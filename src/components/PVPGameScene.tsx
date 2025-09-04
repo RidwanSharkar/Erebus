@@ -633,7 +633,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                   position,
                   direction,
                   attackerEntityId,
-                  { speed: 35, damage: 50, lifetime: 5, piercing: true, opacity: 0.8 }
+                  { speed: 35, damage: 50, lifetime: 3, piercing: true, opacity: 0.8 }
                 );
                 break;
               case 'entropic_bolt':
@@ -642,7 +642,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                   position,
                   direction,
                   attackerEntityId,
-                  { speed: 20, damage: 20, lifetime: 8, piercing: true, opacity: 0.8 }
+                  { speed: 20, damage: 20, lifetime: 2, piercing: false, opacity: 0.8 }
                 );
                 break;
               case 'crossentropy_bolt':
@@ -651,7 +651,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                   position,
                   direction,
                   attackerEntityId,
-                  { speed: 15, damage: 50, lifetime: 10, piercing: true, opacity: 0.8 }
+                  { speed: 15, damage: 90, lifetime: 2.5, piercing: false, opacity: 0.8 }
                 );
                 break;
               case 'perfect_shot':
@@ -660,7 +660,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                   position,
                   direction,
                   attackerEntityId,
-                  { speed: 40, damage: 75, lifetime: 6, piercing: true, opacity: 1.0 }
+                  { speed: 40, damage: 75, lifetime: 3, piercing: true, opacity: 1.0 }
                 );
                 break;
               case 'barrage_projectile':
@@ -670,7 +670,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                   position,
                   direction,
                   attackerEntityId,
-                  { speed: 22, damage: 30, lifetime: 8, maxDistance: 25, piercing: false, opacity: 0.8 }
+                  { speed: 22, damage: 30, lifetime: 3, maxDistance: 25, piercing: false, opacity: 0.8 }
                 );
                 
                 // Mark as barrage arrow for proper visual rendering
@@ -678,7 +678,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                 if (renderer?.mesh) {
                   renderer.mesh.userData.isBarrageArrow = true;
                   renderer.mesh.userData.isRegularArrow = false;
-                  console.log('🏹 Marked PVP barrage projectile for blue arrow rendering');
                 }
                 break;
             }
@@ -734,7 +733,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           
           // Calculate weapon-specific animation duration based on actual weapon timing
           // These durations match the real animation calculations in each weapon component
-          let resetDuration = 55; // Default
+          let resetDuration = 50; // Default
           
           // Special handling for sword charge attacks
           if (data.attackType === 'sword_charge_spin') {

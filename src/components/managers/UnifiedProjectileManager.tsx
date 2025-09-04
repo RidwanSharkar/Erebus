@@ -315,7 +315,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
                 id: explosionIdCounter.current++,
                 position: impactPosition.clone(),
                 color: new Color('#8B00FF'), // Purple/magenta explosion for Crossentropy
-                size: 2.8, // Larger explosion than EntropicBolt
+                size: 2.5, // Larger explosion than EntropicBolt
                 duration: 1.0, // Duration for Crossentropy explosion
                 type: 'crossentropy' as const,
                 chargeTime: 1.0 // Default charge time, could be dynamic based on player charge
@@ -391,7 +391,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             maxDistance: maxDistance,
             damage: 30,
             startTime: Date.now(),
-            hasCollided: false,
+            hasCollided: false, 
             hitEnemies: new Set(),
             opacity: arrow.opacity,
             distanceTraveled: distanceTraveled

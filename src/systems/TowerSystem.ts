@@ -231,7 +231,7 @@ export class TowerSystem extends System {
       const projectileConfig = {
         speed: tower.projectileSpeed,
         damage: tower.attackDamage,
-        lifetime: 5, // 5 second lifetime
+        lifetime: 2, // 5 second lifetime
         opacity: 1.0
       };
       

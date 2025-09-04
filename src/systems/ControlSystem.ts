@@ -601,7 +601,7 @@ export class ControlSystem extends System {
       speed: 20, // Faster than CrossentropyBolt
       damage: 20, // EntropicBolt damage
       lifetime: 5, // Shorter lifetime
-      piercing: true, // Scythe projectiles can pierce
+      piercing: false, // Non-piercing so projectile gets destroyed on hit
       explosive: false, // No explosion effect
       explosionRadius: 0, // No explosion radius
       subclass: this.currentSubclass,
@@ -649,7 +649,7 @@ export class ControlSystem extends System {
       speed: 15, // Slower than EntropicBolt
       damage: 90, // Higher damage for R ability
       lifetime: 5, // Longer lifetime
-      piercing: true, // Scythe projectiles can pierce
+      piercing: false, // 
       explosive: false, // Disabled explosion effect for performance
       explosionRadius: 0, // No explosion radius
       subclass: this.currentSubclass,
@@ -1248,7 +1248,7 @@ export class ControlSystem extends System {
     );
     
     // SABRES DAMAGE
-    const attackRange = 4; // Slightly longer range than sword
+    const attackRange = 3.8; // Slightly longer range than sword
     const attackAngle = Math.PI / 2; // 60 degree cone (wider than sword)
     const leftSabreDamage = 19; // Damage per sabre
     const rightSabreDamage = 23;
@@ -1291,7 +1291,7 @@ export class ControlSystem extends System {
           if (!targetHealth.isDead) {
             combatSystem.queueDamage(target, rightSabreDamage, this.playerEntity || undefined);
           }
-        }, 115); // 100ms delay between sabre hits
+        }, 100); // 100ms delay between sabre hits
         
         hitCount++;
         console.log(`⚔️ Sabres hit target at distance ${distanceToTarget.toFixed(2)} for ${leftSabreDamage + rightSabreDamage} total damage`);
@@ -1316,7 +1316,7 @@ export class ControlSystem extends System {
     direction.normalize();
     
     // Melee attack parameters - increased for PVP combat
-    const meleeRange = 4.8; // Increased attack range for PVP
+    const meleeRange = 4.6; // Increased attack range for PVP
     const meleeAngle = Math.PI / 2; // 120 degree cone (60 degrees each side)
     
     // Base damage values based on combo step - works for all subclasses

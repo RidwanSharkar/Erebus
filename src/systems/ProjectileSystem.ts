@@ -371,7 +371,7 @@ export class ProjectileSystem extends System {
     const projectile = world.createComponent(Projectile);
     projectile.speed = config?.speed || 15; // Slower than arrows
     projectile.damage = config?.damage || 30; // Higher damage than arrows
-    projectile.maxLifetime = config?.lifetime || 10; // Longer lifetime
+    projectile.maxLifetime = config?.lifetime || 1.75; // Longer lifetime
     projectile.owner = ownerId;
     projectile.setDirection(direction);
     
@@ -390,9 +390,9 @@ export class ProjectileSystem extends System {
     const placeholderMaterial = new MeshStandardMaterial({
       color: '#00ff44',
       emissive: '#00ff44',
-      emissiveIntensity: 2,
+      emissiveIntensity: 0,
       transparent: true,
-      opacity: 0.1 // Very low opacity since React component will handle visuals
+      opacity: 0 // Very low opacity since React component will handle visuals
     });
     const placeholderMesh = new Mesh(placeholderGeometry, placeholderMaterial);
     
@@ -450,7 +450,7 @@ export class ProjectileSystem extends System {
     const projectile = world.createComponent(Projectile);
     projectile.speed = config?.speed || 20; // Faster than CrossentropyBolt
     projectile.damage = config?.damage || 20; // EntropicBolt damage
-    projectile.maxLifetime = config?.lifetime || 8; // Shorter lifetime
+    projectile.maxLifetime = config?.lifetime ||1.75; // Shorter lifetime
     projectile.owner = ownerId;
     projectile.setDirection(direction);
     
@@ -469,9 +469,9 @@ export class ProjectileSystem extends System {
     const placeholderMaterial = new MeshStandardMaterial({
       color: '#00ff44',
       emissive: '#00ff44',
-      emissiveIntensity: 1.5,
+      emissiveIntensity: 0,
       transparent: true,
-      opacity: 0.1 // Very low opacity since React component will handle visuals
+      opacity: 0 // Very low opacity since React component will handle visuals
     });
     const placeholderMesh = new Mesh(placeholderGeometry, placeholderMaterial);
     
@@ -530,7 +530,7 @@ export class ProjectileSystem extends System {
     const projectile = world.createComponent(Projectile);
     projectile.speed = config?.speed || 20;
     projectile.damage = config?.damage || 5; // Set default damage to 5 as requested
-    projectile.maxLifetime = config?.lifetime || 5;
+    projectile.maxLifetime = config?.lifetime || 2;
     projectile.owner = ownerId;
     projectile.setDirection(direction);
     projectile.setStartPosition(position);

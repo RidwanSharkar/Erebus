@@ -42,7 +42,7 @@ export default function EntropicBolt({
     if (!boltRef.current || hasCollided.current) return;
 
     timeElapsed.current += delta;
-    const speed = 30 * delta; // Base speed
+    const speed = 20 * delta; // Base speed
     const totalDistance = 25; // Max travel distance
     const progress = Math.min(timeElapsed.current * (30 / totalDistance), 1); // Progress from 0 to 1
 
@@ -120,9 +120,9 @@ export default function EntropicBolt({
           {/* Entropic trail effect */}
           <EntropicBoltTrail
             color={new Color("#00ff44")}
-            size={0.275}
+            size={0.225}
             meshRef={boltRef}
-            opacity={0.9}
+            opacity={1}
           />
           
           <group ref={boltRef} position={position.toArray()}>
@@ -133,60 +133,11 @@ export default function EntropicBolt({
                 0
               ]}
             >
-              {/* Main bolt crystal - simpler than GlacialShard */}
-              <mesh ref={boltMeshRef} rotation={[Math.PI/2, 0, 0]}>
-                <coneGeometry args={[0.15, 0.6, 6]} />
-                <meshStandardMaterial
-                  color="#00ff44"
-                  emissive="#00ff44"
-                  emissiveIntensity={1.0}
-                  transparent
-                  opacity={0.9}
-                />
-              </mesh>
 
-              {/* Entropic aura around bolt */}
-              <mesh>
-                <sphereGeometry args={[0.3, 12, 12]} />
-                <meshStandardMaterial
-                  color="#33ff66"
-                  emissive="#33ff66"
-                  emissiveIntensity={1.0}
-                  transparent
-                  opacity={0.3}
-                  blending={AdditiveBlending}
-                  depthWrite={false}
-                />
-              </mesh>
 
-              {/* Outer energy mist */}
-              <mesh>
-                <sphereGeometry args={[0.5, 8, 8]} />
-                <meshStandardMaterial
-                  color="#66ff88"
-                  emissive="#66ff88"
-                  emissiveIntensity={0.5}
-                  transparent
-                  opacity={0.15}
-                  blending={AdditiveBlending}
-                  depthWrite={false}
-                />
-              </mesh>
 
-              {/* Single rotating energy ring */}
-              <mesh
-                rotation={[Math.PI/2, 0, Date.now() * 0.003]}
-              >
-                <torusGeometry args={[0.25, 0.03, 6, 12]} />
-                <meshStandardMaterial
-                  color="#00ff44"
-                  emissive="#00ff44"
-                  emissiveIntensity={1.2}
-                  transparent
-                  opacity={0.7}
-                  blending={AdditiveBlending}
-                />
-              </mesh>
+
+
 
               {/* Light source */}
               <pointLight
@@ -220,7 +171,7 @@ interface EntropicBoltImpactProps {
 function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
   const startTime = useRef(Date.now());
   const [, forceUpdate] = useState({});
-  const IMPACT_DURATION = 0.5; // Shorter duration than GlacialShard
+  const IMPACT_DURATION = 0.6; // Shorter duration than GlacialShard
   
   useEffect(() => {
     const interval = setInterval(() => {
@@ -253,11 +204,11 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
     <group position={position}>
       {/* Main entropic explosion effect */}
       <mesh>
-        <sphereGeometry args={[1 * (1 + elapsed * 1.5), 12, 12]} />
+        <sphereGeometry args={[0.8 * (1 + elapsed * 1.5), 12, 12]} />
         <meshStandardMaterial
           color="#00ff44"
           emissive="#00ff44"
-          emissiveIntensity={2.0 * fade}
+          emissiveIntensity={1.0 * fade}
           transparent
           opacity={0.6 * fade}
           blending={AdditiveBlending}
@@ -267,11 +218,11 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
 
       {/* Secondary explosion ring */}
       <mesh>
-        <sphereGeometry args={[0.675 * (1 + elapsed * 2), 8, 8]} />
+        <sphereGeometry args={[0.55 * (1 + elapsed * 2), 8, 8]} />
         <meshStandardMaterial
           color="#33ff66"
           emissive="#33ff66"
-          emissiveIntensity={2.5 * fade}
+          emissiveIntensity={1 * fade}
           transparent
           opacity={0.7 * fade}
           blending={AdditiveBlending}
@@ -307,12 +258,12 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
       })}
 
       {/* Expanding energy rings */}
-      {[...Array(5)].map((_, i) => (
+      {[...Array(2)].map((_, i) => (
         <mesh
           key={`energy-ring-${i}`}
           rotation={[-Math.PI/2, 0, i * Math.PI/2]}
         >
-          <torusGeometry args={[1.2 * (1 + elapsed * 1.5) + i * 0.2, 0.08, 6, 16]} />
+          <torusGeometry args={[1 * (1 + elapsed * 1.5) + i * 0.2, 0.08, 6, 16]} />
           <meshStandardMaterial
             color="#00ff44"
             emissive="#00ff44"

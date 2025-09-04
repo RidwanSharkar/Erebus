@@ -63,7 +63,7 @@ export default function CrossentropyExplosion({
     <group position={position}>
       {/* Core explosion sphere - Dark purple/magenta for Crossentropy */}
       <mesh>
-        <sphereGeometry args={[0.6 * scale * (1 + elapsed * expansionRate), 32, 32]} />
+        <sphereGeometry args={[0.4 * scale * (1 + elapsed * expansionRate), 32, 32]} />
         <meshStandardMaterial
           color="#8B00FF" // Dark violet/purple
           emissive="#AA00FF" 
@@ -77,7 +77,7 @@ export default function CrossentropyExplosion({
       
       {/* Inner energy sphere - Brighter purple */}
       <mesh>
-        <sphereGeometry args={[0.65 * scale * (1 + elapsed * (expansionRate + 1)), 24, 24]} />
+        <sphereGeometry args={[0.5 * scale * (1 + elapsed * (expansionRate + 1)), 24, 24]} />
         <meshStandardMaterial
           color="#9932CC" // Dark orchid
           emissive="#DA70D6" // Orchid
@@ -91,7 +91,7 @@ export default function CrossentropyExplosion({
 
       {/* Outer energy sphere - Magenta */}
       <mesh>
-        <sphereGeometry args={[0.7 * scale * (1 + elapsed * (expansionRate + 2)), 16, 16]} />
+        <sphereGeometry args={[0.6 * scale * (1 + elapsed * (expansionRate + 2)), 16, 16]} />
         <meshStandardMaterial
           color="#FF00FF" // Magenta
           emissive="#FF69B4" // Hot pink

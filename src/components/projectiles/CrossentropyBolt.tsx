@@ -20,7 +20,7 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
   const clock = useRef(new Clock());
   const speed = 0.25;
   const maxRange = 20; // Maximum range before fading
-  const lifespan = 10; // Fallback lifespan
+  const lifespan = 5; // Fallback lifespan
   const currentPosition = useRef(position.clone());
   const startPosition = useRef(position.clone());
   const hasCollided = useRef(false);
@@ -29,10 +29,10 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
   const [opacity, setOpacity] = useState(1);
   const { scene } = useThree();
   const size = 0.25;
-  const color = new Color('#ff4400');
+  const color = new Color('#8B00FF');
 
   // Spiral parameters
-  const spiralRadius = 0.3;
+  const spiralRadius = 0.375;
   const spiralSpeed = 3.5; // rotations per second
   const time = useRef(0);
 
@@ -138,8 +138,8 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
       <mesh ref={fireball1Ref} position={currentPosition.current}>
         <sphereGeometry args={[size, 32, 32]} />
         <meshStandardMaterial
-          color="#ff4400"
-          emissive="#ff6633"
+          color="#8B00FF"
+          emissive="#A020F0"
           emissiveIntensity={2 * opacity}
           transparent
           opacity={0.9 * opacity}
@@ -152,8 +152,8 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
       <mesh ref={fireball2Ref} position={currentPosition.current}>
         <sphereGeometry args={[size, 32, 32]} />
         <meshStandardMaterial
-          color="#ff4400"
-          emissive="#ff6633"
+          color="#8B00FF"
+          emissive="#A020F0"
           emissiveIntensity={2 * opacity}
           transparent
           opacity={0.9 * opacity}
@@ -165,7 +165,7 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
       </mesh>
       <CrossentropyBoltTrail
         color={color}
-        size={size/1.25}
+        size={size * 0.9}
         mesh1Ref={fireball1Ref}
         mesh2Ref={fireball2Ref}
         opacity={opacity}
