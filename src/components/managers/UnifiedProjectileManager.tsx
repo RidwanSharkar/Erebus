@@ -15,6 +15,7 @@ import ChargedArrow from '@/components/projectiles/ChargedArrow';
 import RegularArrow from '@/components/projectiles/RegularArrow';
 import Barrage from '@/components/projectiles/Barrage';
 import ExplosionEffect from '@/components/projectiles/ExplosionEffect';
+import CrossentropyExplosion from '@/components/projectiles/CrossentropyExplosion';
 import { Vector3, Color } from '@/utils/three-exports';
 
 // Data interfaces for each projectile type
@@ -34,6 +35,8 @@ interface ExplosionData {
   color: Color;
   size: number;
   duration: number;
+  type?: 'crossentropy' | 'generic'; // Add type to distinguish explosion types
+  chargeTime?: number; // For crossentropy explosions
 }
 
 interface UnifiedProjectileManagerProps {
@@ -89,7 +92,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
       const enemyPos2D = new Vector3(transform.position.x, 0, transform.position.z);
       const distance = projectilePos2D.distanceTo(enemyPos2D);
 
-      if (distance <= 1.3) { // Hit radius for EntropicBolt
+      if (distance <= 1.5) { // Hit radius for EntropicBolt
         console.log(`⚡ EntropicBolt ${boltId} hit enemy ${entity.id} at distance ${distance.toFixed(2)}`);
         return true; // Collision detected
       }
@@ -118,7 +121,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
       const enemyPos2D = new Vector3(transform.position.x, 0, transform.position.z);
       const distance = projectilePos2D.distanceTo(enemyPos2D);
 
-      if (distance <= 1.4) { // Hit radius for CrossentropyBolt (slightly larger than EntropicBolt)
+      if (distance <= 1.6) { // Hit radius for CrossentropyBolt (slightly larger than EntropicBolt)
         console.log(`⚔️ CrossentropyBolt ${boltId} hit enemy ${entity.id} at distance ${distance.toFixed(2)}`);
         return true; // Collision detected
       }
@@ -306,14 +309,16 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
           onImpact={(impactPosition?: Vector3) => {
             console.log(`⚔️ CrossentropyBolt ${bolt.id} impact at position:`, impactPosition?.toArray());
             
-            // Create explosion effect at impact position
+            // Create Crossentropy explosion effect at impact position
             if (impactPosition) {
               const explosion = {
                 id: explosionIdCounter.current++,
                 position: impactPosition.clone(),
-                color: new Color('#ff4400'), // Orange/red explosion for Crossentropy
-                size: 2.5, // Larger explosion than EntropicBolt
-                duration: 1.2 // Longer duration
+                color: new Color('#8B00FF'), // Purple/magenta explosion for Crossentropy
+                size: 2.8, // Larger explosion than EntropicBolt
+                duration: 1.0, // Duration for Crossentropy explosion
+                type: 'crossentropy' as const,
+                chargeTime: 1.0 // Default charge time, could be dynamic based on player charge
               };
               setExplosions(prev => [...prev, explosion]);
             }
@@ -348,44 +353,78 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
       ))}
 
       {/* Regular Arrows */}
-      {projectileData.regular.map(arrow => (
-        <RegularArrow
-          key={arrow.id}
-          position={arrow.position}
-          direction={arrow.direction}
-          onImpact={() => {
-            console.log(`🏹 RegularArrow ${arrow.id} impact`);
-          }}
-        />
-      ))}
+      {projectileData.regular.map(arrow => {
+        // Get distance information from the ECS projectile component
+        const projectileEntity = world?.getEntity(arrow.entityId);
+        const projectile = projectileEntity?.getComponent(Projectile);
+        const distanceTraveled = projectile?.distanceTraveled || 0;
+        const maxDistance = projectile?.maxDistance || 25;
+        
+        return (
+          <RegularArrow
+            key={arrow.id}
+            position={arrow.position}
+            direction={arrow.direction}
+            distanceTraveled={distanceTraveled}
+            maxDistance={maxDistance}
+            onImpact={() => {
+              console.log(`🏹 RegularArrow ${arrow.id} impact`);
+            }}
+          />
+        );
+      })}
 
       {/* Barrage Arrows */}
       <Barrage 
-        projectiles={projectileData.barrage.map(arrow => ({
-          id: arrow.id,
-          position: arrow.position,
-          direction: arrow.direction,
-          startPosition: arrow.position.clone(), // Use current position as start for visual purposes
-          maxDistance: 12,
-          damage: 30,
-          startTime: Date.now(),
-          hasCollided: false,
-          hitEnemies: new Set(),
-          opacity: arrow.opacity
-        }))}
+        projectiles={projectileData.barrage.map(arrow => {
+          // Get distance information from the ECS projectile component
+          const projectileEntity = world?.getEntity(arrow.entityId);
+          const projectile = projectileEntity?.getComponent(Projectile);
+          const distanceTraveled = projectile?.distanceTraveled || 0;
+          const maxDistance = projectile?.maxDistance || 25;
+          
+          return {
+            id: arrow.id,
+            position: arrow.position,
+            direction: arrow.direction,
+            startPosition: arrow.position.clone(), // Use current position as start for visual purposes
+            maxDistance: maxDistance,
+            damage: 30,
+            startTime: Date.now(),
+            hasCollided: false,
+            hitEnemies: new Set(),
+            opacity: arrow.opacity,
+            distanceTraveled: distanceTraveled
+          };
+        })}
       />
 
       {/* Explosions */}
-      {explosions.map(explosion => (
-        <ExplosionEffect
-          key={explosion.id}
-          position={explosion.position}
-          color={explosion.color}
-          size={explosion.size}
-          duration={explosion.duration}
-          onComplete={() => handleExplosionComplete(explosion.id)}
-        />
-      ))}
+      {explosions.map(explosion => {
+        if (explosion.type === 'crossentropy') {
+          return (
+            <CrossentropyExplosion
+              key={explosion.id}
+              position={explosion.position}
+              chargeTime={explosion.chargeTime || 0.75}
+              explosionStartTime={Date.now()}
+              onComplete={() => handleExplosionComplete(explosion.id)}
+            />
+          );
+        } else {
+          // Default to generic explosion for other types
+          return (
+            <ExplosionEffect
+              key={explosion.id}
+              position={explosion.position}
+              color={explosion.color}
+              size={explosion.size/2}
+              duration={explosion.duration}
+              onComplete={() => handleExplosionComplete(explosion.id)}
+            />
+          );
+        }
+      })}
     </>
   );
 }

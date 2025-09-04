@@ -624,7 +624,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                   position,
                   direction,
                   attackerEntityId, // Use attacker's entity ID as owner
-                  { speed: 25, damage: 10, lifetime: 3, opacity: 0.8 } // PVP damage handled by CombatSystem
+                  { speed: 25, damage: 10, lifetime: 3, maxDistance: 25, opacity: 0.8 } // PVP damage handled by CombatSystem
                 );
                 break;
               case 'charged_arrow':
@@ -670,7 +670,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                   position,
                   direction,
                   attackerEntityId,
-                  { speed: 22, damage: 30, lifetime: 8, piercing: false, opacity: 0.8 }
+                  { speed: 22, damage: 30, lifetime: 8, maxDistance: 25, piercing: false, opacity: 0.8 }
                 );
                 
                 // Mark as barrage arrow for proper visual rendering

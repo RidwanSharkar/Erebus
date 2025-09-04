@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Vector3, Group } from 'three';
 import ViperSting from './ViperSting';
 import ViperStingBeam from './ViperStingBeam';
-import SoulStealEffect from './SoulStealEffect';
 import { useViperSting } from './useViperSting';
 import { useViperStingBeam } from './useViperStingBeam';
 
@@ -99,32 +98,7 @@ export default function ViperStingManager({
     };
   }, [shootViperSting]);
 
-  // Create soul steal effect
-  const createSoulStealEffect = (enemyPosition: Vector3) => {
-    if (!parentRef.current) return;
 
-    const newEffect: SoulStealEffect = {
-      id: nextSoulStealId.current++,
-      position: enemyPosition.clone(),
-      targetPosition: parentRef.current.position.clone(),
-      startTime: Date.now(),
-      duration: 1250,
-      active: true
-    };
-
-    setSoulStealEffects(prev => [...prev, newEffect]);
-
-    // Heal player when soul steal completes
-    setTimeout(() => {
-      if (onHealthChange) {
-        onHealthChange(25); // Heal 25 HP
-        console.log('🐍 Soul steal completed - healed 25 HP');
-      }
-      
-      // Remove the effect
-      setSoulStealEffects(prev => prev.filter(effect => effect.id !== newEffect.id));
-    }, newEffect.duration);
-  };
 
   // Get current player position for soul steal effects
   const getCurrentPlayerPosition = () => {
@@ -146,22 +120,7 @@ export default function ViperStingManager({
           onComplete={() => removeBeamEffect(effect.id)}
         />
       ))}
-      
-      {/* Soul Steal Effects */}
-      {soulStealEffects.map(effect => (
-        <SoulStealEffect
-          key={effect.id}
-          id={effect.id}
-          startPosition={effect.position}
-          targetPosition={effect.targetPosition}
-          startTime={effect.startTime}
-          duration={effect.duration}
-          getCurrentPlayerPosition={getCurrentPlayerPosition}
-          onComplete={() => {
-            setSoulStealEffects(prev => prev.filter(e => e.id !== effect.id));
-          }}
-        />
-      ))}
+
     </>
   );
 }

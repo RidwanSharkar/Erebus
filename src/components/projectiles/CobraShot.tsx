@@ -24,7 +24,6 @@ interface CobraShotProps {
 
 const CobraShotProjectileVisual: React.FC<{ projectile: CobraShotProjectile }> = ({ projectile }) => {
   const groupRef = useRef<Group>(null);
-  const TRAIL_COUNT = 8;
 
   useFrame(() => {
     if (!groupRef.current) return;

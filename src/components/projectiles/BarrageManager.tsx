@@ -14,7 +14,6 @@ export function triggerGlobalBarrage(position: Vector3, direction: Vector3): boo
   if (globalBarrageManager) {
     return globalBarrageManager.triggerBarrage(position, direction);
   }
-  console.warn('⚠️ Global Barrage manager not initialized');
   return false;
 }
 
@@ -34,7 +33,6 @@ export default function BarrageManager({}: BarrageManagerProps) {
   }> = [];
 
   const mockOnHit = (targetId: string, damage: number) => {
-    console.log(`🏹 Barrage hit enemy ${targetId} for ${damage} damage`);
   };
 
   const mockSetDamageNumbers = (callback: any) => {
@@ -57,7 +55,6 @@ export default function BarrageManager({}: BarrageManagerProps) {
   useEffect(() => {
     globalBarrageManager = {
       triggerBarrage: (position: Vector3, direction: Vector3) => {
-        console.log('🏹 Triggering Barrage at position:', position.toArray());
         return shootBarrage(position, direction);
       }
     };

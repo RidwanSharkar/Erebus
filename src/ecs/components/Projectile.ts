@@ -17,6 +17,9 @@ export class Projectile extends Component {
   public bounces: number;
   public maxBounces: number;
   public owner: number; // Entity ID of the owner
+  public distanceTraveled: number; // Track distance traveled
+  public maxDistance: number; // Maximum distance before expiring
+  public startPosition: Vector3; // Starting position for distance calculation
 
   constructor(
     speed: number = 20,
@@ -38,6 +41,9 @@ export class Projectile extends Component {
     this.bounces = 0;
     this.maxBounces = 0;
     this.owner = owner;
+    this.distanceTraveled = 0;
+    this.maxDistance = Infinity; // Default to no distance limit
+    this.startPosition = new Vector3(0, 0, 0);
   }
 
   public setDirection(direction: Vector3): void {
@@ -60,6 +66,14 @@ export class Projectile extends Component {
     this.maxBounces = maxBounces;
   }
 
+  public setMaxDistance(maxDistance: number): void {
+    this.maxDistance = maxDistance;
+  }
+
+  public setStartPosition(position: Vector3): void {
+    this.startPosition.copy(position);
+  }
+
   public hasHitTarget(entityId: number): boolean {
     return this.hitTargets.has(entityId);
   }
@@ -80,7 +94,7 @@ export class Projectile extends Component {
   }
 
   public isExpired(): boolean {
-    return this.lifetime >= this.maxLifetime;
+    return this.lifetime >= this.maxLifetime || this.distanceTraveled >= this.maxDistance;
   }
 
   public canBounce(): boolean {
@@ -98,6 +112,10 @@ export class Projectile extends Component {
 
   public update(deltaTime: number): void {
     this.lifetime += deltaTime;
+    
+    // Track distance traveled
+    const distanceThisFrame = this.velocity.length() * deltaTime;
+    this.distanceTraveled += distanceThisFrame;
     
     // Apply gravity if enabled
     if (this.gravity !== 0) {
@@ -128,6 +146,9 @@ export class Projectile extends Component {
     this.bounces = 0;
     this.maxBounces = 0;
     this.owner = -1;
+    this.distanceTraveled = 0;
+    this.maxDistance = Infinity;
+    this.startPosition.set(0, 0, 0);
     this.enabled = true;
   }
 
@@ -141,6 +162,9 @@ export class Projectile extends Component {
     clone.gravity = this.gravity;
     clone.bounces = this.bounces;
     clone.maxBounces = this.maxBounces;
+    clone.distanceTraveled = this.distanceTraveled;
+    clone.maxDistance = this.maxDistance;
+    clone.startPosition.copy(this.startPosition);
     return clone;
   }
 }

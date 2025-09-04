@@ -14,7 +14,7 @@ export default function ExplosionEffect({
   position, 
   onComplete, 
   color = new Color('#00ff44'),
-  size = 0.25,
+  size = 0.15,
   duration = 0.5
 }: ExplosionEffectProps) {
   const ringRef = useRef<Mesh>(null);

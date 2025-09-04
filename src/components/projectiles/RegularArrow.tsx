@@ -6,13 +6,20 @@ interface RegularArrowProps {
   position: Vector3;
   direction: Vector3;
   onImpact?: (position: Vector3) => void;
+  distanceTraveled?: number;
+  maxDistance?: number;
 }
 
-export default function RegularArrow({ position, direction, onImpact }: RegularArrowProps) {
+export default function RegularArrow({ position, direction, onImpact, distanceTraveled = 0, maxDistance = 25 }: RegularArrowProps) {
   
   const arrowRef = useRef<Group>(null);
   const color = "#ffaa00";
   const size = 0.15;
+
+  // Calculate fade based on distance traveled
+  const fadeStartDistance = maxDistance * 0.7; // Start fading at 70% of max distance
+  const fadeProgress = Math.max(0, Math.min(1, (distanceTraveled - fadeStartDistance) / (maxDistance - fadeStartDistance)));
+  const opacity = Math.max(0.1, 1 - fadeProgress); // Minimum opacity of 0.1
 
   useFrame((_, delta) => {
     if (!arrowRef.current) return;
@@ -35,14 +42,14 @@ export default function RegularArrow({ position, direction, onImpact }: RegularA
           <meshStandardMaterial
             color={color}
             emissive="#ff6600"
-            emissiveIntensity={3}
+            emissiveIntensity={3 * opacity}
             transparent
-            opacity={0.9}
+            opacity={0.9 * opacity}
             depthWrite={false}
             blending={AdditiveBlending}
             toneMapped={false}
           />
-          <pointLight color={color} intensity={8} distance={6} />
+
         </mesh>
         
         {/* Arrow Shaft */}
@@ -51,9 +58,9 @@ export default function RegularArrow({ position, direction, onImpact }: RegularA
           <meshStandardMaterial
             color={color}
             emissive="#ff8800"
-            emissiveIntensity={2}
+            emissiveIntensity={2 * opacity}
             transparent
-            opacity={0.8}
+            opacity={0.8 * opacity}
             depthWrite={false}
             blending={AdditiveBlending}
             toneMapped={false}
@@ -77,9 +84,9 @@ export default function RegularArrow({ position, direction, onImpact }: RegularA
               <meshStandardMaterial
                 color="#ffcc44"
                 emissive="#ff9900"
-                emissiveIntensity={1.5}
+                emissiveIntensity={1.5 * opacity}
                 transparent
-                opacity={0.7}
+                opacity={0.7 * opacity}
                 side={DoubleSide}
                 depthWrite={false}
                 blending={AdditiveBlending}
@@ -94,17 +101,16 @@ export default function RegularArrow({ position, direction, onImpact }: RegularA
           <meshStandardMaterial
             color={color}
             emissive="#ffaa00"
-            emissiveIntensity={1}
+            emissiveIntensity={1 * opacity}
             transparent
-            opacity={0.3}
+            opacity={0.3 * opacity}
             depthWrite={false}
             blending={AdditiveBlending}
             toneMapped={false}
           />
         </mesh>
         
-        {/* Main point light */}
-        <pointLight color={color} intensity={12} distance={8} decay={2} />
+ 
       </group>
     </group>
   );

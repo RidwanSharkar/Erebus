@@ -516,6 +516,7 @@ export class ProjectileSystem extends System {
       subclass?: WeaponSubclass;
       level?: number;
       opacity?: number;
+      maxDistance?: number;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -532,6 +533,12 @@ export class ProjectileSystem extends System {
     projectile.maxLifetime = config?.lifetime || 5;
     projectile.owner = ownerId;
     projectile.setDirection(direction);
+    projectile.setStartPosition(position);
+    
+    // Set max distance if specified (for bow arrows)
+    if (config?.maxDistance !== undefined) {
+      projectile.setMaxDistance(config.maxDistance);
+    }
     
     if (config?.piercing) projectile.setPiercing(true);
     if (config?.explosive && config?.explosionRadius) {

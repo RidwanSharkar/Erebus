@@ -495,7 +495,7 @@ export class ControlSystem extends System {
     this.camera.getWorldDirection(direction);
     direction.normalize();
     
-    // Apply downward angle compensation (same as bow projectiles)
+    // Apply angle compensation (same as bow projectiles)
     const compensationAngle = Math.PI / 6; // 30 degrees downward compensation
     const cameraRight = new Vector3();
     cameraRight.crossVectors(direction, new Vector3(0, 1, 0)).normalize();
@@ -539,6 +539,7 @@ export class ControlSystem extends System {
       speed: 25,
       damage: 10, // Arrow damage should be 10
       lifetime: 3,
+      maxDistance: 25, // Limit bow arrows to 25 units distance
       subclass: this.currentSubclass,
       level: this.currentLevel,
       opacity: 1.0
@@ -704,7 +705,7 @@ export class ControlSystem extends System {
     // Get player's health component and heal for 20 HP (doubled from 10)
     const healthComponent = this.playerEntity.getComponent(Health);
     if (healthComponent) {
-      const didHeal = healthComponent.heal(20); // REANIMATE HEAL AMOUNT
+      const didHeal = healthComponent.heal(30); // REANIMATE HEAL AMOUNT
       if (didHeal) {
         console.log(`🩸 Reanimate healed player for 20 HP. Current health: ${healthComponent.currentHealth}/${healthComponent.maxHealth}`);
       } else {
@@ -744,7 +745,7 @@ export class ControlSystem extends System {
     
     // Consume mana
     if (gameUI) {
-      gameUI.consumeMana(25);
+      gameUI.consumeMana(50);
       console.log('❄️ Consumed 25 mana for Frost Nova');
     }
     
@@ -763,7 +764,7 @@ export class ControlSystem extends System {
       this.onFrostNovaCallback(playerPosition, direction);
     }
     
-    // Find all enemies within 5 unit radius and freeze them (reduced from 8)
+    // Find all enemies within 5 unit radius and freeze them
     this.freezeEnemiesInRadius(playerPosition, 6.0, currentTime);
     
     // Trigger global frost nova visual effect
@@ -936,7 +937,7 @@ export class ControlSystem extends System {
     const chargedArrowConfig = {
       speed: 35, // Faster than regular arrows (25)
       damage: 50, // Much higher damage than regular arrows (10)
-      lifetime: 5, // Longer lifetime than regular arrows (3)
+      lifetime: 2, // Longer lifetime than regular arrows (3)
       piercing: true, // Charged arrows can pierce through enemies
       explosive: false, // No explosion, but could add special effects
       subclass: this.currentSubclass,
@@ -1055,7 +1056,7 @@ export class ControlSystem extends System {
   private triggerBowReleaseEffects(finalChargeProgress: number): void {
     if (this.onBowReleaseCallback) {
       // Check if this was a perfect shot
-      const perfectShotMinThreshold = 0.8; // 85% charge
+      const perfectShotMinThreshold = 0.75; // 85% charge
       const perfectShotMaxThreshold = 0.98; // 95% charge
       const isPerfectShot = finalChargeProgress >= perfectShotMinThreshold && finalChargeProgress <= perfectShotMaxThreshold;
       
@@ -1248,7 +1249,7 @@ export class ControlSystem extends System {
     
     // SABRES DAMAGE
     const attackRange = 4; // Slightly longer range than sword
-    const attackAngle = Math.PI / 2.5; // 60 degree cone (wider than sword)
+    const attackAngle = Math.PI / 2; // 60 degree cone (wider than sword)
     const leftSabreDamage = 19; // Damage per sabre
     const rightSabreDamage = 23;
     
@@ -1290,7 +1291,7 @@ export class ControlSystem extends System {
           if (!targetHealth.isDead) {
             combatSystem.queueDamage(target, rightSabreDamage, this.playerEntity || undefined);
           }
-        }, 100); // 100ms delay between sabre hits
+        }, 115); // 100ms delay between sabre hits
         
         hitCount++;
         console.log(`⚔️ Sabres hit target at distance ${distanceToTarget.toFixed(2)} for ${leftSabreDamage + rightSabreDamage} total damage`);
@@ -1315,7 +1316,7 @@ export class ControlSystem extends System {
     direction.normalize();
     
     // Melee attack parameters - increased for PVP combat
-    const meleeRange = 4.9; // Increased attack range for PVP
+    const meleeRange = 4.8; // Increased attack range for PVP
     const meleeAngle = Math.PI / 2; // 120 degree cone (60 degrees each side)
     
     // Base damage values based on combo step - works for all subclasses
@@ -1564,7 +1565,7 @@ export class ControlSystem extends System {
     }
 
     // Get current rage amount and consume ALL rage
-    const currentRage = gameUI ? gameUI.getCurrentRage() : 40; // Fallback to 20 if gameUI not available
+    const currentRage = gameUI ? gameUI.getCurrentRage() : 40; // Fallback to 40 if gameUI not available
     if (gameUI) {
       gameUI.consumeAllRage(); // Consume all rage instead of just 20
       console.log(`⚡ Consumed ${currentRage} rage for Divine Storm`);
@@ -1887,7 +1888,7 @@ export class ControlSystem extends System {
     
     // Get player position and direction
     const playerPosition = playerTransform.getWorldPosition();
-    playerPosition.y += 0.75; // Shoot from chest level
+    playerPosition.y += 1; // Shoot from chest level
     const direction = new Vector3();
     this.camera.getWorldDirection(direction);
     direction.normalize();
@@ -2014,6 +2015,7 @@ export class ControlSystem extends System {
         speed: 22, // Slightly faster than regular arrows (20)
         damage: 30, // High damage for barrage arrows
         lifetime: 8,
+        maxDistance: 25, // Limit barrage arrows to 25 units distance (same as regular arrows)
         piercing: false,
         subclass: this.currentSubclass,
         level: 1,

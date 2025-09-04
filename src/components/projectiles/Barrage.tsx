@@ -13,6 +13,7 @@ interface BarrageProjectile {
   hitEnemies: Set<string>;
   opacity?: number;
   fadeStartTime?: number | null;
+  distanceTraveled?: number;
 }
 
 interface BarrageProps {
@@ -22,25 +23,36 @@ interface BarrageProps {
 export default function Barrage({ projectiles }: BarrageProps) {
   return (
     <>
-      {projectiles.map(projectile => (
-        <group key={projectile.id}>
-          <group
-            position={projectile.position.toArray()}
-            rotation={[
-              0,
-              Math.atan2(projectile.direction.x, projectile.direction.z),
-              0
-            ]}
-          >
+      {projectiles.map(projectile => {
+        // Calculate distance-based fading (same logic as RegularArrow)
+        const distanceTraveled = projectile.distanceTraveled || projectile.position.distanceTo(projectile.startPosition);
+        const maxDistance = projectile.maxDistance || 25;
+        const fadeStartDistance = maxDistance * 0.7; // Start fading at 70% of max distance
+        const fadeProgress = Math.max(0, Math.min(1, (distanceTraveled - fadeStartDistance) / (maxDistance - fadeStartDistance)));
+        const distanceOpacity = Math.max(0.1, 1 - fadeProgress); // Minimum opacity of 0.1
+        
+        // Combine distance-based opacity with any existing opacity
+        const finalOpacity = (projectile.opacity !== undefined ? projectile.opacity : 1) * distanceOpacity;
+        
+        return (
+          <group key={projectile.id}>
+            <group
+              position={projectile.position.toArray()}
+              rotation={[
+                0,
+                Math.atan2(projectile.direction.x, projectile.direction.z),
+                0
+              ]}
+            >
             {/* Base arrow - slightly smaller than regular bow arrows */}
             <mesh rotation={[Math.PI/2, 0, 0]}>
               <cylinderGeometry args={[0.025, 0.1, 1.8, 6]} />
               <meshStandardMaterial
                 color="#0088ff"
                 emissive="#0088ff"
-                emissiveIntensity={1.2}
+                emissiveIntensity={1.2 * finalOpacity}
                 transparent
-                opacity={projectile.opacity !== undefined ? projectile.opacity : 1}
+                opacity={finalOpacity}
               />
             </mesh>
 
@@ -55,9 +67,9 @@ export default function Barrage({ projectiles }: BarrageProps) {
                 <meshStandardMaterial
                   color="#0088ff"
                   emissive="#0088ff"
-                  emissiveIntensity={2.5}
+                  emissiveIntensity={2.5 * finalOpacity}
                   transparent
-                  opacity={(0.8 - i * 0.1) * (projectile.opacity !== undefined ? projectile.opacity : 1)}
+                  opacity={(0.8 - i * 0.1) * finalOpacity}
                   blending={AdditiveBlending}
                 />
               </mesh>
@@ -66,13 +78,14 @@ export default function Barrage({ projectiles }: BarrageProps) {
             {/* Single light */}
             <pointLight 
               color="#0088ff" 
-              intensity={2.5 * (projectile.opacity !== undefined ? projectile.opacity : 1)} 
+              intensity={2.5 * finalOpacity} 
               distance={4}
               decay={2}
             />
           </group>
         </group>
-      ))}
+        );
+      })}
     </>
   );
 }
