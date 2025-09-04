@@ -1,0 +1,182 @@
+// Floating damage numbers component to display damage dealt to enemies
+'use client';
+
+import React, { useEffect, useState } from 'react';
+import { Vector3, Camera } from '@/utils/three-exports';
+
+export interface DamageNumberData {
+  id: string;
+  damage: number;
+  isCritical: boolean;
+  position: Vector3;
+  timestamp: number;
+  damageType?: string; // Added to distinguish damage types
+}
+
+interface DamageNumberProps {
+  damageData: DamageNumberData;
+  onComplete: (id: string) => void;
+  camera: Camera | null;
+  size: { width: number; height: number };
+}
+
+interface DamageNumberPropsExtended extends DamageNumberProps {
+  stackIndex: number; // Index in the stack (0 = newest, 1 = second newest, etc.)
+}
+
+function DamageNumber({ damageData, onComplete, camera, size, stackIndex }: DamageNumberPropsExtended) {
+  const [opacity, setOpacity] = useState(1);
+  const [yOffset, setYOffset] = useState(0);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const duration = 3000; // 3 seconds for better visibility
+    const startTime = Date.now();
+
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Ease out animation
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      
+      // Float upward with stacking offset
+      const baseFloatDistance = 4; // Base float distance
+      const stackOffset = stackIndex * 0.8; // Vertical spacing between stacked numbers
+      setYOffset(easeOut * baseFloatDistance + stackOffset);
+      
+      // Scale animation - start big, settle to smaller size based on stack position
+      const initialScale = stackIndex === 0 ? 1.2 : 0.9 - (stackIndex * 0.1);
+      const finalScale = 0.8 - (stackIndex * 0.1);
+      const scaleProgress = Math.min(progress * 2, 1); // Scale settles faster
+      setScale(initialScale + (finalScale - initialScale) * scaleProgress);
+      
+      // Fade out older numbers more aggressively
+      const fadeStartPoint = stackIndex === 0 ? 0.6 : 0.3 - (stackIndex * 0.1);
+      if (progress > fadeStartPoint) {
+        const fadeProgress = (progress - fadeStartPoint) / (1 - fadeStartPoint);
+        const targetOpacity = stackIndex === 0 ? 0 : Math.max(0, 0.7 - (stackIndex * 0.2));
+        setOpacity(1 - fadeProgress + (targetOpacity * fadeProgress));
+      } else {
+        // Older numbers start more transparent
+        setOpacity(1 - (stackIndex * 0.2));
+      }
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        onComplete(damageData.id);
+      }
+    };
+
+    animate();
+  }, [damageData.id, onComplete, stackIndex]);
+
+  // Proper 3D to 2D projection using the camera
+  let x = 0;
+  let y = 0;
+  
+  if (camera && size.width > 0 && size.height > 0 && damageData.position && damageData.position.clone) {
+    // Create a world position with the floating animation offset
+    const worldPosition = damageData.position.clone();
+    worldPosition.y += yOffset; // Apply the floating animation offset
+    
+    // Project the 3D world position to normalized device coordinates
+    const screenPosition = worldPosition.clone().project(camera);
+    
+    // Convert normalized device coordinates (-1 to 1) to screen coordinates
+    x = (screenPosition.x * 0.5 + 0.5) * size.width;
+    y = (screenPosition.y * -0.5 + 0.5) * size.height;
+    
+    // Debug logging (remove in production)
+    if (damageData.id.endsWith('0')) { // Only log every 10th damage number to avoid spam
+      console.log(`Damage ${damageData.damage} at world pos:`, damageData.position, 'screen pos:', { x, y });
+    }
+  } else {
+    // Fallback to simple projection if camera not available
+    const projectionScale = 50;
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    x = centerX + (damageData.position.x * projectionScale);
+    y = centerY - (damageData.position.z * projectionScale) - (yOffset * 20);
+  }
+
+  return (
+    <div
+      className="absolute pointer-events-none select-none font-bold text-lg"
+      style={{
+        left: `${x}px`,
+        top: `${y}px`,
+        opacity,
+        transform: `translate(-50%, -50%) scale(${scale})`,
+        textShadow: '2px 2px 4px rgba(0, 0, 0, 0.8)',
+        zIndex: 1000 - stackIndex, // Newer numbers appear on top
+        transition: stackIndex > 0 ? 'opacity 0.3s ease-out' : 'none', // Smooth transitions for older numbers
+      }}
+    >
+      <span
+        className={`${
+          damageData.isCritical
+            ? 'text-yellow-300 text-xl animate-pulse'
+            : damageData.damageType === 'crossentropy'
+            ? 'text-green-400'
+            : damageData.damageType === 'healing'
+            ? 'text-green-300'
+            : 'text-red-400'
+        }`}
+      >
+        {damageData.damage}
+        {damageData.isCritical && '!'}
+      </span>
+    </div>
+  );
+}
+
+interface DamageNumbersProps {
+  damageNumbers: DamageNumberData[];
+  onDamageNumberComplete: (id: string) => void;
+  camera: Camera | null;
+  size: { width: number; height: number };
+}
+
+export default function DamageNumbers({ damageNumbers, onDamageNumberComplete, camera, size }: DamageNumbersProps) {
+  // Group damage numbers by position to create stacks
+  const positionGroups = new Map<string, DamageNumberData[]>();
+  
+  damageNumbers.forEach(damageData => {
+    // Create a position key with some tolerance for grouping nearby damage
+    const posKey = `${Math.round(damageData.position.x * 2)}_${Math.round(damageData.position.z * 2)}`;
+    if (!positionGroups.has(posKey)) {
+      positionGroups.set(posKey, []);
+    }
+    positionGroups.get(posKey)!.push(damageData);
+  });
+
+  // Sort each group by timestamp (newest first) and limit to 3 most recent
+  positionGroups.forEach(group => {
+    group.sort((a, b) => b.timestamp - a.timestamp);
+    group.splice(3); // Keep only the 3 most recent
+  });
+
+  return (
+    <div className="fixed inset-0 pointer-events-none">
+      {Array.from(positionGroups.values()).flat().map((damageData) => {
+        // Find the stack index for this damage number
+        const posKey = `${Math.round(damageData.position.x * 2)}_${Math.round(damageData.position.z * 2)}`;
+        const group = positionGroups.get(posKey)!;
+        const stackIndex = group.findIndex(d => d.id === damageData.id);
+        
+        return (
+          <DamageNumber
+            key={damageData.id}
+            damageData={damageData}
+            onComplete={onDamageNumberComplete}
+            camera={camera}
+            size={size}
+            stackIndex={stackIndex}
+          />
+        );
+      })}
+    </div>
+  );
+}

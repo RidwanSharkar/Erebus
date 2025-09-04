@@ -1,0 +1,176 @@
+import React, { useRef, useState } from 'react';
+import { AdditiveBlending } from '@/utils/three-exports';
+
+import { Mesh, Vector3, Clock, Color, Group } from 'three';
+import { useFrame, useThree } from '@react-three/fiber';
+import CrossentropyBoltTrail from './CrossentropyBoltTrail';
+import * as THREE from 'three'
+
+interface CrossentropyBoltProps {
+  id: number;
+  position: Vector3;
+  direction: Vector3;
+  onImpact?: (position?: Vector3) => void;
+  checkCollisions?: (boltId: number, position: Vector3) => boolean;
+}
+
+export default function CrossentropyBolt({ id, position, direction, onImpact, checkCollisions }: CrossentropyBoltProps) {
+  const fireball1Ref = useRef<Mesh>(null);
+  const fireball2Ref = useRef<Mesh>(null);
+  const clock = useRef(new Clock());
+  const speed = 0.25;
+  const maxRange = 20; // Maximum range before fading
+  const lifespan = 10; // Fallback lifespan
+  const currentPosition = useRef(position.clone());
+  const startPosition = useRef(position.clone());
+  const hasCollided = useRef(false);
+  const fadeStartTime = useRef<number | null>(null);
+  const fadeDuration = 0.5; // 500ms fade duration
+  const [opacity, setOpacity] = useState(1);
+  const { scene } = useThree();
+  const size = 0.25;
+  const color = new Color('#ff4400');
+
+  // Spiral parameters
+  const spiralRadius = 0.3;
+  const spiralSpeed = 3.5; // rotations per second
+  const time = useRef(0);
+
+  // Collision detection is now handled by the ECS system
+  // This component only handles visual representation
+
+  useFrame((_, delta) => {
+    if (!fireball1Ref.current || !fireball2Ref.current) return;
+
+    const currentTime = Date.now();
+
+    // Handle fading
+    if (fadeStartTime.current !== null) {
+      const fadeElapsed = currentTime - fadeStartTime.current;
+      const fadeProgress = Math.min(fadeElapsed / (fadeDuration * 1000), 1);
+      const newOpacity = 1 - fadeProgress;
+      
+      setOpacity(newOpacity);
+      
+      if (fadeProgress >= 1) {
+        // Fade complete, remove from scene
+        fireball1Ref.current.removeFromParent();
+        fireball2Ref.current.removeFromParent();
+        if (onImpact) {
+          onImpact(); // Call without position to indicate fade completion
+        }
+        return;
+      }
+    }
+
+    // Skip movement and collision if already collided
+    if (hasCollided.current) return;
+
+    // Check if exceeded lifespan
+    if (clock.current.getElapsedTime() > lifespan) {
+      hasCollided.current = true;
+      fadeStartTime.current = currentTime;
+      return;
+    }
+
+    time.current += delta;
+
+    // Update position based on direction and speed
+    const movement = direction.clone().multiplyScalar(speed * delta * 60);
+    currentPosition.current.add(movement);
+    
+    // Check if exceeded max range
+    const distanceTraveled = currentPosition.current.distanceTo(startPosition.current);
+    if (distanceTraveled >= maxRange) {
+      hasCollided.current = true;
+      fadeStartTime.current = currentTime;
+      if (onImpact) {
+        onImpact(currentPosition.current.clone()); // Impact at max range position
+      }
+      return;
+    }
+
+    // Check collisions each frame
+    if (checkCollisions) {
+      const currentPos = currentPosition.current.clone();
+      const hitSomething = checkCollisions(id, currentPos);
+      
+      if (hitSomething) {
+        hasCollided.current = true;
+        fadeStartTime.current = currentTime;
+        if (onImpact) {
+          onImpact(currentPos); // Impact at collision position
+        }
+        return;
+      }
+    }
+    
+    // Calculate spiral positions for the two fireballs
+    const spiralAngle = time.current * spiralSpeed * Math.PI * 2;
+    const spiralOffset1 = new Vector3(
+      Math.cos(spiralAngle) * spiralRadius,
+      Math.sin(spiralAngle * 0.5) * spiralRadius * 0.3,
+      0
+    );
+    const spiralOffset2 = new Vector3(
+      Math.cos(spiralAngle + Math.PI) * spiralRadius,
+      Math.sin((spiralAngle + Math.PI) * 0.5) * spiralRadius * 0.3,
+      0
+    );
+
+    // Apply spiral offsets to the main direction
+    const right = new Vector3();
+    const up = new Vector3(0, 1, 0);
+    right.crossVectors(direction, up).normalize();
+    up.crossVectors(right, direction).normalize();
+
+    const finalOffset1 = right.clone().multiplyScalar(spiralOffset1.x)
+      .add(up.clone().multiplyScalar(spiralOffset1.y));
+    const finalOffset2 = right.clone().multiplyScalar(spiralOffset2.x)
+      .add(up.clone().multiplyScalar(spiralOffset2.y));
+
+    fireball1Ref.current.position.copy(currentPosition.current.clone().add(finalOffset1));
+    fireball2Ref.current.position.copy(currentPosition.current.clone().add(finalOffset2));
+  });
+
+  return (
+    <group name="crossentropy-bolt-group">
+      <mesh ref={fireball1Ref} position={currentPosition.current}>
+        <sphereGeometry args={[size, 32, 32]} />
+        <meshStandardMaterial
+          color="#ff4400"
+          emissive="#ff6633"
+          emissiveIntensity={2 * opacity}
+          transparent
+          opacity={0.9 * opacity}
+          depthWrite={false}
+          blending={AdditiveBlending}
+          toneMapped={false}
+        />
+        <pointLight color={color} intensity={5 * opacity} distance={12} />
+      </mesh>
+      <mesh ref={fireball2Ref} position={currentPosition.current}>
+        <sphereGeometry args={[size, 32, 32]} />
+        <meshStandardMaterial
+          color="#ff4400"
+          emissive="#ff6633"
+          emissiveIntensity={2 * opacity}
+          transparent
+          opacity={0.9 * opacity}
+          depthWrite={false}
+          blending={AdditiveBlending}
+          toneMapped={false}
+        />
+        <pointLight color={color} intensity={5 * opacity} distance={12} />
+      </mesh>
+      <CrossentropyBoltTrail
+        color={color}
+        size={size/1.25}
+        mesh1Ref={fireball1Ref}
+        mesh2Ref={fireball2Ref}
+        opacity={opacity}
+      />
+      <pointLight color={color} intensity={8 * opacity} distance={4} decay={2} />
+    </group>
+  );
+} 

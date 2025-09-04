@@ -1,0 +1,320 @@
+// Enemy component for identifying enemy entities
+import { Component } from '../Entity';
+
+export enum EnemyType {
+  DUMMY = 'dummy',
+  GRUNT = 'grunt',
+  ELITE = 'elite',
+  BOSS = 'boss'
+}
+
+export class Enemy extends Component {
+  public static readonly componentType = 'Enemy'; // Explicit type identifier
+  public readonly componentType = 'Enemy'; // Instance identifier
+  public type: EnemyType;
+  public level: number;
+  public experienceReward: number;
+  public isAggressive: boolean;
+  public aggroRange: number;
+  public attackRange: number;
+  public attackDamage: number;
+  public attackCooldown: number;
+  public lastAttackTime: number;
+  public movementSpeed: number;
+  public isDead: boolean;
+  public deathTime: number;
+  public respawnTime: number;
+  public canRespawn: boolean;
+  
+  // Freeze status effect
+  public isFrozen: boolean;
+  public freezeStartTime: number;
+  public freezeDuration: number;
+  public originalMovementSpeed: number;
+  
+  // Venom debuff effect
+  public isVenomous: boolean;
+  public venomStartTime: number;
+  public venomDuration: number;
+  public venomDamagePerSecond: number;
+  public lastVenomDamageTime: number;
+
+  constructor(
+    type: EnemyType = EnemyType.DUMMY,
+    level: number = 1
+  ) {
+    super();
+    
+    this.type = type;
+    this.level = level;
+    this.experienceReward = this.calculateExperienceReward();
+    this.isAggressive = type !== EnemyType.DUMMY;
+    this.aggroRange = this.calculateAggroRange();
+    this.attackRange = this.calculateAttackRange();
+    this.attackDamage = this.calculateAttackDamage();
+    this.attackCooldown = this.calculateAttackCooldown();
+    this.lastAttackTime = 0;
+    this.movementSpeed = this.calculateMovementSpeed();
+    this.isDead = false;
+    this.deathTime = 0;
+    this.respawnTime = 30; // 30 seconds default respawn time
+    this.canRespawn = true;
+    
+    // Initialize freeze status
+    this.isFrozen = false;
+    this.freezeStartTime = 0;
+    this.freezeDuration = 0;
+    this.originalMovementSpeed = this.movementSpeed;
+    
+    // Initialize venom status
+    this.isVenomous = false;
+    this.venomStartTime = 0;
+    this.venomDuration = 0;
+    this.venomDamagePerSecond = 0;
+    this.lastVenomDamageTime = 0;
+  }
+
+  private calculateExperienceReward(): number {
+    const baseExp = {
+      [EnemyType.DUMMY]: 5,
+      [EnemyType.GRUNT]: 10,
+      [EnemyType.ELITE]: 25,
+      [EnemyType.BOSS]: 100
+    };
+    return baseExp[this.type] * this.level;
+  }
+
+  private calculateAggroRange(): number {
+    const baseRange = {
+      [EnemyType.DUMMY]: 0, // Dummy enemies don't aggro
+      [EnemyType.GRUNT]: 5,
+      [EnemyType.ELITE]: 8,
+      [EnemyType.BOSS]: 12
+    };
+    return baseRange[this.type];
+  }
+
+  private calculateAttackRange(): number {
+    const baseRange = {
+      [EnemyType.DUMMY]: 0, // Dummy enemies don't attack
+      [EnemyType.GRUNT]: 1.5,
+      [EnemyType.ELITE]: 2,
+      [EnemyType.BOSS]: 3
+    };
+    return baseRange[this.type];
+  }
+
+  private calculateAttackDamage(): number {
+    const baseDamage = {
+      [EnemyType.DUMMY]: 0, // Dummy enemies don't deal damage
+      [EnemyType.GRUNT]: 15,
+      [EnemyType.ELITE]: 25,
+      [EnemyType.BOSS]: 50
+    };
+    return baseDamage[this.type] * this.level;
+  }
+
+  private calculateAttackCooldown(): number {
+    const baseCooldown = {
+      [EnemyType.DUMMY]: 0, // Dummy enemies don't attack
+      [EnemyType.GRUNT]: 2,
+      [EnemyType.ELITE]: 1.5,
+      [EnemyType.BOSS]: 1
+    };
+    return baseCooldown[this.type];
+  }
+
+  private calculateMovementSpeed(): number {
+    const baseSpeed = {
+      [EnemyType.DUMMY]: 0, // Dummy enemies don't move
+      [EnemyType.GRUNT]: 3,
+      [EnemyType.ELITE]: 0, // Elite enemies are stationary like training dummies
+      [EnemyType.BOSS]: 2.5
+    };
+    return baseSpeed[this.type];
+  }
+
+  public canAttack(currentTime: number): boolean {
+    if (!this.isAggressive || this.isDead || this.attackDamage === 0) {
+      return false;
+    }
+    return (currentTime - this.lastAttackTime) >= this.attackCooldown;
+  }
+
+  public performAttack(currentTime: number): void {
+    this.lastAttackTime = currentTime;
+  }
+
+  public takeDamage(): void {
+    // This will be handled by the Health component
+    // This method is for enemy-specific damage reactions
+  }
+
+  public die(currentTime: number): void {
+    this.isDead = true;
+    this.deathTime = currentTime;
+  }
+
+  public canRespawnNow(currentTime: number): boolean {
+    if (!this.canRespawn || !this.isDead) {
+      return false;
+    }
+    return (currentTime - this.deathTime) >= this.respawnTime;
+  }
+
+  public respawn(): void {
+    this.isDead = false;
+    this.deathTime = 0;
+    this.lastAttackTime = 0;
+    // Clear freeze status on respawn
+    this.unfreeze();
+    // Clear venom status on respawn
+    this.removeVenom();
+  }
+  
+  public freeze(duration: number, currentTime: number): void {
+    if (this.isDead) return; // Can't freeze dead enemies
+    
+    this.isFrozen = true;
+    this.freezeStartTime = currentTime;
+    this.freezeDuration = duration;
+    // Set movement speed to 0 when frozen
+    this.movementSpeed = 0;
+  }
+  
+  public unfreeze(): void {
+    this.isFrozen = false;
+    this.freezeStartTime = 0;
+    this.freezeDuration = 0;
+    // Restore original movement speed
+    this.movementSpeed = this.originalMovementSpeed;
+  }
+  
+  public updateFreezeStatus(currentTime: number): void {
+    if (!this.isFrozen) return;
+    
+    const elapsed = currentTime - this.freezeStartTime;
+    if (elapsed >= this.freezeDuration) {
+      this.unfreeze();
+    }
+  }
+  
+  public canMove(): boolean {
+    return !this.isFrozen && !this.isDead;
+  }
+  
+  public applyVenom(duration: number, damagePerSecond: number, currentTime: number): void {
+    if (this.isDead) return; // Can't apply venom to dead enemies
+    
+    this.isVenomous = true;
+    this.venomStartTime = currentTime;
+    this.venomDuration = duration;
+    this.venomDamagePerSecond = damagePerSecond;
+    this.lastVenomDamageTime = currentTime;
+  }
+  
+  public removeVenom(): void {
+    this.isVenomous = false;
+    this.venomStartTime = 0;
+    this.venomDuration = 0;
+    this.venomDamagePerSecond = 0;
+    this.lastVenomDamageTime = 0;
+  }
+  
+  public updateVenomStatus(currentTime: number): { shouldDealDamage: boolean; damage: number } {
+    if (!this.isVenomous) return { shouldDealDamage: false, damage: 0 };
+    
+    const elapsed = currentTime - this.venomStartTime;
+    if (elapsed >= this.venomDuration) {
+      this.removeVenom();
+      return { shouldDealDamage: false, damage: 0 };
+    }
+    
+    // Check if we should deal damage (every second)
+    const timeSinceLastDamage = currentTime - this.lastVenomDamageTime;
+    if (timeSinceLastDamage >= 1.0) {
+      this.lastVenomDamageTime = currentTime;
+      return { shouldDealDamage: true, damage: this.venomDamagePerSecond };
+    }
+    
+    return { shouldDealDamage: false, damage: 0 };
+  }
+
+  public setLevel(newLevel: number): void {
+    this.level = Math.max(1, newLevel);
+    this.experienceReward = this.calculateExperienceReward();
+    this.attackDamage = this.calculateAttackDamage();
+  }
+
+  public getDisplayName(): string {
+    const typeNames = {
+      [EnemyType.DUMMY]: 'Training Dummy',
+      [EnemyType.GRUNT]: 'Grunt',
+      [EnemyType.ELITE]: 'Elite',
+      [EnemyType.BOSS]: 'Boss'
+    };
+    return `${typeNames[this.type]} (Lv.${this.level})`;
+  }
+
+  public reset(): void {
+    this.type = EnemyType.DUMMY;
+    this.level = 1;
+    this.experienceReward = this.calculateExperienceReward();
+    this.isAggressive = false;
+    this.aggroRange = this.calculateAggroRange();
+    this.attackRange = this.calculateAttackRange();
+    this.attackDamage = this.calculateAttackDamage();
+    this.attackCooldown = this.calculateAttackCooldown();
+    this.lastAttackTime = 0;
+    this.movementSpeed = this.calculateMovementSpeed();
+    this.isDead = false;
+    this.deathTime = 0;
+    this.respawnTime = 30;
+    this.canRespawn = true;
+    this.enabled = true;
+    
+    // Reset freeze status
+    this.isFrozen = false;
+    this.freezeStartTime = 0;
+    this.freezeDuration = 0;
+    this.originalMovementSpeed = this.movementSpeed;
+    
+    // Reset venom status
+    this.isVenomous = false;
+    this.venomStartTime = 0;
+    this.venomDuration = 0;
+    this.venomDamagePerSecond = 0;
+    this.lastVenomDamageTime = 0;
+  }
+
+  public clone(): Enemy {
+    const clone = new Enemy(this.type, this.level);
+    clone.experienceReward = this.experienceReward;
+    clone.isAggressive = this.isAggressive;
+    clone.aggroRange = this.aggroRange;
+    clone.attackRange = this.attackRange;
+    clone.attackDamage = this.attackDamage;
+    clone.attackCooldown = this.attackCooldown;
+    clone.lastAttackTime = this.lastAttackTime;
+    clone.movementSpeed = this.movementSpeed;
+    clone.isDead = this.isDead;
+    clone.deathTime = this.deathTime;
+    clone.respawnTime = this.respawnTime;
+    clone.canRespawn = this.canRespawn;
+    
+    // Clone freeze status
+    clone.isFrozen = this.isFrozen;
+    clone.freezeStartTime = this.freezeStartTime;
+    clone.freezeDuration = this.freezeDuration;
+    clone.originalMovementSpeed = this.originalMovementSpeed;
+    
+    // Clone venom status
+    clone.isVenomous = this.isVenomous;
+    clone.venomStartTime = this.venomStartTime;
+    clone.venomDuration = this.venomDuration;
+    clone.venomDamagePerSecond = this.venomDamagePerSecond;
+    clone.lastVenomDamageTime = this.lastVenomDamageTime;
+    
+    return clone;
+  }
+}
