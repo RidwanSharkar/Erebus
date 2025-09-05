@@ -395,8 +395,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       // This will be handled by the game scene to show visual effects
     });
 
+
     newSocket.on('player-animation-state', (data) => {
-      console.log('🎭 Player animation state received:', data);
       // This will be handled by the game scene to update animation states
     });
 
@@ -624,13 +624,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
   const broadcastPlayerAnimationState = useCallback((animationState: PlayerAnimationState) => {
     if (socket && currentRoomId) {
-      console.log('🌐 DEBUG: Broadcasting animation state to server:', animationState);
       socket.emit('player-animation-state', {
         roomId: currentRoomId,
         animationState
       });
-    } else {
-      console.warn('⚠️ DEBUG: Cannot broadcast animation state - socket or roomId missing:', { socket: !!socket, currentRoomId });
     }
   }, [socket, currentRoomId]);
 

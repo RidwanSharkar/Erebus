@@ -65,12 +65,9 @@ export default function FrozenEffect({
         const targetPosition = target.position.clone();
         targetPosition.y += 0.5; // Adjust Y offset to be at player level
         effectRef.current.position.copy(targetPosition);
-      } else if (!target) {
-        // If target no longer exists, complete the effect
-        console.log('❄️ Frozen effect target no longer exists, completing effect for enemy', enemyId);
-        if (onComplete) onComplete();
-        return;
       }
+      // Note: If target is not found, we keep the original position passed as prop
+      // This is important for PVP mode where the position is managed externally
     }
 
     // Fade out in the last 500ms

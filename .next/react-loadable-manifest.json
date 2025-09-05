@@ -1,45 +1,46 @@
 {
   "app/page.tsx -> ../components/LazyGameSystems": {
-    "id": 8026,
+    "id": "app/page.tsx -> ../components/LazyGameSystems",
     "files": [
-      "static/chunks/game-components-e04f3c77e148e194.js"
+      "static/chunks/game-components.js"
     ]
   },
   "app/page.tsx -> ../components/MultiplayerGameScene": {
-    "id": 888,
+    "id": "app/page.tsx -> ../components/MultiplayerGameScene",
     "files": [
-      "static/chunks/three.db9f811d279d824c.js",
-      "static/chunks/game-systems.e1bfe61bf415c8ad.js",
-      "static/chunks/game-components-e04f3c77e148e194.js",
-      "static/chunks/vendor-80af9e570481ec78.js",
-      "static/chunks/850.83e82e4b4d11bd3e.js"
+      "static/chunks/three.js",
+      "static/chunks/game-systems.js",
+      "static/chunks/game-components.js",
+      "static/chunks/vendor.js",
+      "static/chunks/_app-pages-browser_src_utils_DamageNumberManager_ts-_app-pages-browser_src_utils_EventEmitter-49baae.js"
     ]
   },
   "app/page.tsx -> ../components/PVPGameScene": {
-    "id": 6619,
+    "id": "app/page.tsx -> ../components/PVPGameScene",
     "files": [
-      "static/chunks/three.db9f811d279d824c.js",
-      "static/chunks/game-systems.e1bfe61bf415c8ad.js",
-      "static/chunks/game-components-e04f3c77e148e194.js",
-      "static/chunks/vendor-80af9e570481ec78.js",
-      "static/chunks/462.eef3fdd0c4ad04f4.js"
+      "static/chunks/three.js",
+      "static/chunks/game-systems.js",
+      "static/chunks/game-components.js",
+      "static/chunks/vendor.js",
+      "static/chunks/_app-pages-browser_src_utils_DamageNumberManager_ts-_app-pages-browser_src_utils_EventEmitter-49baae.js"
     ]
   },
   "app/page.tsx -> @react-three/fiber": {
-    "id": 3599,
+    "id": "app/page.tsx -> @react-three/fiber",
     "files": [
-      "static/chunks/three.db9f811d279d824c.js",
-      "static/chunks/vendor-80af9e570481ec78.js"
+      "static/chunks/three.js",
+      "static/chunks/vendor.js"
     ]
   },
   "components/LazyGameSystems.tsx -> ./GameScene": {
-    "id": 1702,
+    "id": "components/LazyGameSystems.tsx -> ./GameScene",
     "files": [
-      "static/chunks/three.db9f811d279d824c.js",
-      "static/chunks/game-systems.e1bfe61bf415c8ad.js",
-      "static/chunks/game-components-e04f3c77e148e194.js",
-      "static/chunks/vendor-80af9e570481ec78.js",
-      "static/chunks/983.62dd4e8bb817f2fe.js"
+      "static/chunks/three.js",
+      "static/chunks/game-systems.js",
+      "static/chunks/game-components.js",
+      "static/chunks/vendor.js",
+      "static/chunks/_app-pages-browser_src_utils_DamageNumberManager_ts-_app-pages-browser_src_utils_EventEmitter-49baae.js",
+      "static/chunks/_app-pages-browser_src_utils_EnemyFactory_ts.js"
     ]
   }
 }

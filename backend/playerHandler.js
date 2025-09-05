@@ -93,7 +93,6 @@ function handlePlayerEvents(socket, gameRooms) {
     
     if (!gameRooms.has(roomId)) return;
     
-    console.log(`🎭 Server: Relaying animation state from player ${socket.id}:`, animationState);
     
     // Broadcast animation state to other players in the room
     socket.to(roomId).emit('player-animation-state', {
@@ -115,6 +114,34 @@ function handlePlayerEvents(socket, gameRooms) {
       effect,
       timestamp: Date.now()
     });
+  });
+
+  // Handle player debuff synchronization (freeze, slow, etc.)
+  socket.on('player-debuff', (data) => {
+    console.log(`🔍 Server: Received player-debuff event from ${socket.id}:`, data);
+    const { roomId, targetPlayerId, debuffType, duration, effectData } = data;
+    
+    if (!gameRooms.has(roomId)) {
+      console.warn(`⚠️ Server: Room ${roomId} not found for debuff event`);
+      return;
+    }
+    
+    console.log(`🎯 Server: Relaying ${debuffType} debuff from player ${socket.id} to target ${targetPlayerId}`);
+    
+    // Broadcast debuff to all players in the room (including the target)
+    const debuffData = {
+      sourcePlayerId: socket.id,
+      targetPlayerId,
+      debuffType,
+      duration,
+      effectData,
+      timestamp: Date.now()
+    };
+    
+    // Send to all other clients in the room
+    socket.to(roomId).emit('player-debuff', debuffData);
+    
+    console.log(`✅ Server: Broadcasted ${debuffType} debuff to room ${roomId}`);
   });
 
   // Handle player health changes

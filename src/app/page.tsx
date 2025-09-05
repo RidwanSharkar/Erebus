@@ -90,7 +90,21 @@ export default function Home() {
             <div className="bg-black/95 p-8 rounded-xl border-2 border-green-500 text-white text-center">
               <h1 className="text-4xl font-bold mb-8 text-green-500">AVERNUS</h1>
               <div className="flex flex-col gap-4">
-               
+                <button 
+                  className="px-8 py-4 text-xl bg-green-500 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-green-600 hover:-translate-y-1"
+                  onClick={() => setGameMode('singleplayer')}
+                >
+                  Single Player
+                </button>
+                <button 
+                  className="px-8 py-4 text-xl bg-blue-500 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-blue-600 hover:-translate-y-1"
+                  onClick={() => {
+                    setRoomJoinMode('multiplayer');
+                    setShowRoomJoin(true);
+                  }}
+                >
+                  Multiplayer
+                </button>
                 <button 
                   className="px-8 py-4 text-xl bg-red-500 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-red-600 hover:-translate-y-1"
                   onClick={() => {

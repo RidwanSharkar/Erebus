@@ -106,7 +106,6 @@ function PVPCobraShotManager({ world, players, onPlayerHit, onPlayerVenomed, ser
             onPlayerHit(player.id, 29); // Cobra Shot damage
             
             // Apply venom effect at the HIT player's position (not the caster)
-            console.log(`🐍 Cobra Shot projectile ${projectile.id} hit player ${player.id} (local: ${player.id === localSocketId}), applying venom effect at target position:`, playerPos.toArray());
             onPlayerVenomed(player.id, playerPos.clone());
             
             // Mark projectile as inactive to stop further hits
@@ -168,7 +167,6 @@ function PVPBarrageManager({ world, players, onPlayerHit, onPlayerSlowed, server
             onPlayerHit(player.id, 30); // Barrage damage
             
             // Apply slow effect at the HIT player's position (50% speed reduction for 5 seconds)
-            console.log(`🏹 Barrage projectile ${projectileEntity.id} hit player ${player.id}, applying slow effect at target position:`, playerPos.toArray());
             onPlayerSlowed(player.id, playerPos.clone());
             
             // Clean up hit tracker after a delay to prevent memory leaks
@@ -226,7 +224,6 @@ function PVPFrostNovaManager({ world, players, onPlayerHit, onPlayerFrozen, serv
             onPlayerHit(player.id, 50); // FrostNova damage
             
             // Apply freeze effect at the HIT player's position
-            console.log(`❄️ FrostNova ${frostNova.id} hit player ${player.id}, applying freeze effect at target position:`, playerPos.toArray());
             onPlayerFrozen(player.id, playerPos.clone());
             
             // Clean up hit tracker after a delay to prevent memory leaks
@@ -442,8 +439,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   const createPvpDebuffEffect = useCallback((playerId: string, debuffType: 'frozen' | 'slowed', position: Vector3, duration: number = 5000) => {
     // Debug: Check if this is the local player
     const isLocalPlayer = playerId === socket?.id;
-    console.log(`🎯 Creating PVP ${debuffType} effect for player ${playerId} (isLocal: ${isLocalPlayer}) at position:`, position.toArray());
-    console.log(`🔍 Debug: playerId="${playerId}", socket?.id="${socket?.id}", comparison result: ${playerId === socket?.id}`);
     
     const debuffEffect = {
       id: nextDebuffEffectId.current++,
@@ -462,10 +457,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       if (playerMovement) {
         if (debuffType === 'frozen') {
           playerMovement.freeze(duration);
-          console.log(`🧊 Applied freeze to local player for ${duration}ms - movement speed set to 0`);
         } else if (debuffType === 'slowed') {
           playerMovement.slow(duration, 0.5); // 50% speed reduction
-          console.log(`🐌 Applied slow to local player for ${duration}ms - movement speed reduced to 50%`);
         }
       }
     }
@@ -473,7 +466,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     // Clean up debuff effect after duration
     setTimeout(() => {
       setPvpDebuffEffects(prev => prev.filter(effect => effect.id !== debuffEffect.id));
-      console.log(`🎯 PVP ${debuffType} effect expired for player ${playerId}`);
     }, debuffEffect.duration);
   }, [socket?.id, playerEntity]);
 
@@ -572,7 +564,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       }
       
       // Apply venom damage
-      console.log(`☠️ Venom tick ${tickCount}/${maxTicks} - dealing ${venomDamagePerSecond} damage to player ${playerId} (isLocal: ${isLocalPlayer})`);
       if (broadcastPlayerDamage) {
         broadcastPlayerDamage(playerId, venomDamagePerSecond);
       }
@@ -581,7 +572,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     // Clean up venom effect after duration
     setTimeout(() => {
       setPvpVenomEffects(prev => prev.filter(effect => effect.id !== venomEffect.id));
-      console.log(`☠️ PVP venom effect expired for player ${playerId}`);
     }, venomEffect.duration);
   }, [socket?.id, broadcastPlayerDamage]);
   
@@ -643,11 +633,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     if (!socket) return;
 
     const handlePlayerAttack = (data: any) => {
-      console.log('⚔️ Received PVP player attack:', data);
       if (data.playerId !== socket.id && engineRef.current) {
         // Handle perfect shot beam effects
         if (data.attackType === 'bow_release' && data.animationData?.isPerfectShot) {
-          console.log('🌟 Creating perfect shot beam effect for PVP player!');
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
           const direction = new Vector3(data.direction.x, data.direction.y, data.direction.z);
           
@@ -1494,7 +1482,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     };
 
     const handlePlayerAnimationState = (data: any) => {
-      console.log('🎭 Received PVP player animation state:', data);
       
       // Debug: Log backstab animation specifically
       if (data.animationState?.isBackstabbing) {
@@ -1558,16 +1545,35 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
 
     const handlePlayerDebuff = (data: any) => {
       console.log('🎯 Received PVP player debuff:', data);
-      console.log(`🔍 Debug: My socket ID is "${socket?.id}", target is "${data.targetPlayerId}"`);
+      console.log(`🔍 Debug: My socket ID is "${socket?.id}", target is "${data.targetPlayerId}", am I the target? ${socket?.id === data.targetPlayerId}`);
       
       const { targetPlayerId, debuffType, duration, effectData } = data;
       
       if (targetPlayerId && debuffType && duration) {
-        const position = effectData?.position 
-          ? new Vector3(effectData.position.x, effectData.position.y, effectData.position.z)
-          : new Vector3(0, 0, 0);
+        let position: Vector3;
         
-        console.log(`🎯 Creating ${debuffType} effect for player ${targetPlayerId} from broadcast`);
+        // If this is the local player being debuffed, use the local player entity position for accuracy
+        if (targetPlayerId === socket?.id && playerEntity) {
+          const transform = playerEntity.getComponent(Transform);
+          if (transform) {
+            position = transform.position.clone();
+            console.log(`🎯 Using local player entity position for debuff: [${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}]`);
+          } else {
+            // Fallback to current player position from state
+            position = playerPosition.clone();
+            console.log(`🎯 Fallback to current player position state: [${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}]`);
+          }
+        } else {
+          // For other players, use the multiplayer context or effectData
+          const targetPlayer = players.get(targetPlayerId);
+          position = targetPlayer 
+            ? new Vector3(targetPlayer.position.x, targetPlayer.position.y, targetPlayer.position.z)
+            : (effectData?.position 
+                ? new Vector3(effectData.position.x, effectData.position.y, effectData.position.z)
+                : new Vector3(0, 0, 0));
+          console.log(`🎯 Using remote player position: [${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}]`);
+        }
+        
         createPvpDebuffEffect(targetPlayerId, debuffType, position, duration);
       }
     };
@@ -1587,7 +1593,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       socket.off('player-effect', handlePlayerEffect);
       socket.off('player-debuff', handlePlayerDebuff);
     };
-  }, [socket, playerEntity]);
+  }, [socket, playerEntity, players]);
 
   // Add a cleanup effect to prevent stuck animations
   useEffect(() => {
@@ -2014,14 +2020,10 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         console.log(`🎯 PVP Debuff callback triggered - ${debuffType} effect on entity ${targetEntityId}`);
         
         // Find the server player ID that corresponds to this local ECS entity ID
-        console.log(`🔍 Debug: Looking for entity ${targetEntityId} in serverPlayerEntities:`, Array.from(serverPlayerEntities.current.entries()));
         let targetPlayerId: string | null = null;
-        // The map is stored as playerId -> entityId, so we need to find the key where the value matches targetEntityId
         serverPlayerEntities.current.forEach((localEntityId, playerId) => {
-          console.log(`🔍 Debug: Checking entity ${localEntityId} for player ${playerId}`);
           if (localEntityId === targetEntityId) {
             targetPlayerId = playerId;
-            console.log(`✅ Debug: Found match! Entity ${targetEntityId} belongs to player ${playerId}`);
           }
         });
         
@@ -2646,7 +2648,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             // Find the current position of the affected player
             const affectedPlayer = players.get(venomEffect.playerId);
             const currentPosition = affectedPlayer 
-              ? new Vector3(affectedPlayer.position.x, affectedPlayer.position.y + 1, affectedPlayer.position.z)
+              ? new Vector3(affectedPlayer.position.x, affectedPlayer.position.y, affectedPlayer.position.z)
               : venomEffect.position;
             
             return (
@@ -2673,9 +2675,21 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           {pvpDebuffEffects.map(debuffEffect => {
             // Find the current position of the affected player
             const affectedPlayer = players.get(debuffEffect.playerId);
-            const currentPosition = affectedPlayer 
-              ? new Vector3(affectedPlayer.position.x, affectedPlayer.position.y, affectedPlayer.position.z)
-              : debuffEffect.position;
+            let currentPosition: Vector3;
+            
+            // Special handling for local player to use the most up-to-date position
+            if (debuffEffect.playerId === socket?.id && playerEntity) {
+              const transform = playerEntity.getComponent(Transform);
+              if (transform) {
+                currentPosition = new Vector3(transform.position.x, transform.position.y + 0.5, transform.position.z);
+              } else {
+                currentPosition = new Vector3(playerPosition.x, playerPosition.y + 0.5, playerPosition.z);
+              }
+            } else if (affectedPlayer) {
+              currentPosition = new Vector3(affectedPlayer.position.x, affectedPlayer.position.y + 0.5, affectedPlayer.position.z);
+            } else {
+              currentPosition = new Vector3(debuffEffect.position.x, debuffEffect.position.y + 0.5, debuffEffect.position.z);
+            }
             
             // Use FrozenEffect for frozen debuffs, DebuffIndicator for others
             if (debuffEffect.debuffType === 'frozen') {
@@ -2686,12 +2700,26 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                   duration={debuffEffect.duration}
                   startTime={debuffEffect.startTime}
                   enemyId={debuffEffect.playerId}
-                  enemyData={Array.from(players.values()).map(p => ({
-                    id: p.id,
-                    position: new Vector3(p.position.x, p.position.y, p.position.z),
-                    health: p.health,
-                    isDying: false
-                  }))}
+                  enemyData={Array.from(players.values()).map(p => {
+                    // For local player, use the most current position
+                    if (p.id === socket?.id && playerEntity) {
+                      const transform = playerEntity.getComponent(Transform);
+                      const currentPos = transform ? transform.position : playerPosition;
+                      return {
+                        id: p.id,
+                        position: currentPos.clone(),
+                        health: p.health,
+                        isDying: false
+                      };
+                    } else {
+                      return {
+                        id: p.id,
+                        position: new Vector3(p.position.x, p.position.y, p.position.z),
+                        health: p.health,
+                        isDying: false
+                      };
+                    }
+                  })}
                   onComplete={() => {
                     setPvpDebuffEffects(prev => prev.filter(effect => effect.id !== debuffEffect.id));
                   }}
