@@ -280,7 +280,8 @@ export function MultiplayerGameScene({ onDamageNumbersUpdate, onDamageNumberComp
             
             updated.set(data.playerId, {
               ...currentState,
-              isDivineStorming: true
+              isDivineStorming: true,
+              isSpinning: true // Enable spinning animation for Divine Storm
             });
             
             // Reset Divine Storm state after duration
@@ -291,7 +292,8 @@ export function MultiplayerGameScene({ onDamageNumbersUpdate, onDamageNumberComp
                 if (state) {
                   updated.set(data.playerId, {
                     ...state,
-                    isDivineStorming: false
+                    isDivineStorming: false,
+                    isSpinning: false // Reset spinning animation
                   });
                 }
                 return updated;
@@ -692,6 +694,10 @@ export function MultiplayerGameScene({ onDamageNumbersUpdate, onDamageNumberComp
         if (now - lastAnimationBroadcast.current > 100) { // Throttle to 10 times per second
           // Determine if scythe is spinning based on weapon type and charging state
           const isScytheSpinning = newWeaponState.currentWeapon === WeaponType.SCYTHE && newWeaponState.isCharging;
+          // Determine if sword is spinning during Divine Storm
+          const isSwordSpinning = newWeaponState.isDivineStorming;
+          // Combine all spinning states
+          const isSpinning = isScytheSpinning || isSwordSpinning;
           
           broadcastPlayerAnimationState({
             isCharging: newWeaponState.isCharging,
@@ -699,7 +705,7 @@ export function MultiplayerGameScene({ onDamageNumbersUpdate, onDamageNumberComp
             isSwinging: newWeaponState.isSwinging,
             swordComboStep: newWeaponState.swordComboStep,
             isDivineStorming: newWeaponState.isDivineStorming,
-            isSpinning: isScytheSpinning // Properly broadcast scythe spinning state
+            isSpinning: isSpinning // Broadcast spinning for scythe and Divine Storm
           });
           lastAnimationBroadcast.current = now;
         }

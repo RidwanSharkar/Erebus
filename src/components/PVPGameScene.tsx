@@ -733,16 +733,16 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           
           // Calculate weapon-specific animation duration based on actual weapon timing
           // These durations match the real animation calculations in each weapon component
-          let resetDuration = 50; // Default
+          let resetDuration = 100; // Default
           
           // Special handling for sword charge attacks
           if (data.attackType === 'sword_charge_spin') {
             // Charge spin lasts about 1 full rotation at 27.5 rotation speed
             // (Math.PI * 2) / 27.5 / (1/60) ≈ 685ms for one full rotation
-            resetDuration = 100;
+            resetDuration = 50;
           } else if (data.attackType === 'sword_charge_start') {
             // Charge movement lasts about 1.5 seconds (matches ControlSystem chargeDuration)
-            resetDuration = 350;
+            resetDuration = 450;
           } else {
             switch (playerWeapon) {
               case WeaponType.SCYTHE:
@@ -760,7 +760,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                 // swingProgress += delta * 6.75 until >= Math.PI * 0.55 (or 0.9 for combo step 3)
                 // At 60fps: (Math.PI * 0.55) / 6.75 / (1/60) ≈ 400ms
                 // Note: 3rd combo hit takes longer but we use average timing for multiplayer sync
-                resetDuration = 50;
+                resetDuration = 65;
                 break;
             case WeaponType.SABRES:
               // Two swings with delays - total duration roughly 350ms
@@ -782,7 +782,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
               resetDuration = 300; // Quick shots
               break;
             default:
-              resetDuration = 400; // Default for other weapons
+              resetDuration = 100; // Default for other weapons
             }
           }
           
@@ -842,6 +842,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             updated.set(data.playerId, {
               ...currentState,
               isDivineStorming: true,
+              isSpinning: true, // Enable spinning animation for Divine Storm
               isSwordCharging: false
             });
             
@@ -853,7 +854,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                 if (state) {
                   updated.set(data.playerId, {
                     ...state,
-                    isDivineStorming: false
+                    isDivineStorming: false,
+                    isSpinning: false // Reset spinning animation
                   });
                 }
                 return updated;
@@ -1743,6 +1745,10 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         if (now - lastAnimationBroadcast.current > 100) { // Throttle to 10 times per second
           // Determine if scythe is spinning based on weapon type and charging state
           const isScytheSpinning = newWeaponState.currentWeapon === WeaponType.SCYTHE && newWeaponState.isCharging;
+          // Determine if sword is spinning during Divine Storm or Charge
+          const isSwordSpinning = newWeaponState.isDivineStorming || newWeaponState.isSwordCharging;
+          // Combine all spinning states
+          const isSpinning = isScytheSpinning || isSwordSpinning;
           
           broadcastPlayerAnimationState({
             isCharging: newWeaponState.isCharging,
@@ -1750,7 +1756,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             isSwinging: newWeaponState.isSwinging,
             swordComboStep: newWeaponState.swordComboStep,
             isDivineStorming: newWeaponState.isDivineStorming,
-            isSpinning: isScytheSpinning, // Properly broadcast scythe spinning state
+            isSpinning: isSpinning, // Broadcast spinning for scythe, Divine Storm, and sword charge
             isDeflecting: newWeaponState.isDeflecting,
             isSwordCharging: newWeaponState.isSwordCharging, // Broadcast sword charging state
             isViperStingCharging: newWeaponState.isViperStingCharging,

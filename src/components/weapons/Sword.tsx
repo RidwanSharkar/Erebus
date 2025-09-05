@@ -278,7 +278,7 @@ export default function Sword({
       const MAX_ROTATION = TARGET_ROTATIONS * Math.PI * 4; // 2π radians
       
       // Use constant fast rotation speed
-      const CONSTANT_ROTATION_SPEED = 20
+      const CONSTANT_ROTATION_SPEED = 22.5
       
       // Update rotation based on constant speed
       divineStormRotation.current += delta * CONSTANT_ROTATION_SPEED;
@@ -392,7 +392,7 @@ export default function Sword({
       const angle = chargeSpinRotation.current;
       
       // Orbit parameters (similar to Divine Storm)
-      const orbitRadius = 1.25; // Same radius as Divine Storm
+      const orbitRadius = 1.6; // Same radius as Divine Storm
       
       // Calculate orbital position
       const orbitalX = Math.cos(angle) * orbitRadius;
@@ -406,9 +406,9 @@ export default function Sword({
       
       // Set rotation to make sword lay flat and point outward from center (like Divine Storm)
       swordRef.current.rotation.set(
-        Math.PI/4,      // X rotation: lay flat on ground (60 degrees)
-        -angle + Math.PI,              // Y rotation: point outward from center
-        1               // Z rotation: slight roll
+        Math.PI/3,      // X rotation: lay flat on ground (60 degrees)
+        -angle + Math.PI,              // Y rotation: point outward
+        1               // Z rotation: no roll
       );
       
       // Additional rotation to make it follow the orbital path
@@ -422,7 +422,7 @@ export default function Sword({
       const CHARGE_WINDUP_DURATION = 0.1; // Windup duration in seconds
       const CHARGE_DURATION = 0.45; // Dash duration in seconds
       const CHARGE_DAMAGE = 40; // Base damage for charge collision
-      const CHARGE_COLLISION_RADIUS = 3.0; // Collision radius - increased for better hit detection
+      const CHARGE_COLLISION_RADIUS = 2.5; // Collision radius - increased for better hit detection
       const MAX_CHARGE_BOUNDS = 25; // Maximum distance from origin
       
       // Initialize charge on first active frame
