@@ -41,17 +41,24 @@ class GameRoom {
       return false;
     }
     
-    console.log(`🎮 Starting game in room ${this.roomId}, initiated by player ${initiatingPlayerId}`);
+    console.log(`🎮 Starting game in room ${this.roomId}, initiated by player ${initiatingPlayerId}, mode: ${this.gameMode}`);
     this.gameStarted = true;
     
-    // Initialize with some basic enemies like the single-player version
-    this.initializeEnemies();
-    
-    // Start enemy spawning timers
-    this.startEnemySpawning();
-    
-    // Start enemy AI
-    this.startEnemyAI();
+    // Only initialize enemies and AI for multiplayer mode, not PVP
+    if (this.gameMode === 'multiplayer') {
+      // Initialize with some basic enemies like the single-player version
+      this.initializeEnemies();
+      
+      // Start enemy spawning timers
+      this.startEnemySpawning();
+      
+      // Start enemy AI
+      this.startEnemyAI();
+      
+      console.log(`🎯 Enemy systems started for multiplayer room ${this.roomId}`);
+    } else if (this.gameMode === 'pvp') {
+      console.log(`⚔️ PVP mode - no enemies will be spawned in room ${this.roomId}`);
+    }
     
     // Broadcast game start to all players
     if (this.io) {
@@ -286,6 +293,12 @@ class GameRoom {
   initializeEnemies() {
     if (!this.gameStarted) return;
     
+    // Don't initialize enemies in PVP mode
+    if (this.gameMode === 'pvp') {
+      console.log(`🚫 Skipping enemy initialization in PVP mode for room ${this.roomId}`);
+      return;
+    }
+    
     // Create initial enemies similar to single-player
     // Spawn 2 elite enemies to match the original local spawning
     this.spawnEnemy('elite');
@@ -294,6 +307,12 @@ class GameRoom {
 
   spawnEnemy(type) {
     if (!this.gameStarted) return null;
+    
+    // Don't spawn enemies in PVP mode
+    if (this.gameMode === 'pvp') {
+      console.log(`🚫 Attempted to spawn ${type} in PVP mode - ignoring`);
+      return null;
+    }
     
     const enemyId = `${type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
@@ -487,6 +506,12 @@ class GameRoom {
   startEnemySpawning() {
     if (!this.gameStarted) return;
     
+    // Don't start enemy spawning in PVP mode
+    if (this.gameMode === 'pvp') {
+      console.log(`🚫 Skipping enemy spawning timers in PVP mode for room ${this.roomId}`);
+      return;
+    }
+    
     const MAX_ENEMIES = 5; // Match single player cap
 
     // Timer for regular skeletons: 2 every 13.5 seconds (matches Scene.tsx timing)
@@ -630,6 +655,12 @@ class GameRoom {
   // Start enemy AI system
   startEnemyAI() {
     if (this.gameStarted && this.players.size > 0) {
+      // Don't start enemy AI in PVP mode
+      if (this.gameMode === 'pvp') {
+        console.log(`🚫 Skipping enemy AI in PVP mode for room ${this.roomId}`);
+        return;
+      }
+      
       this.enemyAI.startAI();
       console.log(`🧠 Enemy AI started for room ${this.roomId}`);
     }
