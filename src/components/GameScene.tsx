@@ -77,7 +77,9 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
     isBarrageCharging: false,
     barrageChargeProgress: 0,
     isCobraShotCharging: false,
-    cobraShotChargeProgress: 0
+    cobraShotChargeProgress: 0,
+    isSkyfalling: false,
+    isBackstabbing: false
   });
   
   // Perfect shot system
@@ -230,7 +232,9 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
           isBarrageCharging: controlSystemRef.current.isBarrageChargingActive(),
           barrageChargeProgress: controlSystemRef.current.getBarrageChargeProgress(),
           isCobraShotCharging: controlSystemRef.current.isCobraShotChargingActive(),
-          cobraShotChargeProgress: controlSystemRef.current.getCobraShotChargeProgress()
+          cobraShotChargeProgress: controlSystemRef.current.getCobraShotChargeProgress(),
+          isSkyfalling: controlSystemRef.current.isSkyfallActive(),
+          isBackstabbing: controlSystemRef.current.isBackstabActive()
         });
       }
 
@@ -353,6 +357,8 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
           barrageChargeProgress={weaponState.barrageChargeProgress}
           isCobraShotCharging={weaponState.isCobraShotCharging}
           cobraShotChargeProgress={weaponState.cobraShotChargeProgress}
+          isSkyfalling={weaponState.isSkyfalling}
+          isBackstabbing={weaponState.isBackstabbing}
           reanimateRef={reanimateRef}
           onBowRelease={() => {
             // This callback is now handled by the ControlSystem directly
@@ -494,7 +500,7 @@ function createPlayer(world: World): any {
 
   // Add Movement component
   const movement = world.createComponent(Movement);
-  movement.maxSpeed = 3.65; // Reduced from 8 to 3.65 for slower movement
+  movement.maxSpeed = 3.75; // Reduced from 8 to 3.65 for slower movement
   movement.jumpForce = 8;
   movement.friction = 0.85;
   player.addComponent(movement);

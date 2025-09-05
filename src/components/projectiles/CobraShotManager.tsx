@@ -61,7 +61,6 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
   const nextBeamEffectId = useRef(0);
   
   const POOL_SIZE = 3;
-  const SHOT_COOLDOWN = 2000; // 2 seconds cooldown
   const PROJECTILE_SPEED = 1.0; // Increased speed for better hit detection
   const DAMAGE = 29; // Base damage
   const MAX_DISTANCE = 25; // Longer range than Viper Sting since it doesn't return

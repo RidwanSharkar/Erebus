@@ -52,6 +52,23 @@ interface RoomPreview {
   towers: Tower[];
 }
 
+// Animation state type for better type safety
+type PlayerAnimationState = {
+  isCharging?: boolean; 
+  chargeProgress?: number; 
+  isSwinging?: boolean; 
+  swordComboStep?: 1 | 2 | 3; 
+  isDivineStorming?: boolean; 
+  isSpinning?: boolean; 
+  isDeflecting?: boolean; 
+  isSwordCharging?: boolean; 
+  isViperStingCharging?: boolean; 
+  viperStingChargeProgress?: number; 
+  isBarrageCharging?: boolean; 
+  barrageChargeProgress?: number; 
+  isBackstabbing?: boolean;
+};
+
 interface MultiplayerContextType {
   // Connection state
   socket: Socket | null;
@@ -86,7 +103,7 @@ interface MultiplayerContextType {
   broadcastPlayerAbility: (abilityType: string, position: { x: number; y: number; z: number }, direction?: { x: number; y: number; z: number }, target?: string) => void;
   broadcastPlayerEffect: (effect: any) => void;
   broadcastPlayerDamage: (targetPlayerId: string, damage: number, damageType?: string) => void;
-  broadcastPlayerAnimationState: (animationState: { isCharging?: boolean; chargeProgress?: number; isSwinging?: boolean; swordComboStep?: 1 | 2 | 3; isDivineStorming?: boolean; isSpinning?: boolean; isDeflecting?: boolean; isSwordCharging?: boolean; isViperStingCharging?: boolean; viperStingChargeProgress?: number; isBarrageCharging?: boolean; barrageChargeProgress?: number }) => void;
+  broadcastPlayerAnimationState: (animationState: PlayerAnimationState) => void;
   broadcastPlayerDebuff: (targetPlayerId: string, debuffType: 'frozen' | 'slowed', duration: number, effectData?: any) => void;
   
   // Enemy actions
@@ -601,12 +618,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const broadcastPlayerAnimationState = useCallback((animationState: { isCharging?: boolean; chargeProgress?: number; isSwinging?: boolean; swordComboStep?: 1 | 2 | 3; isDivineStorming?: boolean; isSpinning?: boolean; isDeflecting?: boolean; isSwordCharging?: boolean; isViperStingCharging?: boolean; viperStingChargeProgress?: number; isBarrageCharging?: boolean; barrageChargeProgress?: number }) => {
+  const broadcastPlayerAnimationState = useCallback((animationState: PlayerAnimationState) => {
     if (socket && currentRoomId) {
+      console.log('🌐 DEBUG: Broadcasting animation state to server:', animationState);
       socket.emit('player-animation-state', {
         roomId: currentRoomId,
         animationState
       });
+    } else {
+      console.warn('⚠️ DEBUG: Cannot broadcast animation state - socket or roomId missing:', { socket: !!socket, currentRoomId });
     }
   }, [socket, currentRoomId]);
 

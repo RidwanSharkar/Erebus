@@ -11,7 +11,7 @@ interface FrostNovaProps {
 
 export default function FrostNova({ 
   position, 
-  duration = 2000, // 2 seconds for the explosion effect
+  duration = 1500, // 2 seconds for the explosion effect
   startTime = Date.now(),
   onComplete 
 }: FrostNovaProps) {

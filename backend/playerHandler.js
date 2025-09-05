@@ -87,6 +87,22 @@ function handlePlayerEvents(socket, gameRooms) {
     });
   });
 
+  // Handle player animation state updates (for backstab, charging, swinging, etc.)
+  socket.on('player-animation-state', (data) => {
+    const { roomId, animationState } = data;
+    
+    if (!gameRooms.has(roomId)) return;
+    
+    console.log(`🎭 Server: Relaying animation state from player ${socket.id}:`, animationState);
+    
+    // Broadcast animation state to other players in the room
+    socket.to(roomId).emit('player-animation-state', {
+      playerId: socket.id,
+      animationState,
+      timestamp: Date.now()
+    });
+  });
+
   // Handle visual effect synchronization (new)
   socket.on('player-effect', (data) => {
     const { roomId, effect } = data;

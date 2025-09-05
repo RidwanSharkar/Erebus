@@ -64,6 +64,9 @@ export class ControlSystem extends System {
   // Callback for Skyfall ability
   private onSkyfallCallback?: (position: Vector3, direction: Vector3) => void;
   
+  // Callback for Backstab ability
+  private onBackstabCallback?: (position: Vector3, direction: Vector3, damage: number, isBackstab: boolean) => void;
+  
   // Rate limiting for projectile firing
   private lastFireTime = 0;
   private lastCrossentropyTime = 0; // Separate tracking for CrossentropyBolt
@@ -72,14 +75,13 @@ export class ControlSystem extends System {
   private lastFrostNovaTime = 0; // Separate tracking for Frost Nova ability
   private lastCobraShotTime = 0; // Separate tracking for Cobra Shot ability
   private fireRate = 0.225; // Default for bow
-  private swordFireRate = 0.9; // Slower rate for sword attacks (800ms between attacks)
+  private swordFireRate = 0.9; // Rate for sword attacks
   private sabresFireRate = 0.6; // Sabres dual attack rate (600ms between attacks)
-  private scytheFireRate = 0.33; // EntropicBolt rate (0.5s cooldown)
+  private scytheFireRate = 0.33; // EntropicBolt rate (0.33s cooldown)
   private crossentropyFireRate = 2; // CrossentropyBolt rate (1 per second)
-  private viperStingFireRate = 2.0; // Viper Sting rate (2 seconds cooldown)
-  private reanimateFireRate = 1.5; // Reanimate rate (2 seconds cooldown)
+  private viperStingFireRate = 2.5; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
-  private cobraShotFireRate = 2.0; // Cobra Shot rate (2 seconds cooldown)
+  private cobraShotFireRate = 2.5; // Cobra Shot rate (2 seconds cooldown)
   
   // Current weapon configuration
   private currentWeapon: WeaponType = WeaponType.BOW; // Default weapon
@@ -136,6 +138,13 @@ export class ControlSystem extends System {
   private skyfallStartPosition = new Vector3();
   private skyfallTargetHeight = 0;
   private skyfallOriginalGravity = 0;
+  
+  // Backstab ability state (Sabres)
+  private lastBackstabTime = 0;
+  private backstabCooldown = 2.0; // 2 second cooldown
+  private isBackstabbing = false;
+  private backstabStartTime = 0;
+  private backstabDuration = 1.0; // Total animation duration (0.3 + 0.4 + 0.3 seconds)
   constructor(
     camera: PerspectiveCamera, 
     inputManager: InputManager, 
@@ -258,7 +267,7 @@ export class ControlSystem extends System {
   }
 
   private lastWeaponSwitchTime = 0;
-  private weaponSwitchCooldown = 3; // 200ms cooldown to prevent rapid switching
+  private weaponSwitchCooldown = 1.5; // 200ms cooldown to prevent rapid switching
 
   private handleWeaponSwitching(): void {
     const currentTime = Date.now() / 1000;
@@ -271,6 +280,7 @@ export class ControlSystem extends System {
     // Handle weapon switching with number keys
     if (this.inputManager.isKeyPressed('1')) {
       if (this.currentWeapon !== WeaponType.SWORD) {
+        this.resetAllAbilityStates(); // Reset all ability states when switching weapons
         this.currentWeapon = WeaponType.SWORD;
         this.currentSubclass = WeaponSubclass.DIVINITY; // Default sword subclass
         this.fireRate = this.swordFireRate; // Use sword-specific fire rate
@@ -280,6 +290,7 @@ export class ControlSystem extends System {
       }
     } else if (this.inputManager.isKeyPressed('2')) {
       if (this.currentWeapon !== WeaponType.BOW) {
+        this.resetAllAbilityStates(); // Reset all ability states when switching weapons
         this.currentWeapon = WeaponType.BOW;
         this.currentSubclass = WeaponSubclass.ELEMENTAL; // Default bow subclass
         this.fireRate = 0.225; // Bow fire rate
@@ -288,6 +299,7 @@ export class ControlSystem extends System {
       }
     } else if (this.inputManager.isKeyPressed('3')) {
       if (this.currentWeapon !== WeaponType.SCYTHE) {
+        this.resetAllAbilityStates(); // Reset all ability states when switching weapons
         this.currentWeapon = WeaponType.SCYTHE;
         this.currentSubclass = WeaponSubclass.CHAOS; // Default scythe subclass
         this.fireRate = this.scytheFireRate; // Use scythe fire rate (0.5s)
@@ -296,6 +308,7 @@ export class ControlSystem extends System {
       }
     } else if (this.inputManager.isKeyPressed('4')) {
       if (this.currentWeapon !== WeaponType.SABRES) {
+        this.resetAllAbilityStates(); // Reset all ability states when switching weapons
         this.currentWeapon = WeaponType.SABRES;
         this.currentSubclass = WeaponSubclass.FROST; // Default sabres subclass
         this.fireRate = this.sabresFireRate; // Use sabres-specific fire rate
@@ -467,7 +480,7 @@ export class ControlSystem extends System {
   }
 
   private fireEntropicBoltProjectile(playerTransform: Transform): void {
-    // Rate limiting - use new scythe rate (0.5 seconds)
+    // Rate limiting - use new scythe rate (0.35 seconds)
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastFireTime < this.scytheFireRate) {
       return;
@@ -545,7 +558,7 @@ export class ControlSystem extends System {
     // Offset projectile spawn position slightly forward to avoid collision with player
     const spawnPosition = position.clone();
     spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
-    spawnPosition.y += 0.5; // Slightly higher
+    spawnPosition.y += 0.75; // Slightly higher
     
     // Create projectile using the ProjectileSystem with current weapon config
     const projectileConfig = {
@@ -607,13 +620,13 @@ export class ControlSystem extends System {
     // Offset projectile spawn position slightly forward to avoid collision with player
     const spawnPosition = position.clone();
     spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
-    spawnPosition.y += 0.75; // Slightly higher
+    spawnPosition.y += 1; // Slightly higher
     
     // Create EntropicBolt projectile using the new method
     const entropicConfig = {
       speed: 20, // Faster than CrossentropyBolt
       damage: 20, // EntropicBolt damage
-      lifetime: 5, // Shorter lifetime
+      lifetime: 2, // Shorter lifetime
       piercing: false, // Non-piercing so projectile gets destroyed on hit
       explosive: false, // No explosion effect
       explosionRadius: 0, // No explosion radius
@@ -655,13 +668,13 @@ export class ControlSystem extends System {
     // Offset projectile spawn position slightly forward to avoid collision with player
     const spawnPosition = position.clone();
     spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
-    spawnPosition.y += 0.75; // Slightly higher
+    spawnPosition.y += 1; // Slightly higher
     
     // Create CrossentropyBolt projectile using the existing method
     const crossentropyConfig = {
       speed: 15, // Slower than EntropicBolt
       damage: 90, // Higher damage for R ability
-      lifetime: 5, // Longer lifetime
+      lifetime: 2.5, // Longer lifetime
       piercing: false, // 
       explosive: false, // Disabled explosion effect for performance
       explosionRadius: 0, // No explosion radius
@@ -715,12 +728,12 @@ export class ControlSystem extends System {
     console.log('🌿 Reanimate ability activated - triggering visual effects');
     this.triggerReanimateEffect(playerTransform);
     
-    // Get player's health component and heal for 20 HP (doubled from 10)
+    // Get player's health component and heal for 30 HP 
     const healthComponent = this.playerEntity.getComponent(Health);
     if (healthComponent) {
       const didHeal = healthComponent.heal(30); // REANIMATE HEAL AMOUNT
       if (didHeal) {
-        console.log(`🩸 Reanimate healed player for 20 HP. Current health: ${healthComponent.currentHealth}/${healthComponent.maxHealth}`);
+        console.log(`🩸 Reanimate healed player for 30 HP. Current health: ${healthComponent.currentHealth}/${healthComponent.maxHealth}`);
       } else {
         console.log('🩸 Reanimate cast successfully but player already at full health');
       }
@@ -749,17 +762,17 @@ export class ControlSystem extends System {
       return;
     }
     
-    // Check if player has enough mana (25 mana cost)
+    // Check if player has enough mana (50 mana cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastFrostNova()) {
-      console.log('❄️ Not enough mana to cast Frost Nova (requires 25 mana)');
+      console.log('❄️ Not enough mana to cast Frost Nova (requires 50 mana)');
       return;
     }
     
     // Consume mana
     if (gameUI) {
       gameUI.consumeMana(50);
-      console.log('❄️ Consumed 25 mana for Frost Nova');
+      console.log('❄️ Consumed 50 mana for Frost Nova');
     }
     
     this.lastFrostNovaTime = currentTime;
@@ -834,7 +847,7 @@ export class ControlSystem extends System {
     
     // Get player position and direction (same as other projectiles)
     const playerPosition = playerTransform.getWorldPosition();
-    playerPosition.y += 1; // Shoot from chest level like Viper Sting
+    playerPosition.y += 0.825; // Shoot from chest level like Viper Sting
     
     const direction = new Vector3();
     this.camera.getWorldDirection(direction);
@@ -869,7 +882,7 @@ export class ControlSystem extends System {
     // Broadcast projectile creation to other players
     if (this.onProjectileCreatedCallback) {
       this.onProjectileCreatedCallback('cobra_shot_projectile', spawnPosition, direction, {
-        speed: 16, // Consistent speed for PVP
+        speed: 20, // Consistent speed for PVP
         damage: 29, // Use consistent damage value
         lifetime: 8,
         venomDuration: 6
@@ -1065,6 +1078,10 @@ export class ControlSystem extends System {
     this.onSkyfallCallback = callback;
   }
   
+  public setBackstabCallback(callback: (position: Vector3, direction: Vector3, damage: number, isBackstab: boolean) => void): void {
+    this.onBackstabCallback = callback;
+  }
+  
   public setDebuffCallback(callback: (targetEntityId: number, debuffType: 'frozen' | 'slowed', duration: number, position: Vector3) => void): void {
     this.onDebuffCallback = callback;
   }
@@ -1159,6 +1176,10 @@ export class ControlSystem extends System {
   public isSkyfallActive(): boolean {
     return this.isSkyfalling;
   }
+  
+  public isBackstabActive(): boolean {
+    return this.isBackstabbing;
+  }
 
   private handleSwordInput(playerTransform: Transform): void {
     // Handle sword melee attacks
@@ -1229,6 +1250,12 @@ export class ControlSystem extends System {
       this.performSabresMeleeAttack(playerTransform);
     }
     
+    // Handle Q key for Backstab ability
+    if (this.inputManager.isKeyPressed('q') && !this.isSwinging && !this.isSkyfalling) {
+      console.log('🗡️ Q key pressed for Backstab - attempting to perform ability');
+      this.performBackstab(playerTransform);
+    }
+    
     // Handle E key for Skyfall ability
     if (this.inputManager.isKeyPressed('e') && !this.isSkyfalling) {
       console.log('🌟 E key pressed for Skyfall - attempting to perform ability');
@@ -1238,6 +1265,11 @@ export class ControlSystem extends System {
     // Update Skyfall state if active
     if (this.isSkyfalling) {
       this.updateSkyfallMovement(playerTransform);
+    }
+    
+    // Update Backstab state if active
+    if (this.isBackstabbing) {
+      this.updateBackstabState(playerTransform);
     }
   }
 
@@ -1370,10 +1402,10 @@ export class ControlSystem extends System {
       this.skyfallOriginalGravity = playerMovement.gravity;
       this.skyfallTargetHeight = playerTransform.position.y + (playerMovement.jumpForce * 2); // Double jump height
       
-      console.log(`🌟 Skyfall Setup - Original Gravity: ${this.skyfallOriginalGravity}, Jump Force: ${playerMovement.jumpForce}, Start Y: ${playerTransform.position.y.toFixed(2)}, Target Y: ${this.skyfallTargetHeight.toFixed(2)}`);
+      console.log(`🌟 Skyfall Setup - Original Gravity: ${this.skyfallOriginalGravity}, Jump Force: ${playerMovement.jumpForce}, Start Y: ${playerTransform.position.y.toFixed(2.0)}, Target Y: ${this.skyfallTargetHeight.toFixed( 2.0)}`);
       
       // Apply upward velocity
-      playerMovement.velocity.y = playerMovement.jumpForce * 1.8; // Stronger initial velocity
+      playerMovement.velocity.y = playerMovement.jumpForce * 1; // Stronger initial velocity
       playerMovement.gravity = 0; // Disable gravity during ascent
       // Don't disable canMove as it prevents all physics updates including gravity
       // Instead we'll control horizontal movement in the ControlSystem
@@ -1442,7 +1474,7 @@ export class ControlSystem extends System {
     const allEntities = this.world.getAllEntities();
     const landingPosition = playerTransform.position;
     const damageRadius = 4.0; // 4 unit radius
-    const skyfallDamage = 150; // 150 damage as requested
+    const skyfallDamage = 125; // 125 damage as requested
     
     let hitCount = 0;
     
@@ -1489,6 +1521,172 @@ export class ControlSystem extends System {
     
     console.log('🌟 Skyfall ability completed');
   }
+  
+  private updateBackstabState(playerTransform: Transform): void {
+    const currentTime = Date.now() / 1000;
+    const elapsedTime = currentTime - this.backstabStartTime;
+    
+    // Check if backstab animation duration has elapsed
+    if (elapsedTime >= this.backstabDuration) {
+      this.isBackstabbing = false;
+      console.log('🗡️ Backstab animation completed');
+    }
+  }
+  
+  private resetAllAbilityStates(): void {
+    // Reset all ability states when switching weapons
+    this.isSkyfalling = false;
+    this.skyfallPhase = 'none';
+    this.isBackstabbing = false;
+    this.isDivineStorming = false;
+    this.isSwordCharging = false;
+    this.isDeflecting = false;
+    console.log('🔄 All ability states reset due to weapon switch');
+  }
+
+  // Backstab ability implementation
+  private performBackstab(playerTransform: Transform): void {
+    const currentTime = Date.now() / 1000;
+    
+    // Check cooldown
+    if (currentTime - this.lastBackstabTime < this.backstabCooldown) {
+      console.log(`🗡️ Backstab on cooldown for ${(this.backstabCooldown - (currentTime - this.lastBackstabTime)).toFixed(1)}s`);
+      return;
+    }
+    
+    // Check energy cost
+    const gameUI = (window as any).gameUI;
+    if (!gameUI || !gameUI.canCastBackstab()) {
+      console.log('🗡️ Not enough energy for Backstab (requires 60 energy)');
+      return;
+    }
+    
+    // Consume energy
+    gameUI.consumeEnergy(60);
+    
+    // Set cooldown
+    this.lastBackstabTime = currentTime;
+    
+    console.log('🗡️ Backstab ability activated!');
+    
+    // Start backstab animation
+    this.isBackstabbing = true;
+    this.backstabStartTime = currentTime;
+    
+    // Trigger callback for multiplayer/visual effects
+    if (this.onBackstabCallback) {
+      const direction = new Vector3();
+      this.camera.getWorldDirection(direction);
+      this.onBackstabCallback(playerTransform.position, direction, 75, false); // Base damage, not backstab by default
+    }
+    
+    // Perform backstab damage
+    this.performBackstabDamage(playerTransform);
+  }
+
+  private performBackstabDamage(playerTransform: Transform): void {
+    // Get all entities in the world to check for enemies/players
+    const allEntities = this.world.getAllEntities();
+    const playerPosition = playerTransform.position;
+    
+    // Get player facing direction (camera direction)
+    const playerDirection = new Vector3();
+    this.camera.getWorldDirection(playerDirection);
+    playerDirection.normalize();
+    
+    const backstabRange = 2.5; // Sabre melee range
+    let hitCount = 0;
+    
+    for (const entity of allEntities) {
+      if (entity === this.playerEntity) continue;
+      
+      const targetHealth = entity.getComponent(Health);
+      const targetTransform = entity.getComponent(Transform);
+      
+      if (!targetHealth || !targetTransform || targetHealth.isDead) continue;
+      
+      // Check if target is in range
+      const distance = playerPosition.distanceTo(targetTransform.position);
+      if (distance > backstabRange) continue;
+      
+      // Check if target is in front of player (cone attack)
+      const directionToTarget = new Vector3()
+        .subVectors(targetTransform.position, playerPosition)
+        .normalize();
+      
+      const dotProduct = playerDirection.dot(directionToTarget);
+      const angleThreshold = Math.cos(Math.PI / 3); // 60 degree cone
+      
+      if (dotProduct < angleThreshold) continue;
+      
+      // Determine if this is a backstab (attacking from behind the target)
+      let isBackstab = false;
+      let damage = 75; // Base damage
+      
+      // For PVP players, check if we're behind them
+      const pvpPlayers = (window as any).pvpPlayers;
+      const localSocketId = (window as any).localSocketId;
+      
+      if (pvpPlayers && localSocketId) {
+        // Find the target player in PVP players map
+        let targetPlayer = null;
+        for (const [playerId, player] of pvpPlayers) {
+          if (playerId !== localSocketId) {
+            const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
+            if (playerPos.distanceTo(targetTransform.position) < 0.5) {
+              targetPlayer = player;
+              break;
+            }
+          }
+        }
+        
+        if (targetPlayer) {
+          // Calculate target's facing direction from their rotation
+          const targetFacingDirection = new Vector3(
+            Math.sin(targetPlayer.rotation.y),
+            0,
+            Math.cos(targetPlayer.rotation.y)
+          ).normalize();
+          
+          // Vector from target to attacker
+          const attackerDirection = new Vector3()
+            .subVectors(playerPosition, targetTransform.position)
+            .normalize();
+          
+          // Check if attacker is behind target (dot product < 0 means opposite direction)
+          const behindDotProduct = targetFacingDirection.dot(attackerDirection);
+          isBackstab = behindDotProduct < -0.3; // 70 degree cone behind target
+          
+          if (isBackstab) {
+            damage = 175; // Backstab damage
+            console.log(`🗡️ BACKSTAB! Attacking ${targetPlayer.name} from behind for ${damage} damage`);
+          } else {
+            console.log(`🗡️ Front attack on ${targetPlayer.name} for ${damage} damage`);
+          }
+        }
+      }
+      
+      // Apply damage
+      const combatSystem = this.world.getSystem(CombatSystem);
+      if (combatSystem) {
+        combatSystem.queueDamage(
+          entity,
+          damage,
+          this.playerEntity!,
+          'backstab'
+        );
+        
+        hitCount++;
+        console.log(`🗡️ Backstab hit target at distance ${distance.toFixed(2)} for ${damage} damage${isBackstab ? ' (BACKSTAB!)' : ''}`);
+      }
+    }
+    
+    if (hitCount === 0) {
+      console.log('🗡️ Backstab missed - no targets in range');
+    } else {
+      console.log(`🗡️ Backstab completed - hit ${hitCount} target(s)`);
+    }
+  }
 
   private performMeleeDamage(playerTransform: Transform): void {
     // Get all entities in the world to check for enemies
@@ -1530,7 +1728,7 @@ export class ControlSystem extends System {
       const distance = toEnemy.length();
       
       // Debug logging for PVP hit detection
-      console.log(`🎯 PVP Sword check - Entity ${entity.id}: Player pos (${playerPosition.x.toFixed(2)}, ${playerPosition.y.toFixed(2)}, ${playerPosition.z.toFixed(2)}), Enemy pos (${enemyPosition.x.toFixed(2)}, ${enemyPosition.y.toFixed(2)}, ${enemyPosition.z.toFixed(2)}), Distance: ${distance.toFixed(2)}, Range: ${meleeRange}`);
+      
       
       // Check if enemy is within range
       if (distance <= meleeRange) {
@@ -1540,23 +1738,16 @@ export class ControlSystem extends System {
         const angleDegrees = angle * 180 / Math.PI;
         const maxAngleDegrees = (meleeAngle / 2) * 180 / Math.PI;
         
-        console.log(`🎯 PVP Sword angle check - Entity ${entity.id}: Angle ${angleDegrees.toFixed(1)}°, Max angle: ${maxAngleDegrees.toFixed(1)}°`);
         
         if (angle <= meleeAngle / 2) {
           // Enemy is within attack cone - deal damage through combat system
-          console.log(`🗡️ PVP Sword hit confirmed! Entity ${entity.id} at distance ${distance.toFixed(2)}, angle ${angleDegrees.toFixed(1)}°`);
           
           if (combatSystem && this.playerEntity) {
             // Queue damage through combat system (which will route to multiplayer for enemies)
             combatSystem.queueDamage(entity, baseDamage, this.playerEntity, 'melee');
-            console.log(`💥 Queued ${baseDamage} melee damage to entity ${entity.id} (combo step ${this.swordComboStep})`);
             enemiesHit++;
           }
-        } else {
-          console.log(`❌ PVP Sword missed - Entity ${entity.id} outside attack cone (${angleDegrees.toFixed(1)}° > ${maxAngleDegrees.toFixed(1)}°)`);
         }
-      } else {
-        console.log(`❌ PVP Sword missed - Entity ${entity.id} out of range (${distance.toFixed(2)} > ${meleeRange})`);
       }
     });
     
@@ -1564,11 +1755,8 @@ export class ControlSystem extends System {
     if (enemiesHit > 0) {
       const gameUI = (window as any).gameUI;
       if (gameUI) {
-        const rageBefore = gameUI.getCurrentRage ? gameUI.getCurrentRage() : 'unknown';
         const rageToGain = Math.min(enemiesHit * 5, 5); // 5 rage per hit, max 5 per swing
         gameUI.gainRage(rageToGain);
-        const rageAfter = gameUI.getCurrentRage ? gameUI.getCurrentRage() : 'unknown';
-        console.log(`🗡️ Gained ${rageToGain} rage from hitting ${enemiesHit} enemies with sword combo ${this.swordComboStep} - Rage: ${rageBefore} → ${rageAfter}`);
       }
     }
   }
@@ -1841,7 +2029,7 @@ export class ControlSystem extends System {
 
   // Schedule damage detection during charge movement
   private scheduleChargeDamage(playerTransform: Transform, chargeDirection: Vector3, startTime: number): void {
-    const chargeDuration = 0.75; // Charge lasts about 1.5 seconds
+    const chargeDuration = 0.6; 
     const damageCheckInterval = 50; // Check for damage every 50ms for better collision detection
     const chargeDamage = 40; // High damage for charge ability
     const chargeRadius = 2.5; // Damage radius around player during charge
@@ -2073,7 +2261,7 @@ export class ControlSystem extends System {
     
     // Get player position and direction
     const playerPosition = playerTransform.getWorldPosition();
-    playerPosition.y += 1; // Shoot from chest level
+    playerPosition.y += 0.825; // Shoot from chest level
     const direction = new Vector3();
     this.camera.getWorldDirection(direction);
     direction.normalize();
@@ -2168,7 +2356,7 @@ export class ControlSystem extends System {
     
     // Get player position and direction
     const playerPosition = playerTransform.getWorldPosition();
-    playerPosition.y += 1; // Shoot from chest level
+    playerPosition.y += 0.825; // Shoot from chest level
     const direction = new Vector3();
     this.camera.getWorldDirection(direction);
     
@@ -2364,8 +2552,8 @@ export class ControlSystem extends System {
       };
     } else if (this.currentWeapon === WeaponType.SABRES) {
       cooldowns['Q'] = {
-        current: 0, // No Q ability yet
-        max: 0,
+        current: Math.max(0, this.backstabCooldown - (currentTime - this.lastBackstabTime)),
+        max: this.backstabCooldown,
         isActive: false
       };
       cooldowns['E'] = {

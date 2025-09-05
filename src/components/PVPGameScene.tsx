@@ -447,7 +447,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     isBarrageCharging: false,
     barrageChargeProgress: 0,
     isCobraShotCharging: false,
-    cobraShotChargeProgress: 0
+    cobraShotChargeProgress: 0,
+    isSkyfalling: false,
+    isBackstabbing: false
   });
   
   // Track previous weapon state for change detection
@@ -472,6 +474,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     barrageChargeProgress: number;
     isCobraShotCharging: boolean;
     cobraShotChargeProgress: number;
+    isSkyfalling: boolean;
+    isBackstabbing: boolean;
     lastAttackType?: string;
     lastAttackTime?: number;
     lastAnimationUpdate?: number;
@@ -642,7 +646,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                   position,
                   direction,
                   attackerEntityId,
-                  { speed: 20, damage: 20, lifetime: 2, piercing: false, opacity: 0.8 }
+                  { speed: 20, damage: 20, lifetime: 1.75, piercing: false, opacity: 0.8 }
                 );
                 break;
               case 'crossentropy_bolt':
@@ -721,6 +725,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             isSwordCharging: data.attackType === 'sword_charge_spin' || data.attackType === 'sword_charge_start' || animationData.isSpinning || animationData.isSwordCharging || false,
             swordComboStep: animationData.comboStep || currentState.swordComboStep,
             chargeProgress: animationData.chargeProgress || 0,
+            isSkyfalling: (currentState as any).isSkyfalling || false,
+            isBackstabbing: (currentState as any).isBackstabbing || false,
             lastAttackType: data.attackType,
             lastAttackTime: animationUpdateTime,
             lastAnimationUpdate: animationUpdateTime
@@ -760,7 +766,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                 // swingProgress += delta * 6.75 until >= Math.PI * 0.55 (or 0.9 for combo step 3)
                 // At 60fps: (Math.PI * 0.55) / 6.75 / (1/60) ≈ 400ms
                 // Note: 3rd combo hit takes longer but we use average timing for multiplayer sync
-                resetDuration = 65;
+                resetDuration = 85;
                 break;
             case WeaponType.SABRES:
               // Two swings with delays - total duration roughly 350ms
@@ -836,7 +842,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
               isBarrageCharging: false,
               barrageChargeProgress: 0,
               isCobraShotCharging: false,
-              cobraShotChargeProgress: 0
+              cobraShotChargeProgress: 0,
+              isSkyfalling: false,
+              isBackstabbing: false
             };
             
             updated.set(data.playerId, {
@@ -860,7 +868,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                 }
                 return updated;
               });
-            }, 3000); // Divine Storm lasts 3 seconds
+            }, 4000); // Divine Storm lasts 3 seconds
             
             return updated;
           });
@@ -913,7 +921,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
               isBarrageCharging: false,
               barrageChargeProgress: 0,
               isCobraShotCharging: false,
-              cobraShotChargeProgress: 0
+              cobraShotChargeProgress: 0,
+              isSkyfalling: false,
+              isBackstabbing: false
             };
             
             updated.set(data.playerId, {
@@ -964,7 +974,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
               isBarrageCharging: false,
               barrageChargeProgress: 0,
               isCobraShotCharging: false,
-              cobraShotChargeProgress: 0
+              cobraShotChargeProgress: 0,
+              isSkyfalling: false,
+              isBackstabbing: false
             };
             
             updated.set(data.playerId, {
@@ -1017,7 +1029,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
               isBarrageCharging: false,
               barrageChargeProgress: 0,
               isCobraShotCharging: false,
-              cobraShotChargeProgress: 0
+              cobraShotChargeProgress: 0,
+              isSkyfalling: false,
+              isBackstabbing: false
             };
             
             updated.set(data.playerId, {
@@ -1069,7 +1083,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
               isBarrageCharging: false,
               barrageChargeProgress: 0,
               isCobraShotCharging: false,
-              cobraShotChargeProgress: 0
+              cobraShotChargeProgress: 0,
+              isSkyfalling: false,
+              isBackstabbing: false
             };
             
             updated.set(data.playerId, {
@@ -1094,6 +1110,162 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             
             return updated;
           });
+        } else if (data.abilityType === 'backstab') {
+          console.log('🗡️ Handling Backstab ability from player', data.playerId);
+          
+          // Backstab is an instant melee attack, so we need to:
+          // 1. Calculate damage based on position relative to targets
+          // 2. Apply damage to players in range
+          // 3. Show brief animation state
+          
+          const attackerPosition = new Vector3(data.position.x, data.position.y, data.position.z);
+          const attackerDirection = new Vector3(data.direction.x, data.direction.y, data.direction.z);
+          
+          // Set the backstab animation state for the attacking player
+          setMultiplayerPlayerStates(prev => {
+            const updated = new Map(prev);
+            const currentState = updated.get(data.playerId) || {
+              isCharging: false,
+              chargeProgress: 0,
+              isSwinging: false,
+              swordComboStep: 1 as 1 | 2 | 3,
+              isDivineStorming: false,
+              isSpinning: false,
+              isDeflecting: false,
+              isSwordCharging: false,
+              isViperStingCharging: false,
+              viperStingChargeProgress: 0,
+              isBarrageCharging: false,
+              barrageChargeProgress: 0,
+              isCobraShotCharging: false,
+              cobraShotChargeProgress: 0,
+              isSkyfalling: false,
+              isBackstabbing: false
+            };
+            
+            // Set backstab animation state
+            updated.set(data.playerId, {
+              ...currentState,
+              isBackstabbing: true
+            });
+            
+            // Reset backstab animation after duration
+            setTimeout(() => {
+              setMultiplayerPlayerStates(prev => {
+                const updated = new Map(prev);
+                const currentState = updated.get(data.playerId);
+                if (currentState) {
+                  updated.set(data.playerId, {
+                    ...currentState,
+                    isBackstabbing: false
+                  });
+                }
+                return updated;
+              });
+            }, 1000); // Match backstab duration
+            
+            return updated;
+          });
+          
+          // Find the attacker player to get their rotation
+          const attackerPlayer = players.get(data.playerId);
+          if (attackerPlayer) {
+            // Check if local player is in range and calculate damage
+            const localPlayer = players.get(socket?.id || '');
+            if (localPlayer && socket?.id !== data.playerId) {
+              const localPlayerPos = new Vector3(localPlayer.position.x, localPlayer.position.y, localPlayer.position.z);
+              const distance = attackerPosition.distanceTo(localPlayerPos);
+              
+              if (distance <= 2.5) { // Backstab range
+                // Check if attacker is in front of local player (cone attack)
+                const directionToLocal = new Vector3()
+                  .subVectors(localPlayerPos, attackerPosition)
+                  .normalize();
+                
+                const dotProduct = attackerDirection.dot(directionToLocal);
+                const angleThreshold = Math.cos(Math.PI / 3); // 60 degree cone
+                
+                if (dotProduct >= angleThreshold) {
+                  // Local player is in the attack cone, calculate backstab damage
+                  let damage = 75; // Base damage
+                  let isBackstab = false;
+                  
+                  // Calculate local player's facing direction from their rotation
+                  const localFacingDirection = new Vector3(
+                    Math.sin(localPlayer.rotation.y),
+                    0,
+                    Math.cos(localPlayer.rotation.y)
+                  ).normalize();
+                  
+                  // Vector from local player to attacker
+                  const attackerDirectionFromLocal = new Vector3()
+                    .subVectors(attackerPosition, localPlayerPos)
+                    .normalize();
+                  
+                  // Check if attacker is behind local player (dot product < 0 means opposite direction)
+                  const behindDotProduct = localFacingDirection.dot(attackerDirectionFromLocal);
+                  isBackstab = behindDotProduct < -0.3; // 70 degree cone behind target
+                  
+                  if (isBackstab) {
+                    damage = 150; // Backstab damage
+                    console.log(`🗡️ BACKSTAB! Player ${data.playerId} attacked local player from behind for ${damage} damage`);
+                  } else {
+                    console.log(`🗡️ Front attack from player ${data.playerId} for ${damage} damage`);
+                  }
+                  
+                  // Apply damage to local player
+                  if (broadcastPlayerDamage && socket?.id) {
+                    broadcastPlayerDamage(socket.id, damage, 'backstab');
+                  }
+                }
+              }
+            }
+          }
+          
+          // Show brief backstab animation state
+          setMultiplayerPlayerStates(prev => {
+            const updated = new Map(prev);
+            const currentState = updated.get(data.playerId) || {
+              isCharging: false,
+              chargeProgress: 0,
+              isSwinging: false,
+              swordComboStep: 1 as 1 | 2 | 3,
+              isDivineStorming: false,
+              isSpinning: false,
+              isSwordCharging: false,
+              isDeflecting: false,
+              isViperStingCharging: false,
+              viperStingChargeProgress: 0,
+              isBarrageCharging: false,
+              barrageChargeProgress: 0,
+              isCobraShotCharging: false,
+              cobraShotChargeProgress: 0,
+              isSkyfalling: false,
+              isBackstabbing: false
+            };
+            
+            updated.set(data.playerId, {
+              ...currentState,
+              isSwinging: true // Brief swing animation for backstab
+            });
+            
+            // Reset swing state after brief duration
+            setTimeout(() => {
+              setMultiplayerPlayerStates(prev => {
+                const updated = new Map(prev);
+                const state = updated.get(data.playerId);
+                if (state) {
+                  updated.set(data.playerId, {
+                    ...state,
+                    isSwinging: false
+                  });
+                }
+                return updated;
+              });
+            }, 300); // Brief 300ms animation
+            
+            return updated;
+          });
         }
       }
     };
@@ -1114,6 +1286,12 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
 
     const handlePlayerAnimationState = (data: any) => {
       console.log('🎭 Received PVP player animation state:', data);
+      
+      // Debug: Log backstab animation specifically
+      if (data.animationState?.isBackstabbing) {
+        console.log('🗡️ DEBUG: Received backstab animation state from player', data.playerId, 'isBackstabbing:', data.animationState.isBackstabbing);
+      }
+      
       if (data.playerId !== socket.id) {
         setMultiplayerPlayerStates(prev => {
           const updated = new Map(prev);
@@ -1131,15 +1309,23 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             isBarrageCharging: false,
             barrageChargeProgress: 0,
             isCobraShotCharging: false,
-            cobraShotChargeProgress: 0
+            cobraShotChargeProgress: 0,
+            isBackstabbing: false
           };
           
           // Update with the received animation state
-          updated.set(data.playerId, {
+          const newState = {
             ...currentState,
             ...data.animationState,
             lastAnimationUpdate: Date.now()
-          });
+          };
+          
+          // Debug: Log the final state for backstab
+          if (newState.isBackstabbing) {
+            console.log('🗡️ DEBUG: Setting backstab animation state for player', data.playerId, 'to:', newState.isBackstabbing);
+          }
+          
+          updated.set(data.playerId, newState);
           
           return updated;
         });
@@ -1609,6 +1795,13 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         broadcastPlayerAbility('skyfall', position, direction);
       });
       
+      // Set up Backstab callback
+      controlSystem.setBackstabCallback((position, direction, damage, isBackstab) => {
+        console.log(`🗡️ PVP Backstab triggered - broadcasting to other players (damage: ${damage}, backstab: ${isBackstab})`);
+        broadcastPlayerAbility('backstab', position, direction);
+        // Note: Animation state is now broadcasted automatically in the game loop
+      });
+      
       // Set up Debuff callback for broadcasting freeze/slow effects
       console.log(`🔧 Debug: Setting up debuff callback for ControlSystem`);
       controlSystem.setDebuffCallback((targetEntityId: number, debuffType: 'frozen' | 'slowed', duration: number, position: Vector3) => {
@@ -1724,7 +1917,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           isBarrageCharging: controlSystemRef.current.isBarrageChargingActive(),
           barrageChargeProgress: controlSystemRef.current.getBarrageChargeProgress(),
           isCobraShotCharging: controlSystemRef.current.isCobraShotChargingActive(),
-          cobraShotChargeProgress: controlSystemRef.current.getCobraShotChargeProgress()
+          cobraShotChargeProgress: controlSystemRef.current.getCobraShotChargeProgress(),
+          isSkyfalling: controlSystemRef.current.isSkyfallActive(),
+          isBackstabbing: controlSystemRef.current.isBackstabActive()
         };
         
         // Check for weapon changes and broadcast to other players
@@ -1751,7 +1946,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           // Combine all spinning states
           const isSpinning = isScytheSpinning || isSwordSpinning;
           
-          broadcastPlayerAnimationState({
+          // Create the animation state object
+          const animationStateToSend = {
             isCharging: newWeaponState.isCharging,
             chargeProgress: newWeaponState.chargeProgress,
             isSwinging: newWeaponState.isSwinging,
@@ -1763,8 +1959,18 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             isViperStingCharging: newWeaponState.isViperStingCharging,
             viperStingChargeProgress: newWeaponState.viperStingChargeProgress,
             isBarrageCharging: newWeaponState.isBarrageCharging,
-            barrageChargeProgress: newWeaponState.barrageChargeProgress
-          });
+            barrageChargeProgress: newWeaponState.barrageChargeProgress,
+            isBackstabbing: newWeaponState.isBackstabbing // Broadcast backstab animation state
+          };
+          
+          // Debug: Log backstab state broadcasting with full context
+          if (newWeaponState.isBackstabbing) {
+            console.log('🗡️ DEBUG: Broadcasting backstab animation state:', newWeaponState.isBackstabbing);
+            console.log('🗡️ DEBUG: Full animation state being sent:', animationStateToSend);
+            console.log('🗡️ DEBUG: Socket connected:', !!socket);
+          }
+          
+          broadcastPlayerAnimationState(animationStateToSend);
           lastAnimationBroadcast.current = now;
         }
       }
@@ -1885,6 +2091,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           barrageChargeProgress={weaponState.barrageChargeProgress}
           isCobraShotCharging={weaponState.isCobraShotCharging}
           cobraShotChargeProgress={weaponState.cobraShotChargeProgress}
+          isSkyfalling={weaponState.isSkyfalling}
+          isBackstabbing={weaponState.isBackstabbing}
           reanimateRef={reanimateRef}
           isLocalPlayer={true}
           onBowRelease={() => {
@@ -1954,8 +2162,15 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           isBarrageCharging: false,
           barrageChargeProgress: 0,
           isCobraShotCharging: false,
-          cobraShotChargeProgress: 0
+          cobraShotChargeProgress: 0,
+          isSkyfalling: false,
+          isBackstabbing: false
         };
+        
+        // Debug: Log backstab state for this player
+        if (playerState.isBackstabbing) {
+          console.log('🗡️ DEBUG: Rendering player', player.id, 'with isBackstabbing:', playerState.isBackstabbing);
+        }
         
         return (
           <DragonRenderer
@@ -1979,6 +2194,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             barrageChargeProgress={playerState.barrageChargeProgress}
             isCobraShotCharging={playerState.isCobraShotCharging}
             cobraShotChargeProgress={playerState.cobraShotChargeProgress}
+            isSkyfalling={playerState.isSkyfalling}
+            isBackstabbing={playerState.isBackstabbing}
             rotation={player.rotation}
             isLocalPlayer={false}
             onBowRelease={() => {}}

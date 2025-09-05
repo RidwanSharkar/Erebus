@@ -203,11 +203,11 @@ export default function HotkeyPanel({ currentWeapon, controlSystem }: HotkeyPane
     ],
     [WeaponType.SABRES]: [
       {
-        name: 'Not Assigned',
+        name: 'Backstab',
         key: 'Q',
-        cooldown: 0,
+        cooldown: 2.0,
         currentCooldown: 0,
-        description: 'No ability assigned to this slot yet.'
+        description: 'Deals 75 damage to enemies in front (175 if attacking from behind). Costs 60 energy.'
       },
       {
         name: 'Skyfall',
@@ -499,7 +499,7 @@ function getAbilityIcon(weapon: WeaponType, key: 'Q' | 'E' | 'R'): string {
       R: '⚔️'  // Crossentropy Bolt
     },
     [WeaponType.SABRES]: {
-      Q: '❓',
+      Q: '🗡️', // Backstab
       E: '🌟', // Skyfall
       R: '❓'
     },

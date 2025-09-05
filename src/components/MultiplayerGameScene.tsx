@@ -1022,7 +1022,7 @@ function createMultiplayerPlayer(world: World): any {
 
   // Add Movement component
   const movement = world.createComponent(Movement);
-  movement.maxSpeed = 3.65; // Reduced from 8 to 3.65 for slower movement
+  movement.maxSpeed = 3.75; // Reduced from 8 to 3.65 for slower movement
   movement.jumpForce = 8;
   movement.friction = 0.85;
   player.addComponent(movement);

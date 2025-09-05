@@ -36,7 +36,10 @@ interface DragonUnitProps {
   onSabresSwingComplete?: () => void;
   onSabresLeftSwingStart?: () => void;
   onSabresRightSwingStart?: () => void;
+  onBackstabComplete?: () => void;
   swordComboStep?: 1 | 2 | 3;
+  isSkyfalling?: boolean;
+  isBackstabbing?: boolean;
   isDivineStorming?: boolean;
   isSwordCharging?: boolean;
   isDeflecting?: boolean;
@@ -115,7 +118,10 @@ export default function DragonUnit({
   onSabresSwingComplete = () => {},
   onSabresLeftSwingStart = () => {},
   onSabresRightSwingStart = () => {},
+  onBackstabComplete = () => {},
   swordComboStep = 1,
+  isSkyfalling = false,
+  isBackstabbing = false,
   isDivineStorming = false,
   isSwordCharging = false,
   isDeflecting = false,
@@ -209,6 +215,9 @@ export default function DragonUnit({
           onLeftSwingStart={onSabresLeftSwingStart || (() => {})}
           onRightSwingStart={onSabresRightSwingStart || (() => {})}
           isCharging={isCharging}
+          isSkyfalling={isSkyfalling}
+          isBackstabbing={isBackstabbing}
+          onBackstabComplete={onBackstabComplete}
           subclass={currentSubclass}
         />
       );

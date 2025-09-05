@@ -53,7 +53,7 @@ export class Movement extends Component {
   public chargeStartPosition: Vector3;
 
   constructor(
-    maxSpeed: number = 3.65,
+    maxSpeed: number = 3.75,
     friction: number = 0.8,
     jumpForce: number = 20.0,
     gravity: number = -12.5

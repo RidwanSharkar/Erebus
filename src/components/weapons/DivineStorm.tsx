@@ -62,10 +62,10 @@ export default function DivineStorm({
       // Calculate distance from storm center (parent position)
       const distance = parentPosition.distanceTo(enemy.position);
       
-      if (distance <= 5.0) { // Hit range from storm center - 5 distance radius
+      if (distance <= 4.0) { // Hit range from storm center - 5 distance radius
         lastHitTime.current[enemy.id] = now;
         
-        // Deal 40 holy damage per hit (based on rotation speed)
+        // Deal 40 damage per hit (based on rotation speed)
         onHitTarget?.(enemy.id, 40, false, enemy.position, true);
       }
     });

@@ -43,7 +43,7 @@ export default function EntropicBolt({
 
     timeElapsed.current += delta;
     const speed = 20 * delta; // Base speed
-    const totalDistance = 25; // Max travel distance
+    const totalDistance = 18; // Max travel distance
     const progress = Math.min(timeElapsed.current * (30 / totalDistance), 1); // Progress from 0 to 1
 
     // Calculate the ideal straight-line position

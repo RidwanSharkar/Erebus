@@ -12,6 +12,9 @@ interface SabresProps {
   onLeftSwingStart: () => void;
   onRightSwingStart: () => void;
   isCharging?: boolean;
+  isSkyfalling?: boolean;
+  isBackstabbing?: boolean;
+  onBackstabComplete?: () => void;
   subclass?: string;
 }
 
@@ -21,8 +24,18 @@ export default function Sabres({
   onLeftSwingStart, 
   onRightSwingStart,
   isCharging = false,
+  isSkyfalling = false,
+  isBackstabbing = false,
+  onBackstabComplete = () => {},
   subclass = 'FROST'
 }: SabresProps) {
+  
+  // Debug: Log when backstab animation is received
+  React.useEffect(() => {
+    if (isBackstabbing) {
+      console.log('🗡️ DEBUG: Sabres component received isBackstabbing:', isBackstabbing);
+    }
+  }, [isBackstabbing]);
   // Refs and states for the left sabre
   const leftSabreRef = useRef<Group>(null);
   const leftSwingProgress = useRef(0);
@@ -42,11 +55,30 @@ export default function Sabres({
 
   // Ref for left swing delay
   const leftSwingDelay = useRef(0);
+  
+  // Backstab animation state
+  const backstabProgress = useRef(0);
+  const backstabPhase = useRef<'none' | 'windup' | 'thrust' | 'recover'>('none');
+  const backstabAnimationComplete = useRef(false);
+  // Store the horizontal rotation values from windup to maintain during thrust
+  const backstabHorizontalRotation = useRef({
+    left: { x: 0, y: 0, z: 0 },
+    right: { x: 0, y: 0, z: 0 }
+  });
+
+  // Reset backstab animation when isBackstabbing becomes false
+  useEffect(() => {
+    if (!isBackstabbing) {
+      backstabAnimationComplete.current = false;
+      backstabPhase.current = 'none';
+      backstabProgress.current = 0;
+    }
+  }, [isBackstabbing]);
 
   useFrame((_, delta) => {
     if (leftSabreRef.current && rightSabreRef.current) {
-      if (isCharging) {
-        // SHEATHING POSITIONS when charging/channeling
+      if (isSkyfalling) {
+        // SHEATHING POSITIONS when using Skyfall ability
         const leftSheathPosition = [-0.8, -0.2, 0.5];
         const rightSheathPosition = [0.8, -0.2, 0.5];
         
@@ -66,12 +98,152 @@ export default function Sabres({
         rightSabreRef.current.rotation.x = lerp(rightSabreRef.current.rotation.x * 1.05, Math.PI * 0.37, 0.3);
         rightSabreRef.current.rotation.z = lerp(rightSabreRef.current.rotation.z, -Math.PI * 1.65, 0.2);
 
-        // Reset swing states when channeling
+        // Reset swing states when using Skyfall
         leftSwingProgress.current = 0;
         rightSwingProgress.current = 0;
         leftSwingDelay.current = 0;
         rightSwingDelay.current = 0;
         isSwingComplete.current = false;
+        // Reset backstab states when using Skyfall
+        backstabProgress.current = 0;
+        backstabPhase.current = 'none';
+
+      } else if (isBackstabbing && !backstabAnimationComplete.current) {
+        // BACKSTAB ANIMATION - Single stab motion starting from slash end position
+        if (backstabPhase.current === 'none') {
+          backstabPhase.current = 'windup';
+          backstabProgress.current = 0;
+          
+          // Set initial positions to slash end positions (horizontal forward stance)
+          // These are the positions at the end of a slash (swingPhase = 1)
+          const leftSlashEndX = leftBasePosition[0] + Math.sin(Math.PI) * 1.2 - 0.45; // ≈ -1.25
+          const leftSlashEndY = leftBasePosition[1] + (Math.sin(Math.PI * 2) * -0.25); // ≈ 0.75
+          const leftSlashEndZ = leftBasePosition[2] + (Math.sin(Math.PI) * 1.1); // ≈ 0.65
+          
+          const rightSlashEndX = rightBasePosition[0] - Math.sin(Math.PI) * 1.2 + 0.45; // ≈ 1.25
+          const rightSlashEndY = rightBasePosition[1] + (Math.sin(Math.PI * 2) * -0.25); // ≈ 0.75
+          const rightSlashEndZ = rightBasePosition[2] + (Math.sin(Math.PI) * 1.1); // ≈ 0.65
+          
+          // These are the rotations when swingPhase approaches 1 (near end of slash)
+          const slashPhase = 0.95; // Near end of slash for horizontal blade position
+          const leftHorizontalRotX = Math.sin(slashPhase * Math.PI) * (Math.PI * 0.5);
+          const leftHorizontalRotY = Math.sin(slashPhase * Math.PI) * (Math.PI * 0.5);
+          const leftHorizontalRotZ = Math.sin(slashPhase * Math.PI) * (Math.PI * -0.1);
+          
+          const rightHorizontalRotX = Math.sin(slashPhase * Math.PI) * (Math.PI * 0.5);
+          const rightHorizontalRotY = -Math.sin(slashPhase * Math.PI) * (Math.PI * 0.5);
+          const rightHorizontalRotZ = Math.sin(slashPhase * Math.PI) * (Math.PI * 0.1);
+          
+          // Position sabres at horizontal forward stance (slash end position)
+          leftSabreRef.current.position.set(leftSlashEndX, leftSlashEndY, leftSlashEndZ);
+          rightSabreRef.current.position.set(rightSlashEndX, rightSlashEndY, rightSlashEndZ);
+          leftSabreRef.current.rotation.set(leftHorizontalRotX, leftHorizontalRotY, leftHorizontalRotZ);
+          rightSabreRef.current.rotation.set(rightHorizontalRotX, rightHorizontalRotY, rightHorizontalRotZ);
+        }
+        
+        backstabProgress.current += delta * 1; // Animation speed
+        
+        if (backstabPhase.current === 'windup') {
+          // Brief windup phase - pull sabres back slightly while maintaining horizontal rotation
+          const windupProgress = Math.min(backstabProgress.current / 0.125, 1); // 0.15 second windup
+          const windupEase = Math.sin(windupProgress * Math.PI * 0.15); // Smooth ease in
+          
+          // Pull both sabres back slightly from their horizontal position
+          const windupOffset = windupEase * 0.125;
+          
+          leftSabreRef.current.position.z = leftSabreRef.current.position.z - windupOffset;
+          rightSabreRef.current.position.z = rightSabreRef.current.position.z - windupOffset;
+          
+          // Maintain horizontal rotations during windup (blades stay parallel to ground)
+          const slashPhase = 0.225;
+          const leftRotX = Math.sin(slashPhase * Math.PI) * (Math.PI * 0.5 + Math.PI/4);
+          const leftRotY = Math.sin(slashPhase * Math.PI) * (Math.PI * 0.3) - Math.PI/1.75;
+          const leftRotZ = Math.sin(slashPhase * Math.PI) * (Math.PI * -0.1);
+          
+          const rightRotX = Math.sin(slashPhase * Math.PI) * (Math.PI * 0.5 + Math.PI/4);
+          const rightRotY = -Math.sin(slashPhase * Math.PI) * (Math.PI * 0.3) + Math.PI/1.75;
+          const rightRotZ = Math.sin(slashPhase * Math.PI) * (Math.PI * 0.1);
+          
+          // Apply rotations
+          leftSabreRef.current.rotation.x = leftRotX;
+          leftSabreRef.current.rotation.y = leftRotY;
+          leftSabreRef.current.rotation.z = leftRotZ;
+          
+          rightSabreRef.current.rotation.x = rightRotX;
+          rightSabreRef.current.rotation.y = rightRotY;
+          rightSabreRef.current.rotation.z = rightRotZ;
+          
+          // Store these horizontal rotation values for the thrust phase
+          backstabHorizontalRotation.current = {
+            left: { x: leftRotX, y: leftRotY, z: leftRotZ },
+            right: { x: rightRotX, y: rightRotY, z: rightRotZ }
+          };
+          
+          if (windupProgress >= 1) {
+            backstabPhase.current = 'thrust';
+            backstabProgress.current = 0;
+          }
+        } else if (backstabPhase.current === 'thrust') {
+          // Thrust phase - both sabres thrust forward simultaneously while maintaining horizontal rotation
+          const thrustProgress = Math.min(backstabProgress.current / 0.15, 1); // 0.25 second thrust
+          const thrustEase = Math.sin(thrustProgress * Math.PI * 0.175); // Smooth acceleration
+          
+          // Fast forward thrust motion from windup position
+          const thrustOffset = thrustEase; // Strong forward motion
+          
+          // Both sabres thrust forward together
+          leftSabreRef.current.position.z += thrustOffset;
+          rightSabreRef.current.position.z += thrustOffset;
+          
+          // Slight convergence for stabbing motion
+          const convergence = thrustEase * 0.325;
+          leftSabreRef.current.position.x += convergence;
+          rightSabreRef.current.position.x -= convergence;
+          
+          // Maintain the exact same horizontal rotations from windup (blades stay parallel to ground)
+          leftSabreRef.current.rotation.x = backstabHorizontalRotation.current.left.x;
+          leftSabreRef.current.rotation.y = backstabHorizontalRotation.current.left.y;
+          leftSabreRef.current.rotation.z = backstabHorizontalRotation.current.left.z;
+          
+          rightSabreRef.current.rotation.x = backstabHorizontalRotation.current.right.x;
+          rightSabreRef.current.rotation.y = backstabHorizontalRotation.current.right.y;
+          rightSabreRef.current.rotation.z = backstabHorizontalRotation.current.right.z;
+          
+          if (thrustProgress >= 0.85) {
+            backstabPhase.current = 'recover';
+            backstabProgress.current = 0;
+          }
+        } else if (backstabPhase.current === 'recover') {
+          // Recovery phase - return to base position
+          const recoverProgress = Math.min(backstabProgress.current / 0.2, 1); // 0.2 second recovery
+          const recoverEase = 1 - Math.pow(1 - recoverProgress,0.175); // Ease out curve
+          
+          // Smooth return to base positions
+          leftSabreRef.current.position.x = lerp(leftSabreRef.current.position.x, leftBasePosition[0], recoverEase);
+          leftSabreRef.current.position.y = lerp(leftSabreRef.current.position.y, leftBasePosition[1], recoverEase);
+          leftSabreRef.current.position.z = lerp(leftSabreRef.current.position.z, leftBasePosition[2], recoverEase);
+          
+          rightSabreRef.current.position.x = lerp(rightSabreRef.current.position.x, rightBasePosition[0], recoverEase);
+          rightSabreRef.current.position.y = lerp(rightSabreRef.current.position.y, rightBasePosition[1], recoverEase);
+          rightSabreRef.current.position.z = lerp(rightSabreRef.current.position.z, rightBasePosition[2], recoverEase);
+          
+          // Reset rotations smoothly
+          leftSabreRef.current.rotation.x = lerp(leftSabreRef.current.rotation.x, 0, recoverEase);
+          leftSabreRef.current.rotation.y = lerp(leftSabreRef.current.rotation.y, 0, recoverEase);
+          leftSabreRef.current.rotation.z = lerp(leftSabreRef.current.rotation.z, 0, recoverEase);
+          
+          rightSabreRef.current.rotation.x = lerp(rightSabreRef.current.rotation.x, 0, recoverEase);
+          rightSabreRef.current.rotation.y = lerp(rightSabreRef.current.rotation.y, 0, recoverEase);
+          rightSabreRef.current.rotation.z = lerp(rightSabreRef.current.rotation.z, 0, recoverEase);
+          
+          if (recoverProgress >= 1) {
+            // Backstab animation complete - mark as finished
+            backstabPhase.current = 'none';
+            backstabProgress.current = 0;
+            backstabAnimationComplete.current = true;
+            onBackstabComplete();
+          }
+        }
 
       } else if (isSwinging) {
         // Reset isSwingComplete when starting a new swing
@@ -79,7 +251,7 @@ export default function Sabres({
           isSwingComplete.current = false;
         }
         
-        // Handle left sabre swing with delay
+        // Handle left sabre swing with delayHHHHHHHHHHHH
         if (leftSabreRef.current) {
           if (leftSwingDelay.current < 0.115) {  // 0.15 seconds delay
             leftSwingDelay.current += delta;
@@ -172,6 +344,12 @@ export default function Sabres({
           leftSwingDelay.current = 0;
           rightSwingDelay.current = 0;
           isSwingComplete.current = false;
+        }
+        
+        // Reset backstab states when idle
+        if (!isBackstabbing) {
+          backstabProgress.current = 0;
+          backstabPhase.current = 'none';
         }
       }
     }

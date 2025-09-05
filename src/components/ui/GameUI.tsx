@@ -186,6 +186,7 @@ export default function GameUI({
       canCastCobraShot: () => currentEnergy >= 40,
       canCastViperSting: () => currentEnergy >= 60,
       // Sabres energy abilities
+      canCastBackstab: () => currentEnergy >= 60,
       canCastSkyfall: () => currentEnergy >= 40
     };
   }, [currentMana, currentEnergy, currentRage, currentWeapon]);

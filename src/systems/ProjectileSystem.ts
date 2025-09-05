@@ -358,7 +358,7 @@ export class ProjectileSystem extends System {
 
     // Add Projectile component with scythe-specific settings
     const projectile = world.createComponent(Projectile);
-    projectile.speed = config?.speed || 15; // Slower than arrows
+    projectile.speed = config?.speed || 20; // Slower than arrows
     projectile.damage = config?.damage || 30; // Higher damage than arrows
     projectile.maxLifetime = config?.lifetime || 1.75; // Longer lifetime
     projectile.owner = ownerId;
