@@ -338,13 +338,13 @@ export function MultiplayerGameScene({ onDamageNumbersUpdate, onDamageNumberComp
     };
 
     socket.on('player-attacked', handlePlayerAttack);
-    socket.on('player-ability', handlePlayerAbility);
+    socket.on('player-used-ability', handlePlayerAbility);
     socket.on('player-effect', handlePlayerEffect);
     socket.on('player-animation-state', handlePlayerAnimationState);
 
     return () => {
       socket.off('player-attacked', handlePlayerAttack);
-      socket.off('player-ability', handlePlayerAbility);
+      socket.off('player-used-ability', handlePlayerAbility);
       socket.off('player-effect', handlePlayerEffect);
       socket.off('player-animation-state', handlePlayerAnimationState);
     };

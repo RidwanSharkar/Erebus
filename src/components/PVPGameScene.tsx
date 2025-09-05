@@ -27,9 +27,11 @@ import { CombatSystem } from '@/systems/CombatSystem';
 import { TowerSystem } from '@/systems/TowerSystem';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { ReanimateRef } from '@/components/weapons/Reanimate';
+import Reanimate from '@/components/weapons/Reanimate';
 import UnifiedProjectileManager from '@/components/managers/UnifiedProjectileManager';
 import BowPowershotManager from '@/components/projectiles/BowPowershotManager';
 import FrostNovaManager from '@/components/weapons/FrostNovaManager';
+import FrostNova from '@/components/weapons/FrostNova';
 import CobraShotManager from '@/components/projectiles/CobraShotManager';
 import { CobraShotProjectile } from '@/components/projectiles/CobraShot';
 import ViperStingManager from '@/components/projectiles/ViperStingManager';
@@ -40,7 +42,6 @@ import DivineStormManager, { triggerGlobalDivineStorm } from '@/components/weapo
 import DeflectShieldManager, { triggerGlobalDeflectShield } from '@/components/weapons/DeflectShieldManager';
 import PlayerHealthBar from '@/components/ui/PlayerHealthBar';
 import TowerRenderer from '@/components/towers/TowerRenderer';
-import { TowerFactory } from '@/utils/TowerFactory';
 
 // PVP-specific Cobra Shot Manager for hitting players
 interface PVPCobraShotManagerProps {
@@ -154,7 +155,7 @@ function PVPBarrageManager({ world, players, onPlayerHit, onPlayerSlowed, server
         const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
         const distance = projectilePos.distanceTo(playerPos);
         
-        if (distance <= 1.2) { // Hit radius
+        if (distance <= 1.25) { // Hit radius
           // Create unique hit key to prevent multiple hits
           const hitKey = `${projectileEntity.id}-${player.id}`;
           
@@ -248,6 +249,97 @@ import { useBowPowershot } from '@/components/projectiles/useBowPowershot';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import { triggerGlobalBarrage } from '@/components/projectiles/BarrageManager';
 
+// PVP Reanimate Effect Component (standalone healing effect)
+const PVPReanimateEffect: React.FC<{ position: Vector3; onComplete: () => void }> = React.memo(({ position, onComplete }) => {
+  const [time, setTime] = useState(0);
+  const duration = 1.5;
+  
+  useFrame((_, delta) => {
+    setTime(prev => {
+      const newTime = prev + delta;
+      if (newTime >= duration) {
+        onComplete();
+      }
+      return newTime;
+    });
+  });
+
+  const progress = time / duration;
+  const opacity = Math.sin(progress * Math.PI);
+  const scale = 1 + progress * 2;
+
+  return (
+    <group position={position.toArray()}>
+      {/* Rising healing rings */}
+      {[...Array(3)].map((_, i) => (
+        <mesh
+          key={`ring-${i}`}
+          position={[0, progress * 2 + i * 0.5, 0]}
+          rotation={[Math.PI / 2, 0, time * 2]}
+        >
+          <torusGeometry args={[0.8 - i * 0.2, 0.05, 16, 32]} />
+          <meshStandardMaterial
+            color="#60FF38"
+            emissive="#60FF38"
+            emissiveIntensity={1.5}
+            transparent
+            opacity={opacity * (1 - i * 0.2)}
+          />
+        </mesh>
+      ))}
+
+      {/* Central healing glow */}
+      <mesh scale={[scale, scale, scale]}>
+        <sphereGeometry args={[0.5, 32, 32]} />
+        <meshStandardMaterial
+          color="#60FF38"
+          emissive="#60FF38"
+          emissiveIntensity={2}
+          transparent
+          opacity={opacity * 0.3}
+        />
+      </mesh>
+
+      {/* Healing particles */}
+      {[...Array(12)].map((_, i) => {
+        const angle = (i / 12) * Math.PI * 2;
+        const radius = 0.75 + progress;
+        const yOffset = progress * 2;
+        
+        return (
+          <mesh
+            key={`particle-${i}`}
+            position={[
+              Math.cos(angle + time * 2) * radius/1.1,
+              yOffset + Math.sin(time * 3 + i) * 0.5,
+              Math.sin(angle + time * 2) * radius/1.1
+            ]}
+          >
+            <sphereGeometry args={[0.095, 8, 8]} />
+            <meshStandardMaterial
+              color="#60FF38"
+              emissive="#60FF38"
+              emissiveIntensity={2.5}
+              transparent
+              opacity={opacity * 0.8}
+            />
+          </mesh>
+        );
+      })}
+
+      {/* Light source */}
+      <pointLight
+        color="#60FF38"
+        intensity={2 * opacity}
+        distance={5}
+        decay={2}
+      />
+    </group>
+  );
+});
+
+PVPReanimateEffect.displayName = 'PVPReanimateEffect';
+
 interface PVPGameSceneProps {
   onDamageNumbersUpdate?: (damageNumbers: DamageNumberData[]) => void;
   onDamageNumberComplete?: (id: string) => void;
@@ -304,6 +396,16 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   // Track server tower to local ECS entity mapping
   const serverTowerEntities = useRef<Map<string, number>>(new Map());
   
+  // PVP Reanimate Effect Management
+  const [pvpReanimateEffects, setPvpReanimateEffects] = useState<Array<{
+    id: number;
+    playerId: string;
+    position: Vector3;
+    startTime: number;
+    duration: number;
+  }>>([]);
+  const nextReanimateEffectId = useRef(0);
+  
   // PVP Venom Effect Management
   const [pvpVenomEffects, setPvpVenomEffects] = useState<Array<{
     id: number;
@@ -324,6 +426,16 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     duration: number;
   }>>([]);
   const nextDebuffEffectId = useRef(0);
+
+  // PVP Frost Nova Effect Management
+  const [pvpFrostNovaEffects, setPvpFrostNovaEffects] = useState<Array<{
+    id: number;
+    playerId: string;
+    position: Vector3;
+    startTime: number;
+    duration: number;
+  }>>([]);
+  const nextFrostNovaEffectId = useRef(0);
   
   // Function to create venom effect on PVP players
   // Function to create debuff effect on PVP players
@@ -382,6 +494,48 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       console.log(`❄️ Broadcasting frozen effect for player ${playerId}`);
     }
   }, [createPvpDebuffEffect, broadcastPlayerDebuff]);
+
+  // Function to create reanimate effect on PVP players
+  const createPvpReanimateEffect = useCallback((playerId: string, position: Vector3) => {
+    console.log(`🌿 Creating PVP reanimate effect for player ${playerId} at position:`, position.toArray());
+    
+    const reanimateEffect = {
+      id: nextReanimateEffectId.current++,
+      playerId,
+      position: position.clone(),
+      startTime: Date.now(),
+      duration: 1500 // 1.5 seconds reanimate duration (matches Reanimate component)
+    };
+    
+    setPvpReanimateEffects(prev => [...prev, reanimateEffect]);
+    
+    // Clean up reanimate effect after duration
+    setTimeout(() => {
+      setPvpReanimateEffects(prev => prev.filter(effect => effect.id !== reanimateEffect.id));
+      console.log(`🌿 PVP reanimate effect expired for player ${playerId}`);
+    }, reanimateEffect.duration);
+  }, []);
+
+  // Function to create frost nova effect on PVP players
+  const createPvpFrostNovaEffect = useCallback((playerId: string, position: Vector3) => {
+    console.log(`❄️ Creating PVP frost nova effect for player ${playerId} at position:`, position.toArray());
+    
+    const frostNovaEffect = {
+      id: nextFrostNovaEffectId.current++,
+      playerId,
+      position: position.clone(),
+      startTime: Date.now(),
+      duration: 1200 // 1.2 seconds frost nova duration (matches FrostNovaManager)
+    };
+    
+    setPvpFrostNovaEffects(prev => [...prev, frostNovaEffect]);
+    
+    // Clean up frost nova effect after duration
+    setTimeout(() => {
+      setPvpFrostNovaEffects(prev => prev.filter(effect => effect.id !== frostNovaEffect.id));
+      console.log(`❄️ PVP frost nova effect expired for player ${playerId}`);
+    }, frostNovaEffect.duration);
+  }, []);
 
   const createPvpVenomEffect = useCallback((playerId: string, position: Vector3) => {
     // Debug: Check if this is the local player
@@ -766,7 +920,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                 // swingProgress += delta * 6.75 until >= Math.PI * 0.55 (or 0.9 for combo step 3)
                 // At 60fps: (Math.PI * 0.55) / 6.75 / (1/60) ≈ 400ms
                 // Note: 3rd combo hit takes longer but we use average timing for multiplayer sync
-                resetDuration = 85;
+                resetDuration = 80
                 break;
             case WeaponType.SABRES:
               // Two swings with delays - total duration roughly 350ms
@@ -817,6 +971,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
 
     const handlePlayerAbility = (data: any) => {
       console.log('✨ Received PVP player ability:', data);
+      console.log('🔍 DEBUG: Ability type:', data.abilityType, 'from player:', data.playerId, 'my ID:', socket.id);
       if (data.playerId !== socket.id) {
         // Handle special abilities like Divine Storm, Viper Sting, and Barrage
         if (data.abilityType === 'divine_storm') {
@@ -1005,12 +1160,19 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           });
         } else if (data.abilityType === 'frost_nova') {
           console.log('❄️ Handling Frost Nova ability from player', data.playerId);
-          // Trigger frost nova visual effect at the player's position
-          const { triggerGlobalFrostNova } = require('@/components/weapons/FrostNovaManager');
+          console.log('🔍 DEBUG: Creating Frost Nova effect at position:', data.position);
+          // Create frost nova visual effect at the player's position
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
-          triggerGlobalFrostNova(position);
+          createPvpFrostNovaEffect(data.playerId, position);
           
           // Note: PVP damage and freeze effects are now handled by PVPFrostNovaManager
+        } else if (data.abilityType === 'reanimate') {
+          console.log('🌿 Handling Reanimate ability from player', data.playerId);
+          console.log('🔍 DEBUG: Creating Reanimate effect at position:', data.position);
+          
+          // Create reanimate visual effect at the player's position
+          const position = new Vector3(data.position.x, data.position.y, data.position.z);
+          createPvpReanimateEffect(data.playerId, position);
         } else if (data.abilityType === 'charge') {
           console.log('⚔️ Handling Charge ability from player', data.playerId);
           setMultiplayerPlayerStates(prev => {
@@ -1107,6 +1269,53 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                 return updated;
               });
             }, 3000);
+            
+            return updated;
+          });
+        } else if (data.abilityType === 'skyfall') {
+          console.log('🌟 Handling Skyfall ability from player', data.playerId);
+          
+          // Set the skyfall animation state for the attacking player
+          setMultiplayerPlayerStates(prev => {
+            const updated = new Map(prev);
+            const currentState = updated.get(data.playerId) || {
+              isCharging: false,
+              chargeProgress: 0,
+              isSwinging: false,
+              swordComboStep: 1 as 1 | 2 | 3,
+              isDivineStorming: false,
+              isSpinning: false,
+              isSwordCharging: false,
+              isDeflecting: false,
+              isViperStingCharging: false,
+              viperStingChargeProgress: 0,
+              isBarrageCharging: false,
+              barrageChargeProgress: 0,
+              isCobraShotCharging: false,
+              cobraShotChargeProgress: 0,
+              isSkyfalling: false,
+              isBackstabbing: false
+            };
+            
+            updated.set(data.playerId, {
+              ...currentState,
+              isSkyfalling: true
+            });
+            
+            // Reset Skyfall state after duration (skyfall lasts about 3-4 seconds total)
+            setTimeout(() => {
+              setMultiplayerPlayerStates(prev => {
+                const updated = new Map(prev);
+                const state = updated.get(data.playerId);
+                if (state) {
+                  updated.set(data.playerId, {
+                    ...state,
+                    isSkyfalling: false
+                  });
+                }
+                return updated;
+              });
+            }, 1750); // Skyfall duration
             
             return updated;
           });
@@ -1364,7 +1573,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     };
 
     socket.on('player-attacked', handlePlayerAttack);
-    socket.on('player-ability', handlePlayerAbility);
+    socket.on('player-used-ability', handlePlayerAbility);
     socket.on('player-damaged', handlePlayerDamaged);
     socket.on('player-animation-state', handlePlayerAnimationState);
     socket.on('player-effect', handlePlayerEffect);
@@ -1372,7 +1581,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
 
     return () => {
       socket.off('player-attacked', handlePlayerAttack);
-      socket.off('player-ability', handlePlayerAbility);
+      socket.off('player-used-ability', handlePlayerAbility);
       socket.off('player-damaged', handlePlayerDamaged);
       socket.off('player-animation-state', handlePlayerAnimationState);
       socket.off('player-effect', handlePlayerEffect);
@@ -1681,7 +1890,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         onControlSystemUpdate(controlSystem);
       }
       
-      // Set up PVP callbacks
+      // Set up PVP callbacks (AFTER playerEntity is set)
       controlSystem.setBowReleaseCallback((finalProgress, isPerfectShot) => {
         console.log('🏹 PVP Bow released with charge:', finalProgress, isPerfectShot ? '✨ PERFECT SHOT!' : '');
         
@@ -1761,6 +1970,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       });
       
       // Set up Frost Nova callback
+      console.log('🔍 DEBUG: Setting up Frost Nova callback in PVP');
       controlSystem.setFrostNovaCallback((position, direction) => {
         console.log('❄️ PVP Frost Nova triggered - broadcasting to other players');
         broadcastPlayerAbility('frost_nova', position, direction);
@@ -1783,11 +1993,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         });
       });
       
-      // Set up Deflect callback
-      controlSystem.setDeflectCallback((position, direction) => {
-        console.log('🛡️ PVP Deflect triggered - broadcasting to other players');
-        broadcastPlayerAbility('deflect', position, direction);
-      });
+   
       
       // Set up Skyfall callback
       controlSystem.setSkyfallCallback((position, direction) => {
@@ -1843,10 +2049,28 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       });
       
       // Set up Reanimate callback
+      console.log('🔍 DEBUG: Setting up Reanimate callback in PVP');
       controlSystem.setReanimateCallback(() => {
-        console.log('🌿 PVP Reanimate healing effect triggered');
+        console.log('🌿 PVP Reanimate healing effect triggered - broadcasting to other players');
         if (reanimateRef.current) {
           reanimateRef.current.triggerHealingEffect();
+        }
+        
+        // Broadcast Reanimate ability to other players
+        console.log('🔍 DEBUG: Player entity available for Reanimate broadcast:', !!player);
+        if (player) {
+          const transform = player.getComponent(Transform);
+          if (transform) {
+            const direction = new Vector3();
+            camera.getWorldDirection(direction);
+            direction.normalize();
+            console.log('🔍 DEBUG: Broadcasting Reanimate ability with position:', transform.position);
+            broadcastPlayerAbility('reanimate', transform.position, direction);
+          } else {
+            console.log('🔍 DEBUG: No transform component found on player entity');
+          }
+        } else {
+          console.log('🔍 DEBUG: No player entity available for Reanimate broadcast');
         }
       });
       
@@ -2377,6 +2601,46 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             setCharges={() => {}}
           />
           
+          {/* PVP Reanimate Effects */}
+          {pvpReanimateEffects.map(reanimateEffect => {
+            // Find the current position of the affected player
+            const affectedPlayer = players.get(reanimateEffect.playerId);
+            const currentPosition = affectedPlayer 
+              ? new Vector3(affectedPlayer.position.x, affectedPlayer.position.y, affectedPlayer.position.z)
+              : reanimateEffect.position;
+            
+            return (
+              <PVPReanimateEffect
+                key={reanimateEffect.id}
+                position={currentPosition}
+                onComplete={() => {
+                  setPvpReanimateEffects(prev => prev.filter(effect => effect.id !== reanimateEffect.id));
+                }}
+              />
+            );
+          })}
+
+          {/* PVP Frost Nova Effects */}
+          {pvpFrostNovaEffects.map(frostNovaEffect => {
+            // Find the current position of the casting player
+            const castingPlayer = players.get(frostNovaEffect.playerId);
+            const currentPosition = castingPlayer 
+              ? new Vector3(castingPlayer.position.x, castingPlayer.position.y, castingPlayer.position.z)
+              : frostNovaEffect.position;
+            
+            return (
+              <FrostNova
+                key={frostNovaEffect.id}
+                position={currentPosition}
+                duration={frostNovaEffect.duration}
+                startTime={frostNovaEffect.startTime}
+                onComplete={() => {
+                  setPvpFrostNovaEffects(prev => prev.filter(effect => effect.id !== frostNovaEffect.id));
+                }}
+              />
+            );
+          })}
+
           {/* PVP Venom Effects */}
           {pvpVenomEffects.map(venomEffect => {
             // Find the current position of the affected player

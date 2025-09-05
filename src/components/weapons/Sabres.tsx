@@ -65,6 +65,9 @@ export default function Sabres({
     left: { x: 0, y: 0, z: 0 },
     right: { x: 0, y: 0, z: 0 }
   });
+  
+  // Skyfall animation state
+  const skyfallAnimationComplete = useRef(false);
 
   // Reset backstab animation when isBackstabbing becomes false
   useEffect(() => {
@@ -75,10 +78,17 @@ export default function Sabres({
     }
   }, [isBackstabbing]);
 
+  // Reset skyfall animation when isSkyfalling becomes false
+  useEffect(() => {
+    if (!isSkyfalling) {
+      skyfallAnimationComplete.current = false;
+    }
+  }, [isSkyfalling]);
+
   useFrame((_, delta) => {
     if (leftSabreRef.current && rightSabreRef.current) {
-      if (isSkyfalling) {
-        // SHEATHING POSITIONS when using Skyfall ability
+      if (isSkyfalling && !skyfallAnimationComplete.current) {
+        // SKYFALL ANIMATION - Sheathing animation for PVP visibility
         const leftSheathPosition = [-0.8, -0.2, 0.5];
         const rightSheathPosition = [0.8, -0.2, 0.5];
         
@@ -107,6 +117,8 @@ export default function Sabres({
         // Reset backstab states when using Skyfall
         backstabProgress.current = 0;
         backstabPhase.current = 'none';
+        
+
 
       } else if (isBackstabbing && !backstabAnimationComplete.current) {
         // BACKSTAB ANIMATION - Single stab motion starting from slash end position

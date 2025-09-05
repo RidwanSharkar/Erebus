@@ -422,11 +422,13 @@ export class ControlSystem extends System {
     
     // Handle Reanimate ability with 'Q' key
     if (this.inputManager.isKeyPressed('q') && !this.isCharging) {
+      console.log('🔍 DEBUG: Q key pressed, calling performReanimateAbility');
       this.performReanimateAbility(playerTransform);
     }
     
     // Handle Frost Nova ability with 'E' key
     if (this.inputManager.isKeyPressed('e') && !this.isCharging) {
+      console.log('🔍 DEBUG: E key pressed, calling performFrostNovaAbility');
       this.performFrostNovaAbility(playerTransform);
     }
   }
@@ -713,6 +715,7 @@ export class ControlSystem extends System {
     const currentMana = gameUI ? gameUI.getCurrentMana() : 0;
     
     if (gameUI && !gameUI.canCastReanimate()) {
+      console.log(`🩸 Not enough mana to cast Reanimate (requires 20 mana, have ${currentMana})`);
       return;
     }
     
@@ -745,7 +748,10 @@ export class ControlSystem extends System {
     console.log('🌿 Triggering Reanimate healing effect');
     
     if (this.onReanimateCallback) {
+      console.log('🔍 DEBUG: Calling onReanimateCallback for PVP broadcast');
       this.onReanimateCallback();
+    } else {
+      console.log('🔍 DEBUG: onReanimateCallback is null/undefined - no PVP broadcast!');
     }
     
     const playerPosition = playerTransform.position;
@@ -787,7 +793,10 @@ export class ControlSystem extends System {
     
     // Trigger Frost Nova callback for visual effects
     if (this.onFrostNovaCallback) {
+      console.log('🔍 DEBUG: Calling onFrostNovaCallback for PVP broadcast');
       this.onFrostNovaCallback(playerPosition, direction);
+    } else {
+      console.log('🔍 DEBUG: onFrostNovaCallback is null/undefined - no PVP broadcast!');
     }
     
     // Find all enemies within 5 unit radius and freeze them
@@ -1400,12 +1409,12 @@ export class ControlSystem extends System {
     const playerMovement = this.playerEntity?.getComponent(Movement);
     if (playerMovement) {
       this.skyfallOriginalGravity = playerMovement.gravity;
-      this.skyfallTargetHeight = playerTransform.position.y + (playerMovement.jumpForce * 2); // Double jump height
+      this.skyfallTargetHeight = playerTransform.position.y + (playerMovement.jumpForce * 1.4); // Reduced height by 30% (was 2x, now 1.4x)
       
       console.log(`🌟 Skyfall Setup - Original Gravity: ${this.skyfallOriginalGravity}, Jump Force: ${playerMovement.jumpForce}, Start Y: ${playerTransform.position.y.toFixed(2.0)}, Target Y: ${this.skyfallTargetHeight.toFixed( 2.0)}`);
       
       // Apply upward velocity
-      playerMovement.velocity.y = playerMovement.jumpForce * 1; // Stronger initial velocity
+      playerMovement.velocity.y = playerMovement.jumpForce * 2; // Stronger initial velocity
       playerMovement.gravity = 0; // Disable gravity during ascent
       // Don't disable canMove as it prevents all physics updates including gravity
       // Instead we'll control horizontal movement in the ControlSystem

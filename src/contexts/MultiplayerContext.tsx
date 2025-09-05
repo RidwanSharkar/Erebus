@@ -385,7 +385,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       // This will be handled by the game scene to trigger animations
     });
 
-    newSocket.on('player-ability', (data) => {
+    newSocket.on('player-used-ability', (data) => {
       console.log('✨ Player ability received:', data);
       // This will be handled by the game scene to trigger ability effects
     });
@@ -556,6 +556,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   }, [socket, currentRoomId]);
 
   const broadcastPlayerAbility = useCallback((abilityType: string, position: { x: number; y: number; z: number }, direction?: { x: number; y: number; z: number }, target?: string) => {
+    console.log('🔍 DEBUG: broadcastPlayerAbility called with:', { abilityType, position, direction, target, hasSocket: !!socket, roomId: currentRoomId });
     if (socket && currentRoomId) {
       socket.emit('player-ability', {
         roomId: currentRoomId,
@@ -564,6 +565,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         direction,
         target
       });
+      console.log('🔍 DEBUG: Emitted player-ability event to server');
+    } else {
+      console.log('🔍 DEBUG: Cannot broadcast - missing socket or roomId');
     }
   }, [socket, currentRoomId]);
 
