@@ -18,7 +18,7 @@ interface HotkeyPanelProps {
 interface WeaponData {
   name: string;
   type: WeaponType;
-  key: '1' | '2' | '3';
+  key: '1' | '2' | '3' | '4';
   icon: string;
 }
 
@@ -121,6 +121,12 @@ export default function HotkeyPanel({ currentWeapon, controlSystem }: HotkeyPane
       type: WeaponType.SCYTHE,
       key: '3',
       icon: '⚡'
+    },
+    {
+      name: 'Sabres',
+      type: WeaponType.SABRES,
+      key: '4',
+      icon: '⚔️'
     }
   ];
 
@@ -195,7 +201,29 @@ export default function HotkeyPanel({ currentWeapon, controlSystem }: HotkeyPane
         description: 'Costs 40 mana. Fires a slow, high-damage piercing projectile with extended range.'
       }
     ],
-    [WeaponType.SABRES]: [], // Not implemented in current system
+    [WeaponType.SABRES]: [
+      {
+        name: 'Not Assigned',
+        key: 'Q',
+        cooldown: 0,
+        currentCooldown: 0,
+        description: 'No ability assigned to this slot yet.'
+      },
+      {
+        name: 'Skyfall',
+        key: 'E',
+        cooldown: 4.0,
+        currentCooldown: 0,
+        description: 'Leap high into the air and crash down, dealing 150 damage to enemies below. Costs 40 energy.'
+      },
+      {
+        name: 'Not Assigned',
+        key: 'R',
+        cooldown: 0,
+        currentCooldown: 0,
+        description: 'No ability assigned to this slot yet.'
+      }
+    ],
     [WeaponType.SPEAR]: []   // Not implemented in current system
   };
 
@@ -424,6 +452,13 @@ export default function HotkeyPanel({ currentWeapon, controlSystem }: HotkeyPane
                       );
                     }
                     
+                    // Check for Skyfall active state
+                    if (ability.key === 'E' && currentWeapon === WeaponType.SABRES && controlSystem.isSkyfallActive?.()) {
+                      return (
+                        <div className="absolute inset-0 rounded-lg bg-yellow-400 bg-opacity-20 border-2 border-yellow-400 animate-pulse" />
+                      );
+                    }
+                    
                     return null;
                   })()}
                 </div>
@@ -465,7 +500,7 @@ function getAbilityIcon(weapon: WeaponType, key: 'Q' | 'E' | 'R'): string {
     },
     [WeaponType.SABRES]: {
       Q: '❓',
-      E: '❓',
+      E: '🌟', // Skyfall
       R: '❓'
     },
     [WeaponType.SPEAR]: {

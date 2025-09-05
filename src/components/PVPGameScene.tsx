@@ -1293,7 +1293,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           if (transform) {
             const oldPos = transform.position.clone();
             transform.setPosition(serverPlayer.position.x, serverPlayer.position.y, serverPlayer.position.z);
-            console.log(`🔄 Updated PVP player ${playerId} entity ${entityId} position: [${oldPos.x.toFixed(2)}, ${oldPos.y.toFixed(2)}, ${oldPos.z.toFixed(2)}] → [${serverPlayer.position.x.toFixed(2)}, ${serverPlayer.position.y.toFixed(2)}, ${serverPlayer.position.z.toFixed(2)}]`);
           }
           
           // Reset velocity for remote players to prevent drift from collision resolution
@@ -1439,10 +1438,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   useEffect(() => {
     if (towerSystemRef.current && socket?.id) {
       towerSystemRef.current.setPlayerMapping(serverPlayerEntities.current, socket.id);
-      console.log('🏰 Updated tower system player mapping:', {
-        playerCount: serverPlayerEntities.current.size,
-        localSocketId: socket.id
-      });
     }
   }, [players, socket?.id]);
 
@@ -1606,6 +1601,12 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       controlSystem.setDeflectCallback((position, direction) => {
         console.log('🛡️ PVP Deflect triggered - broadcasting to other players');
         broadcastPlayerAbility('deflect', position, direction);
+      });
+      
+      // Set up Skyfall callback
+      controlSystem.setSkyfallCallback((position, direction) => {
+        console.log('🌟 PVP Skyfall triggered - broadcasting to other players');
+        broadcastPlayerAbility('skyfall', position, direction);
       });
       
       // Set up Debuff callback for broadcasting freeze/slow effects

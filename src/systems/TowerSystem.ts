@@ -57,7 +57,6 @@ export class TowerSystem extends System {
       // Check if tower is dead
       if (health.isDead && !tower.isDead) {
         tower.die(currentTime);
-        console.log(`🏰 Tower ${tower.getDisplayName()} has been destroyed!`);
         continue;
       }
       
@@ -90,7 +89,6 @@ export class TowerSystem extends System {
     // Get all potential targets (players that are not the tower owner)
     const potentialTargets = this.world.queryEntities([Transform, Health, Collider]);
     
-    console.log(`🔍 Tower ${tower.getDisplayName()} searching for targets. Found ${potentialTargets.length} potential entities`);
     
     let closestTarget: Entity | null = null;
     let closestDistance = Infinity;
@@ -102,7 +100,6 @@ export class TowerSystem extends System {
       
       if (targetCollider && targetTransform) {
         const distance = towerTransform.position.distanceTo(targetTransform.position);
-        console.log(`  - Entity ${target.id}: layer=${targetCollider.layer}, distance=${distance.toFixed(2)}, hasComponent(Tower)=${target.hasComponent(Tower)}`);
       }
       
       if (!this.isValidTarget(target, towerTransform, tower)) continue;
@@ -119,21 +116,17 @@ export class TowerSystem extends System {
       }
     }
     
-    console.log(`🔍 Tower ${tower.getDisplayName()} found ${validTargetCount} valid targets`);
     
     if (closestTarget) {
       tower.setTarget(closestTarget.id);
-      console.log(`🎯 Tower ${tower.getDisplayName()} acquired target: Entity ${closestTarget.id} at distance ${closestDistance.toFixed(2)}`);
     } else if (tower.currentTarget) {
       // Clear target if no valid targets found
       tower.clearTarget();
-      console.log(`🎯 Tower ${tower.getDisplayName()} lost target - no valid targets in range`);
     }
   }
   
   private isValidTarget(target: Entity | null, towerTransform: Transform, tower: Tower): boolean {
     if (!target) {
-      console.log(`    ❌ Target is null`);
       return false;
     }
     
@@ -143,30 +136,25 @@ export class TowerSystem extends System {
     
     // Must have required components and be alive
     if (!targetHealth || !targetTransform || !targetCollider || targetHealth.isDead) {
-      console.log(`    ❌ Entity ${target.id}: Missing components or dead (health=${!!targetHealth}, transform=${!!targetTransform}, collider=${!!targetCollider}, isDead=${targetHealth?.isDead})`);
       return false;
     }
     
     // Must be a player (not an enemy or other tower)
     if (targetCollider.layer !== CollisionLayer.PLAYER && targetCollider.layer !== CollisionLayer.ENEMY) {
-      console.log(`    ❌ Entity ${target.id}: Wrong collision layer (${targetCollider.layer}), expected PLAYER(${CollisionLayer.PLAYER}) or ENEMY(${CollisionLayer.ENEMY})`);
       return false;
     }
     
     // Don't target other towers
     if (target.hasComponent(Tower)) {
-      console.log(`    ❌ Entity ${target.id}: Is a tower, skipping`);
       return false;
     }
     
     // In PVP mode, identify if this is an enemy player
     if (this.localSocketId && this.serverPlayerEntities.size > 0) {
-      console.log(`    🔍 Entity ${target.id}: PVP mode check (localSocketId=${this.localSocketId}, playerMappings=${this.serverPlayerEntities.size})`);
       
       // Check if this is the local player (PLAYER layer)
       if (targetCollider.layer === CollisionLayer.PLAYER) {
         const shouldTarget = tower.ownerId !== this.localSocketId;
-        console.log(`    ${shouldTarget ? '✅' : '❌'} Entity ${target.id}: Local player, towerOwner=${tower.ownerId}, localPlayer=${this.localSocketId}, shouldTarget=${shouldTarget}`);
         return shouldTarget;
       }
       
@@ -182,16 +170,13 @@ export class TowerSystem extends System {
         
         if (targetPlayerId) {
           const shouldTarget = tower.ownerId !== targetPlayerId;
-          console.log(`    ${shouldTarget ? '✅' : '❌'} Entity ${target.id}: Remote player ${targetPlayerId}, towerOwner=${tower.ownerId}, shouldTarget=${shouldTarget}`);
           return shouldTarget;
         }
         
-        console.log(`    ✅ Entity ${target.id}: Remote player (unidentified), targeting by default`);
         return true;
       }
     }
     
-    console.log(`    ✅ Entity ${target.id}: Fallback targeting`);
     return true;
   }
   
@@ -251,7 +236,6 @@ export class TowerSystem extends System {
         (projectileEntity as any).towerOwnerId = tower.ownerId;
       }
       
-      console.log(`🏰 Tower ${tower.getDisplayName()} fired at target Entity ${tower.currentTarget} (distance: ${distance.toFixed(2)})`);
     }
     
     // Broadcast attack to multiplayer if callback is set

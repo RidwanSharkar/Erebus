@@ -88,10 +88,7 @@ function DamageNumber({ damageData, onComplete, camera, size, stackIndex }: Dama
     x = (screenPosition.x * 0.5 + 0.5) * size.width;
     y = (screenPosition.y * -0.5 + 0.5) * size.height;
     
-    // Debug logging (remove in production)
-    if (damageData.id.endsWith('0')) { // Only log every 10th damage number to avoid spam
-      console.log(`Damage ${damageData.damage} at world pos:`, damageData.position, 'screen pos:', { x, y });
-    }
+
   } else {
     // Fallback to simple projection if camera not available
     const projectionScale = 50;

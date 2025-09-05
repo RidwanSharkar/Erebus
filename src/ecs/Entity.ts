@@ -14,7 +14,6 @@ export class Entity {
   public addComponent<T extends Component>(component: T): T {
     // Use explicit componentType if available, fallback to constructor name
     const componentName = (component as any).componentType || component.constructor.name;
-    console.log(`🔧 Adding component ${componentName} to entity ${this.id}`);
     this.components.set(componentName, component);
     return component;
   }
@@ -32,7 +31,6 @@ export class Entity {
     if (!component && (componentType as any).componentType) {
       component = this.components.get(componentType.name);
       if (component) {
-        console.log(`🔧 Found component using constructor name fallback: ${componentType.name}`);
       }
     }
     
@@ -43,7 +41,6 @@ export class Entity {
         if (comp instanceof componentType) {
           // Reduce spam - only log occasionally for instanceof fallback usage
           if (Math.random() < 0.01) { // Only log 1% of the time
-            console.log(`🔧 Found component using instanceof check: ${key} -> ${componentType.name}`);
           }
           component = comp;
           break;
@@ -55,12 +52,10 @@ export class Entity {
       const actualType = (component as any).componentType || component.constructor.name;
       if (actualType !== requestedType && !component.constructor.name.match(/^[a-z]$/)) {
         // Only warn if it's not a minified single-letter class name
-        console.warn(`🚨 Component type mismatch! Requested: ${requestedType}, Got: ${actualType}`, component);
       }
     } else {
       // Reduce spam - only log occasionally for missing components
       if (Math.random() < 0.001) { // Only log 0.1% of the time
-        console.warn(`❌ Component not found: ${requestedType}. Available components:`, Array.from(this.components.keys()));
       }
     }
     

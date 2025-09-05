@@ -53,7 +53,7 @@ export class InputManager extends EventEmitter {
     canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
     canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
     canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
-    canvas.addEventListener('wheel', this.onWheel.bind(this));
+    canvas.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     
     // Don't automatically request pointer lock - let systems handle this
@@ -201,7 +201,7 @@ export class InputManager extends EventEmitter {
     document.addEventListener('mousedown', this.onMouseDown.bind(this));
     document.addEventListener('mouseup', this.onMouseUp.bind(this));
     document.addEventListener('mousemove', this.onMouseMove.bind(this));
-    document.addEventListener('wheel', this.onWheel.bind(this));
+    document.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
 
     // Pointer lock events
     document.addEventListener('pointerlockchange', this.onPointerLockChange.bind(this));

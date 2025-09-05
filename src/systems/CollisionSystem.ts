@@ -112,7 +112,6 @@ export class CollisionSystem extends PhysicsSystem {
           // Debug logging for pillar collisions
           if ((collider.layer === 2 && otherCollider.layer === 16) || 
               (collider.layer === 16 && otherCollider.layer === 2)) {
-            console.log(`🔍 Pillar collision detected between entities ${entity.id} and ${otherEntity.id}`);
           }
           
           const pair: CollisionPair = {
@@ -217,7 +216,6 @@ export class CollisionSystem extends PhysicsSystem {
 
     // Calculate separation vector with safety checks
     if (!posA || !posA.clone || !posB || !posB.clone) {
-      console.warn('CollisionSystem: Invalid positions for collision resolution', { posA, posB });
       return;
     }
     
@@ -254,7 +252,6 @@ export class CollisionSystem extends PhysicsSystem {
       // Debug logging for pillar collisions
       if ((pair.colliderA.layer === 2 && pair.colliderB.layer === 16) || 
           (pair.colliderA.layer === 16 && pair.colliderB.layer === 2)) {
-        console.log(`🏛️ Pillar collision detected! Distance: ${distance.toFixed(2)}, Required: ${requiredSeparation.toFixed(2)}, Overlap: ${overlap.toFixed(2)}`);
       }
       
       // For static objects (like pillars), apply stronger separation to prevent penetration

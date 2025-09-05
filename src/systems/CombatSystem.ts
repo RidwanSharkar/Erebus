@@ -43,7 +43,11 @@ export class CombatSystem extends System {
   private onEnemyDamageCallback?: (enemyId: string, damage: number) => void;
   
   // PVP damage callback for routing player damage to server
-  private onPlayerDamageCallback?: (playerId: string, damage: number) => void;
+  private onPlayerDamageCallback?: (playerId: string, damage: number, damageType?: string) => void;
+
+  // Log throttling to reduce spam
+  private lastDamageLogTime = 0;
+  private damageLogThrottle = 100; // Only log every 100ms
 
   constructor(world: World) {
     super();
@@ -52,13 +56,23 @@ export class CombatSystem extends System {
     this.priority = 25; // Run after collision detection
   }
 
+  // Throttled logging to reduce spam
+  private shouldLogDamage(): boolean {
+    const now = Date.now();
+    if (now - this.lastDamageLogTime > this.damageLogThrottle) {
+      this.lastDamageLogTime = now;
+      return true;
+    }
+    return false;
+  }
+
   // Set callback for routing enemy damage to multiplayer server
   public setEnemyDamageCallback(callback: (enemyId: string, damage: number) => void): void {
     this.onEnemyDamageCallback = callback;
   }
   
   // Set callback for routing player damage to multiplayer server (PVP)
-  public setPlayerDamageCallback(callback: (playerId: string, damage: number) => void): void {
+  public setPlayerDamageCallback(callback: (playerId: string, damage: number, damageType?: string) => void): void {
     this.onPlayerDamageCallback = callback;
   }
 
@@ -173,21 +187,28 @@ export class CombatSystem extends System {
     if (!enemy && this.onPlayerDamageCallback && source && source.id !== target.id) {
       // Calculate actual damage with critical hit mechanics
       const damageResult: DamageResult = calculateDamage(baseDamage);
-      const actualDamage = damageResult.damage;
       
-      // Route player damage through multiplayer server for PVP
-      console.log(`⚔️ Routing ${actualDamage} PVP damage to player ${target.id} through multiplayer server`);
-      this.onPlayerDamageCallback(target.id.toString(), actualDamage);
+      // Route player damage through multiplayer server for PVP (let receiver handle shields)
+      if (this.shouldLogDamage()) {
+        console.log(`⚔️ Routing ${damageResult.damage} PVP ${damageType || 'damage'} to player ${target.id} through multiplayer server`);
+      }
+      this.onPlayerDamageCallback(target.id.toString(), damageResult.damage, damageType); // Send damage, let receiver handle shields
       
-      // Still create local damage numbers for immediate visual feedback
+      // Create local damage numbers for immediate visual feedback
       const transform = target.getComponent(Transform);
       if (transform) {
         const position = transform.getWorldPosition();
         // Only create damage number if position is valid
         if (position && position.x !== undefined && position.y !== undefined && position.z !== undefined) {
           position.y += 1.5;
+          
+          // Add slight position offset for delayed damage (like sabres right hit) to prevent overlap
+          if (damageType === 'sabres_right') {
+            position.x += 0.3; // Slight offset to the right for the right sabre
+          }
+          
           this.damageNumberManager.addDamageNumber(
-            actualDamage,
+            damageResult.damage, // Show the full damage in damage numbers
             damageResult.isCritical,
             position,
             damageType || 'pvp'
@@ -197,11 +218,13 @@ export class CombatSystem extends System {
         }
       }
       
-      // Log for debugging
-      const sourceName = source ? `Player ${source.id}` : 'Unknown';
-      const targetName = `Player ${target.id}`;
-      const critText = damageResult.isCritical ? ' CRITICAL' : '';
-      console.log(`⚔️ ${sourceName} dealt ${actualDamage}${critText} PVP ${damageType || 'damage'} to ${targetName} (routed to server)`);
+      // Log for debugging (throttled to reduce spam)
+      if (this.shouldLogDamage()) {
+        const sourceName = source ? `Player ${source.id}` : 'Unknown';
+        const targetName = `Player ${target.id}`;
+        const critText = damageResult.isCritical ? ' CRITICAL' : '';
+        console.log(`⚔️ ${sourceName} dealt ${damageResult.damage}${critText} PVP ${damageType || 'damage'} to ${targetName} (routed to server)`);
+      }
       
       return; // Don't apply damage locally for PVP players
     }
@@ -235,11 +258,13 @@ export class CombatSystem extends System {
         }
       }
       
-      // Log damage for debugging
-      const sourceName = source ? `Entity ${source.id}` : 'Unknown';
-      const targetName = this.getEntityDisplayName(target);
-      const critText = damageResult.isCritical ? ' CRITICAL' : '';
-      console.log(`💥 ${sourceName} dealt ${actualDamage}${critText} ${damageType || 'damage'} to ${targetName} (${health.currentHealth}/${health.maxHealth} HP)`);
+      // Log damage for debugging (throttled to reduce spam)
+      if (this.shouldLogDamage()) {
+        const sourceName = source ? `Entity ${source.id}` : 'Unknown';
+        const targetName = this.getEntityDisplayName(target);
+        const critText = damageResult.isCritical ? ' CRITICAL' : '';
+        console.log(`💥 ${sourceName} dealt ${actualDamage}${critText} ${damageType || 'damage'} to ${targetName} (${health.currentHealth}/${health.maxHealth} HP)`);
+      }
 
       // Check if target died
       if (health.isDead) {

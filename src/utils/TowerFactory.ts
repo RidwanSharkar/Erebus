@@ -96,9 +96,7 @@ export class TowerFactory {
     
     // Notify systems that the entity is ready
     this.world.notifyEntityAdded(entity);
-    
-    console.log(`🏰 Created tower for player ${config.ownerId} at position [${config.position.x.toFixed(2)}, ${config.position.y.toFixed(2)}, ${config.position.z.toFixed(2)}]`);
-    
+        
     return entity;
   }
   
@@ -232,7 +230,6 @@ export class TowerFactory {
       towers.push(tower);
     });
     
-    console.log(`🏰 Created ${towers.length} towers for PVP match with ${playerIds.length} players`);
     return towers;
   }
   
@@ -272,6 +269,6 @@ export class TowerFactory {
       }
     });
     
-    console.log(`🏰 Removed ${playerTowers.length} towers for player ${ownerId}`);
+
   }
 }

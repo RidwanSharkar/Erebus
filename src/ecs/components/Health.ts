@@ -31,8 +31,8 @@ export class Health extends Component {
     this.lastDamageTime = 0;
   }
 
-  public takeDamage(amount: number, currentTime: number = Date.now() / 1000, entity?: any): boolean {
-    if (this.isDead || this.isInvulnerable || amount <= 0) {
+  public takeDamage(amount: number, currentTime: number = Date.now() / 1000, entity?: any, bypassInvulnerability: boolean = false): boolean {
+    if (this.isDead || (!bypassInvulnerability && this.isInvulnerable) || amount <= 0) {
       return false;
     }
 

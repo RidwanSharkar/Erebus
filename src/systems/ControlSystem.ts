@@ -61,6 +61,9 @@ export class ControlSystem extends System {
   // Callback for broadcasting debuff effects in PVP
   private onDebuffCallback?: (targetEntityId: number, debuffType: 'frozen' | 'slowed', duration: number, position: Vector3) => void;
   
+  // Callback for Skyfall ability
+  private onSkyfallCallback?: (position: Vector3, direction: Vector3) => void;
+  
   // Rate limiting for projectile firing
   private lastFireTime = 0;
   private lastCrossentropyTime = 0; // Separate tracking for CrossentropyBolt
@@ -69,10 +72,10 @@ export class ControlSystem extends System {
   private lastFrostNovaTime = 0; // Separate tracking for Frost Nova ability
   private lastCobraShotTime = 0; // Separate tracking for Cobra Shot ability
   private fireRate = 0.225; // Default for bow
-  private swordFireRate = 0.75; // Slower rate for sword attacks (800ms between attacks)
+  private swordFireRate = 0.9; // Slower rate for sword attacks (800ms between attacks)
   private sabresFireRate = 0.6; // Sabres dual attack rate (600ms between attacks)
   private scytheFireRate = 0.33; // EntropicBolt rate (0.5s cooldown)
-  private crossentropyFireRate = 1.0; // CrossentropyBolt rate (1 per second)
+  private crossentropyFireRate = 2; // CrossentropyBolt rate (1 per second)
   private viperStingFireRate = 2.0; // Viper Sting rate (2 seconds cooldown)
   private reanimateFireRate = 1.5; // Reanimate rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
@@ -105,12 +108,12 @@ export class ControlSystem extends System {
   // Sword-specific states
   private swordComboStep: 1 | 2 | 3 = 1;
   private lastSwordAttackTime = 0;
-  private swordComboResetTime = 1; // Reset combo after 2.0 seconds
+  private swordComboResetTime = 1; // Reset combo after 1 seconds
   
   // Divine Storm ability state
   private isDivineStorming = false;
   private lastDivineStormTime = 0;
-  private divineStormCooldown = 10.0; // 8 second cooldown
+  private divineStormCooldown = 8.0; // 8 second cooldown
   
   // Charge ability state
   private isSwordCharging = false;
@@ -120,9 +123,19 @@ export class ControlSystem extends System {
   // Deflect ability state
   private isDeflecting = false;
   private lastDeflectTime = 0;
-  private deflectCooldown = 8.0; // 8 second cooldown
+  private deflectCooldown = 6.0; // 8 second cooldown
   private deflectDuration = 3.0; // 3 second duration
   private deflectBarrier: DeflectBarrier;
+  
+  // Skyfall ability state (Sabres)
+  private isSkyfalling = false;
+  private skyfallPhase: 'none' | 'ascending' | 'descending' | 'landing' = 'none';
+  private lastSkyfallTime = 0;
+  private skyfallCooldown = 5.0; // 4 second cooldown
+  private skyfallStartTime = 0;
+  private skyfallStartPosition = new Vector3();
+  private skyfallTargetHeight = 0;
+  private skyfallOriginalGravity = 0;
   constructor(
     camera: PerspectiveCamera, 
     inputManager: InputManager, 
@@ -166,8 +179,8 @@ export class ControlSystem extends System {
     // Handle charge movement (overrides regular movement)
     this.handleChargeMovement(playerMovement, playerTransform);
 
-    // Handle player movement input (only if not dashing, charging, or frozen)
-    if (!playerMovement.isDashing && !playerMovement.isCharging && !playerMovement.isFrozen) {
+    // Handle player movement input (only if not dashing, charging, frozen, or skyfalling)
+    if (!playerMovement.isDashing && !playerMovement.isCharging && !playerMovement.isFrozen && !this.isSkyfalling) {
       this.handleMovementInput(playerMovement);
     }
     
@@ -1048,6 +1061,10 @@ export class ControlSystem extends System {
     this.onDeflectCallback = callback;
   }
   
+  public setSkyfallCallback(callback: (position: Vector3, direction: Vector3) => void): void {
+    this.onSkyfallCallback = callback;
+  }
+  
   public setDebuffCallback(callback: (targetEntityId: number, debuffType: 'frozen' | 'slowed', duration: number, position: Vector3) => void): void {
     this.onDebuffCallback = callback;
   }
@@ -1138,6 +1155,10 @@ export class ControlSystem extends System {
   public isDeflectActive(): boolean {
     return this.isDeflecting;
   }
+  
+  public isSkyfallActive(): boolean {
+    return this.isSkyfalling;
+  }
 
   private handleSwordInput(playerTransform: Transform): void {
     // Handle sword melee attacks
@@ -1204,8 +1225,19 @@ export class ControlSystem extends System {
 
   private handleSabresInput(playerTransform: Transform): void {
     // Handle left click for dual sabre attack
-    if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging) {
+    if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isSkyfalling) {
       this.performSabresMeleeAttack(playerTransform);
+    }
+    
+    // Handle E key for Skyfall ability
+    if (this.inputManager.isKeyPressed('e') && !this.isSkyfalling) {
+      console.log('🌟 E key pressed for Skyfall - attempting to perform ability');
+      this.performSkyfall(playerTransform);
+    }
+    
+    // Update Skyfall state if active
+    if (this.isSkyfalling) {
+      this.updateSkyfallMovement(playerTransform);
     }
   }
 
@@ -1305,6 +1337,159 @@ export class ControlSystem extends System {
     }
   }
 
+  // Skyfall ability implementation
+  private performSkyfall(playerTransform: Transform): void {
+    const currentTime = Date.now() / 1000;
+    
+    // Check cooldown
+    if (currentTime - this.lastSkyfallTime < this.skyfallCooldown) {
+      console.log(`🌟 Skyfall on cooldown for ${(this.skyfallCooldown - (currentTime - this.lastSkyfallTime)).toFixed(1)}s`);
+      return;
+    }
+    
+    // Check energy cost
+    const gameUI = (window as any).gameUI;
+    if (!gameUI || !gameUI.canCastSkyfall()) {
+      console.log('🌟 Not enough energy for Skyfall (requires 40 energy)');
+      return;
+    }
+    
+    // Consume energy
+    gameUI.consumeEnergy(40);
+    
+    // Start Skyfall
+    this.isSkyfalling = true;
+    this.skyfallPhase = 'ascending';
+    this.skyfallStartTime = currentTime;
+    this.lastSkyfallTime = currentTime;
+    this.skyfallStartPosition.copy(playerTransform.position);
+    
+    // Set target height (double jump height)
+    const playerMovement = this.playerEntity?.getComponent(Movement);
+    if (playerMovement) {
+      this.skyfallOriginalGravity = playerMovement.gravity;
+      this.skyfallTargetHeight = playerTransform.position.y + (playerMovement.jumpForce * 2); // Double jump height
+      
+      console.log(`🌟 Skyfall Setup - Original Gravity: ${this.skyfallOriginalGravity}, Jump Force: ${playerMovement.jumpForce}, Start Y: ${playerTransform.position.y.toFixed(2)}, Target Y: ${this.skyfallTargetHeight.toFixed(2)}`);
+      
+      // Apply upward velocity
+      playerMovement.velocity.y = playerMovement.jumpForce * 1.8; // Stronger initial velocity
+      playerMovement.gravity = 0; // Disable gravity during ascent
+      // Don't disable canMove as it prevents all physics updates including gravity
+      // Instead we'll control horizontal movement in the ControlSystem
+      
+      console.log(`🌟 Applied velocity Y: ${playerMovement.velocity.y.toFixed(2)}, Set gravity to: ${playerMovement.gravity}`);
+    }
+    
+    console.log(`🌟 Skyfall initiated! Ascending to height ${this.skyfallTargetHeight.toFixed(2)}`);
+    
+    // Trigger callback for multiplayer/visual effects
+    if (this.onSkyfallCallback) {
+      const direction = new Vector3();
+      this.camera.getWorldDirection(direction);
+      this.onSkyfallCallback(playerTransform.position, direction);
+    }
+  }
+  
+  private updateSkyfallMovement(playerTransform: Transform): void {
+    const currentTime = Date.now() / 1000;
+    const playerMovement = this.playerEntity?.getComponent(Movement);
+    if (!playerMovement) return;
+    
+    const elapsedTime = currentTime - this.skyfallStartTime;
+    
+    // Debug logging (throttled to avoid spam)
+    if (Math.floor(elapsedTime * 4) !== Math.floor((elapsedTime - 0.25) * 4)) {
+      console.log(`🌟 Skyfall Update - Phase: ${this.skyfallPhase}, Y: ${playerTransform.position.y.toFixed(2)}, Target: ${this.skyfallTargetHeight.toFixed(2)}, Velocity Y: ${playerMovement.velocity.y.toFixed(2)}, Elapsed: ${elapsedTime.toFixed(2)}s`);
+    }
+    
+    switch (this.skyfallPhase) {
+      case 'ascending':
+        // Check if we've reached target height or started falling
+        if (playerTransform.position.y >= this.skyfallTargetHeight || playerMovement.velocity.y <= 0) {
+          this.skyfallPhase = 'descending';
+          playerMovement.velocity.y = 0; // Stop at peak
+          playerMovement.gravity = this.skyfallOriginalGravity * 30; // Faster descent
+          console.log('🌟 Skyfall: Reached peak, beginning descent');
+        }
+        break;
+        
+      case 'descending':
+        // Check if we've landed (close to original height or on ground)
+        if (playerTransform.position.y <= this.skyfallStartPosition.y + 0.5) {
+          this.skyfallPhase = 'landing';
+          this.performSkyfallLanding(playerTransform);
+        }
+        break;
+        
+      case 'landing':
+        // Landing phase complete
+        this.completeSkyfallAbility(playerTransform);
+        break;
+    }
+    
+    // Safety timeout (if something goes wrong, end after 5 seconds)
+    if (elapsedTime > 5.0) {
+      console.log('🌟 Skyfall timeout - force completing');
+      this.completeSkyfallAbility(playerTransform);
+    }
+  }
+  
+  private performSkyfallLanding(playerTransform: Transform): void {
+    console.log('🌟 Skyfall: Landing impact!');
+    
+    // Deal damage to enemies in landing area
+    const allEntities = this.world.getAllEntities();
+    const landingPosition = playerTransform.position;
+    const damageRadius = 4.0; // 4 unit radius
+    const skyfallDamage = 150; // 150 damage as requested
+    
+    let hitCount = 0;
+    
+    for (const entity of allEntities) {
+      if (entity === this.playerEntity) continue;
+      
+      const targetHealth = entity.getComponent(Health);
+      const targetTransform = entity.getComponent(Transform);
+      
+      if (!targetHealth || !targetTransform || targetHealth.isDead) continue;
+      
+      // Check distance to landing position
+      const distanceToLanding = landingPosition.distanceTo(targetTransform.position);
+      
+      if (distanceToLanding <= damageRadius) {
+        // Apply Skyfall damage
+        const combatSystem = this.world.getSystem(CombatSystem);
+        if (combatSystem) {
+          combatSystem.queueDamage(entity, skyfallDamage, this.playerEntity || undefined);
+          hitCount++;
+          console.log(`🌟 Skyfall hit target at distance ${distanceToLanding.toFixed(2)} for ${skyfallDamage} damage`);
+        }
+      }
+    }
+    
+    if (hitCount === 0) {
+      console.log('🌟 Skyfall landing missed - no targets in range');
+    } else {
+      console.log(`🌟 Skyfall landing hit ${hitCount} target(s)`);
+    }
+  }
+  
+  private completeSkyfallAbility(playerTransform: Transform): void {
+    // Reset all Skyfall states
+    this.isSkyfalling = false;
+    this.skyfallPhase = 'none';
+    
+    // Restore player movement
+    const playerMovement = this.playerEntity?.getComponent(Movement);
+    if (playerMovement) {
+      playerMovement.gravity = this.skyfallOriginalGravity;
+      playerMovement.velocity.y = 0; // Stop any remaining vertical movement
+    }
+    
+    console.log('🌟 Skyfall ability completed');
+  }
+
   private performMeleeDamage(playerTransform: Transform): void {
     // Get all entities in the world to check for enemies
     const allEntities = this.world.getAllEntities();
@@ -1320,12 +1505,12 @@ export class ControlSystem extends System {
     const meleeAngle = Math.PI / 2; // 120 degree cone (60 degrees each side)
     
     // Base damage values based on combo step - works for all subclasses
-    let baseDamage = 25; // Base sword damage
+    let baseDamage = 45; // Base sword damage
     // Combo damage scaling
     switch (this.swordComboStep) {
-      case 1: baseDamage = 25; break;
-      case 2: baseDamage = 30; break;
-      case 3: baseDamage = 40; break; // Finisher does more damage
+      case 1: baseDamage = 45; break;
+      case 2: baseDamage = 50; break;
+      case 3: baseDamage = 60; break; // Finisher does more damage
     }
     
     // Get combat system to apply damage
@@ -2175,6 +2360,22 @@ export class ControlSystem extends System {
       cooldowns['R'] = {
         current: Math.max(0, this.crossentropyFireRate - (currentTime - this.lastCrossentropyTime)),
         max: this.crossentropyFireRate,
+        isActive: false
+      };
+    } else if (this.currentWeapon === WeaponType.SABRES) {
+      cooldowns['Q'] = {
+        current: 0, // No Q ability yet
+        max: 0,
+        isActive: false
+      };
+      cooldowns['E'] = {
+        current: Math.max(0, this.skyfallCooldown - (currentTime - this.lastSkyfallTime)),
+        max: this.skyfallCooldown,
+        isActive: this.isSkyfalling
+      };
+      cooldowns['R'] = {
+        current: 0, // No R ability yet
+        max: 0,
         isActive: false
       };
     }

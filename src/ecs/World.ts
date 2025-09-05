@@ -83,7 +83,6 @@ export class World {
     // Disable pooling for components that have prototype method issues in production
     const problematicComponents = ['Health', 'HealthBar', 'Transform', 'Movement', 'Collider', 'Renderer', 'Enemy', 'Projectile', 'Animation'];
     if (problematicComponents.includes(typeName)) {
-      console.log(`Creating ${typeName} component without pooling to avoid prototype issues`);
       return new componentType();
     }
     

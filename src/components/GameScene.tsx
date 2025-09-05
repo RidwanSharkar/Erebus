@@ -180,6 +180,13 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
         }
       });
       
+      // Set up Skyfall callback
+      controlSystem.setSkyfallCallback((position, direction) => {
+        console.log('🌟 Skyfall triggered at position:', position.toArray());
+        // The actual Skyfall logic is handled by the ControlSystem
+        // This callback could be used for additional effects or sound
+      });
+      
       engine.start();
     });
 

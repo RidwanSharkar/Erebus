@@ -482,7 +482,6 @@ export default function Sword({
       
       // Safety checks
       if (!chargeStartPosition.current || !chargeDirection.current || !playerPosition) {
-        console.warn('[Charge] Missing critical references, cancelling charge');
         chargeStartTime.current = null;
         chargeStartPosition.current = null;
         onChargeComplete?.();

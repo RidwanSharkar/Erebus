@@ -113,7 +113,7 @@ export class ProjectileSystem extends System {
       if (target.id === projectileEntity.id || target.id === projectile.owner) {
         // Debug logging for owner collision prevention
         if (target.id === projectile.owner) {
-          console.log(`🚫 Projectile ${projectileEntity.id} skipping owner ${projectile.owner} (target ${target.id})`);
+          // console.log(`🚫 Projectile ${projectileEntity.id} skipping owner ${projectile.owner} (target ${target.id})`);
         }
         continue;
       }
@@ -141,7 +141,7 @@ export class ProjectileSystem extends System {
       // Additional safety check: prevent projectiles from hitting their owner in PVP mode
       // This is a backup check in case the owner comparison above fails
       if (targetCollider.layer === CollisionLayer.PLAYER && target.id === projectile.owner) {
-        console.log(`🚫 Extra safety: Projectile ${projectileEntity.id} prevented from hitting owner ${projectile.owner} (PVP mode)`);
+          // console.log(`🚫 Extra safety: Projectile ${projectileEntity.id} prevented from hitting owner ${projectile.owner} (PVP mode)`);
         continue;
       }
 
@@ -190,12 +190,7 @@ export class ProjectileSystem extends System {
         damageType = 'entropic';
       }
       
-      // Debug logging
-      if (isCrossentropyBolt) {
-        console.log('🟢 CrossEntropy bolt hit detected, using green damage numbers');
-      } else if (isEntropicBolt) {
-        console.log('⚡ Entropic bolt hit detected, using green damage numbers');
-      }
+
       
       this.combatSystem.queueDamage(target, projectile.damage, projectileEntity, damageType);
     } else {
@@ -203,11 +198,6 @@ export class ProjectileSystem extends System {
       const currentTime = Date.now() / 1000;
       const damageDealt = targetHealth.takeDamage(projectile.damage, currentTime, target);
       
-      if (damageDealt) {
-        const enemy = target.getComponent(Enemy);
-        const targetName = enemy ? enemy.getDisplayName() : `Entity ${target.id}`;
-        console.log(`💥 Bone Arrow hit ${targetName} for ${projectile.damage} damage (${targetHealth.currentHealth}/${targetHealth.maxHealth} HP)`);
-      }
     }
 
     // Handle explosion if explosive
@@ -246,7 +236,6 @@ export class ProjectileSystem extends System {
         if (explosionDamage > 0) {
           const currentTime = Date.now() / 1000;
           targetHealth.takeDamage(explosionDamage, currentTime, target);
-          console.log(`💥 Explosion hit target ${target.id} for ${explosionDamage} damage`);
         }
       }
     }
@@ -412,8 +401,6 @@ export class ProjectileSystem extends System {
     
     projectileEntity.addComponent(renderer);
 
-    console.log(`⚔️ Created CrossentropyBolt projectile ${projectileEntity.id} at`, position, 'moving', direction);
-    console.log(`📊 Active projectiles: ${this.world.queryEntities([Transform, Projectile]).length}`);
     
     // Notify systems that the entity is ready
     this.world.notifyEntityAdded(projectileEntity);
@@ -491,9 +478,7 @@ export class ProjectileSystem extends System {
     
     projectileEntity.addComponent(renderer);
 
-    console.log(`⚡ Created EntropicBolt projectile ${projectileEntity.id} at`, position, 'moving', direction);
-    console.log(`📊 Active projectiles: ${this.world.queryEntities([Transform, Projectile]).length}`);
-    
+
     // Notify systems that the entity is ready
     this.world.notifyEntityAdded(projectileEntity);
     
@@ -584,9 +569,6 @@ export class ProjectileSystem extends System {
     collider.radius = 0.15;
     collider.layer = CollisionLayer.PROJECTILE;
     projectileEntity.addComponent(collider);
-
-    console.log(`🚀 Created projectile ${projectileEntity.id} at`, position, 'moving', direction, `(owner: ${ownerId})`);
-    console.log(`📊 Active projectiles: ${this.world.queryEntities([Transform, Projectile]).length}`);
     
     // Notify systems that the entity is ready (this will trigger RenderSystem.onEntityAdded)
     this.world.notifyEntityAdded(projectileEntity);
@@ -594,16 +576,7 @@ export class ProjectileSystem extends System {
     return projectileEntity;
   }
 
-  // Clean up projectile resources when entity is removed
-  public onEntityRemoved(entity: Entity): void {
-    const projectile = entity.getComponent(Projectile);
-    if (projectile) {
-      console.log(`💥 Destroying projectile ${entity.id} (lifetime: ${projectile.lifetime.toFixed(2)}s)`);
-      console.log(`📊 Remaining projectiles: ${this.world.queryEntities([Transform, Projectile]).length - 1}`);
-    }
-    
-    // No special cleanup needed for RegularArrow - React components handle their own lifecycle
-  }
+
 
   // Get pool statistics for debugging
   public getPoolStats(): { 

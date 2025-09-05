@@ -81,11 +81,11 @@ export default function GameUI({
     }
   }, [currentWeapon, maxMana]);
 
-  // Energy regeneration for Bow (14 energy per second)
+  // Energy regeneration for Bow and Sabres (14 energy per second)
   useEffect(() => {
-    if (currentWeapon === WeaponType.BOW) {
+    if (currentWeapon === WeaponType.BOW || currentWeapon === WeaponType.SABRES) {
       const interval = setInterval(() => {
-        setCurrentEnergy(prev => Math.min(maxEnergy, prev + 7)); // 20 energy per second = 10 every 500ms
+        setCurrentEnergy(prev => Math.min(maxEnergy, prev + 7)); // 14 energy per second = 7 every 500ms
       }, 500);
       
       return () => clearInterval(interval);
@@ -120,8 +120,8 @@ export default function GameUI({
       setCurrentMana(maxMana);
       setCurrentEnergy(maxEnergy);
       setLastSwordDamageTime(Date.now()); // Reset damage timer when switching to sword
-    } else if (currentWeapon === WeaponType.BOW) {
-      // Bow - uses energy system
+    } else if (currentWeapon === WeaponType.BOW || currentWeapon === WeaponType.SABRES) {
+      // Bow and Sabres - use energy system
       setCurrentEnergy(maxEnergy);
       setCurrentMana(maxMana);
       setCurrentRage(0);
@@ -135,9 +135,9 @@ export default function GameUI({
     }
   };
 
-  // Function to consume energy (for bow abilities)
+  // Function to consume energy (for bow and sabres abilities)
   const consumeEnergy = (amount: number) => {
-    if (currentWeapon === WeaponType.BOW) {
+    if (currentWeapon === WeaponType.BOW || currentWeapon === WeaponType.SABRES) {
       setCurrentEnergy(prev => Math.max(0, prev - amount));
     }
   };
@@ -184,7 +184,9 @@ export default function GameUI({
       // Bow energy abilities
       canCastBarrage: () => currentEnergy >= 40,
       canCastCobraShot: () => currentEnergy >= 40,
-      canCastViperSting: () => currentEnergy >= 60
+      canCastViperSting: () => currentEnergy >= 60,
+      // Sabres energy abilities
+      canCastSkyfall: () => currentEnergy >= 40
     };
   }, [currentMana, currentEnergy, currentRage, currentWeapon]);
 
@@ -209,6 +211,7 @@ export default function GameUI({
           />
         );
       case WeaponType.BOW:
+      case WeaponType.SABRES:
         return (
           <ResourceBar
             current={currentEnergy}

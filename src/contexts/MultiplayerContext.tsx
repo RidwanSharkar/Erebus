@@ -85,7 +85,7 @@ interface MultiplayerContextType {
   broadcastPlayerAttack: (attackType: string, position: { x: number; y: number; z: number }, direction: { x: number; y: number; z: number }, animationData?: { comboStep?: 1 | 2 | 3; chargeProgress?: number; isSpinning?: boolean; isPerfectShot?: boolean; damage?: number; targetId?: number; hitPosition?: { x: number; y: number; z: number }; isSwordCharging?: boolean }) => void;
   broadcastPlayerAbility: (abilityType: string, position: { x: number; y: number; z: number }, direction?: { x: number; y: number; z: number }, target?: string) => void;
   broadcastPlayerEffect: (effect: any) => void;
-  broadcastPlayerDamage: (targetPlayerId: string, damage: number) => void;
+  broadcastPlayerDamage: (targetPlayerId: string, damage: number, damageType?: string) => void;
   broadcastPlayerAnimationState: (animationState: { isCharging?: boolean; chargeProgress?: number; isSwinging?: boolean; swordComboStep?: 1 | 2 | 3; isDivineStorming?: boolean; isSpinning?: boolean; isDeflecting?: boolean; isSwordCharging?: boolean; isViperStingCharging?: boolean; viperStingChargeProgress?: number; isBarrageCharging?: boolean; barrageChargeProgress?: number }) => void;
   broadcastPlayerDebuff: (targetPlayerId: string, debuffType: 'frozen' | 'slowed', duration: number, effectData?: any) => void;
   
@@ -284,43 +284,65 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
-    // Enemy event handlers
+    // Enemy event handlers (only for multiplayer mode)
     newSocket.on('enemy-spawned', (data) => {
       console.log('👹 Enemy spawned:', data.enemy);
-      setEnemies(prev => {
-        const updated = new Map(prev);
-        updated.set(data.enemy.id, data.enemy);
-        return updated;
+      // Only process enemy events in multiplayer mode, not PVP
+      setGameMode(currentMode => {
+        if (currentMode === 'pvp') {
+          console.log('🚫 Ignoring enemy spawn in PVP mode');
+          return currentMode;
+        }
+        setEnemies(prev => {
+          const updated = new Map(prev);
+          updated.set(data.enemy.id, data.enemy);
+          return updated;
+        });
+        return currentMode;
       });
     });
 
     newSocket.on('enemy-damaged', (data) => {
-      setEnemies(prev => {
-        const updated = new Map(prev);
-        const enemy = updated.get(data.enemyId);
-        if (enemy) {
-          updated.set(data.enemyId, {
-            ...enemy,
-            health: data.newHealth,
-            isDying: data.wasKilled
-          });
+      // Only process enemy events in multiplayer mode, not PVP
+      setGameMode(currentMode => {
+        if (currentMode === 'pvp') {
+          return currentMode;
         }
-        return updated;
+        setEnemies(prev => {
+          const updated = new Map(prev);
+          const enemy = updated.get(data.enemyId);
+          if (enemy) {
+            updated.set(data.enemyId, {
+              ...enemy,
+              health: data.newHealth,
+              isDying: data.wasKilled
+            });
+          }
+          return updated;
+        });
+        return currentMode;
       });
     });
 
     newSocket.on('enemy-moved', (data) => {
-      setEnemies(prev => {
-        const updated = new Map(prev);
-        const enemy = updated.get(data.enemyId);
-        if (enemy) {
-          updated.set(data.enemyId, {
-            ...enemy,
-            position: data.position,
-            rotation: data.rotation
-          });
+      // Only process enemy events in multiplayer mode, not PVP
+      setGameMode(currentMode => {
+        if (currentMode === 'pvp') {
+          return currentMode;
         }
-        return updated;
+        setEnemies(prev => {
+          const updated = new Map(prev);
+          const enemy = updated.get(data.enemyId);
+          if (enemy) {
+            updated.set(data.enemyId, {
+              ...enemy,
+              position: data.position,
+              rotation: data.rotation
+            });
+          }
+          return updated;
+        });
+        return currentMode;
       });
     });
 
@@ -568,12 +590,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const broadcastPlayerDamage = useCallback((targetPlayerId: string, damage: number) => {
+  const broadcastPlayerDamage = useCallback((targetPlayerId: string, damage: number, damageType?: string) => {
     if (socket && currentRoomId) {
       socket.emit('player-damage', {
         roomId: currentRoomId,
         targetPlayerId,
-        damage
+        damage,
+        damageType
       });
     }
   }, [socket, currentRoomId]);
