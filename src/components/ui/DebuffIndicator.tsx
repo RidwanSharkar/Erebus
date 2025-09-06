@@ -24,7 +24,6 @@ export default function DebuffIndicator({
 
   useEffect(() => {
     const timeout = setTimeout(() => {
-      console.log(`🎯 Debuff indicator (${debuffType}) completed after`, duration, 'ms');
       if (onComplete) onComplete();
     }, duration);
 
@@ -42,7 +41,6 @@ export default function DebuffIndicator({
 
     // Safety check: if effect has exceeded its duration, trigger completion
     if (progress >= 1 && onComplete) {
-      console.log(`🎯 Debuff indicator (${debuffType}) exceeded duration, forcing completion`);
       onComplete();
       return;
     }

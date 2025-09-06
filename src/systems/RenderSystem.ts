@@ -34,7 +34,7 @@ export class RenderSystem extends BaseRenderSystem {
       if (typeof rendererComponent.updateAnimations === 'function') {
         rendererComponent.updateAnimations(deltaTime);
       } else {
-        console.warn('⚠️ Renderer component missing updateAnimations method:', rendererComponent);
+        // console.warn('⚠️ Renderer component missing updateAnimations method:', rendererComponent);
       }
 
       // Update mesh if needed
@@ -81,7 +81,7 @@ export class RenderSystem extends BaseRenderSystem {
       if (typeof rendererComponent.updateMesh === 'function') {
         rendererComponent.updateMesh();
       } else {
-        console.warn('⚠️ Renderer component missing updateMesh method:', rendererComponent);
+        // console.warn('⚠️ Renderer component missing updateMesh method:', rendererComponent);
       }
     }
   }
@@ -107,11 +107,11 @@ export class RenderSystem extends BaseRenderSystem {
   public onEntityAdded(entity: Entity): void {
     const rendererComponent = entity.getComponent(Renderer);
     if (rendererComponent) {
-      console.log(`🎨 RenderSystem: Adding entity ${entity.id} to scene`);
+      // console.log(`🎨 RenderSystem: Adding entity ${entity.id} to scene`);
       
       // Handle pre-built mesh/group (like arrows and elite enemies)
       if (rendererComponent.mesh) {
-        console.log(`🏹 Adding pre-built mesh/group for entity ${entity.id}`);
+        // console.log(`🏹 Adding pre-built mesh/group for entity ${entity.id}`);
         this.meshMap.set(entity.id, rendererComponent.mesh);
         this.scene.add(rendererComponent.mesh);
         return;
@@ -119,17 +119,17 @@ export class RenderSystem extends BaseRenderSystem {
       
       // Handle traditional geometry + material
       if (rendererComponent.geometry && rendererComponent.material) {
-        console.log(`🔷 Creating mesh from geometry + material for entity ${entity.id}`);
+        // console.log(`🔷 Creating mesh from geometry + material for entity ${entity.id}`);
         const mesh = rendererComponent.createMesh();
         if (mesh) {
           this.meshMap.set(entity.id, mesh);
           this.scene.add(mesh);
         }
       } else {
-        console.log(`⚪ Entity ${entity.id} has Renderer but no geometry/material - skipping mesh creation`);
+        // console.log(`⚪ Entity ${entity.id} has Renderer but no geometry/material - skipping mesh creation`);
       }
     } else {
-      console.log(`⚠️ RenderSystem: Entity ${entity.id} has no Renderer component`);
+      // console.log(`⚠️ RenderSystem: Entity ${entity.id} has no Renderer component`);
     }
   }
 

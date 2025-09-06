@@ -28,11 +28,6 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
   const duration = isPerfectShot ? 200 : 166; // Perfect shots last slightly longer
   const fadeStartTime = useRef<number | null>(null);
   
-  // Debug logging for perfect shots
-  if (isPerfectShot) {
-    console.log('⚡ BowPowershot: Rendering PERFECT SHOT with enhanced effects!');
-  }
-  
   // Determine colors based on subclass and unlock status
   const getColors = () => {
     if (subclass === WeaponSubclass.VENOM) {

@@ -46,7 +46,6 @@ export default function RoomJoin({ onJoinSuccess, currentWeapon, currentSubclass
       return;
     }
     
-    console.log('Previewing room:', roomId.trim());
     setPreviewLoading(true);
     previewRoom(roomId.trim());
     setShowPreview(true);

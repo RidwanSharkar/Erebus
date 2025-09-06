@@ -97,7 +97,6 @@ export function OptimizedPVPCobraShotManager({
               player.position.z
             );
             
-            console.log(`🐍 Cobra Shot projectile ${projectile.id} hit player ${player.id}, applying venom effect at target position:`, venomPosition.toArray());
             onPlayerVenomed(player.id, venomPosition);
             
             // Release the Vector3 back to pool after use
@@ -187,7 +186,6 @@ export function OptimizedPVPBarrageManager({
               player.position.z
             );
             
-            console.log(`🏹 Barrage projectile ${projectileEntity.id} hit player ${player.id}, applying slow effect at target position:`, slowPosition.toArray());
             onPlayerSlowed(player.id, slowPosition);
             
             // Release the Vector3 back to pool
@@ -272,7 +270,6 @@ export function OptimizedPVPFrostNovaManager({
               player.position.z
             );
             
-            console.log(`❄️ FrostNova ${frostNova.id} hit player ${player.id}, applying freeze effect at target position:`, freezePosition.toArray());
             onPlayerFrozen(player.id, freezePosition);
             
             // Release the Vector3 back to pool

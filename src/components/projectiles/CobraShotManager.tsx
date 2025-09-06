@@ -35,12 +35,8 @@ let globalCobraShotTrigger: ((position: Vector3, direction: Vector3) => void) | 
 let globalCobraShotProjectilePool: (() => CobraShotProjectile[]) | null = null;
 
 export function triggerGlobalCobraShot(position: Vector3, direction: Vector3): void {
-  console.log('🐍 triggerGlobalCobraShot called!', { position: position.toArray(), direction: direction.toArray() });
   if (globalCobraShotTrigger) {
-    console.log('🐍 Calling globalCobraShotTrigger');
     globalCobraShotTrigger(position, direction);
-  } else {
-    console.warn('🐍 globalCobraShotTrigger is null - CobraShotManager may not be mounted');
   }
 }
 
@@ -89,11 +85,10 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
   }, []);
 
   const shootCobraShot = useCallback((position: Vector3, direction: Vector3) => {
-    console.log('🐍 shootCobraShot called!', { position: position.toArray(), direction: direction.toArray() });
     
     const projectile = getInactiveProjectile();
     if (!projectile) {
-      console.log('🐍 No available Cobra Shot projectiles in pool');
+      // console.log('🐍 No available Cobra Shot projectiles in pool');
       return;
     }
 
@@ -109,11 +104,6 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
     projectile.opacity = 1;
     projectile.fadeStartTime = null;
 
-    console.log('🐍 Cobra Shot fired!', {
-      position: position.toArray(),
-      direction: direction.toArray(),
-      projectileId: projectile.id
-    });
 
     // Create beam effect for visual impact
     createBeamEffect(position, direction);
@@ -136,7 +126,6 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
       startTime: Date.now()
     };
     venomEffects.current.push(effect);
-    console.log('☠️ Venom effect created at', position.toArray());
   }, []);
 
   const removeVenomEffect = useCallback((id: number) => {
@@ -151,7 +140,6 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
       startTime: Date.now()
     };
     beamEffects.current.push(beam);
-    console.log('🐍 Cobra Shot beam effect created at', position.toArray());
   }, []);
 
   const removeBeamEffect = useCallback((id: number) => {
@@ -175,10 +163,6 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
       // Check distance traveled
       const distanceTraveled = projectile.position.distanceTo(projectile.startPosition);
       
-      // Debug: Log projectile movement every 30 frames (~0.5 seconds)
-      if (Math.floor(elapsed / 16) % 30 === 0) {
-        console.log(`🐍 Cobra Shot projectile ${projectile.id} at distance ${distanceTraveled.toFixed(2)} / ${MAX_DISTANCE}`);
-      }
       
       // Start fading when approaching max distance
       if (distanceTraveled > MAX_DISTANCE * 0.8 && !projectile.fadeStartTime) {
@@ -194,7 +178,6 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
           projectile.active = false;
           projectile.opacity = 1;
           projectile.fadeStartTime = null;
-          console.log('🐍 Cobra Shot projectile deactivated (max distance/fade)');
           return;
         }
       }
@@ -218,13 +201,11 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
           const combatSystem = world.getSystem(CombatSystem);
           if (combatSystem) {
             combatSystem.queueDamage(entity, DAMAGE, undefined, 'cobra_shot');
-            console.log(`🐍 Cobra Shot hit ${enemy.getDisplayName()} for ${DAMAGE} damage`);
           }
 
           // Apply venom debuff
           const currentGameTime = Date.now() / 1000;
           enemy.applyVenom(VENOM_DURATION, VENOM_DAMAGE_PER_SECOND, currentGameTime);
-          console.log(`☠️ Applied venom to ${enemy.getDisplayName()} (${VENOM_DAMAGE_PER_SECOND} DPS for ${VENOM_DURATION}s)`);
 
           // Create persistent venom effect on enemy using global manager
           addGlobalVenomousEnemy(entity.id.toString(), transform.position);
@@ -236,7 +217,6 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
           projectile.active = false;
           projectile.opacity = 1;
           projectile.fadeStartTime = null;
-          console.log('🐍 Cobra Shot projectile deactivated (hit enemy)');
         }
       });
     });
@@ -256,7 +236,6 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
       if (venomStatus.shouldDealDamage && combatSystem) {
         // Deal venom damage
         combatSystem.queueDamage(entity, venomStatus.damage, undefined, 'venom');
-        console.log(`☠️ Venom dealt ${venomStatus.damage} damage to ${enemy.getDisplayName()}`);
         
         // Create venom effect animation every second (one-time pulse effect)
         createVenomEffect(transform.position);

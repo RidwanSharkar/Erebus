@@ -396,7 +396,7 @@ export class ProjectileSystem extends System {
     if (typeof renderer.setCastShadow === 'function') {
       renderer.setCastShadow(false);
     } else {
-      console.warn('⚠️ Renderer component missing setCastShadow method:', renderer);
+      // console.warn('⚠️ Renderer component missing setCastShadow method:', renderer);
     }
     
     projectileEntity.addComponent(renderer);
@@ -473,7 +473,7 @@ export class ProjectileSystem extends System {
     if (typeof renderer.setCastShadow === 'function') {
       renderer.setCastShadow(false);
     } else {
-      console.warn('⚠️ Renderer component missing setCastShadow method:', renderer);
+      // console.warn('⚠️ Renderer component missing setCastShadow method:', renderer);
     }
     
     projectileEntity.addComponent(renderer);
@@ -559,7 +559,7 @@ export class ProjectileSystem extends System {
     if (typeof renderer.setCastShadow === 'function') {
       renderer.setCastShadow(false); // Projectiles don't need to cast shadows
     } else {
-      console.warn('⚠️ Renderer component missing setCastShadow method:', renderer);
+      // console.warn('⚠️ Renderer component missing setCastShadow method:', renderer);
     }
     
     projectileEntity.addComponent(renderer);
@@ -589,7 +589,6 @@ export class ProjectileSystem extends System {
 
   // Dispose of all pools when system is destroyed
   public onDisable(): void {
-    console.log('🧹 Cleaning up ProjectileSystem pools:', this.getPoolStats());
     this.vector3Pool.clear();
   }
 }

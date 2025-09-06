@@ -28,7 +28,6 @@ export default function DeflectShield({
     if (isActive) {
       startTime.current = Date.now();
       animationProgress.current = 0;
-      console.log('🛡️ Deflect shield activated!');
     } else {
       startTime.current = null;
       animationProgress.current = 0;
@@ -111,7 +110,6 @@ export default function DeflectShield({
 
     // Complete when duration is reached
     if (progress >= 1) {
-      console.log('🛡️ Deflect shield duration complete');
       onComplete?.();
     }
   });

@@ -160,7 +160,6 @@ export class EnemyFactory {
       if (typeof health.enableRegeneration === 'function') {
         health.enableRegeneration(10, 2); // Fast regeneration for training dummy
       } else {
-        console.error('Health component missing enableRegeneration method - object pooling issue', health);
         // Fallback: manually set regeneration properties
         health.canRegenerate = true;
         health.regenerationRate = 10;
@@ -203,14 +202,10 @@ export class EnemyFactory {
     
     if (typeof renderer.setCastShadow === 'function') {
       renderer.setCastShadow(true);
-    } else {
-      console.warn('⚠️ Renderer component missing setCastShadow method:', renderer);
-    }
+    } 
     
     if (typeof renderer.setReceiveShadow === 'function') {
       renderer.setReceiveShadow(true);
-    } else {
-      console.warn('⚠️ Renderer component missing setReceiveShadow method:', renderer);
     }
     entity.addComponent(renderer);
 
@@ -242,12 +237,6 @@ export class EnemyFactory {
       entity.addComponent(healthBar);
     }
 
-    console.log(`🏭 Created ${enemy.getDisplayName()} (${spawnConfig.type}) at position:`, spawnConfig.position);
-    console.log(`🎨 Renderer setup for ${spawnConfig.type}:`, {
-      hasMesh: !!renderer.mesh,
-      hasGeometry: !!renderer.geometry,
-      hasMaterial: !!renderer.material
-    });
     
     // Notify systems that the entity is ready
     this.world.notifyEntityAdded(entity);

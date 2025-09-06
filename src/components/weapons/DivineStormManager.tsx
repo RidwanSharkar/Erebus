@@ -31,7 +31,6 @@ export function triggerGlobalDivineStorm(position: Vector3, playerId?: string, d
   };
   
   globalDivineStormEffects.push(effect);
-  console.log('⚡ Global Divine Storm triggered at position:', position.toArray(), 'duration:', duration + 'ms', 'ID:', effect.id);
   return effect.id;
 }
 

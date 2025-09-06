@@ -43,7 +43,6 @@ export default function ExplosionManager({ world }: ExplosionManagerProps) {
       };
       
       setActiveExplosions(prev => [...prev, newExplosion]);
-      console.log(`💥 Created optimized explosion effect (${newExplosion.duration}s) at position:`, event.position);
     }
 
     // Clear processed events

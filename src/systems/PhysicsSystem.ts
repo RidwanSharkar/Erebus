@@ -32,7 +32,7 @@ export class PhysicsSystem extends BasePhysicsSystem {
       if (typeof movement.updateDebuffs === 'function') {
         movement.updateDebuffs();
       } else {
-        console.warn('⚠️ Movement component missing updateDebuffs method:', movement);
+        // console.warn('⚠️ Movement component missing updateDebuffs method:', movement);
       }
 
       this.updateMovement(transform, movement, deltaTime);

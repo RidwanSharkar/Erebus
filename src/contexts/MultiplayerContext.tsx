@@ -303,11 +303,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     // Enemy event handlers (only for multiplayer mode)
     newSocket.on('enemy-spawned', (data) => {
-      console.log('👹 Enemy spawned:', data.enemy);
       // Only process enemy events in multiplayer mode, not PVP
       setGameMode(currentMode => {
         if (currentMode === 'pvp') {
-          console.log('🚫 Ignoring enemy spawn in PVP mode');
           return currentMode;
         }
         setEnemies(prev => {
@@ -364,34 +362,31 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     newSocket.on('kill-count-updated', (data) => {
-      console.log('💀 Kill count updated:', data);
       setKillCount(data.killCount);
     });
 
     newSocket.on('game-started', (data) => {
-      console.log('🎮 Game started:', data);
       setGameStarted(true);
       setKillCount(data.killCount);
     });
 
     newSocket.on('room-preview', (data) => {
-      console.log('👀 Room preview:', data);
       setCurrentPreview(data);
     });
 
     // Player action event handlers
     newSocket.on('player-attack', (data) => {
-      console.log('⚔️ Player attack received:', data);
+      // console.log('⚔️ Player attack received:', data);
       // This will be handled by the game scene to trigger animations
     });
 
     newSocket.on('player-used-ability', (data) => {
-      console.log('✨ Player ability received:', data);
+      // console.log('✨ Player ability received:', data);
       // This will be handled by the game scene to trigger ability effects
     });
 
     newSocket.on('player-effect', (data) => {
-      console.log('💫 Player effect received:', data);
+      // console.log('💫 Player effect received:', data);
       // This will be handled by the game scene to show visual effects
     });
 
@@ -402,7 +397,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     // Tower event handlers
     newSocket.on('tower-spawned', (data) => {
-      console.log('🏰 Tower spawned:', data.tower);
+      // console.log('🏰 Tower spawned:', data.tower);
       setTowers(prev => {
         const updated = new Map(prev);
         updated.set(data.tower.id, data.tower);
@@ -426,7 +421,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     newSocket.on('tower-destroyed', (data) => {
-      console.log('💥 Tower destroyed:', data.towerId);
+      // console.log('💥 Tower destroyed:', data.towerId);
       setTowers(prev => {
         const updated = new Map(prev);
         const tower = updated.get(data.towerId);
@@ -565,7 +560,6 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         direction,
         target
       });
-      console.log('🔍 DEBUG: Emitted player-ability event to server');
     } else {
       console.log('🔍 DEBUG: Cannot broadcast - missing socket or roomId');
     }

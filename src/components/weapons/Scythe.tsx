@@ -234,14 +234,14 @@ export default function Scythe({
   // Debug: Log when empowerment changes
   useEffect(() => {
     if (isEmpowered) {
-      console.log('[Scythe] Legion empowerment activated - showing green trails');
+      // console.log('[Scythe] Legion empowerment activated - showing green trails');
     }
   }, [isEmpowered]);
 
   // Debug: Log spinning state changes
   useEffect(() => {
     if (isSpinning) {
-      console.log('[Scythe] Spinning animation started');
+      // console.log('[Scythe] Spinning animation started');
     }
   }, [isSpinning]);
 

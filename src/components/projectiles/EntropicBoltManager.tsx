@@ -56,7 +56,6 @@ export default function EntropicBoltManager({ world }: EntropicBoltManagerProps)
             direction: direction.clone(),
             entityId: entity.id
           });
-          console.log(`⚡ Created new EntropicBolt visual for entity ${entity.id}`);
         }
       }
     }
@@ -83,7 +82,6 @@ export default function EntropicBoltManager({ world }: EntropicBoltManagerProps)
           onImpact={() => {
             // Visual component lifecycle - just remove from visual state
             // ECS system handles all collision detection and damage
-            console.log(`⚡ EntropicBolt visual ${bolt.id} expired`);
             setActiveBolts(prev => prev.filter(b => b.id !== bolt.id));
           }}
         />

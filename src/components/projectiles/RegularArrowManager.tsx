@@ -56,7 +56,6 @@ export default function RegularArrowManager({ world }: RegularArrowManagerProps)
             direction: direction.clone(),
             entityId: entity.id
           });
-          console.log(`🏹 Created new RegularArrow visual for entity ${entity.id}`);
         }
       }
     }
@@ -69,7 +68,7 @@ export default function RegularArrowManager({ world }: RegularArrowManagerProps)
   });
 
   const handleArrowImpact = (arrowId: number) => {
-    console.log(`🏹 RegularArrow ${arrowId} impact handled`);
+   // console.log(`🏹 RegularArrow ${arrowId} impact handled`);
     // Impact effects could be added here
   };
 

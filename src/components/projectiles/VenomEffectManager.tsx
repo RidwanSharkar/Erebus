@@ -71,7 +71,6 @@ export default function VenomEffectManager({ world }: VenomEffectManagerProps) {
     };
     
     setVenomousEnemies(prev => [...prev, newVenomousEnemy]);
-    console.log('☠️ Created venom effect for enemy:', enemyId, 'at position:', position);
   }, []);
 
   // Register global manager

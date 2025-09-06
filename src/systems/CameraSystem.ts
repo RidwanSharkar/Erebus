@@ -217,7 +217,6 @@ export class CameraSystem extends System {
     if (targetTransform.position.x === undefined || 
         targetTransform.position.y === undefined || 
         targetTransform.position.z === undefined) {
-      console.warn('CameraSystem: Target position is not properly initialized, skipping snapToTarget');
       return;
     }
 

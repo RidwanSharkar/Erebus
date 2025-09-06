@@ -33,7 +33,6 @@ export default function FrozenEffect({
 
   useEffect(() => {
     const timeout = setTimeout(() => {
-      console.log('❄️ Frozen effect completed after', duration, 'ms for enemy', enemyId);
       if (onComplete) onComplete();
     }, duration);
 
@@ -51,7 +50,6 @@ export default function FrozenEffect({
 
     // Safety check: if effect has exceeded its duration, trigger completion
     if (progress >= 1 && onComplete) {
-      console.log('❄️ Frozen effect exceeded duration, forcing completion for enemy', enemyId);
       onComplete();
       return;
     }

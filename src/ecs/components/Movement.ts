@@ -148,7 +148,6 @@ export class Movement extends Component {
     if (this.isFrozen && currentTime >= this.frozenUntil) {
       this.isFrozen = false;
       this.frozenUntil = 0;
-      console.log('🧊 Player unfrozen');
     }
     
     // Check slowed state
@@ -156,7 +155,6 @@ export class Movement extends Component {
       this.isSlowed = false;
       this.slowedUntil = 0;
       this.movementSpeedMultiplier = 1.0;
-      console.log('🐌 Player no longer slowed');
     }
   }
 

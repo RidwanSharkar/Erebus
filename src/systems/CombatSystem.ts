@@ -146,7 +146,6 @@ export class CombatSystem extends System {
     if (damageType === 'charge') {
       const enemy = target.getComponent(Enemy);
       const entityType = enemy ? `Enemy(${enemy.getDisplayName()})` : `Player(${target.id})`;
-      console.log(`⚔️ CombatSystem processing charge damage: ${baseDamage} to ${entityType}, source: ${source?.id}, hasPlayerCallback: ${!!this.onPlayerDamageCallback}`);
     }
 
     // Check if target is an enemy - if so, route damage through multiplayer
@@ -157,7 +156,7 @@ export class CombatSystem extends System {
       const actualDamage = damageResult.damage;
       
       // Route enemy damage through multiplayer server instead of applying locally
-      console.log(`🌐 Routing ${actualDamage} damage to enemy ${target.id} through multiplayer server`);
+      // console.log(`🌐 Routing ${actualDamage} damage to enemy ${target.id} through multiplayer server`);
       this.onEnemyDamageCallback(target.id.toString(), actualDamage);
       
       // Still create local damage numbers for immediate visual feedback
@@ -177,7 +176,6 @@ export class CombatSystem extends System {
       const sourceName = source ? `Entity ${source.id}` : 'Unknown';
       const targetName = this.getEntityDisplayName(target);
       const critText = damageResult.isCritical ? ' CRITICAL' : '';
-      console.log(`💥 ${sourceName} dealt ${actualDamage}${critText} ${damageType || 'damage'} to ${targetName} (routed to server)`);
       
       return; // Don't apply damage locally for enemies
     }
@@ -190,7 +188,7 @@ export class CombatSystem extends System {
       
       // Route player damage through multiplayer server for PVP (let receiver handle shields)
       if (this.shouldLogDamage()) {
-        console.log(`⚔️ Routing ${damageResult.damage} PVP ${damageType || 'damage'} to player ${target.id} through multiplayer server`);
+        // console.log(`⚔️ Routing ${damageResult.damage} PVP ${damageType || 'damage'} to player ${target.id} through multiplayer server`);
       }
       this.onPlayerDamageCallback(target.id.toString(), damageResult.damage, damageType); // Send damage, let receiver handle shields
       
@@ -214,7 +212,7 @@ export class CombatSystem extends System {
             damageType || 'pvp'
           );
         } else {
-          console.warn('⚠️ Skipping PVP damage number creation - invalid position:', position);
+          // console.warn('⚠️ Skipping PVP damage number creation - invalid position:', position);
         }
       }
       
@@ -223,7 +221,7 @@ export class CombatSystem extends System {
         const sourceName = source ? `Player ${source.id}` : 'Unknown';
         const targetName = `Player ${target.id}`;
         const critText = damageResult.isCritical ? ' CRITICAL' : '';
-        console.log(`⚔️ ${sourceName} dealt ${damageResult.damage}${critText} PVP ${damageType || 'damage'} to ${targetName} (routed to server)`);
+        // console.log(`⚔️ ${sourceName} dealt ${damageResult.damage}${critText} PVP ${damageType || 'damage'} to ${targetName} (routed to server)`);
       }
       
       return; // Don't apply damage locally for PVP players
@@ -254,7 +252,7 @@ export class CombatSystem extends System {
             damageType
           );
         } else {
-          console.warn('⚠️ Skipping damage number creation - invalid position:', position);
+          // console.warn('⚠️ Skipping damage number creation - invalid position:', position);
         }
       }
       
@@ -263,7 +261,7 @@ export class CombatSystem extends System {
         const sourceName = source ? `Entity ${source.id}` : 'Unknown';
         const targetName = this.getEntityDisplayName(target);
         const critText = damageResult.isCritical ? ' CRITICAL' : '';
-        console.log(`💥 ${sourceName} dealt ${actualDamage}${critText} ${damageType || 'damage'} to ${targetName} (${health.currentHealth}/${health.maxHealth} HP)`);
+        // console.log(`💥 ${sourceName} dealt ${actualDamage}${critText} ${damageType || 'damage'} to ${targetName} (${health.currentHealth}/${health.maxHealth} HP)`);
       }
 
       // Check if target died
@@ -291,7 +289,7 @@ export class CombatSystem extends System {
       // Log healing for debugging
       const sourceName = source ? `Entity ${source.id}` : 'Unknown';
       const targetName = this.getEntityDisplayName(target);
-      console.log(`💚 ${sourceName} healed ${targetName} for ${amount} HP (${health.currentHealth}/${health.maxHealth} HP)`);
+      // console.log(`💚 ${sourceName} healed ${targetName} for ${amount} HP (${health.currentHealth}/${health.maxHealth} HP)`);
 
       // Trigger healing effects
       this.triggerHealingEffects(target, amount, source);
@@ -305,7 +303,7 @@ export class CombatSystem extends System {
       enemy.die(currentTime || Date.now() / 1000);
       this.enemiesKilled++;
       
-      console.log(`💀 ${enemy.getDisplayName()} has been defeated!`);
+      // console.log(`💀 ${enemy.getDisplayName()} has been defeated!`);
       
       // Award experience to killer if it's a player
       if (killer) {
@@ -338,7 +336,7 @@ export class CombatSystem extends System {
     enemy.respawn();
     health.revive();
     
-    console.log(`🔄 ${enemy.getDisplayName()} has respawned!`);
+    // console.log(`🔄 ${enemy.getDisplayName()} has respawned!`);
     
     // Trigger respawn effects
     this.triggerRespawnEffects(entity);
@@ -353,18 +351,18 @@ export class CombatSystem extends System {
       // Could trigger damage number popup, blood effects, etc.
       // For now, just log the position where damage occurred
       const critText = isCritical ? ' (CRITICAL)' : '';
-      console.log(`🎯 Damage effect${critText} at position:`, transform.position);
+      // console.log(`🎯 Damage effect${critText} at position:`, transform.position);
     }
 
     // Handle special projectile effects
     if (damageType === 'projectile' && source) {
       const sourceRenderer = source.getComponent(Renderer);
       if (sourceRenderer?.mesh?.userData?.isBarrageArrow) {
-        console.log(`🏹 Barrage arrow hit detected, applying slow effect to target ${target.id}`);
+        // console.log(`🏹 Barrage arrow hit detected, applying slow effect to target ${target.id}`);
         const targetMovement = target.getComponent(Movement);
         if (targetMovement) {
           targetMovement.slow(5000, 0.5); // 5 seconds, 50% speed
-          console.log(`🐌 Applied 50% slow for 5 seconds to target ${target.id}`);
+          // console.log(`🐌 Applied 50% slow for 5 seconds to target ${target.id}`);
         }
       }
     }
@@ -374,7 +372,7 @@ export class CombatSystem extends System {
     // This can be extended to trigger healing particle effects
     const transform = target.getComponent(Transform);
     if (transform) {
-      console.log(`✨ Healing effect at position:`, transform.position);
+      // console.log(`✨ Healing effect at position:`, transform.position);
     }
   }
 
@@ -382,7 +380,7 @@ export class CombatSystem extends System {
     // This can be extended to trigger death animations, loot drops, etc.
     const transform = entity.getComponent(Transform);
     if (transform) {
-      console.log(`💀 Death effect at position:`, transform.position);
+      // console.log(`💀 Death effect at position:`, transform.position);
     }
   }
 
@@ -390,13 +388,13 @@ export class CombatSystem extends System {
     // This can be extended to trigger respawn animations, effects, etc.
     const transform = entity.getComponent(Transform);
     if (transform) {
-      console.log(`🌟 Respawn effect at position:`, transform.position);
+      // console.log(`🌟 Respawn effect at position:`, transform.position);
     }
   }
 
   private awardExperience(entity: Entity, experience: number): void {
     // This would integrate with a progression system
-    console.log(`⭐ Entity ${entity.id} gained ${experience} experience!`);
+    // console.log(`⭐ Entity ${entity.id} gained ${experience} experience!`);
   }
 
   private getEntityDisplayName(entity: Entity): string {

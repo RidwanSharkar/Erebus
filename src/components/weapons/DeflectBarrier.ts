@@ -95,8 +95,6 @@ export class DeflectBarrier {
     };
 
     this.entity.addComponent(collider);
-
-    console.log('🛡️ Deflect barrier activated at position:', barrierPosition);
   }
 
   public deactivate(): void {
@@ -105,8 +103,6 @@ export class DeflectBarrier {
     this.world.destroyEntity(this.entity.id);
     this.entity = null;
     this.isActive = false;
-
-    console.log('🛡️ Deflect barrier deactivated');
   }
 
   private handleProjectileCollision(projectileEntity: Entity): void {
@@ -116,8 +112,6 @@ export class DeflectBarrier {
 
     const projectileTransform = projectileEntity.getComponent(Transform);
     if (!projectileTransform) return;
-
-    console.log('🛡️ Deflect barrier hit by projectile!');
 
     // Calculate reflection direction
     const projectilePos = projectileTransform.getWorldPosition();
@@ -141,8 +135,6 @@ export class DeflectBarrier {
     
     // Reset lifetime to give it more time to travel back
     projectileComponent.lifetime = 0;
-    
-    console.log('🔄 Projectile reflected! New velocity:', reflectedVelocity);
   }
 
   public isBarrierActive(): boolean {

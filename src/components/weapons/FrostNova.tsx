@@ -23,7 +23,6 @@ export default function FrostNova({
 
   useEffect(() => {
     const timeout = setTimeout(() => {
-      console.log('❄️ Frost Nova effect completed after', duration, 'ms');
       if (onComplete) onComplete();
     }, duration);
 
@@ -41,7 +40,6 @@ export default function FrostNova({
 
     // Safety check: if effect has exceeded its duration, trigger completion
     if (progress >= 1 && onComplete) {
-      console.log('❄️ Frost Nova effect exceeded duration, forcing completion');
       onComplete();
       return;
     }

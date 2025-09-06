@@ -44,8 +44,6 @@ const PillarCollision: React.FC<PillarCollisionProps> = ({ world, positions }) =
       // Notify world that entity is ready
       world.notifyEntityAdded(entity);
       entities.push(entity);
-
-      console.log(`🏛️ Created pillar collision entity at position [${position.join(', ')}] with radius ${collider.radius}`);
     });
 
     collisionEntitiesRef.current = entities;

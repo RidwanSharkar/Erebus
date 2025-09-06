@@ -95,7 +95,6 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
     };
     
     setActiveFrostNovas(prev => [...prev, newFrostNova]);
-    console.log('❄️ Created Frost Nova effect at position:', position);
   }, []);
 
   const addFrozenEnemy = useCallback((enemyId: string, position: Vector3) => {
@@ -108,7 +107,6 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
     };
     
     setFrozenEnemies(prev => [...prev, newFrozenEnemy]);
-    console.log('❄️ Created frozen effect for enemy:', enemyId, 'at position:', position);
   }, []);
 
   const getActiveFrostNovas = useCallback(() => {
@@ -162,14 +160,12 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
         // First check: Has the effect duration expired?
         const effectElapsed = now - frozenEnemy.startTime;
         if (effectElapsed >= frozenEnemy.duration) {
-          console.log(`❄️ Removing expired frozen effect for enemy ${frozenEnemy.enemyId} (duration: ${effectElapsed}ms)`);
           return false; // Remove expired effects
         }
 
         // Second check: Does the entity still exist?
         const entity = allEntities.find(e => e.id.toString() === frozenEnemy.enemyId);
         if (!entity) {
-          console.log(`❄️ Removing frozen effect for non-existent enemy ${frozenEnemy.enemyId}`);
           return false; // Entity no longer exists
         }
         
@@ -178,13 +174,11 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
         
         // Third check: Is the entity still valid?
         if (!enemy || !health) {
-          console.log(`❄️ Removing frozen effect for invalid enemy ${frozenEnemy.enemyId}`);
           return false;
         }
 
         // Fourth check: Is the enemy dead?
         if (health.isDead) {
-          console.log(`❄️ Removing frozen effect for dead enemy ${frozenEnemy.enemyId}`);
           return false; // Enemy is dead
         }
         
@@ -198,7 +192,6 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
       return prev.filter(frostNova => {
         const effectElapsed = now - frostNova.startTime;
         if (effectElapsed >= frostNova.duration) {
-          console.log(`❄️ Removing expired frost nova explosion effect (duration: ${effectElapsed}ms)`);
           return false;
         }
         return true;

@@ -32,7 +32,6 @@ export function triggerGlobalDeflectShield(position: Vector3, rotation: Vector3,
   };
   
   globalDeflectShieldEffects.push(effect);
-  console.log('🛡️ Global Deflect Shield triggered at position:', position.toArray(), 'ID:', effect.id);
   return effect.id;
 }
 

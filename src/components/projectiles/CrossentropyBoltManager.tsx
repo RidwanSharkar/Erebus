@@ -56,7 +56,6 @@ export default function CrossentropyBoltManager({ world }: CrossentropyBoltManag
             direction: direction.clone(),
             entityId: entity.id
           });
-          console.log(`⚔️ Created new CrossentropyBolt visual for entity ${entity.id}`);
         }
       }
     }
@@ -83,7 +82,6 @@ export default function CrossentropyBoltManager({ world }: CrossentropyBoltManag
           onImpact={() => {
             // Visual component lifecycle - just remove from visual state
             // ECS system handles all collision detection and damage
-            console.log(`⚔️ CrossentropyBolt visual ${bolt.id} expired`);
             setActiveBolts(prev => prev.filter(b => b.id !== bolt.id));
           }}
         />
