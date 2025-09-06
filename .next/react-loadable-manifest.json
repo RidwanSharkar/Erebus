@@ -22,7 +22,8 @@
       "static/chunks/game-systems.js",
       "static/chunks/game-components.js",
       "static/chunks/vendor.js",
-      "static/chunks/_app-pages-browser_src_utils_DamageNumberManager_ts-_app-pages-browser_src_utils_EventEmitter-49baae.js"
+      "static/chunks/_app-pages-browser_src_utils_DamageNumberManager_ts-_app-pages-browser_src_utils_EventEmitter-49baae.js",
+      "static/chunks/_app-pages-browser_src_utils_PVPObjectPool_ts-_app-pages-browser_src_utils_PVPStateBatcher_ts.js"
     ]
   },
   "app/page.tsx -> @react-three/fiber": {

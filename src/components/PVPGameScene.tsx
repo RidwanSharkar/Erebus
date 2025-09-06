@@ -38,6 +38,14 @@ import ViperStingManager from '@/components/projectiles/ViperStingManager';
 import VenomEffect from '@/components/projectiles/VenomEffect';
 import DebuffIndicator from '@/components/ui/DebuffIndicator';
 import FrozenEffect from '@/components/weapons/FrozenEffect';
+import { 
+  OptimizedPVPCobraShotManager, 
+  OptimizedPVPBarrageManager, 
+  OptimizedPVPFrostNovaManager,
+  useOptimizedPVPEffects 
+} from '@/components/pvp/OptimizedPVPManagers';
+import { pvpObjectPool } from '@/utils/PVPObjectPool';
+import { pvpStateBatcher, PVPStateUpdateHelpers } from '@/utils/PVPStateBatcher';
 import DivineStormManager, { triggerGlobalDivineStorm } from '@/components/weapons/DivineStormManager';
 import DeflectShieldManager, { triggerGlobalDeflectShield } from '@/components/weapons/DeflectShieldManager';
 import PlayerHealthBar from '@/components/ui/PlayerHealthBar';
@@ -73,171 +81,11 @@ interface PVPFrostNovaManagerProps {
   localSocketId?: string;
 }
 
-function PVPCobraShotManager({ world, players, onPlayerHit, onPlayerVenomed, serverPlayerEntities, localSocketId }: PVPCobraShotManagerProps) {
-  // This component monitors visual Cobra Shot projectiles and checks for hits against PVP players
-  useFrame(() => {
-    // Get visual Cobra Shot projectiles from the CobraShotManager
-    const { getGlobalCobraShotProjectiles } = require('@/components/projectiles/CobraShotManager');
-    const cobraShotProjectiles = getGlobalCobraShotProjectiles();
-    
-    // Check each active Cobra Shot projectile for player hits
-    cobraShotProjectiles.forEach((projectile: CobraShotProjectile) => {
-      if (!projectile.active) return;
-      
-      const projectilePos = projectile.position;
-      
-      // Check collision with PVP players (only check players that are NOT the local player)
-      players.forEach(player => {
-        // Skip if this is the local player (they can't hit themselves)
-        if (player.id === localSocketId) {
-          return; // Don't hit yourself
-        }
-        
-        const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
-        const distance = projectilePos.distanceTo(playerPos);
-        
-        if (distance <= 1.5) { // Hit radius
-          // Convert player ID to number for hit tracking (consistent with CobraShotProjectile type)
-          const playerIdNum = parseInt(player.id) || player.id.length; // Convert to number
-          
-          // Check if we haven't already hit this player
-          if (!projectile.hitEnemies.has(playerIdNum)) {
-            projectile.hitEnemies.add(playerIdNum);
-            onPlayerHit(player.id, 29); // Cobra Shot damage
-            
-            // Apply venom effect at the HIT player's position (not the caster)
-            onPlayerVenomed(player.id, playerPos.clone());
-            
-            // Mark projectile as inactive to stop further hits
-            projectile.active = false;
-            projectile.fadeStartTime = Date.now();
-          }
-        }
-      });
-    });
-  });
-  
-  return null; // This is a logic-only component
-}
+// Old PVP managers removed - using optimized versions with object pooling
 
-function PVPBarrageManager({ world, players, onPlayerHit, onPlayerSlowed, serverPlayerEntities, localSocketId }: PVPBarrageManagerProps) {
-  // This component monitors ECS Barrage projectiles and checks for hits against PVP players
-  const hitTracker = useRef<Set<string>>(new Set()); // Track hits to prevent multiple hits per projectile per player
-  
-  useFrame(() => {
-    if (!world) return;
-    
-    // Get all projectile entities from the world
-    const allEntities = world.getAllEntities();
-    const projectileEntities = allEntities.filter(entity => 
-      entity.hasComponent(Projectile) && entity.hasComponent(Transform) && entity.hasComponent(Renderer)
-    );
-    
-    // Check each Barrage projectile for player hits
-    projectileEntities.forEach(projectileEntity => {
-      const renderer = projectileEntity.getComponent(Renderer);
-      const transform = projectileEntity.getComponent(Transform);
-      const projectile = projectileEntity.getComponent(Projectile);
-      
-      // Only check Barrage arrows
-      if (!renderer?.mesh?.userData?.isBarrageArrow || !transform || !projectile) return;
-      
-      const projectilePos = transform.position;
-      
-      // Check collision with PVP players (only check players that are NOT the local player)
-      players.forEach(player => {
-        // Skip if this is the local player (they can't hit themselves)
-        if (player.id === localSocketId) {
-          return; // Don't hit yourself
-        }
-        
-        const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
-        const distance = projectilePos.distanceTo(playerPos);
-        
-        if (distance <= 1.25) { // Hit radius
-          // Create unique hit key to prevent multiple hits
-          const hitKey = `${projectileEntity.id}-${player.id}`;
-          
-          // Check if we haven't already hit this player with this projectile
-          const playerEntityId = serverPlayerEntities.current.get(player.id);
-          if (playerEntityId && !projectile.hasHitTarget(playerEntityId) && !hitTracker.current.has(hitKey)) {
-            projectile.addHitTarget(playerEntityId);
-            hitTracker.current.add(hitKey);
-            
-            onPlayerHit(player.id, 30); // Barrage damage
-            
-            // Apply slow effect at the HIT player's position (50% speed reduction for 5 seconds)
-            onPlayerSlowed(player.id, playerPos.clone());
-            
-            // Clean up hit tracker after a delay to prevent memory leaks
-            setTimeout(() => {
-              hitTracker.current.delete(hitKey);
-            }, 10000); // Clean up after 10 seconds
-          }
-        }
-      });
-    });
-  });
-  
-  return null; // This is a logic-only component
-}
+// Old PVPBarrageManager removed - using optimized version
 
-function PVPFrostNovaManager({ world, players, onPlayerHit, onPlayerFrozen, serverPlayerEntities, localSocketId }: PVPFrostNovaManagerProps) {
-  // This component monitors FrostNova effects and checks for hits against PVP players
-  const frostNovaHitTracker = useRef<Set<string>>(new Set()); // Track hits to prevent multiple hits per frost nova per player
-  const lastUpdateTime = useRef(0);
-  
-  useFrame(() => {
-    if (!world) return;
-    
-    // Throttle updates to avoid excessive checking
-    const now = Date.now();
-    if (now - lastUpdateTime.current < 50) return; // Update every 50ms
-    lastUpdateTime.current = now;
-    
-    // Get active frost nova effects from the FrostNovaManager
-    const { getActiveFrostNovas } = require('@/components/weapons/FrostNovaManager');
-    const activeFrostNovas = getActiveFrostNovas ? getActiveFrostNovas() : [];
-    
-    // Check each active frost nova for player hits
-    activeFrostNovas.forEach((frostNova: any) => {
-      // Check collision with PVP players (only check players that are NOT the local player)
-      players.forEach(player => {
-        // Skip if this is the local player (they can't hit themselves)
-        if (player.id === localSocketId) {
-          return; // Don't hit yourself
-        }
-        
-        const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
-        const frostNovaPos = frostNova.position;
-        const distance = frostNovaPos.distanceTo(playerPos);
-        const frostNovaRadius = 6.0; // Same radius as ControlSystem
-        
-        if (distance <= frostNovaRadius) {
-          // Create unique hit key to prevent multiple hits
-          const hitKey = `${frostNova.id}-${player.id}`;
-          
-          // Check if we haven't already hit this player with this frost nova
-          if (!frostNovaHitTracker.current.has(hitKey)) {
-            frostNovaHitTracker.current.add(hitKey);
-            
-            onPlayerHit(player.id, 50); // FrostNova damage
-            
-            // Apply freeze effect at the HIT player's position
-            onPlayerFrozen(player.id, playerPos.clone());
-            
-            // Clean up hit tracker after a delay to prevent memory leaks
-            setTimeout(() => {
-              frostNovaHitTracker.current.delete(hitKey);
-            }, 7000); // Clean up after 10 seconds
-          }
-        }
-      });
-    });
-  });
-  
-  return null; // This is a logic-only component
-}
+// Old PVPFrostNovaManager removed - using optimized version
 
 import { DamageNumberData } from '@/components/DamageNumbers';
 import { setGlobalCriticalRuneCount, setGlobalCritDamageRuneCount } from '@/core/DamageCalculator';
@@ -449,7 +297,13 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       duration
     };
     
-    setPvpDebuffEffects(prev => [...prev, debuffEffect]);
+    // Use batched updates for debuff effects
+    PVPStateUpdateHelpers.batchEffectUpdates([{
+      type: 'add',
+      effectType: 'debuff',
+      setter: setPvpDebuffEffects,
+      data: debuffEffect
+    }]);
     
     // Apply the debuff to the local player's movement if this is targeting us
     if (isLocalPlayer && playerEntity) {
@@ -463,9 +317,14 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       }
     }
     
-    // Clean up debuff effect after duration
+    // Clean up debuff effect after duration using batched updates
     setTimeout(() => {
-      setPvpDebuffEffects(prev => prev.filter(effect => effect.id !== debuffEffect.id));
+      PVPStateUpdateHelpers.batchEffectUpdates([{
+        type: 'remove',
+        effectType: 'debuff',
+        setter: setPvpDebuffEffects,
+        filterId: debuffEffect.id
+      }]);
     }, debuffEffect.duration);
   }, [socket?.id, playerEntity]);
 
@@ -499,11 +358,22 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       duration: 1500 // 1.5 seconds reanimate duration (matches Reanimate component)
     };
     
-    setPvpReanimateEffects(prev => [...prev, reanimateEffect]);
+    // Use batched updates for reanimate effects
+    PVPStateUpdateHelpers.batchEffectUpdates([{
+      type: 'add',
+      effectType: 'reanimate',
+      setter: setPvpReanimateEffects,
+      data: reanimateEffect
+    }]);
     
-    // Clean up reanimate effect after duration
+    // Clean up reanimate effect after duration using batched updates
     setTimeout(() => {
-      setPvpReanimateEffects(prev => prev.filter(effect => effect.id !== reanimateEffect.id));
+      PVPStateUpdateHelpers.batchEffectUpdates([{
+        type: 'remove',
+        effectType: 'reanimate',
+        setter: setPvpReanimateEffects,
+        filterId: reanimateEffect.id
+      }]);
       console.log(`🌿 PVP reanimate effect expired for player ${playerId}`);
     }, reanimateEffect.duration);
   }, []);
@@ -520,11 +390,22 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       duration: 1200 // 1.2 seconds frost nova duration (matches FrostNovaManager)
     };
     
-    setPvpFrostNovaEffects(prev => [...prev, frostNovaEffect]);
+    // Use batched updates for frost nova effects
+    PVPStateUpdateHelpers.batchEffectUpdates([{
+      type: 'add',
+      effectType: 'frostNova',
+      setter: setPvpFrostNovaEffects,
+      data: frostNovaEffect
+    }]);
     
-    // Clean up frost nova effect after duration
+    // Clean up frost nova effect after duration using batched updates
     setTimeout(() => {
-      setPvpFrostNovaEffects(prev => prev.filter(effect => effect.id !== frostNovaEffect.id));
+      PVPStateUpdateHelpers.batchEffectUpdates([{
+        type: 'remove',
+        effectType: 'frostNova',
+        setter: setPvpFrostNovaEffects,
+        filterId: frostNovaEffect.id
+      }]);
       console.log(`❄️ PVP frost nova effect expired for player ${playerId}`);
     }, frostNovaEffect.duration);
   }, []);
@@ -548,7 +429,13 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       duration: 6000 // 6 seconds venom duration
     };
     
-    setPvpVenomEffects(prev => [...prev, venomEffect]);
+    // Use batched updates for venom effects
+    PVPStateUpdateHelpers.batchEffectUpdates([{
+      type: 'add',
+      effectType: 'venom',
+      setter: setPvpVenomEffects,
+      data: venomEffect
+    }]);
     
     // Apply DoT damage over time
     const venomDamagePerSecond = 17;
@@ -569,9 +456,14 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       }
     }, tickInterval);
     
-    // Clean up venom effect after duration
+    // Clean up venom effect after duration using batched updates
     setTimeout(() => {
-      setPvpVenomEffects(prev => prev.filter(effect => effect.id !== venomEffect.id));
+      PVPStateUpdateHelpers.batchEffectUpdates([{
+        type: 'remove',
+        effectType: 'venom',
+        setter: setPvpVenomEffects,
+        filterId: venomEffect.id
+      }]);
     }, venomEffect.duration);
   }, [socket?.id, broadcastPlayerDamage]);
   
@@ -627,6 +519,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   
   // Perfect shot system
   const { createPowershotEffect } = useBowPowershot();
+  
+  // Optimized PVP effects with object pooling
+  const { createOptimizedVenomEffect, createOptimizedDebuffEffect, getPoolStats } = useOptimizedPVPEffects();
 
   // Set up PVP event listeners for player actions and damage
   useEffect(() => {
@@ -756,8 +651,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           // Create a projectile that can damage the local player
           const projectileSystem = engineRef.current.getWorld().getSystem(ProjectileSystem);
           if (projectileSystem) {
-            const position = new Vector3(data.position.x, data.position.y, data.position.z);
-            const direction = new Vector3(data.direction.x, data.direction.y, data.direction.z);
+            // Use pooled Vector3 objects for better performance
+            const position = pvpObjectPool.acquireVector3(data.position.x, data.position.y, data.position.z);
+            const direction = pvpObjectPool.acquireVector3(data.direction.x, data.direction.y, data.direction.z);
             
             // Get the attacker's local ECS entity ID (if it exists) or use a unique negative ID
             const attackerEntityId = serverPlayerEntities.current.get(data.playerId) || -Math.abs(data.playerId.length * 1000 + Date.now() % 1000);
@@ -827,52 +723,31 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                 }
                 break;
             }
+            
+            // Release pooled Vector3 objects back to pool after use
+            pvpObjectPool.releaseVector3(position);
+            pvpObjectPool.releaseVector3(direction);
           }
         }
         
-        // Update the player state to show attack animation
-        setMultiplayerPlayerStates(prev => {
-          const updated = new Map(prev);
-          const currentState = updated.get(data.playerId) || {
-            isCharging: false,
-            chargeProgress: 0,
-            isSwinging: false,
-            swordComboStep: 1 as 1 | 2 | 3,
-            isDivineStorming: false,
-            isSpinning: false,
-            isSwordCharging: false,
-            isDeflecting: false,
-            isViperStingCharging: false,
-            viperStingChargeProgress: 0,
-            isBarrageCharging: false,
-            barrageChargeProgress: 0,
-            isCobraShotCharging: false,
-            cobraShotChargeProgress: 0
-          };
-          
-          // If there's already an active animation, we'll override it with the new one
-          // This prevents animation stacking and ensures clean transitions
-          
-          // Extract animation data from the attack
-          const animationData = data.animationData || {};
-          
-          // Store the animation update time to check against later
-          const animationUpdateTime = Date.now();
-          
-          updated.set(data.playerId, {
-            ...currentState,
+        // Update the player state to show attack animation using batched updates
+        const animationData = data.animationData || {};
+        const animationUpdateTime = Date.now();
+        
+        PVPStateUpdateHelpers.batchPlayerStateUpdates(setMultiplayerPlayerStates, [{
+          playerId: data.playerId,
+          stateUpdate: {
             isSwinging: data.attackType.includes('swing') || (data.attackType.includes('sword') && !data.attackType.includes('charge')),
             isCharging: data.attackType.includes('bow') && data.attackType.includes('charge'),
             isSpinning: data.attackType.includes('scythe') || data.attackType.includes('entropic_bolt') || data.attackType.includes('crossentropy_bolt') || data.attackType.includes('sword_charge_spin') || animationData.isSpinning || false,
             isSwordCharging: data.attackType === 'sword_charge_spin' || data.attackType === 'sword_charge_start' || animationData.isSpinning || animationData.isSwordCharging || false,
-            swordComboStep: animationData.comboStep || currentState.swordComboStep,
+            swordComboStep: animationData.comboStep || 1,
             chargeProgress: animationData.chargeProgress || 0,
-            isSkyfalling: (currentState as any).isSkyfalling || false,
-            isBackstabbing: (currentState as any).isBackstabbing || false,
             lastAttackType: data.attackType,
             lastAttackTime: animationUpdateTime,
             lastAnimationUpdate: animationUpdateTime
-          });
+          }
+        }]);
           
           // Get the player's weapon and subclass for proper animation timing
           const player = players.get(data.playerId);
@@ -934,26 +809,18 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             }
           }
           
+          // Schedule animation reset using batched updates
           setTimeout(() => {
-            setMultiplayerPlayerStates(prev => {
-              const updated = new Map(prev);
-              const state = updated.get(data.playerId);
-              if (state && state.lastAnimationUpdate === animationUpdateTime) {
-                // Only reset if this timeout corresponds to the most recent animation update
-                updated.set(data.playerId, {
-                  ...state,
-                  isSwinging: false,
-                  isCharging: false,
-                  isSpinning: false,
-                  isSwordCharging: false
-                });
+            PVPStateUpdateHelpers.batchPlayerStateUpdates(setMultiplayerPlayerStates, [{
+              playerId: data.playerId,
+              stateUpdate: {
+                isSwinging: false,
+                isCharging: false,
+                isSpinning: false,
+                isSwordCharging: false
               }
-              return updated;
-            });
+            }]);
           }, resetDuration);
-          
-          return updated;
-        });
       }
     };
 
@@ -966,55 +833,32 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           console.log('⚡ Handling Divine Storm ability from player', data.playerId);
           
           // Trigger visual Divine Storm effect at the player's position
-          const position = new Vector3(data.position.x, data.position.y, data.position.z);
+          const position = pvpObjectPool.acquireVector3(data.position.x, data.position.y, data.position.z);
           triggerGlobalDivineStorm(position, data.playerId);
           
-          setMultiplayerPlayerStates(prev => {
-            const updated = new Map(prev);
-            const currentState = updated.get(data.playerId) || {
-              isCharging: false,
-              chargeProgress: 0,
-              isSwinging: false,
-              swordComboStep: 1 as 1 | 2 | 3,
-              isDivineStorming: false,
-              isSpinning: false,
-              isSwordCharging: false,
-              isDeflecting: false,
-              isViperStingCharging: false,
-              viperStingChargeProgress: 0,
-              isBarrageCharging: false,
-              barrageChargeProgress: 0,
-              isCobraShotCharging: false,
-              cobraShotChargeProgress: 0,
-              isSkyfalling: false,
-              isBackstabbing: false
-            };
-            
-            updated.set(data.playerId, {
-              ...currentState,
+          // Release pooled Vector3 after use
+          pvpObjectPool.releaseVector3(position);
+          
+          // Use batched updates for Divine Storm animation
+          PVPStateUpdateHelpers.batchPlayerStateUpdates(setMultiplayerPlayerStates, [{
+            playerId: data.playerId,
+            stateUpdate: {
               isDivineStorming: true,
               isSpinning: true, // Enable spinning animation for Divine Storm
               isSwordCharging: false
-            });
-            
-            // Reset Divine Storm state after duration
-            setTimeout(() => {
-              setMultiplayerPlayerStates(prev => {
-                const updated = new Map(prev);
-                const state = updated.get(data.playerId);
-                if (state) {
-                  updated.set(data.playerId, {
-                    ...state,
-                    isDivineStorming: false,
-                    isSpinning: false // Reset spinning animation
-                  });
-                }
-                return updated;
-              });
-            }, 4000); // Divine Storm lasts 3 seconds
-            
-            return updated;
-          });
+            }
+          }]);
+          
+          // Reset Divine Storm state after duration using batched updates
+          setTimeout(() => {
+            PVPStateUpdateHelpers.batchPlayerStateUpdates(setMultiplayerPlayerStates, [{
+              playerId: data.playerId,
+              stateUpdate: {
+                isDivineStorming: false,
+                isSpinning: false // Reset spinning animation
+              }
+            }]);
+          }, 4000); // Divine Storm lasts 4 seconds
         } else if (data.abilityType === 'viper_sting') {
           console.log('🐍 Handling Viper Sting ability from player', data.playerId);
           
@@ -2084,6 +1928,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       if (engineRef.current) {
         engineRef.current.destroy();
       }
+      // Clear any pending batched updates
+      pvpStateBatcher.clear();
     };
   }, [scene, camera, gl, gameStarted]);
 
@@ -2096,12 +1942,24 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   // Game loop integration with React Three Fiber
   useFrame((state, deltaTime) => {
     if (engineRef.current && engineRef.current.isEngineRunning() && gameStarted) {
+      // Reset object pool temporary objects for this frame
+      pvpObjectPool.resetFrameTemporaries();
+      
+      // Collect all state updates to batch them
+      const stateUpdates: Array<{
+        setter: React.Dispatch<React.SetStateAction<any>>;
+        value: any;
+      }> = [];
+      
       // Update player position for dragon renderer
       if (playerEntity) {
         const transform = playerEntity.getComponent(Transform);
         if (transform && transform.position) {
           const newPosition = transform.position.clone();
-          setPlayerPosition(newPosition);
+          stateUpdates.push({
+            setter: setPlayerPosition,
+            value: newPosition
+          });
           
           // Update Viper Sting parent ref with current position and camera rotation
           viperStingParentRef.current.position.copy(newPosition);
@@ -2160,7 +2018,10 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           };
         }
         
-        setWeaponState(newWeaponState);
+        stateUpdates.push({
+          setter: setWeaponState,
+          value: newWeaponState
+        });
         
         // Broadcast animation state changes to other players (throttled to avoid spam)
         const now = Date.now();
@@ -2212,6 +2073,17 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         onCameraUpdate(camera, size);
       }
 
+      // Log object pool and state batcher statistics periodically (every 5 seconds)
+      const now = Date.now();
+      if (now % 5000 < 16) { // Approximately every 5 seconds (accounting for frame rate)
+        const poolStats = getPoolStats();
+        const batcherStats = pvpStateBatcher.getStats();
+        console.log('🔧 PVP Performance Stats:', {
+          objectPool: poolStats,
+          stateBatcher: batcherStats
+        });
+      }
+
       // Update game state for UI
       if (onGameStateUpdate && playerEntity && controlSystemRef.current) {
         const healthComponent = playerEntity.getComponent(Health);
@@ -2230,6 +2102,11 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           // Update multiplayer health
           updatePlayerHealth(healthComponent.currentHealth, healthComponent.maxHealth);
         }
+      }
+      
+      // Batch all collected state updates at the end of the frame
+      if (stateUpdates.length > 0) {
+        PVPStateUpdateHelpers.batchGameStateUpdates(stateUpdates);
       }
     }
   });
@@ -2505,8 +2382,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             }}
           />
           <DeflectShieldManager />
-          {/* PVP-specific Cobra Shot Manager that can hit players */}
-          <PVPCobraShotManager 
+          {/* Optimized PVP-specific Cobra Shot Manager with Object Pooling */}
+          <OptimizedPVPCobraShotManager 
             world={engineRef.current.getWorld()}
             players={Array.from(players.values())} // Include all players, filtering is done inside the component
             serverPlayerEntities={serverPlayerEntities}
@@ -2518,14 +2395,16 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
               }
             }}
             onPlayerVenomed={(playerId: string, position: Vector3) => {
-              createPvpVenomEffect(playerId, position);
+              // Clone the position since it comes from the pool and will be released
+              const clonedPosition = position.clone();
+              createPvpVenomEffect(playerId, clonedPosition);
               
               // Broadcast venom effect to all players so they can see it
               if (broadcastPlayerEffect) {
                 broadcastPlayerEffect({
                   type: 'venom',
                   targetPlayerId: playerId,
-                  position: { x: position.x, y: position.y, z: position.z },
+                  position: { x: clonedPosition.x, y: clonedPosition.y, z: clonedPosition.z },
                   duration: 6000
                 });
                 console.log(`☠️ Broadcasting venom effect for player ${playerId}`);
@@ -2533,8 +2412,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             }}
           />
           
-          {/* PVP-specific Barrage Manager that can hit players with slow effect */}
-          <PVPBarrageManager 
+          {/* Optimized PVP-specific Barrage Manager with Object Pooling */}
+          <OptimizedPVPBarrageManager 
             world={engineRef.current.getWorld()}
             players={Array.from(players.values())}
             serverPlayerEntities={serverPlayerEntities}
@@ -2546,12 +2425,14 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
               }
             }}
             onPlayerSlowed={(playerId: string, position: Vector3) => {
-              createPvpDebuffEffect(playerId, 'slowed', position, 5000); // 5 second slow
+              // Clone the position since it comes from the pool and will be released
+              const clonedPosition = position.clone();
+              createPvpDebuffEffect(playerId, 'slowed', clonedPosition, 5000); // 5 second slow
               
               // Broadcast debuff effect to all players so they can see it
               if (broadcastPlayerDebuff) {
                 broadcastPlayerDebuff(playerId, 'slowed', 5000, {
-                  position: { x: position.x, y: position.y, z: position.z },
+                  position: { x: clonedPosition.x, y: clonedPosition.y, z: clonedPosition.z },
                   speedMultiplier: 0.5
                 });
                 console.log(`🐌 Broadcasting slow effect for player ${playerId}`);
@@ -2559,8 +2440,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             }}
           />
           
-          {/* PVP-specific FrostNova Manager that can hit players with freeze effect */}
-          <PVPFrostNovaManager 
+          {/* Optimized PVP-specific FrostNova Manager with Object Pooling */}
+          <OptimizedPVPFrostNovaManager 
             world={engineRef.current.getWorld()}
             players={Array.from(players.values())}
             serverPlayerEntities={serverPlayerEntities}
@@ -2572,7 +2453,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
               }
             }}
             onPlayerFrozen={(playerId: string, position: Vector3) => {
-              createPvpFrozenEffect(playerId, position);
+              // Clone the position since it comes from the pool and will be released
+              const clonedPosition = position.clone();
+              createPvpFrozenEffect(playerId, clonedPosition);
             }}
           />
           <ViperStingManager 
