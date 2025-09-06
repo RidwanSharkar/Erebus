@@ -37,7 +37,6 @@ export class Engine extends EventEmitter {
 
   public async initialize(canvas: HTMLCanvasElement): Promise<void> {
     if (this.isInitialized) {
-      console.warn('Engine already initialized');
       return;
     }
 
@@ -55,7 +54,6 @@ export class Engine extends EventEmitter {
     }
 
     if (this.isRunning) {
-      console.warn('Engine already running');
       return;
     }
 

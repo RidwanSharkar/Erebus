@@ -332,7 +332,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   const createPvpFrozenEffect = useCallback((playerId: string, position: Vector3) => {
     // Debug: Check if this is the local player
     const isLocalPlayer = playerId === socket?.id;
-    console.log(`❄️ Creating PVP frozen effect for player ${playerId} (isLocal: ${isLocalPlayer}) at position:`, position.toArray());
     
     // Create the frozen debuff effect (3 second freeze)
     createPvpDebuffEffect(playerId, 'frozen', position, 5000);
@@ -342,13 +341,11 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       broadcastPlayerDebuff(playerId, 'frozen', 5000, {
         position: { x: position.x, y: position.y, z: position.z }
       });
-      console.log(`❄️ Broadcasting frozen effect for player ${playerId}`);
     }
   }, [createPvpDebuffEffect, broadcastPlayerDebuff]);
 
   // Function to create reanimate effect on PVP players
   const createPvpReanimateEffect = useCallback((playerId: string, position: Vector3) => {
-    console.log(`🌿 Creating PVP reanimate effect for player ${playerId} at position:`, position.toArray());
     
     const reanimateEffect = {
       id: nextReanimateEffectId.current++,
@@ -374,13 +371,11 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         setter: setPvpReanimateEffects,
         filterId: reanimateEffect.id
       }]);
-      console.log(`🌿 PVP reanimate effect expired for player ${playerId}`);
     }, reanimateEffect.duration);
   }, []);
 
   // Function to create frost nova effect on PVP players
   const createPvpFrostNovaEffect = useCallback((playerId: string, position: Vector3) => {
-    console.log(`❄️ Creating PVP frost nova effect for player ${playerId} at position:`, position.toArray());
     
     const frostNovaEffect = {
       id: nextFrostNovaEffectId.current++,
@@ -406,18 +401,15 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         setter: setPvpFrostNovaEffects,
         filterId: frostNovaEffect.id
       }]);
-      console.log(`❄️ PVP frost nova effect expired for player ${playerId}`);
     }, frostNovaEffect.duration);
   }, []);
 
   const createPvpVenomEffect = useCallback((playerId: string, position: Vector3) => {
     // Debug: Check if this is the local player
     const isLocalPlayer = playerId === socket?.id;
-    console.log(`☠️ Creating PVP venom effect for player ${playerId} (isLocal: ${isLocalPlayer}) at position:`, position.toArray());
     
     // SAFETY CHECK: Don't create venom effects on the local player
     if (isLocalPlayer) {
-      console.warn(`⚠️ Attempted to create venom effect on local player ${playerId} - this should not happen!`);
       return;
     }
     
@@ -550,7 +542,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         
         // Handle special ability projectiles that need custom visual effects
         if (data.attackType === 'viper_sting_projectile') {
-          console.log('🐍 Creating PVP Viper Sting visual effect from player', data.playerId);
           
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
           const direction = new Vector3(data.direction.x, data.direction.y, data.direction.z);
@@ -602,7 +593,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         }
         
         if (data.attackType === 'cobra_shot_projectile') {
-          console.log('🐍 Creating PVP Cobra Shot visual effect from player', data.playerId);
           
           // Note: Cobra Shot damage is handled by PVPCobraShotManager through visual projectiles
           // No need to create ECS projectiles that show up as regular arrows
@@ -618,11 +608,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         
         // Handle sword charge hit attacks
         if (data.attackType === 'sword_charge_hit') {
-          console.log('⚔️ Received PVP sword charge hit from player', data.playerId, 'animationData:', data.animationData);
           
           // Validate animationData object exists and has required properties
           if (!data.animationData || typeof data.animationData.damage !== 'number' || typeof data.animationData.targetId !== 'number') {
-            console.warn('⚠️ Invalid sword charge hit animationData:', data.animationData);
             return;
           }
           
@@ -635,7 +623,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
               if (health) {
                 // Apply damage through PVP system
                 broadcastPlayerDamage(socket.id, data.animationData.damage);
-                console.log(`⚔️ Took ${data.animationData.damage} charge damage from ${data.playerId}`);
               }
             }
           }
@@ -646,7 +633,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         // Handle regular projectile attacks - create projectiles that can hit the local player
         const projectileTypes = ['regular_arrow', 'charged_arrow', 'entropic_bolt', 'crossentropy_bolt', 'perfect_shot', 'barrage_projectile'];
         if (projectileTypes.includes(data.attackType)) {
-          console.log('🏹 Creating PVP projectile:', data.attackType, 'from player', data.playerId);
+
           
           // Create a projectile that can damage the local player
           const projectileSystem = engineRef.current.getWorld().getSystem(ProjectileSystem);
@@ -825,12 +812,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     };
 
     const handlePlayerAbility = (data: any) => {
-      console.log('✨ Received PVP player ability:', data);
-      console.log('🔍 DEBUG: Ability type:', data.abilityType, 'from player:', data.playerId, 'my ID:', socket.id);
       if (data.playerId !== socket.id) {
         // Handle special abilities like Divine Storm, Viper Sting, and Barrage
         if (data.abilityType === 'divine_storm') {
-          console.log('⚡ Handling Divine Storm ability from player', data.playerId);
           
           // Trigger visual Divine Storm effect at the player's position
           const position = pvpObjectPool.acquireVector3(data.position.x, data.position.y, data.position.z);
@@ -860,7 +844,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             }]);
           }, 4000); // Divine Storm lasts 4 seconds
         } else if (data.abilityType === 'viper_sting') {
-          console.log('🐍 Handling Viper Sting ability from player', data.playerId);
           
           // Trigger visual effect - this should create the proper Viper Sting projectiles
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
@@ -884,7 +867,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           
           // Trigger the Viper Sting visual effect
           const success = triggerGlobalViperSting();
-          console.log('🐍 Viper Sting visual trigger result:', success);
           
           // Restore original parent ref position after a short delay
           setTimeout(() => {
@@ -938,7 +920,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             return updated;
           });
         } else if (data.abilityType === 'barrage') {
-          console.log('🏹 Handling Barrage ability from player', data.playerId);
           
           // Trigger visual effect
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
@@ -991,22 +972,17 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             return updated;
           });
         } else if (data.abilityType === 'frost_nova') {
-          console.log('❄️ Handling Frost Nova ability from player', data.playerId);
-          console.log('🔍 DEBUG: Creating Frost Nova effect at position:', data.position);
           // Create frost nova visual effect at the player's position
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
           createPvpFrostNovaEffect(data.playerId, position);
           
           // Note: PVP damage and freeze effects are now handled by PVPFrostNovaManager
         } else if (data.abilityType === 'reanimate') {
-          console.log('🌿 Handling Reanimate ability from player', data.playerId);
-          console.log('🔍 DEBUG: Creating Reanimate effect at position:', data.position);
           
           // Create reanimate visual effect at the player's position
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
           createPvpReanimateEffect(data.playerId, position);
         } else if (data.abilityType === 'charge') {
-          console.log('⚔️ Handling Charge ability from player', data.playerId);
           setMultiplayerPlayerStates(prev => {
             const updated = new Map(prev);
             const currentState = updated.get(data.playerId) || {
@@ -1051,7 +1027,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             return updated;
           });
         } else if (data.abilityType === 'deflect') {
-          console.log('🛡️ Handling Deflect ability from player', data.playerId);
           
           // Trigger visual Deflect Shield effect at the player's position
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
@@ -1105,7 +1080,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             return updated;
           });
         } else if (data.abilityType === 'skyfall') {
-          console.log('🌟 Handling Skyfall ability from player', data.playerId);
           
           // Set the skyfall animation state for the attacking player
           setMultiplayerPlayerStates(prev => {
@@ -1152,7 +1126,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             return updated;
           });
         } else if (data.abilityType === 'backstab') {
-          console.log('🗡️ Handling Backstab ability from player', data.playerId);
           
           // Backstab is an instant melee attack, so we need to:
           // 1. Calculate damage based on position relative to targets
@@ -1249,9 +1222,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                   
                   if (isBackstab) {
                     damage = 150; // Backstab damage
-                    console.log(`🗡️ BACKSTAB! Player ${data.playerId} attacked local player from behind for ${damage} damage`);
-                  } else {
-                    console.log(`🗡️ Front attack from player ${data.playerId} for ${damage} damage`);
                   }
                   
                   // Apply damage to local player
@@ -1312,7 +1282,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     };
 
     const handlePlayerDamaged = (data: any) => {
-      console.log('💥 Received PVP player damage:', data);
       // If we are the target, apply damage to our player
       if (data.targetPlayerId === socket.id && playerEntity) {
         const health = playerEntity.getComponent(Health);
@@ -1320,17 +1289,12 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         if (health) {
           // Pass the entity so Health component can use Shield for damage absorption
           health.takeDamage(data.damage, Date.now() / 1000, playerEntity);
-          console.log(`🩸 Took ${data.damage} damage from ${data.sourcePlayerId}. Health: ${health.currentHealth}/${health.maxHealth}, Shield: ${shield ? shield.currentShield : 0}/${shield ? shield.maxShield : 0}`);
         }
       }
     };
 
     const handlePlayerAnimationState = (data: any) => {
       
-      // Debug: Log backstab animation specifically
-      if (data.animationState?.isBackstabbing) {
-        console.log('🗡️ DEBUG: Received backstab animation state from player', data.playerId, 'isBackstabbing:', data.animationState.isBackstabbing);
-      }
       
       if (data.playerId !== socket.id) {
         setMultiplayerPlayerStates(prev => {
@@ -1360,10 +1324,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             lastAnimationUpdate: Date.now()
           };
           
-          // Debug: Log the final state for backstab
-          if (newState.isBackstabbing) {
-            console.log('🗡️ DEBUG: Setting backstab animation state for player', data.playerId, 'to:', newState.isBackstabbing);
-          }
+  
           
           updated.set(data.playerId, newState);
           
@@ -1373,7 +1334,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     };
 
     const handlePlayerEffect = (data: any) => {
-      console.log('✨ Received PVP player effect:', data);
       
       if (data.effect?.type === 'venom') {
         const { targetPlayerId, position, duration } = data.effect;
@@ -1381,7 +1341,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         // Create venom effect on the target player (could be local player or other player)
         if (targetPlayerId && position) {
           const venomPosition = new Vector3(position.x, position.y, position.z);
-          console.log(`☠️ Creating venom effect for player ${targetPlayerId} from broadcast`);
           createPvpVenomEffect(targetPlayerId, venomPosition);
         }
       }
@@ -1401,11 +1360,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           const transform = playerEntity.getComponent(Transform);
           if (transform) {
             position = transform.position.clone();
-            console.log(`🎯 Using local player entity position for debuff: [${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}]`);
           } else {
             // Fallback to current player position from state
             position = playerPosition.clone();
-            console.log(`🎯 Fallback to current player position state: [${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}]`);
           }
         } else {
           // For other players, use the multiplayer context or effectData
@@ -1415,7 +1372,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             : (effectData?.position 
                 ? new Vector3(effectData.position.x, effectData.position.y, effectData.position.z)
                 : new Vector3(0, 0, 0));
-          console.log(`🎯 Using remote player position: [${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}]`);
         }
         
         createPvpDebuffEffect(targetPlayerId, debuffType, position, duration);
@@ -1524,9 +1480,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         
         // Store the mapping
         serverPlayerEntities.current.set(playerId, entity.id);
-        
-        console.log(`🔗 Created local ECS entity ${entity.id} for PVP player ${playerId} (${serverPlayer.name}) at position [${serverPlayer.position.x.toFixed(2)}, ${serverPlayer.position.y.toFixed(2)}, ${serverPlayer.position.z.toFixed(2)}]`);
-        console.log(`🚫 Remote player ${playerId} collision mask: ${collider.mask} (ENVIRONMENT only - no player-to-player collision)`);
+    
       } else {
         // Update existing local ECS entity
         const entityId = serverPlayerEntities.current.get(playerId)!;
@@ -1622,7 +1576,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         // Store the mapping
         serverTowerEntities.current.set(towerId, entity.id);
         
-        console.log(`🏰 Created local ECS entity ${entity.id} for tower ${towerId} (Owner: ${serverTower.ownerId}) at position [${serverTower.position.x.toFixed(2)}, ${serverTower.position.y.toFixed(2)}, ${serverTower.position.z.toFixed(2)}]`);
+  
       } else {
         // Update existing local ECS entity
         const entityId = serverTowerEntities.current.get(towerId)!;
@@ -1742,7 +1696,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       
       // Set up PVP callbacks (AFTER playerEntity is set)
       controlSystem.setBowReleaseCallback((finalProgress, isPerfectShot) => {
-        console.log('🏹 PVP Bow released with charge:', finalProgress, isPerfectShot ? '✨ PERFECT SHOT!' : '');
         
         // Broadcast attack to other players
         if (playerEntity) {
@@ -1761,7 +1714,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         
         // Trigger perfect shot visual effect if it was a perfect shot
         if (isPerfectShot) {
-          console.log('🌟 Creating perfect shot visual effect!');
           
           // Get current player position from the engine
           const currentPlayerEntity = engine.getWorld().getEntity(playerEntityRef.current!);
@@ -1790,7 +1742,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                 true, // isPerfectShot
                 true  // isElementalShotsUnlocked - for now assume unlocked
               );
-              console.log('🌟 Perfect shot effect created with ID:', effectId);
             }
           }
         }
@@ -1809,32 +1760,26 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       
       // Set up Viper Sting callback
       controlSystem.setViperStingCallback((position, direction) => {
-        console.log('🐍 PVP Viper Sting triggered - broadcasting to other players');
         broadcastPlayerAbility('viper_sting', position, direction);
       });
       
       // Set up Barrage callback
       controlSystem.setBarrageCallback((position, direction) => {
-        console.log('🏹 PVP Barrage triggered - broadcasting to other players');
         broadcastPlayerAbility('barrage', position, direction);
       });
       
       // Set up Frost Nova callback
-      console.log('🔍 DEBUG: Setting up Frost Nova callback in PVP');
       controlSystem.setFrostNovaCallback((position, direction) => {
-        console.log('❄️ PVP Frost Nova triggered - broadcasting to other players');
         broadcastPlayerAbility('frost_nova', position, direction);
       });
       
       // Set up Cobra Shot callback (for local visual effects only - projectile is handled via onProjectileCreatedCallback)
       controlSystem.setCobraShotCallback((position, direction) => {
-        console.log('🐍 PVP Cobra Shot triggered - local visual effects only');
         // Don't broadcast as ability - the projectile is already broadcast via onProjectileCreatedCallback
       });
       
       // Set up Charge callback
       controlSystem.setChargeCallback((position, direction) => {
-        console.log('⚔️ PVP Charge triggered - broadcasting to other players');
         // Broadcast as ability for state management
         broadcastPlayerAbility('charge', position, direction);
         // Also broadcast as attack for animation
@@ -1883,7 +1828,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       
       // Set up projectile creation callback
       controlSystem.setProjectileCreatedCallback((projectileType, position, direction, config) => {
-        console.log('🏹 PVP Projectile created - broadcasting to other players:', projectileType);
         const animationData: any = {};
         
         // Add charge progress for bow projectiles
@@ -1895,28 +1839,22 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       });
       
       // Set up Reanimate callback
-      console.log('🔍 DEBUG: Setting up Reanimate callback in PVP');
       controlSystem.setReanimateCallback(() => {
-        console.log('🌿 PVP Reanimate healing effect triggered - broadcasting to other players');
         if (reanimateRef.current) {
           reanimateRef.current.triggerHealingEffect();
         }
         
         // Broadcast Reanimate ability to other players
-        console.log('🔍 DEBUG: Player entity available for Reanimate broadcast:', !!player);
+
         if (player) {
           const transform = player.getComponent(Transform);
           if (transform) {
             const direction = new Vector3();
             camera.getWorldDirection(direction);
             direction.normalize();
-            console.log('🔍 DEBUG: Broadcasting Reanimate ability with position:', transform.position);
+
             broadcastPlayerAbility('reanimate', transform.position, direction);
-          } else {
-            console.log('🔍 DEBUG: No transform component found on player entity');
           }
-        } else {
-          console.log('🔍 DEBUG: No player entity available for Reanimate broadcast');
         }
       });
       
@@ -2010,7 +1948,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         const prevWeapon = prevWeaponRef.current;
         if (newWeaponState.currentWeapon !== prevWeapon.weapon || 
             newWeaponState.currentSubclass !== prevWeapon.subclass) {
-          console.log('🔄 PVP Weapon changed:', newWeaponState.currentWeapon, newWeaponState.currentSubclass);
           updatePlayerWeapon(newWeaponState.currentWeapon, newWeaponState.currentSubclass);
           prevWeaponRef.current = {
             weapon: newWeaponState.currentWeapon,
@@ -2049,14 +1986,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             barrageChargeProgress: newWeaponState.barrageChargeProgress,
             isBackstabbing: newWeaponState.isBackstabbing // Broadcast backstab animation state
           };
-          
-          // Debug: Log backstab state broadcasting with full context
-          if (newWeaponState.isBackstabbing) {
-            console.log('🗡️ DEBUG: Broadcasting backstab animation state:', newWeaponState.isBackstabbing);
-            console.log('🗡️ DEBUG: Full animation state being sent:', animationStateToSend);
-            console.log('🗡️ DEBUG: Socket connected:', !!socket);
-          }
-          
           broadcastPlayerAnimationState(animationStateToSend);
           lastAnimationBroadcast.current = now;
         }
@@ -2075,7 +2004,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
 
       // Log object pool and state batcher statistics periodically (every 5 seconds)
       const now = Date.now();
-      if (now % 5000 < 16) { // Approximately every 5 seconds (accounting for frame rate)
+      if (now % 10000 < 16) { // Approximately every 5 seconds (accounting for frame rate)
         const poolStats = getPoolStats();
         const batcherStats = pvpStateBatcher.getStats();
         console.log('🔧 PVP Performance Stats:', {
@@ -2202,7 +2131,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             // This callback is now handled by the ControlSystem directly
           }}
           onScytheSwingComplete={() => {
-            console.log('⚔️ PVP Scythe swing completed');
             const direction = new Vector3();
             camera.getWorldDirection(direction);
             direction.normalize();
@@ -2211,7 +2139,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             });
           }}
           onSwordSwingComplete={() => {
-            console.log('🗡️ PVP Sword swing completed - notifying control system');
             controlSystemRef.current?.onSwordSwingComplete();
             const direction = new Vector3();
             camera.getWorldDirection(direction);
@@ -2221,7 +2148,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             });
           }}
           onSabresSwingComplete={() => {
-            console.log('⚔️ PVP Sabres swing completed - notifying control system');
             controlSystemRef.current?.onSabresSwingComplete();
             const direction = new Vector3();
             camera.getWorldDirection(direction);
@@ -2229,9 +2155,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             broadcastPlayerAttack('sabres_swing', playerPosition, direction);
           }}
           onChargeComplete={() => {
-            console.log('⚔️ PVP Charge completed - notifying control system');
             controlSystemRef.current?.onChargeComplete();
-            
             // Broadcast charge spin animation
             const direction = new Vector3();
             camera.getWorldDirection(direction);
@@ -2241,7 +2165,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             });
           }}
           onDeflectComplete={() => {
-            console.log('🛡️ PVP Deflect completed - notifying control system');
             controlSystemRef.current?.onDeflectComplete();
           }}
         />
@@ -2269,11 +2192,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           isSkyfalling: false,
           isBackstabbing: false
         };
-        
-        // Debug: Log backstab state for this player
-        if (playerState.isBackstabbing) {
-          console.log('🗡️ DEBUG: Rendering player', player.id, 'with isBackstabbing:', playerState.isBackstabbing);
-        }
         
         return (
           <DragonRenderer
@@ -2375,7 +2293,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
               health: p.health
             }))}
             onHitTarget={(targetId: string, damage: number) => {
-              console.log(`⚡ Divine Storm hit player ${targetId} for ${damage} damage`);
               if (broadcastPlayerDamage) {
                 broadcastPlayerDamage(targetId, damage);
               }
@@ -2389,7 +2306,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             serverPlayerEntities={serverPlayerEntities}
             localSocketId={socket?.id}
             onPlayerHit={(playerId: string, damage: number) => {
-              console.log(`🐍 Cobra Shot hit player ${playerId} for ${damage} damage`);
               if (broadcastPlayerDamage) {
                 broadcastPlayerDamage(playerId, damage);
               }
@@ -2407,7 +2323,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                   position: { x: clonedPosition.x, y: clonedPosition.y, z: clonedPosition.z },
                   duration: 6000
                 });
-                console.log(`☠️ Broadcasting venom effect for player ${playerId}`);
               }
             }}
           />
@@ -2419,7 +2334,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             serverPlayerEntities={serverPlayerEntities}
             localSocketId={socket?.id}
             onPlayerHit={(playerId: string, damage: number) => {
-              console.log(`🏹 Barrage hit player ${playerId} for ${damage} damage`);
               if (broadcastPlayerDamage) {
                 broadcastPlayerDamage(playerId, damage);
               }
@@ -2435,7 +2349,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                   position: { x: clonedPosition.x, y: clonedPosition.y, z: clonedPosition.z },
                   speedMultiplier: 0.5
                 });
-                console.log(`🐌 Broadcasting slow effect for player ${playerId}`);
               }
             }}
           />
@@ -2447,7 +2360,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             serverPlayerEntities={serverPlayerEntities}
             localSocketId={socket?.id}
             onPlayerHit={(playerId: string, damage: number) => {
-              console.log(`❄️ FrostNova hit player ${playerId} for ${damage} damage`);
               if (broadcastPlayerDamage) {
                 broadcastPlayerDamage(playerId, damage);
               }
@@ -2468,7 +2380,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             }))}
             onHit={(targetId: string, damage: number) => {
               // Handle PVP damage to other players
-              console.log(`🐍 Viper Sting hit player ${targetId} for ${damage} damage`);
               if (broadcastPlayerDamage) {
                 broadcastPlayerDamage(targetId, damage);
               }
@@ -2697,11 +2608,8 @@ function setupPVPGame(
   cameraSystem.snapToTarget();
   
   console.log('🌍 Total entities in PVP world:', world.getAllEntities().length);
-  
-  console.log('✅ PVP game setup complete!');
   console.log(`👤 Player entity created with ID: ${playerEntity.id}`);
-  console.log('⚔️ PVP players will be synchronized from server');
-  
+
   return { player: playerEntity, controlSystem, towerSystem };
 }
 
@@ -2749,7 +2657,6 @@ function createPVPPlayer(world: World): any {
   });
   
   const localCollider = player.getComponent(Collider);
-  console.log(`🚫 Local player collision mask: ${localCollider?.mask} (ENVIRONMENT only - no player-to-player collision)`);
 
   return player;
 }

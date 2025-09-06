@@ -363,7 +363,7 @@ export class InputManager extends EventEmitter {
   }
 
   private onPointerLockError(): void {
-    console.warn('Pointer lock failed');
+    // console.warn('Pointer lock failed');
     this.isPointerLocked = false;
   }
 

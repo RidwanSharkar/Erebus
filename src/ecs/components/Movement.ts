@@ -130,7 +130,7 @@ export class Movement extends Component {
     const currentTime = Date.now();
     this.isFrozen = true;
     this.frozenUntil = currentTime + duration;
-    console.log(`🧊 Player frozen for ${duration}ms until ${this.frozenUntil} (current: ${currentTime})`);
+    // console.log(`🧊 Player frozen for ${duration}ms until ${this.frozenUntil} (current: ${currentTime})`);
   }
 
   public slow(duration: number, speedMultiplier: number = 0.5): void {
@@ -138,7 +138,7 @@ export class Movement extends Component {
     this.isSlowed = true;
     this.slowedUntil = currentTime + duration;
     this.movementSpeedMultiplier = speedMultiplier;
-    console.log(`🐌 Player slowed to ${speedMultiplier * 100}% speed for ${duration}ms until ${this.slowedUntil}`);
+    // console.log(`🐌 Player slowed to ${speedMultiplier * 100}% speed for ${duration}ms until ${this.slowedUntil}`);
   }
 
   public updateDebuffs(): void {

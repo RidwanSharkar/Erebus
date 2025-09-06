@@ -102,7 +102,6 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
     const canvas = gl.domElement;
     engine.initialize(canvas).then(() => {
       const { player, controlSystem } = setupGame(engine, scene, camera as PerspectiveCamera, gl);
-      console.log('🎮 GameScene Player entity created:', player, 'ID:', player.id);
       setPlayerEntity(player);
       playerEntityRef.current = player.id;
       controlSystemRef.current = controlSystem;
@@ -114,12 +113,9 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
       
       // Set up bow release callback for perfect shot effects
       controlSystem.setBowReleaseCallback((finalProgress, isPerfectShot) => {
-        console.log('🏹 Bow released with charge:', finalProgress, isPerfectShot ? '✨ PERFECT SHOT!' : '');
         
         // Trigger perfect shot visual effect if it was a perfect shot
         if (isPerfectShot) {
-          console.log('🌟 Creating perfect shot visual effect!');
-          
           // Get current player position from the engine
           const currentPlayerEntity = engine.getWorld().getEntity(playerEntityRef.current!);
           if (currentPlayerEntity) {
@@ -147,7 +143,6 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
                 true, // isPerfectShot
                 true  // isElementalShotsUnlocked - for now assume unlocked
               );
-              console.log('🌟 Perfect shot effect created with ID:', effectId);
             }
           }
         }
@@ -155,28 +150,24 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
       
       // Set up Viper Sting callback
       controlSystem.setViperStingCallback((position, direction) => {
-        console.log('🐍 Viper Sting triggered at position:', position.toArray());
         // The actual Viper Sting logic is handled by the ViperStingManager
         // This callback could be used for additional effects or sound
       });
       
       // Set up Barrage callback
       controlSystem.setBarrageCallback((position, direction) => {
-        console.log('🏹 Barrage triggered at position:', position.toArray());
         // The actual Barrage logic is handled by the BarrageManager
         // This callback could be used for additional effects or sound
       });
       
       // Set up Divine Storm callback
       controlSystem.setDivineStormCallback((position, direction, duration) => {
-        console.log('⚡ Divine Storm activated at position:', position.toArray(), 'duration:', duration + 'ms');
         // Trigger local visual effect with correct duration
         triggerGlobalDivineStorm(position, 'local-player', duration);
       });
       
       // Set up Reanimate callback
       controlSystem.setReanimateCallback(() => {
-        console.log('🌿 Reanimate healing effect triggered');
         if (reanimateRef.current) {
           reanimateRef.current.triggerHealingEffect();
         }
@@ -184,7 +175,6 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
       
       // Set up Skyfall callback
       controlSystem.setSkyfallCallback((position, direction) => {
-        console.log('🌟 Skyfall triggered at position:', position.toArray());
         // The actual Skyfall logic is handled by the ControlSystem
         // This callback could be used for additional effects or sound
       });
@@ -330,11 +320,7 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
 
       {/* Dragon Unit Renderer */}
       {(() => {
-        console.log('🐉 GameScene DragonRenderer render check:', {
-          playerEntity: !!playerEntity,
-          engineRef: !!engineRef.current,
-          playerPosition: playerPosition.toArray()
-        });
+
         return playerEntity && engineRef.current;
       })() && (
         <DragonRenderer
@@ -365,22 +351,22 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
             // Keeping this for compatibility but it won't be used for perfect shot effects
           }}
           onScytheSwingComplete={() => {
-            console.log('⚔️ Scythe swing completed');
+           // console.log('⚔️ Scythe swing completed');
           }}
           onSwordSwingComplete={() => {
-            console.log('🗡️ Sword swing completed - notifying control system');
+           // console.log('🗡️ Sword swing completed - notifying control system');
             controlSystemRef.current?.onSwordSwingComplete();
           }}
           onSabresSwingComplete={() => {
-            console.log('⚔️ Sabres swing completed - notifying control system');
+           // console.log('⚔️ Sabres swing completed - notifying control system');
             controlSystemRef.current?.onSabresSwingComplete();
           }}
           onChargeComplete={() => {
-            console.log('⚔️ Charge completed - notifying control system');
+           // console.log('⚔️ Charge completed - notifying control system');
             controlSystemRef.current?.onChargeComplete();
           }}
           onDeflectComplete={() => {
-            console.log('🛡️ Deflect completed - notifying control system');
+           // console.log('🛡️ Deflect completed - notifying control system');
             controlSystemRef.current?.onDeflectComplete();
           }}
         />
@@ -480,11 +466,6 @@ function setupGame(
   enemyFactory.createElite(new Vector3(-8, 0, 8), 2);
   enemyFactory.createElite(new Vector3(8, 0, 3), 2);
 
-  console.log('✅ Game setup complete!');
-  console.log(`👤 Player entity created with ID: ${playerEntity.id}`);
-  console.log('🎯 Enemies spawned on the map');
-  console.log('🏹 Bow arrows deal 10 base damage, Crossentropy bolts deal 30 base damage');
-  console.log('⚡ All damage now uses critical hit system with floating damage numbers!');
   
   return { player: playerEntity, controlSystem };
 }
@@ -524,14 +505,6 @@ function createPlayer(world: World): any {
 
   // Note: Visual rendering is handled by DragonRenderer component
   // No Renderer component needed as we use React Three Fiber for the dragon model
-
-  console.log('👤 Player entity created with components:', {
-    transform: !!player.getComponent(Transform),
-    movement: !!player.getComponent(Movement),
-    health: !!player.getComponent(Health),
-    shield: !!player.getComponent(Shield),
-    collider: !!player.getComponent(Collider),
-  });
 
   return player;
 }

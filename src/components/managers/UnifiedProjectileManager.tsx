@@ -93,7 +93,6 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
       const distance = projectilePos2D.distanceTo(enemyPos2D);
 
       if (distance <= 1.5) { // Hit radius for EntropicBolt
-        console.log(`⚡ EntropicBolt ${boltId} hit enemy ${entity.id} at distance ${distance.toFixed(2)}`);
         return true; // Collision detected
       }
     }
@@ -122,7 +121,6 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
       const distance = projectilePos2D.distanceTo(enemyPos2D);
 
       if (distance <= 1.6) { // Hit radius for CrossentropyBolt (slightly larger than EntropicBolt)
-        console.log(`⚔️ CrossentropyBolt ${boltId} hit enemy ${entity.id} at distance ${distance.toFixed(2)}`);
         return true; // Collision detected
       }
     }
@@ -171,7 +169,6 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             direction: direction.clone(),
             entityId: entity.id
           });
-          console.log(`⚔️ Created new CrossentropyBolt visual for entity ${entity.id}`);
         }
       } else if (userData.isEntropicBolt) {
         const existing = projectileData.entropic.find(p => p.entityId === entity.id);
@@ -185,7 +182,6 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             direction: direction.clone(),
             entityId: entity.id
           });
-          console.log(`⚡ Created new EntropicBolt visual for entity ${entity.id}`);
         }
       } else if (userData.isChargedArrow) {
         const existing = projectileData.charged.find(p => p.entityId === entity.id);
@@ -202,7 +198,6 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             level: userData.level,
             opacity: userData.opacity || 1.0
           });
-          console.log(`🏹 Created new ChargedArrow visual for entity ${entity.id}`);
         }
       } else if (userData.isBarrageArrow) {
         const existing = projectileData.barrage.find(p => p.entityId === entity.id);
@@ -219,7 +214,6 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             level: userData.level,
             opacity: userData.opacity || 1.0
           });
-          console.log(`🏹 Created new BarrageArrow visual for entity ${entity.id}`);
         }
       } else if (userData.isRegularArrow) {
         const existing = projectileData.regular.find(p => p.entityId === entity.id);
@@ -236,7 +230,6 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             level: userData.level,
             opacity: userData.opacity || 1.0
           });
-          console.log(`🏹 Created new RegularArrow visual for entity ${entity.id}`);
         }
       }
     }
@@ -253,9 +246,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
         size: event.size || 1,
         duration: event.duration || 2
       };
-      
       newExplosions.push(newExplosion);
-      console.log(`💥 Created optimized explosion effect (${newExplosion.duration}s) at position:`, event.position);
     }
 
     // Clear processed explosion events
@@ -307,7 +298,6 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
           direction={bolt.direction}
           checkCollisions={checkCrossentropyBoltCollisions}
           onImpact={(impactPosition?: Vector3) => {
-            console.log(`⚔️ CrossentropyBolt ${bolt.id} impact at position:`, impactPosition?.toArray());
             
             // Create Crossentropy explosion effect at impact position
             if (impactPosition) {
@@ -335,7 +325,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
           direction={bolt.direction}
           checkCollisions={checkEntropicBoltCollisions}
           onImpact={(impactPosition?: Vector3) => {
-            console.log(`⚡ EntropicBolt ${bolt.id} impact at position:`, impactPosition?.toArray());
+            // console.log(`⚡ EntropicBolt ${bolt.id} impact at position:`, impactPosition?.toArray());
           }}
         />
       ))}
@@ -347,7 +337,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
           position={arrow.position}
           direction={arrow.direction}
           onImpact={() => {
-            console.log(`🏹 ChargedArrow ${arrow.id} impact`);
+            // console.log(`🏹 ChargedArrow ${arrow.id} impact`);
           }}
         />
       ))}
@@ -368,7 +358,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             distanceTraveled={distanceTraveled}
             maxDistance={maxDistance}
             onImpact={() => {
-              console.log(`🏹 RegularArrow ${arrow.id} impact`);
+              // console.log(`🏹 RegularArrow ${arrow.id} impact`);
             }}
           />
         );

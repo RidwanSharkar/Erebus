@@ -181,7 +181,6 @@ export default function Sword({
   // Monitor comboStep prop changes for debugging
   useEffect(() => {
     if (currentComboStep.current !== comboStep) {
-      console.log(`🔄 ComboStep prop changed: ${currentComboStep.current} → ${comboStep}`);
       currentComboStep.current = comboStep;
     }
   }, [comboStep]);
@@ -194,13 +193,11 @@ export default function Sword({
     // Handle smooth combo transitions when not actively swinging
     if (!isSwinging && !isSmiting && !isColossusStriking && !isDivineStorming && !isOathstriking && !isCharging && !isDeflecting && isInCombo.current) {
       if (comboTransitionProgress.current === 0) {
-        console.log(`🔄 Combo transition started: ${lastComboStep.current} → ${comboStep}, progress: ${(comboTransitionProgress.current * 100).toFixed(1)}%`);
       }
       comboTransitionProgress.current += delta * 7; // Fast transition speed
       
       if (comboTransitionProgress.current >= 1) {
         // Transition complete
-        console.log(`✅ Combo transition completed: ${lastComboStep.current} → ${comboStep}`);
         isInCombo.current = false;
         comboTransitionProgress.current = 0;
         
@@ -210,12 +207,10 @@ export default function Sword({
           const readyPositions = getComboReadyPosition(comboStep);
           targetPosition.current = readyPositions.position;
           targetRotation.current = readyPositions.rotation;
-          console.log(`🎯 Ready position set for combo ${comboStep}: [${readyPositions.position[0].toFixed(2)}, ${readyPositions.position[1].toFixed(2)}, ${readyPositions.position[2].toFixed(2)}]`);
         } else {
           // Combo ended - return to base position
           targetPosition.current = [...basePosition];
           targetRotation.current = [0, 0, 0];
-          console.log(`🏠 Returning to base position: [${basePosition[0].toFixed(2)}, ${basePosition[1].toFixed(2)}, ${basePosition[2].toFixed(2)}]`);
         }
         
         swordRef.current.position.set(...targetPosition.current);
@@ -233,14 +228,12 @@ export default function Sword({
         if (comboStep !== lastComboStep.current) {
           // Continuing combo - transition to ready position for next swing
           nextTarget = getComboReadyPosition(comboStep);
-          console.log(`🔄 Combo continuing: ${lastComboStep.current} → ${comboStep}, target: [${nextTarget.position[0].toFixed(2)}, ${nextTarget.position[1].toFixed(2)}, ${nextTarget.position[2].toFixed(2)}]`);
         } else {
           // Combo ended - return to base
           nextTarget = {
             position: [...basePosition] as [number, number, number],
             rotation: [0, 0, 0] as [number, number, number]
           };
-          console.log(`🔄 Combo ended: returning to base position [${basePosition[0].toFixed(2)}, ${basePosition[1].toFixed(2)}, ${basePosition[2].toFixed(2)}]`);
         }
         
         // Create a curved backswing path by adding a slight arc
@@ -248,14 +241,7 @@ export default function Sword({
         const arcHeight = 0.15; // Height of the arc during backswing
         const arcProgress = Math.sin(comboTransitionProgress.current * Math.PI); // Creates a bell curve
         
-        // Debug logging for combo transitions
-        if (comboTransitionProgress.current < 0.1) { // Only log at start of transition
-          console.log(`🔄 Combo transition: ${lastComboStep.current} → ${comboStep}`);
-          console.log(`📍 From: [${currentPos.x.toFixed(2)}, ${currentPos.y.toFixed(2)}, ${currentPos.z.toFixed(2)}]`);
-          console.log(`🎯 To: [${nextTarget.position[0].toFixed(2)}, ${nextTarget.position[1].toFixed(2)}, ${nextTarget.position[2].toFixed(2)}]`);
-          console.log(`📐 Arc height: ${arcHeight}, Progress: ${(comboTransitionProgress.current * 100).toFixed(1)}%`);
-        }
-        
+
         // Interpolate position with arc
         const lerpedX = currentPos.x + (nextTarget.position[0] - currentPos.x) * easeOut;
         const lerpedY = currentPos.y + (nextTarget.position[1] - currentPos.y) * easeOut + (arcHeight * arcProgress);
@@ -358,9 +344,7 @@ export default function Sword({
     }
 
     // Handle charge spin animation (separate from main charge logic)
-    if (isChargeSpinning.current) {
-      console.log(`🌪️ Charge spin active - rotation: ${chargeSpinRotation.current.toFixed(2)}, isCharging: ${isCharging}`);
-      
+    if (isChargeSpinning.current) {      
       const TARGET_ROTATIONS = 1; // 1 full rotation like Divine Storm
       const MAX_ROTATION = TARGET_ROTATIONS * Math.PI * 2; // 2π radians for one full rotation
       
@@ -372,7 +356,6 @@ export default function Sword({
       
       // Check if we've completed the target rotation
       if (chargeSpinRotation.current >= MAX_ROTATION) {
-        console.log(`✅ Charge spin completed! Calling onChargeComplete`);
         
         // Reset everything and complete charge
         chargeSpinRotation.current = 0;
@@ -445,10 +428,7 @@ export default function Sword({
           const rageBefore = gameUI.getCurrentRage ? gameUI.getCurrentRage() : 'unknown';
           gameUI.gainRage(0);
           const rageAfter = gameUI.getCurrentRage ? gameUI.getCurrentRage() : 'unknown';
-          console.log(`⚔️ Gained 5 rage from charge attack - Rage: ${rageBefore} → ${rageAfter}`);
         }
-        
-        console.log(`⚔️ Charge initialized! Start time: ${chargeStartTime.current}, Position: ${chargeStartPosition.current?.toArray()}`);
       }
 
       const elapsed = (Date.now() - chargeStartTime.current) / 1000;
@@ -495,7 +475,6 @@ export default function Sword({
       // Bounds checking
       const distanceFromOrigin = newPosition.length();
       if (distanceFromOrigin > MAX_CHARGE_BOUNDS) {
-        console.warn(`[Charge] Cancelled: would move too far from origin (${distanceFromOrigin.toFixed(2)} > ${MAX_CHARGE_BOUNDS})`);
         chargeStartTime.current = null;
         chargeStartPosition.current = null;
         onChargeComplete?.();
@@ -504,8 +483,6 @@ export default function Sword({
 
       // Check for collisions with enemies during dash phase
       if (enemyData && enemyData.length > 0 && onHit && progress > 0 && playerPosition) {
-        console.log(`🏃 Charge dash progress: ${(progress * 100).toFixed(1)}%, checking ${enemyData.length} enemies`);
-        console.log(`🎯 Player position: [${playerPosition.x.toFixed(2)}, ${playerPosition.y.toFixed(2)}, ${playerPosition.z.toFixed(2)}]`);
         
         for (const enemy of enemyData) {
           // Skip already hit enemies
@@ -516,8 +493,6 @@ export default function Sword({
           
           // Calculate distance from actual player position to enemy
           const distance = playerPosition.distanceTo(enemy.position);
-          
-          console.log(`🎯 Enemy ${enemy.id} distance from player: ${distance.toFixed(2)}, collision radius: ${CHARGE_COLLISION_RADIUS}`);
           
           if (distance <= CHARGE_COLLISION_RADIUS) {
             // We hit this enemy
@@ -536,8 +511,6 @@ export default function Sword({
                 isBreach: true // Reuse breach damage type for charge
               }]);
             }
-            
-            console.log(`⚔️ Charge hit enemy ${enemy.id} for ${CHARGE_DAMAGE} damage at distance ${distance.toFixed(2)}`);
           }
         }
       }
@@ -555,7 +528,6 @@ export default function Sword({
 
     // Detect charge completion and trigger spin
     if (!isCharging && chargeStartTime.current !== null && !isChargeSpinning.current && !shouldStartSpin.current) {
-      console.log(`🌪️ Charge completed by ControlSystem - triggering spin phase`);
       shouldStartSpin.current = true;
       
       // Create explosion at final charge location
@@ -585,16 +557,12 @@ export default function Sword({
             }
           }
         }
-        
-        console.log(`💥 Charge explosion hit ${explosionHits} enemies`);
       }
       
     }
     
     // Start spin if flagged to do so
     if (shouldStartSpin.current && !isChargeSpinning.current) {
-      console.log(`🌪️ Starting charge spin phase`);
-      
       // Reset charge state
       chargeStartTime.current = null;
       chargeStartPosition.current = null;
@@ -606,18 +574,11 @@ export default function Sword({
       isChargeSpinning.current = true;
       chargeSpinRotation.current = 0;
       chargeSpinStartTime.current = Date.now();
-      
-      console.log(`🌪️ Spin state set: isChargeSpinning=${isChargeSpinning.current}, rotation=${chargeSpinRotation.current}`);
     }
     
-    // Debug logging for spin state management
-    if (!isCharging && isChargeSpinning.current) {
-      console.log(`🌪️ isCharging=false but spin is active - allowing spin to continue`);
-    }
     
     // Reset everything if charge is cancelled early (before completion)
     if (!isCharging && chargeStartTime.current !== null && !shouldStartSpin.current && !isChargeSpinning.current) {
-      console.log(`⚔️ Charge cancelled early - resetting state`);
       chargeStartTime.current = null;
       chargeStartPosition.current = null;
       chargeHitEnemies.current.clear();
@@ -727,13 +688,11 @@ export default function Sword({
     if (isSwinging) {
       // Always keep currentComboStep synchronized with the prop
       if (currentComboStep.current !== comboStep) {
-        console.log(`🔄 Combo step sync: ${currentComboStep.current} → ${comboStep}`);
         currentComboStep.current = comboStep;
       }
       
       // Update current combo step when swing starts
       if (swingProgress.current === 0) {
-        console.log(`🗡️ Swing started for combo step: ${comboStep}, currentComboStep: ${currentComboStep.current}`);
         swingHasDealtDamage.current = false;
       }
       
@@ -752,27 +711,21 @@ export default function Sword({
         (swingPhase >= 0.15 && swingPhase <= 0.65);   // 1st and 2nd hits have wider windows
       
       if (damageWindow && !swingHasDealtDamage.current) {
-        console.log(`⚔️ Sword damage window active! Phase: ${swingPhase.toFixed(2)}, Combo: ${effectiveComboStep}, Enemies: ${enemyData.length}`);
-        console.log(`🔍 Debug: comboStep prop=${comboStep}, currentComboStep.current=${currentComboStep.current}, effectiveComboStep=${effectiveComboStep}`);
-        console.log(`🎯 Damage window: ${swingPhase >= 0.25 && swingPhase <= 0.75 ? '3rd hit' : '1st/2nd hit'} (${swingPhase.toFixed(2)})`);
         performSwingDamage(effectiveComboStep);
         swingHasDealtDamage.current = true;
       }
       
       if (swingProgress.current >= completionThreshold) {
-        console.log(`✅ Swing ${effectiveComboStep} completed at threshold ${completionThreshold.toFixed(2)}`);
         swingProgress.current = 0;
         swingHasDealtDamage.current = false;
         lastSwingHitTime.current = {}; // Reset hit tracking
         
         // Store the current combo step as the last one
         lastComboStep.current = effectiveComboStep;
-        console.log(`📝 Updated lastComboStep: ${lastComboStep.current}`);
         
         // Set up for smooth transition to next combo position
         // Skip transition animation for 2nd → 3rd swing (overhead strike should start immediately)
         if (effectiveComboStep === 2) {
-          console.log(`⚡ Skipping transition after 2nd swing - 3rd swing starts immediately`);
           isInCombo.current = false; // No transition needed
           
           // For 2nd → 3rd swing, maintain current position without any interpolation
@@ -782,7 +735,6 @@ export default function Sword({
           // This allows natural flow between combo steps (1→2 only)
           isInCombo.current = true;
           comboTransitionProgress.current = 0;
-          console.log(`🔄 Starting combo transition: ${effectiveComboStep} → next step, isInCombo: ${isInCombo.current}`);
         }
         
         // Call completion callback
@@ -995,8 +947,6 @@ export default function Sword({
     // Attack range - increased for better hit detection
     const attackRange = 5; // Increased from 3.0
     
-    console.log(`🗡️ Checking sword collision for combo ${comboStep}, enemies in range:`, enemyData.length);
-    
     let enemiesHitThisSwing = 0;
     let rageGainedThisSwing = 0;
     
@@ -1010,7 +960,6 @@ export default function Sword({
       // Calculate distance from player
       const distance = playerPosition.distanceTo(enemy.position);
       
-      console.log(`🎯 Enemy ${enemy.id} distance: ${distance.toFixed(2)}, range: ${attackRange}`);
       
       if (distance <= attackRange) {
         // Simplified hit detection - use spherical range instead of cone
@@ -1050,10 +999,6 @@ export default function Sword({
               // Add combo-specific damage type flags if needed
             }]);
           }
-          
-          console.log(`🗡️ Sword combo ${comboStep} hit enemy ${enemy.id} for ${baseDamage} damage (distance: ${distance.toFixed(2)})`);
-        } else {
-          console.log(`❌ Enemy ${enemy.id} in range but outside attack arc`);
         }
       }
     });
@@ -1066,13 +1011,9 @@ export default function Sword({
         const rageToGain = Math.min(enemiesHitThisSwing * 5, 5); // 5 rage per hit, max 5 per swing
         gameUI.gainRage(rageToGain);
         const rageAfter = gameUI.getCurrentRage ? gameUI.getCurrentRage() : 'unknown';
-        console.log(`🗡️ Gained ${rageToGain} rage from hitting ${enemiesHitThisSwing} enemies with sword swing ${comboStep} - Rage: ${rageBefore} → ${rageAfter}`);
         rageGainedThisSwing = rageToGain;
       }
     }
-    
-    // Log summary of this swing's results
-    console.log(`📊 Swing ${comboStep} summary: Hit ${enemiesHitThisSwing} enemies, gained ${rageGainedThisSwing} rage total`);
   };
 
   // Create custom sword blade shape

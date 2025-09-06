@@ -56,7 +56,6 @@ export default function ChargedArrowManager({ world }: ChargedArrowManagerProps)
             direction: direction.clone(),
             entityId: entity.id
           });
-          console.log(`🏹 Created new ChargedArrow visual for entity ${entity.id}`);
         }
       }
     }
@@ -69,7 +68,7 @@ export default function ChargedArrowManager({ world }: ChargedArrowManagerProps)
   });
 
   const handleArrowImpact = (arrowId: number) => {
-    console.log(`🏹 ChargedArrow ${arrowId} impact handled`);
+    // console.log(`🏹 ChargedArrow ${arrowId} impact handled`);
     // Impact effects could be added here
   };
 

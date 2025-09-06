@@ -175,8 +175,6 @@ export class ControlSystem extends System {
     // Update debuff states first
     if (typeof playerMovement.updateDebuffs === 'function') {
       playerMovement.updateDebuffs();
-    } else {
-      console.warn('⚠️ Player Movement component missing updateDebuffs method:', playerMovement);
     }
 
     // Handle weapon switching
@@ -286,7 +284,6 @@ export class ControlSystem extends System {
         this.fireRate = this.swordFireRate; // Use sword-specific fire rate
         this.lastWeaponSwitchTime = currentTime;
         this.swordComboStep = 1; // Reset combo when switching to sword
-        console.log('🗡️ Switched to Sword');
       }
     } else if (this.inputManager.isKeyPressed('2')) {
       if (this.currentWeapon !== WeaponType.BOW) {
@@ -295,7 +292,6 @@ export class ControlSystem extends System {
         this.currentSubclass = WeaponSubclass.ELEMENTAL; // Default bow subclass
         this.fireRate = 0.225; // Bow fire rate
         this.lastWeaponSwitchTime = currentTime;
-        console.log('🏹 Switched to Bow');
       }
     } else if (this.inputManager.isKeyPressed('3')) {
       if (this.currentWeapon !== WeaponType.SCYTHE) {
@@ -304,7 +300,6 @@ export class ControlSystem extends System {
         this.currentSubclass = WeaponSubclass.CHAOS; // Default scythe subclass
         this.fireRate = this.scytheFireRate; // Use scythe fire rate (0.5s)
         this.lastWeaponSwitchTime = currentTime;
-        console.log('⚡ Switched to Scythe');
       }
     } else if (this.inputManager.isKeyPressed('4')) {
       if (this.currentWeapon !== WeaponType.SABRES) {
@@ -313,7 +308,6 @@ export class ControlSystem extends System {
         this.currentSubclass = WeaponSubclass.FROST; // Default sabres subclass
         this.fireRate = this.sabresFireRate; // Use sabres-specific fire rate
         this.lastWeaponSwitchTime = currentTime;
-        console.log('⚔️ Switched to Sabres');
       }
     }
   }
@@ -338,11 +332,7 @@ export class ControlSystem extends System {
     
     // Handle Barrage ability with 'Q' key
     if (this.inputManager.isKeyPressed('q')) {
-      console.log('🏹 Q key pressed for Barrage!', {
-        isBarrageCharging: this.isBarrageCharging,
-        isCharging: this.isCharging,
-        isViperStingCharging: this.isViperStingCharging
-      });
+
       if (!this.isBarrageCharging && !this.isCharging && !this.isViperStingCharging) {
         this.performBarrage(playerTransform);
       }
@@ -350,13 +340,7 @@ export class ControlSystem extends System {
     
     // Handle Cobra Shot ability with 'E' key
     if (this.inputManager.isKeyPressed('e')) {
-      console.log('🐍 E key pressed for Cobra Shot!', {
-        isCharging: this.isCharging,
-        isViperStingCharging: this.isViperStingCharging,
-        isBarrageCharging: this.isBarrageCharging,
-        isCobraShotCharging: this.isCobraShotCharging,
-        currentWeapon: this.currentWeapon
-      });
+
       if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging) {
         this.performCobraShot(playerTransform);
       }
@@ -367,7 +351,7 @@ export class ControlSystem extends System {
       if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging) {
         this.isCharging = true;
         this.chargeProgress = 0;
-        console.log('🏹 Started charging bow');
+
       }
       // Increase charge progress (could be time-based)
       if (!this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging) {
@@ -376,7 +360,6 @@ export class ControlSystem extends System {
     } else if (this.isCharging) {
       // Check if any ability is charging - if so, cancel the regular bow shot
       if (this.isViperStingCharging || this.isBarrageCharging || this.isCobraShotCharging) {
-        console.log('🏹 Cancelling regular bow shot due to ability charging');
         this.isCharging = false;
         this.chargeProgress = 0;
         return;
@@ -410,7 +393,6 @@ export class ControlSystem extends System {
       this.fireEntropicBoltProjectile(playerTransform);
     } else if (this.isCharging) {
       // Stop spinning when mouse is released
-      console.log('⚡ Stopped charging scythe (spinning)');
       this.isCharging = false;
       this.chargeProgress = 0;
     }
@@ -422,13 +404,11 @@ export class ControlSystem extends System {
     
     // Handle Reanimate ability with 'Q' key
     if (this.inputManager.isKeyPressed('q') && !this.isCharging) {
-      console.log('🔍 DEBUG: Q key pressed, calling performReanimateAbility');
       this.performReanimateAbility(playerTransform);
     }
     
     // Handle Frost Nova ability with 'E' key
     if (this.inputManager.isKeyPressed('e') && !this.isCharging) {
-      console.log('🔍 DEBUG: E key pressed, calling performFrostNovaAbility');
       this.performFrostNovaAbility(playerTransform);
     }
   }
@@ -468,15 +448,12 @@ export class ControlSystem extends System {
     
     // Check if bow is fully charged for special projectile
     if (this.chargeProgress >= 1.0) {
-      console.log(`🏹 Firing CHARGED ARROW with full charge: ${this.chargeProgress}`);
       this.createChargedArrowProjectile(playerTransform.position.clone(), direction);
     } else if (isPerfectShot) {
-      console.log(`✨ Firing PERFECT SHOT with charge: ${this.chargeProgress}`);
       this.createPerfectShotProjectile(playerTransform.position.clone(), direction);
     } else {
       // Debug: Log the firing angle to verify it's changing with camera rotation
       const angle = Math.atan2(direction.x, direction.z);
-      console.log(`🧭 Firing ${this.currentWeapon} at angle: ${(angle * 180 / Math.PI).toFixed(1)}°`);
       this.createProjectile(playerTransform.position.clone(), direction);
     }
   }
@@ -505,7 +482,6 @@ export class ControlSystem extends System {
     direction.normalize();
     
     const spinStatus = this.isCharging ? ' (SPINNING)' : '';
-    console.log(`⚡ Firing EntropicBolt${spinStatus} - charge: ${this.chargeProgress.toFixed(2)} - rate: ${this.scytheFireRate}s`);
     
     this.createEntropicBoltProjectile(playerTransform.position.clone(), direction);
   }
@@ -532,8 +508,7 @@ export class ControlSystem extends System {
     rotationMatrix.makeRotationAxis(cameraRight, compensationAngle);
     direction.applyMatrix4(rotationMatrix);
     direction.normalize();
-    
-    console.log(`⚔️ Firing CrossentropyBolt ability (R key) - rate: ${this.crossentropyFireRate}s`);
+
     
     this.createCrossentropyBoltProjectile(playerTransform.position.clone(), direction);
   }
@@ -553,7 +528,6 @@ export class ControlSystem extends System {
     const shouldBroadcast = this.onProjectileCreatedCallback !== undefined;
     
     if (!hasValidTargets && !shouldBroadcast) {
-      console.log('🏹 No valid targets found, skipping projectile creation');
       return;
     }
     
@@ -602,21 +576,18 @@ export class ControlSystem extends System {
     const shouldBroadcast = this.onProjectileCreatedCallback !== undefined;
     
     if (!hasValidTargets && !shouldBroadcast) {
-      console.log('⚡ No valid targets found, skipping EntropicBolt creation');
       return;
     }
     
     // Check if player has enough mana (15 mana cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastEntropicBolt()) {
-      console.log('⚡ Not enough mana to cast Entropic Bolt (requires 15 mana)');
       return;
     }
     
     // Consume mana
     if (gameUI) {
       gameUI.consumeMana(10);
-      console.log('⚡ Consumed 15 mana for Entropic Bolt');
     }
     
     // Offset projectile spawn position slightly forward to avoid collision with player
@@ -657,7 +628,6 @@ export class ControlSystem extends System {
     // Check if player has enough mana (40 mana cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastCrossentropyBolt()) {
-      console.log('⚔️ Not enough mana to cast Crossentropy Bolt (requires 40 mana)');
       return;
     }
     
@@ -705,7 +675,6 @@ export class ControlSystem extends System {
     // Rate limiting - prevent spam casting (1 second cooldown)
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastReanimateTime < 1.0) {
-      console.log('🩸 Reanimate on cooldown - please wait');
       return;
     }
     this.lastReanimateTime = currentTime;
@@ -715,7 +684,6 @@ export class ControlSystem extends System {
     const currentMana = gameUI ? gameUI.getCurrentMana() : 0;
     
     if (gameUI && !gameUI.canCastReanimate()) {
-      console.log(`🩸 Not enough mana to cast Reanimate (requires 20 mana, have ${currentMana})`);
       return;
     }
     
@@ -724,11 +692,9 @@ export class ControlSystem extends System {
       const manaBefore = gameUI.getCurrentMana();
       gameUI.consumeMana(20);
       const manaAfter = gameUI.getCurrentMana();
-      console.log(`🩸 Reanimate mana consumption - Before: ${manaBefore}, After: ${manaAfter}, Consumed: ${manaBefore - manaAfter}`);
     }
     
     // Always trigger the visual effect first, regardless of healing success
-    console.log('🌿 Reanimate ability activated - triggering visual effects');
     this.triggerReanimateEffect(playerTransform);
     
     // Get player's health component and heal for 30 HP 
@@ -736,26 +702,21 @@ export class ControlSystem extends System {
     if (healthComponent) {
       const didHeal = healthComponent.heal(30); // REANIMATE HEAL AMOUNT
       if (didHeal) {
-        console.log(`🩸 Reanimate healed player for 30 HP. Current health: ${healthComponent.currentHealth}/${healthComponent.maxHealth}`);
+        // console.log(`🩸 Reanimate healed player for 30 HP. Current health: ${healthComponent.currentHealth}/${healthComponent.maxHealth}`);
       } else {
-        console.log('🩸 Reanimate cast successfully but player already at full health');
+        // console.log('🩸 Reanimate cast successfully but player already at full health');
       }
     }
   }
 
   private triggerReanimateEffect(playerTransform: Transform): void {
     // Trigger the visual healing effect
-    console.log('🌿 Triggering Reanimate healing effect');
     
     if (this.onReanimateCallback) {
-      console.log('🔍 DEBUG: Calling onReanimateCallback for PVP broadcast');
       this.onReanimateCallback();
-    } else {
-      console.log('🔍 DEBUG: onReanimateCallback is null/undefined - no PVP broadcast!');
-    }
+    } 
     
     const playerPosition = playerTransform.position;
-    console.log(`🌿 Healing effect at position: ${playerPosition.x.toFixed(2)}, ${playerPosition.y.toFixed(2)}, ${playerPosition.z.toFixed(2)}`);
   }
 
   private performFrostNovaAbility(playerTransform: Transform): void {
@@ -764,26 +725,22 @@ export class ControlSystem extends System {
     // Check cooldown
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastFrostNovaTime < this.frostNovaFireRate) {
-      console.log(`❄️ Frost Nova on cooldown for ${(this.frostNovaFireRate - (currentTime - this.lastFrostNovaTime)).toFixed(1)}s`);
       return;
     }
     
     // Check if player has enough mana (50 mana cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastFrostNova()) {
-      console.log('❄️ Not enough mana to cast Frost Nova (requires 50 mana)');
       return;
     }
     
     // Consume mana
     if (gameUI) {
       gameUI.consumeMana(50);
-      console.log('❄️ Consumed 50 mana for Frost Nova');
     }
     
     this.lastFrostNovaTime = currentTime;
     
-    console.log('❄️ Frost Nova ability activated!');
     
     // Get player position and direction
     const playerPosition = playerTransform.getWorldPosition();
@@ -793,10 +750,7 @@ export class ControlSystem extends System {
     
     // Trigger Frost Nova callback for visual effects
     if (this.onFrostNovaCallback) {
-      console.log('🔍 DEBUG: Calling onFrostNovaCallback for PVP broadcast');
       this.onFrostNovaCallback(playerPosition, direction);
-    } else {
-      console.log('🔍 DEBUG: onFrostNovaCallback is null/undefined - no PVP broadcast!');
     }
     
     // Find all enemies within 5 unit radius and freeze them
@@ -812,24 +766,20 @@ export class ControlSystem extends System {
     // Check cooldown
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastCobraShotTime < this.cobraShotFireRate) {
-      console.log(`🐍 Cobra Shot on cooldown for ${(this.cobraShotFireRate - (currentTime - this.lastCobraShotTime)).toFixed(1)}s`);
       return;
     }
 
     // Check if player has enough energy (40 energy cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastCobraShot()) {
-      console.log('🐍 Not enough energy to cast Cobra Shot (requires 40 energy)');
       return;
     }
 
     // Consume energy
     if (gameUI) {
       gameUI.consumeEnergy(40);
-      console.log('🐍 Consumed 40 energy for Cobra Shot');
     }
 
-    console.log('🐍 Cobra Shot activated - starting charge!');
     this.isCobraShotCharging = true;
     this.cobraShotChargeProgress = 0;
     this.lastCobraShotTime = currentTime;
@@ -852,8 +802,6 @@ export class ControlSystem extends System {
   }
 
   private fireCobraShot(playerTransform: Transform): void {
-    console.log('🐍 Firing Cobra Shot projectile!');
-    
     // Get player position and direction (same as other projectiles)
     const playerPosition = playerTransform.getWorldPosition();
     playerPosition.y += 0.825; // Shoot from chest level like Viper Sting
@@ -925,7 +873,6 @@ export class ControlSystem extends System {
           // This is an enemy - freeze it (single player mode)
           enemy.freeze(6.0, currentTime);
           frozenCount++;
-          console.log(`❄️ Frozen enemy at distance ${distance.toFixed(2)} units`);
           
           // Add frozen visual effect for this enemy
           addGlobalFrozenEnemy(entity.id.toString(), entityPosition);
@@ -936,16 +883,10 @@ export class ControlSystem extends System {
             const frostNovaDamage = 50; // Frost Nova damage
             combatSystem.queueDamage(entity, frostNovaDamage, this.playerEntity, 'frost_nova');
             damagedPlayers++;
-            console.log(`❄️ Frost Nova hit player ${entity.id} for ${frostNovaDamage} damage at distance ${distance.toFixed(2)} units`);
             
             // Broadcast freeze effect to the target player so they get frozen on their end
             if (this.onDebuffCallback) {
-              console.log(`❄️ Broadcasting freeze effect to PVP player ${entity.id}`);
-              console.log(`🔍 Debug: Calling debuff callback with entityId=${entity.id}, type=frozen, duration=3000`);
               this.onDebuffCallback(entity.id, 'frozen', 6000, entityPosition);
-              console.log(`✅ Debug: Debuff callback completed`);
-            } else {
-              console.warn(`⚠️ Debug: onDebuffCallback is not set!`);
             }
           }
         }
@@ -953,10 +894,10 @@ export class ControlSystem extends System {
     });
     
     if (frozenCount > 0) {
-      console.log(`❄️ Frost Nova froze ${frozenCount} enemies within ${radius} unit radius`);
+      // console.log(`❄️ Frost Nova froze ${frozenCount} enemies within ${radius} unit radius`);
     }
     if (damagedPlayers > 0) {
-      console.log(`❄️ Frost Nova damaged ${damagedPlayers} players within ${radius} unit radius`);
+      // console.log(`❄️ Frost Nova damaged ${damagedPlayers} players within ${radius} unit radius`);
     }
   }
 
@@ -1032,14 +973,11 @@ export class ControlSystem extends System {
         opacity: 1.0
       });
     }
-    
-    console.log(`✨ Perfect shot projectile created with enhanced stats!`);
   }
 
   // Methods to configure weapon for testing
   public setWeaponSubclass(subclass: WeaponSubclass): void {
     this.currentSubclass = subclass;
-    console.log(`🏹 Weapon subclass changed to: ${subclass}`);
   }
 
   // Method to set bow release callback
@@ -1109,7 +1047,6 @@ export class ControlSystem extends System {
 
   public setWeaponLevel(level: number): void {
     this.currentLevel = level;
-    console.log(`⬆️ Weapon level changed to: ${level}`);
   }
 
   public getCurrentWeaponConfig(): { weapon: WeaponType; subclass: WeaponSubclass; level: number } {
@@ -1227,8 +1164,6 @@ export class ControlSystem extends System {
     this.lastFireTime = currentTime;
     this.lastSwordAttackTime = currentTime;
     
-    console.log(`🗡️ Sword melee attack - Combo step ${this.swordComboStep}`);
-    
     // Set swinging state - completion will be handled by sword component callback
     this.isSwinging = true;
     
@@ -1242,15 +1177,12 @@ export class ControlSystem extends System {
   public onSwordSwingComplete(): void {
     if (!this.isSwinging) return; // Prevent multiple calls
     
-    console.log(`🗡️ Sword swing completed - was combo step ${this.swordComboStep}`);
-    
     // Reset swinging state
     this.isSwinging = false;
     
     // Advance combo step for next attack
     this.swordComboStep = (this.swordComboStep % 3 + 1) as 1 | 2 | 3;
     
-    console.log(`🗡️ Next combo step will be: ${this.swordComboStep}`);
   }
 
   private handleSabresInput(playerTransform: Transform): void {
@@ -1261,13 +1193,11 @@ export class ControlSystem extends System {
     
     // Handle Q key for Backstab ability
     if (this.inputManager.isKeyPressed('q') && !this.isSwinging && !this.isSkyfalling) {
-      console.log('🗡️ Q key pressed for Backstab - attempting to perform ability');
       this.performBackstab(playerTransform);
     }
     
     // Handle E key for Skyfall ability
     if (this.inputManager.isKeyPressed('e') && !this.isSkyfalling) {
-      console.log('🌟 E key pressed for Skyfall - attempting to perform ability');
       this.performSkyfall(playerTransform);
     }
     
@@ -1323,7 +1253,7 @@ export class ControlSystem extends System {
     // SABRES DAMAGE
     const attackRange = 3.8; // Slightly longer range than sword
     const attackAngle = Math.PI / 2; // 60 degree cone (wider than sword)
-    const leftSabreDamage = 19; // Damage per sabre
+    const leftSabreDamage = 19;
     const rightSabreDamage = 23;
     
     // Get camera direction for attack direction
@@ -1367,14 +1297,7 @@ export class ControlSystem extends System {
         }, 100); // 100ms delay between sabre hits
         
         hitCount++;
-        console.log(`⚔️ Sabres hit target at distance ${distanceToTarget.toFixed(2)} for ${leftSabreDamage + rightSabreDamage} total damage`);
       }
-    }
-    
-    if (hitCount === 0) {
-      console.log('⚔️ Sabres attack missed - no targets in range');
-    } else {
-      console.log(`⚔️ Sabres attack hit ${hitCount} target(s)`);
     }
   }
 
@@ -1384,14 +1307,12 @@ export class ControlSystem extends System {
     
     // Check cooldown
     if (currentTime - this.lastSkyfallTime < this.skyfallCooldown) {
-      console.log(`🌟 Skyfall on cooldown for ${(this.skyfallCooldown - (currentTime - this.lastSkyfallTime)).toFixed(1)}s`);
       return;
     }
     
     // Check energy cost
     const gameUI = (window as any).gameUI;
     if (!gameUI || !gameUI.canCastSkyfall()) {
-      console.log('🌟 Not enough energy for Skyfall (requires 40 energy)');
       return;
     }
     
@@ -1410,19 +1331,14 @@ export class ControlSystem extends System {
     if (playerMovement) {
       this.skyfallOriginalGravity = playerMovement.gravity;
       this.skyfallTargetHeight = playerTransform.position.y + (playerMovement.jumpForce * 1.4); // Reduced height by 30% (was 2x, now 1.4x)
-      
-      console.log(`🌟 Skyfall Setup - Original Gravity: ${this.skyfallOriginalGravity}, Jump Force: ${playerMovement.jumpForce}, Start Y: ${playerTransform.position.y.toFixed(2.0)}, Target Y: ${this.skyfallTargetHeight.toFixed( 2.0)}`);
-      
+            
       // Apply upward velocity
       playerMovement.velocity.y = playerMovement.jumpForce * 2; // Stronger initial velocity
       playerMovement.gravity = 0; // Disable gravity during ascent
       // Don't disable canMove as it prevents all physics updates including gravity
       // Instead we'll control horizontal movement in the ControlSystem
-      
-      console.log(`🌟 Applied velocity Y: ${playerMovement.velocity.y.toFixed(2)}, Set gravity to: ${playerMovement.gravity}`);
     }
-    
-    console.log(`🌟 Skyfall initiated! Ascending to height ${this.skyfallTargetHeight.toFixed(2)}`);
+
     
     // Trigger callback for multiplayer/visual effects
     if (this.onSkyfallCallback) {
@@ -1439,10 +1355,7 @@ export class ControlSystem extends System {
     
     const elapsedTime = currentTime - this.skyfallStartTime;
     
-    // Debug logging (throttled to avoid spam)
-    if (Math.floor(elapsedTime * 4) !== Math.floor((elapsedTime - 0.25) * 4)) {
-      console.log(`🌟 Skyfall Update - Phase: ${this.skyfallPhase}, Y: ${playerTransform.position.y.toFixed(2)}, Target: ${this.skyfallTargetHeight.toFixed(2)}, Velocity Y: ${playerMovement.velocity.y.toFixed(2)}, Elapsed: ${elapsedTime.toFixed(2)}s`);
-    }
+
     
     switch (this.skyfallPhase) {
       case 'ascending':
@@ -1451,7 +1364,6 @@ export class ControlSystem extends System {
           this.skyfallPhase = 'descending';
           playerMovement.velocity.y = 0; // Stop at peak
           playerMovement.gravity = this.skyfallOriginalGravity * 30; // Faster descent
-          console.log('🌟 Skyfall: Reached peak, beginning descent');
         }
         break;
         
@@ -1470,14 +1382,12 @@ export class ControlSystem extends System {
     }
     
     // Safety timeout (if something goes wrong, end after 5 seconds)
-    if (elapsedTime > 5.0) {
-      console.log('🌟 Skyfall timeout - force completing');
+    if (elapsedTime > 4.0) {
       this.completeSkyfallAbility(playerTransform);
     }
   }
   
   private performSkyfallLanding(playerTransform: Transform): void {
-    console.log('🌟 Skyfall: Landing impact!');
     
     // Deal damage to enemies in landing area
     const allEntities = this.world.getAllEntities();
@@ -1504,15 +1414,8 @@ export class ControlSystem extends System {
         if (combatSystem) {
           combatSystem.queueDamage(entity, skyfallDamage, this.playerEntity || undefined);
           hitCount++;
-          console.log(`🌟 Skyfall hit target at distance ${distanceToLanding.toFixed(2)} for ${skyfallDamage} damage`);
         }
       }
-    }
-    
-    if (hitCount === 0) {
-      console.log('🌟 Skyfall landing missed - no targets in range');
-    } else {
-      console.log(`🌟 Skyfall landing hit ${hitCount} target(s)`);
     }
   }
   
@@ -1527,8 +1430,6 @@ export class ControlSystem extends System {
       playerMovement.gravity = this.skyfallOriginalGravity;
       playerMovement.velocity.y = 0; // Stop any remaining vertical movement
     }
-    
-    console.log('🌟 Skyfall ability completed');
   }
   
   private updateBackstabState(playerTransform: Transform): void {
@@ -1538,7 +1439,6 @@ export class ControlSystem extends System {
     // Check if backstab animation duration has elapsed
     if (elapsedTime >= this.backstabDuration) {
       this.isBackstabbing = false;
-      console.log('🗡️ Backstab animation completed');
     }
   }
   
@@ -1550,7 +1450,6 @@ export class ControlSystem extends System {
     this.isDivineStorming = false;
     this.isSwordCharging = false;
     this.isDeflecting = false;
-    console.log('🔄 All ability states reset due to weapon switch');
   }
 
   // Backstab ability implementation
@@ -1559,14 +1458,12 @@ export class ControlSystem extends System {
     
     // Check cooldown
     if (currentTime - this.lastBackstabTime < this.backstabCooldown) {
-      console.log(`🗡️ Backstab on cooldown for ${(this.backstabCooldown - (currentTime - this.lastBackstabTime)).toFixed(1)}s`);
       return;
     }
     
     // Check energy cost
     const gameUI = (window as any).gameUI;
     if (!gameUI || !gameUI.canCastBackstab()) {
-      console.log('🗡️ Not enough energy for Backstab (requires 60 energy)');
       return;
     }
     
@@ -1575,8 +1472,7 @@ export class ControlSystem extends System {
     
     // Set cooldown
     this.lastBackstabTime = currentTime;
-    
-    console.log('🗡️ Backstab ability activated!');
+  
     
     // Start backstab animation
     this.isBackstabbing = true;
@@ -1668,9 +1564,6 @@ export class ControlSystem extends System {
           
           if (isBackstab) {
             damage = 175; // Backstab damage
-            console.log(`🗡️ BACKSTAB! Attacking ${targetPlayer.name} from behind for ${damage} damage`);
-          } else {
-            console.log(`🗡️ Front attack on ${targetPlayer.name} for ${damage} damage`);
           }
         }
       }
@@ -1686,14 +1579,7 @@ export class ControlSystem extends System {
         );
         
         hitCount++;
-        console.log(`🗡️ Backstab hit target at distance ${distance.toFixed(2)} for ${damage} damage${isBackstab ? ' (BACKSTAB!)' : ''}`);
       }
-    }
-    
-    if (hitCount === 0) {
-      console.log('🗡️ Backstab missed - no targets in range');
-    } else {
-      console.log(`🗡️ Backstab completed - hit ${hitCount} target(s)`);
     }
   }
 
@@ -1708,16 +1594,16 @@ export class ControlSystem extends System {
     direction.normalize();
     
     // Melee attack parameters - increased for PVP combat
-    const meleeRange = 4.6; // Increased attack range for PVP
+    const meleeRange = 4.5; // Increased attack range for PVP
     const meleeAngle = Math.PI / 2; // 120 degree cone (60 degrees each side)
     
     // Base damage values based on combo step - works for all subclasses
     let baseDamage = 45; // Base sword damage
     // Combo damage scaling
     switch (this.swordComboStep) {
-      case 1: baseDamage = 45; break;
-      case 2: baseDamage = 50; break;
-      case 3: baseDamage = 60; break; // Finisher does more damage
+      case 1: baseDamage = 40; break;
+      case 2: baseDamage = 45; break;
+      case 3: baseDamage = 55; break; // Finisher does more damage
     }
     
     // Get combat system to apply damage
@@ -1783,7 +1669,6 @@ export class ControlSystem extends System {
       if (this.inputManager.checkDoubleTap(key)) {
         // Debug: Log the double tap detection
         const debugInfo = this.inputManager.getDoubleTapDebugInfo(key);
-        console.log(`🔍 Double tap detected for key '${key.toUpperCase()}':`, debugInfo);
         
         // Convert input direction to world space based on camera orientation
         const worldDirection = this.getWorldSpaceDirection(direction);
@@ -1793,11 +1678,8 @@ export class ControlSystem extends System {
         const dashStarted = movement.startDash(worldDirection, transform.position, currentTime);
         
         if (dashStarted) {
-          console.log(`🏃 Dash started in direction: ${key.toUpperCase()}`);
           // Reset the double-tap state to prevent multiple dashes
           this.inputManager.resetDoubleTap(key);
-        } else {
-          console.warn(`❌ Dash failed to start for key: ${key.toUpperCase()}`);
         }
         
         break; // Only process one dash per frame
@@ -1820,13 +1702,9 @@ export class ControlSystem extends System {
         transform.position.copy(dashResult.newPosition);
       } else {
         // Cancel dash if it would move too far from origin
-        console.warn(`Dash cancelled: would move too far from origin (${distanceFromOrigin.toFixed(2)} > ${MAX_DASH_BOUNDS})`);
+        // console.warn(`Dash cancelled: would move too far from origin (${distanceFromOrigin.toFixed(2)} > ${MAX_DASH_BOUNDS})`);
         movement.cancelDash();
       }
-    }
-
-    if (dashResult.isComplete) {
-      console.log('🏁 Dash completed');
     }
   }
 
@@ -1853,7 +1731,6 @@ export class ControlSystem extends System {
       
       if (distanceFromOrigin > MAX_CHARGE_BOUNDS) {
         // Cancel charge if it would move too far from origin
-        console.warn(`Charge cancelled: would move too far from origin (${distanceFromOrigin.toFixed(2)} > ${MAX_CHARGE_BOUNDS})`);
         movement.cancelCharge();
         // Notify sword component that charge was cancelled
         this.onChargeComplete();
@@ -1935,14 +1812,12 @@ export class ControlSystem extends System {
     // Check if player has enough rage (minimum 20 rage required)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastDivineStorm()) {
-      console.log('⚡ Not enough rage to cast Divine Storm (requires minimum 20 rage)');
       return;
     }
 
     // Check cooldown
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastDivineStormTime < this.divineStormCooldown) {
-      console.log(`⏰ Divine Storm on cooldown for ${(this.divineStormCooldown - (currentTime - this.lastDivineStormTime)).toFixed(1)}s`);
       return;
     }
 
@@ -1950,7 +1825,6 @@ export class ControlSystem extends System {
     const currentRage = gameUI ? gameUI.getCurrentRage() : 40; // Fallback to 40 if gameUI not available
     if (gameUI) {
       gameUI.consumeAllRage(); // Consume all rage instead of just 20
-      console.log(`⚡ Consumed ${currentRage} rage for Divine Storm`);
     }
 
     // Calculate extended duration: base 4 seconds + 1 second per 10 rage consumed
@@ -1958,7 +1832,6 @@ export class ControlSystem extends System {
     const bonusDuration = Math.floor(currentRage / 10) * 500; // 1 second per 10 rage
     const totalDivineStormDuration = baseStormDuration + bonusDuration;
 
-    console.log(`⚡ Divine Storm activated! Duration: ${totalDivineStormDuration / 1000}s (base: 4s + bonus: ${bonusDuration / 1000}s from ${currentRage} rage)`);
     this.isDivineStorming = true;
     this.lastDivineStormTime = currentTime;
     
@@ -1973,7 +1846,6 @@ export class ControlSystem extends System {
     // Divine Storm lasts for calculated duration
     setTimeout(() => {
       this.isDivineStorming = false;
-      console.log('⚡ Divine Storm completed');
     }, totalDivineStormDuration);
   }
 
@@ -1981,11 +1853,9 @@ export class ControlSystem extends System {
     // Check cooldown
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastChargeTime < this.chargeCooldown) {
-      console.log(`⏰ Charge on cooldown for ${(this.chargeCooldown - (currentTime - this.lastChargeTime)).toFixed(1)}s`);
       return;
     }
 
-    console.log('⚔️ Charge activated!');
     this.isSwordCharging = true;
     this.lastChargeTime = currentTime;
     
@@ -2004,7 +1874,6 @@ export class ControlSystem extends System {
     const gameUI = (window as any).gameUI;
     if (gameUI) {
       gameUI.gainRage(20);
-      console.log('⚔️ Gained 20 rage from using Charge ability');
     }
     
     // Start the charge movement using the separate charge system
@@ -2021,12 +1890,8 @@ export class ControlSystem extends System {
         const chargeStarted = playerMovement.startCharge(direction, playerTransform.position, currentTime);
         
         if (chargeStarted) {
-          console.log('⚔️ Charge movement started with 10.5 distance');
-          
           // Schedule charge damage detection during movement
           this.scheduleChargeDamage(playerTransform, direction, currentTime);
-        } else {
-          console.warn('⚔️ Charge failed to start (already charging or dashing)');
         }
       }
     }
@@ -2063,15 +1928,12 @@ export class ControlSystem extends System {
       let hitSomething = false;
       
       // Debug: Log all entities in the world during charge
-      console.log(`🔍 Charge collision check - Total entities in world: ${allEntities.length}`);
       
       // ENHANCED: Also check against server player positions directly as a fallback
       // This ensures we don't miss collisions due to entity sync issues
       const serverPlayers = (window as any).pvpPlayers || new Map();
       const localSocketId = (window as any).localSocketId;
-      
-      console.log(`🔍 Also checking ${serverPlayers.size} server players directly for collision`);
-      
+            
       serverPlayers.forEach((serverPlayer: any, playerId: string) => {
         // Skip self
         if (playerId === localSocketId) return;
@@ -2084,10 +1946,8 @@ export class ControlSystem extends System {
         const distance = playerPosition.distanceTo(serverPlayerPos);
         const stopDistance = 0.9 + 1.0; // Player collision radius + buffer
         
-        console.log(`🔍 Direct server player check - ${playerId}: distance=${distance.toFixed(2)}, stopDistance=${stopDistance.toFixed(2)}`);
         
         if (distance <= stopDistance && serverPlayer.health > 0) {
-          console.log(`⚔️ Direct server collision detected with player ${playerId}!`);
           this.chargeHitEntities.add(playerIdHash);
           hitSomething = true;
           
@@ -2121,7 +1981,6 @@ export class ControlSystem extends System {
         // Debug: Log entity details
         const enemy = entity.getComponent(Enemy);
         const entityType = enemy ? `Enemy(${enemy.getDisplayName()})` : `Player(${entity.id})`;
-        console.log(`🔍 Checking entity ${entity.id} (${entityType}): transform=${!!entityTransform}, health=${!!entityHealth}, collider=${!!entityCollider}, isDead=${entityHealth?.isDead}`);
         
         if (!entityTransform || !entityHealth || entityHealth.isDead) return;
         
@@ -2133,7 +1992,6 @@ export class ControlSystem extends System {
         const stopDistance = entityCollider ? entityCollider.radius + 1.0 : chargeRadius; // Stop 1 unit away from enemy edge
         
         // Debug: Log position and distance information
-        console.log(`🔍 Entity ${entity.id} (${entityType}): playerPos=[${playerPosition.x.toFixed(2)}, ${playerPosition.y.toFixed(2)}, ${playerPosition.z.toFixed(2)}], entityPos=[${entityPosition.x.toFixed(2)}, ${entityPosition.y.toFixed(2)}, ${entityPosition.z.toFixed(2)}], distance=${distance.toFixed(2)}, stopDistance=${stopDistance.toFixed(2)}, colliderRadius=${entityCollider?.radius || 'none'}`);
         
         if (distance <= stopDistance) {
           // Mark as hit to prevent multiple hits
@@ -2147,7 +2005,6 @@ export class ControlSystem extends System {
             
             const enemy = entity.getComponent(Enemy);
             const entityType = enemy ? `Enemy(${enemy.getDisplayName()})` : `Player(${entity.id})`;
-            console.log(`⚔️ Charge hit ${entityType} for ${chargeDamage} damage at distance ${distance.toFixed(2)}`);
             
             // Broadcast charge attack for PVP (includes damage and animation)
             if (this.onProjectileCreatedCallback) {
@@ -2167,7 +2024,6 @@ export class ControlSystem extends System {
       
       // In PVP mode, stop charge when hitting something
       if (hitSomething) {
-        console.log(`⚔️ Charge stopped by collision - ending charge movement`);
         this.chargeStoppedByCollision = true;
         
         // Stop the charge movement immediately
@@ -2189,7 +2045,6 @@ export class ControlSystem extends System {
 
   // Called by sword component when Charge completes
   public onChargeComplete(): void {
-    console.log('⚔️ Charge completed');
     this.isSwordCharging = false;
   }
 
@@ -2197,11 +2052,9 @@ export class ControlSystem extends System {
     // Check cooldown
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastDeflectTime < this.deflectCooldown) {
-      console.log(`⏰ Deflect on cooldown for ${(this.deflectCooldown - (currentTime - this.lastDeflectTime)).toFixed(1)}s`);
       return;
     }
 
-    console.log('🛡️ Deflect activated!');
     this.isDeflecting = true;
     this.lastDeflectTime = currentTime;
     
@@ -2226,24 +2079,20 @@ export class ControlSystem extends System {
     // Check cooldown
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastViperStingTime < this.viperStingFireRate) {
-      console.log(`⏰ Viper Sting on cooldown for ${(this.viperStingFireRate - (currentTime - this.lastViperStingTime)).toFixed(1)}s`);
       return;
     }
 
     // Check if player has enough energy (60 energy cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastViperSting()) {
-      console.log('🐍 Not enough energy to cast Viper Sting (requires 60 energy)');
       return;
     }
 
     // Consume energy
     if (gameUI) {
       gameUI.consumeEnergy(60);
-      console.log('🐍 Consumed 60 energy for Viper Sting');
     }
 
-    console.log('🐍 Viper Sting activated - starting charge!');
     this.isViperStingCharging = true;
     this.viperStingChargeProgress = 0;
     this.lastViperStingTime = currentTime;
@@ -2266,7 +2115,6 @@ export class ControlSystem extends System {
   }
 
   private fireViperSting(playerTransform: Transform): void {
-    console.log('🐍 Firing Viper Sting projectile!');
     
     // Get player position and direction
     const playerPosition = playerTransform.getWorldPosition();
@@ -2301,7 +2149,7 @@ export class ControlSystem extends System {
     // Trigger the global Viper Sting manager for visual effects
     const success = triggerGlobalViperSting();
     if (success) {
-      console.log('🐍 Viper Sting visual effects successfully triggered!');
+      // console.log('🐍 Viper Sting visual effects successfully triggered!');
     }
     
     // Broadcast projectile creation to other players
@@ -2316,7 +2164,6 @@ export class ControlSystem extends System {
   }
 
   private performBarrage(playerTransform: Transform): void {
-    console.log('🏹 performBarrage called!');
     
     // Check cooldown
     const currentTime = Date.now() / 1000;
@@ -2328,17 +2175,14 @@ export class ControlSystem extends System {
     // Check if player has enough energy (40 energy cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastBarrage()) {
-      console.log('🏹 Not enough energy to cast Barrage (requires 40 energy)');
       return;
     }
 
     // Consume energy
     if (gameUI) {
       gameUI.consumeEnergy(40);
-      console.log('🏹 Consumed 40 energy for Barrage');
     }
 
-    console.log('🏹 Barrage activated - starting charge!');
     this.isBarrageCharging = true;
     this.barrageChargeProgress = 0;
     this.lastBarrageTime = currentTime;
@@ -2361,7 +2205,6 @@ export class ControlSystem extends System {
   }
 
   private fireBarrage(playerTransform: Transform): void {
-    console.log('🏹 Firing Barrage projectiles!');
     
     // Get player position and direction
     const playerPosition = playerTransform.getWorldPosition();
@@ -2424,7 +2267,6 @@ export class ControlSystem extends System {
         this.onProjectileCreatedCallback('barrage_projectile', spawnPosition, projectileDirection, projectileConfig);
       }
       
-      console.log(`🏹 Created Barrage arrow ${projectileEntity.id} at angle ${(angle * 180 / Math.PI).toFixed(1)}°`);
     });
     
     // Trigger Barrage callback for additional visual effects if needed
@@ -2432,7 +2274,6 @@ export class ControlSystem extends System {
       this.onBarrageCallback(playerPosition, direction);
     }
     
-    console.log('🏹 Barrage successfully fired with 5 ECS projectiles!');
   }
 
   private setupDeflectBarrier(playerTransform: Transform): void {
@@ -2492,7 +2333,6 @@ export class ControlSystem extends System {
 
   // Called by sword component when Deflect completes
   public onDeflectComplete(): void {
-    console.log('🛡️ Deflect completed');
     this.isDeflecting = false;
     this.deflectBarrier.deactivate();
   }

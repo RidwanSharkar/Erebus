@@ -33,7 +33,7 @@ export default function Sabres({
   // Debug: Log when backstab animation is received
   React.useEffect(() => {
     if (isBackstabbing) {
-      console.log('🗡️ DEBUG: Sabres component received isBackstabbing:', isBackstabbing);
+      // console.log('🗡️ DEBUG: Sabres component received isBackstabbing:', isBackstabbing);
     }
   }, [isBackstabbing]);
   // Refs and states for the left sabre
