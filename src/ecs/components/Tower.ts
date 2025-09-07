@@ -38,7 +38,7 @@ export class Tower extends Component {
     
     // Combat configuration
     this.attackRange = 10; // 10 unit attack range as specified
-    this.attackDamage = 10; // 10 damage per arrow as specified
+    this.attackDamage = 100; // 25 damage per arrow as requested
     this.attackCooldown = 1.5; // 1.5 seconds between shots
     this.lastAttackTime = 0;
     this.projectileSpeed = 20; // Speed of tower arrows
@@ -96,8 +96,8 @@ export class Tower extends Component {
   public reset(): void {
     this.ownerId = '';
     this.towerIndex = 0;
-    this.attackRange = 8;
-    this.attackDamage = 10;
+    this.attackRange = 10;
+    this.attackDamage = 25;
     this.attackCooldown = 1.5;
     this.lastAttackTime = 0;
     this.projectileSpeed = 20;

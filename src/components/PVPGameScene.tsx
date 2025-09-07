@@ -17,6 +17,7 @@ import { Projectile } from '@/ecs/components/Projectile';
 import { Renderer } from '@/ecs/components/Renderer';
 import { Collider, CollisionLayer, ColliderType } from '@/ecs/components/Collider';
 import { Tower } from '@/ecs/components/Tower';
+import { SummonedUnit } from '@/ecs/components/SummonedUnit';
 import { InterpolationBuffer } from '@/ecs/components/Interpolation';
 import { RenderSystem } from '@/systems/RenderSystem';
 import { ControlSystem } from '@/systems/ControlSystem';
@@ -26,6 +27,7 @@ import { PhysicsSystem } from '@/systems/PhysicsSystem';
 import { CollisionSystem } from '@/systems/CollisionSystem';
 import { CombatSystem } from '@/systems/CombatSystem';
 import { TowerSystem } from '@/systems/TowerSystem';
+import { SummonedUnitSystem } from '@/systems/SummonedUnitSystem';
 import { InterpolationSystem } from '@/systems/InterpolationSystem';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { ReanimateRef } from '@/components/weapons/Reanimate';
@@ -54,6 +56,7 @@ import DivineStormManager, { triggerGlobalDivineStorm } from '@/components/weapo
 import DeflectShieldManager, { triggerGlobalDeflectShield } from '@/components/weapons/DeflectShieldManager';
 import PlayerHealthBar from '@/components/ui/PlayerHealthBar';
 import TowerRenderer from '@/components/towers/TowerRenderer';
+import SummonedUnitRenderer from '@/components/SummonedUnitRenderer';
 
 // PVP-specific Cobra Shot Manager for hitting players
 interface PVPCobraShotManagerProps {
@@ -227,6 +230,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   const playerEntityRef = useRef<number | null>(null);
   const controlSystemRef = useRef<ControlSystem | null>(null);
   const towerSystemRef = useRef<TowerSystem | null>(null);
+  const summonedUnitSystemRef = useRef<SummonedUnitSystem | null>(null);
   const reanimateRef = useRef<ReanimateRef>(null);
   const isInitialized = useRef(false);
   const lastAnimationBroadcast = useRef(0);
@@ -244,6 +248,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   
   // Track server tower to local ECS entity mapping
   const serverTowerEntities = useRef<Map<string, number>>(new Map());
+
+  // Track server summoned unit to local ECS entity mapping
+  const serverSummonedUnitEntities = useRef<Map<string, number>>(new Map());
   
   // PVP Reanimate Effect Management
   const [pvpReanimateEffects, setPvpReanimateEffects] = useState<Array<{
@@ -1709,12 +1716,13 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         }
       };
       
-      const { player, controlSystem, towerSystem } = setupPVPGame(engine, scene, camera as PerspectiveCamera, gl, damagePlayerWithMapping, damageTower);
+      const { player, controlSystem, towerSystem, summonedUnitSystem } = setupPVPGame(engine, scene, camera as PerspectiveCamera, gl, damagePlayerWithMapping, damageTower);
       console.log('🎮 PVP Player entity created:', player, 'ID:', player.id);
       setPlayerEntity(player);
       playerEntityRef.current = player.id;
       controlSystemRef.current = controlSystem;
       towerSystemRef.current = towerSystem;
+      summonedUnitSystemRef.current = summonedUnitSystem;
       
       // Set up tower system with player mapping
       if (towerSystem && socket?.id) {
@@ -2334,6 +2342,35 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         );
       })}
 
+      {/* Summoned Units */}
+      {engineRef.current && (() => {
+        const world = engineRef.current.getWorld();
+        const summonedUnits = world.queryEntities([Transform, SummonedUnit, Health]);
+
+        return summonedUnits.map(entity => {
+          const transform = entity.getComponent(Transform);
+          const unit = entity.getComponent(SummonedUnit);
+          const health = entity.getComponent(Health);
+
+          if (!transform || !unit || !health || unit.isDead || health.isDead) {
+            return null;
+          }
+
+          return (
+            <SummonedUnitRenderer
+              key={unit.unitId}
+              entityId={entity.id}
+              world={world}
+              position={transform.position}
+              ownerId={unit.ownerId}
+              health={health.currentHealth}
+              maxHealth={unit.maxHealth}
+              isDead={unit.isDead}
+            />
+          );
+        }).filter(Boolean); // Remove null entries
+      })()}
+
       {/* Other Players Health Bars */}
       {Array.from(players.values()).map(player => {
         if (player.id === socket?.id) return null; // Don't show health bar for local player
@@ -2710,13 +2747,13 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
 }
 
 function setupPVPGame(
-  engine: Engine, 
-  scene: Scene, 
-  camera: PerspectiveCamera, 
+  engine: Engine,
+  scene: Scene,
+  camera: PerspectiveCamera,
   renderer: WebGLRenderer,
   damagePlayerCallback: (playerId: string, damage: number) => void,
   damageTowerCallback: (towerId: string, damage: number) => void
-): { player: any; controlSystem: ControlSystem; towerSystem: TowerSystem } {
+): { player: any; controlSystem: ControlSystem; towerSystem: TowerSystem; summonedUnitSystem: SummonedUnitSystem } {
   const world = engine.getWorld();
   const inputManager = engine.getInputManager();
 
@@ -2731,9 +2768,10 @@ function setupPVPGame(
   const renderSystem = new RenderSystem(scene, camera, renderer);
   const projectileSystem = new ProjectileSystem(world);
   const towerSystem = new TowerSystem(world);
+  const summonedUnitSystem = new SummonedUnitSystem(world);
   const controlSystem = new ControlSystem(
-    camera as PerspectiveCamera, 
-    inputManager, 
+    camera as PerspectiveCamera,
+    inputManager,
     world,
     projectileSystem
   );
@@ -2752,7 +2790,8 @@ function setupPVPGame(
   // Connect systems
   projectileSystem.setCombatSystem(combatSystem);
   towerSystem.setProjectileSystem(projectileSystem);
-  
+  summonedUnitSystem.setCombatSystem(combatSystem);
+
   // Set up combat system to route player damage through PVP system
   combatSystem.setPlayerDamageCallback(damagePlayerCallback);
   
@@ -2767,6 +2806,7 @@ function setupPVPGame(
   world.addSystem(renderSystem);
   world.addSystem(projectileSystem);
   world.addSystem(towerSystem);
+  world.addSystem(summonedUnitSystem);
   world.addSystem(controlSystem);
   world.addSystem(cameraSystem);
 
@@ -2778,10 +2818,10 @@ function setupPVPGame(
   cameraSystem.setTarget(playerEntity);
   cameraSystem.snapToTarget();
   
-  console.log('🌍 Total entities in PVP world:', world.getAllEntities().length);
-  console.log(`👤 Player entity created with ID: ${playerEntity.id}`);
+      console.log('🌍 Total entities in PVP world:', world.getAllEntities().length);
+      console.log(`👤 Player entity created with ID: ${playerEntity.id}`);
 
-  return { player: playerEntity, controlSystem, towerSystem };
+  return { player: playerEntity, controlSystem, towerSystem, summonedUnitSystem };
 }
 
 function createPVPPlayer(world: World): any {

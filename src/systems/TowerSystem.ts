@@ -5,6 +5,8 @@ import { Entity } from '@/ecs/Entity';
 import { Transform } from '@/ecs/components/Transform';
 import { Health } from '@/ecs/components/Health';
 import { Tower } from '@/ecs/components/Tower';
+import { SummonedUnit } from '@/ecs/components/SummonedUnit';
+import { Projectile } from '@/ecs/components/Projectile';
 import { Collider, CollisionLayer } from '@/ecs/components/Collider';
 import { World } from '@/ecs/World';
 import { ProjectileSystem } from './ProjectileSystem';
@@ -148,16 +150,23 @@ export class TowerSystem extends System {
     if (target.hasComponent(Tower)) {
       return false;
     }
-    
+
+    // Check if this is a summoned unit
+    const summonedUnit = target.getComponent(SummonedUnit);
+    if (summonedUnit) {
+      // Only target enemy summoned units (different owner)
+      return summonedUnit.ownerId !== tower.ownerId;
+    }
+
     // In PVP mode, identify if this is an enemy player
     if (this.localSocketId && this.serverPlayerEntities.size > 0) {
-      
+
       // Check if this is the local player (PLAYER layer)
       if (targetCollider.layer === CollisionLayer.PLAYER) {
         const shouldTarget = tower.ownerId !== this.localSocketId;
         return shouldTarget;
       }
-      
+
       // Check if this is a remote player (ENEMY layer)
       if (targetCollider.layer === CollisionLayer.ENEMY) {
         // Find which player this entity belongs to
@@ -167,12 +176,12 @@ export class TowerSystem extends System {
             targetPlayerId = playerId;
           }
         });
-        
+
         if (targetPlayerId) {
           const shouldTarget = tower.ownerId !== targetPlayerId;
           return shouldTarget;
         }
-        
+
         return true;
       }
     }
@@ -219,7 +228,7 @@ export class TowerSystem extends System {
         lifetime: 2, // 5 second lifetime
         opacity: 1.0
       };
-      
+
       const projectileEntity = this.projectileSystem.createProjectile(
         this.world,
         this.tempVector2, // spawn position
@@ -227,7 +236,14 @@ export class TowerSystem extends System {
         towerEntity.id,   // tower as owner
         projectileConfig
       );
-      
+
+      // Enable homing for tower projectiles
+      const projectile = projectileEntity.getComponent(Projectile);
+      if (projectile && tower.currentTarget) {
+        // Set homing towards the current target with strong homing (0.9) and fast turn rate (4 radians/sec)
+        projectile.setHoming(tower.currentTarget, 0.9, 4.0);
+      }
+
       // Mark projectile as tower projectile for special handling
       const projectileRenderer = projectileEntity.getComponent(Transform);
       if (projectileRenderer) {
@@ -235,7 +251,7 @@ export class TowerSystem extends System {
         (projectileEntity as any).isTowerProjectile = true;
         (projectileEntity as any).towerOwnerId = tower.ownerId;
       }
-      
+
     }
     
     // Broadcast attack to multiplayer if callback is set

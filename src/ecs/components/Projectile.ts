@@ -21,6 +21,11 @@ export class Projectile extends Component {
   public maxDistance: number; // Maximum distance before expiring
   public startPosition: Vector3; // Starting position for distance calculation
 
+  // Homing properties
+  public targetEntityId: number | null; // Entity ID to home towards
+  public homingStrength: number; // How strongly it homes (0-1)
+  public maxTurnRate: number; // Maximum radians per second the projectile can turn
+
   constructor(
     speed: number = 20,
     damage: number = 10,
@@ -44,6 +49,11 @@ export class Projectile extends Component {
     this.distanceTraveled = 0;
     this.maxDistance = Infinity; // Default to no distance limit
     this.startPosition = new Vector3(0, 0, 0);
+
+    // Initialize homing properties
+    this.targetEntityId = null;
+    this.homingStrength = 0; // Default to no homing
+    this.maxTurnRate = Math.PI; // Default to 180 degrees per second turn rate
   }
 
   public setDirection(direction: Vector3): void {
@@ -72,6 +82,17 @@ export class Projectile extends Component {
 
   public setStartPosition(position: Vector3): void {
     this.startPosition.copy(position);
+  }
+
+  public setHoming(targetEntityId: number, homingStrength: number = 0.8, maxTurnRate: number = Math.PI): void {
+    this.targetEntityId = targetEntityId;
+    this.homingStrength = Math.max(0, Math.min(1, homingStrength)); // Clamp between 0 and 1
+    this.maxTurnRate = maxTurnRate;
+  }
+
+  public disableHoming(): void {
+    this.targetEntityId = null;
+    this.homingStrength = 0;
   }
 
   public hasHitTarget(entityId: number): boolean {
@@ -149,6 +170,9 @@ export class Projectile extends Component {
     this.distanceTraveled = 0;
     this.maxDistance = Infinity;
     this.startPosition.set(0, 0, 0);
+    this.targetEntityId = null;
+    this.homingStrength = 0;
+    this.maxTurnRate = Math.PI;
     this.enabled = true;
   }
 
@@ -165,6 +189,9 @@ export class Projectile extends Component {
     clone.distanceTraveled = this.distanceTraveled;
     clone.maxDistance = this.maxDistance;
     clone.startPosition.copy(this.startPosition);
+    clone.targetEntityId = this.targetEntityId;
+    clone.homingStrength = this.homingStrength;
+    clone.maxTurnRate = this.maxTurnRate;
     return clone;
   }
 }

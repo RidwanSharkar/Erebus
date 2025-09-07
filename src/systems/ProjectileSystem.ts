@@ -72,6 +72,9 @@ export class ProjectileSystem extends System {
       // Move projectile
       this.moveProjectile(transform, projectile, deltaTime);
 
+      // Update homing direction if projectile is homing
+      this.updateHomingDirection(entity, projectile, deltaTime);
+
       // Arrow orientation is set once at creation - no need to update every frame
       // this.updateArrowOrientation(entity, projectile);
 
@@ -91,10 +94,85 @@ export class ProjectileSystem extends System {
   private moveProjectile(transform: Transform, projectile: Projectile, deltaTime: number): void {
     // Use temp vector to avoid allocations
     this.tempVector.copy(projectile.velocity).multiplyScalar(deltaTime);
-    
+
     // Update position
     transform.translate(this.tempVector.x, this.tempVector.y, this.tempVector.z);
     transform.matrixNeedsUpdate = true;
+  }
+
+  private updateHomingDirection(projectileEntity: Entity, projectile: Projectile, deltaTime: number): void {
+    // Skip if not homing
+    if (!projectile.targetEntityId || projectile.homingStrength <= 0) {
+      return;
+    }
+
+    // Get target entity
+    const targetEntity = this.world.getEntity(projectile.targetEntityId);
+    if (!targetEntity) {
+      // Target no longer exists, disable homing
+      projectile.disableHoming();
+      return;
+    }
+
+    // Get target position
+    const targetTransform = targetEntity.getComponent(Transform);
+    if (!targetTransform) {
+      projectile.disableHoming();
+      return;
+    }
+
+    // Get projectile position
+    const projectileTransform = projectileEntity.getComponent(Transform);
+    if (!projectileTransform) {
+      return;
+    }
+
+    // Calculate direction to target
+    const currentPosition = projectileTransform.position;
+    const targetPosition = targetTransform.position;
+
+    this.tempVector.copy(targetPosition).sub(currentPosition);
+    const distanceToTarget = this.tempVector.length();
+
+    // If very close to target, maintain current direction
+    if (distanceToTarget < 0.1) {
+      return;
+    }
+
+    // Normalize target direction
+    this.tempVector.normalize();
+
+    // Get current velocity direction
+    const currentDirection = projectile.velocity.clone().normalize();
+
+    // Calculate desired direction (interpolate between current and target direction)
+    const desiredDirection = new Vector3();
+    desiredDirection.lerpVectors(currentDirection, this.tempVector, projectile.homingStrength);
+
+    // Calculate angle between current and desired direction
+    const angle = currentDirection.angleTo(desiredDirection);
+
+    // Limit turn rate
+    const maxTurnThisFrame = projectile.maxTurnRate * deltaTime;
+    const turnAngle = Math.min(angle, maxTurnThisFrame);
+
+    // If we need to turn
+    if (turnAngle > 0.001) { // Small threshold to avoid jitter
+      // Calculate rotation axis
+      const rotationAxis = new Vector3();
+      rotationAxis.crossVectors(currentDirection, desiredDirection).normalize();
+
+      // Create rotation quaternion
+      const cosHalfAngle = Math.cos(turnAngle / 2);
+      const sinHalfAngle = Math.sin(turnAngle / 2);
+
+      // Apply rotation to current direction
+      const newDirection = currentDirection.clone();
+      newDirection.applyAxisAngle(rotationAxis, turnAngle);
+
+      // Update velocity while maintaining speed
+      projectile.velocity.copy(newDirection).multiplyScalar(projectile.speed);
+    }
   }
 
 

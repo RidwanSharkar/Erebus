@@ -138,14 +138,19 @@ export class CombatSystem extends System {
 
   private applyDamage(damageEvent: DamageEvent, currentTime: number): void {
     const { target, damage: baseDamage, source, damageType } = damageEvent;
-    
+
     const health = target.getComponent(Health);
     if (!health || !health.enabled) return;
+
+    // Import SummonedUnit component dynamically to avoid circular dependency
+    const SummonedUnit = require('@/ecs/components/SummonedUnit').SummonedUnit;
 
     // Debug: Log all damage events for charge damage
     if (damageType === 'charge') {
       const enemy = target.getComponent(Enemy);
-      const entityType = enemy ? `Enemy(${enemy.getDisplayName()})` : `Player(${target.id})`;
+      const summonedUnitComponent = target.getComponent(SummonedUnit);
+      const summonedUnit = summonedUnitComponent ? summonedUnitComponent as typeof SummonedUnit.prototype : null;
+      const entityType = enemy ? `Enemy(${enemy.getDisplayName()})` : summonedUnit ? `SummonedUnit(${summonedUnit.getDisplayName()})` : `Player(${target.id})`;
     }
 
     // Check if target is an enemy - if so, route damage through multiplayer
@@ -154,11 +159,11 @@ export class CombatSystem extends System {
       // Calculate actual damage with critical hit mechanics
       const damageResult: DamageResult = calculateDamage(baseDamage);
       const actualDamage = damageResult.damage;
-      
+
       // Route enemy damage through multiplayer server instead of applying locally
       // console.log(`🌐 Routing ${actualDamage} damage to enemy ${target.id} through multiplayer server`);
       this.onEnemyDamageCallback(target.id.toString(), actualDamage);
-      
+
       // Still create local damage numbers for immediate visual feedback
       const transform = target.getComponent(Transform);
       if (transform) {
@@ -171,13 +176,66 @@ export class CombatSystem extends System {
           damageType
         );
       }
-      
+
       // Log for debugging
       const sourceName = source ? `Entity ${source.id}` : 'Unknown';
       const targetName = this.getEntityDisplayName(target);
       const critText = damageResult.isCritical ? ' CRITICAL' : '';
-      
+
       return; // Don't apply damage locally for enemies
+    }
+
+    // Check if target is a summoned unit - treat like enemy (apply damage locally)
+    const summonedUnitComponent = target.getComponent(SummonedUnit);
+    if (summonedUnitComponent) {
+      // Cast to proper type
+      const summonedUnit = summonedUnitComponent as typeof SummonedUnit.prototype;
+
+      // Calculate actual damage with critical hit mechanics
+      const damageResult: DamageResult = calculateDamage(baseDamage);
+      const actualDamage = damageResult.damage;
+
+      // Apply damage locally (pass entity so Health can use Shield component)
+      const damageDealt = health.takeDamage(actualDamage, currentTime, target);
+
+      if (damageDealt) {
+        this.totalDamageDealt += actualDamage;
+
+        // Create damage number at target position
+        const transform = target.getComponent(Transform);
+        if (transform) {
+          const position = transform.getWorldPosition();
+          // Only create damage number if position is valid
+          if (position && position.x !== undefined && position.y !== undefined && position.z !== undefined) {
+            // Offset slightly above the target
+            position.y += 2;
+            this.damageNumberManager.addDamageNumber(
+              actualDamage,
+              damageResult.isCritical,
+              position,
+              damageType || 'melee'
+            );
+          }
+        }
+
+        // Log for debugging (throttled to reduce spam)
+        if (this.shouldLogDamage()) {
+          const sourceName = source ? `Entity ${source.id}` : 'Unknown';
+          const targetName = summonedUnit.getDisplayName();
+          const critText = damageResult.isCritical ? ' CRITICAL' : '';
+          // console.log(`⚔️ ${sourceName} dealt ${actualDamage}${critText} ${damageType || 'damage'} to ${targetName} (${health.currentHealth}/${health.maxHealth} HP)`);
+        }
+
+        // Check if target died
+        if (health.isDead) {
+          this.handleEntityDeath(target, source, currentTime);
+        }
+
+        // Trigger damage effects
+        this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
+      }
+
+      return; // Damage applied locally for summoned units
     }
 
     // Check if target is a player in PVP mode - if so, route damage through multiplayer
@@ -185,13 +243,13 @@ export class CombatSystem extends System {
     if (!enemy && this.onPlayerDamageCallback && source && source.id !== target.id) {
       // Calculate actual damage with critical hit mechanics
       const damageResult: DamageResult = calculateDamage(baseDamage);
-      
+
       // Route player damage through multiplayer server for PVP (let receiver handle shields)
       if (this.shouldLogDamage()) {
         // console.log(`⚔️ Routing ${damageResult.damage} PVP ${damageType || 'damage'} to player ${target.id} through multiplayer server`);
       }
       this.onPlayerDamageCallback(target.id.toString(), damageResult.damage, damageType); // Send damage, let receiver handle shields
-      
+
       // Create local damage numbers for immediate visual feedback
       const transform = target.getComponent(Transform);
       if (transform) {
@@ -199,12 +257,12 @@ export class CombatSystem extends System {
         // Only create damage number if position is valid
         if (position && position.x !== undefined && position.y !== undefined && position.z !== undefined) {
           position.y += 1.5;
-          
+
           // Add slight position offset for delayed damage (like sabres right hit) to prevent overlap
           if (damageType === 'sabres_right') {
             position.x += 0.3; // Slight offset to the right for the right sabre
           }
-          
+
           this.damageNumberManager.addDamageNumber(
             damageResult.damage, // Show the full damage in damage numbers
             damageResult.isCritical,
@@ -215,7 +273,7 @@ export class CombatSystem extends System {
           // console.warn('⚠️ Skipping PVP damage number creation - invalid position:', position);
         }
       }
-      
+
       // Log for debugging (throttled to reduce spam)
       if (this.shouldLogDamage()) {
         const sourceName = source ? `Player ${source.id}` : 'Unknown';
@@ -223,20 +281,20 @@ export class CombatSystem extends System {
         const critText = damageResult.isCritical ? ' CRITICAL' : '';
         // console.log(`⚔️ ${sourceName} dealt ${damageResult.damage}${critText} PVP ${damageType || 'damage'} to ${targetName} (routed to server)`);
       }
-      
+
       return; // Don't apply damage locally for PVP players
     }
 
-    // For non-enemies (like players in non-PVP mode), apply damage locally as before
+    // For non-enemies and non-summoned units (like players in non-PVP mode), apply damage locally as before
     const damageResult: DamageResult = calculateDamage(baseDamage);
     const actualDamage = damageResult.damage;
 
     // Apply damage (pass entity so Health can use Shield component)
     const damageDealt = health.takeDamage(actualDamage, currentTime, target);
-    
+
     if (damageDealt) {
       this.totalDamageDealt += actualDamage;
-      
+
       // Create damage number at target position
       const transform = target.getComponent(Transform);
       if (transform) {
@@ -255,7 +313,7 @@ export class CombatSystem extends System {
           // console.warn('⚠️ Skipping damage number creation - invalid position:', position);
         }
       }
-      
+
       // Log damage for debugging (throttled to reduce spam)
       if (this.shouldLogDamage()) {
         const sourceName = source ? `Entity ${source.id}` : 'Unknown';
@@ -298,19 +356,32 @@ export class CombatSystem extends System {
 
   private handleEntityDeath(entity: Entity, killer?: Entity, currentTime?: number): void {
     const enemy = entity.getComponent(Enemy);
-    
+
     if (enemy) {
       enemy.die(currentTime || Date.now() / 1000);
       this.enemiesKilled++;
-      
+
       // console.log(`💀 ${enemy.getDisplayName()} has been defeated!`);
-      
+
       // Award experience to killer if it's a player
       if (killer) {
         this.awardExperience(killer, enemy.experienceReward);
       }
-      
+
       // Trigger death effects
+      this.triggerDeathEffects(entity, killer);
+    }
+
+    // Handle SummonedUnit death
+    const SummonedUnit = require('@/ecs/components/SummonedUnit').SummonedUnit;
+    const summonedUnitComponent = entity.getComponent(SummonedUnit);
+    if (summonedUnitComponent) {
+      const summonedUnit = summonedUnitComponent as typeof SummonedUnit.prototype;
+      summonedUnit.die(currentTime || Date.now() / 1000);
+
+      // console.log(`💀 ${summonedUnit.getDisplayName()} has been defeated!`);
+
+      // Trigger death effects for summoned units
       this.triggerDeathEffects(entity, killer);
     }
 
@@ -402,7 +473,15 @@ export class CombatSystem extends System {
     if (enemy) {
       return enemy.getDisplayName();
     }
-    
+
+    // Import SummonedUnit component dynamically to avoid circular dependency
+    const SummonedUnit = require('@/ecs/components/SummonedUnit').SummonedUnit;
+    const summonedUnitComponent = entity.getComponent(SummonedUnit);
+    if (summonedUnitComponent) {
+      const summonedUnit = summonedUnitComponent as typeof SummonedUnit.prototype;
+      return summonedUnit.getDisplayName();
+    }
+
     // Could check for other components that provide names
     return `Entity ${entity.id}`;
   }

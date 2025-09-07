@@ -1,35 +1,37 @@
 {
   "app/page.tsx -> ../components/LazyGameSystems": {
-    "id": 8026,
+    "id": "app/page.tsx -> ../components/LazyGameSystems",
     "files": [
-      "static/chunks/game-components-04a60c4299c483a2.js"
+      "static/chunks/game-components.js"
     ]
   },
   "app/page.tsx -> ../components/PVPGameScene": {
-    "id": 9078,
+    "id": "app/page.tsx -> ../components/PVPGameScene",
     "files": [
-      "static/chunks/three.db9f811d279d824c.js",
-      "static/chunks/game-systems.3b39522bc9b3e9cd.js",
-      "static/chunks/game-components-04a60c4299c483a2.js",
-      "static/chunks/vendor-7c2fdbde16997e4d.js",
-      "static/chunks/866.5a703bedf43b550a.js"
+      "static/chunks/three.js",
+      "static/chunks/game-systems.js",
+      "static/chunks/game-components.js",
+      "static/chunks/vendor.js",
+      "static/chunks/_app-pages-browser_src_utils_DamageNumberManager_ts-_app-pages-browser_src_utils_EventEmitter-49baae.js",
+      "static/chunks/_app-pages-browser_src_utils_PVPObjectPool_ts-_app-pages-browser_src_utils_PVPStateBatcher_ts.js"
     ]
   },
   "app/page.tsx -> @react-three/fiber": {
-    "id": 3599,
+    "id": "app/page.tsx -> @react-three/fiber",
     "files": [
-      "static/chunks/three.db9f811d279d824c.js",
-      "static/chunks/vendor-7c2fdbde16997e4d.js"
+      "static/chunks/three.js",
+      "static/chunks/vendor.js"
     ]
   },
   "components/LazyGameSystems.tsx -> ./GameScene": {
-    "id": 1594,
+    "id": "components/LazyGameSystems.tsx -> ./GameScene",
     "files": [
-      "static/chunks/three.db9f811d279d824c.js",
-      "static/chunks/game-systems.3b39522bc9b3e9cd.js",
-      "static/chunks/game-components-04a60c4299c483a2.js",
-      "static/chunks/vendor-7c2fdbde16997e4d.js",
-      "static/chunks/983.a4a76b8cd49d100b.js"
+      "static/chunks/three.js",
+      "static/chunks/game-systems.js",
+      "static/chunks/game-components.js",
+      "static/chunks/vendor.js",
+      "static/chunks/_app-pages-browser_src_utils_DamageNumberManager_ts-_app-pages-browser_src_utils_EventEmitter-49baae.js",
+      "static/chunks/_app-pages-browser_src_utils_EnemyFactory_ts.js"
     ]
   }
 }
