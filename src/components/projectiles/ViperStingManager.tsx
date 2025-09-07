@@ -47,6 +47,7 @@ interface SoulStealEffect {
 // Global state for Viper Sting manager
 let globalViperStingManager: {
   shootViperSting?: () => boolean;
+  getProjectiles?: () => any[];
 } = {};
 
 export const triggerGlobalViperSting = (): boolean => {
@@ -54,6 +55,13 @@ export const triggerGlobalViperSting = (): boolean => {
     return globalViperStingManager.shootViperSting();
   }
   return false;
+};
+
+export const getGlobalViperStingProjectiles = (): any[] => {
+  if (globalViperStingManager.getProjectiles) {
+    return globalViperStingManager.getProjectiles();
+  }
+  return [];
 };
 
 export default function ViperStingManager({
@@ -92,11 +100,12 @@ export default function ViperStingManager({
   // Register global manager
   useEffect(() => {
     globalViperStingManager.shootViperSting = shootViperSting;
-    
+    globalViperStingManager.getProjectiles = () => projectilePool.current;
+
     return () => {
       globalViperStingManager = {};
     };
-  }, [shootViperSting]);
+  }, [shootViperSting, projectilePool]);
 
 
 

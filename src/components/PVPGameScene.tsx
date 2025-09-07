@@ -44,11 +44,12 @@ import VenomEffect from '@/components/projectiles/VenomEffect';
 import DebuffIndicator from '@/components/ui/DebuffIndicator';
 import FrozenEffect from '@/components/weapons/FrozenEffect';
 import StunnedEffect from '@/components/weapons/StunnedEffect';
-import { 
-  OptimizedPVPCobraShotManager, 
-  OptimizedPVPBarrageManager, 
+import {
+  OptimizedPVPCobraShotManager,
+  OptimizedPVPBarrageManager,
   OptimizedPVPFrostNovaManager,
-  useOptimizedPVPEffects 
+  OptimizedPVPViperStingManager,
+  useOptimizedPVPEffects
 } from '@/components/pvp/OptimizedPVPManagers';
 import { pvpObjectPool } from '@/utils/PVPObjectPool';
 import { pvpStateBatcher, PVPStateUpdateHelpers } from '@/utils/PVPStateBatcher';
@@ -2540,34 +2541,35 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
               createPvpFrozenEffect(playerId, clonedPosition);
             }}
           />
-          <ViperStingManager 
-            parentRef={viperStingParentRef as any}
-            enemyData={Array.from(players.values())
-              .filter(p => p.id !== socket?.id) // Filter out local player
-              .filter(p => socket?.id && p.id !== socket.id) // Double-check with strict comparison
-              .map(p => ({
-                id: p.id,
-                position: new Vector3(p.position.x, p.position.y, p.position.z),
-                health: p.health,
-                isDying: false
-              }))}
-            onHit={(targetId: string, damage: number) => {
-              // Handle PVP damage to other players - NEVER hit yourself
-              if (targetId !== socket?.id && broadcastPlayerDamage) {
-                broadcastPlayerDamage(targetId, damage);
+          {/* Optimized PVP-specific ViperSting Manager with Object Pooling */}
+          <OptimizedPVPViperStingManager
+            world={engineRef.current.getWorld()}
+            players={Array.from(players.values())}
+            serverPlayerEntities={serverPlayerEntities}
+            localSocketId={socket?.id}
+            onPlayerHit={(playerId: string, damage: number) => {
+              // CRITICAL FIX: Never damage the local player
+              if (playerId === socket?.id) {
+                console.log(`⚠️ Skipping Viper Sting damage to local player ${socket?.id}`);
+                return;
+              }
+
+              if (broadcastPlayerDamage) {
+                console.log(`🎯 Broadcasting Viper Sting damage to player ${playerId} (NOT local player ${socket?.id})`);
+                broadcastPlayerDamage(playerId, damage);
               }
             }}
-            setDamageNumbers={() => {
-              // Viper Sting damage numbers are handled through the combat system in PVP
-              // This is just a placeholder to satisfy the interface
+            onPlayerVenomed={(playerId: string, position: Vector3) => {
+              // CRITICAL FIX: Never apply venom effect to the local player
+              if (playerId === socket?.id) {
+                console.log(`⚠️ Skipping Viper Sting venom effect on local player ${socket?.id}`);
+                return;
+              }
+
+              // Clone the position since it comes from the pool and will be released
+              const clonedPosition = position.clone();
+              createPvpVenomEffect(playerId, clonedPosition);
             }}
-            nextDamageNumberId={{ current: Date.now() }}
-            charges={[
-              { id: 1, available: true, cooldownStartTime: null },
-              { id: 2, available: true, cooldownStartTime: null },
-              { id: 3, available: true, cooldownStartTime: null }
-            ]}
-            setCharges={() => {}}
           />
           
           {/* PVP Reanimate Effects */}

@@ -9,6 +9,22 @@ import { Renderer } from '@/ecs/components/Renderer';
 import { CobraShotProjectile } from '@/components/projectiles/CobraShot';
 import { pvpObjectPool } from '@/utils/PVPObjectPool';
 
+// Define ViperStingProjectile interface for PVP collision detection
+interface ViperStingProjectile {
+  id: number;
+  position: Vector3;
+  direction: Vector3;
+  startPosition: Vector3;
+  maxDistance: number;
+  active: boolean;
+  startTime: number;
+  hitEnemies: Set<string>;
+  opacity: number;
+  fadeStartTime: number | null;
+  isReturning: boolean;
+  returnHitEnemies: Set<string>;
+}
+
 // Interfaces for PVP managers
 interface PVPCobraShotManagerProps {
   world: World;
@@ -33,6 +49,15 @@ interface PVPFrostNovaManagerProps {
   players: Array<{ id: string; position: { x: number; y: number; z: number }; health: number }>;
   onPlayerHit: (playerId: string, damage: number) => void;
   onPlayerFrozen: (playerId: string, position: Vector3) => void;
+  serverPlayerEntities: React.MutableRefObject<Map<string, number>>;
+  localSocketId?: string;
+}
+
+interface PVPViperStingManagerProps {
+  world: World;
+  players: Array<{ id: string; position: { x: number; y: number; z: number }; health: number }>;
+  onPlayerHit: (playerId: string, damage: number) => void;
+  onPlayerVenomed: (playerId: string, position: Vector3) => void;
   serverPlayerEntities: React.MutableRefObject<Map<string, number>>;
   localSocketId?: string;
 }
@@ -343,4 +368,76 @@ export function useOptimizedPVPEffects() {
     createOptimizedDebuffEffect,
     getPoolStats: () => pvpObjectPool.getStats()
   };
+}
+
+/**
+ * Optimized Viper Sting Manager with Object Pooling
+ * Handles PVP collision detection for Viper Sting projectiles
+ */
+export function OptimizedPVPViperStingManager({
+  world,
+  players,
+  onPlayerHit,
+  onPlayerVenomed,
+  serverPlayerEntities,
+  localSocketId
+}: PVPViperStingManagerProps) {
+  // Track processed hits to avoid duplicates
+  const processedHits = useRef<Set<string>>(new Set());
+
+  useFrame(() => {
+    // Reset temporary objects for this frame
+    pvpObjectPool.resetFrameTemporaries();
+
+    // Get visual Viper Sting projectiles from the ViperStingManager
+    const { getGlobalViperStingProjectiles } = require('@/components/projectiles/ViperStingManager');
+    const viperStingProjectiles = getGlobalViperStingProjectiles();
+
+    // Check each active Viper Sting projectile for player hits
+    viperStingProjectiles.forEach((projectile: ViperStingProjectile) => {
+      if (!projectile.active) return;
+
+      const projectilePos = projectile.position;
+
+      // Check collision with PVP players (only check players that are NOT the local player)
+      players.forEach(player => {
+        // Skip if this is the local player (they can't hit themselves)
+        if (player.id === localSocketId) {
+          return; // Don't hit yourself
+        }
+
+        // Use temporary Vector3 from pool instead of creating new one
+        const playerPos = pvpObjectPool.getTempVector3(
+          player.position.x,
+          player.position.y,
+          player.position.z
+        );
+        const distance = projectilePos.distanceTo(playerPos);
+
+        if (distance <= 1.4) { // Hit radius (same as ViperSting hook)
+          // Use the same hit tracking as original Viper Sting logic
+          const hitSet = projectile.isReturning ? projectile.returnHitEnemies : projectile.hitEnemies;
+
+          // Check if we haven't already hit this player with this projectile
+          if (!hitSet.has(player.id)) {
+            hitSet.add(player.id);
+
+            // Apply damage - Viper Sting damage is 61
+            onPlayerHit(player.id, 61);
+
+            // Viper Sting should apply its own DoT effect, not venom (that's Cobra Shot)
+            // The DoT effect and soul steal healing will be handled by the original Viper Sting logic
+
+            // IMPORTANT: Don't deactivate projectile here! Let the original Viper Sting logic
+            // handle projectile lifecycle (forward -> return -> fade out)
+          }
+        }
+      });
+    });
+
+    // Clear processed hits for next frame
+    processedHits.current.clear();
+  });
+
+  return null; // This is a logic-only component
 }
