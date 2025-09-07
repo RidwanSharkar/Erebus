@@ -42,8 +42,7 @@ export default function EntropicBolt({
     if (!boltRef.current || hasCollided.current) return;
 
     timeElapsed.current += delta;
-    const speed = 20 * delta; // Base speed
-    const totalDistance = 18; // Max travel distance
+    const totalDistance = 30; // Max travel distance
     const progress = Math.min(timeElapsed.current * (30 / totalDistance), 1); // Progress from 0 to 1
 
     // Calculate the ideal straight-line position
@@ -54,9 +53,9 @@ export default function EntropicBolt({
     const seed = randomSeed.current;
     
     // Multiple overlapping sine waves for chaotic movement
-    const chaoticX = Math.sin(time * 8 + seed) * 0.3 * Math.sin(time * 3 + seed * 0.5) * 2.5;
-    const chaoticY = Math.cos(time * 6 + seed * 1.5) * 0.4 * Math.sin(time * 4 + seed * 0.8) * 2.6;
-    const chaoticZ = Math.sin(time * 7 + seed * 2) * 0.25 * Math.cos(time * 5 + seed * 1.2) * 2.4;
+    const chaoticX = Math.sin(time * 8 + seed) * 0.3 * Math.sin(time * 3 + seed * 0.5) * 3.5;
+    const chaoticY = Math.cos(time * 6 + seed * 1.5) * 0.4 * Math.sin(time * 4 + seed * 0.8) * 3.6;
+    const chaoticZ = Math.sin(time * 7 + seed * 2) * 0.25 * Math.cos(time * 5 + seed * 1.2) * 3.4;
     
     // Add some random jitter that decreases as we get closer to target
     const jitterIntensity = (1 - progress) * 0.15;
@@ -120,7 +119,7 @@ export default function EntropicBolt({
           {/* Entropic trail effect */}
           <EntropicBoltTrail
             color={new Color("#00ff44")}
-            size={0.225}
+            size={0.3}
             meshRef={boltRef}
             opacity={1}
           />
@@ -133,11 +132,6 @@ export default function EntropicBolt({
                 0
               ]}
             >
-
-
-
-
-
 
               {/* Light source */}
               <pointLight
@@ -171,7 +165,7 @@ interface EntropicBoltImpactProps {
 function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
   const startTime = useRef(Date.now());
   const [, forceUpdate] = useState({});
-  const IMPACT_DURATION = 0.6; // Shorter duration than GlacialShard
+  const IMPACT_DURATION = 0.7; // Shorter duration than GlacialShard
   
   useEffect(() => {
     const interval = setInterval(() => {
@@ -204,7 +198,7 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
     <group position={position}>
       {/* Main entropic explosion effect */}
       <mesh>
-        <sphereGeometry args={[0.8 * (1 + elapsed * 1.5), 12, 12]} />
+        <sphereGeometry args={[0.675 * (1 + elapsed * 1.5), 12, 12]} />
         <meshStandardMaterial
           color="#00ff44"
           emissive="#00ff44"
@@ -218,7 +212,7 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
 
       {/* Secondary explosion ring */}
       <mesh>
-        <sphereGeometry args={[0.55 * (1 + elapsed * 2), 8, 8]} />
+        <sphereGeometry args={[0.45 * (1 + elapsed * 2), 8, 8]} />
         <meshStandardMaterial
           color="#33ff66"
           emissive="#33ff66"
@@ -233,7 +227,7 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
       {/* Energy shards burst */}
       {[...Array(8)].map((_, i) => {
         const angle = (i / 8) * Math.PI * 2;
-        const radius = 1.5 * (1 + elapsed * 1.2);
+        const radius = 1 * (1 + elapsed * 1.2);
         
         return (
           <mesh

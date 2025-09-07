@@ -102,6 +102,14 @@ export class ProjectileSystem extends System {
   private checkCollisions(projectileEntity: Entity, transform: Transform, projectile: Projectile): void {
     const projectilePos = transform.position;
 
+    // Skip barrage and viper sting projectiles in PVP mode - they should only be handled by specialized PVP managers
+    const renderer = projectileEntity.getComponent(Renderer);
+    if (renderer?.mesh?.userData?.isBarrageArrow || renderer?.mesh?.userData?.projectileType === 'viper_sting') {
+      // In PVP mode, these projectiles are handled by the specialized PVP managers
+      // Skip ECS collision detection to prevent duplicate damage and self-targeting
+      return;
+    }
+
     // Get all entities that could be hit - specifically look for enemies with colliders
     const potentialTargets = this.world.queryEntities([Transform, Health, Collider]);
 
@@ -502,6 +510,7 @@ export class ProjectileSystem extends System {
       level?: number;
       opacity?: number;
       maxDistance?: number;
+      projectileType?: string; // Add projectile type for special handling
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -552,6 +561,7 @@ export class ProjectileSystem extends System {
     placeholderMesh.userData.subclass = config?.subclass;
     placeholderMesh.userData.level = config?.level;
     placeholderMesh.userData.opacity = config?.opacity || 1.0;
+    placeholderMesh.userData.projectileType = config?.projectileType;
     
     renderer.mesh = placeholderMesh;
     

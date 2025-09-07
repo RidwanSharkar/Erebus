@@ -264,7 +264,7 @@ export default function Sword({
       const MAX_ROTATION = TARGET_ROTATIONS * Math.PI * 4; // 2π radians
       
       // Use constant fast rotation speed
-      const CONSTANT_ROTATION_SPEED = 22.5
+      const CONSTANT_ROTATION_SPEED = 25
       
       // Update rotation based on constant speed
       divineStormRotation.current += delta * CONSTANT_ROTATION_SPEED;
@@ -297,7 +297,7 @@ export default function Sword({
       
       // Set rotation to make sword lay flat and point outward from center (like spear whirlwind)
       swordRef.current.rotation.set(
-        Math.PI/3,      // X rotation: lay flat on ground (60 degrees)
+        Math.PI/4,      // X rotation: lay flat on ground (60 degrees)
         -angle + Math.PI,              // Y rotation: point outward
         1               // Z rotation: no roll
       );
@@ -375,7 +375,7 @@ export default function Sword({
       const angle = chargeSpinRotation.current;
       
       // Orbit parameters (similar to Divine Storm)
-      const orbitRadius = 1.6; // Same radius as Divine Storm
+      const orbitRadius = 1.5; // Same radius as Divine Storm
       
       // Calculate orbital position
       const orbitalX = Math.cos(angle) * orbitRadius;
@@ -389,7 +389,7 @@ export default function Sword({
       
       // Set rotation to make sword lay flat and point outward from center (like Divine Storm)
       swordRef.current.rotation.set(
-        Math.PI/3,      // X rotation: lay flat on ground (60 degrees)
+        Math.PI/4,      // X rotation: lay flat on ground (60 degrees)
         -angle + Math.PI,              // Y rotation: point outward
         1               // Z rotation: no roll
       );
@@ -530,34 +530,7 @@ export default function Sword({
     if (!isCharging && chargeStartTime.current !== null && !isChargeSpinning.current && !shouldStartSpin.current) {
       shouldStartSpin.current = true;
       
-      // Create explosion at final charge location
-      const EXPLOSION_DAMAGE = 15;
-      const EXPLOSION_RADIUS = 4.0;
-      
-      if (enemyData && enemyData.length > 0 && onHit && playerPosition) {
-        let explosionHits = 0;
-        
-        for (const enemy of enemyData) {
-          if (enemy.health <= 0) continue;
-          
-          const distance = playerPosition.distanceTo(enemy.position);
-          
-          if (distance <= EXPLOSION_RADIUS) {
-            onHit(enemy.id, EXPLOSION_DAMAGE);
-            explosionHits++;
-            
-            if (setDamageNumbers && nextDamageNumberId) {
-              setDamageNumbers(prev => [...prev, {
-                id: nextDamageNumberId.current++,
-                damage: EXPLOSION_DAMAGE,
-                position: enemy.position.clone(),
-                isCritical: false,
-                isFireball: true
-              }]);
-            }
-          }
-        }
-      }
+   
       
     }
     

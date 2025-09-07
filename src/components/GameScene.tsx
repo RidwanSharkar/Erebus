@@ -28,6 +28,7 @@ import UnifiedProjectileManager from '@/components/managers/UnifiedProjectileMan
 import UnifiedEnemyManager from '@/components/managers/UnifiedEnemyManager';
 import BowPowershotManager from '@/components/projectiles/BowPowershotManager';
 import FrostNovaManager from '@/components/weapons/FrostNovaManager';
+import StunManager from '@/components/weapons/StunManager';
 import CobraShotManager from '@/components/projectiles/CobraShotManager';
 import DivineStormManager, { triggerGlobalDivineStorm } from '@/components/weapons/DivineStormManager';
 import DeflectShieldManager from '@/components/weapons/DeflectShieldManager';
@@ -79,7 +80,8 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
     isCobraShotCharging: false,
     cobraShotChargeProgress: 0,
     isSkyfalling: false,
-    isBackstabbing: false
+    isBackstabbing: false,
+    isSundering: false
   });
   
   // Perfect shot system
@@ -179,6 +181,18 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
         // This callback could be used for additional effects or sound
       });
       
+      // Set up Backstab callback
+      controlSystem.setBackstabCallback((position, direction, damage, isBackstab) => {
+        // The actual Backstab logic is handled by the ControlSystem
+        // This callback could be used for additional effects or sound
+      });
+      
+      // Set up Sunder callback
+      controlSystem.setSunderCallback((position, direction, damage, stackCount) => {
+        // The actual Sunder logic is handled by the ControlSystem
+        // This callback could be used for additional effects or sound
+      });
+      
       engine.start();
     });
 
@@ -224,7 +238,8 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
           isCobraShotCharging: controlSystemRef.current.isCobraShotChargingActive(),
           cobraShotChargeProgress: controlSystemRef.current.getCobraShotChargeProgress(),
           isSkyfalling: controlSystemRef.current.isSkyfallActive(),
-          isBackstabbing: controlSystemRef.current.isBackstabActive()
+          isBackstabbing: controlSystemRef.current.isBackstabActive(),
+          isSundering: controlSystemRef.current.isSunderActive()
         });
       }
 
@@ -302,21 +317,6 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
         <meshStandardMaterial color="#ff6b6b" transparent opacity={0.3} />
       </mesh>
 
-      {/* Some basic environment objects */}
-      <mesh castShadow position={[5, 1, 5]}>
-        <boxGeometry args={[2, 2, 2]} />
-        <meshStandardMaterial color="#8b4513" />
-      </mesh>
-
-      <mesh castShadow position={[-5, 1, -5]}>
-        <boxGeometry args={[2, 2, 2]} />
-        <meshStandardMaterial color="#8b4513" />
-      </mesh>
-
-      <mesh castShadow position={[0, 1, -10]}>
-        <boxGeometry args={[4, 2, 1]} />
-        <meshStandardMaterial color="#696969" />
-      </mesh>
 
       {/* Dragon Unit Renderer */}
       {(() => {
@@ -345,6 +345,7 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
           cobraShotChargeProgress={weaponState.cobraShotChargeProgress}
           isSkyfalling={weaponState.isSkyfalling}
           isBackstabbing={weaponState.isBackstabbing}
+          isSundering={weaponState.isSundering}
           reanimateRef={reanimateRef}
           onBowRelease={() => {
             // This callback is now handled by the ControlSystem directly
@@ -369,6 +370,14 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
            // console.log('🛡️ Deflect completed - notifying control system');
             controlSystemRef.current?.onDeflectComplete();
           }}
+          onBackstabComplete={() => {
+           // console.log('🗡️ Backstab completed - notifying control system');
+            // Backstab animation completed - handled by control system
+          }}
+          onSunderComplete={() => {
+           // console.log('⚔️ Sunder completed - notifying control system');
+            // Sunder animation completed - handled by control system
+          }}
         />
       )}
 
@@ -379,6 +388,7 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
           <UnifiedEnemyManager world={engineRef.current.getWorld()} />
           <BowPowershotManager />
           <FrostNovaManager world={engineRef.current.getWorld()} />
+          <StunManager world={engineRef.current.getWorld()} />
           <CobraShotManager world={engineRef.current.getWorld()} />
           <DivineStormManager 
             enemyData={[]} // Single-player mode uses ECS enemies, not this prop
@@ -458,9 +468,7 @@ function setupGame(
     }
   });
 
-  // Spawn a training dummy for testing
-  enemyFactory.createTrainingDummy(new Vector3(5, 0, 5));
-  
+
   // Spawn some enemies around the map
 
   enemyFactory.createElite(new Vector3(-8, 0, 8), 2);

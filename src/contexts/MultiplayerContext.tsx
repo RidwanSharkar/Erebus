@@ -104,7 +104,7 @@ interface MultiplayerContextType {
   broadcastPlayerEffect: (effect: any) => void;
   broadcastPlayerDamage: (targetPlayerId: string, damage: number, damageType?: string) => void;
   broadcastPlayerAnimationState: (animationState: PlayerAnimationState) => void;
-  broadcastPlayerDebuff: (targetPlayerId: string, debuffType: 'frozen' | 'slowed', duration: number, effectData?: any) => void;
+  broadcastPlayerDebuff: (targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned', duration: number, effectData?: any) => void;
   
   // Enemy actions
   damageEnemy: (enemyId: string, damage: number) => void;
@@ -625,7 +625,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const broadcastPlayerDebuff = useCallback((targetPlayerId: string, debuffType: 'frozen' | 'slowed', duration: number, effectData?: any) => {
+  const broadcastPlayerDebuff = useCallback((targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned', duration: number, effectData?: any) => {
     if (socket && currentRoomId) {
       socket.emit('player-debuff', {
         roomId: currentRoomId,

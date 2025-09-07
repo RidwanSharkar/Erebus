@@ -14,7 +14,9 @@ interface SabresProps {
   isCharging?: boolean;
   isSkyfalling?: boolean;
   isBackstabbing?: boolean;
+  isSundering?: boolean;
   onBackstabComplete?: () => void;
+  onSunderComplete?: () => void;
   subclass?: string;
 }
 
@@ -26,7 +28,9 @@ export default function Sabres({
   isCharging = false,
   isSkyfalling = false,
   isBackstabbing = false,
+  isSundering = false,
   onBackstabComplete = () => {},
+  onSunderComplete = () => {},
   subclass = 'FROST'
 }: SabresProps) {
   
@@ -66,6 +70,16 @@ export default function Sabres({
     right: { x: 0, y: 0, z: 0 }
   });
   
+  // Sunder animation state (whirlwind effect)
+  const sunderProgress = useRef(0);
+  const sunderPhase = useRef<'none' | 'windup' | 'whirlwind' | 'recover'>('none');
+  const sunderAnimationComplete = useRef(false);
+  // Store the horizontal rotation values from windup to maintain during thrust
+  const sunderHorizontalRotation = useRef({
+    left: { x: 0, y: 0, z: 0 },
+    right: { x: 0, y: 0, z: 0 }
+  });
+  
   // Skyfall animation state
   const skyfallAnimationComplete = useRef(false);
 
@@ -77,6 +91,15 @@ export default function Sabres({
       backstabProgress.current = 0;
     }
   }, [isBackstabbing]);
+
+  // Reset sunder animation when isSundering becomes false
+  useEffect(() => {
+    if (!isSundering) {
+      sunderAnimationComplete.current = false;
+      sunderPhase.current = 'none';
+      sunderProgress.current = 0;
+    }
+  }, [isSundering]);
 
   // Reset skyfall animation when isSkyfalling becomes false
   useEffect(() => {
@@ -117,6 +140,9 @@ export default function Sabres({
         // Reset backstab states when using Skyfall
         backstabProgress.current = 0;
         backstabPhase.current = 'none';
+        // Reset sunder states when using Skyfall
+        sunderProgress.current = 0;
+        sunderPhase.current = 'none';
         
 
 
@@ -257,6 +283,119 @@ export default function Sabres({
           }
         }
 
+      } else if (isSundering && !sunderAnimationComplete.current) {
+        // SUNDER ANIMATION - Whirlwind effect with both sabres spinning around player
+        if (sunderPhase.current === 'none') {
+          sunderPhase.current = 'windup';
+          sunderProgress.current = 0;
+          
+          // Start with sabres in extended position for whirlwind
+          // Position them at opposite sides, extended outward
+          const whirlwindRadius = 1.5; // Distance from center
+          const whirlwindHeight = 0.75; // Height above ground
+          
+          // Left sabre starts at left side, extended
+          leftSabreRef.current.position.set(-whirlwindRadius, whirlwindHeight, 0);
+          // Right sabre starts at right side, extended  
+          rightSabreRef.current.position.set(whirlwindRadius, whirlwindHeight, 0);
+          
+          // Both sabres point outward horizontally for whirlwind effect
+          leftSabreRef.current.rotation.set(1, Math.PI * 0.5, 0); // Point left
+          rightSabreRef.current.rotation.set(1, -Math.PI * 0.5, 0); // Point right
+        }
+        
+        sunderProgress.current += delta *2 ; // Animation speed (slower for dramatic effect)
+        
+        if (sunderPhase.current === 'windup') {
+          // Brief windup phase - pull sabres back slightly
+          const windupProgress = Math.min(sunderProgress.current / 0.15, 1); // 0.2 second windup
+          const windupEase = Math.sin(windupProgress * Math.PI * 0.5); // Smooth ease in
+          
+          // Pull sabres back slightly from extended position
+          const pullback = windupEase * 0.5;
+          leftSabreRef.current.position.x += pullback;
+          rightSabreRef.current.position.x -= pullback;
+          
+          if (windupProgress >= 1) {
+            sunderPhase.current = 'whirlwind';
+            sunderProgress.current = 0;
+          }
+        } else if (sunderPhase.current === 'whirlwind') {
+          // Main whirlwind phase - both sabres spin around player in full rotation
+          const whirlwindProgress = Math.min(sunderProgress.current / 1, 1); // 0.8 second whirlwind
+          const whirlwindEase = 1 - Math.pow(1 - whirlwindProgress, 2); // Ease out for dramatic finish
+          
+          // Calculate rotation angle (full 360 degrees)
+          const rotationAngle = whirlwindEase * Math.PI * 4; // Full rotation
+          
+          // Whirlwind radius and height
+          const whirlwindRadius = 1.2;
+          const whirlwindHeight = 0.75;
+          
+          // Left sabre orbits counter-clockwise
+          const leftAngle = rotationAngle;
+          const leftX = Math.cos(leftAngle) * whirlwindRadius;
+          const leftZ = Math.sin(leftAngle) * whirlwindRadius;
+          
+          leftSabreRef.current.position.set(leftX, whirlwindHeight, leftZ);
+          
+          // Right sabre orbits clockwise (opposite direction for whirlwind effect)
+          const rightAngle = -rotationAngle;
+          const rightX = Math.cos(rightAngle) * whirlwindRadius;
+          const rightZ = Math.sin(rightAngle) * whirlwindRadius;
+          
+          rightSabreRef.current.position.set(rightX, whirlwindHeight, rightZ);
+          
+          // Rotate sabres to always point outward from center (tangential to circle)
+          // Left sabre rotation (tangent to circle)
+          const leftTangentAngle = leftAngle + Math.PI * 0.5; // Perpendicular to radius
+          leftSabreRef.current.rotation.set(0, leftTangentAngle, 0);
+          
+          // Right sabre rotation (tangent to circle)
+          const rightTangentAngle = rightAngle - Math.PI * 0.5; // Perpendicular to radius
+          rightSabreRef.current.rotation.set(0, rightTangentAngle, 0);
+          
+          // Add slight vertical tilt for more dynamic look
+          const tiltAmount = Math.sin(rotationAngle * 2) * 0.1; // Oscillating tilt
+          leftSabreRef.current.rotation.x = tiltAmount;
+          rightSabreRef.current.rotation.x = -tiltAmount;
+          
+          if (whirlwindProgress >= 1) {
+            sunderPhase.current = 'recover';
+            sunderProgress.current = 0;
+          }
+        } else if (sunderPhase.current === 'recover') {
+          // Recovery phase - return to base position
+          const recoverProgress = Math.min(sunderProgress.current / 0.3, 1); // 0.3 second recovery
+          const recoverEase = 1 - Math.pow(1 - recoverProgress, 3); // Smooth ease out
+          
+          // Smooth return to base positions
+          leftSabreRef.current.position.x = lerp(leftSabreRef.current.position.x, leftBasePosition[0], recoverEase);
+          leftSabreRef.current.position.y = lerp(leftSabreRef.current.position.y, leftBasePosition[1], recoverEase);
+          leftSabreRef.current.position.z = lerp(leftSabreRef.current.position.z, leftBasePosition[2], recoverEase);
+          
+          rightSabreRef.current.position.x = lerp(rightSabreRef.current.position.x, rightBasePosition[0], recoverEase);
+          rightSabreRef.current.position.y = lerp(rightSabreRef.current.position.y, rightBasePosition[1], recoverEase);
+          rightSabreRef.current.position.z = lerp(rightSabreRef.current.position.z, rightBasePosition[2], recoverEase);
+          
+          // Reset rotations smoothly
+          leftSabreRef.current.rotation.x = lerp(leftSabreRef.current.rotation.x, 0, recoverEase);
+          leftSabreRef.current.rotation.y = lerp(leftSabreRef.current.rotation.y, 0, recoverEase);
+          leftSabreRef.current.rotation.z = lerp(leftSabreRef.current.rotation.z, 0, recoverEase);
+          
+          rightSabreRef.current.rotation.x = lerp(rightSabreRef.current.rotation.x, 0, recoverEase);
+          rightSabreRef.current.rotation.y = lerp(rightSabreRef.current.rotation.y, 0, recoverEase);
+          rightSabreRef.current.rotation.z = lerp(rightSabreRef.current.rotation.z, 0, recoverEase);
+          
+          if (recoverProgress >= 1) {
+            // Sunder animation complete - mark as finished
+            sunderPhase.current = 'none';
+            sunderProgress.current = 0;
+            sunderAnimationComplete.current = true;
+            onSunderComplete();
+          }
+        }
+
       } else if (isSwinging) {
         // Reset isSwingComplete when starting a new swing
         if (leftSwingProgress.current === 0 && rightSwingProgress.current === 0) {
@@ -362,6 +501,12 @@ export default function Sabres({
         if (!isBackstabbing) {
           backstabProgress.current = 0;
           backstabPhase.current = 'none';
+        }
+        
+        // Reset sunder states when idle
+        if (!isSundering) {
+          sunderProgress.current = 0;
+          sunderPhase.current = 'none';
         }
       }
     }

@@ -21,11 +21,7 @@ const LazyGameSystems = dynamic(() => import('../components/LazyGameSystems'), {
   loading: () => null // No HTML elements inside Canvas
 });
 
-// Lazy load multiplayer game scene
-const MultiplayerGameScene = dynamic(() => import('../components/MultiplayerGameScene').then(mod => ({ default: mod.MultiplayerGameScene })), {
-  ssr: false,
-  loading: () => null
-});
+
 
 // Lazy load PVP game scene
 const PVPGameScene = dynamic(() => import('../components/PVPGameScene').then(mod => ({ default: mod.PVPGameScene })), {
@@ -96,15 +92,7 @@ export default function Home() {
                 >
                   Single Player
                 </button>
-                <button 
-                  className="px-8 py-4 text-xl bg-blue-500 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-blue-600 hover:-translate-y-1"
-                  onClick={() => {
-                    setRoomJoinMode('multiplayer');
-                    setShowRoomJoin(true);
-                  }}
-                >
-                  Multiplayer
-                </button>
+
                 <button 
                   className="px-8 py-4 text-xl bg-red-500 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-red-600 hover:-translate-y-1"
                   onClick={() => {
@@ -155,15 +143,7 @@ export default function Home() {
                 onControlSystemUpdate={handleControlSystemUpdate}
               />
             )}
-          {gameMode === 'multiplayer' && (
-            <MultiplayerGameScene 
-              onDamageNumbersUpdate={setDamageNumbers}
-              onDamageNumberComplete={handleDamageNumberComplete}
-              onCameraUpdate={handleCameraUpdate}
-              onGameStateUpdate={handleGameStateUpdate}
-              onControlSystemUpdate={handleControlSystemUpdate}
-            />
-          )}
+
           {gameMode === 'pvp' && (
             <PVPGameScene 
               onDamageNumbersUpdate={setDamageNumbers}

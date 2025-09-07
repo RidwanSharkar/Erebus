@@ -32,9 +32,11 @@ interface DragonRendererProps {
   onSwordSwingComplete?: () => void;
   onSabresSwingComplete?: () => void;
   onBackstabComplete?: () => void;
+  onSunderComplete?: () => void;
   swordComboStep?: 1 | 2 | 3;
   isSkyfalling?: boolean;
   isBackstabbing?: boolean;
+  isSundering?: boolean;
   isDivineStorming?: boolean;
   isSwordCharging?: boolean;
   isDeflecting?: boolean;
@@ -68,9 +70,11 @@ export default function DragonRenderer({
   onSwordSwingComplete = () => {},
   onSabresSwingComplete = () => {},
   onBackstabComplete = () => {},
+  onSunderComplete = () => {},
   swordComboStep = 1,
   isSkyfalling = false,
   isBackstabbing = false,
+  isSundering = false,
   isDivineStorming = false,
   isSwordCharging = false,
   onChargeComplete = () => {},
@@ -312,9 +316,11 @@ export default function DragonRenderer({
           onSwordSwingComplete={onSwordSwingComplete}
           onSabresSwingComplete={onSabresSwingComplete}
           onBackstabComplete={onBackstabComplete}
+          onSunderComplete={onSunderComplete}
           swordComboStep={swordComboStep}
           isSkyfalling={isSkyfalling}
           isBackstabbing={isBackstabbing}
+          isSundering={isSundering}
           isDivineStorming={isDivineStorming}
           isSwordCharging={isSwordCharging}
           isDeflecting={isDeflecting}

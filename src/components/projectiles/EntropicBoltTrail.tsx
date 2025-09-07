@@ -15,7 +15,7 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
   meshRef,
   opacity = 1
 }) => {
-  const particlesCount = 22; // Fewer particles than CrossentropyBoltTrail for simpler effect
+  const particlesCount = 25; // Fewer particles than CrossentropyBoltTrail for simpler effect
   const particlesRef = useRef<Points>(null);
   const positionsRef = useRef<Float32Array>(new Float32Array(particlesCount * 3));
   const opacitiesRef = useRef<Float32Array>(new Float32Array(particlesCount));

@@ -3,12 +3,10 @@ import { Group, Vector3 } from 'three';
 import React from 'react';
 
 import BonePlate from './BonePlate';
-import BoneTail from './BoneTail';
+
 import BoneWings from './BoneWings';
 import { DragonHorns } from './DragonHorns';
-import GhostTrail from './GhostTrail';
 import ChargedOrbitals, { DashChargeStatus } from './ChargedOrbitals';
-import BoneVortex from './BoneVortex';
 import BoneAura from './BoneAura';
 import { WeaponType, WeaponSubclass } from './weapons';
 import EtherealBow from '../weapons/EtherBow';
@@ -17,6 +15,7 @@ import Sword from '../weapons/Sword';
 import Sabres from '../weapons/Sabres';
 import DivineStorm from '../weapons/DivineStorm';
 import Reanimate, { ReanimateRef } from '../weapons/Reanimate';
+import BoneTail from './BoneTail';
 
 interface DragonUnitProps {
   position?: Vector3;
@@ -37,9 +36,11 @@ interface DragonUnitProps {
   onSabresLeftSwingStart?: () => void;
   onSabresRightSwingStart?: () => void;
   onBackstabComplete?: () => void;
+  onSunderComplete?: () => void;
   swordComboStep?: 1 | 2 | 3;
   isSkyfalling?: boolean;
   isBackstabbing?: boolean;
+  isSundering?: boolean;
   isDivineStorming?: boolean;
   isSwordCharging?: boolean;
   isDeflecting?: boolean;
@@ -119,9 +120,11 @@ export default function DragonUnit({
   onSabresLeftSwingStart = () => {},
   onSabresRightSwingStart = () => {},
   onBackstabComplete = () => {},
+  onSunderComplete = () => {},
   swordComboStep = 1,
   isSkyfalling = false,
   isBackstabbing = false,
+  isSundering = false,
   isDivineStorming = false,
   isSwordCharging = false,
   isDeflecting = false,
@@ -217,7 +220,9 @@ export default function DragonUnit({
           isCharging={isCharging}
           isSkyfalling={isSkyfalling}
           isBackstabbing={isBackstabbing}
+          isSundering={isSundering}
           onBackstabComplete={onBackstabComplete}
+          onSunderComplete={onSunderComplete}
           subclass={currentSubclass}
         />
       );
@@ -227,7 +232,7 @@ export default function DragonUnit({
 
   // Memoize components for performance optimization
   const bonePlate = useMemo(() => (
-    <group scale={[0.8, 0.55, 0.8]} position={[0, 0.04, -0.015]} rotation={[0.4, 0, 0]}>
+    <group scale={[0.95, 0.7, 0.95]} position={[0, 0.04, -0.015]} rotation={[0.4, 0, 0]}>
       <BonePlate />
     </group>
   ), []);
@@ -274,15 +279,10 @@ export default function DragonUnit({
 
   return (
     <group ref={groupRef} position={[position.x, position.y + 0.2, position.z]}>
-      {/* DRAGON HORNS */}
-      {leftHorn}
-      {rightHorn}
 
       {/* BONE PLATE (TORSO) */}
       {bonePlate}
 
-      {/* BONE TAIL */}
-      {boneTail}
 
       {/* WINGS */}
       {wings}
@@ -302,6 +302,8 @@ export default function DragonUnit({
 
       {/* WEAPON */}
       {renderWeapon()}
+
+    {/* ======================================================== */}
 
       {/* DIVINE STORM ABILITY */}
       {isDivineStorming && currentWeapon === WeaponType.SWORD && (

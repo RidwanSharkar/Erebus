@@ -1,10 +1,9 @@
 import React, { useRef, useState } from 'react';
 import { AdditiveBlending } from '@/utils/three-exports';
 
-import { Mesh, Vector3, Clock, Color, Group } from 'three';
+import { Mesh, Vector3, Clock, Color } from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import CrossentropyBoltTrail from './CrossentropyBoltTrail';
-import * as THREE from 'three'
 
 interface CrossentropyBoltProps {
   id: number;

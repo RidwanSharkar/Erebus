@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
-import { Vector3, Matrix4, Camera, PerspectiveCamera, Scene, WebGLRenderer, PCFSoftShadowMap, Color } from '@/utils/three-exports';
+import { Vector3, Matrix4, Camera, PerspectiveCamera, Scene, WebGLRenderer, PCFSoftShadowMap, Color, Quaternion, Euler } from '@/utils/three-exports';
 import DragonRenderer from './dragon/DragonRenderer';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 
@@ -17,6 +17,7 @@ import { Projectile } from '@/ecs/components/Projectile';
 import { Renderer } from '@/ecs/components/Renderer';
 import { Collider, CollisionLayer, ColliderType } from '@/ecs/components/Collider';
 import { Tower } from '@/ecs/components/Tower';
+import { InterpolationBuffer } from '@/ecs/components/Interpolation';
 import { RenderSystem } from '@/systems/RenderSystem';
 import { ControlSystem } from '@/systems/ControlSystem';
 import { CameraSystem } from '@/systems/CameraSystem';
@@ -25,12 +26,14 @@ import { PhysicsSystem } from '@/systems/PhysicsSystem';
 import { CollisionSystem } from '@/systems/CollisionSystem';
 import { CombatSystem } from '@/systems/CombatSystem';
 import { TowerSystem } from '@/systems/TowerSystem';
+import { InterpolationSystem } from '@/systems/InterpolationSystem';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { ReanimateRef } from '@/components/weapons/Reanimate';
 import Reanimate from '@/components/weapons/Reanimate';
 import UnifiedProjectileManager from '@/components/managers/UnifiedProjectileManager';
 import BowPowershotManager from '@/components/projectiles/BowPowershotManager';
 import FrostNovaManager from '@/components/weapons/FrostNovaManager';
+import StunManager from '@/components/weapons/StunManager';
 import FrostNova from '@/components/weapons/FrostNova';
 import CobraShotManager from '@/components/projectiles/CobraShotManager';
 import { CobraShotProjectile } from '@/components/projectiles/CobraShot';
@@ -38,6 +41,7 @@ import ViperStingManager from '@/components/projectiles/ViperStingManager';
 import VenomEffect from '@/components/projectiles/VenomEffect';
 import DebuffIndicator from '@/components/ui/DebuffIndicator';
 import FrozenEffect from '@/components/weapons/FrozenEffect';
+import StunnedEffect from '@/components/weapons/StunnedEffect';
 import { 
   OptimizedPVPCobraShotManager, 
   OptimizedPVPBarrageManager, 
@@ -265,7 +269,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   const [pvpDebuffEffects, setPvpDebuffEffects] = useState<Array<{
     id: number;
     playerId: string;
-    debuffType: 'frozen' | 'slowed';
+    debuffType: 'frozen' | 'slowed' | 'stunned';
     position: Vector3;
     startTime: number;
     duration: number;
@@ -284,7 +288,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   
   // Function to create venom effect on PVP players
   // Function to create debuff effect on PVP players
-  const createPvpDebuffEffect = useCallback((playerId: string, debuffType: 'frozen' | 'slowed', position: Vector3, duration: number = 5000) => {
+  const createPvpDebuffEffect = useCallback((playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned', position: Vector3, duration: number = 5000) => {
     // Debug: Check if this is the local player
     const isLocalPlayer = playerId === socket?.id;
     
@@ -313,6 +317,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           playerMovement.freeze(duration);
         } else if (debuffType === 'slowed') {
           playerMovement.slow(duration, 0.5); // 50% speed reduction
+        } else if (debuffType === 'stunned') {
+          playerMovement.freeze(duration); // Stun uses same movement restriction as freeze
         }
       }
     }
@@ -477,7 +483,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     isCobraShotCharging: false,
     cobraShotChargeProgress: 0,
     isSkyfalling: false,
-    isBackstabbing: false
+    isBackstabbing: false,
+    isSundering: false
   });
   
   // Track previous weapon state for change detection
@@ -542,22 +549,26 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         
         // Handle special ability projectiles that need custom visual effects
         if (data.attackType === 'viper_sting_projectile') {
-          
+          // Skip processing our own viper sting projectiles to prevent self-damage
+          if (data.playerId === socket.id) {
+            return;
+          }
+
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
           const direction = new Vector3(data.direction.x, data.direction.y, data.direction.z);
-          
+
           // Create the ECS projectile for damage
           const projectileSystem = engineRef.current.getWorld().getSystem(ProjectileSystem);
           if (projectileSystem) {
             const attackerEntityId = serverPlayerEntities.current.get(data.playerId) || -Math.abs(data.playerId.length * 1000 + Date.now() % 1000);
-            
+
             // Create Viper Sting projectile for damage
             projectileSystem.createProjectile(
               engineRef.current.getWorld(),
               position,
               direction,
               attackerEntityId,
-              { speed: 16, damage: 61, lifetime: 5, piercing: true, opacity: 0.8 }
+              { speed: 16, damage: 61, lifetime: 5, piercing: true, opacity: 0.8, projectileType: 'viper_sting' }
             );
           }
           
@@ -844,7 +855,11 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             }]);
           }, 4000); // Divine Storm lasts 4 seconds
         } else if (data.abilityType === 'viper_sting') {
-          
+          // Skip processing our own viper sting abilities to prevent any potential issues
+          if (data.playerId === socket.id) {
+            return;
+          }
+
           // Trigger visual effect - this should create the proper Viper Sting projectiles
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
           const direction = new Vector3(data.direction.x, data.direction.y, data.direction.z);
@@ -920,7 +935,11 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             return updated;
           });
         } else if (data.abilityType === 'barrage') {
-          
+          // Skip processing our own barrage abilities to prevent any potential issues
+          if (data.playerId === socket.id) {
+            return;
+          }
+
           // Trigger visual effect
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
           const direction = new Vector3(data.direction.x, data.direction.y, data.direction.z);
@@ -1393,7 +1412,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       socket.off('player-effect', handlePlayerEffect);
       socket.off('player-debuff', handlePlayerDebuff);
     };
-  }, [socket, playerEntity, players]);
+  }, [socket, playerEntity]);
 
   // Add a cleanup effect to prevent stuck animations
   useEffect(() => {
@@ -1445,6 +1464,10 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         const transform = world.createComponent(Transform);
         transform.setPosition(serverPlayer.position.x, serverPlayer.position.y, serverPlayer.position.z);
         entity.addComponent(transform);
+
+        // Add InterpolationBuffer component for smooth movement
+        const interpolationBuffer = world.createComponent(InterpolationBuffer);
+        entity.addComponent(interpolationBuffer);
         
         // Add Health component (for PVP damage)
         const health = new Health(serverPlayer.maxHealth);
@@ -1487,10 +1510,19 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         const entity = world.getEntity(entityId);
         
         if (entity) {
-          // Update position
+          // Update position using interpolation buffer for remote players only
           const transform = entity.getComponent(Transform);
-          if (transform) {
-            const oldPos = transform.position.clone();
+          const interpolationBuffer = entity.getComponent(InterpolationBuffer);
+          if (transform && interpolationBuffer) {
+            // Create rotation quaternion from Euler angles
+            const rotation = new Quaternion();
+            rotation.setFromEuler(new Euler(serverPlayer.rotation.x, serverPlayer.rotation.y, serverPlayer.rotation.z));
+
+            // Add server state to interpolation buffer for smooth remote player movement
+            const position = new Vector3(serverPlayer.position.x, serverPlayer.position.y, serverPlayer.position.z);
+            interpolationBuffer.addServerState(position, rotation);
+          } else if (transform) {
+            // Fallback to direct position update if interpolation buffer not available
             transform.setPosition(serverPlayer.position.x, serverPlayer.position.y, serverPlayer.position.z);
           }
           
@@ -1803,9 +1835,16 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         // Note: Animation state is now broadcasted automatically in the game loop
       });
       
+      // Set up Sunder callback
+      controlSystem.setSunderCallback((position, direction, damage, stackCount) => {
+        console.log(`⚔️ PVP Sunder triggered - broadcasting to other players (damage: ${damage}, stacks: ${stackCount})`);
+        broadcastPlayerAbility('sunder', position, direction);
+        // Note: Animation state is now broadcasted automatically in the game loop
+      });
+      
       // Set up Debuff callback for broadcasting freeze/slow effects
       console.log(`🔧 Debug: Setting up debuff callback for ControlSystem`);
-      controlSystem.setDebuffCallback((targetEntityId: number, debuffType: 'frozen' | 'slowed', duration: number, position: Vector3) => {
+      controlSystem.setDebuffCallback((targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned', duration: number, position: Vector3) => {
         console.log(`🎯 PVP Debuff callback triggered - ${debuffType} effect on entity ${targetEntityId}`);
         
         // Find the server player ID that corresponds to this local ECS entity ID
@@ -1875,11 +1914,55 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   useEffect(() => {
     (window as any).pvpPlayers = players;
     (window as any).localSocketId = socket?.id;
+    (window as any).serverPlayerEntities = serverPlayerEntities;
+
+    // Expose interpolation system for debugging
+    (window as any).getInterpolationStats = () => {
+      if (!engineRef.current) {
+        return { error: 'Engine not initialized' };
+      }
+
+      const world = engineRef.current.getWorld();
+      const interpolationSystem = world.getSystem(InterpolationSystem);
+
+      if (!interpolationSystem) {
+        return { error: 'InterpolationSystem not found' };
+      }
+
+      const stats: any = {};
+      serverPlayerEntities.current.forEach((entityId, playerId) => {
+        const entity = world.getEntity(entityId);
+        if (entity) {
+          stats[playerId] = interpolationSystem.getInterpolationStats(entity);
+        }
+      });
+
+      return stats;
+    };
+
+    // Expose advanced interpolation methods for testing
+    (window as any).testInterpolationMethods = () => {
+      console.log('🧮 Available Interpolation Methods:');
+      console.log('1. Linear Interpolation (LERP) - Currently used');
+      console.log('2. Hermite Spline - Smoother curves with velocity');
+      console.log('3. Catmull-Rom Spline - Smooth curves through waypoints');
+      console.log('4. Cubic Bezier - Custom control point curves');
+      console.log('5. Smooth Step - Easing functions');
+      console.log('6. Smoother Step - Even smoother easing');
+
+      console.log('\n📊 Current Interpolation Stats:');
+      console.log((window as any).getInterpolationStats());
+
+      return 'Interpolation methods available in InterpolationSystem class';
+    };
   }, [players, socket?.id]);
 
   // Game loop integration with React Three Fiber
   useFrame((state, deltaTime) => {
     if (engineRef.current && engineRef.current.isEngineRunning() && gameStarted) {
+      // Update FPS counter
+      updateFPSCounter(engineRef.current.getCurrentFPS());
+      
       // Reset object pool temporary objects for this frame
       pvpObjectPool.resetFrameTemporaries();
       
@@ -1941,7 +2024,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           isCobraShotCharging: controlSystemRef.current.isCobraShotChargingActive(),
           cobraShotChargeProgress: controlSystemRef.current.getCobraShotChargeProgress(),
           isSkyfalling: controlSystemRef.current.isSkyfallActive(),
-          isBackstabbing: controlSystemRef.current.isBackstabActive()
+          isBackstabbing: controlSystemRef.current.isBackstabActive(),
+          isSundering: controlSystemRef.current.isSunderActive()
         };
         
         // Check for weapon changes and broadcast to other players
@@ -2125,6 +2209,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           cobraShotChargeProgress={weaponState.cobraShotChargeProgress}
           isSkyfalling={weaponState.isSkyfalling}
           isBackstabbing={weaponState.isBackstabbing}
+          isSundering={weaponState.isSundering}
           reanimateRef={reanimateRef}
           isLocalPlayer={true}
           onBowRelease={() => {
@@ -2166,6 +2251,12 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           }}
           onDeflectComplete={() => {
             controlSystemRef.current?.onDeflectComplete();
+          }}
+          onBackstabComplete={() => {
+            // Backstab animation completed - no need to broadcast as animation state is handled automatically
+          }}
+          onSunderComplete={() => {
+            // Sunder animation completed - no need to broadcast as animation state is handled automatically
           }}
         />
       )}
@@ -2285,6 +2376,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           <UnifiedProjectileManager world={engineRef.current.getWorld()} />
           <BowPowershotManager />
           <FrostNovaManager world={engineRef.current.getWorld()} />
+          <StunManager world={engineRef.current.getWorld()} />
           <CobraShotManager world={engineRef.current.getWorld()} />
           <DivineStormManager 
             enemyData={Array.from(players.values()).filter(p => p.id !== socket?.id).map(p => ({
@@ -2306,17 +2398,31 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             serverPlayerEntities={serverPlayerEntities}
             localSocketId={socket?.id}
             onPlayerHit={(playerId: string, damage: number) => {
+              // CRITICAL FIX: Never damage the local player
+              if (playerId === socket?.id) {
+                console.log(`⚠️ Skipping Cobra Shot damage to local player ${socket?.id}`);
+                return;
+              }
+              
               if (broadcastPlayerDamage) {
+                console.log(`🎯 Broadcasting Cobra Shot damage to player ${playerId} (NOT local player ${socket?.id})`);
                 broadcastPlayerDamage(playerId, damage);
               }
             }}
             onPlayerVenomed={(playerId: string, position: Vector3) => {
+              // CRITICAL FIX: Never apply venom effect to the local player
+              if (playerId === socket?.id) {
+                console.log(`⚠️ Skipping Cobra Shot venom effect on local player ${socket?.id}`);
+                return;
+              }
+              
               // Clone the position since it comes from the pool and will be released
               const clonedPosition = position.clone();
               createPvpVenomEffect(playerId, clonedPosition);
               
               // Broadcast venom effect to all players so they can see it
               if (broadcastPlayerEffect) {
+                console.log(`🎯 Broadcasting Cobra Shot venom effect to player ${playerId} (NOT local player ${socket?.id})`);
                 broadcastPlayerEffect({
                   type: 'venom',
                   targetPlayerId: playerId,
@@ -2334,17 +2440,31 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             serverPlayerEntities={serverPlayerEntities}
             localSocketId={socket?.id}
             onPlayerHit={(playerId: string, damage: number) => {
+              // CRITICAL FIX: Never damage the local player
+              if (playerId === socket?.id) {
+                console.log(`⚠️ Skipping Barrage damage to local player ${socket?.id}`);
+                return;
+              }
+              
               if (broadcastPlayerDamage) {
+                console.log(`🎯 Broadcasting Barrage damage to player ${playerId} (NOT local player ${socket?.id})`);
                 broadcastPlayerDamage(playerId, damage);
               }
             }}
             onPlayerSlowed={(playerId: string, position: Vector3) => {
+              // CRITICAL FIX: Never apply slow effect to the local player
+              if (playerId === socket?.id) {
+                console.log(`⚠️ Skipping Barrage slow effect on local player ${socket?.id}`);
+                return;
+              }
+              
               // Clone the position since it comes from the pool and will be released
               const clonedPosition = position.clone();
               createPvpDebuffEffect(playerId, 'slowed', clonedPosition, 5000); // 5 second slow
               
               // Broadcast debuff effect to all players so they can see it
               if (broadcastPlayerDebuff) {
+                console.log(`🎯 Broadcasting Barrage slow effect to player ${playerId} (NOT local player ${socket?.id})`);
                 broadcastPlayerDebuff(playerId, 'slowed', 5000, {
                   position: { x: clonedPosition.x, y: clonedPosition.y, z: clonedPosition.z },
                   speedMultiplier: 0.5
@@ -2360,11 +2480,24 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             serverPlayerEntities={serverPlayerEntities}
             localSocketId={socket?.id}
             onPlayerHit={(playerId: string, damage: number) => {
+              // CRITICAL FIX: Never damage the local player
+              if (playerId === socket?.id) {
+                console.log(`⚠️ Skipping Frost Nova damage to local player ${socket?.id}`);
+                return;
+              }
+              
               if (broadcastPlayerDamage) {
+                console.log(`🎯 Broadcasting Frost Nova damage to player ${playerId} (NOT local player ${socket?.id})`);
                 broadcastPlayerDamage(playerId, damage);
               }
             }}
             onPlayerFrozen={(playerId: string, position: Vector3) => {
+              // CRITICAL FIX: Never apply frozen effect to the local player
+              if (playerId === socket?.id) {
+                console.log(`⚠️ Skipping Frost Nova frozen effect on local player ${socket?.id}`);
+                return;
+              }
+              
               // Clone the position since it comes from the pool and will be released
               const clonedPosition = position.clone();
               createPvpFrozenEffect(playerId, clonedPosition);
@@ -2372,15 +2505,18 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           />
           <ViperStingManager 
             parentRef={viperStingParentRef as any}
-            enemyData={Array.from(players.values()).filter(p => p.id !== socket?.id).map(p => ({
-              id: p.id,
-              position: new Vector3(p.position.x, p.position.y, p.position.z),
-              health: p.health,
-              isDying: false
-            }))}
+            enemyData={Array.from(players.values())
+              .filter(p => p.id !== socket?.id) // Filter out local player
+              .filter(p => socket?.id && p.id !== socket.id) // Double-check with strict comparison
+              .map(p => ({
+                id: p.id,
+                position: new Vector3(p.position.x, p.position.y, p.position.z),
+                health: p.health,
+                isDying: false
+              }))}
             onHit={(targetId: string, damage: number) => {
-              // Handle PVP damage to other players
-              if (broadcastPlayerDamage) {
+              // Handle PVP damage to other players - NEVER hit yourself
+              if (targetId !== socket?.id && broadcastPlayerDamage) {
                 broadcastPlayerDamage(targetId, damage);
               }
             }}
@@ -2485,10 +2621,43 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
               currentPosition = new Vector3(debuffEffect.position.x, debuffEffect.position.y + 0.5, debuffEffect.position.z);
             }
             
-            // Use FrozenEffect for frozen debuffs, DebuffIndicator for others
+            // Use different effects for different debuff types
             if (debuffEffect.debuffType === 'frozen') {
               return (
                 <FrozenEffect
+                  key={debuffEffect.id}
+                  position={currentPosition}
+                  duration={debuffEffect.duration}
+                  startTime={debuffEffect.startTime}
+                  enemyId={debuffEffect.playerId}
+                  enemyData={Array.from(players.values()).map(p => {
+                    // For local player, use the most current position
+                    if (p.id === socket?.id && playerEntity) {
+                      const transform = playerEntity.getComponent(Transform);
+                      const currentPos = transform ? transform.position : playerPosition;
+                      return {
+                        id: p.id,
+                        position: currentPos.clone(),
+                        health: p.health,
+                        isDying: false
+                      };
+                    } else {
+                      return {
+                        id: p.id,
+                        position: new Vector3(p.position.x, p.position.y, p.position.z),
+                        health: p.health,
+                        isDying: false
+                      };
+                    }
+                  })}
+                  onComplete={() => {
+                    setPvpDebuffEffects(prev => prev.filter(effect => effect.id !== debuffEffect.id));
+                  }}
+                />
+              );
+            } else if (debuffEffect.debuffType === 'stunned') {
+              return (
+                <StunnedEffect
                   key={debuffEffect.id}
                   position={currentPosition}
                   duration={debuffEffect.duration}
@@ -2578,6 +2747,7 @@ function setupPVPGame(
       smoothing: 0.15,
     }
   );
+  const interpolationSystem = new InterpolationSystem();
 
   // Connect systems
   projectileSystem.setCombatSystem(combatSystem);
@@ -2593,6 +2763,7 @@ function setupPVPGame(
   world.addSystem(physicsSystem);
   world.addSystem(collisionSystem);
   world.addSystem(combatSystem);
+  world.addSystem(interpolationSystem); // Add interpolation system before render system
   world.addSystem(renderSystem);
   world.addSystem(projectileSystem);
   world.addSystem(towerSystem);
@@ -2622,6 +2793,9 @@ function createPVPPlayer(world: World): any {
   transform.setPosition(0, 0.5, 0); // Position sphere center at radius height above ground
   player.addComponent(transform);
 
+  // NOTE: Local players do NOT get interpolation buffers
+  // Only remote players use interpolation for smooth movement
+
   // Add Movement component
   const movement = world.createComponent(Movement);
   movement.maxSpeed = 3.75; // Reduced from 8 to 3.65 for slower movement
@@ -2630,18 +2804,18 @@ function createPVPPlayer(world: World): any {
   player.addComponent(movement);
 
   // Add Health component with 400 max health
-  const health = new Health(500);
-  health.enableRegeneration(2, 10); // Slower regen in PVP: 1 HP per second after 10 seconds
+  const health = new Health(750);
+  health.enableRegeneration(2, 5); // Slower regen in PVP: 1 HP per second after 10 seconds
   player.addComponent(health);
 
   // Add Shield component with 100 max shield
-  const shield = new Shield(200, 20, 5); // 100 max shield, 20/s regen, 5s delay
+  const shield = new Shield(250, 20, 2); // 100 max shield, 20/s regen, 5s delay
   player.addComponent(shield);
 
   // Add Collider component for environment collision and PVP damage detection
   const collider = world.createComponent(Collider);
   collider.type = ColliderType.SPHERE;
-  collider.radius = 0.9; // Reduced collision radius for better player proximity in PVP
+  collider.radius = 1.2; // Reduced collision radius for better player proximity in PVP
   collider.layer = CollisionLayer.PLAYER; // Use player layer for local player
   // Set collision mask to collide with environment only - NO player-to-player collision in PVP
   collider.setMask(CollisionLayer.ENVIRONMENT);
@@ -2659,4 +2833,11 @@ function createPVPPlayer(world: World): any {
   const localCollider = player.getComponent(Collider);
 
   return player;
+}
+
+function updateFPSCounter(fps: number) {
+  const fpsElement = document.getElementById('fps-counter');
+  if (fpsElement) {
+    fpsElement.textContent = `FPS: ${fps}`;
+  }
 }

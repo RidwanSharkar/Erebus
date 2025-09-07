@@ -38,6 +38,11 @@ export class Enemy extends Component {
   public venomDuration: number;
   public venomDamagePerSecond: number;
   public lastVenomDamageTime: number;
+  
+  // Sunder stacks effect
+  public sunderStacks: number;
+  public sunderLastApplied: number;
+  public sunderDuration: number;
 
   constructor(
     type: EnemyType = EnemyType.DUMMY,
@@ -72,6 +77,11 @@ export class Enemy extends Component {
     this.venomDuration = 0;
     this.venomDamagePerSecond = 0;
     this.lastVenomDamageTime = 0;
+    
+    // Initialize sunder stacks
+    this.sunderStacks = 0;
+    this.sunderLastApplied = 0;
+    this.sunderDuration = 10.0; // 10 seconds
   }
 
   private calculateExperienceReward(): number {
@@ -239,6 +249,41 @@ export class Enemy extends Component {
     
     return { shouldDealDamage: false, damage: 0 };
   }
+  
+  public applySunderStack(currentTime: number): void {
+    if (this.isDead) return; // Can't apply sunder to dead enemies
+    
+    // Check if existing stacks have expired
+    if (this.sunderStacks > 0 && (currentTime - this.sunderLastApplied) > this.sunderDuration) {
+      this.sunderStacks = 0;
+    }
+    
+    // Add new stack (max 3)
+    if (this.sunderStacks < 3) {
+      this.sunderStacks++;
+    }
+    
+    // Update timing
+    this.sunderLastApplied = currentTime;
+  }
+  
+  public getSunderStacks(): number {
+    return this.sunderStacks;
+  }
+  
+  public clearSunderStacks(): void {
+    this.sunderStacks = 0;
+    this.sunderLastApplied = 0;
+  }
+  
+  public updateSunderStatus(currentTime: number): void {
+    if (this.sunderStacks <= 0) return;
+    
+    const elapsed = currentTime - this.sunderLastApplied;
+    if (elapsed >= this.sunderDuration) {
+      this.clearSunderStacks();
+    }
+  }
 
   public setLevel(newLevel: number): void {
     this.level = Math.max(1, newLevel);
@@ -285,6 +330,10 @@ export class Enemy extends Component {
     this.venomDuration = 0;
     this.venomDamagePerSecond = 0;
     this.lastVenomDamageTime = 0;
+    
+    // Reset sunder stacks
+    this.sunderStacks = 0;
+    this.sunderLastApplied = 0;
   }
 
   public clone(): Enemy {
@@ -314,6 +363,10 @@ export class Enemy extends Component {
     clone.venomDuration = this.venomDuration;
     clone.venomDamagePerSecond = this.venomDamagePerSecond;
     clone.lastVenomDamageTime = this.lastVenomDamageTime;
+    
+    // Clone sunder stacks
+    clone.sunderStacks = this.sunderStacks;
+    clone.sunderLastApplied = this.sunderLastApplied;
     
     return clone;
   }

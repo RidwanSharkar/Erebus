@@ -43,7 +43,7 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
         
         // Sword subclasses
         case WeaponSubclass.DIVINITY:
-          return '#87CEEB'; // Light blue for divinity
+          return '#3FD3FC'; // Light blue for divinity
         case WeaponSubclass.VENGEANCE:
           return '#4682B4'; // Steel blue for vengeance
         
@@ -130,7 +130,7 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
             if (el) trailsRef.current[i] = el;
           }}
         >
-          <sphereGeometry args={[0.43, 32, 32]} />
+          <sphereGeometry args={[0.475, 8, 8]} />
           <meshBasicMaterial
             color={new Color(getTrailColor())}
             transparent

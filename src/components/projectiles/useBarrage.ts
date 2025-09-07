@@ -115,6 +115,14 @@ export function useBarrage({
           // Skip if we've already hit this enemy
           if (projectile.hitEnemies.has(enemy.id)) continue;
 
+          // CRITICAL: Get the local socket ID to prevent self-damage in PVP
+          const localSocketId = (window as any).localSocketId;
+          
+          // NEVER hit yourself - this is the critical fix for self-damage
+          if (localSocketId && enemy.id === localSocketId) {
+            continue; // Skip local player completely
+          }
+
           const projectilePos2D = new Vector3(
             projectile.position.x,
             0,
@@ -131,17 +139,19 @@ export function useBarrage({
             // Mark this enemy as hit by this projectile
             projectile.hitEnemies.add(enemy.id);
             
-            // Apply damage
-            onHit(enemy.id, projectile.damage);
-            
-            // Add damage number
-            setDamageNumbers(prev => [...prev, {
-              id: nextDamageNumberId.current++,
-              damage: projectile.damage,
-              position: enemy.position.clone(),
-              isCritical: false,
-              isBarrage: true
-            }]);
+            // Apply damage - but double-check we're not hitting ourselves
+            if (enemy.id !== localSocketId) {
+              onHit(enemy.id, projectile.damage);
+              
+              // Add damage number
+              setDamageNumbers(prev => [...prev, {
+                id: nextDamageNumberId.current++,
+                damage: projectile.damage,
+                position: enemy.position.clone(),
+                isCritical: false,
+                isBarrage: true
+              }]);
+            }
 
             // This projectile stops after hitting one enemy
             projectile.hasCollided = true;

@@ -3,7 +3,6 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3 } from '@/utils/three-exports';
-import * as THREE from 'three';
 
 export interface CobraShotProjectile {
   id: number;
@@ -50,7 +49,7 @@ const CobraShotProjectileVisual: React.FC<{ projectile: CobraShotProjectile }> =
       <pointLight
         color="#00ff40"
         intensity={2 * projectile.opacity}
-        distance={4}
+        distance={3}
         decay={2}
       />
     </group>

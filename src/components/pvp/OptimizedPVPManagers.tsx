@@ -151,27 +151,33 @@ export function OptimizedPVPBarrageManager({
       
       const projectilePos = transform.position;
       
-      // Check collision with PVP players (only check players that are NOT the local player)
+      // Check collision with PVP players (only check players that are NOT the projectile owner)
       players.forEach(player => {
-        // Skip if this is the local player (they can't hit themselves)
+        // Skip if this is the projectile owner (they can't hit themselves)
+        // Check both the socket ID and the entity ID mapping
         if (player.id === localSocketId) {
-          return; // Don't hit yourself
+          return; // Don't hit yourself (socket ID check)
         }
-        
+
+        // Additional safety check: skip if this player's entity ID matches the projectile owner
+        const playerEntityId = serverPlayerEntities.current.get(player.id);
+        if (playerEntityId && playerEntityId === projectile.owner) {
+          return; // Don't hit the projectile owner (entity ID check)
+        }
+
         // Use temporary Vector3 from pool
         const playerPos = pvpObjectPool.getTempVector3(
-          player.position.x, 
-          player.position.y, 
+          player.position.x,
+          player.position.y,
           player.position.z
         );
         const distance = projectilePos.distanceTo(playerPos);
-        
+
         if (distance <= 1.25) { // Hit radius
           // Create unique hit key using pooled method
           const hitKey = pvpObjectPool.createHitKey(projectileEntity.id, player.id);
-          
+
           // Check if we haven't already hit this player with this projectile
-          const playerEntityId = serverPlayerEntities.current.get(player.id);
           if (playerEntityId && !projectile.hasHitTarget(playerEntityId) && !hitTracker.current.has(hitKey)) {
             projectile.addHitTarget(playerEntityId);
             hitTracker.current.add(hitKey);

@@ -17,6 +17,7 @@ import { CombatSystem } from './CombatSystem';
 import { WeaponSubclass, WeaponType } from '@/components/dragon/weapons';
 import { DeflectBarrier } from '@/components/weapons/DeflectBarrier';
 import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
+import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
 import { triggerGlobalCobraShot } from '@/components/projectiles/CobraShotManager';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 
@@ -59,13 +60,16 @@ export class ControlSystem extends System {
   private onDeflectCallback?: (position: Vector3, direction: Vector3) => void;
   
   // Callback for broadcasting debuff effects in PVP
-  private onDebuffCallback?: (targetEntityId: number, debuffType: 'frozen' | 'slowed', duration: number, position: Vector3) => void;
+  private onDebuffCallback?: (targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned', duration: number, position: Vector3) => void;
   
   // Callback for Skyfall ability
   private onSkyfallCallback?: (position: Vector3, direction: Vector3) => void;
   
   // Callback for Backstab ability
   private onBackstabCallback?: (position: Vector3, direction: Vector3, damage: number, isBackstab: boolean) => void;
+  
+  // Callback for Sunder ability
+  private onSunderCallback?: (position: Vector3, direction: Vector3, damage: number, stackCount: number) => void;
   
   // Rate limiting for projectile firing
   private lastFireTime = 0;
@@ -74,10 +78,10 @@ export class ControlSystem extends System {
   private lastViperStingTime = 0;
   private lastFrostNovaTime = 0; // Separate tracking for Frost Nova ability
   private lastCobraShotTime = 0; // Separate tracking for Cobra Shot ability
-  private fireRate = 0.225; // Default for bow
+  private fireRate = 0.2; // Default for bow
   private swordFireRate = 0.9; // Rate for sword attacks
   private sabresFireRate = 0.6; // Sabres dual attack rate (600ms between attacks)
-  private scytheFireRate = 0.33; // EntropicBolt rate (0.33s cooldown)
+  private scytheFireRate = 0.375; // EntropicBolt rate (0.33s cooldown)
   private crossentropyFireRate = 2; // CrossentropyBolt rate (1 per second)
   private viperStingFireRate = 2.5; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
@@ -141,10 +145,20 @@ export class ControlSystem extends System {
   
   // Backstab ability state (Sabres)
   private lastBackstabTime = 0;
-  private backstabCooldown = 2.0; // 2 second cooldown
+  private backstabCooldown = 1.5; // 2 second cooldown
   private isBackstabbing = false;
   private backstabStartTime = 0;
   private backstabDuration = 1.0; // Total animation duration (0.3 + 0.4 + 0.3 seconds)
+  
+  // Sunder ability state (Sabres)
+  private lastSunderTime = 0;
+  private sunderCooldown = 1.125; // 1.5 second cooldown
+  private isSundering = false;
+  private sunderStartTime = 0;
+  private sunderDuration = 1.0; // Same animation duration as backstab
+  
+  // Sunder stack tracking - Map of entity ID to stack data
+  private sunderStacks = new Map<number, { stacks: number; lastApplied: number; duration: number }>();
   constructor(
     camera: PerspectiveCamera, 
     inputManager: InputManager, 
@@ -176,6 +190,9 @@ export class ControlSystem extends System {
     if (typeof playerMovement.updateDebuffs === 'function') {
       playerMovement.updateDebuffs();
     }
+    
+    // Clean up expired Sunder stacks periodically
+    this.cleanupSunderStacks();
 
     // Handle weapon switching
     this.handleWeaponSwitching();
@@ -853,13 +870,16 @@ export class ControlSystem extends System {
     let frozenCount = 0;
     let damagedPlayers = 0;
     
+    // Get local socket ID to prevent self-targeting
+    const localSocketId = (window as any).localSocketId;
+    
     allEntities.forEach(entity => {
       const entityTransform = entity.getComponent(Transform);
       const entityHealth = entity.getComponent(Health);
       
       if (!entityTransform || !entityHealth || entityHealth.isDead) return;
       
-      // Skip self
+      // Skip self (local player entity)
       if (entity.id === this.playerEntity?.id) return;
       
       const entityPosition = entityTransform.position;
@@ -878,14 +898,33 @@ export class ControlSystem extends System {
           addGlobalFrozenEnemy(entity.id.toString(), entityPosition);
         } else {
           // This is likely another player in PVP mode - deal damage and freeze
+          // CRITICAL FIX: First check if this entity represents the local player
+          const serverPlayerEntities = (window as any).serverPlayerEntities;
+          let targetPlayerId: string | null = null;
+          
+          if (serverPlayerEntities && serverPlayerEntities.current) {
+            serverPlayerEntities.current.forEach((localEntityId: number, playerId: string) => {
+              if (localEntityId === entity.id) {
+                targetPlayerId = playerId;
+              }
+            });
+          }
+          
+          // NEVER damage or debuff ourselves
+          if (targetPlayerId && targetPlayerId === localSocketId) {
+            console.log(`⚠️ Skipping Frost Nova on local player ${localSocketId}`);
+            return; // Skip this entity completely
+          }
+          
           const combatSystem = this.world.getSystem(CombatSystem);
-          if (combatSystem && this.playerEntity) {
+          if (combatSystem && this.playerEntity && targetPlayerId) {
             const frostNovaDamage = 50; // Frost Nova damage
             combatSystem.queueDamage(entity, frostNovaDamage, this.playerEntity, 'frost_nova');
             damagedPlayers++;
             
             // Broadcast freeze effect to the target player so they get frozen on their end
             if (this.onDebuffCallback) {
+              console.log(`🎯 Broadcasting freeze effect to player ${targetPlayerId} (NOT local player ${localSocketId})`);
               this.onDebuffCallback(entity.id, 'frozen', 6000, entityPosition);
             }
           }
@@ -1029,7 +1068,11 @@ export class ControlSystem extends System {
     this.onBackstabCallback = callback;
   }
   
-  public setDebuffCallback(callback: (targetEntityId: number, debuffType: 'frozen' | 'slowed', duration: number, position: Vector3) => void): void {
+  public setSunderCallback(callback: (position: Vector3, direction: Vector3, damage: number, stackCount: number) => void): void {
+    this.onSunderCallback = callback;
+  }
+  
+  public setDebuffCallback(callback: (targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned', duration: number, position: Vector3) => void): void {
     this.onDebuffCallback = callback;
   }
 
@@ -1126,6 +1169,10 @@ export class ControlSystem extends System {
   public isBackstabActive(): boolean {
     return this.isBackstabbing;
   }
+  
+  public isSunderActive(): boolean {
+    return this.isSundering;
+  }
 
   private handleSwordInput(playerTransform: Transform): void {
     // Handle sword melee attacks
@@ -1187,17 +1234,22 @@ export class ControlSystem extends System {
 
   private handleSabresInput(playerTransform: Transform): void {
     // Handle left click for dual sabre attack
-    if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isSkyfalling) {
+    if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isSkyfalling && !this.isSundering) {
       this.performSabresMeleeAttack(playerTransform);
     }
     
     // Handle Q key for Backstab ability
-    if (this.inputManager.isKeyPressed('q') && !this.isSwinging && !this.isSkyfalling) {
+    if (this.inputManager.isKeyPressed('q') && !this.isSwinging && !this.isSkyfalling && !this.isSundering) {
       this.performBackstab(playerTransform);
     }
     
-    // Handle E key for Skyfall ability
-    if (this.inputManager.isKeyPressed('e') && !this.isSkyfalling) {
+    // Handle E key for Sunder ability
+    if (this.inputManager.isKeyPressed('e') && !this.isSwinging && !this.isSkyfalling && !this.isSundering) {
+      this.performSunder(playerTransform);
+    }
+    
+    // Handle R key for Skyfall ability (switched from E)
+    if (this.inputManager.isKeyPressed('r') && !this.isSkyfalling && !this.isSundering) {
       this.performSkyfall(playerTransform);
     }
     
@@ -1209,6 +1261,11 @@ export class ControlSystem extends System {
     // Update Backstab state if active
     if (this.isBackstabbing) {
       this.updateBackstabState(playerTransform);
+    }
+    
+    // Update Sunder state if active
+    if (this.isSundering) {
+      this.updateSunderState(playerTransform);
     }
   }
 
@@ -1442,14 +1499,203 @@ export class ControlSystem extends System {
     }
   }
   
+  // Sunder ability implementation
+  private performSunder(playerTransform: Transform): void {
+    const currentTime = Date.now() / 1000;
+    
+    // Check cooldown
+    if (currentTime - this.lastSunderTime < this.sunderCooldown) {
+      return;
+    }
+    
+    // Check energy cost (35 energy)
+    const gameUI = (window as any).gameUI;
+    if (!gameUI || !gameUI.canCastSunder()) {
+      return;
+    }
+    
+    // Consume energy
+    gameUI.consumeEnergy(35);
+    
+    // Set cooldown
+    this.lastSunderTime = currentTime;
+    
+    // Start sunder animation (same as backstab)
+    this.isSundering = true;
+    this.sunderStartTime = currentTime;
+    
+    // Perform sunder damage with stacking logic
+    this.performSunderDamage(playerTransform);
+  }
+  
+  private updateSunderState(playerTransform: Transform): void {
+    const currentTime = Date.now() / 1000;
+    const elapsedTime = currentTime - this.sunderStartTime;
+    
+    // Check if sunder animation duration has elapsed
+    if (elapsedTime >= this.sunderDuration) {
+      this.isSundering = false;
+    }
+  }
+  
+  private performSunderDamage(playerTransform: Transform): void {
+    // Get all entities in the world to check for enemies/players
+    const allEntities = this.world.getAllEntities();
+    const playerPosition = playerTransform.position;
+    
+    // Get player facing direction (camera direction)
+    const playerDirection = new Vector3();
+    this.camera.getWorldDirection(playerDirection);
+    playerDirection.normalize();
+    
+    const sunderRange = 3.5; // Same range as backstab
+    let hitCount = 0;
+    const currentTime = Date.now() / 1000;
+    
+    for (const entity of allEntities) {
+      if (entity === this.playerEntity) continue;
+      
+      const targetHealth = entity.getComponent(Health);
+      const targetTransform = entity.getComponent(Transform);
+      
+      if (!targetHealth || !targetTransform || targetHealth.isDead) continue;
+      
+      // Check if target is in range
+      const distance = playerPosition.distanceTo(targetTransform.position);
+      if (distance > sunderRange) continue;
+      
+      // Check if target is in front of player (cone attack)
+      const directionToTarget = new Vector3()
+        .subVectors(targetTransform.position, playerPosition)
+        .normalize();
+      
+      const dotProduct = playerDirection.dot(directionToTarget);
+      const angleThreshold = Math.cos(Math.PI / 4); // 60 degree cone
+      
+      if (dotProduct < angleThreshold) continue;
+      
+      // Apply Sunder stacks and calculate damage
+      const { damage, stackCount, isStunned } = this.applySunderStack(entity.id, currentTime);
+      
+      // Apply damage
+      const combatSystem = this.world.getSystem(CombatSystem);
+      if (combatSystem) {
+        combatSystem.queueDamage(
+          entity,
+          damage,
+          this.playerEntity!,
+          'sunder'
+        );
+        
+        // Apply stun effect if at 3 stacks
+        if (isStunned) {
+          const enemy = entity.getComponent(Enemy);
+          if (enemy) {
+            enemy.freeze(4.0, currentTime); // 4 second stun (using freeze mechanics for movement)
+            
+            // Add visual stun effect (different from freeze)
+            addGlobalStunnedEnemy(entity.id.toString(), targetTransform.position);
+          }
+          
+          // Broadcast stun effect for PVP (using new 'stunned' type)
+          // CRITICAL FIX: Check if we're about to target ourselves before broadcasting debuff
+          if (this.onDebuffCallback) {
+            const localSocketId = (window as any).localSocketId;
+            const serverPlayerEntities = (window as any).serverPlayerEntities;
+            let targetPlayerId: string | null = null;
+            
+            if (serverPlayerEntities && serverPlayerEntities.current) {
+              serverPlayerEntities.current.forEach((localEntityId: number, playerId: string) => {
+                if (localEntityId === entity.id) {
+                  targetPlayerId = playerId;
+                }
+              });
+            }
+            
+            // NEVER broadcast debuff to ourselves
+            if (targetPlayerId && targetPlayerId !== localSocketId) {
+              console.log(`🎯 Broadcasting stun effect to player ${targetPlayerId} (NOT local player ${localSocketId})`);
+              this.onDebuffCallback(entity.id, 'stunned', 4000, targetTransform.position);
+            } else {
+              console.log(`⚠️ Skipping stun broadcast - would target local player ${localSocketId} or invalid target ${targetPlayerId}`);
+            }
+          }
+        }
+        
+        hitCount++;
+      }
+      
+      // Trigger callback for multiplayer/visual effects
+      if (this.onSunderCallback) {
+        this.onSunderCallback(playerTransform.position, playerDirection, damage, stackCount);
+      }
+    }
+  }
+  
+  private applySunderStack(entityId: number, currentTime: number): { damage: number; stackCount: number; isStunned: boolean } {
+    const stackDuration = 10.0; // 10 seconds
+    let currentStacks = this.sunderStacks.get(entityId);
+    
+    // Clean up expired stacks or initialize new entry
+    if (!currentStacks || (currentTime - currentStacks.lastApplied) > stackDuration) {
+      currentStacks = { stacks: 0, lastApplied: currentTime, duration: stackDuration };
+    }
+    
+    // Calculate damage based on current stack count (before adding new stack)
+    const baseDamages = [60, 70, 80, 90]; // 0, 1, 2, 3 stacks
+    const damage = baseDamages[Math.min(currentStacks.stacks, 3)];
+    
+    let isStunned = false;
+    let newStackCount = currentStacks.stacks;
+    
+    // Apply new stack
+    if (currentStacks.stacks < 3) {
+      newStackCount = currentStacks.stacks + 1;
+      this.sunderStacks.set(entityId, {
+        stacks: newStackCount,
+        lastApplied: currentTime,
+        duration: stackDuration
+      });
+    } else {
+      // At 3 stacks, apply stun and reset to 0 stacks
+      isStunned = true;
+      newStackCount = 0;
+      this.sunderStacks.set(entityId, {
+        stacks: 0,
+        lastApplied: currentTime,
+        duration: stackDuration
+      });
+    }
+    
+    return { damage, stackCount: newStackCount, isStunned };
+  }
+  
+  // Clean up expired Sunder stacks periodically
+  private cleanupSunderStacks(): void {
+    const currentTime = Date.now() / 1000;
+    const stackDuration = 10.0;
+    
+    // Convert to array to avoid iteration issues
+    const entries = Array.from(this.sunderStacks.entries());
+    for (const [entityId, stackData] of entries) {
+      if ((currentTime - stackData.lastApplied) > stackDuration) {
+        this.sunderStacks.delete(entityId);
+      }
+    }
+  }
+  
   private resetAllAbilityStates(): void {
     // Reset all ability states when switching weapons
     this.isSkyfalling = false;
     this.skyfallPhase = 'none';
     this.isBackstabbing = false;
+    this.isSundering = false;
     this.isDivineStorming = false;
     this.isSwordCharging = false;
     this.isDeflecting = false;
+    
+    // Clear Sunder stacks when switching weapons
+    this.sunderStacks.clear();
   }
 
   // Backstab ability implementation
@@ -1499,7 +1745,7 @@ export class ControlSystem extends System {
     this.camera.getWorldDirection(playerDirection);
     playerDirection.normalize();
     
-    const backstabRange = 2.5; // Sabre melee range
+    const backstabRange = 4.25; // Sabre melee range
     let hitCount = 0;
     
     for (const entity of allEntities) {
@@ -2403,17 +2649,17 @@ export class ControlSystem extends System {
       cooldowns['Q'] = {
         current: Math.max(0, this.backstabCooldown - (currentTime - this.lastBackstabTime)),
         max: this.backstabCooldown,
-        isActive: false
+        isActive: this.isBackstabbing
       };
       cooldowns['E'] = {
+        current: Math.max(0, this.sunderCooldown - (currentTime - this.lastSunderTime)),
+        max: this.sunderCooldown,
+        isActive: this.isSundering
+      };
+      cooldowns['R'] = {
         current: Math.max(0, this.skyfallCooldown - (currentTime - this.lastSkyfallTime)),
         max: this.skyfallCooldown,
         isActive: this.isSkyfalling
-      };
-      cooldowns['R'] = {
-        current: 0, // No R ability yet
-        max: 0,
-        isActive: false
       };
     }
     
