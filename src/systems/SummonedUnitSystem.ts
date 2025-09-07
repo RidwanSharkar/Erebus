@@ -19,7 +19,7 @@ export class SummonedUnitSystem extends System {
 
   // Unit spawning tracking
   private lastSpawnTime: Map<string, number> = new Map(); // ownerId -> last spawn time
-  private spawnInterval: number = 30; // 30 seconds between spawns
+  private spawnInterval: number = 45; // 45 seconds between spawns
 
   // Unit tracking
   private unitsToDestroy: number[] = [];

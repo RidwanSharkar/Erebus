@@ -144,12 +144,12 @@ class GameRoom {
     const playerIndex = this.players.size - 1; // Current player index (0-based)
     const totalPlayers = 5; // Max players for positioning
     const mapRadius = 29;
-    const towerRadius = mapRadius - 3; // 3 units inside the map edge
-    
+    const towerRadius = mapRadius * 0.75; // Position towers closer to center (about 21.75 units from center)
+
     // Calculate angle for this player's position
     const angleStep = (Math.PI * 2) / Math.max(totalPlayers, 2);
     const angle = playerIndex * angleStep;
-    
+
     // Calculate position
     const x = Math.sin(angle) * towerRadius;
     const z = Math.cos(angle) * towerRadius;
