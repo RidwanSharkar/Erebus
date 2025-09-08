@@ -11,15 +11,17 @@ interface DivineStormProps {
   onHitTarget?: (targetId: string, damage: number, isCritical: boolean, position: Vector3, isDivineStorm: boolean) => void;
   parentRef?: React.RefObject<Group>;
   isActive?: boolean; // Control if divine storm should remain active
+  playerId?: string; // ID of the player who cast the Divine Storm (to prevent self-damage)
 }
 
-export default function DivineStorm({ 
+export default function DivineStorm({
   position,
-  onComplete, 
+  onComplete,
   parentRef,
   isActive = true,
   enemyData = [],
-  onHitTarget
+  onHitTarget,
+  playerId
 }: DivineStormProps) {
   const stormRef = useRef<Group>(null);
   const progressRef = useRef(0);
@@ -55,16 +57,19 @@ export default function DivineStorm({
     // Damage detection - check distance from storm center
     enemyData.forEach(enemy => {
       if (!enemy.health || enemy.health <= 0) return;
-      
+
+      // Prevent self-damage: skip if this enemy is the player who cast the Divine Storm
+      if (playerId && enemy.id === playerId) return;
+
       const lastHitTimeForEnemy = lastHitTime.current[enemy.id] || 0;
       if (now - lastHitTimeForEnemy < 200) return; // 200ms cooldown between hits on same enemy
-      
+
       // Calculate distance from storm center (parent position)
       const distance = parentPosition.distanceTo(enemy.position);
-      
+
       if (distance <= 4.0) { // Hit range from storm center - 5 distance radius
         lastHitTime.current[enemy.id] = now;
-        
+
         // Deal 40 damage per hit (based on rotation speed)
         onHitTarget?.(enemy.id, 40, false, enemy.position, true);
       }

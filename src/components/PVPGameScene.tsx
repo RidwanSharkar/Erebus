@@ -2416,7 +2416,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           <FrostNovaManager world={engineRef.current.getWorld()} />
           <StunManager world={engineRef.current.getWorld()} />
           <CobraShotManager world={engineRef.current.getWorld()} />
-          <DivineStormManager 
+          <DivineStormManager
             enemyData={Array.from(players.values()).filter(p => p.id !== socket?.id).map(p => ({
               id: p.id,
               position: new Vector3(p.position.x, p.position.y, p.position.z),
@@ -2427,6 +2427,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                 broadcastPlayerDamage(targetId, damage);
               }
             }}
+            playerId={socket?.id}
           />
           <DeflectShieldManager />
           {/* Optimized PVP-specific Cobra Shot Manager with Object Pooling */}
@@ -2669,7 +2670,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                   duration={debuffEffect.duration}
                   startTime={debuffEffect.startTime}
                   enemyId={debuffEffect.playerId}
-                  enemyData={Array.from(players.values()).map(p => {
+                  enemyData={Array.from(players.values()).filter(p => p.id !== socket?.id).map(p => {
                     // For local player, use the most current position
                     if (p.id === socket?.id && playerEntity) {
                       const transform = playerEntity.getComponent(Transform);
@@ -2702,7 +2703,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                   duration={debuffEffect.duration}
                   startTime={debuffEffect.startTime}
                   enemyId={debuffEffect.playerId}
-                  enemyData={Array.from(players.values()).map(p => {
+                  enemyData={Array.from(players.values()).filter(p => p.id !== socket?.id).map(p => {
                     // For local player, use the most current position
                     if (p.id === socket?.id && playerEntity) {
                       const transform = playerEntity.getComponent(Transform);

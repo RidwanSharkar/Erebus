@@ -21,6 +21,7 @@ interface DragonUnitProps {
   position?: Vector3;
   movementDirection?: Vector3;
   isDashing?: boolean;
+  entityId?: number; // Player's entity ID
   dashCharges?: Array<DashChargeStatus>;
   chargeDirection?: Vector3;
   currentWeapon?: WeaponType;
@@ -97,10 +98,11 @@ interface DragonUnitProps {
   }>) => void;
 }
 
-export default function DragonUnit({ 
+export default function DragonUnit({
   position = new Vector3(0, 0, 0),
   movementDirection = new Vector3(0, 0, 0),
   isDashing = false,
+  entityId,
   dashCharges = [
     { isAvailable: true, cooldownRemaining: 0 },
     { isAvailable: true, cooldownRemaining: 0 },
@@ -208,6 +210,7 @@ export default function DragonUnit({
           playerPosition={playerPosition}
           playerRotation={playerRotation}
           dragonGroupRef={groupRef}
+          playerEntityId={entityId}
         />
       );
     } else if (currentWeapon === WeaponType.SABRES) {

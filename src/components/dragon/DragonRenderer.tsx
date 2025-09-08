@@ -303,6 +303,7 @@ export default function DragonRenderer({
           position={new Vector3(0, 0, 0)} // Position is handled by the parent group
           movementDirection={movementDirection.current}
           isDashing={isDashing.current}
+          entityId={entityId}
           dashCharges={dashCharges}
           chargeDirection={chargeDirection}
           currentWeapon={currentWeapon}

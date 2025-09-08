@@ -390,8 +390,9 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
           <FrostNovaManager world={engineRef.current.getWorld()} />
           <StunManager world={engineRef.current.getWorld()} />
           <CobraShotManager world={engineRef.current.getWorld()} />
-          <DivineStormManager 
+          <DivineStormManager
             enemyData={[]} // Single-player mode uses ECS enemies, not this prop
+            playerId="local-player"
           />
           <DeflectShieldManager />
         </>

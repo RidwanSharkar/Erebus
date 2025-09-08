@@ -14,6 +14,7 @@ interface DivineStormEffect {
 interface DivineStormManagerProps {
   enemyData?: Array<{ id: string; position: Vector3; health: number }>;
   onHitTarget?: (targetId: string, damage: number, isCritical: boolean, position: Vector3, isDivineStorm: boolean) => void;
+  playerId?: string; // ID of the player who cast the Divine Storm
 }
 
 // Global state for Divine Storm effects
@@ -42,9 +43,10 @@ export function clearDivineStormEffect(id: number): void {
   globalDivineStormEffects = globalDivineStormEffects.filter(effect => effect.id !== id);
 }
 
-export default function DivineStormManager({ 
-  enemyData = [], 
-  onHitTarget 
+export default function DivineStormManager({
+  enemyData = [],
+  onHitTarget,
+  playerId
 }: DivineStormManagerProps) {
   const [activeEffects, setActiveEffects] = useState<DivineStormEffect[]>([]);
   const parentRefsMap = useRef<Map<number, { position: Vector3 }>>(new Map());
@@ -99,6 +101,7 @@ export default function DivineStormManager({
             isActive={true}
             enemyData={enemyData}
             onHitTarget={onHitTarget}
+            playerId={effect.playerId || playerId}
             onComplete={() => {
               clearDivineStormEffect(effect.id);
               parentRefsMap.current.delete(effect.id);

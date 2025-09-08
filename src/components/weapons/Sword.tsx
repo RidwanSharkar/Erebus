@@ -107,6 +107,7 @@ interface SwordProps {
   playerPosition?: Vector3;
   playerRotation?: Vector3;
   dragonGroupRef?: React.RefObject<Group>; // Reference to dragon's group for real-time positioning
+  playerEntityId?: number; // Player's entity ID to prevent self-damage
 }
 
 export default function Sword({ 
@@ -135,7 +136,8 @@ export default function Sword({
   setActiveEffects,
   playerPosition,
   playerRotation,
-  dragonGroupRef
+  dragonGroupRef,
+  playerEntityId
 }: SwordProps) {
   const swordRef = useRef<Group>(null);
   const swingProgress = useRef(0);
@@ -312,21 +314,29 @@ export default function Sword({
       const now = Date.now();
       enemyData.forEach(enemy => {
         if (!enemy.health || enemy.health <= 0) return;
-        
+
+        // CRITICAL FIX: Prevent self-damage in PVP mode
+        // Check if this enemy is the player themselves by comparing IDs
+        // In ECS, player entity ID is passed as a number, but enemy.id is a string
+        if (enemy.id === playerEntityId?.toString()) {
+          console.log(`⚔️ Divine Storm: Skipping self-damage for player entity ${enemy.id}`);
+          return;
+        }
+
         const lastHitTime = lastDivineStormHitTime.current[enemy.id] || 0;
         if (now - lastHitTime < 200) return; // 200ms cooldown between hits on same enemy
-        
+
         // Calculate distance from actual player position
         // Use the passed playerPosition or fallback to origin
         const actualPlayerPosition = playerPosition || new Vector3(0, 0, 0);
         const distance = actualPlayerPosition.distanceTo(enemy.position);
-        
+
         if (distance <= 5) { // Hit range from player center - 5 distance radius as specified
           lastDivineStormHitTime.current[enemy.id] = now;
-          
+
           // Deal 40 holy damage per hit (based on rotation speed)
           onHit?.(enemy.id, 40);
-          
+
           // Add damage number
           if (setDamageNumbers && nextDamageNumberId) {
             setDamageNumbers(prev => [...prev, {
