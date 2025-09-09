@@ -53,12 +53,13 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
         case WeaponSubclass.ASSASSIN:
           return '#FF544E'; // Dark purple for assassin
         
-        // Spear subclasses
-        case WeaponSubclass.PYRO:
-          return '#FF544E'; // Keep original pyro color (changed from grey to match other files)
-        case WeaponSubclass.STORM:
-          return '#FF544E'; // Grey for storm
         
+        // Runeblade subclasses
+        case WeaponSubclass.ARCANE:
+          return '#00FF88'; // Bright green for arcane
+        case WeaponSubclass.NATURE:
+          return '#00AA44'; // Darker green for nature
+
         // Bow subclasses
         case WeaponSubclass.ELEMENTAL:
           return '#3EB0FC'; // Keep original elemental color
@@ -75,10 +76,10 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
         return '#6DFF9E'; // Light blue for sword
       case WeaponType.SABRES:
         return '#FF544E'; //78DFFF
-      case WeaponType.SPEAR:
-        return '#C6C6C6'; // FF544E
+      case WeaponType.RUNEBLADE:
+        return '#00FF88'; // Green for runeblade
       case WeaponType.BOW:
-        return '#3A905E'; //D09A1D try 
+        return '#3A905E'; //D09A1D try
     }
   };
 

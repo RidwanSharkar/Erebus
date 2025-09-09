@@ -70,13 +70,18 @@ export default function GameUI({
   const [currentRage, setCurrentRage] = useState(rage);
   const [lastSwordDamageTime, setLastSwordDamageTime] = useState<number>(Date.now());
 
-  // Mana regeneration for Scythe (5 mana per second)
+  // Sync currentMana with prop changes (important for PVP mode)
   useEffect(() => {
-    if (currentWeapon === WeaponType.SCYTHE) {
+    setCurrentMana(mana);
+  }, [mana]);
+
+  // Mana regeneration for Scythe and Runeblade (8 mana per second)
+  useEffect(() => {
+    if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
       const interval = setInterval(() => {
         setCurrentMana(prev => Math.min(maxMana, prev + 4));
       }, 500);
-      
+
       return () => clearInterval(interval);
     }
   }, [currentWeapon, maxMana]);
@@ -125,14 +130,24 @@ export default function GameUI({
       setCurrentEnergy(maxEnergy);
       setCurrentMana(maxMana);
       setCurrentRage(0);
+    } else if (currentWeapon === WeaponType.RUNEBLADE) {
+      // Runeblade - use mana system
+      setCurrentMana(maxMana); // Start with full mana
+      setCurrentEnergy(maxEnergy);
+      setCurrentRage(0);
     }
   }, [currentWeapon, maxMana, maxEnergy, maxRage]);
 
-  // Function to consume mana (for Crossentropy bolt)
+  // Function to consume mana (for Crossentropy bolt and Runeblade abilities)
   const consumeMana = (amount: number) => {
-    if (currentWeapon === WeaponType.SCYTHE) {
+    if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
       setCurrentMana(prev => Math.max(0, prev - amount));
     }
+  };
+
+  // Function to check if Runeblade has enough mana for abilities
+  const hasRunebladeMana = (amount: number) => {
+    return currentWeapon === WeaponType.RUNEBLADE && currentMana >= amount;
   };
 
   // Function to consume energy (for bow and sabres abilities)
@@ -220,6 +235,15 @@ export default function GameUI({
             max={maxEnergy}
             color="#FFD700"
             backgroundColor="#332b18"
+          />
+        );
+      case WeaponType.RUNEBLADE:
+        return (
+          <ResourceBar
+            current={currentMana}
+            max={150} // Runeblade max mana is 150
+            color="#9B59B6" // Purple color for mana
+            backgroundColor="#2a1a33"
           />
         );
       default:

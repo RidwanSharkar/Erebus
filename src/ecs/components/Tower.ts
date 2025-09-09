@@ -37,8 +37,8 @@ export class Tower extends Component {
     this.towerIndex = towerIndex;
     
     // Combat configuration
-    this.attackRange = 10; // 10 unit attack range as specified
-    this.attackDamage = 100; // 25 damage per arrow as requested
+    this.attackRange = 13.5; // attack range 
+    this.attackDamage = 100; // 25 damage per arrow
     this.attackCooldown = 1.5; // 1.5 seconds between shots
     this.lastAttackTime = 0;
     this.projectileSpeed = 20; // Speed of tower arrows

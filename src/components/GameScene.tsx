@@ -24,6 +24,8 @@ import { HealthBarSystem } from '@/systems/HealthBarSystem';
 import { EnemyFactory } from '@/utils/EnemyFactory';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { ReanimateRef } from '@/components/weapons/Reanimate';
+import Smite from './weapons/Smite';
+import DeathGrasp from './weapons/DeathGrasp';
 import UnifiedProjectileManager from '@/components/managers/UnifiedProjectileManager';
 import UnifiedEnemyManager from '@/components/managers/UnifiedEnemyManager';
 import BowPowershotManager from '@/components/projectiles/BowPowershotManager';
@@ -62,6 +64,26 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
   const isInitialized = useRef(false);
   const [playerPosition, setPlayerPosition] = useState(new Vector3(0, 0.5, 0));
   const [playerEntity, setPlayerEntity] = useState<any>(null);
+  const [enemyData, setEnemyData] = useState<Array<{
+    id: string;
+    position: Vector3;
+    health: number;
+  }>>([]);
+
+  // Ability effect states
+  const [smiteEffect, setSmiteEffect] = useState<{
+    id: number;
+    position: Vector3;
+    startTime: number;
+  } | null>(null);
+  const [deathGraspEffect, setDeathGraspEffect] = useState<{
+    id: number;
+    startPosition: Vector3;
+    targetPosition: Vector3;
+    startTime: number;
+  } | null>(null);
+  const nextEffectId = useRef(0);
+
   const [weaponState, setWeaponState] = useState({
     currentWeapon: WeaponType.BOW,
     currentSubclass: WeaponSubclass.ELEMENTAL,
@@ -192,7 +214,47 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
         // The actual Sunder logic is handled by the ControlSystem
         // This callback could be used for additional effects or sound
       });
-      
+
+      // Set up Smite callback
+      controlSystem.setSmiteCallback((position: Vector3, direction: Vector3, onDamageDealt?: (damageDealt: boolean) => void) => {
+        // Create local Smite effect
+        const effectId = nextEffectId.current++;
+        setSmiteEffect({
+          id: effectId,
+          position: position.clone(),
+          startTime: Date.now()
+        });
+
+        // Clear effect after duration (0.9 seconds for Smite)
+        setTimeout(() => {
+          setSmiteEffect(null);
+        }, 900);
+
+        console.log('⚡ Single Player Smite triggered at:', position);
+      });
+
+      // Set up Death Grasp callback
+      controlSystem.setDeathGraspCallback((position: Vector3, direction: Vector3) => {
+        // Calculate target position (where the chains will end)
+        const targetPosition = position.clone().add(direction.clone().multiplyScalar(8));
+
+        // Create local Death Grasp effect
+        const effectId = nextEffectId.current++;
+        setDeathGraspEffect({
+          id: effectId,
+          startPosition: position.clone(),
+          targetPosition: targetPosition,
+          startTime: Date.now()
+        });
+
+        // Clear effect after duration (1.2 seconds for Death Grasp)
+        setTimeout(() => {
+          setDeathGraspEffect(null);
+        }, 1200);
+
+        console.log('⛓️ Single Player Death Grasp triggered from:', position, 'to:', targetPosition);
+      });
+
       engine.start();
     });
 
@@ -217,6 +279,30 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
           setPlayerPosition(transform.position.clone());
         }
       }
+
+      // Update enemy data from ECS world
+      const world = engineRef.current.getWorld();
+      const allEntities = world.getAllEntities();
+      const currentEnemyData = allEntities
+        .filter(entity => {
+          const enemy = entity.getComponent('Enemy' as any);
+          const health = entity.getComponent(Health);
+          const transform = entity.getComponent(Transform);
+          return enemy && health && transform && !health.isDead;
+        })
+        .map(entity => {
+          const health = entity.getComponent(Health);
+          const transform = entity.getComponent(Transform);
+          if (!health || !transform) return null;
+          return {
+            id: entity.id.toString(),
+            position: transform.position.clone(),
+            health: health.currentHealth
+          };
+        })
+        .filter((data): data is NonNullable<typeof data> => data !== null);
+
+      setEnemyData(currentEnemyData);
       
       // Update weapon state from control system
       if (controlSystemRef.current) {
@@ -346,6 +432,8 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
           isSkyfalling={weaponState.isSkyfalling}
           isBackstabbing={weaponState.isBackstabbing}
           isSundering={weaponState.isSundering}
+          isSmiting={controlSystemRef.current?.isSmiteActive() || false}
+          isDeathGrasping={controlSystemRef.current?.isDeathGraspActive() || false}
           reanimateRef={reanimateRef}
           onBowRelease={() => {
             // This callback is now handled by the ControlSystem directly
@@ -377,6 +465,55 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
           onSunderComplete={() => {
            // console.log('⚔️ Sunder completed - notifying control system');
             // Sunder animation completed - handled by control system
+          }}
+          onSmiteComplete={() => {
+            controlSystemRef.current?.onSmiteComplete();
+          }}
+          onDeathGraspComplete={() => {
+            controlSystemRef.current?.onDeathGraspComplete();
+          }}
+        />
+      )}
+
+      {/* Single Player Ability Effects */}
+      {smiteEffect && (
+        <Smite
+          key={`smite-${smiteEffect.id}`}
+          weaponType={WeaponType.RUNEBLADE}
+          position={smiteEffect.position}
+          onComplete={() => {
+            // Effect completes automatically via timeout
+          }}
+          onHit={(targetId, damage) => {
+            // Handle damage through ECS combat system
+            const world = engineRef.current?.getWorld();
+            if (world && playerEntity) {
+              const targetEntity = world.getEntity(parseInt(targetId));
+              if (targetEntity) {
+                const combatSystem = world.getSystem(CombatSystem);
+                if (combatSystem) {
+                  combatSystem.queueDamage(targetEntity, damage, playerEntity, 'smite');
+                }
+              }
+            }
+          }}
+          enemyData={enemyData}
+          onDamageDealt={(damageDealt) => {
+            // This callback is handled by the ControlSystem
+          }}
+        />
+      )}
+
+      {deathGraspEffect && (
+        <DeathGrasp
+          key={`deathgrasp-${deathGraspEffect.id}`}
+          startPosition={deathGraspEffect.startPosition}
+          targetPosition={deathGraspEffect.targetPosition}
+          onComplete={() => {
+            // Effect completes automatically via timeout
+          }}
+          onPullStart={() => {
+            // No pull logic needed for single player
           }}
         />
       )}

@@ -45,7 +45,9 @@ export default function Home() {
     playerShield: 100,
     maxShield: 100,
     currentWeapon: WeaponType.BOW,
-    currentSubclass: WeaponSubclass.ELEMENTAL
+    currentSubclass: WeaponSubclass.ELEMENTAL,
+    mana: 150,
+    maxMana: 150
   });
   const [controlSystem, setControlSystem] = useState<any>(null);
   const [gameMode, setGameMode] = useState<'menu' | 'singleplayer' | 'multiplayer' | 'pvp'>('menu');
@@ -72,8 +74,14 @@ export default function Home() {
     maxShield: number;
     currentWeapon: WeaponType;
     currentSubclass: WeaponSubclass;
+    mana?: number;
+    maxMana?: number;
   }) => {
-    setGameState(newGameState);
+    setGameState({
+      ...newGameState,
+      mana: newGameState.mana ?? 150,
+      maxMana: newGameState.maxMana ?? 150
+    });
   };
 
   const handleControlSystemUpdate = (newControlSystem: any) => {
@@ -168,25 +176,10 @@ export default function Home() {
         {gameMode !== 'menu' && (
           <>
             <div className="absolute top-4 left-4 text-white font-mono text-sm">
-              <div>WASD - Move</div>
-              <div>Right Click + Drag - Look Around</div>
-              <div>Left Click - Attack/Fire</div>
-              <div>R - Special Ability</div>
+              <div>WASD - Double Tap Dash</div>
+              <div>Right Click - Camera </div>
+              <div>Left Click - Attack </div>
               <div>Space - Jump</div>
-              <div>Mouse Wheel - Zoom</div>
-              <div className="mt-2 text-yellow-400">
-                <div>1 - Sword | 2 - Bow | 3 - Scythe</div>
-              </div>
-              {gameMode === 'multiplayer' && (
-                <div className="mt-2 text-blue-400">
-                  <div>Multiplayer Mode - Cooperative</div>
-                </div>
-              )}
-              {gameMode === 'pvp' && (
-                <div className="mt-2 text-red-400">
-                  <div>PVP Mode - Player vs Player</div>
-                </div>
-              )}
             </div>
             
             {/* Performance Stats */}
@@ -224,6 +217,8 @@ export default function Home() {
                 maxHealth={gameState.maxHealth}
                 playerShield={gameState.playerShield}
                 maxShield={gameState.maxShield}
+                mana={gameState.mana || 150}
+                maxMana={gameState.maxMana || 150}
                 controlSystem={controlSystem}
               />
             </div>

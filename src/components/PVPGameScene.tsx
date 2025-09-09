@@ -32,6 +32,10 @@ import { InterpolationSystem } from '@/systems/InterpolationSystem';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { ReanimateRef } from '@/components/weapons/Reanimate';
 import Reanimate from '@/components/weapons/Reanimate';
+import Runeblade from '@/components/weapons/Runeblade';
+import Smite from '@/components/weapons/Smite';
+import DeathGraspProjectile from '@/components/weapons/DeathGraspProjectile';
+import DeathGraspPull from '@/components/weapons/DeathGraspPull';
 import UnifiedProjectileManager from '@/components/managers/UnifiedProjectileManager';
 import BowPowershotManager from '@/components/projectiles/BowPowershotManager';
 import FrostNovaManager from '@/components/weapons/FrostNovaManager';
@@ -261,6 +265,13 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   const [playerExperience, setPlayerExperience] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
 
+  // Mana system state for Runeblade
+  const [currentMana, setCurrentMana] = useState(150);
+  const maxMana = 150;
+
+  // Track current weapon for mana management
+  const [currentWeapon, setCurrentWeapon] = useState<WeaponType>(WeaponType.BOW);
+
   // PVP Reanimate Effect Management
   const [pvpReanimateEffects, setPvpReanimateEffects] = useState<Array<{
     id: number;
@@ -270,6 +281,39 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     duration: number;
   }>>([]);
   const nextReanimateEffectId = useRef(0);
+
+  // PVP Smite Effect Management
+  const [pvpSmiteEffects, setPvpSmiteEffects] = useState<Array<{
+    id: number;
+    playerId: string;
+    position: Vector3;
+    startTime: number;
+    duration: number;
+  }>>([]);
+  const nextSmiteEffectId = useRef(0);
+
+  // PVP DeathGrasp Effect Management
+  const [pvpDeathGraspEffects, setPvpDeathGraspEffects] = useState<Array<{
+    id: number;
+    playerId: string;
+    startPosition: Vector3;
+    direction: Vector3;
+    startTime: number;
+    duration: number;
+    pullTriggered: boolean;
+  }>>([]);
+  const nextDeathGraspEffectId = useRef(0);
+
+  // PVP DeathGrasp Pull Management
+  const [pvpDeathGraspPulls, setPvpDeathGraspPulls] = useState<Array<{
+    id: number;
+    targetPlayerId: string;
+    casterPosition: Vector3;
+    startTime: number;
+    duration: number;
+    isActive: boolean;
+  }>>([]);
+  const nextDeathGraspPullId = useRef(0);
   
   // PVP Venom Effect Management
   const [pvpVenomEffects, setPvpVenomEffects] = useState<Array<{
@@ -368,7 +412,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
 
   // Function to create reanimate effect on PVP players
   const createPvpReanimateEffect = useCallback((playerId: string, position: Vector3) => {
-    
+
     const reanimateEffect = {
       id: nextReanimateEffectId.current++,
       playerId,
@@ -376,7 +420,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       startTime: Date.now(),
       duration: 1500 // 1.5 seconds reanimate duration (matches Reanimate component)
     };
-    
+
     // Use batched updates for reanimate effects
     PVPStateUpdateHelpers.batchEffectUpdates([{
       type: 'add',
@@ -384,7 +428,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       setter: setPvpReanimateEffects,
       data: reanimateEffect
     }]);
-    
+
     // Clean up reanimate effect after duration using batched updates
     setTimeout(() => {
       PVPStateUpdateHelpers.batchEffectUpdates([{
@@ -394,6 +438,102 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         filterId: reanimateEffect.id
       }]);
     }, reanimateEffect.duration);
+  }, []);
+
+  // Function to create smite effect on PVP players
+  const createPvpSmiteEffect = useCallback((playerId: string, position: Vector3) => {
+
+    const smiteEffect = {
+      id: nextSmiteEffectId.current++,
+      playerId,
+      position: position.clone(),
+      startTime: Date.now(),
+      duration: 900 // 0.9 seconds smite duration (matches Smite component)
+    };
+
+    // Use batched updates for smite effects
+    PVPStateUpdateHelpers.batchEffectUpdates([{
+      type: 'add',
+      effectType: 'smite',
+      setter: setPvpSmiteEffects,
+      data: smiteEffect
+    }]);
+
+    // Clean up smite effect after duration using batched updates
+    setTimeout(() => {
+      PVPStateUpdateHelpers.batchEffectUpdates([{
+        type: 'remove',
+        effectType: 'smite',
+        setter: setPvpSmiteEffects,
+        filterId: smiteEffect.id
+      }]);
+    }, smiteEffect.duration);
+  }, []);
+
+  // Function to create death grasp effect on PVP players
+  const createPvpDeathGraspEffect = useCallback((playerId: string, startPosition: Vector3, direction: Vector3) => {
+
+    const deathGraspEffect = {
+      id: nextDeathGraspEffectId.current++,
+      playerId,
+      startPosition: startPosition.clone(),
+      direction: direction.clone(),
+      startTime: Date.now(),
+      duration: 1200, // 1.2 seconds death grasp duration (matches DeathGraspProjectile component)
+      pullTriggered: false
+    };
+
+    // Use batched updates for death grasp effects
+    PVPStateUpdateHelpers.batchEffectUpdates([{
+      type: 'add',
+      effectType: 'deathgrasp',
+      setter: setPvpDeathGraspEffects,
+      data: deathGraspEffect
+    }]);
+
+    // Clean up death grasp effect after duration using batched updates
+    setTimeout(() => {
+      PVPStateUpdateHelpers.batchEffectUpdates([{
+        type: 'remove',
+        effectType: 'deathgrasp',
+        setter: setPvpDeathGraspEffects,
+        filterId: deathGraspEffect.id
+      }]);
+    }, deathGraspEffect.duration);
+  }, []);
+
+  // Function to create death grasp pull effect on PVP players
+  const createPvpDeathGraspPull = useCallback((targetPlayerId: string, casterPosition: Vector3) => {
+    console.log(`🎣 Creating DeathGraspPull effect for target ${targetPlayerId} from position:`, casterPosition);
+
+    const deathGraspPull = {
+      id: nextDeathGraspPullId.current++,
+      targetPlayerId,
+      casterPosition: casterPosition.clone(),
+      startTime: Date.now(),
+      duration: 600, // 0.6 seconds pull duration (matches DeathGraspPull component)
+      isActive: true
+    };
+
+    console.log(`🎣 DeathGraspPull created with ID ${deathGraspPull.id}`);
+
+    // Use batched updates for death grasp pulls
+    PVPStateUpdateHelpers.batchEffectUpdates([{
+      type: 'add',
+      effectType: 'deathgrasp',
+      setter: setPvpDeathGraspPulls,
+      data: deathGraspPull
+    }]);
+
+    // Clean up death grasp pull after duration using batched updates
+    setTimeout(() => {
+      PVPStateUpdateHelpers.batchEffectUpdates([{
+        type: 'remove',
+        effectType: 'deathgrasp',
+        setter: setPvpDeathGraspPulls,
+        filterId: deathGraspPull.id
+      }]);
+    }, deathGraspPull.duration);
   }, []);
 
   // Function to create frost nova effect on PVP players
@@ -500,20 +640,22 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             setPlayerLevel(newLevel);
             console.log(`🎉 Level up! Player reached level ${newLevel}`);
 
-            // Update max health based on new level
-            if (playerEntity) {
-              const health = playerEntity.getComponent(Health);
-              if (health) {
-                const newMaxHealth = ExperienceSystem.getMaxHealthForLevel(newLevel);
-                const oldMaxHealth = health.maxHealth;
+        // Update max health based on new level
+        if (playerEntity) {
+          const health = playerEntity.getComponent(Health);
+          if (health) {
+            const newMaxHealth = ExperienceSystem.getMaxHealthForLevel(newLevel);
+            const oldMaxHealth = health.maxHealth;
 
-                // Update max health and scale current health proportionally
-                health.maxHealth = newMaxHealth;
-                health.currentHealth = Math.min(health.currentHealth, newMaxHealth);
+            // Update max health and scale current health proportionally
+            health.setMaxHealth(newMaxHealth);
 
-                console.log(`💚 Health updated: ${oldMaxHealth} -> ${newMaxHealth} HP`);
-              }
-            }
+            // Synchronize the updated health with server and other players
+            updatePlayerHealth(health.currentHealth, health.maxHealth);
+
+            console.log(`💚 Health updated: ${oldMaxHealth} -> ${newMaxHealth} HP (current: ${health.currentHealth}/${health.maxHealth})`);
+          }
+        }
           }
 
           console.log(`🎯 Local player ${playerId} gained 10 EXP from wave completion (total: ${newExp})`);
@@ -589,6 +731,49 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   
   // Optimized PVP effects with object pooling
   const { createOptimizedVenomEffect, createOptimizedDebuffEffect, getPoolStats } = useOptimizedPVPEffects();
+
+  // Mana regeneration for Runeblade (8 mana per second, same as Scythe)
+  useEffect(() => {
+    if (currentWeapon === WeaponType.RUNEBLADE) {
+      const interval = setInterval(() => {
+        setCurrentMana(prev => Math.min(maxMana, prev + 4));
+      }, 500);
+
+      return () => clearInterval(interval);
+    }
+  }, [currentWeapon, maxMana]);
+
+  // Sync currentWeapon with weaponState
+  useEffect(() => {
+    setCurrentWeapon(weaponState.currentWeapon);
+  }, [weaponState.currentWeapon]);
+
+  // Weapon switching - reset mana when switching to Runeblade
+  useEffect(() => {
+    if (currentWeapon === WeaponType.RUNEBLADE) {
+      setCurrentMana(maxMana); // Start with full mana (150)
+    }
+  }, [currentWeapon, maxMana]);
+
+  // Function to consume mana for Runeblade abilities
+  const consumeMana = useCallback((amount: number) => {
+    console.log('🔍 DEBUG: consumeMana called - currentWeapon:', currentWeapon, 'amount:', amount);
+    if (currentWeapon === WeaponType.RUNEBLADE) {
+      setCurrentMana(prev => {
+        const newValue = Math.max(0, prev - amount);
+        console.log('🔍 DEBUG: consumeMana - old mana:', prev, 'new mana:', newValue);
+        return newValue;
+      });
+    }
+  }, [currentWeapon]);
+
+  // Function to check if Runeblade has enough mana
+  const hasMana = useCallback((amount: number) => {
+    console.log('🔍 DEBUG: hasMana called - currentMana:', currentMana, 'amount:', amount);
+    const result = currentMana >= amount;
+    console.log('🔍 DEBUG: hasMana result:', result);
+    return result;
+  }, [currentMana]);
 
   // Set up PVP event listeners for player actions and damage
   useEffect(() => {
@@ -855,17 +1040,11 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
               // Two swings with delays - total duration roughly 350ms
               resetDuration = 275;
               break;
-            case WeaponType.SPEAR:
-              // Check if Storm subclass (has burst attacks with different timing)
-              if (playerSubclass === WeaponSubclass.STORM) {
-                // Storm spear burst: swingProgress += delta * 22.5 (faster)
-                // At 60fps: (Math.PI * 0.75) / 22.5 / (1/60) ≈ 133ms per swing, 3 swings = ~400ms total
-                resetDuration = 275;
-              } else {
-                // Regular spear: swingProgress += delta * 15 until >= Math.PI * 0.75
-                // At 60fps: (Math.PI * 0.75) / 15 / (1/60) ≈ 200ms
-                resetDuration = 200;
-              }
+            case WeaponType.RUNEBLADE:
+              // Same timing as sword: swingProgress += delta * 6.75 until >= Math.PI * 0.55 (or 0.9 for combo step 3)
+              // At 60fps: (Math.PI * 0.55) / 6.75 / (1/60) ≈ 400ms
+              // Note: 3rd combo hit takes longer but we use average timing for multiplayer sync
+              resetDuration = 80;
               break;
             case WeaponType.BOW:
               resetDuration = 300; // Quick shots
@@ -1065,10 +1244,48 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           
           // Note: PVP damage and freeze effects are now handled by PVPFrostNovaManager
         } else if (data.abilityType === 'reanimate') {
-          
+
           // Create reanimate visual effect at the player's position
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
           createPvpReanimateEffect(data.playerId, position);
+        } else if (data.abilityType === 'smite') {
+
+          // Create smite visual effect at the player's position
+          const position = new Vector3(data.position.x, data.position.y, data.position.z);
+          createPvpSmiteEffect(data.playerId, position);
+        } else if (data.abilityType === 'deathgrasp') {
+
+          // Create death grasp visual effect
+          const position = new Vector3(data.position.x, data.position.y, data.position.z);
+          const direction = new Vector3(data.direction.x, data.direction.y, data.direction.z);
+          const targetPosition = position.clone().add(direction.clone().multiplyScalar(8));
+
+          createPvpDeathGraspEffect(data.playerId, position, direction);
+
+          // Find target player to pull (closest player in front of caster)
+          let closestTarget: { id: string; distance: number } | null = null;
+          players.forEach((player: any) => {
+            if (player.id === data.playerId) return; // Don't pull self
+
+            const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
+            const distance = position.distanceTo(playerPos);
+
+            // Check if player is in front of caster and within range
+            const toPlayer = playerPos.clone().sub(position).normalize();
+            const dotProduct = direction.dot(toPlayer);
+
+            if (dotProduct > 0.5 && distance <= 8) { // 60 degree cone, 8 unit range
+              if (!closestTarget || distance < closestTarget.distance) {
+                closestTarget = { id: player.id, distance };
+              }
+            }
+          });
+
+          // Pull the closest target player if found
+          if (closestTarget !== null && closestTarget !== undefined) {
+            const target = closestTarget as { id: string; distance: number };
+            createPvpDeathGraspPull(target.id, position);
+          }
         } else if (data.abilityType === 'charge') {
           setMultiplayerPlayerStates(prev => {
             const updated = new Map(prev);
@@ -1421,14 +1638,34 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     };
 
     const handlePlayerEffect = (data: any) => {
-      
+
       if (data.effect?.type === 'venom') {
         const { targetPlayerId, position, duration } = data.effect;
-        
+
         // Create venom effect on the target player (could be local player or other player)
         if (targetPlayerId && position) {
           const venomPosition = new Vector3(position.x, position.y, position.z);
           createPvpVenomEffect(targetPlayerId, venomPosition);
+        }
+      }
+
+      if (data.effect?.type === 'deathgrasp_pull') {
+        const { targetPlayerId, position, casterId } = data.effect;
+        console.log(`🎣 Received DeathGrasp pull effect for target ${targetPlayerId} from caster ${casterId}`);
+
+        // If this client is the target player, update the local position
+        if (targetPlayerId === socket?.id && position) {
+          const pullPosition = new Vector3(position.x, position.y, position.z);
+          console.log(`🎣 Applying DeathGrasp pull to local player, moving to:`, pullPosition);
+
+          // Update local player entity position
+          if (playerEntity) {
+            const transform = playerEntity.getComponent(Transform);
+            if (transform) {
+              transform.setPosition(pullPosition.x, pullPosition.y, pullPosition.z);
+              console.log(`🎣 Local player position updated via DeathGrasp pull`);
+            }
+          }
         }
       }
     };
@@ -1956,7 +2193,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         if (reanimateRef.current) {
           reanimateRef.current.triggerHealingEffect();
         }
-        
+
         // Broadcast Reanimate ability to other players
 
         if (player) {
@@ -1970,7 +2207,32 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           }
         }
       });
-      
+
+      // Set up Smite callback
+      controlSystem.setSmiteCallback((position: Vector3, direction: Vector3, onDamageDealt?: (damageDealt: boolean) => void) => {
+        console.log('🔍 DEBUG: Smite callback triggered in PVP mode');
+        // Create local Smite effect
+        createPvpSmiteEffect(socket?.id || '', position);
+
+        // Broadcast Smite ability to other players
+        broadcastPlayerAbility('smite', position, direction);
+      });
+
+      // Set up DeathGrasp callback
+      controlSystem.setDeathGraspCallback((position: Vector3, direction: Vector3) => {
+        console.log('🔍 DEBUG: DeathGrasp callback triggered in PVP mode');
+
+        // Create local DeathGrasp projectile effect
+        createPvpDeathGraspEffect(socket?.id || '', position, direction);
+
+        // Broadcast DeathGrasp ability to other players
+        broadcastPlayerAbility('deathgrasp', position, direction);
+      });
+
+      // Set up mana callbacks for Runeblade
+      controlSystem.setConsumeManaCallback(consumeMana);
+      controlSystem.setCheckManaCallback(hasMana);
+
       engine.start();
     });
 
@@ -1989,6 +2251,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     (window as any).pvpPlayers = players;
     (window as any).localSocketId = socket?.id;
     (window as any).serverPlayerEntities = serverPlayerEntities;
+    (window as any).multiplayer = {
+      broadcastPlayerEffect: broadcastPlayerEffect
+    };
 
     // Expose interpolation system for debugging
     (window as any).getInterpolationStats = () => {
@@ -2182,7 +2447,10 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             playerShield: shieldComponent ? shieldComponent.currentShield : 0,
             maxShield: shieldComponent ? shieldComponent.maxShield : 0,
             currentWeapon: controlSystemRef.current.getCurrentWeapon(),
-            currentSubclass: controlSystemRef.current.getCurrentSubclass()
+            currentSubclass: controlSystemRef.current.getCurrentSubclass(),
+            // Add mana information for Runeblade
+            mana: currentWeapon === WeaponType.RUNEBLADE ? currentMana : 150,
+            maxMana: currentWeapon === WeaponType.RUNEBLADE ? maxMana : 150
           };
           onGameStateUpdate(gameState);
           
@@ -2279,6 +2547,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           isSkyfalling={weaponState.isSkyfalling}
           isBackstabbing={weaponState.isBackstabbing}
           isSundering={weaponState.isSundering}
+          isSmiting={controlSystemRef.current?.isSmiteActive() || false}
+          isDeathGrasping={controlSystemRef.current?.isDeathGraspActive() || false}
           reanimateRef={reanimateRef}
           isLocalPlayer={true}
           onBowRelease={() => {
@@ -2326,6 +2596,12 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           }}
           onSunderComplete={() => {
             // Sunder animation completed - no need to broadcast as animation state is handled automatically
+          }}
+          onSmiteComplete={() => {
+            controlSystemRef.current?.onSmiteComplete();
+          }}
+          onDeathGraspComplete={() => {
+            controlSystemRef.current?.onDeathGraspComplete();
           }}
         />
       )}
@@ -2638,16 +2914,136 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           {pvpReanimateEffects.map(reanimateEffect => {
             // Find the current position of the affected player
             const affectedPlayer = players.get(reanimateEffect.playerId);
-            const currentPosition = affectedPlayer 
+            const currentPosition = affectedPlayer
               ? new Vector3(affectedPlayer.position.x, affectedPlayer.position.y, affectedPlayer.position.z)
               : reanimateEffect.position;
-            
+
             return (
               <PVPReanimateEffect
                 key={reanimateEffect.id}
                 position={currentPosition}
                 onComplete={() => {
                   setPvpReanimateEffects(prev => prev.filter(effect => effect.id !== reanimateEffect.id));
+                }}
+              />
+            );
+          })}
+
+          {/* PVP Smite Effects */}
+          {pvpSmiteEffects.map(smiteEffect => {
+            // Create enemy data from other players for PVP smite damage
+            const otherPlayersData = Array.from(players.entries())
+              .filter(([playerId]) => playerId !== smiteEffect.playerId)
+              .map(([playerId, player]) => ({
+                id: playerId,
+                position: new Vector3(player.position.x, player.position.y, player.position.z),
+                health: player.health
+              }));
+
+            return (
+              <Smite
+                key={smiteEffect.id}
+                weaponType={WeaponType.RUNEBLADE}
+                position={smiteEffect.position}
+                onComplete={() => {
+                  setPvpSmiteEffects(prev => prev.filter(effect => effect.id !== smiteEffect.id));
+                }}
+                onHit={(targetId, damage) => {
+                  // Handle PVP damage through broadcast system
+                  broadcastPlayerDamage(targetId, damage, 'smite');
+                }}
+                enemyData={otherPlayersData}
+                onDamageDealt={(damageDealt) => {
+                  // This callback is handled by the ControlSystem for healing
+                }}
+              />
+            );
+          })}
+
+          {/* PVP DeathGrasp Effects */}
+          {pvpDeathGraspEffects.map(deathGraspEffect => {
+            // For local player, use current transform position instead of potentially stale players map position
+            let currentStartPosition: Vector3;
+
+            if (deathGraspEffect.playerId === socket?.id && playerEntity) {
+              // Local player - use current ECS position
+              const transform = playerEntity.getComponent(Transform);
+              if (transform) {
+                currentStartPosition = transform.position.clone();
+              } else {
+                // Fallback to players map if ECS position unavailable
+                const castingPlayer = players.get(deathGraspEffect.playerId);
+                currentStartPosition = castingPlayer
+                  ? new Vector3(castingPlayer.position.x, castingPlayer.position.y, castingPlayer.position.z)
+                  : deathGraspEffect.startPosition;
+              }
+            } else {
+              // Remote player - use players map position
+              const castingPlayer = players.get(deathGraspEffect.playerId);
+              currentStartPosition = castingPlayer
+                ? new Vector3(castingPlayer.position.x, castingPlayer.position.y, castingPlayer.position.z)
+                : deathGraspEffect.startPosition;
+            }
+
+            return (
+              <DeathGraspProjectile
+                key={deathGraspEffect.id}
+                startPosition={currentStartPosition}
+                direction={deathGraspEffect.direction}
+                casterId={deathGraspEffect.playerId}
+                onHit={(targetId: string, position: Vector3) => {
+                  console.log(`🎯 DeathGrasp hit target: ${targetId} at position:`, position);
+                  console.log(`🎯 DeathGrasp caster position:`, currentStartPosition);
+                  console.log(`🎯 DeathGrasp creating pull effect for target ${targetId}`);
+                  // Create the pulling effect when projectile hits
+                  createPvpDeathGraspPull(targetId, currentStartPosition);
+                }}
+                onComplete={() => {
+                  setPvpDeathGraspEffects(prev => prev.filter(effect => effect.id !== deathGraspEffect.id));
+                }}
+                players={players}
+                localSocketId={socket?.id}
+              />
+            );
+          })}
+
+          {/* PVP DeathGrasp Pull Effects */}
+          {pvpDeathGraspPulls.map(pull => {
+            if (!pull.isActive) return null;
+
+            return (
+              <DeathGraspPull
+                key={pull.id}
+                targetPlayerId={pull.targetPlayerId}
+                casterPosition={pull.casterPosition}
+                isActive={pull.isActive}
+                onComplete={() => {
+                  setPvpDeathGraspPulls(prev => prev.map(p =>
+                    p.id === pull.id ? { ...p, isActive: false } : p
+                  ));
+                }}
+                playerEntities={serverPlayerEntities}
+                getEntityPosition={(entityId) => {
+                  const world = engineRef.current?.getWorld();
+                  if (!world) return null;
+
+                  const entity = world.getEntity(entityId);
+                  if (!entity) return null;
+
+                  const transform = entity.getComponent(Transform);
+                  return transform ? transform.position : null;
+                }}
+                updateEntityPosition={(entityId, position) => {
+                  const world = engineRef.current?.getWorld();
+                  if (!world) return;
+
+                  const entity = world.getEntity(entityId);
+                  if (!entity) return;
+
+                  const transform = entity.getComponent(Transform);
+                  if (transform) {
+                    transform.setPosition(position.x, position.y, position.z);
+                  }
                 }}
               />
             );

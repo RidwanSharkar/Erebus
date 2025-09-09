@@ -40,6 +40,10 @@ interface DragonRendererProps {
   isDivineStorming?: boolean;
   isSwordCharging?: boolean;
   isDeflecting?: boolean;
+  isSmiting?: boolean;
+  isDeathGrasping?: boolean;
+  onSmiteComplete?: () => void;
+  onDeathGraspComplete?: () => void;
   onChargeComplete?: () => void;
   onDeflectComplete?: () => void;
   rotation?: { x: number; y: number; z: number }; // Add rotation prop for multiplayer
@@ -65,6 +69,10 @@ export default function DragonRenderer({
   isSwinging = false,
   isSpinning = false,
   isDeflecting = false,
+  isSmiting = false,
+  isDeathGrasping = false,
+  onSmiteComplete = () => {},
+  onDeathGraspComplete = () => {},
   onBowRelease = () => {},
   onScytheSwingComplete = () => {},
   onSwordSwingComplete = () => {},
@@ -325,6 +333,10 @@ export default function DragonRenderer({
           isDivineStorming={isDivineStorming}
           isSwordCharging={isSwordCharging}
           isDeflecting={isDeflecting}
+          isSmiting={isSmiting}
+          isDeathGrasping={isDeathGrasping}
+          onSmiteComplete={onSmiteComplete}
+          onDeathGraspComplete={onDeathGraspComplete}
           onChargeComplete={onChargeComplete}
           onDeflectComplete={onDeflectComplete}
           enemyData={enemyData}

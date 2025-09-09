@@ -70,7 +70,19 @@ export class ControlSystem extends System {
   
   // Callback for Sunder ability
   private onSunderCallback?: (position: Vector3, direction: Vector3, damage: number, stackCount: number) => void;
-  
+
+  // Callback for Smite ability
+  private onSmiteCallback?: (position: Vector3, direction: Vector3, onDamageDealt?: (damageDealt: boolean) => void) => void;
+
+  // Callback for DeathGrasp ability
+  private onDeathGraspCallback?: (position: Vector3, direction: Vector3) => void;
+
+  // Callback for Runeblade mana consumption
+  private onConsumeManaCallback?: (amount: number) => void;
+
+  // Callback for Runeblade mana checking
+  private onCheckManaCallback?: (amount: number) => boolean;
+
   // Rate limiting for projectile firing
   private lastFireTime = 0;
   private lastCrossentropyTime = 0; // Separate tracking for CrossentropyBolt
@@ -80,6 +92,7 @@ export class ControlSystem extends System {
   private lastCobraShotTime = 0; // Separate tracking for Cobra Shot ability
   private fireRate = 0.2; // Default for bow
   private swordFireRate = 0.9; // Rate for sword attacks
+  private runebladeFireRate = 0.75; // Runeblade attack rate
   private sabresFireRate = 0.6; // Sabres dual attack rate (600ms between attacks)
   private scytheFireRate = 0.375; // EntropicBolt rate (0.33s cooldown)
   private crossentropyFireRate = 2; // CrossentropyBolt rate (1 per second)
@@ -159,6 +172,16 @@ export class ControlSystem extends System {
   
   // Sunder stack tracking - Map of entity ID to stack data
   private sunderStacks = new Map<number, { stacks: number; lastApplied: number; duration: number }>();
+
+  // Smite ability state (Runeblade)
+  private lastSmiteTime = 0;
+  private smiteCooldown = 2.0; // 2 second cooldown
+  private isSmiting = false;
+
+  // DeathGrasp ability state (Runeblade)
+  private lastDeathGraspTime = 0;
+  private deathGraspCooldown = 5.0; // 5 second cooldown
+  private isDeathGrasping = false;
   constructor(
     camera: PerspectiveCamera, 
     inputManager: InputManager, 
@@ -326,6 +349,15 @@ export class ControlSystem extends System {
         this.fireRate = this.sabresFireRate; // Use sabres-specific fire rate
         this.lastWeaponSwitchTime = currentTime;
       }
+    } else if (this.inputManager.isKeyPressed('5')) {
+      if (this.currentWeapon !== WeaponType.RUNEBLADE) {
+        this.resetAllAbilityStates(); // Reset all ability states when switching weapons
+        this.currentWeapon = WeaponType.RUNEBLADE;
+        this.currentSubclass = WeaponSubclass.ARCANE; // Default runeblade subclass
+        this.fireRate = this.runebladeFireRate; // Use runeblade fire rate
+        this.lastWeaponSwitchTime = currentTime;
+        this.swordComboStep = 1; // Reset combo when switching to runeblade
+      }
     }
   }
 
@@ -338,6 +370,8 @@ export class ControlSystem extends System {
       this.handleSwordInput(playerTransform);
     } else if (this.currentWeapon === WeaponType.SABRES) {
       this.handleSabresInput(playerTransform);
+    } else if (this.currentWeapon === WeaponType.RUNEBLADE) {
+      this.handleRunebladeInput(playerTransform);
     }
   }
 
@@ -1071,7 +1105,23 @@ export class ControlSystem extends System {
   public setSunderCallback(callback: (position: Vector3, direction: Vector3, damage: number, stackCount: number) => void): void {
     this.onSunderCallback = callback;
   }
-  
+
+  public setSmiteCallback(callback: (position: Vector3, direction: Vector3, onDamageDealt?: (damageDealt: boolean) => void) => void): void {
+    this.onSmiteCallback = callback;
+  }
+
+  public setDeathGraspCallback(callback: (position: Vector3, direction: Vector3) => void): void {
+    this.onDeathGraspCallback = callback;
+  }
+
+  public setConsumeManaCallback(callback: (amount: number) => void): void {
+    this.onConsumeManaCallback = callback;
+  }
+
+  public setCheckManaCallback(callback: (amount: number) => boolean): void {
+    this.onCheckManaCallback = callback;
+  }
+
   public setDebuffCallback(callback: (targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned', duration: number, position: Vector3) => void): void {
     this.onDebuffCallback = callback;
   }
@@ -1174,27 +1224,58 @@ export class ControlSystem extends System {
     return this.isSundering;
   }
 
+  public isSmiteActive(): boolean {
+    return this.isSmiting;
+  }
+
+  public isDeathGraspActive(): boolean {
+    return this.isDeathGrasping;
+  }
+
   private handleSwordInput(playerTransform: Transform): void {
     // Handle sword melee attacks
     if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isDivineStorming && !this.isSwordCharging && !this.isDeflecting) { // Left mouse button
       this.performSwordMeleeAttack(playerTransform);
     }
-    
+
     // Handle Divine Storm ability with 'R' key
     if (this.inputManager.isKeyPressed('r') && !this.isDivineStorming && !this.isSwinging && !this.isSwordCharging && !this.isDeflecting) {
       this.performDivineStorm(playerTransform);
     }
-    
+
     // Handle Charge ability with 'E' key
     if (this.inputManager.isKeyPressed('e') && !this.isSwordCharging && !this.isDivineStorming && !this.isSwinging && !this.isDeflecting) {
       this.performCharge(playerTransform);
     }
-    
+
     // Handle Deflect ability with 'Q' key
     if (this.inputManager.isKeyPressed('q') && !this.isDeflecting && !this.isDivineStorming && !this.isSwinging && !this.isSwordCharging) {
       this.performDeflect(playerTransform);
     }
-    
+
+    // Check for combo reset
+    const currentTime = Date.now() / 1000;
+    if (currentTime - this.lastSwordAttackTime > this.swordComboResetTime) {
+      this.swordComboStep = 1;
+    }
+  }
+
+  private handleRunebladeInput(playerTransform: Transform): void {
+    // Handle runeblade melee attacks
+    if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isSmiting && !this.isDeathGrasping) { // Left mouse button
+      this.performRunebladeMeleeAttack(playerTransform);
+    }
+
+    // Handle Smite ability with 'E' key
+    if (this.inputManager.isKeyPressed('e') && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping) {
+      this.performSmite(playerTransform);
+    }
+
+    // Handle DeathGrasp ability with 'Q' key
+    if (this.inputManager.isKeyPressed('q') && !this.isDeathGrasping && !this.isSmiting && !this.isSwinging) {
+      this.performDeathGrasp(playerTransform);
+    }
+
     // Check for combo reset
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastSwordAttackTime > this.swordComboResetTime) {
@@ -1210,26 +1291,216 @@ export class ControlSystem extends System {
     }
     this.lastFireTime = currentTime;
     this.lastSwordAttackTime = currentTime;
-    
+
     // Set swinging state - completion will be handled by sword component callback
     this.isSwinging = true;
-    
+
     // Perform melee damage in a cone in front of player
     this.performMeleeDamage(playerTransform);
-    
+
     // Note: Swing completion and combo advancement is now handled by onSwordSwingComplete callback
+  }
+
+  private performRunebladeMeleeAttack(playerTransform: Transform): void {
+    // Rate limiting - prevent spam clicking (use runeblade-specific fire rate)
+    const currentTime = Date.now() / 1000;
+    if (currentTime - this.lastFireTime < this.runebladeFireRate) {
+      return;
+    }
+    this.lastFireTime = currentTime;
+    this.lastSwordAttackTime = currentTime;
+
+    // Set swinging state - completion will be handled by runeblade component callback
+    this.isSwinging = true;
+
+    // Perform melee damage in a cone in front of player (same as sword)
+    this.performMeleeDamage(playerTransform);
+
+    // Note: Swing completion and combo advancement is now handled by onSwordSwingComplete callback
+  }
+
+  private performSmite(playerTransform: Transform): void {
+    // Check if using Runeblade
+    if (this.currentWeapon !== WeaponType.RUNEBLADE) {
+      return;
+    }
+
+    // Check cooldown
+    const currentTime = Date.now() / 1000;
+    if (currentTime - this.lastSmiteTime < this.smiteCooldown) {
+      return; // Still on cooldown
+    }
+
+    // Check if already smiting
+    if (this.isSmiting) {
+      return;
+    }
+
+    // Check mana cost (35 mana)
+    if (this.onCheckManaCallback && !this.onCheckManaCallback(35)) {
+      return; // Not enough mana
+    }
+
+    this.lastSmiteTime = currentTime;
+    this.isSmiting = true;
+
+    // Consume mana (35 mana)
+    if (this.onConsumeManaCallback) {
+      this.onConsumeManaCallback(35);
+    }
+
+    // Get player position and direction
+    const position = playerTransform.position.clone();
+    const direction = new Vector3();
+    this.camera.getWorldDirection(direction);
+    direction.normalize();
+
+    // Offset the smite position slightly forward to look like it's coming from the runeblade swing
+    const smitePosition = position.clone().add(direction.clone().multiplyScalar(2.5));
+
+    // Perform damage in radius around smite position
+    const damageDealt = this.performSmiteDamage(smitePosition);
+
+    // Heal player for 20 HP if damage was dealt
+    if (damageDealt) {
+      this.performSmiteHealing();
+    }
+
+    // Trigger smite callback with damage callback
+    if (this.onSmiteCallback) {
+      this.onSmiteCallback(smitePosition, direction, (damageDealtFlag: boolean) => {
+        // Additional healing if damage was dealt through the visual component
+        if (damageDealtFlag && !damageDealt) {
+          this.performSmiteHealing();
+        }
+      });
+    }
+
+    // Reset smiting state after animation duration (same as the Smite component)
+    setTimeout(() => {
+      this.isSmiting = false;
+    }, 900); // 0.9 seconds matches the animation duration
+  }
+
+  private performSmiteDamage(smitePosition: Vector3): boolean {
+    if (!this.playerEntity) return false;
+
+    const smiteDamage = 80;
+    const damageRadius = 3.0; // Small radius around impact location
+    let damageDealt = false;
+
+    // Get all entities in the world to check for enemies/players
+    const allEntities = this.world.getAllEntities();
+
+    allEntities.forEach(entity => {
+      if (entity.id === this.playerEntity?.id) return; // Don't damage self
+
+      const entityTransform = entity.getComponent(Transform);
+      const entityHealth = entity.getComponent(Health);
+
+      if (!entityTransform || !entityHealth || entityHealth.isDead) return;
+
+      const distance = smitePosition.distanceTo(entityTransform.position);
+
+      if (distance <= damageRadius) {
+        // Entity is within damage radius - apply damage
+        const combatSystem = this.world.getSystem(CombatSystem);
+        if (combatSystem && this.playerEntity) {
+          combatSystem.queueDamage(entity, smiteDamage, this.playerEntity, 'smite');
+          damageDealt = true;
+        }
+      }
+    });
+
+    return damageDealt;
+  }
+
+  private performSmiteHealing(): void {
+    if (!this.playerEntity) return;
+
+    // Get player's health component and heal for 20 HP
+    const healthComponent = this.playerEntity.getComponent(Health);
+    if (healthComponent) {
+      const didHeal = healthComponent.heal(20); // Smite healing amount
+      if (didHeal) {
+        // console.log(`⚡ Smite healed player for 20 HP. Current health: ${healthComponent.currentHealth}/${healthComponent.maxHealth}`);
+      }
+    }
+  }
+
+  private performDeathGrasp(playerTransform: Transform): void {
+    // Check if using Runeblade
+    if (this.currentWeapon !== WeaponType.RUNEBLADE) {
+      return;
+    }
+
+    // Check cooldown
+    const currentTime = Date.now() / 1000;
+    if (currentTime - this.lastDeathGraspTime < this.deathGraspCooldown) {
+      return; // Still on cooldown
+    }
+
+    // Check if already death grasping
+    if (this.isDeathGrasping) {
+      return;
+    }
+
+    // Check mana cost (25 mana)
+    if (this.onCheckManaCallback && !this.onCheckManaCallback(25)) {
+      return; // Not enough mana
+    }
+
+    this.lastDeathGraspTime = currentTime;
+    this.isDeathGrasping = true;
+
+    // Consume mana (25 mana)
+    if (this.onConsumeManaCallback) {
+      this.onConsumeManaCallback(25);
+    }
+
+    // Get player position and direction
+    const position = playerTransform.position.clone();
+    const direction = new Vector3();
+    this.camera.getWorldDirection(direction);
+    direction.normalize();
+
+    // Trigger death grasp callback
+    if (this.onDeathGraspCallback) {
+      this.onDeathGraspCallback(position, direction);
+    }
+
+    // Reset death grasping state after animation duration
+    setTimeout(() => {
+      this.isDeathGrasping = false;
+    }, 1200); // 1.2 seconds matches the animation duration
   }
 
   // Called by sword component when swing animation completes
   public onSwordSwingComplete(): void {
     if (!this.isSwinging) return; // Prevent multiple calls
-    
+
     // Reset swinging state
     this.isSwinging = false;
-    
+
     // Advance combo step for next attack
     this.swordComboStep = (this.swordComboStep % 3 + 1) as 1 | 2 | 3;
-    
+
+  }
+
+  // Called by runeblade component when smite animation completes
+  public onSmiteComplete(): void {
+    if (!this.isSmiting) return; // Prevent multiple calls
+
+    // Reset smiting state
+    this.isSmiting = false;
+  }
+
+  // Called by runeblade component when death grasp animation completes
+  public onDeathGraspComplete(): void {
+    if (!this.isDeathGrasping) return; // Prevent multiple calls
+
+    // Reset death grasping state
+    this.isDeathGrasping = false;
   }
 
   private handleSabresInput(playerTransform: Transform): void {
@@ -2661,8 +2932,21 @@ export class ControlSystem extends System {
         max: this.skyfallCooldown,
         isActive: this.isSkyfalling
       };
+    } else if (this.currentWeapon === WeaponType.RUNEBLADE) {
+      // RUNEBLADE abilities
+      cooldowns['Q'] = {
+        current: Math.max(0, this.deathGraspCooldown - (currentTime - this.lastDeathGraspTime)),
+        max: this.deathGraspCooldown,
+        isActive: this.isDeathGrasping
+      };
+      cooldowns['E'] = {
+        current: Math.max(0, this.smiteCooldown - (currentTime - this.lastSmiteTime)),
+        max: this.smiteCooldown,
+        isActive: this.isSmiting
+      };
+      // R is unused for RUNEBLADE
     }
-    
+
     return cooldowns;
   }
 }

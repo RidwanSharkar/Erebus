@@ -13,6 +13,7 @@ import EtherealBow from '../weapons/EtherBow';
 import Scythe from '../weapons/Scythe';
 import Sword from '../weapons/Sword';
 import Sabres from '../weapons/Sabres';
+import Runeblade from '../weapons/Runeblade';
 import DivineStorm from '../weapons/DivineStorm';
 import Reanimate, { ReanimateRef } from '../weapons/Reanimate';
 import BoneTail from './BoneTail';
@@ -45,6 +46,10 @@ interface DragonUnitProps {
   isDivineStorming?: boolean;
   isSwordCharging?: boolean;
   isDeflecting?: boolean;
+  isSmiting?: boolean;
+  isDeathGrasping?: boolean;
+  onSmiteComplete?: () => void;
+  onDeathGraspComplete?: () => void;
   onChargeComplete?: () => void;
   onDeflectComplete?: () => void;
   enemyData?: Array<{
@@ -130,6 +135,10 @@ export default function DragonUnit({
   isDivineStorming = false,
   isSwordCharging = false,
   isDeflecting = false,
+  isSmiting = false,
+  isDeathGrasping = false,
+  onSmiteComplete = () => {},
+  onDeathGraspComplete = () => {},
   onChargeComplete = () => {},
   onDeflectComplete = () => {},
   enemyData = [],
@@ -227,6 +236,40 @@ export default function DragonUnit({
           onBackstabComplete={onBackstabComplete}
           onSunderComplete={onSunderComplete}
           subclass={currentSubclass}
+        />
+      );
+    } else if (currentWeapon === WeaponType.RUNEBLADE) {
+      return (
+        <Runeblade
+          isSwinging={isSwinging}
+          isSmiting={isSmiting}
+          isDeathGrasping={isDeathGrasping}
+          isOathstriking={false}
+          isDivineStorming={isDivineStorming}
+          isColossusStriking={false}
+          isCharging={isSwordCharging}
+          isDeflecting={isDeflecting}
+          chargeDirectionProp={chargeDirection}
+          onSwingComplete={onSwordSwingComplete}
+          onSmiteComplete={onSmiteComplete}
+          onDeathGraspComplete={onDeathGraspComplete}
+          onOathstrikeComplete={() => {}}
+          onDivineStormComplete={() => {}}
+          onColossusStrikeComplete={() => {}}
+          onChargeComplete={onChargeComplete}
+          onDeflectComplete={onDeflectComplete}
+          hasChainLightning={false}
+          comboStep={swordComboStep}
+          currentSubclass={currentSubclass}
+          enemyData={enemyData}
+          onHit={onHit}
+          setDamageNumbers={setDamageNumbers}
+          nextDamageNumberId={nextDamageNumberId}
+          setActiveEffects={setActiveEffects}
+          playerPosition={playerPosition}
+          playerRotation={playerRotation}
+          dragonGroupRef={groupRef}
+          playerEntityId={entityId}
         />
       );
     }

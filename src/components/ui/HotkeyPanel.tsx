@@ -18,7 +18,7 @@ interface HotkeyPanelProps {
 interface WeaponData {
   name: string;
   type: WeaponType;
-  key: '1' | '2' | '3' | '4';
+  key: '1' | '2' | '3' | '4' | '5';
   icon: string;
 }
 
@@ -127,6 +127,12 @@ export default function HotkeyPanel({ currentWeapon, controlSystem }: HotkeyPane
       type: WeaponType.SABRES,
       key: '4',
       icon: '⚔️'
+    },
+    {
+      name: 'Runeblade',
+      type: WeaponType.RUNEBLADE,
+      key: '5',
+      icon: '🔮'
     }
   ];
 
@@ -224,7 +230,29 @@ export default function HotkeyPanel({ currentWeapon, controlSystem }: HotkeyPane
         description: 'No ability assigned to this slot yet.'
       }
     ],
-    [WeaponType.SPEAR]: []   // Not implemented in current system
+    [WeaponType.RUNEBLADE]: [
+      {
+        name: 'Death Grasp',
+        key: 'Q',
+        cooldown: 12.0,
+        currentCooldown: 0,
+        description: 'Fires spiraling chains that pull the first enemy hit towards you, dealing damage and stunning them briefly.'
+      },
+      {
+        name: 'Smite',
+        key: 'E',
+        cooldown: 8.0,
+        currentCooldown: 0,
+        description: 'Calls down a bolt of divine energy that strikes enemies in a small area, dealing heavy damage.'
+      },
+      {
+        name: 'Oathstrike',
+        key: 'R',
+        cooldown: 15.0,
+        currentCooldown: 0,
+        description: 'Unleashes a powerful strike that deals massive damage and has a chance to critically strike all enemies in range.'
+      }
+    ]
   };
 
   // Update cooldowns from control system
@@ -458,6 +486,26 @@ export default function HotkeyPanel({ currentWeapon, controlSystem }: HotkeyPane
                         <div className="absolute inset-0 rounded-lg bg-yellow-400 bg-opacity-20 border-2 border-yellow-400 animate-pulse" />
                       );
                     }
+
+                    // Check for Death Grasp active state
+                    if (ability.key === 'Q' && currentWeapon === WeaponType.RUNEBLADE) {
+                      const abilityData = abilityCooldowns[ability.key];
+                      if (abilityData && abilityData.isActive) {
+                        return (
+                          <div className="absolute inset-0 rounded-lg bg-purple-400 bg-opacity-20 border-2 border-purple-400 animate-pulse" />
+                        );
+                      }
+                    }
+
+                    // Check for Smite active state
+                    if (ability.key === 'E' && currentWeapon === WeaponType.RUNEBLADE) {
+                      const abilityData = abilityCooldowns[ability.key];
+                      if (abilityData && abilityData.isActive) {
+                        return (
+                          <div className="absolute inset-0 rounded-lg bg-yellow-400 bg-opacity-20 border-2 border-yellow-400 animate-pulse" />
+                        );
+                      }
+                    }
                     
                     return null;
                   })()}
@@ -503,11 +551,11 @@ function getAbilityIcon(weapon: WeaponType, key: 'Q' | 'E' | 'R'): string {
       E: '🌟', // Skyfall
       R: '❓'
     },
-    [WeaponType.SPEAR]: {
-      Q: '❓',
-      E: '❓',
-      R: '❓'
-    }
+    [WeaponType.RUNEBLADE]: {
+      Q: '⛓️', // Death Grasp
+      E: '⚡', // Smite
+      R: '💫'  // Oathstrike
+    },
   };
 
   return iconMap[weapon]?.[key] || '❓';
