@@ -142,9 +142,9 @@ class GameRoom {
   // Tower management for PVP mode
   createTowerForPlayer(playerId, playerName) {
     const playerIndex = this.players.size - 1; // Current player index (0-based)
-    const totalPlayers = 5; // Max players for positioning
+    const totalPlayers = 2; // Max players for positioning
     const mapRadius = 29;
-    const towerRadius = mapRadius * 0.75; // Position towers closer to center (about 21.75 units from center)
+    const towerRadius = mapRadius * 0.6; // Position towers more centrally (about 11.6 units from center)
 
     // Calculate angle for this player's position
     const angleStep = (Math.PI * 2) / Math.max(totalPlayers, 2);
@@ -162,7 +162,7 @@ class GameRoom {
       ownerName: playerName,
       towerIndex: playerIndex,
       position: { x, y, z },
-      health: 500,
+      health: 111500,
       maxHealth: 500,
       isDead: false,
       createdAt: Date.now()

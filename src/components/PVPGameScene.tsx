@@ -101,6 +101,8 @@ import Environment from '@/components/environment/Environment';
 import { useBowPowershot } from '@/components/projectiles/useBowPowershot';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import { triggerGlobalBarrage } from '@/components/projectiles/BarrageManager';
+import { ExperienceSystem } from '@/utils/ExperienceSystem';
+import ExperienceBar from '@/components/ui/ExperienceBar';
 
 // PVP Reanimate Effect Component (standalone healing effect)
 const PVPReanimateEffect: React.FC<{ position: Vector3; onComplete: () => void }> = React.memo(({ position, onComplete }) => {
@@ -206,14 +208,16 @@ interface PVPGameSceneProps {
     currentSubclass: WeaponSubclass;
   }) => void;
   onControlSystemUpdate?: (controlSystem: any) => void;
+  onExperienceUpdate?: (experience: number, level: number) => void;
 }
 
-export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCameraUpdate, onGameStateUpdate, onControlSystemUpdate }: PVPGameSceneProps = {}) {
+export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCameraUpdate, onGameStateUpdate, onControlSystemUpdate, onExperienceUpdate }: PVPGameSceneProps = {}) {
   const { scene, camera, gl, size } = useThree();
-  const { 
-    players, 
+  const {
+    players,
     towers,
     gameStarted,
+    isInRoom,
     updatePlayerPosition,
     updatePlayerWeapon,
     updatePlayerHealth,
@@ -252,7 +256,11 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
 
   // Track server summoned unit to local ECS entity mapping
   const serverSummonedUnitEntities = useRef<Map<string, number>>(new Map());
-  
+
+  // Experience system state
+  const [playerExperience, setPlayerExperience] = useState(0);
+  const [playerLevel, setPlayerLevel] = useState(1);
+
   // PVP Reanimate Effect Management
   const [pvpReanimateEffects, setPvpReanimateEffects] = useState<Array<{
     id: number;
@@ -472,7 +480,59 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       }]);
     }, venomEffect.duration);
   }, [socket?.id, broadcastPlayerDamage]);
-  
+
+  // Function to handle wave completion and award experience
+  const handleWaveComplete = useCallback(() => {
+    console.log(`🌊 Wave completed! Awarding 10 EXP to both players`);
+
+    // Award 10 EXP to BOTH players when a wave completes
+    const allPlayerIds = Array.from(players.keys());
+
+    allPlayerIds.forEach(playerId => {
+      if (playerId === socket?.id) {
+        // Local player gets the experience
+        setPlayerExperience(prev => {
+          const newExp = prev + 10;
+
+          // Check for level up
+          const newLevel = ExperienceSystem.getLevelFromExperience(newExp);
+          if (newLevel > playerLevel) {
+            setPlayerLevel(newLevel);
+            console.log(`🎉 Level up! Player reached level ${newLevel}`);
+
+            // Update max health based on new level
+            if (playerEntity) {
+              const health = playerEntity.getComponent(Health);
+              if (health) {
+                const newMaxHealth = ExperienceSystem.getMaxHealthForLevel(newLevel);
+                const oldMaxHealth = health.maxHealth;
+
+                // Update max health and scale current health proportionally
+                health.maxHealth = newMaxHealth;
+                health.currentHealth = Math.min(health.currentHealth, newMaxHealth);
+
+                console.log(`💚 Health updated: ${oldMaxHealth} -> ${newMaxHealth} HP`);
+              }
+            }
+          }
+
+          console.log(`🎯 Local player ${playerId} gained 10 EXP from wave completion (total: ${newExp})`);
+          return newExp;
+        });
+      } else {
+        // Update opponent's experience (will be handled by server in real implementation)
+        console.log(`🎯 Opponent ${playerId} gained 10 EXP from wave completion`);
+      }
+    });
+  }, [socket?.id, playerLevel, playerEntity, players]);
+
+  // Notify parent component of experience updates
+  React.useEffect(() => {
+    if (onExperienceUpdate) {
+      onExperienceUpdate(playerExperience, playerLevel);
+    }
+  }, [playerExperience, playerLevel, onExperienceUpdate]);
+
   const [weaponState, setWeaponState] = useState({
     currentWeapon: WeaponType.BOW,
     currentSubclass: WeaponSubclass.ELEMENTAL,
@@ -1729,6 +1789,11 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       if (towerSystem && socket?.id) {
         towerSystem.setPlayerMapping(serverPlayerEntities.current, socket.id);
       }
+
+      // Set up wave completion callback for experience awarding
+      if (summonedUnitSystem) {
+        summonedUnitSystem.setWaveCompleteCallback(handleWaveComplete);
+      }
       
       // Pass controlSystem back to parent
       if (onControlSystemUpdate) {
@@ -2146,14 +2211,12 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     }
   }, [onDamageNumberComplete]);
 
-  // Don't render anything if game hasn't started
-  if (!gameStarted) {
-    return null;
-  }
-
   return (
     <>
-      {/* Environment (Sky, Planet, Mountains, Pillars, Pedestal) - No level progression in PVP */}
+      {/* Don't render game world if game hasn't started */}
+      {!gameStarted ? null : (
+        <>
+          {/* Environment (Sky, Planet, Mountains, Pillars, Pedestal) - No level progression in PVP */}
       <Environment level={1} world={engineRef.current?.getWorld()} />
 
       {/* Lighting */}
@@ -2184,10 +2247,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       </mesh>
 
 
-      <mesh castShadow position={[0, 1, -10]}>
-        <boxGeometry args={[4, 2, 1]} />
-        <meshStandardMaterial color="#696969" />
-      </mesh>
+
 
 
 
@@ -2339,6 +2399,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             health={tower.health}
             maxHealth={tower.maxHealth}
             isDead={tower.isDead}
+            camera={camera}
           />
         );
       })}
@@ -2745,6 +2806,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
           })}
         </>
       )}
+        </>
+      )}
     </>
   );
 }
@@ -2846,8 +2909,9 @@ function createPVPPlayer(world: World): any {
   movement.friction = 0.85;
   player.addComponent(movement);
 
-  // Add Health component with 400 max health
-  const health = new Health(750);
+  // Add Health component with level-based max health
+  const maxHealth = ExperienceSystem.getMaxHealthForLevel(1); // Start at level 1
+  const health = new Health(maxHealth);
   health.enableRegeneration(2, 5); // Slower regen in PVP: 1 HP per second after 10 seconds
   player.addComponent(health);
 

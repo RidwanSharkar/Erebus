@@ -127,6 +127,9 @@ export class ProjectileSystem extends System {
       return;
     }
 
+    // Check if this is a tower projectile for special handling
+    const isTowerProjectile = (projectileEntity as any).isTowerProjectile === true;
+
     // Calculate direction to target
     const currentPosition = projectileTransform.position;
     const targetPosition = targetTransform.position;
@@ -134,8 +137,11 @@ export class ProjectileSystem extends System {
     this.tempVector.copy(targetPosition).sub(currentPosition);
     const distanceToTarget = this.tempVector.length();
 
-    // If very close to target, maintain current direction
-    if (distanceToTarget < 0.1) {
+    // For tower projectiles, use more aggressive homing even at close range
+    const minDistanceThreshold = isTowerProjectile ? 0.05 : 0.1; // Closer threshold for towers
+
+    // If very close to target and not a tower projectile, maintain current direction
+    if (distanceToTarget < minDistanceThreshold && !isTowerProjectile) {
       return;
     }
 
@@ -145,33 +151,57 @@ export class ProjectileSystem extends System {
     // Get current velocity direction
     const currentDirection = projectile.velocity.clone().normalize();
 
-    // Calculate desired direction (interpolate between current and target direction)
-    const desiredDirection = new Vector3();
-    desiredDirection.lerpVectors(currentDirection, this.tempVector, projectile.homingStrength);
+    // For tower projectiles, use more direct approach when very close
+    if (isTowerProjectile && distanceToTarget < 0.3) {
+      // Direct approach: immediately adjust towards target
+      const desiredDirection = this.tempVector.clone();
+      const angle = currentDirection.angleTo(desiredDirection);
 
-    // Calculate angle between current and desired direction
-    const angle = currentDirection.angleTo(desiredDirection);
+      // For tower projectiles, allow much more aggressive turning when close
+      const maxTurnThisFrame = projectile.maxTurnRate * deltaTime * 2; // Double the turn rate when close
+      const turnAngle = Math.min(angle, maxTurnThisFrame);
 
-    // Limit turn rate
-    const maxTurnThisFrame = projectile.maxTurnRate * deltaTime;
-    const turnAngle = Math.min(angle, maxTurnThisFrame);
+      if (turnAngle > 0.001) {
+        const rotationAxis = new Vector3();
+        rotationAxis.crossVectors(currentDirection, desiredDirection).normalize();
 
-    // If we need to turn
-    if (turnAngle > 0.001) { // Small threshold to avoid jitter
-      // Calculate rotation axis
-      const rotationAxis = new Vector3();
-      rotationAxis.crossVectors(currentDirection, desiredDirection).normalize();
+        const newDirection = currentDirection.clone();
+        newDirection.applyAxisAngle(rotationAxis, turnAngle);
 
-      // Create rotation quaternion
-      const cosHalfAngle = Math.cos(turnAngle / 2);
-      const sinHalfAngle = Math.sin(turnAngle / 2);
+        projectile.velocity.copy(newDirection).multiplyScalar(projectile.speed);
+      }
+    } else {
+      // Standard homing logic with enhanced strength for tower projectiles
+      const homingStrength = isTowerProjectile ? Math.min(projectile.homingStrength + 0.1, 1.0) : projectile.homingStrength;
 
-      // Apply rotation to current direction
-      const newDirection = currentDirection.clone();
-      newDirection.applyAxisAngle(rotationAxis, turnAngle);
+      // Calculate desired direction (interpolate between current and target direction)
+      const desiredDirection = new Vector3();
+      desiredDirection.lerpVectors(currentDirection, this.tempVector, homingStrength);
 
-      // Update velocity while maintaining speed
-      projectile.velocity.copy(newDirection).multiplyScalar(projectile.speed);
+      // Calculate angle between current and desired direction
+      const angle = currentDirection.angleTo(desiredDirection);
+
+      // Limit turn rate (more aggressive for tower projectiles)
+      const maxTurnThisFrame = projectile.maxTurnRate * deltaTime;
+      const turnAngle = Math.min(angle, maxTurnThisFrame);
+
+      // If we need to turn
+      if (turnAngle > 0.001) { // Small threshold to avoid jitter
+        // Calculate rotation axis
+        const rotationAxis = new Vector3();
+        rotationAxis.crossVectors(currentDirection, desiredDirection).normalize();
+
+        // Create rotation quaternion
+        const cosHalfAngle = Math.cos(turnAngle / 2);
+        const sinHalfAngle = Math.sin(turnAngle / 2);
+
+        // Apply rotation to current direction
+        const newDirection = currentDirection.clone();
+        newDirection.applyAxisAngle(rotationAxis, turnAngle);
+
+        // Update velocity while maintaining speed
+        projectile.velocity.copy(newDirection).multiplyScalar(projectile.speed);
+      }
     }
   }
 

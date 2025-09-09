@@ -7,6 +7,7 @@ import { Camera } from '../utils/three-exports';
 import type { DamageNumberData } from '../components/DamageNumbers';
 import DamageNumbers from '../components/DamageNumbers';
 import GameUI from '../components/ui/GameUI';
+import ExperienceBar from '../components/ui/ExperienceBar';
 import { MultiplayerProvider } from '../contexts/MultiplayerContext';
 import RoomJoin from '../components/ui/RoomJoin';
 
@@ -50,6 +51,8 @@ export default function Home() {
   const [gameMode, setGameMode] = useState<'menu' | 'singleplayer' | 'multiplayer' | 'pvp'>('menu');
   const [showRoomJoin, setShowRoomJoin] = useState(false);
   const [roomJoinMode, setRoomJoinMode] = useState<'multiplayer' | 'pvp'>('multiplayer');
+  const [playerExperience, setPlayerExperience] = useState(0);
+  const [playerLevel, setPlayerLevel] = useState(1);
 
   const handleDamageNumberComplete = (id: string) => {
     // Use the global handler set by GameScene
@@ -75,6 +78,11 @@ export default function Home() {
 
   const handleControlSystemUpdate = (newControlSystem: any) => {
     setControlSystem(newControlSystem);
+  };
+
+  const handleExperienceUpdate = (experience: number, level: number) => {
+    setPlayerExperience(experience);
+    setPlayerLevel(level);
   };
 
   return (
@@ -145,12 +153,13 @@ export default function Home() {
             )}
 
           {gameMode === 'pvp' && (
-            <PVPGameScene 
+            <PVPGameScene
               onDamageNumbersUpdate={setDamageNumbers}
               onDamageNumberComplete={handleDamageNumberComplete}
               onCameraUpdate={handleCameraUpdate}
               onGameStateUpdate={handleGameStateUpdate}
               onControlSystemUpdate={handleControlSystemUpdate}
+              onExperienceUpdate={handleExperienceUpdate}
             />
           )}
         </Canvas>
@@ -218,6 +227,15 @@ export default function Home() {
                 controlSystem={controlSystem}
               />
             </div>
+
+            {/* Experience Bar - Only show in PVP mode */}
+            {gameMode === 'pvp' && (
+              <ExperienceBar
+                experience={playerExperience}
+                level={playerLevel}
+                isLocalPlayer={true}
+              />
+            )}
           </>
         )}
 

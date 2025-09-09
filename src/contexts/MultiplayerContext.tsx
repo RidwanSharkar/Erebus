@@ -20,6 +20,9 @@ interface Player {
   isSlowed?: boolean;
   slowedUntil?: number;
   movementSpeedMultiplier?: number;
+  // PVP Experience system
+  experience?: number;
+  level?: number;
 }
 
 interface Enemy {
@@ -109,9 +112,13 @@ interface MultiplayerContextType {
   // Enemy actions
   damageEnemy: (enemyId: string, damage: number) => void;
   applyStatusEffect: (enemyId: string, effectType: string, duration: number) => void;
-  
+
   // Tower actions
   damageTower: (towerId: string, damage: number) => void;
+
+  // Experience system actions
+  updatePlayerExperience: (playerId: string, experience: number) => void;
+  updatePlayerLevel: (playerId: string, level: number) => void;
 }
 
 const MultiplayerContext = createContext<MultiplayerContextType | null>(null);
@@ -436,6 +443,22 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
+    // Experience system event handlers
+    newSocket.on('player-experience-updated', (data) => {
+      setPlayers(prev => {
+        const updated = new Map(prev);
+        const player = updated.get(data.playerId);
+        if (player) {
+          updated.set(data.playerId, {
+            ...player,
+            experience: data.experience,
+            level: data.level
+          });
+        }
+        return updated;
+      });
+    });
+
     setSocket(newSocket);
 
     return () => {
@@ -638,6 +661,26 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
+  const updatePlayerExperience = useCallback((playerId: string, experience: number) => {
+    if (socket && currentRoomId) {
+      socket.emit('player-experience-changed', {
+        roomId: currentRoomId,
+        playerId,
+        experience
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const updatePlayerLevel = useCallback((playerId: string, level: number) => {
+    if (socket && currentRoomId) {
+      socket.emit('player-level-changed', {
+        roomId: currentRoomId,
+        playerId,
+        level
+      });
+    }
+  }, [socket, currentRoomId]);
+
   const contextValue: MultiplayerContextType = {
     socket,
     isConnected,
@@ -667,7 +710,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     broadcastPlayerDebuff,
     damageEnemy,
     applyStatusEffect,
-    damageTower
+    damageTower,
+    updatePlayerExperience,
+    updatePlayerLevel
   };
 
   return (

@@ -195,30 +195,40 @@ export class TowerSystem extends System {
       tower.clearTarget();
       return;
     }
-    
+
     const targetTransform = targetEntity.getComponent(Transform);
     if (!targetTransform) {
       tower.clearTarget();
       return;
     }
-    
-    // Calculate direction to target
+
+    // Calculate projectile spawn position (slightly above tower center)
+    this.tempVector2.copy(towerTransform.position);
+    this.tempVector2.y += 2; // Spawn projectiles 2 units above tower base
+
+    // Calculate direction from spawn position to target (not tower base)
     this.tempVector.copy(targetTransform.position);
-    this.tempVector.sub(towerTransform.position);
+    this.tempVector.sub(this.tempVector2);
     const distance = this.tempVector.length();
-    
+
     // Check if target is still in range
     if (distance > tower.attackRange) {
       tower.clearTarget();
       return;
     }
-    
-    // Normalize direction
-    this.tempVector.normalize();
-    
-    // Calculate projectile spawn position (slightly above tower center)
-    this.tempVector2.copy(towerTransform.position);
-    this.tempVector2.y += 2; // Spawn projectiles 2 units above tower base
+
+    // Special handling for very close targets - ensure we can always hit them
+    if (distance < 0.5) {
+      // For extremely close targets, create a more predictable trajectory
+      // Aim slightly above the target to account for gravity and ensure hit
+      this.tempVector.copy(targetTransform.position);
+      this.tempVector.y += 0.3; // Aim 0.3 units above target
+      this.tempVector.sub(this.tempVector2);
+      this.tempVector.normalize();
+    } else {
+      // Normalize direction for normal cases
+      this.tempVector.normalize();
+    }
     
     // Create projectile
     if (this.projectileSystem) {
@@ -237,11 +247,23 @@ export class TowerSystem extends System {
         projectileConfig
       );
 
-      // Enable homing for tower projectiles
+      // Enable extremely strong homing for tower projectiles
       const projectile = projectileEntity.getComponent(Projectile);
       if (projectile && tower.currentTarget) {
-        // Set homing towards the current target with strong homing (0.9) and fast turn rate (4 radians/sec)
-        projectile.setHoming(tower.currentTarget, 0.9, 4.0);
+        // Check if target is a summoned unit for special handling
+        const targetEntity = this.world.getEntity(tower.currentTarget);
+        const isSummonedUnit = targetEntity?.getComponent(SummonedUnit) !== undefined;
+
+        if (isSummonedUnit) {
+          // Make it IMPOSSIBLE for summoned units to dodge - perfect tracking
+          projectile.setHoming(tower.currentTarget, 1.0, 8.0);
+        } else {
+          // For players: very difficult to dodge but not impossible
+          projectile.setHoming(tower.currentTarget, 0.95, 6.0);
+        }
+
+        // Add special tower projectile properties for enhanced tracking
+        projectile.maxTurnRate = isSummonedUnit ? 12.0 : 8.0; // Even faster turns for summoned units
       }
 
       // Mark projectile as tower projectile for special handling

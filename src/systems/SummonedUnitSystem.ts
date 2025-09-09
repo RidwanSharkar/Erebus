@@ -21,12 +21,21 @@ export class SummonedUnitSystem extends System {
   private lastSpawnTime: Map<string, number> = new Map(); // ownerId -> last spawn time
   private spawnInterval: number = 45; // 45 seconds between spawns
 
+  // Wave tracking
+  private currentWaveId: string | null = null;
+  private waveUnits: Set<number> = new Set(); // Entity IDs of units in current wave
+  private waveStartTime: number = 0;
+  private lastWaveCompletionTime: number = 0;
+
   // Unit tracking
   private unitsToDestroy: number[] = [];
 
   // Player and tower positions for targeting
   private playerPositions: Map<string, Vector3> = new Map();
   private towerPositions: Map<string, Vector3> = new Map();
+
+  // Wave completion callback
+  private onWaveComplete?: () => void;
 
   // Reusable objects
   private tempVector = new Vector3();
@@ -40,6 +49,10 @@ export class SummonedUnitSystem extends System {
 
   public setCombatSystem(combatSystem: CombatSystem): void {
     this.combatSystem = combatSystem;
+  }
+
+  public setWaveCompleteCallback(callback: () => void): void {
+    this.onWaveComplete = callback;
   }
 
   public updatePlayerPosition(playerId: string, position: Vector3): void {
@@ -65,6 +78,9 @@ export class SummonedUnitSystem extends System {
 
       // Check if unit is expired
       if (unit.isExpired(currentTime)) {
+        // Remove unit from wave tracking
+        this.waveUnits.delete(entity.id);
+
         this.unitsToDestroy.push(entity.id);
         continue;
       }
@@ -72,6 +88,10 @@ export class SummonedUnitSystem extends System {
       // Check if unit is dead
       if (health.isDead && !unit.isDead) {
         unit.die(currentTime);
+
+        // Remove unit from wave tracking
+        this.waveUnits.delete(entity.id);
+
         this.unitsToDestroy.push(entity.id);
         continue;
       }
@@ -82,6 +102,9 @@ export class SummonedUnitSystem extends System {
       // Update unit behavior
       this.updateUnitBehavior(entity, transform, unit, currentTime, deltaTime);
     }
+
+    // Check for wave completion
+    this.checkWaveCompletion(currentTime);
 
     // Handle spawning new units
     this.handleUnitSpawning(currentTime);
@@ -285,6 +308,24 @@ export class SummonedUnitSystem extends System {
     unit.performAttack(currentTime);
   }
 
+  private checkWaveCompletion(currentTime: number): void {
+    // Check if current wave is complete (all units dead or expired)
+    if (this.currentWaveId && this.waveUnits.size === 0) {
+      // Ensure we don't spam the callback (minimum 30 seconds between wave completions)
+      if (currentTime - this.lastWaveCompletionTime >= 30) {
+        console.log(`🎯 Wave ${this.currentWaveId} completed! Awarding experience to all players.`);
+
+        // Award experience to all players
+        if (this.onWaveComplete) {
+          this.onWaveComplete();
+        }
+
+        this.lastWaveCompletionTime = currentTime;
+        this.currentWaveId = null;
+      }
+    }
+  }
+
   private handleUnitSpawning(currentTime: number): void {
     // Get all towers to check for spawning
     const towers = this.world.queryEntities([Transform, Tower, Health]);
@@ -306,6 +347,14 @@ export class SummonedUnitSystem extends System {
   }
 
   private spawnUnitsForTower(tower: Tower, towerPosition: Vector3, currentTime: number): void {
+    // Start a new wave if this is the first tower spawning in this cycle
+    if (!this.currentWaveId) {
+      this.currentWaveId = `wave_${currentTime}`;
+      this.waveStartTime = currentTime;
+      this.waveUnits.clear();
+      console.log(`🌊 Starting new wave: ${this.currentWaveId}`);
+    }
+
     // Find the opposing tower position for targeting
     let opposingTowerPosition = this.findOpposingTowerPosition(tower.ownerId);
 
@@ -314,9 +363,12 @@ export class SummonedUnitSystem extends System {
       opposingTowerPosition = towerPosition.clone().add(new Vector3(0, 0, 20));
     }
 
-    // Spawn 2 units
+    // Spawn 2 units and track them in the wave
     for (let i = 0; i < 2; i++) {
-      this.spawnUnit(tower.ownerId, towerPosition, opposingTowerPosition, i, currentTime);
+      const unitEntity = this.spawnUnit(tower.ownerId, towerPosition, opposingTowerPosition, i, currentTime);
+      if (unitEntity) {
+        this.waveUnits.add(unitEntity.id);
+      }
     }
   }
 
@@ -342,7 +394,7 @@ export class SummonedUnitSystem extends System {
     targetPosition: Vector3,
     unitIndex: number,
     currentTime: number
-  ): void {
+  ): Entity {
     const unitEntity = this.world.createEntity();
     const unitId = `${ownerId}_unit_${currentTime}_${unitIndex}`;
 
@@ -391,6 +443,8 @@ export class SummonedUnitSystem extends System {
 
     // Notify systems that the entity is ready
     this.world.notifyEntityAdded(unitEntity);
+
+    return unitEntity;
   }
 
   // Utility methods for external access
@@ -420,5 +474,8 @@ export class SummonedUnitSystem extends System {
     this.lastSpawnTime.clear();
     this.playerPositions.clear();
     this.towerPositions.clear();
+    this.waveUnits.clear();
+    this.currentWaveId = null;
+    this.onWaveComplete = undefined;
   }
 }

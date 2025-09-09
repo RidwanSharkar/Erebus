@@ -33,12 +33,12 @@ export class TowerFactory {
   
   /**
    * Calculate tower position based on player join order
-   * Players are positioned around the map edge in a circular pattern
+   * Players are positioned more centrally at opposite ends of the map
    */
   public calculateTowerPosition(playerIndex: number, totalPlayers: number = 5): Vector3 {
-    // Position towers around the edge of the map
-    // Use a slightly smaller radius to keep towers inside the map boundary
-    const towerRadius = this.mapRadius - 3; // 3 units inside the map edge
+    // Position towers more centrally at opposite ends
+    // Use a smaller radius to keep towers more centered
+    const towerRadius = this.mapRadius * 0.4; // About 40% of map radius for more central positioning
     
     // Calculate angle for this player's position
     // Start at 0 degrees (positive Z axis) and distribute evenly
