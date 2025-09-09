@@ -1012,18 +1012,18 @@ export default function Sword({
     shape.lineTo(0, 0);
     
     // Right side guard (matches left exactly)
-    shape.lineTo(0.25, 0.25);
+    shape.lineTo(0.175, 0.175);
     shape.lineTo(0.15, -0.15);
     shape.lineTo(0, 0);
     
     // Blade shape with symmetry
     shape.lineTo(0, 0.08);    // Reduced from 0.12
     shape.lineTo(0.2, 0.2);   // Reduced from 0.25
-    shape.quadraticCurveTo(0.8, 0.15, 1.5, 0.18); // Reduced y values
-    shape.quadraticCurveTo(2.0, 0.1, 2.2, 0);     // Reduced y value
+    shape.quadraticCurveTo(0.8, 0.15, 1.825, 0.18); // Reduced y values
+    shape.quadraticCurveTo(2.0, 0.15, 2.275, 0);     // Reduced y value
     
-    shape.quadraticCurveTo(2.0, -0.1, 1.5, -0.18); // Mirror of upper curve
-    shape.quadraticCurveTo(0.8, -0.15, 0.2, -0.2);
+    shape.quadraticCurveTo(2.0, -0.15, 1.825, -0.18); // Mirror of upper curve
+    shape.quadraticCurveTo(0.8, -0.15, 0.15, -0.3);
     shape.lineTo(0, -0.08);   // Reduced from -0.12
     shape.lineTo(0, 0);
     
@@ -1037,10 +1037,10 @@ export default function Sword({
     
     shape.lineTo(0, 0.06);   
     shape.lineTo(0.15, 0.15); 
-    shape.quadraticCurveTo(1.2, 0.12, 1.5, 0.15); 
+    shape.quadraticCurveTo(1.2, 0.12, 1.75, 0.15); 
     shape.quadraticCurveTo(2.0, 0.08, 2.15, 0);    
-    shape.quadraticCurveTo(2.0, -0.08, 1.5, -0.15); 
-    shape.quadraticCurveTo(1.2, -0.12, 0.15, -0.15);
+    shape.quadraticCurveTo(2.0, -0.08, 1.75, -0.15); 
+    shape.quadraticCurveTo(1.2, -0.12, 0.15, -0.275);
     shape.lineTo(0, -0.05);  
     shape.lineTo(0, 0);
     
@@ -1073,15 +1073,15 @@ export default function Sword({
         {(
           <>
             {/* Electrical aura around blade */}
-            <group position={[0.25, 0.7, 0.35]} rotation={[0, -Math.PI / 2, Math.PI / 2]} scale={[0.95, 1.10, 0.95]}>
+            <group position={[0.25, 0.55, 0.35]} rotation={[0, -Math.PI / 2, Math.PI / 2]} scale={[0.95, 1.10, 0.95]}>
               <mesh>
                 <extrudeGeometry args={[createBladeShape(), { ...bladeExtrudeSettings, depth: 0.07 }]} />
                 <meshStandardMaterial
                   color={new Color(0x87CEEB)}
                   emissive={new Color(0x4682B4)}
-                  emissiveIntensity={1.5}
+                  emissiveIntensity={1}
                   transparent
-                  opacity={0.3}
+                  opacity={0.1}
                   blending={AdditiveBlending}
                 />
               </mesh>

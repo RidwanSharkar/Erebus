@@ -106,7 +106,6 @@ import { useBowPowershot } from '@/components/projectiles/useBowPowershot';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import { triggerGlobalBarrage } from '@/components/projectiles/BarrageManager';
 import { ExperienceSystem } from '@/utils/ExperienceSystem';
-import ExperienceBar from '@/components/ui/ExperienceBar';
 
 // PVP Reanimate Effect Component (standalone healing effect)
 const PVPReanimateEffect: React.FC<{ position: Vector3; onComplete: () => void }> = React.memo(({ position, onComplete }) => {
@@ -265,9 +264,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   const [playerExperience, setPlayerExperience] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
 
-  // Mana system state for Runeblade
-  const [currentMana, setCurrentMana] = useState(150);
-  const maxMana = 150;
+// Mana system state for weapons
+const [currentMana, setCurrentMana] = useState(150);
+const [maxMana, setMaxMana] = useState(150);
 
   // Track current weapon for mana management
   const [currentWeapon, setCurrentWeapon] = useState<WeaponType>(WeaponType.BOW);
@@ -734,48 +733,57 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   // Optimized PVP effects with object pooling
   const { createOptimizedVenomEffect, createOptimizedDebuffEffect, getPoolStats } = useOptimizedPVPEffects();
 
-  // Mana regeneration for Runeblade (8 mana per second, same as Scythe)
-  useEffect(() => {
-    if (currentWeapon === WeaponType.RUNEBLADE) {
-      const interval = setInterval(() => {
-        setCurrentMana(prev => Math.min(maxMana, prev + 4));
-      }, 500);
+// Mana regeneration for weapons that use mana (Scythe and Runeblade)
+useEffect(() => {
+  if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
+    const regenRate = currentWeapon === WeaponType.SCYTHE ? 5 : 4; // 10 mana/s for Scythe, 8 mana/s for Runeblade
+    const interval = setInterval(() => {
+      setCurrentMana(prev => Math.min(maxMana, prev + regenRate));
+    }, 500);
 
-      return () => clearInterval(interval);
-    }
-  }, [currentWeapon, maxMana]);
+    return () => clearInterval(interval);
+  }
+}, [currentWeapon, maxMana]);
 
   // Sync currentWeapon with weaponState
   useEffect(() => {
     setCurrentWeapon(weaponState.currentWeapon);
   }, [weaponState.currentWeapon]);
 
-  // Weapon switching - reset mana when switching to Runeblade
-  useEffect(() => {
-    if (currentWeapon === WeaponType.RUNEBLADE) {
-      setCurrentMana(maxMana); // Start with full mana (150)
-    }
-  }, [currentWeapon, maxMana]);
+// Weapon switching - set max mana and reset current mana based on weapon type
+useEffect(() => {
+  let newMaxMana = 0;
+  if (currentWeapon === WeaponType.SCYTHE) {
+    newMaxMana = 250;
+  } else if (currentWeapon === WeaponType.RUNEBLADE) {
+    newMaxMana = 150;
+  }
 
-  // Function to consume mana for Runeblade abilities
-  const consumeMana = useCallback((amount: number) => {
-    console.log('🔍 DEBUG: consumeMana called - currentWeapon:', currentWeapon, 'amount:', amount);
-    if (currentWeapon === WeaponType.RUNEBLADE) {
-      setCurrentMana(prev => {
-        const newValue = Math.max(0, prev - amount);
-        console.log('🔍 DEBUG: consumeMana - old mana:', prev, 'new mana:', newValue);
-        return newValue;
-      });
-    }
-  }, [currentWeapon]);
+  if (newMaxMana > 0) {
+    setMaxMana(newMaxMana);
+    setCurrentMana(newMaxMana); // Start with full mana when switching
+  }
+}, [currentWeapon]);
 
-  // Function to check if Runeblade has enough mana
-  const hasMana = useCallback((amount: number) => {
-    console.log('🔍 DEBUG: hasMana called - currentMana:', currentMana, 'amount:', amount);
-    const result = currentMana >= amount;
-    console.log('🔍 DEBUG: hasMana result:', result);
-    return result;
-  }, [currentMana]);
+// Function to consume mana for weapon abilities (Scythe and Runeblade)
+const consumeMana = useCallback((amount: number) => {
+  console.log('🔍 DEBUG: consumeMana called - currentWeapon:', currentWeapon, 'amount:', amount);
+  if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
+    setCurrentMana(prev => {
+      const newValue = Math.max(0, prev - amount);
+      console.log('🔍 DEBUG: consumeMana - old mana:', prev, 'new mana:', newValue);
+      return newValue;
+    });
+  }
+}, [currentWeapon]);
+
+// Function to check if current weapon has enough mana
+const hasMana = useCallback((amount: number) => {
+  console.log('🔍 DEBUG: hasMana called - currentMana:', currentMana, 'amount:', amount);
+  const result = currentMana >= amount;
+  console.log('🔍 DEBUG: hasMana result:', result);
+  return result;
+}, [currentMana]);
 
   // Set up PVP event listeners for player actions and damage
   useEffect(() => {
@@ -2450,9 +2458,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             maxShield: shieldComponent ? shieldComponent.maxShield : 0,
             currentWeapon: controlSystemRef.current.getCurrentWeapon(),
             currentSubclass: controlSystemRef.current.getCurrentSubclass(),
-            // Add mana information for Runeblade
-            mana: currentWeapon === WeaponType.RUNEBLADE ? currentMana : 150,
-            maxMana: currentWeapon === WeaponType.RUNEBLADE ? maxMana : 150
+            // Add mana information for weapons that use mana
+            mana: (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) ? currentMana : 0,
+            maxMana: (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) ? maxMana : 0
           };
           onGameStateUpdate(gameState);
           

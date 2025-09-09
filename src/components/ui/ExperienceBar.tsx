@@ -63,7 +63,7 @@ export default function ExperienceBar({ experience, level, playerId, isLocalPlay
   const isMaxLevel = level >= 5;
 
   return (
-    <div className="fixed bottom-16 left-1/2 transform -translate-x-1/2 z-40">
+    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-40">
       <div className="bg-black bg-opacity-70 backdrop-blur-sm rounded-lg p-2 border border-gray-600">
         <div className="flex items-center space-x-3">
           {/* Level indicator */}
