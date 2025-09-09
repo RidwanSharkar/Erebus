@@ -195,6 +195,9 @@ export default function GameUI({
       canCastCrossentropyBolt: () => currentMana >= 40,
       canCastReanimate: () => currentMana >= 20,
       canCastFrostNova: () => currentMana >= 25,
+      // Runeblade mana abilities
+      canCastSmite: () => currentMana >= 35,
+      canCastDeathGrasp: () => currentMana >= 25,
       canCastDivineStorm: () => currentRage >= 40,
       // Bow energy abilities
       canCastBarrage: () => currentEnergy >= 40,

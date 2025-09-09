@@ -35,7 +35,7 @@ export class Entity {
     }
     
     // If still not found, search through all components to find a match by type
-    if (!component) {
+    if (!component && componentType) {
       const entries = Array.from(this.components.entries());
       for (const [key, comp] of entries) {
         if (comp instanceof componentType) {
@@ -77,10 +77,12 @@ export class Entity {
     }
     
     // If still not found, search through all components to find a match by type
-    const components = Array.from(this.components.values());
-    for (const comp of components) {
-      if (comp instanceof componentType) {
-        return true;
+    if (componentType) {
+      const components = Array.from(this.components.values());
+      for (const comp of components) {
+        if (comp instanceof componentType) {
+          return true;
+        }
       }
     }
     

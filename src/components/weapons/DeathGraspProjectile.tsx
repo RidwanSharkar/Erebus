@@ -33,8 +33,8 @@ export default function DeathGraspProjectile({
   const timeRef = useRef(0);
   const flickerRef = useRef(1);
   const duration = 1.2; // Total duration
-  const speed = 8; // Units per second
-  const range = speed * duration; // Total travel distance
+  const speed = 15; // Units per second (increased from 8 for longer range)
+  const range = speed * duration; // Total travel distance (~18 units)
   const hitEnemies = useRef(new Set<string>());
   const hasHit = useRef(false);
 
@@ -161,7 +161,7 @@ export default function DeathGraspProjectile({
           if (hitEnemies.current.has(enemy.id) || enemy.health <= 0) continue;
 
           const distance = currentPosition.distanceTo(enemy.position);
-          if (distance <= 2.0) { // 2 unit collision radius
+          if (distance <= 3.0) { // 3 unit collision radius (increased with range)
             console.log(`🎯 DeathGraspProjectile: Hit enemy ${enemy.id} at distance ${distance.toFixed(2)}`);
             hitEnemies.current.add(enemy.id);
             hasHit.current = true;
@@ -178,7 +178,7 @@ export default function DeathGraspProjectile({
 
           const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
           const distance = currentPosition.distanceTo(playerPos);
-          if (distance <= 2.0) { // 2 unit collision radius
+          if (distance <= 3.0) { // 3 unit collision radius (increased with range)
             console.log(`🎯 DeathGraspProjectile: Hit player ${playerId} at distance ${distance.toFixed(2)}`);
             hitEnemies.current.add(playerId);
             hasHit.current = true;

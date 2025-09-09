@@ -8,9 +8,8 @@ import { Transform } from '@/ecs/components/Transform';
 import { Health } from '@/ecs/components/Health';
 
 // Import original renderers - we'll use them directly but more efficiently
-import BossRenderer from './BossRenderer';
 import EliteRenderer from './EliteRenderer';
-import GruntRenderer from './GruntRenderer';
+
 
 interface DetailedInstancedEnemyRendererProps {
   world: World;
@@ -82,23 +81,6 @@ export default function DetailedInstancedEnemyRenderer({
 
   return (
     <>
-      {/* Boss Enemies - Using original BossRenderer */}
-      {enemyEntitiesRef.current.boss.map(entityId => {
-        const entity = world.getEntity(entityId);
-        if (!entity) return null;
-
-        const transform = entity.getComponent(Transform);
-        if (!transform) return null;
-
-        return (
-          <BossRenderer
-            key={entityId}
-            entityId={entityId}
-            position={transform.position}
-            world={world}
-          />
-        );
-      })}
 
       {/* Elite Enemies - Using original EliteRenderer */}
       {enemyEntitiesRef.current.elite.map(entityId => {
@@ -118,22 +100,6 @@ export default function DetailedInstancedEnemyRenderer({
         );
       })}
 
-      {/* Grunt Enemies - Using original GruntRenderer */}
-      {enemyEntitiesRef.current.grunt.map(entityId => {
-        const entity = world.getEntity(entityId);
-        if (!entity) return null;
-
-        const transform = entity.getComponent(Transform);
-        if (!transform) return null;
-
-        return (
-          <GruntRenderer
-            key={entityId}
-            entityId={entityId}
-            world={world}
-          />
-        );
-      })}
     </>
   );
 }

@@ -289,6 +289,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     position: Vector3;
     startTime: number;
     duration: number;
+    onDamageDealt?: (damageDealt: boolean) => void;
   }>>([]);
   const nextSmiteEffectId = useRef(0);
 
@@ -441,14 +442,15 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   }, []);
 
   // Function to create smite effect on PVP players
-  const createPvpSmiteEffect = useCallback((playerId: string, position: Vector3) => {
+  const createPvpSmiteEffect = useCallback((playerId: string, position: Vector3, onDamageDealt?: (damageDealt: boolean) => void) => {
 
     const smiteEffect = {
       id: nextSmiteEffectId.current++,
       playerId,
       position: position.clone(),
       startTime: Date.now(),
-      duration: 900 // 0.9 seconds smite duration (matches Smite component)
+      duration: 900, // 0.9 seconds smite duration (matches Smite component)
+      onDamageDealt: onDamageDealt // Include healing callback
     };
 
     // Use batched updates for smite effects
@@ -1252,7 +1254,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
 
           // Create smite visual effect at the player's position
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
-          createPvpSmiteEffect(data.playerId, position);
+          createPvpSmiteEffect(data.playerId, position, undefined); // No healing callback for remote players
         } else if (data.abilityType === 'deathgrasp') {
 
           // Create death grasp visual effect
@@ -2212,7 +2214,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       controlSystem.setSmiteCallback((position: Vector3, direction: Vector3, onDamageDealt?: (damageDealt: boolean) => void) => {
         console.log('🔍 DEBUG: Smite callback triggered in PVP mode');
         // Create local Smite effect
-        createPvpSmiteEffect(socket?.id || '', position);
+        createPvpSmiteEffect(socket?.id || '', position, onDamageDealt);
 
         // Broadcast Smite ability to other players
         broadcastPlayerAbility('smite', position, direction);
@@ -2953,9 +2955,19 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
                   broadcastPlayerDamage(targetId, damage, 'smite');
                 }}
                 enemyData={otherPlayersData}
-                onDamageDealt={(damageDealt) => {
-                  // This callback is handled by the ControlSystem for healing
-                }}
+                onDamageDealt={smiteEffect.onDamageDealt || ((damageDealt) => {
+                  // Fallback healing if no callback provided
+                  if (damageDealt && playerEntity) {
+                    const healthComponent = playerEntity.getComponent(Health);
+                    if (healthComponent) {
+                      const oldHealth = healthComponent.currentHealth;
+                      const didHeal = healthComponent.heal(20); // Smite healing amount
+                      if (didHeal) {
+                        console.log(`⚡ Smite (PVP visual fallback) healed player for 20 HP! Health: ${oldHealth} -> ${healthComponent.currentHealth}/${healthComponent.maxHealth}`);
+                      }
+                    }
+                  }
+                })}
               />
             );
           })}

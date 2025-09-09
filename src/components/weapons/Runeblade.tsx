@@ -579,9 +579,9 @@ export default function Runeblade({
     const now = Date.now();
 
     const damageValues = {
-      1: 25,
-      2: 30,
-      3: 40
+      1: 30,
+      2: 35,
+      3: 45
     };
 
     const baseDamage = damageValues[comboStep];
@@ -641,44 +641,61 @@ export default function Runeblade({
   // Create custom runeblade shape
   const createBladeShape = () => {
     const shape = new Shape();
-
+    
+    // Start at center
     shape.moveTo(0, 0);
-
-    shape.lineTo(-0.25, 0.25);
-    shape.lineTo(-0.15, -0.15);
+    
+    // Left side guard (fixed symmetry)
+    shape.lineTo(-0.25, 0.25);  
+    shape.lineTo(-0.15, -0.15); 
     shape.lineTo(0, 0);
-
+    
+    // Right side guard (matches left exactly)
     shape.lineTo(0.25, 0.25);
     shape.lineTo(0.15, -0.15);
     shape.lineTo(0, 0);
-
+    
+    // Curved blade shape - asymmetrical with curve flipped to bottom edge
+    // Upper edge (back edge) - straighter, more subtle curve
     shape.lineTo(0, 0.08);
-    shape.lineTo(0.2, 0.2);
-    shape.quadraticCurveTo(0.8, 0.15, 1.5, 0.18);
-    shape.quadraticCurveTo(2.0, 0.1, 2.2, 0);
-    shape.quadraticCurveTo(2.0, -0.1, 1.5, -0.18);
-    shape.quadraticCurveTo(0.8, -0.15, 0.2, -0.2);
+    shape.lineTo(-0.2, 0.12);   // Gentle start
+    shape.quadraticCurveTo(0.8, -0.15, -0.15, 0.12);  // Subtle curve along back
+    shape.quadraticCurveTo(1.8, -0, 1.75, 0.05);  // Gentle curve towards tip
+    shape.quadraticCurveTo(2.15, 0.05, 2.35, 0.225);    // Sharp point
+    
+    // Lower edge (cutting edge) - more curved and pronounced (flipped)
+    shape.quadraticCurveTo(2.125, -0.125, 2.0, -0.25); // Start curve from tip
+    shape.quadraticCurveTo(1.8, -0.45, 1.675, -0.55);  // Peak of the curve (increased)
+    shape.quadraticCurveTo(0.9, -0.35, 0.125, -0.325);   // Curve back towards guard
     shape.lineTo(0, -0.08);
     shape.lineTo(0, 0);
-
+    
     return shape;
   };
 
+  // inner blade shape
   const createInnerBladeShape = () => {
     const shape = new Shape();
     shape.moveTo(0, 0);
 
+    // Inner blade follows the same curved pattern but smaller (inset from outer shape)
+    // Upper edge (back edge) - straighter, more subtle curve
     shape.lineTo(0, 0.06);
-    shape.lineTo(0.15, 0.15);
-    shape.quadraticCurveTo(1.2, 0.12, 1.5, 0.15);
-    shape.quadraticCurveTo(2.0, 0.08, 2.15, 0);
-    shape.quadraticCurveTo(2.0, -0.08, 1.5, -0.15);
-    shape.quadraticCurveTo(1.2, -0.12, 0.15, -0.15);
-    shape.lineTo(0, -0.05);
+    shape.lineTo(-0.15, 0.09);   // Gentle start, inset from outer
+    shape.quadraticCurveTo(0.6, -0.11, -0.11, 0.09);  // Subtle curve along back, inset
+    shape.quadraticCurveTo(1.35, -0.11, 1.575, 0.04);  // Gentle curve towards tip, inset
+    shape.quadraticCurveTo(1.61, 0.015, 2.12, 0);    // Sharp point, slightly longer
+
+    // Lower edge (cutting edge) - more curved and pronounced (flipped)
+    shape.quadraticCurveTo(1.975, -0.094, 1.9, -0.188); // Start curve from tip, slightly longer
+    shape.quadraticCurveTo(1.7, -0.338, 1.606, -0.413);  // Peak of the curve, slightly longer
+    shape.quadraticCurveTo(0.85, -0.263, 0.094, -0.244);   // Curve back towards guard, slightly longer
+    shape.lineTo(0, -0.06);
     shape.lineTo(0, 0);
 
     return shape;
   };
+
 
   const bladeExtrudeSettings = {
     steps: 2,

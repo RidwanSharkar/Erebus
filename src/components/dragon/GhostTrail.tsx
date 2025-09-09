@@ -16,7 +16,7 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
   const trailsRef = useRef<Mesh[]>([]);
   const positions = useRef<Vector3[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
-  const trailCount = 30;
+  const trailCount = 20;
   
   useEffect(() => {
     // Initialize with target position if provided, otherwise use parent's position
@@ -131,7 +131,7 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
             if (el) trailsRef.current[i] = el;
           }}
         >
-          <sphereGeometry args={[0.475, 8, 8]} />
+          <sphereGeometry args={[0.475, 16, 16]} />
           <meshBasicMaterial
             color={new Color(getTrailColor())}
             transparent

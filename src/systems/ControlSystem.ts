@@ -1336,17 +1336,22 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check mana cost (35 mana)
-    if (this.onCheckManaCallback && !this.onCheckManaCallback(35)) {
-      return; // Not enough mana
+    // Check if player has enough mana (35 mana cost)
+    const gameUI = (window as any).gameUI;
+    if (gameUI && !gameUI.canCastSmite()) {
+      console.log(`⚡ Smite: Not enough mana to cast (need 35)`);
+      return;
     }
 
     this.lastSmiteTime = currentTime;
     this.isSmiting = true;
 
     // Consume mana (35 mana)
-    if (this.onConsumeManaCallback) {
-      this.onConsumeManaCallback(35);
+    if (gameUI) {
+      const manaBefore = gameUI.getCurrentMana();
+      gameUI.consumeMana(35);
+      const manaAfter = gameUI.getCurrentMana();
+      console.log(`⚡ Smite: Consumed 35 mana. Mana: ${manaBefore} -> ${manaAfter}`);
     }
 
     // Get player position and direction
@@ -1358,19 +1363,21 @@ export class ControlSystem extends System {
     // Offset the smite position slightly forward to look like it's coming from the runeblade swing
     const smitePosition = position.clone().add(direction.clone().multiplyScalar(2.5));
 
-    // Perform damage in radius around smite position
-    const damageDealt = this.performSmiteDamage(smitePosition);
+    // NOTE: Damage detection is now handled by the Smite visual component
+    // to prevent double damage. The visual component's damage detection is more
+    // accurate and properly timed with the animation.
 
-    // Heal player for 20 HP if damage was dealt
-    if (damageDealt) {
-      this.performSmiteHealing();
-    }
+    // The healing will be triggered by the visual component's onDamageDealt callback
+    // instead of the ControlSystem's performSmiteDamage method.
 
-    // Trigger smite callback with damage callback
+    console.log(`⚡ Smite: Damage detection delegated to visual component`);
+
+    // Trigger smite callback with healing callback
     if (this.onSmiteCallback) {
       this.onSmiteCallback(smitePosition, direction, (damageDealtFlag: boolean) => {
-        // Additional healing if damage was dealt through the visual component
-        if (damageDealtFlag && !damageDealt) {
+        // Handle healing when damage is dealt by the visual component
+        if (damageDealtFlag) {
+          console.log(`⚡ Smite: Damage detected by visual component, triggering healing`);
           this.performSmiteHealing();
         }
       });
@@ -1408,22 +1415,52 @@ export class ControlSystem extends System {
         if (combatSystem && this.playerEntity) {
           combatSystem.queueDamage(entity, smiteDamage, this.playerEntity, 'smite');
           damageDealt = true;
+          console.log(`⚡ Smite dealt ${smiteDamage} damage to entity ${entity.id} at distance ${distance.toFixed(2)}`);
+        } else {
+          console.log(`⚡ Smite: Could not find CombatSystem or playerEntity to deal damage`);
         }
       }
     });
+
+    // NOTE: PVP player damage detection is now handled by the Smite visual component
+    // to prevent double damage. The visual component properly handles PVP damage
+    // through the broadcastPlayerDamage system.
 
     return damageDealt;
   }
 
   private performSmiteHealing(): void {
-    if (!this.playerEntity) return;
+    if (!this.playerEntity) {
+      console.log(`⚡ Smite: No player entity available for healing`);
+      return;
+    }
 
-    // Get player's health component and heal for 20 HP
+    // Get player's health component and heal for 20 HP (like Reanimate ability)
     const healthComponent = this.playerEntity.getComponent(Health);
     if (healthComponent) {
+      const oldHealth = healthComponent.currentHealth;
+      const maxHealth = healthComponent.maxHealth;
+
+      // Always attempt to heal, even if at full health (heal method handles this)
       const didHeal = healthComponent.heal(20); // Smite healing amount
+
       if (didHeal) {
-        // console.log(`⚡ Smite healed player for 20 HP. Current health: ${healthComponent.currentHealth}/${healthComponent.maxHealth}`);
+        console.log(`⚡ Smite SUCCESSFULLY healed player for 20 HP! Health: ${oldHealth} -> ${healthComponent.currentHealth}/${maxHealth}`);
+      } else {
+        console.log(`⚡ Smite: Player already at full health (${healthComponent.currentHealth}/${maxHealth}) - no healing needed`);
+      }
+    } else {
+      console.log(`⚡ Smite: CRITICAL ERROR - Could not find health component for player entity ${this.playerEntity.id}`);
+
+      // Fallback: Try to heal through gameUI if health component is not available
+      try {
+        const gameUI = (window as any).gameUI;
+        if (gameUI && typeof gameUI.gainHealth === 'function') {
+          gameUI.gainHealth(20);
+          console.log(`⚡ Smite: FALLBACK healing through gameUI - healed for 20 HP`);
+        }
+      } catch (error) {
+        console.log(`⚡ Smite: Could not heal through fallback method either`);
       }
     }
   }
@@ -1445,17 +1482,22 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check mana cost (25 mana)
-    if (this.onCheckManaCallback && !this.onCheckManaCallback(25)) {
-      return; // Not enough mana
+    // Check if player has enough mana (25 mana cost)
+    const gameUI = (window as any).gameUI;
+    if (gameUI && !gameUI.canCastDeathGrasp()) {
+      console.log(`💀 DeathGrasp: Not enough mana to cast (need 25)`);
+      return;
     }
 
     this.lastDeathGraspTime = currentTime;
     this.isDeathGrasping = true;
 
     // Consume mana (25 mana)
-    if (this.onConsumeManaCallback) {
-      this.onConsumeManaCallback(25);
+    if (gameUI) {
+      const manaBefore = gameUI.getCurrentMana();
+      gameUI.consumeMana(25);
+      const manaAfter = gameUI.getCurrentMana();
+      console.log(`💀 DeathGrasp: Consumed 25 mana. Mana: ${manaBefore} -> ${manaAfter}`);
     }
 
     // Get player position and direction
@@ -2114,13 +2156,24 @@ export class ControlSystem extends System {
     const meleeRange = 4.5; // Increased attack range for PVP
     const meleeAngle = Math.PI / 2; // 120 degree cone (60 degrees each side)
     
-    // Base damage values based on combo step - works for all subclasses
-    let baseDamage = 45; // Base sword damage
-    // Combo damage scaling
-    switch (this.swordComboStep) {
-      case 1: baseDamage = 40; break;
-      case 2: baseDamage = 45; break;
-      case 3: baseDamage = 55; break; // Finisher does more damage
+    // Base damage values based on combo step and weapon type
+    let baseDamage = 45; // Default base damage
+
+    // Weapon-specific damage scaling
+    if (this.currentWeapon === WeaponType.SWORD) {
+      // Sword damage values
+      switch (this.swordComboStep) {
+        case 1: baseDamage = 40; break;
+        case 2: baseDamage = 45; break;
+        case 3: baseDamage = 55; break; // Finisher does more damage
+      }
+    } else if (this.currentWeapon === WeaponType.RUNEBLADE) {
+      // Runeblade damage values
+      switch (this.swordComboStep) {
+        case 1: baseDamage = 30; break;
+        case 2: baseDamage = 35; break;
+        case 3: baseDamage = 45; break; // Finisher does more damage
+      }
     }
     
     // Get combat system to apply damage

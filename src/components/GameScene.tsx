@@ -13,6 +13,7 @@ import { Movement } from '@/ecs/components/Movement';
 import { Health } from '@/ecs/components/Health';
 import { Shield } from '@/ecs/components/Shield';
 import { Collider, CollisionLayer, ColliderType } from '@/ecs/components/Collider';
+import { Enemy } from '@/ecs/components/Enemy';
 import { RenderSystem } from '@/systems/RenderSystem';
 import { ControlSystem } from '@/systems/ControlSystem';
 import { CameraSystem } from '@/systems/CameraSystem';
@@ -75,6 +76,7 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
     id: number;
     position: Vector3;
     startTime: number;
+    onDamageDealt?: (damageDealt: boolean) => void;
   } | null>(null);
   const [deathGraspEffect, setDeathGraspEffect] = useState<{
     id: number;
@@ -222,7 +224,8 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
         setSmiteEffect({
           id: effectId,
           position: position.clone(),
-          startTime: Date.now()
+          startTime: Date.now(),
+          onDamageDealt: onDamageDealt // Pass the healing callback to the effect
         });
 
         // Clear effect after duration (0.9 seconds for Smite)
@@ -285,7 +288,7 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
       const allEntities = world.getAllEntities();
       const currentEnemyData = allEntities
         .filter(entity => {
-          const enemy = entity.getComponent('Enemy' as any);
+          const enemy = entity.getComponent(Enemy);
           const health = entity.getComponent(Health);
           const transform = entity.getComponent(Transform);
           return enemy && health && transform && !health.isDead;
@@ -498,9 +501,19 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
             }
           }}
           enemyData={enemyData}
-          onDamageDealt={(damageDealt) => {
-            // This callback is handled by the ControlSystem
-          }}
+          onDamageDealt={smiteEffect.onDamageDealt || ((damageDealt) => {
+            // Fallback healing if no callback provided
+            if (damageDealt && playerEntity) {
+              const healthComponent = playerEntity.getComponent(Health);
+              if (healthComponent) {
+                const oldHealth = healthComponent.currentHealth;
+                const didHeal = healthComponent.heal(20); // Smite healing amount
+                if (didHeal) {
+                  console.log(`⚡ Smite (visual fallback) healed player for 20 HP! Health: ${oldHealth} -> ${healthComponent.currentHealth}/${healthComponent.maxHealth}`);
+                }
+              }
+            }
+          })}
         />
       )}
 

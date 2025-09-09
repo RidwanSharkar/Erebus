@@ -1115,7 +1115,7 @@ export default function Sword({
 
   return (
     <>
-    <group rotation={[-0.65, 0, 0.2]} scale={[0.8, 0.9, 0.65]}>
+    <group rotation={[-0.65, 0, 0.2]} scale={[0.85, 0.95, 0.825]}>
       <group 
         ref={swordRef} 
         position={[basePosition[0], basePosition[1], basePosition[2]]}
