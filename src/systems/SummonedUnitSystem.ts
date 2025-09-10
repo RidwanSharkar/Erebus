@@ -363,8 +363,8 @@ export class SummonedUnitSystem extends System {
       opposingTowerPosition = towerPosition.clone().add(new Vector3(0, 0, 20));
     }
 
-    // Spawn 2 units and track them in the wave
-    for (let i = 0; i < 2; i++) {
+    // Spawn 3 units and track them in the wave
+    for (let i = 0; i < 3; i++) {
       const unitEntity = this.spawnUnit(tower.ownerId, towerPosition, opposingTowerPosition, i, currentTime);
       if (unitEntity) {
         this.waveUnits.add(unitEntity.id);

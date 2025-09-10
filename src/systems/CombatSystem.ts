@@ -201,8 +201,28 @@ export class CombatSystem extends System {
       if (damageDealt) {
         this.totalDamageDealt += actualDamage;
 
-        // SKIP damage numbers for summoned units to reduce visual clutter
-        // Health bars still update normally, just no floating numbers
+        // Check if source is a summoned unit - if so, skip damage numbers to reduce visual clutter
+        const sourceSummonedUnit = source ? source.getComponent(SummonedUnit) : null;
+        const shouldShowDamageNumbers = !sourceSummonedUnit; // Show numbers unless source is a summoned unit
+
+        if (shouldShowDamageNumbers) {
+          // Create damage number at target position for damage from players/enemies
+          const transform = target.getComponent(Transform);
+          if (transform) {
+            const position = transform.getWorldPosition();
+            // Only create damage number if position is valid
+            if (position && position.x !== undefined && position.y !== undefined && position.z !== undefined) {
+              // Offset slightly above the target
+              position.y += 2;
+              this.damageNumberManager.addDamageNumber(
+                actualDamage,
+                damageResult.isCritical,
+                position,
+                damageType || 'melee'
+              );
+            }
+          }
+        }
 
         // Log for debugging (throttled to reduce spam)
         if (this.shouldLogDamage()) {
@@ -514,7 +534,7 @@ export class CombatSystem extends System {
     // Import SummonedUnit component dynamically to avoid circular dependency
     const SummonedUnit = require('@/ecs/components/SummonedUnit').SummonedUnit;
 
-    // Check if target is a summoned unit - skip damage numbers to reduce visual clutter
+    // Check if target is a summoned unit - skip damage numbers only if source is also a summoned unit
     const summonedUnitComponent = target.getComponent(SummonedUnit);
     if (summonedUnitComponent) {
       // Calculate actual damage with critical hit mechanics
@@ -527,8 +547,25 @@ export class CombatSystem extends System {
       if (damageDealt) {
         this.totalDamageDealt += actualDamage;
 
-        // SKIP damage numbers for summoned units to reduce visual clutter
-        // Health bars still update normally, just no floating numbers
+        // Check if source is a summoned unit - if so, skip damage numbers to reduce visual clutter
+        const sourceSummonedUnit = source ? source.getComponent(SummonedUnit) : null;
+        const shouldShowDamageNumbers = !sourceSummonedUnit; // Show numbers unless source is a summoned unit
+
+        if (shouldShowDamageNumbers) {
+          // Create damage number at target position for damage from players/enemies
+          const transform = target.getComponent(Transform);
+          if (transform) {
+            const position = transform.getWorldPosition();
+            // Offset slightly above the target
+            position.y += 1.5;
+            this.damageNumberManager.addDamageNumber(
+              actualDamage,
+              damageResult.isCritical,
+              position,
+              damageType
+            );
+          }
+        }
 
         if (health.isDead) {
           this.handleEntityDeath(target, source, currentTime);
