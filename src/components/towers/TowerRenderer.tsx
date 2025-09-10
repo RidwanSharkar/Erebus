@@ -5,9 +5,7 @@ import { useFrame } from '@react-three/fiber';
 import { Vector3, Color, Group, Mesh, AdditiveBlending, MathUtils } from '@/utils/three-exports';
 import { World } from '@/ecs/World';
 import { Transform } from '@/ecs/components/Transform';
-import { Health } from '@/ecs/components/Health';
 import { Tower } from '@/ecs/components/Tower';
-import ElementalVortex from '../enemies/ElementalVortex';
 
 interface TowerRendererProps {
   entityId: number;
@@ -259,7 +257,7 @@ export default function TowerRenderer({
 
       {/* Energy aura effect */}
       <mesh position={[0, 2.0, 0]}>
-        <sphereGeometry args={[1.35, 16, 16]} />
+        <sphereGeometry args={[1.45, 16, 16]} />
         <meshStandardMaterial
           color={colorHex}
           emissive={emissiveHex}
@@ -385,6 +383,7 @@ export default function TowerRenderer({
       {/* Point light for glow effect */}
       <pointLight
         color={colorHex}
+        position={[0, 1.5, 0]}
         intensity={0.5}
         distance={3}
         decay={2}

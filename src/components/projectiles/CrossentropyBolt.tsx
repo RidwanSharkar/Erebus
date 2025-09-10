@@ -28,7 +28,7 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
   const [opacity, setOpacity] = useState(1);
   const { scene } = useThree();
   const size = 0.25;
-  const color = new Color('#8B00FF');
+  const color = new Color('#FF4500');
 
   // Spiral parameters
   const spiralRadius = 0.375;
@@ -137,8 +137,8 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
       <mesh ref={fireball1Ref} position={currentPosition.current}>
         <sphereGeometry args={[size, 32, 32]} />
         <meshStandardMaterial
-          color="#8B00FF"
-          emissive="#A020F0"
+          color="#FF4500"
+          emissive="#FF6600"
           emissiveIntensity={2 * opacity}
           transparent
           opacity={0.9 * opacity}
@@ -151,8 +151,8 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
       <mesh ref={fireball2Ref} position={currentPosition.current}>
         <sphereGeometry args={[size, 32, 32]} />
         <meshStandardMaterial
-          color="#8B00FF"
-          emissive="#A020F0"
+          color="#FF4500"
+          emissive="#FF6600"
           emissiveIntensity={2 * opacity}
           transparent
           opacity={0.9 * opacity}

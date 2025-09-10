@@ -56,9 +56,9 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
         
         // Runeblade subclasses
         case WeaponSubclass.ARCANE:
-          return '#00FF88'; // Bright green for arcane
+          return '#8783D1'; // Bright green for arcane
         case WeaponSubclass.NATURE:
-          return '#00AA44'; // Darker green for nature
+          return '#00FF88'; // Darker green for nature
 
         // Bow subclasses
         case WeaponSubclass.ELEMENTAL:

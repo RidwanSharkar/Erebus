@@ -61,12 +61,12 @@ export default function CrossentropyExplosion({
 
   return (
     <group position={position}>
-      {/* Core explosion sphere - Dark purple/magenta for Crossentropy */}
+      {/* Core explosion sphere - Deep orange fiery for Crossentropy */}
       <mesh>
         <sphereGeometry args={[0.4 * scale * (1 + elapsed * expansionRate), 32, 32]} />
         <meshStandardMaterial
-          color="#8B00FF" // Dark violet/purple
-          emissive="#AA00FF" 
+          color="#FF4500" // Deep orange
+          emissive="#FF6600"
           emissiveIntensity={intensity * fade * 0.6}
           transparent
           opacity={0.85 * fade}
@@ -75,12 +75,12 @@ export default function CrossentropyExplosion({
         />
       </mesh>
       
-      {/* Inner energy sphere - Brighter purple */}
+      {/* Inner energy sphere - Brighter orange */}
       <mesh>
         <sphereGeometry args={[0.5 * scale * (1 + elapsed * (expansionRate + 1)), 24, 24]} />
         <meshStandardMaterial
-          color="#9932CC" // Dark orchid
-          emissive="#DA70D6" // Orchid
+          color="#FF6600" // Fire orange
+          emissive="#FFA500" // Bright orange
           emissiveIntensity={intensity * 0.6 * fade}
           transparent
           opacity={0.9 * fade}
@@ -89,12 +89,12 @@ export default function CrossentropyExplosion({
         />
       </mesh>
 
-      {/* Outer energy sphere - Magenta */}
+      {/* Outer energy sphere - Bright orange */}
       <mesh>
         <sphereGeometry args={[0.6 * scale * (1 + elapsed * (expansionRate + 2)), 16, 16]} />
         <meshStandardMaterial
-          color="#FF00FF" // Magenta
-          emissive="#FF69B4" // Hot pink
+          color="#FFA500" // Bright orange
+          emissive="#FFD700" // Gold
           emissiveIntensity={intensity * 0.4 * fade}
           transparent
           opacity={0.7 * fade}
@@ -103,13 +103,13 @@ export default function CrossentropyExplosion({
         />
       </mesh>
 
-      {/* Multiple expanding rings with purple/magenta theme */}
+      {/* Multiple expanding rings with orange fiery theme */}
       {[0.5, 0.7, 0.85, 1.0, 1.2, 1.4].map((ringSize, i) => (
         <mesh key={i} rotation={[Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI]}>
           <torusGeometry args={[ringSize * scale * (1 + elapsed * (expansionRate + 2)), 0.08 * scale, 16, 32]} />
-          <meshStandardMaterial  
-            color="#8B00FF"
-            emissive="#AA00FF"
+          <meshStandardMaterial
+            color="#FF4500"
+            emissive="#FF6600"
             emissiveIntensity={intensity * fade * 0.4}
             transparent
             opacity={0.8 * fade * (1 - i * 0.12)}
@@ -138,8 +138,8 @@ export default function CrossentropyExplosion({
           >
             <sphereGeometry args={[0.1 * scale, 8, 8]} />
             <meshStandardMaterial
-              color="#FF00FF" // Magenta sparks
-              emissive="#FF69B4" // Hot pink emissive
+              color="#FFA500" // Bright orange sparks
+              emissive="#FFD700" // Gold emissive emissive
               emissiveIntensity={intensity * 1.5 * fade}
               transparent
               opacity={0.95 * fade}
@@ -169,8 +169,8 @@ export default function CrossentropyExplosion({
           >
             <sphereGeometry args={[0.05 * scale, 6, 6]} />
             <meshStandardMaterial
-              color="#DA70D6" // Orchid
-              emissive="#FF1493" // Deep pink
+              color="#FF6600" // Fire orange
+              emissive="#FFA500" // Bright orange
               emissiveIntensity={intensity * 1.8 * fade}
               transparent
               opacity={0.9 * fade}
@@ -181,15 +181,15 @@ export default function CrossentropyExplosion({
         );
       })}
 
-      {/* Dynamic lights - purple/magenta theme */}
+      {/* Dynamic lights - orange fiery theme */}
       <pointLight
-        color="#8B00FF" // Dark violet
+        color="#FF4500" // Deep orange
         intensity={intensity * 4 * fade}
         distance={6 * scale}
         decay={1.8}
       />
       <pointLight
-        color="#FF00FF" // Magenta
+        color="#FFA500" // Bright orange
         intensity={intensity * 2 * fade}
         distance={9 * scale}
         decay={1.5}
@@ -198,7 +198,7 @@ export default function CrossentropyExplosion({
       {/* Additional bright flash at the beginning - more intense for Crossentropy */}
       {elapsed < 0.15 && (
         <pointLight
-          color="#DA70D6" // Orchid
+          color="#FFD700" // Gold
           intensity={intensity * 8 * (1 - elapsed * 6.67)} // Fade over 0.15 seconds
           distance={4 * scale}
           decay={1}
@@ -207,7 +207,7 @@ export default function CrossentropyExplosion({
 
       {/* Ambient glow effect */}
       <pointLight
-        color="#9932CC" // Dark orchid
+        color="#FF6600" // Fire orange
         intensity={intensity * 1.2 * fade}
         distance={12 * scale}
         decay={2}

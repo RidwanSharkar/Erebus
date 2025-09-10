@@ -259,18 +259,8 @@ export default function RoomJoin({ onJoinSuccess, currentWeapon, currentSubclass
           <p className={`m-0 mb-2 font-bold ${gameMode === 'pvp' ? 'text-red-500' : 'text-green-500'}`}>Tips:</p>
           <ul className="m-0 pl-6">
             <li className="mb-1 text-gray-300">Use the same Room ID to play with friends</li>
-            <li className="mb-1 text-gray-300">Maximum 5 players per room</li>
-            {gameMode === 'pvp' ? (
-              <>
-                <li className="mb-1 text-gray-300">Fight against other players to win</li>
-                <li className="mb-1 text-gray-300">No AI enemies - only player vs player combat</li>
-              </>
-            ) : (
-              <>
-                <li className="mb-1 text-gray-300">All players fight the same enemies together</li>
-                <li className="mb-1 text-gray-300">Damage and kills are shared across all players</li>
-              </>
-            )}
+            <li className="mb-1 text-gray-300">Maximum 2-3 players per room</li>
+
           </ul>
         </div>
       </div>
