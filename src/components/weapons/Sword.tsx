@@ -1055,7 +1055,7 @@ export default function Sword({
     bevelSize: 0.02,
     bevelOffset: 0.04,
     bevelSegments: 2
-  };
+  }; 
 
   const innerBladeExtrudeSettings = {
     ...bladeExtrudeSettings,

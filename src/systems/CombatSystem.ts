@@ -201,22 +201,8 @@ export class CombatSystem extends System {
       if (damageDealt) {
         this.totalDamageDealt += actualDamage;
 
-        // Create damage number at target position
-        const transform = target.getComponent(Transform);
-        if (transform) {
-          const position = transform.getWorldPosition();
-          // Only create damage number if position is valid
-          if (position && position.x !== undefined && position.y !== undefined && position.z !== undefined) {
-            // Offset slightly above the target
-            position.y += 2;
-            this.damageNumberManager.addDamageNumber(
-              actualDamage,
-              damageResult.isCritical,
-              position,
-              damageType || 'melee'
-            );
-          }
-        }
+        // SKIP damage numbers for summoned units to reduce visual clutter
+        // Health bars still update normally, just no floating numbers
 
         // Log for debugging (throttled to reduce spam)
         if (this.shouldLogDamage()) {
@@ -517,13 +503,42 @@ export class CombatSystem extends System {
 
   // Immediate damage/healing (bypasses queue)
   public dealDamageImmediate(
-    target: Entity, 
-    damage: number, 
-    source?: Entity, 
+    target: Entity,
+    damage: number,
+    source?: Entity,
     damageType?: string
   ): boolean {
     const health = target.getComponent(Health);
     if (!health || !health.enabled) return false;
+
+    // Import SummonedUnit component dynamically to avoid circular dependency
+    const SummonedUnit = require('@/ecs/components/SummonedUnit').SummonedUnit;
+
+    // Check if target is a summoned unit - skip damage numbers to reduce visual clutter
+    const summonedUnitComponent = target.getComponent(SummonedUnit);
+    if (summonedUnitComponent) {
+      // Calculate actual damage with critical hit mechanics
+      const damageResult: DamageResult = calculateDamage(damage);
+      const actualDamage = damageResult.damage;
+
+      const currentTime = Date.now() / 1000;
+      const damageDealt = health.takeDamage(actualDamage, currentTime, target);
+
+      if (damageDealt) {
+        this.totalDamageDealt += actualDamage;
+
+        // SKIP damage numbers for summoned units to reduce visual clutter
+        // Health bars still update normally, just no floating numbers
+
+        if (health.isDead) {
+          this.handleEntityDeath(target, source, currentTime);
+        }
+
+        this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
+      }
+
+      return damageDealt;
+    }
 
     // Calculate actual damage with critical hit mechanics
     const damageResult: DamageResult = calculateDamage(damage);
@@ -531,10 +546,10 @@ export class CombatSystem extends System {
 
     const currentTime = Date.now() / 1000;
     const damageDealt = health.takeDamage(actualDamage, currentTime, target);
-    
+
     if (damageDealt) {
       this.totalDamageDealt += actualDamage;
-      
+
       // Create damage number at target position
       const transform = target.getComponent(Transform);
       if (transform) {
@@ -548,14 +563,14 @@ export class CombatSystem extends System {
           damageType
         );
       }
-      
+
       if (health.isDead) {
         this.handleEntityDeath(target, source, currentTime);
       }
-      
+
       this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
     }
-    
+
     return damageDealt;
   }
 

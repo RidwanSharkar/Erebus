@@ -635,28 +635,37 @@ const [maxMana, setMaxMana] = useState(150);
         setPlayerExperience(prev => {
           const newExp = prev + 10;
 
-          // Check for level up
+          // Check for level up using the previous experience to determine current level
+          const currentLevel = ExperienceSystem.getLevelFromExperience(prev);
           const newLevel = ExperienceSystem.getLevelFromExperience(newExp);
-          if (newLevel > playerLevel) {
+          if (newLevel > currentLevel) {
             setPlayerLevel(newLevel);
             console.log(`🎉 Level up! Player reached level ${newLevel}`);
 
-        // Update max health based on new level
-        if (playerEntity) {
-          const health = playerEntity.getComponent(Health);
-          if (health) {
-            const newMaxHealth = ExperienceSystem.getMaxHealthForLevel(newLevel);
-            const oldMaxHealth = health.maxHealth;
+            // Update max health based on new level
+            console.log(`🔍 DEBUG: Level up detected! playerEntity exists: ${!!playerEntity}`);
+            if (playerEntity) {
+              console.log(`🔍 DEBUG: Player entity found, updating health`);
+              const health = playerEntity.getComponent(Health);
+              console.log(`🔍 DEBUG: Health component: ${!!health}`);
+              if (health) {
+                const newMaxHealth = ExperienceSystem.getMaxHealthForLevel(newLevel);
+                const oldMaxHealth = health.maxHealth;
+                console.log(`🔍 DEBUG: Health calculation - Level: ${newLevel}, New Max HP: ${newMaxHealth}, Old Max HP: ${oldMaxHealth}`);
 
-            // Update max health and scale current health proportionally
-            health.setMaxHealth(newMaxHealth);
+                // Update max health and scale current health proportionally
+                health.setMaxHealth(newMaxHealth);
 
-            // Synchronize the updated health with server and other players
-            updatePlayerHealth(health.currentHealth, health.maxHealth);
+                // Synchronize the updated health with server and other players
+                updatePlayerHealth(health.currentHealth, health.maxHealth);
 
-            console.log(`💚 Health updated: ${oldMaxHealth} -> ${newMaxHealth} HP (current: ${health.currentHealth}/${health.maxHealth})`);
-          }
-        }
+                console.log(`💚 Health updated: ${oldMaxHealth} -> ${newMaxHealth} HP (current: ${health.currentHealth}/${health.maxHealth})`);
+              } else {
+                console.log(`❌ DEBUG: Health component not found on player entity!`);
+              }
+            } else {
+              console.log(`❌ DEBUG: playerEntity is null during level up!`);
+            }
           }
 
           console.log(`🎯 Local player ${playerId} gained 10 EXP from wave completion (total: ${newExp})`);
@@ -667,7 +676,7 @@ const [maxMana, setMaxMana] = useState(150);
         console.log(`🎯 Opponent ${playerId} gained 10 EXP from wave completion`);
       }
     });
-  }, [socket?.id, playerLevel, playerEntity, players]);
+  }, [socket?.id, playerEntity, players, updatePlayerHealth]);
 
   // Notify parent component of experience updates
   React.useEffect(() => {
