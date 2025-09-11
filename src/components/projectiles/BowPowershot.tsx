@@ -3,7 +3,6 @@ import { AdditiveBlending } from '@/utils/three-exports';
 
 import { Vector3, Group } from 'three';
 import { useFrame } from '@react-three/fiber';
-import * as THREE from 'three';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 
 interface BowPowershotProps {

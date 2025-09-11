@@ -132,18 +132,15 @@ export class PhysicsSystem extends BasePhysicsSystem {
   ];
   private readonly PILLAR_RADIUS = 0.7; // Same as PillarCollision.tsx
 
-  // Define tree positions (same as in Environment.tsx)
+  // Define tree positions (same as in Environment.tsx - reduced by half)
   private readonly TREE_POSITIONS = [
-    // Inner ring trees
-    new Vector3(8, 0, 8), new Vector3(-8, 0, 8), new Vector3(8, 0, -8), new Vector3(-8, 0, -8),
-    // Middle ring trees
-    new Vector3(15, 0, 5), new Vector3(-15, 0, 5), new Vector3(15, 0, -5), new Vector3(-15, 0, -5),
-    new Vector3(5, 0, 15), new Vector3(-5, 0, 15), new Vector3(5, 0, -15), new Vector3(-5, 0, -15),
-    // Outer ring trees
+    // Middle ring trees (selectively kept)
+    new Vector3(15, 0, 5), new Vector3(-15, 0, 5), new Vector3(5, 0, 15),
+    // Outer ring trees (kept all - furthest from center)
     new Vector3(20, 0, 10), new Vector3(-20, 0, 10), new Vector3(20, 0, -10), new Vector3(-20, 0, -10),
     new Vector3(10, 0, 20), new Vector3(-10, 0, 20), new Vector3(10, 0, -20), new Vector3(-10, 0, -20),
-    // Additional scattered trees
-    new Vector3(12, 0, 12), new Vector3(-12, 0, 12), new Vector3(12, 0, -12), new Vector3(-12, 0, -12)
+    // Additional scattered tree (kept one for natural look)
+    new Vector3(12, 0, 12)
   ];
   private readonly TREE_RADIUS = 0.3; // Roughly half the pillar diameter
 

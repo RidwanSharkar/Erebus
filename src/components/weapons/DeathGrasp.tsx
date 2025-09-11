@@ -1,7 +1,6 @@
 import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
-import * as THREE from 'three';
+import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending, SphereGeometry, CylinderGeometry } from '@/utils/three-exports';
 import AnimatedDeathGrasp from './AnimatedDeathGrasp';
 
 interface DeathGraspProps {
@@ -36,10 +35,10 @@ export default function DeathGrasp({
 
   // Use useMemo for static geometries and materials
   const geometries = useMemo(() => ({
-    particle: new THREE.SphereGeometry(0.15, 8, 8),
-    tentacle: new THREE.CylinderGeometry(0.05, 0.05, 1, 8),
-    impact: new THREE.SphereGeometry(0.2, 8, 8),
-    core: new THREE.SphereGeometry(0.18, 8, 8)
+    particle: new SphereGeometry(0.15, 8, 8),
+    tentacle: new CylinderGeometry(0.05, 0.05, 1, 8),
+    impact: new SphereGeometry(0.2, 8, 8),
+    core: new SphereGeometry(0.18, 8, 8)
   }), []);
 
   const materials = useMemo(() => ({

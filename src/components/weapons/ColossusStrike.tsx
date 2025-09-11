@@ -1,7 +1,6 @@
 import React, { useRef, useMemo, useEffect } from 'react';
-import { Vector3, Color } from 'three';
+import { Vector3, Color, SphereGeometry, MeshStandardMaterial, AdditiveBlending } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
-import * as THREE from 'three';
 
 interface ColossusStrikeProps {
   position: Vector3;
@@ -113,25 +112,25 @@ export default function ColossusStrike({
   
   // Create geometries and materials
   const geometries = useMemo(() => ({
-    bolt: new THREE.SphereGeometry(1, 8, 8),
-    impact: new THREE.SphereGeometry(0.8, 16, 16)
+    bolt: new SphereGeometry(1, 8, 8),
+    impact: new SphereGeometry(0.8, 16, 16)
   }), []);
   
   // Updated materials for yellow lightning
   const materials = useMemo(() => ({
-    coreBolt: new THREE.MeshStandardMaterial({
+    coreBolt: new MeshStandardMaterial({
       color: new Color('#FFFF00'), // Pure yellow
       emissive: new Color('#FFD700'), // Golden yellow
       emissiveIntensity: 4,
       transparent: true
     }),
-    secondaryBolt: new THREE.MeshStandardMaterial({
+    secondaryBolt: new MeshStandardMaterial({
       color: new Color('#FFDD00'), // Bright yellow
       emissive: new Color('#FFD700'), // Golden yellow
       emissiveIntensity: 2,
       transparent: true
     }),
-    impact: new THREE.MeshStandardMaterial({
+    impact: new MeshStandardMaterial({
       color: new Color('#FFFF00'), // Pure yellow
       emissive: new Color('#FFD700'), // Golden yellow
       emissiveIntensity: 1,
@@ -140,54 +139,21 @@ export default function ColossusStrike({
   }), []);
 
   // Perform damage detection at the right time (when lightning hits)
+  // Note: Damage is handled by the calling component (PVPGameScene.tsx)
+  // This component is purely visual - no damage logic needed here
   useEffect(() => {
     const damageTimer = setTimeout(() => {
       if (damageDealtRef.current) return; // Prevent multiple damage applications
       damageDealtRef.current = true;
 
-      // Find the closest enemy player target
-      let closestTarget = null;
-      let closestDistance = Infinity;
-
-      for (const target of targetPlayerData) {
-        if (target.health <= 0) continue; // Skip dead players
-        
-        const distance = position.distanceTo(target.position);
-        if (distance < closestDistance) {
-          closestDistance = distance;
-          closestTarget = target;
-        }
+      // Just trigger the damage callback to indicate the visual effect hit
+      if (onDamageDealt) {
+        onDamageDealt(true);
       }
-
-      if (closestTarget) {
-        // Calculate damage: 100 + (2 damage per 1% missing health) + (2 damage per extra rage)
-        const missingHealthPercent = Math.max(0, ((closestTarget.maxHealth - closestTarget.health) / closestTarget.maxHealth) * 100);
-        const extraRage = Math.max(0, rageSpent - 40);
-        const totalDamage = 100 + (missingHealthPercent * 2) + (extraRage * 2);
-
-        console.log(`⚡ Colossus Strike: Target health ${closestTarget.health}/${closestTarget.maxHealth} (${missingHealthPercent.toFixed(1)}% missing), Rage spent: ${rageSpent}, Damage: ${totalDamage}`);
-
-        // Apply damage through the PVP system using broadcastPlayerDamage
-        const multiplayerContext = (window as any).multiplayerContext;
-        if (multiplayerContext && multiplayerContext.broadcastPlayerDamage) {
-          multiplayerContext.broadcastPlayerDamage(closestTarget.id, totalDamage, 'colossus_strike');
-          console.log(`⚡ Colossus Strike: Broadcasted ${totalDamage} damage to player ${closestTarget.id}`);
-        }
-
-        // Trigger damage callback
-        if (onDamageDealt) {
-          onDamageDealt(true);
-        }
-      } else {
-        console.log(`⚡ Colossus Strike: No valid targets found`);
-        if (onDamageDealt) {
-          onDamageDealt(false);
-        }
-      }
-    }, 450); // Damage occurs when lightning hits (mid-animation)
+    }, 450); // Visual effect timing (mid-animation)
 
     return () => clearTimeout(damageTimer);
-  }, [position, targetPlayerData, rageSpent, onDamageDealt]);
+  }, [onDamageDealt]);
   
   useFrame(() => {
     const elapsed = (Date.now() - startTimeRef.current) / 1000;
@@ -241,7 +207,7 @@ export default function ColossusStrike({
               color="#FFD700" // Golden yellow
               transparent
               opacity={(0.8 - (i * 0.15)) * (1 - (Date.now() - startTimeRef.current) / (duration * 1000))}
-              blending={THREE.AdditiveBlending}
+              blending={AdditiveBlending}
             />
           </mesh>
         ))}

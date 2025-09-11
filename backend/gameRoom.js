@@ -26,6 +26,8 @@ class GameRoom {
     this.waveUnits = new Set(); // Unit IDs in current wave
     this.waveStartTime = 0;
     this.lastWaveCompletionTime = 0;
+    this.lastWaveDebugTime = 0;
+    this.lastUpdateSkipLog = 0;
     this.summonedUnitUpdateTimer = null;
     
     // Initialize enemy AI system but don't start it yet
@@ -313,7 +315,11 @@ class GameRoom {
   // Main update loop for summoned units
   updateSummonedUnits() {
     if (!this.gameStarted || this.gameMode !== 'pvp') {
-      // Uncomment for debugging: console.log(`🤖 Summoned unit update skipped: gameStarted=${this.gameStarted}, gameMode=${this.gameMode}`);
+      // Debug logging every 30 seconds to see why updates are skipped
+      if (Math.floor(Date.now() / 1000) % 30 === 0 && Math.floor(Date.now() / 1000) !== this.lastUpdateSkipLog) {
+        this.lastUpdateSkipLog = Math.floor(Date.now() / 1000);
+        console.log(`🤖 Summoned unit update skipped: gameStarted=${this.gameStarted}, gameMode=${this.gameMode}, roomId=${this.roomId}`);
+      }
       return;
     }
     
@@ -344,8 +350,12 @@ class GameRoom {
         continue;
       }
       
-      // Skip inactive or dead units
-      if (!unit.isActive || unit.isDead) continue;
+      // Check if unit is already dead (from damage) - add to cleanup
+      if (unit.isDead || !unit.isActive) {
+        console.log(`🧹 Adding dead/inactive unit ${unitId} to cleanup queue (isDead: ${unit.isDead}, isActive: ${unit.isActive})`);
+        unitsToDestroy.push(unitId);
+        continue;
+      }
       
       // Update unit behavior
       this.updateUnitBehavior(unit, currentTime, deltaTime);
@@ -547,8 +557,31 @@ class GameRoom {
     unit.lastAttackTime = currentTime;
   }
   
+  // Manual wave completion trigger for testing (temporary)
+  triggerTestWaveCompletion() {
+    console.log(`🧪 TEST: Manually triggering wave completion for room ${this.roomId}`);
+    
+    // Broadcast wave completion
+    if (this.io) {
+      this.io.to(this.roomId).emit('wave-completed', {
+        waveId: `test_wave_${Date.now()}`,
+        timestamp: Date.now()
+      });
+    }
+  }
+
   // Check wave completion
   checkWaveCompletion(currentTime) {
+    // Debug logging every 10 seconds to track wave state
+    if (Math.floor(currentTime) % 10 === 0 && Math.floor(currentTime) !== this.lastWaveDebugTime) {
+      this.lastWaveDebugTime = Math.floor(currentTime);
+      console.log(`🌊 Wave Debug: currentWaveId=${this.currentWaveId}, waveUnits.size=${this.waveUnits.size}, lastWaveCompletionTime=${this.lastWaveCompletionTime}, timeSinceLastCompletion=${currentTime - this.lastWaveCompletionTime}`);
+      
+      if (this.waveUnits.size > 0) {
+        console.log(`🤖 Active wave units:`, Array.from(this.waveUnits));
+      }
+    }
+    
     // Check if current wave is complete (all units dead or expired)
     if (this.currentWaveId && this.waveUnits.size === 0) {
       // Ensure we don't spam the callback (minimum 30 seconds between wave completions)
@@ -565,6 +598,8 @@ class GameRoom {
         
         this.lastWaveCompletionTime = currentTime;
         this.currentWaveId = null;
+      } else {
+        console.log(`🕐 Wave ${this.currentWaveId} complete but on cooldown. Time since last: ${currentTime - this.lastWaveCompletionTime}s (need 30s)`);
       }
     }
   }
@@ -618,7 +653,7 @@ class GameRoom {
       this.currentWaveId = `wave_${currentTime}`;
       this.waveStartTime = currentTime;
       this.waveUnits.clear();
-      console.log(`🌊 Starting new wave: ${this.currentWaveId}`);
+      console.log(`🌊 Starting new wave: ${this.currentWaveId} at time ${currentTime}`);
     }
     
     // Find the opposing tower position for targeting
@@ -635,8 +670,8 @@ class GameRoom {
       console.log(`🎯 Using default target position:`, opposingTowerPosition);
     }
     
-    // Spawn 3 units and track them in the wave
-    console.log(`🤖 Spawning 3 units for tower ${tower.id}`);
+    // Spawn 2 units and track them in the wave
+    console.log(`🤖 Spawning 2 units for tower ${tower.id}`);
     for (let i = 0; i < 3; i++) {
       const unitId = this.spawnSummonedUnit(tower.ownerId, tower.position, opposingTowerPosition, i, currentTime);
       if (unitId) {
@@ -684,7 +719,7 @@ class GameRoom {
       health: 1000, // Max health
       maxHealth: 1000,
       attackRange: 4,
-      attackDamage: 45,
+      attackDamage: 60,
       attackCooldown: 2.0,
       lastAttackTime: 0,
       moveSpeed: 2.25,
@@ -727,6 +762,7 @@ class GameRoom {
       unit.isActive = false;
       unit.deathTime = Date.now() / 1000;
       this.waveUnits.delete(unitId);
+      console.log(`💀 Unit ${unitId} killed! Removed from wave. Wave units remaining: ${this.waveUnits.size}`);
     }
     
     console.log(`🤖 Summoned unit ${unitId} took ${damage} damage from ${sourceOwnerId}. Health: ${unit.health}/${unit.maxHealth}${wasKilled ? ' (KILLED)' : ''}`);
@@ -740,7 +776,9 @@ class GameRoom {
     if (unit) {
       this.summonedUnits.delete(unitId);
       this.waveUnits.delete(unitId);
-      console.log(`🤖 Destroyed summoned unit ${unitId}`);
+      console.log(`🗑️ Destroyed summoned unit ${unitId} (was dead: ${unit.isDead}, was active: ${unit.isActive}). Remaining units: ${this.summonedUnits.size}`);
+    } else {
+      console.warn(`⚠️ Attempted to destroy non-existent unit ${unitId}`);
     }
   }
   
@@ -748,8 +786,14 @@ class GameRoom {
   broadcastSummonedUnitUpdates() {
     const unitUpdates = [];
     
-    // Always broadcast updates, even if 0 units, so clients can clean up stale entities
+    // Only broadcast active, living units - dead units should be cleaned up by the main loop
     for (const [unitId, unit] of this.summonedUnits) {
+      // Skip dead or inactive units - they should be cleaned up
+      if (unit.isDead || !unit.isActive) {
+        console.log(`📡 Skipping broadcast of dead/inactive unit ${unitId} (isDead: ${unit.isDead}, isActive: ${unit.isActive})`);
+        continue;
+      }
+      
       unitUpdates.push({
         unitId: unit.unitId,
         ownerId: unit.ownerId,

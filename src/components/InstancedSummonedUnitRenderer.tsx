@@ -25,56 +25,84 @@ import { Transform } from '@/ecs/components/Transform';
 import { Health } from '@/ecs/components/Health';
 import { SummonedUnit } from '@/ecs/components/SummonedUnit';
 
-// Shared geometries - created once and reused (tower-like miniature versions)
+// Shared geometries - based on SummonedUnitRenderer model for crystal-like appearance
 const sharedGeometries = {
-  body: new CylinderGeometry(0.3, 0.36, 0.72, 6), // Keep cylinder for base stability
-  head: new OctahedronGeometry(0.24, 0), // Crystal-like head
-  arm: new CylinderGeometry(0.06, 0.06, 0.48, 4),
-  leg: new CylinderGeometry(0.075, 0.075, 0.24, 4),
-  weapon: new BoxGeometry(0.09, 0.36, 0.03),
+  // Main Body - Crystal-like Octahedron (larger than head)
+  body: new OctahedronGeometry(0.375, 0), // unitBaseRadius * 1.25
+  // Head - Crystal-like Octahedron
+  head: new OctahedronGeometry(0.18, 0), // unitBaseRadius * 0.6
+  // Shoulders - Crystal spheres
+  shoulder: new SphereGeometry(0.12, 8, 8), // unitBaseRadius * 0.4
+  // Shoulder Rings - Energy rings
+  shoulderRing: new TorusGeometry(0.18, 0.01, 6, 12), // unitBaseRadius * 0.5, unitBaseRadius * 0.03
+  // Energy Arms - Crystal cylinders
+  arm: new CylinderGeometry(0.075, 0.06, 0.36, 6), // unitBaseRadius * 0.25, unitBaseRadius * 0.15, unitHeight * 0.3
+  // Energy Tendrils - Orbiting crystal spikes (8 tendrils per unit)
+  energyTendril: new ConeGeometry(0.024, 0.09, 4), // unitBaseRadius * 0.08, unitBaseRadius * 0.3
+  // Energy Aura - Crystal glow effect
+  energyAura: new SphereGeometry(0.525, 8, 8), // unitBaseRadius * 1.75
+  // Health Bar components
   healthBarBg: new PlaneGeometry(1.5, 0.15),
   healthBarFill: new PlaneGeometry(1.5, 0.12),
+  // Death Effect
   deathEffect: new SphereGeometry(1, 6, 4),
-  targetIndicator: new CylinderGeometry(0.45, 0.45, 0.05, 8),
-  // New tower-like geometries
-  shoulder: new SphereGeometry(0.15, 8, 8), // Mini shoulder spheres
-  shoulderRing: new TorusGeometry(0.18, 0.02, 6, 12), // Mini shoulder rings
-  energyTendril: new ConeGeometry(0.04, 0.15, 4), // Mini energy tendrils
-  energyAura: new SphereGeometry(0.6, 8, 8) // Mini energy aura
+  // Crystal Target Indicator
+  targetIndicator: new TorusGeometry(0.36, 0.015, 8, 16) // unitBaseRadius * 1.2, unitBaseRadius * 0.05
 };
 
-// Shared materials - created once and reused (tower-like crystal materials)
+// Shared materials - matching SummonedUnitRenderer crystal-like materials
 const sharedMaterials = {
+  // Main Body - Crystal-like with moderate metalness
   body: new MeshStandardMaterial({
-    metalness: 0.2,
-    roughness: 0.8,
+    metalness: 0.7,
+    roughness: 0.3,
     transparent: true,
     vertexColors: true
   }),
+  // Head - Brighter crystal-like material
   head: new MeshStandardMaterial({
-    metalness: 0.8, // Crystal-like metalness
-    roughness: 0.2, // Crystal-like roughness
+    metalness: 0.8,
+    roughness: 0.2,
     transparent: true,
     vertexColors: true
   }),
+  // Shoulders - Crystal spheres
+  shoulder: new MeshStandardMaterial({
+    metalness: 0.7,
+    roughness: 0.3,
+    transparent: true,
+    vertexColors: true
+  }),
+  // Shoulder Rings - Energy rings with high metalness
+  shoulderRing: new MeshStandardMaterial({
+    metalness: 0.8,
+    roughness: 0.2,
+    transparent: true,
+    vertexColors: true
+  }),
+  // Energy Arms - Crystal cylinders with energy appearance
   arm: new MeshStandardMaterial({
-    metalness: 0.6, // Higher metalness for energy arms
+    metalness: 0.6,
     roughness: 0.4,
     transparent: true,
     vertexColors: true
   }),
-  leg: new MeshStandardMaterial({
-    metalness: 0.1,
-    roughness: 1.0,
+  // Energy Tendrils - High metalness crystal spikes
+  energyTendril: new MeshStandardMaterial({
+    metalness: 0.9,
+    roughness: 0.1,
     transparent: true,
     vertexColors: true
   }),
-  weapon: new MeshStandardMaterial({
-    color: 0x333333,
-    metalness: 0.8,
-    roughness: 0.2,
-    transparent: true
+  // Energy Aura - Glowing crystal effect
+  energyAura: new MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.3,
+    vertexColors: true,
+    depthWrite: false,
+    blending: AdditiveBlending
   }),
+  // Health Bar components
   healthBarBg: new MeshBasicMaterial({
     color: 0x333333,
     transparent: true,
@@ -85,37 +113,15 @@ const sharedMaterials = {
     opacity: 0.9,
     vertexColors: true
   }),
+  // Death Effect
   deathEffect: new MeshBasicMaterial({
     color: 0x666666,
     transparent: true,
     opacity: 0.1,
     wireframe: true
   }),
+  // Crystal Target Indicator - Enhanced glow
   targetIndicator: new MeshBasicMaterial({
-    transparent: true,
-    opacity: 0.2,
-    vertexColors: true
-  }),
-  // New tower-like materials
-  shoulder: new MeshStandardMaterial({
-    metalness: 0.7,
-    roughness: 0.3,
-    transparent: true,
-    vertexColors: true
-  }),
-  shoulderRing: new MeshStandardMaterial({
-    metalness: 0.8,
-    roughness: 0.2,
-    transparent: true,
-    vertexColors: true
-  }),
-  energyTendril: new MeshStandardMaterial({
-    metalness: 0.9,
-    roughness: 0.1,
-    transparent: true,
-    vertexColors: true
-  }),
-  energyAura: new MeshBasicMaterial({
     transparent: true,
     opacity: 0.4,
     vertexColors: true,
@@ -144,25 +150,21 @@ export default function InstancedSummonedUnitRenderer({
   world,
   maxUnits = 100
 }: InstancedSummonedUnitRendererProps) {
-  // Refs for instanced meshes
-  const bodyMeshRef = useRef<InstancedMesh>(null);
-  const headMeshRef = useRef<InstancedMesh>(null);
-  const leftArmMeshRef = useRef<InstancedMesh>(null);
-  const rightArmMeshRef = useRef<InstancedMesh>(null);
-  const leftLegMeshRef = useRef<InstancedMesh>(null);
-  const rightLegMeshRef = useRef<InstancedMesh>(null);
-  const weaponMeshRef = useRef<InstancedMesh>(null);
-  const healthBarBgMeshRef = useRef<InstancedMesh>(null);
-  const healthBarFillMeshRef = useRef<InstancedMesh>(null);
-  const deathEffectMeshRef = useRef<InstancedMesh>(null);
-  const targetIndicatorMeshRef = useRef<InstancedMesh>(null);
-  // New tower-like refs
-  const leftShoulderMeshRef = useRef<InstancedMesh>(null);
-  const rightShoulderMeshRef = useRef<InstancedMesh>(null);
-  const leftShoulderRingMeshRef = useRef<InstancedMesh>(null);
-  const rightShoulderRingMeshRef = useRef<InstancedMesh>(null);
-  const energyTendrilsMeshRef = useRef<InstancedMesh>(null);
-  const energyAuraMeshRef = useRef<InstancedMesh>(null);
+  // Refs for instanced meshes - matching SummonedUnitRenderer crystal model
+  const bodyMeshRef = useRef<InstancedMesh>(null); // Main Body - Crystal-like Octahedron
+  const headMeshRef = useRef<InstancedMesh>(null); // Head - Crystal-like Octahedron
+  const leftShoulderMeshRef = useRef<InstancedMesh>(null); // Left Shoulder - Crystal sphere
+  const rightShoulderMeshRef = useRef<InstancedMesh>(null); // Right Shoulder - Crystal sphere
+  const leftShoulderRingMeshRef = useRef<InstancedMesh>(null); // Left Shoulder Ring - Energy ring
+  const rightShoulderRingMeshRef = useRef<InstancedMesh>(null); // Right Shoulder Ring - Energy ring
+  const leftArmMeshRef = useRef<InstancedMesh>(null); // Left Energy Arm - Crystal cylinder
+  const rightArmMeshRef = useRef<InstancedMesh>(null); // Right Energy Arm - Crystal cylinder
+  const energyTendrilsMeshRef = useRef<InstancedMesh>(null); // Energy Tendrils - 8 orbiting crystal spikes
+  const energyAuraMeshRef = useRef<InstancedMesh>(null); // Energy Aura - Crystal glow effect
+  const healthBarBgMeshRef = useRef<InstancedMesh>(null); // Health Bar Background
+  const healthBarFillMeshRef = useRef<InstancedMesh>(null); // Health Bar Fill
+  const deathEffectMeshRef = useRef<InstancedMesh>(null); // Death Effect
+  const targetIndicatorMeshRef = useRef<InstancedMesh>(null); // Crystal Target Indicator
 
   // Unit instance data
   const unitInstances = useRef<Map<number, UnitInstanceData>>(new Map());
@@ -245,84 +247,62 @@ export default function InstancedSummonedUnitRenderer({
 
     let bodyCount = 0;
     let headCount = 0;
+    let shoulderCount = 0;
+    let shoulderRingCount = 0;
     let armCount = 0;
-    let legCount = 0;
-    let weaponCount = 0;
+    let energyTendrilsCount = 0;
+    let energyAuraCount = 0;
     let healthBarBgCount = 0;
     let healthBarFillCount = 0;
     let deathEffectCount = 0;
     let targetIndicatorCount = 0;
-    // New tower-like counters
-    let shoulderCount = 0;
-    let shoulderRingCount = 0;
-    let energyTendrilsCount = 0;
-    let energyAuraCount = 0;
 
     for (let i = 0; i < count; i++) {
       const unit = instances[i];
       const { damageColor, opacity, healthPercentage } = getUnitAppearance(unit);
 
+      // Reset temp object position
       tempObject.current.position.copy(unit.position);
+      tempObject.current.rotation.set(0, 0, 0);
 
-      // Body
+      // Main Body - Crystal-like Octahedron
       if (bodyMeshRef.current) {
-        tempObject.current.position.y += 0.72; // unitHeight * 0.4
+        tempObject.current.position.y += 0.8625; // unitHeight * 0.725
         tempObject.current.updateMatrix();
         bodyMeshRef.current.setMatrixAt(bodyCount, tempObject.current.matrix);
         bodyMeshRef.current.setColorAt(bodyCount, damageColor);
         bodyCount++;
       }
 
-      // Head (crystal-like octahedron)
+      // Head - Crystal-like Octahedron
       if (headMeshRef.current) {
-        tempObject.current.position.y += 0.36; // unitHeight * 0.8 relative to body
+        tempObject.current.position.set(
+          unit.position.x,
+          unit.position.y + 1.2, // unitHeight * 1
+          unit.position.z
+        );
         tempObject.current.updateMatrix();
         headMeshRef.current.setMatrixAt(headCount, tempObject.current.matrix);
         headMeshRef.current.setColorAt(headCount, damageColor.clone().multiplyScalar(1.2));
         headCount++;
       }
 
-      // Arms (left and right)
-      if (leftArmMeshRef.current && rightArmMeshRef.current) {
-        tempObject.current.position.set(
-          unit.position.x - 0.36, // -side * unitBaseRadius * 1.2
-          unit.position.y + 1.08, // unitHeight * 0.6
-          unit.position.z
-        );
-        tempObject.current.rotation.set(0, 0, -0.3); // -side * 0.3
-        tempObject.current.updateMatrix();
-        leftArmMeshRef.current.setMatrixAt(armCount, tempObject.current.matrix);
-        leftArmMeshRef.current.setColorAt(armCount, damageColor.clone().multiplyScalar(0.9));
-
-        tempObject.current.position.set(
-          unit.position.x + 0.36, // +side * unitBaseRadius * 1.2
-          unit.position.y + 1.08, // unitHeight * 0.6
-          unit.position.z
-        );
-        tempObject.current.rotation.set(0, 0, 0.3); // +side * 0.3
-        tempObject.current.updateMatrix();
-        rightArmMeshRef.current.setMatrixAt(armCount, tempObject.current.matrix);
-        rightArmMeshRef.current.setColorAt(armCount, damageColor.clone().multiplyScalar(0.9));
-        armCount++;
-      }
-
-      // Shoulders (tower-like)
+      // Shoulders - Crystal spheres
       if (leftShoulderMeshRef.current && rightShoulderMeshRef.current) {
         // Left shoulder
         tempObject.current.position.set(
-          unit.position.x - 0.3, // -side * unitBaseRadius
-          unit.position.y + 0.9, // unitHeight * 0.5
+          unit.position.x - 0.36, // -side * unitBaseRadius * 1.2
+          unit.position.y + 1.08, // unitHeight * 0.9
           unit.position.z
         );
-        tempObject.current.rotation.set(0, 0, 0);
         tempObject.current.updateMatrix();
         leftShoulderMeshRef.current.setMatrixAt(shoulderCount, tempObject.current.matrix);
         leftShoulderMeshRef.current.setColorAt(shoulderCount, damageColor.clone().multiplyScalar(1.1));
 
         // Right shoulder
         tempObject.current.position.set(
-          unit.position.x + 0.3, // +side * unitBaseRadius
-          unit.position.y + 0.9, // unitHeight * 0.5
+          unit.position.x + 0.36, // +side * unitBaseRadius * 1.2
+          unit.position.y + 1.08, // unitHeight * 0.9
           unit.position.z
         );
         tempObject.current.updateMatrix();
@@ -331,12 +311,12 @@ export default function InstancedSummonedUnitRenderer({
         shoulderCount++;
       }
 
-      // Shoulder Rings (tower-like)
+      // Shoulder Rings - Energy rings
       if (leftShoulderRingMeshRef.current && rightShoulderRingMeshRef.current) {
         // Left shoulder ring
         tempObject.current.position.set(
-          unit.position.x - 0.3, // -side * unitBaseRadius
-          unit.position.y + 0.9, // unitHeight * 0.5
+          unit.position.x - 0.36, // -side * unitBaseRadius * 1.2
+          unit.position.y + 1.08, // unitHeight * 0.9
           unit.position.z
         );
         tempObject.current.rotation.set(Math.PI / 2, -Math.PI / 4, 0);
@@ -346,8 +326,8 @@ export default function InstancedSummonedUnitRenderer({
 
         // Right shoulder ring
         tempObject.current.position.set(
-          unit.position.x + 0.3, // +side * unitBaseRadius
-          unit.position.y + 0.9, // unitHeight * 0.5
+          unit.position.x + 0.36, // +side * unitBaseRadius * 1.2
+          unit.position.y + 1.08, // unitHeight * 0.9
           unit.position.z
         );
         tempObject.current.rotation.set(Math.PI / 2, Math.PI / 4, 0);
@@ -357,71 +337,46 @@ export default function InstancedSummonedUnitRenderer({
         shoulderRingCount++;
       }
 
-      // Energy Aura (tower-like)
-      if (energyAuraMeshRef.current) {
-        tempObject.current.position.copy(unit.position);
-        tempObject.current.position.y += 0.36; // unitHeight * 0.4
-        tempObject.current.rotation.set(0, 0, 0);
+      // Energy Arms - Crystal cylinders
+      if (leftArmMeshRef.current && rightArmMeshRef.current) {
+        // Left arm
+        tempObject.current.position.set(
+          unit.position.x - 0.42, // -side * unitBaseRadius * 1.4
+          unit.position.y + 0.84, // unitHeight * 0.7
+          unit.position.z - 0.03 // side * unitBaseRadius * 0.1
+        );
+        tempObject.current.rotation.set(0, 0, -0.3);
         tempObject.current.updateMatrix();
-        energyAuraMeshRef.current.setMatrixAt(energyAuraCount, tempObject.current.matrix);
-        energyAuraMeshRef.current.setColorAt(energyAuraCount, damageColor);
-        energyAuraCount++;
+        leftArmMeshRef.current.setMatrixAt(armCount, tempObject.current.matrix);
+        leftArmMeshRef.current.setColorAt(armCount, damageColor.clone().multiplyScalar(0.9));
+
+        // Right arm
+        tempObject.current.position.set(
+          unit.position.x + 0.42, // +side * unitBaseRadius * 1.4
+          unit.position.y + 0.84, // unitHeight * 0.7
+          unit.position.z + 0.03 // -side * unitBaseRadius * 0.1
+        );
+        tempObject.current.rotation.set(0, 0, 0.3);
+        tempObject.current.updateMatrix();
+        rightArmMeshRef.current.setMatrixAt(armCount, tempObject.current.matrix);
+        rightArmMeshRef.current.setColorAt(armCount, damageColor.clone().multiplyScalar(0.9));
+        armCount++;
       }
 
-      // Legs (left and right)
-      if (leftLegMeshRef.current && rightLegMeshRef.current) {
-        tempObject.current.position.set(
-          unit.position.x - 0.18, // -side * unitBaseRadius * 0.6
-          unit.position.y + 0.24, // unitHeight * 0.1
-          unit.position.z
-        );
-        tempObject.current.rotation.set(0, 0, 0);
-        tempObject.current.updateMatrix();
-        leftLegMeshRef.current.setMatrixAt(legCount, tempObject.current.matrix);
-        leftLegMeshRef.current.setColorAt(legCount, damageColor.clone().multiplyScalar(0.8));
-
-        tempObject.current.position.set(
-          unit.position.x + 0.18, // +side * unitBaseRadius * 0.6
-          unit.position.y + 0.24, // unitHeight * 0.1
-          unit.position.z
-        );
-        tempObject.current.updateMatrix();
-        rightLegMeshRef.current.setMatrixAt(legCount, tempObject.current.matrix);
-        rightLegMeshRef.current.setColorAt(legCount, damageColor.clone().multiplyScalar(0.8));
-        legCount++;
-      }
-
-      // Weapon
-      if (weaponMeshRef.current) {
-        tempObject.current.position.set(
-          unit.position.x + 0.45, // unitBaseRadius * 1.5
-          unit.position.y + 1.08, // unitHeight * 0.6
-          unit.position.z
-        );
-        tempObject.current.rotation.set(0, 0, 0.2);
-        tempObject.current.updateMatrix();
-        weaponMeshRef.current.setMatrixAt(weaponCount, tempObject.current.matrix);
-        weaponCount++;
-      }
-
-      // Energy Tendrils (tower-like orbiting spikes)
+      // Energy Tendrils - 8 orbiting crystal spikes
       if (energyTendrilsMeshRef.current) {
-        const tendrilCount = 6; // Fewer tendrils for mini version
+        const tendrilCount = 8;
         for (let t = 0; t < tendrilCount; t++) {
           const angle = (t / tendrilCount) * Math.PI * 2;
-          const radius = 0.25;
-          const height = 1.0;
+          const radius = 0.39; // unitBaseRadius * 1.35
+          const height = 1.32; // unitHeight * 1.1
 
           tempObject.current.position.set(
             unit.position.x + Math.cos(angle) * radius,
-            unit.position.y + height + Math.sin(angle) * radius * 0.5,
+            unit.position.y + height + Math.sin(angle) * radius * 0.3,
             unit.position.z + Math.sin(angle) * radius
           );
-          tempObject.current.rotation.set(
-            Math.PI / 2,
-            angle + Math.PI,
-            -Math.PI / 2
-          );
+          tempObject.current.rotation.set(Math.PI / 2, angle + Math.PI, -Math.PI / 2);
           tempObject.current.updateMatrix();
           energyTendrilsMeshRef.current.setMatrixAt(energyTendrilsCount, tempObject.current.matrix);
           energyTendrilsMeshRef.current.setColorAt(energyTendrilsCount, damageColor.clone().multiplyScalar(1.2));
@@ -429,20 +384,36 @@ export default function InstancedSummonedUnitRenderer({
         }
       }
 
+      // Energy Aura - Crystal glow effect
+      if (energyAuraMeshRef.current) {
+        tempObject.current.position.set(
+          unit.position.x,
+          unit.position.y + 0.9, // unitHeight * 0.75
+          unit.position.z
+        );
+        tempObject.current.rotation.set(0, 0, 0);
+        tempObject.current.updateMatrix();
+        energyAuraMeshRef.current.setMatrixAt(energyAuraCount, tempObject.current.matrix);
+        energyAuraMeshRef.current.setColorAt(energyAuraCount, damageColor);
+        energyAuraCount++;
+      }
+
       // Health Bar (only if not dead)
       if (!unit.isDead && healthBarBgMeshRef.current && healthBarFillMeshRef.current) {
         // Background
         tempObject.current.position.set(
           unit.position.x,
-          unit.position.y + 1.88, // unitHeight + 0.8
+          unit.position.y + 2.0, // unitHeight + 0.8
           unit.position.z
         );
-        tempObject.current.rotation.set(-Math.PI, 0, 0);
+        tempObject.current.rotation.set(-Math.PI / 2, 0, 0);
         tempObject.current.updateMatrix();
         healthBarBgMeshRef.current.setMatrixAt(healthBarBgCount, tempObject.current.matrix);
 
         // Fill
-        tempObject.current.position.x -= (1.5 * (1 - healthPercentage)) / 2;
+        tempObject.current.position.x = unit.position.x - (1.5 * (1 - healthPercentage)) / 2;
+        tempObject.current.position.y = unit.position.y + 2.01; // slightly above background
+        tempObject.current.position.z = unit.position.z;
         tempObject.current.scale.set(healthPercentage, 1, 1);
         tempObject.current.updateMatrix();
         healthBarFillMeshRef.current.setMatrixAt(healthBarFillCount, tempObject.current.matrix);
@@ -462,17 +433,25 @@ export default function InstancedSummonedUnitRenderer({
 
       // Death Effect (only if dead)
       if (unit.isDead && deathEffectMeshRef.current) {
-        tempObject.current.position.copy(unit.position);
-        tempObject.current.position.y += 0.72; // unitHeight * 0.4
+        tempObject.current.position.set(
+          unit.position.x,
+          unit.position.y + 0.6, // unitHeight * 0.4
+          unit.position.z
+        );
+        tempObject.current.rotation.set(0, 0, 0);
         tempObject.current.updateMatrix();
         deathEffectMeshRef.current.setMatrixAt(deathEffectCount, tempObject.current.matrix);
         deathEffectCount++;
       }
 
-      // Target Indicator (always visible)
+      // Crystal Target Indicator (always visible)
       if (targetIndicatorMeshRef.current) {
-        tempObject.current.position.copy(unit.position);
-        tempObject.current.position.y += 0.72; // unitHeight * 0.4
+        tempObject.current.position.set(
+          unit.position.x,
+          unit.position.y + 0.42, // unitHeight * 0.35
+          unit.position.z
+        );
+        tempObject.current.rotation.set(-1.5, 0, 0); // Matches SummonedUnitRenderer
         tempObject.current.updateMatrix();
         targetIndicatorMeshRef.current.setMatrixAt(targetIndicatorCount, tempObject.current.matrix);
         targetIndicatorMeshRef.current.setColorAt(targetIndicatorCount, unit.color);
@@ -480,47 +459,27 @@ export default function InstancedSummonedUnitRenderer({
       }
     }
 
-    // Update instance counts
+    // Update instance counts - Crystal model
     if (bodyMeshRef.current) bodyMeshRef.current.count = bodyCount;
     if (headMeshRef.current) headMeshRef.current.count = headCount;
-    if (leftArmMeshRef.current) leftArmMeshRef.current.count = armCount;
-    if (rightArmMeshRef.current) rightArmMeshRef.current.count = armCount;
-    if (leftLegMeshRef.current) leftLegMeshRef.current.count = legCount;
-    if (rightLegMeshRef.current) rightLegMeshRef.current.count = legCount;
-    if (weaponMeshRef.current) weaponMeshRef.current.count = weaponCount;
-    if (healthBarBgMeshRef.current) healthBarBgMeshRef.current.count = healthBarBgCount;
-    if (healthBarFillMeshRef.current) healthBarFillMeshRef.current.count = healthBarFillCount;
-    if (deathEffectMeshRef.current) deathEffectMeshRef.current.count = deathEffectCount;
-    if (targetIndicatorMeshRef.current) targetIndicatorMeshRef.current.count = targetIndicatorCount;
-    // New tower-like instance counts
     if (leftShoulderMeshRef.current) leftShoulderMeshRef.current.count = shoulderCount;
     if (rightShoulderMeshRef.current) rightShoulderMeshRef.current.count = shoulderCount;
     if (leftShoulderRingMeshRef.current) leftShoulderRingMeshRef.current.count = shoulderRingCount;
     if (rightShoulderRingMeshRef.current) rightShoulderRingMeshRef.current.count = shoulderRingCount;
+    if (leftArmMeshRef.current) leftArmMeshRef.current.count = armCount;
+    if (rightArmMeshRef.current) rightArmMeshRef.current.count = armCount;
     if (energyTendrilsMeshRef.current) energyTendrilsMeshRef.current.count = energyTendrilsCount;
     if (energyAuraMeshRef.current) energyAuraMeshRef.current.count = energyAuraCount;
+    if (healthBarBgMeshRef.current) healthBarBgMeshRef.current.count = healthBarBgCount;
+    if (healthBarFillMeshRef.current) healthBarFillMeshRef.current.count = healthBarFillCount;
+    if (deathEffectMeshRef.current) deathEffectMeshRef.current.count = deathEffectCount;
+    if (targetIndicatorMeshRef.current) targetIndicatorMeshRef.current.count = targetIndicatorCount;
 
-    // Mark instances as needing update
+    // Mark instances as needing update - Crystal model
     if (bodyMeshRef.current) bodyMeshRef.current.instanceMatrix.needsUpdate = true;
     if (bodyMeshRef.current?.instanceColor) bodyMeshRef.current.instanceColor.needsUpdate = true;
     if (headMeshRef.current) headMeshRef.current.instanceMatrix.needsUpdate = true;
     if (headMeshRef.current?.instanceColor) headMeshRef.current.instanceColor.needsUpdate = true;
-    if (leftArmMeshRef.current) leftArmMeshRef.current.instanceMatrix.needsUpdate = true;
-    if (leftArmMeshRef.current?.instanceColor) leftArmMeshRef.current.instanceColor.needsUpdate = true;
-    if (rightArmMeshRef.current) rightArmMeshRef.current.instanceMatrix.needsUpdate = true;
-    if (rightArmMeshRef.current?.instanceColor) rightArmMeshRef.current.instanceColor.needsUpdate = true;
-    if (leftLegMeshRef.current) leftLegMeshRef.current.instanceMatrix.needsUpdate = true;
-    if (leftLegMeshRef.current?.instanceColor) leftLegMeshRef.current.instanceColor.needsUpdate = true;
-    if (rightLegMeshRef.current) rightLegMeshRef.current.instanceMatrix.needsUpdate = true;
-    if (rightLegMeshRef.current?.instanceColor) rightLegMeshRef.current.instanceColor.needsUpdate = true;
-    if (weaponMeshRef.current) weaponMeshRef.current.instanceMatrix.needsUpdate = true;
-    if (healthBarBgMeshRef.current) healthBarBgMeshRef.current.instanceMatrix.needsUpdate = true;
-    if (healthBarFillMeshRef.current) healthBarFillMeshRef.current.instanceMatrix.needsUpdate = true;
-    if (healthBarFillMeshRef.current?.instanceColor) healthBarFillMeshRef.current.instanceColor.needsUpdate = true;
-    if (deathEffectMeshRef.current) deathEffectMeshRef.current.instanceMatrix.needsUpdate = true;
-    if (targetIndicatorMeshRef.current) targetIndicatorMeshRef.current.instanceMatrix.needsUpdate = true;
-    if (targetIndicatorMeshRef.current?.instanceColor) targetIndicatorMeshRef.current.instanceColor.needsUpdate = true;
-    // New tower-like instance updates
     if (leftShoulderMeshRef.current) leftShoulderMeshRef.current.instanceMatrix.needsUpdate = true;
     if (leftShoulderMeshRef.current?.instanceColor) leftShoulderMeshRef.current.instanceColor.needsUpdate = true;
     if (rightShoulderMeshRef.current) rightShoulderMeshRef.current.instanceMatrix.needsUpdate = true;
@@ -529,15 +488,26 @@ export default function InstancedSummonedUnitRenderer({
     if (leftShoulderRingMeshRef.current?.instanceColor) leftShoulderRingMeshRef.current.instanceColor.needsUpdate = true;
     if (rightShoulderRingMeshRef.current) rightShoulderRingMeshRef.current.instanceMatrix.needsUpdate = true;
     if (rightShoulderRingMeshRef.current?.instanceColor) rightShoulderRingMeshRef.current.instanceColor.needsUpdate = true;
+    if (leftArmMeshRef.current) leftArmMeshRef.current.instanceMatrix.needsUpdate = true;
+    if (leftArmMeshRef.current?.instanceColor) leftArmMeshRef.current.instanceColor.needsUpdate = true;
+    if (rightArmMeshRef.current) rightArmMeshRef.current.instanceMatrix.needsUpdate = true;
+    if (rightArmMeshRef.current?.instanceColor) rightArmMeshRef.current.instanceColor.needsUpdate = true;
     if (energyTendrilsMeshRef.current) energyTendrilsMeshRef.current.instanceMatrix.needsUpdate = true;
     if (energyTendrilsMeshRef.current?.instanceColor) energyTendrilsMeshRef.current.instanceColor.needsUpdate = true;
     if (energyAuraMeshRef.current) energyAuraMeshRef.current.instanceMatrix.needsUpdate = true;
     if (energyAuraMeshRef.current?.instanceColor) energyAuraMeshRef.current.instanceColor.needsUpdate = true;
+    if (healthBarBgMeshRef.current) healthBarBgMeshRef.current.instanceMatrix.needsUpdate = true;
+    if (healthBarFillMeshRef.current) healthBarFillMeshRef.current.instanceMatrix.needsUpdate = true;
+    if (healthBarFillMeshRef.current?.instanceColor) healthBarFillMeshRef.current.instanceColor.needsUpdate = true;
+    if (deathEffectMeshRef.current) deathEffectMeshRef.current.instanceMatrix.needsUpdate = true;
+    if (targetIndicatorMeshRef.current) targetIndicatorMeshRef.current.instanceMatrix.needsUpdate = true;
+    if (targetIndicatorMeshRef.current?.instanceColor) targetIndicatorMeshRef.current.instanceColor.needsUpdate = true;
   };
 
   // Animation and updates
   useFrame((state) => {
     const currentTime = state.clock.elapsedTime;
+    const deltaTime = state.clock.getDelta();
 
     // Update unit instances from world state
     updateUnitInstances();
@@ -545,17 +515,142 @@ export default function InstancedSummonedUnitRenderer({
     // Update instanced meshes
     updateInstancedMeshes();
 
-    // Gentle floating animation for alive units (optional - can be removed for more performance)
+    // Apply animations to instanced meshes
     const instances = Array.from(unitInstances.current.values());
+
+    // Gentle floating and rotation animations for alive units
     for (let i = 0; i < instances.length; i++) {
       const unit = instances[i];
       if (unit.isDead) continue;
 
-      // Only update floating for units that need it (throttled)
-      if (i % 3 === Math.floor(currentTime * 10) % 3) { // Update every 3rd unit per frame
-        const floatOffset = Math.sin(currentTime * 2 + i) * 0.05;
-        // This would require updating the position in the instance data
-        // For now, we'll skip this to maintain performance
+      // Calculate floating offset (gentle up/down motion)
+      const floatOffset = Math.sin(currentTime * 2 + i * 0.1) * 0.05;
+
+      // Update body position for floating
+      if (bodyMeshRef.current && bodyMeshRef.current.count > i) {
+        tempObject.current.position.copy(unit.position);
+        tempObject.current.position.y += 0.8625 + floatOffset; // Base height + float
+        tempObject.current.updateMatrix();
+        bodyMeshRef.current.setMatrixAt(i, tempObject.current.matrix);
+        bodyMeshRef.current.instanceMatrix.needsUpdate = true;
+      }
+
+      // Update head position and rotation
+      if (headMeshRef.current && headMeshRef.current.count > i) {
+        tempObject.current.position.set(
+          unit.position.x,
+          unit.position.y + 1.2 + floatOffset,
+          unit.position.z
+        );
+        tempObject.current.rotation.set(0, currentTime * 0.5 + i * 0.1, 0); // Gentle rotation based on time
+        tempObject.current.updateMatrix();
+        headMeshRef.current.setMatrixAt(i, tempObject.current.matrix);
+        headMeshRef.current.instanceMatrix.needsUpdate = true;
+      }
+
+      // Update shoulder positions with float
+      if (leftShoulderMeshRef.current && leftShoulderMeshRef.current.count > i) {
+        tempObject.current.position.set(
+          unit.position.x - 0.36,
+          unit.position.y + 1.08 + floatOffset,
+          unit.position.z
+        );
+        tempObject.current.updateMatrix();
+        leftShoulderMeshRef.current.setMatrixAt(i, tempObject.current.matrix);
+        leftShoulderMeshRef.current.instanceMatrix.needsUpdate = true;
+      }
+
+      if (rightShoulderMeshRef.current && rightShoulderMeshRef.current.count > i) {
+        tempObject.current.position.set(
+          unit.position.x + 0.36,
+          unit.position.y + 1.08 + floatOffset,
+          unit.position.z
+        );
+        tempObject.current.updateMatrix();
+        rightShoulderMeshRef.current.setMatrixAt(i, tempObject.current.matrix);
+        rightShoulderMeshRef.current.instanceMatrix.needsUpdate = true;
+      }
+
+      // Update shoulder rings with float
+      if (leftShoulderRingMeshRef.current && leftShoulderRingMeshRef.current.count > i) {
+        tempObject.current.position.set(
+          unit.position.x - 0.36,
+          unit.position.y + 1.08 + floatOffset,
+          unit.position.z
+        );
+        tempObject.current.rotation.set(Math.PI / 2, -Math.PI / 4, 0);
+        tempObject.current.updateMatrix();
+        leftShoulderRingMeshRef.current.setMatrixAt(i, tempObject.current.matrix);
+        leftShoulderRingMeshRef.current.instanceMatrix.needsUpdate = true;
+      }
+
+      if (rightShoulderRingMeshRef.current && rightShoulderRingMeshRef.current.count > i) {
+        tempObject.current.position.set(
+          unit.position.x + 0.36,
+          unit.position.y + 1.08 + floatOffset,
+          unit.position.z
+        );
+        tempObject.current.rotation.set(Math.PI / 2, Math.PI / 4, 0);
+        tempObject.current.updateMatrix();
+        rightShoulderRingMeshRef.current.setMatrixAt(i, tempObject.current.matrix);
+        rightShoulderRingMeshRef.current.instanceMatrix.needsUpdate = true;
+      }
+
+      // Update arm positions with float
+      if (leftArmMeshRef.current && leftArmMeshRef.current.count > i) {
+        tempObject.current.position.set(
+          unit.position.x - 0.42,
+          unit.position.y + 0.84 + floatOffset,
+          unit.position.z - 0.03
+        );
+        tempObject.current.rotation.set(0, 0, -0.3);
+        tempObject.current.updateMatrix();
+        leftArmMeshRef.current.setMatrixAt(i, tempObject.current.matrix);
+        leftArmMeshRef.current.instanceMatrix.needsUpdate = true;
+      }
+
+      if (rightArmMeshRef.current && rightArmMeshRef.current.count > i) {
+        tempObject.current.position.set(
+          unit.position.x + 0.42,
+          unit.position.y + 0.84 + floatOffset,
+          unit.position.z + 0.03
+        );
+        tempObject.current.rotation.set(0, 0, 0.3);
+        tempObject.current.updateMatrix();
+        rightArmMeshRef.current.setMatrixAt(i, tempObject.current.matrix);
+        rightArmMeshRef.current.instanceMatrix.needsUpdate = true;
+      }
+
+      // Update energy tendrils (orbiting animation)
+      if (energyTendrilsMeshRef.current) {
+        const tendrilCount = 8;
+        for (let t = 0; t < tendrilCount; t++) {
+          const angle = (t / tendrilCount) * Math.PI * 2 + currentTime * 0.5; // Add rotation over time
+          const radius = 0.39;
+          const height = 1.32;
+
+          tempObject.current.position.set(
+            unit.position.x + Math.cos(angle) * radius,
+            unit.position.y + height + floatOffset + Math.sin(angle) * radius * 0.3,
+            unit.position.z + Math.sin(angle) * radius
+          );
+          tempObject.current.rotation.set(Math.PI / 2, angle + Math.PI, -Math.PI / 2);
+          tempObject.current.updateMatrix();
+          energyTendrilsMeshRef.current.setMatrixAt(i * tendrilCount + t, tempObject.current.matrix);
+        }
+        energyTendrilsMeshRef.current.instanceMatrix.needsUpdate = true;
+      }
+
+      // Update energy aura position with float
+      if (energyAuraMeshRef.current && energyAuraMeshRef.current.count > i) {
+        tempObject.current.position.set(
+          unit.position.x,
+          unit.position.y + 0.9 + floatOffset,
+          unit.position.z
+        );
+        tempObject.current.updateMatrix();
+        energyAuraMeshRef.current.setMatrixAt(i, tempObject.current.matrix);
+        energyAuraMeshRef.current.instanceMatrix.needsUpdate = true;
       }
     }
   });
@@ -568,7 +663,7 @@ export default function InstancedSummonedUnitRenderer({
 
   return (
     <group>
-      {/* Body */}
+      {/* Main Body - Crystal-like Octahedron */}
       <instancedMesh
         ref={bodyMeshRef}
         args={[sharedGeometries.body, sharedMaterials.body, maxUnits]}
@@ -576,82 +671,61 @@ export default function InstancedSummonedUnitRenderer({
         receiveShadow
       />
 
-      {/* Head */}
+      {/* Head - Crystal-like Octahedron */}
       <instancedMesh
         ref={headMeshRef}
         args={[sharedGeometries.head, sharedMaterials.head, maxUnits]}
         castShadow
       />
 
-      {/* Left Shoulder */}
+      {/* Left Shoulder - Crystal sphere */}
       <instancedMesh
         ref={leftShoulderMeshRef}
         args={[sharedGeometries.shoulder, sharedMaterials.shoulder, maxUnits]}
         castShadow
       />
 
-      {/* Right Shoulder */}
+      {/* Right Shoulder - Crystal sphere */}
       <instancedMesh
         ref={rightShoulderMeshRef}
         args={[sharedGeometries.shoulder, sharedMaterials.shoulder, maxUnits]}
         castShadow
       />
 
-      {/* Left Shoulder Ring */}
+      {/* Left Shoulder Ring - Energy ring */}
       <instancedMesh
         ref={leftShoulderRingMeshRef}
         args={[sharedGeometries.shoulderRing, sharedMaterials.shoulderRing, maxUnits]}
       />
 
-      {/* Right Shoulder Ring */}
+      {/* Right Shoulder Ring - Energy ring */}
       <instancedMesh
         ref={rightShoulderRingMeshRef}
         args={[sharedGeometries.shoulderRing, sharedMaterials.shoulderRing, maxUnits]}
       />
 
-      {/* Left Arm */}
+      {/* Left Energy Arm - Crystal cylinder */}
       <instancedMesh
         ref={leftArmMeshRef}
         args={[sharedGeometries.arm, sharedMaterials.arm, maxUnits]}
         castShadow
       />
 
-      {/* Right Arm */}
+      {/* Right Energy Arm - Crystal cylinder */}
       <instancedMesh
         ref={rightArmMeshRef}
         args={[sharedGeometries.arm, sharedMaterials.arm, maxUnits]}
         castShadow
       />
 
-      {/* Left Leg */}
-      <instancedMesh
-        ref={leftLegMeshRef}
-        args={[sharedGeometries.leg, sharedMaterials.leg, maxUnits]}
-        castShadow
-      />
-
-      {/* Right Leg */}
-      <instancedMesh
-        ref={rightLegMeshRef}
-        args={[sharedGeometries.leg, sharedMaterials.leg, maxUnits]}
-        castShadow
-      />
-
-      {/* Weapon */}
-      <instancedMesh
-        ref={weaponMeshRef}
-        args={[sharedGeometries.weapon, sharedMaterials.weapon, maxUnits]}
-        castShadow
-      />
-
-      {/* Energy Tendrils */}
+      {/* Energy Tendrils - 8 orbiting crystal spikes */}
       <instancedMesh
         ref={energyTendrilsMeshRef}
-        args={[sharedGeometries.energyTendril, sharedMaterials.energyTendril, maxUnits * 6]}
+        args={[sharedGeometries.energyTendril, sharedMaterials.energyTendril, maxUnits * 8]}
         castShadow
       />
 
-      {/* Energy Aura */}
+      {/* Energy Aura - Crystal glow effect */}
       <instancedMesh
         ref={energyAuraMeshRef}
         args={[sharedGeometries.energyAura, sharedMaterials.energyAura, maxUnits]}
@@ -675,7 +749,7 @@ export default function InstancedSummonedUnitRenderer({
         args={[sharedGeometries.deathEffect, sharedMaterials.deathEffect, maxUnits]}
       />
 
-      {/* Target Indicator */}
+      {/* Crystal Target Indicator */}
       <instancedMesh
         ref={targetIndicatorMeshRef}
         args={[sharedGeometries.targetIndicator, sharedMaterials.targetIndicator, maxUnits]}

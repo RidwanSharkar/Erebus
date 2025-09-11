@@ -1,6 +1,5 @@
 import React, { useRef, useEffect, useMemo } from 'react';
-import * as THREE from 'three';
-import { Vector3 } from 'three';
+import { BufferGeometry, CylinderGeometry, MeshStandardMaterial, Group, Mesh, Vector3, Quaternion, Color } from '../../utils/three-exports';
 
 interface TreeBranch {
   start: Vector3;
@@ -15,7 +14,7 @@ export interface DetailedTree {
   scale: number;
   height: number;
   trunkRadius: number;
-  trunkColor: THREE.Color;
+  trunkColor: Color;
 }
 
 interface DetailedTreesProps {
@@ -125,7 +124,7 @@ const generateTreeStructure = (): TreeBranch[] => {
 };
 
 // Function to create branch geometry
-const createBranchGeometry = (branch: TreeBranch, isTerminal: boolean = false): THREE.BufferGeometry => {
+const createBranchGeometry = (branch: TreeBranch, isTerminal: boolean = false): BufferGeometry => {
   const direction = branch.end.clone().sub(branch.start);
   const length = direction.length();
 
@@ -135,7 +134,7 @@ const createBranchGeometry = (branch: TreeBranch, isTerminal: boolean = false): 
   const bottomRadius = branch.radius;
 
   // Create a cylinder (or cone if terminal) for the branch
-  const geometry = new THREE.CylinderGeometry(
+  const geometry = new CylinderGeometry(
     topRadius,     // Top radius (0 for terminal branches, smaller for others)
     bottomRadius,  // Bottom radius
     length,
@@ -149,7 +148,7 @@ const createBranchGeometry = (branch: TreeBranch, isTerminal: boolean = false): 
 };
 
 const DetailedTrees: React.FC<DetailedTreesProps> = ({ trees }) => {
-  const treeGroupsRef = useRef<THREE.Group[]>([]);
+  const treeGroupsRef = useRef<Group[]>([]);
 
   // Generate tree structures
   const treeStructures = useMemo(() => {
@@ -170,10 +169,10 @@ const DetailedTrees: React.FC<DetailedTreesProps> = ({ trees }) => {
 
     // Create new trees
     treeStructures.forEach((tree) => {
-      const treeGroup = new THREE.Group();
+      const treeGroup = new Group();
 
       // Create trunk
-      const trunkGeometry = new THREE.CylinderGeometry(
+      const trunkGeometry = new CylinderGeometry(
         tree.trunkRadius * 0.8,
         tree.trunkRadius,
         tree.height,
@@ -186,7 +185,7 @@ const DetailedTrees: React.FC<DetailedTreesProps> = ({ trees }) => {
         1.0 + Math.random() * barkColorVariation // Keep trunk at full brightness (was 0.9)
       );
 
-      const trunkMaterial = new THREE.MeshStandardMaterial({
+      const trunkMaterial = new MeshStandardMaterial({
         color: trunkColorWithVariation,
         roughness: 0.85 + Math.random() * 0.1, // 0.85-0.95 for bark texture
         metalness: 0.05 + Math.random() * 0.05, // 0.05-0.1 for subtle variation
@@ -194,12 +193,12 @@ const DetailedTrees: React.FC<DetailedTreesProps> = ({ trees }) => {
         emissiveIntensity: 0.15 + Math.random() * 0.1
       });
 
-      const trunkMesh = new THREE.Mesh(trunkGeometry, trunkMaterial);
+      const trunkMesh = new Mesh(trunkGeometry, trunkMaterial);
       trunkMesh.position.y = tree.height / 2;
       treeGroup.add(trunkMesh);
 
       // Create branches recursively
-      const createBranches = (branches: TreeBranch[], parentGroup: THREE.Group) => {
+      const createBranches = (branches: TreeBranch[], parentGroup: Group) => {
         branches.forEach(branch => {
           const branchGeometry = createBranchGeometry(branch);
 
@@ -209,7 +208,7 @@ const DetailedTrees: React.FC<DetailedTreesProps> = ({ trees }) => {
             0.85 + Math.random() * branchColorVariation // Branches slightly darker than trunk (was 0.7)
           );
 
-          const branchMaterial = new THREE.MeshStandardMaterial({
+          const branchMaterial = new MeshStandardMaterial({
             color: branchColor,
             roughness: 0.9 + Math.random() * 0.08, // 0.9-0.98 for branch texture
             metalness: 0.02 + Math.random() * 0.03, // 0.02-0.05 for subtle variation
@@ -217,7 +216,7 @@ const DetailedTrees: React.FC<DetailedTreesProps> = ({ trees }) => {
             emissiveIntensity: 0.08 + Math.random() * 0.07
           });
 
-          const branchMesh = new THREE.Mesh(branchGeometry, branchMaterial);
+          const branchMesh = new Mesh(branchGeometry, branchMaterial);
 
           // Position branch at start point
           branchMesh.position.copy(branch.start);
@@ -227,7 +226,7 @@ const DetailedTrees: React.FC<DetailedTreesProps> = ({ trees }) => {
           const up = new Vector3(0, 1, 0);
 
           // Create quaternion to rotate from up vector to branch direction
-          const quaternion = new THREE.Quaternion();
+          const quaternion = new Quaternion();
           quaternion.setFromUnitVectors(up, direction);
           branchMesh.setRotationFromQuaternion(quaternion);
 

@@ -1,6 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Vector3 } from '@/utils/three-exports';
-import * as THREE from 'three';
+import { Vector3, AdditiveBlending } from '@/utils/three-exports';
 
 interface CrossentropyExplosionProps {
   position: Vector3;
@@ -71,7 +70,7 @@ export default function CrossentropyExplosion({
           transparent
           opacity={0.85 * fade}
           depthWrite={false}
-          blending={THREE.AdditiveBlending}
+          blending={AdditiveBlending}
         />
       </mesh>
       
@@ -85,7 +84,7 @@ export default function CrossentropyExplosion({
           transparent
           opacity={0.9 * fade}
           depthWrite={false}
-          blending={THREE.AdditiveBlending}
+          blending={AdditiveBlending}
         />
       </mesh>
 
@@ -99,7 +98,7 @@ export default function CrossentropyExplosion({
           transparent
           opacity={0.7 * fade}
           depthWrite={false}
-          blending={THREE.AdditiveBlending}
+          blending={AdditiveBlending}
         />
       </mesh>
 
@@ -114,7 +113,7 @@ export default function CrossentropyExplosion({
             transparent
             opacity={0.8 * fade * (1 - i * 0.12)}
             depthWrite={false}
-            blending={THREE.AdditiveBlending}
+            blending={AdditiveBlending}
           />
         </mesh>
       ))}
@@ -144,7 +143,7 @@ export default function CrossentropyExplosion({
               transparent
               opacity={0.95 * fade}
               depthWrite={false}
-              blending={THREE.AdditiveBlending}
+              blending={AdditiveBlending}
             />
           </mesh>
         );
@@ -175,7 +174,7 @@ export default function CrossentropyExplosion({
               transparent
               opacity={0.9 * fade}
               depthWrite={false}
-              blending={THREE.AdditiveBlending}
+              blending={AdditiveBlending}
             />
           </mesh>
         );

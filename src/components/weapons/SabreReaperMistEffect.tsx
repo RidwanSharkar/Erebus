@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import * as THREE from 'three';
+import { Vector3, SphereGeometry, MeshStandardMaterial } from '@/utils/three-exports';
 
 interface ParticleData {
   initialAngle: number;
@@ -9,7 +9,7 @@ interface ParticleData {
 }
 
 interface SabreReaperMistEffectProps {
-  position: THREE.Vector3;
+  position: Vector3;
   duration?: number;
   onComplete?: () => void;
 }
@@ -35,8 +35,8 @@ export default function SabreReaperMistEffect({
   const [progress, setProgress] = useState(0);
 
   // Create simple geometries and materials for the particles (no pooling for now)
-  const particleGeometry = useMemo(() => new THREE.SphereGeometry(0.1, 8, 8), []);
-  const particleMaterial = useMemo(() => new THREE.MeshStandardMaterial({
+  const particleGeometry = useMemo(() => new SphereGeometry(0.1, 8, 8), []);
+  const particleMaterial = useMemo(() => new MeshStandardMaterial({
     color: "#ff0000", // Red theme for sabres
     emissive: "#aa0000",
     emissiveIntensity: 0.8,

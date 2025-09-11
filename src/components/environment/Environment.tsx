@@ -9,8 +9,7 @@ import PillarCollision from './PillarCollision';
 import DetailedTrees, { DetailedTree } from './DetailedTrees';
 import TreeCollision from './TreeCollision';
 import AtmosphericParticles from './AtmosphericParticles';
-import VolumetricLighting from './VolumetricLighting';
-import { LODWrapper } from './LODManager';
+
 import { generateMountains } from '@/utils/MountainGenerator';
 import { World } from '@/ecs/World';
 import { Vector3, Color } from '@/utils/three-exports';
@@ -47,25 +46,14 @@ const Environment: React.FC<EnvironmentProps> = ({
   // Define pedestal position
   const pedestalPosition: [number, number, number] = useMemo(() => [0, 0, 0], []);
 
-  // Define tree positions for natural forest arrangement
+  // Define tree positions for natural forest arrangement (reduced by half, removed inner trees)
   const treePositions: DetailedTree[] = useMemo(() => [
-    // Inner ring trees (closer to center)
-    { position: new Vector3(8, 0, 8), scale: 0.8, height: 4, trunkRadius: 0.2, trunkColor: new Color(0x4a3c28) },
-    { position: new Vector3(-8, 0, 8), scale: 0.9, height: 4.2, trunkRadius: 0.22, trunkColor: new Color(0x3d301f) },
-    { position: new Vector3(8, 0, -8), scale: 0.85, height: 3.8, trunkRadius: 0.18, trunkColor: new Color(0x5a4a35) },
-    { position: new Vector3(-8, 0, -8), scale: 0.95, height: 4.5, trunkRadius: 0.25, trunkColor: new Color(0x2d2418) },
-
-    // Middle ring trees
+    // Middle ring trees (selectively kept - medium distance from center)
     { position: new Vector3(15, 0, 5), scale: 1.0, height: 4.8, trunkRadius: 0.24, trunkColor: new Color(0x4a3c28) },
     { position: new Vector3(-15, 0, 5), scale: 0.9, height: 4.2, trunkRadius: 0.20, trunkColor: new Color(0x3d301f) },
-    { position: new Vector3(15, 0, -5), scale: 0.85, height: 3.9, trunkRadius: 0.19, trunkColor: new Color(0x5a4a35) },
-    { position: new Vector3(-15, 0, -5), scale: 0.95, height: 4.3, trunkRadius: 0.23, trunkColor: new Color(0x2d2418) },
     { position: new Vector3(5, 0, 15), scale: 0.9, height: 4.1, trunkRadius: 0.21, trunkColor: new Color(0x4a3c28) },
-    { position: new Vector3(-5, 0, 15), scale: 1.0, height: 4.7, trunkRadius: 0.24, trunkColor: new Color(0x3d301f) },
-    { position: new Vector3(5, 0, -15), scale: 0.85, height: 3.8, trunkRadius: 0.18, trunkColor: new Color(0x5a4a35) },
-    { position: new Vector3(-5, 0, -15), scale: 0.9, height: 4.4, trunkRadius: 0.22, trunkColor: new Color(0x2d2418) },
 
-    // Outer ring trees (near map boundary but within collision radius)
+    // Outer ring trees (kept all - furthest from center, near map boundary)
     { position: new Vector3(20, 0, 10), scale: 1.1, height: 5.0, trunkRadius: 0.26, trunkColor: new Color(0x4a3c28) },
     { position: new Vector3(-20, 0, 10), scale: 0.95, height: 4.5, trunkRadius: 0.23, trunkColor: new Color(0x3d301f) },
     { position: new Vector3(20, 0, -10), scale: 0.9, height: 4.2, trunkRadius: 0.20, trunkColor: new Color(0x5a4a35) },
@@ -75,11 +63,8 @@ const Environment: React.FC<EnvironmentProps> = ({
     { position: new Vector3(10, 0, -20), scale: 0.95, height: 4.3, trunkRadius: 0.22, trunkColor: new Color(0x5a4a35) },
     { position: new Vector3(-10, 0, -20), scale: 0.9, height: 4.0, trunkRadius: 0.20, trunkColor: new Color(0x2d2418) },
 
-    // Additional scattered trees for natural look
+    // Additional scattered tree (kept one for natural look)
     { position: new Vector3(12, 0, 12), scale: 0.8, height: 3.7, trunkRadius: 0.17, trunkColor: new Color(0x4a3c28) },
-    { position: new Vector3(-12, 0, 12), scale: 0.95, height: 4.4, trunkRadius: 0.23, trunkColor: new Color(0x3d301f) },
-    { position: new Vector3(12, 0, -12), scale: 1.0, height: 4.7, trunkRadius: 0.25, trunkColor: new Color(0x5a4a35) },
-    { position: new Vector3(-12, 0, -12), scale: 0.85, height: 3.8, trunkRadius: 0.18, trunkColor: new Color(0x2d2418) },
   ], []);
 
   return (
@@ -90,48 +75,14 @@ const Environment: React.FC<EnvironmentProps> = ({
       {/* Enhanced ground with procedural textures */}
       <EnhancedGround level={level} />
 
-      {/* Distant planet with rings - using LOD for performance */}
-      {enablePlanet && (
-        <LODWrapper
-          position={[100, 80, -150]}
-          highDetailDistance={200}
-          mediumDetailDistance={400}
-          lowDetailDistance={600}
-          highDetail={<Planet />}
-          mediumDetail={
-            <group position={[100, 80, -150]} scale={[12, 12, 12]}>
-              <mesh>
-                <sphereGeometry args={[1, 16, 16]} />
-                <meshStandardMaterial color="#B8E0D2" emissive="#B8E0D2" emissiveIntensity={0.5} />
-              </mesh>
-            </group>
-          }
-          lowDetail={
-            <group position={[100, 80, -150]} scale={[8, 8, 8]}>
-              <mesh>
-                <sphereGeometry args={[1, 8, 8]} />
-                <meshBasicMaterial color="#4dff90" />
-              </mesh>
-            </group>
-          }
-        />
-      )}
 
-      {/* Volumetric lighting from the distant planet */}
-      {enablePlanet && (
-        <VolumetricLighting
-          lightPosition={[100, 80, -150]}
-          cameraPosition={[0, 2, 0]}
-          intensity={0.2}
-          color="#4dff90"
-        />
-      )}
+      <Planet />
+
 
       {/* Mountain border around the map */}
       {enableMountains && <InstancedMountains mountains={mountains} />}
 
-      {/* Forest of detailed trees */}
-      <DetailedTrees trees={treePositions} />
+
 
       {/* Central Pedestal */}
       <Pedestal position={pedestalPosition} scale={0.4} level={level} />

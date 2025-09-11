@@ -1,7 +1,6 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3 } from 'three';
-import * as THREE from 'three';
+import { Group, Vector3, AdditiveBlending } from '@/utils/three-exports';
 
 interface ViperStingProjectile {
   id: number;
@@ -82,7 +81,7 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
               emissiveIntensity={1.5 + 1}
               transparent
               opacity={projectile.opacity * 0.7}
-              blending={THREE.AdditiveBlending}
+              blending={AdditiveBlending}
               depthWrite={false}
             />
           </mesh>
@@ -98,7 +97,7 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
           emissiveIntensity={3}
           transparent
           opacity={projectile.opacity}
-          blending={THREE.AdditiveBlending}
+          blending={AdditiveBlending}
           depthWrite={false}
         />
       </mesh>
@@ -126,7 +125,7 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
                 emissiveIntensity={4 + 2}
                 transparent
                 opacity={trailOpacity}
-                blending={THREE.AdditiveBlending}
+                blending={AdditiveBlending}
                 depthWrite={false}
               />
             </mesh>
@@ -140,7 +139,7 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
                 emissiveIntensity={2 + 1}
                 transparent
                 opacity={trailOpacity * 0.5}
-                blending={THREE.AdditiveBlending}
+                blending={AdditiveBlending}
                 depthWrite={false}
               />
             </mesh>

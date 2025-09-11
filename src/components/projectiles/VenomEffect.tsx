@@ -2,8 +2,7 @@
 
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3 } from '@/utils/three-exports';
-import * as THREE from 'three';
+import { Group, Vector3, Mesh, MeshStandardMaterial, AdditiveBlending } from '@/utils/three-exports';
 
 interface VenomEffectProps {
   position: Vector3;
@@ -61,8 +60,8 @@ export default function VenomEffect({
       1 - progress; // Fade out for one-time effects
     
     groupRef.current.children.forEach(child => {
-      if (child instanceof THREE.Mesh) {
-        const material = child.material as THREE.MeshStandardMaterial;
+      if (child instanceof Mesh) {
+        const material = child.material as MeshStandardMaterial;
         if (material.opacity !== undefined) {
           material.opacity = pulseOpacity;
         }
@@ -94,7 +93,7 @@ export default function VenomEffect({
           transparent
           opacity={0.8}
           depthWrite={false}
-          blending={THREE.AdditiveBlending}
+          blending={AdditiveBlending}
         />
       </mesh>
       
@@ -108,7 +107,7 @@ export default function VenomEffect({
           transparent
           opacity={0.9}
           depthWrite={false}
-          blending={THREE.AdditiveBlending}
+          blending={AdditiveBlending}
         />
       </mesh>
       
@@ -134,7 +133,7 @@ export default function VenomEffect({
               transparent
               opacity={0.7}
               depthWrite={false}
-              blending={THREE.AdditiveBlending}
+              blending={AdditiveBlending}
             />
           </mesh>
         );
@@ -162,7 +161,7 @@ export default function VenomEffect({
               transparent
               opacity={0.8}
               depthWrite={false}
-              blending={THREE.AdditiveBlending}
+              blending={AdditiveBlending}
             />
           </mesh>
         );

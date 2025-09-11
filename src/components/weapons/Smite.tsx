@@ -1,8 +1,7 @@
 import { useRef, useMemo } from 'react';
-import { Group, Vector3 } from 'three';
+import { Group, Vector3, CylinderGeometry, TorusGeometry, SphereGeometry, MeshStandardMaterial, Euler } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { WeaponType } from '../dragon/weapons';
-import * as THREE from 'three';
 
 interface SmiteProps {
   weaponType: WeaponType;
@@ -36,76 +35,76 @@ export default function Smite({
 
   // useMemo for static geometries - made more narrow and concentrated
   const cylinderGeometries = useMemo(() => ({
-    core: new THREE.CylinderGeometry(0.08, 0.08, 20, 16),    // Narrower core
-    inner: new THREE.CylinderGeometry(0.18, 0.18, 20, 16),    // More concentrated
-    outer: new THREE.CylinderGeometry(0.32, 0.32, 20, 16),    // Tighter outer beam
-    glow1: new THREE.CylinderGeometry(0.45, 0.45, 20, 16),    // Reduced glow
-    glow2: new THREE.CylinderGeometry(0.55, 0.45, 20, 16),    // More focused
-    outerGlow: new THREE.CylinderGeometry(0.6, 0.65, 20, 16),  // Concentrated outer glow
-    torus: new THREE.TorusGeometry(0.85, 0.08, 8, 32),       // Smaller spiral rings
-    skyTorus: new THREE.TorusGeometry(0.7, 0.08, 32, 32),     // More compact sky effects
-    sphere: new THREE.SphereGeometry(0.12, 8, 8)               // Smaller particles
+    core: new CylinderGeometry(0.08, 0.08, 20, 16),    // Narrower core
+    inner: new CylinderGeometry(0.18, 0.18, 20, 16),    // More concentrated
+    outer: new CylinderGeometry(0.32, 0.32, 20, 16),    // Tighter outer beam
+    glow1: new CylinderGeometry(0.45, 0.45, 20, 16),    // Reduced glow
+    glow2: new CylinderGeometry(0.55, 0.45, 20, 16),    // More focused
+    outerGlow: new CylinderGeometry(0.6, 0.65, 20, 16),  // Concentrated outer glow
+    torus: new TorusGeometry(0.85, 0.08, 8, 32),       // Smaller spiral rings
+    skyTorus: new TorusGeometry(0.7, 0.08, 32, 32),     // More compact sky effects
+    sphere: new SphereGeometry(0.12, 8, 8)               // Smaller particles
   }), []);
 
   // Use useMemo for static materials
   const materials = useMemo(() => ({
-    core: new THREE.MeshStandardMaterial({
+    core: new MeshStandardMaterial({
       color: "#00FF88",
       emissive: "#00FF88",
       emissiveIntensity: 50,
       transparent: true,
       opacity: 0.995
     }),
-    inner: new THREE.MeshStandardMaterial({
+    inner: new MeshStandardMaterial({
       color: "#00FF88",
       emissive: "#00FF88",
       emissiveIntensity: 30,
       transparent: true,
       opacity: 0.675
     }),
-    outer: new THREE.MeshStandardMaterial({
+    outer: new MeshStandardMaterial({
       color: "#00FF88",
       emissive: "#00FF88",
       emissiveIntensity: 20,
       transparent: true,
       opacity: 0.625
     }),
-    glow1: new THREE.MeshStandardMaterial({
+    glow1: new MeshStandardMaterial({
       color: "#00FF88",
       emissive: "#00FF88",
       emissiveIntensity: 4,
       transparent: true,
       opacity: 0.55
     }),
-    glow2: new THREE.MeshStandardMaterial({
+    glow2: new MeshStandardMaterial({
       color: "#00FF88",
       emissive: "#00AA44",
       emissiveIntensity: 3,
       transparent: true,
       opacity: 0.425
     }),
-    outerGlow: new THREE.MeshStandardMaterial({
+    outerGlow: new MeshStandardMaterial({
       color: "#00FF88",
       emissive: "#00AA44",
       emissiveIntensity: 1.5,
       transparent: true,
       opacity: 0.2
     }),
-    spiral: new THREE.MeshStandardMaterial({
+    spiral: new MeshStandardMaterial({
       color: "#00FF88",
       emissive: "#00AA44",
       emissiveIntensity: 10,
       transparent: true,
       opacity: 0.5
     }),
-    skySpiral: new THREE.MeshStandardMaterial({
+    skySpiral: new MeshStandardMaterial({
       color: "#00FF88",
       emissive: "#00AA44",
       emissiveIntensity: 10,
       transparent: true,
       opacity: 0.4
     }),
-    particle: new THREE.MeshStandardMaterial({
+    particle: new MeshStandardMaterial({
       color: "#00FF88",
       emissive: "#00AA44",
       emissiveIntensity: 10,
@@ -117,22 +116,22 @@ export default function Smite({
   // Pre-calculate spiral positions
   const spiralPositions = useMemo(() => (
     Array(3).fill(0).map((_, i) => ({
-      rotation: new THREE.Euler(Math.PI / 4, (i * Math.PI) / 1.5, Math.PI)
+      rotation: new Euler(Math.PI / 4, (i * Math.PI) / 1.5, Math.PI)
     }))
   ), []);
 
   // Pre-calculate sky spiral positions - more concentrated
   const skySpiralPositions = useMemo(() => (
     Array(16).fill(0).map((_, i) => ({
-      rotation: new THREE.Euler(0, (i * Math.PI) / 1.5, 0),
-      position: new THREE.Vector3(0, 6.0, 0)  // Reduced from 7.45 to 6.0 for more concentration
+      rotation: new Euler(0, (i * Math.PI) / 1.5, 0),
+      position: new Vector3(0, 6.0, 0)  // Reduced from 7.45 to 6.0 for more concentration
     }))
   ), []);
 
   // Pre-calculate particle positions - more concentrated for narrower beam
   const particlePositions = useMemo(() => (
     Array(8).fill(0).map((_, i) => ({
-      position: new THREE.Vector3(
+      position: new Vector3(
         Math.cos((i * Math.PI) / 4) * 0.6,  // Reduced from 1.0 to 0.6
         (i - 4) * 1.5,                     // Reduced vertical spread from 2 to 1.5
         Math.sin((i * Math.PI) / 4) * 0.6   // Reduced from 1.0 to 0.6

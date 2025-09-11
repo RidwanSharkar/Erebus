@@ -1780,6 +1780,19 @@ const hasMana = useCallback((amount: number) => {
             
             return updated;
           });
+        } else if (data.abilityType === 'colossus_strike') {
+          
+          // Create Colossus Strike visual effect for other players
+          const position = new Vector3(data.position.x, data.position.y, data.position.z);
+          const direction = new Vector3(data.direction.x, data.direction.y, data.direction.z);
+          
+          // Calculate position in front of the caster (same logic as local player)
+          const effectPosition = position.clone().add(direction.clone().normalize().multiplyScalar(2.5));
+          
+          // Create visual effect
+          createPvpColossusStrikeEffect(data.playerId, effectPosition);
+          
+          console.log(`⚡ Created Colossus Strike visual effect for remote player ${data.playerId}`);
         } else if (data.abilityType === 'backstab') {
           
           // Backstab is an instant melee attack, so we need to:
@@ -2603,9 +2616,10 @@ const hasMana = useCallback((amount: number) => {
         }
       });
 
-      // Set up multiplayer context reference for ControlSystem stealth broadcasting
+      // Set up multiplayer context reference for ControlSystem stealth broadcasting and ColossusStrike damage
       (window as any).multiplayerContext = {
-        broadcastPlayerStealth
+        broadcastPlayerStealth,
+        broadcastPlayerDamage
       };
       
       // Set up global control system reference for tower targeting
@@ -2683,6 +2697,13 @@ const hasMana = useCallback((amount: number) => {
         console.log('⚡ Colossus Strike triggered in PVP mode with rage:', rageSpent);
 
         // Create local Colossus Strike effect
+        // Calculate position in front of the player (like Smite)
+        const casterPosition = position.clone();
+        const casterDirection = direction.clone().normalize();
+        
+        // Position the effect 2.5 units in front of the caster (same as Smite)
+        const effectPosition = casterPosition.add(casterDirection.multiplyScalar(2.5));
+        
         // Find closest enemy player for targeting
         let closestTarget: any = null;
         let closestDistance = Infinity;
@@ -2691,7 +2712,7 @@ const hasMana = useCallback((amount: number) => {
           if (player.id === socket?.id) return; // Don't target self
 
           const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
-          const distance = position.distanceTo(playerPos);
+          const distance = effectPosition.distanceTo(playerPos);
           if (distance < closestDistance) {
             closestDistance = distance;
             closestTarget = player;
@@ -2708,11 +2729,10 @@ const hasMana = useCallback((amount: number) => {
 
           // Apply damage through broadcast system
           broadcastPlayerDamage(closestTarget.id, totalDamage, 'colossus_strike');
-
-          // Create visual effect at target position
-          const targetPos = new Vector3(closestTarget.position.x, closestTarget.position.y, closestTarget.position.z);
-          createPvpColossusStrikeEffect(closestTarget.id, targetPos);
         }
+
+        // Create visual effect at the calculated position (in front of caster)
+        createPvpColossusStrikeEffect(socket?.id || '', effectPosition);
 
         // Broadcast Colossus Strike ability to other players
         broadcastPlayerAbility('colossus_strike', position, direction);
@@ -3199,7 +3219,8 @@ const hasMana = useCallback((amount: number) => {
 
       {/* Server-Authoritative Summoned Units */}
       {engineRef.current && Array.from(summonedUnits.values()).map((unit) => {
-        if (!unit.isActive) return null;
+        // Filter out dead or inactive units
+        if (!unit.isActive || unit.isDead) return null;
 
         return (
           <SummonedUnitRenderer

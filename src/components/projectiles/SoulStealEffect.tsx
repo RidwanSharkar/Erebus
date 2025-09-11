@@ -1,7 +1,6 @@
 import React, { useRef, useEffect } from 'react';
-import { Vector3 } from '@/utils/three-exports';
+import { Vector3, Group, AdditiveBlending, DoubleSide } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
-import * as THREE from 'three';
 
 interface SoulStealEffectProps {
   id: number;
@@ -22,7 +21,7 @@ export default function SoulStealEffect({
   getCurrentPlayerPosition,
   onComplete
 }: SoulStealEffectProps) {
-  const groupRef = useRef<THREE.Group>(null);
+  const groupRef = useRef<Group>(null);
   const currentPosition = useRef(startPosition.clone());
   const hasCompleted = useRef(false);
 
@@ -78,7 +77,7 @@ export default function SoulStealEffect({
           emissiveIntensity={2}
           transparent
           opacity={0.8}
-          blending={THREE.AdditiveBlending}
+          blending={AdditiveBlending}
         />
       </mesh>
 
@@ -91,7 +90,7 @@ export default function SoulStealEffect({
           emissiveIntensity={1}
           transparent
           opacity={0.3}
-          blending={THREE.AdditiveBlending}
+          blending={AdditiveBlending}
         />
       </mesh>
 
@@ -113,7 +112,7 @@ export default function SoulStealEffect({
               emissiveIntensity={1.5}
               transparent
               opacity={0.6 - i * 0.2}
-              blending={THREE.AdditiveBlending}
+              blending={AdditiveBlending}
             />
           </mesh>
         );
@@ -128,8 +127,8 @@ export default function SoulStealEffect({
           emissiveIntensity={1.5}
           transparent
           opacity={0.4}
-          blending={THREE.AdditiveBlending}
-          side={THREE.DoubleSide}
+          blending={AdditiveBlending}
+          side={DoubleSide}
         />
       </mesh>
     </group>

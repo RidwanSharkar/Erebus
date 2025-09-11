@@ -44,7 +44,7 @@ export class SummonedUnit extends Component {
 
     // Combat configuration
     this.attackRange = 4; // 4 unit attack range as specified
-    this.attackDamage = 45; // 15 damage per hit as specified
+    this.attackDamage = 60; // 15 damage per hit as specified
     this.attackCooldown = 2.0; // 1 second between attacks
     this.lastAttackTime = 0;
     this.maxHealth = 1000; // 500 HP as specified
@@ -112,7 +112,7 @@ export class SummonedUnit extends Component {
     this.ownerId = '';
     this.unitId = '';
     this.attackRange = 4;
-    this.attackDamage = 45;
+    this.attackDamage = 60;
     this.attackCooldown = 2.0;
     this.lastAttackTime = 0;
     this.maxHealth = 1000;

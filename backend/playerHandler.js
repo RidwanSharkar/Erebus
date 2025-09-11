@@ -371,6 +371,17 @@ function handlePlayerEvents(socket, gameRooms) {
   socket.on('ping', () => {
     socket.emit('pong', Date.now());
   });
+
+  // TEMPORARY: Test wave completion (for debugging experience system)
+  socket.on('test-wave-completion', (data) => {
+    const { roomId } = data;
+    console.log(`🧪 Player ${socket.id} requesting test wave completion in room ${roomId}`);
+    
+    if (!gameRooms.has(roomId)) return;
+    
+    const room = gameRooms.get(roomId);
+    room.triggerTestWaveCompletion();
+  });
 }
 
 module.exports = { handlePlayerEvents };

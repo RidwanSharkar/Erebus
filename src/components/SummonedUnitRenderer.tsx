@@ -215,7 +215,7 @@ export default function SummonedUnitRenderer({
 
       {/* Energy Aura - Crystal glow effect */}
       <mesh position={[0, unitHeight * 0.75, 0]}>
-        <sphereGeometry args={[unitBaseRadius * 1.75, 8, 8]} />
+        <sphereGeometry args={[unitBaseRadius * 1.675, 8, 8]} />
         <meshBasicMaterial
           color={damageColor}
           transparent
