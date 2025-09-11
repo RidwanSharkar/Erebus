@@ -60,6 +60,16 @@ interface PVPViperStingManagerProps {
   onPlayerVenomed: (playerId: string, position: Vector3) => void;
   serverPlayerEntities: React.MutableRefObject<Map<string, number>>;
   localSocketId?: string;
+  onSoulStealCreated?: (enemyPosition: Vector3) => void; // Add callback for soul steal effects
+}
+
+interface PVPCrossentropyManagerProps {
+  world: World;
+  players: Array<{ id: string; position: { x: number; y: number; z: number }; health: number }>;
+  onPlayerHit: (playerId: string, damage: number) => void;
+  onPlayerExplosion: (playerId: string, position: Vector3) => void;
+  serverPlayerEntities: React.MutableRefObject<Map<string, number>>;
+  localSocketId?: string;
 }
 
 /**
@@ -380,7 +390,8 @@ export function OptimizedPVPViperStingManager({
   onPlayerHit,
   onPlayerVenomed,
   serverPlayerEntities,
-  localSocketId
+  localSocketId,
+  onSoulStealCreated
 }: PVPViperStingManagerProps) {
   // Track processed hits to avoid duplicates
   const processedHits = useRef<Set<string>>(new Set());
@@ -425,8 +436,11 @@ export function OptimizedPVPViperStingManager({
             // Apply damage - Viper Sting damage is 61
             onPlayerHit(player.id, 61);
 
-            // Viper Sting should apply its own DoT effect, not venom (that's Cobra Shot)
-            // The DoT effect and soul steal healing will be handled by the original Viper Sting logic
+            // Create soul steal effect at the hit player's position
+            if (onSoulStealCreated) {
+              const hitPosition = new Vector3(player.position.x, player.position.y, player.position.z);
+              onSoulStealCreated(hitPosition);
+            }
 
             // IMPORTANT: Don't deactivate projectile here! Let the original Viper Sting logic
             // handle projectile lifecycle (forward -> return -> fade out)
@@ -439,5 +453,118 @@ export function OptimizedPVPViperStingManager({
     processedHits.current.clear();
   });
 
+  return null; // This is a logic-only component
+}
+
+/**
+ * Optimized Crossentropy Manager with Object Pooling
+ */
+export function OptimizedPVPCrossentropyManager({ 
+  world, 
+  players, 
+  onPlayerHit, 
+  onPlayerExplosion, 
+  serverPlayerEntities, 
+  localSocketId 
+}: PVPCrossentropyManagerProps) {
+  
+  const hitTracker = useRef<Set<string>>(new Set());
+  const lastUpdateTime = useRef(0);
+  
+  useFrame(() => {
+    if (!world) return;
+    
+    // Throttle updates to avoid excessive checking
+    const now = Date.now();
+    if (now - lastUpdateTime.current < 16) return; // ~60fps
+    lastUpdateTime.current = now;
+    
+    // Reset temporary objects for this frame
+    pvpObjectPool.resetFrameTemporaries();
+    
+    // Get all Crossentropy bolt projectile entities
+    const projectileEntities = world.queryEntities([Transform, Projectile, Renderer]);
+    
+    projectileEntities.forEach(projectileEntity => {
+      const renderer = projectileEntity.getComponent(Renderer);
+      const transform = projectileEntity.getComponent(Transform);
+      const projectile = projectileEntity.getComponent(Projectile);
+      
+      // Check if this is a Crossentropy bolt
+      if (!renderer?.mesh?.userData?.isCrossentropyBolt || !transform || !projectile) {
+        return;
+      }
+      
+      const projectilePos = transform.position;
+      
+      // Check collision with PVP players (only check players that are NOT the local player)
+      players.forEach(player => {
+        // Skip if this is the local player (they can't hit themselves)
+        if (player.id === localSocketId) {
+          return; // Don't hit yourself
+        }
+
+        // Additional safety check: skip if this player's entity ID matches the projectile owner
+        const playerEntityId = serverPlayerEntities.current.get(player.id);
+        if (playerEntityId && playerEntityId === projectile.owner) {
+          return; // Don't hit the projectile owner (entity ID check)
+        }
+
+        // Use temporary Vector3 from pool
+        const playerPos = pvpObjectPool.getTempVector3(
+          player.position.x,
+          player.position.y,
+          player.position.z
+        );
+        const distance = projectilePos.distanceTo(playerPos);
+
+        if (distance <= 1.5) { // Hit radius for Crossentropy bolt
+          // Create unique hit key using pooled method
+          const hitKey = pvpObjectPool.createHitKey(projectileEntity.id, player.id);
+
+          // Check if we haven't already hit this player with this projectile
+          if (playerEntityId && !projectile.hasHitTarget(playerEntityId) && !hitTracker.current.has(hitKey)) {
+            projectile.addHitTarget(playerEntityId);
+            hitTracker.current.add(hitKey);
+            
+            // Apply burning stacks for Crossentropy bolt
+            let finalDamage = 90; // Base Crossentropy damage
+            const controlSystemRef = (window as any).controlSystemRef;
+            if (controlSystemRef && controlSystemRef.current) {
+              const controlSystem = controlSystemRef.current;
+              const currentTime = Date.now() / 1000;
+              
+              // Apply burning stack and get damage bonus (false = Crossentropy bolt)
+              const { damageBonus } = controlSystem.applyBurningStack(playerEntityId, currentTime, false);
+              finalDamage = 90 + damageBonus;
+              
+              console.log(`🔥 Applied burning stack to player ${player.id} via Crossentropy: base 90 + bonus ${damageBonus} = ${finalDamage}`);
+            }
+            
+            onPlayerHit(player.id, finalDamage); // Crossentropy damage with burning bonus
+            
+            // Trigger explosion effect at the HIT player's position
+            // Use pooled Vector3 for the explosion position
+            const explosionPosition = pvpObjectPool.acquireVector3(
+              player.position.x, 
+              player.position.y, 
+              player.position.z
+            );
+            
+            onPlayerExplosion(player.id, explosionPosition);
+            
+            // Release the Vector3 back to pool
+            pvpObjectPool.releaseVector3(explosionPosition);
+            
+            // Clean up hit tracker after a delay to prevent memory leaks
+            setTimeout(() => {
+              hitTracker.current.delete(hitKey);
+            }, 10000); // Clean up after 10 seconds
+          }
+        }
+      });
+    });
+  });
+  
   return null; // This is a logic-only component
 }

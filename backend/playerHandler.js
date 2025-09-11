@@ -144,6 +144,31 @@ function handlePlayerEvents(socket, gameRooms) {
     console.log(`✅ Server: Broadcasted ${debuffType} debuff to room ${roomId}`);
   });
 
+  // Handle player stealth state changes
+  socket.on('player-stealth', (data) => {
+    console.log(`🎯 Server received player-stealth from ${socket.id}:`, data);
+
+    const { roomId, playerId, isInvisible } = data;
+
+    if (!gameRooms.has(roomId)) {
+      console.warn(`⚠️ Server: Room ${roomId} not found for stealth event`);
+      return;
+    }
+
+    const room = gameRooms.get(roomId);
+
+    console.log(`🥷 Server: Broadcasting player ${socket.id} stealth state: ${isInvisible ? 'invisible' : 'visible'} to room ${roomId}`);
+
+    // Broadcast stealth state to all other players in the room (including the sender for consistency)
+    room.io.to(roomId).emit('player-stealth', {
+      playerId: socket.id,
+      isInvisible,
+      timestamp: Date.now()
+    });
+
+    console.log(`✅ Server: Broadcasted stealth state to room ${roomId}`);
+  });
+
   // Handle player health changes
   socket.on('player-health-changed', (data) => {
     const { roomId, health, maxHealth } = data;
@@ -256,7 +281,7 @@ function handlePlayerEvents(socket, gameRooms) {
 
   // Handle PVP damage between players
   socket.on('player-damage', (data) => {
-    const { roomId, targetPlayerId, damage } = data;
+    const { roomId, targetPlayerId, damage, damageType } = data;
     
     if (!gameRooms.has(roomId)) return;
     
@@ -273,13 +298,14 @@ function handlePlayerEvents(socket, gameRooms) {
     const previousHealth = targetPlayer.health;
     targetPlayer.health = Math.max(0, targetPlayer.health - damage);
     
-    console.log(`⚔️ PVP damage: ${sourcePlayer.name} dealt ${damage} damage to ${targetPlayer.name} (${targetPlayer.health}/${targetPlayer.maxHealth} HP)`);
+    console.log(`⚔️ PVP damage: ${sourcePlayer.name} dealt ${damage} damage to ${targetPlayer.name} (${targetPlayer.health}/${targetPlayer.maxHealth} HP)${damageType ? ` [${damageType}]` : ''}`);
     
     // Broadcast damage event to all players in the room
     room.io.to(roomId).emit('player-damaged', {
       sourcePlayerId: socket.id,
       targetPlayerId: targetPlayerId,
       damage: damage,
+      damageType: damageType,
       newHealth: targetPlayer.health,
       maxHealth: targetPlayer.maxHealth,
       wasKilled: previousHealth > 0 && targetPlayer.health <= 0,
@@ -292,6 +318,53 @@ function handlePlayerEvents(socket, gameRooms) {
       health: targetPlayer.health,
       maxHealth: targetPlayer.maxHealth
     });
+  });
+
+  // Handle summoned unit damage in PVP (server-authoritative)
+  socket.on('summoned-unit-damage', (data) => {
+    const { roomId, unitId, unitOwnerId, damage, sourcePlayerId } = data;
+    
+    console.log(`🔍 Server received summoned unit damage:`, {
+      roomId,
+      unitId,
+      unitOwnerId,
+      damage,
+      sourcePlayerId,
+      socketId: socket.id
+    });
+    
+    if (!gameRooms.has(roomId)) return;
+    
+    const room = gameRooms.get(roomId);
+    const sourcePlayer = room.getPlayer(socket.id);
+    
+    if (!sourcePlayer) {
+      console.warn(`⚠️ Summoned unit damage failed: source player ${socket.id} not found in room ${roomId}`);
+      return;
+    }
+    
+    // Validate that the source player is not trying to damage their own units
+    // Use socket.id as the authoritative source since that's who sent the request
+    if (socket.id === unitOwnerId) {
+      console.warn(`⚠️ Summoned unit damage blocked: ${socket.id} tried to damage their own unit ${unitId} (owner: ${unitOwnerId})`);
+      return;
+    }
+    
+    console.log(`🤖 Summoned unit damage: ${sourcePlayer.name} dealt ${damage} damage to unit ${unitId} (owned by ${unitOwnerId})`);
+    
+    // Apply damage server-side (authoritative)
+    const damageApplied = room.damageSummonedUnitDirect(unitId, damage, socket.id);
+    
+    if (damageApplied) {
+      // Broadcast summoned unit damage to all players in the room
+      room.io.to(roomId).emit('summoned-unit-damaged', {
+        unitId: unitId,
+        unitOwnerId: unitOwnerId,
+        sourcePlayerId: socket.id,
+        damage: damage,
+        timestamp: Date.now()
+      });
+    }
   });
 
   // Handle ping/latency measurement

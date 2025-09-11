@@ -92,8 +92,8 @@ function ScytheModel({
           <mesh position-y={0.55} rotation={[Math.PI/2, 0, 0]}>
             <torusGeometry args={[0.14, 0.02, 16, 32]} />
             <meshStandardMaterial
-              color={isEmpowered ? "#8A2BE2" : "#17CE54"}
-              emissive={isEmpowered ? "#9370DB" : "#17CE54"}
+              color={isEmpowered ? "#4169E1" : "#00BFFF"}
+              emissive={isEmpowered ? "#1E90FF" : "#87CEEB"}
               emissiveIntensity={1.25}
               transparent
               opacity={0.7}
@@ -106,8 +106,8 @@ function ScytheModel({
           <mesh position-y={-0.55} rotation={[Math.PI/2, 0, 0]}>
             <torusGeometry args={[0.14, 0.02, 16, 32]} />
             <meshStandardMaterial
-              color={isEmpowered ? "#8A2BE2" : "#17CE54"}
-              emissive={isEmpowered ? "#9370DB" : "#17CE54"}
+              color={isEmpowered ? "#4169E1" : "#00BFFF"}
+              emissive={isEmpowered ? "#1E90FF" : "#87CEEB"}
               emissiveIntensity={1.25}
               transparent
               opacity={0.7}
@@ -121,8 +121,8 @@ function ScytheModel({
           <mesh position-y={-0.4} rotation={[Math.PI/2, 0, 0]}>
             <torusGeometry args={[0.075, 0.02, 16, 32]} />
             <meshStandardMaterial
-              color={isEmpowered ? "#8A2BE2" : "#17CE54"}
-              emissive={isEmpowered ? "#9370DB" : "#17CE54"}
+              color={isEmpowered ? "#4169E1" : "#00BFFF"}
+              emissive={isEmpowered ? "#1E90FF" : "#87CEEB"}
               emissiveIntensity={1}
               transparent
               opacity={0.7}
@@ -135,8 +135,8 @@ function ScytheModel({
           <mesh position-y={-0.2} rotation={[Math.PI/2, 0, 0]}>
             <torusGeometry args={[0.075, 0.02, 16, 32]} />
             <meshStandardMaterial
-              color={isEmpowered ? "#8A2BE2" : "#17CE54"}
-              emissive={isEmpowered ? "#9370DB" : "#17CE54"}
+              color={isEmpowered ? "#4169E1" : "#00BFFF"}
+              emissive={isEmpowered ? "#1E90FF" : "#87CEEB"}
               emissiveIntensity={1.25}
               transparent
               opacity={0.7}
@@ -149,8 +149,8 @@ function ScytheModel({
           <mesh position-y={0.2} rotation={[Math.PI/2, 0, 0]}>
             <torusGeometry args={[0.075, 0.02, 16, 32]} />
             <meshStandardMaterial
-              color={isEmpowered ? "#8A2BE2" : "#17CE54"}
-              emissive={isEmpowered ? "#9370DB" : "#17CE54"}
+              color={isEmpowered ? "#4169E1" : "#00BFFF"}
+              emissive={isEmpowered ? "#1E90FF" : "#87CEEB"}
               emissiveIntensity={1.25}
               transparent
               opacity={0.7}
@@ -163,8 +163,8 @@ function ScytheModel({
           <mesh position-y={0.4} rotation={[Math.PI/2, 0, 0]}>
             <torusGeometry args={[0.075, 0.02, 16, 32]} />
             <meshStandardMaterial
-              color={isEmpowered ? "#8A2BE2" : "#17CE54"}
-              emissive={isEmpowered ? "#9370DB" : "#17CE54"}
+              color={isEmpowered ? "#4169E1" : "#00BFFF"}
+              emissive={isEmpowered ? "#1E90FF" : "#87CEEB"}
               emissiveIntensity={1.25}
               transparent
               opacity={0.7}
@@ -190,10 +190,10 @@ function ScytheModel({
         {/* Base blade */}
         <mesh>
           <extrudeGeometry args={[createBladeShape(), { ...bladeExtradeSettings, depth: 0.03 }]} />
-          <meshStandardMaterial 
-            color={isEmpowered ? "#8A2BE2" : "#17CE54"}
-            emissive={isEmpowered ? "#8A2BE2" : "#17CE54"}
-            emissiveIntensity={1.3}
+          <meshStandardMaterial
+            color={isEmpowered ? "#4169E1" : "#00BFFF"}
+            emissive={isEmpowered ? "#1E90FF" : "#87CEEB"}
+            emissiveIntensity={0.6}
             metalness={0.8}
             roughness={0.1}
             opacity={1}
@@ -208,10 +208,10 @@ function ScytheModel({
         {/* Second blade */}
         <mesh>
           <extrudeGeometry args={[createBladeShape(), { ...bladeExtradeSettings, depth: 0.03 }]} />
-          <meshStandardMaterial 
-            color={isEmpowered ? "#8A2BE2" : "#17CE54"}
-            emissive={isEmpowered ? "#8A2BE2" : "#17CE54"}
-            emissiveIntensity={1.3}
+          <meshStandardMaterial
+            color={isEmpowered ? "#4169E1" : "#00BFFF"}
+            emissive={isEmpowered ? "#1E90FF" : "#87CEEB"}
+            emissiveIntensity={0.6}
             metalness={0.8}
             roughness={0.1}
             opacity={1}

@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { World } from '@/ecs/World';
-import { Entity } from '@/ecs/Entity';
 import { Transform } from '@/ecs/components/Transform';
 import { Projectile } from '@/ecs/components/Projectile';
 import { Renderer } from '@/ecs/components/Renderer';
@@ -14,6 +13,7 @@ import EntropicBolt from '@/components/projectiles/EntropicBolt';
 import ChargedArrow from '@/components/projectiles/ChargedArrow';
 import RegularArrow from '@/components/projectiles/RegularArrow';
 import Barrage from '@/components/projectiles/Barrage';
+import TowerProjectile from '@/components/projectiles/TowerProjectile';
 import ExplosionEffect from '@/components/projectiles/ExplosionEffect';
 import CrossentropyExplosion from '@/components/projectiles/CrossentropyExplosion';
 import { Vector3, Color } from '@/utils/three-exports';
@@ -27,6 +27,7 @@ interface ProjectileData {
   subclass?: any;
   level?: number;
   opacity?: number;
+  ownerId?: string; // For tower projectiles
 }
 
 interface ExplosionData {
@@ -51,12 +52,14 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
     charged: ProjectileData[];
     regular: ProjectileData[];
     barrage: ProjectileData[];
+    tower: ProjectileData[];
   }>({
     crossentropy: [],
     entropic: [],
     charged: [],
     regular: [],
-    barrage: []
+    barrage: [],
+    tower: []
   });
 
   const [explosions, setExplosions] = useState<ExplosionData[]>([]);
@@ -67,6 +70,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
   const chargedIdCounter = useRef(0);
   const regularIdCounter = useRef(0);
   const barrageIdCounter = useRef(0);
+  const towerIdCounter = useRef(0);
   const explosionIdCounter = useRef(0);
 
   // Throttling
@@ -145,6 +149,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
     const newCharged: ProjectileData[] = [];
     const newRegular: ProjectileData[] = [];
     const newBarrage: ProjectileData[] = [];
+    const newTower: ProjectileData[] = [];
 
     for (const entity of allProjectileEntities) {
       const renderer = entity.getComponent(Renderer);
@@ -157,12 +162,31 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
       const direction = userData.direction || projectile.velocity.clone().normalize();
 
       // Determine projectile type and update appropriate array
-      if (userData.isCrossentropyBolt) {
+      if (userData.isTowerProjectile) {
+        const existing = projectileData.tower.find(p => p.entityId === entity.id);
+        if (existing) {
+          existing.position.copy(transform.position);
+          newTower.push(existing);
+        } else {
+          newTower.push({
+            id: towerIdCounter.current++,
+            position: transform.position.clone(),
+            direction: direction.clone(),
+            entityId: entity.id,
+            subclass: userData.subclass,
+            level: userData.level,
+            opacity: userData.opacity || 1.0,
+            ownerId: userData.towerOwnerId
+          });
+        }
+      } else if (userData.isCrossentropyBolt) {
+        console.log('🎯 UnifiedProjectileManager: Found CrossentropyBolt entity', entity.id);
         const existing = projectileData.crossentropy.find(p => p.entityId === entity.id);
         if (existing) {
           existing.position.copy(transform.position);
           newCrossentropy.push(existing);
         } else {
+          console.log('🎯 UnifiedProjectileManager: Adding new CrossentropyBolt projectile');
           newCrossentropy.push({
             id: crossentropyIdCounter.current++,
             position: transform.position.clone(),
@@ -261,11 +285,13 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
       newCharged.length !== projectileData.charged.length ||
       newRegular.length !== projectileData.regular.length ||
       newBarrage.length !== projectileData.barrage.length ||
+      newTower.length !== projectileData.tower.length ||
       newCrossentropy.some(p => !projectileData.crossentropy.find(existing => existing.entityId === p.entityId)) ||
       newEntropic.some(p => !projectileData.entropic.find(existing => existing.entityId === p.entityId)) ||
       newCharged.some(p => !projectileData.charged.find(existing => existing.entityId === p.entityId)) ||
       newRegular.some(p => !projectileData.regular.find(existing => existing.entityId === p.entityId)) ||
-      newBarrage.some(p => !projectileData.barrage.find(existing => existing.entityId === p.entityId))
+      newBarrage.some(p => !projectileData.barrage.find(existing => existing.entityId === p.entityId)) ||
+      newTower.some(p => !projectileData.tower.find(existing => existing.entityId === p.entityId))
     );
 
     if (hasProjectileChanges) {
@@ -274,7 +300,8 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
         entropic: newEntropic,
         charged: newCharged,
         regular: newRegular,
-        barrage: newBarrage
+        barrage: newBarrage,
+        tower: newTower
       });
     }
 
@@ -388,6 +415,18 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
           };
         })}
       />
+
+      {/* Tower Projectiles */}
+      {projectileData.tower.map(projectile => (
+        <TowerProjectile
+          key={projectile.id}
+          position={projectile.position}
+          direction={projectile.direction}
+          entityId={projectile.entityId}
+          ownerId={projectile.ownerId}
+          opacity={projectile.opacity}
+        />
+      ))}
 
       {/* Explosions */}
       {explosions.map(explosion => {

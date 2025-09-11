@@ -2,7 +2,7 @@
 
 import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, Color, Group, Mesh, MeshBasicMaterial } from '@/utils/three-exports';
+import { Vector3, Color, Group, Mesh, MeshBasicMaterial, AdditiveBlending, MathUtils } from '@/utils/three-exports';
 import { World } from '@/ecs/World';
 import { Transform } from '@/ecs/components/Transform';
 import { Health } from '@/ecs/components/Health';
@@ -68,9 +68,13 @@ export default function SummonedUnitRenderer({
   useFrame((state) => {
     if (!groupRef.current || isDead) return;
 
-    // Gentle floating motion
     const time = state.clock.elapsedTime;
+
+    // Gentle floating motion
     groupRef.current.position.y = position.y + Math.sin(time * 2) * 0.05;
+
+    // Gentle rotation for crystal-like appearance
+    groupRef.current.rotation.y += state.clock.getDelta() * 0.5;
 
     // Update health bar scale and color every frame
     const healthPercentage = Math.max(0, Math.min(1, health / maxHealth));
@@ -95,87 +99,129 @@ export default function SummonedUnitRenderer({
 
   return (
     <group ref={groupRef} position={[position.x, position.y, position.z]}>
-      {/* Main Body - Simple Cylinder */}
+      {/* Main Body - Crystal-like Octahedron */}
       <mesh
-        position={[0, unitHeight * 0.4, 0]}
+        position={[0, unitHeight * 0.725, 0]}
         castShadow
         receiveShadow
       >
-        <cylinderGeometry args={[unitBaseRadius, unitBaseRadius * 1.2, unitHeight * 0.6, 6]} />
+        <octahedronGeometry args={[unitBaseRadius * 1.25, 0]} />
         <meshStandardMaterial
           color={damageColor}
-          metalness={0.2}
-          roughness={0.8}
+          metalness={0.7}
+          roughness={0.3}
           transparent
           opacity={opacity}
         />
       </mesh>
 
-      {/* Head - Simple Sphere */}
+      {/* Head - Crystal-like Octahedron */}
       <mesh
-        position={[0, unitHeight * 0.8, 0]}
+        position={[0, unitHeight * 1, 0]}
         castShadow
       >
-        <sphereGeometry args={[unitBaseRadius * 0.8, 8, 6]} />
+        <octahedronGeometry args={[unitBaseRadius * 0.6, 0]} />
         <meshStandardMaterial
-          color={damageColor.clone().multiplyScalar(1.1)}
-          metalness={0.1}
-          roughness={0.9}
-          transparent
-          opacity={opacity}
-        />
-      </mesh>
-
-      {/* Simple Arms - Two small cylinders */}
-      {[-1, 1].map((side) => (
-        <mesh
-          key={`arm-${side}`}
-          position={[side * unitBaseRadius * 1.2, unitHeight * 0.6, 0]}
-          rotation={[0, 0, side * 0.3]}
-          castShadow
-        >
-          <cylinderGeometry args={[unitBaseRadius * 0.2, unitBaseRadius * 0.2, unitHeight * 0.4, 4]} />
-          <meshStandardMaterial
-            color={damageColor.clone().multiplyScalar(0.9)}
-            metalness={0.1}
-            roughness={0.9}
-            transparent
-            opacity={opacity}
-          />
-        </mesh>
-      ))}
-
-      {/* Simple Legs - Two small cylinders */}
-      {[-1, 1].map((side) => (
-        <mesh
-          key={`leg-${side}`}
-          position={[side * unitBaseRadius * 0.6, unitHeight * 0.1, 0]}
-          castShadow
-        >
-          <cylinderGeometry args={[unitBaseRadius * 0.25, unitBaseRadius * 0.25, unitHeight * 0.2, 4]} />
-          <meshStandardMaterial
-            color={damageColor.clone().multiplyScalar(0.8)}
-            metalness={0.1}
-            roughness={1.0}
-            transparent
-            opacity={opacity}
-          />
-        </mesh>
-      ))}
-
-      {/* Simple Weapon - Small cube */}
-      <mesh
-        position={[unitBaseRadius * 1.5, unitHeight * 0.6, 0]}
-        rotation={[0, 0, 0.2]}
-        castShadow
-      >
-        <boxGeometry args={[unitBaseRadius * 0.3, unitHeight * 0.3, unitBaseRadius * 0.1]} />
-        <meshStandardMaterial
-          color={new Color(0x333333)}
+          color={damageColor.clone().multiplyScalar(1.2)}
           metalness={0.8}
           roughness={0.2}
           transparent
           opacity={opacity}
+        />
+      </mesh>
+
+      {/* Shoulders - Crystal spheres */}
+      {[-1, 1].map((side) => (
+        <mesh
+          key={`shoulder-${side}`}
+          position={[side * unitBaseRadius * 1.2, unitHeight * 0.9, 0]}
+          castShadow
+        >
+          <sphereGeometry args={[unitBaseRadius * 0.4, 8, 8]} />
+          <meshStandardMaterial
+            color={damageColor.clone().multiplyScalar(1.1)}
+            metalness={0.7}
+            roughness={0.3}
+            transparent
+            opacity={opacity}
+          />
+        </mesh>
+      ))}
+
+      {/* Shoulder Rings - Energy rings */}
+      {[-1, 1].map((side) => (
+        <mesh
+          key={`shoulder-ring-${side}`}
+          position={[side * unitBaseRadius * 1.2, unitHeight * 0.9, 0]}
+          rotation={[Math.PI / 2, side * Math.PI / 4, 0]}
+        >
+          <torusGeometry args={[unitBaseRadius * 0.5, unitBaseRadius * 0.03, 6, 12]} />
+          <meshStandardMaterial
+            color={damageColor.clone().multiplyScalar(1.3)}
+            metalness={0.8}
+            roughness={0.2}
+            transparent
+            opacity={opacity}
+          />
+        </mesh>
+      ))}
+
+      {/* Energy Arms - Crystal cylinders */}
+      {[-1, 1].map((side) => (
+        <mesh
+          key={`arm-${side}`}
+          position={[side * unitBaseRadius * 1.4, unitHeight * 0.7, side * unitBaseRadius * 0.1]}
+          rotation={[0, 0, side * 0.3]}
+          castShadow
+        >
+          <cylinderGeometry args={[unitBaseRadius * 0.25, unitBaseRadius * 0.15, unitHeight * 0.3, 6]} />
+          <meshStandardMaterial
+            color={damageColor.clone().multiplyScalar(0.9)}
+            metalness={0.6}
+            roughness={0.4}
+            transparent
+            opacity={opacity}
+          />
+        </mesh>
+      ))}
+
+
+      {/* Energy Tendrils - Orbiting crystal spikes */}
+      {[...Array(8)].map((_, i) => {
+        const angle = (i / 6) * Math.PI * 2;
+        const radius = unitBaseRadius * 1.35;
+        const height = unitHeight * 1.1;
+        return (
+          <mesh
+            key={`tendril-${i}`}
+            position={[
+              Math.cos(angle) * radius,
+              height + Math.sin(angle) * radius * 0.3,
+              Math.sin(angle) * radius
+            ]}
+            rotation={[Math.PI / 2, angle + Math.PI, -Math.PI / 2]}
+          >
+            <coneGeometry args={[unitBaseRadius * 0.08, unitBaseRadius * 0.3, 4]} />
+            <meshStandardMaterial
+              color={damageColor.clone().multiplyScalar(1.2)}
+              metalness={0.9}
+              roughness={0.1}
+              transparent
+              opacity={opacity}
+            />
+          </mesh>
+        );
+      })}
+
+      {/* Energy Aura - Crystal glow effect */}
+      <mesh position={[0, unitHeight * 0.75, 0]}>
+        <sphereGeometry args={[unitBaseRadius * 1.75, 8, 8]} />
+        <meshBasicMaterial
+          color={damageColor}
+          transparent
+          opacity={opacity * 0.3}
+          depthWrite={false}
+          blending={AdditiveBlending}
         />
       </mesh>
 
@@ -222,13 +268,15 @@ export default function SummonedUnitRenderer({
         </group>
       )}
 
-      {/* Selection/Target Indicator (subtle glow) */}
-      <mesh position={[0, unitHeight * 0.4, 0]}>
-        <cylinderGeometry args={[unitBaseRadius * 1.5, unitBaseRadius * 1.5, 0.05, 8]} />
+      {/* Crystal Target Indicator - Enhanced glow */}
+      <mesh position={[0, unitHeight * 0.35, 0]} rotation={[-1.5, 0, 1]}>
+        <torusGeometry args={[unitBaseRadius * 1.2, unitBaseRadius * 0.05, 8, 16]} />
         <meshBasicMaterial
           color={unitColor}
           transparent
-          opacity={0.2}
+          opacity={opacity * 0.4}
+          depthWrite={false}
+          blending={AdditiveBlending}
         />
       </mesh>
     </group>

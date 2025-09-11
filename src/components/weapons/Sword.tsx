@@ -1,8 +1,9 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Color, Shape, AdditiveBlending } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import DeflectShield from './DeflectShield';
+import ColossusStrike from './ColossusStrike';
 
 interface SwordProps {
   isSwinging: boolean;
@@ -56,6 +57,7 @@ interface SwordProps {
     isDivineStorm?: boolean;
     isHolyBurn?: boolean;
     isEviscerate?: boolean;
+    isColossusStrike?: boolean;
   }>) => Array<{
     id: number;
     damage: number;
@@ -83,6 +85,7 @@ interface SwordProps {
     isDivineStorm?: boolean;
     isHolyBurn?: boolean;
     isEviscerate?: boolean;
+    isColossusStrike?: boolean;
   }>) => void;
   nextDamageNumberId?: { current: number };
   setActiveEffects?: (callback: (prev: Array<{
@@ -108,6 +111,13 @@ interface SwordProps {
   playerRotation?: Vector3;
   dragonGroupRef?: React.RefObject<Group>; // Reference to dragon's group for real-time positioning
   playerEntityId?: number; // Player's entity ID to prevent self-damage
+  rageSpent?: number; // Amount of rage spent on Colossus Strike
+  targetPlayerData?: Array<{
+    id: string;
+    position: Vector3;
+    health: number;
+    maxHealth: number;
+  }>; // PVP player data for Colossus Strike targeting
 }
 
 export default function Sword({ 
@@ -137,7 +147,9 @@ export default function Sword({
   playerPosition,
   playerRotation,
   dragonGroupRef,
-  playerEntityId
+  playerEntityId,
+  rageSpent = 40,
+  targetPlayerData = []
 }: SwordProps) {
   const swordRef = useRef<Group>(null);
   const swingProgress = useRef(0);
@@ -156,6 +168,12 @@ export default function Sword({
   const isChargeSpinning = useRef(false);
   const shouldStartSpin = useRef(false);
   const basePosition = [-1.18, 0.225, 0.3] as const; // POSITIONING
+  
+  // Colossus Strike state
+  const [colossusStrikeEffects, setColossusStrikeEffects] = useState<Array<{
+    id: number;
+    position: Vector3;
+  }>>([]);
   
   // Chain Lightning Sparks
   const sparkParticles = useRef<Array<{
@@ -663,6 +681,7 @@ export default function Sword({
         colossusStrikeProgress.current = 0;
         swordRef.current.rotation.set(0, 0, 0);
         swordRef.current.position.set(...basePosition);
+        handleColossusStrikeComplete(); // Handle damage and effects
         onColossusStrikeComplete?.();
       }
       return;
@@ -999,6 +1018,22 @@ export default function Sword({
     }
   };
 
+  // Handle Colossus Strike completion and effects
+  const handleColossusStrikeComplete = () => {
+    if (!playerPosition) return;
+
+    // Create the yellow lightning effect at the offset position (like Smite)
+    // The position will be calculated in ControlSystem and passed through the callback
+    const direction = new Vector3();
+    // Assuming camera direction for now - this will be properly handled by the ColossusStrike component
+    const colossusStrikePosition = playerPosition.clone().add(new Vector3(0, 0, -2.5)); // Forward offset
+
+    setColossusStrikeEffects(prev => [...prev, {
+      id: Date.now(),
+      position: colossusStrikePosition
+    }]);
+  };
+
   // Create custom sword blade shape
   const createBladeShape = () => {
     const shape = new Shape();
@@ -1303,6 +1338,25 @@ export default function Sword({
       playerRotation={playerRotation}
       dragonGroupRef={dragonGroupRef}
     />
+    
+    {/* Colossus Strike Lightning Effects */}
+    {colossusStrikeEffects.map((effect) => (
+      <ColossusStrike
+        key={effect.id}
+        position={effect.position}
+        onComplete={() => {
+          setColossusStrikeEffects(prev => prev.filter(e => e.id !== effect.id));
+        }}
+        onDamageDealt={(damageDealt: boolean) => {
+          if (damageDealt) {
+            console.log('⚡ Colossus Strike: Damage dealt by visual component');
+          }
+        }}
+        targetPlayerData={targetPlayerData}
+        playerPosition={playerPosition}
+        rageSpent={rageSpent}
+      />
+    ))}
   </>
   );
 } 

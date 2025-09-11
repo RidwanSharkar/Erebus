@@ -1,0 +1,137 @@
+import React, { useRef, useEffect } from 'react';
+import { Vector3 } from '@/utils/three-exports';
+import { useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
+
+interface SoulStealEffectProps {
+  id: number;
+  startPosition: Vector3;
+  targetPosition: Vector3;
+  startTime: number;
+  duration: number;
+  getCurrentPlayerPosition: () => Vector3;
+  onComplete: () => void;
+}
+
+export default function SoulStealEffect({
+  id,
+  startPosition,
+  targetPosition,
+  startTime,
+  duration,
+  getCurrentPlayerPosition,
+  onComplete
+}: SoulStealEffectProps) {
+  const groupRef = useRef<THREE.Group>(null);
+  const currentPosition = useRef(startPosition.clone());
+  const hasCompleted = useRef(false);
+
+  useFrame(() => {
+    if (!groupRef.current || hasCompleted.current) return;
+
+    const now = Date.now();
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+
+    if (progress >= 1) {
+      // Effect has reached the player
+      if (!hasCompleted.current) {
+        hasCompleted.current = true;
+        onComplete();
+      }
+      return;
+    }
+
+    // Get current player position for dynamic tracking
+    const currentTarget = getCurrentPlayerPosition();
+    
+    // Smooth interpolation from start to current player position
+    const newPosition = new Vector3().lerpVectors(startPosition, currentTarget, progress);
+    
+    // Add some floating/spiraling motion for visual appeal
+    const spiralRadius = 0.3 * (1 - progress); // Spiral gets tighter as it approaches
+    const spiralSpeed = 8; // Rotations per second
+    const spiralAngle = (elapsed / 1000) * spiralSpeed * Math.PI * 2;
+    
+    newPosition.x += Math.sin(spiralAngle) * spiralRadius;
+    newPosition.z += Math.cos(spiralAngle) * spiralRadius;
+    newPosition.y += Math.sin(spiralAngle * 2) * 0.2; // Vertical bobbing
+    
+    currentPosition.current.copy(newPosition);
+    groupRef.current.position.copy(newPosition);
+
+    // Scale effect based on progress (starts small, grows, then shrinks)
+    const scale = progress < 0.5 
+      ? 0.5 + progress // Grow from 0.5 to 1.0
+      : 1.5 - progress; // Shrink from 1.0 to 0.5
+    groupRef.current.scale.setScalar(scale);
+  });
+
+  return (
+    <group ref={groupRef} position={startPosition}>
+      {/* Core soul orb */}
+      <mesh>
+        <sphereGeometry args={[0.15, 8, 8]} />
+        <meshStandardMaterial
+          color="#E879F9"
+          emissive="#E879F9"
+          emissiveIntensity={2}
+          transparent
+          opacity={0.8}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+
+      {/* Outer glow */}
+      <mesh>
+        <sphereGeometry args={[0.25, 8, 8]} />
+        <meshStandardMaterial
+          color="#C084FC"
+          emissive="#C084FC"
+          emissiveIntensity={1}
+          transparent
+          opacity={0.3}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+
+      {/* Trailing particles */}
+      {[...Array(3)].map((_, i) => {
+        const delay = i * 0.1;
+        const trailPosition = new Vector3().lerpVectors(
+          startPosition, 
+          currentPosition.current, 
+          Math.max(0, (Date.now() - startTime - delay * 1000) / duration)
+        );
+        
+        return (
+          <mesh key={i} position={trailPosition}>
+            <sphereGeometry args={[0.05, 4, 4]} />
+            <meshStandardMaterial
+              color="#F3E8FF"
+              emissive="#F3E8FF"
+              emissiveIntensity={1.5}
+              transparent
+              opacity={0.6 - i * 0.2}
+              blending={THREE.AdditiveBlending}
+            />
+          </mesh>
+        );
+      })}
+
+      {/* Healing energy aura */}
+      <mesh rotation={[Math.PI / 2, 0, Date.now() * 0.005]}>
+        <ringGeometry args={[0.1, 0.3, 8]} />
+        <meshStandardMaterial
+          color="#A855F7"
+          emissive="#A855F7"
+          emissiveIntensity={1.5}
+          transparent
+          opacity={0.4}
+          blending={THREE.AdditiveBlending}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
+  );
+}

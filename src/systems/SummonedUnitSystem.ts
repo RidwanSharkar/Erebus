@@ -87,17 +87,20 @@ export class SummonedUnitSystem extends System {
 
       // Check if unit is dead
       if (health.isDead && !unit.isDead) {
+        console.log(`🤖 Summoned unit ${entity.id} (${unit.getDisplayName()}) died - marking for cleanup`);
         unit.die(currentTime);
 
-        // Remove unit from wave tracking
+        // Remove unit from wave tracking immediately
         this.waveUnits.delete(entity.id);
 
+        // Mark for destruction and immediately disable to prevent targeting
+        unit.isActive = false;
         this.unitsToDestroy.push(entity.id);
         continue;
       }
 
-      // Skip inactive or dead units
-      if (!unit.isActive || unit.isDead) continue;
+      // Skip inactive or dead units (including those marked for destruction)
+      if (!unit.isActive || unit.isDead || health.isDead) continue;
 
       // Update unit behavior
       this.updateUnitBehavior(entity, transform, unit, currentTime, deltaTime);
@@ -111,6 +114,7 @@ export class SummonedUnitSystem extends System {
 
     // Destroy expired units
     for (const entityId of this.unitsToDestroy) {
+      console.log(`🗑️ Destroying summoned unit entity ${entityId}`);
       this.world.destroyEntity(entityId);
     }
   }

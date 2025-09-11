@@ -44,6 +44,10 @@ export class CameraSystem extends System {
   private isRightMouseDown = false;
   private wheelListenerAdded = false;
 
+  // Stun state for camera rotation disable
+  private cameraRotationDisabled = false;
+  private disabledByEntityId: string | null = null;
+
   constructor(camera: PerspectiveCamera, inputManager: InputManager, config?: Partial<CameraConfig>) {
     super();
     this.camera = camera;
@@ -99,9 +103,9 @@ export class CameraSystem extends System {
 
   private handleMouseInput(): void {
     const mouseDelta = this.inputManager.getMouseDelta();
-    
-    // Only rotate camera when right mouse button is held down
-    if ((mouseDelta.x !== 0 || mouseDelta.y !== 0) && this.isRightMouseDown) {
+
+    // Only rotate camera when right mouse button is held down AND camera rotation is not disabled
+    if ((mouseDelta.x !== 0 || mouseDelta.y !== 0) && this.isRightMouseDown && !this.cameraRotationDisabled) {
       // Update spherical coordinates based on mouse movement
       this.spherical.theta -= mouseDelta.x * this.config.mouseSensitivity;
       this.spherical.phi -= mouseDelta.y * this.config.mouseSensitivity; // Inverted Y for natural camera feel
@@ -235,5 +239,21 @@ export class CameraSystem extends System {
 
   public getCamera(): PerspectiveCamera {
     return this.camera;
+  }
+
+  // Disable/enable camera rotation (used for stun effects)
+  public setCameraRotationDisabled(disabled: boolean, entityId?: string): void {
+    this.cameraRotationDisabled = disabled;
+    this.disabledByEntityId = disabled ? (entityId || null) : null;
+  }
+
+  // Check if camera rotation is disabled
+  public isCameraRotationDisabled(): boolean {
+    return this.cameraRotationDisabled;
+  }
+
+  // Get the entity ID that disabled camera rotation
+  public getCameraRotationDisabledBy(): string | null {
+    return this.disabledByEntityId;
   }
 }

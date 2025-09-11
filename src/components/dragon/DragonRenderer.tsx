@@ -42,10 +42,16 @@ interface DragonRendererProps {
   isDeflecting?: boolean;
   isSmiting?: boolean;
   isDeathGrasping?: boolean;
+  isWraithStriking?: boolean;
+  isCorruptedAuraActive?: boolean;
+  isColossusStriking?: boolean;
   onSmiteComplete?: () => void;
   onDeathGraspComplete?: () => void;
+  onWraithStrikeComplete?: () => void;
+  onCorruptedAuraToggle?: (active: boolean) => void;
   onChargeComplete?: () => void;
   onDeflectComplete?: () => void;
+  onColossusStrikeComplete?: () => void;
   rotation?: { x: number; y: number; z: number }; // Add rotation prop for multiplayer
   isLocalPlayer?: boolean; // Flag to distinguish local player from other players
   isViperStingCharging?: boolean;
@@ -71,8 +77,14 @@ export default function DragonRenderer({
   isDeflecting = false,
   isSmiting = false,
   isDeathGrasping = false,
+  isWraithStriking = false,
+  isCorruptedAuraActive = false,
+  isColossusStriking = false,
   onSmiteComplete = () => {},
   onDeathGraspComplete = () => {},
+  onWraithStrikeComplete = () => {},
+  onCorruptedAuraToggle = () => {},
+  onColossusStrikeComplete = () => {},
   onBowRelease = () => {},
   onScytheSwingComplete = () => {},
   onSwordSwingComplete = () => {},
@@ -335,10 +347,16 @@ export default function DragonRenderer({
           isDeflecting={isDeflecting}
           isSmiting={isSmiting}
           isDeathGrasping={isDeathGrasping}
+          isWraithStriking={isWraithStriking}
+          isCorruptedAuraActive={isCorruptedAuraActive}
+          isColossusStriking={isColossusStriking}
           onSmiteComplete={onSmiteComplete}
           onDeathGraspComplete={onDeathGraspComplete}
+          onWraithStrikeComplete={onWraithStrikeComplete}
+          onCorruptedAuraToggle={onCorruptedAuraToggle}
           onChargeComplete={onChargeComplete}
           onDeflectComplete={onDeflectComplete}
+          onColossusStrikeComplete={onColossusStrikeComplete}
           enemyData={enemyData}
           onHit={handleSwordHit}
           setDamageNumbers={setDamageNumbers}
@@ -403,6 +421,7 @@ export default function DragonRenderer({
               })));
             }
           }}
+          localSocketId="local-player" // For single-player mode, use a fixed ID
         />
       )}
     </>

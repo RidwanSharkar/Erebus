@@ -146,8 +146,7 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
           void main() {
             float d = length(gl_PointCoord - vec2(0.5));
             float strength = smoothstep(0.5, 0.1, d);
-            // Entropic effect with green energy glow
-            vec3 glowColor = mix(uColor, vec3(0.4, 1.0, 0.6), 0.3);
+            vec3 glowColor = mix(uColor, vec3(1.0, 0.6, 0.0), 0.4);
             gl_FragColor = vec4(glowColor, vOpacity * strength);
           }
         `}

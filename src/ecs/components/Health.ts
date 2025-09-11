@@ -77,8 +77,11 @@ export class Health extends Component {
 
   public setMaxHealth(newMaxHealth: number): void {
     const healthRatio = this.getHealthRatio();
+    const oldMaxHealth = this.maxHealth;
+    const oldCurrentHealth = this.currentHealth;
     this.maxHealth = Math.max(1, newMaxHealth);
     this.currentHealth = Math.floor(this.maxHealth * healthRatio);
+    console.log(`🏥 Health.setMaxHealth: ${oldMaxHealth} -> ${this.maxHealth} (current: ${oldCurrentHealth} -> ${this.currentHealth}, ratio: ${healthRatio.toFixed(3)})`);
   }
 
   public getHealthRatio(): number {

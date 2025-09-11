@@ -7,6 +7,7 @@ class GameRoom {
     this.players = new Map();
     this.enemies = new Map();
     this.towers = new Map(); // PVP towers
+    this.summonedUnits = new Map(); // Server-authoritative summoned units
     this.lastUpdate = Date.now();
     this.io = io; // Store io reference for broadcasting
     
@@ -17,6 +18,15 @@ class GameRoom {
     
     // Status effect tracking for enemies
     this.enemyStatusEffects = new Map(); // enemyId -> { stun: expiration, freeze: expiration, slow: expiration }
+    
+    // Summoned unit management
+    this.lastGlobalSpawnTime = 0; // Global spawn time for all towers (synchronized)
+    this.spawnInterval = 45; // 45 seconds between spawns
+    this.currentWaveId = null;
+    this.waveUnits = new Set(); // Unit IDs in current wave
+    this.waveStartTime = 0;
+    this.lastWaveCompletionTime = 0;
+    this.summonedUnitUpdateTimer = null;
     
     // Initialize enemy AI system but don't start it yet
     this.enemyAI = new EnemyAI(roomId, io);
@@ -57,7 +67,9 @@ class GameRoom {
       
       console.log(`🎯 Enemy systems started for multiplayer room ${this.roomId}`);
     } else if (this.gameMode === 'pvp') {
-      console.log(`⚔️ PVP mode - no enemies will be spawned in room ${this.roomId}`);
+      console.log(`⚔️ PVP mode detected - starting summoned unit system in room ${this.roomId}`);
+      console.log(`🏰 Current towers in room: ${this.towers.size}`);
+      this.startSummonedUnitSystem();
     }
     
     // Broadcast game start to all players
@@ -120,6 +132,7 @@ class GameRoom {
     this.gameStarted = false;
     this.stopEnemySpawning();
     this.stopEnemyAI();
+    this.stopSummonedUnitSystem();
     
     // Clear all enemies
     this.enemies.clear();
@@ -141,6 +154,13 @@ class GameRoom {
 
   // Tower management for PVP mode
   createTowerForPlayer(playerId, playerName) {
+    // Only allow 2 towers maximum, even if more players join
+    const towerCount = Array.from(this.towers.values()).length;
+    if (towerCount >= 2) {
+      console.log(`Tower limit reached (${towerCount}/2). Not creating tower for player ${playerId}`);
+      return;
+    }
+
     const playerIndex = this.players.size - 1; // Current player index (0-based)
     const totalPlayers = 2; // Max players for positioning
     const mapRadius = 29;
@@ -162,9 +182,10 @@ class GameRoom {
       ownerName: playerName,
       towerIndex: playerIndex,
       position: { x, y, z },
-      health: 111500,
-      maxHealth: 500,
+      health: 11500,
+      maxHealth: 11500,
       isDead: false,
+      isActive: true,
       createdAt: Date.now()
     };
     
@@ -252,6 +273,530 @@ class GameRoom {
 
   getTower(towerId) {
     return this.towers.get(towerId);
+  }
+
+  // ===== SUMMONED UNIT SYSTEM =====
+  
+  // Start the summoned unit system for PVP mode
+  startSummonedUnitSystem() {
+    if (this.gameMode !== 'pvp') {
+      console.log(`🚫 Not starting summoned unit system - gameMode is ${this.gameMode}, not 'pvp'`);
+      return;
+    }
+    
+    console.log(`🤖 Starting summoned unit system for PVP room ${this.roomId}`);
+    
+    // Start the update loop for summoned units (60 FPS)
+    this.summonedUnitUpdateTimer = setInterval(() => {
+      this.updateSummonedUnits();
+    }, 1000 / 60); // 60 FPS
+    
+    console.log(`🤖 Summoned unit system started for PVP room ${this.roomId} - update timer created`);
+  }
+  
+  // Stop the summoned unit system
+  stopSummonedUnitSystem() {
+    if (this.summonedUnitUpdateTimer) {
+      clearInterval(this.summonedUnitUpdateTimer);
+      this.summonedUnitUpdateTimer = null;
+    }
+    
+    // Clear all summoned units
+    this.summonedUnits.clear();
+    this.waveUnits.clear();
+    this.lastGlobalSpawnTime = 0;
+    this.currentWaveId = null;
+    
+    console.log(`🤖 Summoned unit system stopped for room ${this.roomId}`);
+  }
+  
+  // Main update loop for summoned units
+  updateSummonedUnits() {
+    if (!this.gameStarted || this.gameMode !== 'pvp') {
+      // Uncomment for debugging: console.log(`🤖 Summoned unit update skipped: gameStarted=${this.gameStarted}, gameMode=${this.gameMode}`);
+      return;
+    }
+    
+    const currentTime = Date.now() / 1000;
+    const deltaTime = 1 / 60; // 60 FPS
+    const unitsToDestroy = [];
+    
+    // Debug log every 5 seconds to avoid spam
+    if (Math.floor(currentTime) % 5 === 0 && Math.floor(currentTime * 10) % 10 === 0) {
+      console.log(`🤖 Summoned unit update: ${this.summonedUnits.size} units, ${this.towers.size} towers`);
+    }
+    
+    // Process existing units
+    for (const [unitId, unit] of this.summonedUnits) {
+      // Check if unit is expired
+      if (this.isUnitExpired(unit, currentTime)) {
+        this.waveUnits.delete(unitId);
+        unitsToDestroy.push(unitId);
+        continue;
+      }
+      
+      // Check if unit is dead
+      if (unit.health <= 0 && !unit.isDead) {
+        unit.isDead = true;
+        unit.deathTime = currentTime;
+        this.waveUnits.delete(unitId);
+        unitsToDestroy.push(unitId);
+        continue;
+      }
+      
+      // Skip inactive or dead units
+      if (!unit.isActive || unit.isDead) continue;
+      
+      // Update unit behavior
+      this.updateUnitBehavior(unit, currentTime, deltaTime);
+    }
+    
+    // Check for wave completion
+    this.checkWaveCompletion(currentTime);
+    
+    // Handle spawning new units
+    this.handleUnitSpawning(currentTime);
+    
+    // Destroy expired units
+    for (const unitId of unitsToDestroy) {
+      this.destroySummonedUnit(unitId);
+    }
+    
+    // Broadcast unit updates to all clients (throttled to 20 FPS for network efficiency)
+    if (Math.floor(currentTime * 20) !== Math.floor((currentTime - deltaTime) * 20)) {
+      this.broadcastSummonedUnitUpdates();
+    }
+  }
+  
+  // Update individual unit behavior (AI logic)
+  updateUnitBehavior(unit, currentTime, deltaTime) {
+    // Search for targets periodically
+    if (this.canUnitSearchForTargets(unit, currentTime)) {
+      this.findTargetForUnit(unit);
+      unit.lastTargetSearchTime = currentTime;
+    }
+    
+    // Move towards target position if no specific target
+    if (!unit.currentTarget && unit.targetPosition) {
+      this.moveUnitTowardsPosition(unit, deltaTime);
+    }
+    
+    // Handle combat with current target
+    if (unit.currentTarget && this.canUnitAttack(unit, currentTime)) {
+      this.handleUnitAttack(unit, currentTime);
+    }
+  }
+  
+  // Find target for unit (same logic as client-side)
+  findTargetForUnit(unit) {
+    // Priority 1: Find enemy units to attack
+    const enemyUnits = this.findEnemyUnitsForUnit(unit);
+    if (enemyUnits.length > 0) {
+      const closestUnit = this.findClosestUnitToPosition(enemyUnits, unit.position);
+      if (closestUnit) {
+        unit.currentTarget = closestUnit.unitId;
+        return;
+      }
+    }
+    
+    // Priority 2: If no enemy units, target enemy tower
+    const enemyTower = this.findEnemyTowerForUnit(unit);
+    if (enemyTower) {
+      unit.currentTarget = `tower_${enemyTower.ownerId}`;
+      return;
+    }
+    
+    // No targets found, clear target
+    unit.currentTarget = null;
+  }
+  
+  // Find enemy units for a given unit
+  findEnemyUnitsForUnit(unit) {
+    const enemyUnits = [];
+    
+    for (const [unitId, otherUnit] of this.summonedUnits) {
+      if (otherUnit.ownerId !== unit.ownerId && 
+          otherUnit.isActive && 
+          !otherUnit.isDead && 
+          otherUnit.health > 0) {
+        enemyUnits.push(otherUnit);
+      }
+    }
+    
+    return enemyUnits;
+  }
+  
+  // Find enemy tower for a given unit
+  findEnemyTowerForUnit(unit) {
+    for (const [towerId, tower] of this.towers) {
+      if (tower.ownerId !== unit.ownerId && 
+          !tower.isDead && 
+          tower.health > 0) {
+        return tower;
+      }
+    }
+    return null;
+  }
+  
+  // Find closest unit to a position
+  findClosestUnitToPosition(units, position) {
+    let closestUnit = null;
+    let closestDistance = Infinity;
+    
+    for (const unit of units) {
+      const distance = this.calculateDistance(position, unit.position);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestUnit = unit;
+      }
+    }
+    
+    return closestUnit;
+  }
+  
+  // Move unit towards target position
+  moveUnitTowardsPosition(unit, deltaTime) {
+    if (!unit.targetPosition) return;
+    
+    const direction = {
+      x: unit.targetPosition.x - unit.position.x,
+      y: unit.targetPosition.y - unit.position.y,
+      z: unit.targetPosition.z - unit.position.z
+    };
+    
+    const distance = Math.sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
+    
+    // If close enough to target position, stop moving
+    if (distance < 0.5) {
+      unit.targetPosition = null;
+      return;
+    }
+    
+    // Normalize and move
+    const normalizedDirection = {
+      x: direction.x / distance,
+      y: direction.y / distance,
+      z: direction.z / distance
+    };
+    
+    const moveDistance = unit.moveSpeed * deltaTime;
+    
+    if (moveDistance < distance) {
+      // Move towards target
+      unit.position.x += normalizedDirection.x * moveDistance;
+      unit.position.y += normalizedDirection.y * moveDistance;
+      unit.position.z += normalizedDirection.z * moveDistance;
+    } else {
+      // Arrived at target
+      unit.position.x = unit.targetPosition.x;
+      unit.position.y = unit.targetPosition.y;
+      unit.position.z = unit.targetPosition.z;
+      unit.targetPosition = null;
+    }
+  }
+  
+  // Handle unit attack
+  handleUnitAttack(unit, currentTime) {
+    if (!unit.currentTarget) return;
+    
+    let target = null;
+    let targetPosition = null;
+    
+    // Check if target is a tower
+    if (unit.currentTarget.startsWith('tower_')) {
+      const towerId = unit.currentTarget;
+      target = this.towers.get(towerId);
+      if (target) {
+        targetPosition = target.position;
+      }
+    } else {
+      // Target is another summoned unit
+      target = this.summonedUnits.get(unit.currentTarget);
+      if (target) {
+        targetPosition = target.position;
+      }
+    }
+    
+    if (!target || !targetPosition) {
+      unit.currentTarget = null;
+      return;
+    }
+    
+    // Check if target is still in range
+    const distance = this.calculateDistance(unit.position, targetPosition);
+    if (distance > unit.attackRange) {
+      unit.currentTarget = null;
+      return;
+    }
+    
+    // Check if target is still alive
+    if (target.isDead || target.health <= 0) {
+      unit.currentTarget = null;
+      return;
+    }
+    
+    // Perform attack
+    if (unit.currentTarget.startsWith('tower_')) {
+      // Attack tower
+      this.damageTower(unit.currentTarget, unit.attackDamage);
+    } else {
+      // Attack summoned unit
+      this.damageSummonedUnitDirect(unit.currentTarget, unit.attackDamage, unit.ownerId);
+    }
+    
+    unit.lastAttackTime = currentTime;
+  }
+  
+  // Check wave completion
+  checkWaveCompletion(currentTime) {
+    // Check if current wave is complete (all units dead or expired)
+    if (this.currentWaveId && this.waveUnits.size === 0) {
+      // Ensure we don't spam the callback (minimum 30 seconds between wave completions)
+      if (currentTime - this.lastWaveCompletionTime >= 30) {
+        console.log(`🎯 Wave ${this.currentWaveId} completed! Awarding experience to all players.`);
+        
+        // Broadcast wave completion
+        if (this.io) {
+          this.io.to(this.roomId).emit('wave-completed', {
+            waveId: this.currentWaveId,
+            timestamp: Date.now()
+          });
+        }
+        
+        this.lastWaveCompletionTime = currentTime;
+        this.currentWaveId = null;
+      }
+    }
+  }
+  
+  // Handle unit spawning
+  handleUnitSpawning(currentTime) {
+    // Check if we have at least 2 towers (both players joined)
+    if (this.towers.size < 2) {
+      // Don't start spawning until both players have joined
+      return;
+    }
+    
+    // Check if it's time for global spawn (synchronized for all towers)
+    const timeSinceLastSpawn = currentTime - this.lastGlobalSpawnTime;
+    
+    // For the first spawn, start immediately when both players are present
+    const shouldSpawn = this.lastGlobalSpawnTime === 0 || timeSinceLastSpawn >= this.spawnInterval;
+    
+    if (!shouldSpawn) {
+      return;
+    }
+    
+    console.log(`🌊 Global spawn time! Spawning units for all ${this.towers.size} towers`);
+    
+    // Spawn units for ALL active towers simultaneously
+    let towersSpawned = 0;
+    for (const [towerId, tower] of this.towers) {
+      if (!tower.isActive || tower.isDead) {
+        console.log(`🚫 Skipping tower ${towerId} - not active or dead`);
+        continue;
+      }
+      
+      console.log(`✅ Spawning units for tower ${towerId} (owner: ${tower.ownerId})`);
+      this.spawnUnitsForTower(tower, currentTime);
+      towersSpawned++;
+    }
+    
+    if (towersSpawned > 0) {
+      // Update global spawn time only if we actually spawned units
+      this.lastGlobalSpawnTime = currentTime;
+      console.log(`🕐 Next global spawn in ${this.spawnInterval} seconds`);
+    }
+  }
+  
+  // Spawn units for a tower
+  spawnUnitsForTower(tower, currentTime) {
+    console.log(`🏰 spawnUnitsForTower called for tower ${tower.id} (owner: ${tower.ownerId})`);
+    
+    // Start a new wave if this is the first tower spawning in this cycle
+    if (!this.currentWaveId) {
+      this.currentWaveId = `wave_${currentTime}`;
+      this.waveStartTime = currentTime;
+      this.waveUnits.clear();
+      console.log(`🌊 Starting new wave: ${this.currentWaveId}`);
+    }
+    
+    // Find the opposing tower position for targeting
+    let opposingTowerPosition = this.findOpposingTowerPosition(tower.ownerId);
+    console.log(`🎯 Opposing tower position for ${tower.ownerId}:`, opposingTowerPosition);
+    
+    // If no opposing tower found, use a default position in front of current tower
+    if (!opposingTowerPosition) {
+      opposingTowerPosition = {
+        x: tower.position.x,
+        y: tower.position.y,
+        z: tower.position.z + 20
+      };
+      console.log(`🎯 Using default target position:`, opposingTowerPosition);
+    }
+    
+    // Spawn 3 units and track them in the wave
+    console.log(`🤖 Spawning 3 units for tower ${tower.id}`);
+    for (let i = 0; i < 3; i++) {
+      const unitId = this.spawnSummonedUnit(tower.ownerId, tower.position, opposingTowerPosition, i, currentTime);
+      if (unitId) {
+        this.waveUnits.add(unitId);
+        console.log(`✅ Unit ${unitId} added to wave ${this.currentWaveId}`);
+      } else {
+        console.log(`❌ Failed to spawn unit ${i} for tower ${tower.id}`);
+      }
+    }
+    console.log(`🌊 Wave ${this.currentWaveId} now has ${this.waveUnits.size} units`);
+  }
+  
+  // Find opposing tower position
+  findOpposingTowerPosition(ownerId) {
+    for (const [towerId, tower] of this.towers) {
+      if (tower.ownerId !== ownerId) {
+        return tower.position;
+      }
+    }
+    return null;
+  }
+  
+  // Spawn a summoned unit
+  spawnSummonedUnit(ownerId, spawnPosition, targetPosition, unitIndex, currentTime) {
+    const unitId = `${ownerId}_unit_${currentTime}_${unitIndex}`;
+    
+    // Add offset to spawn position to avoid stacking
+    const offset = {
+      x: (unitIndex - 1) * 2, // Spread units left/right
+      y: 0,
+      z: 0
+    };
+    
+    const actualSpawnPosition = {
+      x: spawnPosition.x + offset.x,
+      y: spawnPosition.y + offset.y,
+      z: spawnPosition.z + offset.z
+    };
+    
+    const unit = {
+      unitId: unitId,
+      ownerId: ownerId,
+      position: actualSpawnPosition,
+      targetPosition: targetPosition,
+      health: 1000, // Max health
+      maxHealth: 1000,
+      attackRange: 4,
+      attackDamage: 45,
+      attackCooldown: 2.0,
+      lastAttackTime: 0,
+      moveSpeed: 2.25,
+      currentTarget: null,
+      lastTargetSearchTime: 0,
+      targetSearchCooldown: 0.5,
+      isActive: true,
+      isDead: false,
+      deathTime: 0,
+      summonTime: currentTime,
+      lifetime: 120 // 2 minutes
+    };
+    
+    this.summonedUnits.set(unitId, unit);
+    
+    console.log(`🤖 Spawned summoned unit ${unitId} for player ${ownerId} at position [${actualSpawnPosition.x.toFixed(2)}, ${actualSpawnPosition.y.toFixed(2)}, ${actualSpawnPosition.z.toFixed(2)}]`);
+    console.log(`📊 Total summoned units in room: ${this.summonedUnits.size}`);
+    
+    return unitId;
+  }
+  
+  // Damage a summoned unit directly (server-side)
+  damageSummonedUnitDirect(unitId, damage, sourceOwnerId) {
+    const unit = this.summonedUnits.get(unitId);
+    if (!unit) {
+      console.log(`⚠️ Attempted to damage non-existent unit ${unitId} - unit was already destroyed`);
+      return false;
+    }
+    if (unit.isDead) {
+      console.log(`⚠️ Attempted to damage dead unit ${unitId} - ignoring damage`);
+      return false;
+    }
+    
+    const previousHealth = unit.health;
+    unit.health = Math.max(0, unit.health - damage);
+    const wasKilled = previousHealth > 0 && unit.health <= 0;
+    
+    if (wasKilled) {
+      unit.isDead = true;
+      unit.isActive = false;
+      unit.deathTime = Date.now() / 1000;
+      this.waveUnits.delete(unitId);
+    }
+    
+    console.log(`🤖 Summoned unit ${unitId} took ${damage} damage from ${sourceOwnerId}. Health: ${unit.health}/${unit.maxHealth}${wasKilled ? ' (KILLED)' : ''}`);
+    
+    return true;
+  }
+  
+  // Destroy a summoned unit
+  destroySummonedUnit(unitId) {
+    const unit = this.summonedUnits.get(unitId);
+    if (unit) {
+      this.summonedUnits.delete(unitId);
+      this.waveUnits.delete(unitId);
+      console.log(`🤖 Destroyed summoned unit ${unitId}`);
+    }
+  }
+  
+  // Broadcast summoned unit updates to all clients
+  broadcastSummonedUnitUpdates() {
+    const unitUpdates = [];
+    
+    // Always broadcast updates, even if 0 units, so clients can clean up stale entities
+    for (const [unitId, unit] of this.summonedUnits) {
+      unitUpdates.push({
+        unitId: unit.unitId,
+        ownerId: unit.ownerId,
+        position: unit.position,
+        health: unit.health,
+        maxHealth: unit.maxHealth,
+        isDead: unit.isDead,
+        isActive: unit.isActive,
+        currentTarget: unit.currentTarget,
+        targetPosition: unit.targetPosition
+      });
+    }
+    
+    if (this.io && unitUpdates.length > 0) {
+      this.io.to(this.roomId).emit('summoned-units-updated', {
+        units: unitUpdates,
+        timestamp: Date.now()
+      });
+    }
+  }
+  
+  // Get summoned units
+  getSummonedUnits() {
+    return Array.from(this.summonedUnits.values());
+  }
+  
+  // Utility functions
+  isUnitExpired(unit, currentTime) {
+    return unit.isDead || (currentTime - unit.summonTime) >= unit.lifetime;
+  }
+  
+  canUnitSearchForTargets(unit, currentTime) {
+    return (currentTime - unit.lastTargetSearchTime) >= unit.targetSearchCooldown;
+  }
+  
+  canUnitAttack(unit, currentTime) {
+    if (!unit.isActive || unit.isDead || !unit.currentTarget) {
+      return false;
+    }
+    return (currentTime - unit.lastAttackTime) >= unit.attackCooldown;
+  }
+  
+  calculateDistance(pos1, pos2) {
+    const dx = pos1.x - pos2.x;
+    const dy = pos1.y - pos2.y;
+    const dz = pos1.z - pos2.z;
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
 
   getKillCount() {
@@ -735,10 +1280,14 @@ class GameRoom {
     console.log(`🗑️ Destroying room ${this.roomId}`);
     this.stopEnemySpawning();
     this.stopEnemyAI();
+    this.stopSummonedUnitSystem();
     
     this.players.clear();
     this.enemies.clear();
+    this.towers.clear();
+    this.summonedUnits.clear();
     this.enemyStatusEffects.clear();
+    this.lastGlobalSpawnTime = 0;
     this.gameStarted = false;
     this.killCount = 0;
   }

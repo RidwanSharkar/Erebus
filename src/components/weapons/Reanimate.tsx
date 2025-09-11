@@ -34,16 +34,16 @@ const HealingEffect: React.FC<{ position: Vector3; onComplete: () => void }> = R
 
   // Pre-calculate shared material properties
   const ringMaterial = useMemo(() => ({
-    color: "#60FF38",
-    emissive: "#60FF38",
-    emissiveIntensity: 1.5,
+    color: "#ffaa00",
+    emissive: "#ff8800",
+    emissiveIntensity: 2,
     transparent: true
   }), []);
 
   const particleMaterial = useMemo(() => ({
-    color: "#60FF38",
-    emissive: "#60FF38",
-    emissiveIntensity: 2.5,
+    color: "#ffaa00",
+    emissive: "#ff8800",
+    emissiveIntensity: 2,
     transparent: true
   }), []);
 
@@ -72,9 +72,9 @@ const HealingEffect: React.FC<{ position: Vector3; onComplete: () => void }> = R
       <mesh scale={[scale, scale, scale]}>
         <sphereGeometry args={[0.5, 32, 32]} />
         <meshStandardMaterial
-          color="#60FF38"
-          emissive="#60FF38"
-          emissiveIntensity={2}
+          color="#ffaa00"
+          emissive="#ff8800"
+          emissiveIntensity={3}
           transparent
           opacity={opacity * 0.3}
         />
@@ -106,8 +106,8 @@ const HealingEffect: React.FC<{ position: Vector3; onComplete: () => void }> = R
 
       {/* Light source */}
       <pointLight
-        color="#60FF38"
-        intensity={2 * opacity}
+        color="#ff8800"
+        intensity={4 * opacity}
         distance={5}
         decay={2}
       />

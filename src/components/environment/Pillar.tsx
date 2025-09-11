@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
 interface PillarProps {
@@ -7,6 +8,9 @@ interface PillarProps {
 }
 
 const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], level = 1 }) => {
+  const groupRef = useRef<THREE.Group>(null);
+  const timeRef = useRef(0);
+
   // Get level-based colors
   const getLevelColors = (level: number) => {
     switch (level) {
@@ -65,22 +69,24 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], level = 1 }) => {
     };
   }, [level]);
 
-  // rotation animation for the orb
-  const [rotation, setRotation] = React.useState(0);
-  
-  React.useEffect(() => {
-    let animationFrameId: number;
-    
-    const animate = () => {
-      setRotation(prev => (prev + 0.02) % (Math.PI * 2));
-      animationFrameId = requestAnimationFrame(animate);
-    };
-    
-    animate();
-    return () => {
-      cancelAnimationFrame(animationFrameId);
-    };
-  }, []);
+  // Gentle floating animation
+  useFrame((state, delta) => {
+    if (groupRef.current) {
+      timeRef.current += delta;
+
+      // Gentle floating motion
+      const floatOffset = Math.sin(timeRef.current * 0.8) * 0.05;
+      groupRef.current.position.y = position[1] + floatOffset;
+
+      // Subtle rotation for the orb
+      const orb = groupRef.current.children.find(child => child.userData.isOrb);
+      if (orb) {
+        orb.rotation.x = timeRef.current * 0.5;
+        orb.rotation.y = timeRef.current * 0.3;
+        orb.rotation.z = timeRef.current * 0.2;
+      }
+    }
+  });
 
   //  cleanup 
   React.useEffect(() => {
@@ -94,7 +100,7 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], level = 1 }) => {
   const levelColors = getLevelColors(level);
 
   return (
-    <group position={position} scale={[0.35, 0.35, 0.35]}>
+    <group ref={groupRef} position={position} scale={[0.35, 0.35, 0.35]}>
       {/* Base */}
       <mesh
         geometry={pillarGeometries.base}
@@ -103,7 +109,7 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], level = 1 }) => {
         castShadow
         receiveShadow
       />
-      
+
       {/* Main column */}
       <mesh
         geometry={pillarGeometries.column}
@@ -112,7 +118,7 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], level = 1 }) => {
         castShadow
         receiveShadow
       />
-      
+
       {/* Top */}
       <mesh
         geometry={pillarGeometries.top}
@@ -121,13 +127,13 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], level = 1 }) => {
         castShadow
         receiveShadow
       />
-      
+
       {/* Floating orb */}
       <mesh
         geometry={pillarGeometries.orb}
         material={materials.orb}
         position={[0, 5, 0]}
-        rotation={[rotation, rotation, 0]}
+        userData={{ isOrb: true }}
       >
         <pointLight color={levelColors.color} intensity={0.5} distance={5} />
       </mesh>

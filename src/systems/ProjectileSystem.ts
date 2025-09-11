@@ -261,6 +261,15 @@ export class ProjectileSystem extends System {
         continue;
       }
 
+      // CRITICAL PVP FIX: Prevent Viper Sting projectiles from hitting the local player
+      // In PVP, Viper Sting projectiles from remote players should not damage the local player
+      // The local player always has CollisionLayer.PLAYER, while remote players have CollisionLayer.ENEMY
+      if (targetCollider.layer === CollisionLayer.PLAYER && projectile.projectileType === 'viper_sting') {
+        // This is a Viper Sting projectile hitting the local player - skip it
+        // The OptimizedPVPViperStingManager will handle PVP damage separately
+        continue;
+      }
+
       const targetPos = targetTransform.getWorldPosition();
 
       // Use collider radius for more accurate collision detection
@@ -540,6 +549,7 @@ export class ProjectileSystem extends System {
       subclass?: WeaponSubclass;
       level?: number;
       opacity?: number;
+      sourcePlayerId?: string;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -555,6 +565,7 @@ export class ProjectileSystem extends System {
     projectile.damage = config?.damage || 20; // EntropicBolt damage
     projectile.maxLifetime = config?.lifetime ||1.75; // Shorter lifetime
     projectile.owner = ownerId;
+    projectile.sourcePlayerId = config?.sourcePlayerId || 'unknown';
     projectile.setDirection(direction);
     
     if (config?.piercing) projectile.setPiercing(true);
@@ -619,6 +630,7 @@ export class ProjectileSystem extends System {
       opacity?: number;
       maxDistance?: number;
       projectileType?: string; // Add projectile type for special handling
+      sourcePlayerId?: string; // Add source player ID for multiplayer team validation
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -634,6 +646,8 @@ export class ProjectileSystem extends System {
     projectile.damage = config?.damage || 5; // Set default damage to 5 as requested
     projectile.maxLifetime = config?.lifetime || 2;
     projectile.owner = ownerId;
+    projectile.sourcePlayerId = config?.sourcePlayerId || 'unknown';
+    projectile.projectileType = config?.projectileType || 'generic';
     projectile.setDirection(direction);
     projectile.setStartPosition(position);
     
@@ -663,7 +677,7 @@ export class ProjectileSystem extends System {
     });
     const placeholderMesh = new Mesh(placeholderGeometry, placeholderMaterial);
     
-    // Mark this as a RegularArrow for special handling
+    // Mark this as a RegularArrow for special handling (will be overridden by TowerSystem if it's a tower projectile)
     placeholderMesh.userData.isRegularArrow = true;
     placeholderMesh.userData.direction = direction.clone();
     placeholderMesh.userData.subclass = config?.subclass;

@@ -24,6 +24,13 @@ export class Movement extends Component {
   public isSlowed: boolean;
   public slowedUntil: number;
   public movementSpeedMultiplier: number;
+  
+  // Corrupted debuff state (WraithStrike)
+  public isCorrupted: boolean;
+  public corruptedStartTime: number;
+  public corruptedDuration: number;
+  public corruptedInitialSlowPercent: number; // Initial slow percentage (90%)
+  public corruptedRecoveryRate: number; // Recovery rate per second (10%)
 
   // Input-based movement
   public moveDirection: Vector3;
@@ -78,6 +85,13 @@ export class Movement extends Component {
     this.isSlowed = false;
     this.slowedUntil = 0;
     this.movementSpeedMultiplier = 1.0;
+    
+    // Initialize corrupted debuff states
+    this.isCorrupted = false;
+    this.corruptedStartTime = 0;
+    this.corruptedDuration = 0;
+    this.corruptedInitialSlowPercent = 0.9; // 90% initial slow
+    this.corruptedRecoveryRate = 0.1; // 10% recovery per second
     
     this.moveDirection = new Vector3(0, 0, 0);
     this.inputStrength = 0;
@@ -141,6 +155,15 @@ export class Movement extends Component {
     // console.log(`🐌 Player slowed to ${speedMultiplier * 100}% speed for ${duration}ms until ${this.slowedUntil}`);
   }
 
+  public applyCorrupted(duration: number): void {
+    this.isCorrupted = true;
+    this.corruptedStartTime = Date.now() / 1000; // Store in seconds for easier calculations
+    this.corruptedDuration = duration / 1000; // Convert to seconds
+    this.corruptedInitialSlowPercent = 0.9; // 90% initial slow
+    this.corruptedRecoveryRate = 0.1; // 10% recovery per second
+    console.log(`👻 Applied corrupted debuff for ${duration}ms (${this.corruptedDuration}s)`);
+  }
+
   public updateDebuffs(): void {
     const currentTime = Date.now();
     
@@ -156,13 +179,47 @@ export class Movement extends Component {
       this.slowedUntil = 0;
       this.movementSpeedMultiplier = 1.0;
     }
+    
+    // Check corrupted state
+    const currentTimeSeconds = currentTime / 1000;
+    if (this.isCorrupted) {
+      const elapsed = currentTimeSeconds - this.corruptedStartTime;
+      if (elapsed >= this.corruptedDuration) {
+        // Corrupted debuff has expired
+        this.isCorrupted = false;
+        this.corruptedStartTime = 0;
+        this.corruptedDuration = 0;
+        console.log(`👻 Corrupted debuff expired`);
+      }
+    }
   }
 
   public getEffectiveMaxSpeed(): number {
     if (this.isFrozen) {
       return 0; // Completely frozen
     }
-    return this.maxSpeed * this.movementSpeedMultiplier;
+    
+    let speed = this.maxSpeed * this.movementSpeedMultiplier;
+    
+    // Apply corrupted debuff slow effect with gradual recovery
+    if (this.isCorrupted) {
+      const currentTimeSeconds = Date.now() / 1000;
+      const elapsed = currentTimeSeconds - this.corruptedStartTime;
+      
+      // Calculate current slow percentage based on gradual recovery
+      // Initial: 90% slow, recovers 10% per second
+      const currentSlowPercent = Math.max(0, this.corruptedInitialSlowPercent - (elapsed * this.corruptedRecoveryRate));
+      
+      // Apply the slow effect (reduce speed by the slow percentage)
+      speed *= (1 - currentSlowPercent);
+      
+      // Debug logging for corrupted debuff (only log occasionally to avoid spam)
+      if (elapsed % 1.0 < 0.1) { // Log roughly every second
+        console.log(`👻 Corrupted debuff: ${(currentSlowPercent * 100).toFixed(1)}% slow (${((1 - currentSlowPercent) * 100).toFixed(1)}% speed remaining)`);
+      }
+    }
+    
+    return speed;
   }
 
   public startDash(direction: Vector3, currentPosition: Vector3, currentTime: number): boolean {

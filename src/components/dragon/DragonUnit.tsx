@@ -48,10 +48,16 @@ interface DragonUnitProps {
   isDeflecting?: boolean;
   isSmiting?: boolean;
   isDeathGrasping?: boolean;
+  isWraithStriking?: boolean;
+  isCorruptedAuraActive?: boolean;
+  isColossusStriking?: boolean;
   onSmiteComplete?: () => void;
   onDeathGraspComplete?: () => void;
+  onWraithStrikeComplete?: () => void;
+  onCorruptedAuraToggle?: (active: boolean) => void;
   onChargeComplete?: () => void;
   onDeflectComplete?: () => void;
+  onColossusStrikeComplete?: () => void;
   enemyData?: Array<{
     id: string;
     position: Vector3;
@@ -137,10 +143,16 @@ export default function DragonUnit({
   isDeflecting = false,
   isSmiting = false,
   isDeathGrasping = false,
+  isWraithStriking = false,
+  isCorruptedAuraActive = false,
+  isColossusStriking = false,
   onSmiteComplete = () => {},
   onDeathGraspComplete = () => {},
+  onWraithStrikeComplete = () => {},
+  onCorruptedAuraToggle = () => {},
   onChargeComplete = () => {},
   onDeflectComplete = () => {},
+  onColossusStrikeComplete = () => {},
   enemyData = [],
   onHit = () => {},
   setDamageNumbers = () => {},
@@ -197,7 +209,7 @@ export default function DragonUnit({
           isSmiting={false}
           isOathstriking={false}
           isDivineStorming={isDivineStorming}
-          isColossusStriking={false}
+          isColossusStriking={isColossusStriking}
           isCharging={isSwordCharging}
           isDeflecting={isDeflecting}
           chargeDirectionProp={chargeDirection}
@@ -205,7 +217,7 @@ export default function DragonUnit({
           onSmiteComplete={() => {}}
           onOathstrikeComplete={() => {}}
           onDivineStormComplete={() => {}}
-          onColossusStrikeComplete={() => {}}
+          onColossusStrikeComplete={onColossusStrikeComplete}
           onChargeComplete={onChargeComplete}
           onDeflectComplete={onDeflectComplete}
           hasChainLightning={false}
@@ -244,6 +256,8 @@ export default function DragonUnit({
           isSwinging={isSwinging}
           isSmiting={isSmiting}
           isDeathGrasping={isDeathGrasping}
+          isWraithStriking={isWraithStriking}
+          isCorruptedAuraActive={isCorruptedAuraActive}
           isOathstriking={false}
           isDivineStorming={isDivineStorming}
           isColossusStriking={false}
@@ -253,6 +267,8 @@ export default function DragonUnit({
           onSwingComplete={onSwordSwingComplete}
           onSmiteComplete={onSmiteComplete}
           onDeathGraspComplete={onDeathGraspComplete}
+          onWraithStrikeComplete={onWraithStrikeComplete}
+          onCorruptedAuraToggle={onCorruptedAuraToggle}
           onOathstrikeComplete={() => {}}
           onDivineStormComplete={() => {}}
           onColossusStrikeComplete={() => {}}

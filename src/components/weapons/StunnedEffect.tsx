@@ -15,15 +15,17 @@ interface StunnedEffectProps {
     isDying?: boolean;
     deathStartTime?: number;
   }>;
+  disableCameraRotation?: boolean; // New prop to disable camera rotation during stun
 }
 
-export default function StunnedEffect({ 
-  position, 
+export default function StunnedEffect({
+  position,
   duration = 4000, // 4 seconds stun duration
   startTime = Date.now(),
   enemyId,
   enemyData = [],
-  onComplete 
+  onComplete,
+  disableCameraRotation = false
 }: StunnedEffectProps) {
   const effectRef = useRef<Group>(null);
   const [intensity, setIntensity] = useState(1);
@@ -41,6 +43,31 @@ export default function StunnedEffect({
       clearTimeout(timeout);
     };
   }, [duration, onComplete, enemyId]);
+
+  // Handle camera rotation disable for sabre stuns
+  useEffect(() => {
+    if (!disableCameraRotation || !enemyId) return;
+
+    // Disable camera rotation during stun
+    const cameraSystem = (window as any).cameraSystem;
+    if (cameraSystem && typeof cameraSystem.setCameraRotationDisabled === 'function') {
+      cameraSystem.setCameraRotationDisabled(true, enemyId);
+
+      // Re-enable camera rotation when stun ends
+      const timeout = setTimeout(() => {
+        if (cameraSystem && typeof cameraSystem.setCameraRotationDisabled === 'function') {
+          cameraSystem.setCameraRotationDisabled(false, enemyId);
+        }
+      }, duration);
+
+      return () => {
+        clearTimeout(timeout);
+        if (cameraSystem && typeof cameraSystem.setCameraRotationDisabled === 'function') {
+          cameraSystem.setCameraRotationDisabled(false, enemyId);
+        }
+      };
+    }
+  }, [disableCameraRotation, enemyId, duration]);
 
   useFrame(() => {
     if (!effectRef.current) return;

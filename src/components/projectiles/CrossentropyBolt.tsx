@@ -14,10 +14,14 @@ interface CrossentropyBoltProps {
 }
 
 export default function CrossentropyBolt({ id, position, direction, onImpact, checkCollisions }: CrossentropyBoltProps) {
+  console.log('🔥 CrossentropyBolt: Component created with ID', id);
   const fireball1Ref = useRef<Mesh>(null);
   const fireball2Ref = useRef<Mesh>(null);
+  const fireball3Ref = useRef<Mesh>(null);
   const clock = useRef(new Clock());
-  const speed = 0.25;
+  const startSpeed = 0.25;
+  const maxSpeed = 0.8;
+  const accelerationDistance = 15; // Distance over which to accelerate from start to max speed
   const maxRange = 20; // Maximum range before fading
   const lifespan = 5; // Fallback lifespan
   const currentPosition = useRef(position.clone());
@@ -31,15 +35,15 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
   const color = new Color('#FF4500');
 
   // Spiral parameters
-  const spiralRadius = 0.375;
-  const spiralSpeed = 3.5; // rotations per second
+  const spiralRadius = 0.4875;
+  const spiralSpeed = 2; // rotations per second
   const time = useRef(0);
 
   // Collision detection is now handled by the ECS system
   // This component only handles visual representation
 
   useFrame((_, delta) => {
-    if (!fireball1Ref.current || !fireball2Ref.current) return;
+    if (!fireball1Ref.current || !fireball2Ref.current || !fireball3Ref.current) return;
 
     const currentTime = Date.now();
 
@@ -55,6 +59,7 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
         // Fade complete, remove from scene
         fireball1Ref.current.removeFromParent();
         fireball2Ref.current.removeFromParent();
+        fireball3Ref.current.removeFromParent();
         if (onImpact) {
           onImpact(); // Call without position to indicate fade completion
         }
@@ -74,12 +79,14 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
 
     time.current += delta;
 
-    // Update position based on direction and speed
-    const movement = direction.clone().multiplyScalar(speed * delta * 60);
-    currentPosition.current.add(movement);
-    
-    // Check if exceeded max range
+    // Calculate current speed based on distance traveled (accelerate from startSpeed to maxSpeed)
     const distanceTraveled = currentPosition.current.distanceTo(startPosition.current);
+    const accelerationProgress = Math.min(distanceTraveled / accelerationDistance, 1);
+    const currentSpeed = startSpeed + (maxSpeed - startSpeed) * accelerationProgress;
+
+    // Update position based on direction and current speed
+    const movement = direction.clone().multiplyScalar(currentSpeed * delta * 60);
+    currentPosition.current.add(movement);
     if (distanceTraveled >= maxRange) {
       hasCollided.current = true;
       fadeStartTime.current = currentTime;
@@ -104,7 +111,7 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
       }
     }
     
-    // Calculate spiral positions for the two fireballs
+    // Calculate spiral positions for the three fireballs
     const spiralAngle = time.current * spiralSpeed * Math.PI * 2;
     const spiralOffset1 = new Vector3(
       Math.cos(spiralAngle) * spiralRadius,
@@ -114,6 +121,11 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
     const spiralOffset2 = new Vector3(
       Math.cos(spiralAngle + Math.PI) * spiralRadius,
       Math.sin((spiralAngle + Math.PI) * 0.5) * spiralRadius * 0.3,
+      0
+    );
+    const spiralOffset3 = new Vector3(
+      Math.cos(spiralAngle + (2 * Math.PI / 3)) * spiralRadius,
+      Math.sin((spiralAngle + (2 * Math.PI / 3)) * 0.5) * spiralRadius * 0.3,
       0
     );
 
@@ -127,9 +139,12 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
       .add(up.clone().multiplyScalar(spiralOffset1.y));
     const finalOffset2 = right.clone().multiplyScalar(spiralOffset2.x)
       .add(up.clone().multiplyScalar(spiralOffset2.y));
+    const finalOffset3 = right.clone().multiplyScalar(spiralOffset3.x)
+      .add(up.clone().multiplyScalar(spiralOffset3.y));
 
     fireball1Ref.current.position.copy(currentPosition.current.clone().add(finalOffset1));
     fireball2Ref.current.position.copy(currentPosition.current.clone().add(finalOffset2));
+    fireball3Ref.current.position.copy(currentPosition.current.clone().add(finalOffset3));
   });
 
   return (
@@ -162,11 +177,26 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
         />
         <pointLight color={color} intensity={5 * opacity} distance={12} />
       </mesh>
+      <mesh ref={fireball3Ref} position={currentPosition.current}>
+        <sphereGeometry args={[size, 32, 32]} />
+        <meshStandardMaterial
+          color="#FF4500"
+          emissive="#FF6600"
+          emissiveIntensity={2 * opacity}
+          transparent
+          opacity={0.9 * opacity}
+          depthWrite={false}
+          blending={AdditiveBlending}
+          toneMapped={false}
+        />
+        <pointLight color={color} intensity={5 * opacity} distance={12} />
+      </mesh>
       <CrossentropyBoltTrail
         color={color}
-        size={size * 0.9}
+        size={size * 0.875}
         mesh1Ref={fireball1Ref}
         mesh2Ref={fireball2Ref}
+        mesh3Ref={fireball3Ref}
         opacity={opacity}
       />
       <pointLight color={color} intensity={8 * opacity} distance={4} decay={2} />

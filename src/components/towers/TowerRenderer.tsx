@@ -39,11 +39,11 @@ export default function TowerRenderer({
 
   // Default colors for different players
   const playerColors = useMemo(() => [
-    new Color(0x4A90E2), // Blue
-    new Color(0xFF6B35), // Orange
-    new Color(0x50C878), // Green
-    new Color(0x9B59B6), // Purple
-    new Color(0xF39C12)  // Yellow
+    new Color("#4FC3F7"), // Blue - Elite color
+    new Color("#FF6B6B"), // Light Red
+    new Color("#FF8A8A"), // Light Red
+    new Color("#FFB3B3"), // Light Red
+    new Color("#FFD6D6")  // Light Red
   ], []);
 
   const towerColor = color || playerColors[towerIndex % playerColors.length];
@@ -140,8 +140,8 @@ export default function TowerRenderer({
   return (
     <group ref={groupRef}>
       {/* Main body - crystal structure adapted for tower */}
-      <mesh position={[0, 2.0, 0]}>
-        <octahedronGeometry args={[0.8, 0]} />
+      <mesh position={[0, 2.3, 0]}>
+        <octahedronGeometry args={[0.92, 0]} />
         <meshStandardMaterial
           color={colorHex}
           emissive={emissiveHex}
@@ -154,8 +154,8 @@ export default function TowerRenderer({
       </mesh>
 
       {/* Head */}
-      <mesh position={[0, 2.7, 0]}>
-        <octahedronGeometry args={[0.4, 0]} />
+      <mesh position={[0, 3.105, 0]}>
+        <octahedronGeometry args={[0.46, 0]} />
         <meshStandardMaterial
           color={colorHex}
           emissive={emissiveHex}
@@ -168,8 +168,8 @@ export default function TowerRenderer({
       </mesh>
 
       {/* Left Shoulder */}
-      <mesh position={[-0.7, 2.35, 0]}>
-        <sphereGeometry args={[0.325, 16, 16]} />
+      <mesh position={[-0.805, 2.7025, 0]}>
+        <sphereGeometry args={[0.37375, 16, 16]} />
         <meshStandardMaterial
           color={colorHex}
           emissive={emissiveHex}
@@ -182,8 +182,8 @@ export default function TowerRenderer({
       </mesh>
 
       {/* Left Shoulder Ring */}
-      <mesh position={[-0.7, 2.35, 0]} rotation={[Math.PI / 2, -Math.PI / 4, 0]}>
-        <torusGeometry args={[0.4, 0.05, 8, 16]} />
+      <mesh position={[-0.805, 2.7025, 0]} rotation={[Math.PI / 2, -Math.PI / 4, 0]}>
+        <torusGeometry args={[0.46, 0.0575, 8, 16]} />
         <meshStandardMaterial
           color={towerColor.clone().multiplyScalar(1.2).getHex()}
           emissive={towerColor.clone().multiplyScalar(0.6).getHex()}
@@ -198,10 +198,10 @@ export default function TowerRenderer({
       {/* Left Arm - animated for attacks */}
       <mesh
         name="LeftArm"
-        position={[-0.7, 2.0, 0.2]}
+        position={[-0.805, 2.3, 0]}
         rotation={[0, 0, 0]}
       >
-        <cylinderGeometry args={[0.15, 0.15, 1.0, 6]} />
+        <cylinderGeometry args={[0.1725, 0.1725, 1.15, 6]} />
         <meshStandardMaterial
           color={colorHex}
           emissive={emissiveHex}
@@ -214,8 +214,8 @@ export default function TowerRenderer({
       </mesh>
 
       {/* Right Shoulder */}
-      <mesh position={[0.7, 2.35, 0]}>
-        <sphereGeometry args={[0.325, 16, 16]} />
+      <mesh position={[0.805, 2.7025, 0]}>
+        <sphereGeometry args={[0.37375, 16, 16]} />
         <meshStandardMaterial
           color={colorHex}
           emissive={emissiveHex}
@@ -228,8 +228,8 @@ export default function TowerRenderer({
       </mesh>
 
       {/* Right Shoulder Ring */}
-      <mesh position={[0.7, 2.35, 0]} rotation={[Math.PI / 2,  Math.PI / 4, 0]}>
-        <torusGeometry args={[0.4, 0.05, 8, 16]} />
+      <mesh position={[0.805, 2.7025, 0]} rotation={[Math.PI / 2,  Math.PI / 4, 0]}>
+        <torusGeometry args={[0.46, 0.0575, 8, 16]} />
         <meshStandardMaterial
           color={towerColor.clone().multiplyScalar(1.2).getHex()}
           emissive={towerColor.clone().multiplyScalar(0.6).getHex()}
@@ -242,8 +242,8 @@ export default function TowerRenderer({
       </mesh>
 
       {/* Right Arm - stays down */}
-      <mesh position={[0.7, 2.0, 0]} rotation={[0, 0, 0]}>
-        <cylinderGeometry args={[0.15, 0.15, 1.0, 6]} />
+      <mesh position={[0.805, 2.3, 0]} rotation={[0, 0, 0]}>
+        <cylinderGeometry args={[0.1725, 0.1725, 1.15, 6]} />
         <meshStandardMaterial
           color={colorHex}
           emissive={emissiveHex}
@@ -256,8 +256,8 @@ export default function TowerRenderer({
       </mesh>
 
       {/* Energy aura effect */}
-      <mesh position={[0, 2.0, 0]}>
-        <sphereGeometry args={[1.45, 16, 16]} />
+      <mesh position={[0, 2.3, 0]}>
+        <sphereGeometry args={[1.6675, 16, 16]} />
         <meshStandardMaterial
           color={colorHex}
           emissive={emissiveHex}
@@ -275,8 +275,8 @@ export default function TowerRenderer({
       {/* Attack animation - energy spikes when attacking */}
       {isAttackingRef.current && (
         <>
-          <mesh position={[0, 2.2, 1.5]} rotation={[Math.PI / 2, 0, 0]}>
-            <coneGeometry args={[0.1, 0.8, 6]} />
+          <mesh position={[0, 2.53, 1.725]} rotation={[Math.PI / 2, 0, 0]}>
+            <coneGeometry args={[0.115, 0.92, 6]} />
             <meshStandardMaterial
               color={towerColor.clone().multiplyScalar(1.5).getHex()}
               emissive={towerColor.clone().multiplyScalar(0.8).getHex()}
@@ -288,8 +288,8 @@ export default function TowerRenderer({
             />
           </mesh>
 
-          <mesh position={[0.5, 2.2, 1.3]} rotation={[Math.PI / 2, 0, Math.PI / 6]}>
-            <coneGeometry args={[0.08, 0.6, 6]} />
+          <mesh position={[0.575, 2.53, 1.495]} rotation={[Math.PI / 2, 0, Math.PI / 6]}>
+            <coneGeometry args={[0.092, 0.69, 6]} />
             <meshStandardMaterial
               color={towerColor.clone().multiplyScalar(1.5).getHex()}
               emissive={towerColor.clone().multiplyScalar(0.8).getHex()}
@@ -301,8 +301,8 @@ export default function TowerRenderer({
             />
           </mesh>
 
-          <mesh position={[-0.5, 2.2, 1.3]} rotation={[Math.PI / 2, 0, -Math.PI / 6]}>
-            <coneGeometry args={[0.08, 0.6, 6]} />
+          <mesh position={[-0.575, 2.53, 1.495]} rotation={[Math.PI / 2, 0, -Math.PI / 6]}>
+            <coneGeometry args={[0.092, 0.69, 6]} />
             <meshStandardMaterial
               color={towerColor.clone().multiplyScalar(1.5).getHex()}
               emissive={towerColor.clone().multiplyScalar(0.8).getHex()}
@@ -319,9 +319,9 @@ export default function TowerRenderer({
       {/* Energy tendrils orbital rings */}
       {[...Array(8)].map((_, i) => {
         const angle = (i / 8) * Math.PI * 2 + timeRef.current * 1.2;
-        const radius = 0.8;
+        const radius = 0.92;
         const x = Math.cos(angle) * radius;
-        const y = 2.5 + Math.sin(angle) * radius;
+        const y = 2.875 + Math.sin(angle) * radius;
         const z = Math.cos(timeRef.current * 1.5 + i) * 0.2;
 
         return (
@@ -335,7 +335,7 @@ export default function TowerRenderer({
             ]}
           >
             <mesh>
-              <coneGeometry args={[0.075, 0.3, 6]} />
+              <coneGeometry args={[0.08625, 0.345, 6]} />
               <meshStandardMaterial
                 color={colorHex}
                 emissive={emissiveHex}
@@ -351,9 +351,9 @@ export default function TowerRenderer({
       {/* Vertical Energy tendrils */}
       {[...Array(8)].map((_, i) => {
         const angle = (i / 8) * Math.PI * 2 + timeRef.current * 1.2 + Math.PI / 8;
-        const radius = 0.8;
+        const radius = 0.92;
         const x = Math.cos(angle) * radius;
-        const y = 2.5 + Math.sin(angle) * radius;
+        const y = 2.875 + Math.sin(angle) * radius;
         const z = Math.cos(timeRef.current * 1.5 + i) * 0.2;
 
         return (
@@ -367,7 +367,7 @@ export default function TowerRenderer({
             ]}
           >
             <mesh>
-            <coneGeometry args={[0.075, 0.3, 6]} />
+            <coneGeometry args={[0.08625, 0.345, 6]} />
               <meshStandardMaterial
                 color={towerColor.clone().multiplyScalar(0.8).getHex()}
                 emissive={towerColor.clone().multiplyScalar(0.4).getHex()}
@@ -383,9 +383,9 @@ export default function TowerRenderer({
       {/* Point light for glow effect */}
       <pointLight
         color={colorHex}
-        position={[0, 1.5, 0]}
+        position={[0, 1.725, 0]}
         intensity={0.5}
-        distance={3}
+        distance={3.45}
         decay={2}
       />
 
@@ -393,8 +393,8 @@ export default function TowerRenderer({
       {/* Death Effect */}
       {isDead && (
         <group>
-          <mesh position={[0, 2.0, 0]}>
-            <sphereGeometry args={[2, 8, 8]} />
+          <mesh position={[0, 2.3, 0]}>
+            <sphereGeometry args={[2.3, 8, 8]} />
             <meshBasicMaterial
               color={0x666666}
               transparent

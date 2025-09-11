@@ -55,6 +55,7 @@ interface UseViperStingProps {
     available: boolean;
     cooldownStartTime: number | null;
   }>>>;
+  localSocketId?: string; // Add this to properly identify local player
 }
 
 export function useViperSting({
@@ -67,7 +68,8 @@ export function useViperSting({
   createBeamEffect,
   applyDoT,
   charges,
-  setCharges
+  setCharges,
+  localSocketId
 }: UseViperStingProps) {
   const projectilePool = useRef<ViperStingProjectile[]>([]);
   const soulStealEffects = useRef<SoulStealEffect[]>([]);
@@ -206,10 +208,7 @@ export function useViperSting({
               if (enemy.isDying || enemy.health <= 0) continue;
               if (projectile.hitEnemies.has(enemy.id)) continue;
 
-              // CRITICAL: Get the local socket ID to prevent self-damage in PVP
-              const localSocketId = (window as any).localSocketId;
-              
-              // NEVER hit yourself - this is the critical fix for self-damage
+              // CRITICAL: Prevent self-damage in PVP
               if (localSocketId && enemy.id === localSocketId) {
                 continue; // Skip local player completely
               }
@@ -229,27 +228,25 @@ export function useViperSting({
                 // Mark enemy as hit during forward phase
                 projectile.hitEnemies.add(enemy.id);
                 
-                // Apply damage - but double-check we're not hitting ourselves
-                if (enemy.id !== localSocketId) {
-                  onHit(enemy.id, DAMAGE);
-                  
-                  // Apply DoT effect
-                  if (applyDoT) {
-                    applyDoT(enemy.id);
-                  }
-                  
-                  // Add damage number
-                  setDamageNumbers(prev => [...prev, {
-                    id: nextDamageNumberId.current++,
-                    damage: DAMAGE,
-                    position: enemy.position.clone(),
-                    isCritical: false,
-                    isViperSting: true
-                  }]);
-
-                  // Create soul steal effect at enemy position
-                  createSoulStealEffect(enemy.position);
+                // Apply damage and effects
+                onHit(enemy.id, DAMAGE);
+                
+                // Apply DoT effect
+                if (applyDoT) {
+                  applyDoT(enemy.id);
                 }
+                
+                // Add damage number
+                setDamageNumbers(prev => [...prev, {
+                  id: nextDamageNumberId.current++,
+                  damage: DAMAGE,
+                  position: enemy.position.clone(),
+                  isCritical: false,
+                  isViperSting: true
+                }]);
+
+                // Create soul steal effect at enemy position
+                createSoulStealEffect(enemy.position);
               }
             }
           } else if (!projectile.fadeStartTime) {
@@ -281,10 +278,7 @@ export function useViperSting({
               // Use separate hit tracking for return phase
               if (projectile.returnHitEnemies.has(enemy.id)) continue;
 
-              // CRITICAL: Get the local socket ID to prevent self-damage in PVP
-              const localSocketId = (window as any).localSocketId;
-              
-              // NEVER hit yourself - this is the critical fix for self-damage
+              // CRITICAL: Prevent self-damage in PVP
               if (localSocketId && enemy.id === localSocketId) {
                 continue; // Skip local player completely
               }
@@ -304,27 +298,25 @@ export function useViperSting({
                 // Mark enemy as hit during return phase
                 projectile.returnHitEnemies.add(enemy.id);
                 
-                // Apply damage again - but double-check we're not hitting ourselves
-                if (enemy.id !== localSocketId) {
-                  onHit(enemy.id, DAMAGE);
-                  
-                  // Apply DoT effect for return shot as well
-                  if (applyDoT) {
-                    applyDoT(enemy.id);
-                  }
-                  
-                  // Add damage number
-                  setDamageNumbers(prev => [...prev, {
-                    id: nextDamageNumberId.current++,
-                    damage: DAMAGE,
-                    position: enemy.position.clone(),
-                    isCritical: false,
-                    isViperSting: true
-                  }]);
-
-                  // Create soul steal effect at enemy position
-                  createSoulStealEffect(enemy.position);
+                // Apply damage and effects for return shot
+                onHit(enemy.id, DAMAGE);
+                
+                // Apply DoT effect for return shot as well
+                if (applyDoT) {
+                  applyDoT(enemy.id);
                 }
+                
+                // Add damage number
+                setDamageNumbers(prev => [...prev, {
+                  id: nextDamageNumberId.current++,
+                  damage: DAMAGE,
+                  position: enemy.position.clone(),
+                  isCritical: false,
+                  isViperSting: true
+                }]);
+
+                // Create soul steal effect at enemy position
+                createSoulStealEffect(enemy.position);
               }
             }
           } else if (!projectile.fadeStartTime) {
@@ -353,6 +345,7 @@ export function useViperSting({
   return {
     shootViperSting,
     projectilePool,
-    soulStealEffects
+    soulStealEffects,
+    createSoulStealEffect
   };
 }

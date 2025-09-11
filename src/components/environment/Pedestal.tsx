@@ -28,10 +28,10 @@ const Pedestal: React.FC<PedestalProps> = ({
   const { pedestalGeometry, material } = useMemo(() => {
     // Create a larger base geometry similar to the pillar base but bigger
     // Using a slightly tapered cylinder for a more imposing look
-    const baseGeometry = new THREE.CylinderGeometry(4, 4.5, 2.5, 12);
+    const baseGeometry = new THREE.CylinderGeometry(8.5, 4.5, 2.5, 12);
     
     // Add some detail with a smaller top ring
-    const topRingGeometry = new THREE.CylinderGeometry(4.2, 4.2, 0.3, 12);
+    const topRingGeometry = new THREE.CylinderGeometry(9, 4.2, 0.3, 12);
     
     // Stone material similar to pillar
     const stoneMaterial = new THREE.MeshStandardMaterial({

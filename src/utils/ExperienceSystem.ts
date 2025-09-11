@@ -19,8 +19,8 @@ export class ExperienceSystem {
   };
 
   // Health scaling per level
-  private static readonly BASE_HEALTH = 750;
-  private static readonly HEALTH_PER_LEVEL = 100;
+  private static readonly BASE_HEALTH = 1000;
+  private static readonly HEALTH_PER_LEVEL = 150;
 
   /**
    * Calculate the level based on total experience
@@ -83,7 +83,9 @@ export class ExperienceSystem {
    * Calculate max health based on level
    */
   static getMaxHealthForLevel(level: number): number {
-    return this.BASE_HEALTH + ((level - 1) * this.HEALTH_PER_LEVEL);
+    const health = this.BASE_HEALTH + ((level - 1) * this.HEALTH_PER_LEVEL);
+    console.log(`📊 ExperienceSystem.getMaxHealthForLevel(${level}) = ${this.BASE_HEALTH} + ((${level} - 1) * ${this.HEALTH_PER_LEVEL}) = ${health}`);
+    return health;
   }
 
   /**

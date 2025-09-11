@@ -10,6 +10,8 @@ import { Movement } from '@/ecs/components/Movement';
 import { World } from '@/ecs/World';
 import { calculateDamage, DamageResult } from '@/core/DamageCalculator';
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
+import { SummonedUnit } from '@/ecs/components/SummonedUnit';
+import { Projectile } from '@/ecs/components/Projectile';
 
 interface DamageEvent {
   target: Entity;
@@ -45,6 +47,9 @@ export class CombatSystem extends System {
   // PVP damage callback for routing player damage to server
   private onPlayerDamageCallback?: (playerId: string, damage: number, damageType?: string) => void;
 
+  // Summoned unit damage callback for routing summoned unit damage to server
+  private onSummonedUnitDamageCallback?: (unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string, damageType?: string) => void;
+
   // Log throttling to reduce spam
   private lastDamageLogTime = 0;
   private damageLogThrottle = 100; // Only log every 100ms
@@ -74,6 +79,43 @@ export class CombatSystem extends System {
   // Set callback for routing player damage to multiplayer server (PVP)
   public setPlayerDamageCallback(callback: (playerId: string, damage: number, damageType?: string) => void): void {
     this.onPlayerDamageCallback = callback;
+  }
+
+  public setSummonedUnitDamageCallback(callback: (unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string, damageType?: string) => void): void {
+    this.onSummonedUnitDamageCallback = callback;
+  }
+
+  // Apply summoned unit damage received from server
+  public applySummonedUnitDamage(unitId: string, damage: number, sourcePlayerId: string): void {
+    const unitEntity = this.world.getEntity(parseInt(unitId));
+    if (!unitEntity) {
+      console.warn(`⚠️ Cannot apply summoned unit damage: unit ${unitId} not found`);
+      return;
+    }
+
+    const health = unitEntity.getComponent(Health);
+    const summonedUnitComponent = unitEntity.getComponent(SummonedUnit);
+    if (!health || !summonedUnitComponent) {
+      console.warn(`⚠️ Cannot apply summoned unit damage: unit ${unitId} missing components`);
+      return;
+    }
+
+    const currentTime = Date.now() / 1000;
+    
+    // Apply damage locally (pass entity so Health can use Shield component)
+    const damageDealt = health.takeDamage(damage, currentTime, unitEntity);
+
+    if (damageDealt) {
+      console.log(`🤖 Applied ${damage} damage to summoned unit ${unitId} from player ${sourcePlayerId} (${health.currentHealth}/${health.maxHealth} HP)`);
+
+      // Check if target died
+      if (health.isDead) {
+        this.handleEntityDeath(unitEntity, undefined, currentTime);
+      }
+
+      // Trigger damage effects
+      this.triggerDamageEffects(unitEntity, damage, undefined, 'melee', false);
+    }
   }
 
   public update(entities: Entity[], deltaTime: number): void {
@@ -116,10 +158,14 @@ export class CombatSystem extends System {
         shield.update(deltaTime);
       }
 
-      // Update freeze status for enemies
+      // Update debuff statuses for enemies
       const enemy = entity.getComponent(Enemy);
       if (enemy) {
         enemy.updateFreezeStatus(currentTime);
+        enemy.updateCorruptedStatus(currentTime);
+        
+        // Synchronize enemy debuffs with movement component
+        this.synchronizeEnemyDebuffsWithMovement(entity, enemy);
       }
     }
   }
@@ -185,11 +231,113 @@ export class CombatSystem extends System {
       return; // Don't apply damage locally for enemies
     }
 
-    // Check if target is a summoned unit - treat like enemy (apply damage locally)
+    // Check if target is a summoned unit - route through server for synchronization
     const summonedUnitComponent = target.getComponent(SummonedUnit);
-    if (summonedUnitComponent) {
+    if (summonedUnitComponent && this.onSummonedUnitDamageCallback) {
       // Cast to proper type
       const summonedUnit = summonedUnitComponent as typeof SummonedUnit.prototype;
+
+      // Calculate actual damage with critical hit mechanics
+      const damageResult: DamageResult = calculateDamage(baseDamage);
+      const actualDamage = damageResult.damage;
+
+      // Get source player ID for team validation
+      // For projectiles, check if the source has a player ID stored
+      let sourcePlayerId = 'unknown';
+      if (source) {
+        // Check if source is a projectile with stored player info
+        const projectileComponent = source.getComponent(Projectile);
+        if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
+          sourcePlayerId = (projectileComponent as any).sourcePlayerId;
+        } else if (source.userData?.playerId) {
+          sourcePlayerId = source.userData.playerId;
+        }
+      }
+
+      // Get the server unit ID from userData (set during ECS sync)
+      const serverUnitId = target.userData?.serverUnitId || summonedUnit.unitId;
+      const serverUnitOwnerId = target.userData?.serverUnitOwnerId || summonedUnit.ownerId;
+
+      // Route summoned unit damage through multiplayer server instead of applying locally
+      console.log(`🌐 Routing ${actualDamage} damage to summoned unit ${serverUnitId} (owned by ${serverUnitOwnerId}) from source player ${sourcePlayerId} through multiplayer server`);
+      
+      // Debug: Log the source information
+      if (source) {
+        const projectileComponent = source.getComponent(Projectile);
+        console.log(`🔍 Source entity ${source.id} - projectile sourcePlayerId: ${(projectileComponent as any)?.sourcePlayerId}, userData playerId: ${source.userData?.playerId}`);
+      }
+      
+      // Debug: Log the team validation check
+      console.log(`🛡️ Team validation: sourcePlayerId="${sourcePlayerId}" vs unitOwnerId="${serverUnitOwnerId}" - ${sourcePlayerId === serverUnitOwnerId ? 'BLOCKED (same team)' : 'ALLOWED (different teams)'}`);
+      
+      // Block damage to own units
+      if (sourcePlayerId === serverUnitOwnerId) {
+        console.log(`🚫 Blocked damage to own summoned unit`);
+        return;
+      }
+
+      // Additional check: Don't send damage for units that are already dead locally
+      if (health.isDead || health.currentHealth <= 0) {
+        console.log(`🚫 Blocked damage to already dead summoned unit ${serverUnitId}`);
+        return;
+      }
+      
+      // Call the server damage callback with server unit ID
+      this.onSummonedUnitDamageCallback(
+        serverUnitId,
+        serverUnitOwnerId,
+        actualDamage,
+        sourcePlayerId,
+        damageType
+      );
+
+      // Still create local damage numbers for immediate visual feedback
+      // Check if source is a summoned unit - if so, skip damage numbers to reduce visual clutter
+      const sourceSummonedUnit = source ? source.getComponent(SummonedUnit) : null;
+      const shouldShowDamageNumbers = !sourceSummonedUnit; // Show numbers unless source is a summoned unit
+
+      if (shouldShowDamageNumbers) {
+        const transform = target.getComponent(Transform);
+        if (transform) {
+          const position = transform.getWorldPosition();
+          // Only create damage number if position is valid
+          if (position && position.x !== undefined && position.y !== undefined && position.z !== undefined) {
+            // Offset slightly above the target
+            position.y += 2;
+            this.damageNumberManager.addDamageNumber(
+              actualDamage,
+              damageResult.isCritical,
+              position,
+              damageType || 'melee'
+            );
+          }
+        }
+      }
+
+      return; // Don't apply damage locally for summoned units
+    }
+
+    // Fallback: If no callback is set, apply damage locally (for single-player or testing)
+    if (summonedUnitComponent && !this.onSummonedUnitDamageCallback) {
+      // Cast to proper type
+      const summonedUnit = summonedUnitComponent as typeof SummonedUnit.prototype;
+
+      // Get source player ID for team validation (same logic as above)
+      let sourcePlayerId = 'unknown';
+      if (source) {
+        const projectileComponent = source.getComponent(Projectile);
+        if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
+          sourcePlayerId = (projectileComponent as any).sourcePlayerId;
+        } else if (source.userData?.playerId) {
+          sourcePlayerId = source.userData.playerId;
+        }
+      }
+      
+      // TEMPORARY: Block all damage to own units for testing (even in fallback)
+      if (sourcePlayerId === summonedUnit.ownerId) {
+        console.warn(`🚫 FALLBACK BLOCKED: Player ${sourcePlayerId} tried to damage their own summoned unit ${target.id}`);
+        return; // Block the damage
+      }
 
       // Calculate actual damage with critical hit mechanics
       const damageResult: DamageResult = calculateDamage(baseDamage);
@@ -241,14 +389,31 @@ export class CombatSystem extends System {
         this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
       }
 
-      return; // Damage applied locally for summoned units
+      return; // Don't process further for summoned units
     }
 
     // Check if target is a player in PVP mode - if so, route damage through multiplayer
     // Also prevent self-damage in PVP (source hitting themselves)
     if (!enemy && this.onPlayerDamageCallback && source && source.id !== target.id) {
-      // Calculate actual damage with critical hit mechanics
-      const damageResult: DamageResult = calculateDamage(baseDamage);
+      // Apply burning stacks for Entropic Bolt and Crossentropy Bolt
+      let finalDamage = baseDamage;
+      if (damageType === 'entropic' || damageType === 'crossentropy') {
+        // Get the ControlSystem to apply burning stacks
+        const controlSystemRef = (window as any).controlSystemRef;
+        if (controlSystemRef && controlSystemRef.current) {
+          const controlSystem = controlSystemRef.current;
+          const isEntropicBolt = damageType === 'entropic';
+          
+          // Apply burning stack and get damage bonus
+          const { damageBonus } = controlSystem.applyBurningStack(target.id, currentTime, isEntropicBolt);
+          finalDamage = baseDamage + damageBonus;
+          
+          console.log(`🔥 Applied burning stack to player ${target.id}: base damage ${baseDamage} + bonus ${damageBonus} = ${finalDamage}`);
+        }
+      }
+      
+      // Calculate actual damage with critical hit mechanics (using modified damage)
+      const damageResult: DamageResult = calculateDamage(finalDamage);
 
       // Route player damage through multiplayer server for PVP (let receiver handle shields)
       if (this.shouldLogDamage()) {
@@ -267,6 +432,8 @@ export class CombatSystem extends System {
           // Add slight position offset for delayed damage (like sabres right hit) to prevent overlap
           if (damageType === 'sabres_right') {
             position.x += 0.3; // Slight offset to the right for the right sabre
+          } else if (damageType === 'sabres_left') {
+            position.x -= 0.3; // Slight offset to the left for the left sabre
           }
 
           this.damageNumberManager.addDamageNumber(
@@ -384,6 +551,9 @@ export class CombatSystem extends System {
     if (summonedUnitComponent) {
       const summonedUnit = summonedUnitComponent as typeof SummonedUnit.prototype;
       summonedUnit.die(currentTime || Date.now() / 1000);
+      
+      // Immediately disable to prevent further targeting
+      summonedUnit.isActive = false;
 
       // console.log(`💀 ${summonedUnit.getDisplayName()} has been defeated!`);
 
@@ -683,5 +853,48 @@ export class CombatSystem extends System {
     this.deadEntities.length = 0;
     this.damageNumberManager.clear();
     this.resetStats();
+  }
+
+  private synchronizeEnemyDebuffsWithMovement(entity: Entity, enemy: Enemy): void {
+    const movement = entity.getComponent(Movement);
+    if (!movement) return;
+
+    // Calculate the effective movement speed multiplier based on enemy debuffs
+    let speedMultiplier = 1.0;
+
+    // Apply corrupted debuff slow effect
+    if (enemy.isCorrupted) {
+      const currentTime = Date.now() / 1000;
+      const elapsed = currentTime - enemy.corruptedStartTime;
+      
+      // Calculate current slow percentage based on gradual recovery
+      // Initial: 90% slow, recovers 10% per second
+      const currentSlowPercent = Math.max(0, enemy.corruptedInitialSlowPercent - (elapsed * enemy.corruptedRecoveryRate));
+      
+      // Apply the slow effect (reduce speed by the slow percentage)
+      speedMultiplier *= (1 - currentSlowPercent);
+      
+      // Debug logging for corrupted debuff (only log occasionally to avoid spam)
+      const logInterval = 1.0; // Log every second
+      if (elapsed % logInterval < 0.1) {
+        console.log(`👻 Corrupted debuff on ${enemy.getDisplayName()}: ${(currentSlowPercent * 100).toFixed(1)}% slow (${(speedMultiplier * 100).toFixed(1)}% speed remaining)`);
+      }
+    }
+
+    // Only update the movement speed multiplier if it's different from the current value
+    // This prevents overriding other effects unnecessarily
+    if (Math.abs(movement.movementSpeedMultiplier - speedMultiplier) > 0.01) {
+      movement.movementSpeedMultiplier = speedMultiplier;
+    }
+
+    // Reset to normal speed if no debuffs are active
+    if (!enemy.isCorrupted && movement.movementSpeedMultiplier !== 1.0) {
+      // Only reset if no other systems are managing the speed multiplier
+      // Check if this might be from another debuff system (like Corrupted Aura)
+      const wasSlowedByOtherEffect = movement.movementSpeedMultiplier < 1.0;
+      if (!wasSlowedByOtherEffect || movement.movementSpeedMultiplier === 0.1) { // 0.1 is typical corrupted slow value
+        movement.movementSpeedMultiplier = 1.0;
+      }
+    }
   }
 }

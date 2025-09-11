@@ -2,24 +2,37 @@ import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
 import * as THREE from 'three';
+import AnimatedDeathGrasp from './AnimatedDeathGrasp';
 
 interface DeathGraspProps {
   startPosition: Vector3;
   targetPosition: Vector3;
   onComplete: () => void;
   onPullStart: () => void;
+  // Add enemy/player data for collision detection
+  enemyData?: Array<{
+    id: string;
+    position: Vector3;
+    health: number;
+  }>;
+  players?: Map<string, any>;
+  localSocketId?: string;
 }
 
 export default function DeathGrasp({
   startPosition,
   targetPosition,
   onComplete,
-  onPullStart
+  onPullStart,
+  enemyData = [],
+  players,
+  localSocketId
 }: DeathGraspProps) {
   const timeRef = useRef(0);
   const flickerRef = useRef(1);
   const duration = 1.2; // Total duration including pull
   const pullTriggered = useRef(false);
+  const useAnimatedVersion = useRef(true); // Flag to use new animated version
 
   // Use useMemo for static geometries and materials
   const geometries = useMemo(() => ({
@@ -142,6 +155,30 @@ export default function DeathGrasp({
     }
   });
 
+  // Handle hit callback for animated version
+  const handleHit = (targetId: string, position: Vector3) => {
+    console.log(`🎯 DeathGrasp hit target ${targetId} at position:`, position);
+    // The hit detection and damage is handled by the calling system
+    // This is just for visual feedback
+  };
+
+  // Use the new animated version if enabled
+  if (useAnimatedVersion.current) {
+    return (
+      <AnimatedDeathGrasp
+        startPosition={startPosition}
+        targetPosition={targetPosition}
+        onHit={handleHit}
+        onPullStart={onPullStart}
+        onComplete={onComplete}
+        enemyData={enemyData}
+        players={players}
+        localSocketId={localSocketId}
+      />
+    );
+  }
+
+  // Fallback to original static version (kept for compatibility)
   return (
     <group>
       {/* Three spiraling particle streams */}

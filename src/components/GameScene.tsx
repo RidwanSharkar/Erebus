@@ -258,6 +258,13 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
         console.log('⛓️ Single Player Death Grasp triggered from:', position, 'to:', targetPosition);
       });
 
+      // Set up Corrupted Aura toggle callback
+      controlSystem.setCorruptedAuraToggleCallback((active: boolean) => {
+        // Corrupted Aura toggle state is managed by ControlSystem
+        // This callback can be used for additional visual effects or sound
+        console.log(`💀 Corrupted Aura ${active ? 'activated' : 'deactivated'}`);
+      });
+
       engine.start();
     });
 
@@ -315,7 +322,7 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
           isCharging: controlSystemRef.current.isWeaponCharging(),
           chargeProgress: controlSystemRef.current.getChargeProgress(),
           isSwinging: controlSystemRef.current.isWeaponSwinging(),
-          isSpinning: controlSystemRef.current.isWeaponCharging() && controlSystemRef.current.getCurrentWeapon() === WeaponType.SCYTHE,
+          isSpinning: (controlSystemRef.current.isWeaponCharging() || controlSystemRef.current.isCrossentropyChargingActive()) && controlSystemRef.current.getCurrentWeapon() === WeaponType.SCYTHE,
           swordComboStep: controlSystemRef.current.getSwordComboStep(),
           isDivineStorming: controlSystemRef.current.isDivineStormActive(),
           isSwordCharging: controlSystemRef.current.isChargeActive(),
@@ -437,6 +444,8 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
           isSundering={weaponState.isSundering}
           isSmiting={controlSystemRef.current?.isSmiteActive() || false}
           isDeathGrasping={controlSystemRef.current?.isDeathGraspActive() || false}
+          isCorruptedAuraActive={controlSystemRef.current?.isCorruptedAuraActive() || false}
+          isColossusStriking={controlSystemRef.current?.isColossusStrikeActive() || false}
           reanimateRef={reanimateRef}
           onBowRelease={() => {
             // This callback is now handled by the ControlSystem directly
@@ -474,6 +483,10 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
           }}
           onDeathGraspComplete={() => {
             controlSystemRef.current?.onDeathGraspComplete();
+          }}
+          onCorruptedAuraToggle={(active: boolean) => {
+            // Corrupted Aura toggle is handled internally by ControlSystem
+            // This callback is for visual synchronization
           }}
         />
       )}
@@ -528,6 +541,8 @@ export function GameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCam
           onPullStart={() => {
             // No pull logic needed for single player
           }}
+          enemyData={enemyData}
+          localSocketId="local-player"
         />
       )}
 
@@ -587,6 +602,9 @@ function setupGame(
       smoothing: 0.15,
     }
   );
+
+  // Expose camera system globally for StunnedEffect access
+  (window as any).cameraSystem = cameraSystem;
 
   // Connect systems
   projectileSystem.setCombatSystem(combatSystem);

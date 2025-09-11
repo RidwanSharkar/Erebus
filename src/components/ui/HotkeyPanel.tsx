@@ -3,7 +3,7 @@ import { WeaponType } from '@/components/dragon/weapons';
 
 interface AbilityData {
   name: string;
-  key: 'Q' | 'E' | 'R';
+  key: 'Q' | 'E' | 'R' | 'F';
   cooldown: number;
   currentCooldown: number;
   isActive?: boolean;
@@ -159,6 +159,13 @@ export default function HotkeyPanel({ currentWeapon, controlSystem }: HotkeyPane
         cooldown: 4.0,
         currentCooldown: 0,
         description: 'Consumes all rage (min 20) to create a devastating storm. Duration: 4s + 1s per 10 rage consumed.'
+      },
+      {
+        name: 'Colossus Strike',
+        key: 'F',
+        cooldown: 4.0,
+        currentCooldown: 0,
+        description: 'Calls down a massive lightning bolt that deals damage based on enemy missing health. Consumes all rage (min 40).'
       }
     ],
     [WeaponType.BOW]: [
@@ -529,32 +536,37 @@ export default function HotkeyPanel({ currentWeapon, controlSystem }: HotkeyPane
 }
 
 // Helper function to get ability icons
-function getAbilityIcon(weapon: WeaponType, key: 'Q' | 'E' | 'R'): string {
-  const iconMap: Record<WeaponType, Record<'Q' | 'E' | 'R', string>> = {
+function getAbilityIcon(weapon: WeaponType, key: 'Q' | 'E' | 'R' | 'F'): string {
+  const iconMap: Record<WeaponType, Record<'Q' | 'E' | 'R' | 'F', string>> = {
     [WeaponType.SWORD]: {
       Q: '🛡️', // Deflect Barrier
-      E: '⚡', // Charge
-      R: '🌪️'  // Divine Storm
+      E: '🗡️', // Charge
+      R: '⚔️', // Divine Storm
+      F: '⚡'   // Colossus Strike
     },
     [WeaponType.BOW]: {
       Q: '🏹', // Barrage
       E: '🐍', // Cobra Shot
-      R: '🐍'  // Viper Sting
+      R: '🐍',  // Viper Sting
+      F: '⚡'   // 
     },
     [WeaponType.SCYTHE]: {
       Q: '💚', // Reanimate
       E: '⚡', // Entropic Bolt
-      R: '⚔️'  // Crossentropy Bolt
+      R: '🌟', // Crossentropy Bolt
+      F: '💫'
     },
     [WeaponType.SABRES]: {
       Q: '🗡️', // Backstab
       E: '🌟', // Skyfall
-      R: '❓'
+      R: '⚡',
+      F: '💫'
     },
     [WeaponType.RUNEBLADE]: {
       Q: '⛓️', // Death Grasp
       E: '⚡', // Smite
-      R: '💫'  // Oathstrike
+      R: '💫', // Oathstrike
+      F: '🗡️'
     },
   };
 

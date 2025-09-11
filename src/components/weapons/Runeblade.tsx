@@ -3,25 +3,30 @@ import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Color, Shape, AdditiveBlending } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import DeflectShield from './DeflectShield';
+import CorruptedAura from './CorruptedAura';
 
 interface RunebladeProps {
   isSwinging: boolean;
   isSmiting: boolean;
   isOathstriking: boolean;
   isDeathGrasping?: boolean;
+  isWraithStriking?: boolean;
   isDivineStorming?: boolean;
   isColossusStriking?: boolean;
   isCharging?: boolean;
   isDeflecting?: boolean;
+  isCorruptedAuraActive?: boolean;
   chargeDirectionProp?: Vector3;
   onSwingComplete?: () => void;
   onSmiteComplete?: () => void;
   onDeathGraspComplete?: () => void;
+  onWraithStrikeComplete?: () => void;
   onOathstrikeComplete?: () => void;
   onDivineStormComplete?: () => void;
   onColossusStrikeComplete?: () => void;
   onChargeComplete?: () => void;
   onDeflectComplete?: () => void;
+  onCorruptedAuraToggle?: (active: boolean) => void;
   hasChainLightning?: boolean;
   comboStep?: 1 | 2 | 3;
   currentSubclass?: WeaponSubclass;
@@ -85,6 +90,7 @@ interface RunebladeProps {
     isDivineStorm?: boolean;
     isHolyBurn?: boolean;
     isEviscerate?: boolean;
+    isColossusStrike?: boolean;
   }>) => void;
   nextDamageNumberId?: { current: number };
   setActiveEffects?: (callback: (prev: Array<{
@@ -117,19 +123,23 @@ export default function Runeblade({
   isSmiting,
   isOathstriking,
   isDeathGrasping = false,
+  isWraithStriking = false,
   isDivineStorming = false,
   isColossusStriking = false,
   isCharging = false,
   isDeflecting = false,
+  isCorruptedAuraActive = false,
   chargeDirectionProp,
   onSwingComplete,
   onSmiteComplete,
   onDeathGraspComplete,
+  onWraithStrikeComplete,
   onOathstrikeComplete,
   onDivineStormComplete,
   onColossusStrikeComplete,
   onChargeComplete,
   onDeflectComplete,
+  onCorruptedAuraToggle,
   hasChainLightning = false,
   comboStep = 1,
   currentSubclass,
@@ -144,9 +154,11 @@ export default function Runeblade({
   playerEntityId
 }: RunebladeProps) {
   const runebladeRef = useRef<Group>(null);
+  const corruptedAuraRef = useRef<{ toggle: () => void; isActive: boolean }>(null);
   const swingProgress = useRef(0);
   const smiteProgress = useRef(0);
   const deathGraspProgress = useRef(0);
+  const wraithStrikeProgress = useRef(0);
   const colossusStrikeProgress = useRef(0);
   const divineStormRotation = useRef(0);
   const chargeProgress = useRef(0);
@@ -356,6 +368,40 @@ export default function Runeblade({
         runebladeRef.current.rotation.set(0, 0, 0);
         runebladeRef.current.position.set(...basePosition);
         onDeathGraspComplete?.();
+      }
+      return;
+    }
+
+    // Handle WraithStrike animation (uses 2nd swing animation)
+    if (isWraithStriking) {
+      wraithStrikeProgress.current += delta * 8; // Same speed as regular swing
+      const swingPhase = Math.min(wraithStrikeProgress.current / Math.PI/1.5, 1);
+
+      // Use the exact 2nd swing animation logic
+      // 2nd Hit: Mirrored swing (top-left to bottom-right)
+      const forwardPhase = swingPhase <= 0.275
+        ? swingPhase * 2
+        : (0.625 - (swingPhase - 0.075) * 1.20);
+
+      const leftOffset = 2.5;
+      const pivotX = basePosition[0] + leftOffset - Math.sin(forwardPhase * Math.PI) * 2.5;
+      const pivotY = basePosition[1] + Math.sin(forwardPhase * Math.PI) * -0.2;
+      const pivotZ = basePosition[2] + Math.cos(forwardPhase * Math.PI) * 1.1;
+
+      runebladeRef.current.position.set(pivotX, pivotY, pivotZ);
+
+      const rotationX = Math.sin(forwardPhase * Math.PI) * (-0.75) + 1.5;
+      const rotationY = -Math.sin(forwardPhase * Math.PI) * Math.PI;
+      const rotationZ = -Math.sin(forwardPhase * Math.PI) * (Math.PI/1.75);
+
+      runebladeRef.current.rotation.set(rotationX, rotationY, rotationZ);
+
+      // Complete the animation when done
+      if (wraithStrikeProgress.current >= Math.PI * 0.55) {
+        wraithStrikeProgress.current = 0;
+        runebladeRef.current.rotation.set(0, 0, 0);
+        runebladeRef.current.position.set(...basePosition);
+        onWraithStrikeComplete?.();
       }
       return;
     }
@@ -834,8 +880,8 @@ export default function Runeblade({
           <mesh>
             <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
             <meshStandardMaterial
-              color={new Color(0x00AA44)}  // Green blade
-              emissive={new Color(0x00AA44)}
+              color={isCorruptedAuraActive ? new Color(0xFF4444) : new Color(0x00AA44)}  // Red when corrupted, green normally
+              emissive={isCorruptedAuraActive ? new Color(0xFF4444) : new Color(0x00AA44)}
               emissiveIntensity={1.5}
               metalness={0.3}
               roughness={0.1}
@@ -846,8 +892,8 @@ export default function Runeblade({
           <mesh>
             <extrudeGeometry args={[createInnerBladeShape(), innerBladeExtrudeSettings]} />
             <meshStandardMaterial
-              color={new Color(0x00AA44)}  // Green core
-              emissive={new Color(0x00AA44)}
+              color={isCorruptedAuraActive ? new Color(0xFF4444) : new Color(0x00AA44)}  // Red when corrupted, green normally
+              emissive={isCorruptedAuraActive ? new Color(0xFF4444) : new Color(0x00AA44)}
               emissiveIntensity={3}
               metalness={0.2}
               roughness={0.1}
@@ -865,8 +911,8 @@ export default function Runeblade({
               <mesh>
                 <extrudeGeometry args={[createBladeShape(), { ...bladeExtrudeSettings, depth: 0.07 }]} />
                 <meshStandardMaterial
-                  color={new Color(0x00FF88)}
-                  emissive={new Color(0x00AA44)}
+                  color={isCorruptedAuraActive ? new Color(0xFF8888) : new Color(0x00FF88)}
+                  emissive={isCorruptedAuraActive ? new Color(0xFF4444) : new Color(0x00AA44)}
                   emissiveIntensity={1.5}
                   transparent
                   opacity={0.3}
@@ -907,6 +953,16 @@ export default function Runeblade({
       playerRotation={playerRotation}
       dragonGroupRef={dragonGroupRef}
     />
+
+    {/* Corrupted Aura - Rendered outside runeblade group to avoid inheriting transformations */}
+    <CorruptedAura
+      ref={corruptedAuraRef}
+      parentRef={dragonGroupRef || runebladeRef}
+      isActive={isCorruptedAuraActive}
+      onToggle={onCorruptedAuraToggle}
+    />
+    
+    {/* Wraith Strike effect is now handled by HauntedSoulEffect in PVPGameScene */}
     </>
   );
 }

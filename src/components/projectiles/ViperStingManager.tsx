@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Vector3, Group } from 'three';
 import ViperSting from './ViperSting';
 import ViperStingBeam from './ViperStingBeam';
+import SoulStealEffect from './SoulStealEffect';
 import { useViperSting } from './useViperSting';
 import { useViperStingBeam } from './useViperStingBeam';
 
@@ -20,6 +21,7 @@ interface ViperStingManagerProps {
     position: Vector3;
     isCritical: boolean;
     isViperSting?: boolean;
+    isHealing?: boolean;
   }>>>;
   nextDamageNumberId: React.MutableRefObject<number>;
   onHealthChange?: (deltaHealth: number) => void;
@@ -33,6 +35,7 @@ interface ViperStingManagerProps {
     available: boolean;
     cooldownStartTime: number | null;
   }>>>;
+  localSocketId?: string; // Add this to prevent self-damage
 }
 
 interface SoulStealEffect {
@@ -48,6 +51,7 @@ interface SoulStealEffect {
 let globalViperStingManager: {
   shootViperSting?: () => boolean;
   getProjectiles?: () => any[];
+  createSoulSteal?: (enemyPosition: Vector3) => void;
 } = {};
 
 export const triggerGlobalViperSting = (): boolean => {
@@ -64,6 +68,12 @@ export const getGlobalViperStingProjectiles = (): any[] => {
   return [];
 };
 
+export const triggerGlobalViperStingSoulSteal = (enemyPosition: Vector3): void => {
+  if (globalViperStingManager.createSoulSteal) {
+    globalViperStingManager.createSoulSteal(enemyPosition);
+  }
+};
+
 export default function ViperStingManager({
   parentRef,
   enemyData,
@@ -72,7 +82,8 @@ export default function ViperStingManager({
   nextDamageNumberId,
   onHealthChange,
   charges,
-  setCharges
+  setCharges,
+  localSocketId
 }: ViperStingManagerProps) {
   const [soulStealEffects, setSoulStealEffects] = useState<SoulStealEffect[]>([]);
   const nextSoulStealId = useRef(0);
@@ -80,8 +91,8 @@ export default function ViperStingManager({
   // Beam effects management
   const { activeEffects: beamEffects, createBeamEffect, removeEffect: removeBeamEffect } = useViperStingBeam();
 
-  // Viper Sting projectile management
-  const { shootViperSting, projectilePool } = useViperSting({
+  // Viper Sting projectile management with soul steal effect creation
+  const { shootViperSting, projectilePool, soulStealEffects: viperStingSoulStealEffects, createSoulStealEffect } = useViperSting({
     parentRef,
     onHit,
     enemyData,
@@ -94,18 +105,20 @@ export default function ViperStingManager({
       // This is a no-op function to satisfy the interface
     },
     charges,
-    setCharges
+    setCharges,
+    localSocketId // Pass the local socket ID to prevent self-damage
   });
 
   // Register global manager
   useEffect(() => {
     globalViperStingManager.shootViperSting = shootViperSting;
     globalViperStingManager.getProjectiles = () => projectilePool.current;
+    globalViperStingManager.createSoulSteal = createSoulStealEffect;
 
     return () => {
       globalViperStingManager = {};
     };
-  }, [shootViperSting, projectilePool]);
+  }, [shootViperSting, projectilePool, createSoulStealEffect]);
 
 
 
@@ -130,6 +143,43 @@ export default function ViperStingManager({
         />
       ))}
 
+      {/* Soul Steal Effects */}
+      {viperStingSoulStealEffects.current.map(effect => (
+        <SoulStealEffect
+          key={effect.id}
+          id={effect.id}
+          startPosition={effect.position}
+          targetPosition={effect.targetPosition}
+          startTime={effect.startTime}
+          duration={effect.duration}
+          getCurrentPlayerPosition={() => {
+            // Return current player position for dynamic tracking
+            if (parentRef.current) {
+              return parentRef.current.position.clone();
+            }
+            return effect.targetPosition; // Fallback to original target
+          }}
+          onComplete={() => {
+            // Heal 20 HP when soul reaches player (as requested)
+            if (onHealthChange) {
+              onHealthChange(20);
+            }
+            
+            // Show healing damage number
+            if (parentRef.current) {
+              setDamageNumbers(prev => [...prev, {
+                id: nextDamageNumberId.current++,
+                damage: 20,
+                position: parentRef.current!.position.clone().add(new Vector3(0, 1.5, 0)),
+                isCritical: false,
+                isHealing: true
+              }]);
+            }
+            // Remove the effect from the array
+            viperStingSoulStealEffects.current = viperStingSoulStealEffects.current.filter(e => e.id !== effect.id);
+          }}
+        />
+      ))}
     </>
   );
 }

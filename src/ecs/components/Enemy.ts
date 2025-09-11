@@ -43,6 +43,18 @@ export class Enemy extends Component {
   public sunderStacks: number;
   public sunderLastApplied: number;
   public sunderDuration: number;
+  
+  // Burning stacks effect (Entropic Bolt / Crossentropy Bolt)
+  public burningStacks: number;
+  public burningLastApplied: number;
+  public burningDuration: number;
+  
+  // Corrupted debuff effect (WraithStrike)
+  public isCorrupted: boolean;
+  public corruptedStartTime: number;
+  public corruptedDuration: number;
+  public corruptedInitialSlowPercent: number; // Initial slow percentage (90%)
+  public corruptedRecoveryRate: number; // Recovery rate per second (10%)
 
   constructor(
     type: EnemyType = EnemyType.DUMMY,
@@ -82,6 +94,18 @@ export class Enemy extends Component {
     this.sunderStacks = 0;
     this.sunderLastApplied = 0;
     this.sunderDuration = 10.0; // 10 seconds
+    
+    // Initialize burning stacks
+    this.burningStacks = 0;
+    this.burningLastApplied = 0;
+    this.burningDuration = 5.0; // 5 seconds
+    
+    // Initialize corrupted debuff
+    this.isCorrupted = false;
+    this.corruptedStartTime = 0;
+    this.corruptedDuration = 8.0; // 8 seconds
+    this.corruptedInitialSlowPercent = 0.9; // 90% slow initially
+    this.corruptedRecoveryRate = 0.1; // 10% recovery per second
   }
 
   private calculateExperienceReward(): number {
@@ -180,6 +204,8 @@ export class Enemy extends Component {
     this.unfreeze();
     // Clear venom status on respawn
     this.removeVenom();
+    // Clear corrupted status on respawn
+    this.removeCorrupted();
   }
   
   public freeze(duration: number, currentTime: number): void {
@@ -211,6 +237,35 @@ export class Enemy extends Component {
   
   public canMove(): boolean {
     return !this.isFrozen && !this.isDead;
+  }
+  
+  public getEffectiveMovementSpeed(): number {
+    if (this.isDead || this.isFrozen) {
+      return 0;
+    }
+    
+    let speed = this.movementSpeed;
+    
+    // Apply corrupted debuff slow effect
+    if (this.isCorrupted) {
+      const slowMultiplier = this.getCorruptedSlowMultiplier();
+      speed *= (1 - slowMultiplier);
+    }
+    
+    return speed;
+  }
+  
+  private getCorruptedSlowMultiplier(): number {
+    if (!this.isCorrupted) return 0;
+    
+    const currentTime = Date.now() / 1000;
+    const elapsed = currentTime - this.corruptedStartTime;
+    
+    // Calculate current slow percentage based on gradual recovery
+    // Initial: 90% slow, recovers 10% per second
+    const currentSlowPercent = Math.max(0, this.corruptedInitialSlowPercent - (elapsed * this.corruptedRecoveryRate));
+    
+    return currentSlowPercent;
   }
   
   public applyVenom(duration: number, damagePerSecond: number, currentTime: number): void {
@@ -368,6 +423,46 @@ export class Enemy extends Component {
     clone.sunderStacks = this.sunderStacks;
     clone.sunderLastApplied = this.sunderLastApplied;
     
+    // Clone corrupted status
+    clone.isCorrupted = this.isCorrupted;
+    clone.corruptedStartTime = this.corruptedStartTime;
+    clone.corruptedDuration = this.corruptedDuration;
+    clone.corruptedInitialSlowPercent = this.corruptedInitialSlowPercent;
+    clone.corruptedRecoveryRate = this.corruptedRecoveryRate;
+    
     return clone;
+  }
+  
+  public applyCorrupted(duration: number, currentTime: number): void {
+    if (this.isDead) return; // Can't apply corrupted to dead enemies
+    
+    this.isCorrupted = true;
+    this.corruptedStartTime = currentTime;
+    this.corruptedDuration = duration;
+    
+    console.log(`👻 Applied Corrupted debuff to ${this.getDisplayName()} for ${duration} seconds`);
+  }
+  
+  public removeCorrupted(): void {
+    this.isCorrupted = false;
+    this.corruptedStartTime = 0;
+    this.corruptedDuration = 0;
+  }
+  
+  public updateCorruptedStatus(currentTime: number): void {
+    if (!this.isCorrupted) return;
+    
+    const elapsed = currentTime - this.corruptedStartTime;
+    if (elapsed >= this.corruptedDuration) {
+      this.removeCorrupted();
+      console.log(`👻 Corrupted debuff expired on ${this.getDisplayName()}`);
+    }
+  }
+  
+  public getCorruptedTimeRemaining(currentTime: number): number {
+    if (!this.isCorrupted) return 0;
+    
+    const elapsed = currentTime - this.corruptedStartTime;
+    return Math.max(0, this.corruptedDuration - elapsed);
   }
 }

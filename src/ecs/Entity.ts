@@ -6,6 +6,7 @@ export class Entity {
   public readonly id: EntityId;
   private components = new Map<string, Component>();
   private active = true;
+  public userData: any = {}; // For storing arbitrary data like player IDs
 
   constructor() {
     this.id = Entity.nextId++;

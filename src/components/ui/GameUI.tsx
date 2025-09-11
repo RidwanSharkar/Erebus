@@ -139,10 +139,16 @@ export default function GameUI({
   }, [currentWeapon, maxMana, maxEnergy, maxRage]);
 
   // Function to consume mana (for Crossentropy bolt and Runeblade abilities)
-  const consumeMana = (amount: number) => {
+  const consumeMana = (amount: number): boolean => {
     if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
-      setCurrentMana(prev => Math.max(0, prev - amount));
+      if (currentMana >= amount) {
+        setCurrentMana(prev => Math.max(0, prev - amount));
+        return true; // Successfully consumed mana
+      } else {
+        return false; // Not enough mana
+      }
     }
+    return false; // Wrong weapon type
   };
 
   // Function to check if Runeblade has enough mana for abilities
@@ -198,7 +204,10 @@ export default function GameUI({
       // Runeblade mana abilities
       canCastSmite: () => currentMana >= 35,
       canCastDeathGrasp: () => currentMana >= 25,
+      canCastWraithStrike: () => currentMana >= 30,
+      canCastCorruptedAura: () => currentMana >= 8,
       canCastDivineStorm: () => currentRage >= 40,
+      canCastColossusStrike: () => currentRage >= 40,
       // Bow energy abilities
       canCastBarrage: () => currentEnergy >= 40,
       canCastCobraShot: () => currentEnergy >= 40,
@@ -206,7 +215,8 @@ export default function GameUI({
       // Sabres energy abilities
       canCastBackstab: () => currentEnergy >= 60,
       canCastSkyfall: () => currentEnergy >= 40,
-      canCastSunder: () => currentEnergy >= 35
+      canCastSunder: () => currentEnergy >= 35,
+      canCastStealth: () => true // No energy cost for Stealth
     };
   }, [currentMana, currentEnergy, currentRage, currentWeapon]);
 

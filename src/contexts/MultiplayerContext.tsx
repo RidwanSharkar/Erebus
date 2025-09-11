@@ -45,6 +45,18 @@ interface Tower {
   isDead?: boolean;
 }
 
+interface SummonedUnit {
+  unitId: string;
+  ownerId: string;
+  position: { x: number; y: number; z: number };
+  health: number;
+  maxHealth: number;
+  isDead: boolean;
+  isActive: boolean;
+  currentTarget?: string | null;
+  targetPosition?: { x: number; y: number; z: number } | null;
+}
+
 interface RoomPreview {
   roomId: string;
   exists: boolean;
@@ -53,6 +65,7 @@ interface RoomPreview {
   maxPlayers: number;
   enemies: Enemy[];
   towers: Tower[];
+  summonedUnits: SummonedUnit[];
 }
 
 // Animation state type for better type safety
@@ -84,6 +97,7 @@ interface MultiplayerContextType {
   players: Map<string, Player>;
   enemies: Map<string, Enemy>;
   towers: Map<string, Tower>;
+  summonedUnits: Map<string, SummonedUnit>;
   killCount: number;
   gameStarted: boolean;
   gameMode: 'multiplayer' | 'pvp';
@@ -107,7 +121,8 @@ interface MultiplayerContextType {
   broadcastPlayerEffect: (effect: any) => void;
   broadcastPlayerDamage: (targetPlayerId: string, damage: number, damageType?: string) => void;
   broadcastPlayerAnimationState: (animationState: PlayerAnimationState) => void;
-  broadcastPlayerDebuff: (targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned', duration: number, effectData?: any) => void;
+  broadcastPlayerDebuff: (targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, effectData?: any) => void;
+  broadcastPlayerStealth: (isInvisible: boolean) => void;
   
   // Enemy actions
   damageEnemy: (enemyId: string, damage: number) => void;
@@ -115,6 +130,9 @@ interface MultiplayerContextType {
 
   // Tower actions
   damageTower: (towerId: string, damage: number) => void;
+
+  // Summoned unit actions
+  damageSummonedUnit: (unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string) => void;
 
   // Experience system actions
   updatePlayerExperience: (playerId: string, experience: number) => void;
@@ -144,6 +162,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [players, setPlayers] = useState<Map<string, Player>>(new Map());
   const [enemies, setEnemies] = useState<Map<string, Enemy>>(new Map());
   const [towers, setTowers] = useState<Map<string, Tower>>(new Map());
+  const [summonedUnits, setSummonedUnits] = useState<Map<string, SummonedUnit>>(new Map());
   const [killCount, setKillCount] = useState(0);
   const [gameStarted, setGameStarted] = useState(false);
   const [gameMode, setGameMode] = useState<'multiplayer' | 'pvp'>('multiplayer');
@@ -227,6 +246,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         });
         setEnemies(enemiesMap);
         setTowers(new Map()); // Clear towers for multiplayer mode
+        setSummonedUnits(new Map()); // Clear summoned units for multiplayer mode
       } else {
         setEnemies(new Map()); // Clear enemies for PVP mode
         // Update towers (only for PVP mode)
@@ -237,6 +257,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           });
         }
         setTowers(towersMap);
+        
+        // Update summoned units (only for PVP mode)
+        const summonedUnitsMap = new Map();
+        if (data.summonedUnits) {
+          data.summonedUnits.forEach((unit: SummonedUnit) => {
+            summonedUnitsMap.set(unit.unitId, unit);
+          });
+        }
+        setSummonedUnits(summonedUnitsMap);
       }
     });
 
@@ -443,6 +472,33 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
+    // Summoned unit event handlers
+    newSocket.on('summoned-unit-damaged', (data) => {
+      console.log('🤖 Client: Received summoned-unit-damaged event:', data);
+      
+      // Store the damage event for the game scene to process
+      (window as any).pendingSummonedUnitDamage = (window as any).pendingSummonedUnitDamage || [];
+      (window as any).pendingSummonedUnitDamage.push(data);
+    });
+
+    // Server-authoritative summoned unit updates
+    newSocket.on('summoned-units-updated', (data) => {
+      // console.log('🤖 Received summoned units update:', data.units.length, 'units');
+      
+      const summonedUnitsMap = new Map();
+      data.units.forEach((unit: SummonedUnit) => {
+        summonedUnitsMap.set(unit.unitId, unit);
+      });
+      setSummonedUnits(summonedUnitsMap);
+    });
+
+    // Wave completion handler
+    newSocket.on('wave-completed', (data) => {
+      console.log('🌊 Wave completed:', data.waveId);
+      // Trigger experience rewards through a global event
+      window.dispatchEvent(new CustomEvent('wave-completed', { detail: data }));
+    });
+
     // Experience system event handlers
     newSocket.on('player-experience-updated', (data) => {
       setPlayers(prev => {
@@ -508,6 +564,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setPlayers(new Map());
       setEnemies(new Map());
       setTowers(new Map());
+      setSummonedUnits(new Map());
       setKillCount(0);
       setGameStarted(false);
       setGameMode('multiplayer');
@@ -628,6 +685,27 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
+  const damageSummonedUnit = useCallback((unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string) => {
+    console.log(`🔍 Client sending summoned unit damage:`, {
+      unitId,
+      unitOwnerId,
+      damage,
+      sourcePlayerId,
+      socketId: socket?.id,
+      roomId: currentRoomId
+    });
+    
+    if (socket && currentRoomId) {
+      socket.emit('summoned-unit-damage', {
+        roomId: currentRoomId,
+        unitId,
+        unitOwnerId,
+        damage,
+        sourcePlayerId
+      });
+    }
+  }, [socket, currentRoomId]);
+
   const broadcastPlayerDamage = useCallback((targetPlayerId: string, damage: number, damageType?: string) => {
     if (socket && currentRoomId) {
       socket.emit('player-damage', {
@@ -648,7 +726,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const broadcastPlayerDebuff = useCallback((targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned', duration: number, effectData?: any) => {
+  const broadcastPlayerDebuff = useCallback((targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, effectData?: any) => {
     if (socket && currentRoomId) {
       socket.emit('player-debuff', {
         roomId: currentRoomId,
@@ -658,6 +736,22 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         effectData,
         timestamp: Date.now()
       });
+    }
+  }, [socket, currentRoomId]);
+
+  const broadcastPlayerStealth = useCallback((isInvisible: boolean) => {
+    console.log(`📡 Broadcasting player-stealth: playerId=${socket?.id}, isInvisible=${isInvisible}, roomId=${currentRoomId}`);
+
+    if (socket && currentRoomId) {
+      socket.emit('player-stealth', {
+        roomId: currentRoomId,
+        playerId: socket.id,
+        isInvisible,
+        timestamp: Date.now()
+      });
+      console.log(`✅ Sent player-stealth event to server`);
+    } else {
+      console.log(`❌ Cannot broadcast player-stealth: socket=${!!socket}, roomId=${currentRoomId}`);
     }
   }, [socket, currentRoomId]);
 
@@ -690,6 +784,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     players,
     enemies,
     towers,
+    summonedUnits,
     killCount,
     gameStarted,
     gameMode,
@@ -708,9 +803,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     broadcastPlayerDamage,
     broadcastPlayerAnimationState,
     broadcastPlayerDebuff,
+    broadcastPlayerStealth,
     damageEnemy,
     applyStatusEffect,
     damageTower,
+    damageSummonedUnit,
     updatePlayerExperience,
     updatePlayerLevel
   };

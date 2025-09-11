@@ -17,9 +17,11 @@ export class Projectile extends Component {
   public bounces: number;
   public maxBounces: number;
   public owner: number; // Entity ID of the owner
+  public sourcePlayerId: string; // Player ID of the source (for multiplayer team validation)
   public distanceTraveled: number; // Track distance traveled
   public maxDistance: number; // Maximum distance before expiring
   public startPosition: Vector3; // Starting position for distance calculation
+  public projectileType: string; // Type of projectile (e.g., 'viper_sting', 'arrow', etc.)
 
   // Homing properties
   public targetEntityId: number | null; // Entity ID to home towards
@@ -30,7 +32,9 @@ export class Projectile extends Component {
     speed: number = 20,
     damage: number = 10,
     maxLifetime: number = 5,
-    owner: number = -1
+    owner: number = -1,
+    sourcePlayerId: string = 'unknown',
+    projectileType: string = 'generic'
   ) {
     super();
     
@@ -46,9 +50,11 @@ export class Projectile extends Component {
     this.bounces = 0;
     this.maxBounces = 0;
     this.owner = owner;
+    this.sourcePlayerId = sourcePlayerId;
     this.distanceTraveled = 0;
     this.maxDistance = Infinity; // Default to no distance limit
     this.startPosition = new Vector3(0, 0, 0);
+    this.projectileType = projectileType;
 
     // Initialize homing properties
     this.targetEntityId = null;
@@ -167,9 +173,11 @@ export class Projectile extends Component {
     this.bounces = 0;
     this.maxBounces = 0;
     this.owner = -1;
+    this.sourcePlayerId = 'unknown';
     this.distanceTraveled = 0;
     this.maxDistance = Infinity;
     this.startPosition.set(0, 0, 0);
+    this.projectileType = 'generic';
     this.targetEntityId = null;
     this.homingStrength = 0;
     this.maxTurnRate = Math.PI;
@@ -177,7 +185,7 @@ export class Projectile extends Component {
   }
 
   public clone(): Projectile {
-    const clone = new Projectile(this.speed, this.damage, this.maxLifetime, this.owner);
+    const clone = new Projectile(this.speed, this.damage, this.maxLifetime, this.owner, this.sourcePlayerId, this.projectileType);
     clone.velocity.copy(this.velocity);
     clone.lifetime = this.lifetime;
     clone.piercing = this.piercing;

@@ -7,6 +7,7 @@ import { Health } from '@/ecs/components/Health';
 import { Tower } from '@/ecs/components/Tower';
 import { SummonedUnit } from '@/ecs/components/SummonedUnit';
 import { Projectile } from '@/ecs/components/Projectile';
+import { Renderer } from '@/ecs/components/Renderer';
 import { Collider, CollisionLayer } from '@/ecs/components/Collider';
 import { World } from '@/ecs/World';
 import { ProjectileSystem } from './ProjectileSystem';
@@ -22,6 +23,9 @@ export class TowerSystem extends System {
   // Player entity mapping for identifying tower owners vs enemies
   private serverPlayerEntities: Map<string, number> = new Map();
   private localSocketId: string | null = null;
+  
+  // Track stealth states for remote players
+  private playerStealthStates: Map<string, boolean> = new Map();
   
   // Reusable objects to reduce allocations
   private tempVector = new Vector3();
@@ -154,6 +158,10 @@ export class TowerSystem extends System {
     // Check if this is a summoned unit
     const summonedUnit = target.getComponent(SummonedUnit);
     if (summonedUnit) {
+      // Don't target dead or inactive summoned units
+      if (summonedUnit.isDead || !summonedUnit.isActive) {
+        return false;
+      }
       // Only target enemy summoned units (different owner)
       return summonedUnit.ownerId !== tower.ownerId;
     }
@@ -164,6 +172,16 @@ export class TowerSystem extends System {
       // Check if this is the local player (PLAYER layer)
       if (targetCollider.layer === CollisionLayer.PLAYER) {
         const shouldTarget = tower.ownerId !== this.localSocketId;
+        
+        // If this is the local player and they are invisible (stealthed), don't target them
+        if (shouldTarget && this.localSocketId) {
+          // Check if local player is invisible through a global reference
+          const controlSystem = (window as any).controlSystemRef?.current;
+          if (controlSystem && controlSystem.isPlayerInvisible && controlSystem.isPlayerInvisible()) {
+            return false; // Don't target invisible local player
+          }
+        }
+        
         return shouldTarget;
       }
 
@@ -179,6 +197,12 @@ export class TowerSystem extends System {
 
         if (targetPlayerId) {
           const shouldTarget = tower.ownerId !== targetPlayerId;
+          
+          // Check if the target player is invisible (stealthed)
+          if (shouldTarget && this.playerStealthStates.get(targetPlayerId)) {
+            return false; // Don't target invisible remote players
+          }
+          
           return shouldTarget;
         }
 
@@ -192,6 +216,12 @@ export class TowerSystem extends System {
   private attackTarget(towerEntity: Entity, towerTransform: Transform, tower: Tower, currentTime: number): void {
     const targetEntity = this.world.getEntity(tower.currentTarget!);
     if (!targetEntity) {
+      tower.clearTarget();
+      return;
+    }
+
+    // Double-check target validity before attacking
+    if (!this.isValidTarget(targetEntity, towerTransform, tower)) {
       tower.clearTarget();
       return;
     }
@@ -267,11 +297,29 @@ export class TowerSystem extends System {
       }
 
       // Mark projectile as tower projectile for special handling
-      const projectileRenderer = projectileEntity.getComponent(Transform);
-      if (projectileRenderer) {
+      const projectileRenderer = projectileEntity.getComponent(Renderer) as Renderer;
+      if (projectileRenderer && projectileRenderer.mesh) {
         // Add metadata to identify this as a tower projectile
-        (projectileEntity as any).isTowerProjectile = true;
-        (projectileEntity as any).towerOwnerId = tower.ownerId;
+        projectileRenderer.mesh.userData.isTowerProjectile = true;
+        projectileRenderer.mesh.userData.towerOwnerId = tower.ownerId;
+        projectileRenderer.mesh.userData.isRegularArrow = false; // Override regular arrow flag
+        projectileRenderer.mesh.userData.direction = this.tempVector.clone();
+        projectileRenderer.mesh.userData.opacity = 1.0;
+      }
+      
+      // Also mark the entity itself for ProjectileSystem detection
+      (projectileEntity as any).isTowerProjectile = true;
+      (projectileEntity as any).towerOwnerId = tower.ownerId;
+
+      // CRITICAL: Set source player ID on projectile for damage routing
+      // This ensures tower projectiles can damage enemy summoned units
+      projectileEntity.userData = projectileEntity.userData || {};
+      projectileEntity.userData.playerId = tower.ownerId;
+      
+      // Also set it on the projectile component for combat system detection
+      const projectileComponent = projectileEntity.getComponent(Projectile);
+      if (projectileComponent) {
+        (projectileComponent as any).sourcePlayerId = tower.ownerId;
       }
 
     }
@@ -309,5 +357,18 @@ export class TowerSystem extends System {
       const health = entity.getComponent(Health);
       return tower && health && tower.isActive && !tower.isDead && !health.isDead;
     });
+  }
+  
+  // Methods for managing player stealth states
+  public updatePlayerStealthState(playerId: string, isInvisible: boolean): void {
+    this.playerStealthStates.set(playerId, isInvisible);
+  }
+  
+  public clearPlayerStealthState(playerId: string): void {
+    this.playerStealthStates.delete(playerId);
+  }
+  
+  public setLocalSocketId(socketId: string): void {
+    this.localSocketId = socketId;
   }
 }

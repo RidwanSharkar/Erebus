@@ -29,7 +29,8 @@ export {
   RingGeometry,
   OctahedronGeometry,
   TorusGeometry,
-  BufferAttribute
+  BufferAttribute,
+  Float32BufferAttribute
 } from 'three';
 
 // Curve classes
@@ -107,7 +108,8 @@ export {
   BackSide,
   AdditiveBlending,
   LinearFilter,
-  DynamicDrawUsage
+  DynamicDrawUsage,
+  RepeatWrapping
 } from 'three';
 
 // Raycasting

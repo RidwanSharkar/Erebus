@@ -118,7 +118,7 @@ export default function EntropicBolt({
         <>
           {/* Entropic trail effect */}
           <EntropicBoltTrail
-            color={new Color("#00ff44")}
+            color={new Color("#FF4500")}
             size={0.3}
             meshRef={boltRef}
             opacity={1}
@@ -135,7 +135,7 @@ export default function EntropicBolt({
 
               {/* Light source */}
               <pointLight
-                color="#00ff44"
+                color="#FF4500"
                 intensity={3}
                 distance={4}
                 decay={2}
@@ -200,8 +200,8 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
       <mesh>
         <sphereGeometry args={[0.675 * (1 + elapsed * 1.5), 12, 12]} />
         <meshStandardMaterial
-          color="#00ff44"
-          emissive="#00ff44"
+          color="#FF4500"
+          emissive="#FF6600"
           emissiveIntensity={1.0 * fade}
           transparent
           opacity={0.6 * fade}
@@ -214,8 +214,8 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
       <mesh>
         <sphereGeometry args={[0.45 * (1 + elapsed * 2), 8, 8]} />
         <meshStandardMaterial
-          color="#33ff66"
-          emissive="#33ff66"
+          color="#FFA500"
+          emissive="#FFA500"
           emissiveIntensity={1 * fade}
           transparent
           opacity={0.7 * fade}
@@ -241,8 +241,8 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
           >
             <coneGeometry args={[0.08, 0.4, 4]} />
             <meshStandardMaterial
-              color="#66ff88"
-              emissive="#66ff88"
+              color="#FFD700"
+              emissive="#FFD700"
               emissiveIntensity={1.5 * fade}
               transparent
               opacity={0.8 * fade}
@@ -259,8 +259,8 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
         >
           <torusGeometry args={[1 * (1 + elapsed * 1.5) + i * 0.2, 0.08, 6, 16]} />
           <meshStandardMaterial
-            color="#00ff44"
-            emissive="#00ff44"
+            color="#FF4500"
+            emissive="#FF6600"
             emissiveIntensity={1.5 * fade}
             transparent
             opacity={0.5 * fade * (1 - i * 0.3)}
@@ -271,7 +271,7 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
 
       {/* Bright flash */}
       <pointLight
-        color="#00ff44"
+        color="#FF4500"
         intensity={8 * fade}
         distance={4}
         decay={2}
