@@ -74,7 +74,7 @@ export default function DetailedInstancedEnemyRenderer({
       const frameTime = performance.now() - frameStart;
       const totalEnemies = bossIds.length + eliteIds.length + gruntIds.length;
       if (totalEnemies > 0) {
-        console.log(`🎭 Original Models: ${totalEnemies} enemies (${bossIds.length} bosses, ${eliteIds.length} elites, ${gruntIds.length} grunts) rendered in ${frameTime.toFixed(2)}ms`);
+        // console.log(`🎭 Original Models: ${totalEnemies} enemies (${bossIds.length} bosses, ${eliteIds.length} elites, ${gruntIds.length} grunts) rendered in ${frameTime.toFixed(2)}ms`);
       }
     }
   });

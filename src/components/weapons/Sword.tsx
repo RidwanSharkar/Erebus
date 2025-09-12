@@ -337,7 +337,6 @@ export default function Sword({
         // Check if this enemy is the player themselves by comparing IDs
         // In ECS, player entity ID is passed as a number, but enemy.id is a string
         if (enemy.id === playerEntityId?.toString()) {
-          console.log(`⚔️ Divine Storm: Skipping self-damage for player entity ${enemy.id}`);
           return;
         }
 
@@ -1020,10 +1019,23 @@ export default function Sword({
 
   // Handle Colossus Strike completion and effects
   const handleColossusStrikeComplete = () => {
+    // In PVP mode, the ColossusStrike effects are handled by the PVP system
+    // through the ControlSystem callback, not by the Sword component
+    // This prevents double lightning bolts
+    
+    // Check if we're in PVP mode by looking for targetPlayerData
+    const isInPVPMode = targetPlayerData && targetPlayerData.length > 0;
+    
+    if (isInPVPMode) {
+      // Don't create local effects in PVP mode - they're handled by PVPGameScene
+      console.log('⚡ Colossus Strike: Skipping local effect creation in PVP mode');
+      return;
+    }
+    
+    // Only create local effects in non-PVP mode (regular multiplayer)
     if (!playerPosition) return;
 
     // Create the yellow lightning effect at the offset position (like Smite)
-    // The position will be calculated in ControlSystem and passed through the callback
     const direction = new Vector3();
     // Assuming camera direction for now - this will be properly handled by the ColossusStrike component
     const colossusStrikePosition = playerPosition.clone().add(new Vector3(0, 0, -2.5)); // Forward offset
@@ -1339,8 +1351,8 @@ export default function Sword({
       dragonGroupRef={dragonGroupRef}
     />
     
-    {/* Colossus Strike Lightning Effects */}
-    {colossusStrikeEffects.map((effect) => (
+    {/* Colossus Strike Lightning Effects - Only render in non-PVP mode */}
+    {!targetPlayerData && colossusStrikeEffects.map((effect) => (
       <ColossusStrike
         key={effect.id}
         position={effect.position}
@@ -1352,9 +1364,11 @@ export default function Sword({
             console.log('⚡ Colossus Strike: Damage dealt by visual component');
           }
         }}
+        onHit={onHit} // Pass the onHit callback for damage dealing
         targetPlayerData={targetPlayerData}
         playerPosition={playerPosition}
         rageSpent={rageSpent}
+        delayStart={500} // 500ms delay to allow sword animation to complete
       />
     ))}
   </>

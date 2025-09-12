@@ -16,12 +16,6 @@ const Canvas = dynamic(() => import('@react-three/fiber').then(mod => ({ default
   ssr: false,
   loading: () => <div className="flex items-center justify-center h-screen text-white">Loading 3D engine...</div>
 });
-// Use lazy-loaded game systems for maximum code splitting
-const LazyGameSystems = dynamic(() => import('../components/LazyGameSystems'), {
-  ssr: false,
-  loading: () => null // No HTML elements inside Canvas
-});
-
 
 
 // Lazy load PVP game scene
@@ -102,12 +96,7 @@ export default function Home() {
             <div className="bg-black/95 p-8 rounded-xl border-2 border-green-500 text-white text-center">
               <h1 className="text-4xl font-bold mb-8 text-green-500">AVERNUS</h1>
               <div className="flex flex-col gap-4">
-                <button 
-                  className="px-8 py-4 text-xl bg-green-500 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-green-600 hover:-translate-y-1"
-                  onClick={() => setGameMode('singleplayer')}
-                >
-                  Single Player
-                </button>
+  
 
                 <button 
                   className="px-8 py-4 text-xl bg-red-500 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-red-600 hover:-translate-y-1"
@@ -150,15 +139,7 @@ export default function Home() {
             powerPreference: "high-performance"
           }}
         >
-                      {gameMode === 'singleplayer' && (
-              <LazyGameSystems
-                onDamageNumbersUpdate={setDamageNumbers}
-                onDamageNumberComplete={handleDamageNumberComplete}
-                onCameraUpdate={handleCameraUpdate}
-                onGameStateUpdate={handleGameStateUpdate}
-                onControlSystemUpdate={handleControlSystemUpdate}
-              />
-            )}
+
 
           {gameMode === 'pvp' && (
             <PVPGameScene
@@ -185,11 +166,7 @@ export default function Home() {
             {/* Performance Stats */}
             <div className="absolute top-4 right-4 text-white font-mono text-sm">
               <div id="fps-counter">FPS: --</div>
-              {gameMode === 'multiplayer' && (
-                <div className="mt-2 text-blue-400">
-                  <div>Multiplayer Mode</div>
-                </div>
-              )}
+
               {gameMode === 'pvp' && (
                 <div className="mt-2 text-red-400">
                   <div>PVP Mode</div>

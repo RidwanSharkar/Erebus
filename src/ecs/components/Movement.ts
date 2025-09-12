@@ -161,7 +161,6 @@ export class Movement extends Component {
     this.corruptedDuration = duration / 1000; // Convert to seconds
     this.corruptedInitialSlowPercent = 0.9; // 90% initial slow
     this.corruptedRecoveryRate = 0.1; // 10% recovery per second
-    console.log(`👻 Applied corrupted debuff for ${duration}ms (${this.corruptedDuration}s)`);
   }
 
   public updateDebuffs(): void {
@@ -189,7 +188,6 @@ export class Movement extends Component {
         this.isCorrupted = false;
         this.corruptedStartTime = 0;
         this.corruptedDuration = 0;
-        console.log(`👻 Corrupted debuff expired`);
       }
     }
   }
@@ -213,10 +211,6 @@ export class Movement extends Component {
       // Apply the slow effect (reduce speed by the slow percentage)
       speed *= (1 - currentSlowPercent);
       
-      // Debug logging for corrupted debuff (only log occasionally to avoid spam)
-      if (elapsed % 1.0 < 0.1) { // Log roughly every second
-        console.log(`👻 Corrupted debuff: ${(currentSlowPercent * 100).toFixed(1)}% slow (${((1 - currentSlowPercent) * 100).toFixed(1)}% speed remaining)`);
-      }
     }
     
     return speed;

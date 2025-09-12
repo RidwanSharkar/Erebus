@@ -19,7 +19,6 @@ export default function SabreReaperMistEffect({
   duration = 1000, // 1 second animation like stealth mist
   onComplete
 }: SabreReaperMistEffectProps) {
-  console.log('🌫️ SabreReaperMistEffect created at position:', position);
   const startTime = useRef(Date.now());
   const isCompleted = useRef(false);
 
@@ -57,7 +56,6 @@ export default function SabreReaperMistEffect({
 
     if (currentProgress >= 1 && !isCompleted.current) {
       isCompleted.current = true;
-      console.log('🌫️ SabreReaperMistEffect completed, calling onComplete');
       onComplete?.();
     }
   });
@@ -70,7 +68,6 @@ export default function SabreReaperMistEffect({
     };
   }, [particleGeometry, particleMaterial]);
 
-  console.log('🌫️ SabreReaperMistEffect rendering with', particleData.length, 'particles at position:', position);
 
   return (
     <group position={[position.x, position.y, position.z]}>

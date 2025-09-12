@@ -538,7 +538,6 @@ export function OptimizedPVPCrossentropyManager({
               const { damageBonus } = controlSystem.applyBurningStack(playerEntityId, currentTime, false);
               finalDamage = 90 + damageBonus;
               
-              console.log(`🔥 Applied burning stack to player ${player.id} via Crossentropy: base 90 + bonus ${damageBonus} = ${finalDamage}`);
             }
             
             onPlayerHit(player.id, finalDamage); // Crossentropy damage with burning bonus

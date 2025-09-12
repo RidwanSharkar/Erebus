@@ -163,7 +163,6 @@ export default function DeathGraspProjectile({
 
           const distance = currentPosition.distanceTo(enemy.position);
           if (distance <= 3.0) { // 3 unit collision radius (increased with range)
-            console.log(`🎯 DeathGraspProjectile: Hit enemy ${enemy.id} at distance ${distance.toFixed(2)}`);
             hitEnemies.current.add(enemy.id);
             hasHit.current = true;
             onHit?.(enemy.id, enemy.position.clone());
@@ -180,7 +179,6 @@ export default function DeathGraspProjectile({
           const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
           const distance = currentPosition.distanceTo(playerPos);
           if (distance <= 3.0) { // 3 unit collision radius (increased with range)
-            console.log(`🎯 DeathGraspProjectile: Hit player ${playerId} at distance ${distance.toFixed(2)}`);
             hitEnemies.current.add(playerId);
             hasHit.current = true;
             onHit?.(playerId, playerPos.clone());

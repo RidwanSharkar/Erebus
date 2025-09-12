@@ -113,10 +113,8 @@ export class Projectile extends Component {
     // Can't hit owner
     if (entityId === this.owner) return false;
     
-    // If piercing, can hit targets multiple times
-    if (this.piercing) return true;
-    
-    // Otherwise, can only hit each target once
+    // Even piercing projectiles can only hit each target once
+    // Piercing means it can hit multiple different targets, not the same target multiple times
     return !this.hasHitTarget(entityId);
   }
 

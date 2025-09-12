@@ -38,7 +38,6 @@ export default function DeathGraspPull({
       entityId.current = playerEntities.current.get(targetPlayerId) || null;
 
       if (!entityId.current) {
-        console.log(`❌ DeathGraspPull: No entity ID found for player ${targetPlayerId}, cancelling pull`);
         onComplete();
         return;
       }
@@ -51,14 +50,12 @@ export default function DeathGraspPull({
 
       // Safety check to ensure startPosition is set
       if (!startPosition.current) {
-        console.log(`❌ DeathGraspPull: Failed to get start position for entity ${entityId.current}`);
         onComplete();
         return;
       }
 
       // Now we know startPosition.current is not null, so we can safely use it
       const currentPos = startPosition.current;
-      console.log(`🎣 DeathGraspPull: Initializing pull for entity ${entityId.current} from [${currentPos.x.toFixed(1)}, ${currentPos.z.toFixed(1)}] to caster at [${casterPosition.x.toFixed(1)}, ${casterPosition.z.toFixed(1)}]`);
 
       // Calculate target position - pull player towards caster (only X and Z, preserve Y)
       const startGroundPos = currentPos.clone();
@@ -142,7 +139,7 @@ export default function DeathGraspPull({
       // Log position updates every 10 frames to avoid spam
       const frameCount = Math.floor(progress * 60); // Assuming 60fps
       if (frameCount % 10 === 0) {
-        console.log(`🎣 DeathGraspPull: Moving entity ${entityId.current} to [${finalPosition.x.toFixed(1)}, ${finalPosition.z.toFixed(1)}] (${(progress * 100).toFixed(0)}% complete)`);
+        // console.log(`🎣 DeathGraspPull: Moving entity ${entityId.current} to [${finalPosition.x.toFixed(1)}, ${finalPosition.z.toFixed(1)}] (${(progress * 100).toFixed(0)}% complete)`);
       }
 
       // Update ECS position
@@ -160,13 +157,8 @@ export default function DeathGraspPull({
             position: finalPosition,
             casterId: (window as any).localSocketId
           });
-          console.log(`🎣 DeathGraspPull: Broadcasting position update via multiplayer effect for target ${targetPlayerId} to position [${finalPosition.x.toFixed(2)}, ${finalPosition.y.toFixed(2)}, ${finalPosition.z.toFixed(2)}]`);
-        } else {
-          console.log(`❌ DeathGraspPull: broadcastPlayerEffect not available`);
-        }
+        } 
       }
-    } else {
-      console.log(`❌ DeathGraspPull: Could not get current position for entity ${entityId.current}`);
     }
 
     // Complete pull when finished

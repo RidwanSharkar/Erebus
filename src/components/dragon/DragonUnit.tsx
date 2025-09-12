@@ -107,6 +107,14 @@ interface DragonUnitProps {
     summonId?: number;
     targetId?: string;
   }>) => void;
+  // PVP-specific props
+  targetPlayerData?: Array<{
+    id: string;
+    position: Vector3;
+    health: number;
+    maxHealth: number;
+  }>;
+  rageSpent?: number;
 }
 
 export default function DragonUnit({
@@ -166,7 +174,9 @@ export default function DragonUnit({
   isCobraShotCharging = false,
   cobraShotChargeProgress = 0,
   reanimateRef,
-  setActiveEffects = () => {}
+  setActiveEffects = () => {},
+  targetPlayerData,
+  rageSpent
 }: DragonUnitProps) {
   
   const groupRef = useRef<Group>(null);
@@ -232,6 +242,8 @@ export default function DragonUnit({
           playerRotation={playerRotation}
           dragonGroupRef={groupRef}
           playerEntityId={entityId}
+          rageSpent={rageSpent}
+          targetPlayerData={targetPlayerData}
         />
       );
     } else if (currentWeapon === WeaponType.SABRES) {

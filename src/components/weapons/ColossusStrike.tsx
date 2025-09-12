@@ -6,6 +6,7 @@ interface ColossusStrikeProps {
   position: Vector3;
   onComplete: () => void;
   onDamageDealt?: (damageDealt: boolean) => void;
+  onHit?: (targetId: string, damage: number) => void;
   targetPlayerData?: Array<{
     id: string;
     position: Vector3;
@@ -14,20 +15,24 @@ interface ColossusStrikeProps {
   }>;
   playerPosition?: Vector3;
   rageSpent?: number;
+  delayStart?: number; // Delay before lightning appears (in milliseconds)
 }
 
 export default function ColossusStrike({
   position,
   onComplete,
   onDamageDealt,
+  onHit,
   targetPlayerData = [],
   playerPosition,
-  rageSpent = 40
+  rageSpent = 40,
+  delayStart = 0
 }: ColossusStrikeProps) {
-  const startTimeRef = useRef(Date.now());
+  const startTimeRef = useRef(Date.now() + delayStart);
   const duration = 0.9; // Match animation duration
   const flickerRef = useRef(1);
   const damageDealtRef = useRef(false);
+  const isVisible = useRef(false);
   
   // Calculate the sky position (directly above the hit position)
   const skyPosition = useMemo(() => {
@@ -139,24 +144,61 @@ export default function ColossusStrike({
   }), []);
 
   // Perform damage detection at the right time (when lightning hits)
-  // Note: Damage is handled by the calling component (PVPGameScene.tsx)
-  // This component is purely visual - no damage logic needed here
+  // Using Smite's damage model but with smaller radius
   useEffect(() => {
     const damageTimer = setTimeout(() => {
       if (damageDealtRef.current) return; // Prevent multiple damage applications
       damageDealtRef.current = true;
 
-      // Just trigger the damage callback to indicate the visual effect hit
-      if (onDamageDealt) {
-        onDamageDealt(true);
+      // Perform area damage like Smite but with smaller radius
+      const colossusStrikeDamage = 100 + (rageSpent > 40 ? (rageSpent - 40) * 2 : 0); // Base 100 + extra rage scaling
+      const damageRadius = 2.0; // Smaller radius than Smite (3.0)
+      let damageDealtFlag = false;
+
+      if (targetPlayerData && targetPlayerData.length > 0) {
+        targetPlayerData.forEach(player => {
+          if (!player.health || player.health <= 0) return;
+
+          const distance = position.distanceTo(player.position);
+          if (distance <= damageRadius) {
+            // Player is within damage radius - deal damage
+            if (onHit) {
+              // Calculate damage: 100 + (2 × missing health %) + (2 × extra rage)
+              const missingHealthPercent = Math.max(0, ((player.maxHealth - player.health) / player.maxHealth) * 100);
+              const extraRage = Math.max(0, rageSpent - 40);
+              const totalDamage = 100 + (missingHealthPercent * 2) + (extraRage * 2);
+              
+              console.log(`⚡ Colossus Strike: Hitting player ${player.id} for ${totalDamage} damage (distance: ${distance.toFixed(2)})`);
+              onHit(player.id, totalDamage);
+            }
+            damageDealtFlag = true;
+          }
+        });
       }
-    }, 450); // Visual effect timing (mid-animation)
+
+      // Notify parent if any damage was dealt
+      if (onDamageDealt) {
+        onDamageDealt(damageDealtFlag);
+      }
+    }, delayStart + 450); // Visual effect timing (mid-animation) + delay
 
     return () => clearTimeout(damageTimer);
-  }, [onDamageDealt]);
+  }, [onDamageDealt, onHit, targetPlayerData, position, rageSpent, delayStart]);
   
   useFrame(() => {
-    const elapsed = (Date.now() - startTimeRef.current) / 1000;
+    const currentTime = Date.now();
+    const elapsed = (currentTime - startTimeRef.current) / 1000;
+    
+    // Check if we should start showing the effect
+    if (currentTime < startTimeRef.current) {
+      isVisible.current = false;
+      return; // Don't render anything until delay is over
+    }
+    
+    if (!isVisible.current) {
+      isVisible.current = true;
+    }
+    
     flickerRef.current = Math.random() * 0.3 + 0.7;
     
     if (elapsed >= duration) {
@@ -171,6 +213,11 @@ export default function ColossusStrike({
     materials.impact.opacity = fadeOut * 0.9;
   });
   
+  // Don't render anything if not visible yet
+  if (!isVisible.current) {
+    return null;
+  }
+
   return (
     <group>
       {/* Lightning branches */}

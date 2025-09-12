@@ -61,11 +61,19 @@ interface DragonRendererProps {
   isCobraShotCharging?: boolean;
   cobraShotChargeProgress?: number;
   reanimateRef?: React.RefObject<ReanimateRef>;
+  // PVP-specific props
+  targetPlayerData?: Array<{
+    id: string;
+    position: Vector3;
+    health: number;
+    maxHealth: number;
+  }>;
+  rageSpent?: number;
 }
 
-export default function DragonRenderer({ 
-  entityId, 
-  position, 
+export default function DragonRenderer({
+  entityId,
+  position,
   world,
   onMeshReady,
   currentWeapon = WeaponType.BOW,
@@ -107,7 +115,9 @@ export default function DragonRenderer({
   barrageChargeProgress = 0,
   isCobraShotCharging = false,
   cobraShotChargeProgress = 0,
-  reanimateRef
+  reanimateRef,
+  targetPlayerData,
+  rageSpent
 }: DragonRendererProps) {
   const mountRef = useRef(false);
   if (!mountRef.current) {
@@ -371,6 +381,8 @@ export default function DragonRenderer({
           cobraShotChargeProgress={cobraShotChargeProgress}
           reanimateRef={reanimateRef}
           setActiveEffects={setActiveEffects}
+          targetPlayerData={targetPlayerData}
+          rageSpent={rageSpent}
         />
       </group>
       

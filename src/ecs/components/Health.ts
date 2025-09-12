@@ -42,7 +42,11 @@ export class Health extends Component {
     if (entity) {
       const shield = entity.getComponent(Shield);
       if (shield) {
+        const shieldBefore = shield.currentShield;
         finalDamage = shield.absorbDamage(amount);
+        const shieldAfter = shield.currentShield;
+        const shieldDamage = shieldBefore - shieldAfter;
+        
       }
     }
 

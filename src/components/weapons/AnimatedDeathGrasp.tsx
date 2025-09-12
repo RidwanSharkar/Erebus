@@ -227,7 +227,6 @@ export default function AnimatedDeathGrasp({
 
         const distance = currentPos.distanceTo(enemy.position);
         if (distance <= 2.5) { // Collision radius
-          console.log(`🎯 AnimatedDeathGrasp: Hit enemy ${enemy.id} at distance ${distance.toFixed(2)}`);
           hitTargetRef.current = { id: enemy.id, position: enemy.position.clone() };
           onHit(enemy.id, enemy.position.clone());
           return;
@@ -243,7 +242,6 @@ export default function AnimatedDeathGrasp({
         const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
         const distance = currentPos.distanceTo(playerPos);
         if (distance <= 2.5) { // Collision radius
-          console.log(`🎯 AnimatedDeathGrasp: Hit player ${playerId} at distance ${distance.toFixed(2)}`);
           hitTargetRef.current = { id: playerId, position: playerPos.clone() };
           onHit(playerId, playerPos.clone());
           return;

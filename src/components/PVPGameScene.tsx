@@ -260,6 +260,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     position: new Vector3(0, 0.5, 0),
     quaternion: { x: 0, y: 0, z: 0, w: 1 }
   });
+
+  // Ref for ViperStingManager damage number ID (moved to top level to avoid hook rule violations)
+  const viperStingDamageNumberIdRef = useRef(0);
   
   // Track server player to local ECS entity mapping for PVP damage
   const serverPlayerEntities = useRef<Map<string, number>>(new Map());
@@ -294,7 +297,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       if (!unitStillExists) {
         world.destroyEntity(entityId);
         serverSummonedUnitEntities.current.delete(unitId);
-        console.log(`🗑️ Removed ECS entity for summoned unit ${unitId}`);
       }
     }
 
@@ -308,7 +310,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         if (entityId) {
           world.destroyEntity(entityId);
           serverSummonedUnitEntities.current.delete(unit.unitId);
-          console.log(`🗑️ Removed ECS entity for dead/inactive summoned unit ${unit.unitId}`);
         }
         continue;
       }
@@ -352,7 +353,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         entity.userData.serverUnitId = unit.unitId;
         entity.userData.serverUnitOwnerId = unit.ownerId;
 
-        console.log(`✨ Created ECS entity ${entityId} for summoned unit ${unit.unitId} (owner: ${unit.ownerId})`);
       } else {
         // Update existing entity
         const existingEntity = world.getEntity(entityId);
@@ -400,7 +400,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       if (!towerStillExists) {
         world.destroyEntity(entityId);
         serverTowerEntities.current.delete(towerId);
-        console.log(`🗑️ Removed ECS entity for tower ${towerId}`);
       }
     }
 
@@ -447,7 +446,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         entity.userData.serverTowerId = tower.id;
         entity.userData.serverTowerOwnerId = tower.ownerId;
 
-        console.log(`🏰 Created ECS entity ${entityId} for tower ${tower.id} (owner: ${tower.ownerId})`);
       } else {
         // Update existing entity
         const existingEntity = world.getEntity(entityId);
@@ -559,6 +557,10 @@ const [maxMana, setMaxMana] = useState(150);
   }>>([]);
   const nextDebuffEffectId = useRef(0);
 
+  // Track active debuff indicators to prevent visual overcrowding
+  // Key format: "playerId:debuffType" -> debuff effect id
+  const activeDebuffIndicators = useRef<Map<string, number>>(new Map());
+
   // PVP Frost Nova Effect Management
   const [pvpFrostNovaEffects, setPvpFrostNovaEffects] = useState<Array<{
     id: number;
@@ -576,6 +578,7 @@ const [maxMana, setMaxMana] = useState(150);
     position: Vector3;
     startTime: number;
     duration: number;
+    rageSpent?: number;
   }>>([]);
   const nextColossusStrikeEffectId = useRef(0);
 
@@ -603,6 +606,46 @@ const [maxMana, setMaxMana] = useState(150);
     // Debug: Check if this is the local player
     const isLocalPlayer = playerId === socket?.id;
     
+    // Check if there's already an active debuff indicator for this player and debuff type
+    const indicatorKey = `${playerId}:${debuffType}`;
+    const existingIndicatorId = activeDebuffIndicators.current.get(indicatorKey);
+    
+    // If there's already an active indicator, extend its duration instead of creating a new one
+    if (existingIndicatorId !== undefined) {
+      // Find and update the existing debuff effect
+      setPvpDebuffEffects(prev => prev.map(effect => {
+        if (effect.id === existingIndicatorId) {
+          return {
+            ...effect,
+            duration: Math.max(effect.duration, duration), // Use the longer duration
+            position: position.clone(), // Update position to latest
+            stackCount: Math.max(effect.stackCount || 1, (position as any).stackCount || 1) // Update stack count if higher
+          };
+        }
+        return effect;
+      }));
+      
+      // Apply the debuff to the local player's movement if this is targeting us
+      if (isLocalPlayer && playerEntity) {
+        const playerMovement = playerEntity.getComponent(Movement);
+        if (playerMovement) {
+          if (debuffType === 'frozen') {
+            playerMovement.freeze(duration);
+          } else if (debuffType === 'slowed') {
+            playerMovement.slow(duration, 0.5); // 50% speed reduction
+          } else if (debuffType === 'stunned') {
+            playerMovement.freeze(duration); // Stun uses same movement restriction as freeze
+          } else if (debuffType === 'corrupted') {
+            playerMovement.applyCorrupted(duration); // Apply corrupted debuff with gradual recovery
+          } else if (debuffType === 'burning') {
+            // Burning doesn't affect movement, it's a visual effect only
+          }
+        }
+      }
+      
+      return; // Exit early, don't create a new indicator
+    }
+    
     const debuffEffect = {
       id: nextDebuffEffectId.current++,
       playerId,
@@ -612,6 +655,9 @@ const [maxMana, setMaxMana] = useState(150);
       duration,
       stackCount: (position as any).stackCount || 1 // Extract stack count from position if available
     };
+    
+    // Track this new debuff indicator
+    activeDebuffIndicators.current.set(indicatorKey, debuffEffect.id);
     
     // Use batched updates for debuff effects
     PVPStateUpdateHelpers.batchEffectUpdates([{
@@ -633,16 +679,18 @@ const [maxMana, setMaxMana] = useState(150);
           playerMovement.freeze(duration); // Stun uses same movement restriction as freeze
         } else if (debuffType === 'corrupted') {
           playerMovement.applyCorrupted(duration); // Apply corrupted debuff with gradual recovery
-          console.log(`👻 Applied corrupted debuff to local player for ${duration}ms`);
         } else if (debuffType === 'burning') {
           // Burning doesn't affect movement, it's a visual effect only
-          console.log(`🔥 Applied burning debuff to local player for ${duration}ms`);
         }
       }
     }
     
     // Clean up debuff effect after duration using batched updates
     setTimeout(() => {
+      // Remove from tracking map
+      const indicatorKey = `${debuffEffect.playerId}:${debuffEffect.debuffType}`;
+      activeDebuffIndicators.current.delete(indicatorKey);
+      
       PVPStateUpdateHelpers.batchEffectUpdates([{
         type: 'remove',
         effectType: 'debuff',
@@ -763,7 +811,6 @@ const [maxMana, setMaxMana] = useState(150);
 
   // Function to create death grasp pull effect on PVP players
   const createPvpDeathGraspPull = useCallback((targetPlayerId: string, casterPosition: Vector3) => {
-    console.log(`🎣 Creating DeathGraspPull effect for target ${targetPlayerId} from position:`, casterPosition);
 
     const deathGraspPull = {
       id: nextDeathGraspPullId.current++,
@@ -774,7 +821,6 @@ const [maxMana, setMaxMana] = useState(150);
       isActive: true
     };
 
-    console.log(`🎣 DeathGraspPull created with ID ${deathGraspPull.id}`);
 
     // Use batched updates for death grasp pulls
     PVPStateUpdateHelpers.batchEffectUpdates([{
@@ -826,14 +872,15 @@ const [maxMana, setMaxMana] = useState(150);
   }, []);
 
   // Function to create Colossus Strike effect on PVP players
-  const createPvpColossusStrikeEffect = useCallback((playerId: string, position: Vector3) => {
+  const createPvpColossusStrikeEffect = useCallback((playerId: string, position: Vector3, rageSpent: number = 40) => {
 
     const colossusStrikeEffect = {
       id: nextColossusStrikeEffectId.current++,
       playerId,
       position: position.clone(),
       startTime: Date.now(),
-      duration: 900 // 0.9 seconds Colossus Strike duration (matches Sword animation)
+      duration: 900, // 0.9 seconds Colossus Strike duration (matches Sword animation)
+      rageSpent // Store the rage spent for damage calculation
     };
 
     // Use batched updates for Colossus Strike effects
@@ -865,7 +912,6 @@ const [maxMana, setMaxMana] = useState(150);
     
     setPvpHauntedSoulEffects(prev => [...prev, hauntedSoulEffect]);
     
-    console.log(`👻 Created haunted soul effect at position:`, position);
   }, []);
 
   const createPvpVenomEffect = useCallback((playerId: string, position: Vector3) => {
@@ -935,7 +981,6 @@ const [maxMana, setMaxMana] = useState(150);
         // Local player gets the experience
         setPlayerExperience(prev => {
           const newExp = prev + 10;
-          console.log(`🔄 Experience update: ${prev} -> ${newExp}`);
 
           // Check for level up using the previous experience to determine current level
           const currentLevel = ExperienceSystem.getLevelFromExperience(prev);
@@ -947,16 +992,12 @@ const [maxMana, setMaxMana] = useState(150);
             console.log(`🎉 Level up! Player reached level ${newLevel}`);
 
             // Update max health based on new level
-            console.log(`🔍 DEBUG: Level up detected! playerEntity exists: ${!!playerEntity}, playerEntityRef.current: ${playerEntityRef.current}`);
             if (playerEntityRef.current !== null && engineRef.current) {
               const world = engineRef.current.getWorld();
               const actualPlayerEntity = world.getEntity(playerEntityRef.current);
-              console.log(`🔍 DEBUG: Retrieved player entity from world: ${!!actualPlayerEntity}`);
 
               if (actualPlayerEntity) {
-                console.log(`🔍 DEBUG: Player entity found, updating health`);
                 const health = actualPlayerEntity.getComponent(Health);
-                console.log(`🔍 DEBUG: Health component: ${!!health}`);
                 if (health) {
                   const newMaxHealth = ExperienceSystem.getMaxHealthForLevel(newLevel);
                   const oldMaxHealth = health.maxHealth;
@@ -998,7 +1039,6 @@ const [maxMana, setMaxMana] = useState(150);
   // Listen for wave completion events from server
   useEffect(() => {
     const handleWaveCompletedEvent = (event: CustomEvent) => {
-      console.log('🌊 Received wave completed event:', event.detail);
       handleWaveComplete();
     };
 
@@ -1038,6 +1078,10 @@ const [maxMana, setMaxMana] = useState(150);
     isSundering: false,
     isCorruptedAuraActive: false
   });
+
+  // Use a ref to store current weapon state to avoid infinite re-renders
+  const weaponStateRef = useRef(weaponState);
+  const lastWeaponStateUpdate = useRef(0);
   
   // Track previous weapon state for change detection
   const prevWeaponRef = useRef<{ weapon: WeaponType; subclass: WeaponSubclass }>({
@@ -1108,11 +1152,9 @@ useEffect(() => {
 
 // Function to consume mana for weapon abilities (Scythe and Runeblade)
 const consumeMana = useCallback((amount: number) => {
-  console.log('🔍 DEBUG: consumeMana called - currentWeapon:', currentWeapon, 'amount:', amount);
   if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
     setCurrentMana(prev => {
       const newValue = Math.max(0, prev - amount);
-      console.log('🔍 DEBUG: consumeMana - old mana:', prev, 'new mana:', newValue);
       return newValue;
     });
   }
@@ -1120,9 +1162,7 @@ const consumeMana = useCallback((amount: number) => {
 
 // Function to check if current weapon has enough mana
 const hasMana = useCallback((amount: number) => {
-  console.log('🔍 DEBUG: hasMana called - currentMana:', currentMana, 'amount:', amount);
   const result = currentMana >= amount;
-  console.log('🔍 DEBUG: hasMana result:', result);
   return result;
 }, [currentMana]);
 
@@ -1131,37 +1171,23 @@ const hasMana = useCallback((amount: number) => {
     if (!socket) return;
 
     const handlePlayerAttack = (data: any) => {
-      if (data.playerId !== socket.id && engineRef.current) {
-        // Handle perfect shot beam effects
-        if (data.attackType === 'bow_release' && data.animationData?.isPerfectShot) {
-          const position = new Vector3(data.position.x, data.position.y, data.position.z);
-          const direction = new Vector3(data.direction.x, data.direction.y, data.direction.z);
-          
-          // Get the player's subclass from the players map
-          const player = players.get(data.playerId);
-          const subclass = player?.subclass || WeaponSubclass.ELEMENTAL;
-          
-          // Create perfect shot beam effect
-          createPowershotEffect(
-            position,
-            direction,
-            subclass,
-            true, // isPerfectShot
-            true  // isElementalShotsUnlocked
-          );
-        }
+      // CRITICAL FIX: Never process our own attacks to prevent duplicate projectiles and damage
+      if (data.playerId === socket.id) {
+        console.log(`🚫 Skipping own attack broadcast: ${data.attackType} from ${data.playerId}`);
+        return;
+      }
+      
+      if (engineRef.current) {
+        // NOTE: bow_release attacks are no longer broadcast to avoid duplicate damage
+        // Perfect shot visual effects are now handled via the projectile system broadcasts
         
         // Handle special ability projectiles that need custom visual effects
         if (data.attackType === 'viper_sting_projectile') {
-          // Skip processing our own viper sting projectiles to prevent self-damage
-          if (data.playerId === socket.id) {
-            return;
-          }
 
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
           const direction = new Vector3(data.direction.x, data.direction.y, data.direction.z);
 
-          // Create the ECS projectile for damage
+          // Create the ECS projectile for damage (this is needed for collision detection)
           const projectileSystem = engineRef.current.getWorld().getSystem(ProjectileSystem);
           if (projectileSystem) {
             const attackerEntityId = serverPlayerEntities.current.get(data.playerId) || -Math.abs(data.playerId.length * 1000 + Date.now() % 1000);
@@ -1176,39 +1202,25 @@ const hasMana = useCallback((amount: number) => {
             );
           }
           
-          // Trigger visual effect for Viper Sting projectile
-          const { triggerGlobalViperSting } = require('@/components/projectiles/ViperStingManager');
+          // For PVP broadcasts, normalize the position and direction to be flat for visual effect
+          const flatPosition = position.clone();
+          flatPosition.y = 1.5; // Fixed height for visual consistency
           
-          // Update the Viper Sting parent ref to the other player's position for visual effect
-          const originalPosition = viperStingParentRef.current.position.clone();
-          const originalQuaternion = { ...viperStingParentRef.current.quaternion };
+          const flatDirection = direction.clone();
+          flatDirection.y = 0; // Remove vertical component
+          flatDirection.normalize(); // Ensure it's still a unit vector
           
-          // Temporarily set the parent ref to the other player's position and direction
-          viperStingParentRef.current.position.copy(position);
-          
-          // Calculate quaternion from the other player's direction
-          const angle = Math.atan2(direction.x, direction.z);
-          viperStingParentRef.current.quaternion = {
-            x: 0,
-            y: Math.sin(angle / 2),
-            z: 0,
-            w: Math.cos(angle / 2)
-          };
-          
-          // Trigger the Viper Sting visual effect
-          triggerGlobalViperSting();
-          
-          // Restore original parent ref position and rotation
-          setTimeout(() => {
-            viperStingParentRef.current.position.copy(originalPosition);
-            viperStingParentRef.current.quaternion = originalQuaternion;
-          }, 100);
+          // Create visual effect from the remote player's position but with flat trajectory
+          // This will show the Viper Sting projectile coming from the correct player but flat
+          const success = triggerGlobalViperSting(flatPosition, flatDirection);
+          if (success) {
+            console.log(`🐍 Viper Sting projectile visual effect triggered for remote player ${data.playerId}`);
+          }
           
           return;
         }
         
         if (data.attackType === 'cobra_shot_projectile') {
-          
           // Note: Cobra Shot damage is handled by PVPCobraShotManager through visual projectiles
           // No need to create ECS projectiles that show up as regular arrows
           
@@ -1272,12 +1284,27 @@ const hasMana = useCallback((amount: number) => {
                 );
                 break;
               case 'charged_arrow':
-                projectileSystem.createChargedArrowProjectile(
-                  engineRef.current.getWorld(),
-                  position,
-                  direction,
-                  attackerEntityId,
-                  { speed: 35, damage: 50, lifetime: 3, piercing: true, opacity: 0.8 }
+                // Only create visual effect for charged arrows - no damage-dealing projectile
+                // The local player already created the damage-dealing projectile
+                
+                // Create charged arrow visual effect for other players with flat positioning
+                const chargedPlayer = players.get(data.playerId);
+                const chargedSubclass = chargedPlayer?.subclass || WeaponSubclass.ELEMENTAL;
+                
+                // For PVP broadcasts, normalize the position and direction to be flat
+                const chargedFlatPosition = position.clone();
+                chargedFlatPosition.y = 1.5; // Fixed height for visual consistency
+                
+                const chargedFlatDirection = direction.clone();
+                chargedFlatDirection.y = 0; // Remove vertical component
+                chargedFlatDirection.normalize(); // Ensure it's still a unit vector
+                
+                createPowershotEffect(
+                  chargedFlatPosition,
+                  chargedFlatDirection,
+                  chargedSubclass,
+                  false, // not a perfect shot
+                  true   // isElementalShotsUnlocked
                 );
                 break;
               case 'entropic_bolt':
@@ -1299,12 +1326,27 @@ const hasMana = useCallback((amount: number) => {
                 );
                 break;
               case 'perfect_shot':
-                projectileSystem.createChargedArrowProjectile(
-                  engineRef.current.getWorld(),
-                  position,
-                  direction,
-                  attackerEntityId,
-                  { speed: 40, damage: 75, lifetime: 3, piercing: true, opacity: 1.0 }
+                // Only create visual effect for perfect shots - no damage-dealing projectile
+                // The local player already created the damage-dealing projectile
+                
+                // Create perfect shot visual effect for other players with flat positioning
+                const player = players.get(data.playerId);
+                const subclass = player?.subclass || WeaponSubclass.ELEMENTAL;
+                
+                // For PVP broadcasts, normalize the position and direction to be flat
+                const flatPosition = position.clone();
+                flatPosition.y = 1.25; // Fixed height for visual consistency
+                
+                const flatDirection = direction.clone();
+                flatDirection.y = 0; // Remove vertical component
+                flatDirection.normalize(); // Ensure it's still a unit vector
+                
+                createPowershotEffect(
+                  flatPosition,
+                  flatDirection,
+                  subclass,
+                  true, // isPerfectShot
+                  true  // isElementalShotsUnlocked
                 );
                 break;
               case 'barrage_projectile':
@@ -1453,39 +1495,25 @@ const hasMana = useCallback((amount: number) => {
             }]);
           }, 4000); // Divine Storm lasts 4 seconds
         } else if (data.abilityType === 'viper_sting') {
-          // Skip processing our own viper sting abilities to prevent any potential issues
-          if (data.playerId === socket.id) {
-            return;
-          }
 
-          // Trigger visual effect - this should create the proper Viper Sting projectiles
+          // Create Viper Sting visual effect from the remote player's position and direction
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
           const direction = new Vector3(data.direction.x, data.direction.y, data.direction.z);
           
-          // Update the Viper Sting parent ref to the other player's position for visual effect
-          const originalPosition = viperStingParentRef.current.position.clone();
-          const originalQuaternion = { ...viperStingParentRef.current.quaternion };
+          // For PVP broadcasts, normalize the position and direction to be flat
+          const flatPosition = position.clone();
+          flatPosition.y = 1.5; // Fixed height for visual consistency
           
-          // Temporarily set the parent ref to the other player's position and direction
-          viperStingParentRef.current.position.copy(position);
+          const flatDirection = direction.clone();
+          flatDirection.y = 0; // Remove vertical component
+          flatDirection.normalize(); // Ensure it's still a unit vector
           
-          // Calculate quaternion from the other player's direction
-          const angle = Math.atan2(direction.x, direction.z);
-          viperStingParentRef.current.quaternion = {
-            x: 0,
-            y: Math.sin(angle / 2),
-            z: 0,
-            w: Math.cos(angle / 2)
-          };
-          
-          // Trigger the Viper Sting visual effect
-          const success = triggerGlobalViperSting();
-          
-          // Restore original parent ref position after a short delay
-          setTimeout(() => {
-            viperStingParentRef.current.position.copy(originalPosition);
-            viperStingParentRef.current.quaternion = originalQuaternion;
-          }, 100);
+          // Trigger Viper Sting visual effect with flat position and direction
+          // This will create the projectile from the correct player's position but flat
+          const success = triggerGlobalViperSting(flatPosition, flatDirection);
+          if (success) {
+            console.log(`🐍 Viper Sting visual effect triggered for remote player ${data.playerId}`);
+          }
           
           setMultiplayerPlayerStates(prev => {
             const updated = new Map(prev);
@@ -1533,10 +1561,6 @@ const hasMana = useCallback((amount: number) => {
             return updated;
           });
         } else if (data.abilityType === 'barrage') {
-          // Skip processing our own barrage abilities to prevent any potential issues
-          if (data.playerId === socket.id) {
-            return;
-          }
 
           // Trigger visual effect
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
@@ -1789,10 +1813,10 @@ const hasMana = useCallback((amount: number) => {
           // Calculate position in front of the caster (same logic as local player)
           const effectPosition = position.clone().add(direction.clone().normalize().multiplyScalar(2.5));
           
-          // Create visual effect
-          createPvpColossusStrikeEffect(data.playerId, effectPosition);
+          // Create visual effect with rage value (default to 40 if not provided)
+          const rageSpent = data.extraData?.rageSpent || data.rageSpent || 40;
+          createPvpColossusStrikeEffect(data.playerId, effectPosition, rageSpent);
           
-          console.log(`⚡ Created Colossus Strike visual effect for remote player ${data.playerId}`);
         } else if (data.abilityType === 'backstab') {
           
           // Backstab is an instant melee attack, so we need to:
@@ -2015,19 +2039,16 @@ const hasMana = useCallback((amount: number) => {
 
       if (data.effect?.type === 'deathgrasp_pull') {
         const { targetPlayerId, position, casterId } = data.effect;
-        console.log(`🎣 Received DeathGrasp pull effect for target ${targetPlayerId} from caster ${casterId}`);
 
         // If this client is the target player, update the local position
         if (targetPlayerId === socket?.id && position) {
           const pullPosition = new Vector3(position.x, position.y, position.z);
-          console.log(`🎣 Applying DeathGrasp pull to local player, moving to:`, pullPosition);
 
           // Update local player entity position
           if (playerEntity) {
             const transform = playerEntity.getComponent(Transform);
             if (transform) {
               transform.setPosition(pullPosition.x, pullPosition.y, pullPosition.z);
-              console.log(`🎣 Local player position updated via DeathGrasp pull`);
             }
           }
         }
@@ -2035,9 +2056,7 @@ const hasMana = useCallback((amount: number) => {
     };
 
     const handlePlayerDebuff = (data: any) => {
-      console.log('🎯 Received PVP player debuff:', data);
-      console.log(`🔍 Debug: My socket ID is "${socket?.id}", target is "${data.targetPlayerId}", am I the target? ${socket?.id === data.targetPlayerId}`);
-      
+
       const { targetPlayerId, debuffType, duration, effectData } = data;
       
       if (targetPlayerId && debuffType && duration) {
@@ -2067,10 +2086,8 @@ const hasMana = useCallback((amount: number) => {
     };
 
     const handlePlayerStealth = (data: any) => {
-      console.log('🎯 Received player-stealth event:', data);
 
       if (!data || !data.playerId) {
-        console.warn('⚠️ Invalid player stealth data received:', data);
         return;
       }
 
@@ -2085,7 +2102,6 @@ const hasMana = useCallback((amount: number) => {
         towerSystemRef.current.updatePlayerStealthState(playerId, isInvisible);
       }
 
-      console.log(`🥷 Player ${playerId} stealth state changed from ${previousState} to ${isInvisible} (${isInvisible ? 'invisible' : 'visible'})`);
     };
 
     socket.on('player-attacked', handlePlayerAttack);
@@ -2237,8 +2253,6 @@ const hasMana = useCallback((amount: number) => {
             health.maxHealth = serverPlayer.maxHealth;
             health.currentHealth = serverPlayer.health;
           }
-        } else {
-          console.warn(`⚠️ Could not find local ECS entity ${entityId} for PVP player ${playerId}`);
         }
       }
     });
@@ -2257,7 +2271,6 @@ const hasMana = useCallback((amount: number) => {
             health.currentHealth = 0;
             health.isDead = true;
           }
-          console.log(`💀 Marked local ECS entity ${entityId} as dead for disconnected player ${playerId}`);
         }
         entitiesToRemove.push(playerId);
       }
@@ -2351,7 +2364,6 @@ const hasMana = useCallback((amount: number) => {
             health.isDead = true;
             tower.die(Date.now() / 1000);
           }
-          console.log(`💀 Marked local ECS entity ${entityId} as dead for removed tower ${towerId}`);
         }
         towerEntitiesToRemove.push(towerId);
       }
@@ -2400,21 +2412,16 @@ const hasMana = useCallback((amount: number) => {
         });
         
         if (serverPlayerId) {
-          console.log(`🎯 Mapping local entity ${entityId} to server player ${serverPlayerId} for ${damage} PVP damage`);
           broadcastPlayerDamage(serverPlayerId, damage);
-        } else {
-          console.warn(`⚠️ Could not find server player ID for local entity ${entityId}`);
         }
       };
       
       const { player, controlSystem, towerSystem } = setupPVPGame(engine, scene, camera as PerspectiveCamera, gl, damagePlayerWithMapping, damageTower, damageSummonedUnit);
-      console.log('🎮 PVP Player entity created:', player, 'ID:', player.id);
       
       // Update player entity with correct socket ID for team validation
       if (socket?.id) {
         player.userData = player.userData || {};
         player.userData.playerId = socket.id;
-        console.log('🔧 Updated player entity with socket ID:', socket.id);
       }
       
       setPlayerEntity(player);
@@ -2431,10 +2438,12 @@ const hasMana = useCallback((amount: number) => {
 
       // Set up Corrupted Aura toggle callback
       controlSystem.setCorruptedAuraToggleCallback((active: boolean) => {
-        setWeaponState(prev => ({
-          ...prev,
+        const newState = {
+          ...weaponStateRef.current,
           isCorruptedAuraActive: active
-        }));
+        };
+        weaponStateRef.current = newState;
+        setWeaponState(newState);
       });
       
       // Set up tower system with player mapping
@@ -2452,21 +2461,8 @@ const hasMana = useCallback((amount: number) => {
       
       // Set up PVP callbacks (AFTER playerEntity is set)
       controlSystem.setBowReleaseCallback((finalProgress, isPerfectShot) => {
-        
-        // Broadcast attack to other players
-        if (playerEntity) {
-          const transform = playerEntity.getComponent(Transform);
-          if (transform) {
-            const direction = new Vector3();
-            camera.getWorldDirection(direction);
-            direction.normalize();
-            
-            broadcastPlayerAttack('bow_release', transform.position, direction, {
-              chargeProgress: finalProgress,
-              isPerfectShot: isPerfectShot
-            });
-          }
-        }
+        // NOTE: Projectile broadcasting is now handled by setProjectileCreatedCallback
+        // This callback only handles visual effects to avoid duplicate damage
         
         // Trigger perfect shot visual effect if it was a perfect shot
         if (isPerfectShot) {
@@ -2505,7 +2501,6 @@ const hasMana = useCallback((amount: number) => {
       
       // Set up Divine Storm callback
       controlSystem.setDivineStormCallback((position, direction, duration) => {
-        console.log('⚡ PVP Divine Storm activated - broadcasting to other players');
         
         // Trigger local visual effect immediately with correct duration
         triggerGlobalDivineStorm(position, socket?.id, duration);
@@ -2548,27 +2543,23 @@ const hasMana = useCallback((amount: number) => {
       
       // Set up Skyfall callback
       controlSystem.setSkyfallCallback((position, direction) => {
-        console.log('🌟 PVP Skyfall triggered - broadcasting to other players');
         broadcastPlayerAbility('skyfall', position, direction);
       });
       
       // Set up Backstab callback
       controlSystem.setBackstabCallback((position, direction, damage, isBackstab) => {
-        console.log(`🗡️ PVP Backstab triggered - broadcasting to other players (damage: ${damage}, backstab: ${isBackstab})`);
         broadcastPlayerAbility('backstab', position, direction);
         // Note: Animation state is now broadcasted automatically in the game loop
       });
       
       // Set up Sunder callback
       controlSystem.setSunderCallback((position, direction, damage, stackCount) => {
-        console.log(`⚔️ PVP Sunder triggered - broadcasting to other players (damage: ${damage}, stacks: ${stackCount})`);
         broadcastPlayerAbility('sunder', position, direction);
         // Note: Animation state is now broadcasted automatically in the game loop
       });
       
       // Set up SabreReaperMistEffect callback for Stealth ability
       controlSystem.setCreateSabreMistEffectCallback((position: Vector3) => {
-        console.log('🥷 Creating Sabre Reaper Mist effect at position:', position, 'Total effects before:', activeMistEffects.length);
 
         const effectId = `mist_${Date.now()}_${Math.random()}`;
         const newEffect = {
@@ -2579,7 +2570,6 @@ const hasMana = useCallback((amount: number) => {
 
         setActiveMistEffects(prev => {
           const newEffects = [...prev, newEffect];
-          console.log('🥷 Added mist effect, total effects now:', newEffects.length);
           return newEffects;
         });
 
@@ -2587,16 +2577,13 @@ const hasMana = useCallback((amount: number) => {
         setTimeout(() => {
           setActiveMistEffects(prev => {
             const filtered = prev.filter(effect => effect.id !== effectId);
-            console.log('🥷 Removed mist effect, total effects now:', filtered.length);
             return filtered;
           });
         }, 1000);
       });
       
       // Set up Debuff callback for broadcasting freeze/slow effects
-      console.log(`🔧 Debug: Setting up debuff callback for ControlSystem`);
       controlSystem.setDebuffCallback((targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, position: Vector3) => {
-        console.log(`🎯 PVP Debuff callback triggered - ${debuffType} effect on entity ${targetEntityId}`);
         
         // Find the server player ID that corresponds to this local ECS entity ID
         let targetPlayerId: string | null = null;
@@ -2607,12 +2594,9 @@ const hasMana = useCallback((amount: number) => {
         });
         
         if (targetPlayerId && broadcastPlayerDebuff) {
-          console.log(`🎯 Broadcasting ${debuffType} effect to player ${targetPlayerId}`);
           broadcastPlayerDebuff(targetPlayerId, debuffType, duration, {
             position: { x: position.x, y: position.y, z: position.z }
           });
-        } else {
-          console.warn(`⚠️ Could not find server player ID for local entity ${targetEntityId}`);
         }
       });
 
@@ -2659,7 +2643,6 @@ const hasMana = useCallback((amount: number) => {
 
       // Set up Smite callback
       controlSystem.setSmiteCallback((position: Vector3, direction: Vector3, onDamageDealt?: (damageDealt: boolean) => void) => {
-        console.log('🔍 DEBUG: Smite callback triggered in PVP mode');
         // Create local Smite effect
         createPvpSmiteEffect(socket?.id || '', position, onDamageDealt);
 
@@ -2669,7 +2652,6 @@ const hasMana = useCallback((amount: number) => {
 
       // Set up DeathGrasp callback
       controlSystem.setDeathGraspCallback((position: Vector3, direction: Vector3) => {
-        console.log('🔍 DEBUG: DeathGrasp callback triggered in PVP mode');
 
         // Create local DeathGrasp projectile effect
         createPvpDeathGraspEffect(socket?.id || '', position, direction);
@@ -2680,7 +2662,6 @@ const hasMana = useCallback((amount: number) => {
 
       // Set up WraithStrike callback
       controlSystem.setWraithStrikeCallback((position: Vector3, direction: Vector3) => {
-        console.log('👻 DEBUG: WraithStrike callback triggered in PVP mode');
 
         // Broadcast WraithStrike ability to other players
         broadcastPlayerAbility('wraith_strike', position, direction);
@@ -2688,15 +2669,12 @@ const hasMana = useCallback((amount: number) => {
 
       // Set up Haunted Soul Effect callback (for WraithStrike)
       controlSystem.setHauntedSoulEffectCallback((position: Vector3) => {
-        console.log('👻 Creating haunted soul effect at position:', position);
         createPvpHauntedSoulEffect(position);
       });
 
       // Set up Colossus Strike callback
       controlSystem.setColossusStrikeCallback((position: Vector3, direction: Vector3, rageSpent: number) => {
-        console.log('⚡ Colossus Strike triggered in PVP mode with rage:', rageSpent);
 
-        // Create local Colossus Strike effect
         // Calculate position in front of the player (like Smite)
         const casterPosition = position.clone();
         const casterDirection = direction.clone().normalize();
@@ -2704,38 +2682,12 @@ const hasMana = useCallback((amount: number) => {
         // Position the effect 2.5 units in front of the caster (same as Smite)
         const effectPosition = casterPosition.add(casterDirection.multiplyScalar(2.5));
         
-        // Find closest enemy player for targeting
-        let closestTarget: any = null;
-        let closestDistance = Infinity;
-
-        players.forEach((player: any) => {
-          if (player.id === socket?.id) return; // Don't target self
-
-          const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
-          const distance = effectPosition.distanceTo(playerPos);
-          if (distance < closestDistance) {
-            closestDistance = distance;
-            closestTarget = player;
-          }
-        });
-
-        if (closestTarget) {
-          // Calculate damage: 100 + (2 × missing health %) + (2 × extra rage)
-          const missingHealthPercent = Math.max(0, ((closestTarget.maxHealth - closestTarget.health) / closestTarget.maxHealth) * 100);
-          const extraRage = Math.max(0, rageSpent - 40);
-          const totalDamage = 100 + (missingHealthPercent * 2) + (extraRage * 2);
-
-          console.log(`⚡ Colossus Strike: Target ${closestTarget.id} health ${closestTarget.health}/${closestTarget.maxHealth} (${missingHealthPercent.toFixed(1)}% missing), Rage spent: ${rageSpent}, Damage: ${totalDamage}`);
-
-          // Apply damage through broadcast system
-          broadcastPlayerDamage(closestTarget.id, totalDamage, 'colossus_strike');
-        }
-
         // Create visual effect at the calculated position (in front of caster)
-        createPvpColossusStrikeEffect(socket?.id || '', effectPosition);
+        // The damage will be handled by the ColossusStrike component itself
+        createPvpColossusStrikeEffect(socket?.id || '', effectPosition, rageSpent);
 
-        // Broadcast Colossus Strike ability to other players
-        broadcastPlayerAbility('colossus_strike', position, direction);
+        // Broadcast Colossus Strike ability to other players with rage value
+        broadcastPlayerAbility('colossus_strike', position, direction, undefined, { rageSpent });
       });
 
       // Set up mana callbacks for Runeblade
@@ -2790,16 +2742,7 @@ const hasMana = useCallback((amount: number) => {
 
     // Expose advanced interpolation methods for testing
     (window as any).testInterpolationMethods = () => {
-      console.log('🧮 Available Interpolation Methods:');
-      console.log('1. Linear Interpolation (LERP) - Currently used');
-      console.log('2. Hermite Spline - Smoother curves with velocity');
-      console.log('3. Catmull-Rom Spline - Smooth curves through waypoints');
-      console.log('4. Cubic Bezier - Custom control point curves');
-      console.log('5. Smooth Step - Easing functions');
-      console.log('6. Smoother Step - Even smoother easing');
 
-      console.log('\n📊 Current Interpolation Stats:');
-      console.log((window as any).getInterpolationStats());
 
       return 'Interpolation methods available in InterpolationSystem class';
     };
@@ -2867,10 +2810,13 @@ const hasMana = useCallback((amount: number) => {
           isSundering: controlSystemRef.current.isSunderActive(),
           isCorruptedAuraActive: controlSystemRef.current.isCorruptedAuraActive()
         };
-        
+
+        // Update the ref immediately
+        weaponStateRef.current = newWeaponState;
+
         // Check for weapon changes and broadcast to other players
         const prevWeapon = prevWeaponRef.current;
-        if (newWeaponState.currentWeapon !== prevWeapon.weapon || 
+        if (newWeaponState.currentWeapon !== prevWeapon.weapon ||
             newWeaponState.currentSubclass !== prevWeapon.subclass) {
           updatePlayerWeapon(newWeaponState.currentWeapon, newWeaponState.currentSubclass);
           prevWeaponRef.current = {
@@ -2878,12 +2824,17 @@ const hasMana = useCallback((amount: number) => {
             subclass: newWeaponState.currentSubclass
           };
         }
-        
-        setWeaponState(newWeaponState);
-        
-        // Broadcast animation state changes to other players (throttled to avoid spam)
+
+        // Throttle React state updates to prevent infinite re-renders
         const now = Date.now();
-        if (now - lastAnimationBroadcast.current > 100) { // Throttle to 10 times per second
+        if (now - lastWeaponStateUpdate.current > 16) { // ~60fps throttle
+          setWeaponState(newWeaponState);
+          lastWeaponStateUpdate.current = now;
+        }
+
+        // Broadcast animation state changes to other players (throttled to avoid spam)
+        const animationNow = Date.now();
+        if (animationNow - lastAnimationBroadcast.current > 100) { // Throttle to 10 times per second
           // Determine if scythe is spinning based on weapon type and charging state
           const isScytheSpinning = newWeaponState.currentWeapon === WeaponType.SCYTHE && newWeaponState.isCharging;
           // Determine if sword is spinning during Divine Storm or Charge
@@ -2908,7 +2859,7 @@ const hasMana = useCallback((amount: number) => {
             isBackstabbing: newWeaponState.isBackstabbing // Broadcast backstab animation state
           };
           broadcastPlayerAnimationState(animationStateToSend);
-          lastAnimationBroadcast.current = now;
+          lastAnimationBroadcast.current = animationNow;
         }
       }
 
@@ -2942,7 +2893,6 @@ const hasMana = useCallback((amount: number) => {
           const healthComponent = actualPlayerEntity.getComponent(Health);
           const shieldComponent = actualPlayerEntity.getComponent(Shield);
           if (healthComponent) {
-            console.log(`🔄 Game loop health check: ${healthComponent.currentHealth}/${healthComponent.maxHealth} (expected for level ${playerLevel}: ${ExperienceSystem.getMaxHealthForLevel(playerLevel)})`);
             const gameState = {
               playerHealth: healthComponent.currentHealth,
               maxHealth: healthComponent.maxHealth,
@@ -2954,7 +2904,6 @@ const hasMana = useCallback((amount: number) => {
               mana: (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) ? currentMana : 0,
               maxMana: (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) ? maxMana : 0
             };
-            console.log(`🎮 Game state update: Health ${gameState.playerHealth}/${gameState.maxHealth}, Level ${playerLevel}, Exp ${playerExperience}`);
             onGameStateUpdate(gameState);
 
             // Update multiplayer health
@@ -3126,10 +3075,12 @@ const hasMana = useCallback((amount: number) => {
           }}
           onCorruptedAuraToggle={(active: boolean) => {
             // Update the weapon state when Corrupted Aura is toggled
-            setWeaponState(prev => ({
-              ...prev,
+            const newState = {
+              ...weaponStateRef.current,
               isCorruptedAuraActive: active
-            }));
+            };
+            weaponStateRef.current = newState;
+            setWeaponState(newState);
           }}
         />
       )}
@@ -3140,10 +3091,8 @@ const hasMana = useCallback((amount: number) => {
 
         // Check if player is invisible due to stealth
         const isPlayerInvisible = playerStealthStates.current.get(player.id) || false;
-        console.log(`👤 Checking visibility for player ${player.id}: stealth state = ${isPlayerInvisible}, will render = ${!isPlayerInvisible}`);
 
         if (isPlayerInvisible) {
-          console.log(`👻 Player ${player.id} is invisible, skipping render`);
           return null; // Don't render invisible players
         }
         
@@ -3303,19 +3252,16 @@ const hasMana = useCallback((amount: number) => {
             onPlayerHit={(playerId: string, damage: number) => {
               // CRITICAL FIX: Never damage the local player
               if (playerId === socket?.id) {
-                console.log(`⚠️ Skipping Cobra Shot damage to local player ${socket?.id}`);
                 return;
               }
               
               if (broadcastPlayerDamage) {
-                console.log(`🎯 Broadcasting Cobra Shot damage to player ${playerId} (NOT local player ${socket?.id})`);
                 broadcastPlayerDamage(playerId, damage);
               }
             }}
             onPlayerVenomed={(playerId: string, position: Vector3) => {
-              // CRITICAL FIX: Never apply venom effect to the local player
+
               if (playerId === socket?.id) {
-                console.log(`⚠️ Skipping Cobra Shot venom effect on local player ${socket?.id}`);
                 return;
               }
               
@@ -3325,7 +3271,6 @@ const hasMana = useCallback((amount: number) => {
               
               // Broadcast venom effect to all players so they can see it
               if (broadcastPlayerEffect) {
-                console.log(`🎯 Broadcasting Cobra Shot venom effect to player ${playerId} (NOT local player ${socket?.id})`);
                 broadcastPlayerEffect({
                   type: 'venom',
                   targetPlayerId: playerId,
@@ -3345,19 +3290,16 @@ const hasMana = useCallback((amount: number) => {
             onPlayerHit={(playerId: string, damage: number) => {
               // CRITICAL FIX: Never damage the local player
               if (playerId === socket?.id) {
-                console.log(`⚠️ Skipping Barrage damage to local player ${socket?.id}`);
                 return;
               }
               
               if (broadcastPlayerDamage) {
-                console.log(`🎯 Broadcasting Barrage damage to player ${playerId} (NOT local player ${socket?.id})`);
                 broadcastPlayerDamage(playerId, damage);
               }
             }}
             onPlayerSlowed={(playerId: string, position: Vector3) => {
               // CRITICAL FIX: Never apply slow effect to the local player
               if (playerId === socket?.id) {
-                console.log(`⚠️ Skipping Barrage slow effect on local player ${socket?.id}`);
                 return;
               }
               
@@ -3367,7 +3309,6 @@ const hasMana = useCallback((amount: number) => {
               
               // Broadcast debuff effect to all players so they can see it
               if (broadcastPlayerDebuff) {
-                console.log(`🎯 Broadcasting Barrage slow effect to player ${playerId} (NOT local player ${socket?.id})`);
                 broadcastPlayerDebuff(playerId, 'slowed', 5000, {
                   position: { x: clonedPosition.x, y: clonedPosition.y, z: clonedPosition.z },
                   speedMultiplier: 0.5
@@ -3385,19 +3326,16 @@ const hasMana = useCallback((amount: number) => {
             onPlayerHit={(playerId: string, damage: number) => {
               // CRITICAL FIX: Never damage the local player
               if (playerId === socket?.id) {
-                console.log(`⚠️ Skipping Frost Nova damage to local player ${socket?.id}`);
                 return;
               }
               
               if (broadcastPlayerDamage) {
-                console.log(`🎯 Broadcasting Frost Nova damage to player ${playerId} (NOT local player ${socket?.id})`);
                 broadcastPlayerDamage(playerId, damage);
               }
             }}
             onPlayerFrozen={(playerId: string, position: Vector3) => {
               // CRITICAL FIX: Never apply frozen effect to the local player
               if (playerId === socket?.id) {
-                console.log(`⚠️ Skipping Frost Nova frozen effect on local player ${socket?.id}`);
                 return;
               }
               
@@ -3415,19 +3353,16 @@ const hasMana = useCallback((amount: number) => {
             onPlayerHit={(playerId: string, damage: number) => {
               // CRITICAL FIX: Never damage the local player
               if (playerId === socket?.id) {
-                console.log(`⚠️ Skipping Viper Sting damage to local player ${socket?.id}`);
                 return;
               }
 
               if (broadcastPlayerDamage) {
-                console.log(`🎯 Broadcasting Viper Sting damage to player ${playerId} (NOT local player ${socket?.id})`);
                 broadcastPlayerDamage(playerId, damage);
               }
             }}
             onPlayerVenomed={(playerId: string, position: Vector3) => {
               // CRITICAL FIX: Never apply venom effect to the local player
               if (playerId === socket?.id) {
-                console.log(`⚠️ Skipping Viper Sting venom effect on local player ${socket?.id}`);
                 return;
               }
 
@@ -3443,7 +3378,20 @@ const hasMana = useCallback((amount: number) => {
               }
             }}
           />
-          
+
+          {/* ViperStingManager for visual projectiles in PVP mode */}
+          <ViperStingManager
+            parentRef={viperStingParentRef as any}
+            enemyData={[]} // Empty array since we only hit players in PVP
+            onHit={() => {}} // No-op since damage is handled by OptimizedPVPViperStingManager
+            setDamageNumbers={() => {}} // No-op since damage numbers are handled by combat system
+            nextDamageNumberId={viperStingDamageNumberIdRef}
+            onHealthChange={() => {}} // No-op since health changes are handled elsewhere
+            charges={[{ id: 1, available: true, cooldownStartTime: null }]} // Dummy charge state
+            setCharges={() => {}} // No-op since charges aren't used in PVP
+            localSocketId={socket?.id}
+          />
+
           {/* Optimized PVP-specific Crossentropy Manager with Object Pooling */}
           <OptimizedPVPCrossentropyManager
             world={engineRef.current.getWorld()}
@@ -3453,19 +3401,16 @@ const hasMana = useCallback((amount: number) => {
             onPlayerHit={(playerId: string, damage: number) => {
               // CRITICAL FIX: Never damage the local player
               if (playerId === socket?.id) {
-                console.log(`⚠️ Skipping Crossentropy damage to local player ${socket?.id}`);
                 return;
               }
 
               if (broadcastPlayerDamage) {
-                console.log(`🔥 Broadcasting Crossentropy damage to player ${playerId} (NOT local player ${socket?.id})`);
                 broadcastPlayerDamage(playerId, damage);
               }
             }}
             onPlayerExplosion={(playerId: string, position: Vector3) => {
               // CRITICAL FIX: Never apply explosion effect to the local player
               if (playerId === socket?.id) {
-                console.log(`⚠️ Skipping Crossentropy explosion effect on local player ${socket?.id}`);
                 return;
               }
 
@@ -3541,7 +3486,6 @@ const hasMana = useCallback((amount: number) => {
                       const oldHealth = healthComponent.currentHealth;
                       const didHeal = healthComponent.heal(20); // Smite healing amount
                       if (didHeal) {
-                        console.log(`⚡ Smite (PVP visual fallback) healed player for 20 HP! Health: ${oldHealth} -> ${healthComponent.currentHealth}/${healthComponent.maxHealth}`);
                       }
                     }
                   }
@@ -3582,9 +3526,6 @@ const hasMana = useCallback((amount: number) => {
                 direction={deathGraspEffect.direction}
                 casterId={deathGraspEffect.playerId}
                 onHit={(targetId: string, position: Vector3) => {
-                  console.log(`🎯 DeathGrasp hit target: ${targetId} at position:`, position);
-                  console.log(`🎯 DeathGrasp caster position:`, currentStartPosition);
-                  console.log(`🎯 DeathGrasp creating pull effect for target ${targetId}`);
                   // Create the pulling effect when projectile hits
                   createPvpDeathGraspPull(targetId, currentStartPosition);
                 }}
@@ -3669,6 +3610,11 @@ const hasMana = useCallback((amount: number) => {
                 onComplete={() => {
                   setPvpColossusStrikeEffects(prev => prev.filter(effect => effect.id !== colossusStrikeEffect.id));
                 }}
+                onHit={(targetId: string, damage: number) => {
+                  // Handle damage to target player
+                  console.log(`⚡ Colossus Strike: Dealing ${damage} damage to player ${targetId}`);
+                  broadcastPlayerDamage(targetId, damage, 'colossus_strike');
+                }}
                 targetPlayerData={Array.from(players.values()).filter(p => p.id !== socket?.id).map(p => ({
                   id: p.id,
                   position: new Vector3(p.position.x, p.position.y, p.position.z),
@@ -3676,7 +3622,8 @@ const hasMana = useCallback((amount: number) => {
                   maxHealth: p.maxHealth
                 }))}
                 playerPosition={new Vector3(0, 0, 0)} // Not used for remote effects
-                rageSpent={40} // Default value for remote effects
+                rageSpent={colossusStrikeEffect.rageSpent || 40} // Use stored rage value
+                delayStart={500} // 500ms delay to allow sword animation to complete
               />
             );
           })}
@@ -3774,6 +3721,10 @@ const hasMana = useCallback((amount: number) => {
                     }
                   })}
                   onComplete={() => {
+                    // Remove from tracking map
+                    const indicatorKey = `${debuffEffect.playerId}:${debuffEffect.debuffType}`;
+                    activeDebuffIndicators.current.delete(indicatorKey);
+                    
                     setPvpDebuffEffects(prev => prev.filter(effect => effect.id !== debuffEffect.id));
                   }}
                 />
@@ -3808,6 +3759,10 @@ const hasMana = useCallback((amount: number) => {
                     }
                   })}
                   onComplete={() => {
+                    // Remove from tracking map
+                    const indicatorKey = `${debuffEffect.playerId}:${debuffEffect.debuffType}`;
+                    activeDebuffIndicators.current.delete(indicatorKey);
+                    
                     setPvpDebuffEffects(prev => prev.filter(effect => effect.id !== debuffEffect.id));
                   }}
                 />
@@ -3822,6 +3777,10 @@ const hasMana = useCallback((amount: number) => {
                   startTime={debuffEffect.startTime}
                   stackCount={debuffEffect.stackCount}
                   onComplete={() => {
+                    // Remove from tracking map
+                    const indicatorKey = `${debuffEffect.playerId}:${debuffEffect.debuffType}`;
+                    activeDebuffIndicators.current.delete(indicatorKey);
+                    
                     setPvpDebuffEffects(prev => prev.filter(effect => effect.id !== debuffEffect.id));
                   }}
                 />
@@ -3838,7 +3797,6 @@ const hasMana = useCallback((amount: number) => {
                 position={mistEffect.position}
                 duration={1000} // 1 second duration
                 onComplete={() => {
-                  console.log('✅ SabreReaperMistEffect completed for id:', mistEffect.id);
                   setActiveMistEffects(prev => prev.filter(effect => effect.id !== mistEffect.id));
                 }}
               />
@@ -3847,13 +3805,11 @@ const hasMana = useCallback((amount: number) => {
 
           {/* Haunted Soul Effects for WraithStrike */}
           {pvpHauntedSoulEffects.map(soulEffect => {
-            console.log('👻 Rendering HauntedSoulEffect at:', soulEffect.position, 'id:', soulEffect.id);
             return (
               <HauntedSoulEffect
                 key={soulEffect.id}
                 position={soulEffect.position}
                 onComplete={() => {
-                  console.log('✅ HauntedSoulEffect completed for id:', soulEffect.id);
                   setPvpHauntedSoulEffects(prev => prev.filter(effect => effect.id !== soulEffect.id));
                 }}
               />
@@ -3951,9 +3907,6 @@ function setupPVPGame(
   controlSystem.setPlayer(playerEntity);
   cameraSystem.setTarget(playerEntity);
   cameraSystem.snapToTarget();
-  
-      console.log('🌍 Total entities in PVP world:', world.getAllEntities().length);
-      console.log(`👤 Player entity created with ID: ${playerEntity.id}`);
 
   return { player: playerEntity, controlSystem, towerSystem };
 }
@@ -4002,15 +3955,9 @@ function createPVPPlayer(world: World): any {
   player.userData = player.userData || {};
   player.userData.playerId = 'unknown';
 
-  console.log('👤 PVP player entity created with components:', {
-    transform: !!player.getComponent(Transform),
-    movement: !!player.getComponent(Movement),
-    health: !!player.getComponent(Health),
-    shield: !!player.getComponent(Shield),
-    collider: !!player.getComponent(Collider),
-  });
+
   
-  const localCollider = player.getComponent(Collider);
+  // const localCollider = player.getComponent(Collider);
 
   return player;
 }

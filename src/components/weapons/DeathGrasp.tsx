@@ -156,7 +156,7 @@ export default function DeathGrasp({
 
   // Handle hit callback for animated version
   const handleHit = (targetId: string, position: Vector3) => {
-    console.log(`🎯 DeathGrasp hit target ${targetId} at position:`, position);
+    // console.log(`🎯 DeathGrasp hit target ${targetId} at position:`, position);
     // The hit detection and damage is handled by the calling system
     // This is just for visual feedback
   };

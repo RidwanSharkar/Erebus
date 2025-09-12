@@ -117,7 +117,7 @@ interface MultiplayerContextType {
   updatePlayerWeapon: (weapon: WeaponType, subclass?: WeaponSubclass) => void;
   updatePlayerHealth: (health: number, maxHealth?: number) => void;
   broadcastPlayerAttack: (attackType: string, position: { x: number; y: number; z: number }, direction: { x: number; y: number; z: number }, animationData?: { comboStep?: 1 | 2 | 3; chargeProgress?: number; isSpinning?: boolean; isPerfectShot?: boolean; damage?: number; targetId?: number; hitPosition?: { x: number; y: number; z: number }; isSwordCharging?: boolean }) => void;
-  broadcastPlayerAbility: (abilityType: string, position: { x: number; y: number; z: number }, direction?: { x: number; y: number; z: number }, target?: string) => void;
+  broadcastPlayerAbility: (abilityType: string, position: { x: number; y: number; z: number }, direction?: { x: number; y: number; z: number }, target?: string, extraData?: any) => void;
   broadcastPlayerEffect: (effect: any) => void;
   broadcastPlayerDamage: (targetPlayerId: string, damage: number, damageType?: string) => void;
   broadcastPlayerAnimationState: (animationState: PlayerAnimationState) => void;
@@ -169,6 +169,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [currentPreview, setCurrentPreview] = useState<RoomPreview | null>(null);
   
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
+
+  // Throttling refs to prevent infinite re-render loops
+  const lastPlayerMoveUpdate = useRef<{ [playerId: string]: number }>({});
+  const lastPlayerHealthUpdate = useRef<{ [playerId: string]: number }>({});
+  const lastEnemyMoveUpdate = useRef<{ [enemyId: string]: number }>({});
+  const lastEnemyDamageUpdate = useRef<{ [enemyId: string]: number }>({});
 
   // Initialize socket connection
   useEffect(() => {
@@ -292,6 +298,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     newSocket.on('player-moved', (data) => {
+      // Throttle player movement updates to prevent infinite re-renders
+      const now = Date.now();
+      const lastUpdate = lastPlayerMoveUpdate.current[data.playerId] || 0;
+      if (now - lastUpdate < 16) { // Throttle to ~60fps
+        return;
+      }
+      lastPlayerMoveUpdate.current[data.playerId] = now;
+
       setPlayers(prev => {
         const updated = new Map(prev);
         const player = updated.get(data.playerId);
@@ -323,6 +337,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     newSocket.on('player-health-updated', (data) => {
+      // Throttle player health updates to prevent infinite re-renders
+      const now = Date.now();
+      const lastUpdate = lastPlayerHealthUpdate.current[data.playerId] || 0;
+      if (now - lastUpdate < 100) { // Throttle to 10fps for health updates
+        return;
+      }
+      lastPlayerHealthUpdate.current[data.playerId] = now;
+
       setPlayers(prev => {
         const updated = new Map(prev);
         const player = updated.get(data.playerId);
@@ -359,6 +381,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         if (currentMode === 'pvp') {
           return currentMode;
         }
+
+        // Throttle enemy damage updates to prevent infinite re-renders
+        const now = Date.now();
+        const lastUpdate = lastEnemyDamageUpdate.current[data.enemyId] || 0;
+        if (now - lastUpdate < 50) { // Throttle to 20fps for damage updates
+          return currentMode;
+        }
+        lastEnemyDamageUpdate.current[data.enemyId] = now;
+
         setEnemies(prev => {
           const updated = new Map(prev);
           const enemy = updated.get(data.enemyId);
@@ -381,6 +412,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         if (currentMode === 'pvp') {
           return currentMode;
         }
+
+        // Throttle enemy movement updates to prevent infinite re-renders
+        const now = Date.now();
+        const lastUpdate = lastEnemyMoveUpdate.current[data.enemyId] || 0;
+        if (now - lastUpdate < 33) { // Throttle to ~30fps for enemy movements
+          return currentMode;
+        }
+        lastEnemyMoveUpdate.current[data.enemyId] = now;
+
         setEnemies(prev => {
           const updated = new Map(prev);
           const enemy = updated.get(data.enemyId);
@@ -473,9 +513,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     // Summoned unit event handlers
-    newSocket.on('summoned-unit-damaged', (data) => {
-      console.log('🤖 Client: Received summoned-unit-damaged event:', data);
-      
+    newSocket.on('summoned-unit-damaged', (data) => {      
       // Store the damage event for the game scene to process
       (window as any).pendingSummonedUnitDamage = (window as any).pendingSummonedUnitDamage || [];
       (window as any).pendingSummonedUnitDamage.push(data);
@@ -630,18 +668,18 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const broadcastPlayerAbility = useCallback((abilityType: string, position: { x: number; y: number; z: number }, direction?: { x: number; y: number; z: number }, target?: string) => {
-    console.log('🔍 DEBUG: broadcastPlayerAbility called with:', { abilityType, position, direction, target, hasSocket: !!socket, roomId: currentRoomId });
+  const broadcastPlayerAbility = useCallback((abilityType: string, position: { x: number; y: number; z: number }, direction?: { x: number; y: number; z: number }, target?: string, extraData?: any) => {
     if (socket && currentRoomId) {
       socket.emit('player-ability', {
         roomId: currentRoomId,
         abilityType,
         position,
         direction,
-        target
+        target,
+        extraData
       });
     } else {
-      console.log('🔍 DEBUG: Cannot broadcast - missing socket or roomId');
+      // console.log('🔍 DEBUG: Cannot broadcast - missing socket or roomId');
     }
   }, [socket, currentRoomId]);
 
@@ -686,14 +724,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   }, [socket, currentRoomId]);
 
   const damageSummonedUnit = useCallback((unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string) => {
-    console.log(`🔍 Client sending summoned unit damage:`, {
-      unitId,
-      unitOwnerId,
-      damage,
-      sourcePlayerId,
-      socketId: socket?.id,
-      roomId: currentRoomId
-    });
+
     
     if (socket && currentRoomId) {
       socket.emit('summoned-unit-damage', {
@@ -740,7 +771,6 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   }, [socket, currentRoomId]);
 
   const broadcastPlayerStealth = useCallback((isInvisible: boolean) => {
-    console.log(`📡 Broadcasting player-stealth: playerId=${socket?.id}, isInvisible=${isInvisible}, roomId=${currentRoomId}`);
 
     if (socket && currentRoomId) {
       socket.emit('player-stealth', {
@@ -749,9 +779,6 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         isInvisible,
         timestamp: Date.now()
       });
-      console.log(`✅ Sent player-stealth event to server`);
-    } else {
-      console.log(`❌ Cannot broadcast player-stealth: socket=${!!socket}, roomId=${currentRoomId}`);
     }
   }, [socket, currentRoomId]);
 

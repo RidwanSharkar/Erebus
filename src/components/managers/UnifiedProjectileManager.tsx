@@ -180,13 +180,11 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
           });
         }
       } else if (userData.isCrossentropyBolt) {
-        console.log('🎯 UnifiedProjectileManager: Found CrossentropyBolt entity', entity.id);
         const existing = projectileData.crossentropy.find(p => p.entityId === entity.id);
         if (existing) {
           existing.position.copy(transform.position);
           newCrossentropy.push(existing);
         } else {
-          console.log('🎯 UnifiedProjectileManager: Adding new CrossentropyBolt projectile');
           newCrossentropy.push({
             id: crossentropyIdCounter.current++,
             position: transform.position.clone(),

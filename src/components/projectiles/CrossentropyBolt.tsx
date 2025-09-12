@@ -14,7 +14,6 @@ interface CrossentropyBoltProps {
 }
 
 export default function CrossentropyBolt({ id, position, direction, onImpact, checkCollisions }: CrossentropyBoltProps) {
-  console.log('🔥 CrossentropyBolt: Component created with ID', id);
   const fireball1Ref = useRef<Mesh>(null);
   const fireball2Ref = useRef<Mesh>(null);
   const fireball3Ref = useRef<Mesh>(null);

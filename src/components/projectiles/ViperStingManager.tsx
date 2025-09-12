@@ -49,14 +49,14 @@ interface SoulStealEffect {
 
 // Global state for Viper Sting manager
 let globalViperStingManager: {
-  shootViperSting?: () => boolean;
+  shootViperSting?: (position?: Vector3, direction?: Vector3) => boolean;
   getProjectiles?: () => any[];
   createSoulSteal?: (enemyPosition: Vector3) => void;
 } = {};
 
-export const triggerGlobalViperSting = (): boolean => {
+export const triggerGlobalViperSting = (position?: Vector3, direction?: Vector3): boolean => {
   if (globalViperStingManager.shootViperSting) {
-    return globalViperStingManager.shootViperSting();
+    return globalViperStingManager.shootViperSting(position, direction);
   }
   return false;
 };

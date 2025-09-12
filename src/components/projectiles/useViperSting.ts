@@ -107,32 +107,39 @@ export function useViperSting({
     return projectilePool.current.find(p => !p.active);
   }, []);
 
-  const shootViperSting = useCallback(() => {
+  const shootViperSting = useCallback((overridePosition?: Vector3, overrideDirection?: Vector3) => {
     const now = Date.now();
     if (now - lastShotTime.current < SHOT_COOLDOWN) return false;
 
-    if (!parentRef.current) return false;
+    // Use override parameters if provided (for PVP remote player effects)
+    let unitPosition: Vector3;
+    let direction: Vector3;
+    
+    if (overridePosition && overrideDirection) {
+      // PVP mode: use provided position and direction from remote player
+      unitPosition = overridePosition.clone();
+      direction = overrideDirection.clone().normalize();
+    } else {
+      // Local mode: use parentRef
+      if (!parentRef.current) return false;
+      
+      unitPosition = parentRef.current.position.clone();
+      unitPosition.y += 0; // Shoot from chest level
 
+      direction = new Vector3(0, 0, 1);
+      // Check if quaternion exists and is a proper Three.js Quaternion
+      if (parentRef.current.quaternion && typeof parentRef.current.quaternion.x === 'number') {
+        direction.applyQuaternion(parentRef.current.quaternion);
+      } else {
+        // Fallback: use forward direction (for PVP mode where we don't have proper quaternion)
+        direction.set(0, 0, 1);
+      }
+    }
 
     const projectile = getInactiveProjectile();
     if (!projectile) return false;
 
-
-
-
     lastShotTime.current = now;
-
-    const unitPosition = parentRef.current.position.clone();
-    unitPosition.y += 0; // Shoot from chest level
-
-    const direction = new Vector3(0, 0, 1);
-    // Check if quaternion exists and is a proper Three.js Quaternion
-    if (parentRef.current.quaternion && typeof parentRef.current.quaternion.x === 'number') {
-      direction.applyQuaternion(parentRef.current.quaternion);
-    } else {
-      // Fallback: use forward direction (for PVP mode where we don't have proper quaternion)
-      direction.set(0, 0, 1);
-    }
 
     projectile.position.copy(unitPosition);
     projectile.direction.copy(direction);
