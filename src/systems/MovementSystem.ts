@@ -115,6 +115,19 @@ export class MovementSystem extends System {
     // Apply gravity (only affects Y velocity)
     movement.applyGravity(deltaTime);
 
+    // Handle knockback movement (takes priority over input)
+    const currentTime = Date.now() / 1000; // Convert to seconds
+    const knockbackResult = movement.updateKnockback(currentTime);
+
+    if (knockbackResult.newPosition) {
+      transform.position.copy(knockbackResult.newPosition);
+    }
+
+    if (movement.isKnockbacked) {
+      // Skip input-based movement while being knockbacked
+      return;
+    }
+
     // Handle horizontal movement directly for immediate response
     if (movement.inputStrength > 0) {
       // Direct velocity setting for responsive movement

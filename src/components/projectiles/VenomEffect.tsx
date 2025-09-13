@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useRef, memo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Mesh, MeshStandardMaterial, AdditiveBlending } from '@/utils/three-exports';
 
@@ -20,9 +20,9 @@ interface VenomEffectProps {
   }>;
 }
 
-export default function VenomEffect({ 
-  position, 
-  onComplete, 
+const VenomEffectComponent = memo(function VenomEffect({
+  position,
+  onComplete,
   duration = 1000, // 1 second per pulse
   startTime = Date.now(),
   enemyId,
@@ -171,4 +171,27 @@ export default function VenomEffect({
       <pointLight color="#00FF44" intensity={1.5} distance={3} decay={2} />
     </group>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison function for performance optimization
+  if (!prevProps.position.equals(nextProps.position)) return false;
+  if (prevProps.duration !== nextProps.duration) return false;
+  if (prevProps.startTime !== nextProps.startTime) return false;
+  if (prevProps.enemyId !== nextProps.enemyId) return false;
+  if ((prevProps.enemyData?.length || 0) !== (nextProps.enemyData?.length || 0)) return false;
+
+  if (prevProps.enemyData && nextProps.enemyData) {
+    for (let i = 0; i < prevProps.enemyData.length; i++) {
+      const prev = prevProps.enemyData[i];
+      const next = nextProps.enemyData[i];
+      if (!prev || !next) return false;
+      if (prev.id !== next.id || prev.health !== next.health || !prev.position.equals(next.position) ||
+          prev.isDying !== next.isDying || prev.deathStartTime !== next.deathStartTime) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+});
+
+export default VenomEffectComponent;

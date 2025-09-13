@@ -15,6 +15,20 @@ interface DivineStormManagerProps {
   enemyData?: Array<{ id: string; position: Vector3; health: number }>;
   onHitTarget?: (targetId: string, damage: number, isCritical: boolean, position: Vector3, isDivineStorm: boolean) => void;
   playerId?: string; // ID of the player who cast the Divine Storm
+  setDamageNumbers?: (callback: (prev: Array<{
+    id: number;
+    damage: number;
+    position: Vector3;
+    isCritical: boolean;
+    isDivineStorm?: boolean;
+  }>) => Array<{
+    id: number;
+    damage: number;
+    position: Vector3;
+    isCritical: boolean;
+    isDivineStorm?: boolean;
+  }>) => void;
+  nextDamageNumberId?: { current: number };
 }
 
 // Global state for Divine Storm effects
@@ -46,7 +60,9 @@ export function clearDivineStormEffect(id: number): void {
 export default function DivineStormManager({
   enemyData = [],
   onHitTarget,
-  playerId
+  playerId,
+  setDamageNumbers,
+  nextDamageNumberId
 }: DivineStormManagerProps) {
   const [activeEffects, setActiveEffects] = useState<DivineStormEffect[]>([]);
   const parentRefsMap = useRef<Map<number, { position: Vector3 }>>(new Map());
@@ -102,6 +118,8 @@ export default function DivineStormManager({
             enemyData={enemyData}
             onHitTarget={onHitTarget}
             playerId={effect.playerId || playerId}
+            setDamageNumbers={setDamageNumbers}
+            nextDamageNumberId={nextDamageNumberId}
             onComplete={() => {
               clearDivineStormEffect(effect.id);
               parentRefsMap.current.delete(effect.id);

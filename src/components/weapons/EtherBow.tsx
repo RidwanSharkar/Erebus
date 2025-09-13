@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, memo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, CatmullRomCurve3, CubicBezierCurve3, Shape, DoubleSide } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
@@ -20,12 +20,12 @@ interface EtherealBowProps {
   cobraShotChargeProgress?: number;
 }
 
-export default function EtherealBow({ 
-  chargeProgress, 
-  isCharging, 
-  onRelease, 
-  currentSubclass, 
-  hasInstantPowershot = false, 
+const EtherBowComponent = memo(function EtherealBow({
+  chargeProgress,
+  isCharging,
+  onRelease,
+  currentSubclass,
+  hasInstantPowershot = false,
   isAbilityBowAnimation = false,
   isViperStingCharging = false,
   viperStingChargeProgress = 0,
@@ -360,4 +360,23 @@ export default function EtherealBow({
       </group>
     </group>
   );
-} 
+}, (prevProps, nextProps) => {
+  // Custom comparison function for performance optimization
+  return (
+    prevProps.chargeProgress === nextProps.chargeProgress &&
+    prevProps.isCharging === nextProps.isCharging &&
+    prevProps.currentSubclass === nextProps.currentSubclass &&
+    prevProps.hasInstantPowershot === nextProps.hasInstantPowershot &&
+    prevProps.isAbilityBowAnimation === nextProps.isAbilityBowAnimation &&
+    prevProps.isViperStingCharging === nextProps.isViperStingCharging &&
+    prevProps.viperStingChargeProgress === nextProps.viperStingChargeProgress &&
+    prevProps.isBarrageCharging === nextProps.isBarrageCharging &&
+    prevProps.barrageChargeProgress === nextProps.barrageChargeProgress &&
+    prevProps.isCobraShotCharging === nextProps.isCobraShotCharging &&
+    prevProps.cobraShotChargeProgress === nextProps.cobraShotChargeProgress &&
+    (!prevProps.position || !nextProps.position || prevProps.position.equals(nextProps.position)) &&
+    (!prevProps.direction || !nextProps.direction || prevProps.direction.equals(nextProps.direction))
+  );
+});
+
+export default EtherBowComponent;

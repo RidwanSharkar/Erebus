@@ -49,7 +49,7 @@ const CorruptedAura = forwardRef<{ toggle: () => void; isActive: boolean }, Corr
   return (
     <group ref={auraRef}>
       {/* Rotating inner elements - Light Purple Theme, 1.5x scale */}
-      <group rotation={[0, 0, 0]} position={[0, 0.005, 0]} scale={[1.5, 1.5, 1.5]}>
+      <group rotation={[0, 0, 0]} position={[0, -0.7, 0]} scale={[1, 1, 1]}>
         {[0, Math.PI/2, Math.PI, Math.PI*1.5].map((rotation, i) => (
           <mesh key={i} rotation={[-Math.PI / 2, 0, rotation + Date.now() * 0.0008]}>
             <ringGeometry args={[0.85, 1.0, 3]} />
@@ -66,14 +66,14 @@ const CorruptedAura = forwardRef<{ toggle: () => void; isActive: boolean }, Corr
       </group>
 
       {/* Circle - Light Purple Theme, 1.5x scale */}
-      <mesh position={[0, 0.01, 0]} scale={[1.5, 1.5, 1.5]}>
-        <cylinderGeometry args={[0.925, 0.5, -0.175, 32]} />
+      <mesh position={[0, 0.-0.6, 0]} scale={[1, 1, 1]}>
+        <cylinderGeometry args={[0.925, 0.5, -0.1, 32]} />
         <meshStandardMaterial
-          color="#aa88ff"
-          emissive="#6633cc"
-          emissiveIntensity={1}
+          color="#ff8888"
+          emissive="#cc3333"
+          emissiveIntensity={0.4}
           transparent
-          opacity={0.55}
+          opacity={0.45}
           depthWrite={false}
         />
       </mesh>

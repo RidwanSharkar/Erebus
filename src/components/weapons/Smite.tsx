@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, memo } from 'react';
 import { Group, Vector3, CylinderGeometry, TorusGeometry, SphereGeometry, MeshStandardMaterial, Euler } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { WeaponType } from '../dragon/weapons';
@@ -15,15 +15,33 @@ interface SmiteProps {
     health: number;
   }>;
   playerPosition?: Vector3;
+  setDamageNumbers?: (callback: (prev: Array<{
+    id: number;
+    damage: number;
+    position: Vector3;
+    isCritical: boolean;
+    isSmite?: boolean;
+  }>) => Array<{
+    id: number;
+    damage: number;
+    position: Vector3;
+    isCritical: boolean;
+    isSmite?: boolean;
+  }>) => void;
+  nextDamageNumberId?: { current: number };
+  combatSystem?: any; // CombatSystem for creating damage numbers
 }
 
-export default function Smite({
+const SmiteComponent = memo(function Smite({
   position,
   onComplete,
   onHit,
   onDamageDealt,
   enemyData = [],
-  playerPosition
+  playerPosition,
+  setDamageNumbers,
+  nextDamageNumberId,
+  combatSystem
 }: SmiteProps) {
   const lightningRef = useRef<Group>(null);
   const progressRef = useRef(0);
@@ -144,7 +162,7 @@ export default function Smite({
     if (damageTriggered.current || !enemyData.length) return;
 
     damageTriggered.current = true;
-    const smiteDamage = 80;
+    const smiteDamage = 100;
     const damageRadius = 3.0; // Small radius around impact location
     let damageDealtFlag = false;
 
@@ -157,6 +175,19 @@ export default function Smite({
         if (onHit) {
           onHit(enemy.id, smiteDamage); // Pass target ID and damage amount
         }
+
+        // Create damage number for visual feedback using CombatSystem
+        if (combatSystem && combatSystem.damageNumberManager) {
+          const damagePosition = enemy.position.clone();
+          damagePosition.y += 1.5; // Offset above target
+          combatSystem.damageNumberManager.addDamageNumber(
+            smiteDamage,
+            false, // isCritical
+            damagePosition,
+            'smite'
+          );
+        }
+
         damageDealtFlag = true;
       }
     });
@@ -234,4 +265,30 @@ export default function Smite({
       <pointLight position={[0, 0, 0]} color="#00AA44" intensity={10} distance={6} />
     </group>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison function for performance optimization
+  if (prevProps.weaponType !== nextProps.weaponType) return false;
+  if (!prevProps.position.equals(nextProps.position)) return false;
+  if ((prevProps.enemyData?.length || 0) !== (nextProps.enemyData?.length || 0)) return false;
+
+  if (prevProps.enemyData && nextProps.enemyData) {
+    for (let i = 0; i < prevProps.enemyData.length; i++) {
+      const prev = prevProps.enemyData[i];
+      const next = nextProps.enemyData[i];
+      if (!prev || !next) return false;
+      if (prev.id !== next.id || prev.health !== next.health || !prev.position.equals(next.position)) {
+        return false;
+      }
+    }
+  }
+
+  if (prevProps.playerPosition && nextProps.playerPosition) {
+    if (!prevProps.playerPosition.equals(nextProps.playerPosition)) return false;
+  } else if (prevProps.playerPosition !== nextProps.playerPosition) {
+    return false;
+  }
+
+  return true;
+});
+
+export default SmiteComponent;

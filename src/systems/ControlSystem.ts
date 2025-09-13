@@ -20,6 +20,7 @@ import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapo
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
 import { triggerGlobalCobraShot } from '@/components/projectiles/CobraShotManager';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
+import { setGlobalCriticalRuneCount, setGlobalCritDamageRuneCount, getGlobalRuneCounts } from '@/core/DamageCalculator';
 
 export class ControlSystem extends System {
   public readonly requiredComponents = [Transform, Movement];
@@ -40,6 +41,9 @@ export class ControlSystem extends System {
   
   // Callback for Viper Sting activation
   private onViperStingCallback?: (position: Vector3, direction: Vector3) => void;
+
+  // Callback for Cloudkill activation
+  private onCloudkillCallback?: (position: Vector3, direction: Vector3) => void;
   
   // Callback for Barrage activation
   private onBarrageCallback?: (position: Vector3, direction: Vector3) => void;
@@ -49,9 +53,15 @@ export class ControlSystem extends System {
   
   // Callback for Frost Nova activation
   private onFrostNovaCallback?: (position: Vector3, direction: Vector3) => void;
-  
+
   // Callback for Cobra Shot activation
   private onCobraShotCallback?: (position: Vector3, direction: Vector3) => void;
+
+  // Callback for Particle Beam activation
+  private onParticleBeamCallback?: (position: Vector3, direction: Vector3) => void;
+
+  // Callback for creating local Particle Beam visual effect
+  private onCreateLocalParticleBeamCallback?: (position: Vector3, direction: Vector3) => void;
   
   // Callback for Charge activation
   private onChargeCallback?: (position: Vector3, direction: Vector3) => void;
@@ -92,6 +102,12 @@ export class ControlSystem extends System {
   // Callback for Stealth ability
   private onStealthCallback?: (position: Vector3, isActivating: boolean) => void;
 
+  // Callback for broadcasting Sabre Reaper Mist effects in PVP
+  private onBroadcastSabreMistCallback?: (position: Vector3, effectType: 'stealth' | 'skyfall') => void;
+
+  // Callback for creating local debuff effects in PVP
+  private onCreateLocalDebuffCallback?: (playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', position: Vector3, duration: number) => void;
+
   // Callback for Haunted Soul effect (WraithStrike)
   private onHauntedSoulEffectCallback?: (position: Vector3) => void;
 
@@ -102,22 +118,26 @@ export class ControlSystem extends System {
   private lastViperStingTime = 0;
   private lastFrostNovaTime = 0; // Separate tracking for Frost Nova ability
   private lastCobraShotTime = 0; // Separate tracking for Cobra Shot ability
+  private lastParticleBeamTime = 0; // Separate tracking for Particle Beam ability
+  private lastCloudkillTime = 0; // Separate tracking for Cloudkill ability
   private fireRate = 0.2; // Default for bow
   private swordFireRate = 0.9; // Rate for sword attacks
   private runebladeFireRate = 0.75; // Runeblade attack rate
   private sabresFireRate = 0.6; // Sabres dual attack rate (600ms between attacks)
   private scytheFireRate = 0.35; // EntropicBolt rate (0.33s cooldown)
   private crossentropyFireRate = 2; // CrossentropyBolt rate (1 per second)
+  private particleBeamFireRate = 3.0; // Particle Beam rate (3 seconds cooldown)
   private viperStingFireRate = 2.5; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
   private cobraShotFireRate = 2.0; // Cobra Shot rate (2 seconds cooldown)
+  private cloudkillFireRate = 1.5; // Cloudkill rate (1.5 seconds cooldown)
 
   // Key press tracking for toggle abilities
-  private rKeyWasPressed = false;
+  private fKeyWasPressed = false;
   
   // Current weapon configuration
-  private currentWeapon: WeaponType = WeaponType.BOW; // Default weapon
-  private currentSubclass: WeaponSubclass = WeaponSubclass.ELEMENTAL; // Default for bow
+  private currentWeapon: WeaponType;
+  private currentSubclass: WeaponSubclass;
   private currentLevel = 1;
   
   // Weapon-specific states
@@ -142,6 +162,10 @@ export class ControlSystem extends System {
   // Crossentropy Bolt charging state
   private isCrossentropyCharging = false;
   private crossentropyChargeProgress = 0;
+
+  // Particle Beam charging state
+  private isParticleBeamCharging = false;
+  private particleBeamChargeProgress = 0;
   
   // Sword-specific states
   private swordComboStep: 1 | 2 | 3 = 1;
@@ -184,7 +208,7 @@ export class ControlSystem extends System {
   
   // Sunder ability state (Sabres)
   private lastSunderTime = 0;
-  private sunderCooldown = 1.125; // 1.5 second cooldown
+  private sunderCooldown = 1.5; // 1.5 second cooldown
   private isSundering = false;
   private sunderStartTime = 0;
   private sunderDuration = 1.0; // Same animation duration as backstab
@@ -225,28 +249,66 @@ export class ControlSystem extends System {
   // Corrupted Aura ability state (Runeblade)
   private corruptedAuraActive = false;
   private lastManaDrainTime = 0;
-  private corruptedAuraRange = 8.0; // 8 unit range for slow effect
-  private corruptedAuraManaCost = 8; // 8 mana per second
+  private corruptedAuraRange = 2.0; // 8 unit range for slow effect
+  private corruptedAuraManaCost = 24; // 12 mana per second
   private corruptedAuraSlowEffect = 0.5; // 50% slow (multiply movement speed by this)
   private corruptedAuraSlowedEntities = new Map<number, boolean>(); // Track slowed entities
+
+  // Store original rune counts to restore when corrupted aura deactivates
+  private originalCriticalRunes = 0;
+  private originalCritDamageRunes = 0;
 
   // Colossus Strike ability state (Sword)
   private lastColossusStrikeTime = 0;
   private colossusStrikeCooldown = 4.0; // 4 second cooldown
   private isColossusStriking = false;
+  // Selected weapons mapping for hotkeys
+  private selectedWeapons?: {
+    primary: WeaponType;
+    secondary: WeaponType;
+    tertiary?: WeaponType;
+  } | null;
+
   constructor(
-    camera: PerspectiveCamera, 
-    inputManager: InputManager, 
+    camera: PerspectiveCamera,
+    inputManager: InputManager,
     world: World,
-    projectileSystem: ProjectileSystem
+    projectileSystem: ProjectileSystem,
+    selectedWeapons?: {
+      primary: WeaponType;
+      secondary: WeaponType;
+      tertiary?: WeaponType;
+    } | null
   ) {
     super();
     this.camera = camera;
     this.inputManager = inputManager;
     this.world = world;
     this.projectileSystem = projectileSystem;
+    this.selectedWeapons = selectedWeapons;
     this.deflectBarrier = new DeflectBarrier(world);
     this.priority = 5; // Run early for input handling
+
+    // Initialize weapon and subclass based on selected weapons
+    this.currentWeapon = selectedWeapons?.primary || WeaponType.BOW;
+    this.currentSubclass = this.getDefaultSubclassForWeapon(this.currentWeapon);
+  }
+
+  private getDefaultSubclassForWeapon(weapon: WeaponType): WeaponSubclass {
+    switch (weapon) {
+      case WeaponType.SWORD:
+        return WeaponSubclass.DIVINITY;
+      case WeaponType.BOW:
+        return WeaponSubclass.ELEMENTAL;
+      case WeaponType.SCYTHE:
+        return WeaponSubclass.CHAOS;
+      case WeaponType.SABRES:
+        return WeaponSubclass.FROST;
+      case WeaponType.RUNEBLADE:
+        return WeaponSubclass.ARCANE;
+      default:
+        return WeaponSubclass.ELEMENTAL;
+    }
   }
 
   public setPlayer(entity: Entity): void {
@@ -365,56 +427,61 @@ export class ControlSystem extends System {
 
   private handleWeaponSwitching(): void {
     const currentTime = Date.now() / 1000;
-    
+
     // Prevent rapid weapon switching
     if (currentTime - this.lastWeaponSwitchTime < this.weaponSwitchCooldown) {
       return;
     }
 
-    // Handle weapon switching with number keys
-    if (this.inputManager.isKeyPressed('1')) {
-      if (this.currentWeapon !== WeaponType.SWORD) {
-        this.resetAllAbilityStates(); // Reset all ability states when switching weapons
-        this.currentWeapon = WeaponType.SWORD;
-        this.currentSubclass = WeaponSubclass.DIVINITY; // Default sword subclass
-        this.fireRate = this.swordFireRate; // Use sword-specific fire rate
-        this.lastWeaponSwitchTime = currentTime;
-        this.swordComboStep = 1; // Reset combo when switching to sword
+    // Handle weapon switching with number keys based on selected weapons
+    if (this.inputManager.isKeyPressed('1') && this.selectedWeapons?.primary) {
+      if (this.currentWeapon !== this.selectedWeapons.primary) {
+        this.switchToWeapon(this.selectedWeapons.primary, currentTime);
       }
-    } else if (this.inputManager.isKeyPressed('2')) {
-      if (this.currentWeapon !== WeaponType.BOW) {
-        this.resetAllAbilityStates(); // Reset all ability states when switching weapons
-        this.currentWeapon = WeaponType.BOW;
-        this.currentSubclass = WeaponSubclass.ELEMENTAL; // Default bow subclass
-        this.fireRate = 0.225; // Bow fire rate
-        this.lastWeaponSwitchTime = currentTime;
+    } else if (this.inputManager.isKeyPressed('2') && this.selectedWeapons?.secondary) {
+      if (this.currentWeapon !== this.selectedWeapons.secondary) {
+        this.switchToWeapon(this.selectedWeapons.secondary, currentTime);
       }
-    } else if (this.inputManager.isKeyPressed('3')) {
-      if (this.currentWeapon !== WeaponType.SCYTHE) {
-        this.resetAllAbilityStates(); // Reset all ability states when switching weapons
-        this.currentWeapon = WeaponType.SCYTHE;
-        this.currentSubclass = WeaponSubclass.CHAOS; // Default scythe subclass
-        this.fireRate = this.scytheFireRate; // Use scythe fire rate (0.5s)
-        this.lastWeaponSwitchTime = currentTime;
-      }
-    } else if (this.inputManager.isKeyPressed('4')) {
-      if (this.currentWeapon !== WeaponType.SABRES) {
-        this.resetAllAbilityStates(); // Reset all ability states when switching weapons
-        this.currentWeapon = WeaponType.SABRES;
-        this.currentSubclass = WeaponSubclass.FROST; // Default sabres subclass
-        this.fireRate = this.sabresFireRate; // Use sabres-specific fire rate
-        this.lastWeaponSwitchTime = currentTime;
-      }
-    } else if (this.inputManager.isKeyPressed('5')) {
-      if (this.currentWeapon !== WeaponType.RUNEBLADE) {
-        this.resetAllAbilityStates(); // Reset all ability states when switching weapons
-        this.currentWeapon = WeaponType.RUNEBLADE;
-        this.currentSubclass = WeaponSubclass.ARCANE; // Default runeblade subclass
-        this.fireRate = this.runebladeFireRate; // Use runeblade fire rate
-        this.lastWeaponSwitchTime = currentTime;
-        this.swordComboStep = 1; // Reset combo when switching to runeblade
+    } else if (this.inputManager.isKeyPressed('3') && this.selectedWeapons?.tertiary) {
+      if (this.currentWeapon !== this.selectedWeapons.tertiary) {
+        this.switchToWeapon(this.selectedWeapons.tertiary, currentTime);
       }
     }
+  }
+
+  private switchToWeapon(weaponType: WeaponType, currentTime: number): void {
+    this.resetAllAbilityStates(); // Reset all ability states when switching weapons
+
+    // Update current weapon
+    this.currentWeapon = weaponType;
+
+    // Set appropriate subclass and fire rate based on weapon type
+    switch (weaponType) {
+      case WeaponType.SWORD:
+        this.currentSubclass = WeaponSubclass.DIVINITY;
+        this.fireRate = this.swordFireRate;
+        this.swordComboStep = 1; // Reset combo when switching to sword
+        break;
+      case WeaponType.BOW:
+        this.currentSubclass = WeaponSubclass.ELEMENTAL;
+        this.fireRate = 0.225; // Bow fire rate
+        break;
+      case WeaponType.SCYTHE:
+        this.currentSubclass = WeaponSubclass.CHAOS;
+        this.fireRate = this.scytheFireRate;
+        break;
+      case WeaponType.SABRES:
+        this.currentSubclass = WeaponSubclass.FROST;
+        this.fireRate = this.sabresFireRate;
+        break;
+      case WeaponType.RUNEBLADE:
+        this.currentSubclass = WeaponSubclass.ARCANE;
+        this.fireRate = this.runebladeFireRate;
+        this.swordComboStep = 1; // Reset combo when switching to runeblade
+        break;
+    }
+
+    this.lastWeaponSwitchTime = currentTime;
   }
 
   private handleCombatInput(playerTransform: Transform): void {
@@ -450,6 +517,13 @@ export class ControlSystem extends System {
 
       if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging) {
         this.performCobraShot(playerTransform);
+      }
+    }
+
+    // Handle Cloudkill ability with 'F' key
+    if (this.inputManager.isKeyPressed('f')) {
+      if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging) {
+        this.performCloudkill(playerTransform);
       }
     }
     
@@ -517,6 +591,11 @@ export class ControlSystem extends System {
     // Handle Frost Nova ability with 'E' key
     if (this.inputManager.isKeyPressed('e') && !this.isCharging) {
       this.performFrostNovaAbility(playerTransform);
+    }
+
+    // Handle Particle Beam ability with 'F' key
+    if (this.inputManager.isKeyPressed('f') && !this.isCharging && !this.isParticleBeamCharging && !this.isCrossentropyCharging) {
+      this.performParticleBeamAbility(playerTransform);
     }
   }
 
@@ -616,7 +695,8 @@ export class ControlSystem extends System {
         console.warn('⚔️ CrossentropyBolt: Failed to consume mana - not enough mana?');
         return;
       }
-      console.log(`⚔️ CrossentropyBolt: Consumed 40 mana (${manaBefore} -> ${gameUI.getCurrentMana()})`);
+      const manaAfter = manaBefore - 40; // Calculate expected mana after consumption
+      console.log(`⚔️ CrossentropyBolt: Consumed 40 mana (${manaBefore} -> ${manaAfter})`);
     }
 
     this.isCrossentropyCharging = true;
@@ -643,24 +723,215 @@ export class ControlSystem extends System {
   private fireCrossentropyBoltAbilityAfterCharge(playerTransform: Transform): void {
     // Rate limiting was already checked in performCrossentropyAbility()
     // No need to check again here - we just finished charging
-    
+
     // Get dragon's facing direction
     const direction = new Vector3();
     this.camera.getWorldDirection(direction);
     direction.normalize();
-    
+
     // Apply angle compensation (same as bow projectiles)
     const compensationAngle = Math.PI / 6; // 30 degrees downward compensation
     const cameraRight = new Vector3();
     cameraRight.crossVectors(direction, new Vector3(0, 1, 0)).normalize();
-    
+
     const rotationMatrix = new Matrix4();
     rotationMatrix.makeRotationAxis(cameraRight, compensationAngle);
     direction.applyMatrix4(rotationMatrix);
     direction.normalize();
 
-    
+
     this.createCrossentropyBoltProjectile(playerTransform.position.clone(), direction);
+  }
+
+  private performParticleBeamAbility(playerTransform: Transform): void {
+    if (!this.playerEntity) return;
+
+    // Check cooldown
+    const currentTime = Date.now() / 1000;
+    if (currentTime - this.lastParticleBeamTime < this.particleBeamFireRate) {
+      return;
+    }
+
+    // Check if player has enough mana (40 mana cost)
+    const gameUI = (window as any).gameUI;
+    if (gameUI && !gameUI.canCastParticleBeam()) {
+      return;
+    }
+
+    // Consume mana
+    if (gameUI) {
+      const manaBefore = gameUI.getCurrentMana();
+      const manaConsumed = gameUI.consumeMana(40);
+      if (!manaConsumed) {
+        console.warn('⚔️ Particle Beam: Failed to consume mana - not enough mana?');
+        return;
+      }
+      const manaAfter = manaBefore - 40;
+      console.log(`⚔️ Particle Beam: Consumed 40 mana (${manaBefore} -> ${manaAfter})`);
+    }
+
+    this.isParticleBeamCharging = true;
+    this.particleBeamChargeProgress = 0;
+    this.lastParticleBeamTime = currentTime;
+
+    // Start charging animation
+    const chargeStartTime = Date.now();
+    const chargeDuration = 1000; // 1 second charge time
+
+    const chargeInterval = setInterval(() => {
+      const elapsed = Date.now() - chargeStartTime;
+      this.particleBeamChargeProgress = Math.min(elapsed / chargeDuration, 1.0);
+
+      if (this.particleBeamChargeProgress >= 1.0) {
+        clearInterval(chargeInterval);
+        this.fireParticleBeamAfterCharge(playerTransform);
+        this.isParticleBeamCharging = false;
+        this.particleBeamChargeProgress = 0;
+      }
+    }, 16); // ~60fps updates
+  }
+
+  private fireParticleBeamAfterCharge(playerTransform: Transform): void {
+    // Get player's world position (same as Barrage)
+    const playerPosition = playerTransform.getWorldPosition();
+    playerPosition.y += 0.825; // Shoot from chest level (same as Barrage)
+
+    // Get dragon's facing direction
+    const direction = new Vector3();
+    this.camera.getWorldDirection(direction);
+    direction.normalize();
+
+    // Apply angle compensation (same as bow projectiles)
+    const compensationAngle = Math.PI / 6; // 30 degrees downward compensation
+    const cameraRight = new Vector3();
+    cameraRight.crossVectors(direction, new Vector3(0, 1, 0)).normalize();
+
+    const rotationMatrix = new Matrix4();
+    rotationMatrix.makeRotationAxis(cameraRight, compensationAngle);
+    direction.applyMatrix4(rotationMatrix);
+    direction.normalize();
+
+    // Trigger local visual effect for the casting player
+    if (this.onCreateLocalParticleBeamCallback) {
+      this.onCreateLocalParticleBeamCallback(playerPosition, direction);
+    }
+
+    // Trigger Particle Beam callback for multiplayer (remote players)
+    if (this.onParticleBeamCallback) {
+      this.onParticleBeamCallback(playerPosition, direction);
+    }
+
+    // FIXED: Add actual damage logic for enemies (now uses arc collision)
+    this.performParticleBeamDamage(playerPosition, direction);
+
+    console.log('🌊 Tidal Wave created at position:', playerPosition, 'direction:', direction);
+  }
+
+  private performParticleBeamDamage(wavePosition: Vector3, waveDirection: Vector3): void {
+    if (!this.playerEntity) return;
+
+    // Get all entities in the world to check for enemies
+    const allEntities = this.world.getAllEntities();
+    const combatSystem = this.world.getSystem(CombatSystem);
+
+    const waveRadius = 12; // Maximum wave radius
+    const arcAngle = Math.PI / 2; // 90 degrees arc
+    const baseDamage = 70; // Tidal Wave damage
+
+    let enemiesHit = 0;
+
+    allEntities.forEach(entity => {
+      // Skip self
+      if (entity.id === this.playerEntity?.id) return;
+
+      // Check if entity has transform and health (could be enemy or player)
+      const entityTransform = entity.getComponent(Transform);
+      const entityHealth = entity.getComponent(Health);
+
+      if (!entityTransform || !entityHealth || entityHealth.isDead) return;
+
+      const entityPosition = entityTransform.position;
+
+      // Calculate distance from wave center to entity
+      const distanceToWave = wavePosition.distanceTo(entityPosition);
+
+      // Check if entity is within wave radius
+      if (distanceToWave <= waveRadius) {
+        // Check if entity is within the arc (in front of the player)
+        const directionToEntity = entityPosition.clone().sub(wavePosition).normalize();
+        const angleToEntity = Math.acos(waveDirection.dot(directionToEntity));
+
+        // Check if the angle is within the arc (arcAngle/2 on each side)
+        if (angleToEntity <= arcAngle / 2) {
+          // Check if target is frozen for mana refund
+          const isFrozen = this.isPlayerFrozen(entity.id);
+
+          // Deal damage through combat system
+          if (combatSystem && this.playerEntity) {
+            combatSystem.queueDamage(entity, baseDamage, this.playerEntity, 'tidal_wave');
+            enemiesHit++;
+
+            console.log(`🌊 Tidal Wave hit entity ${entity.id} for ${baseDamage} damage at distance ${distanceToWave.toFixed(2)}, angle ${angleToEntity.toFixed(2)}${isFrozen ? ' (FROZEN - refunding mana)' : ''}`);
+
+            // Apply knockback to PVP players only if they are NOT frozen
+            if (!isFrozen) {
+              this.applyKnockbackToEntity(entity, wavePosition, entityPosition);
+            }
+
+            // Refund mana if enemy is frozen (100 mana refund)
+            if (isFrozen) {
+              const gameUI = (window as any).gameUI;
+              if (gameUI) {
+                gameUI.addMana(100);
+                console.log('🌊 Tidal Wave: Refunded 100 mana for hitting frozen enemy');
+              }
+            }
+          }
+        }
+      }
+    });
+
+    console.log(`🌊 Tidal Wave hit ${enemiesHit} enemies`);
+  }
+
+  private applyKnockbackToEntity(entity: Entity, waveCenter: Vector3, entityPosition: Vector3): void {
+    // Calculate knockback direction (away from wave center)
+    const knockbackDirection = entityPosition.clone().sub(waveCenter).normalize();
+
+    // Get entity's movement component
+    const entityMovement = entity.getComponent(Movement);
+    if (!entityMovement) return;
+
+    // Apply knockback (10 units distance, 0.5 second duration)
+    const currentTime = Date.now() / 1000; // Convert to seconds
+    entityMovement.applyKnockback(knockbackDirection, 10, entityPosition.clone(), currentTime, 0.5);
+
+    // Broadcast knockback to other PVP players if this is a PVP game
+    const multiplayerContext = (window as any).multiplayerContext;
+    if (multiplayerContext && multiplayerContext.broadcastPlayerKnockback) {
+      // Find the player ID for this entity (this is a bit hacky, we need to map entity IDs to player IDs)
+      // For now, we'll assume the entity ID matches the player ID in PVP mode
+      const targetPlayerId = entity.id.toString();
+      multiplayerContext.broadcastPlayerKnockback(targetPlayerId, {
+        x: knockbackDirection.x,
+        y: knockbackDirection.y,
+        z: knockbackDirection.z
+      }, 10, 0.5);
+    }
+
+    console.log(`🌊 Tidal Wave knockback applied to entity ${entity.id} in direction (${knockbackDirection.x.toFixed(2)}, ${knockbackDirection.z.toFixed(2)})`);
+  }
+
+  private isPlayerFrozen(entityId: number): boolean {
+    // Check if the entity has frozen debuff
+    const debuffs = this.activeDebuffEffects.get(entityId);
+    if (!debuffs) return false;
+    
+    const currentTime = Date.now() / 1000;
+    return debuffs.some(debuff => 
+      debuff.debuffType === 'frozen' && 
+      currentTime < debuff.startTime + debuff.duration
+    );
   }
 
   private createProjectile(position: Vector3, direction: Vector3): void {
@@ -780,22 +1051,8 @@ export class ControlSystem extends System {
 
   private createCrossentropyBoltProjectile(position: Vector3, direction: Vector3): void {
     if (!this.playerEntity) return;
-    
-    // Check if player has enough mana (40 mana cost)
-    const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastCrossentropyBolt()) {
-      return;
-    }
-    
-    // Consume mana
-    if (gameUI) {
-      const manaConsumed = gameUI.consumeMana(40);
-      if (!manaConsumed) {
-        console.warn('⚔️ CrossentropyBolt: Failed to consume mana despite canCast check');
-        return;
-      }
-      console.log('⚔️ Consumed 40 mana for Crossentropy Bolt');
-    }
+
+    // Note: Mana was already checked and consumed in performCrossentropyAbility()
     
     // Offset projectile spawn position slightly forward to avoid collision with player
     const spawnPosition = position.clone();
@@ -804,7 +1061,7 @@ export class ControlSystem extends System {
     
     // Create CrossentropyBolt projectile using the existing method
     const crossentropyConfig = {
-      speed: 15, // Slower than EntropicBolt
+      speed: 25, // Slower than EntropicBolt
       damage: 90, // Higher damage for R ability
       lifetime: 2.5, // Longer lifetime
       piercing: false, // 
@@ -850,7 +1107,7 @@ export class ControlSystem extends System {
     // Consume mana
     if (gameUI) {
       const manaBefore = gameUI.getCurrentMana();
-      const manaConsumed = gameUI.consumeMana(20);
+      const manaConsumed = gameUI.consumeMana(30);
       if (!manaConsumed) {
         console.warn('🩸 Reanimate: Failed to consume mana despite canCast check');
         return;
@@ -864,7 +1121,7 @@ export class ControlSystem extends System {
     // Get player's health component and heal for 30 HP 
     const healthComponent = this.playerEntity.getComponent(Health);
     if (healthComponent) {
-      const didHeal = healthComponent.heal(30); // REANIMATE HEAL AMOUNT
+      const didHeal = healthComponent.heal(40); // REANIMATE HEAL AMOUNT
       if (didHeal) {
         // console.log(`🩸 Reanimate healed player for 30 HP. Current health: ${healthComponent.currentHealth}/${healthComponent.maxHealth}`);
       } else {
@@ -1187,6 +1444,10 @@ export class ControlSystem extends System {
     this.onViperStingCallback = callback;
   }
 
+  public setCloudkillCallback(callback: (position: Vector3, direction: Vector3) => void): void {
+    this.onCloudkillCallback = callback;
+  }
+
   public setBarrageCallback(callback: (position: Vector3, direction: Vector3) => void): void {
     this.onBarrageCallback = callback;
   }
@@ -1201,6 +1462,14 @@ export class ControlSystem extends System {
   
   public setCobraShotCallback(callback: (position: Vector3, direction: Vector3) => void): void {
     this.onCobraShotCallback = callback;
+  }
+
+  public setParticleBeamCallback(callback: (position: Vector3, direction: Vector3) => void): void {
+    this.onParticleBeamCallback = callback;
+  }
+
+  public setCreateLocalParticleBeamCallback(callback: (position: Vector3, direction: Vector3) => void): void {
+    this.onCreateLocalParticleBeamCallback = callback;
   }
   
   public setChargeCallback(callback: (position: Vector3, direction: Vector3) => void): void {
@@ -1249,6 +1518,14 @@ export class ControlSystem extends System {
 
   public setStealthCallback(callback: (position: Vector3, isActivating: boolean) => void): void {
     this.onStealthCallback = callback;
+  }
+
+  public setBroadcastSabreMistCallback(callback: (position: Vector3, effectType: 'stealth' | 'skyfall') => void): void {
+    this.onBroadcastSabreMistCallback = callback;
+  }
+
+  public setCreateLocalDebuffCallback(callback: (playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', position: Vector3, duration: number) => void): void {
+    this.onCreateLocalDebuffCallback = callback;
   }
 
   public setHauntedSoulEffectCallback(callback: (position: Vector3) => void): void {
@@ -1388,6 +1665,14 @@ export class ControlSystem extends System {
     return this.crossentropyChargeProgress;
   }
 
+  public isParticleBeamChargingActive(): boolean {
+    return this.isParticleBeamCharging;
+  }
+
+  public getParticleBeamChargeProgress(): number {
+    return this.particleBeamChargeProgress;
+  }
+
   public isWeaponSwinging(): boolean {
     return this.isSwinging;
   }
@@ -1488,8 +1773,8 @@ export class ControlSystem extends System {
       this.performRunebladeMeleeAttack(playerTransform);
     }
 
-    // Handle Smite ability with 'E' key
-    if (this.inputManager.isKeyPressed('e') && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWraithStriking) {
+    // Handle Smite ability with 'R' key
+    if (this.inputManager.isKeyPressed('r') && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWraithStriking) {
       this.performSmite(playerTransform);
     }
 
@@ -1498,20 +1783,20 @@ export class ControlSystem extends System {
       this.performDeathGrasp(playerTransform);
     }
 
-    // Handle Corrupted Aura ability with 'R' key (just pressed detection)
-    if (this.inputManager.isKeyPressed('r') && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWraithStriking) {
-      // Track if R key was just pressed (not held down)
-      if (!this.rKeyWasPressed) {
+    // Handle Corrupted Aura ability with 'F' key (just pressed detection)
+    if (this.inputManager.isKeyPressed('f') && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWraithStriking) {
+      // Track if F key was just pressed (not held down)
+      if (!this.fKeyWasPressed) {
         this.toggleCorruptedAura(playerTransform);
-        this.rKeyWasPressed = true;
+        this.fKeyWasPressed = true;
       }
     } else {
-      // Reset the just pressed flag when R key is released
-      this.rKeyWasPressed = false;
+      // Reset the just pressed flag when F key is released
+      this.fKeyWasPressed = false;
     }
 
-    // Handle WraithStrike ability with 'F' key
-    if (this.inputManager.isKeyPressed('f') && !this.isWraithStriking && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping) {
+    // Handle WraithStrike ability with 'E' key
+    if (this.inputManager.isKeyPressed('e') && !this.isWraithStriking && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping) {
       this.performWraithStrike(playerTransform);
     }
 
@@ -1583,7 +1868,7 @@ export class ControlSystem extends System {
     // Check if player has enough mana (35 mana cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastSmite()) {
-      console.log(`⚡ Smite: Not enough mana to cast (need 35)`);
+      // console.log(`⚡ Smite: Not enough mana to cast (need 45)`);
       return;
     }
 
@@ -1603,13 +1888,11 @@ export class ControlSystem extends System {
     // Consume mana (35 mana)
     if (gameUI) {
       const manaBefore = gameUI.getCurrentMana();
-      const manaConsumed = gameUI.consumeMana(35);
+      const manaConsumed = gameUI.consumeMana(45);
       if (!manaConsumed) {
-        console.warn('⚡ Smite: Failed to consume mana despite canCast check');
         return;
       }
       const manaAfter = gameUI.getCurrentMana();
-      console.log(`⚡ Smite: Consumed 35 mana. Mana: ${manaBefore} -> ${manaAfter}`);
     }
 
     // Get player position and direction
@@ -1650,7 +1933,7 @@ export class ControlSystem extends System {
   private performSmiteDamage(smitePosition: Vector3): boolean {
     if (!this.playerEntity) return false;
 
-    const smiteDamage = 80;
+    const smiteDamage = 100;
     const damageRadius = 3.0; // Small radius around impact location
     let damageDealt = false;
 
@@ -1700,10 +1983,10 @@ export class ControlSystem extends System {
       const maxHealth = healthComponent.maxHealth;
 
       // Always attempt to heal, even if at full health (heal method handles this)
-      const didHeal = healthComponent.heal(40); // Smite healing amount
+      const didHeal = healthComponent.heal(100); // Smite healing amount
 
       if (didHeal) {
-        console.log(`⚡ Smite SUCCESSFULLY healed player for 20 HP! Health: ${oldHealth} -> ${healthComponent.currentHealth}/${maxHealth}`);
+        console.log(`⚡ Smite SUCCESSFULLY healed player for 100 HP! Health: ${oldHealth} -> ${healthComponent.currentHealth}/${maxHealth}`);
       } else {
         console.log(`⚡ Smite: Player already at full health (${healthComponent.currentHealth}/${maxHealth}) - no healing needed`);
       }
@@ -1740,10 +2023,10 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check if player has enough mana (25 mana cost)
+    // Check if player has enough mana (35 mana cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastDeathGrasp()) {
-      console.log(`💀 DeathGrasp: Not enough mana to cast (need 25)`);
+      console.log(`💀 DeathGrasp: Not enough mana to cast (need 35)`);
       return;
     }
 
@@ -1760,16 +2043,16 @@ export class ControlSystem extends System {
       }
     }
 
-    // Consume mana (25 mana)
+    // Consume mana (35 mana)
     if (gameUI) {
       const manaBefore = gameUI.getCurrentMana();
-      const manaConsumed = gameUI.consumeMana(25);
+      const manaConsumed = gameUI.consumeMana(35);
       if (!manaConsumed) {
         console.warn('💀 DeathGrasp: Failed to consume mana despite canCast check');
         return;
       }
       const manaAfter = gameUI.getCurrentMana();
-      console.log(`💀 DeathGrasp: Consumed 25 mana. Mana: ${manaBefore} -> ${manaAfter}`);
+      console.log(`💀 DeathGrasp: Consumed 35 mana. Mana: ${manaBefore} -> ${manaAfter}`);
     }
 
     // Get player position and direction
@@ -1806,10 +2089,10 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check if player has enough mana (30 mana cost)
+    // Check if player has enough mana (35 mana cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastWraithStrike()) {
-      console.log(`👻 WraithStrike: Not enough mana to cast (need 30)`);
+      console.log(`👻 WraithStrike: Not enough mana to cast (need 35)`);
       return;
     }
 
@@ -1826,16 +2109,14 @@ export class ControlSystem extends System {
       }
     }
 
-    // Consume mana (30 mana)
+    // Consume mana (35 mana)
     if (gameUI) {
       const manaBefore = gameUI.getCurrentMana();
-      const manaConsumed = gameUI.consumeMana(30);
+      const manaConsumed = gameUI.consumeMana(35);
       if (!manaConsumed) {
-        console.warn('👻 WraithStrike: Failed to consume mana despite canCast check');
         return;
       }
       const manaAfter = gameUI.getCurrentMana();
-      console.log(`👻 WraithStrike: Consumed 30 mana. Mana: ${manaBefore} -> ${manaAfter}`);
     }
 
     // Get player position and direction
@@ -1870,7 +2151,7 @@ export class ControlSystem extends System {
     
     const wraithStrikeRange = 4.5; // Same range as melee attacks
     const wraithStrikeAngle = Math.PI / 2; // 90 degree cone
-    const wraithStrikeDamage = 100; // High damage for wraith strike
+    const wraithStrikeDamage = 85; // High damage for wraith strike
     
     let hitCount = 0;
     const currentTime = Date.now() / 1000;
@@ -2009,7 +2290,7 @@ export class ControlSystem extends System {
     if (this.inputManager.isKeyPressed('e') && !this.isSwinging && !this.isSkyfalling && !this.isSundering) {
       this.performSunder(playerTransform);
     }
-    
+
     // Handle R key for Skyfall ability (switched from E)
     if (this.inputManager.isKeyPressed('r') && !this.isSkyfalling && !this.isSundering) {
       this.performSkyfall(playerTransform);
@@ -2183,6 +2464,11 @@ export class ControlSystem extends System {
     } else {
       console.log('⚠️ Skyfall: Sabre Reaper Mist effect callback not set!');
     }
+
+    // Broadcast mist effect to other players in PVP
+    if (this.onBroadcastSabreMistCallback) {
+      this.onBroadcastSabreMistCallback(playerTransform.position.clone(), 'skyfall');
+    }
   }
   
   private updateSkyfallMovement(playerTransform: Transform): void {
@@ -2273,12 +2559,18 @@ export class ControlSystem extends System {
               });
             }
 
-            // NEVER broadcast debuff to ourselves
+            // Broadcast debuff to other players (but not ourselves)
             if (targetPlayerId && targetPlayerId !== localSocketId) {
               // Broadcast stun effect to the target player
               if (this.onDebuffCallback) {
                 this.onDebuffCallback(entity.id, 'stunned', 2000, targetTransform.position);
               }
+            }
+
+            // Create local debuff effect so the caster can see the stun on the enemy
+            if (this.onCreateLocalDebuffCallback && targetPlayerId) {
+              console.log(`🎯 Creating local Skyfall stun effect for player ${targetPlayerId}`);
+              this.onCreateLocalDebuffCallback(targetPlayerId, 'stunned', targetTransform.position, 2000);
             }
           }
         }
@@ -2422,13 +2714,19 @@ export class ControlSystem extends System {
               });
             }
             
-            // NEVER broadcast debuff to ourselves
-            if (targetPlayerId && targetPlayerId !== localSocketId) {
-              console.log(`🎯 Broadcasting stun effect to player ${targetPlayerId} (NOT local player ${localSocketId})`);
-              this.onDebuffCallback(entity.id, 'stunned', 4000, targetTransform.position);
-            } else {
-              console.log(`⚠️ Skipping stun broadcast - would target local player ${localSocketId} or invalid target ${targetPlayerId}`);
-            }
+          // Broadcast debuff to other players (but not ourselves)
+          if (targetPlayerId && targetPlayerId !== localSocketId) {
+            console.log(`🎯 Broadcasting stun effect to player ${targetPlayerId} (NOT local player ${localSocketId})`);
+            this.onDebuffCallback(entity.id, 'stunned', 4000, targetTransform.position);
+          } else {
+            console.log(`⚠️ Skipping stun broadcast - would target local player ${localSocketId} or invalid target ${targetPlayerId}`);
+          }
+
+          // Create local debuff effect so the local player can see the stun on the enemy
+          if (this.onCreateLocalDebuffCallback && targetPlayerId) {
+            console.log(`🎯 Creating local stun effect for player ${targetPlayerId}`);
+            this.onCreateLocalDebuffCallback(targetPlayerId, 'stunned', targetTransform.position, 4000);
+          }
           }
         }
         
@@ -2481,6 +2779,11 @@ export class ControlSystem extends System {
   }
 
   // Apply burning stack and calculate damage bonus
+  public getBurningStacks(targetId: number): number {
+    const currentStacks = this.burningStacks.get(targetId);
+    return currentStacks ? currentStacks.stacks : 0;
+  }
+
   public applyBurningStack(entityId: number, currentTime: number, isEntropicBolt: boolean = true): { damageBonus: number; stackCount: number } {
     const stackDuration = 5.0; // 5 seconds
     const maxStacks = 15; // Maximum 15 stacks
@@ -2589,6 +2892,11 @@ export class ControlSystem extends System {
     if (this.onCreateSabreMistEffectCallback) {
       this.onCreateSabreMistEffectCallback(playerTransform.position.clone());
     }
+
+    // Broadcast mist effect to other players in PVP
+    if (this.onBroadcastSabreMistCallback) {
+      this.onBroadcastSabreMistCallback(playerTransform.position.clone(), 'stealth');
+    }
     
     // Don't broadcast stealth state immediately - wait for invisibility activation
     
@@ -2682,7 +2990,14 @@ export class ControlSystem extends System {
     this.isDeflecting = false;
     this.isColossusStriking = false;
     this.isWraithStriking = false; // Reset WraithStrike when switching weapons
-    this.corruptedAuraActive = false; // Reset Corrupted Aura when switching weapons
+
+    // Reset Corrupted Aura and restore original rune counts when switching weapons
+    if (this.corruptedAuraActive) {
+      console.log('💀 Corrupted Aura: Deactivating due to weapon switch, restoring rune counts');
+      this.corruptedAuraActive = false;
+      setGlobalCriticalRuneCount(this.originalCriticalRunes);
+      setGlobalCritDamageRuneCount(this.originalCritDamageRunes);
+    }
 
     // Clear Sunder stacks when switching weapons
     this.sunderStacks.clear();
@@ -2704,10 +3019,29 @@ export class ControlSystem extends System {
     // Toggle the aura
     this.corruptedAuraActive = !this.corruptedAuraActive;
 
-    // Reset mana drain timer when activating
+    // Handle rune count changes
     if (this.corruptedAuraActive) {
+      // Store original rune counts before changing them
+      const currentRuneCounts = getGlobalRuneCounts();
+
+      this.originalCriticalRunes = currentRuneCounts.criticalRunes;
+      this.originalCritDamageRunes = currentRuneCounts.critDamageRunes;
+
+      // Set rune counts to 5 while Corrupted Aura is active
+      setGlobalCriticalRuneCount(15);
+      setGlobalCritDamageRuneCount(5);
+
+      console.log(`💀 Corrupted Aura activated: Critical Runes ${currentRuneCounts.criticalRunes} -> 5, Crit Damage Runes ${currentRuneCounts.critDamageRunes} -> 5`);
+
+      // Reset mana drain timer when activating
       this.lastManaDrainTime = Date.now() / 1000;
     } else {
+      // Restore original rune counts when deactivating
+      setGlobalCriticalRuneCount(this.originalCriticalRunes);
+      setGlobalCritDamageRuneCount(this.originalCritDamageRunes);
+
+      console.log(`💀 Corrupted Aura deactivated: Critical Runes 5 -> ${this.originalCriticalRunes}, Crit Damage Runes 5 -> ${this.originalCritDamageRunes}`);
+
       // Clear all slowed entities when deactivating
       this.corruptedAuraSlowedEntities.clear();
     }
@@ -2728,9 +3062,11 @@ export class ControlSystem extends System {
       if (gameUI) {
         const manaConsumed = gameUI.consumeMana(this.corruptedAuraManaCost);
         if (!manaConsumed) {
-          // Not enough mana - deactivate aura
-          console.log('💀 Corrupted Aura: Not enough mana, deactivating aura');
+          // Not enough mana - deactivate aura and restore rune counts
+          console.log('💀 Corrupted Aura: Not enough mana, deactivating aura and restoring rune counts');
           this.corruptedAuraActive = false;
+          setGlobalCriticalRuneCount(this.originalCriticalRunes);
+          setGlobalCritDamageRuneCount(this.originalCritDamageRunes);
           this.corruptedAuraSlowedEntities.clear();
           if (this.onCorruptedAuraToggleCallback) {
             this.onCorruptedAuraToggleCallback(false);
@@ -3176,7 +3512,7 @@ export class ControlSystem extends System {
   }
 
   private performDivineStorm(playerTransform: Transform): void {
-    // Check if player has enough rage (minimum 20 rage required)
+    // Check if player has enough rage (15 rage required)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastDivineStorm()) {
       return;
@@ -3188,32 +3524,62 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Get current rage amount and consume ALL rage
-    const currentRage = gameUI ? gameUI.getCurrentRage() : 40; // Fallback to 40 if gameUI not available
+    // Consume 15 rage
     if (gameUI) {
-      gameUI.consumeAllRage(); // Consume all rage instead of just 20
+      gameUI.consumeDivineStormRage();
     }
 
-    // Calculate extended duration: base 4 seconds + 1 second per 10 rage consumed
-    const baseStormDuration = 1000; // 4 seconds base
-    const bonusDuration = Math.floor(currentRage / 10) * 500; // 1 second per 10 rage
-    const totalDivineStormDuration = baseStormDuration + bonusDuration;
+    // Fixed duration: one full rotation (approximately 1.5 seconds based on sword rotation speed)
+    const divineStormDuration = 1500; // 1.5 seconds for one full rotation
 
     this.isDivineStorming = true;
     this.lastDivineStormTime = currentTime;
-    
+
+    // Store player transform for sword projectile throw
+    const throwPosition = playerTransform.position.clone();
+    const throwDirection = new Vector3();
+    this.camera.getWorldDirection(throwDirection);
+    throwDirection.normalize();
+
     // Trigger Divine Storm callback for multiplayer
     if (this.onDivineStormCallback) {
-      const direction = new Vector3();
-      this.camera.getWorldDirection(direction);
-      direction.normalize();
-      this.onDivineStormCallback(playerTransform.position.clone(), direction, totalDivineStormDuration);
+      this.onDivineStormCallback(throwPosition, throwDirection, divineStormDuration);
     }
 
-    // Divine Storm lasts for calculated duration
+    // Divine Storm lasts for fixed duration, then throw sword projectile
     setTimeout(() => {
       this.isDivineStorming = false;
-    }, totalDivineStormDuration);
+
+      // Throw sword as projectile after Divine Storm completes
+      this.throwSwordProjectile(throwPosition, throwDirection);
+    }, divineStormDuration);
+  }
+
+  private throwSwordProjectile(position: Vector3, direction: Vector3): void {
+    if (!this.projectileSystem || !this.playerEntity) {
+      console.log('⚔️ Sword projectile creation failed: missing projectileSystem or playerEntity');
+      return;
+    }
+
+    console.log('⚔️ Creating sword projectile at position:', position, 'direction:', direction);
+
+    // Create sword projectile that pierces enemies for 75 damage
+    this.projectileSystem.createProjectile(
+      this.world,
+      position,
+      direction,
+      this.playerEntity.id,
+      {
+        speed: 25, // Fast projectile speed
+        damage: 75,
+        lifetime: 3, // 3 seconds lifetime
+        piercing: true, // Can hit multiple enemies
+        projectileType: 'sword_projectile',
+        sourcePlayerId: 'local_player' // For multiplayer validation
+      }
+    );
+
+    console.log('⚔️ Sword projectile created');
   }
 
   private performCharge(playerTransform: Transform): void {
@@ -3240,7 +3606,7 @@ export class ControlSystem extends System {
     // Gain rage for using charge ability (+20 rage)
     const gameUI = (window as any).gameUI;
     if (gameUI) {
-      gameUI.gainRage(20);
+      gameUI.gainRage(25);
     }
     
     // Start the charge movement using the separate charge system
@@ -3530,6 +3896,40 @@ export class ControlSystem extends System {
     }
   }
 
+  private performCloudkill(playerTransform: Transform): void {
+    // Check cooldown
+    const currentTime = Date.now() / 1000;
+    if (currentTime - this.lastCloudkillTime < this.cloudkillFireRate) {
+      return;
+    }
+
+    // Check if player has enough energy (25 energy cost)
+    const gameUI = (window as any).gameUI;
+    if (gameUI && !gameUI.canCastCloudkill()) {
+      return;
+    }
+
+    // Consume energy
+    if (gameUI) {
+      gameUI.consumeEnergy(25);
+    }
+
+    this.lastCloudkillTime = currentTime;
+
+    // Get player position and direction
+    const playerPosition = new Vector3(
+      playerTransform.position.x,
+      playerTransform.position.y,
+      playerTransform.position.z
+    );
+    const direction = new Vector3(0, 0, -1); // Default forward direction
+
+    // Trigger Cloudkill callback
+    if (this.onCloudkillCallback) {
+      this.onCloudkillCallback(playerPosition, direction);
+    }
+  }
+
   private performBarrage(playerTransform: Transform): void {
     
     // Check cooldown
@@ -3787,6 +4187,29 @@ export class ControlSystem extends System {
     };
   }
 
+  public switchWeaponBySlot(slot: 1 | 2 | 3): void {
+    const currentTime = Date.now() / 1000;
+
+    // Prevent rapid weapon switching
+    if (currentTime - this.lastWeaponSwitchTime < this.weaponSwitchCooldown) {
+      return;
+    }
+
+    let weaponType: WeaponType | undefined;
+
+    if (slot === 1 && this.selectedWeapons?.primary) {
+      weaponType = this.selectedWeapons.primary;
+    } else if (slot === 2 && this.selectedWeapons?.secondary) {
+      weaponType = this.selectedWeapons.secondary;
+    } else if (slot === 3 && this.selectedWeapons?.tertiary) {
+      weaponType = this.selectedWeapons.tertiary;
+    }
+
+    if (weaponType && this.currentWeapon !== weaponType) {
+      this.switchToWeapon(weaponType, currentTime);
+    }
+  }
+
   public getAbilityCooldowns(): Record<string, { current: number; max: number; isActive: boolean }> {
     const currentTime = Date.now() / 1000;
     
@@ -3829,6 +4252,11 @@ export class ControlSystem extends System {
         max: this.viperStingFireRate,
         isActive: this.isViperStingCharging
       };
+      cooldowns['F'] = {
+        current: Math.max(0, this.cloudkillFireRate - (currentTime - this.lastCloudkillTime)),
+        max: this.cloudkillFireRate,
+        isActive: false
+      };
     } else if (this.currentWeapon === WeaponType.SCYTHE) {
       cooldowns['Q'] = {
         current: Math.max(0, 1.0 - (currentTime - this.lastReanimateTime)),
@@ -3844,6 +4272,11 @@ export class ControlSystem extends System {
         current: Math.max(0, this.crossentropyFireRate - (currentTime - this.lastCrossentropyTime)),
         max: this.crossentropyFireRate,
         isActive: this.isCrossentropyCharging
+      };
+      cooldowns['F'] = {
+        current: Math.max(0, this.particleBeamFireRate - (currentTime - this.lastParticleBeamTime)),
+        max: this.particleBeamFireRate,
+        isActive: this.isParticleBeamCharging
       };
     } else if (this.currentWeapon === WeaponType.SABRES) {
       cooldowns['Q'] = {
@@ -3874,19 +4307,19 @@ export class ControlSystem extends System {
         isActive: this.isDeathGrasping
       };
       cooldowns['E'] = {
+        current: Math.max(0, this.wraithStrikeCooldown - (currentTime - this.lastWraithStrikeTime)),
+        max: this.wraithStrikeCooldown,
+        isActive: this.isWraithStriking
+      };
+      cooldowns['R'] = {
         current: Math.max(0, this.smiteCooldown - (currentTime - this.lastSmiteTime)),
         max: this.smiteCooldown,
         isActive: this.isSmiting
       };
-      cooldowns['R'] = {
+      cooldowns['F'] = {
         current: this.corruptedAuraActive ? 0 : 0, // No cooldown, just active/inactive state
         max: 1,
         isActive: this.corruptedAuraActive
-      };
-      cooldowns['F'] = {
-        current: Math.max(0, this.wraithStrikeCooldown - (currentTime - this.lastWraithStrikeTime)),
-        max: this.wraithStrikeCooldown,
-        isActive: this.isWraithStriking
       };
     }
 

@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, memo } from 'react';
 import { Group, Vector3, AdditiveBlending } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import DivineStormShard from './DivineStormShard';
@@ -12,16 +12,32 @@ interface DivineStormProps {
   parentRef?: React.RefObject<Group>;
   isActive?: boolean; // Control if divine storm should remain active
   playerId?: string; // ID of the player who cast the Divine Storm (to prevent self-damage)
+  setDamageNumbers?: (callback: (prev: Array<{
+    id: number;
+    damage: number;
+    position: Vector3;
+    isCritical: boolean;
+    isDivineStorm?: boolean;
+  }>) => Array<{
+    id: number;
+    damage: number;
+    position: Vector3;
+    isCritical: boolean;
+    isDivineStorm?: boolean;
+  }>) => void;
+  nextDamageNumberId?: { current: number };
 }
 
-export default function DivineStorm({
+const DivineStormComponent = memo(function DivineStorm({
   position,
   onComplete,
   parentRef,
   isActive = true,
   enemyData = [],
   onHitTarget,
-  playerId
+  playerId,
+  setDamageNumbers,
+  nextDamageNumberId
 }: DivineStormProps) {
   const stormRef = useRef<Group>(null);
   const progressRef = useRef(0);
@@ -72,6 +88,17 @@ export default function DivineStorm({
 
         // Deal 40 damage per hit (based on rotation speed)
         onHitTarget?.(enemy.id, 40, false, enemy.position, true);
+
+        // Create damage number
+        if (setDamageNumbers && nextDamageNumberId) {
+          setDamageNumbers(prev => [...prev, {
+            id: nextDamageNumberId.current++,
+            damage: 40,
+            position: enemy.position.clone(),
+            isCritical: false,
+            isDivineStorm: true
+          }]);
+        }
       }
     });
 
@@ -129,4 +156,26 @@ export default function DivineStorm({
       />
     </group>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison function for performance optimization
+  if (!prevProps.position.equals(nextProps.position)) return false;
+  if (prevProps.isActive !== nextProps.isActive) return false;
+  if (prevProps.playerId !== nextProps.playerId) return false;
+  if ((prevProps.enemyData?.length || 0) !== (nextProps.enemyData?.length || 0)) return false;
+  if (prevProps.parentRef !== nextProps.parentRef) return false;
+
+  if (prevProps.enemyData && nextProps.enemyData) {
+    for (let i = 0; i < prevProps.enemyData.length; i++) {
+      const prev = prevProps.enemyData[i];
+      const next = nextProps.enemyData[i];
+      if (!prev || !next) return false;
+      if (prev.id !== next.id || prev.health !== next.health || !prev.position.equals(next.position)) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+});
+
+export default DivineStormComponent;

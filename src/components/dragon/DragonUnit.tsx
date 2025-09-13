@@ -9,6 +9,8 @@ import { DragonHorns } from './DragonHorns';
 import ChargedOrbitals, { DashChargeStatus } from './ChargedOrbitals';
 import BoneAura from './BoneAura';
 import { WeaponType, WeaponSubclass } from './weapons';
+import DraconicWingJets from './DraconicWingJets';
+import ArchmageCrest from './ArchmageCrest';
 import EtherealBow from '../weapons/EtherBow';
 import Scythe from '../weapons/Scythe';
 import Sword from '../weapons/Sword';
@@ -115,6 +117,9 @@ interface DragonUnitProps {
     maxHealth: number;
   }>;
   rageSpent?: number;
+  collectedBones?: number;
+  isWingJetsActive?: boolean;
+  combatSystem?: any; // CombatSystem for Colossus Strike damage numbers
 }
 
 export default function DragonUnit({
@@ -176,7 +181,10 @@ export default function DragonUnit({
   reanimateRef,
   setActiveEffects = () => {},
   targetPlayerData,
-  rageSpent
+  rageSpent,
+  collectedBones = 0,
+  isWingJetsActive = false,
+  combatSystem
 }: DragonUnitProps) {
   
   const groupRef = useRef<Group>(null);
@@ -244,6 +252,7 @@ export default function DragonUnit({
           playerEntityId={entityId}
           rageSpent={rageSpent}
           targetPlayerData={targetPlayerData}
+          combatSystem={combatSystem}
         />
       );
     } else if (currentWeapon === WeaponType.SABRES) {
@@ -361,12 +370,33 @@ export default function DragonUnit({
       {/* WINGS */}
       {wings}
 
+      {/* DRACONIC WING JETS */}
+      <DraconicWingJets
+        isActive={isWingJetsActive || isDashing || collectedBones > 0}
+        collectedBones={collectedBones}
+        isLeftWing={true}
+        parentRef={groupRef}
+        weaponType={currentWeapon}
+        weaponSubclass={currentSubclass}
+      />
+      <DraconicWingJets
+        isActive={isWingJetsActive || isDashing || collectedBones > 0}
+        collectedBones={collectedBones}
+        isLeftWing={false}
+        parentRef={groupRef}
+        weaponType={currentWeapon}
+        weaponSubclass={currentSubclass}
+      />
+
+      {/* ARCHMAGE CREST */}
+
       {/* CHARGED ORBITALS */}
-      <ChargedOrbitals 
-        parentRef={groupRef} 
+      <ChargedOrbitals
+        parentRef={groupRef}
         dashCharges={dashCharges}
         weaponType={currentWeapon}
         weaponSubclass={currentSubclass}
+        isCorruptedAuraActive={isCorruptedAuraActive}
       />
 
       {/* BONE AURA */}

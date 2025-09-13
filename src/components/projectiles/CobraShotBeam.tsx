@@ -64,7 +64,7 @@ const CobraShotBeam: React.FC<CobraShotBeamProps> = ({
       >
         {/* Core beam - ultra thin with cobra glow */}
         <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 10]}>
-          <cylinderGeometry args={[0.04, 0.04, 20, 8]} />
+          <cylinderGeometry args={[0.045, 0.045, 20, 8]} />
           <meshStandardMaterial
             color={colors.core}
             emissive={colors.emissive}

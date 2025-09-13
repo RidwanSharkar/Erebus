@@ -59,6 +59,14 @@ export class Movement extends Component {
   public chargeDistance: number;
   public chargeStartPosition: Vector3;
 
+  // Knockback system
+  public isKnockbacked: boolean;
+  public knockbackDirection: Vector3;
+  public knockbackStartTime: number;
+  public knockbackDuration: number;
+  public knockbackDistance: number;
+  public knockbackStartPosition: Vector3;
+
   constructor(
     maxSpeed: number = 3.75,
     friction: number = 0.8,
@@ -118,6 +126,14 @@ export class Movement extends Component {
     this.chargeDuration = 0.35; // 350ms charge duration
     this.chargeDistance = 9; // Sword charge distance
     this.chargeStartPosition = new Vector3(0, 0, 0);
+
+    // Initialize knockback properties
+    this.isKnockbacked = false;
+    this.knockbackDirection = new Vector3(0, 0, 0);
+    this.knockbackStartTime = 0;
+    this.knockbackDuration = 0.5; // 500ms knockback duration
+    this.knockbackDistance = 10; // 10 unit knockback distance
+    this.knockbackStartPosition = new Vector3(0, 0, 0);
   }
 
   public addForce(force: Vector3): void {
@@ -367,6 +383,51 @@ export class Movement extends Component {
     this.chargeStartTime = 0;
   }
 
+  public applyKnockback(direction: Vector3, distance: number, currentPosition: Vector3, currentTime: number, duration: number = 0.5): void {
+    // Check if already being knockbacked
+    if (this.isKnockbacked) {
+      return;
+    }
+
+    // Start the knockback
+    this.isKnockbacked = true;
+    this.knockbackDirection.copy(direction).normalize();
+    this.knockbackStartTime = currentTime;
+    this.knockbackDuration = duration;
+    this.knockbackDistance = distance;
+    this.knockbackStartPosition.copy(currentPosition);
+  }
+
+  public updateKnockback(currentTime: number): { isComplete: boolean; newPosition: Vector3 | null } {
+    if (!this.isKnockbacked) {
+      return { isComplete: false, newPosition: null };
+    }
+
+    const elapsed = currentTime - this.knockbackStartTime;
+    const progress = Math.min(elapsed / this.knockbackDuration, 1);
+
+    if (progress >= 1) {
+      // Knockback complete
+      this.isKnockbacked = false;
+      const finalPosition = this.knockbackStartPosition.clone()
+        .add(this.knockbackDirection.clone().multiplyScalar(this.knockbackDistance));
+      return { isComplete: true, newPosition: finalPosition };
+    }
+
+    // Calculate current position using easing (ease-out quad)
+    const easeOutQuad = 1 - Math.pow(1 - progress, 2);
+    const displacement = this.knockbackDirection.clone().multiplyScalar(this.knockbackDistance * easeOutQuad);
+    const newPosition = this.knockbackStartPosition.clone().add(displacement);
+
+    return { isComplete: false, newPosition };
+  }
+
+  public cancelKnockback(): void {
+    this.isKnockbacked = false;
+    this.knockbackDirection.set(0, 0, 0);
+    this.knockbackStartTime = 0;
+  }
+
   public clampVelocity(): void {
     // Get effective max speed (considering debuffs)
     const effectiveMaxSpeed = this.getEffectiveMaxSpeed();
@@ -467,6 +528,14 @@ export class Movement extends Component {
     this.chargeDuration = 0.35;
     this.chargeDistance = 9;
     this.chargeStartPosition.set(0, 0, 0);
+
+    // Reset knockback properties
+    this.isKnockbacked = false;
+    this.knockbackDirection.set(0, 0, 0);
+    this.knockbackStartTime = 0;
+    this.knockbackDuration = 0.5;
+    this.knockbackDistance = 10;
+    this.knockbackStartPosition.set(0, 0, 0);
   }
 
   public clone(): Movement {
@@ -509,6 +578,14 @@ export class Movement extends Component {
     clone.chargeDuration = this.chargeDuration;
     clone.chargeDistance = this.chargeDistance;
     clone.chargeStartPosition.copy(this.chargeStartPosition);
+
+    // Clone knockback properties
+    clone.isKnockbacked = this.isKnockbacked;
+    clone.knockbackDirection.copy(this.knockbackDirection);
+    clone.knockbackStartTime = this.knockbackStartTime;
+    clone.knockbackDuration = this.knockbackDuration;
+    clone.knockbackDistance = this.knockbackDistance;
+    clone.knockbackStartPosition.copy(this.knockbackStartPosition);
 
     return clone;
   }

@@ -18,14 +18,15 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
   const fireball2Ref = useRef<Mesh>(null);
   const fireball3Ref = useRef<Mesh>(null);
   const clock = useRef(new Clock());
-  const startSpeed = 0.25;
-  const maxSpeed = 0.8;
-  const accelerationDistance = 15; // Distance over which to accelerate from start to max speed
+  const startSpeed = 0.03;
+  const maxSpeed = 2;
+  const accelerationDistance = 20; // Distance over which to accelerate from start to max speed
   const maxRange = 20; // Maximum range before fading
-  const lifespan = 5; // Fallback lifespan
+  const lifespan = 3; // Fallback lifespan
   const currentPosition = useRef(position.clone());
   const startPosition = useRef(position.clone());
   const hasCollided = useRef(false);
+  const hasExploded = useRef(false);
   const fadeStartTime = useRef<number | null>(null);
   const fadeDuration = 0.5; // 500ms fade duration
   const [opacity, setOpacity] = useState(1);
@@ -35,7 +36,7 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
 
   // Spiral parameters
   const spiralRadius = 0.4875;
-  const spiralSpeed = 2; // rotations per second
+  const spiralSpeed = 2.5; // rotations per second
   const time = useRef(0);
 
   // Collision detection is now handled by the ECS system
@@ -70,9 +71,11 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
     if (hasCollided.current) return;
 
     // Check if exceeded lifespan
-    if (clock.current.getElapsedTime() > lifespan) {
+    if (clock.current.getElapsedTime() > lifespan && !hasExploded.current) {
       hasCollided.current = true;
+      hasExploded.current = true;
       fadeStartTime.current = currentTime;
+      // Lifespan exceeded without collision - no explosion, just fade
       return;
     }
 
@@ -86,8 +89,9 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
     // Update position based on direction and current speed
     const movement = direction.clone().multiplyScalar(currentSpeed * delta * 60);
     currentPosition.current.add(movement);
-    if (distanceTraveled >= maxRange) {
+    if (distanceTraveled >= maxRange && !hasExploded.current) {
       hasCollided.current = true;
+      hasExploded.current = true;
       fadeStartTime.current = currentTime;
       if (onImpact) {
         onImpact(currentPosition.current.clone()); // Impact at max range position
@@ -99,9 +103,10 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
     if (checkCollisions) {
       const currentPos = currentPosition.current.clone();
       const hitSomething = checkCollisions(id, currentPos);
-      
-      if (hitSomething) {
+
+      if (hitSomething && !hasExploded.current) {
         hasCollided.current = true;
+        hasExploded.current = true;
         fadeStartTime.current = currentTime;
         if (onImpact) {
           onImpact(currentPos); // Impact at collision position

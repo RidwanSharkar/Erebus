@@ -164,16 +164,45 @@ export default function ViperStingManager({
             if (onHealthChange) {
               onHealthChange(20);
             }
-            
-            // Show healing damage number
+
+            // Show healing damage number in both regular and PVP modes
             if (parentRef.current) {
-              setDamageNumbers(prev => [...prev, {
-                id: nextDamageNumberId.current++,
-                damage: 20,
-                position: parentRef.current!.position.clone().add(new Vector3(0, 1.5, 0)),
-                isCritical: false,
-                isHealing: true
-              }]);
+              const healingPosition = parentRef.current.position.clone().add(new Vector3(0, 1.5, 0));
+
+              // Try regular multiplayer mode first
+              if (setDamageNumbers && typeof setDamageNumbers === 'function') {
+                try {
+                  setDamageNumbers(prev => [...prev, {
+                    id: nextDamageNumberId.current++,
+                    damage: 20,
+                    position: healingPosition,
+                    isCritical: false,
+                    isHealing: true
+                  }]);
+                } catch (error) {
+                  // Fall back to PVP mode damage number manager
+                  const damageNumberManager = (window as any).damageNumberManager;
+                  if (damageNumberManager && damageNumberManager.addDamageNumber) {
+                    damageNumberManager.addDamageNumber(
+                      20, // Healing amount
+                      false, // Not critical
+                      healingPosition,
+                      'viper_sting_healing' // Damage type for healing styling
+                    );
+                  }
+                }
+              } else {
+                // PVP mode: Use damage number manager directly
+                const damageNumberManager = (window as any).damageNumberManager;
+                if (damageNumberManager && damageNumberManager.addDamageNumber) {
+                  damageNumberManager.addDamageNumber(
+                    20, // Healing amount
+                    false, // Not critical
+                    healingPosition,
+                    'viper_sting_healing' // Damage type for healing styling
+                  );
+                }
+              }
             }
             // Remove the effect from the array
             viperStingSoulStealEffects.current = viperStingSoulStealEffects.current.filter(e => e.id !== effect.id);

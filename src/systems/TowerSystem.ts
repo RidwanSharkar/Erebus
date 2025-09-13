@@ -266,7 +266,8 @@ export class TowerSystem extends System {
         speed: tower.projectileSpeed,
         damage: tower.attackDamage,
         lifetime: 2, // 5 second lifetime
-        opacity: 1.0
+        opacity: 1.0,
+        sourcePlayerId: tower.ownerId // Set the tower owner as the source player for proper EXP attribution
       };
 
       const projectileEntity = this.projectileSystem.createProjectile(

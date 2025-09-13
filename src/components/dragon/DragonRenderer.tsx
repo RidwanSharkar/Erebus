@@ -45,6 +45,7 @@ interface DragonRendererProps {
   isWraithStriking?: boolean;
   isCorruptedAuraActive?: boolean;
   isColossusStriking?: boolean;
+  isDead?: boolean;
   onSmiteComplete?: () => void;
   onDeathGraspComplete?: () => void;
   onWraithStrikeComplete?: () => void;
@@ -61,6 +62,20 @@ interface DragonRendererProps {
   isCobraShotCharging?: boolean;
   cobraShotChargeProgress?: number;
   reanimateRef?: React.RefObject<ReanimateRef>;
+  // Damage number management
+  onDamageNumbersReady?: (setDamageNumbers: (callback: (prev: Array<{
+    id: number;
+    damage: number;
+    position: Vector3;
+    isCritical: boolean;
+    isSmite?: boolean;
+  }>) => Array<{
+    id: number;
+    damage: number;
+    position: Vector3;
+    isCritical: boolean;
+    isSmite?: boolean;
+  }>) => void, nextDamageNumberId: { current: number }) => void;
   // PVP-specific props
   targetPlayerData?: Array<{
     id: string;
@@ -69,6 +84,7 @@ interface DragonRendererProps {
     maxHealth: number;
   }>;
   rageSpent?: number;
+  combatSystem?: any; // CombatSystem for Colossus Strike damage numbers
 }
 
 export default function DragonRenderer({
@@ -83,6 +99,7 @@ export default function DragonRenderer({
   isSwinging = false,
   isSpinning = false,
   isDeflecting = false,
+  isDead = false,
   isSmiting = false,
   isDeathGrasping = false,
   isWraithStriking = false,
@@ -117,7 +134,9 @@ export default function DragonRenderer({
   cobraShotChargeProgress = 0,
   reanimateRef,
   targetPlayerData,
-  rageSpent
+  rageSpent,
+  onDamageNumbersReady,
+  combatSystem
 }: DragonRendererProps) {
   const mountRef = useRef(false);
   if (!mountRef.current) {
@@ -148,6 +167,13 @@ export default function DragonRenderer({
     isCritical: boolean;
   }>>([]);
   const nextDamageNumberId = useRef(0);
+
+  // Notify parent when damage number functions are ready
+  useEffect(() => {
+    if (onDamageNumbersReady) {
+      onDamageNumbersReady(setDamageNumbers, nextDamageNumberId);
+    }
+  }, [onDamageNumbersReady]);
   const lastChargeState = useRef(false);
   const [activeEffects, setActiveEffects] = useState<Array<{
     id: number;
@@ -329,6 +355,15 @@ export default function DragonRenderer({
   return (
     <>
       <group ref={groupRef}>
+        {/* Death effect - make dragon semi-transparent when dead */}
+        {isDead && (
+          <pointLight
+            color="#ff4444"
+            intensity={0.5}
+            distance={3}
+            decay={2}
+          />
+        )}
         <DragonUnit
           position={new Vector3(0, 0, 0)} // Position is handled by the parent group
           movementDirection={movementDirection.current}
@@ -383,6 +418,7 @@ export default function DragonRenderer({
           setActiveEffects={setActiveEffects}
           targetPlayerData={targetPlayerData}
           rageSpent={rageSpent}
+          combatSystem={combatSystem}
         />
       </group>
       

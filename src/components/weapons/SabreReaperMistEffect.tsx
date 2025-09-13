@@ -19,28 +19,29 @@ export default function SabreReaperMistEffect({
   duration = 1000, // 1 second animation like stealth mist
   onComplete
 }: SabreReaperMistEffectProps) {
+  console.log('🌫️ SabreReaperMistEffect created at position:', position);
   const startTime = useRef(Date.now());
   const isCompleted = useRef(false);
 
   // Initialize particle data once
   const [particleData] = useState<ParticleData[]>(() =>
-    Array(30).fill(null).map(() => ({ // Increased from 20 to 35 particles
+    Array(50).fill(null).map(() => ({ // Increased from 20 to 35 particles
       initialAngle: Math.random() * Math.PI * 2,
-      initialRadius: 0.5 + Math.random() * 1.0, // Doubled the radius range (was 0.5 + 0.5)
-      initialY: 0.5 + Math.random() * 1
+      initialRadius: 0.15 + Math.random() * 1.0,
+      initialY: -0.5 + Math.random() * 2
     }))
   );
 
   const [progress, setProgress] = useState(0);
 
   // Create simple geometries and materials for the particles (no pooling for now)
-  const particleGeometry = useMemo(() => new SphereGeometry(0.1, 8, 8), []);
+  const particleGeometry = useMemo(() => new SphereGeometry(0.1375, 8, 8), []);
   const particleMaterial = useMemo(() => new MeshStandardMaterial({
-    color: "#ff0000", // Red theme for sabres
-    emissive: "#aa0000",
-    emissiveIntensity: 0.8,
+    color: '#FF544E',
+    emissive: '#FF544E',
+    emissiveIntensity: 2,
     transparent: true,
-    opacity: 0.8
+    opacity: 0.6
   }), []);
 
   useFrame(() => {
@@ -56,6 +57,7 @@ export default function SabreReaperMistEffect({
 
     if (currentProgress >= 1 && !isCompleted.current) {
       isCompleted.current = true;
+      console.log('🌫️ SabreReaperMistEffect completed, calling onComplete');
       onComplete?.();
     }
   });
@@ -68,6 +70,7 @@ export default function SabreReaperMistEffect({
     };
   }, [particleGeometry, particleMaterial]);
 
+  console.log('🌫️ SabreReaperMistEffect rendering with', particleData.length, 'particles at position:', position);
 
   return (
     <group position={[position.x, position.y, position.z]}>
@@ -94,7 +97,7 @@ export default function SabreReaperMistEffect({
 
       {/* Add central light for glow effect - red theme */}
       <pointLight
-        color="#ff0000"
+        color="#FF544E"
         intensity={4}
         distance={5}
         decay={1}

@@ -12,6 +12,7 @@ import CrossentropyBolt from '@/components/projectiles/CrossentropyBolt';
 import EntropicBolt from '@/components/projectiles/EntropicBolt';
 import ChargedArrow from '@/components/projectiles/ChargedArrow';
 import RegularArrow from '@/components/projectiles/RegularArrow';
+import SwordProjectile from '@/components/projectiles/SwordProjectile';
 import Barrage from '@/components/projectiles/Barrage';
 import TowerProjectile from '@/components/projectiles/TowerProjectile';
 import ExplosionEffect from '@/components/projectiles/ExplosionEffect';
@@ -28,6 +29,13 @@ interface ProjectileData {
   level?: number;
   opacity?: number;
   ownerId?: string; // For tower projectiles
+}
+
+interface SwordProjectileData {
+  id: number;
+  position: Vector3;
+  direction: Vector3;
+  entityId: number;
 }
 
 interface ExplosionData {
@@ -51,6 +59,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
     entropic: ProjectileData[];
     charged: ProjectileData[];
     regular: ProjectileData[];
+    sword: SwordProjectileData[];
     barrage: ProjectileData[];
     tower: ProjectileData[];
   }>({
@@ -58,6 +67,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
     entropic: [],
     charged: [],
     regular: [],
+    sword: [],
     barrage: [],
     tower: []
   });
@@ -69,6 +79,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
   const entropicIdCounter = useRef(0);
   const chargedIdCounter = useRef(0);
   const regularIdCounter = useRef(0);
+  const swordIdCounter = useRef(0);
   const barrageIdCounter = useRef(0);
   const towerIdCounter = useRef(0);
   const explosionIdCounter = useRef(0);
@@ -148,6 +159,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
     const newEntropic: ProjectileData[] = [];
     const newCharged: ProjectileData[] = [];
     const newRegular: ProjectileData[] = [];
+    const newSword: SwordProjectileData[] = [];
     const newBarrage: ProjectileData[] = [];
     const newTower: ProjectileData[] = [];
 
@@ -253,6 +265,22 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             opacity: userData.opacity || 1.0
           });
         }
+      } else if (userData.projectileType === 'sword_projectile') {
+        console.log('⚔️ Found sword projectile entity:', entity.id, 'userData:', userData);
+        const existing = projectileData.sword.find(p => p.entityId === entity.id);
+        if (existing) {
+          existing.position.copy(transform.position);
+          newSword.push(existing);
+        } else {
+          const newSwordData = {
+            id: swordIdCounter.current++,
+            position: transform.position.clone(),
+            direction: direction.clone(),
+            entityId: entity.id
+          };
+          console.log('⚔️ Added new sword projectile:', newSwordData);
+          newSword.push(newSwordData);
+        }
       }
     }
 
@@ -282,12 +310,14 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
       newEntropic.length !== projectileData.entropic.length ||
       newCharged.length !== projectileData.charged.length ||
       newRegular.length !== projectileData.regular.length ||
+      newSword.length !== projectileData.sword.length ||
       newBarrage.length !== projectileData.barrage.length ||
       newTower.length !== projectileData.tower.length ||
       newCrossentropy.some(p => !projectileData.crossentropy.find(existing => existing.entityId === p.entityId)) ||
       newEntropic.some(p => !projectileData.entropic.find(existing => existing.entityId === p.entityId)) ||
       newCharged.some(p => !projectileData.charged.find(existing => existing.entityId === p.entityId)) ||
       newRegular.some(p => !projectileData.regular.find(existing => existing.entityId === p.entityId)) ||
+      newSword.some(p => !projectileData.sword.find(existing => existing.entityId === p.entityId)) ||
       newBarrage.some(p => !projectileData.barrage.find(existing => existing.entityId === p.entityId)) ||
       newTower.some(p => !projectileData.tower.find(existing => existing.entityId === p.entityId))
     );
@@ -298,6 +328,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
         entropic: newEntropic,
         charged: newCharged,
         regular: newRegular,
+        sword: newSword,
         barrage: newBarrage,
         tower: newTower
       });
@@ -384,6 +415,21 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             maxDistance={maxDistance}
             onImpact={() => {
               // console.log(`🏹 RegularArrow ${arrow.id} impact`);
+            }}
+          />
+        );
+      })}
+
+      {/* Sword Projectiles */}
+      {projectileData.sword.map(sword => {
+        console.log('⚔️ Rendering SwordProjectile:', sword.id, 'at position:', sword.position);
+        return (
+          <SwordProjectile
+            key={sword.id}
+            position={sword.position}
+            direction={sword.direction}
+            onImpact={() => {
+              console.log(`⚔️ SwordProjectile ${sword.id} impact`);
             }}
           />
         );

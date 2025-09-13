@@ -169,21 +169,71 @@ function handlePlayerEvents(socket, gameRooms) {
     console.log(`✅ Server: Broadcasted stealth state to room ${roomId}`);
   });
 
+  socket.on('player-knockback', (data) => {
+    console.log(`🌊 Server received player-knockback from ${socket.id}:`, data);
+
+    const { roomId, playerId, targetPlayerId, direction, distance, duration } = data;
+
+    if (!gameRooms.has(roomId)) {
+      console.warn(`⚠️ Server: Room ${roomId} not found for knockback event`);
+      return;
+    }
+
+    const room = gameRooms.get(roomId);
+
+    console.log(`🌊 Server: Broadcasting knockback from player ${socket.id} to target ${targetPlayerId} in room ${roomId}`);
+
+    // Broadcast knockback to all other players in the room (including the sender for consistency)
+    room.io.to(roomId).emit('player-knockback', {
+      playerId: socket.id,
+      targetPlayerId,
+      direction,
+      distance,
+      duration,
+      timestamp: Date.now()
+    });
+
+    console.log(`✅ Server: Broadcasted knockback to room ${roomId}`);
+  });
+
   // Handle player health changes
   socket.on('player-health-changed', (data) => {
     const { roomId, health, maxHealth } = data;
-    
+
     if (!gameRooms.has(roomId)) return;
-    
+
     const room = gameRooms.get(roomId);
     room.updatePlayerHealth(socket.id, health);
-    
+
     // Broadcast health change to other players
     socket.to(roomId).emit('player-health-updated', {
       playerId: socket.id,
       health,
       maxHealth
     });
+  });
+
+  // Handle player level changes (for tertiary weapon unlocks)
+  socket.on('player-level-changed', (data) => {
+    const { roomId, playerId, level } = data;
+
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    const player = room.getPlayer(playerId);
+
+    if (player) {
+      player.level = level;
+
+      // Broadcast level change to all players in the room (including the sender for consistency)
+      room.io.to(roomId).emit('player-level-changed', {
+        playerId,
+        level,
+        timestamp: Date.now()
+      });
+
+      console.log(`Player ${playerId} leveled up to level ${level} in room ${roomId}`);
+    }
   });
 
   // Handle ally healing (Reanimate & Oathstrike)
@@ -353,14 +403,14 @@ function handlePlayerEvents(socket, gameRooms) {
     console.log(`🤖 Summoned unit damage: ${sourcePlayer.name} dealt ${damage} damage to unit ${unitId} (owned by ${unitOwnerId})`);
     
     // Apply damage server-side (authoritative)
-    const damageApplied = room.damageSummonedUnitDirect(unitId, damage, socket.id);
+    const damageApplied = room.damageSummonedUnitDirect(unitId, damage, sourcePlayerId);
     
     if (damageApplied) {
       // Broadcast summoned unit damage to all players in the room
       room.io.to(roomId).emit('summoned-unit-damaged', {
         unitId: unitId,
         unitOwnerId: unitOwnerId,
-        sourcePlayerId: socket.id,
+        sourcePlayerId: sourcePlayerId,
         damage: damage,
         timestamp: Date.now()
       });

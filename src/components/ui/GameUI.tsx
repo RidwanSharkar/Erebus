@@ -15,6 +15,12 @@ interface GameUIProps {
   rage?: number;
   maxRage?: number;
   controlSystem?: any; // Reference to control system for ability cooldowns
+  selectedWeapons?: {
+    primary: WeaponType;
+    secondary: WeaponType;
+    tertiary?: WeaponType;
+  } | null;
+  onWeaponSwitch?: (slot: 1 | 2 | 3) => void;
 }
 
 interface ResourceBarProps {
@@ -51,104 +57,133 @@ function ResourceBar({ current, max, color, backgroundColor = '#333'}: ResourceB
   );
 }
 
-export default function GameUI({ 
-  currentWeapon, 
-  playerHealth, 
-  maxHealth, 
+export default function GameUI({
+  currentWeapon,
+  playerHealth,
+  maxHealth,
   playerShield = 200,
   maxShield = 200,
-  mana = 200, 
-  maxMana = 200, 
+  mana = 200,
+  maxMana = 200,
   energy = 100,
   maxEnergy = 100,
-  rage = 0, 
+  rage = 0,
   maxRage = 100,
-  controlSystem
+  controlSystem,
+  selectedWeapons,
+  onWeaponSwitch
 }: GameUIProps) {
-  const [currentMana, setCurrentMana] = useState(mana);
-  const [currentEnergy, setCurrentEnergy] = useState(energy);
-  const [currentRage, setCurrentRage] = useState(rage);
-  const [lastSwordDamageTime, setLastSwordDamageTime] = useState<number>(Date.now());
-
-  // Sync currentMana with prop changes (important for PVP mode)
-  useEffect(() => {
-    setCurrentMana(mana);
-  }, [mana]);
-
-  // Mana regeneration for Scythe and Runeblade (8 mana per second)
-  useEffect(() => {
-    if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
-      const interval = setInterval(() => {
-        setCurrentMana(prev => Math.min(maxMana, prev + 4));
-      }, 500);
-
-      return () => clearInterval(interval);
+  // Store resources per weapon type to persist across switches
+  const [weaponResources, setWeaponResources] = useState<{
+    [key in WeaponType]: {
+      mana: number;
+      energy: number;
+      rage: number;
+      lastSwordDamageTime: number;
     }
-  }, [currentWeapon, maxMana]);
+  }>({
+    [WeaponType.SCYTHE]: { mana, energy: maxEnergy, rage: 0, lastSwordDamageTime: Date.now() },
+    [WeaponType.SWORD]: { mana: maxMana, energy: maxEnergy, rage, lastSwordDamageTime: Date.now() },
+    [WeaponType.BOW]: { mana: maxMana, energy, rage: 0, lastSwordDamageTime: Date.now() },
+    [WeaponType.SABRES]: { mana: maxMana, energy, rage: 0, lastSwordDamageTime: Date.now() },
+    [WeaponType.RUNEBLADE]: { mana, energy: maxEnergy, rage: 0, lastSwordDamageTime: Date.now() }
+  });
 
-  // Energy regeneration for Bow and Sabres (14 energy per second)
+  // Get current weapon's resources
+  const currentResources = weaponResources[currentWeapon];
+  const currentMana = currentResources?.mana ?? mana;
+  const currentEnergy = currentResources?.energy ?? energy;
+  const currentRage = currentResources?.rage ?? rage;
+  const lastSwordDamageTime = currentResources?.lastSwordDamageTime ?? Date.now();
+
+  // Continuous regeneration for all weapons (resources regenerate even when not using that weapon)
   useEffect(() => {
-    if (currentWeapon === WeaponType.BOW || currentWeapon === WeaponType.SABRES) {
-      const interval = setInterval(() => {
-        setCurrentEnergy(prev => Math.min(maxEnergy, prev + 7)); // 14 energy per second = 7 every 500ms
-      }, 500);
-      
-      return () => clearInterval(interval);
-    }
-  }, [currentWeapon, maxEnergy]);
+    const interval = setInterval(() => {
+      setWeaponResources(prev => {
+        const updated = { ...prev };
+
+        // Mana regeneration for Scythe (10 mana per second = 5 every 500ms, max 250)
+        const scytheMaxMana = 250;
+        if (updated[WeaponType.SCYTHE].mana < scytheMaxMana) {
+          updated[WeaponType.SCYTHE].mana = Math.min(scytheMaxMana, updated[WeaponType.SCYTHE].mana + 4);
+        }
+
+        // Mana regeneration for Runeblade (4 mana per second = 2 every 500ms, max 150)
+        const runebladeMaxMana = 150;
+        if (updated[WeaponType.RUNEBLADE].mana < runebladeMaxMana) {
+          updated[WeaponType.RUNEBLADE].mana = Math.min(runebladeMaxMana, updated[WeaponType.RUNEBLADE].mana + 2);
+        }
+
+        // Energy regeneration for Bow and Sabres (14 energy per second = 7 every 500ms)
+        if (updated[WeaponType.BOW].energy < maxEnergy) {
+          updated[WeaponType.BOW].energy = Math.min(maxEnergy, updated[WeaponType.BOW].energy + 7);
+        }
+        if (updated[WeaponType.SABRES].energy < maxEnergy) {
+          updated[WeaponType.SABRES].energy = Math.min(maxEnergy, updated[WeaponType.SABRES].energy + 7);
+        }
+
+        return updated;
+      });
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [maxEnergy]);
 
   // Rage decay for Sword (5 rage per second after 5 seconds of no damage)
   useEffect(() => {
-    if (currentWeapon === WeaponType.SWORD) {
-      const interval = setInterval(() => {
-        const now = Date.now();
-        const timeSinceLastDamage = now - lastSwordDamageTime;
-        
-        // If it's been more than 6 seconds since last sword damage, decay rage
-        if (timeSinceLastDamage > 6000) {
-          setCurrentRage(prev => Math.max(0, prev - 5));
-        }
-      }, 1000); // Check every second
-      
-      return () => clearInterval(interval);
-    }
-  }, [currentWeapon, lastSwordDamageTime]);
+    const interval = setInterval(() => {
+      const now = Date.now();
 
-  // Reset resources when weapon changes
-  useEffect(() => {
-    if (currentWeapon === WeaponType.SCYTHE) {
-      setCurrentMana(maxMana);
-      setCurrentEnergy(maxEnergy);
-      setCurrentRage(0);
-    } else if (currentWeapon === WeaponType.SWORD) {
-      setCurrentRage(0);
-      setCurrentMana(maxMana);
-      setCurrentEnergy(maxEnergy);
-      setLastSwordDamageTime(Date.now()); // Reset damage timer when switching to sword
-    } else if (currentWeapon === WeaponType.BOW || currentWeapon === WeaponType.SABRES) {
-      // Bow and Sabres - use energy system
-      setCurrentEnergy(maxEnergy);
-      setCurrentMana(maxMana);
-      setCurrentRage(0);
-    } else if (currentWeapon === WeaponType.RUNEBLADE) {
-      // Runeblade - use mana system
-      setCurrentMana(maxMana); // Start with full mana
-      setCurrentEnergy(maxEnergy);
-      setCurrentRage(0);
-    }
-  }, [currentWeapon, maxMana, maxEnergy, maxRage]);
+      setWeaponResources(prev => {
+        const updated = { ...prev };
+
+        // Only decay rage for Sword weapon
+        const swordData = updated[WeaponType.SWORD];
+        const timeSinceLastDamage = now - swordData.lastSwordDamageTime;
+
+        // If it's been more than 6 seconds since last sword damage, decay rage
+        if (timeSinceLastDamage > 6000 && swordData.rage > 0) {
+          swordData.rage = Math.max(0, swordData.rage - 5);
+        }
+
+        return updated;
+      });
+    }, 1000); // Check every second
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Function to consume mana (for Crossentropy bolt and Runeblade abilities)
   const consumeMana = (amount: number): boolean => {
     if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
       if (currentMana >= amount) {
-        setCurrentMana(prev => Math.max(0, prev - amount));
+        setWeaponResources(prev => ({
+          ...prev,
+          [currentWeapon]: {
+            ...prev[currentWeapon],
+            mana: Math.max(0, prev[currentWeapon].mana - amount)
+          }
+        }));
         return true; // Successfully consumed mana
       } else {
         return false; // Not enough mana
       }
     }
     return false; // Wrong weapon type
+  };
+
+  // Function to add mana (for Particle Beam refund when hitting frozen enemies)
+  const addMana = (amount: number) => {
+    if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
+      const maxMana = currentWeapon === WeaponType.SCYTHE ? 250 : 150;
+      setWeaponResources(prev => ({
+        ...prev,
+        [currentWeapon]: {
+          ...prev[currentWeapon],
+          mana: Math.min(maxMana, prev[currentWeapon].mana + amount)
+        }
+      }));
+    }
   };
 
   // Function to check if Runeblade has enough mana for abilities
@@ -159,29 +194,79 @@ export default function GameUI({
   // Function to consume energy (for bow and sabres abilities)
   const consumeEnergy = (amount: number) => {
     if (currentWeapon === WeaponType.BOW || currentWeapon === WeaponType.SABRES) {
-      setCurrentEnergy(prev => Math.max(0, prev - amount));
+      setWeaponResources(prev => ({
+        ...prev,
+        [currentWeapon]: {
+          ...prev[currentWeapon],
+          energy: Math.max(0, prev[currentWeapon].energy - amount)
+        }
+      }));
+    }
+  };
+
+  // Function to gain energy (for sabres abilities like backstab refund)
+  const gainEnergy = (amount: number) => {
+    if (currentWeapon === WeaponType.BOW || currentWeapon === WeaponType.SABRES) {
+      setWeaponResources(prev => ({
+        ...prev,
+        [currentWeapon]: {
+          ...prev[currentWeapon],
+          energy: Math.min(maxEnergy, prev[currentWeapon].energy + amount)
+        }
+      }));
     }
   };
 
   // Function to gain rage (for sword attacks)
   const gainRage = (amount: number) => {
     if (currentWeapon === WeaponType.SWORD) {
-      setCurrentRage(prev => Math.min(maxRage, prev + amount));
-      setLastSwordDamageTime(Date.now()); // Update last damage time when gaining rage
+      setWeaponResources(prev => ({
+        ...prev,
+        [currentWeapon]: {
+          ...prev[currentWeapon],
+          rage: Math.min(maxRage, prev[currentWeapon].rage + amount),
+          lastSwordDamageTime: Date.now() // Update last damage time when gaining rage
+        }
+      }));
     }
   };
 
   // Function to consume rage (for Divine Storm)
   const consumeRage = (amount: number) => {
     if (currentWeapon === WeaponType.SWORD) {
-      setCurrentRage(prev => Math.max(0, prev - amount));
+      setWeaponResources(prev => ({
+        ...prev,
+        [currentWeapon]: {
+          ...prev[currentWeapon],
+          rage: Math.max(0, prev[currentWeapon].rage - amount)
+        }
+      }));
     }
   };
 
   // Function to consume all rage (for Divine Storm)
   const consumeAllRage = () => {
     if (currentWeapon === WeaponType.SWORD) {
-      setCurrentRage(0);
+      setWeaponResources(prev => ({
+        ...prev,
+        [currentWeapon]: {
+          ...prev[currentWeapon],
+          rage: 0
+        }
+      }));
+    }
+  };
+
+  // Function to consume 15 rage (for updated Divine Storm)
+  const consumeDivineStormRage = () => {
+    if (currentWeapon === WeaponType.SWORD) {
+      setWeaponResources(prev => ({
+        ...prev,
+        [currentWeapon]: {
+          ...prev[currentWeapon],
+          rage: Math.max(0, prev[currentWeapon].rage - 15)
+        }
+      }));
     }
   };
 
@@ -189,16 +274,20 @@ export default function GameUI({
   useEffect(() => {
     (window as any).gameUI = {
       consumeMana,
+      addMana,
       consumeEnergy,
+      gainEnergy,
       gainRage,
       consumeRage,
       consumeAllRage,
+      consumeDivineStormRage,
       getCurrentMana: () => currentMana,
       getCurrentEnergy: () => currentEnergy,
       getCurrentRage: () => currentRage,
-      canCastCrossentropy: () => currentMana >= 40, 
+      canCastCrossentropy: () => currentMana >= 40,
       canCastEntropicBolt: () => currentMana >= 10,
       canCastCrossentropyBolt: () => currentMana >= 40,
+      canCastParticleBeam: () => currentMana >= 40,
       canCastReanimate: () => currentMana >= 20,
       canCastFrostNova: () => currentMana >= 25,
       // Runeblade mana abilities
@@ -206,19 +295,20 @@ export default function GameUI({
       canCastDeathGrasp: () => currentMana >= 25,
       canCastWraithStrike: () => currentMana >= 30,
       canCastCorruptedAura: () => currentMana >= 8,
-      canCastDivineStorm: () => currentRage >= 40,
+      canCastDivineStorm: () => currentRage >= 15,
       canCastColossusStrike: () => currentRage >= 40,
       // Bow energy abilities
       canCastBarrage: () => currentEnergy >= 40,
       canCastCobraShot: () => currentEnergy >= 40,
       canCastViperSting: () => currentEnergy >= 60,
+      canCastCloudkill: () => currentEnergy >= 25,
       // Sabres energy abilities
       canCastBackstab: () => currentEnergy >= 60,
       canCastSkyfall: () => currentEnergy >= 40,
       canCastSunder: () => currentEnergy >= 35,
       canCastStealth: () => true // No energy cost for Stealth
     };
-  }, [currentMana, currentEnergy, currentRage, currentWeapon]);
+  }, [currentMana, currentEnergy, currentRage, currentWeapon, addMana]);
 
   const getResourceBar = () => {
     switch (currentWeapon) {
@@ -226,7 +316,7 @@ export default function GameUI({
         return (
           <ResourceBar
             current={currentMana}
-            max={maxMana}
+            max={250} // Scythe max mana is 250
             color="#4A90E2"
             backgroundColor="#1a2332"
           />
@@ -308,9 +398,11 @@ export default function GameUI({
       </div>
       
       {/* Hotkey Panel - positioned below the main UI */}
-      <HotkeyPanel 
+      <HotkeyPanel
         currentWeapon={currentWeapon}
         controlSystem={controlSystem}
+        selectedWeapons={selectedWeapons}
+        onWeaponSwitch={onWeaponSwitch}
       />
     </>
   );

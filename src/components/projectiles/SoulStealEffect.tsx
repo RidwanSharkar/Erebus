@@ -94,29 +94,7 @@ export default function SoulStealEffect({
         />
       </mesh>
 
-      {/* Trailing particles */}
-      {[...Array(3)].map((_, i) => {
-        const delay = i * 0.1;
-        const trailPosition = new Vector3().lerpVectors(
-          startPosition, 
-          currentPosition.current, 
-          Math.max(0, (Date.now() - startTime - delay * 1000) / duration)
-        );
-        
-        return (
-          <mesh key={i} position={trailPosition}>
-            <sphereGeometry args={[0.05, 4, 4]} />
-            <meshStandardMaterial
-              color="#F3E8FF"
-              emissive="#F3E8FF"
-              emissiveIntensity={1.5}
-              transparent
-              opacity={0.6 - i * 0.2}
-              blending={AdditiveBlending}
-            />
-          </mesh>
-        );
-      })}
+
 
       {/* Healing energy aura */}
       <mesh rotation={[Math.PI / 2, 0, Date.now() * 0.005]}>

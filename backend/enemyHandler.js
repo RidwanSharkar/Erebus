@@ -1,12 +1,14 @@
 function handleEnemyEvents(socket, gameRooms) {
   // Handle enemy damage from players
   socket.on('enemy-damage', (data) => {
-    const { roomId, enemyId, damage } = data;
+    const { roomId, enemyId, damage, sourcePlayerId } = data;
     
     if (!gameRooms.has(roomId)) return;
     
     const room = gameRooms.get(roomId);
-    const result = room.damageEnemy(enemyId, damage, socket.id);
+    // Use sourcePlayerId if provided, otherwise fall back to socket.id for direct player damage
+    const actualSourcePlayerId = sourcePlayerId || socket.id;
+    const result = room.damageEnemy(enemyId, damage, actualSourcePlayerId);
     
     if (result) {
       // Broadcast damage result to all players in the room
@@ -20,7 +22,7 @@ function handleEnemyEvents(socket, gameRooms) {
         timestamp: Date.now()
       });
       
-      console.log(`🎯 Enemy ${enemyId} took ${damage} damage from player ${socket.id}. Health: ${result.newHealth}/${result.maxHealth}${result.wasKilled ? ' (KILLED)' : ''}`);
+      console.log(`🎯 Enemy ${enemyId} took ${damage} damage from player ${actualSourcePlayerId} (via ${socket.id}). Health: ${result.newHealth}/${result.maxHealth}${result.wasKilled ? ' (KILLED)' : ''}`);
     }
   });
 

@@ -42,7 +42,7 @@ export class CombatSystem extends System {
   private enemiesKilled = 0;
 
   // Multiplayer damage callback for routing enemy damage to server
-  private onEnemyDamageCallback?: (enemyId: string, damage: number) => void;
+  private onEnemyDamageCallback?: (enemyId: string, damage: number, sourcePlayerId?: string) => void;
   
   // PVP damage callback for routing player damage to server
   private onPlayerDamageCallback?: (playerId: string, damage: number, damageType?: string) => void;
@@ -72,7 +72,7 @@ export class CombatSystem extends System {
   }
 
   // Set callback for routing enemy damage to multiplayer server
-  public setEnemyDamageCallback(callback: (enemyId: string, damage: number) => void): void {
+  public setEnemyDamageCallback(callback: (enemyId: string, damage: number, sourcePlayerId?: string) => void): void {
     this.onEnemyDamageCallback = callback;
   }
   
@@ -89,14 +89,12 @@ export class CombatSystem extends System {
   public applySummonedUnitDamage(unitId: string, damage: number, sourcePlayerId: string): void {
     const unitEntity = this.world.getEntity(parseInt(unitId));
     if (!unitEntity) {
-      console.warn(`⚠️ Cannot apply summoned unit damage: unit ${unitId} not found`);
       return;
     }
 
     const health = unitEntity.getComponent(Health);
     const summonedUnitComponent = unitEntity.getComponent(SummonedUnit);
     if (!health || !summonedUnitComponent) {
-      console.warn(`⚠️ Cannot apply summoned unit damage: unit ${unitId} missing components`);
       return;
     }
 
@@ -106,7 +104,6 @@ export class CombatSystem extends System {
     const damageDealt = health.takeDamage(damage, currentTime, unitEntity);
 
     if (damageDealt) {
-      console.log(`🤖 Applied ${damage} damage to summoned unit ${unitId} from player ${sourcePlayerId} (${health.currentHealth}/${health.maxHealth} HP)`);
 
       // Check if target died
       if (health.isDead) {
@@ -206,9 +203,21 @@ export class CombatSystem extends System {
       const damageResult: DamageResult = calculateDamage(baseDamage);
       const actualDamage = damageResult.damage;
 
+      // Get source player ID for proper kill attribution
+      let sourcePlayerId: string | undefined;
+      if (source) {
+        // Check if source is a projectile with stored player info
+        const projectileComponent = source.getComponent(Projectile);
+        if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
+          sourcePlayerId = (projectileComponent as any).sourcePlayerId;
+        } else if (source.userData?.playerId) {
+          sourcePlayerId = source.userData.playerId;
+        }
+      }
+
       // Route enemy damage through multiplayer server instead of applying locally
-      // console.log(`🌐 Routing ${actualDamage} damage to enemy ${target.id} through multiplayer server`);
-      this.onEnemyDamageCallback(target.id.toString(), actualDamage);
+      // console.log(`🌐 Routing ${actualDamage} damage to enemy ${target.id} through multiplayer server from source player ${sourcePlayerId || 'unknown'}`);
+      this.onEnemyDamageCallback(target.id.toString(), actualDamage, sourcePlayerId);
 
       // Still create local damage numbers for immediate visual feedback
       const transform = target.getComponent(Transform);
@@ -403,12 +412,25 @@ export class CombatSystem extends System {
         if (controlSystemRef && controlSystemRef.current) {
           const controlSystem = controlSystemRef.current;
           const isEntropicBolt = damageType === 'entropic';
-          
-          // Apply burning stack and get damage bonus
-          const { damageBonus } = controlSystem.applyBurningStack(target.id, currentTime, isEntropicBolt);
-          finalDamage = baseDamage + damageBonus;
-          
-          console.log(`🔥 Applied burning stack to player ${target.id}: base damage ${baseDamage} + bonus ${damageBonus} = ${finalDamage}`);
+
+          // Check if we recently applied burning stacks to prevent spam
+          const lastBurningStackTime = (target as any)._lastBurningStackTime || 0;
+          if (currentTime - lastBurningStackTime > 0.1) { // 100ms cooldown between burning stack applications
+            // Apply burning stack and get damage bonus
+            const { damageBonus } = controlSystem.applyBurningStack(target.id, currentTime, isEntropicBolt);
+            finalDamage = baseDamage + damageBonus;
+
+            // Mark when we last applied burning stacks to this target
+            (target as any)._lastBurningStackTime = currentTime;
+
+            console.log(`🔥 Applied burning stack to player ${target.id}: base damage ${baseDamage} + bonus ${damageBonus} = ${finalDamage}`);
+          } else {
+            // Use existing burning stack bonus without incrementing
+            const existingStacks = controlSystem.getBurningStacks(target.id);
+            const damageBonus = isEntropicBolt ? existingStacks : existingStacks * 20;
+            finalDamage = baseDamage + damageBonus;
+            console.log(`🔥 Using existing burning stack bonus for player ${target.id}: base damage ${baseDamage} + bonus ${damageBonus} = ${finalDamage}`);
+          }
         }
       }
       

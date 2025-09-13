@@ -14,12 +14,18 @@ interface ChargedOrbitalsProps {
   dashCharges: Array<DashChargeStatus>;
   weaponType: WeaponType;
   weaponSubclass?: WeaponSubclass;
+  isCorruptedAuraActive?: boolean;
 }
 
-const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weaponSubclass }: ChargedOrbitalsProps) => {
+const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weaponSubclass, isCorruptedAuraActive }: ChargedOrbitalsProps) => {
   const orbitalsRef = useRef<Group>(null);
   
   const getOrbitalColor = () => {
+    // Check for corrupted aura on Runeblade first
+    if (isCorruptedAuraActive && weaponType === WeaponType.RUNEBLADE) {
+      return '#FF4444';
+    }
+
     if (weaponSubclass) {
       switch (weaponSubclass) {
         // Scythe subclasses
@@ -30,7 +36,7 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
         
         // Sword subclasses
         case WeaponSubclass.DIVINITY:
-          return '#87CEEB';
+          return '#E8CD57';
         case WeaponSubclass.VENGEANCE:
           return '#4682B4';
         

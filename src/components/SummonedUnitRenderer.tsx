@@ -126,7 +126,7 @@ export default function SummonedUnitRenderer({
           metalness={0.8}
           roughness={0.2}
           transparent
-          opacity={opacity}
+          opacity={0.5}
         />
       </mesh>
 
@@ -148,23 +148,6 @@ export default function SummonedUnitRenderer({
         </mesh>
       ))}
 
-      {/* Shoulder Rings - Energy rings */}
-      {[-1, 1].map((side) => (
-        <mesh
-          key={`shoulder-ring-${side}`}
-          position={[side * unitBaseRadius * 1.2, unitHeight * 0.9, 0]}
-          rotation={[Math.PI / 2, side * Math.PI / 4, 0]}
-        >
-          <torusGeometry args={[unitBaseRadius * 0.5, unitBaseRadius * 0.03, 6, 12]} />
-          <meshStandardMaterial
-            color={damageColor.clone().multiplyScalar(1.3)}
-            metalness={0.8}
-            roughness={0.2}
-            transparent
-            opacity={opacity}
-          />
-        </mesh>
-      ))}
 
       {/* Energy Arms - Crystal cylinders */}
       {[-1, 1].map((side) => (
@@ -186,32 +169,6 @@ export default function SummonedUnitRenderer({
       ))}
 
 
-      {/* Energy Tendrils - Orbiting crystal spikes */}
-      {[...Array(8)].map((_, i) => {
-        const angle = (i / 6) * Math.PI * 2;
-        const radius = unitBaseRadius * 1.35;
-        const height = unitHeight * 1.1;
-        return (
-          <mesh
-            key={`tendril-${i}`}
-            position={[
-              Math.cos(angle) * radius,
-              height + Math.sin(angle) * radius * 0.3,
-              Math.sin(angle) * radius
-            ]}
-            rotation={[Math.PI / 2, angle + Math.PI, -Math.PI / 2]}
-          >
-            <coneGeometry args={[unitBaseRadius * 0.08, unitBaseRadius * 0.3, 4]} />
-            <meshStandardMaterial
-              color={damageColor.clone().multiplyScalar(1.2)}
-              metalness={0.9}
-              roughness={0.1}
-              transparent
-              opacity={opacity}
-            />
-          </mesh>
-        );
-      })}
 
       {/* Energy Aura - Crystal glow effect */}
       <mesh position={[0, unitHeight * 0.75, 0]}>
@@ -268,17 +225,7 @@ export default function SummonedUnitRenderer({
         </group>
       )}
 
-      {/* Crystal Target Indicator - Enhanced glow */}
-      <mesh position={[0, unitHeight * 0.35, 0]} rotation={[-1.5, 0, 1]}>
-        <torusGeometry args={[unitBaseRadius * 1.2, unitBaseRadius * 0.05, 8, 16]} />
-        <meshBasicMaterial
-          color={unitColor}
-          transparent
-          opacity={opacity * 0.4}
-          depthWrite={false}
-          blending={AdditiveBlending}
-        />
-      </mesh>
+
     </group>
   );
 }

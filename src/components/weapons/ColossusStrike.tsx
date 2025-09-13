@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useEffect } from 'react';
+import React, { useRef, useMemo, useEffect, memo } from 'react';
 import { Vector3, Color, SphereGeometry, MeshStandardMaterial, AdditiveBlending } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 
@@ -13,26 +13,57 @@ interface ColossusStrikeProps {
     health: number;
     maxHealth: number;
   }>;
+  enemyData?: Array<{
+    id: string;
+    position: Vector3;
+    health: number;
+  }>;
   playerPosition?: Vector3;
   rageSpent?: number;
   delayStart?: number; // Delay before lightning appears (in milliseconds)
+  setDamageNumbers?: (callback: (prev: Array<{
+    id: number;
+    damage: number;
+    position: Vector3;
+    isCritical: boolean;
+    isColossusStrike?: boolean;
+  }>) => Array<{
+    id: number;
+    damage: number;
+    position: Vector3;
+    isCritical: boolean;
+    isColossusStrike?: boolean;
+  }>) => void;
+  nextDamageNumberId?: { current: number };
+  combatSystem?: any; // CombatSystem for creating damage numbers
 }
 
-export default function ColossusStrike({
+const ColossusStrikeComponent = memo(function ColossusStrike({
   position,
   onComplete,
   onDamageDealt,
   onHit,
   targetPlayerData = [],
+  enemyData = [],
   playerPosition,
   rageSpent = 40,
-  delayStart = 0
+  delayStart = 0,
+  setDamageNumbers,
+  nextDamageNumberId,
+  combatSystem
 }: ColossusStrikeProps) {
-  const startTimeRef = useRef(Date.now() + delayStart);
+  console.log(`⚡ Colossus Strike: Component created with position (${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}), delayStart: ${delayStart}, targetPlayerData:`, targetPlayerData);
+
+  const startTimeRef = useRef<number | null>(null);
   const duration = 0.9; // Match animation duration
   const flickerRef = useRef(1);
   const damageDealtRef = useRef(false);
   const isVisible = useRef(false);
+
+  // Initialize start time only once
+  if (startTimeRef.current === null) {
+    startTimeRef.current = Date.now() + delayStart;
+  }
   
   // Calculate the sky position (directly above the hit position)
   const skyPosition = useMemo(() => {
@@ -143,76 +174,102 @@ export default function ColossusStrike({
     })
   }), []);
 
-  // Perform damage detection at the right time (when lightning hits)
-  // Using Smite's damage model but with smaller radius
-  useEffect(() => {
-    const damageTimer = setTimeout(() => {
-      if (damageDealtRef.current) return; // Prevent multiple damage applications
-      damageDealtRef.current = true;
+  // Perform damage detection using Smite's exact damage model
+  const performColossusStrikeDamage = () => {
+    console.log(`⚡ Colossus Strike: performColossusStrikeDamage called!`);
+    if (damageDealtRef.current) {
+      console.log(`⚡ Colossus Strike: Damage already dealt, skipping`);
+      return; // Prevent multiple damage applications
+    }
+    damageDealtRef.current = true;
 
-      // Perform area damage like Smite but with smaller radius
-      const colossusStrikeDamage = 100 + (rageSpent > 40 ? (rageSpent - 40) * 2 : 0); // Base 100 + extra rage scaling
-      const damageRadius = 2.0; // Smaller radius than Smite (3.0)
-      let damageDealtFlag = false;
+    const colossusStrikeDamage = 100; // Same flat damage as Smite
+    const damageRadius = 3.0; // Same radius as Smite (3.0 units)
+    let damageDealtFlag = false;
 
-      if (targetPlayerData && targetPlayerData.length > 0) {
-        targetPlayerData.forEach(player => {
-          if (!player.health || player.health <= 0) return;
+    // Handle both PVP players and PvE enemies with the same logic as Smite
+    const allTargets = [
+      ...(targetPlayerData || []).map(player => ({ ...player, isPlayer: true })),
+      ...(enemyData || []).map(enemy => ({ ...enemy, isPlayer: false }))
+    ];
 
-          const distance = position.distanceTo(player.position);
-          if (distance <= damageRadius) {
-            // Player is within damage radius - deal damage
-            if (onHit) {
-              // Calculate damage: 100 + (2 × missing health %) + (2 × extra rage)
-              const missingHealthPercent = Math.max(0, ((player.maxHealth - player.health) / player.maxHealth) * 100);
-              const extraRage = Math.max(0, rageSpent - 40);
-              const totalDamage = 100 + (missingHealthPercent * 2) + (extraRage * 2);
-              
-              console.log(`⚡ Colossus Strike: Hitting player ${player.id} for ${totalDamage} damage (distance: ${distance.toFixed(2)})`);
-              onHit(player.id, totalDamage);
-            }
-            damageDealtFlag = true;
-          }
-        });
+    // Use caster position for damage calculation if available, otherwise use effect position
+    const damageOrigin = playerPosition && playerPosition.x !== 0 ? playerPosition : position;
+    console.log(`⚡ Colossus Strike: Checking ${allTargets.length} targets from position (${damageOrigin.x.toFixed(2)}, ${damageOrigin.y.toFixed(2)}, ${damageOrigin.z.toFixed(2)}), damageRadius: ${damageRadius}`);
+    console.log(`⚡ Colossus Strike: Target player data:`, targetPlayerData);
+
+    allTargets.forEach(target => {
+      if (!target.health || target.health <= 0) return;
+
+      const distance = damageOrigin.distanceTo(target.position);
+      console.log(`⚡ Colossus Strike: Target ${target.id} at distance ${distance.toFixed(2)} (health: ${target.health})`);
+
+      if (distance <= damageRadius) {
+        // Target is within damage radius - deal damage (same logic as Smite)
+        console.log(`⚡ Colossus Strike: HIT! Dealing ${colossusStrikeDamage} damage to ${target.id}`);
+        if (onHit) {
+          onHit(target.id, colossusStrikeDamage);
+        }
+
+        // Create damage number using CombatSystem (same as Smite)
+        if (combatSystem && combatSystem.damageNumberManager) {
+          const damagePosition = target.position.clone();
+          damagePosition.y += 1.5; // Offset above target
+          combatSystem.damageNumberManager.addDamageNumber(
+            colossusStrikeDamage,
+            false, // isCritical
+            damagePosition,
+            'colossus_strike' // Use distinct damage type for visual styling
+          );
+        }
+
+        damageDealtFlag = true;
       }
+    });
 
-      // Notify parent if any damage was dealt
-      if (onDamageDealt) {
-        onDamageDealt(damageDealtFlag);
-      }
-    }, delayStart + 450); // Visual effect timing (mid-animation) + delay
+    // Notify parent if any damage was dealt
+    if (onDamageDealt) {
+      onDamageDealt(damageDealtFlag);
+    }
+  };
 
-    return () => clearTimeout(damageTimer);
-  }, [onDamageDealt, onHit, targetPlayerData, position, rageSpent, delayStart]);
-  
   useFrame(() => {
+    if (startTimeRef.current === null) return;
+
     const currentTime = Date.now();
     const elapsed = (currentTime - startTimeRef.current) / 1000;
-    
+
     // Check if we should start showing the effect
     if (currentTime < startTimeRef.current) {
       isVisible.current = false;
       return; // Don't render anything until delay is over
     }
-    
+
     if (!isVisible.current) {
       isVisible.current = true;
     }
-    
+
     flickerRef.current = Math.random() * 0.3 + 0.7;
-    
+
     if (elapsed >= duration) {
       onComplete();
       return;
     }
-    
+
     const progress = elapsed / duration;
+
+    // Trigger damage at the same timing as Smite (around 80% progress)
+    if (progress >= 0.8 && !damageDealtRef.current) {
+      console.log(`⚡ Colossus Strike: Triggering damage at progress ${progress.toFixed(2)}`);
+      performColossusStrikeDamage();
+    }
+
     const fadeOut = (1.0 * (1 - progress)) * flickerRef.current;
     materials.coreBolt.opacity = fadeOut;
     materials.secondaryBolt.opacity = fadeOut * 0.8;
     materials.impact.opacity = fadeOut * 0.9;
   });
-  
+
   // Don't render anything if not visible yet
   if (!isVisible.current) {
     return null;
@@ -253,7 +310,7 @@ export default function ColossusStrike({
             <meshBasicMaterial
               color="#FFD700" // Golden yellow
               transparent
-              opacity={(0.8 - (i * 0.15)) * (1 - (Date.now() - startTimeRef.current) / (duration * 1000))}
+              opacity={(0.8 - (i * 0.15)) * (1 - (startTimeRef.current ? (Date.now() - startTimeRef.current) / (duration * 1000) : 0))}
               blending={AdditiveBlending}
             />
           </mesh>
@@ -269,4 +326,44 @@ export default function ColossusStrike({
       </group>
     </group>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison function for performance optimization
+  if (!prevProps.position.equals(nextProps.position)) return false;
+  if (prevProps.rageSpent !== nextProps.rageSpent) return false;
+  if (prevProps.delayStart !== nextProps.delayStart) return false;
+
+  if ((prevProps.enemyData?.length || 0) !== (nextProps.enemyData?.length || 0)) return false;
+  if ((prevProps.targetPlayerData?.length || 0) !== (nextProps.targetPlayerData?.length || 0)) return false;
+
+  if (prevProps.enemyData && nextProps.enemyData) {
+    for (let i = 0; i < prevProps.enemyData.length; i++) {
+      const prev = prevProps.enemyData[i];
+      const next = nextProps.enemyData[i];
+      if (!prev || !next) return false;
+      if (prev.id !== next.id || prev.health !== next.health || !prev.position.equals(next.position)) {
+        return false;
+      }
+    }
+  }
+
+  if (prevProps.targetPlayerData && nextProps.targetPlayerData) {
+    for (let i = 0; i < prevProps.targetPlayerData.length; i++) {
+      const prev = prevProps.targetPlayerData[i];
+      const next = nextProps.targetPlayerData[i];
+      if (!prev || !next) return false;
+      if (prev.id !== next.id || prev.health !== next.health || prev.maxHealth !== next.maxHealth || !prev.position.equals(next.position)) {
+        return false;
+      }
+    }
+  }
+
+  if (prevProps.playerPosition && nextProps.playerPosition) {
+    if (!prevProps.playerPosition.equals(nextProps.playerPosition)) return false;
+  } else if (prevProps.playerPosition !== nextProps.playerPosition) {
+    return false;
+  }
+
+  return true;
+});
+
+export default ColossusStrikeComponent;

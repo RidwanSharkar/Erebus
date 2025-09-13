@@ -1,9 +1,10 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, memo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Color, Shape, AdditiveBlending } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import DeflectShield from './DeflectShield';
-import ColossusStrike from './ColossusStrike';
+import { calculationCache } from '@/utils/CalculationCache';
+import { enhancedObjectPool } from '@/utils/EnhancedObjectPool';
 
 interface SwordProps {
   isSwinging: boolean;
@@ -118,18 +119,19 @@ interface SwordProps {
     health: number;
     maxHealth: number;
   }>; // PVP player data for Colossus Strike targeting
+  combatSystem?: any; // CombatSystem for Colossus Strike damage numbers
 }
 
-export default function Sword({ 
-  isSwinging, 
-  isSmiting, 
-  isOathstriking, 
+const SwordComponent = memo(function Sword({
+  isSwinging,
+  isSmiting,
+  isOathstriking,
   isDivineStorming = false,
   isColossusStriking = false,
   isCharging = false,
   isDeflecting = false,
   chargeDirectionProp,
-  onSwingComplete, 
+  onSwingComplete,
   onSmiteComplete,
   onOathstrikeComplete,
   onDivineStormComplete,
@@ -149,7 +151,8 @@ export default function Sword({
   dragonGroupRef,
   playerEntityId,
   rageSpent = 40,
-  targetPlayerData = []
+  targetPlayerData = [],
+  combatSystem
 }: SwordProps) {
   const swordRef = useRef<Group>(null);
   const swingProgress = useRef(0);
@@ -169,11 +172,6 @@ export default function Sword({
   const shouldStartSpin = useRef(false);
   const basePosition = [-1.18, 0.225, 0.3] as const; // POSITIONING
   
-  // Colossus Strike state
-  const [colossusStrikeEffects, setColossusStrikeEffects] = useState<Array<{
-    id: number;
-    position: Vector3;
-  }>>([]);
   
   // Chain Lightning Sparks
   const sparkParticles = useRef<Array<{
@@ -237,7 +235,7 @@ export default function Sword({
         swordRef.current.rotation.set(...targetRotation.current);
       } else {
         // Smooth interpolation during transition with curved backswing path
-        const easeOut = 1 - Math.pow(1 - comboTransitionProgress.current, 3);
+        const easeOut = calculationCache.getEasingCalculation('easeOut', comboTransitionProgress.current, 0, 1);
         
         // Get current position and rotation
         const currentPos = swordRef.current.position;
@@ -259,7 +257,7 @@ export default function Sword({
         // Create a curved backswing path by adding a slight arc
         // This makes the sword follow a more natural motion instead of straight lines
         const arcHeight = 0.15; // Height of the arc during backswing
-        const arcProgress = Math.sin(comboTransitionProgress.current * Math.PI); // Creates a bell curve
+        const arcProgress = calculationCache.getTrigCalculation('sin', comboTransitionProgress.current * Math.PI); // Creates a bell curve
         
 
         // Interpolate position with arc
@@ -305,21 +303,21 @@ export default function Sword({
       }
       
       // Orbit parameters
-      const orbitRadius = 1.75; // Radius of orbit circle
+      const orbitRadius = 1.65; // Radius of orbit circle
       const angle = divineStormRotation.current;
-      
+
       // Positional calculations
-      const orbitalX = Math.cos(angle) * orbitRadius;
-      const orbitalZ = Math.sin(angle) * orbitRadius;
+      const orbitalX = calculationCache.getTrigCalculation('cos', angle) * orbitRadius;
+      const orbitalZ = calculationCache.getTrigCalculation('sin', angle) * orbitRadius;
       
       // Constant height above ground plane
       const fixedHeight = 0.65; 
       
-      // Set rotation to make sword lay flat and point outward from center (like spear whirlwind)
+      // Set rotation to make sword lay flat and point outward from center (parallel to ground)
       swordRef.current.rotation.set(
-        Math.PI/4,      // X rotation: lay flat on ground (60 degrees)
-        -angle + Math.PI,              // Y rotation: point outward
-        1               // Z rotation: no roll
+        Math.PI/4,      // X rotation: 90 degrees to lay flat on ground
+        -angle + Math.PI,              // Y rotation: will be applied separately
+        1.25                // Z rotation: no roll
       );
       
       // Rotate around Y axis to make it follow the circle (like spear)
@@ -348,7 +346,7 @@ export default function Sword({
         const actualPlayerPosition = playerPosition || new Vector3(0, 0, 0);
         const distance = actualPlayerPosition.distanceTo(enemy.position);
 
-        if (distance <= 5) { // Hit range from player center - 5 distance radius as specified
+        if (distance <= 4.5) { // Hit range from player center - 5 distance radius as specified
           lastDivineStormHitTime.current[enemy.id] = now;
 
           // Deal 40 holy damage per hit (based on rotation speed)
@@ -376,7 +374,7 @@ export default function Sword({
       const MAX_ROTATION = TARGET_ROTATIONS * Math.PI * 2; // 2π radians for one full rotation
       
       // Use fast rotation speed for dramatic effect
-      const SPIN_ROTATION_SPEED = 27.5; // Slightly faster than Divine Storm
+      const SPIN_ROTATION_SPEED = 25; // Slightly faster than Divine Storm
       
       // Update rotation based on constant speed
       chargeSpinRotation.current += delta * SPIN_ROTATION_SPEED;
@@ -403,10 +401,10 @@ export default function Sword({
       
       // Orbit parameters (similar to Divine Storm)
       const orbitRadius = 1.5; // Same radius as Divine Storm
-      
+
       // Calculate orbital position
-      const orbitalX = Math.cos(angle) * orbitRadius;
-      const orbitalZ = Math.sin(angle) * orbitRadius;
+      const orbitalX = calculationCache.getTrigCalculation('cos', angle) * orbitRadius;
+      const orbitalZ = calculationCache.getTrigCalculation('sin', angle) * orbitRadius;
       
       // Constant height above ground plane
       const fixedHeight = 0.65; // Same height as Divine Storm
@@ -465,7 +463,7 @@ export default function Sword({
         const windupProgress = elapsed / CHARGE_WINDUP_DURATION;
         const easeInOut = windupProgress < 0.5 
           ? 2 * windupProgress * windupProgress 
-          : 1 - Math.pow(-2 * windupProgress + 2, 3) / 2;
+          : calculationCache.getEasingCalculation('easeInOut', windupProgress, 0, 1);
         
         // Smoothly rotate sword to forward position
         const targetRotationX = Math.PI/2;
@@ -485,7 +483,7 @@ export default function Sword({
       const progress = Math.min(dashElapsed / CHARGE_DURATION, 1);
 
       // Calculate movement using easing function
-      const easeOutQuad = 1 - Math.pow(1 - progress, 2);
+      const easeOutQuad = calculationCache.getEasingCalculation('easeOutQuad', progress, 0, 1);
       
       // Safety checks
       if (!chargeStartPosition.current || !chargeDirection.current || !playerPosition) {
@@ -680,7 +678,6 @@ export default function Sword({
         colossusStrikeProgress.current = 0;
         swordRef.current.rotation.set(0, 0, 0);
         swordRef.current.position.set(...basePosition);
-        handleColossusStrikeComplete(); // Handle damage and effects
         onColossusStrikeComplete?.();
       }
       return;
@@ -1017,34 +1014,6 @@ export default function Sword({
     }
   };
 
-  // Handle Colossus Strike completion and effects
-  const handleColossusStrikeComplete = () => {
-    // In PVP mode, the ColossusStrike effects are handled by the PVP system
-    // through the ControlSystem callback, not by the Sword component
-    // This prevents double lightning bolts
-    
-    // Check if we're in PVP mode by looking for targetPlayerData
-    const isInPVPMode = targetPlayerData && targetPlayerData.length > 0;
-    
-    if (isInPVPMode) {
-      // Don't create local effects in PVP mode - they're handled by PVPGameScene
-      console.log('⚡ Colossus Strike: Skipping local effect creation in PVP mode');
-      return;
-    }
-    
-    // Only create local effects in non-PVP mode (regular multiplayer)
-    if (!playerPosition) return;
-
-    // Create the yellow lightning effect at the offset position (like Smite)
-    const direction = new Vector3();
-    // Assuming camera direction for now - this will be properly handled by the ColossusStrike component
-    const colossusStrikePosition = playerPosition.clone().add(new Vector3(0, 0, -2.5)); // Forward offset
-
-    setColossusStrikeEffects(prev => [...prev, {
-      id: Date.now(),
-      position: colossusStrikePosition
-    }]);
-  };
 
   // Create custom sword blade shape
   const createBladeShape = () => {
@@ -1350,27 +1319,31 @@ export default function Sword({
       playerRotation={playerRotation}
       dragonGroupRef={dragonGroupRef}
     />
-    
-    {/* Colossus Strike Lightning Effects - Only render in non-PVP mode */}
-    {!targetPlayerData && colossusStrikeEffects.map((effect) => (
-      <ColossusStrike
-        key={effect.id}
-        position={effect.position}
-        onComplete={() => {
-          setColossusStrikeEffects(prev => prev.filter(e => e.id !== effect.id));
-        }}
-        onDamageDealt={(damageDealt: boolean) => {
-          if (damageDealt) {
-            console.log('⚡ Colossus Strike: Damage dealt by visual component');
-          }
-        }}
-        onHit={onHit} // Pass the onHit callback for damage dealing
-        targetPlayerData={targetPlayerData}
-        playerPosition={playerPosition}
-        rageSpent={rageSpent}
-        delayStart={500} // 500ms delay to allow sword animation to complete
-      />
-    ))}
+
   </>
   );
-} 
+}, (prevProps, nextProps) => {
+  // Custom comparison function for performance optimization
+  return (
+    prevProps.isSwinging === nextProps.isSwinging &&
+    prevProps.isSmiting === nextProps.isSmiting &&
+    prevProps.isOathstriking === nextProps.isOathstriking &&
+    prevProps.isDivineStorming === nextProps.isDivineStorming &&
+    prevProps.isColossusStriking === nextProps.isColossusStriking &&
+    prevProps.isCharging === nextProps.isCharging &&
+    prevProps.isDeflecting === nextProps.isDeflecting &&
+    prevProps.comboStep === nextProps.comboStep &&
+    prevProps.currentSubclass === nextProps.currentSubclass &&
+    prevProps.hasChainLightning === nextProps.hasChainLightning &&
+    prevProps.rageSpent === nextProps.rageSpent &&
+    (prevProps.enemyData?.length ?? 0) === (nextProps.enemyData?.length ?? 0) &&
+    (prevProps.targetPlayerData?.length ?? 0) === (nextProps.targetPlayerData?.length ?? 0) &&
+    (!prevProps.chargeDirectionProp || !nextProps.chargeDirectionProp ||
+     prevProps.chargeDirectionProp.equals(nextProps.chargeDirectionProp)) &&
+    (!prevProps.playerPosition || !nextProps.playerPosition ||
+     prevProps.playerPosition.equals(nextProps.playerPosition))
+  );
+});
+
+export default SwordComponent;
+34

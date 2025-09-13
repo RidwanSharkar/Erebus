@@ -230,27 +230,29 @@ export function useViperSting({
                 0,
                 enemy.position.z
               );
-              
+
               if (projectilePos2D.distanceTo(enemyPos2D) < 1.3) {
                 // Mark enemy as hit during forward phase
                 projectile.hitEnemies.add(enemy.id);
-                
-                // Apply damage and effects
+
+                // Apply damage through the onHit callback (which routes to CombatSystem)
                 onHit(enemy.id, DAMAGE);
-                
+
                 // Apply DoT effect
                 if (applyDoT) {
                   applyDoT(enemy.id);
                 }
-                
-                // Add damage number
-                setDamageNumbers(prev => [...prev, {
-                  id: nextDamageNumberId.current++,
-                  damage: DAMAGE,
-                  position: enemy.position.clone(),
-                  isCritical: false,
-                  isViperSting: true
-                }]);
+
+                // Create damage number for visual feedback (like Sword weapon does)
+                if (setDamageNumbers && nextDamageNumberId) {
+                  setDamageNumbers(prev => [...prev, {
+                    id: nextDamageNumberId.current++,
+                    damage: DAMAGE,
+                    position: enemy.position.clone(),
+                    isCritical: false,
+                    isViperSting: true // Flag for Viper Sting specific styling
+                  }]);
+                }
 
                 // Create soul steal effect at enemy position
                 createSoulStealEffect(enemy.position);
@@ -300,27 +302,29 @@ export function useViperSting({
                 0,
                 enemy.position.z
               );
-              
+
               if (projectilePos2D.distanceTo(enemyPos2D) < 1.3) {
                 // Mark enemy as hit during return phase
                 projectile.returnHitEnemies.add(enemy.id);
-                
-                // Apply damage and effects for return shot
+
+                // Apply damage through the onHit callback (which routes to CombatSystem)
                 onHit(enemy.id, DAMAGE);
-                
+
                 // Apply DoT effect for return shot as well
                 if (applyDoT) {
                   applyDoT(enemy.id);
                 }
-                
-                // Add damage number
-                setDamageNumbers(prev => [...prev, {
-                  id: nextDamageNumberId.current++,
-                  damage: DAMAGE,
-                  position: enemy.position.clone(),
-                  isCritical: false,
-                  isViperSting: true
-                }]);
+
+                // Create damage number for visual feedback (like Sword weapon does)
+                if (setDamageNumbers && nextDamageNumberId) {
+                  setDamageNumbers(prev => [...prev, {
+                    id: nextDamageNumberId.current++,
+                    damage: DAMAGE,
+                    position: enemy.position.clone(),
+                    isCritical: false,
+                    isViperSting: true // Flag for Viper Sting specific styling
+                  }]);
+                }
 
                 // Create soul steal effect at enemy position
                 createSoulStealEffect(enemy.position);

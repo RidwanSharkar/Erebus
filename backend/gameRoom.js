@@ -23,7 +23,8 @@ class GameRoom {
     this.lastGlobalSpawnTime = 0; // Global spawn time for all towers (synchronized)
     this.spawnInterval = 45; // 45 seconds between spawns
     this.currentWaveId = null;
-    this.waveUnits = new Set(); // Unit IDs in current wave
+    this.waveUnits = new Set(); // Unit IDs in current wave (legacy for multiplayer)
+    this.playerWaves = new Map(); // PVP mode: playerId -> { waveId, units: Set<unitId>, startTime }
     this.waveStartTime = 0;
     this.lastWaveCompletionTime = 0;
     this.lastWaveDebugTime = 0;
@@ -102,6 +103,7 @@ class GameRoom {
       subclass: subclass,
       health: maxHealth, // Start with full health
       maxHealth: maxHealth,
+      level: 1, // Start at level 1
       movementDirection: { x: 0, y: 0, z: 0 },
       joinedAt: Date.now()
     });
@@ -336,7 +338,7 @@ class GameRoom {
     for (const [unitId, unit] of this.summonedUnits) {
       // Check if unit is expired
       if (this.isUnitExpired(unit, currentTime)) {
-        this.waveUnits.delete(unitId);
+        this.removeUnitFromWave(unitId, unit.ownerId);
         unitsToDestroy.push(unitId);
         continue;
       }
@@ -345,7 +347,7 @@ class GameRoom {
       if (unit.health <= 0 && !unit.isDead) {
         unit.isDead = true;
         unit.deathTime = currentTime;
-        this.waveUnits.delete(unitId);
+        this.removeUnitFromWave(unitId, unit.ownerId);
         unitsToDestroy.push(unitId);
         continue;
       }
@@ -353,6 +355,7 @@ class GameRoom {
       // Check if unit is already dead (from damage) - add to cleanup
       if (unit.isDead || !unit.isActive) {
         console.log(`🧹 Adding dead/inactive unit ${unitId} to cleanup queue (isDead: ${unit.isDead}, isActive: ${unit.isActive})`);
+        this.removeUnitFromWave(unitId, unit.ownerId);
         unitsToDestroy.push(unitId);
         continue;
       }
@@ -570,38 +573,118 @@ class GameRoom {
     }
   }
 
+  // Helper method to remove unit from appropriate wave tracking
+  removeUnitFromWave(unitId, unitOwnerId) {
+    if (this.gameMode === 'pvp') {
+      // PVP mode: Remove from player's wave
+      const playerWave = this.playerWaves.get(unitOwnerId);
+      if (playerWave) {
+        const hadUnit = playerWave.units.has(unitId);
+        playerWave.units.delete(unitId);
+        console.log(`🗑️ Removed unit ${unitId} from PVP wave for player ${unitOwnerId}. Had unit: ${hadUnit}, Remaining: ${playerWave.units.size}`);
+        
+        // DEBUG: Check if this triggers wave completion
+        if (playerWave.units.size === 0) {
+          console.log(`🎯 DEBUG: Player ${unitOwnerId}'s wave is now empty! This should trigger wave completion check.`);
+        }
+      } else {
+        console.warn(`⚠️ Tried to remove unit ${unitId} from non-existent player wave for ${unitOwnerId}`);
+      }
+    } else {
+      // Legacy multiplayer mode: Remove from global wave
+      this.waveUnits.delete(unitId);
+    }
+  }
+
   // Check wave completion
   checkWaveCompletion(currentTime) {
-    // Debug logging every 10 seconds to track wave state
-    if (Math.floor(currentTime) % 10 === 0 && Math.floor(currentTime) !== this.lastWaveDebugTime) {
-      this.lastWaveDebugTime = Math.floor(currentTime);
-      console.log(`🌊 Wave Debug: currentWaveId=${this.currentWaveId}, waveUnits.size=${this.waveUnits.size}, lastWaveCompletionTime=${this.lastWaveCompletionTime}, timeSinceLastCompletion=${currentTime - this.lastWaveCompletionTime}`);
-      
-      if (this.waveUnits.size > 0) {
-        console.log(`🤖 Active wave units:`, Array.from(this.waveUnits));
-      }
-    }
-    
-    // Check if current wave is complete (all units dead or expired)
-    if (this.currentWaveId && this.waveUnits.size === 0) {
-      // Ensure we don't spam the callback (minimum 30 seconds between wave completions)
-      if (currentTime - this.lastWaveCompletionTime >= 30) {
-        console.log(`🎯 Wave ${this.currentWaveId} completed! Awarding experience to all players.`);
-        
-        // Broadcast wave completion
-        if (this.io) {
-          this.io.to(this.roomId).emit('wave-completed', {
-            waveId: this.currentWaveId,
-            timestamp: Date.now()
-          });
+    if (this.gameMode === 'pvp') {
+      // PVP mode: Check each player's wave separately
+      // DEBUG: Log current wave state every few seconds
+      if (Math.floor(currentTime) % 5 === 0 && Math.floor(currentTime) !== this.lastWaveDebugTime) {
+        this.lastWaveDebugTime = Math.floor(currentTime);
+        console.log(`🌊 PVP Wave Debug: Total player waves: ${this.playerWaves.size}`);
+        for (const [playerId, playerWave] of this.playerWaves) {
+          console.log(`   Player ${playerId}: ${playerWave.units.size} units remaining in wave ${playerWave.waveId}`);
         }
+      }
+      
+      for (const [playerId, playerWave] of this.playerWaves) {
+        if (playerWave.units.size === 0) {
+          // This player's wave is complete - award experience to the OPPOSING player
+          const opposingPlayerId = this.getOpposingPlayerId(playerId);
+          
+          if (opposingPlayerId) {
+            console.log(`🎯 PVP Wave completed! Player ${playerId}'s units were all killed. Awarding 10 EXP to opposing player ${opposingPlayerId}.`);
+            
+            // DEBUG: Log all players in the room
+            console.log(`🔍 DEBUG: All players in room:`, Array.from(this.players.keys()));
+            console.log(`🔍 DEBUG: Defeated player: ${playerId}, Winner: ${opposingPlayerId}`);
+            
+            // Broadcast wave completion with specific winner
+            if (this.io) {
+              const waveCompletionData = {
+                waveId: playerWave.waveId,
+                defeatedPlayerId: playerId, // The player whose units were killed
+                winnerPlayerId: opposingPlayerId, // The player who should get experience
+                timestamp: Date.now()
+              };
+              
+              console.log(`📡 Broadcasting wave-completed event:`, waveCompletionData);
+              this.io.to(this.roomId).emit('wave-completed', waveCompletionData);
+            }
+          } else {
+            console.log(`🎯 PVP Wave completed for player ${playerId}, but no opposing player found.`);
+            console.log(`🔍 DEBUG: Current players in room:`, Array.from(this.players.keys()));
+          }
+          
+          // Remove the completed wave
+          this.playerWaves.delete(playerId);
+        }
+      }
+    } else {
+      // Legacy multiplayer mode: Use global wave tracking
+      // Debug logging every 10 seconds to track wave state
+      if (Math.floor(currentTime) % 10 === 0 && Math.floor(currentTime) !== this.lastWaveDebugTime) {
+        this.lastWaveDebugTime = Math.floor(currentTime);
+        console.log(`🌊 Wave Debug: currentWaveId=${this.currentWaveId}, waveUnits.size=${this.waveUnits.size}, lastWaveCompletionTime=${this.lastWaveCompletionTime}, timeSinceLastCompletion=${currentTime - this.lastWaveCompletionTime}`);
         
-        this.lastWaveCompletionTime = currentTime;
-        this.currentWaveId = null;
-      } else {
-        console.log(`🕐 Wave ${this.currentWaveId} complete but on cooldown. Time since last: ${currentTime - this.lastWaveCompletionTime}s (need 30s)`);
+        if (this.waveUnits.size > 0) {
+          console.log(`🤖 Active wave units:`, Array.from(this.waveUnits));
+        }
+      }
+      
+      // Check if current wave is complete (all units dead or expired)
+      if (this.currentWaveId && this.waveUnits.size === 0) {
+        // Ensure we don't spam the callback (minimum 30 seconds between wave completions)
+        if (currentTime - this.lastWaveCompletionTime >= 30) {
+          console.log(`🎯 Wave ${this.currentWaveId} completed! Awarding experience to all players.`);
+          
+          // Broadcast wave completion
+          if (this.io) {
+            this.io.to(this.roomId).emit('wave-completed', {
+              waveId: this.currentWaveId,
+              timestamp: Date.now()
+            });
+          }
+          
+          this.lastWaveCompletionTime = currentTime;
+          this.currentWaveId = null;
+        } else {
+          console.log(`🕐 Wave ${this.currentWaveId} complete but on cooldown. Time since last: ${currentTime - this.lastWaveCompletionTime}s (need 30s)`);
+        }
       }
     }
+  }
+
+  // Helper method to get the opposing player ID in PVP
+  getOpposingPlayerId(playerId) {
+    for (const [otherPlayerId] of this.players) {
+      if (otherPlayerId !== playerId) {
+        return otherPlayerId;
+      }
+    }
+    return null;
   }
   
   // Handle unit spawning
@@ -648,40 +731,87 @@ class GameRoom {
   spawnUnitsForTower(tower, currentTime) {
     console.log(`🏰 spawnUnitsForTower called for tower ${tower.id} (owner: ${tower.ownerId})`);
     
-    // Start a new wave if this is the first tower spawning in this cycle
-    if (!this.currentWaveId) {
-      this.currentWaveId = `wave_${currentTime}`;
-      this.waveStartTime = currentTime;
-      this.waveUnits.clear();
-      console.log(`🌊 Starting new wave: ${this.currentWaveId} at time ${currentTime}`);
-    }
-    
-    // Find the opposing tower position for targeting
-    let opposingTowerPosition = this.findOpposingTowerPosition(tower.ownerId);
-    console.log(`🎯 Opposing tower position for ${tower.ownerId}:`, opposingTowerPosition);
-    
-    // If no opposing tower found, use a default position in front of current tower
-    if (!opposingTowerPosition) {
-      opposingTowerPosition = {
-        x: tower.position.x,
-        y: tower.position.y,
-        z: tower.position.z + 20
-      };
-      console.log(`🎯 Using default target position:`, opposingTowerPosition);
-    }
-    
-    // Spawn 2 units and track them in the wave
-    console.log(`🤖 Spawning 2 units for tower ${tower.id}`);
-    for (let i = 0; i < 3; i++) {
-      const unitId = this.spawnSummonedUnit(tower.ownerId, tower.position, opposingTowerPosition, i, currentTime);
-      if (unitId) {
-        this.waveUnits.add(unitId);
-        console.log(`✅ Unit ${unitId} added to wave ${this.currentWaveId}`);
-      } else {
-        console.log(`❌ Failed to spawn unit ${i} for tower ${tower.id}`);
+    if (this.gameMode === 'pvp') {
+      // PVP mode: Track waves per player
+      const playerId = tower.ownerId;
+      const waveId = `wave_${playerId}_${currentTime}`;
+      
+      // Initialize player wave if not exists
+      if (!this.playerWaves.has(playerId)) {
+        this.playerWaves.set(playerId, {
+          waveId: waveId,
+          units: new Set(),
+          startTime: currentTime
+        });
+        console.log(`🌊 Starting new PVP wave for player ${playerId}: ${waveId}`);
       }
+      
+      const playerWave = this.playerWaves.get(playerId);
+      
+      // Find the opposing tower position for targeting
+      let opposingTowerPosition = this.findOpposingTowerPosition(tower.ownerId);
+      console.log(`🎯 Opposing tower position for ${tower.ownerId}:`, opposingTowerPosition);
+      
+      // If no opposing tower found, use a default position in front of current tower
+      if (!opposingTowerPosition) {
+        opposingTowerPosition = {
+          x: tower.position.x,
+          y: tower.position.y,
+          z: tower.position.z + 20
+        };
+        console.log(`🎯 Using default target position:`, opposingTowerPosition);
+      }
+      
+      // Spawn 3 units and track them in the player's wave
+      console.log(`🤖 Spawning 3 units for tower ${tower.id} (PVP mode)`);
+      for (let i = 0; i < 3; i++) {
+        const unitId = this.spawnSummonedUnit(tower.ownerId, tower.position, opposingTowerPosition, i, currentTime);
+        if (unitId) {
+          playerWave.units.add(unitId);
+          console.log(`✅ Unit ${unitId} added to PVP wave ${waveId} for player ${playerId}`);
+        } else {
+          console.log(`❌ Failed to spawn unit ${i} for tower ${tower.id}`);
+        }
+      }
+      console.log(`🌊 PVP wave ${waveId} now has ${playerWave.units.size} units`);
+      
+    } else {
+      // Legacy multiplayer mode: Use global wave tracking
+      // Start a new wave if this is the first tower spawning in this cycle
+      if (!this.currentWaveId) {
+        this.currentWaveId = `wave_${currentTime}`;
+        this.waveStartTime = currentTime;
+        this.waveUnits.clear();
+        console.log(`🌊 Starting new wave: ${this.currentWaveId} at time ${currentTime}`);
+      }
+      
+      // Find the opposing tower position for targeting
+      let opposingTowerPosition = this.findOpposingTowerPosition(tower.ownerId);
+      console.log(`🎯 Opposing tower position for ${tower.ownerId}:`, opposingTowerPosition);
+      
+      // If no opposing tower found, use a default position in front of current tower
+      if (!opposingTowerPosition) {
+        opposingTowerPosition = {
+          x: tower.position.x,
+          y: tower.position.y,
+          z: tower.position.z + 20
+        };
+        console.log(`🎯 Using default target position:`, opposingTowerPosition);
+      }
+      
+      // Spawn 3 units and track them in the wave
+      console.log(`🤖 Spawning 3 units for tower ${tower.id}`);
+      for (let i = 0; i < 3; i++) {
+        const unitId = this.spawnSummonedUnit(tower.ownerId, tower.position, opposingTowerPosition, i, currentTime);
+        if (unitId) {
+          this.waveUnits.add(unitId);
+          console.log(`✅ Unit ${unitId} added to wave ${this.currentWaveId}`);
+        } else {
+          console.log(`❌ Failed to spawn unit ${i} for tower ${tower.id}`);
+        }
+      }
+      console.log(`🌊 Wave ${this.currentWaveId} now has ${this.waveUnits.size} units`);
     }
-    console.log(`🌊 Wave ${this.currentWaveId} now has ${this.waveUnits.size} units`);
   }
   
   // Find opposing tower position
@@ -761,8 +891,17 @@ class GameRoom {
       unit.isDead = true;
       unit.isActive = false;
       unit.deathTime = Date.now() / 1000;
-      this.waveUnits.delete(unitId);
-      console.log(`💀 Unit ${unitId} killed! Removed from wave. Wave units remaining: ${this.waveUnits.size}`);
+      
+      // FIXED: Use proper wave removal method that handles both PVP and multiplayer modes
+      this.removeUnitFromWave(unitId, unit.ownerId);
+      
+      if (this.gameMode === 'pvp') {
+        const playerWave = this.playerWaves.get(unit.ownerId);
+        const remainingUnits = playerWave ? playerWave.units.size : 0;
+        console.log(`💀 PVP Unit ${unitId} (owned by ${unit.ownerId}) killed by ${sourceOwnerId}! Player wave units remaining: ${remainingUnits}`);
+      } else {
+        console.log(`💀 Unit ${unitId} killed! Removed from wave. Wave units remaining: ${this.waveUnits.size}`);
+      }
     }
     
     console.log(`🤖 Summoned unit ${unitId} took ${damage} damage from ${sourceOwnerId}. Health: ${unit.health}/${unit.maxHealth}${wasKilled ? ' (KILLED)' : ''}`);

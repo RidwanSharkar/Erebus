@@ -1,7 +1,7 @@
 // Floating damage numbers component to display damage dealt to enemies
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, memo } from 'react';
 import { Vector3, Camera } from '@/utils/three-exports';
 
 export interface DamageNumberData {
@@ -24,13 +24,13 @@ interface DamageNumberPropsExtended extends DamageNumberProps {
   stackIndex: number; // Index in the stack (0 = newest, 1 = second newest, etc.)
 }
 
-function DamageNumber({ damageData, onComplete, camera, size, stackIndex }: DamageNumberPropsExtended) {
+const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera, size, stackIndex }: DamageNumberPropsExtended) {
   const [opacity, setOpacity] = useState(1);
   const [yOffset, setYOffset] = useState(0);
   const [scale, setScale] = useState(1);
 
   useEffect(() => {
-    const duration = 3000; // 3 seconds for better visibility
+    const duration = 5000; // 5 seconds for slower floating
     const startTime = Date.now();
 
     const animate = () => {
@@ -48,7 +48,7 @@ function DamageNumber({ damageData, onComplete, camera, size, stackIndex }: Dama
       // Scale animation - start big, settle to smaller size based on stack position
       const initialScale = stackIndex === 0 ? 1.2 : 0.9 - (stackIndex * 0.1);
       const finalScale = 0.8 - (stackIndex * 0.1);
-      const scaleProgress = Math.min(progress * 2, 1); // Scale settles faster
+      const scaleProgress = Math.min(progress * 3, 1); // Scale settles faster
       setScale(initialScale + (finalScale - initialScale) * scaleProgress);
       
       // Fade out older numbers more aggressively
@@ -116,9 +116,11 @@ function DamageNumber({ damageData, onComplete, camera, size, stackIndex }: Dama
           damageData.isCritical
             ? 'text-yellow-300 text-xl animate-pulse'
             : damageData.damageType === 'crossentropy'
-            ? 'text-green-400'
+            ? 'text-orange-400'
             : damageData.damageType === 'healing'
             ? 'text-green-300'
+            : damageData.damageType === 'colossus_strike'
+            ? 'text-yellow-400 text-lg'
             : 'text-red-400'
         }`}
       >
@@ -127,7 +129,21 @@ function DamageNumber({ damageData, onComplete, camera, size, stackIndex }: Dama
       </span>
     </div>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison function for performance optimization
+  return (
+    prevProps.damageData.id === nextProps.damageData.id &&
+    prevProps.damageData.damage === nextProps.damageData.damage &&
+    prevProps.damageData.isCritical === nextProps.damageData.isCritical &&
+    prevProps.damageData.damageType === nextProps.damageData.damageType &&
+    prevProps.damageData.timestamp === nextProps.damageData.timestamp &&
+    prevProps.damageData.position.equals(nextProps.damageData.position) &&
+    prevProps.stackIndex === nextProps.stackIndex &&
+    prevProps.camera === nextProps.camera &&
+    prevProps.size.width === nextProps.size.width &&
+    prevProps.size.height === nextProps.size.height
+  );
+});
 
 interface DamageNumbersProps {
   damageNumbers: DamageNumberData[];
@@ -136,7 +152,7 @@ interface DamageNumbersProps {
   size: { width: number; height: number };
 }
 
-export default function DamageNumbers({ damageNumbers, onDamageNumberComplete, camera, size }: DamageNumbersProps) {
+const DamageNumbersComponent = memo(function DamageNumbers({ damageNumbers, onDamageNumberComplete, camera, size }: DamageNumbersProps) {
   // Group damage numbers by position to create stacks
   const positionGroups = new Map<string, DamageNumberData[]>();
   
@@ -149,10 +165,10 @@ export default function DamageNumbers({ damageNumbers, onDamageNumberComplete, c
     positionGroups.get(posKey)!.push(damageData);
   });
 
-  // Sort each group by timestamp (newest first) and limit to 3 most recent
+  // Sort each group by timestamp (newest first) and limit to 1 most recent
   positionGroups.forEach(group => {
     group.sort((a, b) => b.timestamp - a.timestamp);
-    group.splice(3); // Keep only the 3 most recent
+    group.splice(1); // Keep only the 1 most recent
   });
 
   return (
@@ -162,7 +178,7 @@ export default function DamageNumbers({ damageNumbers, onDamageNumberComplete, c
         const posKey = `${Math.round(damageData.position.x * 2)}_${Math.round(damageData.position.z * 2)}`;
         const group = positionGroups.get(posKey)!;
         const stackIndex = group.findIndex(d => d.id === damageData.id);
-        
+
         return (
           <DamageNumber
             key={damageData.id}
@@ -176,4 +192,21 @@ export default function DamageNumbers({ damageNumbers, onDamageNumberComplete, c
       })}
     </div>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison function for main component
+  return (
+    prevProps.damageNumbers.length === nextProps.damageNumbers.length &&
+    prevProps.damageNumbers.every((prev, index) => {
+      const next = nextProps.damageNumbers[index];
+      return prev?.id === next?.id &&
+             prev?.damage === next?.damage &&
+             prev?.isCritical === next?.isCritical &&
+             prev?.timestamp === next?.timestamp;
+    }) &&
+    prevProps.camera === nextProps.camera &&
+    prevProps.size.width === nextProps.size.width &&
+    prevProps.size.height === nextProps.size.height
+  );
+});
+
+export default DamageNumbersComponent;

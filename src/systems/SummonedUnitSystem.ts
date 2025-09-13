@@ -302,6 +302,10 @@ export class SummonedUnitSystem extends System {
 
     // Perform attack
     if (this.combatSystem) {
+      // Set the source player ID on the attacking entity for proper attribution
+      entity.userData = entity.userData || {};
+      entity.userData.playerId = unit.ownerId;
+      
       // Use combat system to handle damage
       this.combatSystem.queueDamage(targetEntity, unit.attackDamage, entity, 'melee');
     } else {
@@ -444,6 +448,11 @@ export class SummonedUnitSystem extends System {
     collider.layer = CollisionLayer.ENEMY; // Use enemy layer for PVP
     collider.setOffset(0, 0.6, 0); // Center on unit
     unitEntity.addComponent(collider);
+
+    // CRITICAL: Set source player ID on summoned unit entity for proper damage attribution
+    // This ensures summoned unit attacks are properly attributed to their owner for PVP experience
+    unitEntity.userData = unitEntity.userData || {};
+    unitEntity.userData.playerId = ownerId;
 
     // Notify systems that the entity is ready
     this.world.notifyEntityAdded(unitEntity);

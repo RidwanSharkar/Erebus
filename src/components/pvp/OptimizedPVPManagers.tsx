@@ -87,9 +87,12 @@ export function OptimizedPVPCobraShotManager({
   const processedHits = useRef<Set<string>>(new Set());
   
   useFrame(() => {
+    // Don't do collision detection if we don't know who the local player is
+    if (!localSocketId) return;
+
     // Reset temporary objects for this frame
     pvpObjectPool.resetFrameTemporaries();
-    
+
     // Get visual Cobra Shot projectiles from the CobraShotManager
     const { getGlobalCobraShotProjectiles } = require('@/components/projectiles/CobraShotManager');
     const cobraShotProjectiles = getGlobalCobraShotProjectiles();
@@ -164,8 +167,11 @@ export function OptimizedPVPBarrageManager({
   const hitTracker = useRef<Set<string>>(new Set());
   
   useFrame(() => {
+    // Don't do collision detection if we don't know who the local player is
+    if (!localSocketId) return;
+
     if (!world) return;
-    
+
     // Reset temporary objects for this frame
     pvpObjectPool.resetFrameTemporaries();
     
@@ -260,8 +266,11 @@ export function OptimizedPVPFrostNovaManager({
   const lastUpdateTime = useRef(0);
   
   useFrame(() => {
+    // Don't do collision detection if we don't know who the local player is
+    if (!localSocketId) return;
+
     if (!world) return;
-    
+
     // Throttle updates to avoid excessive checking
     const now = Date.now();
     if (now - lastUpdateTime.current < 50) return; // Update every 50ms
@@ -397,6 +406,9 @@ export function OptimizedPVPViperStingManager({
   const processedHits = useRef<Set<string>>(new Set());
 
   useFrame(() => {
+    // Don't do collision detection if we don't know who the local player is
+    if (!localSocketId) return;
+
     // Reset temporary objects for this frame
     pvpObjectPool.resetFrameTemporaries();
 
@@ -436,6 +448,18 @@ export function OptimizedPVPViperStingManager({
             // Apply damage - Viper Sting damage is 61
             onPlayerHit(player.id, 61);
 
+            // Create damage number for visual feedback
+            const damageNumberManager = (window as any).damageNumberManager;
+            if (damageNumberManager && damageNumberManager.addDamageNumber) {
+              const hitPosition = new Vector3(player.position.x, player.position.y + 1.5, player.position.z);
+              damageNumberManager.addDamageNumber(
+                61, // Viper Sting damage
+                false, // Not critical
+                hitPosition,
+                'viper_sting' // Damage type for styling
+              );
+            }
+
             // Create soul steal effect at the hit player's position
             if (onSoulStealCreated) {
               const hitPosition = new Vector3(player.position.x, player.position.y, player.position.z);
@@ -472,8 +496,11 @@ export function OptimizedPVPCrossentropyManager({
   const lastUpdateTime = useRef(0);
   
   useFrame(() => {
+    // Don't do collision detection if we don't know who the local player is
+    if (!localSocketId) return;
+
     if (!world) return;
-    
+
     // Throttle updates to avoid excessive checking
     const now = Date.now();
     if (now - lastUpdateTime.current < 16) return; // ~60fps
