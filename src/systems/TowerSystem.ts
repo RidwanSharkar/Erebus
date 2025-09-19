@@ -197,20 +197,24 @@ export class TowerSystem extends System {
 
         if (targetPlayerId) {
           const shouldTarget = tower.ownerId !== targetPlayerId;
-          
+
           // Check if the target player is invisible (stealthed)
           if (shouldTarget && this.playerStealthStates.get(targetPlayerId)) {
             return false; // Don't target invisible remote players
           }
-          
+
           return shouldTarget;
         }
 
-        return true;
+        // If we can't identify the player for this ENEMY entity, don't target it
+        // This prevents towers from targeting unidentified entities that might be on their own team
+        return false;
       }
     }
-    
-    return true;
+
+    // If we reach here, we couldn't properly identify the target in PVP mode
+    // Be conservative and don't target unidentified entities to prevent friendly fire
+    return false;
   }
   
   private attackTarget(towerEntity: Entity, towerTransform: Transform, tower: Tower, currentTime: number): void {

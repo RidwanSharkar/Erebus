@@ -28,7 +28,7 @@ export default function WeaponSelection({ onWeaponsSelected, gameMode }: WeaponS
     {
       type: WeaponType.SWORD,
       name: 'Greatsword',
-      icon: '⚜️',
+      icon: '💎',
       description: 'Balanced weapon with charge attacks. Focuses on divine and vengeful power.',
       defaultSubclass: WeaponSubclass.DIVINITY
     },

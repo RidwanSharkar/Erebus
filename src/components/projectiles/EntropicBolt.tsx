@@ -9,14 +9,16 @@ interface EntropicBoltProps {
   direction: Vector3;
   onImpact?: (position?: Vector3) => void;
   checkCollisions?: (boltId: number, position: Vector3) => boolean;
+  isCryoflame?: boolean; // Whether this bolt is enhanced with Cryoflame
 }
 
-export default function EntropicBolt({ 
+export default function EntropicBolt({
   id,
-  position, 
-  direction, 
+  position,
+  direction,
   onImpact,
-  checkCollisions
+  checkCollisions,
+  isCryoflame = false
 }: EntropicBoltProps) {
   const boltRef = useRef<Group>(null);
   const boltMeshRef = useRef<Mesh>(null);
@@ -118,10 +120,11 @@ export default function EntropicBolt({
         <>
           {/* Entropic trail effect */}
           <EntropicBoltTrail
-            color={new Color("#FF4500")}
+            color={isCryoflame ? new Color("#1e40af") : new Color("#FF4500")} // Deep cobalt blue for Cryoflame, orange-red for normal
             size={0.3}
             meshRef={boltRef}
             opacity={1}
+            isCryoflame={isCryoflame}
           />
           
           <group ref={boltRef} position={position.toArray()}>
@@ -135,7 +138,7 @@ export default function EntropicBolt({
 
               {/* Light source */}
               <pointLight
-                color="#FF4500"
+                color={isCryoflame ? "#1e40af" : "#FF4500"}
                 intensity={3}
                 distance={4}
                 decay={2}
@@ -147,9 +150,10 @@ export default function EntropicBolt({
 
       {/* Impact effect */}
       {showImpact && impactPosition && (
-        <EntropicBoltImpact 
+        <EntropicBoltImpact
           position={impactPosition}
           onComplete={handleImpactComplete}
+          isCryoflame={isCryoflame}
         />
       )}
     </group>
@@ -160,9 +164,10 @@ export default function EntropicBolt({
 interface EntropicBoltImpactProps {
   position: Vector3;
   onComplete?: () => void;
+  isCryoflame?: boolean;
 }
 
-function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
+function EntropicBoltImpact({ position, onComplete, isCryoflame = false }: EntropicBoltImpactProps) {
   const startTime = useRef(Date.now());
   const [, forceUpdate] = useState({});
   const IMPACT_DURATION = 0.7; // Shorter duration than GlacialShard
@@ -200,8 +205,8 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
       <mesh>
         <sphereGeometry args={[0.675 * (1 + elapsed * 1.5), 12, 12]} />
         <meshStandardMaterial
-          color="#FF4500"
-          emissive="#FF6600"
+          color={isCryoflame ? "#1e40af" : "#FF4500"}
+          emissive={isCryoflame ? "#3b82f6" : "#FF6600"}
           emissiveIntensity={1.0 * fade}
           transparent
           opacity={0.6 * fade}
@@ -214,8 +219,8 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
       <mesh>
         <sphereGeometry args={[0.45 * (1 + elapsed * 2), 8, 8]} />
         <meshStandardMaterial
-          color="#FFA500"
-          emissive="#FFA500"
+          color={isCryoflame ? "#3b82f6" : "#FFA500"}
+          emissive={isCryoflame ? "#60a5fa" : "#FFA500"}
           emissiveIntensity={1 * fade}
           transparent
           opacity={0.7 * fade}
@@ -241,8 +246,8 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
           >
             <coneGeometry args={[0.08, 0.4, 4]} />
             <meshStandardMaterial
-              color="#FFD700"
-              emissive="#FFD700"
+              color={isCryoflame ? "#dbeafe" : "#FFD700"}
+              emissive={isCryoflame ? "#bfdbfe" : "#FFD700"}
               emissiveIntensity={1.5 * fade}
               transparent
               opacity={0.8 * fade}
@@ -259,8 +264,8 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
         >
           <torusGeometry args={[1 * (1 + elapsed * 1.5) + i * 0.2, 0.08, 6, 16]} />
           <meshStandardMaterial
-            color="#FF4500"
-            emissive="#FF6600"
+            color={isCryoflame ? "#1e40af" : "#FF4500"}
+            emissive={isCryoflame ? "#3b82f6" : "#FF6600"}
             emissiveIntensity={1.5 * fade}
             transparent
             opacity={0.5 * fade * (1 - i * 0.3)}
@@ -271,7 +276,7 @@ function EntropicBoltImpact({ position, onComplete }: EntropicBoltImpactProps) {
 
       {/* Bright flash */}
       <pointLight
-        color="#FF4500"
+        color={isCryoflame ? "#1e40af" : "#FF4500"}
         intensity={8 * fade}
         distance={4}
         decay={2}

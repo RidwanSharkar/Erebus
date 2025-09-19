@@ -233,7 +233,7 @@ setInterval(() => {
   const now = Date.now();
   const STALE_THRESHOLD = 60000; // 60 seconds without heartbeat = stale
   
-  console.log(`Running cleanup check. Active connections: ${playerSockets.size}`);
+  // console.log(`Running cleanup check. Active connections: ${playerSockets.size}`);
   
   for (const [playerId, lastHeartbeat] of playerHeartbeats) {
     if (now - lastHeartbeat > STALE_THRESHOLD) {

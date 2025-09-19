@@ -1,7 +1,6 @@
 import React, { useRef, useState, useEffect, memo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3 } from '@/utils/three-exports';
-import * as THREE from 'three';
+import { Group, Vector3, Color } from '@/utils/three-exports';
 
 interface StunnedEffectProps {
   position: Vector3;
@@ -128,8 +127,8 @@ const StunnedEffectComponent = memo(function StunnedEffect({
           <mesh position={[0.6, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
             <cylinderGeometry args={[0.02, 0.02, 1.2, 4]} />
             <meshStandardMaterial
-              color={new THREE.Color(0xFFAA44)}      // Red-orange
-              emissive={new THREE.Color(0xFFAA44)}
+              color={new Color(0xFFAA44)}      // Red-orange
+              emissive={new Color(0xFFAA44)}
               emissiveIntensity={intensity * 1.75}
               transparent
               opacity={fadeProgress * 0.8}
@@ -149,8 +148,8 @@ const StunnedEffectComponent = memo(function StunnedEffect({
               rotation={[0, 0, 0]}>
           <cylinderGeometry args={[0.015, 0.015, 2, 4]} />
           <meshStandardMaterial
-            color={new THREE.Color(0xDD4444)}       // Dark red
-            emissive={new THREE.Color(0xDD4444)}
+            color={new Color(0xDD4444)}       // Dark red
+            emissive={new Color(0xDD4444)}
             emissiveIntensity={intensity * 1}
             transparent
             opacity={fadeProgress * 0.6}
@@ -162,8 +161,8 @@ const StunnedEffectComponent = memo(function StunnedEffect({
       <mesh rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[0.8, 0.05, 8, 16]} />
         <meshStandardMaterial
-          color={new THREE.Color(0xFF4444)}
-          emissive={new THREE.Color(0xFF4444)}
+          color={new Color(0xFF4444)}
+          emissive={new Color(0xFF4444)}
           emissiveIntensity={intensity * 5}
           transparent
           opacity={fadeProgress * 0.5}
@@ -172,7 +171,7 @@ const StunnedEffectComponent = memo(function StunnedEffect({
 
       {/* Point light for illumination */}
       <pointLight
-        color={new THREE.Color(0xFF4444)}
+        color={new Color(0xFF4444)}
         intensity={intensity * 3}
         distance={3}
         decay={2}
@@ -188,8 +187,8 @@ const StunnedEffectComponent = memo(function StunnedEffect({
               ]}>
           <sphereGeometry args={[0.03, 4, 4]} />
           <meshStandardMaterial
-            color={new THREE.Color(0xFFFFFF)}       // White sparks
-            emissive={new THREE.Color(0xFFFFFF)}
+            color={new Color(0xFFFFFF)}       // White sparks
+            emissive={new Color(0xFFFFFF)}
             emissiveIntensity={intensity * 6}
             transparent
             opacity={fadeProgress * Math.random() * 0.8}

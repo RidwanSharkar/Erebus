@@ -12,6 +12,7 @@ import { calculateDamage, DamageResult } from '@/core/DamageCalculator';
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
 import { SummonedUnit } from '@/ecs/components/SummonedUnit';
 import { Projectile } from '@/ecs/components/Projectile';
+import { WeaponType } from '@/components/dragon/weapons';
 
 interface DamageEvent {
   target: Entity;
@@ -19,6 +20,7 @@ interface DamageEvent {
   source?: Entity;
   damageType?: string;
   timestamp: number;
+  sourcePlayerId?: string; // Player ID of the source for proper experience attribution
 }
 
 interface HealEvent {
@@ -59,6 +61,15 @@ export class CombatSystem extends System {
     this.world = world;
     this.damageNumberManager = new DamageNumberManager();
     this.priority = 25; // Run after collision detection
+  }
+
+  private getCurrentWeapon(): WeaponType | undefined {
+    // Get current weapon from ControlSystem
+    const controlSystemRef = (window as any).controlSystemRef;
+    if (controlSystemRef && controlSystemRef.current) {
+      return controlSystemRef.current.getCurrentWeapon();
+    }
+    return undefined;
   }
 
   // Throttled logging to reduce spam
@@ -180,7 +191,7 @@ export class CombatSystem extends System {
   }
 
   private applyDamage(damageEvent: DamageEvent, currentTime: number): void {
-    const { target, damage: baseDamage, source, damageType } = damageEvent;
+    const { target, damage: baseDamage, source, damageType, sourcePlayerId } = damageEvent;
 
     const health = target.getComponent(Health);
     if (!health || !health.enabled) return;
@@ -200,24 +211,55 @@ export class CombatSystem extends System {
     const enemy = target.getComponent(Enemy);
     if (enemy && this.onEnemyDamageCallback) {
       // Calculate actual damage with critical hit mechanics
-      const damageResult: DamageResult = calculateDamage(baseDamage);
+      const currentWeapon = this.getCurrentWeapon();
+      const damageResult: DamageResult = calculateDamage(baseDamage, currentWeapon);
       const actualDamage = damageResult.damage;
 
       // Get source player ID for proper kill attribution
-      let sourcePlayerId: string | undefined;
-      if (source) {
+      // Use the sourcePlayerId from damage event if available, otherwise extract from source entity
+      let finalSourcePlayerId = sourcePlayerId;
+      if (!finalSourcePlayerId && source) {
         // Check if source is a projectile with stored player info
         const projectileComponent = source.getComponent(Projectile);
         if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
-          sourcePlayerId = (projectileComponent as any).sourcePlayerId;
+          finalSourcePlayerId = (projectileComponent as any).sourcePlayerId;
         } else if (source.userData?.playerId) {
-          sourcePlayerId = source.userData.playerId;
+          finalSourcePlayerId = source.userData.playerId;
         }
       }
 
       // Route enemy damage through multiplayer server instead of applying locally
-      // console.log(`🌐 Routing ${actualDamage} damage to enemy ${target.id} through multiplayer server from source player ${sourcePlayerId || 'unknown'}`);
-      this.onEnemyDamageCallback(target.id.toString(), actualDamage, sourcePlayerId);
+      // console.log(`🌐 Routing ${actualDamage} damage to enemy ${target.id} through multiplayer server from source player ${finalSourcePlayerId || 'unknown'}`);
+      this.onEnemyDamageCallback(target.id.toString(), actualDamage, finalSourcePlayerId);
+
+      // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
+      if (source && currentWeapon === WeaponType.RUNEBLADE) {
+        const controlSystemRef = (window as any).controlSystemRef;
+        if (controlSystemRef && controlSystemRef.current) {
+          const controlSystem = controlSystemRef.current;
+          // Check if Runeblade passive is unlocked
+          const weaponSlot = controlSystem.selectedWeapons?.primary === WeaponType.RUNEBLADE ? 'primary' :
+                            controlSystem.selectedWeapons?.secondary === WeaponType.RUNEBLADE ? 'secondary' : null;
+          if (weaponSlot && controlSystem.isPassiveAbilityUnlocked && controlSystem.isPassiveAbilityUnlocked('P', WeaponType.RUNEBLADE, weaponSlot)) {
+            const healingAmount = Math.floor(actualDamage * 0.1); // 10% of damage dealt
+            if (healingAmount > 0) {
+              // Apply healing to source player
+              const sourceHealth = source.getComponent(Health);
+              if (sourceHealth) {
+                sourceHealth.heal(healingAmount);
+
+                // Create healing number for visual feedback
+                const sourceTransform = source.getComponent(Transform);
+                if (sourceTransform) {
+                  const healPosition = sourceTransform.getWorldPosition().clone();
+                  healPosition.y += 1.5;
+                  this.damageNumberManager.addDamageNumber(healingAmount, false, healPosition, 'healing');
+                }
+              }
+            }
+          }
+        }
+      }
 
       // Still create local damage numbers for immediate visual feedback
       const transform = target.getComponent(Transform);
@@ -247,19 +289,20 @@ export class CombatSystem extends System {
       const summonedUnit = summonedUnitComponent as typeof SummonedUnit.prototype;
 
       // Calculate actual damage with critical hit mechanics
-      const damageResult: DamageResult = calculateDamage(baseDamage);
+      const currentWeapon = this.getCurrentWeapon();
+      const damageResult: DamageResult = calculateDamage(baseDamage, currentWeapon);
       const actualDamage = damageResult.damage;
 
       // Get source player ID for team validation
-      // For projectiles, check if the source has a player ID stored
-      let sourcePlayerId = 'unknown';
-      if (source) {
+      // Use the sourcePlayerId from damage event if available, otherwise extract from source entity
+      let finalSourcePlayerId = sourcePlayerId || 'unknown';
+      if (finalSourcePlayerId === 'unknown' && source) {
         // Check if source is a projectile with stored player info
         const projectileComponent = source.getComponent(Projectile);
         if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
-          sourcePlayerId = (projectileComponent as any).sourcePlayerId;
+          finalSourcePlayerId = (projectileComponent as any).sourcePlayerId;
         } else if (source.userData?.playerId) {
-          sourcePlayerId = source.userData.playerId;
+          finalSourcePlayerId = source.userData.playerId;
         }
       }
 
@@ -268,19 +311,19 @@ export class CombatSystem extends System {
       const serverUnitOwnerId = target.userData?.serverUnitOwnerId || summonedUnit.ownerId;
 
       // Route summoned unit damage through multiplayer server instead of applying locally
-      console.log(`🌐 Routing ${actualDamage} damage to summoned unit ${serverUnitId} (owned by ${serverUnitOwnerId}) from source player ${sourcePlayerId} through multiplayer server`);
-      
+      console.log(`🌐 Routing ${actualDamage} damage to summoned unit ${serverUnitId} (owned by ${serverUnitOwnerId}) from source player ${finalSourcePlayerId} through multiplayer server`);
+
       // Debug: Log the source information
       if (source) {
         const projectileComponent = source.getComponent(Projectile);
         console.log(`🔍 Source entity ${source.id} - projectile sourcePlayerId: ${(projectileComponent as any)?.sourcePlayerId}, userData playerId: ${source.userData?.playerId}`);
       }
-      
+
       // Debug: Log the team validation check
-      console.log(`🛡️ Team validation: sourcePlayerId="${sourcePlayerId}" vs unitOwnerId="${serverUnitOwnerId}" - ${sourcePlayerId === serverUnitOwnerId ? 'BLOCKED (same team)' : 'ALLOWED (different teams)'}`);
-      
+      console.log(`🛡️ Team validation: sourcePlayerId="${finalSourcePlayerId}" vs unitOwnerId="${serverUnitOwnerId}" - ${finalSourcePlayerId === serverUnitOwnerId ? 'BLOCKED (same team)' : 'ALLOWED (different teams)'}`);
+
       // Block damage to own units
-      if (sourcePlayerId === serverUnitOwnerId) {
+      if (finalSourcePlayerId === serverUnitOwnerId) {
         console.log(`🚫 Blocked damage to own summoned unit`);
         return;
       }
@@ -296,9 +339,38 @@ export class CombatSystem extends System {
         serverUnitId,
         serverUnitOwnerId,
         actualDamage,
-        sourcePlayerId,
+        finalSourcePlayerId,
         damageType
       );
+
+      // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
+      if (source && currentWeapon === WeaponType.RUNEBLADE) {
+        const controlSystemRef = (window as any).controlSystemRef;
+        if (controlSystemRef && controlSystemRef.current) {
+          const controlSystem = controlSystemRef.current;
+          // Check if Runeblade passive is unlocked
+          const weaponSlot = controlSystem.selectedWeapons?.primary === WeaponType.RUNEBLADE ? 'primary' :
+                            controlSystem.selectedWeapons?.secondary === WeaponType.RUNEBLADE ? 'secondary' : null;
+          if (weaponSlot && controlSystem.isPassiveAbilityUnlocked && controlSystem.isPassiveAbilityUnlocked('P', WeaponType.RUNEBLADE, weaponSlot)) {
+            const healingAmount = Math.floor(actualDamage * 0.1); // 10% of damage dealt
+            if (healingAmount > 0) {
+              // Apply healing to source player
+              const sourceHealth = source.getComponent(Health);
+              if (sourceHealth) {
+                sourceHealth.heal(healingAmount);
+
+                // Create healing number for visual feedback
+                const sourceTransform = source.getComponent(Transform);
+                if (sourceTransform) {
+                  const healPosition = sourceTransform.getWorldPosition().clone();
+                  healPosition.y += 1.5;
+                  this.damageNumberManager.addDamageNumber(healingAmount, false, healPosition, 'healing');
+                }
+              }
+            }
+          }
+        }
+      }
 
       // Still create local damage numbers for immediate visual feedback
       // Check if source is a summoned unit - if so, skip damage numbers to reduce visual clutter
@@ -332,24 +404,26 @@ export class CombatSystem extends System {
       const summonedUnit = summonedUnitComponent as typeof SummonedUnit.prototype;
 
       // Get source player ID for team validation (same logic as above)
-      let sourcePlayerId = 'unknown';
-      if (source) {
+      // Use the sourcePlayerId from damage event if available, otherwise extract from source entity
+      let finalSourcePlayerId = sourcePlayerId || 'unknown';
+      if (finalSourcePlayerId === 'unknown' && source) {
         const projectileComponent = source.getComponent(Projectile);
         if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
-          sourcePlayerId = (projectileComponent as any).sourcePlayerId;
+          finalSourcePlayerId = (projectileComponent as any).sourcePlayerId;
         } else if (source.userData?.playerId) {
-          sourcePlayerId = source.userData.playerId;
+          finalSourcePlayerId = source.userData.playerId;
         }
       }
-      
+
       // TEMPORARY: Block all damage to own units for testing (even in fallback)
-      if (sourcePlayerId === summonedUnit.ownerId) {
-        console.warn(`🚫 FALLBACK BLOCKED: Player ${sourcePlayerId} tried to damage their own summoned unit ${target.id}`);
+      if (finalSourcePlayerId === summonedUnit.ownerId) {
+        console.warn(`🚫 FALLBACK BLOCKED: Player ${finalSourcePlayerId} tried to damage their own summoned unit ${target.id}`);
         return; // Block the damage
       }
 
       // Calculate actual damage with critical hit mechanics
-      const damageResult: DamageResult = calculateDamage(baseDamage);
+      const currentWeapon = this.getCurrentWeapon();
+      const damageResult: DamageResult = calculateDamage(baseDamage, currentWeapon);
       const actualDamage = damageResult.damage;
 
       // Apply damage locally (pass entity so Health can use Shield component)
@@ -391,7 +465,7 @@ export class CombatSystem extends System {
 
         // Check if target died
         if (health.isDead) {
-          this.handleEntityDeath(target, source, currentTime);
+          this.handleEntityDeath(target, source, currentTime, finalSourcePlayerId);
         }
 
         // Trigger damage effects
@@ -404,9 +478,12 @@ export class CombatSystem extends System {
     // Check if target is a player in PVP mode - if so, route damage through multiplayer
     // Also prevent self-damage in PVP (source hitting themselves)
     if (!enemy && this.onPlayerDamageCallback && source && source.id !== target.id) {
-      // Apply burning stacks for Entropic Bolt and Crossentropy Bolt
+      // Check if this is a Cryoflame-enhanced Entropic Bolt
+      const isCryoflameBolt = damageType === 'entropic' && source.getComponent(Renderer)?.mesh?.userData?.isCryoflame === true;
+
+      // Apply burning stacks for Entropic Bolt and Crossentropy Bolt (but not for Cryoflame)
       let finalDamage = baseDamage;
-      if (damageType === 'entropic' || damageType === 'crossentropy') {
+      if ((damageType === 'entropic' || damageType === 'crossentropy') && !isCryoflameBolt) {
         // Get the ControlSystem to apply burning stacks
         const controlSystemRef = (window as any).controlSystemRef;
         if (controlSystemRef && controlSystemRef.current) {
@@ -418,30 +495,97 @@ export class CombatSystem extends System {
           if (currentTime - lastBurningStackTime > 0.1) { // 100ms cooldown between burning stack applications
             // Apply burning stack and get damage bonus
             const { damageBonus } = controlSystem.applyBurningStack(target.id, currentTime, isEntropicBolt);
-            finalDamage = baseDamage + damageBonus;
+
+            // Cap burning damage in PVP to prevent extreme values that cause desync
+            const maxBurningBonus = isEntropicBolt ? 15 : 100; // Max +15 for Entropic, +100 for Crossentropy in PVP
+            const cappedBonus = Math.min(damageBonus, maxBurningBonus);
+            finalDamage = baseDamage + cappedBonus;
 
             // Mark when we last applied burning stacks to this target
             (target as any)._lastBurningStackTime = currentTime;
 
-            console.log(`🔥 Applied burning stack to player ${target.id}: base damage ${baseDamage} + bonus ${damageBonus} = ${finalDamage}`);
+            if (cappedBonus < damageBonus) {
+              console.log(`🔥 Applied burning stack to player ${target.id}: base damage ${baseDamage} + bonus ${cappedBonus}/${damageBonus} (CAPPED FOR PVP) = ${finalDamage}`);
+            } else {
+              console.log(`🔥 Applied burning stack to player ${target.id}: base damage ${baseDamage} + bonus ${cappedBonus} = ${finalDamage}`);
+            }
           } else {
             // Use existing burning stack bonus without incrementing
             const existingStacks = controlSystem.getBurningStacks(target.id);
-            const damageBonus = isEntropicBolt ? existingStacks : existingStacks * 20;
-            finalDamage = baseDamage + damageBonus;
-            console.log(`🔥 Using existing burning stack bonus for player ${target.id}: base damage ${baseDamage} + bonus ${damageBonus} = ${finalDamage}`);
+            const rawDamageBonus = isEntropicBolt ? existingStacks : existingStacks * 20;
+
+            // Cap burning damage in PVP to prevent extreme values that cause desync
+            const maxBurningBonus = isEntropicBolt ? 15 : 100; // Max +15 for Entropic, +100 for Crossentropy in PVP
+            const cappedBonus = Math.min(rawDamageBonus, maxBurningBonus);
+            finalDamage = baseDamage + cappedBonus;
+
+            if (cappedBonus < rawDamageBonus) {
+              console.log(`🔥 Using existing burning stack bonus for player ${target.id}: base damage ${baseDamage} + bonus ${cappedBonus}/${rawDamageBonus} (CAPPED FOR PVP) = ${finalDamage}`);
+            } else {
+              console.log(`🔥 Using existing burning stack bonus for player ${target.id}: base damage ${baseDamage} + bonus ${cappedBonus} = ${finalDamage}`);
+            }
           }
         }
       }
-      
+
+      // Apply Cryoflame double damage to frozen enemies BEFORE critical calculation
+      if (isCryoflameBolt) {
+        // Check if target is frozen using the debuff system
+        const controlSystemRef = (window as any).controlSystemRef;
+        if (controlSystemRef && controlSystemRef.current) {
+          const controlSystem = controlSystemRef.current;
+          const isFrozen = controlSystem.isPlayerStunned(target.id); // Now checks both stunned and frozen
+          if (isFrozen) {
+            // Double the damage for frozen enemies BEFORE critical calculation
+            finalDamage *= 2;
+            console.log(`🧊 Cryoflame: Doubled base damage to frozen enemy ${target.id}: ${finalDamage}`);
+          }
+        }
+      }
+
       // Calculate actual damage with critical hit mechanics (using modified damage)
-      const damageResult: DamageResult = calculateDamage(finalDamage);
+      const currentWeapon = this.getCurrentWeapon();
+      let damageResult: DamageResult = calculateDamage(finalDamage, currentWeapon);
+
+      // Debug logging for sabre damage
+      if (damageType?.includes('sabre')) {
+        console.log(`🎯 SABRE CRIT CALC - Base: ${finalDamage}, Final: ${damageResult.damage}, Critical: ${damageResult.isCritical}, Type: ${damageType}`);
+      }
 
       // Route player damage through multiplayer server for PVP (let receiver handle shields)
       if (this.shouldLogDamage()) {
         // console.log(`⚔️ Routing ${damageResult.damage} PVP ${damageType || 'damage'} to player ${target.id} through multiplayer server`);
       }
       this.onPlayerDamageCallback(target.id.toString(), damageResult.damage, damageType); // Send damage, let receiver handle shields
+
+      // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
+      if (source && currentWeapon === WeaponType.RUNEBLADE) {
+        const controlSystemRef = (window as any).controlSystemRef;
+        if (controlSystemRef && controlSystemRef.current) {
+          const controlSystem = controlSystemRef.current;
+          // Check if Runeblade passive is unlocked
+          const weaponSlot = controlSystem.selectedWeapons?.primary === WeaponType.RUNEBLADE ? 'primary' :
+                            controlSystem.selectedWeapons?.secondary === WeaponType.RUNEBLADE ? 'secondary' : null;
+          if (weaponSlot && controlSystem.isPassiveAbilityUnlocked && controlSystem.isPassiveAbilityUnlocked('P', WeaponType.RUNEBLADE, weaponSlot)) {
+            const healingAmount = Math.floor(damageResult.damage * 0.1); // 10% of damage dealt
+            if (healingAmount > 0) {
+              // Apply healing to source player
+              const sourceHealth = source.getComponent(Health);
+              if (sourceHealth) {
+                sourceHealth.heal(healingAmount);
+
+                // Create healing number for visual feedback
+                const sourceTransform = source.getComponent(Transform);
+                if (sourceTransform) {
+                  const healPosition = sourceTransform.getWorldPosition().clone();
+                  healPosition.y += 1.5;
+                  this.damageNumberManager.addDamageNumber(healingAmount, false, healPosition, 'healing');
+                }
+              }
+            }
+          }
+        }
+      }
 
       // Create local damage numbers for immediate visual feedback
       const transform = target.getComponent(Transform);
@@ -481,7 +625,8 @@ export class CombatSystem extends System {
     }
 
     // For non-enemies and non-summoned units (like players in non-PVP mode), apply damage locally as before
-    const damageResult: DamageResult = calculateDamage(baseDamage);
+    const currentWeapon = this.getCurrentWeapon();
+    const damageResult: DamageResult = calculateDamage(baseDamage, currentWeapon);
     const actualDamage = damageResult.damage;
 
     // Apply damage (pass entity so Health can use Shield component)
@@ -517,10 +662,30 @@ export class CombatSystem extends System {
         // console.log(`💥 ${sourceName} dealt ${actualDamage}${critText} ${damageType || 'damage'} to ${targetName} (${health.currentHealth}/${health.maxHealth} HP)`);
       }
 
-      // Check if target died
-      if (health.isDead) {
-        this.handleEntityDeath(target, source, currentTime);
-      }
+        // Check if target died
+        if (health.isDead) {
+          // Only handle death locally if this is not an enemy in multiplayer mode
+          // Enemy deaths in multiplayer/PVP mode are handled by the server
+          const enemy = target.getComponent(Enemy);
+          const shouldHandleDeathLocally = !enemy || !this.onEnemyDamageCallback;
+          
+          if (shouldHandleDeathLocally) {
+            // Try to get source player ID from the source entity
+            let sourcePlayerIdForDeath: string | undefined;
+            if (source) {
+              const projectileComponent = source.getComponent(Projectile);
+              if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
+                sourcePlayerIdForDeath = (projectileComponent as any).sourcePlayerId;
+              } else if (source.userData?.playerId) {
+                sourcePlayerIdForDeath = source.userData.playerId;
+              }
+            }
+            this.handleEntityDeath(target, source, currentTime, sourcePlayerIdForDeath);
+          } else {
+            // Enemy death in multiplayer mode - let server handle experience and death effects
+            console.log(`🌐 Enemy ${target.id} died locally but death handling is deferred to server in multiplayer mode`);
+          }
+        }
 
       // Trigger damage effects
       this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
@@ -549,7 +714,7 @@ export class CombatSystem extends System {
     }
   }
 
-  private handleEntityDeath(entity: Entity, killer?: Entity, currentTime?: number): void {
+  private handleEntityDeath(entity: Entity, killer?: Entity, currentTime?: number, sourcePlayerId?: string): void {
     const enemy = entity.getComponent(Enemy);
 
     if (enemy) {
@@ -558,9 +723,20 @@ export class CombatSystem extends System {
 
       // console.log(`💀 ${enemy.getDisplayName()} has been defeated!`);
 
-      // Award experience to killer if it's a player
-      if (killer) {
-        this.awardExperience(killer, enemy.experienceReward);
+      // Award experience to killer if it's a player - only for killing blows
+      // IMPORTANT: Only award experience in single-player mode or when enemy callback is not set
+      // In multiplayer/PVP mode, enemy damage should be routed through server, not processed locally
+      if (sourcePlayerId && sourcePlayerId !== 'unknown' && !this.onEnemyDamageCallback) {
+        console.log(`🏆 Player ${sourcePlayerId} killed enemy in single-player mode! Awarding +10 EXP for player kill`);
+        // Award +10 EXP for player kills (increased from +5 as requested)
+        // This should only happen in single-player mode where onEnemyDamageCallback is not set
+        this.onPlayerDamageCallback?.(sourcePlayerId, 0, 'player_kill');
+
+        // Check for Scythe Soul Harvest passive (+5 mana per kill)
+        this.applyScythePassiveReward(sourcePlayerId);
+      } else if (sourcePlayerId && sourcePlayerId !== 'unknown' && this.onEnemyDamageCallback) {
+        console.log(`⚠️ Enemy death processed locally in multiplayer mode - this should not happen! Enemy: ${enemy.getDisplayName()}, Player: ${sourcePlayerId}`);
+        // Don't award experience here - it should be handled by the server/multiplayer system
       }
 
       // Trigger death effects
@@ -573,11 +749,23 @@ export class CombatSystem extends System {
     if (summonedUnitComponent) {
       const summonedUnit = summonedUnitComponent as typeof SummonedUnit.prototype;
       summonedUnit.die(currentTime || Date.now() / 1000);
-      
+
       // Immediately disable to prevent further targeting
       summonedUnit.isActive = false;
 
-      // console.log(`💀 ${summonedUnit.getDisplayName()} has been defeated!`);
+      console.log(`💀 ${summonedUnit.getDisplayName()} has been defeated!`);
+
+      // Award experience for killing blows on enemy summoned units (only if killer is a player, not tower/summoned unit)
+      if (sourcePlayerId && sourcePlayerId !== 'unknown' && this.onPlayerDamageCallback) {
+        // Only award experience if it's an enemy summoned unit (not the player's own unit)
+        if (summonedUnit.ownerId !== sourcePlayerId) {
+          console.log(`🎯 Player ${sourcePlayerId} killed enemy summoned unit owned by ${summonedUnit.ownerId}! Awarding +5 EXP`);
+          // Award +5 EXP for killing enemy summoned units
+          this.onPlayerDamageCallback(sourcePlayerId, 0, 'summoned_unit_kill');
+        } else {
+          console.log(`🤝 Player ${sourcePlayerId} killed their own summoned unit - no EXP awarded`);
+        }
+      }
 
       // Trigger death effects for summoned units
       this.triggerDeathEffects(entity, killer);
@@ -686,17 +874,19 @@ export class CombatSystem extends System {
 
   // Public API for other systems to queue damage and healing
   public queueDamage(
-    target: Entity, 
-    damage: number, 
-    source?: Entity, 
-    damageType?: string
+    target: Entity,
+    damage: number,
+    source?: Entity,
+    damageType?: string,
+    sourcePlayerId?: string
   ): void {
     this.damageQueue.push({
       target,
       damage,
       source,
       damageType,
-      timestamp: Date.now() / 1000
+      timestamp: Date.now() / 1000,
+      sourcePlayerId
     });
   }
 
@@ -718,7 +908,8 @@ export class CombatSystem extends System {
     target: Entity,
     damage: number,
     source?: Entity,
-    damageType?: string
+    damageType?: string,
+    sourcePlayerId?: string
   ): boolean {
     const health = target.getComponent(Health);
     if (!health || !health.enabled) return false;
@@ -730,7 +921,8 @@ export class CombatSystem extends System {
     const summonedUnitComponent = target.getComponent(SummonedUnit);
     if (summonedUnitComponent) {
       // Calculate actual damage with critical hit mechanics
-      const damageResult: DamageResult = calculateDamage(damage);
+      const currentWeapon = this.getCurrentWeapon();
+      const damageResult: DamageResult = calculateDamage(damage, currentWeapon);
       const actualDamage = damageResult.damage;
 
       const currentTime = Date.now() / 1000;
@@ -760,7 +952,17 @@ export class CombatSystem extends System {
         }
 
         if (health.isDead) {
-          this.handleEntityDeath(target, source, currentTime);
+          // Only handle death locally if this is not an enemy in multiplayer mode
+          // Enemy deaths in multiplayer/PVP mode are handled by the server
+          const enemy = target.getComponent(Enemy);
+          const shouldHandleDeathLocally = !enemy || !this.onEnemyDamageCallback;
+          
+          if (shouldHandleDeathLocally) {
+            this.handleEntityDeath(target, source, currentTime, sourcePlayerId);
+          } else {
+            // Enemy death in multiplayer mode - let server handle experience and death effects
+            console.log(`🌐 Enemy ${target.id} died locally via immediate damage but death handling is deferred to server in multiplayer mode`);
+          }
         }
 
         this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
@@ -770,7 +972,8 @@ export class CombatSystem extends System {
     }
 
     // Calculate actual damage with critical hit mechanics
-    const damageResult: DamageResult = calculateDamage(damage);
+    const currentWeapon = this.getCurrentWeapon();
+    const damageResult: DamageResult = calculateDamage(damage, currentWeapon);
     const actualDamage = damageResult.damage;
 
     const currentTime = Date.now() / 1000;
@@ -794,7 +997,17 @@ export class CombatSystem extends System {
       }
 
       if (health.isDead) {
-        this.handleEntityDeath(target, source, currentTime);
+        // Only handle death locally if this is not an enemy in multiplayer mode
+        // Enemy deaths in multiplayer/PVP mode are handled by the server
+        const enemy = target.getComponent(Enemy);
+        const shouldHandleDeathLocally = !enemy || !this.onEnemyDamageCallback;
+        
+        if (shouldHandleDeathLocally) {
+          this.handleEntityDeath(target, source, currentTime, sourcePlayerId);
+        } else {
+          // Enemy death in multiplayer mode - let server handle experience and death effects
+          console.log(`🌐 Enemy ${target.id} died locally via immediate damage but death handling is deferred to server in multiplayer mode`);
+        }
       }
 
       this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
@@ -869,6 +1082,10 @@ export class CombatSystem extends System {
     this.damageNumberManager.removeDamageNumber(id);
   }
 
+  public getDamageNumberManager() {
+    return this.damageNumberManager;
+  }
+
   public onDisable(): void {
     this.damageQueue.length = 0;
     this.healQueue.length = 0;
@@ -916,6 +1133,26 @@ export class CombatSystem extends System {
       const wasSlowedByOtherEffect = movement.movementSpeedMultiplier < 1.0;
       if (!wasSlowedByOtherEffect || movement.movementSpeedMultiplier === 0.1) { // 0.1 is typical corrupted slow value
         movement.movementSpeedMultiplier = 1.0;
+      }
+    }
+  }
+
+  private applyScythePassiveReward(sourcePlayerId: string): void {
+    // Check if Scythe passive is unlocked and current weapon is Scythe
+    const currentWeapon = this.getCurrentWeapon();
+    if (currentWeapon === WeaponType.SCYTHE) {
+      const controlSystemRef = (window as any).controlSystemRef;
+      if (controlSystemRef && controlSystemRef.current) {
+        const weaponSlot = controlSystemRef.current.selectedWeapons?.primary === WeaponType.SCYTHE ? 'primary' : 'secondary';
+        if (weaponSlot && controlSystemRef.current.isPassiveAbilityUnlocked &&
+            controlSystemRef.current.isPassiveAbilityUnlocked('P', WeaponType.SCYTHE, weaponSlot)) {
+          // Soul Harvest: +5 mana per enemy kill
+          const gameUI = (window as any).gameUI;
+          if (gameUI && gameUI.addMana) {
+            gameUI.addMana(5);
+            console.log(`🔮 Scythe Soul Harvest: Gained +5 mana from enemy kill`);
+          }
+        }
       }
     }
   }

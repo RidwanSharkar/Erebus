@@ -191,9 +191,9 @@ function ScytheModel({
         <mesh>
           <extrudeGeometry args={[createBladeShape(), { ...bladeExtradeSettings, depth: 0.03 }]} />
           <meshStandardMaterial
-            color={isEmpowered ? "#4169E1" : "#00BFFF"}
-            emissive={isEmpowered ? "#1E90FF" : "#87CEEB"}
-            emissiveIntensity={0.6}
+            color={isEmpowered ? "#3FAEFC" : "#3FAEFC"}
+            emissive={isEmpowered ? "#3FAEFC" : "#3FAEFC"}
+            emissiveIntensity={1.0}
             metalness={0.8}
             roughness={0.1}
             opacity={1}
@@ -209,9 +209,9 @@ function ScytheModel({
         <mesh>
           <extrudeGeometry args={[createBladeShape(), { ...bladeExtradeSettings, depth: 0.03 }]} />
           <meshStandardMaterial
-            color={isEmpowered ? "#4169E1" : "#00BFFF"}
-            emissive={isEmpowered ? "#1E90FF" : "#87CEEB"}
-            emissiveIntensity={0.6}
+            color={isEmpowered ? "#3FAEFC" : "#3FAEFC"}
+            emissive={isEmpowered ? "#3FAEFC" : "#3FAEFC"}
+            emissiveIntensity={1.0}
             metalness={0.8}
             roughness={0.1}
             opacity={1}
@@ -249,7 +249,7 @@ export default function Scythe({
   const scytheRef = useRef<Group>(null);
   const spinTime = useRef(0);
 
-  const basePosition = [-1.175, 0.65, 0.3] as const;
+  const basePosition = [-0.9, 0.65, 0.3] as const;
 
   useFrame((_, delta) => {
     if (!scytheRef.current) return;
@@ -259,7 +259,7 @@ export default function Scythe({
       spinTime.current += delta;
       
       // Spin the scythe around its center
-      const spinSpeed = 15; // Adjust speed as needed
+      const spinSpeed = 25; // Adjust speed as needed
       const currentRotation = spinTime.current * spinSpeed;
       
       // Position scythe in front of dragon for spinning

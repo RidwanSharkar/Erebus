@@ -1,43 +1,44 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3 } from 'three';
-import * as THREE from 'three';
+import { Vector3, Group, ConeGeometry, MeshBasicMaterial, RingGeometry, AdditiveBlending, DoubleSide } from 'three';
 import { Enemy } from '@/contexts/MultiplayerContext';
 
 interface CloudkillArrowProps {
   targetId: string;
-  initialTargetPosition: THREE.Vector3;
+  initialTargetPosition: Vector3;
   onImpact: (damage: number) => void;
   onComplete: () => void;
-  playerPosition: THREE.Vector3;
+  playerPosition: Vector3;
   enemyData: Enemy[];
-  onHit?: (targetId: string, damage: number, isCritical: boolean, position: THREE.Vector3) => void;
+  onHit?: (targetId: string, damage: number, isCritical: boolean, position: Vector3) => void;
   isHoming?: boolean; // Whether this arrow should home in on venom-affected enemies
   players?: Array<{ id: string; position: { x: number; y: number; z: number }; health?: number }>; // For PVP mode
 }
 
 const DAMAGE_RADIUS = 1.5; // Smaller radius for arrows compared to meteors
 const IMPACT_DURATION = 1.0;
-const ARROW_SPEED = 25.0;
-const ARROW_DAMAGE = 50;
-const WARNING_RING_SEGMENTS = 24;
+const ARROW_SPEED = 26.5;
+const ARROW_DAMAGE = 75;
+const WARNING_RING_SEGMENTS = 6;
 const ARROW_COUNT = 3; // 3 arrows per Cloudkill cast
 
 // Reusable geometries and materials
-const arrowGeometry = new THREE.ConeGeometry(0.1, 0.8, 8); // Arrow shape
-const arrowMaterial = new THREE.MeshBasicMaterial({ color: "#00ff00" }); // Green arrows
-const trailGeometry = new THREE.CylinderGeometry(0.02, 0.02, 1, 6);
+const arrowGeometry = new ConeGeometry(0.1, 0.8, 8); // Arrow shape
+const arrowMaterial = new MeshBasicMaterial({ color: "#00ff00" }); // Green arrows
+
+// Trail effect constants
+const TRAIL_SEGMENTS = 22; 
 
 // Warning indicators scaled for arrows
-const warningRingGeometry = new THREE.RingGeometry((DAMAGE_RADIUS - 0.2), DAMAGE_RADIUS, WARNING_RING_SEGMENTS);
-const pulsingRingGeometry = new THREE.RingGeometry((DAMAGE_RADIUS - 0.4), (DAMAGE_RADIUS - 0.2), WARNING_RING_SEGMENTS);
-const outerGlowGeometry = new THREE.RingGeometry((DAMAGE_RADIUS - 0.1), DAMAGE_RADIUS, WARNING_RING_SEGMENTS);
+const warningRingGeometry = new RingGeometry((DAMAGE_RADIUS - 0.2), DAMAGE_RADIUS, WARNING_RING_SEGMENTS);
+const pulsingRingGeometry = new RingGeometry((DAMAGE_RADIUS - 0.4), (DAMAGE_RADIUS - 0.2), WARNING_RING_SEGMENTS);
+const outerGlowGeometry = new RingGeometry((DAMAGE_RADIUS - 0.1), DAMAGE_RADIUS, WARNING_RING_SEGMENTS);
 
 // Reusable vectors to avoid allocations
-const tempPlayerGroundPos = new THREE.Vector3();
-const tempTargetGroundPos = new THREE.Vector3();
+const tempPlayerGroundPos = new Vector3();
+const tempTargetGroundPos = new Vector3();
 
-const createArrowImpactEffect = (position: THREE.Vector3, startTime: number, onComplete: () => void) => {
+const createArrowImpactEffect = (position: Vector3, startTime: number, onComplete: () => void) => {
   const elapsed = (Date.now() - startTime) / 1000;
   const fade = Math.max(0, 1 - (elapsed / IMPACT_DURATION));
 
@@ -50,7 +51,7 @@ const createArrowImpactEffect = (position: THREE.Vector3, startTime: number, onC
     <group position={position}>
       {/* Core explosion sphere */}
       <mesh>
-        <sphereGeometry args={[0.8 * (1 + elapsed), 16, 16]} />
+        <sphereGeometry args={[0.5 * (1 + elapsed), 16, 16]} />
         <meshStandardMaterial
           color="#00ff00"
           emissive="#00aa00"
@@ -58,7 +59,7 @@ const createArrowImpactEffect = (position: THREE.Vector3, startTime: number, onC
           transparent
           opacity={1.5 * fade}
           depthWrite={false}
-          blending={THREE.AdditiveBlending}
+          blending={AdditiveBlending}
         />
       </mesh>
 
@@ -72,7 +73,7 @@ const createArrowImpactEffect = (position: THREE.Vector3, startTime: number, onC
           transparent
           opacity={1.6 * fade}
           depthWrite={false}
-          blending={THREE.AdditiveBlending}
+          blending={AdditiveBlending}
         />
       </mesh>
 
@@ -87,7 +88,7 @@ const createArrowImpactEffect = (position: THREE.Vector3, startTime: number, onC
             transparent
             opacity={0.8 * fade * (1 - i * 0.15)}
             depthWrite={false}
-            blending={THREE.AdditiveBlending}
+            blending={AdditiveBlending}
           />
         </mesh>
       ))}
@@ -109,6 +110,67 @@ const createArrowImpactEffect = (position: THREE.Vector3, startTime: number, onC
   );
 };
 
+// Improved Trail effect component for Cloudkill arrows (comet-like)
+const CloudkillTrail = ({ 
+  positions, 
+  opacity = 1 
+}: { 
+  positions: Vector3[]; 
+  opacity?: number; 
+}) => {
+  // Don't render if we don't have enough positions
+  if (positions.length < 2) return null;
+
+  return (
+    <group>
+      {positions.map((position, index) => {
+        // Calculate alpha based on position in trail (older = less opaque)
+        const normalizedIndex = index / Math.max(1, positions.length - 1);
+        const alpha = normalizedIndex * opacity * 0.8;
+        
+        // Calculate size based on position in trail (older = smaller)
+        const size = 0.1 + (normalizedIndex * 0.08);
+        
+        // Skip very faint trail segments
+        if (alpha < 0.1) return null;
+        
+        return (
+          <mesh key={`trail-${index}`} position={[position.x, position.y, position.z]}>
+            <sphereGeometry args={[size, 8, 8]} />
+            <meshBasicMaterial
+              color="#00ff00"
+              transparent
+              opacity={alpha}
+              blending={AdditiveBlending}
+              depthWrite={false}
+            />
+          </mesh>
+        );
+      })}
+      
+      {/* Additional bright core particles for the most recent positions */}
+      {positions.length > 2 && positions.slice(-Math.min(6, positions.length)).map((position, index, array) => {
+        const normalizedIndex = index / Math.max(1, array.length - 1);
+        const alpha = normalizedIndex * opacity * 1.2;
+        const size = 0.02 + (normalizedIndex * 0.04);
+        
+        return (
+          <mesh key={`core-${index}`} position={[position.x, position.y, position.z]}>
+            <sphereGeometry args={[size, 6, 6]} />
+            <meshBasicMaterial
+              color="#88ff88"
+              transparent
+              opacity={alpha}
+              blending={AdditiveBlending}
+              depthWrite={false}
+            />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+};
+
 export default function CloudkillArrow({
   targetId,
   initialTargetPosition,
@@ -120,16 +182,31 @@ export default function CloudkillArrow({
   isHoming = false,
   players = []
 }: CloudkillArrowProps) {
-  const arrowGroupRef = useRef<THREE.Group>(null);
-  const trailRef = useRef<THREE.Mesh>(null);
+  const arrowGroupRef = useRef<Group>(null);
 
   // State for tracking current target position
   const [currentTargetPosition, setCurrentTargetPosition] = useState(initialTargetPosition);
 
+  // Store the original indicated position (where the warning ring was shown)
+  // This is separate from currentTargetPosition for homing arrows
+  const originalIndicatedPosition = useRef(initialTargetPosition.clone());
+
+  // Store current velocity direction for homing calculations
+  const currentVelocityDirection = useRef(new Vector3(0, -1, 0)); // Initially downward
+
+  // Chaotic movement variables (similar to EntropicBolt)
+  const timeElapsed = useRef(0);
+  const randomSeed = useRef(Math.random() * 1000);
+  const chaoticOffset = useRef(new Vector3());
+
+  // Trail tracking
+  const trailPositions = useRef<Vector3[]>([]);
+  const maxTrailLength = TRAIL_SEGMENTS;
+
   // useMemo for initial calculations
   const [, startPos] = React.useMemo(() => {
-    const initTarget = new THREE.Vector3(initialTargetPosition.x, -3, initialTargetPosition.z);
-    const start = new THREE.Vector3(initialTargetPosition.x, 50 + Math.random() * 20, initialTargetPosition.z); // Random height variation
+    const initTarget = new Vector3(initialTargetPosition.x, -3, initialTargetPosition.z);
+    const start = new Vector3(initialTargetPosition.x, 50 + Math.random() * 20, initialTargetPosition.z); // Random height variation
     return [initTarget, start];
   }, [initialTargetPosition]);
 
@@ -150,6 +227,8 @@ export default function CloudkillArrow({
   }, []);
 
   useFrame((_, delta) => {
+    timeElapsed.current += delta;
+
     // Update target tracking - find current target position (enemy or player)
     if (isHoming) {
       // First check enemies
@@ -173,45 +252,66 @@ export default function CloudkillArrow({
     }
 
     const currentPos = arrowGroupRef.current.position;
-    const currentTargetGroundPos = new THREE.Vector3(currentTargetPosition.x, -3, currentTargetPosition.z);
+    const currentTargetGroundPos = new Vector3(currentTargetPosition.x, -3, currentTargetPosition.z);
     const distanceToTarget = currentPos.distanceTo(currentTargetGroundPos);
 
-    if (distanceToTarget < DAMAGE_RADIUS || currentPos.y <= -2) {
+    if (distanceToTarget < DAMAGE_RADIUS) {
       setState(prev => ({ ...prev, impactOccurred: true, impactStartTime: Date.now() }));
 
-      // Apply damage to all enemies within radius on impact
-      const impactPosition = new THREE.Vector3(currentTargetPosition.x, 0, currentTargetPosition.z);
+      // CRITICAL FIX: For damage calculation, check player positions at impact time, not at cast time
+      // For homing arrows, use the current impact position (follows venomed targets)
+      // For non-homing arrows, ALWAYS use original indicated position for damage area check
+      const damagePosition = isHoming
+        ? new Vector3(currentTargetPosition.x, 0, currentTargetPosition.z)
+        : new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
 
       if (onHit) {
-        // Damage enemies within radius
+        // Damage enemies within radius of the damage position
         enemyData.forEach(enemy => {
           // Only damage living enemies
           if (enemy.health <= 0) return;
 
-          const enemyPos = new THREE.Vector3(enemy.position.x, 0, enemy.position.z);
-          const distance = enemyPos.distanceTo(impactPosition);
-
+          const enemyPos = new Vector3(enemy.position.x, 0, enemy.position.z);
+          const distance = enemyPos.distanceTo(damagePosition);
+          
           if (distance <= DAMAGE_RADIUS) {
-            onHit(enemy.id, ARROW_DAMAGE, false, impactPosition);
+            onHit(enemy.id, ARROW_DAMAGE, false, damagePosition);
           }
         });
 
-        // Damage players within radius (for PVP mode)
+        // Damage players within radius of the damage position (at impact time)
+        // CRITICAL FIX: For non-homing arrows, only damage players who are still in the original indicated area
+        // For homing arrows, damage at the current impact position (follows venomed targets)
         players.forEach(player => {
           if (!player.position) return;
 
-          const playerPos = new THREE.Vector3(player.position.x, 0, player.position.z);
-          const distance = playerPos.distanceTo(impactPosition);
-
+          const playerPos = new Vector3(player.position.x, 0, player.position.z);
+          
+          // For non-homing arrows: Check against original indicated position ONLY
+          // For homing arrows: Check against current impact position (follows the venomed target)
+          const checkPosition = isHoming 
+            ? new Vector3(currentTargetPosition.x, 0, currentTargetPosition.z)
+            : new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
+          
+          const distance = playerPos.distanceTo(checkPosition);
+          
           if (distance <= DAMAGE_RADIUS) {
-            onHit(player.id, ARROW_DAMAGE, false, impactPosition);
+            onHit(player.id, ARROW_DAMAGE, false, checkPosition);
           }
         });
       }
 
-      // Also check if player is in damage radius
+      // Also check if local player is in damage radius (at impact time)
+      // CRITICAL FIX: For local player, also use the same logic as above
       tempPlayerGroundPos.set(playerPosition.x, 0, playerPosition.z);
-      tempTargetGroundPos.set(currentTargetPosition.x, 0, currentTargetPosition.z);
+      
+      // For non-homing arrows: Check against original indicated position ONLY
+      // For homing arrows: Check against current impact position
+      const localPlayerCheckPosition = isHoming
+        ? new Vector3(currentTargetPosition.x, 0, currentTargetPosition.z)
+        : new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
+      
+      tempTargetGroundPos.set(localPlayerCheckPosition.x, 0, localPlayerCheckPosition.z);
 
       if (tempPlayerGroundPos.distanceTo(tempTargetGroundPos) <= DAMAGE_RADIUS) {
         onImpact(ARROW_DAMAGE);
@@ -219,27 +319,70 @@ export default function CloudkillArrow({
       return;
     }
 
-    // Calculate trajectory towards current target position
+    // Calculate base trajectory towards current target position
     const directionToTarget = currentTargetGroundPos.clone().sub(currentPos).normalize();
     let speed = ARROW_SPEED * delta;
-    
-    // Increase speed and homing accuracy for venom-affected targets
+
+    // Calculate movement direction
+    let baseDirection = directionToTarget.clone();
+
+    // Implement proper homing for venom-affected targets
     if (isHoming) {
       speed *= 1.5; // 50% faster for homing arrows
-      // More aggressive homing - adjust direction more frequently
-      const homingStrength = 0.8; // How strongly the arrow homes in (0.8 = 80% towards target)
-      directionToTarget.multiplyScalar(homingStrength);
+
+      // Smoothly turn towards the target using interpolation
+      const homingStrength = 0.15; // How aggressively the arrow turns per frame (0-1)
+      currentVelocityDirection.current.lerp(directionToTarget, homingStrength);
+
+      // Normalize to maintain consistent speed
+      currentVelocityDirection.current.normalize();
+
+      baseDirection = currentVelocityDirection.current.clone();
+    } else {
+      // For non-homing arrows, reset velocity direction to straight down initially
+      // But allow it to be updated towards target
+      currentVelocityDirection.current.lerp(directionToTarget, 0.1); // Slight correction
+      currentVelocityDirection.current.normalize();
+      baseDirection = currentVelocityDirection.current.clone();
+    }
+
+    // Add localized chaotic movement for comet-like effect (much more subtle)
+    const time = timeElapsed.current;
+    const seed = randomSeed.current;
+    
+    // Reduced amplitude chaotic movement - more localized and comet-like
+    const chaoticX = Math.sin(time * 4 + seed) * 0.08 * Math.sin(time * 2 + seed * 0.3) * 0.6;
+    const chaoticY = Math.cos(time * 3 + seed * 1.2) * 0.06 * Math.sin(time * 2.5 + seed * 0.6) * 0.4;
+    const chaoticZ = Math.sin(time * 3.5 + seed * 1.8) * 0.05 * Math.cos(time * 2.2 + seed * 0.9) * 0.5;
+    
+    // Very minimal jitter that decreases with distance
+    const jitterIntensity = Math.max(0.02, (distanceToTarget / 80)) * 0.03;
+    const jitterX = (Math.random() - 0.5) * jitterIntensity;
+    const jitterY = (Math.random() - 0.5) * jitterIntensity;
+    const jitterZ = (Math.random() - 0.5) * jitterIntensity;
+
+    // Combine chaotic movement with jitter
+    chaoticOffset.current.set(
+      chaoticX + jitterX,
+      chaoticY + jitterY,
+      chaoticZ + jitterZ
+    );
+
+    // Apply base movement
+    const idealPosition = currentPos.clone().addScaledVector(baseDirection, speed);
+    
+    // Add chaotic offset to the ideal position
+    const finalPosition = idealPosition.add(chaoticOffset.current);
+    currentPos.copy(finalPosition);
+
+    // Update trail positions more frequently for better comet effect
+    if (trailPositions.current.length >= maxTrailLength) {
+      trailPositions.current.shift(); // Remove oldest position
     }
     
-    currentPos.addScaledVector(directionToTarget, speed);
-
-    // Update trail to follow arrow
-    if (trailRef.current) {
-      trailRef.current.position.copy(currentPos);
-      trailRef.current.position.y += 0.5; // Position trail above arrow (since arrow points down)
-      // Orient trail vertically for downward motion
-      trailRef.current.rotation.set(0, 0, 0);
-    }
+    // Store world position for trail (not relative to group)
+    const worldPosition = finalPosition.clone();
+    trailPositions.current.push(worldPosition);
   });
 
   const getPulsingScale = useCallback((): [number, number, number] => {
@@ -254,11 +397,11 @@ export default function CloudkillArrow({
      <>
       {/* Warning indicators */}
       {showWarning && (
-        <group position={[currentTargetPosition.x, 0.1, currentTargetPosition.z]}>
+        <group position={[originalIndicatedPosition.current.x, 0.1, originalIndicatedPosition.current.z]}>
           {/* Warning rings using shared geometries */}
           <mesh rotation={[-Math.PI / 2, 0, 0]}>
             <primitive object={warningRingGeometry} />
-            <meshBasicMaterial color="#00aa00" transparent opacity={0.5} side={THREE.DoubleSide} />
+            <meshBasicMaterial color="#00aa00" transparent opacity={0.5} side={DoubleSide} />
           </mesh>
 
           {/* Pulsing inner ring */}
@@ -271,7 +414,7 @@ export default function CloudkillArrow({
               color="#00ff00"
               transparent
               opacity={0.5 + Math.sin(Date.now() * 0.005) * 0.3}
-              side={THREE.DoubleSide}
+              side={DoubleSide}
             />
           </mesh>
 
@@ -284,7 +427,7 @@ export default function CloudkillArrow({
               color="#00cc00"
               transparent
               opacity={0.3}
-              side={THREE.DoubleSide}
+              side={DoubleSide}
             />
           </mesh>
 
@@ -309,7 +452,15 @@ export default function CloudkillArrow({
         </group>
       )}
 
-      {/* Arrow with trail */}
+      {/* Trail effect - rendered separately in world space */}
+      {state.showArrow && trailPositions.current.length > 2 && (
+        <CloudkillTrail
+          positions={trailPositions.current}
+          opacity={1.0}
+        />
+      )}
+
+      {/* Arrow projectile */}
       {state.showArrow && (
         <group ref={arrowGroupRef} position={startPos}>
           <mesh rotation={[Math.PI, 0, 0]}> {/* Point downwards */}
@@ -317,14 +468,12 @@ export default function CloudkillArrow({
             <primitive object={arrowMaterial} />
             <pointLight color="#00ff00" intensity={3} distance={6} />
           </mesh>
-
-
         </group>
       )}
 
       {/* Add impact effect */}
       {state.impactStartTime && createArrowImpactEffect(
-        arrowGroupRef.current?.position || new THREE.Vector3(currentTargetPosition.x, 0, currentTargetPosition.z),
+        arrowGroupRef.current?.position || new Vector3(currentTargetPosition.x, 0, currentTargetPosition.z),
         state.impactStartTime,
         onComplete
       )}

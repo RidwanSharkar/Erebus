@@ -849,7 +849,7 @@ class GameRoom {
       health: 1000, // Max health
       maxHealth: 1000,
       attackRange: 4,
-      attackDamage: 60,
+      attackDamage: Math.floor(Math.random() * 41) + 40,
       attackCooldown: 2.0,
       lastAttackTime: 0,
       moveSpeed: 2.25,
@@ -899,6 +899,25 @@ class GameRoom {
         const playerWave = this.playerWaves.get(unit.ownerId);
         const remainingUnits = playerWave ? playerWave.units.size : 0;
         console.log(`💀 PVP Unit ${unitId} (owned by ${unit.ownerId}) killed by ${sourceOwnerId}! Player wave units remaining: ${remainingUnits}`);
+        
+        // Award +5 EXP for killing blows on enemy summoned units in PVP mode
+        if (sourceOwnerId && sourceOwnerId !== unit.ownerId && sourceOwnerId !== 'unknown') {
+          console.log(`🎯 Player ${sourceOwnerId} killed enemy summoned unit owned by ${unit.ownerId}! Broadcasting +5 EXP award`);
+          
+          // Broadcast summoned unit kill experience to the killer
+          if (this.io) {
+            this.io.to(this.roomId).emit('player-damaged', {
+              targetPlayerId: sourceOwnerId,
+              sourcePlayerId: sourceOwnerId,
+              damage: 0,
+              damageType: 'summoned_unit_kill',
+              wasKilled: false,
+              newHealth: -1, // Special value to indicate this is not actual damage
+              maxHealth: -1,
+              timestamp: Date.now()
+            });
+          }
+        }
       } else {
         console.log(`💀 Unit ${unitId} killed! Removed from wave. Wave units remaining: ${this.waveUnits.size}`);
       }
@@ -1014,6 +1033,16 @@ class GameRoom {
     const player = this.players.get(playerId);
     if (player) {
       player.health = Math.max(0, Math.min(player.maxHealth, health));
+    }
+  }
+
+  updatePlayerShield(playerId, shield, maxShield) {
+    const player = this.players.get(playerId);
+    if (player) {
+      player.shield = Math.max(0, Math.min(maxShield || player.maxShield || 250, shield));
+      if (maxShield !== undefined) {
+        player.maxShield = maxShield;
+      }
     }
   }
 
@@ -1171,6 +1200,21 @@ class GameRoom {
       // Increment shared kill count
       this.killCount++;
       console.log(`💀 Enemy ${enemyId} killed by player ${fromPlayerId}. Room kill count: ${this.killCount}`);
+      
+      // Award +10 EXP for enemy kills to the killer in PVP/multiplayer mode
+      if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
+        console.log(`🎯 Player ${fromPlayerId} killed enemy ${enemyId}! Broadcasting +10 EXP award`);
+        
+        // Broadcast enemy kill experience to the killer
+        this.io.to(this.roomId).emit('player-damaged', {
+          targetPlayerId: fromPlayerId,
+          sourcePlayerId: fromPlayerId,
+          damage: 0,
+          damageType: 'enemy_kill',
+          wasKilled: false,
+          timestamp: Date.now()
+        });
+      }
       
       // Update all players' max health and heal them by 1
       this.players.forEach((player, playerId) => {

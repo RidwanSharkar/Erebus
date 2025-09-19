@@ -11,8 +11,6 @@ interface RunebladeProps {
   isOathstriking: boolean;
   isDeathGrasping?: boolean;
   isWraithStriking?: boolean;
-  isDivineStorming?: boolean;
-  isColossusStriking?: boolean;
   isCharging?: boolean;
   isDeflecting?: boolean;
   isCorruptedAuraActive?: boolean;
@@ -22,8 +20,6 @@ interface RunebladeProps {
   onDeathGraspComplete?: () => void;
   onWraithStrikeComplete?: () => void;
   onOathstrikeComplete?: () => void;
-  onDivineStormComplete?: () => void;
-  onColossusStrikeComplete?: () => void;
   onChargeComplete?: () => void;
   onDeflectComplete?: () => void;
   onCorruptedAuraToggle?: (active: boolean) => void;
@@ -43,26 +39,8 @@ interface RunebladeProps {
     isCritical: boolean;
     isLightning?: boolean;
     isHealing?: boolean;
-    isBlizzard?: boolean;
-    isBoneclaw?: boolean;
     isSmite?: boolean;
     isOathstrike?: boolean;
-    isFirebeam?: boolean;
-    isOrbShield?: boolean;
-    isChainLightning?: boolean;
-    isFireball?: boolean;
-    isSummon?: boolean;
-    isStealthStrike?: boolean;
-    isPyroclast?: boolean;
-    isEagleEye?: boolean;
-    isBreach?: boolean;
-    isBarrage?: boolean;
-    isGlacialShard?: boolean;
-    isAegis?: boolean;
-    isCrossentropyBolt?: boolean;
-    isDivineStorm?: boolean;
-    isHolyBurn?: boolean;
-    isEviscerate?: boolean;
   }>) => Array<{
     id: number;
     damage: number;
@@ -70,27 +48,8 @@ interface RunebladeProps {
     isCritical: boolean;
     isLightning?: boolean;
     isHealing?: boolean;
-    isBlizzard?: boolean;
-    isBoneclaw?: boolean;
     isSmite?: boolean;
     isOathstrike?: boolean;
-    isFirebeam?: boolean;
-    isOrbShield?: boolean;
-    isChainLightning?: boolean;
-    isFireball?: boolean;
-    isSummon?: boolean;
-    isStealthStrike?: boolean;
-    isPyroclast?: boolean;
-    isEagleEye?: boolean;
-    isBreach?: boolean;
-    isBarrage?: boolean;
-    isGlacialShard?: boolean;
-    isAegis?: boolean;
-    isCrossentropyBolt?: boolean;
-    isDivineStorm?: boolean;
-    isHolyBurn?: boolean;
-    isEviscerate?: boolean;
-    isColossusStrike?: boolean;
   }>) => void;
   nextDamageNumberId?: { current: number };
   setActiveEffects?: (callback: (prev: Array<{
@@ -124,8 +83,6 @@ export default function Runeblade({
   isOathstriking,
   isDeathGrasping = false,
   isWraithStriking = false,
-  isDivineStorming = false,
-  isColossusStriking = false,
   isCharging = false,
   isDeflecting = false,
   isCorruptedAuraActive = false,
@@ -135,8 +92,6 @@ export default function Runeblade({
   onDeathGraspComplete,
   onWraithStrikeComplete,
   onOathstrikeComplete,
-  onDivineStormComplete,
-  onColossusStrikeComplete,
   onChargeComplete,
   onDeflectComplete,
   onCorruptedAuraToggle,
@@ -159,8 +114,6 @@ export default function Runeblade({
   const smiteProgress = useRef(0);
   const deathGraspProgress = useRef(0);
   const wraithStrikeProgress = useRef(0);
-  const colossusStrikeProgress = useRef(0);
-  const divineStormRotation = useRef(0);
   const chargeProgress = useRef(0);
   const chargeStartPosition = useRef<Vector3 | null>(null);
   const chargeDirection = useRef<Vector3>(new Vector3());
@@ -181,9 +134,6 @@ export default function Runeblade({
     life: number;
     scale: number;
   }>>([]);
-
-  // Divine Storm hit tracking (no more DoT)
-  const lastDivineStormHitTime = useRef<Record<string, number>>({});
 
   // Swing collision tracking
   const lastSwingHitTime = useRef<Record<string, number>>({});
@@ -210,7 +160,7 @@ export default function Runeblade({
     const now = Date.now();
 
     // Handle smooth combo transitions when not actively swinging
-    if (!isSwinging && !isSmiting && !isDeathGrasping && !isColossusStriking && !isDivineStorming && !isOathstriking && !isCharging && !isDeflecting && isInCombo.current) {
+    if (!isSwinging && !isSmiting && !isDeathGrasping && !isOathstriking && !isCharging && !isDeflecting && isInCombo.current) {
       if (comboTransitionProgress.current === 0) {
       }
       comboTransitionProgress.current += delta * 7; // Fast transition speed
@@ -277,8 +227,8 @@ export default function Runeblade({
       return; // Don't process other animations during transition
     }
 
-    // Skip Divine Storm, Charge, and other animations as requested
-    if (isDivineStorming || isCharging) {
+    // Skip Charge, and other animations as requested
+    if (isCharging) {
       return;
     }
 
@@ -535,7 +485,7 @@ export default function Runeblade({
         runebladeRef.current.position.set(positionX, positionY, positionZ);
         runebladeRef.current.rotation.set(rotationX, rotationY, 0);
       }
-    } else if (!isSwinging && !isSmiting && !isDeathGrasping && !isColossusStriking && !isDivineStorming && !isOathstriking && !isCharging && !isDeflecting && !isInCombo.current) {
+    } else if (!isSwinging && !isSmiting && !isDeathGrasping && !isOathstriking && !isCharging && !isDeflecting && !isInCombo.current) {
       const justCompleted2ndSwing = lastComboStep.current === 2 && comboStep === 3;
 
       if (!justCompleted2ndSwing) {

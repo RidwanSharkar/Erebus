@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState, useRef, useCallb
 import { unstable_batchedUpdates } from 'react-dom';
 import { io, Socket } from 'socket.io-client';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
+import { SkillPointSystem, SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
 
 export interface Player {
   id: string;
@@ -14,6 +15,8 @@ export interface Player {
   subclass?: WeaponSubclass;
   health: number;
   maxHealth: number;
+  shield?: number;
+  maxShield?: number;
   movementDirection?: { x: number; y: number; z: number };
   // PVP Debuff states
   isFrozen?: boolean;
@@ -77,7 +80,6 @@ type PlayerAnimationState = {
   chargeProgress?: number;
   isSwinging?: boolean;
   swordComboStep?: 1 | 2 | 3;
-  isDivineStorming?: boolean;
   isSpinning?: boolean;
   isDeflecting?: boolean;
   isSwordCharging?: boolean;
@@ -85,8 +87,23 @@ type PlayerAnimationState = {
   viperStingChargeProgress?: number;
   isBarrageCharging?: boolean;
   barrageChargeProgress?: number;
+  isCobraShotCharging?: boolean;
+  cobraShotChargeProgress?: number;
+  isCrossentropyCharging?: boolean;
+  crossentropyChargeProgress?: number;
+  isSummonTotemCharging?: boolean;
+  summonTotemChargeProgress?: number;
+  isSmiting?: boolean;
+  isColossusStriking?: boolean;
+  isWindShearing?: boolean;
+  isDeathGrasping?: boolean;
+  isWraithStriking?: boolean;
+  isCorruptedAuraActive?: boolean;
+  isSkyfalling?: boolean;
   isBackstabbing?: boolean;
   isSundering?: boolean;
+  isStealthing?: boolean;
+  isInvisible?: boolean;
 };
 
 interface MultiplayerContextType {
@@ -113,6 +130,9 @@ interface MultiplayerContextType {
     tertiary?: WeaponType;
   } | null;
 
+  // Skill point system state
+  skillPointData: SkillPointData;
+
   // Room preview
   currentPreview: RoomPreview | null;
   
@@ -131,9 +151,11 @@ interface MultiplayerContextType {
   broadcastPlayerAbility: (abilityType: string, position: { x: number; y: number; z: number }, direction?: { x: number; y: number; z: number }, target?: string, extraData?: any) => void;
   broadcastPlayerEffect: (effect: any) => void;
   broadcastPlayerDamage: (targetPlayerId: string, damage: number, damageType?: string) => void;
+  broadcastPlayerHealing: (healingAmount: number, healingType: string, position: { x: number; y: number; z: number }) => void;
   broadcastPlayerAnimationState: (animationState: PlayerAnimationState) => void;
   broadcastPlayerDebuff: (targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, effectData?: any) => void;
   broadcastPlayerStealth: (isInvisible: boolean) => void;
+  broadcastPlayerKnockback: (targetPlayerId: string, direction: { x: number; y: number; z: number }, distance: number, duration: number) => void;
   
   // Enemy actions
   damageEnemy: (enemyId: string, damage: number) => void;
@@ -149,9 +171,16 @@ interface MultiplayerContextType {
   updatePlayerExperience: (playerId: string, experience: number) => void;
   updatePlayerLevel: (playerId: string, level: number) => void;
 
+  // Shield actions
+  updatePlayerShield: (playerId: string, shield: number, maxShield?: number) => void;
+
   // Weapon selection actions
   setSelectedWeapons: (weapons: { primary: WeaponType; secondary: WeaponType; tertiary?: WeaponType }) => void;
   checkAndUnlockTertiaryWeapon: (currentLevel: number) => void;
+
+  // Skill point system actions
+  unlockAbility: (unlock: AbilityUnlock) => void;
+  updateSkillPointsForLevel: (level: number) => void;
 
   // Direct state setters for local visual updates (use with caution)
   setPlayers: React.Dispatch<React.SetStateAction<Map<string, Player>>>;
@@ -190,6 +219,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     secondary: WeaponType;
     tertiary?: WeaponType;
   } | null>(null);
+  const [skillPointData, setSkillPointData] = useState<SkillPointData>(SkillPointSystem.getInitialSkillPointData());
   
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -823,6 +853,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
+  const broadcastPlayerHealing = useCallback((healingAmount: number, healingType: string, position: { x: number; y: number; z: number }) => {
+    if (socket && currentRoomId) {
+      socket.emit('player-healing', {
+        roomId: currentRoomId,
+        healingAmount,
+        healingType,
+        position
+      });
+    }
+  }, [socket, currentRoomId]);
+
   const broadcastPlayerAnimationState = useCallback((animationState: PlayerAnimationState) => {
     if (socket && currentRoomId) {
       socket.emit('player-animation-state', {
@@ -857,12 +898,37 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
+  const broadcastPlayerKnockback = useCallback((targetPlayerId: string, direction: { x: number; y: number; z: number }, distance: number, duration: number) => {
+    if (socket && currentRoomId) {
+      socket.emit('player-knockback', {
+        roomId: currentRoomId,
+        playerId: socket.id,
+        targetPlayerId,
+        direction,
+        distance,
+        duration,
+        timestamp: Date.now()
+      });
+    }
+  }, [socket, currentRoomId]);
+
   const updatePlayerExperience = useCallback((playerId: string, experience: number) => {
     if (socket && currentRoomId) {
       socket.emit('player-experience-changed', {
         roomId: currentRoomId,
         playerId,
         experience
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const updatePlayerShield = useCallback((playerId: string, shield: number, maxShield?: number) => {
+    if (socket && currentRoomId) {
+      socket.emit('player-shield-changed', {
+        roomId: currentRoomId,
+        playerId,
+        shield,
+        maxShield
       });
     }
   }, [socket, currentRoomId]);
@@ -905,9 +971,26 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       // Check for tertiary weapon unlock in PVP mode
       if (gameMode === 'pvp') {
         checkAndUnlockTertiaryWeapon(level);
+        // Update skill points when leveling up
+        updateSkillPointsForLevel(level);
       }
     }
   }, [socket, currentRoomId, gameMode, checkAndUnlockTertiaryWeapon]);
+
+  // Skill point system functions
+  const unlockAbility = useCallback((unlock: AbilityUnlock) => {
+    try {
+      const newSkillPointData = SkillPointSystem.unlockAbility(skillPointData, unlock.weaponType, unlock.abilityKey, unlock.weaponSlot);
+      setSkillPointData(newSkillPointData);
+    } catch (error) {
+      console.error('Failed to unlock ability:', error);
+    }
+  }, [skillPointData]);
+
+  const updateSkillPointsForLevel = useCallback((level: number) => {
+    const newSkillPointData = SkillPointSystem.updateSkillPointsForLevel(skillPointData, level);
+    setSkillPointData(newSkillPointData);
+  }, [skillPointData]);
 
   const contextValue: MultiplayerContextType = {
     socket,
@@ -935,18 +1018,24 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     broadcastPlayerAbility,
     broadcastPlayerEffect,
     broadcastPlayerDamage,
+    broadcastPlayerHealing,
     broadcastPlayerAnimationState,
     broadcastPlayerDebuff,
     broadcastPlayerStealth,
+    broadcastPlayerKnockback,
     damageEnemy,
     applyStatusEffect,
     damageTower,
     damageSummonedUnit,
     updatePlayerExperience,
     updatePlayerLevel,
+    updatePlayerShield,
     selectedWeapons,
     setSelectedWeapons,
     checkAndUnlockTertiaryWeapon,
+    skillPointData,
+    unlockAbility,
+    updateSkillPointsForLevel,
     setPlayers
   };
 

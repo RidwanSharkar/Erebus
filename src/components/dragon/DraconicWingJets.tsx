@@ -1,7 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, Euler } from 'three';
-import * as THREE from 'three';
+import { Group, Vector3, Euler, AdditiveBlending } from 'three';
 import { WeaponType, WeaponSubclass } from './weapons';
 
 interface WingJetProps {
@@ -198,11 +197,11 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
             <meshStandardMaterial
               color={colors.particle}
               emissive={colors.main}
-              emissiveIntensity={0.005}
+              emissiveIntensity={0.5}
               transparent
-              opacity={particle.life / particle.maxLife * 0.8}
+              opacity={particle.life / particle.maxLife * 0.75}
               depthWrite={false}
-              blending={THREE.AdditiveBlending}
+              blending={AdditiveBlending}
             />
           </mesh>
         ))}

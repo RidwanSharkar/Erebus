@@ -37,24 +37,24 @@ interface DragonRendererProps {
   isSkyfalling?: boolean;
   isBackstabbing?: boolean;
   isSundering?: boolean;
-  isDivineStorming?: boolean;
   isSwordCharging?: boolean;
   isDeflecting?: boolean;
   isSmiting?: boolean;
+  isColossusStriking?: boolean;
   isDeathGrasping?: boolean;
   isWraithStriking?: boolean;
   isCorruptedAuraActive?: boolean;
-  isColossusStriking?: boolean;
   isDead?: boolean;
   onSmiteComplete?: () => void;
+  onColossusStrikeComplete?: () => void;
   onDeathGraspComplete?: () => void;
   onWraithStrikeComplete?: () => void;
   onCorruptedAuraToggle?: (active: boolean) => void;
   onChargeComplete?: () => void;
   onDeflectComplete?: () => void;
-  onColossusStrikeComplete?: () => void;
   rotation?: { x: number; y: number; z: number }; // Add rotation prop for multiplayer
   isLocalPlayer?: boolean; // Flag to distinguish local player from other players
+  isStealthing?: boolean; // Whether the local player is currently in stealth mode
   isViperStingCharging?: boolean;
   viperStingChargeProgress?: number;
   isBarrageCharging?: boolean;
@@ -84,7 +84,7 @@ interface DragonRendererProps {
     maxHealth: number;
   }>;
   rageSpent?: number;
-  combatSystem?: any; // CombatSystem for Colossus Strike damage numbers
+  combatSystem?: any; 
 }
 
 export default function DragonRenderer({
@@ -101,15 +101,15 @@ export default function DragonRenderer({
   isDeflecting = false,
   isDead = false,
   isSmiting = false,
+  isColossusStriking = false,
   isDeathGrasping = false,
   isWraithStriking = false,
   isCorruptedAuraActive = false,
-  isColossusStriking = false,
   onSmiteComplete = () => {},
+  onColossusStrikeComplete = () => {},
   onDeathGraspComplete = () => {},
   onWraithStrikeComplete = () => {},
   onCorruptedAuraToggle = () => {},
-  onColossusStrikeComplete = () => {},
   onBowRelease = () => {},
   onScytheSwingComplete = () => {},
   onSwordSwingComplete = () => {},
@@ -120,12 +120,12 @@ export default function DragonRenderer({
   isSkyfalling = false,
   isBackstabbing = false,
   isSundering = false,
-  isDivineStorming = false,
   isSwordCharging = false,
   onChargeComplete = () => {},
   onDeflectComplete = () => {},
   rotation,
   isLocalPlayer = true,
+  isStealthing = false,
   isViperStingCharging = false,
   viperStingChargeProgress = 0,
   isBarrageCharging = false,
@@ -345,7 +345,7 @@ export default function DragonRenderer({
       // Use combat system to deal damage (this will handle damage numbers automatically)
       const combatSystem = world.getSystem(CombatSystem);
       if (combatSystem) {
-        combatSystem.queueDamage(targetEntity, damage, playerEntityObj, 'sword');
+        combatSystem.queueDamage(targetEntity, damage, playerEntityObj, 'sword', playerEntityObj?.userData?.playerId);
 
       }
     }
@@ -387,21 +387,20 @@ export default function DragonRenderer({
           isSkyfalling={isSkyfalling}
           isBackstabbing={isBackstabbing}
           isSundering={isSundering}
-          isDivineStorming={isDivineStorming}
           isSwordCharging={isSwordCharging}
           isDeflecting={isDeflecting}
           isSmiting={isSmiting}
+          isColossusStriking={isColossusStriking}
           isDeathGrasping={isDeathGrasping}
           isWraithStriking={isWraithStriking}
           isCorruptedAuraActive={isCorruptedAuraActive}
-          isColossusStriking={isColossusStriking}
           onSmiteComplete={onSmiteComplete}
+          onColossusStrikeComplete={onColossusStrikeComplete}
           onDeathGraspComplete={onDeathGraspComplete}
           onWraithStrikeComplete={onWraithStrikeComplete}
           onCorruptedAuraToggle={onCorruptedAuraToggle}
           onChargeComplete={onChargeComplete}
           onDeflectComplete={onDeflectComplete}
-          onColossusStrikeComplete={onColossusStrikeComplete}
           enemyData={enemyData}
           onHit={handleSwordHit}
           setDamageNumbers={setDamageNumbers}
@@ -423,10 +422,11 @@ export default function DragonRenderer({
       </group>
       
       {/* GHOST TRAIL - Rendered outside dragon group to avoid inheriting transformations */}
-      <GhostTrail 
-        parentRef={groupRef} 
-        weaponType={currentWeapon} 
-        weaponSubclass={currentSubclass} 
+      <GhostTrail
+        parentRef={groupRef}
+        weaponType={currentWeapon}
+        weaponSubclass={currentSubclass}
+        isStealthing={isStealthing}
       />
       
       {/* VIPER STING MANAGER - Only for local player with bow */}

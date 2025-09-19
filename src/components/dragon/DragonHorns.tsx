@@ -1,8 +1,8 @@
 import React from 'react';
 
 export const DragonHorns = React.memo(({ isLeft = false }: { isLeft?: boolean }) => {
-  const segments = 18;
-  const heightPerSegment = 0.0675;
+  const segments = 8;
+  const heightPerSegment = 0.135; // Doubled to maintain total height
   const baseWidth = 0.075;
   const twistAmount = Math.PI * 1.75;
   const curveAmount = 3.25;
@@ -26,21 +26,21 @@ export const DragonHorns = React.memo(({ isLeft = false }: { isLeft?: boolean })
             rotation={[-1.5 * progress, twist, 0]}
           >
             <mesh>
-              <cylinderGeometry 
-                args={[width, width * 1.5, heightPerSegment, 10]}
+              <cylinderGeometry
+                args={[width, width * 1.5, heightPerSegment, 8]}
               />
-              <meshStandardMaterial 
+              <meshStandardMaterial
                 color={`rgb(${139 - progress * 80}, ${0 + progress * 20}, ${0 + progress * 20})`}
                 roughness={0.7}
                 metalness={0.4}
               />
             </mesh>
-            
-            {/* Ridge details */}
-            {Array.from({ length: 6 }).map((_, j) => (
-              <group 
-                key={j} 
-                rotation={[0, (j * Math.PI / 2), 0]}
+
+            {/* Ridge details - reduced from 6 to 3 for performance */}
+            {Array.from({ length: 3 }).map((_, j) => (
+              <group
+                key={j}
+                rotation={[0, (j * 2 * Math.PI / 3), 0]}
               >
                 <mesh position={[width * 0.95, 0, 0]}>
                   <boxGeometry args={[width * 0.3, heightPerSegment * 1.25 + 0.175, width * 1.5]} />

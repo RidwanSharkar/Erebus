@@ -12,7 +12,6 @@ import CrossentropyBolt from '@/components/projectiles/CrossentropyBolt';
 import EntropicBolt from '@/components/projectiles/EntropicBolt';
 import ChargedArrow from '@/components/projectiles/ChargedArrow';
 import RegularArrow from '@/components/projectiles/RegularArrow';
-import SwordProjectile from '@/components/projectiles/SwordProjectile';
 import Barrage from '@/components/projectiles/Barrage';
 import TowerProjectile from '@/components/projectiles/TowerProjectile';
 import ExplosionEffect from '@/components/projectiles/ExplosionEffect';
@@ -29,6 +28,7 @@ interface ProjectileData {
   level?: number;
   opacity?: number;
   ownerId?: string; // For tower projectiles
+  isCryoflame?: boolean; // For Entropic Bolt Cryoflame mode
 }
 
 interface SwordProjectileData {
@@ -214,7 +214,8 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             id: entropicIdCounter.current++,
             position: transform.position.clone(),
             direction: direction.clone(),
-            entityId: entity.id
+            entityId: entity.id,
+            isCryoflame: userData.isCryoflame || false
           });
         }
       } else if (userData.isChargedArrow) {
@@ -265,6 +266,8 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             opacity: userData.opacity || 1.0
           });
         }
+      } else if (userData.projectileType === 'wind_shear') {
+        // Wind shear projectiles are handled by WindShearProjectileManager, skip here
       } else if (userData.projectileType === 'sword_projectile') {
         console.log('⚔️ Found sword projectile entity:', entity.id, 'userData:', userData);
         const existing = projectileData.sword.find(p => p.entityId === entity.id);
@@ -380,6 +383,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
           position={bolt.position}
           direction={bolt.direction}
           checkCollisions={checkEntropicBoltCollisions}
+          isCryoflame={bolt.isCryoflame}
           onImpact={(impactPosition?: Vector3) => {
             // console.log(`⚡ EntropicBolt ${bolt.id} impact at position:`, impactPosition?.toArray());
           }}
@@ -420,20 +424,6 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
         );
       })}
 
-      {/* Sword Projectiles */}
-      {projectileData.sword.map(sword => {
-        console.log('⚔️ Rendering SwordProjectile:', sword.id, 'at position:', sword.position);
-        return (
-          <SwordProjectile
-            key={sword.id}
-            position={sword.position}
-            direction={sword.direction}
-            onImpact={() => {
-              console.log(`⚔️ SwordProjectile ${sword.id} impact`);
-            }}
-          />
-        );
-      })}
 
       {/* Barrage Arrows */}
       <Barrage 

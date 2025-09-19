@@ -213,6 +213,23 @@ function handlePlayerEvents(socket, gameRooms) {
     });
   });
 
+  // Handle player shield changes
+  socket.on('player-shield-changed', (data) => {
+    const { roomId, shield, maxShield } = data;
+
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    room.updatePlayerShield(socket.id, shield, maxShield);
+
+    // Broadcast shield change to other players
+    socket.to(roomId).emit('player-shield-changed', {
+      playerId: socket.id,
+      shield,
+      maxShield
+    });
+  });
+
   // Handle player level changes (for tertiary weapon unlocks)
   socket.on('player-level-changed', (data) => {
     const { roomId, playerId, level } = data;
@@ -348,7 +365,28 @@ function handlePlayerEvents(socket, gameRooms) {
     const previousHealth = targetPlayer.health;
     targetPlayer.health = Math.max(0, targetPlayer.health - damage);
     
-    console.log(`⚔️ PVP damage: ${sourcePlayer.name} dealt ${damage} damage to ${targetPlayer.name} (${targetPlayer.health}/${targetPlayer.maxHealth} HP)${damageType ? ` [${damageType}]` : ''}`);
+    // CRITICAL FIX: Be more conservative about setting wasKilled for burning stack damage
+    // Since server doesn't track burning stacks, high crossentropy/entropic damage can cause false kills
+    let wasActuallyKilled = previousHealth > 0 && targetPlayer.health <= 0;
+    
+    // For burning stack damage types and high ability damage, require confirmation that damage wasn't just calculation error
+    if (((damageType === 'crossentropy' || damageType === 'entropic') && damage > 100) || 
+        (damageType === 'colossusStrike' && damage > 200)) {
+      if (wasActuallyKilled) {
+        // Add a small buffer to prevent false positives from damage calculation desync
+        // Only mark as killed if health drops significantly below 0 or damage is reasonable
+        if (targetPlayer.health === 0 && damage <= targetPlayer.maxHealth * 0.6) {
+          console.log(`💀 Conservative kill validation passed for ${damageType} damage (${damage}) - confirming wasKilled`);
+        } else {
+          console.log(`⚠️ Suspicious ${damageType} kill with damage ${damage} > maxHealth*0.6 (${targetPlayer.maxHealth*0.6}) - setting wasKilled to false to prevent false positive`);
+          wasActuallyKilled = false;
+          // Restore some health to prevent death from ability calculation errors
+          targetPlayer.health = Math.min(targetPlayer.maxHealth, Math.max(1, previousHealth - Math.floor(targetPlayer.maxHealth * 0.4)));
+        }
+      }
+    }
+    
+    console.log(`⚔️ PVP damage: ${sourcePlayer.name} dealt ${damage} damage to ${targetPlayer.name} (${targetPlayer.health}/${targetPlayer.maxHealth} HP)${damageType ? ` [${damageType}]` : ''}${wasActuallyKilled ? ' - KILLED!' : ''}`);
     
     // Broadcast damage event to all players in the room
     room.io.to(roomId).emit('player-damaged', {
@@ -358,7 +396,7 @@ function handlePlayerEvents(socket, gameRooms) {
       damageType: damageType,
       newHealth: targetPlayer.health,
       maxHealth: targetPlayer.maxHealth,
-      wasKilled: previousHealth > 0 && targetPlayer.health <= 0,
+      wasKilled: wasActuallyKilled,
       timestamp: Date.now()
     });
     
@@ -367,6 +405,32 @@ function handlePlayerEvents(socket, gameRooms) {
       playerId: targetPlayerId,
       health: targetPlayer.health,
       maxHealth: targetPlayer.maxHealth
+    });
+  });
+
+  // Handle PVP healing effects
+  socket.on('player-healing', (data) => {
+    const { roomId, healingAmount, healingType, position } = data;
+    
+    if (!gameRooms.has(roomId)) return;
+    
+    const room = gameRooms.get(roomId);
+    const sourcePlayer = room.getPlayer(socket.id);
+    
+    if (!sourcePlayer) {
+      console.warn(`⚠️ PVP healing failed: source ${socket.id} not found in room ${roomId}`);
+      return;
+    }
+    
+    console.log(`💚 PVP healing: ${sourcePlayer.name} healed for ${healingAmount} HP using ${healingType}`);
+    
+    // Broadcast healing event to all players in the room (including source for confirmation)
+    room.io.to(roomId).emit('player-healing', {
+      sourcePlayerId: socket.id,
+      healingAmount: healingAmount,
+      healingType: healingType,
+      position: position,
+      timestamp: Date.now()
     });
   });
 

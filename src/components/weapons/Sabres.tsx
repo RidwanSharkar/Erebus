@@ -1,6 +1,6 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, Group, Shape, AdditiveBlending } from '@/utils/three-exports';
+import { Group, Shape } from '@/utils/three-exports';
 
 const lerp = (start: number, end: number, t: number) => {
   return start * (1 - t) + end * t;
@@ -48,8 +48,8 @@ export default function Sabres({
   const rightSabreRef = useRef<Group>(null);
   const rightSwingProgress = useRef(0);
 
-  const leftBasePosition = [-0.8, 0.75, 0.65] as const;
-  const rightBasePosition = [0.8, 0.75, 0.65] as const;
+  const leftBasePosition = [-0.75, 0.75, 0.65] as const;
+  const rightBasePosition = [0.75, 0.75, 0.65] as const;
 
   // Ref for tracking right swing delay
   const rightSwingDelay = useRef(0);
@@ -70,7 +70,7 @@ export default function Sabres({
     right: { x: 0, y: 0, z: 0 }
   });
   
-  // Sunder animation state (whirlwind effect)
+  // Flourish animation state 
   const sunderProgress = useRef(0);
   const sunderPhase = useRef<'none' | 'windup' | 'whirlwind' | 'recover'>('none');
   const sunderAnimationComplete = useRef(false);
@@ -539,13 +539,13 @@ export default function Sabres({
     // Sharp elegant tip
     shape.quadraticCurveTo(1.0, 0.1, 1.1, 0);
     // Sweeping bottom curve with notch
-    shape.quadraticCurveTo(1.0, -0.05, 0.8, -0.1);
+    shape.quadraticCurveTo(1.0, -0.0, 0.8, -0.1);
     // Distinctive notch
     shape.lineTo(0.7, -0.15);
     shape.lineTo(0.65, -0.1);
     // Continue curve to handle
     shape.quadraticCurveTo(0.4, -0.08, 0.2, -0.05);
-    shape.quadraticCurveTo(0.1, -0.02, 0, 0);
+    shape.quadraticCurveTo(0.4, -0.02, 0, 0);
 
     return shape;
   };
@@ -566,7 +566,7 @@ export default function Sabres({
     // Mirror for right side
     shape.lineTo(0.13, 0.08);
     shape.lineTo(0.18, 0);
-    shape.lineTo(0.08, -0.04);
+    shape.lineTo(0.08, 0.04);
     shape.lineTo(0, 0);
 
     // Elegant curved blade shape (slightly smaller)
@@ -577,13 +577,13 @@ export default function Sabres({
     // Sharp elegant tip
     shape.quadraticCurveTo(0.98, 0.08, 1.08, 0);
     // Sweeping bottom curve with notch
-    shape.quadraticCurveTo(0.98, -0.04, 0.78, -0.08);
+    shape.quadraticCurveTo(0.98, 0.04, 0.78, -0.08);
     // Distinctive notch
-    shape.lineTo(0.68, -0.13);
-    shape.lineTo(0.63, -0.08);
+    shape.lineTo(0.68, -0.14);
+    shape.lineTo(0.7, -0.08);
     // Continue curve to handle
-    shape.quadraticCurveTo(0.38, -0.06, 0.18, -0.04);
-    shape.quadraticCurveTo(0.08, -0.02, 0, 0);
+    shape.quadraticCurveTo(0.38, -0.04, 0, -0.04);
+    shape.quadraticCurveTo(0.08, -0.04, 0, -0.04);
 
     return shape;
   };
@@ -637,9 +637,9 @@ export default function Sabres({
 
   return (
     <group 
-      position={[0, -0.6, 0.5]} 
-      rotation={[-0.55, 0, 0]}
-      scale={[0.775, 0.775, 0.775]}
+      position={[0, -0.6, 0.4]} 
+      rotation={[-0.4, 0, 0]}
+      scale={[0.775, 0.775, 0.7]}
     >
       {/* Left Sabre */}
       <group 
@@ -697,13 +697,6 @@ export default function Sabres({
             />
           </mesh>
           
-          {/* Point light for local illumination */}
-          <pointLight
-            color={colors.emissive}
-            intensity={5}
-            distance={2}
-            decay={2}
-          />
         </group>
       </group>
 
@@ -763,13 +756,7 @@ export default function Sabres({
             />
           </mesh>
           
-          {/* Point light for local illumination */}
-          <pointLight
-            color={colors.emissive}
-            intensity={1.5}
-            distance={2}
-            decay={2}
-          />
+
         </group>
       </group>
     </group>

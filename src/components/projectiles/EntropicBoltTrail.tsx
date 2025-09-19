@@ -7,13 +7,15 @@ interface EntropicBoltTrailProps {
   size: number;
   meshRef: React.RefObject<Mesh | Group>;
   opacity?: number;
+  isCryoflame?: boolean;
 }
 
 const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
   color,
   size,
   meshRef,
-  opacity = 1
+  opacity = 1,
+  isCryoflame = false
 }) => {
   const particlesCount = 25; // Fewer particles than CrossentropyBoltTrail for simpler effect
   const particlesRef = useRef<Points>(null);
@@ -143,15 +145,24 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
         fragmentShader={`
           varying float vOpacity;
           uniform vec3 uColor;
+          uniform bool uIsCryoflame;
           void main() {
             float d = length(gl_PointCoord - vec2(0.5));
             float strength = smoothstep(0.5, 0.1, d);
-            vec3 glowColor = mix(uColor, vec3(1.0, 0.6, 0.0), 0.4);
+            vec3 glowColor;
+            if (uIsCryoflame) {
+              // For Cryoflame: mix with a deep navy blue for a rich blue effect
+              glowColor = mix(uColor, vec3(0.2, 0.4, 0.8), 0.4);
+            } else {
+              // For normal Entropic: mix with orange for fire effect
+              glowColor = mix(uColor, vec3(1.0, 0.6, 0.0), 0.4);
+            }
             gl_FragColor = vec4(glowColor, vOpacity * strength);
           }
         `}
         uniforms={{
           uColor: { value: color },
+          uIsCryoflame: { value: isCryoflame },
         }}
       />
     </points>

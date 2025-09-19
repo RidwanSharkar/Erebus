@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
 import HotkeyPanel from './HotkeyPanel';
+import { SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
+import { RuneCounter } from './RuneCounter';
 
 interface GameUIProps {
   currentWeapon: WeaponType;
@@ -14,6 +16,7 @@ interface GameUIProps {
   maxEnergy?: number;
   rage?: number;
   maxRage?: number;
+  level?: number; // Player level for mana scaling
   controlSystem?: any; // Reference to control system for ability cooldowns
   selectedWeapons?: {
     primary: WeaponType;
@@ -21,6 +24,12 @@ interface GameUIProps {
     tertiary?: WeaponType;
   } | null;
   onWeaponSwitch?: (slot: 1 | 2 | 3) => void;
+  skillPointData?: SkillPointData;
+  onUnlockAbility?: (unlock: AbilityUnlock) => void;
+  criticalRuneCount?: number;
+  critDamageRuneCount?: number;
+  criticalChance?: number;
+  criticalDamageMultiplier?: number;
 }
 
 interface ResourceBarProps {
@@ -57,6 +66,19 @@ function ResourceBar({ current, max, color, backgroundColor = '#333'}: ResourceB
   );
 }
 
+// Mana scaling based on player level
+function getMaxManaForWeapon(weaponType: WeaponType, level: number): number {
+  if (weaponType === WeaponType.RUNEBLADE) {
+    // Runeblade scaling: Level 1: 150, Level 2: 175, Level 3: 200, Level 4: 225, Level 5: 250
+    const runebladeMana = [0, 150, 175, 200, 225, 250];
+    return runebladeMana[level] || 150;
+  } else if (weaponType === WeaponType.SCYTHE) {
+    // Scythe scaling: Level 1: 250, Level 2: 275, Level 3: 300, Level 4: 325, Level 5: 350
+    return 250 + (level - 1) * 25;
+  }
+  return 200; // Default for other weapons
+}
+
 export default function GameUI({
   currentWeapon,
   playerHealth,
@@ -69,9 +91,16 @@ export default function GameUI({
   maxEnergy = 100,
   rage = 0,
   maxRage = 100,
+  level = 1, // Default to level 1
   controlSystem,
   selectedWeapons,
-  onWeaponSwitch
+  onWeaponSwitch,
+  skillPointData,
+  onUnlockAbility,
+  criticalRuneCount = 0,
+  critDamageRuneCount = 0,
+  criticalChance = 0,
+  criticalDamageMultiplier = 2.0
 }: GameUIProps) {
   // Store resources per weapon type to persist across switches
   const [weaponResources, setWeaponResources] = useState<{
@@ -102,21 +131,21 @@ export default function GameUI({
       setWeaponResources(prev => {
         const updated = { ...prev };
 
-        // Mana regeneration for Scythe (10 mana per second = 5 every 500ms, max 250)
-        const scytheMaxMana = 250;
+        // Mana regeneration for Scythe (10 mana per second = 5 every 500ms)
+        const scytheMaxMana = getMaxManaForWeapon(WeaponType.SCYTHE, level);
         if (updated[WeaponType.SCYTHE].mana < scytheMaxMana) {
           updated[WeaponType.SCYTHE].mana = Math.min(scytheMaxMana, updated[WeaponType.SCYTHE].mana + 4);
         }
 
-        // Mana regeneration for Runeblade (4 mana per second = 2 every 500ms, max 150)
-        const runebladeMaxMana = 150;
+        // Mana regeneration for Runeblade (4 mana per second = 2 every 500ms)
+        const runebladeMaxMana = getMaxManaForWeapon(WeaponType.RUNEBLADE, level);
         if (updated[WeaponType.RUNEBLADE].mana < runebladeMaxMana) {
           updated[WeaponType.RUNEBLADE].mana = Math.min(runebladeMaxMana, updated[WeaponType.RUNEBLADE].mana + 2);
         }
 
         // Energy regeneration for Bow and Sabres (14 energy per second = 7 every 500ms)
         if (updated[WeaponType.BOW].energy < maxEnergy) {
-          updated[WeaponType.BOW].energy = Math.min(maxEnergy, updated[WeaponType.BOW].energy + 7);
+          updated[WeaponType.BOW].energy = Math.min(maxEnergy, updated[WeaponType.BOW].energy + 6);
         }
         if (updated[WeaponType.SABRES].energy < maxEnergy) {
           updated[WeaponType.SABRES].energy = Math.min(maxEnergy, updated[WeaponType.SABRES].energy + 7);
@@ -142,7 +171,7 @@ export default function GameUI({
         const timeSinceLastDamage = now - swordData.lastSwordDamageTime;
 
         // If it's been more than 6 seconds since last sword damage, decay rage
-        if (timeSinceLastDamage > 6000 && swordData.rage > 0) {
+        if (timeSinceLastDamage > 8000 && swordData.rage > 0) {
           swordData.rage = Math.max(0, swordData.rage - 5);
         }
 
@@ -156,12 +185,23 @@ export default function GameUI({
   // Function to consume mana (for Crossentropy bolt and Runeblade abilities)
   const consumeMana = (amount: number): boolean => {
     if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
-      if (currentMana >= amount) {
+      // Apply Runeblade Arcane Mastery passive (-10% mana cost)
+      let actualCost = amount;
+      if (currentWeapon === WeaponType.RUNEBLADE && controlSystem) {
+        // Check if Runeblade passive is unlocked
+        const weaponSlot = selectedWeapons?.primary === WeaponType.RUNEBLADE ? 'primary' : 'secondary';
+        if (weaponSlot && controlSystem.isPassiveAbilityUnlocked &&
+            controlSystem.isPassiveAbilityUnlocked('P', WeaponType.RUNEBLADE, weaponSlot)) {
+          actualCost = Math.floor(amount * 0.9); // 10% reduction
+        }
+      }
+
+      if (currentMana >= actualCost) {
         setWeaponResources(prev => ({
           ...prev,
           [currentWeapon]: {
             ...prev[currentWeapon],
-            mana: Math.max(0, prev[currentWeapon].mana - amount)
+            mana: Math.max(0, prev[currentWeapon].mana - actualCost)
           }
         }));
         return true; // Successfully consumed mana
@@ -175,7 +215,7 @@ export default function GameUI({
   // Function to add mana (for Particle Beam refund when hitting frozen enemies)
   const addMana = (amount: number) => {
     if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
-      const maxMana = currentWeapon === WeaponType.SCYTHE ? 250 : 150;
+      const maxMana = getMaxManaForWeapon(currentWeapon, level);
       setWeaponResources(prev => ({
         ...prev,
         [currentWeapon]: {
@@ -231,7 +271,7 @@ export default function GameUI({
     }
   };
 
-  // Function to consume rage (for Divine Storm)
+  // Function to consume rage 
   const consumeRage = (amount: number) => {
     if (currentWeapon === WeaponType.SWORD) {
       setWeaponResources(prev => ({
@@ -244,7 +284,7 @@ export default function GameUI({
     }
   };
 
-  // Function to consume all rage (for Divine Storm)
+  // Function to consume all rage 
   const consumeAllRage = () => {
     if (currentWeapon === WeaponType.SWORD) {
       setWeaponResources(prev => ({
@@ -257,18 +297,7 @@ export default function GameUI({
     }
   };
 
-  // Function to consume 15 rage (for updated Divine Storm)
-  const consumeDivineStormRage = () => {
-    if (currentWeapon === WeaponType.SWORD) {
-      setWeaponResources(prev => ({
-        ...prev,
-        [currentWeapon]: {
-          ...prev[currentWeapon],
-          rage: Math.max(0, prev[currentWeapon].rage - 15)
-        }
-      }));
-    }
-  };
+
 
   // Expose functions globally for other components to use
   useEffect(() => {
@@ -280,28 +309,24 @@ export default function GameUI({
       gainRage,
       consumeRage,
       consumeAllRage,
-      consumeDivineStormRage,
       getCurrentMana: () => currentMana,
       getCurrentEnergy: () => currentEnergy,
       getCurrentRage: () => currentRage,
       canCastCrossentropy: () => currentMana >= 40,
       canCastEntropicBolt: () => currentMana >= 10,
       canCastCrossentropyBolt: () => currentMana >= 40,
-      canCastParticleBeam: () => currentMana >= 40,
       canCastReanimate: () => currentMana >= 20,
       canCastFrostNova: () => currentMana >= 25,
       // Runeblade mana abilities
-      canCastSmite: () => currentMana >= 35,
+      canCastSmite: () => currentMana >= 45,
       canCastDeathGrasp: () => currentMana >= 25,
       canCastWraithStrike: () => currentMana >= 30,
       canCastCorruptedAura: () => currentMana >= 8,
-      canCastDivineStorm: () => currentRage >= 15,
-      canCastColossusStrike: () => currentRage >= 40,
       // Bow energy abilities
       canCastBarrage: () => currentEnergy >= 40,
       canCastCobraShot: () => currentEnergy >= 40,
       canCastViperSting: () => currentEnergy >= 60,
-      canCastCloudkill: () => currentEnergy >= 25,
+      canCastCloudkill: () => currentEnergy >= 40,
       // Sabres energy abilities
       canCastBackstab: () => currentEnergy >= 60,
       canCastSkyfall: () => currentEnergy >= 40,
@@ -316,7 +341,7 @@ export default function GameUI({
         return (
           <ResourceBar
             current={currentMana}
-            max={250} // Scythe max mana is 250
+            max={getMaxManaForWeapon(WeaponType.SCYTHE, level)} // Dynamic Scythe mana based on level
             color="#4A90E2"
             backgroundColor="#1a2332"
           />
@@ -344,7 +369,7 @@ export default function GameUI({
         return (
           <ResourceBar
             current={currentMana}
-            max={150} // Runeblade max mana is 150
+            max={getMaxManaForWeapon(WeaponType.RUNEBLADE, level)} // Dynamic Runeblade mana based on level
             color="#9B59B6" // Purple color for mana
             backgroundColor="#2a1a33"
           />
@@ -356,6 +381,16 @@ export default function GameUI({
 
   return (
     <>
+      {/* Rune Counter - positioned in right corner */}
+      <div className="fixed bottom-4 right-4 z-50">
+        <RuneCounter
+          criticalRuneCount={criticalRuneCount}
+          critDamageRuneCount={critDamageRuneCount}
+          criticalChance={criticalChance}
+          criticalDamageMultiplier={criticalDamageMultiplier}
+        />
+      </div>
+
       {/* Main UI Panel - positioned above the hotkey panel */}
       <div className="fixed bottom-32 left-1/2 transform -translate-x-1/2 z-50">
         <div className="bg-black bg-opacity-60 backdrop-blur-sm rounded-lg p-4 border border-gray-600 min-w-80">
@@ -403,6 +438,8 @@ export default function GameUI({
         controlSystem={controlSystem}
         selectedWeapons={selectedWeapons}
         onWeaponSwitch={onWeaponSwitch}
+        skillPointData={skillPointData}
+        onUnlockAbility={onUnlockAbility}
       />
     </>
   );

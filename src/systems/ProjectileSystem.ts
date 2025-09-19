@@ -317,7 +317,7 @@ export class ProjectileSystem extends System {
       
 
       
-      this.combatSystem.queueDamage(target, projectile.damage, projectileEntity, damageType);
+      this.combatSystem.queueDamage(target, projectile.damage, projectileEntity, damageType, projectile.sourcePlayerId);
     } else {
       // Fallback to direct damage (pass entity for shield absorption)
       const currentTime = Date.now() / 1000;
@@ -550,6 +550,7 @@ export class ProjectileSystem extends System {
       level?: number;
       opacity?: number;
       sourcePlayerId?: string;
+      isCryoflame?: boolean;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -593,6 +594,7 @@ export class ProjectileSystem extends System {
     placeholderMesh.userData.isEntropicBolt = true;
     placeholderMesh.userData.projectileEntity = projectileEntity;
     placeholderMesh.userData.direction = direction.clone();
+    placeholderMesh.userData.isCryoflame = config?.isCryoflame || false;
     
     renderer.mesh = placeholderMesh;
     
@@ -665,7 +667,7 @@ export class ProjectileSystem extends System {
 
     // Add Renderer component - we'll use a special marker for RegularArrow
     const renderer = world.createComponent(Renderer);
-    
+
     // Create a simple placeholder mesh that will be replaced by the React component
     const placeholderGeometry = new SphereGeometry(0.15, 8, 8);
     const placeholderMaterial = new MeshStandardMaterial({
@@ -676,14 +678,19 @@ export class ProjectileSystem extends System {
       opacity: 0.1 // Very low opacity since React component will handle visuals
     });
     const placeholderMesh = new Mesh(placeholderGeometry, placeholderMaterial);
-    
-    // Mark this as a RegularArrow for special handling (will be overridden by TowerSystem if it's a tower projectile)
-    placeholderMesh.userData.isRegularArrow = true;
+
+    // Only mark as RegularArrow if it's actually a regular arrow or generic projectile
+    // Don't mark special projectile types like wind_shear
+    const projectileType = config?.projectileType || 'generic';
+    if (projectileType === 'generic' || projectileType === 'regular_arrow') {
+      placeholderMesh.userData.isRegularArrow = true;
+    }
+
     placeholderMesh.userData.direction = direction.clone();
     placeholderMesh.userData.subclass = config?.subclass;
     placeholderMesh.userData.level = config?.level;
     placeholderMesh.userData.opacity = config?.opacity || 1.0;
-    placeholderMesh.userData.projectileType = config?.projectileType;
+    placeholderMesh.userData.projectileType = projectileType;
     
     renderer.mesh = placeholderMesh;
     

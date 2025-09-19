@@ -36,7 +36,26 @@ export class InterpolationSystem extends System {
         continue;
       }
 
-      this.interpolateEntity(transform, interpolationBuffer);
+      // Update knockback for remote players (since they don't go through MovementSystem)
+      if (movement && movement.isKnockbacked) {
+        const currentTime = Date.now() / 1000; // Convert to seconds
+        const knockbackResult = movement.updateKnockback(currentTime);
+        
+        if (knockbackResult.newPosition) {
+          // Apply knockback position directly for remote players
+          transform.position.copy(knockbackResult.newPosition);
+          console.log(`🌊 Remote player knockback updated: position=(${knockbackResult.newPosition.x.toFixed(2)}, ${knockbackResult.newPosition.z.toFixed(2)}), entity=${entity.id}`);
+        }
+        
+        if (knockbackResult.isComplete) {
+          console.log(`✅ Remote player knockback completed for entity ${entity.id}`);
+        }
+      }
+
+      // Only interpolate if not being knocked back (knockback has priority)
+      if (!movement || !movement.isKnockbacked) {
+        this.interpolateEntity(transform, interpolationBuffer);
+      }
     }
   }
 

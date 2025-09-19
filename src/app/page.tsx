@@ -1,15 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { WeaponType, WeaponSubclass } from '../components/dragon/weapons';
 import { Camera } from '../utils/three-exports';
 import type { DamageNumberData } from '../components/DamageNumbers';
 import DamageNumbers from '../components/DamageNumbers';
 import GameUI from '../components/ui/GameUI';
+import { getGlobalRuneCounts, getCriticalChance, getCriticalDamageMultiplier } from '../core/DamageCalculator';
 import ExperienceBar from '../components/ui/ExperienceBar';
 import { MultiplayerProvider, useMultiplayer } from '../contexts/MultiplayerContext';
 import RoomJoin from '../components/ui/RoomJoin';
+import { weaponAbilities, getAbilityIcon, type AbilityData } from '../utils/weaponAbilities';
 
 // Dynamic imports for maximum code splitting
 const Canvas = dynamic(() => import('@react-three/fiber').then(mod => ({ default: mod.Canvas })), {
@@ -33,8 +35,41 @@ interface WeaponOption {
   defaultSubclass: WeaponSubclass;
 }
 
+// Tooltip component for ability descriptions
+interface TooltipProps {
+  content: {
+    name: string;
+    description: string;
+    cooldown?: number;
+  };
+  visible: boolean;
+  x: number;
+  y: number;
+}
+
+function AbilityTooltip({ content, visible, x, y }: TooltipProps) {
+  if (!visible) return null;
+
+  return (
+    <div
+      className="fixed z-50 bg-gray-900 border border-gray-600 rounded-lg p-3 text-white text-sm max-w-xs pointer-events-none"
+      style={{
+        left: x - 150, // Center tooltip above cursor
+        top: y - 100,
+        transform: 'translateX(-50%)'
+      }}
+    >
+      <div className="font-semibold text-blue-300 mb-1">{content.name}</div>
+      {content.cooldown !== undefined && (
+        <div className="text-yellow-400 text-xs mb-1">Cooldown: {content.cooldown}s</div>
+      )}
+      <div className="text-gray-300">{content.description}</div>
+    </div>
+  );
+}
+
 function HomeContent() {
-  const { selectedWeapons, setSelectedWeapons } = useMultiplayer();
+  const { selectedWeapons, setSelectedWeapons, skillPointData, unlockAbility, updateSkillPointsForLevel } = useMultiplayer();
 
   const [damageNumbers, setDamageNumbers] = useState<DamageNumberData[]>([]);
   const [cameraInfo, setCameraInfo] = useState<{
@@ -97,6 +132,14 @@ function HomeContent() {
   // Track weapon positions to maintain consistent primary/secondary assignment
   const [weaponPositions, setWeaponPositions] = useState<{ [key: string]: 'primary' | 'secondary' }>({});
 
+  // Tooltip state for ability descriptions
+  const [tooltipContent, setTooltipContent] = useState<{
+    name: string;
+    description: string;
+    cooldown?: number;
+  } | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+
   // Get weapon position for consistent display
   const getWeaponPosition = (weaponType: WeaponType): 'primary' | 'secondary' | null => {
     return weaponPositions[weaponType] || null;
@@ -108,35 +151,35 @@ function HomeContent() {
       type: WeaponType.SCYTHE,
       name: 'Scythe',
       icon: '☠️',
-      description: 'Mage: FREEZE enemies with {E}-Frost Nova, HEAL with {Q}-Sunwell, and BURN targets with {R}-Crossentropy bolts.',
+      description: 'MAGE: FREEZE enemies with {E}-Frost Nova, HEAL with {Q}-Sunwell, and BURN targets with {R}-Crossentropy bolts.',
       defaultSubclass: WeaponSubclass.CHAOS
     },
     {
       type: WeaponType.SWORD,
       name: 'Greatsword',
-      icon: '⚜️',
-      description: 'Gladiator: BLOCK damage with {Q}-Aegis and DASH into range with {E}-Charge, generating rage to unleash powerful finishers with {R}-Bladestorm or {F}-Colossus Strike.',
+      icon: '💎',
+      description: 'GLADIATOR: BLOCK damage with {Q}-Aegis and DASH into range with {E}-Charge, generating rage to unleash powerful finishers.',
       defaultSubclass: WeaponSubclass.DIVINITY
     },
     {
       type: WeaponType.SABRES,
       name: 'Sabres',
       icon: '⚔️',
-      description: 'Assassin: STUN enemies by stacking {E}-Flourish or crashing down on enemies with {R}-Skyfall to apply positional {Q}-Backstab bonus damage or vanish with {F}-Shadow Step.',
+      description: 'ASSASSIN: STUN enemies by stacking {E}-Flourish or crashing down on enemies with {R}-Skyfall to apply positional {Q}-Backstab bonus damage or vanish with {F}-Shadow Step.',
       defaultSubclass: WeaponSubclass.FROST
     },
     {
       type: WeaponType.RUNEBLADE,
       name: 'Runeblade',
       icon: '🔮',
-      description: 'Knight: PULL enemies with {Q}-Void Grasp, SLOW enemies with {E}-Wraithblade, and HEAL with {R}-Unholy Smite. Toggle {F}-Corruption for enhanced damage.',
+      description: 'KNIGHT: PULL enemies with {Q}-Void Grasp, SLOW enemies with {E}-Wraithblade, and HEAL with {R}-Unholy Smite. Toggle {F}-Corruption for enhanced damage.',
       defaultSubclass: WeaponSubclass.ARCANE
     },
     {
       type: WeaponType.BOW,
       name: 'Bow',
       icon: '🏹',
-      description: 'Sniper: SLOW enemies with {Q}-Barrage, apply VENOM with {E}-Cobra Shot, and HEAL through {R}-Viper Sting soul fragments.',
+      description: 'SNIPER: SLOW enemies with {Q}-Barrage, apply VENOM with {E}-Cobra Shot, and HEAL through {R}-Viper Sting soul fragments.',
       defaultSubclass: WeaponSubclass.ELEMENTAL
     }
   ];
@@ -227,6 +270,27 @@ function HomeContent() {
     }
   };
 
+  // Tooltip handlers
+  const handleAbilityHover = useCallback((
+    e: React.MouseEvent,
+    ability: AbilityData
+  ) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setTooltipContent({
+      name: ability.name,
+      description: ability.description,
+      cooldown: ability.cooldown
+    });
+    setTooltipPosition({
+      x: rect.left + rect.width / 2,
+      y: rect.top
+    });
+  }, []);
+
+  const handleAbilityLeave = useCallback(() => {
+    setTooltipContent(null);
+  }, []);
+
   const handleDamageNumberComplete = (id: string) => {
     // Use the global handler set by GameScene
     if ((window as any).handleDamageNumberComplete) {
@@ -259,9 +323,21 @@ function HomeContent() {
     setControlSystem(newControlSystem);
   };
 
+  // Sync skill point data with control system
+  useEffect(() => {
+    if (controlSystem && skillPointData) {
+      controlSystem.setSkillPointData(skillPointData);
+    }
+  }, [controlSystem, skillPointData]);
+
   const handleExperienceUpdate = (experience: number, level: number) => {
     setPlayerExperience(experience);
     setPlayerLevel(level);
+    
+    // Update skill points when level changes
+    if (level > playerLevel) {
+      updateSkillPointsForLevel(level);
+    }
   };
 
   // Initialize tempSelectedWeapons and weapon positions when selectedWeapons changes
@@ -329,8 +405,8 @@ function HomeContent() {
                   )}
                 </p>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                  {weapons.map((weapon) => {
+                <div className="flex flex-wrap justify-center gap-4 mb-6">
+                  {weapons.slice(0, 5).map((weapon) => {
                     const isSelected = tempSelectedWeapons.includes(weapon.type);
                     const canSelect = !isSelected && tempSelectedWeapons.length < 2;
 
@@ -339,7 +415,7 @@ function HomeContent() {
                         key={weapon.type}
                         onClick={() => handleWeaponToggle(weapon.type)}
                         className={`
-                          p-4 rounded-lg border-2 cursor-pointer transition-all duration-300
+                          w-full sm:w-80 md:w-72 lg:w-80 p-4 rounded-lg border-2 cursor-pointer transition-all duration-300
                           ${isSelected
                             ? 'border-green-500 bg-green-500/20 shadow-lg shadow-green-500/30'
                             : canSelect
@@ -353,10 +429,34 @@ function HomeContent() {
                           <h3 className="text-lg font-bold mb-1">{weapon.name}</h3>
                         </div>
 
-                        <p className="text-xs text-gray-300 mb-2 text-center">
+                        <p className="text-xs text-gray-300 mb-3 text-center">
                           {weapon.description}
                         </p>
 
+                        {/* Weapon Abilities */}
+                        <div className="mb-3">
+                          <div className="text-xs text-gray-400 text-center mb-2">Abilities:</div>
+                          <div className="flex justify-center gap-1">
+                            {weaponAbilities[weapon.type]?.map((ability) => (
+                              <div
+                                key={ability.key}
+                                className="relative w-8 h-8 rounded border border-gray-600 bg-gray-800 hover:bg-gray-700 transition-colors cursor-pointer flex items-center justify-center"
+                                onMouseEnter={(e) => handleAbilityHover(e, ability)}
+                                onMouseLeave={handleAbilityLeave}
+                              >
+                                {/* Hotkey indicator */}
+                                <div className="absolute -top-1 -left-1 bg-gray-900 border border-gray-500 rounded text-xs text-white px-0.5 font-semibold leading-none text-[10px]">
+                                  {ability.key}
+                                </div>
+                                
+                                {/* Ability icon */}
+                                <div className="text-sm">
+                                  {getAbilityIcon(weapon.type, ability.key)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
 
                         {isSelected && (
                           <div className="text-center">
@@ -494,6 +594,7 @@ function HomeContent() {
                 maxShield={gameState.maxShield}
                 mana={gameState.mana || 150}
                 maxMana={gameState.maxMana || 150}
+                level={playerLevel}
                 controlSystem={controlSystem}
                 selectedWeapons={selectedWeapons}
                 onWeaponSwitch={(slot) => {
@@ -501,6 +602,12 @@ function HomeContent() {
                     controlSystem.switchWeaponBySlot(slot);
                   }
                 }}
+                skillPointData={skillPointData}
+                onUnlockAbility={unlockAbility}
+                criticalRuneCount={getGlobalRuneCounts().criticalRunes}
+                critDamageRuneCount={getGlobalRuneCounts().critDamageRunes}
+                criticalChance={getCriticalChance()}
+                criticalDamageMultiplier={getCriticalDamageMultiplier()}
               />
             </div>
 
@@ -513,6 +620,16 @@ function HomeContent() {
               />
             )}
           </>
+        )}
+
+        {/* Ability Tooltip - Show during weapon selection */}
+        {gameMode === 'menu' && tooltipContent && (
+          <AbilityTooltip 
+            content={tooltipContent}
+            visible={true}
+            x={tooltipPosition.x}
+            y={tooltipPosition.y}
+          />
         )}
 
       </main>

@@ -1,24 +1,22 @@
 import { useRef, useMemo } from 'react';
 import { Group, Vector3 } from 'three';
 import React from 'react';
-
+import DragonSkull from './DragonSkull';
 import BonePlate from './BonePlate';
-
 import BoneWings from './BoneWings';
 import { DragonHorns } from './DragonHorns';
 import ChargedOrbitals, { DashChargeStatus } from './ChargedOrbitals';
 import BoneAura from './BoneAura';
 import { WeaponType, WeaponSubclass } from './weapons';
 import DraconicWingJets from './DraconicWingJets';
-import ArchmageCrest from './ArchmageCrest';
 import EtherealBow from '../weapons/EtherBow';
 import Scythe from '../weapons/Scythe';
 import Sword from '../weapons/Sword';
 import Sabres from '../weapons/Sabres';
 import Runeblade from '../weapons/Runeblade';
-import DivineStorm from '../weapons/DivineStorm';
 import Reanimate, { ReanimateRef } from '../weapons/Reanimate';
 import BoneTail from './BoneTail';
+import ArchmageCrest from './ArchmageCrest';
 
 interface DragonUnitProps {
   position?: Vector3;
@@ -45,21 +43,20 @@ interface DragonUnitProps {
   isSkyfalling?: boolean;
   isBackstabbing?: boolean;
   isSundering?: boolean;
-  isDivineStorming?: boolean;
   isSwordCharging?: boolean;
   isDeflecting?: boolean;
   isSmiting?: boolean;
+  isColossusStriking?: boolean;
   isDeathGrasping?: boolean;
   isWraithStriking?: boolean;
   isCorruptedAuraActive?: boolean;
-  isColossusStriking?: boolean;
   onSmiteComplete?: () => void;
+  onColossusStrikeComplete?: () => void;
   onDeathGraspComplete?: () => void;
   onWraithStrikeComplete?: () => void;
   onCorruptedAuraToggle?: (active: boolean) => void;
   onChargeComplete?: () => void;
   onDeflectComplete?: () => void;
-  onColossusStrikeComplete?: () => void;
   enemyData?: Array<{
     id: string;
     position: Vector3;
@@ -71,13 +68,11 @@ interface DragonUnitProps {
     damage: number;
     position: Vector3;
     isCritical: boolean;
-    isDivineStorm?: boolean;
   }>) => Array<{
     id: number;
     damage: number;
     position: Vector3;
     isCritical: boolean;
-    isDivineStorm?: boolean;
   }>) => void;
   nextDamageNumberId?: { current: number };
   playerPosition?: Vector3;
@@ -119,7 +114,7 @@ interface DragonUnitProps {
   rageSpent?: number;
   collectedBones?: number;
   isWingJetsActive?: boolean;
-  combatSystem?: any; // CombatSystem for Colossus Strike damage numbers
+  combatSystem?: any; // CombatSystem for  Strike damage numbers
 }
 
 export default function DragonUnit({
@@ -151,21 +146,20 @@ export default function DragonUnit({
   isSkyfalling = false,
   isBackstabbing = false,
   isSundering = false,
-  isDivineStorming = false,
   isSwordCharging = false,
   isDeflecting = false,
   isSmiting = false,
+  isColossusStriking = false,
   isDeathGrasping = false,
   isWraithStriking = false,
   isCorruptedAuraActive = false,
-  isColossusStriking = false,
   onSmiteComplete = () => {},
+  onColossusStrikeComplete = () => {},
   onDeathGraspComplete = () => {},
   onWraithStrikeComplete = () => {},
   onCorruptedAuraToggle = () => {},
   onChargeComplete = () => {},
   onDeflectComplete = () => {},
-  onColossusStrikeComplete = () => {},
   enemyData = [],
   onHit = () => {},
   setDamageNumbers = () => {},
@@ -225,17 +219,15 @@ export default function DragonUnit({
         <Sword
           isSwinging={isSwinging}
           isSmiting={false}
-          isOathstriking={false}
-          isDivineStorming={isDivineStorming}
           isColossusStriking={isColossusStriking}
+          isOathstriking={false}
           isCharging={isSwordCharging}
           isDeflecting={isDeflecting}
           chargeDirectionProp={chargeDirection}
           onSwingComplete={onSwordSwingComplete}
           onSmiteComplete={() => {}}
-          onOathstrikeComplete={() => {}}
-          onDivineStormComplete={() => {}}
           onColossusStrikeComplete={onColossusStrikeComplete}
+          onOathstrikeComplete={() => {}}
           onChargeComplete={onChargeComplete}
           onDeflectComplete={onDeflectComplete}
           hasChainLightning={false}
@@ -250,9 +242,9 @@ export default function DragonUnit({
           playerRotation={playerRotation}
           dragonGroupRef={groupRef}
           playerEntityId={entityId}
-          rageSpent={rageSpent}
-          targetPlayerData={targetPlayerData}
-          combatSystem={combatSystem}
+
+
+   
         />
       );
     } else if (currentWeapon === WeaponType.SABRES) {
@@ -280,8 +272,6 @@ export default function DragonUnit({
           isWraithStriking={isWraithStriking}
           isCorruptedAuraActive={isCorruptedAuraActive}
           isOathstriking={false}
-          isDivineStorming={isDivineStorming}
-          isColossusStriking={false}
           isCharging={isSwordCharging}
           isDeflecting={isDeflecting}
           chargeDirectionProp={chargeDirection}
@@ -291,8 +281,6 @@ export default function DragonUnit({
           onWraithStrikeComplete={onWraithStrikeComplete}
           onCorruptedAuraToggle={onCorruptedAuraToggle}
           onOathstrikeComplete={() => {}}
-          onDivineStormComplete={() => {}}
-          onColossusStrikeComplete={() => {}}
           onChargeComplete={onChargeComplete}
           onDeflectComplete={onDeflectComplete}
           hasChainLightning={false}
@@ -322,9 +310,9 @@ export default function DragonUnit({
 
   const boneTail = useMemo(() => (
     <group scale={[0.85, 0.85, 0.85]} position={[0, 0.05, +0.1]}>
-      <BoneTail movementDirection={movementDirection} />
+      <BoneTail movementDirection={movementDirection} isDashing={isDashing} />
     </group>
-  ), [movementDirection]);
+  ), [movementDirection, isDashing]);
 
   const leftHorn = useMemo(() => (
     <group scale={[0.235, 0.335, 0.235]} position={[-0.05, 0.215, 0.35]} rotation={[+0.15, 0, -5]}>
@@ -389,6 +377,17 @@ export default function DragonUnit({
       />
 
       {/* ARCHMAGE CREST */}
+      <ArchmageCrest
+        position={[0, 0.5, 0]}
+        scale={-0.55}
+        weaponType={currentWeapon}
+        weaponSubclass={currentSubclass}
+      />
+
+
+
+
+  
 
       {/* CHARGED ORBITALS */}
       <ChargedOrbitals
@@ -409,28 +408,6 @@ export default function DragonUnit({
 
     {/* ======================================================== */}
 
-      {/* DIVINE STORM ABILITY */}
-      {isDivineStorming && currentWeapon === WeaponType.SWORD && (
-        <DivineStorm
-          position={position}
-          onComplete={() => {}}
-          parentRef={groupRef}
-          isActive={isDivineStorming}
-          enemyData={enemyData}
-          onHitTarget={(targetId, damage, isCritical, position, isDivineStorm) => {
-            onHit?.(targetId, damage);
-            if (setDamageNumbers && nextDamageNumberId) {
-              setDamageNumbers(prev => [...prev, {
-                id: nextDamageNumberId.current++,
-                damage,
-                position: position.clone(),
-                isCritical,
-                isDivineStorm
-              }]);
-            }
-          }}
-        />
-      )}
 
       {/* REANIMATE ABILITY */}
       {currentWeapon === WeaponType.SCYTHE && (

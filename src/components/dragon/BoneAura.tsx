@@ -42,8 +42,8 @@ const createBonePiece = () => (
 
 export default function BoneAura({ parentRef }: BoneAuraProps) {
   const bonesRef = useRef<Mesh[]>([]);
-  const boneCount = 16;
-  const radius = 0.425;
+  const boneCount = 12;
+  const radius = 0.4;
   const groupRef = useRef<Group>(null);
   
   useFrame(() => {

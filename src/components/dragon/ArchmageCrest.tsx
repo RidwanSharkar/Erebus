@@ -1,7 +1,6 @@
 import { useFrame } from '@react-three/fiber';
 import { useRef, useMemo } from 'react';
-import * as THREE from 'three';
-import { Shape, ExtrudeGeometry } from 'three';
+import { Shape, ExtrudeGeometry, Group, MeshStandardMaterial, SphereGeometry, DoubleSide } from 'three';
 import { WeaponType, WeaponSubclass } from './weapons';
 
 interface ArchmageCrestProps {
@@ -17,9 +16,9 @@ export default function ArchmageCrest({
   weaponType,
   weaponSubclass
 }: ArchmageCrestProps) {
-  const groupRef = useRef<THREE.Group>(null);
-  const leftWingRef = useRef<THREE.Group>(null);
-  const rightWingRef = useRef<THREE.Group>(null);
+  const groupRef = useRef<Group>(null);
+  const leftWingRef = useRef<Group>(null);
+  const rightWingRef = useRef<Group>(null);
 
   // Get color based on weapon type/subclass (matching GhostTrail)
   const getCrestColor = () => {
@@ -78,7 +77,7 @@ export default function ArchmageCrest({
 
   // Cached materials for performance - weapon themed
   const materials = useMemo(() => ({
-    blade: new THREE.MeshStandardMaterial({
+    blade: new MeshStandardMaterial({
       color: colors.main,
       emissive: colors.emissive,
       emissiveIntensity: 1.3,
@@ -86,16 +85,16 @@ export default function ArchmageCrest({
       roughness: 0.1,
       opacity: 1,
       transparent: true,
-      side: THREE.DoubleSide
+      side: DoubleSide
     }),
-    bladeCore: new THREE.MeshStandardMaterial({
+    bladeCore: new MeshStandardMaterial({
       color: colors.emissive,
       emissive: colors.main,
       emissiveIntensity: 2.0,
       transparent: true,
       opacity: 0.9
     }),
-    bladeGlow: new THREE.MeshStandardMaterial({
+    bladeGlow: new MeshStandardMaterial({
       color: colors.glow,
       emissive: colors.secondary,
       emissiveIntensity: 1.5,
@@ -137,37 +136,38 @@ export default function ArchmageCrest({
   // Cached geometries
   const geometries = useMemo(() => ({
     blade: new ExtrudeGeometry(bladeShape, bladeExtrudeSettings),
-    centerCore: new THREE.SphereGeometry(0.12, 12, 12),
-    energyWisp: new THREE.SphereGeometry(0.04, 6, 6)
+    centerCore: new SphereGeometry(0.12, 12, 12),
+    energyWisp: new SphereGeometry(0.04, 6, 6)
   }), [bladeShape, bladeExtrudeSettings]);
 
-  // Animation
+  // Animation - disabled for static appearance
   useFrame((state) => {
     if (!groupRef.current || !leftWingRef.current || !rightWingRef.current) return;
 
-    const time = state.clock.getElapsedTime();
+    // All animations disabled for static appearance
+    // const time = state.clock.getElapsedTime();
 
-    // Gentle floating motion
-    groupRef.current.position.y = position[1] + Math.sin(time * 1.2) * 0.05;
+    // Gentle floating motion - disabled
+    // groupRef.current.position.y = position[1] + Math.sin(time * 1.2) * 0.05;
 
-    // Subtle rotation
-    groupRef.current.rotation.y = Math.sin(time * 0.8) * 0.1;
+    // Subtle rotation - disabled
+    // groupRef.current.rotation.y = Math.sin(time * 0.8) * 0.1;
 
-    // Wing pulsing animation
-    const pulseScale = 1 + Math.sin(time * 2) * 0.08;
-    leftWingRef.current.scale.setScalar(pulseScale);
-    rightWingRef.current.scale.setScalar(pulseScale);
+    // Wing pulsing animation - disabled
+    // const pulseScale = 1 + Math.sin(time * 2) * 0.08;
+    // leftWingRef.current.scale.setScalar(pulseScale);
+    // rightWingRef.current.scale.setScalar(pulseScale);
 
-    // Wing slight oscillation
-    leftWingRef.current.rotation.z = Math.sin(time * 1.5) * 0.05;
-    rightWingRef.current.rotation.z = -Math.sin(time * 1.5) * 0.05;
+    // Wing slight oscillation - disabled
+    // leftWingRef.current.rotation.z = Math.sin(time * 1.5) * 0.05;
+    // rightWingRef.current.rotation.z = -Math.sin(time * 1.5) * 0.05;
   });
 
   const createWingHalf = (isLeft: boolean) => (
     <group
       ref={isLeft ? leftWingRef : rightWingRef}
-      position={[isLeft ? -0.4 : 0.4, 0.15, 0.15]}
-      rotation={[Math.PI / 4, 0, isLeft ? Math.PI / 4 : -Math.PI / 4]}
+      position={[isLeft ? 0.45 : -0.45, 0.15, 0.15]}
+      rotation={[Math.PI / 3, 0, isLeft ? Math.PI / 1.25 : -Math.PI / 1.25]}
     >
       {/* Main blade wing - large primary blade */}
       <group
@@ -177,37 +177,13 @@ export default function ArchmageCrest({
           isLeft ? Math.PI/2 + 0.375  : Math.PI/2 - 0.375,
           isLeft ? -Math.PI / 8 + 0.25 : -Math.PI / 8 + 0.25
         ]}
-        scale={[1.0, 0.4, 0.4]}
+        scale={[0.7, 0.35, 0.35]}
       >
         <mesh geometry={geometries.blade} material={materials.bladeCore}>
-          <pointLight
-            color={colors.emissive}
-            intensity={0.8}
-            distance={2}
-            decay={2}
-          />
+
         </mesh>
       </group>
 
-      {/* Secondary blade - smaller and angled */}
-      <group
-        position={[isLeft ? 0.075 : -0.075, -0.2, 0.1]}
-        rotation={[
-          Math.PI/2,
-          isLeft ? Math.PI/2 - 0.225 : Math.PI/2 + 0.225,
-          isLeft ? -Math.PI / 8 : -Math.PI / 8
-        ]}
-        scale={[0.9, 0.3, 0.8]}
-      >
-        <mesh geometry={geometries.blade} material={materials.bladeCore}>
-          <pointLight
-            color={colors.emissive}
-            intensity={0.8}
-            distance={1.5}
-            decay={2}
-          />
-        </mesh>
-      </group>
 
 
     </group>
@@ -219,33 +195,7 @@ export default function ArchmageCrest({
       position={position}
       scale={[scale, scale, scale]}
     >
-      {/* Central core orb - matching weapon theme */}
-      <mesh geometry={geometries.centerCore} material={materials.bladeCore}>
-        {/* Central light source */}
-        <pointLight
-          color={colors.emissive}
-          intensity={2.0}
-          distance={3}
-          decay={2}
-        />
-      </mesh>
 
-      {/* Floating energy wisps around center */}
-      {[0, 1, 2, 3].map((index) => {
-        const angle = (index * Math.PI * 2) / 4;
-        return (
-          <mesh
-            key={`center-wisp-${index}`}
-            geometry={geometries.energyWisp}
-            material={materials.bladeGlow}
-            position={[
-              Math.cos(angle) * 0.2,
-              Math.sin(angle) * 0.1,
-              Math.sin(angle) * 0.2
-            ]}
-          />
-        );
-      })}
 
       {/* Left wing half */}
       {createWingHalf(true)}
@@ -253,14 +203,6 @@ export default function ArchmageCrest({
       {/* Right wing half */}
       {createWingHalf(false)}
 
-      {/* Additional ambient lighting */}
-      <pointLight
-        color={colors.secondary}
-        intensity={0.8}
-        distance={2}
-        decay={1.5}
-        position={[0, 0.2, 0]}
-      />
     </group>
   );
 }

@@ -307,7 +307,7 @@ export class SummonedUnitSystem extends System {
       entity.userData.playerId = unit.ownerId;
       
       // Use combat system to handle damage
-      this.combatSystem.queueDamage(targetEntity, unit.attackDamage, entity, 'melee');
+      this.combatSystem.queueDamage(targetEntity, unit.attackDamage, entity, 'melee', entity.userData?.playerId);
     } else {
       // Fallback direct damage
       targetHealth.takeDamage(unit.attackDamage, currentTime, targetEntity);

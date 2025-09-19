@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
+import { SkillPointSystem, SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
+import { weaponAbilities, getAbilityIcon, type AbilityData as BaseAbilityData } from '@/utils/weaponAbilities';
 
-interface AbilityData {
-  name: string;
-  key: 'Q' | 'E' | 'R' | 'F';
-  cooldown: number;
+interface AbilityData extends BaseAbilityData {
   currentCooldown: number;
   isActive?: boolean;
-  description: string;
+  isLocked?: boolean;
 }
 
 interface HotkeyPanelProps {
@@ -19,6 +18,8 @@ interface HotkeyPanelProps {
     tertiary?: WeaponType;
   } | null;
   onWeaponSwitch?: (slot: 1 | 2 | 3) => void;
+  skillPointData?: SkillPointData;
+  onUnlockAbility?: (unlock: AbilityUnlock) => void;
 }
 
 interface WeaponData {
@@ -99,7 +100,7 @@ const RoundedSquareProgress: React.FC<{
   );
 };
 
-export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeapons, onWeaponSwitch }: HotkeyPanelProps) {
+export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeapons, onWeaponSwitch, skillPointData, onUnlockAbility }: HotkeyPanelProps) {
   const [tooltipContent, setTooltipContent] = useState<{
     name: string;
     description: string;
@@ -121,7 +122,7 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
             selectedWeapons.primary === WeaponType.RUNEBLADE ? 'Runeblade' : 'Unknown',
       type: selectedWeapons.primary,
       key: '1' as const,
-      icon: selectedWeapons.primary === WeaponType.SWORD ? '⚜️' :
+      icon: selectedWeapons.primary === WeaponType.SWORD ? '💎' :
             selectedWeapons.primary === WeaponType.BOW ? '🏹' :
             selectedWeapons.primary === WeaponType.SCYTHE ? '☠️' :
             selectedWeapons.primary === WeaponType.SABRES ? '⚔️' :
@@ -138,7 +139,7 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
             selectedWeapons.secondary === WeaponType.RUNEBLADE ? 'Runeblade' : 'Unknown',
       type: selectedWeapons.secondary,
       key: '2' as const,
-      icon: selectedWeapons.secondary === WeaponType.SWORD ? '⚜️' :
+      icon: selectedWeapons.secondary === WeaponType.SWORD ? '💎' :
             selectedWeapons.secondary === WeaponType.BOW ? '🏹' :
             selectedWeapons.secondary === WeaponType.SCYTHE ? '☠️' :
             selectedWeapons.secondary === WeaponType.SABRES ? '⚔️' :
@@ -156,7 +157,7 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
               selectedWeapons.tertiary === WeaponType.RUNEBLADE ? 'Runeblade' : 'Unknown',
         type: selectedWeapons.tertiary,
         key: '3' as const,
-        icon: selectedWeapons.tertiary === WeaponType.SWORD ? '⚜️' :
+        icon: selectedWeapons.tertiary === WeaponType.SWORD ? '💎' :
               selectedWeapons.tertiary === WeaponType.BOW ? '🏹' :
               selectedWeapons.tertiary === WeaponType.SCYTHE ? '☠️' :
               selectedWeapons.tertiary === WeaponType.SABRES ? '⚔️' :
@@ -166,158 +167,12 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
     }
   }
 
-  // Define abilities for each weapon (now using 1, 2, 3 keys)
-  const weaponAbilities: Record<WeaponType, AbilityData[]> = {
-    [WeaponType.SWORD]: [
-      {
-        name: 'Aegis',
-        key: 'Q',
-        cooldown: 6.0,
-        currentCooldown: 0,
-        description: 'Creates a protective barrier that blocks all incoming damage for 3 seconds. Cannot attack while shielded.'
-      },
-      {
-        name: 'Charge',
-        key: 'E',
-        cooldown: 8.0,
-        currentCooldown: 0,
-        description: 'Dash forward, instantly gaining 25 rage, damaging enemies in your path.'
-      },
-      {
-        name: 'Bladestorm',
-        key: 'R',
-        cooldown: 4.0,
-        currentCooldown: 0,
-        description: '{40 RAGE} Consumes all rage to create a devastating whirlwind, lasting longer with each 10 rage consumed.'
-      },
-      {
-        name: 'Colossus Strike',
-        key: 'F',
-        cooldown: 4.0,
-        currentCooldown: 0,
-        description: '{40 RAGE} Calls down a massive lightning bolt that deals damage based on enemy missing health and rage consumed.'
-      }
-    ],
-    [WeaponType.BOW]: [
-      {
-        name: 'Barrage',
-        key: 'Q',
-        cooldown: 5.0,
-        currentCooldown: 0,
-        description: '{50 ENERGY} Fires 5 frost arrows in an arc, dealing 30 damage per arrow and applying a 50% SLOW effect for 5 seconds.'
-      },
-      {
-        name: 'Cobra Shot',
-        key: 'E',
-        cooldown: 2.0,
-        currentCooldown: 0,
-        description: '{40 ENERGY} Fires a venomous shot that applies VENOM damage over time to the target..'
-      },
-      {
-        name: 'Viper Sting',
-        key: 'R',
-        cooldown: 7.0,
-        currentCooldown: 0,
-        description: '{60 ENERGY} Fires a powerful piercing arrow that returns to you after a short delay. Each hit on an enemy creates a soul fragment that heals you for 20 HP each when returned.'
-      },
-      {
-        name: 'Cloudkill',
-        key: 'F',
-        cooldown: 1.5,
-        currentCooldown: 0,
-        description: '{25 ENERGY} Summons green arrows from the sky that rain down on enemy locations. If enemy has VENOM, arrows become homing and guaranteed to hit.'
-      }
-    ],
-    [WeaponType.SCYTHE]: [
-      {
-        name: 'Sunwell',
-        key: 'Q',
-        cooldown: 1.0,
-        currentCooldown: 0,
-        description: '{20 MANA} Heals for 30 HP.'
-      },
-      {
-        name: 'Frost Nova',
-        key: 'E',
-        cooldown: 0.5,
-        currentCooldown: 0,
-        description: '{50 MANA} Conjures a freezing vortex around you that deals damage to enemies and applies FREEZE to enemies hit for 6 seconds.'
-      },
-      {
-        name: 'Crossentropy',
-        key: 'R',
-        cooldown: 1.0,
-        currentCooldown: 0,
-        description: '{40 MANA} Charges for 1 second to fire a devastating accelerating flaming bolt that deals 20 additional damage per stack of BURNING.'
-      },
-      {
-        name: 'Tidal Wave',
-        key: 'F',
-        cooldown: 3.0,
-        currentCooldown: 0,
-        description: '{40 MANA} Charges for 1 second to unleash a crashing tidal wave that radiates outward, dealing 70 damage and knocking back enemies by 10 distance. Refunds 100 mana if it hits a FROZEN enemy.'
-      }
-    ],
-    [WeaponType.SABRES]: [
-      {
-        name: 'Backstab',
-        key: 'Q',
-        cooldown: 2.0,
-        currentCooldown: 0,
-        description: '{60 ENERGY} Strikes the target with both sabres, dealing 75 damage or 175 damage if attacking the target from behind. The energy cost is refunded if the target is stunned.'
-      },
-      {
-        name: 'Flourish',
-        key: 'E',
-        cooldown: 1,
-        currentCooldown: 0,
-        description: '{35 ENERGY} Unleash a flurry of slashes that deals increased damage with successsive hits on the same target, stacking up to 3 times. Expending 3 stacks applies STUN for 4 seconds.'
-      },
-      {
-        name: 'Skyfall',
-        key: 'R',
-        cooldown: 5.0,
-        currentCooldown: 0,
-        description: '{40 ENERGY} Leap high into the air and crash down, dealing 125 damage and applying STUN for 2 seconds to enemies below.'
-      },
-      {
-        name: 'Shadow Step',
-        key: 'F',
-        cooldown: 10.0,
-        currentCooldown: 0,
-        description: 'Fade into the shadows, becoming INVISIBLE for 6 seconds after a 0.5 second delay.'
-      }
-    ],
-    [WeaponType.RUNEBLADE]: [
-      {
-        name: 'Void Grasp',
-        key: 'Q',
-        cooldown: 12.0,
-        currentCooldown: 0,
-        description: '{35 MANA} Fires a twisting nether that pulls the first enemy hit towards you.'
-      },
-      {
-        name: 'Wraithblade',
-        key: 'E',
-        cooldown: 8.0,
-        currentCooldown: 0,
-        description: '{35 MANA} Unleashes a powerful strike that inflicts CORRUPTED debuff to the target, reducing their movement speed by 90%, regaining 10% movement speed per second.'
-      },
-      {
-        name: 'Unholy Smite',
-        key: 'R',
-        cooldown: 15.0,
-        currentCooldown: 0,
-        description: '{50 MANA} Calls down unholy energy, dealing damage to enemies in a small area and healing you for 80 HP.'
-      },
-      {
-        name: 'Corruption',
-        key: 'F',
-        cooldown: 0, // No cooldown, it's a toggle ability
-        currentCooldown: 0,
-        description: '{12 MANA/s} Toggle a force-multiplier aura that enhances strikes delivered by the Runeblade, increasing critical strike chance by 30% and critical strike damage by 75%.'
-      }
-    ]
+  // Convert base abilities to include runtime state
+  const createAbilitiesWithState = (baseAbilities: BaseAbilityData[]): AbilityData[] => {
+    return baseAbilities.map(ability => ({
+      ...ability,
+      currentCooldown: 0
+    }));
   };
 
   // Update cooldowns from control system
@@ -382,11 +237,93 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
     setTooltipContent(null);
   }, []);
 
-  const currentAbilities = weaponAbilities[currentWeapon] || [];
+  // Helper function to check if an ability is locked
+  const isAbilityLocked = useCallback((ability: AbilityData): boolean => {
+    if (!selectedWeapons || !skillPointData) return false;
+
+    // Q and E abilities are always unlocked
+    if (ability.key === 'Q' || ability.key === 'E') return false;
+
+    // Determine weapon slot
+    let weaponSlot: 'primary' | 'secondary';
+    let weaponType: WeaponType;
+
+    if (currentWeapon === selectedWeapons.primary) {
+      weaponSlot = 'primary';
+      weaponType = selectedWeapons.primary;
+
+      // For primary weapon, R ability is always unlocked, only F and P can be locked
+      if (ability.key === 'R') {
+        return false; // R is always unlocked for primary weapon
+      }
+      if (ability.key === 'F' || ability.key === 'P') {
+        return !SkillPointSystem.isAbilityUnlocked(skillPointData, weaponType, ability.key, weaponSlot);
+      }
+    } else if (currentWeapon === selectedWeapons.secondary) {
+      weaponSlot = 'secondary';
+      weaponType = selectedWeapons.secondary;
+
+      // For secondary weapon, both R, F, and P abilities can be locked
+      if (ability.key === 'R' || ability.key === 'F' || ability.key === 'P') {
+        return !SkillPointSystem.isAbilityUnlocked(skillPointData, weaponType, ability.key, weaponSlot);
+      }
+    }
+
+    return false;
+  }, [currentWeapon, selectedWeapons, skillPointData]);
+
+  // Helper function to check if an ability can be unlocked (has skill points and is available)
+  const canUnlockAbility = useCallback((ability: AbilityData): boolean => {
+    if (!selectedWeapons || !skillPointData || skillPointData.skillPoints <= 0) return false;
+    if (!ability.isLocked) return false; // Already unlocked
+
+    // Check if this ability is in the available unlocks
+    const availableUnlocks = SkillPointSystem.getAvailableUnlocks(skillPointData, selectedWeapons);
+    return availableUnlocks.some(unlock =>
+      unlock.abilityKey === ability.key &&
+      (
+        (currentWeapon === selectedWeapons.primary && unlock.weaponSlot === 'primary') ||
+        (currentWeapon === selectedWeapons.secondary && unlock.weaponSlot === 'secondary')
+      )
+    );
+  }, [currentWeapon, selectedWeapons, skillPointData]);
+
+  // Handle ability unlock when clicking the + button
+  const handleAbilityUnlock = useCallback((ability: AbilityData) => {
+    if (!selectedWeapons || !onUnlockAbility) return;
+
+    let weaponSlot: 'primary' | 'secondary';
+    let weaponType: WeaponType;
+
+    if (currentWeapon === selectedWeapons.primary) {
+      weaponSlot = 'primary';
+      weaponType = selectedWeapons.primary;
+    } else if (currentWeapon === selectedWeapons.secondary) {
+      weaponSlot = 'secondary';
+      weaponType = selectedWeapons.secondary;
+    } else {
+      return; // Unknown weapon
+    }
+
+    onUnlockAbility({
+      weaponType,
+      abilityKey: ability.key as 'R' | 'F' | 'P',
+      weaponSlot
+    });
+  }, [currentWeapon, selectedWeapons, onUnlockAbility]);
+
+  const currentAbilities = weaponAbilities[currentWeapon] ? createAbilitiesWithState(weaponAbilities[currentWeapon]) : [];
+  
+  // Mark abilities as locked
+  const abilitiesWithLockStatus = currentAbilities.map(ability => ({
+    ...ability,
+    isLocked: isAbilityLocked(ability)
+  }));
 
   if (currentAbilities.length === 0) {
     return null; // Don't render for weapons that aren't implemented
   }
+
 
   return (
     <>
@@ -455,39 +392,59 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
             <div className="w-px h-8 bg-gray-600" />
 
             {/* Ability Icons */}
-            {currentAbilities.map((ability) => {
+            {abilitiesWithLockStatus.map((ability) => {
               const currentCooldown = cooldowns[ability.key] || 0;
               const cooldownPercentage = ability.cooldown > 0 ? (currentCooldown / ability.cooldown) * 100 : 0;
               const isOnCooldown = currentCooldown > 0;
               const isUnassigned = ability.name === 'Not Assigned';
+              const isLocked = ability.isLocked;
+              const canUnlock = canUnlockAbility(ability);
 
               return (
                 <div
                   key={ability.key}
                   className={`relative w-12 h-12 rounded-lg border-2 transition-all duration-200 ${
-                    isUnassigned 
-                      ? 'border-gray-600 bg-gray-800 opacity-50' 
-                      : isOnCooldown 
-                        ? 'border-red-500 bg-red-900 bg-opacity-30' 
-                        : 'border-green-400 bg-green-900 bg-opacity-30 hover:bg-opacity-50'
-                  } cursor-pointer flex items-center justify-center`}
+                    isLocked
+                      ? canUnlock
+                        ? 'border-blue-400 bg-blue-900 bg-opacity-30 hover:bg-opacity-50 cursor-pointer'
+                        : 'border-gray-500 bg-gray-700 opacity-60 cursor-not-allowed'
+                      : isUnassigned
+                        ? 'border-gray-600 bg-gray-800 opacity-50 cursor-pointer'
+                        : isOnCooldown
+                          ? 'border-red-500 bg-red-900 bg-opacity-30 cursor-pointer'
+                          : ability.key === 'P'
+                            ? 'border-purple-400 bg-purple-900 bg-opacity-30 cursor-pointer' // Special styling for passive abilities
+                            : 'border-green-400 bg-green-900 bg-opacity-30 hover:bg-opacity-50 cursor-pointer'
+                  } flex items-center justify-center`}
                   onMouseEnter={(e) => handleAbilityHover(e, ability)}
                   onMouseLeave={handleAbilityLeave}
+                  onClick={canUnlock ? () => handleAbilityUnlock(ability) : undefined}
                 >
                   {/* Hotkey indicator */}
                   <div className="absolute -top-2 -left-2 bg-gray-800 border border-gray-600 rounded text-xs text-white px-1 py-0.5 font-semibold">
                     {ability.key}
                   </div>
 
-                  {/* Ability icon placeholder - you can replace with actual icons */}
+                  {/* Ability icon */}
                   <div className={`w-8 h-8 rounded flex items-center justify-center text-lg font-bold ${
-                    isUnassigned 
-                      ? 'text-gray-500' 
-                      : isOnCooldown 
-                        ? 'text-red-400' 
-                        : 'text-green-400'
+                    isLocked
+                      ? canUnlock
+                        ? 'text-blue-400'
+                        : 'text-gray-500'
+                      : isUnassigned
+                        ? 'text-gray-500'
+                        : isOnCooldown
+                          ? 'text-red-400'
+                          : ability.key === 'P'
+                            ? 'text-purple-400' // Special color for passive abilities
+                            : 'text-green-400'
                   }`}>
-                    {getAbilityIcon(currentWeapon, ability.key)}
+                    {isLocked
+                      ? canUnlock
+                        ? '➕'
+                        : '🔒'
+                      : getAbilityIcon(currentWeapon, ability.key)
+                    }
                   </div>
 
                   {/* Cooldown overlay */}
@@ -553,18 +510,6 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
                       );
                     }
 
-                    // Check for Particle Beam charging state
-                    if (ability.key === 'F' && currentWeapon === WeaponType.SCYTHE && controlSystem.isParticleBeamChargingActive?.()) {
-                      const progress = controlSystem.getParticleBeamChargeProgress?.() || 0;
-                      return (
-                        <div className="absolute inset-0 rounded-lg bg-cyan-400 bg-opacity-20 border-2 border-cyan-400">
-                          <div
-                            className="absolute bottom-0 left-0 right-0 bg-cyan-400 bg-opacity-60 transition-all duration-100"
-                            style={{ height: `${progress * 100}%` }}
-                          />
-                        </div>
-                      );
-                    }
                     
                     // Check for Skyfall active state
                     if (ability.key === 'R' && currentWeapon === WeaponType.SABRES && controlSystem.isSkyfallActive?.()) {
@@ -628,40 +573,3 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
   );
 }
 
-// Helper function to get ability icons
-function getAbilityIcon(weapon: WeaponType, key: 'Q' | 'E' | 'R' | 'F'): string {
-  const iconMap: Record<WeaponType, Record<'Q' | 'E' | 'R' | 'F', string>> = {
-    [WeaponType.SWORD]: {
-      Q: '🛡️', // Aegis
-      E: '🔱', // Charge
-      R: '🌪️', // Divine Storm
-      F: '⚡️'  // Colossus Strike
-    },
-    [WeaponType.BOW]: {
-      Q: '🎯', // Barrage
-      E: '🐍', // Cobra Shot
-      R: '🦂', // Viper Sting
-      F: '☁️'  // Cloudkill
-    },
-    [WeaponType.SCYTHE]: {
-      Q: '🔆', // Sunwell
-      E: '❄️', // Frost Nova
-      R: '☄️', // Crossentropy
-      F: '🌊' // Tidal Wave
-    },
-    [WeaponType.SABRES]: {
-      Q: '🗡️', // Backstab
-      E: '💥', // Flourish
-      R: '🐦‍🔥', // Skyfall
-      F: '🌒' // Shadow Step
-    },
-    [WeaponType.RUNEBLADE]: {
-      Q: '⛓️', // Death Grasp
-      E: '🪝', // Wraith Strike
-      R: '👻', // Unholy Smite
-      F: '🩸' // Corruption 
-    },
-  };
-
-  return iconMap[weapon]?.[key] || '❓';
-}

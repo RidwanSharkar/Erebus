@@ -10,13 +10,14 @@ interface GhostTrailProps {
   weaponType: WeaponType;
   weaponSubclass?: WeaponSubclass;
   targetPosition?: Vector3; // Optional for multiplayer - if provided, use this instead of parentRef position
+  isStealthing?: boolean; // Whether the local player is currently in stealth mode
 }
 
-const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPosition }: GhostTrailProps) => {
+const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPosition, isStealthing = false }: GhostTrailProps) => {
   const trailsRef = useRef<Mesh[]>([]);
   const positions = useRef<Vector3[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
-  const trailCount = 20;
+  const trailCount = 26;
   
   useEffect(() => {
     // Initialize with target position if provided, otherwise use parent's position
@@ -33,6 +34,11 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
   }, [parentRef, targetPosition, trailCount]);
 
   const getTrailColor = () => {
+    // If player is stealthing, use dark grey for all trails
+    if (isStealthing) {
+      return '#333333'; // Dark grey color for stealth mode
+    }
+
     if (weaponSubclass) {
       switch (weaponSubclass) {
         // Scythe subclasses

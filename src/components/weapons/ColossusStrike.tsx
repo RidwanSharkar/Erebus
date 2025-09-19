@@ -1,26 +1,27 @@
-import React, { useRef, useMemo, useEffect, memo } from 'react';
-import { Vector3, Color, SphereGeometry, MeshStandardMaterial, AdditiveBlending } from '@/utils/three-exports';
+import { useRef, useMemo, memo } from 'react';
+import { Group, Vector3, SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, Color, AdditiveBlending, RingGeometry } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
+import { WeaponType } from '../dragon/weapons';
 
 interface ColossusStrikeProps {
+  weaponType: WeaponType;
   position: Vector3;
+  damage?: number; // Dynamic damage based on rage consumed
+  delayStart?: number;
   onComplete: () => void;
+  onHit?: (targetId: string, damage: number, isCritical?: boolean) => void;
   onDamageDealt?: (damageDealt: boolean) => void;
-  onHit?: (targetId: string, damage: number) => void;
-  targetPlayerData?: Array<{
-    id: string;
-    position: Vector3;
-    health: number;
-    maxHealth: number;
-  }>;
   enemyData?: Array<{
     id: string;
     position: Vector3;
     health: number;
   }>;
+  targetPlayerData?: Array<{
+    id: string;
+    position: Vector3;
+    health: number;
+  }>;
   playerPosition?: Vector3;
-  rageSpent?: number;
-  delayStart?: number; // Delay before lightning appears (in milliseconds)
   setDamageNumbers?: (callback: (prev: Array<{
     id: number;
     damage: number;
@@ -40,25 +41,24 @@ interface ColossusStrikeProps {
 
 const ColossusStrikeComponent = memo(function ColossusStrike({
   position,
-  onComplete,
-  onDamageDealt,
-  onHit,
-  targetPlayerData = [],
-  enemyData = [],
-  playerPosition,
-  rageSpent = 40,
+  damage = 100, // Default to 100 if not provided
   delayStart = 0,
+  onComplete,
+  onHit,
+  onDamageDealt,
+  enemyData = [],
+  targetPlayerData = [],
+  playerPosition,
   setDamageNumbers,
   nextDamageNumberId,
   combatSystem
 }: ColossusStrikeProps) {
-  console.log(`⚡ Colossus Strike: Component created with position (${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}), delayStart: ${delayStart}, targetPlayerData:`, targetPlayerData);
-
   const startTimeRef = useRef<number | null>(null);
-  const duration = 0.9; // Match animation duration
+  const duration = 1.2; // Match PVP effect duration (1200ms)
   const flickerRef = useRef(1);
   const damageDealtRef = useRef(false);
   const isVisible = useRef(false);
+  const isCompleted = useRef(false);
 
   // Initialize start time only once
   if (startTimeRef.current === null) {
@@ -72,7 +72,7 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
   
   // Create more concentrated branching geometry for lightning bolt
   const mainBoltSegments = 128; // Increased for more detail
-  const branchCount = 48; // Doubled for more branches
+  const branchCount = 24; // Doubled for more branches
   
   const branches = useMemo(() => {
     const distance = position.clone().sub(skyPosition).length();
@@ -174,18 +174,21 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
     })
   }), []);
 
-  // Perform damage detection using Smite's exact damage model
+  // Perform damage detection using dynamic damage based on rage consumed
   const performColossusStrikeDamage = () => {
-    console.log(`⚡ Colossus Strike: performColossusStrikeDamage called!`);
+    console.log(`⚡ Colossus Strike: performColossusStrikeDamage called with damage: ${damage}`);
     if (damageDealtRef.current) {
       console.log(`⚡ Colossus Strike: Damage already dealt, skipping`);
       return; // Prevent multiple damage applications
     }
     damageDealtRef.current = true;
 
-    const colossusStrikeDamage = 100; // Same flat damage as Smite
     const damageRadius = 3.0; // Same radius as Smite (3.0 units)
     let damageDealtFlag = false;
+
+    // Calculate critical hit (Colossus Strike can be critical)
+    const isCritical = Math.random() < 0.2; // 20% crit chance
+    const finalDamage = isCritical ? Math.floor(damage * 2.0) : damage; // 50% crit damage multiplier
 
     // Handle both PVP players and PvE enemies with the same logic as Smite
     const allTargets = [
@@ -205,19 +208,19 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
       console.log(`⚡ Colossus Strike: Target ${target.id} at distance ${distance.toFixed(2)} (health: ${target.health})`);
 
       if (distance <= damageRadius) {
-        // Target is within damage radius - deal damage (same logic as Smite)
-        console.log(`⚡ Colossus Strike: HIT! Dealing ${colossusStrikeDamage} damage to ${target.id}`);
+        // Target is within damage radius - deal damage
+        console.log(`⚡ Colossus Strike: HIT! Dealing ${finalDamage} damage to ${target.id} (${isCritical ? 'CRITICAL' : 'normal'})`);
         if (onHit) {
-          onHit(target.id, colossusStrikeDamage);
+          onHit(target.id, finalDamage, isCritical);
         }
 
-        // Create damage number using CombatSystem (same as Smite)
+        // Create damage number using CombatSystem
         if (combatSystem && combatSystem.damageNumberManager) {
           const damagePosition = target.position.clone();
           damagePosition.y += 1.5; // Offset above target
           combatSystem.damageNumberManager.addDamageNumber(
-            colossusStrikeDamage,
-            false, // isCritical
+            finalDamage,
+            isCritical,
             damagePosition,
             'colossus_strike' // Use distinct damage type for visual styling
           );
@@ -252,7 +255,10 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
     flickerRef.current = Math.random() * 0.3 + 0.7;
 
     if (elapsed >= duration) {
-      onComplete();
+      if (!isCompleted.current) {
+        isCompleted.current = true;
+        onComplete();
+      }
       return;
     }
 
@@ -270,8 +276,8 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
     materials.impact.opacity = fadeOut * 0.9;
   });
 
-  // Don't render anything if not visible yet
-  if (!isVisible.current) {
+  // Don't render anything if not visible yet or if completed
+  if (!isVisible.current || isCompleted.current) {
     return null;
   }
 
@@ -328,10 +334,9 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
   );
 }, (prevProps, nextProps) => {
   // Custom comparison function for performance optimization
+  if (prevProps.weaponType !== nextProps.weaponType) return false;
   if (!prevProps.position.equals(nextProps.position)) return false;
-  if (prevProps.rageSpent !== nextProps.rageSpent) return false;
   if (prevProps.delayStart !== nextProps.delayStart) return false;
-
   if ((prevProps.enemyData?.length || 0) !== (nextProps.enemyData?.length || 0)) return false;
   if ((prevProps.targetPlayerData?.length || 0) !== (nextProps.targetPlayerData?.length || 0)) return false;
 
@@ -351,7 +356,7 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
       const prev = prevProps.targetPlayerData[i];
       const next = nextProps.targetPlayerData[i];
       if (!prev || !next) return false;
-      if (prev.id !== next.id || prev.health !== next.health || prev.maxHealth !== next.maxHealth || !prev.position.equals(next.position)) {
+      if (prev.id !== next.id || prev.health !== next.health || !prev.position.equals(next.position)) {
         return false;
       }
     }

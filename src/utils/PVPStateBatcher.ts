@@ -154,7 +154,6 @@ export class PVPStateUpdateHelpers {
             chargeProgress: 0,
             isSwinging: false,
             swordComboStep: 1 as 1 | 2 | 3,
-            isDivineStorming: false,
             isSpinning: false,
             isSwordCharging: false,
             isDeflecting: false,
@@ -185,7 +184,7 @@ export class PVPStateUpdateHelpers {
    */
   static batchEffectUpdates(updates: Array<{
     type: 'add' | 'remove';
-    effectType: 'venom' | 'debuff' | 'reanimate' | 'frostNova' | 'smite' | 'deathgrasp' | 'colossusStrike';
+    effectType: 'venom' | 'debuff' | 'reanimate' | 'frostNova' | 'smite' | 'deathgrasp' | 'colossusStrike' | 'windShear';
     setter: React.Dispatch<React.SetStateAction<any[]>>;
     data?: any;
     filterId?: number;

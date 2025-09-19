@@ -16,11 +16,12 @@ import { ProjectileSystem } from './ProjectileSystem';
 import { CombatSystem } from './CombatSystem';
 import { WeaponSubclass, WeaponType } from '@/components/dragon/weapons';
 import { DeflectBarrier } from '@/components/weapons/DeflectBarrier';
+import { SkillPointSystem, SkillPointData } from '@/utils/SkillPointSystem';
 import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
 import { triggerGlobalCobraShot } from '@/components/projectiles/CobraShotManager';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
-import { setGlobalCriticalRuneCount, setGlobalCritDamageRuneCount, getGlobalRuneCounts } from '@/core/DamageCalculator';
+import { setGlobalCriticalRuneCount, setGlobalCritDamageRuneCount, getGlobalRuneCounts, setControlSystem } from '@/core/DamageCalculator';
 
 export class ControlSystem extends System {
   public readonly requiredComponents = [Transform, Movement];
@@ -33,8 +34,6 @@ export class ControlSystem extends System {
   // Callback for bow release effects
   private onBowReleaseCallback?: (finalProgress: number, isPerfectShot?: boolean) => void;
   
-  // Callback for Divine Storm activation
-  private onDivineStormCallback?: (position: Vector3, direction: Vector3, duration: number) => void;
   
   // Callback for projectile creation
   private onProjectileCreatedCallback?: (projectileType: string, position: Vector3, direction: Vector3, config: any) => void;
@@ -50,6 +49,19 @@ export class ControlSystem extends System {
   
   // Callback for Reanimate healing effect
   private onReanimateCallback?: () => void;
+
+  // Callback for creating damage numbers
+  private onDamageNumbersUpdate?: (damageNumbers: Array<{
+    id: string;
+    damage: number;
+    position: Vector3;
+    isCritical: boolean;
+    timestamp: number;
+    damageType?: string;
+  }>) => void;
+
+  // Callback for broadcasting healing in PVP
+  private onBroadcastHealing?: (healingAmount: number, healingType: string, position: Vector3) => void;
   
   // Callback for Frost Nova activation
   private onFrostNovaCallback?: (position: Vector3, direction: Vector3) => void;
@@ -57,11 +69,8 @@ export class ControlSystem extends System {
   // Callback for Cobra Shot activation
   private onCobraShotCallback?: (position: Vector3, direction: Vector3) => void;
 
-  // Callback for Particle Beam activation
-  private onParticleBeamCallback?: (position: Vector3, direction: Vector3) => void;
-
-  // Callback for creating local Particle Beam visual effect
-  private onCreateLocalParticleBeamCallback?: (position: Vector3, direction: Vector3) => void;
+  // Callback for Summon Totem activation
+  private onSummonTotemCallback?: (position: Vector3) => void;
   
   // Callback for Charge activation
   private onChargeCallback?: (position: Vector3, direction: Vector3) => void;
@@ -83,6 +92,12 @@ export class ControlSystem extends System {
 
   // Callback for Smite ability
   private onSmiteCallback?: (position: Vector3, direction: Vector3, onDamageDealt?: (damageDealt: boolean) => void) => void;
+
+  // Callback for Colossus Strike ability
+  private onColossusStrikeCallback?: (position: Vector3, direction: Vector3, damage: number, onDamageDealt?: (damageDealt: boolean) => void) => void;
+
+  // Callback for Wind Shear ability
+  private onWindShearCallback?: (position: Vector3, direction: Vector3) => void;
 
   // Callback for DeathGrasp ability
   private onDeathGraspCallback?: (position: Vector3, direction: Vector3) => void;
@@ -118,19 +133,21 @@ export class ControlSystem extends System {
   private lastViperStingTime = 0;
   private lastFrostNovaTime = 0; // Separate tracking for Frost Nova ability
   private lastCobraShotTime = 0; // Separate tracking for Cobra Shot ability
-  private lastParticleBeamTime = 0; // Separate tracking for Particle Beam ability
+  private lastSummonTotemTime = 0; // Separate tracking for Summon Totem ability
   private lastCloudkillTime = 0; // Separate tracking for Cloudkill ability
   private fireRate = 0.2; // Default for bow
-  private swordFireRate = 0.9; // Rate for sword attacks
-  private runebladeFireRate = 0.75; // Runeblade attack rate
+  private swordFireRate = 0.825; // Rate for sword attacks
+  private runebladeFireRate = 0.7125; // Runeblade attack rate
   private sabresFireRate = 0.6; // Sabres dual attack rate (600ms between attacks)
   private scytheFireRate = 0.35; // EntropicBolt rate (0.33s cooldown)
   private crossentropyFireRate = 2; // CrossentropyBolt rate (1 per second)
-  private particleBeamFireRate = 3.0; // Particle Beam rate (3 seconds cooldown)
+  private summonTotemFireRate = 5.0; // Summon Totem rate (5 seconds cooldown)
   private viperStingFireRate = 2.5; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
   private cobraShotFireRate = 2.0; // Cobra Shot rate (2 seconds cooldown)
-  private cloudkillFireRate = 1.5; // Cloudkill rate (1.5 seconds cooldown)
+  private cloudkillFireRate = 4.0; // Cloudkill rate (1.5 seconds cooldown)
+  private lastBurstFireTime = 0; // Separate tracking for Bow burst fire
+  private burstFireRate = 1.0; // 1 second cooldown between bursts
 
   // Key press tracking for toggle abilities
   private fKeyWasPressed = false;
@@ -163,19 +180,15 @@ export class ControlSystem extends System {
   private isCrossentropyCharging = false;
   private crossentropyChargeProgress = 0;
 
-  // Particle Beam charging state
-  private isParticleBeamCharging = false;
-  private particleBeamChargeProgress = 0;
+  // Summon Totem charging state
+  private isSummonTotemCharging = false;
+  private summonTotemChargeProgress = 0;
   
   // Sword-specific states
   private swordComboStep: 1 | 2 | 3 = 1;
   private lastSwordAttackTime = 0;
   private swordComboResetTime = 1; // Reset combo after 1 seconds
   
-  // Divine Storm ability state
-  private isDivineStorming = false;
-  private lastDivineStormTime = 0;
-  private divineStormCooldown = 8.0; // 8 second cooldown
   
   // Charge ability state
   private isSwordCharging = false;
@@ -185,7 +198,7 @@ export class ControlSystem extends System {
   // Deflect ability state
   private isDeflecting = false;
   private lastDeflectTime = 0;
-  private deflectCooldown = 6.0; // 8 second cooldown
+  private deflectCooldown = 7.0; // 8 second cooldown
   private deflectDuration = 3.0; // 3 second duration
   private deflectBarrier: DeflectBarrier;
   
@@ -201,25 +214,31 @@ export class ControlSystem extends System {
   
   // Backstab ability state (Sabres)
   private lastBackstabTime = 0;
-  private backstabCooldown = 1.5; // 2 second cooldown
+  private backstabCooldown = 1.65; // 2 second cooldown
   private isBackstabbing = false;
   private backstabStartTime = 0;
   private backstabDuration = 1.0; // Total animation duration (0.3 + 0.4 + 0.3 seconds)
   
   // Sunder ability state (Sabres)
   private lastSunderTime = 0;
-  private sunderCooldown = 1.5; // 1.5 second cooldown
+  private sunderCooldown = 1.65; // 1.5 second cooldown
   private isSundering = false;
   private sunderStartTime = 0;
   private sunderDuration = 1.0; // Same animation duration as backstab
+  private sunderDamageApplied = false; // Track if damage has been applied during current sunder
   
   // Stealth ability state (Sabres)
   private lastStealthTime = 0;
   private stealthCooldown = 10.0; // 10 second cooldown
   private isStealthing = false;
+
+  // Public getter for stealth state
+  public getIsStealthing(): boolean {
+    return this.isStealthing;
+  }
   private stealthStartTime = 0;
   private stealthDelayDuration = 0.5; // 0.5 second delay before invisibility
-  private stealthInvisibilityDuration = 6.0; // 6 seconds of invisibility
+  private stealthInvisibilityDuration = 5.0; // 5 seconds of invisibility
   private isInvisible = false;
   
   // Sunder stack tracking - Map of entity ID to stack data
@@ -235,6 +254,16 @@ export class ControlSystem extends System {
   private lastSmiteTime = 0;
   private smiteCooldown = 2.0; // 2 second cooldown
   private isSmiting = false;
+
+  // Colossus Strike ability state (Sword)
+  private lastColossusStrikeTime = 0;
+  private colossusStrikeCooldown = 4.0; // 2 second cooldown
+  private isColossusStriking = false;
+
+  // Wind Shear ability state (Sword)
+  private lastWindShearTime = 0;
+  private windShearCooldown = 2.0; // 3 second cooldown
+  private isWindShearing = false;
 
   // DeathGrasp ability state (Runeblade)
   private lastDeathGraspTime = 0;
@@ -258,16 +287,21 @@ export class ControlSystem extends System {
   private originalCriticalRunes = 0;
   private originalCritDamageRunes = 0;
 
-  // Colossus Strike ability state (Sword)
-  private lastColossusStrikeTime = 0;
-  private colossusStrikeCooldown = 4.0; // 4 second cooldown
-  private isColossusStriking = false;
   // Selected weapons mapping for hotkeys
   private selectedWeapons?: {
     primary: WeaponType;
     secondary: WeaponType;
     tertiary?: WeaponType;
   } | null;
+
+  // Damage number ID counter
+  private nextDamageNumberId: number = 0;
+
+  // Skill point system data
+  private skillPointData: SkillPointData;
+
+  // Titanheart passive tracking
+  private titanheartMaxHealthApplied = false;
 
   constructor(
     camera: PerspectiveCamera,
@@ -288,10 +322,16 @@ export class ControlSystem extends System {
     this.selectedWeapons = selectedWeapons;
     this.deflectBarrier = new DeflectBarrier(world);
     this.priority = 5; // Run early for input handling
+    
+    // Initialize skill point system
+    this.skillPointData = SkillPointSystem.getInitialSkillPointData();
 
     // Initialize weapon and subclass based on selected weapons
     this.currentWeapon = selectedWeapons?.primary || WeaponType.BOW;
     this.currentSubclass = this.getDefaultSubclassForWeapon(this.currentWeapon);
+
+    // Set reference in DamageCalculator for passive ability checks
+    setControlSystem(this);
   }
 
   private getDefaultSubclassForWeapon(weapon: WeaponType): WeaponSubclass {
@@ -451,6 +491,7 @@ export class ControlSystem extends System {
 
   private switchToWeapon(weaponType: WeaponType, currentTime: number): void {
     this.resetAllAbilityStates(); // Reset all ability states when switching weapons
+    this.resetAllPassiveEffects(); // Reset all passive effects when switching weapons
 
     // Update current weapon
     this.currentWeapon = weaponType;
@@ -482,6 +523,185 @@ export class ControlSystem extends System {
     }
 
     this.lastWeaponSwitchTime = currentTime;
+
+    // Apply passive abilities for the new weapon
+    this.applyPassiveAbilities(weaponType);
+  }
+
+  private applyPassiveAbilities(weaponType: WeaponType): void {
+    // First, apply global passive effects that persist regardless of current weapon
+    this.applyGlobalPassiveEffects();
+
+    // Determine weapon slot
+    let weaponSlot: 'primary' | 'secondary' | null = null;
+    if (this.selectedWeapons) {
+      if (weaponType === this.selectedWeapons.primary) {
+        weaponSlot = 'primary';
+      } else if (weaponType === this.selectedWeapons.secondary) {
+        weaponSlot = 'secondary';
+      }
+    }
+
+    if (!weaponSlot) return;
+
+    // Apply weapon-specific passive effects
+    switch (weaponType) {
+      case WeaponType.SABRES:
+        this.applySabresPassive(weaponSlot);
+        break;
+      case WeaponType.SWORD:
+        this.applySwordPassive(weaponSlot);
+        break;
+      case WeaponType.BOW:
+        this.applyBowPassive(weaponSlot);
+        break;
+      case WeaponType.SCYTHE:
+        this.applyScythePassive(weaponSlot);
+        break;
+      case WeaponType.RUNEBLADE:
+        this.applyRunebladePassive(weaponSlot);
+        break;
+    }
+  }
+
+  private applyGlobalPassiveEffects(): void {
+    // Apply Titanheart max health bonus if unlocked anywhere
+    const hasTitanheartPrimary = SkillPointSystem.isAbilityUnlocked(this.skillPointData, WeaponType.SWORD, 'P', 'primary');
+    const hasTitanheartSecondary = SkillPointSystem.isAbilityUnlocked(this.skillPointData, WeaponType.SWORD, 'P', 'secondary');
+
+    if ((hasTitanheartPrimary || hasTitanheartSecondary) && !this.titanheartMaxHealthApplied) {
+      if (this.playerEntity) {
+        const health = this.playerEntity.getComponent(Health);
+        if (health) {
+          // Store original max health if not already stored
+          if (!health.hasOwnProperty('originalMaxHealth')) {
+            (health as any).originalMaxHealth = health.maxHealth;
+          }
+
+          // Increase max health by 350 once
+          health.setMaxHealth(health.maxHealth + 350);
+          this.titanheartMaxHealthApplied = true;
+          console.log('🏆 Titanheart: Max health increased by 350 (global bonus applied)');
+        }
+      }
+    }
+  }
+
+  private applySabresPassive(weaponSlot: 'primary' | 'secondary'): void {
+    if (this.isPassiveAbilityUnlocked('P', WeaponType.SABRES, weaponSlot)) {
+      // Lethality: Increase movement speed from 3.65 to 4.25 and grant 10 critical strike chance runes
+      if (this.playerEntity) {
+        const movement = this.playerEntity.getComponent(Movement);
+        if (movement) {
+          // Store original speed if not already stored
+          if (!movement.hasOwnProperty('originalMaxSpeed')) {
+            (movement as any).originalMaxSpeed = movement.maxSpeed;
+          }
+          movement.maxSpeed = 4.25;
+        }
+      }
+
+      // Store original critical rune count if not already stored for this passive
+      if (this.originalCriticalRunes === 0) {
+        const currentRuneCounts = getGlobalRuneCounts();
+        this.originalCriticalRunes = currentRuneCounts.criticalRunes;
+      }
+
+      // Set critical strike chance runes to 10
+      setGlobalCriticalRuneCount(15);
+
+      console.log(`🩸 Lethality activated: movement speed increased to 4.25, Critical Runes ${this.originalCriticalRunes} -> 10`);
+    } else {
+      // Reset to original state if passive is not unlocked
+      this.resetSabresPassive();
+    }
+  }
+
+  private resetSabresPassive(): void {
+    if (this.playerEntity) {
+      const movement = this.playerEntity.getComponent(Movement);
+      if (movement && (movement as any).originalMaxSpeed) {
+        movement.maxSpeed = (movement as any).originalMaxSpeed;
+      }
+    }
+
+    // Restore original critical rune count
+    if (this.originalCriticalRunes !== 0) {
+      setGlobalCriticalRuneCount(this.originalCriticalRunes);
+      this.originalCriticalRunes = 0; // Reset stored value
+    }
+  }
+
+  private applySwordPassive(weaponSlot: 'primary' | 'secondary'): void {
+    // Check if Titanheart passive is unlocked for this sword slot
+    const isTitanheartUnlocked = this.isPassiveAbilityUnlocked('P', WeaponType.SWORD, weaponSlot);
+
+    if (this.playerEntity) {
+      const health = this.playerEntity.getComponent(Health);
+      if (health) {
+        // Apply enhanced regeneration only when sword is currently equipped
+        if (isTitanheartUnlocked) {
+          // Store original regeneration values if not already stored
+          if (!health.hasOwnProperty('originalRegenerationRate')) {
+            (health as any).originalRegenerationRate = health.regenerationRate;
+          }
+          if (!health.hasOwnProperty('originalRegenerationDelay')) {
+            (health as any).originalRegenerationDelay = health.regenerationDelay;
+          }
+
+          // Set regeneration to 30 HP per second after 5 seconds
+          health.regenerationRate = 30.0;
+          health.enableRegeneration(30.0, 5.0); // 5 second delay
+          console.log('🏆 Titanheart: Enhanced regeneration applied (30 HP/s after 5s)');
+        } else {
+          // Reset regeneration to normal if sword is not equipped but Titanheart was previously active
+          this.resetSwordRegeneration();
+        }
+      }
+    }
+  }
+
+  private resetSwordPassive(): void {
+    // Only reset regeneration, keep the max health bonus
+    this.resetSwordRegeneration();
+
+    // Note: We don't reset max health here - it stays permanently increased once Titanheart is unlocked
+  }
+
+  private resetSwordRegeneration(): void {
+    if (this.playerEntity) {
+      const health = this.playerEntity.getComponent(Health);
+      if (health) {
+        // Restore original regeneration settings if they were stored
+        if ((health as any).originalRegenerationRate && (health as any).originalRegenerationDelay) {
+          health.regenerationRate = (health as any).originalRegenerationRate;
+          health.enableRegeneration((health as any).originalRegenerationRate, (health as any).originalRegenerationDelay);
+          console.log('🏆 Titanheart: Regeneration reset to normal');
+        }
+      }
+    }
+  }
+
+  private applyBowPassive(weaponSlot: 'primary' | 'secondary'): void {
+    // Sharpshooter: +5% critical hit chance (handled in DamageCalculator)
+    // This is a global effect that doesn't need specific application
+  }
+
+  private applyScythePassive(weaponSlot: 'primary' | 'secondary'): void {
+    // Soul Harvest: Gain 5 mana per enemy kill (handled in CombatSystem when enemies die)
+    // This is a global effect that doesn't need specific application
+  }
+
+  private applyRunebladePassive(weaponSlot: 'primary' | 'secondary'): void {
+    // Arcane Mastery: -10% mana costs (handled in mana consumption methods)
+    // This is a global effect that doesn't need specific application
+  }
+
+  private resetAllPassiveEffects(): void {
+    // Reset all passive effects to their base values
+    this.resetSabresPassive();
+    this.resetSwordPassive();
+    // Bow, Scythe, and Runeblade passives are global and don't need resetting
   }
 
   private handleCombatInput(playerTransform: Transform): void {
@@ -499,11 +719,14 @@ export class ControlSystem extends System {
   }
 
   private handleBowInput(playerTransform: Transform): void {
+    // Check if RAPIDFIRE passive is unlocked
+    const hasRapidfirePassive = this.isPassiveAbilityUnlocked('P', WeaponType.BOW, this.currentWeapon === this.selectedWeapons?.primary ? 'primary' : 'secondary');
+
     // Handle Viper Sting ability with 'R' key
-    if (this.inputManager.isKeyPressed('r') && !this.isViperStingCharging && !this.isCharging) {
+    if (this.inputManager.isKeyPressed('r') && !this.isViperStingCharging && !this.isCharging && this.isAbilityUnlocked('R')) {
       this.performViperSting(playerTransform);
     }
-    
+
     // Handle Barrage ability with 'Q' key
     if (this.inputManager.isKeyPressed('q')) {
 
@@ -511,7 +734,7 @@ export class ControlSystem extends System {
         this.performBarrage(playerTransform);
       }
     }
-    
+
     // Handle Cobra Shot ability with 'E' key
     if (this.inputManager.isKeyPressed('e')) {
 
@@ -521,41 +744,76 @@ export class ControlSystem extends System {
     }
 
     // Handle Cloudkill ability with 'F' key
-    if (this.inputManager.isKeyPressed('f')) {
+    if (this.inputManager.isKeyPressed('f') && this.isAbilityUnlocked('F')) {
       if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging) {
         this.performCloudkill(playerTransform);
       }
     }
-    
-    // Handle bow charging and firing
-    if (this.inputManager.isMouseButtonPressed(0)) { // Left mouse button held
-      if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging) {
-        this.isCharging = true;
-        this.chargeProgress = 0;
 
-      }
-      // Increase charge progress (could be time-based)
-      if (!this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging) {
-        this.chargeProgress = Math.min(this.chargeProgress + 0.0125, 1.0); // BOW CHARGE SPEED
-      }
-    } else if (this.isCharging) {
-      // Check if any ability is charging - if so, cancel the regular bow shot
-      if (this.isViperStingCharging || this.isBarrageCharging || this.isCobraShotCharging) {
-        this.isCharging = false;
-        this.chargeProgress = 0;
-        return;
-      }
-      
-      // Store charge progress before resetting for visual effects
-      const finalChargeProgress = this.chargeProgress;
-      
-      // Release the bow
-      this.fireProjectile(playerTransform);
+    // Handle bow input based on whether RAPIDFIRE passive is unlocked
+    if (hasRapidfirePassive) {
+      // RAPIDFIRE MODE: Burst fire without charging
+      // Ensure charging state is reset since we don't use charging in burst mode
       this.isCharging = false;
       this.chargeProgress = 0;
-      
-      // Trigger visual effects callback with the stored charge progress
-      this.triggerBowReleaseEffects(finalChargeProgress);
+
+      if (this.inputManager.isMouseButtonPressed(0)) { // Left mouse button pressed
+        const currentTime = performance.now() / 1000; // Convert to seconds
+
+        // Check cooldown
+        if (currentTime - this.lastBurstFireTime >= this.burstFireRate) {
+          // Fire burst attack - use same direction calculation as regular projectiles
+          // Get dragon's facing direction (same as camera direction since dragon faces camera)
+          const direction = new Vector3();
+          this.camera.getWorldDirection(direction);
+          direction.normalize();
+
+          // Apply downward angle compensation to account for restricted camera bounds
+          const compensationAngle = Math.PI / 6; // 30 degrees downward compensation
+
+          // Create a rotation matrix to apply the downward angle around the camera's right axis
+          const cameraRight = new Vector3();
+          cameraRight.crossVectors(direction, new Vector3(0, 1, 0)).normalize();
+
+          // Apply rotation around the right axis to tilt the direction downward
+          const rotationMatrix = new Matrix4();
+          rotationMatrix.makeRotationAxis(cameraRight, compensationAngle);
+          direction.applyMatrix4(rotationMatrix);
+          direction.normalize();
+
+          this.fireBurstAttack(playerTransform.position, direction);
+        }
+      }
+    } else {
+      // NORMAL MODE: Charge-based firing
+      if (this.inputManager.isMouseButtonPressed(0)) { // Left mouse button held
+        if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging) {
+          this.isCharging = true;
+          this.chargeProgress = 0;
+        }
+        // Increase charge progress (could be time-based)
+        if (!this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging) {
+          this.chargeProgress = Math.min(this.chargeProgress + 0.0125, 1.0); // BOW CHARGE SPEED
+        }
+      } else if (this.isCharging) {
+        // Check if any ability is charging - if so, cancel the regular bow shot
+        if (this.isViperStingCharging || this.isBarrageCharging || this.isCobraShotCharging) {
+          this.isCharging = false;
+          this.chargeProgress = 0;
+          return;
+        }
+
+        // Store charge progress before resetting for visual effects
+        const finalChargeProgress = this.chargeProgress;
+
+        // Release the bow
+        this.fireProjectile(playerTransform);
+        this.isCharging = false;
+        this.chargeProgress = 0;
+
+        // Trigger visual effects callback with the stored charge progress
+        this.triggerBowReleaseEffects(finalChargeProgress);
+      }
     }
   }
 
@@ -579,7 +837,7 @@ export class ControlSystem extends System {
     }
     
     // Handle CrossentropyBolt ability with 'R' key
-    if (this.inputManager.isKeyPressed('r') && !this.isCharging && !this.isCrossentropyCharging) {
+    if (this.inputManager.isKeyPressed('r') && !this.isCharging && !this.isCrossentropyCharging && this.isAbilityUnlocked('R')) {
       this.performCrossentropyAbility(playerTransform);
     }
     
@@ -593,9 +851,9 @@ export class ControlSystem extends System {
       this.performFrostNovaAbility(playerTransform);
     }
 
-    // Handle Particle Beam ability with 'F' key
-    if (this.inputManager.isKeyPressed('f') && !this.isCharging && !this.isParticleBeamCharging && !this.isCrossentropyCharging) {
-      this.performParticleBeamAbility(playerTransform);
+    // Handle Summon Totem ability with 'F' key
+    if (this.inputManager.isKeyPressed('f') && !this.isCharging && !this.isSummonTotemCharging && !this.isCrossentropyCharging && this.isAbilityUnlocked('F')) {
+      this.performSummonTotemAbility(playerTransform);
     }
   }
 
@@ -743,195 +1001,94 @@ export class ControlSystem extends System {
     this.createCrossentropyBoltProjectile(playerTransform.position.clone(), direction);
   }
 
-  private performParticleBeamAbility(playerTransform: Transform): void {
+  private performSummonTotemAbility(playerTransform: Transform): void {
     if (!this.playerEntity) return;
 
     // Check cooldown
     const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastParticleBeamTime < this.particleBeamFireRate) {
+    if (currentTime - this.lastSummonTotemTime < this.summonTotemFireRate) {
       return;
     }
 
-    // Check if player has enough mana (40 mana cost)
+    // Check if player has enough mana (75 mana cost for Summon Totem)
     const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastParticleBeam()) {
-      return;
+    if (gameUI) {
+      const currentMana = gameUI.getCurrentMana();
+      if (currentMana < 75) {
+        console.log('🎭 Summon Totem: Not enough mana');
+        return;
+      }
     }
 
     // Consume mana
     if (gameUI) {
       const manaBefore = gameUI.getCurrentMana();
-      const manaConsumed = gameUI.consumeMana(40);
+      const manaConsumed = gameUI.consumeMana(75);
       if (!manaConsumed) {
-        console.warn('⚔️ Particle Beam: Failed to consume mana - not enough mana?');
+        console.warn('🎭 Summon Totem: Failed to consume mana - not enough mana?');
         return;
       }
-      const manaAfter = manaBefore - 40;
-      console.log(`⚔️ Particle Beam: Consumed 40 mana (${manaBefore} -> ${manaAfter})`);
+      const manaAfter = manaBefore - 75;
+      console.log(`🎭 Summon Totem: Consumed 75 mana (${manaBefore} -> ${manaAfter})`);
     }
 
-    this.isParticleBeamCharging = true;
-    this.particleBeamChargeProgress = 0;
-    this.lastParticleBeamTime = currentTime;
+    this.lastSummonTotemTime = currentTime;
 
-    // Start charging animation
-    const chargeStartTime = Date.now();
-    const chargeDuration = 1000; // 1 second charge time
-
-    const chargeInterval = setInterval(() => {
-      const elapsed = Date.now() - chargeStartTime;
-      this.particleBeamChargeProgress = Math.min(elapsed / chargeDuration, 1.0);
-
-      if (this.particleBeamChargeProgress >= 1.0) {
-        clearInterval(chargeInterval);
-        this.fireParticleBeamAfterCharge(playerTransform);
-        this.isParticleBeamCharging = false;
-        this.particleBeamChargeProgress = 0;
-      }
-    }, 16); // ~60fps updates
-  }
-
-  private fireParticleBeamAfterCharge(playerTransform: Transform): void {
-    // Get player's world position (same as Barrage)
+    // Get player's world position
     const playerPosition = playerTransform.getWorldPosition();
-    playerPosition.y += 0.825; // Shoot from chest level (same as Barrage)
+    playerPosition.y += 0.825; // Summon at chest level
 
-    // Get dragon's facing direction
-    const direction = new Vector3();
-    this.camera.getWorldDirection(direction);
-    direction.normalize();
-
-    // Apply angle compensation (same as bow projectiles)
-    const compensationAngle = Math.PI / 6; // 30 degrees downward compensation
-    const cameraRight = new Vector3();
-    cameraRight.crossVectors(direction, new Vector3(0, 1, 0)).normalize();
-
-    const rotationMatrix = new Matrix4();
-    rotationMatrix.makeRotationAxis(cameraRight, compensationAngle);
-    direction.applyMatrix4(rotationMatrix);
-    direction.normalize();
-
-    // Trigger local visual effect for the casting player
-    if (this.onCreateLocalParticleBeamCallback) {
-      this.onCreateLocalParticleBeamCallback(playerPosition, direction);
+    // Trigger Summon Totem callback for remote players
+    if (this.onSummonTotemCallback) {
+      this.onSummonTotemCallback(playerPosition);
     }
 
-    // Trigger Particle Beam callback for multiplayer (remote players)
-    if (this.onParticleBeamCallback) {
-      this.onParticleBeamCallback(playerPosition, direction);
-    }
-
-    // FIXED: Add actual damage logic for enemies (now uses arc collision)
-    this.performParticleBeamDamage(playerPosition, direction);
-
-    console.log('🌊 Tidal Wave created at position:', playerPosition, 'direction:', direction);
+    console.log('🎭 Summon Totem ability triggered at position:', playerPosition, 'with enemy data available:', !!this.world);
   }
 
-  private performParticleBeamDamage(wavePosition: Vector3, waveDirection: Vector3): void {
-    if (!this.playerEntity) return;
+  private createWindShearProjectile(position: Vector3, direction: Vector3): Entity {
+    if (!this.playerEntity) return null as any;
 
-    // Get all entities in the world to check for enemies
-    const allEntities = this.world.getAllEntities();
-    const combatSystem = this.world.getSystem(CombatSystem);
+    // Offset projectile spawn position forward to avoid immediate collision with player or close enemies
+    const spawnPosition = position.clone().add(direction.clone().multiplyScalar(2.0));
 
-    const waveRadius = 12; // Maximum wave radius
-    const arcAngle = Math.PI / 2; // 90 degrees arc
-    const baseDamage = 70; // Tidal Wave damage
+    // Wind Shear projectile config - 80 piercing damage, 15 unit range, moderate speed
+    const projectileConfig = {
+      speed: 15, // Moderate projectile speed (matches visual speed)
+      damage: 80, // 80 piercing damage as requested
+      lifetime: 2.0, // 2 seconds lifetime (enough for 15 units at 15 speed)
+      piercing: true, // Piercing damage - hits multiple targets as it travels
+      explosive: false,
+      maxDistance: 15, // 15 unit range as requested
+      projectileType: 'wind_shear', // Custom projectile type for identification
+      sourcePlayerId: 'unknown' // Will be set by broadcasting system if needed
+    };
 
-    let enemiesHit = 0;
-
-    allEntities.forEach(entity => {
-      // Skip self
-      if (entity.id === this.playerEntity?.id) return;
-
-      // Check if entity has transform and health (could be enemy or player)
-      const entityTransform = entity.getComponent(Transform);
-      const entityHealth = entity.getComponent(Health);
-
-      if (!entityTransform || !entityHealth || entityHealth.isDead) return;
-
-      const entityPosition = entityTransform.position;
-
-      // Calculate distance from wave center to entity
-      const distanceToWave = wavePosition.distanceTo(entityPosition);
-
-      // Check if entity is within wave radius
-      if (distanceToWave <= waveRadius) {
-        // Check if entity is within the arc (in front of the player)
-        const directionToEntity = entityPosition.clone().sub(wavePosition).normalize();
-        const angleToEntity = Math.acos(waveDirection.dot(directionToEntity));
-
-        // Check if the angle is within the arc (arcAngle/2 on each side)
-        if (angleToEntity <= arcAngle / 2) {
-          // Check if target is frozen for mana refund
-          const isFrozen = this.isPlayerFrozen(entity.id);
-
-          // Deal damage through combat system
-          if (combatSystem && this.playerEntity) {
-            combatSystem.queueDamage(entity, baseDamage, this.playerEntity, 'tidal_wave');
-            enemiesHit++;
-
-            console.log(`🌊 Tidal Wave hit entity ${entity.id} for ${baseDamage} damage at distance ${distanceToWave.toFixed(2)}, angle ${angleToEntity.toFixed(2)}${isFrozen ? ' (FROZEN - refunding mana)' : ''}`);
-
-            // Apply knockback to PVP players only if they are NOT frozen
-            if (!isFrozen) {
-              this.applyKnockbackToEntity(entity, wavePosition, entityPosition);
-            }
-
-            // Refund mana if enemy is frozen (100 mana refund)
-            if (isFrozen) {
-              const gameUI = (window as any).gameUI;
-              if (gameUI) {
-                gameUI.addMana(100);
-                console.log('🌊 Tidal Wave: Refunded 100 mana for hitting frozen enemy');
-              }
-            }
-          }
-        }
-      }
-    });
-
-    console.log(`🌊 Tidal Wave hit ${enemiesHit} enemies`);
-  }
-
-  private applyKnockbackToEntity(entity: Entity, waveCenter: Vector3, entityPosition: Vector3): void {
-    // Calculate knockback direction (away from wave center)
-    const knockbackDirection = entityPosition.clone().sub(waveCenter).normalize();
-
-    // Get entity's movement component
-    const entityMovement = entity.getComponent(Movement);
-    if (!entityMovement) return;
-
-    // Apply knockback (10 units distance, 0.5 second duration)
-    const currentTime = Date.now() / 1000; // Convert to seconds
-    entityMovement.applyKnockback(knockbackDirection, 10, entityPosition.clone(), currentTime, 0.5);
-
-    // Broadcast knockback to other PVP players if this is a PVP game
-    const multiplayerContext = (window as any).multiplayerContext;
-    if (multiplayerContext && multiplayerContext.broadcastPlayerKnockback) {
-      // Find the player ID for this entity (this is a bit hacky, we need to map entity IDs to player IDs)
-      // For now, we'll assume the entity ID matches the player ID in PVP mode
-      const targetPlayerId = entity.id.toString();
-      multiplayerContext.broadcastPlayerKnockback(targetPlayerId, {
-        x: knockbackDirection.x,
-        y: knockbackDirection.y,
-        z: knockbackDirection.z
-      }, 10, 0.5);
-    }
-
-    console.log(`🌊 Tidal Wave knockback applied to entity ${entity.id} in direction (${knockbackDirection.x.toFixed(2)}, ${knockbackDirection.z.toFixed(2)})`);
-  }
-
-  private isPlayerFrozen(entityId: number): boolean {
-    // Check if the entity has frozen debuff
-    const debuffs = this.activeDebuffEffects.get(entityId);
-    if (!debuffs) return false;
-    
-    const currentTime = Date.now() / 1000;
-    return debuffs.some(debuff => 
-      debuff.debuffType === 'frozen' && 
-      currentTime < debuff.startTime + debuff.duration
+    // Create the projectile entity
+    const projectileEntity = this.projectileSystem.createProjectile(
+      this.world,
+      spawnPosition,
+      direction,
+      this.playerEntity.id,
+      projectileConfig
     );
+
+    // Mark as wind shear projectile for visual identification
+    const renderer = projectileEntity.getComponent(Renderer) as Renderer;
+    if (renderer?.mesh) {
+      renderer.mesh.userData.projectileType = 'wind_shear';
+      console.log(`🗡️ WindShearProjectile: Created projectile entity ${projectileEntity.id} with userData:`, renderer.mesh.userData);
+    } else {
+      console.log(`❌ WindShearProjectile: No renderer mesh found for entity ${projectileEntity.id}`);
+    }
+
+    // Broadcast projectile creation to other players
+    if (this.onProjectileCreatedCallback) {
+      this.onProjectileCreatedCallback('wind_shear', spawnPosition, direction, projectileConfig);
+    }
+
+    console.log(`🗡️ WindShearProjectile: Successfully created wind shear projectile entity ${projectileEntity.id}`);
+    return projectileEntity;
   }
 
   private createProjectile(position: Vector3, direction: Vector3): void {
@@ -983,23 +1140,96 @@ export class ControlSystem extends System {
     }
   }
 
-  private createEntropicBoltProjectile(position: Vector3, direction: Vector3): void {
+  private createBurstProjectile(position: Vector3, direction: Vector3): void {
     if (!this.playerEntity) return;
-    
+
     // Check if there are any valid targets in the world before creating projectiles
     const potentialTargets = this.world.queryEntities([Transform, Health, Collider]);
-    const validTargets = potentialTargets.filter(target => 
+    const validTargets = potentialTargets.filter(target =>
       target.id !== this.playerEntity!.id && // Not the player itself
       !target.getComponent(Health)?.isDead // Not dead
     );
-    
+
     // In multiplayer mode, only create projectiles if there are valid targets or if we need to broadcast to other players
     const hasValidTargets = validTargets.length > 0;
     const shouldBroadcast = this.onProjectileCreatedCallback !== undefined;
-    
+
     if (!hasValidTargets && !shouldBroadcast) {
       return;
     }
+
+    // Offset projectile spawn position slightly forward to avoid collision with player
+    const spawnPosition = position.clone();
+    spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
+    spawnPosition.y += 0.75; // Slightly higher
+
+    // Create burst projectile with higher damage
+    const projectileConfig = {
+      speed: 25,
+      damage: 30, // Burst arrows deal 30 damage each
+      lifetime: 3,
+      maxDistance: 25, // Limit bow arrows to 25 units distance
+      subclass: this.currentSubclass,
+      level: this.currentLevel,
+      opacity: 1.0,
+      sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown'
+    };
+
+    this.projectileSystem.createProjectile(
+      this.world,
+      spawnPosition,
+      direction,
+      this.playerEntity.id,
+      projectileConfig
+    );
+
+    // Broadcast projectile creation to other players
+    if (this.onProjectileCreatedCallback) {
+      this.onProjectileCreatedCallback('burst_arrow', spawnPosition, direction, projectileConfig);
+    }
+  }
+
+  private fireBurstAttack(position: Vector3, direction: Vector3): void {
+    // Fire 3 projectiles in rapid succession with small delays
+    const currentTime = performance.now() / 1000; // Convert to seconds
+
+    // Fire first projectile immediately
+    this.createBurstProjectile(position, direction);
+
+    // Fire second projectile after 0.1 seconds
+    setTimeout(() => {
+      this.createBurstProjectile(position, direction);
+    }, 100);
+
+    // Fire third projectile after 0.2 seconds
+    setTimeout(() => {
+      this.createBurstProjectile(position, direction);
+    }, 200);
+
+    // Update burst fire cooldown
+    this.lastBurstFireTime = currentTime;
+  }
+
+  private createEntropicBoltProjectile(position: Vector3, direction: Vector3): void {
+    if (!this.playerEntity) return;
+
+    // Check if there are any valid targets in the world before creating projectiles
+    const potentialTargets = this.world.queryEntities([Transform, Health, Collider]);
+    const validTargets = potentialTargets.filter(target =>
+      target.id !== this.playerEntity!.id && // Not the player itself
+      !target.getComponent(Health)?.isDead // Not dead
+    );
+
+    // In multiplayer mode, only create projectiles if there are valid targets or if we need to broadcast to other players
+    const hasValidTargets = validTargets.length > 0;
+    const shouldBroadcast = this.onProjectileCreatedCallback !== undefined;
+
+    if (!hasValidTargets && !shouldBroadcast) {
+      return;
+    }
+
+    // Check if Cryoflame is unlocked for the current weapon
+    const isCryoflameUnlocked = this.isPassiveAbilityUnlocked('P', WeaponType.SCYTHE, 'primary');
     
     // Check if player has enough mana (15 mana cost)
     const gameUI = (window as any).gameUI;
@@ -1024,7 +1254,7 @@ export class ControlSystem extends System {
     // Create EntropicBolt projectile using the new method
     const entropicConfig = {
       speed: 20, // Faster than CrossentropyBolt
-      damage: 20, // EntropicBolt damage
+      damage: isCryoflameUnlocked ? 45 : 20, // Cryoflame increases damage to 45
       lifetime: 2, // Shorter lifetime
       piercing: false, // Non-piercing so projectile gets destroyed on hit
       explosive: false, // No explosion effect
@@ -1032,7 +1262,8 @@ export class ControlSystem extends System {
       subclass: this.currentSubclass,
       level: this.currentLevel,
       opacity: 1.0,
-      sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown'
+      sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown',
+      isCryoflame: isCryoflameUnlocked // Pass Cryoflame mode to projectile system
     };
     
     this.projectileSystem.createEntropicBoltProjectile(
@@ -1121,7 +1352,7 @@ export class ControlSystem extends System {
     // Get player's health component and heal for 30 HP 
     const healthComponent = this.playerEntity.getComponent(Health);
     if (healthComponent) {
-      const didHeal = healthComponent.heal(40); // REANIMATE HEAL AMOUNT
+      const didHeal = healthComponent.heal(60); // REANIMATE HEAL AMOUNT
       if (didHeal) {
         // console.log(`🩸 Reanimate healed player for 30 HP. Current health: ${healthComponent.currentHealth}/${healthComponent.maxHealth}`);
       } else {
@@ -1132,12 +1363,31 @@ export class ControlSystem extends System {
 
   private triggerReanimateEffect(playerTransform: Transform): void {
     // Trigger the visual healing effect
-    
+
     if (this.onReanimateCallback) {
       this.onReanimateCallback();
-    } 
-    
-    const playerPosition = playerTransform.position;
+    }
+
+    // Create healing damage number above player head
+    const playerPosition = playerTransform.position.clone();
+    playerPosition.y += 1.5; // Position above player's head
+
+    if (this.onDamageNumbersUpdate) {
+      this.onDamageNumbersUpdate([{
+        id: this.nextDamageNumberId.toString(),
+        damage: 60, // Reanimate heals for 60 HP
+        position: playerPosition,
+        isCritical: false,
+        timestamp: Date.now(),
+        damageType: 'reanimate_healing'
+      }]);
+      this.nextDamageNumberId++;
+    }
+
+    // Broadcast healing in PVP mode
+    if (this.onBroadcastHealing) {
+      this.onBroadcastHealing(60, 'reanimate', playerPosition);
+    }
   }
 
   private performFrostNovaAbility(playerTransform: Transform): void {
@@ -1151,7 +1401,7 @@ export class ControlSystem extends System {
     
     // Check if player has enough mana (50 mana cost)
     const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastFrostNova()) {
+    if (gameUI && !gameUI.canCastFrostNova(50)) {
       return;
     }
     
@@ -1194,15 +1444,15 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check if player has enough energy (40 energy cost)
+    // Check if player has enough energy (50 energy cost)
     const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastCobraShot()) {
+    if (gameUI && !gameUI.canCastCobraShot(60)) {
       return;
     }
 
     // Consume energy
     if (gameUI) {
-      gameUI.consumeEnergy(40);
+      gameUI.consumeEnergy(60);
     }
 
     this.isCobraShotCharging = true;
@@ -1327,7 +1577,7 @@ export class ControlSystem extends System {
           const combatSystem = this.world.getSystem(CombatSystem);
           if (combatSystem && this.playerEntity && targetPlayerId) {
             const frostNovaDamage = 50; // Frost Nova damage
-            combatSystem.queueDamage(entity, frostNovaDamage, this.playerEntity, 'frost_nova');
+            combatSystem.queueDamage(entity, frostNovaDamage, this.playerEntity, 'frost_nova', this.playerEntity?.userData?.playerId);
             damagedPlayers++;
             
             // Broadcast freeze effect to the target player so they get frozen on their end
@@ -1432,9 +1682,6 @@ export class ControlSystem extends System {
     this.onBowReleaseCallback = callback;
   }
   
-  public setDivineStormCallback(callback: (position: Vector3, direction: Vector3, duration: number) => void): void {
-    this.onDivineStormCallback = callback;
-  }
   
   public setProjectileCreatedCallback(callback: (projectileType: string, position: Vector3, direction: Vector3, config: any) => void): void {
     this.onProjectileCreatedCallback = callback;
@@ -1464,12 +1711,8 @@ export class ControlSystem extends System {
     this.onCobraShotCallback = callback;
   }
 
-  public setParticleBeamCallback(callback: (position: Vector3, direction: Vector3) => void): void {
-    this.onParticleBeamCallback = callback;
-  }
-
-  public setCreateLocalParticleBeamCallback(callback: (position: Vector3, direction: Vector3) => void): void {
-    this.onCreateLocalParticleBeamCallback = callback;
+  public setSummonTotemCallback(callback: (position: Vector3) => void): void {
+    this.onSummonTotemCallback = callback;
   }
   
   public setChargeCallback(callback: (position: Vector3, direction: Vector3) => void): void {
@@ -1494,6 +1737,14 @@ export class ControlSystem extends System {
 
   public setSmiteCallback(callback: (position: Vector3, direction: Vector3, onDamageDealt?: (damageDealt: boolean) => void) => void): void {
     this.onSmiteCallback = callback;
+  }
+
+  public setColossusStrikeCallback(callback: (position: Vector3, direction: Vector3, damage: number, onDamageDealt?: (damageDealt: boolean) => void) => void): void {
+    this.onColossusStrikeCallback = callback;
+  }
+
+  public setWindShearCallback(callback: (position: Vector3, direction: Vector3) => void): void {
+    this.onWindShearCallback = callback;
   }
 
   public setDeathGraspCallback(callback: (position: Vector3, direction: Vector3) => void): void {
@@ -1530,6 +1781,21 @@ export class ControlSystem extends System {
 
   public setHauntedSoulEffectCallback(callback: (position: Vector3) => void): void {
     this.onHauntedSoulEffectCallback = callback;
+  }
+
+  public setDamageNumbersCallback(callback: (damageNumbers: Array<{
+    id: string;
+    damage: number;
+    position: Vector3;
+    isCritical: boolean;
+    timestamp: number;
+    damageType?: string;
+  }>) => void): void {
+    this.onDamageNumbersUpdate = callback;
+  }
+
+  public setBroadcastHealingCallback(callback: (healingAmount: number, healingType: string, position: Vector3) => void): void {
+    this.onBroadcastHealing = callback;
   }
 
   public setDebuffCallback(callback: (targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, position: Vector3) => void): void {
@@ -1578,16 +1844,16 @@ export class ControlSystem extends System {
     }, duration);
   }
 
-  // Method to check if a player/entity is currently stunned
+  // Method to check if a player/entity is currently stunned or frozen
   private isPlayerStunned(entityId: number): boolean {
     const currentTime = Date.now();
     const effects = this.activeDebuffEffects.get(entityId);
 
     if (!effects) return false;
 
-    // Check if any active effect is a stun effect
+    // Check if any active effect is a stun or freeze effect
     return effects.some(effect =>
-      effect.debuffType === 'stunned' &&
+      (effect.debuffType === 'stunned' || effect.debuffType === 'frozen') &&
       (currentTime - effect.startTime) < effect.duration
     );
   }
@@ -1606,6 +1872,7 @@ export class ControlSystem extends System {
 
   public setWeaponLevel(level: number): void {
     this.currentLevel = level;
+    console.log(`🔧 ControlSystem level set to: ${level}`);
   }
 
   public getCurrentWeaponConfig(): { weapon: WeaponType; subclass: WeaponSubclass; level: number } {
@@ -1665,12 +1932,12 @@ export class ControlSystem extends System {
     return this.crossentropyChargeProgress;
   }
 
-  public isParticleBeamChargingActive(): boolean {
-    return this.isParticleBeamCharging;
+  public isSummonTotemChargingActive(): boolean {
+    return this.isSummonTotemCharging;
   }
 
-  public getParticleBeamChargeProgress(): number {
-    return this.particleBeamChargeProgress;
+  public getSummonTotemChargeProgress(): number {
+    return this.summonTotemChargeProgress;
   }
 
   public isWeaponSwinging(): boolean {
@@ -1682,9 +1949,6 @@ export class ControlSystem extends System {
     return this.swordComboStep;
   }
 
-  public isDivineStormActive(): boolean {
-    return this.isDivineStorming;
-  }
 
   public isChargeActive(): boolean {
     return this.isSwordCharging;
@@ -1718,6 +1982,14 @@ export class ControlSystem extends System {
     return this.isSmiting;
   }
 
+  public isColossusStrikeActive(): boolean {
+    return this.isColossusStriking;
+  }
+
+  public isWindShearActive(): boolean {
+    return this.isWindShearing;
+  }
+
   public isDeathGraspActive(): boolean {
     return this.isDeathGrasping;
   }
@@ -1730,34 +2002,33 @@ export class ControlSystem extends System {
     return this.corruptedAuraActive;
   }
 
-  public isColossusStrikeActive(): boolean {
-    return this.isColossusStriking;
-  }
 
   private handleSwordInput(playerTransform: Transform): void {
     // Handle sword melee attacks
-    if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isDivineStorming && !this.isSwordCharging && !this.isDeflecting && !this.isColossusStriking) { // Left mouse button
+    if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isSwordCharging && !this.isDeflecting) { // Left mouse button
       this.performSwordMeleeAttack(playerTransform);
     }
 
-    // Handle Divine Storm ability with 'R' key
-    if (this.inputManager.isKeyPressed('r') && !this.isDivineStorming && !this.isSwinging && !this.isSwordCharging && !this.isDeflecting && !this.isColossusStriking) {
-      this.performDivineStorm(playerTransform);
-    }
 
     // Handle Charge ability with 'E' key
-    if (this.inputManager.isKeyPressed('e') && !this.isSwordCharging && !this.isDivineStorming && !this.isSwinging && !this.isDeflecting && !this.isColossusStriking) {
+    if (this.inputManager.isKeyPressed('e') && !this.isSwordCharging && !this.isSwinging && !this.isDeflecting) {
       this.performCharge(playerTransform);
     }
 
     // Handle Deflect ability with 'Q' key
-    if (this.inputManager.isKeyPressed('q') && !this.isDeflecting && !this.isDivineStorming && !this.isSwinging && !this.isSwordCharging && !this.isColossusStriking) {
+    if (this.inputManager.isKeyPressed('q') && !this.isDeflecting && !this.isSwinging && !this.isSwordCharging) {
       this.performDeflect(playerTransform);
     }
 
-    // Handle Colossus Strike ability with 'F' key
-    if (this.inputManager.isKeyPressed('f') && !this.isColossusStriking && !this.isDivineStorming && !this.isSwinging && !this.isSwordCharging && !this.isDeflecting) {
+    // Handle Colossus Strike ability with 'R' key
+    if (this.inputManager.isKeyPressed('r') && !this.isColossusStriking && !this.isSwinging && !this.isSwordCharging && !this.isDeflecting && this.isAbilityUnlocked('R')) {
       this.performColossusStrike(playerTransform);
+    }
+
+    // Handle Wind Shear ability with 'F' key
+    if (this.inputManager.isKeyPressed('f') && !this.isWindShearing && !this.isSwinging && !this.isSwordCharging && !this.isDeflecting && !this.isColossusStriking && this.isAbilityUnlocked('F')) {
+      console.log('🌪️ F key pressed for Wind Shear ability');
+      this.performWindShear(playerTransform);
     }
 
     // Check for combo reset
@@ -1774,7 +2045,7 @@ export class ControlSystem extends System {
     }
 
     // Handle Smite ability with 'R' key
-    if (this.inputManager.isKeyPressed('r') && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWraithStriking) {
+    if (this.inputManager.isKeyPressed('r') && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWraithStriking && this.isAbilityUnlocked('R')) {
       this.performSmite(playerTransform);
     }
 
@@ -1784,7 +2055,7 @@ export class ControlSystem extends System {
     }
 
     // Handle Corrupted Aura ability with 'F' key (just pressed detection)
-    if (this.inputManager.isKeyPressed('f') && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWraithStriking) {
+    if (this.inputManager.isKeyPressed('f') && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWraithStriking && this.isAbilityUnlocked('F')) {
       // Track if F key was just pressed (not held down)
       if (!this.fKeyWasPressed) {
         this.toggleCorruptedAura(playerTransform);
@@ -1927,7 +2198,142 @@ export class ControlSystem extends System {
     // Reset smiting state after animation duration (same as the Smite component)
     setTimeout(() => {
       this.isSmiting = false;
-    }, 900); // 0.9 seconds matches the animation duration
+    }, 1000); // 1.0 seconds matches the original animation duration
+  }
+
+  private performColossusStrike(playerTransform: Transform): void {
+    // Check if using Sword
+    if (this.currentWeapon !== WeaponType.SWORD) {
+      return;
+    }
+
+    // Check cooldown
+    const currentTime = Date.now() / 1000;
+    if (currentTime - this.lastColossusStrikeTime < this.colossusStrikeCooldown) {
+      return; // Still on cooldown
+    }
+
+    // Check if already colossus striking
+    if (this.isColossusStriking) {
+      return;
+    }
+
+    // Check minimum rage requirement (25 rage minimum)
+    const gameUI = (window as any).gameUI;
+    if (gameUI && gameUI.getCurrentRage() < 25) {
+      console.log(`❌ Colossus Strike: Not enough rage (minimum 25 required, current: ${gameUI.getCurrentRage()})`);
+      return;
+    }
+
+    // Consume all rage and calculate damage
+    const rageConsumed = gameUI ? gameUI.getCurrentRage() : 0;
+    if (gameUI) {
+      gameUI.consumeAllRage();
+      console.log(`⚡ Colossus Strike: Consumed ${rageConsumed} rage`);
+    }
+
+    // Calculate damage: 100 base + (30 * floor(rageConsumed / 5))
+    const extraDamage = Math.floor(rageConsumed / 5) * 30;
+    const totalDamage =  extraDamage;
+
+    console.log(`⚡ Colossus Strike: Rage consumed: ${rageConsumed}, Extra damage: ${extraDamage}, Total damage: ${totalDamage}`);
+
+    this.lastColossusStrikeTime = currentTime;
+    this.isColossusStriking = true;
+
+    // Stop player movement immediately when casting Colossus Strike
+    if (this.playerEntity) {
+      const playerMovement = this.playerEntity.getComponent(Movement);
+      if (playerMovement) {
+        playerMovement.velocity.x = 0;
+        playerMovement.velocity.z = 0;
+        playerMovement.setMoveDirection(new Vector3(0, 0, 0), 0);
+      }
+    }
+
+    // Get player position and direction
+    const position = playerTransform.position.clone();
+    const direction = new Vector3();
+    this.camera.getWorldDirection(direction);
+    direction.normalize();
+
+    // Offset the colossus strike position slightly forward to look like it's coming from the sword swing
+    const strikePosition = position.clone().add(direction.clone().multiplyScalar(2.5));
+
+    console.log(`⚡ Colossus Strike: Damage detection delegated to visual component`);
+
+    // Trigger colossus strike callback with calculated damage
+    if (this.onColossusStrikeCallback) {
+      this.onColossusStrikeCallback(strikePosition, direction, totalDamage, (damageDealtFlag: boolean) => {
+        // Handle any effects when damage is dealt by the visual component
+        if (damageDealtFlag) {
+          console.log(`⚡ Colossus Strike: Damage dealt successfully`);
+        }
+      });
+    }
+
+    // Reset colossus striking state after animation duration (same as the ColossusStrike component)
+    setTimeout(() => {
+      this.isColossusStriking = false;
+    }, 1200); // 1.2 seconds matches the updated animation duration
+  }
+
+  private performWindShear(playerTransform: Transform): void {
+    console.log(`🌪️ WindShear: Attempting to perform wind shear ability`);
+
+    // Check if using Sword
+    if (this.currentWeapon !== WeaponType.SWORD) {
+      console.log(`❌ WindShear: Not using sword weapon, current weapon: ${this.currentWeapon}`);
+      return;
+    }
+
+    // Check cooldown
+    const currentTime = Date.now() / 1000;
+    if (currentTime - this.lastWindShearTime < this.windShearCooldown) {
+      console.log(`❌ WindShear: On cooldown, time remaining: ${this.windShearCooldown - (currentTime - this.lastWindShearTime)}s`);
+      return; // Still on cooldown
+    }
+
+    // Check if already wind shearing
+    if (this.isWindShearing) {
+      return;
+    }
+
+    this.lastWindShearTime = currentTime;
+    this.isWindShearing = true;
+
+    // Get player position and direction
+    const position = playerTransform.position.clone();
+    const direction = new Vector3();
+    this.camera.getWorldDirection(direction);
+
+    // Keep direction horizontal (remove Y component to fire on flat plane)
+    direction.y = 0;
+    direction.normalize();
+
+    // Set position to chest level (player position + 1 unit up)
+    const chestLevelPosition = position.clone();
+    chestLevelPosition.y += 1.0;
+
+    // Offset the wind shear position slightly forward from chest level
+    const shearPosition = chestLevelPosition.add(direction.clone().multiplyScalar(1.5));
+
+    // Trigger wind shear visual effect via callback
+    console.log(`🌪️ WindShear: Triggering visual effect at position:`, shearPosition, `direction:`, direction);
+    if (this.onWindShearCallback) {
+      this.onWindShearCallback(shearPosition, direction);
+    }
+
+    // Also create ECS projectile for damage calculations
+    const projectileEntity = this.createWindShearProjectile(shearPosition, direction);
+    if (projectileEntity) {
+      console.log(`✅ WindShear: Successfully created damage entity ${projectileEntity.id}`);
+    }
+
+    // Reset the wind shearing state after a short delay
+    setTimeout(() => {
+      this.isWindShearing = false;
+    }, 200); // 200ms delay to prevent spamming
   }
 
   private performSmiteDamage(smitePosition: Vector3): boolean {
@@ -1954,9 +2360,9 @@ export class ControlSystem extends System {
         // Entity is within damage radius - apply damage
         const combatSystem = this.world.getSystem(CombatSystem);
         if (combatSystem && this.playerEntity) {
-          combatSystem.queueDamage(entity, smiteDamage, this.playerEntity, 'smite');
+          combatSystem.queueDamage(entity, smiteDamage, this.playerEntity, 'smite', this.playerEntity?.userData?.playerId);
           damageDealt = true;
-          console.log(`⚡ Smite dealt ${smiteDamage} damage to entity ${entity.id} at distance ${distance.toFixed(2)}`);
+          console.log(`⚡  dealt ${smiteDamage} damage to entity ${entity.id} at distance ${distance.toFixed(2)}`);
         } else {
           console.log(`⚡ Smite: Could not find CombatSystem or playerEntity to deal damage`);
         }
@@ -1976,7 +2382,7 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Get player's health component and heal for 20 HP (like Reanimate ability)
+    // Get player's health component and heal for 100 HP
     const healthComponent = this.playerEntity.getComponent(Health);
     if (healthComponent) {
       const oldHealth = healthComponent.currentHealth;
@@ -1987,6 +2393,28 @@ export class ControlSystem extends System {
 
       if (didHeal) {
         console.log(`⚡ Smite SUCCESSFULLY healed player for 100 HP! Health: ${oldHealth} -> ${healthComponent.currentHealth}/${maxHealth}`);
+
+        // Create healing damage number above player head
+        const playerTransform = this.playerEntity.getComponent(Transform);
+        if (playerTransform && this.onDamageNumbersUpdate) {
+          const healingPosition = playerTransform.position.clone();
+          healingPosition.y += 1.5; // Position above player's head
+
+          this.onDamageNumbersUpdate([{
+            id: this.nextDamageNumberId.toString(),
+            damage: 100, // Smite heals for 100 HP
+            position: healingPosition,
+            isCritical: false,
+            timestamp: Date.now(),
+            damageType: 'smite_healing'
+          }]);
+          this.nextDamageNumberId++;
+
+          // Broadcast healing in PVP mode
+          if (this.onBroadcastHealing) {
+            this.onBroadcastHealing(100, 'smite', healingPosition);
+          }
+        }
       } else {
         console.log(`⚡ Smite: Player already at full health (${healthComponent.currentHealth}/${maxHealth}) - no healing needed`);
       }
@@ -2181,7 +2609,7 @@ export class ControlSystem extends System {
       // Apply damage
       const combatSystem = this.world.getSystem(CombatSystem);
       if (combatSystem) {
-        combatSystem.queueDamage(entity, wraithStrikeDamage, this.playerEntity!, 'wraith_strike');
+        combatSystem.queueDamage(entity, wraithStrikeDamage, this.playerEntity!, 'wraith_strike', this.playerEntity?.userData?.playerId);
         hitCount++;
         
         // Apply Corrupted debuff
@@ -2259,6 +2687,14 @@ export class ControlSystem extends System {
     this.isSmiting = false;
   }
 
+  // Called by sword component when colossus strike animation completes
+  public onColossusStrikeComplete(): void {
+    if (!this.isColossusStriking) return; // Prevent multiple calls
+
+    // Reset colossus striking state
+    this.isColossusStriking = false;
+  }
+
   // Called by runeblade component when death grasp animation completes
   public onDeathGraspComplete(): void {
     if (!this.isDeathGrasping) return; // Prevent multiple calls
@@ -2287,17 +2723,18 @@ export class ControlSystem extends System {
     }
     
     // Handle E key for Sunder ability
-    if (this.inputManager.isKeyPressed('e') && !this.isSwinging && !this.isSkyfalling && !this.isSundering) {
+    if (this.inputManager.isKeyPressed('e') && !this.isSkyfalling && !this.isSundering) {
+      // Allow Sunder even while swinging - it should be usable during combat
       this.performSunder(playerTransform);
     }
 
     // Handle R key for Skyfall ability (switched from E)
-    if (this.inputManager.isKeyPressed('r') && !this.isSkyfalling && !this.isSundering) {
+    if (this.inputManager.isKeyPressed('r') && !this.isSkyfalling && !this.isSundering && this.isAbilityUnlocked('R')) {
       this.performSkyfall(playerTransform);
     }
     
     // Handle F key for Stealth ability
-    if (this.inputManager.isKeyPressed('f') && !this.isSwinging && !this.isSkyfalling && !this.isSundering && !this.isBackstabbing && !this.isStealthing) {
+    if (this.inputManager.isKeyPressed('f') && !this.isSwinging && !this.isSkyfalling && !this.isSundering && !this.isBackstabbing && !this.isStealthing && this.isAbilityUnlocked('F')) {
       this.performStealth(playerTransform);
     }
     
@@ -2351,20 +2788,22 @@ export class ControlSystem extends System {
 
   private performSabresMeleeDamage(playerTransform: Transform): void {
     const currentTime = Date.now() / 1000;
-    
+
     // Get all entities that could be damaged
     const allEntities = this.world.getAllEntities();
-    const potentialTargets = allEntities.filter(entity => 
-      entity.hasComponent(Health) && 
+    const potentialTargets = allEntities.filter(entity =>
+      entity.hasComponent(Health) &&
       entity.hasComponent(Transform) &&
       entity !== this.playerEntity
     );
-    
+
     // SABRES DAMAGE
     const attackRange = 3.8; // Slightly longer range than sword
     const attackAngle = Math.PI / 2; // 60 degree cone (wider than sword)
     const leftSabreDamage = 19;
     const rightSabreDamage = 23;
+
+    console.log(`⚔️ SABRE ATTACK - Left: ${leftSabreDamage}, Right: ${rightSabreDamage}, Weapon: ${this.currentWeapon}, Level: ${this.currentLevel}`);
     
     // Get camera direction for attack direction
     const attackDirection = new Vector3();
@@ -2397,12 +2836,12 @@ export class ControlSystem extends System {
       const combatSystem = this.world.getSystem(CombatSystem);
       if (combatSystem) {
         // Left sabre hit (immediate)
-        combatSystem.queueDamage(target, leftSabreDamage, this.playerEntity || undefined);
+        combatSystem.queueDamage(target, leftSabreDamage, this.playerEntity || undefined, 'sabre_left', this.playerEntity?.userData?.playerId);
         
         // Right sabre hit (with small delay)
         setTimeout(() => {
           if (!targetHealth.isDead) {
-            combatSystem.queueDamage(target, rightSabreDamage, this.playerEntity || undefined);
+            combatSystem.queueDamage(target, rightSabreDamage, this.playerEntity || undefined, 'sabre_right', this.playerEntity?.userData?.playerId);
           }
         }, 100); // 100ms delay between sabre hits
         
@@ -2443,7 +2882,7 @@ export class ControlSystem extends System {
       this.skyfallTargetHeight = playerTransform.position.y + (playerMovement.jumpForce * 1.4); // Reduced height by 30% (was 2x, now 1.4x)
             
       // Apply upward velocity
-      playerMovement.velocity.y = playerMovement.jumpForce * 2; // Stronger initial velocity
+      playerMovement.velocity.y = playerMovement.jumpForce * 2.0; // Stronger initial velocity
       playerMovement.gravity = 0; // Disable gravity during ascent
       // Don't disable canMove as it prevents all physics updates including gravity
       // Instead we'll control horizontal movement in the ControlSystem
@@ -2504,7 +2943,7 @@ export class ControlSystem extends System {
         break;
     }
     
-    // Safety timeout (if something goes wrong, end after 5 seconds)
+    // Safety timeout (end after 5 seconds)
     if (elapsedTime > 4.0) {
       this.completeSkyfallAbility(playerTransform);
     }
@@ -2517,7 +2956,7 @@ export class ControlSystem extends System {
     const allEntities = this.world.getAllEntities();
     const landingPosition = playerTransform.position;
     const damageRadius = 4.0; // 4 unit radius
-    const skyfallDamage = 125; // 125 damage as requested
+    const skyfallDamage = 125; // SKYFALL DAMAGE
 
     let hitCount = 0;
     
@@ -2536,7 +2975,7 @@ export class ControlSystem extends System {
         // Apply Skyfall damage
         const combatSystem = this.world.getSystem(CombatSystem);
         if (combatSystem) {
-          combatSystem.queueDamage(entity, skyfallDamage, this.playerEntity || undefined);
+          combatSystem.queueDamage(entity, skyfallDamage, this.playerEntity || undefined, 'skyfall', this.playerEntity?.userData?.playerId);
           hitCount++;
 
           // Apply stun effect (2 seconds) to enemies hit by Skyfall
@@ -2625,18 +3064,33 @@ export class ControlSystem extends System {
     // Start sunder animation (same as backstab)
     this.isSundering = true;
     this.sunderStartTime = currentTime;
+    this.sunderDamageApplied = false; // Reset damage flag for new sunder
     
-    // Perform sunder damage with stacking logic
-    this.performSunderDamage(playerTransform);
+    // Don't perform damage immediately - wait for the right moment in animation
+    // This ensures damage happens during the actual sunder animation, not just at the start
   }
   
   private updateSunderState(playerTransform: Transform): void {
     const currentTime = Date.now() / 1000;
     const elapsedTime = currentTime - this.sunderStartTime;
     
+    // Apply damage at the right moment in the animation (30% through, like backstab)
+    const damageTimingPercent = 0.3; // 30% through the animation
+    const damageWindow = this.sunderDuration * damageTimingPercent;
+    const damageWindowEnd = damageWindow + 0.1; // Small window to ensure damage is applied
+    
+    if (elapsedTime >= damageWindow && elapsedTime <= damageWindowEnd) {
+      // Only apply damage once during this window
+      if (!this.sunderDamageApplied) {
+        this.performSunderDamage(playerTransform);
+        this.sunderDamageApplied = true;
+      }
+    }
+    
     // Check if sunder animation duration has elapsed
     if (elapsedTime >= this.sunderDuration) {
       this.isSundering = false;
+      this.sunderDamageApplied = false; // Reset for next use
     }
   }
   
@@ -2686,7 +3140,8 @@ export class ControlSystem extends System {
           entity,
           damage,
           this.playerEntity!,
-          'sunder'
+          'sunder',
+          this.playerEntity?.userData?.playerId
         );
         
         // Apply stun effect if at 3 stacks
@@ -2918,6 +3373,22 @@ export class ControlSystem extends System {
       if (this.isStealthing) {
         console.log('🥷 Stealth: Duration expired, ending stealth effect');
 
+        // Create local reappearance mist effect
+        if (this.onCreateSabreMistEffectCallback && this.playerEntity) {
+          const currentPlayerTransform = this.playerEntity.getComponent(Transform);
+          if (currentPlayerTransform) {
+            this.onCreateSabreMistEffectCallback(currentPlayerTransform.position.clone());
+          }
+        }
+
+        // Broadcast reappearance mist effect to other players
+        if (this.onBroadcastSabreMistCallback && this.playerEntity) {
+          const currentPlayerTransform = this.playerEntity.getComponent(Transform);
+          if (currentPlayerTransform) {
+            this.onBroadcastSabreMistCallback(currentPlayerTransform.position.clone(), 'stealth');
+          }
+        }
+
         // Ensure we clean up all stealth states
         this.isInvisible = false;
         this.isStealthing = false;
@@ -2973,6 +3444,7 @@ export class ControlSystem extends System {
     this.skyfallPhase = 'none';
     this.isBackstabbing = false;
     this.isSundering = false;
+    this.sunderDamageApplied = false; // Reset sunder damage flag
 
     // Clean up stealth state and ensure visibility is restored
     if (this.isStealthing || this.isInvisible) {
@@ -2985,10 +3457,8 @@ export class ControlSystem extends System {
       this.broadcastStealthState(false);
     }
 
-    this.isDivineStorming = false;
     this.isSwordCharging = false;
     this.isDeflecting = false;
-    this.isColossusStriking = false;
     this.isWraithStriking = false; // Reset WraithStrike when switching weapons
 
     // Reset Corrupted Aura and restore original rune counts when switching weapons
@@ -3112,16 +3582,66 @@ export class ControlSystem extends System {
   // Callback for Corrupted Aura toggle
   private onCorruptedAuraToggleCallback?: (active: boolean) => void;
 
-  // Callback for Colossus Strike activation
-  private onColossusStrikeCallback?: (position: Vector3, direction: Vector3, rageSpent: number) => void;
 
   public setCorruptedAuraToggleCallback(callback: (active: boolean) => void): void {
     this.onCorruptedAuraToggleCallback = callback;
   }
 
-  public setColossusStrikeCallback(callback: (position: Vector3, direction: Vector3, rageSpent: number) => void): void {
-    this.onColossusStrikeCallback = callback;
+  // Skill Point System Methods
+  public getSkillPointData(): SkillPointData {
+    return { ...this.skillPointData };
   }
+
+  public setSkillPointData(data: SkillPointData): void {
+    this.skillPointData = data;
+  }
+
+  public updateSkillPointsForLevel(level: number): void {
+    this.skillPointData = SkillPointSystem.updateSkillPointsForLevel(this.skillPointData, level);
+  }
+
+  public unlockAbility(weaponType: WeaponType, abilityKey: 'R' | 'F' | 'P', weaponSlot: 'primary' | 'secondary'): boolean {
+    try {
+      this.skillPointData = SkillPointSystem.unlockAbility(this.skillPointData, weaponType, abilityKey, weaponSlot);
+      return true;
+    } catch (error) {
+      console.error('Failed to unlock ability:', error);
+      return false;
+    }
+  }
+
+  private isAbilityUnlocked(abilityKey: 'R' | 'F'): boolean {
+    if (!this.selectedWeapons) return false;
+
+    // Determine weapon slot
+    let weaponSlot: 'primary' | 'secondary';
+    let weaponType: WeaponType;
+
+    if (this.currentWeapon === this.selectedWeapons.primary) {
+      weaponSlot = 'primary';
+      weaponType = this.selectedWeapons.primary;
+
+      // For primary weapon, R ability is always unlocked, only F can be locked
+      if (abilityKey === 'R') {
+        return true;
+      }
+    } else if (this.currentWeapon === this.selectedWeapons.secondary) {
+      weaponSlot = 'secondary';
+      weaponType = this.selectedWeapons.secondary;
+    } else {
+      // For tertiary weapon or unknown, allow abilities (tertiary unlocks later)
+      return true;
+    }
+
+    return SkillPointSystem.isAbilityUnlocked(this.skillPointData, weaponType, abilityKey, weaponSlot);
+  }
+
+  public isPassiveAbilityUnlocked(abilityKey: 'P', weaponType: WeaponType, weaponSlot: 'primary' | 'secondary'): boolean {
+    if (!this.selectedWeapons) return false;
+
+    return SkillPointSystem.isAbilityUnlocked(this.skillPointData, weaponType, abilityKey, weaponSlot);
+  }
+
 
   // Backstab ability implementation
   private performBackstab(playerTransform: Transform): void {
@@ -3259,7 +3779,8 @@ export class ControlSystem extends System {
           entity,
           damage,
           this.playerEntity!,
-          'backstab'
+          'backstab',
+          this.playerEntity?.userData?.playerId
         );
 
         hitCount++;
@@ -3268,7 +3789,7 @@ export class ControlSystem extends System {
         if (isTargetStunned) {
           const gameUI = (window as any).gameUI;
           if (gameUI && gameUI.gainEnergy) {
-            gameUI.gainEnergy(60);
+            gameUI.gainEnergy(45);
           }
         }
       }
@@ -3298,7 +3819,7 @@ export class ControlSystem extends System {
       switch (this.swordComboStep) {
         case 1: baseDamage = 40; break;
         case 2: baseDamage = 45; break;
-        case 3: baseDamage = 55; break; // Finisher does more damage
+        case 3: baseDamage = 50; break; // Finisher does more damage
       }
     } else if (this.currentWeapon === WeaponType.RUNEBLADE) {
       // Runeblade damage values
@@ -3342,7 +3863,7 @@ export class ControlSystem extends System {
           
           if (combatSystem && this.playerEntity) {
             // Queue damage through combat system (which will route to multiplayer for enemies)
-            combatSystem.queueDamage(entity, baseDamage, this.playerEntity, 'melee');
+            combatSystem.queueDamage(entity, baseDamage, this.playerEntity, 'melee', this.playerEntity?.userData?.playerId);
             enemiesHit++;
           }
         }
@@ -3511,76 +4032,7 @@ export class ControlSystem extends System {
     return worldDirection;
   }
 
-  private performDivineStorm(playerTransform: Transform): void {
-    // Check if player has enough rage (15 rage required)
-    const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastDivineStorm()) {
-      return;
-    }
 
-    // Check cooldown
-    const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastDivineStormTime < this.divineStormCooldown) {
-      return;
-    }
-
-    // Consume 15 rage
-    if (gameUI) {
-      gameUI.consumeDivineStormRage();
-    }
-
-    // Fixed duration: one full rotation (approximately 1.5 seconds based on sword rotation speed)
-    const divineStormDuration = 1500; // 1.5 seconds for one full rotation
-
-    this.isDivineStorming = true;
-    this.lastDivineStormTime = currentTime;
-
-    // Store player transform for sword projectile throw
-    const throwPosition = playerTransform.position.clone();
-    const throwDirection = new Vector3();
-    this.camera.getWorldDirection(throwDirection);
-    throwDirection.normalize();
-
-    // Trigger Divine Storm callback for multiplayer
-    if (this.onDivineStormCallback) {
-      this.onDivineStormCallback(throwPosition, throwDirection, divineStormDuration);
-    }
-
-    // Divine Storm lasts for fixed duration, then throw sword projectile
-    setTimeout(() => {
-      this.isDivineStorming = false;
-
-      // Throw sword as projectile after Divine Storm completes
-      this.throwSwordProjectile(throwPosition, throwDirection);
-    }, divineStormDuration);
-  }
-
-  private throwSwordProjectile(position: Vector3, direction: Vector3): void {
-    if (!this.projectileSystem || !this.playerEntity) {
-      console.log('⚔️ Sword projectile creation failed: missing projectileSystem or playerEntity');
-      return;
-    }
-
-    console.log('⚔️ Creating sword projectile at position:', position, 'direction:', direction);
-
-    // Create sword projectile that pierces enemies for 75 damage
-    this.projectileSystem.createProjectile(
-      this.world,
-      position,
-      direction,
-      this.playerEntity.id,
-      {
-        speed: 25, // Fast projectile speed
-        damage: 75,
-        lifetime: 3, // 3 seconds lifetime
-        piercing: true, // Can hit multiple enemies
-        projectileType: 'sword_projectile',
-        sourcePlayerId: 'local_player' // For multiplayer validation
-      }
-    );
-
-    console.log('⚔️ Sword projectile created');
-  }
 
   private performCharge(playerTransform: Transform): void {
     // Check cooldown
@@ -3734,7 +4186,7 @@ export class ControlSystem extends System {
           // Apply damage through combat system
           const combatSystem = this.world.getSystem(CombatSystem);
           if (combatSystem && this.playerEntity) {
-            combatSystem.queueDamage(entity, chargeDamage, this.playerEntity, 'charge');
+            combatSystem.queueDamage(entity, chargeDamage, this.playerEntity, 'charge', this.playerEntity?.userData?.playerId);
             
             const enemy = entity.getComponent(Enemy);
             const entityType = enemy ? `Enemy(${enemy.getDisplayName()})` : `Player(${entity.id})`;
@@ -3911,7 +4363,7 @@ export class ControlSystem extends System {
 
     // Consume energy
     if (gameUI) {
-      gameUI.consumeEnergy(25);
+      gameUI.consumeEnergy(40);
     }
 
     this.lastCloudkillTime = currentTime;
@@ -4105,78 +4557,7 @@ export class ControlSystem extends System {
     this.deflectBarrier.deactivate();
   }
 
-  private performColossusStrike(playerTransform: Transform): void {
-    // Check if using Sword
-    if (this.currentWeapon !== WeaponType.SWORD) {
-      return;
-    }
 
-    // Check cooldown
-    const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastColossusStrikeTime < this.colossusStrikeCooldown) {
-      return; // Still on cooldown
-    }
-
-    // Check if already performing Colossus Strike
-    if (this.isColossusStriking) {
-      return;
-    }
-
-    // Check if player has enough rage (minimum 40 rage required)
-    const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastColossusStrike()) {
-      console.log(`⚡ Colossus Strike: Not enough rage to cast (need 40)`);
-      return;
-    }
-
-    this.lastColossusStrikeTime = currentTime;
-    this.isColossusStriking = true;
-
-    // Stop player movement immediately when casting Colossus Strike
-    if (this.playerEntity) {
-      const playerMovement = this.playerEntity.getComponent(Movement);
-      if (playerMovement) {
-        playerMovement.velocity.x = 0;
-        playerMovement.velocity.z = 0;
-        playerMovement.setMoveDirection(new Vector3(0, 0, 0), 0);
-      }
-    }
-
-    // Get current rage amount and consume ALL rage (like Divine Storm)
-    const currentRage = gameUI ? gameUI.getCurrentRage() : 40;
-    if (gameUI) {
-      gameUI.consumeAllRage(); // Consume all rage instead of just 40
-    }
-
-    console.log(`⚡ Colossus Strike: Consumed ${currentRage} rage`);
-
-    // Get player position and direction
-    const position = playerTransform.position.clone();
-    const direction = new Vector3();
-    this.camera.getWorldDirection(direction);
-    direction.normalize();
-
-    // Offset the colossus strike position slightly forward to look like it's coming from the sword swing (like Smite)
-    const colossusStrikePosition = position.clone().add(direction.clone().multiplyScalar(2.5));
-
-    // Trigger colossus strike callback with rage spent
-    if (this.onColossusStrikeCallback) {
-      this.onColossusStrikeCallback(colossusStrikePosition, direction, currentRage);
-    }
-
-    // Reset colossus striking state after animation duration (same as the Sword component)
-    setTimeout(() => {
-      this.isColossusStriking = false;
-    }, 900); // 0.9 seconds matches the animation duration
-  }
-
-  // Called by sword component when Colossus Strike animation completes
-  public onColossusStrikeComplete(): void {
-    if (!this.isColossusStriking) return; // Prevent multiple calls
-
-    // Reset colossus striking state
-    this.isColossusStriking = false;
-  }
 
   // Public methods to get cooldown information for UI
   public getWeaponSwitchCooldown(): { current: number; max: number } {
@@ -4227,14 +4608,14 @@ export class ControlSystem extends System {
         isActive: this.isSwordCharging
       };
       cooldowns['R'] = {
-        current: Math.max(0, this.divineStormCooldown - (currentTime - this.lastDivineStormTime)),
-        max: this.divineStormCooldown,
-        isActive: this.isDivineStorming
-      };
-      cooldowns['F'] = {
         current: Math.max(0, this.colossusStrikeCooldown - (currentTime - this.lastColossusStrikeTime)),
         max: this.colossusStrikeCooldown,
         isActive: this.isColossusStriking
+      };
+      cooldowns['F'] = {
+        current: Math.max(0, this.windShearCooldown - (currentTime - this.lastWindShearTime)),
+        max: this.windShearCooldown,
+        isActive: this.isWindShearing
       };
     } else if (this.currentWeapon === WeaponType.BOW) {
       cooldowns['Q'] = {
@@ -4274,9 +4655,9 @@ export class ControlSystem extends System {
         isActive: this.isCrossentropyCharging
       };
       cooldowns['F'] = {
-        current: Math.max(0, this.particleBeamFireRate - (currentTime - this.lastParticleBeamTime)),
-        max: this.particleBeamFireRate,
-        isActive: this.isParticleBeamCharging
+        current: Math.max(0, this.summonTotemFireRate - (currentTime - this.lastSummonTotemTime)),
+        max: this.summonTotemFireRate,
+        isActive: this.isSummonTotemCharging
       };
     } else if (this.currentWeapon === WeaponType.SABRES) {
       cooldowns['Q'] = {

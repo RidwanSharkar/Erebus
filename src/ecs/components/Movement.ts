@@ -212,23 +212,28 @@ export class Movement extends Component {
     if (this.isFrozen) {
       return 0; // Completely frozen
     }
-    
+
     let speed = this.maxSpeed * this.movementSpeedMultiplier;
-    
+
+    // Debug logging for movement speed
+    if (this.maxSpeed !== 3.65 && this.maxSpeed !== 4.25) {
+      console.log(`🚀 Movement speed calculation: maxSpeed=${this.maxSpeed}, multiplier=${this.movementSpeedMultiplier}, baseSpeed=${speed}`);
+    }
+
     // Apply corrupted debuff slow effect with gradual recovery
     if (this.isCorrupted) {
       const currentTimeSeconds = Date.now() / 1000;
       const elapsed = currentTimeSeconds - this.corruptedStartTime;
-      
+
       // Calculate current slow percentage based on gradual recovery
       // Initial: 90% slow, recovers 10% per second
       const currentSlowPercent = Math.max(0, this.corruptedInitialSlowPercent - (elapsed * this.corruptedRecoveryRate));
-      
+
       // Apply the slow effect (reduce speed by the slow percentage)
       speed *= (1 - currentSlowPercent);
-      
+
     }
-    
+
     return speed;
   }
 
@@ -386,6 +391,7 @@ export class Movement extends Component {
   public applyKnockback(direction: Vector3, distance: number, currentPosition: Vector3, currentTime: number, duration: number = 0.5): void {
     // Check if already being knockbacked
     if (this.isKnockbacked) {
+      console.log(`⚠️ Knockback already active (${(currentTime - this.knockbackStartTime).toFixed(2)}s elapsed), ignoring new knockback`);
       return;
     }
 
@@ -396,6 +402,8 @@ export class Movement extends Component {
     this.knockbackDuration = duration;
     this.knockbackDistance = distance;
     this.knockbackStartPosition.copy(currentPosition);
+
+    console.log(`🚀 Starting knockback: distance=${distance}, duration=${duration}, direction=(${direction.x.toFixed(2)}, ${direction.z.toFixed(2)}), startPos=(${currentPosition.x.toFixed(2)}, ${currentPosition.z.toFixed(2)})`);
   }
 
   public updateKnockback(currentTime: number): { isComplete: boolean; newPosition: Vector3 | null } {
@@ -408,9 +416,10 @@ export class Movement extends Component {
 
     if (progress >= 1) {
       // Knockback complete
-      this.isKnockbacked = false;
       const finalPosition = this.knockbackStartPosition.clone()
         .add(this.knockbackDirection.clone().multiplyScalar(this.knockbackDistance));
+      console.log(`✅ Knockback complete: final position (${finalPosition.x.toFixed(2)}, ${finalPosition.z.toFixed(2)}), total displacement: ${this.knockbackDistance}`);
+      this.isKnockbacked = false;
       return { isComplete: true, newPosition: finalPosition };
     }
 
@@ -418,6 +427,8 @@ export class Movement extends Component {
     const easeOutQuad = 1 - Math.pow(1 - progress, 2);
     const displacement = this.knockbackDirection.clone().multiplyScalar(this.knockbackDistance * easeOutQuad);
     const newPosition = this.knockbackStartPosition.clone().add(displacement);
+
+    console.log(`🔄 Knockback progress: ${progress.toFixed(2)}, elapsed=${elapsed.toFixed(2)}, position=(${newPosition.x.toFixed(2)}, ${newPosition.z.toFixed(2)})`);
 
     return { isComplete: false, newPosition };
   }

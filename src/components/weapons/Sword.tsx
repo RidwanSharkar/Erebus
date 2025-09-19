@@ -10,16 +10,14 @@ interface SwordProps {
   isSwinging: boolean;
   isSmiting: boolean;
   isOathstriking: boolean;
-  isDivineStorming?: boolean;
   isColossusStriking?: boolean;
   isCharging?: boolean;
   isDeflecting?: boolean;
   chargeDirectionProp?: Vector3;
   onSwingComplete?: () => void;
   onSmiteComplete?: () => void;
-  onOathstrikeComplete?: () => void;
-  onDivineStormComplete?: () => void;
   onColossusStrikeComplete?: () => void;
+  onOathstrikeComplete?: () => void;
   onChargeComplete?: () => void;
   onDeflectComplete?: () => void;
   hasChainLightning?: boolean;
@@ -38,27 +36,7 @@ interface SwordProps {
     isCritical: boolean;
     isLightning?: boolean;
     isHealing?: boolean;
-    isBlizzard?: boolean;
-    isBoneclaw?: boolean;
-    isSmite?: boolean;
-    isOathstrike?: boolean;
-    isFirebeam?: boolean;
-    isOrbShield?: boolean;
-    isChainLightning?: boolean;
-    isFireball?: boolean;
-    isSummon?: boolean;
-    isStealthStrike?: boolean;
-    isPyroclast?: boolean;
-    isEagleEye?: boolean;
-    isBreach?: boolean;
-    isBarrage?: boolean;
-    isGlacialShard?: boolean;
-    isAegis?: boolean;
-    isCrossentropyBolt?: boolean;
-    isDivineStorm?: boolean;
-    isHolyBurn?: boolean;
-    isEviscerate?: boolean;
-    isColossusStrike?: boolean;
+
   }>) => Array<{
     id: number;
     damage: number;
@@ -66,27 +44,8 @@ interface SwordProps {
     isCritical: boolean;
     isLightning?: boolean;
     isHealing?: boolean;
-    isBlizzard?: boolean;
-    isBoneclaw?: boolean;
-    isSmite?: boolean;
-    isOathstrike?: boolean;
-    isFirebeam?: boolean;
-    isOrbShield?: boolean;
-    isChainLightning?: boolean;
-    isFireball?: boolean;
-    isSummon?: boolean;
-    isStealthStrike?: boolean;
-    isPyroclast?: boolean;
-    isEagleEye?: boolean;
     isBreach?: boolean;
-    isBarrage?: boolean;
-    isGlacialShard?: boolean;
     isAegis?: boolean;
-    isCrossentropyBolt?: boolean;
-    isDivineStorm?: boolean;
-    isHolyBurn?: boolean;
-    isEviscerate?: boolean;
-    isColossusStrike?: boolean;
   }>) => void;
   nextDamageNumberId?: { current: number };
   setActiveEffects?: (callback: (prev: Array<{
@@ -112,30 +71,20 @@ interface SwordProps {
   playerRotation?: Vector3;
   dragonGroupRef?: React.RefObject<Group>; // Reference to dragon's group for real-time positioning
   playerEntityId?: number; // Player's entity ID to prevent self-damage
-  rageSpent?: number; // Amount of rage spent on Colossus Strike
-  targetPlayerData?: Array<{
-    id: string;
-    position: Vector3;
-    health: number;
-    maxHealth: number;
-  }>; // PVP player data for Colossus Strike targeting
-  combatSystem?: any; // CombatSystem for Colossus Strike damage numbers
 }
 
 const SwordComponent = memo(function Sword({
   isSwinging,
   isSmiting,
   isOathstriking,
-  isDivineStorming = false,
   isColossusStriking = false,
   isCharging = false,
   isDeflecting = false,
   chargeDirectionProp,
   onSwingComplete,
   onSmiteComplete,
-  onOathstrikeComplete,
-  onDivineStormComplete,
   onColossusStrikeComplete,
+  onOathstrikeComplete,
   onChargeComplete,
   onDeflectComplete,
   hasChainLightning = false,
@@ -149,16 +98,12 @@ const SwordComponent = memo(function Sword({
   playerPosition,
   playerRotation,
   dragonGroupRef,
-  playerEntityId,
-  rageSpent = 40,
-  targetPlayerData = [],
-  combatSystem
+  playerEntityId
 }: SwordProps) {
   const swordRef = useRef<Group>(null);
   const swingProgress = useRef(0);
   const smiteProgress = useRef(0);
   const colossusStrikeProgress = useRef(0);
-  const divineStormRotation = useRef(0);
   const chargeProgress = useRef(0);
   const chargeStartPosition = useRef<Vector3 | null>(null);
   const chargeDirection = useRef<Vector3>(new Vector3());
@@ -181,8 +126,6 @@ const SwordComponent = memo(function Sword({
     scale: number;
   }>>([]);
 
-  // Divine Storm hit tracking (no more DoT)
-  const lastDivineStormHitTime = useRef<Record<string, number>>({});
 
   // Swing collision tracking
   const lastSwingHitTime = useRef<Record<string, number>>({});
@@ -209,7 +152,7 @@ const SwordComponent = memo(function Sword({
     const now = Date.now();
 
     // Handle smooth combo transitions when not actively swinging
-    if (!isSwinging && !isSmiting && !isColossusStriking && !isDivineStorming && !isOathstriking && !isCharging && !isDeflecting && isInCombo.current) {
+    if (!isSwinging && !isSmiting && !isOathstriking && !isCharging && !isDeflecting && isInCombo.current) {
       if (comboTransitionProgress.current === 0) {
       }
       comboTransitionProgress.current += delta * 7; // Fast transition speed
@@ -277,104 +220,14 @@ const SwordComponent = memo(function Sword({
     }
 
 
-    if (isDivineStorming) {
-      const TARGET_ROTATIONS = 1; // 1 full rotation
-      const MAX_ROTATION = TARGET_ROTATIONS * Math.PI * 4; // 2π radians
-      
-      // Use constant fast rotation speed
-      const CONSTANT_ROTATION_SPEED = 25
-      
-      // Update rotation based on constant speed
-      divineStormRotation.current += delta * CONSTANT_ROTATION_SPEED;
-      
-      // Check if we've completed the target rotations
-      if (divineStormRotation.current >= MAX_ROTATION) {
-        // Reset everything immediately
-        divineStormRotation.current = 0;
-        lastDivineStormHitTime.current = {};
-        
-        // Reset position and rotation to base values
-        swordRef.current.position.set(...basePosition);
-        swordRef.current.rotation.set(0, 0, 0);
-        
-        // Call completion callback
-        onDivineStormComplete?.();
-        return;
-      }
-      
-      // Orbit parameters
-      const orbitRadius = 1.65; // Radius of orbit circle
-      const angle = divineStormRotation.current;
-
-      // Positional calculations
-      const orbitalX = calculationCache.getTrigCalculation('cos', angle) * orbitRadius;
-      const orbitalZ = calculationCache.getTrigCalculation('sin', angle) * orbitRadius;
-      
-      // Constant height above ground plane
-      const fixedHeight = 0.65; 
-      
-      // Set rotation to make sword lay flat and point outward from center (parallel to ground)
-      swordRef.current.rotation.set(
-        Math.PI/4,      // X rotation: 90 degrees to lay flat on ground
-        -angle + Math.PI,              // Y rotation: will be applied separately
-        1.25                // Z rotation: no roll
-      );
-      
-      // Rotate around Y axis to make it follow the circle (like spear)
-      swordRef.current.rotateY(-angle + Math.PI);
-      
-      // Apply position after rotation is set
-      swordRef.current.position.set(orbitalX, fixedHeight, orbitalZ);
-      
-      // Damage detection - check distance from player center, not sword position
-      const now = Date.now();
-      enemyData.forEach(enemy => {
-        if (!enemy.health || enemy.health <= 0) return;
-
-        // CRITICAL FIX: Prevent self-damage in PVP mode
-        // Check if this enemy is the player themselves by comparing IDs
-        // In ECS, player entity ID is passed as a number, but enemy.id is a string
-        if (enemy.id === playerEntityId?.toString()) {
-          return;
-        }
-
-        const lastHitTime = lastDivineStormHitTime.current[enemy.id] || 0;
-        if (now - lastHitTime < 200) return; // 200ms cooldown between hits on same enemy
-
-        // Calculate distance from actual player position
-        // Use the passed playerPosition or fallback to origin
-        const actualPlayerPosition = playerPosition || new Vector3(0, 0, 0);
-        const distance = actualPlayerPosition.distanceTo(enemy.position);
-
-        if (distance <= 4.5) { // Hit range from player center - 5 distance radius as specified
-          lastDivineStormHitTime.current[enemy.id] = now;
-
-          // Deal 40 holy damage per hit (based on rotation speed)
-          onHit?.(enemy.id, 40);
-
-          // Add damage number
-          if (setDamageNumbers && nextDamageNumberId) {
-            setDamageNumbers(prev => [...prev, {
-              id: nextDamageNumberId.current++,
-              damage: 40,
-              position: enemy.position.clone(),
-              isCritical: false,
-              isDivineStorm: true
-            }]);
-          }
-        }
-      });
-      
-      return;
-    }
 
     // Handle charge spin animation (separate from main charge logic)
     if (isChargeSpinning.current) {      
-      const TARGET_ROTATIONS = 1; // 1 full rotation like Divine Storm
+      const TARGET_ROTATIONS = 1; // 1 full rotation 
       const MAX_ROTATION = TARGET_ROTATIONS * Math.PI * 2; // 2π radians for one full rotation
       
       // Use fast rotation speed for dramatic effect
-      const SPIN_ROTATION_SPEED = 25; // Slightly faster than Divine Storm
+      const SPIN_ROTATION_SPEED = 27.5; 
       
       // Update rotation based on constant speed
       chargeSpinRotation.current += delta * SPIN_ROTATION_SPEED;
@@ -396,23 +249,23 @@ const SwordComponent = memo(function Sword({
         return;
       }
       
-      // Orbital spin animation - similar to Divine Storm
+      // Orbital spin animation
       const angle = chargeSpinRotation.current;
       
-      // Orbit parameters (similar to Divine Storm)
-      const orbitRadius = 1.5; // Same radius as Divine Storm
+      // Orbit parameters
+      const orbitRadius = 1.5; 
 
       // Calculate orbital position
       const orbitalX = calculationCache.getTrigCalculation('cos', angle) * orbitRadius;
       const orbitalZ = calculationCache.getTrigCalculation('sin', angle) * orbitRadius;
       
       // Constant height above ground plane
-      const fixedHeight = 0.65; // Same height as Divine Storm
+      const fixedHeight = 0.65; 
       
       // Set position to orbit around player
       swordRef.current.position.set(orbitalX, fixedHeight, orbitalZ);
       
-      // Set rotation to make sword lay flat and point outward from center (like Divine Storm)
+      // Set rotation to make sword lay flat and point outward from center 
       swordRef.current.rotation.set(
         Math.PI/4,      // X rotation: lay flat on ground (60 degrees)
         -angle + Math.PI,              // Y rotation: point outward
@@ -432,13 +285,14 @@ const SwordComponent = memo(function Sword({
       const CHARGE_DAMAGE = 40; // Base damage for charge collision
       const CHARGE_COLLISION_RADIUS = 2.5; // Collision radius - increased for better hit detection
       const MAX_CHARGE_BOUNDS = 25; // Maximum distance from origin
-      
+      const CHARGE_FAILSAFE_TIMEOUT = 1.5; // Total expected duration + buffer
+
       // Initialize charge on first active frame
       if (!chargeStartTime.current) {
         chargeStartTime.current = Date.now();
         chargeStartPosition.current = playerPosition?.clone() || new Vector3(0, 0, 0);
         chargeHitEnemies.current.clear();
-        
+
         // Use the charge direction passed from the ControlSystem
         if (chargeDirectionProp) {
           chargeDirection.current = chargeDirectionProp.clone().normalize();
@@ -446,7 +300,7 @@ const SwordComponent = memo(function Sword({
           // Fallback to forward direction
           chargeDirection.current = new Vector3(0, 0, -1).normalize();
         }
-        
+
         // Gain rage for performing a charge attack (5 rage per charge)
         const gameUI = (window as any).gameUI;
         if (gameUI) {
@@ -457,7 +311,20 @@ const SwordComponent = memo(function Sword({
       }
 
       const elapsed = (Date.now() - chargeStartTime.current) / 1000;
-      
+
+      // Failsafe: If charge has been running too long, reset to prevent getting stuck
+      if (elapsed > CHARGE_FAILSAFE_TIMEOUT) {
+        console.warn('⚠️ Charge animation failsafe triggered - resetting charge state');
+        chargeStartTime.current = null;
+        chargeStartPosition.current = null;
+        chargeHitEnemies.current.clear();
+        chargeTrail.current = [];
+        swordRef.current.rotation.set(0, 0, 0);
+        swordRef.current.position.set(...basePosition);
+        onChargeComplete?.();
+        return;
+      }
+
       // Windup phase - rotate sword to forward position
       if (elapsed < CHARGE_WINDUP_DURATION) {
         const windupProgress = elapsed / CHARGE_WINDUP_DURATION;
@@ -558,6 +425,23 @@ const SwordComponent = memo(function Sword({
    
       
     }
+
+    // Enhanced failsafe: Reset all charge states if isCharging becomes false but we still have active charge state
+    if (!isCharging && chargeStartTime.current !== null && !isChargeSpinning.current && !shouldStartSpin.current) {
+      // If we've been in this state for too long without starting the spin, force reset
+      const timeSinceChargeEnd = (Date.now() - chargeStartTime.current) / 1000;
+      if (timeSinceChargeEnd > 2.0) { // 2 seconds is definitely too long to wait for spin
+        console.warn('⚠️ Charge completion failsafe triggered - forcing reset of all charge states');
+        chargeStartTime.current = null;
+        chargeStartPosition.current = null;
+        chargeHitEnemies.current.clear();
+        chargeTrail.current = [];
+        shouldStartSpin.current = false;
+        swordRef.current.rotation.set(0, 0, 0);
+        swordRef.current.position.set(...basePosition);
+        return;
+      }
+    }
     
     // Start spin if flagged to do so
     if (shouldStartSpin.current && !isChargeSpinning.current) {
@@ -640,40 +524,40 @@ const SwordComponent = memo(function Sword({
 
     if (isColossusStriking) {
       colossusStrikeProgress.current += delta * (colossusStrikeProgress.current < Math.PI/2 ? 3 : 6);
-      const colossusPhase = Math.min(colossusStrikeProgress.current / Math.PI, 1);
-      
+      const colossusStrikePhase = Math.min(colossusStrikeProgress.current / Math.PI, 1);
+
       let rotationX, rotationY, positionX, positionY, positionZ;
-      
-      if (colossusPhase < 0.5) {
+
+      if (colossusStrikePhase < 0.5) {
         // Wind-up phase: pull back and up, with more movement towards center
-        const windupPhase = colossusPhase * 0.45;
+        const windupPhase = colossusStrikePhase * 0.45;
         rotationX = -Math.PI/3 - (windupPhase * Math.PI/3);
         rotationY = windupPhase * Math.PI/4;
-        
+
         // Move towards center during windup
         positionX = basePosition[0] + (windupPhase * 1.5);
         positionY = basePosition[1] + windupPhase * 1.5;
         positionZ = basePosition[2] - windupPhase * 1.5;
       } else {
         // Strike phase: swing down towards center point
-        const strikePhase = (colossusPhase - 0.5) * 2;
+        const strikePhase = (colossusStrikePhase - 0.5) * 2;
         rotationX = -2*Math.PI/3 + (strikePhase * 3*Math.PI/2);
         rotationY = (Math.PI/4) * (1 - strikePhase);
-      
-        // Strike  towards center
+
+        // Strike towards center
         positionX = basePosition[0] + (1.5 * (1 - strikePhase));
         positionY = basePosition[1] + (1.5 - strikePhase * 2.0);
         positionZ = basePosition[2] - (1.5 - strikePhase * 3.0);
       }
-      
+
       swordRef.current.position.set(
         positionX,
         positionY,
         positionZ
       );
-      
+
       swordRef.current.rotation.set(rotationX, rotationY, 0);
-      
+
       if (colossusStrikeProgress.current >= Math.PI) {
         colossusStrikeProgress.current = 0;
         swordRef.current.rotation.set(0, 0, 0);
@@ -833,7 +717,7 @@ const SwordComponent = memo(function Sword({
       }
       
 
-    } else if (!isSwinging && !isSmiting && !isColossusStriking && !isDivineStorming && !isOathstriking && !isCharging && !isDeflecting && !isInCombo.current) {
+    } else if (!isSwinging && !isSmiting && !isOathstriking && !isCharging && !isDeflecting && !isInCombo.current) {
       // Only apply idle animation when not in combo transition and not immediately after 2nd swing
       // Check if we just completed 2nd swing and are about to start 3rd swing
       const justCompleted2ndSwing = lastComboStep.current === 2 && comboStep === 3;
@@ -1035,8 +919,8 @@ const SwordComponent = memo(function Sword({
     // Blade shape with symmetry
     shape.lineTo(0, 0.08);    // Reduced from 0.12
     shape.lineTo(0.2, 0.2);   // Reduced from 0.25
-    shape.quadraticCurveTo(0.8, 0.15, 1.825, 0.18); // Reduced y values
-    shape.quadraticCurveTo(2.0, 0.15, 2.275, 0);     // Reduced y value
+    shape.quadraticCurveTo(0.8, 0.15, 1.875, 0.18); // Reduced y values
+    shape.quadraticCurveTo(2.0, 0.15, 2.375, 0);     // Reduced y value
     
     shape.quadraticCurveTo(2.0, -0.15, 1.825, -0.18); // Mirror of upper curve
     shape.quadraticCurveTo(0.8, -0.15, 0.15, -0.3);
@@ -1131,11 +1015,11 @@ const SwordComponent = memo(function Sword({
 
   return (
     <>
-    <group rotation={[-0.65, 0, 0.2]} scale={[0.85, 0.95, 0.825]}>
+   <group rotation={[-0.65, 0, 0.2]} scale={[0.8, 0.9, 0.65]}>
       <group 
         ref={swordRef} 
         position={[basePosition[0], basePosition[1], basePosition[2]]}
-        rotation={[0, 0, Math.PI]}
+        rotation={[0, 0, Math.PI/3]}
         scale={[0.75, 0.8, 0.65]}
       >
         {/* Handle */}
@@ -1209,6 +1093,8 @@ const SwordComponent = memo(function Sword({
               opacity={0.8}
             />
           </mesh>
+
+          
           
           <mesh>
             <sphereGeometry args={[0.145, 16, 16]} />
@@ -1294,19 +1180,6 @@ const SwordComponent = memo(function Sword({
         </mesh>
       ))}
 
-      {/* Divine Storm Holy Energy Effects */}
-      {isDivineStorming && (
-        <group>
-     
-          {/* Divine light */}
-          <pointLight 
-            color={new Color(0xB5B010)}
-            intensity={1}
-            distance={8}
-            decay={1}
-          />
-        </group>
-      )}
 
     </group>
     
@@ -1327,17 +1200,14 @@ const SwordComponent = memo(function Sword({
   return (
     prevProps.isSwinging === nextProps.isSwinging &&
     prevProps.isSmiting === nextProps.isSmiting &&
-    prevProps.isOathstriking === nextProps.isOathstriking &&
-    prevProps.isDivineStorming === nextProps.isDivineStorming &&
     prevProps.isColossusStriking === nextProps.isColossusStriking &&
+    prevProps.isOathstriking === nextProps.isOathstriking &&
     prevProps.isCharging === nextProps.isCharging &&
     prevProps.isDeflecting === nextProps.isDeflecting &&
     prevProps.comboStep === nextProps.comboStep &&
     prevProps.currentSubclass === nextProps.currentSubclass &&
     prevProps.hasChainLightning === nextProps.hasChainLightning &&
-    prevProps.rageSpent === nextProps.rageSpent &&
     (prevProps.enemyData?.length ?? 0) === (nextProps.enemyData?.length ?? 0) &&
-    (prevProps.targetPlayerData?.length ?? 0) === (nextProps.targetPlayerData?.length ?? 0) &&
     (!prevProps.chargeDirectionProp || !nextProps.chargeDirectionProp ||
      prevProps.chargeDirectionProp.equals(nextProps.chargeDirectionProp)) &&
     (!prevProps.playerPosition || !nextProps.playerPosition ||

@@ -160,17 +160,16 @@ export default function ViperStingManager({
             return effect.targetPosition; // Fallback to original target
           }}
           onComplete={() => {
-            // Heal 20 HP when soul reaches player (as requested)
-            if (onHealthChange) {
+            // Only process healing if this is NOT PVP mode (check if onHealthChange is a real function)
+            const isPVPMode = !onHealthChange || onHealthChange.toString().includes('No-op');
+            
+            if (!isPVPMode && onHealthChange) {
+              // Non-PVP mode: Heal 20 HP when soul reaches player
               onHealthChange(20);
-            }
 
-            // Show healing damage number in both regular and PVP modes
-            if (parentRef.current) {
-              const healingPosition = parentRef.current.position.clone().add(new Vector3(0, 1.5, 0));
-
-              // Try regular multiplayer mode first
-              if (setDamageNumbers && typeof setDamageNumbers === 'function') {
+              // Show healing damage number
+              if (parentRef.current && setDamageNumbers && typeof setDamageNumbers === 'function') {
+                const healingPosition = parentRef.current.position.clone().add(new Vector3(0, 1.5, 0));
                 try {
                   setDamageNumbers(prev => [...prev, {
                     id: nextDamageNumberId.current++,
@@ -180,30 +179,14 @@ export default function ViperStingManager({
                     isHealing: true
                   }]);
                 } catch (error) {
-                  // Fall back to PVP mode damage number manager
-                  const damageNumberManager = (window as any).damageNumberManager;
-                  if (damageNumberManager && damageNumberManager.addDamageNumber) {
-                    damageNumberManager.addDamageNumber(
-                      20, // Healing amount
-                      false, // Not critical
-                      healingPosition,
-                      'viper_sting_healing' // Damage type for healing styling
-                    );
-                  }
-                }
-              } else {
-                // PVP mode: Use damage number manager directly
-                const damageNumberManager = (window as any).damageNumberManager;
-                if (damageNumberManager && damageNumberManager.addDamageNumber) {
-                  damageNumberManager.addDamageNumber(
-                    20, // Healing amount
-                    false, // Not critical
-                    healingPosition,
-                    'viper_sting_healing' // Damage type for healing styling
-                  );
+                  console.warn('ViperSting: Failed to add healing damage number:', error);
                 }
               }
+            } else {
+              // PVP mode: Healing is handled by OptimizedPVPViperStingManager
+              console.log('🔮 Viper Sting soul steal completed (PVP mode - healing handled elsewhere)');
             }
+            
             // Remove the effect from the array
             viperStingSoulStealEffects.current = viperStingSoulStealEffects.current.filter(e => e.id !== effect.id);
           }}

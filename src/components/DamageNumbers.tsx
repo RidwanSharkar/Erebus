@@ -117,13 +117,26 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
             ? 'text-yellow-300 text-xl animate-pulse'
             : damageData.damageType === 'crossentropy'
             ? 'text-orange-400'
-            : damageData.damageType === 'healing'
-            ? 'text-green-300'
+            : damageData.damageType === 'healing' ||
+              damageData.damageType === 'reanimate_healing' ||
+              damageData.damageType === 'smite_healing' ||
+              damageData.damageType === 'viper_sting_healing' ||
+              damageData.damageType === 'summon_totem_healing'
+            ? 'text-green-400 text-lg font-extrabold'
             : damageData.damageType === 'colossus_strike'
             ? 'text-yellow-400 text-lg'
+            : damageData.damageType === 'barrage'
+            ? 'text-blue-400 text-lg'
+            : damageData.damageType === 'cobra_shot'
+            ? 'text-green-400 text-lg'
             : 'text-red-400'
         }`}
       >
+        {(damageData.damageType === 'healing' ||
+          damageData.damageType === 'reanimate_healing' ||
+          damageData.damageType === 'smite_healing' ||
+          damageData.damageType === 'viper_sting_healing' ||
+          damageData.damageType === 'summon_totem_healing') && '+'}
         {damageData.damage}
         {damageData.isCritical && '!'}
       </span>

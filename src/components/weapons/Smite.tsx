@@ -2,6 +2,7 @@ import { useRef, useMemo, memo } from 'react';
 import { Group, Vector3, CylinderGeometry, TorusGeometry, SphereGeometry, MeshStandardMaterial, Euler } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { WeaponType } from '../dragon/weapons';
+import { calculateDamage, DamageResult } from '@/core/DamageCalculator';
 
 interface SmiteProps {
   weaponType: WeaponType;
@@ -30,9 +31,11 @@ interface SmiteProps {
   }>) => void;
   nextDamageNumberId?: { current: number };
   combatSystem?: any; // CombatSystem for creating damage numbers
+  isCorruptedAuraActive?: boolean; // Whether corrupted aura is active (affects colors and damage)
 }
 
 const SmiteComponent = memo(function Smite({
+  weaponType,
   position,
   onComplete,
   onHit,
@@ -41,11 +44,12 @@ const SmiteComponent = memo(function Smite({
   playerPosition,
   setDamageNumbers,
   nextDamageNumberId,
-  combatSystem
+  combatSystem,
+  isCorruptedAuraActive = false
 }: SmiteProps) {
   const lightningRef = useRef<Group>(null);
   const progressRef = useRef(0);
-  const animationDuration = 0.9; // Fixed animation duration (in seconds)
+  const animationDuration = 1.0; // Extended animation duration to ensure full visibility in PVP mode
   const delayTimer = useRef(0);
   const startDelay = 0.05; // Initial delay
   const damageDealt = useRef(false);
@@ -64,72 +68,78 @@ const SmiteComponent = memo(function Smite({
     sphere: new SphereGeometry(0.12, 8, 8)               // Smaller particles
   }), []);
 
-  // Use useMemo for static materials
-  const materials = useMemo(() => ({
-    core: new MeshStandardMaterial({
-      color: "#00FF88",
-      emissive: "#00FF88",
-      emissiveIntensity: 50,
-      transparent: true,
-      opacity: 0.995
-    }),
-    inner: new MeshStandardMaterial({
-      color: "#00FF88",
-      emissive: "#00FF88",
-      emissiveIntensity: 30,
-      transparent: true,
-      opacity: 0.675
-    }),
-    outer: new MeshStandardMaterial({
-      color: "#00FF88",
-      emissive: "#00FF88",
-      emissiveIntensity: 20,
-      transparent: true,
-      opacity: 0.625
-    }),
-    glow1: new MeshStandardMaterial({
-      color: "#00FF88",
-      emissive: "#00FF88",
-      emissiveIntensity: 4,
-      transparent: true,
-      opacity: 0.55
-    }),
-    glow2: new MeshStandardMaterial({
-      color: "#00FF88",
-      emissive: "#00AA44",
-      emissiveIntensity: 3,
-      transparent: true,
-      opacity: 0.425
-    }),
-    outerGlow: new MeshStandardMaterial({
-      color: "#00FF88",
-      emissive: "#00AA44",
-      emissiveIntensity: 1.5,
-      transparent: true,
-      opacity: 0.2
-    }),
-    spiral: new MeshStandardMaterial({
-      color: "#00FF88",
-      emissive: "#00AA44",
-      emissiveIntensity: 10,
-      transparent: true,
-      opacity: 0.5
-    }),
-    skySpiral: new MeshStandardMaterial({
-      color: "#00FF88",
-      emissive: "#00AA44",
-      emissiveIntensity: 10,
-      transparent: true,
-      opacity: 0.4
-    }),
-    particle: new MeshStandardMaterial({
-      color: "#00FF88",
-      emissive: "#00AA44",
-      emissiveIntensity: 10,
-      transparent: true,
-      opacity: 0.665
-    })
-  }), []);
+  // Use useMemo for static materials - colors change based on corrupted aura status
+  const materials = useMemo(() => {
+    const isCorrupted = isCorruptedAuraActive;
+    const primaryColor = isCorrupted ? "#FF4444" : "#00FF88";     // Red when corrupted, green normally
+    const secondaryColor = isCorrupted ? "#FF8888" : "#00AA44";   // Light red when corrupted, dark green normally
+
+    return {
+      core: new MeshStandardMaterial({
+        color: primaryColor,
+        emissive: primaryColor,
+        emissiveIntensity: 50,
+        transparent: true,
+        opacity: 0.995
+      }),
+      inner: new MeshStandardMaterial({
+        color: primaryColor,
+        emissive: primaryColor,
+        emissiveIntensity: 30,
+        transparent: true,
+        opacity: 0.675
+      }),
+      outer: new MeshStandardMaterial({
+        color: primaryColor,
+        emissive: primaryColor,
+        emissiveIntensity: 20,
+        transparent: true,
+        opacity: 0.625
+      }),
+      glow1: new MeshStandardMaterial({
+        color: primaryColor,
+        emissive: primaryColor,
+        emissiveIntensity: 4,
+        transparent: true,
+        opacity: 0.55
+      }),
+      glow2: new MeshStandardMaterial({
+        color: primaryColor,
+        emissive: secondaryColor,
+        emissiveIntensity: 3,
+        transparent: true,
+        opacity: 0.425
+      }),
+      outerGlow: new MeshStandardMaterial({
+        color: primaryColor,
+        emissive: secondaryColor,
+        emissiveIntensity: 1.5,
+        transparent: true,
+        opacity: 0.2
+      }),
+      spiral: new MeshStandardMaterial({
+        color: primaryColor,
+        emissive: secondaryColor,
+        emissiveIntensity: 10,
+        transparent: true,
+        opacity: 0.5
+      }),
+      skySpiral: new MeshStandardMaterial({
+        color: primaryColor,
+        emissive: secondaryColor,
+        emissiveIntensity: 10,
+        transparent: true,
+        opacity: 0.4
+      }),
+      particle: new MeshStandardMaterial({
+        color: primaryColor,
+        emissive: secondaryColor,
+        emissiveIntensity: 10,
+        transparent: true,
+        opacity: 0.665
+      })
+    };
+  }, [isCorruptedAuraActive]);
 
   // Pre-calculate spiral positions
   const spiralPositions = useMemo(() => (
@@ -162,7 +172,7 @@ const SmiteComponent = memo(function Smite({
     if (damageTriggered.current || !enemyData.length) return;
 
     damageTriggered.current = true;
-    const smiteDamage = 100;
+    const baseSmiteDamage = 100;
     const damageRadius = 3.0; // Small radius around impact location
     let damageDealtFlag = false;
 
@@ -171,9 +181,19 @@ const SmiteComponent = memo(function Smite({
 
       const distance = position.distanceTo(enemy.position);
       if (distance <= damageRadius) {
+        // Calculate critical hit damage
+        const damageResult: DamageResult = calculateDamage(baseSmiteDamage, weaponType ?? WeaponType.RUNEBLADE);
+
+        // Apply corrupted aura bonus damage (similar to Wraithblade)
+        let finalDamage = damageResult.damage;
+        if (isCorruptedAuraActive) {
+          // Corrupted aura adds 25% bonus damage (similar to other corrupted abilities)
+          finalDamage = Math.floor(finalDamage * 1.25);
+        }
+
         // Enemy is within damage radius - deal damage
         if (onHit) {
-          onHit(enemy.id, smiteDamage); // Pass target ID and damage amount
+          onHit(enemy.id, finalDamage); // Pass target ID and damage amount
         }
 
         // Create damage number for visual feedback using CombatSystem
@@ -181,11 +201,22 @@ const SmiteComponent = memo(function Smite({
           const damagePosition = enemy.position.clone();
           damagePosition.y += 1.5; // Offset above target
           combatSystem.damageNumberManager.addDamageNumber(
-            smiteDamage,
-            false, // isCritical
+            finalDamage,
+            damageResult.isCritical,
             damagePosition,
             'smite'
           );
+        }
+
+        // Also create damage number using setDamageNumbers if provided
+        if (setDamageNumbers && nextDamageNumberId) {
+          setDamageNumbers(prev => [...prev, {
+            id: nextDamageNumberId.current++,
+            damage: finalDamage,
+            position: enemy.position.clone(),
+            isCritical: damageResult.isCritical,
+            isSmite: true
+          }]);
         }
 
         damageDealtFlag = true;
@@ -261,8 +292,18 @@ const SmiteComponent = memo(function Smite({
       ))}
 
       {/* Lights */}
-      <pointLight position={[0, -10, 0]} color="#00FF88" intensity={35} distance={25} />
-      <pointLight position={[0, 0, 0]} color="#00AA44" intensity={10} distance={6} />
+      <pointLight
+        position={[0, -10, 0]}
+        color={isCorruptedAuraActive ? "#FF4444" : "#00FF88"}
+        intensity={35}
+        distance={25}
+      />
+      <pointLight
+        position={[0, 0, 0]}
+        color={isCorruptedAuraActive ? "#FF8888" : "#00AA44"}
+        intensity={10}
+        distance={6}
+      />
     </group>
   );
 }, (prevProps, nextProps) => {
