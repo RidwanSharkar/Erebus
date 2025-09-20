@@ -75,6 +75,11 @@ export default function SummonedTotem({
 }: SummonProps) {
   console.log('🎭 SummonedTotem: Component created with enemyData:', enemyData.length, 'enemies');
   console.log('🎭 SummonedTotem: enemyData details:', enemyData.map(e => ({ id: e.id, health: e.health, position: e.position })));
+
+  // Log PVP player detection
+  const pvpPlayers = enemyData.filter(e => !e.id.startsWith('enemy-'));
+  const npcs = enemyData.filter(e => e.id.startsWith('enemy-'));
+  console.log('🎭 SummonedTotem: PVP players detected:', pvpPlayers.length, 'NPCs detected:', npcs.length);
   const groupRef = useRef<Group>(null);
   const [currentTarget, setCurrentTarget] = useState<{ id: string; position: Vector3; health: number } | null>(null);
 
@@ -107,10 +112,13 @@ export default function SummonedTotem({
       return null;
     }
 
-    const totemPosition = groupRef.current.position;
+    // Get the totem's world position
+    const totemWorldPosition = new Vector3();
+    groupRef.current.getWorldPosition(totemWorldPosition);
+
     let closestDistance = constants.RANGE;
     let closestTarget: { id: string; position: Vector3; health: number } | null = null;
-    console.log('🎭 SummonTotem: Finding target among', enemyData.length, 'enemies at totem pos:', totemPosition);
+    console.log('🎭 SummonTotem: Finding target among', enemyData.length, 'enemies at totem world pos:', totemWorldPosition);
 
     for (let i = 0; i < enemyData.length; i++) {
       const enemy = enemyData[i];
@@ -137,7 +145,7 @@ export default function SummonedTotem({
 
       const distance = calculateDistance(
         enemy.position,
-        totemPosition
+        totemWorldPosition
       );
 
       console.log(`🎭 SummonTotem: Enemy ${enemy.id} distance: ${distance.toFixed(2)}, range: ${constants.RANGE}`);
@@ -183,6 +191,12 @@ export default function SummonedTotem({
 
     const effectId = Date.now();
 
+    // Get totem world position for relative effect positioning
+    const totemWorldPosition = new Vector3();
+    if (groupRef.current) {
+      groupRef.current.getWorldPosition(totemWorldPosition);
+    }
+
     const updates = {
       damageNumber: {
         id: nextDamageNumberId.current++,
@@ -194,7 +208,7 @@ export default function SummonedTotem({
       effect: {
         id: effectId,
         type: 'summonExplosion',
-        position: target.position.clone().setY(1.5),
+        position: worldImpactPosition.clone().sub(totemWorldPosition), // Store relative position
         direction: new Vector3(),
         duration: constants.EFFECT_DURATION / 1000,
         startTime: Date.now(),
@@ -263,7 +277,12 @@ export default function SummonedTotem({
 
     // Attack if we have a valid target in range
     if (closestEnemy && closestEnemy.health > 0) {
-      console.log('🎭 SummonTotem: Attacking closest enemy in range:', closestEnemy.id);
+      const currentTotemPosition = new Vector3();
+      if (groupRef.current) {
+        groupRef.current.getWorldPosition(currentTotemPosition);
+      }
+      const distance = calculateDistance(closestEnemy.position, currentTotemPosition);
+      console.log('🎭 SummonTotem: Attacking closest enemy in range:', closestEnemy.id, 'at distance:', distance.toFixed(2));
       setCurrentTarget(closestEnemy);
       handleAttack(closestEnemy);
       constants.lastAttackTime = now;
@@ -272,6 +291,8 @@ export default function SummonedTotem({
       if (currentTarget) {
         console.log('🎭 SummonTotem: No enemy in range, clearing target');
         setCurrentTarget(null);
+      } else if (enemyData.length > 0) {
+        console.log('🎭 SummonTotem: No valid target found, but have', enemyData.length, 'potential enemies');
       }
     }
   });
@@ -300,99 +321,92 @@ export default function SummonedTotem({
           const duration = effect.duration || 0.2;
           const fade = Math.max(0, 1 - (elapsed / duration));
 
-          const target = effect.targetId ? enemyData.find(e => e.id === effect.targetId) : null;
+          // Effect position is stored as relative to totem position
+          const effectRelativePosition = effect.position;
 
-          if (target && groupRef.current) {
-            const totemWorldPos = new Vector3();
-            groupRef.current.getWorldPosition(totemWorldPos);
+          return (
+            <group key={effect.id} position={effectRelativePosition.toArray()}>
+              <mesh>
+                <sphereGeometry args={[0.35 * (1 + elapsed * 2), 32, 32]} />
+                <meshStandardMaterial
+                  color="#8800ff"
+                  emissive="#9933ff"
+                  emissiveIntensity={0.5 * fade}
+                  transparent
+                  opacity={0.8 * fade}
+                  depthWrite={false}
+                  blending={AdditiveBlending}
+                />
+              </mesh>
 
-            // Effect position is already in world coordinates, so convert to local relative to totem
-            const effectPosition = effect.position.clone().sub(totemWorldPos);
+              <mesh>
+                <sphereGeometry args={[0.25 * (1 + elapsed * 3), 24, 24]} />
+                <meshStandardMaterial
+                  color="#aa66ff"
+                  emissive="#ffffff"
+                  emissiveIntensity={0.5 * fade}
+                  transparent
+                  opacity={0.9 * fade}
+                  depthWrite={false}
+                  blending={AdditiveBlending}
+                />
+              </mesh>
 
-            return (
-              <group key={effect.id} position={effectPosition.toArray()}>
-                <mesh>
-                  <sphereGeometry args={[0.35 * (1 + elapsed * 2), 32, 32]} />
+              {[0.45, 0.65, 0.85].map((size, i) => (
+                <mesh key={i} rotation={[Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI]}>
+                  <torusGeometry args={[size * (1 + elapsed * 3), 0.045, 16, 32]} />
                   <meshStandardMaterial
                     color="#8800ff"
                     emissive="#9933ff"
-                    emissiveIntensity={0.5 * fade}
+                    emissiveIntensity={1 * fade}
                     transparent
-                    opacity={0.8 * fade}
+                    opacity={0.6 * fade * (1 - i * 0.2)}
                     depthWrite={false}
                     blending={AdditiveBlending}
                   />
                 </mesh>
+              ))}
 
-                <mesh>
-                  <sphereGeometry args={[0.25 * (1 + elapsed * 3), 24, 24]} />
-                  <meshStandardMaterial
-                    color="#aa66ff"
-                    emissive="#ffffff"
-                    emissiveIntensity={0.5 * fade}
-                    transparent
-                    opacity={0.9 * fade}
-                    depthWrite={false}
-                    blending={AdditiveBlending}
-                  />
-                </mesh>
-
-                {[0.45, 0.65, 0.85].map((size, i) => (
-                  <mesh key={i} rotation={[Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI]}>
-                    <torusGeometry args={[size * (1 + elapsed * 3), 0.045, 16, 32]} />
+              {[...Array(4)].map((_, i) => {
+                const angle = (i / 4) * Math.PI * 2;
+                const radius = 0.5 * (1 + elapsed * 2);
+                return (
+                  <mesh
+                    key={`spark-${i}`}
+                    position={[
+                      Math.sin(angle) * radius,
+                      Math.cos(angle) * radius,
+                      0
+                    ]}
+                  >
+                    <sphereGeometry args={[0.05, 8, 8]} />
                     <meshStandardMaterial
-                      color="#8800ff"
-                      emissive="#9933ff"
-                      emissiveIntensity={1 * fade}
+                      color="#aa66ff"
+                      emissive="#ffffff"
+                      emissiveIntensity={2 * fade}
                       transparent
-                      opacity={0.6 * fade * (1 - i * 0.2)}
+                      opacity={0.8 * fade}
                       depthWrite={false}
                       blending={AdditiveBlending}
                     />
                   </mesh>
-                ))}
+                );
+              })}
 
-                {[...Array(4)].map((_, i) => {
-                  const angle = (i / 4) * Math.PI * 2;
-                  const radius = 0.5 * (1 + elapsed * 2);
-                  return (
-                    <mesh
-                      key={`spark-${i}`}
-                      position={[
-                        Math.sin(angle) * radius,
-                        Math.cos(angle) * radius,
-                        0
-                      ]}
-                    >
-                      <sphereGeometry args={[0.05, 8, 8]} />
-                      <meshStandardMaterial
-                        color="#aa66ff"
-                        emissive="#ffffff"
-                        emissiveIntensity={2 * fade}
-                        transparent
-                        opacity={0.8 * fade}
-                        depthWrite={false}
-                        blending={AdditiveBlending}
-                      />
-                    </mesh>
-                  );
-                })}
-
-                <pointLight
-                  color="#8800ff"
-                  intensity={1 * fade}
-                  distance={4}
-                  decay={2}
-                />
-                <pointLight
-                  color="#aa66ff"
-                  intensity={1 * fade}
-                  distance={6}
-                  decay={1}
-                />
-              </group>
-            );
-          }
+              <pointLight
+                color="#8800ff"
+                intensity={1 * fade}
+                distance={4}
+                decay={2}
+              />
+              <pointLight
+                color="#aa66ff"
+                intensity={1 * fade}
+                distance={6}
+                decay={1}
+              />
+            </group>
+          );
         }
         return null;
       })}

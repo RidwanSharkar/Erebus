@@ -96,6 +96,8 @@ type PlayerAnimationState = {
   isSmiting?: boolean;
   isColossusStriking?: boolean;
   isWindShearing?: boolean;
+  isWindShearCharging?: boolean;
+  windShearChargeProgress?: number;
   isDeathGrasping?: boolean;
   isWraithStriking?: boolean;
   isCorruptedAuraActive?: boolean;
@@ -156,6 +158,7 @@ interface MultiplayerContextType {
   broadcastPlayerDebuff: (targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, effectData?: any) => void;
   broadcastPlayerStealth: (isInvisible: boolean) => void;
   broadcastPlayerKnockback: (targetPlayerId: string, direction: { x: number; y: number; z: number }, distance: number, duration: number) => void;
+  broadcastPlayerTornadoEffect: (playerId: string, position: { x: number; y: number; z: number }, duration: number) => void;
   
   // Enemy actions
   damageEnemy: (enemyId: string, damage: number) => void;
@@ -898,6 +901,18 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
+  const broadcastPlayerTornadoEffect = useCallback((playerId: string, position: { x: number; y: number; z: number }, duration: number) => {
+    if (socket && currentRoomId) {
+      socket.emit('player-tornado-effect', {
+        roomId: currentRoomId,
+        playerId,
+        position,
+        duration,
+        timestamp: Date.now()
+      });
+    }
+  }, [socket, currentRoomId]);
+
   const broadcastPlayerKnockback = useCallback((targetPlayerId: string, direction: { x: number; y: number; z: number }, distance: number, duration: number) => {
     if (socket && currentRoomId) {
       socket.emit('player-knockback', {
@@ -1023,6 +1038,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     broadcastPlayerDebuff,
     broadcastPlayerStealth,
     broadcastPlayerKnockback,
+    broadcastPlayerTornadoEffect,
     damageEnemy,
     applyStatusEffect,
     damageTower,

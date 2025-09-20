@@ -172,7 +172,7 @@ export default function GameUI({
 
         // If it's been more than 6 seconds since last sword damage, decay rage
         if (timeSinceLastDamage > 8000 && swordData.rage > 0) {
-          swordData.rage = Math.max(0, swordData.rage - 5);
+          swordData.rage = Math.max(0, swordData.rage - 2);
         }
 
         return updated;
@@ -327,6 +327,8 @@ export default function GameUI({
       canCastCobraShot: () => currentEnergy >= 40,
       canCastViperSting: () => currentEnergy >= 60,
       canCastCloudkill: () => currentEnergy >= 40,
+      // Sword rage abilities
+      canCastWindShear: () => currentRage >= 10,
       // Sabres energy abilities
       canCastBackstab: () => currentEnergy >= 60,
       canCastSkyfall: () => currentEnergy >= 40,

@@ -29,7 +29,7 @@ export function calculateDamage(baseAmount: number, weaponType?: WeaponType): Da
   // Base crit chance is 11%, each rune adds 3%
   let criticalChance = 0.11 + (globalCriticalRuneCount * 0.03);
 
-  // Add Bow passive: Sharpshooter (+5% crit chance)
+  // Add Bow passive: TEMPEST ROUNDS (+5% crit chance)
   if (weaponType === WeaponType.BOW && globalControlSystem) {
     // Check if Bow passive is unlocked
     const weaponSlot = globalControlSystem.selectedWeapons?.primary === WeaponType.BOW ? 'primary' : 'secondary';
@@ -48,10 +48,7 @@ export function calculateDamage(baseAmount: number, weaponType?: WeaponType): Da
   // Round down to integer to avoid floating point precision issues
   const damage = Math.floor(rawDamage);
 
-  // Debug logging for sabre damage calculations
-  if (baseAmount === 19 || baseAmount === 23) {
-    console.log(`💎 CRIT CALC - Base: ${baseAmount}, CritChance: ${(criticalChance * 100).toFixed(1)}%, CritRunes: ${globalCriticalRuneCount}, CritDmgRunes: ${globalCritDamageRuneCount}, IsCritical: ${isCritical}, Multiplier: ${criticalDamageMultiplier.toFixed(2)}, Final: ${damage}`);
-  }
+
 
   return { damage, isCritical };
 }
@@ -60,7 +57,7 @@ export function calculateDamage(baseAmount: number, weaponType?: WeaponType): Da
 export function getCriticalChance(weaponType?: WeaponType): number {
   let criticalChance = 0.11 + (globalCriticalRuneCount * 0.03);
 
-  // Add Bow passive: Sharpshooter (+5% crit chance)
+  // Add Bow passive: TEMPEST ROUNDS (+5% crit chance)
   if (weaponType === WeaponType.BOW && globalControlSystem) {
     // Check if Bow passive is unlocked
     const weaponSlot = globalControlSystem.selectedWeapons?.primary === WeaponType.BOW ? 'primary' : 'secondary';

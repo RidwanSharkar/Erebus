@@ -18,6 +18,8 @@ interface EtherealBowProps {
   barrageChargeProgress?: number;
   isCobraShotCharging?: boolean;
   cobraShotChargeProgress?: number;
+  isCloudkillCharging?: boolean;
+  cloudkillChargeProgress?: number;
 }
 
 const EtherBowComponent = memo(function EtherealBow({
@@ -32,7 +34,9 @@ const EtherBowComponent = memo(function EtherealBow({
   isBarrageCharging = false,
   barrageChargeProgress = 0,
   isCobraShotCharging = false,
-  cobraShotChargeProgress = 0
+  cobraShotChargeProgress = 0,
+  isCloudkillCharging = false,
+  cloudkillChargeProgress = 0
 }: EtherealBowProps) {
   const bowRef = useRef<Group>(null);
   const maxDrawDistance = 1.35;
@@ -47,17 +51,17 @@ const EtherBowComponent = memo(function EtherealBow({
   // Charge Release Logic - only trigger for actual bow charging, not ability animations
   useFrame(() => {
     // Only track charging state for actual bow charging, not ability animations
-    const actualIsCharging = isCharging && !isAbilityBowAnimation && !isViperStingCharging && !isBarrageCharging && !isCobraShotCharging;
-    
+    const actualIsCharging = isCharging && !isAbilityBowAnimation && !isViperStingCharging && !isBarrageCharging && !isCobraShotCharging && !isCloudkillCharging;
+
     // Only trigger onRelease for actual bow charging, not ability animations
-    if (prevIsCharging.current && !actualIsCharging && !isViperStingCharging && !isBarrageCharging && !isCobraShotCharging) {
+    if (prevIsCharging.current && !actualIsCharging && !isViperStingCharging && !isBarrageCharging && !isCobraShotCharging && !isCloudkillCharging) {
       // Use the chargeProgress prop instead of calculating our own
       // Check if this was a perfect shot using the same chargeProgress used for visuals
       const wasPerfectShot = chargeProgress >= perfectShotMinThreshold && chargeProgress <= perfectShotMaxThreshold;
-      
+
       onRelease(chargeProgress, wasPerfectShot);
     }
-    
+
     prevIsCharging.current = actualIsCharging;
   });
 
@@ -122,10 +126,14 @@ const EtherBowComponent = memo(function EtherealBow({
       rotation={[-Math.PI/2, -Math.PI/2,  -Math.PI/2]}   // Reset base rotation
       scale={[0.875, 0.8, 0.8]}
     >
-      <group 
-        ref={bowRef} 
+      <group
+        ref={bowRef}
         position={[basePosition[0], basePosition[1], basePosition[2]]}
-        rotation={[Math.PI, Math.PI/2, 0]} // ROTATION HERE <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+        rotation={[
+          Math.PI + (isCloudkillCharging ? -Math.PI/6 * cloudkillChargeProgress : 0), // Tilt bow upwards for Cloudkill
+          Math.PI/2,
+          0
+        ]}
       >
         {/* Bow body with dynamic color for instant powershot, charging, and perfect shot timing */}
         <mesh rotation={[Math.PI/2, 0, 0]}>
@@ -135,8 +143,9 @@ const EtherBowComponent = memo(function EtherealBow({
               isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
               isCobraShotCharging ? `rgb(${Math.floor(0 + cobraShotChargeProgress * 255)}, ${Math.floor(255)}, ${Math.floor(64 + cobraShotChargeProgress * 32)})` : // Green cobra colors
               isViperStingCharging ? `rgb(${Math.floor(139 + viperStingChargeProgress * 116)}, ${Math.floor(63 + viperStingChargeProgress * 125)}, ${Math.floor(155 + viperStingChargeProgress * 97)})` : // Purple venom colors
+              isCloudkillCharging ? `rgb(${Math.floor(0 + cloudkillChargeProgress * 255)}, ${Math.floor(255)}, ${Math.floor(0)})` : // Green cloudkill colors
               currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? "#00ff40" :
-              currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 
+              currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ?
                 `rgb(${Math.floor(193 + chargeProgress * 62)}, ${Math.floor(140 - chargeProgress * 140)}, ${Math.floor(75 - chargeProgress * 75)})` :
               "#C18C4B"
             }
@@ -144,8 +153,9 @@ const EtherBowComponent = memo(function EtherealBow({
               isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
               isCobraShotCharging ? `rgb(${Math.floor(0 + cobraShotChargeProgress * 170)}, ${Math.floor(170 + cobraShotChargeProgress * 85)}, ${Math.floor(32 + cobraShotChargeProgress * 32)})` : // Green cobra emissive
               isViperStingCharging ? `rgb(${Math.floor(139 + viperStingChargeProgress * 116)}, ${Math.floor(63 + viperStingChargeProgress * 125)}, ${Math.floor(155 + viperStingChargeProgress * 97)})` : // Purple venom colors
+              isCloudkillCharging ? `rgb(${Math.floor(0 + cloudkillChargeProgress * 170)}, ${Math.floor(170 + cloudkillChargeProgress * 85)}, ${Math.floor(0)})` : // Green cloudkill emissive
               currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? "#00aa20" :
-              currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 
+              currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ?
                 `rgb(${Math.floor(193 + chargeProgress * 62)}, ${Math.floor(140 - chargeProgress * 140)}, ${Math.floor(75 - chargeProgress * 75)})` :
               "#C18C4B"
             }
@@ -153,6 +163,7 @@ const EtherBowComponent = memo(function EtherealBow({
               isPerfectShotWindow ? 4.0 + Math.sin(Date.now() * 0.02) * 2.0 : // Pulsing effect during perfect window
               isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
               isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
+              isCloudkillCharging ? 2.0 + cloudkillChargeProgress * 2.0 : // Cloudkill charging glow
               currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? 2.5 :
               currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 1.5 + chargeProgress * 1.5 :
               1.5
@@ -164,7 +175,7 @@ const EtherBowComponent = memo(function EtherealBow({
 
         {/* Bow string */}
         <mesh>
-          <tubeGeometry args={[createStringCurve(isCobraShotCharging ? cobraShotChargeProgress : isBarrageCharging ? barrageChargeProgress : isViperStingCharging ? viperStingChargeProgress : chargeProgress), 16, 0.02, 8, false]} />
+          <tubeGeometry args={[createStringCurve(isCobraShotCharging ? cobraShotChargeProgress : isBarrageCharging ? barrageChargeProgress : isViperStingCharging ? viperStingChargeProgress : isCloudkillCharging ? cloudkillChargeProgress : chargeProgress), 16, 0.02, 8, false]} />
           <meshStandardMaterial 
             color="#ffffff"
             emissive="#ffffff"
@@ -327,28 +338,28 @@ const EtherBowComponent = memo(function EtherealBow({
         </group>
 
         {/* Arrow  */}
-        {(isCharging || isViperStingCharging || isBarrageCharging || isCobraShotCharging) && (
-          <group 
-            position={[0, 0, 0.8 - (isCobraShotCharging ? cobraShotChargeProgress : isBarrageCharging ? barrageChargeProgress : isViperStingCharging ? viperStingChargeProgress : chargeProgress) * maxDrawDistance]}
+        {(isCharging || isViperStingCharging || isBarrageCharging || isCobraShotCharging || isCloudkillCharging) && (
+          <group
+            position={[0, 0, 0.8 - (isCobraShotCharging ? cobraShotChargeProgress : isBarrageCharging ? barrageChargeProgress : isViperStingCharging ? viperStingChargeProgress : isCloudkillCharging ? cloudkillChargeProgress : chargeProgress) * maxDrawDistance]}
             rotation={[Math.PI/2, 0, 0]}
           >
             {/* Arrow shaft - increased length from 0.5 to 0.7 */}
             <mesh>
               <cylinderGeometry args={[0.015, 0.02, 0.9, 8]} />
-              <meshStandardMaterial 
-                color={isCobraShotCharging ? "#00ff40" : isBarrageCharging ? "#ff8800" : isViperStingCharging ? "#A855C7" : "#00ffff"}
-                emissive={isCobraShotCharging ? "#00ff40" : isBarrageCharging ? "#ff8800" : isViperStingCharging ? "#A855C7" : "#00ffff"}
+              <meshStandardMaterial
+                color={isCobraShotCharging ? "#00ff40" : isBarrageCharging ? "#ff8800" : isViperStingCharging ? "#A855C7" : isCloudkillCharging ? "#00ff00" : "#00ffff"}
+                emissive={isCobraShotCharging ? "#00ff40" : isBarrageCharging ? "#ff8800" : isViperStingCharging ? "#A855C7" : isCloudkillCharging ? "#00ff00" : "#00ffff"}
                 emissiveIntensity={3}
                 transparent
                 opacity={0.9}
               />
             </mesh>
             {/* Arrow head - adjusted position for longer shaft */}
-            <mesh position={[0, 0.35, 0]}>  
+            <mesh position={[0, 0.35, 0]}>
               <coneGeometry args={[0.03, 0.175, 8]} />
-              <meshStandardMaterial 
-                color={isCobraShotCharging ? "#00ff40" : isBarrageCharging ? "#ff8800" : isViperStingCharging ? "#A855C7" : "#00ffff"}
-                emissive={isCobraShotCharging ? "#00ff40" : isBarrageCharging ? "#ff8800" : isViperStingCharging ? "#A855C7" : "#00ffff"}
+              <meshStandardMaterial
+                color={isCobraShotCharging ? "#00ff40" : isBarrageCharging ? "#ff8800" : isViperStingCharging ? "#A855C7" : isCloudkillCharging ? "#00ff00" : "#00ffff"}
+                emissive={isCobraShotCharging ? "#00ff40" : isBarrageCharging ? "#ff8800" : isViperStingCharging ? "#A855C7" : isCloudkillCharging ? "#00ff00" : "#00ffff"}
                 emissiveIntensity={3}
                 transparent
                 opacity={0.9}
@@ -374,6 +385,8 @@ const EtherBowComponent = memo(function EtherealBow({
     prevProps.barrageChargeProgress === nextProps.barrageChargeProgress &&
     prevProps.isCobraShotCharging === nextProps.isCobraShotCharging &&
     prevProps.cobraShotChargeProgress === nextProps.cobraShotChargeProgress &&
+    prevProps.isCloudkillCharging === nextProps.isCloudkillCharging &&
+    prevProps.cloudkillChargeProgress === nextProps.cloudkillChargeProgress &&
     (!prevProps.position || !nextProps.position || prevProps.position.equals(nextProps.position)) &&
     (!prevProps.direction || !nextProps.direction || prevProps.direction.equals(nextProps.direction))
   );

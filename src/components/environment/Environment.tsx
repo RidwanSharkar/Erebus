@@ -6,13 +6,13 @@ import Pillar from './Pillar';
 import Pedestal from './Pedestal';
 import EnhancedGround from './EnhancedGround';
 import PillarCollision from './PillarCollision';
-import DetailedTrees, { DetailedTree } from './DetailedTrees';
+import DetailedTrees, { DetailedTree, LargeTree, OptimizedLargeTree } from './DetailedTrees';
 import TreeCollision from './TreeCollision';
 import AtmosphericParticles from './AtmosphericParticles';
 
 import { generateMountains } from '@/utils/MountainGenerator';
 import { World } from '@/ecs/World';
-import { Vector3, Color } from '@/utils/three-exports';
+import { Vector3, Color, PerspectiveCamera } from '@/utils/three-exports';
 
 interface EnvironmentProps {
   level?: number;
@@ -20,6 +20,8 @@ interface EnvironmentProps {
   enablePlanet?: boolean;
   enableSky?: boolean;
   world?: World; // Optional world for collision system
+  camera?: PerspectiveCamera; // Optional camera for LOD calculations
+  enableLargeTree?: boolean; // Enable large tree rendering
 }
 
 /**
@@ -31,7 +33,9 @@ const Environment: React.FC<EnvironmentProps> = ({
   enableMountains = true,
   enablePlanet = true,
   enableSky = true,
-  world
+  world,
+  camera,
+  enableLargeTree = false
 }) => {
   // Generate mountains once and memoize for performance
   const mountains = useMemo(() => generateMountains(), []);
@@ -113,6 +117,8 @@ const Environment: React.FC<EnvironmentProps> = ({
           />
         </group>
       ))}
+
+
 
       {/* Collision entities for pillars only (only if world is provided) */}
       {world && (

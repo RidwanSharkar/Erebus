@@ -29,6 +29,7 @@ interface ProjectileData {
   opacity?: number;
   ownerId?: string; // For tower projectiles
   isCryoflame?: boolean; // For Entropic Bolt Cryoflame mode
+  projectileType?: string; // For projectile type differentiation (e.g., burst_arrow)
 }
 
 interface SwordProjectileData {
@@ -250,7 +251,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             opacity: userData.opacity || 1.0
           });
         }
-      } else if (userData.isRegularArrow) {
+      } else if (userData.isRegularArrow || userData.projectileType === 'burst_arrow') {
         const existing = projectileData.regular.find(p => p.entityId === entity.id);
         if (existing) {
           existing.position.copy(transform.position);
@@ -263,7 +264,8 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             entityId: entity.id,
             subclass: userData.subclass,
             level: userData.level,
-            opacity: userData.opacity || 1.0
+            opacity: userData.opacity || 1.0,
+            projectileType: userData.projectileType // Pass projectile type for color differentiation
           });
         }
       } else if (userData.projectileType === 'wind_shear') {
@@ -417,6 +419,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             direction={arrow.direction}
             distanceTraveled={distanceTraveled}
             maxDistance={maxDistance}
+            projectileType={arrow.projectileType}
             onImpact={() => {
               // console.log(`🏹 RegularArrow ${arrow.id} impact`);
             }}

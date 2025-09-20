@@ -61,6 +61,7 @@ interface PVPViperStingManagerProps {
   serverPlayerEntities: React.MutableRefObject<Map<string, number>>;
   localSocketId?: string;
   onSoulStealCreated?: (enemyPosition: Vector3) => void; // Add callback for soul steal effects
+  damageNumberManager?: any; // Damage number manager for visual feedback
 }
 
 interface PVPCrossentropyManagerProps {
@@ -394,13 +395,14 @@ export function useOptimizedPVPEffects() {
  * Handles PVP collision detection for Viper Sting projectiles
  */
 export function OptimizedPVPViperStingManager({
-  world,
+  world: ecsWorld,
   players,
   onPlayerHit,
   onPlayerVenomed,
   serverPlayerEntities,
   localSocketId,
-  onSoulStealCreated
+  onSoulStealCreated,
+  damageNumberManager
 }: PVPViperStingManagerProps) {
   // Track processed hits to avoid duplicates
   const processedHits = useRef<Set<string>>(new Set());
@@ -421,107 +423,269 @@ export function OptimizedPVPViperStingManager({
       if (!projectile.active) return;
 
       const projectilePos = projectile.position;
+
+      // CRITICAL FIX: Handle projectile lifecycle in PVP mode
+      // Since enemyData is empty in PVP, we need to manage return phase transition here
+      if (!projectile.isReturning) {
+        // Check if projectile has reached max distance and should return
+        const distanceTraveled = projectile.position.distanceTo(projectile.startPosition);
+        if (distanceTraveled >= projectile.maxDistance && !projectile.fadeStartTime) {
+          console.log('🔄 PVP Viper Sting switching to return phase:', projectile.id);
+          projectile.isReturning = true;
+          // Initialize return direction - will be updated dynamically below
+        }
+      }
+
+      // Handle dynamic return direction toward current player position
+      if (projectile.isReturning) {
+        // Get current player position for dynamic return
+        const localPlayerEntity = serverPlayerEntities.current.get(localSocketId);
+        if (localPlayerEntity) {
+          const playerWorldEntity = ecsWorld.getEntity(localPlayerEntity);
+          if (playerWorldEntity) {
+            const transform = playerWorldEntity.getComponent(Transform);
+            if (transform) {
+              const currentPlayerPosition = transform.position.clone();
+              currentPlayerPosition.y += 0; // Match chest level
+
+              const distanceToPlayer = projectile.position.distanceTo(currentPlayerPosition);
+
+              if (distanceToPlayer > 1.5 && !projectile.fadeStartTime) {
+                // Update direction toward current player position (dynamic following)
+                projectile.direction = new Vector3().subVectors(currentPlayerPosition, projectile.position).normalize();
+              } else if (distanceToPlayer <= 1.5 && !projectile.fadeStartTime) {
+                // Start fading when projectile reaches player
+                projectile.fadeStartTime = Date.now();
+              }
+            }
+          }
+        }
+      }
       
       // Only log when actually returning for debugging
       if (projectile.isReturning && projectile.returnHitEnemies.size === 0) {
         console.log('🔄 Viper Sting entering return phase:', projectile.id);
       }
 
-      // Check collision with PVP players (only check players that are NOT the local player)
-      players.forEach(player => {
-        // Skip if this is the local player (they can't hit themselves)
-        if (player.id === localSocketId) {
-          return; // Don't hit yourself
+      // Handle projectile movement and return phase collision detection
+      if (!projectile.isReturning) {
+        // Forward movement - handled by useViperSting hook
+        // CRITICAL FIX: Only check collisions after projectile has moved away from player
+        const distanceFromStart = projectile.position.distanceTo(projectile.startPosition);
+        if (distanceFromStart < 2.0) {
+          // Projectile hasn't moved far enough from start position - skip collision detection
+          // This prevents self-damage when projectile is first created
+          return;
         }
 
-        // Use temporary Vector3 from pool instead of creating new one
-        const playerPos = pvpObjectPool.getTempVector3(
-          player.position.x,
-          player.position.y,
-          player.position.z
-        );
-        const distance = projectilePos.distanceTo(playerPos);
-
-        if (distance <= 1.3) { // Hit radius (same as ViperSting hook)
-          // Use the same hit tracking as original Viper Sting logic
-          const hitSet = projectile.isReturning ? projectile.returnHitEnemies : projectile.hitEnemies;
-
-          // Check if we haven't already hit this player with this projectile (both phases)
-          if (!hitSet.has(player.id)) {
-            hitSet.add(player.id);
-
-            console.log('🎯 Viper Sting PVP Hit:', {
-              projectileId: projectile.id,
-              targetPlayerId: player.id,
-              damage: 61,
-              phase: projectile.isReturning ? 'return' : 'forward',
-              distance: distance.toFixed(2)
-            });
-
-            // Apply damage - Viper Sting damage is 61
-            onPlayerHit(player.id, 61);
-
-            // Create damage number for visual feedback
-            const damageNumberManager = (window as any).damageNumberManager;
-            if (damageNumberManager && damageNumberManager.addDamageNumber) {
-              const hitPosition = new Vector3(player.position.x, player.position.y + 1.5, player.position.z);
-              damageNumberManager.addDamageNumber(
-                61, // Viper Sting damage
-                false, // Not critical
-                hitPosition,
-                'viper_sting_damage' // Damage type for styling (ensure it's damage, not healing)
-              );
-            }
-
-            // Create soul steal effect at the hit player's position (only for the caster)
-            if (onSoulStealCreated) {
-              const hitPosition = new Vector3(player.position.x, player.position.y, player.position.z);
-              onSoulStealCreated(hitPosition);
-              
-              // Schedule healing when soul steal reaches the caster (after 1.25 seconds)
-              setTimeout(() => {
-                // Heal the local player (caster) when soul reaches them
-                const multiplayerContext = (window as any).multiplayerContext;
-                if (multiplayerContext && multiplayerContext.broadcastPlayerHealing && multiplayerContext.players) {
-                  // Get current player position for healing visual
-                  const players = Array.from(multiplayerContext.players.values()) as any[];
-                  const localPlayer = players.find((p: any) => p.id === localSocketId);
-                  if (localPlayer && localPlayer.position) {
-                    const healingPosition = {
-                      x: localPlayer.position.x,
-                      y: localPlayer.position.y + 1.5,
-                      z: localPlayer.position.z
-                    };
-
-                    // Broadcast healing to all players
-                    multiplayerContext.broadcastPlayerHealing(20, 'viper_sting', healingPosition);
-
-                    // Show healing damage number locally
-                    const damageNumberManager = (window as any).damageNumberManager;
-                    if (damageNumberManager && damageNumberManager.addDamageNumber) {
-                      damageNumberManager.addDamageNumber(
-                        20, // Healing amount
-                        false, // Not critical
-                        new Vector3(healingPosition.x, healingPosition.y, healingPosition.z),
-                        'viper_sting_healing' // Damage type for healing styling
-                      );
-                    }
-                    
-                    console.log('🔮 Viper Sting soul steal healing applied:', {
-                      caster: localSocketId,
-                      healAmount: 20,
-                      position: healingPosition
-                    });
-                  }
-                }
-              }, 1250); // Match soul steal effect duration
-            }
-
-            // IMPORTANT: Don't deactivate projectile here! Let the original Viper Sting logic
-            // handle projectile lifecycle (forward -> return -> fade out)
+        // Collision detection for forward phase
+        players.forEach(player => {
+          // Skip if this is the local player (they can't hit themselves)
+          if (player.id === localSocketId) {
+            return; // Don't hit yourself
           }
+
+          // Use temporary Vector3 from pool instead of creating new one
+          const playerPos = pvpObjectPool.getTempVector3(
+            player.position.x,
+            player.position.y,
+            player.position.z
+          );
+          const distance = projectilePos.distanceTo(playerPos);
+
+          if (distance <= 1.3) { // Hit radius (same as ViperSting hook)
+            // CRITICAL DEBUG: Check if we're trying to hit ourselves
+            if (player.id === localSocketId) {
+              console.error('🚨 SELF-DAMAGE ALERT: Viper Sting trying to hit local player!', {
+                projectileId: projectile.id,
+                targetPlayerId: player.id,
+                localSocketId: localSocketId,
+                distance: distance.toFixed(2)
+              });
+              return; // Skip self-damage (this is redundant but kept for debugging)
+            }
+
+            // Check if we haven't already hit this player with this projectile
+            if (!projectile.hitEnemies.has(player.id)) {
+              projectile.hitEnemies.add(player.id);
+
+              console.log('🎯 Viper Sting PVP Forward Hit:', {
+                projectileId: projectile.id,
+                targetPlayerId: player.id,
+                damage: 61,
+                distance: distance.toFixed(2)
+              });
+
+              // Apply damage - Viper Sting damage is 61
+              onPlayerHit(player.id, 61);
+
+              // Create damage number for visual feedback
+              if (damageNumberManager && damageNumberManager.addDamageNumber) {
+                const hitPosition = new Vector3(player.position.x, player.position.y + 1.5, player.position.z);
+                damageNumberManager.addDamageNumber(
+                  61, // Viper Sting damage
+                  false, // Not critical
+                  hitPosition,
+                  'viper_sting_damage' // Damage type for styling (ensure it's damage, not healing)
+                );
+              }
+
+              // Create soul steal effect at the hit player's position (only for the caster)
+              if (onSoulStealCreated) {
+                const hitPosition = new Vector3(player.position.x, player.position.y, player.position.z);
+                onSoulStealCreated(hitPosition);
+
+                // Schedule healing when soul steal reaches the caster (after 1.25 seconds)
+                setTimeout(() => {
+                  // Heal the local player (caster) when soul reaches them
+                  const multiplayerContext = (window as any).multiplayerContext;
+                  if (multiplayerContext && multiplayerContext.broadcastPlayerHealing && multiplayerContext.players) {
+                    // Get current player position for healing visual
+                    const players = Array.from(multiplayerContext.players.values()) as any[];
+                    const localPlayer = players.find((p: any) => p.id === localSocketId);
+                    if (localPlayer && localPlayer.position) {
+                      const healingPosition = {
+                        x: localPlayer.position.x,
+                        y: localPlayer.position.y + 1.5,
+                        z: localPlayer.position.z
+                      };
+
+                      // Broadcast healing to all players (this will create damage numbers via handlePlayerHealing)
+                      multiplayerContext.broadcastPlayerHealing(20, 'viper_sting', healingPosition);
+
+                      console.log('🔮 Viper Sting soul steal healing applied:', {
+                        caster: localSocketId,
+                        healAmount: 20,
+                        position: healingPosition
+                      });
+                    }
+                  }
+                }, 1250); // Match soul steal effect duration
+              }
+            }
+          }
+        });
+      } else {
+        // Return phase - handle movement and collision detection
+        const distanceToPlayer = projectile.position.distanceTo(projectile.startPosition);
+
+        if (distanceToPlayer > 1.5 && !projectile.fadeStartTime) {
+          // Move projectile back toward player (simulate the movement from useViperSting)
+          projectile.position.add(
+            projectile.direction.clone().multiplyScalar(0.625) // PROJECTILE_SPEED from useViperSting
+          );
+
+          // CRITICAL FIX: Only check return phase collisions when projectile is far enough from player
+          // This prevents self-damage during the final return phase
+          if (distanceToPlayer < 2.0) {
+            return; // Too close to player, skip collision detection
+          }
+
+          // Check for enemy collisions during return phase
+          players.forEach(player => {
+            // Skip if this is the local player (they can't hit themselves)
+            if (player.id === localSocketId) {
+              return; // Don't hit yourself
+            }
+
+            // Use temporary Vector3 from pool instead of creating new one
+            const playerPos = pvpObjectPool.getTempVector3(
+              player.position.x,
+              player.position.y,
+              player.position.z
+            );
+            const distance = projectilePos.distanceTo(playerPos);
+
+            if (distance <= 1.3) { // Hit radius (same as ViperSting hook)
+              // CRITICAL DEBUG: Check if we're trying to hit ourselves in return phase
+              if (player.id === localSocketId) {
+                console.error('🚨 SELF-DAMAGE ALERT: Viper Sting return phase trying to hit local player!', {
+                  projectileId: projectile.id,
+                  targetPlayerId: player.id,
+                  localSocketId: localSocketId,
+                  distance: distance.toFixed(2)
+                });
+                return; // Skip self-damage (this is redundant but kept for debugging)
+              }
+
+              // Check if we haven't already hit this player during return phase
+              if (!projectile.returnHitEnemies.has(player.id)) {
+                projectile.returnHitEnemies.add(player.id);
+
+                console.log('🎯 Viper Sting PVP Return Hit:', {
+                  projectileId: projectile.id,
+                  targetPlayerId: player.id,
+                  damage: 61,
+                  distance: distance.toFixed(2)
+                });
+
+                // Apply damage - Viper Sting damage is 61
+                onPlayerHit(player.id, 61);
+
+                // Create damage number for visual feedback
+                if (damageNumberManager && damageNumberManager.addDamageNumber) {
+                  const hitPosition = new Vector3(player.position.x, player.position.y + 1.5, player.position.z);
+                  damageNumberManager.addDamageNumber(
+                    61, // Viper Sting damage
+                    false, // Not critical
+                    hitPosition,
+                    'viper_sting_damage' // Damage type for styling (ensure it's damage, not healing)
+                  );
+                }
+
+                // Create soul steal effect at the hit player's position (only for the caster)
+                if (onSoulStealCreated) {
+                  const hitPosition = new Vector3(player.position.x, player.position.y, player.position.z);
+                  onSoulStealCreated(hitPosition);
+
+                  // Schedule healing when soul steal reaches the caster (after 1.25 seconds)
+                  setTimeout(() => {
+                    // Heal the local player (caster) when soul reaches them
+                    const multiplayerContext = (window as any).multiplayerContext;
+                    if (multiplayerContext && multiplayerContext.broadcastPlayerHealing && multiplayerContext.players) {
+                      // Get current player position for healing visual
+                      const players = Array.from(multiplayerContext.players.values()) as any[];
+                      const localPlayer = players.find((p: any) => p.id === localSocketId);
+                      if (localPlayer && localPlayer.position) {
+                        const healingPosition = {
+                          x: localPlayer.position.x,
+                          y: localPlayer.position.y + 1.5,
+                          z: localPlayer.position.z
+                        };
+
+                        // Broadcast healing to all players (this will create damage numbers via handlePlayerHealing)
+                        multiplayerContext.broadcastPlayerHealing(20, 'viper_sting', healingPosition);
+
+                        console.log('🔮 Viper Sting return soul steal healing applied:', {
+                          caster: localSocketId,
+                          healAmount: 20,
+                          position: healingPosition
+                        });
+                      }
+                    }
+                  }, 1250); // Match soul steal effect duration
+                }
+              }
+            }
+          });
+        } else if (!projectile.fadeStartTime) {
+          // Start fading when projectile reaches player
+          projectile.fadeStartTime = Date.now();
+          console.log('🏠 Viper Sting projectile reached player, starting fade:', projectile.id);
         }
-      });
+      }
+
+      // Handle fading for projectiles that have reached their fade start time
+      if (projectile.fadeStartTime) {
+        const fadeElapsed = Date.now() - projectile.fadeStartTime;
+        const fadeProgress = fadeElapsed / 350; // FADE_DURATION from useViperSting
+        projectile.opacity = Math.max(0, 1 - fadeProgress);
+
+        if (fadeProgress >= 1) {
+          projectile.active = false;
+          console.log('💨 Viper Sting projectile faded out:', projectile.id);
+        }
+      }
     });
 
     // Clear processed hits for next frame

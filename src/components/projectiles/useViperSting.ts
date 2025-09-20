@@ -272,11 +272,18 @@ export function useViperSting({
         } else {
           // Return movement phase
           if (!parentRef.current) return;
-          
-          const distanceToPlayer = projectile.position.distanceTo(projectile.startPosition);
-          
+
+          // Get current player position for dynamic return
+          const currentPlayerPosition = parentRef.current.position.clone();
+          currentPlayerPosition.y += 0; // Match the chest level used for launching
+
+          const distanceToPlayer = projectile.position.distanceTo(currentPlayerPosition);
+
           if (distanceToPlayer > 1.5 && !projectile.fadeStartTime) {
-            // Move projectile back toward player
+            // Update direction toward current player position (dynamic following)
+            projectile.direction = new Vector3().subVectors(currentPlayerPosition, projectile.position).normalize();
+
+            // Move projectile back toward current player position
             projectile.position.add(
               projectile.direction.clone().multiplyScalar(PROJECTILE_SPEED)
             );

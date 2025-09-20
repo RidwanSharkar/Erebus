@@ -184,7 +184,7 @@ export class PVPStateUpdateHelpers {
    */
   static batchEffectUpdates(updates: Array<{
     type: 'add' | 'remove';
-    effectType: 'venom' | 'debuff' | 'reanimate' | 'frostNova' | 'smite' | 'deathgrasp' | 'colossusStrike' | 'windShear';
+    effectType: 'venom' | 'debuff' | 'reanimate' | 'frostNova' | 'smite' | 'deathgrasp' | 'colossusStrike' | 'windShear' | 'windShearTornado';
     setter: React.Dispatch<React.SetStateAction<any[]>>;
     data?: any;
     filterId?: number;

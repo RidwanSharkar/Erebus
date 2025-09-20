@@ -56,6 +56,9 @@ export class CombatSystem extends System {
   private lastDamageLogTime = 0;
   private damageLogThrottle = 100; // Only log every 100ms
 
+  // Local player entity ID for distinguishing caster vs target damage numbers
+  private localPlayerEntityId: number | null = null;
+
   constructor(world: World) {
     super();
     this.world = world;
@@ -261,17 +264,21 @@ export class CombatSystem extends System {
         }
       }
 
-      // Still create local damage numbers for immediate visual feedback
-      const transform = target.getComponent(Transform);
-      if (transform) {
-        const position = transform.getWorldPosition();
-        position.y += 1.5;
-        this.damageNumberManager.addDamageNumber(
-          actualDamage,
-          damageResult.isCritical,
-          position,
-          damageType
-        );
+      // Skip damage numbers for tower projectiles - players will see their own damage taken display
+      const isTowerProjectile = source && (source as any).isTowerProjectile === true;
+      if (!isTowerProjectile) {
+        // Still create local damage numbers for immediate visual feedback
+        const transform = target.getComponent(Transform);
+        if (transform) {
+          const position = transform.getWorldPosition();
+          position.y += 1.5;
+          this.damageNumberManager.addDamageNumber(
+            actualDamage,
+            damageResult.isCritical,
+            position,
+            damageType
+          );
+        }
       }
 
       // Log for debugging
@@ -372,10 +379,10 @@ export class CombatSystem extends System {
         }
       }
 
-      // Still create local damage numbers for immediate visual feedback
-      // Check if source is a summoned unit - if so, skip damage numbers to reduce visual clutter
+      // Skip damage numbers for tower projectiles or summoned units - players will see their own damage taken display
+      const isTowerProjectile = source && (source as any).isTowerProjectile === true;
       const sourceSummonedUnit = source ? source.getComponent(SummonedUnit) : null;
-      const shouldShowDamageNumbers = !sourceSummonedUnit; // Show numbers unless source is a summoned unit
+      const shouldShowDamageNumbers = !sourceSummonedUnit && !isTowerProjectile; // Show numbers unless source is a summoned unit or tower projectile
 
       if (shouldShowDamageNumbers) {
         const transform = target.getComponent(Transform);
@@ -432,9 +439,10 @@ export class CombatSystem extends System {
       if (damageDealt) {
         this.totalDamageDealt += actualDamage;
 
-        // Check if source is a summoned unit - if so, skip damage numbers to reduce visual clutter
+        // Skip damage numbers for tower projectiles or summoned units - players will see their own damage taken display
+        const isTowerProjectile = source && (source as any).isTowerProjectile === true;
         const sourceSummonedUnit = source ? source.getComponent(SummonedUnit) : null;
-        const shouldShowDamageNumbers = !sourceSummonedUnit; // Show numbers unless source is a summoned unit
+        const shouldShowDamageNumbers = !sourceSummonedUnit && !isTowerProjectile; // Show numbers unless source is a summoned unit or tower projectile
 
         if (shouldShowDamageNumbers) {
           // Create damage number at target position for damage from players/enemies
@@ -587,29 +595,38 @@ export class CombatSystem extends System {
         }
       }
 
-      // Create local damage numbers for immediate visual feedback
-      const transform = target.getComponent(Transform);
-      if (transform) {
-        const position = transform.getWorldPosition();
-        // Only create damage number if position is valid
-        if (position && position.x !== undefined && position.y !== undefined && position.z !== undefined) {
-          position.y += 1.5;
+      // Skip damage numbers for tower projectiles and specific projectile types that use damage taken system
+      // Exception: Show damage numbers for crossentropy and entropic bolts when local player is the caster (not the target)
+      const isTowerProjectile = source && (source as any).isTowerProjectile === true;
+      const isProjectileWithDamageTaken = damageType === 'crossentropy' || damageType === 'entropic' || damageType === 'projectile';
+      const isLocalPlayerCaster = this.localPlayerEntityId !== null && this.localPlayerEntityId !== target.id;
+      const shouldShowDamageNumbers = !isTowerProjectile && (!isProjectileWithDamageTaken || (isProjectileWithDamageTaken && isLocalPlayerCaster));
 
-          // Add slight position offset for delayed damage (like sabres right hit) to prevent overlap
-          if (damageType === 'sabres_right') {
-            position.x += 0.3; // Slight offset to the right for the right sabre
-          } else if (damageType === 'sabres_left') {
-            position.x -= 0.3; // Slight offset to the left for the left sabre
+      if (shouldShowDamageNumbers) {
+        // Create local damage numbers for immediate visual feedback
+        const transform = target.getComponent(Transform);
+        if (transform) {
+          const position = transform.getWorldPosition();
+          // Only create damage number if position is valid
+          if (position && position.x !== undefined && position.y !== undefined && position.z !== undefined) {
+            position.y += 1.5;
+
+            // Add slight position offset for delayed damage (like sabres right hit) to prevent overlap
+            if (damageType === 'sabres_right') {
+              position.x += 0.3; // Slight offset to the right for the right sabre
+            } else if (damageType === 'sabres_left') {
+              position.x -= 0.3; // Slight offset to the left for the left sabre
+            }
+
+            this.damageNumberManager.addDamageNumber(
+              damageResult.damage, // Show the full damage in damage numbers
+              damageResult.isCritical,
+              position,
+              damageType || 'pvp'
+            );
+          } else {
+            // console.warn('⚠️ Skipping PVP damage number creation - invalid position:', position);
           }
-
-          this.damageNumberManager.addDamageNumber(
-            damageResult.damage, // Show the full damage in damage numbers
-            damageResult.isCritical,
-            position,
-            damageType || 'pvp'
-          );
-        } else {
-          // console.warn('⚠️ Skipping PVP damage number creation - invalid position:', position);
         }
       }
 
@@ -635,22 +652,26 @@ export class CombatSystem extends System {
     if (damageDealt) {
       this.totalDamageDealt += actualDamage;
 
-      // Create damage number at target position
-      const transform = target.getComponent(Transform);
-      if (transform) {
-        const position = transform.getWorldPosition();
-        // Only create damage number if position is valid
-        if (position && position.x !== undefined && position.y !== undefined && position.z !== undefined) {
-          // Offset slightly above the target
-          position.y += 3;
-          this.damageNumberManager.addDamageNumber(
-            actualDamage,
-            damageResult.isCritical,
-            position,
-            damageType
-          );
-        } else {
-          // console.warn('⚠️ Skipping damage number creation - invalid position:', position);
+      // Skip damage numbers for tower projectiles - players will see their own damage taken display
+      const isTowerProjectile = source && (source as any).isTowerProjectile === true;
+      if (!isTowerProjectile) {
+        // Create damage number at target position
+        const transform = target.getComponent(Transform);
+        if (transform) {
+          const position = transform.getWorldPosition();
+          // Only create damage number if position is valid
+          if (position && position.x !== undefined && position.y !== undefined && position.z !== undefined) {
+            // Offset slightly above the target
+            position.y += 3;
+            this.damageNumberManager.addDamageNumber(
+              actualDamage,
+              damageResult.isCritical,
+              position,
+              damageType
+            );
+          } else {
+            // console.warn('⚠️ Skipping damage number creation - invalid position:', position);
+          }
         }
       }
 
@@ -931,9 +952,10 @@ export class CombatSystem extends System {
       if (damageDealt) {
         this.totalDamageDealt += actualDamage;
 
-        // Check if source is a summoned unit - if so, skip damage numbers to reduce visual clutter
+        // Skip damage numbers for tower projectiles or summoned units - players will see their own damage taken display
+        const isTowerProjectile = source && (source as any).isTowerProjectile === true;
         const sourceSummonedUnit = source ? source.getComponent(SummonedUnit) : null;
-        const shouldShowDamageNumbers = !sourceSummonedUnit; // Show numbers unless source is a summoned unit
+        const shouldShowDamageNumbers = !sourceSummonedUnit && !isTowerProjectile; // Show numbers unless source is a summoned unit or tower projectile
 
         if (shouldShowDamageNumbers) {
           // Create damage number at target position for damage from players/enemies
@@ -982,18 +1004,22 @@ export class CombatSystem extends System {
     if (damageDealt) {
       this.totalDamageDealt += actualDamage;
 
-      // Create damage number at target position
-      const transform = target.getComponent(Transform);
-      if (transform) {
-        const position = transform.getWorldPosition();
-        // Offset slightly above the target
-        position.y += 1.5;
-        this.damageNumberManager.addDamageNumber(
-          actualDamage,
-          damageResult.isCritical,
-          position,
-          damageType
-        );
+      // Skip damage numbers for tower projectiles - players will see their own damage taken display
+      const isTowerProjectile = source && (source as any).isTowerProjectile === true;
+      if (!isTowerProjectile) {
+        // Create damage number at target position
+        const transform = target.getComponent(Transform);
+        if (transform) {
+          const position = transform.getWorldPosition();
+          // Offset slightly above the target
+          position.y += 1.5;
+          this.damageNumberManager.addDamageNumber(
+            actualDamage,
+            damageResult.isCritical,
+            position,
+            damageType
+          );
+        }
       }
 
       if (health.isDead) {
@@ -1155,5 +1181,10 @@ export class CombatSystem extends System {
         }
       }
     }
+  }
+
+  // Set the local player entity ID for damage number filtering
+  public setLocalPlayerEntityId(entityId: number): void {
+    this.localPlayerEntityId = entityId;
   }
 }

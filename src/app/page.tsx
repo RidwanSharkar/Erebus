@@ -7,24 +7,18 @@ import { Camera } from '../utils/three-exports';
 import type { DamageNumberData } from '../components/DamageNumbers';
 import DamageNumbers from '../components/DamageNumbers';
 import GameUI from '../components/ui/GameUI';
+import PVPScoreboard from '../components/ui/PVPScoreboard';
 import { getGlobalRuneCounts, getCriticalChance, getCriticalDamageMultiplier } from '../core/DamageCalculator';
 import ExperienceBar from '../components/ui/ExperienceBar';
 import { MultiplayerProvider, useMultiplayer } from '../contexts/MultiplayerContext';
 import RoomJoin from '../components/ui/RoomJoin';
 import { weaponAbilities, getAbilityIcon, type AbilityData } from '../utils/weaponAbilities';
 
-// Dynamic imports for maximum code splitting
-const Canvas = dynamic(() => import('@react-three/fiber').then(mod => ({ default: mod.Canvas })), {
-  ssr: false,
-  loading: () => <div className="flex items-center justify-center h-screen text-white">Loading 3D engine...</div>
-});
+// Import Canvas directly to avoid dynamic import issues
+import { Canvas } from '@react-three/fiber';
 
-
-// Lazy load PVP game scene
-const PVPGameScene = dynamic(() => import('../components/PVPGameScene').then(mod => ({ default: mod.PVPGameScene })), {
-  ssr: false,
-  loading: () => null
-});
+// Import PVP game scene directly to avoid dynamic import issues
+import { PVPGameScene } from '../components/PVPGameScene';
 
 // Weapon option interface
 interface WeaponOption {
@@ -69,7 +63,7 @@ function AbilityTooltip({ content, visible, x, y }: TooltipProps) {
 }
 
 function HomeContent() {
-  const { selectedWeapons, setSelectedWeapons, skillPointData, unlockAbility, updateSkillPointsForLevel } = useMultiplayer();
+  const { selectedWeapons, setSelectedWeapons, skillPointData, unlockAbility, updateSkillPointsForLevel, socket } = useMultiplayer();
 
   const [damageNumbers, setDamageNumbers] = useState<DamageNumberData[]>([]);
   const [cameraInfo, setCameraInfo] = useState<{
@@ -78,6 +72,13 @@ function HomeContent() {
   }>({
     camera: null,
     size: { width: 0, height: 0 }
+  });
+  const [scoreboardData, setScoreboardData] = useState<{
+    playerKills: Map<string, number>;
+    players: Map<string, any>;
+  }>({
+    playerKills: new Map(),
+    players: new Map()
   });
   const [gameState, setGameState] = useState({
     playerHealth: 200,
@@ -151,35 +152,35 @@ function HomeContent() {
       type: WeaponType.SCYTHE,
       name: 'Scythe',
       icon: '☠️',
-      description: 'MAGE: FREEZE enemies with {E}-Frost Nova, HEAL with {Q}-Sunwell, and BURN targets with {R}-Crossentropy bolts.',
+      description: 'WEAVER: arcane transmuter evoker of the elements with mastery of ice and fire domains, capable of conjuration and healing magic.',
       defaultSubclass: WeaponSubclass.CHAOS
     },
     {
       type: WeaponType.SWORD,
       name: 'Greatsword',
       icon: '💎',
-      description: 'GLADIATOR: BLOCK damage with {Q}-Aegis and DASH into range with {E}-Charge, generating rage to unleash powerful finishers.',
+      description: 'IMMORTAL: martial champion with powerful defensive and versatile offensive capabilities, blocking incoming damage, closing distance, and unleashing devastating finishers.',
       defaultSubclass: WeaponSubclass.DIVINITY
     },
     {
       type: WeaponType.SABRES,
       name: 'Sabres',
       icon: '⚔️',
-      description: 'ASSASSIN: STUN enemies by stacking {E}-Flourish or crashing down on enemies with {R}-Skyfall to apply positional {Q}-Backstab bonus damage or vanish with {F}-Shadow Step.',
+      description: 'LURKER: stealth assassin excelling at close-quarters combat, acrobatic maneuvers, and exploiting stunned enemies with burst damage.',
       defaultSubclass: WeaponSubclass.FROST
     },
     {
       type: WeaponType.RUNEBLADE,
       name: 'Runeblade',
       icon: '🔮',
-      description: 'KNIGHT: PULL enemies with {Q}-Void Grasp, SLOW enemies with {E}-Wraithblade, and HEAL with {R}-Unholy Smite. Toggle {F}-Corruption for enhanced damage.',
+      description: 'TEMPLAR: eldritch knight adept at controlling the battlefield with grasping chains and corrupted magic with powerful lifestealing melee attacks.',
       defaultSubclass: WeaponSubclass.ARCANE
     },
     {
       type: WeaponType.BOW,
       name: 'Bow',
       icon: '🏹',
-      description: 'SNIPER: SLOW enemies with {Q}-Barrage, apply VENOM with {E}-Cobra Shot, and HEAL through {R}-Viper Sting soul fragments.',
+      description: 'VIPER: sniper marksman specializing in ranged combat, applying venom, slowing, leeching health, and launching ballistics.',
       defaultSubclass: WeaponSubclass.ELEMENTAL
     }
   ];
@@ -252,24 +253,6 @@ function HomeContent() {
     }
   };
 
-
-  const getWeaponSubclassDescription = (weapon: WeaponOption) => {
-    switch (weapon.type) {
-      case WeaponType.SCYTHE:
-        return 'Chaos: Raw destructive power | Abyssal: Void-based abilities';
-      case WeaponType.SWORD:
-        return 'Divinity: Holy light attacks | Vengeance: Retribution strikes';
-      case WeaponType.SABRES:
-        return 'Frost: Ice-based mobility | Assassin: Stealth and precision';
-      case WeaponType.RUNEBLADE:
-        return 'Arcane: Magical damage | Nature: Healing and growth';
-      case WeaponType.BOW:
-        return 'Elemental: Fire/Ice/Lightning | Venom: Poison and corruption';
-      default:
-        return '';
-    }
-  };
-
   // Tooltip handlers
   const handleAbilityHover = useCallback((
     e: React.MouseEvent,
@@ -321,6 +304,10 @@ function HomeContent() {
 
   const handleControlSystemUpdate = (newControlSystem: any) => {
     setControlSystem(newControlSystem);
+  };
+
+  const handleScoreboardUpdate = (playerKills: Map<string, number>, players: Map<string, any>) => {
+    setScoreboardData({ playerKills, players });
   };
 
   // Sync skill point data with control system
@@ -398,11 +385,7 @@ function HomeContent() {
                 </h2>
                 <p className="text-center mb-6 text-gray-300">
                   Select 2 weapons for your arsenal. Your primary weapon becomes the '1' key, secondary becomes the '2' key.
-                  {selectedWeapons?.tertiary && (
-                    <span className="block mt-2 text-yellow-400">
-                      At level 3, you'll automatically unlock a random tertiary weapon as the '3' key!
-                    </span>
-                  )}
+
                 </p>
 
                 <div className="flex flex-wrap justify-center gap-4 mb-6">
@@ -546,6 +529,7 @@ function HomeContent() {
               onGameStateUpdate={handleGameStateUpdate}
               onControlSystemUpdate={handleControlSystemUpdate}
               onExperienceUpdate={handleExperienceUpdate}
+              onScoreboardUpdate={handleScoreboardUpdate}
               selectedWeapons={selectedWeapons}
             />
           )}
@@ -617,6 +601,15 @@ function HomeContent() {
                 experience={playerExperience}
                 level={playerLevel}
                 isLocalPlayer={true}
+              />
+            )}
+
+            {/* PVP Scoreboard - Only show in PVP mode */}
+            {gameMode === 'pvp' && scoreboardData.playerKills.size > 0 && (
+              <PVPScoreboard
+                playerKills={scoreboardData.playerKills}
+                players={scoreboardData.players}
+                currentPlayerId={socket?.id}
               />
             )}
           </>

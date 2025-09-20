@@ -188,7 +188,7 @@ const SmiteComponent = memo(function Smite({
         let finalDamage = damageResult.damage;
         if (isCorruptedAuraActive) {
           // Corrupted aura adds 25% bonus damage (similar to other corrupted abilities)
-          finalDamage = Math.floor(finalDamage * 1.25);
+          finalDamage = Math.floor(finalDamage * 1.5);
         }
 
         // Enemy is within damage radius - deal damage

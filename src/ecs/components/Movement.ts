@@ -216,7 +216,7 @@ export class Movement extends Component {
     let speed = this.maxSpeed * this.movementSpeedMultiplier;
 
     // Debug logging for movement speed
-    if (this.maxSpeed !== 3.65 && this.maxSpeed !== 4.25) {
+    if (this.maxSpeed !== 3.75 && this.maxSpeed !== 4.25) {
       console.log(`🚀 Movement speed calculation: maxSpeed=${this.maxSpeed}, multiplier=${this.movementSpeedMultiplier}, baseSpeed=${speed}`);
     }
 
@@ -263,7 +263,7 @@ export class Movement extends Component {
     setTimeout(() => {
       this.dashCharges[availableChargeIndex].isAvailable = true;
       this.dashCharges[availableChargeIndex].cooldownStartTime = null;
-    }, 6000); // 6 second cooldown
+    }, 7500); // 6 second cooldown DASHCOOLDOWN DASH COOLDOWN
 
     return true;
   }

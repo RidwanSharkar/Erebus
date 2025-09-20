@@ -8,7 +8,10 @@ export class Tower extends Component {
   // Tower ownership and identification
   public ownerId: string; // Player ID who owns this tower
   public towerIndex: number; // Tower index (0 for first player, 1 for second, etc.)
-  
+
+  // Player level for damage scaling
+  public playerLevel: number;
+
   // Combat properties
   public attackRange: number;
   public attackDamage: number;
@@ -29,16 +32,18 @@ export class Tower extends Component {
   
   constructor(
     ownerId: string = '',
-    towerIndex: number = 0
+    towerIndex: number = 0,
+    playerLevel: number = 1
   ) {
     super();
-    
+
     this.ownerId = ownerId;
     this.towerIndex = towerIndex;
-    
+    this.playerLevel = playerLevel;
+
     // Combat configuration
-    this.attackRange = 13; // attack range 
-    this.attackDamage = 150; // 25 damage per arrow
+    this.attackRange = 11.5; // attack range
+    this.attackDamage = this.calculateDamageForLevel(playerLevel); // Scale damage based on player level
     this.attackCooldown = 1.5; // 1.5 seconds between shots
     this.lastAttackTime = 0;
     this.projectileSpeed = 20; // Speed of tower arrows
@@ -60,6 +65,23 @@ export class Tower extends Component {
       return false;
     }
     return (currentTime - this.lastAttackTime) >= this.attackCooldown;
+  }
+
+  // Calculate tower damage based on player level
+  private calculateDamageForLevel(level: number): number {
+    // Base damage: 150 at level 1, +50 per additional level
+    return 150 + (50 * (level - 1));
+  }
+
+  // Update player level and recalculate damage
+  public updatePlayerLevel(newLevel: number): void {
+    if (newLevel !== this.playerLevel) {
+      console.log(`🏰 Tower ${this.ownerId} (index ${this.towerIndex}) level updated: ${this.playerLevel} → ${newLevel}`);
+      this.playerLevel = newLevel;
+      const oldDamage = this.attackDamage;
+      this.attackDamage = this.calculateDamageForLevel(newLevel);
+      console.log(`💥 Tower ${this.ownerId} damage updated: ${oldDamage} → ${this.attackDamage}`);
+    }
   }
   
   public performAttack(currentTime: number): void {
@@ -96,13 +118,14 @@ export class Tower extends Component {
   public reset(): void {
     this.ownerId = '';
     this.towerIndex = 0;
-    this.attackRange = 10;
-    this.attackDamage = 25;
+    this.playerLevel = 1;
+    this.attackRange = 11.5;
+    this.attackDamage = this.calculateDamageForLevel(1);
     this.attackCooldown = 1.5;
     this.lastAttackTime = 0;
     this.projectileSpeed = 20;
     this.currentTarget = null;
-    this.targetSearchRange = 9;
+    this.targetSearchRange = 12.5; // attackRange + 1
     this.lastTargetSearchTime = 0;
     this.targetSearchCooldown = 0.5;
     this.isActive = true;
@@ -112,7 +135,7 @@ export class Tower extends Component {
   }
   
   public clone(): Tower {
-    const clone = new Tower(this.ownerId, this.towerIndex);
+    const clone = new Tower(this.ownerId, this.towerIndex, this.playerLevel);
     clone.attackRange = this.attackRange;
     clone.attackDamage = this.attackDamage;
     clone.attackCooldown = this.attackCooldown;

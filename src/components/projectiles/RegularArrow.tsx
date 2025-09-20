@@ -8,12 +8,22 @@ interface RegularArrowProps {
   onImpact?: (position: Vector3) => void;
   distanceTraveled?: number;
   maxDistance?: number;
+  projectileType?: string; // Add projectile type to support different colors
 }
 
-export default function RegularArrow({ position, direction, onImpact, distanceTraveled = 0, maxDistance = 25 }: RegularArrowProps) {
-  
+export default function RegularArrow({ position, direction, onImpact, distanceTraveled = 0, maxDistance = 25, projectileType }: RegularArrowProps) {
+
   const arrowRef = useRef<Group>(null);
-  const color = "#ffaa00";
+
+  // Determine colors based on projectile type
+  const isBurstArrow = projectileType === 'burst_arrow';
+  const color = isBurstArrow ? "#00ffff" : "#ffaa00"; // Teal for burst arrows, yellow for regular
+  const emissiveColor = isBurstArrow ? "#0088aa" : "#ff6600"; // Darker teal for burst, orange for regular
+  const shaftEmissiveColor = isBurstArrow ? "#0099cc" : "#ff8800"; // Medium teal for burst, light orange for regular
+  const fletchingColor = isBurstArrow ? "#66ffff" : "#ffcc44"; // Light teal for burst, light yellow for regular
+  const fletchingEmissiveColor = isBurstArrow ? "#00aaff" : "#ff9900"; // Bright teal for burst, bright yellow for regular
+  const auraColor = isBurstArrow ? "#00ffff" : "#ffaa00"; // Teal for burst, yellow for regular
+
   const size = 0.15;
 
   // Calculate fade based on distance traveled
@@ -37,11 +47,11 @@ export default function RegularArrow({ position, direction, onImpact, distanceTr
     <group name="regular-arrow-group">
       <group ref={arrowRef} position={position}>
         {/* Arrow Head */}
-        <mesh position={[0, 0, 0.2]}>
+        <mesh position={[0, 0, 0.2]} rotation={[Math.PI / 2, 0, 0]}>
           <coneGeometry args={[0.08, 0.25, 8]} />
           <meshStandardMaterial
             color={color}
-            emissive="#ff6600"
+            emissive={emissiveColor}
             emissiveIntensity={3 * opacity}
             transparent
             opacity={0.9 * opacity}
@@ -53,11 +63,11 @@ export default function RegularArrow({ position, direction, onImpact, distanceTr
         </mesh>
         
         {/* Arrow Shaft */}
-        <mesh>
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
           <cylinderGeometry args={[0.02, 0.03, 0.4, 8]} />
           <meshStandardMaterial
             color={color}
-            emissive="#ff8800"
+            emissive={shaftEmissiveColor}
             emissiveIntensity={2 * opacity}
             transparent
             opacity={0.8 * opacity}
@@ -82,8 +92,8 @@ export default function RegularArrow({ position, direction, onImpact, distanceTr
             >
               <planeGeometry args={[0.08, 0.12]} />
               <meshStandardMaterial
-                color="#ffcc44"
-                emissive="#ff9900"
+                color={fletchingColor}
+                emissive={fletchingEmissiveColor}
                 emissiveIntensity={1.5 * opacity}
                 transparent
                 opacity={0.7 * opacity}
@@ -99,8 +109,8 @@ export default function RegularArrow({ position, direction, onImpact, distanceTr
         <mesh>
           <sphereGeometry args={[size * 1.5, 16, 16]} />
           <meshStandardMaterial
-            color={color}
-            emissive="#ffaa00"
+            color={auraColor}
+            emissive={color}
             emissiveIntensity={1 * opacity}
             transparent
             opacity={0.3 * opacity}

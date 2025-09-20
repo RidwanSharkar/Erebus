@@ -11,6 +11,7 @@ export interface DamageNumberData {
   position: Vector3;
   timestamp: number;
   damageType?: string; // Added to distinguish damage types
+  isIncomingDamage?: boolean; // Whether this damage was received by the local player
 }
 
 interface DamageNumberProps {
@@ -30,7 +31,8 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
   const [scale, setScale] = useState(1);
 
   useEffect(() => {
-    const duration = 5000; // 5 seconds for slower floating
+    const isIncoming = damageData.isIncomingDamage;
+    const duration = isIncoming ? 3000 : 5000; // Shorter duration for incoming damage
     const startTime = Date.now();
 
     const animate = () => {
@@ -39,27 +41,49 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
 
       // Ease out animation
       const easeOut = 1 - Math.pow(1 - progress, 3);
-      
-      // Float upward with stacking offset
-      const baseFloatDistance = 4; // Base float distance
-      const stackOffset = stackIndex * 0.8; // Vertical spacing between stacked numbers
-      setYOffset(easeOut * baseFloatDistance + stackOffset);
-      
-      // Scale animation - start big, settle to smaller size based on stack position
-      const initialScale = stackIndex === 0 ? 1.2 : 0.9 - (stackIndex * 0.1);
-      const finalScale = 0.8 - (stackIndex * 0.1);
-      const scaleProgress = Math.min(progress * 3, 1); // Scale settles faster
-      setScale(initialScale + (finalScale - initialScale) * scaleProgress);
-      
-      // Fade out older numbers more aggressively
-      const fadeStartPoint = stackIndex === 0 ? 0.6 : 0.3 - (stackIndex * 0.1);
-      if (progress > fadeStartPoint) {
-        const fadeProgress = (progress - fadeStartPoint) / (1 - fadeStartPoint);
-        const targetOpacity = stackIndex === 0 ? 0 : Math.max(0, 0.7 - (stackIndex * 0.2));
-        setOpacity(1 - fadeProgress + (targetOpacity * fadeProgress));
+
+      if (isIncoming) {
+        // For incoming damage, float downward from under the character
+        const baseFloatDistance = -2; // Float downward
+        const stackOffset = stackIndex * -0.5; // Stack downward
+        setYOffset(easeOut * baseFloatDistance + stackOffset);
+
+        // Scale animation - start slightly big, settle smaller
+        const initialScale = stackIndex === 0 ? 1.1 : 0.8 - (stackIndex * 0.1);
+        const finalScale = 0.7 - (stackIndex * 0.1);
+        const scaleProgress = Math.min(progress * 4, 1); // Scale settles faster
+        setScale(initialScale + (finalScale - initialScale) * scaleProgress);
+
+        // Fade out
+        if (progress > 0.5) {
+          const fadeProgress = (progress - 0.5) / 0.5;
+          setOpacity(1 - fadeProgress);
+        } else {
+          setOpacity(1);
+        }
       } else {
-        // Older numbers start more transparent
-        setOpacity(1 - (stackIndex * 0.2));
+        // Original outgoing damage animation
+        // Float upward with stacking offset
+        const baseFloatDistance = 4; // Base float distance
+        const stackOffset = stackIndex * 0.8; // Vertical spacing between stacked numbers
+        setYOffset(easeOut * baseFloatDistance + stackOffset);
+
+        // Scale animation - start big, settle to smaller size based on stack position
+        const initialScale = stackIndex === 0 ? 1.2 : 0.9 - (stackIndex * 0.1);
+        const finalScale = 0.8 - (stackIndex * 0.1);
+        const scaleProgress = Math.min(progress * 3, 1); // Scale settles faster
+        setScale(initialScale + (finalScale - initialScale) * scaleProgress);
+
+        // Fade out older numbers more aggressively
+        const fadeStartPoint = stackIndex === 0 ? 0.6 : 0.3 - (stackIndex * 0.1);
+        if (progress > fadeStartPoint) {
+          const fadeProgress = (progress - fadeStartPoint) / (1 - fadeStartPoint);
+          const targetOpacity = stackIndex === 0 ? 0 : Math.max(0, 0.7 - (stackIndex * 0.2));
+          setOpacity(1 - fadeProgress + (targetOpacity * fadeProgress));
+        } else {
+          // Older numbers start more transparent
+          setOpacity(1 - (stackIndex * 0.2));
+        }
       }
 
       if (progress < 1) {
@@ -70,7 +94,7 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
     };
 
     animate();
-  }, [damageData.id, onComplete, stackIndex]);
+  }, [damageData.id, onComplete, stackIndex, damageData.isIncomingDamage]);
 
   // Proper 3D to 2D projection using the camera
   let x = 0;
@@ -113,25 +137,30 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
     >
       <span
         className={`${
-          damageData.isCritical
-            ? 'text-yellow-300 text-xl animate-pulse'
-            : damageData.damageType === 'crossentropy'
-            ? 'text-orange-400'
-            : damageData.damageType === 'healing' ||
-              damageData.damageType === 'reanimate_healing' ||
-              damageData.damageType === 'smite_healing' ||
-              damageData.damageType === 'viper_sting_healing' ||
-              damageData.damageType === 'summon_totem_healing'
-            ? 'text-green-400 text-lg font-extrabold'
-            : damageData.damageType === 'colossus_strike'
-            ? 'text-yellow-400 text-lg'
-            : damageData.damageType === 'barrage'
-            ? 'text-blue-400 text-lg'
-            : damageData.damageType === 'cobra_shot'
-            ? 'text-green-400 text-lg'
-            : 'text-red-400'
+          damageData.isIncomingDamage
+            ? // Incoming damage: red for all damage
+              'text-red-400 text-lg font-bold'
+            : // Outgoing damage: original logic
+              damageData.isCritical
+                ? 'text-yellow-300 text-xl animate-pulse'
+                : damageData.damageType === 'crossentropy'
+                ? 'text-orange-400'
+                : damageData.damageType === 'healing' ||
+                  damageData.damageType === 'reanimate_healing' ||
+                  damageData.damageType === 'smite_healing' ||
+                  damageData.damageType === 'viper_sting_healing' ||
+                  damageData.damageType === 'summon_totem_healing'
+                ? 'text-green-400 text-lg font-extrabold'
+                : damageData.damageType === 'colossus_strike'
+                ? 'text-yellow-400 text-lg'
+                : damageData.damageType === 'barrage'
+                ? 'text-blue-400 text-lg'
+                : damageData.damageType === 'cobra_shot'
+                ? 'text-green-400 text-lg'
+                : 'text-red-400'
         }`}
       >
+        {damageData.isIncomingDamage && '-'}
         {(damageData.damageType === 'healing' ||
           damageData.damageType === 'reanimate_healing' ||
           damageData.damageType === 'smite_healing' ||
@@ -149,6 +178,7 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
     prevProps.damageData.damage === nextProps.damageData.damage &&
     prevProps.damageData.isCritical === nextProps.damageData.isCritical &&
     prevProps.damageData.damageType === nextProps.damageData.damageType &&
+    prevProps.damageData.isIncomingDamage === nextProps.damageData.isIncomingDamage &&
     prevProps.damageData.timestamp === nextProps.damageData.timestamp &&
     prevProps.damageData.position.equals(nextProps.damageData.position) &&
     prevProps.stackIndex === nextProps.stackIndex &&
@@ -214,6 +244,8 @@ const DamageNumbersComponent = memo(function DamageNumbers({ damageNumbers, onDa
       return prev?.id === next?.id &&
              prev?.damage === next?.damage &&
              prev?.isCritical === next?.isCritical &&
+             prev?.damageType === next?.damageType &&
+             prev?.isIncomingDamage === next?.isIncomingDamage &&
              prev?.timestamp === next?.timestamp;
     }) &&
     prevProps.camera === nextProps.camera &&

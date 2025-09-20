@@ -12,13 +12,13 @@ export interface AbilityData {
 export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
   [WeaponType.SWORD]: [
     {
-      name: 'Aegis',
+      name: 'Fullguard',
       key: 'Q',
       cooldown: 7.0,
       description: 'Creates a protective barrier that blocks all incoming damage for 3 seconds. Cannot attack while shielded.'
     },
     {
-      name: 'Charge',
+      name: 'Reckless Abandon',
       key: 'E',
       cooldown: 8.0,
       description: 'Dash forward, instantly gaining 25 rage, damaging enemies in your path.'
@@ -30,22 +30,22 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       description: '{25+ RAGE} Consumes all rage to execute an enemy player, calling down a lightning bolt that deals increasing damage based on the amount of rage consumed.'
     },
     {
-      name: 'Wind Shear',
+      name: 'Razorwind',
       key: 'F',
       cooldown: 3.0,
-      description: '{10 RAGE} Throws your sword forward, dealing 80 piercing damage to enemies hit within 15 units.'
+      description: '{10 RAGE} Throws your sword forward in a gust of wind, dealing 80 piercing damage to enemies hit within 15 units.'
     },
     {
       name: 'Titan\'s Breath',
       key: 'P',
       cooldown: 0,
-      description: '{PASSIVE} Increases maximum health by 350 and health regeneration to 30 HP/s after 5 seconds of not taking damage.',
+      description: '{PASSIVE} Increases maximum health by 350 and health regeneration to 30 HP/s outside of combat.',
       isPassive: true
     }
   ],
   [WeaponType.BOW]: [
     {
-      name: 'Frostbite',
+      name: 'Frost Bite',
       key: 'Q',
       cooldown: 5.0,
       description: '{50 ENERGY} Fires 5 frost arrows in an arc, dealing 30 damage per arrow and applying a 50% SLOW effect for 5 seconds.'
@@ -57,16 +57,16 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       description: '{60 ENERGY} Fires a venomous shot that applies VENOM damage over time to the target.'
     },
     {
-      name: 'Viper Sting',
+      name: 'Hydra Sting',
       key: 'R',
       cooldown: 2.0,
       description: '{60 ENERGY} Fires a powerful piercing arrow that returns to you after a short delay. Each hit on an enemy creates a soul fragment that heals you for 20 HP each when returned.'
     },
     {
-      name: 'Cloudkill',
+      name: 'Cloud Fang',
       key: 'F',
       cooldown: 4.0,
-      description: '{40 ENERGY} Summons green arrows from the sky that rain down on enemy locations. If enemy has VENOM, arrows become homing and guaranteed to hit.'
+      description: '{40 ENERGY} Summons green arrows from the sky that rain down on enemy locations.'
     },
     {
       name: 'Tempest Rounds',
@@ -135,7 +135,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       description: 'Fade into the shadows, becoming INVISIBLE for 6 seconds after a 0.5 second delay.'
     },
     {
-      name: 'Lethality',
+      name: 'Cuthroat Oath',
       key: 'P',
       cooldown: 0,
       description: '{PASSIVE} Permanently increases critical strike chance by 30%.',
@@ -146,19 +146,19 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
     {
       name: 'Void Grasp',
       key: 'Q',
-      cooldown: 12.0,
+      cooldown: 5.0,
       description: '{35 MANA} Fires a twisting nether that pulls the first enemy hit towards you.'
     },
     {
       name: 'Wraithblade',
       key: 'E',
-      cooldown: 8.0,
+      cooldown: 3.0,
       description: '{35 MANA} Unleashes a powerful strike that inflicts CORRUPTED debuff to the target, reducing their movement speed by 90%, regaining 10% movement speed per second.'
     },
     {
-      name: 'Haunting Smite',
+      name: 'Hexed Smite',
       key: 'R',
-      cooldown: 15.0,
+      cooldown: 3.0,
       description: '{45 MANA} Calls down unholy energy, dealing damage to enemies in a small area and healing you for 80 HP.'
     },
     {

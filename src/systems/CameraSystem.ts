@@ -256,4 +256,9 @@ export class CameraSystem extends System {
   public getCameraRotationDisabledBy(): string | null {
     return this.disabledByEntityId;
   }
+
+  // Disable/enable camera rotation for death state
+  public setDeathCameraDisabled(disabled: boolean, playerId?: string): void {
+    this.setCameraRotationDisabled(disabled, playerId);
+  }
 }

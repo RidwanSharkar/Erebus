@@ -7,7 +7,6 @@ interface CloudkillTarget {
   position: Vector3;
   targetId: string;
   delay: number;
-  isHoming: boolean;
   casterPosition?: Vector3; // Position of the player who cast the cloudkill
 }
 
@@ -87,35 +86,14 @@ export default function CloudkillManager({
 
     const targets: CloudkillTarget[] = [];
 
-    // Check if any enemy/player has venom debuff
-    const hasVenomDebuff = (targetId: string): boolean => {
-      // Check players first (for PVP)
-      const player = players.find(p => p.id === targetId);
-      if (player && player.isVenomed) {
-        return true;
-      }
-
-      // Check enemy data (for single player or other game modes)
-      const enemy = enemyData.find(e => e.id === targetId);
-      if (enemy) {
-        // This would need to be implemented based on how venom debuff is tracked in enemy data
-        // For now, return false
-        return false;
-      }
-
-      return false;
-    };
-
     // Distribute all arrows among available targets
     for (let i = 0; i < ARROW_COUNT; i++) {
       const target = closestTargets[i % closestTargets.length];
-      const isHoming = hasVenomDebuff(target.id);
 
       targets.push({
         position: new Vector3(target.position.x, 0, target.position.z),
         targetId: target.id,
         delay: i * ARROW_DELAY_INTERVAL, // Staggered delays: 0ms, 300ms, 600ms
-        isHoming,
         casterPosition: playerPosition.clone() // Use local player position as caster for self-cast
       });
     }
@@ -171,37 +149,17 @@ export default function CloudkillManager({
     // Get closest targets
     const closestTargets = targetsWithDistance.slice(0, Math.min(targetCount, ARROW_COUNT)).map(item => item.target);
 
-    // Check if any target has venom debuff
-    const hasVenomDebuff = (targetId: string): boolean => {
-      // Check players first (for PVP)
-      const player = players.find(p => p.id === targetId);
-      if (player && player.isVenomed && player.venomedUntil && Date.now() < player.venomedUntil) {
-        return true;
-      }
-
-      // Check enemy data (for single player or other game modes)
-      const enemy = enemyData.find(e => e.id === targetId);
-      if (enemy) {
-        // This would need to be implemented based on how venom debuff is tracked in enemy data
-        return false;
-      }
-
-      return false;
-    };
-
     const targets: CloudkillTarget[] = [];
 
     // Distribute all arrows among available targets
     for (let i = 0; i < ARROW_COUNT; i++) {
       const target = closestTargets[i % closestTargets.length];
-      const isHoming = hasVenomDebuff(target.id);
       const targetPosition = new Vector3(target.position.x, 0, target.position.z);
 
       targets.push({
         position: targetPosition,
         targetId: target.id,
         delay: i * ARROW_DELAY_INTERVAL, // Staggered delays: 0ms, 300ms, 600ms
-        isHoming,
         casterPosition: casterPosition.clone() // Store the caster's position for each target
       });
     }
@@ -248,37 +206,17 @@ export default function CloudkillManager({
     // Get closest targets
     const closestTargets = targetsWithDistance.slice(0, Math.min(targetCount, ARROW_COUNT)).map(item => item.target);
 
-    // Check if any target has venom debuff
-    const hasVenomDebuff = (targetId: string): boolean => {
-      // Check players first (for PVP)
-      const player = players.find(p => p.id === targetId);
-      if (player && player.isVenomed && player.venomedUntil && Date.now() < player.venomedUntil) {
-        return true;
-      }
-
-      // Check enemy data (for single player or other game modes)
-      const enemy = enemyData.find(e => e.id === targetId);
-      if (enemy) {
-        // This would need to be implemented based on how venom debuff is tracked in enemy data
-        return false;
-      }
-
-      return false;
-    };
-
     const targets: CloudkillTarget[] = [];
 
     // Distribute all arrows among available targets
     for (let i = 0; i < ARROW_COUNT; i++) {
       const target = closestTargets[i % closestTargets.length];
-      const isHoming = hasVenomDebuff(target.id);
       const targetPosition = new Vector3(target.position.x, 0, target.position.z);
 
       targets.push({
         position: targetPosition,
         targetId: target.id,
         delay: i * ARROW_DELAY_INTERVAL, // Staggered delays: 0ms, 300ms, 600ms
-        isHoming,
         casterPosition: casterPosition.clone() // Use the provided caster position
       });
     }
@@ -342,24 +280,12 @@ export default function CloudkillManager({
     // Create targets that specifically target the local player
     const targets: CloudkillTarget[] = [];
 
-    // Check if the local player has venom debuff
-    const hasVenomDebuff = (targetId: string): boolean => {
-      const player = players.find(p => p.id === targetId);
-      if (player && player.isVenomed && player.venomedUntil && Date.now() < player.venomedUntil) {
-        return true;
-      }
-      return false;
-    };
-
     // Create arrows targeting the local player
     for (let i = 0; i < ARROW_COUNT; i++) {
-      const isHoming = hasVenomDebuff(localPlayer.id);
-
       targets.push({
         position: localPlayerPosition.clone(),
         targetId: localPlayer.id,
         delay: i * ARROW_DELAY_INTERVAL, // Staggered delays: 0ms, 300ms, 600ms
-        isHoming,
         casterPosition: localPlayerPosition.clone() // Use local player position as both target and caster for visual effect
       });
     }
@@ -495,7 +421,6 @@ export default function CloudkillManager({
               playerPosition={target.casterPosition || playerPosition}
               enemyData={enemyData}
               onHit={onHit}
-              isHoming={target.isHoming}
               players={players}
             />
           ))}

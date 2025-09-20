@@ -10,7 +10,8 @@ export class DamageNumberManager {
     damage: number,
     isCritical: boolean,
     position: Vector3,
-    damageType?: string
+    damageType?: string,
+    isIncomingDamage?: boolean
   ): string {
     const id = `damage_${this.nextId++}`;
     const damageNumber: DamageNumberData = {
@@ -20,6 +21,7 @@ export class DamageNumberManager {
       position: position.clone(), // Clone to avoid reference issues
       timestamp: Date.now(),
       damageType,
+      isIncomingDamage,
     };
 
     this.damageNumbers.push(damageNumber);

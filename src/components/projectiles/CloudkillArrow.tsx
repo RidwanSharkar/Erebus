@@ -11,7 +11,6 @@ interface CloudkillArrowProps {
   playerPosition: Vector3;
   enemyData: Enemy[];
   onHit?: (targetId: string, damage: number, isCritical: boolean, position: Vector3) => void;
-  isHoming?: boolean; // Whether this arrow should home in on venom-affected enemies
   players?: Array<{ id: string; position: { x: number; y: number; z: number }; health?: number }>; // For PVP mode
 }
 
@@ -179,7 +178,6 @@ export default function CloudkillArrow({
   playerPosition,
   enemyData,
   onHit,
-  isHoming = false,
   players = []
 }: CloudkillArrowProps) {
   const arrowGroupRef = useRef<Group>(null);
@@ -190,9 +188,6 @@ export default function CloudkillArrow({
   // Store the original indicated position (where the warning ring was shown)
   // This is separate from currentTargetPosition for homing arrows
   const originalIndicatedPosition = useRef(initialTargetPosition.clone());
-
-  // Store current velocity direction for homing calculations
-  const currentVelocityDirection = useRef(new Vector3(0, -1, 0)); // Initially downward
 
   // Chaotic movement variables (similar to EntropicBolt)
   const timeElapsed = useRef(0);
@@ -221,7 +216,7 @@ export default function CloudkillArrow({
   useEffect(() => {
     const timer = setTimeout(() => {
       setState(prev => ({ ...prev, showArrow: true }));
-    }, 500); // 0.5 second delay for warning
+    }, 200); // 0.2 second delay for warning
 
     return () => clearTimeout(timer);
   }, []);
@@ -229,20 +224,7 @@ export default function CloudkillArrow({
   useFrame((_, delta) => {
     timeElapsed.current += delta;
 
-    // Update target tracking - find current target position (enemy or player)
-    if (isHoming) {
-      // First check enemies
-      const enemyTarget = enemyData.find(enemy => enemy.id === targetId && enemy.health > 0);
-      if (enemyTarget) {
-        setCurrentTargetPosition(new Vector3(enemyTarget.position.x, enemyTarget.position.y, enemyTarget.position.z));
-      } else {
-        // Then check players - for homing arrows, track player movement
-        const playerTarget = players.find(player => player.id === targetId);
-        if (playerTarget && playerTarget.position) {
-          setCurrentTargetPosition(new Vector3(playerTarget.position.x, playerTarget.position.y, playerTarget.position.z));
-        }
-      }
-    }
+    // No target tracking needed - arrows fall straight to initial position
 
     if (!arrowGroupRef.current || !state.showArrow || state.impactOccurred) {
       if (state.impactOccurred && !state.impactStartTime) {
@@ -259,11 +241,8 @@ export default function CloudkillArrow({
       setState(prev => ({ ...prev, impactOccurred: true, impactStartTime: Date.now() }));
 
       // CRITICAL FIX: For damage calculation, check player positions at impact time, not at cast time
-      // For homing arrows, use the current impact position (follows venomed targets)
-      // For non-homing arrows, ALWAYS use original indicated position for damage area check
-      const damagePosition = isHoming
-        ? new Vector3(currentTargetPosition.x, 0, currentTargetPosition.z)
-        : new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
+      // Always use original indicated position for damage area check (no homing behavior)
+      const damagePosition = new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
 
       if (onHit) {
         // Damage enemies within radius of the damage position
@@ -280,37 +259,32 @@ export default function CloudkillArrow({
         });
 
         // Damage players within radius of the damage position (at impact time)
-        // CRITICAL FIX: For non-homing arrows, only damage players who are still in the original indicated area
-        // For homing arrows, damage at the current impact position (follows venomed targets)
+        // CRITICAL FIX: Only damage players who are still in the original indicated area at impact time
+        // Exclude the original target if they're no longer in the area
         players.forEach(player => {
           if (!player.position) return;
 
           const playerPos = new Vector3(player.position.x, 0, player.position.z);
-          
-          // For non-homing arrows: Check against original indicated position ONLY
-          // For homing arrows: Check against current impact position (follows the venomed target)
-          const checkPosition = isHoming 
-            ? new Vector3(currentTargetPosition.x, 0, currentTargetPosition.z)
-            : new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
-          
+
+          // Always check against original indicated position (no homing behavior)
+          const checkPosition = new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
+
           const distance = playerPos.distanceTo(checkPosition);
-          
+
           if (distance <= DAMAGE_RADIUS) {
+            // Only damage if player is actually in the area at impact time
             onHit(player.id, ARROW_DAMAGE, false, checkPosition);
           }
         });
       }
 
       // Also check if local player is in damage radius (at impact time)
-      // CRITICAL FIX: For local player, also use the same logic as above
+      // CRITICAL FIX: For local player, check against original indicated position (no homing behavior)
       tempPlayerGroundPos.set(playerPosition.x, 0, playerPosition.z);
-      
-      // For non-homing arrows: Check against original indicated position ONLY
-      // For homing arrows: Check against current impact position
-      const localPlayerCheckPosition = isHoming
-        ? new Vector3(currentTargetPosition.x, 0, currentTargetPosition.z)
-        : new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
-      
+
+      // Always check against original indicated position (no homing behavior)
+      const localPlayerCheckPosition = new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
+
       tempTargetGroundPos.set(localPlayerCheckPosition.x, 0, localPlayerCheckPosition.z);
 
       if (tempPlayerGroundPos.distanceTo(tempTargetGroundPos) <= DAMAGE_RADIUS) {
@@ -319,32 +293,12 @@ export default function CloudkillArrow({
       return;
     }
 
-    // Calculate base trajectory towards current target position
+    // Calculate base trajectory towards initial target position (no homing)
     const directionToTarget = currentTargetGroundPos.clone().sub(currentPos).normalize();
-    let speed = ARROW_SPEED * delta;
+    const speed = ARROW_SPEED * delta;
 
-    // Calculate movement direction
-    let baseDirection = directionToTarget.clone();
-
-    // Implement proper homing for venom-affected targets
-    if (isHoming) {
-      speed *= 1.5; // 50% faster for homing arrows
-
-      // Smoothly turn towards the target using interpolation
-      const homingStrength = 0.15; // How aggressively the arrow turns per frame (0-1)
-      currentVelocityDirection.current.lerp(directionToTarget, homingStrength);
-
-      // Normalize to maintain consistent speed
-      currentVelocityDirection.current.normalize();
-
-      baseDirection = currentVelocityDirection.current.clone();
-    } else {
-      // For non-homing arrows, reset velocity direction to straight down initially
-      // But allow it to be updated towards target
-      currentVelocityDirection.current.lerp(directionToTarget, 0.1); // Slight correction
-      currentVelocityDirection.current.normalize();
-      baseDirection = currentVelocityDirection.current.clone();
-    }
+    // Always fall straight down to initial target position (no homing behavior)
+    const baseDirection = directionToTarget.clone();
 
     // Add localized chaotic movement for comet-like effect (much more subtle)
     const time = timeElapsed.current;

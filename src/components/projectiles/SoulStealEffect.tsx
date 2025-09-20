@@ -43,19 +43,10 @@ export default function SoulStealEffect({
 
     // Get current player position for dynamic tracking
     const currentTarget = getCurrentPlayerPosition();
-    
+
     // Smooth interpolation from start to current player position
     const newPosition = new Vector3().lerpVectors(startPosition, currentTarget, progress);
-    
-    // Add some floating/spiraling motion for visual appeal
-    const spiralRadius = 0.3 * (1 - progress); // Spiral gets tighter as it approaches
-    const spiralSpeed = 8; // Rotations per second
-    const spiralAngle = (elapsed / 1000) * spiralSpeed * Math.PI * 2;
-    
-    newPosition.x += Math.sin(spiralAngle) * spiralRadius;
-    newPosition.z += Math.cos(spiralAngle) * spiralRadius;
-    newPosition.y += Math.sin(spiralAngle * 2) * 0.2; // Vertical bobbing
-    
+
     currentPosition.current.copy(newPosition);
     groupRef.current.position.copy(newPosition);
 

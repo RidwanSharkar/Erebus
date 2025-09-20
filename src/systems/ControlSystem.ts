@@ -126,6 +126,9 @@ export class ControlSystem extends System {
   // Callback for Haunted Soul effect (WraithStrike)
   private onHauntedSoulEffectCallback?: (position: Vector3) => void;
 
+  // Callback for WindShear Tornado effect
+  private onWindShearTornadoCallback?: (playerId: string, duration: number) => void;
+
   // Rate limiting for projectile firing
   private lastFireTime = 0;
   private lastCrossentropyTime = 0; // Separate tracking for CrossentropyBolt
@@ -175,6 +178,10 @@ export class ControlSystem extends System {
   // Cobra Shot charging state
   private isCobraShotCharging = false;
   private cobraShotChargeProgress = 0;
+
+  // Cloudkill charging state
+  private isCloudkillCharging = false;
+  private cloudkillChargeProgress = 0;
 
   // Crossentropy Bolt charging state
   private isCrossentropyCharging = false;
@@ -262,8 +269,12 @@ export class ControlSystem extends System {
 
   // Wind Shear ability state (Sword)
   private lastWindShearTime = 0;
-  private windShearCooldown = 2.0; // 3 second cooldown
+  private windShearCooldown = 2.0; // 2 second cooldown
   private isWindShearing = false;
+
+  // Wind Shear charging state
+  private isWindShearCharging = false;
+  private windShearChargeProgress = 0;
 
   // DeathGrasp ability state (Runeblade)
   private lastDeathGraspTime = 0;
@@ -302,6 +313,9 @@ export class ControlSystem extends System {
 
   // Titanheart passive tracking
   private titanheartMaxHealthApplied = false;
+
+  // Death state tracking
+  private isPlayerDead = false;
 
   constructor(
     camera: PerspectiveCamera,
@@ -360,17 +374,26 @@ export class ControlSystem extends System {
 
     const playerTransform = this.playerEntity.getComponent(Transform);
     const playerMovement = this.playerEntity.getComponent(Movement);
-    
+
     if (!playerTransform || !playerMovement) return;
+
+    // If player is dead, prevent all input processing but still allow debuff updates
+    if (this.isPlayerDead) {
+      // Update debuff states even when dead (for visual effects)
+      if (typeof playerMovement.updateDebuffs === 'function') {
+        playerMovement.updateDebuffs();
+      }
+      return; // Skip all other input processing
+    }
 
     // Update debuff states first
     if (typeof playerMovement.updateDebuffs === 'function') {
       playerMovement.updateDebuffs();
     }
-    
+
     // Clean up expired Sunder stacks periodically
     this.cleanupSunderStacks();
-    
+
     // Clean up expired Burning stacks periodically
     this.cleanupBurningStacks();
 
@@ -388,10 +411,10 @@ export class ControlSystem extends System {
     if (!playerMovement.isDashing && !playerMovement.isCharging && !playerMovement.isFrozen) {
       this.handleMovementInput(playerMovement);
     }
-    
+
     // Handle combat input
     this.handleCombatInput(playerTransform);
-    
+
     // Update deflect barrier position if active
     this.updateDeflectBarrier(playerTransform);
   }
@@ -745,7 +768,7 @@ export class ControlSystem extends System {
 
     // Handle Cloudkill ability with 'F' key
     if (this.inputManager.isKeyPressed('f') && this.isAbilityUnlocked('F')) {
-      if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging) {
+      if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging && !this.isCloudkillCharging) {
         this.performCloudkill(playerTransform);
       }
     }
@@ -787,17 +810,17 @@ export class ControlSystem extends System {
     } else {
       // NORMAL MODE: Charge-based firing
       if (this.inputManager.isMouseButtonPressed(0)) { // Left mouse button held
-        if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging) {
+        if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging && !this.isCloudkillCharging) {
           this.isCharging = true;
           this.chargeProgress = 0;
         }
         // Increase charge progress (could be time-based)
-        if (!this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging) {
+        if (!this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging && !this.isCloudkillCharging) {
           this.chargeProgress = Math.min(this.chargeProgress + 0.0125, 1.0); // BOW CHARGE SPEED
         }
       } else if (this.isCharging) {
         // Check if any ability is charging - if so, cancel the regular bow shot
-        if (this.isViperStingCharging || this.isBarrageCharging || this.isCobraShotCharging) {
+        if (this.isViperStingCharging || this.isBarrageCharging || this.isCobraShotCharging || this.isCloudkillCharging) {
           this.isCharging = false;
           this.chargeProgress = 0;
           return;
@@ -1172,6 +1195,7 @@ export class ControlSystem extends System {
       subclass: this.currentSubclass,
       level: this.currentLevel,
       opacity: 1.0,
+      projectileType: 'burst_arrow', // Mark as burst arrow for teal coloring
       sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown'
     };
 
@@ -1783,6 +1807,10 @@ export class ControlSystem extends System {
     this.onHauntedSoulEffectCallback = callback;
   }
 
+  public setWindShearTornadoCallback(callback: (playerId: string, duration: number) => void): void {
+    this.onWindShearTornadoCallback = callback;
+  }
+
   public setDamageNumbersCallback(callback: (damageNumbers: Array<{
     id: string;
     damage: number;
@@ -1924,6 +1952,14 @@ export class ControlSystem extends System {
     return this.cobraShotChargeProgress;
   }
 
+  public isCloudkillChargingActive(): boolean {
+    return this.isCloudkillCharging;
+  }
+
+  public getCloudkillChargeProgress(): number {
+    return this.cloudkillChargeProgress;
+  }
+
   public isCrossentropyChargingActive(): boolean {
     return this.isCrossentropyCharging;
   }
@@ -1988,6 +2024,14 @@ export class ControlSystem extends System {
 
   public isWindShearActive(): boolean {
     return this.isWindShearing;
+  }
+
+  public isWindShearChargingActive(): boolean {
+    return this.isWindShearCharging;
+  }
+
+  public getWindShearChargeProgress(): number {
+    return this.windShearChargeProgress;
   }
 
   public isDeathGraspActive(): boolean {
@@ -2294,12 +2338,54 @@ export class ControlSystem extends System {
       return; // Still on cooldown
     }
 
-    // Check if already wind shearing
-    if (this.isWindShearing) {
+    // Check if already wind shearing or charging
+    if (this.isWindShearing || this.isWindShearCharging) {
       return;
     }
 
+    // Check if player has enough rage (10 rage cost)
+    const gameUI = (window as any).gameUI;
+    if (gameUI && !gameUI.canCastWindShear()) {
+      console.log(`❌ WindShear: Not enough rage (10 required, current: ${gameUI.getCurrentRage()})`);
+      return;
+    }
+
+    // Consume rage
+    if (gameUI) {
+      gameUI.consumeRage(10);
+      console.log(`⚡ WindShear: Consumed 10 rage`);
+    }
+
+    this.isWindShearCharging = true;
+    this.windShearChargeProgress = 0;
     this.lastWindShearTime = currentTime;
+
+    // Trigger tornado effect (2 seconds duration)
+    if (this.onWindShearTornadoCallback) {
+      console.log(`🌪️ WindShear: Triggering tornado effect`);
+      this.onWindShearTornadoCallback('local', 2000); // 2 seconds
+    }
+
+    // Start charging animation
+    const chargeStartTime = Date.now();
+    const chargeDuration = 500; // 0.5 second charge time
+
+    const chargeInterval = setInterval(() => {
+      const elapsed = Date.now() - chargeStartTime;
+      this.windShearChargeProgress = Math.min(elapsed / chargeDuration, 1.0);
+
+      if (this.windShearChargeProgress >= 1.0) {
+        clearInterval(chargeInterval);
+        this.fireWindShear(playerTransform);
+        this.isWindShearCharging = false;
+        this.windShearChargeProgress = 0;
+      }
+    }, 16); // ~60fps updates
+  }
+
+  private fireWindShear(playerTransform: Transform): void {
+    console.log(`🌪️ WindShear: Firing wind shear projectile after charge`);
+
     this.isWindShearing = true;
 
     // Get player position and direction
@@ -3596,6 +3682,15 @@ export class ControlSystem extends System {
     this.skillPointData = data;
   }
 
+  public setPlayerDead(isDead: boolean): void {
+    this.isPlayerDead = isDead;
+  }
+
+
+  public isPlayerDeadState(): boolean {
+    return this.isPlayerDead;
+  }
+
   public updateSkillPointsForLevel(level: number): void {
     this.skillPointData = SkillPointSystem.updateSkillPointsForLevel(this.skillPointData, level);
   }
@@ -4355,7 +4450,7 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check if player has enough energy (25 energy cost)
+    // Check if player has enough energy (40 energy cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastCloudkill()) {
       return;
@@ -4366,8 +4461,28 @@ export class ControlSystem extends System {
       gameUI.consumeEnergy(40);
     }
 
+    this.isCloudkillCharging = true;
+    this.cloudkillChargeProgress = 0;
     this.lastCloudkillTime = currentTime;
 
+    // Start charging animation
+    const chargeStartTime = Date.now();
+    const chargeDuration = 800; // 0.8 second charge time (shorter than Barrage)
+
+    const chargeInterval = setInterval(() => {
+      const elapsed = Date.now() - chargeStartTime;
+      this.cloudkillChargeProgress = Math.min(elapsed / chargeDuration, 1.0);
+
+      if (this.cloudkillChargeProgress >= 1.0) {
+        clearInterval(chargeInterval);
+        this.fireCloudkill(playerTransform);
+        this.isCloudkillCharging = false;
+        this.cloudkillChargeProgress = 0;
+      }
+    }, 16); // ~60fps updates
+  }
+
+  private fireCloudkill(playerTransform: Transform): void {
     // Get player position and direction
     const playerPosition = new Vector3(
       playerTransform.position.x,
@@ -4615,7 +4730,7 @@ export class ControlSystem extends System {
       cooldowns['F'] = {
         current: Math.max(0, this.windShearCooldown - (currentTime - this.lastWindShearTime)),
         max: this.windShearCooldown,
-        isActive: this.isWindShearing
+        isActive: this.isWindShearCharging
       };
     } else if (this.currentWeapon === WeaponType.BOW) {
       cooldowns['Q'] = {
@@ -4636,7 +4751,7 @@ export class ControlSystem extends System {
       cooldowns['F'] = {
         current: Math.max(0, this.cloudkillFireRate - (currentTime - this.lastCloudkillTime)),
         max: this.cloudkillFireRate,
-        isActive: false
+        isActive: this.isCloudkillCharging
       };
     } else if (this.currentWeapon === WeaponType.SCYTHE) {
       cooldowns['Q'] = {

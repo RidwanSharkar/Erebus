@@ -26,7 +26,10 @@ export class TowerSystem extends System {
   
   // Track stealth states for remote players
   private playerStealthStates: Map<string, boolean> = new Map();
-  
+
+  // Track player levels for damage scaling
+  private playerLevels: Map<string, number> = new Map();
+
   // Reusable objects to reduce allocations
   private tempVector = new Vector3();
   private tempVector2 = new Vector3();
@@ -91,11 +94,14 @@ export class TowerSystem extends System {
   
   private searchForTarget(towerEntity: Entity, towerTransform: Transform, tower: Tower, currentTime: number): void {
     tower.updateTargetSearch(currentTime);
-    
+
     // Get all potential targets (players that are not the tower owner)
     const potentialTargets = this.world.queryEntities([Transform, Health, Collider]);
-    
-    
+
+    // Debug logging for tower targeting
+    console.log(`🔍 Tower ${tower.ownerId} searching for targets. Found ${potentialTargets.length} potential entities.`);
+
+
     let closestTarget: Entity | null = null;
     let closestDistance = Infinity;
     let validTargetCount = 0;
@@ -108,14 +114,20 @@ export class TowerSystem extends System {
         const distance = towerTransform.position.distanceTo(targetTransform.position);
       }
       
-      if (!this.isValidTarget(target, towerTransform, tower)) continue;
-      
+      if (!this.isValidTarget(target, towerTransform, tower)) {
+        // Debug: Log why target was rejected
+        const targetPlayerId = this.getPlayerIdForEntity(target);
+        const targetCollider = target.getComponent(Collider);
+        console.log(`❌ Tower ${tower.ownerId} rejected target: ${targetPlayerId || 'unknown'} (layer: ${targetCollider?.layer})`);
+        continue;
+      }
+
       validTargetCount++;
       const targetTransform2 = target.getComponent(Transform);
       if (!targetTransform2) continue;
-      
+
       const distance = towerTransform.position.distanceTo(targetTransform2.position);
-      
+
       if (distance <= tower.targetSearchRange && distance < closestDistance) {
         closestTarget = target;
         closestDistance = distance;
@@ -124,9 +136,17 @@ export class TowerSystem extends System {
     
     
     if (closestTarget) {
+      // Get target info for logging
+      const targetTransform = closestTarget.getComponent(Transform);
+      const targetCollider = closestTarget.getComponent(Collider);
+      const targetPlayerId = this.getPlayerIdForEntity(closestTarget);
+
+      console.log(`🎯 Tower ${tower.ownerId} targeting: ${targetPlayerId || 'unknown entity'} (distance: ${closestDistance.toFixed(2)}, layer: ${targetCollider?.layer})`);
+      console.log(`📊 Tower ${tower.ownerId} found ${validTargetCount} valid targets out of ${potentialTargets.length} potential targets`);
       tower.setTarget(closestTarget.id);
     } else if (tower.currentTarget) {
       // Clear target if no valid targets found
+      console.log(`❌ Tower ${tower.ownerId} clearing target - no valid targets found (${validTargetCount}/${potentialTargets.length} valid)`);
       tower.clearTarget();
     }
   }
@@ -135,24 +155,49 @@ export class TowerSystem extends System {
     if (!target) {
       return false;
     }
-    
+
     const targetHealth = target.getComponent(Health);
     const targetTransform = target.getComponent(Transform);
     const targetCollider = target.getComponent(Collider);
-    
+
     // Must have required components and be alive
     if (!targetHealth || !targetTransform || !targetCollider || targetHealth.isDead) {
       return false;
     }
-    
+
     // Must be a player (not an enemy or other tower)
     if (targetCollider.layer !== CollisionLayer.PLAYER && targetCollider.layer !== CollisionLayer.ENEMY) {
       return false;
     }
-    
+
     // Don't target other towers
     if (target.hasComponent(Tower)) {
       return false;
+    }
+
+    // CRITICAL: Never target the tower's own owner - check this first
+    if (this.localSocketId && this.serverPlayerEntities.size > 0) {
+      // Check if this target is the tower owner (local player)
+      if (targetCollider.layer === CollisionLayer.PLAYER && tower.ownerId === this.localSocketId) {
+        console.log(`🛡️ Tower ${tower.ownerId} refusing to target own player (local)`);
+        return false;
+      }
+
+      // Check if this target is the tower owner (remote player)
+      if (targetCollider.layer === CollisionLayer.ENEMY) {
+        // Find which player this entity belongs to
+        let targetPlayerId: string | null = null;
+        this.serverPlayerEntities.forEach((entityId, playerId) => {
+          if (entityId === target.id) {
+            targetPlayerId = playerId;
+          }
+        });
+
+        if (targetPlayerId && tower.ownerId === targetPlayerId) {
+          console.log(`🛡️ Tower ${tower.ownerId} refusing to target own player (remote: ${targetPlayerId})`);
+          return false;
+        }
+      }
     }
 
     // Check if this is a summoned unit
@@ -166,54 +211,40 @@ export class TowerSystem extends System {
       return summonedUnit.ownerId !== tower.ownerId;
     }
 
-    // In PVP mode, identify if this is an enemy player
+    // For player entities, we need to handle stealth and ensure we don't target own player
     if (this.localSocketId && this.serverPlayerEntities.size > 0) {
+      let targetPlayerId: string | null = null;
 
-      // Check if this is the local player (PLAYER layer)
+      // Determine the player ID for this target
       if (targetCollider.layer === CollisionLayer.PLAYER) {
-        const shouldTarget = tower.ownerId !== this.localSocketId;
-        
-        // If this is the local player and they are invisible (stealthed), don't target them
-        if (shouldTarget && this.localSocketId) {
-          // Check if local player is invisible through a global reference
-          const controlSystem = (window as any).controlSystemRef?.current;
-          if (controlSystem && controlSystem.isPlayerInvisible && controlSystem.isPlayerInvisible()) {
-            return false; // Don't target invisible local player
-          }
-        }
-        
-        return shouldTarget;
-      }
-
-      // Check if this is a remote player (ENEMY layer)
-      if (targetCollider.layer === CollisionLayer.ENEMY) {
-        // Find which player this entity belongs to
-        let targetPlayerId: string | null = null;
+        // Local player
+        targetPlayerId = this.localSocketId;
+      } else if (targetCollider.layer === CollisionLayer.ENEMY) {
+        // Remote player - find their ID from the mapping
         this.serverPlayerEntities.forEach((entityId, playerId) => {
           if (entityId === target.id) {
             targetPlayerId = playerId;
           }
         });
+      }
 
-        if (targetPlayerId) {
-          const shouldTarget = tower.ownerId !== targetPlayerId;
-
-          // Check if the target player is invisible (stealthed)
-          if (shouldTarget && this.playerStealthStates.get(targetPlayerId)) {
-            return false; // Don't target invisible remote players
-          }
-
-          return shouldTarget;
-        }
-
-        // If we can't identify the player for this ENEMY entity, don't target it
-        // This prevents towers from targeting unidentified entities that might be on their own team
+      // If we can't identify the player, be conservative and don't target
+      if (!targetPlayerId) {
         return false;
       }
+
+      // Check if target player is invisible (stealthed)
+      if (this.playerStealthStates.get(targetPlayerId)) {
+        return false; // Don't target invisible players
+      }
+
+      // At this point, we know it's a valid enemy player (not the tower owner)
+      // The ownership check was already done above, so we can safely return true
+      return true;
     }
 
-    // If we reach here, we couldn't properly identify the target in PVP mode
-    // Be conservative and don't target unidentified entities to prevent friendly fire
+    // If we reach here, we couldn't properly identify the target
+    // Be conservative and don't target unidentified entities
     return false;
   }
   
@@ -375,5 +406,69 @@ export class TowerSystem extends System {
   
   public setLocalSocketId(socketId: string): void {
     this.localSocketId = socketId;
+  }
+
+  // Update player level and adjust tower damage accordingly
+  public updatePlayerLevel(playerId: string, newLevel: number): void {
+    const oldLevel = this.playerLevels.get(playerId) || 1;
+
+    if (oldLevel !== newLevel) {
+      console.log(`📈 Player ${playerId} level changed: ${oldLevel} → ${newLevel}`);
+      this.playerLevels.set(playerId, newLevel);
+
+      // Update all towers owned by this player
+      this.updateTowersForPlayer(playerId, newLevel);
+    }
+  }
+
+  // Update all towers for a specific player with their new level
+  private updateTowersForPlayer(playerId: string, newLevel: number): void {
+    const allTowers = this.world.queryEntities([Transform, Tower, Health]);
+
+    for (const towerEntity of allTowers) {
+      const tower = towerEntity.getComponent(Tower);
+      if (tower && tower.ownerId === playerId) {
+        tower.updatePlayerLevel(newLevel);
+      }
+    }
+  }
+
+  // Get current level for a player (defaults to 1)
+  public getPlayerLevel(playerId: string): number {
+    return this.playerLevels.get(playerId) || 1;
+  }
+
+  // Initialize player levels from a players map (useful for startup)
+  public initializePlayerLevels(players: Map<string, any>): void {
+    players.forEach((player, playerId) => {
+      if (player.level && player.level !== this.getPlayerLevel(playerId)) {
+        this.updatePlayerLevel(playerId, player.level);
+      }
+    });
+  }
+
+  // Helper method to get player ID for an entity
+  private getPlayerIdForEntity(entity: Entity): string | null {
+    if (!this.localSocketId || this.serverPlayerEntities.size === 0) {
+      return null;
+    }
+
+    const collider = entity.getComponent(Collider);
+    if (!collider) return null;
+
+    if (collider.layer === CollisionLayer.PLAYER) {
+      return this.localSocketId;
+    } else if (collider.layer === CollisionLayer.ENEMY) {
+      // Find the player ID from the server player entities map
+      let playerId: string | null = null;
+      this.serverPlayerEntities.forEach((entityId, pId) => {
+        if (entityId === entity.id) {
+          playerId = pId;
+        }
+      });
+      return playerId;
+    }
+
+    return null;
   }
 }

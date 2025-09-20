@@ -52,6 +52,18 @@ export default function TowerRenderer({
   const healthPercentage = Math.max(0, health / maxHealth);
   const opacity = isDead ? 0.3 : Math.max(0.5, healthPercentage);
 
+  // Get tower range from component
+  let towerRange = 11.5; // Default range
+  if (world && entityId) {
+    const entity = world.getEntity(entityId);
+    if (entity) {
+      const towerComponent = entity.getComponent(Tower);
+      if (towerComponent) {
+        towerRange = towerComponent.attackRange;
+      }
+    }
+  }
+
   // Convert player color to hex for material colors
   const colorHex = towerColor.getHex();
   const emissiveHex = towerColor.clone().multiplyScalar(0.3).getHex();
@@ -389,6 +401,17 @@ export default function TowerRenderer({
         decay={2}
       />
 
+      {/* Range Indicator Circle */}
+      <mesh position={[0, 0.1, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[towerRange - 0.1, towerRange, 64]} />
+        <meshBasicMaterial
+          color={towerColor.getHex()}
+          transparent
+          opacity={0.3}
+          side={2} // DoubleSide
+          depthWrite={false}
+        />
+      </mesh>
 
       {/* Death Effect */}
       {isDead && (
