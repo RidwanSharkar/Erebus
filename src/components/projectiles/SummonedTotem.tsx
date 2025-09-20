@@ -208,7 +208,7 @@ export default function SummonedTotem({
       effect: {
         id: effectId,
         type: 'summonExplosion',
-        position: worldImpactPosition.clone().sub(totemWorldPosition), // Store relative position
+        position: worldImpactPosition.clone(), // Use absolute world position of the target
         direction: new Vector3(),
         duration: constants.EFFECT_DURATION / 1000,
         startTime: Date.now(),
@@ -235,18 +235,18 @@ export default function SummonedTotem({
   }, [constants, onDamage, setActiveEffects, setDamageNumbers, nextDamageNumberId, enemyData]);
 
   const handleHealing = useCallback(() => {
-    if (!onHealPlayer) {
-      console.log('🎭 SummonTotem: No heal callback provided');
+    if (!onHealPlayer || !casterId) {
+      console.log('🎭 SummonTotem: No heal callback or casterId provided');
       return;
     }
 
     const now = Date.now();
     if (now - constants.lastHealTime >= constants.HEAL_INTERVAL) {
-      console.log('🎭 SummonTotem: Healing player for', constants.HEAL_AMOUNT, 'HP');
+      console.log('🎭 SummonTotem: Healing caster', casterId, 'for', constants.HEAL_AMOUNT, 'HP');
       onHealPlayer(constants.HEAL_AMOUNT);
       constants.lastHealTime = now;
     }
-  }, [constants, onHealPlayer]);
+  }, [constants, onHealPlayer, casterId]);
 
   useFrame(() => {
     const now = Date.now();
@@ -321,11 +321,11 @@ export default function SummonedTotem({
           const duration = effect.duration || 0.2;
           const fade = Math.max(0, 1 - (elapsed / duration));
 
-          // Effect position is stored as relative to totem position
-          const effectRelativePosition = effect.position;
+          // Effect position is now stored as absolute world position
+          const effectWorldPosition = effect.position;
 
           return (
-            <group key={effect.id} position={effectRelativePosition.toArray()}>
+            <group key={effect.id} position={effectWorldPosition.toArray()}>
               <mesh>
                 <sphereGeometry args={[0.35 * (1 + elapsed * 2), 32, 32]} />
                 <meshStandardMaterial

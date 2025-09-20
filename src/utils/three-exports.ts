@@ -23,6 +23,7 @@ export {
   BoxGeometry,
   CylinderGeometry,
   ConeGeometry,
+  CircleGeometry,
   Shape,
   Box3,
   Sphere,

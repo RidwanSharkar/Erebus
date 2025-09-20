@@ -10,6 +10,9 @@ import DetailedTrees, { DetailedTree, LargeTree, OptimizedLargeTree } from './De
 import TreeCollision from './TreeCollision';
 import AtmosphericParticles from './AtmosphericParticles';
 
+import SimpleBorderEffects from './SimpleBorderEffects';
+
+
 import { generateMountains } from '@/utils/MountainGenerator';
 import { World } from '@/ecs/World';
 import { Vector3, Color, PerspectiveCamera } from '@/utils/three-exports';
@@ -22,6 +25,8 @@ interface EnvironmentProps {
   world?: World; // Optional world for collision system
   camera?: PerspectiveCamera; // Optional camera for LOD calculations
   enableLargeTree?: boolean; // Enable large tree rendering
+  enableBorderEffects?: boolean; // Enable border effects
+  borderEffectType?: 'detailed' | 'simple' | 'barrier' | 'none'; // Type of border effects
 }
 
 /**
@@ -35,7 +40,9 @@ const Environment: React.FC<EnvironmentProps> = ({
   enableSky = true,
   world,
   camera,
-  enableLargeTree = false
+  enableLargeTree = false,
+  enableBorderEffects = true,
+  borderEffectType = 'simple'
 }) => {
   // Generate mountains once and memoize for performance
   const mountains = useMemo(() => generateMountains(), []);
@@ -85,6 +92,22 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       {/* Mountain border around the map */}
       {enableMountains && <InstancedMountains mountains={mountains} />}
+
+      {/* Border effects - positioned just before mountains */}
+      {enableBorderEffects && borderEffectType !== 'none' && (
+        <>
+
+          {borderEffectType === 'simple' && (
+            <SimpleBorderEffects 
+              radius={22} 
+              count={32}
+              enableParticles={true}
+              particleCount={80}
+            />
+          )}
+
+        </>
+      )}
 
 
 

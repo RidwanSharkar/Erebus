@@ -129,6 +129,9 @@ export class ControlSystem extends System {
   // Callback for WindShear Tornado effect
   private onWindShearTornadoCallback?: (playerId: string, duration: number) => void;
 
+  // Local socket ID for identifying the local player
+  private localSocketId: string | null = null;
+
   // Rate limiting for projectile firing
   private lastFireTime = 0;
   private lastCrossentropyTime = 0; // Separate tracking for CrossentropyBolt
@@ -140,17 +143,17 @@ export class ControlSystem extends System {
   private lastCloudkillTime = 0; // Separate tracking for Cloudkill ability
   private fireRate = 0.2; // Default for bow
   private swordFireRate = 0.825; // Rate for sword attacks
-  private runebladeFireRate = 0.7125; // Runeblade attack rate
+  private runebladeFireRate = 0.725; // Runeblade attack rate
   private sabresFireRate = 0.6; // Sabres dual attack rate (600ms between attacks)
   private scytheFireRate = 0.35; // EntropicBolt rate (0.33s cooldown)
   private crossentropyFireRate = 2; // CrossentropyBolt rate (1 per second)
   private summonTotemFireRate = 5.0; // Summon Totem rate (5 seconds cooldown)
-  private viperStingFireRate = 2.5; // Viper Sting rate (2 seconds cooldown)
+  private viperStingFireRate = 2.0; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
   private cobraShotFireRate = 2.0; // Cobra Shot rate (2 seconds cooldown)
   private cloudkillFireRate = 4.0; // Cloudkill rate (1.5 seconds cooldown)
   private lastBurstFireTime = 0; // Separate tracking for Bow burst fire
-  private burstFireRate = 1.0; // 1 second cooldown between bursts
+  private burstFireRate = 0.85; // 1 second cooldown between bursts
 
   // Key press tracking for toggle abilities
   private fKeyWasPressed = false;
@@ -1842,6 +1845,10 @@ export class ControlSystem extends System {
     };
   }
 
+  public setLocalSocketId(socketId: string): void {
+    this.localSocketId = socketId;
+  }
+
   // Internal method to track debuff effects for stun detection
   private trackDebuffEffect(entityId: number, debuffType: string, duration: number): void {
     const currentTime = Date.now();
@@ -2363,7 +2370,9 @@ export class ControlSystem extends System {
     // Trigger tornado effect (2 seconds duration)
     if (this.onWindShearTornadoCallback) {
       console.log(`🌪️ WindShear: Triggering tornado effect`);
-      this.onWindShearTornadoCallback('local', 2000); // 2 seconds
+      const playerId = this.localSocketId || 'local'; // Use actual socket ID if available, fallback to 'local'
+      console.log(`🌪️ WindShear: Using playerId:`, playerId, 'localSocketId:', this.localSocketId);
+      this.onWindShearTornadoCallback(playerId, 2000); // 2 seconds
     }
 
     // Start charging animation

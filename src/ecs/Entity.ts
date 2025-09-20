@@ -36,14 +36,19 @@ export class Entity {
     }
     
     // If still not found, search through all components to find a match by type
-    if (!component && componentType) {
+    if (!component && componentType && typeof componentType === 'function') {
       const entries = Array.from(this.components.entries());
       for (const [key, comp] of entries) {
-        if (comp instanceof componentType) {
-          // Reduce spam - only log occasionally for instanceof fallback usage
-          if (Math.random() < 0.01) { // Only log 1% of the time
+        try {
+          if (comp instanceof componentType) {
+            // Reduce spam - only log occasionally for instanceof fallback usage
+            if (Math.random() < 0.01) { // Only log 1% of the time
+            }
+            component = comp;
+            break;
           }
-          component = comp;
+        } catch (error) {
+          console.warn('Entity.getComponent: instanceof check failed for componentType:', componentType, 'error:', error);
           break;
         }
       }
@@ -78,11 +83,16 @@ export class Entity {
     }
     
     // If still not found, search through all components to find a match by type
-    if (componentType) {
+    if (componentType && typeof componentType === 'function') {
       const components = Array.from(this.components.values());
       for (const comp of components) {
-        if (comp instanceof componentType) {
-          return true;
+        try {
+          if (comp instanceof componentType) {
+            return true;
+          }
+        } catch (error) {
+          console.warn('Entity.hasComponent: instanceof check failed for componentType:', componentType, 'error:', error);
+          break;
         }
       }
     }

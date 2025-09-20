@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { CylinderGeometry, SphereGeometry, MeshStandardMaterial, PointLight } from '../../utils/three-exports';
+import { CylinderGeometry, SphereGeometry, MeshStandardMaterial, PointLight, Color } from '../../utils/three-exports';
+import { useColorCycle } from '../../utils/hooks/useColorCycle';
 
 interface PillarProps {
   position?: [number, number, number];
@@ -7,63 +8,42 @@ interface PillarProps {
 }
 
 const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], level = 1 }) => {
-  // Get level-based colors
-  const getLevelColors = (level: number) => {
-    switch (level) {
-      case 1: return { color: '#FF6E6E', emissive: '#FF6E6E' }; // Green  00ff00 006600
-      case 2: return { color: '#ffa500', emissive: '#cc8400' }; // Orange
-      case 3: return { color: '#87ceeb', emissive: '#4682b4' }; // Light Blue
-      case 4: return { color: '#dda0dd', emissive: '#9370db' }; // Light Purple
-      case 5: return { color: '#ff0000', emissive: '#600000' }; // Red
-      default: return { color: '#00ff00', emissive: '#006600' }; // Default to green
-    }
-  };
+  // Use time-based color cycling
+  const { getPrimaryColors } = useColorCycle();
 
-  // Create geometries and materials only once using useMemo
-  const { pillarGeometries, materials } = useMemo(() => {
-    // Base geometry
-    const baseGeometry = new CylinderGeometry(2, 2.2, 1, 8);
+  // Create static geometries only once using useMemo
+  const pillarGeometries = useMemo(() => {
+    return {
+      base: new CylinderGeometry(2, 2.2, 1, 8),
+      column: new CylinderGeometry(1.5, 1.5, 8, 8),
+      top: new CylinderGeometry(2.2, 2, 1, 8),
+      orb: new SphereGeometry(1, 32, 32),
+    };
+  }, []);
 
-    // Main column geometry
-    const columnGeometry = new CylinderGeometry(1.5, 1.5, 8, 8);
+  // Shared stone material (static)
+  const stoneMaterial = useMemo(() => new MeshStandardMaterial({
+    color: '#ffffff',
+    roughness: 0.7,
+    metalness: 0.2,
+  }), []);
 
-    // Top geometry (decorative cap)
-    const topGeometry = new CylinderGeometry(2.2, 2, 1, 8);
-
-    // Shared material for all parts
-    const stoneMaterial = new MeshStandardMaterial({
-      color: '#ffffff',
-      roughness: 0.7,
-      metalness: 0.2,
-    });
-
-    // Add sphere geometry for the orb
-    const orbGeometry = new SphereGeometry(1, 32, 32);
-
-    // Get level-based colors
-    const levelColors = getLevelColors(level);
-
-    // Add glowing material for the orb with level-based colors
-    const orbMaterial = new MeshStandardMaterial({
-      color: levelColors.color,
-      emissive: levelColors.emissive,
+  // Dynamic orb material that updates with colors
+  const orbMaterial = useMemo(() => {
+    const colors = getPrimaryColors();
+    return new MeshStandardMaterial({
+      color: new Color(colors.color),
+      emissive: new Color(colors.emissive),
       metalness: 1,
       roughness: 0.2,
     });
+  }, [getPrimaryColors]);
 
-    return {
-      pillarGeometries: {
-        base: baseGeometry,
-        column: columnGeometry,
-        top: topGeometry,
-        orb: orbGeometry,
-      },
-      materials: {
-        stone: stoneMaterial,
-        orb: orbMaterial,
-      }
-    };
-  }, [level]);
+  // Group materials for cleanup
+  const materials = useMemo(() => ({
+    stone: stoneMaterial,
+    orb: orbMaterial,
+  }), [stoneMaterial, orbMaterial]);
 
   // rotation animation for the orb
   const [rotation, setRotation] = React.useState(0);
@@ -82,7 +62,7 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], level = 1 }) => {
     };
   }, []);
 
-  //  cleanup 
+  // Cleanup geometries and materials
   React.useEffect(() => {
     return () => {
       Object.values(pillarGeometries).forEach(geometry => geometry.dispose());
@@ -90,8 +70,9 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], level = 1 }) => {
     };
   }, [pillarGeometries, materials]);
 
-  // Get level-based light color
-  const levelColors = getLevelColors(level);
+  // Get current colors for the light
+  const currentColors = getPrimaryColors();
+  const lightColor = useMemo(() => new Color(currentColors.color), [currentColors.color]);
 
   return (
     <group position={position} scale={[0.35, 0.35, 0.35]}>
@@ -129,7 +110,7 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], level = 1 }) => {
         position={[0, 5, 0]}
         rotation={[rotation, rotation, 0]}
       >
-        <pointLight color={levelColors.color} intensity={0.5} distance={5} />
+        <pointLight color={lightColor} intensity={0.5} distance={5} />
       </mesh>
     </group>
   );

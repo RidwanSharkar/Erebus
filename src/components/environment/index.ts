@@ -5,3 +5,6 @@ export { default as InstancedMountains } from './InstancedMountains';
 export { default as Pillar } from './Pillar';
 export { default as Pedestal } from './Pedestal';
 export { default as PillarCollision } from './PillarCollision';
+export { default as BorderEffects } from './BorderEffects';
+export { default as SimpleBorderEffects } from './SimpleBorderEffects';
+export { default as EnergyBarrier } from './EnergyBarrier';

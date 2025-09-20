@@ -87,12 +87,13 @@ export default function CloudkillManager({
     const targets: CloudkillTarget[] = [];
 
     // Distribute all arrows among available targets
+    // Create fixed impact areas based on target positions at cast time
     for (let i = 0; i < ARROW_COUNT; i++) {
       const target = closestTargets[i % closestTargets.length];
 
       targets.push({
         position: new Vector3(target.position.x, 0, target.position.z),
-        targetId: target.id,
+        targetId: `area_${i}_${target.id}_${Date.now()}`, // Use area ID instead of player ID to avoid tracking
         delay: i * ARROW_DELAY_INTERVAL, // Staggered delays: 0ms, 300ms, 600ms
         casterPosition: playerPosition.clone() // Use local player position as caster for self-cast
       });
@@ -152,13 +153,14 @@ export default function CloudkillManager({
     const targets: CloudkillTarget[] = [];
 
     // Distribute all arrows among available targets
+    // Create fixed impact areas based on target positions at cast time
     for (let i = 0; i < ARROW_COUNT; i++) {
       const target = closestTargets[i % closestTargets.length];
       const targetPosition = new Vector3(target.position.x, 0, target.position.z);
 
       targets.push({
         position: targetPosition,
-        targetId: target.id,
+        targetId: `area_${i}_${target.id}_${Date.now()}`, // Use area ID instead of player ID to avoid tracking
         delay: i * ARROW_DELAY_INTERVAL, // Staggered delays: 0ms, 300ms, 600ms
         casterPosition: casterPosition.clone() // Store the caster's position for each target
       });
@@ -209,13 +211,14 @@ export default function CloudkillManager({
     const targets: CloudkillTarget[] = [];
 
     // Distribute all arrows among available targets
+    // Create fixed impact areas based on target positions at cast time
     for (let i = 0; i < ARROW_COUNT; i++) {
       const target = closestTargets[i % closestTargets.length];
       const targetPosition = new Vector3(target.position.x, 0, target.position.z);
 
       targets.push({
         position: targetPosition,
-        targetId: target.id,
+        targetId: `area_${i}_${target.id}_${Date.now()}`, // Use area ID instead of player ID to avoid tracking
         delay: i * ARROW_DELAY_INTERVAL, // Staggered delays: 0ms, 300ms, 600ms
         casterPosition: casterPosition.clone() // Use the provided caster position
       });
@@ -280,11 +283,11 @@ export default function CloudkillManager({
     // Create targets that specifically target the local player
     const targets: CloudkillTarget[] = [];
 
-    // Create arrows targeting the local player
+    // Create arrows targeting the local player's current position (fixed impact areas)
     for (let i = 0; i < ARROW_COUNT; i++) {
       targets.push({
         position: localPlayerPosition.clone(),
-        targetId: localPlayer.id,
+        targetId: `area_${i}_${localPlayer.id}_${Date.now()}`, // Use area ID instead of player ID to avoid tracking
         delay: i * ARROW_DELAY_INTERVAL, // Staggered delays: 0ms, 300ms, 600ms
         casterPosition: localPlayerPosition.clone() // Use local player position as both target and caster for visual effect
       });

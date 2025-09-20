@@ -888,9 +888,39 @@ const [maxMana, setMaxMana] = useState(150);
   const createPvpWindShearTornadoEffect = useCallback((playerId: string, duration: number) => {
     console.log('🌪️ Creating PVP Wind Shear Tornado effect for player:', playerId, 'duration:', duration);
 
-    // Get initial position for fallback
-    const player = players.get(playerId);
-    const initialPosition = player ? new Vector3(player.position.x, player.position.y, player.position.z) : new Vector3();
+    // Debug: Log all players in the map
+    console.log('🌪️ Current players in map:', Array.from(players.keys()));
+    console.log('🌪️ Looking for playerId:', playerId);
+
+    // For local player (socket.id or 'local'), use the actual player entity position
+    let initialPosition = new Vector3();
+    let player = players.get(playerId);
+
+    // Check if this is for the local player
+    const isLocalPlayer = playerId === socket?.id || playerId === 'local';
+    
+    if (isLocalPlayer && playerEntity) {
+      const transform = playerEntity.getComponent(Transform);
+      if (transform) {
+        initialPosition = transform.position.clone();
+        console.log('🌪️ Using local player entity position:', initialPosition.toArray());
+      }
+    } else if (player) {
+      initialPosition = new Vector3(player.position.x, player.position.y, player.position.z);
+      console.log('🌪️ Using remote player position:', initialPosition.toArray());
+    } else {
+      // Try to find the local player by socket ID if playerId was 'local'
+      if (playerId === 'local' && socket?.id) {
+        console.log('🌪️ Player not found with "local", trying socket ID:', socket.id);
+        player = players.get(socket.id);
+        if (player) {
+          initialPosition = new Vector3(player.position.x, player.position.y, player.position.z);
+          console.log('🌪️ Found player with socket ID, position:', initialPosition.toArray());
+        }
+      }
+    }
+
+    console.log('🌪️ Player found:', !!player, 'Is local player:', isLocalPlayer, 'Initial position:', initialPosition.toArray());
 
     const tornadoEffect = {
       id: nextWindShearTornadoEffectId.current++,
@@ -917,7 +947,7 @@ const [maxMana, setMaxMana] = useState(150);
         filterId: tornadoEffect.id
       }]);
     }, duration);
-  }, []);
+  }, [players, socket?.id, playerEntity]);
 
   // Function to create death grasp effect on PVP players
   const createPvpDeathGraspEffect = useCallback((playerId: string, startPosition: Vector3, direction: Vector3) => {
@@ -3820,6 +3850,11 @@ const hasMana = useCallback((amount: number) => {
         broadcastPlayerAbility('windShear', position, direction);
       });
 
+      // Set the local socket ID for the control system
+      if (socket?.id) {
+        controlSystem.setLocalSocketId(socket.id);
+      }
+
       // Set up WindShear Tornado callback
       controlSystem.setWindShearTornadoCallback((playerId: string, duration: number) => {
         console.log('🌪️ WindShear Tornado callback triggered for player:', playerId, 'duration:', duration);
@@ -3828,7 +3863,7 @@ const hasMana = useCallback((amount: number) => {
         createPvpWindShearTornadoEffect(playerId, duration);
 
         // Broadcast tornado effect to other players if it's not the local player
-        if (playerId !== 'local') {
+        if (socket?.id && playerId !== socket.id) {
           // Get current player position for broadcasting
           const player = players.get(playerId);
           if (player) {
@@ -4188,11 +4223,7 @@ const hasMana = useCallback((amount: number) => {
       {/* Enhanced Ground with textures and ambient occlusion */}
       <EnhancedGround radius={29} height={1} level={1} />
 
-      {/* Map boundary visual indicator */}
-      <mesh position={[0, 0.01, 0]} scale={[2.5, 2.5, 2.5]}>
-        <ringGeometry args={[25, 29, 64]} />
-        <meshStandardMaterial color="#ff6b6b" transparent opacity={0.3} />
-      </mesh>
+
 
 
 
@@ -4486,12 +4517,36 @@ const hasMana = useCallback((amount: number) => {
             <WindShearTornadoEffect
               key={effect.id}
               getPlayerPosition={() => {
-                // Get the player's current position dynamically
-                const player = players.get(effect.playerId);
-                if (player) {
-                  return new Vector3(player.position.x, player.position.y, player.position.z);
+                // Check if this is for the local player
+                const isLocalPlayer = effect.playerId === socket?.id || effect.playerId === 'local';
+                
+                if (isLocalPlayer && playerEntity) {
+                  // Use the actual player entity position for local player
+                  const transform = playerEntity.getComponent(Transform);
+                  if (transform) {
+                    const pos = transform.position.clone();
+                    console.log('🌪️ Tornado following local player entity:', effect.playerId, 'Position:', pos.toArray());
+                    return pos;
+                  }
                 }
+
+                // For remote players, get position from players map
+                let player = players.get(effect.playerId);
+
+                // If player not found and playerId is 'local', try to find the local player
+                if (!player && effect.playerId === 'local' && socket?.id) {
+                  console.log('🌪️ Tornado getPlayerPosition: Player not found with "local", trying socket ID:', socket.id);
+                  player = players.get(socket.id);
+                }
+
+                if (player) {
+                  const pos = new Vector3(player.position.x, player.position.y, player.position.z);
+                  console.log('🌪️ Tornado following remote player:', effect.playerId, 'Position:', pos.toArray());
+                  return pos;
+                }
+
                 // Fallback to stored position if player not found
+                console.log('🌪️ Tornado using fallback position for player:', effect.playerId, 'Fallback position:', effect.position.toArray());
                 return effect.position;
               }}
               startTime={effect.startTime}

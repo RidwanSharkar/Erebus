@@ -1,6 +1,7 @@
 import React, { useRef, useMemo } from 'react';
-import { Mesh, Group, SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, BackSide, DoubleSide, Matrix4, Vector3, RingGeometry, CanvasTexture, LinearFilter, Frustum, Sphere } from '@/utils/three-exports';
+import { Mesh, Group, SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, BackSide, DoubleSide, Matrix4, Vector3, RingGeometry, CanvasTexture, LinearFilter, Frustum, Sphere, Color } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
+import { useColorCycle } from '../../utils/hooks/useColorCycle';
 
 /**
  * Planet component with rings and atmospheric glow effects
@@ -10,31 +11,36 @@ const Planet: React.FC = () => {
   const ringRef = useRef<Mesh>(null);
   const groupRef = useRef<Group>(null);
 
+  // Use time-based color cycling
+  const { getPlanetColors } = useColorCycle();
+  const planetColors = getPlanetColors();
+
   // Memoize geometries with reduced segments for better performance
   const sphereGeometry = useMemo(() => new SphereGeometry(1, 24, 24), []);
   const ringGeometry = useMemo(() => new RingGeometry(1.4, 2.1, 48), []);
-  
-  // Memoize materials for performance
+
+  // Dynamic planet material that updates with colors
   const planetMaterial = useMemo(() => new MeshStandardMaterial({
-    color: "#B8E0D2",
+    color: new Color(planetColors.planet),
     roughness: 0.7,
     metalness: 0.2,
-    emissive: "#B8E0D2",
+    emissive: new Color(planetColors.planet),
     emissiveIntensity: 0.675
-  }), []);
+  }), [planetColors.planet]);
 
+  // Dynamic glow materials that update with colors
   const glowMaterial = useMemo(() => new MeshBasicMaterial({
-    color: "#4dff90",
+    color: new Color(planetColors.glow),
     transparent: true,
     opacity: 0.5
-  }), []);
+  }), [planetColors.glow]);
 
   const outerGlowMaterial = useMemo(() => new MeshBasicMaterial({
-    color: "#4dff90",
+    color: new Color(planetColors.glow),
     transparent: true,
     opacity: 0.2,
     side: BackSide
-  }), []);
+  }), [planetColors.glow]);
 
   // Create a simple ring texture procedurally to avoid external dependencies
   const ringTexture = useMemo(() => {
@@ -64,16 +70,16 @@ const Planet: React.FC = () => {
 
   const ringMaterial = useMemo(() => new MeshStandardMaterial({
     map: ringTexture,
-    color: "#A8DBFF",
+    color: new Color(planetColors.ring),
     transparent: true,
     opacity: 1,
     side: DoubleSide,
     alphaMap: ringTexture,
     roughness: 0.7,
     metalness: 0.2,
-    emissive: "#77FFC0",
+    emissive: new Color(planetColors.planet),
     emissiveIntensity: 1.1
-  }), [ringTexture]);
+  }), [ringTexture, planetColors.ring, planetColors.planet]);
 
   // Cache frustum and matrices to reduce garbage collection
   const frustum = useMemo(() => new Frustum(), []);

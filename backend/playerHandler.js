@@ -400,6 +400,17 @@ function handlePlayerEvents(socket, gameRooms) {
       timestamp: Date.now()
     });
     
+    // If player was killed, broadcast kill event for scoreboard tracking
+    if (wasActuallyKilled) {
+      room.io.to(roomId).emit('player-kill', {
+        killerId: socket.id,
+        victimId: targetPlayerId,
+        killerName: sourcePlayer.name,
+        victimName: targetPlayer.name,
+        timestamp: Date.now()
+      });
+    }
+    
     // Also broadcast health update specifically
     room.io.to(roomId).emit('player-health-updated', {
       playerId: targetPlayerId,

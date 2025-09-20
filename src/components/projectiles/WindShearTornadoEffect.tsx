@@ -18,6 +18,9 @@ export default function WindShearTornadoEffect({
   const groupRef = useRef<Group>(null);
   const hasCompleted = useRef(false);
 
+  // Initialize position on first render
+  const initialPosition = getPlayerPosition();
+
   useFrame(() => {
     if (!groupRef.current || hasCompleted.current) return;
 
@@ -49,7 +52,7 @@ export default function WindShearTornadoEffect({
   });
 
   return (
-    <group ref={groupRef} position={[0, 0, 0]}>
+    <group ref={groupRef} position={[initialPosition.x, initialPosition.y, initialPosition.z]}>
       {/* Main tornado cone - grey with some transparency - ROTATED RIGHT SIDE UP */}
       <mesh rotation={[Math.PI, 0, 0]}>
         <coneGeometry args={[0.8, 2.5, 8, 1, true]} />

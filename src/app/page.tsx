@@ -605,7 +605,7 @@ function HomeContent() {
             )}
 
             {/* PVP Scoreboard - Only show in PVP mode */}
-            {gameMode === 'pvp' && scoreboardData.playerKills.size > 0 && (
+            {gameMode === 'pvp' && (
               <PVPScoreboard
                 playerKills={scoreboardData.playerKills}
                 players={scoreboardData.players}
