@@ -430,7 +430,6 @@ export function OptimizedPVPViperStingManager({
         // Check if projectile has reached max distance and should return
         const distanceTraveled = projectile.position.distanceTo(projectile.startPosition);
         if (distanceTraveled >= projectile.maxDistance && !projectile.fadeStartTime) {
-          console.log('🔄 PVP Viper Sting switching to return phase:', projectile.id);
           projectile.isReturning = true;
           // Initialize return direction - will be updated dynamically below
         }
@@ -464,7 +463,7 @@ export function OptimizedPVPViperStingManager({
       
       // Only log when actually returning for debugging
       if (projectile.isReturning && projectile.returnHitEnemies.size === 0) {
-        console.log('🔄 Viper Sting entering return phase:', projectile.id);
+        //console.log('🔄 Viper Sting entering return phase:', projectile.id);
       }
 
       // Handle projectile movement and return phase collision detection

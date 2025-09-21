@@ -182,9 +182,6 @@ export default function ViperStingManager({
                   console.warn('ViperSting: Failed to add healing damage number:', error);
                 }
               }
-            } else {
-              // PVP mode: Healing is handled by OptimizedPVPViperStingManager
-              console.log('🔮 Viper Sting soul steal completed (PVP mode - healing handled elsewhere)');
             }
             
             // Remove the effect from the array

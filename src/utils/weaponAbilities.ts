@@ -189,9 +189,9 @@ export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | '
   [WeaponType.BOW]: {
     Q: '🎯', // Barrage
     E: '🐍', // Cobra Shot
-    R: '🐉', // Viper Sting
+    R: '🪶', // Viper Sting
     F: '🍃', // Cloudkill
-    P: '🪶' // Rapid Fire 
+    P: '🐉' // Tempest Rounds 
 
   },
   [WeaponType.SCYTHE]: {

@@ -65,13 +65,9 @@ const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
   const managerRef = React.useRef<SummonTotemManagerRef>(null);
 
   React.useEffect(() => {
-    console.log('🎭 LocalSummonTotemManager: Setting up global trigger callback');
     setGlobalSummonTotemTrigger((position, enemyDataParam, onDamageParam, setActiveEffectsParam, activeEffectsParam, setDamageNumbersParam, nextDamageNumberIdParam, onHealPlayerParam, casterId) => {
-      console.log('🎭 LocalSummonTotemManager: Global trigger callback fired with enemyDataParam:', enemyDataParam?.length || 0, 'enemies');
-      console.log('🎭 LocalSummonTotemManager: Local enemyData prop has:', enemyData.length, 'enemies');
       if (managerRef.current) {
         const finalEnemyData = enemyDataParam || enemyData;
-        console.log('🎭 LocalSummonTotemManager: Using finalEnemyData with', finalEnemyData.length, 'enemies');
         managerRef.current.createTotem(
           position,
           finalEnemyData,
@@ -82,8 +78,6 @@ const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
           nextDamageNumberIdParam || nextDamageNumberId,
           onHealPlayerParam || onHealPlayer
         );
-      } else {
-        console.log('🎭 LocalSummonTotemManager: managerRef.current is null!');
       }
     });
 
@@ -95,9 +89,7 @@ const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
   return (
     <SummonTotemManager
       ref={managerRef}
-      onTotemComplete={(totemId) => {
-        console.log('🎭 Local Summon Totem completed:', totemId);
-      }}
+
     />
   );
 };

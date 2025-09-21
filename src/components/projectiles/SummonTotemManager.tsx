@@ -177,8 +177,6 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
     onHealPlayer?: (healAmount: number) => void,
     casterId?: string
   ) => {
-    console.log('🎭 SummonTotemManager: createTotem called with enemyData:', enemyData.length, 'enemies');
-    console.log('🎭 SummonTotemManager: enemyData details:', enemyData.map(e => ({ id: e.id, health: e.health })));
     const totemId = totemIdCounter.current++;
     const startTime = Date.now();
 
@@ -377,10 +375,7 @@ export const triggerGlobalSummonTotem = (
   onHealPlayer?: (healAmount: number) => void,
   casterId?: string
 ) => {
-  console.log('🎭 triggerGlobalSummonTotem: Called with enemyData:', enemyData?.length || 0, 'enemies');
-  console.log('🎭 triggerGlobalSummonTotem: enemyData details:', enemyData?.map(e => ({ id: e.id, health: e.health })));
   if (globalSummonTotemTriggerCallback) {
-    console.log('🎭 triggerGlobalSummonTotem: Calling global callback with enemyData');
     globalSummonTotemTriggerCallback(
       position,
       enemyData,
@@ -392,8 +387,6 @@ export const triggerGlobalSummonTotem = (
       onHealPlayer,
       casterId
     );
-  } else {
-    console.log('🎭 triggerGlobalSummonTotem: No global callback set!');
   }
 };
 
@@ -449,7 +442,6 @@ export const createSummonTotem = (
 ): number | null => {
   // This function can be called from external systems to create totems
   // The actual implementation will be handled by the manager component
-  console.log('🎭 Creating summon totem at position:', position);
 
   // For now, return a dummy ID - the actual creation is handled by the component
   return Date.now();

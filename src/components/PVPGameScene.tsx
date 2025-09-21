@@ -514,7 +514,7 @@ const [maxMana, setMaxMana] = useState(150);
     position: Vector3;
     startTime: number;
     duration: number;
-    onDamageDealt?: (damageDealt: boolean) => void;
+    onDamageDealt?: (totalDamage: number) => void;
   }>>([]);
   const nextSmiteEffectId = useRef(0);
 
@@ -788,7 +788,7 @@ const [maxMana, setMaxMana] = useState(150);
   }, []);
 
   // Function to create smite effect on PVP players
-  const createPvpSmiteEffect = useCallback((playerId: string, position: Vector3, onDamageDealt?: (damageDealt: boolean) => void) => {
+  const createPvpSmiteEffect = useCallback((playerId: string, position: Vector3, onDamageDealt?: (totalDamage: number) => void) => {
 
     const smiteEffect = {
       id: nextSmiteEffectId.current++,
@@ -3804,7 +3804,7 @@ const hasMana = useCallback((amount: number) => {
       });
 
       // Set up Smite callback
-      controlSystem.setSmiteCallback((position: Vector3, direction: Vector3, onDamageDealt?: (damageDealt: boolean) => void) => {
+      controlSystem.setSmiteCallback((position: Vector3, direction: Vector3, onDamageDealt?: (totalDamage: number) => void) => {
         // Create local Smite effect
         createPvpSmiteEffect(socket?.id || '', position, onDamageDealt);
 
@@ -4981,14 +4981,15 @@ const hasMana = useCallback((amount: number) => {
                   broadcastPlayerDamage(targetId, damage, 'smite');
                 }}
                 enemyData={otherPlayersData}
-                onDamageDealt={smiteEffect.onDamageDealt || ((damageDealt) => {
-                  // Fallback healing if no callback provided
-                  if (damageDealt && playerEntity) {
+                onDamageDealt={smiteEffect.onDamageDealt || ((totalDamage) => {
+                  // Fallback healing if no callback provided - heal for the actual damage dealt
+                  if (totalDamage > 0 && playerEntity) {
                     const healthComponent = playerEntity.getComponent(Health);
                     if (healthComponent) {
                       const oldHealth = healthComponent.currentHealth;
-                      const didHeal = healthComponent.heal(20); // Smite healing amount
+                      const didHeal = healthComponent.heal(totalDamage); // Smite healing based on damage dealt
                       if (didHeal) {
+                        console.log(`⚡ PVP Smite: Healed player for ${totalDamage} HP (${oldHealth} -> ${healthComponent.currentHealth})`);
                       }
                     }
                   }

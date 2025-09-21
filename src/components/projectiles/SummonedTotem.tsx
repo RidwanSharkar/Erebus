@@ -118,14 +118,11 @@ export default function SummonedTotem({
 
     let closestDistance = constants.RANGE;
     let closestTarget: { id: string; position: Vector3; health: number } | null = null;
-    console.log('🎭 SummonTotem: Finding target among', enemyData.length, 'enemies at totem world pos:', totemWorldPosition);
 
     for (let i = 0; i < enemyData.length; i++) {
       const enemy = enemyData[i];
-      console.log(`🎭 SummonTotem: Checking enemy ${i}: id=${enemy.id}, health=${enemy.health}, position=(${enemy.position.x.toFixed(2)}, ${enemy.position.y.toFixed(2)}, ${enemy.position.z.toFixed(2)})`);
 
       if (enemy.health <= 0) {
-        console.log(`🎭 SummonTotem: Skipping enemy ${enemy.id} - dead (health: ${enemy.health})`);
         // Skip dead enemies
         continue;
       }
@@ -133,13 +130,11 @@ export default function SummonedTotem({
       // In PVP mode, only target enemy players (not NPCs)
       // Enemy players have socket IDs, NPCs have IDs starting with 'enemy-'
       if (enemy.id.startsWith('enemy-')) {
-        console.log(`🎭 SummonTotem: Skipping enemy ${enemy.id} - NPC (starts with 'enemy-')`);
         // Skip enemy NPCs in PVP mode
         continue;
       }
 
       if (excludeCurrentTarget && currentTarget && enemy.id === currentTarget.id) {
-        console.log(`🎭 SummonTotem: Skipping enemy ${enemy.id} - excluded current target`);
         continue;
       }
 
@@ -148,22 +143,17 @@ export default function SummonedTotem({
         totemWorldPosition
       );
 
-      console.log(`🎭 SummonTotem: Enemy ${enemy.id} distance: ${distance.toFixed(2)}, range: ${constants.RANGE}`);
 
       if (distance <= closestDistance) {
         closestDistance = distance;
         closestTarget = enemy;
-        console.log(`🎭 SummonTotem: New closest target: ${enemy.id} at distance ${distance.toFixed(2)}`);
       }
     }
 
-    console.log('🎭 SummonTotem: Final target found:', closestTarget ? `${closestTarget.id} at distance ${closestDistance.toFixed(2)}` : 'none');
     return closestTarget;
   }, [enemyData, calculateDistance, currentTarget, constants.RANGE]);
 
   const handleAttack = useCallback((target: { id: string; position: Vector3; health: number }) => {
-    console.log('🎭 SummonTotem: handleAttack called with target:', target?.id, 'health:', target?.health);
-
     if (!target || target.health <= 0 || !onDamage || !nextDamageNumberId || !setDamageNumbers || !setActiveEffects) {
       console.log('🎭 SummonTotem: Attack cancelled - missing requirements:', {
         hasTarget: !!target,
@@ -182,11 +172,9 @@ export default function SummonedTotem({
     // Check if enemy is still alive and in range
     const currentEnemy = enemyData.find(e => e.id === target.id && e.health > 0);
     if (!currentEnemy) {
-      console.log('🎭 SummonTotem: Target no longer valid:', target.id);
       return;
     }
 
-    console.log('🎭 SummonTotem: Attacking target', target.id, 'for', constants.DAMAGE, 'damage at position:', worldImpactPosition);
     onDamage(target.id, constants.DAMAGE, worldImpactPosition, false);
 
     const effectId = Date.now();
@@ -230,13 +218,11 @@ export default function SummonedTotem({
 
   const handleHealing = useCallback(() => {
     if (!onHealPlayer) {
-      console.log('🎭 SummonTotem: No heal callback provided');
       return;
     }
 
     const now = Date.now();
     if (now - constants.lastHealTime >= constants.HEAL_INTERVAL) {
-      console.log('🎭 SummonTotem: Healing player for', constants.HEAL_AMOUNT, 'HP');
       onHealPlayer(constants.HEAL_AMOUNT);
       constants.lastHealTime = now;
     }
@@ -249,7 +235,6 @@ export default function SummonedTotem({
     if (now - constants.startTime > constants.DURATION) {
       if (!constants.hasTriggeredCleanup) {
         constants.hasTriggeredCleanup = true;
-        console.log('🎭 SummonTotem: Duration expired, cleaning up');
         onComplete?.();
         onStartCooldown?.();
       }
@@ -264,7 +249,6 @@ export default function SummonedTotem({
       return;
     }
 
-    console.log('🎭 SummonTotem: Frame update - checking for attack opportunity');
 
     // Continuously check for the closest enemy in range
     const closestEnemy = findNewTarget();
@@ -276,17 +260,13 @@ export default function SummonedTotem({
         groupRef.current.getWorldPosition(currentTotemPosition);
       }
       const distance = calculateDistance(closestEnemy.position, currentTotemPosition);
-      console.log('🎭 SummonTotem: Attacking closest enemy in range:', closestEnemy.id, 'at distance:', distance.toFixed(2));
       setCurrentTarget(closestEnemy);
       handleAttack(closestEnemy);
       constants.lastAttackTime = now;
     } else {
       // No enemy in range, clear current target
       if (currentTarget) {
-        console.log('🎭 SummonTotem: No enemy in range, clearing target');
         setCurrentTarget(null);
-      } else if (enemyData.length > 0) {
-        console.log('🎭 SummonTotem: No valid target found, but have', enemyData.length, 'potential enemies');
       }
     }
   });

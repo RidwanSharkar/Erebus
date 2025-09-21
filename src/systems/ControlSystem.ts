@@ -21,7 +21,7 @@ import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapo
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
 import { triggerGlobalCobraShot } from '@/components/projectiles/CobraShotManager';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
-import { setGlobalCriticalRuneCount, setGlobalCritDamageRuneCount, getGlobalRuneCounts, setControlSystem } from '@/core/DamageCalculator';
+import { setGlobalCriticalRuneCount, setGlobalCritDamageRuneCount, getGlobalRuneCounts, setControlSystem, calculateDamage, DamageResult } from '@/core/DamageCalculator';
 
 export class ControlSystem extends System {
   public readonly requiredComponents = [Transform, Movement];
@@ -91,7 +91,7 @@ export class ControlSystem extends System {
   private onSunderCallback?: (position: Vector3, direction: Vector3, damage: number, stackCount: number) => void;
 
   // Callback for Smite ability
-  private onSmiteCallback?: (position: Vector3, direction: Vector3, onDamageDealt?: (damageDealt: boolean) => void) => void;
+  private onSmiteCallback?: (position: Vector3, direction: Vector3, onDamageDealt?: (totalDamage: number) => void) => void;
 
   // Callback for Colossus Strike ability
   private onColossusStrikeCallback?: (position: Vector3, direction: Vector3, damage: number, onDamageDealt?: (damageDealt: boolean) => void) => void;
@@ -267,7 +267,7 @@ export class ControlSystem extends System {
 
   // Colossus Strike ability state (Sword)
   private lastColossusStrikeTime = 0;
-  private colossusStrikeCooldown = 4.0; // 2 second cooldown
+  private colossusStrikeCooldown = 5.0; // 2 second cooldown
   private isColossusStriking = false;
 
   // Wind Shear ability state (Sword)
@@ -292,7 +292,7 @@ export class ControlSystem extends System {
   // Corrupted Aura ability state (Runeblade)
   private corruptedAuraActive = false;
   private lastManaDrainTime = 0;
-  private corruptedAuraRange = 2.0; // 8 unit range for slow effect
+  private corruptedAuraRange = 2.0; 
   private corruptedAuraManaCost = 24; // 12 mana per second
   private corruptedAuraSlowEffect = 0.5; // 50% slow (multiply movement speed by this)
   private corruptedAuraSlowedEntities = new Map<number, boolean>(); // Track slowed entities
@@ -634,7 +634,7 @@ export class ControlSystem extends System {
       }
 
       // Set critical strike chance runes to 10
-      setGlobalCriticalRuneCount(15);
+      setGlobalCriticalRuneCount(10);
 
       console.log(`🩸 Lethality activated: movement speed increased to 4.25, Critical Runes ${this.originalCriticalRunes} -> 10`);
     } else {
@@ -1762,7 +1762,7 @@ export class ControlSystem extends System {
     this.onSunderCallback = callback;
   }
 
-  public setSmiteCallback(callback: (position: Vector3, direction: Vector3, onDamageDealt?: (damageDealt: boolean) => void) => void): void {
+  public setSmiteCallback(callback: (position: Vector3, direction: Vector3, onDamageDealt?: (totalDamage: number) => void) => void): void {
     this.onSmiteCallback = callback;
   }
 
@@ -2254,11 +2254,11 @@ export class ControlSystem extends System {
 
     // Trigger smite callback with healing callback
     if (this.onSmiteCallback) {
-      this.onSmiteCallback(smitePosition, direction, (damageDealtFlag: boolean) => {
-        // Handle healing when damage is dealt by the visual component
-        if (damageDealtFlag) {
-          console.log(`⚡ Smite: Damage detected by visual component, triggering healing`);
-          this.performSmiteHealing();
+      this.onSmiteCallback(smitePosition, direction, (totalDamage: number) => {
+        // Handle healing based on the actual damage dealt by the visual component
+        if (totalDamage > 0) {
+          console.log(`⚡ Smite: ${totalDamage} total damage dealt by visual component, triggering healing`);
+          this.performSmiteHealing(totalDamage);
         }
       });
     }
@@ -2448,12 +2448,13 @@ export class ControlSystem extends System {
     }, 200); // 200ms delay to prevent spamming
   }
 
-  private performSmiteDamage(smitePosition: Vector3): boolean {
-    if (!this.playerEntity) return false;
+  private performSmiteDamage(smitePosition: Vector3): { damageDealt: boolean; totalDamage: number } {
+    if (!this.playerEntity) return { damageDealt: false, totalDamage: 0 };
 
-    const smiteDamage = 100;
+    const baseSmiteDamage = 100;
     const damageRadius = 3.0; // Small radius around impact location
     let damageDealt = false;
+    let totalDamage = 0;
 
     // Get all entities in the world to check for enemies/players
     const allEntities = this.world.getAllEntities();
@@ -2469,12 +2470,17 @@ export class ControlSystem extends System {
       const distance = smitePosition.distanceTo(entityTransform.position);
 
       if (distance <= damageRadius) {
-        // Entity is within damage radius - apply damage
+        // Entity is within damage radius - calculate actual damage and queue it
         const combatSystem = this.world.getSystem(CombatSystem);
         if (combatSystem && this.playerEntity) {
-          combatSystem.queueDamage(entity, smiteDamage, this.playerEntity, 'smite', this.playerEntity?.userData?.playerId);
+          // Calculate actual damage with critical hit mechanics
+          const damageResult: DamageResult = calculateDamage(baseSmiteDamage, this.currentWeapon);
+          const actualDamage = damageResult.damage;
+
+          combatSystem.queueDamage(entity, actualDamage, this.playerEntity, 'smite', this.playerEntity?.userData?.playerId);
           damageDealt = true;
-          console.log(`⚡  dealt ${smiteDamage} damage to entity ${entity.id} at distance ${distance.toFixed(2)}`);
+          totalDamage += actualDamage;
+          console.log(`⚡ Smite dealt ${actualDamage}${damageResult.isCritical ? ' CRITICAL' : ''} damage to entity ${entity.id} at distance ${distance.toFixed(2)}`);
         } else {
           console.log(`⚡ Smite: Could not find CombatSystem or playerEntity to deal damage`);
         }
@@ -2485,26 +2491,26 @@ export class ControlSystem extends System {
     // to prevent double damage. The visual component properly handles PVP damage
     // through the broadcastPlayerDamage system.
 
-    return damageDealt;
+    return { damageDealt, totalDamage };
   }
 
-  private performSmiteHealing(): void {
+  private performSmiteHealing(healingAmount: number): void {
     if (!this.playerEntity) {
       console.log(`⚡ Smite: No player entity available for healing`);
       return;
     }
 
-    // Get player's health component and heal for 100 HP
+    // Get player's health component and heal for the actual damage dealt
     const healthComponent = this.playerEntity.getComponent(Health);
     if (healthComponent) {
       const oldHealth = healthComponent.currentHealth;
       const maxHealth = healthComponent.maxHealth;
 
       // Always attempt to heal, even if at full health (heal method handles this)
-      const didHeal = healthComponent.heal(100); // Smite healing amount
+      const didHeal = healthComponent.heal(healingAmount); // Smite healing amount based on damage dealt
 
       if (didHeal) {
-        console.log(`⚡ Smite SUCCESSFULLY healed player for 100 HP! Health: ${oldHealth} -> ${healthComponent.currentHealth}/${maxHealth}`);
+        console.log(`⚡ Smite SUCCESSFULLY healed player for ${healingAmount} HP! Health: ${oldHealth} -> ${healthComponent.currentHealth}/${maxHealth}`);
 
         // Create healing damage number above player head
         const playerTransform = this.playerEntity.getComponent(Transform);
@@ -2514,7 +2520,7 @@ export class ControlSystem extends System {
 
           this.onDamageNumbersUpdate([{
             id: this.nextDamageNumberId.toString(),
-            damage: 100, // Smite heals for 100 HP
+            damage: healingAmount, // Smite heals for the actual damage dealt
             position: healingPosition,
             isCritical: false,
             timestamp: Date.now(),
@@ -2524,7 +2530,7 @@ export class ControlSystem extends System {
 
           // Broadcast healing in PVP mode
           if (this.onBroadcastHealing) {
-            this.onBroadcastHealing(100, 'smite', healingPosition);
+            this.onBroadcastHealing(healingAmount, 'smite', healingPosition);
           }
         }
       } else {
@@ -2537,8 +2543,8 @@ export class ControlSystem extends System {
       try {
         const gameUI = (window as any).gameUI;
         if (gameUI && typeof gameUI.gainHealth === 'function') {
-          gameUI.gainHealth(40);
-          console.log(`⚡ Smite: FALLBACK healing through gameUI - healed for 20 HP`);
+          gameUI.gainHealth(healingAmount);
+          console.log(`⚡ Smite: FALLBACK healing through gameUI - healed for ${healingAmount} HP`);
         }
       } catch (error) {
         console.log(`⚡ Smite: Could not heal through fallback method either`);

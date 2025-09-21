@@ -35,7 +35,7 @@ export function calculateDamage(baseAmount: number, weaponType?: WeaponType): Da
     const weaponSlot = globalControlSystem.selectedWeapons?.primary === WeaponType.BOW ? 'primary' : 'secondary';
     if (weaponSlot && globalControlSystem.isPassiveAbilityUnlocked &&
         globalControlSystem.isPassiveAbilityUnlocked('P', WeaponType.BOW, weaponSlot)) {
-      criticalChance += 0.05; // +5% crit chance
+      criticalChance += 0.10; // +5% crit chance
     }
   }
 

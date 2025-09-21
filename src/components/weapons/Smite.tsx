@@ -9,7 +9,7 @@ interface SmiteProps {
   position: Vector3;
   onComplete: () => void;
   onHit?: (targetId: string, damage: number) => void;
-  onDamageDealt?: (damageDealt: boolean) => void;
+  onDamageDealt?: (totalDamage: number) => void;
   enemyData?: Array<{
     id: string;
     position: Vector3;
@@ -174,7 +174,7 @@ const SmiteComponent = memo(function Smite({
     damageTriggered.current = true;
     const baseSmiteDamage = 100;
     const damageRadius = 3.0; // Small radius around impact location
-    let damageDealtFlag = false;
+    let totalDamage = 0;
 
     enemyData.forEach(enemy => {
       if (!enemy.health || enemy.health <= 0) return;
@@ -219,13 +219,13 @@ const SmiteComponent = memo(function Smite({
           }]);
         }
 
-        damageDealtFlag = true;
+        totalDamage += finalDamage;
       }
     });
 
-    // Notify parent if any damage was dealt
+    // Notify parent with total damage dealt
     if (onDamageDealt) {
-      onDamageDealt(damageDealtFlag);
+      onDamageDealt(totalDamage);
     }
   };
 

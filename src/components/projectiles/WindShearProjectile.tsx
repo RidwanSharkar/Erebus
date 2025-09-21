@@ -41,7 +41,6 @@ export default function WindShearProjectileManager({
   const addProjectile = useCallback((position: Vector3, direction: Vector3) => {
     const projectileId = projectileIdCounter.current++;
     
-    console.log(`🗡️ WindShear: Creating projectile ${projectileId} at position:`, position.toArray(), 'direction:', direction.toArray(), 'direction length:', direction.length());
     
     const normalizedDirection = direction.clone().normalize();
     const projectileData: WindShearProjectileData = {
@@ -56,7 +55,6 @@ export default function WindShearProjectileManager({
     
     setActiveProjectiles(prev => {
       const newProjectiles = [...prev, projectileData];
-      console.log(`✅ WindShear: Successfully created projectile ${projectileId}. Active projectiles:`, newProjectiles.length, 'Normalized direction:', normalizedDirection.toArray());
       return newProjectiles;
     });
   }, []);
@@ -86,7 +84,6 @@ export default function WindShearProjectileManager({
             const distance = projectile.position.distanceTo(enemy.position);
             if (distance <= HIT_RADIUS) {
               projectile.hitTargets.add(enemy.id);
-              console.log(`🗡️ WindShear: Hit enemy ${enemy.id} for ${DAMAGE} damage`);
               
               // Call hit callback for damage processing
               if (onProjectileHit) {
@@ -109,7 +106,6 @@ export default function WindShearProjectileManager({
             const distance = projectile.position.distanceTo(playerPos);
             if (distance <= HIT_RADIUS) {
               projectile.hitTargets.add(player.id);
-              console.log(`🗡️ WindShear: Hit player ${player.id} for ${DAMAGE} damage`);
 
               // Call hit callback for damage processing
               if (onProjectileHit) {
@@ -118,7 +114,6 @@ export default function WindShearProjectileManager({
 
               // Call player hit callback for Charge cooldown reduction
               if (onPlayerHit) {
-                console.log(`🗡️ WindShear: Notifying player hit for Charge cooldown reduction - player: ${player.id}`);
                 onPlayerHit(player.id);
               }
 
@@ -133,13 +128,10 @@ export default function WindShearProjectileManager({
         
         // Debug log every 0.25 seconds to track projectile movement more frequently
         if (Math.floor(lifetime * 4) !== Math.floor((lifetime - deltaTime) * 4)) {
-          console.log(`🗡️ WindShear: Projectile ${projectile.id} - distance: ${projectile.distanceTraveled.toFixed(1)}/${projectile.maxDistance}, lifetime: ${lifetime.toFixed(1)}s, position:`, projectile.position.toArray(), `direction:`, projectile.direction.toArray(), `hits: ${projectile.hitTargets.size}`);
         }
         
         if (projectile.distanceTraveled < projectile.maxDistance && lifetime <= 3.0) {
           updatedProjectiles.push(projectile);
-        } else {
-          console.log(`🗡️ WindShear: Removing projectile ${projectile.id} - distance: ${projectile.distanceTraveled.toFixed(1)}/${projectile.maxDistance}, lifetime: ${lifetime.toFixed(1)}s, total hits: ${projectile.hitTargets.size}`);
         }
       });
 
@@ -171,11 +163,8 @@ export default function WindShearProjectileManager({
 
 // Global function to trigger wind shear projectiles (called from ControlSystem)
 export const triggerWindShearProjectile = (position: Vector3, direction: Vector3) => {
-  console.log(`🗡️ WindShear: Trigger called with position:`, position.toArray(), 'direction:', direction.toArray());
   if ((window as any).triggerWindShearProjectile) {
     (window as any).triggerWindShearProjectile(position, direction);
-  } else {
-    console.warn('🗡️ WindShear: Manager not ready, projectile creation failed');
   }
 };
 

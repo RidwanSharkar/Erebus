@@ -29,11 +29,7 @@ const PVPScoreboard: React.FC<PVPScoreboardProps> = ({
   }
 
   return (
-    <div className="fixed bottom-20 right-4 bg-black/80 text-white rounded-lg p-3 min-w-48 max-w-64 z-50 border border-gray-600">
-      {/* Header */}
-      <div className="text-center mb-2 border-b border-gray-600 pb-2">
-
-      </div>
+    <div className="fixed bottom-20 right-4 bg-black/80 text-white rounded-lg p-2 min-w-48 max-w-64 z-50 border border-gray-600">
 
       {/* Player List */}
       <div className="space-y-1">
@@ -72,12 +68,7 @@ const PVPScoreboard: React.FC<PVPScoreboardProps> = ({
         ))}
       </div>
 
-      {/* Footer */}
-      <div className="mt-2 pt-1 border-t border-gray-600 text-center">
-        <div className="text-xs text-gray-400">
 
-        </div>
-      </div>
     </div>
   );
 };
