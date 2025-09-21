@@ -2577,8 +2577,10 @@ const hasMana = useCallback((amount: number) => {
           const wasAlive = !health.isDead;
 
           // Pass the entity so Health component can use Shield for damage absorption
-          // Bypass invulnerability for PVP damage to allow rapid attacks like bursts to land multiple hits
-          health.takeDamage(data.damage, Date.now() / 1000, playerEntity, true);
+          // Bypass invulnerability for PVP damage to allow rapid attacks like bursts to land multiple hits,
+          // but respect deflect invulnerability (3 seconds) which is much longer than standard invulnerability (0.5s)
+          const bypassInvulnerability = !health.isInvulnerable || health.invulnerabilityTimer <= 1.0;
+          health.takeDamage(data.damage, Date.now() / 1000, playerEntity, bypassInvulnerability);
 
           // Display incoming damage numbers
           if (playerEntity) {
@@ -2653,9 +2655,7 @@ const hasMana = useCallback((amount: number) => {
               
               // If target is truly gone, award experience with delay
               console.log(`✅ Confirmed target ${data.targetPlayerId} is dead. Awarding experience with delay.`);
-              if (socket.id) {
-                incrementKillCount(socket.id);
-              }
+              // Note: Kill count will be handled by handlePlayerKill event from server
               setPlayerExperience(prev => prev + 10);
             }, 500); // 500ms delay to allow server state to sync
             
@@ -2664,11 +2664,7 @@ const hasMana = useCallback((amount: number) => {
 
           console.log(`🎯 Local player killed ${data.targetPlayerId} with ${data.damage} damage! Awarding +10 EXP`);
 
-          // Increment kill counter for the local player
-          if (socket.id) {
-            incrementKillCount(socket.id);
-          }
-
+          // Note: Kill count will be handled by handlePlayerKill event from server
           // Award +10 EXP to the local player for the kill
           setPlayerExperience(prev => {
             const newExp = prev + 10;
