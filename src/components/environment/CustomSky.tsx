@@ -1,20 +1,38 @@
 import React, { useMemo } from 'react';
 import { Color, BackSide, SphereGeometry } from '@/utils/three-exports';
-import { useColorCycle } from '../../utils/hooks/useColorCycle';
 
 interface SkyProps {
   level?: number;
 }
 
-// Note: Level-based colors removed in favor of time-based cycling
+/**
+ * Get level-based colors for dynamic sky appearance
+ */
+const getLevelColors = (level: number) => {
+  switch (level) {
+    case 1: return { color: '#ff0000', emissive: '#600000' }; // Green 00ff00 006600
+    case 2: return { color: '#ffa500', emissive: '#cc8400' }; // Orange
+    case 3: return { color: '#87ceeb', emissive: '#4682b4' }; // Light Blue
+    case 4: return { color: '#dda0dd', emissive: '#9370db' }; // Light Purple
+    case 5: return { color: '#ff0000', emissive: '#600000' }; // Red
+    default: return { color: '#00ff00', emissive: '#006600' }; // Default to green
+  }
+};
 
 /**
- * Creates a custom sky shader with time-based gradient colors
+ * Creates a custom sky shader with level-based gradient colors
  */
-const createSkyShader = (skyColors: { topColor: string; middleColor: string; bottomColor: string }) => {
-  const topColor = new Color(skyColors.topColor);
-  const middleColor = new Color(skyColors.middleColor);
-  const bottomColor = new Color(skyColors.bottomColor);
+const createSkyShader = (level: number) => {
+  const levelColors = getLevelColors(level);
+  const baseColor = new Color(levelColors.color);
+  
+  // Create gradient colors based on level
+  // Top: darker version of level color (made paler)
+  const topColor = baseColor.clone().multiplyScalar(0.5);
+  // Middle: level color with some saturation (made paler)
+  const middleColor = baseColor.clone().multiplyScalar(0.85);
+  // Bottom: lighter, more neutral version (made paler)
+  const bottomColor = baseColor.clone().lerp(new Color('#87CEEB'), 0.6);
   
   return {
     uniforms: {
@@ -54,23 +72,19 @@ const createSkyShader = (skyColors: { topColor: string; middleColor: string; bot
 };
 
 /**
- * Custom sky component with time-based gradient shader
+ * Custom sky component with level-based gradient shader
  * Creates an immersive atmospheric backdrop for the game
  */
 const CustomSky: React.FC<SkyProps> = ({ level = 1 }) => {
-  // Use time-based color cycling
-  const { getSkyColors } = useColorCycle();
-  const skyColors = getSkyColors();
-
   const shaderParams = useMemo(() => {
-    const skyShader = createSkyShader(skyColors);
+    const skyShader = createSkyShader(level);
     return {
       uniforms: skyShader.uniforms,
       vertexShader: skyShader.vertexShader,
       fragmentShader: skyShader.fragmentShader,
       side: BackSide,
     };
-  }, [skyColors]);
+  }, [level]);
 
   // Memoize geometry for performance
   const skyGeometry = useMemo(() => new SphereGeometry(500, 32, 32), []);

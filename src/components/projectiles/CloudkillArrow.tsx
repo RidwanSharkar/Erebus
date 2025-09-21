@@ -259,25 +259,35 @@ export default function CloudkillArrow({
         });
 
         // Damage players within radius of the damage position (at impact time)
-        // Only damage players who are actually in the indicated area when the arrow impacts
+        // CRITICAL FIX: Only damage players who are still in the original indicated area at impact time
+        // Exclude the original target if they're no longer in the area
         players.forEach(player => {
           if (!player.position) return;
 
           const playerPos = new Vector3(player.position.x, 0, player.position.z);
-          const distance = playerPos.distanceTo(damagePosition);
+
+          // Always check against original indicated position (no homing behavior)
+          const checkPosition = new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
+
+          const distance = playerPos.distanceTo(checkPosition);
 
           if (distance <= DAMAGE_RADIUS) {
-            // Damage any player who is currently in the impact area, regardless of original targeting
-            onHit(player.id, ARROW_DAMAGE, false, damagePosition);
+            // Only damage if player is actually in the area at impact time
+            onHit(player.id, ARROW_DAMAGE, false, checkPosition);
           }
         });
       }
 
       // Also check if local player is in damage radius (at impact time)
-      // Check against the same damage position used for all other damage calculations
+      // CRITICAL FIX: For local player, check against original indicated position (no homing behavior)
       tempPlayerGroundPos.set(playerPosition.x, 0, playerPosition.z);
 
-      if (tempPlayerGroundPos.distanceTo(damagePosition) <= DAMAGE_RADIUS) {
+      // Always check against original indicated position (no homing behavior)
+      const localPlayerCheckPosition = new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
+
+      tempTargetGroundPos.set(localPlayerCheckPosition.x, 0, localPlayerCheckPosition.z);
+
+      if (tempPlayerGroundPos.distanceTo(tempTargetGroundPos) <= DAMAGE_RADIUS) {
         onImpact(ARROW_DAMAGE);
       }
       return;

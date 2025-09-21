@@ -14,6 +14,7 @@ interface WindShearProjectileData {
 
 interface WindShearProjectileManagerProps {
   onProjectileHit?: (targetId: string, damage: number) => void;
+  onPlayerHit?: (playerId: string) => void; // New callback for player hits (for Charge cooldown reduction)
   world?: any; // World instance for collision detection
   players?: Array<{ id: string; position: { x: number; y: number; z: number }; health: number }>;
   enemyData?: Array<{
@@ -25,12 +26,13 @@ interface WindShearProjectileManagerProps {
 }
 
 // React-based projectile manager (no global state)
-export default function WindShearProjectileManager({ 
-  onProjectileHit, 
-  world, 
-  players = [], 
-  enemyData = [], 
-  localSocketId 
+export default function WindShearProjectileManager({
+  onProjectileHit,
+  onPlayerHit, // New callback for player hits
+  world,
+  players = [],
+  enemyData = [],
+  localSocketId
 }: WindShearProjectileManagerProps) {
   const [activeProjectiles, setActiveProjectiles] = useState<WindShearProjectileData[]>([]);
   const projectileIdCounter = useRef(0);
@@ -108,12 +110,18 @@ export default function WindShearProjectileManager({
             if (distance <= HIT_RADIUS) {
               projectile.hitTargets.add(player.id);
               console.log(`🗡️ WindShear: Hit player ${player.id} for ${DAMAGE} damage`);
-              
+
               // Call hit callback for damage processing
               if (onProjectileHit) {
                 onProjectileHit(player.id, DAMAGE);
               }
-              
+
+              // Call player hit callback for Charge cooldown reduction
+              if (onPlayerHit) {
+                console.log(`🗡️ WindShear: Notifying player hit for Charge cooldown reduction - player: ${player.id}`);
+                onPlayerHit(player.id);
+              }
+
               // Don't remove projectile immediately - piercing damage!
               break; // Only hit one target per frame
             }

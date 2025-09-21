@@ -1774,6 +1774,23 @@ export class ControlSystem extends System {
     this.onWindShearCallback = callback;
   }
 
+  // Method to reduce Charge cooldown when WindShear hits a player
+  public reduceChargeCooldownFromWindShear(playerId: string): void {
+    const currentTime = Date.now() / 1000;
+    const timeSinceLastCharge = currentTime - this.lastChargeTime;
+    const remainingCooldown = Math.max(0, this.chargeCooldown - timeSinceLastCharge);
+
+    if (remainingCooldown > 0) {
+      // Reduce the cooldown by 4 seconds (or to 0 if less than 4 seconds remaining)
+      const reductionAmount = Math.min(4.0, remainingCooldown);
+      this.lastChargeTime -= reductionAmount; // Move the last charge time back to effectively reduce cooldown
+
+      console.log(`⚡ WindShear: Reduced Charge cooldown by ${reductionAmount}s due to hitting player ${playerId}. Remaining cooldown: ${Math.max(0, this.chargeCooldown - (currentTime - this.lastChargeTime))}s`);
+    } else {
+      console.log(`⚡ WindShear: Charge ability not on cooldown, no reduction applied`);
+    }
+  }
+
   public setDeathGraspCallback(callback: (position: Vector3, direction: Vector3) => void): void {
     this.onDeathGraspCallback = callback;
   }

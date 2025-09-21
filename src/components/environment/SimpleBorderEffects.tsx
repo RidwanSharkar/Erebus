@@ -1,12 +1,12 @@
 import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { 
-  InstancedMesh, 
-  MeshBasicMaterial, 
-  PlaneGeometry, 
+import {
+  InstancedMesh,
+  MeshBasicMaterial,
+  PlaneGeometry,
   CircleGeometry,
-  Matrix4, 
-  Vector3, 
+  Matrix4,
+  Vector3,
   Group
 } from '@/utils/three-exports';
 
@@ -21,8 +21,8 @@ interface SimpleBorderEffectsProps {
  * Ultra-performance border effects using simple geometries and particles
  * Perfect for maintaining 120+ FPS while adding atmospheric elements
  */
-const SimpleBorderEffects: React.FC<SimpleBorderEffectsProps> = ({ 
-  radius = 25, 
+const SimpleBorderEffects: React.FC<SimpleBorderEffectsProps> = ({
+  radius = 25,
   count = 64,
   enableParticles = true,
   particleCount = 100
@@ -35,17 +35,17 @@ const SimpleBorderEffects: React.FC<SimpleBorderEffectsProps> = ({
   const particlePositions = useMemo(() => {
     const positions: Vector3[] = [];
     const angleStep = (Math.PI * 2) / particleCount;
-    
+
     for (let i = 0; i < particleCount; i++) {
       const angle = i * angleStep;
       const distance = radius + (Math.random() - 0.5) * 4; // Slight variation
       const x = Math.cos(angle) * distance;
       const z = Math.sin(angle) * distance;
       const y = Math.random() * 2; // Random height
-      
+
       positions.push(new Vector3(x, y, z));
     }
-    
+
     return positions;
   }, [radius, particleCount]);
 
@@ -53,15 +53,15 @@ const SimpleBorderEffects: React.FC<SimpleBorderEffectsProps> = ({
   const glowPositions = useMemo(() => {
     const positions: Vector3[] = [];
     const angleStep = (Math.PI * 2) / count;
-    
+
     for (let i = 0; i < count; i++) {
       const angle = i * angleStep;
       const x = Math.cos(angle) * radius;
       const z = Math.sin(angle) * radius;
-      
+
       positions.push(new Vector3(x, 0.5, z));
     }
-    
+
     return positions;
   }, [radius, count]);
 
@@ -82,12 +82,12 @@ const SimpleBorderEffects: React.FC<SimpleBorderEffectsProps> = ({
 
   // Geometries
   const particleGeometry = useMemo(() => new PlaneGeometry(0.05, 0.05), []);
-  const glowGeometry = useMemo(() => new CircleGeometry(0.3, 8), []);
+  const glowGeometry = useMemo(() => new CircleGeometry(0.275, 8), []);
 
   // Update instanced matrices
   useEffect(() => {
     const matrix = new Matrix4();
-    
+
     // Update particle instances
     if (particleRef.current) {
       particlePositions.forEach((position, i) => {
@@ -110,12 +110,12 @@ const SimpleBorderEffects: React.FC<SimpleBorderEffectsProps> = ({
   // Animate particles
   useFrame((state) => {
     if (!groupRef.current) return;
-    
+
     const time = state.clock.getElapsedTime();
-    
+
     // Gentle rotation
-    groupRef.current.rotation.y = time * 0.05;
-    
+    groupRef.current.rotation.y = time * 0.1;
+
     // Update particle positions for floating animation
     if (particleRef.current) {
       const matrix = new Matrix4();

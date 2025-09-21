@@ -4223,7 +4223,11 @@ const hasMana = useCallback((amount: number) => {
       {/* Enhanced Ground with textures and ambient occlusion */}
       <EnhancedGround radius={29} height={1} level={1} />
 
-
+      {/* Map boundary visual indicator */}
+      <mesh position={[0, 0.01, 0]} scale={[2.5, 2.5, 2.5]}>
+        <ringGeometry args={[25, 29, 64]} />
+        <meshStandardMaterial color="#ff6b6b" transparent opacity={0.3} />
+      </mesh>
 
 
 
@@ -4493,7 +4497,7 @@ const hasMana = useCallback((amount: number) => {
       {engineRef.current && (
         <>
           <UnifiedProjectileManager world={engineRef.current.getWorld()} />
-          <WindShearProjectileManager 
+          <WindShearProjectileManager
             world={engineRef.current.getWorld()}
             players={Array.from(players.values())}
             enemyData={[]} // Empty in PVP mode - we target other players instead
@@ -4508,6 +4512,13 @@ const hasMana = useCallback((amount: number) => {
               else if (damageEnemy) {
                 console.log(`🗡️ WindShear: Dealing ${damage} damage to enemy ${targetId}`);
                 damageEnemy(targetId, damage);
+              }
+            }}
+            onPlayerHit={(playerId: string) => {
+              // Reduce Charge cooldown when WindShear hits a player
+              if (controlSystemRef.current) {
+                console.log(`⚡ WindShear: Player hit detected - ${playerId}, reducing Charge cooldown`);
+                controlSystemRef.current.reduceChargeCooldownFromWindShear(playerId);
               }
             }}
           />

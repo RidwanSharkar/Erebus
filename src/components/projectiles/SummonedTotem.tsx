@@ -89,7 +89,7 @@ export default function SummonedTotem({
     hasTriggeredCleanup: false,
     mountId: Date.now(),
     ATTACK_COOLDOWN: 500, // 0.5 seconds
-    RANGE: 5, // 5 units range for PVP targeting
+    RANGE: 6, // 5 units range for PVP targeting
     DURATION: 8000, // 8 seconds
     DAMAGE: 25, // 25 damage per attack
     EFFECT_DURATION: 225,
@@ -191,12 +191,6 @@ export default function SummonedTotem({
 
     const effectId = Date.now();
 
-    // Get totem world position for relative effect positioning
-    const totemWorldPosition = new Vector3();
-    if (groupRef.current) {
-      groupRef.current.getWorldPosition(totemWorldPosition);
-    }
-
     const updates = {
       damageNumber: {
         id: nextDamageNumberId.current++,
@@ -208,7 +202,7 @@ export default function SummonedTotem({
       effect: {
         id: effectId,
         type: 'summonExplosion',
-        position: worldImpactPosition.clone(), // Use absolute world position of the target
+        position: worldImpactPosition.clone(), // Store absolute world position
         direction: new Vector3(),
         duration: constants.EFFECT_DURATION / 1000,
         startTime: Date.now(),
@@ -235,18 +229,18 @@ export default function SummonedTotem({
   }, [constants, onDamage, setActiveEffects, setDamageNumbers, nextDamageNumberId, enemyData]);
 
   const handleHealing = useCallback(() => {
-    if (!onHealPlayer || !casterId) {
-      console.log('🎭 SummonTotem: No heal callback or casterId provided');
+    if (!onHealPlayer) {
+      console.log('🎭 SummonTotem: No heal callback provided');
       return;
     }
 
     const now = Date.now();
     if (now - constants.lastHealTime >= constants.HEAL_INTERVAL) {
-      console.log('🎭 SummonTotem: Healing caster', casterId, 'for', constants.HEAL_AMOUNT, 'HP');
+      console.log('🎭 SummonTotem: Healing player for', constants.HEAL_AMOUNT, 'HP');
       onHealPlayer(constants.HEAL_AMOUNT);
       constants.lastHealTime = now;
     }
-  }, [constants, onHealPlayer, casterId]);
+  }, [constants, onHealPlayer]);
 
   useFrame(() => {
     const now = Date.now();

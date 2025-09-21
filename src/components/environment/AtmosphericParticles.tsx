@@ -91,7 +91,7 @@ const AtmosphericParticles: React.FC<AtmosphericParticlesProps> = ({
     <group position={position}>
       <points ref={pointsRef} geometry={geometry}>
         <pointsMaterial
-          size={size}
+          size={size*1.25}
           vertexColors
           transparent
           opacity={0.75}

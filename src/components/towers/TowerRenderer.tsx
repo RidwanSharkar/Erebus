@@ -401,17 +401,6 @@ export default function TowerRenderer({
         decay={2}
       />
 
-      {/* Range Indicator Circle */}
-      <mesh position={[0, 0.1, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[towerRange - 0.1, towerRange, 64]} />
-        <meshBasicMaterial
-          color={towerColor.getHex()}
-          transparent
-          opacity={0.3}
-          side={2} // DoubleSide
-          depthWrite={false}
-        />
-      </mesh>
 
       {/* Death Effect */}
       {isDead && (
