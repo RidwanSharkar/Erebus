@@ -2,6 +2,7 @@ import { useRef, useMemo, memo } from 'react';
 import { Group, Vector3, SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, Color, AdditiveBlending, RingGeometry } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { WeaponType } from '../dragon/weapons';
+import { calculateDamage } from '@/core/DamageCalculator';
 
 interface ColossusStrikeProps {
   weaponType: WeaponType;
@@ -40,6 +41,7 @@ interface ColossusStrikeProps {
 }
 
 const ColossusStrikeComponent = memo(function ColossusStrike({
+  weaponType,
   position,
   damage = 100, // Default to 100 if not provided
   delayStart = 0,
@@ -186,9 +188,10 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
     const damageRadius = 3.0; // Same radius as Smite (3.0 units)
     let damageDealtFlag = false;
 
-    // Calculate critical hit (Colossus Strike can be critical)
-    const isCritical = Math.random() < 0.2; // 20% crit chance
-    const finalDamage = isCritical ? Math.floor(damage * 2.0) : damage; // 50% crit damage multiplier
+    // Calculate damage using centralized DamageCalculator system
+    const damageResult = calculateDamage(damage, weaponType);
+    const finalDamage = damageResult.damage;
+    const isCritical = damageResult.isCritical;
 
     // Handle both PVP players and PvE enemies with the same logic as Smite
     const allTargets = [

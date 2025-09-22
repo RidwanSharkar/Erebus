@@ -157,6 +157,14 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
                 ? 'text-blue-400 text-lg'
                 : damageData.damageType === 'cobra_shot'
                 ? 'text-green-400 text-lg'
+                : damageData.damageType === 'viper_sting'
+                ? 'text-purple-300 text-lg'
+                : damageData.damageType === 'cloudkill'
+                ? 'text-teal-400 text-lg'
+                : damageData.damageType === 'frost_nova'
+                ? 'text-blue-300 text-lg'
+                : damageData.damageType === 'entropic_cryoflame'
+                ? 'text-cyan-400 text-lg'
                 : 'text-red-400'
         }`}
       >

@@ -136,7 +136,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
       const enemyPos2D = new Vector3(transform.position.x, 0, transform.position.z);
       const distance = projectilePos2D.distanceTo(enemyPos2D);
 
-      if (distance <= 1.6) { // Hit radius for CrossentropyBolt (slightly larger than EntropicBolt)
+      if (distance <= 1.55) { // Hit radius for CrossentropyBolt (slightly larger than EntropicBolt)
         return true; // Collision detected
       }
     }

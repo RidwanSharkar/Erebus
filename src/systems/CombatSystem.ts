@@ -8,7 +8,7 @@ import { Transform } from '@/ecs/components/Transform';
 import { Renderer } from '@/ecs/components/Renderer';
 import { Movement } from '@/ecs/components/Movement';
 import { World } from '@/ecs/World';
-import { calculateDamage, DamageResult } from '@/core/DamageCalculator';
+import { calculateDamage, DamageResult, getGlobalRuneCounts } from '@/core/DamageCalculator';
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
 import { SummonedUnit } from '@/ecs/components/SummonedUnit';
 import { Projectile } from '@/ecs/components/Projectile';
@@ -21,6 +21,7 @@ interface DamageEvent {
   damageType?: string;
   timestamp: number;
   sourcePlayerId?: string; // Player ID of the source for proper experience attribution
+  isCritical?: boolean; // Whether this damage was a critical hit
 }
 
 interface HealEvent {
@@ -47,7 +48,7 @@ export class CombatSystem extends System {
   private onEnemyDamageCallback?: (enemyId: string, damage: number, sourcePlayerId?: string) => void;
   
   // PVP damage callback for routing player damage to server
-  private onPlayerDamageCallback?: (playerId: string, damage: number, damageType?: string) => void;
+  private onPlayerDamageCallback?: (playerId: string, damage: number, damageType?: string, isCritical?: boolean) => void;
 
   // Summoned unit damage callback for routing summoned unit damage to server
   private onSummonedUnitDamageCallback?: (unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string, damageType?: string) => void;
@@ -91,7 +92,7 @@ export class CombatSystem extends System {
   }
   
   // Set callback for routing player damage to multiplayer server (PVP)
-  public setPlayerDamageCallback(callback: (playerId: string, damage: number, damageType?: string) => void): void {
+  public setPlayerDamageCallback(callback: (playerId: string, damage: number, damageType?: string, isCritical?: boolean) => void): void {
     this.onPlayerDamageCallback = callback;
   }
 
@@ -194,7 +195,8 @@ export class CombatSystem extends System {
   }
 
   private applyDamage(damageEvent: DamageEvent, currentTime: number): void {
-    const { target, damage: baseDamage, source, damageType, sourcePlayerId } = damageEvent;
+    const { target, damage: baseDamage, source, sourcePlayerId } = damageEvent;
+    let damageType = damageEvent.damageType;
 
     const health = target.getComponent(Health);
     if (!health || !health.enabled) return;
@@ -214,8 +216,19 @@ export class CombatSystem extends System {
     const enemy = target.getComponent(Enemy);
     if (enemy && this.onEnemyDamageCallback) {
       // Calculate actual damage with critical hit mechanics
+      // For abilities that already determined critical hits (like backstab), preserve the original critical flag
       const currentWeapon = this.getCurrentWeapon();
-      const damageResult: DamageResult = calculateDamage(baseDamage, currentWeapon);
+      let damageResult: DamageResult;
+
+      if (damageEvent.isCritical !== undefined) {
+        // Preserve pre-calculated critical hit and damage (e.g., from backstab)
+        // The damage is already calculated correctly, just preserve the critical flag
+        damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
+      } else {
+        // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
+        damageResult = calculateDamage(baseDamage, currentWeapon);
+      }
+
       const actualDamage = damageResult.damage;
 
       // Get source player ID for proper kill attribution
@@ -244,7 +257,7 @@ export class CombatSystem extends System {
           const weaponSlot = controlSystem.selectedWeapons?.primary === WeaponType.RUNEBLADE ? 'primary' :
                             controlSystem.selectedWeapons?.secondary === WeaponType.RUNEBLADE ? 'secondary' : null;
           if (weaponSlot && controlSystem.isPassiveAbilityUnlocked && controlSystem.isPassiveAbilityUnlocked('P', WeaponType.RUNEBLADE, weaponSlot)) {
-            const healingAmount = Math.floor(actualDamage * 0.1); // 10% of damage dealt
+            const healingAmount = Math.floor(actualDamage * 0.15); // 10% of damage dealt
             if (healingAmount > 0) {
               // Apply healing to source player
               const sourceHealth = source.getComponent(Health);
@@ -281,10 +294,7 @@ export class CombatSystem extends System {
         }
       }
 
-      // Log for debugging
-      const sourceName = source ? `Entity ${source.id}` : 'Unknown';
-      const targetName = this.getEntityDisplayName(target);
-      const critText = damageResult.isCritical ? ' CRITICAL' : '';
+
 
       return; // Don't apply damage locally for enemies
     }
@@ -296,8 +306,19 @@ export class CombatSystem extends System {
       const summonedUnit = summonedUnitComponent as typeof SummonedUnit.prototype;
 
       // Calculate actual damage with critical hit mechanics
+      // For abilities that already determined critical hits (like backstab), preserve the original critical flag
       const currentWeapon = this.getCurrentWeapon();
-      const damageResult: DamageResult = calculateDamage(baseDamage, currentWeapon);
+      let damageResult: DamageResult;
+
+      if (damageEvent.isCritical !== undefined) {
+        // Preserve pre-calculated critical hit and damage (e.g., from backstab)
+        // The damage is already calculated correctly, just preserve the critical flag
+        damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
+      } else {
+        // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
+        damageResult = calculateDamage(baseDamage, currentWeapon);
+      }
+
       const actualDamage = damageResult.damage;
 
       // Get source player ID for team validation
@@ -359,7 +380,7 @@ export class CombatSystem extends System {
           const weaponSlot = controlSystem.selectedWeapons?.primary === WeaponType.RUNEBLADE ? 'primary' :
                             controlSystem.selectedWeapons?.secondary === WeaponType.RUNEBLADE ? 'secondary' : null;
           if (weaponSlot && controlSystem.isPassiveAbilityUnlocked && controlSystem.isPassiveAbilityUnlocked('P', WeaponType.RUNEBLADE, weaponSlot)) {
-            const healingAmount = Math.floor(actualDamage * 0.1); // 10% of damage dealt
+            const healingAmount = Math.floor(actualDamage * 0.15); // 10% of damage dealt
             if (healingAmount > 0) {
               // Apply healing to source player
               const sourceHealth = source.getComponent(Health);
@@ -429,8 +450,19 @@ export class CombatSystem extends System {
       }
 
       // Calculate actual damage with critical hit mechanics
+      // For abilities that already determined critical hits (like backstab), preserve the original critical flag
       const currentWeapon = this.getCurrentWeapon();
-      const damageResult: DamageResult = calculateDamage(baseDamage, currentWeapon);
+      let damageResult: DamageResult;
+
+      if (damageEvent.isCritical !== undefined) {
+        // Preserve pre-calculated critical hit and damage (e.g., from backstab)
+        // The damage is already calculated correctly, just preserve the critical flag
+        damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
+      } else {
+        // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
+        damageResult = calculateDamage(baseDamage, currentWeapon);
+      }
+
       const actualDamage = damageResult.damage;
 
       // Apply damage locally (pass entity so Health can use Shield component)
@@ -486,8 +518,19 @@ export class CombatSystem extends System {
     // Check if target is a player in PVP mode - if so, route damage through multiplayer
     // Also prevent self-damage in PVP (source hitting themselves)
     if (!enemy && this.onPlayerDamageCallback && source && source.id !== target.id) {
+      // CRITICAL: Don't damage dead players in PVP
+      const targetHealth = target.getComponent(Health);
+      if (targetHealth && targetHealth.isDead) {
+        console.log(`🚫 Blocked damage to dead player ${target.id} - not processing projectile hit`);
+        return;
+      }
       // Check if this is a Cryoflame-enhanced Entropic Bolt
       const isCryoflameBolt = damageType === 'entropic' && source.getComponent(Renderer)?.mesh?.userData?.isCryoflame === true;
+
+      // Update damage type for Cryoflame bolts for proper damage number coloring
+      if (isCryoflameBolt) {
+        damageType = 'entropic_cryoflame';
+      }
 
       // Apply burning stacks for Entropic Bolt and Crossentropy Bolt (but not for Cryoflame)
       let finalDamage = baseDamage;
@@ -500,7 +543,7 @@ export class CombatSystem extends System {
 
           // Check if we recently applied burning stacks to prevent spam
           const lastBurningStackTime = (target as any)._lastBurningStackTime || 0;
-          if (currentTime - lastBurningStackTime > 0.1) { // 100ms cooldown between burning stack applications
+          if (currentTime - lastBurningStackTime > 0.3) { // 100ms cooldown between burning stack applications
             // Apply burning stack and get damage bonus
             const { damageBonus } = controlSystem.applyBurningStack(target.id, currentTime, isEntropicBolt);
 
@@ -552,19 +595,29 @@ export class CombatSystem extends System {
       }
 
       // Calculate actual damage with critical hit mechanics (using modified damage)
+      // For abilities that already determined critical hits (like backstab), preserve the original critical flag
       const currentWeapon = this.getCurrentWeapon();
-      let damageResult: DamageResult = calculateDamage(finalDamage, currentWeapon);
+      let damageResult: DamageResult;
+
+      if (damageEvent.isCritical !== undefined) {
+        // Preserve pre-calculated critical hit and damage (e.g., from backstab)
+        // The damage is already calculated correctly, just preserve the critical flag
+        damageResult = { damage: finalDamage, isCritical: damageEvent.isCritical };
+      } else {
+        // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
+        damageResult = calculateDamage(finalDamage, currentWeapon);
+      }
 
       // Debug logging for sabre damage
       if (damageType?.includes('sabre')) {
-        console.log(`🎯 SABRE CRIT CALC - Base: ${finalDamage}, Final: ${damageResult.damage}, Critical: ${damageResult.isCritical}, Type: ${damageType}`);
+        console.log(`🎯 SABRE CRIT CALC - Base: ${finalDamage}, Final: ${damageResult.damage}, Critical: ${damageResult.isCritical}, Type: ${damageType}, Preserved: ${damageEvent.isCritical !== undefined}`);
       }
 
       // Route player damage through multiplayer server for PVP (let receiver handle shields)
       if (this.shouldLogDamage()) {
         // console.log(`⚔️ Routing ${damageResult.damage} PVP ${damageType || 'damage'} to player ${target.id} through multiplayer server`);
       }
-      this.onPlayerDamageCallback(target.id.toString(), damageResult.damage, damageType); // Send damage, let receiver handle shields
+      this.onPlayerDamageCallback(target.id.toString(), damageResult.damage, damageType, damageResult.isCritical); // Send damage and critical flag, let receiver handle shields
 
       // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
       if (source && currentWeapon === WeaponType.RUNEBLADE) {
@@ -598,7 +651,7 @@ export class CombatSystem extends System {
       // Skip damage numbers for tower projectiles and specific projectile types that use damage taken system
       // Exception: Show damage numbers for crossentropy and entropic bolts when local player is the caster (not the target)
       const isTowerProjectile = source && (source as any).isTowerProjectile === true;
-      const isProjectileWithDamageTaken = damageType === 'crossentropy' || damageType === 'entropic' || damageType === 'projectile';
+      const isProjectileWithDamageTaken = damageType === 'crossentropy' || damageType === 'entropic' || damageType === 'entropic_cryoflame' || damageType === 'projectile';
       const isLocalPlayerCaster = this.localPlayerEntityId !== null && this.localPlayerEntityId !== target.id;
       const shouldShowDamageNumbers = !isTowerProjectile && (!isProjectileWithDamageTaken || (isProjectileWithDamageTaken && isLocalPlayerCaster));
 
@@ -744,20 +797,11 @@ export class CombatSystem extends System {
 
       // console.log(`💀 ${enemy.getDisplayName()} has been defeated!`);
 
-      // Award experience to killer if it's a player - only for killing blows
-      // IMPORTANT: Only award experience in single-player mode or when enemy callback is not set
-      // In multiplayer/PVP mode, enemy damage should be routed through server, not processed locally
-      if (sourcePlayerId && sourcePlayerId !== 'unknown' && !this.onEnemyDamageCallback) {
-        console.log(`🏆 Player ${sourcePlayerId} killed enemy in single-player mode! Awarding +10 EXP for player kill`);
-        // Award +10 EXP for player kills (increased from +5 as requested)
-        // This should only happen in single-player mode where onEnemyDamageCallback is not set
-        this.onPlayerDamageCallback?.(sourcePlayerId, 0, 'player_kill');
-
-        // Check for Scythe Soul Harvest passive (+5 mana per kill)
+      // Experience awards are now handled by the backend server
+      // Apply other rewards like Scythe Soul Harvest passive (+5 mana per kill)
+      if (sourcePlayerId && sourcePlayerId !== 'unknown') {
+        console.log(`🏆 Player ${sourcePlayerId} killed enemy! EXP will be awarded by server.`);
         this.applyScythePassiveReward(sourcePlayerId);
-      } else if (sourcePlayerId && sourcePlayerId !== 'unknown' && this.onEnemyDamageCallback) {
-        console.log(`⚠️ Enemy death processed locally in multiplayer mode - this should not happen! Enemy: ${enemy.getDisplayName()}, Player: ${sourcePlayerId}`);
-        // Don't award experience here - it should be handled by the server/multiplayer system
       }
 
       // Trigger death effects
@@ -776,13 +820,10 @@ export class CombatSystem extends System {
 
       console.log(`💀 ${summonedUnit.getDisplayName()} has been defeated!`);
 
-      // Award experience for killing blows on enemy summoned units (only if killer is a player, not tower/summoned unit)
-      if (sourcePlayerId && sourcePlayerId !== 'unknown' && this.onPlayerDamageCallback) {
-        // Only award experience if it's an enemy summoned unit (not the player's own unit)
+      // Experience awards for summoned unit kills are now handled by the backend server
+      if (sourcePlayerId && sourcePlayerId !== 'unknown') {
         if (summonedUnit.ownerId !== sourcePlayerId) {
-          console.log(`🎯 Player ${sourcePlayerId} killed enemy summoned unit owned by ${summonedUnit.ownerId}! Awarding +5 EXP`);
-          // Award +5 EXP for killing enemy summoned units
-          this.onPlayerDamageCallback(sourcePlayerId, 0, 'summoned_unit_kill');
+          console.log(`🎯 Player ${sourcePlayerId} killed enemy summoned unit owned by ${summonedUnit.ownerId}! EXP will be awarded by server.`);
         } else {
           console.log(`🤝 Player ${sourcePlayerId} killed their own summoned unit - no EXP awarded`);
         }
@@ -899,7 +940,8 @@ export class CombatSystem extends System {
     damage: number,
     source?: Entity,
     damageType?: string,
-    sourcePlayerId?: string
+    sourcePlayerId?: string,
+    isCritical?: boolean
   ): void {
     this.damageQueue.push({
       target,
@@ -907,7 +949,8 @@ export class CombatSystem extends System {
       source,
       damageType,
       timestamp: Date.now() / 1000,
-      sourcePlayerId
+      sourcePlayerId,
+      isCritical
     });
   }
 

@@ -130,9 +130,9 @@ const EtherBowComponent = memo(function EtherealBow({
         ref={bowRef}
         position={[basePosition[0], basePosition[1], basePosition[2]]}
         rotation={[
-          Math.PI + (isCloudkillCharging ? -Math.PI/6 * cloudkillChargeProgress : 0), // Tilt bow upwards for Cloudkill
+          Math.PI + (isCloudkillCharging ? Math.PI/4 * cloudkillChargeProgress : 0), // Tilt bow upwards to 45 degrees for Cloudkill
           Math.PI/2,
-          0
+          0 + (isCloudkillCharging ? Math.PI/4 * cloudkillChargeProgress : 0)
         ]}
       >
         {/* Bow body with dynamic color for instant powershot, charging, and perfect shot timing */}

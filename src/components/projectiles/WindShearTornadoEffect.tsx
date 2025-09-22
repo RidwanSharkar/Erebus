@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from 'react';
-import { Vector3, Group, AdditiveBlending, DoubleSide, Color } from '@/utils/three-exports';
+import React, { useRef } from 'react';
+import { Vector3, Group, AdditiveBlending, DoubleSide } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 
 interface WindShearTornadoEffectProps {
@@ -40,7 +40,7 @@ export default function WindShearTornadoEffect({
     const playerPosition = getPlayerPosition();
 
     // Rotate the entire tornado effect
-    const rotationSpeed = 0.5; // Rotation speed
+    const rotationSpeed =2; // Rotation speed
     groupRef.current.rotation.y += rotationSpeed;
 
     // Scale effect based on progress (grows slightly then fades)

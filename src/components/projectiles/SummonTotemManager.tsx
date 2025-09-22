@@ -60,10 +60,13 @@ interface SummonTotemData {
   nextDamageNumberId?: { current: number };
   onHealPlayer?: (healAmount: number) => void;
   casterId?: string;
+  localSocketId?: string;
 }
 
 interface SummonTotemManagerProps {
   onTotemComplete?: (totemId: number) => void;
+  players?: Map<string, any>; // Real-time players data
+  localSocketId?: string; // Local player ID to exclude from targets
 }
 
 export interface SummonTotemManagerRef {
@@ -115,11 +118,12 @@ export interface SummonTotemManagerRef {
     }>) => void,
     nextDamageNumberId?: { current: number },
     onHealPlayer?: (healAmount: number) => void,
-    casterId?: string
+    casterId?: string,
+    localSocketId?: string
   ) => number;
 }
 
-const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerProps>(({ onTotemComplete }, ref) => {
+const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerProps>(({ onTotemComplete, players, localSocketId }, ref) => {
   const [activeTotems, setActiveTotems] = useState<SummonTotemData[]>([]);
   const totemIdCounter = useRef(0);
 
@@ -175,7 +179,8 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
     }>) => void,
     nextDamageNumberId?: { current: number },
     onHealPlayer?: (healAmount: number) => void,
-    casterId?: string
+    casterId?: string,
+    localSocketId?: string
   ) => {
     const totemId = totemIdCounter.current++;
     const startTime = Date.now();
@@ -198,7 +203,8 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
       setDamageNumbers,
       nextDamageNumberId,
       onHealPlayer,
-      casterId
+      casterId: casterId,
+      localSocketId
     };
 
     setActiveTotems(prev => [...prev, newTotem]);
@@ -222,6 +228,8 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
         <SummonedTotem
           key={totem.id}
           position={totem.position}
+          players={players}
+          localSocketId={totem.localSocketId}
           enemyData={totem.enemyData}
           onDamage={totem.onDamage}
           onComplete={totem.onComplete}

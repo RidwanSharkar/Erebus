@@ -1,38 +1,20 @@
 import React, { useMemo } from 'react';
 import { Color, BackSide, SphereGeometry } from '@/utils/three-exports';
 
-interface SkyProps {
-  level?: number;
-}
+interface SkyProps {}
+
 
 /**
- * Get level-based colors for dynamic sky appearance
+ * Creates a custom sky shader with static light red gradient
  */
-const getLevelColors = (level: number) => {
-  switch (level) {
-    case 1: return { color: '#ff0000', emissive: '#600000' }; // Green 00ff00 006600
-    case 2: return { color: '#ffa500', emissive: '#cc8400' }; // Orange
-    case 3: return { color: '#87ceeb', emissive: '#4682b4' }; // Light Blue
-    case 4: return { color: '#dda0dd', emissive: '#9370db' }; // Light Purple
-    case 5: return { color: '#ff0000', emissive: '#600000' }; // Red
-    default: return { color: '#00ff00', emissive: '#006600' }; // Default to green
-  }
-};
-
-/**
- * Creates a custom sky shader with level-based gradient colors
- */
-const createSkyShader = (level: number) => {
-  const levelColors = getLevelColors(level);
-  const baseColor = new Color(levelColors.color);
-  
-  // Create gradient colors based on level
-  // Top: darker version of level color (made paler)
-  const topColor = baseColor.clone().multiplyScalar(0.5);
-  // Middle: level color with some saturation (made paler)
-  const middleColor = baseColor.clone().multiplyScalar(0.85);
-  // Bottom: lighter, more neutral version (made paler)
-  const bottomColor = baseColor.clone().lerp(new Color('#87CEEB'), 0.6);
+const createSkyShader = () => {
+  // Create static light red gradient colors
+  // Top: darker red
+  const topColor = new Color('#8B0000');
+  // Middle: medium red
+  const middleColor = new Color('#FF6B6B');
+  // Bottom: light red that blends with the sky
+  const bottomColor = new Color('#FFB3B3');
   
   return {
     uniforms: {
@@ -72,19 +54,19 @@ const createSkyShader = (level: number) => {
 };
 
 /**
- * Custom sky component with level-based gradient shader
+ * Custom sky component with static light red gradient shader
  * Creates an immersive atmospheric backdrop for the game
  */
-const CustomSky: React.FC<SkyProps> = ({ level = 1 }) => {
+const CustomSky: React.FC<SkyProps> = () => {
   const shaderParams = useMemo(() => {
-    const skyShader = createSkyShader(level);
+    const skyShader = createSkyShader();
     return {
       uniforms: skyShader.uniforms,
       vertexShader: skyShader.vertexShader,
       fragmentShader: skyShader.fragmentShader,
       side: BackSide,
     };
-  }, [level]);
+  }, []);
 
   // Memoize geometry for performance
   const skyGeometry = useMemo(() => new SphereGeometry(500, 32, 32), []);

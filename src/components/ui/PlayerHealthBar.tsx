@@ -15,15 +15,13 @@ interface PlayerHealthBarProps {
 }
 
 export default function PlayerHealthBar({
-  playerId,
-  playerName,
   position,
   health,
   maxHealth,
   shield = 0,
   maxShield = 200,
   camera,
-  showDistance = 25
+  showDistance = 35
 }: PlayerHealthBarProps) {
   const groupRef = useRef<Group>(null);
   const meshRefs = useRef<{

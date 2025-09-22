@@ -152,7 +152,7 @@ function HomeContent() {
       type: WeaponType.SCYTHE,
       name: 'Scythe',
       icon: '☠️',
-      description: 'WEAVER: arcane transmuter evoker of the elements with mastery of ice and fire domains, capable of conjuration and healing magic.',
+      description: 'WEAVER: elemental evoker, capable of conjuration and healing magic, with mastery of fire and ice domains',
       defaultSubclass: WeaponSubclass.CHAOS
     },
     {
@@ -381,15 +381,16 @@ function HomeContent() {
               {/* Weapon Selection Section */}
               <div className="mb-8">
                 <h2 className="text-2xl font-bold mb-4 text-center text-green-400">
-                  Choose Your Weapons
+                Select 2 Weapons
                 </h2>
                 <p className="text-center mb-6 text-gray-300">
-                  Select 2 weapons for your arsenal. Your primary weapon becomes the '1' key, secondary becomes the '2' key.
+                  Your primary weapon becomes the '1' key, secondary becomes the '2' key.
 
                 </p>
 
-                <div className="flex flex-wrap justify-center gap-4 mb-6">
-                  {weapons.slice(0, 5).map((weapon) => {
+                {/* First row - 3 weapons */}
+                <div className="grid grid-cols-3 gap-0 mb-0 max-w-7xl mx-auto">
+                  {weapons.slice(0, 3).map((weapon) => {
                     const isSelected = tempSelectedWeapons.includes(weapon.type);
                     const canSelect = !isSelected && tempSelectedWeapons.length < 2;
 
@@ -398,14 +399,32 @@ function HomeContent() {
                         key={weapon.type}
                         onClick={() => handleWeaponToggle(weapon.type)}
                         className={`
-                          w-full sm:w-80 md:w-72 lg:w-80 p-4 rounded-lg border-2 cursor-pointer transition-all duration-300
+                          w-full sm:w-96 md:w-80 lg:w-96 p-6 cursor-pointer transition-all duration-300 relative
                           ${isSelected
-                            ? 'border-green-500 bg-green-500/20 shadow-lg shadow-green-500/30'
+                            ? 'shadow-lg shadow-green-500/30'
                             : canSelect
-                              ? 'border-gray-600 bg-gray-800/50 hover:border-gray-400 hover:bg-gray-700/50'
-                              : 'border-gray-700 bg-gray-900/50 opacity-60 cursor-not-allowed'
+                              ? 'hover:scale-105'
+                              : 'opacity-60 cursor-not-allowed'
                           }
                         `}
+                        style={{
+                          clipPath: 'polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)',
+                          background: isSelected
+                            ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.3) 0%, rgba(34, 197, 94, 0.1) 100%)'
+                            : canSelect
+                              ? 'linear-gradient(135deg, rgba(55, 65, 81, 0.6) 0%, rgba(31, 41, 55, 0.8) 100%)'
+                              : 'linear-gradient(135deg, rgba(17, 24, 39, 0.8) 0%, rgba(31, 41, 55, 0.6) 100%)',
+                          border: isSelected
+                            ? '3px solid #22c55e'
+                            : canSelect
+                              ? '2px solid #6b7280'
+                              : '2px solid #374151',
+                          minHeight: '400px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
                       >
                         <div className="text-center mb-3">
                           <div className="text-3xl mb-2">{weapon.icon}</div>
@@ -453,19 +472,91 @@ function HomeContent() {
                   })}
                 </div>
 
-                {/* Selection Status */}
-                <div className="text-center mb-6">
-                  <p className="text-sm text-gray-400 mb-2">
-                    Selected: {tempSelectedWeapons.length > 0 ? tempSelectedWeapons.join(', ') : 'None'}
-                    {tempSelectedWeapons.length === 2 && (
-                      <span className="block text-green-400 font-semibold">✓ Weapons confirmed!</span>
-                    )}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {tempSelectedWeapons.length}/2 weapons selected
-                    {tempSelectedWeapons.length < 2 && ' - Select one more weapon'}
-                  </p>
+                {/* Second row - 2 weapons centered */}
+                <div className="flex justify-center gap-1 max-w-5xl mx-auto -mt-16 ml-10">
+                  {weapons.slice(3, 5).map((weapon) => {
+                    const isSelected = tempSelectedWeapons.includes(weapon.type);
+                    const canSelect = !isSelected && tempSelectedWeapons.length < 2;
+
+                    return (
+                      <div
+                        key={weapon.type}
+                        onClick={() => handleWeaponToggle(weapon.type)}
+                        className={`
+                          w-96 p-7 cursor-pointer transition-all duration-300 relative
+                          ${isSelected
+                            ? 'shadow-lg shadow-green-500/30'
+                            : canSelect
+                              ? 'hover:scale-105'
+                              : 'opacity-60 cursor-not-allowed'
+                          }
+                        `}
+                        style={{
+                          clipPath: 'polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)',
+                          background: isSelected
+                            ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.3) 0%, rgba(34, 197, 94, 0.1) 100%)'
+                            : canSelect
+                              ? 'linear-gradient(135deg, rgba(55, 65, 81, 0.6) 0%, rgba(31, 41, 55, 0.8) 100%)'
+                              : 'linear-gradient(135deg, rgba(17, 24, 39, 0.8) 0%, rgba(31, 41, 55, 0.6) 100%)',
+                          border: isSelected
+                            ? '3px solid #22c55e'
+                            : canSelect
+                              ? '2px solid #6b7280'
+                              : '2px solid #374151',
+                          minHeight: '400px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <div className="text-center mb-3">
+                          <div className="text-3xl mb-2">{weapon.icon}</div>
+                          <h3 className="text-lg font-bold mb-1">{weapon.name}</h3>
+                        </div>
+
+                        <p className="text-xs text-gray-300 mb-3 text-center">
+                          {weapon.description}
+                        </p>
+
+                        {/* Weapon Abilities */}
+                        <div className="mb-3">
+                          <div className="text-xs text-gray-400 text-center mb-2">Abilities:</div>
+                          <div className="flex justify-center gap-1">
+                            {weaponAbilities[weapon.type]?.map((ability) => (
+                              <div
+                                key={ability.key}
+                                className="relative w-8 h-8 rounded border border-gray-600 bg-gray-800 hover:bg-gray-700 transition-colors cursor-pointer flex items-center justify-center"
+                                onMouseEnter={(e) => handleAbilityHover(e, ability)}
+                                onMouseLeave={handleAbilityLeave}
+                              >
+                                {/* Hotkey indicator */}
+                                <div className="absolute -top-1 -left-1 bg-gray-900 border border-gray-500 rounded text-xs text-white px-0.5 font-semibold leading-none text-[10px]">
+                                  {ability.key}
+                                </div>
+
+                                {/* Ability icon */}
+                                <div className="text-sm">
+                                  {getAbilityIcon(weapon.type, ability.key)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {isSelected && (
+                          <div className="text-center">
+                            <span className="inline-block px-2 py-1 bg-green-600 text-white text-xs rounded-full">
+                              Selected ({getWeaponPosition(weapon.type) === 'primary' ? 'Primary' : 'Secondary'})
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
+
+
               </div>
 
               {/* Game Mode Buttons */}
@@ -484,7 +575,7 @@ function HomeContent() {
                   }}
                   disabled={!selectedWeapons}
                 >
-                  PVP
+                  ENTER
                   {!selectedWeapons && ' (Select Weapons First)'}
                 </button>
               </div>
@@ -531,6 +622,7 @@ function HomeContent() {
               onExperienceUpdate={handleExperienceUpdate}
               onScoreboardUpdate={handleScoreboardUpdate}
               selectedWeapons={selectedWeapons}
+              skillPointData={skillPointData}
             />
           )}
         </Canvas>

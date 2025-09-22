@@ -119,6 +119,10 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
           }
         }
 
+        // For remote totems, use the caster's ID as localSocketId so the totem excludes the caster
+        // For local totems, use the actual local player's ID
+        const effectiveLocalSocketId = enemyDataParam ? casterId : localSocketIdRef.current;
+
         managerRef.current.createTotem(
           position,
           finalEnemyData,
@@ -129,7 +133,9 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
           nextDamageNumberIdParam || nextDamageNumberId,
             onHealPlayerParam || onHealPlayer || onHealPlayerCallback || ((healAmount: number) => {
               // Heal the local player - this should be handled by the parent component
-            })
+            }),
+          casterId,
+          effectiveLocalSocketId
         );
       }
     });
@@ -144,6 +150,8 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
       ref={managerRef}
       onTotemComplete={(totemId) => {
       }}
+      players={players}
+      localSocketId={localSocketId}
     />
   );
 };

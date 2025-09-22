@@ -30,9 +30,10 @@ interface PVPCobraShotManagerProps {
   world: World;
   players: Array<{ id: string; position: { x: number; y: number; z: number }; health: number }>;
   onPlayerHit: (playerId: string, damage: number) => void;
-  onPlayerVenomed: (playerId: string, position: Vector3) => void;
+  onPlayerVenomed: (playerId: string, position: Vector3, casterId?: string) => void;
   serverPlayerEntities: React.MutableRefObject<Map<string, number>>;
   localSocketId?: string;
+  damageNumberManager?: any; // Damage number manager for visual feedback
 }
 
 interface PVPBarrageManagerProps {
@@ -42,6 +43,7 @@ interface PVPBarrageManagerProps {
   onPlayerSlowed: (playerId: string, position: Vector3) => void;
   serverPlayerEntities: React.MutableRefObject<Map<string, number>>;
   localSocketId?: string;
+  damageNumberManager?: any; // Damage number manager for visual feedback
 }
 
 interface PVPFrostNovaManagerProps {
@@ -57,7 +59,7 @@ interface PVPViperStingManagerProps {
   world: World;
   players: Array<{ id: string; position: { x: number; y: number; z: number }; health: number }>;
   onPlayerHit: (playerId: string, damage: number) => void;
-  onPlayerVenomed: (playerId: string, position: Vector3) => void;
+  onPlayerVenomed: (playerId: string, position: Vector3, casterId?: string) => void;
   serverPlayerEntities: React.MutableRefObject<Map<string, number>>;
   localSocketId?: string;
   onSoulStealCreated?: (enemyPosition: Vector3) => void; // Add callback for soul steal effects
@@ -71,18 +73,20 @@ interface PVPCrossentropyManagerProps {
   onPlayerExplosion: (playerId: string, position: Vector3) => void;
   serverPlayerEntities: React.MutableRefObject<Map<string, number>>;
   localSocketId?: string;
+  damageNumberManager?: any; // Damage number manager for visual feedback
 }
 
 /**
  * Optimized Cobra Shot Manager with Object Pooling
  */
-export function OptimizedPVPCobraShotManager({ 
-  world, 
-  players, 
-  onPlayerHit, 
-  onPlayerVenomed, 
-  serverPlayerEntities, 
-  localSocketId 
+export function OptimizedPVPCobraShotManager({
+  world,
+  players,
+  onPlayerHit,
+  onPlayerVenomed,
+  serverPlayerEntities,
+  localSocketId,
+  damageNumberManager
 }: PVPCobraShotManagerProps) {
   // Track processed hits to avoid duplicates
   const processedHits = useRef<Set<string>>(new Set());
@@ -127,7 +131,18 @@ export function OptimizedPVPCobraShotManager({
           if (!projectile.hitEnemies.has(playerIdNum)) {
             projectile.hitEnemies.add(playerIdNum);
             onPlayerHit(player.id, 29); // Cobra Shot damage
-            
+
+            // Create damage number for visual feedback (green for Cobra Shot)
+            if (damageNumberManager && damageNumberManager.addDamageNumber) {
+              const hitPosition = new Vector3(player.position.x, player.position.y + 1.5, player.position.z);
+              damageNumberManager.addDamageNumber(
+                29, // Cobra Shot damage
+                false, // Not critical
+                hitPosition,
+                'cobra_shot' // Damage type for green styling
+              );
+            }
+
             // Apply venom effect at the HIT player's position (not the caster)
             // Use pooled Vector3 for the venom position
             const venomPosition = pvpObjectPool.acquireVector3(
@@ -136,7 +151,7 @@ export function OptimizedPVPCobraShotManager({
               player.position.z
             );
             
-            onPlayerVenomed(player.id, venomPosition);
+            onPlayerVenomed(player.id, venomPosition, localSocketId);
             
             // Release the Vector3 back to pool after use
             // Note: onPlayerVenomed should clone the vector if it needs to store it
@@ -157,13 +172,14 @@ export function OptimizedPVPCobraShotManager({
 /**
  * Optimized Barrage Manager with Object Pooling
  */
-export function OptimizedPVPBarrageManager({ 
-  world, 
-  players, 
-  onPlayerHit, 
-  onPlayerSlowed, 
-  serverPlayerEntities, 
-  localSocketId 
+export function OptimizedPVPBarrageManager({
+  world,
+  players,
+  onPlayerHit,
+  onPlayerSlowed,
+  serverPlayerEntities,
+  localSocketId,
+  damageNumberManager
 }: PVPBarrageManagerProps) {
   const hitTracker = useRef<Set<string>>(new Set());
   
@@ -225,7 +241,18 @@ export function OptimizedPVPBarrageManager({
             hitTracker.current.add(hitKey);
             
             onPlayerHit(player.id, 30); // Barrage damage
-            
+
+            // Create damage number for visual feedback (blue for Barrage)
+            if (damageNumberManager && damageNumberManager.addDamageNumber) {
+              const hitPosition = new Vector3(player.position.x, player.position.y + 1.5, player.position.z);
+              damageNumberManager.addDamageNumber(
+                30, // Barrage damage
+                false, // Not critical
+                hitPosition,
+                'barrage' // Damage type for blue styling
+              );
+            }
+
             // Apply slow effect at the HIT player's position (50% speed reduction for 5 seconds)
             // Use pooled Vector3 for the slow position
             const slowPosition = pvpObjectPool.acquireVector3(
@@ -525,7 +552,7 @@ export function OptimizedPVPViperStingManager({
                   61, // Viper Sting damage
                   false, // Not critical
                   hitPosition,
-                  'viper_sting_damage' // Damage type for styling (ensure it's damage, not healing)
+                  'viper_sting' // Damage type for light purple styling
                 );
               }
 
@@ -559,7 +586,7 @@ export function OptimizedPVPViperStingManager({
                       });
                     }
                   }
-                }, 1250); // Match soul steal effect duration
+                }, 1750); // Match soul steal effect duration
               }
             }
           }
@@ -574,7 +601,6 @@ export function OptimizedPVPViperStingManager({
             projectile.direction.clone().multiplyScalar(0.625) // PROJECTILE_SPEED from useViperSting
           );
 
-          // CRITICAL FIX: Only check return phase collisions when projectile is far enough from player
           // This prevents self-damage during the final return phase
           if (distanceToPlayer < 2.0) {
             return; // Too close to player, skip collision detection
@@ -596,7 +622,6 @@ export function OptimizedPVPViperStingManager({
             const distance = projectilePos.distanceTo(playerPos);
 
             if (distance <= 1.3) { // Hit radius (same as ViperSting hook)
-              // CRITICAL DEBUG: Check if we're trying to hit ourselves in return phase
               if (player.id === localSocketId) {
                 console.error('🚨 SELF-DAMAGE ALERT: Viper Sting return phase trying to hit local player!', {
                   projectileId: projectile.id,
@@ -604,7 +629,7 @@ export function OptimizedPVPViperStingManager({
                   localSocketId: localSocketId,
                   distance: distance.toFixed(2)
                 });
-                return; // Skip self-damage (this is redundant but kept for debugging)
+                return; // Skip self-damage 
               }
 
               // Check if we haven't already hit this player during return phase
@@ -628,7 +653,7 @@ export function OptimizedPVPViperStingManager({
                     61, // Viper Sting damage
                     false, // Not critical
                     hitPosition,
-                    'viper_sting_damage' // Damage type for styling (ensure it's damage, not healing)
+                    'viper_sting' // Damage type for light purple styling
                   );
                 }
 
@@ -697,13 +722,14 @@ export function OptimizedPVPViperStingManager({
 /**
  * Optimized Crossentropy Manager with Object Pooling
  */
-export function OptimizedPVPCrossentropyManager({ 
-  world, 
-  players, 
-  onPlayerHit, 
-  onPlayerExplosion, 
-  serverPlayerEntities, 
-  localSocketId 
+export function OptimizedPVPCrossentropyManager({
+  world,
+  players,
+  onPlayerHit,
+  onPlayerExplosion,
+  serverPlayerEntities,
+  localSocketId,
+  damageNumberManager
 }: PVPCrossentropyManagerProps) {
   
   const hitTracker = useRef<Set<string>>(new Set());
@@ -769,7 +795,7 @@ export function OptimizedPVPCrossentropyManager({
             hitTracker.current.add(hitKey);
             
             // Apply burning stacks for Crossentropy bolt
-            let finalDamage = 90; // Base Crossentropy damage
+            let finalDamage = 140; // Base Crossentropy damage
             const controlSystemRef = (window as any).controlSystemRef;
             if (controlSystemRef && controlSystemRef.current) {
               const controlSystem = controlSystemRef.current;
@@ -777,16 +803,25 @@ export function OptimizedPVPCrossentropyManager({
               
               // Apply burning stack and get damage bonus (false = Crossentropy bolt)
               const { damageBonus } = controlSystem.applyBurningStack(playerEntityId, currentTime, false);
-              
-              // Cap burning damage in PVP to prevent extreme values that cause desync
-              const maxBurningBonus = 100; // Max +100 for Crossentropy in PVP
-              const cappedBonus = Math.min(damageBonus, maxBurningBonus);
-              finalDamage = 90 + cappedBonus;
+
+              // No PVP damage cap - allow full burning damage bonus
+              finalDamage = 140 + damageBonus;
               
             }
             
             onPlayerHit(player.id, finalDamage); // Crossentropy damage with burning bonus
-            
+
+            // Create damage number for visual feedback (orange for Crossentropy)
+            if (damageNumberManager && damageNumberManager.addDamageNumber) {
+              const hitPosition = new Vector3(player.position.x, player.position.y + 1.5, player.position.z);
+              damageNumberManager.addDamageNumber(
+                finalDamage, // Crossentropy damage with burning bonus
+                false, // Not critical
+                hitPosition,
+                'crossentropy' // Damage type for orange styling
+              );
+            }
+
             // Trigger explosion effect at the HIT player's position
             // Use pooled Vector3 for the explosion position
             const explosionPosition = pvpObjectPool.acquireVector3(

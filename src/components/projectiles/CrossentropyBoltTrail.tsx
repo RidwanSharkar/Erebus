@@ -19,7 +19,7 @@ const CrossentropyBoltTrail: React.FC<CrossentropyBoltTrailProps> = ({
   mesh3Ref,
   opacity = 1
 }) => {
-  const particlesCount = 45;
+  const particlesCount = 50;
   const particles1Ref = useRef<Points>(null);
   const particles2Ref = useRef<Points>(null);
   const particles3Ref = useRef<Points>(null);

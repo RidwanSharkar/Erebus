@@ -44,6 +44,9 @@ class GameRoom {
     this.ascendantTimer = null;
     this.fallenTitanTimer = null;
     
+    // PVP Death confirmation system
+    this.pendingKills = new Map(); // victimId -> { killerId, killerName, victimName, damageType, timestamp }
+    
     console.log(`🎮 Game room ${roomId} created. Waiting for start game command...`);
   }
 
@@ -621,7 +624,7 @@ class GameRoom {
             console.log(`🔍 DEBUG: All players in room:`, Array.from(this.players.keys()));
             console.log(`🔍 DEBUG: Defeated player: ${playerId}, Winner: ${opposingPlayerId}`);
             
-            // Broadcast wave completion with specific winner
+            // Broadcast wave completion and award EXP using the new event format
             if (this.io) {
               const waveCompletionData = {
                 waveId: playerWave.waveId,
@@ -632,6 +635,16 @@ class GameRoom {
               
               console.log(`📡 Broadcasting wave-completed event:`, waveCompletionData);
               this.io.to(this.roomId).emit('wave-completed', waveCompletionData);
+              
+              // Award +10 EXP to the winner for completing the wave
+              this.io.to(this.roomId).emit('player-experience-gained', {
+                playerId: opposingPlayerId,
+                experienceGained: 10,
+                source: 'pvp_wave_completion',
+                defeatedPlayerId: playerId,
+                waveId: playerWave.waveId,
+                timestamp: Date.now()
+              });
             }
           } else {
             console.log(`🎯 PVP Wave completed for player ${playerId}, but no opposing player found.`);
@@ -904,16 +917,14 @@ class GameRoom {
         if (sourceOwnerId && sourceOwnerId !== unit.ownerId && sourceOwnerId !== 'unknown') {
           console.log(`🎯 Player ${sourceOwnerId} killed enemy summoned unit owned by ${unit.ownerId}! Broadcasting +5 EXP award`);
           
-          // Broadcast summoned unit kill experience to the killer
+          // Broadcast summoned unit kill experience to the killer using the new event format
           if (this.io) {
-            this.io.to(this.roomId).emit('player-damaged', {
-              targetPlayerId: sourceOwnerId,
-              sourcePlayerId: sourceOwnerId,
-              damage: 0,
-              damageType: 'summoned_unit_kill',
-              wasKilled: false,
-              newHealth: -1, // Special value to indicate this is not actual damage
-              maxHealth: -1,
+            this.io.to(this.roomId).emit('player-experience-gained', {
+              playerId: sourceOwnerId,
+              experienceGained: 5,
+              source: 'summoned_unit_kill',
+              unitId: unitId,
+              unitOwnerId: unit.ownerId,
               timestamp: Date.now()
             });
           }
@@ -1205,13 +1216,12 @@ class GameRoom {
       if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
         console.log(`🎯 Player ${fromPlayerId} killed enemy ${enemyId}! Broadcasting +10 EXP award`);
         
-        // Broadcast enemy kill experience to the killer
-        this.io.to(this.roomId).emit('player-damaged', {
-          targetPlayerId: fromPlayerId,
-          sourcePlayerId: fromPlayerId,
-          damage: 0,
-          damageType: 'enemy_kill',
-          wasKilled: false,
+        // Broadcast enemy kill experience to the killer using the new event format
+        this.io.to(this.roomId).emit('player-experience-gained', {
+          playerId: fromPlayerId,
+          experienceGained: 10,
+          source: 'enemy_kill',
+          enemyId: enemyId,
           timestamp: Date.now()
         });
       }
@@ -1529,6 +1539,80 @@ class GameRoom {
       killCount: this.killCount,
       lastUpdate: this.lastUpdate
     };
+  }
+
+  // PVP Death Confirmation System Methods
+
+  setPendingKill(killData) {
+    const { victimId, killerId, killerName, victimName, damageType, timestamp } = killData;
+    
+    // Store pending kill for death confirmation
+    this.pendingKills.set(victimId, {
+      killerId,
+      killerName,
+      victimName,
+      damageType,
+      timestamp
+    });
+    
+    console.log(`📋 Pending kill registered: ${killerName} (${killerId}) -> ${victimName} (${victimId}) [${damageType}]`);
+    
+    // Clean up old pending kills (older than 10 seconds)
+    this.cleanupOldPendingKills();
+  }
+
+  confirmPlayerDeath(victimId) {
+    const pendingKill = this.pendingKills.get(victimId);
+    
+    if (!pendingKill) {
+      console.log(`⚠️ No pending kill found for player ${victimId} - no experience will be awarded`);
+      return null;
+    }
+    
+    // Award experience to the killer
+    const { killerId, killerName, victimName, damageType, timestamp } = pendingKill;
+    
+    console.log(`✅ Death confirmed: ${killerName} (${killerId}) killed ${victimName} (${victimId}) with ${damageType}. Awarding +10 EXP`);
+    
+    // Broadcast experience award
+    this.io.to(this.roomId).emit('player-experience-gained', {
+      playerId: killerId,
+      experienceGained: 10,
+      source: 'pvp_player_kill',
+      killerName: killerName,
+      victimName: victimName,
+      damageType: damageType,
+      timestamp: Date.now()
+    });
+    
+    // Remove the pending kill
+    this.pendingKills.delete(victimId);
+    
+    return pendingKill;
+  }
+
+  cleanupOldPendingKills() {
+    const now = Date.now();
+    const maxAge = 10000; // 10 seconds
+    
+    for (const [victimId, killData] of this.pendingKills.entries()) {
+      if (now - killData.timestamp > maxAge) {
+        console.log(`🧹 Cleaning up old pending kill: ${killData.killerName} -> ${killData.victimName} (${now - killData.timestamp}ms old)`);
+        this.pendingKills.delete(victimId);
+      }
+    }
+  }
+
+  getPendingKill(victimId) {
+    return this.pendingKills.get(victimId);
+  }
+
+  clearPendingKill(victimId) {
+    const existed = this.pendingKills.delete(victimId);
+    if (existed) {
+      console.log(`🗑️ Cleared pending kill for player ${victimId}`);
+    }
+    return existed;
   }
 }
 

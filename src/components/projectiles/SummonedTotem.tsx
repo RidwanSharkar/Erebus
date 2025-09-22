@@ -2,10 +2,14 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Group, Vector3, AdditiveBlending } from 'three';
 import { useFrame } from '@react-three/fiber';
 import TotemModel from './TotemModel';
+import { calculateDamage } from '@/core/DamageCalculator';
+import { WeaponType } from '@/components/dragon/weapons';
 
 interface SummonProps {
   position: Vector3;
-  enemyData?: Array<{
+  players?: Map<string, any>; // Real-time players data
+  localSocketId?: string; // Local player ID to exclude from targets
+  enemyData?: Array<{ // Fallback for NPCs or static enemies
     id: string;
     position: Vector3;
     health: number;
@@ -62,6 +66,8 @@ interface SummonProps {
 
 export default function SummonedTotem({
   position,
+  players,
+  localSocketId,
   enemyData = [],
   onDamage,
   onComplete,
@@ -73,13 +79,6 @@ export default function SummonedTotem({
   onHealPlayer,
   casterId
 }: SummonProps) {
-  console.log('🎭 SummonedTotem: Component created with enemyData:', enemyData.length, 'enemies');
-  console.log('🎭 SummonedTotem: enemyData details:', enemyData.map(e => ({ id: e.id, health: e.health, position: e.position })));
-
-  // Log PVP player detection
-  const pvpPlayers = enemyData.filter(e => !e.id.startsWith('enemy-'));
-  const npcs = enemyData.filter(e => e.id.startsWith('enemy-'));
-  console.log('🎭 SummonedTotem: PVP players detected:', pvpPlayers.length, 'NPCs detected:', npcs.length);
   const groupRef = useRef<Group>(null);
   const [currentTarget, setCurrentTarget] = useState<{ id: string; position: Vector3; health: number } | null>(null);
 
@@ -91,7 +90,7 @@ export default function SummonedTotem({
     ATTACK_COOLDOWN: 500, // 0.5 seconds
     RANGE: 6, // 5 units range for PVP targeting
     DURATION: 8000, // 8 seconds
-    DAMAGE: 25, // 25 damage per attack
+    BASE_DAMAGE: 20, // Same as scythe basic attack damage
     EFFECT_DURATION: 225,
     // Removed TARGET_SWITCH_INTERVAL - continuously check for targets
     HEAL_INTERVAL: 1000, // Heal every 1 second
@@ -106,9 +105,42 @@ export default function SummonedTotem({
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }, []);
 
+  // Get current enemy data from players and static enemyData
+  const getCurrentEnemyData = useCallback((): Array<{ id: string; position: Vector3; health: number }> => {
+    let currentEnemies: Array<{ id: string; position: Vector3; health: number }> = [...enemyData];
+
+    // Add real-time player positions
+    if (players && localSocketId) {
+      const playerEnemies = Array.from(players.entries())
+        .filter(([playerId]) => playerId !== localSocketId) // Exclude local player
+        .map(([playerId, playerData]) => ({
+          id: playerId,
+          position: new Vector3(playerData.position.x, playerData.position.y, playerData.position.z),
+          health: playerData.health
+        }));
+      currentEnemies = [...currentEnemies, ...playerEnemies];
+    }
+
+    return currentEnemies;
+  }, [players, localSocketId, enemyData]);
+
+  // Log initial enemy data
+  const initialEnemyData = getCurrentEnemyData();
+  console.log('🎭 SummonedTotem: Component created with enemyData:', initialEnemyData.length, 'enemies');
+  console.log('🎭 SummonedTotem: enemyData details:', initialEnemyData.map(e => ({ id: e.id, health: e.health, position: e.position })));
+
+  // Log PVP player detection
+  const pvpPlayers = initialEnemyData.filter(e => !e.id.startsWith('enemy-'));
+  const npcs = initialEnemyData.filter(e => e.id.startsWith('enemy-'));
+  console.log('🎭 SummonedTotem: PVP players detected:', pvpPlayers.length, 'NPCs detected:', npcs.length);
+
   const findNewTarget = useCallback((excludeCurrentTarget: boolean = false): { id: string; position: Vector3; health: number } | null => {
-    if (!groupRef.current || !enemyData.length) {
-      console.log('🎭 SummonTotem: No groupRef or no enemyData', enemyData.length);
+    if (!groupRef.current) {
+      return null;
+    }
+
+    const currentEnemyData = getCurrentEnemyData();
+    if (!currentEnemyData.length) {
       return null;
     }
 
@@ -119,8 +151,8 @@ export default function SummonedTotem({
     let closestDistance = constants.RANGE;
     let closestTarget: { id: string; position: Vector3; health: number } | null = null;
 
-    for (let i = 0; i < enemyData.length; i++) {
-      const enemy = enemyData[i];
+    for (let i = 0; i < currentEnemyData.length; i++) {
+      const enemy = currentEnemyData[i];
 
       if (enemy.health <= 0) {
         // Skip dead enemies
@@ -143,7 +175,6 @@ export default function SummonedTotem({
         totemWorldPosition
       );
 
-
       if (distance <= closestDistance) {
         closestDistance = distance;
         closestTarget = enemy;
@@ -151,7 +182,7 @@ export default function SummonedTotem({
     }
 
     return closestTarget;
-  }, [enemyData, calculateDistance, currentTarget, constants.RANGE]);
+  }, [getCurrentEnemyData, calculateDistance, currentTarget, constants.RANGE]);
 
   const handleAttack = useCallback((target: { id: string; position: Vector3; health: number }) => {
     if (!target || target.health <= 0 || !onDamage || !nextDamageNumberId || !setDamageNumbers || !setActiveEffects) {
@@ -166,31 +197,44 @@ export default function SummonedTotem({
       return;
     }
 
-    // Use the enemy's actual world position for damage numbers and effects
-    const worldImpactPosition = target.position.clone().setY(1.5);
-
-    // Check if enemy is still alive and in range
-    const currentEnemy = enemyData.find(e => e.id === target.id && e.health > 0);
+    // CRITICAL FIX: Get the current/real-time enemy position from current enemy data at the moment of attack
+    const currentEnemyData = getCurrentEnemyData();
+    const currentEnemy = currentEnemyData.find(e => e.id === target.id && e.health > 0);
     if (!currentEnemy) {
       return;
     }
 
-    onDamage(target.id, constants.DAMAGE, worldImpactPosition, false);
+    // Calculate damage using the same system as scythe basic attacks
+    const damageResult = calculateDamage(constants.BASE_DAMAGE, WeaponType.SCYTHE);
+
+    // Use the enemy's current real-time position for damage numbers and effects (not cached target position)
+    const currentWorldImpactPosition = currentEnemy.position.clone().setY(1.5);
+
+    console.log('🎭 SummonTotem: Attacking target:', {
+      targetId: target.id,
+      damage: damageResult.damage,
+      isCritical: damageResult.isCritical,
+      position: currentWorldImpactPosition,
+      casterId: casterId
+    });
+
+    // Call the damage callback to route damage to server
+    onDamage(target.id, damageResult.damage, currentWorldImpactPosition, damageResult.isCritical);
 
     const effectId = Date.now();
 
     const updates = {
       damageNumber: {
         id: nextDamageNumberId.current++,
-        damage: constants.DAMAGE,
-        position: worldImpactPosition.clone(),
-        isCritical: false,
-        isSummon: true
+        damage: damageResult.damage,
+        position: currentWorldImpactPosition.clone(),
+        isCritical: damageResult.isCritical,
+        isSummon: true // Mark as summon damage for proper attribution
       },
       effect: {
         id: effectId,
         type: 'summonExplosion',
-        position: worldImpactPosition.clone(), // Store absolute world position
+        position: currentWorldImpactPosition.clone(), // Use current real-time position for explosion
         direction: new Vector3(),
         duration: constants.EFFECT_DURATION / 1000,
         startTime: Date.now(),
@@ -199,6 +243,7 @@ export default function SummonedTotem({
       }
     };
 
+    // Add damage number locally for immediate visual feedback (attributed to summoner)
     setDamageNumbers(prev => [...prev, updates.damageNumber]);
     setActiveEffects(prev => [
       ...prev.filter(effect =>
@@ -214,7 +259,7 @@ export default function SummonedTotem({
         setActiveEffects(prev => prev.filter(effect => effect.id !== effectId));
       }
     });
-  }, [constants, onDamage, setActiveEffects, setDamageNumbers, nextDamageNumberId, enemyData]);
+  }, [constants, onDamage, setActiveEffects, setDamageNumbers, nextDamageNumberId, getCurrentEnemyData, casterId]);
 
   const handleHealing = useCallback(() => {
     if (!onHealPlayer) {

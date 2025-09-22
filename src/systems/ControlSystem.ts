@@ -301,6 +301,10 @@ export class ControlSystem extends System {
   private originalCriticalRunes = 0;
   private originalCritDamageRunes = 0;
 
+  // Store base rune counts for Sabres passive (level-based only, not including passive bonus)
+  private sabresBaseCriticalRunes = 0;
+  private sabresPassiveCriticalBonus = 0; // Track how much the passive adds
+
   // Selected weapons mapping for hotkeys
   private selectedWeapons?: {
     primary: WeaponType;
@@ -627,16 +631,22 @@ export class ControlSystem extends System {
         }
       }
 
-      // Store original critical rune count if not already stored for this passive
-      if (this.originalCriticalRunes === 0) {
+      // Store base critical rune count (level-based only) if not already stored for this passive
+      if (this.sabresBaseCriticalRunes === 0) {
         const currentRuneCounts = getGlobalRuneCounts();
-        this.originalCriticalRunes = currentRuneCounts.criticalRunes;
+        // The base should be the current total minus any previous passive bonus
+        this.sabresBaseCriticalRunes = currentRuneCounts.criticalRunes - this.sabresPassiveCriticalBonus;
       }
 
-      // Set critical strike chance runes to 10
-      setGlobalCriticalRuneCount(10);
+      // Add +10 critical runes as permanent passive bonus (only add if not already applied)
+      if (this.sabresPassiveCriticalBonus === 0) {
+        this.sabresPassiveCriticalBonus = 10;
+        const currentRuneCounts = getGlobalRuneCounts();
+        const newCriticalRunes = currentRuneCounts.criticalRunes + 10;
+        setGlobalCriticalRuneCount(newCriticalRunes);
 
-      console.log(`🩸 Lethality activated: movement speed increased to 4.25, Critical Runes ${this.originalCriticalRunes} -> 10`);
+        console.log(`🩸 Lethality activated: movement speed increased to 4.25, Critical Runes ${currentRuneCounts.criticalRunes} -> ${newCriticalRunes} (+10 permanent bonus)`);
+      }
     } else {
       // Reset to original state if passive is not unlocked
       this.resetSabresPassive();
@@ -651,10 +661,16 @@ export class ControlSystem extends System {
       }
     }
 
-    // Restore original critical rune count
-    if (this.originalCriticalRunes !== 0) {
-      setGlobalCriticalRuneCount(this.originalCriticalRunes);
-      this.originalCriticalRunes = 0; // Reset stored value
+    // Remove the passive critical rune bonus (restore to base level-based runes only)
+    if (this.sabresPassiveCriticalBonus > 0) {
+      const currentRuneCounts = getGlobalRuneCounts();
+      const newCriticalRunes = Math.max(0, currentRuneCounts.criticalRunes - this.sabresPassiveCriticalBonus);
+      setGlobalCriticalRuneCount(newCriticalRunes);
+
+      console.log(`🩸 Lethality deactivated: Critical Runes ${currentRuneCounts.criticalRunes} -> ${newCriticalRunes} (removed ${this.sabresPassiveCriticalBonus} passive bonus)`);
+
+      this.sabresPassiveCriticalBonus = 0;
+      this.sabresBaseCriticalRunes = 0; // Reset stored values
     }
   }
 
@@ -2384,12 +2400,12 @@ export class ControlSystem extends System {
     this.windShearChargeProgress = 0;
     this.lastWindShearTime = currentTime;
 
-    // Trigger tornado effect (2 seconds duration)
+    // Trigger tornado effect (1.25 seconds duration)
     if (this.onWindShearTornadoCallback) {
       console.log(`🌪️ WindShear: Triggering tornado effect`);
       const playerId = this.localSocketId || 'local'; // Use actual socket ID if available, fallback to 'local'
       console.log(`🌪️ WindShear: Using playerId:`, playerId, 'localSocketId:', this.localSocketId);
-      this.onWindShearTornadoCallback(playerId, 2000); // 2 seconds
+      this.onWindShearTornadoCallback(playerId, 1250); // 1.25 seconds
     }
 
     // Start charging animation
@@ -2777,7 +2793,6 @@ export class ControlSystem extends System {
 
   private triggerHauntedSoulEffect(position: Vector3): void {
     // Trigger haunted soul visual effect through callback
-    console.log(`👻 Triggering haunted soul effect at position: ${position.x}, ${position.y}, ${position.z}`);
     
     // Call the haunted soul effect callback if available
     if (this.onHauntedSoulEffectCallback) {
@@ -2885,8 +2900,6 @@ export class ControlSystem extends System {
     }
     this.lastFireTime = currentTime;
     
-    console.log('⚔️ Sabres dual attack initiated');
-    
     // Set swinging state - completion will be handled by sabres component callback
     this.isSwinging = true;
     
@@ -2916,8 +2929,8 @@ export class ControlSystem extends System {
     );
 
     // SABRES DAMAGE
-    const attackRange = 3.8; // Slightly longer range than sword
-    const attackAngle = Math.PI / 2; // 60 degree cone (wider than sword)
+    const attackRange = 3.8;
+    const attackAngle = Math.PI / 2; 
     const leftSabreDamage = 19;
     const rightSabreDamage = 23;
 
@@ -3016,12 +3029,8 @@ export class ControlSystem extends System {
 
     // Create Sabre Reaper Mist effect at player position
     if (this.onCreateSabreMistEffectCallback) {
-      console.log('🎯 Skyfall: Calling Sabre Reaper Mist effect callback at position:', playerTransform.position);
       this.onCreateSabreMistEffectCallback(playerTransform.position.clone());
-    } else {
-      console.log('⚠️ Skyfall: Sabre Reaper Mist effect callback not set!');
-    }
-
+    } 
     // Broadcast mist effect to other players in PVP
     if (this.onBroadcastSabreMistCallback) {
       this.onBroadcastSabreMistCallback(playerTransform.position.clone(), 'skyfall');
@@ -3099,11 +3108,9 @@ export class ControlSystem extends System {
           // Apply stun effect (2 seconds) to enemies hit by Skyfall
           const enemy = entity.getComponent(Enemy);
           if (enemy) {
-            // This is an enemy - stun it
             enemy.freeze(2.0, currentTime); // 2 second stun using freeze mechanics
           } else {
-            // This is likely another player in PVP mode - apply stun debuff
-            // CRITICAL FIX: Check if we're about to target ourselves before broadcasting debuff
+            // apply stun debuff
             const localSocketId = (window as any).localSocketId;
             const serverPlayerEntities = (window as any).serverPlayerEntities;
             let targetPlayerId: string | null = null;
@@ -3126,7 +3133,6 @@ export class ControlSystem extends System {
 
             // Create local debuff effect so the caster can see the stun on the enemy
             if (this.onCreateLocalDebuffCallback && targetPlayerId) {
-              console.log(`🎯 Creating local Skyfall stun effect for player ${targetPlayerId}`);
               this.onCreateLocalDebuffCallback(targetPlayerId, 'stunned', targetTransform.position, 2000);
             }
           }
@@ -3373,8 +3379,8 @@ export class ControlSystem extends System {
       // Entropic Bolt: +1 damage per stack
       damageBonus = currentStacks.stacks;
     } else {
-      // Crossentropy Bolt: +20 damage per stack
-      damageBonus = currentStacks.stacks * 20;
+      // Crossentropy Bolt: +10 damage per stack
+      damageBonus = currentStacks.stacks * 10;
     }
     
     let newStackCount = currentStacks.stacks;
@@ -3477,7 +3483,6 @@ export class ControlSystem extends System {
     setTimeout(() => {
       if (this.isStealthing) { // Only activate if stealth wasn't cancelled
         this.isInvisible = true;
-        console.log('🥷 Stealth: Player is now invisible');
         
         // Broadcast invisibility state to other players
         this.broadcastStealthState(true);
@@ -3533,7 +3538,6 @@ export class ControlSystem extends System {
     // Only clean up if the setTimeout might have failed for some reason
     // This is a safety net, not the primary cleanup mechanism
     if (elapsedTime >= totalStealthDuration + 1.0) { // Add 1 second buffer
-      console.log('🥷 Stealth: Safety cleanup triggered - setTimeout may have failed');
 
       this.isStealthing = false;
       this.isInvisible = false;
@@ -3566,7 +3570,6 @@ export class ControlSystem extends System {
 
     // Clean up stealth state and ensure visibility is restored
     if (this.isStealthing || this.isInvisible) {
-      console.log('🥷 Stealth: Cleaning up stealth state due to weapon switch');
       this.isStealthing = false;
       this.isInvisible = false;
       this.stealthStartTime = 0;
@@ -3581,7 +3584,6 @@ export class ControlSystem extends System {
 
     // Reset Corrupted Aura and restore original rune counts when switching weapons
     if (this.corruptedAuraActive) {
-      console.log('💀 Corrupted Aura: Deactivating due to weapon switch, restoring rune counts');
       this.corruptedAuraActive = false;
       setGlobalCriticalRuneCount(this.originalCriticalRunes);
       setGlobalCritDamageRuneCount(this.originalCritDamageRunes);
@@ -3615,11 +3617,11 @@ export class ControlSystem extends System {
       this.originalCriticalRunes = currentRuneCounts.criticalRunes;
       this.originalCritDamageRunes = currentRuneCounts.critDamageRunes;
 
-      // Set rune counts to 5 while Corrupted Aura is active
-      setGlobalCriticalRuneCount(15);
-      setGlobalCritDamageRuneCount(5);
-
-      console.log(`💀 Corrupted Aura activated: Critical Runes ${currentRuneCounts.criticalRunes} -> 5, Crit Damage Runes ${currentRuneCounts.critDamageRunes} -> 5`);
+      // Heartbreak: increases critical strike chance by 45% and critical strike damage by 75%
+      // Each crit rune adds 3% chance, so 45% = +15 crit runes
+      // Each crit damage rune adds 15% damage, so 75% = +5 crit damage runes
+      setGlobalCriticalRuneCount(currentRuneCounts.criticalRunes + 15);
+      setGlobalCritDamageRuneCount(currentRuneCounts.critDamageRunes + 5);
 
       // Reset mana drain timer when activating
       this.lastManaDrainTime = Date.now() / 1000;
@@ -3627,8 +3629,6 @@ export class ControlSystem extends System {
       // Restore original rune counts when deactivating
       setGlobalCriticalRuneCount(this.originalCriticalRunes);
       setGlobalCritDamageRuneCount(this.originalCritDamageRunes);
-
-      console.log(`💀 Corrupted Aura deactivated: Critical Runes 5 -> ${this.originalCriticalRunes}, Crit Damage Runes 5 -> ${this.originalCritDamageRunes}`);
 
       // Clear all slowed entities when deactivating
       this.corruptedAuraSlowedEntities.clear();
@@ -3844,12 +3844,12 @@ export class ControlSystem extends System {
       
       // Determine if this is a backstab (attacking from behind the target)
       let isBackstab = false;
-      let damage = 75; // Base damage
-      
+      let baseDamage = 75; // Base damage
+
       // For PVP players, check if we're behind them
       const pvpPlayers = (window as any).pvpPlayers;
       const localSocketId = (window as any).localSocketId;
-      
+
       if (pvpPlayers && localSocketId) {
         // Find the target player in PVP players map
         let targetPlayer = null;
@@ -3862,7 +3862,7 @@ export class ControlSystem extends System {
             }
           }
         }
-        
+
         if (targetPlayer) {
           // Calculate target's facing direction from their rotation
           const targetFacingDirection = new Vector3(
@@ -3870,21 +3870,25 @@ export class ControlSystem extends System {
             0,
             Math.cos(targetPlayer.rotation.y)
           ).normalize();
-          
+
           // Vector from target to attacker
           const attackerDirection = new Vector3()
             .subVectors(playerPosition, targetTransform.position)
             .normalize();
-          
+
           // Check if attacker is behind target (dot product < 0 means opposite direction)
           const behindDotProduct = targetFacingDirection.dot(attackerDirection);
           isBackstab = behindDotProduct < -0.3; // 70 degree cone behind target
-          
+
           if (isBackstab) {
-            damage = 175; // Backstab damage
+            baseDamage = 175; // Backstab base damage (before critical calculation)
           }
         }
       }
+
+      // Use DamageCalculator for proper critical chance and damage scaling
+      const damageResult = calculateDamage(baseDamage, WeaponType.SABRES);
+      const damage = damageResult.damage;
       
       // Check if target is stunned (for energy refund)
       let isTargetStunned = false;
@@ -3907,7 +3911,8 @@ export class ControlSystem extends System {
           damage,
           this.playerEntity!,
           'backstab',
-          this.playerEntity?.userData?.playerId
+          this.playerEntity?.userData?.playerId,
+          damageResult.isCritical
         );
 
         hitCount++;
@@ -3933,8 +3938,8 @@ export class ControlSystem extends System {
     this.camera.getWorldDirection(direction);
     direction.normalize();
     
-    // Melee attack parameters - increased for PVP combat
-    const meleeRange = 4.5; // Increased attack range for PVP
+    // Melee attack parameters -  for PVP combat
+    const meleeRange = 4.5; //  attack range for PVP
     const meleeAngle = Math.PI / 2; // 120 degree cone (60 degrees each side)
     
     // Base damage values based on combo step and weapon type
@@ -3962,20 +3967,21 @@ export class ControlSystem extends System {
     
     // Track enemies hit for rage generation
     let enemiesHit = 0;
-    
+    let criticalHits = 0;
+
     allEntities.forEach(entity => {
       // Check if entity has enemy component and health
       const enemyTransform = entity.getComponent(Transform);
       const enemyHealth = entity.getComponent(Health);
       if (!enemyTransform || !enemyHealth || entity.id === this.playerEntity?.id) return;
-      
+
       const enemyPosition = enemyTransform.position;
       const toEnemy = enemyPosition.clone().sub(playerPosition);
       const distance = toEnemy.length();
-      
+
       // Debug logging for PVP hit detection
-      
-      
+
+
       // Check if enemy is within range
       if (distance <= meleeRange) {
         // Check if enemy is within attack cone
@@ -3983,26 +3989,38 @@ export class ControlSystem extends System {
         const angle = direction.angleTo(toEnemy);
         const angleDegrees = angle * 180 / Math.PI;
         const maxAngleDegrees = (meleeAngle / 2) * 180 / Math.PI;
-        
-        
+
+
         if (angle <= meleeAngle / 2) {
-          // Enemy is within attack cone - deal damage through combat system
-          
+          // Enemy is within attack cone - calculate damage with critical hits
           if (combatSystem && this.playerEntity) {
+            // Calculate damage using DamageCalculator to get critical hit information
+            const damageResult = calculateDamage(baseDamage, this.currentWeapon);
+            const actualDamage = damageResult.damage;
+
+            // Track critical hits for rage generation
+            if (damageResult.isCritical) {
+              criticalHits++;
+            }
+
             // Queue damage through combat system (which will route to multiplayer for enemies)
-            combatSystem.queueDamage(entity, baseDamage, this.playerEntity, 'melee', this.playerEntity?.userData?.playerId);
+            // Pass isCritical flag so CombatSystem doesn't recalculate critical damage
+            combatSystem.queueDamage(entity, actualDamage, this.playerEntity, 'melee', this.playerEntity?.userData?.playerId, damageResult.isCritical);
             enemiesHit++;
           }
         }
       }
     });
-    
-    // Generate rage only if we hit enemies (5 rage per hit, max 5 per swing)
+
+    // Generate rage based on hits and critical hits
     if (enemiesHit > 0) {
       const gameUI = (window as any).gameUI;
       if (gameUI) {
-        const rageToGain = Math.min(enemiesHit * 5, 5); // 5 rage per hit, max 5 per swing
-        gameUI.gainRage(rageToGain);
+        // Critical strikes give 10 rage each, regular hits give 5 rage, max 5 per swing
+        const criticalRage = criticalHits * 10;
+        const regularRage = Math.max(0, enemiesHit - criticalHits) * 5;
+        const totalRage = Math.min(criticalRage + regularRage, 5); // Max 5 rage per swing total
+        gameUI.gainRage(totalRage);
       }
     }
   }
@@ -4185,7 +4203,7 @@ export class ControlSystem extends System {
     // Gain rage for using charge ability (+20 rage)
     const gameUI = (window as any).gameUI;
     if (gameUI) {
-      gameUI.gainRage(25);
+      gameUI.gainRage(20);
     }
     
     // Start the charge movement using the separate charge system
@@ -4217,7 +4235,7 @@ export class ControlSystem extends System {
   private scheduleChargeDamage(playerTransform: Transform, chargeDirection: Vector3, startTime: number): void {
     const chargeDuration = 0.6; 
     const damageCheckInterval = 50; // Check for damage every 50ms for better collision detection
-    const chargeDamage = 40; // High damage for charge ability
+    const chargeDamage = 40; // Damage for charge ability
     const chargeRadius = 2.5; // Damage radius around player during charge
     
     // Reset charge hit tracking
@@ -4499,7 +4517,7 @@ export class ControlSystem extends System {
 
     // Start charging animation
     const chargeStartTime = Date.now();
-    const chargeDuration = 800; // 0.8 second charge time (shorter than Barrage)
+    const chargeDuration = 700; // 0.8 second charge time (shorter than Barrage)
 
     const chargeInterval = setInterval(() => {
       const elapsed = Date.now() - chargeStartTime;

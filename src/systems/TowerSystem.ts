@@ -99,7 +99,6 @@ export class TowerSystem extends System {
     const potentialTargets = this.world.queryEntities([Transform, Health, Collider]);
 
     // Debug logging for tower targeting
-    console.log(`🔍 Tower ${tower.ownerId} searching for targets. Found ${potentialTargets.length} potential entities.`);
 
 
     let closestTarget: Entity | null = null;
@@ -118,7 +117,6 @@ export class TowerSystem extends System {
         // Debug: Log why target was rejected
         const targetPlayerId = this.getPlayerIdForEntity(target);
         const targetCollider = target.getComponent(Collider);
-        console.log(`❌ Tower ${tower.ownerId} rejected target: ${targetPlayerId || 'unknown'} (layer: ${targetCollider?.layer})`);
         continue;
       }
 
@@ -141,12 +139,9 @@ export class TowerSystem extends System {
       const targetCollider = closestTarget.getComponent(Collider);
       const targetPlayerId = this.getPlayerIdForEntity(closestTarget);
 
-      console.log(`🎯 Tower ${tower.ownerId} targeting: ${targetPlayerId || 'unknown entity'} (distance: ${closestDistance.toFixed(2)}, layer: ${targetCollider?.layer})`);
-      console.log(`📊 Tower ${tower.ownerId} found ${validTargetCount} valid targets out of ${potentialTargets.length} potential targets`);
       tower.setTarget(closestTarget.id);
     } else if (tower.currentTarget) {
       // Clear target if no valid targets found
-      console.log(`❌ Tower ${tower.ownerId} clearing target - no valid targets found (${validTargetCount}/${potentialTargets.length} valid)`);
       tower.clearTarget();
     }
   }
@@ -194,7 +189,6 @@ export class TowerSystem extends System {
         });
 
         if (targetPlayerId && tower.ownerId === targetPlayerId) {
-          console.log(`🛡️ Tower ${tower.ownerId} refusing to target own player (remote: ${targetPlayerId})`);
           return false;
         }
       }

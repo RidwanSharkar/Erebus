@@ -46,8 +46,6 @@ export class HealthBar extends Component {
   public currentHealthRatio: number;
   public lastHealthRatio: number;
   public animationSpeed: number;
-  public damageFlashTimer: number;
-  public damageFlashDuration: number;
 
   constructor(config: HealthBarConfig = {}) {
     super();
@@ -72,8 +70,6 @@ export class HealthBar extends Component {
     this.currentHealthRatio = 1.0;
     this.lastHealthRatio = 1.0;
     this.animationSpeed = 5.0; // How fast health bar animates
-    this.damageFlashTimer = 0;
-    this.damageFlashDuration = 0.2;
 
     // Create rendering objects
     this.createHealthBarMeshes();
@@ -151,9 +147,6 @@ export class HealthBar extends Component {
 
     // Update position and rotation to face camera
     this.updatePositionAndRotation(cameraPosition, worldPosition);
-
-    // Update damage flash
-    this.updateDamageFlash(deltaTime);
   }
 
   private updateHealthMesh(): void {
@@ -225,33 +218,10 @@ export class HealthBar extends Component {
     this.group.lookAt(cameraPosition);
   }
 
-  private updateDamageFlash(deltaTime: number): void {
-    if (this.damageFlashTimer > 0) {
-      this.damageFlashTimer -= deltaTime;
-      
-      // Flash effect - make health bar brighter
-      const flashIntensity = this.damageFlashTimer / this.damageFlashDuration;
-      const flashColor = new Color(1, 1, 1);
-      
-      // Mix current color with white for flash effect
-      const currentColor = (this.healthMesh.material as MeshBasicMaterial).color.clone();
-      currentColor.lerp(flashColor, flashIntensity * 0.5);
-      (this.healthMesh.material as MeshBasicMaterial).color.copy(currentColor);
-    }
-  }
 
-  public triggerDamageFlash(): void {
-    this.damageFlashTimer = this.damageFlashDuration;
-  }
 
   public setHealthRatio(ratio: number): void {
-    const oldRatio = this.currentHealthRatio;
     this.currentHealthRatio = Math.max(0, Math.min(1, ratio));
-    
-    // Trigger damage flash if health decreased
-    if (this.currentHealthRatio < oldRatio) {
-      this.triggerDamageFlash();
-    }
   }
 
   public getGroup(): Group {
@@ -279,7 +249,6 @@ export class HealthBar extends Component {
     this.currentHealthRatio = 1.0;
     this.lastHealthRatio = 1.0;
     this.isVisible = true;
-    this.damageFlashTimer = 0;
     this.enabled = true;
     
     // Reset visual state

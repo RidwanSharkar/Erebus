@@ -152,7 +152,7 @@ interface MultiplayerContextType {
   broadcastPlayerAttack: (attackType: string, position: { x: number; y: number; z: number }, direction: { x: number; y: number; z: number }, animationData?: { comboStep?: 1 | 2 | 3; chargeProgress?: number; isSpinning?: boolean; isPerfectShot?: boolean; damage?: number; targetId?: number; hitPosition?: { x: number; y: number; z: number }; isSwordCharging?: boolean }) => void;
   broadcastPlayerAbility: (abilityType: string, position: { x: number; y: number; z: number }, direction?: { x: number; y: number; z: number }, target?: string, extraData?: any) => void;
   broadcastPlayerEffect: (effect: any) => void;
-  broadcastPlayerDamage: (targetPlayerId: string, damage: number, damageType?: string) => void;
+  broadcastPlayerDamage: (targetPlayerId: string, damage: number, damageType?: string, isCritical?: boolean) => void;
   broadcastPlayerHealing: (healingAmount: number, healingType: string, position: { x: number; y: number; z: number }) => void;
   broadcastPlayerAnimationState: (animationState: PlayerAnimationState) => void;
   broadcastPlayerDebuff: (targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, effectData?: any) => void;
@@ -845,13 +845,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const broadcastPlayerDamage = useCallback((targetPlayerId: string, damage: number, damageType?: string) => {
+  const broadcastPlayerDamage = useCallback((targetPlayerId: string, damage: number, damageType?: string, isCritical?: boolean) => {
     if (socket && currentRoomId) {
+      // Additional logging to track damage attempts
+      console.log(`📡 Broadcasting ${damage} ${damageType || 'generic'} damage${isCritical ? ' (CRITICAL)' : ''} to player ${targetPlayerId}`);
+
       socket.emit('player-damage', {
         roomId: currentRoomId,
         targetPlayerId,
         damage,
-        damageType
+        damageType,
+        isCritical
       });
     }
   }, [socket, currentRoomId]);

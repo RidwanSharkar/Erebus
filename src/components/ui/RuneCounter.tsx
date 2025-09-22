@@ -19,7 +19,7 @@ export function RuneCounter({
       <div className="flex flex-col text-xs text-white">
 
         <div className="text-gray-300">
-          Critical: {(criticalChance * 100).toFixed(1)}% | ×{(criticalDamageMultiplier * 100).toFixed(0)}%
+          Crit: {(criticalChance * 100).toFixed(1)}% | ×{(criticalDamageMultiplier * 100).toFixed(0)}%
         </div>
       </div>
     </div>

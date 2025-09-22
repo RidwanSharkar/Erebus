@@ -12,6 +12,9 @@ interface CloudkillArrowProps {
   enemyData: Enemy[];
   onHit?: (targetId: string, damage: number, isCritical: boolean, position: Vector3) => void;
   players?: Array<{ id: string; position: { x: number; y: number; z: number }; health?: number }>; // For PVP mode
+  // Add callback to get real-time player positions at impact time
+  getCurrentPlayerPositions?: () => Array<{ id: string; position: { x: number; y: number; z: number }; health?: number }>;
+  localSocketId?: string; // To identify the local player for onImpact callback
 }
 
 const DAMAGE_RADIUS = 1.5; // Smaller radius for arrows compared to meteors
@@ -178,7 +181,9 @@ export default function CloudkillArrow({
   playerPosition,
   enemyData,
   onHit,
-  players = []
+  players = [],
+  getCurrentPlayerPositions,
+  localSocketId
 }: CloudkillArrowProps) {
   const arrowGroupRef = useRef<Group>(null);
 
@@ -259,36 +264,56 @@ export default function CloudkillArrow({
         });
 
         // Damage players within radius of the damage position (at impact time)
-        // CRITICAL FIX: Only damage players who are still in the original indicated area at impact time
-        // Exclude the original target if they're no longer in the area
-        players.forEach(player => {
+        // CRITICAL FIX: Get real-time player positions at impact time, not stale snapshot
+        const realTimePlayerPositions = getCurrentPlayerPositions ? getCurrentPlayerPositions() : players;
+        
+        realTimePlayerPositions.forEach(player => {
           if (!player.position) return;
 
-          const playerPos = new Vector3(player.position.x, 0, player.position.z);
+          // Use the real-time player position at impact time
+          const currentPlayerPos = new Vector3(player.position.x, 0, player.position.z);
 
           // Always check against original indicated position (no homing behavior)
-          const checkPosition = new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
+          const impactAreaCenter = new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
 
-          const distance = playerPos.distanceTo(checkPosition);
+          const distanceFromImpactArea = currentPlayerPos.distanceTo(impactAreaCenter);
 
-          if (distance <= DAMAGE_RADIUS) {
-            // Only damage if player is actually in the area at impact time
-            onHit(player.id, ARROW_DAMAGE, false, checkPosition);
+          // Only damage if player is currently within the damage radius at impact time
+          if (distanceFromImpactArea <= DAMAGE_RADIUS) {
+            onHit(player.id, ARROW_DAMAGE, false, impactAreaCenter);
           }
         });
       }
 
       // Also check if local player is in damage radius (at impact time)
-      // CRITICAL FIX: For local player, check against original indicated position (no homing behavior)
-      tempPlayerGroundPos.set(playerPosition.x, 0, playerPosition.z);
-
-      // Always check against original indicated position (no homing behavior)
-      const localPlayerCheckPosition = new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
-
-      tempTargetGroundPos.set(localPlayerCheckPosition.x, 0, localPlayerCheckPosition.z);
-
-      if (tempPlayerGroundPos.distanceTo(tempTargetGroundPos) <= DAMAGE_RADIUS) {
-        onImpact(ARROW_DAMAGE);
+      // CRITICAL FIX: Use real-time position data instead of stale playerPosition prop
+      if (getCurrentPlayerPositions && localSocketId) {
+        // Find the local player in the real-time positions
+        const realTimePositions = getCurrentPlayerPositions();
+        const localPlayer = realTimePositions.find(player => player.id === localSocketId);
+        
+        if (localPlayer && localPlayer.position) {
+          // Use the real-time local player position at impact time
+          const localPlayerCurrentPos = new Vector3(localPlayer.position.x, 0, localPlayer.position.z);
+          const localPlayerImpactAreaCenter = new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
+          
+          const localPlayerDistanceFromImpact = localPlayerCurrentPos.distanceTo(localPlayerImpactAreaCenter);
+          
+          // Only trigger onImpact if local player is currently within the damage radius at impact time
+          if (localPlayerDistanceFromImpact <= DAMAGE_RADIUS) {
+            onImpact(ARROW_DAMAGE);
+          }
+        }
+      } else {
+        // Fallback to the old method only if getCurrentPlayerPositions is not available
+        const localPlayerCurrentPos = new Vector3(playerPosition.x, 0, playerPosition.z);
+        const localPlayerImpactAreaCenter = new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
+        
+        const localPlayerDistanceFromImpact = localPlayerCurrentPos.distanceTo(localPlayerImpactAreaCenter);
+        
+        if (localPlayerDistanceFromImpact <= DAMAGE_RADIUS) {
+          onImpact(ARROW_DAMAGE);
+        }
       }
       return;
     }

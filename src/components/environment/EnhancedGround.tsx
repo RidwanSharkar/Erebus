@@ -21,15 +21,15 @@ const EnhancedGround: React.FC<EnhancedGroundProps> = ({
   const materialRef = useRef<ShaderMaterial>(null);
   const timeRef = useRef(0);
 
-  // Get level-based colors - Volcano theme with red and grey
+  // Get level-based colors - Volcano theme with red and grey (darker)
   const getLevelColors = useMemo(() => {
     switch (level) {
-      case 1: return { primary: '#4a4a4a', secondary: '#2a2a2a', accent: '#8b0000' };
-      case 2: return { primary: '#5a5a5a', secondary: '#333333', accent: '#a00000' };
-      case 3: return { primary: '#666666', secondary: '#404040', accent: '#b22222' };
-      case 4: return { primary: '#707070', secondary: '#4a4a4a', accent: '#c8102e' };
-      case 5: return { primary: '#787878', secondary: '#555555', accent: '#dc143c' };
-      default: return { primary: '#4a4a4a', secondary: '#2a2a2a', accent: '#8b0000' };
+      case 1: return { primary: '#2a2a2a', secondary: '#1a1a1a', accent: '#5a0000' };
+      case 2: return { primary: '#3a3a3a', secondary: '#222222', accent: '#6a0000' };
+      case 3: return { primary: '#404040', secondary: '#2a2a2a', accent: '#7a2222' };
+      case 4: return { primary: '#4a4a4a', secondary: '#333333', accent: '#8a102e' };
+      case 5: return { primary: '#505050', secondary: '#3a3a3a', accent: '#9a143c' };
+      default: return { primary: '#2a2a2a', secondary: '#1a1a1a', accent: '#5a0000' };
     }
   }, [level]);
 

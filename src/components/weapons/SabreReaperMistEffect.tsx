@@ -27,7 +27,7 @@ export default function SabreReaperMistEffect({
   const [particleData] = useState<ParticleData[]>(() =>
     Array(50).fill(null).map(() => ({ // Increased from 20 to 35 particles
       initialAngle: Math.random() * Math.PI * 2,
-      initialRadius: 0.15 + Math.random() * 1.0,
+      initialRadius: 0.075 + Math.random() * 1.0,
       initialY: -0.5 + Math.random() * 2
     }))
   );

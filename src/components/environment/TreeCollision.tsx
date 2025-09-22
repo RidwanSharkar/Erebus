@@ -35,7 +35,7 @@ const TreeCollision: React.FC<TreeCollisionProps> = ({ world, trees }) => {
       // Add Collider component - cylinder shape to match tree trunk
       const collider = world.createComponent(Collider);
       collider.type = ColliderType.CYLINDER;
-      collider.radius = 0.3; // Roughly half the pillar diameter (pillar radius is 0.7, tree trunk radius is ~0.2-0.25, collision slightly larger)
+      collider.radius = 0.7; // Roughly half the pillar diameter (pillar radius is 0.7, tree trunk radius is ~0.2-0.25, collision slightly larger)
       collider.height = tree.height; // Full trunk height for collision
       collider.layer = CollisionLayer.ENVIRONMENT;
       collider.isStatic = true; // Trees don't move

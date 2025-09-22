@@ -17,6 +17,8 @@ interface CloudkillManagerProps {
   onPlayerHit?: (damage: number) => void;
   players?: Array<{ id: string; position: { x: number; y: number; z: number }; isVenomed?: boolean; venomedUntil?: number }>; // For PVP - check if players have venom debuff and get their positions
   localSocketId?: string; // To exclude the casting player from targets
+  // Add callback to get real-time player positions
+  getCurrentPlayerPositions?: () => Array<{ id: string; position: { x: number; y: number; z: number }; health?: number }>;
 }
 
 interface ActiveCloudkill {
@@ -31,7 +33,8 @@ export default function CloudkillManager({
   playerPosition,
   onPlayerHit,
   players = [],
-  localSocketId
+  localSocketId,
+  getCurrentPlayerPositions
 }: CloudkillManagerProps) {
   const [activeCloudkills, setActiveCloudkills] = useState<ActiveCloudkill[]>([]);
   const lastCastTime = useRef<number>(0);
@@ -422,6 +425,8 @@ export default function CloudkillManager({
               enemyData={enemyData}
               onHit={onHit}
               players={players}
+              getCurrentPlayerPositions={getCurrentPlayerPositions}
+              localSocketId={localSocketId}
             />
           ))}
         </React.Fragment>
@@ -468,5 +473,15 @@ export const setGlobalCloudkillTrigger = (callback: (position: Vector3, casterId
 export const triggerGlobalCloudkill = (position: Vector3, casterId: string) => {
   if (globalCloudkillTrigger) {
     globalCloudkillTrigger(position, casterId);
+  }
+};
+
+export const triggerGlobalCloudkillWithTargets = (targetPositions: Array<{ x: number; y: number; z: number }>, casterId: string) => {
+  if (globalCloudkillTrigger) {
+    // For each target position, trigger cloudkill at that specific location
+    targetPositions.forEach(targetPos => {
+      const position = new Vector3(targetPos.x, targetPos.y, targetPos.z);
+      globalCloudkillTrigger!(position, casterId);
+    });
   }
 };

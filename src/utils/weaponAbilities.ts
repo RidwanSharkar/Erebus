@@ -26,14 +26,14 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
     {
       name: 'Colossus Strike',
       key: 'R',
-      cooldown: 4.0,
+      cooldown: 5.0,
       description: '{25+ RAGE} Consumes all rage to execute an enemy player, calling down a lightning bolt that deals increasing damage based on the amount of rage consumed.'
     },
     {
-      name: 'Razorwind',
+      name: 'Divine Wind',
       key: 'F',
-      cooldown: 3.0,
-      description: '{10 RAGE} Throws your sword forward in a gust of wind, dealing 80 piercing damage to enemies hit within 15 units.'
+      cooldown: 1.5,
+      description: '{10 RAGE} Throws your sword forward in a gust of wind, dealing 80 piercing damage to enemies hit within 15 units. Hitting an enemy player reduces the cooldown of Reckless Abandon by 4 seconds.'
     },
     {
       name: 'Titan\'s Breath',
@@ -81,7 +81,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Sunwell',
       key: 'Q',
       cooldown: 1.0,
-      description: '{20 MANA} Heals for 30 HP.'
+      description: '{20 MANA} Transmutes mana to heal you for 60 HP.'
     },
     {
       name: 'Coldsnap',
@@ -125,17 +125,17 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
     {
       name: 'Divebomb',
       key: 'R',
-      cooldown: 5.0,
+      cooldown: 6.0,
       description: '{40 ENERGY} Leap high into the air and crash down, dealing 125 damage and applying STUN for 2 seconds to enemies below.'
     },
     {
       name: 'Shadow Step',
       key: 'F',
       cooldown: 10.0,
-      description: 'Fade into the shadows, becoming INVISIBLE for 6 seconds after a 0.5 second delay.'
+      description: 'Fade into the shadows, becoming INVISIBLE for 5 seconds after a brief delay.'
     },
     {
-      name: 'Cuthroat Oath',
+      name: 'Cutthroat Oath',
       key: 'P',
       cooldown: 0,
       description: '{PASSIVE} Permanently increases critical strike chance by 30%.',
@@ -168,7 +168,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       description: '{24 MANA/S} Toggle a force-multiplier aura that increases critical strike chance by 45% and critical strike damage by 75%.'
     },
     {
-      name: 'Blood Pact',
+      name: 'Bloodpact',
       key: 'P',
       cooldown: 0,
       description: '{PASSIVE} Reduces mana costs by 10% and heals for 10% of basic attack damage (including crits) while equipped.',

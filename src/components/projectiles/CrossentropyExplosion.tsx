@@ -8,18 +8,18 @@ interface CrossentropyExplosionProps {
   onComplete?: () => void;
 }
 
-const IMPACT_DURATION = 1.0; // Slightly longer than the original for more dramatic effect
+const IMPACT_DURATION = 0.5; // Slightly longer than the original for more dramatic effect
 
 export default function CrossentropyExplosion({ 
   position, 
-  chargeTime = 1.0,
+  chargeTime = 1,
   explosionStartTime,
   onComplete 
 }: CrossentropyExplosionProps) {
   const startTime = useRef(explosionStartTime || Date.now());
   const [, forceUpdate] = useState({}); // Force updates to animate
   const normalizedCharge = Math.min(chargeTime / 4, 1.0);
-  const scale = 0.6 + (normalizedCharge * 1.0); // Increased base scale for more impact
+  const scale = 0.5 + (normalizedCharge * 1.0); // Increased base scale for more impact
   const intensity = 2.5 + (normalizedCharge * 4); // Higher intensity for Crossentropy
   const sparkCount = 16; // More sparks for dramatic effect
   

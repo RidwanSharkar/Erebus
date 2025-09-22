@@ -223,11 +223,11 @@ const SwordComponent = memo(function Sword({
 
     // Handle charge spin animation (separate from main charge logic)
     if (isChargeSpinning.current) {      
-      const TARGET_ROTATIONS = 1; // 1 full rotation 
+      const TARGET_ROTATIONS = 1.5; // 1 full rotation 
       const MAX_ROTATION = TARGET_ROTATIONS * Math.PI * 2; // 2π radians for one full rotation
       
       // Use fast rotation speed for dramatic effect
-      const SPIN_ROTATION_SPEED = 27.5; 
+      const SPIN_ROTATION_SPEED = 26.5; 
       
       // Update rotation based on constant speed
       chargeSpinRotation.current += delta * SPIN_ROTATION_SPEED;
@@ -253,7 +253,7 @@ const SwordComponent = memo(function Sword({
       const angle = chargeSpinRotation.current;
       
       // Orbit parameters
-      const orbitRadius = 1.5; 
+      const orbitRadius = 1.125; 
 
       // Calculate orbital position
       const orbitalX = calculationCache.getTrigCalculation('cos', angle) * orbitRadius;
@@ -285,7 +285,7 @@ const SwordComponent = memo(function Sword({
       const CHARGE_DAMAGE = 40; // Base damage for charge collision
       const CHARGE_COLLISION_RADIUS = 2.5; // Collision radius - increased for better hit detection
       const MAX_CHARGE_BOUNDS = 25; // Maximum distance from origin
-      const CHARGE_FAILSAFE_TIMEOUT = 1.5; // Total expected duration + buffer
+      const CHARGE_FAILSAFE_TIMEOUT = 0.75; // Total expected duration + buffer
 
       // Initialize charge on first active frame
       if (!chargeStartTime.current) {
@@ -530,7 +530,7 @@ const SwordComponent = memo(function Sword({
 
       if (colossusStrikePhase < 0.5) {
         // Wind-up phase: pull back and up, with more movement towards center
-        const windupPhase = colossusStrikePhase * 0.45;
+        const windupPhase = colossusStrikePhase * 0.35;
         rotationX = -Math.PI/3 - (windupPhase * Math.PI/3);
         rotationY = windupPhase * Math.PI/4;
 

@@ -5,6 +5,7 @@ import { useThree, useFrame } from '@react-three/fiber';
 import { Vector3, Matrix4, Camera, PerspectiveCamera, Scene, WebGLRenderer, PCFSoftShadowMap, Color, Quaternion, Euler, Group, AdditiveBlending } from '@/utils/three-exports';
 import DragonRenderer from './dragon/DragonRenderer';
 import { useMultiplayer, Player } from '@/contexts/MultiplayerContext';
+import { SkillPointData } from '@/utils/SkillPointSystem';
 
 // Import our ECS systems
 import { Engine } from '@/core/Engine';
@@ -45,7 +46,7 @@ import StunManager from '@/components/weapons/StunManager';
 import FrostNova from '@/components/weapons/FrostNova';
 import CobraShotManager from '@/components/projectiles/CobraShotManager';
 import ViperStingManager from '@/components/projectiles/ViperStingManager';
-import CloudkillManager, { triggerGlobalCloudkill } from '@/components/projectiles/CloudkillManager';
+import CloudkillManager, { triggerGlobalCloudkill, triggerGlobalCloudkillWithTargets } from '@/components/projectiles/CloudkillManager';
 import VenomEffect from '@/components/projectiles/VenomEffect';
 import DebuffIndicator from '@/components/ui/DebuffIndicator';
 import FrozenEffect from '@/components/weapons/FrozenEffect';
@@ -109,9 +110,10 @@ interface PVPGameSceneProps {
     secondary: WeaponType;
     tertiary?: WeaponType;
   } | null;
+  skillPointData?: SkillPointData;
 }
 
-export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCameraUpdate, onGameStateUpdate, onControlSystemUpdate, onExperienceUpdate, onScoreboardUpdate, selectedWeapons }: PVPGameSceneProps = {}) {
+export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCameraUpdate, onGameStateUpdate, onControlSystemUpdate, onExperienceUpdate, onScoreboardUpdate, selectedWeapons, skillPointData }: PVPGameSceneProps = {}) {
   const { scene, camera, gl, size } = useThree();
   const {
     players,
@@ -120,6 +122,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     summonedUnits,
     gameStarted,
     isInRoom,
+    currentRoomId,
     updatePlayerPosition,
     updatePlayerWeapon,
     updatePlayerHealth,
@@ -1057,7 +1060,7 @@ const [maxMana, setMaxMana] = useState(150);
     
   }, []);
 
-  const createPvpVenomEffect = useCallback((playerId: string, position: Vector3) => {
+  const createPvpVenomEffect = useCallback((playerId: string, position: Vector3, casterId?: string) => {
     // Debug: Check if this is the local player
     const isLocalPlayer = playerId === socket?.id;
     
@@ -1098,6 +1101,27 @@ const [maxMana, setMaxMana] = useState(150);
       // Apply venom damage
       if (broadcastPlayerDamage) {
         broadcastPlayerDamage(playerId, venomDamagePerSecond, 'cobra_shot');
+      }
+
+      // Create local damage numbers for the caster to see their venom DoT
+      if (casterId === socket?.id) {
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        if (damageNumberManager && damageNumberManager.addDamageNumber) {
+          const targetPlayer = players.get(playerId);
+          if (targetPlayer) {
+            const damagePosition = new Vector3(
+              targetPlayer.position.x,
+              targetPlayer.position.y + 1.5,
+              targetPlayer.position.z
+            );
+            damageNumberManager.addDamageNumber(
+              venomDamagePerSecond,
+              false, // Not critical
+              damagePosition,
+              'cobra_shot' // Green color for venom DoT damage
+            );
+          }
+        }
       }
     }, tickInterval);
     
@@ -1232,7 +1256,16 @@ const [maxMana, setMaxMana] = useState(150);
     }
 
     console.log(`✅ Player ${playerId} respawned at tower position: ${respawnPosition.x}, ${respawnPosition.y}, ${respawnPosition.z}`);
-  }, [socket?.id, towers, updatePlayerHealth, playerEntityRef, engineRef]);
+
+    // Notify server of respawn for death confirmation and experience award
+    if (socket && socket.connected && currentRoomId) {
+      socket.emit('player-respawn', {
+        roomId: currentRoomId,
+        playerId: playerId
+      });
+      console.log(`📡 Notified server of player ${playerId} respawn for death confirmation`);
+    }
+  }, [socket, currentRoomId, towers, updatePlayerHealth, playerEntityRef, engineRef]);
 
   // Function to handle wave completion (legacy multiplayer mode - wave experience removed)
   const handleWaveComplete = useCallback(() => {
@@ -1518,7 +1551,7 @@ const hasMana = useCallback((amount: number) => {
         }
         
         // Handle regular projectile attacks - create projectiles that can hit the local player
-        const projectileTypes = ['regular_arrow', 'charged_arrow', 'entropic_bolt', 'crossentropy_bolt', 'perfect_shot', 'barrage_projectile'];
+        const projectileTypes = ['regular_arrow', 'charged_arrow', 'entropic_bolt', 'crossentropy_bolt', 'perfect_shot', 'barrage_projectile', 'burst_arrow'];
         if (projectileTypes.includes(data.attackType)) {
 
           
@@ -1568,12 +1601,30 @@ const hasMana = useCallback((amount: number) => {
                 );
                 break;
               case 'entropic_bolt':
+                // Use broadcast config data if available, otherwise fall back to defaults
+                const entropicConfig = data.animationData?.projectileConfig || {};
+                const isCryoflame = entropicConfig.isCryoflame || false;
+                
+                // Debug: Log received data to verify Cryoflame state
+                console.log('🔥 Received entropic_bolt broadcast:', {
+                  from: data.playerId,
+                  isCryoflame: isCryoflame,
+                  damage: entropicConfig.damage || 20
+                });
+                
                 projectileSystem.createEntropicBoltProjectile(
                   engineRef.current.getWorld(),
                   position,
                   direction,
                   attackerEntityId,
-                  { speed: 20, damage: 20, lifetime: 1.75, piercing: false, opacity: 0.8 }
+                  { 
+                    speed: entropicConfig.speed || 20, 
+                    damage: entropicConfig.damage || 20, 
+                    lifetime: entropicConfig.lifetime || 1.75, 
+                    piercing: entropicConfig.piercing || false, 
+                    opacity: entropicConfig.opacity || 0.8,
+                    isCryoflame: isCryoflame // Pass Cryoflame state to projectile system
+                  }
                 );
                 break;
               case 'crossentropy_bolt':
@@ -1624,6 +1675,23 @@ const hasMana = useCallback((amount: number) => {
                 if (renderer?.mesh) {
                   renderer.mesh.userData.isBarrageArrow = true;
                   renderer.mesh.userData.isRegularArrow = false;
+                }
+                break;
+              case 'burst_arrow':
+                // Create Tempest Rounds burst projectiles for PVP
+                const burstEntity = projectileSystem.createProjectile(
+                  engineRef.current.getWorld(),
+                  position,
+                  direction,
+                  attackerEntityId,
+                  { speed: 25, damage: 30, lifetime: 3, maxDistance: 25, piercing: false, opacity: 0.8, projectileType: 'burst_arrow' }
+                );
+                
+                // Mark as burst arrow for proper visual rendering (teal color)
+                const burstRenderer = burstEntity.getComponent(Renderer);
+                if (burstRenderer?.mesh) {
+                  burstRenderer.mesh.userData.isBurstArrow = true;
+                  burstRenderer.mesh.userData.isRegularArrow = false;
                 }
                 break;
             }
@@ -1797,16 +1865,22 @@ const hasMana = useCallback((amount: number) => {
             return updated;
           });
         } else if (data.abilityType === 'cloudkill') {
-          // Cloudkill ability - trigger the global cloudkill effect at the LOCAL player's position
-          // (Cloudkill should target the receiving player, not the casting player)
-          if (playerEntityRef.current !== null && engineRef.current) {
-            const world = engineRef.current.getWorld();
-            const localPlayerEntity = world.getEntity(playerEntityRef.current);
-            if (localPlayerEntity) {
-              const localPlayerTransform = localPlayerEntity.getComponent(Transform);
-              if (localPlayerTransform) {
-                const localPosition = localPlayerTransform.position.clone();
-                triggerGlobalCloudkill(localPosition, data.playerId);
+          // Cloudkill ability - use the target positions from when the ability was originally cast
+          // Check if target positions are included in the broadcast data
+          if (data.targetPositions && Array.isArray(data.targetPositions)) {
+            // Use the original target positions from the caster
+            triggerGlobalCloudkillWithTargets(data.targetPositions, data.playerId);
+          } else {
+            // Fallback to old behavior for compatibility (should be removed after testing)
+            if (playerEntityRef.current !== null && engineRef.current) {
+              const world = engineRef.current.getWorld();
+              const localPlayerEntity = world.getEntity(playerEntityRef.current);
+              if (localPlayerEntity) {
+                const localPlayerTransform = localPlayerEntity.getComponent(Transform);
+                if (localPlayerTransform) {
+                  const localPosition = localPlayerTransform.position.clone();
+                  triggerGlobalCloudkill(localPosition, data.playerId);
+                }
               }
             }
           }
@@ -2519,40 +2593,21 @@ const hasMana = useCallback((amount: number) => {
             return updated;
           });
         } else if (data.abilityType === 'summon_totem') {
-          // Trigger Summon Totem for remote players
-          const position = new Vector3(data.position.x, data.position.y, data.position.z);
-
-          // Create enemy data for remote totem targeting (other players)
-          const remoteEnemyData = Array.from(players.entries())
-            .filter(([playerId]) => playerId !== data.playerId) // Exclude the caster
-            .map(([playerId, playerData]) => ({
-              id: playerId,
-              position: playerData.position,
-              health: playerData.health
-            }));
-
-          // Trigger the global summon totem function for remote players
-          if (typeof window !== 'undefined' && (window as any).triggerGlobalSummonTotem) {
+          // Trigger remote totem creation via PVPSummonTotemManager
+          console.log(`🎭 Remote Summon Totem from ${data.playerId} at position:`, data.position);
+          
+          if ((window as any).triggerGlobalSummonTotem) {
+            const position = new Vector3(data.position.x, data.position.y, data.position.z);
             (window as any).triggerGlobalSummonTotem(
               position,
-              remoteEnemyData,
-              (targetId: string, damage: number, impactPosition: Vector3, isCritical?: boolean) => {
-                // Handle damage to other players from remote totem
-                const targetPlayer = players.get(targetId);
-                if (targetPlayer) {
-                  handlePlayerDamaged({
-                    targetPlayerId: targetId,
-                    damage,
-                    position: impactPosition
-                  });
-                }
-              },
-              setPvpSummonTotemEffects,
-              pvpSummonTotemEffects,
-              undefined, // No damage numbers for remote players
-              undefined, // No damage number ID for remote players
-              undefined, // No healing for remote players
-              data.playerId
+              undefined, // Let PVPSummonTotemManager handle enemy data
+              undefined, // Let PVPSummonTotemManager handle damage callback
+              undefined, // Let PVPSummonTotemManager handle effects
+              undefined, // Let PVPSummonTotemManager handle active effects
+              undefined, // Let PVPSummonTotemManager handle damage numbers
+              undefined, // Let PVPSummonTotemManager handle damage number ID
+              undefined, // Let PVPSummonTotemManager handle healing
+              data.playerId // Pass remote caster ID
             );
           }
         }
@@ -2586,9 +2641,8 @@ const hasMana = useCallback((amount: number) => {
           if (playerEntity) {
             const transform = playerEntity.getComponent(Transform);
             if (transform) {
-              // Determine if this was a critical hit (we don't have this info from server, so we'll assume not critical for now)
-              // In a more advanced implementation, we could pass critical info from the server
-              const isCritical = false; // TODO: Get critical info from server if available
+              // Use the critical hit information passed from the server
+              const isCritical = data.isCritical || false;
 
               // Directly add damage numbers using the combat system's damage number manager
               const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
@@ -2630,212 +2684,23 @@ const hasMana = useCallback((amount: number) => {
         // Additional validation: Check if target player is actually removed from players map (truly dead)
         const targetPlayerStillExists = players.has(data.targetPlayerId);
         
-        if ((targetActuallyDied || remotePlayerDied) && data.newHealth === 0) {
-          const currentTime = Date.now() / 1000; // Current time in seconds
-          const timeSinceLastExp = currentTime - lastExperienceAwardTime;
-
-          // Check if 5 seconds have passed since last experience award
-          if (timeSinceLastExp < 5) {
-            console.log(`⏰ Experience cooldown active. ${5 - timeSinceLastExp} seconds remaining.`);
-            return;
-          }
-
-          // Additional validation: Ensure we're not awarding experience for burning stack overkill or high ability damage
-          if ((data.damageType === 'crossentropy' && data.damage > 150) || 
-              (data.damageType === 'colossusStrike' && data.damage > 200)) {
-            console.log(`⚠️ Suspicious high ${data.damageType} damage (${data.damage}) - likely burning stack calculation error or ability scaling. Verifying target death...`);
-            
-            // Wait a bit and check if target is still alive in the players map
-            setTimeout(() => {
-              const targetStillAlive = players.has(data.targetPlayerId);
-              if (targetStillAlive) {
-                console.log(`❌ Target ${data.targetPlayerId} is still alive despite "kill" - ${data.damageType} damage desync detected. No experience awarded.`);
-                return;
-              }
-              
-              // If target is truly gone, award experience with delay
-              console.log(`✅ Confirmed target ${data.targetPlayerId} is dead. Awarding experience with delay.`);
-              // Note: Kill count will be handled by handlePlayerKill event from server
-              setPlayerExperience(prev => prev + 10);
-            }, 500); // 500ms delay to allow server state to sync
-            
-            return; // Don't award immediately for suspicious high damage
-          }
-
-          console.log(`🎯 Local player killed ${data.targetPlayerId} with ${data.damage} damage! Awarding +10 EXP`);
-
-          // Note: Kill count will be handled by handlePlayerKill event from server
-          // Award +10 EXP to the local player for the kill
-          setPlayerExperience(prev => {
-            const newExp = prev + 10;
-
-            // Check for level up
-            const currentLevel = ExperienceSystem.getLevelFromExperience(prev);
-            const newLevel = ExperienceSystem.getLevelFromExperience(newExp);
-
-            if (newLevel > currentLevel) {
-              setPlayerLevel(newLevel);
-              console.log(`🎉 Level up! Player reached level ${newLevel} from killing ${data.targetPlayerId}`);
-
-              // Update ControlSystem level for rune calculations
-              if (controlSystemRef.current) {
-                controlSystemRef.current.setWeaponLevel(newLevel);
-              }
-
-              // Update max health based on new level
-              if (playerEntityRef.current !== null && engineRef.current) {
-                const world = engineRef.current.getWorld();
-                const actualPlayerEntity = world.getEntity(playerEntityRef.current);
-
-                if (actualPlayerEntity) {
-                  const health = actualPlayerEntity.getComponent(Health);
-                  if (health) {
-                    let newMaxHealth = ExperienceSystem.getMaxHealthForLevel(newLevel);
-
-                    // Add Titanheart bonus if unlocked (+350 health)
-                    if (controlSystemRef.current) {
-                      const hasTitanheartPrimary = controlSystemRef.current.isPassiveAbilityUnlocked &&
-                        controlSystemRef.current.isPassiveAbilityUnlocked('P', WeaponType.SWORD, 'primary');
-                      const hasTitanheartSecondary = controlSystemRef.current.isPassiveAbilityUnlocked &&
-                        controlSystemRef.current.isPassiveAbilityUnlocked('P', WeaponType.SWORD, 'secondary');
-
-                      if (hasTitanheartPrimary || hasTitanheartSecondary) {
-                        newMaxHealth += 350;
-                        console.log(`🏆 Titanheart: Added +350 health bonus to level-up (total: ${newMaxHealth})`);
-                      }
-                    }
-
-                    health.setMaxHealth(newMaxHealth);
-                    updatePlayerHealth(health.currentHealth, health.maxHealth);
-                  }
-                }
-              }
-            }
-
-            console.log(`🎯 Local player gained +10 EXP from killing ${data.targetPlayerId} (total: ${newExp})`);
-            return newExp;
-          });
-
-          // Update the last experience award time
-          setLastExperienceAwardTime(currentTime);
-        } else {
-          // Log why experience was not awarded for debugging
-          if (data.wasKilled && data.newHealth !== 0) {
-            console.log(`⚠️ Server reported kill but health is ${data.newHealth} (not 0) - burning stack desync likely. No experience awarded.`);
-          }
+        // All EXP awards are now handled by the server via player-experience-gained events
+        // The frontend no longer does any kill detection or EXP calculation
+        if (targetActuallyDied || remotePlayerDied) {
+          console.log(`🎯 Player ${data.targetPlayerId} died from ${data.damage} ${data.damageType || 'generic'} damage. EXP will be awarded by server if confirmed.`);
         }
       }
 
       // Check if we are the source of damage that killed a summoned unit
       if (data.sourcePlayerId === socket.id && data.damageType === 'summoned_unit_kill') {
-        console.log(`🎯 Local player killed enemy summoned unit! Awarding +5 EXP`);
-
-        // Award +5 EXP to the local player for killing enemy summoned units
-        setPlayerExperience(prev => {
-          const newExp = prev + 5;
-
-          // Check for level up
-          const currentLevel = ExperienceSystem.getLevelFromExperience(prev);
-          const newLevel = ExperienceSystem.getLevelFromExperience(newExp);
-
-          if (newLevel > currentLevel) {
-            setPlayerLevel(newLevel);
-            console.log(`🎉 Level up! Player reached level ${newLevel} from killing enemy summoned unit`);
-
-            // Update ControlSystem level for rune calculations
-            if (controlSystemRef.current) {
-              controlSystemRef.current.setWeaponLevel(newLevel);
-            }
-
-            // Update max health based on new level
-            if (playerEntityRef.current !== null && engineRef.current) {
-              const world = engineRef.current.getWorld();
-              const actualPlayerEntity = world.getEntity(playerEntityRef.current);
-
-              if (actualPlayerEntity) {
-                const health = actualPlayerEntity.getComponent(Health);
-                if (health) {
-                  let newMaxHealth = ExperienceSystem.getMaxHealthForLevel(newLevel);
-
-                  // Add Titanheart bonus if unlocked (+350 health)
-                  if (controlSystemRef.current) {
-                    const hasTitanheartPrimary = controlSystemRef.current.isPassiveAbilityUnlocked &&
-                      controlSystemRef.current.isPassiveAbilityUnlocked('P', WeaponType.SWORD, 'primary');
-                    const hasTitanheartSecondary = controlSystemRef.current.isPassiveAbilityUnlocked &&
-                      controlSystemRef.current.isPassiveAbilityUnlocked('P', WeaponType.SWORD, 'secondary');
-
-                    if (hasTitanheartPrimary || hasTitanheartSecondary) {
-                      newMaxHealth += 350;
-                      console.log(`🏆 Titanheart: Added +350 health bonus to level-up (total: ${newMaxHealth})`);
-                    }
-                  }
-
-                  health.setMaxHealth(newMaxHealth);
-                  updatePlayerHealth(health.currentHealth, health.maxHealth);
-                }
-              }
-            }
-          }
-
-          console.log(`🎯 Local player gained +5 EXP from killing enemy summoned unit (total: ${newExp})`);
-          return newExp;
-        });
+        console.log(`🎯 Local player killed enemy summoned unit! EXP will be awarded by server.`);
+        // EXP award is now handled by the server via player-experience-gained event
       }
 
       // Check if we are the source of damage that killed an enemy
       if (data.sourcePlayerId === socket.id && data.damageType === 'enemy_kill') {
-        console.log(`🎯 Local player killed enemy! Awarding +10 EXP`);
-
-        // Award +10 EXP to the local player for killing enemies
-        setPlayerExperience(prev => {
-          const newExp = prev + 10;
-
-          // Check for level up
-          const currentLevel = ExperienceSystem.getLevelFromExperience(prev);
-          const newLevel = ExperienceSystem.getLevelFromExperience(newExp);
-
-          if (newLevel > currentLevel) {
-            setPlayerLevel(newLevel);
-            console.log(`🎉 Level up! Player reached level ${newLevel} from killing enemy`);
-
-            // Update ControlSystem level for rune calculations
-            if (controlSystemRef.current) {
-              controlSystemRef.current.setWeaponLevel(newLevel);
-            }
-
-            // Update max health based on new level
-            if (playerEntityRef.current !== null && engineRef.current) {
-              const world = engineRef.current.getWorld();
-              const actualPlayerEntity = world.getEntity(playerEntityRef.current);
-
-              if (actualPlayerEntity) {
-                const health = actualPlayerEntity.getComponent(Health);
-                if (health) {
-                  let newMaxHealth = ExperienceSystem.getMaxHealthForLevel(newLevel);
-
-                  // Add Titanheart bonus if unlocked (+350 health)
-                  if (controlSystemRef.current) {
-                    const hasTitanheartPrimary = controlSystemRef.current.isPassiveAbilityUnlocked &&
-                      controlSystemRef.current.isPassiveAbilityUnlocked('P', WeaponType.SWORD, 'primary');
-                    const hasTitanheartSecondary = controlSystemRef.current.isPassiveAbilityUnlocked &&
-                      controlSystemRef.current.isPassiveAbilityUnlocked('P', WeaponType.SWORD, 'secondary');
-
-                    if (hasTitanheartPrimary || hasTitanheartSecondary) {
-                      newMaxHealth += 350;
-                      console.log(`🏆 Titanheart: Added +350 health bonus to level-up (total: ${newMaxHealth})`);
-                    }
-                  }
-
-                  health.setMaxHealth(newMaxHealth);
-                  updatePlayerHealth(health.currentHealth, health.maxHealth);
-                }
-              }
-            }
-          }
-
-          console.log(`🎯 Local player gained +10 EXP from killing enemy (total: ${newExp})`);
-          return newExp;
-        });
+        console.log(`🎯 Local player killed enemy! EXP will be awarded by server.`);
+        // EXP award is now handled by the server via player-experience-gained event
       }
 
       // Create damage number for visual feedback - ONLY for the local player being damaged
@@ -3152,10 +3017,52 @@ const hasMana = useCallback((amount: number) => {
       console.log(`💚 Player ${sourcePlayerId} healed for ${healingAmount} HP using ${healingType}`);
     };
 
+    const handlePlayerExperienceGained = (data: any) => {
+      const { playerId, experienceGained, source, timestamp } = data;
+
+      // Only award EXP to the local player
+      if (playerId === socket?.id) {
+        console.log(`🎯 Local player gained +${experienceGained} EXP from ${source}`);
+
+        setPlayerExperience(prev => {
+          const newExp = prev + experienceGained;
+
+          // Check for level up
+          const currentLevel = ExperienceSystem.getLevelFromExperience(prev);
+          const newLevel = ExperienceSystem.getLevelFromExperience(newExp);
+
+          if (newLevel > currentLevel) {
+            setPlayerLevel(newLevel);
+            console.log(`🎉 Level up! Player reached level ${newLevel} from ${source}`);
+
+            // Update ControlSystem level for rune calculations
+            if (controlSystemRef.current) {
+              controlSystemRef.current.setWeaponLevel(newLevel);
+            }
+
+            // Update max health based on new level
+            if (playerEntity) {
+              const health = playerEntity.getComponent(Health);
+              if (health) {
+                const newMaxHealth = ExperienceSystem.getMaxHealthForLevel(newLevel);
+                health.maxHealth = newMaxHealth;
+                console.log(`💖 Max health updated to ${newMaxHealth} for level ${newLevel}`);
+              }
+            }
+          }
+
+          return newExp;
+        });
+      } else {
+        console.log(`📊 Player ${playerId} gained +${experienceGained} EXP from ${source}`);
+      }
+    };
+
     socket.on('player-attacked', handlePlayerAttack);
     socket.on('player-used-ability', handlePlayerAbility);
     socket.on('player-damaged', handlePlayerDamaged);
     socket.on('player-healing', handlePlayerHealing);
+    socket.on('player-experience-gained', handlePlayerExperienceGained);
     socket.on('player-kill', handlePlayerKill);
     socket.on('player-animation-state', handlePlayerAnimationState);
     socket.on('player-effect', handlePlayerEffect);
@@ -3170,6 +3077,7 @@ const hasMana = useCallback((amount: number) => {
       socket.off('player-used-ability', handlePlayerAbility);
       socket.off('player-damaged', handlePlayerDamaged);
       socket.off('player-healing', handlePlayerHealing);
+      socket.off('player-experience-gained', handlePlayerExperienceGained);
       socket.off('player-kill', handlePlayerKill);
       socket.off('player-animation-state', handlePlayerAnimationState);
       socket.off('player-effect', handlePlayerEffect);
@@ -3453,6 +3361,38 @@ const hasMana = useCallback((amount: number) => {
   }, [players, socket?.id]);
 
   // Initialize the PVP game engine
+  // Function to get cloudkill target positions (replicates CloudkillManager logic)
+  const getCloudkillTargetPositions = useCallback((casterPosition: Vector3, casterId: string): Array<{ x: number; y: number; z: number }> => {
+    const ARROW_COUNT = 3;
+    const allTargets: Array<{ id: string; position: { x: number; y: number; z: number } }> = [];
+
+    // Add players (excluding the casting player) - same logic as CloudkillManager
+    Array.from(players.values()).forEach(player => {
+      if (player.position && player.id !== casterId) {
+        allTargets.push({
+          id: player.id,
+          position: player.position
+        });
+      }
+    });
+
+    if (allTargets.length === 0) return [];
+
+    // Calculate distances and sort by proximity - same logic as CloudkillManager
+    const targetsWithDistance = allTargets.map(target => ({
+      target,
+      distance: casterPosition.distanceTo(new Vector3(target.position.x, 0, target.position.z))
+    }));
+
+    targetsWithDistance.sort((a, b) => a.distance - b.distance);
+
+    // Get closest targets
+    const closestTargets = targetsWithDistance.slice(0, Math.min(allTargets.length, ARROW_COUNT)).map(item => item.target);
+
+    // Return the target positions that arrows will be aimed at
+    return closestTargets.map(target => target.position);
+  }, [players]);
+
   useEffect(() => {
     if (isInitialized.current || !gameStarted) return;
     isInitialized.current = true;
@@ -3473,19 +3413,19 @@ const hasMana = useCallback((amount: number) => {
     const canvas = gl.domElement;
     engine.initialize(canvas).then(() => {
       // Create a PVP damage callback that maps local ECS entity IDs back to server player IDs
-      const damagePlayerWithMapping = (entityId: string, damage: number) => {
+      const damagePlayerWithMapping = (entityId: string, damage: number, damageType?: string, isCritical?: boolean) => {
         // Find the server player ID that corresponds to this local ECS entity ID
         const numericEntityId = parseInt(entityId);
         let serverPlayerId: string | null = null;
-        
+
         serverPlayerEntities.current.forEach((localEntityId, playerId) => {
           if (localEntityId === numericEntityId) {
             serverPlayerId = playerId;
           }
         });
-        
+
         if (serverPlayerId) {
-          broadcastPlayerDamage(serverPlayerId, damage);
+          broadcastPlayerDamage(serverPlayerId, damage, damageType, isCritical);
         }
       };
       
@@ -3505,6 +3445,11 @@ const hasMana = useCallback((amount: number) => {
 
       // Synchronize ControlSystem level with player level
       controlSystem.setWeaponLevel(playerLevel);
+
+      // Set skill point data for ability unlocks
+      if (skillPointData) {
+        controlSystem.setSkillPointData(skillPointData);
+      }
 
       // Set initial tower system player mapping and socket ID if socket is available
       if (socket?.id) {
@@ -3594,62 +3539,35 @@ const hasMana = useCallback((amount: number) => {
 
       // Set up Summon Totem callback
       controlSystem.setSummonTotemCallback((position) => {
-        // Broadcast to other players
+        console.log('🎭 Local Summon Totem cast at position:', position);
+        
+        // Broadcast to other players first
         broadcastPlayerAbility('summon_totem', position);
-
-        // Also trigger local Summon Totem for the casting player
+        
+        // Trigger local totem creation via PVPSummonTotemManager 
         if (socket?.id && (window as any).triggerGlobalSummonTotem) {
           (window as any).triggerGlobalSummonTotem(
             position,
-            Array.from(players.values()).filter(player => player.id !== socket.id).map(player => ({
-              id: player.id,
-              position: new Vector3(player.position.x, player.position.y, player.position.z),
-              health: player.health
-            })),
-            (targetId: string, damage: number, impactPosition: Vector3, isCritical?: boolean) => {
-              // Handle damage to other players from local totem
-              const targetPlayer = players.get(targetId);
-              if (targetPlayer) {
-                if (broadcastPlayerDamage) {
-                  broadcastPlayerDamage(targetId, damage);
-                }
-              }
-            },
-            setPvpSummonTotemEffects,
-            pvpSummonTotemEffects,
-            smiteDamageNumbers.setDamageNumbers,
-            smiteDamageNumbers.nextDamageNumberId,
-            (healAmount: number) => {
-              // Heal the local player from their own totem
-              if (playerEntityRef.current && engineRef.current) {
-                const world = engineRef.current.getWorld();
-                const playerEntity = world.getEntity(playerEntityRef.current);
-                if (playerEntity) {
-                  const health = playerEntity.getComponent(Health);
-                  if (health) {
-                    const currentHealth = health.currentHealth;
-                    const maxHealth = health.maxHealth;
-                    const newHealth = Math.min(maxHealth, currentHealth + healAmount);
-                    health.currentHealth = newHealth;
-
-                    // Broadcast healing to other players
-                    if (broadcastPlayerHealing) {
-                      broadcastPlayerHealing(healAmount, 'summon_totem', new Vector3());
-                    }
-                  }
-                }
-              }
-            },
-            socket.id
+            undefined, // Let PVPSummonTotemManager handle enemy data
+            undefined, // Let PVPSummonTotemManager handle damage callback
+            undefined, // Let PVPSummonTotemManager handle effects
+            undefined, // Let PVPSummonTotemManager handle active effects
+            undefined, // Let PVPSummonTotemManager handle damage numbers
+            undefined, // Let PVPSummonTotemManager handle damage number ID
+            undefined, // Let PVPSummonTotemManager handle healing
+            socket.id  // Pass caster ID
           );
         }
       });
 
 
-      // Set up Cloudkill callback
+      // Set up Cloudkill callback with target position capture
       controlSystem.setCloudkillCallback((position, direction) => {
-        // Broadcast to other players
-        broadcastPlayerAbility('cloudkill', position, direction);
+        // First, get the target positions that will be hit by cloudkill
+        const targetPositions = getCloudkillTargetPositions(position, socket?.id || '');
+        
+        // Broadcast to other players with target positions
+        broadcastPlayerAbility('cloudkill', position, direction, undefined, { targetPositions });
         
         // Also trigger local CloudkillManager for the casting player
         if (socket?.id) {
@@ -3770,6 +3688,17 @@ const hasMana = useCallback((amount: number) => {
           animationData.chargeProgress = controlSystem.getChargeProgress();
         }
         
+        // Add projectile config data for special effects (like Cryoflame)
+        animationData.projectileConfig = config;
+        
+        // Debug: Log what we're broadcasting for entropic bolts
+        if (projectileType === 'entropic_bolt') {
+          console.log('🚀 Broadcasting entropic_bolt:', {
+            isCryoflame: config?.isCryoflame,
+            damage: config?.damage
+          });
+        }
+        
         broadcastPlayerAttack(projectileType, position, direction, animationData);
       });
       
@@ -3858,15 +3787,15 @@ const hasMana = useCallback((amount: number) => {
         // Create local tornado effect
         createPvpWindShearTornadoEffect(playerId, duration);
 
-        // Broadcast tornado effect to other players if it's not the local player
-        if (socket?.id && playerId !== socket.id) {
-          // Get current player position for broadcasting
-          const player = players.get(playerId);
-          if (player) {
-            broadcastPlayerTornadoEffect(playerId, {
-              x: player.position.x,
-              y: player.position.y,
-              z: player.position.z
+        // Always broadcast tornado effect to other players when windshear is used
+        if (socket?.id) {
+          // Get current player position for broadcasting (should be local player position)
+          const localPlayer = players.get(socket.id);
+          if (localPlayer) {
+            broadcastPlayerTornadoEffect(socket.id, {
+              x: localPlayer.position.x,
+              y: localPlayer.position.y,
+              z: localPlayer.position.z
             }, duration);
           }
         }
@@ -4176,16 +4105,12 @@ const hasMana = useCallback((amount: number) => {
     }
   }, [onDamageNumberComplete]);
 
-  // Memoized enemy data for PVP Summon Totem Manager
-  const pvpSummonTotemEnemyData = useMemo(() => {
-    const enemyData = Array.from(players.values()).filter(player => player.id !== socket?.id).map(player => ({
-      id: player.id,
-      position: new Vector3(player.position.x, player.position.y, player.position.z),
-      health: player.health
-    }));
-    console.log('🎭 PVPGameScene: Computed enemyData for PVPSummonTotemManager:', enemyData.length, 'enemies');
-    return enemyData;
-  }, [players, socket?.id]);
+  // Real-time enemy data for PVP Summon Totem Manager (not memoized to get real-time positions)
+  const pvpSummonTotemEnemyData = Array.from(players.values()).filter(player => player.id !== socket?.id).map(player => ({
+    id: player.id,
+    position: new Vector3(player.position.x, player.position.y, player.position.z),
+    health: player.health
+  }));
 
 
   return (
@@ -4202,10 +4127,10 @@ const hasMana = useCallback((amount: number) => {
       />
 
       {/* Lighting */}
-      <ambientLight intensity={0.3} />
+      <ambientLight intensity={0.15} />
       <directionalLight
         position={[10, 10, 5]}
-        intensity={0.5}
+        intensity={0.25}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -4219,11 +4144,7 @@ const hasMana = useCallback((amount: number) => {
       {/* Enhanced Ground with textures and ambient occlusion */}
       <EnhancedGround radius={29} height={1} level={1} />
 
-      {/* Map boundary visual indicator */}
-      <mesh position={[0, 0.01, 0]} scale={[2.5, 2.5, 2.5]}>
-        <ringGeometry args={[25, 29, 64]} />
-        <meshStandardMaterial color="#ff6b6b" transparent opacity={0.3} />
-      </mesh>
+
 
 
 
@@ -4503,6 +4424,19 @@ const hasMana = useCallback((amount: number) => {
               if (players.has(targetId) && broadcastPlayerDamage) {
                 console.log(`🗡️ WindShear: Broadcasting ${damage} damage to player ${targetId}`);
                 broadcastPlayerDamage(targetId, damage, 'windshear');
+
+                // Create local damage number for immediate visual feedback
+                const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+                const targetPlayer = players.get(targetId);
+                if (damageNumberManager && damageNumberManager.addDamageNumber && targetPlayer) {
+                  const hitPosition = new Vector3(targetPlayer.position.x, targetPlayer.position.y + 1.5, targetPlayer.position.z);
+                  damageNumberManager.addDamageNumber(
+                    damage,
+                    false, // Not critical (could be enhanced later if needed)
+                    hitPosition,
+                    'windshear'
+                  );
+                }
               }
               // Handle damage for actual enemies (if any exist in PVP mode)
               else if (damageEnemy) {
@@ -4575,6 +4509,7 @@ const hasMana = useCallback((amount: number) => {
             players={Array.from(players.values())} // Include all players, filtering is done inside the component
             serverPlayerEntities={serverPlayerEntities}
             localSocketId={socket?.id}
+            damageNumberManager={engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager()}
             onPlayerHit={(playerId: string, damage: number) => {
               // CRITICAL FIX: Never damage the local player
               if (playerId === socket?.id) {
@@ -4585,7 +4520,7 @@ const hasMana = useCallback((amount: number) => {
                 broadcastPlayerDamage(playerId, damage, 'cobra_shot');
               }
             }}
-            onPlayerVenomed={(playerId: string, position: Vector3) => {
+            onPlayerVenomed={(playerId: string, position: Vector3, casterId?: string) => {
 
               if (playerId === socket?.id) {
                 return;
@@ -4593,8 +4528,8 @@ const hasMana = useCallback((amount: number) => {
               
               // Clone the position since it comes from the pool and will be released
               const clonedPosition = position.clone();
-              createPvpVenomEffect(playerId, clonedPosition);
-              
+              createPvpVenomEffect(playerId, clonedPosition, casterId);
+
               // Update player's venom status
               setPlayers((prev: Map<string, Player>) => {
                 const newPlayers = new Map(prev);
@@ -4627,6 +4562,7 @@ const hasMana = useCallback((amount: number) => {
             players={Array.from(players.values())}
             serverPlayerEntities={serverPlayerEntities}
             localSocketId={socket?.id}
+            damageNumberManager={engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager()}
             onPlayerHit={(playerId: string, damage: number) => {
               // CRITICAL FIX: Never damage the local player
               if (playerId === socket?.id) {
@@ -4712,7 +4648,7 @@ const hasMana = useCallback((amount: number) => {
                 broadcastPlayerDamage(playerId, damage);
               }
             }}
-            onPlayerVenomed={(playerId: string, position: Vector3) => {
+            onPlayerVenomed={(playerId: string, position: Vector3, casterId?: string) => {
               // CRITICAL FIX: Never apply venom effect to the local player
               if (playerId === socket?.id) {
                 return;
@@ -4720,7 +4656,7 @@ const hasMana = useCallback((amount: number) => {
 
               // Clone the position since it comes from the pool and will be released
               const clonedPosition = position.clone();
-              createPvpVenomEffect(playerId, clonedPosition);
+              createPvpVenomEffect(playerId, clonedPosition, casterId);
             }}
             onSoulStealCreated={(enemyPosition: Vector3) => {
               // Directly heal the local player for Viper Sting soul steal
@@ -4796,19 +4732,23 @@ const hasMana = useCallback((amount: number) => {
             onHit={(targetId, damage, isCritical, position) => {
               // Handle player hits from Cloudkill arrows
               const targetPlayer = Array.from(players.values()).find(p => p.id === targetId);
-              if (targetPlayer && targetId !== socket?.id) { // Don't damage local player
-                if (broadcastPlayerDamage) {
-                  broadcastPlayerDamage(targetId, damage);
+              if (targetPlayer) {
+                // Don't damage local player, but still show damage numbers for all valid hits
+                if (targetId !== socket?.id) {
+                  if (broadcastPlayerDamage) {
+                    broadcastPlayerDamage(targetId, damage);
+                  }
                 }
 
-                // Add damage numbers
-                if (onDamageNumbersUpdate && playerPosition) {
+                // Add damage numbers for all hits (teal for Cloudkill) - caster should see all their damage
+                if (onDamageNumbersUpdate) {
                   const damageNumberId = Math.random().toString(36).substr(2, 9);
                   onDamageNumbersUpdate([{
                     id: damageNumberId,
                     damage: damage,
                     position: position,
                     isCritical: isCritical,
+                    damageType: 'cloudkill',
                     timestamp: Date.now()
                   }]);
                 }
@@ -4830,6 +4770,16 @@ const hasMana = useCallback((amount: number) => {
                 venomedUntil: player.venomedUntil
               }))}
             localSocketId={socket?.id}
+            getCurrentPlayerPositions={() => {
+              // Return real-time player positions at the moment this is called (at impact time)
+              return Array.from(players.values())
+                .filter(player => player.position && player.health !== undefined) 
+                .map(player => ({
+                  id: player.id,
+                  position: player.position!,
+                  health: player.health
+                }));
+            }}
           />
 
           {/* Optimized PVP-specific Crossentropy Manager with Object Pooling */}
@@ -4838,6 +4788,7 @@ const hasMana = useCallback((amount: number) => {
             players={Array.from(players.values())}
             serverPlayerEntities={serverPlayerEntities}
             localSocketId={socket?.id}
+            damageNumberManager={engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager()}
             onPlayerHit={(playerId: string, damage: number) => {
               // CRITICAL FIX: Never damage the local player
               if (playerId === socket?.id) {
@@ -4845,7 +4796,7 @@ const hasMana = useCallback((amount: number) => {
               }
 
               if (broadcastPlayerDamage) {
-                broadcastPlayerDamage(playerId, damage);
+                broadcastPlayerDamage(playerId, damage, 'crossentropy');
               }
             }}
             onPlayerExplosion={(playerId: string, position: Vector3) => {
@@ -4881,11 +4832,41 @@ const hasMana = useCallback((amount: number) => {
             players={players}
             localSocketId={socket?.id}
             onDamage={(targetId, damage, impactPosition, isCritical) => {
+              // CRITICAL FIX: Prevent self-damage from Summon Totem
+              if (targetId === socket?.id) {
+                console.error('🚨 SELF-DAMAGE PREVENTION: Summon Totem onDamage blocked self-damage!', {
+                  targetPlayerId: targetId,
+                  localSocketId: socket?.id,
+                  damage: damage
+                });
+                return;
+              }
+
+              console.log('💥 Summon Totem PVP damage applied:', {
+                targetPlayerId: targetId,
+                damage: damage,
+                isCritical: isCritical,
+                source: 'SummonTotem'
+              });
+
               // Handle damage to other players
               const targetPlayer = players.get(targetId);
               if (targetPlayer) {
                 if (broadcastPlayerDamage) {
-                  broadcastPlayerDamage(targetId, damage);
+                  broadcastPlayerDamage(targetId, damage, 'summon_totem', isCritical);
+                }
+
+                // Add damage numbers for immediate visual feedback
+                if (onDamageNumbersUpdate && impactPosition) {
+                  const damageNumberId = Math.random().toString(36).substr(2, 9);
+                  onDamageNumbersUpdate([{
+                    id: damageNumberId,
+                    damage: damage,
+                    position: impactPosition,
+                    isCritical: !!isCritical,
+                    timestamp: Date.now(),
+                    damageType: 'summon_totem'
+                  }]);
                 }
               }
             }}
@@ -5443,7 +5424,7 @@ function setupPVPGame(
   scene: Scene,
   camera: PerspectiveCamera,
   renderer: WebGLRenderer,
-  damagePlayerCallback: (playerId: string, damage: number) => void,
+  damagePlayerCallback: (playerId: string, damage: number, damageType?: string, isCritical?: boolean) => void,
   damageTowerCallback: (towerId: string, damage: number) => void,
   damageSummonedUnitCallback?: (unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string) => void,
   damageEnemyCallback?: (enemyId: string, damage: number, sourcePlayerId?: string) => void,

@@ -85,8 +85,6 @@ export default function SoulStealEffect({
         />
       </mesh>
 
-
-
       {/* Healing energy aura */}
       <mesh rotation={[Math.PI / 2, 0, Date.now() * 0.005]}>
         <ringGeometry args={[0.1, 0.3, 8]} />

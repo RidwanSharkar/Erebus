@@ -51,13 +51,13 @@ function handlePlayerEvents(socket, gameRooms) {
 
   // Handle attack animations (visual only)
   socket.on('player-attack', (data) => {
-    const { roomId, attackType, position, direction } = data;
-    
+    const { roomId, attackType, position, direction, animationData } = data;
+
     if (!gameRooms.has(roomId)) return;
-    
+
     const room = gameRooms.get(roomId);
     const player = room.getPlayer(socket.id);
-    
+
     // Broadcast attack animation to other players with weapon info
     socket.to(roomId).emit('player-attacked', {
       playerId: socket.id,
@@ -66,6 +66,7 @@ function handlePlayerEvents(socket, gameRooms) {
       direction,
       weapon: player ? player.weapon : undefined,
       subclass: player ? player.subclass : undefined,
+      animationData, // Include animation data (like projectile config with Cryoflame state)
       timestamp: Date.now()
     });
   });
@@ -196,6 +197,32 @@ function handlePlayerEvents(socket, gameRooms) {
     console.log(`✅ Server: Broadcasted knockback to room ${roomId}`);
   });
 
+  // Handle player tornado effect (WindShear ability)
+  socket.on('player-tornado-effect', (data) => {
+    console.log(`🌪️ Server received player-tornado-effect from ${socket.id}:`, data);
+
+    const { roomId, playerId, position, duration } = data;
+
+    if (!gameRooms.has(roomId)) {
+      console.warn(`⚠️ Server: Room ${roomId} not found for tornado effect`);
+      return;
+    }
+
+    const room = gameRooms.get(roomId);
+
+    console.log(`🌪️ Server: Broadcasting tornado effect from player ${socket.id} in room ${roomId}`);
+
+    // Broadcast tornado effect to all other players in the room (including the sender for consistency)
+    room.io.to(roomId).emit('player-tornado-effect', {
+      playerId: socket.id,
+      position,
+      duration,
+      timestamp: Date.now()
+    });
+
+    console.log(`✅ Server: Broadcasted tornado effect to room ${roomId}`);
+  });
+
   // Handle player health changes
   socket.on('player-health-changed', (data) => {
     const { roomId, health, maxHealth } = data;
@@ -286,7 +313,10 @@ function handlePlayerEvents(socket, gameRooms) {
     if (!gameRooms.has(roomId)) return;
     
     const room = gameRooms.get(roomId);
+    const player = room.getPlayer(socket.id);
+    
     room.updatePlayerHealth(socket.id, 0);
+    console.log(`💀 Player ${player?.name || socket.id} officially died - health set to 0`);
     
     // Broadcast player death to other players
     socket.to(roomId).emit('player-died', {
@@ -301,16 +331,21 @@ function handlePlayerEvents(socket, gameRooms) {
     if (!gameRooms.has(roomId)) return;
     
     const room = gameRooms.get(roomId);
-    room.updatePlayerHealth(socket.id, health || maxHealth);
+    const player = room.getPlayer(socket.id);
+    const newHealth = health || maxHealth;
+    
+    room.updatePlayerHealth(socket.id, newHealth);
     
     if (position) {
       room.updatePlayerPosition(socket.id, position, { x: 0, y: 0, z: 0 });
     }
     
+    console.log(`🔄 Player ${player?.name || socket.id} respawned with ${newHealth}/${maxHealth} health`);
+    
     // Broadcast player respawn to other players
     socket.to(roomId).emit('player-respawned', {
       playerId: socket.id,
-      health: health || maxHealth,
+      health: newHealth,
       maxHealth,
       position
     });
@@ -348,7 +383,7 @@ function handlePlayerEvents(socket, gameRooms) {
 
   // Handle PVP damage between players
   socket.on('player-damage', (data) => {
-    const { roomId, targetPlayerId, damage, damageType } = data;
+    const { roomId, targetPlayerId, damage, damageType, isCritical } = data;
     
     if (!gameRooms.has(roomId)) return;
     
@@ -361,30 +396,20 @@ function handlePlayerEvents(socket, gameRooms) {
       return;
     }
     
+    // Prevent damaging already dead players (health <= 0)
+    if (targetPlayer.health <= 0) {
+      console.log(`⚰️ BLOCKED: Ignoring ${damage} ${damageType || 'generic'} damage to already dead player ${targetPlayer.name} (${targetPlayerId}) - health: ${targetPlayer.health}. Source: ${sourcePlayer.name} (${socket.id})`);
+      return;
+    }
+    
     // Apply damage to target player
     const previousHealth = targetPlayer.health;
     targetPlayer.health = Math.max(0, targetPlayer.health - damage);
     
-    // CRITICAL FIX: Be more conservative about setting wasKilled for burning stack damage
-    // Since server doesn't track burning stacks, high crossentropy/entropic damage can cause false kills
+    // Simple kill detection: Player died if they had health > 0 before and health <= 0 after
     let wasActuallyKilled = previousHealth > 0 && targetPlayer.health <= 0;
     
-    // For burning stack damage types and high ability damage, require confirmation that damage wasn't just calculation error
-    if (((damageType === 'crossentropy' || damageType === 'entropic') && damage > 100) || 
-        (damageType === 'colossusStrike' && damage > 200)) {
-      if (wasActuallyKilled) {
-        // Add a small buffer to prevent false positives from damage calculation desync
-        // Only mark as killed if health drops significantly below 0 or damage is reasonable
-        if (targetPlayer.health === 0 && damage <= targetPlayer.maxHealth * 0.6) {
-          console.log(`💀 Conservative kill validation passed for ${damageType} damage (${damage}) - confirming wasKilled`);
-        } else {
-          console.log(`⚠️ Suspicious ${damageType} kill with damage ${damage} > maxHealth*0.6 (${targetPlayer.maxHealth*0.6}) - setting wasKilled to false to prevent false positive`);
-          wasActuallyKilled = false;
-          // Restore some health to prevent death from ability calculation errors
-          targetPlayer.health = Math.min(targetPlayer.maxHealth, Math.max(1, previousHealth - Math.floor(targetPlayer.maxHealth * 0.4)));
-        }
-      }
-    }
+    console.log(`💥 Damage processed: ${previousHealth} -> ${targetPlayer.health} HP. Player killed: ${wasActuallyKilled} [${damageType || 'generic'} damage: ${damage}]`);
     
     console.log(`⚔️ PVP damage: ${sourcePlayer.name} dealt ${damage} damage to ${targetPlayer.name} (${targetPlayer.health}/${targetPlayer.maxHealth} HP)${damageType ? ` [${damageType}]` : ''}${wasActuallyKilled ? ' - KILLED!' : ''}`);
     
@@ -394,6 +419,7 @@ function handlePlayerEvents(socket, gameRooms) {
       targetPlayerId: targetPlayerId,
       damage: damage,
       damageType: damageType,
+      isCritical: isCritical,
       newHealth: targetPlayer.health,
       maxHealth: targetPlayer.maxHealth,
       wasKilled: wasActuallyKilled,
@@ -401,12 +427,27 @@ function handlePlayerEvents(socket, gameRooms) {
     });
     
     // If player was killed, broadcast kill event for scoreboard tracking
+    // NOTE: Experience is now awarded by a separate death confirmation system
     if (wasActuallyKilled) {
       room.io.to(roomId).emit('player-kill', {
         killerId: socket.id,
         victimId: targetPlayerId,
         killerName: sourcePlayer.name,
         victimName: targetPlayer.name,
+        timestamp: Date.now()
+      });
+      
+      // Mark player as requiring death confirmation for experience award
+      // The actual experience will be awarded when death is confirmed by the death system
+      console.log(`💀 Player ${sourcePlayer.name} (${socket.id}) dealt killing blow to ${targetPlayer.name} (${targetPlayerId}). Death confirmation required for EXP award.`);
+      
+      // Store kill data for death confirmation system
+      room.setPendingKill({
+        killerId: socket.id,
+        victimId: targetPlayerId,
+        killerName: sourcePlayer.name,
+        victimName: targetPlayer.name,
+        damageType: damageType,
         timestamp: Date.now()
       });
     }
@@ -433,16 +474,31 @@ function handlePlayerEvents(socket, gameRooms) {
       return;
     }
     
-    console.log(`💚 PVP healing: ${sourcePlayer.name} healed for ${healingAmount} HP using ${healingType}`);
+    // Prevent healing dead players (health <= 0)
+    if (sourcePlayer.health <= 0) {
+      console.log(`⚰️ BLOCKED: Ignoring ${healingAmount} ${healingType} healing to dead player ${sourcePlayer.name} (${socket.id}) - health: ${sourcePlayer.health}`);
+      return;
+    }
     
-    // Broadcast healing event to all players in the room (including source for confirmation)
-    room.io.to(roomId).emit('player-healing', {
-      sourcePlayerId: socket.id,
-      healingAmount: healingAmount,
-      healingType: healingType,
-      position: position,
-      timestamp: Date.now()
-    });
+    // Apply healing to the source player (the one who cast the healing ability)
+    const previousHealth = sourcePlayer.health;
+    sourcePlayer.health = Math.min(sourcePlayer.maxHealth, sourcePlayer.health + healingAmount);
+    
+    const actualHealingAmount = sourcePlayer.health - previousHealth;
+    
+    console.log(`💚 PVP healing: ${sourcePlayer.name} healed for ${actualHealingAmount} HP using ${healingType} (${sourcePlayer.health}/${sourcePlayer.maxHealth} HP)`);
+    
+    // Only broadcast healing event if actual healing occurred
+    if (actualHealingAmount > 0) {
+      // Broadcast healing event to all players in the room (including source for confirmation)
+      room.io.to(roomId).emit('player-healing', {
+        sourcePlayerId: socket.id,
+        healingAmount: actualHealingAmount,
+        healingType: healingType,
+        position: position,
+        timestamp: Date.now()
+      });
+    }
   });
 
   // Handle summoned unit damage in PVP (server-authoritative)
@@ -506,6 +562,38 @@ function handlePlayerEvents(socket, gameRooms) {
     
     const room = gameRooms.get(roomId);
     room.triggerTestWaveCompletion();
+  });
+
+  // Handle player respawn confirmation for experience award
+  socket.on('player-respawn', (data) => {
+    const { roomId, playerId } = data;
+    
+    if (!gameRooms.has(roomId)) return;
+    
+    const room = gameRooms.get(roomId);
+    const player = room.getPlayer(playerId || socket.id);
+    
+    if (!player) {
+      console.warn(`⚠️ Player respawn failed: player ${playerId || socket.id} not found in room ${roomId}`);
+      return;
+    }
+    
+    // Reset player health to max on respawn
+    player.health = player.maxHealth;
+    
+    // Confirm death and award experience if there was a pending kill
+    const confirmedKill = room.confirmPlayerDeath(playerId || socket.id);
+    
+    console.log(`🔄 Player ${player.name} (${playerId || socket.id}) respawned in room ${roomId}${confirmedKill ? ' - kill confirmed and EXP awarded' : ''}`);
+    
+    // Broadcast respawn to all players
+    room.io.to(roomId).emit('player-respawned', {
+      playerId: playerId || socket.id,
+      playerName: player.name,
+      health: player.health,
+      maxHealth: player.maxHealth,
+      timestamp: Date.now()
+    });
   });
 }
 

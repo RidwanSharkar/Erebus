@@ -3,21 +3,9 @@ import { CylinderGeometry, SphereGeometry, MeshStandardMaterial, PointLight } fr
 
 interface PillarProps {
   position?: [number, number, number];
-  level?: number;
 }
 
-const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], level = 1 }) => {
-  // Get level-based colors
-  const getLevelColors = (level: number) => {
-    switch (level) {
-      case 1: return { color: '#FF6E6E', emissive: '#FF6E6E' }; // Green  00ff00 006600
-      case 2: return { color: '#ffa500', emissive: '#cc8400' }; // Orange
-      case 3: return { color: '#87ceeb', emissive: '#4682b4' }; // Light Blue
-      case 4: return { color: '#dda0dd', emissive: '#9370db' }; // Light Purple
-      case 5: return { color: '#ff0000', emissive: '#600000' }; // Red
-      default: return { color: '#00ff00', emissive: '#006600' }; // Default to green
-    }
-  };
+const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0] }) => {
 
   // Create geometries and materials only once using useMemo
   const { pillarGeometries, materials } = useMemo(() => {
@@ -40,13 +28,10 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], level = 1 }) => {
     // Add sphere geometry for the orb
     const orbGeometry = new SphereGeometry(1, 32, 32);
 
-    // Get level-based colors
-    const levelColors = getLevelColors(level);
-
-    // Add glowing material for the orb with level-based colors
+    // Add glowing material for the orb with light red color
     const orbMaterial = new MeshStandardMaterial({
-      color: levelColors.color,
-      emissive: levelColors.emissive,
+      color: '#FF6B6B',
+      emissive: '#CC0000',
       metalness: 1,
       roughness: 0.2,
     });
@@ -63,7 +48,7 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], level = 1 }) => {
         orb: orbMaterial,
       }
     };
-  }, [level]);
+  }, []);
 
   // rotation animation for the orb
   const [rotation, setRotation] = React.useState(0);
@@ -90,8 +75,6 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], level = 1 }) => {
     };
   }, [pillarGeometries, materials]);
 
-  // Get level-based light color
-  const levelColors = getLevelColors(level);
 
   return (
     <group position={position} scale={[0.35, 0.35, 0.35]}>
@@ -129,7 +112,7 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], level = 1 }) => {
         position={[0, 5, 0]}
         rotation={[rotation, rotation, 0]}
       >
-        <pointLight color={levelColors.color} intensity={0.5} distance={5} />
+        <pointLight color="#FF6B6B" intensity={0.5} distance={5} />
       </mesh>
     </group>
   );

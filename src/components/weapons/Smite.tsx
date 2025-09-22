@@ -41,7 +41,6 @@ const SmiteComponent = memo(function Smite({
   onHit,
   onDamageDealt,
   enemyData = [],
-  playerPosition,
   setDamageNumbers,
   nextDamageNumberId,
   combatSystem,
@@ -52,7 +51,6 @@ const SmiteComponent = memo(function Smite({
   const animationDuration = 1.0; // Extended animation duration to ensure full visibility in PVP mode
   const delayTimer = useRef(0);
   const startDelay = 0.05; // Initial delay
-  const damageDealt = useRef(false);
   const damageTriggered = useRef(false);
 
   // useMemo for static geometries - made more narrow and concentrated
@@ -152,16 +150,16 @@ const SmiteComponent = memo(function Smite({
   const skySpiralPositions = useMemo(() => (
     Array(16).fill(0).map((_, i) => ({
       rotation: new Euler(0, (i * Math.PI) / 1.5, 0),
-      position: new Vector3(0, 6.0, 0)  // Reduced from 7.45 to 6.0 for more concentration
+      position: new Vector3(0, 6.0, 0)  // concentration
     }))
   ), []);
 
-  // Pre-calculate particle positions - more concentrated for narrower beam
+  // Pre-calculate particle positions
   const particlePositions = useMemo(() => (
     Array(8).fill(0).map((_, i) => ({
       position: new Vector3(
         Math.cos((i * Math.PI) / 4) * 0.6,  // Reduced from 1.0 to 0.6
-        (i - 4) * 1.5,                     // Reduced vertical spread from 2 to 1.5
+        (i - 4) * 1.5,                     // vertical spread 
         Math.sin((i * Math.PI) / 4) * 0.6   // Reduced from 1.0 to 0.6
       )
     }))
@@ -181,15 +179,9 @@ const SmiteComponent = memo(function Smite({
 
       const distance = position.distanceTo(enemy.position);
       if (distance <= damageRadius) {
-        // Calculate critical hit damage
+        // Calculate critical hit damage (Corrupted Aura bonuses are already applied via global rune count modifications)
         const damageResult: DamageResult = calculateDamage(baseSmiteDamage, weaponType ?? WeaponType.RUNEBLADE);
-
-        // Apply corrupted aura bonus damage (similar to Wraithblade)
-        let finalDamage = damageResult.damage;
-        if (isCorruptedAuraActive) {
-          // Corrupted aura adds 25% bonus damage (similar to other corrupted abilities)
-          finalDamage = Math.floor(finalDamage * 1.5);
-        }
+        const finalDamage = damageResult.damage;
 
         // Enemy is within damage radius - deal damage
         if (onHit) {
