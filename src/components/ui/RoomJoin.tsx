@@ -4,12 +4,13 @@ import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 
 interface RoomJoinProps {
   onJoinSuccess: () => void;
+  onBack: () => void;
   currentWeapon: WeaponType;
   currentSubclass?: WeaponSubclass;
   gameMode?: 'multiplayer' | 'pvp';
 }
 
-export default function RoomJoin({ onJoinSuccess, currentWeapon, currentSubclass, gameMode = 'multiplayer' }: RoomJoinProps) {
+export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, currentSubclass, gameMode = 'multiplayer' }: RoomJoinProps) {
   const { 
     joinRoom, 
     isConnected, 
@@ -230,14 +231,20 @@ export default function RoomJoin({ onJoinSuccess, currentWeapon, currentSubclass
         )}
 
 
-        <div className="flex gap-4">
- 
+        <div className="flex flex-col gap-3">
           <button 
-            className="flex-1 px-8 py-2.5 text-lg bg-green-500 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-green-600 hover:-translate-y-1 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:transform-none"
+            className="w-full px-8 py-2.5 text-lg bg-green-500 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-green-600 hover:-translate-y-1 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:transform-none"
             onClick={handleJoin}
             disabled={isJoining || !isConnected || !playerName.trim()}
           >
             {isJoining ? 'Entering...' : 'Enter Room'}
+          </button>
+          <button 
+            className="w-full px-8 py-2.5 text-lg bg-gray-600 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-gray-500 hover:-translate-y-1 disabled:bg-gray-800 disabled:cursor-not-allowed disabled:transform-none"
+            onClick={onBack}
+            disabled={isJoining}
+          >
+            Back
           </button>
         </div>
 

@@ -199,35 +199,35 @@ function HomeContent() {
       type: WeaponType.SCYTHE,
       name: 'Scythe',
       icon: '☠️',
-      description: 'WEAVER: elemental evoker, capable of conjuration and healing magic, with mastery of fire and ice domains',
+      description: 'ENTROPY WEAVER',
       defaultSubclass: WeaponSubclass.CHAOS
-    },
-    {
-      type: WeaponType.SWORD,
-      name: 'Greatsword',
-      icon: '💎',
-      description: 'IMMORTAL: martial champion with powerful defensive and versatile offensive capabilities, blocking incoming damage, closing distance, and unleashing devastating finishers.',
-      defaultSubclass: WeaponSubclass.DIVINITY
-    },
-    {
-      type: WeaponType.SABRES,
-      name: 'Sabres',
-      icon: '⚔️',
-      description: 'LURKER: stealth assassin excelling at close-quarters combat, acrobatic maneuvers, and exploiting stunned enemies with burst damage.',      defaultSubclass: WeaponSubclass.FROST
-    },
-    {
-      type: WeaponType.RUNEBLADE,
-      name: 'Runeblade',
-      icon: '🔮',
-      description: 'TEMPLAR: eldritch knight adept at controlling the battlefield with grasping chains and corrupted magic with powerful lifestealing melee attacks.',
-      defaultSubclass: WeaponSubclass.ARCANE
     },
     {
       type: WeaponType.BOW,
       name: 'Bow',
       icon: '🏹',
-      description: 'VIPER: sniper marksman specializing in ranged combat, applying venom, slowing, leeching health, and launching ballistics.',
+      description: 'VIPER HUNTRESS',
       defaultSubclass: WeaponSubclass.ELEMENTAL
+    },
+    {
+      type: WeaponType.SABRES,
+      name: 'Sabres',
+      icon: '⚔️',
+      description: 'LURKER ASSASSIN',      defaultSubclass: WeaponSubclass.FROST
+    },
+    {
+      type: WeaponType.RUNEBLADE,
+      name: 'Runeblade',
+      icon: '🔮',
+      description: 'TEMPLAR KNIGHT',
+      defaultSubclass: WeaponSubclass.ARCANE
+    },
+    {
+      type: WeaponType.SWORD,
+      name: 'Greatsword',
+      icon: '💎',
+      description: 'PRAETOR IMMORTAL',
+      defaultSubclass: WeaponSubclass.DIVINITY
     }
   ];
 
@@ -417,17 +417,17 @@ function HomeContent() {
         {/* Main Menu */}
         {gameMode === 'menu' && (
           <div className="absolute inset-0 flex items-center justify-center z-50 overflow-y-auto">
-            <div className="bg-gray-900/95 p-10 rounded-xl border-2 border-blue-500 text-white max-w-6xl w-11/12 my-8">
-              <h1 className="text-2xl font-bold mb-1 text-blue-400 text-center"> SELECT 2 WEAPONS</h1>
+            <div className="bg-gray-900/95 p-8 rounded-xl border-2 border-blue-500 text-white max-w-5xl w-11/12 my-6">
+              <h1 className="text-xl font-bold mb-1 text-blue-400 text-center"> SELECT 2 WEAPONS</h1>
 
               {/* Weapon Selection Section */}
-              <div className="mb-8">
-                <h2 className="text-1.0xl font-normal mb-3 text-center text-blue-400">
+              <div className="mb-6">
+                <h2 className="text-sm font-normal mb-2 text-center text-blue-400">
                   Primary Weapon becomes the '1' key | Secondary Weapon becomes the '2' key
                 </h2>
 
 
-                <div className="flex flex-wrap justify-center gap-4 mb-6">
+                <div className="flex flex-wrap justify-center gap-3 mb-4">
                   {weapons.slice(0, 5).map((weapon) => {
                     const isSelected = tempSelectedWeapons.includes(weapon.type);
                     const canSelect = !isSelected && tempSelectedWeapons.length < 2;
@@ -438,7 +438,7 @@ function HomeContent() {
                         key={weapon.type}
                         onClick={() => handleWeaponToggle(weapon.type)}
                         className={`
-                          w-full sm:w-80 md:w-72 lg:w-80 p-4 rounded-lg border-2 cursor-pointer transition-all duration-300
+                          w-full sm:w-72 md:w-64 lg:w-72 p-3 rounded-lg border-2 cursor-pointer transition-all duration-300
                           ${isSelected
                             ? `${colorScheme.border} ${colorScheme.background} shadow-lg ${colorScheme.shadow}`
                             : canSelect
@@ -447,33 +447,33 @@ function HomeContent() {
                           }
                         `}
                       >
-                        <div className="text-center mb-3">
-                          <div className="text-3xl mb-2">{weapon.icon}</div>
-                          <h3 className="text-lg font-bold mb-1">{weapon.name}</h3>
+                        <div className="text-center mb-2">
+                          <div className="text-2xl mb-1">{weapon.icon}</div>
+                          <h3 className="text-base font-bold mb-1">{weapon.name}</h3>
                         </div>
 
-                        <p className="text-xs text-gray-300 mb-3 text-center">
+                        <p className="text-xs text-gray-300 mb-2 text-center">
                           {weapon.description}
                         </p>
 
                         {/* Weapon Abilities */}
-                        <div className="mb-3">
-                          <div className="text-xs text-gray-400 text-center mb-2">Abilities:</div>
+                        <div className="mb-2">
+                          <div className="text-xs text-gray-400 text-center mb-1">Abilities:</div>
                           <div className="flex justify-center gap-1">
                             {weaponAbilities[weapon.type]?.map((ability) => (
                               <div
                                 key={ability.key}
-                                className="relative w-8 h-8 rounded border border-gray-600 bg-gray-800 hover:bg-gray-700 transition-colors cursor-pointer flex items-center justify-center"
+                                className="relative w-7 h-7 rounded border border-gray-600 bg-gray-800 hover:bg-gray-700 transition-colors cursor-pointer flex items-center justify-center"
                                 onMouseEnter={(e) => handleAbilityHover(e, ability)}
                                 onMouseLeave={handleAbilityLeave}
                               >
                                 {/* Hotkey indicator */}
-                                <div className="absolute -top-1 -left-1 bg-gray-900 border border-gray-500 rounded text-xs text-white px-0.5 font-semibold leading-none text-[10px]">
+                                <div className="absolute -top-1 -left-1 bg-gray-900 border border-gray-500 rounded text-xs text-white px-0.5 font-semibold leading-none text-[9px]">
                                   {ability.key}
                                 </div>
                                 
                                 {/* Ability icon */}
-                                <div className="text-sm">
+                                <div className="text-xs">
                                   {getAbilityIcon(weapon.type, ability.key)}
                                 </div>
                               </div>
@@ -483,7 +483,7 @@ function HomeContent() {
 
                         {isSelected && (
                           <div className="text-center">
-                            <span className={`inline-block px-2 py-1 ${colorScheme.badge} text-white text-xs rounded-full`}>
+                            <span className={`inline-block px-1.5 py-0.5 ${colorScheme.badge} text-white text-xs rounded-full`}>
                               Selected ({getWeaponPosition(weapon.type) === 'primary' ? 'Primary' : 'Secondary'})
                             </span>
                           </div>
@@ -495,9 +495,9 @@ function HomeContent() {
               </div>
 
               {/* Game Mode Buttons */}
-              <div className="flex flex-col gap-4 items-center">
+              <div className="flex flex-col gap-3 items-center">
                 <button
-                  className={`px-8 py-3.5 text-xl text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:-translate-y-1 w-1/2.5 ${
+                  className={`px-6 py-2.5 text-lg text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:-translate-y-1 w-1/2.5 ${
                     selectedWeapons
                       ? 'bg-red-500 hover:bg-red-600'
                       : 'bg-gray-600 cursor-not-allowed'
@@ -524,6 +524,9 @@ function HomeContent() {
             onJoinSuccess={() => {
               setShowRoomJoin(false);
               setGameMode(roomJoinMode);
+            }}
+            onBack={() => {
+              setShowRoomJoin(false);
             }}
             currentWeapon={selectedWeapons.primary}
             currentSubclass={gameState.currentSubclass}

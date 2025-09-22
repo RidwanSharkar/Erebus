@@ -4,18 +4,18 @@ export class ExperienceSystem {
   // Level requirements (cumulative EXP needed)
   private static readonly LEVEL_REQUIREMENTS = {
     1: 0,     // Starting level
-    2: 25,    // Need 25 total EXP for level 2
-    3: 75,    // Need 75 total EXP for level 3
-    4: 150,   // Need 150 total EXP for level 4
-    5: 250    // Need 250 total EXP for level 5 (max)
+    2: 50,    // Need 50 total EXP for level 2
+    3: 150,   // Need 150 total EXP for level 3
+    4: 350,   // Need 300 total EXP for level 4
+    5: 750    // Need 500 total EXP for level 5 (max)
   };
 
   // EXP per level increment
   private static readonly EXP_PER_LEVEL_INCREMENT = {
-    1: 25,   // 0 -> 25 for level 2
-    2: 50,   // 25 -> 75 for level 3
-    3: 75,   // 75 -> 150 for level 4
-    4: 100   // 150 -> 250 for level 5
+    1: 50,   // 0 -> 50 for level 2
+    2: 100,  // 50 -> 150 for level 3
+    3: 200,  // 150 -> 300 for level 4
+    4: 400   // 300 -> 500 for level 5
   };
 
   // Health scaling per level

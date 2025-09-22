@@ -771,7 +771,7 @@ export class ControlSystem extends System {
     }
 
     // Handle Cobra Shot ability with 'E' key
-    if (this.inputManager.isKeyPressed('e')) {
+    if (this.inputManager.isKeyPressed('e') && this.isAbilityUnlocked('E')) {
 
       if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging) {
         this.performCobraShot(playerTransform);
@@ -880,7 +880,7 @@ export class ControlSystem extends System {
     }
     
     // Handle Frost Nova ability with 'E' key
-    if (this.inputManager.isKeyPressed('e') && !this.isCharging) {
+    if (this.inputManager.isKeyPressed('e') && !this.isCharging && this.isAbilityUnlocked('E')) {
       this.performFrostNovaAbility(playerTransform);
     }
 
@@ -2052,7 +2052,7 @@ export class ControlSystem extends System {
 
 
     // Handle Charge ability with 'E' key
-    if (this.inputManager.isKeyPressed('e') && !this.isSwordCharging && !this.isSwinging && !this.isDeflecting) {
+    if (this.inputManager.isKeyPressed('e') && !this.isSwordCharging && !this.isSwinging && !this.isDeflecting && this.isAbilityUnlocked('E')) {
       this.performCharge(playerTransform);
     }
 
@@ -2107,7 +2107,7 @@ export class ControlSystem extends System {
     }
 
     // Handle WraithStrike ability with 'E' key
-    if (this.inputManager.isKeyPressed('e') && !this.isWraithStriking && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping) {
+    if (this.inputManager.isKeyPressed('e') && !this.isWraithStriking && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping && this.isAbilityUnlocked('E')) {
       this.performWraithStrike(playerTransform);
     }
 
@@ -2764,7 +2764,7 @@ export class ControlSystem extends System {
     }
     
     // Handle E key for Sunder ability
-    if (this.inputManager.isKeyPressed('e') && !this.isSkyfalling && !this.isSundering) {
+    if (this.inputManager.isKeyPressed('e') && !this.isSkyfalling && !this.isSundering && this.isAbilityUnlocked('E')) {
       // Allow Sunder even while swinging - it should be usable during combat
       this.performSunder(playerTransform);
     }
@@ -3628,7 +3628,7 @@ export class ControlSystem extends System {
     }
   }
 
-  private isAbilityUnlocked(abilityKey: 'R' | 'F'): boolean {
+  private isAbilityUnlocked(abilityKey: 'E' | 'R' | 'F'): boolean {
     if (!this.selectedWeapons) return false;
 
     // Determine weapon slot
@@ -3638,11 +3638,6 @@ export class ControlSystem extends System {
     if (this.currentWeapon === this.selectedWeapons.primary) {
       weaponSlot = 'primary';
       weaponType = this.selectedWeapons.primary;
-
-      // For primary weapon, R ability is always unlocked, only F can be locked
-      if (abilityKey === 'R') {
-        return true;
-      }
     } else if (this.currentWeapon === this.selectedWeapons.secondary) {
       weaponSlot = 'secondary';
       weaponType = this.selectedWeapons.secondary;

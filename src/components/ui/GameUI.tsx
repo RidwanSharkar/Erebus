@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
 import HotkeyPanel from './HotkeyPanel';
 import { SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
@@ -31,6 +31,7 @@ interface GameUIProps {
   criticalChance?: number;
   criticalDamageMultiplier?: number;
 }
+
 
 interface ResourceBarProps {
   current: number;
@@ -124,6 +125,16 @@ export default function GameUI({
   const currentEnergy = currentResources?.energy ?? energy;
   const currentRage = currentResources?.rage ?? rage;
   const lastSwordDamageTime = currentResources?.lastSwordDamageTime ?? Date.now();
+
+  // Wrapper for unlockAbility to ensure ControlSystem is updated immediately
+  const handleUnlockAbility = useCallback((unlock: AbilityUnlock) => {
+    if (controlSystem) {
+      controlSystem.unlockAbility(unlock.weaponType, unlock.abilityKey, unlock.weaponSlot);
+    }
+    if (onUnlockAbility) {
+      onUnlockAbility(unlock);
+    }
+  }, [controlSystem, onUnlockAbility]);
 
   // Continuous regeneration for all weapons (resources regenerate even when not using that weapon)
   useEffect(() => {
@@ -430,7 +441,16 @@ export default function GameUI({
           
           {/* Resource Bar (weapon-specific) */}
           {getResourceBar()}
-          
+
+          {/* Skill Points Display */}
+          {skillPointData && skillPointData.skillPoints > 0 && (
+            <div className="mt-2 text-center">
+              <div className="text-yellow-400 text-xs font-medium drop-shadow-lg">
+                Ability Points: {skillPointData.skillPoints}
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
       
@@ -441,7 +461,7 @@ export default function GameUI({
         selectedWeapons={selectedWeapons}
         onWeaponSwitch={onWeaponSwitch}
         skillPointData={skillPointData}
-        onUnlockAbility={onUnlockAbility}
+        onUnlockAbility={handleUnlockAbility}
       />
     </>
   );

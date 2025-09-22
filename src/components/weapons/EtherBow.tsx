@@ -122,17 +122,17 @@ const EtherBowComponent = memo(function EtherealBow({
 
   return (
     <group 
-      position={[0.6, 0.65, 0.875]}
-      rotation={[-Math.PI/2, -Math.PI/2,  -Math.PI/2]}   // Reset base rotation
+      position={[0.6, 0.6, 0.875]}
+      rotation={[-Math.PI/2.0 + (isCloudkillCharging ? (-Math.PI/1.7 + Math.PI/2.1) * cloudkillChargeProgress : 0), -Math.PI/2,  -Math.PI/2]}   // Reset base rotation
       scale={[0.875, 0.8, 0.8]}
     >
       <group
         ref={bowRef}
         position={[basePosition[0], basePosition[1], basePosition[2]]}
         rotation={[
-          Math.PI + (isCloudkillCharging ? Math.PI/4 * cloudkillChargeProgress : 0), // Tilt bow upwards to 45 degrees for Cloudkill
+          Math.PI, // (isCloudkillCharging ? Math.PI/10 * cloudkillChargeProgress : 0) for xbow->bow
           Math.PI/2,
-          0 + (isCloudkillCharging ? Math.PI/4 * cloudkillChargeProgress : 0)
+          0
         ]}
       >
         {/* Bow body with dynamic color for instant powershot, charging, and perfect shot timing */}

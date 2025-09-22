@@ -54,6 +54,7 @@ import StunnedEffect from '@/components/weapons/StunnedEffect';
 import SabreReaperMistEffect from '@/components/weapons/SabreReaperMistEffect';
 import HauntedSoulEffect from '@/components/weapons/HauntedSoulEffect';
 import CrossentropyExplosion from '@/components/projectiles/CrossentropyExplosion';
+import SummonTotemExplosion from '@/components/projectiles/SummonTotemExplosion';
 import {
   OptimizedPVPCobraShotManager,
   OptimizedPVPBarrageManager,
@@ -631,6 +632,16 @@ const [maxMana, setMaxMana] = useState(150);
     duration: number;
   }>>([]);
   const nextCrossentropyExplosionId = useRef(0);
+
+  // PVP Summon Totem Explosion Effect Management
+  const [pvpSummonTotemExplosions, setPvpSummonTotemExplosions] = useState<Array<{
+    id: number;
+    playerId: string;
+    position: Vector3;
+    startTime: number;
+    duration: number;
+  }>>([]);
+  const nextSummonTotemExplosionId = useRef(0);
 
   // PVP Haunted Soul Effect Management
   const [pvpHauntedSoulEffects, setPvpHauntedSoulEffects] = useState<Array<{
@@ -3755,6 +3766,25 @@ const hasMana = useCallback((amount: number) => {
       broadcastPlayerEffect: broadcastPlayerEffect
     };
 
+    // Set up Summon Totem explosion trigger
+    (window as any).triggerSummonTotemExplosion = (playerId: string, initialPosition: Vector3) => {
+      // Create explosion effect at the target player's current position
+      const explosionId = nextSummonTotemExplosionId.current++;
+
+      setPvpSummonTotemExplosions(prev => [...prev, {
+        id: explosionId,
+        playerId: playerId,
+        position: initialPosition.clone(),
+        startTime: Date.now(),
+        duration: 1000 // 1 second explosion
+      }]);
+
+      // Remove explosion effect after duration
+      setTimeout(() => {
+        setPvpSummonTotemExplosions(prev => prev.filter(effect => effect.id !== explosionId));
+      }, 1000);
+    };
+
     // Expose interpolation system for debugging
     (window as any).getInterpolationStats = () => {
       if (!engineRef.current) {
@@ -5006,6 +5036,26 @@ const hasMana = useCallback((amount: number) => {
                 explosionStartTime={explosionEffect.startTime}
                 onComplete={() => {
                   setPvpCrossentropyExplosions(prev => prev.filter(effect => effect.id !== explosionEffect.id));
+                }}
+              />
+            );
+          })}
+
+          {/* PVP Summon Totem Explosion Effects */}
+          {pvpSummonTotemExplosions.map(explosionEffect => {
+            // Find the current position of the target player
+            const targetPlayer = players.get(explosionEffect.playerId);
+            const currentPosition = targetPlayer
+              ? new Vector3(targetPlayer.position.x, targetPlayer.position.y, targetPlayer.position.z)
+              : explosionEffect.position;
+
+            return (
+              <SummonTotemExplosion
+                key={explosionEffect.id}
+                position={currentPosition}
+                explosionStartTime={explosionEffect.startTime}
+                onComplete={() => {
+                  setPvpSummonTotemExplosions(prev => prev.filter(effect => effect.id !== explosionEffect.id));
                 }}
               />
             );

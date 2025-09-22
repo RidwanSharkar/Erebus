@@ -7,7 +7,7 @@ export interface SkillPointData {
 
 export interface AbilityUnlock {
   weaponType: WeaponType;
-  abilityKey: 'R' | 'F' | 'P';
+  abilityKey: 'E' | 'R' | 'F' | 'P';
   weaponSlot: 'primary' | 'secondary'; // Which slot this weapon is in
 }
 
@@ -19,7 +19,7 @@ export class SkillPointSystem {
    */
   static getInitialSkillPointData(): SkillPointData {
     return {
-      skillPoints: 0,
+      skillPoints: 2,
       unlockedAbilities: {}
     };
   }
@@ -49,9 +49,23 @@ export class SkillPointSystem {
 
     const available: AbilityUnlock[] = [];
 
-    // Check primary weapon F and P abilities
+    // Check primary weapon E, R, F, and P abilities
     const primaryKey = `${selectedWeapons.primary}_primary`;
     const primaryUnlocked = skillPointData.unlockedAbilities[primaryKey] || new Set();
+    if (!primaryUnlocked.has('E')) {
+      available.push({
+        weaponType: selectedWeapons.primary,
+        abilityKey: 'E',
+        weaponSlot: 'primary'
+      });
+    }
+    if (!primaryUnlocked.has('R')) {
+      available.push({
+        weaponType: selectedWeapons.primary,
+        abilityKey: 'R',
+        weaponSlot: 'primary'
+      });
+    }
     if (!primaryUnlocked.has('F')) {
       available.push({
         weaponType: selectedWeapons.primary,
@@ -67,9 +81,16 @@ export class SkillPointSystem {
       });
     }
 
-    // Check secondary weapon R, F, and P abilities
+    // Check secondary weapon E, R, F, and P abilities
     const secondaryKey = `${selectedWeapons.secondary}_secondary`;
     const secondaryUnlocked = skillPointData.unlockedAbilities[secondaryKey] || new Set();
+    if (!secondaryUnlocked.has('E')) {
+      available.push({
+        weaponType: selectedWeapons.secondary,
+        abilityKey: 'E',
+        weaponSlot: 'secondary'
+      });
+    }
     if (!secondaryUnlocked.has('R')) {
       available.push({
         weaponType: selectedWeapons.secondary,
@@ -101,21 +122,9 @@ export class SkillPointSystem {
   static isAbilityUnlocked(
     skillPointData: SkillPointData,
     weaponType: WeaponType,
-    abilityKey: 'R' | 'F' | 'P',
+    abilityKey: 'E' | 'R' | 'F' | 'P',
     weaponSlot: 'primary' | 'secondary'
   ): boolean {
-    // Primary weapon R ability is always unlocked
-    if (weaponSlot === 'primary' && abilityKey === 'R') {
-      return true;
-    }
-
-    // Passive abilities (P) are never locked once unlocked - they can be unlocked for any weapon slot
-    if (abilityKey === 'P') {
-      const key = `${weaponType}_${weaponSlot}`;
-      const unlockedForWeapon = skillPointData.unlockedAbilities[key] || new Set();
-      return unlockedForWeapon.has(abilityKey);
-    }
-
     const key = `${weaponType}_${weaponSlot}`;
     const unlockedForWeapon = skillPointData.unlockedAbilities[key] || new Set();
     return unlockedForWeapon.has(abilityKey);
@@ -127,7 +136,7 @@ export class SkillPointSystem {
   static unlockAbility(
     skillPointData: SkillPointData,
     weaponType: WeaponType,
-    abilityKey: 'R' | 'F' | 'P',
+    abilityKey: 'E' | 'R' | 'F' | 'P',
     weaponSlot: 'primary' | 'secondary'
   ): SkillPointData {
     if (skillPointData.skillPoints <= 0) {
@@ -186,29 +195,34 @@ export class SkillPointSystem {
   /**
    * Get ability name for display
    */
-  static getAbilityName(weaponType: WeaponType, abilityKey: 'R' | 'F' | 'P'): string {
-    const abilityNames: Record<WeaponType, Record<'R' | 'F' | 'P', string>> = {
+  static getAbilityName(weaponType: WeaponType, abilityKey: 'E' | 'R' | 'F' | 'P'): string {
+    const abilityNames: Record<WeaponType, Record<'E' | 'R' | 'F' | 'P', string>> = {
       [WeaponType.SWORD]: {
+        E: 'Frost Nova',
         R: 'Colossus Strike',
         F: 'Wind Shear',
         P: 'Titanheart'
       },
       [WeaponType.BOW]: {
+        E: 'Barrage',
         R: 'Viper Sting',
         F: 'Cloudkill',
         P: 'Sharpshooter'
       },
       [WeaponType.SCYTHE]: {
+        E: 'Cobra Shot',
         R: 'Crossentropy',
         F: 'Summon Totem',
         P: 'Cryoflame'
       },
       [WeaponType.SABRES]: {
+        E: 'Death Grasp',
         R: 'Skyfall',
         F: 'Shadow Step',
         P: 'Lethality'
       },
       [WeaponType.RUNEBLADE]: {
+        E: 'Smite',
         R: 'Unholy Smite',
         F: 'Corruption',
         P: 'Arcane Mastery'

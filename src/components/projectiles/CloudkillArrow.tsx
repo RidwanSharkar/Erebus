@@ -178,7 +178,7 @@ export default function CloudkillArrow({
       // CRITICAL FIX: For damage calculation, check player positions at impact time, not at cast time
       // Always use original indicated position for damage area check (no homing behavior)
       // Position damage numbers above ground level for visibility
-      const damagePosition = new Vector3(originalIndicatedPosition.current.x, 1.2, originalIndicatedPosition.current.z);
+      const damagePosition = new Vector3(originalIndicatedPosition.current.x, 2.5, originalIndicatedPosition.current.z);
 
       if (onHit) {
         // Damage enemies within radius of the damage position
@@ -202,7 +202,7 @@ export default function CloudkillArrow({
           if (!player.position) return;
 
           // Use the real-time player position at impact time
-          const currentPlayerPos = new Vector3(player.position.x, 0, player.position.z);
+          const currentPlayerPos = new Vector3(player.position.x, player.position.y, player.position.z);
 
           // Always check against original indicated position (no homing behavior)
           const impactAreaCenter = new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
@@ -211,7 +211,9 @@ export default function CloudkillArrow({
 
           // Only damage if player is currently within the damage radius at impact time
           if (distanceFromImpactArea <= DAMAGE_RADIUS) {
-            onHit(player.id, ARROW_DAMAGE, false, impactAreaCenter);
+            // Position damage numbers at player height for visibility (like other abilities)
+            const damagePosition = new Vector3(player.position.x, player.position.y + 1.5, player.position.z);
+            onHit(player.id, ARROW_DAMAGE, false, damagePosition);
           }
         });
       }
