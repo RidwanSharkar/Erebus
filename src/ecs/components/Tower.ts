@@ -76,11 +76,9 @@ export class Tower extends Component {
   // Update player level and recalculate damage
   public updatePlayerLevel(newLevel: number): void {
     if (newLevel !== this.playerLevel) {
-      console.log(`🏰 Tower ${this.ownerId} (index ${this.towerIndex}) level updated: ${this.playerLevel} → ${newLevel}`);
       this.playerLevel = newLevel;
       const oldDamage = this.attackDamage;
       this.attackDamage = this.calculateDamageForLevel(newLevel);
-      console.log(`💥 Tower ${this.ownerId} damage updated: ${oldDamage} → ${this.attackDamage}`);
     }
   }
   
@@ -125,7 +123,7 @@ export class Tower extends Component {
     this.lastAttackTime = 0;
     this.projectileSpeed = 20;
     this.currentTarget = null;
-    this.targetSearchRange = 12.5; // attackRange + 1
+    this.targetSearchRange = 11.5; // attackRange + 1
     this.lastTargetSearchTime = 0;
     this.targetSearchCooldown = 0.5;
     this.isActive = true;

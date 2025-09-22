@@ -22,30 +22,36 @@ export default function TowerProjectile({
   const groupRef = useRef<Group>(null);
   const timeRef = useRef(0);
 
-  // Determine color based on owner ID
+  // Determine color based on owner ID - match tower colors exactly
   const projectileColor = useMemo(() => {
     if (!ownerId) {
       return new Color(0x888888); // Gray for unknown owner
     }
-    
-    // For PVP, use a more predictable color assignment
-    // This ensures consistent colors for each player across all their towers
+
+    // Use same colors as TowerRenderer for consistency
     const playerColors = [
-      new Color(0x4A90E2), // Blue (Player 1)
-      new Color(0xFF4444), // Red (Player 2)
-      new Color(0x50C878), // Green (Player 3)
-      new Color(0x9B59B6), // Purple (Player 4)
-      new Color(0xF39C12)  // Orange (Player 5)
+      new Color("#4FC3F7"), // Blue - Elite color (Player 1)
+      new Color("#FF8C00"), // Orange/Red Fire theme (Player 2)
+      new Color("#FF8A8A"), // Light Red (Player 3)
+      new Color("#FFB3B3"), // Light Red (Player 4)
+      new Color("#FFD6D6")  // Light Red (Player 5)
     ];
-    
-    // Simple hash to get consistent color index for each player
-    const hash = ownerId.split('').reduce((a, b) => {
-      a = ((a << 5) - a) + b.charCodeAt(0);
-      return a & a;
-    }, 0);
-    
-    const colorIndex = Math.abs(hash) % playerColors.length;
-    return playerColors[colorIndex];
+
+    // Extract player number from ownerId (e.g., "player1" -> 0, "player2" -> 1)
+    const playerMatch = ownerId.match(/player(\d+)/);
+    let playerIndex = 0;
+    if (playerMatch) {
+      playerIndex = parseInt(playerMatch[1]) - 1; // Convert to 0-based index
+    } else {
+      // Fallback to hash for custom IDs
+      const hash = ownerId.split('').reduce((a, b) => {
+        a = ((a << 5) - a) + b.charCodeAt(0);
+        return a & a;
+      }, 0);
+      playerIndex = Math.abs(hash) % playerColors.length;
+    }
+
+    return playerColors[playerIndex];
   }, [ownerId]);
 
   const emissiveColor = useMemo(() => 

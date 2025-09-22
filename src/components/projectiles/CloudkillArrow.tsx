@@ -29,7 +29,7 @@ const arrowGeometry = new ConeGeometry(0.1, 0.8, 8); // Arrow shape
 const arrowMaterial = new MeshBasicMaterial({ color: "#00ff00" }); // Green arrows
 
 // Trail effect constants
-const TRAIL_SEGMENTS = 22; 
+const TRAIL_SEGMENTS = 20; 
 
 // Warning indicators scaled for arrows
 const warningRingGeometry = new RingGeometry((DAMAGE_RADIUS - 0.2), DAMAGE_RADIUS, WARNING_RING_SEGMENTS);
@@ -40,50 +40,7 @@ const outerGlowGeometry = new RingGeometry((DAMAGE_RADIUS - 0.1), DAMAGE_RADIUS,
 const tempPlayerGroundPos = new Vector3();
 const tempTargetGroundPos = new Vector3();
 
-const createArrowImpactEffect = (position: Vector3, startTime: number, onComplete: () => void) => {
-  const elapsed = (Date.now() - startTime) / 1000;
-  const fade = Math.max(0, 1 - (elapsed / IMPACT_DURATION));
 
-  if (fade <= 0) {
-    onComplete();
-    return null;
-  }
-
-  return (
-    <group position={position}>
-  
-      {/* Expanding rings */}
-      {[1.2, 1.2, 1.2].map((size, i) => (
-        <mesh key={i} rotation={[Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI]}>
-          <torusGeometry args={[size * (1 + elapsed * 1.5), 0.1, 3, 16]} />
-          <meshStandardMaterial
-            color="#00ff00"
-            emissive="#00aa00"
-            emissiveIntensity={0.7 * fade}
-            transparent
-            opacity={0.8 * fade * (1 - i * 0.15)}
-            depthWrite={false}
-            blending={AdditiveBlending}
-          />
-        </mesh>
-      ))}
-
-      {/* Dynamic lights with fade */}
-      <pointLight
-        color="#00ff00"
-        intensity={0.6 * fade}
-        distance={6 * (1 + elapsed)}
-        decay={2}
-      />
-      <pointLight
-        color="#88ff88"
-        intensity={0.6 * fade}
-        distance={8}
-        decay={1}
-      />
-    </group>
-  );
-};
 
 // Improved Trail effect component for Cloudkill arrows (comet-like)
 const CloudkillTrail = ({ 
@@ -194,7 +151,7 @@ export default function CloudkillArrow({
   useEffect(() => {
     const timer = setTimeout(() => {
       setState(prev => ({ ...prev, showArrow: true }));
-    }, 200); // 0.2 second delay for warning
+    }, 100); // 0.2 second delay for warning
 
     return () => clearTimeout(timer);
   }, []);
@@ -424,12 +381,6 @@ export default function CloudkillArrow({
         </group>
       )}
 
-      {/* Add impact effect */}
-      {state.impactStartTime && createArrowImpactEffect(
-        arrowGroupRef.current?.position || new Vector3(currentTargetPosition.x, 0, currentTargetPosition.z),
-        state.impactStartTime,
-        onComplete
-      )}
     </>
   );
 }

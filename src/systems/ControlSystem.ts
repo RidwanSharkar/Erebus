@@ -611,7 +611,6 @@ export class ControlSystem extends System {
           // Increase max health by 350 once
           health.setMaxHealth(health.maxHealth + 350);
           this.titanheartMaxHealthApplied = true;
-          console.log('🏆 Titanheart: Max health increased by 350 (global bonus applied)');
         }
       }
     }
@@ -644,8 +643,6 @@ export class ControlSystem extends System {
         const currentRuneCounts = getGlobalRuneCounts();
         const newCriticalRunes = currentRuneCounts.criticalRunes + 10;
         setGlobalCriticalRuneCount(newCriticalRunes);
-
-        console.log(`🩸 Lethality activated: movement speed increased to 4.25, Critical Runes ${currentRuneCounts.criticalRunes} -> ${newCriticalRunes} (+10 permanent bonus)`);
       }
     } else {
       // Reset to original state if passive is not unlocked
@@ -666,8 +663,6 @@ export class ControlSystem extends System {
       const currentRuneCounts = getGlobalRuneCounts();
       const newCriticalRunes = Math.max(0, currentRuneCounts.criticalRunes - this.sabresPassiveCriticalBonus);
       setGlobalCriticalRuneCount(newCriticalRunes);
-
-      console.log(`🩸 Lethality deactivated: Critical Runes ${currentRuneCounts.criticalRunes} -> ${newCriticalRunes} (removed ${this.sabresPassiveCriticalBonus} passive bonus)`);
 
       this.sabresPassiveCriticalBonus = 0;
       this.sabresBaseCriticalRunes = 0; // Reset stored values
@@ -694,7 +689,6 @@ export class ControlSystem extends System {
           // Set regeneration to 30 HP per second after 5 seconds
           health.regenerationRate = 30.0;
           health.enableRegeneration(30.0, 5.0); // 5 second delay
-          console.log('🏆 Titanheart: Enhanced regeneration applied (30 HP/s after 5s)');
         } else {
           // Reset regeneration to normal if sword is not equipped but Titanheart was previously active
           this.resetSwordRegeneration();
@@ -718,7 +712,6 @@ export class ControlSystem extends System {
         if ((health as any).originalRegenerationRate && (health as any).originalRegenerationDelay) {
           health.regenerationRate = (health as any).originalRegenerationRate;
           health.enableRegeneration((health as any).originalRegenerationRate, (health as any).originalRegenerationDelay);
-          console.log('🏆 Titanheart: Regeneration reset to normal');
         }
       }
     }
@@ -865,11 +858,10 @@ export class ControlSystem extends System {
       if (!this.isCharging) {
         this.isCharging = true;
         this.chargeProgress = 0;
-        console.log('⚡ Started charging scythe (spinning)');
       }
       // Increase charge progress continuously for spinning animation (no cap)
       this.chargeProgress += 0.03; // Continuously increase for spinning
-      
+
       // Fire EntropicBolt projectiles continuously while spinning
       this.fireEntropicBoltProjectile(playerTransform);
     } else if (this.isCharging) {
@@ -877,7 +869,6 @@ export class ControlSystem extends System {
       this.isCharging = false;
       this.chargeProgress = 0;
     }
-    
     // Handle CrossentropyBolt ability with 'R' key
     if (this.inputManager.isKeyPressed('r') && !this.isCharging && !this.isCrossentropyCharging && this.isAbilityUnlocked('R')) {
       this.performCrossentropyAbility(playerTransform);
@@ -992,11 +983,8 @@ export class ControlSystem extends System {
       const manaBefore = gameUI.getCurrentMana();
       const manaConsumed = gameUI.consumeMana(40);
       if (!manaConsumed) {
-        console.warn('⚔️ CrossentropyBolt: Failed to consume mana - not enough mana?');
         return;
       }
-      const manaAfter = manaBefore - 40; // Calculate expected mana after consumption
-      console.log(`⚔️ CrossentropyBolt: Consumed 40 mana (${manaBefore} -> ${manaAfter})`);
     }
 
     this.isCrossentropyCharging = true;
@@ -1057,7 +1045,6 @@ export class ControlSystem extends System {
     if (gameUI) {
       const currentMana = gameUI.getCurrentMana();
       if (currentMana < 75) {
-        console.log('🎭 Summon Totem: Not enough mana');
         return;
       }
     }
@@ -1067,11 +1054,8 @@ export class ControlSystem extends System {
       const manaBefore = gameUI.getCurrentMana();
       const manaConsumed = gameUI.consumeMana(75);
       if (!manaConsumed) {
-        console.warn('🎭 Summon Totem: Failed to consume mana - not enough mana?');
         return;
       }
-      const manaAfter = manaBefore - 75;
-      console.log(`🎭 Summon Totem: Consumed 75 mana (${manaBefore} -> ${manaAfter})`);
     }
 
     this.lastSummonTotemTime = currentTime;
@@ -1084,8 +1068,6 @@ export class ControlSystem extends System {
     if (this.onSummonTotemCallback) {
       this.onSummonTotemCallback(playerPosition);
     }
-
-    console.log('🎭 Summon Totem ability triggered at position:', playerPosition, 'with enemy data available:', !!this.world);
   }
 
   private createWindShearProjectile(position: Vector3, direction: Vector3): Entity {
@@ -1119,9 +1101,6 @@ export class ControlSystem extends System {
     const renderer = projectileEntity.getComponent(Renderer) as Renderer;
     if (renderer?.mesh) {
       renderer.mesh.userData.projectileType = 'wind_shear';
-      console.log(`🗡️ WindShearProjectile: Created projectile entity ${projectileEntity.id} with userData:`, renderer.mesh.userData);
-    } else {
-      console.log(`❌ WindShearProjectile: No renderer mesh found for entity ${projectileEntity.id}`);
     }
 
     // Broadcast projectile creation to other players
@@ -1129,7 +1108,6 @@ export class ControlSystem extends System {
       this.onProjectileCreatedCallback('wind_shear', spawnPosition, direction, projectileConfig);
     }
 
-    console.log(`🗡️ WindShearProjectile: Successfully created wind shear projectile entity ${projectileEntity.id}`);
     return projectileEntity;
   }
 
@@ -1284,7 +1262,6 @@ export class ControlSystem extends System {
     if (gameUI) {
       const manaConsumed = gameUI.consumeMana(10);
       if (!manaConsumed) {
-        console.warn('⚡ EntropicBolt: Failed to consume mana despite canCast check');
         return;
       }
     }
@@ -1383,7 +1360,6 @@ export class ControlSystem extends System {
       const manaBefore = gameUI.getCurrentMana();
       const manaConsumed = gameUI.consumeMana(30);
       if (!manaConsumed) {
-        console.warn('🩸 Reanimate: Failed to consume mana despite canCast check');
         return;
       }
       const manaAfter = gameUI.getCurrentMana();
@@ -1395,12 +1371,7 @@ export class ControlSystem extends System {
     // Get player's health component and heal for 30 HP 
     const healthComponent = this.playerEntity.getComponent(Health);
     if (healthComponent) {
-      const didHeal = healthComponent.heal(60); // REANIMATE HEAL AMOUNT
-      if (didHeal) {
-        // console.log(`🩸 Reanimate healed player for 30 HP. Current health: ${healthComponent.currentHealth}/${healthComponent.maxHealth}`);
-      } else {
-        // console.log('🩸 Reanimate cast successfully but player already at full health');
-      }
+    const didHeal = healthComponent.heal(60); // REANIMATE HEAL AMOUNT
     }
   }
 
@@ -1452,7 +1423,6 @@ export class ControlSystem extends System {
     if (gameUI) {
       const manaConsumed = gameUI.consumeMana(50);
       if (!manaConsumed) {
-        console.warn('❄️ FrostNova: Failed to consume mana despite canCast check');
         return;
       }
     }
@@ -1613,7 +1583,6 @@ export class ControlSystem extends System {
           
           // NEVER damage or debuff ourselves
           if (targetPlayerId && targetPlayerId === localSocketId) {
-            console.log(`⚠️ Skipping Frost Nova on local player ${localSocketId}`);
             return; // Skip this entity completely
           }
           
@@ -1625,7 +1594,6 @@ export class ControlSystem extends System {
             
             // Broadcast freeze effect to the target player so they get frozen on their end
             if (this.onDebuffCallback) {
-              console.log(`🎯 Broadcasting freeze effect to player ${targetPlayerId} (NOT local player ${localSocketId})`);
               this.onDebuffCallback(entity.id, 'frozen', 6000, entityPosition);
             }
           }
@@ -1633,12 +1601,6 @@ export class ControlSystem extends System {
       }
     });
     
-    if (frozenCount > 0) {
-      // console.log(`❄️ Frost Nova froze ${frozenCount} enemies within ${radius} unit radius`);
-    }
-    if (damagedPlayers > 0) {
-      // console.log(`❄️ Frost Nova damaged ${damagedPlayers} players within ${radius} unit radius`);
-    }
   }
 
   private createChargedArrowProjectile(position: Vector3, direction: Vector3): void {
@@ -1800,10 +1762,6 @@ export class ControlSystem extends System {
       // Reduce the cooldown by 4 seconds (or to 0 if less than 4 seconds remaining)
       const reductionAmount = Math.min(4.0, remainingCooldown);
       this.lastChargeTime -= reductionAmount; // Move the last charge time back to effectively reduce cooldown
-
-      console.log(`⚡ WindShear: Reduced Charge cooldown by ${reductionAmount}s due to hitting player ${playerId}. Remaining cooldown: ${Math.max(0, this.chargeCooldown - (currentTime - this.lastChargeTime))}s`);
-    } else {
-      console.log(`⚡ WindShear: Charge ability not on cooldown, no reduction applied`);
     }
   }
 
@@ -1940,7 +1898,6 @@ export class ControlSystem extends System {
 
   public setWeaponLevel(level: number): void {
     this.currentLevel = level;
-    console.log(`🔧 ControlSystem level set to: ${level}`);
   }
 
   public getCurrentWeaponConfig(): { weapon: WeaponType; subclass: WeaponSubclass; level: number } {
@@ -2111,7 +2068,6 @@ export class ControlSystem extends System {
 
     // Handle Wind Shear ability with 'F' key
     if (this.inputManager.isKeyPressed('f') && !this.isWindShearing && !this.isSwinging && !this.isSwordCharging && !this.isDeflecting && !this.isColossusStriking && this.isAbilityUnlocked('F')) {
-      console.log('🌪️ F key pressed for Wind Shear ability');
       this.performWindShear(playerTransform);
     }
 
@@ -2223,7 +2179,6 @@ export class ControlSystem extends System {
     // Check if player has enough mana (35 mana cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastSmite()) {
-      // console.log(`⚡ Smite: Not enough mana to cast (need 45)`);
       return;
     }
 
@@ -2266,14 +2221,11 @@ export class ControlSystem extends System {
     // The healing will be triggered by the visual component's onDamageDealt callback
     // instead of the ControlSystem's performSmiteDamage method.
 
-    console.log(`⚡ Smite: Damage detection delegated to visual component`);
-
     // Trigger smite callback with healing callback
     if (this.onSmiteCallback) {
       this.onSmiteCallback(smitePosition, direction, (totalDamage: number) => {
         // Handle healing based on the actual damage dealt by the visual component
         if (totalDamage > 0) {
-          console.log(`⚡ Smite: ${totalDamage} total damage dealt by visual component, triggering healing`);
           this.performSmiteHealing(totalDamage);
         }
       });
@@ -2305,7 +2257,6 @@ export class ControlSystem extends System {
     // Check minimum rage requirement (25 rage minimum)
     const gameUI = (window as any).gameUI;
     if (gameUI && gameUI.getCurrentRage() < 25) {
-      console.log(`❌ Colossus Strike: Not enough rage (minimum 25 required, current: ${gameUI.getCurrentRage()})`);
       return;
     }
 
@@ -2313,14 +2264,11 @@ export class ControlSystem extends System {
     const rageConsumed = gameUI ? gameUI.getCurrentRage() : 0;
     if (gameUI) {
       gameUI.consumeAllRage();
-      console.log(`⚡ Colossus Strike: Consumed ${rageConsumed} rage`);
     }
 
     // Calculate damage: 100 base + (30 * floor(rageConsumed / 5))
     const extraDamage = Math.floor(rageConsumed / 5) * 30;
     const totalDamage =  extraDamage;
-
-    console.log(`⚡ Colossus Strike: Rage consumed: ${rageConsumed}, Extra damage: ${extraDamage}, Total damage: ${totalDamage}`);
 
     this.lastColossusStrikeTime = currentTime;
     this.isColossusStriking = true;
@@ -2344,15 +2292,10 @@ export class ControlSystem extends System {
     // Offset the colossus strike position slightly forward to look like it's coming from the sword swing
     const strikePosition = position.clone().add(direction.clone().multiplyScalar(2.5));
 
-    console.log(`⚡ Colossus Strike: Damage detection delegated to visual component`);
-
     // Trigger colossus strike callback with calculated damage
     if (this.onColossusStrikeCallback) {
       this.onColossusStrikeCallback(strikePosition, direction, totalDamage, (damageDealtFlag: boolean) => {
         // Handle any effects when damage is dealt by the visual component
-        if (damageDealtFlag) {
-          console.log(`⚡ Colossus Strike: Damage dealt successfully`);
-        }
       });
     }
 
@@ -2363,18 +2306,14 @@ export class ControlSystem extends System {
   }
 
   private performWindShear(playerTransform: Transform): void {
-    console.log(`🌪️ WindShear: Attempting to perform wind shear ability`);
-
     // Check if using Sword
     if (this.currentWeapon !== WeaponType.SWORD) {
-      console.log(`❌ WindShear: Not using sword weapon, current weapon: ${this.currentWeapon}`);
       return;
     }
 
     // Check cooldown
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastWindShearTime < this.windShearCooldown) {
-      console.log(`❌ WindShear: On cooldown, time remaining: ${this.windShearCooldown - (currentTime - this.lastWindShearTime)}s`);
       return; // Still on cooldown
     }
 
@@ -2386,14 +2325,12 @@ export class ControlSystem extends System {
     // Check if player has enough rage (10 rage cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastWindShear()) {
-      console.log(`❌ WindShear: Not enough rage (10 required, current: ${gameUI.getCurrentRage()})`);
       return;
     }
 
     // Consume rage
     if (gameUI) {
       gameUI.consumeRage(10);
-      console.log(`⚡ WindShear: Consumed 10 rage`);
     }
 
     this.isWindShearCharging = true;
@@ -2402,9 +2339,7 @@ export class ControlSystem extends System {
 
     // Trigger tornado effect (1.25 seconds duration)
     if (this.onWindShearTornadoCallback) {
-      console.log(`🌪️ WindShear: Triggering tornado effect`);
       const playerId = this.localSocketId || 'local'; // Use actual socket ID if available, fallback to 'local'
-      console.log(`🌪️ WindShear: Using playerId:`, playerId, 'localSocketId:', this.localSocketId);
       this.onWindShearTornadoCallback(playerId, 1250); // 1.25 seconds
     }
 
@@ -2426,8 +2361,6 @@ export class ControlSystem extends System {
   }
 
   private fireWindShear(playerTransform: Transform): void {
-    console.log(`🌪️ WindShear: Firing wind shear projectile after charge`);
-
     this.isWindShearing = true;
 
     // Get player position and direction
@@ -2447,16 +2380,12 @@ export class ControlSystem extends System {
     const shearPosition = chestLevelPosition.add(direction.clone().multiplyScalar(1.5));
 
     // Trigger wind shear visual effect via callback
-    console.log(`🌪️ WindShear: Triggering visual effect at position:`, shearPosition, `direction:`, direction);
     if (this.onWindShearCallback) {
       this.onWindShearCallback(shearPosition, direction);
     }
 
     // Also create ECS projectile for damage calculations
-    const projectileEntity = this.createWindShearProjectile(shearPosition, direction);
-    if (projectileEntity) {
-      console.log(`✅ WindShear: Successfully created damage entity ${projectileEntity.id}`);
-    }
+    this.createWindShearProjectile(shearPosition, direction);
 
     // Reset the wind shearing state after a short delay
     setTimeout(() => {
@@ -2496,9 +2425,6 @@ export class ControlSystem extends System {
           combatSystem.queueDamage(entity, actualDamage, this.playerEntity, 'smite', this.playerEntity?.userData?.playerId);
           damageDealt = true;
           totalDamage += actualDamage;
-          console.log(`⚡ Smite dealt ${actualDamage}${damageResult.isCritical ? ' CRITICAL' : ''} damage to entity ${entity.id} at distance ${distance.toFixed(2)}`);
-        } else {
-          console.log(`⚡ Smite: Could not find CombatSystem or playerEntity to deal damage`);
         }
       }
     });
@@ -2512,7 +2438,6 @@ export class ControlSystem extends System {
 
   private performSmiteHealing(healingAmount: number): void {
     if (!this.playerEntity) {
-      console.log(`⚡ Smite: No player entity available for healing`);
       return;
     }
 
@@ -2526,8 +2451,6 @@ export class ControlSystem extends System {
       const didHeal = healthComponent.heal(healingAmount); // Smite healing amount based on damage dealt
 
       if (didHeal) {
-        console.log(`⚡ Smite SUCCESSFULLY healed player for ${healingAmount} HP! Health: ${oldHealth} -> ${healthComponent.currentHealth}/${maxHealth}`);
-
         // Create healing damage number above player head
         const playerTransform = this.playerEntity.getComponent(Transform);
         if (playerTransform && this.onDamageNumbersUpdate) {
@@ -2549,21 +2472,15 @@ export class ControlSystem extends System {
             this.onBroadcastHealing(healingAmount, 'smite', healingPosition);
           }
         }
-      } else {
-        console.log(`⚡ Smite: Player already at full health (${healthComponent.currentHealth}/${maxHealth}) - no healing needed`);
       }
     } else {
-      console.log(`⚡ Smite: CRITICAL ERROR - Could not find health component for player entity ${this.playerEntity.id}`);
-
       // Fallback: Try to heal through gameUI if health component is not available
       try {
         const gameUI = (window as any).gameUI;
         if (gameUI && typeof gameUI.gainHealth === 'function') {
           gameUI.gainHealth(healingAmount);
-          console.log(`⚡ Smite: FALLBACK healing through gameUI - healed for ${healingAmount} HP`);
         }
       } catch (error) {
-        console.log(`⚡ Smite: Could not heal through fallback method either`);
       }
     }
   }
@@ -2588,7 +2505,6 @@ export class ControlSystem extends System {
     // Check if player has enough mana (35 mana cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastDeathGrasp()) {
-      console.log(`💀 DeathGrasp: Not enough mana to cast (need 35)`);
       return;
     }
 
@@ -2610,11 +2526,8 @@ export class ControlSystem extends System {
       const manaBefore = gameUI.getCurrentMana();
       const manaConsumed = gameUI.consumeMana(35);
       if (!manaConsumed) {
-        console.warn('💀 DeathGrasp: Failed to consume mana despite canCast check');
         return;
       }
-      const manaAfter = gameUI.getCurrentMana();
-      console.log(`💀 DeathGrasp: Consumed 35 mana. Mana: ${manaBefore} -> ${manaAfter}`);
     }
 
     // Get player position and direction
@@ -2654,7 +2567,6 @@ export class ControlSystem extends System {
     // Check if player has enough mana (35 mana cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastWraithStrike()) {
-      console.log(`👻 WraithStrike: Not enough mana to cast (need 35)`);
       return;
     }
 
@@ -2678,7 +2590,6 @@ export class ControlSystem extends System {
       if (!manaConsumed) {
         return;
       }
-      const manaAfter = gameUI.getCurrentMana();
     }
 
     // Get player position and direction
@@ -2750,8 +2661,6 @@ export class ControlSystem extends System {
         this.applyCorruptedDebuff(entity, targetTransform.position, currentTime);
       }
     }
-    
-    console.log(`👻 WraithStrike hit ${hitCount} targets`);
   }
 
   private applyCorruptedDebuff(entity: Entity, position: Vector3, currentTime: number): void {
@@ -2779,11 +2688,10 @@ export class ControlSystem extends System {
       
       // NEVER broadcast debuff to ourselves
       if (targetPlayerId && targetPlayerId !== localSocketId) {
-        // Broadcast corrupted effect to the target player
-        if (this.onDebuffCallback) {
-          console.log(`👻 Broadcasting corrupted effect to player ${targetPlayerId}`);
-          this.onDebuffCallback(entity.id, 'corrupted', 8000, position); // 8 seconds in milliseconds
-        }
+            // Broadcast corrupted effect to the target player
+            if (this.onDebuffCallback) {
+              this.onDebuffCallback(entity.id, 'corrupted', 8000, position); // 8 seconds in milliseconds
+            }
         
         // Trigger haunted soul visual effect
         this.triggerHauntedSoulEffect(position);
@@ -2910,9 +2818,7 @@ export class ControlSystem extends System {
   // Called by sabres component when swing animation completes
   public onSabresSwingComplete(): void {
     if (!this.isSwinging) return; // Prevent multiple calls
-    
-    console.log('⚔️ Sabres dual swing completed');
-    
+
     // Reset swinging state
     this.isSwinging = false;
   }
@@ -2930,11 +2836,9 @@ export class ControlSystem extends System {
 
     // SABRES DAMAGE
     const attackRange = 3.8;
-    const attackAngle = Math.PI / 2; 
+    const attackAngle = Math.PI / 2;
     const leftSabreDamage = 19;
     const rightSabreDamage = 23;
-
-    console.log(`⚔️ SABRE ATTACK - Left: ${leftSabreDamage}, Right: ${rightSabreDamage}, Weapon: ${this.currentWeapon}, Level: ${this.currentLevel}`);
     
     // Get camera direction for attack direction
     const attackDirection = new Vector3();
@@ -3293,17 +3197,13 @@ export class ControlSystem extends System {
               });
             }
             
-          // Broadcast debuff to other players (but not ourselves)
+            // Broadcast debuff to other players (but not ourselves)
           if (targetPlayerId && targetPlayerId !== localSocketId) {
-            console.log(`🎯 Broadcasting stun effect to player ${targetPlayerId} (NOT local player ${localSocketId})`);
             this.onDebuffCallback(entity.id, 'stunned', 4000, targetTransform.position);
-          } else {
-            console.log(`⚠️ Skipping stun broadcast - would target local player ${localSocketId} or invalid target ${targetPlayerId}`);
           }
 
           // Create local debuff effect so the local player can see the stun on the enemy
           if (this.onCreateLocalDebuffCallback && targetPlayerId) {
-            console.log(`🎯 Creating local stun effect for player ${targetPlayerId}`);
             this.onCreateLocalDebuffCallback(targetPlayerId, 'stunned', targetTransform.position, 4000);
           }
           }
@@ -3494,8 +3394,6 @@ export class ControlSystem extends System {
 
     setTimeout(() => {
       if (this.isStealthing) {
-        console.log('🥷 Stealth: Duration expired, ending stealth effect');
-
         // Create local reappearance mist effect
         if (this.onCreateSabreMistEffectCallback && this.playerEntity) {
           const currentPlayerTransform = this.playerEntity.getComponent(Transform);
@@ -3519,8 +3417,6 @@ export class ControlSystem extends System {
 
         // Force broadcast the visibility state to ensure all clients see the player again
         this.broadcastStealthState(false);
-
-        console.log('🥷 Stealth: Player is now visible again');
       }
     }, totalStealthDuration * 1000);
   }
@@ -3549,14 +3445,10 @@ export class ControlSystem extends System {
   }
   
   private broadcastStealthState(isInvisible: boolean): void {
-    console.log(`🥷 Broadcasting stealth state: ${isInvisible ? 'invisible' : 'visible'}`);
-
     // Broadcast stealth state through the multiplayer system
     const multiplayerContext = (window as any).multiplayerContext;
     if (multiplayerContext && multiplayerContext.broadcastPlayerStealth) {
       multiplayerContext.broadcastPlayerStealth(isInvisible);
-    } else {
-      console.log('⚠️ Multiplayer context not available for stealth broadcast');
     }
   }
   
@@ -3621,7 +3513,7 @@ export class ControlSystem extends System {
       // Each crit rune adds 3% chance, so 45% = +15 crit runes
       // Each crit damage rune adds 15% damage, so 75% = +5 crit damage runes
       setGlobalCriticalRuneCount(currentRuneCounts.criticalRunes + 15);
-      setGlobalCritDamageRuneCount(currentRuneCounts.critDamageRunes + 5);
+      setGlobalCritDamageRuneCount(currentRuneCounts.critDamageRunes + 6);
 
       // Reset mana drain timer when activating
       this.lastManaDrainTime = Date.now() / 1000;
@@ -3647,12 +3539,11 @@ export class ControlSystem extends System {
     // Handle mana draining (8 mana per second)
     if (currentTime - this.lastManaDrainTime >= 1.0) {
       const gameUI = (window as any).gameUI;
-      if (gameUI) {
-        const manaConsumed = gameUI.consumeMana(this.corruptedAuraManaCost);
-        if (!manaConsumed) {
-          // Not enough mana - deactivate aura and restore rune counts
-          console.log('💀 Corrupted Aura: Not enough mana, deactivating aura and restoring rune counts');
-          this.corruptedAuraActive = false;
+        if (gameUI) {
+          const manaConsumed = gameUI.consumeMana(this.corruptedAuraManaCost);
+          if (!manaConsumed) {
+            // Not enough mana - deactivate aura and restore rune counts
+            this.corruptedAuraActive = false;
           setGlobalCriticalRuneCount(this.originalCriticalRunes);
           setGlobalCritDamageRuneCount(this.originalCritDamageRunes);
           this.corruptedAuraSlowedEntities.clear();
@@ -4105,7 +3996,6 @@ export class ControlSystem extends System {
         this.onChargeComplete();
       } else if (pillarCollision.hasCollision) {
         // Cancel charge if it would collide with a pillar
-        console.warn(`Charge cancelled: would collide with pillar at [${pillarCollision.pillarCenter.toArray().join(', ')}]`);
         movement.cancelCharge();
         // Notify sword component that charge was cancelled
         this.onChargeComplete();
@@ -4116,7 +4006,6 @@ export class ControlSystem extends System {
     }
 
     if (chargeResult.isComplete || this.chargeStoppedByCollision) {
-      console.log('⚔️ Charge movement completed');
       // Notify sword component that charge is complete
       this.onChargeComplete();
     }
@@ -4477,10 +4366,7 @@ export class ControlSystem extends System {
     }
     
     // Trigger the global Viper Sting manager for visual effects
-    const success = triggerGlobalViperSting();
-    if (success) {
-      // console.log('🐍 Viper Sting visual effects successfully triggered!');
-    }
+    triggerGlobalViperSting();
     
     // Broadcast projectile creation to other players
     if (this.onProjectileCreatedCallback) {
@@ -4552,7 +4438,6 @@ export class ControlSystem extends System {
     // Check cooldown
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastBarrageTime < this.barrageFireRate) {
-      console.log(`⏰ Barrage on cooldown for ${(this.barrageFireRate - (currentTime - this.lastBarrageTime)).toFixed(1)}s`);
       return;
     }
 

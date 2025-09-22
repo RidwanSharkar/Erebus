@@ -4,9 +4,6 @@ import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Color, Group, Mesh, MeshBasicMaterial, AdditiveBlending, MathUtils } from '@/utils/three-exports';
 import { World } from '@/ecs/World';
-import { Transform } from '@/ecs/components/Transform';
-import { Health } from '@/ecs/components/Health';
-import { SummonedUnit } from '@/ecs/components/SummonedUnit';
 
 interface SummonedUnitRendererProps {
   entityId: number;
@@ -82,7 +79,7 @@ export default function SummonedUnitRenderer({
     // Update health bar fill scale and position
     if (healthBarRef.current) {
       healthBarRef.current.scale.x = healthPercentage;
-      healthBarRef.current.position.x = -(1.5 * (1 - healthPercentage)) / 2;
+      healthBarRef.current.position.x = -(0.85 * (1 - healthPercentage)) / 2;
     }
 
     // Update health bar color based on percentage
@@ -187,18 +184,18 @@ export default function SummonedUnitRenderer({
         <group position={[0, unitHeight + 0.8, 0]}>
           {/* Health Bar Background */}
           <mesh position={[0, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <planeGeometry args={[1.5, 0.15]} />
+            <planeGeometry args={[0.85, 0.15]} />
             <meshBasicMaterial color={0x333333} transparent opacity={0.8} />
           </mesh>
 
           {/* Health Bar Fill */}
           <mesh
             ref={healthBarRef}
-            position={[-(1.5 * (1 - healthPercentage)) / 2, 0.01, 0]}
+            position={[-(0.85 * (1 - healthPercentage)) / 2, 0.01, 0]}
             rotation={[-Math.PI / 2, 0, 0]}
             scale={[healthPercentage, 1, 1]}
           >
-            <planeGeometry args={[1.5, 0.12]} />
+            <planeGeometry args={[0.85, 0.12]} />
             <meshBasicMaterial
               ref={healthBarMaterialRef}
               color={healthPercentage > 0.5 ? 0x00ff00 : healthPercentage > 0.25 ? 0xffff00 : 0xff0000}

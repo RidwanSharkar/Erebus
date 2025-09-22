@@ -417,13 +417,13 @@ function HomeContent() {
         {/* Main Menu */}
         {gameMode === 'menu' && (
           <div className="absolute inset-0 flex items-center justify-center z-50 overflow-y-auto">
-            <div className="bg-gray-900/95 p-10 rounded-xl border-2 border-red-500 text-white max-w-6xl w-11/12 my-8">
-              <h1 className="text-3xl font-bold mb-3 text-red-500 text-center"> Select 2 Weapons</h1>
+            <div className="bg-gray-900/95 p-10 rounded-xl border-2 border-blue-500 text-white max-w-6xl w-11/12 my-8">
+              <h1 className="text-2xl font-bold mb-1 text-blue-400 text-center"> SELECT 2 WEAPONS</h1>
 
               {/* Weapon Selection Section */}
               <div className="mb-8">
-                <h2 className="text-1.25xl font-normal mb-3 text-center text-red-400">
-                  Your primary weapon has the 'Q', 'E', and 'R' keys unlocked and becomes the '1' key, secondary becomes the '2' key.
+                <h2 className="text-1.0xl font-normal mb-3 text-center text-blue-400">
+                  Primary Weapon becomes the '1' key | Secondary Weapon becomes the '2' key
                 </h2>
 
 

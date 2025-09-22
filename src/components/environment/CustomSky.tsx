@@ -9,12 +9,12 @@ interface SkyProps {}
  */
 const createSkyShader = () => {
   // Create tropical indigo lighter purple gradient colors
-  // Top: deep indigo blue
-  const topColor = new Color('#191970');
-  // Middle: tropical blue-purple
-  const middleColor = new Color('#4169E1');
-  // Bottom: lighter blue that blends with the sky
-  const bottomColor = new Color('#87CEEB');
+  // Top: darker deep indigo blue
+  const topColor = new Color('#FC5656');
+  // Middle: darker tropical blue-purple
+  const middleColor = new Color('#FC5656');
+  // Bottom: darker blue that blends with the sky
+  const bottomColor = new Color('#9B97D8');
   
   return {
     uniforms: {

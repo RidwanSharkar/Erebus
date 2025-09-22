@@ -285,7 +285,7 @@ const SwordComponent = memo(function Sword({
       const CHARGE_DAMAGE = 40; // Base damage for charge collision
       const CHARGE_COLLISION_RADIUS = 2.5; // Collision radius - increased for better hit detection
       const MAX_CHARGE_BOUNDS = 25; // Maximum distance from origin
-      const CHARGE_FAILSAFE_TIMEOUT = 0.75; // Total expected duration + buffer
+      const CHARGE_FAILSAFE_TIMEOUT = 0.6; // Total expected duration + buffer
 
       // Initialize charge on first active frame
       if (!chargeStartTime.current) {
@@ -314,7 +314,6 @@ const SwordComponent = memo(function Sword({
 
       // Failsafe: If charge has been running too long, reset to prevent getting stuck
       if (elapsed > CHARGE_FAILSAFE_TIMEOUT) {
-        console.warn('⚠️ Charge animation failsafe triggered - resetting charge state');
         chargeStartTime.current = null;
         chargeStartPosition.current = null;
         chargeHitEnemies.current.clear();
@@ -431,7 +430,6 @@ const SwordComponent = memo(function Sword({
       // If we've been in this state for too long without starting the spin, force reset
       const timeSinceChargeEnd = (Date.now() - chargeStartTime.current) / 1000;
       if (timeSinceChargeEnd > 2.0) { // 2 seconds is definitely too long to wait for spin
-        console.warn('⚠️ Charge completion failsafe triggered - forcing reset of all charge states');
         chargeStartTime.current = null;
         chargeStartPosition.current = null;
         chargeHitEnemies.current.clear();

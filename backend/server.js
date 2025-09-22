@@ -131,15 +131,15 @@ io.on('connection', (socket) => {
   
   // Handle tower damage from players
   socket.on('tower-damage', (data) => {
-    const { roomId, towerId, damage } = data;
-    
+    const { roomId, towerId, damage, sourcePlayerId, damageType } = data;
+
     if (!gameRooms.has(roomId)) return;
-    
+
     const room = gameRooms.get(roomId);
-    const result = room.damageTower(towerId, damage);
-    
+    const result = room.damageTower(towerId, damage, sourcePlayerId, damageType);
+
     if (result) {
-      console.log(`🏰 Tower ${towerId} took ${damage} damage from player ${socket.id}`);
+      console.log(`🏰 Tower ${towerId} took ${damage} damage from player ${sourcePlayerId || socket.id} (${damageType || 'unknown'})`);
     }
   });
 
@@ -245,7 +245,6 @@ setInterval(() => {
 
 // Start server
 server.listen(PORT, () => {
-  console.log(`Towers multiplayer server running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 

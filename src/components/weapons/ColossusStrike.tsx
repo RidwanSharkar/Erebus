@@ -178,9 +178,7 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
 
   // Perform damage detection using dynamic damage based on rage consumed
   const performColossusStrikeDamage = () => {
-    console.log(`⚡ Colossus Strike: performColossusStrikeDamage called with damage: ${damage}`);
     if (damageDealtRef.current) {
-      console.log(`⚡ Colossus Strike: Damage already dealt, skipping`);
       return; // Prevent multiple damage applications
     }
     damageDealtRef.current = true;
@@ -201,18 +199,14 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
 
     // Use caster position for damage calculation if available, otherwise use effect position
     const damageOrigin = playerPosition && playerPosition.x !== 0 ? playerPosition : position;
-    console.log(`⚡ Colossus Strike: Checking ${allTargets.length} targets from position (${damageOrigin.x.toFixed(2)}, ${damageOrigin.y.toFixed(2)}, ${damageOrigin.z.toFixed(2)}), damageRadius: ${damageRadius}`);
-    console.log(`⚡ Colossus Strike: Target player data:`, targetPlayerData);
 
     allTargets.forEach(target => {
       if (!target.health || target.health <= 0) return;
 
       const distance = damageOrigin.distanceTo(target.position);
-      console.log(`⚡ Colossus Strike: Target ${target.id} at distance ${distance.toFixed(2)} (health: ${target.health})`);
 
       if (distance <= damageRadius) {
         // Target is within damage radius - deal damage
-        console.log(`⚡ Colossus Strike: HIT! Dealing ${finalDamage} damage to ${target.id} (${isCritical ? 'CRITICAL' : 'normal'})`);
         if (onHit) {
           onHit(target.id, finalDamage, isCritical);
         }
@@ -269,7 +263,6 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
 
     // Trigger damage at the same timing as Smite (around 80% progress)
     if (progress >= 0.8 && !damageDealtRef.current) {
-      console.log(`⚡ Colossus Strike: Triggering damage at progress ${progress.toFixed(2)}`);
       performColossusStrikeDamage();
     }
 

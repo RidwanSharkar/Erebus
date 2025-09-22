@@ -22,7 +22,6 @@ function handleEnemyEvents(socket, gameRooms) {
         timestamp: Date.now()
       });
       
-      console.log(`🎯 Enemy ${enemyId} took ${damage} damage from player ${actualSourcePlayerId} (via ${socket.id}). Health: ${result.newHealth}/${result.maxHealth}${result.wasKilled ? ' (KILLED)' : ''}`);
     }
   });
 
@@ -59,7 +58,7 @@ function handleEnemyEvents(socket, gameRooms) {
     const success = room.applyStatusEffect(enemyId, effectType, duration);
     
     if (success) {
-      console.log(`🎯 Applied ${effectType} to enemy ${enemyId} for ${duration}ms by player ${socket.id}`);
+      // console.log(`🎯 Applied ${effectType} to enemy ${enemyId} for ${duration}ms by player ${socket.id}`);
     }
   });
 

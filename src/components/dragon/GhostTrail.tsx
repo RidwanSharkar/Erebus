@@ -17,7 +17,7 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
   const trailsRef = useRef<Mesh[]>([]);
   const positions = useRef<Vector3[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
-  const trailCount = 26;
+  const trailCount = 24;
   
   useEffect(() => {
     // Initialize with target position if provided, otherwise use parent's position
@@ -43,13 +43,13 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
       switch (weaponSubclass) {
         // Scythe subclasses
         case WeaponSubclass.CHAOS:
-          return '#3FAEFC'; // Keep original chaos color
+          return '#0095FF'; // Keep original chaos color
         case WeaponSubclass.ABYSSAL:
           return '#17CE54'; // Purple for abyssal
         
         // Sword subclasses
         case WeaponSubclass.DIVINITY:
-          return '#3FD3FC'; // Light blue for divinity
+          return '#00C8FF'; // Light blue for divinity
         case WeaponSubclass.VENGEANCE:
           return '#4682B4'; // Steel blue for vengeance
         

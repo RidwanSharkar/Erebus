@@ -520,14 +520,8 @@ export function OptimizedPVPViperStingManager({
           const distance = projectilePos.distanceTo(playerPos);
 
           if (distance <= 1.3) { // Hit radius (same as ViperSting hook)
-            // CRITICAL DEBUG: Check if we're trying to hit ourselves
             if (player.id === localSocketId) {
-              console.error('🚨 SELF-DAMAGE ALERT: Viper Sting trying to hit local player!', {
-                projectileId: projectile.id,
-                targetPlayerId: player.id,
-                localSocketId: localSocketId,
-                distance: distance.toFixed(2)
-              });
+
               return; // Skip self-damage (this is redundant but kept for debugging)
             }
 
@@ -535,12 +529,7 @@ export function OptimizedPVPViperStingManager({
             if (!projectile.hitEnemies.has(player.id)) {
               projectile.hitEnemies.add(player.id);
 
-              console.log('🎯 Viper Sting PVP Forward Hit:', {
-                projectileId: projectile.id,
-                targetPlayerId: player.id,
-                damage: 61,
-                distance: distance.toFixed(2)
-              });
+
 
               // Apply damage - Viper Sting damage is 61
               onPlayerHit(player.id, 61);
@@ -579,11 +568,7 @@ export function OptimizedPVPViperStingManager({
                       // Broadcast healing to all players (this will create damage numbers via handlePlayerHealing)
                       multiplayerContext.broadcastPlayerHealing(20, 'viper_sting', healingPosition);
 
-                      console.log('🔮 Viper Sting soul steal healing applied:', {
-                        caster: localSocketId,
-                        healAmount: 20,
-                        position: healingPosition
-                      });
+
                     }
                   }
                 }, 1750); // Match soul steal effect duration
@@ -623,12 +608,6 @@ export function OptimizedPVPViperStingManager({
 
             if (distance <= 1.3) { // Hit radius (same as ViperSting hook)
               if (player.id === localSocketId) {
-                console.error('🚨 SELF-DAMAGE ALERT: Viper Sting return phase trying to hit local player!', {
-                  projectileId: projectile.id,
-                  targetPlayerId: player.id,
-                  localSocketId: localSocketId,
-                  distance: distance.toFixed(2)
-                });
                 return; // Skip self-damage 
               }
 
@@ -636,12 +615,7 @@ export function OptimizedPVPViperStingManager({
               if (!projectile.returnHitEnemies.has(player.id)) {
                 projectile.returnHitEnemies.add(player.id);
 
-                console.log('🎯 Viper Sting PVP Return Hit:', {
-                  projectileId: projectile.id,
-                  targetPlayerId: player.id,
-                  damage: 61,
-                  distance: distance.toFixed(2)
-                });
+   
 
                 // Apply damage - Viper Sting damage is 61
                 onPlayerHit(player.id, 61);
@@ -680,11 +654,7 @@ export function OptimizedPVPViperStingManager({
                         // Broadcast healing to all players (this will create damage numbers via handlePlayerHealing)
                         multiplayerContext.broadcastPlayerHealing(20, 'viper_sting', healingPosition);
 
-                        console.log('🔮 Viper Sting return soul steal healing applied:', {
-                          caster: localSocketId,
-                          healAmount: 20,
-                          position: healingPosition
-                        });
+ 
                       }
                     }
                   }, 1250); // Match soul steal effect duration
@@ -695,7 +665,6 @@ export function OptimizedPVPViperStingManager({
         } else if (!projectile.fadeStartTime) {
           // Start fading when projectile reaches player
           projectile.fadeStartTime = Date.now();
-          console.log('🏠 Viper Sting projectile reached player, starting fade:', projectile.id);
         }
       }
 
@@ -707,7 +676,6 @@ export function OptimizedPVPViperStingManager({
 
         if (fadeProgress >= 1) {
           projectile.active = false;
-          console.log('💨 Viper Sting projectile faded out:', projectile.id);
         }
       }
     });

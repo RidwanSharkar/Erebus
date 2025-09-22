@@ -98,13 +98,12 @@ export default function RoomJoin({ onJoinSuccess, currentWeapon, currentSubclass
     return (
       <div className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/95 p-8 rounded-xl border-2 ${gameMode === 'pvp' ? 'border-red-500' : 'border-green-500'} text-white max-w-md w-11/12 z-50 text-center`}>
         <h2 className="text-2xl font-bold mb-4">{gameMode === 'pvp' ? 'PVP' : 'Multiplayer'} Room: {roomId}</h2>
-        <p className="mb-4">Players connected: {players.size}/5</p>
+        <p className="mb-4">Players connected: {players.size}</p>
         <div className="flex flex-col gap-3 mb-6">
           {Array.from(players.values()).map(player => (
             <div key={player.id} className="flex justify-between items-center p-3 bg-white/10 rounded-lg border border-gray-600">
               <span className="font-bold text-green-500">{player.name}</span>
               <span className="text-orange-500 capitalize">({player.weapon})</span>
-              <span className="text-red-400 font-mono">{player.health}/{player.maxHealth} HP</span>
             </div>
           ))}
         </div>
@@ -195,9 +194,6 @@ export default function RoomJoin({ onJoinSuccess, currentWeapon, currentSubclass
 
   return (
     <div className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/95 p-8 rounded-xl border-2 ${gameMode === 'pvp' ? 'border-red-500' : 'border-green-500'} text-white max-w-lg w-11/12 z-50`}>
-      <h2 className="text-2xl font-bold mb-2">Join {gameMode === 'pvp' ? 'PVP' : 'Multiplayer'} Game</h2>
-      <p className="mb-6 text-gray-300">{gameMode === 'pvp' ? 'Battle against other players' : 'Play with up to 5 players per room'}</p>
-      
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-2">
           <label htmlFor="playerName" className="font-bold text-green-500">Your Name:</label>
@@ -209,7 +205,7 @@ export default function RoomJoin({ onJoinSuccess, currentWeapon, currentSubclass
             placeholder="Enter your name"
             maxLength={20}
             disabled={isJoining}
-            className="p-3 border-2 border-gray-600 rounded-lg bg-white/10 text-white text-base focus:outline-none focus:border-green-500 focus:bg-white/15 disabled:opacity-60 disabled:cursor-not-allowed"
+            className="p-2 border-2 border-gray-600 rounded-lg bg-white/10 text-white text-base focus:outline-none focus:border-green-500 focus:bg-white/15 disabled:opacity-60 disabled:cursor-not-allowed"
           />
         </div>
 
@@ -223,7 +219,7 @@ export default function RoomJoin({ onJoinSuccess, currentWeapon, currentSubclass
             placeholder="Room ID (e.g., 'default', 'room1')"
             maxLength={50}
             disabled={isJoining}
-            className="p-3 border-2 border-gray-600 rounded-lg bg-white/10 text-white text-base focus:outline-none focus:border-green-500 focus:bg-white/15 disabled:opacity-60 disabled:cursor-not-allowed"
+            className="p-2 border-2 border-gray-600 rounded-lg bg-white/10 text-white text-base focus:outline-none focus:border-green-500 focus:bg-white/15 disabled:opacity-60 disabled:cursor-not-allowed"
           />
         </div>
 
@@ -233,36 +229,18 @@ export default function RoomJoin({ onJoinSuccess, currentWeapon, currentSubclass
           </div>
         )}
 
-        <div className="text-center p-2 rounded-lg bg-white/10 font-bold">
-          Status: {isConnected ? 'Connected' : 'Connecting...'}
-        </div>
 
         <div className="flex gap-4">
+ 
           <button 
-            className="flex-1 px-8 py-4 text-lg bg-blue-500 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-blue-600 hover:-translate-y-1 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:transform-none"
-            onClick={handlePreview}
-            disabled={!isConnected || !roomId.trim() || previewLoading}
-          >
-            {previewLoading ? 'Loading...' : 'Preview Room'}
-          </button>
-          
-          <button 
-            className="flex-1 px-8 py-4 text-lg bg-green-500 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-green-600 hover:-translate-y-1 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:transform-none"
+            className="flex-1 px-8 py-2.5 text-lg bg-green-500 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-green-600 hover:-translate-y-1 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:transform-none"
             onClick={handleJoin}
             disabled={isJoining || !isConnected || !playerName.trim()}
           >
-            {isJoining ? 'Joining...' : 'Join Directly'}
+            {isJoining ? 'Entering...' : 'Enter Room'}
           </button>
         </div>
 
-        <div className="bg-white/5 p-4 rounded-lg text-sm">
-          <p className={`m-0 mb-2 font-bold ${gameMode === 'pvp' ? 'text-red-500' : 'text-green-500'}`}>Tips:</p>
-          <ul className="m-0 pl-6">
-            <li className="mb-1 text-gray-300">Use the same Room ID to play with friends</li>
-            <li className="mb-1 text-gray-300">Maximum 2-3 players per room</li>
-
-          </ul>
-        </div>
       </div>
     </div>
   );

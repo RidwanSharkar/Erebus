@@ -12,6 +12,7 @@ import { calculateDamage, DamageResult, getGlobalRuneCounts } from '@/core/Damag
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
 import { SummonedUnit } from '@/ecs/components/SummonedUnit';
 import { Projectile } from '@/ecs/components/Projectile';
+import { Tower } from '@/ecs/components/Tower';
 import { WeaponType } from '@/components/dragon/weapons';
 
 interface DamageEvent {
@@ -52,6 +53,9 @@ export class CombatSystem extends System {
 
   // Summoned unit damage callback for routing summoned unit damage to server
   private onSummonedUnitDamageCallback?: (unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string, damageType?: string) => void;
+
+  // Tower damage callback for routing tower damage to server
+  private onTowerDamageCallback?: (towerId: string, damage: number, sourcePlayerId?: string, damageType?: string) => void;
 
   // Log throttling to reduce spam
   private lastDamageLogTime = 0;
@@ -98,6 +102,10 @@ export class CombatSystem extends System {
 
   public setSummonedUnitDamageCallback(callback: (unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string, damageType?: string) => void): void {
     this.onSummonedUnitDamageCallback = callback;
+  }
+
+  public setTowerDamageCallback(callback: (towerId: string, damage: number, sourcePlayerId?: string, damageType?: string) => void): void {
+    this.onTowerDamageCallback = callback;
   }
 
   // Apply summoned unit damage received from server
@@ -339,26 +347,20 @@ export class CombatSystem extends System {
       const serverUnitOwnerId = target.userData?.serverUnitOwnerId || summonedUnit.ownerId;
 
       // Route summoned unit damage through multiplayer server instead of applying locally
-      console.log(`🌐 Routing ${actualDamage} damage to summoned unit ${serverUnitId} (owned by ${serverUnitOwnerId}) from source player ${finalSourcePlayerId} through multiplayer server`);
 
       // Debug: Log the source information
       if (source) {
         const projectileComponent = source.getComponent(Projectile);
-        console.log(`🔍 Source entity ${source.id} - projectile sourcePlayerId: ${(projectileComponent as any)?.sourcePlayerId}, userData playerId: ${source.userData?.playerId}`);
       }
 
-      // Debug: Log the team validation check
-      console.log(`🛡️ Team validation: sourcePlayerId="${finalSourcePlayerId}" vs unitOwnerId="${serverUnitOwnerId}" - ${finalSourcePlayerId === serverUnitOwnerId ? 'BLOCKED (same team)' : 'ALLOWED (different teams)'}`);
 
       // Block damage to own units
       if (finalSourcePlayerId === serverUnitOwnerId) {
-        console.log(`🚫 Blocked damage to own summoned unit`);
         return;
       }
 
       // Additional check: Don't send damage for units that are already dead locally
       if (health.isDead || health.currentHealth <= 0) {
-        console.log(`🚫 Blocked damage to already dead summoned unit ${serverUnitId}`);
         return;
       }
       
@@ -445,7 +447,7 @@ export class CombatSystem extends System {
 
       // TEMPORARY: Block all damage to own units for testing (even in fallback)
       if (finalSourcePlayerId === summonedUnit.ownerId) {
-        console.warn(`🚫 FALLBACK BLOCKED: Player ${finalSourcePlayerId} tried to damage their own summoned unit ${target.id}`);
+        // console.warn(`🚫 FALLBACK BLOCKED: Player ${finalSourcePlayerId} tried to damage their own summoned unit ${target.id}`);
         return; // Block the damage
       }
 
@@ -515,13 +517,78 @@ export class CombatSystem extends System {
       return; // Don't process further for summoned units
     }
 
+    // Check if target is a tower - if so, route damage through multiplayer server
+    const tower = target.getComponent(Tower);
+    if (tower && this.onTowerDamageCallback) {
+      // Calculate actual damage with critical hit mechanics
+      const currentWeapon = this.getCurrentWeapon();
+      let damageResult: DamageResult;
+
+      if (damageEvent.isCritical !== undefined) {
+        // Preserve pre-calculated critical hit and damage
+        damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
+      } else {
+        // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
+        damageResult = calculateDamage(baseDamage, currentWeapon);
+      }
+
+      const actualDamage = damageResult.damage;
+
+      // Get source player ID for proper attribution
+      let finalSourcePlayerId = sourcePlayerId;
+      if (!finalSourcePlayerId && source) {
+        // Check if source is a projectile with stored player info
+        const projectileComponent = source.getComponent(Projectile);
+        if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
+          finalSourcePlayerId = (projectileComponent as any).sourcePlayerId;
+        } else if (source.userData?.playerId) {
+          finalSourcePlayerId = source.userData.playerId;
+        }
+      }
+
+      // Get the server tower ID from userData (set during ECS sync)
+      const serverTowerId = target.userData?.serverTowerId || `tower_${tower.ownerId}`;
+
+      // Route tower damage through multiplayer server instead of applying locally
+
+      // CRITICAL: Only allow damage from summoned units, not from players directly
+      const sourceSummonedUnitComponent = source ? source.getComponent(SummonedUnit) : null;
+      if (!sourceSummonedUnitComponent) {
+        return;
+      }
+
+      // Cast to proper type to access ownerId
+      const sourceSummonedUnit = sourceSummonedUnitComponent as typeof SummonedUnit.prototype;
+
+      // Ensure the summoned unit belongs to an enemy player (not the tower owner)
+      if (sourceSummonedUnit.ownerId === tower.ownerId) {
+        return;
+      }
+
+      this.onTowerDamageCallback(serverTowerId, actualDamage, finalSourcePlayerId, damageType);
+
+      // Create damage number for visual feedback
+      const transform = target.getComponent(Transform);
+      if (transform) {
+        const position = transform.getWorldPosition();
+        position.y += 2; // Position above tower
+        this.damageNumberManager.addDamageNumber(
+          actualDamage,
+          damageResult.isCritical,
+          position,
+          damageType || 'tower'
+        );
+      }
+
+      return; // Don't apply damage locally for towers
+    }
+
     // Check if target is a player in PVP mode - if so, route damage through multiplayer
     // Also prevent self-damage in PVP (source hitting themselves)
     if (!enemy && this.onPlayerDamageCallback && source && source.id !== target.id) {
       // CRITICAL: Don't damage dead players in PVP
       const targetHealth = target.getComponent(Health);
       if (targetHealth && targetHealth.isDead) {
-        console.log(`🚫 Blocked damage to dead player ${target.id} - not processing projectile hit`);
         return;
       }
       // Check if this is a Cryoflame-enhanced Entropic Bolt
@@ -555,11 +622,7 @@ export class CombatSystem extends System {
             // Mark when we last applied burning stacks to this target
             (target as any)._lastBurningStackTime = currentTime;
 
-            if (cappedBonus < damageBonus) {
-              console.log(`🔥 Applied burning stack to player ${target.id}: base damage ${baseDamage} + bonus ${cappedBonus}/${damageBonus} (CAPPED FOR PVP) = ${finalDamage}`);
-            } else {
-              console.log(`🔥 Applied burning stack to player ${target.id}: base damage ${baseDamage} + bonus ${cappedBonus} = ${finalDamage}`);
-            }
+
           } else {
             // Use existing burning stack bonus without incrementing
             const existingStacks = controlSystem.getBurningStacks(target.id);
@@ -570,11 +633,7 @@ export class CombatSystem extends System {
             const cappedBonus = Math.min(rawDamageBonus, maxBurningBonus);
             finalDamage = baseDamage + cappedBonus;
 
-            if (cappedBonus < rawDamageBonus) {
-              console.log(`🔥 Using existing burning stack bonus for player ${target.id}: base damage ${baseDamage} + bonus ${cappedBonus}/${rawDamageBonus} (CAPPED FOR PVP) = ${finalDamage}`);
-            } else {
-              console.log(`🔥 Using existing burning stack bonus for player ${target.id}: base damage ${baseDamage} + bonus ${cappedBonus} = ${finalDamage}`);
-            }
+
           }
         }
       }
@@ -589,7 +648,6 @@ export class CombatSystem extends System {
           if (isFrozen) {
             // Double the damage for frozen enemies BEFORE critical calculation
             finalDamage *= 2;
-            console.log(`🧊 Cryoflame: Doubled base damage to frozen enemy ${target.id}: ${finalDamage}`);
           }
         }
       }
@@ -610,7 +668,7 @@ export class CombatSystem extends System {
 
       // Debug logging for sabre damage
       if (damageType?.includes('sabre')) {
-        console.log(`🎯 SABRE CRIT CALC - Base: ${finalDamage}, Final: ${damageResult.damage}, Critical: ${damageResult.isCritical}, Type: ${damageType}, Preserved: ${damageEvent.isCritical !== undefined}`);
+       // console.log(`🎯 SABRE CRIT CALC - Base: ${finalDamage}, Final: ${damageResult.damage}, Critical: ${damageResult.isCritical}, Type: ${damageType}, Preserved: ${damageEvent.isCritical !== undefined}`);
       }
 
       // Route player damage through multiplayer server for PVP (let receiver handle shields)
@@ -757,7 +815,7 @@ export class CombatSystem extends System {
             this.handleEntityDeath(target, source, currentTime, sourcePlayerIdForDeath);
           } else {
             // Enemy death in multiplayer mode - let server handle experience and death effects
-            console.log(`🌐 Enemy ${target.id} died locally but death handling is deferred to server in multiplayer mode`);
+            // console.log(`🌐 Enemy ${target.id} died locally but death handling is deferred to server in multiplayer mode`);
           }
         }
 
@@ -800,7 +858,6 @@ export class CombatSystem extends System {
       // Experience awards are now handled by the backend server
       // Apply other rewards like Scythe Soul Harvest passive (+5 mana per kill)
       if (sourcePlayerId && sourcePlayerId !== 'unknown') {
-        console.log(`🏆 Player ${sourcePlayerId} killed enemy! EXP will be awarded by server.`);
         this.applyScythePassiveReward(sourcePlayerId);
       }
 
@@ -818,14 +875,13 @@ export class CombatSystem extends System {
       // Immediately disable to prevent further targeting
       summonedUnit.isActive = false;
 
-      console.log(`💀 ${summonedUnit.getDisplayName()} has been defeated!`);
 
       // Experience awards for summoned unit kills are now handled by the backend server
       if (sourcePlayerId && sourcePlayerId !== 'unknown') {
         if (summonedUnit.ownerId !== sourcePlayerId) {
-          console.log(`🎯 Player ${sourcePlayerId} killed enemy summoned unit owned by ${summonedUnit.ownerId}! EXP will be awarded by server.`);
+          // console.log(`🎯 Player ${sourcePlayerId} killed enemy summoned unit owned by ${summonedUnit.ownerId}! EXP will be awarded by server.`);
         } else {
-          console.log(`🤝 Player ${sourcePlayerId} killed their own summoned unit - no EXP awarded`);
+          // console.log(`🤝 Player ${sourcePlayerId} killed their own summoned unit - no EXP awarded`);
         }
       }
 
@@ -1024,9 +1080,6 @@ export class CombatSystem extends System {
           
           if (shouldHandleDeathLocally) {
             this.handleEntityDeath(target, source, currentTime, sourcePlayerId);
-          } else {
-            // Enemy death in multiplayer mode - let server handle experience and death effects
-            console.log(`🌐 Enemy ${target.id} died locally via immediate damage but death handling is deferred to server in multiplayer mode`);
           }
         }
 
@@ -1073,10 +1126,7 @@ export class CombatSystem extends System {
         
         if (shouldHandleDeathLocally) {
           this.handleEntityDeath(target, source, currentTime, sourcePlayerId);
-        } else {
-          // Enemy death in multiplayer mode - let server handle experience and death effects
-          console.log(`🌐 Enemy ${target.id} died locally via immediate damage but death handling is deferred to server in multiplayer mode`);
-        }
+        } 
       }
 
       this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
@@ -1185,7 +1235,7 @@ export class CombatSystem extends System {
       // Debug logging for corrupted debuff (only log occasionally to avoid spam)
       const logInterval = 1.0; // Log every second
       if (elapsed % logInterval < 0.1) {
-        console.log(`👻 Corrupted debuff on ${enemy.getDisplayName()}: ${(currentSlowPercent * 100).toFixed(1)}% slow (${(speedMultiplier * 100).toFixed(1)}% speed remaining)`);
+        // console.log(`👻 Corrupted debuff on ${enemy.getDisplayName()}: ${(currentSlowPercent * 100).toFixed(1)}% slow (${(speedMultiplier * 100).toFixed(1)}% speed remaining)`);
       }
     }
 
@@ -1219,7 +1269,6 @@ export class CombatSystem extends System {
           const gameUI = (window as any).gameUI;
           if (gameUI && gameUI.addMana) {
             gameUI.addMana(5);
-            console.log(`🔮 Scythe Soul Harvest: Gained +5 mana from enemy kill`);
           }
         }
       }

@@ -87,7 +87,6 @@ export class SummonedUnitSystem extends System {
 
       // Check if unit is dead
       if (health.isDead && !unit.isDead) {
-        console.log(`🤖 Summoned unit ${entity.id} (${unit.getDisplayName()}) died - marking for cleanup`);
         unit.die(currentTime);
 
         // Remove unit from wave tracking immediately
@@ -114,7 +113,6 @@ export class SummonedUnitSystem extends System {
 
     // Destroy expired units
     for (const entityId of this.unitsToDestroy) {
-      console.log(`🗑️ Destroying summoned unit entity ${entityId}`);
       this.world.destroyEntity(entityId);
     }
   }
@@ -321,7 +319,6 @@ export class SummonedUnitSystem extends System {
     if (this.currentWaveId && this.waveUnits.size === 0) {
       // Ensure we don't spam the callback (minimum 30 seconds between wave completions)
       if (currentTime - this.lastWaveCompletionTime >= 30) {
-        console.log(`🎯 Wave ${this.currentWaveId} completed! Awarding experience to all players.`);
 
         // Award experience to all players
         if (this.onWaveComplete) {
@@ -360,7 +357,6 @@ export class SummonedUnitSystem extends System {
       this.currentWaveId = `wave_${currentTime}`;
       this.waveStartTime = currentTime;
       this.waveUnits.clear();
-      console.log(`🌊 Starting new wave: ${this.currentWaveId}`);
     }
 
     // Find the opposing tower position for targeting

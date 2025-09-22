@@ -2,6 +2,7 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Group, Vector3, AdditiveBlending } from 'three';
 import { useFrame } from '@react-three/fiber';
 import TotemModel from './TotemModel';
+import UnholyAura from './UnholyAura';
 import { calculateDamage } from '@/core/DamageCalculator';
 import { WeaponType } from '@/components/dragon/weapons';
 
@@ -79,6 +80,7 @@ export default function SummonedTotem({
   onHealPlayer,
   casterId
 }: SummonProps) {
+
   const groupRef = useRef<Group>(null);
   const [currentTarget, setCurrentTarget] = useState<{ id: string; position: Vector3; health: number } | null>(null);
 
@@ -110,29 +112,29 @@ export default function SummonedTotem({
     let currentEnemies: Array<{ id: string; position: Vector3; health: number }> = [...enemyData];
 
     // Add real-time player positions
-    if (players && localSocketId) {
+    if (players) {
+      const allPlayerIds = Array.from(players.keys());
+
       const playerEnemies = Array.from(players.entries())
-        .filter(([playerId]) => playerId !== localSocketId) // Exclude local player
+        .filter(([playerId]) => !casterId || playerId !== casterId) // Exclude the caster of the totem (if casterId is defined)
         .map(([playerId, playerData]) => ({
           id: playerId,
           position: new Vector3(playerData.position.x, playerData.position.y, playerData.position.z),
           health: playerData.health
         }));
+
       currentEnemies = [...currentEnemies, ...playerEnemies];
     }
 
     return currentEnemies;
-  }, [players, localSocketId, enemyData]);
+  }, [players, casterId, enemyData]);
 
   // Log initial enemy data
   const initialEnemyData = getCurrentEnemyData();
-  console.log('🎭 SummonedTotem: Component created with enemyData:', initialEnemyData.length, 'enemies');
-  console.log('🎭 SummonedTotem: enemyData details:', initialEnemyData.map(e => ({ id: e.id, health: e.health, position: e.position })));
 
   // Log PVP player detection
   const pvpPlayers = initialEnemyData.filter(e => !e.id.startsWith('enemy-'));
   const npcs = initialEnemyData.filter(e => e.id.startsWith('enemy-'));
-  console.log('🎭 SummonedTotem: PVP players detected:', pvpPlayers.length, 'NPCs detected:', npcs.length);
 
   const findNewTarget = useCallback((excludeCurrentTarget: boolean = false): { id: string; position: Vector3; health: number } | null => {
     if (!groupRef.current) {
@@ -186,14 +188,7 @@ export default function SummonedTotem({
 
   const handleAttack = useCallback((target: { id: string; position: Vector3; health: number }) => {
     if (!target || target.health <= 0 || !onDamage || !nextDamageNumberId || !setDamageNumbers || !setActiveEffects) {
-      console.log('🎭 SummonTotem: Attack cancelled - missing requirements:', {
-        hasTarget: !!target,
-        targetHealth: target?.health,
-        hasOnDamage: !!onDamage,
-        hasNextId: !!nextDamageNumberId,
-        hasSetDamageNumbers: !!setDamageNumbers,
-        hasSetActiveEffects: !!setActiveEffects
-      });
+
       return;
     }
 
@@ -210,13 +205,12 @@ export default function SummonedTotem({
     // Use the enemy's current real-time position for damage numbers and effects (not cached target position)
     const currentWorldImpactPosition = currentEnemy.position.clone().setY(1.5);
 
-    console.log('🎭 SummonTotem: Attacking target:', {
-      targetId: target.id,
-      damage: damageResult.damage,
-      isCritical: damageResult.isCritical,
-      position: currentWorldImpactPosition,
-      casterId: casterId
-    });
+
+
+    // CRITICAL: Prevent attacking the caster
+    if (casterId && target.id === casterId) {
+      return;
+    }
 
     // Call the damage callback to route damage to server
     onDamage(target.id, damageResult.damage, currentWorldImpactPosition, damageResult.isCritical);
@@ -332,6 +326,7 @@ export default function SummonedTotem({
   return (
     <group ref={groupRef} position={position.toArray()}>
       <TotemModel isAttacking={!!currentTarget} />
+      <UnholyAura />
 
       {/* Render active effects */}
       {activeEffects.map(effect => {
@@ -348,8 +343,8 @@ export default function SummonedTotem({
               <mesh>
                 <sphereGeometry args={[0.35 * (1 + elapsed * 2), 32, 32]} />
                 <meshStandardMaterial
-                  color="#8800ff"
-                  emissive="#9933ff"
+                  color="#0099ff"
+                  emissive="#0088cc"
                   emissiveIntensity={0.5 * fade}
                   transparent
                   opacity={0.8 * fade}
@@ -361,8 +356,8 @@ export default function SummonedTotem({
               <mesh>
                 <sphereGeometry args={[0.25 * (1 + elapsed * 3), 24, 24]} />
                 <meshStandardMaterial
-                  color="#aa66ff"
-                  emissive="#ffffff"
+                  color="#0077aa"
+                  emissive="#cceeff"
                   emissiveIntensity={0.5 * fade}
                   transparent
                   opacity={0.9 * fade}
@@ -375,8 +370,8 @@ export default function SummonedTotem({
                 <mesh key={i} rotation={[Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI]}>
                   <torusGeometry args={[size * (1 + elapsed * 3), 0.045, 16, 32]} />
                   <meshStandardMaterial
-                    color="#8800ff"
-                    emissive="#9933ff"
+                    color="#0099ff"
+                    emissive="#0088cc"
                     emissiveIntensity={1 * fade}
                     transparent
                     opacity={0.6 * fade * (1 - i * 0.2)}
@@ -400,8 +395,8 @@ export default function SummonedTotem({
                   >
                     <sphereGeometry args={[0.05, 8, 8]} />
                     <meshStandardMaterial
-                      color="#aa66ff"
-                      emissive="#ffffff"
+                      color="#0077aa"
+                      emissive="#cceeff"
                       emissiveIntensity={2 * fade}
                       transparent
                       opacity={0.8 * fade}
@@ -413,13 +408,13 @@ export default function SummonedTotem({
               })}
 
               <pointLight
-                color="#8800ff"
+                color="#0099ff"
                 intensity={1 * fade}
                 distance={4}
                 decay={2}
               />
               <pointLight
-                color="#aa66ff"
+                color="#0077aa"
                 intensity={1 * fade}
                 distance={6}
                 decay={1}

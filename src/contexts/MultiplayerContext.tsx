@@ -165,7 +165,7 @@ interface MultiplayerContextType {
   applyStatusEffect: (enemyId: string, effectType: string, duration: number) => void;
 
   // Tower actions
-  damageTower: (towerId: string, damage: number) => void;
+  damageTower: (towerId: string, damage: number, sourcePlayerId?: string, damageType?: string) => void;
 
   // Summoned unit actions
   damageSummonedUnit: (unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string) => void;
@@ -620,11 +620,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     // Wave completion handler
     addEventHandler('wave-completed', (data) => {
-      console.log('🌊 Wave completed:', data.waveId);
       
       // Check if this is PVP mode with specific winner
       if (data.winnerPlayerId && data.defeatedPlayerId) {
-        console.log(`🎯 PVP Wave completed: Player ${data.defeatedPlayerId}'s units defeated. Winner: ${data.winnerPlayerId}`);
         // Trigger PVP-specific experience rewards through a global event
         window.dispatchEvent(new CustomEvent('pvp-wave-completed', { 
           detail: {
@@ -634,7 +632,6 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         }));
       } else {
         // Legacy multiplayer mode - award to all players
-        console.log('🌊 Multiplayer wave completed:', data.waveId);
         window.dispatchEvent(new CustomEvent('wave-completed', { detail: data }));
       }
     });
@@ -821,12 +818,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const damageTower = useCallback((towerId: string, damage: number) => {
+  const damageTower = useCallback((towerId: string, damage: number, sourcePlayerId?: string, damageType?: string) => {
     if (socket && currentRoomId) {
       socket.emit('tower-damage', {
         roomId: currentRoomId,
         towerId,
-        damage
+        damage,
+        sourcePlayerId,
+        damageType
       });
     }
   }, [socket, currentRoomId]);
@@ -847,8 +846,6 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
   const broadcastPlayerDamage = useCallback((targetPlayerId: string, damage: number, damageType?: string, isCritical?: boolean) => {
     if (socket && currentRoomId) {
-      // Additional logging to track damage attempts
-      console.log(`📡 Broadcasting ${damage} ${damageType || 'generic'} damage${isCritical ? ' (CRITICAL)' : ''} to player ${targetPlayerId}`);
 
       socket.emit('player-damage', {
         roomId: currentRoomId,
@@ -970,7 +967,6 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       const randomIndex = Math.floor(Math.random() * availableWeapons.length);
       const tertiaryWeapon = availableWeapons[randomIndex];
 
-      console.log(`🎯 Level 3 reached! Unlocking tertiary weapon: ${tertiaryWeapon}`);
 
       setSelectedWeaponsState({
         ...selectedWeapons,
@@ -1002,7 +998,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       const newSkillPointData = SkillPointSystem.unlockAbility(skillPointData, unlock.weaponType, unlock.abilityKey, unlock.weaponSlot);
       setSkillPointData(newSkillPointData);
     } catch (error) {
-      console.error('Failed to unlock ability:', error);
+      // console.error('Failed to unlock ability:', error);
     }
   }, [skillPointData]);
 

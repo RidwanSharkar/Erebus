@@ -12,25 +12,25 @@ const Planet: React.FC = () => {
 
   // Memoize geometries with reduced segments for better performance
   const sphereGeometry = useMemo(() => new SphereGeometry(1, 24, 24), []);
-  const ringGeometry = useMemo(() => new RingGeometry(1.4, 2.1, 48), []);
+  const ringGeometry = useMemo(() => new RingGeometry(1.5 , 2.1, 48), []);
   
   // Memoize materials for performance
   const planetMaterial = useMemo(() => new MeshStandardMaterial({
-    color: "#B8E0D2",
+    color: "#56FCF7",
     roughness: 0.7,
     metalness: 0.2,
-    emissive: "#B8E0D2",
+    emissive: "#56FCF7",
     emissiveIntensity: 0.675
   }), []);
 
   const glowMaterial = useMemo(() => new MeshBasicMaterial({
-    color: "#4dff90",
+    color: "#00C3FF",
     transparent: true,
     opacity: 0.5
   }), []);
 
   const outerGlowMaterial = useMemo(() => new MeshBasicMaterial({
-    color: "#4dff90",
+    color: "#00C3FF",
     transparent: true,
     opacity: 0.2,
     side: BackSide
@@ -64,21 +64,21 @@ const Planet: React.FC = () => {
 
   const ringMaterial = useMemo(() => new MeshStandardMaterial({
     map: ringTexture,
-    color: "#A8DBFF",
+    color: "#00C3FF",
     transparent: true,
     opacity: 1,
     side: DoubleSide,
     alphaMap: ringTexture,
     roughness: 0.7,
     metalness: 0.2,
-    emissive: "#77FFC0",
+    emissive: "#00C3FF",
     emissiveIntensity: 1.1
   }), [ringTexture]);
 
   // Cache frustum and matrices to reduce garbage collection
   const frustum = useMemo(() => new Frustum(), []);
   const matrix = useMemo(() => new Matrix4(), []);
-  const sphere = useMemo(() => new Sphere(new Vector3(), 24 * Math.sqrt(3)), []);
+  const sphere = useMemo(() => new Sphere(new Vector3(), 18 * Math.sqrt(3)), []);
 
   // Rotate the ring slowly and apply frustum culling
   useFrame((state, delta) => {
@@ -103,8 +103,8 @@ const Planet: React.FC = () => {
   return (
     <group 
       ref={groupRef} 
-      position={[100, 80, -150]} 
-      scale={[24, 24, 24]} 
+      position={[100, 60, -150]} 
+      scale={[18, 18, 18]} 
       rotation={[1.0, 0.1, 0.1]}
     >
       {/* Main planet sphere */}

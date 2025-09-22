@@ -30,7 +30,7 @@ export class CameraSystem extends System {
     smoothing: 0.1,
     minPolarAngle: Math.PI / 3.5, // Prevent camera from going above horizon
     maxPolarAngle: Math.PI / 2.5, // Prevent camera from looking underneath the map
-    maxDistance: 13.5,
+    maxDistance: 12.5,
   };
 
   // Camera state

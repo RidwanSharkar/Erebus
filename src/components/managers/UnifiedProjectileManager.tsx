@@ -271,7 +271,6 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
       } else if (userData.projectileType === 'wind_shear') {
         // Wind shear projectiles are handled by WindShearProjectileManager, skip here
       } else if (userData.projectileType === 'sword_projectile') {
-        console.log('⚔️ Found sword projectile entity:', entity.id, 'userData:', userData);
         const existing = projectileData.sword.find(p => p.entityId === entity.id);
         if (existing) {
           existing.position.copy(transform.position);
@@ -283,7 +282,6 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             direction: direction.clone(),
             entityId: entity.id
           };
-          console.log('⚔️ Added new sword projectile:', newSwordData);
           newSword.push(newSwordData);
         }
       }

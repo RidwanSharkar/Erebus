@@ -30,7 +30,7 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
       switch (weaponSubclass) {
         // Scythe subclasses
         case WeaponSubclass.CHAOS:
-          return '#3EB0FC';
+          return '#7ADEFF';
         case WeaponSubclass.ABYSSAL:
           return '#17CE54';
         
@@ -42,7 +42,7 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
         
         // Sabres subclasses
         case WeaponSubclass.FROST:
-          return '#FF544E';
+          return '#F27663';
         case WeaponSubclass.ASSASSIN:
           return '#FF544E';
         

@@ -1,4 +1,4 @@
-import { Vector3, ConeGeometry } from '@/utils/three-exports';
+import { Vector3, ConeGeometry, BufferGeometry, BufferAttribute } from '@/utils/three-exports';
 
 export interface MountainData {
   position: Vector3;
@@ -11,8 +11,8 @@ export interface MountainData {
  */
 export const generateMountains = (): MountainData[] => {
   const mountains: MountainData[] = [];
-  const numberOfMountains = 22;
-  const radius = 46;
+  const numberOfMountains = 21;
+  const radius = 46.75;
   
   // Create evenly spaced mountains around the perimeter
   for (let i = 0; i < numberOfMountains; i++) {
@@ -43,6 +43,63 @@ export const generateMountains = (): MountainData[] => {
   }
 
   return mountains;
+};
+
+/**
+ * Pre-generates a set of jagged mountain base variants for hybrid instanced rendering
+ * Creates 4 different geometry variants to add variety while maintaining performance
+ * Only affects the bottom half of the mountain for subtle natural variation
+ */
+export const createMountainBaseVariants = (): BufferGeometry[] => {
+  const variants: BufferGeometry[] = [];
+  
+  // Create 4 different variants with different seed offsets
+  for (let variant = 0; variant < 3; variant++) {
+    const seed = variant * 0.25; // Different seed for each variant
+    
+    // Start with a cone geometry as base
+    const baseGeometry = new ConeGeometry(22, 34.5, 24, 6);
+    const geometry = baseGeometry.clone();
+    const positions = geometry.attributes.position.array as Float32Array;
+    
+    // Add subtle jagged variation to bottom half only
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i];
+      const y = positions[i + 1];
+      const z = positions[i + 2];
+      
+      // Height-based variation - only affect bottom half of mountain
+      const normalizedHeight = (y + 17.25) / 34.5;
+      const heightFactor = normalizedHeight <= 0.5 ? normalizedHeight * 2 : 0;
+      
+      if (heightFactor > 0) {
+        // Create subtle noise for natural rock formations
+        const geologicalNoiseX = Math.sin(x * 0.3 + seed) * Math.cos(z * 0.2 + seed * 1.5);
+        const geologicalNoiseZ = Math.cos(x * 0.25 + seed * 2) * Math.sin(z * 0.35 + seed * 2.5);
+        
+        const rockFormationX = Math.sin(x * 0.8 + seed * 3) * Math.cos(z * 0.6 + seed * 4) * 0.7;
+        const rockFormationZ = Math.cos(x * 0.7 + seed * 5) * Math.sin(z * 0.9 + seed * 6) * 0.7;
+        
+        // Apply more dramatic displacement for increased jaggedness
+        const totalVariationX = (geologicalNoiseX + rockFormationX) * heightFactor * 1.85;
+        const totalVariationZ = (geologicalNoiseZ + rockFormationZ) * heightFactor * 1.85;
+        
+        positions[i] += totalVariationX;
+        positions[i + 2] += totalVariationZ;
+        
+        // Add more dramatic height variation for ridges and cliffs
+        const ridgeNoise = Math.sin(x * 0.4 + z * 0.3 + seed * 7) * Math.cos(x * 0.2 + z * 0.5 + seed * 8);
+        const heightVariation = ridgeNoise * heightFactor * 0.8;
+        positions[i + 1] += heightVariation;
+      }
+    }
+    
+    geometry.attributes.position.needsUpdate = true;
+    geometry.computeVertexNormals();
+    variants.push(geometry);
+  }
+  
+  return variants;
 };
 
 /**

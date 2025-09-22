@@ -11,11 +11,11 @@ const createVortexPiece = () => (
   <group>
     {/* Mist-like particle similar to ReaperMistEffect */}
     <mesh>
-      <sphereGeometry args={[0.15, 8, 8]} />
+      <sphereGeometry args={[0.125, 8, 8]} />
       <meshStandardMaterial 
         color="#4FC3F7"
         emissive="#4FC3F7"
-        emissiveIntensity={0.8}
+        emissiveIntensity={0.35}
         transparent
         opacity={0.7}
         blending={AdditiveBlending}
@@ -28,7 +28,7 @@ const createVortexPiece = () => (
 function ElementalVortex({ parentRef }: ElementalVortexProps) {
   const vortexPiecesRef = useRef<(Group | null)[]>([]);
   const pieceCount = 40; // More particles for denser effect
-  const baseRadius = 1.0; // Larger radius
+  const baseRadius = 1.25; // Larger radius
   const groupRef = useRef<Group>(null);
   
   useFrame(({ clock }) => {
@@ -38,8 +38,8 @@ function ElementalVortex({ parentRef }: ElementalVortexProps) {
       if (!piece) return;
       
       const time = clock.getElapsedTime();
-      const heightOffset = ((i / pieceCount) * 1.25 - 0.175); // Taller vortex
-      const radiusMultiplier = 0.8 - (heightOffset * 0.4); // Gentler taper
+      const heightOffset = ((i / pieceCount) * 1.5 - 0.175); // Taller vortex
+      const radiusMultiplier = 0.8 - (heightOffset * 0.375); // Gentler taper
       
       // More complex spiral motion like mist particles
       const spiralAngle = (i / pieceCount) * Math.PI * 6 + time * 1.5;

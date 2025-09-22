@@ -46,18 +46,14 @@ class GameRoom {
     
     // PVP Death confirmation system
     this.pendingKills = new Map(); // victimId -> { killerId, killerName, victimName, damageType, timestamp }
-    
-    console.log(`🎮 Game room ${roomId} created. Waiting for start game command...`);
   }
 
   // Start the actual game
   startGame(initiatingPlayerId) {
     if (this.gameStarted) {
-      console.log(`🎮 Game already started in room ${this.roomId}`);
       return false;
     }
     
-    console.log(`🎮 Starting game in room ${this.roomId}, initiated by player ${initiatingPlayerId}, mode: ${this.gameMode}`);
     this.gameStarted = true;
     
     // Only initialize enemies and AI for multiplayer mode, not PVP
@@ -71,10 +67,7 @@ class GameRoom {
       // Start enemy AI
       this.startEnemyAI();
       
-      console.log(`🎯 Enemy systems started for multiplayer room ${this.roomId}`);
     } else if (this.gameMode === 'pvp') {
-      console.log(`⚔️ PVP mode detected - starting summoned unit system in room ${this.roomId}`);
-      console.log(`🏰 Current towers in room: ${this.towers.size}`);
       this.startSummonedUnitSystem();
     }
     
@@ -115,8 +108,6 @@ class GameRoom {
     if (gameMode === 'pvp') {
       this.createTowerForPlayer(playerId, playerName);
     }
-    
-    console.log(`Player ${playerId} (${playerName}) joined room ${this.roomId} with ${weapon}${subclass ? ` (${subclass})` : ''}. Current kill count: ${this.killCount}`);
   }
 
   removePlayer(playerId) {
@@ -129,7 +120,6 @@ class GameRoom {
     
     // Stop game if no players left
     if (this.players.size === 0 && this.gameStarted) {
-      console.log(`🎮 No players left in room ${this.roomId}, stopping game`);
       this.stopGame();
     }
   }
@@ -143,8 +133,6 @@ class GameRoom {
     
     // Clear all enemies
     this.enemies.clear();
-    
-    console.log(`🎮 Game stopped in room ${this.roomId}`);
   }
 
   getPlayer(playerId) {
@@ -164,7 +152,6 @@ class GameRoom {
     // Only allow 2 towers maximum, even if more players join
     const towerCount = Array.from(this.towers.values()).length;
     if (towerCount >= 2) {
-      console.log(`Tower limit reached (${towerCount}/2). Not creating tower for player ${playerId}`);
       return;
     }
 
@@ -189,8 +176,8 @@ class GameRoom {
       ownerName: playerName,
       towerIndex: playerIndex,
       position: { x, y, z },
-      health: 11500,
-      maxHealth: 11500,
+      health: 10000,
+      maxHealth: 10000,
       isDead: false,
       isActive: true,
       createdAt: Date.now()
@@ -205,8 +192,6 @@ class GameRoom {
         tower: tower
       });
     }
-    
-    console.log(`🏰 Created tower ${towerId} for player ${playerId} (${playerName}) at position [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}] with 10-unit attack range`);
     return tower;
   }
 
@@ -232,12 +217,10 @@ class GameRoom {
       setTimeout(() => {
         this.towers.delete(towerId);
       }, 1000);
-      
-      console.log(`🏰 Removed tower ${towerId} for player ${playerId}`);
     }
   }
 
-  damageTower(towerId, damage) {
+  damageTower(towerId, damage, sourcePlayerId = null, damageType = null) {
     const tower = this.towers.get(towerId);
     if (!tower || tower.isDead) {
       return false;
@@ -257,6 +240,8 @@ class GameRoom {
         roomId: this.roomId,
         towerId: towerId,
         damage: damage,
+        sourcePlayerId: sourcePlayerId,
+        damageType: damageType,
         newHealth: tower.health,
         wasDestroyed: wasDestroyed
       });
@@ -269,8 +254,6 @@ class GameRoom {
         });
       }
     }
-    
-    console.log(`🏰 Tower ${towerId} took ${damage} damage. Health: ${tower.health}/${tower.maxHealth}${wasDestroyed ? ' (DESTROYED)' : ''}`);
     return true;
   }
 
@@ -287,18 +270,13 @@ class GameRoom {
   // Start the summoned unit system for PVP mode
   startSummonedUnitSystem() {
     if (this.gameMode !== 'pvp') {
-      console.log(`🚫 Not starting summoned unit system - gameMode is ${this.gameMode}, not 'pvp'`);
       return;
     }
-    
-    console.log(`🤖 Starting summoned unit system for PVP room ${this.roomId}`);
     
     // Start the update loop for summoned units (60 FPS)
     this.summonedUnitUpdateTimer = setInterval(() => {
       this.updateSummonedUnits();
     }, 1000 / 60); // 60 FPS
-    
-    console.log(`🤖 Summoned unit system started for PVP room ${this.roomId} - update timer created`);
   }
   
   // Stop the summoned unit system
@@ -313,8 +291,6 @@ class GameRoom {
     this.waveUnits.clear();
     this.lastGlobalSpawnTime = 0;
     this.currentWaveId = null;
-    
-    console.log(`🤖 Summoned unit system stopped for room ${this.roomId}`);
   }
   
   // Main update loop for summoned units
@@ -323,7 +299,6 @@ class GameRoom {
       // Debug logging every 30 seconds to see why updates are skipped
       if (Math.floor(Date.now() / 1000) % 30 === 0 && Math.floor(Date.now() / 1000) !== this.lastUpdateSkipLog) {
         this.lastUpdateSkipLog = Math.floor(Date.now() / 1000);
-        console.log(`🤖 Summoned unit update skipped: gameStarted=${this.gameStarted}, gameMode=${this.gameMode}, roomId=${this.roomId}`);
       }
       return;
     }
@@ -332,10 +307,6 @@ class GameRoom {
     const deltaTime = 1 / 60; // 60 FPS
     const unitsToDestroy = [];
     
-    // Debug log every 5 seconds to avoid spam
-    if (Math.floor(currentTime) % 5 === 0 && Math.floor(currentTime * 10) % 10 === 0) {
-      console.log(`🤖 Summoned unit update: ${this.summonedUnits.size} units, ${this.towers.size} towers`);
-    }
     
     // Process existing units
     for (const [unitId, unit] of this.summonedUnits) {
@@ -357,7 +328,6 @@ class GameRoom {
       
       // Check if unit is already dead (from damage) - add to cleanup
       if (unit.isDead || !unit.isActive) {
-        console.log(`🧹 Adding dead/inactive unit ${unitId} to cleanup queue (isDead: ${unit.isDead}, isActive: ${unit.isActive})`);
         this.removeUnitFromWave(unitId, unit.ownerId);
         unitsToDestroy.push(unitId);
         continue;
@@ -565,7 +535,6 @@ class GameRoom {
   
   // Manual wave completion trigger for testing (temporary)
   triggerTestWaveCompletion() {
-    console.log(`🧪 TEST: Manually triggering wave completion for room ${this.roomId}`);
     
     // Broadcast wave completion
     if (this.io) {
@@ -584,15 +553,11 @@ class GameRoom {
       if (playerWave) {
         const hadUnit = playerWave.units.has(unitId);
         playerWave.units.delete(unitId);
-        console.log(`🗑️ Removed unit ${unitId} from PVP wave for player ${unitOwnerId}. Had unit: ${hadUnit}, Remaining: ${playerWave.units.size}`);
         
         // DEBUG: Check if this triggers wave completion
         if (playerWave.units.size === 0) {
-          console.log(`🎯 DEBUG: Player ${unitOwnerId}'s wave is now empty! This should trigger wave completion check.`);
         }
-      } else {
-        console.warn(`⚠️ Tried to remove unit ${unitId} from non-existent player wave for ${unitOwnerId}`);
-      }
+      } 
     } else {
       // Legacy multiplayer mode: Remove from global wave
       this.waveUnits.delete(unitId);
@@ -606,9 +571,7 @@ class GameRoom {
       // DEBUG: Log current wave state every few seconds
       if (Math.floor(currentTime) % 5 === 0 && Math.floor(currentTime) !== this.lastWaveDebugTime) {
         this.lastWaveDebugTime = Math.floor(currentTime);
-        console.log(`🌊 PVP Wave Debug: Total player waves: ${this.playerWaves.size}`);
         for (const [playerId, playerWave] of this.playerWaves) {
-          console.log(`   Player ${playerId}: ${playerWave.units.size} units remaining in wave ${playerWave.waveId}`);
         }
       }
       
@@ -618,11 +581,8 @@ class GameRoom {
           const opposingPlayerId = this.getOpposingPlayerId(playerId);
           
           if (opposingPlayerId) {
-            console.log(`🎯 PVP Wave completed! Player ${playerId}'s units were all killed. Awarding 10 EXP to opposing player ${opposingPlayerId}.`);
             
             // DEBUG: Log all players in the room
-            console.log(`🔍 DEBUG: All players in room:`, Array.from(this.players.keys()));
-            console.log(`🔍 DEBUG: Defeated player: ${playerId}, Winner: ${opposingPlayerId}`);
             
             // Broadcast wave completion and award EXP using the new event format
             if (this.io) {
@@ -633,7 +593,6 @@ class GameRoom {
                 timestamp: Date.now()
               };
               
-              console.log(`📡 Broadcasting wave-completed event:`, waveCompletionData);
               this.io.to(this.roomId).emit('wave-completed', waveCompletionData);
               
               // Award +10 EXP to the winner for completing the wave
@@ -647,8 +606,6 @@ class GameRoom {
               });
             }
           } else {
-            console.log(`🎯 PVP Wave completed for player ${playerId}, but no opposing player found.`);
-            console.log(`🔍 DEBUG: Current players in room:`, Array.from(this.players.keys()));
           }
           
           // Remove the completed wave
@@ -660,10 +617,8 @@ class GameRoom {
       // Debug logging every 10 seconds to track wave state
       if (Math.floor(currentTime) % 10 === 0 && Math.floor(currentTime) !== this.lastWaveDebugTime) {
         this.lastWaveDebugTime = Math.floor(currentTime);
-        console.log(`🌊 Wave Debug: currentWaveId=${this.currentWaveId}, waveUnits.size=${this.waveUnits.size}, lastWaveCompletionTime=${this.lastWaveCompletionTime}, timeSinceLastCompletion=${currentTime - this.lastWaveCompletionTime}`);
         
         if (this.waveUnits.size > 0) {
-          console.log(`🤖 Active wave units:`, Array.from(this.waveUnits));
         }
       }
       
@@ -671,7 +626,6 @@ class GameRoom {
       if (this.currentWaveId && this.waveUnits.size === 0) {
         // Ensure we don't spam the callback (minimum 30 seconds between wave completions)
         if (currentTime - this.lastWaveCompletionTime >= 30) {
-          console.log(`🎯 Wave ${this.currentWaveId} completed! Awarding experience to all players.`);
           
           // Broadcast wave completion
           if (this.io) {
@@ -684,7 +638,6 @@ class GameRoom {
           this.lastWaveCompletionTime = currentTime;
           this.currentWaveId = null;
         } else {
-          console.log(`🕐 Wave ${this.currentWaveId} complete but on cooldown. Time since last: ${currentTime - this.lastWaveCompletionTime}s (need 30s)`);
         }
       }
     }
@@ -718,17 +671,14 @@ class GameRoom {
       return;
     }
     
-    console.log(`🌊 Global spawn time! Spawning units for all ${this.towers.size} towers`);
     
     // Spawn units for ALL active towers simultaneously
     let towersSpawned = 0;
     for (const [towerId, tower] of this.towers) {
       if (!tower.isActive || tower.isDead) {
-        console.log(`🚫 Skipping tower ${towerId} - not active or dead`);
         continue;
       }
       
-      console.log(`✅ Spawning units for tower ${towerId} (owner: ${tower.ownerId})`);
       this.spawnUnitsForTower(tower, currentTime);
       towersSpawned++;
     }
@@ -736,13 +686,11 @@ class GameRoom {
     if (towersSpawned > 0) {
       // Update global spawn time only if we actually spawned units
       this.lastGlobalSpawnTime = currentTime;
-      console.log(`🕐 Next global spawn in ${this.spawnInterval} seconds`);
     }
   }
   
   // Spawn units for a tower
   spawnUnitsForTower(tower, currentTime) {
-    console.log(`🏰 spawnUnitsForTower called for tower ${tower.id} (owner: ${tower.ownerId})`);
     
     if (this.gameMode === 'pvp') {
       // PVP mode: Track waves per player
@@ -756,14 +704,12 @@ class GameRoom {
           units: new Set(),
           startTime: currentTime
         });
-        console.log(`🌊 Starting new PVP wave for player ${playerId}: ${waveId}`);
       }
       
       const playerWave = this.playerWaves.get(playerId);
       
       // Find the opposing tower position for targeting
       let opposingTowerPosition = this.findOpposingTowerPosition(tower.ownerId);
-      console.log(`🎯 Opposing tower position for ${tower.ownerId}:`, opposingTowerPosition);
       
       // If no opposing tower found, use a default position in front of current tower
       if (!opposingTowerPosition) {
@@ -772,21 +718,16 @@ class GameRoom {
           y: tower.position.y,
           z: tower.position.z + 20
         };
-        console.log(`🎯 Using default target position:`, opposingTowerPosition);
       }
       
       // Spawn 3 units and track them in the player's wave
-      console.log(`🤖 Spawning 3 units for tower ${tower.id} (PVP mode)`);
       for (let i = 0; i < 3; i++) {
         const unitId = this.spawnSummonedUnit(tower.ownerId, tower.position, opposingTowerPosition, i, currentTime);
         if (unitId) {
           playerWave.units.add(unitId);
-          console.log(`✅ Unit ${unitId} added to PVP wave ${waveId} for player ${playerId}`);
         } else {
-          console.log(`❌ Failed to spawn unit ${i} for tower ${tower.id}`);
         }
       }
-      console.log(`🌊 PVP wave ${waveId} now has ${playerWave.units.size} units`);
       
     } else {
       // Legacy multiplayer mode: Use global wave tracking
@@ -795,12 +736,10 @@ class GameRoom {
         this.currentWaveId = `wave_${currentTime}`;
         this.waveStartTime = currentTime;
         this.waveUnits.clear();
-        console.log(`🌊 Starting new wave: ${this.currentWaveId} at time ${currentTime}`);
       }
       
       // Find the opposing tower position for targeting
       let opposingTowerPosition = this.findOpposingTowerPosition(tower.ownerId);
-      console.log(`🎯 Opposing tower position for ${tower.ownerId}:`, opposingTowerPosition);
       
       // If no opposing tower found, use a default position in front of current tower
       if (!opposingTowerPosition) {
@@ -809,21 +748,16 @@ class GameRoom {
           y: tower.position.y,
           z: tower.position.z + 20
         };
-        console.log(`🎯 Using default target position:`, opposingTowerPosition);
       }
       
       // Spawn 3 units and track them in the wave
-      console.log(`🤖 Spawning 3 units for tower ${tower.id}`);
       for (let i = 0; i < 3; i++) {
         const unitId = this.spawnSummonedUnit(tower.ownerId, tower.position, opposingTowerPosition, i, currentTime);
         if (unitId) {
           this.waveUnits.add(unitId);
-          console.log(`✅ Unit ${unitId} added to wave ${this.currentWaveId}`);
         } else {
-          console.log(`❌ Failed to spawn unit ${i} for tower ${tower.id}`);
         }
       }
-      console.log(`🌊 Wave ${this.currentWaveId} now has ${this.waveUnits.size} units`);
     }
   }
   
@@ -878,8 +812,6 @@ class GameRoom {
     
     this.summonedUnits.set(unitId, unit);
     
-    console.log(`🤖 Spawned summoned unit ${unitId} for player ${ownerId} at position [${actualSpawnPosition.x.toFixed(2)}, ${actualSpawnPosition.y.toFixed(2)}, ${actualSpawnPosition.z.toFixed(2)}]`);
-    console.log(`📊 Total summoned units in room: ${this.summonedUnits.size}`);
     
     return unitId;
   }
@@ -888,11 +820,9 @@ class GameRoom {
   damageSummonedUnitDirect(unitId, damage, sourceOwnerId) {
     const unit = this.summonedUnits.get(unitId);
     if (!unit) {
-      console.log(`⚠️ Attempted to damage non-existent unit ${unitId} - unit was already destroyed`);
       return false;
     }
     if (unit.isDead) {
-      console.log(`⚠️ Attempted to damage dead unit ${unitId} - ignoring damage`);
       return false;
     }
     
@@ -911,11 +841,9 @@ class GameRoom {
       if (this.gameMode === 'pvp') {
         const playerWave = this.playerWaves.get(unit.ownerId);
         const remainingUnits = playerWave ? playerWave.units.size : 0;
-        console.log(`💀 PVP Unit ${unitId} (owned by ${unit.ownerId}) killed by ${sourceOwnerId}! Player wave units remaining: ${remainingUnits}`);
         
         // Award +5 EXP for killing blows on enemy summoned units in PVP mode
         if (sourceOwnerId && sourceOwnerId !== unit.ownerId && sourceOwnerId !== 'unknown') {
-          console.log(`🎯 Player ${sourceOwnerId} killed enemy summoned unit owned by ${unit.ownerId}! Broadcasting +5 EXP award`);
           
           // Broadcast summoned unit kill experience to the killer using the new event format
           if (this.io) {
@@ -930,11 +858,9 @@ class GameRoom {
           }
         }
       } else {
-        console.log(`💀 Unit ${unitId} killed! Removed from wave. Wave units remaining: ${this.waveUnits.size}`);
       }
     }
     
-    console.log(`🤖 Summoned unit ${unitId} took ${damage} damage from ${sourceOwnerId}. Health: ${unit.health}/${unit.maxHealth}${wasKilled ? ' (KILLED)' : ''}`);
     
     return true;
   }
@@ -945,10 +871,7 @@ class GameRoom {
     if (unit) {
       this.summonedUnits.delete(unitId);
       this.waveUnits.delete(unitId);
-      console.log(`🗑️ Destroyed summoned unit ${unitId} (was dead: ${unit.isDead}, was active: ${unit.isActive}). Remaining units: ${this.summonedUnits.size}`);
-    } else {
-      console.warn(`⚠️ Attempted to destroy non-existent unit ${unitId}`);
-    }
+    } 
   }
   
   // Broadcast summoned unit updates to all clients
@@ -959,7 +882,6 @@ class GameRoom {
     for (const [unitId, unit] of this.summonedUnits) {
       // Skip dead or inactive units - they should be cleaned up
       if (unit.isDead || !unit.isActive) {
-        console.log(`📡 Skipping broadcast of dead/inactive unit ${unitId} (isDead: ${unit.isDead}, isActive: ${unit.isActive})`);
         continue;
       }
       
@@ -1063,7 +985,6 @@ class GameRoom {
     
     // Don't initialize enemies in PVP mode
     if (this.gameMode === 'pvp') {
-      console.log(`🚫 Skipping enemy initialization in PVP mode for room ${this.roomId}`);
       return;
     }
     
@@ -1078,7 +999,6 @@ class GameRoom {
     
     // Don't spawn enemies in PVP mode
     if (this.gameMode === 'pvp') {
-      console.log(`🚫 Attempted to spawn ${type} in PVP mode - ignoring`);
       return null;
     }
     
@@ -1100,13 +1020,11 @@ class GameRoom {
       isDying: false
     };
     
-    console.log(`🎯 [Server] Spawning ${type} ${enemyId} with health: ${maxHealth}/${maxHealth} (level: ${this.getLevel(this.killCount)})`);
 
     this.enemies.set(enemyId, enemyData);
     
     // Broadcast enemy spawn to all players in the room
     if (this.io) {
-      console.log(`🎯 Broadcasting enemy spawn: ${type} ${enemyId} to room ${this.roomId}`);
       broadcastEnemySpawn(this.io, this.roomId, enemyData);
     }
     
@@ -1116,7 +1034,6 @@ class GameRoom {
   getEnemyMaxHealth(type) {
     // Use level-based health calculation like single player
     const currentLevel = this.getLevel(this.killCount);
-    console.log(`🎯 [Server] Getting health for ${type} at level ${currentLevel} (killCount: ${this.killCount})`);
     
     switch (type) {
       case 'elite':
@@ -1210,11 +1127,9 @@ class GameRoom {
       
       // Increment shared kill count
       this.killCount++;
-      console.log(`💀 Enemy ${enemyId} killed by player ${fromPlayerId}. Room kill count: ${this.killCount}`);
       
       // Award +10 EXP for enemy kills to the killer in PVP/multiplayer mode
       if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
-        console.log(`🎯 Player ${fromPlayerId} killed enemy ${enemyId}! Broadcasting +10 EXP award`);
         
         // Broadcast enemy kill experience to the killer using the new event format
         this.io.to(this.roomId).emit('player-experience-gained', {
@@ -1290,7 +1205,6 @@ class GameRoom {
     
     // Don't start enemy spawning in PVP mode
     if (this.gameMode === 'pvp') {
-      console.log(`🚫 Skipping enemy spawning timers in PVP mode for room ${this.roomId}`);
       return;
     }
     
@@ -1398,7 +1312,6 @@ class GameRoom {
       this.spawnEnemy('fallen-titan');
     }, 60000); // Match Scene.tsx timing
     
-    console.log(`🎯 Enemy spawning started for room ${this.roomId}`);
   }
 
   // Stop enemy spawning
@@ -1431,7 +1344,6 @@ class GameRoom {
       clearInterval(this.fallenTitanTimer);
       this.fallenTitanTimer = null;
     }
-    console.log(`🎯 Enemy spawning stopped for room ${this.roomId}`);
   }
 
   // Start enemy AI system
@@ -1439,19 +1351,16 @@ class GameRoom {
     if (this.gameStarted && this.players.size > 0) {
       // Don't start enemy AI in PVP mode
       if (this.gameMode === 'pvp') {
-        console.log(`🚫 Skipping enemy AI in PVP mode for room ${this.roomId}`);
         return;
       }
       
       this.enemyAI.startAI();
-      console.log(`🧠 Enemy AI started for room ${this.roomId}`);
     }
   }
 
   // Stop enemy AI system
   stopEnemyAI() {
     this.enemyAI.stopAI();
-    console.log(`🧠 Enemy AI stopped for room ${this.roomId}`);
   }
 
   // Status effect management methods
@@ -1475,7 +1384,6 @@ class GameRoom {
       });
     }
     
-    console.log(`🎯 Applied ${effectType} to enemy ${enemyId} for ${duration}ms`);
     return true;
   }
 
@@ -1514,7 +1422,6 @@ class GameRoom {
 
   // Cleanup when room is destroyed
   destroy() {
-    console.log(`🗑️ Destroying room ${this.roomId}`);
     this.stopEnemySpawning();
     this.stopEnemyAI();
     this.stopSummonedUnitSystem();
@@ -1555,7 +1462,6 @@ class GameRoom {
       timestamp
     });
     
-    console.log(`📋 Pending kill registered: ${killerName} (${killerId}) -> ${victimName} (${victimId}) [${damageType}]`);
     
     // Clean up old pending kills (older than 10 seconds)
     this.cleanupOldPendingKills();
@@ -1565,14 +1471,12 @@ class GameRoom {
     const pendingKill = this.pendingKills.get(victimId);
     
     if (!pendingKill) {
-      console.log(`⚠️ No pending kill found for player ${victimId} - no experience will be awarded`);
       return null;
     }
     
     // Award experience to the killer
     const { killerId, killerName, victimName, damageType, timestamp } = pendingKill;
     
-    console.log(`✅ Death confirmed: ${killerName} (${killerId}) killed ${victimName} (${victimId}) with ${damageType}. Awarding +10 EXP`);
     
     // Broadcast experience award
     this.io.to(this.roomId).emit('player-experience-gained', {
@@ -1597,7 +1501,6 @@ class GameRoom {
     
     for (const [victimId, killData] of this.pendingKills.entries()) {
       if (now - killData.timestamp > maxAge) {
-        console.log(`🧹 Cleaning up old pending kill: ${killData.killerName} -> ${killData.victimName} (${now - killData.timestamp}ms old)`);
         this.pendingKills.delete(victimId);
       }
     }
@@ -1610,7 +1513,6 @@ class GameRoom {
   clearPendingKill(victimId) {
     const existed = this.pendingKills.delete(victimId);
     if (existed) {
-      console.log(`🗑️ Cleared pending kill for player ${victimId}`);
     }
     return existed;
   }

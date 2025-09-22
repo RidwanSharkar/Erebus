@@ -172,13 +172,13 @@ export default function InstancedSummonedUnitRenderer({
   const tempMatrix = useRef(new Matrix4());
   const tempColor = useRef(new Color());
 
-  // Player color cache
+  // Player color cache - match tower colors
   const playerColors = useMemo(() => [
-    new Color(0x4A90E2), // Blue
-    new Color(0xFF6B35), // Orange
-    new Color(0x50C878), // Green
-    new Color(0x9B59B6), // Purple
-    new Color(0xF39C12)  // Yellow
+    new Color("#4FC3F7"), // Blue - Elite color (Player 1)
+    new Color("#FF8C00"), // Orange/Red Fire theme (Player 2)
+    new Color("#FF8A8A"), // Light Red (Player 3)
+    new Color("#FFB3B3"), // Light Red (Player 4)
+    new Color("#FFD6D6")  // Light Red (Player 5)
   ], []);
 
   // Generate consistent color based on ownerId

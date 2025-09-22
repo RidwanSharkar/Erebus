@@ -174,7 +174,6 @@ export class TowerSystem extends System {
     if (this.localSocketId && this.serverPlayerEntities.size > 0) {
       // Check if this target is the tower owner (local player)
       if (targetCollider.layer === CollisionLayer.PLAYER && tower.ownerId === this.localSocketId) {
-        console.log(`🛡️ Tower ${tower.ownerId} refusing to target own player (local)`);
         return false;
       }
 
@@ -407,7 +406,6 @@ export class TowerSystem extends System {
     const oldLevel = this.playerLevels.get(playerId) || 1;
 
     if (oldLevel !== newLevel) {
-      console.log(`📈 Player ${playerId} level changed: ${oldLevel} → ${newLevel}`);
       this.playerLevels.set(playerId, newLevel);
 
       // Update all towers owned by this player

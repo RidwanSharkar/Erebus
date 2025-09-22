@@ -1,7 +1,6 @@
 import { useRef, useMemo } from 'react';
 import { Group, Vector3 } from 'three';
 import React from 'react';
-import DragonSkull from './DragonSkull';
 import BonePlate from './BonePlate';
 import BoneWings from './BoneWings';
 import { DragonHorns } from './DragonHorns';
@@ -382,10 +381,10 @@ export default function DragonUnit({
         weaponSubclass={currentSubclass}
       />
 
-      {/* ARCHMAGE CREST */}
+      {/* CREST */}
       <ArchmageCrest
-        position={[0, 0.5, 0]}
-        scale={-0.55}
+        position={[0, 0.5, 0.15]}
+        scale={-0.625}
         weaponType={currentWeapon}
         weaponSubclass={currentSubclass}
       />
@@ -393,7 +392,6 @@ export default function DragonUnit({
 
 
 
-  
 
       {/* CHARGED ORBITALS */}
       <ChargedOrbitals

@@ -84,7 +84,7 @@ export class ExperienceSystem {
    */
   static getMaxHealthForLevel(level: number): number {
     const health = this.BASE_HEALTH + ((level - 1) * this.HEALTH_PER_LEVEL);
-    console.log(`📊 ExperienceSystem.getMaxHealthForLevel(${level}) = ${this.BASE_HEALTH} + ((${level} - 1) * ${this.HEALTH_PER_LEVEL}) = ${health}`);
+    // console.log(`📊 ExperienceSystem.getMaxHealthForLevel(${level}) = ${this.BASE_HEALTH} + ((${level} - 1) * ${this.HEALTH_PER_LEVEL}) = ${health}`);
     return health;
   }
 

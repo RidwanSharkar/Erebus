@@ -150,14 +150,17 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
             float d = length(gl_PointCoord - vec2(0.5));
             float strength = smoothstep(0.5, 0.1, d);
             vec3 glowColor;
+            float emissiveMultiplier = 1.0;
             if (uIsCryoflame) {
-              // For Cryoflame: mix with a deep navy blue for a rich blue effect
+              // For Cryoflame: mix with a deep navy blue for a rich blue effect and increase emissive intensity
               glowColor = mix(uColor, vec3(0.2, 0.4, 0.8), 0.4);
+              emissiveMultiplier = 2.0;
             } else {
               // For normal Entropic: mix with orange for fire effect
               glowColor = mix(uColor, vec3(1.0, 0.6, 0.0), 0.4);
+              emissiveMultiplier = 1.0;
             }
-            gl_FragColor = vec4(glowColor, vOpacity * strength);
+            gl_FragColor = vec4(glowColor * emissiveMultiplier, vOpacity * strength);
           }
         `}
         uniforms={{

@@ -53,10 +53,6 @@ export default function EntropicBoltManager({ world }: EntropicBoltManagerProps)
           const direction = renderer.mesh.userData.direction || projectile.velocity.clone().normalize();
           const isCryoflame = renderer.mesh.userData.isCryoflame || false;
           
-          // Debug: Log Cryoflame detection
-          if (isCryoflame) {
-            console.log('❄️ EntropicBoltManager: Detected Cryoflame bolt, creating blue entropic bolt');
-          }
           
           newBolts.push({
             id: boltIdCounter.current++,

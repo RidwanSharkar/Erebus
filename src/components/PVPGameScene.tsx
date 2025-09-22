@@ -164,7 +164,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
       const newKills = new Map(prev);
       const currentKills = newKills.get(playerId) || 0;
       newKills.set(playerId, currentKills + 1);
-      console.log(`🏆 Player ${playerId} kill count: ${currentKills} → ${currentKills + 1}`);
       return newKills;
     });
   }, []);
@@ -415,8 +414,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
         towerComponent.isDead = tower.isDead || false;
         entity.addComponent(towerComponent);
 
-        console.log(`🏰 Created tower for ${tower.ownerId} (level ${playerLevel}) - damage: ${towerComponent.attackDamage}`);
-
         // Add Health component
         const health = new Health(tower.maxHealth);
         health.currentHealth = tower.health;
@@ -462,7 +459,6 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
             const currentPlayerLevel = ownerPlayer?.level || 1;
 
             if (towerComponent.playerLevel !== currentPlayerLevel) {
-              console.log(`🏰 Updating existing tower for ${tower.ownerId} level: ${towerComponent.playerLevel} → ${currentPlayerLevel}`);
               towerComponent.updatePlayerLevel(currentPlayerLevel);
             }
 
@@ -854,8 +850,6 @@ const [maxMana, setMaxMana] = useState(150);
 
   // Function to create wind shear effect on PVP players
   const createPvpWindShearEffect = useCallback((playerId: string, position: Vector3, direction: Vector3) => {
-    console.log('🌪️ Creating PVP Wind Shear effect for player:', playerId);
-
     // Trigger the visual projectile effect
     triggerWindShearProjectile(position, direction);
 
@@ -889,11 +883,7 @@ const [maxMana, setMaxMana] = useState(150);
 
   // Function to create wind shear tornado effect on PVP players
   const createPvpWindShearTornadoEffect = useCallback((playerId: string, duration: number) => {
-    console.log('🌪️ Creating PVP Wind Shear Tornado effect for player:', playerId, 'duration:', duration);
-
     // Debug: Log all players in the map
-    console.log('🌪️ Current players in map:', Array.from(players.keys()));
-    console.log('🌪️ Looking for playerId:', playerId);
 
     // For local player (socket.id or 'local'), use the actual player entity position
     let initialPosition = new Vector3();
@@ -906,24 +896,18 @@ const [maxMana, setMaxMana] = useState(150);
       const transform = playerEntity.getComponent(Transform);
       if (transform) {
         initialPosition = transform.position.clone();
-        console.log('🌪️ Using local player entity position:', initialPosition.toArray());
       }
     } else if (player) {
       initialPosition = new Vector3(player.position.x, player.position.y, player.position.z);
-      console.log('🌪️ Using remote player position:', initialPosition.toArray());
     } else {
       // Try to find the local player by socket ID if playerId was 'local'
       if (playerId === 'local' && socket?.id) {
-        console.log('🌪️ Player not found with "local", trying socket ID:', socket.id);
         player = players.get(socket.id);
         if (player) {
           initialPosition = new Vector3(player.position.x, player.position.y, player.position.z);
-          console.log('🌪️ Found player with socket ID, position:', initialPosition.toArray());
         }
       }
     }
-
-    console.log('🌪️ Player found:', !!player, 'Is local player:', isLocalPlayer, 'Initial position:', initialPosition.toArray());
 
     const tornadoEffect = {
       id: nextWindShearTornadoEffectId.current++,
@@ -1138,8 +1122,6 @@ const [maxMana, setMaxMana] = useState(150);
 
   // Function to handle player death in PVP
   const handlePlayerDeath = useCallback((deadPlayerId: string, killerId: string | undefined) => {
-    console.log(`💀 Player ${deadPlayerId} died! Killer: ${killerId || 'unknown'}`);
-
     // Mark player as dead
     setPlayerDeathStates(prev => {
       const newState = new Map(prev);
@@ -1158,12 +1140,10 @@ const [maxMana, setMaxMana] = useState(150);
     // Set death state in ControlSystem to prevent movement and abilities
     if (deadPlayerId === socket?.id && controlSystemRef.current) {
       controlSystemRef.current.setPlayerDead(true);
-      console.log(`🚫 Local player marked as dead - disabling movement and abilities`);
 
       // Also disable camera rotation during death
       if (cameraSystemRef.current) {
         cameraSystemRef.current.setDeathCameraDisabled(true, socket.id);
-        console.log(`📷 Camera rotation disabled during death`);
       }
 
       // Also set the Health component's isDead flag and make player invulnerable
@@ -1175,7 +1155,6 @@ const [maxMana, setMaxMana] = useState(150);
           if (health) {
             health.isDead = true; // Ensure Health component knows player is dead
             health.setInvulnerable(6.0); // Make invulnerable for 6 seconds (1 second longer than respawn)
-            console.log(`🛡️ Local player made invulnerable during death state`);
           }
         }
       }
@@ -1192,12 +1171,10 @@ const [maxMana, setMaxMana] = useState(150);
 
   // Function to handle player respawn
   const handlePlayerRespawn = useCallback((playerId: string) => {
-    console.log(`🔄 Respawning player ${playerId}`);
-
     // Find the player's tower
     const playerTower = Array.from(towers.values()).find(tower => tower.ownerId === playerId);
     if (!playerTower) {
-      console.warn(`⚠️ No tower found for player ${playerId}, cannot respawn`);
+      // console.warn(`⚠️ No tower found for player ${playerId}, cannot respawn`);
       return;
     }
 
@@ -1226,14 +1203,12 @@ const [maxMana, setMaxMana] = useState(150);
             health.revive(); // Restore full health and clear death flag
             health.setInvulnerable(2.0); // Give player 2 seconds of invulnerability after respawn
             updatePlayerHealth(health.currentHealth, health.maxHealth);
-            console.log(`💚 Local player respawned with full health: ${health.currentHealth}/${health.maxHealth} (invulnerable for 2 seconds)`);
           }
         }
       }
     } else {
       // Remote player respawn - the server will handle broadcasting the position update
       // We don't need to update local state as the server sync will handle it
-      console.log(`🔄 Remote player ${playerId} respawn broadcasted to server`);
     }
 
     // Clear death state
@@ -1246,16 +1221,12 @@ const [maxMana, setMaxMana] = useState(150);
     // Clear death state in ControlSystem to re-enable movement and abilities
     if (playerId === socket?.id && controlSystemRef.current) {
       controlSystemRef.current.setPlayerDead(false);
-      console.log(`✅ Local player respawned - re-enabling movement and abilities`);
 
       // Re-enable camera rotation
       if (cameraSystemRef.current) {
         cameraSystemRef.current.setDeathCameraDisabled(false, socket.id);
-        console.log(`📷 Camera rotation re-enabled after respawn`);
       }
     }
-
-    console.log(`✅ Player ${playerId} respawned at tower position: ${respawnPosition.x}, ${respawnPosition.y}, ${respawnPosition.z}`);
 
     // Notify server of respawn for death confirmation and experience award
     if (socket && socket.connected && currentRoomId) {
@@ -1263,13 +1234,11 @@ const [maxMana, setMaxMana] = useState(150);
         roomId: currentRoomId,
         playerId: playerId
       });
-      console.log(`📡 Notified server of player ${playerId} respawn for death confirmation`);
     }
   }, [socket, currentRoomId, towers, updatePlayerHealth, playerEntityRef, engineRef]);
 
   // Function to handle wave completion (legacy multiplayer mode - wave experience removed)
   const handleWaveComplete = useCallback(() => {
-    console.log(`🌊 Wave completed! No experience awarded (wave experience system removed)`);
     // Wave experience has been removed - no EXP is awarded for wave completions
   }, []);
 
@@ -1277,14 +1246,10 @@ const [maxMana, setMaxMana] = useState(150);
   const handlePvpWaveComplete = useCallback((eventData: any) => {
     const { winnerPlayerId, defeatedPlayerId, isLocalPlayerWinner, waveId } = eventData;
 
-    console.log(`🎯 PVP Wave completed! Player ${defeatedPlayerId}'s units were defeated. Winner: ${winnerPlayerId}`);
-
     if (isLocalPlayerWinner) {
       // Local player won - no experience awarded (wave experience system removed)
-      console.log(`🏆 Local player won the wave! No experience awarded (wave experience system removed)`);
     } else {
       // Opponent won - no experience for local player
-      console.log(`😞 Opponent won the wave. Local player's units were defeated. No experience awarded.`);
     }
   }, []);
 
@@ -1319,7 +1284,6 @@ const [maxMana, setMaxMana] = useState(150);
   React.useEffect(() => {
     const primaryWeapon = selectedWeapons?.primary || WeaponType.BOW;
     const runeCount = getRuneCountForWeapon(primaryWeapon, playerLevel);
-    console.log(`🎯 PVPGameScene setting runes - Weapon: ${primaryWeapon}, Level: ${playerLevel}, Runes: ${runeCount}`);
     setGlobalCriticalRuneCount(runeCount);
     setGlobalCritDamageRuneCount(runeCount);
   }, [playerLevel, selectedWeapons?.primary]);
@@ -1466,7 +1430,6 @@ const hasMana = useCallback((amount: number) => {
     const handlePlayerAttack = (data: any) => {
       // CRITICAL FIX: Never process our own attacks to prevent duplicate projectiles and damage
       if (data.playerId === socket.id) {
-        console.log(`🚫 Skipping own attack broadcast: ${data.attackType} from ${data.playerId}`);
         return;
       }
       
@@ -1507,7 +1470,6 @@ const hasMana = useCallback((amount: number) => {
           // This will show the Viper Sting projectile coming from the correct player but flat
           const success = triggerGlobalViperSting(flatPosition, flatDirection);
           if (success) {
-            console.log(`🐍 Viper Sting projectile visual effect triggered for remote player ${data.playerId}`);
           }
           
           return;
@@ -1604,13 +1566,6 @@ const hasMana = useCallback((amount: number) => {
                 // Use broadcast config data if available, otherwise fall back to defaults
                 const entropicConfig = data.animationData?.projectileConfig || {};
                 const isCryoflame = entropicConfig.isCryoflame || false;
-                
-                // Debug: Log received data to verify Cryoflame state
-                console.log('🔥 Received entropic_bolt broadcast:', {
-                  from: data.playerId,
-                  isCryoflame: isCryoflame,
-                  damage: entropicConfig.damage || 20
-                });
                 
                 projectileSystem.createEntropicBoltProjectile(
                   engineRef.current.getWorld(),
@@ -1811,7 +1766,6 @@ const hasMana = useCallback((amount: number) => {
           // This will create the projectile from the correct player's position but flat
           const success = triggerGlobalViperSting(flatPosition, flatDirection);
           if (success) {
-            console.log(`🐍 Viper Sting visual effect triggered for remote player ${data.playerId}`);
           }
           
           setMultiplayerPlayerStates(prev => {
@@ -2594,8 +2548,7 @@ const hasMana = useCallback((amount: number) => {
           });
         } else if (data.abilityType === 'summon_totem') {
           // Trigger remote totem creation via PVPSummonTotemManager
-          console.log(`🎭 Remote Summon Totem from ${data.playerId} at position:`, data.position);
-          
+
           if ((window as any).triggerGlobalSummonTotem) {
             const position = new Vector3(data.position.x, data.position.y, data.position.z);
             (window as any).triggerGlobalSummonTotem(
@@ -2622,7 +2575,6 @@ const hasMana = useCallback((amount: number) => {
         // Check if player is already in death state - if so, ignore damage
         const deathState = playerDeathStates.get(socket.id);
         if (deathState?.isDead) {
-          console.log(`🛡️ Ignoring damage to dead player ${socket.id}`);
           return;
         }
         const health = playerEntity.getComponent(Health);
@@ -2687,19 +2639,16 @@ const hasMana = useCallback((amount: number) => {
         // All EXP awards are now handled by the server via player-experience-gained events
         // The frontend no longer does any kill detection or EXP calculation
         if (targetActuallyDied || remotePlayerDied) {
-          console.log(`🎯 Player ${data.targetPlayerId} died from ${data.damage} ${data.damageType || 'generic'} damage. EXP will be awarded by server if confirmed.`);
         }
       }
 
       // Check if we are the source of damage that killed a summoned unit
       if (data.sourcePlayerId === socket.id && data.damageType === 'summoned_unit_kill') {
-        console.log(`🎯 Local player killed enemy summoned unit! EXP will be awarded by server.`);
         // EXP award is now handled by the server via player-experience-gained event
       }
 
       // Check if we are the source of damage that killed an enemy
       if (data.sourcePlayerId === socket.id && data.damageType === 'enemy_kill') {
-        console.log(`🎯 Local player killed enemy! EXP will be awarded by server.`);
         // EXP award is now handled by the server via player-experience-gained event
       }
 
@@ -2890,8 +2839,6 @@ const hasMana = useCallback((amount: number) => {
 
       const { playerId, duration } = data;
 
-      console.log('🌪️ Received tornado effect from player:', playerId, 'duration:', duration);
-
       // Create the tornado effect for the remote player
       createPvpWindShearTornadoEffect(playerId, duration);
     };
@@ -2919,49 +2866,38 @@ const hasMana = useCallback((amount: number) => {
     };
 
     const handlePlayerKnockback = (data: any) => {
-      console.log(`🎯 ===== RECEIVED KNOCKBACK EVENT =====`);
-      console.log(`🎯 Raw data:`, JSON.stringify(data, null, 2));
-
       if (!data || !data.targetPlayerId) {
-        console.log(`❌ Invalid knockback data received - missing targetPlayerId`);
         return;
       }
 
       const { targetPlayerId, direction, distance, duration } = data;
 
-      console.log(`🎯 Processing knockback for player ${targetPlayerId}: distance=${distance}, duration=${duration}, direction=(${direction?.x?.toFixed(2)}, ${direction?.z?.toFixed(2)})`);
-
       // Find the target player entity
       const targetEntityId = serverPlayerEntities.current.get(targetPlayerId);
       if (!targetEntityId) {
-        console.log(`🌊 Knockback: Could not find entity for player ${targetPlayerId}`);
         return;
       }
 
       // Get the entity from the world
       const world = engineRef.current?.getWorld();
       if (!world) {
-        console.log(`🌊 Knockback: World not available`);
         return;
       }
 
       const targetEntity = world.getEntity(targetEntityId);
       if (!targetEntity) {
-        console.log(`🌊 Knockback: Could not find entity ${targetEntityId} in world`);
         return;
       }
 
       // Get the movement component
       const targetMovement = targetEntity.getComponent(Movement);
       if (!targetMovement) {
-        console.log(`🌊 Knockback: Entity ${targetEntityId} has no movement component`);
         return;
       }
 
       // Get the transform component for current position
       const targetTransform = targetEntity.getComponent(Transform);
       if (!targetTransform) {
-        console.log(`🌊 Knockback: Entity ${targetEntityId} has no transform component`);
         return;
       }
 
@@ -2976,8 +2912,6 @@ const hasMana = useCallback((amount: number) => {
         currentTime,
         duration
       );
-
-      console.log(`🌊 Applied knockback to player ${targetPlayerId}: distance ${distance}, duration ${duration}s`);
     };
 
     const handlePlayerKill = (data: any) => {
@@ -2986,8 +2920,6 @@ const hasMana = useCallback((amount: number) => {
       }
 
       const { killerId, victimId } = data;
-
-      console.log(`💀 Player ${killerId} killed ${victimId}!`);
 
       // Increment kill counter for the killer
       incrementKillCount(killerId);
@@ -3013,8 +2945,6 @@ const hasMana = useCallback((amount: number) => {
           );
         }
       }
-
-      console.log(`💚 Player ${sourcePlayerId} healed for ${healingAmount} HP using ${healingType}`);
     };
 
     const handlePlayerExperienceGained = (data: any) => {
@@ -3022,8 +2952,6 @@ const hasMana = useCallback((amount: number) => {
 
       // Only award EXP to the local player
       if (playerId === socket?.id) {
-        console.log(`🎯 Local player gained +${experienceGained} EXP from ${source}`);
-
         setPlayerExperience(prev => {
           const newExp = prev + experienceGained;
 
@@ -3033,7 +2961,6 @@ const hasMana = useCallback((amount: number) => {
 
           if (newLevel > currentLevel) {
             setPlayerLevel(newLevel);
-            console.log(`🎉 Level up! Player reached level ${newLevel} from ${source}`);
 
             // Update ControlSystem level for rune calculations
             if (controlSystemRef.current) {
@@ -3046,15 +2973,12 @@ const hasMana = useCallback((amount: number) => {
               if (health) {
                 const newMaxHealth = ExperienceSystem.getMaxHealthForLevel(newLevel);
                 health.maxHealth = newMaxHealth;
-                console.log(`💖 Max health updated to ${newMaxHealth} for level ${newLevel}`);
               }
             }
           }
 
           return newExp;
         });
-      } else {
-        console.log(`📊 Player ${playerId} gained +${experienceGained} EXP from ${source}`);
       }
     };
 
@@ -3101,7 +3025,6 @@ const hasMana = useCallback((amount: number) => {
           // If an animation has been active for more than 3 seconds, force reset it
           if (state.lastAnimationUpdate && now - state.lastAnimationUpdate > 3000) {
             if (state.isSwinging || state.isCharging || state.isSpinning) {
-              console.log(`🔧 Force resetting stuck animation for player ${playerId}`);
               updated.set(playerId, {
                 ...state,
                 isSwinging: false,
@@ -3226,7 +3149,6 @@ const hasMana = useCallback((amount: number) => {
             if (wasAlive && health.isDead) {
               // For remote players, we don't know who killed them from server updates
               // This will be handled by server-side death broadcasts
-              console.log(`💀 Remote player ${playerId} detected as dead from health sync`);
             }
           }
         }
@@ -3318,8 +3240,6 @@ const hasMana = useCallback((amount: number) => {
           if (tower && serverTower.isDead && !tower.isDead) {
             tower.die(Date.now() / 1000);
           }
-        } else {
-          console.warn(`⚠️ Could not find local ECS entity ${entityId} for tower ${towerId}`);
         }
       }
     });
@@ -3401,7 +3321,6 @@ const hasMana = useCallback((amount: number) => {
     // Initialize damage system with level-scaled runes for Bow, Sword, and Sabres
     const primaryWeapon = selectedWeapons?.primary || WeaponType.BOW;
     const runeCount = getRuneCountForWeapon(primaryWeapon, playerLevel);
-    console.log(`🎯 PVPGameScene INIT setting runes - Weapon: ${primaryWeapon}, Level: ${playerLevel}, Runes: ${runeCount}`);
     setGlobalCriticalRuneCount(runeCount);
     setGlobalCritDamageRuneCount(runeCount);
     
@@ -3539,8 +3458,6 @@ const hasMana = useCallback((amount: number) => {
 
       // Set up Summon Totem callback
       controlSystem.setSummonTotemCallback((position) => {
-        console.log('🎭 Local Summon Totem cast at position:', position);
-        
         // Broadcast to other players first
         broadcastPlayerAbility('summon_totem', position);
         
@@ -3691,14 +3608,6 @@ const hasMana = useCallback((amount: number) => {
         // Add projectile config data for special effects (like Cryoflame)
         animationData.projectileConfig = config;
         
-        // Debug: Log what we're broadcasting for entropic bolts
-        if (projectileType === 'entropic_bolt') {
-          console.log('🚀 Broadcasting entropic_bolt:', {
-            isCryoflame: config?.isCryoflame,
-            damage: config?.damage
-          });
-        }
-        
         broadcastPlayerAttack(projectileType, position, direction, animationData);
       });
       
@@ -3719,7 +3628,7 @@ const hasMana = useCallback((amount: number) => {
             broadcastPlayerAbility('reanimate', transform.position, direction);
 
             // Broadcast Reanimate healing to other players
-            broadcastPlayerHealing(40, 'reanimate', {
+            broadcastPlayerHealing(60, 'reanimate', {
               x: transform.position.x,
               y: transform.position.y + 1.5, // Position above player's head
               z: transform.position.z
@@ -3766,8 +3675,6 @@ const hasMana = useCallback((amount: number) => {
 
       // Set up Wind Shear callback
       controlSystem.setWindShearCallback((position: Vector3, direction: Vector3) => {
-        console.log('🌪️ Wind Shear callback triggered with position:', position.toArray(), 'direction:', direction.toArray());
-
         // Create local Wind Shear projectile effect
         createPvpWindShearEffect(socket?.id || '', position, direction);
 
@@ -3782,8 +3689,6 @@ const hasMana = useCallback((amount: number) => {
 
       // Set up WindShear Tornado callback
       controlSystem.setWindShearTornadoCallback((playerId: string, duration: number) => {
-        console.log('🌪️ WindShear Tornado callback triggered for player:', playerId, 'duration:', duration);
-
         // Create local tornado effect
         createPvpWindShearTornadoEffect(playerId, duration);
 
@@ -4033,10 +3938,6 @@ const hasMana = useCallback((amount: number) => {
       if (now % 10000 < 16) { // Approximately every 5 seconds (accounting for frame rate)
         const poolStats = getPoolStats();
         const batcherStats = pvpStateBatcher.getStats();
-        console.log('🔧 PVP Performance Stats:', {
-          objectPool: poolStats,
-          stateBatcher: batcherStats
-        });
       }
 
       // Throttle game state update to prevent infinite re-renders (every 100ms)
@@ -4127,7 +4028,7 @@ const hasMana = useCallback((amount: number) => {
       />
 
       {/* Lighting */}
-      <ambientLight intensity={0.15} />
+      <ambientLight intensity={0.1} />
       <directionalLight
         position={[10, 10, 5]}
         intensity={0.25}
@@ -4348,10 +4249,14 @@ const hasMana = useCallback((amount: number) => {
 
       {/* Towers */}
       {Array.from(towers.values()).map(tower => {
+        // Get the actual ECS entity ID for this tower
+        const entityId = serverTowerEntities.current.get(tower.id);
+        if (!entityId) return null; // Skip if entity doesn't exist yet
+
         return (
           <TowerRenderer
             key={tower.id}
-            entityId={parseInt(tower.id.replace(/\D/g, '0'))} // Convert string ID to number
+            entityId={entityId}
             world={engineRef.current?.getWorld() || new World()}
             position={new Vector3(tower.position.x, tower.position.y, tower.position.z)}
             ownerId={tower.ownerId}
@@ -4422,7 +4327,6 @@ const hasMana = useCallback((amount: number) => {
             onProjectileHit={(targetId: string, damage: number) => {
               // Handle damage for players in PVP (other players are "enemies")
               if (players.has(targetId) && broadcastPlayerDamage) {
-                console.log(`🗡️ WindShear: Broadcasting ${damage} damage to player ${targetId}`);
                 broadcastPlayerDamage(targetId, damage, 'windshear');
 
                 // Create local damage number for immediate visual feedback
@@ -4440,14 +4344,12 @@ const hasMana = useCallback((amount: number) => {
               }
               // Handle damage for actual enemies (if any exist in PVP mode)
               else if (damageEnemy) {
-                console.log(`🗡️ WindShear: Dealing ${damage} damage to enemy ${targetId}`);
                 damageEnemy(targetId, damage);
               }
             }}
             onPlayerHit={(playerId: string) => {
               // Reduce Charge cooldown when WindShear hits a player
               if (controlSystemRef.current) {
-                console.log(`⚡ WindShear: Player hit detected - ${playerId}, reducing Charge cooldown`);
                 controlSystemRef.current.reduceChargeCooldownFromWindShear(playerId);
               }
             }}
@@ -4466,7 +4368,6 @@ const hasMana = useCallback((amount: number) => {
                   const transform = playerEntity.getComponent(Transform);
                   if (transform) {
                     const pos = transform.position.clone();
-                    console.log('🌪️ Tornado following local player entity:', effect.playerId, 'Position:', pos.toArray());
                     return pos;
                   }
                 }
@@ -4476,24 +4377,20 @@ const hasMana = useCallback((amount: number) => {
 
                 // If player not found and playerId is 'local', try to find the local player
                 if (!player && effect.playerId === 'local' && socket?.id) {
-                  console.log('🌪️ Tornado getPlayerPosition: Player not found with "local", trying socket ID:', socket.id);
                   player = players.get(socket.id);
                 }
 
                 if (player) {
                   const pos = new Vector3(player.position.x, player.position.y, player.position.z);
-                  console.log('🌪️ Tornado following remote player:', effect.playerId, 'Position:', pos.toArray());
                   return pos;
                 }
 
                 // Fallback to stored position if player not found
-                console.log('🌪️ Tornado using fallback position for player:', effect.playerId, 'Fallback position:', effect.position.toArray());
                 return effect.position;
               }}
               startTime={effect.startTime}
               duration={effect.duration}
               onComplete={() => {
-                console.log('🌪️ WindShear tornado effect completed for player:', effect.playerId);
               }}
             />
           ))}
@@ -4628,21 +4525,10 @@ const hasMana = useCallback((amount: number) => {
             localSocketId={socket?.id}
             damageNumberManager={engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager()}
             onPlayerHit={(playerId: string, damage: number) => {
-              // CRITICAL FIX: Never damage the local player
+
               if (playerId === socket?.id) {
-                console.error('🚨 SELF-DAMAGE PREVENTION: Viper Sting onPlayerHit blocked self-damage!', {
-                  targetPlayerId: playerId,
-                  localSocketId: socket?.id,
-                  damage: damage
-                });
                 return;
               }
-
-              console.log('💥 Viper Sting PVP damage applied:', {
-                targetPlayerId: playerId,
-                damage: damage,
-                source: 'ViperSting'
-              });
 
               if (broadcastPlayerDamage) {
                 broadcastPlayerDamage(playerId, damage);
@@ -4669,8 +4555,6 @@ const hasMana = useCallback((amount: number) => {
                   if (healthComponent) {
                     const didHeal = healthComponent.heal(20);
                     if (didHeal) {
-                      console.log(`🐍 Viper Sting Soul Steal healed local player for 20 HP! Health: ${healthComponent.currentHealth}/${healthComponent.maxHealth}`);
-
                       // Create healing damage number above local player head
                       const damageNumberManager = (window as any).damageNumberManager;
                       if (damageNumberManager && damageNumberManager.addDamageNumber) {
@@ -4832,22 +4716,10 @@ const hasMana = useCallback((amount: number) => {
             players={players}
             localSocketId={socket?.id}
             onDamage={(targetId, damage, impactPosition, isCritical) => {
-              // CRITICAL FIX: Prevent self-damage from Summon Totem
+
               if (targetId === socket?.id) {
-                console.error('🚨 SELF-DAMAGE PREVENTION: Summon Totem onDamage blocked self-damage!', {
-                  targetPlayerId: targetId,
-                  localSocketId: socket?.id,
-                  damage: damage
-                });
                 return;
               }
-
-              console.log('💥 Summon Totem PVP damage applied:', {
-                targetPlayerId: targetId,
-                damage: damage,
-                isCritical: isCritical,
-                source: 'SummonTotem'
-              });
 
               // Handle damage to other players
               const targetPlayer = players.get(targetId);
@@ -4951,7 +4823,6 @@ const hasMana = useCallback((amount: number) => {
                 position={smiteEffect.position}
                 onComplete={() => {
                   // Animation completed, but don't remove yet - let setTimeout handle cleanup
-                  console.log(`🔮 Smite animation completed for effect ${smiteEffect.id}`);
                 }}
                 onHit={(targetId, damage) => {
                   // Handle PVP damage through broadcast system
@@ -4966,7 +4837,6 @@ const hasMana = useCallback((amount: number) => {
                       const oldHealth = healthComponent.currentHealth;
                       const didHeal = healthComponent.heal(totalDamage); // Smite healing based on damage dealt
                       if (didHeal) {
-                        console.log(`⚡ PVP Smite: Healed player for ${totalDamage} HP (${oldHealth} -> ${healthComponent.currentHealth})`);
                       }
                     }
                   }
@@ -5001,7 +4871,6 @@ const hasMana = useCallback((amount: number) => {
                 damage={colossusStrikeEffect.damage || 100}
                 onComplete={() => {
                   // Animation completed, but don't remove yet - let setTimeout handle cleanup
-                  console.log(`⚡ Colossus Strike animation completed for effect ${colossusStrikeEffect.id}`);
                 }}
                 onHit={(targetId, damage, isCritical) => {
                   // Handle PVP damage through broadcast system
@@ -5010,7 +4879,6 @@ const hasMana = useCallback((amount: number) => {
                 targetPlayerData={otherPlayersData}
                 onDamageDealt={colossusStrikeEffect.onDamageDealt || ((damageDealt) => {
                   // No healing for Colossus Strike (unlike Smite)
-                  console.log(`⚡ Colossus Strike: Damage dealt: ${damageDealt}`);
                 })}
                 setDamageNumbers={smiteDamageNumbers.setDamageNumbers}
                 nextDamageNumberId={smiteDamageNumbers.nextDamageNumberId}
@@ -5290,7 +5158,6 @@ const hasMana = useCallback((amount: number) => {
           
           {/* Sabre Reaper Mist Effects for Stealth */}
           {activeMistEffects.map(mistEffect => {
-            console.log('🎨 Rendering SabreReaperMistEffect at:', mistEffect.position, 'id:', mistEffect.id);
             return (
               <SabreReaperMistEffect
                 key={mistEffect.id}
@@ -5328,8 +5195,8 @@ const hasMana = useCallback((amount: number) => {
                   <mesh>
                     <sphereGeometry args={[0.35 * (1 + elapsed * 2), 32, 32]} />
                     <meshStandardMaterial
-                      color="#8800ff"
-                      emissive="#9933ff"
+                      color="#0099ff"
+                      emissive="#0088cc"
                       emissiveIntensity={0.5 * fade}
                       transparent
                       opacity={0.8 * fade}
@@ -5341,8 +5208,8 @@ const hasMana = useCallback((amount: number) => {
                   <mesh>
                     <sphereGeometry args={[0.25 * (1 + elapsed * 3), 24, 24]} />
                     <meshStandardMaterial
-                      color="#aa66ff"
-                      emissive="#ffffff"
+                      color="#0077aa"
+                      emissive="#cceeff"
                       emissiveIntensity={0.5 * fade}
                       transparent
                       opacity={0.9 * fade}
@@ -5355,8 +5222,8 @@ const hasMana = useCallback((amount: number) => {
                     <mesh key={i} rotation={[Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI]}>
                       <torusGeometry args={[size * (1 + elapsed * 3), 0.045, 16, 32]} />
                       <meshStandardMaterial
-                        color="#8800ff"
-                        emissive="#9933ff"
+                        color="#0099ff"
+                        emissive="#0088cc"
                         emissiveIntensity={1 * fade}
                         transparent
                         opacity={0.6 * fade * (1 - i * 0.2)}
@@ -5380,8 +5247,8 @@ const hasMana = useCallback((amount: number) => {
                       >
                         <sphereGeometry args={[0.05, 8, 8]} />
                         <meshStandardMaterial
-                          color="#aa66ff"
-                          emissive="#ffffff"
+                          color="#0077aa"
+                          emissive="#cceeff"
                           emissiveIntensity={2 * fade}
                           transparent
                           opacity={0.8 * fade}
@@ -5393,13 +5260,13 @@ const hasMana = useCallback((amount: number) => {
                   })}
 
                   <pointLight
-                    color="#8800ff"
+                    color="#0099ff"
                     intensity={1 * fade}
                     distance={4}
                     decay={2}
                   />
                   <pointLight
-                    color="#aa66ff"
+                    color="#0077aa"
                     intensity={1 * fade}
                     distance={6}
                     decay={1}
@@ -5425,7 +5292,7 @@ function setupPVPGame(
   camera: PerspectiveCamera,
   renderer: WebGLRenderer,
   damagePlayerCallback: (playerId: string, damage: number, damageType?: string, isCritical?: boolean) => void,
-  damageTowerCallback: (towerId: string, damage: number) => void,
+  damageTowerCallback: (towerId: string, damage: number, sourcePlayerId?: string, damageType?: string) => void,
   damageSummonedUnitCallback?: (unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string) => void,
   damageEnemyCallback?: (enemyId: string, damage: number, sourcePlayerId?: string) => void,
   selectedWeapons?: {
@@ -5503,8 +5370,13 @@ function setupPVPGame(
     }
   });
   
-  // Set up tower system callback for tower damage
-  // TODO: Implement tower damage callback mapping similar to player damage
+  // Set up tower damage callback
+  combatSystem.setTowerDamageCallback((towerId: string, damage: number, sourcePlayerId?: string, damageType?: string) => {
+    // Use the tower damage callback from multiplayer context
+    if (damageTowerCallback) {
+      damageTowerCallback(towerId, damage, sourcePlayerId, damageType);
+    }
+  });
 
   // Add systems to world (order matters for dependencies)
   world.addSystem(physicsSystem);

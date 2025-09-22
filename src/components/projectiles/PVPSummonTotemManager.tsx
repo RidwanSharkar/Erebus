@@ -94,18 +94,16 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
       if (managerRef.current) {
         let finalEnemyData: Array<{ id: string; position: Vector3; health: number }> = [];
 
-        // If enemyDataParam is provided, use it (for remote totems)
+        // If enemyDataParam is provided, use it (for remote totems) but filter out the caster
         if (enemyDataParam && enemyDataParam.length > 0) {
-          finalEnemyData = enemyDataParam;
+          finalEnemyData = enemyDataParam.filter(enemy => enemy.id !== casterId);
         } else {
-          // Otherwise, use the current enemyData prop directly (for local totems)
+          // Otherwise, use the current enemyData prop directly (for remote totems when enemyDataParam is not provided)
           const currentPlayers = playersRef.current;
-          const currentLocalSocketId = localSocketIdRef.current;
 
-
-          if (currentPlayers && currentLocalSocketId) {
+          if (currentPlayers) {
             finalEnemyData = Array.from(currentPlayers.entries())
-              .filter(([playerId]) => playerId !== currentLocalSocketId) // Exclude local player
+              .filter(([playerId]) => playerId !== casterId) // Exclude the caster of the totem
               .map(([playerId, playerData]) => ({
                 id: playerId,
                 position: new Vector3(playerData.position.x, playerData.position.y, playerData.position.z),

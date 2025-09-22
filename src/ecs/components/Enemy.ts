@@ -439,8 +439,6 @@ export class Enemy extends Component {
     this.isCorrupted = true;
     this.corruptedStartTime = currentTime;
     this.corruptedDuration = duration;
-    
-    console.log(`👻 Applied Corrupted debuff to ${this.getDisplayName()} for ${duration} seconds`);
   }
   
   public removeCorrupted(): void {
@@ -455,7 +453,6 @@ export class Enemy extends Component {
     const elapsed = currentTime - this.corruptedStartTime;
     if (elapsed >= this.corruptedDuration) {
       this.removeCorrupted();
-      console.log(`👻 Corrupted debuff expired on ${this.getDisplayName()}`);
     }
   }
   

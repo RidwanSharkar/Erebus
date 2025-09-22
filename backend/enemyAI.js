@@ -9,7 +9,6 @@ class EnemyAI {
     // Enemy aggro tracking
     this.enemyAggro = new Map(); // enemyId -> { targetPlayerId, lastUpdate, aggro }
     
-    console.log(`🧠 Enemy AI system created for room ${roomId}`);
   }
 
   setRoom(room) {
@@ -23,7 +22,6 @@ class EnemyAI {
       this.updateAI();
     }, this.updateInterval);
     
-    console.log(`🧠 Enemy AI started for room ${this.roomId}`);
   }
 
   stopAI() {
@@ -33,7 +31,6 @@ class EnemyAI {
     }
     
     this.enemyAggro.clear();
-    console.log(`🧠 Enemy AI stopped for room ${this.roomId}`);
   }
 
   updateAI() {

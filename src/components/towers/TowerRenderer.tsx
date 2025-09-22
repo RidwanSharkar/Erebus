@@ -2,7 +2,7 @@
 
 import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, Color, Group, Mesh, AdditiveBlending, MathUtils } from '@/utils/three-exports';
+import { Vector3, Color, Group, Mesh, MeshBasicMaterial, AdditiveBlending, MathUtils } from '@/utils/three-exports';
 import { World } from '@/ecs/World';
 import { Transform } from '@/ecs/components/Transform';
 import { Tower } from '@/ecs/components/Tower';
@@ -39,11 +39,11 @@ export default function TowerRenderer({
 
   // Default colors for different players
   const playerColors = useMemo(() => [
-    new Color("#4FC3F7"), // Blue - Elite color
-    new Color("#FF6B6B"), // Light Red
-    new Color("#FF8A8A"), // Light Red
-    new Color("#FFB3B3"), // Light Red
-    new Color("#FFD6D6")  // Light Red
+    new Color("#4FC3F7"), // Blue - Elite color (Player 1)
+    new Color("#FF8C00"), // Orange/Red Fire theme (Player 2)
+    new Color("#FF8A8A"), // Light Red (Player 3)
+    new Color("#FFB3B3"), // Light Red (Player 4)
+    new Color("#FFD6D6")  // Light Red (Player 5)
   ], []);
 
   const towerColor = color || playerColors[towerIndex % playerColors.length];
@@ -53,7 +53,7 @@ export default function TowerRenderer({
   const opacity = isDead ? 0.3 : Math.max(0.5, healthPercentage);
 
   // Get tower range from component
-  let towerRange = 11.5; // Default range
+  let towerRange = 12; // Default range
   if (world && entityId) {
     const entity = world.getEntity(entityId);
     if (entity) {
@@ -79,16 +79,10 @@ export default function TowerRenderer({
       const entity = world.getEntity(entityId);
       if (entity) {
         const tower = entity.getComponent(Tower);
-        if (tower && tower.currentTarget) {
-          // Check if recently attacked (simulate attack animation)
-          const currentTime = Date.now() / 1000;
-          const timeSinceLastAttack = currentTime - tower.lastAttackTime;
-
-          // Show attack animation if recently fired
-          isAttackingRef.current = timeSinceLastAttack < 0.5;
-        } else {
-          isAttackingRef.current = false;
-        }
+        // Show attack animation when tower has a current target
+        isAttackingRef.current = tower ? tower.currentTarget != null : false;
+      } else {
+        isAttackingRef.current = false;
       }
 
       // Handle targeting rotation
@@ -120,9 +114,29 @@ export default function TowerRenderer({
         groupRef.current.rotation.y += delta * 0.5;
       }
 
-      // Make health bar face the camera
+      // Update and show health bar
       if (healthBarRef.current && camera) {
         healthBarRef.current.lookAt(camera.position);
+
+        // Update health bar scale and color
+        const healthBarFill = healthBarRef.current.children[1] as Mesh; // Second child is the fill
+        if (healthBarFill) {
+          // Update scale based on health percentage
+          healthBarFill.scale.x = healthPercentage;
+
+          // Position health bar to align left when scaling
+          healthBarFill.position.x = -(2.0 * (1 - healthPercentage)) / 2;
+
+          // Update color based on health percentage
+          const material = healthBarFill.material as MeshBasicMaterial;
+          if (healthPercentage > 0.6) {
+            material.color.setHex(0x00ff00); // Green
+          } else if (healthPercentage > 0.3) {
+            material.color.setHex(0xffff00); // Yellow
+          } else {
+            material.color.setHex(0xff0000); // Red
+          }
+        }
       }
 
       // Attack animation for "arms" (energy tendrils)
@@ -282,7 +296,7 @@ export default function TowerRenderer({
       </mesh>
 
       {/* Constant elemental vortex - adapted for tower */}
-
+      
 
       {/* Attack animation - energy spikes when attacking */}
       {isAttackingRef.current && (
@@ -327,6 +341,8 @@ export default function TowerRenderer({
           </mesh>
         </>
       )}
+
+      ELEMENTAL VORTEX
 
       {/* Energy tendrils orbital rings */}
       {[...Array(8)].map((_, i) => {
@@ -401,6 +417,34 @@ export default function TowerRenderer({
         decay={2}
       />
 
+
+      {/* Health Bar - Always visible for towers */}
+      <group ref={healthBarRef}>
+        {/* Health bar background */}
+        <mesh position={[0, 4.5, 0]}>
+          <planeGeometry args={[2.0, 0.15]} />
+          <meshBasicMaterial
+            color={0x333333}
+            transparent
+            opacity={0.8}
+            depthWrite={false}
+          />
+        </mesh>
+
+        {/* Health bar fill */}
+        <mesh position={[0, 4.5, 0.001]}>
+          <planeGeometry args={[2.0, 0.15]} />
+          <meshBasicMaterial
+            color={
+              healthPercentage > 0.6 ? 0x00ff00 :
+              healthPercentage > 0.3 ? 0xffff00 : 0xff0000
+            }
+            transparent
+            opacity={0.9}
+            depthWrite={false}
+          />
+        </mesh>
+      </group>
 
       {/* Death Effect */}
       {isDead && (

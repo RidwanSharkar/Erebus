@@ -50,30 +50,36 @@ export default function EntropicBolt({
     // Calculate the ideal straight-line position
     const idealPosition = startPosition.current.clone().lerp(targetPosition.current, progress);
 
-    // Add chaotic movement with multiple sine waves for entropic effect
-    const time = timeElapsed.current;
-    const seed = randomSeed.current;
-    
-    // Multiple overlapping sine waves for chaotic movement
-    const chaoticX = Math.sin(time * 8 + seed) * 0.3 * Math.sin(time * 3 + seed * 0.5) * 3.5;
-    const chaoticY = Math.cos(time * 6 + seed * 1.5) * 0.4 * Math.sin(time * 4 + seed * 0.8) * 3.6;
-    const chaoticZ = Math.sin(time * 7 + seed * 2) * 0.25 * Math.cos(time * 5 + seed * 1.2) * 3.4;
-    
-    // Add some random jitter that decreases as we get closer to target
-    const jitterIntensity = (1 - progress) * 0.15;
-    const jitterX = (Math.random() - 0.5) * jitterIntensity;
-    const jitterY = (Math.random() - 0.5) * jitterIntensity;
-    const jitterZ = (Math.random() - 0.5) * jitterIntensity;
+    let finalPosition = idealPosition;
 
-    // Combine chaotic movement with jitter
-    chaoticOffset.current.set(
-      chaoticX + jitterX,
-      chaoticY + jitterY,
-      chaoticZ + jitterZ
-    );
+    // Only add chaotic movement if NOT Cryoflame (Cryoflame bolts move in straight lines)
+    if (!isCryoflame) {
+      // Add chaotic movement with multiple sine waves for entropic effect
+      const time = timeElapsed.current;
+      const seed = randomSeed.current;
 
-    // Apply the chaotic offset to the ideal position
-    const finalPosition = idealPosition.clone().add(chaoticOffset.current);
+      // Multiple overlapping sine waves for chaotic movement
+      const chaoticX = Math.sin(time * 8 + seed) * 0.3 * Math.sin(time * 3 + seed * 0.5) * 3.5;
+      const chaoticY = Math.cos(time * 6 + seed * 1.5) * 0.4 * Math.sin(time * 4 + seed * 0.8) * 3.6;
+      const chaoticZ = Math.sin(time * 7 + seed * 2) * 0.25 * Math.cos(time * 5 + seed * 1.2) * 3.4;
+
+      // Add some random jitter that decreases as we get closer to target
+      const jitterIntensity = (1 - progress) * 0.15;
+      const jitterX = (Math.random() - 0.5) * jitterIntensity;
+      const jitterY = (Math.random() - 0.5) * jitterIntensity;
+      const jitterZ = (Math.random() - 0.5) * jitterIntensity;
+
+      // Combine chaotic movement with jitter
+      chaoticOffset.current.set(
+        chaoticX + jitterX,
+        chaoticY + jitterY,
+        chaoticZ + jitterZ
+      );
+
+      // Apply the chaotic offset to the ideal position
+      finalPosition = idealPosition.clone().add(chaoticOffset.current);
+    }
+
     boltRef.current.position.copy(finalPosition);
 
     // Check collisions each frame
@@ -207,7 +213,7 @@ function EntropicBoltImpact({ position, onComplete, isCryoflame = false }: Entro
         <meshStandardMaterial
           color={isCryoflame ? "#1e40af" : "#FF4500"}
           emissive={isCryoflame ? "#3b82f6" : "#FF6600"}
-          emissiveIntensity={1.0 * fade}
+          emissiveIntensity={(isCryoflame ? 2.0 : 1.0) * fade}
           transparent
           opacity={0.6 * fade}
           blending={AdditiveBlending}
@@ -221,7 +227,7 @@ function EntropicBoltImpact({ position, onComplete, isCryoflame = false }: Entro
         <meshStandardMaterial
           color={isCryoflame ? "#3b82f6" : "#FFA500"}
           emissive={isCryoflame ? "#60a5fa" : "#FFA500"}
-          emissiveIntensity={1 * fade}
+          emissiveIntensity={(isCryoflame ? 2.0 : 1.0) * fade}
           transparent
           opacity={0.7 * fade}
           blending={AdditiveBlending}
@@ -248,7 +254,7 @@ function EntropicBoltImpact({ position, onComplete, isCryoflame = false }: Entro
             <meshStandardMaterial
               color={isCryoflame ? "#dbeafe" : "#FFD700"}
               emissive={isCryoflame ? "#bfdbfe" : "#FFD700"}
-              emissiveIntensity={1.5 * fade}
+              emissiveIntensity={(isCryoflame ? 3.0 : 1.5) * fade}
               transparent
               opacity={0.8 * fade}
             />
@@ -266,7 +272,7 @@ function EntropicBoltImpact({ position, onComplete, isCryoflame = false }: Entro
           <meshStandardMaterial
             color={isCryoflame ? "#1e40af" : "#FF4500"}
             emissive={isCryoflame ? "#3b82f6" : "#FF6600"}
-            emissiveIntensity={1.5 * fade}
+            emissiveIntensity={(isCryoflame ? 3.0 : 1.5) * fade}
             transparent
             opacity={0.5 * fade * (1 - i * 0.3)}
             blending={AdditiveBlending}

@@ -38,7 +38,7 @@ const SimpleBorderEffects: React.FC<SimpleBorderEffectsProps> = ({
 
     for (let i = 0; i < particleCount; i++) {
       const angle = i * angleStep;
-      const distance = radius + (Math.random() - 0.5) * 4; // Slight variation
+      const distance = radius + (Math.random() - 0.5) * 3; // Slight variation
       const x = Math.cos(angle) * distance;
       const z = Math.sin(angle) * distance;
       const y = Math.random() * 2; // Random height
@@ -59,7 +59,7 @@ const SimpleBorderEffects: React.FC<SimpleBorderEffectsProps> = ({
       const x = Math.cos(angle) * radius;
       const z = Math.sin(angle) * radius;
 
-      positions.push(new Vector3(x, 0.5, z));
+      positions.push(new Vector3(x, 0.675, z));
     }
 
     return positions;
@@ -67,22 +67,22 @@ const SimpleBorderEffects: React.FC<SimpleBorderEffectsProps> = ({
 
   // Materials
   const particleMaterial = useMemo(() => new MeshBasicMaterial({
-    color: 0x4fc3f7,
+    color: 0xF40000,
     transparent: true,
-    opacity: 0.6,
+    opacity: 0.7,
     alphaTest: 0.1,
   }), []);
 
   const glowMaterial = useMemo(() => new MeshBasicMaterial({
-    color: 0xdda0dd, // Light purple
+    color: 0xF74F4F, // Light purple
     transparent: true,
-    opacity: 0.3,
+    opacity: 0.325,
     alphaTest: 0.1,
   }), []);
 
   // Geometries
   const particleGeometry = useMemo(() => new PlaneGeometry(0.05, 0.05), []);
-  const glowGeometry = useMemo(() => new CircleGeometry(0.275, 8), []);
+  const glowGeometry = useMemo(() => new CircleGeometry(0.275, 12), []);
 
   // Update instanced matrices
   useEffect(() => {
@@ -114,7 +114,7 @@ const SimpleBorderEffects: React.FC<SimpleBorderEffectsProps> = ({
     const time = state.clock.getElapsedTime();
 
     // Gentle rotation
-    groupRef.current.rotation.y = time * 0.1;
+    groupRef.current.rotation.y = time * 0.065;
 
     // Update particle positions for floating animation
     if (particleRef.current) {

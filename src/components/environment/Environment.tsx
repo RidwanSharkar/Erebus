@@ -56,12 +56,8 @@ const Environment: React.FC<EnvironmentProps> = ({
 
   // Define tree positions for natural forest arrangement (reduced by half, removed inner trees)
   const treePositions: DetailedTree[] = useMemo(() => [
-        // Middle ring trees (selectively kept - medium distance from center)
-
     // Outer ring trees (kept all - furthest from center, near map boundary)
-    { position: new Vector3(19.5, 0, 10), scale: 1.65, height: 3.0, trunkRadius: 0.275, trunkColor: new Color(0x4a3c28) },
-
-    // Additional scattered tree (kept one for natural look)
+    { position: new Vector3(18, 0, 10), scale: 1.65, height: 3.0, trunkRadius: 0.275, trunkColor: new Color(0xA3773D) },
   ], []);
 
   return (
@@ -75,9 +71,7 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       <Planet />
 
-      {treePositions.map((tree, index) => (
-        <DetailedTrees key={`detailed-tree-${index}`} trees={treePositions} />
-      ))}
+      <DetailedTrees trees={treePositions} />
 
 
       {/* Mountain border around the map */}
@@ -86,7 +80,7 @@ const Environment: React.FC<EnvironmentProps> = ({
       {/* Border effects - particles and glows around map perimeter */}
       {enableBorderEffects && (
         <SimpleBorderEffects
-          radius={21}
+          radius={22}
           count={64}
           enableParticles={true}
           particleCount={100}
@@ -104,7 +98,7 @@ const Environment: React.FC<EnvironmentProps> = ({
         radius={8}
         color="#ffffff"
         speed={0.3}
-        size={0.025}
+        size={0.02}
       />
 
       {/* Three pillars in triangle formation */}
@@ -112,18 +106,8 @@ const Environment: React.FC<EnvironmentProps> = ({
         <group key={`pillar-group-${index}`}>
           <Pillar position={pillarPos} />
           {/* Particles around each pillar */}
-          <AtmosphericParticles
-            position={pillarPos}
-            count={15}
-            radius={2}
-            color={level === 1 ? '#FF6E6E' : level === 2 ? '#FFA500' : level === 3 ? '#87CEEB' : '#DDA0DD'}
-            speed={0.4}
-            size={0.015}
-          />
         </group>
       ))}
-
-
 
       {/* Collision entities for pillars only (only if world is provided) */}
       {world && (

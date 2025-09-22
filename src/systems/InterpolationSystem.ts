@@ -44,11 +44,11 @@ export class InterpolationSystem extends System {
         if (knockbackResult.newPosition) {
           // Apply knockback position directly for remote players
           transform.position.copy(knockbackResult.newPosition);
-          console.log(`🌊 Remote player knockback updated: position=(${knockbackResult.newPosition.x.toFixed(2)}, ${knockbackResult.newPosition.z.toFixed(2)}), entity=${entity.id}`);
+          // console.log(`🌊 Remote player knockback updated: position=(${knockbackResult.newPosition.x.toFixed(2)}, ${knockbackResult.newPosition.z.toFixed(2)}), entity=${entity.id}`);
         }
         
         if (knockbackResult.isComplete) {
-          console.log(`✅ Remote player knockback completed for entity ${entity.id}`);
+          // console.log(`✅ Remote player knockback completed for entity ${entity.id}`);
         }
       }
 
@@ -124,7 +124,7 @@ export class InterpolationSystem extends System {
   public setInterpolationDelay(entity: Entity, delayMs: number): void {
     // Note: This would require modifying the InterpolationBuffer component
     // For now, the delay is fixed in the component itself
-    console.warn('Interpolation delay is currently fixed in InterpolationBuffer component');
+    // console.warn('Interpolation delay is currently fixed in InterpolationBuffer component');
   }
 
   /**
