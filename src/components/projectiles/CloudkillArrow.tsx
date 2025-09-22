@@ -51,38 +51,11 @@ const createArrowImpactEffect = (position: Vector3, startTime: number, onComplet
 
   return (
     <group position={position}>
-      {/* Core explosion sphere */}
-      <mesh>
-        <sphereGeometry args={[0.5 * (1 + elapsed), 16, 16]} />
-        <meshStandardMaterial
-          color="#00ff00"
-          emissive="#00aa00"
-          emissiveIntensity={2 * fade}
-          transparent
-          opacity={1.5 * fade}
-          depthWrite={false}
-          blending={AdditiveBlending}
-        />
-      </mesh>
-
-      {/* Inner energy sphere */}
-      <mesh>
-        <sphereGeometry args={[0.4, 12, 12]} />
-        <meshStandardMaterial
-          color="#88ff88"
-          emissive="#ffffff"
-          emissiveIntensity={2 * fade}
-          transparent
-          opacity={1.6 * fade}
-          depthWrite={false}
-          blending={AdditiveBlending}
-        />
-      </mesh>
-
+  
       {/* Expanding rings */}
-      {[1.2, 1.4, 1.6].map((size, i) => (
+      {[1.2, 1.2, 1.2].map((size, i) => (
         <mesh key={i} rotation={[Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI]}>
-          <torusGeometry args={[size * (1 + elapsed * 1.5), 0.15, 3, 16]} />
+          <torusGeometry args={[size * (1 + elapsed * 1.5), 0.1, 3, 16]} />
           <meshStandardMaterial
             color="#00ff00"
             emissive="#00aa00"
@@ -247,7 +220,8 @@ export default function CloudkillArrow({
 
       // CRITICAL FIX: For damage calculation, check player positions at impact time, not at cast time
       // Always use original indicated position for damage area check (no homing behavior)
-      const damagePosition = new Vector3(originalIndicatedPosition.current.x, 0, originalIndicatedPosition.current.z);
+      // Position damage numbers above ground level for visibility
+      const damagePosition = new Vector3(originalIndicatedPosition.current.x, 1.2, originalIndicatedPosition.current.z);
 
       if (onHit) {
         // Damage enemies within radius of the damage position

@@ -67,7 +67,7 @@ const Environment: React.FC<EnvironmentProps> = ({
   return (
     <group name="environment">
       {/* Custom sky with level-based colors */}
-      {enableSky && <CustomSky level={level} />}
+      {enableSky && <CustomSky />}
 
       {/* Enhanced ground with procedural textures */}
       <EnhancedGround level={level} />
@@ -110,7 +110,7 @@ const Environment: React.FC<EnvironmentProps> = ({
       {/* Three pillars in triangle formation */}
       {pillarPositions.map((pillarPos, index) => (
         <group key={`pillar-group-${index}`}>
-          <Pillar position={pillarPos} level={level} />
+          <Pillar position={pillarPos} />
           {/* Particles around each pillar */}
           <AtmosphericParticles
             position={pillarPos}

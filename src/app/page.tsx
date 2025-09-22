@@ -7,18 +7,24 @@ import { Camera } from '../utils/three-exports';
 import type { DamageNumberData } from '../components/DamageNumbers';
 import DamageNumbers from '../components/DamageNumbers';
 import GameUI from '../components/ui/GameUI';
-import PVPScoreboard from '../components/ui/PVPScoreboard';
 import { getGlobalRuneCounts, getCriticalChance, getCriticalDamageMultiplier } from '../core/DamageCalculator';
 import ExperienceBar from '../components/ui/ExperienceBar';
 import { MultiplayerProvider, useMultiplayer } from '../contexts/MultiplayerContext';
 import RoomJoin from '../components/ui/RoomJoin';
 import { weaponAbilities, getAbilityIcon, type AbilityData } from '../utils/weaponAbilities';
 
-// Import Canvas directly to avoid dynamic import issues
-import { Canvas } from '@react-three/fiber';
+// Dynamic imports for maximum code splitting
+const Canvas = dynamic(() => import('@react-three/fiber').then(mod => ({ default: mod.Canvas })), {
+  ssr: false,
+  loading: () => <div className="flex items-center justify-center h-screen text-white">Loading 3D engine...</div>
+});
 
-// Import PVP game scene directly to avoid dynamic import issues
-import { PVPGameScene } from '../components/PVPGameScene';
+
+// Lazy load PVP game scene
+const PVPGameScene = dynamic(() => import('../components/PVPGameScene').then(mod => ({ default: mod.PVPGameScene })), {
+  ssr: false,
+  loading: () => null
+});
 
 // Weapon option interface
 interface WeaponOption {
@@ -63,7 +69,7 @@ function AbilityTooltip({ content, visible, x, y }: TooltipProps) {
 }
 
 function HomeContent() {
-  const { selectedWeapons, setSelectedWeapons, skillPointData, unlockAbility, updateSkillPointsForLevel, socket } = useMultiplayer();
+  const { selectedWeapons, setSelectedWeapons, skillPointData, unlockAbility, updateSkillPointsForLevel } = useMultiplayer();
 
   const [damageNumbers, setDamageNumbers] = useState<DamageNumberData[]>([]);
   const [cameraInfo, setCameraInfo] = useState<{
@@ -72,13 +78,6 @@ function HomeContent() {
   }>({
     camera: null,
     size: { width: 0, height: 0 }
-  });
-  const [scoreboardData, setScoreboardData] = useState<{
-    playerKills: Map<string, number>;
-    players: Map<string, any>;
-  }>({
-    playerKills: new Map(),
-    players: new Map()
   });
   const [gameState, setGameState] = useState({
     playerHealth: 200,
@@ -146,6 +145,54 @@ function HomeContent() {
     return weaponPositions[weaponType] || null;
   };
 
+  // Get weapon color scheme for selection styling
+  const getWeaponColorScheme = (weaponType: WeaponType) => {
+    switch (weaponType) {
+      case WeaponType.BOW:
+        return {
+          border: 'border-green-500',
+          background: 'bg-green-500/20',
+          shadow: 'shadow-green-500/30',
+          badge: 'bg-green-600'
+        };
+      case WeaponType.SWORD:
+        return {
+          border: 'border-sky-400',
+          background: 'bg-sky-400/20',
+          shadow: 'shadow-sky-400/30',
+          badge: 'bg-sky-500'
+        };
+      case WeaponType.SCYTHE:
+        return {
+          border: 'border-blue-500',
+          background: 'bg-blue-500/20',
+          shadow: 'shadow-blue-500/30',
+          badge: 'bg-blue-600'
+        };
+      case WeaponType.RUNEBLADE:
+        return {
+          border: 'border-purple-500',
+          background: 'bg-purple-500/20',
+          shadow: 'shadow-purple-500/30',
+          badge: 'bg-purple-600'
+        };
+      case WeaponType.SABRES:
+        return {
+          border: 'border-red-500',
+          background: 'bg-red-500/20',
+          shadow: 'shadow-red-500/30',
+          badge: 'bg-red-600'
+        };
+      default:
+        return {
+          border: 'border-green-500',
+          background: 'bg-green-500/20',
+          shadow: 'shadow-green-500/30',
+          badge: 'bg-green-600'
+        };
+    }
+  };
+
   // Weapon options
   const weapons: WeaponOption[] = [
     {
@@ -166,8 +213,7 @@ function HomeContent() {
       type: WeaponType.SABRES,
       name: 'Sabres',
       icon: '⚔️',
-      description: 'LURKER: stealth assassin excelling at close-quarters combat, acrobatic maneuvers, and exploiting stunned enemies with burst damage.',
-      defaultSubclass: WeaponSubclass.FROST
+      description: 'LURKER: stealth assassin excelling at close-quarters combat, acrobatic maneuvers, and exploiting stunned enemies with burst damage.',      defaultSubclass: WeaponSubclass.FROST
     },
     {
       type: WeaponType.RUNEBLADE,
@@ -306,10 +352,6 @@ function HomeContent() {
     setControlSystem(newControlSystem);
   };
 
-  const handleScoreboardUpdate = (playerKills: Map<string, number>, players: Map<string, any>) => {
-    setScoreboardData({ playerKills, players });
-  };
-
   // Sync skill point data with control system
   useEffect(() => {
     if (controlSystem && skillPointData) {
@@ -375,56 +417,35 @@ function HomeContent() {
         {/* Main Menu */}
         {gameMode === 'menu' && (
           <div className="absolute inset-0 flex items-center justify-center z-50 overflow-y-auto">
-            <div className="bg-black/95 p-8 rounded-xl border-2 border-green-500 text-white max-w-6xl w-11/12 my-8">
-              <h1 className="text-4xl font-bold mb-8 text-green-500 text-center">AVERNUS</h1>
+            <div className="bg-gray-900/95 p-10 rounded-xl border-2 border-red-500 text-white max-w-6xl w-11/12 my-8">
+              <h1 className="text-3xl font-bold mb-3 text-red-500 text-center"> Select 2 Weapons</h1>
 
               {/* Weapon Selection Section */}
               <div className="mb-8">
-                <h2 className="text-2xl font-bold mb-4 text-center text-green-400">
-                Select 2 Weapons
+                <h2 className="text-1.25xl font-normal mb-3 text-center text-red-400">
+                  Your primary weapon has the 'Q', 'E', and 'R' keys unlocked and becomes the '1' key, secondary becomes the '2' key.
                 </h2>
-                <p className="text-center mb-6 text-gray-300">
-                  Your primary weapon becomes the '1' key, secondary becomes the '2' key.
 
-                </p>
 
-                {/* First row - 3 weapons */}
-                <div className="grid grid-cols-3 gap-0 mb-0 max-w-7xl mx-auto">
-                  {weapons.slice(0, 3).map((weapon) => {
+                <div className="flex flex-wrap justify-center gap-4 mb-6">
+                  {weapons.slice(0, 5).map((weapon) => {
                     const isSelected = tempSelectedWeapons.includes(weapon.type);
                     const canSelect = !isSelected && tempSelectedWeapons.length < 2;
+                    const colorScheme = getWeaponColorScheme(weapon.type);
 
                     return (
                       <div
                         key={weapon.type}
                         onClick={() => handleWeaponToggle(weapon.type)}
                         className={`
-                          w-full sm:w-96 md:w-80 lg:w-96 p-6 cursor-pointer transition-all duration-300 relative
+                          w-full sm:w-80 md:w-72 lg:w-80 p-4 rounded-lg border-2 cursor-pointer transition-all duration-300
                           ${isSelected
-                            ? 'shadow-lg shadow-green-500/30'
+                            ? `${colorScheme.border} ${colorScheme.background} shadow-lg ${colorScheme.shadow}`
                             : canSelect
-                              ? 'hover:scale-105'
-                              : 'opacity-60 cursor-not-allowed'
+                              ? 'border-gray-600 bg-gray-800/50 hover:border-gray-400 hover:bg-gray-700/50'
+                              : 'border-gray-700 bg-gray-900/50 opacity-60 cursor-not-allowed'
                           }
                         `}
-                        style={{
-                          clipPath: 'polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)',
-                          background: isSelected
-                            ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.3) 0%, rgba(34, 197, 94, 0.1) 100%)'
-                            : canSelect
-                              ? 'linear-gradient(135deg, rgba(55, 65, 81, 0.6) 0%, rgba(31, 41, 55, 0.8) 100%)'
-                              : 'linear-gradient(135deg, rgba(17, 24, 39, 0.8) 0%, rgba(31, 41, 55, 0.6) 100%)',
-                          border: isSelected
-                            ? '3px solid #22c55e'
-                            : canSelect
-                              ? '2px solid #6b7280'
-                              : '2px solid #374151',
-                          minHeight: '400px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
                       >
                         <div className="text-center mb-3">
                           <div className="text-3xl mb-2">{weapon.icon}</div>
@@ -462,7 +483,7 @@ function HomeContent() {
 
                         {isSelected && (
                           <div className="text-center">
-                            <span className="inline-block px-2 py-1 bg-green-600 text-white text-xs rounded-full">
+                            <span className={`inline-block px-2 py-1 ${colorScheme.badge} text-white text-xs rounded-full`}>
                               Selected ({getWeaponPosition(weapon.type) === 'primary' ? 'Primary' : 'Secondary'})
                             </span>
                           </div>
@@ -471,98 +492,12 @@ function HomeContent() {
                     );
                   })}
                 </div>
-
-                {/* Second row - 2 weapons centered */}
-                <div className="flex justify-center gap-1 max-w-5xl mx-auto -mt-16 ml-10">
-                  {weapons.slice(3, 5).map((weapon) => {
-                    const isSelected = tempSelectedWeapons.includes(weapon.type);
-                    const canSelect = !isSelected && tempSelectedWeapons.length < 2;
-
-                    return (
-                      <div
-                        key={weapon.type}
-                        onClick={() => handleWeaponToggle(weapon.type)}
-                        className={`
-                          w-96 p-7 cursor-pointer transition-all duration-300 relative
-                          ${isSelected
-                            ? 'shadow-lg shadow-green-500/30'
-                            : canSelect
-                              ? 'hover:scale-105'
-                              : 'opacity-60 cursor-not-allowed'
-                          }
-                        `}
-                        style={{
-                          clipPath: 'polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)',
-                          background: isSelected
-                            ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.3) 0%, rgba(34, 197, 94, 0.1) 100%)'
-                            : canSelect
-                              ? 'linear-gradient(135deg, rgba(55, 65, 81, 0.6) 0%, rgba(31, 41, 55, 0.8) 100%)'
-                              : 'linear-gradient(135deg, rgba(17, 24, 39, 0.8) 0%, rgba(31, 41, 55, 0.6) 100%)',
-                          border: isSelected
-                            ? '3px solid #22c55e'
-                            : canSelect
-                              ? '2px solid #6b7280'
-                              : '2px solid #374151',
-                          minHeight: '400px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        <div className="text-center mb-3">
-                          <div className="text-3xl mb-2">{weapon.icon}</div>
-                          <h3 className="text-lg font-bold mb-1">{weapon.name}</h3>
-                        </div>
-
-                        <p className="text-xs text-gray-300 mb-3 text-center">
-                          {weapon.description}
-                        </p>
-
-                        {/* Weapon Abilities */}
-                        <div className="mb-3">
-                          <div className="text-xs text-gray-400 text-center mb-2">Abilities:</div>
-                          <div className="flex justify-center gap-1">
-                            {weaponAbilities[weapon.type]?.map((ability) => (
-                              <div
-                                key={ability.key}
-                                className="relative w-8 h-8 rounded border border-gray-600 bg-gray-800 hover:bg-gray-700 transition-colors cursor-pointer flex items-center justify-center"
-                                onMouseEnter={(e) => handleAbilityHover(e, ability)}
-                                onMouseLeave={handleAbilityLeave}
-                              >
-                                {/* Hotkey indicator */}
-                                <div className="absolute -top-1 -left-1 bg-gray-900 border border-gray-500 rounded text-xs text-white px-0.5 font-semibold leading-none text-[10px]">
-                                  {ability.key}
-                                </div>
-
-                                {/* Ability icon */}
-                                <div className="text-sm">
-                                  {getAbilityIcon(weapon.type, ability.key)}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {isSelected && (
-                          <div className="text-center">
-                            <span className="inline-block px-2 py-1 bg-green-600 text-white text-xs rounded-full">
-                              Selected ({getWeaponPosition(weapon.type) === 'primary' ? 'Primary' : 'Secondary'})
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-
               </div>
 
               {/* Game Mode Buttons */}
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-4 items-center">
                 <button
-                  className={`px-8 py-4 text-xl text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:-translate-y-1 ${
+                  className={`px-8 py-3.5 text-xl text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:-translate-y-1 w-1/2.5 ${
                     selectedWeapons
                       ? 'bg-red-500 hover:bg-red-600'
                       : 'bg-gray-600 cursor-not-allowed'
@@ -575,7 +510,7 @@ function HomeContent() {
                   }}
                   disabled={!selectedWeapons}
                 >
-                  ENTER
+                  ENTER AVERNUS
                   {!selectedWeapons && ' (Select Weapons First)'}
                 </button>
               </div>
@@ -620,9 +555,7 @@ function HomeContent() {
               onGameStateUpdate={handleGameStateUpdate}
               onControlSystemUpdate={handleControlSystemUpdate}
               onExperienceUpdate={handleExperienceUpdate}
-              onScoreboardUpdate={handleScoreboardUpdate}
               selectedWeapons={selectedWeapons}
-              skillPointData={skillPointData}
             />
           )}
         </Canvas>
@@ -693,15 +626,6 @@ function HomeContent() {
                 experience={playerExperience}
                 level={playerLevel}
                 isLocalPlayer={true}
-              />
-            )}
-
-            {/* PVP Scoreboard - Only show in PVP mode */}
-            {gameMode === 'pvp' && (
-              <PVPScoreboard
-                playerKills={scoreboardData.playerKills}
-                players={scoreboardData.players}
-                currentPlayerId={socket?.id}
               />
             )}
           </>
