@@ -13,6 +13,7 @@ import { Collider } from '@/ecs/components/Collider';
 import { InputManager } from '@/core/InputManager';
 import { World } from '@/ecs/World';
 import { ProjectileSystem } from './ProjectileSystem';
+import { AudioSystem } from './AudioSystem';
 import { CombatSystem } from './CombatSystem';
 import { WeaponSubclass, WeaponType } from '@/components/dragon/weapons';
 import { DeflectBarrier } from '@/components/weapons/DeflectBarrier';
@@ -29,6 +30,7 @@ export class ControlSystem extends System {
   private camera: PerspectiveCamera;
   private world: World;
   private projectileSystem: ProjectileSystem;
+  private audioSystem: AudioSystem | null = null;
   private playerEntity: Entity | null = null;
   
   // Callback for bow release effects
@@ -279,6 +281,7 @@ export class ControlSystem extends System {
   private isWindShearCharging = false;
   private windShearChargeProgress = 0;
 
+
   // DeathGrasp ability state (Runeblade)
   private lastDeathGraspTime = 0;
   private deathGraspCooldown = 5.0; // 5 second cooldown
@@ -329,6 +332,7 @@ export class ControlSystem extends System {
     inputManager: InputManager,
     world: World,
     projectileSystem: ProjectileSystem,
+    audioSystem?: AudioSystem | null,
     selectedWeapons?: {
       primary: WeaponType;
       secondary: WeaponType;
@@ -340,10 +344,11 @@ export class ControlSystem extends System {
     this.inputManager = inputManager;
     this.world = world;
     this.projectileSystem = projectileSystem;
+    this.audioSystem = audioSystem || null;
     this.selectedWeapons = selectedWeapons;
     this.deflectBarrier = new DeflectBarrier(world);
     this.priority = 5; // Run early for input handling
-    
+
     // Initialize skill point system
     this.skillPointData = SkillPointSystem.getInitialSkillPointData();
 
@@ -825,6 +830,9 @@ export class ControlSystem extends System {
         if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging && !this.isCloudkillCharging) {
           this.isCharging = true;
           this.chargeProgress = 0;
+
+          // Play bow draw sound when starting to charge
+          this.audioSystem?.playBowDrawSound(playerTransform.position);
         }
         // Increase charge progress (could be time-based)
         if (!this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging && !this.isCloudkillCharging) {
@@ -840,6 +848,9 @@ export class ControlSystem extends System {
 
         // Store charge progress before resetting for visual effects
         const finalChargeProgress = this.chargeProgress;
+
+        // Play bow release sound when firing
+        this.audioSystem?.playBowReleaseSound(playerTransform.position, finalChargeProgress);
 
         // Release the bow
         this.fireProjectile(playerTransform);
@@ -858,6 +869,7 @@ export class ControlSystem extends System {
       if (!this.isCharging) {
         this.isCharging = true;
         this.chargeProgress = 0;
+
       }
       // Increase charge progress continuously for spinning animation (no cap)
       this.chargeProgress += 0.03; // Continuously increase for spinning
@@ -868,6 +880,7 @@ export class ControlSystem extends System {
       // Stop spinning when mouse is released
       this.isCharging = false;
       this.chargeProgress = 0;
+
     }
     // Handle CrossentropyBolt ability with 'R' key
     if (this.inputManager.isKeyPressed('r') && !this.isCharging && !this.isCrossentropyCharging && this.isAbilityUnlocked('R')) {
@@ -942,24 +955,27 @@ export class ControlSystem extends System {
       return;
     }
     this.lastFireTime = currentTime;
-    
+
+    // Play entropic bolt sound
+    this.audioSystem?.playEntropicBoltSound(playerTransform.position);
+
     // Get dragon's facing direction
     const direction = new Vector3();
     this.camera.getWorldDirection(direction);
     direction.normalize();
-    
+
     // Apply downward angle compensation (same as bow projectiles)
     const compensationAngle = Math.PI / 6; // 30 degrees downward compensation
     const cameraRight = new Vector3();
     cameraRight.crossVectors(direction, new Vector3(0, 1, 0)).normalize();
-    
+
     const rotationMatrix = new Matrix4();
     rotationMatrix.makeRotationAxis(cameraRight, compensationAngle);
     direction.applyMatrix4(rotationMatrix);
     direction.normalize();
-    
+
     const spinStatus = this.isCharging ? ' (SPINNING)' : '';
-    
+
     this.createEntropicBoltProjectile(playerTransform.position.clone(), direction);
   }
 
@@ -1011,6 +1027,9 @@ export class ControlSystem extends System {
   private fireCrossentropyBoltAbilityAfterCharge(playerTransform: Transform): void {
     // Rate limiting was already checked in performCrossentropyAbility()
     // No need to check again here - we just finished charging
+
+    // Play crossentropy sound after the 1-second charge
+    this.audioSystem?.playCrossentropySound(playerTransform.position);
 
     // Get dragon's facing direction
     const direction = new Vector3();
@@ -1471,7 +1490,10 @@ export class ControlSystem extends System {
     this.isCobraShotCharging = true;
     this.cobraShotChargeProgress = 0;
     this.lastCobraShotTime = currentTime;
-    
+
+    // Play bow draw sound when starting to charge
+    this.audioSystem?.playBowDrawSound(playerTransform.position);
+
     // Start charging animation
     const chargeStartTime = Date.now();
     const chargeDuration = 750; // 0.75 second charge time (between Viper Sting and Barrage)
@@ -1482,6 +1504,10 @@ export class ControlSystem extends System {
       
       if (this.cobraShotChargeProgress >= 1.0) {
         clearInterval(chargeInterval);
+
+        // Play bow release sound when firing
+        this.audioSystem?.playBowReleaseSound(playerTransform.position, 1.0);
+
         this.fireCobraShot(playerTransform);
         this.isCobraShotCharging = false;
         this.cobraShotChargeProgress = 0;
@@ -2132,6 +2158,9 @@ export class ControlSystem extends System {
     this.lastFireTime = currentTime;
     this.lastSwordAttackTime = currentTime;
 
+    // Play sword swing sound based on current combo step
+    this.audioSystem?.playSwordSwingSound(this.swordComboStep, playerTransform.position);
+
     // Set swinging state - completion will be handled by sword component callback
     this.isSwinging = true;
 
@@ -2336,6 +2365,9 @@ export class ControlSystem extends System {
     this.isWindShearCharging = true;
     this.windShearChargeProgress = 0;
     this.lastWindShearTime = currentTime;
+
+    // Play windshear sound for the duration of the charge
+    this.audioSystem?.playWindshearSound(playerTransform.position);
 
     // Trigger tornado effect (1.25 seconds duration)
     if (this.onWindShearTornadoCallback) {
@@ -2807,10 +2839,13 @@ export class ControlSystem extends System {
       return;
     }
     this.lastFireTime = currentTime;
-    
+
+    // Play sabres swing sound
+    this.audioSystem?.playSabresSwingSound(playerTransform.position);
+
     // Set swinging state - completion will be handled by sabres component callback
     this.isSwinging = true;
-    
+
     // Perform melee damage in a cone in front of player (dual attack)
     this.performSabresMeleeDamage(playerTransform);
   }
@@ -4310,7 +4345,10 @@ export class ControlSystem extends System {
     this.isViperStingCharging = true;
     this.viperStingChargeProgress = 0;
     this.lastViperStingTime = currentTime;
-    
+
+    // Play bow draw sound when starting to charge
+    this.audioSystem?.playBowDrawSound(playerTransform.position);
+
     // Start charging animation
     const chargeStartTime = Date.now();
     const chargeDuration = 1000; // 1 second charge time
@@ -4321,6 +4359,10 @@ export class ControlSystem extends System {
       
       if (this.viperStingChargeProgress >= 1.0) {
         clearInterval(chargeInterval);
+
+        // Play bow release sound when firing
+        this.audioSystem?.playBowReleaseSound(playerTransform.position, 1.0);
+
         this.fireViperSting(playerTransform);
         this.isViperStingCharging = false;
         this.viperStingChargeProgress = 0;
@@ -4450,7 +4492,10 @@ export class ControlSystem extends System {
     this.isBarrageCharging = true;
     this.barrageChargeProgress = 0;
     this.lastBarrageTime = currentTime;
-    
+
+    // Play bow draw sound when starting to charge
+    this.audioSystem?.playBowDrawSound(playerTransform.position);
+
     // Start charging animation
     const chargeStartTime = Date.now();
     const chargeDuration = 500; // 1 second charge time
@@ -4461,6 +4506,10 @@ export class ControlSystem extends System {
       
       if (this.barrageChargeProgress >= 1.0) {
         clearInterval(chargeInterval);
+
+        // Play bow release sound when firing
+        this.audioSystem?.playBowReleaseSound(playerTransform.position, 1.0);
+
         this.fireBarrage(playerTransform);
         this.isBarrageCharging = false;
         this.barrageChargeProgress = 0;

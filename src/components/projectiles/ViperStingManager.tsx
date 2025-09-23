@@ -179,7 +179,7 @@ export default function ViperStingManager({
                     isHealing: true
                   }]);
                 } catch (error) {
-                  console.warn('ViperSting: Failed to add healing damage number:', error);
+                  // console.warn('ViperSting: Failed to add healing damage number:', error);
                 }
               }
             }

@@ -198,7 +198,7 @@ function HomeContent() {
     {
       type: WeaponType.SCYTHE,
       name: 'Scythe',
-      icon: '☠️',
+      icon: '🦋',
       description: 'ENTROPY WEAVER',
       defaultSubclass: WeaponSubclass.CHAOS
     },
@@ -225,7 +225,7 @@ function HomeContent() {
     {
       type: WeaponType.SWORD,
       name: 'Greatsword',
-      icon: '💎',
+      icon: '💠',
       description: 'PRAETOR IMMORTAL',
       defaultSubclass: WeaponSubclass.DIVINITY
     }

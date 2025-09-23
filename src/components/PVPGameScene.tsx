@@ -23,6 +23,7 @@ import { Entity } from '@/ecs/Entity';
 import { InterpolationBuffer } from '@/ecs/components/Interpolation';
 import { RenderSystem } from '@/systems/RenderSystem';
 import { ControlSystem } from '@/systems/ControlSystem';
+import { AudioSystem } from '@/systems/AudioSystem';
 import { CameraSystem } from '@/systems/CameraSystem';
 import { ProjectileSystem } from '@/systems/ProjectileSystem';
 import { PhysicsSystem } from '@/systems/PhysicsSystem';
@@ -5368,11 +5369,16 @@ function setupPVPGame(
   const towerSystem = new TowerSystem(world);
   // Note: SummonedUnitSystem is disabled for PVP - using server-authoritative summoned units instead
   // const summonedUnitSystem = new SummonedUnitSystem(world);
+
+  // Initialize Audio System
+  const audioSystem = new AudioSystem();
+
   const controlSystem = new ControlSystem(
     camera as PerspectiveCamera,
     inputManager,
     world,
     projectileSystem,
+    audioSystem,
     selectedWeapons
   );
   const cameraSystem = new CameraSystem(
@@ -5436,6 +5442,7 @@ function setupPVPGame(
   world.addSystem(renderSystem);
   world.addSystem(projectileSystem);
   world.addSystem(towerSystem);
+  world.addSystem(audioSystem);
   // world.addSystem(summonedUnitSystem); // Disabled for server-authoritative units
   world.addSystem(controlSystem);
   world.addSystem(cameraSystem);
@@ -5450,6 +5457,11 @@ function setupPVPGame(
 
   // Set local player entity ID for combat system damage number filtering
   combatSystem.setLocalPlayerEntityId(playerEntity.id);
+
+  // Preload weapon sound effects
+  audioSystem.preloadWeaponSounds().catch((error: any) => {
+    console.warn('Failed to preload weapon sounds:', error);
+  });
 
   return { player: playerEntity, controlSystem, towerSystem };
 }

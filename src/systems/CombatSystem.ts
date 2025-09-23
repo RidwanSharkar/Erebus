@@ -686,7 +686,7 @@ export class CombatSystem extends System {
           const weaponSlot = controlSystem.selectedWeapons?.primary === WeaponType.RUNEBLADE ? 'primary' :
                             controlSystem.selectedWeapons?.secondary === WeaponType.RUNEBLADE ? 'secondary' : null;
           if (weaponSlot && controlSystem.isPassiveAbilityUnlocked && controlSystem.isPassiveAbilityUnlocked('P', WeaponType.RUNEBLADE, weaponSlot)) {
-            const healingAmount = Math.floor(damageResult.damage * 0.1); // 10% of damage dealt
+            const healingAmount = Math.floor(damageResult.damage * 0.15); // 10% of damage dealt
             if (healingAmount > 0) {
               // Apply healing to source player
               const sourceHealth = source.getComponent(Health);

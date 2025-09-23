@@ -1,10 +1,9 @@
-import { useRef, useEffect, memo } from 'react';
+import { useRef, useState, useEffect, memo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Color, Shape, AdditiveBlending } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import DeflectShield from './DeflectShield';
-import { calculationCache } from '@/utils/CalculationCache';
-import { enhancedObjectPool } from '@/utils/EnhancedObjectPool';
+import { calculationCache } from '@/utils/CalculationCache';;
 
 interface SwordProps {
   isSwinging: boolean;
@@ -111,6 +110,11 @@ const SwordComponent = memo(function Sword({
   const chargeHitEnemies = useRef<Set<string>>(new Set());
   const chargeTrail = useRef<Array<{id: number, position: Vector3, life: number}>>([]);
   const nextChargeParticleId = useRef(1);
+
+  // Fire trail for Charge ability (like Breach component)
+  const [fireTrail, setFireTrail] = useState<Array<{id: number, position: Vector3}>>([]);
+  const nextFireParticleId = useRef(1);
+  const lastChargePosition = useRef<Vector3 | null>(null);
   const chargeSpinRotation = useRef(0);
   const chargeSpinStartTime = useRef<number | null>(null);
   const isChargeSpinning = useRef(false);
@@ -292,6 +296,7 @@ const SwordComponent = memo(function Sword({
         chargeStartTime.current = Date.now();
         chargeStartPosition.current = playerPosition?.clone() || new Vector3(0, 0, 0);
         chargeHitEnemies.current.clear();
+        lastChargePosition.current = playerPosition?.clone() || new Vector3(0, 0, 0);
 
         // Use the charge direction passed from the ControlSystem
         if (chargeDirectionProp) {
@@ -300,6 +305,9 @@ const SwordComponent = memo(function Sword({
           // Fallback to forward direction
           chargeDirection.current = new Vector3(0, 0, -1).normalize();
         }
+
+        // Initialize fire trail
+        setFireTrail([]);
 
         // Gain rage for performing a charge attack (5 rage per charge)
         const gameUI = (window as any).gameUI;
@@ -316,8 +324,10 @@ const SwordComponent = memo(function Sword({
       if (elapsed > CHARGE_FAILSAFE_TIMEOUT) {
         chargeStartTime.current = null;
         chargeStartPosition.current = null;
+        lastChargePosition.current = null;
         chargeHitEnemies.current.clear();
         chargeTrail.current = [];
+        setFireTrail([]);
         swordRef.current.rotation.set(0, 0, 0);
         swordRef.current.position.set(...basePosition);
         onChargeComplete?.();
@@ -368,8 +378,41 @@ const SwordComponent = memo(function Sword({
       if (distanceFromOrigin > MAX_CHARGE_BOUNDS) {
         chargeStartTime.current = null;
         chargeStartPosition.current = null;
+        lastChargePosition.current = null;
+        setFireTrail([]);
         onChargeComplete?.();
         return;
+      }
+
+      // Create fire particles between last position and current position (like Breach component)
+      if (lastChargePosition.current && playerPosition) {
+        const particlePositions: Array<{id: number, position: Vector3}> = [];
+
+        // Only add particles occasionally
+        if (Math.random() > 0.7) {
+          // Create a particle along the path using actual player position
+          const particleProgress = Math.random();
+          const particlePos = lastChargePosition.current.clone().lerp(playerPosition, particleProgress);
+
+          // Add some random offset
+          particlePos.x += (Math.random() - 0.5) * 1.5;
+          particlePos.y += Math.random() * 0.5;
+          particlePos.z += (Math.random() - 0.5) * 1.5;
+
+          particlePositions.push({
+            id: nextFireParticleId.current++,
+            position: particlePos
+          });
+        }
+
+        if (particlePositions.length > 0) {
+          setFireTrail((prev: Array<{id: number, position: Vector3}>) => [...prev, ...particlePositions]);
+        }
+      }
+
+      // Update last position for next frame using actual player position
+      if (playerPosition) {
+        lastChargePosition.current = playerPosition.clone();
       }
 
       // Check for collisions with enemies during dash phase
@@ -1161,8 +1204,8 @@ const SwordComponent = memo(function Sword({
       
       {/* Charge Trail Effects - Rendered outside sword group for proper world positioning */}
       {isCharging && chargeTrail.current.map(particle => (
-        <mesh 
-          key={particle.id} 
+        <mesh
+          key={particle.id}
           position={[particle.position.x, particle.position.y, particle.position.z]}
           scale={[particle.life * 0.2, particle.life * 0.2, particle.life * 0.2]}
         >
@@ -1176,6 +1219,11 @@ const SwordComponent = memo(function Sword({
             blending={AdditiveBlending}
           />
         </mesh>
+      ))}
+
+      {/* Fire Trail Effects for Charge ability (like Breach component) */}
+      {fireTrail.map((particle: {id: number, position: Vector3}) => (
+        <FireParticle key={particle.id} position={particle.position} />
       ))}
 
 
@@ -1213,5 +1261,48 @@ const SwordComponent = memo(function Sword({
   );
 });
 
+// Fire particle component for Charge ability (exact copy from Breach component)
+function FireParticle({ position }: { position: Vector3 }) {
+  const particleRef = useRef<THREE.Mesh>(null);
+  const lifetime = useRef(0.5 + Math.random() * 1.0); // Random lifetime between 0.5-1.5 seconds
+  const startTime = useRef(Date.now());
+  const initialScale = useRef(0.5 + Math.random() * 0.8); // Random initial scale between 0.5-1.3
+
+  useFrame(() => {
+    if (!particleRef.current) return;
+
+    const elapsed = (Date.now() - startTime.current) / 1000;
+    const progress = Math.min(elapsed / lifetime.current, 1);
+
+    if (progress < 1) {
+      // Make the particle rise slightly
+      particleRef.current.position.y += 0.01;
+
+      // Scale down as the particle ages
+      const scale = initialScale.current * (1 - progress);
+      particleRef.current.scale.set(scale, scale, scale);
+
+      // Fade out
+      const material = particleRef.current.material as THREE.MeshStandardMaterial;
+      if (material) {
+        material.opacity = 1 - progress;
+      }
+    }
+  });
+
+  return (
+    <mesh ref={particleRef} position={[position.x, position.y, position.z]}>
+      <sphereGeometry args={[0.5, 8, 8]} />
+      <meshStandardMaterial
+        color="#ff4500"
+        emissive="#ff7700"
+        emissiveIntensity={5}
+        transparent={true}
+        opacity={0.9}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
 export default SwordComponent;
-34
