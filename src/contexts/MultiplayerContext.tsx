@@ -159,6 +159,7 @@ interface MultiplayerContextType {
   broadcastPlayerStealth: (isInvisible: boolean) => void;
   broadcastPlayerKnockback: (targetPlayerId: string, direction: { x: number; y: number; z: number }, distance: number, duration: number) => void;
   broadcastPlayerTornadoEffect: (playerId: string, position: { x: number; y: number; z: number }, duration: number) => void;
+  broadcastPlayerDeathEffect: (playerId: string, position: { x: number; y: number; z: number }, isStarting: boolean) => void;
   
   // Enemy actions
   damageEnemy: (enemyId: string, damage: number) => void;
@@ -914,6 +915,18 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
+  const broadcastPlayerDeathEffect = useCallback((playerId: string, position: { x: number; y: number; z: number }, isStarting: boolean) => {
+    if (socket && currentRoomId) {
+      socket.emit('player-death-effect', {
+        roomId: currentRoomId,
+        playerId,
+        position,
+        isStarting,
+        timestamp: Date.now()
+      });
+    }
+  }, [socket, currentRoomId]);
+
   const broadcastPlayerKnockback = useCallback((targetPlayerId: string, direction: { x: number; y: number; z: number }, distance: number, duration: number) => {
     if (socket && currentRoomId) {
       socket.emit('player-knockback', {
@@ -1039,6 +1052,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     broadcastPlayerStealth,
     broadcastPlayerKnockback,
     broadcastPlayerTornadoEffect,
+    broadcastPlayerDeathEffect,
     damageEnemy,
     applyStatusEffect,
     damageTower,

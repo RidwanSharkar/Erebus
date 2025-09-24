@@ -13,6 +13,13 @@ import { MultiplayerProvider, useMultiplayer } from '../contexts/MultiplayerCont
 import RoomJoin from '../components/ui/RoomJoin';
 import { weaponAbilities, getAbilityIcon, type AbilityData } from '../utils/weaponAbilities';
 
+// Extend Window interface to include audioSystem
+declare global {
+  interface Window {
+    audioSystem?: any;
+  }
+}
+
 // Dynamic imports for maximum code splitting
 const Canvas = dynamic(() => import('@react-three/fiber').then(mod => ({ default: mod.Canvas })), {
   ssr: false,
@@ -199,39 +206,44 @@ function HomeContent() {
       type: WeaponType.SCYTHE,
       name: 'Scythe',
       icon: '🦋',
-      description: 'ENTROPY WEAVER',
+      description: 'WEAVER',
       defaultSubclass: WeaponSubclass.CHAOS
     },
     {
       type: WeaponType.BOW,
       name: 'Bow',
       icon: '🏹',
-      description: 'VIPER HUNTRESS',
+      description: 'VIPER',
       defaultSubclass: WeaponSubclass.ELEMENTAL
     },
     {
       type: WeaponType.SABRES,
       name: 'Sabres',
       icon: '⚔️',
-      description: 'LURKER ASSASSIN',      defaultSubclass: WeaponSubclass.FROST
+      description: 'ASSASSIN',      defaultSubclass: WeaponSubclass.FROST
     },
     {
       type: WeaponType.RUNEBLADE,
       name: 'Runeblade',
       icon: '🔮',
-      description: 'TEMPLAR KNIGHT',
+      description: 'TEMPLAR',
       defaultSubclass: WeaponSubclass.ARCANE
     },
     {
       type: WeaponType.SWORD,
       name: 'Greatsword',
       icon: '💠',
-      description: 'PRAETOR IMMORTAL',
+      description: 'IMMORTAL',
       defaultSubclass: WeaponSubclass.DIVINITY
     }
   ];
 
   const handleWeaponToggle = (weaponType: WeaponType) => {
+    // Play selection sound when weapon is clicked
+    if (window.audioSystem) {
+      window.audioSystem.playUISelectionSound();
+    }
+
     const isSelected = tempSelectedWeapons.includes(weaponType);
 
     if (isSelected) {
@@ -360,11 +372,14 @@ function HomeContent() {
   }, [controlSystem, skillPointData]);
 
   const handleExperienceUpdate = (experience: number, level: number) => {
+    // Check if this is a level up before updating state
+    const isLevelUp = level > playerLevel;
+
     setPlayerExperience(experience);
     setPlayerLevel(level);
-    
+
     // Update skill points when level changes
-    if (level > playerLevel) {
+    if (isLevelUp) {
       updateSkillPointsForLevel(level);
     }
   };
@@ -410,6 +425,22 @@ function HomeContent() {
       setWeaponPositions({});
     }
   }, [tempSelectedWeapons]);
+
+  // Initialize audio system for UI sounds
+  useEffect(() => {
+    const initAudioSystem = async () => {
+      try {
+        const { AudioSystem } = await import('../systems/AudioSystem');
+        const audioSystem = new AudioSystem();
+        (window as any).audioSystem = audioSystem;
+        await audioSystem.preloadWeaponSounds();
+      } catch (error) {
+        console.warn('Failed to initialize audio system:', error);
+      }
+    };
+
+    initAudioSystem();
+  }, []);
 
   return (
     <MultiplayerProvider>
@@ -503,6 +534,11 @@ function HomeContent() {
                       : 'bg-gray-600 cursor-not-allowed'
                   }`}
                   onClick={() => {
+                    // Play interface sound
+                    if (window.audioSystem) {
+                      window.audioSystem.playUIInterfaceSound();
+                    }
+
                     if (selectedWeapons) {
                       setRoomJoinMode('pvp');
                       setShowRoomJoin(true);

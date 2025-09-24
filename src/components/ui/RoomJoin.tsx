@@ -2,6 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 
+// Extend Window interface to include audioSystem
+declare global {
+  interface Window {
+    audioSystem?: any;
+  }
+}
+
 interface RoomJoinProps {
   onJoinSuccess: () => void;
   onBack: () => void;
@@ -67,6 +74,11 @@ export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, current
       return;
     }
 
+    // Play interface sound
+    if (window.audioSystem) {
+      window.audioSystem.playUIInterfaceSound();
+    }
+
     setIsJoining(true);
     try {
       await joinRoom(roomId, playerName.trim(), currentWeapon, currentSubclass, gameMode);
@@ -85,11 +97,30 @@ export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, current
   };
 
   const handleBackToForm = () => {
+    // Play interface sound
+    if (window.audioSystem) {
+      window.audioSystem.playUIInterfaceSound();
+    }
+
     setShowPreview(false);
     clearPreview();
   };
 
+  const handleBack = () => {
+    // Play interface sound
+    if (window.audioSystem) {
+      window.audioSystem.playUIInterfaceSound();
+    }
+
+    onBack();
+  };
+
   const handleStartGame = () => {
+    // Play interface sound
+    if (window.audioSystem) {
+      window.audioSystem.playUIInterfaceSound();
+    }
+
     startGame();
     onJoinSuccess(); // Still call this to update UI state
   };
@@ -239,9 +270,9 @@ export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, current
           >
             {isJoining ? 'Entering...' : 'Enter Room'}
           </button>
-          <button 
+          <button
             className="w-full px-8 py-2.5 text-lg bg-gray-600 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-gray-500 hover:-translate-y-1 disabled:bg-gray-800 disabled:cursor-not-allowed disabled:transform-none"
-            onClick={onBack}
+            onClick={handleBack}
             disabled={isJoining}
           >
             Back

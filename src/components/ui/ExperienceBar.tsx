@@ -13,10 +13,10 @@ export default function ExperienceBar({ experience, level, playerId, isLocalPlay
   // Calculate EXP needed for next level
   const getExpForNextLevel = (currentLevel: number): number => {
     switch (currentLevel) {
-      case 1: return 25;  // 25 EXP to reach level 2
-      case 2: return 50;  // 50 EXP to reach level 3
-      case 3: return 75;  // 75 EXP to reach level 4
-      case 4: return 100; // 100 EXP to reach level 5
+      case 1: return 50;  // 50 EXP to reach level 2
+      case 2: return 100; // 100 EXP to reach level 3
+      case 3: return 200; // 200 EXP to reach level 4
+      case 4: return 400; // 400 EXP to reach level 5
       case 5: return 0;   // Max level
       default: return 0;
     }
@@ -27,9 +27,9 @@ export default function ExperienceBar({ experience, level, playerId, isLocalPlay
     if (currentLevel >= 5) return 100; // Max level
 
     const expForPrevLevels = currentLevel === 1 ? 0 :
-      currentLevel === 2 ? 25 :
-      currentLevel === 3 ? 75 :
-      currentLevel === 4 ? 150 : 0;
+      currentLevel === 2 ? 50 :
+      currentLevel === 3 ? 150 :
+      currentLevel === 4 ? 350 : 0;
 
     const expForCurrentLevel = getExpForNextLevel(currentLevel);
     const currentLevelExp = currentExp - expForPrevLevels;
@@ -41,10 +41,10 @@ export default function ExperienceBar({ experience, level, playerId, isLocalPlay
   const getTotalExpForLevel = (targetLevel: number): number => {
     switch (targetLevel) {
       case 1: return 0;
-      case 2: return 25;
-      case 3: return 75;
-      case 4: return 150;
-      case 5: return 250;
+      case 2: return 50;
+      case 3: return 150;
+      case 4: return 350;
+      case 5: return 750;
       default: return 0;
     }
   };

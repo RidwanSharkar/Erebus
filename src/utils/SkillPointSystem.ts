@@ -171,10 +171,13 @@ export class SkillPointSystem {
     skillPointData: SkillPointData,
     newLevel: number
   ): SkillPointData {
-    const totalSkillPoints = this.getSkillPointsForLevel(newLevel);
+    // Calculate total skill points: initial 2 + (level - 1) skill points per level
+    const initialSkillPoints = 2;
+    const levelBasedSkillPoints = Math.max(0, (newLevel - 1) * this.SKILL_POINTS_PER_LEVEL);
+    const totalSkillPoints = initialSkillPoints + levelBasedSkillPoints;
     const spentSkillPoints = this.getSpentSkillPoints(skillPointData);
     const availableSkillPoints = Math.max(0, totalSkillPoints - spentSkillPoints);
-    
+
     return {
       ...skillPointData,
       skillPoints: availableSkillPoints

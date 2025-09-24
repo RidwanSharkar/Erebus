@@ -70,6 +70,7 @@ interface SwordProps {
   playerRotation?: Vector3;
   dragonGroupRef?: React.RefObject<Group>; // Reference to dragon's group for real-time positioning
   playerEntityId?: number; // Player's entity ID to prevent self-damage
+  realTimePositionRef?: React.RefObject<Vector3>; // Real-time position for charge trail particles
 }
 
 const SwordComponent = memo(function Sword({
@@ -97,7 +98,8 @@ const SwordComponent = memo(function Sword({
   playerPosition,
   playerRotation,
   dragonGroupRef,
-  playerEntityId
+  playerEntityId,
+  realTimePositionRef
 }: SwordProps) {
   const swordRef = useRef<Group>(null);
   const swingProgress = useRef(0);
@@ -384,25 +386,29 @@ const SwordComponent = memo(function Sword({
         return;
       }
 
-      // Create fire particles between last position and current position (like Breach component)
-      if (lastChargePosition.current && playerPosition) {
+      // Create fire particles along the actual charge trajectory using real player position
+      if (lastChargePosition.current) {
         const particlePositions: Array<{id: number, position: Vector3}> = [];
 
         // Only add particles occasionally
         if (Math.random() > 0.7) {
-          // Create a particle along the path using actual player position
-          const particleProgress = Math.random();
-          const particlePos = lastChargePosition.current.clone().lerp(playerPosition, particleProgress);
+          // Use the real-time position from ECS system for accurate trajectory tracking
+          const currentPosition = realTimePositionRef?.current || playerPosition;
+          if (currentPosition) {
+            // Create particles between last position and current real position
+            const particleProgress = Math.random();
+            const particlePos = lastChargePosition.current.clone().lerp(currentPosition, particleProgress);
 
-          // Add some random offset
-          particlePos.x += (Math.random() - 0.5) * 1.5;
-          particlePos.y += Math.random() * 0.5;
-          particlePos.z += (Math.random() - 0.5) * 1.5;
+            // Add some random offset around the charge path
+            particlePos.x += (Math.random() - 0.5) * 1.5;
+            particlePos.y += Math.random() * 0.5;
+            particlePos.z += (Math.random() - 0.5) * 1.5;
 
-          particlePositions.push({
-            id: nextFireParticleId.current++,
-            position: particlePos
-          });
+            particlePositions.push({
+              id: nextFireParticleId.current++,
+              position: particlePos
+            });
+          }
         }
 
         if (particlePositions.length > 0) {
@@ -410,23 +416,25 @@ const SwordComponent = memo(function Sword({
         }
       }
 
-      // Update last position for next frame using actual player position
-      if (playerPosition) {
-        lastChargePosition.current = playerPosition.clone();
+      // Update last position for next frame using real-time player position from ECS
+      const currentPositionForUpdate = realTimePositionRef?.current || playerPosition;
+      if (currentPositionForUpdate) {
+        lastChargePosition.current = currentPositionForUpdate.clone();
       }
 
       // Check for collisions with enemies during dash phase
-      if (enemyData && enemyData.length > 0 && onHit && progress > 0 && playerPosition) {
-        
+      const currentPosition = realTimePositionRef?.current || playerPosition;
+      if (enemyData && enemyData.length > 0 && onHit && progress > 0 && currentPosition) {
+
         for (const enemy of enemyData) {
           // Skip already hit enemies
           if (chargeHitEnemies.current.has(enemy.id)) continue;
-          
+
           // Skip if enemy health is 0 or below
           if (enemy.health <= 0) continue;
-          
-          // Calculate distance from actual player position to enemy
-          const distance = playerPosition.distanceTo(enemy.position);
+
+          // Calculate distance from real-time player position to enemy
+          const distance = currentPosition.distanceTo(enemy.position);
           
           if (distance <= CHARGE_COLLISION_RADIUS) {
             // We hit this enemy

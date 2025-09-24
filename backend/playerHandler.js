@@ -533,6 +533,23 @@ function handlePlayerEvents(socket, gameRooms) {
       timestamp: Date.now()
     });
   });
+
+  // Handle player death effect broadcasting
+  socket.on('player-death-effect', (data) => {
+    const { roomId, playerId, position, isStarting, timestamp } = data;
+
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+
+    // Broadcast death effect to other players in the room
+    socket.to(roomId).emit('player-death-effect', {
+      playerId,
+      position,
+      isStarting,
+      timestamp
+    });
+  });
 }
 
 module.exports = { handlePlayerEvents };

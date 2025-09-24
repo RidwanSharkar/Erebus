@@ -52,6 +52,7 @@ import VenomEffect from '@/components/projectiles/VenomEffect';
 import DebuffIndicator from '@/components/ui/DebuffIndicator';
 import FrozenEffect from '@/components/weapons/FrozenEffect';
 import StunnedEffect from '@/components/weapons/StunnedEffect';
+import DeathEffect from '@/components/weapons/DeathEffect';
 import SabreReaperMistEffect from '@/components/weapons/SabreReaperMistEffect';
 import HauntedSoulEffect from '@/components/weapons/HauntedSoulEffect';
 import CrossentropyExplosion from '@/components/projectiles/CrossentropyExplosion';
@@ -138,6 +139,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     broadcastPlayerDebuff, // For broadcasting debuff effects
     broadcastPlayerStealth, // For broadcasting stealth state
     broadcastPlayerTornadoEffect, // For broadcasting tornado effects
+    broadcastPlayerDeathEffect, // For broadcasting death effects
     broadcastPlayerKnockback, // For broadcasting knockback effects
     damageTower, // New function for tower damage
     damageSummonedUnit, // New function for summoned unit damage
@@ -154,6 +156,9 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   const reanimateRef = useRef<ReanimateRef>(null);
   const isInitialized = useRef(false);
   const lastAnimationBroadcast = useRef(0);
+  const realTimePlayerPositionRef = useRef<Vector3>(new Vector3(0, 0.5, 0));
+  // Real-time position refs for enemy players to enable ghost trail updates
+  const enemyPlayerPositionRefs = useRef<Map<string, { current: Vector3 }>>(new Map());
   const [playerPosition, setPlayerPosition] = useState(new Vector3(0, 0.5, 0));
   const [playerEntity, setPlayerEntity] = useState<any>(null);
 
@@ -195,6 +200,33 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
 
     return () => clearInterval(cleanupInterval);
   }, []); // Remove setPlayers dependency to prevent infinite re-renders
+
+  // Update enemy player position refs for ghost trail functionality
+  useEffect(() => {
+    players.forEach((player, playerId) => {
+      // Skip local player - they have their own realTimePlayerPositionRef
+      if (playerId === socket?.id) return;
+
+      // Get or create position ref for this enemy player
+      let positionRef = enemyPlayerPositionRefs.current.get(playerId);
+      if (!positionRef) {
+        positionRef = { current: new Vector3(player.position.x, player.position.y, player.position.z) };
+        enemyPlayerPositionRefs.current.set(playerId, positionRef);
+      } else if (positionRef.current) {
+        // Update existing ref with new position
+        positionRef.current.set(player.position.x, player.position.y, player.position.z);
+      }
+    });
+
+    // Clean up refs for players that no longer exist
+    const currentPlayerIds = Array.from(players.keys());
+    const refPlayerIds = Array.from(enemyPlayerPositionRefs.current.keys());
+    refPlayerIds.forEach(playerId => {
+      if (!currentPlayerIds.includes(playerId)) {
+        enemyPlayerPositionRefs.current.delete(playerId);
+      }
+    });
+  }, [players, socket?.id]);
 
   // Monitor player level changes and update TowerSystem
   useEffect(() => {
@@ -267,6 +299,14 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     deathTime: number;
     killerId?: string;
     deathPosition: Vector3;
+  }>>(new Map());
+
+  // Track death effects for players
+  const [deathEffects, setDeathEffects] = useState<Map<string, {
+    playerId: string;
+    position: Vector3;
+    startTime: number;
+    isActive: boolean;
   }>>(new Map());
 
   // Sync server summoned units to ECS entities for targeting and collision
@@ -1149,6 +1189,24 @@ const [maxMana, setMaxMana] = useState(150);
       return newState;
     });
 
+    // Start death effect locally
+    const player = players.get(deadPlayerId);
+    if (player) {
+      setDeathEffects(prev => {
+        const newEffects = new Map(prev);
+        newEffects.set(deadPlayerId, {
+          playerId: deadPlayerId,
+          position: new Vector3(player.position.x, player.position.y, player.position.z),
+          startTime: Date.now(),
+          isActive: true
+        });
+        return newEffects;
+      });
+
+      // Broadcast death effect to other players
+      broadcastPlayerDeathEffect(deadPlayerId, player.position, true);
+    }
+
     // Set death state in ControlSystem to prevent movement and abilities
     if (deadPlayerId === socket?.id && controlSystemRef.current) {
       controlSystemRef.current.setPlayerDead(true);
@@ -1229,6 +1287,16 @@ const [maxMana, setMaxMana] = useState(150);
       newState.delete(playerId);
       return newState;
     });
+
+    // Stop death effect locally
+    setDeathEffects(prev => {
+      const newEffects = new Map(prev);
+      newEffects.delete(playerId);
+      return newEffects;
+    });
+
+    // Stop death effect for other players
+    broadcastPlayerDeathEffect(playerId, { x: 0, y: 0, z: 0 }, false);
 
     // Clear death state in ControlSystem to re-enable movement and abilities
     if (playerId === socket?.id && controlSystemRef.current) {
@@ -1754,6 +1822,41 @@ const hasMana = useCallback((amount: number) => {
               }
             }]);
           }, resetDuration);
+      }
+
+      // Play enemy sound effects at 50% volume
+      const position = new Vector3(data.position.x, data.position.y, data.position.z);
+      if (window.audioSystem) {
+        switch (data.attackType) {
+          case 'viper_sting_projectile':
+            window.audioSystem.playEnemyViperStingReleaseSound(position);
+            break;
+          case 'cobra_shot_projectile':
+            // Cobra shot uses bow release sound
+            window.audioSystem.playEnemyBowReleaseSound(position, data.animationData?.chargeProgress);
+            break;
+          case 'regular_arrow':
+            window.audioSystem.playEnemyBowReleaseSound(position, data.animationData?.chargeProgress);
+            break;
+          case 'charged_arrow':
+            window.audioSystem.playEnemyBowReleaseSound(position, data.animationData?.chargeProgress);
+            break;
+          case 'perfect_shot':
+            window.audioSystem.playEnemyBowReleaseSound(position, 1.0); // Perfect shot is max charge
+            break;
+          case 'barrage_projectile':
+            window.audioSystem.playEnemyBowReleaseSound(position, data.animationData?.chargeProgress);
+            break;
+          case 'burst_arrow':
+            window.audioSystem.playEnemyBowReleaseSound(position, data.animationData?.chargeProgress);
+            break;
+          case 'entropic_bolt':
+            window.audioSystem.playEnemyEntropicBoltSound(position);
+            break;
+          case 'crossentropy_bolt':
+            window.audioSystem.playEnemyCrossentropySound(position);
+            break;
+        }
       }
     };
 
@@ -2577,6 +2680,55 @@ const hasMana = useCallback((amount: number) => {
           }
         }
       }
+
+      // Play enemy ability sound effects at 50% volume
+      const position = new Vector3(data.position.x, data.position.y, data.position.z);
+      if (window.audioSystem) {
+        switch (data.abilityType) {
+          case 'cloudkill':
+            window.audioSystem.playEnemyBowReleaseSound(position, data.animationData?.chargeProgress);
+            break;
+          case 'frost_nova':
+            window.audioSystem.playEnemyFrostNovaSound(position);
+            break;
+          case 'reanimate':
+            // Reanimate doesn't have a specific sound, uses healing sound which is handled separately
+            break;
+          case 'smite':
+            window.audioSystem.playEnemyRunebladeSmiteSound(position);
+            break;
+          case 'colossusStrike':
+            window.audioSystem.playEnemyColossusStrikeSound(position);
+            break;
+          case 'windShear':
+            window.audioSystem.playEnemyWindshearSound(position);
+            break;
+          case 'deathgrasp':
+            window.audioSystem.playEnemyRunebladeVoidGraspSound(position);
+            break;
+          case 'wraith_strike':
+            window.audioSystem.playEnemyRunebladeWraithbladeSound(position);
+            break;
+          case 'charge':
+            window.audioSystem.playEnemySwordChargeSound(position);
+            break;
+          case 'deflect':
+            window.audioSystem.playEnemySwordDeflectSound(position);
+            break;
+          case 'skyfall':
+            window.audioSystem.playEnemySabresSkyfallSound(position);
+            break;
+          case 'backstab':
+            window.audioSystem.playEnemyBackstabSound(position);
+            break;
+          case 'sunder':
+            window.audioSystem.playEnemySabresFlourishSound(position);
+            break;
+          case 'stealth':
+            window.audioSystem.playEnemySabresShadowStepSound(position);
+            break;
+        }
+      }
     };
 
     const handlePlayerDamaged = (data: any) => {
@@ -2732,6 +2884,63 @@ const hasMana = useCallback((amount: number) => {
           
           return updated;
         });
+
+        // Play enemy animation sound effects at 50% volume
+        const position = new Vector3(data.position?.x || 0, data.position?.y || 0, data.position?.z || 0);
+        if (window.audioSystem && data.animationState) {
+          // Handle melee attack sounds
+          if (data.animationState.isSwinging && data.animationState.swordComboStep) {
+            // Get the player's weapon type to determine which sound to play
+            const player = players.get(data.playerId);
+            const weaponType = player?.weapon || WeaponType.BOW;
+
+            switch (weaponType) {
+              case WeaponType.SWORD:
+                window.audioSystem.playEnemySwordSwingSound(data.animationState.swordComboStep, position);
+                break;
+              case WeaponType.SABRES:
+                window.audioSystem.playEnemySabresSwingSound(position);
+                break;
+              case WeaponType.SCYTHE:
+                // Scythe melee attacks use entropic bolt sound
+                window.audioSystem.playEnemyEntropicBoltSound(position);
+                break;
+              case WeaponType.RUNEBLADE:
+                // Runeblade melee attacks use heartrend sound
+                window.audioSystem.playEnemyRunebladeHeartrendSound(position);
+                break;
+            }
+          }
+
+          // Handle charging sounds
+          if (data.animationState.isCharging) {
+            const player = players.get(data.playerId);
+            const weaponType = player?.weapon || WeaponType.BOW;
+
+            switch (weaponType) {
+              case WeaponType.BOW:
+                window.audioSystem.playEnemyBowDrawSound(position);
+                break;
+              case WeaponType.SWORD:
+                window.audioSystem.playEnemySwordChargeSound(position);
+                break;
+            }
+          }
+
+          // Handle ability charging sounds
+          if (data.animationState.isViperStingCharging) {
+            // Viper sting charge sound (could add if needed)
+          }
+          if (data.animationState.isBarrageCharging) {
+            // Barrage charge sound (could add if needed)
+          }
+          if (data.animationState.isCobraShotCharging) {
+            // Cobra shot charge sound (could add if needed)
+          }
+          if (data.animationState.isWindShearCharging) {
+            // Wind shear charge sound (could add if needed)
+          }
+        }
       }
     };
 
@@ -2853,6 +3062,35 @@ const hasMana = useCallback((amount: number) => {
 
       // Create the tornado effect for the remote player
       createPvpWindShearTornadoEffect(playerId, duration);
+    };
+
+    const handlePlayerDeathEffect = (data: any) => {
+      if (!data || !data.playerId) {
+        return;
+      }
+
+      const { playerId, position, isStarting } = data;
+
+      if (isStarting) {
+        // Start death effect
+        setDeathEffects(prev => {
+          const newEffects = new Map(prev);
+          newEffects.set(playerId, {
+            playerId,
+            position: new Vector3(position.x, position.y, position.z),
+            startTime: Date.now(),
+            isActive: true
+          });
+          return newEffects;
+        });
+      } else {
+        // Stop death effect
+        setDeathEffects(prev => {
+          const newEffects = new Map(prev);
+          newEffects.delete(playerId);
+          return newEffects;
+        });
+      }
     };
 
     const handlePlayerShieldChanged = (data: any) => {
@@ -3005,6 +3243,7 @@ const hasMana = useCallback((amount: number) => {
     socket.on('player-debuff', handlePlayerDebuff);
     socket.on('player-stealth', handlePlayerStealth);
     socket.on('player-tornado-effect', handlePlayerTornadoEffect);
+    socket.on('player-death-effect', handlePlayerDeathEffect);
     socket.on('player-shield-changed', handlePlayerShieldChanged);
     socket.on('player-knockback', handlePlayerKnockback);
 
@@ -3020,6 +3259,7 @@ const hasMana = useCallback((amount: number) => {
       socket.off('player-debuff', handlePlayerDebuff);
       socket.off('player-stealth', handlePlayerStealth);
       socket.off('player-tornado-effect', handlePlayerTornadoEffect);
+      socket.off('player-death-effect', handlePlayerDeathEffect);
       socket.off('player-shield-changed', handlePlayerShieldChanged);
       socket.off('player-knockback', handlePlayerKnockback);
     };
@@ -3833,6 +4073,7 @@ const hasMana = useCallback((amount: number) => {
         if (transform && transform.position) {
           const newPosition = transform.position.clone();
           setPlayerPosition(newPosition);
+          realTimePlayerPositionRef.current.copy(newPosition);
 
           // Update Viper Sting parent ref with current position and camera rotation
           viperStingParentRef.current.position.copy(newPosition);
@@ -4091,6 +4332,7 @@ const hasMana = useCallback((amount: number) => {
         <DragonRenderer
           entityId={playerEntity.id}
           position={playerPosition}
+          realTimePositionRef={realTimePlayerPositionRef}
           world={engineRef.current!.getWorld()}
           currentWeapon={weaponState.currentWeapon}
           currentSubclass={weaponState.currentSubclass}
@@ -4232,11 +4474,15 @@ const hasMana = useCallback((amount: number) => {
           isFrozen: false
         };
         
+        // Get the real-time position ref for this enemy player
+        const enemyPositionRef = enemyPlayerPositionRefs.current.get(player.id);
+
         return (
           <DragonRenderer
             key={player.id}
             entityId={parseInt(player.id.replace(/\D/g, '0'))} // Convert string ID to number
             position={new Vector3(player.position.x, player.position.y, player.position.z)}
+            realTimePositionRef={enemyPositionRef}
             world={engineRef.current?.getWorld() || new World()} // Use current world or create new one
             currentWeapon={player.weapon}
             currentSubclass={player.subclass}
@@ -5234,6 +5480,44 @@ const hasMana = useCallback((amount: number) => {
             );
           })}
 
+          {/* Death Effects for Dead Players */}
+          {Array.from(deathEffects.values()).map(deathEffect => {
+            return (
+              <DeathEffect
+                key={deathEffect.playerId}
+                position={deathEffect.position}
+                duration={5000} // 5 seconds (respawn time)
+                startTime={deathEffect.startTime}
+                playerId={deathEffect.playerId}
+                playerData={Array.from(players.values()).map(p => {
+                  // For local player, use the most current position
+                  if (p.id === socket?.id && playerEntity) {
+                    const transform = playerEntity.getComponent(Transform);
+                    const currentPos = transform ? transform.position : new Vector3(p.position.x, p.position.y, p.position.z);
+                    return {
+                      id: p.id,
+                      position: currentPos.clone(),
+                      health: p.health
+                    };
+                  } else {
+                    return {
+                      id: p.id,
+                      position: new Vector3(p.position.x, p.position.y, p.position.z),
+                      health: p.health
+                    };
+                  }
+                })}
+                onComplete={() => {
+                  setDeathEffects(prev => {
+                    const newEffects = new Map(prev);
+                    newEffects.delete(deathEffect.playerId);
+                    return newEffects;
+                  });
+                }}
+              />
+            );
+          })}
+
           {/* PVP Summon Totem Effects */}
           {pvpSummonTotemEffects.map(effect => {
             if (effect.type === 'summonExplosion') {
@@ -5370,8 +5654,13 @@ function setupPVPGame(
   // Note: SummonedUnitSystem is disabled for PVP - using server-authoritative summoned units instead
   // const summonedUnitSystem = new SummonedUnitSystem(world);
 
-  // Initialize Audio System
-  const audioSystem = new AudioSystem();
+  // Initialize Audio System (reuse if already created for UI sounds)
+  const audioSystem = (window as any).audioSystem || new AudioSystem();
+
+  // Make audio system globally available for UI sounds (if not already set)
+  if (!(window as any).audioSystem) {
+    (window as any).audioSystem = audioSystem;
+  }
 
   const controlSystem = new ControlSystem(
     camera as PerspectiveCamera,

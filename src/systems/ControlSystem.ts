@@ -389,13 +389,15 @@ export class ControlSystem extends System {
 
     if (!playerTransform || !playerMovement) return;
 
-    // If player is dead, prevent all input processing but still allow debuff updates
+    // If player is dead, allow input processing but set movement to 0
     if (this.isPlayerDead) {
       // Update debuff states even when dead (for visual effects)
       if (typeof playerMovement.updateDebuffs === 'function') {
         playerMovement.updateDebuffs();
       }
-      return; // Skip all other input processing
+      // Set movement velocity to 0 to prevent movement while dead
+      playerMovement.velocity.set(0, 0, 0);
+      // Continue with input processing below
     }
 
     // Update debuff states first
@@ -956,8 +958,13 @@ export class ControlSystem extends System {
     }
     this.lastFireTime = currentTime;
 
-    // Play entropic bolt sound
-    this.audioSystem?.playEntropicBoltSound(playerTransform.position);
+    // Play entropic bolt sound (or cryoflame if passive unlocked)
+    const isCryoflameUnlocked = this.isPassiveAbilityUnlocked('P', WeaponType.SCYTHE, 'primary');
+    if (isCryoflameUnlocked) {
+      this.audioSystem?.playScytheCryoflameSound(playerTransform.position);
+    } else {
+      this.audioSystem?.playEntropicBoltSound(playerTransform.position);
+    }
 
     // Get dragon's facing direction
     const direction = new Vector3();
@@ -1007,6 +1014,9 @@ export class ControlSystem extends System {
     this.crossentropyChargeProgress = 0;
     this.lastCrossentropyTime = currentTime;
 
+    // Play crossentropy sound at the start of the ability
+    this.audioSystem?.playCrossentropySound(playerTransform.position);
+
     // Start charging animation
     const chargeStartTime = Date.now();
     const chargeDuration = 1000; // 1 second charge time
@@ -1027,9 +1037,6 @@ export class ControlSystem extends System {
   private fireCrossentropyBoltAbilityAfterCharge(playerTransform: Transform): void {
     // Rate limiting was already checked in performCrossentropyAbility()
     // No need to check again here - we just finished charging
-
-    // Play crossentropy sound after the 1-second charge
-    this.audioSystem?.playCrossentropySound(playerTransform.position);
 
     // Get dragon's facing direction
     const direction = new Vector3();
@@ -1078,6 +1085,9 @@ export class ControlSystem extends System {
     }
 
     this.lastSummonTotemTime = currentTime;
+
+    // Play mantra sound when totem is summoned
+    this.audioSystem?.playScytheMantraSound(playerTransform.getWorldPosition());
 
     // Get player's world position
     const playerPosition = playerTransform.getWorldPosition();
@@ -1383,7 +1393,10 @@ export class ControlSystem extends System {
       }
       const manaAfter = gameUI.getCurrentMana();
     }
-    
+
+    // Play sunwell sound when reanimate is cast
+    this.audioSystem?.playScytheSunwellSound(playerTransform.getWorldPosition());
+
     // Always trigger the visual effect first, regardless of healing success
     this.triggerReanimateEffect(playerTransform);
     
@@ -1447,8 +1460,10 @@ export class ControlSystem extends System {
     }
     
     this.lastFrostNovaTime = currentTime;
-    
-    
+
+    // Play frost nova sound at the start of the ability
+    this.audioSystem?.playFrostNovaSound(playerTransform.position);
+
     // Get player position and direction
     const playerPosition = playerTransform.getWorldPosition();
     const direction = new Vector3();
@@ -2179,6 +2194,9 @@ export class ControlSystem extends System {
     this.lastFireTime = currentTime;
     this.lastSwordAttackTime = currentTime;
 
+    // Play sword swing sound based on current combo step (same as sword)
+    this.audioSystem?.playSwordSwingSound(this.swordComboStep, playerTransform.position);
+
     // Set swinging state - completion will be handled by runeblade component callback
     this.isSwinging = true;
 
@@ -2213,6 +2231,9 @@ export class ControlSystem extends System {
 
     this.lastSmiteTime = currentTime;
     this.isSmiting = true;
+
+    // Play smite sound
+    this.audioSystem?.playRunebladeSmiteSound(playerTransform.position);
 
     // Stop player movement immediately when casting Smite
     if (this.playerEntity) {
@@ -2301,6 +2322,9 @@ export class ControlSystem extends System {
 
     this.lastColossusStrikeTime = currentTime;
     this.isColossusStriking = true;
+
+    // Play colossus strike sound at the start of the ability
+    this.audioSystem?.playColossusStrikeSound(playerTransform.position);
 
     // Stop player movement immediately when casting Colossus Strike
     if (this.playerEntity) {
@@ -2543,6 +2567,9 @@ export class ControlSystem extends System {
     this.lastDeathGraspTime = currentTime;
     this.isDeathGrasping = true;
 
+    // Play void grasp sound
+    this.audioSystem?.playRunebladeVoidGraspSound(playerTransform.position);
+
     // Stop player movement immediately when casting Death Grasp
     if (this.playerEntity) {
       const playerMovement = this.playerEntity.getComponent(Movement);
@@ -2604,6 +2631,9 @@ export class ControlSystem extends System {
 
     this.lastWraithStrikeTime = currentTime;
     this.isWraithStriking = true;
+
+    // Play wraithblade sound
+    this.audioSystem?.playRunebladeWraithbladeSound(playerTransform.position);
 
     // Stop player movement immediately when casting Wraith Strike
     if (this.playerEntity) {
@@ -2944,7 +2974,10 @@ export class ControlSystem extends System {
     this.skyfallStartTime = currentTime;
     this.lastSkyfallTime = currentTime;
     this.skyfallStartPosition.copy(playerTransform.position);
-    
+
+    // Play skyfall sound
+    this.audioSystem?.playSabresSkyfallSound(playerTransform.position);
+
     // Set target height (double jump height)
     const playerMovement = this.playerEntity?.getComponent(Movement);
     if (playerMovement) {
@@ -3128,7 +3161,10 @@ export class ControlSystem extends System {
     this.isSundering = true;
     this.sunderStartTime = currentTime;
     this.sunderDamageApplied = false; // Reset damage flag for new sunder
-    
+
+    // Play flourish sound
+    this.audioSystem?.playSabresFlourishSound(playerTransform.position);
+
     // Don't perform damage immediately - wait for the right moment in animation
     // This ensures damage happens during the actual sunder animation, not just at the start
   }
@@ -3401,7 +3437,10 @@ export class ControlSystem extends System {
     // Start stealth animation
     this.isStealthing = true;
     this.stealthStartTime = currentTime;
-    
+
+    // Play shadow step sound
+    this.audioSystem?.playSabresShadowStepSound(playerTransform.position);
+
     // Create Sabre Reaper Mist effect at player position
     if (this.onCreateSabreMistEffectCallback) {
       this.onCreateSabreMistEffectCallback(playerTransform.position.clone());
@@ -3552,6 +3591,9 @@ export class ControlSystem extends System {
 
       // Reset mana drain timer when activating
       this.lastManaDrainTime = Date.now() / 1000;
+
+      // Play heartrend sound when Corrupted Aura is activated
+      this.audioSystem?.playRunebladeHeartrendSound(playerTransform.position);
     } else {
       // Restore original rune counts when deactivating
       setGlobalCriticalRuneCount(this.originalCriticalRunes);
@@ -3716,7 +3758,10 @@ export class ControlSystem extends System {
     // Start backstab animation
     this.isBackstabbing = true;
     this.backstabStartTime = currentTime;
-    
+
+    // Play backstab sound at the start of the ability
+    this.audioSystem?.playBackstabSound(playerTransform.position);
+
     // Trigger callback for multiplayer/visual effects
     if (this.onBackstabCallback) {
       const direction = new Vector3();
@@ -4107,7 +4152,10 @@ export class ControlSystem extends System {
 
     this.isSwordCharging = true;
     this.lastChargeTime = currentTime;
-    
+
+    // Play charge sound
+    this.audioSystem?.playSwordChargeSound(playerTransform.position);
+
     // Reset collision tracking for new charge
     this.chargeStoppedByCollision = false;
     
@@ -4306,7 +4354,10 @@ export class ControlSystem extends System {
 
     this.isDeflecting = true;
     this.lastDeflectTime = currentTime;
-    
+
+    // Play deflect sound
+    this.audioSystem?.playSwordDeflectSound(playerTransform.position);
+
     // Trigger Deflect callback for multiplayer
     if (this.onDeflectCallback) {
       const direction = new Vector3();
@@ -4360,8 +4411,8 @@ export class ControlSystem extends System {
       if (this.viperStingChargeProgress >= 1.0) {
         clearInterval(chargeInterval);
 
-        // Play bow release sound when firing
-        this.audioSystem?.playBowReleaseSound(playerTransform.position, 1.0);
+        // Play viper sting release sound when firing
+        this.audioSystem?.playViperStingReleaseSound(playerTransform.position);
 
         this.fireViperSting(playerTransform);
         this.isViperStingCharging = false;

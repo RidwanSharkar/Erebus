@@ -19,6 +19,7 @@ import { ReanimateRef } from '../weapons/Reanimate';
 interface DragonRendererProps {
   entityId: number;
   position: Vector3;
+  realTimePositionRef?: React.RefObject<Vector3>;
   world: World;
   onMeshReady?: (mesh: Group) => void;
   currentWeapon?: WeaponType;
@@ -92,6 +93,7 @@ interface DragonRendererProps {
 export default function DragonRenderer({
   entityId,
   position,
+  realTimePositionRef,
   world,
   onMeshReady,
   currentWeapon = WeaponType.BOW,
@@ -190,6 +192,11 @@ export default function DragonRenderer({
     targetId?: string;
   }>>([]);
 
+  // Real-time position ref for charge trail particles
+  // Use the passed ref if available (for local player), otherwise create our own (for remote players)
+  const internalRealTimePositionRef = useRef<Vector3>(position ? position.clone() : new Vector3(0, 0.5, 0));
+  const effectiveRealTimePositionRef = realTimePositionRef || internalRealTimePositionRef;
+
   // Calculate movement direction based on position changes
   useFrame(() => {
     if (groupRef.current) {
@@ -283,8 +290,14 @@ export default function DragonRenderer({
         // For weapons (like deflect shield), use movement direction if moving, otherwise last facing direction
         const entity = world.getEntity(entityId);
         let weaponRotation = new Vector3(0, angle, 0); // Default to camera direction
-        
+
         if (entity) {
+          // Update real-time position ref for charge trail particles
+          const transform = entity.getComponent(Transform);
+          if (transform && transform.position && effectiveRealTimePositionRef.current) {
+            effectiveRealTimePositionRef.current.copy(transform.position);
+          }
+
           const movement = entity.getComponent(Movement);
           if (movement && movement.inputStrength > 0.1) {
             // Player is actively moving - use movement direction for weapons
@@ -411,6 +424,7 @@ export default function DragonRenderer({
           nextDamageNumberId={nextDamageNumberId}
           playerPosition={position}
           playerRotation={currentRotation}
+          realTimePositionRef={effectiveRealTimePositionRef}
           isViperStingCharging={isViperStingCharging}
           viperStingChargeProgress={viperStingChargeProgress}
           isBarrageCharging={isBarrageCharging}
@@ -432,6 +446,7 @@ export default function DragonRenderer({
         parentRef={groupRef}
         weaponType={currentWeapon}
         weaponSubclass={currentSubclass}
+        targetPosition={effectiveRealTimePositionRef.current || undefined}
         isStealthing={isStealthing}
       />
       

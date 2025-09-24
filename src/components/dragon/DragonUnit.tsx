@@ -76,6 +76,7 @@ interface DragonUnitProps {
   nextDamageNumberId?: { current: number };
   playerPosition?: Vector3;
   playerRotation?: Vector3;
+  realTimePositionRef?: React.RefObject<Vector3>;
   isViperStingCharging?: boolean;
   viperStingChargeProgress?: number;
   isBarrageCharging?: boolean;
@@ -167,6 +168,7 @@ export default function DragonUnit({
   nextDamageNumberId = { current: 0 },
   playerPosition,
   playerRotation = new Vector3(0, 0, 0),
+  realTimePositionRef,
   isViperStingCharging = false,
   viperStingChargeProgress = 0,
   isBarrageCharging = false,
@@ -247,9 +249,9 @@ export default function DragonUnit({
           playerRotation={playerRotation}
           dragonGroupRef={groupRef}
           playerEntityId={entityId}
+          realTimePositionRef={realTimePositionRef}
 
 
-   
         />
       );
     } else if (currentWeapon === WeaponType.SABRES) {
