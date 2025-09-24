@@ -62,9 +62,9 @@ export default function WindShearProjectileManager({
   useFrame((state, deltaTime) => {
     if (activeProjectiles.length === 0) return;
 
-    const speed = 25; // Increased to 20 units per second for better visibility during testing
+    const speed = 32.5; // Increased by 30%
     const currentTime = Date.now();
-    const DAMAGE = 80; // Piercing damage as specified
+    const DAMAGE = 120; // Increased piercing damage as specified
     const HIT_RADIUS = 1.5; // Collision radius
 
     setActiveProjectiles(prev => {

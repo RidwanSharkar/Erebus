@@ -198,7 +198,7 @@ export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | '
     E: '❄️', // Coldsnap
     R: '🔥', // Crossentropy
     F: '🪬', // Totem
-    P: '💎' // Cryoflame
+    P: '💠' // Cryoflame
   },
   [WeaponType.SABRES]: {
     Q: '🔪', // Backstab

@@ -24,6 +24,8 @@ interface EnvironmentProps {
   world?: World; // Optional world for collision system
   camera?: PerspectiveCamera; // Optional camera for LOD calculations
   enableLargeTree?: boolean; // Enable large tree rendering
+  isPVP?: boolean; // Enable PVP-specific pillar positioning
+  pvpPillarPositions?: Array<[number, number, number]>; // PVP pillar positions
 }
 
 /**
@@ -38,18 +40,25 @@ const Environment: React.FC<EnvironmentProps> = ({
   enableBorderEffects = true,
   world,
   camera,
-  enableLargeTree = false
+  enableLargeTree = false,
+  isPVP = false,
+  pvpPillarPositions
 }) => {
   // Generate mountains once and memoize for performance
   const mountains = useMemo(() => generateMountains(), []);
 
-  // Define pillar positions in triangle formation
-  const pillarPositions: Array<[number, number, number]> = useMemo(() => [
-    [0, 0, -5],        // Front pillar
-    [-4.25, 0, 2.5],   // Left pillar
-    [4.25, 0, 2.5]     // Right pillar
-    
-  ], []);
+  // Define pillar positions - use PVP positions if provided, otherwise default triangle
+  const pillarPositions: Array<[number, number, number]> = useMemo(() => {
+    if (isPVP && pvpPillarPositions) {
+      return pvpPillarPositions;
+    }
+    // Default triangle formation for regular gameplay
+    return [
+      [0, 0, -5],        // Front pillar
+      [-4.25, 0, 2.5],   // Left pillar
+      [4.25, 0, 2.5]     // Right pillar
+    ];
+  }, [isPVP, pvpPillarPositions]);
 
   // Define pedestal position
   const pedestalPosition: [number, number, number] = useMemo(() => [0, 0, 0], []);

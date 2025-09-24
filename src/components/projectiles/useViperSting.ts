@@ -14,6 +14,8 @@ interface ViperStingProjectile {
   fadeStartTime: number | null;
   isReturning: boolean;
   returnHitEnemies: Set<string>;
+  casterId?: string; // For PVP: remember which player cast this projectile
+  casterPosition?: Vector3; // For PVP: remember the caster's position for return
 }
 
 interface SoulStealEffect {
@@ -56,6 +58,11 @@ interface UseViperStingProps {
     cooldownStartTime: number | null;
   }>>>;
   localSocketId?: string; // Add this to properly identify local player
+  players?: Array<{ // For PVP dynamic targeting
+    id: string;
+    position: { x: number; y: number; z: number };
+    health: number;
+  }>;
 }
 
 export function useViperSting({
@@ -69,7 +76,8 @@ export function useViperSting({
   applyDoT,
   charges,
   setCharges,
-  localSocketId
+  localSocketId,
+  players
 }: UseViperStingProps) {
   const projectilePool = useRef<ViperStingProjectile[]>([]);
   const soulStealEffects = useRef<SoulStealEffect[]>([]);
@@ -80,6 +88,7 @@ export function useViperSting({
   const POOL_SIZE = 3;
   const SHOT_COOLDOWN = 2000; // 7 seconds
   const PROJECTILE_SPEED = 0.625; // Slightly faster than regular arrows
+  const PROJECTILE_RETURN_SPEED = 0.525; // Slightly slower for return phase
   const DAMAGE = 61;
   const MAX_DISTANCE = 20; // Reduced max distance for return mechanic
   const FADE_DURATION = 350;
@@ -107,7 +116,7 @@ export function useViperSting({
     return projectilePool.current.find(p => !p.active);
   }, []);
 
-  const shootViperSting = useCallback((overridePosition?: Vector3, overrideDirection?: Vector3) => {
+  const shootViperSting = useCallback((overridePosition?: Vector3, overrideDirection?: Vector3, casterId?: string) => {
     const now = Date.now();
     if (now - lastShotTime.current < SHOT_COOLDOWN) return false;
 
@@ -152,6 +161,10 @@ export function useViperSting({
     projectile.fadeStartTime = null;
     projectile.isReturning = false;
     projectile.id = nextProjectileId.current++;
+
+    // Set caster information for PVP return targeting
+    projectile.casterId = casterId || localSocketId;
+    projectile.casterPosition = unitPosition.clone();
 
     // Create beam effect for forward shot
     if (createBeamEffect) {
@@ -270,22 +283,44 @@ export function useViperSting({
             }
           }
         } else {
-          // Return movement phase
-          if (!parentRef.current) return;
+          // Return movement phase - dynamically follow caster's current position
 
-          // Get current player position for dynamic return
-          const currentPlayerPosition = parentRef.current.position.clone();
-          currentPlayerPosition.y += 0; // Match the chest level used for launching
+          // Determine the current target position based on caster
+          let returnTargetPosition: Vector3;
 
-          const distanceToPlayer = projectile.position.distanceTo(currentPlayerPosition);
+          if (projectile.casterId === localSocketId) {
+            // Local player projectile - use current local position
+            if (!parentRef.current) return;
+            returnTargetPosition = parentRef.current.position.clone();
+          } else if (projectile.casterId && players) {
+            // Remote player projectile - find caster in players array
+            const casterPlayer = players.find(p => p.id === projectile.casterId);
+            if (casterPlayer) {
+              returnTargetPosition = new Vector3(
+                casterPlayer.position.x,
+                casterPlayer.position.y,
+                casterPlayer.position.z
+              );
+            } else {
+              // Fallback to stored caster position if player not found
+              returnTargetPosition = projectile.casterPosition || projectile.startPosition.clone();
+            }
+          } else {
+            // Fallback for non-PVP or missing data
+            returnTargetPosition = projectile.casterPosition || projectile.startPosition.clone();
+          }
 
-          if (distanceToPlayer > 1.5 && !projectile.fadeStartTime) {
-            // Update direction toward current player position (dynamic following)
-            projectile.direction = new Vector3().subVectors(currentPlayerPosition, projectile.position).normalize();
+          returnTargetPosition.y += 0; // Match the chest level used for launching
 
-            // Move projectile back toward current player position
+          const distanceToTarget = projectile.position.distanceTo(returnTargetPosition);
+
+          if (distanceToTarget > 1.5 && !projectile.fadeStartTime) {
+            // Update direction toward caster's current position (dynamic following)
+            projectile.direction = new Vector3().subVectors(returnTargetPosition, projectile.position).normalize();
+
+            // Move projectile back toward caster's current position
             projectile.position.add(
-              projectile.direction.clone().multiplyScalar(PROJECTILE_SPEED)
+              projectile.direction.clone().multiplyScalar(PROJECTILE_RETURN_SPEED)
             );
 
             // Check for enemy collisions during return phase (allow hitting different enemies)
@@ -338,7 +373,7 @@ export function useViperSting({
               }
             }
           } else if (!projectile.fadeStartTime) {
-            // Start fading when projectile reaches player
+            // Start fading when projectile reaches caster's current position
             projectile.fadeStartTime = now;
           }
         }

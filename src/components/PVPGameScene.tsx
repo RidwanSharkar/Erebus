@@ -18,6 +18,7 @@ import { Shield } from '@/ecs/components/Shield';
 import { Renderer } from '@/ecs/components/Renderer';
 import { Collider, CollisionLayer, ColliderType } from '@/ecs/components/Collider';
 import { Tower } from '@/ecs/components/Tower';
+import { Pillar } from '@/ecs/components/Pillar';
 import { SummonedUnit } from '@/ecs/components/SummonedUnit';
 import { Entity } from '@/ecs/Entity';
 import { InterpolationBuffer } from '@/ecs/components/Interpolation';
@@ -30,6 +31,7 @@ import { PhysicsSystem } from '@/systems/PhysicsSystem';
 import { CollisionSystem } from '@/systems/CollisionSystem';
 import { CombatSystem } from '@/systems/CombatSystem';
 import { TowerSystem } from '@/systems/TowerSystem';
+import { PillarSystem } from '@/systems/PillarSystem';
 import { InterpolationSystem } from '@/systems/InterpolationSystem';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { ReanimateRef } from '@/components/weapons/Reanimate';
@@ -70,6 +72,7 @@ import { pvpStateBatcher, PVPStateUpdateHelpers } from '@/utils/PVPStateBatcher'
 import DeflectShieldManager, { triggerGlobalDeflectShield } from '@/components/weapons/DeflectShieldManager';
 import PlayerHealthBar from '@/components/ui/PlayerHealthBar';
 import TowerRenderer from '@/components/towers/TowerRenderer';
+import PillarRenderer from '@/components/environment/PillarRenderer';
 import SummonedUnitRenderer from '@/components/SummonedUnitRenderer';
 import EnhancedGround from '@/components/environment/EnhancedGround';
 
@@ -122,6 +125,8 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     players,
     setPlayers,
     towers,
+    pillars,
+    setPillars,
     summonedUnits,
     gameStarted,
     isInRoom,
@@ -142,11 +147,13 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     broadcastPlayerDeathEffect, // For broadcasting death effects
     broadcastPlayerKnockback, // For broadcasting knockback effects
     damageTower, // New function for tower damage
+    damagePillar, // New function for pillar damage
     damageSummonedUnit, // New function for summoned unit damage
     damageEnemy, // New function for enemy damage with source player tracking
     socket
   } = useMultiplayer();
-  
+
+
   const engineRef = useRef<Engine | null>(null);
   const playerEntityRef = useRef<number | null>(null);
   const controlSystemRef = useRef<ControlSystem | null>(null);
@@ -279,6 +286,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   
   // Track server tower to local ECS entity mapping
   const serverTowerEntities = useRef<Map<string, number>>(new Map());
+  const serverPillarEntities = useRef<Map<string, number>>(new Map());
 
   // Track server summoned unit to local ECS entity mapping
   const serverSummonedUnitEntities = useRef<Map<string, number>>(new Map());
@@ -516,6 +524,99 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   useEffect(() => {
     syncTowersToECS();
   }, [towers]);
+
+  // Sync pillars to ECS
+  const syncPillarsToECS = useCallback(() => {
+    if (!engineRef.current) return;
+    const world = engineRef.current.getWorld();
+    const currentPillars = Array.from(pillars.values());
+
+    // Remove entities for pillars that no longer exist on server
+    for (const [pillarId, entityId] of Array.from(serverPillarEntities.current.entries())) {
+      const pillarStillExists = currentPillars.some(pillar => pillar.id === pillarId);
+      if (!pillarStillExists) {
+        world.destroyEntity(entityId);
+        serverPillarEntities.current.delete(pillarId);
+      }
+    }
+
+    // Create or update entities for current server pillars
+    for (const pillar of currentPillars) {
+      let entityId = serverPillarEntities.current.get(pillar.id);
+      let entity: Entity;
+
+      if (!entityId) {
+        // Create new entity for this pillar
+        entity = world.createEntity();
+        entityId = entity.id;
+        serverPillarEntities.current.set(pillar.id, entityId);
+
+        // Add Transform component
+        const transform = world.createComponent(Transform);
+        transform.setPosition(pillar.position.x, pillar.position.y, pillar.position.z);
+        entity.addComponent(transform);
+
+        // Add Pillar component
+        const pillarComponent = world.createComponent(Pillar);
+        pillarComponent.ownerId = pillar.ownerId;
+        pillarComponent.pillarIndex = pillar.pillarIndex;
+        pillarComponent.isActive = !pillar.isDead;
+        pillarComponent.isDead = pillar.isDead || false;
+        entity.addComponent(pillarComponent);
+
+        // Store server pillar ID for damage routing
+        entity.userData = entity.userData || {};
+        entity.userData.serverPillarId = pillar.id;
+
+        // Add Health component
+        const health = new Health(pillar.maxHealth);
+        health.currentHealth = pillar.health;
+        health.isDead = pillar.isDead || false;
+        entity.addComponent(health);
+
+        // Add Collider component for targeting
+        const collider = world.createComponent(Collider);
+        collider.type = ColliderType.SPHERE;
+        collider.radius = 0.7; // Pillar collision radius (matches visual)
+        collider.layer = CollisionLayer.ENEMY; // Use enemy layer so they can be targeted like towers
+        collider.isStatic = true;
+        entity.addComponent(collider);
+
+        // Notify world that entity is ready
+        world.notifyEntityAdded(entity);
+      } else {
+        // Update existing entity
+        const existingEntity = world.getEntity(entityId);
+        if (!existingEntity) continue;
+        entity = existingEntity;
+
+        // Update transform if position changed
+        const transform = entity.getComponent(Transform);
+        if (transform) {
+          transform.setPosition(pillar.position.x, pillar.position.y, pillar.position.z);
+        }
+
+        // Update health
+        const health = entity.getComponent(Health);
+        if (health) {
+          health.currentHealth = pillar.health;
+          health.isDead = pillar.isDead || false;
+        }
+
+        // Update pillar component
+        const pillarComponent = entity.getComponent(Pillar);
+        if (pillarComponent) {
+          pillarComponent.isActive = !pillar.isDead;
+          pillarComponent.isDead = pillar.isDead || false;
+        }
+      }
+    }
+  }, [pillars, engineRef]);
+
+  // Sync pillars to ECS when they change
+  useEffect(() => {
+    syncPillarsToECS();
+  }, [pillars]);
 
   // Experience system state
   const [playerExperience, setPlayerExperience] = useState(0);
@@ -1534,7 +1635,7 @@ const hasMana = useCallback((amount: number) => {
               position,
               direction,
               attackerEntityId,
-              { speed: 16, damage: 61, lifetime: 5, piercing: true, opacity: 0.8, projectileType: 'viper_sting' }
+              { speed: 16, damage: 61, lifetime: 5, piercing: true, opacity: 0.8, projectileType: 'viper_sting', sourcePlayerId: data.playerId }
             );
           }
           
@@ -1615,7 +1716,7 @@ const hasMana = useCallback((amount: number) => {
                   position,
                   direction,
                   attackerEntityId, // Use attacker's entity ID as owner
-                  { speed: 25, damage: 10, lifetime: 3, maxDistance: 25, opacity: 0.8 } // PVP damage handled by CombatSystem
+                  { speed: 25, damage: 10, lifetime: 3, maxDistance: 25, opacity: 0.8, sourcePlayerId: data.playerId } // PVP damage handled by CombatSystem
                 );
                 break;
               case 'charged_arrow':
@@ -1702,7 +1803,7 @@ const hasMana = useCallback((amount: number) => {
                   position,
                   direction,
                   attackerEntityId,
-                  { speed: 22, damage: 30, lifetime: 3, maxDistance: 25, piercing: false, opacity: 0.8 }
+                  { speed: 22, damage: 30, lifetime: 3, maxDistance: 25, piercing: false, opacity: 0.8, sourcePlayerId: data.playerId }
                 );
                 
                 // Mark as barrage arrow for proper visual rendering
@@ -1719,7 +1820,7 @@ const hasMana = useCallback((amount: number) => {
                   position,
                   direction,
                   attackerEntityId,
-                  { speed: 25, damage: 30, lifetime: 3, maxDistance: 25, piercing: false, opacity: 0.8, projectileType: 'burst_arrow' }
+                  { speed: 25, damage: 30, lifetime: 3, maxDistance: 25, piercing: false, opacity: 0.8, projectileType: 'burst_arrow', sourcePlayerId: data.playerId }
                 );
                 
                 // Mark as burst arrow for proper visual rendering (teal color)
@@ -1879,7 +1980,8 @@ const hasMana = useCallback((amount: number) => {
           
           // Trigger Viper Sting visual effect with flat position and direction
           // This will create the projectile from the correct player's position but flat
-          const success = triggerGlobalViperSting(flatPosition, flatDirection);
+          // Pass caster ID so projectile returns to the correct player
+          const success = triggerGlobalViperSting(flatPosition, flatDirection, data.playerId);
           if (success) {
           }
           
@@ -2877,70 +2979,56 @@ const hasMana = useCallback((amount: number) => {
             ...data.animationState,
             lastAnimationUpdate: Date.now()
           };
-          
-  
-          
+
+
+
           updated.set(data.playerId, newState);
-          
+
+          // Play enemy animation sound effects at 50% volume
+          const position = new Vector3(data.position?.x || 0, data.position?.y || 0, data.position?.z || 0);
+          if (window.audioSystem && data.animationState) {
+            // Handle melee attack sounds
+            if (data.animationState.isSwinging && data.animationState.swordComboStep) {
+              // Get the player's weapon type to determine which sound to play
+              const player = players.get(data.playerId);
+              const weaponType = player?.weapon || WeaponType.BOW;
+
+              switch (weaponType) {
+                case WeaponType.SWORD:
+                  window.audioSystem.playEnemySwordSwingSound(data.animationState.swordComboStep, position);
+                  break;
+                case WeaponType.SABRES:
+                  window.audioSystem.playEnemySabresSwingSound(position);
+                  break;
+                case WeaponType.SCYTHE:
+                  // Scythe melee attacks use entropic bolt sound
+                  window.audioSystem.playEnemyEntropicBoltSound(position);
+                  break;
+                case WeaponType.RUNEBLADE:
+                  // Runeblade melee attacks use heartrend sound
+                  window.audioSystem.playEnemyRunebladeHeartrendSound(position);
+                  break;
+              }
+            }
+
+            // Handle charging sounds - only play when charging starts (transitions from false to true)
+            if (data.animationState.isCharging && !currentState.isCharging) {
+              const player = players.get(data.playerId);
+              const weaponType = player?.weapon || WeaponType.BOW;
+
+              switch (weaponType) {
+                case WeaponType.BOW:
+                  window.audioSystem.playEnemyBowDrawSound(position);
+                  break;
+                case WeaponType.SWORD:
+                  window.audioSystem.playEnemySwordChargeSound(position);
+                  break;
+              }
+            }
+          }
+
           return updated;
         });
-
-        // Play enemy animation sound effects at 50% volume
-        const position = new Vector3(data.position?.x || 0, data.position?.y || 0, data.position?.z || 0);
-        if (window.audioSystem && data.animationState) {
-          // Handle melee attack sounds
-          if (data.animationState.isSwinging && data.animationState.swordComboStep) {
-            // Get the player's weapon type to determine which sound to play
-            const player = players.get(data.playerId);
-            const weaponType = player?.weapon || WeaponType.BOW;
-
-            switch (weaponType) {
-              case WeaponType.SWORD:
-                window.audioSystem.playEnemySwordSwingSound(data.animationState.swordComboStep, position);
-                break;
-              case WeaponType.SABRES:
-                window.audioSystem.playEnemySabresSwingSound(position);
-                break;
-              case WeaponType.SCYTHE:
-                // Scythe melee attacks use entropic bolt sound
-                window.audioSystem.playEnemyEntropicBoltSound(position);
-                break;
-              case WeaponType.RUNEBLADE:
-                // Runeblade melee attacks use heartrend sound
-                window.audioSystem.playEnemyRunebladeHeartrendSound(position);
-                break;
-            }
-          }
-
-          // Handle charging sounds
-          if (data.animationState.isCharging) {
-            const player = players.get(data.playerId);
-            const weaponType = player?.weapon || WeaponType.BOW;
-
-            switch (weaponType) {
-              case WeaponType.BOW:
-                window.audioSystem.playEnemyBowDrawSound(position);
-                break;
-              case WeaponType.SWORD:
-                window.audioSystem.playEnemySwordChargeSound(position);
-                break;
-            }
-          }
-
-          // Handle ability charging sounds
-          if (data.animationState.isViperStingCharging) {
-            // Viper sting charge sound (could add if needed)
-          }
-          if (data.animationState.isBarrageCharging) {
-            // Barrage charge sound (could add if needed)
-          }
-          if (data.animationState.isCobraShotCharging) {
-            // Cobra shot charge sound (could add if needed)
-          }
-          if (data.animationState.isWindShearCharging) {
-            // Wind shear charge sound (could add if needed)
-          }
-        }
       }
     };
 
@@ -3175,7 +3263,8 @@ const hasMana = useCallback((amount: number) => {
       incrementKillCount(killerId);
     };
 
-    const handlePlayerHealing = (data: any) => {
+
+  const handlePlayerHealing = (data: any) => {
       const { healingAmount, healingType, position } = data;
 
       // Get the source player ID from socket data
@@ -3246,6 +3335,7 @@ const hasMana = useCallback((amount: number) => {
     socket.on('player-death-effect', handlePlayerDeathEffect);
     socket.on('player-shield-changed', handlePlayerShieldChanged);
     socket.on('player-knockback', handlePlayerKnockback);
+
 
     return () => {
       socket.off('player-attacked', handlePlayerAttack);
@@ -3600,7 +3690,7 @@ const hasMana = useCallback((amount: number) => {
         }
       };
       
-      const { player, controlSystem, towerSystem } = setupPVPGame(engine, scene, camera as PerspectiveCamera, gl, damagePlayerWithMapping, damageTower, damageSummonedUnit, damageEnemy, selectedWeapons, cameraSystemRef);
+      const { player, controlSystem, towerSystem, pillarSystem } = setupPVPGame(engine, scene, camera as PerspectiveCamera, gl, damagePlayerWithMapping, damageTower, damagePillar, damageSummonedUnit, damageEnemy, selectedWeapons, cameraSystemRef);
       
       // Update player entity with correct socket ID for team validation
       if (socket?.id) {
@@ -4297,6 +4387,7 @@ const hasMana = useCallback((amount: number) => {
         world={engineRef.current?.getWorld()}
         camera={camera as PerspectiveCamera}
         enableLargeTree={true}
+        isPVP={true}
       />
 
       {/* Lighting */}
@@ -4546,6 +4637,28 @@ const hasMana = useCallback((amount: number) => {
         );
       })}
 
+      {/* Render Pillars */}
+      {Array.from(pillars.values()).map(pillar => {
+        // Get the actual ECS entity ID for this pillar
+        const entityId = serverPillarEntities.current.get(pillar.id);
+        if (!entityId) return null; // Skip if entity doesn't exist yet
+
+        return (
+          <PillarRenderer
+            key={pillar.id}
+            entityId={entityId}
+            world={engineRef.current?.getWorld() || new World()}
+            position={new Vector3(pillar.position.x, pillar.position.y, pillar.position.z)}
+            ownerId={pillar.ownerId}
+            pillarIndex={pillar.pillarIndex}
+            health={pillar.health}
+            maxHealth={pillar.maxHealth}
+            isDead={pillar.isDead}
+            camera={camera}
+          />
+        );
+      })}
+
       {/* Server-Authoritative Summoned Units */}
       {engineRef.current && Array.from(summonedUnits.values()).map((unit) => {
         // Filter out dead or inactive units
@@ -4561,6 +4674,7 @@ const hasMana = useCallback((amount: number) => {
             health={unit.health}
             maxHealth={unit.maxHealth}
             isDead={unit.isDead}
+            isElite={unit.isElite}
           />
         );
       }).filter(Boolean)}
@@ -4885,6 +4999,7 @@ const hasMana = useCallback((amount: number) => {
             charges={[{ id: 1, available: true, cooldownStartTime: null }]} // Dummy charge state
             setCharges={() => {}} // No-op since charges aren't used in PVP
             localSocketId={socket?.id}
+            players={Array.from(players.values())} // Pass players data for dynamic targeting
           />
 
           {/* CloudkillManager for visual arrows in PVP mode */}
@@ -5628,6 +5743,7 @@ function setupPVPGame(
   renderer: WebGLRenderer,
   damagePlayerCallback: (playerId: string, damage: number, damageType?: string, isCritical?: boolean) => void,
   damageTowerCallback: (towerId: string, damage: number, sourcePlayerId?: string, damageType?: string) => void,
+  damagePillarCallback?: (pillarId: string, damage: number, sourcePlayerId?: string) => void,
   damageSummonedUnitCallback?: (unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string) => void,
   damageEnemyCallback?: (enemyId: string, damage: number, sourcePlayerId?: string) => void,
   selectedWeapons?: {
@@ -5636,7 +5752,7 @@ function setupPVPGame(
     tertiary?: WeaponType;
   } | null,
   cameraSystemRef?: React.MutableRefObject<CameraSystem | null>
-): { player: any; controlSystem: ControlSystem; towerSystem: TowerSystem } {
+): { player: any; controlSystem: ControlSystem; towerSystem: TowerSystem; pillarSystem: PillarSystem } {
   const world = engine.getWorld();
   const inputManager = engine.getInputManager();
 
@@ -5651,6 +5767,7 @@ function setupPVPGame(
   const renderSystem = new RenderSystem(scene, camera, renderer);
   const projectileSystem = new ProjectileSystem(world);
   const towerSystem = new TowerSystem(world);
+  const pillarSystem = new PillarSystem(world);
   // Note: SummonedUnitSystem is disabled for PVP - using server-authoritative summoned units instead
   // const summonedUnitSystem = new SummonedUnitSystem(world);
 
@@ -5723,6 +5840,14 @@ function setupPVPGame(
     }
   });
 
+  // Set up pillar damage callback
+  combatSystem.setPillarDamageCallback((pillarId: string, damage: number, sourcePlayerId?: string) => {
+    // Use the pillar damage callback from multiplayer context
+    if (damagePillarCallback) {
+      damagePillarCallback(pillarId, damage, sourcePlayerId);
+    }
+  });
+
   // Add systems to world (order matters for dependencies)
   world.addSystem(physicsSystem);
   world.addSystem(collisionSystem);
@@ -5731,6 +5856,7 @@ function setupPVPGame(
   world.addSystem(renderSystem);
   world.addSystem(projectileSystem);
   world.addSystem(towerSystem);
+  world.addSystem(pillarSystem);
   world.addSystem(audioSystem);
   // world.addSystem(summonedUnitSystem); // Disabled for server-authoritative units
   world.addSystem(controlSystem);
@@ -5752,7 +5878,7 @@ function setupPVPGame(
     console.warn('Failed to preload weapon sounds:', error);
   });
 
-  return { player: playerEntity, controlSystem, towerSystem };
+  return { player: playerEntity, controlSystem, towerSystem, pillarSystem };
 }
 
 function createPVPPlayer(world: World): any {

@@ -143,6 +143,20 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Handle pillar damage from players
+  socket.on('pillar-damage', (data) => {
+    const { roomId, pillarId, damage, sourcePlayerId } = data;
+
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    const result = room.damagePillar(pillarId, damage, sourcePlayerId);
+
+    if (result) {
+      console.log(`🏛️ Pillar ${pillarId} took ${damage} damage from player ${sourcePlayerId || socket.id}`);
+    }
+  });
+
   // Handle heartbeat from client
   socket.on('heartbeat', () => {
     playerHeartbeats.set(socket.id, Date.now());

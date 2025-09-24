@@ -35,7 +35,7 @@ export class AudioSystem extends System {
     Howler.pos(position.x, position.y, position.z);
   }
 
-  // Preload weapon sound effects
+  // Preload weapon sound effects and background music
   public async preloadWeaponSounds() {
     const weaponSounds = [
       { id: 'bow_draw', file: 'bow/draw.mp3' },
@@ -64,16 +64,18 @@ export class AudioSystem extends System {
       { id: 'runeblade_wraithblade', file: 'runeblade/wraithblade.mp3' },
       { id: 'runeblade_void_grasp', file: 'runeblade/void_grasp.mp3' },
       { id: 'ui_selection', file: 'ui/selection.mp3' },
-      { id: 'ui_interface', file: 'ui/interface.mp3' }
+      { id: 'ui_interface', file: 'ui/interface.mp3' },
+      { id: 'background_music', file: 'ui/Avernus.mp3', loop: true }
     ];
 
-    const loadPromises = weaponSounds.map(async ({ id, file }) => {
+    const loadPromises = weaponSounds.map(async ({ id, file, loop }) => {
       try {
         const sound = new Howl({
           src: [`/audio/sfx/${file}`],
           volume: this.sfxVolume * this.masterVolume,
           preload: true,
-          html5: false // Use Web Audio API for better performance
+          html5: false, // Use Web Audio API for better performance
+          loop: loop || false // Enable looping for background music
         });
 
         // Wait for sound to load
@@ -411,6 +413,32 @@ export class AudioSystem extends System {
   // Play UI interface sound (for navigation buttons)
   public playUIInterfaceSound() {
     return this.playWeaponSound('ui_interface', new Vector3(0, 0, 0), { volume: 0.7 });
+  }
+
+  // Background music controls (local only, 50% volume)
+  private backgroundMusicInstance: number | null = null;
+
+  public startBackgroundMusic() {
+    if (this.backgroundMusicInstance !== null) {
+      return; // Already playing
+    }
+
+    const bgMusic = this.soundCache.get('background_music');
+    if (bgMusic) {
+      // Set volume to 50% (0.5) and play
+      bgMusic.volume(0.5 * this.sfxVolume * this.masterVolume);
+      this.backgroundMusicInstance = bgMusic.play();
+      console.log('🎵 Started background music');
+    }
+  }
+
+  public stopBackgroundMusic() {
+    const bgMusic = this.soundCache.get('background_music');
+    if (bgMusic && this.backgroundMusicInstance !== null) {
+      bgMusic.stop(this.backgroundMusicInstance);
+      this.backgroundMusicInstance = null;
+      console.log('🎵 Stopped background music');
+    }
   }
 
   // Clean up resources

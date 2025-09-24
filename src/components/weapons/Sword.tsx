@@ -386,29 +386,31 @@ const SwordComponent = memo(function Sword({
         return;
       }
 
-      // Create fire particles along the actual charge trajectory using real player position
-      if (lastChargePosition.current) {
+      // Create fire particles along the actual charge trajectory using calculated charge path
+      if (chargeStartPosition.current && chargeDirection.current) {
         const particlePositions: Array<{id: number, position: Vector3}> = [];
 
-        // Only add particles occasionally
+        // Only add particles occasionally to avoid performance issues
         if (Math.random() > 0.7) {
-          // Use the real-time position from ECS system for accurate trajectory tracking
-          const currentPosition = realTimePositionRef?.current || playerPosition;
-          if (currentPosition) {
-            // Create particles between last position and current real position
-            const particleProgress = Math.random();
-            const particlePos = lastChargePosition.current.clone().lerp(currentPosition, particleProgress);
+          // Create particles along the intended charge path based on current progress
+          // Use a slight random progress offset to distribute particles along the path
+          const pathProgress = Math.max(0, progress - 0.1 + Math.random() * 0.2); // Sample from slightly behind to slightly ahead
+          const clampedProgress = Math.min(pathProgress, progress); // Don't go beyond current progress
+          const easeOutQuadSample = calculationCache.getEasingCalculation('easeOutQuad', clampedProgress, 0, 1);
 
-            // Add some random offset around the charge path
-            particlePos.x += (Math.random() - 0.5) * 1.5;
-            particlePos.y += Math.random() * 0.5;
-            particlePos.z += (Math.random() - 0.5) * 1.5;
+          // Calculate position along the charge path
+          const pathDisplacement = chargeDirection.current.clone().multiplyScalar(CHARGE_DISTANCE * easeOutQuadSample);
+          const particlePos = chargeStartPosition.current.clone().add(pathDisplacement);
 
-            particlePositions.push({
-              id: nextFireParticleId.current++,
-              position: particlePos
-            });
-          }
+          // Add some random offset around the charge path for visual variety
+          particlePos.x += (Math.random() - 0.5) * 1.2;
+          particlePos.y += Math.random() * 0.3; // Reduced vertical spread
+          particlePos.z += (Math.random() - 0.5) * 1.2;
+
+          particlePositions.push({
+            id: nextFireParticleId.current++,
+            position: particlePos
+          });
         }
 
         if (particlePositions.length > 0) {
@@ -416,10 +418,12 @@ const SwordComponent = memo(function Sword({
         }
       }
 
-      // Update last position for next frame using real-time player position from ECS
-      const currentPositionForUpdate = realTimePositionRef?.current || playerPosition;
-      if (currentPositionForUpdate) {
-        lastChargePosition.current = currentPositionForUpdate.clone();
+      // Update last position for next frame using the calculated charge position
+      // This ensures trail particles are positioned relative to the charge animation path
+      if (chargeStartPosition.current && chargeDirection.current) {
+        const easeOutQuadUpdate = calculationCache.getEasingCalculation('easeOutQuad', progress, 0, 1);
+        const displacement = chargeDirection.current.clone().multiplyScalar(CHARGE_DISTANCE * easeOutQuadUpdate);
+        lastChargePosition.current = chargeStartPosition.current.clone().add(displacement);
       }
 
       // Check for collisions with enemies during dash phase

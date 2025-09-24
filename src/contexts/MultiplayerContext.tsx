@@ -59,8 +59,19 @@ interface SummonedUnit {
   maxHealth: number;
   isDead: boolean;
   isActive: boolean;
+  isElite?: boolean;
   currentTarget?: string | null;
   targetPosition?: { x: number; y: number; z: number } | null;
+}
+
+interface Pillar {
+  id: string;
+  ownerId: string;
+  pillarIndex: number;
+  position: { x: number; y: number; z: number };
+  health: number;
+  maxHealth: number;
+  isDead?: boolean;
 }
 
 interface RoomPreview {
@@ -120,6 +131,7 @@ interface MultiplayerContextType {
   players: Map<string, Player>;
   enemies: Map<string, Enemy>;
   towers: Map<string, Tower>;
+  pillars: Map<string, Pillar>;
   summonedUnits: Map<string, SummonedUnit>;
   killCount: number;
   gameStarted: boolean;
@@ -171,6 +183,9 @@ interface MultiplayerContextType {
   // Summoned unit actions
   damageSummonedUnit: (unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string) => void;
 
+  // Pillar actions
+  damagePillar: (pillarId: string, damage: number, sourcePlayerId?: string) => void;
+
   // Experience system actions
   updatePlayerExperience: (playerId: string, experience: number) => void;
   updatePlayerLevel: (playerId: string, level: number) => void;
@@ -188,6 +203,7 @@ interface MultiplayerContextType {
 
   // Direct state setters for local visual updates (use with caution)
   setPlayers: React.Dispatch<React.SetStateAction<Map<string, Player>>>;
+  setPillars: React.Dispatch<React.SetStateAction<Map<string, Pillar>>>;
 }
 
 const MultiplayerContext = createContext<MultiplayerContextType | null>(null);
@@ -213,6 +229,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [players, setPlayers] = useState<Map<string, Player>>(new Map());
   const [enemies, setEnemies] = useState<Map<string, Enemy>>(new Map());
   const [towers, setTowers] = useState<Map<string, Tower>>(new Map());
+  const [pillars, setPillars] = useState<Map<string, Pillar>>(new Map());
   const [summonedUnits, setSummonedUnits] = useState<Map<string, SummonedUnit>>(new Map());
   const [killCount, setKillCount] = useState(0);
   const [gameStarted, setGameStarted] = useState(false);
@@ -599,6 +616,38 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
+    // Pillar event handlers
+    addEventHandler('pillar-spawned', (data) => {
+      setPillars(prev => {
+        const updated = new Map(prev);
+        updated.set(data.pillar.id, data.pillar);
+        return updated;
+      });
+    });
+
+    addEventHandler('pillar-damaged', (data) => {
+      setPillars(prev => {
+        const updated = new Map(prev);
+        const pillar = updated.get(data.pillarId);
+        if (pillar) {
+          updated.set(data.pillarId, {
+            ...pillar,
+            health: data.newHealth,
+            isDead: data.wasDestroyed
+          });
+        }
+        return updated;
+      });
+    });
+
+    addEventHandler('pillar-destroyed', (data) => {
+      setPillars(prev => {
+        const updated = new Map(prev);
+        updated.delete(data.pillarId);
+        return updated;
+      });
+    });
+
     // Summoned unit event handlers
     addEventHandler('summoned-unit-damaged', (data) => {      
       // Store the damage event for the game scene to process
@@ -609,6 +658,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     // Server-authoritative summoned unit updates
     addEventHandler('summoned-units-updated', (data) => {
       // console.log('🤖 Received summoned units update:', data.units.length, 'units');
+
+      // Debug: Check for elite units
+      const eliteUnits = data.units.filter((unit: SummonedUnit) => unit.isElite);
+      if (eliteUnits.length > 0) {
+        console.log(`🤖 Received ${eliteUnits.length} elite units:`, eliteUnits.map((u: SummonedUnit) => `${u.unitId} (owner: ${u.ownerId}, health: ${u.health}/${u.maxHealth})`));
+      }
 
       unstable_batchedUpdates(() => {
         const summonedUnitsMap = new Map();
@@ -833,12 +888,23 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
   const damageSummonedUnit = useCallback((unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string) => {
 
-    
+
     if (socket && currentRoomId) {
       socket.emit('summoned-unit-damage', {
         roomId: currentRoomId,
         unitId,
         unitOwnerId,
+        damage,
+        sourcePlayerId
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const damagePillar = useCallback((pillarId: string, damage: number, sourcePlayerId?: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('pillar-damage', {
+        roomId: currentRoomId,
+        pillarId,
         damage,
         sourcePlayerId
       });
@@ -1029,7 +1095,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     players,
     enemies,
     towers,
+    pillars,
     summonedUnits,
+    setPillars,
     killCount,
     gameStarted,
     gameMode,
@@ -1057,6 +1125,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     applyStatusEffect,
     damageTower,
     damageSummonedUnit,
+    damagePillar,
     updatePlayerExperience,
     updatePlayerLevel,
     updatePlayerShield,

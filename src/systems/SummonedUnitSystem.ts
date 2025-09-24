@@ -37,6 +37,9 @@ export class SummonedUnitSystem extends System {
   // Wave completion callback
   private onWaveComplete?: () => void;
 
+  // Elite unit tracking based on destroyed enemy pillars
+  private destroyedEnemyPillars: Map<string, number> = new Map(); // ownerId -> number of destroyed enemy pillars
+
   // Reusable objects
   private tempVector = new Vector3();
   private tempVector2 = new Vector3();
@@ -367,9 +370,21 @@ export class SummonedUnitSystem extends System {
       opposingTowerPosition = towerPosition.clone().add(new Vector3(0, 0, 20));
     }
 
-    // Spawn 3 units and track them in the wave
-    for (let i = 0; i < 3; i++) {
-      const unitEntity = this.spawnUnit(tower.ownerId, towerPosition, opposingTowerPosition, i, currentTime);
+    // Spawn 3 units: some normal, some elite based on destroyed enemy pillars
+    const eliteCount = this.getEliteUnitCount(tower.ownerId);
+    const normalCount = 3 - eliteCount;
+
+    // Spawn normal units first
+    for (let i = 0; i < normalCount; i++) {
+      const unitEntity = this.spawnUnit(tower.ownerId, towerPosition, opposingTowerPosition, i, currentTime, false);
+      if (unitEntity) {
+        this.waveUnits.add(unitEntity.id);
+      }
+    }
+
+    // Spawn elite units
+    for (let i = 0; i < eliteCount; i++) {
+      const unitEntity = this.spawnUnit(tower.ownerId, towerPosition, opposingTowerPosition, normalCount + i, currentTime, true);
       if (unitEntity) {
         this.waveUnits.add(unitEntity.id);
       }
@@ -397,7 +412,8 @@ export class SummonedUnitSystem extends System {
     spawnPosition: Vector3,
     targetPosition: Vector3,
     unitIndex: number,
-    currentTime: number
+    currentTime: number,
+    isElite: boolean = false
   ): Entity {
     const unitEntity = this.world.createEntity();
     const unitId = `${ownerId}_unit_${currentTime}_${unitIndex}`;
@@ -419,6 +435,12 @@ export class SummonedUnitSystem extends System {
     const summonedUnit = this.world.createComponent(SummonedUnit);
     summonedUnit.ownerId = ownerId;
     summonedUnit.unitId = unitId;
+    summonedUnit.isElite = isElite;
+    // Reinitialize stats based on elite status
+    if (isElite) {
+      summonedUnit.maxHealth = 1500;
+      summonedUnit.attackDamage = 120;
+    }
     summonedUnit.targetPosition = {
       x: targetPosition.x,
       y: targetPosition.y,
@@ -484,7 +506,19 @@ export class SummonedUnitSystem extends System {
     this.playerPositions.clear();
     this.towerPositions.clear();
     this.waveUnits.clear();
+    this.destroyedEnemyPillars.clear();
     this.currentWaveId = null;
     this.onWaveComplete = undefined;
+  }
+
+  public onEnemyPillarDestroyed(destroyerPlayerId: string, pillarOwnerId: string): void {
+    // Track destroyed enemy pillars for the destroyer
+    const currentCount = this.destroyedEnemyPillars.get(destroyerPlayerId) || 0;
+    this.destroyedEnemyPillars.set(destroyerPlayerId, currentCount + 1);
+  }
+
+  private getEliteUnitCount(ownerId: string): number {
+    const destroyedPillars = this.destroyedEnemyPillars.get(ownerId) || 0;
+    return Math.min(destroyedPillars, 2); // Max 2 elite units
   }
 }

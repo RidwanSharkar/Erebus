@@ -7,6 +7,7 @@ class GameRoom {
     this.players = new Map();
     this.enemies = new Map();
     this.towers = new Map(); // PVP towers
+    this.pillars = new Map(); // PVP pillars
     this.summonedUnits = new Map(); // Server-authoritative summoned units
     this.lastUpdate = Date.now();
     this.io = io; // Store io reference for broadcasting
@@ -46,6 +47,9 @@ class GameRoom {
     
     // PVP Death confirmation system
     this.pendingKills = new Map(); // victimId -> { killerId, killerName, victimName, damageType, timestamp }
+
+    // Elite unit tracking for PVP - track destroyed enemy pillars per player
+    this.destroyedEnemyPillars = new Map(); // playerId -> number of enemy pillars they have destroyed
   }
 
   // Start the actual game
@@ -104,18 +108,24 @@ class GameRoom {
       joinedAt: Date.now()
     });
     
-    // Create tower for PVP mode
+    // Create tower and pillars for PVP mode
     if (gameMode === 'pvp') {
       this.createTowerForPlayer(playerId, playerName);
+      this.createPillarsForPlayer(playerId, playerName);
+
+      // Sync existing towers and pillars (from other players) to the newly joined player
+      this.syncExistingTowersToPlayer(playerId);
+      this.syncExistingPillarsToPlayer(playerId);
     }
   }
 
   removePlayer(playerId) {
     this.players.delete(playerId);
     
-    // Remove player's tower in PVP mode
+    // Remove player's tower and pillars in PVP mode
     if (this.gameMode === 'pvp') {
       this.removeTowerForPlayer(playerId);
+      this.removePillarsForPlayer(playerId);
     }
     
     // Stop game if no players left
@@ -158,15 +168,16 @@ class GameRoom {
     const playerIndex = this.players.size - 1; // Current player index (0-based)
     const totalPlayers = 2; // Max players for positioning
     const mapRadius = 29;
-    const towerRadius = mapRadius * 0.6; // Position towers more centrally (about 11.6 units from center)
+    const baseRadius = mapRadius * 0.6; // Base radius for pillars (about 11.6 units from center)
+    const towerOffset = 3; // Towers are positioned 3 units further out than pillars
 
     // Calculate angle for this player's position
     const angleStep = (Math.PI * 2) / Math.max(totalPlayers, 2);
     const angle = playerIndex * angleStep;
 
-    // Calculate position
-    const x = Math.sin(angle) * towerRadius;
-    const z = Math.cos(angle) * towerRadius;
+    // Calculate position - place towers in front of pillars
+    const x = Math.sin(angle) * (baseRadius + towerOffset);
+    const z = Math.cos(angle) * (baseRadius + towerOffset);
     const y = 0; // Ground level
     
     const towerId = `tower_${playerId}`;
@@ -265,6 +276,231 @@ class GameRoom {
     return this.towers.get(towerId);
   }
 
+  createPillarsForPlayer(playerId, playerName) {
+    // Get the tower position to position pillars relative to it
+    const towerId = `tower_${playerId}`;
+    const tower = this.towers.get(towerId);
+    if (!tower) return;
+
+    // Use the actual tower position that was already calculated
+    const towerX = tower.position.x;
+    const towerZ = tower.position.z;
+    const towerY = tower.position.y;
+
+    // Calculate direction from center to tower
+    const centerToTowerX = towerX;
+    const centerToTowerZ = towerZ;
+    const length = Math.sqrt(centerToTowerX * centerToTowerX + centerToTowerZ * centerToTowerZ);
+    const normalizedX = centerToTowerX / length;
+    const normalizedZ = centerToTowerZ / length;
+
+    // Calculate perpendicular vector for left/right positioning
+    const perpX = -normalizedZ;
+    const perpZ = normalizedX;
+
+    // Position pillars 3 units behind tower (closer to center), spread out evenly
+    const frontOffset = -3; // Negative to place behind tower
+    const pillarSpacing = 2.5; // Spacing between pillars
+
+    // Create 3 pillars: left, center, right
+    const pillars = [];
+
+    // Left pillar
+    const leftPillarId = `pillar_${playerId}_0`;
+    const leftPillar = {
+      id: leftPillarId,
+      ownerId: playerId,
+      ownerName: playerName,
+      pillarIndex: 0,
+      position: {
+        x: towerX + (normalizedX * frontOffset) + (perpX * -pillarSpacing),
+        y: towerY,
+        z: towerZ + (normalizedZ * frontOffset) + (perpZ * -pillarSpacing)
+      },
+      health: 3000,
+      maxHealth: 3000,
+      isDead: false,
+      isActive: true,
+      createdAt: Date.now()
+    };
+    pillars.push(leftPillar);
+
+    // Center pillar
+    const centerPillarId = `pillar_${playerId}_1`;
+    const centerPillar = {
+      id: centerPillarId,
+      ownerId: playerId,
+      ownerName: playerName,
+      pillarIndex: 1,
+      position: {
+        x: towerX + (normalizedX * frontOffset),
+        y: towerY,
+        z: towerZ + (normalizedZ * frontOffset)
+      },
+      health: 3000,
+      maxHealth: 3000,
+      isDead: false,
+      isActive: true,
+      createdAt: Date.now()
+    };
+    pillars.push(centerPillar);
+
+    // Right pillar
+    const rightPillarId = `pillar_${playerId}_2`;
+    const rightPillar = {
+      id: rightPillarId,
+      ownerId: playerId,
+      ownerName: playerName,
+      pillarIndex: 2,
+      position: {
+        x: towerX + (normalizedX * frontOffset) + (perpX * pillarSpacing),
+        y: towerY,
+        z: towerZ + (normalizedZ * frontOffset) + (perpZ * pillarSpacing)
+      },
+      health: 3000,
+      maxHealth: 3000,
+      isDead: false,
+      isActive: true,
+      createdAt: Date.now()
+    };
+    pillars.push(rightPillar);
+
+    // Store all pillars
+    pillars.forEach(pillar => {
+      this.pillars.set(pillar.id, pillar);
+    });
+
+    // Broadcast pillar spawn to all players in the room
+    if (this.io) {
+      pillars.forEach(pillar => {
+        this.io.to(this.roomId).emit('pillar-spawned', {
+          roomId: this.roomId,
+          pillar: pillar
+        });
+      });
+    }
+  }
+
+  removePillarsForPlayer(playerId) {
+    // Find and remove all pillars for this player
+    for (const [pillarId, pillar] of this.pillars) {
+      if (pillar.ownerId === playerId) {
+        pillar.isDead = true;
+        pillar.health = 0;
+
+        // Broadcast pillar destruction
+        if (this.io) {
+          this.io.to(this.roomId).emit('pillar-destroyed', {
+            roomId: this.roomId,
+            pillarId: pillarId,
+            ownerId: playerId
+          });
+        }
+
+        // Remove from map after a delay
+        setTimeout(() => {
+          this.pillars.delete(pillarId);
+        }, 1000);
+      }
+    }
+  }
+
+  damagePillar(pillarId, damage, sourcePlayerId = null) {
+    const pillar = this.pillars.get(pillarId);
+    if (!pillar || pillar.isDead) {
+      return false;
+    }
+
+    // Prevent players from damaging their own pillars
+    if (sourcePlayerId === pillar.ownerId) {
+      return false;
+    }
+
+    const oldHealth = pillar.health;
+    pillar.health = Math.max(0, pillar.health - damage);
+    const wasDestroyed = pillar.health <= 0 && oldHealth > 0;
+
+    if (wasDestroyed) {
+      pillar.isDead = true;
+
+      // Track destroyed enemy pillars for elite unit spawning (destroyer gets elite units)
+      this.onEnemyPillarDestroyed(sourcePlayerId, pillar.ownerId);
+
+      console.log(`💥 Pillar destroyed! ${sourcePlayerId} destroyed ${pillar.ownerId}'s pillar. ${sourcePlayerId} now has ${this.destroyedEnemyPillars.get(sourcePlayerId) || 0} destroyed enemy pillars (elites: ${this.getEliteUnitCount(sourcePlayerId)})`);
+    }
+
+    // Broadcast pillar damage
+    if (this.io) {
+      this.io.to(this.roomId).emit('pillar-damaged', {
+        roomId: this.roomId,
+        pillarId: pillarId,
+        damage: damage,
+        sourcePlayerId: sourcePlayerId,
+        newHealth: pillar.health,
+        wasDestroyed: wasDestroyed
+      });
+
+      if (wasDestroyed) {
+        this.io.to(this.roomId).emit('pillar-destroyed', {
+          roomId: this.roomId,
+          pillarId: pillarId,
+          ownerId: pillar.ownerId,
+          destroyerId: sourcePlayerId
+        });
+      }
+    }
+    return true;
+  }
+
+  onEnemyPillarDestroyed(destroyerPlayerId, pillarOwnerId) {
+    // Track destroyed enemy pillars for the destroyer (they get elite units as reward)
+    // This will be used by the summoned unit system to spawn elites
+    const key = destroyerPlayerId; // The player who destroyed the pillar gets elite units
+    const currentCount = this.destroyedEnemyPillars.get(key) || 0;
+    this.destroyedEnemyPillars.set(key, currentCount + 1);
+  }
+
+  getEliteUnitCount(playerId) {
+    const destroyedPillars = this.destroyedEnemyPillars.get(playerId) || 0;
+    return Math.min(destroyedPillars, 3); // Max 3 elite units (one per enemy pillar destroyed)
+  }
+
+  getPillars() {
+    return Array.from(this.pillars.values());
+  }
+
+  getPillar(pillarId) {
+    return this.pillars.get(pillarId);
+  }
+
+  syncExistingTowersToPlayer(playerId) {
+    // Send all existing towers to the newly joined player
+    if (this.io) {
+      for (const tower of this.towers.values()) {
+        // Don't send the player's own tower back to them (they already know about it)
+        if (tower.ownerId !== playerId) {
+          this.io.to(playerId).emit('tower-spawned', {
+            roomId: this.roomId,
+            tower: tower
+          });
+        }
+      }
+    }
+  }
+
+  syncExistingPillarsToPlayer(playerId) {
+    // Send all existing pillars to the newly joined player, including their own
+    // The frontend will handle this appropriately
+    if (this.io) {
+      for (const pillar of this.pillars.values()) {
+        this.io.to(playerId).emit('pillar-spawned', {
+          roomId: this.roomId,
+          pillar: pillar
+        });
+      }
+    }
+  }
+
   // ===== SUMMONED UNIT SYSTEM =====
   
   // Start the summoned unit system for PVP mode
@@ -289,6 +525,7 @@ class GameRoom {
     // Clear all summoned units
     this.summonedUnits.clear();
     this.waveUnits.clear();
+    this.destroyedEnemyPillars.clear(); // Clear enemy pillar destruction tracking
     this.lastGlobalSpawnTime = 0;
     this.currentWaveId = null;
   }
@@ -720,12 +957,25 @@ class GameRoom {
         };
       }
       
-      // Spawn 3 units and track them in the player's wave
-      for (let i = 0; i < 3; i++) {
-        const unitId = this.spawnSummonedUnit(tower.ownerId, tower.position, opposingTowerPosition, i, currentTime);
+      // Spawn 3 units: some normal, some elite based on how many enemy pillars the player has destroyed
+      const eliteCount = this.getEliteUnitCount(tower.ownerId);
+      const normalCount = 3 - eliteCount;
+
+      console.log(`🎯 [${tower.ownerId}] Spawning units: ${normalCount} normal, ${eliteCount} elite (destroyed enemy pillars: ${this.destroyedEnemyPillars.get(tower.ownerId) || 0})`);
+
+      // Spawn normal units first
+      for (let i = 0; i < normalCount; i++) {
+        const unitId = this.spawnSummonedUnit(tower.ownerId, tower.position, opposingTowerPosition, i, currentTime, false);
         if (unitId) {
           playerWave.units.add(unitId);
-        } else {
+        }
+      }
+
+      // Spawn elite units
+      for (let i = 0; i < eliteCount; i++) {
+        const unitId = this.spawnSummonedUnit(tower.ownerId, tower.position, opposingTowerPosition, normalCount + i, currentTime, true);
+        if (unitId) {
+          playerWave.units.add(unitId);
         }
       }
       
@@ -772,7 +1022,7 @@ class GameRoom {
   }
   
   // Spawn a summoned unit
-  spawnSummonedUnit(ownerId, spawnPosition, targetPosition, unitIndex, currentTime) {
+  spawnSummonedUnit(ownerId, spawnPosition, targetPosition, unitIndex, currentTime, isElite = false) {
     const unitId = `${ownerId}_unit_${currentTime}_${unitIndex}`;
     
     // Add offset to spawn position to avoid stacking
@@ -793,10 +1043,10 @@ class GameRoom {
       ownerId: ownerId,
       position: actualSpawnPosition,
       targetPosition: targetPosition,
-      health: 1000, // Max health
-      maxHealth: 1000,
+      health: isElite ? 1500 : 1000, // Elite units have 1.5x health
+      maxHealth: isElite ? 1500 : 1000,
       attackRange: 4,
-      attackDamage: Math.floor(Math.random() * 41) + 40,
+      attackDamage: isElite ? 120 : Math.floor(Math.random() * 41) + 40, // Elite units have fixed 120 damage (2x)
       attackCooldown: 2.0,
       lastAttackTime: 0,
       moveSpeed: 2.25,
@@ -805,6 +1055,7 @@ class GameRoom {
       targetSearchCooldown: 0.5,
       isActive: true,
       isDead: false,
+      isElite: isElite,
       deathTime: 0,
       summonTime: currentTime,
       lifetime: 120 // 2 minutes
@@ -893,6 +1144,7 @@ class GameRoom {
         maxHealth: unit.maxHealth,
         isDead: unit.isDead,
         isActive: unit.isActive,
+        isElite: unit.isElite,
         currentTarget: unit.currentTarget,
         targetPosition: unit.targetPosition
       });

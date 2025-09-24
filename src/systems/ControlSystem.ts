@@ -1105,11 +1105,11 @@ export class ControlSystem extends System {
     // Offset projectile spawn position forward to avoid immediate collision with player or close enemies
     const spawnPosition = position.clone().add(direction.clone().multiplyScalar(2.0));
 
-    // Wind Shear projectile config - 80 piercing damage, 15 unit range, moderate speed
+    // Wind Shear projectile config - 120 piercing damage, 15 unit range, increased speed
     const projectileConfig = {
-      speed: 15, // Moderate projectile speed (matches visual speed)
-      damage: 80, // 80 piercing damage as requested
-      lifetime: 2.0, // 2 seconds lifetime (enough for 15 units at 15 speed)
+      speed: 32.5, // Increased projectile speed by 30% (matches visual speed)
+      damage: 120, // 120 piercing damage as requested
+      lifetime: 2.0, // 2 seconds lifetime (enough for 15 units at 32.5 speed)
       piercing: true, // Piercing damage - hits multiple targets as it travels
       explosive: false,
       maxDistance: 15, // 15 unit range as requested
@@ -2401,7 +2401,7 @@ export class ControlSystem extends System {
 
     // Start charging animation
     const chargeStartTime = Date.now();
-    const chargeDuration = 500; // 0.5 second charge time
+    const chargeDuration = 1000; // 0.75 second charge time
 
     const chargeInterval = setInterval(() => {
       const elapsed = Date.now() - chargeStartTime;

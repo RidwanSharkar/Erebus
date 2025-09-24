@@ -124,7 +124,7 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
       key: '1' as const,
       icon: selectedWeapons.primary === WeaponType.SWORD ? '💎' :
             selectedWeapons.primary === WeaponType.BOW ? '🏹' :
-            selectedWeapons.primary === WeaponType.SCYTHE ? '☠️' :
+            selectedWeapons.primary === WeaponType.SCYTHE ? '🦋' :
             selectedWeapons.primary === WeaponType.SABRES ? '⚔️' :
             selectedWeapons.primary === WeaponType.RUNEBLADE ? '🔮' : '❓'
     };
@@ -141,7 +141,7 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
       key: '2' as const,
       icon: selectedWeapons.secondary === WeaponType.SWORD ? '💎' :
             selectedWeapons.secondary === WeaponType.BOW ? '🏹' :
-            selectedWeapons.secondary === WeaponType.SCYTHE ? '☠️' :
+            selectedWeapons.secondary === WeaponType.SCYTHE ? '🦋' :
             selectedWeapons.secondary === WeaponType.SABRES ? '⚔️' :
             selectedWeapons.secondary === WeaponType.RUNEBLADE ? '🔮' : '❓'
     };
@@ -159,7 +159,7 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
         key: '3' as const,
         icon: selectedWeapons.tertiary === WeaponType.SWORD ? '💎' :
               selectedWeapons.tertiary === WeaponType.BOW ? '🏹' :
-              selectedWeapons.tertiary === WeaponType.SCYTHE ? '☠️' :
+              selectedWeapons.tertiary === WeaponType.SCYTHE ? '🦋' :
               selectedWeapons.tertiary === WeaponType.SABRES ? '⚔️' :
               selectedWeapons.tertiary === WeaponType.RUNEBLADE ? '🔮' : '❓'
       };

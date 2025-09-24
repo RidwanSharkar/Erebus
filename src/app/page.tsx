@@ -232,7 +232,7 @@ function HomeContent() {
     {
       type: WeaponType.SWORD,
       name: 'Greatsword',
-      icon: '💠',
+      icon: '💎',
       description: 'IMMORTAL',
       defaultSubclass: WeaponSubclass.DIVINITY
     }
@@ -434,6 +434,9 @@ function HomeContent() {
         const audioSystem = new AudioSystem();
         (window as any).audioSystem = audioSystem;
         await audioSystem.preloadWeaponSounds();
+
+        // Start background music at 50% volume - plays locally only
+        audioSystem.startBackgroundMusic();
       } catch (error) {
         console.warn('Failed to initialize audio system:', error);
       }

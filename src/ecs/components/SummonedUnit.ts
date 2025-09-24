@@ -32,22 +32,35 @@ export class SummonedUnit extends Component {
   public summonTime: number; // When this unit was summoned
   public lifetime: number; // How long this unit lives (in seconds)
 
+  // Elite properties
+  public isElite: boolean; // Whether this is an elite unit with enhanced stats
+
   constructor(
     ownerId: string = '',
     unitId: string = '',
-    targetPosition: { x: number; y: number; z: number } | null = null
+    targetPosition: { x: number; y: number; z: number } | null = null,
+    isElite: boolean = false
   ) {
     super();
 
     this.ownerId = ownerId;
     this.unitId = unitId;
+    this.isElite = isElite;
 
-    // Combat configuration
-    this.attackRange = 4; // 4 unit attack range as specified
-    this.attackDamage = 60; // 15 damage per hit as specified
-    this.attackCooldown = 2.0; // 1 second between attacks
-    this.lastAttackTime = 0;
-    this.maxHealth = 1000; // 500 HP as specified
+    // Combat configuration - elite units have enhanced stats
+    if (isElite) {
+      this.attackRange = 4; // Same range
+      this.attackDamage = 120; // Double damage (2x)
+      this.attackCooldown = 2.0; // Same cooldown
+      this.lastAttackTime = 0;
+      this.maxHealth = 1500; // 1.5x health
+    } else {
+      this.attackRange = 4; // 4 unit attack range as specified
+      this.attackDamage = 60; // 60 damage per hit as specified
+      this.attackCooldown = 2.0; // 2 second between attacks
+      this.lastAttackTime = 0;
+      this.maxHealth = 1000; // 1000 HP as specified
+    }
 
     // Movement configuration
     this.moveSpeed = 2.25; // Moderate movement speed
@@ -111,6 +124,7 @@ export class SummonedUnit extends Component {
   public reset(): void {
     this.ownerId = '';
     this.unitId = '';
+    this.isElite = false;
     this.attackRange = 4;
     this.attackDamage = 60;
     this.attackCooldown = 2.0;
@@ -130,7 +144,7 @@ export class SummonedUnit extends Component {
   }
 
   public clone(): SummonedUnit {
-    const clone = new SummonedUnit(this.ownerId, this.unitId, this.targetPosition);
+    const clone = new SummonedUnit(this.ownerId, this.unitId, this.targetPosition, this.isElite);
     clone.attackRange = this.attackRange;
     clone.attackDamage = this.attackDamage;
     clone.attackCooldown = this.attackCooldown;

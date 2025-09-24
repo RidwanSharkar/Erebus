@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Color, Group, Mesh, MeshBasicMaterial, AdditiveBlending, MathUtils } from '@/utils/three-exports';
 import { World } from '@/ecs/World';
@@ -13,6 +13,7 @@ interface SummonedUnitRendererProps {
   health: number;
   maxHealth: number;
   isDead?: boolean;
+  isElite?: boolean;
   color?: Color;
 }
 
@@ -24,8 +25,15 @@ export default function SummonedUnitRenderer({
   health,
   maxHealth,
   isDead = false,
+  isElite = false,
   color
 }: SummonedUnitRendererProps) {
+  // Debug logging for elite units
+  useEffect(() => {
+    if (isElite) {
+      console.log(`👑 Elite unit rendered for ${ownerId}: health=${health}/${maxHealth}, position=(${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)})`);
+    }
+  }, [isElite, ownerId, health, maxHealth, position]);
   const groupRef = useRef<Group>(null);
   const healthBarRef = useRef<Mesh>(null);
   const healthBarMaterialRef = useRef<MeshBasicMaterial>(null);
@@ -33,6 +41,9 @@ export default function SummonedUnitRenderer({
   // Unit dimensions (simple and small to maintain framerate)
   const unitHeight = 1.2;
   const unitBaseRadius = 0.3;
+
+  // Elite units are 1.15x larger
+  const eliteScale = isElite ? 1.15 : 1.0;
 
   // Default colors for different players
   const playerColors = useMemo(() => [
@@ -95,7 +106,7 @@ export default function SummonedUnitRenderer({
   });
 
   return (
-    <group ref={groupRef} position={[position.x, position.y, position.z]}>
+    <group ref={groupRef} position={[position.x, position.y, position.z]} scale={[eliteScale, eliteScale, eliteScale]}>
       {/* Main Body - Crystal-like Octahedron */}
       <mesh
         position={[0, unitHeight * 0.725, 0]}

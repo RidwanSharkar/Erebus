@@ -23,6 +23,8 @@ interface ViperStingProjectile {
   fadeStartTime: number | null;
   isReturning: boolean;
   returnHitEnemies: Set<string>;
+  casterId?: string; // For PVP: remember which player cast this projectile
+  casterPosition?: Vector3; // For PVP: remember the caster's position for return
 }
 
 // Interfaces for PVP managers
@@ -577,13 +579,28 @@ export function OptimizedPVPViperStingManager({
           }
         });
       } else {
-        // Return phase - handle movement and collision detection
-        const distanceToPlayer = projectile.position.distanceTo(projectile.startPosition);
+        // Return phase - handle movement and collision detection with dynamic targeting
+
+        // Find the current position of the caster
+        let returnTargetPosition: Vector3;
+        const casterPlayer = players.find(p => p.id === projectile.casterId);
+        if (casterPlayer) {
+          returnTargetPosition = new Vector3(
+            casterPlayer.position.x,
+            casterPlayer.position.y,
+            casterPlayer.position.z
+          );
+        } else {
+          // Fallback if caster not found
+          returnTargetPosition = projectile.casterPosition || projectile.startPosition;
+        }
+
+        const distanceToPlayer = projectile.position.distanceTo(returnTargetPosition);
 
         if (distanceToPlayer > 1.5 && !projectile.fadeStartTime) {
           // Move projectile back toward player (simulate the movement from useViperSting)
           projectile.position.add(
-            projectile.direction.clone().multiplyScalar(0.625) // PROJECTILE_SPEED from useViperSting
+            projectile.direction.clone().multiplyScalar(0.525) // PROJECTILE_RETURN_SPEED from useViperSting
           );
 
           // This prevents self-damage during the final return phase

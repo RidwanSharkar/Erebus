@@ -139,13 +139,21 @@ export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, current
             </div>
           ))}
         </div>
-        <button 
-          className={`w-full px-8 py-4 text-xl ${gameMode === 'pvp' ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'} text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:-translate-y-1`}
-          onClick={handleStartGame}
-          disabled={false}
-        >
-          {gameStarted ? 'Join Game' : `Start ${gameMode === 'pvp' ? 'PVP' : 'Game'}`}
-        </button>
+        <div className="flex flex-col gap-3">
+          <button 
+            className={`w-full px-8 py-4 text-xl ${gameMode === 'pvp' ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'} text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:-translate-y-1`}
+            onClick={handleStartGame}
+            disabled={false}
+          >
+            {gameStarted ? 'Join Game' : `Start ${gameMode === 'pvp' ? 'PVP' : 'Game'}`}
+          </button>
+          <button 
+            className="w-full px-8 py-3 text-lg bg-gray-600 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-gray-500 hover:-translate-y-1"
+            onClick={handleBack}
+          >
+            Return
+          </button>
+        </div>
       </div>
     );
   }

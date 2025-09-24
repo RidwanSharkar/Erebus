@@ -36,6 +36,11 @@ interface ViperStingManagerProps {
     cooldownStartTime: number | null;
   }>>>;
   localSocketId?: string; // Add this to prevent self-damage
+  players?: Array<{ // For PVP dynamic targeting
+    id: string;
+    position: { x: number; y: number; z: number };
+    health: number;
+  }>;
 }
 
 interface SoulStealEffect {
@@ -49,14 +54,14 @@ interface SoulStealEffect {
 
 // Global state for Viper Sting manager
 let globalViperStingManager: {
-  shootViperSting?: (position?: Vector3, direction?: Vector3) => boolean;
+  shootViperSting?: (position?: Vector3, direction?: Vector3, casterId?: string) => boolean;
   getProjectiles?: () => any[];
   createSoulSteal?: (enemyPosition: Vector3) => void;
 } = {};
 
-export const triggerGlobalViperSting = (position?: Vector3, direction?: Vector3): boolean => {
+export const triggerGlobalViperSting = (position?: Vector3, direction?: Vector3, casterId?: string): boolean => {
   if (globalViperStingManager.shootViperSting) {
-    return globalViperStingManager.shootViperSting(position, direction);
+    return globalViperStingManager.shootViperSting(position, direction, casterId);
   }
   return false;
 };
@@ -83,7 +88,8 @@ export default function ViperStingManager({
   onHealthChange,
   charges,
   setCharges,
-  localSocketId
+  localSocketId,
+  players
 }: ViperStingManagerProps) {
   const [soulStealEffects, setSoulStealEffects] = useState<SoulStealEffect[]>([]);
   const nextSoulStealId = useRef(0);
@@ -106,7 +112,8 @@ export default function ViperStingManager({
     },
     charges,
     setCharges,
-    localSocketId // Pass the local socket ID to prevent self-damage
+    localSocketId, // Pass the local socket ID to prevent self-damage
+    players // Pass players data for dynamic PVP targeting
   });
 
   // Register global manager

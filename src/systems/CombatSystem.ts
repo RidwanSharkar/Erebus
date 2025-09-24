@@ -13,6 +13,7 @@ import { DamageNumberManager } from '@/utils/DamageNumberManager';
 import { SummonedUnit } from '@/ecs/components/SummonedUnit';
 import { Projectile } from '@/ecs/components/Projectile';
 import { Tower } from '@/ecs/components/Tower';
+import { Pillar } from '@/ecs/components/Pillar';
 import { WeaponType } from '@/components/dragon/weapons';
 
 interface DamageEvent {
@@ -56,6 +57,7 @@ export class CombatSystem extends System {
 
   // Tower damage callback for routing tower damage to server
   private onTowerDamageCallback?: (towerId: string, damage: number, sourcePlayerId?: string, damageType?: string) => void;
+  private onPillarDamageCallback?: (pillarId: string, damage: number, sourcePlayerId?: string) => void;
 
   // Log throttling to reduce spam
   private lastDamageLogTime = 0;
@@ -106,6 +108,10 @@ export class CombatSystem extends System {
 
   public setTowerDamageCallback(callback: (towerId: string, damage: number, sourcePlayerId?: string, damageType?: string) => void): void {
     this.onTowerDamageCallback = callback;
+  }
+
+  public setPillarDamageCallback(callback: (pillarId: string, damage: number, sourcePlayerId?: string) => void): void {
+    this.onPillarDamageCallback = callback;
   }
 
   // Apply summoned unit damage received from server
@@ -515,6 +521,61 @@ export class CombatSystem extends System {
       }
 
       return; // Don't process further for summoned units
+    }
+
+    // Check if target is a pillar - if so, route damage through multiplayer server
+    const pillar = target.getComponent(Pillar);
+    if (pillar && this.onPillarDamageCallback) {
+      // Calculate actual damage with critical hit mechanics
+      const currentWeapon = this.getCurrentWeapon();
+      let damageResult: DamageResult;
+
+      if (damageEvent.isCritical !== undefined) {
+        // Preserve pre-calculated critical hit and damage
+        damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
+      } else {
+        // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
+        damageResult = calculateDamage(baseDamage, currentWeapon);
+      }
+
+      const actualDamage = damageResult.damage;
+
+      // Get source player ID for proper attribution
+      let finalSourcePlayerId = sourcePlayerId;
+      if (!finalSourcePlayerId && source) {
+        // Check if source is a projectile with stored player info
+        const projectileComponent = source.getComponent(Projectile);
+        if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
+          finalSourcePlayerId = (projectileComponent as any).sourcePlayerId;
+        } else if (source.userData?.playerId) {
+          finalSourcePlayerId = source.userData.playerId;
+        }
+      }
+
+      // Get the server pillar ID from userData (set during ECS sync)
+      const serverPillarId = target.userData?.serverPillarId || `pillar_${pillar.ownerId}_${pillar.pillarIndex}`;
+
+      // CRITICAL: Only allow damage from enemy players, not from the pillar owner
+      if (finalSourcePlayerId === pillar.ownerId) {
+        return; // Can't damage your own pillars
+      }
+
+      this.onPillarDamageCallback(serverPillarId, actualDamage, finalSourcePlayerId);
+
+      // Create damage number for visual feedback
+      const transform = target.getComponent(Transform);
+      if (transform) {
+        const position = transform.getWorldPosition();
+        position.y += 2; // Position above pillar
+        this.damageNumberManager?.addDamageNumber(
+          actualDamage,
+          damageResult.isCritical,
+          position,
+          damageType
+        );
+      }
+
+      return; // Don't process further for pillars
     }
 
     // Check if target is a tower - if so, route damage through multiplayer server
