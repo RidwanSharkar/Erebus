@@ -163,6 +163,7 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   const reanimateRef = useRef<ReanimateRef>(null);
   const isInitialized = useRef(false);
   const lastAnimationBroadcast = useRef(0);
+  const lastMeleeSoundTime = useRef(new Map<string, number>());
   const realTimePlayerPositionRef = useRef<Vector3>(new Vector3(0, 0.5, 0));
   // Real-time position refs for enemy players to enable ghost trail updates
   const enemyPlayerPositionRefs = useRef<Map<string, { current: Vector3 }>>(new Map());
@@ -613,10 +614,10 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
     }
   }, [pillars, engineRef]);
 
-  // Sync pillars to ECS when they change
+  // Sync pillars to ECS when they change or engine becomes available
   useEffect(() => {
     syncPillarsToECS();
-  }, [pillars]);
+  }, [pillars, engineRef.current]);
 
   // Experience system state
   const [playerExperience, setPlayerExperience] = useState(0);
@@ -1957,6 +1958,15 @@ const hasMana = useCallback((amount: number) => {
           case 'crossentropy_bolt':
             window.audioSystem.playEnemyCrossentropySound(position);
             break;
+          case 'sword_swing':
+            window.audioSystem.playEnemySwordSwingSound(data.animationData?.comboStep || 1, position);
+            break;
+          case 'runeblade_swing':
+            window.audioSystem.playEnemySwordSwingSound(data.animationData?.comboStep || 1, position);
+            break;
+          case 'sabres_swing':
+            window.audioSystem.playEnemySabresSwingSound(position);
+            break;
         }
       }
     };
@@ -2987,27 +2997,36 @@ const hasMana = useCallback((amount: number) => {
           // Play enemy animation sound effects at 50% volume
           const position = new Vector3(data.position?.x || 0, data.position?.y || 0, data.position?.z || 0);
           if (window.audioSystem && data.animationState) {
-            // Handle melee attack sounds
-            if (data.animationState.isSwinging && data.animationState.swordComboStep) {
-              // Get the player's weapon type to determine which sound to play
-              const player = players.get(data.playerId);
-              const weaponType = player?.weapon || WeaponType.BOW;
+            // Handle melee attack sounds - prevent duplicate sounds within 200ms
+            if (data.animationState.isSwinging) {
+              const now = Date.now();
+              const lastSoundTime = lastMeleeSoundTime.current.get(data.playerId) || 0;
+              if (now - lastSoundTime > 200) { // 200ms cooldown to prevent double sounds
+                lastMeleeSoundTime.current.set(data.playerId, now);
 
-              switch (weaponType) {
-                case WeaponType.SWORD:
-                  window.audioSystem.playEnemySwordSwingSound(data.animationState.swordComboStep, position);
-                  break;
-                case WeaponType.SABRES:
-                  window.audioSystem.playEnemySabresSwingSound(position);
-                  break;
-                case WeaponType.SCYTHE:
-                  // Scythe melee attacks use entropic bolt sound
-                  window.audioSystem.playEnemyEntropicBoltSound(position);
-                  break;
-                case WeaponType.RUNEBLADE:
-                  // Runeblade melee attacks use heartrend sound
-                  window.audioSystem.playEnemyRunebladeHeartrendSound(position);
-                  break;
+                // Get the player's weapon type to determine which sound to play
+                const player = players.get(data.playerId);
+                const weaponType = player?.weapon || WeaponType.BOW;
+
+                switch (weaponType) {
+                  case WeaponType.SWORD:
+                    // Use swordComboStep if available, otherwise default to 1
+                    const swordComboStep = data.animationState.swordComboStep || 1;
+                    window.audioSystem.playEnemySwordSwingSound(swordComboStep, position);
+                    break;
+                  case WeaponType.SABRES:
+                    window.audioSystem.playEnemySabresSwingSound(position);
+                    break;
+                  case WeaponType.SCYTHE:
+                    // Scythe melee attacks use entropic bolt sound
+                    window.audioSystem.playEnemyEntropicBoltSound(position);
+                    break;
+                  case WeaponType.RUNEBLADE:
+                    // Use swordComboStep if available, otherwise default to 1
+                    const runebladeComboStep = data.animationState.swordComboStep || 1;
+                    window.audioSystem.playEnemySwordSwingSound(runebladeComboStep, position);
+                    break;
+                }
               }
             }
 
@@ -3941,17 +3960,19 @@ const hasMana = useCallback((amount: number) => {
       // Set up projectile creation callback
       controlSystem.setProjectileCreatedCallback((projectileType, position, direction, config) => {
         const animationData: any = {};
-        
+
         // Add charge progress for bow projectiles
         if (projectileType.includes('arrow') || projectileType.includes('bolt')) {
           animationData.chargeProgress = controlSystem.getChargeProgress();
         }
-        
+
         // Add projectile config data for special effects (like Cryoflame)
         animationData.projectileConfig = config;
-        
+
         broadcastPlayerAttack(projectileType, position, direction, animationData);
       });
+
+      // Melee attack sounds are now handled through animation state broadcasting only
       
       // Set up Reanimate callback
       controlSystem.setReanimateCallback(() => {
@@ -4243,12 +4264,11 @@ const hasMana = useCallback((amount: number) => {
           // Combine all spinning states
           const isSpinning = isScytheSpinning || isSwordSpinning;
 
-          // Create the animation state object
-          const animationStateToSend = {
+          // Create the animation state object - only include weapon-specific fields for current weapon
+          const animationStateToSend: any = {
             isCharging: newWeaponState.isCharging,
             chargeProgress: newWeaponState.chargeProgress,
             isSwinging: newWeaponState.isSwinging,
-            swordComboStep: newWeaponState.swordComboStep,
             isSpinning: isSpinning, // Broadcast spinning for scythe and sword charge
             isDeflecting: newWeaponState.isDeflecting,
             isSwordCharging: newWeaponState.isSwordCharging, // Broadcast sword charging state
@@ -4267,6 +4287,12 @@ const hasMana = useCallback((amount: number) => {
             isWraithStriking: controlSystemRef.current?.isWraithStrikeActive() || false,
             isCorruptedAuraActive: controlSystemRef.current?.isCorruptedAuraActive() || false
           };
+
+          // Only include swordComboStep for weapons that actually use it (Sword and Runeblade)
+          const currentWeapon = controlSystemRef.current?.getCurrentWeapon();
+          if (currentWeapon === WeaponType.SWORD || currentWeapon === WeaponType.RUNEBLADE) {
+            animationStateToSend.swordComboStep = newWeaponState.swordComboStep;
+          }
           broadcastPlayerAnimationState(animationStateToSend);
           lastAnimationBroadcast.current = animationNow;
         }
@@ -4643,6 +4669,10 @@ const hasMana = useCallback((amount: number) => {
         const entityId = serverPillarEntities.current.get(pillar.id);
         if (!entityId) return null; // Skip if entity doesn't exist yet
 
+        // Get tower index for consistent player coloring
+        const tower = Array.from(towers.values()).find(t => t.ownerId === pillar.ownerId);
+        const playerIndex = tower ? tower.towerIndex : 0;
+
         return (
           <PillarRenderer
             key={pillar.id}
@@ -4651,6 +4681,7 @@ const hasMana = useCallback((amount: number) => {
             position={new Vector3(pillar.position.x, pillar.position.y, pillar.position.z)}
             ownerId={pillar.ownerId}
             pillarIndex={pillar.pillarIndex}
+            playerIndex={playerIndex}
             health={pillar.health}
             maxHealth={pillar.maxHealth}
             isDead={pillar.isDead}

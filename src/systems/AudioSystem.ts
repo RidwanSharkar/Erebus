@@ -41,6 +41,9 @@ export class AudioSystem extends System {
       { id: 'bow_draw', file: 'bow/draw.mp3' },
       { id: 'bow_release', file: 'bow/release.mp3' },
       { id: 'bow_viper_sting_release', file: 'bow/viper_sting_release.mp3' },
+      { id: 'bow_barrage_release', file: 'bow/barrage_release.mp3' },
+      { id: 'bow_cobra_shot_release', file: 'bow/cobra_shot_release.mp3' },
+      { id: 'bow_cloudkill_release', file: 'bow/cloudkill_release.mp3' },
       { id: 'sabres_swing', file: 'sabres/sabres_swing.mp3' },
       { id: 'sabres_backstab', file: 'sabres/backstab.mp3' },
       { id: 'sabres_flourish', file: 'sabres/flourish.mp3' },
@@ -65,17 +68,17 @@ export class AudioSystem extends System {
       { id: 'runeblade_void_grasp', file: 'runeblade/void_grasp.mp3' },
       { id: 'ui_selection', file: 'ui/selection.mp3' },
       { id: 'ui_interface', file: 'ui/interface.mp3' },
-      { id: 'background_music', file: 'ui/Avernus.mp3', loop: true }
+      { id: 'ui_dash', file: 'ui/dash.mp3' }
+      // Removed background_music from preload - loaded lazily
     ];
 
-    const loadPromises = weaponSounds.map(async ({ id, file, loop }) => {
+    const loadPromises = weaponSounds.map(async ({ id, file }) => {
       try {
         const sound = new Howl({
           src: [`/audio/sfx/${file}`],
           volume: this.sfxVolume * this.masterVolume,
           preload: true,
-          html5: false, // Use Web Audio API for better performance
-          loop: loop || false // Enable looping for background music
+          html5: false // Use Web Audio API for better performance
         });
 
         // Wait for sound to load
@@ -94,6 +97,75 @@ export class AudioSystem extends System {
 
     await Promise.all(loadPromises);
     console.log('🎵 Weapon sound preloading complete');
+  }
+
+  // Lazy load background music to avoid slow initial page loads
+  public async preloadBackgroundMusic(): Promise<void> {
+    if (this.soundCache.has('background_music')) {
+      return; // Already loaded
+    }
+
+    try {
+      console.log('🎵 Loading background music...');
+      const sound = new Howl({
+        src: ['/audio/sfx/ui/Avernus.mp3'],
+        volume: this.sfxVolume * this.masterVolume,
+        preload: true,
+        html5: false, // Use Web Audio API for better performance
+        loop: true // Enable looping for background music
+      });
+
+      // Wait for sound to load
+      await new Promise<void>((resolve, reject) => {
+        sound.on('load', () => resolve());
+        sound.on('loaderror', (soundId, error) => reject(new Error(`Failed to load background music: ${error}`)));
+      });
+
+      this.soundCache.set('background_music', sound);
+      console.log('✅ Background music loaded successfully');
+    } catch (error) {
+      console.warn('⚠️ Failed to load background music:', error);
+    }
+  }
+
+  // Alternative streaming approach for large background music files
+  public startBackgroundMusicStreaming(): void {
+    if (this.backgroundAudioElement) {
+      return; // Already streaming
+    }
+
+    try {
+      console.log('🎵 Starting background music streaming...');
+      this.backgroundAudioElement = new Audio('/audio/sfx/ui/Avernus.mp3');
+      this.backgroundAudioElement.loop = true;
+      this.backgroundAudioElement.volume = 0.35 * this.sfxVolume * this.masterVolume;
+      this.backgroundAudioElement.preload = 'none'; // Stream instead of preload
+
+      // Add event listeners
+      this.backgroundAudioElement.addEventListener('canplaythrough', () => {
+        console.log('✅ Background music ready to stream');
+      });
+
+      this.backgroundAudioElement.addEventListener('error', (e) => {
+        console.warn('⚠️ Background music streaming failed:', e);
+      });
+
+      // Start playing (will begin streaming)
+      this.backgroundAudioElement.play().catch(error => {
+        console.warn('Failed to start streaming background music:', error);
+      });
+    } catch (error) {
+      console.warn('Failed to create streaming audio element:', error);
+    }
+  }
+
+  public stopBackgroundMusicStreaming(): void {
+    if (this.backgroundAudioElement) {
+      this.backgroundAudioElement.pause();
+      this.backgroundAudioElement.currentTime = 0;
+      this.backgroundAudioElement = null;
+      console.log('🎵 Stopped background music streaming');
+    }
   }
 
   // Play weapon sound effect (local only)
@@ -141,6 +213,21 @@ export class AudioSystem extends System {
   // Play viper sting release sound (called when viper sting is fired)
   public playViperStingReleaseSound(position: Vector3) {
     return this.playWeaponSound('bow_viper_sting_release', position, { volume: 0.9 });
+  }
+
+  // Play barrage release sound (called when barrage is fired)
+  public playBarrageReleaseSound(position: Vector3) {
+    return this.playWeaponSound('bow_barrage_release', position, { volume: 0.9 });
+  }
+
+  // Play cobra shot release sound (called when cobra shot is fired)
+  public playCobraShotReleaseSound(position: Vector3) {
+    return this.playWeaponSound('bow_cobra_shot_release', position, { volume: 0.9 });
+  }
+
+  // Play cloudkill release sound (called when cloudkill is fired)
+  public playCloudkillReleaseSound(position: Vector3) {
+    return this.playWeaponSound('bow_cloudkill_release', position, { volume: 0.9 });
   }
 
   // Play sabres swing sound
@@ -415,8 +502,14 @@ export class AudioSystem extends System {
     return this.playWeaponSound('ui_interface', new Vector3(0, 0, 0), { volume: 0.7 });
   }
 
+  // Play UI dash sound (when dashing)
+  public playUIDashSound() {
+    return this.playWeaponSound('ui_dash', new Vector3(0, 0, 0), { volume: 0.8 });
+  }
+
   // Background music controls (local only, 50% volume)
   private backgroundMusicInstance: number | null = null;
+  private backgroundAudioElement: HTMLAudioElement | null = null; // For streaming fallback
 
   public startBackgroundMusic() {
     if (this.backgroundMusicInstance !== null) {
@@ -425,24 +518,33 @@ export class AudioSystem extends System {
 
     const bgMusic = this.soundCache.get('background_music');
     if (bgMusic) {
-      // Set volume to 50% (0.5) and play
-      bgMusic.volume(0.5 * this.sfxVolume * this.masterVolume);
+      // Set volume to 40% (0.4) and play - slightly reduced
+      bgMusic.volume(0.35 * this.sfxVolume * this.masterVolume);
       this.backgroundMusicInstance = bgMusic.play();
       console.log('🎵 Started background music');
     }
   }
 
   public stopBackgroundMusic() {
+    // Stop Howl-based playback
     const bgMusic = this.soundCache.get('background_music');
     if (bgMusic && this.backgroundMusicInstance !== null) {
       bgMusic.stop(this.backgroundMusicInstance);
       this.backgroundMusicInstance = null;
-      console.log('🎵 Stopped background music');
     }
+
+    // Also stop streaming playback if active
+    this.stopBackgroundMusicStreaming();
+
+    console.log('🎵 Stopped background music');
   }
 
   // Clean up resources
   public dispose() {
+    // Stop and clean up background music
+    this.stopBackgroundMusic();
+
+    // Clean up sound cache
     this.soundCache.forEach(sound => {
       sound.unload();
     });

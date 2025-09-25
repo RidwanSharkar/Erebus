@@ -40,10 +40,7 @@ export default function TowerRenderer({
   // Default colors for different players
   const playerColors = useMemo(() => [
     new Color("#4FC3F7"), // Blue - Elite color (Player 1)
-    new Color("#FF8C00"), // Orange/Red Fire theme (Player 2)
-    new Color("#FF8A8A"), // Light Red (Player 3)
-    new Color("#FFB3B3"), // Light Red (Player 4)
-    new Color("#FFD6D6")  // Light Red (Player 5)
+    new Color("#FF6B6B"), // Brighter Red - matches pillar color (Player 2)
   ], []);
 
   const towerColor = color || playerColors[towerIndex % playerColors.length];

@@ -815,13 +815,7 @@ export default function Runeblade({
             />
           </mesh>
 
-          {/* Enhanced point light */}
-          <pointLight
-            color={new Color(0x00FF88)}
-            intensity={2}
-            distance={1}
-            decay={2}
-          />
+
         </group>
 
         {/* Blade*/}

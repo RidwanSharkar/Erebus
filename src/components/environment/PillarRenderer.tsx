@@ -13,6 +13,7 @@ interface PillarRendererProps {
   position: Vector3;
   ownerId: string;
   pillarIndex: number;
+  playerIndex?: number;
   health: number;
   maxHealth: number;
   isDead?: boolean;
@@ -26,6 +27,7 @@ export default function PillarRenderer({
   position,
   ownerId,
   pillarIndex,
+  playerIndex = 0,
   health,
   maxHealth,
   isDead = false,
@@ -34,23 +36,21 @@ export default function PillarRenderer({
 }: PillarRendererProps) {
   const groupRef = useRef<Group>(null);
   const healthBarRef = useRef<Group>(null);
-  const timeRef = useRef(0);
 
   // Default colors for different players
   const playerColors = useMemo(() => [
     new Color("#4FC3F7"), // Blue - Elite color (Player 1)
-    new Color("#FF8C00"), // Orange/Red Fire theme (Player 2)
-    new Color("#FF8A8A"), // Light Red (Player 3)
-    new Color("#FFB3B3"), // Light Red (Player 4)
-    new Color("#FFD6D6")  // Light Red (Player 5)
+    new Color("#FF4646"), // Orange/Red Fire theme (Player 2)
   ], []);
 
-  const pillarColor = color || playerColors[pillarIndex % playerColors.length];
+  // Use playerIndex to get consistent color for all pillars of the same player
+  // Player 1 (index 0) = blue, Player 2 (index 1) = red
+  const pillarColor = color || playerColors[playerIndex % playerColors.length];
 
   // Health bar dimensions
-  const healthBarWidth = 3;
-  const healthBarHeight = 0.3;
-  const healthBarY = 6; // Above the pillar
+  const healthBarWidth = 2;
+  const healthBarHeight = 0.2;
+  const healthBarY = 3.25; // Above the pillar
 
   // Create geometries and materials only once using useMemo
   const { pillarGeometries, materials } = useMemo(() => {
@@ -121,13 +121,6 @@ export default function PillarRenderer({
   }, [pillarGeometries, materials]);
 
   useFrame((state, delta) => {
-    timeRef.current += delta;
-
-    if (groupRef.current && !isDead) {
-      // Subtle floating animation
-      groupRef.current.position.y = position.y + Math.sin(timeRef.current * 2) * 0.05;
-    }
-
     // Update health bar to always face camera
     if (healthBarRef.current && camera) {
       healthBarRef.current.lookAt(camera.position);

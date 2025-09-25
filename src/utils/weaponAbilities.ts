@@ -33,13 +33,13 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Divine Wind',
       key: 'F',
       cooldown: 1.5,
-      description: '{10 RAGE} Throws your sword forward in a gust of wind, dealing 80 piercing damage to enemies hit within 15 units. Hitting an enemy player reduces the cooldown of Charge by 4 seconds.'
+      description: '{10 RAGE} Charges a gust of wind that launches your sword forward, dealing 120 piercing damage to enemies hit. Hitting an enemy player reduces the cooldown of Charge by 4 seconds.'
     },
     {
       name: 'Titan\'s Breath',
       key: 'P',
       cooldown: 0,
-      description: '{PASSIVE} Increases maximum health by 350 and health regeneration to 30 HP/s outside of combat.',
+      description: '{PASSIVE} Increases maximum health by 350 and health regeneration to 30 HP per second outside of combat.',
       isPassive: true
     }
   ],
@@ -48,7 +48,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Frost Bite',
       key: 'Q',
       cooldown: 5.0,
-      description: '{50 ENERGY} Fires 5 chilled arrows in an arc, dealing 30 damage per arrow and applying a 50% SLOW effect for 5 seconds.'
+      description: '{50 ENERGY} Fires 5 arrows in an arc, dealing 30 damage per arrow and applying a 50% SLOW effect for 5 seconds. An enemy can be hit by multiple arrows at close range.'
     },
     {
       name: 'Cobra Shot',
@@ -72,7 +72,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Tempest Rounds',
       key: 'P',
       cooldown: 0,
-      description: '{PASSIVE} Replaces primary attack with a 3-round burst attack. Each arrow deals 30 damage with 1 second cooldown between bursts.',
+      description: '{PASSIVE} Replaces primary attack with a 3-round burst attack. Each arrow deals 30 damage.',
       isPassive: true
     }
   ],
@@ -159,7 +159,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Hexed Smite',
       key: 'R',
       cooldown: 3.0,
-      description: '{45 MANA} Calls down unholy energy, dealing 100 damage to enemies in a small area, healing you for the same amount of damage dealt.'
+      description: '{45 MANA} Calls down unholy energy, dealing damage to enemy players in a small area, healing you for the same amount of damage dealt.'
     },
     {
       name: 'Heartrend',
@@ -190,8 +190,8 @@ export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | '
     Q: '🎯', // Barrage
     E: '🐍', // Cobra Shot
     R: '🐉', // Viper Sting
-    F: '🍃', // Cloudkill
-    P: '🪶' // Tempest Rounds 
+    F: '🪶', // Cloudkill
+    P: '🍃' // Tempest Rounds 
   },
   [WeaponType.SCYTHE]: {
     Q: '🔆', // Sunwell

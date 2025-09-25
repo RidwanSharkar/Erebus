@@ -80,7 +80,7 @@ const Pedestal: React.FC<PedestalProps> = ({
       {/* Central point light */}
       <pointLight
         position={[0, 2.5, 0]}
-        color={getLevelColors(level).color}
+        color={0x7D5DE5}
         intensity={0.4}
         distance={8}
         decay={2}

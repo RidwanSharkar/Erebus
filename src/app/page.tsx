@@ -133,6 +133,7 @@ function HomeContent() {
   const [roomJoinMode, setRoomJoinMode] = useState<'multiplayer' | 'pvp'>('multiplayer');
   const [playerExperience, setPlayerExperience] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
+  const [showRulesPanel, setShowRulesPanel] = useState(false);
 
   // Local weapon selection state
   const [tempSelectedWeapons, setTempSelectedWeapons] = useState<WeaponType[]>([]);
@@ -433,10 +434,18 @@ function HomeContent() {
         const { AudioSystem } = await import('../systems/AudioSystem');
         const audioSystem = new AudioSystem();
         (window as any).audioSystem = audioSystem;
+
+        // Only preload weapon sounds (fast loading)
         await audioSystem.preloadWeaponSounds();
 
-        // Start background music at 50% volume - plays locally only
-        audioSystem.startBackgroundMusic();
+        // Lazy load background music in the background (doesn't block UI)
+        audioSystem.preloadBackgroundMusic().then(() => {
+          // Start background music once loaded (35% volume for subtle background)
+          audioSystem.startBackgroundMusic();
+        }).catch((error) => {
+          console.warn('Background music failed to load:', error);
+        });
+
       } catch (error) {
         console.warn('Failed to initialize audio system:', error);
       }
@@ -451,7 +460,14 @@ function HomeContent() {
         {/* Main Menu */}
         {gameMode === 'menu' && (
           <div className="absolute inset-0 flex items-center justify-center z-50 overflow-y-auto">
-            <div className="bg-gray-900/95 p-8 rounded-xl border-2 border-blue-500 text-white max-w-5xl w-11/12 my-6">
+            <div className="bg-gray-900/95 p-8 rounded-xl border-2 border-blue-500 text-white max-w-5xl w-11/12 my-6 relative">
+              <button
+                onClick={() => setShowRulesPanel(true)}
+                className="absolute top-4 right-4 text-2xl hover:scale-110 transition-transform cursor-pointer text-yellow-400 hover:text-yellow-300"
+                title="Rulebook"
+              >
+                📜
+              </button>
               <h1 className="text-xl font-bold mb-1 text-blue-400 text-center"> SELECT 2 WEAPONS</h1>
 
               {/* Weapon Selection Section */}
@@ -552,6 +568,84 @@ function HomeContent() {
                   ENTER AVERNUS
                   {!selectedWeapons && ' (Select Weapons First)'}
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Rules Panel */}
+        {showRulesPanel && (
+          <div
+            className="absolute inset-0 bg-black/80 flex items-center justify-center z-50"
+            onClick={() => setShowRulesPanel(false)}
+          >
+            <div
+              className="bg-gray-900 border-2 border-yellow-400 rounded-xl p-8 max-w-2xl w-11/12 max-h-[80vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-center mb-6">
+                <h2 className="text-2xl font-bold text-yellow-400 mb-2">📜 RULEBOOK</h2>
+              </div>
+
+              <div className="text-white space-y-4">
+                <div className="border-b border-gray-600 pb-4">
+                  <h3 className="text-lg font-semibold text-blue-400 mb-2">🎯 OVERVIEW</h3>
+                  <p className="text-gray-300">
+                  <ul className="text-gray-300 text-sm space-y-1 ml-4">
+                    <li>• Each player has a Tower and 3 Inhibitors.</li>
+                    <li>• Each player's Tower summons 3 Units every 45 seconds.</li>
+                    <li>• Player kills and Summoned Unit kills award experience points.</li>
+                    <li>• Leveling up grants a Skill Point to unlock additional abilities.</li>
+                    <li>• Players respawn upon 5 seconds after death.</li>
+                    <li>• Only Summoned Units can damage the opposing player's Tower.</li>
+                    <li>• Players can destroy the opposing player's Inhibitors to upgrade their Summoned Units into ELITES.</li>
+                    <li>• The first player to destroy the opposing player's Tower wins.</li>
+                  </ul>
+                  </p>
+                </div>
+
+                <div className="border-b border-gray-600 pb-4">
+                  <h3 className="text-lg font-semibold text-blue-400 mb-2">⚔️ WEAPON SYSTEM</h3>
+                  <p className="text-gray-300 mb-2">
+                    Choose 2 weapons to equip. Each weapon has their 'Q' ability unlocked by default; all other abilities are unlocked by spending Skill Points. Each weapon has unique abilities and playstyles:
+                  </p>
+                  <ul className="text-gray-300 text-sm space-y-1 ml-4">
+                    <li>• <strong className="text-green-400">Bow (VIPER)</strong>:</li>
+                    <li>• <strong className="text-sky-400">Greatsword (IMMORTAL)</strong>:</li>
+                    <li>• <strong className="text-blue-400">Scythe (WEAVER)</strong>:</li>
+                    <li>• <strong className="text-purple-400">Runeblade (TEMPLAR)</strong>: </li>
+                    <li>• <strong className="text-red-400">Sabres (ASSASSIN)</strong>:</li>
+                  </ul>
+                </div>
+
+                <div className="border-b border-gray-600 pb-4">
+                  <h3 className="text-lg font-semibold text-blue-400 mb-2">🎮 CONTROLS</h3>
+                  <ul className="text-gray-300 text-sm space-y-1">
+                    <li>• <strong>WASD</strong>: Movement (Double-tap to dash)</li>
+                    <li>• <strong>Left Click</strong>: Attack</li>
+                    <li>• <strong>Right Click</strong>: Camera control</li>
+                    <li>• <strong>Space</strong>: Jump</li>
+                    <li>• <strong>1/2</strong>: Switch between primary/secondary weapons</li>
+                    <li>• <strong>Q/E/R/F</strong>: Weapon abilities (hover over abilities to see details)</li>
+                  </ul>
+                </div>
+
+                <div className="border-b border-gray-600 pb-4">
+                  <h3 className="text-lg font-semibold text-blue-400 mb-2">🏆 OBJECTIVE</h3>
+                  <p className="text-gray-300 mb-2">
+                    Level up by killing enemy Players and their Summoned Units. Unlock skill points to enhance your abilities.
+                  </p>
+                  <ul className="text-gray-300 text-sm space-y-1 ml-4">
+                    <li>• Defend your Tower from the enemy player's Summoned Units</li>
+                    <li>• Defend your Inhibitors from the enemy Player</li>
+                    <li>• Use your Summoned Units to damage the enemy Player's Tower</li>
+                    <li>• Destroy the enemy Player's Inhibitors to upgrade your Summoned Units into ELITES</li>
+                    <li>• Level up to gain combat bonuses and to invest Skill Points into additional weapon abilities</li>
+                    <li>• Destroy the enemy Player's Tower to win the game</li>
+                  </ul>
+                </div>
+
+              
               </div>
             </div>
           </div>

@@ -1171,13 +1171,7 @@ const SwordComponent = memo(function Sword({
             />
           </mesh>
 
-          {/* Enhanced point light */}
-          <pointLight 
-            color={new Color(0x11B52F)}
-            intensity={2}
-            distance={1}
-            decay={2}
-          />
+ 
         </group>
         
         {/* Blade*/}

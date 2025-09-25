@@ -299,8 +299,8 @@ class GameRoom {
     const perpZ = normalizedX;
 
     // Position pillars 3 units behind tower (closer to center), spread out evenly
-    const frontOffset = -3; // Negative to place behind tower
-    const pillarSpacing = 2.5; // Spacing between pillars
+    const frontOffset = -6; // Negative to place behind tower
+    const pillarSpacing = 8.5; // Spacing between pillars
 
     // Create 3 pillars: left, center, right
     const pillars = [];
@@ -317,8 +317,8 @@ class GameRoom {
         y: towerY,
         z: towerZ + (normalizedZ * frontOffset) + (perpZ * -pillarSpacing)
       },
-      health: 3000,
-      maxHealth: 3000,
+      health: 4000,
+      maxHealth: 4000,
       isDead: false,
       isActive: true,
       createdAt: Date.now()
@@ -337,8 +337,8 @@ class GameRoom {
         y: towerY,
         z: towerZ + (normalizedZ * frontOffset)
       },
-      health: 3000,
-      maxHealth: 3000,
+      health: 4000,
+      maxHealth: 4000,
       isDead: false,
       isActive: true,
       createdAt: Date.now()
@@ -357,8 +357,8 @@ class GameRoom {
         y: towerY,
         z: towerZ + (normalizedZ * frontOffset) + (perpZ * pillarSpacing)
       },
-      health: 3000,
-      maxHealth: 3000,
+      health: 4000,
+      maxHealth: 4000,
       isDead: false,
       isActive: true,
       createdAt: Date.now()

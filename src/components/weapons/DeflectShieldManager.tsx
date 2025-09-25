@@ -27,7 +27,7 @@ export function triggerGlobalDeflectShield(position: Vector3, rotation: Vector3,
     position: position.clone(),
     rotation: rotation.clone(),
     startTime: Date.now(),
-    duration: 3000, // 3 seconds
+    duration: 3250, // 3 seconds
     playerId
   };
   

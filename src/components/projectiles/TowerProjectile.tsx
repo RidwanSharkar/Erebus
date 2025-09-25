@@ -100,7 +100,7 @@ export default function TowerProjectile({
     <group ref={groupRef}>
       {/* Main projectile body - crystalline energy shard */}
       <mesh>
-        <dodecahedronGeometry args={[0.2, 0]} />
+        <octahedronGeometry args={[0.2, 0]} />
         <meshStandardMaterial
           color={projectileColor}
           emissive={emissiveColor}

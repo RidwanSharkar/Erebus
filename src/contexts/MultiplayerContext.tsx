@@ -671,7 +671,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           summonedUnitsMap.set(unit.unitId, unit);
         });
         setSummonedUnits(summonedUnitsMap);
-      });
+      });``
     });
 
     // Wave completion handler

@@ -95,6 +95,21 @@ const nextConfig = {
   images: {
     unoptimized: false,
   },
+
+  // Add caching headers for audio files
+  async headers() {
+    return [
+      {
+        source: '/audio/sfx/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+    ];
+  },
 }
 
 module.exports = nextConfig

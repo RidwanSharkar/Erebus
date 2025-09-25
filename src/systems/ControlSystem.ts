@@ -131,11 +131,18 @@ export class ControlSystem extends System {
   // Callback for WindShear Tornado effect
   private onWindShearTornadoCallback?: (playerId: string, duration: number) => void;
 
+  // Callback for broadcasting melee attack sounds in PVP
+  private onBroadcastMeleeAttackCallback?: (attackType: string, position: Vector3, comboStep?: number) => void;
+
   // Local socket ID for identifying the local player
   private localSocketId: string | null = null;
 
   // Rate limiting for projectile firing
-  private lastFireTime = 0;
+  private lastBowFireTime = 0; // Bow projectiles
+  private lastScytheFireTime = 0; // Scythe entropic bolts
+  private lastSwordFireTime = 0; // Sword melee attacks
+  private lastRunebladeFireTime = 0; // Runeblade melee attacks
+  private lastSabresFireTime = 0; // Sabres melee attacks
   private lastCrossentropyTime = 0; // Separate tracking for CrossentropyBolt
   private lastReanimateTime = 0; // Separate tracking for Reanimate ability
   private lastViperStingTime = 0;
@@ -851,6 +858,9 @@ export class ControlSystem extends System {
         // Store charge progress before resetting for visual effects
         const finalChargeProgress = this.chargeProgress;
 
+        // Stop the bow draw sound before playing release sound
+        this.audioSystem?.stopSound('bow_draw');
+
         // Play bow release sound when firing
         this.audioSystem?.playBowReleaseSound(playerTransform.position, finalChargeProgress);
 
@@ -908,10 +918,10 @@ export class ControlSystem extends System {
   private fireProjectile(playerTransform: Transform): void {
     // Rate limiting - prevent spam clicking
     const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastFireTime < this.fireRate) {
+    if (currentTime - this.lastBowFireTime < this.fireRate) {
       return;
     }
-    this.lastFireTime = currentTime;
+    this.lastBowFireTime = currentTime;
     
     // Get dragon's facing direction (same as camera direction since dragon faces camera)
     // This ensures arrows fire outward from where the dragon is facing
@@ -953,13 +963,14 @@ export class ControlSystem extends System {
   private fireEntropicBoltProjectile(playerTransform: Transform): void {
     // Rate limiting - use new scythe rate (0.35 seconds)
     const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastFireTime < this.scytheFireRate) {
+    if (currentTime - this.lastScytheFireTime < this.scytheFireRate) {
       return;
     }
-    this.lastFireTime = currentTime;
+    this.lastScytheFireTime = currentTime;
 
     // Play entropic bolt sound (or cryoflame if passive unlocked)
-    const isCryoflameUnlocked = this.isPassiveAbilityUnlocked('P', WeaponType.SCYTHE, 'primary');
+    const weaponSlot: 'primary' | 'secondary' = this.currentWeapon === this.selectedWeapons?.primary ? 'primary' : 'secondary';
+    const isCryoflameUnlocked = this.isPassiveAbilityUnlocked('P', WeaponType.SCYTHE, weaponSlot);
     if (isCryoflameUnlocked) {
       this.audioSystem?.playScytheCryoflameSound(playerTransform.position);
     } else {
@@ -1232,6 +1243,9 @@ export class ControlSystem extends System {
       this.playerEntity.id,
       projectileConfig
     );
+
+    // Play bow release sound locally for Tempest Rounds burst
+    this.audioSystem?.playBowReleaseSound(spawnPosition);
 
     // Broadcast projectile creation to other players
     if (this.onProjectileCreatedCallback) {
@@ -1520,8 +1534,8 @@ export class ControlSystem extends System {
       if (this.cobraShotChargeProgress >= 1.0) {
         clearInterval(chargeInterval);
 
-        // Play bow release sound when firing
-        this.audioSystem?.playBowReleaseSound(playerTransform.position, 1.0);
+        // Play cobra shot release sound when firing
+        this.audioSystem?.playCobraShotReleaseSound(playerTransform.position);
 
         this.fireCobraShot(playerTransform);
         this.isCobraShotCharging = false;
@@ -1846,6 +1860,10 @@ export class ControlSystem extends System {
     this.onWindShearTornadoCallback = callback;
   }
 
+  public setBroadcastMeleeAttackCallback(callback: (attackType: string, position: Vector3, comboStep?: number) => void): void {
+    this.onBroadcastMeleeAttackCallback = callback;
+  }
+
   public setDamageNumbersCallback(callback: (damageNumbers: Array<{
     id: string;
     damage: number;
@@ -2167,16 +2185,17 @@ export class ControlSystem extends System {
   private performSwordMeleeAttack(playerTransform: Transform): void {
     // Rate limiting - prevent spam clicking (use sword-specific fire rate)
     const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastFireTime < this.swordFireRate) {
+    if (currentTime - this.lastSwordFireTime < this.swordFireRate) {
       return;
     }
-    this.lastFireTime = currentTime;
+    this.lastSwordFireTime = currentTime;
     this.lastSwordAttackTime = currentTime;
 
     // Play sword swing sound based on current combo step
     this.audioSystem?.playSwordSwingSound(this.swordComboStep, playerTransform.position);
 
     // Set swinging state - completion will be handled by sword component callback
+    // Animation state broadcasting will handle sound synchronization for other players
     this.isSwinging = true;
 
     // Perform melee damage in a cone in front of player
@@ -2188,16 +2207,17 @@ export class ControlSystem extends System {
   private performRunebladeMeleeAttack(playerTransform: Transform): void {
     // Rate limiting - prevent spam clicking (use runeblade-specific fire rate)
     const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastFireTime < this.runebladeFireRate) {
+    if (currentTime - this.lastRunebladeFireTime < this.runebladeFireRate) {
       return;
     }
-    this.lastFireTime = currentTime;
+    this.lastRunebladeFireTime = currentTime;
     this.lastSwordAttackTime = currentTime;
 
     // Play sword swing sound based on current combo step (same as sword)
     this.audioSystem?.playSwordSwingSound(this.swordComboStep, playerTransform.position);
 
     // Set swinging state - completion will be handled by runeblade component callback
+    // Animation state broadcasting will handle sound synchronization for other players
     this.isSwinging = true;
 
     // Perform melee damage in a cone in front of player (same as sword)
@@ -2865,15 +2885,16 @@ export class ControlSystem extends System {
   private performSabresMeleeAttack(playerTransform: Transform): void {
     // Rate limiting - prevent spam clicking (use sabres-specific fire rate)
     const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastFireTime < this.sabresFireRate) {
+    if (currentTime - this.lastSabresFireTime < this.sabresFireRate) {
       return;
     }
-    this.lastFireTime = currentTime;
+    this.lastSabresFireTime = currentTime;
 
     // Play sabres swing sound
     this.audioSystem?.playSabresSwingSound(playerTransform.position);
 
     // Set swinging state - completion will be handled by sabres component callback
+    // Animation state broadcasting will handle sound synchronization for other players
     this.isSwinging = true;
 
     // Perform melee damage in a cone in front of player (dual attack)
@@ -3528,6 +3549,23 @@ export class ControlSystem extends System {
   
   private resetAllAbilityStates(): void {
     // Reset all ability states when switching weapons
+    this.isSwinging = false; // Reset swinging state to prevent sound overlap
+    this.isCharging = false; // Reset bow charging state
+    this.chargeProgress = 0; // Reset charge progress
+    this.isViperStingCharging = false; // Reset viper sting charging
+    this.viperStingChargeProgress = 0;
+    this.isBarrageCharging = false; // Reset barrage charging
+    this.barrageChargeProgress = 0;
+    this.isCobraShotCharging = false; // Reset cobra shot charging
+    this.cobraShotChargeProgress = 0;
+    this.isCloudkillCharging = false; // Reset cloudkill charging
+    this.cloudkillChargeProgress = 0;
+    this.isCrossentropyCharging = false; // Reset crossentropy charging
+    this.crossentropyChargeProgress = 0;
+    this.isSummonTotemCharging = false; // Reset summon totem charging
+    this.summonTotemChargeProgress = 0;
+    this.isWindShearCharging = false; // Reset wind shear charging
+    this.windShearChargeProgress = 0;
     this.isSkyfalling = false;
     this.skyfallPhase = 'none';
     this.isBackstabbing = false;
@@ -4013,6 +4051,9 @@ export class ControlSystem extends System {
         const dashStarted = movement.startDash(worldDirection, transform.position, currentTime);
         
         if (dashStarted) {
+          // Play dash sound
+          this.audioSystem?.playUIDashSound();
+
           // Reset the double-tap state to prevent multiple dashes
           this.inputManager.resetDoubleTap(key);
         }
@@ -4489,6 +4530,9 @@ export class ControlSystem extends System {
     this.cloudkillChargeProgress = 0;
     this.lastCloudkillTime = currentTime;
 
+    // Play bow draw sound when starting to charge (same as other bow abilities)
+    this.audioSystem?.playBowDrawSound(playerTransform.position);
+
     // Start charging animation
     const chargeStartTime = Date.now();
     const chargeDuration = 700; // 0.8 second charge time (shorter than Barrage)
@@ -4514,6 +4558,9 @@ export class ControlSystem extends System {
       playerTransform.position.z
     );
     const direction = new Vector3(0, 0, -1); // Default forward direction
+
+    // Play cloudkill release sound
+    this.audioSystem?.playCloudkillReleaseSound(playerTransform.position);
 
     // Trigger Cloudkill callback
     if (this.onCloudkillCallback) {
@@ -4558,8 +4605,8 @@ export class ControlSystem extends System {
       if (this.barrageChargeProgress >= 1.0) {
         clearInterval(chargeInterval);
 
-        // Play bow release sound when firing
-        this.audioSystem?.playBowReleaseSound(playerTransform.position, 1.0);
+        // Play barrage release sound when firing
+        this.audioSystem?.playBarrageReleaseSound(playerTransform.position);
 
         this.fireBarrage(playerTransform);
         this.isBarrageCharging = false;

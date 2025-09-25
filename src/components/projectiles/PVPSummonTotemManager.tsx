@@ -72,17 +72,12 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
 
   // Use refs to access latest props in callback
   const playersRef = React.useRef(players);
-  const localSocketIdRef = React.useRef(localSocketId);
   const enemyDataRef = React.useRef(enemyData);
 
   // Update refs when props change
   React.useEffect(() => {
     playersRef.current = players;
   }, [players]);
-
-  React.useEffect(() => {
-    localSocketIdRef.current = localSocketId;
-  }, [localSocketId]);
 
   React.useEffect(() => {
     enemyDataRef.current = enemyData;
@@ -119,7 +114,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
 
         // For remote totems, use the caster's ID as localSocketId so the totem excludes the caster
         // For local totems, use the actual local player's ID
-        const effectiveLocalSocketId = enemyDataParam ? casterId : localSocketIdRef.current;
+        const effectiveLocalSocketId = enemyDataParam ? casterId : localSocketId;
 
         managerRef.current.createTotem(
           position,
@@ -129,9 +124,11 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
           activeEffectsParam || activeEffects,
           setDamageNumbersParam || setDamageNumbers,
           nextDamageNumberIdParam || nextDamageNumberId,
-            onHealPlayerParam || onHealPlayer || onHealPlayerCallback || ((healAmount: number) => {
-              // Heal the local player - this should be handled by the parent component
-            }),
+          onHealPlayerParam || (casterId && localSocketId && casterId !== localSocketId ? (() => {
+            // Remote totems should not heal anyone locally - healing is handled by the server
+          }) : onHealPlayer) || onHealPlayerCallback || ((healAmount: number) => {
+            // Heal the local player - this should be handled by the parent component
+          }),
           casterId,
           effectiveLocalSocketId
         );
@@ -141,7 +138,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
     return () => {
       setGlobalSummonTotemTrigger(() => {});
     };
-  }, [onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, onHealPlayer, onHealPlayerCallback, playerId, enemyData, players]);
+  }, [onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, onHealPlayer, onHealPlayerCallback, playerId, enemyData, players, localSocketId]);
 
   return (
     <SummonTotemManager

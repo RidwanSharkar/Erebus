@@ -519,6 +519,6 @@ export class SummonedUnitSystem extends System {
 
   private getEliteUnitCount(ownerId: string): number {
     const destroyedPillars = this.destroyedEnemyPillars.get(ownerId) || 0;
-    return Math.min(destroyedPillars, 2); // Max 2 elite units
+    return Math.min(destroyedPillars, 3); // Max 3 elite units (one per enemy pillar destroyed)
   }
 }
