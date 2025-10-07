@@ -174,7 +174,13 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
           damageData.damageType === 'smite_healing' ||
           damageData.damageType === 'viper_sting_healing' ||
           damageData.damageType === 'summon_totem_healing') && '+'}
-        {damageData.damage}
+        {damageData.damageType === 'healing' ||
+         damageData.damageType === 'reanimate_healing' ||
+         damageData.damageType === 'smite_healing' ||
+         damageData.damageType === 'viper_sting_healing' ||
+         damageData.damageType === 'summon_totem_healing'
+           ? Math.round(damageData.damage)
+           : damageData.damage}
         {damageData.isCritical && '!'}
       </span>
     </div>

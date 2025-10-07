@@ -510,6 +510,11 @@ export class ControlSystem extends System {
   private weaponSwitchCooldown = 1.5; // 200ms cooldown to prevent rapid switching
 
   private handleWeaponSwitching(): void {
+    // Prevent weapon switching while dead and waiting to respawn
+    if (this.isPlayerDead) {
+      return;
+    }
+
     const currentTime = Date.now() / 1000;
 
     // Prevent rapid weapon switching
@@ -754,6 +759,11 @@ export class ControlSystem extends System {
   }
 
   private handleCombatInput(playerTransform: Transform): void {
+    // Prevent combat actions while dead and waiting to respawn
+    if (this.isPlayerDead) {
+      return;
+    }
+
     if (this.currentWeapon === WeaponType.BOW) {
       this.handleBowInput(playerTransform);
     } else if (this.currentWeapon === WeaponType.SCYTHE) {
@@ -1293,7 +1303,8 @@ export class ControlSystem extends System {
     }
 
     // Check if Cryoflame is unlocked for the current weapon
-    const isCryoflameUnlocked = this.isPassiveAbilityUnlocked('P', WeaponType.SCYTHE, 'primary');
+    const weaponSlot: 'primary' | 'secondary' = this.currentWeapon === this.selectedWeapons?.primary ? 'primary' : 'secondary';
+    const isCryoflameUnlocked = this.isPassiveAbilityUnlocked('P', WeaponType.SCYTHE, weaponSlot);
     
     // Check if player has enough mana (15 mana cost)
     const gameUI = (window as any).gameUI;
@@ -3736,6 +3747,12 @@ export class ControlSystem extends System {
   public unlockAbility(weaponType: WeaponType, abilityKey: 'R' | 'F' | 'P', weaponSlot: 'primary' | 'secondary'): boolean {
     try {
       this.skillPointData = SkillPointSystem.unlockAbility(this.skillPointData, weaponType, abilityKey, weaponSlot);
+
+      // Apply passive effects immediately if this is a passive ability
+      if (abilityKey === 'P') {
+        this.applyPassiveAbilities(weaponType);
+      }
+
       return true;
     } catch (error) {
       console.error('Failed to unlock ability:', error);
@@ -4030,6 +4047,11 @@ export class ControlSystem extends System {
   }
 
   private checkForDashInput(movement: Movement, transform: Transform): void {
+    // Prevent dashing while dead and waiting to respawn
+    if (this.isPlayerDead) {
+      return;
+    }
+
     // Check for double-tap on movement keys
     const dashDirections = [
       { key: 'w', direction: new Vector3(0, 0, -1) }, // Forward
@@ -4086,6 +4108,12 @@ export class ControlSystem extends System {
 
   private handleChargeMovement(movement: Movement, transform: Transform): void {
     if (!movement.isCharging) return;
+
+    // If player died during charge, cancel it
+    if (this.isPlayerDead) {
+      movement.cancelCharge();
+      return;
+    }
 
     const currentTime = Date.now() / 1000; // Convert to seconds
     

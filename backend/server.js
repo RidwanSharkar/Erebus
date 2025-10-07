@@ -109,6 +109,7 @@ io.on('connection', (socket) => {
       players: room.getPlayers(),
       enemies: room.getEnemies(),
       towers: room.getTowers(),
+      pillars: room.getPillars(),
       summonedUnits: room.getSummonedUnits(),
       killCount: room.getKillCount(),
       gameStarted: room.getGameStarted(),

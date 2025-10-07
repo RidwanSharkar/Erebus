@@ -596,7 +596,7 @@ function HomeContent() {
                     <li>• Each player's Tower summons 3 Units every 45 seconds.</li>
                     <li>• Player kills and Summoned Unit kills award experience points.</li>
                     <li>• Leveling up grants a Skill Point to unlock additional abilities.</li>
-                    <li>• Players respawn upon 5 seconds after death.</li>
+                    <li>• Players respawn upon 10 seconds after death.</li>
                     <li>• Only Summoned Units can damage the opposing player's Tower.</li>
                     <li>• Players can destroy the opposing player's Inhibitors to upgrade their Summoned Units into ELITES.</li>
                     <li>• The first player to destroy the opposing player's Tower wins.</li>

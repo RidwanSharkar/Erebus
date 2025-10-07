@@ -18,7 +18,7 @@ interface DeathEffectProps {
 
 export default function DeathEffect({
   position,
-  duration = 5000, // 5 seconds (respawn time)
+  duration = 12500, // 12.5 seconds (respawn time)
   startTime = Date.now(),
   playerId,
   playerData = [],

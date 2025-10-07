@@ -475,15 +475,13 @@ class GameRoom {
 
   syncExistingTowersToPlayer(playerId) {
     // Send all existing towers to the newly joined player
+    // Include all towers since the frontend needs to know about them all
     if (this.io) {
       for (const tower of this.towers.values()) {
-        // Don't send the player's own tower back to them (they already know about it)
-        if (tower.ownerId !== playerId) {
-          this.io.to(playerId).emit('tower-spawned', {
-            roomId: this.roomId,
-            tower: tower
-          });
-        }
+        this.io.to(playerId).emit('tower-spawned', {
+          roomId: this.roomId,
+          tower: tower
+        });
       }
     }
   }

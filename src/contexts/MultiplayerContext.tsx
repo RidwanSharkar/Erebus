@@ -335,6 +335,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         });
         setEnemies(enemiesMap);
         setTowers(new Map()); // Clear towers for multiplayer mode
+        setPillars(new Map()); // Clear pillars for multiplayer mode
         setSummonedUnits(new Map()); // Clear summoned units for multiplayer mode
       } else {
         setEnemies(new Map()); // Clear enemies for PVP mode
@@ -346,6 +347,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           });
         }
         setTowers(towersMap);
+
+        // Update pillars (only for PVP mode)
+        const pillarsMap = new Map();
+        if (data.pillars) {
+          data.pillars.forEach((pillar: Pillar) => {
+            pillarsMap.set(pillar.id, pillar);
+          });
+        }
+        setPillars(pillarsMap);
 
         // Update summoned units (only for PVP mode)
         const summonedUnitsMap = new Map();

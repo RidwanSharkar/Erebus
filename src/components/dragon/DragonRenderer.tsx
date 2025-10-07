@@ -26,6 +26,7 @@ interface DragonRendererProps {
   currentSubclass?: WeaponSubclass;
   isCharging?: boolean;
   chargeProgress?: number;
+  chargeDirection?: Vector3;
   isSwinging?: boolean;
   isSpinning?: boolean;
   onBowRelease?: (finalProgress: number, isPerfectShot?: boolean) => void;
@@ -100,6 +101,7 @@ export default function DragonRenderer({
   currentSubclass = WeaponSubclass.ELEMENTAL,
   isCharging = false,
   chargeProgress = 0,
+  chargeDirection,
   isSwinging = false,
   isSpinning = false,
   isDeflecting = false,
@@ -165,7 +167,9 @@ export default function DragonRenderer({
     { isAvailable: true, cooldownRemaining: 0 },
     { isAvailable: true, cooldownRemaining: 0 }
   ]);
-  const [chargeDirection, setChargeDirection] = useState<Vector3 | undefined>(undefined);
+  // Use chargeDirection from props, with fallback to local state for backward compatibility
+  const [localChargeDirection, setLocalChargeDirection] = useState<Vector3 | undefined>(undefined);
+  const effectiveChargeDirection = chargeDirection || localChargeDirection;
   const [damageNumbers, setDamageNumbers] = useState<Array<{
     id: number;
     damage: number;
@@ -207,7 +211,7 @@ export default function DragonRenderer({
         camera.getWorldDirection(direction);
         direction.y = 0; // Keep movement horizontal
         direction.normalize();
-        setChargeDirection(direction);
+        setLocalChargeDirection(direction);
 
       }
       lastChargeState.current = isSwordCharging;
@@ -259,9 +263,9 @@ export default function DragonRenderer({
           
           // Update charge direction if charging
           if (movement.isCharging) {
-            setChargeDirection(movement.chargeDirection.clone());
+            setLocalChargeDirection(movement.chargeDirection.clone());
           } else {
-            setChargeDirection(undefined);
+            setLocalChargeDirection(undefined);
           }
         }
       }
@@ -387,7 +391,7 @@ export default function DragonRenderer({
           isDashing={isDashing.current}
           entityId={entityId}
           dashCharges={dashCharges}
-          chargeDirection={chargeDirection}
+          chargeDirection={effectiveChargeDirection}
           currentWeapon={currentWeapon}
           currentSubclass={currentSubclass}
           isCharging={isCharging}

@@ -1335,10 +1335,10 @@ const [maxMana, setMaxMana] = useState(150);
     // Note: Experience rewards for kills are handled in handlePlayerDamaged
     // This function only handles the death of the local player
 
-    // Start respawn timer (5 seconds)
+    // Start respawn timer (10 seconds)
     setTimeout(() => {
       handlePlayerRespawn(deadPlayerId);
-    }, 5000);
+    }, 12500);
   }, [socket?.id, players, updatePlayerHealth, playerEntityRef, engineRef]);
 
   // Function to handle player respawn
@@ -1475,6 +1475,7 @@ const [maxMana, setMaxMana] = useState(150);
     currentSubclass: WeaponSubclass.ELEMENTAL,
     isCharging: false,
     chargeProgress: 0,
+    chargeDirection: new Vector3(0, 0, -1), // Default forward direction
     isSwinging: false,
     isSpinning: false,
     swordComboStep: 1 as 1 | 2 | 3,
@@ -2997,11 +2998,11 @@ const hasMana = useCallback((amount: number) => {
           // Play enemy animation sound effects at 50% volume
           const position = new Vector3(data.position?.x || 0, data.position?.y || 0, data.position?.z || 0);
           if (window.audioSystem && data.animationState) {
-            // Handle melee attack sounds - prevent duplicate sounds within 200ms
+            // Handle melee attack sounds - prevent duplicate sounds within 100ms
             if (data.animationState.isSwinging) {
               const now = Date.now();
               const lastSoundTime = lastMeleeSoundTime.current.get(data.playerId) || 0;
-              if (now - lastSoundTime > 200) { // 200ms cooldown to prevent double sounds
+              if (now - lastSoundTime > 50) { // 100ms cooldown to prevent double sounds
                 lastMeleeSoundTime.current.set(data.playerId, now);
 
                 // Get the player's weapon type to determine which sound to play
@@ -3860,6 +3861,11 @@ const hasMana = useCallback((amount: number) => {
       
       // Set up Charge callback
       controlSystem.setChargeCallback((position, direction) => {
+        // Store charge direction for trail effect
+        setWeaponState(prev => ({
+          ...prev,
+          chargeDirection: direction.clone()
+        }));
         // Broadcast as ability for state management
         broadcastPlayerAbility('charge', position, direction);
         // Also broadcast as attack for animation
@@ -4215,6 +4221,7 @@ const hasMana = useCallback((amount: number) => {
           currentSubclass: controlSystemRef.current.getCurrentSubclass(),
           isCharging: controlSystemRef.current.isWeaponCharging(),
           chargeProgress: controlSystemRef.current.getChargeProgress(),
+          chargeDirection: weaponStateRef.current.chargeDirection,
           isSwinging: controlSystemRef.current.isWeaponSwinging(),
           isSpinning: (controlSystemRef.current.isWeaponCharging() || controlSystemRef.current.isCrossentropyChargingActive()) && controlSystemRef.current.getCurrentWeapon() === WeaponType.SCYTHE,
           swordComboStep: controlSystemRef.current.getSwordComboStep(),
@@ -4455,6 +4462,7 @@ const hasMana = useCallback((amount: number) => {
           currentSubclass={weaponState.currentSubclass}
           isCharging={weaponState.isCharging}
           chargeProgress={weaponState.chargeProgress}
+          chargeDirection={weaponState.chargeDirection}
           isSwinging={weaponState.isSwinging}
           isSpinning={weaponState.isSpinning}
           swordComboStep={weaponState.swordComboStep}
@@ -5632,7 +5640,7 @@ const hasMana = useCallback((amount: number) => {
               <DeathEffect
                 key={deathEffect.playerId}
                 position={deathEffect.position}
-                duration={5000} // 5 seconds (respawn time)
+                duration={10000} // 10 seconds (respawn time)
                 startTime={deathEffect.startTime}
                 playerId={deathEffect.playerId}
                 playerData={Array.from(players.values()).map(p => {
