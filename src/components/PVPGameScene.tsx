@@ -624,15 +624,28 @@ export function PVPGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, on
   const [playerLevel, setPlayerLevel] = useState(1);
   const [lastExperienceAwardTime, setLastExperienceAwardTime] = useState(0);
 
+// Mana scaling based on player level
+const getMaxManaForWeapon = (weaponType: WeaponType, level: number): number => {
+  if (weaponType === WeaponType.RUNEBLADE) {
+    // Runeblade scaling: Level 1: 150, Level 2: 175, Level 3: 200, Level 4: 225, Level 5: 250
+    const runebladeMana = [0, 150, 175, 200, 225, 250];
+    return runebladeMana[level] || 150;
+  } else if (weaponType === WeaponType.SCYTHE) {
+    // Scythe scaling: Level 1: 250, Level 2: 275, Level 3: 300, Level 4: 325, Level 5: 350
+    return 250 + (level - 1) * 25;
+  }
+  return 200; // Default for other weapons
+};
+
 // Mana system state for weapons (persistent across weapon switches)
 const [weaponManaResources, setWeaponManaResources] = useState<{
   [key in WeaponType]: number;
 }>({
-  [WeaponType.SCYTHE]: 250,
+  [WeaponType.SCYTHE]: getMaxManaForWeapon(WeaponType.SCYTHE, 1), // Start with level 1 capacity
   [WeaponType.SWORD]: 0,
   [WeaponType.BOW]: 0,
   [WeaponType.SABRES]: 0,
-  [WeaponType.RUNEBLADE]: 150
+  [WeaponType.RUNEBLADE]: getMaxManaForWeapon(WeaponType.RUNEBLADE, 1) // Start with level 1 capacity
 });
 const [maxMana, setMaxMana] = useState(150);
 
@@ -1558,13 +1571,15 @@ useEffect(() => {
       const updated = { ...prev };
 
       // Mana regeneration for Scythe (10 mana per second = 5 every 500ms)
-      if (updated[WeaponType.SCYTHE] < 250) {
-        updated[WeaponType.SCYTHE] = Math.min(250, updated[WeaponType.SCYTHE] + 5);
+      const scytheMaxMana = getMaxManaForWeapon(WeaponType.SCYTHE, playerLevel);
+      if (updated[WeaponType.SCYTHE] < scytheMaxMana) {
+        updated[WeaponType.SCYTHE] = Math.min(scytheMaxMana, updated[WeaponType.SCYTHE] + 5);
       }
 
       // Mana regeneration for Runeblade (8 mana per second = 4 every 500ms)
-      if (updated[WeaponType.RUNEBLADE] < 150) {
-        updated[WeaponType.RUNEBLADE] = Math.min(150, updated[WeaponType.RUNEBLADE] + 2);
+      const runebladeMaxMana = getMaxManaForWeapon(WeaponType.RUNEBLADE, playerLevel);
+      if (updated[WeaponType.RUNEBLADE] < runebladeMaxMana) {
+        updated[WeaponType.RUNEBLADE] = Math.min(runebladeMaxMana, updated[WeaponType.RUNEBLADE] + 2);
       }
 
       return updated;
@@ -1572,23 +1587,45 @@ useEffect(() => {
   }, 500);
 
   return () => clearInterval(interval);
-}, []);
+}, [playerLevel]);
+
+// Handle mana capacity increase when leveling up
+useEffect(() => {
+  // When player levels up, increase mana capacity for Scythe and Runeblade
+  setWeaponManaResources(prev => {
+    const updated = { ...prev };
+    
+    // Update Scythe mana capacity
+    const scytheMaxMana = getMaxManaForWeapon(WeaponType.SCYTHE, playerLevel);
+    if (updated[WeaponType.SCYTHE] < scytheMaxMana) {
+      updated[WeaponType.SCYTHE] = scytheMaxMana; // Fill to new max capacity
+    }
+    
+    // Update Runeblade mana capacity
+    const runebladeMaxMana = getMaxManaForWeapon(WeaponType.RUNEBLADE, playerLevel);
+    if (updated[WeaponType.RUNEBLADE] < runebladeMaxMana) {
+      updated[WeaponType.RUNEBLADE] = runebladeMaxMana; // Fill to new max capacity
+    }
+    
+    return updated;
+  });
+}, [playerLevel]);
 
   // Sync currentWeapon with weaponState
   useEffect(() => {
     setCurrentWeapon(weaponState.currentWeapon);
   }, [weaponState.currentWeapon]);
 
-// Update max mana display based on current weapon (but don't reset the actual mana value)
+// Update max mana display based on current weapon and level (but don't reset the actual mana value)
 useEffect(() => {
   if (currentWeapon === WeaponType.SCYTHE) {
-    setMaxMana(250);
+    setMaxMana(getMaxManaForWeapon(WeaponType.SCYTHE, playerLevel));
   } else if (currentWeapon === WeaponType.RUNEBLADE) {
-    setMaxMana(150);
+    setMaxMana(getMaxManaForWeapon(WeaponType.RUNEBLADE, playerLevel));
   } else {
     setMaxMana(0); // No mana for other weapons
   }
-}, [currentWeapon]);
+}, [currentWeapon, playerLevel]);
 
 // Function to consume mana for weapon abilities (Scythe and Runeblade)
 const consumeMana = useCallback((amount: number) => {
@@ -2995,7 +3032,7 @@ const hasMana = useCallback((amount: number) => {
 
           updated.set(data.playerId, newState);
 
-          // Play enemy animation sound effects at 50% volume
+          // Play enemy animation sound effects at 25% volume
           const position = new Vector3(data.position?.x || 0, data.position?.y || 0, data.position?.z || 0);
           if (window.audioSystem && data.animationState) {
             // Handle melee attack sounds - prevent duplicate sounds within 100ms
@@ -3022,11 +3059,11 @@ const hasMana = useCallback((amount: number) => {
                     // Scythe melee attacks use entropic bolt sound
                     window.audioSystem.playEnemyEntropicBoltSound(position);
                     break;
-                  case WeaponType.RUNEBLADE:
-                    // Use swordComboStep if available, otherwise default to 1
-                    const runebladeComboStep = data.animationState.swordComboStep || 1;
-                    window.audioSystem.playEnemySwordSwingSound(runebladeComboStep, position);
-                    break;
+                case WeaponType.RUNEBLADE:
+                  // Use swordComboStep if available, otherwise default to 1
+                  const runebladeComboStep = data.animationState.swordComboStep || 1;
+                  window.audioSystem.playEnemySwordSwingSound(runebladeComboStep, position);
+                  break;
                 }
               }
             }
@@ -4516,6 +4553,15 @@ const hasMana = useCallback((amount: number) => {
             direction.normalize();
             broadcastPlayerAttack('sabres_swing', playerPosition, direction);
           }}
+          onRunebladeSwingComplete={() => {
+            controlSystemRef.current?.onSwordSwingComplete(); // Reuse Sword swing complete for combo advancement
+            const direction = new Vector3();
+            camera.getWorldDirection(direction);
+            direction.normalize();
+            broadcastPlayerAttack('runeblade_swing', playerPosition, direction, {
+              comboStep: weaponState.swordComboStep
+            });
+          }}
           onChargeComplete={() => {
             controlSystemRef.current?.onChargeComplete();
             // Broadcast charge spin animation
@@ -4639,6 +4685,7 @@ const hasMana = useCallback((amount: number) => {
             onScytheSwingComplete={() => {}}
             onSwordSwingComplete={() => {}}
             onSabresSwingComplete={() => {}}
+            onRunebladeSwingComplete={() => {}}
             onBackstabComplete={() => {}}
             onSunderComplete={() => {}}
             onSmiteComplete={() => {}}

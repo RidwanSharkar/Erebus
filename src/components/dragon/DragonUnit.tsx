@@ -34,6 +34,7 @@ interface DragonUnitProps {
   onScytheSwingComplete?: () => void;
   onSwordSwingComplete?: () => void;
   onSabresSwingComplete?: () => void;
+  onRunebladeSwingComplete?: () => void;
   onSabresLeftSwingStart?: () => void;
   onSabresRightSwingStart?: () => void;
   onBackstabComplete?: () => void;
@@ -140,6 +141,7 @@ export default function DragonUnit({
   onScytheSwingComplete = () => {},
   onSwordSwingComplete = () => {},
   onSabresSwingComplete = () => {},
+  onRunebladeSwingComplete = () => {},
   onSabresLeftSwingStart = () => {},
   onSabresRightSwingStart = () => {},
   onBackstabComplete = () => {},
@@ -282,7 +284,7 @@ export default function DragonUnit({
           isCharging={isSwordCharging}
           isDeflecting={isDeflecting}
           chargeDirectionProp={chargeDirection}
-          onSwingComplete={onSwordSwingComplete}
+          onSwingComplete={onRunebladeSwingComplete}
           onSmiteComplete={onSmiteComplete}
           onDeathGraspComplete={onDeathGraspComplete}
           onWraithStrikeComplete={onWraithStrikeComplete}

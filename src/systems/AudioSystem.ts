@@ -1,9 +1,7 @@
 // Audio System for managing game sound effects and music
 import { Howl, Howler } from 'howler';
 import { System } from '@/ecs/System';
-import { World } from '@/ecs/World';
 import { Vector3 } from 'three';
-import { Transform } from '@/ecs/components/Transform';
 
 export interface SoundConfig {
   volume?: number;
@@ -297,33 +295,33 @@ export class AudioSystem extends System {
     return this.playWeaponSound('sabres_backstab', position, { volume: 0.8 });
   }
 
-  // ===== ENEMY SOUND EFFECTS (50% volume) =====
+  // ===== ENEMY SOUND EFFECTS (25% volume) =====
 
   // Play enemy bow draw sound
   public playEnemyBowDrawSound(position: Vector3) {
-    return this.playWeaponSound('bow_draw', position, { volume: 0.3 }); // 0.6 * 0.5
+    return this.playWeaponSound('bow_draw', position, { volume: 0.15 }); // 0.6 * 0.25
   }
 
   // Play enemy bow release sound
   public playEnemyBowReleaseSound(position: Vector3, chargeProgress?: number) {
-    const volume = (0.7 + (chargeProgress || 0) * 0.3) * 0.5; // 50% of original volume
+    const volume = (0.7 + (chargeProgress || 0) * 0.3) * 0.25; // 25% of original volume
     const rate = 0.9 + (chargeProgress || 0) * 0.2;
     return this.playWeaponSound('bow_release', position, { volume, rate });
   }
 
   // Play enemy viper sting release sound
   public playEnemyViperStingReleaseSound(position: Vector3) {
-    return this.playWeaponSound('bow_viper_sting_release', position, { volume: 0.45 }); // 0.9 * 0.5
+    return this.playWeaponSound('bow_viper_sting_release', position, { volume: 0.225 }); // 0.9 * 0.25
   }
 
   // Play enemy sabres swing sound
   public playEnemySabresSwingSound(position: Vector3) {
-    return this.playWeaponSound('sabres_swing', position, { volume: 0.4 }); // 0.8 * 0.5
+    return this.playWeaponSound('sabres_swing', position, { volume: 0.2 }); // 0.8 * 0.25
   }
 
   // Play enemy sabres flourish sound
   public playEnemySabresFlourishSound(position: Vector3) {
-    return this.playWeaponSound('sabres_flourish', position, { volume: 0.45 }); // 0.9 * 0.5
+    return this.playWeaponSound('sabres_flourish', position, { volume: 0.225 }); // 0.9 * 0.25
   }
 
   // Play enemy sabres shadow step sound
@@ -338,18 +336,18 @@ export class AudioSystem extends System {
 
   // Play enemy entropic bolt sound
   public playEnemyEntropicBoltSound(position: Vector3) {
-    return this.playWeaponSound('entropic_bolt', position, { volume: 0.4 }); // 0.8 * 0.5
+    return this.playWeaponSound('entropic_bolt', position, { volume: 0.2 }); // 0.8 * 0.25
   }
 
   // Play enemy crossentropy sound
   public playEnemyCrossentropySound(position: Vector3) {
-    return this.playWeaponSound('crossentropy', position, { volume: 0.45 }); // 0.9 * 0.5
+    return this.playWeaponSound('crossentropy', position, { volume: 0.225 }); // 0.9 * 0.25
   }
 
   // Play enemy sword swing sounds
   public playEnemySwordSwingSound(comboStep: 1 | 2 | 3, position: Vector3) {
     const soundId = `sword_swing_${comboStep}`;
-    return this.playWeaponSound(soundId, position, { volume: 0.4 }); // 0.8 * 0.5
+    return this.playWeaponSound(soundId, position, { volume: 0.2 }); // 0.8 * 0.25
   }
 
   // Play enemy sword deflect sound
@@ -359,7 +357,7 @@ export class AudioSystem extends System {
 
   // Play enemy sword charge sound
   public playEnemySwordChargeSound(position: Vector3) {
-    return this.playWeaponSound('sword_charge', position, { volume: 0.45 }); // 0.9 * 0.5
+    return this.playWeaponSound('sword_charge', position, { volume: 0.225 }); // 0.9 * 0.25
   }
 
   // Play enemy windshear sound

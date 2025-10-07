@@ -167,7 +167,28 @@ export default function GameUI({
     }, 500);
 
     return () => clearInterval(interval);
-  }, [maxEnergy]);
+  }, [maxEnergy, level]);
+
+  // Handle mana capacity increase when leveling up
+  useEffect(() => {
+    setWeaponResources(prev => {
+      const updated = { ...prev };
+      
+      // Update Scythe mana capacity
+      const scytheMaxMana = getMaxManaForWeapon(WeaponType.SCYTHE, level);
+      if (updated[WeaponType.SCYTHE].mana < scytheMaxMana) {
+        updated[WeaponType.SCYTHE].mana = scytheMaxMana; // Fill to new max capacity
+      }
+      
+      // Update Runeblade mana capacity
+      const runebladeMaxMana = getMaxManaForWeapon(WeaponType.RUNEBLADE, level);
+      if (updated[WeaponType.RUNEBLADE].mana < runebladeMaxMana) {
+        updated[WeaponType.RUNEBLADE].mana = runebladeMaxMana; // Fill to new max capacity
+      }
+      
+      return updated;
+    });
+  }, [level]);
 
   // Rage decay for Sword (5 rage per second after 5 seconds of no damage)
   useEffect(() => {

@@ -1,4 +1,4 @@
-# 🎮 Nocturne - Multiplayer 3D Action Game
+# 🎮 AVERNUS - Multiplayer 3D Action Game
 
 A fast-paced, competitive multiplayer 3D action game featuring real-time combat, strategic weapon switching, and deep progression systems. Built with modern web technologies for smooth, scalable gameplay.
 

@@ -33,6 +33,7 @@ interface DragonRendererProps {
   onScytheSwingComplete?: () => void;
   onSwordSwingComplete?: () => void;
   onSabresSwingComplete?: () => void;
+  onRunebladeSwingComplete?: () => void;
   onBackstabComplete?: () => void;
   onSunderComplete?: () => void;
   swordComboStep?: 1 | 2 | 3;
@@ -120,6 +121,7 @@ export default function DragonRenderer({
   onScytheSwingComplete = () => {},
   onSwordSwingComplete = () => {},
   onSabresSwingComplete = () => {},
+  onRunebladeSwingComplete = () => {},
   onBackstabComplete = () => {},
   onSunderComplete = () => {},
   swordComboStep = 1,
@@ -402,6 +404,7 @@ export default function DragonRenderer({
           onScytheSwingComplete={onScytheSwingComplete}
           onSwordSwingComplete={onSwordSwingComplete}
           onSabresSwingComplete={onSabresSwingComplete}
+          onRunebladeSwingComplete={onRunebladeSwingComplete}
           onBackstabComplete={onBackstabComplete}
           onSunderComplete={onSunderComplete}
           swordComboStep={swordComboStep}
