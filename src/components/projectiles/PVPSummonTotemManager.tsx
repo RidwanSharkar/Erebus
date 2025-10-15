@@ -50,9 +50,9 @@ interface PVPSummonTotemManagerProps {
     isSummon?: boolean;
   }>) => void;
   nextDamageNumberId?: { current: number };
-  onHealPlayer?: (healAmount: number) => void;
+  onHealPlayer?: (healAmount: number, targetPlayerId?: string) => void;
   playerId?: string; // Add player ID for healing
-  onHealPlayerCallback?: (healAmount: number) => void; // Additional healing callback
+  onHealPlayerCallback?: (healAmount: number, targetPlayerId?: string) => void; // Additional healing callback
 }
 
 const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
@@ -124,10 +124,11 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
           activeEffectsParam || activeEffects,
           setDamageNumbersParam || setDamageNumbers,
           nextDamageNumberIdParam || nextDamageNumberId,
-          onHealPlayerParam || (casterId && localSocketId && casterId !== localSocketId ? (() => {
+          onHealPlayerParam || (casterId && localSocketId && casterId !== localSocketId ? ((healAmount: number, targetPlayerId?: string) => {
             // Remote totems should not heal anyone locally - healing is handled by the server
-          }) : onHealPlayer) || onHealPlayerCallback || ((healAmount: number) => {
-            // Heal the local player - this should be handled by the parent component
+          }) : onHealPlayer) || onHealPlayerCallback || ((healAmount: number, targetPlayerId?: string) => {
+            // Heal players - this should be handled by the parent component
+            // The targetPlayerId parameter allows healing specific players
           }),
           casterId,
           effectiveLocalSocketId

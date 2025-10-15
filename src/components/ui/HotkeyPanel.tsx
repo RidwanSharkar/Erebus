@@ -215,7 +215,7 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
     const rect = e.currentTarget.getBoundingClientRect();
     setTooltipContent({
       name: weapon.name,
-      description: `Switch to ${weapon.name} (${weapon.key})`
+      description: `Weilding the ${weapon.name}`
     });
     setTooltipPosition({
       x: rect.left + rect.width / 2,
@@ -297,12 +297,15 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
   }, [currentWeapon, selectedWeapons, onUnlockAbility]);
 
   const currentAbilities = weaponAbilities[currentWeapon] ? createAbilitiesWithState(weaponAbilities[currentWeapon]) : [];
-  
+
   // Mark abilities as locked
   const abilitiesWithLockStatus = currentAbilities.map(ability => ({
     ...ability,
     isLocked: isAbilityLocked(ability)
   }));
+
+  // Filter out passive abilities for display (but keep logic intact)
+  const displayAbilities = abilitiesWithLockStatus.filter(ability => ability.key !== 'P');
 
   if (currentAbilities.length === 0) {
     return null; // Don't render for weapons that aren't implemented
@@ -383,7 +386,7 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
             <div className="w-px h-8 bg-gray-600" />
 
             {/* Ability Icons */}
-            {abilitiesWithLockStatus.map((ability) => {
+            {displayAbilities.map((ability) => {
               const currentCooldown = cooldowns[ability.key] || 0;
               const isOnCooldown = currentCooldown > 0;
               const isUnassigned = ability.name === 'Not Assigned';

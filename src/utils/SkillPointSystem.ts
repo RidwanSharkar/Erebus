@@ -124,7 +124,15 @@ export class SkillPointSystem {
     abilityKey: 'E' | 'R' | 'F' | 'P',
     weaponSlot: 'primary' | 'secondary'
   ): boolean {
-    // All abilities are unlocked by default for all weapons
+    // EXCEPTION: Scythe's Cryoflame passive (P) should NOT be unlocked by default
+    // All other abilities are unlocked by default for all weapons
+    if (weaponType === WeaponType.SCYTHE && abilityKey === 'P') {
+      // Check if Cryoflame has been explicitly unlocked
+      const abilityId = `${weaponType}_${abilityKey}_${weaponSlot}`;
+      return skillPointData.unlockedAbilities[weaponType]?.has(abilityId) ?? false;
+    }
+    
+    // All other abilities are unlocked by default
     return true;
   }
   

@@ -61,7 +61,7 @@ interface SummonProps {
     isSummon?: boolean;
   }>) => void;
   nextDamageNumberId?: { current: number };
-  onHealPlayer?: (healAmount: number) => void; // Callback for healing the caster
+  onHealPlayer?: (healAmount: number, targetPlayerId?: string) => void; // Callback for healing players (with optional target ID)
   casterId?: string; // ID of the player who cast the totem
 }
 
@@ -90,13 +90,14 @@ export default function SummonedTotem({
     hasTriggeredCleanup: false,
     mountId: Date.now(),
     ATTACK_COOLDOWN: 500, // 0.5 seconds
-    RANGE: 6, // 5 units range for PVP targeting
+    RANGE: 6, // 6 units range for PVP targeting
+    HEAL_RANGE: 5, // 5 units range for healing
     DURATION: 8000, // 8 seconds
     BASE_DAMAGE: 20, // Same as scythe basic attack damage
     EFFECT_DURATION: 225,
     // Removed TARGET_SWITCH_INTERVAL - continuously check for targets
     HEAL_INTERVAL: 1000, // Heal every 1 second
-    HEAL_AMOUNT: 20, // 20 HP per second
+    HEAL_AMOUNT: 40, // 40 HP per second (updated from 20)
     lastHealTime: Date.now()
   }).current;
 
@@ -234,16 +235,36 @@ export default function SummonedTotem({
   }, [constants, onDamage, setActiveEffects, setDamageNumbers, nextDamageNumberId, getCurrentEnemyData, casterId]);
 
   const handleHealing = useCallback(() => {
-    if (!onHealPlayer) {
+    if (!onHealPlayer || !groupRef.current) {
       return;
     }
 
     const now = Date.now();
     if (now - constants.lastHealTime >= constants.HEAL_INTERVAL) {
-      onHealPlayer(constants.HEAL_AMOUNT);
+      // Get totem's world position
+      const totemWorldPosition = new Vector3();
+      groupRef.current.getWorldPosition(totemWorldPosition);
+
+      // Heal ALL players within HEAL_RANGE (5 units)
+      if (players) {
+        players.forEach((player, playerId) => {
+          const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
+          const distance = calculateDistance(totemWorldPosition, playerPos);
+          
+          // Heal player if within range
+          if (distance <= constants.HEAL_RANGE) {
+            // Call healing callback with player ID to heal specific player
+            onHealPlayer(constants.HEAL_AMOUNT, playerId);
+          }
+        });
+      } else if (casterId) {
+        // Fallback: If no players map, just heal the caster (single-player mode)
+        onHealPlayer(constants.HEAL_AMOUNT, casterId);
+      }
+      
       constants.lastHealTime = now;
     }
-  }, [constants, onHealPlayer]);
+  }, [constants, onHealPlayer, players, casterId, calculateDistance]);
 
   useFrame(() => {
     const now = Date.now();

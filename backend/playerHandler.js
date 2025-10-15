@@ -102,6 +102,27 @@ function handlePlayerEvents(socket, gameRooms) {
       }
     }
 
+    // Special handling for Wraith Strike ability - apply taunt effect to enemies hit
+    if (abilityType === 'wraith_strike') {
+      // Find enemies within melee range of the wraith strike position
+      const tauntRange = 4.5; // Wraith strike melee range
+      const tauntDuration = 10000; // 10 seconds
+
+      for (const [enemyId, enemy] of gameRoom.enemies) {
+        // Taunt ALL enemy types hit by Wraith Strike (boss, elite, normal)
+        const distance = Math.sqrt(
+          Math.pow(enemy.position.x - position.x, 2) +
+          Math.pow(enemy.position.z - position.z, 2)
+        );
+
+        if (distance <= tauntRange) {
+          // Apply taunt effect to this enemy
+          gameRoom.enemyAI.tauntEnemy(enemyId, socket.id, tauntDuration);
+          console.log(`👻 Wraith Strike: Player ${socket.id} taunted enemy ${enemyId} (${enemy.type}) for ${tauntDuration/1000} seconds`);
+        }
+      }
+    }
+
     // Broadcast ability usage to other players
     socket.to(roomId).emit('player-used-ability', {
       playerId: socket.id,

@@ -24,15 +24,15 @@ const EnhancedGround: React.FC<EnhancedGroundProps> = ({
   // Get level-based colors - Volcano theme with red and grey (darker)
   const getLevelColors = useMemo(() => {
     switch (level) {
-      case 1: return { primary: '#5D5FE3', secondary: '#1a1a1a', accent: '#5DADE2' };
-      case 2: return { primary: '#3a3a3a', secondary: '#222222', accent: '#6a0000' };
-      case 3: return { primary: '#404040', secondary: '#2a2a2a', accent: '#7a2222' };
-      case 4: return { primary: '#4a4a4a', secondary: '#333333', accent: '#8a102e' };
+      case 1: return { primary: '#5D5FE3', secondary: '#1a1a1a', accent: '#5D5FE3' };
+      case 2: return { primary: '#17CC93', secondary: '#222222', accent: '#17CC93' };
+      case 3: return { primary: '#E35D7C', secondary: '#2a2a2a', accent: '#7a2222' };
+      case 4: return { primary: '#E3875D', secondary: '#333333', accent: '#E3875D' };
       case 5: return { primary: '#505050', secondary: '#3a3a3a', accent: '#9a143c' };
       default: return { primary: '#2a2a2a', secondary: '#1a1a1a', accent: '#5a0000' };
     }
   }, [level]);
-
+// 17CC93 5D5FE3 
   const levelColors = getLevelColors;
 
   // Create procedural texture for ground detail

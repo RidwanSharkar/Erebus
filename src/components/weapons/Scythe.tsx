@@ -193,7 +193,7 @@ function ScytheModel({
           <meshStandardMaterial
             color={isEmpowered ? "#3FAEFC" : "#3FAEFC"}
             emissive={isEmpowered ? "#3FAEFC" : "#3FAEFC"}
-            emissiveIntensity={1.0}
+            emissiveIntensity={1.25}
             metalness={0.8}
             roughness={0.1}
             opacity={1}
@@ -211,7 +211,7 @@ function ScytheModel({
           <meshStandardMaterial
             color={isEmpowered ? "#3FAEFC" : "#3FAEFC"}
             emissive={isEmpowered ? "#3FAEFC" : "#3FAEFC"}
-            emissiveIntensity={1.0}
+            emissiveIntensity={1.25}
             metalness={0.8}
             roughness={0.1}
             opacity={1}

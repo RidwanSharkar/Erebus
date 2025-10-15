@@ -28,7 +28,7 @@ const createVortexPiece = () => (
 function ElementalVortex({ parentRef }: ElementalVortexProps) {
   const vortexPiecesRef = useRef<(Group | null)[]>([]);
   const pieceCount = 40; // More particles for denser effect
-  const baseRadius = 1.25; // Larger radius
+  const baseRadius = 1.5; // Larger radius
   const groupRef = useRef<Group>(null);
   
   useFrame(({ clock }) => {
@@ -38,7 +38,7 @@ function ElementalVortex({ parentRef }: ElementalVortexProps) {
       if (!piece) return;
       
       const time = clock.getElapsedTime();
-      const heightOffset = ((i / pieceCount) * 1.5 - 0.175); // Taller vortex
+      const heightOffset = ((i / pieceCount) * 1.5 - 0.1275); // Taller vortex
       const radiusMultiplier = 0.8 - (heightOffset * 0.375); // Gentler taper
       
       // More complex spiral motion like mist particles

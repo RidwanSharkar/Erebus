@@ -152,7 +152,7 @@ class EnemyAI {
 
     // Check if skeleton can attack target (within range)
     const distance = this.calculateDistance(skeleton.position, targetPlayer.position);
-    const attackRange = 2.65;
+    const attackRange = 2.4;
     const attackCooldown = 2000; // 2 seconds between attacks
 
     if (distance <= attackRange) {
@@ -369,8 +369,8 @@ class EnemyAI {
       type: 'boss-skeleton',
       position: skeletonPosition,
       rotation: 0,
-      health: 500,
-      maxHealth: 500,
+      health: 420,
+      maxHealth: 420,
       isDying: false,
       damage: 10,
       bossId: boss.id // Track which boss summoned this skeleton
@@ -587,8 +587,8 @@ class EnemyAI {
     // Different enemy types have different movement speeds
     switch (enemyType) {
       case 'elite': return 0.0; // Elite enemies are stationary like training dummies
-      case 'boss': return 2; // Boss moves at moderate speed
-      case 'boss-skeleton': return 1.5; // Boss-summoned skeletons move at normal skeleton speed
+      case 'boss': return 2.25; // Boss moves at moderate speed
+      case 'boss-skeleton': return 1.125; // Boss-summoned skeletons move at normal skeleton speed
       case 'skeleton': return 2.0;
       case 'mage': return 1.5;
       case 'reaper': return 2.5;

@@ -168,10 +168,10 @@ function HomeContent() {
         };
       case WeaponType.SCYTHE:
         return {
-          border: 'border-yellow-500',
-          background: 'bg-yellow-500/20',
-          shadow: 'shadow-yellow-500/30',
-          badge: 'bg-yellow-600'
+          border: 'border-purple-500',
+          background: 'bg-purple-500/20',
+          shadow: 'shadow-purple-500/30',
+          badge: 'bg-purple-600'
         };
       case WeaponType.RUNEBLADE:
         return {
@@ -200,6 +200,13 @@ function HomeContent() {
   // Weapon options
   const weapons: WeaponOption[] = [
     {
+      type: WeaponType.RUNEBLADE,
+      name: 'Runeblade',
+      icon: '⚜️',
+      description: 'TEMPLAR',
+      defaultSubclass: WeaponSubclass.ARCANE
+    },
+    {
       type: WeaponType.SCYTHE,
       name: 'Scythe',
       icon: '🦋',
@@ -207,24 +214,18 @@ function HomeContent() {
       defaultSubclass: WeaponSubclass.CHAOS
     },
     {
+      type: WeaponType.SABRES,
+      name: 'Sabres',
+      icon: '⚔️',
+      description: 'ASSASSIN',
+      defaultSubclass: WeaponSubclass.FROST
+    },
+    {
       type: WeaponType.BOW,
       name: 'Bow',
       icon: '🏹',
       description: 'VIPER',
       defaultSubclass: WeaponSubclass.ELEMENTAL
-    },
-    {
-      type: WeaponType.SABRES,
-      name: 'Sabres',
-      icon: '⚔️',
-      description: 'ASSASSIN',      defaultSubclass: WeaponSubclass.FROST
-    },
-    {
-      type: WeaponType.RUNEBLADE,
-      name: 'Runeblade',
-      icon: '⚜️',
-      description: 'TEMPLAR',
-      defaultSubclass: WeaponSubclass.ARCANE
     }
   ];
 
@@ -410,7 +411,7 @@ function HomeContent() {
         {/* Main Menu */}
         {gameMode === 'menu' && (
           <div className="absolute inset-0 flex items-center justify-center z-50 overflow-y-auto">
-            <div className="bg-gray-900/95 p-8 rounded-xl border-2 border-yellow-500 text-white max-w-5xl w-11/12 my-6 relative">
+            <div className="bg-gray-900/95 p-8 rounded-xl border-2 border-green-500 text-white max-w-5xl w-11/12 my-6 relative">
               <button
                 onClick={() => setShowRulesPanel(true)}
                 className="absolute top-4 right-4 text-2xl hover:scale-110 transition-transform cursor-pointer text-yellow-400 hover:text-yellow-300"
@@ -418,7 +419,7 @@ function HomeContent() {
               >
                 📜
               </button>
-              <h1 className="text-xl font-bold mb-1 text-yellow-400 text-center"> EMPYREA </h1>
+              <h1 className="text-xl font-bold mb-1 text-green-400 text-center"> EMPYREA </h1>
 
               {/* Weapon Selection Section */}
               <div className="mb-6">
@@ -458,7 +459,7 @@ function HomeContent() {
                         <div className="mb-2">
                           <div className="text-xs text-gray-400 text-center mb-1">Abilities:</div>
                           <div className="flex justify-center gap-1">
-                            {weaponAbilities[weapon.type]?.map((ability) => (
+                            {weaponAbilities[weapon.type]?.filter(ability => ability.key !== 'P').map((ability) => (
                               <div
                                 key={ability.key}
                                 className="relative w-7 h-7 rounded border border-gray-600 bg-gray-800 hover:bg-gray-700 transition-colors cursor-pointer flex items-center justify-center"
@@ -528,7 +529,7 @@ function HomeContent() {
             onClick={() => setShowRulesPanel(false)}
           >
             <div
-              className="bg-gray-900 border-2 border-yellow-400 rounded-xl p-8 max-w-2xl w-11/12 max-h-[80vh] overflow-y-auto"
+              className="bg-gray-900 border-2 border-green-400 rounded-xl p-8 max-w-2xl w-11/12 max-h-[80vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="text-center mb-6">
