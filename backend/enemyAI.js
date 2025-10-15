@@ -199,8 +199,31 @@ class EnemyAI {
       const tauntTarget = players.find(p => p.id === tauntTargetId);
       if (tauntTarget) {
         console.log(`🎯 Boss ${boss.id} is taunted by ${tauntTarget.name} - ignoring normal aggro`);
-        // Move boss towards taunt target, ignoring normal aggro
-        this.moveEnemyTowardsTarget(boss, tauntTarget);
+        
+        // ALWAYS update rotation to face taunt target
+        this.updateBossRotation(boss, tauntTarget);
+        
+        // Check if boss can attack taunt target (within range)
+        const distance = this.calculateDistance(boss.position, tauntTarget.position);
+        const attackRange = 3.0; // Boss attack range
+        const attackCooldown = 750; // 0.75 seconds between attacks
+        const now = Date.now();
+        
+        if (distance <= attackRange) {
+          // Within attack range - prioritize attacking over moving
+          const lastAttackTime = this.bossAttackCooldown.get(boss.id) || 0;
+
+          if (now - lastAttackTime >= attackCooldown) {
+            // Attack the taunted player
+            this.bossAttackPlayer(boss, tauntTarget);
+            this.bossAttackCooldown.set(boss.id, now);
+          }
+          // Don't move when in attack range - stay and attack
+        } else {
+          // Outside attack range - move towards taunt target
+          this.moveEnemyTowardsTarget(boss, tauntTarget);
+        }
+        
         return;
       }
     }
@@ -587,15 +610,8 @@ class EnemyAI {
     // Different enemy types have different movement speeds
     switch (enemyType) {
       case 'elite': return 0.0; // Elite enemies are stationary like training dummies
-      case 'boss': return 2.25; // Boss moves at moderate speed
-      case 'boss-skeleton': return 1.125; // Boss-summoned skeletons move at normal skeleton speed
-      case 'skeleton': return 2.0;
-      case 'mage': return 1.5;
-      case 'reaper': return 2.5;
-      case 'abomination': return 1.0;
-      case 'death-knight': return 1.8;
-      case 'ascendant': return 2.2;
-      case 'fallen-titan': return 0.8;
+      case 'boss': return 2; // Boss moves at moderate speed
+      case 'boss-skeleton': return 1; // Boss-summoned skeletons move at normal skeleton speed
       default: return 2.0;
     }
   }

@@ -210,13 +210,9 @@ export class ProjectileSystem extends System {
   private checkCollisions(projectileEntity: Entity, transform: Transform, projectile: Projectile): void {
     const projectilePos = transform.position;
 
-    // Skip barrage and viper sting projectiles in PVP mode - they should only be handled by specialized PVP managers
-    const renderer = projectileEntity.getComponent(Renderer);
-    if (renderer?.mesh?.userData?.isBarrageArrow || renderer?.mesh?.userData?.projectileType === 'viper_sting') {
-      // In PVP mode, these projectiles are handled by the specialized PVP managers
-      // Skip ECS collision detection to prevent duplicate damage and self-targeting
-      return;
-    }
+    // NOTE: Barrage and Viper Sting projectiles ARE handled by ECS collision detection
+    // They work against both PVP players (via specialized managers) AND COOP enemies (boss/skeletons)
+    // The specialized PVP managers handle player-vs-player damage, while ECS handles enemy damage
 
     // Get all entities that could be hit - specifically look for enemies with colliders
     const potentialTargets = this.world.queryEntities([Transform, Health, Collider]);
