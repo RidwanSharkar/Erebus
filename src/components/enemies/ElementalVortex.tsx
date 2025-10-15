@@ -11,10 +11,10 @@ const createVortexPiece = () => (
   <group>
     {/* Mist-like particle similar to ReaperMistEffect */}
     <mesh>
-      <sphereGeometry args={[0.125, 8, 8]} />
-      <meshStandardMaterial 
-        color="#4FC3F7"
-        emissive="#4FC3F7"
+      <sphereGeometry args={[0.15, 8, 8]} />
+      <meshStandardMaterial
+        color="#BA55D3"
+        emissive="#BA55D3"
         emissiveIntensity={0.35}
         transparent
         opacity={0.7}
@@ -84,8 +84,8 @@ function ElementalVortex({ parentRef }: ElementalVortexProps) {
         </group>
       ))}
       
-      <pointLight 
-        color="#4FC3F7"
+      <pointLight
+        color="#BA55D3"
         intensity={12}
         distance={12}
         decay={1.2}

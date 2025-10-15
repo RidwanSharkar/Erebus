@@ -1,7 +1,7 @@
 {
-  "name": "avernus-backend",
+  "name": "empyrea-backend",
   "version": "1.0.0",
-  "description": "Multiplayer backend for AVERNUS game",
+  "description": "Multiplayer backend for EMPYREA game",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

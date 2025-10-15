@@ -30,7 +30,7 @@ const Canvas = dynamic(() => import('@react-three/fiber').then(mod => ({ default
 
 
 // Lazy load PVP game scene
-const PVPGameScene = dynamic(() => import('../components/PVPGameScene').then(mod => ({ default: mod.PVPGameScene })), {
+const CoopGameScene = dynamic(() => import('../components/CoopGameScene').then(mod => ({ default: mod.CoopGameScene })), {
   ssr: false,
   loading: () => null
 });
@@ -68,7 +68,7 @@ function AbilityTooltip({ content, visible, x, y }: TooltipProps) {
         transform: 'translateX(-50%)'
       }}
     >
-      <div className="font-semibold text-blue-300 mb-1">{content.name}</div>
+      <div className="font-semibold text-yellow-300 mb-1">{content.name}</div>
       {content.cooldown !== undefined && (
         <div className="text-yellow-400 text-xs mb-1">Cooldown: {content.cooldown}s</div>
       )}
@@ -103,8 +103,6 @@ function HomeContent() {
   // Helper function to get default subclass for a weapon
   const getDefaultSubclassForWeapon = (weapon: WeaponType): WeaponSubclass => {
     switch (weapon) {
-      case WeaponType.SWORD:
-        return WeaponSubclass.DIVINITY;
       case WeaponType.BOW:
         return WeaponSubclass.ELEMENTAL;
       case WeaponType.SCYTHE:
@@ -131,9 +129,9 @@ function HomeContent() {
   }, [selectedWeapons]);
 
   const [controlSystem, setControlSystem] = useState<any>(null);
-  const [gameMode, setGameMode] = useState<'menu' | 'singleplayer' | 'multiplayer' | 'pvp'>('menu');
+  const [gameMode, setGameMode] = useState<'menu' | 'singleplayer' | 'multiplayer' | 'pvp' | 'coop'>('menu');
   const [showRoomJoin, setShowRoomJoin] = useState(false);
-  const [roomJoinMode, setRoomJoinMode] = useState<'multiplayer' | 'pvp'>('multiplayer');
+  const [roomJoinMode, setRoomJoinMode] = useState<'multiplayer' | 'pvp' | 'coop'>('multiplayer');
   const [playerExperience, setPlayerExperience] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
   const [playerEssence, setPlayerEssence] = useState(50); // Start with 50 essence
@@ -168,26 +166,19 @@ function HomeContent() {
           shadow: 'shadow-green-500/30',
           badge: 'bg-green-600'
         };
-      case WeaponType.SWORD:
+      case WeaponType.SCYTHE:
+        return {
+          border: 'border-yellow-500',
+          background: 'bg-yellow-500/20',
+          shadow: 'shadow-yellow-500/30',
+          badge: 'bg-yellow-600'
+        };
+      case WeaponType.RUNEBLADE:
         return {
           border: 'border-sky-400',
           background: 'bg-sky-400/20',
           shadow: 'shadow-sky-400/30',
           badge: 'bg-sky-500'
-        };
-      case WeaponType.SCYTHE:
-        return {
-          border: 'border-blue-500',
-          background: 'bg-blue-500/20',
-          shadow: 'shadow-blue-500/30',
-          badge: 'bg-blue-600'
-        };
-      case WeaponType.RUNEBLADE:
-        return {
-          border: 'border-purple-500',
-          background: 'bg-purple-500/20',
-          shadow: 'shadow-purple-500/30',
-          badge: 'bg-purple-600'
         };
       case WeaponType.SABRES:
         return {
@@ -231,16 +222,9 @@ function HomeContent() {
     {
       type: WeaponType.RUNEBLADE,
       name: 'Runeblade',
-      icon: '🔮',
+      icon: '⚜️',
       description: 'TEMPLAR',
       defaultSubclass: WeaponSubclass.ARCANE
-    },
-    {
-      type: WeaponType.SWORD,
-      name: 'Greatsword',
-      icon: '💎',
-      description: 'IMMORTAL',
-      defaultSubclass: WeaponSubclass.DIVINITY
     }
   ];
 
@@ -254,66 +238,12 @@ function HomeContent() {
 
     if (isSelected) {
       // Remove weapon if already selected
-      const newSelectedWeapons = tempSelectedWeapons.filter(w => w !== weaponType);
-
-      // Create new positions object
-      const newPositions: { [key: string]: 'primary' | 'secondary' } = {};
-
-      // If we have weapons remaining, ensure proper primary/secondary assignment
-      if (newSelectedWeapons.length === 1) {
-        // Only one weapon left - it becomes primary
-        newPositions[newSelectedWeapons[0]] = 'primary';
-      } else if (newSelectedWeapons.length === 2) {
-        // Two weapons - preserve existing positions if possible, otherwise reassign
-        const remainingPositions = Object.entries(weaponPositions)
-          .filter(([weapon]) => weapon !== weaponType && newSelectedWeapons.includes(weapon as WeaponType));
-
-        if (remainingPositions.length === 2) {
-          // Both remaining weapons had positions - preserve them
-          remainingPositions.forEach(([weapon, position]) => {
-            newPositions[weapon] = position;
-          });
-        } else if (remainingPositions.length === 1) {
-          // Only one had a position - assign it as primary, other as secondary
-          const [weaponWithPosition, position] = remainingPositions[0];
-          newPositions[weaponWithPosition] = position;
-
-          // Find the weapon without a position
-          const weaponWithoutPosition = newSelectedWeapons.find(w => w !== weaponWithPosition);
-          if (weaponWithoutPosition) {
-            // Assign secondary to the weapon that doesn't have a position
-            newPositions[weaponWithoutPosition] = position === 'primary' ? 'secondary' : 'primary';
-          }
-        } else {
-          // No positions preserved - assign first as primary, second as secondary
-          newSelectedWeapons.forEach((weapon, index) => {
-            newPositions[weapon] = index === 0 ? 'primary' : 'secondary';
-          });
-        }
-      }
-
-      // Update state with new arrays
-      setTempSelectedWeapons(newSelectedWeapons);
-      setWeaponPositions(newPositions);
+      setTempSelectedWeapons([]);
+      setWeaponPositions({});
     } else {
-      // Add weapon if not selected and we haven't reached the limit
-      if (tempSelectedWeapons.length < 2) {
-        const newSelectedWeapons = [...tempSelectedWeapons, weaponType];
-
-        // Create new positions
-        const newPositions = { ...weaponPositions };
-
-        if (newSelectedWeapons.length === 1) {
-          // First weapon - always primary
-          newPositions[weaponType] = 'primary';
-        } else if (newSelectedWeapons.length === 2) {
-          // Second weapon - always secondary
-          newPositions[weaponType] = 'secondary';
-        }
-
-        setTempSelectedWeapons(newSelectedWeapons);
-        setWeaponPositions(newPositions);
-      }
+      // Select this weapon (only allow 1 weapon)
+      setTempSelectedWeapons([weaponType]);
+      setWeaponPositions({ [weaponType]: 'primary' });
     }
   };
 
@@ -397,37 +327,31 @@ function HomeContent() {
   // Initialize tempSelectedWeapons and weapon positions when selectedWeapons changes
   useEffect(() => {
     if (selectedWeapons) {
-      const weapons = [selectedWeapons.primary, selectedWeapons.secondary];
+      const weapons = [selectedWeapons.primary]; // Only use primary weapon
       setTempSelectedWeapons(weapons);
 
       // Set up weapon positions
       const positions: { [key: string]: 'primary' | 'secondary' } = {};
       positions[selectedWeapons.primary] = 'primary';
-      positions[selectedWeapons.secondary] = 'secondary';
       setWeaponPositions(positions);
     }
   }, [selectedWeapons]);
 
-  // Auto-confirm selection when exactly 2 weapons are selected
+  // Auto-confirm selection when exactly 1 weapon is selected
   useEffect(() => {
-    if (tempSelectedWeapons.length === 2) {
-      // Find primary and secondary based on weapon positions
-      const primaryWeapon = tempSelectedWeapons.find(w => weaponPositions[w] === 'primary');
-      const secondaryWeapon = tempSelectedWeapons.find(w => weaponPositions[w] === 'secondary');
+    if (tempSelectedWeapons.length === 1) {
+      const selectedWeapon = tempSelectedWeapons[0];
 
-      if (primaryWeapon && secondaryWeapon) {
-        // Only update if the weapons have actually changed
-        if (!selectedWeapons ||
-            selectedWeapons.primary !== primaryWeapon ||
-            selectedWeapons.secondary !== secondaryWeapon) {
-          setSelectedWeapons({
-            primary: primaryWeapon,
-            secondary: secondaryWeapon
-          });
-        }
+      // Only update if the weapon has actually changed
+      if (!selectedWeapons ||
+          selectedWeapons.primary !== selectedWeapon) {
+        setSelectedWeapons({
+          primary: selectedWeapon,
+          secondary: selectedWeapon // Use same weapon for secondary for compatibility
+        });
       }
     }
-  }, [tempSelectedWeapons, weaponPositions]);
+  }, [tempSelectedWeapons]);
 
   // Clear weapon positions when no weapons are selected
   useEffect(() => {
@@ -486,7 +410,7 @@ function HomeContent() {
         {/* Main Menu */}
         {gameMode === 'menu' && (
           <div className="absolute inset-0 flex items-center justify-center z-50 overflow-y-auto">
-            <div className="bg-gray-900/95 p-8 rounded-xl border-2 border-blue-500 text-white max-w-5xl w-11/12 my-6 relative">
+            <div className="bg-gray-900/95 p-8 rounded-xl border-2 border-yellow-500 text-white max-w-5xl w-11/12 my-6 relative">
               <button
                 onClick={() => setShowRulesPanel(true)}
                 className="absolute top-4 right-4 text-2xl hover:scale-110 transition-transform cursor-pointer text-yellow-400 hover:text-yellow-300"
@@ -494,19 +418,17 @@ function HomeContent() {
               >
                 📜
               </button>
-              <h1 className="text-xl font-bold mb-1 text-blue-400 text-center"> SELECT 2 WEAPONS</h1>
+              <h1 className="text-xl font-bold mb-1 text-yellow-400 text-center"> EMPYREA </h1>
 
               {/* Weapon Selection Section */}
               <div className="mb-6">
-                <h2 className="text-sm font-normal mb-2 text-center text-blue-400">
-                  Primary Weapon becomes the '1' key | Secondary Weapon becomes the '2' key
-                </h2>
+     
 
 
-                <div className="flex flex-wrap justify-center gap-3 mb-4">
-                  {weapons.slice(0, 5).map((weapon) => {
+                <div className="grid grid-cols-2 gap-3 mb-4 max-w-4xl mx-auto">
+                  {weapons.map((weapon) => {
                     const isSelected = tempSelectedWeapons.includes(weapon.type);
-                    const canSelect = !isSelected && tempSelectedWeapons.length < 2;
+                    const canSelect = !isSelected && tempSelectedWeapons.length < 1;
                     const colorScheme = getWeaponColorScheme(weapon.type);
 
                     return (
@@ -514,7 +436,7 @@ function HomeContent() {
                         key={weapon.type}
                         onClick={() => handleWeaponToggle(weapon.type)}
                         className={`
-                          w-full sm:w-72 md:w-64 lg:w-72 p-3 rounded-lg border-2 cursor-pointer transition-all duration-300
+                          w-full p-3 rounded-lg border-2 cursor-pointer transition-all duration-300
                           ${isSelected
                             ? `${colorScheme.border} ${colorScheme.background} shadow-lg ${colorScheme.shadow}`
                             : canSelect
@@ -560,7 +482,7 @@ function HomeContent() {
                         {isSelected && (
                           <div className="text-center">
                             <span className={`inline-block px-1.5 py-0.5 ${colorScheme.badge} text-white text-xs rounded-full`}>
-                              Selected ({getWeaponPosition(weapon.type) === 'primary' ? 'Primary' : 'Secondary'})
+                              Selected
                             </span>
                           </div>
                         )}
@@ -585,13 +507,13 @@ function HomeContent() {
                     }
 
                     if (selectedWeapons) {
-                      setRoomJoinMode('pvp');
+                      setRoomJoinMode('coop');
                       setShowRoomJoin(true);
                     }
                   }}
                   disabled={!selectedWeapons}
                 >
-                  ENTER AVERNUS
+                  ENTER
                   {!selectedWeapons && ' (Select Weapons First)'}
                 </button>
               </div>
@@ -615,7 +537,7 @@ function HomeContent() {
 
               <div className="text-white space-y-4">
                 <div className="border-b border-gray-600 pb-4">
-                  <h3 className="text-lg font-semibold text-blue-400 mb-2">🎯 OVERVIEW</h3>
+                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">🎯 OVERVIEW</h3>
                   <p className="text-gray-300">
                   <ul className="text-gray-300 text-sm space-y-1 ml-4">
                     <li>• Each player has a Tower and 3 Inhibitors.</li>
@@ -631,21 +553,20 @@ function HomeContent() {
                 </div>
 
                 <div className="border-b border-gray-600 pb-4">
-                  <h3 className="text-lg font-semibold text-blue-400 mb-2">⚔️ WEAPON SYSTEM</h3>
+                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">⚔️ WEAPON SYSTEM</h3>
                   <p className="text-gray-300 mb-2">
-                    Choose 2 weapons to equip. Each weapon has their 'Q' ability unlocked by default; all other abilities are unlocked by spending Skill Points. Each weapon has unique abilities and playstyles:
+                    Choose 1 weapon to equip. All abilities for your chosen weapon are unlocked by default. Each weapon has unique abilities and playstyles:
                   </p>
                   <ul className="text-gray-300 text-sm space-y-1 ml-4">
                     <li>• <strong className="text-green-400">Bow (VIPER) Ranged sniper with burst, harass and long-range siege potential</strong>:</li>
-                    <li>• <strong className="text-sky-400">Greatsword (IMMORTAL) Versatile offensive figher with distance-closing and defensive capabilities</strong>:</li>
-                    <li>• <strong className="text-blue-400">Scythe (WEAVER) Mana-based caster with offensive and defensive fire and ice spells</strong>:</li>
-                    <li>• <strong className="text-purple-400">Runeblade (TEMPLAR) Mana-based knight with life-stealing, area control and debuff abilities</strong>: </li>
+                    <li>• <strong className="text-yellow-400">Scythe (WEAVER) Mana-based caster with offensive and defensive fire and ice spells</strong>:</li>
+                    <li>• <strong className="text-sky-400">Runeblade (TEMPLAR) Mana-based knight with life-stealing, area control and debuff abilities</strong>: </li>
                     <li>• <strong className="text-red-400">Sabres (ASSASSIN) Stealth-based close-quarters specialist with high-risk, high-reward damage</strong>:</li>
                   </ul>
                 </div>
 
                 <div className="border-b border-gray-600 pb-4">
-                  <h3 className="text-lg font-semibold text-blue-400 mb-2">🎮 CONTROLS</h3>
+                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">🎮 CONTROLS</h3>
                   <ul className="text-gray-300 text-sm space-y-1">
                     <li>• <strong>WASD</strong>: Movement (Double-tap to dash)</li>
                     <li>• <strong>Left Click</strong>: Attack</li>
@@ -657,7 +578,7 @@ function HomeContent() {
                 </div>
 
                 <div className="border-b border-gray-600 pb-4">
-                  <h3 className="text-lg font-semibold text-blue-400 mb-2">🏆 OBJECTIVE</h3>
+                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">🏆 OBJECTIVE</h3>
                   <p className="text-gray-300 mb-2">
                     Level up by killing enemy Players and their Summoned Units. Unlock skill points to enhance your abilities.
                   </p>
@@ -709,8 +630,8 @@ function HomeContent() {
         >
 
 
-          {gameMode === 'pvp' && (
-            <PVPGameScene
+          {(gameMode === 'pvp' || gameMode === 'coop') && (
+            <CoopGameScene
               onDamageNumbersUpdate={setDamageNumbers}
               onDamageNumberComplete={handleDamageNumberComplete}
               onCameraUpdate={handleCameraUpdate}
@@ -720,6 +641,7 @@ function HomeContent() {
               onEssenceUpdate={handleEssenceUpdate}
               onMerchantUIUpdate={setShowMerchantUI}
               selectedWeapons={selectedWeapons}
+              skillPointData={skillPointData}
             />
           )}
         </Canvas>

@@ -769,12 +769,12 @@ export default function Runeblade({
             </mesh>
           ))}
 
-          {/* Core orb - GREEN THEME */}
+          {/* Core orb - YELLOW THEME */}
           <mesh>
             <sphereGeometry args={[0.155, 16, 16]} />
             <meshStandardMaterial
-              color={new Color(0x00FF88)}         // Bright green
-              emissive={new Color(0x00FF88)}      // Green emission
+              color={new Color(0xB5B010)}         // Pure yellow
+              emissive={new Color(0xB5B010)}      // Yellow emission
               emissiveIntensity={3}
               transparent
               opacity={1}
@@ -785,8 +785,8 @@ export default function Runeblade({
           <mesh>
             <sphereGeometry args={[0.1, 16, 16]} />
             <meshStandardMaterial
-              color={new Color(0x00AA44)}
-              emissive={new Color(0x00AA44)}
+              color={new Color(0x1097B5)}
+              emissive={new Color(0x1097B5)}
               emissiveIntensity={40}
               transparent
               opacity={0.8}
@@ -796,8 +796,8 @@ export default function Runeblade({
           <mesh>
             <sphereGeometry args={[0.145, 16, 16]} />
             <meshStandardMaterial
-              color={new Color(0x00AA44)}
-              emissive={new Color(0x00AA44)}
+              color={new Color(0x1097B5)}
+              emissive={new Color(0x1097B5)}
               emissiveIntensity={35}
               transparent
               opacity={0.6}
@@ -807,8 +807,8 @@ export default function Runeblade({
           <mesh>
             <sphereGeometry args={[.175, 16, 16]} />
             <meshStandardMaterial
-              color={new Color(0x00AA44)}
-              emissive={new Color(0x00AA44)}
+              color={new Color(0x1097B5)}
+              emissive={new Color(0x1097B5)}
               emissiveIntensity={30}
               transparent
               opacity={0.4}
@@ -824,8 +824,8 @@ export default function Runeblade({
           <mesh>
             <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
             <meshStandardMaterial
-              color={isCorruptedAuraActive ? new Color(0xFF4444) : new Color(0x00AA44)}  // Red when corrupted, green normally
-              emissive={isCorruptedAuraActive ? new Color(0xFF4444) : new Color(0x00AA44)}
+              color={new Color(0x1097B5)}  // Blue theme
+              emissive={new Color(0x1097B5)}
               emissiveIntensity={1.5}
               metalness={0.3}
               roughness={0.1}
@@ -836,8 +836,8 @@ export default function Runeblade({
           <mesh>
             <extrudeGeometry args={[createInnerBladeShape(), innerBladeExtrudeSettings]} />
             <meshStandardMaterial
-              color={isCorruptedAuraActive ? new Color(0xFF4444) : new Color(0x00AA44)}  // Red when corrupted, green normally
-              emissive={isCorruptedAuraActive ? new Color(0xFF4444) : new Color(0x00AA44)}
+              color={new Color(0x1097B5)}  // Blue theme
+              emissive={new Color(0x1097B5)}
               emissiveIntensity={3}
               metalness={0.2}
               roughness={0.1}
@@ -847,7 +847,7 @@ export default function Runeblade({
           </mesh>
         </group>
 
-        {/* Green electrical effects */}
+        {/* Electrical effects */}
         {hasChainLightning && (
           <group>
             {/* Electrical aura around blade */}
@@ -855,8 +855,8 @@ export default function Runeblade({
               <mesh>
                 <extrudeGeometry args={[createBladeShape(), { ...bladeExtrudeSettings, depth: 0.07 }]} />
                 <meshStandardMaterial
-                  color={isCorruptedAuraActive ? new Color(0xFF8888) : new Color(0x00FF88)}
-                  emissive={isCorruptedAuraActive ? new Color(0xFF4444) : new Color(0x00AA44)}
+                  color={new Color(0x87CEEB)}
+                  emissive={new Color(0x4682B4)}
                   emissiveIntensity={1.5}
                   transparent
                   opacity={0.3}
@@ -874,8 +874,8 @@ export default function Runeblade({
               >
                 <sphereGeometry args={[1.25, 6, 6]} />
                 <meshStandardMaterial
-                  color={new Color(0x00FF88)}
-                  emissive={new Color(0x00AA44)}
+                  color={new Color(0x87CEEB)}
+                  emissive={new Color(0x4682B4)}
                   emissiveIntensity={3 * spark.life}
                   transparent
                   opacity={spark.life * 0.6}

@@ -22,9 +22,8 @@ interface GameUIProps {
   selectedWeapons?: {
     primary: WeaponType;
     secondary: WeaponType;
-    tertiary?: WeaponType;
   } | null;
-  onWeaponSwitch?: (slot: 1 | 2 | 3) => void;
+  onWeaponSwitch?: (slot: 1 | 3) => void;
   skillPointData?: SkillPointData;
   onUnlockAbility?: (unlock: AbilityUnlock) => void;
   purchasedItems?: string[];
@@ -466,14 +465,6 @@ export default function GameUI({
           {/* Resource Bar (weapon-specific) */}
           {getResourceBar()}
 
-          {/* Skill Points Display */}
-          {skillPointData && skillPointData.skillPoints > 0 && (
-            <div className="mt-2 text-center">
-              <div className="text-yellow-400 text-xs font-medium drop-shadow-lg">
-                Ability Points: {skillPointData.skillPoints}
-              </div>
-            </div>
-          )}
 
         </div>
       </div>

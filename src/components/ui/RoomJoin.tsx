@@ -14,7 +14,7 @@ interface RoomJoinProps {
   onBack: () => void;
   currentWeapon: WeaponType;
   currentSubclass?: WeaponSubclass;
-  gameMode?: 'multiplayer' | 'pvp';
+  gameMode?: 'multiplayer' | 'pvp' | 'coop';
 }
 
 export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, currentSubclass, gameMode = 'multiplayer' }: RoomJoinProps) {
@@ -81,7 +81,7 @@ export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, current
 
     setIsJoining(true);
     try {
-      await joinRoom(roomId, playerName.trim(), currentWeapon, currentSubclass, gameMode);
+      await joinRoom(roomId, playerName.trim(), currentWeapon, currentSubclass, gameMode === 'coop' ? 'coop' : 'multiplayer');
       // Clear preview state
       clearPreview();
       setShowPreview(false);
@@ -90,6 +90,7 @@ export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, current
         setIsJoining(false);
         // Don't automatically start the game - let user click "Start Game" button
       }, 1000);
+      // Note: onJoinSuccess() is NOT called here - it's called when starting the game
     } catch (error) {
       console.error('Failed to join room:', error);
       setIsJoining(false);
@@ -128,8 +129,8 @@ export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, current
   // If already in room, show room info
   if (isInRoom) {
     return (
-      <div className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/95 p-8 rounded-xl border-2 ${gameMode === 'pvp' ? 'border-red-500' : 'border-green-500'} text-white max-w-md w-11/12 z-50 text-center`}>
-        <h2 className="text-2xl font-bold mb-4">{gameMode === 'pvp' ? 'PVP' : 'Multiplayer'} Room: {roomId}</h2>
+      <div className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/95 p-8 rounded-xl border-2 ${(gameMode === 'pvp' || gameMode === 'coop') ? 'border-red-500' : 'border-green-500'} text-white max-w-md w-11/12 z-50 text-center`}>
+        <h2 className="text-2xl font-bold mb-4">{(gameMode === 'pvp' || gameMode === 'coop') ? 'Co-op' : 'Multiplayer'} Room: {roomId}</h2>
         <p className="mb-4">Players connected: {players.size}</p>
         <div className="flex flex-col gap-3 mb-6">
           {Array.from(players.values()).map(player => (
@@ -140,12 +141,12 @@ export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, current
           ))}
         </div>
         <div className="flex flex-col gap-3">
-          <button 
-            className={`w-full px-8 py-4 text-xl ${gameMode === 'pvp' ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'} text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:-translate-y-1`}
+          <button
+            className={`w-full px-8 py-4 text-xl ${(gameMode === 'pvp' || gameMode === 'coop') ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'} text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:-translate-y-1`}
             onClick={handleStartGame}
             disabled={false}
           >
-            {gameStarted ? 'Join Game' : `Start ${gameMode === 'pvp' ? 'PVP' : 'Game'}`}
+            {gameStarted ? 'Join Game' : `Start ${(gameMode === 'pvp' || gameMode === 'coop') ? 'Co-op' : 'Game'}`}
           </button>
           <button 
             className="w-full px-8 py-3 text-lg bg-gray-600 text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:bg-gray-500 hover:-translate-y-1"
@@ -161,15 +162,15 @@ export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, current
   // Show room preview if requested
   if (showPreview && currentPreview) {
     return (
-      <div className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/95 p-8 rounded-xl border-2 ${gameMode === 'pvp' ? 'border-red-500' : 'border-green-500'} text-white max-w-2xl w-11/12 z-50`}>
-        <h2 className="text-2xl font-bold mb-6">{gameMode === 'pvp' ? 'PVP' : 'Multiplayer'} Room Preview: {currentPreview.roomId}</h2>
+      <div className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/95 p-8 rounded-xl border-2 ${(gameMode === 'pvp' || gameMode === 'coop') ? 'border-red-500' : 'border-green-500'} text-white max-w-2xl w-11/12 z-50`}>
+        <h2 className="text-2xl font-bold mb-6">{(gameMode === 'pvp' || gameMode === 'coop') ? 'Co-op' : 'Multiplayer'} Room Preview: {currentPreview.roomId}</h2>
         
         {currentPreview.exists ? (
           <div className="flex flex-col gap-6">
             <div className="flex justify-around bg-white/5 p-4 rounded-lg mb-4">
               <p className="m-0 font-bold text-green-500">Players: {currentPreview.playerCount}/{currentPreview.maxPlayers}</p>
-              {gameMode !== 'pvp' && <p className="m-0 font-bold text-green-500">Enemies: {currentPreview.enemies.length}</p>}
-              {gameMode === 'pvp' && <p className="m-0 font-bold text-red-500">Mode: Player vs Player</p>}
+              {gameMode !== 'pvp' && gameMode !== 'coop' && <p className="m-0 font-bold text-green-500">Enemies: {currentPreview.enemies.length}</p>}
+              {(gameMode === 'pvp' || gameMode === 'coop') && <p className="m-0 font-bold text-red-500">Mode: Co-op</p>}
             </div>
             
             {currentPreview.playerCount > 0 ? (
@@ -233,7 +234,7 @@ export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, current
   }
 
   return (
-    <div className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/95 p-8 rounded-xl border-2 ${gameMode === 'pvp' ? 'border-red-500' : 'border-green-500'} text-white max-w-lg w-11/12 z-50`}>
+    <div className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/95 p-8 rounded-xl border-2 ${(gameMode === 'pvp' || gameMode === 'coop') ? 'border-red-500' : 'border-green-500'} text-white max-w-lg w-11/12 z-50`}>
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-2">
           <label htmlFor="playerName" className="font-bold text-green-500">Your Name:</label>
@@ -266,6 +267,18 @@ export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, current
         {connectionError && (
           <div className="bg-red-500/20 border border-red-400 text-red-400 p-4 rounded-lg text-center">
             Error: {connectionError}
+          </div>
+        )}
+
+        {!isConnected && !connectionError && (
+          <div className="bg-yellow-500/20 border border-yellow-400 text-yellow-400 p-4 rounded-lg text-center">
+            Connecting to server...
+          </div>
+        )}
+
+        {isConnected && (
+          <div className="bg-green-500/20 border border-green-400 text-green-400 p-4 rounded-lg text-center">
+            Connected to server ✓
           </div>
         )}
 

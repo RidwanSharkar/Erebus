@@ -74,9 +74,34 @@ function handlePlayerEvents(socket, gameRooms) {
   // Handle ability usage animations
   socket.on('player-ability', (data) => {
     const { roomId, abilityType, position, direction, target } = data;
-    
+
     if (!gameRooms.has(roomId)) return;
-    
+
+    const gameRoom = gameRooms.get(roomId);
+
+    // Special handling for Deathgrasp ability - apply taunt effect to nearby enemies
+    if (abilityType === 'deathgrasp') {
+      // Find enemies within range of the deathgrasp position
+      const tauntRange = 15; // Range to taunt enemies
+      const tauntDuration = 10000; // 10 seconds
+
+      for (const [enemyId, enemy] of gameRoom.enemies) {
+        // Only taunt boss enemies for now
+        if (enemy.type === 'boss') {
+          const distance = Math.sqrt(
+            Math.pow(enemy.position.x - position.x, 2) +
+            Math.pow(enemy.position.z - position.z, 2)
+          );
+
+          if (distance <= tauntRange) {
+            // Apply taunt effect to this enemy
+            gameRoom.enemyAI.tauntEnemy(enemyId, socket.id, tauntDuration);
+            console.log(`🎯 Deathgrasp: Player ${socket.id} taunted boss ${enemyId} for ${tauntDuration/1000} seconds`);
+          }
+        }
+      }
+    }
+
     // Broadcast ability usage to other players
     socket.to(roomId).emit('player-used-ability', {
       playerId: socket.id,
@@ -275,6 +300,90 @@ function handlePlayerEvents(socket, gameRooms) {
     });
   });
 
+  // Handle nearby ally healing (Reanimate with range check)
+  socket.on('heal-nearby-allies', (data) => {
+    const { roomId, healAmount, abilityType, position, radius } = data;
+    
+    if (!gameRooms.has(roomId)) return;
+    
+    const room = gameRooms.get(roomId);
+    const healerPlayer = room.getPlayer(socket.id);
+    
+    if (!healerPlayer) return;
+    
+    console.log(`🔍 DEBUG: Reanimate cast by ${socket.id} at position:`, position, `radius: ${radius}`);
+    
+    // Helper function to calculate distance between two positions
+    const calculateDistance = (pos1, pos2) => {
+      if (!pos2 || pos2.x === undefined || pos2.y === undefined || pos2.z === undefined) {
+        console.log(`⚠️ WARNING: Invalid position for player:`, pos2);
+        return Infinity; // Return infinite distance if position is invalid
+      }
+      const dx = pos1.x - pos2.x;
+      const dy = pos1.y - pos2.y;
+      const dz = pos1.z - pos2.z;
+      return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    };
+    
+    // Find all players within radius and heal them
+    let healedPlayers = [];
+    room.players.forEach((player, playerId) => {
+      console.log(`🔍 DEBUG: Checking player ${playerId}, health: ${player.health}, position:`, player.position);
+      
+      // Skip dead players
+      if (player.health <= 0) {
+        console.log(`⚠️ Skipping dead player ${playerId}`);
+        return;
+      }
+      
+      // Skip if player has no position
+      if (!player.position) {
+        console.log(`⚠️ WARNING: Player ${playerId} has no position data!`);
+        return;
+      }
+      
+      // Calculate distance from healer position to this player
+      const distance = calculateDistance(position, player.position);
+      console.log(`📏 Distance from caster to player ${playerId}: ${distance.toFixed(2)} units (radius: ${radius})`);
+      
+      // Heal if within radius
+      if (distance <= radius) {
+        const previousHealth = player.health;
+        const newHealth = Math.min(player.maxHealth, player.health + healAmount);
+        room.updatePlayerHealth(playerId, newHealth);
+        
+        const actualHealingAmount = newHealth - previousHealth;
+        
+        console.log(`💚 Healing player ${playerId}: ${previousHealth} -> ${newHealth} (${actualHealingAmount} HP)`);
+        
+        // Only broadcast if actual healing occurred
+        if (actualHealingAmount > 0) {
+          healedPlayers.push({
+            playerId: playerId,
+            healAmount: actualHealingAmount,
+            position: player.position
+          });
+          
+          // Broadcast healing event to the healed player (and all others to show the visual)
+          room.io.to(roomId).emit('player-healing', {
+            sourcePlayerId: socket.id,
+            targetPlayerId: playerId,
+            healingAmount: actualHealingAmount,
+            healingType: abilityType,
+            position: {
+              x: player.position.x,
+              y: player.position.y + 1.5, // Position above player's head
+              z: player.position.z
+            },
+            timestamp: Date.now()
+          });
+        }
+      }
+    });
+    
+    console.log(`💚 Player ${socket.id} healed ${healedPlayers.length} nearby allies with ${abilityType} (${healAmount} HP, ${radius} units radius)`);
+  });
+
   // Handle player death
   socket.on('player-died', (data) => {
     const { roomId } = data;
@@ -421,33 +530,37 @@ function handlePlayerEvents(socket, gameRooms) {
 
   // Handle PVP healing effects
   socket.on('player-healing', (data) => {
-    const { roomId, healingAmount, healingType, position } = data;
+    const { roomId, healingAmount, healingType, position, targetPlayerId } = data;
     
     if (!gameRooms.has(roomId)) return;
     
     const room = gameRooms.get(roomId);
-    const sourcePlayer = room.getPlayer(socket.id);
     
-    if (!sourcePlayer) {
+    // If targetPlayerId is specified, heal that player; otherwise heal the source player
+    const playerToHeal = targetPlayerId || socket.id;
+    const targetPlayer = room.getPlayer(playerToHeal);
+    
+    if (!targetPlayer) {
       return;
     }
     
     // Prevent healing dead players (health <= 0)
-    if (sourcePlayer.health <= 0) {
+    if (targetPlayer.health <= 0) {
       return;
     }
     
-    // Apply healing to the source player (the one who cast the healing ability)
-    const previousHealth = sourcePlayer.health;
-    sourcePlayer.health = Math.min(sourcePlayer.maxHealth, sourcePlayer.health + healingAmount);
+    // Apply healing to the target player
+    const previousHealth = targetPlayer.health;
+    targetPlayer.health = Math.min(targetPlayer.maxHealth, targetPlayer.health + healingAmount);
     
-    const actualHealingAmount = sourcePlayer.health - previousHealth;
+    const actualHealingAmount = targetPlayer.health - previousHealth;
 
     // Only broadcast healing event if actual healing occurred
     if (actualHealingAmount > 0) {
       // Broadcast healing event to all players in the room (including source for confirmation)
       room.io.to(roomId).emit('player-healing', {
         sourcePlayerId: socket.id,
+        targetPlayerId: playerToHeal,
         healingAmount: actualHealingAmount,
         healingType: healingType,
         position: position,

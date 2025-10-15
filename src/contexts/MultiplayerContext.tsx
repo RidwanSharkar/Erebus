@@ -18,21 +18,16 @@ export interface Player {
   shield?: number;
   maxShield?: number;
   movementDirection?: { x: number; y: number; z: number };
-  // PVP Debuff states
-  isFrozen?: boolean;
-  frozenUntil?: number;
-  isSlowed?: boolean;
-  slowedUntil?: number;
-  movementSpeedMultiplier?: number;
-  isVenomed?: boolean;
-  venomedUntil?: number;
-  // PVP Experience system
+  // Co-op Experience system
   experience?: number;
   level?: number;
   // Essence currency system
   essence?: number;
   // Purchased items
   purchasedItems?: string[];
+  // Venom status effects
+  isVenomed?: boolean;
+  venomedUntil?: number;
 }
 
 export interface Enemy {
@@ -45,38 +40,6 @@ export interface Enemy {
   isDying?: boolean;
 }
 
-interface Tower {
-  id: string;
-  ownerId: string;
-  towerIndex: number;
-  position: { x: number; y: number; z: number };
-  health: number;
-  maxHealth: number;
-  isDead?: boolean;
-}
-
-interface SummonedUnit {
-  unitId: string;
-  ownerId: string;
-  position: { x: number; y: number; z: number };
-  health: number;
-  maxHealth: number;
-  isDead: boolean;
-  isActive: boolean;
-  isElite?: boolean;
-  currentTarget?: string | null;
-  targetPosition?: { x: number; y: number; z: number } | null;
-}
-
-interface Pillar {
-  id: string;
-  ownerId: string;
-  pillarIndex: number;
-  position: { x: number; y: number; z: number };
-  health: number;
-  maxHealth: number;
-  isDead?: boolean;
-}
 
 interface RoomPreview {
   roomId: string;
@@ -85,8 +48,6 @@ interface RoomPreview {
   playerCount: number;
   maxPlayers: number;
   enemies: Enemy[];
-  towers: Tower[];
-  summonedUnits: SummonedUnit[];
 }
 
 interface ChatMessage {
@@ -142,12 +103,9 @@ interface MultiplayerContextType {
   currentRoomId: string | null;
   players: Map<string, Player>;
   enemies: Map<string, Enemy>;
-  towers: Map<string, Tower>;
-  pillars: Map<string, Pillar>;
-  summonedUnits: Map<string, SummonedUnit>;
   killCount: number;
   gameStarted: boolean;
-  gameMode: 'multiplayer' | 'pvp';
+  gameMode: 'multiplayer' | 'coop';
 
   // Chat state
   chatMessages: ChatMessage[];
@@ -157,7 +115,6 @@ interface MultiplayerContextType {
   selectedWeapons: {
     primary: WeaponType;
     secondary: WeaponType;
-    tertiary?: WeaponType;
   } | null;
 
   // Skill point system state
@@ -167,7 +124,7 @@ interface MultiplayerContextType {
   currentPreview: RoomPreview | null;
   
   // Actions
-  joinRoom: (roomId: string, playerName: string, weapon: WeaponType, subclass?: WeaponSubclass, gameMode?: 'multiplayer' | 'pvp') => Promise<void>;
+  joinRoom: (roomId: string, playerName: string, weapon: WeaponType, subclass?: WeaponSubclass, gameMode?: 'multiplayer' | 'coop') => Promise<void>;
   leaveRoom: () => void;
   previewRoom: (roomId: string) => void;
   clearPreview: () => void;
@@ -181,7 +138,7 @@ interface MultiplayerContextType {
   broadcastPlayerAbility: (abilityType: string, position: { x: number; y: number; z: number }, direction?: { x: number; y: number; z: number }, target?: string, extraData?: any) => void;
   broadcastPlayerEffect: (effect: any) => void;
   broadcastPlayerDamage: (targetPlayerId: string, damage: number, damageType?: string, isCritical?: boolean) => void;
-  broadcastPlayerHealing: (healingAmount: number, healingType: string, position: { x: number; y: number; z: number }) => void;
+  broadcastPlayerHealing: (healingAmount: number, healingType: string, position: { x: number; y: number; z: number }, targetPlayerId?: string) => void;
   broadcastPlayerAnimationState: (animationState: PlayerAnimationState) => void;
   broadcastPlayerDebuff: (targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, effectData?: any) => void;
   broadcastPlayerStealth: (isInvisible: boolean) => void;
@@ -190,17 +147,8 @@ interface MultiplayerContextType {
   broadcastPlayerDeathEffect: (playerId: string, position: { x: number; y: number; z: number }, isStarting: boolean) => void;
   
   // Enemy actions
-  damageEnemy: (enemyId: string, damage: number) => void;
+  damageEnemy: (enemyId: string, damage: number, sourcePlayerId?: string) => void;
   applyStatusEffect: (enemyId: string, effectType: string, duration: number) => void;
-
-  // Tower actions
-  damageTower: (towerId: string, damage: number, sourcePlayerId?: string, damageType?: string) => void;
-
-  // Summoned unit actions
-  damageSummonedUnit: (unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string) => void;
-
-  // Pillar actions
-  damagePillar: (pillarId: string, damage: number, sourcePlayerId?: string) => void;
 
   // Experience system actions
   updatePlayerExperience: (playerId: string, experience: number) => void;
@@ -213,8 +161,7 @@ interface MultiplayerContextType {
   updatePlayerShield: (playerId: string, shield: number, maxShield?: number) => void;
 
   // Weapon selection actions
-  setSelectedWeapons: (weapons: { primary: WeaponType; secondary: WeaponType; tertiary?: WeaponType }) => void;
-  checkAndUnlockTertiaryWeapon: (currentLevel: number) => void;
+  setSelectedWeapons: (weapons: { primary: WeaponType; secondary: WeaponType }) => void;
 
   // Skill point system actions
   unlockAbility: (unlock: AbilityUnlock) => void;
@@ -230,7 +177,6 @@ interface MultiplayerContextType {
 
   // Direct state setters for local visual updates (use with caution)
   setPlayers: React.Dispatch<React.SetStateAction<Map<string, Player>>>;
-  setPillars: React.Dispatch<React.SetStateAction<Map<string, Pillar>>>;
 }
 
 const MultiplayerContext = createContext<MultiplayerContextType | null>(null);
@@ -255,17 +201,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
   const [players, setPlayers] = useState<Map<string, Player>>(new Map());
   const [enemies, setEnemies] = useState<Map<string, Enemy>>(new Map());
-  const [towers, setTowers] = useState<Map<string, Tower>>(new Map());
-  const [pillars, setPillars] = useState<Map<string, Pillar>>(new Map());
-  const [summonedUnits, setSummonedUnits] = useState<Map<string, SummonedUnit>>(new Map());
   const [killCount, setKillCount] = useState(0);
   const [gameStarted, setGameStarted] = useState(false);
-  const [gameMode, setGameMode] = useState<'multiplayer' | 'pvp'>('multiplayer');
+  const [gameMode, setGameMode] = useState<'multiplayer' | 'coop'>('multiplayer');
   const [currentPreview, setCurrentPreview] = useState<RoomPreview | null>(null);
   const [selectedWeapons, setSelectedWeaponsState] = useState<{
     primary: WeaponType;
     secondary: WeaponType;
-    tertiary?: WeaponType;
   } | null>(null);
   const [skillPointData, setSkillPointData] = useState<SkillPointData>(SkillPointSystem.getInitialSkillPointData());
 
@@ -285,16 +227,24 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   useEffect(() => {
     const serverUrl = process.env.NEXT_PUBLIC_BACKEND_URL ||
       (process.env.NODE_ENV === 'production'
-        ? 'https://avernus-backend.fly.dev'
+        ? 'https://empyrea-game-backend.fly.dev'
         : 'http://localhost:8080');
 
     console.log('🔌 Connecting to multiplayer server:', serverUrl);
 
     const newSocket = io(serverUrl, {
-      transports: ['websocket', 'polling'],
-      timeout: 10000,
-      forceNew: true
+      transports: ['polling', 'websocket'],
+      timeout: 20000,
+      forceNew: true,
+      withCredentials: true,
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5
     });
+
+    // Store the socket in state
+    setSocket(newSocket);
 
     // Store event handlers for cleanup
     const eventHandlers = new Map<string, (...args: any[]) => void>();
@@ -320,14 +270,18 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       }, 30000); // Send heartbeat every 30 seconds
     });
 
+    addEventHandler('connecting', () => {
+      console.log('🔄 Connecting to multiplayer server...');
+    });
+
     addEventHandler('disconnect', (reason) => {
       console.log('❌ Disconnected from server:', reason);
       setIsConnected(false);
+      setSocket(null); // Clear socket reference
       setIsInRoom(false);
       setCurrentRoomId(null);
       setPlayers(new Map());
       setEnemies(new Map());
-      setTowers(new Map());
 
       // Clear heartbeat
       if (heartbeatInterval.current) {
@@ -338,8 +292,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     addEventHandler('connect_error', (error) => {
       console.error('🔥 Connection error:', error);
+      console.error('🔥 Error details:', error.message, error);
       setConnectionError(error.message);
       setIsConnected(false);
+      setSocket(null); // Clear socket reference on connection error
     });
 
     // Room event handlers
@@ -359,44 +315,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setPlayers(playersMap);
 
       // Update enemies (only for multiplayer mode)
-      if (data.gameMode !== 'pvp') {
-        const enemiesMap = new Map();
+      // Co-op mode - initialize enemies
+      const enemiesMap = new Map();
+      if (data.enemies) {
         data.enemies.forEach((enemy: Enemy) => {
           enemiesMap.set(enemy.id, enemy);
         });
-        setEnemies(enemiesMap);
-        setTowers(new Map()); // Clear towers for multiplayer mode
-        setPillars(new Map()); // Clear pillars for multiplayer mode
-        setSummonedUnits(new Map()); // Clear summoned units for multiplayer mode
-      } else {
-        setEnemies(new Map()); // Clear enemies for PVP mode
-        // Update towers (only for PVP mode)
-        const towersMap = new Map();
-        if (data.towers) {
-          data.towers.forEach((tower: Tower) => {
-            towersMap.set(tower.id, tower);
-          });
-        }
-        setTowers(towersMap);
-
-        // Update pillars (only for PVP mode)
-        const pillarsMap = new Map();
-        if (data.pillars) {
-          data.pillars.forEach((pillar: Pillar) => {
-            pillarsMap.set(pillar.id, pillar);
-          });
-        }
-        setPillars(pillarsMap);
-
-        // Update summoned units (only for PVP mode)
-        const summonedUnitsMap = new Map();
-        if (data.summonedUnits) {
-          data.summonedUnits.forEach((unit: SummonedUnit) => {
-            summonedUnitsMap.set(unit.unitId, unit);
-          });
-        }
-        setSummonedUnits(summonedUnitsMap);
       }
+      setEnemies(enemiesMap);
     });
 
     addEventHandler('room-full', () => {
@@ -504,81 +430,63 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
-    // Enemy event handlers (only for multiplayer mode)
+    // Enemy event handlers (for multiplayer and co-op modes)
     addEventHandler('enemy-spawned', (data) => {
-      // Only process enemy events in multiplayer mode, not PVP
-      setGameMode(currentMode => {
-        if (currentMode === 'pvp') {
-          return currentMode;
-        }
-        setEnemies(prev => {
-          const updated = new Map(prev);
-          updated.set(data.enemy.id, data.enemy);
-          return updated;
-        });
-        return currentMode;
+      setEnemies(prev => {
+        const updated = new Map(prev);
+        updated.set(data.enemy.id, data.enemy);
+        return updated;
       });
     });
 
     addEventHandler('enemy-damaged', (data) => {
-      // Only process enemy events in multiplayer mode, not PVP
-      setGameMode(currentMode => {
-        if (currentMode === 'pvp') {
-          return currentMode;
-        }
+      console.log(`💥 Enemy damaged: ${data.enemyId}, health: ${data.newHealth}/${data.maxHealth}, damage: ${data.damage}, from: ${data.fromPlayerId}`);
 
-        // Throttle enemy damage updates to prevent infinite re-renders
-        const now = Date.now();
-        const lastUpdate = lastEnemyDamageUpdate.current[data.enemyId] || 0;
-        if (now - lastUpdate < 50) { // Throttle to 20fps for damage updates
-          return currentMode;
-        }
-        lastEnemyDamageUpdate.current[data.enemyId] = now;
+      // Throttle enemy damage updates to prevent infinite re-renders
+      const now = Date.now();
+      const lastUpdate = lastEnemyDamageUpdate.current[data.enemyId] || 0;
+      if (now - lastUpdate < 50) { // Throttle to 20fps for damage updates
+        return;
+      }
+      lastEnemyDamageUpdate.current[data.enemyId] = now;
 
-        setEnemies(prev => {
-          const updated = new Map(prev);
-          const enemy = updated.get(data.enemyId);
-          if (enemy) {
-            updated.set(data.enemyId, {
-              ...enemy,
-              health: data.newHealth,
-              isDying: data.wasKilled
-            });
-          }
-          return updated;
-        });
-        return currentMode;
+      setEnemies(prev => {
+        const updated = new Map(prev);
+        const enemy = updated.get(data.enemyId);
+        if (enemy) {
+          console.log(`🔄 Updating enemy ${data.enemyId} health from ${enemy.health} to ${data.newHealth}`);
+          updated.set(data.enemyId, {
+            ...enemy,
+            health: data.newHealth,
+            isDying: data.wasKilled
+          });
+        } else {
+          console.log(`❌ Enemy ${data.enemyId} not found in enemies map`);
+        }
+        return updated;
       });
     });
 
     addEventHandler('enemy-moved', (data) => {
-      // Only process enemy events in multiplayer mode, not PVP
-      setGameMode(currentMode => {
-        if (currentMode === 'pvp') {
-          return currentMode;
-        }
+      // Throttle enemy movement updates to prevent infinite re-renders
+      const now = Date.now();
+      const lastUpdate = lastEnemyMoveUpdate.current[data.enemyId] || 0;
+      if (now - lastUpdate < 33) { // Throttle to ~30fps for enemy movements
+        return;
+      }
+      lastEnemyMoveUpdate.current[data.enemyId] = now;
 
-        // Throttle enemy movement updates to prevent infinite re-renders
-        const now = Date.now();
-        const lastUpdate = lastEnemyMoveUpdate.current[data.enemyId] || 0;
-        if (now - lastUpdate < 33) { // Throttle to ~30fps for enemy movements
-          return currentMode;
+      setEnemies(prev => {
+        const updated = new Map(prev);
+        const enemy = updated.get(data.enemyId);
+        if (enemy) {
+          updated.set(data.enemyId, {
+            ...enemy,
+            position: data.position,
+            rotation: data.rotation
+          });
         }
-        lastEnemyMoveUpdate.current[data.enemyId] = now;
-
-        setEnemies(prev => {
-          const updated = new Map(prev);
-          const enemy = updated.get(data.enemyId);
-          if (enemy) {
-            updated.set(data.enemyId, {
-              ...enemy,
-              position: data.position,
-              rotation: data.rotation
-            });
-          }
-          return updated;
-        });
-        return currentMode;
+        return updated;
       });
     });
 
@@ -616,121 +524,35 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       // This will be handled by the game scene to update animation states
     });
 
-    // Tower event handlers
-    addEventHandler('tower-spawned', (data) => {
-      // console.log('🏰 Tower spawned:', data.tower);
-      setTowers(prev => {
+    // Experience system event handlers
+    addEventHandler('player-experience-gained', (data) => {
+      // console.log('📈 Player experience gained:', data);
+      setPlayers(prev => {
         const updated = new Map(prev);
-        updated.set(data.tower.id, data.tower);
-        return updated;
-      });
-    });
+        const player = updated.get(data.playerId);
+        if (player) {
+          const newExperience = (player.experience || 0) + data.experienceGained;
+          const newLevel = Math.floor(newExperience / 100) + 1; // Simple leveling formula
 
-    addEventHandler('tower-damaged', (data) => {
-      setTowers(prev => {
-        const updated = new Map(prev);
-        const tower = updated.get(data.towerId);
-        if (tower) {
-          updated.set(data.towerId, {
-            ...tower,
-            health: data.newHealth,
-            isDead: data.wasDestroyed
+          updated.set(data.playerId, {
+            ...player,
+            experience: newExperience,
+            level: newLevel
           });
         }
         return updated;
       });
-    });
 
-    addEventHandler('tower-destroyed', (data) => {
-      // console.log('💥 Tower destroyed:', data.towerId);
-      setTowers(prev => {
-        const updated = new Map(prev);
-        const tower = updated.get(data.towerId);
-        if (tower) {
-          updated.set(data.towerId, {
-            ...tower,
-            health: 0,
-            isDead: true
-          });
-        }
-        return updated;
-      });
-    });
-
-    // Pillar event handlers
-    addEventHandler('pillar-spawned', (data) => {
-      setPillars(prev => {
-        const updated = new Map(prev);
-        updated.set(data.pillar.id, data.pillar);
-        return updated;
-      });
-    });
-
-    addEventHandler('pillar-damaged', (data) => {
-      setPillars(prev => {
-        const updated = new Map(prev);
-        const pillar = updated.get(data.pillarId);
-        if (pillar) {
-          updated.set(data.pillarId, {
-            ...pillar,
-            health: data.newHealth,
-            isDead: data.wasDestroyed
-          });
-        }
-        return updated;
-      });
-    });
-
-    addEventHandler('pillar-destroyed', (data) => {
-      setPillars(prev => {
-        const updated = new Map(prev);
-        updated.delete(data.pillarId);
-        return updated;
-      });
-    });
-
-    // Summoned unit event handlers
-    addEventHandler('summoned-unit-damaged', (data) => {      
-      // Store the damage event for the game scene to process
-      (window as any).pendingSummonedUnitDamage = (window as any).pendingSummonedUnitDamage || [];
-      (window as any).pendingSummonedUnitDamage.push(data);
-    });
-
-    // Server-authoritative summoned unit updates
-    addEventHandler('summoned-units-updated', (data) => {
-      // console.log('🤖 Received summoned units update:', data.units.length, 'units');
-
-      // Debug: Check for elite units
-      const eliteUnits = data.units.filter((unit: SummonedUnit) => unit.isElite);
-      if (eliteUnits.length > 0) {
-        console.log(`🤖 Received ${eliteUnits.length} elite units:`, eliteUnits.map((u: SummonedUnit) => `${u.unitId} (owner: ${u.ownerId}, health: ${u.health}/${u.maxHealth})`));
-      }
-
-      unstable_batchedUpdates(() => {
-        const summonedUnitsMap = new Map();
-        data.units.forEach((unit: SummonedUnit) => {
-          summonedUnitsMap.set(unit.unitId, unit);
-        });
-        setSummonedUnits(summonedUnitsMap);
-      });``
+      // Trigger level up effects if level changed
+      window.dispatchEvent(new CustomEvent('player-level-up-check', {
+        detail: { playerId: data.playerId, experienceGained: data.experienceGained }
+      }));
     });
 
     // Wave completion handler
     addEventHandler('wave-completed', (data) => {
-      
-      // Check if this is PVP mode with specific winner
-      if (data.winnerPlayerId && data.defeatedPlayerId) {
-        // Trigger PVP-specific experience rewards through a global event
-        window.dispatchEvent(new CustomEvent('pvp-wave-completed', { 
-          detail: {
-            ...data,
-            isLocalPlayerWinner: data.winnerPlayerId === newSocket.id
-          }
-        }));
-      } else {
-        // Legacy multiplayer mode - award to all players
-        window.dispatchEvent(new CustomEvent('wave-completed', { detail: data }));
-      }
+      // Co-op mode - award to all players
+      window.dispatchEvent(new CustomEvent('wave-completed', { detail: data }));
     });
 
     // Experience system event handlers
@@ -749,72 +571,96 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
-    // Purchase system event handler
+
     addEventHandler('player-purchase', (data) => {
       setPlayers(prev => {
         const updated = new Map(prev);
         const player = updated.get(data.playerId);
         if (player) {
+          const purchasedItems = player.purchasedItems || [];
+          purchasedItems.push(data.itemId);
           updated.set(data.playerId, {
             ...player,
-            essence: data.currency === 'essence' ? (player.essence || 0) - data.cost : player.essence,
-            purchasedItems: [...(player.purchasedItems || []), data.itemId]
+            purchasedItems,
+            essence: (player.essence || 0) - data.cost
           });
         }
         return updated;
       });
     });
 
-    // Chat system event handler
     addEventHandler('chat-message', (data) => {
-      const chatMessage = data.message as ChatMessage;
-      setChatMessages(prev => [...prev.slice(-49), chatMessage]); // Keep last 50 messages
+      setChatMessages(prev => {
+        const newMessage: ChatMessage = {
+          id: `${Date.now()}-${Math.random()}`,
+          playerId: data.message.playerId || 'unknown',
+          playerName: data.message.playerName || 'Unknown',
+          message: data.message,
+          timestamp: Date.now()
+        };
+        return [...prev, newMessage];
+      });
     });
 
-    setSocket(newSocket);
-
+    // Cleanup function
     return () => {
-      // Remove all event handlers
-      eventHandlers.forEach((handler, event) => {
-        newSocket.off(event, handler);
-      });
-      eventHandlers.clear();
+      console.log('🧹 Cleaning up socket connection');
+      if (newSocket) {
+        newSocket.removeAllListeners();
+        newSocket.disconnect();
+      }
+      setSocket(null);
+      setIsConnected(false);
+      setIsInRoom(false);
+      setCurrentRoomId(null);
+      setPlayers(new Map());
+      setEnemies(new Map());
 
+      // Clear heartbeat
       if (heartbeatInterval.current) {
         clearInterval(heartbeatInterval.current);
+        heartbeatInterval.current = null;
       }
-      newSocket.close();
     };
-  }, []);
+  }, []); // Only run once on mount
 
-  // Actions
-  const joinRoom = useCallback(async (roomId: string, playerName: string, weapon: WeaponType, subclass?: WeaponSubclass, gameMode: 'multiplayer' | 'pvp' = 'multiplayer') => {
+  const joinRoom = useCallback(async (roomId: string, playerName: string, weapon: WeaponType, subclass?: WeaponSubclass, gameMode?: 'multiplayer' | 'coop') => {
     if (!socket || !isConnected) {
       throw new Error('Not connected to server');
     }
 
     return new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Join room timeout'));
-      }, 10000);
-
-      socket.once('room-joined', () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-
-      socket.once('room-full', () => {
-        clearTimeout(timeout);
-        reject(new Error('Room is full'));
-      });
-
       socket.emit('join-room', {
         roomId,
         playerName,
         weapon,
         subclass,
-        gameMode
+        gameMode: gameMode || 'multiplayer'
       });
+
+      // Set up timeout for room join response
+      const timeout = setTimeout(() => {
+        reject(new Error('Room join timeout'));
+      }, 10000);
+
+      // Listen for successful room join
+      const handleRoomJoined = (data: any) => {
+        clearTimeout(timeout);
+        socket.off('room-joined', handleRoomJoined);
+        socket.off('room-full', handleRoomFull);
+        resolve();
+      };
+
+      // Listen for room full error
+      const handleRoomFull = () => {
+        clearTimeout(timeout);
+        socket.off('room-joined', handleRoomJoined);
+        socket.off('room-full', handleRoomFull);
+        reject(new Error('Room is full'));
+      };
+
+      socket.once('room-joined', handleRoomJoined);
+      socket.once('room-full', handleRoomFull);
     });
   }, [socket, isConnected]);
 
@@ -825,8 +671,6 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCurrentRoomId(null);
       setPlayers(new Map());
       setEnemies(new Map());
-      setTowers(new Map());
-      setSummonedUnits(new Map());
       setKillCount(0);
       setGameStarted(false);
       setGameMode('multiplayer');
@@ -916,12 +760,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const damageEnemy = useCallback((enemyId: string, damage: number) => {
+  const damageEnemy = useCallback((enemyId: string, damage: number, sourcePlayerId?: string) => {
     if (socket && currentRoomId) {
       socket.emit('enemy-damage', {
         roomId: currentRoomId,
         enemyId,
-        damage
+        damage,
+        sourcePlayerId: sourcePlayerId || socket.id // Always send the player ID for aggro tracking
       });
     }
   }, [socket, currentRoomId]);
@@ -937,42 +782,6 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const damageTower = useCallback((towerId: string, damage: number, sourcePlayerId?: string, damageType?: string) => {
-    if (socket && currentRoomId) {
-      socket.emit('tower-damage', {
-        roomId: currentRoomId,
-        towerId,
-        damage,
-        sourcePlayerId,
-        damageType
-      });
-    }
-  }, [socket, currentRoomId]);
-
-  const damageSummonedUnit = useCallback((unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string) => {
-
-
-    if (socket && currentRoomId) {
-      socket.emit('summoned-unit-damage', {
-        roomId: currentRoomId,
-        unitId,
-        unitOwnerId,
-        damage,
-        sourcePlayerId
-      });
-    }
-  }, [socket, currentRoomId]);
-
-  const damagePillar = useCallback((pillarId: string, damage: number, sourcePlayerId?: string) => {
-    if (socket && currentRoomId) {
-      socket.emit('pillar-damage', {
-        roomId: currentRoomId,
-        pillarId,
-        damage,
-        sourcePlayerId
-      });
-    }
-  }, [socket, currentRoomId]);
 
   const broadcastPlayerDamage = useCallback((targetPlayerId: string, damage: number, damageType?: string, isCritical?: boolean) => {
     if (socket && currentRoomId) {
@@ -987,13 +796,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const broadcastPlayerHealing = useCallback((healingAmount: number, healingType: string, position: { x: number; y: number; z: number }) => {
+  const broadcastPlayerHealing = useCallback((healingAmount: number, healingType: string, position: { x: number; y: number; z: number }, targetPlayerId?: string) => {
     if (socket && currentRoomId) {
       socket.emit('player-healing', {
         roomId: currentRoomId,
         healingAmount,
         healingType,
-        position
+        position,
+        targetPlayerId // Optional: if specified, heals target player; otherwise heals source
       });
     }
   }, [socket, currentRoomId]);
@@ -1102,30 +912,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   }, [socket, currentRoomId]);
 
   // Weapon selection functions (moved before updatePlayerLevel to avoid forward reference)
-  const setSelectedWeapons = useCallback((weapons: { primary: WeaponType; secondary: WeaponType; tertiary?: WeaponType }) => {
+  const setSelectedWeapons = useCallback((weapons: { primary: WeaponType; secondary: WeaponType }) => {
     setSelectedWeaponsState(weapons);
   }, []);
-
-  const checkAndUnlockTertiaryWeapon = useCallback((currentLevel: number) => {
-    if (currentLevel >= 3 && selectedWeapons && !selectedWeapons.tertiary) {
-      // Get all available weapons
-      const allWeapons = Object.values(WeaponType);
-      // Filter out already selected weapons
-      const availableWeapons = allWeapons.filter(weapon =>
-        weapon !== selectedWeapons.primary && weapon !== selectedWeapons.secondary
-      );
-
-      // Randomly select one of the remaining weapons
-      const randomIndex = Math.floor(Math.random() * availableWeapons.length);
-      const tertiaryWeapon = availableWeapons[randomIndex];
-
-
-      setSelectedWeaponsState({
-        ...selectedWeapons,
-        tertiary: tertiaryWeapon
-      });
-    }
-  }, [selectedWeapons]);
 
   const updatePlayerLevel = useCallback((playerId: string, level: number) => {
     if (socket && currentRoomId) {
@@ -1135,14 +924,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         level
       });
 
-      // Check for tertiary weapon unlock in PVP mode
-      if (gameMode === 'pvp') {
-        checkAndUnlockTertiaryWeapon(level);
-        // Update skill points when leveling up
-        updateSkillPointsForLevel(level);
-      }
+      // Update skill points when leveling up
+      updateSkillPointsForLevel(level);
     }
-  }, [socket, currentRoomId, gameMode, checkAndUnlockTertiaryWeapon]);
+  }, [socket, currentRoomId, gameMode]);
 
   // Skill point system functions
   const unlockAbility = useCallback((unlock: AbilityUnlock) => {
@@ -1244,10 +1029,6 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     currentRoomId,
     players,
     enemies,
-    towers,
-    pillars,
-    summonedUnits,
-    setPillars,
     killCount,
     gameStarted,
     gameMode,
@@ -1273,16 +1054,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     broadcastPlayerDeathEffect,
     damageEnemy,
     applyStatusEffect,
-    damageTower,
-    damageSummonedUnit,
-    damagePillar,
     updatePlayerExperience,
     updatePlayerLevel,
     updatePlayerEssence,
     updatePlayerShield,
     selectedWeapons,
     setSelectedWeapons,
-    checkAndUnlockTertiaryWeapon,
     skillPointData,
     unlockAbility,
     updateSkillPointsForLevel,

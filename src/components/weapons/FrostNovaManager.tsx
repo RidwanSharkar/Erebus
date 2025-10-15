@@ -137,22 +137,12 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
 
     const now = Date.now();
 
-    // Check for newly frozen enemies and add frozen effects
+    // NOTE: We no longer automatically add freeze visuals to all frozen enemies.
+    // This is because enemy.freeze() is used for both Frost Nova (freeze) and Sabre stuns.
+    // Freeze visuals are now only added when explicitly called via addGlobalFrozenEnemy().
+    // The StunManager handles stun visuals separately via addGlobalStunnedEnemy().
+    
     const allEntities = world.getAllEntities();
-    allEntities.forEach(entity => {
-      const enemy = entity.getComponent(Enemy);
-      const transform = entity.getComponent(Transform);
-      
-      if (enemy && transform && enemy.isFrozen) {
-        // Check if we already have a frozen effect for this enemy
-        const existingFrozenEffect = frozenEnemies.find(fe => fe.enemyId === entity.id.toString());
-        
-        if (!existingFrozenEffect) {
-          // Add frozen effect for this newly frozen enemy
-          addFrozenEnemy(entity.id.toString(), transform.position);
-        }
-      }
-    });
 
     // Clean up frozen effects based on multiple criteria
     setFrozenEnemies(prev => {

@@ -1,50 +1,14 @@
-# 🌋 AVERNUS 1.0
-
-A competitive 1v1 multiplayer PVP 3D action game featuring fast-paced real-time combat with strategic weapon switching, dozens of ability combinations and a progression system within a semi-MOBA format.
-
-GAMEPLAY: https://www.youtube.com/watch?v=5BqoieHbZJw
+# 🌑  ENCELADUS
 
 ## 🪐 Key Features  
 
-### 🔩 Technical Specs
+### ⚙️ Technical Specs
 - **Real-time Multiplayer**: Socket.io-powered networking with sub-60ms latency
 - **ECS Architecture**: Entity-Component-System for optimal performance and modularity
 - **Advanced 3D Rendering**: Three.js with WebGL, LOD management, and instanced rendering
 - **Spatial Audio**: Howler.js-powered 3D positional audio with 30+ unique sound effects
 - **Performance Optimizations**: Object pooling, state batching, and performance monitoring
 - **Scalable Backend**: Node.js server with automatic scaling and health monitoring
-
-### ⚙️ Gameplay Systems
-- **5 Unique Weapon Classes**: Each with distinct playstyles and 4-5 unlockable abilities
-- **Dynamic Progression**: Level up to 5, unlock abilities, and master multiple weapon combinations
-- **Real-time Combat**: Precise hit detection, damage numbers, and visual feedback
-- **Strategic Depth**: Resource management, cooldowns, ability combos and timings
-
-## 🎮 How to Play
-
-### Quick Start
-1. **Choose 2 Weapons**: Select a primary and secondary weapons from 5 classes. Each weapon starts off with their 'Q' ability by default. 
-3. **Level Up**: Gain experience by eliminating enemy players and their summoned units. 
-4. **Unlock Abilities**: Spend skill points on new abilities (E, R, F keys)
-5. **Master Combat**: Switch weapons mid-fight and combine abilities for devastating combos
-
-### 📜 Game Format and Rules
-• Each player has a Tower and 3 Inhibitors.<br>
-• Each player's Tower summons 3 Units every 45 seconds.<br>
-• Player kills and Summoned Unit kills award experience points.<br>
-• Leveling up grants a Skill Point to unlock additional abilities.<br>
-• Players respawn upon 12.5 seconds after death.<br>
-• Only Summoned Units can damage the opposing player's Tower.<br>
-• Players can destroy the opposing player's Inhibitors to upgrade their Summoned Units into ELITES.<br>
-• The first player to destroy the opposing player's Tower wins.
-
-### 🏆 Game Objectives
-• Defend your Tower from the enemy player's Summoned Units<br>
-• Defend your Inhibitors from the enemy Player<br>
-• Use your Summoned Units to damage the enemy Player's Tower<br>
-• Destroy the enemy Player's Inhibitors to upgrade your Summoned Units into ELITES<br>
-• Level up to gain combat bonuses and to invest Skill Points into additional weapon abilities<br>
-• Destroy the enemy Player's Tower to win the game
 
 ---
 

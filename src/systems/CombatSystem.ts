@@ -52,6 +52,9 @@ export class CombatSystem extends System {
   // PVP damage callback for routing player damage to server
   private onPlayerDamageCallback?: (playerId: string, damage: number, damageType?: string, isCritical?: boolean) => void;
 
+  // Co-op mode flag - prevents player-to-player damage
+  private isCoopMode: boolean = false;
+
   // Summoned unit damage callback for routing summoned unit damage to server
   private onSummonedUnitDamageCallback?: (unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string, damageType?: string) => void;
 
@@ -112,6 +115,10 @@ export class CombatSystem extends System {
 
   public setPillarDamageCallback(callback: (pillarId: string, damage: number, sourcePlayerId?: string) => void): void {
     this.onPillarDamageCallback = callback;
+  }
+
+  public setCoopMode(isCoop: boolean): void {
+    this.isCoopMode = isCoop;
   }
 
   // Apply summoned unit damage received from server
@@ -259,8 +266,10 @@ export class CombatSystem extends System {
       }
 
       // Route enemy damage through multiplayer server instead of applying locally
-      // console.log(`🌐 Routing ${actualDamage} damage to enemy ${target.id} through multiplayer server from source player ${finalSourcePlayerId || 'unknown'}`);
-      this.onEnemyDamageCallback(target.id.toString(), actualDamage, finalSourcePlayerId);
+      // Use server enemy ID from entity userData instead of ECS entity ID
+      const serverEnemyId = target.userData?.serverEnemyId || target.id.toString();
+      // console.log(`🌐 Routing ${actualDamage} damage to enemy ${serverEnemyId} (ECS: ${target.id}) through multiplayer server from source player ${finalSourcePlayerId || 'unknown'}`);
+      this.onEnemyDamageCallback(serverEnemyId, actualDamage, finalSourcePlayerId);
 
       // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
       if (source && currentWeapon === WeaponType.RUNEBLADE) {
@@ -644,9 +653,9 @@ export class CombatSystem extends System {
       return; // Don't apply damage locally for towers
     }
 
-    // Check if target is a player in PVP mode - if so, route damage through multiplayer
-    // Also prevent self-damage in PVP (source hitting themselves)
-    if (!enemy && this.onPlayerDamageCallback && source && source.id !== target.id) {
+    // Check if target is a player - if so, route damage through multiplayer (only in PVP mode)
+    // Also prevent self-damage and player-to-player damage in co-op mode
+    if (!enemy && this.onPlayerDamageCallback && source && source.id !== target.id && !this.isCoopMode) {
       // CRITICAL: Don't damage dead players in PVP
       const targetHealth = target.getComponent(Health);
       if (targetHealth && targetHealth.isDead) {
@@ -999,6 +1008,16 @@ export class CombatSystem extends System {
         if (targetMovement) {
           targetMovement.slow(5000, 0.5); // 5 seconds, 50% speed
           // console.log(`🐌 Applied 50% slow for 5 seconds to target ${target.id}`);
+        }
+        
+        // Send slow status to server for multiplayer enemies (co-op mode)
+        const controlSystemRef = (window as any).controlSystemRef;
+        if (controlSystemRef && controlSystemRef.current && target.userData?.serverEnemyId) {
+          const controlSystem = controlSystemRef.current;
+          const applyStatusCallback = controlSystem.onApplyEnemyStatusEffectCallback;
+          if (applyStatusCallback) {
+            applyStatusCallback(target.userData.serverEnemyId, 'slow', 5000); // 5 seconds in ms
+          }
         }
       }
     }

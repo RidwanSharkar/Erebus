@@ -28,10 +28,10 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0] }) => {
     // Add sphere geometry for the orb
     const orbGeometry = new SphereGeometry(1, 32, 32);
 
-    // Add glowing material for the orb with light red color
+    // Add glowing material for the orb with light blue color
     const orbMaterial = new MeshStandardMaterial({
-      color: '#7D5DE5',
-      emissive: '#7D5DE5',
+      color: '#5DADE2',
+      emissive: '#5DADE2',
       metalness: 1,
       roughness: 0.2,
     });
@@ -112,7 +112,7 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0] }) => {
         position={[0, 5, 0]}
         rotation={[rotation, rotation, 0]}
       >
-        <pointLight color="#7D5DE5" intensity={1} distance={5} />
+        <pointLight color="#5DADE2" intensity={1} distance={5} />
       </mesh>
     </group>
   );

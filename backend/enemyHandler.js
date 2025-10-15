@@ -2,9 +2,14 @@ function handleEnemyEvents(socket, gameRooms) {
   // Handle enemy damage from players
   socket.on('enemy-damage', (data) => {
     const { roomId, enemyId, damage, sourcePlayerId } = data;
-    
-    if (!gameRooms.has(roomId)) return;
-    
+
+    console.log(`⚔️ Received enemy-damage: room=${roomId}, enemy=${enemyId}, damage=${damage}, source=${sourcePlayerId || socket.id}`);
+
+    if (!gameRooms.has(roomId)) {
+      console.log(`❌ Room ${roomId} not found`);
+      return;
+    }
+
     const room = gameRooms.get(roomId);
     // Use sourcePlayerId if provided, otherwise fall back to socket.id for direct player damage
     const actualSourcePlayerId = sourcePlayerId || socket.id;

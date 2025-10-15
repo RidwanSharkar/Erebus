@@ -8,22 +8,46 @@ const app = express();
 const server = http.createServer(app);
 
 // CORS configuration for both Express and Socket.io
+const getCorsOrigins = () => {
+    const corsOriginsEnv = process.env.CORS_ORIGINS;
+    if (corsOriginsEnv) {
+        return corsOriginsEnv.split(',').map(origin => origin.trim());
+    }
+
+    // Fallback origins if env var not set
+    return process.env.NODE_ENV === 'production'
+      ? ['https://empyrea.vercel.app', 'https://empyrea-game-backend.fly.dev']
+      : ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:3001', 'http://127.0.0.1:3001'];
+};
+
 const corsOptions = {
-    origin: process.env.NODE_ENV === 'production' 
-      ? ['https://avernus.vercel.app'] // Updated for AVERNUS Vercel domain
-      : ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:3001', 'http://127.0.0.1:3001'],
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type'],
+    origin: getCorsOrigins(),
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     credentials: true
 };
+
+// Log incoming requests for debugging
+app.use((req, res, next) => {
+    console.log(`${req.method} ${req.path} from ${req.get('origin') || 'no-origin'}`);
+    next();
+});
 
 app.use(cors(corsOptions));
 app.use(express.json());
 
 const io = socketIo(server, {
-  cors: corsOptions,
-  pingTimeout: 15000,  // Very aggressive timeout (15 seconds)
-  pingInterval: 5000   // Ping every 5 seconds for fast disconnect detection
+  cors: {
+    origin: getCorsOrigins(),
+    methods: ['GET', 'POST'],
+    credentials: true
+  },
+  transports: ['polling', 'websocket'],
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  connectTimeout: 45000,
+  maxHttpBufferSize: 1e8
 });
 
 const PORT = process.env.PORT || 8080;
@@ -90,8 +114,8 @@ io.on('connection', (socket) => {
     
     const room = gameRooms.get(roomId);
     
-    // Check room capacity (max 5 players)
-    if (room.getPlayerCount() >= 5) {
+    // Check room capacity (max 3 players for co-op)
+    if (room.getPlayerCount() >= 3) {
       socket.emit('room-full');
       return;
     }
@@ -108,9 +132,6 @@ io.on('connection', (socket) => {
       playerId: socket.id,
       players: room.getPlayers(),
       enemies: room.getEnemies(),
-      towers: room.getTowers(),
-      pillars: room.getPillars(),
-      summonedUnits: room.getSummonedUnits(),
       killCount: room.getKillCount(),
       gameStarted: room.getGameStarted(),
       gameMode: room.gameMode || gameMode
@@ -279,7 +300,11 @@ setInterval(() => {
 
 // Start server
 server.listen(PORT, () => {
+  console.log(`=== Server Starting ===`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Port: ${PORT}`);
+  console.log(`Allowed CORS Origins:`, getCorsOrigins());
+  console.log(`=====================`);
 });
 
 // Graceful shutdown

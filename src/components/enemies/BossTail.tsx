@@ -3,12 +3,12 @@ import { Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import React from 'react';
 
-interface BoneTailProps {
+interface BossTailProps {
   movementDirection?: Vector3;
   isDashing?: boolean;
 }
 
-const BoneTail: React.FC<BoneTailProps> = React.memo(({
+const BossTail: React.FC<BossTailProps> = React.memo(({
   movementDirection,
   isDashing = false
 }) => {
@@ -99,8 +99,8 @@ const BoneTail: React.FC<BoneTailProps> = React.memo(({
               <cylinderGeometry args={[0.04, 0.055, 0.15, 6]} />
               <meshStandardMaterial
                 color="#ffffff"
-                emissive="#304040"
-                emissiveIntensity={0.6}
+                emissive="#8B0000"
+                emissiveIntensity={0.5}
                 roughness={0.3}
                 metalness={0.4}
               />
@@ -112,8 +112,8 @@ const BoneTail: React.FC<BoneTailProps> = React.memo(({
                 <coneGeometry args={[0.02, 0.06, 4]} />
                 <meshStandardMaterial
                   color="#ffffff"
-                  emissive="#304040"
-                  emissiveIntensity={0.6}
+                  emissive="#8B0000"
+                  emissiveIntensity={0.5}
                   roughness={0.3}
                   metalness={0.4}
                 />
@@ -125,8 +125,8 @@ const BoneTail: React.FC<BoneTailProps> = React.memo(({
                 <coneGeometry args={[0.02, 0.06, 4]} />
                 <meshStandardMaterial
                   color="#ffffff"
-                  emissive="#304040"
-                  emissiveIntensity={0.6}
+                  emissive="#8B0000"
+                  emissiveIntensity={0.5}
                   roughness={0.3}
                   metalness={0.4}
                 />
@@ -148,6 +148,7 @@ const BoneTail: React.FC<BoneTailProps> = React.memo(({
   );
 });
 
-BoneTail.displayName = 'BoneTail';
+BossTail.displayName = 'BossTail';
 
-export default BoneTail;
+export default BossTail;
+
