@@ -4352,7 +4352,7 @@ const hasMana = useCallback((amount: number) => {
       <ambientLight intensity={0.1} />
       <directionalLight
         position={[10, 10, 5]}
-        intensity={0.4}
+        intensity={0.2}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -4413,6 +4413,25 @@ const hasMana = useCallback((amount: number) => {
           isStealthing={controlSystemRef.current?.getIsStealthing() || false}
           onDamageNumbersReady={handleDamageNumbersReady}
           combatSystem={engineRef.current?.getWorld().getSystem(require('@/systems/CombatSystem').CombatSystem)}
+          onHeal={(amount: number) => {
+            // Handle healing for local player (Viper Sting soul steal, etc.)
+            if (playerEntityRef.current !== null && engineRef.current) {
+              const world = engineRef.current.getWorld();
+              const playerEntity = world.getEntity(playerEntityRef.current);
+              if (playerEntity) {
+                const CombatSystemClass = require('@/systems/CombatSystem').CombatSystem;
+                const combatSystem = world.getSystem(CombatSystemClass) as any;
+                if (combatSystem && combatSystem.healImmediate) {
+                  // Use CombatSystem to heal the player (this handles all the logic)
+                  combatSystem.healImmediate(playerEntity, amount, playerEntity);
+                  // The CombatSystem will handle updating the health component and triggering effects
+
+                  // Broadcast healing to other players
+                  broadcastPlayerHealing(amount, 'viper_sting', playerPosition);
+                }
+              }
+            }
+          }}
           onBowRelease={() => {
             // This callback is now handled by the ControlSystem directly
           }}

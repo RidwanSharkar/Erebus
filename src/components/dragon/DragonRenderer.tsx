@@ -56,6 +56,7 @@ interface DragonRendererProps {
   onCorruptedAuraToggle?: (active: boolean) => void;
   onChargeComplete?: () => void;
   onDeflectComplete?: () => void;
+  onHeal?: (amount: number) => void; // Callback for healing effects like Viper Sting soul steal
   rotation?: { x: number; y: number; z: number }; // Add rotation prop for multiplayer
   isLocalPlayer?: boolean; // Flag to distinguish local player from other players
   isStealthing?: boolean; // Whether the local player is currently in stealth mode
@@ -148,6 +149,7 @@ export default function DragonRenderer({
   rageSpent,
   onDamageNumbersReady,
   combatSystem,
+  onHeal = () => {},
   purchasedItems = []
 }: DragonRendererProps) {
   const mountRef = useRef(false);
@@ -341,9 +343,9 @@ export default function DragonRenderer({
         setCurrentRotation(new Vector3(rotation.x, rotation.y, rotation.z));
       }
       
-      // Update enemy data for sword collision detection
-      // Always update enemy data when sword is equipped to ensure fresh data
-      if (currentWeapon === WeaponType.SWORD) {
+      // Update enemy data for weapon collision detection
+      // Always update enemy data for weapons that need collision detection
+      if (currentWeapon === WeaponType.SWORD || currentWeapon === WeaponType.BOW) {
         const enemies = world.queryEntities([Transform, Health, Enemy]);
         const enemyDataArray = enemies.map(enemy => {
           const transform = enemy.getComponent(Transform)!;
@@ -479,11 +481,7 @@ export default function DragonRenderer({
           onHit={handleSwordHit}
           setDamageNumbers={setDamageNumbers}
           nextDamageNumberId={nextDamageNumberId}
-          onHealthChange={(deltaHealth) => {
-            // Handle healing from soul steal
-
-            // Could integrate with health system here
-          }}
+          onHealthChange={onHeal}
           charges={dashCharges.map((charge, index) => ({
             id: index + 1,
             available: charge.isAvailable,

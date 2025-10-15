@@ -80,11 +80,11 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
     
     const time = clock.getElapsedTime();
     
-    // Position orbitals around the parent
+    // Position orbitals around the parent in a normal circular orbit
     orbitalsRef.current.children.forEach((orbital, index) => {
-      const angle = (index / dashCharges.length) * Math.PI * 2 + time * 0.5;
-      const radius = 0.05 + Math.sin(time * 2 + index);
-      const height = Math.sin(time * 1.5 + index * 0.5) * 0.1;
+      const angle = (index / dashCharges.length) * Math.PI * 2 + time * 0.8;
+      const radius = 0.9; // Fixed radius for circular orbit
+      const height = 0.3; // Fixed height above parent
       
       orbital.position.set(
         Math.cos(angle) * radius,
