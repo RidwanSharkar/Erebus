@@ -602,6 +602,21 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
+    // Boss-related event handlers
+    addEventHandler('boss-skeleton-summoned', (data) => {
+      // Add the summoned skeleton to enemies map
+      setEnemies(prev => {
+        const updated = new Map(prev);
+        updated.set(data.skeleton.id, data.skeleton);
+        return updated;
+      });
+    });
+
+    addEventHandler('boss-skeleton-attack', (data) => {
+      // This will be handled by the game scene for attack animations
+      // The event is forwarded through window for the SummonedBossSkeleton component
+    });
+
     // Cleanup function
     return () => {
       console.log('🧹 Cleaning up socket connection');

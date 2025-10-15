@@ -235,6 +235,22 @@ class GameRoom {
         }
         
         console.log(`🎉 BOSS DEFEATED by player ${fromPlayerId}!`);
+      } else if (enemy.type === 'boss-skeleton') {
+        // Handle boss skeleton death
+        if (enemy.bossId && this.enemyAI) {
+          this.enemyAI.removeBossSkeleton(enemy.bossId, enemyId);
+        }
+
+        // Award +5 EXP for boss skeleton kills to the killer
+        if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
+          this.io.to(this.roomId).emit('player-experience-gained', {
+            playerId: fromPlayerId,
+            experienceGained: 5,
+            source: 'boss_skeleton_kill',
+            enemyId: enemyId,
+            timestamp: Date.now()
+          });
+        }
       } else {
         // Normal enemy kill rewards
         // Increment shared kill count
@@ -300,6 +316,12 @@ class GameRoom {
 
   getEnemy(enemyId) {
     return this.enemies.get(enemyId);
+  }
+
+  // Add enemy to the game (used by boss summoning)
+  addEnemy(enemyData) {
+    this.enemies.set(enemyData.id, enemyData);
+    console.log(`➕ Enemy ${enemyData.id} (${enemyData.type}) added to room ${this.roomId}`);
   }
 
   // Function to calculate level based on kill count (same as Scene.tsx)
