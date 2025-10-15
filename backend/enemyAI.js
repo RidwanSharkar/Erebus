@@ -268,8 +268,8 @@ class EnemyAI {
       this.bossMeteorCooldown.set(boss.id, now);
     }
 
-    // Check skeleton summoning cooldown (10 seconds)
-    const skeletonSummonCooldown = 10000;
+    // Check skeleton summoning cooldown (17.5 seconds)
+    const skeletonSummonCooldown = 25000;
     const lastSkeletonSummonTime = this.bossSkeletonSummonCooldown.get(boss.id) || 0;
 
     if (now - lastSkeletonSummonTime >= skeletonSummonCooldown) {
@@ -588,7 +588,7 @@ class EnemyAI {
     switch (enemyType) {
       case 'elite': return 0.0; // Elite enemies are stationary like training dummies
       case 'boss': return 2; // Boss moves at moderate speed
-      case 'boss-skeleton': return 2.5; // Boss-summoned skeletons move at normal skeleton speed
+      case 'boss-skeleton': return 1.5; // Boss-summoned skeletons move at normal skeleton speed
       case 'skeleton': return 2.0;
       case 'mage': return 1.5;
       case 'reaper': return 2.5;

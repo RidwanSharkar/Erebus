@@ -31,9 +31,12 @@ export default function SummonedBossSkeleton({
   
   const currentPosition = useRef(position.clone());
   const currentRotation = useRef(rotation);
+  const lastPosition = useRef(position.clone());
+  const movementCheckTimer = useRef(0);
 
   // Constants
   const ATTACK_DURATION = 1000; // milliseconds
+  const MOVEMENT_THRESHOLD = 0.05; // Minimum movement to trigger walking animation
 
   // Sync position from server
   useEffect(() => {
@@ -82,6 +85,29 @@ export default function SummonedBossSkeleton({
     }
   }, [isDying]);
 
+  // Continuously check for movement and update walking animation
+  useFrame((_, delta) => {
+    if (!groupRef.current || isDying) return;
+
+    // Check movement every frame
+    movementCheckTimer.current += delta;
+
+    if (movementCheckTimer.current >= 0.1) { // Check every 100ms
+      const distance = currentPosition.current.distanceTo(lastPosition.current);
+      
+      // Update walking state based on actual movement
+      const shouldBeWalking = distance > MOVEMENT_THRESHOLD && !isAttacking;
+      
+      if (shouldBeWalking !== isWalking) {
+        setIsWalking(shouldBeWalking);
+      }
+
+      // Store current position for next check
+      lastPosition.current.copy(currentPosition.current);
+      movementCheckTimer.current = 0;
+    }
+  });
+
 
   // Listen for attack events from server
   useEffect(() => {
@@ -113,12 +139,8 @@ export default function SummonedBossSkeleton({
     const handleEnemyMove = (data: any) => {
       if (data.enemyId === id) {
         const newPosition = new Vector3(data.position.x, data.position.y, data.position.z);
-        const distance = currentPosition.current.distanceTo(newPosition);
 
-        // Update walking state based on movement
-        setIsWalking(distance > 0.1);
-
-        // Update position and rotation
+        // Update position and rotation (walking state is handled by useFrame)
         currentPosition.current.copy(newPosition);
         currentRotation.current = data.rotation;
 
@@ -145,7 +167,7 @@ export default function SummonedBossSkeleton({
         visible={!isDying}
       >
         <CustomSkeleton
-          position={[0, 0.735, 0] as [number, number, number]}
+          position={[0, 0, 0] as [number, number, number]}
           rotation={[0, 0, 0] as [number, number, number]}
           isWalking={isWalking}
           isAttacking={isAttacking}

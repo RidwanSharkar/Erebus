@@ -298,6 +298,7 @@ function ShoulderPlate() {
 
 export default function CustomSkeleton({ position, rotation = [0, 0, 0], isWalking = false, isAttacking = false }: CustomSkeletonProps) {
   const groupRef = useRef<Group>(null);
+  const bodyGroupRef = useRef<Group>(null);
   const walkCycleRef = useRef(0);
   const attackCycleRef = useRef(0);
 
@@ -314,14 +315,15 @@ export default function CustomSkeleton({ position, rotation = [0, 0, 0], isWalki
 
   // Animation loop
   useFrame((_, delta) => {
-    if (!groupRef.current) return;
+    if (!groupRef.current || !bodyGroupRef.current) return;
 
     // Walking animation
     if (isWalking) {
       walkCycleRef.current = (walkCycleRef.current + delta * WALK_SPEED) % (Math.PI * 2);
       
-      const walkHeightOffset = Math.abs(Math.sin(walkCycleRef.current) * 0.1);
-      groupRef.current.position.y = position[1] + 1 - walkHeightOffset;
+      // Apply bobbing to body group only, not main group
+      const walkHeightOffset = Math.abs(Math.sin(walkCycleRef.current) * 0.05);
+      bodyGroupRef.current.position.y = -walkHeightOffset;
       
       // Animate legs
       ['LeftLeg', 'RightLeg'].forEach(part => {
@@ -368,8 +370,8 @@ export default function CustomSkeleton({ position, rotation = [0, 0, 0], isWalki
         }
       });
     } else {
-      // Reset to standing position
-      groupRef.current.position.y = position[1] + 1;
+      // Reset body to base position when not walking
+      bodyGroupRef.current.position.y = 0;
     }
 
     // Attack animation
@@ -391,11 +393,12 @@ export default function CustomSkeleton({ position, rotation = [0, 0, 0], isWalki
 
   return (
     <>
-      <group ref={groupRef} position={[position[0], position[1] + 1, position[2]]} rotation={rotation} scale={[0.8, 0.8, 0.8]}>
-
-        <group name="Body" position={[0, 1, 0.085]} scale={[0.85, 0.85, 0.85]} rotation={[0.1, 0, 0]}>
-          <BonePlate />
-        </group>
+      <group ref={groupRef} position={[position[0], position[1] + 1, position[2]]} rotation={rotation} scale={[0.7  , 0.7, 0.7]}>
+        {/* Body group for animation (bobbing, etc.) */}
+        <group ref={bodyGroupRef}>
+          <group name="Body" position={[0, 1, 0.085]} scale={[0.85, 0.85, 0.85]} rotation={[0.1, 0, 0]}>
+            <BonePlate />
+          </group>
 
 
       {/* SKULL POSITIONING - adjusted for hunched posture */}
@@ -607,6 +610,7 @@ export default function CustomSkeleton({ position, rotation = [0, 0, 0], isWalki
             <meshStandardMaterial color="#d8e8d8" roughness={0.4} metalness={0.3} emissive="#330000" emissiveIntensity={0.2} />
           </mesh>
         </group>
+        </group> {/* Close bodyGroupRef */}
       </group>
 
     </>
