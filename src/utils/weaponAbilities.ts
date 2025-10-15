@@ -144,10 +144,10 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
   ],
   [WeaponType.RUNEBLADE]: [
     {
-      name: 'Void Grasp',
+      name: 'Fullguard',
       key: 'Q',
-      cooldown: 5.0,
-      description: '{35 MANA} Fires grasping chains that latch onto the first enemy hit, pulling them towards you.'
+      cooldown: 7.0,
+      description: 'Creates a protective barrier that blocks all incoming damage for 3 seconds. Cannot attack while shielded.'
     },
     {
       name: 'Wraithblade',
@@ -208,7 +208,7 @@ export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | '
     P: '☠️' // Lethality
   },
   [WeaponType.RUNEBLADE]: {
-    Q: '⛓️', // Void Grasp
+    Q: '🛡️', // Fullguard
     E: '🪝', // Wraithblade
     R: '👻', // Hexed Smite
     F: '💔', // Heartrend

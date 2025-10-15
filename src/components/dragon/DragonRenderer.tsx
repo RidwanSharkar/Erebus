@@ -133,7 +133,7 @@ export default function DragonRenderer({
   onChargeComplete = () => {},
   onDeflectComplete = () => {},
   rotation,
-  isLocalPlayer = true,
+  isLocalPlayer = false,
   isStealthing = false,
   isViperStingCharging = false,
   viperStingChargeProgress = 0,
@@ -152,6 +152,12 @@ export default function DragonRenderer({
 }: DragonRendererProps) {
   const mountRef = useRef(false);
   if (!mountRef.current) {
+    console.log('🐉 DragonRenderer mounting:', {
+      entityId,
+      position: position?.toArray(),
+      isLocalPlayer,
+      currentWeapon
+    });
     mountRef.current = true;
   }
   const { camera } = useThree();
@@ -237,11 +243,16 @@ export default function DragonRenderer({
       // Get dash state from Movement component
       const entity = world.getEntity(entityId);
       if (entity) {
-        // Debug: Check what components are actually on this entity (reduced logging)
+        // Debug: Check what components are actually on this entity
         if (Math.random() < 0.01) { // Only log 1% of the time to reduce spam
           const allComponents = entity.getAllComponents();
           const componentNames = entity.getComponentNames();
-          
+          console.log('🔍 DragonRenderer entity found:', {
+            entityId,
+            componentNames,
+            position: position?.toArray(),
+            isLocalPlayer
+          });
         }
         
         const movement = entity.getComponent(Movement);

@@ -3,7 +3,6 @@ import CustomSky from './CustomSky';
 import Planet from './Planet';
 import InstancedMountains from './InstancedMountains';
 import Pillar from './Pillar';
-import Pedestal from './Pedestal';
 import EnhancedGround from './EnhancedGround';
 import PillarCollision from './PillarCollision';
 import DetailedTrees, { DetailedTree } from './DetailedTrees';
@@ -71,7 +70,10 @@ const Environment: React.FC<EnvironmentProps> = ({
   // Define tree positions for natural forest arrangement (reduced by half, removed inner trees)
   const treePositions: DetailedTree[] = useMemo(() => [
     // Outer ring trees (kept all - furthest from center, near map boundary)
-    { position: new Vector3(18, 0, 10), scale: 1.65, height: 3.0, trunkRadius: 0.275, trunkColor: new Color(0xA3773D) },
+    { position: new Vector3(18, 0, 10), scale: 1.5, height: 2.5, trunkRadius: 0.275, trunkColor: new Color(0xC69049) },
+    { position: new Vector3(13, 0, 10), scale: 1.35, height: 1.5, trunkRadius: 0.225, trunkColor: new Color(0xC69049) },
+    { position: new Vector3(17, 0, 3), scale: 1.35, height: 2, trunkRadius: 0.255, trunkColor: new Color(0xA3773D) },
+
   ], []);
 
   // Define merchant position near the tree
@@ -105,10 +107,6 @@ const Environment: React.FC<EnvironmentProps> = ({
           particleCount={100}
         />
       )}
-
-      {/* Central Pedestal */}
-      <Pedestal position={pedestalPosition} scale={0.4} level={level} />
-
 
       {/* Atmospheric particles around central area */}
       <AtmosphericParticles

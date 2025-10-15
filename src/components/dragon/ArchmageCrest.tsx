@@ -44,7 +44,7 @@ export default function ArchmageCrest({
 
         // Runeblade subclasses
         case WeaponSubclass.ARCANE:
-          return { main: '#8783D1', emissive: '#A890F0', glow: '#D4C4F7', secondary: '#B19CD9' };
+          return { main: '#3FD3FC', emissive: '#87CEEB', glow: '#E0F6FF', secondary: '#B0E0E6' };
         case WeaponSubclass.NATURE:
           return { main: '#00FF88', emissive: '#32CD32', glow: '#90EE90', secondary: '#66CDAA' };
 

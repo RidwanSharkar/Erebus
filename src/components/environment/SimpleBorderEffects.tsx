@@ -67,14 +67,14 @@ const SimpleBorderEffects: React.FC<SimpleBorderEffectsProps> = ({
 
   // Materials
   const particleMaterial = useMemo(() => new MeshBasicMaterial({
-    color: 0xF40000,
+    color: 0x5DADE2,
     transparent: true,
     opacity: 0.7,
     alphaTest: 0.1,
   }), []);
 
   const glowMaterial = useMemo(() => new MeshBasicMaterial({
-    color: 0xF74F4F, // Light purple
+    color: 0x5DADE2, // Light blue
     transparent: true,
     opacity: 0.325,
     alphaTest: 0.1,

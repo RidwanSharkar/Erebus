@@ -40,7 +40,6 @@ export class SkillPointSystem {
     selectedWeapons: {
       primary: WeaponType;
       secondary: WeaponType;
-      tertiary?: WeaponType;
     } | null
   ): AbilityUnlock[] {
     if (!selectedWeapons || skillPointData.skillPoints <= 0) {
@@ -125,9 +124,8 @@ export class SkillPointSystem {
     abilityKey: 'E' | 'R' | 'F' | 'P',
     weaponSlot: 'primary' | 'secondary'
   ): boolean {
-    const key = `${weaponType}_${weaponSlot}`;
-    const unlockedForWeapon = skillPointData.unlockedAbilities[key] || new Set();
-    return unlockedForWeapon.has(abilityKey);
+    // All abilities are unlocked by default for all weapons
+    return true;
   }
   
   /**

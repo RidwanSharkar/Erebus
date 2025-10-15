@@ -66,7 +66,7 @@ export class ControlSystem extends System {
   }>) => void;
 
   // Callback for broadcasting healing in PVP
-  private onBroadcastHealing?: (healingAmount: number, healingType: string, position: Vector3) => void;
+  private onBroadcastHealing?: (healingAmount: number, healingType: string, position: Vector3, targetPlayerId?: string) => void;
   
   // Callback for Frost Nova activation
   private onFrostNovaCallback?: (position: Vector3, direction: Vector3) => void;
@@ -85,6 +85,9 @@ export class ControlSystem extends System {
   
   // Callback for broadcasting debuff effects in PVP
   private onDebuffCallback?: (targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, position: Vector3) => void;
+  
+  // Callback for applying status effects to enemies in multiplayer (public so CombatSystem can access)
+  public onApplyEnemyStatusEffectCallback?: (enemyId: string, effectType: string, duration: number) => void;
   
   // Callback for Skyfall ability
   private onSkyfallCallback?: (position: Vector3, direction: Vector3) => void;
@@ -322,7 +325,6 @@ export class ControlSystem extends System {
   private selectedWeapons?: {
     primary: WeaponType;
     secondary: WeaponType;
-    tertiary?: WeaponType;
   } | null;
 
   // Damage number ID counter
@@ -346,7 +348,6 @@ export class ControlSystem extends System {
     selectedWeapons?: {
       primary: WeaponType;
       secondary: WeaponType;
-      tertiary?: WeaponType;
     } | null
   ) {
     super();
@@ -544,10 +545,6 @@ export class ControlSystem extends System {
     } else if (this.inputManager.isKeyPressed('2') && this.selectedWeapons?.secondary) {
       if (this.currentWeapon !== this.selectedWeapons.secondary) {
         this.switchToWeapon(this.selectedWeapons.secondary, currentTime);
-      }
-    } else if (this.inputManager.isKeyPressed('3') && this.selectedWeapons?.tertiary) {
-      if (this.currentWeapon !== this.selectedWeapons.tertiary) {
-        this.switchToWeapon(this.selectedWeapons.tertiary, currentTime);
       }
     }
   }
@@ -1442,8 +1439,11 @@ export class ControlSystem extends System {
     // Get player's health component and heal for 30 HP 
     const healthComponent = this.playerEntity.getComponent(Health);
     if (healthComponent) {
-    const didHeal = healthComponent.heal(60); // REANIMATE HEAL AMOUNT
+      const didHeal = healthComponent.heal(60); // REANIMATE HEAL AMOUNT
     }
+    
+    // Heal nearby allies within 5 units (co-op mode)
+    this.healNearbyAllies(playerTransform, 60, 5.0);
   }
 
   private triggerReanimateEffect(playerTransform: Transform): void {
@@ -1472,6 +1472,85 @@ export class ControlSystem extends System {
     // Broadcast healing in PVP mode
     if (this.onBroadcastHealing) {
       this.onBroadcastHealing(60, 'reanimate', playerPosition);
+    }
+  }
+
+  private healNearbyAllies(playerTransform: Transform, healAmount: number, radius: number): void {
+    // Get all entities in the world
+    const allEntities = this.world.getAllEntities();
+    const playerPosition = playerTransform.position;
+    
+    // Get local socket ID to avoid healing ourselves again
+    const localSocketId = (window as any).localSocketId;
+    const serverPlayerEntities = (window as any).serverPlayerEntities;
+    
+    if (!serverPlayerEntities || !serverPlayerEntities.current) {
+      return; // No multiplayer context
+    }
+    
+    let healedCount = 0;
+    
+    // Iterate through all entities to find nearby players
+    allEntities.forEach(entity => {
+      // Skip ourselves
+      if (entity === this.playerEntity) return;
+      
+      const entityTransform = entity.getComponent(Transform);
+      const entityHealth = entity.getComponent(Health);
+      
+      if (!entityTransform || !entityHealth || entityHealth.isDead) return;
+      
+      // Check if this entity is a player (not an enemy)
+      let isPlayer = false;
+      let targetPlayerId: string | null = null;
+      
+      serverPlayerEntities.current.forEach((localEntityId: number, playerId: string) => {
+        if (localEntityId === entity.id) {
+          isPlayer = true;
+          targetPlayerId = playerId;
+        }
+      });
+      
+      // Only heal other players, not enemies
+      if (!isPlayer || !targetPlayerId) return;
+      
+      // Check distance
+      const distance = playerPosition.distanceTo(entityTransform.position);
+      if (distance > radius) return;
+      
+      // Heal this ally
+      const didHeal = entityHealth.heal(healAmount);
+      
+      if (didHeal) {
+        healedCount++;
+        
+        // Create healing number for this ally
+        const allyPosition = entityTransform.position.clone();
+        allyPosition.y += 1.5;
+        
+        if (this.onDamageNumbersUpdate) {
+          this.onDamageNumbersUpdate([{
+            id: this.nextDamageNumberId.toString(),
+            damage: healAmount,
+            position: allyPosition,
+            isCritical: false,
+            timestamp: Date.now(),
+            damageType: 'reanimate_healing'
+          }]);
+          this.nextDamageNumberId++;
+        }
+        
+        // Broadcast healing for this ally with targetPlayerId
+        if (this.onBroadcastHealing) {
+          this.onBroadcastHealing(healAmount, 'reanimate_ally', allyPosition, targetPlayerId);
+        }
+        
+        console.log(`💚 Reanimate healed ally ${targetPlayerId} for ${healAmount} HP (${distance.toFixed(1)} units away)`);
+      }
+    });
+    
+    if (healedCount > 0) {
+      console.log(`💚 Reanimate healed ${healedCount} nearby allies!`);
     }
   }
 
@@ -1647,6 +1726,11 @@ export class ControlSystem extends System {
           
           // Add frozen visual effect for this enemy
           addGlobalFrozenEnemy(entity.id.toString(), entityPosition);
+          
+          // Send freeze status to server for multiplayer (co-op mode)
+          if (this.onApplyEnemyStatusEffectCallback && entity.userData?.serverEnemyId) {
+            this.onApplyEnemyStatusEffectCallback(entity.userData.serverEnemyId, 'freeze', 6000); // 6 seconds in ms
+          }
         } else {
           // This is likely another player in PVP mode - deal damage and freeze
           // CRITICAL FIX: First check if this entity represents the local player
@@ -1900,7 +1984,7 @@ export class ControlSystem extends System {
     this.onDamageNumbersUpdate = callback;
   }
 
-  public setBroadcastHealingCallback(callback: (healingAmount: number, healingType: string, position: Vector3) => void): void {
+  public setBroadcastHealingCallback(callback: (healingAmount: number, healingType: string, position: Vector3, targetPlayerId?: string) => void): void {
     this.onBroadcastHealing = callback;
   }
 
@@ -1918,6 +2002,10 @@ export class ControlSystem extends System {
         originalCallback(targetEntityId, debuffType, duration, position);
       }
     };
+  }
+
+  public setApplyEnemyStatusEffectCallback(callback: (enemyId: string, effectType: string, duration: number) => void): void {
+    this.onApplyEnemyStatusEffectCallback = callback;
   }
 
   public setLocalSocketId(socketId: string): void {
@@ -2173,9 +2261,9 @@ export class ControlSystem extends System {
       this.performSmite(playerTransform);
     }
 
-    // Handle DeathGrasp ability with 'Q' key
-    if (this.inputManager.isKeyPressed('q') && !this.isDeathGrasping && !this.isSmiting && !this.isSwinging && !this.isWraithStriking) {
-      this.performDeathGrasp(playerTransform);
+    // Handle Deflect ability with 'Q' key
+    if (this.inputManager.isKeyPressed('q') && !this.isDeflecting && !this.isSmiting && !this.isSwinging && !this.isWraithStriking) {
+      this.performDeflect(playerTransform);
     }
 
     // Handle Corrupted Aura ability with 'F' key (just pressed detection)
@@ -2779,6 +2867,11 @@ export class ControlSystem extends System {
       
       // Trigger haunted soul visual effect
       this.triggerHauntedSoulEffect(position);
+      
+      // Send corrupted status to server for multiplayer (co-op mode)
+      if (this.onApplyEnemyStatusEffectCallback && entity.userData?.serverEnemyId) {
+        this.onApplyEnemyStatusEffectCallback(entity.userData.serverEnemyId, 'corrupted', 8000); // 8 seconds in ms
+      }
     } else {
       // This is likely another player in PVP mode - broadcast corrupted debuff
       const localSocketId = (window as any).localSocketId;
@@ -3127,6 +3220,9 @@ export class ControlSystem extends System {
           const enemy = entity.getComponent(Enemy);
           if (enemy) {
             enemy.freeze(2.0, currentTime); // 2 second stun using freeze mechanics
+            
+            // Add visual stun effect (different from freeze)
+            addGlobalStunnedEnemy(entity.id.toString(), targetTransform.position);
           } else {
             // apply stun debuff
             const localSocketId = (window as any).localSocketId;
@@ -3788,7 +3884,7 @@ export class ControlSystem extends System {
       weaponSlot = 'secondary';
       weaponType = this.selectedWeapons.secondary;
     } else {
-      // For tertiary weapon or unknown, allow abilities (tertiary unlocks later)
+      // For unknown weapon, allow abilities
       return true;
     }
 
@@ -4802,7 +4898,7 @@ export class ControlSystem extends System {
     };
   }
 
-  public switchWeaponBySlot(slot: 1 | 2 | 3): void {
+  public switchWeaponBySlot(slot: 1 | 2): void {
     const currentTime = Date.now() / 1000;
 
     // Prevent rapid weapon switching
@@ -4816,8 +4912,6 @@ export class ControlSystem extends System {
       weaponType = this.selectedWeapons.primary;
     } else if (slot === 2 && this.selectedWeapons?.secondary) {
       weaponType = this.selectedWeapons.secondary;
-    } else if (slot === 3 && this.selectedWeapons?.tertiary) {
-      weaponType = this.selectedWeapons.tertiary;
     }
 
     if (weaponType && this.currentWeapon !== weaponType) {

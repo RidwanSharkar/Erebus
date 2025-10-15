@@ -5,16 +5,16 @@ interface SkyProps {}
 
 
 /**
- * Creates a custom sky shader with tropical indigo lighter purple gradient
+ * Creates a custom sky shader with blue gradient
  */
 const createSkyShader = () => {
-  // Create tropical indigo lighter purple gradient colors
-  // Top: darker deep indigo blue
-  const topColor = new Color('#FC5656');
-  // Middle: darker tropical blue-purple
-  const middleColor = new Color('#FC5656');
-  // Bottom: darker blue that blends with the sky
-  const bottomColor = new Color('#9B97D8');
+  // Create blue gradient sky colors
+  // Top: light blue
+  const topColor = new Color('#87CEEB');
+  // Middle: medium blue
+  const middleColor = new Color('#4682B4');
+  // Bottom: darker blue for horizon
+  const bottomColor = new Color('#2F4F4F');
   
   return {
     uniforms: {
@@ -54,7 +54,7 @@ const createSkyShader = () => {
 };
 
 /**
- * Custom sky component with tropical indigo lighter purple gradient shader
+ * Custom sky component with blue gradient shader
  * Creates an immersive atmospheric backdrop for the game
  */
 const CustomSky: React.FC<SkyProps> = () => {

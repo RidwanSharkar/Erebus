@@ -15,9 +15,8 @@ interface HotkeyPanelProps {
   selectedWeapons?: {
     primary: WeaponType;
     secondary: WeaponType;
-    tertiary?: WeaponType;
   } | null;
-  onWeaponSwitch?: (slot: 1 | 2 | 3) => void;
+  onWeaponSwitch?: (slot: 1 | 3) => void;
   skillPointData?: SkillPointData;
   onUnlockAbility?: (unlock: AbilityUnlock) => void;
   purchasedItems?: string[];
@@ -131,22 +130,6 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
     };
     weapons.push(primaryWeapon);
 
-    // Secondary weapon - key 2
-    const secondaryWeapon = {
-      name: selectedWeapons.secondary === WeaponType.SWORD ? 'Sword' :
-            selectedWeapons.secondary === WeaponType.BOW ? 'Bow' :
-            selectedWeapons.secondary === WeaponType.SCYTHE ? 'Scythe' :
-            selectedWeapons.secondary === WeaponType.SABRES ? 'Sabres' :
-            selectedWeapons.secondary === WeaponType.RUNEBLADE ? 'Runeblade' : 'Unknown',
-      type: selectedWeapons.secondary,
-      key: '2' as const,
-      icon: selectedWeapons.secondary === WeaponType.SWORD ? '💎' :
-            selectedWeapons.secondary === WeaponType.BOW ? '🏹' :
-            selectedWeapons.secondary === WeaponType.SCYTHE ? '🦋' :
-            selectedWeapons.secondary === WeaponType.SABRES ? '⚔️' :
-            selectedWeapons.secondary === WeaponType.RUNEBLADE ? '🔮' : '❓'
-    };
-    weapons.push(secondaryWeapon);
 
     // Purchased items - key 3 (takes precedence over tertiary weapon)
     if (purchasedItems.length > 0) {
@@ -171,24 +154,6 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
         isPurchasedItem: true // Custom flag to identify this is a purchased item
       };
       weapons.push(purchasedItemSlot);
-    }
-    // Tertiary weapon - key 3 (only if no purchased items and tertiary weapon exists)
-    else if (selectedWeapons.tertiary) {
-      const tertiaryWeapon = {
-        name: selectedWeapons.tertiary === WeaponType.SWORD ? 'Sword' :
-              selectedWeapons.tertiary === WeaponType.BOW ? 'Bow' :
-              selectedWeapons.tertiary === WeaponType.SCYTHE ? 'Scythe' :
-              selectedWeapons.tertiary === WeaponType.SABRES ? 'Sabres' :
-              selectedWeapons.tertiary === WeaponType.RUNEBLADE ? 'Runeblade' : 'Unknown',
-        type: selectedWeapons.tertiary,
-        key: '3' as const,
-        icon: selectedWeapons.tertiary === WeaponType.SWORD ? '💎' :
-              selectedWeapons.tertiary === WeaponType.BOW ? '🏹' :
-              selectedWeapons.tertiary === WeaponType.SCYTHE ? '🦋' :
-              selectedWeapons.tertiary === WeaponType.SABRES ? '⚔️' :
-              selectedWeapons.tertiary === WeaponType.RUNEBLADE ? '🔮' : '❓'
-      };
-      weapons.push(tertiaryWeapon);
     }
   }
 
@@ -360,8 +325,8 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
                 if ((weapon as any).isPurchasedItem) return;
 
                 if (!isOnCooldown && onWeaponSwitch) {
-                  const slot = weapon.key === '1' ? 1 : weapon.key === '2' ? 2 : 3;
-                  onWeaponSwitch(slot as 1 | 2 | 3);
+                  const slot = weapon.key === '1' ? 1 : 3;
+                  onWeaponSwitch(slot as 1 | 3);
                 }
               }, [isOnCooldown, onWeaponSwitch, weapon.key, weapon]);
 
@@ -420,7 +385,6 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
             {/* Ability Icons */}
             {abilitiesWithLockStatus.map((ability) => {
               const currentCooldown = cooldowns[ability.key] || 0;
-              const cooldownPercentage = ability.cooldown > 0 ? (currentCooldown / ability.cooldown) * 100 : 0;
               const isOnCooldown = currentCooldown > 0;
               const isUnassigned = ability.name === 'Not Assigned';
               const isLocked = ability.isLocked;
@@ -551,14 +515,11 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
                       );
                     }
 
-                    // Check for Death Grasp active state
-                    if (ability.key === 'Q' && currentWeapon === WeaponType.RUNEBLADE) {
-                      const abilityData = abilityCooldowns[ability.key];
-                      if (abilityData && abilityData.isActive) {
-                        return (
-                          <div className="absolute inset-0 rounded-lg bg-purple-400 bg-opacity-20 border-2 border-purple-400 animate-pulse" />
-                        );
-                      }
+                    // Check for Deflect active state
+                    if (ability.key === 'Q' && currentWeapon === WeaponType.RUNEBLADE && controlSystem.isDeflectActive?.()) {
+                      return (
+                        <div className="absolute inset-0 rounded-lg bg-yellow-400 bg-opacity-20 border-2 border-yellow-400 animate-pulse" />
+                      );
                     }
 
                     // Check for Smite active state
