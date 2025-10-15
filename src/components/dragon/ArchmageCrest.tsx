@@ -26,7 +26,7 @@ export default function ArchmageCrest({
       switch (weaponSubclass) {
         // Scythe subclasses
         case WeaponSubclass.CHAOS:
-          return { main: '#3EB0FC', emissive: '#87CEEB', glow: '#E0F6FF', secondary: '#A5F3FC' };
+          return { main: '#3FAEFC', emissive: '#3FAEFC', glow: '#3FAEFC', secondary: '#3FAEFC' };
         case WeaponSubclass.ABYSSAL:
           return { main: '#17CE54', emissive: '#4A90E2', glow: '#A5F3FC', secondary: '#87CEEB' };
 
@@ -44,7 +44,7 @@ export default function ArchmageCrest({
 
         // Runeblade subclasses
         case WeaponSubclass.ARCANE:
-          return { main: '#3FD3FC', emissive: '#87CEEB', glow: '#E0F6FF', secondary: '#B0E0E6' };
+          return { main: '#E8CD57', emissive: '#E8CD57', glow: '#E8CD57', secondary: '#B0E0E6' };
         case WeaponSubclass.NATURE:
           return { main: '#00FF88', emissive: '#32CD32', glow: '#90EE90', secondary: '#66CDAA' };
 

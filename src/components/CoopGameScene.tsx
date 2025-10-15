@@ -35,44 +35,27 @@ import { InterpolationSystem } from '@/systems/InterpolationSystem';
 import { MerchantSystem } from '@/systems/MerchantSystem';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { ReanimateRef } from '@/components/weapons/Reanimate';
-import PVPReanimateEffect from '@/components/weapons/PVPReanimateEffect';
+
 import Smite from '@/components/weapons/Smite';
-import ColossusStrike from '@/components/weapons/ColossusStrike';
+
 import WindShearProjectileManager, { triggerWindShearProjectile } from '@/components/projectiles/WindShearProjectile';
-import WindShearTornadoEffect from '@/components/projectiles/WindShearTornadoEffect';
-import DeathGraspProjectile from '@/components/weapons/DeathGraspProjectile';
+
 import UnifiedProjectileManager from '@/components/managers/UnifiedProjectileManager';
 import BowPowershotManager from '@/components/projectiles/BowPowershotManager';
 import FrostNovaManager from '@/components/weapons/FrostNovaManager';
 import StunManager from '@/components/weapons/StunManager';
-import FrostNova from '@/components/weapons/FrostNova';
+
 import CobraShotManager from '@/components/projectiles/CobraShotManager';
-import ViperStingManager from '@/components/projectiles/ViperStingManager';
+
 import CloudkillManager, { triggerGlobalCloudkill, triggerGlobalCloudkillWithTargets } from '@/components/projectiles/CloudkillManager';
-import VenomEffect from '@/components/projectiles/VenomEffect';
-import DebuffIndicator from '@/components/ui/DebuffIndicator';
-import FrozenEffect from '@/components/weapons/FrozenEffect';
-import StunnedEffect from '@/components/weapons/StunnedEffect';
-import DeathEffect from '@/components/weapons/DeathEffect';
-import SabreReaperMistEffect from '@/components/weapons/SabreReaperMistEffect';
-import HauntedSoulEffect from '@/components/weapons/HauntedSoulEffect';
-import CrossentropyExplosion from '@/components/projectiles/CrossentropyExplosion';
-import SummonTotemExplosion from '@/components/projectiles/SummonTotemExplosion';
 import {
-  OptimizedPVPCobraShotManager,
-  OptimizedPVPBarrageManager,
-  OptimizedPVPFrostNovaManager,
-  OptimizedPVPViperStingManager,
-  OptimizedPVPCrossentropyManager,
   useOptimizedPVPEffects
 } from '@/components/pvp/OptimizedPVPManagers';
 import { pvpObjectPool } from '@/utils/PVPObjectPool';
 import { pvpStateBatcher, PVPStateUpdateHelpers } from '@/utils/PVPStateBatcher';
 import DeflectShieldManager, { triggerGlobalDeflectShield } from '@/components/weapons/DeflectShieldManager';
 import PlayerHealthBar from '@/components/ui/PlayerHealthBar';
-import MerchantUI from '@/components/ui/MerchantUI';
 import EnhancedGround from '@/components/environment/EnhancedGround';
-import DetailedInstancedEnemyRenderer from '@/components/enemies/DetailedInstancedEnemyRenderer';
 
 
 import { DamageNumberData } from '@/components/DamageNumbers';
@@ -2566,7 +2549,7 @@ const hasMana = useCallback((amount: number) => {
               undefined, // Let PVPSummonTotemManager handle active effects
               undefined, // Let PVPSummonTotemManager handle damage numbers
               undefined, // Let PVPSummonTotemManager handle damage number ID
-              undefined, // Let PVPSummonTotemManager handle healing
+              undefined, // Remote totems healing is handled by the server
               data.playerId // Pass remote caster ID
             );
           }
@@ -3977,7 +3960,7 @@ const hasMana = useCallback((amount: number) => {
       // Broadcast to other players first
       broadcastPlayerAbility('summon_totem', position);
 
-      // Trigger local totem creation via PVPSummonTotemManager
+      // Trigger local totem creation via PVPSummonTotemManager with healing callback
       if (socket?.id && (window as any).triggerGlobalSummonTotem) {
         (window as any).triggerGlobalSummonTotem(
           position,
@@ -3987,7 +3970,35 @@ const hasMana = useCallback((amount: number) => {
           undefined, // Let PVPSummonTotemManager handle active effects
           undefined, // Let PVPSummonTotemManager handle damage numbers
           undefined, // Let PVPSummonTotemManager handle damage number ID
-          undefined, // Let PVPSummonTotemManager handle healing
+          (healAmount: number, targetPlayerId?: string) => {
+            // Heal callback - broadcast healing to specific player or all nearby players
+            if (targetPlayerId && player && socket && currentRoomId) {
+              const transform = player.getComponent(Transform);
+              if (transform) {
+                // Broadcast single-target healing (totem heals specific player)
+                socket.emit('player-healing', {
+                  roomId: currentRoomId,
+                  healingAmount: healAmount,
+                  healingType: 'summon_totem',
+                  position: {
+                    x: transform.position.x,
+                    y: transform.position.y,
+                    z: transform.position.z
+                  },
+                  targetPlayerId: targetPlayerId, // Heal the specific target player
+                  sourcePlayerId: socket.id
+                });
+
+                // If healing the local player, apply it immediately
+                if (targetPlayerId === socket.id) {
+                  const healthComponent = player.getComponent(Health);
+                  if (healthComponent) {
+                    healthComponent.heal(healAmount);
+                  }
+                }
+              }
+            }
+          },
           socket.id  // Pass caster ID
         );
       }
@@ -4770,6 +4781,47 @@ const hasMana = useCallback((amount: number) => {
         );
       })}
 
+      {/* PVP Smite Effects */}
+      {pvpSmiteEffects.map(effect => {
+        // Prepare enemy data including BOSS and BOSS-SKELETON enemies
+        const smiteEnemyData = Array.from(enemies.values())
+          .filter(enemy => !enemy.isDying && (enemy.type === 'boss' || enemy.type === 'boss-skeleton'))
+          .map(enemy => ({
+            id: enemy.id,
+            position: new Vector3(enemy.position.x, enemy.position.y, enemy.position.z),
+            health: enemy.health
+          }));
+
+        return (
+          <Smite
+            key={`smite-${effect.id}`}
+            weaponType={WeaponType.RUNEBLADE}
+            position={effect.position}
+            onComplete={() => {
+              // Remove effect after completion
+              setPvpSmiteEffects(prev => prev.filter(e => e.id !== effect.id));
+            }}
+            onHit={(targetId, damage) => {
+              // Handle damage to enemies
+              if (socket && currentRoomId) {
+                socket.emit('player-hit-enemy', {
+                  roomId: currentRoomId,
+                  enemyId: targetId,
+                  damage: damage,
+                  isCritical: false
+                });
+              }
+            }}
+            onDamageDealt={effect.onDamageDealt}
+            enemyData={smiteEnemyData}
+            setDamageNumbers={smiteDamageNumbers.setDamageNumbers}
+            nextDamageNumberId={smiteDamageNumbers.nextDamageNumberId}
+            combatSystem={engineRef.current?.getWorld().getSystem(CombatSystem)}
+            isCorruptedAuraActive={controlSystemRef.current?.isCorruptedAuraActive() || false}
+          />
+        );
+      })}
+
       {/* Unified Managers - Single query optimization */}
       {engineRef.current && (
         <>
@@ -4779,6 +4831,10 @@ const hasMana = useCallback((amount: number) => {
           <StunManager world={engineRef.current.getWorld()} />
           <CobraShotManager world={engineRef.current.getWorld()} />
           <DeflectShieldManager />
+          <PVPSummonTotemManager 
+            players={players}
+            localSocketId={socket?.id}
+          />
         </>
       )}
         </>

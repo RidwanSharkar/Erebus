@@ -31,7 +31,7 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
   const fadeDuration = 0.5; // 500ms fade duration
   const [opacity, setOpacity] = useState(1);
   const { scene } = useThree();
-  const size = 0.25;
+  const size = 0.225;
   const color = new Color('#FF4500');
 
   // Spiral parameters

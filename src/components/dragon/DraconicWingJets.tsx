@@ -37,7 +37,7 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
       switch (weaponSubclass) {
         // Scythe subclasses
         case WeaponSubclass.CHAOS:
-          return { main: '#3EB0FC', emissive: '#87CEEB', particle: '#E0F6FF' }; // Keep original chaos color
+          return { main: '#8783D1', emissive: '#A890F0', particle: '#D4C4F7' };
         case WeaponSubclass.ABYSSAL:
           return { main: '#17CE54', emissive: '#4A90E2', particle: '#A5F3FC' }; // Purple for abyssal
 
@@ -55,7 +55,7 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
 
         // Runeblade subclasses
         case WeaponSubclass.ARCANE:
-          return { main: '#8783D1', emissive: '#A890F0', particle: '#D4C4F7' }; // Bright green for arcane
+          return { main: '#3FD3FC', emissive: '#87CEEB', particle: '#E0F6FF' }; // Light blue for divinity
         case WeaponSubclass.NATURE:
           return { main: '#00FF88', emissive: '#32CD32', particle: '#90EE90' }; // Darker green for nature
 

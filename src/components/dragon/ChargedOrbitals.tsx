@@ -30,7 +30,7 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
       switch (weaponSubclass) {
         // Scythe subclasses
         case WeaponSubclass.CHAOS:
-          return '#5EFAFF';
+          return '#84C3D1';
         case WeaponSubclass.ABYSSAL:
           return '#17CE54';
         

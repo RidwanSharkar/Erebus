@@ -364,7 +364,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
                 id: explosionIdCounter.current++,
                 position: impactPosition.clone(),
                 color: new Color('#8B00FF'), // Purple/magenta explosion for Crossentropy
-                size: 2.5, // Larger explosion than EntropicBolt
+                size: 1.75, // Larger explosion than EntropicBolt
                 duration: 1.0, // Duration for Crossentropy explosion
                 type: 'crossentropy' as const,
                 chargeTime: 1.0 // Default charge time, could be dynamic based on player charge
@@ -470,7 +470,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             <CrossentropyExplosion
               key={explosion.id}
               position={explosion.position}
-              chargeTime={explosion.chargeTime || 0.75}
+              chargeTime={explosion.chargeTime || 1.0}
               explosionStartTime={Date.now()}
               onComplete={() => handleExplosionComplete(explosion.id)}
             />
@@ -482,7 +482,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
               key={explosion.id}
               position={explosion.position}
               color={explosion.color}
-              size={explosion.size/2}
+              size={explosion.size}
               duration={explosion.duration}
               onComplete={() => handleExplosionComplete(explosion.id)}
             />

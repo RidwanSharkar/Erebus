@@ -9,7 +9,7 @@ interface MeteorTrailProps {
 }
 
 export default function MeteorTrail({ color, size, meshRef }: MeteorTrailProps) {
-  const particlesCount = 22;
+  const particlesCount = 16;
   const particlesRef = useRef<THREE.Points>(null);
   const positionsRef = useRef<Float32Array>(new Float32Array(particlesCount * 3));
   const opacitiesRef = useRef<Float32Array>(new Float32Array(particlesCount));

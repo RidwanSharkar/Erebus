@@ -160,7 +160,7 @@ export class ControlSystem extends System {
   private swordFireRate = 0.825; // Rate for sword attacks
   private runebladeFireRate = 0.725; // Runeblade attack rate
   private sabresFireRate = 0.6; // Sabres dual attack rate (600ms between attacks)
-  private scytheFireRate = 0.35; // EntropicBolt rate (0.33s cooldown)
+  private scytheFireRate = 0.25; // EntropicBolt rate (0.33s cooldown)
   private crossentropyFireRate = 2; // CrossentropyBolt rate (1 per second)
   private summonTotemFireRate = 5.0; // Summon Totem rate (5 seconds cooldown)
   private viperStingFireRate = 2.0; // Viper Sting rate (2 seconds cooldown)
@@ -1339,7 +1339,7 @@ export class ControlSystem extends System {
     // Create EntropicBolt projectile using the new method
     const entropicConfig = {
       speed: 20, // Faster than CrossentropyBolt
-      damage: isCryoflameUnlocked ? 45 : 20, // Cryoflame increases damage to 45
+      damage: isCryoflameUnlocked ? 55 : 36, // Cryoflame increases damage to 45
       lifetime: 2, // Shorter lifetime
       piercing: false, // Non-piercing so projectile gets destroyed on hit
       explosive: false, // No explosion effect
@@ -1378,7 +1378,7 @@ export class ControlSystem extends System {
     // Create CrossentropyBolt projectile using the existing method
     const crossentropyConfig = {
       speed: 25, // Slower than EntropicBolt
-      damage: 90, // Higher damage for R ability
+      damage: 200, // Higher damage for R ability
       lifetime: 2.5, // Longer lifetime
       piercing: false, // 
       explosive: false, // Disabled explosion effect for performance

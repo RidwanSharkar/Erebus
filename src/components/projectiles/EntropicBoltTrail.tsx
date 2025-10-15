@@ -150,7 +150,7 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
             float d = length(gl_PointCoord - vec2(0.5));
             float strength = smoothstep(0.5, 0.1, d);
             vec3 glowColor;
-            float emissiveMultiplier = 1.0;
+            float emissiveMultiplier = 0.5;
             if (uIsCryoflame) {
               // For Cryoflame: mix with a deep navy blue for a rich blue effect and increase emissive intensity
               glowColor = mix(uColor, vec3(0.2, 0.4, 0.8), 0.4);

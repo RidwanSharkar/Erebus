@@ -132,7 +132,7 @@ const createBranchGeometry = (branch: TreeBranch): THREE.BufferGeometry => {
     branch.radius * 0.8, // Top radius (slightly smaller)
     branch.radius,        // Bottom radius
     length,
-    6                     // 6 segments for natural look
+    7                     // 6 segments for natural look
   );
   
   // Position cylinder so it starts at origin and extends along Y-axis

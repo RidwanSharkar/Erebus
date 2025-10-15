@@ -126,11 +126,11 @@ export default function EntropicBolt({
         <>
           {/* Entropic trail effect */}
           <EntropicBoltTrail
-            color={isCryoflame ? new Color("#1e40af") : new Color("#FF4500")} // Deep cobalt blue for Cryoflame, orange-red for normal
+            color={new Color("#1e40af")} // Deep cobalt blue (always use Cryoflame visuals)
             size={0.3}
             meshRef={boltRef}
             opacity={1}
-            isCryoflame={isCryoflame}
+            isCryoflame={true}
           />
           
           <group ref={boltRef} position={position.toArray()}>
@@ -144,7 +144,7 @@ export default function EntropicBolt({
 
               {/* Light source */}
               <pointLight
-                color={isCryoflame ? "#1e40af" : "#FF4500"}
+                color="#1e40af"
                 intensity={3}
                 distance={4}
                 decay={2}
@@ -211,9 +211,9 @@ function EntropicBoltImpact({ position, onComplete, isCryoflame = false }: Entro
       <mesh>
         <sphereGeometry args={[0.675 * (1 + elapsed * 1.5), 12, 12]} />
         <meshStandardMaterial
-          color={isCryoflame ? "#1e40af" : "#FF4500"}
-          emissive={isCryoflame ? "#3b82f6" : "#FF6600"}
-          emissiveIntensity={(isCryoflame ? 2.0 : 1.0) * fade}
+          color="#1e40af"
+          emissive="#3b82f6"
+          emissiveIntensity={2.0 * fade}
           transparent
           opacity={0.6 * fade}
           blending={AdditiveBlending}
@@ -225,9 +225,9 @@ function EntropicBoltImpact({ position, onComplete, isCryoflame = false }: Entro
       <mesh>
         <sphereGeometry args={[0.45 * (1 + elapsed * 2), 8, 8]} />
         <meshStandardMaterial
-          color={isCryoflame ? "#3b82f6" : "#FFA500"}
-          emissive={isCryoflame ? "#60a5fa" : "#FFA500"}
-          emissiveIntensity={(isCryoflame ? 2.0 : 1.0) * fade}
+          color="#3b82f6"
+          emissive="#60a5fa"
+          emissiveIntensity={2.0 * fade}
           transparent
           opacity={0.7 * fade}
           blending={AdditiveBlending}
@@ -252,9 +252,9 @@ function EntropicBoltImpact({ position, onComplete, isCryoflame = false }: Entro
           >
             <coneGeometry args={[0.08, 0.4, 4]} />
             <meshStandardMaterial
-              color={isCryoflame ? "#dbeafe" : "#FFD700"}
-              emissive={isCryoflame ? "#bfdbfe" : "#FFD700"}
-              emissiveIntensity={(isCryoflame ? 3.0 : 1.5) * fade}
+              color="#dbeafe"
+              emissive="#bfdbfe"
+              emissiveIntensity={3.0 * fade}
               transparent
               opacity={0.8 * fade}
             />
@@ -270,9 +270,9 @@ function EntropicBoltImpact({ position, onComplete, isCryoflame = false }: Entro
         >
           <torusGeometry args={[1 * (1 + elapsed * 1.5) + i * 0.2, 0.08, 6, 16]} />
           <meshStandardMaterial
-            color={isCryoflame ? "#1e40af" : "#FF4500"}
-            emissive={isCryoflame ? "#3b82f6" : "#FF6600"}
-            emissiveIntensity={(isCryoflame ? 3.0 : 1.5) * fade}
+            color="#1e40af"
+            emissive="#3b82f6"
+            emissiveIntensity={3.0 * fade}
             transparent
             opacity={0.5 * fade * (1 - i * 0.3)}
             blending={AdditiveBlending}
@@ -282,7 +282,7 @@ function EntropicBoltImpact({ position, onComplete, isCryoflame = false }: Entro
 
       {/* Bright flash */}
       <pointLight
-        color={isCryoflame ? "#1e40af" : "#FF4500"}
+        color="#1e40af"
         intensity={8 * fade}
         distance={4}
         decay={2}
