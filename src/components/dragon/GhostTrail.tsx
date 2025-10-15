@@ -43,7 +43,7 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
       switch (weaponSubclass) {
         // Scythe subclasses
         case WeaponSubclass.CHAOS:
-          return '#0095FF'; // Keep original chaos color
+          return '#17CC93'; // Keep original chaos color
         case WeaponSubclass.ABYSSAL:
           return '#0095FF'; // Purple for abyssal
         
@@ -62,7 +62,7 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
         
         // Runeblade subclasses
         case WeaponSubclass.ARCANE:
-          return '#00C8FF'; // Bright green for arcane
+          return '#00B7FF'; // Bright green for arcane
         case WeaponSubclass.NATURE:
           return '#00FF88'; // Darker green for nature
 

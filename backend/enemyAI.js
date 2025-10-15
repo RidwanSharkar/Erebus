@@ -18,6 +18,10 @@ class EnemyAI {
     // Boss meteor cooldown tracking
     this.bossMeteorCooldown = new Map(); // enemyId -> lastMeteorTime
 
+    // Boss skeleton summoning tracking
+    this.bossSkeletonSummonCooldown = new Map(); // enemyId -> lastSummonTime
+    this.bossSummonedSkeletons = new Map(); // enemyId -> Set of skeleton IDs
+
     // Enemy taunt tracking (for Deathgrasp ability)
     this.enemyTaunts = new Map(); // enemyId -> { taunterPlayerId, tauntEndTime }
   }
@@ -81,6 +85,12 @@ class EnemyAI {
       return;
     }
 
+    // Special handling for boss-summoned skeletons
+    if (enemy.type === 'boss-skeleton') {
+      this.updateBossSkeletonAI(enemy, players);
+      return;
+    }
+
     // Get or create aggro data for this enemy
     let aggroData = this.enemyAggro.get(enemy.id);
     if (!aggroData) {
@@ -110,6 +120,76 @@ class EnemyAI {
 
     // Move enemy towards target
     this.moveEnemyTowardsTarget(enemy, targetPlayer || players.find(p => p.id === aggroData.targetPlayerId));
+  }
+
+  updateBossSkeletonAI(skeleton, players) {
+    // Get or create aggro data for this skeleton
+    let aggroData = this.enemyAggro.get(skeleton.id);
+    if (!aggroData) {
+      // Find closest player as initial target
+      const closestPlayer = this.findClosestPlayer(skeleton, players);
+      if (!closestPlayer) return;
+
+      aggroData = {
+        targetPlayerId: closestPlayer.id,
+        lastUpdate: Date.now(),
+        aggro: 100
+      };
+      this.enemyAggro.set(skeleton.id, aggroData);
+    }
+
+    // Find current target player
+    const targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
+    if (!targetPlayer) {
+      // Target player left, find new target
+      const newTarget = this.findClosestPlayer(skeleton, players);
+      if (newTarget) {
+        aggroData.targetPlayerId = newTarget.id;
+      } else {
+        return;
+      }
+    }
+
+    // Check if skeleton can attack target (within range)
+    const distance = this.calculateDistance(skeleton.position, targetPlayer.position);
+    const attackRange = 2.65;
+    const attackCooldown = 2000; // 2 seconds between attacks
+
+    if (distance <= attackRange) {
+      // Within attack range - check attack cooldown
+      if (!this.bossAttackCooldown.has(skeleton.id)) {
+        this.bossAttackCooldown.set(skeleton.id, 0);
+      }
+
+      const lastAttackTime = this.bossAttackCooldown.get(skeleton.id);
+      const now = Date.now();
+
+      if (now - lastAttackTime >= attackCooldown) {
+        // Attack the player
+        this.bossSkeletonAttackPlayer(skeleton, targetPlayer);
+        this.bossAttackCooldown.set(skeleton.id, now);
+      }
+    } else {
+      // Outside attack range - move towards target
+      this.moveEnemyTowardsTarget(skeleton, targetPlayer);
+    }
+  }
+
+  bossSkeletonAttackPlayer(skeleton, player) {
+    const damage = skeleton.damage || 10; // Default 10 damage
+
+    // Broadcast skeleton attack to all players
+    if (this.io) {
+      this.io.to(this.roomId).emit('boss-skeleton-attack', {
+        skeletonId: skeleton.id,
+        targetPlayerId: player.id,
+        damage: damage,
+        position: skeleton.position,
+        timestamp: Date.now()
+      });
+    }
+
+    console.log(`💀 Boss skeleton ${skeleton.id} attacked player ${player.id} for ${damage} damage!`);
   }
 
   updateBossAI(boss, players) {
@@ -177,7 +257,7 @@ class EnemyAI {
     // ALWAYS update rotation to face target, even when standing still
     this.updateBossRotation(boss, targetPlayer);
 
-    // Check meteor cooldown (5 seconds)
+    // Check meteor cooldown (10 seconds)
     const meteorCooldown = 10000;
     const lastMeteorTime = this.bossMeteorCooldown.get(boss.id) || 0;
     const now = Date.now();
@@ -186,6 +266,21 @@ class EnemyAI {
       // Cast meteor ability at all player positions
       this.bossCastMeteor(boss, players);
       this.bossMeteorCooldown.set(boss.id, now);
+    }
+
+    // Check skeleton summoning cooldown (10 seconds)
+    const skeletonSummonCooldown = 10000;
+    const lastSkeletonSummonTime = this.bossSkeletonSummonCooldown.get(boss.id) || 0;
+
+    if (now - lastSkeletonSummonTime >= skeletonSummonCooldown) {
+      // Check current skeleton count
+      const currentSkeletons = this.bossSummonedSkeletons.get(boss.id) || new Set();
+      
+      // Only summon if less than 2 skeletons
+      if (currentSkeletons.size < 2) {
+        this.bossSummonSkeleton(boss);
+        this.bossSkeletonSummonCooldown.set(boss.id, now);
+      }
     }
 
     if (distance <= attackRange) {
@@ -250,6 +345,65 @@ class EnemyAI {
     }
 
     console.log(`☄️ Boss ${boss.id} cast meteor at ${targetPositions.length} player positions!`);
+  }
+
+  bossSummonSkeleton(boss) {
+    if (!this.room) return;
+
+    // Generate unique skeleton ID
+    const skeletonId = `skeleton-${boss.id}-${Date.now()}`;
+
+    // Position skeleton near boss (random offset)
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 3 + Math.random() * 2; // 3-5 units away
+
+    const skeletonPosition = {
+      x: boss.position.x + Math.cos(angle) * distance,
+      y: 0,
+      z: boss.position.z + Math.sin(angle) * distance
+    };
+
+    // Create skeleton enemy object
+    const skeleton = {
+      id: skeletonId,
+      type: 'boss-skeleton',
+      position: skeletonPosition,
+      rotation: 0,
+      health: 500,
+      maxHealth: 500,
+      isDying: false,
+      damage: 10,
+      bossId: boss.id // Track which boss summoned this skeleton
+    };
+
+    // Add to boss's summoned skeletons set
+    if (!this.bossSummonedSkeletons.has(boss.id)) {
+      this.bossSummonedSkeletons.set(boss.id, new Set());
+    }
+    this.bossSummonedSkeletons.get(boss.id).add(skeletonId);
+
+    // Add skeleton to room enemies through the game room
+    this.room.addEnemy(skeleton);
+
+    // Broadcast skeleton summon to all players
+    if (this.io) {
+      this.io.to(this.roomId).emit('boss-skeleton-summoned', {
+        bossId: boss.id,
+        skeleton: skeleton,
+        timestamp: Date.now()
+      });
+    }
+
+    console.log(`💀 Boss ${boss.id} summoned skeleton ${skeletonId} at position (${skeletonPosition.x.toFixed(2)}, ${skeletonPosition.z.toFixed(2)})`);
+  }
+
+  // Track when a boss skeleton is killed
+  removeBossSkeleton(bossId, skeletonId) {
+    const skeletons = this.bossSummonedSkeletons.get(bossId);
+    if (skeletons) {
+      skeletons.delete(skeletonId);
+      console.log(`💀 Skeleton ${skeletonId} removed from boss ${bossId}'s summons (${skeletons.size}/2 remaining)`);
+    }
   }
 
   // Track damage dealt to boss by each player
@@ -434,6 +588,7 @@ class EnemyAI {
     switch (enemyType) {
       case 'elite': return 0.0; // Elite enemies are stationary like training dummies
       case 'boss': return 2; // Boss moves at moderate speed
+      case 'boss-skeleton': return 2.5; // Boss-summoned skeletons move at normal skeleton speed
       case 'skeleton': return 2.0;
       case 'mage': return 1.5;
       case 'reaper': return 2.5;

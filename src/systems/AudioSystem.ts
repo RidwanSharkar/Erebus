@@ -106,7 +106,7 @@ export class AudioSystem extends System {
     try {
       console.log('🎵 Loading background music...');
       const sound = new Howl({
-        src: ['/audio/sfx/ui/Avernus.mp3'],
+        src: ['/audio/sfx/ui/Empyrea.mp3'],
         volume: this.sfxVolume * this.masterVolume,
         preload: true,
         html5: false, // Use Web Audio API for better performance
@@ -134,7 +134,7 @@ export class AudioSystem extends System {
 
     try {
       console.log('🎵 Starting background music streaming...');
-      this.backgroundAudioElement = new Audio('/audio/sfx/ui/Avernus.mp3');
+      this.backgroundAudioElement = new Audio('/audio/sfx/ui/Empyrea.mp3');
       this.backgroundAudioElement.loop = true;
       this.backgroundAudioElement.volume = 0.35 * this.sfxVolume * this.masterVolume;
       this.backgroundAudioElement.preload = 'none'; // Stream instead of preload

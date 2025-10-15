@@ -5,6 +5,7 @@ import { useThree, useFrame } from '@react-three/fiber';
 import { Vector3, Matrix4, Camera, PerspectiveCamera, Scene, WebGLRenderer, PCFSoftShadowMap, Color, Quaternion, Euler, Group, AdditiveBlending } from '@/utils/three-exports';
 import DragonRenderer from './dragon/DragonRenderer';
 import BossRenderer from './enemies/BossRenderer';
+import SummonedBossSkeleton from './enemies/SummonedBossSkeleton';
 import Meteor from './enemies/Meteor';
 import { useMultiplayer, Player } from '@/contexts/MultiplayerContext';
 import { SkillPointData } from '@/utils/SkillPointSystem';
@@ -3351,7 +3352,8 @@ const hasMana = useCallback((amount: number) => {
         // Add Collider component for damage detection (non-solid, trigger only)
         const collider = world.createComponent(Collider);
         collider.type = ColliderType.SPHERE;
-        collider.radius = serverEnemy.type === 'boss' ? 2.0 : 1.5; // Larger hitbox for boss
+        // Boss = 2.0, boss-skeleton = 1.2, elite = 1.5
+        collider.radius = serverEnemy.type === 'boss' ? 2.0 : (serverEnemy.type === 'boss-skeleton' ? 1.2 : 1.5);
         collider.layer = CollisionLayer.ENEMY;
         collider.isTrigger = true; // IMPORTANT: Trigger only, doesn't push players
         collider.setMask(CollisionLayer.PROJECTILE); // Only detect projectiles, not physical collision with players
@@ -4336,10 +4338,10 @@ const hasMana = useCallback((amount: number) => {
       />
 
       {/* Lighting */}
-      <ambientLight intensity={0.2} />
+      <ambientLight intensity={0.1} />
       <directionalLight
         position={[10, 10, 5]}
-        intensity={0.6}
+        intensity={0.4}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -4646,6 +4648,24 @@ const hasMana = useCallback((amount: number) => {
               />
             )}
           </group>
+        );
+      })}
+
+      {/* Boss Summoned Skeletons (Co-op Mode) */}
+      {Array.from(enemies.values()).map(enemy => {
+        // Only render boss-skeleton type enemies
+        if (enemy.isDying || enemy.type !== 'boss-skeleton') return null;
+
+        return (
+          <SummonedBossSkeleton
+            key={enemy.id}
+            id={enemy.id}
+            position={new Vector3(enemy.position.x, enemy.position.y, enemy.position.z)}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+          />
         );
       })}
 

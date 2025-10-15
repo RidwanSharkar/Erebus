@@ -1,11 +1,14 @@
 // src/components/environment/CustomSkeleton.tsx
 import React, { useRef } from 'react';
 import { Group, Mesh, MeshStandardMaterial, SphereGeometry, CylinderGeometry, ConeGeometry } from 'three';
+import { useFrame } from '@react-three/fiber';
 import BonePlate from '../dragon/BonePlate';
 
 interface CustomSkeletonProps {
   position: [number, number, number];
   rotation?: [number, number, number];
+  isWalking?: boolean;
+  isAttacking?: boolean;
 }
 
 // Reuse Materials
@@ -293,8 +296,14 @@ function ShoulderPlate() {
   );
 }
 
-export default function CustomSkeleton({ position, rotation = [0, 0, 0] }: CustomSkeletonProps) {
+export default function CustomSkeleton({ position, rotation = [0, 0, 0], isWalking = false, isAttacking = false }: CustomSkeletonProps) {
   const groupRef = useRef<Group>(null);
+  const walkCycleRef = useRef(0);
+  const attackCycleRef = useRef(0);
+
+  // Animation constants
+  const WALK_SPEED = 4;
+  const ATTACK_SPEED = 1.35;
 
   // Update rotation when it changes
   React.useEffect(() => {
@@ -302,6 +311,83 @@ export default function CustomSkeleton({ position, rotation = [0, 0, 0] }: Custo
       groupRef.current.rotation.set(rotation[0], rotation[1], rotation[2]);
     }
   }, [rotation]);
+
+  // Animation loop
+  useFrame((_, delta) => {
+    if (!groupRef.current) return;
+
+    // Walking animation
+    if (isWalking) {
+      walkCycleRef.current = (walkCycleRef.current + delta * WALK_SPEED) % (Math.PI * 2);
+      
+      const walkHeightOffset = Math.abs(Math.sin(walkCycleRef.current) * 0.1);
+      groupRef.current.position.y = position[1] + 1 - walkHeightOffset;
+      
+      // Animate legs
+      ['LeftLeg', 'RightLeg'].forEach(part => {
+        const limb = groupRef.current?.getObjectByName(part) as Mesh;
+        if (limb) {
+          const isRight = part.includes('Right');
+          const phase = isRight ? walkCycleRef.current : walkCycleRef.current + Math.PI;
+          
+          // Upper leg movement
+          const upperLegAngle = Math.sin(phase) * 0.4;
+          limb.rotation.x = upperLegAngle;
+
+          // Knee joint animation
+          const lowerLeg = limb.children[0]?.children[1];
+          if (lowerLeg) {
+            const kneePhase = phase + Math.PI / 4;
+            const baseKneeAngle = 0.2;
+            const kneeFlexion = Math.max(0, Math.sin(kneePhase));
+            const kneeAngle = baseKneeAngle + kneeFlexion * 0.8;
+            lowerLeg.rotation.x = kneeAngle;
+            
+            const twistAngle = Math.sin(phase) * 0.1;
+            lowerLeg.rotation.y = twistAngle;
+          }
+
+          const hipTwist = Math.sin(phase) * 0.05;
+          limb.rotation.y = hipTwist;
+        }
+      });
+
+      // Arm swing animation
+      ['LeftArm', 'RightArm'].forEach(part => {
+        const limb = groupRef.current?.getObjectByName(part) as Mesh;
+        if (limb) {
+          const isRight = part.includes('Right');
+          const phase = isRight ? walkCycleRef.current + Math.PI : walkCycleRef.current;
+          
+          const baseHunchedAngle = 0.1;
+          const armSwing = Math.sin(phase) * 0.08;
+          limb.rotation.x = baseHunchedAngle + armSwing;
+          
+          const armSway = Math.sin(phase) * 0.03;
+          limb.rotation.z = (isRight ? -0.15 : 0.15) + armSway;
+        }
+      });
+    } else {
+      // Reset to standing position
+      groupRef.current.position.y = position[1] + 1;
+    }
+
+    // Attack animation
+    if (isAttacking) {
+      attackCycleRef.current += delta * ATTACK_SPEED;
+      const progress = Math.min(attackCycleRef.current, Math.PI / 2);
+      const armAngle = Math.sin(progress) * Math.PI;
+
+      const rightArm = groupRef.current.getObjectByName('RightArm') as Mesh;
+      if (rightArm) {
+        rightArm.rotation.x = -armAngle;
+      }
+
+      if (attackCycleRef.current > Math.PI / 2) {
+        attackCycleRef.current = 0;
+      }
+    }
+  });
 
   return (
     <>
