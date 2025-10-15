@@ -184,7 +184,7 @@ class GameRoom {
   damageEnemy(enemyId, damage, fromPlayerId) {
     const enemy = this.enemies.get(enemyId);
     if (!enemy || enemy.isDying) {
-      console.log(`❌ Damage attempt on invalid enemy: ${enemyId}, enemy exists: ${!!enemy}, is dying: ${enemy?.isDying}`);
+      // Silently reject damage to dying/dead enemies (prevents spam)
       return null;
     }
 
@@ -251,6 +251,27 @@ class GameRoom {
             timestamp: Date.now()
           });
         }
+
+        // IMPORTANT: Remove skeleton immediately (no death animation delay)
+        // This prevents invisible skeletons from being damageable
+        this.enemies.delete(enemyId);
+        console.log(`🗑️ Boss skeleton ${enemyId} removed immediately from enemies map`);
+
+        // Broadcast immediate removal to all clients
+        if (this.io) {
+          this.io.to(this.roomId).emit('enemy-removed', {
+            enemyId: enemyId,
+            timestamp: Date.now()
+          });
+        }
+
+        // Clean up aggro immediately (moved from below)
+        if (this.enemyAI) {
+          this.enemyAI.removeEnemyAggro(enemyId);
+        }
+        
+        // Return early to skip the setTimeout cleanup below
+        return result;
       } else {
         // Normal enemy kill rewards
         // Increment shared kill count

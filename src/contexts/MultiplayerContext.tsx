@@ -617,6 +617,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       // The event is forwarded through window for the SummonedBossSkeleton component
     });
 
+    addEventHandler('enemy-removed', (data) => {
+      // Immediately remove enemy from local state (for instant cleanup of skeletons)
+      setEnemies(prev => {
+        const updated = new Map(prev);
+        updated.delete(data.enemyId);
+        console.log(`🗑️ Removed enemy ${data.enemyId} from local state`);
+        return updated;
+      });
+    });
+
     // Cleanup function
     return () => {
       console.log('🧹 Cleaning up socket connection');
