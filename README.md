@@ -1,12 +1,12 @@
-# 🌑  Enceladus Or Erebus - undecided
+# 🌑  EREBUS
 
-### v0.5 First Boss
+### v0.5 First Boss Model
 ![BossPreRelease](https://github.com/user-attachments/assets/32f96a9d-e66b-404a-a984-fd2dbd04b866)
 
 ### v0.5 Co-op Aggro System
 ![AggroSystem](https://github.com/user-attachments/assets/70b0485a-b29b-47f9-a228-5e8627a2766d)
 
-### v0.5 Model Creation
+### v0.5 Bone Wings Upgrade
 ![BoneWingsUpgrade](https://github.com/user-attachments/assets/46d1397f-b87d-4f49-89d4-f90a4aba4cbb)
 
 
@@ -17,6 +17,25 @@
 - **Spatial Audio**: Howler.js-powered 3D positional audio with 30+ unique sound effects
 - **Performance Optimizations**: Object pooling, state batching, and performance monitoring
 - **Scalable Backend**: Node.js server with automatic scaling and health monitoring
+
+## 🎨 Custom Model Creation & Visual Effects
+
+**No external 3D models/assets used** - All models built from scratch using Three.js primitives and mathematical shapes, maintaining a consistent 'bone' theme throughout.
+
+### Model Construction Techniques
+- **Primitive Geometry Assembly**: Weapons and units built by combining cylinders, spheres, boxes, and custom geometries
+- **Mathematical Shape Generation**: Three.js `Shape` class used to create complex 2D profiles extruded into 3D forms
+- **Procedural Detailing**: Bones, spikes, and organic structures generated algorithmically for visual consistency
+
+### Visual Effects System
+- **Emissive Materials**: Glowing effects achieved through Three.js emissive material properties and dynamic point lights
+- **Instanced Mesh Rendering**: High-performance particle systems for trails, auras, and environmental effects
+- **Material Shaders**: Custom material configurations for metallic, crystalline, and ethereal appearances
+- **Dynamic Lighting**: Real-time light positioning and intensity modulation for atmospheric effects
+
+### ECS Integration
+- **Component-Based Rendering**: Visual components (Renderer, HealthBar, Collider) integrated with ECS architecture
+- **System-Driven Animation**: Animation states managed through ECS components with React Three Fiber integration
 
 ## 🛠️ Technical Architecture
 
@@ -41,6 +60,7 @@
 - **Level-of-Detail**: Distance-based rendering optimization
 - **Instanced Rendering**: Efficient crowd rendering for enemies
 - **Spatial Hashing**: Fast collision detection for hundreds of entities
+
 
 ## 🏗️ Entity Component System (ECS) Architecture
 
@@ -169,7 +189,7 @@ world.emitEvent('enemy_killed', { enemyId, killerId });
 const events = world.getEvents('enemy_killed');
 ```
 
-### ECS Architecture vs. Eidolon
+### ECS Architecture Benefits
 
 - **Modularity**: Components and systems are independent and reusable
 - **Performance**: Only relevant systems process relevant entities

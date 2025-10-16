@@ -419,7 +419,7 @@ function HomeContent() {
               >
                 📜
               </button>
-              <h1 className="text-xl font-bold mb-1 text-green-400 text-center"> EMPYREA </h1>
+              <h1 className="text-xl font-bold mb-2 text-green-400 text-center"> EREBUS </h1>
 
               {/* Weapon Selection Section */}
               <div className="mb-6">
