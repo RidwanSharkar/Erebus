@@ -1,4 +1,4 @@
-# 🌑  EREBUS v0.5
+# 🌑  Erebus - v0.5
 
 ### v0.5 First Boss Model
 ![BossPreRelease](https://github.com/user-attachments/assets/32f96a9d-e66b-404a-a984-fd2dbd04b866)
@@ -14,6 +14,7 @@
 - **Spatial Audio**: Howler.js-powered 3D positional audio with 30+ unique sound effects
 - **Performance Optimizations**: Object pooling, state batching, and performance monitoring
 - **Scalable Backend**: Node.js server with automatic scaling and health monitoring
+- **In-Game Chat Functionality**
 
 ## 🎨 Custom Model Creation & Visual Effects
 
@@ -25,12 +26,69 @@
 ### Model Construction Techniques
 - **Primitive Geometry Assembly**: Weapons and units built by combining cylinders, spheres, boxes, and custom geometries
 - **Mathematical Shape Generation**: Three.js `Shape` class used to create complex 2D profiles extruded into 3D forms
+  - **Quadratic Curves**: `quadraticCurveTo()` method creates Bézier curves for smooth, organic weapon shapes
+
+    ```typescript
+    // Runeblade shape creation using quadratic curves
+    shape.lineTo(0, 0.08);
+    shape.lineTo(-0.2, 0.12);
+    shape.quadraticCurveTo(0.8, -0.15, -0.15, 0.12);  // Subtle curve along back
+    shape.quadraticCurveTo(1.8, -0, 1.75, 0.05);      // Gentle curve towards tip
+    shape.quadraticCurveTo(2.15, 0.05, 2.35, 0.225);   // Sharp point
+
+    // Lower edge with pronounced curves
+    shape.quadraticCurveTo(2.125, -0.125, 2.0, -0.25);  // Start curve from tip
+    shape.quadraticCurveTo(1.8, -0.45, 1.675, -0.55);   // Peak of the curve
+    shape.quadraticCurveTo(0.9, -0.35, 0.125, -0.325);  // Curve back towards guard
+    ```
 - **Procedural Detailing**: Bones, spikes, and organic structures generated algorithmically for visual consistency
 
 ### Visual Effects System
 - **Emissive Materials**: Glowing effects achieved through Three.js emissive material properties and dynamic point lights
 - **Instanced Mesh Rendering**: High-performance particle systems for trails, auras, and environmental effects
 - **Material Shaders**: Custom material configurations for metallic, crystalline, and ethereal appearances
+  - **Projectile Trail Shaders**: 
+
+    ```glsl
+    // Entropic Bolt Fragment Shader
+    void main() {
+      float d = length(gl_PointCoord - vec2(0.5));
+      float strength = smoothstep(0.5, 0.1, d);
+      vec3 glowColor;
+      float emissiveMultiplier = 0.5;
+      if (uIsCryoflame) {
+        glowColor = mix(uColor, vec3(0.2, 0.4, 0.8), 0.4); // Cryoflame: deep navy blue
+        emissiveMultiplier = 2.0;
+      } else {
+        glowColor = mix(uColor, vec3(1.0, 0.6, 0.0), 0.4); // Normal: orange fire effect
+        emissiveMultiplier = 1.0;
+      }
+      gl_FragColor = vec4(glowColor * emissiveMultiplier, vOpacity * strength);
+    }
+    ```
+
+  - **Ground Shader**: Procedural texturing with normal mapping, ambient occlusion, and subtle animation
+
+    ```glsl
+    // Enhanced Ground Fragment Shader
+    void main() {
+      vec4 colorSample = texture2D(colorMap, vUv);
+      vec3 normalSample = texture2D(normalMap, vUv).rgb * 2.0 - 1.0;
+
+      float distanceFromCenter = length(vPosition.xz) / 29.0;
+      float ao = 1.0 - smoothstep(0.0, 1.0, distanceFromCenter) * 0.2;
+
+      float animation = sin(vPosition.x * 0.01 + time * 0.1) * sin(vPosition.z * 0.01 + time * 0.07) * 0.02 + 1.0;
+
+      vec3 finalColor = colorSample.rgb * animation * ao;
+
+      float rim = 1.0 - dot(vNormal, vec3(0.0, 1.0, 0.0));
+      rim = pow(rim, 3.0) * 0.1;
+      finalColor += accentColor * rim;
+
+      gl_FragColor = vec4(finalColor, 1.0);
+    }
+    ```
 - **Dynamic Lighting**: Real-time light positioning and intensity modulation for atmospheric effects
 
 ### ECS Integration
@@ -130,6 +188,67 @@ world.render(deltaTime);
 
 #### **Rendering Components**
 - **Renderer**: Visual representation with material and geometry management
+  - **Instanced Rendering**: High-performance crowd rendering with individual instance control
+
+    ```typescript
+    public setupInstancing(instancedMesh: InstancedMesh, instanceId: number): void {
+      this.isInstanced = true;
+      this.instancedMesh = instancedMesh;
+      this.instanceId = instanceId;
+    }
+
+    public updateInstanceMatrix(matrix: Matrix4): void {
+      if (this.isInstanced && this.instancedMesh && this.instanceId >= 0) {
+        this.instancedMesh.setMatrixAt(this.instanceId, matrix);
+        this.instancedMesh.instanceMatrix.needsUpdate = true;
+      }
+    }
+
+    public setInstanceVisible(visible: boolean): void {
+      if (this.isInstanced && this.instancedMesh && this.instanceId >= 0) {
+        const matrix = new Matrix4();
+        this.instancedMesh.getMatrixAt(this.instanceId, matrix);
+
+        if (!visible) {
+          matrix.scale(new Vector3(0, 0, 0)); // Hide by scaling to zero
+        }
+
+        this.instancedMesh.setMatrixAt(this.instanceId, matrix);
+        this.instancedMesh.instanceMatrix.needsUpdate = true;
+      }
+    }
+    ```
+
+  - **Dynamic Mesh Updates**: Runtime property synchronization for shadows and materials
+
+    ```typescript
+    public updateMesh(): void {
+      if (!this.mesh) return;
+
+      // Handle shadow properties for both Mesh and Group hierarchies
+      if (this.mesh instanceof Mesh) {
+        this.mesh.castShadow = this.castShadow;
+        this.mesh.receiveShadow = this.receiveShadow;
+      } else if (this.mesh instanceof Group) {
+        this.mesh.traverse((child) => {
+          if (child instanceof Mesh) {
+            child.castShadow = this.castShadow;
+            child.receiveShadow = this.receiveShadow;
+          }
+        });
+      }
+
+      this.mesh.frustumCulled = this.frustumCulled;
+      this.mesh.visible = this.visible;
+      this.mesh.renderOrder = this.renderOrder;
+
+      if (this.needsUpdate && this.geometry && this.material && this.mesh instanceof Mesh) {
+        this.mesh.geometry = this.geometry;
+        this.mesh.material = this.material;
+        this.needsUpdate = false;
+      }
+    }
+    ```
 - **HealthBar**: UI health display with dynamic positioning
 - **Collider**: Collision detection shapes and boundaries
 

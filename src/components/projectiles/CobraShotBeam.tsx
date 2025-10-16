@@ -98,31 +98,50 @@ const CobraShotBeam: React.FC<CobraShotBeamProps> = ({
           />
         </mesh>
 
-        {/* Cobra ring/swirl effects that last longer */}
+        {/* Ring/swirl effects that last longer - same as Power Shot but in green */}
         {[...Array(8)].map((_, i) => {
-          const ringProgress = Math.min(1, (Date.now() - startTimeRef.current) / (duration * 0.8));
-          const ringPosition = ringProgress * 20 - 10;
-          const ringScale = 0.8 + Math.sin(ringProgress * Math.PI * 4 + i) * 0.3;
-          const ringOpacity = fadeProgress * (1 - ringProgress) * 0.8;
-          
+          const ringProgress = Math.min(1, (Date.now() - startTimeRef.current) / 800); // Slower fade for rings
+          const ringFade = fadeStartTime.current
+            ? Math.max(0, 1 - (Date.now() - fadeStartTime.current) / 600) // Longer fade for rings
+            : 1;
+
+          const offset = i * 3;
+          const scale = 1 - (i * 0.1);
+
           return (
-            <mesh
-              key={i}
-              position={[0, 0, ringPosition]}
-              rotation={[Math.PI / 2, 0, (Date.now() * 0.01 + i) % (Math.PI * 2)]}
-              scale={[ringScale, ringScale, 1]}
-            >
-              <torusGeometry args={[0.15, 0.03, 8, 16]} />
-              <meshStandardMaterial
-                color={colors.core}
-                emissive={colors.core}
-                emissiveIntensity={8 * fadeProgress}
-                transparent
-                opacity={ringOpacity}
-                blending={2} // AdditiveBlending
-                depthWrite={false}
-              />
-            </mesh>
+            <group key={`ring-${i}`} position={[0, 0, offset]}>
+              {/* Smoke ring effect */}
+              <mesh
+                rotation={[0, Date.now() * 0.002 + i, 0]}
+                scale={[scale, scale, scale]}
+              >
+                <torusGeometry args={[0.4, 0.08, 6, 12]} />
+                <meshStandardMaterial
+                  color={colors.outer}
+                  emissive={colors.emissive}
+                  emissiveIntensity={2 * ringFade}
+                  transparent
+                  opacity={0.4 * ringFade * (1 - ringProgress * 0.5)}
+                  blending={2} // AdditiveBlending
+                />
+              </mesh>
+
+              {/* Secondary swirl */}
+              <mesh
+                rotation={[Math.PI/2, Date.now() * -0.003 + i, 0]}
+                scale={[scale * 0.7, scale * 0.7, scale * 0.7]}
+              >
+                <torusGeometry args={[0.3, 0.06, 6, 12]} />
+                <meshStandardMaterial
+                  color={colors.core}
+                  emissive={colors.emissive}
+                  emissiveIntensity={1.5 * ringFade}
+                  transparent
+                  opacity={0.3 * ringFade * (1 - ringProgress * 0.3)}
+                  blending={2} // AdditiveBlending
+                />
+              </mesh>
+            </group>
           );
         })}
 

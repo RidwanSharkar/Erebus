@@ -262,7 +262,7 @@ class EnemyAI {
     }
 
     // Check skeleton summoning cooldown (17.5 seconds)
-    const skeletonSummonCooldown = 25000;
+    const skeletonSummonCooldown = 30000;
     const lastSkeletonSummonTime = this.bossSkeletonSummonCooldown.get(boss.id) || 0;
 
     if (now - lastSkeletonSummonTime >= skeletonSummonCooldown) {

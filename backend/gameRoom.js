@@ -552,7 +552,7 @@ class GameRoom {
   updatePlayerShield(playerId, shield, maxShield) {
     const player = this.players.get(playerId);
     if (player) {
-      player.shield = Math.max(0, Math.min(maxShield || player.maxShield || 250, shield));
+      player.shield = Math.max(0, Math.min(maxShield || player.maxShield || 100, shield));
       if (maxShield !== undefined) {
         player.maxShield = maxShield;
       }

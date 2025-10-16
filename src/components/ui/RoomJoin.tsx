@@ -129,7 +129,7 @@ export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, current
   // If already in room, show room info
   if (isInRoom) {
     return (
-      <div className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/95 p-8 rounded-xl border-2 ${(gameMode === 'pvp' || gameMode === 'coop') ? 'border-red-500' : 'border-green-500'} text-white max-w-md w-11/12 z-50 text-center`}>
+      <div className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/95 p-8 rounded-xl border-2 ${(gameMode === 'pvp' || gameMode === 'coop') ? 'border-green-500' : 'border-green-500'} text-white max-w-md w-11/12 z-50 text-center`}>
         <h2 className="text-2xl font-bold mb-4">{(gameMode === 'pvp' || gameMode === 'coop') ? 'Co-op' : 'Multiplayer'} Room: {roomId}</h2>
         <p className="mb-4">Players connected: {players.size}</p>
         <div className="flex flex-col gap-3 mb-6">
@@ -162,7 +162,7 @@ export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, current
   // Show room preview if requested
   if (showPreview && currentPreview) {
     return (
-      <div className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/95 p-8 rounded-xl border-2 ${(gameMode === 'pvp' || gameMode === 'coop') ? 'border-red-500' : 'border-green-500'} text-white max-w-2xl w-11/12 z-50`}>
+      <div className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/95 p-8 rounded-xl border-2 ${(gameMode === 'pvp' || gameMode === 'coop') ? 'border-green-500' : 'border-green-500'} text-white max-w-2xl w-11/12 z-50`}>
         <h2 className="text-2xl font-bold mb-6">{(gameMode === 'pvp' || gameMode === 'coop') ? 'Co-op' : 'Multiplayer'} Room Preview: {currentPreview.roomId}</h2>
         
         {currentPreview.exists ? (
@@ -234,7 +234,7 @@ export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, current
   }
 
   return (
-    <div className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/95 p-8 rounded-xl border-2 ${(gameMode === 'pvp' || gameMode === 'coop') ? 'border-red-500' : 'border-green-500'} text-white max-w-lg w-11/12 z-50`}>
+    <div className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/95 p-8 rounded-xl border-2 ${(gameMode === 'pvp' || gameMode === 'coop') ? 'border-green-500' : 'border-green-500'} text-white max-w-lg w-11/12 z-50`}>
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-2">
           <label htmlFor="playerName" className="font-bold text-green-500">Your Name:</label>
@@ -265,7 +265,7 @@ export default function RoomJoin({ onJoinSuccess, onBack, currentWeapon, current
         </div>
 
         {connectionError && (
-          <div className="bg-red-500/20 border border-red-400 text-red-400 p-4 rounded-lg text-center">
+          <div className="bg-red-500/20 border border-green-400 text-red-400 p-4 rounded-lg text-center">
             Error: {connectionError}
           </div>
         )}
