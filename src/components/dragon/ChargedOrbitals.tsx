@@ -23,7 +23,7 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
   const getOrbitalColor = () => {
     // Check for corrupted aura on Runeblade first
     if (isCorruptedAuraActive && weaponType === WeaponType.RUNEBLADE) {
-      return '#FF4444';
+      return '#ff8800';
     }
 
     if (weaponSubclass) {
@@ -83,8 +83,8 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
     // Position orbitals around the parent in a normal circular orbit
     orbitalsRef.current.children.forEach((orbital, index) => {
       const angle = (index / dashCharges.length) * Math.PI * 2 + time * 0.8;
-      const radius = 0.9; // Fixed radius for circular orbit
-      const height = 0.3; // Fixed height above parent
+      const radius = 0.7; // Fixed radius for circular orbit
+      const height = -0.2; // Fixed height above parent
       
       orbital.position.set(
         Math.cos(angle) * radius,

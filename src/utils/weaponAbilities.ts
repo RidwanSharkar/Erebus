@@ -188,7 +188,7 @@ export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | '
   },
   [WeaponType.BOW]: {
     Q: '🎯', // Barrage
-    E: '🐍', // Cobra Shot
+    E: '🍃', // Cobra Shot
     R: '🐉', // Viper Sting
     F: '🪶', // Cloudkill
     P: '🍃' // Tempest Rounds 
@@ -209,9 +209,9 @@ export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | '
   },
   [WeaponType.RUNEBLADE]: {
     Q: '🛡️', // Fullguard
-    E: '🪝', // Wraithblade
-    R: '👻', // Hexed Smite
-    F: '💔', // Heartrend
+    E: '🗡️', // Wraithblade
+    R: '⚡️', // Hexed Smite
+    F: '💠', // Heartrend
     P: '🩸' // Bloodpact
   },
 };

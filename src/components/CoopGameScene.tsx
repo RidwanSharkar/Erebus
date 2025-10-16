@@ -36,7 +36,7 @@ import { MerchantSystem } from '@/systems/MerchantSystem';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { ReanimateRef } from '@/components/weapons/Reanimate';
 
-import Smite from '@/components/weapons/Smite';
+import ColossusStrike from '@/components/weapons/ColossusStrike';
 
 import WindShearProjectileManager, { triggerWindShearProjectile } from '@/components/projectiles/WindShearProjectile';
 
@@ -2716,6 +2716,63 @@ const hasMana = useCallback((amount: number) => {
       }
     };
 
+    const handleBossSkeletonAttack = (data: any) => {
+      // If we are the target, apply damage to our player
+      if (data.targetPlayerId === socket?.id && playerEntity && socket?.id) {
+        // Check if player is already in death state - if so, ignore damage
+        const deathState = playerDeathStates.get(socket.id);
+        if (deathState?.isDead) {
+          return;
+        }
+
+        const health = playerEntity.getComponent(Health);
+        const shield = playerEntity.getComponent(Shield);
+        if (health) {
+          // Track if player was alive before damage
+          const wasAlive = !health.isDead;
+
+          // Apply damage from boss skeleton (treat as physical damage from enemy)
+          // Use standard invulnerability rules for enemy damage
+          health.takeDamage(data.damage, Date.now() / 1000, playerEntity, false);
+
+          // Display incoming damage numbers
+          if (playerEntity) {
+            const transform = playerEntity.getComponent(Transform);
+            if (transform) {
+              // Boss skeleton damage is not critical
+              const isCritical = false;
+
+              // Directly add damage numbers using the combat system's damage number manager
+              const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+              if (damageNumberManager && damageNumberManager.addDamageNumber) {
+                const incomingDamagePosition = transform.position.clone();
+                incomingDamagePosition.y -= 0.5; // Position below player's feet
+
+                damageNumberManager.addDamageNumber(
+                  data.damage,
+                  isCritical,
+                  incomingDamagePosition,
+                  'physical', // Boss skeleton damage type
+                  true // isIncomingDamage = true
+                );
+              }
+            }
+          }
+
+          // Broadcast shield changes to other players
+          if (shield) {
+            updatePlayerShield(shield.currentShield, shield.maxShield);
+          }
+
+          // Check if player died from this damage
+          if (wasAlive && health.isDead) {
+            // Handle player death from boss skeleton attack
+            handlePlayerDeath(socket.id, data.skeletonId);
+          }
+        }
+      }
+    };
+
     const handlePlayerAnimationState = (data: any) => {
       
       
@@ -3248,6 +3305,7 @@ const hasMana = useCallback((amount: number) => {
     socket.on('boss-attack', handleBossAttack);
     socket.on('boss-defeated', handleBossDefeated);
     socket.on('boss-meteor-cast', handleBossMeteorCast);
+    socket.on('boss-skeleton-attack', handleBossSkeletonAttack);
 
 
     return () => {
@@ -3270,6 +3328,7 @@ const hasMana = useCallback((amount: number) => {
       socket.off('boss-attack', handleBossAttack);
       socket.off('boss-defeated', handleBossDefeated);
       socket.off('boss-meteor-cast', handleBossMeteorCast);
+      socket.off('boss-skeleton-attack', handleBossSkeletonAttack);
     };
   }, [socket, playerEntity]);
 
@@ -3533,22 +3592,22 @@ const hasMana = useCallback((amount: number) => {
   // Function to get cloudkill target positions (replicates CloudkillManager logic)
   const getCloudkillTargetPositions = useCallback((casterPosition: Vector3, casterId: string): Array<{ x: number; y: number; z: number }> => {
     const ARROW_COUNT = 3;
-    const allTargets: Array<{ id: string; position: { x: number; y: number; z: number } }> = [];
+    const bossTargets: Array<{ id: string; position: { x: number; y: number; z: number } }> = [];
 
-    // Add players (excluding the casting player) - same logic as CloudkillManager
-    Array.from(players.values()).forEach(player => {
-      if (player.position && player.id !== casterId) {
-        allTargets.push({
-          id: player.id,
-          position: player.position
+    // Add boss enemies only
+    Array.from(enemies.values()).forEach(enemy => {
+      if (enemy.health > 0 && (enemy.type === 'boss' || enemy.type === 'boss-skeleton')) {
+        bossTargets.push({
+          id: enemy.id,
+          position: enemy.position
         });
       }
     });
 
-    if (allTargets.length === 0) return [];
+    if (bossTargets.length === 0) return [];
 
     // Calculate distances and sort by proximity - same logic as CloudkillManager
-    const targetsWithDistance = allTargets.map(target => ({
+    const targetsWithDistance = bossTargets.map(target => ({
       target,
       distance: casterPosition.distanceTo(new Vector3(target.position.x, 0, target.position.z))
     }));
@@ -3556,11 +3615,11 @@ const hasMana = useCallback((amount: number) => {
     targetsWithDistance.sort((a, b) => a.distance - b.distance);
 
     // Get closest targets
-    const closestTargets = targetsWithDistance.slice(0, Math.min(allTargets.length, ARROW_COUNT)).map(item => item.target);
+    const closestTargets = targetsWithDistance.slice(0, Math.min(bossTargets.length, ARROW_COUNT)).map(item => item.target);
 
     // Return the target positions that arrows will be aimed at
     return closestTargets.map(target => target.position);
-  }, [players]);
+  }, [enemies]);
 
   useEffect(() => {
     if (isInitialized.current || !gameStarted) return;
@@ -4812,31 +4871,39 @@ const hasMana = useCallback((amount: number) => {
           }));
 
         return (
-          <Smite
+          <ColossusStrike
             key={`smite-${effect.id}`}
             weaponType={WeaponType.RUNEBLADE}
             position={effect.position}
+            delayStart={0.25} // Delay the visual effect by 0.5 seconds
             onComplete={() => {
               // Remove effect after completion
               setPvpSmiteEffects(prev => prev.filter(e => e.id !== effect.id));
             }}
-            onHit={(targetId, damage) => {
+            onHit={(targetId, damage, isCritical) => {
               // Handle damage to enemies
               if (socket && currentRoomId) {
                 socket.emit('player-hit-enemy', {
                   roomId: currentRoomId,
                   enemyId: targetId,
                   damage: damage,
-                  isCritical: false
+                  isCritical: isCritical || false
                 });
               }
             }}
-            onDamageDealt={effect.onDamageDealt}
+            onDamageDealt={(damageDealt) => {
+              // Convert boolean to number for healing calculation (same as Smite)
+              if (effect.onDamageDealt && damageDealt) {
+                // Calculate base damage for healing (same as Smite: 100)
+                const baseDamage = 100;
+                effect.onDamageDealt(baseDamage);
+              }
+            }}
             enemyData={smiteEnemyData}
+            targetPlayerData={[]} // No player targets for Smite
             setDamageNumbers={smiteDamageNumbers.setDamageNumbers}
             nextDamageNumberId={smiteDamageNumbers.nextDamageNumberId}
             combatSystem={engineRef.current?.getWorld().getSystem(CombatSystem)}
-            isCorruptedAuraActive={controlSystemRef.current?.isCorruptedAuraActive() || false}
           />
         );
       })}
@@ -4850,9 +4917,28 @@ const hasMana = useCallback((amount: number) => {
           <StunManager world={engineRef.current.getWorld()} />
           <CobraShotManager world={engineRef.current.getWorld()} />
           <DeflectShieldManager />
-          <PVPSummonTotemManager 
+          <PVPSummonTotemManager
             players={players}
             localSocketId={socket?.id}
+          />
+          <CloudkillManager
+            enemyData={Array.from(enemies.values())
+              .filter(enemy => !enemy.isDying && (enemy.type === 'boss' || enemy.type === 'boss-skeleton'))
+              .map(enemy => ({
+                id: enemy.id,
+                type: enemy.type,
+                position: enemy.position,
+                rotation: enemy.rotation,
+                health: enemy.health,
+                maxHealth: enemy.maxHealth,
+                isDying: enemy.isDying
+              }))}
+            onHit={(targetId, damage, isCritical, position) => {
+              if (socket && currentRoomId) {
+                damageEnemy(targetId, damage, socket.id);
+              }
+            }}
+            playerPosition={playerPosition}
           />
         </>
       )}

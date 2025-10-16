@@ -622,7 +622,7 @@ export default function BossModel({
   // Attack animation constants - synchronized with damage dealing window
   const ARM_DELAY = 60; // 60ms between arms for visible sequence
   const TELEGRAPH_TIME = 80; // 80ms telegraph before first hit
-  const ATTACK_DURATION = 0.35; // Match the 0.4s attack detection window
+  const ATTACK_DURATION = 0.325; // Match the 0.4s attack detection window
 
 
   useFrame((state, delta) => {
@@ -773,7 +773,7 @@ export default function BossModel({
       </group>
 
       {/* Body - Bone Plate */}
-      <group position={[0, 2.15, -0.15]} scale={[1.25, 1.1, 1.25]} rotation={[0.0, 0, 0]}>
+      <group position={[0, 2.15, -0.05]} scale={[1.25, 1.25, 1.25]} rotation={[0.2, 0, 0]}>
         <BonePlate />
       </group>
 
@@ -785,14 +785,14 @@ export default function BossModel({
  
 
       {/* Wings at height 3 on both sides */}
-      <group position={[0, 2.5, -0.05]} rotation={[0, Math.PI / 5, 0]} scale={[1.75, 1.75, 1.15]}>
+      <group position={[0, 2.35, -0.05]} rotation={[0, Math.PI / 8, 0]} scale={[1.75 , 1.75, 2 ]}>
         <BossBoneWings
           isLeftWing={true}
           parentRef={groupRef}
           isDashing={false}
         />
       </group>
-      <group position={[0, 2.5, -0.05]} rotation={[0, -Math.PI / 5, 0]} scale={[1.75, 1.75, 1.15]}>
+      <group position={[0, 2.35, -0.05]} rotation={[0, -Math.PI / 8, 0]} scale={[1.75 , 1.75, 2 ]}>
         <BossBoneWings
           isLeftWing={false}
           parentRef={groupRef}
@@ -802,36 +802,36 @@ export default function BossModel({
 
 
       {/* Shoulder Plates */}
-      <group position={[-0.55, 2.8, 0.05]} rotation={[-0.45, -Math.PI/1.2, -.525]}>
+      <group position={[-0.55, 2.75, 0.275]} scale={[1.1, 1.1, 1.1]} rotation={[-0.45, -Math.PI/1.2, -.525]}>
         <ShoulderPlate />
       </group>
-      <group position={[0.55, 2.8, 0.05]} rotation={[-0.45, Math.PI/1.2, 0.525]}>
+      <group position={[0.55, 2.75, 0.275]} scale={[1.1, 1.1, -1.1]} rotation={[-0.25, Math.PI/-1.2 - Math.PI/4, 0.525]}>
         <ShoulderPlate />
       </group>
 
       {/* Bone Tail */}
-      <group scale={[1.5, 1.5, 1.5]} position={[0, 1.75, -0.05]}>
+      <group scale={[1.5, 1.5, 1.5]} position={[0, 1.85, -0.0]}>
         <BoneTail />
       </group>
 
-      <group position={[0, 0.25, 0]} scale={[0.75, 0.75, 0.75]}>
+      <group position={[0, 0.15, 0]} scale={[0.85, 0.85, 0.85]}>
         <ElementalVortex parentRef={groupRef} />
       </group>
 
 
 
       {/* Back Arms (Blade arms with sequential attacks) */}
-      <group name="LeftUpperBackArm" position={[-0.55, 2.6, 0]} scale={[-0.9, 0.7, 0.9]} rotation={[0, Math.PI*2, -0.4]}>
+      <group name="LeftUpperBackArm" position={[-0.55, 2.6, 0.25]} scale={[-0.9, 0.7, 0.9]} rotation={[0.4, Math.PI*2, -0.3]}>
         <BossClawModel isLeftHand={true} />
       </group>
-      <group name="RightUpperBackArm" position={[0.55, 2.6, 0]} scale={[0.9, 0.7, 0.9]} rotation={[0, -Math.PI*2, 0.4]}>
+      <group name="RightUpperBackArm" position={[0.55, 2.6, 0.25]} scale={[0.9, 0.7, 0.9]} rotation={[0.4, -Math.PI*2, 0.3]}>
         <BossClawModel isLeftHand={false} />
       </group>
 
-      <group name="LeftMiddleBackArm" position={[-0.45, 2.5, -0.1]} scale={[-0.75, 0.75, 0.75]} rotation={[0.4, Math.PI*2.1, -.4]}>
+      <group name="LeftMiddleBackArm" position={[-0.45, 2.5, 0.15]} scale={[-0.75, 0.75, 0.75]} rotation={[0.4, Math.PI*2.1, -.4]}>
         <BossClawModel isLeftHand={true} />
       </group>
-      <group name="RightMiddleBackArm" position={[0.45, 2.5, -0.1]} scale={[0.75, 0.75, 0.75]} rotation={[0.4, -Math.PI*2.1, 0.4]}>
+      <group name="RightMiddleBackArm" position={[0.45, 2.5, 0.15]} scale={[0.75, 0.75, 0.75]} rotation={[0.4, -Math.PI*2.1, 0.4]}>
         <BossClawModel isLeftHand={false} />
       </group>
 
