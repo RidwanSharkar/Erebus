@@ -7,7 +7,7 @@
 ![AggroSystem](https://github.com/user-attachments/assets/70b0485a-b29b-47f9-a228-5e8627a2766d)
 
 ### v0.5 Model Creation
-![BossPreRelease](https://github.com/user-attachments/assets/ad52e857-ec41-418e-b55a-cd7f4f1570e0)
+![BoneWingsUpgrade](https://github.com/user-attachments/assets/46d1397f-b87d-4f49-89d4-f90a4aba4cbb)
 
 
 ### ⚙️ Technical Specs
