@@ -1,13 +1,10 @@
-# 🌑  EREBUS
+# 🌑  EREBUS v0.5
 
 ### v0.5 First Boss Model
 ![BossPreRelease](https://github.com/user-attachments/assets/32f96a9d-e66b-404a-a984-fd2dbd04b866)
 
 ### v0.5 Co-op Aggro System
 ![AggroSystem](https://github.com/user-attachments/assets/70b0485a-b29b-47f9-a228-5e8627a2766d)
-
-### v0.5 Bone Wings Upgrade
-![BoneWingsUpgrade](https://github.com/user-attachments/assets/46d1397f-b87d-4f49-89d4-f90a4aba4cbb)
 
 
 ### ⚙️ Technical Specs
@@ -21,6 +18,9 @@
 ## 🎨 Custom Model Creation & Visual Effects
 
 **No external 3D models/assets used** - All models built from scratch using Three.js primitives and mathematical shapes, maintaining a consistent 'bone' theme throughout.
+
+### v0.5 Bone Wings Upgrade
+![BoneWingsUpgrade](https://github.com/user-attachments/assets/46d1397f-b87d-4f49-89d4-f90a4aba4cbb)
 
 ### Model Construction Techniques
 - **Primitive Geometry Assembly**: Weapons and units built by combining cylinders, spheres, boxes, and custom geometries
