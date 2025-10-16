@@ -108,6 +108,12 @@ export default function Runeblade({
   dragonGroupRef,
   playerEntityId
 }: RunebladeProps) {
+  // Color scheme based on corrupted aura state
+  const primaryColor = isCorruptedAuraActive ? new Color("#ffaa00") : new Color(0x1097B5);
+  const primaryEmissive = isCorruptedAuraActive ? new Color("#ff8800") : new Color(0x1097B5);
+  const secondaryColor = isCorruptedAuraActive ? new Color("#ff8800") : new Color(0x87CEEB);
+  const secondaryEmissive = isCorruptedAuraActive ? new Color("#ff6600") : new Color(0x4682B4);
+
   const runebladeRef = useRef<Group>(null);
   const corruptedAuraRef = useRef<{ toggle: () => void; isActive: boolean }>(null);
   const swingProgress = useRef(0);
@@ -785,8 +791,8 @@ export default function Runeblade({
           <mesh>
             <sphereGeometry args={[0.1, 16, 16]} />
             <meshStandardMaterial
-              color={new Color(0x1097B5)}
-              emissive={new Color(0x1097B5)}
+              color={primaryColor}
+              emissive={primaryEmissive}
               emissiveIntensity={40}
               transparent
               opacity={0.8}
@@ -796,8 +802,8 @@ export default function Runeblade({
           <mesh>
             <sphereGeometry args={[0.145, 16, 16]} />
             <meshStandardMaterial
-              color={new Color(0x1097B5)}
-              emissive={new Color(0x1097B5)}
+              color={primaryColor}
+              emissive={primaryEmissive}
               emissiveIntensity={35}
               transparent
               opacity={0.6}
@@ -807,8 +813,8 @@ export default function Runeblade({
           <mesh>
             <sphereGeometry args={[.175, 16, 16]} />
             <meshStandardMaterial
-              color={new Color(0x1097B5)}
-              emissive={new Color(0x1097B5)}
+              color={primaryColor}
+              emissive={primaryEmissive}
               emissiveIntensity={30}
               transparent
               opacity={0.4}
@@ -824,8 +830,8 @@ export default function Runeblade({
           <mesh>
             <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
             <meshStandardMaterial
-              color={new Color(0x1097B5)}  // Blue theme
-              emissive={new Color(0x1097B5)}
+              color={primaryColor}  // Dynamic theme based on corrupted aura
+              emissive={primaryEmissive}
               emissiveIntensity={1.5}
               metalness={0.3}
               roughness={0.1}
@@ -836,8 +842,8 @@ export default function Runeblade({
           <mesh>
             <extrudeGeometry args={[createInnerBladeShape(), innerBladeExtrudeSettings]} />
             <meshStandardMaterial
-              color={new Color(0x1097B5)}  // Blue theme
-              emissive={new Color(0x1097B5)}
+              color={primaryColor}  // Dynamic theme based on corrupted aura
+              emissive={primaryEmissive}
               emissiveIntensity={3}
               metalness={0.2}
               roughness={0.1}
@@ -855,8 +861,8 @@ export default function Runeblade({
               <mesh>
                 <extrudeGeometry args={[createBladeShape(), { ...bladeExtrudeSettings, depth: 0.07 }]} />
                 <meshStandardMaterial
-                  color={new Color(0x87CEEB)}
-                  emissive={new Color(0x4682B4)}
+                  color={secondaryColor}
+                  emissive={secondaryEmissive}
                   emissiveIntensity={1.5}
                   transparent
                   opacity={0.3}
@@ -874,8 +880,8 @@ export default function Runeblade({
               >
                 <sphereGeometry args={[1.25, 6, 6]} />
                 <meshStandardMaterial
-                  color={new Color(0x87CEEB)}
-                  emissive={new Color(0x4682B4)}
+                  color={secondaryColor}
+                  emissive={secondaryEmissive}
                   emissiveIntensity={3 * spark.life}
                   transparent
                   opacity={spark.life * 0.6}

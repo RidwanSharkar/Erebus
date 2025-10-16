@@ -56,6 +56,8 @@ const BossBoneWings = React.memo(({ isLeftWing, isDashing }: BossBoneWingsProps)
       rot: new Euler(0.2, 0, isLeftWing ? -Math.PI / 1.8 : Math.PI / 1.8), 
       scale: 0.8 
     },
+    
+    
     // Tip bone segment 1 - original absolute position (this will be the parent for the connection)
     { 
       pos: new Vector3(isLeftWing ? -1.3 : 1.3, 0.75, 0.2), 
@@ -64,14 +66,36 @@ const BossBoneWings = React.memo(({ isLeftWing, isDashing }: BossBoneWingsProps)
     },
 
     // Tip bone segment 2 - will be positioned relative to segment 1 (lower wing section)
-    { 
-      pos: new  Vector3(isLeftWing ? 0.05 : -0.05, -0.5, -0.0), 
-      rot: new Euler(0.05, 0, isLeftWing ? -Math.PI / -0.475 : Math.PI / -0.475), 
-      scale: 0.8 
+    {
+      pos: new  Vector3(isLeftWing ? 0.05 : -0.05, -0.5, -0.02),
+      rot: new Euler(0.05, 0, isLeftWing ? -Math.PI / -0.475 : Math.PI / -0.475),
+      scale: 0.9
+
     },
+
+    // Additional tip bone segment 3 - for middle wing section
+    {
+      pos: new Vector3(isLeftWing ? -1.1 : 1.1, 0.65, 0.175),
+      rot: new Euler(0.1, 0, isLeftWing ? -Math.PI / 4   + Math.PI / 2.5 : Math.PI / 4 - Math.PI / 2.5),
+      scale: 0.9
+    },
+
+    // Additional tip bone segment 4 - for upper wing section
+    {
+      pos: new Vector3(isLeftWing ? -0.925 : 0.925, 0.55, 0.095),
+      rot: new Euler(0.05, 0, isLeftWing ? -Math.PI / 4.5 + Math.PI / 2.5 : Math.PI / 5 - Math.PI / 2.5),
+      scale: 0.85
+    },
+
+
+
+    
+    
+
+    
   ], [isLeftWing]);
 
-  // Define parent-child relationships - only for the two tip segments
+  // Define parent-child relationships - for tip segments
   const boneConnections = useMemo(() => [
     -1, // bone 0: no parent (independent)
     -1, // bone 1: no parent (independent)
@@ -81,6 +105,8 @@ const BossBoneWings = React.memo(({ isLeftWing, isDashing }: BossBoneWingsProps)
     -1, // bone 5: no parent (independent)
     -1, // bone 6: no parent (independent) - tip segment 1
     6,  // bone 7: parent is bone 6 - tip segment 2 connected to segment 1
+    -1, // bone 8: no parent (independent) - additional tip segment 3
+    -1, // bone 9: no parent (independent) - additional tip segment 4
   ], []);
 
   // Store original rotations for restoration

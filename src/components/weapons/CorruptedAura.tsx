@@ -54,8 +54,8 @@ const CorruptedAura = forwardRef<{ toggle: () => void; isActive: boolean }, Corr
           <mesh key={i} rotation={[-Math.PI / 2, 0, rotation + Date.now() * 0.0008]}>
             <ringGeometry args={[0.85, 1.0, 3]} />
             <meshStandardMaterial
-              color="#aa88ff"
-              emissive="#8844ff"
+                color="#ffaa00"
+                emissive="#ff8800"
               emissiveIntensity={2}
               transparent
               opacity={0.6}
@@ -69,9 +69,9 @@ const CorruptedAura = forwardRef<{ toggle: () => void; isActive: boolean }, Corr
       <mesh position={[0, 0.-0.6, 0]} scale={[1, 1, 1]}>
         <cylinderGeometry args={[0.925, 0.5, -0.1, 32]} />
         <meshStandardMaterial
-          color="#ff8888"
-          emissive="#cc3333"
-          emissiveIntensity={0.4}
+            color="#ff8800"
+            emissive="#ff6600"
+            emissiveIntensity={1}
           transparent
           opacity={0.45}
           depthWrite={false}

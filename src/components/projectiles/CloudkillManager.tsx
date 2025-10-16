@@ -14,11 +14,6 @@ interface CloudkillManagerProps {
   enemyData: Enemy[];
   onHit: (targetId: string, damage: number, isCritical: boolean, position: Vector3) => void;
   playerPosition: Vector3;
-  onPlayerHit?: (damage: number) => void;
-  players?: Array<{ id: string; position: { x: number; y: number; z: number }; isVenomed?: boolean; venomedUntil?: number }>; // For PVP - check if players have venom debuff and get their positions
-  localSocketId?: string; // To exclude the casting player from targets
-  // Add callback to get real-time player positions
-  getCurrentPlayerPositions?: () => Array<{ id: string; position: { x: number; y: number; z: number }; health?: number }>;
 }
 
 interface ActiveCloudkill {
@@ -30,11 +25,7 @@ interface ActiveCloudkill {
 export default function CloudkillManager({
   enemyData,
   onHit,
-  playerPosition,
-  onPlayerHit,
-  players = [],
-  localSocketId,
-  getCurrentPlayerPositions
+  playerPosition
 }: CloudkillManagerProps) {
   const [activeCloudkills, setActiveCloudkills] = useState<ActiveCloudkill[]>([]);
   const lastCastTime = useRef<number>(0);
@@ -45,33 +36,23 @@ export default function CloudkillManager({
   const COOLDOWN = 4000; // 1.5 seconds cooldown (handled by ControlSystem)
 
   const findClosestTargets = useCallback((count: number): Array<{ id: string; position: { x: number; y: number; z: number } }> => {
-    // Combine enemies and players as potential targets
-    const allTargets: Array<{ id: string; position: { x: number; y: number; z: number } }> = [];
+    // Only target boss units
+    const bossTargets: Array<{ id: string; position: { x: number; y: number; z: number } }> = [];
 
-    // Add enemies
+    // Add boss enemies only
     enemyData.forEach(enemy => {
-      if (enemy.health > 0) {
-        allTargets.push({
+      if (enemy.health > 0 && (enemy.type === 'boss' || enemy.type === 'boss-skeleton')) {
+        bossTargets.push({
           id: enemy.id,
           position: enemy.position
         });
       }
     });
 
-    // Add players (for PVP) - exclude the casting player
-    players.forEach(player => {
-      if (player.position && player.id !== localSocketId) {
-        allTargets.push({
-          id: player.id,
-          position: player.position
-        });
-      }
-    });
-
-    if (allTargets.length === 0) return [];
+    if (bossTargets.length === 0) return [];
 
     // Calculate distances and sort by proximity
-    const targetsWithDistance = allTargets.map(target => ({
+    const targetsWithDistance = bossTargets.map(target => ({
       target,
       distance: playerPosition.distanceTo(new Vector3(target.position.x, 0, target.position.z))
     }));
@@ -80,7 +61,7 @@ export default function CloudkillManager({
 
     // Return up to 'count' closest targets
     return targetsWithDistance.slice(0, count).map(item => item.target);
-  }, [enemyData, players, playerPosition, localSocketId]);
+  }, [enemyData, playerPosition]);
 
   const distributeArrowsToTargets = useCallback((targetCount: number): CloudkillTarget[] => {
     const closestTargets = findClosestTargets(Math.min(targetCount, ARROW_COUNT));
@@ -102,47 +83,32 @@ export default function CloudkillManager({
     }
 
     return targets;
-  }, [findClosestTargets, players, enemyData]);
+  }, [findClosestTargets]);
 
   // Function to distribute arrows to targets from a specific caster's perspective
   const distributeArrowsToTargetsFromCaster = useCallback((casterId: string, targetCount: number): CloudkillTarget[] => {
-    // Find the caster's position
-    const caster = players.find(p => p.id === casterId);
-    if (!caster || !caster.position) {
-      return [];
-    }
+    // For co-op mode, we use the player's position as caster position
+    const casterPosition = playerPosition.clone();
 
-    const casterPosition = new Vector3(caster.position.x, caster.position.y, caster.position.z);
+    // Find closest boss targets
+    const bossTargets: Array<{ id: string; position: { x: number; y: number; z: number } }> = [];
 
-    // Find closest targets from caster's perspective (excluding the caster)
-    const allTargets: Array<{ id: string; position: { x: number; y: number; z: number } }> = [];
-
-    // Add enemies
+    // Add boss enemies only
     enemyData.forEach(enemy => {
-      if (enemy.health > 0) {
-        allTargets.push({
+      if (enemy.health > 0 && (enemy.type === 'boss' || enemy.type === 'boss-skeleton')) {
+        bossTargets.push({
           id: enemy.id,
           position: enemy.position
         });
       }
     });
 
-    // Add players (excluding the caster)
-    players.forEach(player => {
-      if (player.position && player.id !== casterId) {
-        allTargets.push({
-          id: player.id,
-          position: player.position
-        });
-      }
-    });
-
-    if (allTargets.length === 0) {
+    if (bossTargets.length === 0) {
       return [];
     }
 
     // Calculate distances from caster's position and sort by proximity
-    const targetsWithDistance = allTargets.map(target => ({
+    const targetsWithDistance = bossTargets.map(target => ({
       target,
       distance: casterPosition.distanceTo(new Vector3(target.position.x, 0, target.position.z))
     }));
@@ -167,39 +133,29 @@ export default function CloudkillManager({
       });
     }
     return targets;
-  }, [players, enemyData, ARROW_COUNT, ARROW_DELAY_INTERVAL]);
+  }, [playerPosition, enemyData, ARROW_COUNT, ARROW_DELAY_INTERVAL]);
 
   // Function to distribute arrows to targets from a specific caster position (for remote casts)
   const distributeArrowsToTargetsFromCasterPosition = useCallback((casterId: string, casterPosition: Vector3, targetCount: number): CloudkillTarget[] => {
-    // Find closest targets from caster's perspective (excluding the caster)
-    const allTargets: Array<{ id: string; position: { x: number; y: number; z: number } }> = [];
+    // Find closest boss targets
+    const bossTargets: Array<{ id: string; position: { x: number; y: number; z: number } }> = [];
 
-    // Add enemies
+    // Add boss enemies only
     enemyData.forEach(enemy => {
-      if (enemy.health > 0) {
-        allTargets.push({
+      if (enemy.health > 0 && (enemy.type === 'boss' || enemy.type === 'boss-skeleton')) {
+        bossTargets.push({
           id: enemy.id,
           position: enemy.position
         });
       }
     });
 
-    // Add players (excluding the caster)
-    players.forEach(player => {
-      if (player.position && player.id !== casterId) {
-        allTargets.push({
-          id: player.id,
-          position: player.position
-        });
-      }
-    });
-
-    if (allTargets.length === 0) {
+    if (bossTargets.length === 0) {
       return [];
     }
 
     // Calculate distances from caster's position and sort by proximity
-    const targetsWithDistance = allTargets.map(target => ({
+    const targetsWithDistance = bossTargets.map(target => ({
       target,
       distance: casterPosition.distanceTo(new Vector3(target.position.x, 0, target.position.z))
     }));
@@ -224,7 +180,7 @@ export default function CloudkillManager({
       });
     }
     return targets;
-  }, [players, enemyData, ARROW_COUNT, ARROW_DELAY_INTERVAL]);
+  }, [enemyData, ARROW_COUNT, ARROW_DELAY_INTERVAL]);
 
   const castCloudkill = useCallback(() => {
     const now = Date.now();
@@ -232,15 +188,15 @@ export default function CloudkillManager({
       return false;
     }
 
-    // Check if we have any targets (enemies or players)
-    const totalTargets = enemyData.length + players.length;
-    if (totalTargets === 0) {
-      return false; // No targets to attack
+    // Check if we have any boss targets
+    const bossTargets = enemyData.filter(enemy => enemy.health > 0 && (enemy.type === 'boss' || enemy.type === 'boss-skeleton'));
+    if (bossTargets.length === 0) {
+      return false; // No boss targets to attack
     }
 
     lastCastTime.current = now;
 
-    const targets = distributeArrowsToTargets(totalTargets);
+    const targets = distributeArrowsToTargets(bossTargets.length);
 
     if (targets.length === 0) {
       return false;
@@ -265,52 +221,6 @@ export default function CloudkillManager({
     return true;
   }, [enemyData, distributeArrowsToTargets]);
 
-  // Special function to cast cloudkill that targets the local player (for receiving player in PVP)
-  const castCloudkillTargetingLocalPlayer = useCallback((casterId: string, localPlayerPosition: Vector3) => {
-    const now = Date.now();
-    if (now - lastCastTime.current < COOLDOWN) {
-      return false;
-    }
-
-    // Find the local player's data
-    const localPlayer = players.find(p => p.id === localSocketId);
-    if (!localPlayer) {
-      return false;
-    }
-
-    lastCastTime.current = now;
-
-    // Create targets that specifically target the local player
-    const targets: CloudkillTarget[] = [];
-
-    // Create arrows targeting the local player
-    for (let i = 0; i < ARROW_COUNT; i++) {
-      targets.push({
-        position: localPlayerPosition.clone(),
-        targetId: localPlayer.id,
-        delay: i * ARROW_DELAY_INTERVAL, // Staggered delays: 0ms, 300ms, 600ms
-        casterPosition: localPlayerPosition.clone() // Use local player position as both target and caster for visual effect
-      });
-    }
-
-    const cloudkillEffect: ActiveCloudkill = {
-      id: Date.now(),
-      targets,
-      startTime: now
-    };
-
-    setActiveCloudkills(prev => [...prev, cloudkillEffect]);
-
-    // Clean up the effect after all arrows have fallen and impacts completed
-    const totalDuration = 1000 + (ARROW_COUNT - 1) * ARROW_DELAY_INTERVAL + 1500;
-    setTimeout(() => {
-      setActiveCloudkills(prev =>
-        prev.filter(effect => effect.id !== cloudkillEffect.id)
-      );
-    }, totalDuration);
-
-    return true;
-  }, [players, localSocketId, ARROW_COUNT, ARROW_DELAY_INTERVAL, COOLDOWN]);
 
   // Special function to cast cloudkill from a specific caster's perspective
   const castCloudkillFromCaster = useCallback((casterId: string, casterPosition?: Vector3) => {
@@ -319,20 +229,19 @@ export default function CloudkillManager({
       return false;
     }
 
-    // Find targets that are enemies of the caster (all players except the caster)
-    const enemyPlayers = players.filter(p => p.id !== casterId);
-    const totalTargets = enemyData.length + enemyPlayers.length;
-    
-    if (totalTargets === 0) {
+    // Find boss targets
+    const bossTargets = enemyData.filter(enemy => enemy.health > 0 && (enemy.type === 'boss' || enemy.type === 'boss-skeleton'));
+
+    if (bossTargets.length === 0) {
       return false;
     }
 
     lastCastTime.current = now;
 
     // Create targets from caster's perspective using provided position or lookup
-    const targets = casterPosition 
-      ? distributeArrowsToTargetsFromCasterPosition(casterId, casterPosition, totalTargets)
-      : distributeArrowsToTargetsFromCaster(casterId, totalTargets);
+    const targets = casterPosition
+      ? distributeArrowsToTargetsFromCasterPosition(casterId, casterPosition, bossTargets.length)
+      : distributeArrowsToTargetsFromCaster(casterId, bossTargets.length);
 
     if (targets.length === 0) {
       return false;
@@ -355,26 +264,17 @@ export default function CloudkillManager({
     }, totalDuration);
 
     return true;
-  }, [enemyData, players, distributeArrowsToTargetsFromCaster, distributeArrowsToTargetsFromCasterPosition, ARROW_COUNT, ARROW_DELAY_INTERVAL, COOLDOWN]);
+  }, [enemyData, distributeArrowsToTargetsFromCaster, distributeArrowsToTargetsFromCasterPosition, ARROW_COUNT, ARROW_DELAY_INTERVAL, COOLDOWN]);
 
   // Set up global trigger
   React.useEffect(() => {
     const triggerCallback = (position: Vector3, casterId: string) => {
-      // Only trigger if we have targets
-      const totalTargets = enemyData.length + players.filter(p => p.id !== casterId).length;
+      // Only trigger if we have boss targets
+      const bossTargets = enemyData.filter(enemy => enemy.health > 0 && (enemy.type === 'boss' || enemy.type === 'boss-skeleton'));
 
-      if (totalTargets > 0) {
-        // Check if this is a PVP scenario (casterId is different from local player)
-        const isReceivingPlayer = localSocketId && casterId !== localSocketId;
-
-        if (isReceivingPlayer) {
-          // For the receiving player: create arrows targeting themselves at their current position
-          // The position passed is the receiving player's position, and casterId is the remote player
-          castCloudkillTargetingLocalPlayer(casterId, position);
-        } else {
-          // For the casting player: create arrows targeting other players from caster's position
-          castCloudkillFromCaster(casterId, position);
-        }
+      if (bossTargets.length > 0) {
+        // For co-op mode, cast cloudkill targeting bosses
+        castCloudkillFromCaster(casterId, position);
       }
     };
 
@@ -383,17 +283,12 @@ export default function CloudkillManager({
     return () => {
       setGlobalCloudkillTrigger(() => {});
     };
-  }, [enemyData, players, castCloudkill, castCloudkillTargetingLocalPlayer, localSocketId]);
+  }, [enemyData, castCloudkillFromCaster]);
 
   const removeCloudkill = useCallback((id: number) => {
     setActiveCloudkills(prev => prev.filter(effect => effect.id !== id));
   }, []);
 
-  const handleArrowImpact = useCallback((damage: number) => {
-    if (onPlayerHit) {
-      onPlayerHit(damage);
-    }
-  }, [onPlayerHit]);
 
   const handleArrowComplete = useCallback((cloudkillId: number, arrowIndex: number) => {
     // Check if this was the last arrow in the cloudkill effect
@@ -419,14 +314,11 @@ export default function CloudkillManager({
               key={`${cloudkill.id}-${index}`}
               targetId={target.targetId}
               initialTargetPosition={target.position}
-              onImpact={handleArrowImpact}
+              onImpact={() => {}} // No longer needed for PVP
               onComplete={() => handleArrowComplete(cloudkill.id, index)}
               playerPosition={target.casterPosition || playerPosition}
               enemyData={enemyData}
               onHit={onHit}
-              players={players}
-              getCurrentPlayerPositions={getCurrentPlayerPositions}
-              localSocketId={localSocketId}
             />
           ))}
         </React.Fragment>
@@ -463,7 +355,7 @@ export function useCloudkillManager({ enemyData, playerPosition }: {
   };
 }
 
-// Global trigger mechanism for PVP Cloudkill
+// Global trigger mechanism for Cloudkill
 let globalCloudkillTrigger: ((position: Vector3, casterId: string) => void) | null = null;
 
 export const setGlobalCloudkillTrigger = (callback: (position: Vector3, casterId: string) => void) => {

@@ -68,16 +68,7 @@ class EnemyAI {
   }
 
   updateEnemyAI(enemy, players) {
-    // Check if enemy is taunted (Deathgrasp effect)
-    if (this.isEnemyTaunted(enemy.id)) {
-      const tauntTargetId = this.getEnemyTauntTarget(enemy.id);
-      const tauntTarget = players.find(p => p.id === tauntTargetId);
-      if (tauntTarget) {
-        // Move enemy towards taunt target, ignoring normal aggro
-        this.moveEnemyTowardsTarget(enemy, tauntTarget);
-        return;
-      }
-    }
+    // Note: Taunt now works by giving aggro priority instead of overriding AI completely
 
     // Special handling for boss enemies
     if (enemy.type === 'boss') {
@@ -193,40 +184,7 @@ class EnemyAI {
   }
 
   updateBossAI(boss, players) {
-    // Check if boss is taunted (Deathgrasp effect) - taunts override all aggro
-    if (this.isEnemyTaunted(boss.id)) {
-      const tauntTargetId = this.getEnemyTauntTarget(boss.id);
-      const tauntTarget = players.find(p => p.id === tauntTargetId);
-      if (tauntTarget) {
-        console.log(`🎯 Boss ${boss.id} is taunted by ${tauntTarget.name} - ignoring normal aggro`);
-        
-        // ALWAYS update rotation to face taunt target
-        this.updateBossRotation(boss, tauntTarget);
-        
-        // Check if boss can attack taunt target (within range)
-        const distance = this.calculateDistance(boss.position, tauntTarget.position);
-        const attackRange = 3.0; // Boss attack range
-        const attackCooldown = 750; // 0.75 seconds between attacks
-        const now = Date.now();
-        
-        if (distance <= attackRange) {
-          // Within attack range - prioritize attacking over moving
-          const lastAttackTime = this.bossAttackCooldown.get(boss.id) || 0;
-
-          if (now - lastAttackTime >= attackCooldown) {
-            // Attack the taunted player
-            this.bossAttackPlayer(boss, tauntTarget);
-            this.bossAttackCooldown.set(boss.id, now);
-          }
-          // Don't move when in attack range - stay and attack
-        } else {
-          // Outside attack range - move towards taunt target
-          this.moveEnemyTowardsTarget(boss, tauntTarget);
-        }
-        
-        return;
-      }
-    }
+    // Note: Taunt now works by giving aggro priority instead of overriding AI completely
 
     // console.log(`🤖 Updating Boss AI for ${boss.id}, current target: ${boss.currentTarget || 'none'}`);
 
@@ -237,17 +195,29 @@ class EnemyAI {
 
     const damageMap = this.bossDamageTracking.get(boss.id);
 
-    // Determine target based on damage dealt
+    // Determine target based on damage dealt (with taunt priority)
     let targetPlayer = null;
     let maxDamage = 0;
     let topDamagePlayerId = null;
 
+    // Check if boss is currently taunted
+    const isTaunted = this.isEnemyTaunted(boss.id);
+    const tauntTargetId = isTaunted ? this.getEnemyTauntTarget(boss.id) : null;
+
     // console.log(`📊 Boss ${boss.id} damage tracking:`, Array.from(damageMap.entries()));
 
-    // Find player who dealt most damage
+    // Find player who dealt most damage (taunted player gets massive priority bonus)
     damageMap.forEach((damage, playerId) => {
-      if (damage > maxDamage) {
-        maxDamage = damage;
+      let effectiveDamage = damage;
+
+      // If this player is the taunt target, give them massive damage bonus for targeting
+      if (isTaunted && playerId === tauntTargetId) {
+        effectiveDamage += 10000; // Massive bonus to ensure taunt priority
+        console.log(`🎯 Boss ${boss.id} prioritizing taunted player ${playerId} (${damage} + 10000 bonus)`);
+      }
+
+      if (effectiveDamage > maxDamage) {
+        maxDamage = effectiveDamage;
         topDamagePlayerId = playerId;
         const player = players.find(p => p.id === playerId);
         if (player) {
@@ -329,7 +299,7 @@ class EnemyAI {
       return;
     }
 
-    const damage = 35; // Boss deals 10 damage per hit
+    const damage = 31; // Boss deals 10 damage per hit
 
     // Broadcast boss attack to all players
     if (this.io) {
@@ -676,7 +646,23 @@ class EnemyAI {
       tauntEndTime
     });
 
-    console.log(`🎯 Enemy ${enemyId} taunted by player ${taunterPlayerId} for ${duration/1000} seconds`);
+    // For bosses, add taunt bonus to damage tracking
+    // For regular enemies, use regular aggro system
+    const enemy = this.room?.enemies.get(enemyId);
+    if (enemy && enemy.type === 'boss') {
+      // Initialize damage tracking if not exists
+      if (!this.bossDamageTracking.has(enemyId)) {
+        this.bossDamageTracking.set(enemyId, new Map());
+      }
+      const damageMap = this.bossDamageTracking.get(enemyId);
+      const currentDamage = damageMap.get(taunterPlayerId) || 0;
+      damageMap.set(taunterPlayerId, currentDamage + 1000); // Large damage bonus for taunt
+      console.log(`🎯 Boss ${enemyId} taunted by player ${taunterPlayerId} for ${duration/1000} seconds (damage bonus: +1000)`);
+    } else {
+      // For regular enemies, use regular aggro system
+      this.updateAggro(enemyId, taunterPlayerId, 1000); // Large aggro bonus
+      console.log(`🎯 Enemy ${enemyId} taunted by player ${taunterPlayerId} for ${duration/1000} seconds (aggro priority)`);
+    }
   }
 
   // Check if enemy is currently taunted

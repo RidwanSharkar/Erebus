@@ -160,7 +160,7 @@ export class ControlSystem extends System {
   private swordFireRate = 0.825; // Rate for sword attacks
   private runebladeFireRate = 0.725; // Runeblade attack rate
   private sabresFireRate = 0.6; // Sabres dual attack rate (600ms between attacks)
-  private scytheFireRate = 0.25; // EntropicBolt rate (0.33s cooldown)
+  private scytheFireRate = 0.275; // EntropicBolt rate (0.33s cooldown)
   private crossentropyFireRate = 2; // CrossentropyBolt rate (1 per second)
   private summonTotemFireRate = 5.0; // Summon Totem rate (5 seconds cooldown)
   private viperStingFireRate = 2.0; // Viper Sting rate (2 seconds cooldown)
@@ -168,7 +168,7 @@ export class ControlSystem extends System {
   private cobraShotFireRate = 2.0; // Cobra Shot rate (2 seconds cooldown)
   private cloudkillFireRate = 4.0; // Cloudkill rate (1.5 seconds cooldown)
   private lastBurstFireTime = 0; // Separate tracking for Bow burst fire
-  private burstFireRate = 0.85; // 1 second cooldown between bursts
+  private burstFireRate = 0.925; // 1 second cooldown between bursts
 
   // Key press tracking for toggle abilities
   private fKeyWasPressed = false;
@@ -2365,8 +2365,8 @@ export class ControlSystem extends System {
     this.lastSmiteTime = currentTime;
     this.isSmiting = true;
 
-    // Play smite sound
-    this.audioSystem?.playRunebladeSmiteSound(playerTransform.position);
+    // Play colossus strike sound instead of smite sound
+    this.audioSystem?.playColossusStrikeSound(playerTransform.position);
 
     // Stop player movement immediately when casting Smite
     if (this.playerEntity) {
