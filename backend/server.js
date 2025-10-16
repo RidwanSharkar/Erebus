@@ -14,9 +14,9 @@ const getCorsOrigins = () => {
         return corsOriginsEnv.split(',').map(origin => origin.trim());
     }
 
-    // Fallback origins if env var not set
+    // Fallback origins if env var not set - only allow frontend domains
     return process.env.NODE_ENV === 'production'
-      ? ['https://empyrea.vercel.app', 'https://empyrea-game-backend.fly.dev']
+      ? ['https://empyrea.vercel.app', 'https://empyrea-ridwansharkar.vercel.app', 'https://empyrea-game-backend.fly.dev']
       : ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:3001', 'http://127.0.0.1:3001'];
 };
 
@@ -44,9 +44,9 @@ const io = socketIo(server, {
   },
   transports: ['polling', 'websocket'],
   allowEIO3: true,
-  pingTimeout: 60000,
-  pingInterval: 25000,
-  connectTimeout: 45000,
+  pingTimeout: 20000,  // Reduced from 60000ms (60s) to 20000ms (20s)
+  pingInterval: 10000,  // Reduced from 25000ms (25s) to 10000ms (10s)
+  connectTimeout: 20000, // Reduced from 45000ms (45s) to 20000ms (20s)
   maxHttpBufferSize: 1e8
 });
 
@@ -286,10 +286,10 @@ function cleanupPlayer(playerId) {
 // Periodic cleanup of stale connections (every 30 seconds)
 setInterval(() => {
   const now = Date.now();
-  const STALE_THRESHOLD = 60000; // 60 seconds without heartbeat = stale
-  
+  const STALE_THRESHOLD = 45000; // 45 seconds without heartbeat = stale (allows for 2 missed heartbeats)
+
   // console.log(`Running cleanup check. Active connections: ${playerSockets.size}`);
-  
+
   for (const [playerId, lastHeartbeat] of playerHeartbeats) {
     if (now - lastHeartbeat > STALE_THRESHOLD) {
       console.log(`Cleaning up stale connection: ${playerId}, last heartbeat: ${Math.floor((now - lastHeartbeat) / 1000)}s ago`);

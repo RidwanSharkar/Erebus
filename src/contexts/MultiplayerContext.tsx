@@ -233,14 +233,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     console.log('🔌 Connecting to multiplayer server:', serverUrl);
 
     const newSocket = io(serverUrl, {
-      transports: ['polling', 'websocket'],
+      transports: ['websocket', 'polling'], // Prefer websocket first
       timeout: 20000,
       forceNew: true,
       withCredentials: true,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      reconnectionAttempts: 5
+      reconnectionAttempts: 5,
+      upgrade: true, // Allow transport upgrades
+      rememberUpgrade: true // Remember successful upgrades
     });
 
     // Store the socket in state
@@ -266,8 +268,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         clearInterval(heartbeatInterval.current);
       }
       heartbeatInterval.current = setInterval(() => {
-        newSocket.emit('heartbeat');
-      }, 30000); // Send heartbeat every 30 seconds
+        if (newSocket.connected) {
+          newSocket.emit('heartbeat');
+        }
+      }, 15000); // Send heartbeat every 15 seconds
     });
 
     addEventHandler('connecting', () => {
@@ -295,7 +299,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       console.error('🔥 Error details:', error.message, error);
       setConnectionError(error.message);
       setIsConnected(false);
-      setSocket(null); // Clear socket reference on connection error
+      // Don't clear socket reference immediately on connection error - let reconnection handle it
     });
 
     // Room event handlers
