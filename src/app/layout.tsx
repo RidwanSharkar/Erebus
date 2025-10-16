@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Empyrea',
-  description: '3D action game built with React Three Fiber and ECS architecture',
+  title: 'Erebus',
+  description: '3-Player Co-op Boss Battle Arena built with React Three Fiber and Socket.io',
 }
 
 export default function RootLayout({

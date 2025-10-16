@@ -126,7 +126,7 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
             selectedWeapons.primary === WeaponType.BOW ? '🏹' :
             selectedWeapons.primary === WeaponType.SCYTHE ? '🦋' :
             selectedWeapons.primary === WeaponType.SABRES ? '⚔️' :
-            selectedWeapons.primary === WeaponType.RUNEBLADE ? '🔮' : '❓'
+            selectedWeapons.primary === WeaponType.RUNEBLADE ? '⚜️' : '❓'
     };
     weapons.push(primaryWeapon);
 

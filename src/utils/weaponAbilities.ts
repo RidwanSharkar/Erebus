@@ -156,7 +156,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       description: '{35 MANA} A swift strike that inflicts enemies hit with the CORRUPTED debuff for 8 seconds. reducing movement speed by 90%. Afflicted enemies regain 10% movement speed per second.'
     },
     {
-      name: 'Hexed Smite',
+      name: 'Colossus Smite',
       key: 'R',
       cooldown: 3.0,
       description: '{45 MANA} Calls down unholy energy, dealing damage to enemy players in a small area, healing you for the same amount of damage dealt.'

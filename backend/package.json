@@ -1,7 +1,7 @@
 {
-  "name": "empyrea-backend",
+  "name": "erebus-backend",
   "version": "1.0.0",
-  "description": "Multiplayer backend for EMPYREA game",
+  "description": "Multiplayer backend for Erebus game",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
