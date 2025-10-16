@@ -1,6 +1,6 @@
-# 🌑  Erebus - v0.5
+# 🌑  Erebus β
 
-### v0.5 First Boss Model
+### v0.5 Initial Release Boss Model
 ![BossPreRelease](https://github.com/user-attachments/assets/32f96a9d-e66b-404a-a984-fd2dbd04b866)
 
 ### v0.5 Co-op Aggro System
@@ -14,7 +14,7 @@
 - **Spatial Audio**: Howler.js-powered 3D positional audio with 30+ unique sound effects
 - **Performance Optimizations**: Object pooling, state batching, and performance monitoring
 - **Scalable Backend**: Node.js server with automatic scaling and health monitoring
-- **In-Game Chat Functionality**
+- **In-Game Chat Functionality**: Real-time multiplayer text communication with player names
 
 ## 🎨 Custom Model Creation & Visual Effects
 
@@ -135,7 +135,7 @@
 const player = world.createEntity();
 player.addComponent(new Transform(new Vector3(0, 0, 0)));
 player.addComponent(new Movement(3.75, 0.8)); // speed, friction
-player.addComponent(new Health(1000));
+player.addComponent(new Health(500));
 ```
 
 #### **Component** (`Component.ts`)
@@ -308,7 +308,7 @@ world.emitEvent('enemy_killed', { enemyId, killerId });
 const events = world.getEvents('enemy_killed');
 ```
 
-### ECS Architecture Benefits
+### Custom ECS Architecture
 
 - **Modularity**: Components and systems are independent and reusable
 - **Performance**: Only relevant systems process relevant entities
