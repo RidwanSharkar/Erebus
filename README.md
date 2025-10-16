@@ -1,6 +1,14 @@
-# 🌑  Enceladus Or Erebus - NAME NOT DECIDED
+# 🌑  Enceladus Or Erebus - undecided
 
-## 🪐 Key Features  
+### v0.5 First Boss
+![BossPreRelease](https://github.com/user-attachments/assets/32f96a9d-e66b-404a-a984-fd2dbd04b866)
+
+### v0.5 Co-op Aggro System
+![AggroSystem](https://github.com/user-attachments/assets/70b0485a-b29b-47f9-a228-5e8627a2766d)
+
+### v0.5 Model Creation
+![BossPreRelease](https://github.com/user-attachments/assets/ad52e857-ec41-418e-b55a-cd7f4f1570e0)
+
 
 ### ⚙️ Technical Specs
 - **Real-time Multiplayer**: Socket.io-powered networking with sub-60ms latency
