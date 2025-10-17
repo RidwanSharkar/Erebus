@@ -360,7 +360,7 @@ export default function GameUI({
       canCastBarrage: () => currentEnergy >= 40,
       canCastCobraShot: () => currentEnergy >= 40,
       canCastViperSting: () => currentEnergy >= 60,
-      canCastCloudkill: () => currentEnergy >= 40,
+      canCastRejuvenatingShot: () => currentEnergy >= 40,
       // Sword rage abilities
       canCastWindShear: () => currentRage >= 10,
       // Sabres energy abilities

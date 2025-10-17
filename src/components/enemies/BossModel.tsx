@@ -708,7 +708,6 @@ export default function BossModel({
             rightArm.rotation.z = 0;
           }
         });
-        console.log('🎯 Boss attack animation completed');
       }
     } else if (!isAttacking) {
       // Reset arm positions when not attacking

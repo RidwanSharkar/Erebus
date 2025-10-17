@@ -6,6 +6,7 @@ import { Projectile } from '@/ecs/components/Projectile';
 import { Renderer } from '@/ecs/components/Renderer';
 import { Enemy } from '@/ecs/components/Enemy';
 import { Health } from '@/ecs/components/Health';
+import { Collider } from '@/ecs/components/Collider';
 
 // Import individual projectile components
 import CrossentropyBolt from '@/components/projectiles/CrossentropyBolt';
@@ -94,21 +95,33 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
 
     // Get all enemy entities
     const allEntities = world.getAllEntities();
-    
+
     for (const entity of allEntities) {
       const enemy = entity.getComponent(Enemy);
       const health = entity.getComponent(Health);
       const transform = entity.getComponent(Transform);
+      const collider = entity.getComponent(Collider);
 
       // Skip if not an enemy or if dead
       if (!enemy || !health || !transform || health.isDead) continue;
 
+      // Get collision center (account for collider offset)
+      const collisionCenter = transform.position.clone();
+      if (collider) {
+        collisionCenter.add((collider as Collider).offset);
+      }
+
       // Check collision distance (using 2D distance for better gameplay)
       const projectilePos2D = new Vector3(position.x, 0, position.z);
-      const enemyPos2D = new Vector3(transform.position.x, 0, transform.position.z);
+      const enemyPos2D = new Vector3(collisionCenter.x, 0, collisionCenter.z);
       const distance = projectilePos2D.distanceTo(enemyPos2D);
 
-      if (distance <= 1.5) { // Hit radius for EntropicBolt
+      // EntropicBolt has effective radius of ~0.5, enemy collider radius varies
+      const projectileRadius = 0.5;
+      const enemyRadius = collider ? (collider as Collider).radius : 1.0;
+      const totalCollisionRadius = projectileRadius + enemyRadius;
+
+      if (distance <= totalCollisionRadius) {
         return true; // Collision detected
       }
     }
@@ -122,21 +135,33 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
 
     // Get all enemy entities
     const allEntities = world.getAllEntities();
-    
+
     for (const entity of allEntities) {
       const enemy = entity.getComponent(Enemy);
       const health = entity.getComponent(Health);
       const transform = entity.getComponent(Transform);
+      const collider = entity.getComponent(Collider);
 
       // Skip if not an enemy or if dead
       if (!enemy || !health || !transform || health.isDead) continue;
 
+      // Get collision center (account for collider offset)
+      const collisionCenter = transform.position.clone();
+      if (collider) {
+        collisionCenter.add((collider as Collider).offset);
+      }
+
       // Check collision distance (using 2D distance for better gameplay)
       const projectilePos2D = new Vector3(position.x, 0, position.z);
-      const enemyPos2D = new Vector3(transform.position.x, 0, transform.position.z);
+      const enemyPos2D = new Vector3(collisionCenter.x, 0, collisionCenter.z);
       const distance = projectilePos2D.distanceTo(enemyPos2D);
 
-      if (distance <= 1.55) { // Hit radius for CrossentropyBolt (slightly larger than EntropicBolt)
+      // CrossentropyBolt has effective radius of ~0.5, enemy collider radius varies
+      const projectileRadius = 0.5;
+      const enemyRadius = collider ? (collider as Collider).radius : 1.0;
+      const totalCollisionRadius = projectileRadius + enemyRadius;
+
+      if (distance <= totalCollisionRadius) {
         return true; // Collision detected
       }
     }
@@ -297,7 +322,9 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
         position: event.position.clone(),
         color: event.color || new Color('#00ff44'),
         size: event.size || 1,
-        duration: event.duration || 2
+        duration: event.duration || 2,
+        type: event.type || 'generic',
+        chargeTime: event.chargeTime
       };
       newExplosions.push(newExplosion);
     }
@@ -360,11 +387,16 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             
             // Create Crossentropy explosion effect at impact position
             if (impactPosition) {
+              // Ensure explosion is visible by setting it at a consistent height
+              // Boss entities have colliders centered at y=1, so position explosion at y=1.5 for visibility
+              const explosionPosition = impactPosition.clone();
+              explosionPosition.y = Math.max(1.5, impactPosition.y); // Minimum y=1.5 to ensure visibility on bosses
+              
               const explosion = {
                 id: explosionIdCounter.current++,
-                position: impactPosition.clone(),
+                position: explosionPosition,
                 color: new Color('#8B00FF'), // Purple/magenta explosion for Crossentropy
-                size: 1.75, // Larger explosion than EntropicBolt
+                size: 2.0, // Increased size from 1.75 to 2.0 for better visibility on large bosses
                 duration: 1.0, // Duration for Crossentropy explosion
                 type: 'crossentropy' as const,
                 chargeTime: 1.0 // Default charge time, could be dynamic based on player charge

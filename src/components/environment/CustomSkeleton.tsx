@@ -54,9 +54,7 @@ function BoneLegModel() {
       <group position={[0, length/2, 0]}>
         {createJoint(0.06)}
       </group>
-      <group position={[0, -length/2, 0]}>
-        {createJoint(0.06)}
-      </group>
+ 
     </group>
   );
 
@@ -96,10 +94,6 @@ function BoneLegModel() {
                     <group>
                       {createParallelBones(0.15, 0.02)}
 
-                      {/* Toe claws */}
-                      <group position={[0, -0.1, 0]} rotation={[Math.PI/6, 0, 0]}>
-                        <mesh geometry={clawGeometry} material={darkBoneMaterial} />
-                      </group>
                     </group>
                   </group>
                 ))}
@@ -133,9 +127,6 @@ function BossClawModel({ isLeftHand = false }: { isLeftHand?: boolean }) {
       <group position={[0, length/2, 0]}>
         {createJoint(0.08)}
       </group>
-      <group position={[0, -length/2, 0]}>
-        {createJoint(0.08)}
-      </group>
     </group>
   );
 
@@ -160,7 +151,7 @@ function BossClawModel({ isLeftHand = false }: { isLeftHand?: boolean }) {
             {createParallelBones(0.8, 0.12)}
 
             <group position={[0, -0.5, 0]} rotation={[0, 0, Math.PI / 5.5]}>
-              {createJoint(0.09)}
+
 
               <group position={[0, -0.1, 0]}>
                 <mesh>
@@ -230,33 +221,11 @@ function ShoulderPlate() {
               />
             </mesh>
 
-            {/* Decorative ridge on each plate */}
-            <mesh position={[0.07, 0.05, 0.0]} rotation={[0, Math.PI / 6, 0]}>
-              <boxGeometry args={[0.035, 0.24, 0.015]} />
-              <meshStandardMaterial
-                color="#c0c0c0"
-                roughness={0.3}
-                metalness={0.5}
-                emissive="#220000"
-                emissiveIntensity={0.15}
-              />
-            </mesh>
           </group>
         ))}
 
-        {/* Top rim */}
-        <mesh position={[0, 0.22, 0]} rotation={[Math.PI/2, Math.PI, Math.PI/2]}>
-          <torusGeometry args={[0.065, 0.02, 3, 5]} />
-          <meshStandardMaterial
-            color="#d4d4d4"
-            roughness={0.3}
-            metalness={0.5}
-            emissive="#330000"
-            emissiveIntensity={0.2}
-          />
-        </mesh>
 
-                {/* bottom rim */}
+                {/* middle rim */}
                 <mesh position={[0, 0, 0]} rotation={[Math.PI/2, Math.PI, Math.PI/2]}>
           <torusGeometry args={[0.16, 0.02, 4, 5]} />
           <meshStandardMaterial
@@ -396,13 +365,13 @@ export default function CustomSkeleton({ position, rotation = [0, 0, 0], isWalki
       <group ref={groupRef} position={[position[0], position[1] + 1, position[2]]} rotation={rotation} scale={[0.7  , 0.7, 0.7]}>
         {/* Body group for animation (bobbing, etc.) */}
         <group ref={bodyGroupRef}>
-          <group name="Body" position={[0, 1, 0.085]} scale={[0.85, 0.85, 0.85]} rotation={[0.1, 0, 0]}>
+          <group name="Body" position={[0, 0.9, 0.085]} scale={[0.85, 0.85, 0.85]} rotation={[0.1, 0, 0]}>
             <BonePlate />
           </group>
 
 
       {/* SKULL POSITIONING - adjusted for hunched posture */}
-      <group name="Head" position={[0, 1.575, 0.35]} scale={[ 0.75, 0.8, 0.8]} rotation={[0.15, 0, 0]}>
+      <group name="Head" position={[0, 1.5, 0.35]} scale={[ 0.75, 0.8, 0.8]} rotation={[0.15, 0, 0]}>
         {/* Main skull shape */}
         <group>
           {/* Back of cranium */}
@@ -569,12 +538,12 @@ export default function CustomSkeleton({ position, rotation = [0, 0, 0], isWalki
       <group name="LeftArm" position={[-0.35, 1, 0.18]} scale={[-0.45, 0.45, 0.45]} rotation={[0.1, Math.PI/5, 0.15]}>
         <BossClawModel isLeftHand={true} />
       </group>
-      <group name="RightArm" position={[0.35, 1, 0.18]} scale={[0.45, 0.45, 0.45]} rotation={[0.1, -Math.PI/5, -0.15]}>
+      <group name="RightArm" position={[0.35, 1.3, 0.28]} scale={[0.45, 0.45, 0.45]} rotation={[0.1, -Math.PI/5, -0.15]}>
         <BossClawModel isLeftHand={false} />
       </group>
 
       {/* Pelvis structure */}
-      <group position={[0, 0.45, 0]} scale={[1.4, 0.825, 0.8]}>
+      <group position={[0, 0.4, 0]} scale={[1.4, 0.825, 0.8]}>
         {/* Main pelvic bowl */}
         <mesh>
           <cylinderGeometry args={[0.21, 0.10, 0.3, 8]} />

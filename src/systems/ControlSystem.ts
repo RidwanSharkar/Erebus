@@ -22,6 +22,7 @@ import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapo
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
 import { triggerGlobalCobraShot } from '@/components/projectiles/CobraShotManager';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
+import { triggerGlobalRejuvenatingShot } from '@/components/projectiles/RejuvenatingShotManager';
 import { setGlobalCriticalRuneCount, setGlobalCritDamageRuneCount, getGlobalRuneCounts, setControlSystem, calculateDamage, DamageResult } from '@/core/DamageCalculator';
 
 export class ControlSystem extends System {
@@ -46,8 +47,8 @@ export class ControlSystem extends System {
   // Callback for Viper Sting activation
   private onViperStingCallback?: (position: Vector3, direction: Vector3) => void;
 
-  // Callback for Cloudkill activation
-  private onCloudkillCallback?: (position: Vector3, direction: Vector3) => void;
+  // Callback for Rejuvenating Shot activation
+  private onRejuvenatingShotCallback?: (position: Vector3, direction: Vector3) => void;
   
   // Callback for Barrage activation
   private onBarrageCallback?: (position: Vector3, direction: Vector3) => void;
@@ -155,7 +156,7 @@ export class ControlSystem extends System {
   private lastFrostNovaTime = 0; // Separate tracking for Frost Nova ability
   private lastCobraShotTime = 0; // Separate tracking for Cobra Shot ability
   private lastSummonTotemTime = 0; // Separate tracking for Summon Totem ability
-  private lastCloudkillTime = 0; // Separate tracking for Cloudkill ability
+  private lastRejuvenatingShotTime = 0; // Separate tracking for Rejuvenating Shot ability
   private fireRate = 0.2; // Default for bow
   private swordFireRate = 0.825; // Rate for sword attacks
   private runebladeFireRate = 0.725; // Runeblade attack rate
@@ -166,7 +167,7 @@ export class ControlSystem extends System {
   private viperStingFireRate = 2.0; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
   private cobraShotFireRate = 2.0; // Cobra Shot rate (2 seconds cooldown)
-  private cloudkillFireRate = 4.0; // Cloudkill rate (1.5 seconds cooldown)
+  private rejuvenatingShotFireRate = 4.0; // Rejuvenating Shot rate (4 seconds cooldown)
   private lastBurstFireTime = 0; // Separate tracking for Bow burst fire
   private burstFireRate = 0.925; // 1 second cooldown between bursts
 
@@ -197,9 +198,9 @@ export class ControlSystem extends System {
   private isCobraShotCharging = false;
   private cobraShotChargeProgress = 0;
 
-  // Cloudkill charging state
-  private isCloudkillCharging = false;
-  private cloudkillChargeProgress = 0;
+  // Rejuvenating Shot charging state
+  private isRejuvenatingShotCharging = false;
+  private rejuvenatingShotChargeProgress = 0;
 
   // Crossentropy Bolt charging state
   private isCrossentropyCharging = false;
@@ -813,10 +814,10 @@ export class ControlSystem extends System {
       }
     }
 
-    // Handle Cloudkill ability with 'F' key
+    // Handle Rejuvenating Shot ability with 'F' key
     if (this.inputManager.isKeyPressed('f') && this.isAbilityUnlocked('F')) {
-      if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging && !this.isCloudkillCharging) {
-        this.performCloudkill(playerTransform);
+      if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging && !this.isRejuvenatingShotCharging) {
+        this.performRejuvenatingShot(playerTransform);
       }
     }
 
@@ -857,7 +858,7 @@ export class ControlSystem extends System {
     } else {
       // NORMAL MODE: Charge-based firing
       if (this.inputManager.isMouseButtonPressed(0)) { // Left mouse button held
-        if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging && !this.isCloudkillCharging) {
+        if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging && !this.isRejuvenatingShotCharging) {
           this.isCharging = true;
           this.chargeProgress = 0;
 
@@ -865,12 +866,12 @@ export class ControlSystem extends System {
           this.audioSystem?.playBowDrawSound(playerTransform.position);
         }
         // Increase charge progress (could be time-based)
-        if (!this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging && !this.isCloudkillCharging) {
+        if (!this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging && !this.isRejuvenatingShotCharging) {
           this.chargeProgress = Math.min(this.chargeProgress + 0.0125, 1.0); // BOW CHARGE SPEED
         }
       } else if (this.isCharging) {
         // Check if any ability is charging - if so, cancel the regular bow shot
-        if (this.isViperStingCharging || this.isBarrageCharging || this.isCobraShotCharging || this.isCloudkillCharging) {
+        if (this.isViperStingCharging || this.isBarrageCharging || this.isCobraShotCharging || this.isRejuvenatingShotCharging) {
           this.isCharging = false;
           this.chargeProgress = 0;
           return;
@@ -1860,8 +1861,8 @@ export class ControlSystem extends System {
     this.onViperStingCallback = callback;
   }
 
-  public setCloudkillCallback(callback: (position: Vector3, direction: Vector3) => void): void {
-    this.onCloudkillCallback = callback;
+  public setRejuvenatingShotCallback(callback: (position: Vector3, direction: Vector3) => void): void {
+    this.onRejuvenatingShotCallback = callback;
   }
 
   public setBarrageCallback(callback: (position: Vector3, direction: Vector3) => void): void {
@@ -2121,12 +2122,12 @@ export class ControlSystem extends System {
     return this.cobraShotChargeProgress;
   }
 
-  public isCloudkillChargingActive(): boolean {
-    return this.isCloudkillCharging;
+  public isRejuvenatingShotChargingActive(): boolean {
+    return this.isRejuvenatingShotCharging;
   }
 
-  public getCloudkillChargeProgress(): number {
-    return this.cloudkillChargeProgress;
+  public getRejuvenatingShotChargeProgress(): number {
+    return this.rejuvenatingShotChargeProgress;
   }
 
   public isCrossentropyChargingActive(): boolean {
@@ -3219,10 +3220,22 @@ export class ControlSystem extends System {
           // Apply stun effect (2 seconds) to enemies hit by Skyfall
           const enemy = entity.getComponent(Enemy);
           if (enemy) {
-            enemy.freeze(2.0, currentTime); // 2 second stun using freeze mechanics
-            
-            // Add visual stun effect (different from freeze)
-            addGlobalStunnedEnemy(entity.id.toString(), targetTransform.position);
+            // Apply stun to enemy component for immediate movement and rotation stop
+            enemy.stun(2.0, currentTime); // 2 second stun using stun mechanics
+
+            // Add visual stun effect (different from freeze) - 2 second duration for Skyfall
+            addGlobalStunnedEnemy(entity.id.toString(), targetTransform.position, 2000);
+            console.log(`🌟 Skyfall: Applied stun visual effect to enemy ${entity.id}, serverEnemyId: ${entity.userData?.serverEnemyId}`);
+
+            // Send stun status to server for multiplayer enemies (co-op mode)
+            console.log(`🌟 Skyfall: Checking callback - exists: ${!!this.onApplyEnemyStatusEffectCallback}, serverEnemyId: ${entity.userData?.serverEnemyId}`);
+            if (this.onApplyEnemyStatusEffectCallback && entity.userData?.serverEnemyId) {
+              console.log(`🌟 Skyfall: Calling callback with enemyId=${entity.userData.serverEnemyId}, effectType=stun, duration=2000`);
+              this.onApplyEnemyStatusEffectCallback(entity.userData.serverEnemyId, 'stun', 2000); // 2 seconds
+              console.log(`🌟 Skyfall: Callback completed`);
+            } else {
+              console.error(`🌟 Skyfall: CANNOT BROADCAST - callback: ${!!this.onApplyEnemyStatusEffectCallback}, serverEnemyId: ${entity.userData?.serverEnemyId}`);
+            }
           } else {
             // apply stun debuff
             const localSocketId = (window as any).localSocketId;
@@ -3389,10 +3402,20 @@ export class ControlSystem extends System {
         if (isStunned) {
           const enemy = entity.getComponent(Enemy);
           if (enemy) {
-            enemy.freeze(4.0, currentTime); // 4 second stun (using freeze mechanics for movement)
-            
-            // Add visual stun effect (different from freeze)
-            addGlobalStunnedEnemy(entity.id.toString(), targetTransform.position);
+            // Apply stun to enemy component for immediate movement and rotation stop
+            enemy.stun(4.0, currentTime); // 4 second stun (using stun mechanics for movement and rotation)
+
+            // Add visual stun effect (different from freeze) - 4 second duration for Sunder
+            addGlobalStunnedEnemy(entity.id.toString(), targetTransform.position, 4000);
+            console.log(`⚔️ Sunder: Applied stun visual effect to enemy ${entity.id}, serverEnemyId: ${entity.userData?.serverEnemyId}`);
+
+            // Send stun status to server for multiplayer enemies (co-op mode)
+            if (this.onApplyEnemyStatusEffectCallback && entity.userData?.serverEnemyId) {
+              this.onApplyEnemyStatusEffectCallback(entity.userData.serverEnemyId, 'stun', 4000); // 4 seconds
+              console.log(`⚔️ Sunder: Broadcasted stun to server for enemy ${entity.userData.serverEnemyId}`);
+            } else {
+              console.warn(`⚔️ Sunder: Could not broadcast stun - callback: ${!!this.onApplyEnemyStatusEffectCallback}, serverEnemyId: ${entity.userData?.serverEnemyId}`);
+            }
           }
           
           // Broadcast stun effect for PVP (using new 'stunned' type)
@@ -3679,8 +3702,8 @@ export class ControlSystem extends System {
     this.barrageChargeProgress = 0;
     this.isCobraShotCharging = false; // Reset cobra shot charging
     this.cobraShotChargeProgress = 0;
-    this.isCloudkillCharging = false; // Reset cloudkill charging
-    this.cloudkillChargeProgress = 0;
+    this.isRejuvenatingShotCharging = false; // Reset rejuvenating shot charging
+    this.rejuvenatingShotChargeProgress = 0;
     this.isCrossentropyCharging = false; // Reset crossentropy charging
     this.crossentropyChargeProgress = 0;
     this.isSummonTotemCharging = false; // Reset summon totem charging
@@ -3927,12 +3950,9 @@ export class ControlSystem extends System {
     // Play backstab sound at the start of the ability
     this.audioSystem?.playBackstabSound(playerTransform.position);
 
-    // Trigger callback for multiplayer/visual effects
-    if (this.onBackstabCallback) {
-      const direction = new Vector3();
-      this.camera.getWorldDirection(direction);
-      this.onBackstabCallback(playerTransform.position, direction, 75, false); // Base damage, not backstab by default
-    }
+    // Trigger callback for multiplayer/visual effects - actual backstab detection happens in performBackstabDamage
+    // We'll call this after damage detection, so remove this early call
+    // The callback will be triggered from performBackstabDamage with the correct isBackstab value
     
     // Perform backstab damage
     this.performBackstabDamage(playerTransform);
@@ -4015,6 +4035,30 @@ export class ControlSystem extends System {
             baseDamage = 175; // Backstab base damage (before critical calculation)
           }
         }
+      } else {
+        // Check for enemies (bosses and summoned skeletons)
+        const enemy = entity.getComponent(Enemy);
+        if (enemy && entity.userData?.rotation !== undefined) {
+          // Calculate enemy's facing direction from their rotation (in radians)
+          const targetFacingDirection = new Vector3(
+            Math.sin(entity.userData.rotation),
+            0,
+            Math.cos(entity.userData.rotation)
+          ).normalize();
+
+          // Vector from target to attacker
+          const attackerDirection = new Vector3()
+            .subVectors(playerPosition, targetTransform.position)
+            .normalize();
+
+          // Check if attacker is behind target (dot product < 0 means opposite direction)
+          const behindDotProduct = targetFacingDirection.dot(attackerDirection);
+          isBackstab = behindDotProduct < -0.3; // 70 degree cone behind target
+
+          if (isBackstab) {
+            baseDamage = 175; // Backstab base damage (before critical calculation)
+          }
+        }
       }
 
       // Use DamageCalculator for proper critical chance and damage scaling
@@ -4047,6 +4091,13 @@ export class ControlSystem extends System {
         );
 
         hitCount++;
+
+        // Trigger callback for multiplayer/visual effects with correct backstab status
+        if (this.onBackstabCallback && hitCount === 1) { // Only trigger once per backstab ability use
+          const direction = new Vector3();
+          this.camera.getWorldDirection(direction);
+          this.onBackstabCallback(playerTransform.position, direction, damage, isBackstab);
+        }
 
         // Refund energy if target is stunned (60 energy)
         if (isTargetStunned) {
@@ -4646,16 +4697,16 @@ export class ControlSystem extends System {
     }
   }
 
-  private performCloudkill(playerTransform: Transform): void {
+  private performRejuvenatingShot(playerTransform: Transform): void {
     // Check cooldown
     const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastCloudkillTime < this.cloudkillFireRate) {
+    if (currentTime - this.lastRejuvenatingShotTime < this.rejuvenatingShotFireRate) {
       return;
     }
 
     // Check if player has enough energy (40 energy cost)
     const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastCloudkill()) {
+    if (gameUI && !gameUI.canCastRejuvenatingShot()) {
       return;
     }
 
@@ -4664,9 +4715,9 @@ export class ControlSystem extends System {
       gameUI.consumeEnergy(40);
     }
 
-    this.isCloudkillCharging = true;
-    this.cloudkillChargeProgress = 0;
-    this.lastCloudkillTime = currentTime;
+    this.isRejuvenatingShotCharging = true;
+    this.rejuvenatingShotChargeProgress = 0;
+    this.lastRejuvenatingShotTime = currentTime;
 
     // Play bow draw sound when starting to charge (same as other bow abilities)
     this.audioSystem?.playBowDrawSound(playerTransform.position);
@@ -4677,32 +4728,59 @@ export class ControlSystem extends System {
 
     const chargeInterval = setInterval(() => {
       const elapsed = Date.now() - chargeStartTime;
-      this.cloudkillChargeProgress = Math.min(elapsed / chargeDuration, 1.0);
+      this.rejuvenatingShotChargeProgress = Math.min(elapsed / chargeDuration, 1.0);
 
-      if (this.cloudkillChargeProgress >= 1.0) {
+      if (this.rejuvenatingShotChargeProgress >= 1.0) {
         clearInterval(chargeInterval);
-        this.fireCloudkill(playerTransform);
-        this.isCloudkillCharging = false;
-        this.cloudkillChargeProgress = 0;
+        this.fireRejuvenatingShot(playerTransform);
+        this.isRejuvenatingShotCharging = false;
+        this.rejuvenatingShotChargeProgress = 0;
       }
     }, 16); // ~60fps updates
   }
 
-  private fireCloudkill(playerTransform: Transform): void {
-    // Get player position and direction
-    const playerPosition = new Vector3(
-      playerTransform.position.x,
-      playerTransform.position.y,
-      playerTransform.position.z
-    );
-    const direction = new Vector3(0, 0, -1); // Default forward direction
+  private fireRejuvenatingShot(playerTransform: Transform): void {
+    // Get player position and direction (same as other projectiles)
+    const playerPosition = playerTransform.getWorldPosition();
+    playerPosition.y += 0.825; // Shoot from chest level like Cobra Shot
+    
+    const direction = new Vector3();
+    this.camera.getWorldDirection(direction);
+    direction.normalize();
+    
+    // Apply same downward angle compensation as other projectiles
+    const compensationAngle = Math.PI / 6; // 30 degrees downward compensation
+    const cameraRight = new Vector3();
+    cameraRight.crossVectors(direction, new Vector3(0, 1, 0)).normalize();
+    
+    // Apply rotation around the right axis to tilt the direction downward
+    const rotationMatrix = new Matrix4();
+    rotationMatrix.makeRotationAxis(cameraRight, compensationAngle);
+    direction.applyMatrix4(rotationMatrix);
+    direction.normalize();
+    
+    // Offset spawn position slightly forward to avoid collision with player
+    const spawnPosition = playerPosition.clone();
+    spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
 
-    // Play cloudkill release sound
-    this.audioSystem?.playCloudkillReleaseSound(playerTransform.position);
+    // Play bow release sound (reuse existing bow sound)
+    this.audioSystem?.playBowReleaseSound(playerTransform.position);
 
-    // Trigger Cloudkill callback
-    if (this.onCloudkillCallback) {
-      this.onCloudkillCallback(playerPosition, direction);
+    // Trigger Rejuvenating Shot callback for multiplayer broadcast
+    if (this.onRejuvenatingShotCallback) {
+      this.onRejuvenatingShotCallback(spawnPosition, direction);
+    }
+    
+    // Trigger global rejuvenating shot for local visual effects
+    triggerGlobalRejuvenatingShot(spawnPosition, direction);
+    
+    // Broadcast projectile creation to other players
+    if (this.onProjectileCreatedCallback) {
+      this.onProjectileCreatedCallback('rejuvenating_shot_projectile', spawnPosition, direction, {
+        speed: 20, // Consistent speed for multiplayer
+        healAmount: 80,
+        lifetime: 8
+      });
     }
   }
 
@@ -4787,7 +4865,7 @@ export class ControlSystem extends System {
       // Create proper ECS projectile entity
       const projectileConfig = {
         speed: 22, // Slightly faster than regular arrows (20)
-        damage: 30, // High damage for barrage arrows
+        damage: 60, // High damage for barrage arrows
         lifetime: 8,
         maxDistance: 25, // Limit barrage arrows to 25 units distance (same as regular arrows)
         piercing: false,
@@ -4962,9 +5040,9 @@ export class ControlSystem extends System {
         isActive: this.isViperStingCharging
       };
       cooldowns['F'] = {
-        current: Math.max(0, this.cloudkillFireRate - (currentTime - this.lastCloudkillTime)),
-        max: this.cloudkillFireRate,
-        isActive: this.isCloudkillCharging
+        current: Math.max(0, this.rejuvenatingShotFireRate - (currentTime - this.lastRejuvenatingShotTime)),
+        max: this.rejuvenatingShotFireRate,
+        isActive: this.isRejuvenatingShotCharging
       };
     } else if (this.currentWeapon === WeaponType.SCYTHE) {
       cooldowns['Q'] = {

@@ -405,6 +405,45 @@ function handlePlayerEvents(socket, gameRooms) {
     console.log(`💚 Player ${socket.id} healed ${healedPlayers.length} nearby allies with ${abilityType} (${healAmount} HP, ${radius} units radius)`);
   });
 
+  // Handle player healing (for totems, etc.)
+  socket.on('player-healing', (data) => {
+    const { roomId, healingAmount, healingType, position, targetPlayerId } = data;
+
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    const healerPlayer = room.getPlayer(socket.id);
+
+    if (!healerPlayer) return;
+
+    // Validate that the target player exists
+    if (targetPlayerId) {
+      const targetPlayer = room.getPlayer(targetPlayerId);
+      if (!targetPlayer) return;
+
+      // Apply healing to target player
+      const previousHealth = targetPlayer.health;
+      const newHealth = Math.min(targetPlayer.maxHealth, targetPlayer.health + healingAmount);
+      const actualHealingAmount = newHealth - previousHealth;
+
+      if (actualHealingAmount > 0) {
+        room.updatePlayerHealth(targetPlayerId, newHealth);
+
+        console.log(`💚 Player ${socket.id} healed ${targetPlayerId} for ${actualHealingAmount} HP (${healingType})`);
+
+        // Broadcast healing event to all players in the room
+        room.io.to(roomId).emit('player-healing', {
+          sourcePlayerId: socket.id,
+          targetPlayerId: targetPlayerId,
+          healingAmount: actualHealingAmount,
+          healingType: healingType,
+          position: position,
+          timestamp: Date.now()
+        });
+      }
+    }
+  });
+
   // Handle player death
   socket.on('player-died', (data) => {
     const { roomId } = data;

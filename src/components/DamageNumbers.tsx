@@ -145,17 +145,19 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
                 ? 'text-yellow-300 text-xl animate-pulse'
                 : damageData.damageType === 'crossentropy'
                 ? 'text-orange-400'
-                : damageData.damageType === 'healing' ||
+                :               damageData.damageType === 'healing' ||
                   damageData.damageType === 'reanimate_healing' ||
                   damageData.damageType === 'smite_healing' ||
                   damageData.damageType === 'viper_sting_healing' ||
-                  damageData.damageType === 'summon_totem_healing'
+                  damageData.damageType === 'summon_totem_healing' ||
+                  damageData.damageType === 'rejuvenating_shot_healing'
                 ? 'text-green-400 text-lg font-extrabold'
                 : damageData.damageType === 'colossus_strike'
                 ? 'text-yellow-400 text-lg'
                 : damageData.damageType === 'barrage'
                 ? 'text-blue-400 text-lg'
-                : damageData.damageType === 'cobra_shot'
+                : damageData.damageType === 'cobra_shot' ||
+                  damageData.damageType === 'venom'
                 ? 'text-green-400 text-lg'
                 : damageData.damageType === 'viper_sting'
                 ? 'text-purple-300 text-lg'
@@ -173,12 +175,14 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
           damageData.damageType === 'reanimate_healing' ||
           damageData.damageType === 'smite_healing' ||
           damageData.damageType === 'viper_sting_healing' ||
-          damageData.damageType === 'summon_totem_healing') && '+'}
+          damageData.damageType === 'summon_totem_healing' ||
+          damageData.damageType === 'rejuvenating_shot_healing') && '+'}
         {damageData.damageType === 'healing' ||
          damageData.damageType === 'reanimate_healing' ||
          damageData.damageType === 'smite_healing' ||
          damageData.damageType === 'viper_sting_healing' ||
-         damageData.damageType === 'summon_totem_healing'
+         damageData.damageType === 'summon_totem_healing' ||
+         damageData.damageType === 'rejuvenating_shot_healing'
            ? Math.round(damageData.damage)
            : damageData.damage}
         {damageData.isCritical && '!'}

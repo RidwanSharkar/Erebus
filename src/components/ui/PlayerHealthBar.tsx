@@ -19,7 +19,7 @@ export default function PlayerHealthBar({
   health,
   maxHealth,
   shield = 0,
-  maxShield = 200,
+  maxShield = 100,
   camera,
   showDistance = 35
 }: PlayerHealthBarProps) {

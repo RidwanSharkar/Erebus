@@ -42,12 +42,12 @@ import WindShearProjectileManager, { triggerWindShearProjectile } from '@/compon
 
 import UnifiedProjectileManager from '@/components/managers/UnifiedProjectileManager';
 import BowPowershotManager from '@/components/projectiles/BowPowershotManager';
-import FrostNovaManager from '@/components/weapons/FrostNovaManager';
-import StunManager from '@/components/weapons/StunManager';
+import FrostNovaManager, { addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
+import StunManager, { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
 
 import CobraShotManager from '@/components/projectiles/CobraShotManager';
 
-import CloudkillManager, { triggerGlobalCloudkill, triggerGlobalCloudkillWithTargets } from '@/components/projectiles/CloudkillManager';
+import RejuvenatingShotManager from '@/components/projectiles/RejuvenatingShotManager';
 import {
   useOptimizedPVPEffects
 } from '@/components/pvp/OptimizedPVPManagers';
@@ -1444,6 +1444,16 @@ const hasMana = useCallback((amount: number) => {
           return;
         }
         
+        if (data.attackType === 'rejuvenating_shot_projectile') {
+          // Trigger visual effect for Rejuvenating Shot projectile
+          const { triggerGlobalRejuvenatingShot } = require('@/components/projectiles/RejuvenatingShotManager');
+          const position = new Vector3(data.position.x, data.position.y, data.position.z);
+          const direction = new Vector3(data.direction.x, data.direction.y, data.direction.z);
+          triggerGlobalRejuvenatingShot(position, direction);
+          
+          return;
+        }
+        
         // Handle sword charge hit attacks
         if (data.attackType === 'sword_charge_hit') {
           
@@ -1711,6 +1721,10 @@ const hasMana = useCallback((amount: number) => {
             // Cobra shot uses bow release sound
             window.audioSystem.playEnemyBowReleaseSound(position, data.animationData?.chargeProgress);
             break;
+          case 'rejuvenating_shot_projectile':
+            // Rejuvenating shot uses bow release sound
+            window.audioSystem.playEnemyBowReleaseSound(position, data.animationData?.chargeProgress);
+            break;
           case 'regular_arrow':
             window.audioSystem.playEnemyBowReleaseSound(position, data.animationData?.chargeProgress);
             break;
@@ -1819,26 +1833,6 @@ const hasMana = useCallback((amount: number) => {
             
             return updated;
           });
-        } else if (data.abilityType === 'cloudkill') {
-          // Cloudkill ability - use the target positions from when the ability was originally cast
-          // Check if target positions are included in the broadcast data
-          if (data.targetPositions && Array.isArray(data.targetPositions)) {
-            // Use the original target positions from the caster
-            triggerGlobalCloudkillWithTargets(data.targetPositions, data.playerId);
-          } else {
-            // Fallback to old behavior for compatibility (should be removed after testing)
-            if (playerEntityRef.current !== null && engineRef.current) {
-              const world = engineRef.current.getWorld();
-              const localPlayerEntity = world.getEntity(playerEntityRef.current);
-              if (localPlayerEntity) {
-                const localPlayerTransform = localPlayerEntity.getComponent(Transform);
-                if (localPlayerTransform) {
-                  const localPosition = localPlayerTransform.position.clone();
-                  triggerGlobalCloudkill(localPosition, data.playerId);
-                }
-              }
-            }
-          }
         } else if (data.abilityType === 'frost_nova') {
           // Create frost nova visual effect at the player's position
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
@@ -2560,7 +2554,7 @@ const hasMana = useCallback((amount: number) => {
       const position = new Vector3(data.position.x, data.position.y, data.position.z);
       if (window.audioSystem) {
         switch (data.abilityType) {
-          case 'cloudkill':
+          case 'rejuvenating_shot':
             window.audioSystem.playEnemyBowReleaseSound(position, data.animationData?.chargeProgress);
             break;
           case 'frost_nova':
@@ -3152,7 +3146,8 @@ const hasMana = useCallback((amount: number) => {
           healingAmount,
           false, // Not critical
           healingPosition,
-          `${healingType}_healing`
+          `${healingType}_healing`, // This will be 'rejuvenating_shot_healing', 'reanimate_healing', etc.
+          false // Not incoming damage
         );
       }
       
@@ -3286,6 +3281,60 @@ const hasMana = useCallback((amount: number) => {
       setActiveMeteors(prev => [...prev, ...newMeteors]);
     };
 
+    const handleEnemyStatusEffect = (data: any) => {
+      const { enemyId, effectType, duration, timestamp } = data;
+      
+      console.log(`📨 Received enemy-status-effect event: enemyId=${enemyId}, effectType=${effectType}, duration=${duration}ms`);
+      
+      if (!engineRef.current) {
+        console.warn(`⚠️ Cannot apply status effect - engineRef is null`);
+        return;
+      }
+
+      const world = engineRef.current.getWorld();
+      
+      // Find the boss entity by its server ID
+      const allEntities = world.getAllEntities();
+      console.log(`🔍 Searching for enemy ${enemyId} among ${allEntities.length} entities`);
+      
+      for (const entity of allEntities) {
+        if (entity.userData?.serverEnemyId === enemyId) {
+          console.log(`✅ Found entity ${entity.id} with serverEnemyId ${enemyId}`);
+          const enemy = entity.getComponent(Enemy);
+          if (enemy) {
+            const currentTime = Date.now() / 1000;
+            
+            // Apply the appropriate status effect based on type
+            if (effectType === 'stun') {
+              enemy.stun(duration / 1000, currentTime); // Convert ms to seconds
+              
+              // Add visual stun effect
+              const transform = entity.getComponent(Transform);
+              if (transform) {
+                addGlobalStunnedEnemy(entity.id.toString(), transform.position, duration);
+                console.log(`✨ Applied stun visual effect to entity ${entity.id}`);
+              }
+            } else if (effectType === 'freeze') {
+              enemy.freeze(duration / 1000, currentTime);
+              
+              // Add visual freeze effect
+              const transform = entity.getComponent(Transform);
+              if (transform) {
+                addGlobalFrozenEnemy(entity.id.toString(), transform.position);
+              }
+            } else if (effectType === 'corrupted') {
+              enemy.applyCorrupted(duration / 1000, currentTime);
+            }
+            
+            console.log(`✅ Applied ${effectType} to enemy ${enemyId} for ${duration}ms`);
+          } else {
+            console.warn(`⚠️ Entity ${entity.id} has no Enemy component`);
+          }
+          break;
+        }
+      }
+    };
+
     socket.on('player-attacked', handlePlayerAttack);
     socket.on('player-used-ability', handlePlayerAbility);
     socket.on('player-damaged', handlePlayerDamaged);
@@ -3306,6 +3355,7 @@ const hasMana = useCallback((amount: number) => {
     socket.on('boss-defeated', handleBossDefeated);
     socket.on('boss-meteor-cast', handleBossMeteorCast);
     socket.on('boss-skeleton-attack', handleBossSkeletonAttack);
+    socket.on('enemy-status-effect', handleEnemyStatusEffect);
 
 
     return () => {
@@ -3329,6 +3379,7 @@ const hasMana = useCallback((amount: number) => {
       socket.off('boss-defeated', handleBossDefeated);
       socket.off('boss-meteor-cast', handleBossMeteorCast);
       socket.off('boss-skeleton-attack', handleBossSkeletonAttack);
+      socket.off('enemy-status-effect', handleEnemyStatusEffect);
     };
   }, [socket, playerEntity]);
 
@@ -3589,37 +3640,6 @@ const hasMana = useCallback((amount: number) => {
 
 
   // Initialize the PVP game engine
-  // Function to get cloudkill target positions (replicates CloudkillManager logic)
-  const getCloudkillTargetPositions = useCallback((casterPosition: Vector3, casterId: string): Array<{ x: number; y: number; z: number }> => {
-    const ARROW_COUNT = 3;
-    const bossTargets: Array<{ id: string; position: { x: number; y: number; z: number } }> = [];
-
-    // Add boss enemies only
-    Array.from(enemies.values()).forEach(enemy => {
-      if (enemy.health > 0 && (enemy.type === 'boss' || enemy.type === 'boss-skeleton')) {
-        bossTargets.push({
-          id: enemy.id,
-          position: enemy.position
-        });
-      }
-    });
-
-    if (bossTargets.length === 0) return [];
-
-    // Calculate distances and sort by proximity - same logic as CloudkillManager
-    const targetsWithDistance = bossTargets.map(target => ({
-      target,
-      distance: casterPosition.distanceTo(new Vector3(target.position.x, 0, target.position.z))
-    }));
-
-    targetsWithDistance.sort((a, b) => a.distance - b.distance);
-
-    // Get closest targets
-    const closestTargets = targetsWithDistance.slice(0, Math.min(bossTargets.length, ARROW_COUNT)).map(item => item.target);
-
-    // Return the target positions that arrows will be aimed at
-    return closestTargets.map(target => target.position);
-  }, [enemies]);
 
   useEffect(() => {
     if (isInitialized.current || !gameStarted) return;
@@ -3698,14 +3718,7 @@ const hasMana = useCallback((amount: number) => {
 
       // Update weapon state from control system
       if (controlSystemRef.current) {
-        // Debug: Log control system state occasionally
-        if (Math.random() < 0.01) { // Only log 1% of the time
-          console.log('🎮 Control system state:', {
-            currentWeapon: controlSystemRef.current.getCurrentWeapon(),
-            isWeaponCharging: controlSystemRef.current.isWeaponCharging(),
-            position: playerEntity?.getComponent(require('@/ecs/components/Transform').Transform)?.position?.toArray()
-          });
-        }
+
 
         const newWeaponState = {
           currentWeapon: controlSystemRef.current.getCurrentWeapon(),
@@ -4048,11 +4061,31 @@ const hasMana = useCallback((amount: number) => {
                   sourcePlayerId: socket.id
                 });
 
-                // If healing the local player, apply it immediately
+                // If healing the local player, apply it immediately with visual feedback
                 if (targetPlayerId === socket.id) {
                   const healthComponent = player.getComponent(Health);
                   if (healthComponent) {
+                    const previousHealth = healthComponent.currentHealth;
                     healthComponent.heal(healAmount);
+                    const actualHealingAmount = healthComponent.currentHealth - previousHealth;
+                    
+                    // Show local healing visual feedback
+                    if (actualHealingAmount > 0) {
+                      const damageNumberManager = (window as any).damageNumberManager;
+                      if (damageNumberManager) {
+                        const healingPosition = new Vector3(
+                          transform.position.x,
+                          transform.position.y + 1.5,
+                          transform.position.z
+                        );
+                        damageNumberManager.addDamageNumber(
+                          actualHealingAmount,
+                          false,
+                          healingPosition,
+                          'summon_totem_healing'
+                        );
+                      }
+                    }
                   }
                 }
               }
@@ -4064,19 +4097,6 @@ const hasMana = useCallback((amount: number) => {
     });
 
 
-    // Set up Cloudkill callback with target position capture
-    controlSystem.setCloudkillCallback((position, direction) => {
-      // First, get the target positions that will be hit by cloudkill
-      const targetPositions = getCloudkillTargetPositions(position, socket?.id || '');
-
-      // Broadcast to other players with target positions
-      broadcastPlayerAbility('cloudkill', position, direction, undefined, { targetPositions });
-
-      // Also trigger local CloudkillManager for the casting player
-      if (socket?.id) {
-        triggerGlobalCloudkill(position, socket.id);
-      }
-    });
 
     // Set up Cobra Shot callback (for local visual effects only - projectile is handled via onProjectileCreatedCallback)
     controlSystem.setCobraShotCallback((position, direction) => {
@@ -4103,6 +4123,11 @@ const hasMana = useCallback((amount: number) => {
     // Set up Skyfall callback
     controlSystem.setSkyfallCallback((position, direction) => {
       broadcastPlayerAbility('skyfall', position, direction);
+    });
+
+    // Set up Rejuvenating Shot callback
+    controlSystem.setRejuvenatingShotCallback((position, direction) => {
+      broadcastPlayerAbility('rejuvenating_shot', position, direction);
     });
 
     // Set up Backstab callback
@@ -4178,8 +4203,11 @@ const hasMana = useCallback((amount: number) => {
 
     // Set up enemy status effect callback for co-op mode
     controlSystem.setApplyEnemyStatusEffectCallback((enemyId: string, effectType: string, duration: number) => {
+      console.log(`🔗 ControlSystem callback invoked: enemyId=${enemyId}, effectType=${effectType}, duration=${duration}ms`);
       if (applyStatusEffect) {
         applyStatusEffect(enemyId, effectType, duration);
+      } else {
+        console.error(`❌ applyStatusEffect callback not available!`);
       }
     });
 
@@ -4428,12 +4456,7 @@ const hasMana = useCallback((amount: number) => {
       {/* Main Player Dragon Unit Renderer */}
       {(() => {
         const shouldRender = playerEntity && engineRef.current;
-        console.log('🎮 CoopGameScene DragonRenderer render check:', {
-          shouldRender,
-          playerEntityId: playerEntity?.id,
-          engineRunning: engineRef.current?.isEngineRunning(),
-          selectedWeapons
-        });
+
         return shouldRender;
       })() && (
         <DragonRenderer
@@ -4457,8 +4480,8 @@ const hasMana = useCallback((amount: number) => {
           barrageChargeProgress={weaponState.barrageChargeProgress}
           isCobraShotCharging={weaponState.isCobraShotCharging}
           cobraShotChargeProgress={weaponState.cobraShotChargeProgress}
-          isCloudkillCharging={controlSystemRef.current?.isCloudkillChargingActive() || false}
-          cloudkillChargeProgress={controlSystemRef.current?.getCloudkillChargeProgress() || 0}
+          isRejuvenatingShotCharging={controlSystemRef.current?.isRejuvenatingShotChargingActive() || false}
+          rejuvenatingShotChargeProgress={controlSystemRef.current?.getRejuvenatingShotChargeProgress() || 0}
           isSkyfalling={weaponState.isSkyfalling}
           isBackstabbing={weaponState.isBackstabbing}
           isSundering={weaponState.isSundering}
@@ -4728,6 +4751,12 @@ const hasMana = useCallback((amount: number) => {
               attackingHand={bossAttackState.attackingHand}
               targetPosition={targetPosition}
               rotation={enemy.rotation}
+              isStunned={(() => {
+                const world = engineRef.current!.getWorld();
+                const entity = world.getEntity(entityId);
+                const enemyComponent = entity?.getComponent(Enemy);
+                return enemyComponent ? enemyComponent.isStunned : false;
+              })()}
             />
 
             {/* Taunt Effect Indicator */}
@@ -4920,25 +4949,38 @@ const hasMana = useCallback((amount: number) => {
           <PVPSummonTotemManager
             players={players}
             localSocketId={socket?.id}
-          />
-          <CloudkillManager
-            enemyData={Array.from(enemies.values())
-              .filter(enemy => !enemy.isDying && (enemy.type === 'boss' || enemy.type === 'boss-skeleton'))
-              .map(enemy => ({
-                id: enemy.id,
-                type: enemy.type,
-                position: enemy.position,
-                rotation: enemy.rotation,
-                health: enemy.health,
-                maxHealth: enemy.maxHealth,
-                isDying: enemy.isDying
-              }))}
-            onHit={(targetId, damage, isCritical, position) => {
-              if (socket && currentRoomId) {
-                damageEnemy(targetId, damage, socket.id);
+            onHealPlayer={(healAmount: number, targetPlayerId?: string) => {
+              // Broadcast totem healing to server
+              if (targetPlayerId) {
+                // Get the target player's position for the healing effect
+                const targetPlayer = players.get(targetPlayerId);
+                if (targetPlayer) {
+                  const targetPosition = {
+                    x: targetPlayer.position.x,
+                    y: targetPlayer.position.y + 1.5, // Position above player's head
+                    z: targetPlayer.position.z
+                  };
+                  broadcastPlayerHealing(healAmount, 'totem', targetPosition, targetPlayerId);
+                }
               }
             }}
-            playerPosition={playerPosition}
+          />
+          <RejuvenatingShotManager
+            world={engineRef.current.getWorld()}
+            playerPositions={Array.from(players.values())
+              .filter(player => player.health > 0)
+              .map(player => ({
+                id: player.id,
+                position: new Vector3(player.position.x, player.position.y, player.position.z),
+                health: player.health,
+                maxHealth: player.maxHealth
+              }))}
+            onPlayerHealed={(playerId, healAmount, position) => {
+              // Handle healing logic - broadcast to server for both local and remote players
+              if (socket && currentRoomId) {
+                broadcastPlayerHealing(healAmount, 'rejuvenating_shot', position, playerId);
+              }
+            }}
           />
         </>
       )}
@@ -5108,6 +5150,7 @@ function setupCoopGame(
   if (skillPointData) {
     controlSystem.setSkillPointData(skillPointData);
   }
+
 
   // Preload weapon sound effects
   audioSystem.preloadWeaponSounds().catch((error: any) => {

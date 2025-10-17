@@ -63,10 +63,10 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       description: '{60 ENERGY} Fires a powerful piercing arrow that returns to you after a short delay. Each hit on an enemy creates a soul fragment that heals you for 20 HP each when returned.'
     },
     {
-      name: 'Cloudkill',
+      name: 'Rejuvenating Shot',
       key: 'F',
       cooldown: 4.0,
-      description: '{40 ENERGY} Launches an artillery barrage of arrows from the sky that rain down on enemy locations.'
+      description: '{40 ENERGY} Fires a healing projectile that restores 80 HP to the first allied player it hits.'
     },
     {
       name: 'Tempest Rounds',
@@ -188,9 +188,9 @@ export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | '
   },
   [WeaponType.BOW]: {
     Q: '🎯', // Barrage
-    E: '🍃', // Cobra Shot
-    R: '🐉', // Viper Sting
-    F: '🪶', // Cloudkill
+    E: '🐉', // Cobra Shot
+    R: '🪶', // Viper Sting
+    F: '🍃', // Rejuvenating Shot
     P: '🍃' // Tempest Rounds 
   },
   [WeaponType.SCYTHE]: {

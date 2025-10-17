@@ -245,21 +245,44 @@ export default function SummonedTotem({
       const totemWorldPosition = new Vector3();
       groupRef.current.getWorldPosition(totemWorldPosition);
 
+      // Track if we've healed the caster
+      let casterHealedFromPlayersMap = false;
+      let casterPositionFromMap: Vector3 | null = null;
+
       // Heal ALL players within HEAL_RANGE (5 units)
       if (players) {
         players.forEach((player, playerId) => {
           const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
           const distance = calculateDistance(totemWorldPosition, playerPos);
           
+          // Track caster's position from map for fallback check
+          if (playerId === casterId) {
+            casterPositionFromMap = playerPos;
+          }
+          
           // Heal player if within range
           if (distance <= constants.HEAL_RANGE) {
             // Call healing callback with player ID to heal specific player
             onHealPlayer(constants.HEAL_AMOUNT, playerId);
+            
+            // Track if caster was healed
+            if (playerId === casterId) {
+              casterHealedFromPlayersMap = true;
+            }
           }
         });
-      } else if (casterId) {
-        // Fallback: If no players map, just heal the caster (single-player mode)
-        onHealPlayer(constants.HEAL_AMOUNT, casterId);
+      }
+      
+      // CRITICAL FIX: If the caster wasn't healed from the players map (due to stale position),
+      // check if their stale position is close enough with a generous range multiplier
+      // This accounts for network lag and position update delays (2-3x normal range)
+      if (casterId && !casterHealedFromPlayersMap && casterPositionFromMap) {
+        const distanceFromStalePosition = calculateDistance(totemWorldPosition, casterPositionFromMap);
+        // Use 3x the normal healing range to account for position lag (15 units instead of 5)
+        if (distanceFromStalePosition <= constants.HEAL_RANGE * 3) {
+          // Caster is likely within range despite stale position data
+          onHealPlayer(constants.HEAL_AMOUNT, casterId);
+        }
       }
       
       constants.lastHealTime = now;

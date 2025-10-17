@@ -195,6 +195,7 @@ export class CombatSystem extends System {
       const enemy = entity.getComponent(Enemy);
       if (enemy) {
         enemy.updateFreezeStatus(currentTime);
+        enemy.updateStunStatus(currentTime);
         enemy.updateCorruptedStatus(currentTime);
         
         // Synchronize enemy debuffs with movement component

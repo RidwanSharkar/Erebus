@@ -299,7 +299,7 @@ class EnemyAI {
       return;
     }
 
-    const damage = 31; // Boss deals 10 damage per hit
+    const damage = 23; // Boss deals 10 damage per hit
 
     // Broadcast boss attack to all players
     if (this.io) {
@@ -534,6 +534,11 @@ class EnemyAI {
     
     // Check for freeze effect - sets speed to 0
     if (this.room.isEnemyAffectedBy(enemyId, 'freeze')) {
+      return 0;
+    }
+
+    // Check for stun effect - sets speed to 0
+    if (this.room.isEnemyAffectedBy(enemyId, 'stun')) {
       return 0;
     }
     
