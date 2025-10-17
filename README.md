@@ -390,11 +390,6 @@ updateEnemyAI(enemy) {
 
 ### Player State Management
 
-#### **Weapon & Ability States**
-- **Dual Weapon System**: Primary/secondary weapon states with hotkey switching
-- **Subclass Management**: Weapon subclasses with unique ability sets
-- **Skill Point Progression**: Unlocked abilities tracked per weapon/slot combination
-
 #### **Health & Resource States**
 - **Multi-layered Health**: Base health + shield + regeneration mechanics
 - **Mana System**: Runeblade-specific resource with consumption/regeneration
