@@ -303,17 +303,45 @@ export class ProjectileSystem extends System {
       const renderer = projectileEntity.getComponent(Renderer);
       const isCrossentropyBolt = renderer?.mesh?.userData?.isCrossentropyBolt;
       const isEntropicBolt = renderer?.mesh?.userData?.isEntropicBolt;
-      
+      const isBarrageArrow = renderer?.mesh?.userData?.isBarrageArrow;
+
       let damageType = 'projectile';
       if (isCrossentropyBolt) {
         damageType = 'crossentropy';
       } else if (isEntropicBolt) {
         damageType = 'entropic';
+      } else if (isBarrageArrow) {
+        damageType = 'barrage';
       }
       
 
       
       this.combatSystem.queueDamage(target, projectile.damage, projectileEntity, damageType, projectile.sourcePlayerId);
+
+      // CRITICAL FIX: Emit explosion event for CrossentropyBolt hits
+      // This ensures the local player sees the explosion visual effect
+      if (isCrossentropyBolt) {
+        const projectileTransform = projectileEntity.getComponent(Transform);
+        const targetTransform = target.getComponent(Transform);
+        
+        if (projectileTransform && targetTransform) {
+          // Use the target's position for the explosion center (where the bolt hit)
+          const explosionPosition = targetTransform.position.clone();
+          // Ensure explosion is visible by setting it at a consistent height
+          // Boss entities have colliders centered at y=1, so position explosion at y=1.5 for visibility
+          explosionPosition.y = Math.max(1.5, explosionPosition.y);
+
+          // Emit explosion event for CrossentropyBolt
+          this.world.emitEvent('explosion', {
+            position: explosionPosition,
+            color: new Color('#8B00FF'), // Purple/magenta explosion for Crossentropy
+            size: 2.0, // Increased size for better visibility on large bosses
+            duration: 1.0,
+            type: 'crossentropy' as const,
+            chargeTime: 1.0 // Default charge time
+          });
+        }
+      }
     } else {
       // Fallback to direct damage (pass entity for shield absorption)
       const currentTime = Date.now() / 1000;

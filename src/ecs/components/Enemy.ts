@@ -31,6 +31,11 @@ export class Enemy extends Component {
   public freezeStartTime: number;
   public freezeDuration: number;
   public originalMovementSpeed: number;
+
+  // Stun status effect (prevents rotation but not movement)
+  public isStunned: boolean;
+  public stunStartTime: number;
+  public stunDuration: number;
   
   // Venom debuff effect
   public isVenomous: boolean;
@@ -82,6 +87,11 @@ export class Enemy extends Component {
     this.freezeStartTime = 0;
     this.freezeDuration = 0;
     this.originalMovementSpeed = this.movementSpeed;
+
+    // Initialize stun status
+    this.isStunned = false;
+    this.stunStartTime = 0;
+    this.stunDuration = 0;
     
     // Initialize venom status
     this.isVenomous = false;
@@ -202,6 +212,8 @@ export class Enemy extends Component {
     this.lastAttackTime = 0;
     // Clear freeze status on respawn
     this.unfreeze();
+    // Clear stun status on respawn
+    this.unstun();
     // Clear venom status on respawn
     this.removeVenom();
     // Clear corrupted status on respawn
@@ -225,22 +237,53 @@ export class Enemy extends Component {
     // Restore original movement speed
     this.movementSpeed = this.originalMovementSpeed;
   }
+
+  public stun(duration: number, currentTime: number): void {
+    if (this.isDead) return; // Can't stun dead enemies
+
+    this.isStunned = true;
+    this.stunStartTime = currentTime;
+    this.stunDuration = duration;
+    // Set movement speed to 0 when stunned
+    this.movementSpeed = 0;
+  }
+
+  public unstun(): void {
+    this.isStunned = false;
+    this.stunStartTime = 0;
+    this.stunDuration = 0;
+    // Restore original movement speed
+    this.movementSpeed = this.originalMovementSpeed;
+  }
   
   public updateFreezeStatus(currentTime: number): void {
     if (!this.isFrozen) return;
-    
+
     const elapsed = currentTime - this.freezeStartTime;
     if (elapsed >= this.freezeDuration) {
       this.unfreeze();
     }
   }
+
+  public updateStunStatus(currentTime: number): void {
+    if (!this.isStunned) return;
+
+    const elapsed = currentTime - this.stunStartTime;
+    if (elapsed >= this.stunDuration) {
+      this.unstun();
+    }
+  }
   
   public canMove(): boolean {
-    return !this.isFrozen && !this.isDead;
+    return !this.isFrozen && !this.isStunned && !this.isDead;
+  }
+
+  public canRotate(): boolean {
+    return !this.isStunned && !this.isDead;
   }
   
   public getEffectiveMovementSpeed(): number {
-    if (this.isDead || this.isFrozen) {
+    if (this.isDead || this.isFrozen || this.isStunned) {
       return 0;
     }
     
@@ -378,6 +421,11 @@ export class Enemy extends Component {
     this.freezeStartTime = 0;
     this.freezeDuration = 0;
     this.originalMovementSpeed = this.movementSpeed;
+
+    // Reset stun status
+    this.isStunned = false;
+    this.stunStartTime = 0;
+    this.stunDuration = 0;
     
     // Reset venom status
     this.isVenomous = false;
@@ -411,6 +459,11 @@ export class Enemy extends Component {
     clone.freezeStartTime = this.freezeStartTime;
     clone.freezeDuration = this.freezeDuration;
     clone.originalMovementSpeed = this.originalMovementSpeed;
+
+    // Clone stun status
+    clone.isStunned = this.isStunned;
+    clone.stunStartTime = this.stunStartTime;
+    clone.stunDuration = this.stunDuration;
     
     // Clone venom status
     clone.isVenomous = this.isVenomous;

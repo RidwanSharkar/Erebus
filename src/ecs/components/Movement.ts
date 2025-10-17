@@ -260,7 +260,7 @@ export class Movement extends Component {
     setTimeout(() => {
       this.dashCharges[availableChargeIndex].isAvailable = true;
       this.dashCharges[availableChargeIndex].cooldownStartTime = null;
-    }, 7250); // 6 second cooldown DASHCOOLDOWN DASH COOLDOWN
+    }, 8000); // 6 second cooldown DASHCOOLDOWN DASH COOLDOWN
 
     return true;
   }

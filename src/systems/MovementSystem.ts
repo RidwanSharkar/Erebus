@@ -36,10 +36,10 @@ export class MovementSystem extends System {
         continue;
       }
 
-      // Check if this is a frozen enemy - skip movement if frozen
+      // Check if this is a frozen or stunned enemy - skip movement if frozen or stunned
       const enemy = entity.getComponent(Enemy);
-      if (enemy && enemy.isFrozen) {
-        continue; // Skip all movement for frozen enemies
+      if (enemy && (enemy.isFrozen || enemy.isStunned)) {
+        continue; // Skip all movement for frozen or stunned enemies
       }
 
       // Handle input-based movement

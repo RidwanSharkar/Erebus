@@ -223,9 +223,9 @@ export class AudioSystem extends System {
     return this.playWeaponSound('bow_cobra_shot_release', position, { volume: 0.9 });
   }
 
-  // Play cloudkill release sound (called when cloudkill is fired)
-  public playCloudkillReleaseSound(position: Vector3) {
-    return this.playWeaponSound('bow_cloudkill_release', position, { volume: 0.9 });
+  // Play bow ability release sound (called when bow abilities are fired)
+  public playBowAbilityReleaseSound(position: Vector3) {
+    return this.playWeaponSound('bow_release', position, { volume: 0.9 });
   }
 
   // Play sabres swing sound

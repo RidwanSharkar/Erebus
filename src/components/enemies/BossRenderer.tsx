@@ -15,6 +15,7 @@ interface BossRendererProps {
   attackingHand?: 'left' | 'right' | null;
   targetPosition?: Vector3 | null;
   rotation?: number; // Server-authoritative rotation in radians
+  isStunned?: boolean; // Whether the enemy is currently stunned
 }
 
 export default function BossRenderer({
@@ -25,7 +26,8 @@ export default function BossRenderer({
   isAttacking = false,
   attackingHand = null,
   targetPosition = null,
-  rotation
+  rotation,
+  isStunned = false
 }: BossRendererProps) {
   const groupRef = useRef<Group>(null);
   const timeRef = useRef(0);
@@ -47,22 +49,28 @@ export default function BossRenderer({
       // Gentle floating animation for boss
       groupRef.current.position.y += Math.sin(timeRef.current * 1.5) * 0.02;
 
+      // Prevent rotation if stunned
+      if (isStunned) {
+        // Keep current rotation, don't update it
+        return;
+      }
+
       // Use server rotation if available (preferred for multiplayer sync)
       if (rotation !== undefined) {
         // Server provides authoritative rotation - use smooth interpolation for visual smoothness
         const ROTATION_SPEED = 6.0; // Fast but smooth rotation
         const currentRotationY = groupRef.current.rotation.y;
-        
+
         // Calculate shortest rotation path to server rotation
         let rotationDiff = rotation - currentRotationY;
-        
+
         // Normalize angle difference to [-π, π] (avoid spinning wrong way)
         while (rotationDiff > Math.PI) rotationDiff -= Math.PI * 2;
         while (rotationDiff < -Math.PI) rotationDiff += Math.PI * 2;
-        
+
         // Apply smooth rotation (clamped to avoid overshooting)
         groupRef.current.rotation.y += rotationDiff * Math.min(1, ROTATION_SPEED * delta);
-        
+
         // Update ref for next frame
         currentRotationRef.current = groupRef.current.rotation.y;
       }

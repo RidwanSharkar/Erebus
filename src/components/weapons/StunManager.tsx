@@ -21,13 +21,13 @@ interface StunManagerProps {
 
 // Global state for triggering stun effects from ControlSystem
 let globalStunManager: {
-  addStunnedEnemy: (enemyId: string, position: Vector3) => void;
+  addStunnedEnemy: (enemyId: string, position: Vector3, duration?: number) => void;
   getActiveStunnedEnemies: () => StunnedEnemyData[];
 } | null = null;
 
-export const addGlobalStunnedEnemy = (enemyId: string, position: Vector3): boolean => {
+export const addGlobalStunnedEnemy = (enemyId: string, position: Vector3, duration: number = 4000): boolean => {
   if (globalStunManager) {
-    globalStunManager.addStunnedEnemy(enemyId, position);
+    globalStunManager.addStunnedEnemy(enemyId, position, duration);
     return true;
   }
   return false;
@@ -67,15 +67,16 @@ export default function StunManager({ world }: StunManagerProps) {
       });
   }, [world]);
 
-  const addStunnedEnemy = useCallback((enemyId: string, position: Vector3) => {
+  const addStunnedEnemy = useCallback((enemyId: string, position: Vector3, duration: number = 4000) => {
     const newStunnedEnemy: StunnedEnemyData = {
       id: stunnedEnemyIdCounter.current++,
       enemyId,
       position: position.clone(),
       startTime: Date.now(),
-      duration: 4000 // 4 seconds stun duration
+      duration: duration // Dynamic stun duration
     };
     
+    console.log(`✨ StunManager: Adding stun effect for enemy ${enemyId} with duration ${duration}ms`);
     setStunnedEnemies(prev => [...prev, newStunnedEnemy]);
   }, []);
 
@@ -146,9 +147,9 @@ export default function StunManager({ world }: StunManagerProps) {
         return false;
       }
       
-      // Remove if enemy is no longer stunned/frozen
+      // Remove if enemy is no longer stunned
       const enemy = entity.getComponent(Enemy);
-      if (enemy && !enemy.isFrozen) {
+      if (enemy && !enemy.isStunned) {
         return false;
       }
       

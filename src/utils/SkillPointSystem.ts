@@ -215,7 +215,7 @@ export class SkillPointSystem {
       [WeaponType.BOW]: {
         E: 'Barrage',
         R: 'Viper Sting',
-        F: 'Cloudkill',
+        F: 'Rejuvenating Shot',
         P: 'Sharpshooter'
       },
       [WeaponType.SCYTHE]: {

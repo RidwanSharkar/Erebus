@@ -66,8 +66,8 @@ interface DragonRendererProps {
   barrageChargeProgress?: number;
   isCobraShotCharging?: boolean;
   cobraShotChargeProgress?: number;
-  isCloudkillCharging?: boolean;
-  cloudkillChargeProgress?: number;
+  isRejuvenatingShotCharging?: boolean;
+  rejuvenatingShotChargeProgress?: number;
   reanimateRef?: React.RefObject<ReanimateRef>;
   // Damage number management
   onDamageNumbersReady?: (setDamageNumbers: (callback: (prev: Array<{
@@ -142,8 +142,8 @@ export default function DragonRenderer({
   barrageChargeProgress = 0,
   isCobraShotCharging = false,
   cobraShotChargeProgress = 0,
-  isCloudkillCharging = false,
-  cloudkillChargeProgress = 0,
+  isRejuvenatingShotCharging = false,
+  rejuvenatingShotChargeProgress = 0,
   reanimateRef,
   targetPlayerData,
   rageSpent,
@@ -453,8 +453,8 @@ export default function DragonRenderer({
           barrageChargeProgress={barrageChargeProgress}
           isCobraShotCharging={isCobraShotCharging}
           cobraShotChargeProgress={cobraShotChargeProgress}
-          isCloudkillCharging={isCloudkillCharging}
-          cloudkillChargeProgress={cloudkillChargeProgress}
+          isRejuvenatingShotCharging={isRejuvenatingShotCharging}
+          rejuvenatingShotChargeProgress={rejuvenatingShotChargeProgress}
           reanimateRef={reanimateRef}
           setActiveEffects={setActiveEffects}
           targetPlayerData={targetPlayerData}
