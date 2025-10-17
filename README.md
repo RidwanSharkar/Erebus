@@ -1,6 +1,9 @@
 # 🌑  Erebus β
 
-### v0.5 Initial Release Boss Model
+### v0.5 Ally Healing
+![bowheal](https://github.com/user-attachments/assets/e0c4c545-8e06-4961-bc23-700b85691959)
+
+### v0.5 Initial Boss Model
 ![BossPreRelease](https://github.com/user-attachments/assets/32f96a9d-e66b-404a-a984-fd2dbd04b866)
 
 ### v0.5 Co-op Aggro System
