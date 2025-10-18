@@ -187,18 +187,28 @@ function handlePlayerEvents(socket, gameRooms) {
 
   // Handle player stealth state changes
   socket.on('player-stealth', (data) => {
-    const { roomId, playerId, isInvisible } = data;
+    const { roomId, playerId, isInvisible, isStealthing } = data;
 
     if (!gameRooms.has(roomId)) {
       return;
     }
 
     const room = gameRooms.get(roomId);
+    const player = room.players.get(socket.id);
+
+    if (player) {
+      // Update player's stealth state on server
+      player.isInvisible = isInvisible;
+      player.isStealthing = isStealthing || false;
+
+      console.log(`👤 Player ${socket.id} stealth state: invisible=${isInvisible}, stealthing=${player.isStealthing}`);
+    }
 
     // Broadcast stealth state to all other players in the room (including the sender for consistency)
     room.io.to(roomId).emit('player-stealth', {
       playerId: socket.id,
       isInvisible,
+      isStealthing: player?.isStealthing || false,
       timestamp: Date.now()
     });
   });

@@ -45,6 +45,8 @@ interface DragonUnitProps {
   isSkyfalling?: boolean;
   isBackstabbing?: boolean;
   isSundering?: boolean;
+  isStealthing?: boolean;
+  isInvisible?: boolean;
   isSwordCharging?: boolean;
   isDeflecting?: boolean;
   isSmiting?: boolean;
@@ -64,7 +66,7 @@ interface DragonUnitProps {
     position: Vector3;
     health: number;
   }>;
-  onHit?: (targetId: string, damage: number) => void;
+  onHit?: (targetId: string, damage: number, isCritical?: boolean, position?: Vector3, isBlizzard?: boolean) => void;
   setDamageNumbers?: (callback: (prev: Array<{
     id: number;
     damage: number;
@@ -152,6 +154,8 @@ export default function DragonUnit({
   isSkyfalling = false,
   isBackstabbing = false,
   isSundering = false,
+  isStealthing = false,
+  isInvisible = false,
   isSwordCharging = false,
   isDeflecting = false,
   isSmiting = false,
@@ -270,9 +274,13 @@ export default function DragonUnit({
           isSkyfalling={isSkyfalling}
           isBackstabbing={isBackstabbing}
           isSundering={isSundering}
+          isStealthing={isStealthing}
+          isInvisible={isInvisible}
           onBackstabComplete={onBackstabComplete}
           onSunderComplete={onSunderComplete}
           subclass={currentSubclass}
+          enemyData={enemyData}
+          onHit={onHit}
         />
       );
     } else if (currentWeapon === WeaponType.RUNEBLADE) {

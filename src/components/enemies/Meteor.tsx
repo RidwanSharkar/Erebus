@@ -7,6 +7,7 @@ interface MeteorProps {
   targetPosition: THREE.Vector3;
   onImpact: (damage: number, position: THREE.Vector3) => void;
   onComplete: () => void;
+  timestamp?: number; // Optional timestamp for staggered meteor timing
 }
 
 const DAMAGE_RADIUS = 2.99;
@@ -100,7 +101,7 @@ const createMeteorImpactEffect = (position: THREE.Vector3, startTime: number, on
   );
 };
 
-export default function Meteor({ targetPosition, onImpact, onComplete }: MeteorProps) {
+export default function Meteor({ targetPosition, onImpact, onComplete, timestamp }: MeteorProps) {
   const meteorGroupRef = useRef<THREE.Group>(null);
   const meteorMeshRef = useRef<THREE.Mesh>(null);
 
@@ -120,12 +121,15 @@ export default function Meteor({ targetPosition, onImpact, onComplete }: MeteorP
   });
 
   useEffect(() => {
+    // Calculate delay based on timestamp if provided, otherwise use default WARNING_DURATION
+    const delay = timestamp ? Math.max(0, timestamp - Date.now() + WARNING_DURATION) : WARNING_DURATION;
+
     const timer = setTimeout(() => {
       setState(prev => ({ ...prev, showMeteor: true }));
-    }, WARNING_DURATION);
+    }, delay);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [timestamp]);
 
   useFrame((_, delta) => {
     if (!meteorGroupRef.current || !state.showMeteor || state.impactOccurred) {

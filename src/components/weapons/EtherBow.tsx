@@ -121,9 +121,9 @@ const EtherBowComponent = memo(function EtherealBow({
   };
 
   return (
-    <group 
+    <group
       position={[0.6, 0.6, 0.875]}
-      rotation={[-Math.PI/2.0 + (isRejuvenatingShotCharging ? (-Math.PI/1.7 + Math.PI/2.1) * rejuvenatingShotChargeProgress : 0), -Math.PI/2,  -Math.PI/2]}   // Reset base rotation
+      rotation={[-Math.PI/2.0, -Math.PI/2,  -Math.PI/2]}   // Reset base rotation
       scale={[0.875, 0.8, 0.8]}
     >
       <group

@@ -367,7 +367,7 @@ export default function GameUI({
       canCastBackstab: () => currentEnergy >= 60,
       canCastSkyfall: () => currentEnergy >= 40,
       canCastSunder: () => currentEnergy >= 35,
-      canCastStealth: () => true // No energy cost for Stealth
+      canCastStealth: () => currentEnergy >= 25,
     };
   }, [currentMana, currentEnergy, currentRage, currentWeapon, addMana]);
 

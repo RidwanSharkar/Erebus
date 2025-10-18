@@ -34,7 +34,7 @@ export default function SabreReaperMistEffect({
   const [progress, setProgress] = useState(0);
 
   // Create simple geometries and materials for the particles (no pooling for now)
-  const particleGeometry = useMemo(() => new SphereGeometry(0.1375, 8, 8), []);
+  const particleGeometry = useMemo(() => new SphereGeometry(0.125, 8, 8), []);
   const particleMaterial = useMemo(() => new MeshStandardMaterial({
     color: '#FF544E',
     emissive: '#FF544E',

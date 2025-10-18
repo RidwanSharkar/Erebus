@@ -7,6 +7,7 @@ import DragonRenderer from './dragon/DragonRenderer';
 import BossRenderer from './enemies/BossRenderer';
 import SummonedBossSkeleton from './enemies/SummonedBossSkeleton';
 import Meteor from './enemies/Meteor';
+import DeathGraspProjectile from './weapons/DeathGraspProjectile';
 import { useMultiplayer, Player } from '@/contexts/MultiplayerContext';
 import { SkillPointData } from '@/utils/SkillPointSystem';
 
@@ -21,7 +22,6 @@ import { Enemy, EnemyType } from '@/ecs/components/Enemy';
 
 import { Renderer } from '@/ecs/components/Renderer';
 import { Collider, CollisionLayer, ColliderType } from '@/ecs/components/Collider';
-import { Entity } from '@/ecs/Entity';
 import { InterpolationBuffer } from '@/ecs/components/Interpolation';
 import { RenderSystem } from '@/systems/RenderSystem';
 import { ControlSystem } from '@/systems/ControlSystem';
@@ -37,6 +37,7 @@ import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { ReanimateRef } from '@/components/weapons/Reanimate';
 
 import ColossusStrike from '@/components/weapons/ColossusStrike';
+import SabreReaperMistEffect from '@/components/weapons/SabreReaperMistEffect';
 
 import WindShearProjectileManager, { triggerWindShearProjectile } from '@/components/projectiles/WindShearProjectile';
 
@@ -193,16 +194,6 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
 
   // Debug multiplayer state
   useEffect(() => {
-    console.log('🔗 CoopGameScene multiplayer state:', {
-      gameStarted,
-      isInRoom,
-      currentRoomId,
-      socketConnected: socket?.connected,
-      enemyCount: enemies.size,
-      enemies: Array.from(enemies.values()).map(e => ({ id: e.id, type: e.type, health: e.health, maxHealth: e.maxHealth })),
-      socketId: socket?.id,
-      playersCount: players.size
-    });
   }, [gameStarted, isInRoom, currentRoomId, socket?.connected, socket?.id, players.size, enemies.size]);
 
 
@@ -610,6 +601,15 @@ const [maxMana, setMaxMana] = useState(150);
     timestamp: number;
   }
   const [activeMeteors, setActiveMeteors] = useState<MeteorState[]>([]);
+
+  interface DeathGraspState {
+    id: string;
+    startPosition: Vector3;
+    direction: Vector3;
+    timestamp: number;
+    bossId: string;
+  }
+  const [activeBossDeathGrasps, setActiveBossDeathGrasps] = useState<DeathGraspState[]>([]);
 
   // Function to create enemy taunt effect (for Deathgrasp)
   const createEnemyTauntEffect = useCallback((enemyId: string, duration: number = 10000) => {
@@ -2043,7 +2043,6 @@ const hasMana = useCallback((amount: number) => {
               if (distance <= tauntRange) {
                 // Create taunt visual effect on this boss
                 createEnemyTauntEffect(enemy.id, 10000); // 10 seconds taunt duration
-                console.log(`🎯 Deathgrasp: Showing taunt effect on boss ${enemy.id}`);
               }
             }
           });
@@ -3230,7 +3229,6 @@ const hasMana = useCallback((amount: number) => {
 
       // Only handle boss attacks targeting the local player
       if (targetPlayerId === socket?.id && playerEntity) {
-        console.log(`🔥 Boss ${bossId} attacked local player for ${damage} damage!`);
 
         // Apply damage to local player
         const health = playerEntity.getComponent(Health);
@@ -3238,19 +3236,27 @@ const hasMana = useCallback((amount: number) => {
           const currentTime = Date.now() / 1000;
           health.takeDamage(damage, currentTime, playerEntity);
 
-          // Create damage number for visual feedback
-          const damageNumberManager = (window as any).damageNumberManager;
-          if (damageNumberManager && playerEntity) {
+          // Display incoming damage numbers (like boss skeleton does)
+          if (playerEntity) {
             const transform = playerEntity.getComponent(Transform);
             if (transform) {
-              const damagePosition = transform.getWorldPosition().clone();
-              damagePosition.y += 2; // Position above player
-              damageNumberManager.addDamageNumber(
-                damage,
-                false, // Not critical
-                damagePosition,
-                'boss_attack'
-              );
+              // Boss damage is not critical
+              const isCritical = false;
+
+              // Directly add damage numbers using the combat system's damage number manager
+              const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+              if (damageNumberManager && damageNumberManager.addDamageNumber) {
+                const incomingDamagePosition = transform.position.clone();
+                incomingDamagePosition.y -= 0.5; // Position below player's feet
+
+                damageNumberManager.addDamageNumber(
+                  damage,
+                  isCritical,
+                  incomingDamagePosition,
+                  'physical', // Boss damage type
+                  true // isIncomingDamage = true
+                );
+              }
             }
           }
         }
@@ -3270,15 +3276,30 @@ const hasMana = useCallback((amount: number) => {
 
     const handleBossMeteorCast = (data: any) => {
       const { meteorId, targetPositions, timestamp } = data;
-      
-      // Create meteors for each target position (all player positions)
+
+      // Create meteors for each target position with 1-second offset per player for natural timing
       const newMeteors: MeteorState[] = targetPositions.map((pos: { x: number; y: number; z: number }, index: number) => ({
         id: `${meteorId}_${index}`,
         targetPosition: new Vector3(pos.x, pos.y, pos.z),
-        timestamp
+        timestamp: timestamp + (index * 1000) // Add 1 second offset per player
       }));
 
       setActiveMeteors(prev => [...prev, ...newMeteors]);
+    };
+
+    const handleBossDeathGraspCast = (data: any) => {
+      const { deathGraspId, startPosition, direction, bossId, timestamp } = data;
+
+      const newDeathGrasp: DeathGraspState = {
+        id: deathGraspId,
+        startPosition: new Vector3(startPosition.x, startPosition.y + 1.5, startPosition.z), // Slightly elevated
+        direction: new Vector3(direction.x, direction.y, direction.z),
+        bossId: bossId,
+        timestamp: timestamp
+      };
+
+      setActiveBossDeathGrasps(prev => [...prev, newDeathGrasp]);
+      console.log(`💀 Boss ${bossId} DeathGrasp spawned:`, newDeathGrasp);
     };
 
     const handleEnemyStatusEffect = (data: any) => {
@@ -3295,11 +3316,9 @@ const hasMana = useCallback((amount: number) => {
       
       // Find the boss entity by its server ID
       const allEntities = world.getAllEntities();
-      console.log(`🔍 Searching for enemy ${enemyId} among ${allEntities.length} entities`);
       
       for (const entity of allEntities) {
         if (entity.userData?.serverEnemyId === enemyId) {
-          console.log(`✅ Found entity ${entity.id} with serverEnemyId ${enemyId}`);
           const enemy = entity.getComponent(Enemy);
           if (enemy) {
             const currentTime = Date.now() / 1000;
@@ -3312,7 +3331,6 @@ const hasMana = useCallback((amount: number) => {
               const transform = entity.getComponent(Transform);
               if (transform) {
                 addGlobalStunnedEnemy(entity.id.toString(), transform.position, duration);
-                console.log(`✨ Applied stun visual effect to entity ${entity.id}`);
               }
             } else if (effectType === 'freeze') {
               enemy.freeze(duration / 1000, currentTime);
@@ -3325,10 +3343,6 @@ const hasMana = useCallback((amount: number) => {
             } else if (effectType === 'corrupted') {
               enemy.applyCorrupted(duration / 1000, currentTime);
             }
-            
-            console.log(`✅ Applied ${effectType} to enemy ${enemyId} for ${duration}ms`);
-          } else {
-            console.warn(`⚠️ Entity ${entity.id} has no Enemy component`);
           }
           break;
         }
@@ -3354,6 +3368,7 @@ const hasMana = useCallback((amount: number) => {
     socket.on('boss-attack', handleBossAttack);
     socket.on('boss-defeated', handleBossDefeated);
     socket.on('boss-meteor-cast', handleBossMeteorCast);
+    socket.on('boss-deathgrasp-cast', handleBossDeathGraspCast);
     socket.on('boss-skeleton-attack', handleBossSkeletonAttack);
     socket.on('enemy-status-effect', handleEnemyStatusEffect);
 
@@ -3378,6 +3393,7 @@ const hasMana = useCallback((amount: number) => {
       socket.off('boss-attack', handleBossAttack);
       socket.off('boss-defeated', handleBossDefeated);
       socket.off('boss-meteor-cast', handleBossMeteorCast);
+      socket.off('boss-deathgrasp-cast', handleBossDeathGraspCast);
       socket.off('boss-skeleton-attack', handleBossSkeletonAttack);
       socket.off('enemy-status-effect', handleEnemyStatusEffect);
     };
@@ -3453,9 +3469,10 @@ const hasMana = useCallback((amount: number) => {
         collider.setOffset(0, 1, 0); // Center on enemy
         entity.addComponent(collider);
 
-        // Store server enemy ID in entity userData for damage routing
+        // Store server enemy ID and rotation in entity userData for damage routing and backstab detection
         entity.userData = entity.userData || {};
         entity.userData.serverEnemyId = enemyId;
+        entity.userData.rotation = serverEnemy.rotation || 0; // Store rotation for backstab mechanic
 
         // Notify systems that the entity is ready
         world.notifyEntityAdded(entity);
@@ -3463,7 +3480,6 @@ const hasMana = useCallback((amount: number) => {
         // Store the mapping
         serverEnemyEntities.current.set(enemyId, entity.id);
         
-        console.log(`✅ Created local ECS entity for enemy ${enemyId} (type: ${serverEnemy.type})`);
       } else {
         // Update existing local ECS entity
         const entityId = serverEnemyEntities.current.get(enemyId)!;
@@ -3482,6 +3498,12 @@ const hasMana = useCallback((amount: number) => {
             health.maxHealth = serverEnemy.maxHealth;
             health.currentHealth = serverEnemy.health;
           }
+          
+          // Update rotation for backstab detection
+          if (!entity.userData) {
+            entity.userData = {};
+          }
+          entity.userData.rotation = serverEnemy.rotation || 0;
         }
       }
     });
@@ -3495,7 +3517,6 @@ const hasMana = useCallback((amount: number) => {
         const entity = world.getEntity(entityId);
         if (entity) {
           world.destroyEntity(entity.id);
-          console.log(`🗑️ Removed local ECS entity for enemy ${enemyId}`);
         }
         enemiesToRemove.push(enemyId);
       }
@@ -3668,7 +3689,6 @@ const hasMana = useCallback((amount: number) => {
 
     // Cleanup function
     return () => {
-      console.log('🧹 CoopGameScene: Cleaning up engine...');
       setEngineReady(false);
       if (engineRef.current) {
         engineRef.current.stop();
@@ -3924,7 +3944,6 @@ const hasMana = useCallback((amount: number) => {
       return;
     }
 
-    console.log('✅ CoopGameScene: Engine ready, setting up player and control system...');
 
     // Create a PVP damage callback that maps local ECS entity IDs back to server player IDs
     const damagePlayerWithMapping = (entityId: string, damage: number, damageType?: string, isCritical?: boolean) => {
@@ -4203,11 +4222,8 @@ const hasMana = useCallback((amount: number) => {
 
     // Set up enemy status effect callback for co-op mode
     controlSystem.setApplyEnemyStatusEffectCallback((enemyId: string, effectType: string, duration: number) => {
-      console.log(`🔗 ControlSystem callback invoked: enemyId=${enemyId}, effectType=${effectType}, duration=${duration}ms`);
       if (applyStatusEffect) {
         applyStatusEffect(enemyId, effectType, duration);
-      } else {
-        console.error(`❌ applyStatusEffect callback not available!`);
       }
     });
 
@@ -4376,15 +4392,10 @@ const hasMana = useCallback((amount: number) => {
     playerEntityRef.current = player.id;
     controlSystemRef.current = controlSystem;
 
-    console.log('🎮 CoopGameScene: Player and control system setup complete', {
-      playerEntityId: player.id,
-      hasControlSystem: !!controlSystem,
-      socketId: socket?.id
-    });
+
 
     // Cleanup function
     return () => {
-      console.log('🧹 CoopGameScene: Cleaning up player and control system...');
       setPlayerEntity(null);
       playerEntityRef.current = null;
       controlSystemRef.current = null;
@@ -4394,7 +4405,6 @@ const hasMana = useCallback((amount: number) => {
   // Sync skill point data with control system when it changes
   useEffect(() => {
     if (controlSystemRef.current && skillPointData) {
-      console.log('🎯 CoopGameScene: Syncing skill point data with control system', skillPointData);
       controlSystemRef.current.setSkillPointData(skillPointData);
     }
   }, [skillPointData]);
@@ -4493,6 +4503,7 @@ const hasMana = useCallback((amount: number) => {
           reanimateRef={reanimateRef}
           isLocalPlayer={true}
           isStealthing={controlSystemRef.current?.getIsStealthing() || false}
+          isInvisible={controlSystemRef.current?.getIsInvisible() || false}
           onDamageNumbersReady={handleDamageNumbersReady}
           combatSystem={engineRef.current?.getWorld().getSystem(require('@/systems/CombatSystem').CombatSystem)}
           onHeal={(amount: number) => {
@@ -4793,6 +4804,7 @@ const hasMana = useCallback((amount: number) => {
           <Meteor
             key={meteor.id}
             targetPosition={meteor.targetPosition}
+            timestamp={meteor.timestamp}
             onImpact={(damage, position) => {
               // Only apply damage if local player is within range
               if (playerEntity) {
@@ -4835,6 +4847,79 @@ const hasMana = useCallback((amount: number) => {
               // Remove meteor when it's done
               setActiveMeteors(prev => prev.filter(m => m.id !== meteor.id));
             }}
+          />
+        );
+      })}
+
+      {/* Boss DeathGrasp Projectiles */}
+      {activeBossDeathGrasps.map(deathGrasp => {
+        return (
+          <DeathGraspProjectile
+            key={deathGrasp.id}
+            startPosition={deathGrasp.startPosition}
+            direction={deathGrasp.direction}
+            casterId={deathGrasp.bossId}
+            onHit={(targetId, hitPosition) => {
+              console.log(`💀 Boss DeathGrasp hit target: ${targetId}`);
+              
+              // Check if the hit target is the local player
+              if (socket?.id && playerEntity) {
+                const localPlayerId = socket.id;
+                
+                // If we were hit by the DeathGrasp, pull us towards the boss
+                if (targetId === localPlayerId) {
+                  const localPlayerTransform = playerEntity.getComponent(Transform);
+                  if (localPlayerTransform) {
+                    // Find the boss position
+                    const boss = Array.from(enemies.values()).find(e => e.id === deathGrasp.bossId);
+                    if (boss) {
+                      // Calculate pull direction (from player to boss)
+                      const pullDirection = new Vector3(
+                        boss.position.x - localPlayerTransform.position.x,
+                        0,
+                        boss.position.z - localPlayerTransform.position.z
+                      ).normalize();
+                      
+                      // Apply strong pull force (10 units)
+                      const pullDistance = 10;
+                      const newPosition = new Vector3(
+                        localPlayerTransform.position.x + pullDirection.x * pullDistance,
+                        localPlayerTransform.position.y,
+                        localPlayerTransform.position.z + pullDirection.z * pullDistance
+                      );
+                      
+                      // Update player position
+                      localPlayerTransform.position.copy(newPosition);
+                      
+                      console.log(`🌀 Local player pulled by DeathGrasp! New position:`, newPosition);
+                      
+                      // Broadcast position update to server
+                      if (socket) {
+                        socket.emit('player-move', {
+                          position: {
+                            x: newPosition.x,
+                            y: newPosition.y,
+                            z: newPosition.z
+                          },
+                          rotation: localPlayerTransform.rotation.y
+                        });
+                      }
+                    }
+                  }
+                }
+              }
+            }}
+            onComplete={() => {
+              // Remove DeathGrasp when it's done (either hit something or expired)
+              setActiveBossDeathGrasps(prev => prev.filter(dg => dg.id !== deathGrasp.id));
+            }}
+            enemyData={Array.from(enemies.values()).map(e => ({
+              id: e.id,
+              position: new Vector3(e.position.x, e.position.y, e.position.z),
+              health: e.health
+            }))}
+            players={players}
+            localSocketId={socket?.id || ''}
           />
         );
       })}
@@ -4982,6 +5067,18 @@ const hasMana = useCallback((amount: number) => {
               }
             }}
           />
+
+          {/* Sabre Reaper Mist Effects */}
+          {activeMistEffects.map(effect => (
+            <SabreReaperMistEffect
+              key={effect.id}
+              position={effect.position}
+              duration={1000}
+              onComplete={() => {
+                // Effect cleanup is handled by the setTimeout in the callback
+              }}
+            />
+          ))}
         </>
       )}
         </>

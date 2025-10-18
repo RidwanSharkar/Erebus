@@ -32,6 +32,22 @@ export default function BossRenderer({
   const groupRef = useRef<Group>(null);
   const timeRef = useRef(0);
   const currentRotationRef = useRef(0);
+  
+  // Update entity userData with visual rotation for backstab detection every frame
+  useEffect(() => {
+    const updateVisualRotation = () => {
+      const entity = world.getEntity(entityId);
+      if (entity && groupRef.current) {
+        if (!entity.userData) {
+          entity.userData = {};
+        }
+        entity.userData.visualRotation = groupRef.current.rotation.y;
+      }
+    };
+    
+    const intervalId = setInterval(updateVisualRotation, 16); // ~60fps
+    return () => clearInterval(intervalId);
+  }, [world, entityId]);
 
   // Lightning effect handler
   const handleLightningStart = (hand: 'left' | 'right') => {

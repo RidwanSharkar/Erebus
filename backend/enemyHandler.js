@@ -13,8 +13,9 @@ function handleEnemyEvents(socket, gameRooms) {
     const room = gameRooms.get(roomId);
     // Use sourcePlayerId if provided, otherwise fall back to socket.id for direct player damage
     const actualSourcePlayerId = sourcePlayerId || socket.id;
-    const result = room.damageEnemy(enemyId, damage, actualSourcePlayerId);
-    
+    const player = room.players.get(actualSourcePlayerId);
+    const result = room.damageEnemy(enemyId, damage, actualSourcePlayerId, player);
+
     if (result) {
       // Broadcast damage result to all players in the room
       room.io.to(roomId).emit('enemy-damaged', {

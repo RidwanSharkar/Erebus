@@ -91,7 +91,9 @@ class GameRoom {
       level: 1, // Start at level 1
       essence: 50, // Start with 50 essence
       movementDirection: { x: 0, y: 0, z: 0 },
-      joinedAt: Date.now()
+      joinedAt: Date.now(),
+      isStealthing: false, // Sabres stealth ability state
+      isInvisible: false // Whether player is currently invisible
     });
 
     // Position players in a circle for co-op mode
@@ -181,7 +183,7 @@ class GameRoom {
     return { x: 0, y: 0, z: 0 };
   }
 
-  damageEnemy(enemyId, damage, fromPlayerId) {
+  damageEnemy(enemyId, damage, fromPlayerId, player = null) {
     const enemy = this.enemies.get(enemyId);
     if (!enemy || enemy.isDying) {
       // Silently reject damage to dying/dead enemies (prevents spam)
@@ -193,9 +195,19 @@ class GameRoom {
 
     console.log(`💥 Enemy ${enemyId} (${enemy.type}) damaged by ${damage} from player ${fromPlayerId}. Health: ${previousHealth} -> ${enemy.health}`);
 
-    // Track boss damage for aggro system
-    if (enemy.type === 'boss' && this.enemyAI && fromPlayerId) {
-      this.enemyAI.trackBossDamage(enemyId, fromPlayerId, damage);
+    // Track damage for aggro system
+    if (this.enemyAI && fromPlayerId) {
+      if (enemy.type === 'boss') {
+        this.enemyAI.trackBossDamage(enemyId, fromPlayerId, damage, player);
+      } else {
+        // Apply aggro for regular enemies too
+        let aggroAmount = damage;
+        if (player && player.isStealthing) {
+          aggroAmount *= 10.0; // Same 10x multiplier as bosses
+          console.log(`👤 Stealth aggro bonus: Player ${fromPlayerId} stealth attack on enemy ${enemyId} (${damage} -> ${aggroAmount} aggro)`);
+        }
+        this.enemyAI.updateAggro(enemyId, fromPlayerId, aggroAmount);
+      }
     }
 
     const result = {
@@ -569,3 +581,5 @@ class GameRoom {
 }
 
 module.exports = GameRoom;
+
+

@@ -18,11 +18,20 @@ class EnemyAI {
     // Boss meteor cooldown tracking
     this.bossMeteorCooldown = new Map(); // enemyId -> lastMeteorTime
 
+    // Boss DeathGrasp cooldown tracking
+    this.bossDeathGraspCooldown = new Map(); // enemyId -> lastDeathGraspTime
+
     // Boss skeleton summoning tracking
     this.bossSkeletonSummonCooldown = new Map(); // enemyId -> lastSummonTime
     this.bossSummonedSkeletons = new Map(); // enemyId -> Set of skeleton IDs
 
-    // Enemy taunt tracking (for Deathgrasp ability)
+    // Boss spawn time tracking (for initial meteor delay)
+    this.bossSpawnTime = new Map(); // enemyId -> spawnTimestamp
+
+    // Debug logging throttle for meteor blocking
+    this._lastMeteorDebugLog = new Map(); // debugKey -> lastLogTime
+
+    // Enemy taunt tracking (for Wraithblade ability)
     this.enemyTaunts = new Map(); // enemyId -> { taunterPlayerId, tauntEndTime }
   }
 
@@ -48,6 +57,12 @@ class EnemyAI {
     this.enemyAggro.clear();
     this.bossDamageTracking.clear();
     this.bossAttackCooldown.clear();
+    this.bossSpawnTime.clear();
+    this.bossMeteorCooldown.clear();
+    this.bossDeathGraspCooldown.clear();
+    this.bossSkeletonSummonCooldown.clear();
+    this.bossSummonedSkeletons.clear();
+    this._lastMeteorDebugLog.clear();
     this.enemyTaunts.clear();
   }
 
@@ -250,15 +265,51 @@ class EnemyAI {
     // ALWAYS update rotation to face target, even when standing still
     this.updateBossRotation(boss, targetPlayer);
 
-    // Check meteor cooldown (10 seconds)
-    const meteorCooldown = 10000;
-    const lastMeteorTime = this.bossMeteorCooldown.get(boss.id) || 0;
-    const now = Date.now();
+    // Track boss spawn time if not already tracked
+    if (!this.bossSpawnTime.has(boss.id)) {
+      // Use boss.spawnedAt from boss data, or current time as fallback
+      const spawnTime = boss.spawnedAt || Date.now();
+      this.bossSpawnTime.set(boss.id, spawnTime);
+      console.log(`🕐 Boss ${boss.id} spawn time tracked: ${new Date(spawnTime).toISOString()} (using ${boss.spawnedAt ? 'boss.spawnedAt' : 'current time as fallback'})`);
+      
+      // Verify the spawn time is reasonable (not in the future, not too far in the past)
+      const now = Date.now();
+      if (spawnTime > now) {
+        console.warn(`⚠️ Boss ${boss.id} has spawn time in the future! Correcting to current time.`);
+        this.bossSpawnTime.set(boss.id, now);
+      } else if (now - spawnTime > 3600000) { // More than 1 hour ago
+        console.warn(`⚠️ Boss ${boss.id} has spawn time more than 1 hour in the past (${((now - spawnTime) / 60000).toFixed(1)} minutes ago). This might be from an old session.`);
+      }
+    }
 
-    if (now - lastMeteorTime >= meteorCooldown) {
+    // Check meteor cooldown (20 seconds) and initial 60 second delay
+    const meteorCooldown = 20000;
+    const initialMeteorDelay = 60000; // 60 seconds before first meteor
+    const lastMeteorTime = this.bossMeteorCooldown.get(boss.id) || 0;
+    const bossSpawnTime = this.bossSpawnTime.get(boss.id);
+    const now = Date.now();
+    const timeSinceSpawn = now - bossSpawnTime;
+
+    // Only allow meteor if:
+    // 1. At least 60 seconds have passed since boss spawned
+    // 2. Normal cooldown has passed since last meteor
+    if (timeSinceSpawn >= initialMeteorDelay && now - lastMeteorTime >= meteorCooldown) {
       // Cast meteor ability at all player positions
+      console.log(`☄️ Boss ${boss.id} casting meteor (${(timeSinceSpawn / 1000).toFixed(1)}s since spawn, ${((now - lastMeteorTime) / 1000).toFixed(1)}s since last meteor)`);
       this.bossCastMeteor(boss, players);
       this.bossMeteorCooldown.set(boss.id, now);
+    } else {
+      // Debug: Log why meteor was blocked (only log every 5 seconds to avoid spam)
+      const debugKey = `${boss.id}-meteor-debug`;
+      const lastDebugLog = this._lastMeteorDebugLog.get(debugKey) || 0;
+      if (now - lastDebugLog >= 5000) { // Log every 5 seconds
+        const timeUntilMeteor = Math.max(0, initialMeteorDelay - timeSinceSpawn);
+        const reason = timeSinceSpawn < initialMeteorDelay 
+          ? `Initial 60s delay (${(timeUntilMeteor / 1000).toFixed(1)}s remaining)`
+          : `Normal cooldown (${((meteorCooldown - (now - lastMeteorTime)) / 1000).toFixed(1)}s remaining)`;
+        console.log(`⏳ Boss ${boss.id} meteor blocked: ${reason} [${(timeSinceSpawn / 1000).toFixed(1)}s since spawn]`);
+        this._lastMeteorDebugLog.set(debugKey, now);
+      }
     }
 
     // Check skeleton summoning cooldown (17.5 seconds)
@@ -274,6 +325,16 @@ class EnemyAI {
         this.bossSummonSkeleton(boss);
         this.bossSkeletonSummonCooldown.set(boss.id, now);
       }
+    }
+
+    // Check DeathGrasp cooldown (10 seconds)
+    const deathGraspCooldown = 10000;
+    const lastDeathGraspTime = this.bossDeathGraspCooldown.get(boss.id) || 0;
+
+    if (now - lastDeathGraspTime >= deathGraspCooldown) {
+      // Cast DeathGrasp at a random player
+      this.bossCastDeathGrasp(boss, players);
+      this.bossDeathGraspCooldown.set(boss.id, now);
     }
 
     if (distance <= attackRange) {
@@ -323,9 +384,14 @@ class EnemyAI {
       z: player.position.z
     }));
 
-    if (targetPositions.length === 0) return;
+    if (targetPositions.length === 0) {
+      console.log(`⚠️ Boss ${boss.id} tried to cast meteor but no players found`);
+      return;
+    }
 
     const meteorId = `meteor-${boss.id}-${Date.now()}`;
+    const spawnTime = this.bossSpawnTime.get(boss.id);
+    const timeSinceSpawn = spawnTime ? ((Date.now() - spawnTime) / 1000).toFixed(1) : 'unknown';
 
     // Broadcast meteor cast to all players
     if (this.io) {
@@ -337,7 +403,42 @@ class EnemyAI {
       });
     }
 
-    console.log(`☄️ Boss ${boss.id} cast meteor at ${targetPositions.length} player positions!`);
+    console.log(`☄️☄️☄️ METEOR CAST: Boss ${boss.id} cast meteor at ${targetPositions.length} player positions! (${timeSinceSpawn}s since spawn)`);
+  }
+
+  bossCastDeathGrasp(boss, players) {
+    // Select a random player to target
+    if (players.length === 0) {
+      console.log(`⚠️ Boss ${boss.id} tried to cast DeathGrasp but no players found`);
+      return;
+    }
+
+    const randomPlayer = players[Math.floor(Math.random() * players.length)];
+    const deathGraspId = `deathgrasp-${boss.id}-${Date.now()}`;
+
+    // Calculate direction from boss to target player
+    const dx = randomPlayer.position.x - boss.position.x;
+    const dz = randomPlayer.position.z - boss.position.z;
+    const length = Math.sqrt(dx * dx + dz * dz);
+    const direction = {
+      x: length > 0 ? dx / length : 0,
+      y: 0,
+      z: length > 0 ? dz / length : 0
+    };
+
+    // Broadcast DeathGrasp cast to all players
+    if (this.io) {
+      this.io.to(this.roomId).emit('boss-deathgrasp-cast', {
+        bossId: boss.id,
+        deathGraspId: deathGraspId,
+        startPosition: boss.position,
+        direction: direction,
+        targetPlayerId: randomPlayer.id,
+        timestamp: Date.now()
+      });
+    }
+
+    console.log(`💀 Boss ${boss.id} casting DeathGrasp at player ${randomPlayer.name || randomPlayer.id}!`);
   }
 
   bossSummonSkeleton(boss) {
@@ -400,16 +501,25 @@ class EnemyAI {
   }
 
   // Track damage dealt to boss by each player
-  trackBossDamage(bossId, playerId, damage) {
+  trackBossDamage(bossId, playerId, damage, player = null) {
     if (!this.bossDamageTracking.has(bossId)) {
       this.bossDamageTracking.set(bossId, new Map());
     }
 
     const damageMap = this.bossDamageTracking.get(bossId);
-    const currentDamage = damageMap.get(playerId) || 0;
-    damageMap.set(playerId, currentDamage + damage);
+    let effectiveDamage = damage;
 
-    console.log(`📊 Boss aggro - Player ${playerId} has dealt ${currentDamage + damage} total damage to boss ${bossId}`);
+    // Apply massive aggro multiplier for Sabres stealth attacks (similar to WraithStrike taunt)
+    if (player && player.isStealthing) {
+      const stealthMultiplier = 10.0; // 10x aggro generation while stealthing
+      effectiveDamage *= stealthMultiplier;
+      console.log(`👤 Stealth aggro bonus: Player ${playerId} stealth attack (${damage} damage) -> ${effectiveDamage} effective aggro`);
+    }
+
+    const currentDamage = damageMap.get(playerId) || 0;
+    damageMap.set(playerId, currentDamage + effectiveDamage);
+
+    console.log(`📊 Boss aggro - Player ${playerId} has dealt ${currentDamage + effectiveDamage} total damage to boss ${bossId}${player?.isStealthing ? ' (STEALTH BONUS)' : ''}`);
   }
 
   findClosestPlayer(enemy, players) {
@@ -585,8 +695,8 @@ class EnemyAI {
     // Different enemy types have different movement speeds
     switch (enemyType) {
       case 'elite': return 0.0; // Elite enemies are stationary like training dummies
-      case 'boss': return 2; // Boss moves at moderate speed
-      case 'boss-skeleton': return 1; // Boss-summoned skeletons move at normal skeleton speed
+      case 'boss': return 1.25; // Boss moves at moderate speed
+      case 'boss-skeleton': return 2.5; // Boss-summoned skeletons move at normal skeleton speed
       default: return 2.0;
     }
   }
@@ -641,9 +751,13 @@ class EnemyAI {
     this.enemyAggro.delete(enemyId);
     this.bossDamageTracking.delete(enemyId);
     this.bossAttackCooldown.delete(enemyId);
+    this.bossSpawnTime.delete(enemyId);
+    this.bossMeteorCooldown.delete(enemyId);
+    this.bossSkeletonSummonCooldown.delete(enemyId);
+    this.bossSummonedSkeletons.delete(enemyId);
   }
 
-  // Apply taunt effect to enemy (Deathgrasp ability)
+  // Apply taunt effect to enemy (Wraithblade ability)
   tauntEnemy(enemyId, taunterPlayerId, duration = 10000) { // Default 10 seconds
     const tauntEndTime = Date.now() + duration;
     this.enemyTaunts.set(enemyId, {
