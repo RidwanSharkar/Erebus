@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, Group, DoubleSide, AdditiveBlending } from '@/utils/three-exports';
+import { Vector3, Group, DoubleSide, AdditiveBlending, Color } from '@/utils/three-exports';
+import RejuvenatingShotTrail from './RejuvenatingShotTrail';
 
 interface RejuvenatingShotProps {
   position: Vector3;
@@ -49,6 +50,14 @@ export default function RejuvenatingShot({ position, direction, onImpact, distan
 
   return (
     <group name="rejuvenating-shot-group">
+      {/* Healing trail effect - positioned outside the projectile group for proper world coordinates */}
+      <RejuvenatingShotTrail
+        color={new Color(color)}
+        size={size * 0.8}
+        meshRef={arrowRef}
+        opacity={opacity}
+      />
+
       <group ref={arrowRef} position={position}>
         {/* Bright white core for the arrow head */}
         <mesh position={[0, 0, 0.22]} rotation={[Math.PI / 2, 0, 0]}>

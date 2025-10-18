@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Shape } from '@/utils/three-exports';
+import { Group, Shape, Vector3 } from '@/utils/three-exports';
+import Blizzard from './Blizzard/Blizzard';
 
 const lerp = (start: number, end: number, t: number) => {
   return start * (1 - t) + end * t;
@@ -15,23 +16,35 @@ interface SabresProps {
   isSkyfalling?: boolean;
   isBackstabbing?: boolean;
   isSundering?: boolean;
+  isStealthing?: boolean;
+  isInvisible?: boolean;
   onBackstabComplete?: () => void;
   onSunderComplete?: () => void;
   subclass?: string;
+  enemyData?: Array<{
+    id: string;
+    position: Vector3;
+    health: number;
+  }>;
+  onHit?: (targetId: string, damage: number, isCritical?: boolean, position?: Vector3, isBlizzard?: boolean) => void;
 }
 
-export default function Sabres({ 
-  isSwinging, 
-  onSwingComplete, 
-  onLeftSwingStart, 
+export default function Sabres({
+  isSwinging,
+  onSwingComplete,
+  onLeftSwingStart,
   onRightSwingStart,
   isCharging = false,
   isSkyfalling = false,
   isBackstabbing = false,
   isSundering = false,
+  isStealthing = false,
+  isInvisible = false,
   onBackstabComplete = () => {},
   onSunderComplete = () => {},
-  subclass = 'FROST'
+  subclass = 'FROST',
+  enemyData = [],
+  onHit
 }: SabresProps) {
   
   // Debug: Log when backstab animation is received
@@ -759,6 +772,19 @@ export default function Sabres({
 
         </group>
       </group>
+
+      {/* Blizzard effect during stealth */}
+      {isStealthing && isInvisible && onHit && (
+        <Blizzard
+          position={new Vector3(0, 0.6, -0.4)} // Counteract sabre positioning to center on player
+          onComplete={() => {}} // Blizzard handles its own completion
+          enemyData={enemyData}
+          onHitTarget={(targetId, damage, isCritical, position) => {
+            onHit(targetId, damage, isCritical, position, true);
+          }}
+          level={1} // Default level, can be made configurable later
+        />
+      )}
     </group>
   );
 }

@@ -7,6 +7,7 @@ import { Entity } from '@/ecs/Entity';
 import { Transform } from '@/ecs/components/Transform';
 import { Movement } from '@/ecs/components/Movement';
 import { Health } from '@/ecs/components/Health';
+import { Shield } from '@/ecs/components/Shield';
 import { Enemy } from '@/ecs/components/Enemy';
 import { Renderer } from '@/ecs/components/Renderer';
 import { Collider } from '@/ecs/components/Collider';
@@ -244,6 +245,7 @@ export class ControlSystem extends System {
   private isBackstabbing = false;
   private backstabStartTime = 0;
   private backstabDuration = 1.0; // Total animation duration (0.3 + 0.4 + 0.3 seconds)
+  private backstabTargetRotations = new Map<number, number>(); // Store target rotations at start of backstab
   
   // Sunder ability state (Sabres)
   private lastSunderTime = 0;
@@ -261,6 +263,11 @@ export class ControlSystem extends System {
   // Public getter for stealth state
   public getIsStealthing(): boolean {
     return this.isStealthing;
+  }
+
+  // Public getter for invisibility state
+  public getIsInvisible(): boolean {
+    return this.isInvisible;
   }
   private stealthStartTime = 0;
   private stealthDelayDuration = 0.5; // 0.5 second delay before invisibility
@@ -2631,14 +2638,15 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Get player's health component and heal for the actual damage dealt
+    // Get player's health component and heal for half the damage dealt
     const healthComponent = this.playerEntity.getComponent(Health);
     if (healthComponent) {
       const oldHealth = healthComponent.currentHealth;
       const maxHealth = healthComponent.maxHealth;
 
       // Always attempt to heal, even if at full health (heal method handles this)
-      const didHeal = healthComponent.heal(healingAmount); // Smite healing amount based on damage dealt
+      const actualHealingAmount = Math.floor(healingAmount / 2); // Heal for half the damage dealt
+      const didHeal = healthComponent.heal(actualHealingAmount); // Smite healing amount based on half damage dealt
 
       if (didHeal) {
         // Create healing damage number above player head
@@ -2649,7 +2657,7 @@ export class ControlSystem extends System {
 
           this.onDamageNumbersUpdate([{
             id: this.nextDamageNumberId.toString(),
-            damage: healingAmount, // Smite heals for the actual damage dealt
+            damage: actualHealingAmount, // Smite heals for half the damage dealt
             position: healingPosition,
             isCritical: false,
             timestamp: Date.now(),
@@ -2659,7 +2667,7 @@ export class ControlSystem extends System {
 
           // Broadcast healing in PVP mode
           if (this.onBroadcastHealing) {
-            this.onBroadcastHealing(healingAmount, 'smite', healingPosition);
+            this.onBroadcastHealing(actualHealingAmount, 'smite', healingPosition);
           }
         }
       }
@@ -3042,8 +3050,16 @@ export class ControlSystem extends System {
     // SABRES DAMAGE
     const attackRange = 3.8;
     const attackAngle = Math.PI / 2;
-    const leftSabreDamage = 19;
-    const rightSabreDamage = 23;
+
+    // Base damage values
+    let leftSabreDamage = 19;
+    let rightSabreDamage = 23;
+
+    // Apply stealth damage bonus (5 second duration)
+    if (this.isStealthing) {
+      leftSabreDamage = 37;  // Increased from 19 to 31
+      rightSabreDamage = 41; // Increased from 23 to 41
+    }
     
     // Get camera direction for attack direction
     const attackDirection = new Vector3();
@@ -3225,17 +3241,11 @@ export class ControlSystem extends System {
 
             // Add visual stun effect (different from freeze) - 2 second duration for Skyfall
             addGlobalStunnedEnemy(entity.id.toString(), targetTransform.position, 2000);
-            console.log(`🌟 Skyfall: Applied stun visual effect to enemy ${entity.id}, serverEnemyId: ${entity.userData?.serverEnemyId}`);
 
             // Send stun status to server for multiplayer enemies (co-op mode)
-            console.log(`🌟 Skyfall: Checking callback - exists: ${!!this.onApplyEnemyStatusEffectCallback}, serverEnemyId: ${entity.userData?.serverEnemyId}`);
             if (this.onApplyEnemyStatusEffectCallback && entity.userData?.serverEnemyId) {
-              console.log(`🌟 Skyfall: Calling callback with enemyId=${entity.userData.serverEnemyId}, effectType=stun, duration=2000`);
               this.onApplyEnemyStatusEffectCallback(entity.userData.serverEnemyId, 'stun', 2000); // 2 seconds
-              console.log(`🌟 Skyfall: Callback completed`);
-            } else {
-              console.error(`🌟 Skyfall: CANNOT BROADCAST - callback: ${!!this.onApplyEnemyStatusEffectCallback}, serverEnemyId: ${entity.userData?.serverEnemyId}`);
-            }
+            } 
           } else {
             // apply stun debuff
             const localSocketId = (window as any).localSocketId;
@@ -3266,6 +3276,16 @@ export class ControlSystem extends System {
         }
       }
     }
+
+    // Create Sabre Reaper Mist effect at landing position
+    if (this.onCreateSabreMistEffectCallback) {
+      this.onCreateSabreMistEffectCallback(landingPosition.clone());
+    }
+
+    // Broadcast mist effect to other players in PVP
+    if (this.onBroadcastSabreMistCallback) {
+      this.onBroadcastSabreMistCallback(landingPosition.clone(), 'skyfall');
+    }
   }
   
   private completeSkyfallAbility(playerTransform: Transform): void {
@@ -3288,6 +3308,8 @@ export class ControlSystem extends System {
     // Check if backstab animation duration has elapsed
     if (elapsedTime >= this.backstabDuration) {
       this.isBackstabbing = false;
+      // Clean up captured rotations
+      this.backstabTargetRotations.clear();
     }
   }
   
@@ -3308,7 +3330,16 @@ export class ControlSystem extends System {
     
     // Consume energy
     gameUI.consumeEnergy(35);
-    
+
+    // Regenerate 35 shield on Sunder use
+    if (this.playerEntity) {
+      const shieldComponent = this.playerEntity.getComponent(Shield);
+      if (shieldComponent) {
+        const newShieldValue = Math.min(shieldComponent.maxShield, shieldComponent.currentShield + 35);
+        shieldComponent.setShield(newShieldValue, shieldComponent.maxShield);
+      }
+    }
+
     // Set cooldown
     this.lastSunderTime = currentTime;
     
@@ -3465,7 +3496,7 @@ export class ControlSystem extends System {
     }
     
     // Calculate damage based on current stack count (before adding new stack)
-    const baseDamages = [60, 70, 80, 90]; // 0, 1, 2, 3 stacks
+    const baseDamages = [65, 80, 95, 125]; // 0, 1, 2, 3 stacks
     const damage = baseDamages[Math.min(currentStacks.stacks, 3)];
     
     let isStunned = false;
@@ -3593,8 +3624,15 @@ export class ControlSystem extends System {
     if (currentTime - this.lastStealthTime < this.stealthCooldown) {
       return;
     }
-    
-    // No energy cost for Stealth ability
+
+    // Check energy cost (25 energy)
+    const gameUI = (window as any).gameUI;
+    if (!gameUI || !gameUI.canCastStealth()) {
+      return;
+    }
+
+    // Consume energy
+    gameUI.consumeEnergy(25);
     
     // Set cooldown
     this.lastStealthTime = currentTime;
@@ -3687,7 +3725,7 @@ export class ControlSystem extends System {
     // Broadcast stealth state through the multiplayer system
     const multiplayerContext = (window as any).multiplayerContext;
     if (multiplayerContext && multiplayerContext.broadcastPlayerStealth) {
-      multiplayerContext.broadcastPlayerStealth(isInvisible);
+      multiplayerContext.broadcastPlayerStealth(isInvisible, this.isStealthing);
     }
   }
   
@@ -3866,6 +3904,14 @@ export class ControlSystem extends System {
 
   public setPlayerDead(isDead: boolean): void {
     this.isPlayerDead = isDead;
+
+    // Reset stealth state when player dies
+    if (isDead) {
+      this.isStealthing = false;
+      this.isInvisible = false;
+      this.stealthStartTime = 0;
+      this.broadcastStealthState(false);
+    }
   }
 
 
@@ -3942,6 +3988,24 @@ export class ControlSystem extends System {
     // Set cooldown
     this.lastBackstabTime = currentTime;
   
+    // Capture current rotations of all nearby entities BEFORE the backstab damage check
+    // This prevents the boss from turning to face us during the backstab cast
+    // Use visual rotation (from mesh) if available, as it lags behind server rotation
+    const allEntities = this.world.getAllEntities();
+    this.backstabTargetRotations.clear();
+    
+    for (const entity of allEntities) {
+      if (entity === this.playerEntity) continue;
+      const visualRot = entity.userData?.visualRotation;
+      const serverRot = entity.userData?.rotation;
+      const rotToCapture = visualRot !== undefined ? visualRot : serverRot;
+      
+      if (rotToCapture !== undefined) {
+        this.backstabTargetRotations.set(entity.id, rotToCapture);
+      }
+    }
+    
+    console.log(`🗡️ Captured ${this.backstabTargetRotations.size} entity rotations for backstab`);
     
     // Start backstab animation
     this.isBackstabbing = true;
@@ -4038,12 +4102,34 @@ export class ControlSystem extends System {
       } else {
         // Check for enemies (bosses and summoned skeletons)
         const enemy = entity.getComponent(Enemy);
-        if (enemy && entity.userData?.rotation !== undefined) {
+        
+        // Use captured rotation from when backstab started, not current rotation
+        // Prefer visualRotation (from mesh) over rotation (from server) as it lags behind due to interpolation
+        const capturedRotation = this.backstabTargetRotations.get(entity.id);
+        const visualRotation = entity.userData?.visualRotation;
+        const serverRotation = entity.userData?.rotation;
+        
+        // Priority: captured > visual > server
+        const rotationToUse = capturedRotation !== undefined ? capturedRotation : 
+                             (visualRotation !== undefined ? visualRotation : serverRotation);
+        
+        console.log(`🗡️ Backstab Debug - Entity ${entity.id}:`, {
+          hasEnemy: !!enemy,
+          hasUserData: !!entity.userData,
+          serverRotation: serverRotation,
+          visualRotation: visualRotation,
+          capturedRotation: capturedRotation,
+          rotationToUse: rotationToUse,
+          usingVisual: visualRotation !== undefined && capturedRotation === undefined,
+          serverEnemyId: entity.userData?.serverEnemyId
+        });
+        
+        if (enemy && rotationToUse !== undefined) {
           // Calculate enemy's facing direction from their rotation (in radians)
           const targetFacingDirection = new Vector3(
-            Math.sin(entity.userData.rotation),
+            Math.sin(rotationToUse),
             0,
-            Math.cos(entity.userData.rotation)
+            Math.cos(rotationToUse)
           ).normalize();
 
           // Vector from target to attacker
@@ -4055,15 +4141,36 @@ export class ControlSystem extends System {
           const behindDotProduct = targetFacingDirection.dot(attackerDirection);
           isBackstab = behindDotProduct < -0.3; // 70 degree cone behind target
 
+          console.log(`🗡️ Backstab Calculation:`, {
+            entityRotation: rotationToUse,
+            targetFacing: targetFacingDirection,
+            attackerDirection: attackerDirection,
+            behindDotProduct: behindDotProduct,
+            isBackstab: isBackstab,
+            threshold: -0.3
+          });
+
           if (isBackstab) {
-            baseDamage = 175; // Backstab base damage (before critical calculation)
+            baseDamage = 225; // Backstab base damage (before critical calculation)
+            console.log(`✅ BACKSTAB SUCCESS! Base damage increased to 215`);
+          } else {
+            console.log(`❌ Not a backstab. Dot product ${behindDotProduct.toFixed(2)} >= -0.3`);
           }
+        } else {
+          console.log(`❌ Backstab failed checks - enemy: ${!!enemy}, rotation defined: ${rotationToUse !== undefined}`);
         }
       }
 
       // Use DamageCalculator for proper critical chance and damage scaling
       const damageResult = calculateDamage(baseDamage, WeaponType.SABRES);
       const damage = damageResult.damage;
+      
+      console.log(`🗡️ Final Backstab Damage:`, {
+        baseDamage: baseDamage,
+        isBackstab: isBackstab,
+        finalDamage: damage,
+        isCritical: damageResult.isCritical
+      });
       
       // Check if target is stunned (for energy refund)
       let isTargetStunned = false;
@@ -4103,7 +4210,7 @@ export class ControlSystem extends System {
         if (isTargetStunned) {
           const gameUI = (window as any).gameUI;
           if (gameUI && gameUI.gainEnergy) {
-            gameUI.gainEnergy(45);
+            gameUI.gainEnergy(60);
           }
         }
       }

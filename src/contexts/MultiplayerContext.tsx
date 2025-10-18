@@ -141,7 +141,7 @@ interface MultiplayerContextType {
   broadcastPlayerHealing: (healingAmount: number, healingType: string, position: { x: number; y: number; z: number }, targetPlayerId?: string) => void;
   broadcastPlayerAnimationState: (animationState: PlayerAnimationState) => void;
   broadcastPlayerDebuff: (targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, effectData?: any) => void;
-  broadcastPlayerStealth: (isInvisible: boolean) => void;
+  broadcastPlayerStealth: (isInvisible: boolean, isStealthing?: boolean) => void;
   broadcastPlayerKnockback: (targetPlayerId: string, direction: { x: number; y: number; z: number }, distance: number, duration: number) => void;
   broadcastPlayerTornadoEffect: (playerId: string, position: { x: number; y: number; z: number }, duration: number) => void;
   broadcastPlayerDeathEffect: (playerId: string, position: { x: number; y: number; z: number }, isStarting: boolean) => void;
@@ -444,7 +444,6 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     addEventHandler('enemy-damaged', (data) => {
-      console.log(`💥 Enemy damaged: ${data.enemyId}, health: ${data.newHealth}/${data.maxHealth}, damage: ${data.damage}, from: ${data.fromPlayerId}`);
 
       // Throttle enemy damage updates to prevent infinite re-renders
       const now = Date.now();
@@ -458,12 +457,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         const updated = new Map(prev);
         const enemy = updated.get(data.enemyId);
         if (enemy) {
-          console.log(`🔄 Updating enemy ${data.enemyId} health from ${enemy.health} to ${data.newHealth}`);
-          updated.set(data.enemyId, {
-            ...enemy,
-            health: data.newHealth,
-            isDying: data.wasKilled
-          });
+          // Update enemy health and maxHealth with new values from server
+          enemy.health = data.newHealth;
+          enemy.maxHealth = data.maxHealth;
+
+          // Handle enemy death
+          if (data.wasKilled) {
+            enemy.isDying = true;
+          }
         } else {
           console.log(`❌ Enemy ${data.enemyId} not found in enemies map`);
         }
@@ -859,13 +860,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const broadcastPlayerStealth = useCallback((isInvisible: boolean) => {
+  const broadcastPlayerStealth = useCallback((isInvisible: boolean, isStealthing?: boolean) => {
 
     if (socket && currentRoomId) {
       socket.emit('player-stealth', {
         roomId: currentRoomId,
         playerId: socket.id,
         isInvisible,
+        isStealthing: isStealthing || false,
         timestamp: Date.now()
       });
     }

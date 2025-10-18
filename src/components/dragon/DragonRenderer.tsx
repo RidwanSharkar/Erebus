@@ -60,6 +60,7 @@ interface DragonRendererProps {
   rotation?: { x: number; y: number; z: number }; // Add rotation prop for multiplayer
   isLocalPlayer?: boolean; // Flag to distinguish local player from other players
   isStealthing?: boolean; // Whether the local player is currently in stealth mode
+  isInvisible?: boolean; // Whether the local player is currently invisible (stealth active)
   isViperStingCharging?: boolean;
   viperStingChargeProgress?: number;
   isBarrageCharging?: boolean;
@@ -136,6 +137,7 @@ export default function DragonRenderer({
   rotation,
   isLocalPlayer = false,
   isStealthing = false,
+  isInvisible = false,
   isViperStingCharging = false,
   viperStingChargeProgress = 0,
   isBarrageCharging = false,
@@ -249,12 +251,6 @@ export default function DragonRenderer({
         if (Math.random() < 0.01) { // Only log 1% of the time to reduce spam
           const allComponents = entity.getAllComponents();
           const componentNames = entity.getComponentNames();
-          console.log('🔍 DragonRenderer entity found:', {
-            entityId,
-            componentNames,
-            position: position?.toArray(),
-            isLocalPlayer
-          });
         }
         
         const movement = entity.getComponent(Movement);
@@ -375,16 +371,16 @@ export default function DragonRenderer({
   }, [onMeshReady]);
   
   // Handle sword damage through combat system
-  const handleSwordHit = (targetId: string, damage: number) => {
+  const handleSwordHit = (targetId: string, damage: number, isCritical?: boolean, position?: Vector3, isBlizzard?: boolean) => {
     const targetEntity = world.getEntity(parseInt(targetId));
     const playerEntityObj = world.getEntity(entityId);
-    
+
     if (targetEntity && playerEntityObj) {
       // Use combat system to deal damage (this will handle damage numbers automatically)
       const combatSystem = world.getSystem(CombatSystem);
       if (combatSystem) {
-        combatSystem.queueDamage(targetEntity, damage, playerEntityObj, 'sword', playerEntityObj?.userData?.playerId);
-
+        const damageType = isBlizzard ? 'blizzard' : 'sword';
+        combatSystem.queueDamage(targetEntity, damage, playerEntityObj, damageType, playerEntityObj?.userData?.playerId, isCritical);
       }
     }
   };
@@ -426,6 +422,8 @@ export default function DragonRenderer({
           isSkyfalling={isSkyfalling}
           isBackstabbing={isBackstabbing}
           isSundering={isSundering}
+          isStealthing={isStealthing}
+          isInvisible={isInvisible}
           isSwordCharging={isSwordCharging}
           isDeflecting={isDeflecting}
           isSmiting={isSmiting}
