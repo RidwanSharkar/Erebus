@@ -32,6 +32,9 @@ export class Movement extends Component {
   public corruptedInitialSlowPercent: number; // Initial slow percentage (90%)
   public corruptedRecoveryRate: number; // Recovery rate per second (10%)
 
+  // Ice Beam debuff state (Scythe Ice Beam)
+  public isIcebeaming: boolean;
+
   // Input-based movement
   public moveDirection: Vector3;
   public inputStrength: number;
@@ -100,6 +103,9 @@ export class Movement extends Component {
     this.corruptedDuration = 0;
     this.corruptedInitialSlowPercent = 0.9; // 90% initial slow
     this.corruptedRecoveryRate = 0.1; // 10% recovery per second
+
+    // Initialize Ice Beam debuff state
+    this.isIcebeaming = false;
     
     this.moveDirection = new Vector3(0, 0, 0);
     this.inputStrength = 0;
@@ -229,6 +235,11 @@ export class Movement extends Component {
       // Apply the slow effect (reduce speed by the slow percentage)
       speed *= (1 - currentSlowPercent);
 
+    }
+
+    // Apply Ice Beam movement speed reduction (50% slower)
+    if (this.isIcebeaming) {
+      speed *= 0.5; // 50% speed reduction
     }
 
     return speed;
@@ -510,6 +521,7 @@ export class Movement extends Component {
     this.isSlowed = false;
     this.slowedUntil = 0;
     this.movementSpeedMultiplier = 1.0;
+    this.isIcebeaming = false;
 
     // Reset dash properties
     this.isDashing = false;

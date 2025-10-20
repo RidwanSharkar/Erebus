@@ -4,10 +4,9 @@ import { useFrame } from '@react-three/fiber';
 
 interface DebuffIndicatorProps {
   position: Vector3;
-  debuffType: 'frozen' | 'slowed' | 'burning';
+  debuffType: 'frozen' | 'slowed';
   duration?: number;
   startTime?: number;
-  stackCount?: number; // For burning stacks
   onComplete?: () => void;
 }
 
@@ -16,7 +15,6 @@ export default function DebuffIndicator({
   debuffType,
   duration = 5000,
   startTime = Date.now(),
-  stackCount = 1,
   onComplete 
 }: DebuffIndicatorProps) {
   const indicatorRef = useRef<Group>(null);
@@ -79,12 +77,6 @@ export default function DebuffIndicator({
           color: "#FFA726",
           emissive: "#FF9800",
           symbol: "🐌"
-        };
-      case 'burning':
-        return {
-          color: "#FF5722",
-          emissive: "#D84315",
-          symbol: "🔥"
         };
       default:
         return {
@@ -164,47 +156,6 @@ export default function DebuffIndicator({
         );
       })}
 
-      {/* Stack count indicator for burning debuff */}
-      {debuffType === 'burning' && stackCount > 1 && (
-        <group position={[0.6, 0.3, 0.02]}>
-          {/* Stack count background */}
-          <mesh>
-            <circleGeometry args={[0.15, 8]} />
-            <meshStandardMaterial
-              color="#000000"
-              transparent
-              opacity={0.8 * fadeProgress}
-            />
-          </mesh>
-          
-          {/* Stack count text representation using small spheres */}
-          <group position={[0, 0, 0.01]}>
-            {/* Display up to 15 stacks as small dots arranged in a pattern */}
-            {[...Array(Math.min(stackCount, 15))].map((_, i) => {
-              const row = Math.floor(i / 5);
-              const col = i % 5;
-              const x = (col - 2) * 0.05;
-              const y = (1 - row) * 0.05;
-              
-              return (
-                <mesh
-                  key={i}
-                  position={[x, y, 0]}
-                >
-                  <sphereGeometry args={[0.015, 6, 6]} />
-                  <meshStandardMaterial
-                    color="#FFFF00"
-                    emissive="#FF8F00"
-                    emissiveIntensity={0.8 * intensity}
-                    transparent
-                    opacity={0.9 * fadeProgress}
-                  />
-                </mesh>
-              );
-            })}
-          </group>
-        </group>
-      )}
 
       {/* Point light for glow effect */}
       <pointLight 

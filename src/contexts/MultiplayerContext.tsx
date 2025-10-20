@@ -140,7 +140,7 @@ interface MultiplayerContextType {
   broadcastPlayerDamage: (targetPlayerId: string, damage: number, damageType?: string, isCritical?: boolean) => void;
   broadcastPlayerHealing: (healingAmount: number, healingType: string, position: { x: number; y: number; z: number }, targetPlayerId?: string) => void;
   broadcastPlayerAnimationState: (animationState: PlayerAnimationState) => void;
-  broadcastPlayerDebuff: (targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, effectData?: any) => void;
+  broadcastPlayerDebuff: (targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', duration: number, effectData?: any) => void;
   broadcastPlayerStealth: (isInvisible: boolean, isStealthing?: boolean) => void;
   broadcastPlayerKnockback: (targetPlayerId: string, direction: { x: number; y: number; z: number }, distance: number, duration: number) => void;
   broadcastPlayerTornadoEffect: (playerId: string, position: { x: number; y: number; z: number }, duration: number) => void;
@@ -465,9 +465,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           if (data.wasKilled) {
             enemy.isDying = true;
           }
-        } else {
-          console.log(`❌ Enemy ${data.enemyId} not found in enemies map`);
         }
+        // Silently ignore if enemy not found - it may have been removed already (died)
         return updated;
       });
     });
@@ -847,7 +846,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const broadcastPlayerDebuff = useCallback((targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, effectData?: any) => {
+  const broadcastPlayerDebuff = useCallback((targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', duration: number, effectData?: any) => {
     if (socket && currentRoomId) {
       socket.emit('player-debuff', {
         roomId: currentRoomId,

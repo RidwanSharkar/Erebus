@@ -779,28 +779,16 @@ export function OptimizedPVPCrossentropyManager({
             projectile.addHitTarget(playerEntityId);
             hitTracker.current.add(hitKey);
             
-            // Apply burning stacks for Crossentropy bolt
-            let finalDamage = 140; // Base Crossentropy damage
-            const controlSystemRef = (window as any).controlSystemRef;
-            if (controlSystemRef && controlSystemRef.current) {
-              const controlSystem = controlSystemRef.current;
-              const currentTime = Date.now() / 1000;
-              
-              // Apply burning stack and get damage bonus (false = Crossentropy bolt)
-              const { damageBonus } = controlSystem.applyBurningStack(playerEntityId, currentTime, false);
+            // Crossentropy bolt damage (burning stacks removed)
+            const finalDamage = 140; // Base Crossentropy damage
 
-              // No PVP damage cap - allow full burning damage bonus
-              finalDamage = 140 + damageBonus;
-              
-            }
-            
-            onPlayerHit(player.id, finalDamage); // Crossentropy damage with burning bonus
+            onPlayerHit(player.id, finalDamage); // Crossentropy damage
 
             // Create damage number for visual feedback (orange for Crossentropy)
             if (damageNumberManager && damageNumberManager.addDamageNumber) {
               const hitPosition = new Vector3(player.position.x, player.position.y + 1.5, player.position.z);
               damageNumberManager.addDamageNumber(
-                finalDamage, // Crossentropy damage with burning bonus
+                finalDamage, // Crossentropy damage
                 false, // Not critical
                 hitPosition,
                 'crossentropy' // Damage type for orange styling

@@ -48,6 +48,9 @@ export class CameraSystem extends System {
   private cameraRotationDisabled = false;
   private disabledByEntityId: string | null = null;
 
+  // Ice Beam state for camera rotation speed reduction
+  private isIcebeaming = false;
+
   constructor(camera: PerspectiveCamera, inputManager: InputManager, config?: Partial<CameraConfig>) {
     super();
     this.camera = camera;
@@ -106,9 +109,12 @@ export class CameraSystem extends System {
 
     // Only rotate camera when right mouse button is held down AND camera rotation is not disabled
     if ((mouseDelta.x !== 0 || mouseDelta.y !== 0) && this.isRightMouseDown && !this.cameraRotationDisabled) {
+      // Apply Ice Beam camera rotation speed reduction (50% slower)
+      const sensitivity = this.isIcebeaming ? this.config.mouseSensitivity * 0.125 : this.config.mouseSensitivity;
+
       // Update spherical coordinates based on mouse movement
-      this.spherical.theta -= mouseDelta.x * this.config.mouseSensitivity;
-      this.spherical.phi -= mouseDelta.y * this.config.mouseSensitivity; // Inverted Y for natural camera feel
+      this.spherical.theta -= mouseDelta.x * sensitivity;
+      this.spherical.phi -= mouseDelta.y * sensitivity; // Inverted Y for natural camera feel
 
       // Clamp phi to prevent camera flipping
       this.spherical.phi = MathUtils.clamp(
@@ -260,5 +266,10 @@ export class CameraSystem extends System {
   // Disable/enable camera rotation for death state
   public setDeathCameraDisabled(disabled: boolean, playerId?: string): void {
     this.setCameraRotationDisabled(disabled, playerId);
+  }
+
+  // Set Ice Beam state for camera rotation speed reduction
+  public setIceBeamActive(active: boolean): void {
+    this.isIcebeaming = active;
   }
 }

@@ -236,7 +236,7 @@ export class CombatSystem extends System {
 
     // Check if target is an enemy - if so, route damage through multiplayer
     const enemy = target.getComponent(Enemy);
-    if (enemy && this.onEnemyDamageCallback) {
+    if (enemy && !health.isDead && this.onEnemyDamageCallback) {
       // Calculate actual damage with critical hit mechanics
       // For abilities that already determined critical hits (like backstab), preserve the original critical flag
       const currentWeapon = this.getCurrentWeapon();
@@ -670,44 +670,8 @@ export class CombatSystem extends System {
         damageType = 'entropic_cryoflame';
       }
 
-      // Apply burning stacks for Entropic Bolt and Crossentropy Bolt (but not for Cryoflame)
+      // Start with base damage (burning stacks removed)
       let finalDamage = baseDamage;
-      if ((damageType === 'entropic' || damageType === 'crossentropy') && !isCryoflameBolt) {
-        // Get the ControlSystem to apply burning stacks
-        const controlSystemRef = (window as any).controlSystemRef;
-        if (controlSystemRef && controlSystemRef.current) {
-          const controlSystem = controlSystemRef.current;
-          const isEntropicBolt = damageType === 'entropic';
-
-          // Check if we recently applied burning stacks to prevent spam
-          const lastBurningStackTime = (target as any)._lastBurningStackTime || 0;
-          if (currentTime - lastBurningStackTime > 0.3) { // 100ms cooldown between burning stack applications
-            // Apply burning stack and get damage bonus
-            const { damageBonus } = controlSystem.applyBurningStack(target.id, currentTime, isEntropicBolt);
-
-            // Cap burning damage in PVP to prevent extreme values that cause desync
-            const maxBurningBonus = isEntropicBolt ? 15 : 100; // Max +15 for Entropic, +100 for Crossentropy in PVP
-            const cappedBonus = Math.min(damageBonus, maxBurningBonus);
-            finalDamage = baseDamage + cappedBonus;
-
-            // Mark when we last applied burning stacks to this target
-            (target as any)._lastBurningStackTime = currentTime;
-
-
-          } else {
-            // Use existing burning stack bonus without incrementing
-            const existingStacks = controlSystem.getBurningStacks(target.id);
-            const rawDamageBonus = isEntropicBolt ? existingStacks : existingStacks * 20;
-
-            // Cap burning damage in PVP to prevent extreme values that cause desync
-            const maxBurningBonus = isEntropicBolt ? 15 : 100; // Max +15 for Entropic, +100 for Crossentropy in PVP
-            const cappedBonus = Math.min(rawDamageBonus, maxBurningBonus);
-            finalDamage = baseDamage + cappedBonus;
-
-
-          }
-        }
-      }
 
       // Apply Cryoflame double damage to frozen enemies BEFORE critical calculation
       if (isCryoflameBolt) {
