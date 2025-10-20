@@ -86,7 +86,7 @@ export class ControlSystem extends System {
   private onDeflectCallback?: (position: Vector3, direction: Vector3) => void;
   
   // Callback for broadcasting debuff effects in PVP
-  private onDebuffCallback?: (targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, position: Vector3) => void;
+  private onDebuffCallback?: (targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', duration: number, position: Vector3) => void;
   
   // Callback for applying status effects to enemies in multiplayer (public so CombatSystem can access)
   public onApplyEnemyStatusEffectCallback?: (enemyId: string, effectType: string, duration: number) => void;
@@ -116,7 +116,7 @@ export class ControlSystem extends System {
   private onWraithStrikeCallback?: (position: Vector3, direction: Vector3) => void;
 
   // Callback for Runeblade mana consumption
-  private onConsumeManaCallback?: (amount: number) => void;
+  private onConsumeManaCallback?: (amount: number) => boolean;
 
   // Callback for Runeblade mana checking
   private onCheckManaCallback?: (amount: number) => boolean;
@@ -131,7 +131,7 @@ export class ControlSystem extends System {
   private onBroadcastSabreMistCallback?: (position: Vector3, effectType: 'stealth' | 'skyfall') => void;
 
   // Callback for creating local debuff effects in PVP
-  private onCreateLocalDebuffCallback?: (playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', position: Vector3, duration: number) => void;
+  private onCreateLocalDebuffCallback?: (playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', position: Vector3, duration: number) => void;
 
   // Callback for Haunted Soul effect (WraithStrike)
   private onHauntedSoulEffectCallback?: (position: Vector3) => void;
@@ -147,12 +147,18 @@ export class ControlSystem extends System {
 
   // Rate limiting for projectile firing
   private lastBowFireTime = 0; // Bow projectiles
-  private lastScytheFireTime = 0; // Scythe entropic bolts
+  private lastScytheFireTime = 0; // Scythe entropic bolts (deprecated - now uses Icebeam)
   private lastSwordFireTime = 0; // Sword melee attacks
   private lastRunebladeFireTime = 0; // Runeblade melee attacks
   private lastSabresFireTime = 0; // Sabres melee attacks
   private lastCrossentropyTime = 0; // Separate tracking for CrossentropyBolt
   private lastReanimateTime = 0; // Separate tracking for Reanimate ability
+
+  // Icebeam state tracking
+  private isIcebeaming = false;
+  private icebeamStartTime = 0;
+  private onIcebeamStateChangeCallback?: (isActive: boolean) => void;
+  private lastIcebeamManaConsumeTime = 0; // Track last mana consumption for Icebeam
   private lastViperStingTime = 0;
   private lastFrostNovaTime = 0; // Separate tracking for Frost Nova ability
   private lastCobraShotTime = 0; // Separate tracking for Cobra Shot ability
@@ -162,7 +168,7 @@ export class ControlSystem extends System {
   private swordFireRate = 0.825; // Rate for sword attacks
   private runebladeFireRate = 0.725; // Runeblade attack rate
   private sabresFireRate = 0.6; // Sabres dual attack rate (600ms between attacks)
-  private scytheFireRate = 0.275; // EntropicBolt rate (0.33s cooldown)
+  private scytheFireRate = 0.35; // EntropicBolt rate (0.33s cooldown)
   private crossentropyFireRate = 2; // CrossentropyBolt rate (1 per second)
   private summonTotemFireRate = 5.0; // Summon Totem rate (5 seconds cooldown)
   private viperStingFireRate = 2.0; // Viper Sting rate (2 seconds cooldown)
@@ -277,9 +283,6 @@ export class ControlSystem extends System {
   // Sunder stack tracking - Map of entity ID to stack data
   private sunderStacks = new Map<number, { stacks: number; lastApplied: number; duration: number }>();
 
-  // Burning stack tracking - Map of entity ID to stack data
-  private burningStacks = new Map<number, { stacks: number; lastApplied: number; duration: number }>();
-
   // Active debuff effects tracking for PVP players - Map of entity ID to debuff data
   private activeDebuffEffects = new Map<number, { debuffType: string; startTime: number; duration: number }[]>();
 
@@ -317,7 +320,7 @@ export class ControlSystem extends System {
   private corruptedAuraActive = false;
   private lastManaDrainTime = 0;
   private corruptedAuraRange = 2.0; 
-  private corruptedAuraManaCost = 24; // 12 mana per second
+  private corruptedAuraManaCost = 20; // 12 mana per second
   private corruptedAuraSlowEffect = 0.5; // 50% slow (multiply movement speed by this)
   private corruptedAuraSlowedEntities = new Map<number, boolean>(); // Track slowed entities
 
@@ -438,9 +441,6 @@ export class ControlSystem extends System {
     // Clean up expired Sunder stacks periodically
     this.cleanupSunderStacks();
 
-    // Clean up expired Burning stacks periodically
-    this.cleanupBurningStacks();
-
     // Handle weapon switching
     this.handleWeaponSwitching();
 
@@ -461,6 +461,27 @@ export class ControlSystem extends System {
 
     // Update deflect barrier position if active
     this.updateDeflectBarrier(playerTransform);
+
+    // Handle Icebeam mana consumption (20 mana per second)
+    if (this.isIcebeaming) {
+      const currentTime = Date.now() / 1000; // Convert to seconds for consistency with other abilities
+      const timeSinceLastConsume = currentTime - this.lastIcebeamManaConsumeTime;
+
+      // Consume mana every 0.1 seconds (2 mana per consumption = 20 per second)
+      if (timeSinceLastConsume >= 0.1) {
+        const gameUI = (window as any).gameUI;
+        if (gameUI) {
+          const manaCost = 5; // 2 mana every 0.1 seconds = 20 per second
+          const manaConsumed = gameUI.consumeMana(manaCost);
+          if (manaConsumed) {
+            this.lastIcebeamManaConsumeTime = currentTime;
+          } else {
+            // Not enough mana - stop Icebeam
+            this.stopIcebeam();
+          }
+        }
+      }
+    }
   }
 
   private handleMovementInput(movement: Movement): void {
@@ -905,42 +926,90 @@ export class ControlSystem extends System {
   }
 
   private handleScytheInput(playerTransform: Transform): void {
-    // Handle scythe left click for EntropicBolt
+    // Handle scythe left click for Icebeam
     if (this.inputManager.isMouseButtonPressed(0)) { // Left mouse button held
-      if (!this.isCharging) {
-        this.isCharging = true;
-        this.chargeProgress = 0;
+      if (!this.isIcebeaming) {
+        // Start Icebeam (mana check happens in update loop)
+        this.isIcebeaming = true;
+        this.icebeamStartTime = Date.now();
+        this.lastIcebeamManaConsumeTime = Date.now() / 1000; // Initialize mana consumption timer in seconds
 
+        // Apply movement and camera speed debuffs
+        const playerMovement = this.playerEntity?.getComponent(Movement);
+        if (playerMovement) {
+          playerMovement.isIcebeaming = true;
+        }
+
+        // Apply camera rotation speed debuff
+        const cameraSystem = (window as any).cameraSystem;
+        if (cameraSystem && cameraSystem.setIceBeamActive) {
+          cameraSystem.setIceBeamActive(true);
+        }
+
+        // Start spinning animation
+        if (!this.isCharging) {
+          this.isCharging = true;
+          this.chargeProgress = 0;
+        }
+
+        // Trigger Icebeam state change callback
+        if (this.onIcebeamStateChangeCallback) {
+          this.onIcebeamStateChangeCallback(true);
+        }
+      } else {
+        // Continue spinning animation while Icebeaming
+        this.chargeProgress += 0.03; // Continuously increase for spinning
       }
-      // Increase charge progress continuously for spinning animation (no cap)
-      this.chargeProgress += 0.03; // Continuously increase for spinning
-
-      // Fire EntropicBolt projectiles continuously while spinning
-      this.fireEntropicBoltProjectile(playerTransform);
-    } else if (this.isCharging) {
-      // Stop spinning when mouse is released
-      this.isCharging = false;
-      this.chargeProgress = 0;
-
+    } else if (this.isIcebeaming) {
+      // Stop Icebeam when mouse is released
+      this.stopIcebeam();
     }
+    
     // Handle CrossentropyBolt ability with 'R' key
-    if (this.inputManager.isKeyPressed('r') && !this.isCharging && !this.isCrossentropyCharging && this.isAbilityUnlocked('R')) {
+    if (this.inputManager.isKeyPressed('r') && !this.isIcebeaming && !this.isCrossentropyCharging && this.isAbilityUnlocked('R')) {
       this.performCrossentropyAbility(playerTransform);
     }
     
     // Handle Reanimate ability with 'Q' key
-    if (this.inputManager.isKeyPressed('q') && !this.isCharging) {
+    if (this.inputManager.isKeyPressed('q') && !this.isIcebeaming) {
       this.performReanimateAbility(playerTransform);
     }
     
     // Handle Frost Nova ability with 'E' key
-    if (this.inputManager.isKeyPressed('e') && !this.isCharging && this.isAbilityUnlocked('E')) {
+    if (this.inputManager.isKeyPressed('e') && !this.isIcebeaming && this.isAbilityUnlocked('E')) {
       this.performFrostNovaAbility(playerTransform);
     }
 
     // Handle Summon Totem ability with 'F' key
-    if (this.inputManager.isKeyPressed('f') && !this.isCharging && !this.isSummonTotemCharging && !this.isCrossentropyCharging && this.isAbilityUnlocked('F')) {
+    if (this.inputManager.isKeyPressed('f') && !this.isIcebeaming && !this.isSummonTotemCharging && !this.isCrossentropyCharging && this.isAbilityUnlocked('F')) {
       this.performSummonTotemAbility(playerTransform);
+    }
+  }
+
+  private stopIcebeam(): void {
+    this.isIcebeaming = false;
+    this.icebeamStartTime = 0;
+    this.lastIcebeamManaConsumeTime = 0; // Reset mana consumption timer
+
+    // Remove movement and camera speed debuffs
+    const playerMovement = this.playerEntity?.getComponent(Movement);
+    if (playerMovement) {
+      playerMovement.isIcebeaming = false;
+    }
+
+    // Remove camera rotation speed debuff
+    const cameraSystem = (window as any).cameraSystem;
+    if (cameraSystem && cameraSystem.setIceBeamActive) {
+      cameraSystem.setIceBeamActive(false);
+    }
+
+    // Stop spinning animation
+    this.isCharging = false;
+    this.chargeProgress = 0;
+
+    // Trigger Icebeam state change callback
+    if (this.onIcebeamStateChangeCallback) {
+      this.onIcebeamStateChangeCallback(false);
     }
   }
 
@@ -1347,7 +1416,7 @@ export class ControlSystem extends System {
     // Create EntropicBolt projectile using the new method
     const entropicConfig = {
       speed: 20, // Faster than CrossentropyBolt
-      damage: isCryoflameUnlocked ? 55 : 36, // Cryoflame increases damage to 45
+      damage: isCryoflameUnlocked ? 55 : 41, // Cryoflame increases damage to 45
       lifetime: 2, // Shorter lifetime
       piercing: false, // Non-piercing so projectile gets destroyed on hit
       explosive: false, // No explosion effect
@@ -1393,7 +1462,8 @@ export class ControlSystem extends System {
       explosionRadius: 0, // No explosion radius
       subclass: this.currentSubclass,
       level: this.currentLevel,
-      opacity: 1.0
+      opacity: 1.0,
+      sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown' // CRITICAL FIX: Include sourcePlayerId for proper damage attribution
     };
     
     this.projectileSystem.createCrossentropyBoltProjectile(
@@ -1760,7 +1830,7 @@ export class ControlSystem extends System {
           
           const combatSystem = this.world.getSystem(CombatSystem);
           if (combatSystem && this.playerEntity && targetPlayerId) {
-            const frostNovaDamage = 50; // Frost Nova damage
+            const frostNovaDamage = 51; // Frost Nova damage
             combatSystem.queueDamage(entity, frostNovaDamage, this.playerEntity, 'frost_nova', this.playerEntity?.userData?.playerId);
             damagedPlayers++;
             
@@ -1945,7 +2015,7 @@ export class ControlSystem extends System {
     this.onWraithStrikeCallback = callback;
   }
 
-  public setConsumeManaCallback(callback: (amount: number) => void): void {
+  public setConsumeManaCallback(callback: (amount: number) => boolean): void {
     this.onConsumeManaCallback = callback;
   }
 
@@ -1965,7 +2035,7 @@ export class ControlSystem extends System {
     this.onBroadcastSabreMistCallback = callback;
   }
 
-  public setCreateLocalDebuffCallback(callback: (playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', position: Vector3, duration: number) => void): void {
+  public setCreateLocalDebuffCallback(callback: (playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', position: Vector3, duration: number) => void): void {
     this.onCreateLocalDebuffCallback = callback;
   }
 
@@ -1996,12 +2066,12 @@ export class ControlSystem extends System {
     this.onBroadcastHealing = callback;
   }
 
-  public setDebuffCallback(callback: (targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, position: Vector3) => void): void {
+  public setDebuffCallback(callback: (targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', duration: number, position: Vector3) => void): void {
     // Store the original callback
     const originalCallback = callback;
 
     // Create a wrapper callback that also tracks debuffs internally
-    this.onDebuffCallback = (targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, position: Vector3) => {
+    this.onDebuffCallback = (targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', duration: number, position: Vector3) => {
       // Track the debuff effect internally for stun detection
       this.trackDebuffEffect(targetEntityId, debuffType, duration);
 
@@ -2221,6 +2291,20 @@ export class ControlSystem extends System {
 
   public isCorruptedAuraActive(): boolean {
     return this.corruptedAuraActive;
+  }
+
+  public isIcebeamActive(): boolean {
+    return this.isIcebeaming;
+  }
+
+  public setIcebeamStateChangeCallback(callback: (isActive: boolean) => void): void {
+    this.onIcebeamStateChangeCallback = callback;
+  }
+
+  public forceStopIcebeam(): void {
+    if (this.isIcebeaming) {
+      this.stopIcebeam();
+    }
   }
 
 
@@ -3335,7 +3419,7 @@ export class ControlSystem extends System {
     if (this.playerEntity) {
       const shieldComponent = this.playerEntity.getComponent(Shield);
       if (shieldComponent) {
-        const newShieldValue = Math.min(shieldComponent.maxShield, shieldComponent.currentShield + 35);
+        const newShieldValue = Math.min(shieldComponent.maxShield, shieldComponent.currentShield + 45);
         shieldComponent.setShield(newShieldValue, shieldComponent.maxShield);
       }
     }
@@ -3524,70 +3608,6 @@ export class ControlSystem extends System {
     return { damage, stackCount: newStackCount, isStunned };
   }
 
-  // Apply burning stack and calculate damage bonus
-  public getBurningStacks(targetId: number): number {
-    const currentStacks = this.burningStacks.get(targetId);
-    return currentStacks ? currentStacks.stacks : 0;
-  }
-
-  public applyBurningStack(entityId: number, currentTime: number, isEntropicBolt: boolean = true): { damageBonus: number; stackCount: number } {
-    const stackDuration = 5.0; // 5 seconds
-    const maxStacks = 15; // Maximum 15 stacks
-    let currentStacks = this.burningStacks.get(entityId);
-    
-    // Clean up expired stacks or initialize new entry
-    if (!currentStacks || (currentTime - currentStacks.lastApplied) > stackDuration) {
-      currentStacks = { stacks: 0, lastApplied: currentTime, duration: stackDuration };
-    }
-    
-    // Calculate damage bonus based on current stack count (before adding new stack)
-    let damageBonus = 0;
-    if (isEntropicBolt) {
-      // Entropic Bolt: +1 damage per stack
-      damageBonus = currentStacks.stacks;
-    } else {
-      // Crossentropy Bolt: +10 damage per stack
-      damageBonus = currentStacks.stacks * 10;
-    }
-    
-    let newStackCount = currentStacks.stacks;
-    
-    // Apply new stack (up to maximum)
-    if (currentStacks.stacks < maxStacks) {
-      newStackCount = currentStacks.stacks + 1;
-      this.burningStacks.set(entityId, {
-        stacks: newStackCount,
-        lastApplied: currentTime,
-        duration: stackDuration
-      });
-    } else {
-      // At max stacks, just refresh the duration
-      this.burningStacks.set(entityId, {
-        stacks: maxStacks,
-        lastApplied: currentTime,
-        duration: stackDuration
-      });
-      newStackCount = maxStacks;
-    }
-    
-    // Broadcast burning debuff effect in PVP mode
-    if (this.onDebuffCallback && newStackCount > 0) {
-      // Find the entity to get its position
-      const targetEntity = this.world.getEntity(entityId);
-      if (targetEntity) {
-        const transform = targetEntity.getComponent(Transform);
-        if (transform) {
-          // Create a position with stack count information
-          const positionWithStacks = transform.position.clone();
-          (positionWithStacks as any).stackCount = newStackCount; // Attach stack count to position
-          this.onDebuffCallback(entityId, 'burning', stackDuration * 1000, positionWithStacks);
-        }
-      }
-    }
-    
-    return { damageBonus, stackCount: newStackCount };
-  }
-  
   // Clean up expired Sunder stacks periodically
   private cleanupSunderStacks(): void {
     const currentTime = Date.now() / 1000;
@@ -3602,19 +3622,6 @@ export class ControlSystem extends System {
     }
   }
 
-  // Clean up expired Burning stacks periodically
-  private cleanupBurningStacks(): void {
-    const currentTime = Date.now() / 1000;
-    const stackDuration = 5.0;
-    
-    // Convert to array to avoid iteration issues
-    const entries = Array.from(this.burningStacks.entries());
-    for (const [entityId, stackData] of entries) {
-      if ((currentTime - stackData.lastApplied) > stackDuration) {
-        this.burningStacks.delete(entityId);
-      }
-    }
-  }
   
   // Stealth ability implementation
   private performStealth(playerTransform: Transform): void {

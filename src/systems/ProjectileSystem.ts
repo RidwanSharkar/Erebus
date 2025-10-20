@@ -496,6 +496,7 @@ export class ProjectileSystem extends System {
       subclass?: WeaponSubclass;
       level?: number;
       opacity?: number;
+      sourcePlayerId?: string; // CRITICAL FIX: Add sourcePlayerId to config
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -511,6 +512,7 @@ export class ProjectileSystem extends System {
     projectile.damage = config?.damage || 30; // Higher damage than arrows
     projectile.maxLifetime = config?.lifetime || 1.75; // Longer lifetime
     projectile.owner = ownerId;
+    projectile.sourcePlayerId = config?.sourcePlayerId || 'unknown'; // CRITICAL FIX: Set sourcePlayerId for proper damage attribution
     projectile.setDirection(direction);
     
     if (config?.piercing) projectile.setPiercing(true);

@@ -7,7 +7,6 @@ import DragonRenderer from './dragon/DragonRenderer';
 import BossRenderer from './enemies/BossRenderer';
 import SummonedBossSkeleton from './enemies/SummonedBossSkeleton';
 import Meteor from './enemies/Meteor';
-import DeathGraspProjectile from './weapons/DeathGraspProjectile';
 import { useMultiplayer, Player } from '@/contexts/MultiplayerContext';
 import { SkillPointData } from '@/utils/SkillPointSystem';
 
@@ -22,6 +21,7 @@ import { Enemy, EnemyType } from '@/ecs/components/Enemy';
 
 import { Renderer } from '@/ecs/components/Renderer';
 import { Collider, CollisionLayer, ColliderType } from '@/ecs/components/Collider';
+import { Entity } from '@/ecs/Entity';
 import { InterpolationBuffer } from '@/ecs/components/Interpolation';
 import { RenderSystem } from '@/systems/RenderSystem';
 import { ControlSystem } from '@/systems/ControlSystem';
@@ -42,6 +42,7 @@ import SabreReaperMistEffect from '@/components/weapons/SabreReaperMistEffect';
 import WindShearProjectileManager, { triggerWindShearProjectile } from '@/components/projectiles/WindShearProjectile';
 
 import UnifiedProjectileManager from '@/components/managers/UnifiedProjectileManager';
+import IcebeamManager from '@/components/managers/IcebeamManager';
 import BowPowershotManager from '@/components/projectiles/BowPowershotManager';
 import FrostNovaManager, { addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import StunManager, { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
@@ -527,11 +528,10 @@ const [maxMana, setMaxMana] = useState(150);
   const [pvpDebuffEffects, setPvpDebuffEffects] = useState<Array<{
     id: number;
     playerId: string;
-    debuffType: 'frozen' | 'slowed' | 'stunned' | 'burning';
+    debuffType: 'frozen' | 'slowed' | 'stunned';
     position: Vector3;
     startTime: number;
     duration: number;
-    stackCount?: number; // For burning stacks
   }>>([]);
   const nextDebuffEffectId = useRef(0);
 
@@ -602,15 +602,6 @@ const [maxMana, setMaxMana] = useState(150);
   }
   const [activeMeteors, setActiveMeteors] = useState<MeteorState[]>([]);
 
-  interface DeathGraspState {
-    id: string;
-    startPosition: Vector3;
-    direction: Vector3;
-    timestamp: number;
-    bossId: string;
-  }
-  const [activeBossDeathGrasps, setActiveBossDeathGrasps] = useState<DeathGraspState[]>([]);
-
   // Function to create enemy taunt effect (for Deathgrasp)
   const createEnemyTauntEffect = useCallback((enemyId: string, duration: number = 10000) => {
     const tauntEffect = {
@@ -641,7 +632,7 @@ const [maxMana, setMaxMana] = useState(150);
 
   // Function to create venom effect on PVP players
   // Function to create debuff effect on PVP players
-  const createPvpDebuffEffect = useCallback((playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', position: Vector3, duration: number = 5000) => {
+  const createPvpDebuffEffect = useCallback((playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', position: Vector3, duration: number = 5000) => {
     // Debug: Check if this is the local player
     const isLocalPlayer = playerId === socket?.id;
     
@@ -657,8 +648,7 @@ const [maxMana, setMaxMana] = useState(150);
           return {
             ...effect,
             duration: Math.max(effect.duration, duration), // Use the longer duration
-            position: position.clone(), // Update position to latest
-            stackCount: Math.max(effect.stackCount || 1, (position as any).stackCount || 1) // Update stack count if higher
+            position: position.clone() // Update position to latest
           };
         }
         return effect;
@@ -676,8 +666,6 @@ const [maxMana, setMaxMana] = useState(150);
             playerMovement.freeze(duration); // Stun uses same movement restriction as freeze
           } else if (debuffType === 'corrupted') {
             playerMovement.applyCorrupted(duration); // Apply corrupted debuff with gradual recovery
-          } else if (debuffType === 'burning') {
-            // Burning doesn't affect movement, it's a visual effect only
           }
         }
       }
@@ -691,8 +679,7 @@ const [maxMana, setMaxMana] = useState(150);
       debuffType,
       position: position.clone(),
       startTime: Date.now(),
-      duration,
-      stackCount: (position as any).stackCount || 1 // Extract stack count from position if available
+      duration
     };
     
     // Track this new debuff indicator
@@ -718,8 +705,6 @@ const [maxMana, setMaxMana] = useState(150);
           playerMovement.freeze(duration); // Stun uses same movement restriction as freeze
         } else if (debuffType === 'corrupted') {
           playerMovement.applyCorrupted(duration); // Apply corrupted debuff with gradual recovery
-        } else if (debuffType === 'burning') {
-          // Burning doesn't affect movement, it's a visual effect only
         }
       }
     }
@@ -1229,7 +1214,8 @@ const [maxMana, setMaxMana] = useState(150);
     isBackstabbing: false,
     isSundering: false,
     isCorruptedAuraActive: false,
-    isFrozen: false
+    isFrozen: false,
+    isIcebeaming: false
   });
 
   // Use a ref to store current weapon state to avoid infinite re-renders
@@ -1366,18 +1352,25 @@ useEffect(() => {
 // Function to consume mana for weapon abilities (Scythe and Runeblade)
 const consumeMana = useCallback((amount: number) => {
   if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
-    setWeaponManaResources(prev => ({
-      ...prev,
-      [currentWeapon]: Math.max(0, prev[currentWeapon] - amount)
-    }));
+    const currentWeaponMana = weaponManaResources[currentWeapon];
+    if (currentWeaponMana >= amount) {
+      setWeaponManaResources(prev => ({
+        ...prev,
+        [currentWeapon]: Math.max(0, prev[currentWeapon] - amount)
+      }));
+      return true; // Successfully consumed mana
+    }
   }
-}, [currentWeapon]);
+  return false; // Not enough mana or wrong weapon
+}, [currentWeapon, weaponManaResources]);
 
 // Function to check if current weapon has enough mana
 const hasMana = useCallback((amount: number) => {
-  const result = currentMana >= amount;
-  return result;
-}, [currentMana]);
+  if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
+    return weaponManaResources[currentWeapon] >= amount;
+  }
+  return false; // Wrong weapon type
+}, [currentWeapon, weaponManaResources]);
 
   // Set up PVP event listeners for player actions and damage
   useEffect(() => {
@@ -1481,8 +1474,12 @@ const hasMana = useCallback((amount: number) => {
         // Handle regular projectile attacks - create projectiles that can hit the local player
         const projectileTypes = ['regular_arrow', 'charged_arrow', 'entropic_bolt', 'crossentropy_bolt', 'perfect_shot', 'barrage_projectile', 'burst_arrow'];
         if (projectileTypes.includes(data.attackType)) {
+          // Skip creating projectiles for the local player's own attacks to prevent duplicates
+          const localSocketId = (window as any).localSocketId;
+          if (data.playerId === localSocketId) {
+            return; // Local player already created this projectile
+          }
 
-          
           // Create a projectile that can damage the local player
           const projectileSystem = engineRef.current.getWorld().getSystem(ProjectileSystem);
           if (projectileSystem) {
@@ -3287,34 +3284,16 @@ const hasMana = useCallback((amount: number) => {
       setActiveMeteors(prev => [...prev, ...newMeteors]);
     };
 
-    const handleBossDeathGraspCast = (data: any) => {
-      const { deathGraspId, startPosition, direction, bossId, timestamp } = data;
-
-      const newDeathGrasp: DeathGraspState = {
-        id: deathGraspId,
-        startPosition: new Vector3(startPosition.x, startPosition.y + 1.5, startPosition.z), // Slightly elevated
-        direction: new Vector3(direction.x, direction.y, direction.z),
-        bossId: bossId,
-        timestamp: timestamp
-      };
-
-      setActiveBossDeathGrasps(prev => [...prev, newDeathGrasp]);
-      console.log(`💀 Boss ${bossId} DeathGrasp spawned:`, newDeathGrasp);
-    };
-
     const handleEnemyStatusEffect = (data: any) => {
       const { enemyId, effectType, duration, timestamp } = data;
       
-      console.log(`📨 Received enemy-status-effect event: enemyId=${enemyId}, effectType=${effectType}, duration=${duration}ms`);
-      
       if (!engineRef.current) {
-        console.warn(`⚠️ Cannot apply status effect - engineRef is null`);
         return;
       }
 
       const world = engineRef.current.getWorld();
       
-      // Find the boss entity by its server ID
+      // Find the enemy entity by its server ID
       const allEntities = world.getAllEntities();
       
       for (const entity of allEntities) {
@@ -3347,6 +3326,7 @@ const hasMana = useCallback((amount: number) => {
           break;
         }
       }
+      // Silently ignore if enemy not found - it may have died already
     };
 
     socket.on('player-attacked', handlePlayerAttack);
@@ -3368,7 +3348,6 @@ const hasMana = useCallback((amount: number) => {
     socket.on('boss-attack', handleBossAttack);
     socket.on('boss-defeated', handleBossDefeated);
     socket.on('boss-meteor-cast', handleBossMeteorCast);
-    socket.on('boss-deathgrasp-cast', handleBossDeathGraspCast);
     socket.on('boss-skeleton-attack', handleBossSkeletonAttack);
     socket.on('enemy-status-effect', handleEnemyStatusEffect);
 
@@ -3393,7 +3372,6 @@ const hasMana = useCallback((amount: number) => {
       socket.off('boss-attack', handleBossAttack);
       socket.off('boss-defeated', handleBossDefeated);
       socket.off('boss-meteor-cast', handleBossMeteorCast);
-      socket.off('boss-deathgrasp-cast', handleBossDeathGraspCast);
       socket.off('boss-skeleton-attack', handleBossSkeletonAttack);
       socket.off('enemy-status-effect', handleEnemyStatusEffect);
     };
@@ -3497,6 +3475,8 @@ const hasMana = useCallback((amount: number) => {
           if (health) {
             health.maxHealth = serverEnemy.maxHealth;
             health.currentHealth = serverEnemy.health;
+            // Set isDead flag if health is 0 or less
+            health.isDead = serverEnemy.health <= 0;
           }
           
           // Update rotation for backstab detection
@@ -3761,7 +3741,8 @@ const hasMana = useCallback((amount: number) => {
           isBackstabbing: controlSystemRef.current.isBackstabActive(),
           isSundering: controlSystemRef.current.isSunderActive(),
           isCorruptedAuraActive: controlSystemRef.current.isCorruptedAuraActive(),
-          isFrozen: weaponStateRef.current.isFrozen
+          isFrozen: weaponStateRef.current.isFrozen,
+          isIcebeaming: controlSystemRef.current.isIcebeamActive()
         };
 
         // Update the ref immediately
@@ -4198,12 +4179,12 @@ const hasMana = useCallback((amount: number) => {
     });
 
     // Set up callback for creating local debuff effects
-    controlSystem.setCreateLocalDebuffCallback((playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', position: Vector3, duration: number) => {
+    controlSystem.setCreateLocalDebuffCallback((playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', position: Vector3, duration: number) => {
       createPvpDebuffEffect(playerId, debuffType, position, duration);
     });
 
     // Set up Debuff callback for broadcasting freeze/slow effects
-    controlSystem.setDebuffCallback((targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'burning', duration: number, position: Vector3) => {
+    controlSystem.setDebuffCallback((targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', duration: number, position: Vector3) => {
 
       // Find the server player ID that corresponds to this local ECS entity ID
       let targetPlayerId: string | null = null;
@@ -4851,79 +4832,6 @@ const hasMana = useCallback((amount: number) => {
         );
       })}
 
-      {/* Boss DeathGrasp Projectiles */}
-      {activeBossDeathGrasps.map(deathGrasp => {
-        return (
-          <DeathGraspProjectile
-            key={deathGrasp.id}
-            startPosition={deathGrasp.startPosition}
-            direction={deathGrasp.direction}
-            casterId={deathGrasp.bossId}
-            onHit={(targetId, hitPosition) => {
-              console.log(`💀 Boss DeathGrasp hit target: ${targetId}`);
-              
-              // Check if the hit target is the local player
-              if (socket?.id && playerEntity) {
-                const localPlayerId = socket.id;
-                
-                // If we were hit by the DeathGrasp, pull us towards the boss
-                if (targetId === localPlayerId) {
-                  const localPlayerTransform = playerEntity.getComponent(Transform);
-                  if (localPlayerTransform) {
-                    // Find the boss position
-                    const boss = Array.from(enemies.values()).find(e => e.id === deathGrasp.bossId);
-                    if (boss) {
-                      // Calculate pull direction (from player to boss)
-                      const pullDirection = new Vector3(
-                        boss.position.x - localPlayerTransform.position.x,
-                        0,
-                        boss.position.z - localPlayerTransform.position.z
-                      ).normalize();
-                      
-                      // Apply strong pull force (10 units)
-                      const pullDistance = 10;
-                      const newPosition = new Vector3(
-                        localPlayerTransform.position.x + pullDirection.x * pullDistance,
-                        localPlayerTransform.position.y,
-                        localPlayerTransform.position.z + pullDirection.z * pullDistance
-                      );
-                      
-                      // Update player position
-                      localPlayerTransform.position.copy(newPosition);
-                      
-                      console.log(`🌀 Local player pulled by DeathGrasp! New position:`, newPosition);
-                      
-                      // Broadcast position update to server
-                      if (socket) {
-                        socket.emit('player-move', {
-                          position: {
-                            x: newPosition.x,
-                            y: newPosition.y,
-                            z: newPosition.z
-                          },
-                          rotation: localPlayerTransform.rotation.y
-                        });
-                      }
-                    }
-                  }
-                }
-              }
-            }}
-            onComplete={() => {
-              // Remove DeathGrasp when it's done (either hit something or expired)
-              setActiveBossDeathGrasps(prev => prev.filter(dg => dg.id !== deathGrasp.id));
-            }}
-            enemyData={Array.from(enemies.values()).map(e => ({
-              id: e.id,
-              position: new Vector3(e.position.x, e.position.y, e.position.z),
-              health: e.health
-            }))}
-            players={players}
-            localSocketId={socket?.id || ''}
-          />
-        );
-      })}
-
       {/* Other Players Health Bars */}
       {Array.from(players.values()).map(player => {
         if (player.id === socket?.id) return null; // Don't show health bar for local player
@@ -5026,6 +4934,17 @@ const hasMana = useCallback((amount: number) => {
       {engineRef.current && (
         <>
           <UnifiedProjectileManager world={engineRef.current.getWorld()} />
+          <IcebeamManager
+            world={engineRef.current.getWorld()}
+            playerRef={viperStingParentRef as any}
+            isIcebeaming={weaponState.isIcebeaming}
+            onIcebeamEnd={() => {
+              // Force stop Icebeam in control system
+              if (controlSystemRef.current) {
+                controlSystemRef.current.forceStopIcebeam();
+              }
+            }}
+          />
           <BowPowershotManager />
           <FrostNovaManager world={engineRef.current.getWorld()} />
           <StunManager world={engineRef.current.getWorld()} />

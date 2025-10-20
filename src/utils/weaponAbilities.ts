@@ -93,7 +93,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Crossentropy',
       key: 'R',
       cooldown: 2.0,
-      description: '{40 MANA} Charges for 1 second to fire an accelerating plasma bolt that deals 10 additional damage per stack of BURNING.'
+      description: '{40 MANA} Charges for 1 second to fire an accelerating plasma bolt that deals 200 damage.'
     },
     {
       name: 'Mantra',
@@ -105,7 +105,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Cryoflame',
       key: 'P',
       cooldown: 0,
-      description: '{PASSIVE} Modifies primary attack to deal increased damage but no longer apply BURNING. Cryoflame Bolts deal double damage to enemies afflicted by FREEZE.',
+      description: '{PASSIVE} Modifies primary attack to deal increased damage. Cryoflame Bolts deal double damage to enemies afflicted by FREEZE.',
       isPassive: true
     }
   ],

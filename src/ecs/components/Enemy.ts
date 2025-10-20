@@ -49,11 +49,6 @@ export class Enemy extends Component {
   public sunderLastApplied: number;
   public sunderDuration: number;
   
-  // Burning stacks effect (Entropic Bolt / Crossentropy Bolt)
-  public burningStacks: number;
-  public burningLastApplied: number;
-  public burningDuration: number;
-  
   // Corrupted debuff effect (WraithStrike)
   public isCorrupted: boolean;
   public corruptedStartTime: number;
@@ -104,11 +99,6 @@ export class Enemy extends Component {
     this.sunderStacks = 0;
     this.sunderLastApplied = 0;
     this.sunderDuration = 10.0; // 10 seconds
-    
-    // Initialize burning stacks
-    this.burningStacks = 0;
-    this.burningLastApplied = 0;
-    this.burningDuration = 5.0; // 5 seconds
     
     // Initialize corrupted debuff
     this.isCorrupted = false;
