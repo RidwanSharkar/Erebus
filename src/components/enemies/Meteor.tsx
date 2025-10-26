@@ -1,11 +1,11 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import * as THREE from 'three';
+import { Vector3, SphereGeometry, MeshBasicMaterial, RingGeometry, AdditiveBlending, DoubleSide, Group, Mesh, Color } from 'three';
 import MeteorTrail from './MeteorTrail';
 
 interface MeteorProps {
-  targetPosition: THREE.Vector3;
-  onImpact: (damage: number, position: THREE.Vector3) => void;
+  targetPosition: Vector3;
+  onImpact: (damage: number, position: Vector3) => void;
   onComplete: () => void;
   timestamp?: number; // Optional timestamp for staggered meteor timing
 }
@@ -19,22 +19,21 @@ const FIRE_PARTICLES_COUNT = 12;
 const WARNING_DURATION = 100; // 1.5 seconds warning before meteor appears
 
 // Reusable geometries and materials
-const meteorGeometry = new THREE.SphereGeometry(0.75, 16, 16);
-const meteorMaterial = new THREE.MeshBasicMaterial({ color: "#BA55D3" });
-const warningRingGeometry = new THREE.RingGeometry(DAMAGE_RADIUS - 0.2, DAMAGE_RADIUS, WARNING_RING_SEGMENTS);
-const pulsingRingGeometry = new THREE.RingGeometry(DAMAGE_RADIUS - 0.8, DAMAGE_RADIUS - 0.6, WARNING_RING_SEGMENTS);
-const outerGlowGeometry = new THREE.RingGeometry(DAMAGE_RADIUS - 0.25, DAMAGE_RADIUS, WARNING_RING_SEGMENTS);
-const particleGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+const meteorGeometry = new SphereGeometry(0.75, 16, 16);
+const meteorMaterial = new MeshBasicMaterial({ color: "#BA55D3" });
+const warningRingGeometry = new RingGeometry(DAMAGE_RADIUS - 0.2, DAMAGE_RADIUS, WARNING_RING_SEGMENTS);
+const pulsingRingGeometry = new RingGeometry(DAMAGE_RADIUS - 0.8, DAMAGE_RADIUS - 0.6, WARNING_RING_SEGMENTS);
+const outerGlowGeometry = new RingGeometry(DAMAGE_RADIUS - 0.25, DAMAGE_RADIUS, WARNING_RING_SEGMENTS);
+const particleGeometry = new SphereGeometry(0.1, 8, 8);
 
 // Reusable vectors to avoid allocations
-const tempTargetGroundPos = new THREE.Vector3();
+const tempTargetGroundPos = new Vector3();
 
-const createMeteorImpactEffect = (position: THREE.Vector3, startTime: number, onComplete: () => void) => {
+const createMeteorImpactEffect = (position: Vector3, startTime: number) => {
   const elapsed = (Date.now() - startTime) / 350;
   const fade = Math.max(0, 1 - (elapsed / IMPACT_DURATION));
   
   if (fade <= 0) {
-    onComplete();
     return null;
   }
 
@@ -50,7 +49,7 @@ const createMeteorImpactEffect = (position: THREE.Vector3, startTime: number, on
           transparent
           opacity={1.8 * fade}
           depthWrite={false}
-          blending={THREE.AdditiveBlending}
+          blending={AdditiveBlending}
         />
       </mesh>
 
@@ -64,7 +63,7 @@ const createMeteorImpactEffect = (position: THREE.Vector3, startTime: number, on
           transparent
           opacity={1.9 * fade}
           depthWrite={false}
-          blending={THREE.AdditiveBlending}
+          blending={AdditiveBlending}
         />
       </mesh>
 
@@ -79,7 +78,7 @@ const createMeteorImpactEffect = (position: THREE.Vector3, startTime: number, on
             transparent
             opacity={0.95 * fade * (1 - i * 0.1)}
             depthWrite={false}
-            blending={THREE.AdditiveBlending}
+            blending={AdditiveBlending}
           />
         </mesh>
       ))}
@@ -102,14 +101,14 @@ const createMeteorImpactEffect = (position: THREE.Vector3, startTime: number, on
 };
 
 export default function Meteor({ targetPosition, onImpact, onComplete, timestamp }: MeteorProps) {
-  const meteorGroupRef = useRef<THREE.Group>(null);
-  const meteorMeshRef = useRef<THREE.Mesh>(null);
+  const meteorGroupRef = useRef<Group>(null);
+  const meteorMeshRef = useRef<Mesh>(null);
 
   // useMemo for initial calculations
   const [initialTargetPos, startPos, trajectory] = useMemo(() => {
-    const initTarget = new THREE.Vector3(targetPosition.x, -3, targetPosition.z); // Slightly below ground for better visual
-    const start = new THREE.Vector3(targetPosition.x, 60, targetPosition.z);
-    const traj = new THREE.Vector3().subVectors(initTarget, start).normalize();
+    const initTarget = new Vector3(targetPosition.x, -3, targetPosition.z); // Slightly below ground for better visual
+    const start = new Vector3(targetPosition.x, 60, targetPosition.z);
+    const traj = new Vector3().subVectors(initTarget, start).normalize();
     return [initTarget, start, traj];
   }, [targetPosition]);
 
@@ -130,6 +129,24 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
 
     return () => clearTimeout(timer);
   }, [timestamp]);
+
+  // Monitor impact effect completion and call onComplete when fade reaches 0
+  useEffect(() => {
+    if (!state.impactStartTime) return;
+
+    const impactTime = state.impactStartTime; // Capture non-null value
+    const checkInterval = setInterval(() => {
+      const elapsed = (Date.now() - impactTime) / 350;
+      const fade = Math.max(0, 1 - (elapsed / IMPACT_DURATION));
+
+      if (fade <= 0) {
+        clearInterval(checkInterval);
+        onComplete();
+      }
+    }, 16); // Check every frame (~60fps)
+
+    return () => clearInterval(checkInterval);
+  }, [state.impactStartTime, onComplete]);
 
   useFrame((_, delta) => {
     if (!meteorGroupRef.current || !state.showMeteor || state.impactOccurred) {
@@ -165,7 +182,7 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
         {/* Warning rings using shared geometries */}
         <mesh rotation={[-Math.PI / 2, 0, 0]}>
           <primitive object={warningRingGeometry} />
-          <meshBasicMaterial color="#BA55D3" transparent opacity={0.4} side={THREE.DoubleSide} />
+          <meshBasicMaterial color="#BA55D3" transparent opacity={0.4} side={DoubleSide} />
         </mesh>
 
         {/* Pulsing inner ring */}
@@ -178,7 +195,7 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
             color="#BA55D3"
             transparent
             opacity={0.4 + Math.sin(Date.now() * 0.003) * 0.2}
-            side={THREE.DoubleSide}
+            side={DoubleSide}
           />
         </mesh>
 
@@ -191,7 +208,7 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
             color="#BA55D3"
             transparent
             opacity={0.25}
-            side={THREE.DoubleSide}
+            side={DoubleSide}
           />
         </mesh>
 
@@ -224,7 +241,7 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
             <pointLight color="#BA55D3" intensity={5} distance={8} />
             <MeteorTrail
               meshRef={meteorMeshRef}
-              color={new THREE.Color("#BA55D3")}
+              color={new Color("#BA55D3")}
               size={0.07}
             />
           </mesh>
@@ -234,8 +251,7 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
       {/* Add impact effect */}
       {state.impactStartTime && createMeteorImpactEffect(
         meteorGroupRef.current?.position || initialTargetPos,
-        state.impactStartTime,
-        onComplete
+        state.impactStartTime
       )}
     </>
   );

@@ -76,8 +76,8 @@ app.get('/health', (req, res) => {
     totalPlayersInRooms += playerCount;
   }
   
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
     rooms: gameRooms.size,
     totalSockets: playerSockets.size,

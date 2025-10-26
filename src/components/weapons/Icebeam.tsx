@@ -33,6 +33,48 @@ export default function Icebeam({
     }
   }, [isActive, isFadingOut]);
 
+  // Color interpolation helper function
+  const lerpColor = (color1: string, color2: string, t: number): string => {
+    const c1 = color1.replace('#', '');
+    const c2 = color2.replace('#', '');
+    const r1 = parseInt(c1.substr(0, 2), 16);
+    const g1 = parseInt(c1.substr(2, 2), 16);
+    const b1 = parseInt(c1.substr(4, 2), 16);
+    const r2 = parseInt(c2.substr(0, 2), 16);
+    const g2 = parseInt(c2.substr(2, 2), 16);
+    const b2 = parseInt(c2.substr(4, 2), 16);
+
+    const r = Math.round(r1 + (r2 - r1) * t);
+    const g = Math.round(g1 + (g2 - g1) * t);
+    const b = Math.round(b1 + (b2 - b1) * t);
+
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  };
+
+  // Get beam colors based on duration
+  const getBeamColors = (activeTime: number) => {
+    if (activeTime < 2) {
+      // Cyan phase (0-2 seconds)
+      return {
+        color: '#58FCEC',
+        emissive: '#00E5FF'
+      };
+    } else if (activeTime < 4) {
+      // Transition to purple (2-4 seconds)
+      const t = (activeTime - 2) / 2; // 0 to 1 over 2 seconds
+      return {
+        color: lerpColor('#58FCEC', '#8A2BE2', t), // Cyan to purple
+        emissive: lerpColor('#00E5FF', '#9932CC', t) // Cyan emissive to purple
+      };
+    } else {
+      // Red phase (4+ seconds)
+      return {
+        color: '#FF4500',
+        emissive: '#FF0000'
+      };
+    }
+  };
+
   useFrame(() => {
     if (!beamRef.current) return;
 
@@ -42,10 +84,10 @@ export default function Icebeam({
     if (parentRef.current) {
       currentPosition.current.copy(parentRef.current.position);
       currentPosition.current.y += 1; // Offset for beam origin
-      
+
       currentDirection.current.set(0, 0, 1);
       currentDirection.current.applyQuaternion(parentRef.current.quaternion);
-      
+
       // Update beam position and rotation
       beamRef.current.position.copy(currentPosition.current);
       beamRef.current.rotation.y = Math.atan2(currentDirection.current.x, currentDirection.current.z);
@@ -81,6 +123,10 @@ export default function Icebeam({
     beamRef.current.scale.setScalar(scale);
   });
 
+  // Get current beam colors based on active time
+  const activeTime = isActive ? (Date.now() - startTime) / 1000 : 0;
+  const beamColors = getBeamColors(activeTime);
+
   return (
     <group ref={beamRef}>
       {/* Origin point effects */}
@@ -89,8 +135,8 @@ export default function Icebeam({
         <mesh>
           <sphereGeometry args={[0.45 * intensity, 16, 16]} />
           <meshStandardMaterial
-            color="#58FCEC"
-            emissive="#00E5FF"
+            color={beamColors.color}
+            emissive={beamColors.emissive}
             emissiveIntensity={2.5 * intensity * fadeProgress}
             transparent
             opacity={0.65 * fadeProgress}
@@ -101,8 +147,8 @@ export default function Icebeam({
         <mesh>
           <sphereGeometry args={[0.65 * intensity, 16, 16]} />
           <meshStandardMaterial
-            color="#58FCEC"
-            emissive="#00E5FF"
+            color={beamColors.color}
+            emissive={beamColors.emissive}
             emissiveIntensity={0.7 * intensity * fadeProgress}
             transparent
             opacity={0.65 * fadeProgress}
@@ -111,10 +157,10 @@ export default function Icebeam({
 
 
         {/* Origin point light */}
-        <pointLight 
-          color="#58FCEC" 
-          intensity={20 * intensity * fadeProgress} 
-          distance={3 * intensity} 
+        <pointLight
+          color={beamColors.emissive}
+          intensity={20 * intensity * fadeProgress}
+          distance={3 * intensity}
         />
       </group>
 
@@ -124,8 +170,8 @@ export default function Icebeam({
         <mesh rotation={[Math.PI / 2, 0, 0]}>
           <cylinderGeometry args={[0.1 * intensity / 2, 0.1 * intensity, 20, 16]} />
           <meshStandardMaterial
-            color="#58FCEC"
-            emissive="#00E5FF"
+            color={beamColors.color}
+            emissive={beamColors.emissive}
             emissiveIntensity={50 * intensity * fadeProgress}
             transparent
             opacity={0.95 * fadeProgress}
@@ -136,8 +182,8 @@ export default function Icebeam({
         <mesh rotation={[Math.PI / 2, 0, 0]}>
           <cylinderGeometry args={[0.25 * intensity / 2, 0.275 * intensity, 20, 16]} />
           <meshStandardMaterial
-            color="#58FCEC"
-            emissive="#00E5FF"
+            color={beamColors.color}
+            emissive={beamColors.emissive}
             emissiveIntensity={10 * intensity * fadeProgress}
             transparent
             opacity={0.7 * fadeProgress}
@@ -148,8 +194,8 @@ export default function Icebeam({
         <mesh rotation={[Math.PI / 2, 0, 0]}>
           <cylinderGeometry args={[0.30 * intensity, 0.375 * intensity, 20, 16]} />
           <meshStandardMaterial
-            color="#58FCEC"
-            emissive="#00E5FF"
+            color={beamColors.color}
+            emissive={beamColors.emissive}
             emissiveIntensity={2 * intensity * fadeProgress}
             transparent
             opacity={0.6 * fadeProgress}
@@ -160,8 +206,8 @@ export default function Icebeam({
         <mesh rotation={[Math.PI / 2, 0, 0]}>
           <cylinderGeometry args={[0.35 * intensity, 0.375 * intensity, 20, 16]} />
           <meshStandardMaterial
-            color="#58FCEC"
-            emissive="#00E5FF"
+            color={beamColors.color}
+            emissive={beamColors.emissive}
             emissiveIntensity={0.75 * intensity * fadeProgress}
             transparent
             opacity={0.6 * fadeProgress}
@@ -170,15 +216,15 @@ export default function Icebeam({
 
         {/* Spiral effect */}
         {[...Array(Math.floor(5 * intensity))].map((_, i) => (
-          <mesh 
-            key={i} 
+          <mesh
+            key={i}
             rotation={[-Math.PI / 4, 0, (i * Math.PI) / -1.5]}
             position={[0, 0, 10]}
           >
             <torusGeometry args={[0.35 * intensity, 0.05, 8, 32]} />
             <meshStandardMaterial
-              color="#58FCEC"
-              emissive="#00E5FF"
+              color={beamColors.color}
+              emissive={beamColors.emissive}
               emissiveIntensity={1 * intensity * fadeProgress}
               transparent
               opacity={0.3 * fadeProgress}
@@ -203,8 +249,8 @@ export default function Icebeam({
           >
             <boxGeometry args={[0.05, 0.05, 0.1]} />
             <meshStandardMaterial
-              color="#58FCEC"
-              emissive="#00E5FF"
+              color={beamColors.color}
+              emissive={beamColors.emissive}
               emissiveIntensity={2 * intensity * fadeProgress}
               transparent
               opacity={0.75 * fadeProgress}
@@ -213,11 +259,11 @@ export default function Icebeam({
         ))}
 
         {/* Point light for the ice crystals */}
-        <pointLight 
-          position={[0, 0, 12]} 
-          color="#00E5FF" 
-          intensity={12 * intensity * fadeProgress} 
-          distance={4 * intensity} 
+        <pointLight
+          position={[0, 0, 12]}
+          color={beamColors.emissive}
+          intensity={12 * intensity * fadeProgress}
+          distance={4 * intensity}
         />
       </group>
     </group>

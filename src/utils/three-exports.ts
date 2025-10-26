@@ -24,6 +24,7 @@ export {
   CylinderGeometry,
   ConeGeometry,
   Shape,
+  ExtrudeGeometry,
   CircleGeometry,
   Box3,
   Sphere,

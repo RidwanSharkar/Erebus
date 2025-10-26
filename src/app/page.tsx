@@ -111,6 +111,8 @@ function HomeContent() {
         return WeaponSubclass.FROST;
       case WeaponType.RUNEBLADE:
         return WeaponSubclass.ARCANE;
+      case WeaponType.SPEAR:
+        return WeaponSubclass.STORM;
       default:
         return WeaponSubclass.ELEMENTAL;
     }
@@ -187,6 +189,13 @@ function HomeContent() {
           shadow: 'shadow-red-500/30',
           badge: 'bg-red-600'
         };
+      case WeaponType.SPEAR:
+        return {
+          border: 'border-gray-400',
+          background: 'bg-gray-400/20',
+          shadow: 'shadow-gray-400/30',
+          badge: 'bg-gray-500'
+        };
       default:
         return {
           border: 'border-green-500',
@@ -226,6 +235,13 @@ function HomeContent() {
       icon: '🏹',
       description: 'VIPER',
       defaultSubclass: WeaponSubclass.ELEMENTAL
+    },
+    {
+      type: WeaponType.SPEAR,
+      name: 'Spear',
+      icon: '🔱',
+      description: 'IMMORTAL',
+      defaultSubclass: WeaponSubclass.STORM
     }
   ];
 
@@ -426,70 +442,140 @@ function HomeContent() {
      
 
 
-                <div className="grid grid-cols-2 gap-3 mb-4 max-w-4xl mx-auto">
-                  {weapons.map((weapon) => {
-                    const isSelected = tempSelectedWeapons.includes(weapon.type);
-                    const canSelect = !isSelected && tempSelectedWeapons.length < 1;
-                    const colorScheme = getWeaponColorScheme(weapon.type);
+                <div className="flex flex-col gap-3 mb-4 max-w-4xl mx-auto">
+                  {/* First row - 3 weapons */}
+                  <div className="grid grid-cols-3 gap-3">
+                    {weapons.slice(0, 3).map((weapon) => {
+                      const isSelected = tempSelectedWeapons.includes(weapon.type);
+                      const canSelect = !isSelected && tempSelectedWeapons.length < 1;
+                      const colorScheme = getWeaponColorScheme(weapon.type);
 
-                    return (
-                      <div
-                        key={weapon.type}
-                        onClick={() => handleWeaponToggle(weapon.type)}
-                        className={`
-                          w-full p-3 rounded-lg border-2 cursor-pointer transition-all duration-300
-                          ${isSelected
-                            ? `${colorScheme.border} ${colorScheme.background} shadow-lg ${colorScheme.shadow}`
-                            : canSelect
-                              ? 'border-gray-600 bg-gray-800/50 hover:border-gray-400 hover:bg-gray-700/50'
-                              : 'border-gray-700 bg-gray-900/50 opacity-60 cursor-not-allowed'
-                          }
-                        `}
-                      >
-                        <div className="text-center mb-2">
-                          <div className="text-2xl mb-1">{weapon.icon}</div>
-                          <h3 className="text-base font-bold mb-1">{weapon.name}</h3>
-                        </div>
-
-                        <p className="text-xs text-gray-300 mb-2 text-center">
-                          {weapon.description}
-                        </p>
-
-                        {/* Weapon Abilities */}
-                        <div className="mb-2">
-                          <div className="text-xs text-gray-400 text-center mb-1">Abilities:</div>
-                          <div className="flex justify-center gap-1">
-                            {weaponAbilities[weapon.type]?.filter(ability => ability.key !== 'P').map((ability) => (
-                              <div
-                                key={ability.key}
-                                className="relative w-7 h-7 rounded border border-gray-600 bg-gray-800 hover:bg-gray-700 transition-colors cursor-pointer flex items-center justify-center"
-                                onMouseEnter={(e) => handleAbilityHover(e, ability)}
-                                onMouseLeave={handleAbilityLeave}
-                              >
-                                {/* Hotkey indicator */}
-                                <div className="absolute -top-1 -left-1 bg-gray-900 border border-gray-500 rounded text-xs text-white px-0.5 font-semibold leading-none text-[9px]">
-                                  {ability.key}
-                                </div>
-                                
-                                {/* Ability icon */}
-                                <div className="text-xs">
-                                  {getAbilityIcon(weapon.type, ability.key)}
-                                </div>
-                              </div>
-                            ))}
+                      return (
+                        <div
+                          key={weapon.type}
+                          onClick={() => handleWeaponToggle(weapon.type)}
+                          className={`
+                            w-full p-3 rounded-lg border-2 cursor-pointer transition-all duration-300
+                            ${isSelected
+                              ? `${colorScheme.border} ${colorScheme.background} shadow-lg ${colorScheme.shadow}`
+                              : canSelect
+                                ? 'border-gray-600 bg-gray-800/50 hover:border-gray-400 hover:bg-gray-700/50'
+                                : 'border-gray-700 bg-gray-900/50 opacity-60 cursor-not-allowed'
+                            }
+                          `}
+                        >
+                          <div className="text-center mb-2">
+                            <div className="text-2xl mb-1">{weapon.icon}</div>
+                            <h3 className="text-base font-bold mb-1">{weapon.name}</h3>
                           </div>
-                        </div>
 
-                        {isSelected && (
-                          <div className="text-center">
-                            <span className={`inline-block px-1.5 py-0.5 ${colorScheme.badge} text-white text-xs rounded-full`}>
-                              Selected
-                            </span>
+                          <p className="text-xs text-gray-300 mb-2 text-center">
+                            {weapon.description}
+                          </p>
+
+                          {/* Weapon Abilities */}
+                          <div className="mb-2">
+                            <div className="text-xs text-gray-400 text-center mb-1">Abilities:</div>
+                            <div className="flex justify-center gap-1">
+                              {weaponAbilities[weapon.type]?.filter(ability => ability.key !== 'P').map((ability) => (
+                                <div
+                                  key={ability.key}
+                                  className="relative w-7 h-7 rounded border border-gray-600 bg-gray-800 hover:bg-gray-700 transition-colors cursor-pointer flex items-center justify-center"
+                                  onMouseEnter={(e) => handleAbilityHover(e, ability)}
+                                  onMouseLeave={handleAbilityLeave}
+                                >
+                                  {/* Hotkey indicator */}
+                                  <div className="absolute -top-1 -left-1 bg-gray-900 border border-gray-500 rounded text-xs text-white px-0.5 font-semibold leading-none text-[9px]">
+                                    {ability.key}
+                                  </div>
+                                  
+                                  {/* Ability icon */}
+                                  <div className="text-xs">
+                                    {getAbilityIcon(weapon.type, ability.key)}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+
+                          {isSelected && (
+                            <div className="text-center">
+                              <span className={`inline-block px-1.5 py-0.5 ${colorScheme.badge} text-white text-xs rounded-full`}>
+                                Selected
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* Second row - 2 weapons centered */}
+                  <div className="flex justify-center gap-3">
+                    {weapons.slice(3, 5).map((weapon) => {
+                      const isSelected = tempSelectedWeapons.includes(weapon.type);
+                      const canSelect = !isSelected && tempSelectedWeapons.length < 1;
+                      const colorScheme = getWeaponColorScheme(weapon.type);
+
+                      return (
+                        <div
+                          key={weapon.type}
+                          onClick={() => handleWeaponToggle(weapon.type)}
+                          className={`
+                            w-64 p-3 rounded-lg border-2 cursor-pointer transition-all duration-300
+                            ${isSelected
+                              ? `${colorScheme.border} ${colorScheme.background} shadow-lg ${colorScheme.shadow}`
+                              : canSelect
+                                ? 'border-gray-600 bg-gray-800/50 hover:border-gray-400 hover:bg-gray-700/50'
+                                : 'border-gray-700 bg-gray-900/50 opacity-60 cursor-not-allowed'
+                            }
+                          `}
+                        >
+                          <div className="text-center mb-2">
+                            <div className="text-2xl mb-1">{weapon.icon}</div>
+                            <h3 className="text-base font-bold mb-1">{weapon.name}</h3>
+                          </div>
+
+                          <p className="text-xs text-gray-300 mb-2 text-center">
+                            {weapon.description}
+                          </p>
+
+                          {/* Weapon Abilities */}
+                          <div className="mb-2">
+                            <div className="text-xs text-gray-400 text-center mb-1">Abilities:</div>
+                            <div className="flex justify-center gap-1">
+                              {weaponAbilities[weapon.type]?.filter(ability => ability.key !== 'P').map((ability) => (
+                                <div
+                                  key={ability.key}
+                                  className="relative w-7 h-7 rounded border border-gray-600 bg-gray-800 hover:bg-gray-700 transition-colors cursor-pointer flex items-center justify-center"
+                                  onMouseEnter={(e) => handleAbilityHover(e, ability)}
+                                  onMouseLeave={handleAbilityLeave}
+                                >
+                                  {/* Hotkey indicator */}
+                                  <div className="absolute -top-1 -left-1 bg-gray-900 border border-gray-500 rounded text-xs text-white px-0.5 font-semibold leading-none text-[9px]">
+                                    {ability.key}
+                                  </div>
+                                  
+                                  {/* Ability icon */}
+                                  <div className="text-xs">
+                                    {getAbilityIcon(weapon.type, ability.key)}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {isSelected && (
+                            <div className="text-center">
+                              <span className={`inline-block px-1.5 py-0.5 ${colorScheme.badge} text-white text-xs rounded-full`}>
+                                Selected
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 

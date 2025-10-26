@@ -142,6 +142,18 @@ export class ControlSystem extends System {
   // Callback for broadcasting melee attack sounds in PVP
   private onBroadcastMeleeAttackCallback?: (attackType: string, position: Vector3, comboStep?: number) => void;
 
+  // Callback for Whirlwind ability
+  private onWhirlwindCallback?: (position: Vector3, direction: Vector3, damage: number) => void;
+
+  // Callback for Throw Spear ability
+  private onThrowSpearCallback?: (position: Vector3, direction: Vector3, chargeTime: number) => void;
+
+  // Callback for Flurry ability
+  private onFlurryCallback?: (position: Vector3) => void;
+
+  // Callback for Flurry healing effect
+  private onFlurryHealingEffectCallback?: (position: Vector3) => void;
+
   // Local socket ID for identifying the local player
   private localSocketId: string | null = null;
 
@@ -170,11 +182,11 @@ export class ControlSystem extends System {
   private sabresFireRate = 0.6; // Sabres dual attack rate (600ms between attacks)
   private scytheFireRate = 0.35; // EntropicBolt rate (0.33s cooldown)
   private crossentropyFireRate = 2; // CrossentropyBolt rate (1 per second)
-  private summonTotemFireRate = 5.0; // Summon Totem rate (5 seconds cooldown)
+  private summonTotemFireRate = 6.0; // Summon Totem rate (5 seconds cooldown)
   private viperStingFireRate = 2.0; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
   private cobraShotFireRate = 2.0; // Cobra Shot rate (2 seconds cooldown)
-  private rejuvenatingShotFireRate = 4.0; // Rejuvenating Shot rate (4 seconds cooldown)
+  private rejuvenatingShotFireRate = 3.0; // Rejuvenating Shot rate (4 seconds cooldown)
   private lastBurstFireTime = 0; // Separate tracking for Bow burst fire
   private burstFireRate = 0.925; // 1 second cooldown between bursts
 
@@ -266,6 +278,28 @@ export class ControlSystem extends System {
   private stealthCooldown = 10.0; // 10 second cooldown
   private isStealthing = false;
 
+  // Whirlwind ability state (Spear)
+  private lastWhirlwindTime = 0;
+  private whirlwindCooldown = 3.0; // 3 second cooldown
+  private isWhirlwindCharging = false;
+  private whirlwindChargeProgress = 0;
+  private isWhirlwinding = false;
+  private whirlwindStartTime = 0;
+  private whirlwindDuration = 0.8; // Duration of the spin animation
+
+  // Throw Spear ability state (Spear)
+  private lastThrowSpearTime = 0;
+  private throwSpearCooldown = 4.0; // 4 second cooldown
+  private isThrowSpearCharging = false;
+  private throwSpearChargeProgress = 0;
+
+  // Flurry ability state (Spear)
+  private lastFlurryTime = 0;
+  private flurryCooldown = 10.0; // 10 second cooldown
+  private isFlurryActive = false;
+  private flurryStartTime = 0;
+  private flurryDuration = 5.0; // 5 second duration
+
   // Public getter for stealth state
   public getIsStealthing(): boolean {
     return this.isStealthing;
@@ -320,7 +354,7 @@ export class ControlSystem extends System {
   private corruptedAuraActive = false;
   private lastManaDrainTime = 0;
   private corruptedAuraRange = 2.0; 
-  private corruptedAuraManaCost = 20; // 12 mana per second
+  private corruptedAuraManaCost = 18; // 12 mana per second
   private corruptedAuraSlowEffect = 0.5; // 50% slow (multiply movement speed by this)
   private corruptedAuraSlowedEntities = new Map<number, boolean>(); // Track slowed entities
 
@@ -394,6 +428,8 @@ export class ControlSystem extends System {
         return WeaponSubclass.FROST;
       case WeaponType.RUNEBLADE:
         return WeaponSubclass.ARCANE;
+      case WeaponType.SPEAR:
+        return WeaponSubclass.STORM;
       default:
         return WeaponSubclass.ELEMENTAL;
     }
@@ -422,7 +458,7 @@ export class ControlSystem extends System {
     // If input is disabled (e.g., chat is open), skip input processing
     if (this.inputDisabled) return;
 
-    // If player is dead, allow input processing but set movement to 0
+    // If player is dead, completely block all input and movement
     if (this.isPlayerDead) {
       // Update debuff states even when dead (for visual effects)
       if (typeof playerMovement.updateDebuffs === 'function') {
@@ -430,7 +466,8 @@ export class ControlSystem extends System {
       }
       // Set movement velocity to 0 to prevent movement while dead
       playerMovement.velocity.set(0, 0, 0);
-      // Continue with input processing below
+      // Block all input - don't process anything else
+      return;
     }
 
     // Update debuff states first
@@ -608,6 +645,9 @@ export class ControlSystem extends System {
         this.currentSubclass = WeaponSubclass.ARCANE;
         this.fireRate = this.runebladeFireRate;
         this.swordComboStep = 1; // Reset combo when switching to runeblade
+        break;
+      case WeaponType.SPEAR:
+        this.currentSubclass = WeaponSubclass.STORM;
         break;
     }
 
@@ -814,6 +854,8 @@ export class ControlSystem extends System {
       this.handleSabresInput(playerTransform);
     } else if (this.currentWeapon === WeaponType.RUNEBLADE) {
       this.handleRunebladeInput(playerTransform);
+    } else if (this.currentWeapon === WeaponType.SPEAR) {
+      this.handleSpearInput(playerTransform);
     }
   }
 
@@ -1104,7 +1146,7 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check if player has enough mana (40 mana cost)
+    // Check if player has enough mana (30 mana cost)
     const gameUI = (window as any).gameUI;
     if (gameUI && !gameUI.canCastCrossentropyBolt()) {
       return;
@@ -1113,7 +1155,7 @@ export class ControlSystem extends System {
     // Consume mana
     if (gameUI) {
       const manaBefore = gameUI.getCurrentMana();
-      const manaConsumed = gameUI.consumeMana(40);
+      const manaConsumed = gameUI.consumeMana(30);
       if (!manaConsumed) {
         return;
       }
@@ -2051,6 +2093,22 @@ export class ControlSystem extends System {
     this.onBroadcastMeleeAttackCallback = callback;
   }
 
+  public setWhirlwindCallback(callback: (position: Vector3, direction: Vector3, damage: number) => void): void {
+    this.onWhirlwindCallback = callback;
+  }
+
+  public setThrowSpearCallback(callback: (position: Vector3, direction: Vector3, chargeTime: number) => void): void {
+    this.onThrowSpearCallback = callback;
+  }
+
+  public setFlurryCallback(callback: (position: Vector3) => void): void {
+    this.onFlurryCallback = callback;
+  }
+
+  public setFlurryHealingEffectCallback(callback: (position: Vector3) => void): void {
+    this.onFlurryHealingEffectCallback = callback;
+  }
+
   public setDamageNumbersCallback(callback: (damageNumbers: Array<{
     id: string;
     damage: number;
@@ -2295,6 +2353,30 @@ export class ControlSystem extends System {
 
   public isIcebeamActive(): boolean {
     return this.isIcebeaming;
+  }
+
+  public isWhirlwindChargingActive(): boolean {
+    return this.isWhirlwindCharging;
+  }
+
+  public getWhirlwindChargeProgress(): number {
+    return this.whirlwindChargeProgress;
+  }
+
+  public isWhirlwindActive(): boolean {
+    return this.isWhirlwinding;
+  }
+
+  public isThrowSpearChargingActive(): boolean {
+    return this.isThrowSpearCharging;
+  }
+
+  public getThrowSpearChargeProgress(): number {
+    return this.throwSpearChargeProgress;
+  }
+
+  public getIsFlurryActive(): boolean {
+    return this.isFlurryActive;
   }
 
   public setIcebeamStateChangeCallback(callback: (isActive: boolean) => void): void {
@@ -3013,6 +3095,14 @@ export class ControlSystem extends System {
 
   }
 
+  // Called by spear component when swing animation completes
+  public onSpearSwingComplete(): void {
+    if (!this.isSwinging) return; // Prevent multiple calls
+
+    // Reset swinging state
+    this.isSwinging = false;
+  }
+
   // Called by runeblade component when smite animation completes
   public onSmiteComplete(): void {
     if (!this.isSmiting) return; // Prevent multiple calls
@@ -3091,6 +3181,438 @@ export class ControlSystem extends System {
     if (this.isStealthing) {
       this.updateStealthState(playerTransform);
     }
+  }
+
+  private handleSpearInput(playerTransform: Transform): void {
+    const currentTime = performance.now() / 1000;
+
+    // Handle left click for spear thrust attack
+    if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging) {
+      this.performSpearMeleeAttack(playerTransform);
+    }
+
+    // Handle Q key for Throw Spear ability
+    if (this.inputManager.isKeyPressed('q') && !this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging && this.isAbilityUnlocked('Q')) {
+      this.performThrowSpear(playerTransform);
+    }
+
+    // Handle E key for Whirlwind ability
+    if (this.inputManager.isKeyPressed('e') && !this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging && this.isAbilityUnlocked('E')) {
+      this.performWhirlwind(playerTransform);
+    }
+
+    // Handle F key for Flurry ability
+    if (this.inputManager.isKeyPressed('f') && !this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging && !this.isFlurryActive && this.isAbilityUnlocked('F')) {
+      this.performFlurry(playerTransform);
+    }
+
+    // Update Throw Spear charging state
+    if (this.isThrowSpearCharging) {
+      this.updateThrowSpearCharging(playerTransform, currentTime);
+    }
+
+    // Update Whirlwind charging state
+    if (this.isWhirlwindCharging) {
+      this.updateWhirlwindCharging(playerTransform, currentTime);
+    }
+
+    // Update Whirlwind spinning state
+    if (this.isWhirlwinding) {
+      this.updateWhirlwindSpinning(currentTime);
+    }
+
+    // Update Flurry state
+    if (this.isFlurryActive) {
+      this.updateFlurryState(currentTime);
+    }
+  }
+
+  private performSpearMeleeAttack(playerTransform: Transform): void {
+    // Rate limiting - prevent spam clicking
+    const currentTime = Date.now() / 1000;
+    // Use doubled attack speed (halved fire rate) when Flurry is active
+    const effectiveFireRate = this.isFlurryActive ? this.swordFireRate / 2 : this.swordFireRate;
+    if (currentTime - this.lastSwordFireTime < effectiveFireRate) {
+      return;
+    }
+    this.lastSwordFireTime = currentTime;
+
+    // Play spear thrust sound (reuse sword sound for now)
+    this.audioSystem?.playSwordSwingSound(1, playerTransform.position);
+
+    // Set swinging state - completion will be handled by spear component callback
+    this.isSwinging = true;
+
+    // Broadcast melee attack sound in PVP
+    this.onBroadcastMeleeAttackCallback?.('spear', playerTransform.position);
+
+    // Perform damage detection immediately for spear (unlike sword which waits for animation)
+    this.performSpearMeleeDamage(playerTransform);
+  }
+
+  private performSpearMeleeDamage(playerTransform: Transform): void {
+    // Get all entities in the world to check for enemies
+    const allEntities = this.world.getAllEntities();
+    const playerPosition = playerTransform.position;
+
+    // Get player facing direction (camera direction)
+    const direction = new Vector3();
+    this.camera.getWorldDirection(direction);
+    direction.normalize();
+
+    // Spear attack parameters - longer range than melee
+    const spearRange = 8.0; // Longer range for spear
+    const spearAngle = Math.PI / 3; // 60 degree cone
+
+    // Base damage for spear
+    let baseDamage = 50; // Spear base damage
+
+    // Get combat system to apply damage
+    const combatSystem = this.world.getSystem(CombatSystem);
+
+    // Track enemies hit for rage generation
+    let enemiesHit = 0;
+    let criticalHits = 0;
+
+    allEntities.forEach(entity => {
+      // Check if entity has enemy component and health
+      const enemyTransform = entity.getComponent(Transform);
+      const enemyHealth = entity.getComponent(Health);
+      if (!enemyTransform || !enemyHealth || entity.id === this.playerEntity?.id) return;
+
+      const enemyPosition = enemyTransform.position;
+      const toEnemy = enemyPosition.clone().sub(playerPosition);
+      const distance = toEnemy.length();
+
+      // Check if enemy is within range
+      if (distance <= spearRange) {
+        // Check if enemy is within attack cone
+        toEnemy.normalize();
+        const angle = direction.angleTo(toEnemy);
+        const angleDegrees = angle * 180 / Math.PI;
+        const maxAngleDegrees = (spearAngle / 2) * 180 / Math.PI;
+
+        if (angle <= spearAngle / 2) {
+          // Enemy is within attack cone - calculate damage with critical hits
+          if (combatSystem && this.playerEntity) {
+            // Calculate damage using DamageCalculator to get critical hit information
+            const damageResult = calculateDamage(baseDamage, this.currentWeapon);
+            const actualDamage = damageResult.damage;
+
+            // Track critical hits for rage generation
+            if (damageResult.isCritical) {
+              criticalHits++;
+            }
+
+            // Queue damage through combat system (which will route to multiplayer for enemies)
+            combatSystem.queueDamage(entity, actualDamage, this.playerEntity, 'melee', this.playerEntity?.userData?.playerId, damageResult.isCritical);
+            enemiesHit++;
+          }
+        }
+      }
+    });
+
+    // If Flurry is active and enemies were hit, heal the player
+    if (this.isFlurryActive && enemiesHit > 0 && this.playerEntity) {
+      const healPerHit = 20;
+      const totalHealing = healPerHit * enemiesHit;
+      
+      const playerHealth = this.playerEntity.getComponent(Health);
+      if (playerHealth && combatSystem) {
+        console.log(`⚔️ Flurry healing: ${totalHealing} HP from ${enemiesHit} hit(s)`);
+        const didHeal = playerHealth.heal(totalHealing);
+        
+        if (didHeal) {
+          // Create healing damage number above player head
+          const healingPosition = playerTransform.position.clone();
+          healingPosition.y += 1.5; // Position above player's head
+
+          if (this.onDamageNumbersUpdate) {
+            this.onDamageNumbersUpdate([{
+              id: this.nextDamageNumberId.toString(),
+              damage: totalHealing,
+              position: healingPosition,
+              isCritical: false,
+              timestamp: Date.now(),
+              damageType: 'flurry_healing'
+            }]);
+            this.nextDamageNumberId++;
+          }
+
+          // Trigger Flurry healing visual effect
+          if (this.onFlurryHealingEffectCallback) {
+            this.onFlurryHealingEffectCallback(playerTransform.position.clone());
+          }
+
+          // Broadcast healing in multiplayer
+          if (this.onBroadcastHealing) {
+            this.onBroadcastHealing(totalHealing, 'flurry', healingPosition);
+          }
+        }
+      }
+    }
+
+    // Generate rage based on hits and critical hits
+    if (enemiesHit > 0) {
+      const gameUI = (window as any).gameUI;
+      if (gameUI) {
+        // Critical strikes give 10 rage each, regular hits give 5 rage, max 5 per swing
+        const criticalRage = criticalHits * 10;
+        const regularRage = Math.max(0, enemiesHit - criticalHits) * 5;
+        const totalRage = Math.min(criticalRage + regularRage, 5); // Max 5 rage per swing total
+        gameUI.gainRage(totalRage);
+      }
+    }
+  }
+
+  private performWhirlwind(playerTransform: Transform): void {
+    const currentTime = performance.now() / 1000;
+
+    // Check cooldown
+    if (currentTime - this.lastWhirlwindTime < this.whirlwindCooldown) {
+      return;
+    }
+
+    // Start charging
+    this.isWhirlwindCharging = true;
+    this.whirlwindChargeProgress = 0;
+    this.whirlwindStartTime = currentTime;
+
+    // Play charging sound (optional - can be added later)
+    this.audioSystem?.playSwordChargeSound?.(playerTransform.position);
+  }
+
+  private updateWhirlwindCharging(playerTransform: Transform, currentTime: number): void {
+    const maxChargeTime = 2.0; // Max 2 seconds charge
+    const chargeTime = currentTime - this.whirlwindStartTime;
+    
+    // Update charge progress (0 to 1)
+    this.whirlwindChargeProgress = Math.min(chargeTime / maxChargeTime, 1.0);
+
+    // Check if E key is released or max charge reached
+    if (!this.inputManager.isKeyPressed('e') || this.whirlwindChargeProgress >= 1.0) {
+      // Release and execute Whirlwind
+      this.executeWhirlwind(playerTransform, currentTime);
+    }
+  }
+
+  private executeWhirlwind(playerTransform: Transform, currentTime: number): void {
+    // Stop charging
+    this.isWhirlwindCharging = false;
+
+    // Calculate damage based on charge progress (50 to 200)
+    const minDamage = 50;
+    const maxDamage = 400;
+    const chargeDamage = minDamage + (maxDamage - minDamage) * this.whirlwindChargeProgress;
+
+    // Start spinning
+    this.isWhirlwinding = true;
+    this.whirlwindStartTime = currentTime;
+    this.lastWhirlwindTime = currentTime;
+
+    // Get camera direction for attack
+    const direction = new Vector3();
+    this.camera.getWorldDirection(direction);
+    direction.y = 0;
+    direction.normalize();
+
+    // Trigger visual effect callback
+    if (this.onWhirlwindCallback) {
+      this.onWhirlwindCallback(playerTransform.position.clone(), direction, chargeDamage);
+    }
+
+    // Play whirlwind sound
+    this.audioSystem?.playSwordSwingSound?.(1, playerTransform.position);
+
+    // Apply damage to all enemies in range immediately
+    this.performWhirlwindDamage(playerTransform, chargeDamage);
+  }
+
+  private performWhirlwindDamage(playerTransform: Transform, baseDamage: number): void {
+    // Get all entities that could be damaged
+    const allEntities = this.world.getAllEntities();
+    const playerPosition = playerTransform.position;
+    const whirlwindRadius = 3.5; // 3.5 unit radius for damage
+
+    // Get combat system
+    const combatSystem = this.world.getSystem(CombatSystem);
+    if (!combatSystem) return;
+
+    let enemiesHit = 0;
+
+    allEntities.forEach(entity => {
+      // Check if entity has enemy component and health
+      const enemyTransform = entity.getComponent(Transform);
+      const enemyHealth = entity.getComponent(Health);
+      if (!enemyTransform || !enemyHealth || entity.id === this.playerEntity?.id) return;
+
+      const enemyPosition = enemyTransform.position;
+      const distance = playerPosition.distanceTo(enemyPosition);
+
+      // Check if enemy is within Whirlwind radius
+      if (distance <= whirlwindRadius) {
+        // Calculate damage with critical hits
+        const damageResult = calculateDamage(baseDamage, this.currentWeapon);
+        const actualDamage = damageResult.damage;
+
+        // Queue damage through combat system
+        combatSystem.queueDamage(
+          entity,
+          actualDamage,
+          this.playerEntity || undefined,
+          'whirlwind',
+          this.playerEntity?.userData?.playerId,
+          damageResult.isCritical
+        );
+        enemiesHit++;
+      }
+    });
+
+    // Log hits for debugging
+    if (enemiesHit > 0) {
+      console.log(`Whirlwind hit ${enemiesHit} enemies for ${baseDamage} base damage each`);
+    }
+  }
+
+  private updateWhirlwindSpinning(currentTime: number): void {
+    // Check if spinning animation is complete
+    if (currentTime - this.whirlwindStartTime >= this.whirlwindDuration) {
+      this.isWhirlwinding = false;
+      this.whirlwindChargeProgress = 0;
+    }
+  }
+
+  public onWhirlwindComplete(): void {
+    this.isWhirlwinding = false;
+    this.whirlwindChargeProgress = 0;
+  }
+
+  private performThrowSpear(playerTransform: Transform): void {
+    const currentTime = performance.now() / 1000;
+
+    console.log('🎯 performThrowSpear called!');
+
+    // Check cooldown
+    if (currentTime - this.lastThrowSpearTime < this.throwSpearCooldown) {
+      console.log('🎯 Throw Spear on cooldown');
+      return;
+    }
+
+    console.log('🎯 Starting Throw Spear charge');
+
+    // Start charging
+    this.isThrowSpearCharging = true;
+    this.throwSpearChargeProgress = 0;
+    this.whirlwindStartTime = currentTime; // Reuse whirlwindStartTime for charge tracking
+
+    // Play charging sound (optional - can be added later)
+    this.audioSystem?.playSwordChargeSound?.(playerTransform.position);
+  }
+
+  private updateThrowSpearCharging(playerTransform: Transform, currentTime: number): void {
+    const maxChargeTime = 2.0; // Max 2 seconds charge
+    const chargeTime = currentTime - this.whirlwindStartTime;
+    
+    // Update charge progress (0 to 1)
+    this.throwSpearChargeProgress = Math.min(chargeTime / maxChargeTime, 1.0);
+
+    // Check if Q key is released or max charge reached
+    if (!this.inputManager.isKeyPressed('q') || this.throwSpearChargeProgress >= 1.0) {
+      // Release and execute Throw Spear
+      this.executeThrowSpear(playerTransform, currentTime);
+    }
+  }
+
+  private executeThrowSpear(playerTransform: Transform, currentTime: number): void {
+    console.log('🎯 executeThrowSpear called!');
+
+    // Stop charging
+    this.isThrowSpearCharging = false;
+
+    // Calculate charge time (0 to 2 seconds)
+    const chargeTime = this.throwSpearChargeProgress * 2.0;
+
+    console.log('🎯 Executing throw with charge time:', chargeTime);
+
+    // Update last throw time
+    this.lastThrowSpearTime = currentTime;
+
+    // Get camera direction for throw (projected onto horizontal plane)
+    const direction = new Vector3();
+    this.camera.getWorldDirection(direction);
+    direction.y = 0; // Zero out vertical component to throw horizontally
+    direction.normalize();
+
+    console.log('🎯 Direction (horizontal):', direction.toArray());
+
+    // Play throw sound
+    this.audioSystem?.playSwordSwingSound?.(1, playerTransform.position);
+
+    // Trigger the throw spear callback if set
+    if (this.onThrowSpearCallback) {
+      console.log('🎯 Calling onThrowSpearCallback');
+      this.onThrowSpearCallback(
+        playerTransform.position.clone(),
+        direction,
+        chargeTime
+      );
+    } else {
+      console.log('🎯 ERROR: onThrowSpearCallback is not set!');
+    }
+
+    // Reset charge progress
+    this.throwSpearChargeProgress = 0;
+  }
+
+  private performFlurry(playerTransform: Transform): void {
+    const currentTime = performance.now() / 1000;
+
+    console.log('⚔️ performFlurry called!');
+
+    // Check cooldown
+    if (currentTime - this.lastFlurryTime < this.flurryCooldown) {
+      console.log('⚔️ Flurry on cooldown');
+      return;
+    }
+
+    console.log('⚔️ Activating Flurry!');
+
+    // Activate Flurry
+    this.isFlurryActive = true;
+    this.flurryStartTime = currentTime;
+    this.lastFlurryTime = currentTime;
+
+    // Play activation sound (optional - can be added later)
+    this.audioSystem?.playSwordChargeSound?.(playerTransform.position);
+
+    // Trigger the WindShear Tornado effect (visual effect for Flurry)
+    if (this.onWindShearTornadoCallback) {
+      console.log('⚔️ Calling onWindShearTornadoCallback for Flurry');
+      // Use local player ID and flurry duration (5 seconds)
+      this.onWindShearTornadoCallback(this.localSocketId || 'local', this.flurryDuration * 1000);
+    } else {
+      console.log('⚔️ onWindShearTornadoCallback is not set');
+    }
+
+    // Trigger the Flurry callback if set
+    if (this.onFlurryCallback) {
+      console.log('⚔️ Calling onFlurryCallback');
+      this.onFlurryCallback(playerTransform.position.clone());
+    } else {
+      console.log('⚔️ onFlurryCallback is not set');
+    }
+  }
+
+  private updateFlurryState(currentTime: number): void {
+    // Check if Flurry duration has expired
+    if (currentTime - this.flurryStartTime >= this.flurryDuration) {
+      console.log('⚔️ Flurry duration expired, deactivating');
+      this.isFlurryActive = false;
+    }
+  }
+
+  public onFlurryComplete(): void {
+    this.isFlurryActive = false;
   }
 
   private performSabresMeleeAttack(playerTransform: Transform): void {
@@ -3755,6 +4277,12 @@ export class ControlSystem extends System {
     this.summonTotemChargeProgress = 0;
     this.isWindShearCharging = false; // Reset wind shear charging
     this.windShearChargeProgress = 0;
+    this.isWhirlwindCharging = false; // Reset whirlwind charging
+    this.whirlwindChargeProgress = 0;
+    this.isWhirlwinding = false; // Reset whirlwind spinning
+    this.isThrowSpearCharging = false; // Reset throw spear charging
+    this.throwSpearChargeProgress = 0;
+    this.isFlurryActive = false; // Reset Flurry state
     this.isSkyfalling = false;
     this.skyfallPhase = 'none';
     this.isBackstabbing = false;
@@ -3946,7 +4474,7 @@ export class ControlSystem extends System {
     }
   }
 
-  private isAbilityUnlocked(abilityKey: 'E' | 'R' | 'F'): boolean {
+  private isAbilityUnlocked(abilityKey: 'Q' | 'E' | 'R' | 'F'): boolean {
     if (!this.selectedWeapons) return false;
 
     // Determine weapon slot
@@ -5221,6 +5749,23 @@ export class ControlSystem extends System {
         current: this.corruptedAuraActive ? 0 : 0, // No cooldown, just active/inactive state
         max: 1,
         isActive: this.corruptedAuraActive
+      };
+    } else if (this.currentWeapon === WeaponType.SPEAR) {
+      // SPEAR abilities
+      cooldowns['Q'] = {
+        current: Math.max(0, this.throwSpearCooldown - (currentTime - this.lastThrowSpearTime)),
+        max: this.throwSpearCooldown,
+        isActive: this.isThrowSpearCharging
+      };
+      cooldowns['E'] = {
+        current: Math.max(0, this.whirlwindCooldown - (currentTime - this.lastWhirlwindTime)),
+        max: this.whirlwindCooldown,
+        isActive: this.isWhirlwindCharging || this.isWhirlwinding
+      };
+      cooldowns['F'] = {
+        current: Math.max(0, this.flurryCooldown - (currentTime - this.lastFlurryTime)),
+        max: this.flurryCooldown,
+        isActive: this.isFlurryActive
       };
     }
 

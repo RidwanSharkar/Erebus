@@ -150,7 +150,8 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
                   damageData.damageType === 'smite_healing' ||
                   damageData.damageType === 'viper_sting_healing' ||
                   damageData.damageType === 'summon_totem_healing' ||
-                  damageData.damageType === 'rejuvenating_shot_healing'
+                  damageData.damageType === 'rejuvenating_shot_healing' ||
+                  damageData.damageType === 'flurry_healing'
                 ? 'text-green-400 text-lg font-extrabold'
                 : damageData.damageType === 'colossus_strike'
                 ? 'text-yellow-400 text-lg'
@@ -167,6 +168,8 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
                 ? 'text-blue-300 text-lg'
                 : damageData.damageType === 'entropic_cryoflame'
                 ? 'text-cyan-400 text-lg'
+                : damageData.damageType === 'icebeam'
+                ? 'text-blue-300 text-lg'
                 : 'text-red-400'
         }`}
       >
@@ -176,15 +179,17 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
           damageData.damageType === 'smite_healing' ||
           damageData.damageType === 'viper_sting_healing' ||
           damageData.damageType === 'summon_totem_healing' ||
-          damageData.damageType === 'rejuvenating_shot_healing') && '+'}
+          damageData.damageType === 'rejuvenating_shot_healing' ||
+          damageData.damageType === 'flurry_healing') && '+'}
         {damageData.damageType === 'healing' ||
          damageData.damageType === 'reanimate_healing' ||
          damageData.damageType === 'smite_healing' ||
          damageData.damageType === 'viper_sting_healing' ||
          damageData.damageType === 'summon_totem_healing' ||
-         damageData.damageType === 'rejuvenating_shot_healing'
-           ? Math.round(damageData.damage)
-           : damageData.damage}
+         damageData.damageType === 'rejuvenating_shot_healing' ||
+         damageData.damageType === 'flurry_healing'
+          ? Math.round(damageData.damage)
+          : damageData.damage}
         {damageData.isCritical && '!'}
       </span>
     </div>

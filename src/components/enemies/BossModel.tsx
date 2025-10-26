@@ -1,6 +1,6 @@
 // Combined Boss Model - Ascendant + Abomination features with 6 arms, spell-casting, and complex animations
 import React, { useRef, useEffect, useMemo } from 'react';
-import { Group, MeshStandardMaterial, SphereGeometry, CylinderGeometry, ConeGeometry, BoxGeometry, Shape, ExtrudeGeometry, InstancedMesh, Matrix4, Vector3, Euler, TorusGeometry, Quaternion } from 'three';
+import { Group, MeshStandardMaterial, SphereGeometry, CylinderGeometry, ConeGeometry, BoxGeometry, Shape, ExtrudeGeometry, InstancedMesh, Matrix4, Vector3, Euler, TorusGeometry, Quaternion, MathUtils, DynamicDrawUsage, DoubleSide, Points, AdditiveBlending, Mesh, Object3D, Material } from 'three';
 import { useFrame } from '@react-three/fiber';
 import BonePlate from '../dragon/BonePlate';
 import AscendantBoneWings from '../dragon/AscendantBoneWings';
@@ -8,7 +8,6 @@ import BoneTail from '../dragon/BoneTail';
 import BoneAura from '../dragon/BoneAura';
 import DraconicWingJets from '../dragon/DraconicWingJets';
 import { WeaponType } from '../dragon/weapons';
-import * as THREE from 'three';
 import BossBoneWings from './BossBoneWings';
 import ElementalVortex from './ElementalVortex';
 import BossDragonSkull from './BossDragonSkull';
@@ -116,7 +115,7 @@ function AscendantArm({ isRaised = false }: { isRaised?: boolean }) {
     const currentRotation = armRef.current.rotation.x;
     const lerpFactor = 5 * delta; // Animation speed
 
-    armRef.current.rotation.x = THREE.MathUtils.lerp(currentRotation, targetRotation, lerpFactor);
+    armRef.current.rotation.x = MathUtils.lerp(currentRotation, targetRotation, lerpFactor);
   });
 
   const createBoneSegment = (length: number, width: number) => (
@@ -220,7 +219,7 @@ function AscendantArm({ isRaised = false }: { isRaised?: boolean }) {
 function VertebraeInstances() {
   const instances = useMemo(() => {
     const mesh = new InstancedMesh(SHARED_GEOMETRIES.vertebrae, SHARED_MATERIALS.standardBone, 5);
-    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     return mesh;
   }, []);
 
@@ -362,7 +361,7 @@ function BossClawModel({ isLeftHand = false }: { isLeftHand?: boolean }) {
                       roughness={0.1}
                       opacity={1}
                       transparent
-                      side={THREE.DoubleSide}
+                      side={DoubleSide}
                     />
                   </mesh>
 
@@ -526,7 +525,7 @@ function CustomHorn({ isLeft = false }: { isLeft?: boolean }) {
 // Boss Trail Effect component - enhanced particle system
 function BossTrailEffect({ parentRef }: { parentRef: React.RefObject<Group> }) {
   const particlesCount = 10; // More particles for boss
-  const particlesRef = useRef<THREE.Points>(null);
+  const particlesRef = useRef<Points>(null);
   const positionsRef = useRef<Float32Array>(new Float32Array(particlesCount * 3));
   const opacitiesRef = useRef<Float32Array>(new Float32Array(particlesCount));
   const scalesRef = useRef<Float32Array>(new Float32Array(particlesCount));
@@ -584,7 +583,7 @@ function BossTrailEffect({ parentRef }: { parentRef: React.RefObject<Group> }) {
       <shaderMaterial
         transparent
         depthWrite={false}
-        blending={THREE.AdditiveBlending}
+        blending={AdditiveBlending}
         vertexShader={`
           attribute float opacity;
           attribute float scale;
@@ -670,8 +669,8 @@ export default function BossModel({
       ];
 
       armPairs.forEach(({ left, right, startTime, rotationRange }) => {
-        const leftArm = group.getObjectByName(left) as THREE.Mesh;
-        const rightArm = group.getObjectByName(right) as THREE.Mesh;
+        const leftArm = group.getObjectByName(left) as Mesh;
+        const rightArm = group.getObjectByName(right) as Mesh;
 
         if (leftArm && rightArm) {
           const armProgress = Math.max(0, Math.min(1, (attackCycleRef.current - startTime) * 2)); // Faster progression
@@ -701,8 +700,8 @@ export default function BossModel({
       // Reset forward pivot when attack ends
       if (attackCycleRef.current >= ATTACK_DURATION) {
         armPairs.forEach(({ left, right }) => {
-          const leftArm = group.getObjectByName(left) as THREE.Mesh;
-          const rightArm = group.getObjectByName(right) as THREE.Mesh;
+          const leftArm = group.getObjectByName(left) as Mesh;
+          const rightArm = group.getObjectByName(right) as Mesh;
           if (leftArm && rightArm) {
             leftArm.rotation.z = 0;
             rightArm.rotation.z = 0;
@@ -719,8 +718,8 @@ export default function BossModel({
       ];
 
       defaultRotations.forEach(({ left, right, y }) => {
-        const leftArm = group.getObjectByName(left) as THREE.Mesh;
-        const rightArm = group.getObjectByName(right) as THREE.Mesh;
+        const leftArm = group.getObjectByName(left) as Mesh;
+        const rightArm = group.getObjectByName(right) as Mesh;
 
         if (leftArm && rightArm) {
           leftArm.rotation.y = y;
@@ -743,8 +742,8 @@ export default function BossModel({
 
     return () => {
       if (currentGroupRef) {
-        currentGroupRef.traverse((child: THREE.Object3D) => {
-          if (child instanceof THREE.Mesh) {
+        currentGroupRef.traverse((child: Object3D) => {
+          if (child instanceof Mesh) {
             // Dispose geometries (but not shared ones)
             if (child.geometry && !child.geometry.userData?.shared) {
               child.geometry.dispose();
@@ -753,9 +752,9 @@ export default function BossModel({
             // Dispose materials
             if (child.material) {
               if (Array.isArray(child.material)) {
-                child.material.forEach((material: THREE.Material) => material.dispose());
+                child.material.forEach((material: Material) => material.dispose());
               } else {
-                (child.material as THREE.Material).dispose();
+                (child.material as Material).dispose();
               }
             }
           }
