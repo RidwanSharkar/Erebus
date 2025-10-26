@@ -51,13 +51,13 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       description: '{50 ENERGY} Fires 5 arrows in an arc, dealing 30 damage per arrow and applying a 50% SLOW effect for 5 seconds. An enemy can be hit by multiple arrows at close range.'
     },
     {
-      name: 'Cobra Shot',
+      name: 'Viper Sting',
       key: 'E',
       cooldown: 2.0,
       description: '{60 ENERGY} Fires a laced arrow that applies VENOM damage over time to the target, preventing shield regeneration for 6 seconds.'
     },
     {
-      name: 'Viper Sting',
+      name: 'Reaping Talons',
       key: 'R',
       cooldown: 2.0,
       description: '{60 ENERGY} Fires a powerful piercing arrow that returns to you after a short delay. Each hit on an enemy creates a soul fragment that heals you for 20 HP each when returned.'
@@ -81,7 +81,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Sunwell',
       key: 'Q',
       cooldown: 1.0,
-      description: '{30 MANA} Transmutes mana to heal you for 60 HP.'
+      description: '{30 MANA} Transmutes mana to heal you and nearby allies for 60 HP.'
     },
     {
       name: 'Coldsnap',
@@ -93,13 +93,13 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Crossentropy',
       key: 'R',
       cooldown: 2.0,
-      description: '{40 MANA} Charges for 1 second to fire an accelerating plasma bolt that deals 200 damage.'
+      description: '{30 MANA} Charges for 1 second to fire an accelerating plasma bolt that deals 200 damage.'
     },
     {
       name: 'Mantra',
       key: 'F',
       cooldown: 5.0,
-      description: '{75 MANA} Summons a totem that heals you for 20 HP per second while blasting nearby enemies that enter its range. Lasts 8 seconds.'
+      description: '{75 MANA} Summons a totem that heals you and allies for 40 HP per second while within its range. Lasts 8 seconds.'
     },
     {
       name: 'Cryoflame',
@@ -114,13 +114,13 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Backstab',
       key: 'Q',
       cooldown: 2.0,
-      description: '{60 ENERGY} Strikes the target with both sabres, dealing 75 damage or 175 damage if attacking the target from behind. Refund 45 energy if the target is stunned.'
+      description: '{60 ENERGY} Strikes the target with both sabres, dealing 75 damage or triple damage if attacking the target from behind. Refund all energy spent if the target is stunned.'
     },
     {
       name: 'Flourish',
       key: 'E',
       cooldown: 1.5,
-      description: '{35 ENERGY} Unleash a flurry of slashes that deals increased damage with successive hits on the same target, stacking up to 3 times. Expending 3 stacks applies STUN for 4 seconds.'
+      description: '{35 ENERGY} Unleash a flurry of slashes that regenerates 45 SHIELD and deals increased damage with successive hits on the same target, stacking up to 3 times. Expending 3 stacks applies STUN for 4 seconds.'
     },
     {
       name: 'Divebomb',
@@ -129,10 +129,10 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       description: '{40 ENERGY} Leap into the air and crash down, dealing 125 damage and applying STUN for 2 seconds to enemies caught below.'
     },
     {
-      name: 'Shadow Step',
+      name: 'Event Horizon',
       key: 'F',
       cooldown: 10.0,
-      description: 'Fade into the shadows, becoming INVISIBLE for 5 seconds.'
+      description: '{20 ENERGY} Doubles the damage of your primary attack for 5 seconds while applying TAUNT to enemies, forcing them to attack you.'
     },
     {
       name: 'Cutthroat Oath',
@@ -144,28 +144,28 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
   ],
   [WeaponType.RUNEBLADE]: [
     {
-      name: 'Fullguard',
+      name: 'Aegis',
       key: 'Q',
       cooldown: 7.0,
-      description: 'Creates a protective barrier that blocks all incoming damage for 3 seconds. Cannot attack while shielded.'
+      description: 'Creates a protective barrier that blocks all incoming damage for 3 seconds.'
     },
     {
-      name: 'Wraithblade',
+      name: 'Oathblade',
       key: 'E',
       cooldown: 3.0,
-      description: '{35 MANA} A swift strike that inflicts enemies hit with the CORRUPTED debuff for 8 seconds. reducing movement speed by 90%. Afflicted enemies regain 10% movement speed per second.'
+      description: '{35 MANA} A swift strike that applies SLOW and TAUNT to enemies hit, forcing them to attack you for up to 10 seconds.'
     },
     {
       name: 'Colossus Smite',
       key: 'R',
       cooldown: 3.0,
-      description: '{45 MANA} Calls down unholy energy, dealing damage to enemy players in a small area, healing you for the same amount of damage dealt.'
+      description: '{45 MANA} Calls down a pillar of radiant energy, dealing damage to enemy players in a small area, healing you for the same amount of damage dealt.'
     },
     {
-      name: 'Heartrend',
+      name: 'Titan\'s Grip',
       key: 'F',
       cooldown: 0, // No cooldown, it's a toggle ability
-      description: '{24 MANA/S} Toggle a force-multiplier aura that increases critical strike chance by 45% and critical strike damage by 75%.'
+      description: '{20 MANA/S} Toggle a force-multiplier aura that increases critical strike chance by 45% and critical strike damage by 75%.'
     },
     {
       name: 'Bloodpact',
@@ -177,28 +177,28 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
   ],
   [WeaponType.SPEAR]: [
     {
-      name: 'Throw Spear',
+      name: 'Razorwind',
       key: 'Q',
       cooldown: 4.0,
-      description: 'Hold to charge for up to 2 seconds, then release to throw your spear. The spear flies forward, damaging all enemies it passes through, then returns to you, damaging enemies again. Distance and damage scale from 50 to 200 based on charge time.'
+      description: 'Hold to charge for up to 2 seconds, then release to throw your spear. The spear flies forward, damaging all enemies it passes through, then returns to you, damaging enemies again. Distance and damage scale from 50 to 200 based on charge time. Generates 5-20 Essence.'
     },
     {
-      name: 'Whirlwind',
+      name: 'Hurricane Sweep',
       key: 'E',
       cooldown: 3.0,
-      description: 'Hold to charge for up to 2 seconds, then release to spin your spear in a single rotation, damaging all nearby enemies. Damage scales from 50 to 200 based on charge time.'
+      description: 'Hold to charge for up to 2 seconds, then release to damage all nearby enemies around you for 50 to 400 based on charge time. Generates 0-20 Essence. Increases attack speed by 1% for each Essence possessed.'
     },
     {
-      name: 'Storm Surge',
+      name: 'Lightning Bolt',
       key: 'R',
-      cooldown: 15.0,
-      description: 'Calls down a lightning storm that damages enemies in a large area.'
+      cooldown: 1.0,
+      description: '{5 ESSENCE} Calls down a lightning bolt on the highest priority enemy in the map, dealing 117 damage.'
     },
     {
-      name: 'Flurry',
+      name: 'Eye of the Storm',
       key: 'F',
       cooldown: 10.0,
-      description: 'Enter a frenzied state for 5 seconds, doubling your attack speed. Each successful hit heals you for 20 HP.'
+      description: '{40 ESSENCE} Enter a frenzied state for 5 seconds, doubling your attack speed. Each successful hit heals you for 15 HP.'
     },
     {
       name: 'Tempest',
@@ -243,15 +243,15 @@ export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | '
   [WeaponType.RUNEBLADE]: {
     Q: '🛡️', // Fullguard
     E: '🗡️', // Wraithblade
-    R: '⚡️', // Hexed Smite
-    F: '💠', // Heartrend
+    R: '💠', // Hexed Smite
+    F: '☢️', // Heartrend
     P: '🩸' // Bloodpact
   },
   [WeaponType.SPEAR]: {
-    Q: '⛓️‍💥', // Throw Spear
-    E: '⚓️', // Whirlwind
-    R: '💨', // Storm Surge
-    F: '🌪️', // Flurry
+    Q: '💨', // Throw Spear
+    E: '🌪️', // Whirlwind
+    R: '⚡️', // Lightning Storm
+    F: '🌩️', // Flurry
     P: '🌩️' // Tempest
   },
 };

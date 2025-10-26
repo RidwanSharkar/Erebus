@@ -75,6 +75,7 @@ interface DragonRendererProps {
   isWhirlwinding?: boolean;
   isThrowSpearCharging?: boolean;
   throwSpearChargeProgress?: number;
+  isThrowSpearReleasing?: boolean;
   reanimateRef?: React.RefObject<ReanimateRef>;
   // Damage number management
   onDamageNumbersReady?: (setDamageNumbers: (callback: (prev: Array<{
@@ -158,6 +159,7 @@ export default function DragonRenderer({
   isWhirlwinding = false,
   isThrowSpearCharging = false,
   throwSpearChargeProgress = 0,
+  isThrowSpearReleasing = false,
   reanimateRef,
   targetPlayerData,
   rageSpent,
@@ -469,6 +471,9 @@ export default function DragonRenderer({
           isWhirlwindCharging={isWhirlwindCharging}
           whirlwindChargeProgress={whirlwindChargeProgress}
           isWhirlwinding={isWhirlwinding}
+          isThrowSpearCharging={isThrowSpearCharging}
+          throwSpearChargeProgress={throwSpearChargeProgress}
+          isThrowSpearReleasing={isThrowSpearReleasing}
           reanimateRef={reanimateRef}
           setActiveEffects={setActiveEffects}
           targetPlayerData={targetPlayerData}

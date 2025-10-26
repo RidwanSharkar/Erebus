@@ -97,6 +97,7 @@ interface DragonUnitProps {
   isWhirlwinding?: boolean;
   isThrowSpearCharging?: boolean;
   throwSpearChargeProgress?: number;
+  isThrowSpearReleasing?: boolean;
   // Reanimate ability props
   reanimateRef?: React.RefObject<ReanimateRef>;
   setActiveEffects?: (callback: (prev: Array<{
@@ -198,6 +199,7 @@ export default function DragonUnit({
   isWhirlwinding = false,
   isThrowSpearCharging = false,
   throwSpearChargeProgress = 0,
+  isThrowSpearReleasing = false,
   reanimateRef,
   setActiveEffects = () => {},
   targetPlayerData,
@@ -340,6 +342,7 @@ export default function DragonUnit({
           currentSubclass={currentSubclass}
           isThrowSpearCharging={isThrowSpearCharging || false}
           throwSpearChargeProgress={throwSpearChargeProgress || 0}
+          isThrowSpearReleasing={isThrowSpearReleasing || false}
           isSpearThrown={false}
           isWhirlwindCharging={isWhirlwindCharging || false}
           whirlwindChargeProgress={whirlwindChargeProgress || 0}

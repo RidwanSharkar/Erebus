@@ -111,15 +111,16 @@ export default function GameUI({
       mana: number;
       energy: number;
       rage: number;
+      essence: number;
       lastSwordDamageTime: number;
     }
   }>({
-    [WeaponType.SCYTHE]: { mana, energy: maxEnergy, rage: 0, lastSwordDamageTime: Date.now() },
-    [WeaponType.SWORD]: { mana: maxMana, energy: maxEnergy, rage, lastSwordDamageTime: Date.now() },
-    [WeaponType.BOW]: { mana: maxMana, energy, rage: 0, lastSwordDamageTime: Date.now() },
-    [WeaponType.SABRES]: { mana: maxMana, energy, rage: 0, lastSwordDamageTime: Date.now() },
-    [WeaponType.RUNEBLADE]: { mana, energy: maxEnergy, rage: 0, lastSwordDamageTime: Date.now() },
-    [WeaponType.SPEAR]: { mana: maxMana, energy, rage: 0, lastSwordDamageTime: Date.now() }
+    [WeaponType.SCYTHE]: { mana, energy: maxEnergy, rage: 0, essence: 0, lastSwordDamageTime: Date.now() },
+    [WeaponType.SWORD]: { mana: maxMana, energy: maxEnergy, rage, essence: 0, lastSwordDamageTime: Date.now() },
+    [WeaponType.BOW]: { mana: maxMana, energy, rage: 0, essence: 0, lastSwordDamageTime: Date.now() },
+    [WeaponType.SABRES]: { mana: maxMana, energy, rage: 0, essence: 0, lastSwordDamageTime: Date.now() },
+    [WeaponType.RUNEBLADE]: { mana, energy: maxEnergy, rage: 0, essence: 0, lastSwordDamageTime: Date.now() },
+    [WeaponType.SPEAR]: { mana: maxMana, energy, rage: 0, essence: 0, lastSwordDamageTime: Date.now() }
   });
 
   // Get current weapon's resources
@@ -127,6 +128,7 @@ export default function GameUI({
   const currentMana = currentResources?.mana ?? mana;
   const currentEnergy = currentResources?.energy ?? energy;
   const currentRage = currentResources?.rage ?? rage;
+  const currentEssence = currentResources?.essence ?? 0;
   const lastSwordDamageTime = currentResources?.lastSwordDamageTime ?? Date.now();
 
   // Wrapper for unlockAbility to ensure ControlSystem is updated immediately
@@ -319,7 +321,7 @@ export default function GameUI({
     }
   };
 
-  // Function to consume all rage 
+  // Function to consume all rage
   const consumeAllRage = () => {
     if (currentWeapon === WeaponType.SWORD) {
       setWeaponResources(prev => ({
@@ -327,6 +329,32 @@ export default function GameUI({
         [currentWeapon]: {
           ...prev[currentWeapon],
           rage: 0
+        }
+      }));
+    }
+  };
+
+  // Function to gain essence (for spear abilities)
+  const gainEssence = (amount: number) => {
+    if (currentWeapon === WeaponType.SPEAR) {
+      setWeaponResources(prev => ({
+        ...prev,
+        [currentWeapon]: {
+          ...prev[currentWeapon],
+          essence: Math.min(100, prev[currentWeapon].essence + amount)
+        }
+      }));
+    }
+  };
+
+  // Function to consume essence (for spear abilities)
+  const consumeEssence = (amount: number) => {
+    if (currentWeapon === WeaponType.SPEAR) {
+      setWeaponResources(prev => ({
+        ...prev,
+        [currentWeapon]: {
+          ...prev[currentWeapon],
+          essence: Math.max(0, prev[currentWeapon].essence - amount)
         }
       }));
     }
@@ -344,12 +372,15 @@ export default function GameUI({
       gainRage,
       consumeRage,
       consumeAllRage,
+      gainEssence,
+      consumeEssence,
       getCurrentMana: () => currentMana,
       getCurrentEnergy: () => currentEnergy,
       getCurrentRage: () => currentRage,
-      canCastCrossentropy: () => currentMana >= 40,
+      getCurrentEssence: () => currentEssence,
+      canCastCrossentropy: () => currentMana >= 30,
       canCastEntropicBolt: () => currentMana >= 10,
-      canCastCrossentropyBolt: () => currentMana >= 40,
+      canCastCrossentropyBolt: () => currentMana >= 30,
       canCastReanimate: () => currentMana >= 20,
       canCastFrostNova: () => currentMana >= 25,
       // Runeblade mana abilities
@@ -369,8 +400,11 @@ export default function GameUI({
       canCastSkyfall: () => currentEnergy >= 40,
       canCastSunder: () => currentEnergy >= 35,
       canCastStealth: () => currentEnergy >= 25,
+      // Spear Essence abilities
+      canCastFlurry: () => currentEssence >= 40,
+      canCastLightningStorm: () => currentEssence >= 5,
     };
-  }, [currentMana, currentEnergy, currentRage, currentWeapon, addMana]);
+  }, [currentMana, currentEnergy, currentRage, currentEssence, currentWeapon, addMana]);
 
   const getResourceBar = () => {
     switch (currentWeapon) {
@@ -407,8 +441,17 @@ export default function GameUI({
           <ResourceBar
             current={currentMana}
             max={getMaxManaForWeapon(WeaponType.RUNEBLADE, level)} // Dynamic Runeblade mana based on level
-            color="#9B59B6" // Purple color for mana
+            color="#FF8C00" // Orange color for mana
             backgroundColor="#2a1a33"
+          />
+        );
+      case WeaponType.SPEAR:
+        return (
+          <ResourceBar
+            current={currentEssence}
+            max={100}
+            color="#00D4FF" // Light blue for Essence
+            backgroundColor="#1a2332"
           />
         );
       default:

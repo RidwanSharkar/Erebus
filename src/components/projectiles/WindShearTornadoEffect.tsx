@@ -1,6 +1,95 @@
 import React, { useRef } from 'react';
 import { Vector3, Group, AdditiveBlending, DoubleSide } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
+
+// Whirlwind Radial Wave Effect Component
+export function WhirlwindRadialWaveEffect({
+  getPlayerPosition,
+  startTime,
+  duration,
+  onComplete
+}: {
+  getPlayerPosition: () => Vector3;
+  startTime: number;
+  duration: number;
+  onComplete: () => void;
+}) {
+  const groupRef = useRef<Group>(null);
+  const hasCompleted = useRef(false);
+
+  useFrame(() => {
+    if (!groupRef.current || hasCompleted.current) return;
+
+    const now = Date.now();
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+
+    if (progress >= 1) {
+      if (!hasCompleted.current) {
+        hasCompleted.current = true;
+        onComplete();
+      }
+      return;
+    }
+
+    const playerPosition = getPlayerPosition();
+    groupRef.current.position.copy(playerPosition);
+
+    // Create expanding wave effect - faster and more explosive
+    const waveScale = progress * 10; // Expand to 6 units radius (faster expansion)
+    groupRef.current.scale.setScalar(waveScale);
+
+    // Add opacity fading - fade out as it expands
+    const opacity = Math.max(0, 1 - progress * 2); // Fade out faster than expansion
+    groupRef.current.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        if (Array.isArray(child.material)) {
+          child.material.forEach(mat => {
+            if (mat.opacity !== undefined) {
+              mat.opacity = opacity;
+            }
+          });
+        } else if (child.material.opacity !== undefined) {
+          child.material.opacity = opacity;
+        }
+      }
+    });
+  });
+
+  return (
+    <group ref={groupRef}>
+      {/* Main radial wave ring */}
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0.155, 0]}>
+        <ringGeometry args={[0.8, 1, 32]} />
+        <meshStandardMaterial
+          color="#C0C0C0"
+          emissive="#808080"
+          emissiveIntensity={2}
+          transparent
+          opacity={0.8}
+          side={DoubleSide}
+          blending={AdditiveBlending}
+        />
+      </mesh>
+
+      {/* Secondary inner wave */}
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0.15, 0]}>
+        <ringGeometry args={[0.4, 0.6, 24]} />
+        <meshStandardMaterial
+          color="#A0A0A0"
+          emissive="#606060"
+          emissiveIntensity={1.5}
+          transparent
+          opacity={0.6}
+          side={DoubleSide}
+          blending={AdditiveBlending}
+        />
+      </mesh>
+
+    </group>
+  );
+}
 
 interface WindShearTornadoEffectProps {
   getPlayerPosition: () => Vector3;
@@ -40,11 +129,11 @@ export default function WindShearTornadoEffect({
     const playerPosition = getPlayerPosition();
 
     // Rotate the entire tornado effect
-    const rotationSpeed =2; // Rotation speed
+    const rotationSpeed =2.5; // Rotation speed
     groupRef.current.rotation.y += rotationSpeed;
 
     // Scale effect based on progress (grows slightly then fades)
-    const scale = 0.6 + (progress * 0.4); // Grows from 0.8 to 1.2
+    const scale = 0.7 + (progress * 0.3); // Grows from 0.8 to 1.2
     groupRef.current.scale.setScalar(scale);
 
     // Position the effect at the exact player position (follow player)

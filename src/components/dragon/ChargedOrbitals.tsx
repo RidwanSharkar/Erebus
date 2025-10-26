@@ -72,6 +72,8 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
         return '#00FF88';
       case WeaponType.BOW:
         return '#3A905E';
+      case WeaponType.SPEAR:
+        return '#E8CD57'; // Light blue/teal for Spear
     }
   };
 

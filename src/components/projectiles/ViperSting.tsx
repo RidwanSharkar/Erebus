@@ -48,8 +48,8 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
       <mesh rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[0.04, 0.15, 2.5, 8]} />
         <meshStandardMaterial
-          color="#8B3F9B" // Dark purple venom color
-          emissive="#5A2B5F"
+          color="#ff4400" // Reddish-orange PerfectShot color
+          emissive="#cc0000"
           emissiveIntensity={1.2}
           transparent
           opacity={projectile.opacity}
@@ -60,8 +60,8 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
       <mesh position={[0, 0, 1.25]} rotation={[Math.PI / 2, 0, 0]}>
         <coneGeometry args={[0.15, 0.6, 6]} />
         <meshStandardMaterial
-          color="#A855C7" 
-          emissive="#7E3A9F"
+          color="#cc0000"
+          emissive="#ff4400"
           emissiveIntensity={1.5}
           transparent
           opacity={projectile.opacity}
@@ -76,8 +76,8 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
           >
             <torusGeometry args={[0.15 + i * 0.05, 0.02, 6, 12]} />
             <meshStandardMaterial
-              color="#A855C7" // Medium purple
-              emissive="#A855C7"
+              color="#cc0000" // Dark red
+              emissive="#cc0000"
               emissiveIntensity={1.5 + 1}
               transparent
               opacity={projectile.opacity * 0.7}
@@ -92,8 +92,8 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
       <mesh>
         <sphereGeometry args={[0.08, 8, 8]} />
         <meshStandardMaterial
-          color="#C084FC"
-          emissive="#A855C7"
+          color="#ff6600"
+          emissive="#cc0000"
           emissiveIntensity={3}
           transparent
           opacity={projectile.opacity}
@@ -120,8 +120,8 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
             <mesh scale={[trailScale, trailScale, trailScale]}>
               <sphereGeometry args={[0.15, 8, 8]} />
               <meshStandardMaterial
-                color="#A855C7" // Medium purple
-                emissive="#A855C7"
+                color="#cc0000" // Dark red
+                emissive="#cc0000"
                 emissiveIntensity={4 + 2}
                 transparent
                 opacity={trailOpacity}
@@ -134,8 +134,8 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
             <mesh scale={[trailScale * 1.5, trailScale * 1.5, trailScale * 1.5]}>
               <sphereGeometry args={[0.2, 6, 6]} />
               <meshStandardMaterial
-                color="#C084FC" // Light purple
-                emissive="#C084FC"
+                color="#ff6600" // Orange
+                emissive="#ff6600"
                 emissiveIntensity={2 + 1}
                 transparent
                 opacity={trailOpacity * 0.5}
@@ -149,7 +149,7 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
 
       {/* Point light for glow effect */}
       <pointLight
-        color="#A855C7"
+        color="#cc0000"
         intensity={2 * projectile.opacity}
         distance={4}
         decay={2}

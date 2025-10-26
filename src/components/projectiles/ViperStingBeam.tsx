@@ -20,11 +20,11 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
   const duration = 200; // Slightly longer than bow powershot
   const fadeStartTime = useRef<number | null>(null);
   
-  // Purple venom theme colors
+  // Reddish-orange PerfectShot theme colors
   const colors = {
-    core: "#8B3F9B",      // Dark purple
-    emissive: "#A855C7",   // Medium purple
-    outer: "#C084FC"       // Light purple
+    core: "#ff4400",      // Reddish-orange
+    emissive: "#cc0000",   // Dark red
+    outer: "#ff6600"       // Orange
   };
   
   useFrame(() => {
@@ -194,8 +194,8 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
                   <mesh>
                     <sphereGeometry args={[0.03, 4, 4]} />
                     <meshStandardMaterial
-                      color="#E879F9"
-                      emissive="#E879F9"
+                      color="#ff6600"
+                      emissive="#ff6600"
                       emissiveIntensity={10 * fadeProgress}
                       transparent
                       opacity={0.9 * fadeProgress}
@@ -210,8 +210,8 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
             <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 10]}>
               <cylinderGeometry args={[0.15, 0.15, 20, 8]} />
               <meshStandardMaterial
-                color="#E879F9"
-                emissive="#E879F9"
+                color="#ff6600"
+                emissive="#ff6600"
                 emissiveIntensity={3 * fadeProgress}
                 transparent
                 opacity={0.4 * fadeProgress}

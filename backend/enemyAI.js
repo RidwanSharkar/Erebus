@@ -789,8 +789,8 @@ class EnemyAI {
     // Different enemy types have different movement speeds
     switch (enemyType) {
       case 'elite': return 0.0; // Elite enemies are stationary like training dummies
-      case 'boss': return 1.165; // Boss moves at moderate speed
-      case 'boss-skeleton': return 2; // Boss-summoned skeletons move at normal skeleton speed
+      case 'boss': return 1.25; // Boss moves at moderate speed
+      case 'boss-skeleton': return 1.75; // Boss-summoned skeletons move at normal skeleton speed
       default: return 2.0;
     }
   }

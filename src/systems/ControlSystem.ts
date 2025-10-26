@@ -153,6 +153,10 @@ export class ControlSystem extends System {
 
   // Callback for Flurry healing effect
   private onFlurryHealingEffectCallback?: (position: Vector3) => void;
+  // Callback for Whirlwind radial wave effect
+  private onWhirlwindRadialWaveCallback?: (playerId: string, duration: number) => void;
+  // Callback for Lightning Storm ability
+  private onLightningStormCallback?: (position: Vector3) => void;
 
   // Local socket ID for identifying the local player
   private localSocketId: string | null = null;
@@ -292,6 +296,9 @@ export class ControlSystem extends System {
   private throwSpearCooldown = 4.0; // 4 second cooldown
   private isThrowSpearCharging = false;
   private throwSpearChargeProgress = 0;
+  private throwSpearChargeStartTime = 0;
+  private isThrowSpearReleasing = false;
+  private throwSpearReleaseTime = 0;
 
   // Flurry ability state (Spear)
   private lastFlurryTime = 0;
@@ -299,6 +306,10 @@ export class ControlSystem extends System {
   private isFlurryActive = false;
   private flurryStartTime = 0;
   private flurryDuration = 5.0; // 5 second duration
+
+  // Lightning Storm ability state (Spear)
+  private lastLightningStormTime = 0;
+  private lightningStormCooldown = 1.0; // 1 second cooldown
 
   // Public getter for stealth state
   public getIsStealthing(): boolean {
@@ -899,7 +910,7 @@ export class ControlSystem extends System {
       this.chargeProgress = 0;
 
       if (this.inputManager.isMouseButtonPressed(0)) { // Left mouse button pressed
-        const currentTime = performance.now() / 1000; // Convert to seconds
+        const currentTime = Date.now() / 1000; // Convert to seconds
 
         // Check cooldown
         if (currentTime - this.lastBurstFireTime >= this.burstFireRate) {
@@ -1395,7 +1406,7 @@ export class ControlSystem extends System {
 
   private fireBurstAttack(position: Vector3, direction: Vector3): void {
     // Fire 3 projectiles in rapid succession with small delays
-    const currentTime = performance.now() / 1000; // Convert to seconds
+    const currentTime = Date.now() / 1000; // Convert to seconds
 
     // Fire first projectile immediately
     this.createBurstProjectile(position, direction);
@@ -2109,6 +2120,14 @@ export class ControlSystem extends System {
     this.onFlurryHealingEffectCallback = callback;
   }
 
+  public setWhirlwindRadialWaveCallback(callback: (playerId: string, duration: number) => void): void {
+    this.onWhirlwindRadialWaveCallback = callback;
+  }
+
+  public setLightningStormCallback(callback: (position: Vector3) => void): void {
+    this.onLightningStormCallback = callback;
+  }
+
   public setDamageNumbersCallback(callback: (damageNumbers: Array<{
     id: string;
     damage: number;
@@ -2373,6 +2392,10 @@ export class ControlSystem extends System {
 
   public getThrowSpearChargeProgress(): number {
     return this.throwSpearChargeProgress;
+  }
+
+  public isThrowSpearReleasingActive(): boolean {
+    return this.isThrowSpearReleasing;
   }
 
   public getIsFlurryActive(): boolean {
@@ -3184,7 +3207,7 @@ export class ControlSystem extends System {
   }
 
   private handleSpearInput(playerTransform: Transform): void {
-    const currentTime = performance.now() / 1000;
+    const currentTime = Date.now() / 1000;
 
     // Handle left click for spear thrust attack
     if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging) {
@@ -3201,6 +3224,11 @@ export class ControlSystem extends System {
       this.performWhirlwind(playerTransform);
     }
 
+    // Handle R key for Lightning Storm ability
+    if (this.inputManager.isKeyPressed('r') && !this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging && !this.isFlurryActive && this.isAbilityUnlocked('R')) {
+      this.performLightningStorm(playerTransform);
+    }
+
     // Handle F key for Flurry ability
     if (this.inputManager.isKeyPressed('f') && !this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging && !this.isFlurryActive && this.isAbilityUnlocked('F')) {
       this.performFlurry(playerTransform);
@@ -3209,6 +3237,15 @@ export class ControlSystem extends System {
     // Update Throw Spear charging state
     if (this.isThrowSpearCharging) {
       this.updateThrowSpearCharging(playerTransform, currentTime);
+    }
+
+    // Update Throw Spear releasing state
+    if (this.isThrowSpearReleasing) {
+      // Keep releasing animation for 0.15 seconds, then hide spear
+      if (currentTime - this.throwSpearReleaseTime >= 0.15) {
+        this.isThrowSpearReleasing = false;
+        this.throwSpearReleaseTime = 0;
+      }
     }
 
     // Update Whirlwind charging state
@@ -3230,8 +3267,21 @@ export class ControlSystem extends System {
   private performSpearMeleeAttack(playerTransform: Transform): void {
     // Rate limiting - prevent spam clicking
     const currentTime = Date.now() / 1000;
-    // Use doubled attack speed (halved fire rate) when Flurry is active
-    const effectiveFireRate = this.isFlurryActive ? this.swordFireRate / 2 : this.swordFireRate;
+
+    // Base fire rate
+    let effectiveFireRate = this.swordFireRate;
+
+    // Apply Flurry speed boost (halved fire rate)
+    if (this.isFlurryActive) {
+      effectiveFireRate /= 1.5;
+    }
+
+    // Apply Essence attack speed bonus for Spear (1% per Essence, max 100%)
+    if (this.currentWeapon === WeaponType.SPEAR) {
+      const currentEssence = (window as any).gameUI?.getCurrentEssence?.() || 0;
+      const speedMultiplier = 1 + (currentEssence / 100); // 1% per Essence
+      effectiveFireRate /= speedMultiplier; // Lower fire rate = faster attacks
+    }
     if (currentTime - this.lastSwordFireTime < effectiveFireRate) {
       return;
     }
@@ -3261,11 +3311,8 @@ export class ControlSystem extends System {
     direction.normalize();
 
     // Spear attack parameters - longer range than melee
-    const spearRange = 8.0; // Longer range for spear
-    const spearAngle = Math.PI / 3; // 60 degree cone
-
-    // Base damage for spear
-    let baseDamage = 50; // Spear base damage
+    const spearRange = 6.75; // Longer range for spear
+    const spearAngle = Math.PI / 2; // 60 degree cone
 
     // Get combat system to apply damage
     const combatSystem = this.world.getSystem(CombatSystem);
@@ -3293,10 +3340,16 @@ export class ControlSystem extends System {
         const maxAngleDegrees = (spearAngle / 2) * 180 / Math.PI;
 
         if (angle <= spearAngle / 2) {
-          // Enemy is within attack cone - calculate damage with critical hits
+          // Enemy is within attack cone - calculate distance-scaled damage
           if (combatSystem && this.playerEntity) {
+            // Scale damage based on distance: 30-60 damage (0 to 6.75 units)
+            const minDamage = 30;
+            const maxDamage = 60;
+            const distanceRatio = Math.min(distance / spearRange, 1.0); // Clamp to max range
+            const scaledDamage = minDamage + (distanceRatio * (maxDamage - minDamage));
+
             // Calculate damage using DamageCalculator to get critical hit information
-            const damageResult = calculateDamage(baseDamage, this.currentWeapon);
+            const damageResult = calculateDamage(scaledDamage, this.currentWeapon);
             const actualDamage = damageResult.damage;
 
             // Track critical hits for rage generation
@@ -3314,7 +3367,7 @@ export class ControlSystem extends System {
 
     // If Flurry is active and enemies were hit, heal the player
     if (this.isFlurryActive && enemiesHit > 0 && this.playerEntity) {
-      const healPerHit = 20;
+      const healPerHit = 15;
       const totalHealing = healPerHit * enemiesHit;
       
       const playerHealth = this.playerEntity.getComponent(Health);
@@ -3366,7 +3419,7 @@ export class ControlSystem extends System {
   }
 
   private performWhirlwind(playerTransform: Transform): void {
-    const currentTime = performance.now() / 1000;
+    const currentTime = Date.now() / 1000;
 
     // Check cooldown
     if (currentTime - this.lastWhirlwindTime < this.whirlwindCooldown) {
@@ -3410,6 +3463,12 @@ export class ControlSystem extends System {
     this.whirlwindStartTime = currentTime;
     this.lastWhirlwindTime = currentTime;
 
+    // Trigger radial wave effect during active whirlwind phase
+    if (this.onWhirlwindRadialWaveCallback) {
+      console.log('🌪️ Calling onWhirlwindRadialWaveCallback for Whirlwind');
+      this.onWhirlwindRadialWaveCallback(this.localSocketId || 'local', this.whirlwindDuration * 1000);
+    }
+
     // Get camera direction for attack
     const direction = new Vector3();
     this.camera.getWorldDirection(direction);
@@ -3419,6 +3478,14 @@ export class ControlSystem extends System {
     // Trigger visual effect callback
     if (this.onWhirlwindCallback) {
       this.onWhirlwindCallback(playerTransform.position.clone(), direction, chargeDamage);
+    }
+
+    // Grant Essence based on charge time (10 Essence per second of charge)
+    const whirlwindChargeTime = this.whirlwindChargeProgress * 2.0; // Whirlwind also charges for up to 2 seconds
+    const essenceGain = Math.floor(whirlwindChargeTime * 10);
+    if ((window as any).gameUI?.gainEssence) {
+      (window as any).gameUI.gainEssence(essenceGain);
+      console.log('🌪️ Gained', essenceGain, 'Essence from Whirlwind');
     }
 
     // Play whirlwind sound
@@ -3432,7 +3499,7 @@ export class ControlSystem extends System {
     // Get all entities that could be damaged
     const allEntities = this.world.getAllEntities();
     const playerPosition = playerTransform.position;
-    const whirlwindRadius = 3.5; // 3.5 unit radius for damage
+    const whirlwindRadius = 6.5; // 3.5 unit radius for damage
 
     // Get combat system
     const combatSystem = this.world.getSystem(CombatSystem);
@@ -3488,7 +3555,7 @@ export class ControlSystem extends System {
   }
 
   private performThrowSpear(playerTransform: Transform): void {
-    const currentTime = performance.now() / 1000;
+    const currentTime = Date.now() / 1000;
 
     console.log('🎯 performThrowSpear called!');
 
@@ -3503,6 +3570,7 @@ export class ControlSystem extends System {
     // Start charging
     this.isThrowSpearCharging = true;
     this.throwSpearChargeProgress = 0;
+    this.throwSpearChargeStartTime = currentTime;
     this.whirlwindStartTime = currentTime; // Reuse whirlwindStartTime for charge tracking
 
     // Play charging sound (optional - can be added later)
@@ -3517,8 +3585,12 @@ export class ControlSystem extends System {
     this.throwSpearChargeProgress = Math.min(chargeTime / maxChargeTime, 1.0);
 
     // Check if Q key is released or max charge reached
-    if (!this.inputManager.isKeyPressed('q') || this.throwSpearChargeProgress >= 1.0) {
-      // Release and execute Throw Spear
+    // Check if we should execute: key released AND minimum hold time (0.5s) passed, OR fully charged
+    const minHoldTime = 0.5; // Minimum 0.5 seconds hold time
+    const hasMinHoldTime = (currentTime - this.throwSpearChargeStartTime) >= minHoldTime;
+
+    if ((!this.inputManager.isKeyPressed('q') && hasMinHoldTime) || this.throwSpearChargeProgress >= 1.0) {
+      // Release and execute Throw Spear (if minimum hold time met or fully charged)
       this.executeThrowSpear(playerTransform, currentTime);
     }
   }
@@ -3526,8 +3598,10 @@ export class ControlSystem extends System {
   private executeThrowSpear(playerTransform: Transform, currentTime: number): void {
     console.log('🎯 executeThrowSpear called!');
 
-    // Stop charging
+    // Stop charging and start release animation
     this.isThrowSpearCharging = false;
+    this.isThrowSpearReleasing = true;
+    this.throwSpearReleaseTime = currentTime;
 
     // Calculate charge time (0 to 2 seconds)
     const chargeTime = this.throwSpearChargeProgress * 2.0;
@@ -3548,6 +3622,13 @@ export class ControlSystem extends System {
     // Play throw sound
     this.audioSystem?.playSwordSwingSound?.(1, playerTransform.position);
 
+    // Grant Essence based on charge time (10 Essence per second of charge)
+    const essenceGain = Math.floor(chargeTime * 10);
+    if ((window as any).gameUI?.gainEssence) {
+      (window as any).gameUI.gainEssence(essenceGain);
+      console.log('🎯 Gained', essenceGain, 'Essence from Throw Spear');
+    }
+
     // Trigger the throw spear callback if set
     if (this.onThrowSpearCallback) {
       console.log('🎯 Calling onThrowSpearCallback');
@@ -3562,10 +3643,11 @@ export class ControlSystem extends System {
 
     // Reset charge progress
     this.throwSpearChargeProgress = 0;
+    this.throwSpearChargeStartTime = 0;
   }
 
   private performFlurry(playerTransform: Transform): void {
-    const currentTime = performance.now() / 1000;
+    const currentTime = Date.now() / 1000;
 
     console.log('⚔️ performFlurry called!');
 
@@ -3575,7 +3657,20 @@ export class ControlSystem extends System {
       return;
     }
 
+    // Check Essence cost (40 Essence)
+    const essenceCost = 40;
+    if (!(window as any).gameUI?.getCurrentEssence || (window as any).gameUI.getCurrentEssence() < essenceCost) {
+      console.log('⚔️ Not enough Essence for Flurry');
+      return;
+    }
+
     console.log('⚔️ Activating Flurry!');
+
+    // Consume Essence
+    if ((window as any).gameUI?.consumeEssence) {
+      (window as any).gameUI.consumeEssence(essenceCost);
+      console.log(`⚔️ Consumed ${essenceCost} Essence for Flurry`);
+    }
 
     // Activate Flurry
     this.isFlurryActive = true;
@@ -3600,6 +3695,47 @@ export class ControlSystem extends System {
       this.onFlurryCallback(playerTransform.position.clone());
     } else {
       console.log('⚔️ onFlurryCallback is not set');
+    }
+  }
+
+  private performLightningStorm(playerTransform: Transform): void {
+    const currentTime = Date.now() / 1000;
+
+    console.log('⚡ performLightningStorm called!');
+
+    // Check cooldown
+    if (currentTime - this.lastLightningStormTime < this.lightningStormCooldown) {
+      console.log('⚡ Lightning Storm on cooldown');
+      return;
+    }
+
+    // Check Essence cost (5 Essence)
+    const essenceCost = 5;
+    if (!(window as any).gameUI?.getCurrentEssence || (window as any).gameUI.getCurrentEssence() < essenceCost) {
+      console.log('⚡ Not enough Essence for Lightning Storm');
+      return;
+    }
+
+    console.log('⚡ Activating Lightning Storm!');
+
+    // Consume Essence
+    if ((window as any).gameUI?.consumeEssence) {
+      (window as any).gameUI.consumeEssence(essenceCost);
+      console.log(`⚡ Consumed ${essenceCost} Essence for Lightning Storm`);
+    }
+
+    // Update cooldown
+    this.lastLightningStormTime = currentTime;
+
+    // Play activation sound
+    this.audioSystem?.playColossusStrikeSound?.(playerTransform.position);
+
+    // Trigger the Lightning Storm callback if set
+    if (this.onLightningStormCallback) {
+      console.log('⚡ Calling onLightningStormCallback');
+      this.onLightningStormCallback(playerTransform.position.clone());
+    } else {
+      console.log('⚡ onLightningStormCallback is not set');
     }
   }
 
@@ -4282,6 +4418,9 @@ export class ControlSystem extends System {
     this.isWhirlwinding = false; // Reset whirlwind spinning
     this.isThrowSpearCharging = false; // Reset throw spear charging
     this.throwSpearChargeProgress = 0;
+    this.throwSpearChargeStartTime = 0;
+    this.isThrowSpearReleasing = false; // Reset throw spear releasing
+    this.throwSpearReleaseTime = 0;
     this.isFlurryActive = false; // Reset Flurry state
     this.isSkyfalling = false;
     this.skyfallPhase = 'none';
@@ -5507,7 +5646,7 @@ export class ControlSystem extends System {
       // Create proper ECS projectile entity
       const projectileConfig = {
         speed: 22, // Slightly faster than regular arrows (20)
-        damage: 60, // High damage for barrage arrows
+        damage: 87, // High damage for barrage arrows
         lifetime: 8,
         maxDistance: 25, // Limit barrage arrows to 25 units distance (same as regular arrows)
         piercing: false,
@@ -5766,6 +5905,11 @@ export class ControlSystem extends System {
         current: Math.max(0, this.flurryCooldown - (currentTime - this.lastFlurryTime)),
         max: this.flurryCooldown,
         isActive: this.isFlurryActive
+      };
+      cooldowns['R'] = {
+        current: Math.max(0, this.lightningStormCooldown - (currentTime - this.lastLightningStormTime)),
+        max: this.lightningStormCooldown,
+        isActive: false // Lightning Storm is instant, no active state
       };
     }
 

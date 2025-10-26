@@ -38,11 +38,13 @@ import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { ReanimateRef } from '@/components/weapons/Reanimate';
 
 import ColossusStrike from '@/components/weapons/ColossusStrike';
+import LightningStorm from '@/components/weapons/LightningStorm';
+import SmiteComponent from '@/components/weapons/Smite';
 import SabreReaperMistEffect from '@/components/weapons/SabreReaperMistEffect';
 import FlurryHealingEffect from '@/components/weapons/FlurryHealingEffect';
 
 import WindShearProjectileManager, { triggerWindShearProjectile } from '@/components/projectiles/WindShearProjectile';
-import WindShearTornadoEffect from '@/components/projectiles/WindShearTornadoEffect';
+import WindShearTornadoEffect, { WhirlwindRadialWaveEffect } from '@/components/projectiles/WindShearTornadoEffect';
 
 import UnifiedProjectileManager from '@/components/managers/UnifiedProjectileManager';
 import IcebeamManager from '@/components/managers/IcebeamManager';
@@ -474,6 +476,18 @@ const [maxMana, setMaxMana] = useState(150);
   }>>([]);
   const nextColossusStrikeEffectId = useRef(0);
 
+  // Lightning Storm Effect Management
+  const [lightningStormEffects, setLightningStormEffects] = useState<Array<{
+    id: number;
+    playerId: string;
+    position: Vector3;
+    damage: number;
+    startTime: number;
+    duration: number;
+    onDamageDealt?: (damageDealt: boolean) => void;
+  }>>([]);
+  const nextLightningStormEffectId = useRef(0);
+
   // PVP Wind Shear Effect Management
   const [pvpWindShearEffects, setPvpWindShearEffects] = useState<Array<{
     id: number;
@@ -494,6 +508,16 @@ const [maxMana, setMaxMana] = useState(150);
     duration: number;
   }>>([]);
   const nextWindShearTornadoEffectId = useRef(0);
+
+  // PVP Whirlwind Radial Wave Effect Management
+  const [pvpWhirlwindRadialWaveEffects, setPvpWhirlwindRadialWaveEffects] = useState<Array<{
+    id: number;
+    playerId: string;
+    position: Vector3;
+    startTime: number;
+    duration: number;
+  }>>([]);
+  const nextWhirlwindRadialWaveEffectId = useRef(0);
 
   // PVP DeathGrasp Effect Management
   const [pvpDeathGraspEffects, setPvpDeathGraspEffects] = useState<Array<{
@@ -871,6 +895,37 @@ const [maxMana, setMaxMana] = useState(150);
     }, colossusStrikeEffect.duration);
   }, []);
 
+  // Function to create Lightning Storm effect
+  const createLightningStormEffect = useCallback((playerId: string, position: Vector3, damage: number, onDamageDealt?: (damageDealt: boolean) => void) => {
+    const lightningStormEffect = {
+      id: nextLightningStormEffectId.current++,
+      playerId,
+      position: position.clone(),
+      damage: damage,
+      startTime: Date.now(),
+      duration: 1000, // 1.0 seconds
+      onDamageDealt: onDamageDealt
+    };
+
+    // Use batched updates for lightning storm effects
+    PVPStateUpdateHelpers.batchEffectUpdates([{
+      type: 'add',
+      effectType: 'lightningStorm',
+      setter: setLightningStormEffects,
+      data: lightningStormEffect
+    }]);
+
+    // Clean up lightning storm effect after duration using batched updates
+    setTimeout(() => {
+      PVPStateUpdateHelpers.batchEffectUpdates([{
+        type: 'remove',
+        effectType: 'lightningStorm',
+        setter: setLightningStormEffects,
+        filterId: lightningStormEffect.id
+      }]);
+    }, lightningStormEffect.duration);
+  }, []);
+
   // Function to create wind shear effect on PVP players
   const createPvpWindShearEffect = useCallback((playerId: string, position: Vector3, direction: Vector3) => {
     // Trigger the visual projectile effect
@@ -955,6 +1010,51 @@ const [maxMana, setMaxMana] = useState(150);
         effectType: 'windShearTornado',
         setter: setPvpWindShearTornadoEffects,
         filterId: tornadoEffect.id
+      }]);
+    }, duration);
+  }, [players, socket?.id, playerEntity]);
+
+  // Function to create whirlwind radial wave effect on PVP players
+  const createPvpWhirlwindRadialWaveEffect = useCallback((playerId: string, duration: number) => {
+    // For local player (socket.id or 'local'), use the actual player entity position
+    let initialPosition = new Vector3();
+    let player = players.get(playerId);
+
+    // Check if this is for the local player
+    const isLocalPlayer = playerId === socket?.id || playerId === 'local';
+
+    if (isLocalPlayer && playerEntity) {
+      const transform = playerEntity.getComponent(Transform);
+      if (transform) {
+        initialPosition = transform.position.clone();
+      }
+    } else if (player) {
+      initialPosition = new Vector3(player.position.x, player.position.y, player.position.z);
+    }
+
+    const radialWaveEffect = {
+      id: nextWhirlwindRadialWaveEffectId.current++,
+      playerId,
+      position: initialPosition,
+      startTime: Date.now(),
+      duration
+    };
+
+    // Use batched updates for radial wave effects
+    PVPStateUpdateHelpers.batchEffectUpdates([{
+      type: 'add',
+      effectType: 'whirlwindRadialWave',
+      setter: setPvpWhirlwindRadialWaveEffects,
+      data: radialWaveEffect
+    }]);
+
+    // Clean up radial wave effect after duration using batched updates
+    setTimeout(() => {
+      PVPStateUpdateHelpers.batchEffectUpdates([{
+        type: 'remove',
+        effectType: 'whirlwindRadialWave',
+        setter: setPvpWhirlwindRadialWaveEffects,
+        filterId: radialWaveEffect.id
       }]);
     }, duration);
   }, [players, socket?.id, playerEntity]);
@@ -2073,6 +2173,13 @@ const hasMana = useCallback((amount: number) => {
           const damage = (data.extraData && data.extraData.damage) ? data.extraData.damage : 100;
           createPvpColossusStrikeEffect(data.playerId, position, damage, undefined); // No healing callback for remote players
 
+        } else if (data.abilityType === 'lightningStorm') {
+
+          // Create lightning storm visual effect at the player's position
+          const position = new Vector3(data.position.x, data.position.y, data.position.z);
+          const damage = (data.extraData && data.extraData.damage) ? data.extraData.damage : 117;
+          createLightningStormEffect(data.playerId, position, damage, undefined); // No healing callback for remote players
+
           // Update player state to show colossus striking animation
           setMultiplayerPlayerStates(prev => {
             const updated = new Map(prev);
@@ -2734,6 +2841,9 @@ const hasMana = useCallback((amount: number) => {
             break;
           case 'colossusStrike':
             window.audioSystem.playEnemyColossusStrikeSound(position);
+            break;
+          case 'lightningStorm':
+            window.audioSystem.playEnemyColossusStrikeSound(position); // Reuse colossus strike sound for lightning storm
             break;
           case 'windShear':
             window.audioSystem.playEnemyWindshearSound(position);
@@ -4594,6 +4704,15 @@ const hasMana = useCallback((amount: number) => {
       broadcastPlayerAbility('colossusStrike', position, direction, undefined, { damage });
     });
 
+    // Set up Lightning Storm callback
+    controlSystem.setLightningStormCallback((position: Vector3) => {
+      // Create local Lightning Storm effect with fixed damage of 117
+      createLightningStormEffect(socket?.id || '', position, 117);
+
+      // Broadcast Lightning Storm ability to other players
+      broadcastPlayerAbility('lightningStorm', position, new Vector3(0, 0, 1), undefined, { damage: 117 });
+    });
+
     // Set up Wind Shear callback
     controlSystem.setWindShearCallback((position: Vector3, direction: Vector3) => {
       // Create local Wind Shear projectile effect
@@ -4625,6 +4744,12 @@ const hasMana = useCallback((amount: number) => {
           }, duration);
         }
       }
+    });
+
+    // Set up Whirlwind Radial Wave callback
+    controlSystem.setWhirlwindRadialWaveCallback((playerId: string, duration: number) => {
+      // Create local radial wave effect
+      createPvpWhirlwindRadialWaveEffect(playerId, duration);
     });
 
     // Set up DeathGrasp callback
@@ -4769,6 +4894,7 @@ const hasMana = useCallback((amount: number) => {
           isWhirlwinding={controlSystemRef.current?.isWhirlwindActive() || false}
           isThrowSpearCharging={controlSystemRef.current?.isThrowSpearChargingActive() || false}
           throwSpearChargeProgress={controlSystemRef.current?.getThrowSpearChargeProgress() || 0}
+          isThrowSpearReleasing={controlSystemRef.current?.isThrowSpearReleasingActive() || false}
           isSkyfalling={weaponState.isSkyfalling}
           isBackstabbing={weaponState.isBackstabbing}
           isSundering={weaponState.isSundering}
@@ -5210,37 +5336,89 @@ const hasMana = useCallback((amount: number) => {
             health: enemy.health
           }));
 
+        // Debug: Check if boss/skeleton enemies are found
+        if (smiteEnemyData.length > 0) {
+          console.log('Runeblade R ability - Found enemies for damage:', smiteEnemyData.map(e => ({ id: e.id, type: enemies.get(e.id)?.type, distance: effect.position.distanceTo(e.position) })));
+        } else {
+          console.log('Runeblade R ability - No boss/skeleton enemies found in range');
+        }
+
         return (
-          <ColossusStrike
+          <SmiteComponent
             key={`smite-${effect.id}`}
             weaponType={WeaponType.RUNEBLADE}
             position={effect.position}
-            delayStart={0.25} // Delay the visual effect by 0.5 seconds
             onComplete={() => {
               // Remove effect after completion
               setPvpSmiteEffects(prev => prev.filter(e => e.id !== effect.id));
             }}
-            onHit={(targetId, damage, isCritical) => {
+            onHit={(targetId, damage) => {
               // Handle damage to enemies
               if (socket && currentRoomId) {
                 socket.emit('player-hit-enemy', {
                   roomId: currentRoomId,
                   enemyId: targetId,
                   damage: damage,
-                  isCritical: isCritical || false
+                  isCritical: false // Smite doesn't pass isCritical in onHit callback
                 });
               }
             }}
-            onDamageDealt={(damageDealt) => {
-              // Convert boolean to number for healing calculation (same as Smite)
-              if (effect.onDamageDealt && damageDealt) {
-                // Calculate base damage for healing (same as Smite: 100)
-                const baseDamage = 100;
-                effect.onDamageDealt(baseDamage);
+            onDamageDealt={(totalDamage) => {
+              // Smite passes total damage directly
+              if (effect.onDamageDealt && totalDamage > 0) {
+                effect.onDamageDealt(totalDamage);
               }
             }}
             enemyData={smiteEnemyData}
-            targetPlayerData={[]} // No player targets for Smite
+            setDamageNumbers={smiteDamageNumbers.setDamageNumbers}
+            nextDamageNumberId={smiteDamageNumbers.nextDamageNumberId}
+            combatSystem={engineRef.current?.getWorld().getSystem(CombatSystem)}
+            isCorruptedAuraActive={false} // Not applicable for Runeblade R ability
+          />
+        );
+      })}
+
+      {/* Lightning Storm Effects */}
+      {lightningStormEffects.map(effect => {
+        // Get enemy data for Lightning Storm targeting
+        const lightningStormEnemyData = Array.from(enemies.values())
+          .filter(enemy => enemy.type === 'boss' || enemy.type === 'bossSkeleton')
+          .map(enemy => ({
+            id: enemy.id,
+            position: new Vector3(enemy.position.x, enemy.position.y, enemy.position.z),
+            health: enemy.health,
+            isBoss: enemy.type === 'boss',
+            isSkeletonMinion: enemy.type === 'bossSkeleton'
+          }));
+
+        return (
+          <LightningStorm
+            key={`lightning-storm-${effect.id}`}
+            weaponType={WeaponType.SPEAR}
+            position={effect.position}
+            damage={117}
+            onComplete={() => {
+              // Remove effect after completion
+              setLightningStormEffects(prev => prev.filter(e => e.id !== effect.id));
+            }}
+            onHit={(targetId, damage) => {
+              // Handle damage to enemies
+              if (socket && currentRoomId) {
+                socket.emit('player-hit-enemy', {
+                  roomId: currentRoomId,
+                  enemyId: targetId,
+                  damage: damage,
+                  isCritical: false // Lightning Storm doesn't pass isCritical in onHit callback
+                });
+              }
+            }}
+            onDamageDealt={(damageDealtFlag) => {
+              // Lightning Storm damage dealt callback
+              if (effect.onDamageDealt && damageDealtFlag) {
+                effect.onDamageDealt(damageDealtFlag);
+              }
+            }}
+            enemyData={lightningStormEnemyData}
             setDamageNumbers={smiteDamageNumbers.setDamageNumbers}
             nextDamageNumberId={smiteDamageNumbers.nextDamageNumberId}
             combatSystem={engineRef.current?.getWorld().getSystem(CombatSystem)}
@@ -5289,6 +5467,41 @@ const hasMana = useCallback((amount: number) => {
             duration={effect.duration}
             onComplete={() => {
               setPvpWindShearTornadoEffects(prev => prev.filter(e => e.id !== effect.id));
+            }}
+          />
+        );
+      })}
+
+      {/* Whirlwind Radial Wave Effects (for Whirlwind ability) */}
+      {pvpWhirlwindRadialWaveEffects.map(effect => {
+        // Get player position function - track the player dynamically
+        const getPlayerPosition = () => {
+          const isLocalPlayer = effect.playerId === socket?.id || effect.playerId === 'local';
+
+          if (isLocalPlayer && playerEntity) {
+            const transform = playerEntity.getComponent(Transform);
+            if (transform) {
+              return transform.position.clone();
+            }
+          } else {
+            const player = players.get(effect.playerId);
+            if (player) {
+              return new Vector3(player.position.x, player.position.y, player.position.z);
+            }
+          }
+
+          // Fallback to initial position
+          return effect.position.clone();
+        };
+
+        return (
+          <WhirlwindRadialWaveEffect
+            key={`radial-wave-${effect.id}`}
+            getPlayerPosition={getPlayerPosition}
+            startTime={effect.startTime}
+            duration={effect.duration}
+            onComplete={() => {
+              setPvpWhirlwindRadialWaveEffects(prev => prev.filter(e => e.id !== effect.id));
             }}
           />
         );

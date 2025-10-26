@@ -56,7 +56,7 @@ export default function ArchmageCrest({
 
         // Spear subclasses
         case WeaponSubclass.STORM:
-          return { main: '#B8B8B8', emissive: '#C0C0C0', glow: '#E0E0E0', secondary: '#A8A8A8' };
+          return { main: '#E8CD57', emissive: '#E8CD57', glow: '#E8CD57', secondary: '#B0E0E6' };
         case WeaponSubclass.VALOR:
           return { main: '#A8A8A8', emissive: '#B0B0B0', glow: '#D0D0D0', secondary: '#909090' };
       }
