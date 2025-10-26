@@ -71,6 +71,12 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
           return '#17CE54'; // Keep original elemental color
         case WeaponSubclass.VENOM:
           return '#17CC93'; // Green/purple for venom 17CE54
+
+        // Spear subclasses
+        case WeaponSubclass.STORM:
+          return '#B8B8B8'; // Lighter greyish silver for storm
+        case WeaponSubclass.VALOR:
+          return '#A8A8A8'; // Darker greyish silver for valor
       }
     }
     
@@ -86,6 +92,8 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
         return '#00FF88'; // Green for runeblade
       case WeaponType.BOW:
         return '#3A905E'; //D09A1D try
+      case WeaponType.SPEAR:
+        return '#C0C0C0'; // Greyish silver for spear
     }
   };
 

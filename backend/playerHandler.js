@@ -465,6 +465,11 @@ function handlePlayerEvents(socket, gameRooms) {
 
     room.updatePlayerHealth(socket.id, 0);
 
+    // Remove dead player from all aggro charts (boss, skeletons, enemies)
+    if (room.enemyAI) {
+      room.enemyAI.removePlayerFromAllAggro(socket.id);
+    }
+
     // Broadcast player death to other players
     socket.to(roomId).emit('player-died', {
       playerId: socket.id
@@ -690,7 +695,7 @@ function handlePlayerEvents(socket, gameRooms) {
 
   // Handle player respawn confirmation for experience award
   socket.on('player-respawn', (data) => {
-    const { roomId, playerId } = data;
+    const { roomId, playerId, position } = data;
     
     if (!gameRooms.has(roomId)) return;
     
@@ -704,6 +709,10 @@ function handlePlayerEvents(socket, gameRooms) {
     // Reset player health to max on respawn
     player.health = player.maxHealth;
 
+    // Set respawn position (center of map if not provided)
+    const respawnPosition = position || { x: 0, y: 0.5, z: 0 };
+    player.position = respawnPosition;
+
     // Confirm death and award experience if there was a pending kill
     const confirmedKill = room.confirmPlayerDeath(playerId || socket.id);
 
@@ -713,6 +722,7 @@ function handlePlayerEvents(socket, gameRooms) {
       playerName: player.name,
       health: player.health,
       maxHealth: player.maxHealth,
+      position: respawnPosition,
       timestamp: Date.now()
     });
   });

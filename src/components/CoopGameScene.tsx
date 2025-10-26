@@ -2,11 +2,12 @@
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
-import { Vector3, Matrix4, Camera, PerspectiveCamera, Scene, WebGLRenderer, PCFSoftShadowMap, Color, Quaternion, Euler, Group, AdditiveBlending } from '@/utils/three-exports';
+import { Vector3, Matrix4, Camera, PerspectiveCamera, Scene, WebGLRenderer, PCFSoftShadowMap, Color, Quaternion, Euler, Group, AdditiveBlending, MeshBasicMaterial } from '@/utils/three-exports';
 import DragonRenderer from './dragon/DragonRenderer';
 import BossRenderer from './enemies/BossRenderer';
 import SummonedBossSkeleton from './enemies/SummonedBossSkeleton';
 import Meteor from './enemies/Meteor';
+import BossTeleportEffect from './enemies/BossTeleportEffect';
 import { useMultiplayer, Player } from '@/contexts/MultiplayerContext';
 import { SkillPointData } from '@/utils/SkillPointSystem';
 
@@ -38,8 +39,10 @@ import { ReanimateRef } from '@/components/weapons/Reanimate';
 
 import ColossusStrike from '@/components/weapons/ColossusStrike';
 import SabreReaperMistEffect from '@/components/weapons/SabreReaperMistEffect';
+import FlurryHealingEffect from '@/components/weapons/FlurryHealingEffect';
 
 import WindShearProjectileManager, { triggerWindShearProjectile } from '@/components/projectiles/WindShearProjectile';
+import WindShearTornadoEffect from '@/components/projectiles/WindShearTornadoEffect';
 
 import UnifiedProjectileManager from '@/components/managers/UnifiedProjectileManager';
 import IcebeamManager from '@/components/managers/IcebeamManager';
@@ -50,12 +53,14 @@ import StunManager, { addGlobalStunnedEnemy } from '@/components/weapons/StunMan
 import CobraShotManager from '@/components/projectiles/CobraShotManager';
 
 import RejuvenatingShotManager from '@/components/projectiles/RejuvenatingShotManager';
+import ThrowSpearManager, { triggerGlobalThrowSpear } from '@/components/projectiles/ThrowSpearManager';
 import {
   useOptimizedPVPEffects
 } from '@/components/pvp/OptimizedPVPManagers';
 import { pvpObjectPool } from '@/utils/PVPObjectPool';
 import { pvpStateBatcher, PVPStateUpdateHelpers } from '@/utils/PVPStateBatcher';
 import DeflectShieldManager, { triggerGlobalDeflectShield } from '@/components/weapons/DeflectShieldManager';
+import DeathEffect from '@/components/weapons/DeathEffect';
 import PlayerHealthBar from '@/components/ui/PlayerHealthBar';
 import EnhancedGround from '@/components/environment/EnhancedGround';
 
@@ -119,7 +124,7 @@ function TauntEffectIndicator({ position }: { position: Vector3 }) {
       // Rotate the ring
       ringRef.current.rotation.z = state.clock.elapsedTime * 3;
       // Pulse opacity
-      const material = ringRef.current.material as THREE.MeshBasicMaterial;
+      const material = ringRef.current.material as MeshBasicMaterial;
       material.opacity = 0.3 + Math.sin(state.clock.elapsedTime * 6) * 0.2;
     }
   });
@@ -427,7 +432,8 @@ const [weaponManaResources, setWeaponManaResources] = useState<{
   [WeaponType.SWORD]: 0,
   [WeaponType.BOW]: 0,
   [WeaponType.SABRES]: 0,
-  [WeaponType.RUNEBLADE]: getMaxManaForWeapon(WeaponType.RUNEBLADE, 1) // Start with level 1 capacity
+  [WeaponType.RUNEBLADE]: getMaxManaForWeapon(WeaponType.RUNEBLADE, 1), // Start with level 1 capacity
+  [WeaponType.SPEAR]: 0
 });
 const [maxMana, setMaxMana] = useState(150);
 
@@ -513,6 +519,14 @@ const [maxMana, setMaxMana] = useState(150);
     summonId?: number;
     targetId?: string;
   }>>([]);
+
+  // Flurry Healing Effect Management
+  const [flurryHealingEffects, setFlurryHealingEffects] = useState<Array<{
+    id: number;
+    position: Vector3;
+    startTime: number;
+  }>>([]);
+  const nextFlurryHealingEffectId = useRef(0);
 
   // PVP Venom Effect Management
   const [pvpVenomEffects, setPvpVenomEffects] = useState<Array<{
@@ -601,6 +615,15 @@ const [maxMana, setMaxMana] = useState(150);
     timestamp: number;
   }
   const [activeMeteors, setActiveMeteors] = useState<MeteorState[]>([]);
+
+  // Boss Teleport Effect State
+  interface TeleportEffectState {
+    id: string;
+    position: Vector3;
+    type: 'start' | 'end';
+    timestamp: number;
+  }
+  const [activeTeleportEffects, setActiveTeleportEffects] = useState<TeleportEffectState[]>([]);
 
   // Function to create enemy taunt effect (for Deathgrasp)
   const createEnemyTauntEffect = useCallback((enemyId: string, duration: number = 10000) => {
@@ -799,6 +822,22 @@ const [maxMana, setMaxMana] = useState(150);
         filterId: smiteEffect.id
       }]);
     }, smiteEffect.duration);
+  }, []);
+
+  // Function to trigger Flurry healing effect
+  const triggerFlurryHealingEffect = useCallback((position: Vector3) => {
+    const healingEffect = {
+      id: nextFlurryHealingEffectId.current++,
+      position: position.clone(),
+      startTime: Date.now()
+    };
+
+    setFlurryHealingEffects(prev => [...prev, healingEffect]);
+
+    // Clean up healing effect after 800ms (duration of the effect)
+    setTimeout(() => {
+      setFlurryHealingEffects(prev => prev.filter(e => e.id !== healingEffect.id));
+    }, 800);
   }, []);
 
   const createPvpColossusStrikeEffect = useCallback((playerId: string, position: Vector3, damage: number, onDamageDealt?: (damageDealt: boolean) => void) => {
@@ -1073,14 +1112,116 @@ const [maxMana, setMaxMana] = useState(150);
     }, venomEffect.duration);
   }, [socket?.id, broadcastPlayerDamage]);
 
+  // Function to handle player respawn after death timer
+  const handlePlayerRespawn = useCallback((respawnPlayerId: string) => {
+    if (!socket || respawnPlayerId !== socket.id) return;
+
+    // Check if there are any other alive players in the room
+    // Respawn is only allowed if at least one other player is alive
+    const alivePlayers = Array.from(players.values()).filter(player => 
+      player.id !== respawnPlayerId && player.health > 0
+    );
+
+    if (alivePlayers.length === 0) {
+      console.log(`⚠️ Cannot respawn player ${respawnPlayerId} - no other alive players in the room`);
+      // Keep the death effect active but don't respawn
+      return;
+    }
+
+    console.log(`🔄 Respawning player ${respawnPlayerId} at map center (${alivePlayers.length} alive players available)`);
+
+    // Clear death state
+    setPlayerDeathStates(prev => {
+      const newState = new Map(prev);
+      newState.delete(respawnPlayerId);
+      return newState;
+    });
+
+    // Clear death effect
+    setDeathEffects(prev => {
+      const newEffects = new Map(prev);
+      newEffects.delete(respawnPlayerId);
+      return newEffects;
+    });
+
+    // Revive the player entity
+    if (playerEntityRef.current !== null && engineRef.current) {
+      const world = engineRef.current.getWorld();
+      const playerEntity = world.getEntity(playerEntityRef.current);
+      if (playerEntity) {
+        const health = playerEntity.getComponent(Health);
+        const transform = playerEntity.getComponent(Transform);
+        
+        if (health && transform) {
+          // Revive with full health
+          health.revive();
+          
+          // Teleport to map center (0, 0.5, 0)
+          transform.setPosition(0, 0.5, 0);
+          
+          console.log(`✅ Player respawned at center: (0, 0.5, 0) with ${health.currentHealth}/${health.maxHealth} HP`);
+        }
+      }
+    }
+
+    // Re-enable control system
+    if (controlSystemRef.current) {
+      controlSystemRef.current.setPlayerDead(false);
+    }
+
+    // Re-enable camera rotation
+    if (cameraSystemRef.current && socket.id) {
+      cameraSystemRef.current.setDeathCameraDisabled(false, socket.id);
+    }
+
+    // Notify server of respawn
+    if (socket && currentRoomId) {
+      const world = engineRef.current?.getWorld();
+      const playerEntity = world?.getEntity(playerEntityRef.current!);
+      const health = playerEntity?.getComponent(Health);
+      
+      socket.emit('player-respawn', {
+        roomId: currentRoomId,
+        playerId: respawnPlayerId,
+        position: { x: 0, y: 0.5, z: 0 },
+        health: health?.currentHealth || health?.maxHealth,
+        maxHealth: health?.maxHealth
+      });
+    }
+  }, [socket, currentRoomId, playerEntityRef, engineRef, controlSystemRef, cameraSystemRef, players]);
+
   // Function to handle player death in PVP
   const handlePlayerDeath = useCallback((deadPlayerId: string, killerId: string | undefined) => {
+    console.log(`💀 handlePlayerDeath called for player ${deadPlayerId}, killed by ${killerId || 'unknown'}`);
+    
+    // Get the death position - for local player use ECS position, for remote players use players Map
+    let deathPosition: Vector3;
+    
+    if (deadPlayerId === socket?.id) {
+      // Local player - use accurate ECS position
+      const world = engineRef.current?.getWorld();
+      const localPlayerEntity = world?.getEntity(playerEntityRef.current!);
+      const transform = localPlayerEntity?.getComponent(Transform);
+      
+      if (transform && transform.position) {
+        deathPosition = transform.position.clone();
+        console.log(`💀 Local player death - using ECS position: (${deathPosition.x.toFixed(2)}, ${deathPosition.y.toFixed(2)}, ${deathPosition.z.toFixed(2)})`);
+      } else {
+        // Fallback to players Map if transform not available
+        const player = players.get(deadPlayerId);
+        deathPosition = player ? new Vector3(player.position.x, player.position.y, player.position.z) : new Vector3(0, 0.5, 0);
+        console.log(`💀 Local player death - fallback to players Map: (${deathPosition.x.toFixed(2)}, ${deathPosition.y.toFixed(2)}, ${deathPosition.z.toFixed(2)})`);
+      }
+    } else {
+      // Remote player - use players Map position
+      const player = players.get(deadPlayerId);
+      deathPosition = player ? new Vector3(player.position.x, player.position.y, player.position.z) : new Vector3(0, 0.5, 0);
+      console.log(`💀 Remote player ${deadPlayerId} death - using players Map: (${deathPosition.x.toFixed(2)}, ${deathPosition.y.toFixed(2)}, ${deathPosition.z.toFixed(2)})`);
+    }
+    
     // Mark player as dead
     setPlayerDeathStates(prev => {
       const newState = new Map(prev);
-      const player = players.get(deadPlayerId);
-      const deathPosition = player ? new Vector3(player.position.x, player.position.y, player.position.z) : new Vector3(0, 0.5, 0);
-
       newState.set(deadPlayerId, {
         isDead: true,
         deathTime: Date.now(),
@@ -1090,27 +1231,38 @@ const [maxMana, setMaxMana] = useState(150);
       return newState;
     });
 
-    // Start death effect locally
-    const player = players.get(deadPlayerId);
-    if (player) {
-      setDeathEffects(prev => {
-        const newEffects = new Map(prev);
-        newEffects.set(deadPlayerId, {
-          playerId: deadPlayerId,
-          position: new Vector3(player.position.x, player.position.y, player.position.z),
-          startTime: Date.now(),
-          isActive: true
-        });
-        return newEffects;
+    // Start death effect locally with accurate position
+    console.log(`💀 Creating death effect for player ${deadPlayerId} at position (${deathPosition.x.toFixed(2)}, ${deathPosition.y.toFixed(2)}, ${deathPosition.z.toFixed(2)})`);
+    
+    setDeathEffects(prev => {
+      const newEffects = new Map(prev);
+      newEffects.set(deadPlayerId, {
+        playerId: deadPlayerId,
+        position: deathPosition.clone(),
+        startTime: Date.now(),
+        isActive: true
       });
+      console.log(`💀 Death effects map now has ${newEffects.size} effects`);
+      return newEffects;
+    });
 
-      // Broadcast death effect to other players
-      broadcastPlayerDeathEffect(deadPlayerId, player.position, true);
-    }
+    // Broadcast death effect to other players
+    broadcastPlayerDeathEffect(deadPlayerId, deathPosition, true);
 
     // Set death state in ControlSystem to prevent movement and abilities
     if (deadPlayerId === socket?.id && controlSystemRef.current) {
+      console.log(`💀 Setting player dead state in ControlSystem for ${deadPlayerId}`);
       controlSystemRef.current.setPlayerDead(true);
+
+      // Play death sound effect
+      if (engineRef.current) {
+        const world = engineRef.current.getWorld();
+        const audioSystem = world.getSystem(AudioSystem);
+        if (audioSystem) {
+          // Play a death sound (using interface sound as placeholder)
+          (audioSystem as any).playSound?.('ui/interface', 0.3);
+        }
+      }
 
       // Also disable camera rotation during death
       if (cameraSystemRef.current) {
@@ -1125,16 +1277,20 @@ const [maxMana, setMaxMana] = useState(150);
           const health = playerEntity.getComponent(Health);
           if (health) {
             health.isDead = true; // Ensure Health component knows player is dead
-            health.setInvulnerable(6.0); // Make invulnerable for 6 seconds (1 second longer than respawn)
+            health.setInvulnerable(31.0); // Make invulnerable for 31 seconds (1 second longer than respawn)
           }
         }
       }
+
+      // Note: Respawn is triggered by DeathEffect onComplete callback after 30 seconds
+    } else {
+      console.log(`💀 Skipped death state setup for ${deadPlayerId} (not local player or no control system)`);
     }
 
     // Note: Experience rewards for kills are handled in handlePlayerDamaged
     // This function only handles the death of the local player
 
-  }, [socket?.id, players, updatePlayerHealth, playerEntityRef, engineRef]);
+  }, [socket, players, playerEntityRef, engineRef, controlSystemRef, cameraSystemRef, broadcastPlayerDeathEffect, handlePlayerRespawn]);
 
 
   // Function to handle wave completion (legacy multiplayer mode - wave experience removed)
@@ -1447,6 +1603,16 @@ const hasMana = useCallback((amount: number) => {
           return;
         }
         
+        if (data.attackType === 'throw_spear') {
+          // Trigger visual effect for Throw Spear projectile
+          const position = new Vector3(data.position.x, data.position.y, data.position.z);
+          const direction = new Vector3(data.direction.x, data.direction.y, data.direction.z);
+          const chargeTime = data.animationData?.chargeTime || 0;
+          triggerGlobalThrowSpear(position, direction, chargeTime);
+          
+          return;
+        }
+        
         // Handle sword charge hit attacks
         if (data.attackType === 'sword_charge_hit') {
           
@@ -1721,6 +1887,10 @@ const hasMana = useCallback((amount: number) => {
           case 'rejuvenating_shot_projectile':
             // Rejuvenating shot uses bow release sound
             window.audioSystem.playEnemyBowReleaseSound(position, data.animationData?.chargeProgress);
+            break;
+          case 'throw_spear':
+            // Throw spear uses sword swing sound
+            window.audioSystem.playEnemySwordSwingSound(1, position);
             break;
           case 'regular_arrow':
             window.audioSystem.playEnemyBowReleaseSound(position, data.animationData?.chargeProgress);
@@ -2990,6 +3160,85 @@ const hasMana = useCallback((amount: number) => {
       }
     };
 
+    const handlePlayerRespawned = (data: any) => {
+      if (!data || !data.playerId) {
+        return;
+      }
+
+      const { playerId, health, maxHealth, position } = data;
+
+      console.log(`🔄 Player ${playerId} respawned at (${position?.x}, ${position?.y}, ${position?.z})`);
+
+      // Clear death state for this player
+      setPlayerDeathStates(prev => {
+        const newState = new Map(prev);
+        newState.delete(playerId);
+        return newState;
+      });
+
+      // Clear death effect
+      setDeathEffects(prev => {
+        const newEffects = new Map(prev);
+        newEffects.delete(playerId);
+        return newEffects;
+      });
+
+      // If this is the local player respawning, update their entity and re-enable controls
+      if (playerId === socket?.id) {
+        console.log(`✅ Local player respawned - re-enabling controls and updating position`);
+        
+        // Re-enable control system
+        if (controlSystemRef.current) {
+          controlSystemRef.current.setPlayerDead(false);
+          console.log(`✅ Controls re-enabled for local player`);
+        }
+
+        // Re-enable camera rotation
+        if (cameraSystemRef.current) {
+          cameraSystemRef.current.setDeathCameraDisabled(false, playerId);
+          console.log(`✅ Camera rotation re-enabled for local player`);
+        }
+
+        // Update the player entity's position
+        if (playerEntityRef.current !== null && engineRef.current) {
+          const world = engineRef.current.getWorld();
+          const playerEntity = world.getEntity(playerEntityRef.current);
+          if (playerEntity) {
+            const transform = playerEntity.getComponent(Transform);
+            const healthComp = playerEntity.getComponent(Health);
+            
+            if (transform && position) {
+              // Set position to center of map
+              transform.setPosition(position.x || 0, position.y || 0.5, position.z || 0);
+              console.log(`✅ Player entity moved to respawn position: (${position.x || 0}, ${position.y || 0.5}, ${position.z || 0})`);
+            }
+
+            if (healthComp) {
+              // Ensure health is restored
+              healthComp.isDead = false;
+              healthComp.currentHealth = health || maxHealth || healthComp.maxHealth;
+              console.log(`✅ Player health restored: ${healthComp.currentHealth}/${healthComp.maxHealth}`);
+            }
+          }
+        }
+      }
+
+      // Update player health and position in players state
+      setPlayers(prevPlayers => {
+        const newPlayers = new Map(prevPlayers);
+        const player = newPlayers.get(playerId);
+        if (player) {
+          newPlayers.set(playerId, {
+            ...player,
+            health: health || maxHealth,
+            maxHealth: maxHealth,
+            position: position || { x: 0, y: 0.5, z: 0 }
+          });
+        }
+        return newPlayers;
+      });
+    };
+
     const handlePlayerShieldChanged = (data: any) => {
       if (!data || !data.playerId) {
         return;
@@ -3284,6 +3533,30 @@ const hasMana = useCallback((amount: number) => {
       setActiveMeteors(prev => [...prev, ...newMeteors]);
     };
 
+    const handleBossTeleport = (data: any) => {
+      const { bossId, startPosition, endPosition, rotation, targetPlayerId, timestamp } = data;
+
+      // Create teleport effect at start position (boss disappearing)
+      const startEffect: TeleportEffectState = {
+        id: `${bossId}-teleport-start-${timestamp}`,
+        position: new Vector3(startPosition.x, startPosition.y, startPosition.z),
+        type: 'start',
+        timestamp
+      };
+
+      // Create teleport effect at end position (boss appearing)
+      const endEffect: TeleportEffectState = {
+        id: `${bossId}-teleport-end-${timestamp}`,
+        position: new Vector3(endPosition.x, endPosition.y, endPosition.z),
+        type: 'end',
+        timestamp
+      };
+
+      setActiveTeleportEffects(prev => [...prev, startEffect, endEffect]);
+
+      console.log(`✨ Boss ${bossId} teleported from (${startPosition.x.toFixed(1)}, ${startPosition.z.toFixed(1)}) to (${endPosition.x.toFixed(1)}, ${endPosition.z.toFixed(1)})`);
+    };
+
     const handleEnemyStatusEffect = (data: any) => {
       const { enemyId, effectType, duration, timestamp } = data;
       
@@ -3343,11 +3616,13 @@ const hasMana = useCallback((amount: number) => {
     socket.on('player-stealth', handlePlayerStealth);
     socket.on('player-tornado-effect', handlePlayerTornadoEffect);
     socket.on('player-death-effect', handlePlayerDeathEffect);
+    socket.on('player-respawned', handlePlayerRespawned);
     socket.on('player-shield-changed', handlePlayerShieldChanged);
     socket.on('player-knockback', handlePlayerKnockback);
     socket.on('boss-attack', handleBossAttack);
     socket.on('boss-defeated', handleBossDefeated);
     socket.on('boss-meteor-cast', handleBossMeteorCast);
+    socket.on('boss-teleport', handleBossTeleport);
     socket.on('boss-skeleton-attack', handleBossSkeletonAttack);
     socket.on('enemy-status-effect', handleEnemyStatusEffect);
 
@@ -3367,11 +3642,13 @@ const hasMana = useCallback((amount: number) => {
       socket.off('player-stealth', handlePlayerStealth);
       socket.off('player-tornado-effect', handlePlayerTornadoEffect);
       socket.off('player-death-effect', handlePlayerDeathEffect);
+      socket.off('player-respawned', handlePlayerRespawned);
       socket.off('player-shield-changed', handlePlayerShieldChanged);
       socket.off('player-knockback', handlePlayerKnockback);
       socket.off('boss-attack', handleBossAttack);
       socket.off('boss-defeated', handleBossDefeated);
       socket.off('boss-meteor-cast', handleBossMeteorCast);
+      socket.off('boss-teleport', handleBossTeleport);
       socket.off('boss-skeleton-attack', handleBossSkeletonAttack);
       socket.off('enemy-status-effect', handleEnemyStatusEffect);
     };
@@ -3711,6 +3988,7 @@ const hasMana = useCallback((amount: number) => {
           };
 
           // Send position updates to other players with camera rotation
+          // This continues even during death to prevent ping timeout disconnection
           const rotation = { x: 0, y: cameraAngle, z: 0 };
           updatePlayerPosition(transform.position, rotation);
         }
@@ -4130,6 +4408,14 @@ const hasMana = useCallback((amount: number) => {
       broadcastPlayerAbility('rejuvenating_shot', position, direction);
     });
 
+    // Set up Throw Spear callback
+    controlSystem.setThrowSpearCallback((position, direction, chargeTime) => {
+      // Trigger local visual effect
+      triggerGlobalThrowSpear(position, direction, chargeTime);
+      // Broadcast to other players
+      broadcastPlayerAbility('throw_spear', position, direction, undefined, { chargeTime });
+    });
+
     // Set up Backstab callback
     controlSystem.setBackstabCallback((position, direction, damage, isBackstab) => {
       broadcastPlayerAbility('backstab', position, direction);
@@ -4278,6 +4564,11 @@ const hasMana = useCallback((amount: number) => {
 
       // Broadcast Smite ability to other players
       broadcastPlayerAbility('smite', position, direction);
+    });
+
+    // Set up Flurry healing effect callback
+    controlSystem.setFlurryHealingEffectCallback((position: Vector3) => {
+      triggerFlurryHealingEffect(position);
     });
 
     // Set up damage numbers callback for healing effects
@@ -4473,6 +4764,11 @@ const hasMana = useCallback((amount: number) => {
           cobraShotChargeProgress={weaponState.cobraShotChargeProgress}
           isRejuvenatingShotCharging={controlSystemRef.current?.isRejuvenatingShotChargingActive() || false}
           rejuvenatingShotChargeProgress={controlSystemRef.current?.getRejuvenatingShotChargeProgress() || 0}
+          isWhirlwindCharging={controlSystemRef.current?.isWhirlwindChargingActive() || false}
+          whirlwindChargeProgress={controlSystemRef.current?.getWhirlwindChargeProgress() || 0}
+          isWhirlwinding={controlSystemRef.current?.isWhirlwindActive() || false}
+          isThrowSpearCharging={controlSystemRef.current?.isThrowSpearChargingActive() || false}
+          throwSpearChargeProgress={controlSystemRef.current?.getThrowSpearChargeProgress() || 0}
           isSkyfalling={weaponState.isSkyfalling}
           isBackstabbing={weaponState.isBackstabbing}
           isSundering={weaponState.isSundering}
@@ -4541,6 +4837,13 @@ const hasMana = useCallback((amount: number) => {
             broadcastPlayerAttack('runeblade_swing', playerPosition, direction, {
               comboStep: weaponState.swordComboStep
             });
+          }}
+          onSpearSwingComplete={() => {
+            controlSystemRef.current?.onSpearSwingComplete();
+            const direction = new Vector3();
+            camera.getWorldDirection(direction);
+            direction.normalize();
+            broadcastPlayerAttack('spear_swing', playerPosition, direction);
           }}
           onChargeComplete={() => {
             controlSystemRef.current?.onChargeComplete();
@@ -4832,6 +5135,21 @@ const hasMana = useCallback((amount: number) => {
         );
       })}
 
+      {/* Boss Teleport Effects */}
+      {activeTeleportEffects.map(effect => {
+        return (
+          <BossTeleportEffect
+            key={effect.id}
+            position={effect.position}
+            type={effect.type}
+            onComplete={() => {
+              // Remove effect when it's done
+              setActiveTeleportEffects(prev => prev.filter(e => e.id !== effect.id));
+            }}
+          />
+        );
+      })}
+
       {/* Other Players Health Bars */}
       {Array.from(players.values()).map(player => {
         if (player.id === socket?.id) return null; // Don't show health bar for local player
@@ -4930,6 +5248,52 @@ const hasMana = useCallback((amount: number) => {
         );
       })}
 
+      {/* Flurry Healing Effects */}
+      {flurryHealingEffects.map(effect => (
+        <FlurryHealingEffect
+          key={`flurry-heal-${effect.id}`}
+          position={effect.position}
+          onComplete={() => {
+            setFlurryHealingEffects(prev => prev.filter(e => e.id !== effect.id));
+          }}
+        />
+      ))}
+
+      {/* WindShear Tornado Effects (for Flurry ability) */}
+      {pvpWindShearTornadoEffects.map(effect => {
+        // Get player position function - track the player dynamically
+        const getPlayerPosition = () => {
+          const isLocalPlayer = effect.playerId === socket?.id || effect.playerId === 'local';
+          
+          if (isLocalPlayer && playerEntity) {
+            const transform = playerEntity.getComponent(Transform);
+            if (transform) {
+              return transform.position.clone();
+            }
+          } else {
+            const player = players.get(effect.playerId);
+            if (player) {
+              return new Vector3(player.position.x, player.position.y, player.position.z);
+            }
+          }
+          
+          // Fallback to initial position
+          return effect.position.clone();
+        };
+
+        return (
+          <WindShearTornadoEffect
+            key={`tornado-${effect.id}`}
+            getPlayerPosition={getPlayerPosition}
+            startTime={effect.startTime}
+            duration={effect.duration}
+            onComplete={() => {
+              setPvpWindShearTornadoEffects(prev => prev.filter(e => e.id !== effect.id));
+            }}
+          />
+        );
+      })}
+
       {/* Unified Managers - Single query optimization */}
       {engineRef.current && (
         <>
@@ -4972,7 +5336,7 @@ const hasMana = useCallback((amount: number) => {
           <RejuvenatingShotManager
             world={engineRef.current.getWorld()}
             playerPositions={Array.from(players.values())
-              .filter(player => player.health > 0)
+              .filter(player => player.health > 0 && player.id !== socket?.id) // Exclude local player
               .map(player => ({
                 id: player.id,
                 position: new Vector3(player.position.x, player.position.y, player.position.z),
@@ -4986,6 +5350,9 @@ const hasMana = useCallback((amount: number) => {
               }
             }}
           />
+          <ThrowSpearManager
+            world={engineRef.current.getWorld()}
+          />
 
           {/* Sabre Reaper Mist Effects */}
           {activeMistEffects.map(effect => (
@@ -4995,6 +5362,29 @@ const hasMana = useCallback((amount: number) => {
               duration={1000}
               onComplete={() => {
                 // Effect cleanup is handled by the setTimeout in the callback
+              }}
+            />
+          ))}
+
+          {/* Death Effects for Players */}
+          {Array.from(deathEffects.values()).map(effect => (
+            <DeathEffect
+              key={effect.playerId}
+              position={effect.position}
+              startTime={effect.startTime}
+              duration={30000}
+              playerId={effect.playerId}
+              playerData={Array.from(players.values()).map(p => ({
+                id: p.id,
+                position: new Vector3(p.position.x, p.position.y, p.position.z),
+                health: p.health
+              }))}
+              onComplete={() => {
+                console.log(`💀 Death effect completed for player ${effect.playerId} - triggering respawn`);
+                // Only trigger respawn for local player
+                if (effect.playerId === socket?.id) {
+                  handlePlayerRespawn(effect.playerId);
+                }
               }}
             />
           ))}
@@ -5047,6 +5437,7 @@ function createCoopPlayer(world: World): any {
   // Note: This will be updated when the socket ID becomes available
   player.userData = player.userData || {};
   player.userData.playerId = 'unknown';
+  player.userData.isPlayer = true; // Mark as local player for manager systems
 
   return player;
 }

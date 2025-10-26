@@ -3,7 +3,8 @@ export enum WeaponType {
     SWORD = 'SWORD',
     SABRES = 'SABRES',
     RUNEBLADE = 'RUNEBLADE',
-    BOW = 'BOW'
+    BOW = 'BOW',
+    SPEAR = 'SPEAR'
   }
 
 export enum WeaponSubclass {
@@ -25,5 +26,9 @@ export enum WeaponSubclass {
 
     // Bow subclasses
     ELEMENTAL = 'ELEMENTAL',
-    VENOM = 'VENOM'
+    VENOM = 'VENOM',
+
+    // Spear subclasses
+    STORM = 'STORM',
+    VALOR = 'VALOR'
   }

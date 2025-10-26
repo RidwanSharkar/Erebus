@@ -64,6 +64,12 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
           return { main: '#17CE54', emissive: '#00CED1', particle: '#AFEEEE' }; // Keep original elemental color
         case WeaponSubclass.VENOM:
           return { main: '#17CC93', emissive: '#20B2AA', particle: '#87CEEB' }; // Green/purple for venom
+
+        // Spear subclasses
+        case WeaponSubclass.STORM:
+          return { main: '#B8B8B8', emissive: '#C0C0C0', particle: '#E0E0E0' }; // Lighter greyish silver for storm
+        case WeaponSubclass.VALOR:
+          return { main: '#A8A8A8', emissive: '#B0B0B0', particle: '#D0D0D0' }; // Darker greyish silver for valor
       }
     }
 
@@ -79,6 +85,8 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
         return { main: '#00FF88', emissive: '#32CD32', particle: '#90EE90' }; // Green for runeblade
       case WeaponType.BOW:
         return { main: '#3A905E', emissive: '#228B22', particle: '#32CD32' }; //D09A1D try
+      case WeaponType.SPEAR:
+        return { main: '#C0C0C0', emissive: '#C0C0C0', particle: '#E0E0E0' }; // Greyish silver for spear
     }
 
     return { main: '#4A90E2', emissive: '#87CEEB', particle: '#E0F6FF' }; // Default

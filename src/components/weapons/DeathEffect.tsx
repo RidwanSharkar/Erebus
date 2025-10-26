@@ -18,7 +18,7 @@ interface DeathEffectProps {
 
 export default function DeathEffect({
   position,
-  duration = 12500, // 12.5 seconds (respawn time)
+  duration = 15000, // 15 seconds (respawn time)
   startTime = Date.now(),
   playerId,
   playerData = [],
@@ -28,10 +28,15 @@ export default function DeathEffect({
   const [intensity, setIntensity] = useState(1);
   const [fadeProgress, setFadeProgress] = useState(1);
   const rotationSpeed = useRef(Math.random() * 0.01 + 0.005);
+  const hasCompleted = useRef(false); // Flag to prevent multiple onComplete calls
 
   useEffect(() => {
     const timeout = setTimeout(() => {
-      if (onComplete) onComplete();
+      // Only trigger completion once
+      if (onComplete && !hasCompleted.current) {
+        hasCompleted.current = true;
+        onComplete();
+      }
     }, duration);
 
     return () => {
@@ -46,11 +51,7 @@ export default function DeathEffect({
     const elapsed = currentTime - startTime;
     const progress = Math.min(elapsed / duration, 1);
 
-    // Safety check: if effect has exceeded its duration, trigger completion
-    if (progress >= 1 && onComplete) {
-      onComplete();
-      return;
-    }
+    // Safety check removed - we rely on setTimeout for completion to avoid duplicate calls
 
     // Update position to follow player if playerId is provided
     if (playerId && playerData.length > 0) {

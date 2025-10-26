@@ -14,6 +14,7 @@ import Scythe from '../weapons/Scythe';
 import Sword from '../weapons/Sword';
 import Sabres from '../weapons/Sabres';
 import Runeblade from '../weapons/Runeblade';
+import SpearComponent from '../weapons/Spear';
 import Reanimate, { ReanimateRef } from '../weapons/Reanimate';
 import BoneTail from './BoneTail';
 import ArchmageCrest from './ArchmageCrest';
@@ -37,6 +38,7 @@ interface DragonUnitProps {
   onSwordSwingComplete?: () => void;
   onSabresSwingComplete?: () => void;
   onRunebladeSwingComplete?: () => void;
+  onSpearSwingComplete?: () => void;
   onSabresLeftSwingStart?: () => void;
   onSabresRightSwingStart?: () => void;
   onBackstabComplete?: () => void;
@@ -90,6 +92,11 @@ interface DragonUnitProps {
   cobraShotChargeProgress?: number;
   isRejuvenatingShotCharging?: boolean;
   rejuvenatingShotChargeProgress?: number;
+  isWhirlwindCharging?: boolean;
+  whirlwindChargeProgress?: number;
+  isWhirlwinding?: boolean;
+  isThrowSpearCharging?: boolean;
+  throwSpearChargeProgress?: number;
   // Reanimate ability props
   reanimateRef?: React.RefObject<ReanimateRef>;
   setActiveEffects?: (callback: (prev: Array<{
@@ -146,6 +153,7 @@ export default function DragonUnit({
   onSwordSwingComplete = () => {},
   onSabresSwingComplete = () => {},
   onRunebladeSwingComplete = () => {},
+  onSpearSwingComplete = () => {},
   onSabresLeftSwingStart = () => {},
   onSabresRightSwingStart = () => {},
   onBackstabComplete = () => {},
@@ -185,6 +193,11 @@ export default function DragonUnit({
   cobraShotChargeProgress = 0,
   isRejuvenatingShotCharging = false,
   rejuvenatingShotChargeProgress = 0,
+  isWhirlwindCharging = false,
+  whirlwindChargeProgress = 0,
+  isWhirlwinding = false,
+  isThrowSpearCharging = false,
+  throwSpearChargeProgress = 0,
   reanimateRef,
   setActiveEffects = () => {},
   targetPlayerData,
@@ -315,6 +328,21 @@ export default function DragonUnit({
           playerRotation={playerRotation}
           dragonGroupRef={groupRef}
           playerEntityId={entityId}
+        />
+      );
+    } else if (currentWeapon === WeaponType.SPEAR) {
+      return (
+        <SpearComponent
+          isSwinging={isSwinging || false}
+          onSwingComplete={onSpearSwingComplete || (() => {})}
+          isWhirlwinding={isWhirlwinding || false}
+          fireballCharges={[]} // Basic implementation for now
+          currentSubclass={currentSubclass}
+          isThrowSpearCharging={isThrowSpearCharging || false}
+          throwSpearChargeProgress={throwSpearChargeProgress || 0}
+          isSpearThrown={false}
+          isWhirlwindCharging={isWhirlwindCharging || false}
+          whirlwindChargeProgress={whirlwindChargeProgress || 0}
         />
       );
     }

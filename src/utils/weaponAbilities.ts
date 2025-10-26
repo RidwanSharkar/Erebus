@@ -174,6 +174,39 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       description: '{PASSIVE} Reduces mana costs by 10% and heals for 15% of all attack damage dealt.',
       isPassive: true
     }
+  ],
+  [WeaponType.SPEAR]: [
+    {
+      name: 'Throw Spear',
+      key: 'Q',
+      cooldown: 4.0,
+      description: 'Hold to charge for up to 2 seconds, then release to throw your spear. The spear flies forward, damaging all enemies it passes through, then returns to you, damaging enemies again. Distance and damage scale from 50 to 200 based on charge time.'
+    },
+    {
+      name: 'Whirlwind',
+      key: 'E',
+      cooldown: 3.0,
+      description: 'Hold to charge for up to 2 seconds, then release to spin your spear in a single rotation, damaging all nearby enemies. Damage scales from 50 to 200 based on charge time.'
+    },
+    {
+      name: 'Storm Surge',
+      key: 'R',
+      cooldown: 15.0,
+      description: 'Calls down a lightning storm that damages enemies in a large area.'
+    },
+    {
+      name: 'Flurry',
+      key: 'F',
+      cooldown: 10.0,
+      description: 'Enter a frenzied state for 5 seconds, doubling your attack speed. Each successful hit heals you for 20 HP.'
+    },
+    {
+      name: 'Tempest',
+      key: 'P',
+      cooldown: 0,
+      description: '{PASSIVE} Increases movement speed by 10% and attack speed by 5%.',
+      isPassive: true
+    }
   ]
 };
 
@@ -204,7 +237,7 @@ export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | '
     Q: '🔪', // Backstab
     E: '💥', // Flourish
     R: '🐦‍🔥', // Divebomb
-    F: '🌒', // Shadow Step
+    F: '🌑', // Shadow Step
     P: '☠️' // Lethality
   },
   [WeaponType.RUNEBLADE]: {
@@ -213,6 +246,13 @@ export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | '
     R: '⚡️', // Hexed Smite
     F: '💠', // Heartrend
     P: '🩸' // Bloodpact
+  },
+  [WeaponType.SPEAR]: {
+    Q: '⛓️‍💥', // Throw Spear
+    E: '⚓️', // Whirlwind
+    R: '💨', // Storm Surge
+    F: '🌪️', // Flurry
+    P: '🌩️' // Tempest
   },
 };
 

@@ -21,6 +21,9 @@ class EnemyAI {
     // Boss DeathGrasp cooldown tracking
     this.bossDeathGraspCooldown = new Map(); // enemyId -> lastDeathGraspTime
 
+    // Boss teleport cooldown tracking
+    this.bossTeleportCooldown = new Map(); // enemyId -> lastTeleportTime
+
     // Boss skeleton summoning tracking
     this.bossSkeletonSummonCooldown = new Map(); // enemyId -> lastSummonTime
     this.bossSummonedSkeletons = new Map(); // enemyId -> Set of skeleton IDs
@@ -113,19 +116,22 @@ class EnemyAI {
     }
 
     // Find current target player
-    const targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
-    if (!targetPlayer) {
-      // Target player left, find new target
+    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
+    
+    // If target is dead or doesn't exist, find a new target
+    if (!targetPlayer || targetPlayer.health <= 0) {
       const newTarget = this.findClosestPlayer(enemy, players);
       if (newTarget) {
         aggroData.targetPlayerId = newTarget.id;
+        targetPlayer = newTarget;
       } else {
+        // No valid targets available
         return;
       }
     }
 
     // Move enemy towards target
-    this.moveEnemyTowardsTarget(enemy, targetPlayer || players.find(p => p.id === aggroData.targetPlayerId));
+    this.moveEnemyTowardsTarget(enemy, targetPlayer);
   }
 
   updateBossSkeletonAI(skeleton, players) {
@@ -145,13 +151,16 @@ class EnemyAI {
     }
 
     // Find current target player
-    const targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
-    if (!targetPlayer) {
-      // Target player left, find new target
+    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
+    
+    // If target is dead or doesn't exist, find a new target
+    if (!targetPlayer || targetPlayer.health <= 0) {
       const newTarget = this.findClosestPlayer(skeleton, players);
       if (newTarget) {
         aggroData.targetPlayerId = newTarget.id;
+        targetPlayer = newTarget;
       } else {
+        // No valid targets available
         return;
       }
     }
@@ -182,7 +191,7 @@ class EnemyAI {
   }
 
   bossSkeletonAttackPlayer(skeleton, player) {
-    const damage = skeleton.damage || 10; // Default 10 damage
+    const damage = skeleton.damage || 29; // Default 29 damage
 
     // Broadcast skeleton attack to all players
     if (this.io) {
@@ -223,6 +232,13 @@ class EnemyAI {
 
     // Find player who dealt most damage (taunted player gets massive priority bonus)
     damageMap.forEach((damage, playerId) => {
+      const player = players.find(p => p.id === playerId);
+      
+      // Skip dead players
+      if (!player || player.health <= 0) {
+        return;
+      }
+
       let effectiveDamage = damage;
 
       // If this player is the taunt target, give them massive damage bonus for targeting
@@ -234,10 +250,7 @@ class EnemyAI {
       if (effectiveDamage > maxDamage) {
         maxDamage = effectiveDamage;
         topDamagePlayerId = playerId;
-        const player = players.find(p => p.id === playerId);
-        if (player) {
-          targetPlayer = player;
-        }
+        targetPlayer = player;
       }
     });
 
@@ -259,8 +272,8 @@ class EnemyAI {
 
     // Check if boss can attack target (within range)
     const distance = this.calculateDistance(boss.position, targetPlayer.position);
-    const attackRange = 3.0; // Boss attack range
-    const attackCooldown = 750; // 2 seconds between attacks
+    const attackRange = 2.9; // Boss attack range
+    const attackCooldown = 875; // 2 seconds between attacks
 
     // ALWAYS update rotation to face target, even when standing still
     this.updateBossRotation(boss, targetPlayer);
@@ -313,7 +326,7 @@ class EnemyAI {
     }
 
     // Check skeleton summoning cooldown (17.5 seconds)
-    const skeletonSummonCooldown = 30000;
+    const skeletonSummonCooldown = 22500;
     const lastSkeletonSummonTime = this.bossSkeletonSummonCooldown.get(boss.id) || 0;
 
     if (now - lastSkeletonSummonTime >= skeletonSummonCooldown) {
@@ -335,6 +348,22 @@ class EnemyAI {
       // Cast DeathGrasp at a random player
       this.bossCastDeathGrasp(boss, players);
       this.bossDeathGraspCooldown.set(boss.id, now);
+    }
+
+    // Check Teleport cooldown (10 seconds) with initial 15 second delay
+    const teleportCooldown = 10000;
+    const initialTeleportDelay = 15000; // 15 seconds before first teleport
+    const lastTeleportTime = this.bossTeleportCooldown.get(boss.id) || 0;
+
+    // Only allow teleport if:
+    // 1. At least 15 seconds have passed since boss spawned
+    // 2. Normal cooldown has passed since last teleport
+    // 3. Target player exists
+    if (timeSinceSpawn >= initialTeleportDelay && now - lastTeleportTime >= teleportCooldown && targetPlayer) {
+      // Teleport behind the target player
+      console.log(`✨ Boss ${boss.id} initiating teleport to player ${targetPlayer.name || targetPlayer.id} (${(timeSinceSpawn / 1000).toFixed(1)}s since spawn, ${((now - lastTeleportTime) / 1000).toFixed(1)}s since last teleport)`);
+      this.bossCastTeleport(boss, targetPlayer);
+      this.bossTeleportCooldown.set(boss.id, now);
     }
 
     if (distance <= attackRange) {
@@ -360,7 +389,7 @@ class EnemyAI {
       return;
     }
 
-    const damage = 23; // Boss deals 10 damage per hit
+    const damage = 41; // Boss deals 43 damage per hit (updated from 37)
 
     // Broadcast boss attack to all players
     if (this.io) {
@@ -441,6 +470,66 @@ class EnemyAI {
     console.log(`💀 Boss ${boss.id} casting DeathGrasp at player ${randomPlayer.name || randomPlayer.id}!`);
   }
 
+  bossCastTeleport(boss, targetPlayer) {
+    if (!targetPlayer) {
+      console.log(`⚠️ Boss ${boss.id} tried to teleport but no target player found`);
+      return;
+    }
+
+    // Store the starting position for the teleport effect
+    const startPosition = {
+      x: boss.position.x,
+      y: boss.position.y,
+      z: boss.position.z
+    };
+
+    // Calculate position behind the target player
+    // Get the player's Y rotation (horizontal facing direction) in radians
+    const playerRotation = targetPlayer.rotation?.y || 0;
+    
+    // Calculate position 2.5 units behind the player based on their facing direction
+    // Player rotation.y is in radians, where 0 points along +Z axis
+    const teleportDistance = 2.5;
+    
+    // Calculate the direction the player is facing
+    const facingX = Math.sin(playerRotation);
+    const facingZ = Math.cos(playerRotation);
+    
+    // Position boss behind the player (opposite to facing direction)
+    const endPosition = {
+      x: targetPlayer.position.x - facingX * teleportDistance,
+      y: targetPlayer.position.y,
+      z: targetPlayer.position.z - facingZ * teleportDistance
+    };
+    
+    console.log(`📍 Teleport calculation: Player at (${targetPlayer.position.x.toFixed(2)}, ${targetPlayer.position.z.toFixed(2)}) rotation: ${playerRotation.toFixed(2)}, Boss teleporting to (${endPosition.x.toFixed(2)}, ${endPosition.z.toFixed(2)})`);
+
+
+    // Update boss position immediately
+    boss.position.x = endPosition.x;
+    boss.position.y = endPosition.y;
+    boss.position.z = endPosition.z;
+
+    // Calculate rotation to face the player after teleporting
+    const rotDx = targetPlayer.position.x - endPosition.x;
+    const rotDz = targetPlayer.position.z - endPosition.z;
+    boss.rotation = Math.atan2(rotDx, rotDz);
+
+    // Broadcast teleport event to all players
+    if (this.io) {
+      this.io.to(this.roomId).emit('boss-teleport', {
+        bossId: boss.id,
+        startPosition: startPosition,
+        endPosition: endPosition,
+        rotation: boss.rotation,
+        targetPlayerId: targetPlayer.id,
+        timestamp: Date.now()
+      });
+    }
+
+    console.log(`✨✨✨ TELEPORT SUCCESS: Boss ${boss.id} teleported behind player ${targetPlayer.name || targetPlayer.id} from (${startPosition.x.toFixed(2)}, ${startPosition.z.toFixed(2)}) to (${endPosition.x.toFixed(2)}, ${endPosition.z.toFixed(2)})!`);
+  }
+
   bossSummonSkeleton(boss) {
     if (!this.room) return;
 
@@ -463,10 +552,10 @@ class EnemyAI {
       type: 'boss-skeleton',
       position: skeletonPosition,
       rotation: 0,
-      health: 420,
-      maxHealth: 420,
+      health: 666,
+      maxHealth: 666,
       isDying: false,
-      damage: 10,
+      damage: 29,
       bossId: boss.id // Track which boss summoned this skeleton
     };
 
@@ -525,15 +614,20 @@ class EnemyAI {
   findClosestPlayer(enemy, players) {
     let closestPlayer = null;
     let closestDistance = Infinity;
-    
+
     players.forEach(player => {
+      // Skip dead players (health <= 0)
+      if (player.health <= 0) {
+        return;
+      }
+
       const distance = this.calculateDistance(enemy.position, player.position);
       if (distance < closestDistance) {
         closestDistance = distance;
         closestPlayer = player;
       }
     });
-    
+
     return closestPlayer;
   }
 
@@ -695,8 +789,8 @@ class EnemyAI {
     // Different enemy types have different movement speeds
     switch (enemyType) {
       case 'elite': return 0.0; // Elite enemies are stationary like training dummies
-      case 'boss': return 1.25; // Boss moves at moderate speed
-      case 'boss-skeleton': return 2.5; // Boss-summoned skeletons move at normal skeleton speed
+      case 'boss': return 1.165; // Boss moves at moderate speed
+      case 'boss-skeleton': return 2; // Boss-summoned skeletons move at normal skeleton speed
       default: return 2.0;
     }
   }
@@ -814,6 +908,29 @@ class EnemyAI {
       aggroData.aggro += aggroAmount;
       aggroData.lastUpdate = Date.now();
     }
+  }
+
+  // Remove player from all aggro charts when they die
+  removePlayerFromAllAggro(deadPlayerId) {
+    console.log(`💀 Removing dead player ${deadPlayerId} from all aggro charts`);
+
+    // Remove from all boss damage tracking
+    this.bossDamageTracking.forEach((damageMap, bossId) => {
+      if (damageMap.has(deadPlayerId)) {
+        damageMap.delete(deadPlayerId);
+        console.log(`  - Removed ${deadPlayerId} from boss ${bossId} damage tracking`);
+      }
+    });
+
+    // Remove from all enemy aggro (regular enemies, skeletons, etc.)
+    this.enemyAggro.forEach((aggroData, enemyId) => {
+      if (aggroData.targetPlayerId === deadPlayerId) {
+        // Clear the target for this enemy - it will find a new target on next update
+        aggroData.targetPlayerId = null;
+        aggroData.aggro = 0;
+        console.log(`  - Cleared ${deadPlayerId} as target for enemy ${enemyId}`);
+      }
+    });
   }
 }
 

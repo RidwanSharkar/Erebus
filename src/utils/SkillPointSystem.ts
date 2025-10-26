@@ -2,12 +2,12 @@ import { WeaponType } from '@/components/dragon/weapons';
 
 export interface SkillPointData {
   skillPoints: number;
-  unlockedAbilities: Record<string, Set<string>>; // weaponType -> Set of unlocked abilities (R, F)
+  unlockedAbilities: Record<string, Set<string>>; // weaponType -> Set of unlocked abilities (Q, E, R, F, P)
 }
 
 export interface AbilityUnlock {
   weaponType: WeaponType;
-  abilityKey: 'E' | 'R' | 'F' | 'P';
+  abilityKey: 'Q' | 'E' | 'R' | 'F' | 'P';
   weaponSlot: 'primary' | 'secondary'; // Which slot this weapon is in
 }
 
@@ -121,7 +121,7 @@ export class SkillPointSystem {
   static isAbilityUnlocked(
     skillPointData: SkillPointData,
     weaponType: WeaponType,
-    abilityKey: 'E' | 'R' | 'F' | 'P',
+    abilityKey: 'Q' | 'E' | 'R' | 'F' | 'P',
     weaponSlot: 'primary' | 'secondary'
   ): boolean {
     // EXCEPTION: Scythe's Cryoflame passive (P) should NOT be unlocked by default
@@ -142,7 +142,7 @@ export class SkillPointSystem {
   static unlockAbility(
     skillPointData: SkillPointData,
     weaponType: WeaponType,
-    abilityKey: 'E' | 'R' | 'F' | 'P',
+    abilityKey: 'Q' | 'E' | 'R' | 'F' | 'P',
     weaponSlot: 'primary' | 'secondary'
   ): SkillPointData {
     if (skillPointData.skillPoints <= 0) {
@@ -235,6 +235,12 @@ export class SkillPointSystem {
         R: 'Unholy Smite',
         F: 'Corruption',
         P: 'Arcane Mastery'
+      },
+      [WeaponType.SPEAR]: {
+        E: 'Whirlwind',
+        R: 'Throw Spear',
+        F: 'Storm Surge',
+        P: 'Tempest'
       }
     };
 
@@ -250,7 +256,8 @@ export class SkillPointSystem {
       [WeaponType.BOW]: 'Bow',
       [WeaponType.SCYTHE]: 'Scythe',
       [WeaponType.SABRES]: 'Sabres',
-      [WeaponType.RUNEBLADE]: 'Runeblade'
+      [WeaponType.RUNEBLADE]: 'Runeblade',
+      [WeaponType.SPEAR]: 'Spear'
     };
     
     return weaponNames[weaponType] || 'Unknown Weapon';

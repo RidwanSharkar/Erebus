@@ -119,14 +119,16 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
             selectedWeapons.primary === WeaponType.BOW ? 'Bow' :
             selectedWeapons.primary === WeaponType.SCYTHE ? 'Scythe' :
             selectedWeapons.primary === WeaponType.SABRES ? 'Sabres' :
-            selectedWeapons.primary === WeaponType.RUNEBLADE ? 'Runeblade' : 'Unknown',
+            selectedWeapons.primary === WeaponType.RUNEBLADE ? 'Runeblade' :
+            selectedWeapons.primary === WeaponType.SPEAR ? 'Spear' : 'Unknown',
       type: selectedWeapons.primary,
       key: '1' as const,
       icon: selectedWeapons.primary === WeaponType.SWORD ? '💎' :
             selectedWeapons.primary === WeaponType.BOW ? '🏹' :
             selectedWeapons.primary === WeaponType.SCYTHE ? '🦋' :
             selectedWeapons.primary === WeaponType.SABRES ? '⚔️' :
-            selectedWeapons.primary === WeaponType.RUNEBLADE ? '⚜️' : '❓'
+            selectedWeapons.primary === WeaponType.RUNEBLADE ? '⚜️' :
+            selectedWeapons.primary === WeaponType.SPEAR ? '🔱' : '❓'
     };
     weapons.push(primaryWeapon);
 
@@ -177,6 +179,11 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
       Object.keys(abilityCooldowns).forEach(key => {
         newCooldowns[key] = abilityCooldowns[key].current;
       });
+
+      // Debug logging for Spear cooldowns
+      if (currentWeapon === WeaponType.SPEAR && Object.keys(abilityCooldowns).length > 0) {
+        console.log('🎯 Spear Cooldowns:', abilityCooldowns);
+      }
 
       setCooldowns(newCooldowns);
 
@@ -539,6 +546,39 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
                     if (ability.key === 'F' && currentWeapon === WeaponType.RUNEBLADE && controlSystem.isCorruptedAuraActive?.()) {
                       return (
                         <div className="absolute inset-0 rounded-lg bg-red-400 bg-opacity-20 border-2 border-red-400 animate-pulse" />
+                      );
+                    }
+
+                    // Check for Throw Spear charging state
+                    if (ability.key === 'Q' && currentWeapon === WeaponType.SPEAR && controlSystem.isThrowSpearChargingActive?.()) {
+                      const progress = controlSystem.getThrowSpearChargeProgress?.() || 0;
+                      return (
+                        <div className="absolute inset-0 rounded-lg bg-blue-400 bg-opacity-20 border-2 border-blue-400">
+                          <div 
+                            className="absolute bottom-0 left-0 right-0 bg-blue-400 bg-opacity-60 transition-all duration-100"
+                            style={{ height: `${progress * 100}%` }}
+                          />
+                        </div>
+                      );
+                    }
+
+                    // Check for Whirlwind charging state
+                    if (ability.key === 'E' && currentWeapon === WeaponType.SPEAR && controlSystem.isWhirlwindChargingActive?.()) {
+                      const progress = controlSystem.getWhirlwindChargeProgress?.() || 0;
+                      return (
+                        <div className="absolute inset-0 rounded-lg bg-cyan-400 bg-opacity-20 border-2 border-cyan-400">
+                          <div 
+                            className="absolute bottom-0 left-0 right-0 bg-cyan-400 bg-opacity-60 transition-all duration-100"
+                            style={{ height: `${progress * 100}%` }}
+                          />
+                        </div>
+                      );
+                    }
+
+                    // Check for Flurry active state
+                    if (ability.key === 'F' && currentWeapon === WeaponType.SPEAR && controlSystem.getIsFlurryActive?.()) {
+                      return (
+                        <div className="absolute inset-0 rounded-lg bg-yellow-400 bg-opacity-20 border-2 border-yellow-400 animate-pulse" />
                       );
                     }
 

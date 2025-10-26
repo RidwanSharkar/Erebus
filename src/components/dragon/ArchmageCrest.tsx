@@ -53,6 +53,12 @@ export default function ArchmageCrest({
           return { main: '#17CE54', emissive: '#00CED1', glow: '#AFEEEE', secondary: '#87CEEB' };
         case WeaponSubclass.VENOM:
           return { main: '#17CC93', emissive: '#20B2AA', glow: '#87CEEB', secondary: '#48D1CC' };
+
+        // Spear subclasses
+        case WeaponSubclass.STORM:
+          return { main: '#B8B8B8', emissive: '#C0C0C0', glow: '#E0E0E0', secondary: '#A8A8A8' };
+        case WeaponSubclass.VALOR:
+          return { main: '#A8A8A8', emissive: '#B0B0B0', glow: '#D0D0D0', secondary: '#909090' };
       }
     }
 
@@ -68,6 +74,8 @@ export default function ArchmageCrest({
         return { main: '#00FF88', emissive: '#32CD32', glow: '#90EE90', secondary: '#66CDAA' };
       case WeaponType.BOW:
         return { main: '#3A905E', emissive: '#228B22', glow: '#32CD32', secondary: '#00FF7F' };
+      case WeaponType.SPEAR:
+        return { main: '#C0C0C0', emissive: '#C0C0C0', glow: '#E0E0E0', secondary: '#A8A8A8' };
     }
 
     return { main: '#8A2BE2', emissive: '#9370DB', glow: '#DA70D6', secondary: '#BA55D3' }; // Default purple

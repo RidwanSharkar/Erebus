@@ -1,23 +1,22 @@
 import { useRef } from 'react';
-import { Group, Vector3 } from 'three';
+import { Group, Vector3, TorusGeometry, TetrahedronGeometry, MeshStandardMaterial } from 'three';
 import { useFrame } from '@react-three/fiber';
 import BlizzardShard from './BlizzardShard';
-import * as THREE from 'three';
 
 export const sharedGeometries = {
-  torus: new THREE.TorusGeometry(0.8, 0.075, 8, 32),
-  tetrahedron: new THREE.TetrahedronGeometry(0.075)
+  torus: new TorusGeometry(0.8, 0.075, 8, 32),
+  tetrahedron: new TetrahedronGeometry(0.075)
 };
 
 export const sharedMaterials = {
-  blizzard: new THREE.MeshStandardMaterial({
+  blizzard: new MeshStandardMaterial({
     color: "#FF544E",
     emissive: "#FF544E",
     emissiveIntensity: 2,
     transparent: true,
     opacity: 0.3
   }),
-  shard: new THREE.MeshStandardMaterial({
+  shard: new MeshStandardMaterial({
     color: "#FF544E",
     emissive: "#FF544E",
     emissiveIntensity: 1,

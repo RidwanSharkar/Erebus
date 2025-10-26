@@ -35,6 +35,7 @@ interface DragonRendererProps {
   onSwordSwingComplete?: () => void;
   onSabresSwingComplete?: () => void;
   onRunebladeSwingComplete?: () => void;
+  onSpearSwingComplete?: () => void;
   onBackstabComplete?: () => void;
   onSunderComplete?: () => void;
   swordComboStep?: 1 | 2 | 3;
@@ -69,6 +70,11 @@ interface DragonRendererProps {
   cobraShotChargeProgress?: number;
   isRejuvenatingShotCharging?: boolean;
   rejuvenatingShotChargeProgress?: number;
+  isWhirlwindCharging?: boolean;
+  whirlwindChargeProgress?: number;
+  isWhirlwinding?: boolean;
+  isThrowSpearCharging?: boolean;
+  throwSpearChargeProgress?: number;
   reanimateRef?: React.RefObject<ReanimateRef>;
   // Damage number management
   onDamageNumbersReady?: (setDamageNumbers: (callback: (prev: Array<{
@@ -125,6 +131,7 @@ export default function DragonRenderer({
   onSwordSwingComplete = () => {},
   onSabresSwingComplete = () => {},
   onRunebladeSwingComplete = () => {},
+  onSpearSwingComplete = () => {},
   onBackstabComplete = () => {},
   onSunderComplete = () => {},
   swordComboStep = 1,
@@ -146,6 +153,11 @@ export default function DragonRenderer({
   cobraShotChargeProgress = 0,
   isRejuvenatingShotCharging = false,
   rejuvenatingShotChargeProgress = 0,
+  isWhirlwindCharging = false,
+  whirlwindChargeProgress = 0,
+  isWhirlwinding = false,
+  isThrowSpearCharging = false,
+  throwSpearChargeProgress = 0,
   reanimateRef,
   targetPlayerData,
   rageSpent,
@@ -416,6 +428,7 @@ export default function DragonRenderer({
           onSwordSwingComplete={onSwordSwingComplete}
           onSabresSwingComplete={onSabresSwingComplete}
           onRunebladeSwingComplete={onRunebladeSwingComplete}
+          onSpearSwingComplete={onSpearSwingComplete}
           onBackstabComplete={onBackstabComplete}
           onSunderComplete={onSunderComplete}
           swordComboStep={swordComboStep}
@@ -453,6 +466,9 @@ export default function DragonRenderer({
           cobraShotChargeProgress={cobraShotChargeProgress}
           isRejuvenatingShotCharging={isRejuvenatingShotCharging}
           rejuvenatingShotChargeProgress={rejuvenatingShotChargeProgress}
+          isWhirlwindCharging={isWhirlwindCharging}
+          whirlwindChargeProgress={whirlwindChargeProgress}
+          isWhirlwinding={isWhirlwinding}
           reanimateRef={reanimateRef}
           setActiveEffects={setActiveEffects}
           targetPlayerData={targetPlayerData}
