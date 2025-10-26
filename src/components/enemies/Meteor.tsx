@@ -29,11 +29,12 @@ const particleGeometry = new SphereGeometry(0.1, 8, 8);
 // Reusable vectors to avoid allocations
 const tempTargetGroundPos = new Vector3();
 
-const createMeteorImpactEffect = (position: Vector3, startTime: number) => {
+const createMeteorImpactEffect = (position: Vector3, startTime: number, onComplete: () => void) => {
   const elapsed = (Date.now() - startTime) / 350;
   const fade = Math.max(0, 1 - (elapsed / IMPACT_DURATION));
   
   if (fade <= 0) {
+    onComplete();
     return null;
   }
 
@@ -129,24 +130,6 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
 
     return () => clearTimeout(timer);
   }, [timestamp]);
-
-  // Monitor impact effect completion and call onComplete when fade reaches 0
-  useEffect(() => {
-    if (!state.impactStartTime) return;
-
-    const impactTime = state.impactStartTime; // Capture non-null value
-    const checkInterval = setInterval(() => {
-      const elapsed = (Date.now() - impactTime) / 350;
-      const fade = Math.max(0, 1 - (elapsed / IMPACT_DURATION));
-
-      if (fade <= 0) {
-        clearInterval(checkInterval);
-        onComplete();
-      }
-    }, 16); // Check every frame (~60fps)
-
-    return () => clearInterval(checkInterval);
-  }, [state.impactStartTime, onComplete]);
 
   useFrame((_, delta) => {
     if (!meteorGroupRef.current || !state.showMeteor || state.impactOccurred) {
@@ -251,7 +234,8 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
       {/* Add impact effect */}
       {state.impactStartTime && createMeteorImpactEffect(
         meteorGroupRef.current?.position || initialTargetPos,
-        state.impactStartTime
+        state.impactStartTime,
+        onComplete
       )}
     </>
   );
