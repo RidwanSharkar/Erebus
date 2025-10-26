@@ -63,8 +63,8 @@ export default function SoulStealEffect({
       <mesh>
         <sphereGeometry args={[0.15, 8, 8]} />
         <meshStandardMaterial
-          color="#E879F9"
-          emissive="#E879F9"
+          color="#ff4400"
+          emissive="#cc0000"
           emissiveIntensity={2}
           transparent
           opacity={0.8}
@@ -76,8 +76,8 @@ export default function SoulStealEffect({
       <mesh>
         <sphereGeometry args={[0.25, 8, 8]} />
         <meshStandardMaterial
-          color="#C084FC"
-          emissive="#C084FC"
+          color="#ff6600"
+          emissive="#ff6600"
           emissiveIntensity={1}
           transparent
           opacity={0.3}
@@ -89,8 +89,8 @@ export default function SoulStealEffect({
       <mesh rotation={[Math.PI / 2, 0, Date.now() * 0.005]}>
         <ringGeometry args={[0.1, 0.3, 8]} />
         <meshStandardMaterial
-          color="#A855F7"
-          emissive="#A855F7"
+          color="#ff4400"
+          emissive="#cc0000"
           emissiveIntensity={1.5}
           transparent
           opacity={0.4}

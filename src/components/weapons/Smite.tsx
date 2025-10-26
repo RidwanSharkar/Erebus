@@ -69,8 +69,8 @@ const SmiteComponent = memo(function Smite({
   // Use useMemo for static materials - colors change based on corrupted aura status
   const materials = useMemo(() => {
     const isCorrupted = isCorruptedAuraActive;
-    const primaryColor = isCorrupted ? "#FF4444" : "#00FF88";     // Red when corrupted, green normally
-    const secondaryColor = isCorrupted ? "#FF8888" : "#00AA44";   // Light red when corrupted, dark green normally
+    const primaryColor = isCorrupted ? "#FF4444" : "#FFA500";     // Red when corrupted, orange normally
+    const secondaryColor = isCorrupted ? "#FF8888" : "#FF8C00";   // Light red when corrupted, dark orange normally
 
     return {
       core: new MeshStandardMaterial({
@@ -174,18 +174,43 @@ const SmiteComponent = memo(function Smite({
     const damageRadius = 3.0; // Small radius around impact location
     let totalDamage = 0;
 
+    // Debug: Log damage attempt
+    console.log('Smite damage attempt:', {
+      weaponType,
+      position: position.toArray(),
+      enemyCount: enemyData.length,
+      damageRadius
+    });
+
     enemyData.forEach(enemy => {
       if (!enemy.health || enemy.health <= 0) return;
 
       const distance = position.distanceTo(enemy.position);
+
+      // Debug: Log distance check
+      console.log(`Smite target ${enemy.id} distance: ${distance.toFixed(2)}, in range: ${distance <= damageRadius}`);
+
       if (distance <= damageRadius) {
         // Calculate critical hit damage (Corrupted Aura bonuses are already applied via global rune count modifications)
         const damageResult: DamageResult = calculateDamage(baseSmiteDamage, weaponType ?? WeaponType.RUNEBLADE);
         const finalDamage = damageResult.damage;
 
+        console.log(`Smite damaging target ${enemy.id} for ${finalDamage} damage`);
+
         // Enemy is within damage radius - deal damage
         if (onHit) {
           onHit(enemy.id, finalDamage); // Pass target ID and damage amount
+        }
+
+        // Also queue damage directly to combat system if available (like WraithStrike does)
+        if (combatSystem) {
+          // Find the enemy entity by server enemy ID
+          const allEntities = combatSystem.world?.getAllEntities() || [];
+          const enemyEntity = allEntities.find((entity: any) => entity.userData?.serverEnemyId === enemy.id);
+
+          if (enemyEntity) {
+            combatSystem.queueDamage(enemyEntity, finalDamage, null, 'smite', undefined);
+          }
         }
 
         // Create damage number for visual feedback using CombatSystem
@@ -286,13 +311,13 @@ const SmiteComponent = memo(function Smite({
       {/* Lights */}
       <pointLight
         position={[0, -10, 0]}
-        color={isCorruptedAuraActive ? "#FF4444" : "#00FF88"}
+        color={isCorruptedAuraActive ? "#FF4444" : "#FFA500"}
         intensity={35}
         distance={25}
       />
       <pointLight
         position={[0, 0, 0]}
-        color={isCorruptedAuraActive ? "#FF8888" : "#00AA44"}
+        color={isCorruptedAuraActive ? "#FF8888" : "#FF8C00"}
         intensity={10}
         distance={6}
       />

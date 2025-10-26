@@ -180,11 +180,6 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
         newCooldowns[key] = abilityCooldowns[key].current;
       });
 
-      // Debug logging for Spear cooldowns
-      if (currentWeapon === WeaponType.SPEAR && Object.keys(abilityCooldowns).length > 0) {
-        console.log('🎯 Spear Cooldowns:', abilityCooldowns);
-      }
-
       setCooldowns(newCooldowns);
 
       // Update weapon switch cooldown if available

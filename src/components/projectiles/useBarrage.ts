@@ -143,11 +143,16 @@ export function useBarrage({
             if (enemy.id !== localSocketId) {
               onHit(enemy.id, projectile.damage);
               
-              // Add damage number
+              // Add damage number with slight random offset to prevent stacking
+              const damagePosition = enemy.position.clone();
+              // Add small random offset (-0.5 to 0.5 units) to spread damage numbers
+              damagePosition.x += (Math.random() - 0.5) * 2.0;
+              damagePosition.z += (Math.random() - 0.5) * 2.0;
+
               setDamageNumbers(prev => [...prev, {
                 id: nextDamageNumberId.current++,
                 damage: projectile.damage,
-                position: enemy.position.clone(),
+                position: damagePosition,
                 isCritical: false,
                 isBarrage: true
               }]);

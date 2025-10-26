@@ -345,11 +345,11 @@ function BossClawModel({ isLeftHand = false }: { isLeftHand?: boolean }) {
               {createJoint(0.09)}
 
               {/* ULTRALISK BLADES */}
-              <group position={[0, 0.1, 0]}>
+              <group position={[0, 0.1, 0.075]}>
                 <group
                   position={[isLeftHand ? -0 : -0, 0, 0]}
-                  rotation={[2 + Math.PI/4, -0.75, Math.PI*2.675 + 0.85]}
-                  scale={[1.1, 0.55, 1.4]}
+                  rotation={[2 + Math.PI/4, -0.75, Math.PI*2 - 0.35]}
+                  scale={[1.5, 0.75, 1.275]}
                 >
                   <mesh>
                     <extrudeGeometry args={[BLADE_SHAPE, BLADE_EXTRUDE_SETTINGS]} />
@@ -524,7 +524,7 @@ function CustomHorn({ isLeft = false }: { isLeft?: boolean }) {
 
 // Boss Trail Effect component - enhanced particle system
 function BossTrailEffect({ parentRef }: { parentRef: React.RefObject<Group> }) {
-  const particlesCount = 10; // More particles for boss
+  const particlesCount = 12; // More particles for boss
   const particlesRef = useRef<Points>(null);
   const positionsRef = useRef<Float32Array>(new Float32Array(particlesCount * 3));
   const opacitiesRef = useRef<Float32Array>(new Float32Array(particlesCount));
@@ -638,33 +638,21 @@ export default function BossModel({
     wasAttackingRef.current = isAttacking;
 
     if (isAttacking && attackCycleRef.current < ATTACK_DURATION) {
-      attackCycleRef.current += delta;
+      attackCycleRef.current += delta * 1.75;
 
-      // Define arm pairs with their delays and rotations
+      // Define arm pairs with their delays and rotations (only existing arms)
       const armPairs = [
-        {
-          left: 'LeftLowerBackArm',
-          right: 'RightLowerBackArm',
-          startTime: TELEGRAPH_TIME / 1000,
-          rotationRange: Math.PI * 0.5
-        },
         {
           left: 'LeftMiddleBackArm',
           right: 'RightMiddleBackArm',
-          startTime: (TELEGRAPH_TIME + ARM_DELAY) / 1000,
-          rotationRange: Math.PI * 0.5
+          startTime: TELEGRAPH_TIME / 1000,
+          rotationRange: Math.PI * 1
         },
         {
           left: 'LeftUpperBackArm',
           right: 'RightUpperBackArm',
-          startTime: (TELEGRAPH_TIME + (ARM_DELAY * 2)) / 1000,
-          rotationRange: Math.PI * 0.5
-        },
-        {
-          left: 'LeftFrontArm',
-          right: 'RightFrontArm',
-          startTime: (TELEGRAPH_TIME + (ARM_DELAY * 3)) / 1000,
-          rotationRange: Math.PI * 0.5
+          startTime: (TELEGRAPH_TIME + ARM_DELAY) / 1000,
+          rotationRange: Math.PI * 1
         }
       ];
 
@@ -687,12 +675,12 @@ export default function BossModel({
           leftArm.rotation.z = forwardPivot;
           rightArm.rotation.z = forwardPivot;
 
-          // Trigger lightning at specific phase for front arms
-          if ((left === 'LeftFrontArm' || right === 'RightFrontArm') &&
+          // Trigger lightning at specific phase for upper arms
+          if ((left === 'LeftUpperBackArm' || right === 'RightUpperBackArm') &&
               armProgress > 0.3 && armProgress < 0.7 &&
               onLightningStart) {
-            if (left === 'LeftFrontArm') onLightningStart('left');
-            if (right === 'RightFrontArm') onLightningStart('right');
+            if (left === 'LeftUpperBackArm') onLightningStart('left');
+            if (right === 'RightUpperBackArm') onLightningStart('right');
           }
         }
       });
@@ -709,12 +697,10 @@ export default function BossModel({
         });
       }
     } else if (!isAttacking) {
-      // Reset arm positions when not attacking
+      // Reset arm positions when not attacking (only existing arms)
       const defaultRotations = [
-        { left: 'LeftLowerBackArm', right: 'RightLowerBackArm', y: Math.PI * 4.2 },
         { left: 'LeftMiddleBackArm', right: 'RightMiddleBackArm', y: Math.PI * 4.1 },
-        { left: 'LeftUpperBackArm', right: 'RightUpperBackArm', y: Math.PI * 4 },
-        { left: 'LeftFrontArm', right: 'RightFrontArm', y: Math.PI * 4.9 }
+        { left: 'LeftUpperBackArm', right: 'RightUpperBackArm', y: Math.PI * 4 }
       ];
 
       defaultRotations.forEach(({ left, right, y }) => {
@@ -724,6 +710,9 @@ export default function BossModel({
         if (leftArm && rightArm) {
           leftArm.rotation.y = y;
           rightArm.rotation.y = -y;
+          // Also reset z rotation to ensure no tilt remains
+          leftArm.rotation.z = 0;
+          rightArm.rotation.z = 0;
         }
       });
 
@@ -764,18 +753,18 @@ export default function BossModel({
   }, []);
 
   return (
-    <group ref={groupRef} scale={[1.2,  1.2, 1.2]}> {/* Slightly larger than Reaper */}
+    <group ref={groupRef} scale={[1.1,  1.1, 1.1]}> {/* Slightly larger than Reaper */}
       {/* Trail Effects */}
-      <group position={[0, 2.15, -0]}>
+      <group position={[0, 1.85, -0]}>
         <BossTrailEffect parentRef={groupRef} />
       </group>
 
       {/* Body - Bone Plate */}
-      <group position={[0, 2.15, -0.05]} scale={[1.25, 1.25, 1.25]} rotation={[0.2, 0, 0]}>
+      <group position={[0, 1.95, -0.05]} scale={[1.25, 1.25, 1.25]} rotation={[0.2, 0, 0]}>
         <BonePlate />
       </group>
 
-      <group position={[0, 2.5, 0.25]} scale={[0.65, 0.75, 0.75]} rotation={[0.5, 0, 0]}>
+      <group position={[0, 2.35, 0.35]} scale={[0.55, 0.75, 0.75]} rotation={[0.5, 0, 0]}>
         <BossDragonSkull />
       </group>
 
@@ -783,14 +772,14 @@ export default function BossModel({
  
 
       {/* Wings at height 3 on both sides */}
-      <group position={[0, 2.35, -0.05]} rotation={[0, Math.PI / 8, 0]} scale={[1.75 , 1.75, 2 ]}>
+      <group position={[0, 2.25, -0.05]} rotation={[0, Math.PI / 8, 0]} scale={[1.75 , 1.75, 2 ]}>
         <BossBoneWings
           isLeftWing={true}
           parentRef={groupRef}
           isDashing={false}
         />
       </group>
-      <group position={[0, 2.35, -0.05]} rotation={[0, -Math.PI / 8, 0]} scale={[1.75 , 1.75, 2 ]}>
+      <group position={[0, 2.25, -0.05]} rotation={[0, -Math.PI / 8, 0]} scale={[1.75 , 1.75, 2 ]}>
         <BossBoneWings
           isLeftWing={false}
           parentRef={groupRef}
@@ -800,36 +789,36 @@ export default function BossModel({
 
 
       {/* Shoulder Plates */}
-      <group position={[-0.55, 2.75, 0.275]} scale={[1.1, 1.1, 1.1]} rotation={[-0.45, -Math.PI/1.2, -.525]}>
+      <group position={[-0.55, 2.65, 0.275]} scale={[1.1, 1.1, 1.1]} rotation={[-0.45, -Math.PI/1.2, -.525]}>
         <ShoulderPlate />
       </group>
-      <group position={[0.55, 2.75, 0.275]} scale={[1.1, 1.1, -1.1]} rotation={[-0.25, Math.PI/-1.2 - Math.PI/4, 0.525]}>
+      <group position={[0.55, 2.65, 0.275]} scale={[1.1, 1.1, -1.1]} rotation={[-0.25, Math.PI/-1.2 - Math.PI/4, 0.525]}>
         <ShoulderPlate />
       </group>
 
       {/* Bone Tail */}
-      <group scale={[1.5, 1.5, 1.5]} position={[0, 1.85, -0.0]}>
+      <group scale={[1.5, 1.5, 1.5]} position={[0, 1.65, -0.0]}>
         <BoneTail />
       </group>
 
-      <group position={[0, 0.15, 0]} scale={[0.85, 0.85, 0.85]}>
+      <group position={[0, -0.35, -0.125]} scale={[1, 1, 1]}>
         <ElementalVortex parentRef={groupRef} />
       </group>
 
 
 
       {/* Back Arms (Blade arms with sequential attacks) */}
-      <group name="LeftUpperBackArm" position={[-0.55, 2.6, 0.25]} scale={[-0.9, 0.7, 0.9]} rotation={[0.4, Math.PI*2, -0.3]}>
+      <group name="LeftUpperBackArm" position={[-0.55, 2.43, 0.25]} scale={[-0.8, 0.7, 0.8]} rotation={[0.4, Math.PI*2, -0.3]}>
         <BossClawModel isLeftHand={true} />
       </group>
-      <group name="RightUpperBackArm" position={[0.55, 2.6, 0.25]} scale={[0.9, 0.7, 0.9]} rotation={[0.4, -Math.PI*2, 0.3]}>
+      <group name="RightUpperBackArm" position={[0.55, 2.43, 0.25]} scale={[0.8, 0.7, 0.8]} rotation={[0.4, -Math.PI*2, 0.3]}>
         <BossClawModel isLeftHand={false} />
       </group>
 
-      <group name="LeftMiddleBackArm" position={[-0.45, 2.5, 0.15]} scale={[-0.75, 0.75, 0.75]} rotation={[0.4, Math.PI*2.1, -.4]}>
+      <group name="LeftMiddleBackArm" position={[-0.4, 2.25, 0.15]} scale={[-0.65, 0.65, 0.65]} rotation={[0.4, Math.PI*2.1, -.4]}>
         <BossClawModel isLeftHand={true} />
       </group>
-      <group name="RightMiddleBackArm" position={[0.45, 2.5, 0.15]} scale={[0.75, 0.75, 0.75]} rotation={[0.4, -Math.PI*2.1, 0.4]}>
+      <group name="RightMiddleBackArm" position={[0.4, 2.25, 0.15]} scale={[0.65, 0.65, 0.65]} rotation={[0.4, -Math.PI*2.1, 0.4]}>
         <BossClawModel isLeftHand={false} />
       </group>
 

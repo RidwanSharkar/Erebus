@@ -19,7 +19,7 @@ export default function ThrowSpearProjectile({
   chargeTime 
 }: ThrowSpearProjectileProps) {
   const groupRef = useRef<Group>(null);
-  const TRAIL_COUNT = 10;
+  const TRAIL_COUNT = 14;
 
   // Calculate visual intensity based on charge time (0-1)
   const chargeIntensity = Math.min(chargeTime / 2, 1);
@@ -106,8 +106,8 @@ export default function ThrowSpearProjectile({
     <group ref={groupRef}>
       {/* Main spear container with proper scaling and positioning to match original */}
       <group 
-        position={[0, -0.4, 0.6]}
-        rotation={[-0.55, 0.15, 0]}
+        position={[0, 0.5, 0.6]}
+        rotation={[-0, 0.15, 0]}
         scale={[0.825, 0.75, 0.75]}
       >
         <group 
@@ -324,30 +324,18 @@ export default function ThrowSpearProjectile({
       {/* Lightning trail effects - more intense with higher charge */}
       {[...Array(TRAIL_COUNT)].map((_, index) => {
         const trailOpacity = opacity * (1 - index / TRAIL_COUNT) * 0.6;
-        const trailScale = 1.25 - (index / TRAIL_COUNT) * 0.5;
+        const trailScale = 1.35 - (index / TRAIL_COUNT) * 0.5;
         
         // Calculate trail offset in world space (behind the spear along its trajectory)
         // Use the direction vector to position trails behind the spear
-        const trailOffset: [number, number, number] = [0, 0, -(index + 1) * 0.8 + 1]; // Behind the spear along Z axis
+        const trailOffset: [number, number, number] = [-1, 0, -(index + 1) * 0.8 + 1]; // Behind the spear along Z axis
                 
         return (
           <group
             key={`trail-${index}`}
             position={trailOffset} // Position behind the spear along its movement direction
           >
-            {/* Lightning energy trail */}
-            <mesh scale={[trailScale, trailScale, trailScale]}>
-              <sphereGeometry args={[0.15, 8, 8]} />
-              <meshStandardMaterial
-                color={new THREE.Color(lightningColor)}
-                emissive={new THREE.Color(lightningColor)}
-                emissiveIntensity={chargeIntensity * 4 + 2}
-                transparent
-                opacity={trailOpacity}
-                blending={THREE.AdditiveBlending}
-                depthWrite={false}
-              />
-            </mesh>
+
             
             {/* Outer energy glow */}
             <mesh scale={[trailScale * 1.5, trailScale * 1.5, trailScale * 1.5]}>
@@ -366,25 +354,6 @@ export default function ThrowSpearProjectile({
         );
       })}
       
-      {/* Spinning energy rings around the spear - more with higher charge */}
-      {[...Array(Math.floor(2 + chargeIntensity * 2))].map((_, i) => (
-        <group key={`ring-${i}`} position={direction.clone().multiplyScalar(0.3 - i * 0.4)}>
-          <mesh
-            rotation={[0, 0, Date.now() * 0.01 + i * Math.PI / 3]}
-          >
-            <torusGeometry args={[0.15 + i * 0.05, 0.02, 6, 12]} />
-            <meshStandardMaterial
-              color={new THREE.Color(lightningColor)}
-              emissive={new THREE.Color(lightningColor)}
-              emissiveIntensity={baseEmissiveIntensity + chargeIntensity}
-              transparent
-              opacity={opacity * 0.7}
-              blending={THREE.AdditiveBlending}
-              depthWrite={false}
-            />
-          </mesh>
-        </group>
-      ))}
     </group>
   );
 }

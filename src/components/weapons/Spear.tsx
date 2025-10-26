@@ -16,6 +16,7 @@ interface SpearProps {
   currentSubclass?: WeaponSubclass;
   isThrowSpearCharging?: boolean;
   throwSpearChargeProgress?: number;
+  isThrowSpearReleasing?: boolean;
   isSpearThrown?: boolean;
   isWhirlwindCharging?: boolean;
   whirlwindChargeProgress?: number;
@@ -29,6 +30,7 @@ const SpearComponent = memo(function Spear({
   currentSubclass,
   isThrowSpearCharging = false,
   throwSpearChargeProgress = 0,
+  isThrowSpearReleasing = false,
   isSpearThrown = false,
   isWhirlwindCharging = false,
   whirlwindChargeProgress = 0
@@ -60,8 +62,12 @@ const SpearComponent = memo(function Spear({
 
     // Handle whirlwind spinning animation (orbital motion when released)
     if (isWhirlwinding) {
-      // Accelerate rotation speed when whirlwind is active
-      whirlwindSpeed.current = Math.min(whirlwindSpeed.current + delta * 15, 35);
+      // Start at maximum speed immediately when whirlwind begins
+      if (whirlwindSpeed.current === 0) {
+        whirlwindSpeed.current = 60; // Start at max speed
+      }
+      // Then immediately start decelerating for explosive burst effect
+      whirlwindSpeed.current = Math.max(0, whirlwindSpeed.current - delta * 1920);
 
       // Update rotation based on speed
       whirlwindRotation.current += delta * whirlwindSpeed.current;
@@ -100,8 +106,8 @@ const SpearComponent = memo(function Spear({
 
       return;
     } else if (whirlwindSpeed.current > 0) {
-      // Deceleration when whirlwind ends
-      whirlwindSpeed.current = Math.max(0, whirlwindSpeed.current - delta * 30);
+      // Deceleration when whirlwind ends - continue slowing down
+      whirlwindSpeed.current = Math.max(0, whirlwindSpeed.current - delta * 1920);
 
       // Continue rotation but slowing down
       whirlwindRotation.current += delta * whirlwindSpeed.current;
@@ -145,11 +151,11 @@ const SpearComponent = memo(function Spear({
     if (isWhirlwindCharging) {
       // Pull spear to center and start spinning slowly
       const pullAmount = whirlwindChargeProgress;
-      const heightOffset = 0.3 * pullAmount; // Lift up slightly
-      const spinSpeed = pullAmount * 5; // Gradually increase spin speed
+      const heightOffset = 0.3 * pullAmount + 0.5; // Lift up slightly
+      const spinSpeed = pullAmount * 60; // Gradually increase spin speed - faster and more explosive
 
       // Pull spear toward center of player
-      const targetX = -0.5 * (1 - pullAmount);
+      const targetX = -0.5 * (1 - pullAmount) - 0.65;
       const targetY = basePosition[1] + heightOffset;
       const targetZ = basePosition[2] + (0.5 * pullAmount);
 
@@ -159,7 +165,7 @@ const SpearComponent = memo(function Spear({
       spearRef.current.position.z += (targetZ - spearRef.current.position.z) * 0.1;
 
       // Start spinning the spear
-      spearRef.current.rotation.x = -Math.PI/2;
+      spearRef.current.rotation.x = -Math.PI; // Face sky perpendicular
       spearRef.current.rotation.y += delta * spinSpeed;
       spearRef.current.rotation.z = Math.PI;
 
@@ -168,29 +174,62 @@ const SpearComponent = memo(function Spear({
 
     // Handle ThrowSpear charging animation
     if (isThrowSpearCharging) {
-      // Charging windup animation - spear pulls back and glows
-      const windupAmount = -0.75 * throwSpearChargeProgress; // Pull back based on charge
-      const heightOffset = 0.5 * throwSpearChargeProgress; // Lift up slightly
-      const tiltAmount = -0.5 * throwSpearChargeProgress; // Tilt back for throwing stance
+      // Dramatic charging windup animation - spear raises high and pulls back
+      const windupAmount = -1.25 * throwSpearChargeProgress; // Pull back slightly less
+      const heightOffset = 1.5 * throwSpearChargeProgress; // Raise much higher
+      const sideOffset = -0.25 * throwSpearChargeProgress; // Pull slightly to the side
+      const tiltAmount = -0.75 * throwSpearChargeProgress; // More dramatic tilt back
 
       // Smoothly animate to charging position
-      spearRef.current.position.x += (basePosition[0] - spearRef.current.position.x) * 0.1;
-      spearRef.current.position.y += (basePosition[1] + heightOffset - spearRef.current.position.y) * 0.1;
-      spearRef.current.position.z += (basePosition[2] + windupAmount - spearRef.current.position.z) * 0.1;
+      const targetX = basePosition[0] + sideOffset;
+      const targetY = basePosition[1] + heightOffset;
+      const targetZ = basePosition[2] + windupAmount;
 
-      // Tilt the spear back for throwing stance
-      const targetRotationX = -Math.PI/2 + tiltAmount;
-      spearRef.current.rotation.x += (targetRotationX - spearRef.current.rotation.x) * 0.1;
-      spearRef.current.rotation.y += (0 - spearRef.current.rotation.y) * 0.1;
-      spearRef.current.rotation.z += (Math.PI - spearRef.current.rotation.z) * 0.1;
+      spearRef.current.position.x += (targetX - spearRef.current.position.x) * 0.08;
+      spearRef.current.position.y += (targetY - spearRef.current.position.y) * 0.08;
+      spearRef.current.position.z += (targetZ - spearRef.current.position.z) * 0.08;
 
-      // Add slight trembling effect when fully charged
+      // Dramatic tilt back for throwing stance - point spear upward and back
+      const targetRotationX = -Math.PI/2 + tiltAmount; // Tilt back more
+      const targetRotationY = 0.3 * throwSpearChargeProgress; // Slight Y rotation for aiming
+      spearRef.current.rotation.x += (targetRotationX - spearRef.current.rotation.x) * 0.08;
+      spearRef.current.rotation.y += (targetRotationY - spearRef.current.rotation.y) * 0.08;
+      spearRef.current.rotation.z += (Math.PI - spearRef.current.rotation.z) * 0.08;
+
+      // Add trembling effect when fully charged
       if (throwSpearChargeProgress > 0.8) {
-        const trembleAmount = 0.02 * (throwSpearChargeProgress - 0.8) * 5;
+        const trembleAmount = 0.03 * (throwSpearChargeProgress - 0.8) * 5;
         spearRef.current.position.x += (Math.random() - 0.5) * trembleAmount;
         spearRef.current.position.y += (Math.random() - 0.5) * trembleAmount;
         spearRef.current.position.z += (Math.random() - 0.5) * trembleAmount;
+        spearRef.current.rotation.x += (Math.random() - 0.5) * trembleAmount * 0.1;
       }
+
+      return;
+    }
+
+    // Handle ThrowSpear release animation - fast snap down motion
+    if (isThrowSpearReleasing) {
+      // Quick snap down to simulate throwing motion
+      const snapSpeed = 0.4; // Fast snap speed
+
+      // Snap to throwing position - forward and down
+      const throwPositionX = basePosition[0] + 1.0; // Forward
+      const throwPositionY = basePosition[1] - 0.5; // Down
+      const throwPositionZ = basePosition[2] + 0.8; // Forward
+
+      spearRef.current.position.x += (throwPositionX - spearRef.current.position.x) * snapSpeed;
+      spearRef.current.position.y += (throwPositionY - spearRef.current.position.y) * snapSpeed;
+      spearRef.current.position.z += (throwPositionZ - spearRef.current.position.z) * snapSpeed;
+
+      // Snap rotation to throwing angle - point forward and slightly down
+      const throwRotationX = -Math.PI/3; // Point forward/down
+      const throwRotationY = 0;
+      const throwRotationZ = Math.PI;
+
+      spearRef.current.rotation.x += (throwRotationX - spearRef.current.rotation.x) * snapSpeed;
+      spearRef.current.rotation.y += (throwRotationY - spearRef.current.rotation.y) * snapSpeed;
+      spearRef.current.rotation.z += (throwRotationZ - spearRef.current.rotation.z) * snapSpeed;
 
       return;
     }
@@ -208,32 +247,18 @@ const SpearComponent = memo(function Spear({
       }
 
       // Faster swing speed for burst attacks
-      const swingSpeed = isBurstAttack ? 22.5 : 15; // Double speed for Storm burst
+      const swingSpeed = 21.5;
       swingProgress.current += delta * swingSpeed;
       const swingPhase = Math.min(swingProgress.current / Math.PI / 1.5, 1);
 
       if (swingProgress.current >= Math.PI * 0.75) {
         swingProgress.current = 0;
 
-        // Handle burst attack completion
-        if (isBurstAttack) {
-          burstCount.current++;
-
-          // Complete after 2 attacks (0 and 1, so when count reaches 2)
-          if (burstCount.current >= 2) {
-            burstCount.current = 0;
-            // Reset position and rotation only when burst sequence is complete
-            spearRef.current.rotation.set(-Math.PI/2, 0, Math.PI);
-            spearRef.current.position.set(...basePosition);
-            onSwingComplete?.();
-          }
-          // Continue burst - don't reset position/rotation between burst attacks
-        } else {
           // Normal single attack completion - reset position, rotation
           spearRef.current.rotation.set(-Math.PI/2, 0, Math.PI);
           spearRef.current.position.set(...basePosition);
           onSwingComplete?.();
-        }
+        
         return;
       }
 

@@ -153,7 +153,8 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
                   damageData.damageType === 'rejuvenating_shot_healing' ||
                   damageData.damageType === 'flurry_healing'
                 ? 'text-green-400 text-lg font-extrabold'
-                : damageData.damageType === 'colossus_strike'
+                : damageData.damageType === 'colossus_strike' ||
+                  damageData.damageType === 'lightning_storm'
                 ? 'text-yellow-400 text-lg'
                 : damageData.damageType === 'barrage'
                 ? 'text-blue-400 text-lg'

@@ -210,7 +210,7 @@ function HomeContent() {
   const weapons: WeaponOption[] = [
     {
       type: WeaponType.RUNEBLADE,
-      name: 'Runeblade',
+      name: 'Sword',
       icon: '⚜️',
       description: 'TEMPLAR',
       defaultSubclass: WeaponSubclass.ARCANE
