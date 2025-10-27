@@ -1,21 +1,21 @@
 # 🌑  Erebus β
 
-### v0.7 Redesigned Spear 
-![Spear1](https://github.com/user-attachments/assets/24227104-6208-4e3e-9487-fbd11a9f89ca) <br>
-
 ### v0.7 Boss Abilities
 ![Spear2](https://github.com/user-attachments/assets/31e24563-2d63-42c2-9645-3cc977889355)
 
-### v0.6 Scythe Rework
+### v0.6 Redesigned Spear 
+![Spear1](https://github.com/user-attachments/assets/24227104-6208-4e3e-9487-fbd11a9f89ca) <br>
+
+### v0.5 Scythe Rework
 ![Pulsar](https://github.com/user-attachments/assets/569b3535-ab96-4183-9a37-5ccfd4f0fc64)
 
-### v0.5 Ally Healing
+### v0.4 Ally Healing
 ![bowheal](https://github.com/user-attachments/assets/e0c4c545-8e06-4961-bc23-700b85691959)
 
-### v0.4 Co-op Aggro System
+### v0.3 Co-op Aggro System
 ![AggroSystem](https://github.com/user-attachments/assets/70b0485a-b29b-47f9-a228-5e8627a2766d)
 
-### v0.3 Initial Boss Model
+### v0.2 Initial Boss Model
 ![BossPreRelease](https://github.com/user-attachments/assets/32f96a9d-e66b-404a-a984-fd2dbd04b866)
 
 
