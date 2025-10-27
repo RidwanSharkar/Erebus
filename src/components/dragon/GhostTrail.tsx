@@ -74,7 +74,7 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
 
         // Spear subclasses
         case WeaponSubclass.STORM:
-          return '#B8B8B8'; // Lighter greyish silver for storm
+          return '#ABAAAA'; // Lighter greyish silver for storm
         case WeaponSubclass.VALOR:
           return '#A8A8A8'; // Darker greyish silver for valor
       }

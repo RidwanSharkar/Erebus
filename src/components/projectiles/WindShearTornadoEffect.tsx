@@ -1,6 +1,12 @@
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { Vector3, Group, AdditiveBlending, DoubleSide, Mesh } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
+
+interface LightningSpark {
+  id: number;
+  position: [number, number, number];
+  segments: Array<[number, number, number]>;
+}
 
 // Whirlwind Radial Wave Effect Component
 export function WhirlwindRadialWaveEffect({
@@ -16,6 +22,34 @@ export function WhirlwindRadialWaveEffect({
 }) {
   const groupRef = useRef<Group>(null);
   const hasCompleted = useRef(false);
+
+  // Generate lightning sparks
+  const lightningSparks: LightningSpark[] = useMemo(() => {
+    const sparks: LightningSpark[] = [];
+    for (let i = 0; i < 12; i++) {
+      // Random positions within expanding radius
+      const angle = (i / 12) * Math.PI * 2;
+      const distance = 0.3 + Math.random() * 0.5; // Random distance from center
+      const x = Math.cos(angle) * distance;
+      const z = Math.sin(angle) * distance;
+      const y = (Math.random() - 0.5) * 0.3; // Slight vertical variation
+
+      sparks.push({
+        id: i,
+        position: [x, y, z] as [number, number, number],
+        // Create jagged lightning segments
+        segments: Array(3 + Math.floor(Math.random() * 3)).fill(0).map((_, segIdx) => {
+          const segAngle = angle + (Math.random() - 0.5) * 0.5;
+          const segDistance = distance + (Math.random() - 0.5) * 0.2;
+          const segX = Math.cos(segAngle) * segDistance;
+          const segZ = Math.sin(segAngle) * segDistance;
+          const segY = y + (Math.random() - 0.5) * 0.1;
+          return [segX, segY, segZ] as [number, number, number];
+        })
+      });
+    }
+    return sparks;
+  }, []);
 
   useFrame(() => {
     if (!groupRef.current || hasCompleted.current) return;
@@ -62,9 +96,9 @@ export function WhirlwindRadialWaveEffect({
       <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0.155, 0]}>
         <ringGeometry args={[0.8, 1, 32]} />
         <meshStandardMaterial
-          color="#C0C0C0"
-          emissive="#808080"
-          emissiveIntensity={2}
+          color="#FFFF00"
+          emissive="#FFFF00"
+          emissiveIntensity={1}
           transparent
           opacity={0.8}
           side={DoubleSide}
@@ -76,9 +110,9 @@ export function WhirlwindRadialWaveEffect({
       <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0.15, 0]}>
         <ringGeometry args={[0.4, 0.6, 24]} />
         <meshStandardMaterial
-          color="#A0A0A0"
-          emissive="#606060"
-          emissiveIntensity={1.5}
+          color="#FFFF00"
+          emissive="#FFFF00"
+          emissiveIntensity={1}
           transparent
           opacity={0.6}
           side={DoubleSide}
@@ -86,6 +120,80 @@ export function WhirlwindRadialWaveEffect({
         />
       </mesh>
 
+      {/* Violent Yellow Lightning Sparks */}
+      {lightningSparks.map((spark: LightningSpark) => (
+        <group key={spark.id}>
+          {/* Main spark segments */}
+          {spark.segments.map((segment: [number, number, number], segIdx) => (
+            <mesh
+              key={`spark-${spark.id}-seg-${segIdx}`}
+              position={segment}
+            >
+              <sphereGeometry args={[0.02 + Math.random() * 0.02, 4, 4]} />
+              <meshStandardMaterial
+                color="#FFFF00" // Pure yellow
+                emissive="#FFD700" // Golden yellow
+                emissiveIntensity={0.5 + Math.random() * 2}
+                transparent
+                opacity={1}
+                blending={AdditiveBlending}
+              />
+            </mesh>
+          ))}
+
+          {/* Crackling mini sparks around main spark */}
+          {[...Array(3)].map((_, miniIdx) => {
+            const miniAngle = (miniIdx / 3) * Math.PI * 2 + Math.random() * Math.PI;
+            const miniDistance = 0.08 + Math.random() * 0.05;
+            const miniX = spark.position[0] + Math.cos(miniAngle) * miniDistance;
+            const miniZ = spark.position[2] + Math.sin(miniAngle) * miniDistance;
+            const miniY = spark.position[1] + (Math.random() - 0.5) * 0.05;
+
+            return (
+              <mesh
+                key={`mini-spark-${spark.id}-${miniIdx}`}
+                position={[miniX, miniY, miniZ]}
+              >
+                <sphereGeometry args={[0.015 + Math.random() * 0.01, 3, 3]} />
+                <meshStandardMaterial
+                  color="#FFFF88" // Bright yellow-white
+                  emissive="#FFD700" // Golden yellow
+                  emissiveIntensity={0.5 + Math.random() * 1.5}
+                  transparent
+                  opacity={0.9}
+                  blending={AdditiveBlending}
+                />
+              </mesh>
+            );
+          })}
+        </group>
+      ))}
+
+      {/* Additional random crackling sparks */}
+      {[...Array(8)].map((_, i) => {
+        const randomAngle = Math.random() * Math.PI * 2;
+        const randomDistance = 0.2 + Math.random() * 0.8;
+        const crackleX = Math.cos(randomAngle) * randomDistance;
+        const crackleZ = Math.sin(randomAngle) * randomDistance;
+        const crackleY = (Math.random() - 0.5) * 0.4;
+
+        return (
+          <mesh
+            key={`crackle-${i}`}
+            position={[crackleX, crackleY, crackleZ]}
+          >
+            <sphereGeometry args={[0.02 + Math.random() * 0.015, 3, 3]} />
+            <meshStandardMaterial
+              color="#FFFF00" // Pure yellow
+              emissive="#FFD700" // Golden yellow
+              emissiveIntensity={0.5 + Math.random() * 1.5}
+              transparent
+              opacity={0.8}
+              blending={AdditiveBlending}
+            />
+          </mesh>
+        );
+      })}
     </group>
   );
 }
@@ -132,7 +240,7 @@ export default function WindShearTornadoEffect({
     groupRef.current.rotation.y += rotationSpeed;
 
     // Scale effect based on progress (grows slightly then fades)
-    const scale = 0.5 + (progress * 0.3); // Grows from 0.8 to 1.2
+    const scale = 0.425 + (progress * 0.3); // Grows from 0.8 to 1.2
     groupRef.current.scale.setScalar(scale);
 
     // Position the effect at the exact player position (follow player)
@@ -143,7 +251,7 @@ export default function WindShearTornadoEffect({
     <group ref={groupRef} position={[initialPosition.x, initialPosition.y, initialPosition.z]}>
       {/* Main tornado cone - grey with some transparency - ROTATED RIGHT SIDE UP */}
       <mesh rotation={[Math.PI, 0, 0]}>
-        <coneGeometry args={[1.25, 4, 8, 1, true]} />
+        <coneGeometry args={[1.25, 3.75, 8, 1, true]} />
         <meshStandardMaterial
           color="#666666" // Grey color
           emissive="#444444"
