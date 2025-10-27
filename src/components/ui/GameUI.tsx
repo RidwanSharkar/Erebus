@@ -413,7 +413,7 @@ export default function GameUI({
           <ResourceBar
             current={currentMana}
             max={getMaxManaForWeapon(WeaponType.SCYTHE, level)} // Dynamic Scythe mana based on level
-            color="#4A90E2"
+            color="#197EF0"
             backgroundColor="#1a2332"
           />
         );
@@ -441,7 +441,7 @@ export default function GameUI({
           <ResourceBar
             current={currentMana}
             max={getMaxManaForWeapon(WeaponType.RUNEBLADE, level)} // Dynamic Runeblade mana based on level
-            color="#FF8C00" // Orange color for mana
+            color="#FF7B00" // Orange color for mana
             backgroundColor="#2a1a33"
           />
         );
@@ -450,7 +450,7 @@ export default function GameUI({
           <ResourceBar
             current={currentEssence}
             max={100}
-            color="#00D4FF" // Light blue for Essence
+            color="#3EABE6" // Light blue for Essence
             backgroundColor="#1a2332"
           />
         );

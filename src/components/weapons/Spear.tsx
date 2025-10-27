@@ -532,16 +532,16 @@ const SpearComponent = memo(function Spear({
 
         <group
           ref={innerBladeRef}
-          position={[0, 0.45, 0.35]}
+          position={[0, 0.475, 0.35]}
           rotation={[0, -Math.PI / 6, Math.PI / 2]}
-          scale={[0.75, 0.6, 0.75]}
+          scale={[0.725, 0.5125, 0.75]}
         >
           <mesh>
             <extrudeGeometry args={[createInnerBladeShape(), bladeExtrudeSettings]} />
             <meshStandardMaterial
               color={new Color(0xE8CD57)}
               emissive={new Color(0xE8CD57)}
-              emissiveIntensity={1.5}
+              emissiveIntensity={1.25}
               metalness={0.3}
               roughness={0.1}
             />
@@ -552,7 +552,7 @@ const SpearComponent = memo(function Spear({
             <meshStandardMaterial
               color={new Color(0xC0C0C0)}
               emissive={new Color(0xC0C0C0)}
-              emissiveIntensity={1.5}
+              emissiveIntensity={1.25}
               metalness={0.2}
               roughness={0.1}
               opacity={0.8}

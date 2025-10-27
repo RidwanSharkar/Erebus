@@ -52,32 +52,6 @@ const FlurryHealingEffect: React.FC<FlurryHealingEffectProps> = React.memo(({ po
         </mesh>
       ))}
 
-      {/* Central healing burst - bright core */}
-      <mesh scale={[scale * 0.6, scale * 1.2, scale * 0.6]}>
-        <sphereGeometry args={[0.35, 24, 24]} />
-        <meshStandardMaterial
-          color={coreColor}
-          emissive={coreColor}
-          emissiveIntensity={5}
-          transparent
-          opacity={opacity * 0.7}
-          toneMapped={false}
-        />
-      </mesh>
-
-      {/* Outer healing pulse */}
-      <mesh scale={[scale * 0.9, scale * 1.5, scale * 0.9]}>
-        <sphereGeometry args={[0.5, 24, 24]} />
-        <meshStandardMaterial
-          color={primaryColor}
-          emissive={secondaryColor}
-          emissiveIntensity={3.5}
-          transparent
-          opacity={opacity * 0.3}
-          toneMapped={false}
-        />
-      </mesh>
-
       {/* Rapid swirling healing particles - lots of them for "flurry" effect */}
       {[...Array(24)].map((_, i) => {
         const angle = (i / 24) * Math.PI * 2;
@@ -151,33 +125,7 @@ const FlurryHealingEffect: React.FC<FlurryHealingEffectProps> = React.memo(({ po
         );
       })}
 
-      {/* Expanding ground ring with pulse */}
-      <mesh position={[0, 0.05, 0]} rotation={[Math.PI / 2, 0, time * 3]}>
-        <ringGeometry args={[scale * 0.4, scale * 0.7, 32]} />
-        <meshStandardMaterial
-          color={accentColor}
-          emissive={primaryColor}
-          emissiveIntensity={3}
-          transparent
-          opacity={opacity * 0.6}
-          side={2} // DoubleSide
-          toneMapped={false}
-        />
-      </mesh>
 
-      {/* Inner ground ring - counter-rotating */}
-      <mesh position={[0, 0.08, 0]} rotation={[Math.PI / 2, 0, -time * 4]}>
-        <ringGeometry args={[scale * 0.2, scale * 0.4, 24]} />
-        <meshStandardMaterial
-          color={coreColor}
-          emissive={secondaryColor}
-          emissiveIntensity={3.5}
-          transparent
-          opacity={opacity * 0.7}
-          side={2} // DoubleSide
-          toneMapped={false}
-        />
-      </mesh>
 
       {/* Multiple point lights for intense glow */}
       <pointLight

@@ -144,7 +144,7 @@ export class AudioSystem extends System {
       console.log('🎵 Starting background music streaming...');
       this.backgroundAudioElement = new Audio('/audio/sfx/ui/Empyrea.mp3');
       this.backgroundAudioElement.loop = true;
-      this.backgroundAudioElement.volume = 0.35 * this.sfxVolume * this.masterVolume;
+      this.backgroundAudioElement.volume = 0.2875 * this.sfxVolume * this.masterVolume;
       this.backgroundAudioElement.preload = 'none'; // Stream instead of preload
 
       // Add event listeners
@@ -572,8 +572,8 @@ export class AudioSystem extends System {
 
     const bgMusic = this.soundCache.get('background_music');
     if (bgMusic) {
-      // Set volume to 40% (0.4) and play - slightly reduced
-      bgMusic.volume(0.35 * this.sfxVolume * this.masterVolume);
+      // Set volume to 25% (0.25) and play - reduced for more subtle background
+      bgMusic.volume(0.25 * this.sfxVolume * this.masterVolume);
       this.backgroundMusicInstance = bgMusic.play();
       console.log('🎵 Started background music');
     }
