@@ -2,6 +2,8 @@
 
 ### v0.7 Redesigned Spear 
 ![Spear1](https://github.com/user-attachments/assets/24227104-6208-4e3e-9487-fbd11a9f89ca) <br>
+
+### v0.7 Boss Abilities
 ![Spear2](https://github.com/user-attachments/assets/31e24563-2d63-42c2-9645-3cc977889355)
 
 ### v0.6 Scythe Rework
