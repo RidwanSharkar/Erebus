@@ -1989,8 +1989,8 @@ const hasMana = useCallback((amount: number) => {
             window.audioSystem.playEnemyBowReleaseSound(position, data.animationData?.chargeProgress);
             break;
           case 'throw_spear':
-            // Throw spear uses sword swing sound
-            window.audioSystem.playEnemySwordSwingSound(1, position);
+            // Throw spear uses throw spear release sound
+            window.audioSystem.playEnemyThrowSpearReleaseSound(position);
             break;
           case 'regular_arrow':
             window.audioSystem.playEnemyBowReleaseSound(position, data.animationData?.chargeProgress);

@@ -173,6 +173,8 @@ export class ControlSystem extends System {
   // Icebeam state tracking
   private isIcebeaming = false;
   private icebeamStartTime = 0;
+  private lastIcebeamTime = 0;
+  private icebeamCooldown = 1.0; // 1 second cooldown
   private onIcebeamStateChangeCallback?: (isActive: boolean) => void;
   private lastIcebeamManaConsumeTime = 0; // Track last mana consumption for Icebeam
   private lastViperStingTime = 0;
@@ -510,16 +512,16 @@ export class ControlSystem extends System {
     // Update deflect barrier position if active
     this.updateDeflectBarrier(playerTransform);
 
-    // Handle Icebeam mana consumption (20 mana per second)
+    // Handle Icebeam mana consumption (16 mana per second)
     if (this.isIcebeaming) {
       const currentTime = Date.now() / 1000; // Convert to seconds for consistency with other abilities
       const timeSinceLastConsume = currentTime - this.lastIcebeamManaConsumeTime;
 
-      // Consume mana every 0.1 seconds (2 mana per consumption = 20 per second)
+      // Consume mana every 0.1 seconds (1.6 mana per consumption = 16 per second)
       if (timeSinceLastConsume >= 0.1) {
         const gameUI = (window as any).gameUI;
         if (gameUI) {
-          const manaCost = 5; // 2 mana every 0.1 seconds = 20 per second
+          const manaCost = 4; // 1.6 mana every 0.1 seconds = 16 per second
           const manaConsumed = gameUI.consumeMana(manaCost);
           if (manaConsumed) {
             this.lastIcebeamManaConsumeTime = currentTime;
@@ -982,6 +984,12 @@ export class ControlSystem extends System {
     // Handle scythe left click for Icebeam
     if (this.inputManager.isMouseButtonPressed(0)) { // Left mouse button held
       if (!this.isIcebeaming) {
+        // Check cooldown
+        const currentTime = Date.now() / 1000;
+        if (currentTime - this.lastIcebeamTime < this.icebeamCooldown) {
+          return; // On cooldown
+        }
+
         // Start Icebeam (mana check happens in update loop)
         this.isIcebeaming = true;
         this.icebeamStartTime = Date.now();
@@ -1042,6 +1050,7 @@ export class ControlSystem extends System {
   private stopIcebeam(): void {
     this.isIcebeaming = false;
     this.icebeamStartTime = 0;
+    this.lastIcebeamTime = Date.now() / 1000; // Set cooldown
     this.lastIcebeamManaConsumeTime = 0; // Reset mana consumption timer
 
     // Remove movement and camera speed debuffs
@@ -3287,8 +3296,8 @@ export class ControlSystem extends System {
     }
     this.lastSwordFireTime = currentTime;
 
-    // Play spear thrust sound (reuse sword sound for now)
-    this.audioSystem?.playSwordSwingSound(1, playerTransform.position);
+    // Play spear thrust sound
+    this.audioSystem?.playSpearSwingSound(playerTransform.position);
 
     // Set swinging state - completion will be handled by spear component callback
     this.isSwinging = true;
@@ -3431,8 +3440,8 @@ export class ControlSystem extends System {
     this.whirlwindChargeProgress = 0;
     this.whirlwindStartTime = currentTime;
 
-    // Play charging sound (optional - can be added later)
-    this.audioSystem?.playSwordChargeSound?.(playerTransform.position);
+    // Play whirlwind charge sound
+    this.audioSystem?.playWhirlwindChargeSound(playerTransform.position);
   }
 
   private updateWhirlwindCharging(playerTransform: Transform, currentTime: number): void {
@@ -3488,8 +3497,9 @@ export class ControlSystem extends System {
       console.log('🌪️ Gained', essenceGain, 'Essence from Whirlwind');
     }
 
-    // Play whirlwind sound
-    this.audioSystem?.playSwordSwingSound?.(1, playerTransform.position);
+    // Stop charge sound and play release sound
+    this.audioSystem?.stopSound('whirlwind_charge');
+    this.audioSystem?.playWhirlwindReleaseSound(playerTransform.position);
 
     // Apply damage to all enemies in range immediately
     this.performWhirlwindDamage(playerTransform, chargeDamage);
@@ -3573,8 +3583,8 @@ export class ControlSystem extends System {
     this.throwSpearChargeStartTime = currentTime;
     this.whirlwindStartTime = currentTime; // Reuse whirlwindStartTime for charge tracking
 
-    // Play charging sound (optional - can be added later)
-    this.audioSystem?.playSwordChargeSound?.(playerTransform.position);
+    // Play throw spear charge sound
+    this.audioSystem?.playThrowSpearChargeSound(playerTransform.position);
   }
 
   private updateThrowSpearCharging(playerTransform: Transform, currentTime: number): void {
@@ -3602,6 +3612,10 @@ export class ControlSystem extends System {
     this.isThrowSpearCharging = false;
     this.isThrowSpearReleasing = true;
     this.throwSpearReleaseTime = currentTime;
+
+    // Stop charge sound and play release sound
+    this.audioSystem?.stopSound('throw_spear_charge');
+    this.audioSystem?.playThrowSpearReleaseSound(playerTransform.position);
 
     // Calculate charge time (0 to 2 seconds)
     const chargeTime = this.throwSpearChargeProgress * 2.0;
@@ -3677,8 +3691,8 @@ export class ControlSystem extends System {
     this.flurryStartTime = currentTime;
     this.lastFlurryTime = currentTime;
 
-    // Play activation sound (optional - can be added later)
-    this.audioSystem?.playSwordChargeSound?.(playerTransform.position);
+    // Play flurry activation sound
+    this.audioSystem?.playFlurrySound(playerTransform.position);
 
     // Trigger the WindShear Tornado effect (visual effect for Flurry)
     if (this.onWindShearTornadoCallback) {
@@ -3709,8 +3723,8 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check Essence cost (5 Essence)
-    const essenceCost = 5;
+    // Check Essence cost (8 Essence)
+    const essenceCost = 8;
     if (!(window as any).gameUI?.getCurrentEssence || (window as any).gameUI.getCurrentEssence() < essenceCost) {
       console.log('⚡ Not enough Essence for Lightning Storm');
       return;
@@ -3727,8 +3741,8 @@ export class ControlSystem extends System {
     // Update cooldown
     this.lastLightningStormTime = currentTime;
 
-    // Play activation sound
-    this.audioSystem?.playColossusStrikeSound?.(playerTransform.position);
+    // Play lightning bolt sound
+    this.audioSystem?.playLightningBoltSound(playerTransform.position);
 
     // Trigger the Lightning Storm callback if set
     if (this.onLightningStormCallback) {

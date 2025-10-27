@@ -402,7 +402,7 @@ export default function GameUI({
       canCastStealth: () => currentEnergy >= 25,
       // Spear Essence abilities
       canCastFlurry: () => currentEssence >= 40,
-      canCastLightningStorm: () => currentEssence >= 5,
+      canCastLightningStorm: () => currentEssence >= 8,
     };
   }, [currentMana, currentEnergy, currentRage, currentEssence, currentWeapon, addMana]);
 
