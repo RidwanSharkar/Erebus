@@ -1,11 +1,11 @@
 # 🌑  Erebus β
 
 ### v0.7 Redesigned Spear 
-![spear1](https://github.com/user-attachments/assets/059942ca-5e85-49c1-9bdb-4a47afbcbb98)<br>
-![spear2](https://github.com/user-attachments/assets/718eae1e-a183-473a-a6ef-d2dd5ecf7212)
+![Spear1](https://github.com/user-attachments/assets/24227104-6208-4e3e-9487-fbd11a9f89ca) <br>
+![Spear2](https://github.com/user-attachments/assets/31e24563-2d63-42c2-9645-3cc977889355)
 
 ### v0.6 Scythe Rework
-![pulsar](https://github.com/user-attachments/assets/2a8d75ec-df5b-4068-9ee9-17da074e763b)
+![Pulsar](https://github.com/user-attachments/assets/569b3535-ab96-4183-9a37-5ccfd4f0fc64)
 
 ### v0.5 Ally Healing
 ![bowheal](https://github.com/user-attachments/assets/e0c4c545-8e06-4961-bc23-700b85691959)
