@@ -1,5 +1,7 @@
 # 🌑  Erebus β
 
+**Custom Sound Effects: https://www.youtube.com/watch?v=4zXGMIMsG2k**
+
 ### v0.7 Boss Abilities
 ![Spear2](https://github.com/user-attachments/assets/31e24563-2d63-42c2-9645-3cc977889355)
 
