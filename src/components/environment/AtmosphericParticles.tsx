@@ -17,7 +17,7 @@ interface AtmosphericParticlesProps {
  */
 const AtmosphericParticles: React.FC<AtmosphericParticlesProps> = ({
   position = [0, 0, 0],
-  count = 50,
+  count = 36,
   radius = 3,
   color = '#ffffff',
   speed = 0.5,

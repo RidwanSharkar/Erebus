@@ -1,7 +1,6 @@
 import React, { useRef } from 'react';
-import { Vector3, Group, AdditiveBlending, DoubleSide } from '@/utils/three-exports';
+import { Vector3, Group, AdditiveBlending, DoubleSide, Mesh } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
-import * as THREE from 'three';
 
 // Whirlwind Radial Wave Effect Component
 export function WhirlwindRadialWaveEffect({
@@ -43,7 +42,7 @@ export function WhirlwindRadialWaveEffect({
     // Add opacity fading - fade out as it expands
     const opacity = Math.max(0, 1 - progress * 2); // Fade out faster than expansion
     groupRef.current.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.material) {
+      if (child instanceof Mesh && child.material) {
         if (Array.isArray(child.material)) {
           child.material.forEach(mat => {
             if (mat.opacity !== undefined) {
@@ -129,11 +128,11 @@ export default function WindShearTornadoEffect({
     const playerPosition = getPlayerPosition();
 
     // Rotate the entire tornado effect
-    const rotationSpeed =2.5; // Rotation speed
+    const rotationSpeed =2; // Rotation speed
     groupRef.current.rotation.y += rotationSpeed;
 
     // Scale effect based on progress (grows slightly then fades)
-    const scale = 0.7 + (progress * 0.3); // Grows from 0.8 to 1.2
+    const scale = 0.5 + (progress * 0.3); // Grows from 0.8 to 1.2
     groupRef.current.scale.setScalar(scale);
 
     // Position the effect at the exact player position (follow player)
@@ -144,7 +143,7 @@ export default function WindShearTornadoEffect({
     <group ref={groupRef} position={[initialPosition.x, initialPosition.y, initialPosition.z]}>
       {/* Main tornado cone - grey with some transparency - ROTATED RIGHT SIDE UP */}
       <mesh rotation={[Math.PI, 0, 0]}>
-        <coneGeometry args={[1.25, 2.5, 8, 1, true]} />
+        <coneGeometry args={[1.25, 4, 8, 1, true]} />
         <meshStandardMaterial
           color="#666666" // Grey color
           emissive="#444444"
@@ -157,9 +156,9 @@ export default function WindShearTornadoEffect({
       </mesh>
 
       {/* FAST SPINNING OUTER RINGS - Multiple layers rotating at different heights */}
-      {[...Array(3)].map((_, ringIndex) => {
+      {[...Array(4)].map((_, ringIndex) => {
         // Distribute rings vertically from bottom to top of tornado
-        const heightOffset = (ringIndex - 0.5 ) * 0.8; // -0.8, 0, +0.8
+        const heightOffset = (ringIndex - 0.5 ) * 0.75; // -0.8, 0, +0.8
 
         return (
           <mesh

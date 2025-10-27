@@ -64,6 +64,14 @@ export class AudioSystem extends System {
       { id: 'runeblade_smite', file: 'runeblade/smite.mp3' },
       { id: 'runeblade_wraithblade', file: 'runeblade/wraithblade.mp3' },
       { id: 'runeblade_void_grasp', file: 'runeblade/void_grasp.mp3' },
+      { id: 'spear_swing', file: 'spear/spear_swing.mp3' },
+      { id: 'whirlwind_charge', file: 'spear/whirlwind_charge.mp3' },
+      { id: 'whirlwind_release', file: 'spear/whirlwind_release.mp3' },
+      { id: 'throw_spear_charge', file: 'spear/throw_spear_charge.mp3' },
+      { id: 'throw_spear_release', file: 'spear/throw_spear_release.mp3' },
+      { id: 'lightning_bolt', file: 'spear/Lightning_bolt.mp3' },
+      { id: 'flurry', file: 'spear/flurry.mp3' },
+      { id: 'icebeam', file: 'scythe/icebeam.mp3' },
       { id: 'ui_selection', file: 'ui/selection.mp3' },
       { id: 'ui_interface', file: 'ui/interface.mp3' },
       { id: 'ui_dash', file: 'ui/dash.mp3' }
@@ -185,6 +193,9 @@ export class AudioSystem extends System {
       }
       if (config.rate !== undefined) {
         sound.rate(config.rate, soundInstance);
+      }
+      if (config.loop !== undefined) {
+        sound.loop(config.loop, soundInstance);
       }
     }
 
@@ -397,6 +408,11 @@ export class AudioSystem extends System {
     return this.playWeaponSound('runeblade_void_grasp', position, { volume: 0.45 }); // Assuming 0.9 base volume
   }
 
+  // Play enemy throw spear release sound
+  public playEnemyThrowSpearReleaseSound(position: Vector3) {
+    return this.playWeaponSound('throw_spear_release', position, { volume: 0.225 }); // 0.9 * 0.25
+  }
+
   // Play enemy scythe sounds
   public playEnemyScytheMantraSound(position: Vector3) {
     return this.playWeaponSound('scythe_mantra', position, { volume: 0.45 }); // Assuming 0.9 base volume
@@ -498,6 +514,46 @@ export class AudioSystem extends System {
   // Play UI interface sound (for navigation buttons)
   public playUIInterfaceSound() {
     return this.playWeaponSound('ui_interface', new Vector3(0, 0, 0), { volume: 0.7 });
+  }
+
+  // Play spear swing sound
+  public playSpearSwingSound(position: Vector3) {
+    return this.playWeaponSound('spear_swing', position, { volume: 0.8 });
+  }
+
+  // Play whirlwind charge sound
+  public playWhirlwindChargeSound(position: Vector3) {
+    return this.playWeaponSound('whirlwind_charge', position, { volume: 0.9 });
+  }
+
+  // Play whirlwind release sound
+  public playWhirlwindReleaseSound(position: Vector3) {
+    return this.playWeaponSound('whirlwind_release', position, { volume: 0.9 });
+  }
+
+  // Play throw spear charge sound
+  public playThrowSpearChargeSound(position: Vector3) {
+    return this.playWeaponSound('throw_spear_charge', position, { volume: 0.9 });
+  }
+
+  // Play throw spear release sound
+  public playThrowSpearReleaseSound(position: Vector3) {
+    return this.playWeaponSound('throw_spear_release', position, { volume: 0.9 });
+  }
+
+  // Play lightning bolt sound
+  public playLightningBoltSound(position: Vector3) {
+    return this.playWeaponSound('lightning_bolt', position, { volume: 0.9 });
+  }
+
+  // Play flurry sound
+  public playFlurrySound(position: Vector3) {
+    return this.playWeaponSound('flurry', position, { volume: 0.9 });
+  }
+
+  // Play icebeam sound (loops while active)
+  public playIcebeamSound(position: Vector3) {
+    return this.playWeaponSound('icebeam', position, { volume: 0.8, loop: true });
   }
 
   // Play UI dash sound (when dashing)

@@ -36,6 +36,7 @@ const SpearComponent = memo(function Spear({
   whirlwindChargeProgress = 0
 }: SpearProps) {
   const spearRef = useRef<Group>(null);
+  const innerBladeRef = useRef<Group>(null);
   const swingProgress = useRef(0);
   const basePosition = [-1.18, 0.225, -0.3] as const; // POSITIONING
   const whirlwindRotation = useRef(0);
@@ -57,8 +58,15 @@ const SpearComponent = memo(function Spear({
     prevWhirlwindState.current = isWhirlwinding || false;
   }, [isWhirlwinding]);
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (!spearRef.current) return;
+
+    // Handle inner blade rotation
+    if (innerBladeRef.current) {
+      const rotationSpeed = 0.5; // Adjust speed as needed
+      const currentRotation = state.clock.getElapsedTime() * rotationSpeed;
+      innerBladeRef.current.rotation.y = -Math.PI / 6 + currentRotation;
+    }
 
     // Handle whirlwind spinning animation (orbital motion when released)
     if (isWhirlwinding) {
@@ -417,9 +425,9 @@ const SpearComponent = memo(function Spear({
           <mesh>
             <sphereGeometry args={[0.155, 16, 16]} />
             <meshStandardMaterial
-              color={new Color(0xC0C0C0)}         // Greyish silver
-              emissive={new Color(0xC0C0C0)}      // Greyish silver emission
-              emissiveIntensity={2 + (isThrowSpearCharging ? throwSpearChargeProgress * 20 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 20 : 0)}
+              color={new Color(0xE8CD57)}         // Greyish silver
+              emissive={new Color(0xE8CD57)}      // Greyish silver emission
+              emissiveIntensity={1 + (isThrowSpearCharging ? throwSpearChargeProgress * 20 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 20 : 0)}
               transparent
               opacity={1}
             />
@@ -428,8 +436,8 @@ const SpearComponent = memo(function Spear({
           <mesh>
             <sphereGeometry args={[0.1, 16, 16]} />
             <meshStandardMaterial
-              color={new Color(0xC0C0C0)}
-              emissive={new Color(0xC0C0C0)}
+              color={new Color(0xE8CD57)}
+              emissive={new Color(0xE8CD57)}
               emissiveIntensity={40 + (isThrowSpearCharging ? throwSpearChargeProgress * 60 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 60 : 0)}
               transparent
               opacity={0.8}
@@ -439,8 +447,8 @@ const SpearComponent = memo(function Spear({
           <mesh>
             <sphereGeometry args={[0.145, 16, 16]} />
             <meshStandardMaterial
-              color={new Color(0xC0C0C0)}
-              emissive={new Color(0xC0C0C0)}
+              color={new Color(0xE8CD57)}
+              emissive={new Color(0xE8CD57)}
               emissiveIntensity={35 + (isThrowSpearCharging ? throwSpearChargeProgress * 50 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 50 : 0)}
               transparent
               opacity={0.6}
@@ -450,8 +458,8 @@ const SpearComponent = memo(function Spear({
           <mesh>
             <sphereGeometry args={[.175, 16, 16]} />
             <meshStandardMaterial
-              color={new Color(0xC0C0C0)}
-              emissive={new Color(0xC0C0C0)}
+              color={new Color(0xE8CD57)}
+              emissive={new Color(0xE8CD57)}
               emissiveIntensity={30 + (isThrowSpearCharging ? throwSpearChargeProgress * 40 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 40 : 0)}
               transparent
               opacity={0.4}
@@ -459,7 +467,7 @@ const SpearComponent = memo(function Spear({
           </mesh>
 
           <pointLight
-            color={new Color(0xC0C0C0)}
+            color={new Color(0xE8CD57)}
             intensity={2 + (isThrowSpearCharging ? throwSpearChargeProgress * 15 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 15 : 0)}
             distance={0.5}
             decay={2}
@@ -472,8 +480,8 @@ const SpearComponent = memo(function Spear({
               <mesh>
                 <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
                 <meshStandardMaterial
-                  color={new Color(0xC0C0C0)}
-                  emissive={new Color(0xC0C0C0)}
+                  color={new Color('#E8CD57')}
+                  emissive={new Color('#E8CD57')}
                   emissiveIntensity={1.55}
                   metalness={0.8}
                   roughness={0.1}
@@ -490,8 +498,8 @@ const SpearComponent = memo(function Spear({
               <mesh>
                 <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
                 <meshStandardMaterial
-                  color={new Color(0xC0C0C0)}
-                  emissive={new Color(0xC0C0C0)}
+                  color={new Color('#E8CD57')}
+                  emissive={new Color('#E8CD57')}
                   emissiveIntensity={1.55}
                   metalness={0.8}
                   roughness={0.1}
@@ -508,8 +516,8 @@ const SpearComponent = memo(function Spear({
               <mesh>
                 <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
                 <meshStandardMaterial
-                  color={new Color(0xC0C0C0)}
-                  emissive={new Color(0xC0C0C0)}
+                  color={new Color('#E8CD57')}
+                  emissive={new Color('#E8CD57')}
                   emissiveIntensity={1.55}
                   metalness={0.8}
                   roughness={0.1}
@@ -522,12 +530,17 @@ const SpearComponent = memo(function Spear({
           </group>
         </group>
 
-        <group position={[0, 0.45, 0.35]} rotation={[0, -Math.PI / 2, Math.PI / 2]} scale={[0.75, 0.8, 0.75]}>
+        <group
+          ref={innerBladeRef}
+          position={[0, 0.45, 0.35]}
+          rotation={[0, -Math.PI / 6, Math.PI / 2]}
+          scale={[0.75, 0.6, 0.75]}
+        >
           <mesh>
             <extrudeGeometry args={[createInnerBladeShape(), bladeExtrudeSettings]} />
             <meshStandardMaterial
-              color={new Color(0xC0C0C0)}
-              emissive={new Color(0xC0C0C0)}
+              color={new Color(0xE8CD57)}
+              emissive={new Color(0xE8CD57)}
               emissiveIntensity={1.5}
               metalness={0.3}
               roughness={0.1}
@@ -539,7 +552,7 @@ const SpearComponent = memo(function Spear({
             <meshStandardMaterial
               color={new Color(0xC0C0C0)}
               emissive={new Color(0xC0C0C0)}
-              emissiveIntensity={1}
+              emissiveIntensity={1.5}
               metalness={0.2}
               roughness={0.1}
               opacity={0.8}

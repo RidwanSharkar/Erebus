@@ -177,28 +177,28 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
   ],
   [WeaponType.SPEAR]: [
     {
-      name: 'Razorwind',
+      name: 'Wind Shear',
       key: 'Q',
       cooldown: 4.0,
-      description: 'Hold to charge for up to 2 seconds, then release to throw your spear. The spear flies forward, damaging all enemies it passes through, then returns to you, damaging enemies again. Distance and damage scale from 50 to 200 based on charge time. Generates 5-20 Essence.'
+      description: 'Hold to charge for up to 2 seconds, then release to throw your spear. The spear flies forward, damaging all enemies it passes through, then returns to you, damaging enemies again. Distance and damage scale from 50 to 200 based on charge time. Generates 5 - 20 Charge.'
     },
     {
-      name: 'Hurricane Sweep',
+      name: 'Tempest Sweep',
       key: 'E',
       cooldown: 3.0,
-      description: 'Hold to charge for up to 2 seconds, then release to damage all nearby enemies around you for 50 to 400 based on charge time. Generates 0-20 Essence. Increases attack speed by 1% for each Essence possessed.'
+      description: 'Hold to charge for up to 2 seconds, then release to damage all nearby enemies around you for 50 to 400 based on charge time. Generates 1- 20 Charge. Increases attack speed by 1% for each Charge possessed.'
     },
     {
       name: 'Lightning Bolt',
       key: 'R',
       cooldown: 1.0,
-      description: '{5 ESSENCE} Calls down a lightning bolt on the highest priority enemy in the map, dealing 117 damage.'
+      description: '{8 CHARGE} Calls down a lightning bolt on the highest priority enemy in the map, dealing 117 damage.'
     },
     {
-      name: 'Eye of the Storm',
+      name: 'Storm Shroud',
       key: 'F',
       cooldown: 10.0,
-      description: '{40 ESSENCE} Enter a frenzied state for 5 seconds, doubling your attack speed. Each successful hit heals you for 15 HP.'
+      description: '{40 CHARGE} Enter a frenzied state for 5 seconds, doubling your attack speed. Each successful hit heals you for 15 HP.'
     },
     {
       name: 'Tempest',
@@ -243,8 +243,8 @@ export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | '
   [WeaponType.RUNEBLADE]: {
     Q: '🛡️', // Fullguard
     E: '🗡️', // Wraithblade
-    R: '💠', // Hexed Smite
-    F: '☢️', // Heartrend
+    R: '⚡️', // Hexed Smite
+    F: '💠', // Heartrend
     P: '🩸' // Bloodpact
   },
   [WeaponType.SPEAR]: {

@@ -23,6 +23,7 @@ export default function IcebeamManager({
   const lastDamageTime = useRef<Record<number, number>>({});
   const damageInterval = useRef<NodeJS.Timeout | null>(null);
   const isActiveRef = useRef(false);
+  const icebeamSoundInstance = useRef<number | null>(null);
 
   // Beam properties
   const BEAM_LENGTH = 20;
@@ -38,6 +39,12 @@ export default function IcebeamManager({
 
   const stopIcebeam = useCallback(() => {
     isActiveRef.current = false;
+
+    // Stop icebeam sound
+    if (icebeamSoundInstance.current !== null && (window as any).audioSystem?.stopSound) {
+      (window as any).audioSystem.stopSound('icebeam', icebeamSoundInstance.current);
+      icebeamSoundInstance.current = null;
+    }
 
     if (damageInterval.current) {
       clearInterval(damageInterval.current);
@@ -57,7 +64,7 @@ export default function IcebeamManager({
     const timeActive = icebeamStartTime.current ? (currentTime - icebeamStartTime.current) / 1000 : 0;
     
     // Calculate damage scaling - increases every second held
-    const baseDamage = 35;
+    const baseDamage = 31;
     const damageMultiplier = 1 + Math.floor(timeActive) * 0.5; // +50% damage per second held
     const finalDamage = Math.floor(baseDamage * damageMultiplier);
 
@@ -127,10 +134,20 @@ export default function IcebeamManager({
   // Handle icebeam state changes
   useEffect(() => {
     isActiveRef.current = isIcebeaming;
-    
+
     if (isIcebeaming) {
       // Start icebeam
       icebeamStartTime.current = Date.now();
+
+      // Play icebeam sound (restart if already playing)
+      if ((window as any).audioSystem?.playIcebeamSound) {
+        // Stop any existing icebeam sound first
+        if (icebeamSoundInstance.current !== null && (window as any).audioSystem?.stopSound) {
+          (window as any).audioSystem.stopSound('icebeam', icebeamSoundInstance.current);
+        }
+        // Start new icebeam sound
+        icebeamSoundInstance.current = (window as any).audioSystem.playIcebeamSound(playerRef.current?.position || new Vector3());
+      }
 
       // Clear any existing interval
       if (damageInterval.current) {
