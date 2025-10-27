@@ -1,6 +1,7 @@
 # 🌑  Erebus β
 
-A cooperative 1-3 player 3D boss battle action game featuring fast-paced real-time combat with a unique weapon/class system and boss encounter mechanics, emphasizing tactical positioning, resource management and coordinated party strategies within a fantasy/sci-fi arena. <br>
+A cooperative 1-3 player 3D boss battle action game featuring fast-paced real-time combat with a unique weapon/class system and boss encounter mechanics, emphasizing tactical positioning, resource management and coordinated party strategies within a fantasy/sci-fi arena.
+
 **Custom Sound Effects: https://www.youtube.com/watch?v=4zXGMIMsG2k** (GarageBand)
 
 ### v0.7 Boss Abilities
