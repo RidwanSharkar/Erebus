@@ -41,7 +41,6 @@ export class AudioSystem extends System {
       { id: 'bow_viper_sting_release', file: 'bow/viper_sting_release.mp3' },
       { id: 'bow_barrage_release', file: 'bow/barrage_release.mp3' },
       { id: 'bow_cobra_shot_release', file: 'bow/cobra_shot_release.mp3' },
-      { id: 'bow_cloudkill_release', file: 'bow/cloudkill_release.mp3' },
       { id: 'sabres_swing', file: 'sabres/sabres_swing.mp3' },
       { id: 'sabres_backstab', file: 'sabres/backstab.mp3' },
       { id: 'sabres_flourish', file: 'sabres/flourish.mp3' },
@@ -144,7 +143,7 @@ export class AudioSystem extends System {
       console.log('🎵 Starting background music streaming...');
       this.backgroundAudioElement = new Audio('/audio/sfx/ui/Empyrea.mp3');
       this.backgroundAudioElement.loop = true;
-      this.backgroundAudioElement.volume = 0.2875 * this.sfxVolume * this.masterVolume;
+      this.backgroundAudioElement.volume = 0.325 * this.sfxVolume * this.masterVolume;
       this.backgroundAudioElement.preload = 'none'; // Stream instead of preload
 
       // Add event listeners
