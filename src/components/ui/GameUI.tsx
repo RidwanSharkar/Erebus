@@ -384,7 +384,7 @@ export default function GameUI({
       canCastReanimate: () => currentMana >= 20,
       canCastFrostNova: () => currentMana >= 25,
       // Runeblade mana abilities
-      canCastSmite: () => currentMana >= 45,
+      canCastSmite: () => currentMana >= 40,
       canCastDeathGrasp: () => currentMana >= 25,
       canCastWraithStrike: () => currentMana >= 30,
       canCastCorruptedAura: () => currentMana >= 8,
@@ -402,7 +402,7 @@ export default function GameUI({
       canCastStealth: () => currentEnergy >= 25,
       // Spear Essence abilities
       canCastFlurry: () => currentEssence >= 40,
-      canCastLightningStorm: () => currentEssence >= 8,
+      canCastLightningStorm: () => currentEssence >= 15,
     };
   }, [currentMana, currentEnergy, currentRage, currentEssence, currentWeapon, addMana]);
 

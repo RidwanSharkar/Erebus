@@ -1659,7 +1659,7 @@ const hasMana = useCallback((amount: number) => {
               position,
               direction,
               attackerEntityId,
-              { speed: 16, damage: 61, lifetime: 5, piercing: true, opacity: 0.8, projectileType: 'viper_sting', sourcePlayerId: data.playerId }
+              { speed: 18, damage: 73, lifetime: 5, piercing: true, opacity: 0.8, projectileType: 'viper_sting', sourcePlayerId: data.playerId }
             );
           }
           
@@ -1868,7 +1868,7 @@ const hasMana = useCallback((amount: number) => {
                   position,
                   direction,
                   attackerEntityId,
-                  { speed: 25, damage: 30, lifetime: 3, maxDistance: 25, piercing: false, opacity: 0.8, projectileType: 'burst_arrow', sourcePlayerId: data.playerId }
+                  { speed: 35, damage: 25, lifetime: 3, maxDistance: 25, piercing: false, opacity: 0.8, projectileType: 'burst_arrow', sourcePlayerId: data.playerId }
                 );
                 
                 // Mark as burst arrow for proper visual rendering (teal color)

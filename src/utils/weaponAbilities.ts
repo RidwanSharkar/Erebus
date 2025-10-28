@@ -164,7 +164,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
     {
       name: 'Titan\'s Grip',
       key: 'F',
-      cooldown: 0, // No cooldown, it's a toggle ability
+      cooldown: 0, 
       description: '{20 MANA/S} Toggle a force-multiplier aura that increases critical strike chance by 45% and critical strike damage by 75%.'
     },
     {
@@ -192,7 +192,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Lightning Bolt',
       key: 'R',
       cooldown: 1.0,
-      description: '{8 CHARGE} Calls down a lightning bolt on the highest priority enemy in the map, dealing 117 damage.'
+      description: '{15 CHARGE} Calls down a lightning bolt on the highest priority enemy in the map, dealing 117 damage.'
     },
     {
       name: 'Storm Shroud',

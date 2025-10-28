@@ -272,8 +272,8 @@ class EnemyAI {
 
     // Check if boss can attack target (within range)
     const distance = this.calculateDistance(boss.position, targetPlayer.position);
-    const attackRange = 2.9; // Boss attack range
-    const attackCooldown = 875; // 2 seconds between attacks
+    const attackRange = 3.0; // Boss attack range
+    const attackCooldown = 800; // 2 seconds between attacks
 
     // ALWAYS update rotation to face target, even when standing still
     this.updateBossRotation(boss, targetPlayer);
@@ -326,7 +326,7 @@ class EnemyAI {
     }
 
     // Check skeleton summoning cooldown (17.5 seconds)
-    const skeletonSummonCooldown = 22500;
+    const skeletonSummonCooldown = 17500;
     const lastSkeletonSummonTime = this.bossSkeletonSummonCooldown.get(boss.id) || 0;
 
     if (now - lastSkeletonSummonTime >= skeletonSummonCooldown) {
@@ -389,7 +389,7 @@ class EnemyAI {
       return;
     }
 
-    const damage = 41; // Boss deals 43 damage per hit (updated from 37)
+    const damage = 47; // Boss deals 47 damage per hit
 
     // Broadcast boss attack to all players
     if (this.io) {

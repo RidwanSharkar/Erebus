@@ -533,14 +533,14 @@ export function OptimizedPVPViperStingManager({
 
 
 
-              // Apply damage - Viper Sting damage is 61
-              onPlayerHit(player.id, 61);
+              // Apply damage - Viper Sting damage is 73
+              onPlayerHit(player.id, 73);
 
               // Create damage number for visual feedback
               if (damageNumberManager && damageNumberManager.addDamageNumber) {
                 const hitPosition = new Vector3(player.position.x, player.position.y + 1.5, player.position.z);
                 damageNumberManager.addDamageNumber(
-                  61, // Viper Sting damage
+                  73, // Viper Sting damage
                   false, // Not critical
                   hitPosition,
                   'viper_sting' // Damage type for light purple styling
@@ -634,14 +634,14 @@ export function OptimizedPVPViperStingManager({
 
    
 
-                // Apply damage - Viper Sting damage is 61
-                onPlayerHit(player.id, 61);
+                // Apply damage - Viper Sting damage is 73
+                onPlayerHit(player.id, 73);
 
                 // Create damage number for visual feedback
                 if (damageNumberManager && damageNumberManager.addDamageNumber) {
                   const hitPosition = new Vector3(player.position.x, player.position.y + 1.5, player.position.z);
                   damageNumberManager.addDamageNumber(
-                    61, // Viper Sting damage
+                    73, // Viper Sting damage
                     false, // Not critical
                     hitPosition,
                     'viper_sting' // Damage type for light purple styling

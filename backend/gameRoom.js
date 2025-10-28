@@ -171,10 +171,10 @@ class GameRoom {
   getEnemyMaxHealth(type) {
     // Co-op mode only supports boss enemies
     if (type === 'boss') {
-      return 25000; // Boss has fixed 50,000 HP
+      return 37500; // Boss has fixed 37,500 HP
     }
     
-    return 25000; // Fallback to boss health
+    return 37500; // Fallback to boss health
   }
 
   generateRandomPosition() {
@@ -398,7 +398,7 @@ class GameRoom {
     // Spawn boss at center of arena
     const position = { x: 0, y: 0, z: 0 };
 
-    const maxHealth = 25000;
+    const maxHealth = 37500;
     const bossData = {
       id: bossId,
       type: 'boss',

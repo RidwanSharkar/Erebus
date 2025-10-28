@@ -170,7 +170,7 @@ const SmiteComponent = memo(function Smite({
     if (damageTriggered.current || !enemyData.length) return;
 
     damageTriggered.current = true;
-    const baseSmiteDamage = 100;
+    const baseSmiteDamage = 165;
     const damageRadius = 3.0; // Small radius around impact location
     let totalDamage = 0;
 
