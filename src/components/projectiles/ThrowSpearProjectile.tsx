@@ -18,7 +18,7 @@ export default function ThrowSpearProjectile({
   chargeTime 
 }: ThrowSpearProjectileProps) {
   const groupRef = useRef<Group>(null);
-  const TRAIL_COUNT = 14;
+  const TRAIL_COUNT = 16;
 
   // Calculate visual intensity based on charge time (0-1)
   const chargeIntensity = Math.min(chargeTime / 2, 1);
@@ -106,11 +106,11 @@ export default function ThrowSpearProjectile({
       {/* Main spear container with proper scaling and positioning to match original */}
       <group 
         position={[0, 0.5, 0.6]}
-        rotation={[-0, 0.15, 0]}
+        rotation={[-0, 0, 0]}
         scale={[0.825, 0.75, 0.75]}
       >
         <group 
-          position={[-1.18, 0.225, -0.3]}
+          position={[-1.18, 0, -0]}
           rotation={[Math.PI/2, 0, 0]}
           scale={[0.8, 0.8, 0.7]}
         >
@@ -323,7 +323,7 @@ export default function ThrowSpearProjectile({
       {/* Lightning trail effects - more intense with higher charge */}
       {[...Array(TRAIL_COUNT)].map((_, index) => {
         const trailOpacity = opacity * (1 - index / TRAIL_COUNT) * 0.6;
-        const trailScale = 1.35 - (index / TRAIL_COUNT) * 0.5;
+        const trailScale = 1.15 - (index / TRAIL_COUNT) * 0.5;
         
         // Calculate trail offset in world space (behind the spear along its trajectory)
         // Use the direction vector to position trails behind the spear

@@ -42,7 +42,7 @@ export function triggerGlobalThrowSpear(position: Vector3, direction: Vector3, c
   });
 
   // Calculate distance based on charge time (10 to 20 units)
-  const minDistance = 4;
+  const minDistance = 8;
   const maxDistance = 20;
   const distance = minDistance + (maxDistance - minDistance) * (chargeTime / 2.0);
 
@@ -144,8 +144,8 @@ export default function ThrowSpearManager({ world }: ThrowSpearManagerProps) {
 
       globalThrowSpearProjectiles = globalThrowSpearProjectiles.filter((projectile) => {
         // Speed based on charge time (15-40 units per second)
-        const minSpeed = 10;
-        const maxSpeed = 40;
+        const minSpeed = 16;
+        const maxSpeed = 42;
         const speed = minSpeed + (maxSpeed - minSpeed) * (projectile.chargeTime / 2.0); // chargeTime is 0-2
         const returnSpeed = speed * 1.1; // Return slightly faster
         if (!projectile.active) return false;
