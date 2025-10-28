@@ -17,12 +17,12 @@ export default function RegularArrow({ position, direction, onImpact, distanceTr
 
   // Determine colors based on projectile type
   const isBurstArrow = projectileType === 'burst_arrow';
-  const color = isBurstArrow ? "#00ffff" : "#ffaa00"; // Teal for burst arrows, yellow for regular
-  const emissiveColor = isBurstArrow ? "#0088aa" : "#ff6600"; // Darker teal for burst, orange for regular
-  const shaftEmissiveColor = isBurstArrow ? "#0099cc" : "#ff8800"; // Medium teal for burst, light orange for regular
-  const fletchingColor = isBurstArrow ? "#66ffff" : "#ffcc44"; // Light teal for burst, light yellow for regular
-  const fletchingEmissiveColor = isBurstArrow ? "#00aaff" : "#ff9900"; // Bright teal for burst, bright yellow for regular
-  const auraColor = isBurstArrow ? "#00ffff" : "#ffaa00"; // Teal for burst, yellow for regular
+  const color = isBurstArrow ? "#ff5500" : "#00ffff"; // Teal for burst arrows, red-orange for regular
+  const emissiveColor = isBurstArrow ? "#aa2200" : "#0088aa"; // Darker teal for burst, dark red-orange for regular
+  const shaftEmissiveColor = isBurstArrow ? "#ff4400" : "#0099cc"; // Medium teal for burst, red-orange for regular
+  const fletchingColor = isBurstArrow ? "#ff7722" : "#66ffff"; // Light teal for burst, light red-orange for regular
+  const fletchingEmissiveColor = isBurstArrow ? "#ff5500" : "#00aaff"; // Bright teal for burst, bright red-orange for regular
+  const auraColor = isBurstArrow ? "#ff5500" : "#00ffff"; // Teal for burst, red-orange for regular
 
   const size = 0.15;
 

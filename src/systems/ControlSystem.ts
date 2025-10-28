@@ -1385,8 +1385,8 @@ export class ControlSystem extends System {
 
     // Create burst projectile with higher damage
     const projectileConfig = {
-      speed: 25,
-      damage: 30, // Burst arrows deal 30 damage each
+      speed: 35,
+      damage: 25, // Burst arrows deal 30 damage each
       lifetime: 3,
       maxDistance: 25, // Limit bow arrows to 25 units distance
       subclass: this.currentSubclass,
@@ -2587,7 +2587,7 @@ export class ControlSystem extends System {
     // Consume mana (35 mana)
     if (gameUI) {
       const manaBefore = gameUI.getCurrentMana();
-      const manaConsumed = gameUI.consumeMana(45);
+      const manaConsumed = gameUI.consumeMana(40);
       if (!manaConsumed) {
         return;
       }
@@ -2791,7 +2791,7 @@ export class ControlSystem extends System {
   private performSmiteDamage(smitePosition: Vector3): { damageDealt: boolean; totalDamage: number } {
     if (!this.playerEntity) return { damageDealt: false, totalDamage: 0 };
 
-    const baseSmiteDamage = 100;
+    const baseSmiteDamage = 165;
     const damageRadius = 3.0; // Small radius around impact location
     let damageDealt = false;
     let totalDamage = 0;
@@ -3026,7 +3026,7 @@ export class ControlSystem extends System {
     
     const wraithStrikeRange = 4.5; // Same range as melee attacks
     const wraithStrikeAngle = Math.PI / 2; // 90 degree cone
-    const wraithStrikeDamage = 85; // High damage for wraith strike
+    const wraithStrikeDamage = 140; // High damage for wraith strike
     
     let hitCount = 0;
     const currentTime = Date.now() / 1000;
@@ -3723,8 +3723,8 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check Essence cost (8 Essence)
-    const essenceCost = 8;
+    // Check Essence cost (15 Essence)
+    const essenceCost = 15;
     if (!(window as any).gameUI?.getCurrentEssence || (window as any).gameUI.getCurrentEssence() < essenceCost) {
       console.log('⚡ Not enough Essence for Lightning Storm');
       return;
@@ -3813,8 +3813,8 @@ export class ControlSystem extends System {
 
     // Apply stealth damage bonus (5 second duration)
     if (this.isStealthing) {
-      leftSabreDamage = 37;  // Increased from 19 to 31
-      rightSabreDamage = 41; // Increased from 23 to 41
+      leftSabreDamage = 43;  // Increased from 19 to 31
+      rightSabreDamage = 57; // Increased from 23 to 41
     }
     
     // Get camera direction for attack direction
@@ -4311,7 +4311,7 @@ export class ControlSystem extends System {
     }
 
     // Consume energy
-    gameUI.consumeEnergy(25);
+    gameUI.consumeEnergy(20);
     
     // Set cooldown
     this.lastStealthTime = currentTime;
@@ -4747,7 +4747,7 @@ export class ControlSystem extends System {
       
       // Determine if this is a backstab (attacking from behind the target)
       let isBackstab = false;
-      let baseDamage = 75; // Base damage
+      let baseDamage = 95; // Base damage
 
       // For PVP players, check if we're behind them
       const pvpPlayers = (window as any).pvpPlayers;
@@ -4839,7 +4839,7 @@ export class ControlSystem extends System {
           });
 
           if (isBackstab) {
-            baseDamage = 225; // Backstab base damage (before critical calculation)
+            baseDamage = 285; // Backstab base damage (before critical calculation)
             console.log(`✅ BACKSTAB SUCCESS! Base damage increased to 215`);
           } else {
             console.log(`❌ Not a backstab. Dot product ${behindDotProduct.toFixed(2)} >= -0.3`);
@@ -4926,16 +4926,16 @@ export class ControlSystem extends System {
     if (this.currentWeapon === WeaponType.SWORD) {
       // Sword damage values
       switch (this.swordComboStep) {
-        case 1: baseDamage = 40; break;
-        case 2: baseDamage = 45; break;
-        case 3: baseDamage = 50; break; // Finisher does more damage
+        case 1: baseDamage = 45; break;
+        case 2: baseDamage = 50; break;
+        case 3: baseDamage = 60; break; // Finisher does more damage
       }
     } else if (this.currentWeapon === WeaponType.RUNEBLADE) {
       // Runeblade damage values
       switch (this.swordComboStep) {
-        case 1: baseDamage = 30; break;
-        case 2: baseDamage = 35; break;
-        case 3: baseDamage = 45; break; // Finisher does more damage
+        case 1: baseDamage = 45; break;
+        case 2: baseDamage = 50; break;
+        case 3: baseDamage = 60; break; // Finisher does more damage
       }
     }
     
@@ -5484,8 +5484,8 @@ export class ControlSystem extends System {
     // Broadcast projectile creation to other players
     if (this.onProjectileCreatedCallback) {
       this.onProjectileCreatedCallback('viper_sting_projectile', spawnPosition, direction, {
-        speed: 16,
-        damage: 61,
+        speed: 18,
+        damage: 73,
         lifetime: 5,
         isReturning: false
       });
@@ -5660,7 +5660,7 @@ export class ControlSystem extends System {
       // Create proper ECS projectile entity
       const projectileConfig = {
         speed: 22, // Slightly faster than regular arrows (20)
-        damage: 87, // High damage for barrage arrows
+        damage: 113, // High damage for barrage arrows
         lifetime: 8,
         maxDistance: 25, // Limit barrage arrows to 25 units distance (same as regular arrows)
         piercing: false,

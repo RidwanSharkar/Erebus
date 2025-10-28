@@ -581,9 +581,9 @@ export default function Runeblade({
     const now = Date.now();
 
     const damageValues = {
-      1: 30,
-      2: 35,
-      3: 45
+      1: 45,
+      2: 50,
+      3: 60
     };
 
     const baseDamage = damageValues[comboStep];
