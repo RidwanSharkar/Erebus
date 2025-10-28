@@ -4252,7 +4252,7 @@ export class ControlSystem extends System {
     }
     
     // Calculate damage based on current stack count (before adding new stack)
-    const baseDamages = [65, 80, 95, 125]; // 0, 1, 2, 3 stacks
+    const baseDamages = [85, 105, 135, 175]; // 0, 1, 2, 3 stacks
     const damage = baseDamages[Math.min(currentStacks.stacks, 3)];
     
     let isStunned = false;
