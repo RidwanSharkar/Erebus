@@ -51,28 +51,34 @@ export default function Icebeam({
     return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
   };
 
-  // Get beam colors based on duration
+  // Get beam colors based on duration - cycles through color wheel with extended blue time
   const getBeamColors = (activeTime: number) => {
-    if (activeTime < 2) {
-      // Cyan phase (0-2 seconds)
-      return {
-        color: '#58FCEC',
-        emissive: '#00E5FF'
-      };
-    } else if (activeTime < 4) {
-      // Transition to purple (2-4 seconds)
-      const t = (activeTime - 2) / 2; // 0 to 1 over 2 seconds
-      return {
-        color: lerpColor('#58FCEC', '#8A2BE2', t), // Cyan to purple
-        emissive: lerpColor('#00E5FF', '#9932CC', t) // Cyan emissive to purple
-      };
-    } else {
-      // Red phase (4+ seconds)
-      return {
-        color: '#FF4500',
-        emissive: '#FF0000'
-      };
-    }
+    // Cycle through colors every 4 seconds (longer cycle for more blue time)
+    const cycleTime = activeTime % 4;
+    const cycleProgress = cycleTime / 4;
+
+    // Define key colors with extended blue: Cyan (0-0.5), Orange (0.5-0.75), Purple (0.75-1.0)
+    // This gives cyan 50% of the cycle time, orange 25%, purple 25%
+    const colors = [
+      { color: '#58FCEC', emissive: '#00E5FF' }, // Cyan (extended)
+      { color: '#58FCEC', emissive: '#00E5FF' }, // Cyan (extended)
+      { color: '#FF6B35', emissive: '#FF4500' }, // Orange
+      { color: '#8A2BE2', emissive: '#9932CC' }, // Purple
+      { color: '#58FCEC', emissive: '#00E5FF' }  // Back to Cyan
+    ];
+
+    // Find which segment we're in (0-4)
+    const segmentIndex = Math.floor(cycleProgress * 4);
+    const segmentProgress = (cycleProgress * 4) % 1;
+
+    // Interpolate between current and next color
+    const currentColor = colors[segmentIndex];
+    const nextColor = colors[segmentIndex + 1] || colors[0];
+
+    return {
+      color: lerpColor(currentColor.color, nextColor.color, segmentProgress),
+      emissive: lerpColor(currentColor.emissive, nextColor.emissive, segmentProgress)
+    };
   };
 
   useFrame(() => {
@@ -110,7 +116,7 @@ export default function Icebeam({
     } else if (isActive) {
       // Handle intensity increase over time (scales with external intensity from damage multiplier)
       const activeTime = (currentTime - startTime) / 1000;
-      const baseIntensity = Math.min(1 + activeTime * 0.3, 1.5); // Max 1.5x intensity
+      const baseIntensity = Math.min(1 + activeTime * 0.3, 2.5); // Max 1.5x intensity
       const newIntensity = baseIntensity * externalIntensity;
       // Cap visual scaling at 1.3x while keeping damage scaling unlimited
       const cappedVisualIntensity = Math.min(newIntensity, 1.3);
