@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Vector3, AdditiveBlending } from '@/utils/three-exports';
+import { Vector3, AdditiveBlending, Group, Mesh, Material } from '@/utils/three-exports';
 
 interface SummonTotemExplosionProps {
   position: Vector3;
@@ -15,7 +15,30 @@ export default function SummonTotemExplosion({
   onComplete
 }: SummonTotemExplosionProps) {
   const startTime = useRef(explosionStartTime || Date.now());
+  const groupRef = useRef<Group>(null);
   const [, forceUpdate] = useState({}); // Force updates to animate
+
+  // MEMORY FIX: Cleanup geometries and materials on unmount
+  useEffect(() => {
+    return () => {
+      if (groupRef.current) {
+        groupRef.current.traverse((child) => {
+          if (child instanceof Mesh) {
+            if (child.geometry) {
+              child.geometry.dispose();
+            }
+            if (child.material) {
+              if (Array.isArray(child.material)) {
+                child.material.forEach((mat: Material) => mat.dispose());
+              } else {
+                (child.material as Material).dispose();
+              }
+            }
+          }
+        });
+      }
+    };
+  }, []);
 
   useEffect(() => {
     // Animation timer - exact same timing as original
@@ -50,7 +73,7 @@ export default function SummonTotemExplosion({
   if (fade <= 0) return null;
 
   return (
-    <group position={position}>
+    <group ref={groupRef} position={position}>
       {/* Core explosion sphere - Exact same as original */}
       <mesh>
         <sphereGeometry args={[0.35 * (1 + elapsed * 2), 32, 32]} />

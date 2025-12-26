@@ -204,6 +204,16 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
   useEffect(() => {
   }, [gameStarted, isInRoom, currentRoomId, socket?.connected, socket?.id, players.size, enemies.size]);
 
+  // ==================== MEMORY MANAGEMENT ====================
+  // Memory thresholds for emergency cleanup (in bytes)
+  const MEMORY_CRITICAL_THRESHOLD = 800 * 1024 * 1024; // 800MB
+  const MEMORY_WARNING_THRESHOLD = 600 * 1024 * 1024; // 600MB
+  const EMERGENCY_CLEANUP_COOLDOWN = 10000; // 10 seconds between emergency cleanups
+  
+  // Refs for memory tracking
+  const lastEmergencyCleanup = useRef(0);
+  const lastMemoryCheck = useRef(0);
+  const previousEnemyStates = useRef<Map<string, any>>(new Map());
 
   const engineRef = useRef<Engine | null>(null);
   const playerEntityRef = useRef<number | null>(null);
@@ -4064,11 +4074,119 @@ const hasMana = useCallback((amount: number) => {
     };
   }, [gameStarted]); // Only initialize when game starts, not when players change
 
+  // ==================== EMERGENCY MEMORY CLEANUP ====================
+  // Helper function to dispose pooled effects and geometries
+  const disposeEffectPools = useCallback(() => {
+    // Clear the PVP object pool
+    pvpObjectPool.clearAll();
+    
+    // Clear any cached geometries (force garbage collection)
+    if (typeof window !== 'undefined' && 'gc' in window) {
+      try {
+        (window as typeof window & { gc?: () => void }).gc?.();
+      } catch {
+        // GC not available in most browsers
+      }
+    }
+  }, []);
+
+  // Emergency cleanup function that clears all accumulating state
+  const performEmergencyCleanup = useCallback(() => {
+    console.error('🚨 EMERGENCY: Triggering memory cleanup...');
+    
+    // Clear all PVP effect arrays
+    setPvpVenomEffects([]);
+    setPvpDebuffEffects([]);
+    setPvpFrostNovaEffects([]);
+    setPvpCrossentropyExplosions([]);
+    setPvpSummonTotemExplosions([]);
+    setPvpHauntedSoulEffects([]);
+    setEnemyTauntEffects([]);
+    setPvpSmiteEffects([]);
+    setPvpColossusStrikeEffects([]);
+    setLightningStormEffects([]);
+    setPvpWindShearEffects([]);
+    setPvpWindShearTornadoEffects([]);
+    setPvpWhirlwindRadialWaveEffects([]);
+    setPvpReanimateEffects([]);
+    setPvpDeathGraspEffects([]);
+    setPvpSummonTotemEffects([]);
+    setFlurryHealingEffects([]);
+    setActiveMistEffects([]);
+    setActiveMeteors([]);
+    setActiveTeleportEffects([]);
+    
+    // Clear previous enemy states map
+    previousEnemyStates.current.clear();
+    
+    // Clear debuff indicators tracking
+    activeDebuffIndicators.current.clear();
+    
+    // Clear enemy player position refs (keep the map but clear old entries)
+    const playerIds = Array.from(players.keys());
+    enemyPlayerPositionRefs.current.forEach((_, key) => {
+      if (!playerIds.includes(key)) {
+        enemyPlayerPositionRefs.current.delete(key);
+      }
+    });
+    
+    // Clear stealth states for disconnected players
+    playerStealthStates.current.forEach((_, key) => {
+      if (!playerIds.includes(key)) {
+        playerStealthStates.current.delete(key);
+      }
+    });
+    
+    // Clear server entity mappings for disconnected players
+    serverPlayerEntities.current.forEach((_, key) => {
+      if (!playerIds.includes(key)) {
+        serverPlayerEntities.current.delete(key);
+      }
+    });
+    
+    // Clear melee sound time tracking for disconnected players
+    lastMeleeSoundTime.current.forEach((_, key) => {
+      if (!playerIds.includes(key)) {
+        lastMeleeSoundTime.current.delete(key);
+      }
+    });
+    
+    // Aggressively dispose pooled effects/geometries
+    disposeEffectPools();
+    
+    console.error('🚨 EMERGENCY: Memory cleanup completed');
+  }, [players, disposeEffectPools, setPlayers]);
+
   // Game loop integration with React Three Fiber
   useFrame((state, deltaTime) => {
     if (engineRef.current && engineRef.current.isEngineRunning() && gameStarted) {
       // Update FPS counter
       updateFPSCounter(engineRef.current.getCurrentFPS());
+
+      // ==================== MEMORY MONITORING ====================
+      const memoryCheckTime = Date.now();
+      // Only check memory every 2 seconds to avoid performance overhead
+      if (memoryCheckTime - lastMemoryCheck.current > 2000) {
+        lastMemoryCheck.current = memoryCheckTime;
+        
+        // Check memory usage if performance.memory is available (Chrome only)
+        const memoryInfo = (performance as any).memory;
+        if (memoryInfo) {
+          const memoryUsage = memoryInfo.usedJSHeapSize;
+          
+          // MEMORY FIX: Emergency cleanup when memory pressure is critical
+          if (memoryUsage > MEMORY_CRITICAL_THRESHOLD && memoryCheckTime - lastEmergencyCleanup.current > EMERGENCY_CLEANUP_COOLDOWN) {
+            console.error(`🚨 EMERGENCY: Memory pressure at ${Math.round(memoryUsage / 1024 / 1024)}MB - triggering cleanup`);
+            lastEmergencyCleanup.current = memoryCheckTime;
+            performEmergencyCleanup();
+          } else if (memoryUsage > MEMORY_WARNING_THRESHOLD) {
+            // Log warning but don't trigger cleanup yet
+            if (Math.random() < 0.01) { // Only log 1% of the time to avoid console spam
+              console.warn(`⚠️ Memory warning: ${Math.round(memoryUsage / 1024 / 1024)}MB used`);
+            }
+          }
+        }
+      }
 
       // Reset object pool temporary objects for this frame
       pvpObjectPool.resetFrameTemporaries();

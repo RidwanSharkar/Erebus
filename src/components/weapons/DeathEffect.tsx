@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Group, Vector3 } from '@/utils/three-exports';
+import { Group, Vector3, Mesh, Material } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 
 interface DeathEffectProps {
@@ -43,6 +43,28 @@ export default function DeathEffect({
       clearTimeout(timeout);
     };
   }, [duration, onComplete, playerId]);
+
+  // MEMORY FIX: Cleanup geometries and materials on unmount
+  useEffect(() => {
+    return () => {
+      if (effectRef.current) {
+        effectRef.current.traverse((child) => {
+          if (child instanceof Mesh) {
+            if (child.geometry) {
+              child.geometry.dispose();
+            }
+            if (child.material) {
+              if (Array.isArray(child.material)) {
+                child.material.forEach((mat: Material) => mat.dispose());
+              } else {
+                (child.material as Material).dispose();
+              }
+            }
+          }
+        });
+      }
+    };
+  }, []);
 
   useFrame(() => {
     if (!effectRef.current) return;
