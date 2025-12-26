@@ -51,8 +51,7 @@ export default function BossRenderer({
 
   // Lightning effect handler
   const handleLightningStart = (hand: 'left' | 'right') => {
-    // You can add lightning effect logic here
-    console.log(`Boss casting lightning from ${hand} hand`);
+
   };
 
   useFrame((_, delta) => {

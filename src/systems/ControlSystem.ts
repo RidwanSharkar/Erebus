@@ -521,7 +521,7 @@ export class ControlSystem extends System {
       if (timeSinceLastConsume >= 0.1) {
         const gameUI = (window as any).gameUI;
         if (gameUI) {
-          const manaCost = 4; // 1.6 mana every 0.1 seconds = 16 per second
+          const manaCost = 3; // 1.6 mana every 0.1 seconds = 16 per second
           const manaConsumed = gameUI.consumeMana(manaCost);
           if (manaConsumed) {
             this.lastIcebeamManaConsumeTime = currentTime;

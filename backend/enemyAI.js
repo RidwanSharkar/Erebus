@@ -191,7 +191,7 @@ class EnemyAI {
   }
 
   bossSkeletonAttackPlayer(skeleton, player) {
-    const damage = skeleton.damage || 29; // Default 29 damage
+    const damage = skeleton.damage || 17; // Default 17 damage
 
     // Broadcast skeleton attack to all players
     if (this.io) {
@@ -326,7 +326,7 @@ class EnemyAI {
     }
 
     // Check skeleton summoning cooldown (17.5 seconds)
-    const skeletonSummonCooldown = 17500;
+    const skeletonSummonCooldown = 12500;
     const lastSkeletonSummonTime = this.bossSkeletonSummonCooldown.get(boss.id) || 0;
 
     if (now - lastSkeletonSummonTime >= skeletonSummonCooldown) {
@@ -334,7 +334,7 @@ class EnemyAI {
       const currentSkeletons = this.bossSummonedSkeletons.get(boss.id) || new Set();
       
       // Only summon if less than 2 skeletons
-      if (currentSkeletons.size < 2) {
+      if (currentSkeletons.size < 4) {
         this.bossSummonSkeleton(boss);
         this.bossSkeletonSummonCooldown.set(boss.id, now);
       }
@@ -555,7 +555,7 @@ class EnemyAI {
       health: 666,
       maxHealth: 666,
       isDying: false,
-      damage: 29,
+      damage: 17,
       bossId: boss.id // Track which boss summoned this skeleton
     };
 

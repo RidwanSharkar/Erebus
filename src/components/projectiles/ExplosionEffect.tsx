@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, Color, Mesh, Material, AdditiveBlending } from '@/utils/three-exports';
+import { Vector3, Color, Mesh, Material, AdditiveBlending, MeshStandardMaterial } from '@/utils/three-exports';
 
 interface ExplosionEffectProps {
   position: Vector3;
@@ -46,6 +46,24 @@ export default function ExplosionEffect({
       material.emissiveIntensity = fade * 1.5;
     }
   });
+
+  // MEMORY FIX: Cleanup geometry and material on unmount
+  useEffect(() => {
+    return () => {
+      if (ringRef.current) {
+        if (ringRef.current.geometry) {
+          ringRef.current.geometry.dispose();
+        }
+        if (ringRef.current.material) {
+          if (Array.isArray(ringRef.current.material)) {
+            ringRef.current.material.forEach((mat: Material) => mat.dispose());
+          } else {
+            (ringRef.current.material as Material).dispose();
+          }
+        }
+      }
+    };
+  }, []);
 
   return (
     <mesh ref={ringRef} position={position}>

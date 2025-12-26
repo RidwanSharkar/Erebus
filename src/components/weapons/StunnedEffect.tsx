@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, memo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, Color } from '@/utils/three-exports';
+import { Group, Vector3, Color, Mesh, Material } from '@/utils/three-exports';
 
 interface StunnedEffectProps {
   position: Vector3;
@@ -68,6 +68,28 @@ const StunnedEffectComponent = memo(function StunnedEffect({
       };
     }
   }, [disableCameraRotation, enemyId, duration]);
+
+  // MEMORY FIX: Cleanup geometries and materials on unmount
+  useEffect(() => {
+    return () => {
+      if (effectRef.current) {
+        effectRef.current.traverse((child) => {
+          if (child instanceof Mesh) {
+            if (child.geometry) {
+              child.geometry.dispose();
+            }
+            if (child.material) {
+              if (Array.isArray(child.material)) {
+                child.material.forEach((mat: Material) => mat.dispose());
+              } else {
+                (child.material as Material).dispose();
+              }
+            }
+          }
+        });
+      }
+    };
+  }, []);
 
   useFrame(() => {
     if (!effectRef.current) return;

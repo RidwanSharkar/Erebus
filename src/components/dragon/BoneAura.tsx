@@ -1,6 +1,6 @@
-import { useRef } from 'react';
+import { useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Mesh, Group } from 'three';
+import { Mesh, Group, Material } from 'three';
 import { Vector3, Euler } from '@/utils/three-exports';
 
 interface BoneAuraProps {
@@ -62,6 +62,29 @@ export default function BoneAura({ parentRef }: BoneAuraProps) {
       bone.rotation.y = angle + Math.PI / 3;
     });
   });
+
+  // MEMORY FIX: Cleanup geometries and materials on unmount
+  useEffect(() => {
+    return () => {
+      if (groupRef.current) {
+        groupRef.current.traverse((child) => {
+          if (child instanceof Mesh) {
+            if (child.geometry) {
+              child.geometry.dispose();
+            }
+            if (child.material) {
+              if (Array.isArray(child.material)) {
+                child.material.forEach((mat: Material) => mat.dispose());
+              } else {
+                (child.material as Material).dispose();
+              }
+            }
+          }
+        });
+      }
+      bonesRef.current = [];
+    };
+  }, []);
 
   return (
     <group ref={groupRef}>

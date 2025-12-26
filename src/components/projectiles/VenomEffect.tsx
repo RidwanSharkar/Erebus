@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useRef, memo } from 'react';
+import React, { useRef, memo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, Mesh, MeshStandardMaterial, AdditiveBlending } from '@/utils/three-exports';
+import { Group, Vector3, Mesh, MeshStandardMaterial, AdditiveBlending, Material } from '@/utils/three-exports';
 
 interface VenomEffectProps {
   position: Vector3;
@@ -73,6 +73,28 @@ const VenomEffectComponent = memo(function VenomEffect({
       onComplete();
     }
   });
+
+  // MEMORY FIX: Cleanup geometries and materials on unmount
+  useEffect(() => {
+    return () => {
+      if (groupRef.current) {
+        groupRef.current.traverse((child) => {
+          if (child instanceof Mesh) {
+            if (child.geometry) {
+              child.geometry.dispose();
+            }
+            if (child.material) {
+              if (Array.isArray(child.material)) {
+                child.material.forEach((mat: Material) => mat.dispose());
+              } else {
+                (child.material as Material).dispose();
+              }
+            }
+          }
+        });
+      }
+    };
+  }, []);
   
   // Randomize rotation for variety
   const randomRotation = useRef(Math.random() * Math.PI * 2);

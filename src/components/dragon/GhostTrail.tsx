@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Mesh, Vector3, Color } from 'three';
+import { Mesh, Vector3, Color, Material } from 'three';
 import { Group, MeshBasicMaterial } from '@/utils/three-exports';
 import { WeaponType, WeaponSubclass } from './weapons';
 import React from 'react';
@@ -32,6 +32,28 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
       setIsInitialized(true);
     }
   }, [parentRef, targetPosition, trailCount]);
+
+  // MEMORY FIX: Cleanup geometries and materials on unmount
+  useEffect(() => {
+    return () => {
+      trailsRef.current.forEach((trail) => {
+        if (trail) {
+          if (trail.geometry) {
+            trail.geometry.dispose();
+          }
+          if (trail.material) {
+            if (Array.isArray(trail.material)) {
+              trail.material.forEach((mat: Material) => mat.dispose());
+            } else {
+              (trail.material as Material).dispose();
+            }
+          }
+        }
+      });
+      trailsRef.current = [];
+      positions.current = [];
+    };
+  }, []);
 
   const getTrailColor = () => {
     // If player is stealthing, use dark grey for all trails
