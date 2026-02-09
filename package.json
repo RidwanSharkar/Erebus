@@ -30,7 +30,10 @@
   "devDependencies": {
     "@types/howler": "^2.2.12",
     "eslint": "^8",
-    "eslint-config-next": "^14.2.32",
+    "eslint-config-next": "^14.2.35",
     "webpack-bundle-analyzer": "^4.10.2"
+  },
+  "overrides": {
+    "glob": "^10.5.0"
   }
 }
