@@ -5,6 +5,8 @@ import { unstable_batchedUpdates } from 'react-dom';
 import { io, Socket } from 'socket.io-client';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { SkillPointSystem, SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
+import { ExperienceSystem } from '@/utils/ExperienceSystem';
+import { StatSystem, StatPointData, StatKey, PlayerStats } from '@/utils/StatSystem';
 
 export interface Player {
   id: string;
@@ -28,6 +30,8 @@ export interface Player {
   // Venom status effects
   isVenomed?: boolean;
   venomedUntil?: number;
+  // Character stat system
+  stats?: PlayerStats;
 }
 
 export interface Enemy {
@@ -38,6 +42,25 @@ export interface Enemy {
   health: number;
   maxHealth: number;
   isDying?: boolean;
+}
+
+export interface DroppedItem {
+  id: string;
+  type: string;
+  stat?: StatKey;
+  label: string;
+  category?: 'amulet' | 'boss_drop';
+  position: { x: number; y: number; z: number };
+  droppedAt: number;
+}
+
+export interface InventoryItem {
+  id: string;
+  type: string;
+  stat?: StatKey;
+  label: string;
+  category?: 'amulet' | 'boss_drop';
+  pickedUpAt: number;
 }
 
 
@@ -104,6 +127,7 @@ interface MultiplayerContextType {
   players: Map<string, Player>;
   enemies: Map<string, Enemy>;
   killCount: number;
+  skeletonKillCount: number;
   gameStarted: boolean;
   gameMode: 'multiplayer' | 'coop';
 
@@ -119,6 +143,9 @@ interface MultiplayerContextType {
 
   // Skill point system state
   skillPointData: SkillPointData;
+
+  // Stat point system state
+  statPointData: StatPointData;
 
   // Room preview
   currentPreview: RoomPreview | null;
@@ -167,6 +194,15 @@ interface MultiplayerContextType {
   unlockAbility: (unlock: AbilityUnlock) => void;
   updateSkillPointsForLevel: (level: number) => void;
 
+  // Stat point system actions
+  allocateStatPoint: (stat: StatKey) => void;
+  updateStatPointsForLevel: (level: number) => void;
+
+  // Item drop & inventory
+  droppedItems: Map<string, DroppedItem>;
+  inventory: InventoryItem[];
+  pickupItem: (itemId: string) => void;
+
   // Merchant purchase actions
   purchaseItem: (itemId: string, cost: number, currency: 'essence') => boolean;
 
@@ -202,6 +238,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [players, setPlayers] = useState<Map<string, Player>>(new Map());
   const [enemies, setEnemies] = useState<Map<string, Enemy>>(new Map());
   const [killCount, setKillCount] = useState(0);
+  const [skeletonKillCount, setSkeletonKillCount] = useState(0);
   const [gameStarted, setGameStarted] = useState(false);
   const [gameMode, setGameMode] = useState<'multiplayer' | 'coop'>('multiplayer');
   const [currentPreview, setCurrentPreview] = useState<RoomPreview | null>(null);
@@ -210,10 +247,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     secondary: WeaponType;
   } | null>(null);
   const [skillPointData, setSkillPointData] = useState<SkillPointData>(SkillPointSystem.getInitialSkillPointData());
+  const [statPointData, setStatPointData] = useState<StatPointData>(StatSystem.getInitialStatPointData());
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Item drop & inventory state
+  const [droppedItems, setDroppedItems] = useState<Map<string, DroppedItem>>(new Map());
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
 
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -286,6 +328,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCurrentRoomId(null);
       setPlayers(new Map());
       setEnemies(new Map());
+      setSkeletonKillCount(0);
+      setDroppedItems(new Map());
+      setInventory([]);
 
       // Clear heartbeat
       if (heartbeatInterval.current) {
@@ -498,6 +543,54 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setKillCount(data.killCount);
     });
 
+    addEventHandler('skeleton-kill-count-updated', (data) => {
+      setSkeletonKillCount(data.skeletonKillCount);
+    });
+
+    // Item drop event handlers
+    addEventHandler('item-dropped', (data: { item: DroppedItem }) => {
+      setDroppedItems(prev => {
+        const next = new Map(prev);
+        next.set(data.item.id, data.item);
+        return next;
+      });
+    });
+
+    addEventHandler('item-picked-up', (data: { itemId: string; playerId: string; item: DroppedItem }) => {
+      // Remove from world for everyone
+      setDroppedItems(prev => {
+        const next = new Map(prev);
+        next.delete(data.itemId);
+        return next;
+      });
+      // Grant stat only to the player who picked it up
+      if (newSocket.id && data.playerId === newSocket.id) {
+        // Only amulets grant a stat bonus; boss drops have their own effects
+        if (data.item.stat) {
+          setStatPointData(prev => StatSystem.grantItemStat(prev, data.item.stat!));
+        }
+        setInventory(prev => [
+          ...prev,
+          {
+            id: data.itemId,
+            type: data.item.type,
+            stat: data.item.stat,
+            label: data.item.label,
+            category: data.item.category,
+            pickedUpAt: Date.now()
+          }
+        ]);
+      }
+    });
+
+    addEventHandler('item-expired', (data: { itemId: string }) => {
+      setDroppedItems(prev => {
+        const next = new Map(prev);
+        next.delete(data.itemId);
+        return next;
+      });
+    });
+
     addEventHandler('game-started', (data) => {
       setGameStarted(true);
       setKillCount(data.killCount);
@@ -536,7 +629,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         const player = updated.get(data.playerId);
         if (player) {
           const newExperience = (player.experience || 0) + data.experienceGained;
-          const newLevel = Math.floor(newExperience / 100) + 1; // Simple leveling formula
+          const newLevel = ExperienceSystem.getLevelFromExperience(newExperience);
 
           updated.set(data.playerId, {
             ...player,
@@ -696,13 +789,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const leaveRoom = useCallback(() => {
     if (socket) {
       socket.emit('leave-room');
-      setIsInRoom(false);
-      setCurrentRoomId(null);
-      setPlayers(new Map());
-      setEnemies(new Map());
-      setKillCount(0);
-      setGameStarted(false);
-      setGameMode('multiplayer');
+    setIsInRoom(false);
+    setCurrentRoomId(null);
+    setPlayers(new Map());
+    setEnemies(new Map());
+    setKillCount(0);
+    setSkeletonKillCount(0);
+    setGameStarted(false);
+    setGameMode('multiplayer');
+    setDroppedItems(new Map());
+    setInventory([]);
     }
   }, [socket]);
 
@@ -807,6 +903,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         enemyId,
         effectType,
         duration
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const pickupItem = useCallback((itemId: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('pickup-item', {
+        roomId: currentRoomId,
+        itemId
       });
     }
   }, [socket, currentRoomId]);
@@ -954,10 +1059,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         level
       });
 
-      // Update skill points when leveling up
+      // Update skill points and stat points when leveling up
       updateSkillPointsForLevel(level);
+      updateStatPointsForLevel(level);
     }
-  }, [socket, currentRoomId, gameMode]);
+  }, [socket, currentRoomId, gameMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Skill point system functions
   const unlockAbility = useCallback((unlock: AbilityUnlock) => {
@@ -973,6 +1079,20 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     const newSkillPointData = SkillPointSystem.updateSkillPointsForLevel(skillPointData, level);
     setSkillPointData(newSkillPointData);
   }, [skillPointData]);
+
+  const allocateStatPoint = useCallback((stat: StatKey) => {
+    try {
+      const newStatPointData = StatSystem.allocateStat(statPointData, stat);
+      setStatPointData(newStatPointData);
+    } catch {
+      // No points available
+    }
+  }, [statPointData]);
+
+  const updateStatPointsForLevel = useCallback((level: number) => {
+    const newStatPointData = StatSystem.updateStatPointsForLevel(statPointData, level);
+    setStatPointData(newStatPointData);
+  }, [statPointData]);
 
   const purchaseItem = useCallback((itemId: string, cost: number, currency: 'essence'): boolean => {
     // Try to find local player by socket ID first, then by looking for any player (for single-player mode)
@@ -1060,6 +1180,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     players,
     enemies,
     killCount,
+    skeletonKillCount,
     gameStarted,
     gameMode,
     currentPreview,
@@ -1093,7 +1214,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     skillPointData,
     unlockAbility,
     updateSkillPointsForLevel,
+    statPointData,
+    allocateStatPoint,
+    updateStatPointsForLevel,
     purchaseItem,
+    droppedItems,
+    inventory,
+    pickupItem,
     chatMessages,
     isChatOpen,
     sendChatMessage,

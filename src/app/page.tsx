@@ -13,6 +13,7 @@ import EssenceDisplay from '../components/ui/EssenceDisplay';
 import { MultiplayerProvider, useMultiplayer } from '../contexts/MultiplayerContext';
 import RoomJoin from '../components/ui/RoomJoin';
 import MerchantUI from '../components/ui/MerchantUI';
+import StatsPanel from '../components/ui/StatsPanel';
 import { weaponAbilities, getAbilityIcon, type AbilityData } from '../utils/weaponAbilities';
 
 // Extend Window interface to include audioSystem
@@ -78,7 +79,7 @@ function AbilityTooltip({ content, visible, x, y }: TooltipProps) {
 }
 
 function HomeContent() {
-  const { selectedWeapons, setSelectedWeapons, skillPointData, unlockAbility, updateSkillPointsForLevel, purchaseItem, players, socket } = useMultiplayer();
+  const { selectedWeapons, setSelectedWeapons, skillPointData, unlockAbility, updateSkillPointsForLevel, statPointData, allocateStatPoint, updateStatPointsForLevel: updateStatPointsForLvl, purchaseItem, players, socket, skeletonKillCount, enemies, inventory } = useMultiplayer();
 
   const [damageNumbers, setDamageNumbers] = useState<DamageNumberData[]>([]);
   const [cameraInfo, setCameraInfo] = useState<{
@@ -331,9 +332,10 @@ function HomeContent() {
     setPlayerExperience(experience);
     setPlayerLevel(level);
 
-    // Update skill points when level changes
+    // Update skill points and stat points when level changes
     if (isLevelUp) {
       updateSkillPointsForLevel(level);
+      updateStatPointsForLvl(level);
     }
   };
 
@@ -422,7 +424,6 @@ function HomeContent() {
   }, []);
 
   return (
-    <MultiplayerProvider>
       <main className="w-full h-screen bg-black relative">
         {/* Main Menu */}
         {gameMode === 'menu' && (
@@ -729,6 +730,7 @@ function HomeContent() {
               onMerchantUIUpdate={setShowMerchantUI}
               selectedWeapons={selectedWeapons}
               skillPointData={skillPointData}
+              statPointData={statPointData}
             />
           )}
         </Canvas>
@@ -792,15 +794,30 @@ function HomeContent() {
                 critDamageRuneCount={getGlobalRuneCounts().critDamageRunes}
                 criticalChance={getCriticalChance()}
                 criticalDamageMultiplier={getCriticalDamageMultiplier()}
+                intellectStatPoints={statPointData.stats.intellect}
               />
             </div>
 
-            {/* Experience Bar - Only show in PVP mode */}
-            {gameMode === 'pvp' && (
+            {/* Experience Bar - show in PVP and co-op modes */}
+            {(gameMode === 'pvp' || gameMode === 'coop') && (
               <ExperienceBar
                 experience={playerExperience}
                 level={playerLevel}
                 isLocalPlayer={true}
+                skeletonKillCount={gameMode === 'coop' ? skeletonKillCount : undefined}
+                bossSpawned={gameMode === 'coop'
+                  ? Array.from(enemies.values()).some(e => e.type === 'boss' && !e.isDying)
+                  : undefined}
+              />
+            )}
+
+            {/* Character Stats & Inventory Panel - bottom left */}
+            {(gameMode === 'pvp' || gameMode === 'coop') && (
+              <StatsPanel
+                statPointData={statPointData}
+                onAllocateStat={allocateStatPoint}
+                playerLevel={playerLevel}
+                inventory={inventory}
               />
             )}
 
@@ -866,7 +883,6 @@ function HomeContent() {
         )}
 
       </main>
-    </MultiplayerProvider>
   );
 }
 

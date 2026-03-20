@@ -187,7 +187,7 @@ export class ControlSystem extends System {
   private runebladeFireRate = 0.725; // Runeblade attack rate
   private sabresFireRate = 0.6; // Sabres dual attack rate (600ms between attacks)
   private scytheFireRate = 0.35; // EntropicBolt rate (0.33s cooldown)
-  private crossentropyFireRate = 2; // CrossentropyBolt rate (1 per second)
+  private crossentropyFireRate = 5; // CrossentropyBolt rate (1 per second)
   private summonTotemFireRate = 6.0; // Summon Totem rate (5 seconds cooldown)
   private viperStingFireRate = 2.0; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
@@ -521,7 +521,7 @@ export class ControlSystem extends System {
       if (timeSinceLastConsume >= 0.1) {
         const gameUI = (window as any).gameUI;
         if (gameUI) {
-          const manaCost = 3; // 1.6 mana every 0.1 seconds = 16 per second
+          const manaCost = 4; // 1.6 mana every 0.1 seconds = 16 per second
           const manaConsumed = gameUI.consumeMana(manaCost);
           if (manaConsumed) {
             this.lastIcebeamManaConsumeTime = currentTime;
@@ -1517,7 +1517,7 @@ export class ControlSystem extends System {
     // Create CrossentropyBolt projectile using the existing method
     const crossentropyConfig = {
       speed: 25, // Slower than EntropicBolt
-      damage: 200, // Higher damage for R ability
+      damage: 500, // Higher damage for R ability
       lifetime: 2.5, // Longer lifetime
       piercing: false, // 
       explosive: false, // Disabled explosion effect for performance

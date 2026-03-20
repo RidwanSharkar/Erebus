@@ -24,6 +24,9 @@ class EnemyAI {
     // Boss teleport cooldown tracking
     this.bossTeleportCooldown = new Map(); // enemyId -> lastTeleportTime
 
+    // Blade-enhanced state after blink (next attack deals double damage for 1.5s)
+    this.bossBladeEnhanced = new Map(); // enemyId -> expiryTimestamp
+
     // Boss skeleton summoning tracking
     this.bossSkeletonSummonCooldown = new Map(); // enemyId -> lastSummonTime
     this.bossSummonedSkeletons = new Map(); // enemyId -> Set of skeleton IDs
@@ -67,6 +70,7 @@ class EnemyAI {
     this.bossSummonedSkeletons.clear();
     this._lastMeteorDebugLog.clear();
     this.enemyTaunts.clear();
+    this.bossBladeEnhanced.clear();
   }
 
   updateAI() {
@@ -180,14 +184,51 @@ class EnemyAI {
       const now = Date.now();
 
       if (now - lastAttackTime >= attackCooldown) {
-        // Attack the player
-        this.bossSkeletonAttackPlayer(skeleton, targetPlayer);
+        // Lock cooldown immediately so the telegraph doesn't re-trigger
         this.bossAttackCooldown.set(skeleton.id, now);
+
+        // Telegraph the attack (starts animation on clients)
+        this.telegraphSkeletonAttack(skeleton, targetPlayer);
+
+        // After 1 second, confirm damage only if the player is still in range
+        const telegraphDelay = 1000;
+        setTimeout(() => {
+          // Abort if skeleton died or room ended during the telegraph
+          if (skeleton.isDying || !this.room?.getGameStarted()) return;
+
+          const currentPlayers = this.room?.getPlayers();
+          if (!currentPlayers) return;
+
+          const currentTarget = currentPlayers.find(p => p.id === targetPlayer.id);
+          if (!currentTarget || currentTarget.health <= 0) return;
+
+          // Only deal damage if player is still within attack range
+          const currentDistance = this.calculateDistance(skeleton.position, currentTarget.position);
+          if (currentDistance <= attackRange) {
+            this.bossSkeletonAttackPlayer(skeleton, currentTarget);
+          } else {
+            console.log(`💀 Skeleton ${skeleton.id} attack missed - player ${currentTarget.id} dodged out of range!`);
+          }
+        }, telegraphDelay);
       }
     } else {
       // Outside attack range - move towards target
       this.moveEnemyTowardsTarget(skeleton, targetPlayer);
     }
+  }
+
+  telegraphSkeletonAttack(skeleton, player) {
+    // Broadcast the telegraph to all players so the attack animation starts
+    if (this.io) {
+      this.io.to(this.roomId).emit('boss-skeleton-attack-telegraph', {
+        skeletonId: skeleton.id,
+        targetPlayerId: player.id,
+        position: skeleton.position,
+        timestamp: Date.now()
+      });
+    }
+
+    console.log(`💀 Boss skeleton ${skeleton.id} telegraphing attack at player ${player.id}!`);
   }
 
   bossSkeletonAttackPlayer(skeleton, player) {
@@ -325,21 +366,6 @@ class EnemyAI {
       }
     }
 
-    // Check skeleton summoning cooldown (17.5 seconds)
-    const skeletonSummonCooldown = 12500;
-    const lastSkeletonSummonTime = this.bossSkeletonSummonCooldown.get(boss.id) || 0;
-
-    if (now - lastSkeletonSummonTime >= skeletonSummonCooldown) {
-      // Check current skeleton count
-      const currentSkeletons = this.bossSummonedSkeletons.get(boss.id) || new Set();
-      
-      // Only summon if less than 2 skeletons
-      if (currentSkeletons.size < 4) {
-        this.bossSummonSkeleton(boss);
-        this.bossSkeletonSummonCooldown.set(boss.id, now);
-      }
-    }
-
     // Check DeathGrasp cooldown (10 seconds)
     const deathGraspCooldown = 10000;
     const lastDeathGraspTime = this.bossDeathGraspCooldown.get(boss.id) || 0;
@@ -389,7 +415,17 @@ class EnemyAI {
       return;
     }
 
-    const damage = 47; // Boss deals 47 damage per hit
+    const baseDamage = 47; // Boss deals 47 damage per hit
+
+    // Check if the blade-enhanced buff is still active (from blink)
+    const enhancedExpiry = this.bossBladeEnhanced.get(boss.id) || 0;
+    const isEnhanced = Date.now() < enhancedExpiry;
+    const damage = isEnhanced ? baseDamage * 2 : baseDamage;
+
+    // Consume the buff on first attack (whether or not it was still active)
+    if (this.bossBladeEnhanced.has(boss.id)) {
+      this.bossBladeEnhanced.delete(boss.id);
+    }
 
     // Broadcast boss attack to all players
     if (this.io) {
@@ -398,11 +434,16 @@ class EnemyAI {
         targetPlayerId: player.id,
         damage: damage,
         position: boss.position,
+        bladeEnhancedConsumed: true, // Signal clients to clear the glow
         timestamp: Date.now()
       });
     }
 
-    console.log(`🔥 Boss ${boss.id} attacked player ${player.id} for ${damage} damage!`);
+    if (isEnhanced) {
+      console.log(`🔴🔥 Boss ${boss.id} EMPOWERED STRIKE! Attacked player ${player.id} for ${damage} damage (2x)!`);
+    } else {
+      console.log(`🔥 Boss ${boss.id} attacked player ${player.id} for ${damage} damage!`);
+    }
   }
 
   bossCastMeteor(boss, players) {
@@ -515,6 +556,20 @@ class EnemyAI {
     const rotDz = targetPlayer.position.z - endPosition.z;
     boss.rotation = Math.atan2(rotDx, rotDz);
 
+    // Activate blade-enhanced state: next attack within 2.5s deals double damage
+    const bladeEnhancedDuration = 2500;
+    const blinkTime = Date.now();
+    this.bossBladeEnhanced.set(boss.id, blinkTime + bladeEnhancedDuration);
+
+    // Delay the boss's next attack by 1 second so players have time to react.
+    // We do this by moving the last-attack timestamp forward by (1000 - attackCooldown),
+    // which makes the cooldown check pass exactly 1000ms after the blink.
+    const attackCooldown = 800;
+    const telegraphDelay = 1000;
+    this.bossAttackCooldown.set(boss.id, blinkTime + (telegraphDelay - attackCooldown));
+
+    console.log(`🔴 Boss ${boss.id} blades enhanced after blink! Next attack deals double damage (${bladeEnhancedDuration}ms window, ${telegraphDelay}ms telegraph)`);
+
     // Broadcast teleport event to all players
     if (this.io) {
       this.io.to(this.roomId).emit('boss-teleport', {
@@ -523,6 +578,7 @@ class EnemyAI {
         endPosition: endPosition,
         rotation: boss.rotation,
         targetPlayerId: targetPlayer.id,
+        bladesEnhanced: true,
         timestamp: Date.now()
       });
     }
@@ -849,6 +905,7 @@ class EnemyAI {
     this.bossMeteorCooldown.delete(enemyId);
     this.bossSkeletonSummonCooldown.delete(enemyId);
     this.bossSummonedSkeletons.delete(enemyId);
+    this.bossBladeEnhanced.delete(enemyId);
   }
 
   // Apply taunt effect to enemy (Wraithblade ability)

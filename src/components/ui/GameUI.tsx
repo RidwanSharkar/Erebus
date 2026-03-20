@@ -31,6 +31,7 @@ interface GameUIProps {
   critDamageRuneCount?: number;
   criticalChance?: number;
   criticalDamageMultiplier?: number;
+  intellectStatPoints?: number; // INTELLECT stat: +50 mana pool & +1/s regen per point
 }
 
 
@@ -68,17 +69,18 @@ function ResourceBar({ current, max, color, backgroundColor = '#333'}: ResourceB
   );
 }
 
-// Mana scaling based on player level
-function getMaxManaForWeapon(weaponType: WeaponType, level: number): number {
+// Mana scaling based on player level and INTELLECT stat (+50 per point)
+function getMaxManaForWeapon(weaponType: WeaponType, level: number, intellectPoints: number = 0): number {
+  const intellectBonus = intellectPoints * 50;
   if (weaponType === WeaponType.RUNEBLADE) {
     // Runeblade scaling: Level 1: 150, Level 2: 175, Level 3: 200, Level 4: 225, Level 5: 250
     const runebladeMana = [0, 150, 175, 200, 225, 250];
-    return runebladeMana[level] || 150;
+    return (runebladeMana[level] || 150) + intellectBonus;
   } else if (weaponType === WeaponType.SCYTHE) {
     // Scythe scaling: Level 1: 250, Level 2: 275, Level 3: 300, Level 4: 325, Level 5: 350
-    return 250 + (level - 1) * 25;
+    return 250 + (level - 1) * 25 + intellectBonus;
   }
-  return 200; // Default for other weapons
+  return 200 + intellectBonus; // Default for other weapons
 }
 
 export default function GameUI({
@@ -103,7 +105,8 @@ export default function GameUI({
   criticalRuneCount = 0,
   critDamageRuneCount = 0,
   criticalChance = 0,
-  criticalDamageMultiplier = 2.0
+  criticalDamageMultiplier = 2.0,
+  intellectStatPoints = 0
 }: GameUIProps) {
   // Store resources per weapon type to persist across switches
   const [weaponResources, setWeaponResources] = useState<{
@@ -147,16 +150,18 @@ export default function GameUI({
       setWeaponResources(prev => {
         const updated = { ...prev };
 
-        // Mana regeneration for Scythe (10 mana per second = 5 every 500ms)
-        const scytheMaxMana = getMaxManaForWeapon(WeaponType.SCYTHE, level);
+        // Mana regeneration for Scythe (8/s base = 4 every 500ms, +1/s per INTELLECT = +0.5 per tick)
+        const scytheMaxMana = getMaxManaForWeapon(WeaponType.SCYTHE, level, intellectStatPoints);
+        const scytheRegenPerTick = 4 + intellectStatPoints * 0.5;
         if (updated[WeaponType.SCYTHE].mana < scytheMaxMana) {
-          updated[WeaponType.SCYTHE].mana = Math.min(scytheMaxMana, updated[WeaponType.SCYTHE].mana + 4);
+          updated[WeaponType.SCYTHE].mana = Math.min(scytheMaxMana, updated[WeaponType.SCYTHE].mana + scytheRegenPerTick);
         }
 
-        // Mana regeneration for Runeblade (4 mana per second = 2 every 500ms)
-        const runebladeMaxMana = getMaxManaForWeapon(WeaponType.RUNEBLADE, level);
+        // Mana regeneration for Runeblade (4/s base = 2 every 500ms, +1/s per INTELLECT = +0.5 per tick)
+        const runebladeMaxMana = getMaxManaForWeapon(WeaponType.RUNEBLADE, level, intellectStatPoints);
+        const runebladeRegenPerTick = 2 + intellectStatPoints * 0.5;
         if (updated[WeaponType.RUNEBLADE].mana < runebladeMaxMana) {
-          updated[WeaponType.RUNEBLADE].mana = Math.min(runebladeMaxMana, updated[WeaponType.RUNEBLADE].mana + 2);
+          updated[WeaponType.RUNEBLADE].mana = Math.min(runebladeMaxMana, updated[WeaponType.RUNEBLADE].mana + runebladeRegenPerTick);
         }
 
         // Energy regeneration for Bow and Sabres (14 energy per second = 7 every 500ms)
@@ -172,28 +177,28 @@ export default function GameUI({
     }, 500);
 
     return () => clearInterval(interval);
-  }, [maxEnergy, level]);
+  }, [maxEnergy, level, intellectStatPoints]);
 
-  // Handle mana capacity increase when leveling up
+  // Handle mana capacity increase when leveling up or gaining INTELLECT
   useEffect(() => {
     setWeaponResources(prev => {
       const updated = { ...prev };
       
       // Update Scythe mana capacity
-      const scytheMaxMana = getMaxManaForWeapon(WeaponType.SCYTHE, level);
+      const scytheMaxMana = getMaxManaForWeapon(WeaponType.SCYTHE, level, intellectStatPoints);
       if (updated[WeaponType.SCYTHE].mana < scytheMaxMana) {
         updated[WeaponType.SCYTHE].mana = scytheMaxMana; // Fill to new max capacity
       }
       
       // Update Runeblade mana capacity
-      const runebladeMaxMana = getMaxManaForWeapon(WeaponType.RUNEBLADE, level);
+      const runebladeMaxMana = getMaxManaForWeapon(WeaponType.RUNEBLADE, level, intellectStatPoints);
       if (updated[WeaponType.RUNEBLADE].mana < runebladeMaxMana) {
         updated[WeaponType.RUNEBLADE].mana = runebladeMaxMana; // Fill to new max capacity
       }
       
       return updated;
     });
-  }, [level]);
+  }, [level, intellectStatPoints]);
 
   // Rage decay for Sword (5 rage per second after 5 seconds of no damage)
   useEffect(() => {
@@ -252,7 +257,7 @@ export default function GameUI({
   // Function to add mana (for Particle Beam refund when hitting frozen enemies)
   const addMana = (amount: number) => {
     if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
-      const maxMana = getMaxManaForWeapon(currentWeapon, level);
+      const maxMana = getMaxManaForWeapon(currentWeapon, level, intellectStatPoints);
       setWeaponResources(prev => ({
         ...prev,
         [currentWeapon]: {

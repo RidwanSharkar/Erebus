@@ -1,96 +1,103 @@
 'use client';
 
 import React from 'react';
+import { ExperienceSystem } from '@/utils/ExperienceSystem';
 
 interface ExperienceBarProps {
   experience: number;
   level: number;
-  playerId?: string;
   isLocalPlayer?: boolean;
+  /** Co-op: how many pre-boss skeletons have been killed (0–20) */
+  skeletonKillCount?: number;
+  /** Co-op: whether the boss has already been spawned */
+  bossSpawned?: boolean;
 }
 
-export default function ExperienceBar({ experience, level, playerId, isLocalPlayer = false }: ExperienceBarProps) {
-  // Calculate EXP needed for next level
-  const getExpForNextLevel = (currentLevel: number): number => {
-    switch (currentLevel) {
-      case 1: return 50;  // 50 EXP to reach level 2
-      case 2: return 100; // 100 EXP to reach level 3
-      case 3: return 200; // 200 EXP to reach level 4
-      case 4: return 400; // 400 EXP to reach level 5
-      case 5: return 0;   // Max level
-      default: return 0;
-    }
-  };
+const SKELETON_KILLS_REQUIRED = 20;
 
-  // Calculate current level progress
-  const getLevelProgress = (currentLevel: number, currentExp: number): number => {
-    if (currentLevel >= 5) return 100; // Max level
-
-    const expForPrevLevels = currentLevel === 1 ? 0 :
-      currentLevel === 2 ? 50 :
-      currentLevel === 3 ? 150 :
-      currentLevel === 4 ? 350 : 0;
-
-    const expForCurrentLevel = getExpForNextLevel(currentLevel);
-    const currentLevelExp = currentExp - expForPrevLevels;
-
-    return Math.min((currentLevelExp / expForCurrentLevel) * 100, 100);
-  };
-
-  // Calculate total EXP needed to reach current level
-  const getTotalExpForLevel = (targetLevel: number): number => {
-    switch (targetLevel) {
-      case 1: return 0;
-      case 2: return 50;
-      case 3: return 150;
-      case 4: return 350;
-      case 5: return 750;
-      default: return 0;
-    }
-  };
-
-  // Get current level's EXP range for display
-  const getCurrentLevelExpRange = (currentLevel: number) => {
-    const minExp = getTotalExpForLevel(currentLevel);
-    const maxExp = getTotalExpForLevel(currentLevel + 1);
-    return { min: minExp, max: maxExp };
-  };
-
-  const progress = getLevelProgress(level, experience);
-  const { min, max } = getCurrentLevelExpRange(level);
+export default function ExperienceBar({
+  experience,
+  level,
+  isLocalPlayer = false,
+  skeletonKillCount = 0,
+  bossSpawned = false,
+}: ExperienceBarProps) {
+  const isMaxLevel = level >= 5;
+  const progress = ExperienceSystem.getLevelProgress(level, experience);
+  const { min, max } = ExperienceSystem.getCurrentLevelExpRange(level);
   const currentLevelExp = experience - min;
   const maxLevelExp = max - min;
-  const isMaxLevel = level >= 5;
+
+  const skeletonProgress = Math.min((skeletonKillCount / SKELETON_KILLS_REQUIRED) * 100, 100);
+  const showSkeletonTracker = !bossSpawned;
 
   return (
-    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-40">
-      <div className="bg-black bg-opacity-70 backdrop-blur-sm rounded-lg p-2 border border-gray-600">
-        <div className="flex items-center space-x-3">
-          {/* Level indicator */}
-          <div className="flex items-center space-x-2">
-            <div className={`text-sm font-bold ${isLocalPlayer ? 'text-yellow-400' : 'text-blue-400'}`}>
-              LV {level}
-            </div>
-            <div className="text-xs text-gray-400">
-              {isMaxLevel ? 'MAX' : `${currentLevelExp}/${maxLevelExp} EXP`}
-            </div>
-          </div>
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 select-none">
+      <div
+        className="rounded-xl border border-white/10 bg-black/75 backdrop-blur-md px-4 py-2.5 shadow-xl"
+        style={{ minWidth: 320 }}
+      >
+        {/* ── Level & EXP row ── */}
+        <div className="flex items-center gap-3 mb-1.5">
 
-          {/* Experience bar */}
-          <div className="w-48 h-2 bg-gray-700 rounded-full overflow-hidden">
-            <div
-              className={`h-full transition-all duration-300 ${
-                isLocalPlayer ? 'bg-gradient-to-r from-yellow-500 to-yellow-400' : 'bg-gradient-to-r from-blue-500 to-blue-400'
+          {/* Level badge */}
+          <div
+            className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center text-sm font-black shadow-inner
+              ${isLocalPlayer
+                ? 'bg-gradient-to-br from-yellow-500 to-amber-600 text-black'
+                : 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white'
               }`}
-              style={{ width: `${progress}%` }}
-            />
+          >
+            {level}
           </div>
 
-          {/* Total EXP display */}
-          <div className="text-xs text-gray-400">
-            Total: {experience} EXP
+          <div className="flex-1 min-w-0">
+            {/* Label row */}
+            <div className="flex justify-between items-baseline mb-1">
+              <span className="text-xs font-semibold text-white/80 uppercase tracking-wide">
+                {isMaxLevel ? 'Max Level' : `Level ${level}`}
+              </span>
+              <span className="text-[11px] text-white/50 tabular-nums">
+                {isMaxLevel
+                  ? `${experience} EXP`
+                  : `${currentLevelExp.toLocaleString()} / ${maxLevelExp.toLocaleString()} EXP`}
+              </span>
+            </div>
+
+            {/* EXP bar */}
+            <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ease-out
+                  ${isLocalPlayer
+                    ? 'bg-gradient-to-r from-yellow-400 to-amber-300'
+                    : 'bg-gradient-to-r from-blue-400 to-indigo-300'
+                  }`}
+                style={{ width: `${isMaxLevel ? 100 : progress}%` }}
+              />
+            </div>
           </div>
         </div>
+
+        {/* ── Pre-boss skeleton tracker (co-op only) ── */}
+        {showSkeletonTracker && (
+          <div className="mt-2 pt-2 border-t border-white/10">
+            <div className="flex justify-between items-baseline mb-1">
+              <span className="text-[11px] font-semibold text-red-400/90 uppercase tracking-wide">
+                ☠ Summon the Boss
+              </span>
+              <span className="text-[11px] text-white/50 tabular-nums">
+                {skeletonKillCount} / {SKELETON_KILLS_REQUIRED} kills
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-300 ease-out bg-gradient-to-r from-red-600 to-rose-400"
+                style={{ width: `${skeletonProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );

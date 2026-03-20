@@ -12,6 +12,7 @@ export interface DamageResult {
 let globalCriticalRuneCount = 0;
 let globalCritDamageRuneCount = 0;
 let globalControlSystem: any = null; // Reference to control system for passive ability checks
+let globalAgilityStatPoints = 0; // Agility stat: +1% crit chance and +0.10x crit damage per point
 
 export function setControlSystem(controlSystem: any) {
   globalControlSystem = controlSystem;
@@ -25,9 +26,13 @@ export function setGlobalCritDamageRuneCount(count: number) {
   globalCritDamageRuneCount = count;
 }
 
+export function setGlobalAgilityStatPoints(points: number) {
+  globalAgilityStatPoints = points;
+}
+
 export function calculateDamage(baseAmount: number, weaponType?: WeaponType): DamageResult {
-  // Base crit chance is 11%, each rune adds 3%
-  let criticalChance = 0.11 + (globalCriticalRuneCount * 0.03);
+  // Base crit chance is 11%, each rune adds 3%, each Agility point adds 1%
+  let criticalChance = 0.11 + (globalCriticalRuneCount * 0.03) + (globalAgilityStatPoints * 0.01);
 
   // Add Bow passive: TEMPEST ROUNDS (+5% crit chance)
   if (weaponType === WeaponType.BOW && globalControlSystem) {
@@ -41,8 +46,8 @@ export function calculateDamage(baseAmount: number, weaponType?: WeaponType): Da
 
   const isCritical = Math.random() < criticalChance;
 
-  // Base crit damage multiplier is 2x, each crit damage rune adds 0.15x
-  const criticalDamageMultiplier = 2.0 + (globalCritDamageRuneCount * 0.15);
+  // Base crit damage multiplier is 2x, each crit damage rune adds 0.15x, each Agility point adds 0.10x
+  const criticalDamageMultiplier = 2.0 + (globalCritDamageRuneCount * 0.15) + (globalAgilityStatPoints * 0.10);
   const rawDamage = isCritical ? baseAmount * criticalDamageMultiplier : baseAmount;
 
   // Round down to integer to avoid floating point precision issues
@@ -55,7 +60,7 @@ export function calculateDamage(baseAmount: number, weaponType?: WeaponType): Da
 
 // Utility functions for debugging and testing
 export function getCriticalChance(weaponType?: WeaponType): number {
-  let criticalChance = 0.11 + (globalCriticalRuneCount * 0.03);
+  let criticalChance = 0.11 + (globalCriticalRuneCount * 0.03) + (globalAgilityStatPoints * 0.01);
 
   // Add Bow passive: TEMPEST ROUNDS (+5% crit chance)
   if (weaponType === WeaponType.BOW && globalControlSystem) {
@@ -71,7 +76,7 @@ export function getCriticalChance(weaponType?: WeaponType): number {
 }
 
 export function getCriticalDamageMultiplier(): number {
-  return 2.0 + (globalCritDamageRuneCount * 0.15);
+  return 2.0 + (globalCritDamageRuneCount * 0.15) + (globalAgilityStatPoints * 0.10);
 }
 
 export function getGlobalRuneCounts(): { criticalRunes: number; critDamageRunes: number } {

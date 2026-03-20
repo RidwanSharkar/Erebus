@@ -14,6 +14,9 @@ class GameRoom {
     this.killCount = 0; // Shared kill count for all players
     this.gameMode = 'coop'; // Default to co-op mode
 
+    // Item drop system
+    this.droppedItems = new Map(); // itemId -> { id, type, stat, label, position, droppedAt }
+
     // Status effect tracking for enemies
     this.enemyStatusEffects = new Map(); // enemyId -> { stun: expiration, freeze: expiration, slow: expiration }
 
@@ -26,12 +29,17 @@ class GameRoom {
     this.enemyAI = new EnemyAI(roomId, io);
     this.enemyAI.setRoom(this);
 
-    // Timer references for cleanup (boss only)
+    // Timer references for cleanup
     this.bossSpawnTimer = null;
 
     // Track when game started for boss spawning
     this.gameStartTime = 0;
     this.bossSpawned = false;
+
+    // Pre-boss skeleton wave tracking
+    this.skeletonKillCount = 0;          // How many pre-boss skeletons have been killed
+    this.skeletonSpawnStartTimer = null; // Initial 15-second delay before first spawn
+    this.skeletonSpawnInterval = null;   // Interval: 1 skeleton every 5 seconds
   }
 
   // Start the actual game
@@ -43,10 +51,10 @@ class GameRoom {
     this.gameStarted = true;
     this.gameStartTime = Date.now();
     this.bossSpawned = false;
+    this.skeletonKillCount = 0;
 
     // Initialize enemies and AI for co-op mode
     if (this.gameMode === 'coop') {
-      // Initialize with some basic enemies like the single-player version
       this.initializeEnemies();
 
       // Start enemy spawning timers
@@ -55,8 +63,8 @@ class GameRoom {
       // Start enemy AI
       this.startEnemyAI();
 
-      // Schedule boss spawn 20 seconds after game start
-      this.scheduleBossSpawn();
+      // Begin pre-boss skeleton wave (15s delay, then 1 every 5s)
+      this.startSkeletonSpawning();
     }
     
     // Broadcast game start to all players
@@ -156,10 +164,8 @@ class GameRoom {
   initializeEnemies() {
     if (!this.gameStarted) return;
 
-    // Initialize enemies for co-op mode
     if (this.gameMode === 'coop') {
-      // No initial enemies - only boss spawns after 20 seconds
-      console.log('🎮 Co-op mode initialized - Boss will spawn in 20 seconds');
+      console.log('🎮 Co-op mode initialized - Skeletons begin spawning in 15 seconds, Boss after 20 are killed');
     }
   }
 
@@ -231,7 +237,7 @@ class GameRoom {
           this.players.forEach((player, playerId) => {
             this.io.to(this.roomId).emit('player-experience-gained', {
               playerId: playerId,
-              experienceGained: 100, // 100 EXP for boss kill
+              experienceGained: 1000, // 1000 EXP for boss kill
               source: 'boss_kill',
               enemyId: enemyId,
               timestamp: Date.now()
@@ -244,6 +250,9 @@ class GameRoom {
             killedBy: fromPlayerId,
             timestamp: Date.now()
           });
+
+          // Always drop 2 random unique boss reward items
+          this.spawnBossItemDrops(enemy.position);
         }
         
         console.log(`🎉 BOSS DEFEATED by player ${fromPlayerId}!`);
@@ -257,15 +266,41 @@ class GameRoom {
         if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
           this.io.to(this.roomId).emit('player-experience-gained', {
             playerId: fromPlayerId,
-            experienceGained: 5,
+            experienceGained: 50,
             source: 'boss_skeleton_kill',
             enemyId: enemyId,
             timestamp: Date.now()
           });
         }
 
-        // IMPORTANT: Remove skeleton immediately (no death animation delay)
-        // This prevents invisible skeletons from being damageable
+        // Track pre-boss skeleton kills and trigger boss once 20 are killed
+        if (!this.bossSpawned) {
+          this.skeletonKillCount++;
+          console.log(`💀 Pre-boss skeleton killed (${this.skeletonKillCount}/20)`);
+
+          if (this.io) {
+            this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
+              skeletonKillCount: this.skeletonKillCount,
+              required: 20,
+              timestamp: Date.now()
+            });
+          }
+
+          if (this.skeletonKillCount >= 20) {
+            // Stop skeleton spawning and summon the boss
+            this.stopSkeletonSpawning();
+            console.log('💀💀💀 20 skeletons killed - Boss is appearing!');
+            this.spawnBoss();
+            this.bossSpawned = true;
+          }
+        }
+
+        // 10% chance to drop an amulet on skeleton death
+        if (Math.random() < 0.10) {
+          this.spawnItemDrop(enemy.position);
+        }
+
+        // Remove skeleton immediately (no death animation delay)
         this.enemies.delete(enemyId);
         console.log(`🗑️ Boss skeleton ${enemyId} removed immediately from enemies map`);
 
@@ -277,11 +312,11 @@ class GameRoom {
           });
         }
 
-        // Clean up aggro immediately (moved from below)
+        // Clean up aggro immediately
         if (this.enemyAI) {
           this.enemyAI.removeEnemyAggro(enemyId);
         }
-        
+
         // Return early to skip the setTimeout cleanup below
         return result;
       } else {
@@ -366,27 +401,92 @@ class GameRoom {
     return 5;                      // Level 5: 70+ kills
   }
 
-  // Enemy spawning system - BOSS ONLY for co-op mode
+  // Enemy spawning system - skeletons only (boss triggered by kill count)
   startEnemySpawning() {
     if (!this.gameStarted) return;
-
-    // No regular enemy spawning for co-op mode - only boss
-    console.log('🎮 Co-op mode - regular enemy spawning disabled (boss only)');
+    console.log('🎮 Co-op mode - skeleton wave spawning will begin in 15 seconds');
   }
 
-  // Schedule boss spawn 20 seconds after game starts
-  scheduleBossSpawn() {
-    if (this.bossSpawnTimer) {
-      clearTimeout(this.bossSpawnTimer);
+  // Begin pre-boss skeleton wave: first spawn after 15s, then 1 every 5s (max 5 on map)
+  startSkeletonSpawning() {
+    if (this.skeletonSpawnStartTimer || this.skeletonSpawnInterval) return;
+
+    console.log('⏳ Skeleton spawn sequence initiated - first skeleton in 15 seconds');
+
+    this.skeletonSpawnStartTimer = setTimeout(() => {
+      if (!this.gameStarted || this.bossSpawned) return;
+
+      this.spawnIndependentSkeleton();
+
+      this.skeletonSpawnInterval = setInterval(() => {
+        if (!this.gameStarted || this.bossSpawned) {
+          this.stopSkeletonSpawning();
+          return;
+        }
+
+        const activeSkeleton = Array.from(this.enemies.values())
+          .filter(e => e.type === 'boss-skeleton' && !e.isDying);
+
+        if (activeSkeleton.length < 5) {
+          this.spawnIndependentSkeleton();
+        } else {
+          console.log(`⏸️ Skeleton cap reached (5/5) - waiting before next spawn`);
+        }
+      }, 5000); // one skeleton every 5 seconds
+    }, 15000); // 15-second initial delay
+  }
+
+  // Stop the pre-boss skeleton spawn timers
+  stopSkeletonSpawning() {
+    if (this.skeletonSpawnStartTimer) {
+      clearTimeout(this.skeletonSpawnStartTimer);
+      this.skeletonSpawnStartTimer = null;
+    }
+    if (this.skeletonSpawnInterval) {
+      clearInterval(this.skeletonSpawnInterval);
+      this.skeletonSpawnInterval = null;
+    }
+  }
+
+  // Spawn a skeleton at a random arena position (not tied to a boss)
+  spawnIndependentSkeleton() {
+    if (!this.gameStarted) return null;
+
+    const skeletonId = `skeleton-pre-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 8 + Math.random() * 12; // 8–20 units from center
+
+    const position = {
+      x: Math.cos(angle) * distance,
+      y: 0,
+      z: Math.sin(angle) * distance
+    };
+
+    const skeleton = {
+      id: skeletonId,
+      type: 'boss-skeleton',
+      position,
+      rotation: 0,
+      health: 666,
+      maxHealth: 666,
+      isDying: false,
+      damage: 17,
+      bossId: null // Independent - not summoned by a boss
+    };
+
+    this.enemies.set(skeletonId, skeleton);
+
+    if (this.io) {
+      // Use enemy-spawned so the frontend adds it to the enemies map
+      this.io.to(this.roomId).emit('enemy-spawned', {
+        enemy: skeleton,
+        timestamp: Date.now()
+      });
     }
 
-    this.bossSpawnTimer = setTimeout(() => {
-      if (this.gameStarted && !this.bossSpawned && this.gameMode === 'coop') {
-        this.spawnBoss();
-        this.bossSpawned = true;
-        console.log('🔥 Boss spawned 20 seconds after game start!');
-      }
-    }, 20000); // 20 seconds
+    console.log(`💀 Independent skeleton spawned: ${skeletonId} at (${position.x.toFixed(1)}, ${position.z.toFixed(1)})`);
+    return skeleton;
   }
 
   // Spawn the boss enemy
@@ -398,7 +498,7 @@ class GameRoom {
     // Spawn boss at center of arena
     const position = { x: 0, y: 0, z: 0 };
 
-    const maxHealth = 37500;
+    const maxHealth = 10500;
     const bossData = {
       id: bossId,
       type: 'boss',
@@ -430,11 +530,11 @@ class GameRoom {
 
   // Stop enemy spawning
   stopEnemySpawning() {
-    // Clear boss spawn timer
     if (this.bossSpawnTimer) {
       clearTimeout(this.bossSpawnTimer);
       this.bossSpawnTimer = null;
     }
+    this.stopSkeletonSpawning();
   }
 
   // Start enemy AI system
@@ -509,6 +609,115 @@ class GameRoom {
     return activeEffects;
   }
 
+  // Spawn a random amulet item at the given position
+  spawnItemDrop(position) {
+    const itemTypes = [
+      { type: 'AMULET_OF_STRENGTH', stat: 'strength', label: 'Amulet of Strength' },
+      { type: 'AMULET_OF_STAMINA',  stat: 'stamina',  label: 'Amulet of Stamina'  },
+      { type: 'AMULET_OF_AGILITY',  stat: 'agility',  label: 'Amulet of Agility'  },
+      { type: 'AMULET_OF_INTELLECT',stat: 'intellect',label: 'Amulet of Intellect' },
+    ];
+
+    const chosen = itemTypes[Math.floor(Math.random() * itemTypes.length)];
+    const itemId = `item-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+
+    const item = {
+      id: itemId,
+      type: chosen.type,
+      stat: chosen.stat,
+      label: chosen.label,
+      position: { x: position.x, y: 0.3, z: position.z },
+      droppedAt: Date.now()
+    };
+
+    this.droppedItems.set(itemId, item);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('item-dropped', { item, timestamp: Date.now() });
+    }
+
+    // Auto-expire after 60 seconds
+    setTimeout(() => {
+      if (this.droppedItems.has(itemId)) {
+        this.droppedItems.delete(itemId);
+        if (this.io) {
+          this.io.to(this.roomId).emit('item-expired', { itemId, timestamp: Date.now() });
+        }
+      }
+    }, 60000);
+
+    console.log(`💍 Item dropped: ${item.label} (${itemId}) at (${position.x.toFixed(1)}, ${position.z.toFixed(1)})`);
+    return item;
+  }
+
+  // Always drop 2 unique random boss reward items when the boss is slain
+  spawnBossItemDrops(position) {
+    const bossItemPool = [
+      { type: 'CLOAK_OF_SPEED',  label: 'Cloak of Speed',  category: 'boss_drop' },
+      { type: 'WARDING_SHIELD',  label: 'Warding Shield',  category: 'boss_drop' },
+      { type: 'HOLY_RELIC',      label: 'Holy Relic',      category: 'boss_drop' },
+      { type: 'TITAN_HEART',     label: 'Titan Heart',     category: 'boss_drop' },
+    ];
+
+    // Shuffle and pick 2 distinct items
+    const shuffled = [...bossItemPool].sort(() => Math.random() - 0.5);
+    const chosen = shuffled.slice(0, 2);
+
+    const offsets = [-2.0, 2.0];
+    chosen.forEach((itemDef, index) => {
+      const itemId = `boss-item-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      const item = {
+        id: itemId,
+        type: itemDef.type,
+        label: itemDef.label,
+        category: itemDef.category,
+        position: { x: position.x + offsets[index], y: 0.3, z: position.z },
+        droppedAt: Date.now(),
+      };
+
+      this.droppedItems.set(itemId, item);
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('item-dropped', { item, timestamp: Date.now() });
+      }
+
+      // Boss items persist for 3 minutes
+      setTimeout(() => {
+        if (this.droppedItems.has(itemId)) {
+          this.droppedItems.delete(itemId);
+          if (this.io) {
+            this.io.to(this.roomId).emit('item-expired', { itemId, timestamp: Date.now() });
+          }
+        }
+      }, 180000);
+
+      console.log(`👑 Boss drop: ${item.label} (${itemId}) at (${item.position.x.toFixed(1)}, ${item.position.z.toFixed(1)})`);
+    });
+  }
+
+  // Handle a player picking up an item
+  pickupItem(itemId, playerId) {
+    const item = this.droppedItems.get(itemId);
+    if (!item) {
+      console.log(`⚠️ Pickup failed: item ${itemId} no longer exists`);
+      return null;
+    }
+
+    this.droppedItems.delete(itemId);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('item-picked-up', {
+        itemId,
+        playerId,
+        item,
+        timestamp: Date.now()
+      });
+    }
+
+    console.log(`🎁 Player ${playerId} picked up ${item.label}`);
+    return item;
+  }
+
   // Cleanup when room is destroyed
   destroy() {
     this.stopEnemySpawning();
@@ -517,9 +726,11 @@ class GameRoom {
     this.players.clear();
     this.enemies.clear();
     this.enemyStatusEffects.clear();
+    this.droppedItems.clear();
     this.gameStarted = false;
     this.killCount = 0;
     this.bossSpawned = false;
+    this.skeletonKillCount = 0;
   }
 
   // Get room summary for debugging

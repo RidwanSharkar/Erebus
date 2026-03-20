@@ -1,26 +1,26 @@
-// Experience System Utilities for PVP mode
+// Experience System Utilities for co-op and PVP modes
 
 export class ExperienceSystem {
-  // Level requirements (cumulative EXP needed)
-  private static readonly LEVEL_REQUIREMENTS = {
+  // Cumulative EXP needed to reach each level
+  private static readonly LEVEL_REQUIREMENTS: Record<number, number> = {
     1: 0,     // Starting level
-    2: 50,    // Need 50 total EXP for level 2
-    3: 150,   // Need 150 total EXP for level 3
-    4: 350,   // Need 300 total EXP for level 4
-    5: 750    // Need 500 total EXP for level 5 (max)
+    2: 500,  // 1 000 total EXP to reach level 2
+    3: 2000,  // 3 000 total EXP to reach level 3 (+2 000 from L2)
+    4: 5000,  // 7 000 total EXP to reach level 4 (+4 000 from L3)
+    5: 7500  // 15 000 total EXP to reach level 5 (+8 000 from L4, max)
   };
 
-  // EXP per level increment
-  private static readonly EXP_PER_LEVEL_INCREMENT = {
-    1: 50,   // 0 -> 50 for level 2
-    2: 100,  // 50 -> 150 for level 3
-    3: 200,  // 150 -> 300 for level 4
-    4: 400   // 300 -> 500 for level 5
+  // EXP needed to go from level N to level N+1
+  private static readonly EXP_PER_LEVEL_INCREMENT: Record<number, number> = {
+    1: 1000,  // 0    → 1 000
+    2: 2000,  // 1000 → 3 000
+    3: 4000,  // 3000 → 7 000
+    4: 8000   // 7000 → 15 000
   };
 
   // Health scaling per level
-  private static readonly BASE_HEALTH = 500;
-  private static readonly HEALTH_PER_LEVEL = 150;
+  private static readonly BASE_HEALTH = 250;
+  private static readonly HEALTH_PER_LEVEL = 100;
 
   /**
    * Calculate the level based on total experience
@@ -34,30 +34,30 @@ export class ExperienceSystem {
   }
 
   /**
-   * Get the experience required to reach a specific level
+   * Get the cumulative experience required to reach a specific level
    */
   static getExperienceForLevel(level: number): number {
-    return this.LEVEL_REQUIREMENTS[level as keyof typeof this.LEVEL_REQUIREMENTS] || 0;
+    return this.LEVEL_REQUIREMENTS[level] ?? 0;
   }
 
   /**
-   * Get the experience required for the next level
+   * Get the cumulative experience required for the next level
    */
   static getExperienceForNextLevel(currentLevel: number): number {
     if (currentLevel >= 5) return 0;
-    return this.LEVEL_REQUIREMENTS[(currentLevel + 1) as keyof typeof this.LEVEL_REQUIREMENTS] || 0;
+    return this.LEVEL_REQUIREMENTS[currentLevel + 1] ?? 0;
   }
 
   /**
-   * Get the experience required to level up from current level
+   * Get the experience increment needed to level up from currentLevel
    */
   static getExperienceIncrementForLevel(currentLevel: number): number {
     if (currentLevel >= 5) return 0;
-    return this.EXP_PER_LEVEL_INCREMENT[currentLevel as keyof typeof this.EXP_PER_LEVEL_INCREMENT] || 0;
+    return this.EXP_PER_LEVEL_INCREMENT[currentLevel] ?? 0;
   }
 
   /**
-   * Calculate current level progress (0-100)
+   * Calculate current level progress as a percentage (0–100)
    */
   static getLevelProgress(currentLevel: number, currentExp: number): number {
     if (currentLevel >= 5) return 100;
@@ -71,7 +71,7 @@ export class ExperienceSystem {
   }
 
   /**
-   * Get current level's experience range
+   * Get the experience range for the current level: { min, max, current }
    */
   static getCurrentLevelExpRange(currentLevel: number): { min: number; max: number; current: number } {
     const min = this.getExperienceForLevel(currentLevel);
@@ -83,47 +83,39 @@ export class ExperienceSystem {
    * Calculate max health based on level
    */
   static getMaxHealthForLevel(level: number): number {
-    const health = this.BASE_HEALTH + ((level - 1) * this.HEALTH_PER_LEVEL);
-    // console.log(`📊 ExperienceSystem.getMaxHealthForLevel(${level}) = ${this.BASE_HEALTH} + ((${level} - 1) * ${this.HEALTH_PER_LEVEL}) = ${health}`);
-    return health;
+    return this.BASE_HEALTH + (level - 1) * this.HEALTH_PER_LEVEL;
   }
 
   /**
-   * Check if player can level up with given experience
+   * Check whether a player can level up with their current experience
    */
   static canLevelUp(currentLevel: number, currentExp: number): boolean {
     if (currentLevel >= 5) return false;
-    const requiredExp = this.getExperienceForNextLevel(currentLevel);
-    return currentExp >= requiredExp;
+    return currentExp >= this.getExperienceForNextLevel(currentLevel);
   }
 
   /**
    * Get the new level after gaining experience
    */
   static getNewLevelAfterExperience(currentLevel: number, currentExp: number, expGained: number): number {
-    const newExp = currentExp + expGained;
-    return this.getLevelFromExperience(newExp);
+    return this.getLevelFromExperience(currentExp + expGained);
   }
 
   /**
-   * Award experience and return level up information
+   * Award experience and return level-up information
    */
-  static awardExperience(currentLevel: number, currentExp: number, expGained: number): {
-    newLevel: number;
-    newExp: number;
-    leveledUp: boolean;
-    levelsGained: number;
-  } {
+  static awardExperience(
+    currentLevel: number,
+    currentExp: number,
+    expGained: number
+  ): { newLevel: number; newExp: number; leveledUp: boolean; levelsGained: number } {
     const newExp = currentExp + expGained;
     const newLevel = this.getLevelFromExperience(newExp);
-    const leveledUp = newLevel > currentLevel;
-    const levelsGained = newLevel - currentLevel;
-
     return {
       newLevel,
       newExp,
-      leveledUp,
-      levelsGained
+      leveledUp: newLevel > currentLevel,
+      levelsGained: newLevel - currentLevel
     };
   }
 
@@ -132,7 +124,6 @@ export class ExperienceSystem {
    */
   static getExperienceToNextLevel(currentLevel: number, currentExp: number): number {
     if (currentLevel >= 5) return 0;
-    const requiredExp = this.getExperienceForNextLevel(currentLevel);
-    return Math.max(requiredExp - currentExp, 0);
+    return Math.max(this.getExperienceForNextLevel(currentLevel) - currentExp, 0);
   }
 }

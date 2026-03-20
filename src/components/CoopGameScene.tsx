@@ -10,6 +10,8 @@ import Meteor from './enemies/Meteor';
 import BossTeleportEffect from './enemies/BossTeleportEffect';
 import { useMultiplayer, Player } from '@/contexts/MultiplayerContext';
 import { SkillPointData } from '@/utils/SkillPointSystem';
+import { StatSystem, StatPointData } from '@/utils/StatSystem';
+import { setGlobalAgilityStatPoints } from '@/core/DamageCalculator';
 
 // Import our ECS systems
 import { Engine } from '@/core/Engine';
@@ -107,6 +109,7 @@ interface CoopGameSceneProps {
     secondary: WeaponType;
   } | null;
   skillPointData?: SkillPointData;
+  statPointData?: StatPointData;
 }
 
 // Taunt Effect Indicator Component
@@ -167,7 +170,103 @@ function TauntEffectIndicator({ position }: { position: Vector3 }) {
   );
 }
 
-export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCameraUpdate, onGameStateUpdate, onControlSystemUpdate, onExperienceUpdate, onEssenceUpdate, onMerchantUIUpdate, selectedWeapons, skillPointData }: CoopGameSceneProps = {}) {
+// Amulet stat color map
+const AMULET_COLORS: Record<string, string> = {
+  strength:  '#f97316',
+  stamina:   '#ef4444',
+  agility:   '#eab308',
+  intellect: '#8b5cf6',
+};
+
+// Boss drop item color map
+const BOSS_ITEM_COLORS: Record<string, string> = {
+  CLOAK_OF_SPEED:  '#00cfff',
+  WARDING_SHIELD:  '#4169e1',
+  HOLY_RELIC:      '#ffd700',
+  TITAN_HEART:     '#ff4500',
+};
+
+interface DroppedItemMeshProps {
+  item: { id: string; type: string; stat?: string; label: string; category?: string; position: { x: number; y: number; z: number } };
+  playerPositionRef: React.MutableRefObject<Vector3>;
+  onPickup: (itemId: string) => void;
+}
+
+function DroppedItemMesh({ item, playerPositionRef, onPickup }: DroppedItemMeshProps) {
+  const groupRef = useRef<any>(null);
+  const ringRef = useRef<any>(null);
+  const glowRef = useRef<any>(null);
+  const isBossDrop = item.category === 'boss_drop';
+  const color = (item.stat ? AMULET_COLORS[item.stat] : null) || BOSS_ITEM_COLORS[item.type] || '#ffffff';
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (groupRef.current) {
+      groupRef.current.position.y = item.position.y + Math.sin(t * 2) * 0.15;
+      groupRef.current.rotation.y = t * 1.5;
+    }
+    if (glowRef.current) {
+      glowRef.current.material.opacity = 0.25 + Math.sin(t * 3) * 0.15;
+    }
+  });
+
+  const handleClick = (e: any) => {
+    e.stopPropagation();
+    const itemPos = new Vector3(item.position.x, item.position.y, item.position.z);
+    const playerPos = playerPositionRef.current;
+    const dist = playerPos.distanceTo(itemPos);
+    if (dist <= 6) {
+      onPickup(item.id);
+    }
+  };
+
+  return (
+    <group
+      ref={groupRef}
+      position={[item.position.x, item.position.y, item.position.z]}
+      onClick={handleClick}
+    >
+      {/* Outer glow sphere — larger for boss drops */}
+      <mesh ref={glowRef}>
+        <sphereGeometry args={[isBossDrop ? 0.7 : 0.45, 12, 12]} />
+        <meshBasicMaterial color={color} transparent opacity={isBossDrop ? 0.35 : 0.3} depthWrite={false} />
+      </mesh>
+
+      {isBossDrop ? (
+        <>
+          {/* Boss drop: spinning diamond (dodecahedron) */}
+          <mesh ref={ringRef}>
+            <dodecahedronGeometry args={[0.28, 0]} />
+            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.8} metalness={0.9} roughness={0.1} />
+          </mesh>
+          {/* Outer ring */}
+          <mesh rotation={[Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[0.4, 0.05, 8, 24]} />
+            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.5} metalness={0.8} roughness={0.2} />
+          </mesh>
+          {/* Stronger glow for boss items */}
+          <pointLight color={color} intensity={3.0} distance={5} />
+        </>
+      ) : (
+        <>
+          {/* Amulet ring (torus) */}
+          <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[0.22, 0.06, 8, 20]} />
+            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.2} metalness={0.8} roughness={0.2} />
+          </mesh>
+          {/* Center gem */}
+          <mesh position={[0, 0, 0]}>
+            <octahedronGeometry args={[0.1, 0]} />
+            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={2.0} metalness={0.5} roughness={0.1} />
+          </mesh>
+          <pointLight color={color} intensity={1.5} distance={3} />
+        </>
+      )}
+    </group>
+  );
+}
+
+export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCameraUpdate, onGameStateUpdate, onControlSystemUpdate, onExperienceUpdate, onEssenceUpdate, onMerchantUIUpdate, selectedWeapons, skillPointData, statPointData }: CoopGameSceneProps = {}) {
   const { camera, gl, scene } = useThree();
   const {
     players,
@@ -198,6 +297,9 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     isChatOpen,
     openChat,
     closeChat,
+    droppedItems,
+    pickupItem,
+    inventory,
   } = useMultiplayer();
 
   // Debug multiplayer state
@@ -218,6 +320,8 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
   const engineRef = useRef<Engine | null>(null);
   const playerEntityRef = useRef<number | null>(null);
   const controlSystemRef = useRef<ControlSystem | null>(null);
+  // Track current stat data in a ref for use inside event handler closures
+  const playerStatDataRef = useRef<StatPointData | undefined>(statPointData);
   const cameraSystemRef = useRef<CameraSystem | null>(null);
   // summonedUnitSystemRef removed - using server-authoritative summoned units
   const reanimateRef = useRef<ReanimateRef>(null);
@@ -641,6 +745,10 @@ const [maxMana, setMaxMana] = useState(150);
     attackingHand: 'left' | 'right' | null;
     lastAttackTime: number;
   }>>(new Map());
+
+  // Boss blade glow state (active after blink, cleared on next attack or 1.5s expiry)
+  const [bossBladesGlowing, setBossBladesGlowing] = useState<Map<string, boolean>>(new Map());
+  const bossBladeGlowTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   // Boss Meteor State
   interface MeteorState {
@@ -1459,6 +1567,81 @@ const [maxMana, setMaxMana] = useState(150);
     setGlobalCritDamageRuneCount(runeCount);
   }, [playerLevel, selectedWeapons?.primary]);
 
+  // Sync stat data ref and apply stat-driven effects whenever statPointData changes
+  React.useEffect(() => {
+    playerStatDataRef.current = statPointData;
+
+    if (!statPointData) return;
+
+    // AGILITY: update global crit values in DamageCalculator
+    setGlobalAgilityStatPoints(statPointData.stats.agility);
+
+    // STAMINA: update the player entity's max health
+    const playerEntity = engineRef.current?.getWorld().getEntity(playerEntityRef.current ?? -1);
+    if (playerEntity) {
+      const health = playerEntity.getComponent(Health);
+      if (health) {
+        const baseMaxHealth = ExperienceSystem.getMaxHealthForLevel(playerLevel);
+        const staminaBonus = StatSystem.getBonusMaxHealth(statPointData.stats);
+        const newMaxHealth = baseMaxHealth + staminaBonus;
+        if (health.maxHealth !== newMaxHealth) {
+          health.maxHealth = newMaxHealth;
+          // Ensure current health doesn't exceed the new max
+          health.currentHealth = Math.min(health.currentHealth, newMaxHealth);
+        }
+      }
+    }
+  }, [statPointData, playerLevel]);
+
+  // Apply boss drop item effects whenever inventory changes
+  React.useEffect(() => {
+    if (!inventory || inventory.length === 0) return;
+
+    const cloakCount    = inventory.filter(i => i.type === 'CLOAK_OF_SPEED').length;
+    const wardingCount  = inventory.filter(i => i.type === 'WARDING_SHIELD').length;
+    const holyCount     = inventory.filter(i => i.type === 'HOLY_RELIC').length;
+    const titanCount    = inventory.filter(i => i.type === 'TITAN_HEART').length;
+
+    const world = engineRef.current?.getWorld();
+    const playerEntity = world?.getEntity(playerEntityRef.current ?? -1);
+
+    if (playerEntity) {
+      // CLOAK_OF_SPEED: boost movement speed and jump force
+      if (cloakCount > 0) {
+        const movement = playerEntity.getComponent(Movement);
+        if (movement) {
+          movement.maxSpeed = 3.75 + (cloakCount * 1.25); // 5.0 per cloak
+          movement.jumpForce = 8 + (cloakCount * 4);      // 12 per cloak
+        }
+      }
+
+      // WARDING_SHIELD: increase max shield by 75 per item
+      if (wardingCount > 0) {
+        const shieldComp = playerEntity.getComponent(Shield);
+        if (shieldComp) {
+          const newMax = 100 + wardingCount * 75;
+          if (shieldComp.maxShield !== newMax) {
+            const gained = newMax - shieldComp.maxShield;
+            shieldComp.maxShield = newMax;
+            shieldComp.currentShield = Math.min(newMax, shieldComp.currentShield + gained);
+          }
+        }
+      }
+
+      // TITAN_HEART: base regen 2 HP/s → +200% per item (+4 HP/s each)
+      if (titanCount > 0) {
+        const healthComp = playerEntity.getComponent(Health);
+        if (healthComp) {
+          const newRate = 2 + titanCount * 4; // 6 HP/s for 1, 10 HP/s for 2
+          healthComp.enableRegeneration(newRate, 5);
+        }
+      }
+    }
+
+    // HOLY_RELIC: double mana regen per relic (100% increase each)
+    manaRegenMultiplierRef.current = Math.pow(2, holyCount);
+  }, [inventory]);
+
   const [weaponState, setWeaponState] = useState({
     currentWeapon: WeaponType.BOW,
     currentSubclass: WeaponSubclass.ELEMENTAL,
@@ -1551,23 +1734,27 @@ const [maxMana, setMaxMana] = useState(150);
   // Optimized PVP effects with object pooling
   const { createOptimizedVenomEffect, createOptimizedDebuffEffect, getPoolStats } = useOptimizedPVPEffects();
 
+// Multiplier applied to all mana regeneration — set by Holy Relic boss drop
+const manaRegenMultiplierRef = useRef(1);
+
 // Mana regeneration for weapons that use mana (Scythe and Runeblade)
 useEffect(() => {
   // Continuous mana regeneration for all weapons (resources regenerate even when not using that weapon)
   const interval = setInterval(() => {
     setWeaponManaResources(prev => {
       const updated = { ...prev };
+      const mul = manaRegenMultiplierRef.current;
 
       // Mana regeneration for Scythe (10 mana per second = 5 every 500ms)
       const scytheMaxMana = getMaxManaForWeapon(WeaponType.SCYTHE, playerLevel);
       if (updated[WeaponType.SCYTHE] < scytheMaxMana) {
-        updated[WeaponType.SCYTHE] = Math.min(scytheMaxMana, updated[WeaponType.SCYTHE] + 5);
+        updated[WeaponType.SCYTHE] = Math.min(scytheMaxMana, updated[WeaponType.SCYTHE] + 5 * mul);
       }
 
       // Mana regeneration for Runeblade (8 mana per second = 4 every 500ms)
       const runebladeMaxMana = getMaxManaForWeapon(WeaponType.RUNEBLADE, playerLevel);
       if (updated[WeaponType.RUNEBLADE] < runebladeMaxMana) {
-        updated[WeaponType.RUNEBLADE] = Math.min(runebladeMaxMana, updated[WeaponType.RUNEBLADE] + 2);
+        updated[WeaponType.RUNEBLADE] = Math.min(runebladeMaxMana, updated[WeaponType.RUNEBLADE] + 2 * mul);
       }
 
       return updated;
@@ -2889,6 +3076,16 @@ const hasMana = useCallback((amount: number) => {
     const handlePlayerDamaged = (data: any) => {
       let targetActuallyDied = false;
 
+      // Pre-calculate reduced damage at function scope so the onDamageNumbersUpdate
+      // block below can also show the post-reduction value.
+      const statDataForReduction = playerStatDataRef.current;
+      const damageReductionForDisplay = statDataForReduction
+        ? StatSystem.getDamageReduction(statDataForReduction.stats)
+        : 0;
+      const reducedDamageDisplay = damageReductionForDisplay > 0
+        ? Math.max(1, Math.round(data.damage * (1 - damageReductionForDisplay)))
+        : data.damage;
+
       // If we are the target, apply damage to our player
       if (data.targetPlayerId === socket?.id && playerEntity && socket?.id) {
         // Check if player is already in death state - if so, ignore damage
@@ -2906,7 +3103,7 @@ const hasMana = useCallback((amount: number) => {
           // Bypass invulnerability for PVP damage to allow rapid attacks like bursts to land multiple hits,
           // but respect deflect invulnerability (3 seconds) which is much longer than standard invulnerability (0.5s)
           const bypassInvulnerability = !health.isInvulnerable || health.invulnerabilityTimer <= 1.0;
-          health.takeDamage(data.damage, Date.now() / 1000, playerEntity, bypassInvulnerability);
+          health.takeDamage(reducedDamageDisplay, Date.now() / 1000, playerEntity, bypassInvulnerability);
 
           // Display incoming damage numbers
           if (playerEntity) {
@@ -2922,7 +3119,7 @@ const hasMana = useCallback((amount: number) => {
                 incomingDamagePosition.y -= 0.5; // Position below player's feet
 
                 damageNumberManager.addDamageNumber(
-                  data.damage,
+                  reducedDamageDisplay,
                   isCritical,
                   incomingDamagePosition,
                   data.damageType,
@@ -2986,7 +3183,7 @@ const hasMana = useCallback((amount: number) => {
           const damageNumberId = Math.random().toString(36).substr(2, 9);
           onDamageNumbersUpdate([{
             id: damageNumberId,
-            damage: data.damage,
+            damage: reducedDamageDisplay,
             position: damagePosition,
             isCritical: false, // PVP damage doesn't have crits currently
             timestamp: Date.now(),
@@ -3011,9 +3208,16 @@ const hasMana = useCallback((amount: number) => {
           // Track if player was alive before damage
           const wasAlive = !health.isDead;
 
+          // Apply STRENGTH damage reduction
+          const statData = playerStatDataRef.current;
+          const damageReduction = statData ? StatSystem.getDamageReduction(statData.stats) : 0;
+          const reducedDamage = damageReduction > 0
+            ? Math.max(1, Math.round(data.damage * (1 - damageReduction)))
+            : data.damage;
+
           // Apply damage from boss skeleton (treat as physical damage from enemy)
           // Use standard invulnerability rules for enemy damage
-          health.takeDamage(data.damage, Date.now() / 1000, playerEntity, false);
+          health.takeDamage(reducedDamage, Date.now() / 1000, playerEntity, false);
 
           // Display incoming damage numbers
           if (playerEntity) {
@@ -3029,7 +3233,7 @@ const hasMana = useCallback((amount: number) => {
                 incomingDamagePosition.y -= 0.5; // Position below player's feet
 
                 damageNumberManager.addDamageNumber(
-                  data.damage,
+                  reducedDamage,
                   isCritical,
                   incomingDamagePosition,
                   'physical', // Boss skeleton damage type
@@ -3559,7 +3763,21 @@ const hasMana = useCallback((amount: number) => {
     };
 
     const handleBossAttack = (data: any) => {
-      const { bossId, targetPlayerId, damage, position, timestamp } = data;
+      const { bossId, targetPlayerId, damage, position, bladeEnhancedConsumed, timestamp } = data;
+
+      // If the blade-enhanced buff was consumed on this attack, clear the glow immediately
+      if (bladeEnhancedConsumed) {
+        const existingTimer = bossBladeGlowTimers.current.get(bossId);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+          bossBladeGlowTimers.current.delete(bossId);
+        }
+        setBossBladesGlowing(prev => {
+          const updated = new Map(prev);
+          updated.set(bossId, false);
+          return updated;
+        });
+      }
 
       // Update boss attack animation state for all bosses
       setBossAttackStates(prev => {
@@ -3600,7 +3818,13 @@ const hasMana = useCallback((amount: number) => {
         const health = playerEntity.getComponent(Health);
         if (health) {
           const currentTime = Date.now() / 1000;
-          health.takeDamage(damage, currentTime, playerEntity);
+          // Apply STRENGTH damage reduction
+          const statData = playerStatDataRef.current;
+          const damageReduction = statData ? StatSystem.getDamageReduction(statData.stats) : 0;
+          const reducedDamage = damageReduction > 0
+            ? Math.max(1, Math.round(damage * (1 - damageReduction)))
+            : damage;
+          health.takeDamage(reducedDamage, currentTime, playerEntity);
 
           // Display incoming damage numbers (like boss skeleton does)
           if (playerEntity) {
@@ -3616,7 +3840,7 @@ const hasMana = useCallback((amount: number) => {
                 incomingDamagePosition.y -= 0.5; // Position below player's feet
 
                 damageNumberManager.addDamageNumber(
-                  damage,
+                  reducedDamage,
                   isCritical,
                   incomingDamagePosition,
                   'physical', // Boss damage type
@@ -3654,7 +3878,7 @@ const hasMana = useCallback((amount: number) => {
     };
 
     const handleBossTeleport = (data: any) => {
-      const { bossId, startPosition, endPosition, rotation, targetPlayerId, timestamp } = data;
+      const { bossId, startPosition, endPosition, rotation, targetPlayerId, bladesEnhanced, timestamp } = data;
 
       // Create teleport effect at start position (boss disappearing)
       const startEffect: TeleportEffectState = {
@@ -3673,6 +3897,30 @@ const hasMana = useCallback((amount: number) => {
       };
 
       setActiveTeleportEffects(prev => [...prev, startEffect, endEffect]);
+
+      // Activate blade glow for 1.5 seconds after blink
+      if (bladesEnhanced) {
+        // Clear any existing timer for this boss
+        const existingTimer = bossBladeGlowTimers.current.get(bossId);
+        if (existingTimer) clearTimeout(existingTimer);
+
+        setBossBladesGlowing(prev => {
+          const updated = new Map(prev);
+          updated.set(bossId, true);
+          return updated;
+        });
+
+        const timer = setTimeout(() => {
+          setBossBladesGlowing(prev => {
+            const updated = new Map(prev);
+            updated.set(bossId, false);
+            return updated;
+          });
+          bossBladeGlowTimers.current.delete(bossId);
+        }, 2500);
+
+        bossBladeGlowTimers.current.set(bossId, timer);
+      }
 
       console.log(`✨ Boss ${bossId} teleported from (${startPosition.x.toFixed(1)}, ${startPosition.z.toFixed(1)}) to (${endPosition.x.toFixed(1)}, ${endPosition.z.toFixed(1)})`);
     };
@@ -5290,6 +5538,7 @@ const hasMana = useCallback((amount: number) => {
               attackingHand={bossAttackState.attackingHand}
               targetPosition={targetPosition}
               rotation={enemy.rotation}
+              bladesGlowing={bossBladesGlowing.get(enemy.id) ?? false}
               isStunned={(() => {
                 const world = engineRef.current!.getWorld();
                 const entity = world.getEntity(entityId);
@@ -5717,6 +5966,16 @@ const hasMana = useCallback((amount: number) => {
                   handlePlayerRespawn(effect.playerId);
                 }
               }}
+            />
+          ))}
+
+          {/* Dropped Amulet Items */}
+          {Array.from(droppedItems.values()).map(item => (
+            <DroppedItemMesh
+              key={item.id}
+              item={item}
+              playerPositionRef={realTimePlayerPositionRef}
+              onPickup={pickupItem}
             />
           ))}
         </>

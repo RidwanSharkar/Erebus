@@ -109,26 +109,24 @@ export default function SummonedBossSkeleton({
   });
 
 
-  // Listen for attack events from server
+  // Listen for telegraph events from server (starts the swing animation; damage comes 1s later)
   useEffect(() => {
     if (!socket) return;
 
-    const handleSkeletonAttack = (data: any) => {
+    const handleSkeletonTelegraph = (data: any) => {
       if (data.skeletonId === id) {
-        // Start attack animation immediately
         setIsAttacking(true);
         
-        // Reset attack after animation completes
         setTimeout(() => {
           setIsAttacking(false);
         }, ATTACK_DURATION);
       }
     };
 
-    socket.on('boss-skeleton-attack', handleSkeletonAttack);
+    socket.on('boss-skeleton-attack-telegraph', handleSkeletonTelegraph);
 
     return () => {
-      socket.off('boss-skeleton-attack', handleSkeletonAttack);
+      socket.off('boss-skeleton-attack-telegraph', handleSkeletonTelegraph);
     };
   }, [id, socket, ATTACK_DURATION]);
 

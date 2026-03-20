@@ -68,6 +68,16 @@ function handleEnemyEvents(socket, gameRooms) {
     }
   });
 
+  // Handle item pickup from player
+  socket.on('pickup-item', (data) => {
+    const { roomId, itemId } = data;
+
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    room.pickupItem(itemId, socket.id);
+  });
+
   // Handle requests for enemy status effects
   socket.on('get-enemy-status', (data) => {
     const { roomId, enemyId } = data;

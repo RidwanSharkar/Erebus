@@ -17,6 +17,7 @@ interface BossModelProps {
   onHit?: (damage: number) => void;
   attackingHand?: 'left' | 'right' | null;
   onLightningStart?: (hand: 'left' | 'right') => void;
+  bladesGlowing?: boolean;
 }
 
 // Materials for the arms
@@ -268,7 +269,7 @@ function EyeSet({ position }: { position: [number, number, number] }) {
 
 
 // Boss Claw Model with Ultralisk Blades
-function BossClawModel({ isLeftHand = false }: { isLeftHand?: boolean }) {
+function BossClawModel({ isLeftHand = false, glowing = false }: { isLeftHand?: boolean; glowing?: boolean }) {
   const createBoneSegment = (length: number, width: number) => (
     <mesh geometry={SHARED_GEOMETRIES.cylinder} material={SHARED_MATERIALS.standardBone} scale={[width/0.04, length, width/0.04]} />
   );
@@ -354,9 +355,9 @@ function BossClawModel({ isLeftHand = false }: { isLeftHand?: boolean }) {
                   <mesh>
                     <extrudeGeometry args={[BLADE_SHAPE, BLADE_EXTRUDE_SETTINGS]} />
                     <meshStandardMaterial
-                      color="#BA55D3"
-                      emissive="#BA55D3"
-                      emissiveIntensity={1.3}
+                      color={glowing ? "#FF0000" : "#BA55D3"}
+                      emissive={glowing ? "#FF0000" : "#BA55D3"}
+                      emissiveIntensity={glowing ? 4.0 : 1.3}
                       metalness={0.8}
                       roughness={0.1}
                       opacity={1}
@@ -366,9 +367,9 @@ function BossClawModel({ isLeftHand = false }: { isLeftHand?: boolean }) {
                   </mesh>
 
                   <pointLight
-                    color="#BA55D3"
-                    intensity={1}
-                    distance={2}
+                    color={glowing ? "#FF0000" : "#BA55D3"}
+                    intensity={glowing ? 4.0 : 1}
+                    distance={glowing ? 4 : 2}
                     decay={2}
                   />
                 </group>
@@ -612,7 +613,8 @@ function BossTrailEffect({ parentRef }: { parentRef: React.RefObject<Group> }) {
 export default function BossModel({
   isAttacking = false,
   attackingHand = null,
-  onLightningStart
+  onLightningStart,
+  bladesGlowing = false
 }: BossModelProps) {
   const groupRef = useRef<Group>(null);
   const attackCycleRef = useRef(0);
@@ -809,17 +811,17 @@ export default function BossModel({
 
       {/* Back Arms (Blade arms with sequential attacks) */}
       <group name="LeftUpperBackArm" position={[-0.55, 2.43, 0.25]} scale={[-0.8, 0.7, 0.8]} rotation={[0.4, Math.PI*2, -0.3]}>
-        <BossClawModel isLeftHand={true} />
+        <BossClawModel isLeftHand={true} glowing={bladesGlowing} />
       </group>
       <group name="RightUpperBackArm" position={[0.55, 2.43, 0.25]} scale={[0.8, 0.7, 0.8]} rotation={[0.4, -Math.PI*2, 0.3]}>
-        <BossClawModel isLeftHand={false} />
+        <BossClawModel isLeftHand={false} glowing={bladesGlowing} />
       </group>
 
       <group name="LeftMiddleBackArm" position={[-0.4, 2.25, 0.15]} scale={[-0.65, 0.65, 0.65]} rotation={[0.4, Math.PI*2.1, -.4]}>
-        <BossClawModel isLeftHand={true} />
+        <BossClawModel isLeftHand={true} glowing={bladesGlowing} />
       </group>
       <group name="RightMiddleBackArm" position={[0.4, 2.25, 0.15]} scale={[0.65, 0.65, 0.65]} rotation={[0.4, -Math.PI*2.1, 0.4]}>
-        <BossClawModel isLeftHand={false} />
+        <BossClawModel isLeftHand={false} glowing={bladesGlowing} />
       </group>
 
 

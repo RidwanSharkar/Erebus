@@ -16,6 +16,7 @@ interface BossRendererProps {
   targetPosition?: Vector3 | null;
   rotation?: number; // Server-authoritative rotation in radians
   isStunned?: boolean; // Whether the enemy is currently stunned
+  bladesGlowing?: boolean; // Red blade glow after blink
 }
 
 export default function BossRenderer({
@@ -27,7 +28,8 @@ export default function BossRenderer({
   attackingHand = null,
   targetPosition = null,
   rotation,
-  isStunned = false
+  isStunned = false,
+  bladesGlowing = false
 }: BossRendererProps) {
   const groupRef = useRef<Group>(null);
   const timeRef = useRef(0);
@@ -137,6 +139,7 @@ export default function BossRenderer({
         isAttacking={isAttacking}
         attackingHand={attackingHand}
         onLightningStart={handleLightningStart}
+        bladesGlowing={bladesGlowing}
       />
     </group>
   );
