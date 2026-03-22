@@ -6,6 +6,8 @@ import { Vector3, Matrix4, Camera, PerspectiveCamera, Scene, WebGLRenderer, PCFS
 import DragonRenderer from './dragon/DragonRenderer';
 import BossRenderer from './enemies/BossRenderer';
 import SummonedBossSkeleton from './enemies/SummonedBossSkeleton';
+import KnightRenderer from './enemies/KnightRenderer';
+import KnightDeathVortex from './enemies/KnightDeathVortex';
 import Meteor from './enemies/Meteor';
 import BossTeleportEffect from './enemies/BossTeleportEffect';
 import { useMultiplayer, Player } from '@/contexts/MultiplayerContext';
@@ -766,6 +768,13 @@ const [maxMana, setMaxMana] = useState(150);
     timestamp: number;
   }
   const [activeTeleportEffects, setActiveTeleportEffects] = useState<TeleportEffectState[]>([]);
+
+  // Knight Death Vortex Effect State
+  interface KnightDeathVortexState {
+    id: string;
+    position: { x: number; y: number; z: number };
+  }
+  const [knightDeathVortices, setKnightDeathVortices] = useState<KnightDeathVortexState[]>([]);
 
   // Function to create enemy taunt effect (for Deathgrasp)
   const createEnemyTauntEffect = useCallback((enemyId: string, duration: number = 10000) => {
@@ -1611,7 +1620,7 @@ const [maxMana, setMaxMana] = useState(150);
         const movement = playerEntity.getComponent(Movement);
         if (movement) {
           movement.maxSpeed = 3.75 + (cloakCount * 1.25); // 5.0 per cloak
-          movement.jumpForce = 8 + (cloakCount * 4);      // 12 per cloak
+          movement.jumpForce = 8 + (cloakCount * 2);      // 12 per cloak
         }
       }
 
@@ -1619,7 +1628,7 @@ const [maxMana, setMaxMana] = useState(150);
       if (wardingCount > 0) {
         const shieldComp = playerEntity.getComponent(Shield);
         if (shieldComp) {
-          const newMax = 100 + wardingCount * 75;
+          const newMax = 50 + wardingCount * 75;
           if (shieldComp.maxShield !== newMax) {
             const gained = newMax - shieldComp.maxShield;
             shieldComp.maxShield = newMax;
@@ -3257,6 +3266,47 @@ const hasMana = useCallback((amount: number) => {
       }
     };
 
+    const handleKnightAttack = (data: any) => {
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+
+        const statData = playerStatDataRef.current;
+        const damageReduction = statData ? StatSystem.getDamageReduction(statData.stats) : 0;
+        const reducedDamage = damageReduction > 0
+          ? Math.max(1, Math.round(data.damage * (1 - damageReduction)))
+          : data.damage;
+
+        health.takeDamage(reducedDamage, Date.now() / 1000, playerEntity, false);
+
+        if (playerEntity) {
+          const transform = playerEntity.getComponent(Transform);
+          if (transform) {
+            const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+            if (damageNumberManager && damageNumberManager.addDamageNumber) {
+              const pos = transform.position.clone();
+              pos.y -= 0.5;
+              damageNumberManager.addDamageNumber(reducedDamage, false, pos, 'physical', true);
+            }
+          }
+        }
+
+        if (shield) {
+          updatePlayerShield(shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.knightId);
+        }
+      }
+    };
+
     const handlePlayerAnimationState = (data: any) => {
       
       
@@ -3970,6 +4020,13 @@ const hasMana = useCallback((amount: number) => {
       // Silently ignore if enemy not found - it may have died already
     };
 
+    const handleKnightDeathVortex = (data: { enemyId: string; position: { x: number; y: number; z: number } }) => {
+      setKnightDeathVortices(prev => [
+        ...prev,
+        { id: `vortex-${data.enemyId}-${Date.now()}`, position: data.position },
+      ]);
+    };
+
     socket.on('player-attacked', handlePlayerAttack);
     socket.on('player-used-ability', handlePlayerAbility);
     socket.on('player-damaged', handlePlayerDamaged);
@@ -3992,7 +4049,9 @@ const hasMana = useCallback((amount: number) => {
     socket.on('boss-meteor-cast', handleBossMeteorCast);
     socket.on('boss-teleport', handleBossTeleport);
     socket.on('boss-skeleton-attack', handleBossSkeletonAttack);
+    socket.on('knight-attack', handleKnightAttack);
     socket.on('enemy-status-effect', handleEnemyStatusEffect);
+    socket.on('knight-death-vortex', handleKnightDeathVortex);
 
 
     return () => {
@@ -4018,7 +4077,9 @@ const hasMana = useCallback((amount: number) => {
       socket.off('boss-meteor-cast', handleBossMeteorCast);
       socket.off('boss-teleport', handleBossTeleport);
       socket.off('boss-skeleton-attack', handleBossSkeletonAttack);
+      socket.off('knight-attack', handleKnightAttack);
       socket.off('enemy-status-effect', handleEnemyStatusEffect);
+      socket.off('knight-death-vortex', handleKnightDeathVortex);
     };
   }, [socket, playerEntity]);
 
@@ -4084,8 +4145,11 @@ const hasMana = useCallback((amount: number) => {
         // Add Collider component for damage detection (non-solid, trigger only)
         const collider = world.createComponent(Collider);
         collider.type = ColliderType.SPHERE;
-        // Boss = 2.0, boss-skeleton = 1.2, elite = 1.5
-        collider.radius = serverEnemy.type === 'boss' ? 2.0 : (serverEnemy.type === 'boss-skeleton' ? 1.2 : 1.5);
+        // Boss = 2.0, boss-skeleton = 1.2, knight = 1.3, elite = 1.5
+        collider.radius = serverEnemy.type === 'boss' ? 2.0
+          : serverEnemy.type === 'boss-skeleton' ? 1.2
+          : serverEnemy.type === 'knight' ? 1.3
+          : 1.5;
         collider.layer = CollisionLayer.ENEMY;
         collider.isTrigger = true; // IMPORTANT: Trigger only, doesn't push players
         collider.setMask(CollisionLayer.PROJECTILE); // Only detect projectiles, not physical collision with players
@@ -5223,8 +5287,8 @@ const hasMana = useCallback((amount: number) => {
         shadow-camera-bottom={-20}
       />
 
-      {/* Enhanced Ground with textures and ambient occlusion */}
-      <EnhancedGround radius={29} height={1} level={1} />
+      {/* Enhanced Ground with textures and ambient occlusion
+      <EnhancedGround radius={29} height={1} level={1} />  */}
 
       {/* Main Player Dragon Unit Renderer */}
       {(() => {
@@ -5575,6 +5639,35 @@ const hasMana = useCallback((amount: number) => {
         );
       })}
 
+      {/* Knights (Co-op Mode) — Mixamo animated */}
+      {Array.from(enemies.values()).map(enemy => {
+        if (enemy.isDying || enemy.type !== 'knight') return null;
+
+        return (
+          <KnightRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={new Vector3(enemy.position.x, enemy.position.y, enemy.position.z)}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+          />
+        );
+      })}
+
+      {/* Knight Death Vortex Effects */}
+      {knightDeathVortices.map(vortex => (
+        <KnightDeathVortex
+          key={vortex.id}
+          id={vortex.id}
+          position={vortex.position}
+          onComplete={() =>
+            setKnightDeathVortices(prev => prev.filter(v => v.id !== vortex.id))
+          }
+        />
+      ))}
+
       {/* Boss Meteors */}
       {activeMeteors.map(meteor => {
         return (
@@ -5696,7 +5789,7 @@ const hasMana = useCallback((amount: number) => {
       {pvpSmiteEffects.map(effect => {
         // Prepare enemy data including BOSS and BOSS-SKELETON enemies
         const smiteEnemyData = Array.from(enemies.values())
-          .filter(enemy => !enemy.isDying && (enemy.type === 'boss' || enemy.type === 'boss-skeleton'))
+          .filter(enemy => !enemy.isDying && (enemy.type === 'boss' || enemy.type === 'boss-skeleton' || enemy.type === 'knight'))
           .map(enemy => ({
             id: enemy.id,
             position: new Vector3(enemy.position.x, enemy.position.y, enemy.position.z),
@@ -6010,7 +6103,7 @@ function createCoopPlayer(world: World): any {
   player.addComponent(health);
 
   // Add Shield component with 250 max shield
-  const shield = new Shield(100, 15, 2.5); // 250 max shield, 20/s regen, 5s delay
+  const shield = new Shield(50, 15, 2.5); // 250 max shield, 20/s regen, 5s delay
   player.addComponent(shield);
 
   // Add Collider component for environment collision and enemy damage detection

@@ -10,6 +10,8 @@ import TreeCollision from './TreeCollision';
 import AtmosphericParticles from './AtmosphericParticles';
 import SimpleBorderEffects from './SimpleBorderEffects';
 import CustomSkeleton from './CustomSkeleton';
+import StylizedGrass from './StylizedGrass';
+import InstancedForest from './InstancedForest';
 
 import { generateMountains } from '@/utils/MountainGenerator';
 import { World } from '@/ecs/World';
@@ -20,6 +22,8 @@ interface EnvironmentProps {
   enableMountains?: boolean;
   enablePlanet?: boolean;
   enableSky?: boolean;
+  enableGrass?: boolean; // Enable stylized instanced grass
+  enableForest?: boolean; // Enable instanced forest ring
   enableBorderEffects?: boolean; // Enable border particle and glow effects
   world?: World; // Optional world for collision system
   camera?: PerspectiveCamera; // Optional camera for LOD calculations
@@ -39,6 +43,8 @@ const Environment: React.FC<EnvironmentProps> = ({
   enableMountains = true,
   enablePlanet = true,
   enableSky = true,
+  enableGrass = true,
+  enableForest = true,
   enableBorderEffects = true,
   world,
   camera,
@@ -84,13 +90,15 @@ const Environment: React.FC<EnvironmentProps> = ({
       {/* Custom sky with level-based colors */}
       {enableSky && <CustomSky />}
 
-      {/* Enhanced ground with procedural textures */}
-      <EnhancedGround level={level} />
 
+      {/* Instanced grass field — 80k blades, GPU-animated wind */}
+      {enableGrass && <StylizedGrass />}
+
+      {/* Instanced forest ring — 220 trees, 4 draw calls, GPU wind */}
+      {enableForest && <InstancedForest />}
 
       <Planet />
 
-      <DetailedTrees trees={treePositions} />
 
       {/* Merchant positioned near the tree edge - only render when player is nearby for performance */}
       {showMerchant && <CustomSkeleton position={merchantPosition} rotation={merchantRotation} />}
@@ -98,15 +106,7 @@ const Environment: React.FC<EnvironmentProps> = ({
       {/* Mountain border around the map */}
       {enableMountains && <InstancedMountains mountains={mountains} />}
 
-      {/* Border effects - particles and glows around map perimeter */}
-      {enableBorderEffects && (
-        <SimpleBorderEffects
-          radius={22}
-          count={64}
-          enableParticles={true}
-          particleCount={100}
-        />
-      )}
+
 
       {/* Atmospheric particles around central area */}
       <AtmosphericParticles
@@ -131,10 +131,7 @@ const Environment: React.FC<EnvironmentProps> = ({
         <PillarCollision world={world} positions={pillarPositions} />
       )}
 
-      {/* Collision entities for tree trunks (only if world is provided) */}
-      {world && (
-        <TreeCollision world={world} trees={treePositions} />
-      )}
+ 
     </group>
   );
 };

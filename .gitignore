@@ -3,3 +3,6 @@ node_modules
 .next
 .env*.local
 .env.local
+
+# Source asset files (FBX, PSD, etc.) — not part of the build
+assets/

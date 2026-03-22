@@ -81,14 +81,7 @@ export default function ExperienceBar({
         {/* ── Pre-boss skeleton tracker (co-op only) ── */}
         {showSkeletonTracker && (
           <div className="mt-2 pt-2 border-t border-white/10">
-            <div className="flex justify-between items-baseline mb-1">
-              <span className="text-[11px] font-semibold text-red-400/90 uppercase tracking-wide">
-                ☠ Summon the Boss
-              </span>
-              <span className="text-[11px] text-white/50 tabular-nums">
-                {skeletonKillCount} / {SKELETON_KILLS_REQUIRED} kills
-              </span>
-            </div>
+
             <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-300 ease-out bg-gradient-to-r from-red-600 to-rose-400"

@@ -104,6 +104,12 @@ class EnemyAI {
       return;
     }
 
+    // Special handling for knights
+    if (enemy.type === 'knight') {
+      this.updateKnightAI(enemy, players);
+      return;
+    }
+
     // Get or create aggro data for this enemy
     let aggroData = this.enemyAggro.get(enemy.id);
     if (!aggroData) {
@@ -232,9 +238,8 @@ class EnemyAI {
   }
 
   bossSkeletonAttackPlayer(skeleton, player) {
-    const damage = skeleton.damage || 17; // Default 17 damage
+    const damage = skeleton.damage || 17;
 
-    // Broadcast skeleton attack to all players
     if (this.io) {
       this.io.to(this.roomId).emit('boss-skeleton-attack', {
         skeletonId: skeleton.id,
@@ -247,6 +252,110 @@ class EnemyAI {
 
     console.log(`💀 Boss skeleton ${skeleton.id} attacked player ${player.id} for ${damage} damage!`);
   }
+
+  // ─── Knight AI ───────────────────────────────────────────────────────────────
+
+  updateKnightAI(knight, players) {
+    let aggroData = this.enemyAggro.get(knight.id);
+    if (!aggroData) {
+      const closestPlayer = this.findClosestPlayer(knight, players);
+      if (!closestPlayer) return;
+      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100 };
+      this.enemyAggro.set(knight.id, aggroData);
+    }
+
+    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
+    if (!targetPlayer || targetPlayer.health <= 0) {
+      const newTarget = this.findClosestPlayer(knight, players);
+      if (newTarget) {
+        aggroData.targetPlayerId = newTarget.id;
+        targetPlayer = newTarget;
+      } else {
+        return;
+      }
+    }
+
+    const distance = this.calculateDistance(knight.position, targetPlayer.position);
+    const attackRange = 2.6; // Slightly longer reach than skeleton (shield bash + sword)
+    const attackCooldown = 2500; // 2.5s between attacks — slower, heavier swings
+    const aggroRadius = 5;   // Knight idles until a player steps within this range
+
+    // Once aggroed, stay aggroed until the player gets very far (leash at 3× aggro radius)
+    const leashRadius = aggroRadius * 3;
+    if (!aggroData.isAggroed && distance <= aggroRadius) {
+      aggroData.isAggroed = true;
+    } else if (aggroData.isAggroed && distance > leashRadius) {
+      aggroData.isAggroed = false;
+    }
+
+    if (!aggroData.isAggroed) {
+      // Player is out of aggro range — stand still, client shows Idle automatically
+      return;
+    }
+
+    if (distance <= attackRange) {
+      if (!this.bossAttackCooldown.has(knight.id)) {
+        this.bossAttackCooldown.set(knight.id, 0);
+      }
+
+      const lastAttackTime = this.bossAttackCooldown.get(knight.id);
+      const now = Date.now();
+
+      if (now - lastAttackTime >= attackCooldown) {
+        this.bossAttackCooldown.set(knight.id, now);
+        this.telegraphKnightAttack(knight, targetPlayer);
+
+        setTimeout(() => {
+          if (knight.isDying || !this.room?.getGameStarted()) return;
+
+          const currentPlayers = this.room?.getPlayers();
+          if (!currentPlayers) return;
+
+          const currentTarget = currentPlayers.find(p => p.id === targetPlayer.id);
+          if (!currentTarget || currentTarget.health <= 0) return;
+
+          const currentDistance = this.calculateDistance(knight.position, currentTarget.position);
+          if (currentDistance <= attackRange) {
+            this.knightAttackPlayer(knight, currentTarget);
+          } else {
+            console.log(`⚔️ Knight ${knight.id} swing missed - player dodged!`);
+          }
+        }, 1000);
+      }
+    } else {
+      this.moveEnemyTowardsTarget(knight, targetPlayer);
+    }
+  }
+
+  telegraphKnightAttack(knight, player) {
+    if (this.io) {
+      this.io.to(this.roomId).emit('knight-attack-telegraph', {
+        knightId: knight.id,
+        targetPlayerId: player.id,
+        position: knight.position,
+        timestamp: Date.now()
+      });
+    }
+    console.log(`⚔️ Knight ${knight.id} telegraphing attack at player ${player.id}!`);
+  }
+
+  knightAttackPlayer(knight, player) {
+    const damage = knight.damage || 25;
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('knight-attack', {
+        knightId: knight.id,
+        targetPlayerId: player.id,
+        damage: damage,
+        position: knight.position,
+        timestamp: Date.now()
+      });
+    }
+
+    console.log(`⚔️ Knight ${knight.id} attacked player ${player.id} for ${damage} damage!`);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
 
   updateBossAI(boss, players) {
     // Note: Taunt now works by giving aggro priority instead of overriding AI completely
