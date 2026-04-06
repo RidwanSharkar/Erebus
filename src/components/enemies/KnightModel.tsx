@@ -55,18 +55,23 @@ export default function KnightModel({ isWalking, isAttacking }: KnightModelProps
     const rename = (clips: AnimationClip[], name: string) =>
       clips.map(c => { const r = c.clone(); r.name = name; return r; });
 
-    // Mixamo walk/idle animations embed root motion in mixamorig:Hips.position —
+    // Mixamo walk/idle animations embed root motion in the Hips position track —
     // the bone physically translates forward through the clip. Since position is
     // driven by server state, we zero out X and Z while keeping Y so the natural
     // vertical bounce is preserved.
+    //
+    // Match the Hips position track case-insensitively to handle naming variations
+    // across export tools (mixamorig:Hips, mixamorig_Hips, Hips, etc.).
+    // Only the Hips (root bone) should be stripped — other bones need their
+    // local-space position offsets intact.
     const stripRootMotionXZ = (clip: AnimationClip): AnimationClip => {
       clip.tracks = clip.tracks.map(track => {
-        if (track.name !== 'mixamorig:Hips.position') return track;
+        if (!track.name.endsWith('.position')) return track;
+        if (!track.name.toLowerCase().includes('hips')) return track;
         const values = Float32Array.from(track.values);
         for (let i = 0; i < values.length; i += 3) {
           values[i]     = 0; // X
           values[i + 2] = 0; // Z
-          // values[i + 1] (Y) kept — up/down bounce
         }
         return new VectorKeyframeTrack(track.name, Array.from(track.times), Array.from(values));
       });
@@ -98,15 +103,27 @@ export default function KnightModel({ isWalking, isAttacking }: KnightModelProps
 
     if (!nextAction || nextAction === currentActionRef.current) return;
 
+    currentActionRef.current?.fadeOut(0.2);
+
     if (isAttacking) {
+      // Attack is one-shot — always restart from the beginning.
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.2).play();
     } else {
+      // Walk / Idle are continuous loops. Resume from current playback time
+      // rather than resetting to frame 0, so a brief Idle→Walk flicker doesn't
+      // snap the character's legs back to the start pose.
+      //
+      // Re-enable explicitly: Three.js auto-disables actions whose weight
+      // reaches 0 after a fadeOut completes (_updateWeight sets enabled=false).
+      // Without this, a Walk that was faded out for Attack stays disabled and
+      // contributes zero weight no matter how many fadeIn/play calls follow.
+      nextAction.enabled = true;
       nextAction.setLoop(LoopRepeat, Infinity);
+      nextAction.fadeIn(0.2).play();
     }
 
-    currentActionRef.current?.fadeOut(0.2);
-    nextAction.reset().fadeIn(0.2).play();
     currentActionRef.current = nextAction;
   }, [isWalking, isAttacking, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -17,11 +17,15 @@ interface KnightRendererProps {
 }
 
 const ATTACK_DURATION = 1200; // ms — matches Mixamo attack clip length
-const MOVEMENT_THRESHOLD = 0.05;
-const FADE_DURATION = 1.5 ; // seconds
+const FADE_DURATION = 1.5; // seconds
 // How quickly (per second) the rendered position chases the server-authoritative target.
-// 15 is responsive enough to track a sprinting knight yet smooths out 33 ms server steps.
-const LERP_SPEED = 5;
+// 12 keeps the visual within ~0.17 units of the server position at knight speed (2 u/s),
+// tight enough to avoid visible lag while still smoothing out 33 ms server steps.
+const LERP_SPEED = 12;
+// After the server stops sending position updates for this long, transition to idle.
+// Must comfortably exceed 2× the server tick (33ms) plus network jitter to avoid
+// premature Walk→Idle flicker when the client-side throttle drops an update.
+const WALK_STOP_DELAY = 250; // ms
 
 export default function KnightRenderer({
   id,
@@ -42,13 +46,10 @@ export default function KnightRenderer({
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
 
-  // Mirror walking/attacking state in refs so useFrame always reads the current value
-  // without needing to capture setState closures.
-  const isWalkingRef = useRef(false);
   const isAttackingRef = useRef(false);
 
-  const lastCheckedPosition = useRef(new Vector3());
-  const movementCheckTimer = useRef(0);
+  // Timer handle for the delayed idle transition after server stops sending moves.
+  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer = useRef(0);
   const opacity = useRef(1);
 
@@ -59,27 +60,38 @@ export default function KnightRenderer({
     if (group) {
       group.position.copy(targetPosition.current);
       group.rotation.y = targetRotation.current;
-      lastCheckedPosition.current.copy(targetPosition.current);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update the target whenever the server position prop changes.
-  // Using primitive coordinate values as deps so the effect only fires when the
-  // actual numbers change — not every time the parent creates a new Vector3 object.
-  // Only the target ref is written here; useFrame smoothly chases it every frame.
+  // Walking state is derived here from server deltas — deterministic and immune to
+  // lerp timing — instead of sampling the rendered position in useFrame.
   useEffect(() => {
     const dist = targetPosition.current.distanceTo(position);
-    if (dist > 0.05) {
-      // Large teleport — snap instantly so the knight doesn't swim across the map.
-      targetPosition.current.copy(position);
-      if (groupRef.current) {
-        groupRef.current.position.copy(position);
-        lastCheckedPosition.current.copy(position);
-      }
-    } else {
-      targetPosition.current.copy(position);
+    targetPosition.current.copy(position);
+
+    if (dist > 5.0 && groupRef.current) {
+      // Actual teleport (spawn, respawn) — snap so the knight doesn't swim the map.
+      groupRef.current.position.copy(position);
+    }
+
+    // Server moved the knight a meaningful amount → it's walking.
+    if (dist > 0.01 && !isAttackingRef.current && !isDying) {
+      if (!isWalking) setIsWalking(true);
+
+      // Push back the idle-transition timer: as long as the server keeps sending
+      // movement updates the knight stays in its walk animation.
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      walkStopTimer.current = setTimeout(() => {
+        setIsWalking(false);
+      }, WALK_STOP_DELAY);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clean up the walk-stop timer on unmount.
+  useEffect(() => {
+    return () => { if (walkStopTimer.current) clearTimeout(walkStopTimer.current); };
+  }, []);
 
   // Update target rotation — lerped in useFrame to stay consistent with position.
   useEffect(() => {
@@ -116,20 +128,6 @@ export default function KnightRenderer({
     while (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2;
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
-
-    // Walking detection — sample every 100 ms. Uses the actual rendered position so the
-    // animation reflects real visual movement rather than the raw server target.
-    movementCheckTimer.current += delta;
-    if (movementCheckTimer.current >= 0.1) {
-      const moved = group.position.distanceTo(lastCheckedPosition.current);
-      const shouldWalk = moved > MOVEMENT_THRESHOLD && !isAttackingRef.current && !isDying;
-      if (shouldWalk !== isWalkingRef.current) {
-        isWalkingRef.current = shouldWalk;
-        setIsWalking(shouldWalk);
-      }
-      lastCheckedPosition.current.copy(group.position);
-      movementCheckTimer.current = 0;
-    }
 
     // Death fade-out.
     if (isDying) {

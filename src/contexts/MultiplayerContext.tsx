@@ -520,7 +520,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       // Throttle enemy movement updates to prevent infinite re-renders
       const now = Date.now();
       const lastUpdate = lastEnemyMoveUpdate.current[data.enemyId] || 0;
-      if (now - lastUpdate < 33) { // Throttle to ~30fps for enemy movements
+      if (now - lastUpdate < 16) { // Throttle to ~60fps for enemy movements
         return;
       }
       lastEnemyMoveUpdate.current[data.enemyId] = now;
