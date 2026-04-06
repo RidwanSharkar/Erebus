@@ -5049,7 +5049,7 @@ export class ControlSystem extends System {
 
     if (dashResult.newPosition) {
       // Apply bounds checking (similar to old implementation)
-      const MAX_DASH_BOUNDS = 29; // Maximum distance from origin (matches map boundary)
+      const MAX_DASH_BOUNDS = 33; // Maximum distance from origin (matches map boundary)
       const distanceFromOrigin = dashResult.newPosition.length();
       
       if (distanceFromOrigin <= MAX_DASH_BOUNDS) {
@@ -5083,7 +5083,7 @@ export class ControlSystem extends System {
 
     if (chargeResult.newPosition) {
       // Apply bounds checking
-      const MAX_CHARGE_BOUNDS = 29; // Maximum distance from origin (matches map boundary)
+      const MAX_CHARGE_BOUNDS = 33; // Maximum distance from origin (matches map boundary)
       const distanceFromOrigin = chargeResult.newPosition.length();
       
       // Check for pillar collision

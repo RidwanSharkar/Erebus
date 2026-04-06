@@ -16,7 +16,7 @@ import {
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const TREE_COUNT = 100;
+const TREE_COUNT = 25;
 
 // 3 overlapping sphere tiers making a rounded deciduous blob
 // yFrac = how far up within the canopy radius to offset the center
@@ -236,9 +236,9 @@ interface InstancedForestProps {
 // ---------------------------------------------------------------------------
 const InstancedForest: React.FC<InstancedForestProps> = ({
   count        = TREE_COUNT,
-  innerRadius  = 13,
-  outerRadius  = 27,
-  windStrength = 0.18,
+  innerRadius  = 15,
+  outerRadius  = 31,
+  windStrength = 0.5,
   trunkDark    = '#3d2b1f',
   trunkLight   = '#6b4a34',
   leafDark     = '#2a6b14',
@@ -253,7 +253,7 @@ const InstancedForest: React.FC<InstancedForestProps> = ({
 
   // ── Geometries ────────────────────────────────────────────────────────────
   const trunkGeo = useMemo(() => {
-    const g = new CylinderGeometry(0.4, 1.0, 2.0, 5, 4);
+    const g = new CylinderGeometry(0.05, 1.0, 3.25, 5, 4);
     addHeightRatio(g);
     return g;
   }, []);
@@ -261,7 +261,7 @@ const InstancedForest: React.FC<InstancedForestProps> = ({
   // Instanced spheres: enough segments to read as full rounded canopies (still cheap at 100×3)
   const canopyGeos = useMemo(() =>
     CANOPY_TIERS.map(() => {
-      const g = new SphereGeometry(0.65, 3, 25);
+      const g = new SphereGeometry(0.05, 3, 25);
       addHeightRatio(g);
       return g;
     }),

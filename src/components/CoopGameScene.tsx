@@ -331,10 +331,10 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
   const isInitialized = useRef(false);
   const lastAnimationBroadcast = useRef(0);
   const lastMeleeSoundTime = useRef(new Map<string, number>());
-  const realTimePlayerPositionRef = useRef<Vector3>(new Vector3(0, 0.5, 0));
+  const realTimePlayerPositionRef = useRef<Vector3>(new Vector3(0, 0.5, 28));
   // Real-time position refs for enemy players to enable ghost trail updates
   const enemyPlayerPositionRefs = useRef<Map<string, { current: Vector3 }>>(new Map());
-  const [playerPosition, setPlayerPosition] = useState(new Vector3(0, 0.5, 0));
+  const [playerPosition, setPlayerPosition] = useState(new Vector3(0, 0.5, 28));
   const [playerEntity, setPlayerEntity] = useState<any>(null);
   const [engineReady, setEngineReady] = useState(false); // Track when engine is ready
 
@@ -482,7 +482,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
 
   // Create a ref for the Viper Sting manager that includes position and rotation
   const viperStingParentRef = useRef({
-    position: new Vector3(0, 0.5, 0),
+    position: new Vector3(0, 0.5, 28),
     quaternion: { x: 0, y: 0, z: 0, w: 1 }
   });
 
@@ -1383,10 +1383,10 @@ const [maxMana, setMaxMana] = useState(150);
           // Revive with full health
           health.revive();
           
-          // Teleport to map center (0, 0.5, 0)
-          transform.setPosition(0, 0.5, 0);
+          // Teleport back to south-edge spawn point
+          transform.setPosition(0, 0.5, 28);
           
-          console.log(`✅ Player respawned at center: (0, 0.5, 0) with ${health.currentHealth}/${health.maxHealth} HP`);
+          console.log(`✅ Player respawned at south spawn: (0, 0.5, 28) with ${health.currentHealth}/${health.maxHealth} HP`);
         }
       }
     }
@@ -1436,13 +1436,13 @@ const [maxMana, setMaxMana] = useState(150);
       } else {
         // Fallback to players Map if transform not available
         const player = players.get(deadPlayerId);
-        deathPosition = player ? new Vector3(player.position.x, player.position.y, player.position.z) : new Vector3(0, 0.5, 0);
+        deathPosition = player ? new Vector3(player.position.x, player.position.y, player.position.z) : new Vector3(0, 0.5, 28);
         console.log(`💀 Local player death - fallback to players Map: (${deathPosition.x.toFixed(2)}, ${deathPosition.y.toFixed(2)}, ${deathPosition.z.toFixed(2)})`);
       }
     } else {
       // Remote player - use players Map position
       const player = players.get(deadPlayerId);
-      deathPosition = player ? new Vector3(player.position.x, player.position.y, player.position.z) : new Vector3(0, 0.5, 0);
+      deathPosition = player ? new Vector3(player.position.x, player.position.y, player.position.z) : new Vector3(0, 0.5, 28);
       console.log(`💀 Remote player ${deadPlayerId} death - using players Map: (${deathPosition.x.toFixed(2)}, ${deathPosition.y.toFixed(2)}, ${deathPosition.z.toFixed(2)})`);
     }
     
@@ -4777,7 +4777,7 @@ const hasMana = useCallback((amount: number) => {
     );
 
     // Initialize merchant system
-    const merchantPosition = new Vector3(16, 0, 8); // Same position as in Environment.tsx
+    const merchantPosition = new Vector3(18.4, 0, 9.2); // Same position as in Environment.tsx
     const merchantSystem = new MerchantSystem(merchantPosition);
     merchantSystemRef.current = merchantSystem;
 
@@ -5288,7 +5288,7 @@ const hasMana = useCallback((amount: number) => {
       />
 
       {/* Enhanced Ground with textures and ambient occlusion
-      <EnhancedGround radius={29} height={1} level={1} />  */}
+      <EnhancedGround radius={33} height={1} level={1} />  */}
 
       {/* Main Player Dragon Unit Renderer */}
       {(() => {
@@ -6086,7 +6086,7 @@ function createCoopPlayer(world: World): any {
 
   // Add Transform component
   const transform = world.createComponent(Transform);
-  transform.setPosition(0, 0.5, 0); // Position sphere center at radius height above ground
+  transform.setPosition(0, 0.5, 28); // South edge spawn — away from the center knight groups
   player.addComponent(transform);
 
   // Add Movement component

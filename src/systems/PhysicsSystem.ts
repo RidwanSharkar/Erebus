@@ -66,8 +66,8 @@ export class PhysicsSystem extends BasePhysicsSystem {
     const currentPosition = transform.position.clone();
     const potentialPosition = currentPosition.clone().add(deltaPosition);
     
-    // Apply map boundary constraints with smooth sliding (radius of 29 units from origin)
-    const MAP_RADIUS = 29;
+    // Apply map boundary constraints with smooth sliding (matches enlarged grass / collision disc)
+    const MAP_RADIUS = 33;
     
     // Only check horizontal distance (ignore Y for boundary)
     const horizontalPosition = new Vector3(potentialPosition.x, 0, potentialPosition.z);

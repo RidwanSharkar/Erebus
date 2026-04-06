@@ -7,13 +7,13 @@ interface ExperienceBarProps {
   experience: number;
   level: number;
   isLocalPlayer?: boolean;
-  /** Co-op: how many pre-boss skeletons have been killed (0–20) */
+  /** Co-op: how many of the 15 starting knights have been killed (0–15) */
   skeletonKillCount?: number;
   /** Co-op: whether the boss has already been spawned */
   bossSpawned?: boolean;
 }
 
-const SKELETON_KILLS_REQUIRED = 20;
+const KNIGHT_KILLS_REQUIRED = 15;
 
 export default function ExperienceBar({
   experience,
@@ -28,7 +28,7 @@ export default function ExperienceBar({
   const currentLevelExp = experience - min;
   const maxLevelExp = max - min;
 
-  const skeletonProgress = Math.min((skeletonKillCount / SKELETON_KILLS_REQUIRED) * 100, 100);
+  const skeletonProgress = Math.min((skeletonKillCount / KNIGHT_KILLS_REQUIRED) * 100, 100);
   const showSkeletonTracker = !bossSpawned;
 
   return (
@@ -78,7 +78,7 @@ export default function ExperienceBar({
           </div>
         </div>
 
-        {/* ── Pre-boss skeleton tracker (co-op only) ── */}
+        {/* ── Knight kill tracker — fills as knights die, boss spawns at 15/15 (co-op only) ── */}
         {showSkeletonTracker && (
           <div className="mt-2 pt-2 border-t border-white/10">
 

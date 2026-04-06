@@ -59,7 +59,7 @@ const Planet: React.FC = () => {
     <group 
       ref={groupRef} 
       position={[100, 60, -150]} 
-      scale={[12, 12, 12]} 
+      scale={[6.5, 6.5, 6.5]} 
       rotation={[1.0, 0.1, 0.1]}
     >
       {/* Main planet sphere */}
@@ -67,14 +67,14 @@ const Planet: React.FC = () => {
 
       {/* Inner glow */}
       <mesh 
-        scale={[1.05, 1.05, 1.05]} 
+        scale={[1.00, 1.00, 1.00]} 
         geometry={sphereGeometry} 
         material={glowMaterial} 
       />
 
       {/* Outer glow */}
       <mesh 
-        scale={[1.1, 1.1, 1.1]} 
+        scale={[1.05, 1.05, 1.05]} 
         geometry={sphereGeometry}
         material={outerGlowMaterial}
       />

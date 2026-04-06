@@ -13,7 +13,7 @@ interface EnhancedGroundProps {
  * Provides depth and visual interest to the game environment
  */
 const EnhancedGround: React.FC<EnhancedGroundProps> = ({
-  radius = 29,
+  radius = 33,
   height = 1,
   level = 1
 }) => {
@@ -154,7 +154,7 @@ const EnhancedGround: React.FC<EnhancedGroundProps> = ({
           vec3 normalSample = texture2D(normalMap, vUv).rgb * 2.0 - 1.0;
 
           // Distance from center for ambient occlusion effect
-          float distanceFromCenter = length(vPosition.xz) / 29.0;
+          float distanceFromCenter = length(vPosition.xz) / 33.0;
           float ao = 1.0 - smoothstep(0.0, 1.0, distanceFromCenter) * 0.2;
 
           // Add subtle animation to break up static appearance

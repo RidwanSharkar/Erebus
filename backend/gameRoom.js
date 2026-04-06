@@ -20,11 +20,6 @@ class GameRoom {
     // Status effect tracking for enemies
     this.enemyStatusEffects = new Map(); // enemyId -> { stun: expiration, freeze: expiration, slow: expiration }
 
-    this.waveUnits = new Set(); // Unit IDs in current wave
-    this.waveStartTime = 0;
-    this.lastWaveCompletionTime = 0;
-    this.lastWaveDebugTime = 0;
-
     // Initialize enemy AI system but don't start it yet
     this.enemyAI = new EnemyAI(roomId, io);
     this.enemyAI.setRoom(this);
@@ -36,10 +31,34 @@ class GameRoom {
     this.gameStartTime = 0;
     this.bossSpawned = false;
 
-    // Pre-boss skeleton wave tracking
-    this.skeletonKillCount = 0;          // How many pre-boss skeletons have been killed
-    this.skeletonSpawnStartTimer = null; // Initial 15-second delay before first spawn
-    this.skeletonSpawnInterval = null;   // Interval: 1 skeleton every 5 seconds
+    // Kill tracking toward boss trigger (15 knights must be killed)
+    this.skeletonKillCount = 0;
+  }
+
+  // Fixed knight spawn positions — 5 groups of 3 spread across the map
+  static get KNIGHT_POSITIONS() {
+    return [
+      // Group 1 — North Gate
+      { x:  0,   y: 0, z: -14 },
+      { x: -3,   y: 0, z: -11 },
+      { x:  3,   y: 0, z: -11 },
+      // Group 2 — Northeast Ruins
+      { x: 13,   y: 0, z: -11 },
+      { x: 16,   y: 0, z:  -8 },
+      { x: 10,   y: 0, z:  -8 },
+      // Group 3 — East Outpost
+      { x: 20,   y: 0, z:   0 },
+      { x: 20,   y: 0, z:   4 },
+      { x: 17,   y: 0, z:   2 },
+      // Group 4 — South Grove
+      { x:  5,   y: 0, z:  16 },
+      { x:  2,   y: 0, z:  13 },
+      { x:  8,   y: 0, z:  13 },
+      // Group 5 — West Crossing
+      { x: -18,  y: 0, z:   0 },
+      { x: -15,  y: 0, z:   4 },
+      { x: -15,  y: 0, z:  -4 },
+    ];
   }
 
   // Start the actual game
@@ -57,14 +76,8 @@ class GameRoom {
     if (this.gameMode === 'coop') {
       this.initializeEnemies();
 
-      // Start enemy spawning timers
-      this.startEnemySpawning();
-
       // Start enemy AI
       this.startEnemyAI();
-
-      // Begin pre-boss skeleton wave (15s delay, then 1 every 5s)
-      this.startSkeletonSpawning();
     }
     
     // Broadcast game start to all players
@@ -104,21 +117,26 @@ class GameRoom {
       isInvisible: false // Whether player is currently invisible
     });
 
-    // Position players in a circle for co-op mode
+    // Position players in a small cluster near the south edge for co-op mode
     if (gameMode === 'coop') {
       const playerIndex = this.players.size - 1; // Current player index (0-based, after adding)
       const totalPlayers = 3; // Max players for positioning
 
-      // Position players in a circle around the center
+      // Spawn base is at the south edge of the playable area
+      const spawnBaseX = 0;
+      const spawnBaseZ = 28;
+
+      // Arrange players in a tight arc around the base point, facing north (toward the action)
       const angleStep = (Math.PI * 2) / totalPlayers;
       const angle = playerIndex * angleStep;
-      const spawnDistance = 5; // Distance from center
+      const spawnRadius = 2.5;
 
-      const spawnX = Math.sin(angle) * spawnDistance;
-      const spawnZ = Math.cos(angle) * spawnDistance;
-
-      const playerPosition = { x: spawnX, y: 1, z: spawnZ };
-      const playerRotation = { x: 0, y: angle + Math.PI, z: 0 }; // Face toward center
+      const playerPosition = {
+        x: spawnBaseX + Math.sin(angle) * spawnRadius,
+        y: 1,
+        z: spawnBaseZ + Math.cos(angle) * spawnRadius
+      };
+      const playerRotation = { x: 0, y: Math.PI, z: 0 }; // Face north toward the map center
 
       // Update player object with correct position and rotation
       const player = this.players.get(playerId);
@@ -165,8 +183,40 @@ class GameRoom {
     if (!this.gameStarted) return;
 
     if (this.gameMode === 'coop') {
-      console.log('🎮 Co-op mode initialized - Skeletons begin spawning in 15 seconds, Boss after 20 are killed');
+      this.initializeKnights();
     }
+  }
+
+  // Place all 15 knights at fixed map positions and broadcast them to clients
+  initializeKnights() {
+    const positions = GameRoom.KNIGHT_POSITIONS;
+
+    positions.forEach((pos, index) => {
+      const knightId = `knight-${index}-${Date.now()}`;
+
+      const knight = {
+        id: knightId,
+        type: 'knight',
+        position: { x: pos.x, y: pos.y, z: pos.z },
+        rotation: 0,
+        health: 850,
+        maxHealth: 850,
+        isDying: false,
+        damage: 25,
+        bossId: null
+      };
+
+      this.enemies.set(knightId, knight);
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-spawned', {
+          enemy: knight,
+          timestamp: Date.now()
+        });
+      }
+    });
+
+    console.log(`⚔️ Placed ${positions.length} knights at fixed positions — kill all to summon the boss`);
   }
 
   spawnEnemy(type) {
@@ -273,22 +323,21 @@ class GameRoom {
           });
         }
 
-        // Track pre-boss skeleton kills and trigger boss once 20 are killed
+        // Track boss-skeleton kills (boss-summoned only — won't trigger boss since bossSpawned is true)
         if (!this.bossSpawned) {
           this.skeletonKillCount++;
-          console.log(`💀 Pre-boss skeleton killed (${this.skeletonKillCount}/20)`);
+          console.log(`💀 Skeleton killed (${this.skeletonKillCount}/15)`);
 
           if (this.io) {
             this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
               skeletonKillCount: this.skeletonKillCount,
-              required: 20,
+              required: 15,
               timestamp: Date.now()
             });
           }
 
-          if (this.skeletonKillCount >= 20) {
-            this.stopSkeletonSpawning();
-            console.log('💀💀💀 20 skeletons killed - Boss is appearing!');
+          if (this.skeletonKillCount >= 15) {
+            console.log('💀💀💀 15 enemies killed - Boss is appearing!');
             this.spawnBoss();
             this.bossSpawned = true;
           }
@@ -331,22 +380,21 @@ class GameRoom {
           });
         }
 
-        // Knights count toward the boss-trigger kill count
+        // Knights count toward the boss-trigger kill count (all 15 must die)
         if (!this.bossSpawned) {
           this.skeletonKillCount++;
-          console.log(`⚔️ Knight killed (${this.skeletonKillCount}/20)`);
+          console.log(`⚔️ Knight killed (${this.skeletonKillCount}/15)`);
 
           if (this.io) {
             this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
               skeletonKillCount: this.skeletonKillCount,
-              required: 20,
+              required: 15,
               timestamp: Date.now()
             });
           }
 
-          if (this.skeletonKillCount >= 20) {
-            this.stopSkeletonSpawning();
-            console.log('⚔️⚔️⚔️ 20 enemies killed - Boss is appearing!');
+          if (this.skeletonKillCount >= 15) {
+            console.log('⚔️⚔️⚔️ All 15 knights killed - Boss is appearing!');
             this.spawnBoss();
             this.bossSpawned = true;
           }
@@ -464,141 +512,12 @@ class GameRoom {
     return 5;                      // Level 5: 70+ kills
   }
 
-  // Enemy spawning system - skeletons only (boss triggered by kill count)
-  startEnemySpawning() {
-    if (!this.gameStarted) return;
-    console.log('🎮 Co-op mode - skeleton wave spawning will begin in 15 seconds');
-  }
-
-  // Begin pre-boss enemy wave: first spawn after 15s, then 1 every 5s (max 5 on map)
-  // Each spawn is 50% skeleton / 50% knight
-  startSkeletonSpawning() {
-    if (this.skeletonSpawnStartTimer || this.skeletonSpawnInterval) return;
-
-    console.log('⏳ Enemy spawn sequence initiated - first enemy in 15 seconds');
-
-    this.skeletonSpawnStartTimer = setTimeout(() => {
-      if (!this.gameStarted || this.bossSpawned) return;
-
-      this.spawnIndependentEnemy();
-
-      this.skeletonSpawnInterval = setInterval(() => {
-        if (!this.gameStarted || this.bossSpawned) {
-          this.stopSkeletonSpawning();
-          return;
-        }
-
-        const activeEnemies = Array.from(this.enemies.values())
-          .filter(e => (e.type === 'boss-skeleton' || e.type === 'knight') && !e.isDying);
-
-        if (activeEnemies.length < 5) {
-          this.spawnIndependentEnemy();
-        } else {
-          console.log(`⏸️ Enemy cap reached (5/5) - waiting before next spawn`);
-        }
-      }, 5000); // one enemy every 5 seconds
-    }, 15000); // 15-second initial delay
-  }
-
-  // Stop the pre-boss skeleton spawn timers
-  stopSkeletonSpawning() {
-    if (this.skeletonSpawnStartTimer) {
-      clearTimeout(this.skeletonSpawnStartTimer);
-      this.skeletonSpawnStartTimer = null;
+  // Stop enemy spawning (no-op now that spawning is replaced by fixed placement)
+  stopEnemySpawning() {
+    if (this.bossSpawnTimer) {
+      clearTimeout(this.bossSpawnTimer);
+      this.bossSpawnTimer = null;
     }
-    if (this.skeletonSpawnInterval) {
-      clearInterval(this.skeletonSpawnInterval);
-      this.skeletonSpawnInterval = null;
-    }
-  }
-
-  // Spawn a random arena enemy (50% skeleton, 50% knight)
-  spawnIndependentEnemy() {
-    if (Math.random() < 0.5) {
-      return this.spawnIndependentSkeleton();
-    } else {
-      return this.spawnKnight();
-    }
-  }
-
-  // Spawn a skeleton at a random arena position (not tied to a boss)
-  spawnIndependentSkeleton() {
-    if (!this.gameStarted) return null;
-
-    const skeletonId = `skeleton-pre-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-    const angle = Math.random() * Math.PI * 2;
-    const distance = 8 + Math.random() * 12; // 8–20 units from center
-
-    const position = {
-      x: Math.cos(angle) * distance,
-      y: 0,
-      z: Math.sin(angle) * distance
-    };
-
-    const skeleton = {
-      id: skeletonId,
-      type: 'boss-skeleton',
-      position,
-      rotation: 0,
-      health: 666,
-      maxHealth: 666,
-      isDying: false,
-      damage: 17,
-      bossId: null
-    };
-
-    this.enemies.set(skeletonId, skeleton);
-
-    if (this.io) {
-      this.io.to(this.roomId).emit('enemy-spawned', {
-        enemy: skeleton,
-        timestamp: Date.now()
-      });
-    }
-
-    console.log(`💀 Independent skeleton spawned: ${skeletonId} at (${position.x.toFixed(1)}, ${position.z.toFixed(1)})`);
-    return skeleton;
-  }
-
-  // Spawn a knight at a random arena position
-  spawnKnight() {
-    if (!this.gameStarted) return null;
-
-    const knightId = `knight-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-    const angle = Math.random() * Math.PI * 2;
-    const distance = 8 + Math.random() * 12; // 8–20 units from center
-
-    const position = {
-      x: Math.cos(angle) * distance,
-      y: 0,
-      z: Math.sin(angle) * distance
-    };
-
-    const knight = {
-      id: knightId,
-      type: 'knight',
-      position,
-      rotation: 0,
-      health: 850,
-      maxHealth: 850,
-      isDying: false,
-      damage: 25,
-      bossId: null
-    };
-
-    this.enemies.set(knightId, knight);
-
-    if (this.io) {
-      this.io.to(this.roomId).emit('enemy-spawned', {
-        enemy: knight,
-        timestamp: Date.now()
-      });
-    }
-
-    console.log(`⚔️ Knight spawned: ${knightId} at (${position.x.toFixed(1)}, ${position.z.toFixed(1)})`);
-    return knight;
   }
 
   // Spawn the boss enemy
@@ -638,15 +557,6 @@ class GameRoom {
 
     console.log(`👹 Boss spawned with ${maxHealth} HP at center of arena!`);
     return bossData;
-  }
-
-  // Stop enemy spawning
-  stopEnemySpawning() {
-    if (this.bossSpawnTimer) {
-      clearTimeout(this.bossSpawnTimer);
-      this.bossSpawnTimer = null;
-    }
-    this.stopSkeletonSpawning();
   }
 
   // Start enemy AI system

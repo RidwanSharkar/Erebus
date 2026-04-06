@@ -12,7 +12,8 @@ export interface MountainData {
 export const generateMountains = (): MountainData[] => {
   const mountains: MountainData[] = [];
   const numberOfMountains = 21;
-  const radius = 46.75;
+  // Outer ring — pushed out with the larger grass field so the skyline sits farther back
+  const radius = 55;
   
   // Create evenly spaced mountains around the perimeter
   for (let i = 0; i < numberOfMountains; i++) {

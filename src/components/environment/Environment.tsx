@@ -16,6 +16,7 @@ import InstancedForest from './InstancedForest';
 import { generateMountains } from '@/utils/MountainGenerator';
 import { World } from '@/ecs/World';
 import { Vector3, Color, PerspectiveCamera } from '@/utils/three-exports';
+import PerimeterCloudSystem from './PerimeterCloudSystem';
 
 interface EnvironmentProps {
   level?: number;
@@ -64,32 +65,24 @@ const Environment: React.FC<EnvironmentProps> = ({
     }
     // Default triangle formation for regular gameplay
     return [
-      [0, 0, -5],        // Front pillar
-      [-4.25, 0, 2.5],   // Left pillar
-      [4.25, 0, 2.5]     // Right pillar
+      [0, 0, 22.5],        // Front pillar
+      [-7.25, 0, 21],   // Left pillar
     ];
   }, [isPVP, pvpPillarPositions]);
 
   // Define pedestal position
   const pedestalPosition: [number, number, number] = useMemo(() => [0, 0, 0], []);
 
-  // Define tree positions for natural forest arrangement (reduced by half, removed inner trees)
-  const treePositions: DetailedTree[] = useMemo(() => [
-    // Outer ring trees (kept all - furthest from center, near map boundary)
-    { position: new Vector3(18, 0, 10), scale: 1.5, height: 2.5, trunkRadius: 0.275, trunkColor: new Color(0xC69049) },
-    { position: new Vector3(13, 0, 10), scale: 1.35, height: 1.5, trunkRadius: 0.225, trunkColor: new Color(0xC69049) },
-    { position: new Vector3(17, 0, 3), scale: 1.35, height: 2, trunkRadius: 0.255, trunkColor: new Color(0xA3773D) },
-
-  ], []);
-
   // Define merchant position near the tree
-  const merchantPosition: [number, number, number] = useMemo(() => [16, 0, 8], []);
+  const merchantPosition: [number, number, number] = useMemo(() => [18.4, 0, 9.2], []);
 
   return (
     <group name="environment">
       {/* Custom sky with level-based colors */}
       {enableSky && <CustomSky />}
 
+      {/* Perimeter clouds - red atmospheric clouds around map boundary */}
+      <PerimeterCloudSystem radius={31} />
 
       {/* Instanced grass field — 80k blades, GPU-animated wind */}
       {enableGrass && <StylizedGrass />}
@@ -99,14 +92,19 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       <Planet />
 
+            {/* Border effects - particles and glows around map perimeter */}
+            {enableBorderEffects && (
+        <SimpleBorderEffects
+          radius={31}
+          count={48}
+          enableParticles={true}
+          particleCount={100}
+        />
+      )}
+
 
       {/* Merchant positioned near the tree edge - only render when player is nearby for performance */}
       {showMerchant && <CustomSkeleton position={merchantPosition} rotation={merchantRotation} />}
-
-      {/* Mountain border around the map */}
-      {enableMountains && <InstancedMountains mountains={mountains} />}
-
-
 
       {/* Atmospheric particles around central area */}
       <AtmosphericParticles

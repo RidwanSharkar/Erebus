@@ -92,9 +92,9 @@ const GRASS_FRAGMENT = `
     // Ambient occlusion at the base (raised floor 0.4 → 0.55 so base isn't so dark)
     col *= 0.55 + smoothstep(0.0, 0.25, vHeightRatio) * 0.45;
 
-    // Fade at the edge of the playable area
+    // Fade at the edge of the playable area (matches radius prop)
     float dist = length(vWorldPos.xz);
-    col *= 1.0 - smoothstep(24.0, 27.5, dist) * 0.5;
+    col *= 1.0 - smoothstep(27.5, 31.5, dist) * 0.5;
 
     gl_FragColor = vec4(col, 1.0);
   }
@@ -102,7 +102,7 @@ const GRASS_FRAGMENT = `
 
 const StylizedGrass: React.FC<StylizedGrassProps> = ({
   count = 80000,
-  radius = 27,
+  radius = 31,
   bladeHeight = 0.45,
   windStrength = 0.25,
   baseColor = '#1a4d1a',
