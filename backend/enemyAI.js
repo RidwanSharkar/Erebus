@@ -401,7 +401,7 @@ class EnemyAI {
 
     const distance = this.calculateDistance(shade.position, targetPlayer.position);
     const attackRange = 11.0;  // ranged throw
-    const aggroRadius = 5;
+    const aggroRadius = 7;
     const leashRadius = aggroRadius * 3;
 
     if (!aggroData.isAggroed && distance <= aggroRadius) {
@@ -449,16 +449,26 @@ class EnemyAI {
     const len = Math.sqrt(dx * dx + dz * dz);
     if (len === 0) return;
 
-    // Perpendicular direction: rotate the forward vector 90° left or right randomly
-    const sign = Math.random() < 0.5 ? 1 : -1;
-    const perpX = (-dz / len) * sign;
-    const perpZ = ( dx / len) * sign;
+    // Forward and left unit vectors
+    const fwdX  =  dx / len;
+    const fwdZ  =  dz / len;
+    const leftX = -dz / len; // 90° CCW of forward
+    const leftZ  =  dx / len;
+
+    // Pick one of four angles relative to forward: ±45° (diagonal) or ±90° (perpendicular).
+    // Straight forward (0°) and backward angles are intentionally excluded.
+    const ANGLES = [-Math.PI / 2, -Math.PI / 4, Math.PI / 4, Math.PI / 2];
+    const theta  = ANGLES[Math.floor(Math.random() * ANGLES.length)];
+
+    // Rotate forward vector by theta: dir = cos(θ)·fwd + sin(θ)·left
+    const blinkX = Math.cos(theta) * fwdX + Math.sin(theta) * leftX;
+    const blinkZ = Math.cos(theta) * fwdZ + Math.sin(theta) * leftZ;
 
     const blinkDist = 4;
     const endPosition = {
-      x: shade.position.x + perpX * blinkDist,
+      x: shade.position.x + blinkX * blinkDist,
       y: shade.position.y,
-      z: shade.position.z + perpZ * blinkDist,
+      z: shade.position.z + blinkZ * blinkDist,
     };
 
     // Update server position immediately
@@ -481,7 +491,8 @@ class EnemyAI {
       });
     }
 
-    console.log(`👻 Shade ${shade.id} blinked 4 units perpendicular ${sign > 0 ? 'left' : 'right'} of target`);
+    const dirLabel = theta > 0 ? (Math.abs(theta) < Math.PI / 2 ? 'diagonal-fwd-left' : 'left') : (Math.abs(theta) < Math.PI / 2 ? 'diagonal-fwd-right' : 'right');
+    console.log(`👻 Shade ${shade.id} blinked 4 units ${dirLabel} of target (θ=${(theta * 180 / Math.PI).toFixed(0)}°)`);
 
     // After the blink completes, fire daggers at the target's location
     const BLINK_DURATION = 600; // ms — client position snap delay
@@ -545,7 +556,7 @@ class EnemyAI {
     }
 
     const distance    = this.calculateDistance(warlock.position, targetPlayer.position);
-    const aggroRadius = 7; // Slightly larger than knight/shade (5)
+    const aggroRadius = 8; // Slightly larger than knight/shade (5)
     const leashRadius = aggroRadius * 3;
 
     if (!aggroData.isAggroed && distance <= aggroRadius) {
@@ -625,6 +636,16 @@ class EnemyAI {
         startPosition,
         endPosition,
         rotation: warlock.rotation,
+        timestamp: Date.now()
+      });
+
+      // Flame strike erupts at the blink destination — clients delay rendering
+      // until the blink animation completes (800 ms, matches WarlockRenderer.tsx).
+      this.io.to(this.roomId).emit('warlock-flame-strike', {
+        warlockId: warlock.id,
+        position:  endPosition,
+        damage:    50,
+        radius:    2.5,
         timestamp: Date.now()
       });
     }

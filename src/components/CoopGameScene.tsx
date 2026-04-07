@@ -12,6 +12,7 @@ import ShadeRenderer from './enemies/ShadeRenderer';
 import ShadeDaggerProjectile from './enemies/ShadeDaggerProjectile';
 import WarlockRenderer from './enemies/WarlockRenderer';
 import WarlockProjectile from './enemies/WarlockProjectile';
+import WarlockFlameStrike from './enemies/WarlockFlameStrike';
 import Meteor from './enemies/Meteor';
 import BossTeleportEffect from './enemies/BossTeleportEffect';
 import { useMultiplayer, Player } from '@/contexts/MultiplayerContext';
@@ -797,6 +798,13 @@ const [maxMana, setMaxMana] = useState(150);
     damage: number;
   }
   const [warlockProjectiles, setWarlockProjectiles] = useState<WarlockProjectileState[]>([]);
+
+  // Warlock flame-strike state — one entry per active AOE eruption
+  interface WarlockFlameStrikeState {
+    id: string;
+    position: Vector3;
+  }
+  const [warlockFlameStrikes, setWarlockFlameStrikes] = useState<WarlockFlameStrikeState[]>([]);
 
   // Function to create enemy taunt effect (for Deathgrasp)
   const createEnemyTauntEffect = useCallback((enemyId: string, duration: number = 10000) => {
@@ -4049,11 +4057,12 @@ const hasMana = useCallback((amount: number) => {
       ]);
     };
 
-    // How long (ms) the shade throw animation plays before daggers are released.
-    // Match this to the shade_throw.glb clip length.
-    const SHADE_THROW_DURATION = 1500;
+    // How long (ms) into the shade throw animation the daggers are released.
+    // 250 ms early relative to the full clip length (1500 ms) to sync with the
+    // visual release point in the animation without changing the clip itself.
+    const SHADE_THROW_DURATION = 1000;
     // Delay between each successive dagger in the 3-dagger volley.
-    const SHADE_DAGGER_INTERVAL = 350;
+    const SHADE_DAGGER_INTERVAL = 250;
 
     const handleShadeAttackTelegraph = (data: {
       shadeId: string;
@@ -4150,6 +4159,45 @@ const hasMana = useCallback((amount: number) => {
 
     socket.on('warlock-attack-telegraph', handleWarlockAttackTelegraph);
 
+    // Blink animation duration — must match BLINK_ANIMATION_DURATION in WarlockRenderer.tsx
+    const WARLOCK_BLINK_ANIM_MS = 800;
+
+    const handleWarlockFlameStrike = (data: {
+      warlockId: string;
+      position: { x: number; y: number; z: number };
+      damage: number;
+      radius: number;
+    }) => {
+      // Wait until the blink slide finishes before erupting so the pillars
+      // materialise exactly where the warlock lands.
+      setTimeout(() => {
+        const strikePos = new Vector3(data.position.x, data.position.y, data.position.z);
+
+        // Spawn the visual effect
+        setWarlockFlameStrikes(prev => [
+          ...prev,
+          { id: `flame-strike-${data.warlockId}-${Date.now()}`, position: strikePos.clone() },
+        ]);
+
+        // Client-side AOE damage check for the local player
+        if (!playerEntity) return;
+        const t = playerEntity.getComponent(Transform);
+        if (!t) return;
+        const dist = new Vector3(t.position.x, t.position.y, t.position.z).distanceTo(strikePos);
+        if (dist > data.radius) return;
+
+        const health = playerEntity.getComponent(Health);
+        if (!health || health.isDead) return;
+        const wasAlive = !health.isDead;
+        health.takeDamage(data.damage, Date.now() / 1000, playerEntity, false);
+        if (wasAlive && health.isDead && socket?.id) {
+          handlePlayerDeath(socket.id, 'warlock-flame-strike');
+        }
+      }, WARLOCK_BLINK_ANIM_MS);
+    };
+
+    socket.on('warlock-flame-strike', handleWarlockFlameStrike);
+
 
     return () => {
       socket.off('player-attacked', handlePlayerAttack);
@@ -4179,6 +4227,7 @@ const hasMana = useCallback((amount: number) => {
       socket.off('knight-death-vortex', handleKnightDeathVortex);
       socket.off('shade-attack-telegraph', handleShadeAttackTelegraph);
       socket.off('warlock-attack-telegraph', handleWarlockAttackTelegraph);
+      socket.off('warlock-flame-strike', handleWarlockFlameStrike);
     };
   }, [socket, playerEntity]);
 
@@ -5854,6 +5903,15 @@ const hasMana = useCallback((amount: number) => {
             }
           }}
           onComplete={() => setWarlockProjectiles(prev => prev.filter(p => p.id !== orb.id))}
+        />
+      ))}
+
+      {/* Warlock Flame Strike AOE eruptions */}
+      {warlockFlameStrikes.map(strike => (
+        <WarlockFlameStrike
+          key={strike.id}
+          position={strike.position}
+          onComplete={() => setWarlockFlameStrikes(prev => prev.filter(s => s.id !== strike.id))}
         />
       ))}
 
