@@ -35,29 +35,39 @@ class GameRoom {
     this.skeletonKillCount = 0;
   }
 
-  // Fixed knight spawn positions — 5 groups of 3 spread across the map
-  static get KNIGHT_POSITIONS() {
+  // 4 camps — each defined by 4 unit positions.
+  // Slot 0 of every camp is always a knight; slots 1–3 are randomised on spawn
+  // and can be a knight (random soul colour), a shade, or a warlock.
+  static get CAMP_POSITIONS() {
     return [
-      // Group 1 — North Gate
-      { x:  0,   y: 0, z: -14 },
-      { x: -3,   y: 0, z: -11 },
-      { x:  3,   y: 0, z: -11 },
-      // Group 2 — Northeast Ruins
-      { x: 13,   y: 0, z: -11 },
-      { x: 16,   y: 0, z:  -8 },
-      { x: 10,   y: 0, z:  -8 },
-      // Group 3 — East Outpost
-      { x: 20,   y: 0, z:   0 },
-      { x: 20,   y: 0, z:   4 },
-      { x: 17,   y: 0, z:   2 },
-      // Group 4 — South Grove
-      { x:  5,   y: 0, z:  16 },
-      { x:  2,   y: 0, z:  13 },
-      { x:  8,   y: 0, z:  13 },
-      // Group 5 — West Crossing
-      { x: -18,  y: 0, z:   0 },
-      { x: -15,  y: 0, z:   4 },
-      { x: -15,  y: 0, z:  -4 },
+      // Camp 1 — Northeast Ruins
+      [
+        { x: 13,  y: 0, z: -11 },
+        { x: 16,  y: 0, z:  -8 },
+        { x: 10,  y: 0, z:  -8 },
+        { x: 13,  y: 0, z:  -8 },
+      ],
+      // Camp 2 — East Outpost
+      [
+        { x: 20,  y: 0, z:  0 },
+        { x: 20,  y: 0, z:  4 },
+        { x: 17,  y: 0, z:  2 },
+        { x: 17,  y: 0, z:  4 },
+      ],
+      // Camp 3 — South Grove
+      [
+        { x:  5,  y: 0, z: 16 },
+        { x:  2,  y: 0, z: 13 },
+        { x:  8,  y: 0, z: 13 },
+        { x:  2,  y: 0, z: 16 },
+      ],
+      // Camp 4 — West Crossing
+      [
+        { x: -18, y: 0, z:  0 },
+        { x: -15, y: 0, z:  4 },
+        { x: -15, y: 0, z: -4 },
+        { x: -18, y: 0, z:  3 },
+      ],
     ];
   }
 
@@ -183,42 +193,93 @@ class GameRoom {
     if (!this.gameStarted) return;
 
     if (this.gameMode === 'coop') {
-      this.initializeKnights();
+      this.initializeCamps();
     }
   }
 
-  // Place all 15 knights at fixed map positions and broadcast them to clients
-  initializeKnights() {
-    const positions = GameRoom.KNIGHT_POSITIONS;
+  // Spawn 4 units per camp across 4 fixed camps.
+  // Each camp's first slot is always a knight; the remaining 3 slots are
+  // randomly assigned as knight (random soul colour), shade, or warlock.
+  initializeCamps() {
+    const camps = GameRoom.CAMP_POSITIONS;
     const soulTypes = ['green', 'red', 'blue', 'purple'];
+    const randomTypes = ['knight', 'shade', 'warlock'];
 
-    positions.forEach((pos, index) => {
-      const knightId = `knight-${index}-${Date.now()}`;
+    const soulStats = {
+      green:  { health: 1350, maxHealth: 1350, damage: 25,  attackCooldown: 2500, moveSpeed: 2.0 },
+      red:    { health: 850,  maxHealth: 850,  damage: 50,  attackCooldown: 2500, moveSpeed: 2.0 },
+      blue:   { health: 850,  maxHealth: 850,  damage: 20,  attackCooldown: 1250, moveSpeed: 2.0 },
+      purple: { health: 850,  maxHealth: 850,  damage: 25,  attackCooldown: 2500, moveSpeed: 4.0 },
+    };
 
-      const knight = {
-        id: knightId,
-        type: 'knight',
-        position: { x: pos.x, y: pos.y, z: pos.z },
-        rotation: 0,
-        health: 850,
-        maxHealth: 850,
-        isDying: false,
-        damage: 25,
-        bossId: null,
-        soulType: soulTypes[Math.floor(Math.random() * soulTypes.length)]
-      };
+    let totalSpawned = 0;
 
-      this.enemies.set(knightId, knight);
+    camps.forEach((positions, campIndex) => {
+      positions.forEach((pos, slotIndex) => {
+        const type = slotIndex === 0
+          ? 'knight'
+          : randomTypes[Math.floor(Math.random() * randomTypes.length)];
 
-      if (this.io) {
-        this.io.to(this.roomId).emit('enemy-spawned', {
-          enemy: knight,
-          timestamp: Date.now()
-        });
-      }
+        let enemy;
+
+        if (type === 'knight') {
+          const soulType = soulTypes[Math.floor(Math.random() * soulTypes.length)];
+          const stats = soulStats[soulType];
+          enemy = {
+            id: `knight-${campIndex}-${slotIndex}-${Date.now()}`,
+            type: 'knight',
+            position: { x: pos.x, y: pos.y, z: pos.z },
+            rotation: 0,
+            health: stats.health,
+            maxHealth: stats.maxHealth,
+            isDying: false,
+            damage: stats.damage,
+            attackCooldown: stats.attackCooldown,
+            moveSpeed: stats.moveSpeed,
+            bossId: null,
+            soulType,
+          };
+        } else if (type === 'shade') {
+          enemy = {
+            id: `shade-${campIndex}-${slotIndex}-${Date.now()}`,
+            type: 'shade',
+            position: { x: pos.x, y: pos.y, z: pos.z },
+            rotation: 0,
+            health: 750,
+            maxHealth: 750,
+            isDying: false,
+            damage: 25,
+            attackCooldown: 3500,
+            moveSpeed: 2.0,
+          };
+        } else {
+          enemy = {
+            id: `warlock-${campIndex}-${slotIndex}-${Date.now()}`,
+            type: 'warlock',
+            position: { x: pos.x, y: pos.y, z: pos.z },
+            rotation: 0,
+            health: 800,
+            maxHealth: 800,
+            isDying: false,
+            damage: 100,
+            moveSpeed: 0,
+          };
+        }
+
+        this.enemies.set(enemy.id, enemy);
+
+        if (this.io) {
+          this.io.to(this.roomId).emit('enemy-spawned', {
+            enemy,
+            timestamp: Date.now()
+          });
+        }
+
+        totalSpawned++;
+      });
     });
 
-    console.log(`⚔️ Placed ${positions.length} knights at fixed positions — kill all to summon the boss`);
+    console.log(`⚔️ Spawned ${totalSpawned} enemies across ${camps.length} camps (1 knight guaranteed + 3 random per camp)`);
   }
 
   spawnEnemy(type) {
@@ -436,6 +497,119 @@ class GameRoom {
         }, 2500);
 
         return result;
+
+      } else if (enemy.type === 'shade') {
+        // Award EXP for shade kills
+        if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
+          this.io.to(this.roomId).emit('player-experience-gained', {
+            playerId: fromPlayerId,
+            experienceGained: 65,
+            source: 'shade_kill',
+            enemyId: enemyId,
+            timestamp: Date.now()
+          });
+        }
+
+        // Shade kills count toward the boss-spawn threshold
+        if (!this.bossSpawned) {
+          this.skeletonKillCount++;
+          console.log(`👻 Shade killed (${this.skeletonKillCount}/15)`);
+
+          if (this.io) {
+            this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
+              skeletonKillCount: this.skeletonKillCount,
+              required: 15,
+              timestamp: Date.now()
+            });
+          }
+
+          if (this.skeletonKillCount >= 15) {
+            console.log('👻👻👻 Kill threshold reached - Boss is appearing!');
+            this.spawnBoss();
+            this.bossSpawned = true;
+          }
+        }
+
+        // Small item drop chance
+        if (Math.random() < 0.15) {
+          this.spawnItemDrop(enemy.position);
+        }
+
+        // Stop AI immediately; delay removal so the client fade-out completes.
+        if (this.enemyAI) {
+          this.enemyAI.removeEnemyAggro(enemyId);
+        }
+
+        setTimeout(() => {
+          this.enemies.delete(enemyId);
+          console.log(`🗑️ Shade ${enemyId} removed from enemies map after death fade`);
+
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-removed', {
+              enemyId: enemyId,
+              timestamp: Date.now()
+            });
+          }
+        }, 2500);
+
+        return result;
+
+      } else if (enemy.type === 'warlock') {
+        // Award EXP for warlock kills
+        if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
+          this.io.to(this.roomId).emit('player-experience-gained', {
+            playerId: fromPlayerId,
+            experienceGained: 80,
+            source: 'warlock_kill',
+            enemyId: enemyId,
+            timestamp: Date.now()
+          });
+        }
+
+        // Warlock kills count toward the boss-spawn threshold
+        if (!this.bossSpawned) {
+          this.skeletonKillCount++;
+          console.log(`🔮 Warlock killed (${this.skeletonKillCount}/15)`);
+
+          if (this.io) {
+            this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
+              skeletonKillCount: this.skeletonKillCount,
+              required: 15,
+              timestamp: Date.now()
+            });
+          }
+
+          if (this.skeletonKillCount >= 15) {
+            console.log('🔮🔮🔮 Kill threshold reached — Boss is appearing!');
+            this.spawnBoss();
+            this.bossSpawned = true;
+          }
+        }
+
+        // Small item drop chance
+        if (Math.random() < 0.15) {
+          this.spawnItemDrop(enemy.position);
+        }
+
+        // Stop AI immediately; delay removal so the client fade-out completes.
+        if (this.enemyAI) {
+          this.enemyAI.removeEnemyAggro(enemyId);
+        }
+
+        setTimeout(() => {
+          this.enemies.delete(enemyId);
+          console.log(`🗑️ Warlock ${enemyId} removed from enemies map after death fade`);
+
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-removed', {
+              enemyId: enemyId,
+              timestamp: Date.now()
+            });
+          }
+        }, 2500);
+
+        return result;
+
       } else {
         // Normal enemy kill rewards
         // Increment shared kill count

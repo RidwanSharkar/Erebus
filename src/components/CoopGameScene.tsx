@@ -8,6 +8,10 @@ import BossRenderer from './enemies/BossRenderer';
 import SummonedBossSkeleton from './enemies/SummonedBossSkeleton';
 import KnightRenderer from './enemies/KnightRenderer';
 import KnightDeathVortex from './enemies/KnightDeathVortex';
+import ShadeRenderer from './enemies/ShadeRenderer';
+import ShadeDaggerProjectile from './enemies/ShadeDaggerProjectile';
+import WarlockRenderer from './enemies/WarlockRenderer';
+import WarlockProjectile from './enemies/WarlockProjectile';
 import Meteor from './enemies/Meteor';
 import BossTeleportEffect from './enemies/BossTeleportEffect';
 import { useMultiplayer, Player } from '@/contexts/MultiplayerContext';
@@ -775,6 +779,24 @@ const [maxMana, setMaxMana] = useState(150);
     position: { x: number; y: number; z: number };
   }
   const [knightDeathVortices, setKnightDeathVortices] = useState<KnightDeathVortexState[]>([]);
+
+  // Shade dagger projectile state — one entry per in-flight dagger
+  interface ShadeDaggerState {
+    id: string;
+    startPosition: Vector3;
+    targetPosition: Vector3;
+    damage: number;
+  }
+  const [shadeDaggers, setShadeDaggers] = useState<ShadeDaggerState[]>([]);
+
+  // Warlock projectile state — one entry per in-flight chaotic orb
+  interface WarlockProjectileState {
+    id: string;
+    startPosition: Vector3;
+    targetPosition: Vector3;
+    damage: number;
+  }
+  const [warlockProjectiles, setWarlockProjectiles] = useState<WarlockProjectileState[]>([]);
 
   // Function to create enemy taunt effect (for Deathgrasp)
   const createEnemyTauntEffect = useCallback((enemyId: string, duration: number = 10000) => {
@@ -4027,6 +4049,51 @@ const hasMana = useCallback((amount: number) => {
       ]);
     };
 
+    // How long (ms) the shade throw animation plays before daggers are released.
+    // Match this to the shade_throw.glb clip length.
+    const SHADE_THROW_DURATION = 1500;
+    // Delay between each successive dagger in the 3-dagger volley.
+    const SHADE_DAGGER_INTERVAL = 350;
+
+    const handleShadeAttackTelegraph = (data: {
+      shadeId: string;
+      targetPlayerId: string;
+      startPosition: { x: number; y: number; z: number };
+      targetPosition: { x: number; y: number; z: number };
+      damage: number;
+    }) => {
+      const start       = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
+      // Fallback snapshot — used only when the local player entity isn't available.
+      const staleTarget = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
+
+      // Spawn 3 daggers staggered after the throw animation finishes.
+      // Each setTimeout samples the player's live position right when the dagger
+      // launches so it leads the player's current location rather than where they
+      // were 2+ seconds ago when the server first computed the target.
+      for (let i = 0; i < 3; i++) {
+        setTimeout(() => {
+          let target = staleTarget.clone();
+          if (playerEntity) {
+            const t = playerEntity.getComponent(Transform);
+            if (t) {
+              // Keep server Y for torso height; update X/Z from live position.
+              target = new Vector3(t.position.x, data.targetPosition.y, t.position.z);
+            }
+          }
+
+          setShadeDaggers(prev => [
+            ...prev,
+            {
+              id: `shade-dagger-${data.shadeId}-${Date.now()}-${i}`,
+              startPosition: start.clone(),
+              targetPosition: target,
+              damage: data.damage,
+            },
+          ]);
+        }, SHADE_THROW_DURATION + i * SHADE_DAGGER_INTERVAL);
+      }
+    };
+
     socket.on('player-attacked', handlePlayerAttack);
     socket.on('player-used-ability', handlePlayerAbility);
     socket.on('player-damaged', handlePlayerDamaged);
@@ -4052,6 +4119,36 @@ const hasMana = useCallback((amount: number) => {
     socket.on('knight-attack', handleKnightAttack);
     socket.on('enemy-status-effect', handleEnemyStatusEffect);
     socket.on('knight-death-vortex', handleKnightDeathVortex);
+    socket.on('shade-attack-telegraph', handleShadeAttackTelegraph);
+
+    // How long (ms) the warlock launch wind-up plays before the orb is released.
+    // Match this to the warlock_launch.glb clip length.
+    const WARLOCK_LAUNCH_DURATION = 1400;
+
+    const handleWarlockAttackTelegraph = (data: {
+      warlockId: string;
+      startPosition: { x: number; y: number; z: number };
+      targetPosition: { x: number; y: number; z: number };
+      damage: number;
+    }) => {
+      const start  = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
+      const target = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
+
+      // Spawn the orb once the launch animation's wind-up has finished
+      setTimeout(() => {
+        setWarlockProjectiles(prev => [
+          ...prev,
+          {
+            id: `warlock-orb-${data.warlockId}-${Date.now()}`,
+            startPosition: start.clone(),
+            targetPosition: target.clone(),
+            damage: data.damage,
+          },
+        ]);
+      }, WARLOCK_LAUNCH_DURATION);
+    };
+
+    socket.on('warlock-attack-telegraph', handleWarlockAttackTelegraph);
 
 
     return () => {
@@ -4080,6 +4177,8 @@ const hasMana = useCallback((amount: number) => {
       socket.off('knight-attack', handleKnightAttack);
       socket.off('enemy-status-effect', handleEnemyStatusEffect);
       socket.off('knight-death-vortex', handleKnightDeathVortex);
+      socket.off('shade-attack-telegraph', handleShadeAttackTelegraph);
+      socket.off('warlock-attack-telegraph', handleWarlockAttackTelegraph);
     };
   }, [socket, playerEntity]);
 
@@ -4145,10 +4244,11 @@ const hasMana = useCallback((amount: number) => {
         // Add Collider component for damage detection (non-solid, trigger only)
         const collider = world.createComponent(Collider);
         collider.type = ColliderType.SPHERE;
-        // Boss = 2.0, boss-skeleton = 1.2, knight = 1.3, elite = 1.5
+        // Boss = 2.0, boss-skeleton = 1.2, knight = 1.3, shade = 1.0, elite = 1.5
         collider.radius = serverEnemy.type === 'boss' ? 2.0
           : serverEnemy.type === 'boss-skeleton' ? 1.2
           : serverEnemy.type === 'knight' ? 1.3
+          : serverEnemy.type === 'shade' ? 1.0
           : 1.5;
         collider.layer = CollisionLayer.ENEMY;
         collider.isTrigger = true; // IMPORTANT: Trigger only, doesn't push players
@@ -5669,6 +5769,94 @@ const hasMana = useCallback((amount: number) => {
         />
       ))}
 
+      {/* Shades (Co-op Mode) — ranged throw attackers */}
+      {Array.from(enemies.values()).map(enemy => {
+        if (enemy.type !== 'shade') return null;
+        return (
+          <ShadeRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={new Vector3(enemy.position.x, enemy.position.y, enemy.position.z)}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+          />
+        );
+      })}
+
+      {/* Shade Dagger Projectiles */}
+      {shadeDaggers.map(dagger => (
+        <ShadeDaggerProjectile
+          key={dagger.id}
+          startPosition={dagger.startPosition}
+          targetPosition={dagger.targetPosition}
+          damage={dagger.damage}
+          getPlayerPosition={() => {
+            if (!playerEntity) return null;
+            const t = playerEntity.getComponent(Transform);
+            return t ? t.position.clone() : null;
+          }}
+          onHitPlayer={() => {
+            if (!playerEntity) return;
+            const deathState = playerDeathStates.get(socket?.id ?? '');
+            if (deathState?.isDead) return;
+            const health = playerEntity.getComponent(Health);
+            if (!health) return;
+            const wasAlive = !health.isDead;
+            health.takeDamage(dagger.damage, Date.now() / 1000, playerEntity, false);
+            if (wasAlive && health.isDead && socket?.id) {
+              handlePlayerDeath(socket.id, 'shade-dagger');
+            }
+          }}
+          onComplete={() => setShadeDaggers(prev => prev.filter(d => d.id !== dagger.id))}
+        />
+      ))}
+
+      {/* Warlocks (Co-op Mode) — stationary spellcasters that blink and launch chaos orbs */}
+      {Array.from(enemies.values()).map(enemy => {
+        if (enemy.type !== 'warlock') return null;
+        return (
+          <WarlockRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={new Vector3(enemy.position.x, enemy.position.y, enemy.position.z)}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+          />
+        );
+      })}
+
+      {/* Warlock Chaos Orb Projectiles */}
+      {warlockProjectiles.map(orb => (
+        <WarlockProjectile
+          key={orb.id}
+          startPosition={orb.startPosition}
+          targetPosition={orb.targetPosition}
+          damage={orb.damage}
+          getPlayerPosition={() => {
+            if (!playerEntity) return null;
+            const t = playerEntity.getComponent(Transform);
+            return t ? t.position.clone() : null;
+          }}
+          onHitPlayer={() => {
+            if (!playerEntity) return;
+            const deathState = playerDeathStates.get(socket?.id ?? '');
+            if (deathState?.isDead) return;
+            const health = playerEntity.getComponent(Health);
+            if (!health) return;
+            const wasAlive = !health.isDead;
+            health.takeDamage(orb.damage, Date.now() / 1000, playerEntity, false);
+            if (wasAlive && health.isDead && socket?.id) {
+              handlePlayerDeath(socket.id, 'warlock-orb');
+            }
+          }}
+          onComplete={() => setWarlockProjectiles(prev => prev.filter(p => p.id !== orb.id))}
+        />
+      ))}
+
       {/* Boss Meteors */}
       {activeMeteors.map(meteor => {
         return (
@@ -5790,7 +5978,7 @@ const hasMana = useCallback((amount: number) => {
       {pvpSmiteEffects.map(effect => {
         // Prepare enemy data including BOSS and BOSS-SKELETON enemies
         const smiteEnemyData = Array.from(enemies.values())
-          .filter(enemy => !enemy.isDying && (enemy.type === 'boss' || enemy.type === 'boss-skeleton' || enemy.type === 'knight'))
+          .filter(enemy => !enemy.isDying && (enemy.type === 'boss' || enemy.type === 'boss-skeleton' || enemy.type === 'knight' || enemy.type === 'shade'))
           .map(enemy => ({
             id: enemy.id,
             position: new Vector3(enemy.position.x, enemy.position.y, enemy.position.z),

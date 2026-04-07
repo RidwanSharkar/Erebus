@@ -39,6 +39,13 @@ class EnemyAI {
 
     // Enemy taunt tracking (for Wraithblade ability)
     this.enemyTaunts = new Map(); // enemyId -> { taunterPlayerId, tauntEndTime }
+
+    // Warlock ability cooldown tracking
+    this.warlockBlinkCooldown  = new Map(); // enemyId -> lastBlinkTime
+    this.warlockLaunchCooldown = new Map(); // enemyId -> lastLaunchTime
+
+    // Shade blink+attack cooldown tracking (4-second cooldown)
+    this.shadeBlinkCooldown = new Map(); // enemyId -> lastBlinkTime
   }
 
   setRoom(room) {
@@ -71,6 +78,9 @@ class EnemyAI {
     this._lastMeteorDebugLog.clear();
     this.enemyTaunts.clear();
     this.bossBladeEnhanced.clear();
+    this.warlockBlinkCooldown.clear();
+    this.warlockLaunchCooldown.clear();
+    this.shadeBlinkCooldown.clear();
   }
 
   updateAI() {
@@ -107,6 +117,18 @@ class EnemyAI {
     // Special handling for knights
     if (enemy.type === 'knight') {
       this.updateKnightAI(enemy, players);
+      return;
+    }
+
+    // Special handling for shades
+    if (enemy.type === 'shade') {
+      this.updateShadeAI(enemy, players);
+      return;
+    }
+
+    // Special handling for warlocks
+    if (enemy.type === 'warlock') {
+      this.updateWarlockAI(enemy, players);
       return;
     }
 
@@ -277,7 +299,7 @@ class EnemyAI {
 
     const distance = this.calculateDistance(knight.position, targetPlayer.position);
     const attackRange = 2.6; // Slightly longer reach than skeleton (shield bash + sword)
-    const attackCooldown = 2500; // 2.5s between attacks — slower, heavier swings
+    const attackCooldown = knight.attackCooldown ?? 2500; // Soul-type override, default 2.5s
     const aggroRadius = 5;   // Knight idles until a player steps within this range
 
     // Once aggroed, stay aggroed until the player gets very far (leash at 3× aggro radius)
@@ -353,6 +375,283 @@ class EnemyAI {
     }
 
     console.log(`⚔️ Knight ${knight.id} attacked player ${player.id} for ${damage} damage!`);
+  }
+
+  // ─── Shade AI ────────────────────────────────────────────────────────────────
+
+  updateShadeAI(shade, players) {
+    let aggroData = this.enemyAggro.get(shade.id);
+    if (!aggroData) {
+      const closestPlayer = this.findClosestPlayer(shade, players);
+      if (!closestPlayer) return;
+      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100 };
+      this.enemyAggro.set(shade.id, aggroData);
+    }
+
+    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
+    if (!targetPlayer || targetPlayer.health <= 0) {
+      const newTarget = this.findClosestPlayer(shade, players);
+      if (newTarget) {
+        aggroData.targetPlayerId = newTarget.id;
+        targetPlayer = newTarget;
+      } else {
+        return;
+      }
+    }
+
+    const distance = this.calculateDistance(shade.position, targetPlayer.position);
+    const attackRange = 11.0;  // ranged throw
+    const aggroRadius = 5;
+    const leashRadius = aggroRadius * 3;
+
+    if (!aggroData.isAggroed && distance <= aggroRadius) {
+      aggroData.isAggroed = true;
+    } else if (aggroData.isAggroed && distance > leashRadius) {
+      aggroData.isAggroed = false;
+    }
+
+    if (!aggroData.isAggroed) return;
+
+    if (distance <= attackRange) {
+      // Face the target even while standing still
+      const dx = targetPlayer.position.x - shade.position.x;
+      const dz = targetPlayer.position.z - shade.position.z;
+      shade.rotation = Math.atan2(dx, dz);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-moved', {
+          enemyId: shade.id,
+          position: shade.position,
+          rotation: shade.rotation,
+          timestamp: Date.now()
+        });
+      }
+
+      // Blink perpendicular then attack (4-second cooldown)
+      const blinkCooldown = 4000;
+      const lastBlinkTime = this.shadeBlinkCooldown.get(shade.id) || 0;
+      const now = Date.now();
+
+      if (now - lastBlinkTime >= blinkCooldown) {
+        this.shadeBlinkCooldown.set(shade.id, now);
+        this.shadeCastBlinkAndAttack(shade, targetPlayer);
+      }
+    } else {
+      this.moveEnemyTowardsTarget(shade, targetPlayer);
+    }
+  }
+
+  shadeCastBlinkAndAttack(shade, targetPlayer) {
+    const startPosition = { ...shade.position };
+
+    // Direction from shade toward target
+    const dx  = targetPlayer.position.x - shade.position.x;
+    const dz  = targetPlayer.position.z - shade.position.z;
+    const len = Math.sqrt(dx * dx + dz * dz);
+    if (len === 0) return;
+
+    // Perpendicular direction: rotate the forward vector 90° left or right randomly
+    const sign = Math.random() < 0.5 ? 1 : -1;
+    const perpX = (-dz / len) * sign;
+    const perpZ = ( dx / len) * sign;
+
+    const blinkDist = 4;
+    const endPosition = {
+      x: shade.position.x + perpX * blinkDist,
+      y: shade.position.y,
+      z: shade.position.z + perpZ * blinkDist,
+    };
+
+    // Update server position immediately
+    shade.position.x = endPosition.x;
+    shade.position.y = endPosition.y;
+    shade.position.z = endPosition.z;
+
+    // Face the target from the new position
+    const rotDx = targetPlayer.position.x - endPosition.x;
+    const rotDz = targetPlayer.position.z - endPosition.z;
+    shade.rotation = Math.atan2(rotDx, rotDz);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('shade-blink-telegraph', {
+        shadeId: shade.id,
+        startPosition,
+        endPosition,
+        rotation: shade.rotation,
+        timestamp: Date.now()
+      });
+    }
+
+    console.log(`👻 Shade ${shade.id} blinked 4 units perpendicular ${sign > 0 ? 'left' : 'right'} of target`);
+
+    // After the blink completes, fire daggers at the target's location
+    const BLINK_DURATION = 600; // ms — client position snap delay
+    setTimeout(() => {
+      if (shade.isDying || !this.room?.getGameStarted()) return;
+
+      const currentPlayers = this.room?.getPlayers();
+      if (!currentPlayers) return;
+
+      const currentTarget = currentPlayers.find(p => p.id === targetPlayer.id);
+      if (!currentTarget || currentTarget.health <= 0) return;
+
+      this.telegraphShadeAttack(shade, currentTarget);
+    }, BLINK_DURATION);
+  }
+
+  telegraphShadeAttack(shade, targetPlayer) {
+    if (this.io) {
+      this.io.to(this.roomId).emit('shade-attack-telegraph', {
+        shadeId: shade.id,
+        targetPlayerId: targetPlayer.id,
+        // Offset positions upward so daggers fly at torso/chest height
+        // (shade model is ~2× taller than knight after the scale adjustment)
+        startPosition: {
+          x: shade.position.x,
+          y: shade.position.y + 2.0,
+          z: shade.position.z
+        },
+        targetPosition: {
+          x: targetPlayer.position.x,
+          y: targetPlayer.position.y + 1.0,
+          z: targetPlayer.position.z
+        },
+        damage: 25,
+        timestamp: Date.now()
+      });
+    }
+    console.log(`👻 Shade ${shade.id} throwing daggers at player ${targetPlayer.id}!`);
+  }
+
+  // ─── Warlock AI ──────────────────────────────────────────────────────────────
+
+  updateWarlockAI(warlock, players) {
+    let aggroData = this.enemyAggro.get(warlock.id);
+    if (!aggroData) {
+      const closestPlayer = this.findClosestPlayer(warlock, players);
+      if (!closestPlayer) return;
+      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100 };
+      this.enemyAggro.set(warlock.id, aggroData);
+    }
+
+    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
+    if (!targetPlayer || targetPlayer.health <= 0) {
+      const newTarget = this.findClosestPlayer(warlock, players);
+      if (newTarget) {
+        aggroData.targetPlayerId = newTarget.id;
+        targetPlayer = newTarget;
+      } else {
+        return;
+      }
+    }
+
+    const distance    = this.calculateDistance(warlock.position, targetPlayer.position);
+    const aggroRadius = 7; // Slightly larger than knight/shade (5)
+    const leashRadius = aggroRadius * 3;
+
+    if (!aggroData.isAggroed && distance <= aggroRadius) {
+      aggroData.isAggroed = true;
+    } else if (aggroData.isAggroed && distance > leashRadius) {
+      aggroData.isAggroed = false;
+    }
+
+    if (!aggroData.isAggroed) return;
+
+    // Always face the target (even while idle)
+    const dx = targetPlayer.position.x - warlock.position.x;
+    const dz = targetPlayer.position.z - warlock.position.z;
+    warlock.rotation = Math.atan2(dx, dz);
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-moved', {
+        enemyId: warlock.id,
+        position: warlock.position,
+        rotation: warlock.rotation,
+        timestamp: Date.now()
+      });
+    }
+
+    const now = Date.now();
+
+    // ── Blink (5-second cooldown) ─────────────────────────────────────────────
+    // Teleports 5 units closer to the target; plays blink animation on clients.
+    const blinkCooldown = 5000;
+    const lastBlinkTime = this.warlockBlinkCooldown.get(warlock.id) || 0;
+
+    if (now - lastBlinkTime >= blinkCooldown && distance > 3) {
+      this.warlockBlinkCooldown.set(warlock.id, now);
+      this.warlockCastBlink(warlock, targetPlayer);
+    }
+
+    // ── Launch (6-second cooldown) ───────────────────────────────────────────
+    // Fires a large chaotic projectile at the target's current position.
+    const launchRange    = 11.0; // Slightly more than shade attack range (9.0)
+    const launchCooldown = 6000;
+    const lastLaunchTime = this.warlockLaunchCooldown.get(warlock.id) || 0;
+
+    if (distance <= launchRange && now - lastLaunchTime >= launchCooldown) {
+      this.warlockLaunchCooldown.set(warlock.id, now);
+      this.warlockCastLaunch(warlock, targetPlayer);
+    }
+  }
+
+  warlockCastBlink(warlock, targetPlayer) {
+    const startPosition = { ...warlock.position };
+
+    // Direction from warlock toward target
+    const dx  = targetPlayer.position.x - warlock.position.x;
+    const dz  = targetPlayer.position.z - warlock.position.z;
+    const len = Math.sqrt(dx * dx + dz * dz);
+    if (len === 0) return;
+
+    const blinkDist = 5; // Teleport 5 units closer
+    const endPosition = {
+      x: warlock.position.x + (dx / len) * blinkDist,
+      y: warlock.position.y,
+      z: warlock.position.z + (dz / len) * blinkDist,
+    };
+
+    // Update server position immediately
+    warlock.position.x = endPosition.x;
+    warlock.position.y = endPosition.y;
+    warlock.position.z = endPosition.z;
+
+    // Rotation to face target from new position
+    const rotDx = targetPlayer.position.x - endPosition.x;
+    const rotDz = targetPlayer.position.z - endPosition.z;
+    warlock.rotation = Math.atan2(rotDx, rotDz);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('warlock-blink-telegraph', {
+        warlockId: warlock.id,
+        startPosition,
+        endPosition,
+        rotation: warlock.rotation,
+        timestamp: Date.now()
+      });
+    }
+
+    console.log(`🔮 Warlock ${warlock.id} blinked 5 units closer to player ${targetPlayer.id}`);
+  }
+
+  warlockCastLaunch(warlock, targetPlayer) {
+    if (this.io) {
+      this.io.to(this.roomId).emit('warlock-attack-telegraph', {
+        warlockId: warlock.id,
+        startPosition: {
+          x: warlock.position.x,
+          y: warlock.position.y + 2.0,
+          z: warlock.position.z,
+        },
+        targetPosition: {
+          x: targetPlayer.position.x,
+          y: targetPlayer.position.y + 1.0,
+          z: targetPlayer.position.z,
+        },
+        damage: 100,
+        timestamp: Date.now()
+      });
+    }
+
+    console.log(`🔮 Warlock ${warlock.id} launching chaotic orb at player ${targetPlayer.id}!`);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -852,7 +1151,7 @@ class EnemyAI {
     if (!targetPlayer) return;
     
     const distance = this.calculateDistance(enemy.position, targetPlayer.position);
-    const baseSpeed = this.getEnemyMoveSpeed(enemy.type);
+    const baseSpeed = enemy.moveSpeed ?? this.getEnemyMoveSpeed(enemy.type);
     
     // Apply status effect modifiers to movement speed
     const moveSpeed = this.getModifiedMovementSpeed(enemy.id, baseSpeed);
@@ -953,9 +1252,11 @@ class EnemyAI {
   getEnemyMoveSpeed(enemyType) {
     // Different enemy types have different movement speeds
     switch (enemyType) {
-      case 'elite': return 0.0; // Elite enemies are stationary like training dummies
-      case 'boss': return 1.25; // Boss moves at moderate speed
-      case 'boss-skeleton': return 1.75; // Boss-summoned skeletons move at normal skeleton speed
+      case 'elite': return 0.0;   // Stationary training dummies
+      case 'boss': return 1.25;
+      case 'boss-skeleton': return 1.75;
+      case 'shade':   return 2.0;
+      case 'warlock': return 0.0; // Stationary — moves only via blink
       default: return 2.0;
     }
   }
@@ -1015,6 +1316,9 @@ class EnemyAI {
     this.bossSkeletonSummonCooldown.delete(enemyId);
     this.bossSummonedSkeletons.delete(enemyId);
     this.bossBladeEnhanced.delete(enemyId);
+    this.warlockBlinkCooldown.delete(enemyId);
+    this.warlockLaunchCooldown.delete(enemyId);
+    this.shadeBlinkCooldown.delete(enemyId);
   }
 
   // Apply taunt effect to enemy (Wraithblade ability)
