@@ -12,6 +12,7 @@ import SimpleBorderEffects from './SimpleBorderEffects';
 import CustomSkeleton from './CustomSkeleton';
 import StylizedGrass from './StylizedGrass';
 import InstancedForest from './InstancedForest';
+import StoneGround from './StoneGround';
 
 import { generateMountains } from '@/utils/MountainGenerator';
 import { World } from '@/ecs/World';
@@ -86,6 +87,9 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       {/* Instanced grass field — 80k blades, GPU-animated wind */}
       {enableGrass && <StylizedGrass />}
+
+      {/* Stone road + branch connectors + combat platforms — single draw call */}
+      <StoneGround />
 
       {/* Instanced forest ring — 220 trees, 4 draw calls, GPU wind */}
       {enableForest && <InstancedForest />}

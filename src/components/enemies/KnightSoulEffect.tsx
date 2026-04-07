@@ -19,7 +19,7 @@ const SOUL_COLORS: Record<SoulType, { core: string; glow: string; light: string 
 
 // 6 small orbiting particles for a denser ring
 const ORBIT_COUNT = 6;
-const ORBIT_RADIUS = 0.42;
+const ORBIT_RADIUS = 0.35;
 
 export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
   const groupRef = useRef<Group>(null);
@@ -38,7 +38,7 @@ export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
 
     // Float the whole soul up and down — lowered base height
     if (groupRef.current) {
-      groupRef.current.position.y = 0.425 + Math.sin(t * 1.4) * 0.22;
+      groupRef.current.position.y = 1.5 + Math.sin(t * 1.4) * 0.125;
     }
 
     // Pulse the core orb scale — stronger throb
