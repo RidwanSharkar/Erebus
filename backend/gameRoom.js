@@ -190,6 +190,7 @@ class GameRoom {
   // Place all 15 knights at fixed map positions and broadcast them to clients
   initializeKnights() {
     const positions = GameRoom.KNIGHT_POSITIONS;
+    const soulTypes = ['green', 'red', 'blue', 'purple'];
 
     positions.forEach((pos, index) => {
       const knightId = `knight-${index}-${Date.now()}`;
@@ -203,7 +204,8 @@ class GameRoom {
         maxHealth: 850,
         isDying: false,
         damage: 25,
-        bossId: null
+        bossId: null,
+        soulType: soulTypes[Math.floor(Math.random() * soulTypes.length)]
       };
 
       this.enemies.set(knightId, knight);
@@ -414,20 +416,24 @@ class GameRoom {
           });
         }
 
-        // Remove knight immediately
-        this.enemies.delete(enemyId);
-        console.log(`🗑️ Knight ${enemyId} removed from enemies map`);
-
-        if (this.io) {
-          this.io.to(this.roomId).emit('enemy-removed', {
-            enemyId: enemyId,
-            timestamp: Date.now()
-          });
-        }
-
+        // Stop AI targeting this knight immediately, but delay removal so
+        // clients have time to play the death animation + opacity fade
+        // (death clip ~1.5s + FADE_DURATION 1.5s → 2500ms covers both).
         if (this.enemyAI) {
           this.enemyAI.removeEnemyAggro(enemyId);
         }
+
+        setTimeout(() => {
+          this.enemies.delete(enemyId);
+          console.log(`🗑️ Knight ${enemyId} removed from enemies map after death animation`);
+
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-removed', {
+              enemyId: enemyId,
+              timestamp: Date.now()
+            });
+          }
+        }, 2500);
 
         return result;
       } else {

@@ -42,6 +42,7 @@ export interface Enemy {
   health: number;
   maxHealth: number;
   isDying?: boolean;
+  soulType?: 'green' | 'red' | 'blue' | 'purple';
 }
 
 export interface DroppedItem {

@@ -5641,7 +5641,7 @@ const hasMana = useCallback((amount: number) => {
 
       {/* Knights (Co-op Mode) — Mixamo animated */}
       {Array.from(enemies.values()).map(enemy => {
-        if (enemy.isDying || enemy.type !== 'knight') return null;
+        if (enemy.type !== 'knight') return null;
 
         return (
           <KnightRenderer
@@ -5652,6 +5652,7 @@ const hasMana = useCallback((amount: number) => {
             health={enemy.health}
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
+            soulType={enemy.soulType}
           />
         );
       })}

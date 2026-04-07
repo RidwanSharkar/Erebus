@@ -5,6 +5,7 @@ import { Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import KnightModel from './KnightModel';
+import KnightSoulEffect from './KnightSoulEffect';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 
 interface KnightRendererProps {
@@ -14,6 +15,7 @@ interface KnightRendererProps {
   health: number;
   maxHealth: number;
   isDying?: boolean;
+  soulType?: 'green' | 'red' | 'blue' | 'purple';
 }
 
 const ATTACK_DURATION = 1200; // ms — matches Mixamo attack clip length
@@ -34,12 +36,14 @@ export default function KnightRenderer({
   health,
   maxHealth,
   isDying = false,
+  soulType,
 }: KnightRendererProps) {
   const { socket } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking, setIsWalking] = useState(false);
+  const [attackVariant, setAttackVariant] = useState<1 | 2>(1);
 
   // Server-authoritative targets — updated when props change (single source of truth).
   // The group is NEVER written to from effects; only useFrame lerps toward these refs.
@@ -104,6 +108,7 @@ export default function KnightRenderer({
 
     const handleKnightTelegraph = (data: any) => {
       if (data.knightId !== id) return;
+      setAttackVariant(Math.random() < 0.65 ? 1 : 2);
       setIsAttacking(true);
       isAttackingRef.current = true;
       setTimeout(() => {
@@ -147,28 +152,33 @@ export default function KnightRenderer({
 
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
-      <KnightModel isWalking={isWalking} isAttacking={isAttacking} />
+      <KnightModel isWalking={isWalking} isAttacking={isAttacking} attackVariant={attackVariant} isDying={isDying} />
 
-      {/* Billboard health bar — sits just above the 2-unit-tall knight model */}
-      <Billboard position={[0, 2.3, 0]} follow lockX={false} lockY={false} lockZ={false}>
+      {/* Glowing soul orb floating above the knight */}
+      {soulType && !isDying && (
+        <KnightSoulEffect soulType={soulType} />
+      )}
+
+      {/* Billboard health bar — above the knight model head */}
+      <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
-            {/* Background track */}
+            {/* Background track — deep wine */}
             <mesh position={[0, 0, 0]}>
               <planeGeometry args={[2.0, 0.25]} />
-              <meshBasicMaterial color="#333333" opacity={0.85} transparent />
+              <meshBasicMaterial color="#2a1218" opacity={0.9} transparent />
             </mesh>
 
-            {/* Gold fill — knight theme */}
+            {/* Health fill — crimson */}
             <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
               <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
-              <meshBasicMaterial color="#c8a227" opacity={0.95} transparent />
+              <meshBasicMaterial color="#dc143c" opacity={0.95} transparent />
             </mesh>
 
             <Text
               position={[0, 0, 0.002]}
               fontSize={0.18}
-              color="#ffffff"
+              color="#fde8ec"
               anchorX="center"
               anchorY="middle"
               fontWeight="bold"

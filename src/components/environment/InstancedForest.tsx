@@ -268,7 +268,7 @@ const InstancedForest: React.FC<InstancedForestProps> = ({
   []);
 
   // Flat disc for shadow blobs
-  const shadowGeo = useMemo(() => new CircleGeometry(1.0, 10), []);
+  const shadowGeo = useMemo(() => new CircleGeometry(0.5, 10), []);
 
   // ── Materials ─────────────────────────────────────────────────────────────
   const trunkMat = useMemo(() => new ShaderMaterial({
@@ -336,7 +336,7 @@ const InstancedForest: React.FC<InstancedForestProps> = ({
       scl.set(trunkR, trunkH, trunkR);
       mat.makeScale(scl.x, scl.y, scl.z);
       mat.premultiply(rotY);
-      pos.set(x, trunkH * 0.25, z);
+      pos.set(x, trunkH * 0.25 + 2.0, z);
       mat.setPosition(pos);
       trunkRef.current.setMatrixAt(i, mat);
 
