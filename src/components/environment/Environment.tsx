@@ -15,6 +15,7 @@ import InstancedForest from './InstancedForest';
 import StoneGround from './StoneGround';
 import CastleWalls from './CastleWalls';
 import CastleWallCollision from './CastleWallCollision';
+import CampThemeLights from './CampThemeLights';
 
 import { generateMountains } from '@/utils/MountainGenerator';
 import { World } from '@/ecs/World';
@@ -36,6 +37,7 @@ interface EnvironmentProps {
   pvpPillarPositions?: Array<[number, number, number]>; // PVP pillar positions
   merchantRotation?: [number, number, number]; // Merchant rotation for interactions
   showMerchant?: boolean; // Whether to render the merchant (for performance optimization)
+  campTypes?: string[]; // Assigned archetype per camp ('blue'|'green'|'red'|'purple')
 }
 
 /**
@@ -56,7 +58,8 @@ const Environment: React.FC<EnvironmentProps> = ({
   isPVP = false,
   pvpPillarPositions,
   merchantRotation = [0, 0, 0],
-  showMerchant = false
+  showMerchant = false,
+  campTypes = [],
 }) => {
   // Generate mountains once and memoize for performance
   const mountains = useMemo(() => generateMountains(), []);
@@ -134,11 +137,14 @@ const Environment: React.FC<EnvironmentProps> = ({
         <PillarCollision world={world} positions={pillarPositions} />
       )}
 
-      {/* Castle walls — L-shaped ruins around each of the 4 camps, single draw call */}
+      {/* Castle walls — U-shaped ruins around each of the 3 camps, single draw call */}
       <CastleWalls />
 
       {/* ECS BOX colliders for castle walls — blocks player + enemies (only if world is provided) */}
       {world && <CastleWallCollision world={world} />}
+
+      {/* Coloured theme lights inside each camp based on randomly assigned archetype */}
+      {campTypes.length > 0 && <CampThemeLights campTypes={campTypes} />}
 
     </group>
   );

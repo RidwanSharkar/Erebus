@@ -7,6 +7,7 @@ import { Billboard, Text } from '@react-three/drei';
 import KnightModel from './KnightModel';
 import KnightSoulEffect from './KnightSoulEffect';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { campHpTheme } from '@/utils/campHpTheme';
 
 interface KnightRendererProps {
   id: string;
@@ -16,6 +17,7 @@ interface KnightRendererProps {
   maxHealth: number;
   isDying?: boolean;
   soulType?: 'green' | 'red' | 'blue' | 'purple';
+  campType?: string;
 }
 
 const ATTACK_DURATION = 1200; // ms — matches Mixamo attack clip length
@@ -37,7 +39,9 @@ export default function KnightRenderer({
   maxHealth,
   isDying = false,
   soulType,
+  campType,
 }: KnightRendererProps) {
+  const theme = campHpTheme(campType);
   const { socket } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
 
@@ -163,22 +167,20 @@ export default function KnightRenderer({
       <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
-            {/* Background track — deep wine */}
             <mesh position={[0, 0, 0]}>
               <planeGeometry args={[2.0, 0.25]} />
-              <meshBasicMaterial color="#2a1218" opacity={0.9} transparent />
+              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
 
-            {/* Health fill — crimson */}
             <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
               <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
-              <meshBasicMaterial color="#dc143c" opacity={0.95} transparent />
+              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
 
             <Text
               position={[0, 0, 0.002]}
               fontSize={0.18}
-              color="#fde8ec"
+              color={theme.text}
               anchorX="center"
               anchorY="middle"
               fontWeight="bold"

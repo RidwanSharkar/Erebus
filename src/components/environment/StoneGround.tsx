@@ -89,14 +89,13 @@ const STONE_FRAGMENT = `
 // draw call.  Three slab categories share the same unit-cube geometry:
 //
 //   PATH       y=0.055, thickness 0.09 — the main north-south road
-//   CONNECTOR  y=0.055, thickness 0.09 — branches off the path to each group
-//   PLATFORM   y=0.06,  thickness 0.10 — the elevated combat pads per group
+//   CONNECTOR  y=0.055, thickness 0.09 — branches off the path to each camp
+//   PLATFORM   y=0.06,  thickness 0.10 — large cobbled combat pads per camp
 //
-// 4 camp platforms (backend/gameRoom.js CAMP_POSITIONS):
-//   Camp 1 — NE Ruins      : (13,-11),(16,-8),(10,-8),(13,-8)   → east branch z≈-9
-//   Camp 2 — East Outpost  : (20,0),  (20,4), (17,2), (17,4)   → east branch z≈2
-//   Camp 3 — South Grove   : (5,16),  (2,13), (8,13), (2,16)   → east branch z≈14
-//   Camp 4 — West Crossing : (-18,0),(-15,4),(-15,-4),(-18,3)  → west branch z≈0
+// 3 camp platforms (backend/gameRoom.js CAMP_POSITIONS):
+//   Camp 0 — North Fortress : center (0,-22)  → path leads directly north here
+//   Camp 1 — East Bastion   : center (22,8)   → east branch off path at z≈8
+//   Camp 2 — West Citadel   : center (-22,8)  → west branch off path at z≈8
 // ---------------------------------------------------------------------------
 
 interface SlabDef {
@@ -139,65 +138,74 @@ const buildPath = (): SlabDef[] => {
   return slabs;
 };
 
-// ─── Camp 1 · Northeast Ruins ─────────────────────────────────────────────
-// Connector departs the east edge of the path (x≈2.5) at z≈-9 and arrives
-// at the platform.  Platform: 2×2 grid covering knights at (10,-8),(13,-11),(16,-8).
+// ─── Camp 0 · North Fortress ──────────────────────────────────────────────
+// Main path terminates at z≈-24, two bridge slabs span the gap into the camp.
+// Large 3×3 platform covers the walled interior (x:-7 to 7, z:-28 to -17).
+const CAMP0_CONNECTOR: SlabDef[] = [
+  { position: [ 0.5, 0.055, -24.8], scale: [4.5, 0.09, 2.5], rotY:  0.03 },
+  { position: [ 0.0, 0.055, -22.0], scale: [5.0, 0.09, 2.5], rotY: -0.02 },
+];
+const CAMP0_PLATFORM: SlabDef[] = [
+  // back row  (z ≈ -27)
+  { position: [-4.0, 0.06, -27.2], scale: [6.0, 0.10, 4.0], rotY:  0.04 },
+  { position: [ 0.0, 0.06, -27.5], scale: [4.5, 0.10, 4.0], rotY: -0.03 },
+  { position: [ 4.0, 0.06, -27.0], scale: [6.0, 0.10, 4.0], rotY:  0.05 },
+  // mid row   (z ≈ -22)
+  { position: [-4.0, 0.06, -22.5], scale: [6.0, 0.10, 5.0], rotY: -0.04 },
+  { position: [ 0.0, 0.06, -22.0], scale: [4.5, 0.10, 5.5], rotY:  0.03 },
+  { position: [ 4.0, 0.06, -22.5], scale: [6.0, 0.10, 5.0], rotY: -0.05 },
+  // front row (z ≈ -18)
+  { position: [-4.0, 0.06, -17.8], scale: [6.0, 0.10, 4.0], rotY:  0.05 },
+  { position: [ 0.0, 0.06, -18.0], scale: [4.5, 0.10, 4.0], rotY: -0.04 },
+  { position: [ 4.0, 0.06, -17.5], scale: [6.0, 0.10, 4.0], rotY:  0.03 },
+];
+
+// ─── Camp 1 · East Bastion ────────────────────────────────────────────────
+// Connector branches east from the path spine (x≈0) at z≈8, arriving at the
+// camp gate (x=15).  Large 3×3 platform covers x:15–29, z:2–14.
 const CAMP1_CONNECTOR: SlabDef[] = [
-  { position: [ 4.8, 0.055, -9.3], scale: [3.0, 0.09, 2.0], rotY:  0.04 },
-  { position: [ 7.5, 0.055, -9.1], scale: [2.8, 0.09, 2.0], rotY: -0.03 },
-  { position: [10.2, 0.055, -8.9], scale: [2.5, 0.09, 2.0], rotY:  0.04 },
+  { position: [ 4.5, 0.055,  7.8], scale: [3.5, 0.09, 2.5], rotY:  0.04 },
+  { position: [ 8.0, 0.055,  8.0], scale: [3.5, 0.09, 2.5], rotY: -0.03 },
+  { position: [11.5, 0.055,  7.9], scale: [3.0, 0.09, 2.5], rotY:  0.05 },
+  { position: [14.2, 0.055,  8.1], scale: [3.0, 0.09, 2.5], rotY: -0.04 },
 ];
 const CAMP1_PLATFORM: SlabDef[] = [
-  { position: [11.5, 0.06, -10.5], scale: [3.0, 0.10, 2.8], rotY:  0.07 },
-  { position: [14.5, 0.06, -10.2], scale: [2.8, 0.10, 2.6], rotY: -0.05 },
-  { position: [11.2, 0.06,  -7.8], scale: [3.0, 0.10, 2.8], rotY:  0.06 },
-  { position: [15.0, 0.06,  -8.1], scale: [2.6, 0.10, 2.8], rotY: -0.07 },
+  // west col  (x ≈ 17)
+  { position: [17.0, 0.06,  3.5], scale: [5.0, 0.10, 5.0], rotY:  0.04 },
+  { position: [17.0, 0.06,  8.0], scale: [5.0, 0.10, 5.5], rotY: -0.03 },
+  { position: [17.0, 0.06, 12.5], scale: [5.0, 0.10, 4.5], rotY:  0.06 },
+  // mid col   (x ≈ 22)
+  { position: [22.0, 0.06,  3.0], scale: [5.0, 0.10, 4.5], rotY: -0.04 },
+  { position: [22.0, 0.06,  8.0], scale: [5.5, 0.10, 5.5], rotY:  0.03 },
+  { position: [22.0, 0.06, 13.0], scale: [5.0, 0.10, 4.5], rotY: -0.05 },
+  // east col  (x ≈ 27)
+  { position: [27.0, 0.06,  3.5], scale: [4.5, 0.10, 5.0], rotY:  0.05 },
+  { position: [27.0, 0.06,  8.5], scale: [4.5, 0.10, 5.0], rotY: -0.04 },
+  { position: [27.0, 0.06, 12.5], scale: [4.5, 0.10, 4.5], rotY:  0.03 },
 ];
 
-// ─── Camp 2 · East Outpost ────────────────────────────────────────────────
-// Connector departs the east edge of the path at z≈2, reaching the platform
-// at x≈17–20. Platform covers knights at (20,0),(20,4),(17,2).
+// ─── Camp 2 · West Citadel ────────────────────────────────────────────────
+// Mirror of Camp 1: branches west from path at z≈8, gate at x=-15.
+// Large 3×3 platform covers x:-29 to -15, z:2–14.
 const CAMP2_CONNECTOR: SlabDef[] = [
-  { position: [ 4.8, 0.055, 1.8], scale: [2.8, 0.09, 2.0], rotY:  0.03 },
-  { position: [ 7.5, 0.055, 2.0], scale: [2.8, 0.09, 2.2], rotY: -0.04 },
-  { position: [10.2, 0.055, 1.9], scale: [2.8, 0.09, 2.0], rotY:  0.05 },
-  { position: [12.8, 0.055, 2.1], scale: [2.8, 0.09, 2.2], rotY: -0.03 },
-  { position: [15.4, 0.055, 2.0], scale: [2.5, 0.09, 2.0], rotY:  0.04 },
+  { position: [ -4.5, 0.055,  7.8], scale: [3.5, 0.09, 2.5], rotY: -0.04 },
+  { position: [ -8.0, 0.055,  8.0], scale: [3.5, 0.09, 2.5], rotY:  0.03 },
+  { position: [-11.5, 0.055,  7.9], scale: [3.0, 0.09, 2.5], rotY: -0.05 },
+  { position: [-14.2, 0.055,  8.1], scale: [3.0, 0.09, 2.5], rotY:  0.04 },
 ];
 const CAMP2_PLATFORM: SlabDef[] = [
-  { position: [17.5, 0.06, 1.2], scale: [2.6, 0.10, 2.8], rotY: -0.06 },
-  { position: [20.0, 0.06, 0.5], scale: [2.4, 0.10, 2.6], rotY:  0.08 },
-  { position: [17.5, 0.06, 3.2], scale: [2.6, 0.10, 2.8], rotY:  0.07 },
-  { position: [20.0, 0.06, 3.8], scale: [2.4, 0.10, 2.6], rotY: -0.05 },
-];
-
-// ─── Camp 3 · South Grove ─────────────────────────────────────────────────
-// The path passes z≈13–16; the group sits east of it (x≈2–8). Short east
-// connector leads to a tidy 2×2 platform.
-const CAMP3_CONNECTOR: SlabDef[] = [
-  { position: [4.2, 0.055, 13.4], scale: [2.8, 0.09, 2.0], rotY: 0.05 },
-];
-const CAMP3_PLATFORM: SlabDef[] = [
-  { position: [4.5, 0.06, 15.5], scale: [2.8, 0.10, 2.6], rotY:  0.08 },
-  { position: [7.5, 0.06, 13.5], scale: [2.6, 0.10, 2.8], rotY: -0.06 },
-  { position: [4.5, 0.06, 13.0], scale: [2.8, 0.10, 2.6], rotY:  0.06 },
-  { position: [7.2, 0.06, 15.8], scale: [2.4, 0.10, 2.4], rotY: -0.04 },
-];
-
-// ─── Camp 4 · West Crossing ───────────────────────────────────────────────
-// Connector departs the west edge of the path (x≈-2.5) at z≈0 and arrives
-// at the platform. Platform covers knights at (-18,0),(-15,4),(-15,-4).
-const CAMP4_CONNECTOR: SlabDef[] = [
-  { position: [ -4.8, 0.055,  0.2], scale: [2.8, 0.09, 2.0], rotY: -0.03 },
-  { position: [ -7.5, 0.055,  0.0], scale: [2.8, 0.09, 2.2], rotY:  0.04 },
-  { position: [-10.2, 0.055,  0.1], scale: [2.8, 0.09, 2.0], rotY: -0.05 },
-  { position: [-12.8, 0.055, -0.1], scale: [2.5, 0.09, 2.2], rotY:  0.03 },
-];
-const CAMP4_PLATFORM: SlabDef[] = [
-  { position: [-15.5, 0.06,  0.5], scale: [2.8, 0.10, 2.8], rotY:  0.07 },
-  { position: [-18.0, 0.06, -0.2], scale: [2.6, 0.10, 2.6], rotY: -0.06 },
-  { position: [-15.5, 0.06,  3.5], scale: [2.6, 0.10, 2.8], rotY:  0.05 },
-  { position: [-15.5, 0.06, -3.5], scale: [2.6, 0.10, 2.8], rotY: -0.05 },
+  // east col  (x ≈ -17)
+  { position: [-17.0, 0.06,  3.5], scale: [5.0, 0.10, 5.0], rotY: -0.04 },
+  { position: [-17.0, 0.06,  8.0], scale: [5.0, 0.10, 5.5], rotY:  0.03 },
+  { position: [-17.0, 0.06, 12.5], scale: [5.0, 0.10, 4.5], rotY: -0.06 },
+  // mid col   (x ≈ -22)
+  { position: [-22.0, 0.06,  3.0], scale: [5.0, 0.10, 4.5], rotY:  0.04 },
+  { position: [-22.0, 0.06,  8.0], scale: [5.5, 0.10, 5.5], rotY: -0.03 },
+  { position: [-22.0, 0.06, 13.0], scale: [5.0, 0.10, 4.5], rotY:  0.05 },
+  // west col  (x ≈ -27)
+  { position: [-27.0, 0.06,  3.5], scale: [4.5, 0.10, 5.0], rotY: -0.05 },
+  { position: [-27.0, 0.06,  8.5], scale: [4.5, 0.10, 5.0], rotY:  0.04 },
+  { position: [-27.0, 0.06, 12.5], scale: [4.5, 0.10, 4.5], rotY: -0.03 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -205,15 +213,13 @@ const CAMP4_PLATFORM: SlabDef[] = [
 // ---------------------------------------------------------------------------
 const ALL_SLABS: SlabDef[] = [
   ...buildPath(),        // 31 slabs — main N-S road
-  ...CAMP1_CONNECTOR,    //  3 slabs — NE branch road
-  ...CAMP1_PLATFORM,     //  4 slabs — NE platform
-  ...CAMP2_CONNECTOR,    //  5 slabs — east branch road
-  ...CAMP2_PLATFORM,     //  4 slabs — east platform
-  ...CAMP3_CONNECTOR,    //  1 slab  — south-east stub
-  ...CAMP3_PLATFORM,     //  4 slabs — south platform
-  ...CAMP4_CONNECTOR,    //  4 slabs — west branch road
-  ...CAMP4_PLATFORM,     //  4 slabs — west platform
-  // Total: 60 slabs — 1 draw call
+  ...CAMP0_CONNECTOR,    //  2 slabs — north bridge to fortress
+  ...CAMP0_PLATFORM,     //  9 slabs — north fortress platform
+  ...CAMP1_CONNECTOR,    //  4 slabs — east branch road
+  ...CAMP1_PLATFORM,     //  9 slabs — east bastion platform
+  ...CAMP2_CONNECTOR,    //  4 slabs — west branch road
+  ...CAMP2_PLATFORM,     //  9 slabs — west citadel platform
+  // Total: 68 slabs — 1 draw call
 ];
 
 const SLAB_COUNT = ALL_SLABS.length;

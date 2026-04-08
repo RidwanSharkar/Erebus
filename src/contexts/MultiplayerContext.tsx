@@ -43,6 +43,8 @@ export interface Enemy {
   maxHealth: number;
   isDying?: boolean;
   soulType?: 'green' | 'red' | 'blue' | 'purple';
+  campType?: string;
+  campIndex?: number;
 }
 
 export interface DroppedItem {

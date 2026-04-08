@@ -882,7 +882,7 @@ export class ControlSystem extends System {
     }
 
     // Handle Barrage ability with 'Q' key
-    if (this.inputManager.isKeyPressed('q')) {
+    if (this.inputManager.isKeyPressed('q') && this.isAbilityUnlocked('Q')) {
 
       if (!this.isBarrageCharging && !this.isCharging && !this.isViperStingCharging) {
         this.performBarrage(playerTransform);
@@ -1032,7 +1032,7 @@ export class ControlSystem extends System {
     }
     
     // Handle Reanimate ability with 'Q' key
-    if (this.inputManager.isKeyPressed('q') && !this.isIcebeaming) {
+    if (this.inputManager.isKeyPressed('q') && !this.isIcebeaming && this.isAbilityUnlocked('Q')) {
       this.performReanimateAbility(playerTransform);
     }
     
@@ -2435,7 +2435,7 @@ export class ControlSystem extends System {
     }
 
     // Handle Deflect ability with 'Q' key
-    if (this.inputManager.isKeyPressed('q') && !this.isDeflecting && !this.isSwinging && !this.isSwordCharging) {
+    if (this.inputManager.isKeyPressed('q') && !this.isDeflecting && !this.isSwinging && !this.isSwordCharging && this.isAbilityUnlocked('Q')) {
       this.performDeflect(playerTransform);
     }
 
@@ -2468,7 +2468,7 @@ export class ControlSystem extends System {
     }
 
     // Handle Deflect ability with 'Q' key
-    if (this.inputManager.isKeyPressed('q') && !this.isDeflecting && !this.isSmiting && !this.isSwinging && !this.isWraithStriking) {
+    if (this.inputManager.isKeyPressed('q') && !this.isDeflecting && !this.isSmiting && !this.isSwinging && !this.isWraithStriking && this.isAbilityUnlocked('Q')) {
       this.performDeflect(playerTransform);
     }
 
@@ -3174,7 +3174,7 @@ export class ControlSystem extends System {
     }
     
     // Handle Q key for Backstab ability
-    if (this.inputManager.isKeyPressed('q') && !this.isSwinging && !this.isSkyfalling && !this.isSundering) {
+    if (this.inputManager.isKeyPressed('q') && !this.isSwinging && !this.isSkyfalling && !this.isSundering && this.isAbilityUnlocked('Q')) {
       this.performBackstab(playerTransform);
     }
     
@@ -4611,15 +4611,9 @@ export class ControlSystem extends System {
     this.skillPointData = SkillPointSystem.updateSkillPointsForLevel(this.skillPointData, level);
   }
 
-  public unlockAbility(weaponType: WeaponType, abilityKey: 'R' | 'F' | 'P', weaponSlot: 'primary' | 'secondary'): boolean {
+  public unlockAbility(weaponType: WeaponType, abilityKey: 'Q' | 'E' | 'R' | 'F', weaponSlot: 'primary' | 'secondary'): boolean {
     try {
       this.skillPointData = SkillPointSystem.unlockAbility(this.skillPointData, weaponType, abilityKey, weaponSlot);
-
-      // Apply passive effects immediately if this is a passive ability
-      if (abilityKey === 'P') {
-        this.applyPassiveAbilities(weaponType);
-      }
-
       return true;
     } catch (error) {
       console.error('Failed to unlock ability:', error);

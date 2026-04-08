@@ -7,13 +7,13 @@ interface ExperienceBarProps {
   experience: number;
   level: number;
   isLocalPlayer?: boolean;
-  /** Co-op: how many of the 15 starting knights have been killed (0–15) */
+  /** Co-op: how many of the 12 starting enemies have been killed (0–12) */
   skeletonKillCount?: number;
   /** Co-op: whether the boss has already been spawned */
   bossSpawned?: boolean;
 }
 
-const KNIGHT_KILLS_REQUIRED = 15;
+const KNIGHT_KILLS_REQUIRED = 12;
 
 export default function ExperienceBar({
   experience,
@@ -78,7 +78,7 @@ export default function ExperienceBar({
           </div>
         </div>
 
-        {/* ── Knight kill tracker — fills as knights die, boss spawns at 15/15 (co-op only) ── */}
+        {/* ── Kill tracker — fills as enemies die, boss spawns at 12/12 (co-op only) ── */}
         {showSkeletonTracker && (
           <div className="mt-2 pt-2 border-t border-white/10">
 

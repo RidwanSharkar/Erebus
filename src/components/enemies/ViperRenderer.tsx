@@ -6,6 +6,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import ViperModel from './ViperModel';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { campHpTheme } from '@/utils/campHpTheme';
 
 interface ViperRendererProps {
   id: string;
@@ -14,6 +15,7 @@ interface ViperRendererProps {
   health: number;
   maxHealth: number;
   isDying?: boolean;
+  campType?: string;
 }
 
 // How long isAttacking stays true — used to suppress walk state during the bow cycle.
@@ -30,7 +32,9 @@ export default function ViperRenderer({
   health,
   maxHealth,
   isDying = false,
+  campType,
 }: ViperRendererProps) {
+  const theme = campHpTheme(campType);
   const { socket } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
 
@@ -139,22 +143,20 @@ export default function ViperRenderer({
       <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
-            {/* Dark background track */}
             <mesh position={[0, 0, 0]}>
               <planeGeometry args={[2.0, 0.25]} />
-              <meshBasicMaterial color="#0a1a00" opacity={0.9} transparent />
+              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
 
-            {/* Lime-green health fill */}
             <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
               <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
-              <meshBasicMaterial color="#66cc00" opacity={0.95} transparent />
+              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
 
             <Text
               position={[0, 0, 0.002]}
               fontSize={0.18}
-              color="#ccff88"
+              color={theme.text}
               anchorX="center"
               anchorY="middle"
               fontWeight="bold"

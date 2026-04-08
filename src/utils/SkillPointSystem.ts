@@ -2,12 +2,12 @@ import { WeaponType } from '@/components/dragon/weapons';
 
 export interface SkillPointData {
   skillPoints: number;
-  unlockedAbilities: Record<string, Set<string>>; // weaponType -> Set of unlocked abilities (Q, E, R, F, P)
+  unlockedAbilities: Record<string, Set<string>>; // weaponType_slot -> Set of unlocked abilities (Q, E, R, F)
 }
 
 export interface AbilityUnlock {
   weaponType: WeaponType;
-  abilityKey: 'Q' | 'E' | 'R' | 'F' | 'P';
+  abilityKey: 'Q' | 'E' | 'R' | 'F';
   weaponSlot: 'primary' | 'secondary'; // Which slot this weapon is in
 }
 
@@ -19,7 +19,7 @@ export class SkillPointSystem {
    */
   static getInitialSkillPointData(): SkillPointData {
     return {
-      skillPoints: 2,
+      skillPoints: 1,
       unlockedAbilities: {}
     };
   }
@@ -47,69 +47,24 @@ export class SkillPointSystem {
     }
 
     const available: AbilityUnlock[] = [];
+    const unlockableKeys: Array<'Q' | 'E' | 'R' | 'F'> = ['Q', 'E', 'R', 'F'];
 
-    // Check primary weapon E, R, F, and P abilities
+    // Check primary weapon Q, E, R, F abilities
     const primaryKey = `${selectedWeapons.primary}_primary`;
     const primaryUnlocked = skillPointData.unlockedAbilities[primaryKey] || new Set();
-    if (!primaryUnlocked.has('E')) {
-      available.push({
-        weaponType: selectedWeapons.primary,
-        abilityKey: 'E',
-        weaponSlot: 'primary'
-      });
-    }
-    if (!primaryUnlocked.has('R')) {
-      available.push({
-        weaponType: selectedWeapons.primary,
-        abilityKey: 'R',
-        weaponSlot: 'primary'
-      });
-    }
-    if (!primaryUnlocked.has('F')) {
-      available.push({
-        weaponType: selectedWeapons.primary,
-        abilityKey: 'F',
-        weaponSlot: 'primary'
-      });
-    }
-    if (!primaryUnlocked.has('P')) {
-      available.push({
-        weaponType: selectedWeapons.primary,
-        abilityKey: 'P',
-        weaponSlot: 'primary'
-      });
+    for (const key of unlockableKeys) {
+      if (!primaryUnlocked.has(key)) {
+        available.push({ weaponType: selectedWeapons.primary, abilityKey: key, weaponSlot: 'primary' });
+      }
     }
 
-    // Check secondary weapon E, R, F, and P abilities
+    // Check secondary weapon Q, E, R, F abilities
     const secondaryKey = `${selectedWeapons.secondary}_secondary`;
     const secondaryUnlocked = skillPointData.unlockedAbilities[secondaryKey] || new Set();
-    if (!secondaryUnlocked.has('E')) {
-      available.push({
-        weaponType: selectedWeapons.secondary,
-        abilityKey: 'E',
-        weaponSlot: 'secondary'
-      });
-    }
-    if (!secondaryUnlocked.has('R')) {
-      available.push({
-        weaponType: selectedWeapons.secondary,
-        abilityKey: 'R',
-        weaponSlot: 'secondary'
-      });
-    }
-    if (!secondaryUnlocked.has('F')) {
-      available.push({
-        weaponType: selectedWeapons.secondary,
-        abilityKey: 'F',
-        weaponSlot: 'secondary'
-      });
-    }
-    if (!secondaryUnlocked.has('P')) {
-      available.push({
-        weaponType: selectedWeapons.secondary,
-        abilityKey: 'P',
-        weaponSlot: 'secondary'
-      });
+    for (const key of unlockableKeys) {
+      if (!secondaryUnlocked.has(key)) {
+        available.push({ weaponType: selectedWeapons.secondary, abilityKey: key, weaponSlot: 'secondary' });
+      }
     }
 
     return available;
@@ -124,16 +79,11 @@ export class SkillPointSystem {
     abilityKey: 'Q' | 'E' | 'R' | 'F' | 'P',
     weaponSlot: 'primary' | 'secondary'
   ): boolean {
-    // EXCEPTION: Scythe's Cryoflame passive (P) should NOT be unlocked by default
-    // All other abilities are unlocked by default for all weapons
-    if (weaponType === WeaponType.SCYTHE && abilityKey === 'P') {
-      // Check if Cryoflame has been explicitly unlocked
-      const abilityId = `${weaponType}_${abilityKey}_${weaponSlot}`;
-      return skillPointData.unlockedAbilities[weaponType]?.has(abilityId) ?? false;
-    }
-    
-    // All other abilities are unlocked by default
-    return true;
+    // P (passive) abilities are always active — they are not part of the unlock system
+    if (abilityKey === 'P') return true;
+
+    const key = `${weaponType}_${weaponSlot}`;
+    return skillPointData.unlockedAbilities[key]?.has(abilityKey) ?? false;
   }
   
   /**
@@ -142,7 +92,7 @@ export class SkillPointSystem {
   static unlockAbility(
     skillPointData: SkillPointData,
     weaponType: WeaponType,
-    abilityKey: 'Q' | 'E' | 'R' | 'F' | 'P',
+    abilityKey: 'Q' | 'E' | 'R' | 'F',
     weaponSlot: 'primary' | 'secondary'
   ): SkillPointData {
     if (skillPointData.skillPoints <= 0) {
@@ -177,8 +127,8 @@ export class SkillPointSystem {
     skillPointData: SkillPointData,
     newLevel: number
   ): SkillPointData {
-    // Calculate total skill points: initial 2 + (level - 1) skill points per level
-    const initialSkillPoints = 2;
+    // Calculate total skill points: initial 1 + (level - 1) skill points per level
+    const initialSkillPoints = 1;
     const levelBasedSkillPoints = Math.max(0, (newLevel - 1) * this.SKILL_POINTS_PER_LEVEL);
     const totalSkillPoints = initialSkillPoints + levelBasedSkillPoints;
     const spentSkillPoints = this.getSpentSkillPoints(skillPointData);
@@ -204,43 +154,43 @@ export class SkillPointSystem {
   /**
    * Get ability name for display
    */
-  static getAbilityName(weaponType: WeaponType, abilityKey: 'E' | 'R' | 'F' | 'P'): string {
-    const abilityNames: Record<WeaponType, Record<'E' | 'R' | 'F' | 'P', string>> = {
+  static getAbilityName(weaponType: WeaponType, abilityKey: 'Q' | 'E' | 'R' | 'F'): string {
+    const abilityNames: Record<WeaponType, Record<'Q' | 'E' | 'R' | 'F', string>> = {
       [WeaponType.SWORD]: {
-        E: 'Frost Nova',
+        Q: 'Fullguard',
+        E: 'Charge',
         R: 'Colossus Strike',
-        F: 'Wind Shear',
-        P: 'Titanheart'
+        F: 'Divine Wind'
       },
       [WeaponType.BOW]: {
-        E: 'Barrage',
-        R: 'Viper Sting',
-        F: 'Rejuvenating Shot',
-        P: 'Sharpshooter'
+        Q: 'Frost Bite',
+        E: 'Viper Sting',
+        R: 'Reaping Talons',
+        F: 'Rejuvenating Shot'
       },
       [WeaponType.SCYTHE]: {
-        E: 'Cobra Shot',
+        Q: 'Sunwell',
+        E: 'Coldsnap',
         R: 'Crossentropy',
-        F: 'Summon Totem',
-        P: 'Cryoflame'
+        F: 'Mantra'
       },
       [WeaponType.SABRES]: {
-        E: 'Death Grasp',
-        R: 'Skyfall',
-        F: 'Shadow Step',
-        P: 'Lethality'
+        Q: 'Backstab',
+        E: 'Flourish',
+        R: 'Divebomb',
+        F: 'Event Horizon'
       },
       [WeaponType.RUNEBLADE]: {
-        E: 'Smite',
-        R: 'Unholy Smite',
-        F: 'Corruption',
-        P: 'Arcane Mastery'
+        Q: 'Aegis',
+        E: 'Oathblade',
+        R: 'Colossus Smite',
+        F: "Titan's Grip"
       },
       [WeaponType.SPEAR]: {
-        E: 'Whirlwind',
-        R: 'Throw Spear',
-        F: 'Storm Surge',
-        P: 'Tempest'
+        Q: 'Wind Shear',
+        E: 'Tempest Sweep',
+        R: 'Lightning Bolt',
+        F: 'Storm Shroud'
       }
     };
 

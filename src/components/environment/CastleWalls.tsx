@@ -5,7 +5,7 @@ import { Matrix4, Vector3, Quaternion, InstancedMesh, Color } from '@/utils/thre
 
 // ─── Wall Segment Definitions ─────────────────────────────────────────────────
 // Each segment: center position and full dimensions (sizeX, sizeY, sizeZ)
-// Two wall segments per camp form an L-shape; corner posts cap each junction.
+// Three wall segments per camp form a U-shaped enclosure; 4 corner posts per camp.
 
 export interface WallSegmentDef {
   center: [number, number, number];
@@ -18,34 +18,50 @@ const WALL_HEIGHT = 3.0;
 const WALL_THICKNESS = 0.6;
 
 export const WALL_SEGMENTS: WallSegmentDef[] = [
-  // ── Camp 1 · NE Ruins ──── L opens west, corner at (17.5, -12.5) ──────────
-  { center: [13.25, WALL_HEIGHT / 2, -12.5], sizeX: 8.5, sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS },
-  { center: [17.5,  WALL_HEIGHT / 2, -9.5 ], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 6.0  },
+  // ── Camp 0 · North Fortress ── 3-sided, open south ───────────────────────
+  // Area: x ∈ [-7, 7], z ∈ [-28, -16]
+  { center: [ 0,    WALL_HEIGHT / 2, -28  ], sizeX: 14.6, sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS }, // north wall
+  { center: [-7,    WALL_HEIGHT / 2, -22  ], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 12   }, // west wall
+  { center: [ 7,    WALL_HEIGHT / 2, -22  ], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 12   }, // east wall
 
-  // ── Camp 2 · East Outpost ─ L opens west, corner at (22.5, -2.0) ──────────
-  { center: [19.25, WALL_HEIGHT / 2, -2.0 ], sizeX: 6.5, sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS },
-  { center: [22.5,  WALL_HEIGHT / 2,  2.0 ], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 8.0  },
+  // ── Camp 1 · East Bastion ── 3-sided, open west ───────────────────────────
+  // Area: x ∈ [15, 29], z ∈ [2, 14]
+  { center: [22,    WALL_HEIGHT / 2,  2   ], sizeX: 14,   sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS }, // north wall
+  { center: [22,    WALL_HEIGHT / 2, 14   ], sizeX: 14,   sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS }, // south wall
+  { center: [29,    WALL_HEIGHT / 2,  8   ], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 12   }, // east wall
 
-  // ── Camp 3 · South Grove ── L opens NW,   corner at (10.5, 18.5) ──────────
-  { center: [6.0,   WALL_HEIGHT / 2, 18.5 ], sizeX: 9.0, sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS },
-  { center: [10.5,  WALL_HEIGHT / 2, 15.25], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 6.5  },
-
-  // ── Camp 4 · West Crossing  L opens east, corner at (-22.5, -6.0) ─────────
-  { center: [-22.5, WALL_HEIGHT / 2, -0.25], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 11.5 },
-  { center: [-17.75,WALL_HEIGHT / 2, -6.0 ], sizeX: 9.5, sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS },
+  // ── Camp 2 · West Citadel ── 3-sided, open east ───────────────────────────
+  // Area: x ∈ [-29, -15], z ∈ [2, 14]
+  { center: [-22,   WALL_HEIGHT / 2,  2   ], sizeX: 14,   sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS }, // north wall
+  { center: [-22,   WALL_HEIGHT / 2, 14   ], sizeX: 14,   sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS }, // south wall
+  { center: [-29,   WALL_HEIGHT / 2,  8   ], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 12   }, // west wall
 ];
 
-// Corner posts cap each L junction — slightly taller than walls for definition
+// Corner posts mark each wall junction — slightly taller than walls for definition
+// 4 posts per camp (both closed corners + gate pillars at the open entrance)
 const CORNER_POST_SIZE = 0.85;
 const CORNER_POST_HEIGHT = WALL_HEIGHT + 1.0;
 const CORNER_POSTS: [number, number, number][] = [
-  [ 17.5,  CORNER_POST_HEIGHT / 2, -12.5],  // Camp 1
-  [ 22.5,  CORNER_POST_HEIGHT / 2,  -2.0],  // Camp 2
-  [ 10.5,  CORNER_POST_HEIGHT / 2,  18.5],  // Camp 3
-  [-22.5,  CORNER_POST_HEIGHT / 2,  -6.0],  // Camp 4
+  // Camp 0 — North Fortress (open south)
+  [ -7,  CORNER_POST_HEIGHT / 2, -28],  // NW closed corner
+  [  7,  CORNER_POST_HEIGHT / 2, -28],  // NE closed corner
+  [ -7,  CORNER_POST_HEIGHT / 2, -16],  // SW gate pillar
+  [  7,  CORNER_POST_HEIGHT / 2, -16],  // SE gate pillar
+
+  // Camp 1 — East Bastion (open west)
+  [ 15,  CORNER_POST_HEIGHT / 2,  2],   // NW gate pillar
+  [ 29,  CORNER_POST_HEIGHT / 2,  2],   // NE closed corner
+  [ 15,  CORNER_POST_HEIGHT / 2, 14],   // SW gate pillar
+  [ 29,  CORNER_POST_HEIGHT / 2, 14],   // SE closed corner
+
+  // Camp 2 — West Citadel (open east)
+  [-15,  CORNER_POST_HEIGHT / 2,  2],   // NE gate pillar
+  [-29,  CORNER_POST_HEIGHT / 2,  2],   // NW closed corner
+  [-15,  CORNER_POST_HEIGHT / 2, 14],   // SE gate pillar
+  [-29,  CORNER_POST_HEIGHT / 2, 14],   // SW closed corner
 ];
 
-// ─── Battlement (merlon) constants ───────────────────────────────────────────
+// ─── Battlement (merlon) constants ──────────────────────────────────────────
 const MERLON_SPACING    = 1.5;   // distance from one merlon center to the next
 const MERLON_LONG_SIDE  = 0.75;  // width along the wall's long axis
 const MERLON_SHORT_SIDE = WALL_THICKNESS - 0.05; // depth (flush with wall face)

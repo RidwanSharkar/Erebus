@@ -31,43 +31,31 @@ class GameRoom {
     this.gameStartTime = 0;
     this.bossSpawned = false;
 
-    // Kill tracking toward boss trigger (15 knights must be killed)
+    // Kill tracking toward boss trigger (12 enemies must be killed across 3 camps)
     this.skeletonKillCount = 0;
   }
 
-  // 4 camps — each defined by 4 unit positions.
-  // Slot 0 of every camp is always a knight; slots 1–3 are randomised on spawn
-  // and can be a knight (random soul colour), a shade, or a warlock.
-  static get CAMP_POSITIONS() {
+  // ── Camp type definitions ──────────────────────────────────────────────────
+  // Each game the 3 camps are each randomly assigned one of these 4 archetypes.
+  // enemyPool: unit types that can fill non-knight slots.
+  // knightSoulType: the soul colour used for knights in this camp.
+  // min/maxEnemies: total units to spawn in this camp.
+  static get CAMP_TYPES() {
+    return {
+      blue:   { color: 'blue',   knightSoulType: 'blue',   enemyPool: ['knight', 'weaver', 'shade', 'viper'], minEnemies: 5,  maxEnemies: 8 },
+      green:  { color: 'green',  knightSoulType: 'green',  enemyPool: ['knight', 'viper',  'weaver'],          minEnemies: 6,  maxEnemies: 7  },
+      red:    { color: 'red',    knightSoulType: 'red',    enemyPool: ['knight', 'warlock','templar'],          minEnemies: 6,  maxEnemies: 7  },
+      purple: { color: 'purple', knightSoulType: 'purple', enemyPool: ['knight', 'warlock','shade'],            minEnemies: 7,  maxEnemies: 8 },
+    };
+  }
+
+  // ── Spawn areas for each camp ──────────────────────────────────────────────
+  // Enemies are placed at random positions within these AABB bounds (y = 0).
+  static get CAMP_AREAS() {
     return [
-      // Camp 1 — Northeast Ruins
-      [
-        { x: 13,  y: 0, z: -11 },
-        { x: 16,  y: 0, z:  -8 },
-        { x: 10,  y: 0, z:  -8 },
-        { x: 13,  y: 0, z:  -8 },
-      ],
-      // Camp 2 — East Outpost
-      [
-        { x: 20,  y: 0, z:  0 },
-        { x: 20,  y: 0, z:  4 },
-        { x: 17,  y: 0, z:  2 },
-        { x: 17,  y: 0, z:  4 },
-      ],
-      // Camp 3 — South Grove
-      [
-        { x:  5,  y: 0, z: 16 },
-        { x:  2,  y: 0, z: 13 },
-        { x:  8,  y: 0, z: 13 },
-        { x:  2,  y: 0, z: 16 },
-      ],
-      // Camp 4 — West Crossing
-      [
-        { x: -18, y: 0, z:  0 },
-        { x: -15, y: 0, z:  4 },
-        { x: -15, y: 0, z: -4 },
-        { x: -18, y: 0, z:  3 },
-      ],
+      { name: 'North Fortress', xMin: -5.5, xMax: 5.5, zMin: -26.5, zMax: -17.5 },
+      { name: 'East Bastion',   xMin: 16.5, xMax: 27.5, zMin:  3.0,  zMax: 13.0 },
+      { name: 'West Citadel',   xMin: -27.5, xMax: -16.5, zMin: 3.0, zMax: 13.0 },
     ];
   }
 
@@ -197,128 +185,113 @@ class GameRoom {
     }
   }
 
-  // Spawn 4 units per camp across 4 fixed camps.
-  // Each camp's first slot is always a knight; the remaining 3 slots are
-  // randomly assigned as knight (random soul colour), shade, or warlock.
-  initializeCamps() {
-    const camps = GameRoom.CAMP_POSITIONS;
-    const soulTypes = ['green', 'red', 'blue', 'purple'];
-    const randomTypes = ['knight', 'shade', 'warlock', 'viper', 'templar', 'weaver'];
-
+  // Build one enemy object at the given position for the given type/camp.
+  _buildEnemy(type, campIndex, slotIndex, pos, campDef) {
     const soulStats = {
-      green:  { health: 1350, maxHealth: 1350, damage: 25,  attackCooldown: 2500, moveSpeed: 2.0 },
-      red:    { health: 850,  maxHealth: 850,  damage: 50,  attackCooldown: 2500, moveSpeed: 2.0 },
-      blue:   { health: 850,  maxHealth: 850,  damage: 20,  attackCooldown: 1250, moveSpeed: 2.0 },
-      purple: { health: 850,  maxHealth: 850,  damage: 25,  attackCooldown: 2500, moveSpeed: 4.0 },
+      green:  { health: 1400, maxHealth: 1400, damage: 25,  attackCooldown: 2500, moveSpeed: 2.0 },
+      red:    { health: 1050,  maxHealth: 1050,  damage: 50,  attackCooldown: 2500, moveSpeed: 2.0 },
+      blue:   { health: 900,  maxHealth: 900,  damage: 25,  attackCooldown: 1250, moveSpeed: 2.0 },
+      purple: { health: 850,  maxHealth: 850,  damage: 30,  attackCooldown: 2500, moveSpeed: 4.0 },
     };
+
+    const ts = Date.now();
+    const base = { position: { x: pos.x, y: 0, z: pos.z }, rotation: 0, isDying: false, campIndex, campType: campDef.color };
+
+    if (type === 'knight') {
+      const soulType = campDef.knightSoulType;
+      const stats = soulStats[soulType];
+      return { id: `knight-${campIndex}-${slotIndex}-${ts}`, type: 'knight', ...base,
+        health: stats.health, maxHealth: stats.maxHealth, damage: stats.damage,
+        attackCooldown: stats.attackCooldown, moveSpeed: stats.moveSpeed, bossId: null, soulType };
+    }
+    if (type === 'shade') {
+      return { id: `shade-${campIndex}-${slotIndex}-${ts}`, type: 'shade', ...base,
+        health: 750, maxHealth: 750, damage: 25, attackCooldown: 3500, moveSpeed: 2.0 };
+    }
+    if (type === 'warlock') {
+      return { id: `warlock-${campIndex}-${slotIndex}-${ts}`, type: 'warlock', ...base,
+        health: 800, maxHealth: 800, damage: 100, moveSpeed: 0 };
+    }
+    if (type === 'templar') {
+      return { id: `templar-${campIndex}-${slotIndex}-${ts}`, type: 'templar', ...base,
+        health: 1000, maxHealth: 1000, damage: 60, attackCooldown: 2000, moveSpeed: 3.5 };
+    }
+    if (type === 'weaver') {
+      return { id: `weaver-${campIndex}-${slotIndex}-${ts}`, type: 'weaver', ...base,
+        health: 700, maxHealth: 700, damage: 0, moveSpeed: 2.0 };
+    }
+    // viper
+    return { id: `viper-${campIndex}-${slotIndex}-${ts}`, type: 'viper', ...base,
+      health: 650, maxHealth: 650, damage: 70, attackCooldown: 5000, moveSpeed: 2.0 };
+  }
+
+  // Generate a random position within a camp area, avoiding positions too close to others.
+  _randomCampPos(area, existing, minDist = 1.8) {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const x = area.xMin + Math.random() * (area.xMax - area.xMin);
+      const z = area.zMin + Math.random() * (area.zMax - area.zMin);
+      const tooClose = existing.some(p => Math.hypot(p.x - x, p.z - z) < minDist);
+      if (!tooClose) return { x, z };
+    }
+    // Fallback: just use the center with small random offset
+    const cx = (area.xMin + area.xMax) / 2 + (Math.random() - 0.5) * 2;
+    const cz = (area.zMin + area.zMax) / 2 + (Math.random() - 0.5) * 2;
+    return { x: cx, z: cz };
+  }
+
+  // Randomly assign each of the 3 camps one of the 4 archetypes and spawn
+  // the appropriate enemies inside. Emits 'camps-initialized' once done.
+  initializeCamps() {
+    const campTypeKeys = Object.keys(GameRoom.CAMP_TYPES);
+    const areas = GameRoom.CAMP_AREAS;
+    const campDefs = GameRoom.CAMP_TYPES;
+
+    // Randomly assign one of the 4 types to each of the 3 camps
+    const assignedTypes = areas.map(() => campTypeKeys[Math.floor(Math.random() * campTypeKeys.length)]);
 
     let totalSpawned = 0;
 
-    camps.forEach((positions, campIndex) => {
+    assignedTypes.forEach((typeKey, campIndex) => {
+      const campDef = campDefs[typeKey];
+      const area = areas[campIndex];
+
+      const count = campDef.minEnemies + Math.floor(Math.random() * (campDef.maxEnemies - campDef.minEnemies + 1));
+      const positions = [];
+
+      for (let i = 0; i < count; i++) {
+        positions.push(this._randomCampPos(area, positions));
+      }
+
       positions.forEach((pos, slotIndex) => {
-        const type = slotIndex === 0
-          ? 'knight'
-          : randomTypes[Math.floor(Math.random() * randomTypes.length)];
-
-        let enemy;
-
-        if (type === 'knight') {
-          const soulType = soulTypes[Math.floor(Math.random() * soulTypes.length)];
-          const stats = soulStats[soulType];
-          enemy = {
-            id: `knight-${campIndex}-${slotIndex}-${Date.now()}`,
-            type: 'knight',
-            position: { x: pos.x, y: pos.y, z: pos.z },
-            rotation: 0,
-            health: stats.health,
-            maxHealth: stats.maxHealth,
-            isDying: false,
-            damage: stats.damage,
-            attackCooldown: stats.attackCooldown,
-            moveSpeed: stats.moveSpeed,
-            bossId: null,
-            soulType,
-          };
-        } else if (type === 'shade') {
-          enemy = {
-            id: `shade-${campIndex}-${slotIndex}-${Date.now()}`,
-            type: 'shade',
-            position: { x: pos.x, y: pos.y, z: pos.z },
-            rotation: 0,
-            health: 750,
-            maxHealth: 750,
-            isDying: false,
-            damage: 25,
-            attackCooldown: 3500,
-            moveSpeed: 2.0,
-          };
-        } else if (type === 'warlock') {
-          enemy = {
-            id: `warlock-${campIndex}-${slotIndex}-${Date.now()}`,
-            type: 'warlock',
-            position: { x: pos.x, y: pos.y, z: pos.z },
-            rotation: 0,
-            health: 800,
-            maxHealth: 800,
-            isDying: false,
-            damage: 100,
-            moveSpeed: 0,
-          };
-        } else if (type === 'templar') {
-          enemy = {
-            id: `templar-${campIndex}-${slotIndex}-${Date.now()}`,
-            type: 'templar',
-            position: { x: pos.x, y: pos.y, z: pos.z },
-            rotation: 0,
-            health: 1000,
-            maxHealth: 1000,
-            isDying: false,
-            damage: 60,
-            attackCooldown: 2000,
-            moveSpeed: 3.5,
-          };
-        } else if (type === 'weaver') {
-          enemy = {
-            id: `weaver-${campIndex}-${slotIndex}-${Date.now()}`,
-            type: 'weaver',
-            position: { x: pos.x, y: pos.y, z: pos.z },
-            rotation: 0,
-            health: 700,
-            maxHealth: 700,
-            isDying: false,
-            damage: 0,
-            moveSpeed: 2.0,
-          };
+        // Slot 0 is always a knight; remaining slots pull from the camp's pool
+        let unitType;
+        if (slotIndex === 0) {
+          unitType = 'knight';
         } else {
-          // viper
-          enemy = {
-            id: `viper-${campIndex}-${slotIndex}-${Date.now()}`,
-            type: 'viper',
-            position: { x: pos.x, y: pos.y, z: pos.z },
-            rotation: 0,
-            health: 650,
-            maxHealth: 650,
-            isDying: false,
-            damage: 70,
-            attackCooldown: 5000,
-            moveSpeed: 2.0,
-          };
+          const pool = campDef.enemyPool;
+          unitType = pool[Math.floor(Math.random() * pool.length)];
         }
 
+        const enemy = this._buildEnemy(unitType, campIndex, slotIndex, pos, campDef);
         this.enemies.set(enemy.id, enemy);
 
         if (this.io) {
-          this.io.to(this.roomId).emit('enemy-spawned', {
-            enemy,
-            timestamp: Date.now()
-          });
+          this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
         }
 
         totalSpawned++;
       });
     });
 
-    console.log(`⚔️ Spawned ${totalSpawned} enemies across ${camps.length} camps (1 knight guaranteed + 3 random per camp)`);
+    // Tell clients which archetype each camp was assigned so they can apply themed lighting
+    if (this.io) {
+      this.io.to(this.roomId).emit('camps-initialized', {
+        campTypes: assignedTypes,
+        timestamp: Date.now()
+      });
+    }
+
+    console.log(`⚔️ Spawned ${totalSpawned} enemies across ${areas.length} camps — types: ${assignedTypes.join(', ')}`);
   }
 
   spawnEnemy(type) {
@@ -428,18 +401,18 @@ class GameRoom {
         // Track boss-skeleton kills (boss-summoned only — won't trigger boss since bossSpawned is true)
         if (!this.bossSpawned) {
           this.skeletonKillCount++;
-          console.log(`💀 Skeleton killed (${this.skeletonKillCount}/15)`);
+          console.log(`💀 Skeleton killed (${this.skeletonKillCount}/12)`);
 
           if (this.io) {
             this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
               skeletonKillCount: this.skeletonKillCount,
-              required: 15,
+              required: 12,
               timestamp: Date.now()
             });
           }
 
-          if (this.skeletonKillCount >= 15) {
-            console.log('💀💀💀 15 enemies killed - Boss is appearing!');
+          if (this.skeletonKillCount >= 12) {
+            console.log('💀💀💀 12 enemies killed - Boss is appearing!');
             this.spawnBoss();
             this.bossSpawned = true;
           }
@@ -485,18 +458,18 @@ class GameRoom {
         // Knights count toward the boss-trigger kill count (all 15 must die)
         if (!this.bossSpawned) {
           this.skeletonKillCount++;
-          console.log(`⚔️ Knight killed (${this.skeletonKillCount}/15)`);
+          console.log(`⚔️ Knight killed (${this.skeletonKillCount}/12)`);
 
           if (this.io) {
             this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
               skeletonKillCount: this.skeletonKillCount,
-              required: 15,
+              required: 12,
               timestamp: Date.now()
             });
           }
 
-          if (this.skeletonKillCount >= 15) {
-            console.log('⚔️⚔️⚔️ All 15 knights killed - Boss is appearing!');
+          if (this.skeletonKillCount >= 12) {
+            console.log('⚔️⚔️⚔️ All 12 enemies killed - Boss is appearing!');
             this.spawnBoss();
             this.bossSpawned = true;
           }
@@ -552,17 +525,17 @@ class GameRoom {
         // Shade kills count toward the boss-spawn threshold
         if (!this.bossSpawned) {
           this.skeletonKillCount++;
-          console.log(`👻 Shade killed (${this.skeletonKillCount}/15)`);
+          console.log(`👻 Shade killed (${this.skeletonKillCount}/12)`);
 
           if (this.io) {
             this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
               skeletonKillCount: this.skeletonKillCount,
-              required: 15,
+              required: 12,
               timestamp: Date.now()
             });
           }
 
-          if (this.skeletonKillCount >= 15) {
+          if (this.skeletonKillCount >= 12) {
             console.log('👻👻👻 Kill threshold reached - Boss is appearing!');
             this.spawnBoss();
             this.bossSpawned = true;
@@ -608,17 +581,17 @@ class GameRoom {
         // Warlock kills count toward the boss-spawn threshold
         if (!this.bossSpawned) {
           this.skeletonKillCount++;
-          console.log(`🔮 Warlock killed (${this.skeletonKillCount}/15)`);
+          console.log(`🔮 Warlock killed (${this.skeletonKillCount}/12)`);
 
           if (this.io) {
             this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
               skeletonKillCount: this.skeletonKillCount,
-              required: 15,
+              required: 12,
               timestamp: Date.now()
             });
           }
 
-          if (this.skeletonKillCount >= 15) {
+          if (this.skeletonKillCount >= 12) {
             console.log('🔮🔮🔮 Kill threshold reached — Boss is appearing!');
             this.spawnBoss();
             this.bossSpawned = true;
@@ -664,17 +637,17 @@ class GameRoom {
         // Templar kills count toward the boss-spawn threshold
         if (!this.bossSpawned) {
           this.skeletonKillCount++;
-          console.log(`🛡️ Templar killed (${this.skeletonKillCount}/15)`);
+          console.log(`🛡️ Templar killed (${this.skeletonKillCount}/12)`);
 
           if (this.io) {
             this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
               skeletonKillCount: this.skeletonKillCount,
-              required: 15,
+              required: 12,
               timestamp: Date.now()
             });
           }
 
-          if (this.skeletonKillCount >= 15) {
+          if (this.skeletonKillCount >= 12) {
             console.log('🛡️🛡️🛡️ Kill threshold reached — Boss is appearing!');
             this.spawnBoss();
             this.bossSpawned = true;
@@ -719,17 +692,17 @@ class GameRoom {
 
         if (!this.bossSpawned) {
           this.skeletonKillCount++;
-          console.log(`🧵 Weaver killed (${this.skeletonKillCount}/15)`);
+          console.log(`🧵 Weaver killed (${this.skeletonKillCount}/12)`);
 
           if (this.io) {
             this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
               skeletonKillCount: this.skeletonKillCount,
-              required: 15,
+              required: 12,
               timestamp: Date.now()
             });
           }
 
-          if (this.skeletonKillCount >= 15) {
+          if (this.skeletonKillCount >= 12) {
             console.log('🧵🧵🧵 Kill threshold reached — Boss is appearing!');
             this.spawnBoss();
             this.bossSpawned = true;
@@ -773,6 +746,55 @@ class GameRoom {
         setTimeout(() => {
           this.enemies.delete(enemyId);
           console.log(`🗑️ Ghoul ${enemyId} removed from enemies map after death fade`);
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-removed', { enemyId, timestamp: Date.now() });
+          }
+        }, 2500);
+
+        return result;
+
+      } else if (enemy.type === 'viper') {
+        // Award EXP for viper kills
+        if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
+          this.io.to(this.roomId).emit('player-experience-gained', {
+            playerId: fromPlayerId,
+            experienceGained: 60,
+            source: 'viper_kill',
+            enemyId: enemyId,
+            timestamp: Date.now()
+          });
+        }
+
+        if (!this.bossSpawned) {
+          this.skeletonKillCount++;
+          console.log(`🐍 Viper killed (${this.skeletonKillCount}/12)`);
+
+          if (this.io) {
+            this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
+              skeletonKillCount: this.skeletonKillCount,
+              required: 12,
+              timestamp: Date.now()
+            });
+          }
+
+          if (this.skeletonKillCount >= 12) {
+            console.log('🐍🐍🐍 Kill threshold reached — Boss is appearing!');
+            this.spawnBoss();
+            this.bossSpawned = true;
+          }
+        }
+
+        if (Math.random() < 0.12) {
+          this.spawnItemDrop(enemy.position);
+        }
+
+        if (this.enemyAI) {
+          this.enemyAI.removeEnemyAggro(enemyId);
+        }
+
+        setTimeout(() => {
+          this.enemies.delete(enemyId);
+          console.log(`🗑️ Viper ${enemyId} removed from enemies map after death fade`);
           if (this.io) {
             this.io.to(this.roomId).emit('enemy-removed', { enemyId, timestamp: Date.now() });
           }
@@ -879,7 +901,7 @@ class GameRoom {
     // Spawn boss at center of arena
     const position = { x: 0, y: 0, z: 0 };
 
-    const maxHealth = 10500;
+    const maxHealth = 6900;
     const bossData = {
       id: bossId,
       type: 'boss',

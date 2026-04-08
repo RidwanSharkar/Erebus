@@ -233,8 +233,8 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
   const isAbilityLocked = useCallback((ability: AbilityData): boolean => {
     if (!selectedWeapons || !skillPointData) return false;
 
-    // Only Q ability is unlocked by default for both primary and secondary weapons
-    if (ability.key === 'Q') return false;
+    // P (passive) abilities are never locked — they are always active
+    if (ability.key === 'P') return false;
 
     // Determine weapon slot
     let weaponSlot: 'primary' | 'secondary';
@@ -250,8 +250,8 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
       return false; // Not a selected weapon
     }
 
-    // E, R, F, and P abilities are all unlockable for both weapons
-    if (ability.key === 'E' || ability.key === 'R' || ability.key === 'F' || ability.key === 'P') {
+    // Q, E, R, F abilities all require unlocking
+    if (ability.key === 'Q' || ability.key === 'E' || ability.key === 'R' || ability.key === 'F') {
       return !SkillPointSystem.isAbilityUnlocked(skillPointData, weaponType, ability.key, weaponSlot);
     }
 
@@ -293,7 +293,7 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
 
     onUnlockAbility({
       weaponType,
-      abilityKey: ability.key as 'R' | 'F' | 'P',
+      abilityKey: ability.key as 'Q' | 'E' | 'R' | 'F',
       weaponSlot
     });
   }, [currentWeapon, selectedWeapons, onUnlockAbility]);

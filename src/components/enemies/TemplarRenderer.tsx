@@ -6,6 +6,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import TemplarModel from './TemplarModel';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { campHpTheme } from '@/utils/campHpTheme';
 
 interface TemplarRendererProps {
   id: string;
@@ -14,6 +15,7 @@ interface TemplarRendererProps {
   health: number;
   maxHealth: number;
   isDying?: boolean;
+  campType?: string;
 }
 
 const ATTACK_DURATION = 1200; // ms — matches templar attack clip length
@@ -28,7 +30,9 @@ export default function TemplarRenderer({
   health,
   maxHealth,
   isDying = false,
+  campType,
 }: TemplarRendererProps) {
+  const theme = campHpTheme(campType);
   const { socket } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
 
@@ -132,26 +136,24 @@ export default function TemplarRenderer({
         isDying={isDying}
       />
 
-      {/* Billboard health bar — gold/holy theme */}
+      {/* Billboard health bar */}
       <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
-            {/* Dark background track */}
             <mesh position={[0, 0, 0]}>
               <planeGeometry args={[2.0, 0.25]} />
-              <meshBasicMaterial color="#1a1200" opacity={0.9} transparent />
+              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
 
-            {/* Gold health fill */}
             <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
               <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
-              <meshBasicMaterial color="#c8960c" opacity={0.95} transparent />
+              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
 
             <Text
               position={[0, 0, 0.002]}
               fontSize={0.18}
-              color="#fff8dc"
+              color={theme.text}
               anchorX="center"
               anchorY="middle"
               fontWeight="bold"

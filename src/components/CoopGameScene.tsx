@@ -354,6 +354,9 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
   // Fog of war — which of the four camps the local player has discovered
   const [discoveredCamps, setDiscoveredCamps] = useState<boolean[]>([false, false, false, false]);
   const discoveredCampsRef = useRef<boolean[]>([false, false, false, false]);
+
+  // Camp archetypes assigned by the server ('blue' | 'green' | 'red' | 'purple')
+  const [campTypes, setCampTypes] = useState<string[]>([]);
   const [engineReady, setEngineReady] = useState(false); // Track when engine is ready
 
   // PVP Kill Counter - tracks kills for all players
@@ -4407,6 +4410,13 @@ const hasMana = useCallback((amount: number) => {
     socket.on('weaver-heal-telegraph', handleWeaverHealTelegraph);
     socket.on('weaver-summon-telegraph', handleWeaverSummonTelegraph);
 
+    const handleCampsInitialized = (data: { campTypes: string[] }) => {
+      if (Array.isArray(data.campTypes)) {
+        setCampTypes(data.campTypes);
+      }
+    };
+    socket.on('camps-initialized', handleCampsInitialized);
+
     return () => {
       socket.off('player-attacked', handlePlayerAttack);
       socket.off('player-used-ability', handlePlayerAbility);
@@ -4441,6 +4451,7 @@ const hasMana = useCallback((amount: number) => {
       socket.off('ghoul-attack', handleGhoulAttack);
       socket.off('weaver-heal-telegraph', handleWeaverHealTelegraph);
       socket.off('weaver-summon-telegraph', handleWeaverSummonTelegraph);
+      socket.off('camps-initialized', handleCampsInitialized);
     };
   }, [socket, playerEntity]);
 
@@ -5650,9 +5661,10 @@ const hasMana = useCallback((amount: number) => {
         world={engineRef.current?.getWorld()}
         camera={camera as PerspectiveCamera}
         enableLargeTree={true}
-        isPVP={false} // COOP mode
+        isPVP={false}
         merchantRotation={merchantRotation}
         showMerchant={isMerchantVisible}
+        campTypes={campTypes}
       />
 
       {/* Fog of War — dark veil over undiscovered camp areas */}
@@ -6047,6 +6059,7 @@ const hasMana = useCallback((amount: number) => {
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
             soulType={enemy.soulType}
+            campType={enemy.campType}
           />
         );
       })}
@@ -6076,6 +6089,7 @@ const hasMana = useCallback((amount: number) => {
             health={enemy.health}
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
+            campType={enemy.campType}
           />
         );
       })}
@@ -6121,6 +6135,7 @@ const hasMana = useCallback((amount: number) => {
             health={enemy.health}
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
+            campType={enemy.campType}
           />
         );
       })}
@@ -6138,6 +6153,7 @@ const hasMana = useCallback((amount: number) => {
             health={enemy.health}
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
+            campType={enemy.campType}
           />
         );
       })}
@@ -6192,6 +6208,7 @@ const hasMana = useCallback((amount: number) => {
             health={enemy.health}
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
+            campType={enemy.campType}
           />
         );
       })}
@@ -6237,6 +6254,7 @@ const hasMana = useCallback((amount: number) => {
             health={enemy.health}
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
+            campType={enemy.campType}
           />
         );
       })}

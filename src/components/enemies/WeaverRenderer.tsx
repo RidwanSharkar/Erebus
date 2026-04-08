@@ -6,6 +6,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import WeaverModel from './WeaverModel';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { campHpTheme } from '@/utils/campHpTheme';
 
 interface WeaverRendererProps {
   id: string;
@@ -14,6 +15,7 @@ interface WeaverRendererProps {
   health: number;
   maxHealth: number;
   isDying?: boolean;
+  campType?: string;
 }
 
 const CAST_HEAL_DURATION   = 2000; // ms — matches weaver_castheal clip length
@@ -29,7 +31,9 @@ export default function WeaverRenderer({
   health,
   maxHealth,
   isDying = false,
+  campType,
 }: WeaverRendererProps) {
+  const theme = campHpTheme(campType);
   const { socket } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
 
@@ -152,18 +156,18 @@ export default function WeaverRenderer({
           <>
             <mesh position={[0, 0, 0]}>
               <planeGeometry args={[2.0, 0.25]} />
-              <meshBasicMaterial color="#0a1a0a" opacity={0.9} transparent />
+              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
 
             <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
               <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
-              <meshBasicMaterial color="#22cc55" opacity={0.95} transparent />
+              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
 
             <Text
               position={[0, 0, 0.002]}
               fontSize={0.18}
-              color="#aaffcc"
+              color={theme.text}
               anchorX="center"
               anchorY="middle"
               fontWeight="bold"

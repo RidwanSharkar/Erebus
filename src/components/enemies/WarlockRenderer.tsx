@@ -6,6 +6,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import WarlockModel from './WarlockModel';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { campHpTheme } from '@/utils/campHpTheme';
 
 interface WarlockRendererProps {
   id: string;
@@ -14,6 +15,7 @@ interface WarlockRendererProps {
   health: number;
   maxHealth: number;
   isDying?: boolean;
+  campType?: string;
 }
 
 // How long the blink animation plays before we snap to the new position
@@ -32,7 +34,9 @@ export default function WarlockRenderer({
   health,
   maxHealth,
   isDying = false,
+  campType,
 }: WarlockRendererProps) {
+  const theme = campHpTheme(campType);
   const { socket } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
 
@@ -147,26 +151,24 @@ export default function WarlockRenderer({
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <WarlockModel isBlinking={isBlinking} isLaunching={isLaunching} isDying={isDying} />
 
-      {/* Billboard health bar — arcane crimson theme */}
+      {/* Billboard health bar */}
       <Billboard position={[0, 4.5, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
-            {/* Deep void background */}
             <mesh position={[0, 0, 0]}>
               <planeGeometry args={[2.0, 0.25]} />
-              <meshBasicMaterial color="#0d0010" opacity={0.9} transparent />
+              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
 
-            {/* Chaotic crimson fill */}
             <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
               <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
-              <meshBasicMaterial color="#aa1144" opacity={0.95} transparent />
+              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
 
             <Text
               position={[0, 0, 0.002]}
               fontSize={0.18}
-              color="#ffcce0"
+              color={theme.text}
               anchorX="center"
               anchorY="middle"
               fontWeight="bold"
