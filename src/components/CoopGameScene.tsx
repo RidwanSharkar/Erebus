@@ -86,6 +86,8 @@ import EnhancedGround from '@/components/environment/EnhancedGround';
 import { DamageNumberData } from '@/components/DamageNumbers';
 import { setGlobalCriticalRuneCount, setGlobalCritDamageRuneCount, setControlSystem } from '@/core/DamageCalculator';
 import Environment from '@/components/environment/Environment';
+import FogOfWar from '@/components/environment/FogOfWar';
+import { CAMP_DATA, CAMP_DISCOVERY_RADIUS, isEnemyVisible } from '@/utils/fogOfWarUtils';
 import { useBowPowershot } from '@/components/projectiles/useBowPowershot';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import PVPSummonTotemManager from '@/components/projectiles/PVPSummonTotemManager';
@@ -348,6 +350,10 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
   const enemyPlayerPositionRefs = useRef<Map<string, { current: Vector3 }>>(new Map());
   const [playerPosition, setPlayerPosition] = useState(new Vector3(0, 0.5, 28));
   const [playerEntity, setPlayerEntity] = useState<any>(null);
+
+  // Fog of war — which of the four camps the local player has discovered
+  const [discoveredCamps, setDiscoveredCamps] = useState<boolean[]>([false, false, false, false]);
+  const discoveredCampsRef = useRef<boolean[]>([false, false, false, false]);
   const [engineReady, setEngineReady] = useState(false); // Track when engine is ready
 
   // PVP Kill Counter - tracks kills for all players
@@ -4867,6 +4873,27 @@ const hasMana = useCallback((amount: number) => {
           setPlayerPosition(newPosition);
           realTimePlayerPositionRef.current.copy(newPosition);
 
+          // Fog of war — check if the player has stepped into a new camp's discovery radius
+          {
+            const px = newPosition.x;
+            const pz = newPosition.z;
+            let fogUpdated = false;
+            for (let i = 0; i < CAMP_DATA.length; i++) {
+              if (!discoveredCampsRef.current[i]) {
+                const camp = CAMP_DATA[i];
+                const dx = px - camp.x;
+                const dz = pz - camp.z;
+                if (dx * dx + dz * dz < CAMP_DISCOVERY_RADIUS * CAMP_DISCOVERY_RADIUS) {
+                  discoveredCampsRef.current[i] = true;
+                  fogUpdated = true;
+                }
+              }
+            }
+            if (fogUpdated) {
+              setDiscoveredCamps([...discoveredCampsRef.current]);
+            }
+          }
+
           // Update Viper Sting parent ref with current position and camera rotation
           viperStingParentRef.current.position.copy(newPosition);
 
@@ -5628,6 +5655,12 @@ const hasMana = useCallback((amount: number) => {
         showMerchant={isMerchantVisible}
       />
 
+      {/* Fog of War — dark veil over undiscovered camp areas */}
+      <FogOfWar
+        playerPositionRef={realTimePlayerPositionRef}
+        discoveredCamps={discoveredCamps}
+      />
+
       {/* Lighting */}
       <ambientLight intensity={0.1} />
       <directionalLight
@@ -5902,6 +5935,9 @@ const hasMana = useCallback((amount: number) => {
         const entityId = serverEnemyEntities.current.get(enemy.id);
         if (!entityId) return null; // Wait for ECS sync
 
+        // Hide boss in undiscovered camps
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
+
         // Check if this boss is currently taunted
         const isTaunted = enemyTauntEffects.some(effect => effect.enemyId === enemy.id);
 
@@ -5981,6 +6017,7 @@ const hasMana = useCallback((amount: number) => {
       {Array.from(enemies.values()).map(enemy => {
         // Only render boss-skeleton type enemies
         if (enemy.isDying || enemy.type !== 'boss-skeleton') return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
 
         return (
           <SummonedBossSkeleton
@@ -5998,6 +6035,7 @@ const hasMana = useCallback((amount: number) => {
       {/* Knights (Co-op Mode) — Mixamo animated */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'knight') return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
 
         return (
           <KnightRenderer
@@ -6028,6 +6066,7 @@ const hasMana = useCallback((amount: number) => {
       {/* Shades (Co-op Mode) — ranged throw attackers */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'shade') return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
         return (
           <ShadeRenderer
             key={enemy.id}
@@ -6072,6 +6111,7 @@ const hasMana = useCallback((amount: number) => {
       {/* Warlocks (Co-op Mode) — stationary spellcasters that blink and launch chaos orbs */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'warlock') return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
         return (
           <WarlockRenderer
             key={enemy.id}
@@ -6088,6 +6128,7 @@ const hasMana = useCallback((amount: number) => {
       {/* Templars (Co-op Mode) — heavy melee fighters with alternating attack animations */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'templar') return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
         return (
           <TemplarRenderer
             key={enemy.id}
@@ -6141,6 +6182,7 @@ const hasMana = useCallback((amount: number) => {
       {/* Vipers (Co-op Mode) — ranged archers that draw and release energy arrows */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'viper') return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
         return (
           <ViperRenderer
             key={enemy.id}
@@ -6185,6 +6227,7 @@ const hasMana = useCallback((amount: number) => {
       {/* Weavers (Co-op Mode) — support spellcasters that heal allies and summon ghouls */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'weaver') return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
         return (
           <WeaverRenderer
             key={enemy.id}
@@ -6210,6 +6253,7 @@ const hasMana = useCallback((amount: number) => {
       {/* Ghouls (Co-op Mode) — weaver summons; melee undead creatures */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'ghoul') return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
         return (
           <GhoulRenderer
             key={enemy.id}

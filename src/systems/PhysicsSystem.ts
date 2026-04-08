@@ -4,6 +4,7 @@ import { PhysicsSystem as BasePhysicsSystem } from '@/ecs/System';
 import { Entity } from '@/ecs/Entity';
 import { Transform } from '@/ecs/components/Transform';
 import { Movement } from '@/ecs/components/Movement';
+import { WALL_SEGMENTS, WallSegmentDef } from '@/components/environment/CastleWalls';
 
 export class PhysicsSystem extends BasePhysicsSystem {
   public readonly requiredComponents = [Transform, Movement];
@@ -73,9 +74,10 @@ export class PhysicsSystem extends BasePhysicsSystem {
     const horizontalPosition = new Vector3(potentialPosition.x, 0, potentialPosition.z);
     const distanceFromCenter = horizontalPosition.length();
     
-    // Check for pillar and tree collisions
+    // Check for pillar, tree, and castle-wall collisions
     const pillarCollision = this.checkPillarCollision(potentialPosition);
     const treeCollision = this.checkTreeCollision(potentialPosition);
+    const wallCollision = this.checkWallCollision(potentialPosition);
 
     if (distanceFromCenter >= MAP_RADIUS) {
       // If we hit the boundary, calculate tangent movement for smooth sliding
@@ -115,6 +117,14 @@ export class PhysicsSystem extends BasePhysicsSystem {
       // Reduce velocity in the direction of the tree to prevent bouncing
       const velocityNormalComponent = movement.velocity.clone().projectOnVector(treeCollision.normal);
       movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
+    } else if (wallCollision.hasCollision) {
+      // Handle castle-wall collision with smooth sliding (AABB)
+      const slidePosition = this.calculateWallSliding(currentPosition, deltaPosition, wallCollision);
+      transform.setPosition(slidePosition.x, slidePosition.y, slidePosition.z);
+
+      // Reduce velocity in the direction of the wall to prevent bouncing
+      const velocityNormalComponent = movement.velocity.clone().projectOnVector(wallCollision.normal);
+      movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
     } else {
       // If within bounds and no collision, move normally
       transform.translate(deltaPosition.x, deltaPosition.y, deltaPosition.z);
@@ -124,7 +134,13 @@ export class PhysicsSystem extends BasePhysicsSystem {
     transform.matrixNeedsUpdate = true;
   }
 
-  // Define pillar positions (same as in Environment.tsx)
+  // Player body radius used for all AABB wall collision checks
+  private readonly PLAYER_RADIUS = 0.5;
+
+  // Wall segments imported directly from CastleWalls so positions stay in sync
+  private readonly WALL_SEGMENTS: WallSegmentDef[] = WALL_SEGMENTS;
+
+  // REMOVE LATER Define pillar positions (same as in Environment.tsx)
   private readonly PILLAR_POSITIONS = [
     new Vector3(0, 0, -5),        // Front pillar
     new Vector3(-4.25, 0, 2.5),   // Left pillar
@@ -247,6 +263,85 @@ export class PhysicsSystem extends BasePhysicsSystem {
       const correctedHorizontal = treeHorizontal.clone().add(pushDirection.multiplyScalar(this.TREE_RADIUS));
       slidePosition.x = correctedHorizontal.x;
       slidePosition.z = correctedHorizontal.z;
+    }
+
+    return slidePosition;
+  }
+
+  /**
+   * AABB collision: find the closest point on each wall segment's footprint to the
+   * player position and check if it's within PLAYER_RADIUS.  Returns the push-out
+   * normal (player-center → closest-point direction, inverted) and the segment index
+   * so the sliding step can re-verify against the same box.
+   */
+  private checkWallCollision(position: Vector3): {
+    hasCollision: boolean;
+    normal: Vector3;
+    closestPoint: Vector3;
+    segmentIndex: number;
+  } {
+    const px = position.x;
+    const pz = position.z;
+
+    for (let i = 0; i < this.WALL_SEGMENTS.length; i++) {
+      const seg = this.WALL_SEGMENTS[i];
+      const [cx, , cz] = seg.center;
+      const halfX = seg.sizeX / 2;
+      const halfZ = seg.sizeZ / 2;
+
+      // Closest point on this segment's XZ footprint to the player
+      const closestX = Math.max(cx - halfX, Math.min(px, cx + halfX));
+      const closestZ = Math.max(cz - halfZ, Math.min(pz, cz + halfZ));
+
+      const dx = px - closestX;
+      const dz = pz - closestZ;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      if (dist < this.PLAYER_RADIUS) {
+        const normal = dist < 0.001
+          ? new Vector3(1, 0, 0)
+          : new Vector3(dx / dist, 0, dz / dist);
+        return {
+          hasCollision: true,
+          normal,
+          closestPoint: new Vector3(closestX, 0, closestZ),
+          segmentIndex: i,
+        };
+      }
+    }
+
+    return { hasCollision: false, normal: new Vector3(), closestPoint: new Vector3(), segmentIndex: -1 };
+  }
+
+  private calculateWallSliding(
+    currentPosition: Vector3,
+    deltaPosition: Vector3,
+    collision: { normal: Vector3; closestPoint: Vector3; segmentIndex: number }
+  ): Vector3 {
+    // Slide along the wall face (tangent perpendicular to push-out normal)
+    const tangent = new Vector3(-collision.normal.z, 0, collision.normal.x);
+    const tangentMovement = deltaPosition.clone().projectOnVector(tangent);
+    const slidePosition = currentPosition.clone().add(tangentMovement);
+
+    // Re-verify against the same segment and push out if we're still inside
+    const seg = this.WALL_SEGMENTS[collision.segmentIndex];
+    const [cx, , cz] = seg.center;
+    const halfX = seg.sizeX / 2;
+    const halfZ = seg.sizeZ / 2;
+
+    const closestX = Math.max(cx - halfX, Math.min(slidePosition.x, cx + halfX));
+    const closestZ = Math.max(cz - halfZ, Math.min(slidePosition.z, cz + halfZ));
+
+    const dx = slidePosition.x - closestX;
+    const dz = slidePosition.z - closestZ;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    if (dist < this.PLAYER_RADIUS) {
+      const pushDir = dist < 0.001
+        ? new Vector3(1, 0, 0)
+        : new Vector3(dx / dist, 0, dz / dist);
+      slidePosition.x = closestX + pushDir.x * this.PLAYER_RADIUS;
+      slidePosition.z = closestZ + pushDir.z * this.PLAYER_RADIUS;
     }
 
     return slidePosition;

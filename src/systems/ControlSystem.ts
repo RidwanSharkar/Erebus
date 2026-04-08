@@ -5111,37 +5111,53 @@ export class ControlSystem extends System {
     }
   }
 
-  // Define pillar positions (same as in Environment.tsx)
-  private readonly PILLAR_POSITIONS = [
-    new Vector3(0, 0, -5),        // Front pillar
-    new Vector3(-4.25, 0, 2.5),   // Left pillar
-    new Vector3(4.25, 0, 2.5)     // Right pillar
+  // Castle wall segments — mirrors CastleWalls.tsx WALL_SEGMENTS (AABB half-extents)
+  private readonly WALL_SEGMENTS = [
+    // Camp 1 · NE Ruins
+    { cx: 13.25,  cz: -12.5,  hx: 4.25,  hz: 0.3   },
+    { cx: 17.5,   cz:  -9.5,  hx: 0.3,   hz: 3.0   },
+    // Camp 2 · East Outpost
+    { cx: 19.25,  cz:  -2.0,  hx: 3.25,  hz: 0.3   },
+    { cx: 22.5,   cz:   2.0,  hx: 0.3,   hz: 4.0   },
+    // Camp 3 · South Grove
+    { cx:  6.0,   cz:  18.5,  hx: 4.5,   hz: 0.3   },
+    { cx: 10.5,   cz:  15.25, hx: 0.3,   hz: 3.25  },
+    // Camp 4 · West Crossing
+    { cx: -22.5,  cz:  -0.25, hx: 0.3,   hz: 5.75  },
+    { cx: -17.75, cz:  -6.0,  hx: 4.75,  hz: 0.3   },
   ];
-  private readonly PILLAR_RADIUS = 0.7; // Same as PillarCollision.tsx
+  private readonly WALL_PLAYER_RADIUS = 0.5;
 
   private checkPillarCollision(position: Vector3): { hasCollision: boolean; normal: Vector3; pillarCenter: Vector3 } {
-    for (const pillarPos of this.PILLAR_POSITIONS) {
-      // Only check horizontal distance (ignore Y)
-      const horizontalPos = new Vector3(position.x, 0, position.z);
-      const pillarHorizontal = new Vector3(pillarPos.x, 0, pillarPos.z);
-      const distance = horizontalPos.distanceTo(pillarHorizontal);
-      
-      if (distance < this.PILLAR_RADIUS) {
-        // Calculate normal vector pointing away from pillar center
-        const normal = horizontalPos.clone().sub(pillarHorizontal).normalize();
-        // Handle case where player is exactly at pillar center
-        if (normal.length() === 0) {
-          normal.set(1, 0, 0); // Default direction
+    // No standalone pillars remain — delegate to wall AABB check so that charge
+    // ability is cancelled when hitting any castle wall segment.
+    const wallResult = this.checkWallCollision(position);
+    return {
+      hasCollision: wallResult.hasCollision,
+      normal: wallResult.normal,
+      pillarCenter: new Vector3(position.x, 0, position.z),
+    };
+  }
+
+  private checkWallCollision(position: Vector3): { hasCollision: boolean; normal: Vector3 } {
+    const r = this.WALL_PLAYER_RADIUS;
+    for (const wall of this.WALL_SEGMENTS) {
+      const dx = Math.abs(position.x - wall.cx);
+      const dz = Math.abs(position.z - wall.cz);
+      if (dx < wall.hx + r && dz < wall.hz + r) {
+        // Find the axis with the smallest overlap to determine the push normal
+        const overlapX = (wall.hx + r) - dx;
+        const overlapZ = (wall.hz + r) - dz;
+        let normal: Vector3;
+        if (overlapX < overlapZ) {
+          normal = new Vector3(position.x > wall.cx ? 1 : -1, 0, 0);
+        } else {
+          normal = new Vector3(0, 0, position.z > wall.cz ? 1 : -1);
         }
-        return {
-          hasCollision: true,
-          normal: normal,
-          pillarCenter: pillarPos.clone()
-        };
+        return { hasCollision: true, normal };
       }
     }
-    
-    return { hasCollision: false, normal: new Vector3(), pillarCenter: new Vector3() };
+    return { hasCollision: false, normal: new Vector3() };
   }
 
   private getWorldSpaceDirection(inputDirection: Vector3): Vector3 {

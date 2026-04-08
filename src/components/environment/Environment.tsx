@@ -13,6 +13,8 @@ import CustomSkeleton from './CustomSkeleton';
 import StylizedGrass from './StylizedGrass';
 import InstancedForest from './InstancedForest';
 import StoneGround from './StoneGround';
+import CastleWalls from './CastleWalls';
+import CastleWallCollision from './CastleWallCollision';
 
 import { generateMountains } from '@/utils/MountainGenerator';
 import { World } from '@/ecs/World';
@@ -132,7 +134,12 @@ const Environment: React.FC<EnvironmentProps> = ({
         <PillarCollision world={world} positions={pillarPositions} />
       )}
 
- 
+      {/* Castle walls — L-shaped ruins around each of the 4 camps, single draw call */}
+      <CastleWalls />
+
+      {/* ECS BOX colliders for castle walls — blocks player + enemies (only if world is provided) */}
+      {world && <CastleWallCollision world={world} />}
+
     </group>
   );
 };

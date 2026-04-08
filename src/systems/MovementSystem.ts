@@ -177,8 +177,8 @@ export class MovementSystem extends System {
     const horizontalPosition = new Vector3(potentialPosition.x, 0, potentialPosition.z);
     const distanceFromCenter = horizontalPosition.length();
     
-    // Check for pillar collisions first
-    const pillarCollision = this.checkPillarCollision(potentialPosition);
+    // Check for wall collisions first
+    const wallCollision = this.checkWallCollision(potentialPosition);
     
     if (distanceFromCenter >= MAP_RADIUS) {
       // If we hit the boundary, calculate tangent movement for smooth sliding
@@ -202,16 +202,16 @@ export class MovementSystem extends System {
         currentPosition.y + deltaPosition.y, // Allow vertical movement (jumping, falling)
         newHorizontalPosition.z
       );
-    } else if (pillarCollision.hasCollision) {
-      // Handle pillar collision with smooth sliding
-      const slidePosition = this.calculatePillarSliding(currentPosition, deltaPosition, pillarCollision);
+    } else if (wallCollision.hasCollision) {
+      // Handle wall collision with smooth sliding along the wall face
+      const slidePosition = this.calculateWallSliding(currentPosition, deltaPosition, wallCollision);
       transform.setPosition(slidePosition.x, slidePosition.y, slidePosition.z);
       
-      // Reduce velocity in the direction of the pillar to prevent bouncing
-      const velocityNormalComponent = movement.velocity.clone().projectOnVector(pillarCollision.normal);
+      // Cancel velocity component into the wall to prevent bouncing
+      const velocityNormalComponent = movement.velocity.clone().projectOnVector(wallCollision.normal);
       movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
     } else {
-      // If within bounds and no pillar collision, move normally
+      // If within bounds and no wall collision, move normally
       transform.translate(deltaPosition.x, deltaPosition.y, deltaPosition.z);
     }
 
@@ -219,65 +219,65 @@ export class MovementSystem extends System {
     transform.matrixNeedsUpdate = true;
   }
 
-  // Define pillar positions (same as in Environment.tsx)
-  private readonly PILLAR_POSITIONS = [
-    new Vector3(0, 0, -5),        // Front pillar
-    new Vector3(-4.25, 0, 2.5),   // Left pillar
-    new Vector3(4.25, 0, 2.5)     // Right pillar
+  // Castle wall AABB segments — mirrors CastleWalls.tsx WALL_SEGMENTS (half-extents)
+  private readonly WALL_SEGMENTS = [
+    // Camp 1 · NE Ruins
+    { cx: 13.25,  cz: -12.5,  hx: 4.25,  hz: 0.3   },
+    { cx: 17.5,   cz:  -9.5,  hx: 0.3,   hz: 3.0   },
+    // Camp 2 · East Outpost
+    { cx: 19.25,  cz:  -2.0,  hx: 3.25,  hz: 0.3   },
+    { cx: 22.5,   cz:   2.0,  hx: 0.3,   hz: 4.0   },
+    // Camp 3 · South Grove
+    { cx:  6.0,   cz:  18.5,  hx: 4.5,   hz: 0.3   },
+    { cx: 10.5,   cz:  15.25, hx: 0.3,   hz: 3.25  },
+    // Camp 4 · West Crossing
+    { cx: -22.5,  cz:  -0.25, hx: 0.3,   hz: 5.75  },
+    { cx: -17.75, cz:  -6.0,  hx: 4.75,  hz: 0.3   },
   ];
-  private readonly PILLAR_RADIUS = 0.7; // Same as PillarCollision.tsx
+  private readonly WALL_PLAYER_RADIUS = 0.5;
 
-  private checkPillarCollision(position: Vector3): { hasCollision: boolean; normal: Vector3; pillarCenter: Vector3 } {
-    for (const pillarPos of this.PILLAR_POSITIONS) {
-      // Only check horizontal distance (ignore Y)
-      const horizontalPos = new Vector3(position.x, 0, position.z);
-      const pillarHorizontal = new Vector3(pillarPos.x, 0, pillarPos.z);
-      const distance = horizontalPos.distanceTo(pillarHorizontal);
-      
-      if (distance < this.PILLAR_RADIUS) {
-        // Calculate normal vector pointing away from pillar center
-        const normal = horizontalPos.clone().sub(pillarHorizontal).normalize();
-        // Handle case where player is exactly at pillar center
-        if (normal.length() === 0) {
-          normal.set(1, 0, 0); // Default direction
-        }
-        return {
-          hasCollision: true,
-          normal: normal,
-          pillarCenter: pillarPos.clone()
-        };
+  private checkWallCollision(position: Vector3): { hasCollision: boolean; normal: Vector3; wallIndex: number } {
+    const r = this.WALL_PLAYER_RADIUS;
+    for (let i = 0; i < this.WALL_SEGMENTS.length; i++) {
+      const wall = this.WALL_SEGMENTS[i];
+      const dx = Math.abs(position.x - wall.cx);
+      const dz = Math.abs(position.z - wall.cz);
+      if (dx < wall.hx + r && dz < wall.hz + r) {
+        // Push along the axis with the smallest overlap (correct face normal)
+        const overlapX = (wall.hx + r) - dx;
+        const overlapZ = (wall.hz + r) - dz;
+        const normal = overlapX < overlapZ
+          ? new Vector3(position.x > wall.cx ? 1 : -1, 0, 0)
+          : new Vector3(0, 0, position.z > wall.cz ? 1 : -1);
+        return { hasCollision: true, normal, wallIndex: i };
       }
     }
-    
-    return { hasCollision: false, normal: new Vector3(), pillarCenter: new Vector3() };
+    return { hasCollision: false, normal: new Vector3(), wallIndex: -1 };
   }
 
-  private calculatePillarSliding(currentPosition: Vector3, deltaPosition: Vector3, collision: { normal: Vector3; pillarCenter: Vector3 }): Vector3 {
-    // Calculate the tangent vector (perpendicular to normal in XZ plane)
+  private calculateWallSliding(currentPosition: Vector3, deltaPosition: Vector3, collision: { normal: Vector3; wallIndex: number }): Vector3 {
+    // Tangent = perpendicular to the (axis-aligned) face normal — allows sliding along the wall
     const tangent = new Vector3(-collision.normal.z, 0, collision.normal.x);
-    
-    // Project the movement vector onto the tangent for sliding
     const tangentMovement = deltaPosition.clone().projectOnVector(tangent);
-    
-    // Calculate the new position with sliding movement
+
     const slidePosition = currentPosition.clone().add(tangentMovement);
-    
-    // Ensure we maintain minimum distance from pillar center
-    const pillarHorizontal = new Vector3(collision.pillarCenter.x, 0, collision.pillarCenter.z);
-    const slideHorizontal = new Vector3(slidePosition.x, 0, slidePosition.z);
-    const distanceAfterSlide = slideHorizontal.distanceTo(pillarHorizontal);
-    
-    if (distanceAfterSlide < this.PILLAR_RADIUS) {
-      // Push the position to maintain minimum distance
-      const pushDirection = slideHorizontal.clone().sub(pillarHorizontal).normalize();
-      if (pushDirection.length() === 0) {
-        pushDirection.set(1, 0, 0); // Default direction
+
+    // After sliding, re-check and push out if we're still inside the AABB
+    const wall = this.WALL_SEGMENTS[collision.wallIndex];
+    if (!wall) return slidePosition;
+
+    const r = this.WALL_PLAYER_RADIUS;
+    const sdx = Math.abs(slidePosition.x - wall.cx);
+    const sdz = Math.abs(slidePosition.z - wall.cz);
+    if (sdx < wall.hx + r && sdz < wall.hz + r) {
+      // Push out along the same normal
+      if (collision.normal.x !== 0) {
+        slidePosition.x = wall.cx + collision.normal.x * (wall.hx + r);
+      } else {
+        slidePosition.z = wall.cz + collision.normal.z * (wall.hz + r);
       }
-      const correctedHorizontal = pillarHorizontal.clone().add(pushDirection.multiplyScalar(this.PILLAR_RADIUS));
-      slidePosition.x = correctedHorizontal.x;
-      slidePosition.z = correctedHorizontal.z;
     }
-    
+
     return slidePosition;
   }
 
