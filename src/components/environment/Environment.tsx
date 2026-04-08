@@ -66,8 +66,7 @@ const Environment: React.FC<EnvironmentProps> = ({
     }
     // Default triangle formation for regular gameplay
     return [
-      [0, 0, 22.5],        // Front pillar
-      [-7.25, 0, 21],   // Left pillar
+
     ];
   }, [isPVP, pvpPillarPositions]);
 

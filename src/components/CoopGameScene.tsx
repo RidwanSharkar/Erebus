@@ -10,7 +10,14 @@ import KnightRenderer from './enemies/KnightRenderer';
 import KnightDeathVortex from './enemies/KnightDeathVortex';
 import ShadeRenderer from './enemies/ShadeRenderer';
 import ShadeDaggerProjectile from './enemies/ShadeDaggerProjectile';
+import ViperRenderer from './enemies/ViperRenderer';
+import ViperArrowProjectile from './enemies/ViperArrowProjectile';
+import TemplarRenderer from './enemies/TemplarRenderer';
 import WarlockRenderer from './enemies/WarlockRenderer';
+import WeaverRenderer from './enemies/WeaverRenderer';
+import WeaverHealEffect from './enemies/WeaverHealEffect';
+import GhoulRenderer from './enemies/GhoulRenderer';
+import GhoulSummonRitual from './enemies/GhoulSummonRitual';
 import WarlockProjectile from './enemies/WarlockProjectile';
 import WarlockFlameStrike from './enemies/WarlockFlameStrike';
 import Meteor from './enemies/Meteor';
@@ -805,6 +812,29 @@ const [maxMana, setMaxMana] = useState(150);
     position: Vector3;
   }
   const [warlockFlameStrikes, setWarlockFlameStrikes] = useState<WarlockFlameStrikeState[]>([]);
+
+  // Viper arrow projectile state — one entry per in-flight arrow
+  interface ViperArrowState {
+    id: string;
+    startPosition: Vector3;
+    targetPosition: Vector3;
+    damage: number;
+  }
+  const [viperArrows, setViperArrows] = useState<ViperArrowState[]>([]);
+
+  // Weaver heal VFX — one entry per active heal burst
+  interface WeaverHealEffectState {
+    id: string;
+    position: Vector3;
+  }
+  const [weaverHealEffects, setWeaverHealEffects] = useState<WeaverHealEffectState[]>([]);
+
+  // Ghoul summon ritual circle VFX — one entry per active ritual
+  interface GhoulSummonRitualState {
+    id: string;
+    position: Vector3;
+  }
+  const [ghoulSummonRituals, setGhoulSummonRituals] = useState<GhoulSummonRitualState[]>([]);
 
   // Function to create enemy taunt effect (for Deathgrasp)
   const createEnemyTauntEffect = useCallback((enemyId: string, duration: number = 10000) => {
@@ -3337,6 +3367,47 @@ const hasMana = useCallback((amount: number) => {
       }
     };
 
+    const handleTemplarAttack = (data: any) => {
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+
+        const statData = playerStatDataRef.current;
+        const damageReduction = statData ? StatSystem.getDamageReduction(statData.stats) : 0;
+        const reducedDamage = damageReduction > 0
+          ? Math.max(1, Math.round(data.damage * (1 - damageReduction)))
+          : data.damage;
+
+        health.takeDamage(reducedDamage, Date.now() / 1000, playerEntity, false);
+
+        if (playerEntity) {
+          const transform = playerEntity.getComponent(Transform);
+          if (transform) {
+            const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+            if (damageNumberManager && damageNumberManager.addDamageNumber) {
+              const pos = transform.position.clone();
+              pos.y -= 0.5;
+              damageNumberManager.addDamageNumber(reducedDamage, false, pos, 'physical', true);
+            }
+          }
+        }
+
+        if (shield) {
+          updatePlayerShield(shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.templarId);
+        }
+      }
+    };
+
     const handlePlayerAnimationState = (data: any) => {
       
       
@@ -4126,6 +4197,7 @@ const hasMana = useCallback((amount: number) => {
     socket.on('boss-teleport', handleBossTeleport);
     socket.on('boss-skeleton-attack', handleBossSkeletonAttack);
     socket.on('knight-attack', handleKnightAttack);
+    socket.on('templar-attack', handleTemplarAttack);
     socket.on('enemy-status-effect', handleEnemyStatusEffect);
     socket.on('knight-death-vortex', handleKnightDeathVortex);
     socket.on('shade-attack-telegraph', handleShadeAttackTelegraph);
@@ -4140,11 +4212,23 @@ const hasMana = useCallback((amount: number) => {
       targetPosition: { x: number; y: number; z: number };
       damage: number;
     }) => {
-      const start  = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
-      const target = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
+      const start       = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
+      // Server-computed target at the time of telegraph — used as fallback.
+      const staleTarget = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
 
-      // Spawn the orb once the launch animation's wind-up has finished
+      // Spawn the orb once the launch animation's wind-up has finished.
+      // Sample the live player position at the moment of release so the initial
+      // aim is accurate even if the player moved during the 1.4 s wind-up.
       setTimeout(() => {
+        let target = staleTarget.clone();
+        if (playerEntity) {
+          const t = playerEntity.getComponent(Transform);
+          if (t) {
+            // Keep server Y for vertical aim; update X/Z from live position.
+            target = new Vector3(t.position.x, data.targetPosition.y, t.position.z);
+          }
+        }
+
         setWarlockProjectiles(prev => [
           ...prev,
           {
@@ -4198,6 +4282,124 @@ const hasMana = useCallback((amount: number) => {
 
     socket.on('warlock-flame-strike', handleWarlockFlameStrike);
 
+    // How long the draw-bow animation plays before the arrow is released.
+    // This should match the viper_drawbow.glb clip length (approx 1 second).
+    const VIPER_DRAWBOW_DURATION = 1000;
+
+    const handleViperAttackTelegraph = (data: {
+      viperId: string;
+      targetPlayerId: string;
+      startPosition: { x: number; y: number; z: number };
+      targetPosition: { x: number; y: number; z: number };
+      damage: number;
+    }) => {
+      const start = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
+      // Sample the player's live position at the moment of release for better tracking.
+      const staleTarget = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
+
+      setTimeout(() => {
+        let target = staleTarget.clone();
+        if (playerEntity) {
+          const t = playerEntity.getComponent(Transform);
+          if (t) {
+            target = new Vector3(t.position.x, data.targetPosition.y, t.position.z);
+          }
+        }
+
+        setViperArrows(prev => [
+          ...prev,
+          {
+            id: `viper-arrow-${data.viperId}-${Date.now()}`,
+            startPosition: start.clone(),
+            targetPosition: target,
+            damage: data.damage,
+          },
+        ]);
+      }, VIPER_DRAWBOW_DURATION);
+    };
+
+    socket.on('viper-attack-telegraph', handleViperAttackTelegraph);
+
+    // ── Ghoul attack (melee damage to local player) ──────────────────────────
+    const handleGhoulAttack = (data: any) => {
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+
+        const statData = playerStatDataRef.current;
+        const damageReduction = statData ? StatSystem.getDamageReduction(statData.stats) : 0;
+        const reducedDamage = damageReduction > 0
+          ? Math.max(1, Math.round(data.damage * (1 - damageReduction)))
+          : data.damage;
+
+        health.takeDamage(reducedDamage, Date.now() / 1000, playerEntity, false);
+
+        if (playerEntity) {
+          const transform = playerEntity.getComponent(Transform);
+          if (transform) {
+            const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+            if (damageNumberManager && damageNumberManager.addDamageNumber) {
+              const pos = transform.position.clone();
+              pos.y -= 0.5;
+              damageNumberManager.addDamageNumber(reducedDamage, false, pos, 'physical', true);
+            }
+          }
+        }
+
+        if (shield) {
+          updatePlayerShield(shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.ghoulId);
+        }
+      }
+    };
+
+    // ── Weaver heal VFX ───────────────────────────────────────────────────────
+    const handleWeaverHealTelegraph = (data: {
+      weaverId: string;
+      targetEnemyId: string;
+      targetPosition: { x: number; y: number; z: number };
+    }) => {
+      // Delay heal burst to match cast animation finish (~1.8s)
+      setTimeout(() => {
+        const pos = new Vector3(data.targetPosition.x, data.targetPosition.y + 0.5, data.targetPosition.z);
+        setWeaverHealEffects(prev => [
+          ...prev,
+          { id: `weaver-heal-${data.weaverId}-${Date.now()}`, position: pos },
+        ]);
+      }, 1800);
+    };
+
+    // ── Weaver summon telegraph — spawn ritual circle at cast start ───────────
+    // The backend now includes ritualPosition in the telegraph so the circle
+    // appears on the ground the moment the weaver begins the cast animation.
+    const handleWeaverSummonTelegraph = (data: {
+      weaverId: string;
+      ritualPosition: { x: number; y: number; z: number };
+    }) => {
+      if (!data.ritualPosition) return; // Guard for older server versions
+      const ritualPos = new Vector3(
+        data.ritualPosition.x,
+        data.ritualPosition.y,
+        data.ritualPosition.z
+      );
+      setGhoulSummonRituals(prev => [
+        ...prev,
+        { id: `ghoul-ritual-${data.weaverId}-${Date.now()}`, position: ritualPos },
+      ]);
+    };
+
+    socket.on('ghoul-attack', handleGhoulAttack);
+    socket.on('weaver-heal-telegraph', handleWeaverHealTelegraph);
+    socket.on('weaver-summon-telegraph', handleWeaverSummonTelegraph);
 
     return () => {
       socket.off('player-attacked', handlePlayerAttack);
@@ -4223,11 +4425,16 @@ const hasMana = useCallback((amount: number) => {
       socket.off('boss-teleport', handleBossTeleport);
       socket.off('boss-skeleton-attack', handleBossSkeletonAttack);
       socket.off('knight-attack', handleKnightAttack);
+      socket.off('templar-attack', handleTemplarAttack);
       socket.off('enemy-status-effect', handleEnemyStatusEffect);
       socket.off('knight-death-vortex', handleKnightDeathVortex);
       socket.off('shade-attack-telegraph', handleShadeAttackTelegraph);
       socket.off('warlock-attack-telegraph', handleWarlockAttackTelegraph);
       socket.off('warlock-flame-strike', handleWarlockFlameStrike);
+      socket.off('viper-attack-telegraph', handleViperAttackTelegraph);
+      socket.off('ghoul-attack', handleGhoulAttack);
+      socket.off('weaver-heal-telegraph', handleWeaverHealTelegraph);
+      socket.off('weaver-summon-telegraph', handleWeaverSummonTelegraph);
     };
   }, [socket, playerEntity]);
 
@@ -5878,6 +6085,22 @@ const hasMana = useCallback((amount: number) => {
         );
       })}
 
+      {/* Templars (Co-op Mode) — heavy melee fighters with alternating attack animations */}
+      {Array.from(enemies.values()).map(enemy => {
+        if (enemy.type !== 'templar') return null;
+        return (
+          <TemplarRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={new Vector3(enemy.position.x, enemy.position.y, enemy.position.z)}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+          />
+        );
+      })}
+
       {/* Warlock Chaos Orb Projectiles */}
       {warlockProjectiles.map(orb => (
         <WarlockProjectile
@@ -5912,6 +6135,100 @@ const hasMana = useCallback((amount: number) => {
           key={strike.id}
           position={strike.position}
           onComplete={() => setWarlockFlameStrikes(prev => prev.filter(s => s.id !== strike.id))}
+        />
+      ))}
+
+      {/* Vipers (Co-op Mode) — ranged archers that draw and release energy arrows */}
+      {Array.from(enemies.values()).map(enemy => {
+        if (enemy.type !== 'viper') return null;
+        return (
+          <ViperRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={new Vector3(enemy.position.x, enemy.position.y, enemy.position.z)}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+          />
+        );
+      })}
+
+      {/* Viper Energy Arrow Projectiles */}
+      {viperArrows.map(arrow => (
+        <ViperArrowProjectile
+          key={arrow.id}
+          startPosition={arrow.startPosition}
+          targetPosition={arrow.targetPosition}
+          damage={arrow.damage}
+          getPlayerPosition={() => {
+            if (!playerEntity) return null;
+            const t = playerEntity.getComponent(Transform);
+            return t ? t.position.clone() : null;
+          }}
+          onHitPlayer={() => {
+            if (!playerEntity) return;
+            const deathState = playerDeathStates.get(socket?.id ?? '');
+            if (deathState?.isDead) return;
+            const health = playerEntity.getComponent(Health);
+            if (!health) return;
+            const wasAlive = !health.isDead;
+            health.takeDamage(arrow.damage, Date.now() / 1000, playerEntity, false);
+            if (wasAlive && health.isDead && socket?.id) {
+              handlePlayerDeath(socket.id, 'viper-arrow');
+            }
+          }}
+          onComplete={() => setViperArrows(prev => prev.filter(a => a.id !== arrow.id))}
+        />
+      ))}
+
+      {/* Weavers (Co-op Mode) — support spellcasters that heal allies and summon ghouls */}
+      {Array.from(enemies.values()).map(enemy => {
+        if (enemy.type !== 'weaver') return null;
+        return (
+          <WeaverRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={new Vector3(enemy.position.x, enemy.position.y, enemy.position.z)}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+          />
+        );
+      })}
+
+      {/* Weaver Heal VFX */}
+      {weaverHealEffects.map(effect => (
+        <WeaverHealEffect
+          key={effect.id}
+          position={effect.position}
+          onComplete={() => setWeaverHealEffects(prev => prev.filter(e => e.id !== effect.id))}
+        />
+      ))}
+
+      {/* Ghouls (Co-op Mode) — weaver summons; melee undead creatures */}
+      {Array.from(enemies.values()).map(enemy => {
+        if (enemy.type !== 'ghoul') return null;
+        return (
+          <GhoulRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={new Vector3(enemy.position.x, enemy.position.y, enemy.position.z)}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+          />
+        );
+      })}
+
+      {/* Ghoul Summon Ritual Circles */}
+      {ghoulSummonRituals.map(ritual => (
+        <GhoulSummonRitual
+          key={ritual.id}
+          position={ritual.position}
+          onComplete={() => setGhoulSummonRituals(prev => prev.filter(r => r.id !== ritual.id))}
         />
       ))}
 

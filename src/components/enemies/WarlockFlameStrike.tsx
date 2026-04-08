@@ -10,7 +10,7 @@ interface WarlockFlameStrikeProps {
 }
 
 const DURATION     = 1.1;  // seconds — total effect lifetime
-const PILLAR_COUNT = 7;    // centre + 6 ring pillars
+const PILLAR_COUNT = 6;    // centre + 6 ring pillars
 
 interface PillarCfg {
   x: number;

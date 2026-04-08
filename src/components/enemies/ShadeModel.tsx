@@ -18,7 +18,7 @@ useGLTF.preload('/models/shade_throw.glb');
 
 // Doubled from the knight baseline (0.0135) since the shade GLB geometry
 // is smaller than the knight's — this brings it to a similar in-world size.
-const SCALE = 0.0325;
+const SCALE = 0.0375;
 
 export default function ShadeModel({ isWalking, isAttacking, isBlinking: _isBlinking, isDying }: ShadeModelProps) {
   const sceneGroupRef = useRef<Group>(null);

@@ -16,7 +16,7 @@ useGLTF.preload('/models/warlock_blink.glb');
 useGLTF.preload('/models/warlock_launch.glb');
 
 // Starting scale — adjust if the warlock GLB geometry differs significantly from the knight (0.0135)
-const SCALE = 0.0115;
+const SCALE = 0.0125;
 
 export default function WarlockModel({ isBlinking, isLaunching, isDying }: WarlockModelProps) {
   const sceneGroupRef = useRef<Group>(null);

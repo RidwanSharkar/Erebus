@@ -46,6 +46,19 @@ class EnemyAI {
 
     // Shade blink+attack cooldown tracking (4-second cooldown)
     this.shadeBlinkCooldown = new Map(); // enemyId -> lastBlinkTime
+
+    // Viper arrow shot cooldown tracking (2-second cooldown)
+    this.viperAttackCooldown = new Map(); // enemyId -> lastAttackTime
+
+    // Weaver ability cooldown tracking
+    this.weaverHealCooldown   = new Map(); // enemyId -> lastHealTime
+    this.weaverSummonCooldown = new Map(); // enemyId -> lastSummonTime
+
+    // Weaver summoned ghoul tracking (1 ghoul per weaver at a time)
+    this.weaverSummonedGhouls = new Map(); // weaverId -> ghoulId | null
+
+    // Ghoul attack cooldown tracking
+    this.ghoulAttackCooldown = new Map(); // enemyId -> lastAttackTime
   }
 
   setRoom(room) {
@@ -81,6 +94,11 @@ class EnemyAI {
     this.warlockBlinkCooldown.clear();
     this.warlockLaunchCooldown.clear();
     this.shadeBlinkCooldown.clear();
+    this.viperAttackCooldown.clear();
+    this.weaverHealCooldown.clear();
+    this.weaverSummonCooldown.clear();
+    this.weaverSummonedGhouls.clear();
+    this.ghoulAttackCooldown.clear();
   }
 
   updateAI() {
@@ -129,6 +147,30 @@ class EnemyAI {
     // Special handling for warlocks
     if (enemy.type === 'warlock') {
       this.updateWarlockAI(enemy, players);
+      return;
+    }
+
+    // Special handling for vipers
+    if (enemy.type === 'viper') {
+      this.updateViperAI(enemy, players);
+      return;
+    }
+
+    // Special handling for templars
+    if (enemy.type === 'templar') {
+      this.updateTemplarAI(enemy, players);
+      return;
+    }
+
+    // Special handling for weavers
+    if (enemy.type === 'weaver') {
+      this.updateWeaverAI(enemy, players);
+      return;
+    }
+
+    // Special handling for ghouls (weaver summons)
+    if (enemy.type === 'ghoul') {
+      this.updateGhoulAI(enemy, players);
       return;
     }
 
@@ -584,7 +626,7 @@ class EnemyAI {
 
     // ── Blink (5-second cooldown) ─────────────────────────────────────────────
     // Teleports 5 units closer to the target; plays blink animation on clients.
-    const blinkCooldown = 5000;
+    const blinkCooldown = 8000;
     const lastBlinkTime = this.warlockBlinkCooldown.get(warlock.id) || 0;
 
     if (now - lastBlinkTime >= blinkCooldown && distance > 3) {
@@ -594,7 +636,7 @@ class EnemyAI {
 
     // ── Launch (6-second cooldown) ───────────────────────────────────────────
     // Fires a large chaotic projectile at the target's current position.
-    const launchRange    = 11.0; // Slightly more than shade attack range (9.0)
+    const launchRange    = 14.0; // Slightly more than shade attack range (9.0)
     const launchCooldown = 6000;
     const lastLaunchTime = this.warlockLaunchCooldown.get(warlock.id) || 0;
 
@@ -613,7 +655,7 @@ class EnemyAI {
     const len = Math.sqrt(dx * dx + dz * dz);
     if (len === 0) return;
 
-    const blinkDist = 5; // Teleport 5 units closer
+    const blinkDist = 7; // Teleport 5 units closer
     const endPosition = {
       x: warlock.position.x + (dx / len) * blinkDist,
       y: warlock.position.y,
@@ -645,7 +687,7 @@ class EnemyAI {
         warlockId: warlock.id,
         position:  endPosition,
         damage:    50,
-        radius:    2.5,
+        radius:    3.0,
         timestamp: Date.now()
       });
     }
@@ -667,12 +709,489 @@ class EnemyAI {
           y: targetPlayer.position.y + 1.0,
           z: targetPlayer.position.z,
         },
-        damage: 100,
+        damage: 60,
         timestamp: Date.now()
       });
     }
 
     console.log(`🔮 Warlock ${warlock.id} launching chaotic orb at player ${targetPlayer.id}!`);
+  }
+
+  // ─── Templar AI ──────────────────────────────────────────────────────────────
+
+  updateTemplarAI(templar, players) {
+    let aggroData = this.enemyAggro.get(templar.id);
+    if (!aggroData) {
+      const closestPlayer = this.findClosestPlayer(templar, players);
+      if (!closestPlayer) return;
+      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100 };
+      this.enemyAggro.set(templar.id, aggroData);
+    }
+
+    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
+    if (!targetPlayer || targetPlayer.health <= 0) {
+      const newTarget = this.findClosestPlayer(templar, players);
+      if (newTarget) {
+        aggroData.targetPlayerId = newTarget.id;
+        targetPlayer = newTarget;
+      } else {
+        return;
+      }
+    }
+
+    const distance      = this.calculateDistance(templar.position, targetPlayer.position);
+    const attackRange   = 2.6;
+    const attackCooldown = templar.attackCooldown ?? 2000; // Slightly faster than knight (2500 ms)
+    const aggroRadius   = 6;
+    const leashRadius   = aggroRadius * 3;
+
+    if (!aggroData.isAggroed && distance <= aggroRadius) {
+      aggroData.isAggroed = true;
+    } else if (aggroData.isAggroed && distance > leashRadius) {
+      aggroData.isAggroed = false;
+    }
+
+    if (!aggroData.isAggroed) return;
+
+    if (distance <= attackRange) {
+      if (!this.bossAttackCooldown.has(templar.id)) {
+        this.bossAttackCooldown.set(templar.id, 0);
+      }
+
+      const lastAttackTime = this.bossAttackCooldown.get(templar.id);
+      const now = Date.now();
+
+      if (now - lastAttackTime >= attackCooldown) {
+        this.bossAttackCooldown.set(templar.id, now);
+        this.telegraphTemplarAttack(templar, targetPlayer);
+
+        setTimeout(() => {
+          if (templar.isDying || !this.room?.getGameStarted()) return;
+
+          const currentPlayers = this.room?.getPlayers();
+          if (!currentPlayers) return;
+
+          const currentTarget = currentPlayers.find(p => p.id === targetPlayer.id);
+          if (!currentTarget || currentTarget.health <= 0) return;
+
+          const currentDistance = this.calculateDistance(templar.position, currentTarget.position);
+          if (currentDistance <= attackRange) {
+            this.templarAttackPlayer(templar, currentTarget);
+          } else {
+            console.log(`🛡️ Templar ${templar.id} swing missed — player dodged!`);
+          }
+        }, 1000);
+      }
+    } else {
+      this.moveEnemyTowardsTarget(templar, targetPlayer);
+    }
+  }
+
+  telegraphTemplarAttack(templar, player) {
+    if (this.io) {
+      this.io.to(this.roomId).emit('templar-attack-telegraph', {
+        templarId: templar.id,
+        targetPlayerId: player.id,
+        position: templar.position,
+        timestamp: Date.now()
+      });
+    }
+    console.log(`🛡️ Templar ${templar.id} telegraphing attack at player ${player.id}!`);
+  }
+
+  templarAttackPlayer(templar, player) {
+    const damage = templar.damage || 60;
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('templar-attack', {
+        templarId: templar.id,
+        targetPlayerId: player.id,
+        damage: damage,
+        position: templar.position,
+        timestamp: Date.now()
+      });
+    }
+
+    console.log(`🛡️ Templar ${templar.id} attacked player ${player.id} for ${damage} damage!`);
+  }
+
+  // ─── Viper AI ────────────────────────────────────────────────────────────────
+
+  updateViperAI(viper, players) {
+    let aggroData = this.enemyAggro.get(viper.id);
+    if (!aggroData) {
+      const closestPlayer = this.findClosestPlayer(viper, players);
+      if (!closestPlayer) return;
+      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100 };
+      this.enemyAggro.set(viper.id, aggroData);
+    }
+
+    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
+    if (!targetPlayer || targetPlayer.health <= 0) {
+      const newTarget = this.findClosestPlayer(viper, players);
+      if (newTarget) {
+        aggroData.targetPlayerId = newTarget.id;
+        targetPlayer = newTarget;
+      } else {
+        return;
+      }
+    }
+
+    const distance    = this.calculateDistance(viper.position, targetPlayer.position);
+    const attackRange = 13.0; // Long-range archer
+    const aggroRadius = 9;
+    const leashRadius = aggroRadius * 3;
+
+    if (!aggroData.isAggroed && distance <= aggroRadius) {
+      aggroData.isAggroed = true;
+    } else if (aggroData.isAggroed && distance > leashRadius) {
+      aggroData.isAggroed = false;
+    }
+
+    if (!aggroData.isAggroed) return;
+
+    // Always face the target while aggroed.
+    const dx = targetPlayer.position.x - viper.position.x;
+    const dz = targetPlayer.position.z - viper.position.z;
+    viper.rotation = Math.atan2(dx, dz);
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-moved', {
+        enemyId:   viper.id,
+        position:  viper.position,
+        rotation:  viper.rotation,
+        timestamp: Date.now()
+      });
+    }
+
+    if (distance <= attackRange) {
+      // In range — check the 2-second attack cooldown.
+      const attackCooldown = viper.attackCooldown ?? 5000;
+      const lastAttackTime = this.viperAttackCooldown.get(viper.id) || 0;
+      const now = Date.now();
+
+      if (now - lastAttackTime >= attackCooldown) {
+        this.viperAttackCooldown.set(viper.id, now);
+        this.telegraphViperAttack(viper, targetPlayer);
+      }
+    } else {
+      // Out of range — close the distance.
+      this.moveEnemyTowardsTarget(viper, targetPlayer);
+    }
+  }
+
+  telegraphViperAttack(viper, targetPlayer) {
+    if (this.io) {
+      this.io.to(this.roomId).emit('viper-attack-telegraph', {
+        viperId:  viper.id,
+        targetPlayerId: targetPlayer.id,
+        // Launch arrow from chest height of the viper model.
+        startPosition: {
+          x: viper.position.x,
+          y: viper.position.y + 1.5,
+          z: viper.position.z
+        },
+        targetPosition: {
+          x: targetPlayer.position.x,
+          y: targetPlayer.position.y + 1.0,
+          z: targetPlayer.position.z
+        },
+        damage:    70,
+        timestamp: Date.now()
+      });
+    }
+    console.log(`🐍 Viper ${viper.id} drawing bow at player ${targetPlayer.id}!`);
+  }
+
+  // ─── Weaver AI ───────────────────────────────────────────────────────────────
+
+  updateWeaverAI(weaver, players) {
+    let aggroData = this.enemyAggro.get(weaver.id);
+    if (!aggroData) {
+      const closestPlayer = this.findClosestPlayer(weaver, players);
+      if (!closestPlayer) return;
+      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100 };
+      this.enemyAggro.set(weaver.id, aggroData);
+    }
+
+    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
+    if (!targetPlayer || targetPlayer.health <= 0) {
+      const newTarget = this.findClosestPlayer(weaver, players);
+      if (newTarget) {
+        aggroData.targetPlayerId = newTarget.id;
+        targetPlayer = newTarget;
+      } else {
+        return;
+      }
+    }
+
+    const distance    = this.calculateDistance(weaver.position, targetPlayer.position);
+    const aggroRadius = 9;
+    const leashRadius = aggroRadius * 3;
+
+    if (!aggroData.isAggroed && distance <= aggroRadius) {
+      aggroData.isAggroed = true;
+    } else if (aggroData.isAggroed && distance > leashRadius) {
+      aggroData.isAggroed = false;
+    }
+
+    if (!aggroData.isAggroed) return;
+
+    // Always face the nearest player while aggroed.
+    const dx = targetPlayer.position.x - weaver.position.x;
+    const dz = targetPlayer.position.z - weaver.position.z;
+    weaver.rotation = Math.atan2(dx, dz);
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-moved', {
+        enemyId:   weaver.id,
+        position:  weaver.position,
+        rotation:  weaver.rotation,
+        timestamp: Date.now()
+      });
+    }
+
+    const now = Date.now();
+
+    // ── Summon Ghoul (30-second cooldown; max 1 active ghoul) ────────────────
+    const summonCooldown = 30000;
+    const lastSummonTime = this.weaverSummonCooldown.get(weaver.id) || 0;
+    const activeGhoulId  = this.weaverSummonedGhouls.get(weaver.id);
+    const ghoulAlive     = activeGhoulId && this.room?.enemies.has(activeGhoulId) &&
+                           !this.room?.enemies.get(activeGhoulId)?.isDying;
+
+    if (!ghoulAlive && now - lastSummonTime >= summonCooldown) {
+      this.weaverSummonCooldown.set(weaver.id, now);
+      this.weaverCastSummon(weaver);
+    }
+
+    // ── Heal (5-second cooldown) ─────────────────────────────────────────────
+    const healCooldown   = 5000;
+    const healRange      = 10.0;
+    const lastHealTime   = this.weaverHealCooldown.get(weaver.id) || 0;
+
+    if (now - lastHealTime >= healCooldown) {
+      const healTarget = this.findLowestHpPercentEnemy(weaver, healRange);
+      if (healTarget) {
+        this.weaverHealCooldown.set(weaver.id, now);
+        this.weaverCastHeal(weaver, healTarget);
+      }
+    }
+
+    // Move toward target player (stay at moderate range)
+    const preferredRange = 8.0; // Weaver keeps distance
+    if (distance > preferredRange) {
+      this.moveEnemyTowardsTarget(weaver, targetPlayer);
+    }
+  }
+
+  // Find the allied enemy (not a player) within healRange of the weaver that has
+  // the lowest current HP percentage, skipping dying/dead enemies and the weaver itself.
+  findLowestHpPercentEnemy(weaver, range) {
+    if (!this.room) return null;
+
+    let lowestPct  = Infinity;
+    let bestTarget = null;
+
+    this.room.getEnemies().forEach(enemy => {
+      if (enemy.id === weaver.id) return;
+      if (enemy.isDying || enemy.health <= 0) return;
+      if (enemy.health >= enemy.maxHealth) return; // Already full — no point healing
+
+      const dist = this.calculateDistance(weaver.position, enemy.position);
+      if (dist > range) return;
+
+      const pct = enemy.health / enemy.maxHealth;
+      if (pct < lowestPct) {
+        lowestPct  = pct;
+        bestTarget = enemy;
+      }
+    });
+
+    return bestTarget;
+  }
+
+  weaverCastHeal(weaver, targetEnemy) {
+    // Face the heal target
+    const dx = targetEnemy.position.x - weaver.position.x;
+    const dz = targetEnemy.position.z - weaver.position.z;
+    weaver.rotation = Math.atan2(dx, dz);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('weaver-heal-telegraph', {
+        weaverId:       weaver.id,
+        targetEnemyId:  targetEnemy.id,
+        targetPosition: { ...targetEnemy.position },
+        timestamp:      Date.now()
+      });
+    }
+    console.log(`🧵 Weaver ${weaver.id} casting Heal on ${targetEnemy.id} (HP: ${targetEnemy.health}/${targetEnemy.maxHealth})`);
+
+    // After cast animation (~1.8s) apply the actual heal.
+    setTimeout(() => {
+      if (weaver.isDying || !this.room?.getGameStarted()) return;
+
+      const liveEnemy = this.room?.getEnemy(targetEnemy.id);
+      if (!liveEnemy || liveEnemy.isDying || liveEnemy.health <= 0) return;
+
+      const healAmount    = 150;
+      const previousHp    = liveEnemy.health;
+      liveEnemy.health    = Math.min(liveEnemy.maxHealth, liveEnemy.health + healAmount);
+      const actualHeal    = liveEnemy.health - previousHp;
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-healed', {
+          enemyId:    liveEnemy.id,
+          healAmount: actualHeal,
+          newHealth:  liveEnemy.health,
+          maxHealth:  liveEnemy.maxHealth,
+          timestamp:  Date.now()
+        });
+      }
+      console.log(`🧵 Weaver ${weaver.id} healed ${liveEnemy.id} for ${actualHeal} HP (${previousHp} -> ${liveEnemy.health})`);
+    }, 1800);
+  }
+
+  weaverCastSummon(weaver) {
+    if (!this.room) return;
+
+    // Ritual circle spawns 2–3 units in front/side of weaver
+    const angle    = weaver.rotation + (Math.random() - 0.5) * (Math.PI / 3);
+    const distance = 2.5 + Math.random() * 1.5;
+
+    const ritualPosition = {
+      x: weaver.position.x + Math.sin(angle) * distance,
+      y: 0,
+      z: weaver.position.z + Math.cos(angle) * distance,
+    };
+
+    // Broadcast summon animation telegraph — include ritual position so the
+    // client can place the ritual circle immediately at cast start.
+    if (this.io) {
+      this.io.to(this.roomId).emit('weaver-summon-telegraph', {
+        weaverId:       weaver.id,
+        ritualPosition: { ...ritualPosition },
+        timestamp:      Date.now()
+      });
+    }
+    console.log(`🧵 Weaver ${weaver.id} beginning summon ritual…`);
+
+    // After the cast animation (~3s), spawn the ghoul
+    setTimeout(() => {
+      if (weaver.isDying || !this.room?.getGameStarted()) return;
+
+      const ghoulId = `ghoul-${weaver.id}-${Date.now()}`;
+
+      const ghoul = {
+        id:        ghoulId,
+        type:      'ghoul',
+        position:  { ...ritualPosition },
+        rotation:  weaver.rotation,
+        health:    500,
+        maxHealth: 500,
+        isDying:   false,
+        damage:    30,
+        attackCooldown: 2000,
+        moveSpeed: 2.5,
+        summonerId: weaver.id,
+      };
+
+      this.weaverSummonedGhouls.set(weaver.id, ghoulId);
+      this.room.addEnemy(ghoul);
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('weaver-ghoul-summoned', {
+          weaverId:       weaver.id,
+          ghoul,
+          ritualPosition: { ...ritualPosition },
+          timestamp:      Date.now()
+        });
+      }
+      console.log(`🧵 Weaver ${weaver.id} summoned ghoul ${ghoulId} at ritual circle!`);
+    }, 3000);
+  }
+
+  // ─── Ghoul AI ────────────────────────────────────────────────────────────────
+
+  updateGhoulAI(ghoul, players) {
+    let aggroData = this.enemyAggro.get(ghoul.id);
+    if (!aggroData) {
+      const closestPlayer = this.findClosestPlayer(ghoul, players);
+      if (!closestPlayer) return;
+      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100, isAggroed: true };
+      this.enemyAggro.set(ghoul.id, aggroData);
+    }
+
+    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
+    if (!targetPlayer || targetPlayer.health <= 0) {
+      const newTarget = this.findClosestPlayer(ghoul, players);
+      if (newTarget) {
+        aggroData.targetPlayerId = newTarget.id;
+        targetPlayer = newTarget;
+      } else {
+        return;
+      }
+    }
+
+    const distance      = this.calculateDistance(ghoul.position, targetPlayer.position);
+    const attackRange   = 2.4;
+    const attackCooldown = ghoul.attackCooldown ?? 2000;
+
+    if (distance <= attackRange) {
+      if (!this.ghoulAttackCooldown.has(ghoul.id)) {
+        this.ghoulAttackCooldown.set(ghoul.id, 0);
+      }
+
+      const lastAttackTime = this.ghoulAttackCooldown.get(ghoul.id);
+      const now = Date.now();
+
+      if (now - lastAttackTime >= attackCooldown) {
+        this.ghoulAttackCooldown.set(ghoul.id, now);
+        this.telegraphGhoulAttack(ghoul, targetPlayer);
+
+        setTimeout(() => {
+          if (ghoul.isDying || !this.room?.getGameStarted()) return;
+
+          const currentPlayers = this.room?.getPlayers();
+          if (!currentPlayers) return;
+
+          const currentTarget = currentPlayers.find(p => p.id === targetPlayer.id);
+          if (!currentTarget || currentTarget.health <= 0) return;
+
+          const currentDistance = this.calculateDistance(ghoul.position, currentTarget.position);
+          if (currentDistance <= attackRange) {
+            this.ghoulAttackPlayer(ghoul, currentTarget);
+          }
+        }, 900);
+      }
+    } else {
+      this.moveEnemyTowardsTarget(ghoul, targetPlayer);
+    }
+  }
+
+  telegraphGhoulAttack(ghoul, player) {
+    if (this.io) {
+      this.io.to(this.roomId).emit('ghoul-attack-telegraph', {
+        ghoulId:       ghoul.id,
+        targetPlayerId: player.id,
+        position:       ghoul.position,
+        timestamp:      Date.now()
+      });
+    }
+    console.log(`💀 Ghoul ${ghoul.id} telegraphing attack at player ${player.id}!`);
+  }
+
+  ghoulAttackPlayer(ghoul, player) {
+    const damage = ghoul.damage || 30;
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('ghoul-attack', {
+        ghoulId:       ghoul.id,
+        targetPlayerId: player.id,
+        damage,
+        position: ghoul.position,
+        timestamp: Date.now()
+      });
+    }
+    console.log(`💀 Ghoul ${ghoul.id} attacked player ${player.id} for ${damage} damage!`);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1278,6 +1797,10 @@ class EnemyAI {
       case 'boss-skeleton': return 1.75;
       case 'shade':   return 2.0;
       case 'warlock': return 0.0; // Stationary — moves only via blink
+      case 'viper':   return 2.0;
+      case 'templar': return 3.5;
+      case 'weaver':  return 2.0;
+      case 'ghoul':   return 2.5;
       default: return 2.0;
     }
   }
@@ -1340,6 +1863,19 @@ class EnemyAI {
     this.warlockBlinkCooldown.delete(enemyId);
     this.warlockLaunchCooldown.delete(enemyId);
     this.shadeBlinkCooldown.delete(enemyId);
+    this.viperAttackCooldown.delete(enemyId);
+    this.weaverHealCooldown.delete(enemyId);
+    this.weaverSummonCooldown.delete(enemyId);
+    this.weaverSummonedGhouls.delete(enemyId);
+    this.ghoulAttackCooldown.delete(enemyId);
+
+    // If a ghoul dies, clear it from its summoner's slot so the weaver can resummon
+    this.weaverSummonedGhouls.forEach((ghoulId, weaverId) => {
+      if (ghoulId === enemyId) {
+        this.weaverSummonedGhouls.set(weaverId, null);
+        console.log(`🧵 Weaver ${weaverId} ghoul ${enemyId} died — resummon available`);
+      }
+    });
   }
 
   // Apply taunt effect to enemy (Wraithblade ability)

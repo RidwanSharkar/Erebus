@@ -16,7 +16,7 @@ import {
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const TREE_COUNT = 25;
+const TREE_COUNT = 50;
 
 // 3 overlapping sphere tiers making a rounded deciduous blob
 // yFrac = how far up within the canopy radius to offset the center
@@ -236,8 +236,8 @@ interface InstancedForestProps {
 // ---------------------------------------------------------------------------
 const InstancedForest: React.FC<InstancedForestProps> = ({
   count        = TREE_COUNT,
-  innerRadius  = 15,
-  outerRadius  = 31,
+  innerRadius  = 10,
+  outerRadius  = 51,
   windStrength = 0.5,
   trunkDark    = '#3d2b1f',
   trunkLight   = '#6b4a34',

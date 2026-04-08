@@ -203,7 +203,7 @@ class GameRoom {
   initializeCamps() {
     const camps = GameRoom.CAMP_POSITIONS;
     const soulTypes = ['green', 'red', 'blue', 'purple'];
-    const randomTypes = ['knight', 'shade', 'warlock'];
+    const randomTypes = ['knight', 'shade', 'warlock', 'viper', 'templar', 'weaver'];
 
     const soulStats = {
       green:  { health: 1350, maxHealth: 1350, damage: 25,  attackCooldown: 2500, moveSpeed: 2.0 },
@@ -252,7 +252,7 @@ class GameRoom {
             attackCooldown: 3500,
             moveSpeed: 2.0,
           };
-        } else {
+        } else if (type === 'warlock') {
           enemy = {
             id: `warlock-${campIndex}-${slotIndex}-${Date.now()}`,
             type: 'warlock',
@@ -263,6 +263,45 @@ class GameRoom {
             isDying: false,
             damage: 100,
             moveSpeed: 0,
+          };
+        } else if (type === 'templar') {
+          enemy = {
+            id: `templar-${campIndex}-${slotIndex}-${Date.now()}`,
+            type: 'templar',
+            position: { x: pos.x, y: pos.y, z: pos.z },
+            rotation: 0,
+            health: 1000,
+            maxHealth: 1000,
+            isDying: false,
+            damage: 60,
+            attackCooldown: 2000,
+            moveSpeed: 3.5,
+          };
+        } else if (type === 'weaver') {
+          enemy = {
+            id: `weaver-${campIndex}-${slotIndex}-${Date.now()}`,
+            type: 'weaver',
+            position: { x: pos.x, y: pos.y, z: pos.z },
+            rotation: 0,
+            health: 700,
+            maxHealth: 700,
+            isDying: false,
+            damage: 0,
+            moveSpeed: 2.0,
+          };
+        } else {
+          // viper
+          enemy = {
+            id: `viper-${campIndex}-${slotIndex}-${Date.now()}`,
+            type: 'viper',
+            position: { x: pos.x, y: pos.y, z: pos.z },
+            rotation: 0,
+            health: 650,
+            maxHealth: 650,
+            isDying: false,
+            damage: 70,
+            attackCooldown: 5000,
+            moveSpeed: 2.0,
           };
         }
 
@@ -605,6 +644,137 @@ class GameRoom {
               enemyId: enemyId,
               timestamp: Date.now()
             });
+          }
+        }, 2500);
+
+        return result;
+
+      } else if (enemy.type === 'templar') {
+        // Award EXP for templar kills
+        if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
+          this.io.to(this.roomId).emit('player-experience-gained', {
+            playerId: fromPlayerId,
+            experienceGained: 75,
+            source: 'templar_kill',
+            enemyId: enemyId,
+            timestamp: Date.now()
+          });
+        }
+
+        // Templar kills count toward the boss-spawn threshold
+        if (!this.bossSpawned) {
+          this.skeletonKillCount++;
+          console.log(`🛡️ Templar killed (${this.skeletonKillCount}/15)`);
+
+          if (this.io) {
+            this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
+              skeletonKillCount: this.skeletonKillCount,
+              required: 15,
+              timestamp: Date.now()
+            });
+          }
+
+          if (this.skeletonKillCount >= 15) {
+            console.log('🛡️🛡️🛡️ Kill threshold reached — Boss is appearing!');
+            this.spawnBoss();
+            this.bossSpawned = true;
+          }
+        }
+
+        // Slightly higher item drop chance than shade/warlock
+        if (Math.random() < 0.20) {
+          this.spawnItemDrop(enemy.position);
+        }
+
+        // Stop AI immediately; delay removal for client fade-out.
+        if (this.enemyAI) {
+          this.enemyAI.removeEnemyAggro(enemyId);
+        }
+
+        setTimeout(() => {
+          this.enemies.delete(enemyId);
+          console.log(`🗑️ Templar ${enemyId} removed from enemies map after death fade`);
+
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-removed', {
+              enemyId: enemyId,
+              timestamp: Date.now()
+            });
+          }
+        }, 2500);
+
+        return result;
+
+      } else if (enemy.type === 'weaver') {
+        // Award EXP for weaver kills
+        if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
+          this.io.to(this.roomId).emit('player-experience-gained', {
+            playerId: fromPlayerId,
+            experienceGained: 80,
+            source: 'weaver_kill',
+            enemyId: enemyId,
+            timestamp: Date.now()
+          });
+        }
+
+        if (!this.bossSpawned) {
+          this.skeletonKillCount++;
+          console.log(`🧵 Weaver killed (${this.skeletonKillCount}/15)`);
+
+          if (this.io) {
+            this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
+              skeletonKillCount: this.skeletonKillCount,
+              required: 15,
+              timestamp: Date.now()
+            });
+          }
+
+          if (this.skeletonKillCount >= 15) {
+            console.log('🧵🧵🧵 Kill threshold reached — Boss is appearing!');
+            this.spawnBoss();
+            this.bossSpawned = true;
+          }
+        }
+
+        if (Math.random() < 0.18) {
+          this.spawnItemDrop(enemy.position);
+        }
+
+        if (this.enemyAI) {
+          this.enemyAI.removeEnemyAggro(enemyId);
+        }
+
+        setTimeout(() => {
+          this.enemies.delete(enemyId);
+          console.log(`🗑️ Weaver ${enemyId} removed from enemies map after death fade`);
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-removed', { enemyId, timestamp: Date.now() });
+          }
+        }, 2500);
+
+        return result;
+
+      } else if (enemy.type === 'ghoul') {
+        // Award EXP for ghoul kills
+        if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
+          this.io.to(this.roomId).emit('player-experience-gained', {
+            playerId: fromPlayerId,
+            experienceGained: 40,
+            source: 'ghoul_kill',
+            enemyId: enemyId,
+            timestamp: Date.now()
+          });
+        }
+
+        if (this.enemyAI) {
+          this.enemyAI.removeEnemyAggro(enemyId);
+        }
+
+        setTimeout(() => {
+          this.enemies.delete(enemyId);
+          console.log(`🗑️ Ghoul ${enemyId} removed from enemies map after death fade`);
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-removed', { enemyId, timestamp: Date.now() });
           }
         }, 2500);
 

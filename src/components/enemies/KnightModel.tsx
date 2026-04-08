@@ -21,10 +21,10 @@ useGLTF.preload('/models/knight_walk.glb');
 useGLTF.preload('/models/knight_attack.glb');
 useGLTF.preload('/models/knight_attack2.glb');
 useGLTF.preload('/models/knight_death.glb');
-
+ 
 // GLB geometry is in centimeters (bboxMax Y ≈ 172.5 cm).
 // Target ≈ 2 game units tall → 2 / 172.5 ≈ 0.0116
-const SCALE = 0.0135;
+const SCALE = 0.015;
 
 export default function KnightModel({ isWalking, isAttacking, attackVariant, isDying }: KnightModelProps) {
   // This ref is the root handed to useAnimations so the mixer can find bones

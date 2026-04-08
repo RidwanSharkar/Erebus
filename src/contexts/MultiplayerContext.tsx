@@ -540,6 +540,19 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
+    // Update enemy health when a Weaver heals an ally
+    addEventHandler('enemy-healed', (data) => {
+      setEnemies(prev => {
+        const updated = new Map(prev);
+        const enemy = updated.get(data.enemyId);
+        if (enemy) {
+          enemy.health    = data.newHealth;
+          enemy.maxHealth = data.maxHealth;
+        }
+        return updated;
+      });
+    });
+
     addEventHandler('kill-count-updated', (data) => {
       setKillCount(data.killCount);
     });
@@ -706,6 +719,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setEnemies(prev => {
         const updated = new Map(prev);
         updated.set(data.skeleton.id, data.skeleton);
+        return updated;
+      });
+    });
+
+    // Weaver summons a ghoul — add it to the enemies map so it renders.
+    addEventHandler('weaver-ghoul-summoned', (data) => {
+      setEnemies(prev => {
+        const updated = new Map(prev);
+        updated.set(data.ghoul.id, data.ghoul);
         return updated;
       });
     });
