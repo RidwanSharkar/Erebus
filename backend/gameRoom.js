@@ -42,10 +42,10 @@ class GameRoom {
   // min/maxEnemies: total units to spawn in this camp.
   static get CAMP_TYPES() {
     return {
-      blue:   { color: 'blue',   knightSoulType: 'blue',   enemyPool: ['knight', 'weaver', 'shade', 'viper'], minEnemies: 5,  maxEnemies: 8 },
-      green:  { color: 'green',  knightSoulType: 'green',  enemyPool: ['knight', 'viper',  'weaver'],          minEnemies: 6,  maxEnemies: 7  },
-      red:    { color: 'red',    knightSoulType: 'red',    enemyPool: ['knight', 'warlock','templar'],          minEnemies: 6,  maxEnemies: 7  },
-      purple: { color: 'purple', knightSoulType: 'purple', enemyPool: ['knight', 'warlock','shade'],            minEnemies: 7,  maxEnemies: 8 },
+      blue:   { color: 'blue',   knightSoulType: 'blue',   enemyPool: ['knight', 'shade', 'viper'], minEnemies: 4,  maxEnemies: 6 },
+      green:  { color: 'green',  knightSoulType: 'green',  enemyPool: ['knight', 'viper',  'weaver'],          minEnemies: 4,  maxEnemies: 5  },
+      red:    { color: 'red',    knightSoulType: 'red',    enemyPool: ['knight', 'warlock','templar'],          minEnemies: 4,  maxEnemies: 5  },
+      purple: { color: 'purple', knightSoulType: 'purple', enemyPool: ['knight', 'warlock','shade'],            minEnemies: 5,  maxEnemies: 6 },
     };
   }
 
@@ -108,7 +108,7 @@ class GameRoom {
       health: maxHealth, // Start with full health
       maxHealth: maxHealth,
       level: 1, // Start at level 1
-      essence: 50, // Start with 50 essence
+      essence: 0,
       movementDirection: { x: 0, y: 0, z: 0 },
       joinedAt: Date.now(),
       isStealthing: false, // Sabres stealth ability state

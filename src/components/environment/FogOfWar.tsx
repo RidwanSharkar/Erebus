@@ -80,7 +80,7 @@ const FogOfWar: React.FC<FogOfWarProps> = ({ playerPositionRef, discoveredCamps 
     uFogColor:     { value: new Color(0x020408) },
     uFogAlpha:     { value: 0.93 },
     uPlayerPos:    { value: new Vector3() },
-    uPlayerRadius: { value: 7.0 },
+    uPlayerRadius: { value: 12.0 },
     uEdgeSoftness: { value: 2.5 },
     uCampCenters:  { value: CAMP_DATA.map(c => new Vector2(c.x, c.z)) },
     uCampRadius:   { value: 11.0 },

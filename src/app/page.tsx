@@ -777,9 +777,6 @@ function HomeContent() {
                 maxHealth={gameState.maxHealth}
                 playerShield={gameState.playerShield}
                 maxShield={gameState.maxShield}
-                mana={gameState.mana || 150}
-                maxMana={gameState.maxMana || 150}
-                level={playerLevel}
                 controlSystem={controlSystem}
                 selectedWeapons={selectedWeapons}
                 onWeaponSwitch={(slot) => {
@@ -794,7 +791,6 @@ function HomeContent() {
                 critDamageRuneCount={getGlobalRuneCounts().critDamageRunes}
                 criticalChance={getCriticalChance()}
                 criticalDamageMultiplier={getCriticalDamageMultiplier()}
-                intellectStatPoints={statPointData.stats.intellect}
               />
             </div>
 

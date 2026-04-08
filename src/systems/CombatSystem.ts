@@ -891,10 +891,6 @@ export class CombatSystem extends System {
       // console.log(`💀 ${enemy.getDisplayName()} has been defeated!`);
 
       // Experience awards are now handled by the backend server
-      // Apply other rewards like Scythe Soul Harvest passive (+5 mana per kill)
-      if (sourcePlayerId && sourcePlayerId !== 'unknown') {
-        this.applyScythePassiveReward(sourcePlayerId);
-      }
 
       // Trigger death effects
       this.triggerDeathEffects(entity, killer);
@@ -1297,25 +1293,6 @@ export class CombatSystem extends System {
       const wasSlowedByOtherEffect = movement.movementSpeedMultiplier < 1.0;
       if (!wasSlowedByOtherEffect || movement.movementSpeedMultiplier === 0.1) { // 0.1 is typical corrupted slow value
         movement.movementSpeedMultiplier = 1.0;
-      }
-    }
-  }
-
-  private applyScythePassiveReward(sourcePlayerId: string): void {
-    // Check if Scythe passive is unlocked and current weapon is Scythe
-    const currentWeapon = this.getCurrentWeapon();
-    if (currentWeapon === WeaponType.SCYTHE) {
-      const controlSystemRef = (window as any).controlSystemRef;
-      if (controlSystemRef && controlSystemRef.current) {
-        const weaponSlot = controlSystemRef.current.selectedWeapons?.primary === WeaponType.SCYTHE ? 'primary' : 'secondary';
-        if (weaponSlot && controlSystemRef.current.isPassiveAbilityUnlocked &&
-            controlSystemRef.current.isPassiveAbilityUnlocked('P', WeaponType.SCYTHE, weaponSlot)) {
-          // Soul Harvest: +5 mana per enemy kill
-          const gameUI = (window as any).gameUI;
-          if (gameUI && gameUI.addMana) {
-            gameUI.addMana(5);
-          }
-        }
       }
     }
   }

@@ -590,7 +590,6 @@ export default function Runeblade({
     const attackRange = 5;
 
     let enemiesHitThisSwing = 0;
-    let rageGainedThisSwing = 0;
 
     enemyData.forEach(enemy => {
       if (!enemy.health || enemy.health <= 0) return;
@@ -630,14 +629,6 @@ export default function Runeblade({
       }
     });
 
-    if (enemiesHitThisSwing > 0) {
-      const gameUI = (window as any).gameUI;
-      if (gameUI) {
-        const rageToGain = Math.min(enemiesHitThisSwing * 5, 5);
-        gameUI.gainRage(rageToGain);
-        rageGainedThisSwing = rageToGain;
-      }
-    }
   };
 
   // Create custom runeblade shape

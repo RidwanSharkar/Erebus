@@ -115,12 +115,6 @@ export class ControlSystem extends System {
   // Callback for WraithStrike ability
   private onWraithStrikeCallback?: (position: Vector3, direction: Vector3) => void;
 
-  // Callback for Runeblade mana consumption
-  private onConsumeManaCallback?: (amount: number) => boolean;
-
-  // Callback for Runeblade mana checking
-  private onCheckManaCallback?: (amount: number) => boolean;
-
   // Callback for creating Sabre Reaper Mist effect
   private onCreateSabreMistEffectCallback?: (position: Vector3) => void;
 
@@ -176,7 +170,6 @@ export class ControlSystem extends System {
   private lastIcebeamTime = 0;
   private icebeamCooldown = 1.0; // 1 second cooldown
   private onIcebeamStateChangeCallback?: (isActive: boolean) => void;
-  private lastIcebeamManaConsumeTime = 0; // Track last mana consumption for Icebeam
   private lastViperStingTime = 0;
   private lastFrostNovaTime = 0; // Separate tracking for Frost Nova ability
   private lastCobraShotTime = 0; // Separate tracking for Cobra Shot ability
@@ -365,9 +358,7 @@ export class ControlSystem extends System {
 
   // Corrupted Aura ability state (Runeblade)
   private corruptedAuraActive = false;
-  private lastManaDrainTime = 0;
   private corruptedAuraRange = 2.0; 
-  private corruptedAuraManaCost = 18; // 12 mana per second
   private corruptedAuraSlowEffect = 0.5; // 50% slow (multiply movement speed by this)
   private corruptedAuraSlowedEntities = new Map<number, boolean>(); // Track slowed entities
 
@@ -512,26 +503,6 @@ export class ControlSystem extends System {
     // Update deflect barrier position if active
     this.updateDeflectBarrier(playerTransform);
 
-    // Handle Icebeam mana consumption (16 mana per second)
-    if (this.isIcebeaming) {
-      const currentTime = Date.now() / 1000; // Convert to seconds for consistency with other abilities
-      const timeSinceLastConsume = currentTime - this.lastIcebeamManaConsumeTime;
-
-      // Consume mana every 0.1 seconds (1.6 mana per consumption = 16 per second)
-      if (timeSinceLastConsume >= 0.1) {
-        const gameUI = (window as any).gameUI;
-        if (gameUI) {
-          const manaCost = 4; // 1.6 mana every 0.1 seconds = 16 per second
-          const manaConsumed = gameUI.consumeMana(manaCost);
-          if (manaConsumed) {
-            this.lastIcebeamManaConsumeTime = currentTime;
-          } else {
-            // Not enough mana - stop Icebeam
-            this.stopIcebeam();
-          }
-        }
-      }
-    }
   }
 
   private handleMovementInput(movement: Movement): void {
@@ -835,13 +806,11 @@ export class ControlSystem extends System {
   }
 
   private applyScythePassive(weaponSlot: 'primary' | 'secondary'): void {
-    // Soul Harvest: Gain 5 mana per enemy kill (handled in CombatSystem when enemies die)
-    // This is a global effect that doesn't need specific application
+    // Cryoflame: modifies primary attack - passive, no additional setup needed
   }
 
   private applyRunebladePassive(weaponSlot: 'primary' | 'secondary'): void {
-    // Arcane Mastery: -10% mana costs (handled in mana consumption methods)
-    // This is a global effect that doesn't need specific application
+    // Bloodpact: heals for 15% of attack damage dealt (handled in CombatSystem)
   }
 
   private resetAllPassiveEffects(): void {
@@ -990,10 +959,8 @@ export class ControlSystem extends System {
           return; // On cooldown
         }
 
-        // Start Icebeam (mana check happens in update loop)
         this.isIcebeaming = true;
         this.icebeamStartTime = Date.now();
-        this.lastIcebeamManaConsumeTime = Date.now() / 1000; // Initialize mana consumption timer in seconds
 
         // Apply movement and camera speed debuffs
         const playerMovement = this.playerEntity?.getComponent(Movement);
@@ -1051,8 +1018,6 @@ export class ControlSystem extends System {
     this.isIcebeaming = false;
     this.icebeamStartTime = 0;
     this.lastIcebeamTime = Date.now() / 1000; // Set cooldown
-    this.lastIcebeamManaConsumeTime = 0; // Reset mana consumption timer
-
     // Remove movement and camera speed debuffs
     const playerMovement = this.playerEntity?.getComponent(Movement);
     if (playerMovement) {
@@ -1166,21 +1131,6 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check if player has enough mana (30 mana cost)
-    const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastCrossentropyBolt()) {
-      return;
-    }
-
-    // Consume mana
-    if (gameUI) {
-      const manaBefore = gameUI.getCurrentMana();
-      const manaConsumed = gameUI.consumeMana(30);
-      if (!manaConsumed) {
-        return;
-      }
-    }
-
     this.isCrossentropyCharging = true;
     this.crossentropyChargeProgress = 0;
     this.lastCrossentropyTime = currentTime;
@@ -1235,24 +1185,6 @@ export class ControlSystem extends System {
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastSummonTotemTime < this.summonTotemFireRate) {
       return;
-    }
-
-    // Check if player has enough mana (75 mana cost for Summon Totem)
-    const gameUI = (window as any).gameUI;
-    if (gameUI) {
-      const currentMana = gameUI.getCurrentMana();
-      if (currentMana < 75) {
-        return;
-      }
-    }
-
-    // Consume mana
-    if (gameUI) {
-      const manaBefore = gameUI.getCurrentMana();
-      const manaConsumed = gameUI.consumeMana(75);
-      if (!manaConsumed) {
-        return;
-      }
     }
 
     this.lastSummonTotemTime = currentTime;
@@ -1456,20 +1388,6 @@ export class ControlSystem extends System {
     const weaponSlot: 'primary' | 'secondary' = this.currentWeapon === this.selectedWeapons?.primary ? 'primary' : 'secondary';
     const isCryoflameUnlocked = this.isPassiveAbilityUnlocked('P', WeaponType.SCYTHE, weaponSlot);
     
-    // Check if player has enough mana (15 mana cost)
-    const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastEntropicBolt()) {
-      return;
-    }
-    
-    // Consume mana
-    if (gameUI) {
-      const manaConsumed = gameUI.consumeMana(10);
-      if (!manaConsumed) {
-        return;
-      }
-    }
-    
     // Offset projectile spawn position slightly forward to avoid collision with player
     const spawnPosition = position.clone();
     spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
@@ -1552,24 +1470,6 @@ export class ControlSystem extends System {
     }
     this.lastReanimateTime = currentTime;
     
-    // Check if player has enough mana (20 mana cost - doubled from 10)
-    const gameUI = (window as any).gameUI;
-    const currentMana = gameUI ? gameUI.getCurrentMana() : 0;
-    
-    if (gameUI && !gameUI.canCastReanimate()) {
-      return;
-    }
-    
-    // Consume mana
-    if (gameUI) {
-      const manaBefore = gameUI.getCurrentMana();
-      const manaConsumed = gameUI.consumeMana(30);
-      if (!manaConsumed) {
-        return;
-      }
-      const manaAfter = gameUI.getCurrentMana();
-    }
-
     // Play sunwell sound when reanimate is cast
     this.audioSystem?.playScytheSunwellSound(playerTransform.getWorldPosition());
 
@@ -1703,20 +1603,6 @@ export class ControlSystem extends System {
       return;
     }
     
-    // Check if player has enough mana (50 mana cost)
-    const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastFrostNova(50)) {
-      return;
-    }
-    
-    // Consume mana
-    if (gameUI) {
-      const manaConsumed = gameUI.consumeMana(50);
-      if (!manaConsumed) {
-        return;
-      }
-    }
-    
     this.lastFrostNovaTime = currentTime;
 
     // Play frost nova sound at the start of the ability
@@ -1747,17 +1633,6 @@ export class ControlSystem extends System {
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastCobraShotTime < this.cobraShotFireRate) {
       return;
-    }
-
-    // Check if player has enough energy (50 energy cost)
-    const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastCobraShot(60)) {
-      return;
-    }
-
-    // Consume energy
-    if (gameUI) {
-      gameUI.consumeEnergy(60);
     }
 
     this.isCobraShotCharging = true;
@@ -2075,14 +1950,6 @@ export class ControlSystem extends System {
 
   public setWraithStrikeCallback(callback: (position: Vector3, direction: Vector3) => void): void {
     this.onWraithStrikeCallback = callback;
-  }
-
-  public setConsumeManaCallback(callback: (amount: number) => boolean): void {
-    this.onConsumeManaCallback = callback;
-  }
-
-  public setCheckManaCallback(callback: (amount: number) => boolean): void {
-    this.onCheckManaCallback = callback;
   }
 
   public setCreateSabreMistEffectCallback(callback: (position: Vector3) => void): void {
@@ -2562,12 +2429,6 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check if player has enough mana (35 mana cost)
-    const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastSmite()) {
-      return;
-    }
-
     this.lastSmiteTime = currentTime;
     this.isSmiting = true;
 
@@ -2582,16 +2443,6 @@ export class ControlSystem extends System {
         playerMovement.velocity.z = 0;
         playerMovement.setMoveDirection(new Vector3(0, 0, 0), 0);
       }
-    }
-
-    // Consume mana (35 mana)
-    if (gameUI) {
-      const manaBefore = gameUI.getCurrentMana();
-      const manaConsumed = gameUI.consumeMana(40);
-      if (!manaConsumed) {
-        return;
-      }
-      const manaAfter = gameUI.getCurrentMana();
     }
 
     // Get player position and direction
@@ -2643,21 +2494,7 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check minimum rage requirement (25 rage minimum)
-    const gameUI = (window as any).gameUI;
-    if (gameUI && gameUI.getCurrentRage() < 25) {
-      return;
-    }
-
-    // Consume all rage and calculate damage
-    const rageConsumed = gameUI ? gameUI.getCurrentRage() : 0;
-    if (gameUI) {
-      gameUI.consumeAllRage();
-    }
-
-    // Calculate damage: 100 base + (30 * floor(rageConsumed / 5))
-    const extraDamage = Math.floor(rageConsumed / 5) * 30;
-    const totalDamage =  extraDamage;
+    const totalDamage = 300;
 
     this.lastColossusStrikeTime = currentTime;
     this.isColossusStriking = true;
@@ -2712,17 +2549,6 @@ export class ControlSystem extends System {
     // Check if already wind shearing or charging
     if (this.isWindShearing || this.isWindShearCharging) {
       return;
-    }
-
-    // Check if player has enough rage (10 rage cost)
-    const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastWindShear()) {
-      return;
-    }
-
-    // Consume rage
-    if (gameUI) {
-      gameUI.consumeRage(10);
     }
 
     this.isWindShearCharging = true;
@@ -2898,12 +2724,6 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check if player has enough mana (35 mana cost)
-    const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastDeathGrasp()) {
-      return;
-    }
-
     this.lastDeathGraspTime = currentTime;
     this.isDeathGrasping = true;
 
@@ -2917,15 +2737,6 @@ export class ControlSystem extends System {
         playerMovement.velocity.x = 0;
         playerMovement.velocity.z = 0;
         playerMovement.setMoveDirection(new Vector3(0, 0, 0), 0);
-      }
-    }
-
-    // Consume mana (35 mana)
-    if (gameUI) {
-      const manaBefore = gameUI.getCurrentMana();
-      const manaConsumed = gameUI.consumeMana(35);
-      if (!manaConsumed) {
-        return;
       }
     }
 
@@ -2963,12 +2774,6 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check if player has enough mana (35 mana cost)
-    const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastWraithStrike()) {
-      return;
-    }
-
     this.lastWraithStrikeTime = currentTime;
     this.isWraithStriking = true;
 
@@ -2982,15 +2787,6 @@ export class ControlSystem extends System {
         playerMovement.velocity.x = 0;
         playerMovement.velocity.z = 0;
         playerMovement.setMoveDirection(new Vector3(0, 0, 0), 0);
-      }
-    }
-
-    // Consume mana (35 mana)
-    if (gameUI) {
-      const manaBefore = gameUI.getCurrentMana();
-      const manaConsumed = gameUI.consumeMana(35);
-      if (!manaConsumed) {
-        return;
       }
     }
 
@@ -3285,12 +3081,6 @@ export class ControlSystem extends System {
       effectiveFireRate /= 1.5;
     }
 
-    // Apply Essence attack speed bonus for Spear (1% per Essence, max 100%)
-    if (this.currentWeapon === WeaponType.SPEAR) {
-      const currentEssence = (window as any).gameUI?.getCurrentEssence?.() || 0;
-      const speedMultiplier = 1 + (currentEssence / 100); // 1% per Essence
-      effectiveFireRate /= speedMultiplier; // Lower fire rate = faster attacks
-    }
     if (currentTime - this.lastSwordFireTime < effectiveFireRate) {
       return;
     }
@@ -3326,9 +3116,7 @@ export class ControlSystem extends System {
     // Get combat system to apply damage
     const combatSystem = this.world.getSystem(CombatSystem);
 
-    // Track enemies hit for rage generation
     let enemiesHit = 0;
-    let criticalHits = 0;
 
     allEntities.forEach(entity => {
       // Check if entity has enemy component and health
@@ -3345,8 +3133,6 @@ export class ControlSystem extends System {
         // Check if enemy is within attack cone
         toEnemy.normalize();
         const angle = direction.angleTo(toEnemy);
-        const angleDegrees = angle * 180 / Math.PI;
-        const maxAngleDegrees = (spearAngle / 2) * 180 / Math.PI;
 
         if (angle <= spearAngle / 2) {
           // Enemy is within attack cone - calculate distance-scaled damage
@@ -3354,17 +3140,12 @@ export class ControlSystem extends System {
             // Scale damage based on distance: 30-60 damage (0 to 6.75 units)
             const minDamage = 30;
             const maxDamage = 60;
-            const distanceRatio = Math.min(distance / spearRange, 1.0); // Clamp to max range
+            const distanceRatio = Math.min(distance / spearRange, 1.0);
             const scaledDamage = minDamage + (distanceRatio * (maxDamage - minDamage));
 
             // Calculate damage using DamageCalculator to get critical hit information
             const damageResult = calculateDamage(scaledDamage, this.currentWeapon);
             const actualDamage = damageResult.damage;
-
-            // Track critical hits for rage generation
-            if (damageResult.isCritical) {
-              criticalHits++;
-            }
 
             // Queue damage through combat system (which will route to multiplayer for enemies)
             combatSystem.queueDamage(entity, actualDamage, this.playerEntity, 'melee', this.playerEntity?.userData?.playerId, damageResult.isCritical);
@@ -3414,17 +3195,6 @@ export class ControlSystem extends System {
       }
     }
 
-    // Generate rage based on hits and critical hits
-    if (enemiesHit > 0) {
-      const gameUI = (window as any).gameUI;
-      if (gameUI) {
-        // Critical strikes give 10 rage each, regular hits give 5 rage, max 5 per swing
-        const criticalRage = criticalHits * 10;
-        const regularRage = Math.max(0, enemiesHit - criticalHits) * 5;
-        const totalRage = Math.min(criticalRage + regularRage, 5); // Max 5 rage per swing total
-        gameUI.gainRage(totalRage);
-      }
-    }
   }
 
   private performWhirlwind(playerTransform: Transform): void {
@@ -3487,14 +3257,6 @@ export class ControlSystem extends System {
     // Trigger visual effect callback
     if (this.onWhirlwindCallback) {
       this.onWhirlwindCallback(playerTransform.position.clone(), direction, chargeDamage);
-    }
-
-    // Grant Essence based on charge time (10 Essence per second of charge)
-    const whirlwindChargeTime = this.whirlwindChargeProgress * 2.0; // Whirlwind also charges for up to 2 seconds
-    const essenceGain = Math.floor(whirlwindChargeTime * 10);
-    if ((window as any).gameUI?.gainEssence) {
-      (window as any).gameUI.gainEssence(essenceGain);
-      console.log('🌪️ Gained', essenceGain, 'Essence from Whirlwind');
     }
 
     // Stop charge sound and play release sound
@@ -3636,13 +3398,6 @@ export class ControlSystem extends System {
     // Play throw sound
     this.audioSystem?.playSwordSwingSound?.(1, playerTransform.position);
 
-    // Grant Essence based on charge time (10 Essence per second of charge)
-    const essenceGain = Math.floor(chargeTime * 10);
-    if ((window as any).gameUI?.gainEssence) {
-      (window as any).gameUI.gainEssence(essenceGain);
-      console.log('🎯 Gained', essenceGain, 'Essence from Throw Spear');
-    }
-
     // Trigger the throw spear callback if set
     if (this.onThrowSpearCallback) {
       console.log('🎯 Calling onThrowSpearCallback');
@@ -3671,20 +3426,7 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check Essence cost (40 Essence)
-    const essenceCost = 40;
-    if (!(window as any).gameUI?.getCurrentEssence || (window as any).gameUI.getCurrentEssence() < essenceCost) {
-      console.log('⚔️ Not enough Essence for Flurry');
-      return;
-    }
-
     console.log('⚔️ Activating Flurry!');
-
-    // Consume Essence
-    if ((window as any).gameUI?.consumeEssence) {
-      (window as any).gameUI.consumeEssence(essenceCost);
-      console.log(`⚔️ Consumed ${essenceCost} Essence for Flurry`);
-    }
 
     // Activate Flurry
     this.isFlurryActive = true;
@@ -3723,20 +3465,7 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check Essence cost (15 Essence)
-    const essenceCost = 15;
-    if (!(window as any).gameUI?.getCurrentEssence || (window as any).gameUI.getCurrentEssence() < essenceCost) {
-      console.log('⚡ Not enough Essence for Lightning Storm');
-      return;
-    }
-
     console.log('⚡ Activating Lightning Storm!');
-
-    // Consume Essence
-    if ((window as any).gameUI?.consumeEssence) {
-      (window as any).gameUI.consumeEssence(essenceCost);
-      console.log(`⚡ Consumed ${essenceCost} Essence for Lightning Storm`);
-    }
 
     // Update cooldown
     this.lastLightningStormTime = currentTime;
@@ -3870,15 +3599,6 @@ export class ControlSystem extends System {
     if (currentTime - this.lastSkyfallTime < this.skyfallCooldown) {
       return;
     }
-    
-    // Check energy cost
-    const gameUI = (window as any).gameUI;
-    if (!gameUI || !gameUI.canCastSkyfall()) {
-      return;
-    }
-    
-    // Consume energy
-    gameUI.consumeEnergy(40);
     
     // Start Skyfall
     this.isSkyfalling = true;
@@ -4078,15 +3798,6 @@ export class ControlSystem extends System {
       return;
     }
     
-    // Check energy cost (35 energy)
-    const gameUI = (window as any).gameUI;
-    if (!gameUI || !gameUI.canCastSunder()) {
-      return;
-    }
-    
-    // Consume energy
-    gameUI.consumeEnergy(35);
-
     // Regenerate 35 shield on Sunder use
     if (this.playerEntity) {
       const shieldComponent = this.playerEntity.getComponent(Shield);
@@ -4304,15 +4015,6 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check energy cost (25 energy)
-    const gameUI = (window as any).gameUI;
-    if (!gameUI || !gameUI.canCastStealth()) {
-      return;
-    }
-
-    // Consume energy
-    gameUI.consumeEnergy(20);
-    
     // Set cooldown
     this.lastStealthTime = currentTime;
     
@@ -4474,12 +4176,6 @@ export class ControlSystem extends System {
   }
 
   private toggleCorruptedAura(playerTransform: Transform): void {
-    // Check if player has enough mana to activate (minimum 8 mana)
-    const gameUI = (window as any).gameUI;
-    if (!this.corruptedAuraActive && gameUI && !gameUI.canCastCorruptedAura()) {
-      return; // Not enough mana to activate
-    }
-
     // Toggle the aura
     this.corruptedAuraActive = !this.corruptedAuraActive;
 
@@ -4496,9 +4192,6 @@ export class ControlSystem extends System {
       // Each crit damage rune adds 15% damage, so 75% = +5 crit damage runes
       setGlobalCriticalRuneCount(currentRuneCounts.criticalRunes + 15);
       setGlobalCritDamageRuneCount(currentRuneCounts.critDamageRunes + 6);
-
-      // Reset mana drain timer when activating
-      this.lastManaDrainTime = Date.now() / 1000;
 
       // Play heartrend sound when Corrupted Aura is activated
       this.audioSystem?.playRunebladeHeartrendSound(playerTransform.position);
@@ -4520,26 +4213,6 @@ export class ControlSystem extends System {
   private updateCorruptedAuraEffects(playerTransform: Transform): void {
     const currentTime = Date.now() / 1000;
     const playerPosition = playerTransform.position;
-
-    // Handle mana draining (8 mana per second)
-    if (currentTime - this.lastManaDrainTime >= 1.0) {
-      const gameUI = (window as any).gameUI;
-        if (gameUI) {
-          const manaConsumed = gameUI.consumeMana(this.corruptedAuraManaCost);
-          if (!manaConsumed) {
-            // Not enough mana - deactivate aura and restore rune counts
-            this.corruptedAuraActive = false;
-          setGlobalCriticalRuneCount(this.originalCriticalRunes);
-          setGlobalCritDamageRuneCount(this.originalCritDamageRunes);
-          this.corruptedAuraSlowedEntities.clear();
-          if (this.onCorruptedAuraToggleCallback) {
-            this.onCorruptedAuraToggleCallback(false);
-          }
-          return;
-        }
-        this.lastManaDrainTime = currentTime;
-      }
-    }
 
     // Apply slow effect to enemies/players within range
     this.applyCorruptedAuraSlow(playerPosition, currentTime);
@@ -4657,15 +4330,6 @@ export class ControlSystem extends System {
     if (currentTime - this.lastBackstabTime < this.backstabCooldown) {
       return;
     }
-    
-    // Check energy cost
-    const gameUI = (window as any).gameUI;
-    if (!gameUI || !gameUI.canCastBackstab()) {
-      return;
-    }
-    
-    // Consume energy
-    gameUI.consumeEnergy(60);
     
     // Set cooldown
     this.lastBackstabTime = currentTime;
@@ -4888,13 +4552,6 @@ export class ControlSystem extends System {
           this.onBackstabCallback(playerTransform.position, direction, damage, isBackstab);
         }
 
-        // Refund energy if target is stunned (60 energy)
-        if (isTargetStunned) {
-          const gameUI = (window as any).gameUI;
-          if (gameUI && gameUI.gainEnergy) {
-            gameUI.gainEnergy(60);
-          }
-        }
       }
     }
   }
@@ -4936,10 +4593,6 @@ export class ControlSystem extends System {
     // Get combat system to apply damage
     const combatSystem = this.world.getSystem(CombatSystem);
     
-    // Track enemies hit for rage generation
-    let enemiesHit = 0;
-    let criticalHits = 0;
-
     allEntities.forEach(entity => {
       // Check if entity has enemy component and health
       const enemyTransform = entity.getComponent(Transform);
@@ -4950,17 +4603,11 @@ export class ControlSystem extends System {
       const toEnemy = enemyPosition.clone().sub(playerPosition);
       const distance = toEnemy.length();
 
-      // Debug logging for PVP hit detection
-
-
       // Check if enemy is within range
       if (distance <= meleeRange) {
         // Check if enemy is within attack cone
         toEnemy.normalize();
         const angle = direction.angleTo(toEnemy);
-        const angleDegrees = angle * 180 / Math.PI;
-        const maxAngleDegrees = (meleeAngle / 2) * 180 / Math.PI;
-
 
         if (angle <= meleeAngle / 2) {
           // Enemy is within attack cone - calculate damage with critical hits
@@ -4969,31 +4616,13 @@ export class ControlSystem extends System {
             const damageResult = calculateDamage(baseDamage, this.currentWeapon);
             const actualDamage = damageResult.damage;
 
-            // Track critical hits for rage generation
-            if (damageResult.isCritical) {
-              criticalHits++;
-            }
-
             // Queue damage through combat system (which will route to multiplayer for enemies)
             // Pass isCritical flag so CombatSystem doesn't recalculate critical damage
             combatSystem.queueDamage(entity, actualDamage, this.playerEntity, 'melee', this.playerEntity?.userData?.playerId, damageResult.isCritical);
-            enemiesHit++;
           }
         }
       }
     });
-
-    // Generate rage based on hits and critical hits
-    if (enemiesHit > 0) {
-      const gameUI = (window as any).gameUI;
-      if (gameUI) {
-        // Critical strikes give 10 rage each, regular hits give 5 rage, max 5 per swing
-        const criticalRage = criticalHits * 10;
-        const regularRage = Math.max(0, enemiesHit - criticalHits) * 5;
-        const totalRage = Math.min(criticalRage + regularRage, 5); // Max 5 rage per swing total
-        gameUI.gainRage(totalRage);
-      }
-    }
   }
 
   private checkForDashInput(movement: Movement, transform: Transform): void {
@@ -5200,12 +4829,6 @@ export class ControlSystem extends System {
       this.camera.getWorldDirection(direction);
       direction.normalize();
       this.onChargeCallback(playerTransform.position.clone(), direction);
-    }
-    
-    // Gain rage for using charge ability (+20 rage)
-    const gameUI = (window as any).gameUI;
-    if (gameUI) {
-      gameUI.gainRage(20);
     }
     
     // Start the charge movement using the separate charge system
@@ -5417,17 +5040,6 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check if player has enough energy (60 energy cost)
-    const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastViperSting()) {
-      return;
-    }
-
-    // Consume energy
-    if (gameUI) {
-      gameUI.consumeEnergy(60);
-    }
-
     this.isViperStingCharging = true;
     this.viperStingChargeProgress = 0;
     this.lastViperStingTime = currentTime;
@@ -5509,17 +5121,6 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check if player has enough energy (40 energy cost)
-    const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastRejuvenatingShot()) {
-      return;
-    }
-
-    // Consume energy
-    if (gameUI) {
-      gameUI.consumeEnergy(40);
-    }
-
     this.isRejuvenatingShotCharging = true;
     this.rejuvenatingShotChargeProgress = 0;
     this.lastRejuvenatingShotTime = currentTime;
@@ -5595,17 +5196,6 @@ export class ControlSystem extends System {
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastBarrageTime < this.barrageFireRate) {
       return;
-    }
-
-    // Check if player has enough energy (40 energy cost)
-    const gameUI = (window as any).gameUI;
-    if (gameUI && !gameUI.canCastBarrage()) {
-      return;
-    }
-
-    // Consume energy
-    if (gameUI) {
-      gameUI.consumeEnergy(40);
     }
 
     this.isBarrageCharging = true;

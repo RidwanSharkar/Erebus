@@ -304,13 +304,6 @@ const SwordComponent = memo(function Sword({
         }
 
 
-        // Gain rage for performing a charge attack (5 rage per charge)
-        const gameUI = (window as any).gameUI;
-        if (gameUI) {
-          const rageBefore = gameUI.getCurrentRage ? gameUI.getCurrentRage() : 'unknown';
-          gameUI.gainRage(0);
-          const rageAfter = gameUI.getCurrentRage ? gameUI.getCurrentRage() : 'unknown';
-        }
       }
 
       const elapsed = (Date.now() - chargeStartTime.current) / 1000;
@@ -834,7 +827,6 @@ const SwordComponent = memo(function Sword({
     const attackRange = 5; // Increased from 3.0
     
     let enemiesHitThisSwing = 0;
-    let rageGainedThisSwing = 0;
     
     enemyData.forEach(enemy => {
       if (!enemy.health || enemy.health <= 0) return;
@@ -889,17 +881,6 @@ const SwordComponent = memo(function Sword({
       }
     });
     
-    // Gain rage only if we hit enemies (5 rage per enemy hit, up to 5 rage per swing)
-    if (enemiesHitThisSwing > 0) {
-      const gameUI = (window as any).gameUI;
-      if (gameUI) {
-        const rageBefore = gameUI.getCurrentRage ? gameUI.getCurrentRage() : 'unknown';
-        const rageToGain = Math.min(enemiesHitThisSwing * 5, 5); // 5 rage per hit, max 5 per swing
-        gameUI.gainRage(rageToGain);
-        const rageAfter = gameUI.getCurrentRage ? gameUI.getCurrentRage() : 'unknown';
-        rageGainedThisSwing = rageToGain;
-      }
-    }
   };
 
 

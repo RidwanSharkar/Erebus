@@ -9,7 +9,7 @@ interface GhoulSummonRitualProps {
   onComplete: () => void;
 }
 
-const DURATION = 3.5; // seconds — covers the ghoul_summon animation
+const DURATION = 2.5; // seconds — covers the ghoul_summon animation
 
 export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonRitualProps) {
   const elapsed = useRef(0);

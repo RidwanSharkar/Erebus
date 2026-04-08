@@ -19,7 +19,7 @@ useGLTF.preload('/models/ghoul_attack.glb');
 useGLTF.preload('/models/ghoul_attack2.glb');
 useGLTF.preload('/models/ghoul_summon.glb');
 
-const SCALE = 0.015;
+const SCALE = 0.014;
 
 export default function GhoulModel({ isWalking, isAttacking, attackVariant, isSummoning, isDying }: GhoulModelProps) {
   const sceneGroupRef = useRef<Group>(null);

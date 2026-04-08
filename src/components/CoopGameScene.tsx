@@ -550,35 +550,8 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
   const [playerLevel, setPlayerLevel] = useState(1);
   const [lastExperienceAwardTime, setLastExperienceAwardTime] = useState(0);
 
-// Mana scaling based on player level
-const getMaxManaForWeapon = (weaponType: WeaponType, level: number): number => {
-  if (weaponType === WeaponType.RUNEBLADE) {
-    // Runeblade scaling: Level 1: 150, Level 2: 175, Level 3: 200, Level 4: 225, Level 5: 250
-    const runebladeMana = [0, 150, 175, 200, 225, 250];
-    return runebladeMana[level] || 150;
-  } else if (weaponType === WeaponType.SCYTHE) {
-    // Scythe scaling: Level 1: 250, Level 2: 275, Level 3: 300, Level 4: 325, Level 5: 350
-    return 250 + (level - 1) * 25;
-  }
-  return 200; // Default for other weapons
-};
-
-// Mana system state for weapons (persistent across weapon switches)
-const [weaponManaResources, setWeaponManaResources] = useState<{
-  [key in WeaponType]: number;
-}>({
-  [WeaponType.SCYTHE]: getMaxManaForWeapon(WeaponType.SCYTHE, 1), // Start with level 1 capacity
-  [WeaponType.SWORD]: 0,
-  [WeaponType.BOW]: 0,
-  [WeaponType.SABRES]: 0,
-  [WeaponType.RUNEBLADE]: getMaxManaForWeapon(WeaponType.RUNEBLADE, 1), // Start with level 1 capacity
-  [WeaponType.SPEAR]: 0
-});
-const [maxMana, setMaxMana] = useState(150);
-
-  // Track current weapon for mana management
+  // Track current weapon
   const [currentWeapon, setCurrentWeapon] = useState<WeaponType>(WeaponType.BOW);
-  const currentMana = weaponManaResources[currentWeapon];
 
   // PVP Reanimate Effect Management
   const [pvpReanimateEffects, setPvpReanimateEffects] = useState<Array<{
@@ -1716,8 +1689,6 @@ const [maxMana, setMaxMana] = useState(150);
       }
     }
 
-    // HOLY_RELIC: double mana regen per relic (100% increase each)
-    manaRegenMultiplierRef.current = Math.pow(2, holyCount);
   }, [inventory]);
 
   const [weaponState, setWeaponState] = useState({
@@ -1812,96 +1783,10 @@ const [maxMana, setMaxMana] = useState(150);
   // Optimized PVP effects with object pooling
   const { createOptimizedVenomEffect, createOptimizedDebuffEffect, getPoolStats } = useOptimizedPVPEffects();
 
-// Multiplier applied to all mana regeneration — set by Holy Relic boss drop
-const manaRegenMultiplierRef = useRef(1);
-
-// Mana regeneration for weapons that use mana (Scythe and Runeblade)
-useEffect(() => {
-  // Continuous mana regeneration for all weapons (resources regenerate even when not using that weapon)
-  const interval = setInterval(() => {
-    setWeaponManaResources(prev => {
-      const updated = { ...prev };
-      const mul = manaRegenMultiplierRef.current;
-
-      // Mana regeneration for Scythe (10 mana per second = 5 every 500ms)
-      const scytheMaxMana = getMaxManaForWeapon(WeaponType.SCYTHE, playerLevel);
-      if (updated[WeaponType.SCYTHE] < scytheMaxMana) {
-        updated[WeaponType.SCYTHE] = Math.min(scytheMaxMana, updated[WeaponType.SCYTHE] + 5 * mul);
-      }
-
-      // Mana regeneration for Runeblade (8 mana per second = 4 every 500ms)
-      const runebladeMaxMana = getMaxManaForWeapon(WeaponType.RUNEBLADE, playerLevel);
-      if (updated[WeaponType.RUNEBLADE] < runebladeMaxMana) {
-        updated[WeaponType.RUNEBLADE] = Math.min(runebladeMaxMana, updated[WeaponType.RUNEBLADE] + 2 * mul);
-      }
-
-      return updated;
-    });
-  }, 500);
-
-  return () => clearInterval(interval);
-}, [playerLevel]);
-
-// Handle mana capacity increase when leveling up
-useEffect(() => {
-  // When player levels up, increase mana capacity for Scythe and Runeblade
-  setWeaponManaResources(prev => {
-    const updated = { ...prev };
-    
-    // Update Scythe mana capacity
-    const scytheMaxMana = getMaxManaForWeapon(WeaponType.SCYTHE, playerLevel);
-    if (updated[WeaponType.SCYTHE] < scytheMaxMana) {
-      updated[WeaponType.SCYTHE] = scytheMaxMana; // Fill to new max capacity
-    }
-    
-    // Update Runeblade mana capacity
-    const runebladeMaxMana = getMaxManaForWeapon(WeaponType.RUNEBLADE, playerLevel);
-    if (updated[WeaponType.RUNEBLADE] < runebladeMaxMana) {
-      updated[WeaponType.RUNEBLADE] = runebladeMaxMana; // Fill to new max capacity
-    }
-    
-    return updated;
-  });
-}, [playerLevel]);
-
   // Sync currentWeapon with weaponState
   useEffect(() => {
     setCurrentWeapon(weaponState.currentWeapon);
   }, [weaponState.currentWeapon]);
-
-// Update max mana display based on current weapon and level (but don't reset the actual mana value)
-useEffect(() => {
-  if (currentWeapon === WeaponType.SCYTHE) {
-    setMaxMana(getMaxManaForWeapon(WeaponType.SCYTHE, playerLevel));
-  } else if (currentWeapon === WeaponType.RUNEBLADE) {
-    setMaxMana(getMaxManaForWeapon(WeaponType.RUNEBLADE, playerLevel));
-  } else {
-    setMaxMana(0); // No mana for other weapons
-  }
-}, [currentWeapon, playerLevel]);
-
-// Function to consume mana for weapon abilities (Scythe and Runeblade)
-const consumeMana = useCallback((amount: number) => {
-  if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
-    const currentWeaponMana = weaponManaResources[currentWeapon];
-    if (currentWeaponMana >= amount) {
-      setWeaponManaResources(prev => ({
-        ...prev,
-        [currentWeapon]: Math.max(0, prev[currentWeapon] - amount)
-      }));
-      return true; // Successfully consumed mana
-    }
-  }
-  return false; // Not enough mana or wrong weapon
-}, [currentWeapon, weaponManaResources]);
-
-// Function to check if current weapon has enough mana
-const hasMana = useCallback((amount: number) => {
-  if (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) {
-    return weaponManaResources[currentWeapon] >= amount;
-  }
-  return false; // Wrong weapon type
-}, [currentWeapon, weaponManaResources]);
 
   // Set up PVP event listeners for player actions and damage
   useEffect(() => {
@@ -5089,10 +4974,7 @@ const hasMana = useCallback((amount: number) => {
               playerShield: shieldComponent ? shieldComponent.currentShield : 0,
               maxShield: shieldComponent ? shieldComponent.maxShield : 0,
               currentWeapon: controlSystemRef.current.getCurrentWeapon(),
-              currentSubclass: controlSystemRef.current.getCurrentSubclass(),
-              // Add mana information for weapons that use mana
-              mana: (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) ? currentMana : 0,
-              maxMana: (currentWeapon === WeaponType.SCYTHE || currentWeapon === WeaponType.RUNEBLADE) ? maxMana : 0
+              currentSubclass: controlSystemRef.current.getCurrentSubclass()
             };
             onGameStateUpdate(gameState);
 
@@ -5598,10 +5480,6 @@ const hasMana = useCallback((amount: number) => {
       createPvpHauntedSoulEffect(position);
     });
 
-
-    // Set up mana callbacks for Runeblade
-    controlSystem.setConsumeManaCallback(consumeMana);
-    controlSystem.setCheckManaCallback(hasMana);
 
     // Update player entity with correct socket ID for team validation
     if (socket?.id) {
