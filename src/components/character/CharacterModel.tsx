@@ -5,7 +5,11 @@ import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 
-export type AnimState = 'Idle' | 'Run' | 'Backwards' | 'LeftStrafe' | 'RightStrafe' | 'Jump';
+export type AnimState =
+  | 'Idle' | 'Run' | 'Backwards' | 'LeftStrafe' | 'RightStrafe' | 'LeftStrafeRun' | 'RightStrafeRun'
+  | 'BackLeftStrafeRun' | 'BackRightStrafeRun'
+  | 'Jump' | 'JumpFront' | 'JumpBack'
+  | 'Cast' | 'SwordCast' | 'DrawBow' | 'ReleaseBow';
 
 interface CharacterModelProps {
   animState: AnimState;
@@ -16,11 +20,23 @@ useGLTF.preload('/models/character_run.glb');
 useGLTF.preload('/models/character_backwards.glb');
 useGLTF.preload('/models/character_leftStrafe.glb');
 useGLTF.preload('/models/character_rightStrafe.glb');
+useGLTF.preload('/models/character_leftStrafeRun.glb');
+useGLTF.preload('/models/character_rightStrafeRun.glb');
 useGLTF.preload('/models/character_jump.glb');
+useGLTF.preload('/models/character_jumpFront.glb');
+useGLTF.preload('/models/character_jumpBack.glb');
+useGLTF.preload('/models/character_cast.glb');
+useGLTF.preload('/models/character_swordCast.glb');
+useGLTF.preload('/models/character_drawBow.glb');
+useGLTF.preload('/models/character_releaseBow.glb');
 
 // Adjust if the character GLB geometry is larger or smaller than expected.
 // Standard Mixamo / Character Creator exports at ~200 units tall (cm) → 0.01 gives ~2 world units.
 const SCALE = 0.01;
+
+// Fine-tune vertical placement so the character's feet sit flush with the ground.
+// Increase (less negative) to raise, decrease (more negative) to lower.
+const Y_OFFSET = -0.25;
 
 // Crossfade durations per transition type (seconds).
 const FADE_NORMAL = 0.2;
@@ -35,7 +51,15 @@ export default function CharacterModel({ animState }: CharacterModelProps) {
   const { animations: backAnims }               = useGLTF('/models/character_backwards.glb');
   const { animations: leftAnims }               = useGLTF('/models/character_leftStrafe.glb');
   const { animations: rightAnims }              = useGLTF('/models/character_rightStrafe.glb');
+  const { animations: leftStrafeRunAnims }      = useGLTF('/models/character_leftStrafeRun.glb');
+  const { animations: rightStrafeRunAnims }     = useGLTF('/models/character_rightStrafeRun.glb');
   const { animations: jumpAnims }               = useGLTF('/models/character_jump.glb');
+  const { animations: jumpFrontAnims }          = useGLTF('/models/character_jumpFront.glb');
+  const { animations: jumpBackAnims }           = useGLTF('/models/character_jumpBack.glb');
+  const { animations: castAnims }               = useGLTF('/models/character_cast.glb');
+  const { animations: swordCastAnims }          = useGLTF('/models/character_swordCast.glb');
+  const { animations: drawBowAnims }            = useGLTF('/models/character_drawBow.glb');
+  const { animations: releaseBowAnims }         = useGLTF('/models/character_releaseBow.glb');
 
   // Clone scene so each instance owns its materials (avoids shared fade / material state).
   const clonedScene = useMemo(() => {
@@ -72,14 +96,24 @@ export default function CharacterModel({ animState }: CharacterModelProps) {
     };
 
     return [
-      ...rename(idleAnims,  'Idle'       ).map(stripRootMotionXZ),
-      ...rename(runAnims,   'Run'        ).map(stripRootMotionXZ),
-      ...rename(backAnims,  'Backwards'  ).map(stripRootMotionXZ),
-      ...rename(leftAnims,  'LeftStrafe' ).map(stripRootMotionXZ),
-      ...rename(rightAnims, 'RightStrafe').map(stripRootMotionXZ),
-      ...rename(jumpAnims,  'Jump'       ).map(stripRootMotionXZ),
+      ...rename(idleAnims,           'Idle'          ).map(stripRootMotionXZ),
+      ...rename(runAnims,            'Run'           ).map(stripRootMotionXZ),
+      ...rename(backAnims,           'Backwards'     ).map(stripRootMotionXZ),
+      ...rename(leftAnims,           'LeftStrafe'    ).map(stripRootMotionXZ),
+      ...rename(rightAnims,          'RightStrafe'   ).map(stripRootMotionXZ),
+      ...rename(leftStrafeRunAnims,  'LeftStrafeRun'     ).map(stripRootMotionXZ),
+      ...rename(rightStrafeRunAnims, 'RightStrafeRun'    ).map(stripRootMotionXZ),
+      ...rename(leftStrafeRunAnims,  'BackLeftStrafeRun' ).map(stripRootMotionXZ),
+      ...rename(rightStrafeRunAnims, 'BackRightStrafeRun').map(stripRootMotionXZ),
+      ...rename(jumpAnims,           'Jump'          ).map(stripRootMotionXZ),
+      ...rename(jumpFrontAnims,      'JumpFront'     ).map(stripRootMotionXZ),
+      ...rename(jumpBackAnims,       'JumpBack'      ).map(stripRootMotionXZ),
+      ...rename(castAnims,           'Cast'          ).map(stripRootMotionXZ),
+      ...rename(swordCastAnims,      'SwordCast'     ).map(stripRootMotionXZ),
+      ...rename(drawBowAnims,        'DrawBow'       ).map(stripRootMotionXZ),
+      ...rename(releaseBowAnims,     'ReleaseBow'    ).map(stripRootMotionXZ),
     ];
-  }, [idleAnims, runAnims, backAnims, leftAnims, rightAnims, jumpAnims]);
+  }, [idleAnims, runAnims, backAnims, leftAnims, rightAnims, leftStrafeRunAnims, rightStrafeRunAnims, jumpAnims, jumpFrontAnims, jumpBackAnims, castAnims, swordCastAnims, drawBowAnims, releaseBowAnims]);
 
   const { actions } = useAnimations(animations, sceneGroupRef);
 
@@ -95,9 +129,13 @@ export default function CharacterModel({ animState }: CharacterModelProps) {
     currentActionRef.current?.fadeOut(fadeOut);
     nextAction.enabled = true;
 
-    if (animState === 'Jump') {
+    if (animState === 'Jump' || animState === 'JumpFront' || animState === 'JumpBack' || animState === 'ReleaseBow') {
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = false;
+      nextAction.reset().fadeIn(fadeIn).play();
+    } else if (animState === 'Cast' || animState === 'SwordCast' || animState === 'DrawBow') {
+      // Always restart so the cast clip plays from the beginning on each new hold.
+      nextAction.setLoop(LoopRepeat, Infinity);
       nextAction.reset().fadeIn(fadeIn).play();
     } else {
       nextAction.setLoop(LoopRepeat, Infinity);
@@ -108,7 +146,7 @@ export default function CharacterModel({ animState }: CharacterModelProps) {
   }, [animState, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <group ref={sceneGroupRef}>
+    <group ref={sceneGroupRef} position-y={Y_OFFSET}>
       <group scale={[SCALE, SCALE, SCALE]}>
         <primitive object={clonedScene} />
       </group>

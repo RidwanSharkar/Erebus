@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
-import { universalAbilityPool, UniversalAbility, AbilityLoadout, getDefaultLoadout } from '@/utils/weaponAbilities';
+import { universalAbilityPool, UniversalAbility, AbilityLoadout, getDefaultLoadoutForWeapon } from '@/utils/weaponAbilities';
 
 interface AbilitySelectionModalProps {
   selectedWeapon: WeaponType;
@@ -45,7 +45,7 @@ const SOURCE_WEAPON_ORDER: WeaponType[] = [
 ];
 
 export default function AbilitySelectionModal({ selectedWeapon, onConfirm, onBack }: AbilitySelectionModalProps) {
-  const [loadout, setLoadout] = useState<AbilityLoadout>(getDefaultLoadout());
+  const [loadout, setLoadout] = useState<AbilityLoadout>(() => getDefaultLoadoutForWeapon(selectedWeapon));
 
   // Only show abilities that are allowed for the currently selected weapon, grouped by source
   const abilityGroups = useMemo(() => {
@@ -58,7 +58,9 @@ export default function AbilitySelectionModal({ selectedWeapon, onConfirm, onBac
       }))
       .filter(group => group.abilities.length > 0);
   }, [selectedWeapon]);
-  const [activeSlot, setActiveSlot] = useState<'Q' | 'E' | 'R' | null>('Q');
+  const defaultLoadout = getDefaultLoadoutForWeapon(selectedWeapon);
+  const initialSlot = defaultLoadout.Q === null ? 'Q' : defaultLoadout.E === null ? 'E' : defaultLoadout.R === null ? 'R' : null;
+  const [activeSlot, setActiveSlot] = useState<'Q' | 'E' | 'R' | null>(initialSlot);
   const [hoveredAbility, setHoveredAbility] = useState<UniversalAbility | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 

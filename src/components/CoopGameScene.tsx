@@ -4829,7 +4829,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
           chargeProgress: controlSystemRef.current.getChargeProgress(),
           chargeDirection: weaponStateRef.current.chargeDirection,
           isSwinging: controlSystemRef.current.isWeaponSwinging(),
-          isSpinning: (controlSystemRef.current.isWeaponCharging() || controlSystemRef.current.isCrossentropyChargingActive()) && controlSystemRef.current.getCurrentWeapon() === WeaponType.SCYTHE,
+          isSpinning: (controlSystemRef.current.isWeaponCharging() || controlSystemRef.current.isCrossentropyChargingActive() || controlSystemRef.current.isEntropicBoltActive()) && controlSystemRef.current.getCurrentWeapon() === WeaponType.SCYTHE,
           swordComboStep: controlSystemRef.current.getSwordComboStep(),
           isSwordCharging: controlSystemRef.current.isChargeActive(),
           isDeflecting: controlSystemRef.current.isDeflectActive(),
@@ -4871,8 +4871,8 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
         // Broadcast animation state changes to other players (throttled to avoid spam)
         const animationNow = Date.now();
         if (animationNow - lastAnimationBroadcast.current > 100) { // Throttle to 10 times per second
-          // Determine if scythe is spinning based on weapon type and charging state
-          const isScytheSpinning = newWeaponState.currentWeapon === WeaponType.SCYTHE && newWeaponState.isCharging;
+          // Determine if scythe is spinning (IceBeam, Crossentropy, or Entropic Bolts)
+          const isScytheSpinning = newWeaponState.isSpinning && newWeaponState.currentWeapon === WeaponType.SCYTHE;
           // Determine if sword is spinning during Charge
           const isSwordSpinning = newWeaponState.isSwordCharging;
           // Combine all spinning states
@@ -5591,6 +5591,8 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
           position={playerPosition}
           world={engineRef.current.getWorld()}
           isLocalPlayer={true}
+          currentWeapon={weaponState.currentWeapon}
+          isCharging={weaponState.isCharging}
         />
       )}
 

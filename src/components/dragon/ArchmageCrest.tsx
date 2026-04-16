@@ -174,7 +174,7 @@ export default function ArchmageCrest({
   const createWingHalf = (isLeft: boolean) => (
     <group
       ref={isLeft ? leftWingRef : rightWingRef}
-      position={[isLeft ? 0.45 : -0.45, 0.15, 0.15]}
+      position={[isLeft ? 0.45 : -0.45, 0.35, 0.15]}
       rotation={[Math.PI / 3, 0, isLeft ? Math.PI / 1.25 : -Math.PI / 1.25]}
     >
       {/* Main blade wing - large primary blade */}
@@ -185,7 +185,7 @@ export default function ArchmageCrest({
           isLeft ? Math.PI/2 + 0.375  : Math.PI/2 - 0.375,
           isLeft ? -Math.PI / 8 + 0.25 : -Math.PI / 8 + 0.25
         ]}
-        scale={[0.7, 0.35, 0.35]}
+        scale={[0.6, 0.3, 0.3]}
       >
         <mesh geometry={geometries.blade} material={materials.bladeCore}>
 

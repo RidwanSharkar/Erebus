@@ -181,9 +181,27 @@ export function getUniversalAbilityById(id: string): UniversalAbility | undefine
   return universalAbilityPool.find(a => a.id === id);
 }
 
-/** Returns a default loadout (first 3 abilities from the pool) */
+/** Returns an empty loadout (no abilities selected) */
 export function getDefaultLoadout(): AbilityLoadout {
   return { Q: null, E: null, R: null };
+}
+
+/** Returns the pre-selected default loadout for a given weapon */
+export function getDefaultLoadoutForWeapon(weapon: WeaponType): AbilityLoadout {
+  switch (weapon) {
+    case WeaponType.RUNEBLADE:
+      return { Q: 'RUNEBLADE_E', E: 'RUNEBLADE_R', R: 'RUNEBLADE_Q' }; // Wraith Strike / Colossus Strike / Aegis
+    case WeaponType.SCYTHE:
+      return { Q: 'SCYTHE_Q', E: 'SCYTHE_R', R: 'SCYTHE_F' };         // Sunwell / Crossentropy / Mantra
+    case WeaponType.SPEAR:
+      return { Q: 'SPEAR_Q', E: 'SPEAR_E', R: 'SPEAR_F' };            // Wind Shear / Tempest Sweep / Storm Shroud
+    case WeaponType.BOW:
+      return { Q: 'BOW_E', E: 'BOW_Q', R: 'BOW_R' };                  // Cobra Shot / Frostbite / Reaping Talons
+    case WeaponType.SABRES:
+      return { Q: 'SABRES_Q', E: 'SABRES_E', R: 'SABRES_R' };         // Backstab / Flourish / Divebomb
+    default:
+      return { Q: null, E: null, R: null };
+  }
 }
 
 // Weapon abilities data - extracted from HotkeyPanel for reuse

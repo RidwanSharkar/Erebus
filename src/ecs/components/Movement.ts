@@ -73,8 +73,8 @@ export class Movement extends Component {
   constructor(
     maxSpeed: number = 3.75,
     friction: number = 0.8,
-    jumpForce: number = 20.0,
-    gravity: number = -12.5
+    jumpForce: number = 35.0,
+    gravity: number = -20.5
   ) {
     super();
     
@@ -114,8 +114,8 @@ export class Movement extends Component {
     this.isDashing = false;
     this.dashDirection = new Vector3(0, 0, 0);
     this.dashStartTime = 0;
-    this.dashDuration = 0.35; // 350ms dash duration (same as old implementation)
-    this.dashDistance = 4; // Increased from 3.125 for more noticeable dash
+    this.dashDuration = 0.375; // 350ms dash duration (same as old implementation)
+    this.dashDistance = 4.5; // Increased from 3.125 for more noticeable dash
     this.dashStartPosition = new Vector3(0, 0, 0);
     
     // Initialize multiple dash charges (3 charges, each with 6s cooldown)

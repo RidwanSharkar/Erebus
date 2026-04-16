@@ -131,7 +131,7 @@ export default function Runeblade({
   const chargeSpinStartTime = useRef<number | null>(null);
   const isChargeSpinning = useRef(false);
   const shouldStartSpin = useRef(false); 
-  const basePosition = [-1.18, 0.225, 0.3] as const; // POSITIONING
+  const basePosition = [-1.18, 0.675, 0.675] as const; // POSITIONING
 
   // Chain Lightning Sparks
   const sparkParticles = useRef<Array<{

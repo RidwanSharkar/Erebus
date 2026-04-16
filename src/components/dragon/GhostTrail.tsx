@@ -149,7 +149,7 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
     }
     
     // Adjust height — base offset + optional lift for character model
-    newPos.y += 0.3 + yOffset;
+    newPos.y += -0.1 + yOffset;
 
     // Always update position history so trail starts from the right place on next dash
     positions.current.unshift(newPos);
@@ -183,7 +183,7 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
             if (el) trailsRef.current[i] = el;
           }}
         >
-          <sphereGeometry args={[0.475, 16, 16]} />
+          <sphereGeometry args={[0.5, 16, 16]} />
           <meshBasicMaterial
             color={new Color(getTrailColor())}
             transparent

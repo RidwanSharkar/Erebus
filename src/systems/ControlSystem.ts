@@ -568,7 +568,13 @@ export class ControlSystem extends System {
       worldDirection.addScaledVector(cameraForward, -inputDirection.z);
       worldDirection.normalize();
 
-      movement.setMoveDirection(worldDirection, 1.0);
+      // Walking backwards or backward-diagonal (A+S / D+S, angle > 112.5° from camera forward) is 50% speed.
+      const fwdDot    = cameraForward.dot(worldDirection);
+      const fwdCrossY = cameraForward.x * worldDirection.z - cameraForward.z * worldDirection.x;
+      const moveAngle = Math.atan2(fwdCrossY, fwdDot);
+      const backwardsMultiplier = Math.abs(moveAngle) > (5 * Math.PI) / 8 ? 0.5 : 1.0;
+
+      movement.setMoveDirection(worldDirection, backwardsMultiplier);
     } else {
       movement.setMoveDirection(new Vector3(0, 0, 0), 0);
     }
@@ -2411,6 +2417,14 @@ export class ControlSystem extends System {
 
   public isIcebeamActive(): boolean {
     return this.isIcebeaming;
+  }
+
+  // Returns true when the scythe is firing Entropic Bolts (LMB held, no IceBeam passive).
+  public isEntropicBoltActive(): boolean {
+    if (this.currentWeapon !== WeaponType.SCYTHE) return false;
+    const weaponSlot: 'primary' | 'secondary' = this.currentWeapon === this.selectedWeapons?.primary ? 'primary' : 'secondary';
+    const isIcebeamUnlocked = this.isPassiveAbilityUnlocked('P', WeaponType.SCYTHE, weaponSlot);
+    return !isIcebeamUnlocked && this.inputManager.isMouseButtonPressed(0);
   }
 
   public isWhirlwindChargingActive(): boolean {
