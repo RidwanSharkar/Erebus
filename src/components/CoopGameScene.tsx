@@ -350,6 +350,12 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
   const isInitialized = useRef(false);
   const lastAnimationBroadcast = useRef(0);
   const lastMeleeSoundTime = useRef(new Map<string, number>());
+  // Knight/Templar miss-sound scheduling: cancel timer when damage event confirms a hit
+  const knightPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const templarPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  // Alternating damage-sound variant (1 or 2) for knight and templar
+  const knightDamageVariant = useRef<1 | 2>(1);
+  const templarDamageVariant = useRef<1 | 2>(1);
   const realTimePlayerPositionRef = useRef<Vector3>(new Vector3(0, 0.5, 28));
   // Real-time position refs for enemy players to enable ghost trail updates
   const enemyPlayerPositionRefs = useRef<Map<string, { current: Vector3 }>>(new Map());
@@ -772,6 +778,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
   interface KnightDeathVortexState {
     id: string;
     position: { x: number; y: number; z: number };
+    soulType?: 'red' | 'purple' | 'green' | 'blue' | null;
   }
   const [knightDeathVortices, setKnightDeathVortices] = useState<KnightDeathVortexState[]>([]);
 
@@ -3225,8 +3232,32 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       }
     };
 
+    // Knight telegraph — schedule a miss sound; cancel it if a damage event arrives first
+    const handleKnightAttackTelegraph = (data: any) => {
+      if (data.targetPlayerId !== socket?.id) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      // Server applies damage after ~1000ms — wait slightly longer before calling it a miss
+      const timer = setTimeout(() => {
+        knightPendingMissTimers.current.delete(data.knightId);
+        window.audioSystem?.playKnightMissSound(pos);
+      }, 1100);
+      knightPendingMissTimers.current.set(data.knightId, timer);
+    };
+
     const handleKnightAttack = (data: any) => {
       if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+
+      // Cancel pending miss sound — this attack connected
+      const pendingMiss = knightPendingMissTimers.current.get(data.knightId);
+      if (pendingMiss) {
+        clearTimeout(pendingMiss);
+        knightPendingMissTimers.current.delete(data.knightId);
+      }
+
+      // Play alternating hit sound
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      window.audioSystem?.playKnightDamageSound(pos, knightDamageVariant.current);
+      knightDamageVariant.current = knightDamageVariant.current === 1 ? 2 : 1;
 
       const deathState = playerDeathStates.get(socket.id);
       if (deathState?.isDead) return;
@@ -3347,8 +3378,31 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       }
     };
 
+    // Templar telegraph — schedule a miss sound; cancel it if a damage event arrives first
+    const handleTemplarAttackTelegraph = (data: any) => {
+      if (data.targetPlayerId !== socket?.id) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      const timer = setTimeout(() => {
+        templarPendingMissTimers.current.delete(data.templarId);
+        window.audioSystem?.playTemplarMissSound(pos);
+      }, 1100);
+      templarPendingMissTimers.current.set(data.templarId, timer);
+    };
+
     const handleTemplarAttack = (data: any) => {
       if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+
+      // Cancel pending miss sound — this attack connected
+      const pendingMiss = templarPendingMissTimers.current.get(data.templarId);
+      if (pendingMiss) {
+        clearTimeout(pendingMiss);
+        templarPendingMissTimers.current.delete(data.templarId);
+      }
+
+      // Play alternating hit sound
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      window.audioSystem?.playTemplarDamageSound(pos, templarDamageVariant.current);
+      templarDamageVariant.current = templarDamageVariant.current === 1 ? 2 : 1;
 
       const deathState = playerDeathStates.get(socket.id);
       if (deathState?.isDead) return;
@@ -4101,10 +4155,10 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       // Silently ignore if enemy not found - it may have died already
     };
 
-    const handleKnightDeathVortex = (data: { enemyId: string; position: { x: number; y: number; z: number } }) => {
+    const handleKnightDeathVortex = (data: { enemyId: string; position: { x: number; y: number; z: number }; soulType?: 'red' | 'purple' | 'green' | 'blue' | null }) => {
       setKnightDeathVortices(prev => [
         ...prev,
-        { id: `vortex-${data.enemyId}-${Date.now()}`, position: data.position },
+        { id: `vortex-${data.enemyId}-${Date.now()}`, position: data.position, soulType: data.soulType },
       ]);
     };
 
@@ -4176,9 +4230,11 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     socket.on('boss-meteor-cast', handleBossMeteorCast);
     socket.on('boss-teleport', handleBossTeleport);
     socket.on('boss-skeleton-attack', handleBossSkeletonAttack);
+    socket.on('knight-attack-telegraph', handleKnightAttackTelegraph);
     socket.on('knight-attack', handleKnightAttack);
     socket.on('knight-smite',  handleKnightSmite);
     socket.on('knight-frost',  handleKnightFrost);
+    socket.on('templar-attack-telegraph', handleTemplarAttackTelegraph);
     socket.on('templar-attack', handleTemplarAttack);
     socket.on('enemy-status-effect', handleEnemyStatusEffect);
     socket.on('knight-death-vortex', handleKnightDeathVortex);
@@ -4413,10 +4469,17 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       socket.off('boss-meteor-cast', handleBossMeteorCast);
       socket.off('boss-teleport', handleBossTeleport);
       socket.off('boss-skeleton-attack', handleBossSkeletonAttack);
+      socket.off('knight-attack-telegraph', handleKnightAttackTelegraph);
       socket.off('knight-attack', handleKnightAttack);
       socket.off('knight-smite',  handleKnightSmite);
       socket.off('knight-frost',  handleKnightFrost);
+      socket.off('templar-attack-telegraph', handleTemplarAttackTelegraph);
       socket.off('templar-attack', handleTemplarAttack);
+      // Clear any pending miss timers on cleanup
+      knightPendingMissTimers.current.forEach(clearTimeout);
+      knightPendingMissTimers.current.clear();
+      templarPendingMissTimers.current.forEach(clearTimeout);
+      templarPendingMissTimers.current.clear();
       socket.off('enemy-status-effect', handleEnemyStatusEffect);
       socket.off('knight-death-vortex', handleKnightDeathVortex);
       socket.off('shade-attack-telegraph', handleShadeAttackTelegraph);
@@ -6074,6 +6137,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
           key={vortex.id}
           id={vortex.id}
           position={vortex.position}
+          soulType={vortex.soulType}
           onComplete={() =>
             setKnightDeathVortices(prev => prev.filter(v => v.id !== vortex.id))
           }

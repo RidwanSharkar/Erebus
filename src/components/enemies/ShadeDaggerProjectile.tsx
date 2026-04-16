@@ -13,7 +13,7 @@ interface ShadeDaggerProjectileProps {
   onComplete: () => void;
 }
 
-const SPEED = 18;       // units per second
+const SPEED = 24;       // units per second
 const HIT_RADIUS = 1.1; // collision radius against the local player
 
 export default function ShadeDaggerProjectile({

@@ -26,6 +26,7 @@ export interface AbilityLoadout {
   Q: string | null;   // universal ability id
   E: string | null;
   R: string | null;
+  passive?: string | null; // selected passive ability id (sourceKey === 'P')
 }
 
 const ALL_WEAPONS: WeaponType[] = [
@@ -127,6 +128,12 @@ export const universalAbilityPool: UniversalAbility[] = [
     name: 'Mantra', cooldown: 5.0, icon: '🪬',
     description: 'Summons a totem that heals you and allies for 40 HP per second while within its range. Lasts 8 seconds.',
     allowedWeapons: ALL_WEAPONS,
+  },
+  {
+    id: 'SCYTHE_P', sourceWeapon: WeaponType.SCYTHE, sourceKey: 'P',
+    name: 'Icebeam', cooldown: 0, icon: '🧊',
+    description: '{PASSIVE} Replaces your primary attack with Icebeam, a channeled beam that ramps up damage the longer it is maintained.',
+    allowedWeapons: [WeaponType.SCYTHE],
   },
 
   // ── SABRES ────────────────────────────────────────────────────────────

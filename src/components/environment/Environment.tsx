@@ -160,8 +160,8 @@ const Environment: React.FC<EnvironmentProps> = ({
       <GroundFogSystem />
       
 
-      {/* Rising fire embers above each camp beacon */}
-      <InstancedEmbers />
+      {/* Rising fire embers above each camp beacon — colour matches camp theme */}
+      <InstancedEmbers campTypes={campTypes} />
 
       {/* Scattered rubble, rocks and stone chunks across the arena */}
       <InstancedDebris />

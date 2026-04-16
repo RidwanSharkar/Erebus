@@ -97,6 +97,9 @@ export default function WarlockRenderer({
       targetPosition.current.copy(newPos);
       targetRotation.current = data.rotation;
 
+      // Play blink sound at the departure position
+      (window as any).audioSystem?.playEnemyBlinkSound(startPos);
+
       const fxId = `${id}-${Date.now()}`;
 
       // Departure effect at the original position

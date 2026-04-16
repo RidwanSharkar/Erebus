@@ -7,7 +7,61 @@ import * as THREE from 'three';
 interface KnightDeathVortexProps {
   id: string;
   position: { x: number; y: number; z: number };
+  soulType?: string | null;
   onComplete: () => void;
+}
+
+interface VortexPalette {
+  light: string;
+  core: string;
+  halo: string;
+  innerA: string; // alternating orb colour A (even indices)
+  innerB: string; // alternating orb colour B (odd indices)
+  outerA: string; // every 3rd === 0
+  outerB: string; // every 3rd === 1
+  outerC: string; // every 3rd === 2
+  beam: string;
+}
+
+function getPalette(soulType?: string | null): VortexPalette {
+  switch (soulType) {
+    case 'red':
+      return {
+        light: '#ff3020', core: '#fff0f0', halo: '#ff3020',
+        innerA: '#ffffff', innerB: '#ff5040',
+        outerA: '#ff8080', outerB: '#ff4040', outerC: '#ffffff',
+        beam: '#ff6040',
+      };
+    case 'purple':
+      return {
+        light: '#c060ff', core: '#f8f0ff', halo: '#9030e0',
+        innerA: '#ffffff', innerB: '#c060ff',
+        outerA: '#d080ff', outerB: '#b050f0', outerC: '#ffffff',
+        beam: '#c060ff',
+      };
+    case 'green':
+      return {
+        light: '#30e060', core: '#f0fff4', halo: '#20c040',
+        innerA: '#ffffff', innerB: '#40ff80',
+        outerA: '#80ffa0', outerB: '#40c060', outerC: '#ffffff',
+        beam: '#40ff80',
+      };
+    case 'blue':
+      return {
+        light: '#4080ff', core: '#f0f8ff', halo: '#2060e0',
+        innerA: '#ffffff', innerB: '#4090ff',
+        outerA: '#8090ff', outerB: '#5070f0', outerC: '#ffffff',
+        beam: '#4090ff',
+      };
+    default:
+      // Original gold palette
+      return {
+        light: '#ffe0a0', core: '#fffff0', halo: '#ffc840',
+        innerA: '#ffffff', innerB: '#ffd860',
+        outerA: '#b8b8ff', outerB: '#90c8ff', outerC: '#ffffff',
+        beam: '#ffe0a0',
+      };
+  }
 }
 
 const TOTAL_DURATION = 4.8;   // seconds before the effect is removed
@@ -32,7 +86,8 @@ function makeRingPositions(count: number, radius: number, vertAmp: number) {
   });
 }
 
-export default function KnightDeathVortex({ position, onComplete }: KnightDeathVortexProps) {
+export default function KnightDeathVortex({ position, soulType, onComplete }: KnightDeathVortexProps) {
+  const palette = getPalette(soulType);
   const groupRef     = useRef<THREE.Group>(null);
   const innerRef     = useRef<THREE.Group>(null);
   const outerRef     = useRef<THREE.Group>(null);
@@ -151,17 +206,17 @@ export default function KnightDeathVortex({ position, onComplete }: KnightDeathV
       {/* Scene light */}
       <pointLight
         ref={lightRef}
-        color="#ffe0a0"
+        color={palette.light}
         intensity={10}
         distance={14}
         decay={2}
       />
 
-      {/* Core orb — bright white-gold */}
+      {/* Core orb */}
       <mesh ref={coreRef}>
         <sphereGeometry args={[0.33, 20, 20]} />
         <meshBasicMaterial
-          color="#fffff0"
+          color={palette.core}
           transparent
           opacity={1}
           blending={THREE.AdditiveBlending}
@@ -169,11 +224,11 @@ export default function KnightDeathVortex({ position, onComplete }: KnightDeathV
         />
       </mesh>
 
-      {/* Outer halo — soft gold */}
+      {/* Outer halo */}
       <mesh ref={haloRef}>
         <sphereGeometry args={[0.58, 14, 14]} />
         <meshBasicMaterial
-          color="#ffc840"
+          color={palette.halo}
           transparent
           opacity={0.38}
           blending={THREE.AdditiveBlending}
@@ -181,13 +236,13 @@ export default function KnightDeathVortex({ position, onComplete }: KnightDeathV
         />
       </mesh>
 
-      {/* Inner ring — fast counter-clockwise, gold + white alternating */}
+      {/* Inner ring — fast spinning, two alternating colours */}
       <group ref={innerRef}>
         {innerPositions.map((pos, i) => (
           <mesh key={i} position={pos}>
             <sphereGeometry args={[0.085, 8, 8]} />
             <meshBasicMaterial
-              color={i % 2 === 0 ? '#ffffff' : '#ffd860'}
+              color={i % 2 === 0 ? palette.innerA : palette.innerB}
               transparent
               opacity={0.95}
               blending={THREE.AdditiveBlending}
@@ -198,11 +253,11 @@ export default function KnightDeathVortex({ position, onComplete }: KnightDeathV
         ))}
       </group>
 
-      {/* Outer ring — slower, counter-rotating, ethereal blue-white-purple */}
+      {/* Outer ring — slower, counter-rotating, three cycling colours */}
       <group ref={outerRef}>
         {outerPositions.map((pos, i) => {
           const color =
-            i % 3 === 0 ? '#b8b8ff' : i % 3 === 1 ? '#90c8ff' : '#ffffff';
+            i % 3 === 0 ? palette.outerA : i % 3 === 1 ? palette.outerB : palette.outerC;
           return (
             <mesh key={i} position={pos}>
               <sphereGeometry args={[0.065, 8, 8]} />
@@ -223,7 +278,7 @@ export default function KnightDeathVortex({ position, onComplete }: KnightDeathV
       <mesh ref={beamRef} position={[0, 1.5, 0]}>
         <cylinderGeometry args={[0.04, 0.18, 3.5, 8, 1, true]} />
         <meshBasicMaterial
-          color="#ffe0a0"
+          color={palette.beam}
           transparent
           opacity={0.22}
           blending={THREE.AdditiveBlending}

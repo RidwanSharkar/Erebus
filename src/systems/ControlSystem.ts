@@ -2568,15 +2568,18 @@ export class ControlSystem extends System {
     this.lastRunebladeFireTime = currentTime;
     this.lastSwordAttackTime = currentTime;
 
-    // Play sword swing sound based on current combo step (same as sword)
-    this.audioSystem?.playSwordSwingSound(this.swordComboStep, playerTransform.position);
-
     // Set swinging state - completion will be handled by runeblade component callback
-    // Animation state broadcasting will handle sound synchronization for other players
     this.isSwinging = true;
 
-    // Perform melee damage in a cone in front of player (same as sword)
-    this.performMeleeDamage(playerTransform);
+    // Perform melee damage and decide hit vs miss sound based on result
+    const enemiesHit = this.performMeleeDamage(playerTransform);
+    if (enemiesHit > 0) {
+      // Hit an enemy — play the normal attack sound for this combo step
+      this.audioSystem?.playSwordSwingSound(this.swordComboStep, playerTransform.position);
+    } else {
+      // Missed — play the appropriate miss sound (swordMiss2 on 3rd combo step)
+      this.audioSystem?.playRunebladeMissSound(this.swordComboStep, playerTransform.position);
+    }
 
     // Note: Swing completion and combo advancement is now handled by onSwordSwingComplete callback
   }
@@ -3154,20 +3157,22 @@ export class ControlSystem extends System {
     }
     this.lastSwordFireTime = currentTime;
 
-    // Play spear thrust sound
-    this.audioSystem?.playSpearSwingSound(playerTransform.position);
-
     // Set swinging state - completion will be handled by spear component callback
     this.isSwinging = true;
 
     // Broadcast melee attack sound in PVP
     this.onBroadcastMeleeAttackCallback?.('spear', playerTransform.position);
 
-    // Perform damage detection immediately for spear (unlike sword which waits for animation)
-    this.performSpearMeleeDamage(playerTransform);
+    // Perform damage detection and play hit vs miss sound based on result
+    const enemiesHit = this.performSpearMeleeDamage(playerTransform);
+    if (enemiesHit > 0) {
+      this.audioSystem?.playSpearSwingSound(playerTransform.position);
+    } else {
+      this.audioSystem?.playWeaponMissSound(playerTransform.position);
+    }
   }
 
-  private performSpearMeleeDamage(playerTransform: Transform): void {
+  private performSpearMeleeDamage(playerTransform: Transform): number {
     // Get all entities in the world to check for enemies
     const allEntities = this.world.getAllEntities();
     const playerPosition = playerTransform.position;
@@ -3263,6 +3268,7 @@ export class ControlSystem extends System {
       }
     }
 
+    return enemiesHit;
   }
 
   private performWhirlwind(playerTransform: Transform): void {
@@ -3570,15 +3576,16 @@ export class ControlSystem extends System {
     }
     this.lastSabresFireTime = currentTime;
 
-    // Play sabres swing sound
-    this.audioSystem?.playSabresSwingSound(playerTransform.position);
-
     // Set swinging state - completion will be handled by sabres component callback
-    // Animation state broadcasting will handle sound synchronization for other players
     this.isSwinging = true;
 
-    // Perform melee damage in a cone in front of player (dual attack)
-    this.performSabresMeleeDamage(playerTransform);
+    // Perform melee damage and play hit vs miss sound based on result
+    const enemiesHit = this.performSabresMeleeDamage(playerTransform);
+    if (enemiesHit > 0) {
+      this.audioSystem?.playSabresSwingSound(playerTransform.position);
+    } else {
+      this.audioSystem?.playWeaponMissSound(playerTransform.position);
+    }
   }
 
   // Called by sabres component when swing animation completes
@@ -3589,7 +3596,7 @@ export class ControlSystem extends System {
     this.isSwinging = false;
   }
 
-  private performSabresMeleeDamage(playerTransform: Transform): void {
+  private performSabresMeleeDamage(playerTransform: Transform): number {
     const currentTime = Date.now() / 1000;
 
     // Get all entities that could be damaged
@@ -3657,6 +3664,8 @@ export class ControlSystem extends System {
         hitCount++;
       }
     }
+
+    return hitCount;
   }
 
   // Skyfall ability implementation
@@ -4339,6 +4348,30 @@ export class ControlSystem extends System {
 
   public setAbilityLoadout(loadout: AbilityLoadout): void {
     this.abilityLoadout = loadout;
+    // If a passive was selected in the loadout menu, force-unlock it without spending skill points
+    if (loadout.passive) {
+      this.applyLoadoutPassive(loadout.passive);
+    }
+  }
+
+  /**
+   * Directly unlocks the 'P' passive for the primary weapon slot based on the
+   * selected passive ability id (e.g. 'BOW_P', 'SCYTHE_P'). Does not spend skill points.
+   */
+  private applyLoadoutPassive(passiveId: string): void {
+    if (!this.selectedWeapons) return;
+    const weaponType = this.selectedWeapons.primary;
+    const slot = 'primary';
+    const key = `${weaponType}_${slot}`;
+    const newUnlockedAbilities = { ...this.skillPointData.unlockedAbilities };
+    if (!newUnlockedAbilities[key]) {
+      newUnlockedAbilities[key] = new Set(['P']);
+    } else {
+      const existing = new Set(newUnlockedAbilities[key]);
+      existing.add('P');
+      newUnlockedAbilities[key] = existing;
+    }
+    this.skillPointData = { ...this.skillPointData, unlockedAbilities: newUnlockedAbilities };
   }
 
   public setPlayerDead(isDead: boolean): void {
@@ -4634,7 +4667,7 @@ export class ControlSystem extends System {
     }
   }
 
-  private performMeleeDamage(playerTransform: Transform): void {
+  private performMeleeDamage(playerTransform: Transform): number {
     // Get all entities in the world to check for enemies
     const allEntities = this.world.getAllEntities();
     const playerPosition = playerTransform.position;
@@ -4670,6 +4703,7 @@ export class ControlSystem extends System {
     
     // Get combat system to apply damage
     const combatSystem = this.world.getSystem(CombatSystem);
+    let enemiesHit = 0;
     
     allEntities.forEach(entity => {
       // Check if entity has enemy component and health
@@ -4697,10 +4731,13 @@ export class ControlSystem extends System {
             // Queue damage through combat system (which will route to multiplayer for enemies)
             // Pass isCritical flag so CombatSystem doesn't recalculate critical damage
             combatSystem.queueDamage(entity, actualDamage, this.playerEntity, 'melee', this.playerEntity?.userData?.playerId, damageResult.isCritical);
+            enemiesHit++;
           }
         }
       }
     });
+
+    return enemiesHit;
   }
 
   private checkForDashInput(movement: Movement, transform: Transform): void {

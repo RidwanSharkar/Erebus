@@ -470,7 +470,7 @@ class EnemyAI {
     switch (knight.soulType) {
       // ── Red: Smite — powered melee slam (75 dmg, 7 s CD, melee range) ───────
       case 'red': {
-        const CD = 7000;
+        const CD = 6000;
         if (now - lastAbility < CD) return false;
         if (distance > meleeRange) return false;
 
@@ -498,7 +498,7 @@ class EnemyAI {
 
       // ── Blue: Frost Ray — ranged slow + 30 dmg (10 s CD, 9-unit range) ──────
       case 'blue': {
-        const CD = 10000;
+        const CD = 14000;
         const FROST_RANGE = 9.0;
         if (now - lastAbility < CD) return false;
         if (distance > FROST_RANGE) return false;
@@ -536,7 +536,7 @@ class EnemyAI {
       if (!currentTarget || currentTarget.health <= 0) return;
 
       const currentDistance = this.calculateDistance(knight.position, currentTarget.position);
-      const SMITE_RANGE = 2.6; // same melee range
+      const SMITE_RANGE = 2.8; // same melee range
       if (currentDistance <= SMITE_RANGE) {
         if (this.io) {
           this.io.to(this.roomId).emit('knight-smite', {
@@ -653,7 +653,7 @@ class EnemyAI {
     }
 
     const distance = this.calculateDistance(shade.position, targetPlayer.position);
-    const attackRange = 11.0;  // ranged throw
+    const attackRange = 14.0;  // ranged throw
     const aggroRadius = 7;
     const leashRadius = aggroRadius * 3;
 
@@ -680,7 +680,7 @@ class EnemyAI {
       }
 
       // Blink perpendicular then attack (4-second cooldown)
-      const blinkCooldown = 4000;
+      const blinkCooldown = 4250;
       const lastBlinkTime = this.shadeBlinkCooldown.get(shade.id) || 0;
       const now = Date.now();
 
@@ -717,7 +717,7 @@ class EnemyAI {
     const blinkX = Math.cos(theta) * fwdX + Math.sin(theta) * leftX;
     const blinkZ = Math.cos(theta) * fwdZ + Math.sin(theta) * leftZ;
 
-    const blinkDist = 4;
+    const blinkDist = 5;
     const endPosition = {
       x: shade.position.x + blinkX * blinkDist,
       y: shade.position.y,

@@ -518,6 +518,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           // Handle enemy death
           if (data.wasKilled) {
             enemy.isDying = true;
+            // Play death sound at the enemy's position
+            (window as any).audioSystem?.playEnemyDeathSound(enemy.position);
           }
         }
         // Silently ignore if enemy not found - it may have been removed already (died)

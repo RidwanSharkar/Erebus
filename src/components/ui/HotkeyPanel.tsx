@@ -162,6 +162,11 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
     ability: abilityLoadout?.[slot] ? (getUniversalAbilityById(abilityLoadout[slot]!) ?? null) : null
   }));
 
+  // Resolve the passive ability from the loadout (no hotkey, shown without a key badge)
+  const passiveAbility: UniversalAbility | null = abilityLoadout?.passive
+    ? (getUniversalAbilityById(abilityLoadout.passive) ?? null)
+    : null;
+
   // Update cooldowns from control system
   useEffect(() => {
     if (!controlSystem || !controlSystem.getAbilityCooldowns) return;
@@ -299,6 +304,19 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
 
             {/* Separator */}
             <div className="w-px h-8 bg-gray-600" />
+
+            {/* Passive Ability Icon — no hotkey, displayed after Q/E/R */}
+            {passiveAbility && (
+              <div
+                className="relative w-12 h-12 rounded-lg border-2 border-violet-400 bg-violet-900 bg-opacity-30 flex items-center justify-center"
+                onMouseEnter={(e) => handleAbilityHover(e, passiveAbility)}
+                onMouseLeave={handleAbilityLeave}
+              >
+                <div className="w-8 h-8 rounded flex items-center justify-center text-lg font-bold text-violet-300">
+                  {passiveAbility.icon}
+                </div>
+              </div>
+            )}
 
             {/* Ability Icons — driven by abilityLoadout (Q / E / R) */}
             {loadoutAbilities.map(({ slot, ability }) => {

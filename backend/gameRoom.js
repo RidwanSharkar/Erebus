@@ -514,6 +514,7 @@ class GameRoom {
           this.io.to(this.roomId).emit('knight-death-vortex', {
             enemyId: enemyId,
             position: { x: enemy.position.x, y: enemy.position.y, z: enemy.position.z },
+            soulType: enemy.soulType || null,
             timestamp: Date.now()
           });
         }

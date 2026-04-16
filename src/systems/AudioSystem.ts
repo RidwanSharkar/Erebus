@@ -63,6 +63,15 @@ export class AudioSystem extends System {
       { id: 'runeblade_smite', file: 'runeblade/smite.mp3' },
       { id: 'runeblade_wraithblade', file: 'runeblade/wraithblade.mp3' },
       { id: 'runeblade_void_grasp', file: 'runeblade/void_grasp.mp3' },
+      { id: 'sword_miss_1', file: 'runeblade/swordMiss1.mp3' },
+      { id: 'sword_miss_2', file: 'runeblade/swordMiss2.mp3' },
+      { id: 'knight_miss', file: 'sabres/sabreMiss3.mp3' },
+      { id: 'knight_damage_1', file: 'versus/knightDamage1.mp3' },
+      { id: 'knight_damage_2', file: 'versus/knightDamage2.mp3' },
+      { id: 'templar_damage_1', file: 'versus/templarDamage1.mp3' },
+      { id: 'templar_damage_2', file: 'versus/TemplarDamage2.mp3' },
+      { id: 'enemy_blink', file: 'versus/blink.mp3' },
+      { id: 'enemy_death', file: 'versus/deathSFX.mp3' },
       { id: 'spear_swing', file: 'spear/spear_swing.mp3' },
       { id: 'whirlwind_charge', file: 'spear/whirlwind_charge.mp3' },
       { id: 'whirlwind_release', file: 'spear/whirlwind_release.mp3' },
@@ -489,6 +498,48 @@ export class AudioSystem extends System {
   // Play runeblade void grasp sound (death grasp Q ability)
   public playRunebladeVoidGraspSound(position: Vector3) {
     return this.playWeaponSound('runeblade_void_grasp', position, { volume: 0.9 });
+  }
+
+  // Play runeblade miss sound (swing into empty air, combo-step aware)
+  public playRunebladeMissSound(comboStep: 1 | 2 | 3, position: Vector3) {
+    const soundId = comboStep === 3 ? 'sword_miss_2' : 'sword_miss_1';
+    return this.playWeaponSound(soundId, position, { volume: 0.75 });
+  }
+
+  // Play generic weapon miss sound for spear and sabres
+  public playWeaponMissSound(position: Vector3) {
+    return this.playWeaponSound('sword_miss_1', position, { volume: 0.75 });
+  }
+
+  // Play knight swing-miss sound (sabreMiss3)
+  public playKnightMissSound(position: Vector3) {
+    return this.playWeaponSound('knight_miss', position, { volume: 0.85 });
+  }
+
+  // Play knight hit-damage sound (alternates between 1 and 2)
+  public playKnightDamageSound(position: Vector3, variant: 1 | 2) {
+    return this.playWeaponSound(`knight_damage_${variant}`, position, { volume: 0.9 });
+  }
+
+  // Play templar swing-miss sound (swordMiss1)
+  public playTemplarMissSound(position: Vector3) {
+    return this.playWeaponSound('sword_miss_1', position, { volume: 0.85 });
+  }
+
+  // Play templar hit-damage sound (alternates between 1 and 2)
+  public playTemplarDamageSound(position: Vector3, variant: 1 | 2) {
+    return this.playWeaponSound(`templar_damage_${variant}`, position, { volume: 0.9 });
+  }
+
+  // Play enemy blink sound (Shade and Warlock teleport)
+  public playEnemyBlinkSound(position: Vector3) {
+    return this.playWeaponSound('enemy_blink', position, { volume: 0.9 });
+  }
+
+  // Play enemy death sound — accepts a plain object so callers outside Three.js contexts
+  // don't need to import Vector3
+  public playEnemyDeathSound(position: { x: number; y: number; z: number }) {
+    return this.playWeaponSound('enemy_death', new Vector3(position.x, position.y, position.z), { volume: 0.95 });
   }
 
   // Play scythe mantra sound (totem summon)

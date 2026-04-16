@@ -45,18 +45,25 @@ const SOURCE_WEAPON_ORDER: WeaponType[] = [
 ];
 
 export default function AbilitySelectionModal({ selectedWeapon, onConfirm, onBack }: AbilitySelectionModalProps) {
-  const [loadout, setLoadout] = useState<AbilityLoadout>(() => getDefaultLoadoutForWeapon(selectedWeapon));
+  const [loadout, setLoadout] = useState<AbilityLoadout>(() => ({ ...getDefaultLoadoutForWeapon(selectedWeapon), passive: null }));
 
-  // Only show abilities that are allowed for the currently selected weapon, grouped by source
+  // Only show active abilities (non-passive) that are allowed for the currently selected weapon, grouped by source
   const abilityGroups = useMemo(() => {
     return SOURCE_WEAPON_ORDER
       .map(weapon => ({
         weapon,
         abilities: universalAbilityPool.filter(
-          a => a.sourceWeapon === weapon && a.allowedWeapons.includes(selectedWeapon)
+          a => a.sourceWeapon === weapon && a.allowedWeapons.includes(selectedWeapon) && a.sourceKey !== 'P'
         ),
       }))
       .filter(group => group.abilities.length > 0);
+  }, [selectedWeapon]);
+
+  // Passive abilities available for this weapon (shown separately, not assignable to Q/E/R)
+  const passiveAbilities = useMemo(() => {
+    return universalAbilityPool.filter(
+      a => a.sourceKey === 'P' && a.allowedWeapons.includes(selectedWeapon)
+    );
   }, [selectedWeapon]);
   const defaultLoadout = getDefaultLoadoutForWeapon(selectedWeapon);
   const initialSlot = defaultLoadout.Q === null ? 'Q' : defaultLoadout.E === null ? 'E' : defaultLoadout.R === null ? 'R' : null;
@@ -101,6 +108,13 @@ export default function AbilitySelectionModal({ selectedWeapon, onConfirm, onBac
     const nextEmpty = slots.find(s => s !== activeSlot && newLoadout[s] === null);
     setActiveSlot(nextEmpty ?? null);
   }, [activeSlot, isAssigned, loadout]);
+
+  const handlePassiveClick = useCallback((ability: UniversalAbility) => {
+    setLoadout(prev => ({
+      ...prev,
+      passive: prev.passive === ability.id ? null : ability.id,
+    }));
+  }, []);
 
   const handleSlotClick = useCallback((slot: 'Q' | 'E' | 'R') => {
     setActiveSlot(slot);
@@ -220,6 +234,47 @@ export default function AbilitySelectionModal({ selectedWeapon, onConfirm, onBac
             );
           })}
         </div>
+
+        {/* Passive Abilities — shown separately, no hotkey assignment */}
+        {passiveAbilities.length > 0 && (
+          <div className="mt-4">
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 pl-1">
+              Passive Ability <span className="text-gray-500 normal-case font-normal">(optional — replaces primary attack)</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {passiveAbilities.map(ability => {
+                const isSelected = loadout.passive === ability.id;
+                const colors = WEAPON_COLORS[ability.sourceWeapon];
+                return (
+                  <div
+                    key={ability.id}
+                    onClick={() => handlePassiveClick(ability)}
+                    onMouseEnter={(e) => handleMouseEnter(e, ability)}
+                    onMouseLeave={handleMouseLeave}
+                    className={`
+                      relative flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all duration-150
+                      ${isSelected
+                        ? 'ring-1 ring-violet-400 border-transparent bg-violet-900/60'
+                        : `${colors.border} ${colors.bg} hover:brightness-125 border-opacity-50`
+                      }
+                    `}
+                  >
+                    <div className="text-xl shrink-0">{ability.icon}</div>
+                    <div className="min-w-0">
+                      <div className="text-white text-xs font-semibold">{ability.name}</div>
+                      <div className="text-violet-400 text-xs">PASSIVE</div>
+                    </div>
+                    {isSelected && (
+                      <div className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold bg-violet-700 text-violet-200 border border-violet-400">
+                        ✓
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="flex gap-3 mt-5 justify-between items-center">
