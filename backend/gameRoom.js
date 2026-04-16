@@ -42,13 +42,13 @@ class GameRoom {
   // min/maxEnemies: total units to spawn in this camp.
   static get CAMP_TYPES() {
     return {
-      blue:   { color: 'blue',   knightSoulType: 'blue',   enemyPool: ['knight', 'shade', 'viper'], minEnemies: 4,  maxEnemies: 6 },
-      green:  { color: 'green',  knightSoulType: 'green',  enemyPool: ['knight', 'viper',  'weaver'],          minEnemies: 4,  maxEnemies: 5  },
+      blue:   { color: 'blue',   knightSoulType: 'blue',   enemyPool: ['knight', 'shade', 'weaver' ], minEnemies: 4,  maxEnemies: 6 },
+      green:  { color: 'green',  knightSoulType: 'green',  enemyPool: ['knight', 'viper', ],          minEnemies: 4,  maxEnemies: 5  },
       red:    { color: 'red',    knightSoulType: 'red',    enemyPool: ['knight', 'warlock','templar'],          minEnemies: 4,  maxEnemies: 5  },
-      purple: { color: 'purple', knightSoulType: 'purple', enemyPool: ['knight', 'warlock','shade'],            minEnemies: 5,  maxEnemies: 6 },
+      purple: { color: 'purple', knightSoulType: 'purple', enemyPool: ['knight', 'shade'],            minEnemies: 5,  maxEnemies: 6 },
     };
   }
-
+ 
   // ── Spawn areas for each camp ──────────────────────────────────────────────
   // Enemies are placed at random positions within these AABB bounds (y = 0).
   static get CAMP_AREAS() {
@@ -182,7 +182,36 @@ class GameRoom {
 
     if (this.gameMode === 'coop') {
       this.initializeCamps();
+      this.initializeTitan();
     }
+  }
+
+  // Spawn the Titan — a single 3000-HP sentinel that roams the centre of the map.
+  initializeTitan() {
+    const ts = Date.now();
+    const CIRCLE_RADIUS = 10;
+
+    // Start on the south side of the circle so it doesn't overlap the player spawn.
+    const startAngle = Math.PI / 2; // 90° → (0, 10) in XZ
+    const titan = {
+      id:        `titan-${ts}`,
+      type:      'titan',
+      position:  { x: Math.cos(startAngle) * CIRCLE_RADIUS, y: 0, z: Math.sin(startAngle) * CIRCLE_RADIUS },
+      rotation:  0,
+      health:    3000,
+      maxHealth: 3000,
+      isDying:   false,
+      damage:    0, // Attack logic added later
+      moveSpeed: 1.8,
+    };
+
+    this.enemies.set(titan.id, titan);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-spawned', { enemy: titan, timestamp: Date.now() });
+    }
+
+    console.log(`🗿 Titan spawned — roaming centre of map (radius ${CIRCLE_RADIUS})`);
   }
 
   // Build one enemy object at the given position for the given type/camp.

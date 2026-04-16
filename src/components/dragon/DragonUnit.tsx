@@ -130,6 +130,7 @@ interface DragonUnitProps {
   collectedBones?: number;
   isWingJetsActive?: boolean;
   combatSystem?: any; // CombatSystem for  Strike damage numbers
+  hideBody?: boolean; // When true, only the weapon is rendered (no dragon body/wings/orbitals)
 }
 
 export default function DragonUnit({
@@ -207,7 +208,8 @@ export default function DragonUnit({
   collectedBones = 0,
   isWingJetsActive = false,
   combatSystem,
-  purchasedItems = []
+  purchasedItems = [],
+  hideBody = false
 }: DragonUnitProps) {
   
   const groupRef = useRef<Group>(null);
@@ -420,62 +422,56 @@ export default function DragonUnit({
   return (
     <group ref={groupRef} position={[position.x, position.y + 0.2, position.z]}>
 
-      {/* BONE PLATE (TORSO) */}
-      {bonePlate}
+      {!hideBody && (<>
+        {/* BONE PLATE (TORSO) */}
+        {bonePlate}
 
+        {/* WINGS */}
+        {wings}
 
-      {/* WINGS */}
-      {wings}
+        {/* DRACONIC WING JETS */}
+        <DraconicWingJets
+          isActive={isWingJetsActive || isDashing || collectedBones > 0}
+          collectedBones={collectedBones}
+          isLeftWing={true}
+          parentRef={groupRef}
+          weaponType={currentWeapon}
+          weaponSubclass={currentSubclass}
+        />
+        <DraconicWingJets
+          isActive={isWingJetsActive || isDashing || collectedBones > 0}
+          collectedBones={collectedBones}
+          isLeftWing={false}
+          parentRef={groupRef}
+          weaponType={currentWeapon}
+          weaponSubclass={currentSubclass}
+        />
 
-      {/* DRACONIC WING JETS */}
-      <DraconicWingJets
-        isActive={isWingJetsActive || isDashing || collectedBones > 0}
-        collectedBones={collectedBones}
-        isLeftWing={true}
-        parentRef={groupRef}
-        weaponType={currentWeapon}
-        weaponSubclass={currentSubclass}
-      />
-      <DraconicWingJets
-        isActive={isWingJetsActive || isDashing || collectedBones > 0}
-        collectedBones={collectedBones}
-        isLeftWing={false}
-        parentRef={groupRef}
-        weaponType={currentWeapon}
-        weaponSubclass={currentSubclass}
-      />
+        {/* CREST */}
+        <ArchmageCrest
+          position={[0, 0.5, 0.15]}
+          scale={-0.625}
+          weaponType={currentWeapon}
+          weaponSubclass={currentSubclass}
+        />
 
-      {/* CREST */}
-      <ArchmageCrest
-        position={[0, 0.5, 0.15]}
-        scale={-0.625}
-        weaponType={currentWeapon}
-        weaponSubclass={currentSubclass}
-      />
+        {/* CHARGED ORBITALS */}
+        <ChargedOrbitals
+          parentRef={groupRef}
+          dashCharges={dashCharges}
+          weaponType={currentWeapon}
+          weaponSubclass={currentSubclass}
+          isCorruptedAuraActive={isCorruptedAuraActive}
+        />
 
-
-
-
-
-      {/* CHARGED ORBITALS */}
-      <ChargedOrbitals
-        parentRef={groupRef}
-        dashCharges={dashCharges}
-        weaponType={currentWeapon}
-        weaponSubclass={currentSubclass}
-        isCorruptedAuraActive={isCorruptedAuraActive}
-      />
-
-      {/* BONE AURA */}
-      <BoneAura 
-        parentRef={groupRef}
-      />
+        {/* BONE AURA */}
+        <BoneAura
+          parentRef={groupRef}
+        />
+      </>)}
 
       {/* WEAPON */}
       {renderWeapon()}
-
-    {/* ======================================================== */}
-
 
       {/* REANIMATE ABILITY */}
       {currentWeapon === WeaponType.SCYTHE && (

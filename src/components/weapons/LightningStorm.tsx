@@ -69,25 +69,10 @@ const LightningStormComponent = memo(function LightningStorm({
     startTimeRef.current = Date.now() + delayStart;
   }
 
-  // Select target: 75% chance for boss, 25% chance for random skeleton minion
+  // Select a random enemy from all available targets in range
   const selectedTarget = useMemo(() => {
-    const bossEnemies = enemyData.filter(enemy => enemy.isBoss);
-    const skeletonMinions = enemyData.filter(enemy => enemy.isSkeletonMinion);
-
-    const rand = Math.random();
-    if (rand < 0.75 && bossEnemies.length > 0) {
-      // 75% chance to hit boss
-      return bossEnemies[Math.floor(Math.random() * bossEnemies.length)];
-    } else if (skeletonMinions.length > 0) {
-      // 25% chance to hit random skeleton minion
-      return skeletonMinions[Math.floor(Math.random() * skeletonMinions.length)];
-    } else if (bossEnemies.length > 0) {
-      // Fallback to boss if no minions available
-      return bossEnemies[Math.floor(Math.random() * bossEnemies.length)];
-    }
-
-    // If no valid targets, return null
-    return null;
+    if (enemyData.length === 0) return null;
+    return enemyData[Math.floor(Math.random() * enemyData.length)];
   }, [enemyData]);
 
   // Calculate the sky position (directly above the target position)

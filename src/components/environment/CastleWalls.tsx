@@ -18,23 +18,24 @@ const WALL_HEIGHT = 3.0;
 const WALL_THICKNESS = 0.6;
 
 export const WALL_SEGMENTS: WallSegmentDef[] = [
-  // ── Camp 0 · North Fortress ── 3-sided, open south ───────────────────────
-  // Area: x ∈ [-7, 7], z ∈ [-28, -16]
-  { center: [ 0,    WALL_HEIGHT / 2, -28  ], sizeX: 14.6, sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS }, // north wall
-  { center: [-7,    WALL_HEIGHT / 2, -22  ], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 12   }, // west wall
-  { center: [ 7,    WALL_HEIGHT / 2, -22  ], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 12   }, // east wall
-
-  // ── Camp 1 · East Bastion ── 3-sided, open west ───────────────────────────
-  // Area: x ∈ [15, 29], z ∈ [2, 14]
-  { center: [22,    WALL_HEIGHT / 2,  2   ], sizeX: 14,   sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS }, // north wall
-  { center: [22,    WALL_HEIGHT / 2, 14   ], sizeX: 14,   sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS }, // south wall
-  { center: [29,    WALL_HEIGHT / 2,  8   ], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 12   }, // east wall
-
-  // ── Camp 2 · West Citadel ── 3-sided, open east ───────────────────────────
-  // Area: x ∈ [-29, -15], z ∈ [2, 14]
-  { center: [-22,   WALL_HEIGHT / 2,  2   ], sizeX: 14,   sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS }, // north wall
-  { center: [-22,   WALL_HEIGHT / 2, 14   ], sizeX: 14,   sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS }, // south wall
-  { center: [-29,   WALL_HEIGHT / 2,  8   ], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 12   }, // west wall
+  // ── Maze Wall 1 · NW Barrier (east-west) ─────────────────────────────────
+  { center: [-14,   WALL_HEIGHT / 2, -18  ], sizeX: 12,            sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS },
+  // ── Maze Wall 2 · North Shard (north-south) ───────────────────────────────
+  { center: [  5,   WALL_HEIGHT / 2, -22  ], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 10            },
+  // ── Maze Wall 3 · East Spine (north-south) ────────────────────────────────
+  { center: [ 18,   WALL_HEIGHT / 2,  -8  ], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 12            },
+  // ── Maze Wall 4 · Center-East Divider (east-west) ─────────────────────────
+  { center: [ 12,   WALL_HEIGHT / 2,   2  ], sizeX: 10,            sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS },
+  // ── Maze Wall 5 · Central Chokepoint (north-south) ────────────────────────
+  { center: [  0,   WALL_HEIGHT / 2,   8  ], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 10            },
+  // ── Maze Wall 6 · SE Corridor (east-west) ─────────────────────────────────
+  { center: [ 14,   WALL_HEIGHT / 2,  18  ], sizeX: 12,            sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS },
+  // ── Maze Wall 7 · SW Channel (north-south) ────────────────────────────────
+  { center: [-16,   WALL_HEIGHT / 2,  15  ], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 10            },
+  // ── Maze Wall 8 · West Divider (east-west) ────────────────────────────────
+  { center: [-20,   WALL_HEIGHT / 2,   0  ], sizeX: 10,            sizeY: WALL_HEIGHT, sizeZ: WALL_THICKNESS },
+  // ── Maze Wall 9 · NW-Center Rib (north-south) ─────────────────────────────
+  { center: [ -6,   WALL_HEIGHT / 2,  -8  ], sizeX: WALL_THICKNESS, sizeY: WALL_HEIGHT, sizeZ: 8             },
 ];
 
 // Corner posts mark each wall junction — slightly taller than walls for definition
@@ -42,23 +43,33 @@ export const WALL_SEGMENTS: WallSegmentDef[] = [
 const CORNER_POST_SIZE = 0.85;
 const CORNER_POST_HEIGHT = WALL_HEIGHT + 1.0;
 const CORNER_POSTS: [number, number, number][] = [
-  // Camp 0 — North Fortress (open south)
-  [ -7,  CORNER_POST_HEIGHT / 2, -28],  // NW closed corner
-  [  7,  CORNER_POST_HEIGHT / 2, -28],  // NE closed corner
-  [ -7,  CORNER_POST_HEIGHT / 2, -16],  // SW gate pillar
-  [  7,  CORNER_POST_HEIGHT / 2, -16],  // SE gate pillar
-
-  // Camp 1 — East Bastion (open west)
-  [ 15,  CORNER_POST_HEIGHT / 2,  2],   // NW gate pillar
-  [ 29,  CORNER_POST_HEIGHT / 2,  2],   // NE closed corner
-  [ 15,  CORNER_POST_HEIGHT / 2, 14],   // SW gate pillar
-  [ 29,  CORNER_POST_HEIGHT / 2, 14],   // SE closed corner
-
-  // Camp 2 — West Citadel (open east)
-  [-15,  CORNER_POST_HEIGHT / 2,  2],   // NE gate pillar
-  [-29,  CORNER_POST_HEIGHT / 2,  2],   // NW closed corner
-  [-15,  CORNER_POST_HEIGHT / 2, 14],   // SE gate pillar
-  [-29,  CORNER_POST_HEIGHT / 2, 14],   // SW closed corner
+  // Wall 1 ends — NW Barrier (x: -14±6 @ z=-18)
+  [-20,  CORNER_POST_HEIGHT / 2, -18],
+  [ -8,  CORNER_POST_HEIGHT / 2, -18],
+  // Wall 2 ends — North Shard (z: -22±5 @ x=5)
+  [  5,  CORNER_POST_HEIGHT / 2, -27],
+  [  5,  CORNER_POST_HEIGHT / 2, -17],
+  // Wall 3 ends — East Spine (z: -8±6 @ x=18)
+  [ 18,  CORNER_POST_HEIGHT / 2, -14],
+  [ 18,  CORNER_POST_HEIGHT / 2,  -2],
+  // Wall 4 ends — Center-East Divider (x: 12±5 @ z=2)
+  [  7,  CORNER_POST_HEIGHT / 2,   2],
+  [ 17,  CORNER_POST_HEIGHT / 2,   2],
+  // Wall 5 ends — Central Chokepoint (z: 8±5 @ x=0)
+  [  0,  CORNER_POST_HEIGHT / 2,   3],
+  [  0,  CORNER_POST_HEIGHT / 2,  13],
+  // Wall 6 ends — SE Corridor (x: 14±6 @ z=18)
+  [  8,  CORNER_POST_HEIGHT / 2,  18],
+  [ 20,  CORNER_POST_HEIGHT / 2,  18],
+  // Wall 7 ends — SW Channel (z: 15±5 @ x=-16)
+  [-16,  CORNER_POST_HEIGHT / 2,  10],
+  [-16,  CORNER_POST_HEIGHT / 2,  20],
+  // Wall 8 ends — West Divider (x: -20±5 @ z=0)
+  [-25,  CORNER_POST_HEIGHT / 2,   0],
+  [-15,  CORNER_POST_HEIGHT / 2,   0],
+  // Wall 9 ends — NW-Center Rib (z: -8±4 @ x=-6)
+  [ -6,  CORNER_POST_HEIGHT / 2, -12],
+  [ -6,  CORNER_POST_HEIGHT / 2,  -4],
 ];
 
 // ─── Battlement (merlon) constants ──────────────────────────────────────────

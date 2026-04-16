@@ -16,6 +16,14 @@ import StoneGround from './StoneGround';
 import CastleWalls from './CastleWalls';
 import CastleWallCollision from './CastleWallCollision';
 import CampThemeLights from './CampThemeLights';
+import GroundFogSystem from './GroundFogSystem';
+import InstancedEmbers from './InstancedEmbers';
+import InstancedDebris from './InstancedDebris';
+import InstancedMushrooms from './InstancedMushrooms';
+import InstancedBones from './InstancedBones';
+import GroundCracks from './GroundCracks';
+import InstancedRunes from './InstancedRunes';
+import VolumetricMoonRays from './VolumetricMoonRays';
 
 import { generateMountains } from '@/utils/MountainGenerator';
 import { World } from '@/ecs/World';
@@ -145,6 +153,34 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       {/* Coloured theme lights inside each camp based on randomly assigned archetype */}
       {campTypes.length > 0 && <CampThemeLights campTypes={campTypes} />}
+
+      {/* ── Doodads & scene props ──────────────────────────────────────── */}
+
+      {/* Low-lying mist wisps drifting across the arena floor */}
+      <GroundFogSystem />
+
+      {/* Rising fire embers above each camp beacon */}
+      <InstancedEmbers />
+
+      {/* Scattered rubble, rocks and stone chunks across the arena */}
+      <InstancedDebris />
+
+      {/* Bioluminescent mushrooms near the forest ring */}
+      <InstancedMushrooms />
+
+      {/* Aged bones and crude skulls near camp areas */}
+      <InstancedBones />
+
+      {/* Procedural crack decals on stone paths */}
+      <GroundCracks />
+
+
+      {/* Glowing arcane runes on ground near pillars and camp centers */}
+      <InstancedRunes />
+
+      {/* Volumetric god-ray shafts descending from the blood moon */}
+      <VolumetricMoonRays />
+
 
     </group>
   );

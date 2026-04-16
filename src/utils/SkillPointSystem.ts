@@ -2,12 +2,12 @@ import { WeaponType } from '@/components/dragon/weapons';
 
 export interface SkillPointData {
   skillPoints: number;
-  unlockedAbilities: Record<string, Set<string>>; // weaponType_slot -> Set of unlocked abilities (Q, E, R, F)
+  unlockedAbilities: Record<string, Set<string>>; // weaponType_slot -> Set of unlocked abilities (Q, E, R, F, P)
 }
 
 export interface AbilityUnlock {
   weaponType: WeaponType;
-  abilityKey: 'Q' | 'E' | 'R' | 'F';
+  abilityKey: 'Q' | 'E' | 'R' | 'F' | 'P';
   weaponSlot: 'primary' | 'secondary'; // Which slot this weapon is in
 }
 
@@ -47,9 +47,9 @@ export class SkillPointSystem {
     }
 
     const available: AbilityUnlock[] = [];
-    const unlockableKeys: Array<'Q' | 'E' | 'R' | 'F'> = ['Q', 'E', 'R', 'F'];
+    const unlockableKeys: Array<'Q' | 'E' | 'R' | 'F' | 'P'> = ['Q', 'E', 'R', 'F', 'P'];
 
-    // Check primary weapon Q, E, R, F abilities
+    // Check primary weapon abilities
     const primaryKey = `${selectedWeapons.primary}_primary`;
     const primaryUnlocked = skillPointData.unlockedAbilities[primaryKey] || new Set();
     for (const key of unlockableKeys) {
@@ -58,7 +58,7 @@ export class SkillPointSystem {
       }
     }
 
-    // Check secondary weapon Q, E, R, F abilities
+    // Check secondary weapon abilities
     const secondaryKey = `${selectedWeapons.secondary}_secondary`;
     const secondaryUnlocked = skillPointData.unlockedAbilities[secondaryKey] || new Set();
     for (const key of unlockableKeys) {
@@ -79,9 +79,6 @@ export class SkillPointSystem {
     abilityKey: 'Q' | 'E' | 'R' | 'F' | 'P',
     weaponSlot: 'primary' | 'secondary'
   ): boolean {
-    // P (passive) abilities are always active — they are not part of the unlock system
-    if (abilityKey === 'P') return true;
-
     const key = `${weaponType}_${weaponSlot}`;
     return skillPointData.unlockedAbilities[key]?.has(abilityKey) ?? false;
   }
@@ -92,7 +89,7 @@ export class SkillPointSystem {
   static unlockAbility(
     skillPointData: SkillPointData,
     weaponType: WeaponType,
-    abilityKey: 'Q' | 'E' | 'R' | 'F',
+    abilityKey: 'Q' | 'E' | 'R' | 'F' | 'P',
     weaponSlot: 'primary' | 'secondary'
   ): SkillPointData {
     if (skillPointData.skillPoints <= 0) {
@@ -191,6 +188,12 @@ export class SkillPointSystem {
         E: 'Tempest Sweep',
         R: 'Lightning Bolt',
         F: 'Storm Shroud'
+      },
+      [WeaponType.KNIGHT]: {
+        Q: '',
+        E: '',
+        R: '',
+        F: ''
       }
     };
 
@@ -207,7 +210,8 @@ export class SkillPointSystem {
       [WeaponType.SCYTHE]: 'Scythe',
       [WeaponType.SABRES]: 'Sabres',
       [WeaponType.RUNEBLADE]: 'Runeblade',
-      [WeaponType.SPEAR]: 'Spear'
+      [WeaponType.SPEAR]: 'Spear',
+      [WeaponType.KNIGHT]: 'Knight'
     };
     
     return weaponNames[weaponType] || 'Unknown Weapon';

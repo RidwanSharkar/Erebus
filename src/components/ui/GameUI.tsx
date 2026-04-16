@@ -2,6 +2,7 @@ import React, { useCallback } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
 import HotkeyPanel from './HotkeyPanel';
 import { SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
+import { AbilityLoadout } from '@/utils/weaponAbilities';
 import { RuneCounter } from './RuneCounter';
 import ChatUI from './ChatUI';
 
@@ -18,6 +19,7 @@ interface GameUIProps {
   } | null;
   onWeaponSwitch?: (slot: 1 | 3) => void;
   skillPointData?: SkillPointData;
+  abilityLoadout?: AbilityLoadout | null;
   onUnlockAbility?: (unlock: AbilityUnlock) => void;
   purchasedItems?: string[];
   criticalRuneCount?: number;
@@ -51,6 +53,7 @@ export default function GameUI({
   selectedWeapons,
   onWeaponSwitch,
   skillPointData,
+  abilityLoadout,
   onUnlockAbility,
   purchasedItems = [],
   criticalRuneCount = 0,
@@ -128,6 +131,7 @@ export default function GameUI({
         selectedWeapons={selectedWeapons}
         onWeaponSwitch={onWeaponSwitch}
         skillPointData={skillPointData}
+        abilityLoadout={abilityLoadout}
         onUnlockAbility={handleUnlockAbility}
         purchasedItems={purchasedItems}
       />

@@ -59,6 +59,9 @@ class EnemyAI {
 
     // Ghoul attack cooldown tracking
     this.ghoulAttackCooldown = new Map(); // enemyId -> lastAttackTime
+
+    // Titan circular-path tracking
+    this.titanAngle = new Map(); // enemyId -> current angle in radians
   }
 
   setRoom(room) {
@@ -99,6 +102,7 @@ class EnemyAI {
     this.weaverSummonCooldown.clear();
     this.weaverSummonedGhouls.clear();
     this.ghoulAttackCooldown.clear();
+    this.titanAngle.clear();
   }
 
   updateAI() {
@@ -171,6 +175,12 @@ class EnemyAI {
     // Special handling for ghouls (weaver summons)
     if (enemy.type === 'ghoul') {
       this.updateGhoulAI(enemy, players);
+      return;
+    }
+
+    // Special handling for the Titan — always roaming in a circle, no aggro yet
+    if (enemy.type === 'titan') {
+      this.updateTitanAI(enemy);
       return;
     }
 
@@ -1194,6 +1204,46 @@ class EnemyAI {
     console.log(`💀 Ghoul ${ghoul.id} attacked player ${player.id} for ${damage} damage!`);
   }
 
+  // ─── Titan AI ────────────────────────────────────────────────────────────────
+  // The Titan perpetually patrols a circle centred on (0, 0) with no aggro logic.
+  // Aggro and attack behaviour will be added in a later pass.
+
+  updateTitanAI(titan) {
+    const CIRCLE_RADIUS   = 10;    // units — matches gameRoom.js spawn radius
+    const ANGULAR_SPEED   = 0.22;  // radians per second ≈ 28-second lap
+    const deltaTime       = this.updateInterval / 1000;
+
+    // Seed starting angle from current position so the titan continues from
+    // wherever it spawned rather than snapping to 0°.
+    if (!this.titanAngle.has(titan.id)) {
+      const startAngle = Math.atan2(titan.position.z, titan.position.x);
+      this.titanAngle.set(titan.id, startAngle);
+    }
+
+    const currentAngle = this.titanAngle.get(titan.id);
+    const newAngle     = currentAngle + ANGULAR_SPEED * deltaTime;
+    this.titanAngle.set(titan.id, newAngle);
+
+    // Place the titan exactly on the circle — no drift accumulation.
+    titan.position.x = Math.cos(newAngle) * CIRCLE_RADIUS;
+    titan.position.z = Math.sin(newAngle) * CIRCLE_RADIUS;
+
+    // Face the tangential (forward) direction of the circle.
+    // Tangent of a CCW circle at angle θ is (-sin θ, cos θ) in XZ.
+    const facingX = -Math.sin(newAngle);
+    const facingZ =  Math.cos(newAngle);
+    titan.rotation = Math.atan2(facingX, facingZ);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-moved', {
+        enemyId:   titan.id,
+        position:  titan.position,
+        rotation:  titan.rotation,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
 
   updateBossAI(boss, players) {
@@ -1793,6 +1843,7 @@ class EnemyAI {
     // Different enemy types have different movement speeds
     switch (enemyType) {
       case 'elite': return 0.0;   // Stationary training dummies
+      case 'titan': return 1.8;
       case 'boss': return 1.25;
       case 'boss-skeleton': return 1.75;
       case 'shade':   return 2.0;
@@ -1868,6 +1919,7 @@ class EnemyAI {
     this.weaverSummonCooldown.delete(enemyId);
     this.weaverSummonedGhouls.delete(enemyId);
     this.ghoulAttackCooldown.delete(enemyId);
+    this.titanAngle.delete(enemyId);
 
     // If a ghoul dies, clear it from its summoner's slot so the weaver can resummon
     this.weaverSummonedGhouls.forEach((ghoulId, weaverId) => {

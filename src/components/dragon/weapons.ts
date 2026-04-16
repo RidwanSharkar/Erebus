@@ -4,7 +4,8 @@ export enum WeaponType {
     SABRES = 'SABRES',
     RUNEBLADE = 'RUNEBLADE',
     BOW = 'BOW',
-    SPEAR = 'SPEAR'
+    SPEAR = 'SPEAR',
+    KNIGHT = 'KNIGHT'
   }
 
 export enum WeaponSubclass {

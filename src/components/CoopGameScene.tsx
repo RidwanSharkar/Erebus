@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useThree, useFrame } from '@react-three/fiber';
 import { Vector3, Matrix4, Camera, PerspectiveCamera, Scene, WebGLRenderer, PCFSoftShadowMap, Color, Quaternion, Euler, Group, AdditiveBlending, MeshBasicMaterial } from '@/utils/three-exports';
 import DragonRenderer from './dragon/DragonRenderer';
+import CharacterRenderer from './character/CharacterRenderer';
 import BossRenderer from './enemies/BossRenderer';
 import SummonedBossSkeleton from './enemies/SummonedBossSkeleton';
 import KnightRenderer from './enemies/KnightRenderer';
@@ -18,12 +19,14 @@ import WeaverRenderer from './enemies/WeaverRenderer';
 import WeaverHealEffect from './enemies/WeaverHealEffect';
 import GhoulRenderer from './enemies/GhoulRenderer';
 import GhoulSummonRitual from './enemies/GhoulSummonRitual';
+import TitanRenderer from './enemies/TitanRenderer';
 import WarlockProjectile from './enemies/WarlockProjectile';
 import WarlockFlameStrike from './enemies/WarlockFlameStrike';
 import Meteor from './enemies/Meteor';
 import BossTeleportEffect from './enemies/BossTeleportEffect';
 import { useMultiplayer, Player } from '@/contexts/MultiplayerContext';
 import { SkillPointData } from '@/utils/SkillPointSystem';
+import { AbilityLoadout } from '@/utils/weaponAbilities';
 import { StatSystem, StatPointData } from '@/utils/StatSystem';
 import { setGlobalAgilityStatPoints } from '@/core/DamageCalculator';
 
@@ -126,6 +129,7 @@ interface CoopGameSceneProps {
   } | null;
   skillPointData?: SkillPointData;
   statPointData?: StatPointData;
+  abilityLoadout?: AbilityLoadout | null;
 }
 
 // Taunt Effect Indicator Component
@@ -282,7 +286,7 @@ function DroppedItemMesh({ item, playerPositionRef, onPickup }: DroppedItemMeshP
   );
 }
 
-export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCameraUpdate, onGameStateUpdate, onControlSystemUpdate, onExperienceUpdate, onEssenceUpdate, onMerchantUIUpdate, selectedWeapons, skillPointData, statPointData }: CoopGameSceneProps = {}) {
+export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCameraUpdate, onGameStateUpdate, onControlSystemUpdate, onExperienceUpdate, onEssenceUpdate, onMerchantUIUpdate, selectedWeapons, skillPointData, statPointData, abilityLoadout }: CoopGameSceneProps = {}) {
   const { camera, gl, scene } = useThree();
   const {
     players,
@@ -4404,6 +4408,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
         collider.type = ColliderType.SPHERE;
         // Boss = 2.0, boss-skeleton = 1.2, knight = 1.3, shade = 1.0, elite = 1.5
         collider.radius = serverEnemy.type === 'boss' ? 2.0
+          : serverEnemy.type === 'titan' ? 2.5
           : serverEnemy.type === 'boss-skeleton' ? 1.2
           : serverEnemy.type === 'knight' ? 1.3
           : serverEnemy.type === 'shade' ? 1.0
@@ -5491,7 +5496,10 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     playerEntityRef.current = player.id;
     controlSystemRef.current = controlSystem;
 
-
+    // Apply loadout immediately if it was selected before the engine was ready
+    if (abilityLoadout) {
+      controlSystem.setAbilityLoadout(abilityLoadout);
+    }
 
     // Cleanup function
     return () => {
@@ -5507,6 +5515,13 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       controlSystemRef.current.setSkillPointData(skillPointData);
     }
   }, [skillPointData]);
+
+  // Sync ability loadout with control system when it changes or when the engine becomes ready
+  useEffect(() => {
+    if (controlSystemRef.current && abilityLoadout) {
+      controlSystemRef.current.setAbilityLoadout(abilityLoadout);
+    }
+  }, [abilityLoadout, engineReady]);
 
   // Expose damage number completion handler for parent component
   useEffect(() => {
@@ -5569,12 +5584,18 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       {/* Enhanced Ground with textures and ambient occlusion
       <EnhancedGround radius={33} height={1} level={1} />  */}
 
-      {/* Main Player Dragon Unit Renderer */}
-      {(() => {
-        const shouldRender = playerEntity && engineRef.current;
+      {/* Main Player Character Body — always the humanoid character model */}
+      {playerEntity && engineRef.current && (
+        <CharacterRenderer
+          entityId={playerEntity.id}
+          position={playerPosition}
+          world={engineRef.current.getWorld()}
+          isLocalPlayer={true}
+        />
+      )}
 
-        return shouldRender;
-      })() && (
+      {/* Main Player Weapon Renderer — weapon layer on top of the character (dragon body hidden) */}
+      {playerEntity && engineRef.current && weaponState.currentWeapon !== WeaponType.KNIGHT && (
         <DragonRenderer
           entityId={playerEntity.id}
           position={playerPosition}
@@ -5722,10 +5743,11 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
             setWeaponState(newState);
           }}
           purchasedItems={players.get(socket?.id || '')?.purchasedItems || []}
+          hideBody={true}
         />
       )}
 
-      {/* Other Players Dragon Renderers */}
+      {/* Other Players Renderers */}
       {Array.from(players.values()).map(player => {
         if (player.id === socket?.id) return null; // Don't render our own player twice
 
@@ -5767,52 +5789,68 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
         // Get the real-time position ref for this enemy player
         const enemyPositionRef = enemyPlayerPositionRefs.current.get(player.id);
 
+        const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
+
         return (
-          <DragonRenderer
-            key={player.id}
-            entityId={parseInt(player.id.replace(/\D/g, '0'))} // Convert string ID to number
-            position={new Vector3(player.position.x, player.position.y, player.position.z)}
-            realTimePositionRef={enemyPositionRef}
-            world={engineRef.current?.getWorld() || new World()} // Use current world or create new one
-            currentWeapon={player.weapon}
-            currentSubclass={player.subclass}
-            isCharging={playerState.isCharging}
-            chargeProgress={playerState.chargeProgress}
-            isSwinging={playerState.isSwinging}
-            isSpinning={playerState.isSpinning}
-            swordComboStep={playerState.swordComboStep}
-            isSwordCharging={playerState.isSwordCharging}
-            isDeflecting={playerState.isDeflecting}
-            isViperStingCharging={playerState.isViperStingCharging}
-            viperStingChargeProgress={playerState.viperStingChargeProgress}
-            isBarrageCharging={playerState.isBarrageCharging}
-            barrageChargeProgress={playerState.barrageChargeProgress}
-            isCobraShotCharging={playerState.isCobraShotCharging}
-            cobraShotChargeProgress={playerState.cobraShotChargeProgress}
-            isSkyfalling={playerState.isSkyfalling}
-            isBackstabbing={playerState.isBackstabbing}
-            isSundering={playerState.isSundering || false}
-            isSmiting={playerState.isSmiting || false}
-            isColossusStriking={playerState.isColossusStriking || false}
-            isDeathGrasping={playerState.isDeathGrasping || false}
-            isWraithStriking={playerState.isWraithStriking || false}
-            isCorruptedAuraActive={playerState.isCorruptedAuraActive || false}
-            isDead={isPlayerDead}
-            rotation={player.rotation}
-            isLocalPlayer={false}
-            onBowRelease={() => {}}
-            onScytheSwingComplete={() => {}}
-            onSwordSwingComplete={() => {}}
-            onSabresSwingComplete={() => {}}
-            onRunebladeSwingComplete={() => {}}
-            onBackstabComplete={() => {}}
-            onSunderComplete={() => {}}
-            onSmiteComplete={() => {}}
-            onColossusStrikeComplete={() => {}}
-            onDeathGraspComplete={() => {}}
-            onWraithStrikeComplete={() => {}}
-            purchasedItems={player.purchasedItems || []}
-          />
+          <React.Fragment key={player.id}>
+            {/* Character body — always the humanoid model */}
+            <CharacterRenderer
+              entityId={parseInt(player.id.replace(/\D/g, '0'))}
+              position={playerPos}
+              world={engineRef.current?.getWorld() || new World()}
+              isLocalPlayer={false}
+              rotation={player.rotation}
+            />
+
+            {/* Weapon layer — dragon body hidden, only weapon rendered */}
+            {player.weapon !== WeaponType.KNIGHT && (
+              <DragonRenderer
+                entityId={parseInt(player.id.replace(/\D/g, '0'))}
+                position={playerPos}
+                realTimePositionRef={enemyPositionRef}
+                world={engineRef.current?.getWorld() || new World()}
+                currentWeapon={player.weapon}
+                currentSubclass={player.subclass}
+                isCharging={playerState.isCharging}
+                chargeProgress={playerState.chargeProgress}
+                isSwinging={playerState.isSwinging}
+                isSpinning={playerState.isSpinning}
+                swordComboStep={playerState.swordComboStep}
+                isSwordCharging={playerState.isSwordCharging}
+                isDeflecting={playerState.isDeflecting}
+                isViperStingCharging={playerState.isViperStingCharging}
+                viperStingChargeProgress={playerState.viperStingChargeProgress}
+                isBarrageCharging={playerState.isBarrageCharging}
+                barrageChargeProgress={playerState.barrageChargeProgress}
+                isCobraShotCharging={playerState.isCobraShotCharging}
+                cobraShotChargeProgress={playerState.cobraShotChargeProgress}
+                isSkyfalling={playerState.isSkyfalling}
+                isBackstabbing={playerState.isBackstabbing}
+                isSundering={playerState.isSundering || false}
+                isSmiting={playerState.isSmiting || false}
+                isColossusStriking={playerState.isColossusStriking || false}
+                isDeathGrasping={playerState.isDeathGrasping || false}
+                isWraithStriking={playerState.isWraithStriking || false}
+                isCorruptedAuraActive={playerState.isCorruptedAuraActive || false}
+                isDead={isPlayerDead}
+                rotation={player.rotation}
+                isLocalPlayer={false}
+                onBowRelease={() => {}}
+                onScytheSwingComplete={() => {}}
+                onSwordSwingComplete={() => {}}
+                onSabresSwingComplete={() => {}}
+                onRunebladeSwingComplete={() => {}}
+                onBackstabComplete={() => {}}
+                onSunderComplete={() => {}}
+                onSmiteComplete={() => {}}
+                onColossusStrikeComplete={() => {}}
+                onDeathGraspComplete={() => {}}
+                onWraithStrikeComplete={() => {}}
+                purchasedItems={player.purchasedItems || []}
+                hideBody={true}
+              />
+            )}
+          </React.Fragment>
         );
       })}
 
@@ -6172,6 +6210,22 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
         />
       ))}
 
+      {/* Titan — always visible, roaming the centre of the map */}
+      {Array.from(enemies.values()).map(enemy => {
+        if (enemy.type !== 'titan') return null;
+        return (
+          <TitanRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={new Vector3(enemy.position.x, enemy.position.y, enemy.position.z)}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+          />
+        );
+      })}
+
       {/* Boss Meteors */}
       {activeMeteors.map(meteor => {
         return (
@@ -6345,8 +6399,14 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       {/* Lightning Storm Effects */}
       {lightningStormEffects.map(effect => {
         // Get enemy data for Lightning Storm targeting
+        const lightningOrigin = new Vector3(effect.position.x, effect.position.y, effect.position.z);
+        const lightningRange = 10;
         const lightningStormEnemyData = Array.from(enemies.values())
-          .filter(enemy => enemy.type === 'boss' || enemy.type === 'bossSkeleton')
+          .filter(enemy => {
+            if (enemy.isDying || enemy.health <= 0) return false;
+            const ePos = new Vector3(enemy.position.x, enemy.position.y, enemy.position.z);
+            return ePos.distanceTo(lightningOrigin) <= lightningRange;
+          })
           .map(enemy => ({
             id: enemy.id,
             position: new Vector3(enemy.position.x, enemy.position.y, enemy.position.z),
@@ -6710,7 +6770,10 @@ function setupCoopGame(
 
   // Set up damage callbacks
   if (damageEnemyCallback) {
-    combatSystem.setEnemyDamageCallback(damageEnemyCallback);
+    combatSystem.setEnemyDamageCallback((enemyId: string, damage: number, sourcePlayerId?: string) => {
+      audioSystem.playUIHitboxSound();
+      damageEnemyCallback(enemyId, damage, sourcePlayerId);
+    });
   }
   combatSystem.setPlayerDamageCallback(damagePlayerCallback);
 

@@ -5,6 +5,7 @@ import { unstable_batchedUpdates } from 'react-dom';
 import { io, Socket } from 'socket.io-client';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { SkillPointSystem, SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
+import { AbilityLoadout } from '@/utils/weaponAbilities';
 import { ExperienceSystem } from '@/utils/ExperienceSystem';
 import { StatSystem, StatPointData, StatKey, PlayerStats } from '@/utils/StatSystem';
 
@@ -193,6 +194,10 @@ interface MultiplayerContextType {
   // Weapon selection actions
   setSelectedWeapons: (weapons: { primary: WeaponType; secondary: WeaponType }) => void;
 
+  // Ability loadout
+  abilityLoadout: AbilityLoadout | null;
+  setAbilityLoadout: (loadout: AbilityLoadout | null) => void;
+
   // Skill point system actions
   unlockAbility: (unlock: AbilityUnlock) => void;
   updateSkillPointsForLevel: (level: number) => void;
@@ -251,6 +256,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   } | null>(null);
   const [skillPointData, setSkillPointData] = useState<SkillPointData>(SkillPointSystem.getInitialSkillPointData());
   const [statPointData, setStatPointData] = useState<StatPointData>(StatSystem.getInitialStatPointData());
+  const [abilityLoadout, setAbilityLoadoutState] = useState<AbilityLoadout | null>(null);
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -1076,6 +1082,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setSelectedWeaponsState(weapons);
   }, []);
 
+  const setAbilityLoadout = useCallback((loadout: AbilityLoadout | null) => {
+    setAbilityLoadoutState(loadout);
+  }, []);
+
   const updatePlayerLevel = useCallback((playerId: string, level: number) => {
     if (socket && currentRoomId) {
       socket.emit('player-level-changed', {
@@ -1236,6 +1246,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     updatePlayerShield,
     selectedWeapons,
     setSelectedWeapons,
+    abilityLoadout,
+    setAbilityLoadout,
     skillPointData,
     unlockAbility,
     updateSkillPointsForLevel,

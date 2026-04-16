@@ -221,18 +221,24 @@ export class MovementSystem extends System {
 
   // Castle wall AABB segments — mirrors CastleWalls.tsx WALL_SEGMENTS (half-extents)
   private readonly WALL_SEGMENTS = [
-    // Camp 1 · NE Ruins
-    { cx: 13.25,  cz: -12.5,  hx: 4.25,  hz: 0.3   },
-    { cx: 17.5,   cz:  -9.5,  hx: 0.3,   hz: 3.0   },
-    // Camp 2 · East Outpost
-    { cx: 19.25,  cz:  -2.0,  hx: 3.25,  hz: 0.3   },
-    { cx: 22.5,   cz:   2.0,  hx: 0.3,   hz: 4.0   },
-    // Camp 3 · South Grove
-    { cx:  6.0,   cz:  18.5,  hx: 4.5,   hz: 0.3   },
-    { cx: 10.5,   cz:  15.25, hx: 0.3,   hz: 3.25  },
-    // Camp 4 · West Crossing
-    { cx: -22.5,  cz:  -0.25, hx: 0.3,   hz: 5.75  },
-    { cx: -17.75, cz:  -6.0,  hx: 4.75,  hz: 0.3   },
+    // Maze Wall 1 · NW Barrier (east-west)
+    { cx: -14,   cz: -18,   hx: 6,    hz: 0.3  },
+    // Maze Wall 2 · North Shard (north-south)
+    { cx:   5,   cz: -22,   hx: 0.3,  hz: 5    },
+    // Maze Wall 3 · East Spine (north-south)
+    { cx:  18,   cz:  -8,   hx: 0.3,  hz: 6    },
+    // Maze Wall 4 · Center-East Divider (east-west)
+    { cx:  12,   cz:   2,   hx: 5,    hz: 0.3  },
+    // Maze Wall 5 · Central Chokepoint (north-south)
+    { cx:   0,   cz:   8,   hx: 0.3,  hz: 5    },
+    // Maze Wall 6 · SE Corridor (east-west)
+    { cx:  14,   cz:  18,   hx: 6,    hz: 0.3  },
+    // Maze Wall 7 · SW Channel (north-south)
+    { cx: -16,   cz:  15,   hx: 0.3,  hz: 5    },
+    // Maze Wall 8 · West Divider (east-west)
+    { cx: -20,   cz:   0,   hx: 5,    hz: 0.3  },
+    // Maze Wall 9 · NW-Center Rib (north-south)
+    { cx:  -6,   cz:  -8,   hx: 0.3,  hz: 4    },
   ];
   private readonly WALL_PLAYER_RADIUS = 0.5;
 

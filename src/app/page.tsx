@@ -14,7 +14,8 @@ import { MultiplayerProvider, useMultiplayer } from '../contexts/MultiplayerCont
 import RoomJoin from '../components/ui/RoomJoin';
 import MerchantUI from '../components/ui/MerchantUI';
 import StatsPanel from '../components/ui/StatsPanel';
-import { weaponAbilities, getAbilityIcon, type AbilityData } from '../utils/weaponAbilities';
+import { weaponAbilities, getAbilityIcon, type AbilityData, type AbilityLoadout } from '../utils/weaponAbilities';
+import AbilitySelectionModal from '../components/ui/AbilitySelectionModal';
 
 // Extend Window interface to include audioSystem
 declare global {
@@ -79,7 +80,8 @@ function AbilityTooltip({ content, visible, x, y }: TooltipProps) {
 }
 
 function HomeContent() {
-  const { selectedWeapons, setSelectedWeapons, skillPointData, unlockAbility, updateSkillPointsForLevel, statPointData, allocateStatPoint, updateStatPointsForLevel: updateStatPointsForLvl, purchaseItem, players, socket, skeletonKillCount, enemies, inventory } = useMultiplayer();
+  const { selectedWeapons, setSelectedWeapons, abilityLoadout, setAbilityLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, statPointData, allocateStatPoint, updateStatPointsForLevel: updateStatPointsForLvl, purchaseItem, players, socket, skeletonKillCount, enemies, inventory } = useMultiplayer();
+  const [showAbilitySelection, setShowAbilitySelection] = useState(false);
 
   const [damageNumbers, setDamageNumbers] = useState<DamageNumberData[]>([]);
   const [cameraInfo, setCameraInfo] = useState<{
@@ -114,6 +116,8 @@ function HomeContent() {
         return WeaponSubclass.ARCANE;
       case WeaponType.SPEAR:
         return WeaponSubclass.STORM;
+      case WeaponType.KNIGHT:
+        return WeaponSubclass.DIVINITY;
       default:
         return WeaponSubclass.ELEMENTAL;
     }
@@ -243,11 +247,10 @@ function HomeContent() {
       icon: '🔱',
       description: 'IMMORTAL',
       defaultSubclass: WeaponSubclass.STORM
-    }
+    },
   ];
 
   const handleWeaponToggle = (weaponType: WeaponType) => {
-    // Play selection sound when weapon is clicked
     if (window.audioSystem) {
       window.audioSystem.playUISelectionSound();
     }
@@ -255,13 +258,14 @@ function HomeContent() {
     const isSelected = tempSelectedWeapons.includes(weaponType);
 
     if (isSelected) {
-      // Remove weapon if already selected
       setTempSelectedWeapons([]);
       setWeaponPositions({});
+      setAbilityLoadout(null);
     } else {
-      // Select this weapon (only allow 1 weapon)
       setTempSelectedWeapons([weaponType]);
       setWeaponPositions({ [weaponType]: 'primary' });
+      // Reset ability loadout when weapon changes — player picks abilities in-game
+      setAbilityLoadout(null);
     }
   };
 
@@ -317,6 +321,13 @@ function HomeContent() {
   const handleControlSystemUpdate = (newControlSystem: any) => {
     setControlSystem(newControlSystem);
   };
+
+  // Show ability selection modal when the game starts (if no loadout chosen yet)
+  useEffect(() => {
+    if ((gameMode === 'coop' || gameMode === 'pvp') && !abilityLoadout && selectedWeapons) {
+      setShowAbilitySelection(true);
+    }
+  }, [gameMode]);
 
   // Sync skill point data with control system
   useEffect(() => {
@@ -511,9 +522,9 @@ function HomeContent() {
                     })}
                   </div>
                   
-                  {/* Second row - 2 weapons centered */}
-                  <div className="flex justify-center gap-3">
-                    {weapons.slice(3, 5).map((weapon) => {
+                  {/* Second row - remaining weapons */}
+                  <div className="grid grid-cols-3 gap-3">
+                    {weapons.slice(3).map((weapon) => {
                       const isSelected = tempSelectedWeapons.includes(weapon.type);
                       const canSelect = !isSelected && tempSelectedWeapons.length < 1;
                       const colorScheme = getWeaponColorScheme(weapon.type);
@@ -523,7 +534,7 @@ function HomeContent() {
                           key={weapon.type}
                           onClick={() => handleWeaponToggle(weapon.type)}
                           className={`
-                            w-64 p-3 rounded-lg border-2 cursor-pointer transition-all duration-300
+                            w-full p-3 rounded-lg border-2 cursor-pointer transition-all duration-300
                             ${isSelected
                               ? `${colorScheme.border} ${colorScheme.background} shadow-lg ${colorScheme.shadow}`
                               : canSelect
@@ -589,11 +600,9 @@ function HomeContent() {
                       : 'bg-gray-600 cursor-not-allowed'
                   }`}
                   onClick={() => {
-                    // Play interface sound
                     if (window.audioSystem) {
                       window.audioSystem.playUIInterfaceSound();
                     }
-
                     if (selectedWeapons) {
                       setRoomJoinMode('coop');
                       setShowRoomJoin(true);
@@ -602,7 +611,7 @@ function HomeContent() {
                   disabled={!selectedWeapons}
                 >
                   ENTER
-                  {!selectedWeapons && ' (Select Weapons First)'}
+                  {!selectedWeapons && ' (Select a Weapon First)'}
                 </button>
               </div>
             </div>
@@ -686,6 +695,18 @@ function HomeContent() {
           </div>
         )}
 
+        {/* Ability Selection Modal */}
+        {showAbilitySelection && selectedWeapons && (
+          <AbilitySelectionModal
+            selectedWeapon={selectedWeapons.primary}
+            onConfirm={(loadout) => {
+              setAbilityLoadout(loadout);
+              setShowAbilitySelection(false);
+            }}
+            onBack={() => setShowAbilitySelection(false)}
+          />
+        )}
+
         {/* Room Join UI */}
         {showRoomJoin && selectedWeapons && (
           <RoomJoin
@@ -731,6 +752,7 @@ function HomeContent() {
               selectedWeapons={selectedWeapons}
               skillPointData={skillPointData}
               statPointData={statPointData}
+              abilityLoadout={abilityLoadout}
             />
           )}
         </Canvas>
@@ -785,6 +807,7 @@ function HomeContent() {
                   }
                 }}
                 skillPointData={skillPointData}
+                abilityLoadout={abilityLoadout}
                 onUnlockAbility={unlockAbility}
                 purchasedItems={localPurchasedItems}
                 criticalRuneCount={getGlobalRuneCounts().criticalRunes}

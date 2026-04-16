@@ -19,6 +19,7 @@ import { CombatSystem } from './CombatSystem';
 import { WeaponSubclass, WeaponType } from '@/components/dragon/weapons';
 import { DeflectBarrier } from '@/components/weapons/DeflectBarrier';
 import { SkillPointSystem, SkillPointData } from '@/utils/SkillPointSystem';
+import { AbilityLoadout } from '@/utils/weaponAbilities';
 import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
 import { triggerGlobalCobraShot } from '@/components/projectiles/CobraShotManager';
@@ -157,7 +158,7 @@ export class ControlSystem extends System {
 
   // Rate limiting for projectile firing
   private lastBowFireTime = 0; // Bow projectiles
-  private lastScytheFireTime = 0; // Scythe entropic bolts (deprecated - now uses Icebeam)
+  private lastScytheFireTime = 0; // Scythe entropic bolts
   private lastSwordFireTime = 0; // Sword melee attacks
   private lastRunebladeFireTime = 0; // Runeblade melee attacks
   private lastSabresFireTime = 0; // Sabres melee attacks
@@ -179,7 +180,7 @@ export class ControlSystem extends System {
   private swordFireRate = 0.825; // Rate for sword attacks
   private runebladeFireRate = 0.725; // Runeblade attack rate
   private sabresFireRate = 0.6; // Sabres dual attack rate (600ms between attacks)
-  private scytheFireRate = 0.35; // EntropicBolt rate (0.33s cooldown)
+  private scytheFireRate = 0.525; // EntropicBolt rate (0.33s cooldown)
   private crossentropyFireRate = 5; // CrossentropyBolt rate (1 per second)
   private summonTotemFireRate = 6.0; // Summon Totem rate (5 seconds cooldown)
   private viperStingFireRate = 2.0; // Viper Sting rate (2 seconds cooldown)
@@ -304,7 +305,7 @@ export class ControlSystem extends System {
 
   // Lightning Storm ability state (Spear)
   private lastLightningStormTime = 0;
-  private lightningStormCooldown = 1.0; // 1 second cooldown
+  private lightningStormCooldown = 3.0; // 3 second cooldown
 
   // Public getter for stealth state
   public getIsStealthing(): boolean {
@@ -361,6 +362,10 @@ export class ControlSystem extends System {
   private corruptedAuraRange = 2.0; 
   private corruptedAuraSlowEffect = 0.5; // 50% slow (multiply movement speed by this)
   private corruptedAuraSlowedEntities = new Map<number, boolean>(); // Track slowed entities
+  private lastCorruptedAuraTime = 0;
+  private corruptedAuraCooldown = 6.0; // 6 second cooldown
+  private corruptedAuraDuration = 4.0; // 4 second duration
+  private corruptedAuraStartTime = 0;
 
   // Store original rune counts to restore when corrupted aura deactivates
   private originalCriticalRunes = 0;
@@ -381,6 +386,9 @@ export class ControlSystem extends System {
 
   // Skill point system data
   private skillPointData: SkillPointData;
+
+  // Ability loadout (universal ability selection per slot Q/E/R)
+  private abilityLoadout: AbilityLoadout | null = null;
 
   // Titanheart passive tracking
   private titanheartMaxHealthApplied = false;
@@ -806,7 +814,7 @@ export class ControlSystem extends System {
   }
 
   private applyScythePassive(weaponSlot: 'primary' | 'secondary'): void {
-    // Cryoflame: modifies primary attack - passive, no additional setup needed
+    // Icebeam: replaces primary attack input flow when unlocked
   }
 
   private applyRunebladePassive(weaponSlot: 'primary' | 'secondary'): void {
@@ -818,6 +826,193 @@ export class ControlSystem extends System {
     this.resetSabresPassive();
     this.resetSwordPassive();
     // Bow, Scythe, and Runeblade passives are global and don't need resetting
+  }
+
+  /**
+   * Handle Q/E/R key presses by routing to the ability assigned in the loadout.
+   * This is called after the per-weapon primary attack handler every frame.
+   */
+  private handleLoadoutAbilityKeys(playerTransform: Transform): void {
+    if (!this.abilityLoadout) return;
+    const slots: Array<'Q' | 'E' | 'R'> = ['Q', 'E', 'R'];
+    const keys = ['q', 'e', 'r'] as const;
+    for (let i = 0; i < slots.length; i++) {
+      const abilityId = this.abilityLoadout[slots[i]];
+      if (abilityId && this.inputManager.isKeyPressed(keys[i])) {
+        this.dispatchAbility(abilityId, playerTransform);
+      }
+    }
+  }
+
+  /** Dispatch an ability by its universal id, executing the corresponding perform method. */
+  private dispatchAbility(abilityId: string, playerTransform: Transform): void {
+    switch (abilityId) {
+      // ── RUNEBLADE ─────────────────────────────────────────────────────
+      case 'RUNEBLADE_Q': // Aegis (Deflect)
+        if (!this.isDeflecting && !this.isSmiting && !this.isSwinging && !this.isWraithStriking)
+          this.performDeflect(playerTransform);
+        break;
+      case 'RUNEBLADE_E': // Wraith Strike
+        if (!this.isWraithStriking && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping)
+          this.performWraithStrike(playerTransform);
+        break;
+      case 'RUNEBLADE_R': // Colossus Strike (Smite)
+        if (!this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWraithStriking)
+          this.performSmite(playerTransform);
+        break;
+      // ── BOW ───────────────────────────────────────────────────────────
+      case 'BOW_Q': // Frost Bite (Barrage)
+        if (!this.isBarrageCharging && !this.isCharging && !this.isViperStingCharging)
+          this.performBarrage(playerTransform);
+        break;
+      case 'BOW_E': // Viper Sting (Cobra Shot)
+        if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging)
+          this.performCobraShot(playerTransform);
+        break;
+      case 'BOW_R': // Reaping Talons (Viper Sting)
+        if (!this.isViperStingCharging && !this.isCharging)
+          this.performViperSting(playerTransform);
+        break;
+      // ── SCYTHE ────────────────────────────────────────────────────────
+      case 'SCYTHE_Q': // Sunwell (Reanimate)
+        if (!this.isIcebeaming)
+          this.performReanimateAbility(playerTransform);
+        break;
+      case 'SCYTHE_E': // Coldsnap (Frost Nova)
+        if (!this.isIcebeaming)
+          this.performFrostNovaAbility(playerTransform);
+        break;
+      case 'SCYTHE_R': // Crossentropy
+        if (!this.isIcebeaming && !this.isCrossentropyCharging)
+          this.performCrossentropyAbility(playerTransform);
+        break;
+      // ── SABRES ────────────────────────────────────────────────────────
+      case 'SABRES_Q': // Backstab
+        if (!this.isSwinging && !this.isSkyfalling && !this.isSundering)
+          this.performBackstab(playerTransform);
+        break;
+      case 'SABRES_E': // Flourish (Sunder)
+        if (!this.isSkyfalling && !this.isSundering)
+          this.performSunder(playerTransform);
+        break;
+      case 'SABRES_R': // Divebomb (Skyfall)
+        if (!this.isSkyfalling && !this.isSundering)
+          this.performSkyfall(playerTransform);
+        break;
+      // ── SPEAR ─────────────────────────────────────────────────────────
+      case 'SPEAR_Q': // Wind Shear (Throw Spear)
+        if (!this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging)
+          this.performThrowSpear(playerTransform);
+        break;
+      case 'SPEAR_E': // Tempest Sweep (Whirlwind)
+        if (!this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging)
+          this.performWhirlwind(playerTransform);
+        break;
+      case 'SPEAR_R': // Lightning Bolt
+        if (!this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging && !this.isFlurryActive)
+          this.performLightningStorm(playerTransform);
+        break;
+      // ── FORMERLY F-KEY (now in universal loadout pool) ────────────────
+      case 'RUNEBLADE_F': // Aura (Corrupted Aura toggle)
+        this.toggleCorruptedAura(playerTransform);
+        break;
+      case 'BOW_F': // Rejuvenating Shot
+        if (!this.isBarrageCharging && !this.isViperStingCharging && !this.isCobraShotCharging)
+          this.performRejuvenatingShot(playerTransform);
+        break;
+      case 'BOW_P': // Tempest Rounds — passive, no active dispatch needed
+        break;
+      case 'SCYTHE_F': // Mantra (Summon Totem)
+        if (!this.isIcebeaming)
+          this.performSummonTotemAbility(playerTransform);
+        break;
+      case 'SABRES_F': // Accretion (Stealth)
+        if (!this.isSkyfalling && !this.isSundering)
+          this.performStealth(playerTransform);
+        break;
+      case 'SPEAR_F': // Storm Shroud (Flurry)
+        if (!this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging)
+          this.performFlurry(playerTransform);
+        break;
+    }
+  }
+
+  /**
+   * Update ongoing ability states for abilities that may be active on any weapon.
+   * These were previously only updated inside their weapon-specific handlers,
+   * but now run every frame to support cross-weapon ability usage.
+   */
+  private updateCrossWeaponStates(playerTransform: Transform, currentTime: number): void {
+    // Spear states
+    if (this.isThrowSpearCharging) {
+      this.updateThrowSpearCharging(playerTransform, currentTime);
+    }
+    if (this.isThrowSpearReleasing) {
+      if (currentTime - this.throwSpearReleaseTime >= 0.15) {
+        this.isThrowSpearReleasing = false;
+        this.throwSpearReleaseTime = 0;
+      }
+    }
+    if (this.isWhirlwindCharging) {
+      this.updateWhirlwindCharging(playerTransform, currentTime);
+    }
+    if (this.isWhirlwinding) {
+      this.updateWhirlwindSpinning(currentTime);
+    }
+    if (this.isFlurryActive) {
+      this.updateFlurryState(currentTime);
+    }
+    // Sabres states
+    if (this.isSkyfalling) {
+      this.updateSkyfallMovement(playerTransform);
+    }
+    if (this.isBackstabbing) {
+      this.updateBackstabState(playerTransform);
+    }
+    if (this.isSundering) {
+      this.updateSunderState(playerTransform);
+    }
+    if (this.isStealthing) {
+      this.updateStealthState(playerTransform);
+    }
+    // Runeblade states
+    if (this.corruptedAuraActive) {
+      // Auto-expire after duration
+      if (currentTime - this.corruptedAuraStartTime >= this.corruptedAuraDuration) {
+        this.deactivateCorruptedAura();
+      } else {
+        this.updateCorruptedAuraEffects(playerTransform);
+      }
+    }
+  }
+
+  /** Return the cooldown info for a specific universal ability id. */
+  private getCooldownForAbility(abilityId: string, currentTime: number): { current: number; max: number; isActive: boolean } {
+    switch (abilityId) {
+      case 'RUNEBLADE_Q': return { current: Math.max(0, this.deathGraspCooldown - (currentTime - this.lastDeathGraspTime)), max: this.deathGraspCooldown, isActive: this.isDeathGrasping };
+      case 'RUNEBLADE_E': return { current: Math.max(0, this.wraithStrikeCooldown - (currentTime - this.lastWraithStrikeTime)), max: this.wraithStrikeCooldown, isActive: this.isWraithStriking };
+      case 'RUNEBLADE_R': return { current: Math.max(0, this.smiteCooldown - (currentTime - this.lastSmiteTime)), max: this.smiteCooldown, isActive: this.isSmiting };
+      case 'BOW_Q':       return { current: Math.max(0, this.barrageFireRate - (currentTime - this.lastBarrageTime)), max: this.barrageFireRate, isActive: this.isBarrageCharging };
+      case 'BOW_E':       return { current: Math.max(0, this.cobraShotFireRate - (currentTime - this.lastCobraShotTime)), max: this.cobraShotFireRate, isActive: this.isCobraShotCharging };
+      case 'BOW_R':       return { current: Math.max(0, this.viperStingFireRate - (currentTime - this.lastViperStingTime)), max: this.viperStingFireRate, isActive: this.isViperStingCharging };
+      case 'SCYTHE_Q':    return { current: Math.max(0, 1.0 - (currentTime - this.lastReanimateTime)), max: 1.0, isActive: false };
+      case 'SCYTHE_E':    return { current: Math.max(0, this.frostNovaFireRate - (currentTime - this.lastFrostNovaTime)), max: this.frostNovaFireRate, isActive: false };
+      case 'SCYTHE_R':    return { current: Math.max(0, this.crossentropyFireRate - (currentTime - this.lastCrossentropyTime)), max: this.crossentropyFireRate, isActive: this.isCrossentropyCharging };
+      case 'SABRES_Q':    return { current: Math.max(0, this.backstabCooldown - (currentTime - this.lastBackstabTime)), max: this.backstabCooldown, isActive: this.isBackstabbing };
+      case 'SABRES_E':    return { current: Math.max(0, this.sunderCooldown - (currentTime - this.lastSunderTime)), max: this.sunderCooldown, isActive: this.isSundering };
+      case 'SABRES_R':    return { current: Math.max(0, this.skyfallCooldown - (currentTime - this.lastSkyfallTime)), max: this.skyfallCooldown, isActive: this.isSkyfalling };
+      case 'SPEAR_Q':     return { current: Math.max(0, this.throwSpearCooldown - (currentTime - this.lastThrowSpearTime)), max: this.throwSpearCooldown, isActive: this.isThrowSpearCharging };
+      case 'SPEAR_E':     return { current: Math.max(0, this.whirlwindCooldown - (currentTime - this.lastWhirlwindTime)), max: this.whirlwindCooldown, isActive: this.isWhirlwindCharging || this.isWhirlwinding };
+      case 'SPEAR_R':     return { current: Math.max(0, this.lightningStormCooldown - (currentTime - this.lastLightningStormTime)), max: this.lightningStormCooldown, isActive: false };
+      // ── Formerly F-key abilities ──────────────────────────────────────
+      case 'RUNEBLADE_F': return { current: Math.max(0, this.corruptedAuraCooldown - (currentTime - this.lastCorruptedAuraTime)), max: this.corruptedAuraCooldown, isActive: this.corruptedAuraActive };
+      case 'BOW_F':       return { current: Math.max(0, this.rejuvenatingShotFireRate - (currentTime - this.lastRejuvenatingShotTime)), max: this.rejuvenatingShotFireRate, isActive: false };
+      case 'BOW_P':       return { current: 0, max: 0, isActive: false };
+      case 'SCYTHE_F':    return { current: Math.max(0, this.summonTotemFireRate - (currentTime - this.lastSummonTotemTime)), max: this.summonTotemFireRate, isActive: false };
+      case 'SABRES_F':    return { current: Math.max(0, this.stealthCooldown - (currentTime - this.lastStealthTime)), max: this.stealthCooldown, isActive: this.isStealthing };
+      case 'SPEAR_F':     return { current: Math.max(0, this.flurryCooldown - (currentTime - this.lastFlurryTime)), max: this.flurryCooldown, isActive: this.isFlurryActive };
+      default:            return { current: 0, max: 1, isActive: false };
+    }
   }
 
   private handleCombatInput(playerTransform: Transform): void {
@@ -839,39 +1034,19 @@ export class ControlSystem extends System {
     } else if (this.currentWeapon === WeaponType.SPEAR) {
       this.handleSpearInput(playerTransform);
     }
+
+    // Dispatch Q/E/R to the player's chosen ability loadout (cross-weapon)
+    this.handleLoadoutAbilityKeys(playerTransform);
+
+    // Update ongoing ability states regardless of current weapon
+    this.updateCrossWeaponStates(playerTransform, Date.now() / 1000);
   }
 
   private handleBowInput(playerTransform: Transform): void {
     // Check if RAPIDFIRE passive is unlocked
     const hasRapidfirePassive = this.isPassiveAbilityUnlocked('P', WeaponType.BOW, this.currentWeapon === this.selectedWeapons?.primary ? 'primary' : 'secondary');
 
-    // Handle Viper Sting ability with 'R' key
-    if (this.inputManager.isKeyPressed('r') && !this.isViperStingCharging && !this.isCharging && this.isAbilityUnlocked('R')) {
-      this.performViperSting(playerTransform);
-    }
-
-    // Handle Barrage ability with 'Q' key
-    if (this.inputManager.isKeyPressed('q') && this.isAbilityUnlocked('Q')) {
-
-      if (!this.isBarrageCharging && !this.isCharging && !this.isViperStingCharging) {
-        this.performBarrage(playerTransform);
-      }
-    }
-
-    // Handle Cobra Shot ability with 'E' key
-    if (this.inputManager.isKeyPressed('e') && this.isAbilityUnlocked('E')) {
-
-      if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging) {
-        this.performCobraShot(playerTransform);
-      }
-    }
-
-    // Handle Rejuvenating Shot ability with 'F' key
-    if (this.inputManager.isKeyPressed('f') && this.isAbilityUnlocked('F')) {
-      if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging && !this.isRejuvenatingShotCharging) {
-        this.performRejuvenatingShot(playerTransform);
-      }
-    }
+    // Q/E/R abilities are now handled by handleLoadoutAbilityKeys via the universal dispatch.
 
     // Handle bow input based on whether RAPIDFIRE passive is unlocked
     if (hasRapidfirePassive) {
@@ -950,68 +1125,67 @@ export class ControlSystem extends System {
   }
 
   private handleScytheInput(playerTransform: Transform): void {
-    // Handle scythe left click for Icebeam
-    if (this.inputManager.isMouseButtonPressed(0)) { // Left mouse button held
-      if (!this.isIcebeaming) {
-        // Check cooldown
-        const currentTime = Date.now() / 1000;
-        if (currentTime - this.lastIcebeamTime < this.icebeamCooldown) {
-          return; // On cooldown
-        }
+    const weaponSlot: 'primary' | 'secondary' = this.currentWeapon === this.selectedWeapons?.primary ? 'primary' : 'secondary';
+    const isIcebeamUnlocked = this.isPassiveAbilityUnlocked('P', WeaponType.SCYTHE, weaponSlot);
 
-        this.isIcebeaming = true;
-        this.icebeamStartTime = Date.now();
+    // Handle Scythe left click:
+    // - default: Entropic Bolt primary
+    // - passive unlocked: Icebeam replaces primary
+    if (isIcebeamUnlocked) {
+      if (this.inputManager.isMouseButtonPressed(0)) { // Left mouse button held
+        if (!this.isIcebeaming) {
+          // Check cooldown
+          const currentTime = Date.now() / 1000;
+          if (currentTime - this.lastIcebeamTime < this.icebeamCooldown) {
+            return; // On cooldown
+          }
 
-        // Apply movement and camera speed debuffs
-        const playerMovement = this.playerEntity?.getComponent(Movement);
-        if (playerMovement) {
-          playerMovement.isIcebeaming = true;
-        }
+          this.isIcebeaming = true;
+          this.icebeamStartTime = Date.now();
 
-        // Apply camera rotation speed debuff
-        const cameraSystem = (window as any).cameraSystem;
-        if (cameraSystem && cameraSystem.setIceBeamActive) {
-          cameraSystem.setIceBeamActive(true);
-        }
+          // Apply movement and camera speed debuffs
+          const playerMovement = this.playerEntity?.getComponent(Movement);
+          if (playerMovement) {
+            playerMovement.isIcebeaming = true;
+          }
 
-        // Start spinning animation
-        if (!this.isCharging) {
-          this.isCharging = true;
-          this.chargeProgress = 0;
-        }
+          // Apply camera rotation speed debuff
+          const cameraSystem = (window as any).cameraSystem;
+          if (cameraSystem && cameraSystem.setIceBeamActive) {
+            cameraSystem.setIceBeamActive(true);
+          }
 
-        // Trigger Icebeam state change callback
-        if (this.onIcebeamStateChangeCallback) {
-          this.onIcebeamStateChangeCallback(true);
+          // Start spinning animation
+          if (!this.isCharging) {
+            this.isCharging = true;
+            this.chargeProgress = 0;
+          }
+
+          // Trigger Icebeam state change callback
+          if (this.onIcebeamStateChangeCallback) {
+            this.onIcebeamStateChangeCallback(true);
+          }
+        } else {
+          // Continue spinning animation while Icebeaming
+          this.chargeProgress += 0.03; // Continuously increase for spinning
         }
-      } else {
-        // Continue spinning animation while Icebeaming
-        this.chargeProgress += 0.03; // Continuously increase for spinning
+      } else if (this.isIcebeaming) {
+        // Stop Icebeam when mouse is released
+        this.stopIcebeam();
       }
-    } else if (this.isIcebeaming) {
-      // Stop Icebeam when mouse is released
-      this.stopIcebeam();
-    }
-    
-    // Handle CrossentropyBolt ability with 'R' key
-    if (this.inputManager.isKeyPressed('r') && !this.isIcebeaming && !this.isCrossentropyCharging && this.isAbilityUnlocked('R')) {
-      this.performCrossentropyAbility(playerTransform);
-    }
-    
-    // Handle Reanimate ability with 'Q' key
-    if (this.inputManager.isKeyPressed('q') && !this.isIcebeaming && this.isAbilityUnlocked('Q')) {
-      this.performReanimateAbility(playerTransform);
-    }
-    
-    // Handle Frost Nova ability with 'E' key
-    if (this.inputManager.isKeyPressed('e') && !this.isIcebeaming && this.isAbilityUnlocked('E')) {
-      this.performFrostNovaAbility(playerTransform);
-    }
+    } else {
+      // Ensure Icebeam is fully reset if passive is not unlocked
+      if (this.isIcebeaming) {
+        this.stopIcebeam();
+      }
 
-    // Handle Summon Totem ability with 'F' key
-    if (this.inputManager.isKeyPressed('f') && !this.isIcebeaming && !this.isSummonTotemCharging && !this.isCrossentropyCharging && this.isAbilityUnlocked('F')) {
-      this.performSummonTotemAbility(playerTransform);
+      // Default Scythe primary attack: Entropic Bolt
+      if (this.inputManager.isMouseButtonPressed(0) && !this.isCrossentropyCharging && !this.isSummonTotemCharging) {
+        this.fireEntropicBoltProjectile(playerTransform);
+      }
     }
+    
+    // Q/E/R abilities are now handled by handleLoadoutAbilityKeys via the universal dispatch.
   }
 
   private stopIcebeam(): void {
@@ -1093,14 +1267,8 @@ export class ControlSystem extends System {
     }
     this.lastScytheFireTime = currentTime;
 
-    // Play entropic bolt sound (or cryoflame if passive unlocked)
-    const weaponSlot: 'primary' | 'secondary' = this.currentWeapon === this.selectedWeapons?.primary ? 'primary' : 'secondary';
-    const isCryoflameUnlocked = this.isPassiveAbilityUnlocked('P', WeaponType.SCYTHE, weaponSlot);
-    if (isCryoflameUnlocked) {
-      this.audioSystem?.playScytheCryoflameSound(playerTransform.position);
-    } else {
-      this.audioSystem?.playEntropicBoltSound(playerTransform.position);
-    }
+    // Play entropic bolt sound
+    this.audioSystem?.playEntropicBoltSound(playerTransform.position);
 
     // Get dragon's facing direction
     const direction = new Vector3();
@@ -1384,10 +1552,6 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Check if Cryoflame is unlocked for the current weapon
-    const weaponSlot: 'primary' | 'secondary' = this.currentWeapon === this.selectedWeapons?.primary ? 'primary' : 'secondary';
-    const isCryoflameUnlocked = this.isPassiveAbilityUnlocked('P', WeaponType.SCYTHE, weaponSlot);
-    
     // Offset projectile spawn position slightly forward to avoid collision with player
     const spawnPosition = position.clone();
     spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
@@ -1396,7 +1560,7 @@ export class ControlSystem extends System {
     // Create EntropicBolt projectile using the new method
     const entropicConfig = {
       speed: 20, // Faster than CrossentropyBolt
-      damage: isCryoflameUnlocked ? 55 : 41, // Cryoflame increases damage to 45
+      damage: 31,
       lifetime: 2, // Shorter lifetime
       piercing: false, // Non-piercing so projectile gets destroyed on hit
       explosive: false, // No explosion effect
@@ -1404,8 +1568,7 @@ export class ControlSystem extends System {
       subclass: this.currentSubclass,
       level: this.currentLevel,
       opacity: 1.0,
-      sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown',
-      isCryoflame: isCryoflameUnlocked // Pass Cryoflame mode to projectile system
+      sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown'
     };
     
     this.projectileSystem.createEntropicBoltProjectile(
@@ -2291,30 +2454,11 @@ export class ControlSystem extends System {
 
   private handleSwordInput(playerTransform: Transform): void {
     // Handle sword melee attacks
-    if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isSwordCharging && !this.isDeflecting) { // Left mouse button
+    if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isSwordCharging && !this.isDeflecting) {
       this.performSwordMeleeAttack(playerTransform);
     }
 
-
-    // Handle Charge ability with 'E' key
-    if (this.inputManager.isKeyPressed('e') && !this.isSwordCharging && !this.isSwinging && !this.isDeflecting && this.isAbilityUnlocked('E')) {
-      this.performCharge(playerTransform);
-    }
-
-    // Handle Deflect ability with 'Q' key
-    if (this.inputManager.isKeyPressed('q') && !this.isDeflecting && !this.isSwinging && !this.isSwordCharging && this.isAbilityUnlocked('Q')) {
-      this.performDeflect(playerTransform);
-    }
-
-    // Handle Colossus Strike ability with 'R' key
-    if (this.inputManager.isKeyPressed('r') && !this.isColossusStriking && !this.isSwinging && !this.isSwordCharging && !this.isDeflecting && this.isAbilityUnlocked('R')) {
-      this.performColossusStrike(playerTransform);
-    }
-
-    // Handle Wind Shear ability with 'F' key
-    if (this.inputManager.isKeyPressed('f') && !this.isWindShearing && !this.isSwinging && !this.isSwordCharging && !this.isDeflecting && !this.isColossusStriking && this.isAbilityUnlocked('F')) {
-      this.performWindShear(playerTransform);
-    }
+    // Q/E/R abilities are now handled by handleLoadoutAbilityKeys via the universal dispatch.
 
     // Check for combo reset
     const currentTime = Date.now() / 1000;
@@ -2325,41 +2469,12 @@ export class ControlSystem extends System {
 
   private handleRunebladeInput(playerTransform: Transform): void {
     // Handle runeblade melee attacks
-    if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isSmiting && !this.isDeathGrasping && !this.isWraithStriking) { // Left mouse button
+    if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isSmiting && !this.isDeathGrasping && !this.isWraithStriking) {
       this.performRunebladeMeleeAttack(playerTransform);
     }
 
-    // Handle Smite ability with 'R' key
-    if (this.inputManager.isKeyPressed('r') && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWraithStriking && this.isAbilityUnlocked('R')) {
-      this.performSmite(playerTransform);
-    }
-
-    // Handle Deflect ability with 'Q' key
-    if (this.inputManager.isKeyPressed('q') && !this.isDeflecting && !this.isSmiting && !this.isSwinging && !this.isWraithStriking && this.isAbilityUnlocked('Q')) {
-      this.performDeflect(playerTransform);
-    }
-
-    // Handle Corrupted Aura ability with 'F' key (just pressed detection)
-    if (this.inputManager.isKeyPressed('f') && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWraithStriking && this.isAbilityUnlocked('F')) {
-      // Track if F key was just pressed (not held down)
-      if (!this.fKeyWasPressed) {
-        this.toggleCorruptedAura(playerTransform);
-        this.fKeyWasPressed = true;
-      }
-    } else {
-      // Reset the just pressed flag when F key is released
-      this.fKeyWasPressed = false;
-    }
-
-    // Handle WraithStrike ability with 'E' key
-    if (this.inputManager.isKeyPressed('e') && !this.isWraithStriking && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping && this.isAbilityUnlocked('E')) {
-      this.performWraithStrike(playerTransform);
-    }
-
-    // Handle Corrupted Aura effects while active
-    if (this.corruptedAuraActive) {
-      this.updateCorruptedAuraEffects(playerTransform);
-    }
+    // Q/E/R abilities are now handled by handleLoadoutAbilityKeys via the universal dispatch.
+    // Corrupted Aura and combo reset are handled below / in updateCrossWeaponStates.
 
     // Check for combo reset
     const currentTime = Date.now() / 1000;
@@ -2413,11 +2528,6 @@ export class ControlSystem extends System {
   }
 
   private performSmite(playerTransform: Transform): void {
-    // Check if using Runeblade
-    if (this.currentWeapon !== WeaponType.RUNEBLADE) {
-      return;
-    }
-
     // Check cooldown
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastSmiteTime < this.smiteCooldown) {
@@ -2758,11 +2868,6 @@ export class ControlSystem extends System {
   }
 
   private performWraithStrike(playerTransform: Transform): void {
-    // Check if using Runeblade
-    if (this.currentWeapon !== WeaponType.RUNEBLADE) {
-      return;
-    }
-
     // Check cooldown
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastWraithStrikeTime < this.wraithStrikeCooldown) {
@@ -2968,105 +3073,19 @@ export class ControlSystem extends System {
     if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isSkyfalling && !this.isSundering) {
       this.performSabresMeleeAttack(playerTransform);
     }
-    
-    // Handle Q key for Backstab ability
-    if (this.inputManager.isKeyPressed('q') && !this.isSwinging && !this.isSkyfalling && !this.isSundering && this.isAbilityUnlocked('Q')) {
-      this.performBackstab(playerTransform);
-    }
-    
-    // Handle E key for Sunder ability
-    if (this.inputManager.isKeyPressed('e') && !this.isSkyfalling && !this.isSundering && this.isAbilityUnlocked('E')) {
-      // Allow Sunder even while swinging - it should be usable during combat
-      this.performSunder(playerTransform);
-    }
 
-    // Handle R key for Skyfall ability (switched from E)
-    if (this.inputManager.isKeyPressed('r') && !this.isSkyfalling && !this.isSundering && this.isAbilityUnlocked('R')) {
-      this.performSkyfall(playerTransform);
-    }
-    
-    // Handle F key for Stealth ability
-    if (this.inputManager.isKeyPressed('f') && !this.isSwinging && !this.isSkyfalling && !this.isSundering && !this.isBackstabbing && !this.isStealthing && this.isAbilityUnlocked('F')) {
-      this.performStealth(playerTransform);
-    }
-    
-    // Update Skyfall state if active
-    if (this.isSkyfalling) {
-      this.updateSkyfallMovement(playerTransform);
-    }
-    
-    // Update Backstab state if active
-    if (this.isBackstabbing) {
-      this.updateBackstabState(playerTransform);
-    }
-    
-    // Update Sunder state if active
-    if (this.isSundering) {
-      this.updateSunderState(playerTransform);
-    }
-    
-    // Update Stealth state if active
-    if (this.isStealthing) {
-      this.updateStealthState(playerTransform);
-    }
+    // Q/E/R abilities are now handled by handleLoadoutAbilityKeys via the universal dispatch.
+    // Ongoing states (Skyfall, Backstab, Sunder, Stealth) are updated by updateCrossWeaponStates.
   }
 
   private handleSpearInput(playerTransform: Transform): void {
-    const currentTime = Date.now() / 1000;
-
     // Handle left click for spear thrust attack
     if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging) {
       this.performSpearMeleeAttack(playerTransform);
     }
 
-    // Handle Q key for Throw Spear ability
-    if (this.inputManager.isKeyPressed('q') && !this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging && this.isAbilityUnlocked('Q')) {
-      this.performThrowSpear(playerTransform);
-    }
-
-    // Handle E key for Whirlwind ability
-    if (this.inputManager.isKeyPressed('e') && !this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging && this.isAbilityUnlocked('E')) {
-      this.performWhirlwind(playerTransform);
-    }
-
-    // Handle R key for Lightning Storm ability
-    if (this.inputManager.isKeyPressed('r') && !this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging && !this.isFlurryActive && this.isAbilityUnlocked('R')) {
-      this.performLightningStorm(playerTransform);
-    }
-
-    // Handle F key for Flurry ability
-    if (this.inputManager.isKeyPressed('f') && !this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging && !this.isFlurryActive && this.isAbilityUnlocked('F')) {
-      this.performFlurry(playerTransform);
-    }
-
-    // Update Throw Spear charging state
-    if (this.isThrowSpearCharging) {
-      this.updateThrowSpearCharging(playerTransform, currentTime);
-    }
-
-    // Update Throw Spear releasing state
-    if (this.isThrowSpearReleasing) {
-      // Keep releasing animation for 0.15 seconds, then hide spear
-      if (currentTime - this.throwSpearReleaseTime >= 0.15) {
-        this.isThrowSpearReleasing = false;
-        this.throwSpearReleaseTime = 0;
-      }
-    }
-
-    // Update Whirlwind charging state
-    if (this.isWhirlwindCharging) {
-      this.updateWhirlwindCharging(playerTransform, currentTime);
-    }
-
-    // Update Whirlwind spinning state
-    if (this.isWhirlwinding) {
-      this.updateWhirlwindSpinning(currentTime);
-    }
-
-    // Update Flurry state
-    if (this.isFlurryActive) {
-      this.updateFlurryState(currentTime);
-    }
+    // Q/E/R abilities are now handled by handleLoadoutAbilityKeys via the universal dispatch.
+    // Ongoing states (ThrowSpear, Whirlwind, Flurry) are updated by updateCrossWeaponStates.
   }
 
   private performSpearMeleeAttack(playerTransform: Transform): void {
@@ -4160,9 +4179,7 @@ export class ControlSystem extends System {
 
     // Reset Corrupted Aura and restore original rune counts when switching weapons
     if (this.corruptedAuraActive) {
-      this.corruptedAuraActive = false;
-      setGlobalCriticalRuneCount(this.originalCriticalRunes);
-      setGlobalCritDamageRuneCount(this.originalCritDamageRunes);
+      this.deactivateCorruptedAura();
     }
 
     // Clear Sunder stacks when switching weapons
@@ -4176,37 +4193,45 @@ export class ControlSystem extends System {
   }
 
   private toggleCorruptedAura(playerTransform: Transform): void {
-    // Toggle the aura
-    this.corruptedAuraActive = !this.corruptedAuraActive;
+    const currentTime = Date.now() / 1000;
 
-    // Handle rune count changes
     if (this.corruptedAuraActive) {
-      // Store original rune counts before changing them
-      const currentRuneCounts = getGlobalRuneCounts();
-
-      this.originalCriticalRunes = currentRuneCounts.criticalRunes;
-      this.originalCritDamageRunes = currentRuneCounts.critDamageRunes;
-
-      // Heartbreak: increases critical strike chance by 45% and critical strike damage by 75%
-      // Each crit rune adds 3% chance, so 45% = +15 crit runes
-      // Each crit damage rune adds 15% damage, so 75% = +5 crit damage runes
-      setGlobalCriticalRuneCount(currentRuneCounts.criticalRunes + 15);
-      setGlobalCritDamageRuneCount(currentRuneCounts.critDamageRunes + 6);
-
-      // Play heartrend sound when Corrupted Aura is activated
-      this.audioSystem?.playRunebladeHeartrendSound(playerTransform.position);
-    } else {
-      // Restore original rune counts when deactivating
-      setGlobalCriticalRuneCount(this.originalCriticalRunes);
-      setGlobalCritDamageRuneCount(this.originalCritDamageRunes);
-
-      // Clear all slowed entities when deactivating
-      this.corruptedAuraSlowedEntities.clear();
+      // Allow early cancellation — deactivate immediately
+      this.deactivateCorruptedAura();
+      return;
     }
 
-    // Trigger callback to update visual component
+    // Block activation while on cooldown
+    if (currentTime - this.lastCorruptedAuraTime < this.corruptedAuraCooldown) {
+      return;
+    }
+
+    // Activate aura
+    this.corruptedAuraActive = true;
+    this.corruptedAuraStartTime = currentTime;
+    this.lastCorruptedAuraTime = currentTime;
+
+    // Store original rune counts and apply crit bonuses
+    const currentRuneCounts = getGlobalRuneCounts();
+    this.originalCriticalRunes = currentRuneCounts.criticalRunes;
+    this.originalCritDamageRunes = currentRuneCounts.critDamageRunes;
+    setGlobalCriticalRuneCount(currentRuneCounts.criticalRunes + 15);
+    setGlobalCritDamageRuneCount(currentRuneCounts.critDamageRunes + 6);
+
+    this.audioSystem?.playRunebladeHeartrendSound(playerTransform.position);
+
     if (this.onCorruptedAuraToggleCallback) {
-      this.onCorruptedAuraToggleCallback(this.corruptedAuraActive);
+      this.onCorruptedAuraToggleCallback(true);
+    }
+  }
+
+  private deactivateCorruptedAura(): void {
+    this.corruptedAuraActive = false;
+    setGlobalCriticalRuneCount(this.originalCriticalRunes);
+    setGlobalCritDamageRuneCount(this.originalCritDamageRunes);
+    this.corruptedAuraSlowedEntities.clear();
+    if (this.onCorruptedAuraToggleCallback) {
+      this.onCorruptedAuraToggleCallback(false);
     }
   }
 
@@ -4263,6 +4288,10 @@ export class ControlSystem extends System {
     this.skillPointData = data;
   }
 
+  public setAbilityLoadout(loadout: AbilityLoadout): void {
+    this.abilityLoadout = loadout;
+  }
+
   public setPlayerDead(isDead: boolean): void {
     this.isPlayerDead = isDead;
 
@@ -4284,7 +4313,7 @@ export class ControlSystem extends System {
     this.skillPointData = SkillPointSystem.updateSkillPointsForLevel(this.skillPointData, level);
   }
 
-  public unlockAbility(weaponType: WeaponType, abilityKey: 'Q' | 'E' | 'R' | 'F', weaponSlot: 'primary' | 'secondary'): boolean {
+  public unlockAbility(weaponType: WeaponType, abilityKey: 'Q' | 'E' | 'R' | 'F' | 'P', weaponSlot: 'primary' | 'secondary'): boolean {
     try {
       this.skillPointData = SkillPointSystem.unlockAbility(this.skillPointData, weaponType, abilityKey, weaponSlot);
       return true;
@@ -4736,18 +4765,24 @@ export class ControlSystem extends System {
 
   // Castle wall segments — mirrors CastleWalls.tsx WALL_SEGMENTS (AABB half-extents)
   private readonly WALL_SEGMENTS = [
-    // Camp 1 · NE Ruins
-    { cx: 13.25,  cz: -12.5,  hx: 4.25,  hz: 0.3   },
-    { cx: 17.5,   cz:  -9.5,  hx: 0.3,   hz: 3.0   },
-    // Camp 2 · East Outpost
-    { cx: 19.25,  cz:  -2.0,  hx: 3.25,  hz: 0.3   },
-    { cx: 22.5,   cz:   2.0,  hx: 0.3,   hz: 4.0   },
-    // Camp 3 · South Grove
-    { cx:  6.0,   cz:  18.5,  hx: 4.5,   hz: 0.3   },
-    { cx: 10.5,   cz:  15.25, hx: 0.3,   hz: 3.25  },
-    // Camp 4 · West Crossing
-    { cx: -22.5,  cz:  -0.25, hx: 0.3,   hz: 5.75  },
-    { cx: -17.75, cz:  -6.0,  hx: 4.75,  hz: 0.3   },
+    // Maze Wall 1 · NW Barrier (east-west)
+    { cx: -14,   cz: -18,   hx: 6,    hz: 0.3  },
+    // Maze Wall 2 · North Shard (north-south)
+    { cx:   5,   cz: -22,   hx: 0.3,  hz: 5    },
+    // Maze Wall 3 · East Spine (north-south)
+    { cx:  18,   cz:  -8,   hx: 0.3,  hz: 6    },
+    // Maze Wall 4 · Center-East Divider (east-west)
+    { cx:  12,   cz:   2,   hx: 5,    hz: 0.3  },
+    // Maze Wall 5 · Central Chokepoint (north-south)
+    { cx:   0,   cz:   8,   hx: 0.3,  hz: 5    },
+    // Maze Wall 6 · SE Corridor (east-west)
+    { cx:  14,   cz:  18,   hx: 6,    hz: 0.3  },
+    // Maze Wall 7 · SW Channel (north-south)
+    { cx: -16,   cz:  15,   hx: 0.3,  hz: 5    },
+    // Maze Wall 8 · West Divider (east-west)
+    { cx: -20,   cz:   0,   hx: 5,    hz: 0.3  },
+    // Maze Wall 9 · NW-Center Rib (north-south)
+    { cx:  -6,   cz:  -8,   hx: 0.3,  hz: 4    },
   ];
   private readonly WALL_PLAYER_RADIUS = 0.5;
 
@@ -5394,9 +5429,21 @@ export class ControlSystem extends System {
 
   public getAbilityCooldowns(): Record<string, { current: number; max: number; isActive: boolean }> {
     const currentTime = Date.now() / 1000;
-    
     const cooldowns: Record<string, { current: number; max: number; isActive: boolean }> = {};
-    
+
+    // If a loadout is assigned, return per-slot cooldowns based on it
+    if (this.abilityLoadout) {
+      const slots: Array<'Q' | 'E' | 'R'> = ['Q', 'E', 'R'];
+      for (const slot of slots) {
+        const id = this.abilityLoadout[slot];
+        if (id) {
+          cooldowns[slot] = this.getCooldownForAbility(id, currentTime);
+        }
+      }
+      return cooldowns;
+    }
+
+    // Legacy fallback: weapon-type-based cooldowns (used when no loadout is set)
     if (this.currentWeapon === WeaponType.SWORD) {
       cooldowns['Q'] = {
         current: Math.max(0, this.deflectCooldown - (currentTime - this.lastDeflectTime)),

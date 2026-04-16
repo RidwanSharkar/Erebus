@@ -1,23 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
-import { SkillPointSystem, SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
-import { weaponAbilities, getAbilityIcon, type AbilityData as BaseAbilityData } from '@/utils/weaponAbilities';
-
-interface AbilityData extends BaseAbilityData {
-  currentCooldown: number;
-  isActive?: boolean;
-  isLocked?: boolean;
-}
+import { SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
+import { universalAbilityPool, getUniversalAbilityById, type AbilityLoadout, type UniversalAbility } from '@/utils/weaponAbilities';
 
 interface HotkeyPanelProps {
   currentWeapon: WeaponType;
-  controlSystem?: any; // Reference to control system for cooldown data
+  controlSystem?: any;
   selectedWeapons?: {
     primary: WeaponType;
     secondary: WeaponType;
   } | null;
   onWeaponSwitch?: (slot: 1 | 3) => void;
   skillPointData?: SkillPointData;
+  abilityLoadout?: AbilityLoadout | null;
   onUnlockAbility?: (unlock: AbilityUnlock) => void;
   purchasedItems?: string[];
 }
@@ -100,7 +95,7 @@ const RoundedSquareProgress: React.FC<{
   );
 };
 
-export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeapons, onWeaponSwitch, skillPointData, onUnlockAbility, purchasedItems = [] }: HotkeyPanelProps) {
+export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeapons, onWeaponSwitch, skillPointData, abilityLoadout, onUnlockAbility, purchasedItems = [] }: HotkeyPanelProps) {
   const [tooltipContent, setTooltipContent] = useState<{
     name: string;
     description: string;
@@ -159,13 +154,13 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
     }
   }
 
-  // Convert base abilities to include runtime state
-  const createAbilitiesWithState = (baseAbilities: BaseAbilityData[]): AbilityData[] => {
-    return baseAbilities.map(ability => ({
-      ...ability,
-      currentCooldown: 0
-    }));
-  };
+  // Resolve the 3 assigned abilities from the loadout
+  const loadoutAbilities: Array<{ slot: 'Q' | 'E' | 'R'; ability: UniversalAbility | null }> = (
+    ['Q', 'E', 'R'] as const
+  ).map(slot => ({
+    slot,
+    ability: abilityLoadout?.[slot] ? (getUniversalAbilityById(abilityLoadout[slot]!) ?? null) : null
+  }));
 
   // Update cooldowns from control system
   useEffect(() => {
@@ -197,7 +192,7 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
 
   const handleAbilityHover = useCallback((
     e: React.MouseEvent,
-    ability: AbilityData
+    ability: UniversalAbility
   ) => {
     const rect = e.currentTarget.getBoundingClientRect();
     setTooltipContent({
@@ -229,89 +224,7 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
     setTooltipContent(null);
   }, []);
 
-  // Helper function to check if an ability is locked
-  const isAbilityLocked = useCallback((ability: AbilityData): boolean => {
-    if (!selectedWeapons || !skillPointData) return false;
-
-    // P (passive) abilities are never locked — they are always active
-    if (ability.key === 'P') return false;
-
-    // Determine weapon slot
-    let weaponSlot: 'primary' | 'secondary';
-    let weaponType: WeaponType;
-
-    if (currentWeapon === selectedWeapons.primary) {
-      weaponSlot = 'primary';
-      weaponType = selectedWeapons.primary;
-    } else if (currentWeapon === selectedWeapons.secondary) {
-      weaponSlot = 'secondary';
-      weaponType = selectedWeapons.secondary;
-    } else {
-      return false; // Not a selected weapon
-    }
-
-    // Q, E, R, F abilities all require unlocking
-    if (ability.key === 'Q' || ability.key === 'E' || ability.key === 'R' || ability.key === 'F') {
-      return !SkillPointSystem.isAbilityUnlocked(skillPointData, weaponType, ability.key, weaponSlot);
-    }
-
-    return false;
-  }, [currentWeapon, selectedWeapons, skillPointData]);
-
-  // Helper function to check if an ability can be unlocked (has skill points and is available)
-  const canUnlockAbility = useCallback((ability: AbilityData): boolean => {
-    if (!selectedWeapons || !skillPointData || skillPointData.skillPoints <= 0) return false;
-    if (!ability.isLocked) return false; // Already unlocked
-
-    // Check if this ability is in the available unlocks
-    const availableUnlocks = SkillPointSystem.getAvailableUnlocks(skillPointData, selectedWeapons);
-    return availableUnlocks.some(unlock =>
-      unlock.abilityKey === ability.key &&
-      (
-        (currentWeapon === selectedWeapons.primary && unlock.weaponSlot === 'primary') ||
-        (currentWeapon === selectedWeapons.secondary && unlock.weaponSlot === 'secondary')
-      )
-    );
-  }, [currentWeapon, selectedWeapons, skillPointData]);
-
-  // Handle ability unlock when clicking the + button
-  const handleAbilityUnlock = useCallback((ability: AbilityData) => {
-    if (!selectedWeapons || !onUnlockAbility) return;
-
-    let weaponSlot: 'primary' | 'secondary';
-    let weaponType: WeaponType;
-
-    if (currentWeapon === selectedWeapons.primary) {
-      weaponSlot = 'primary';
-      weaponType = selectedWeapons.primary;
-    } else if (currentWeapon === selectedWeapons.secondary) {
-      weaponSlot = 'secondary';
-      weaponType = selectedWeapons.secondary;
-    } else {
-      return; // Unknown weapon
-    }
-
-    onUnlockAbility({
-      weaponType,
-      abilityKey: ability.key as 'Q' | 'E' | 'R' | 'F',
-      weaponSlot
-    });
-  }, [currentWeapon, selectedWeapons, onUnlockAbility]);
-
-  const currentAbilities = weaponAbilities[currentWeapon] ? createAbilitiesWithState(weaponAbilities[currentWeapon]) : [];
-
-  // Mark abilities as locked
-  const abilitiesWithLockStatus = currentAbilities.map(ability => ({
-    ...ability,
-    isLocked: isAbilityLocked(ability)
-  }));
-
-  // Filter out passive abilities for display (but keep logic intact)
-  const displayAbilities = abilitiesWithLockStatus.filter(ability => ability.key !== 'P');
-
-  if (currentAbilities.length === 0) {
-    return null; // Don't render for weapons that aren't implemented
-  }
+  // Always render even without a loadout (shows empty slots)
 
 
   return (
@@ -387,198 +300,88 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
             {/* Separator */}
             <div className="w-px h-8 bg-gray-600" />
 
-            {/* Ability Icons */}
-            {displayAbilities.map((ability) => {
-              const currentCooldown = cooldowns[ability.key] || 0;
+            {/* Ability Icons — driven by abilityLoadout (Q / E / R) */}
+            {loadoutAbilities.map(({ slot, ability }) => {
+              const currentCooldown = cooldowns[slot] || 0;
               const isOnCooldown = currentCooldown > 0;
-              const isUnassigned = ability.name === 'Not Assigned';
-              const isLocked = ability.isLocked;
-              const canUnlock = canUnlockAbility(ability);
+
+              // Determine active / charging state from controlSystem
+              const getActiveOverlay = (): React.ReactNode => {
+                if (!controlSystem) return null;
+                const abilityCooldowns = controlSystem.getAbilityCooldowns?.() ?? {};
+                const cd = abilityCooldowns[slot];
+
+                if (cd?.isActive) {
+                  return <div className="absolute inset-0 rounded-lg bg-yellow-400 bg-opacity-20 border-2 border-yellow-400 animate-pulse" />;
+                }
+
+                // Ability-specific charge progress overlays (resolved from ability id)
+                const id = abilityLoadout?.[slot];
+                if (id === 'BOW_R' && controlSystem.isViperStingChargingActive?.()) {
+                  const p = controlSystem.getViperStingChargeProgress?.() || 0;
+                  return <div className="absolute inset-0 rounded-lg bg-purple-400 bg-opacity-20 border-2 border-purple-400"><div className="absolute bottom-0 left-0 right-0 bg-purple-400 bg-opacity-60 transition-all duration-100" style={{ height: `${p * 100}%` }} /></div>;
+                }
+                if (id === 'BOW_Q' && controlSystem.isBarrageChargingActive?.()) {
+                  const p = controlSystem.getBarrageChargeProgress?.() || 0;
+                  return <div className="absolute inset-0 rounded-lg bg-orange-400 bg-opacity-20 border-2 border-orange-400"><div className="absolute bottom-0 left-0 right-0 bg-orange-400 bg-opacity-60 transition-all duration-100" style={{ height: `${p * 100}%` }} /></div>;
+                }
+                if (id === 'BOW_E' && controlSystem.isCobraShotChargingActive?.()) {
+                  const p = controlSystem.getCobraShotChargeProgress?.() || 0;
+                  return <div className="absolute inset-0 rounded-lg bg-green-400 bg-opacity-20 border-2 border-green-400"><div className="absolute bottom-0 left-0 right-0 bg-green-400 bg-opacity-60 transition-all duration-100" style={{ height: `${p * 100}%` }} /></div>;
+                }
+                if (id === 'SABRES_R' && controlSystem.isSkyfallActive?.()) {
+                  return <div className="absolute inset-0 rounded-lg bg-yellow-400 bg-opacity-20 border-2 border-yellow-400 animate-pulse" />;
+                }
+                if (id === 'RUNEBLADE_Q' && controlSystem.isDeflectActive?.()) {
+                  return <div className="absolute inset-0 rounded-lg bg-yellow-400 bg-opacity-20 border-2 border-yellow-400 animate-pulse" />;
+                }
+                if (id === 'SPEAR_Q' && controlSystem.isThrowSpearChargingActive?.()) {
+                  const p = controlSystem.getThrowSpearChargeProgress?.() || 0;
+                  return <div className="absolute inset-0 rounded-lg bg-blue-400 bg-opacity-20 border-2 border-blue-400"><div className="absolute bottom-0 left-0 right-0 bg-blue-400 bg-opacity-60 transition-all duration-100" style={{ height: `${p * 100}%` }} /></div>;
+                }
+                if (id === 'SPEAR_E' && controlSystem.isWhirlwindChargingActive?.()) {
+                  const p = controlSystem.getWhirlwindChargeProgress?.() || 0;
+                  return <div className="absolute inset-0 rounded-lg bg-cyan-400 bg-opacity-20 border-2 border-cyan-400"><div className="absolute bottom-0 left-0 right-0 bg-cyan-400 bg-opacity-60 transition-all duration-100" style={{ height: `${p * 100}%` }} /></div>;
+                }
+                return null;
+              };
 
               return (
                 <div
-                  key={ability.key}
+                  key={slot}
                   className={`relative w-12 h-12 rounded-lg border-2 transition-all duration-200 ${
-                    isLocked
-                      ? canUnlock
-                        ? 'border-blue-400 bg-blue-900 bg-opacity-30 hover:bg-opacity-50 cursor-pointer'
-                        : 'border-gray-500 bg-gray-700 opacity-60 cursor-not-allowed'
-                      : isUnassigned
-                        ? 'border-gray-600 bg-gray-800 opacity-50 cursor-pointer'
-                        : isOnCooldown
-                          ? 'border-red-500 bg-red-900 bg-opacity-30 cursor-pointer'
-                          : ability.key === 'P'
-                            ? 'border-purple-400 bg-purple-900 bg-opacity-30 cursor-pointer' // Special styling for passive abilities
-                            : 'border-green-400 bg-green-900 bg-opacity-30 hover:bg-opacity-50 cursor-pointer'
+                    !ability
+                      ? 'border-dashed border-gray-600 bg-gray-800 opacity-50'
+                      : isOnCooldown
+                        ? 'border-red-500 bg-red-900 bg-opacity-30 cursor-pointer'
+                        : 'border-green-400 bg-green-900 bg-opacity-30 hover:bg-opacity-50 cursor-pointer'
                   } flex items-center justify-center`}
-                  onMouseEnter={(e) => handleAbilityHover(e, ability)}
+                  onMouseEnter={ability ? (e) => handleAbilityHover(e, ability) : undefined}
                   onMouseLeave={handleAbilityLeave}
-                  onClick={canUnlock ? () => handleAbilityUnlock(ability) : undefined}
                 >
-                  {/* Hotkey indicator */}
+                  {/* Slot key badge */}
                   <div className="absolute -top-2 -left-2 bg-gray-800 border border-gray-600 rounded text-xs text-white px-1 py-0.5 font-semibold">
-                    {ability.key}
+                    {slot}
                   </div>
 
                   {/* Ability icon */}
                   <div className={`w-8 h-8 rounded flex items-center justify-center text-lg font-bold ${
-                    isLocked
-                      ? canUnlock
-                        ? 'text-blue-400'
-                        : 'text-gray-500'
-                      : isUnassigned
-                        ? 'text-gray-500'
-                        : isOnCooldown
-                          ? 'text-red-400'
-                          : ability.key === 'P'
-                            ? 'text-purple-400' // Special color for passive abilities
-                            : 'text-green-400'
+                    !ability ? 'text-gray-600' : isOnCooldown ? 'text-red-400' : 'text-green-400'
                   }`}>
-                    {isLocked
-                      ? canUnlock
-                        ? '➕'
-                        : '🔒'
-                      : getAbilityIcon(currentWeapon, ability.key)
-                    }
+                    {ability ? ability.icon : '·'}
                   </div>
 
-                  {/* Cooldown overlay */}
-                  {isOnCooldown && !isUnassigned && (
-                    <>
-
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-white text-sm font-bold bg-black bg-opacity-60 rounded px-1">
-                          {Math.ceil(currentCooldown)}
-                        </span>
-                      </div>
-                    </>
+                  {/* Cooldown number */}
+                  {isOnCooldown && ability && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-white text-sm font-bold bg-black bg-opacity-60 rounded px-1">
+                        {Math.ceil(currentCooldown)}
+                      </span>
+                    </div>
                   )}
 
-                  {/* Active state indicator for abilities */}
-                  {(() => {
-                    if (!controlSystem || !controlSystem.getAbilityCooldowns) return null;
-                    
-                    const abilityCooldowns = controlSystem.getAbilityCooldowns();
-                    const abilityData = abilityCooldowns[ability.key];
-                    
-                    if (abilityData && abilityData.isActive) {
-                      return (
-                        <div className="absolute inset-0 rounded-lg bg-yellow-400 bg-opacity-20 border-2 border-yellow-400 animate-pulse" />
-                      );
-                    }
-                    
-                    // Check for charging states (Viper Sting, Barrage)
-                    if (ability.key === 'R' && currentWeapon === WeaponType.BOW && controlSystem.isViperStingChargingActive?.()) {
-                      const progress = controlSystem.getViperStingChargeProgress?.() || 0;
-                      return (
-                        <div className="absolute inset-0 rounded-lg bg-purple-400 bg-opacity-20 border-2 border-purple-400">
-                          <div 
-                            className="absolute bottom-0 left-0 right-0 bg-purple-400 bg-opacity-60 transition-all duration-100"
-                            style={{ height: `${progress * 100}%` }}
-                          />
-                        </div>
-                      );
-                    }
-                    
-                    if (ability.key === 'Q' && currentWeapon === WeaponType.BOW && controlSystem.isBarrageChargingActive?.()) {
-                      const progress = controlSystem.getBarrageChargeProgress?.() || 0;
-                      return (
-                        <div className="absolute inset-0 rounded-lg bg-orange-400 bg-opacity-20 border-2 border-orange-400">
-                          <div 
-                            className="absolute bottom-0 left-0 right-0 bg-orange-400 bg-opacity-60 transition-all duration-100"
-                            style={{ height: `${progress * 100}%` }}
-                          />
-                        </div>
-                      );
-                    }
-                    
-                    // Check for Cobra Shot charging state
-                    if (ability.key === 'E' && currentWeapon === WeaponType.BOW && controlSystem.isCobraShotChargingActive?.()) {
-                      const progress = controlSystem.getCobraShotChargeProgress?.() || 0;
-                      return (
-                        <div className="absolute inset-0 rounded-lg bg-green-400 bg-opacity-20 border-2 border-green-400">
-                          <div
-                            className="absolute bottom-0 left-0 right-0 bg-green-400 bg-opacity-60 transition-all duration-100"
-                            style={{ height: `${progress * 100}%` }}
-                          />
-                        </div>
-                      );
-                    }
-
-                    
-                    // Check for Skyfall active state
-                    if (ability.key === 'R' && currentWeapon === WeaponType.SABRES && controlSystem.isSkyfallActive?.()) {
-                      return (
-                        <div className="absolute inset-0 rounded-lg bg-yellow-400 bg-opacity-20 border-2 border-yellow-400 animate-pulse" />
-                      );
-                    }
-
-                    // Check for Stealth active state
-                    if (ability.key === 'F' && currentWeapon === WeaponType.SABRES && controlSystem.isStealthActive?.()) {
-                      return (
-                        <div className="absolute inset-0 rounded-lg bg-purple-400 bg-opacity-20 border-2 border-purple-400 animate-pulse" />
-                      );
-                    }
-
-                    // Check for Deflect active state
-                    if (ability.key === 'Q' && currentWeapon === WeaponType.RUNEBLADE && controlSystem.isDeflectActive?.()) {
-                      return (
-                        <div className="absolute inset-0 rounded-lg bg-yellow-400 bg-opacity-20 border-2 border-yellow-400 animate-pulse" />
-                      );
-                    }
-
-                    // Check for Smite active state
-                    if (ability.key === 'E' && currentWeapon === WeaponType.RUNEBLADE) {
-                      const abilityData = abilityCooldowns[ability.key];
-                      if (abilityData && abilityData.isActive) {
-                        return (
-                          <div className="absolute inset-0 rounded-lg bg-yellow-400 bg-opacity-20 border-2 border-yellow-400 animate-pulse" />
-                        );
-                      }
-                    }
-
-                    // Check for Corrupted Aura active state
-                    if (ability.key === 'F' && currentWeapon === WeaponType.RUNEBLADE && controlSystem.isCorruptedAuraActive?.()) {
-                      return (
-                        <div className="absolute inset-0 rounded-lg bg-red-400 bg-opacity-20 border-2 border-red-400 animate-pulse" />
-                      );
-                    }
-
-                    // Check for Throw Spear charging state
-                    if (ability.key === 'Q' && currentWeapon === WeaponType.SPEAR && controlSystem.isThrowSpearChargingActive?.()) {
-                      const progress = controlSystem.getThrowSpearChargeProgress?.() || 0;
-                      return (
-                        <div className="absolute inset-0 rounded-lg bg-blue-400 bg-opacity-20 border-2 border-blue-400">
-                          <div 
-                            className="absolute bottom-0 left-0 right-0 bg-blue-400 bg-opacity-60 transition-all duration-100"
-                            style={{ height: `${progress * 100}%` }}
-                          />
-                        </div>
-                      );
-                    }
-
-                    // Check for Whirlwind charging state
-                    if (ability.key === 'E' && currentWeapon === WeaponType.SPEAR && controlSystem.isWhirlwindChargingActive?.()) {
-                      const progress = controlSystem.getWhirlwindChargeProgress?.() || 0;
-                      return (
-                        <div className="absolute inset-0 rounded-lg bg-cyan-400 bg-opacity-20 border-2 border-cyan-400">
-                          <div 
-                            className="absolute bottom-0 left-0 right-0 bg-cyan-400 bg-opacity-60 transition-all duration-100"
-                            style={{ height: `${progress * 100}%` }}
-                          />
-                        </div>
-                      );
-                    }
-
-                    // Check for Flurry active state
-                    if (ability.key === 'F' && currentWeapon === WeaponType.SPEAR && controlSystem.getIsFlurryActive?.()) {
-                      return (
-                        <div className="absolute inset-0 rounded-lg bg-yellow-400 bg-opacity-20 border-2 border-yellow-400 animate-pulse" />
-                      );
-                    }
-
-                    return null;
-                  })()}
+                  {/* Active / charge overlay */}
+                  {ability && getActiveOverlay()}
                 </div>
               );
             })}
