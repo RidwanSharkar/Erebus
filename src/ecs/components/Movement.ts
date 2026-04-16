@@ -35,6 +35,9 @@ export class Movement extends Component {
   // Ice Beam debuff state (Scythe Ice Beam)
   public isIcebeaming: boolean;
 
+  // Attack-cast movement slow (Sword ColossusStrike, Bow abilities, Scythe casts, Spear charges)
+  public isAttackSlowed: boolean;
+
   // Input-based movement
   public moveDirection: Vector3;
   public inputStrength: number;
@@ -106,6 +109,9 @@ export class Movement extends Component {
 
     // Initialize Ice Beam debuff state
     this.isIcebeaming = false;
+
+    // Initialize attack-cast slow state
+    this.isAttackSlowed = false;
     
     this.moveDirection = new Vector3(0, 0, 0);
     this.inputStrength = 0;
@@ -239,7 +245,12 @@ export class Movement extends Component {
 
     // Apply Ice Beam movement speed reduction (50% slower)
     if (this.isIcebeaming) {
-      speed *= 0.5; // 50% speed reduction
+      speed *= 0.5;
+    }
+
+    // Apply attack-cast movement slow (50% slower while casting restricted abilities)
+    if (this.isAttackSlowed) {
+      speed *= 0.5;
     }
 
     return speed;
@@ -522,6 +533,7 @@ export class Movement extends Component {
     this.slowedUntil = 0;
     this.movementSpeedMultiplier = 1.0;
     this.isIcebeaming = false;
+    this.isAttackSlowed = false;
 
     // Reset dash properties
     this.isDashing = false;
@@ -572,6 +584,8 @@ export class Movement extends Component {
     clone.isSlowed = this.isSlowed;
     clone.slowedUntil = this.slowedUntil;
     clone.movementSpeedMultiplier = this.movementSpeedMultiplier;
+    clone.isIcebeaming = this.isIcebeaming;
+    clone.isAttackSlowed = this.isAttackSlowed;
 
     // Clone dash properties
     clone.isDashing = this.isDashing;

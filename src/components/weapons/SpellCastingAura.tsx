@@ -67,7 +67,7 @@ const SpellCastingAura = forwardRef<{ isActive: boolean }, SpellCastingAuraProps
     <group ref={auraRef}>
 
       {/* Inner rotating rune segments */}
-      <group position={[0, -0.6, 0]}>
+      <group position={[0, -0.5, 0]}>
         {[0, Math.PI / 2, Math.PI, Math.PI * 1.5].map((rotation, i) => (
           <mesh key={`inner-${i}`} rotation={[-Math.PI / 2, 0, rotation + t * 0.0007]}>
             <ringGeometry args={[0.5, 0.6, 8]} />
@@ -84,7 +84,7 @@ const SpellCastingAura = forwardRef<{ isActive: boolean }, SpellCastingAuraProps
       </group>
 
       {/* Central magic disc with pulsing glow */}
-      <group position={[0, -0.55, 0]}>
+      <group position={[0, -0.45, 0]}>
         <mesh scale={[1, 0.1, 1]}>
           <cylinderGeometry args={[0.4, 0.2, 0.05, 32]} />
           <meshStandardMaterial
@@ -110,7 +110,7 @@ const SpellCastingAura = forwardRef<{ isActive: boolean }, SpellCastingAuraProps
       </group>
 
       {/* Orbiting particles */}
-      <group position={[0, -0.5, 0]}>
+      <group position={[0, -0.4, 0]}>
         {[0, Math.PI / 3, (Math.PI * 2) / 3, Math.PI, (Math.PI * 4) / 3, (Math.PI * 5) / 3].map((angle, i) => (
           <group key={`particle-group-${i}`}>
             <mesh
@@ -154,7 +154,7 @@ const SpellCastingAura = forwardRef<{ isActive: boolean }, SpellCastingAuraProps
       </group>
 
       {/* Decorative counter-rotating rune ring */}
-      <group position={[0, -0.58, 0]}>
+      <group position={[0, -0.48, 0]}>
         {[0, Math.PI / 6, Math.PI / 3, Math.PI / 2, (Math.PI * 2) / 3, (Math.PI * 5) / 6,
           Math.PI, (Math.PI * 7) / 6, (Math.PI * 4) / 3, Math.PI * 1.5, (Math.PI * 5) / 3, (Math.PI * 11) / 6,
         ].map((rotation, i) => (
@@ -173,7 +173,7 @@ const SpellCastingAura = forwardRef<{ isActive: boolean }, SpellCastingAuraProps
       </group>
 
       {/* Outer rotating triangle rings */}
-      <group position={[0, -0.7, 0]}>
+      <group position={[0, -0.6, 0]}>
         {[0, Math.PI / 2, Math.PI, Math.PI * 1.5].map((rotation, i) => (
           <mesh key={`outer-${i}`} rotation={[-Math.PI / 2, 0, rotation + t * 0.0008]}>
             <ringGeometry args={[0.85, 1.0, 3]} />
@@ -190,7 +190,7 @@ const SpellCastingAura = forwardRef<{ isActive: boolean }, SpellCastingAuraProps
       </group>
 
       {/* Ground-level fill disc */}
-      <mesh position={[0, -0.6, 0]}>
+      <mesh position={[0, -0.5, 0]}>
         <cylinderGeometry args={[0.925, 0.5, -0.1, 32]} />
         <meshStandardMaterial
           color="#FF4500"

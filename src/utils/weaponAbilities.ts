@@ -47,6 +47,12 @@ export const universalAbilityPool: UniversalAbility[] = [
     allowedWeapons: ALL_WEAPONS,
   },
   {
+    id: 'DEATH_GRASP', sourceWeapon: WeaponType.RUNEBLADE, sourceKey: 'Q',
+    name: 'Death Grasp', cooldown: 5.0, icon: '💀',
+    description: 'Launch a spectral claw that grabs the nearest enemy unit, pulling them towards you and dealing 80 damage.',
+    allowedWeapons: ALL_WEAPONS,
+  },
+  {
     id: 'RUNEBLADE_E', sourceWeapon: WeaponType.RUNEBLADE, sourceKey: 'E',
     name: 'Wraith Strike', cooldown: 3.0, icon: '🗡️',
     description: 'A swift strike that applies SLOW and TAUNT to enemies hit, forcing them to attack you for up to 10 seconds.',

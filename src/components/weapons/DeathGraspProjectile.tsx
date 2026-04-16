@@ -202,21 +202,6 @@ export default function DeathGraspProjectile({
     }
   });
 
-  // Convert players Map to enemy data format for animated version
-  const playerEnemyData = useMemo(() => {
-    if (!players || !localSocketId) return enemyData;
-    
-    const playerArray = Array.from(players.entries())
-      .filter(([playerId]) => playerId !== localSocketId && playerId !== casterId)
-      .map(([playerId, player]) => ({
-        id: playerId,
-        position: new Vector3(player.position.x, player.position.y, player.position.z),
-        health: player.health
-      }));
-    
-    return [...enemyData, ...playerArray];
-  }, [players, localSocketId, casterId, enemyData]);
-
   // Use the new animated version if enabled
   if (useAnimatedVersion.current) {
     return (
@@ -228,17 +213,13 @@ export default function DeathGraspProjectile({
             onHit(targetId, position);
           }
         }}
-        onPullStart={() => {
-          // Pull start is handled by the hit callback in PVP
-        }}
+        onPullStart={() => {}}
         onComplete={() => {
           if (onComplete) {
             onComplete();
           }
         }}
-        enemyData={playerEnemyData}
-        players={players}
-        localSocketId={localSocketId}
+        enemyData={enemyData}
       />
     );
   }

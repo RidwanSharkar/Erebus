@@ -171,8 +171,6 @@ export default function DeathGrasp({
         onPullStart={onPullStart}
         onComplete={onComplete}
         enemyData={enemyData}
-        players={players}
-        localSocketId={localSocketId}
       />
     );
   }

@@ -228,6 +228,7 @@ export default function DragonUnit({
       WeaponType.SABRES,
       WeaponType.SCYTHE,
       WeaponType.SPEAR,
+      WeaponType.RUNEBLADE,
     ]);
 
     const onMouseDown = (e: MouseEvent) => {

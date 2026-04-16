@@ -87,7 +87,7 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
     orbitalsRef.current.children.forEach((orbital, index) => {
       const angle = (index / dashCharges.length) * Math.PI * 2 + time * 1;
       const radius = 0.627; // Fixed radius for circular orbit
-      const height = -0.55; // Fixed height above parent
+      const height = -0.65; // Fixed height above parent
       
       orbital.position.set(
         Math.cos(angle) * radius,
@@ -115,7 +115,7 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
         return (
           <group key={index}>
             <mesh>
-              <sphereGeometry args={[0.115, 8, 8]} />
+              <sphereGeometry args={[0.1125, 8, 8]} />
               <meshStandardMaterial
                 color={new Color(isAvailable ? activeColor : inactiveColor)}
                 emissive={new Color(isAvailable ? activeColor : inactiveColor)}

@@ -183,7 +183,7 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
             if (el) trailsRef.current[i] = el;
           }}
         >
-          <sphereGeometry args={[0.5, 16, 16]} />
+          <sphereGeometry args={[0.475, 16, 16]} />
           <meshBasicMaterial
             color={new Color(getTrailColor())}
             transparent

@@ -61,7 +61,7 @@ function ScytheModel({
       ref={scytheRef} 
       position={[basePosition[0], basePosition[1], basePosition[2]]}
       rotation={[0, 0, Math.PI]}
-      scale={[0.65, 0.75, 0.65]}
+      scale={[0.45, 0.8, 0.55]}
     >
       {/* Handle */}
       <group position={[0, -0, 0]} rotation={[0, 0, Math.PI + 0.3]}>
@@ -249,7 +249,7 @@ export default function Scythe({
   const scytheRef = useRef<Group>(null);
   const spinTime = useRef(0);
 
-  const basePosition = [-0.9, 0.65, 0.3] as const;
+  const basePosition = [-0.8, 0.75, 0.4] as const;
 
   useFrame((_, delta) => {
     if (!scytheRef.current) return;
@@ -263,7 +263,7 @@ export default function Scythe({
       const currentRotation = spinTime.current * spinSpeed;
       
       // Position scythe in front of dragon for spinning
-      scytheRef.current.position.set(0, 0.5, 1.2);
+      scytheRef.current.position.set(0, 0.925, 1.5);
       
       // Rotate the scythe around its handle (Z-axis rotation for spinning)
       scytheRef.current.rotation.set(Math.PI/8, 0, currentRotation);

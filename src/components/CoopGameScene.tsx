@@ -81,6 +81,7 @@ import {
 import { pvpObjectPool } from '@/utils/PVPObjectPool';
 import { pvpStateBatcher, PVPStateUpdateHelpers } from '@/utils/PVPStateBatcher';
 import DeflectShieldManager, { triggerGlobalDeflectShield } from '@/components/weapons/DeflectShieldManager';
+import DeathGraspProjectile from '@/components/weapons/DeathGraspProjectile';
 import DeathEffect from '@/components/weapons/DeathEffect';
 import PlayerHealthBar from '@/components/ui/PlayerHealthBar';
 import EnhancedGround from '@/components/environment/EnhancedGround';
@@ -6493,6 +6494,48 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
             duration={effect.duration}
             onComplete={() => {
               setPvpWindShearTornadoEffects(prev => prev.filter(e => e.id !== effect.id));
+            }}
+          />
+        );
+      })}
+
+      {/* Death Grasp Projectile Effects */}
+      {pvpDeathGraspEffects.map(effect => {
+        // Build NPC enemy array for hit detection
+        const nearbyEnemies = Array.from(enemies.values())
+          .filter(e => !e.isDying && e.health > 0)
+          .map(e => ({
+            id: e.id,
+            position: new Vector3(e.position.x, e.position.y, e.position.z),
+            health: e.health,
+          }));
+
+        // Compute target position: aim 18 units in the cast direction
+        const targetPos = effect.startPosition.clone().add(
+          effect.direction.clone().normalize().multiplyScalar(18)
+        );
+
+        return (
+          <DeathGraspProjectile
+            key={`death-grasp-${effect.id}`}
+            startPosition={effect.startPosition}
+            direction={effect.direction}
+            casterId={effect.playerId}
+            enemyData={nearbyEnemies}
+            onHit={(targetId, hitPosition) => {
+              // Deal 80 damage to the hit enemy and broadcast to server
+              if (socket && currentRoomId) {
+                socket.emit('enemy_damaged', {
+                  roomId: currentRoomId,
+                  enemyId: targetId,
+                  damage: 80,
+                  attackerId: socket.id,
+                  position: { x: hitPosition.x, y: hitPosition.y, z: hitPosition.z },
+                });
+              }
+            }}
+            onComplete={() => {
+              setPvpDeathGraspEffects(prev => prev.filter(e => e.id !== effect.id));
             }}
           />
         );

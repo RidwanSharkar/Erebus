@@ -183,9 +183,9 @@ export class ControlSystem extends System {
   private scytheFireRate = 0.525; // EntropicBolt rate (0.33s cooldown)
   private crossentropyFireRate = 5; // CrossentropyBolt rate (1 per second)
   private summonTotemFireRate = 6.0; // Summon Totem rate (5 seconds cooldown)
-  private viperStingFireRate = 2.0; // Viper Sting rate (2 seconds cooldown)
+  private viperStingFireRate = 4.0; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
-  private cobraShotFireRate = 2.0; // Cobra Shot rate (2 seconds cooldown)
+  private cobraShotFireRate = 4.0; // Cobra Shot rate (2 seconds cooldown)
   private rejuvenatingShotFireRate = 3.0; // Rejuvenating Shot rate (4 seconds cooldown)
   private lastBurstFireTime = 0; // Separate tracking for Bow burst fire
   private burstFireRate = 0.925; // 1 second cooldown between bursts
@@ -211,7 +211,7 @@ export class ControlSystem extends System {
   private isBarrageCharging = false;
   private barrageChargeProgress = 0;
   private lastBarrageTime = 0;
-  private barrageFireRate = 5.0; // 5 second cooldown (keeping as requested)
+  private barrageFireRate = 7.0; // 5 second cooldown (keeping as requested)
   
   // Cobra Shot charging state
   private isCobraShotCharging = false;
@@ -511,6 +511,40 @@ export class ControlSystem extends System {
     // Update deflect barrier position if active
     this.updateDeflectBarrier(playerTransform);
 
+    // Recompute attack-cast slow flag every frame
+    this.updateAttackSlowState(playerMovement);
+
+  }
+
+  private updateAttackSlowState(movement: Movement): void {
+    const isScytheEntropicFiring =
+      this.currentWeapon === WeaponType.SCYTHE &&
+      !this.isIcebeaming &&
+      !this.isCrossentropyCharging &&
+      !this.isSummonTotemCharging &&
+      this.inputManager.isMouseButtonPressed(0);
+
+    const isBowLmbAttacking =
+      this.currentWeapon === WeaponType.BOW &&
+      this.inputManager.isMouseButtonPressed(0);
+
+    movement.isAttackSlowed =
+      // Sword — ColossusStrike duration
+      this.isColossusStriking ||
+      // Runeblade — Smite (aka Colossus Strike on Runeblade) duration
+      this.isSmiting ||
+      // Bow — LMB charged shot and Tempest Rounds rapidfire, plus Q/E/R abilities
+      isBowLmbAttacking ||
+      this.isBarrageCharging ||
+      this.isCobraShotCharging ||
+      this.isViperStingCharging ||
+      // Scythe — CrossEntropy charge or Entropic Bolt stream
+      this.isCrossentropyCharging ||
+      isScytheEntropicFiring ||
+      // Spear — Tempest Flourish (Whirlwind) and Wind Shear (ThrowSpear) charging
+      this.isWhirlwindCharging ||
+      this.isWhirlwinding ||
+      this.isThrowSpearCharging;
   }
 
   private handleMovementInput(movement: Movement): void {
@@ -918,6 +952,11 @@ export class ControlSystem extends System {
         if (!this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging && !this.isFlurryActive)
           this.performLightningStorm(playerTransform);
         break;
+      // ── UNIVERSAL ─────────────────────────────────────────────────────
+      case 'DEATH_GRASP':
+        if (!this.isDeathGrasping)
+          this.performDeathGrasp(playerTransform);
+        break;
       // ── FORMERLY F-KEY (now in universal loadout pool) ────────────────
       case 'RUNEBLADE_F': // Aura (Corrupted Aura toggle)
         this.toggleCorruptedAura(playerTransform);
@@ -995,6 +1034,7 @@ export class ControlSystem extends System {
   /** Return the cooldown info for a specific universal ability id. */
   private getCooldownForAbility(abilityId: string, currentTime: number): { current: number; max: number; isActive: boolean } {
     switch (abilityId) {
+      case 'DEATH_GRASP':
       case 'RUNEBLADE_Q': return { current: Math.max(0, this.deathGraspCooldown - (currentTime - this.lastDeathGraspTime)), max: this.deathGraspCooldown, isActive: this.isDeathGrasping };
       case 'RUNEBLADE_E': return { current: Math.max(0, this.wraithStrikeCooldown - (currentTime - this.lastWraithStrikeTime)), max: this.wraithStrikeCooldown, isActive: this.isWraithStriking };
       case 'RUNEBLADE_R': return { current: Math.max(0, this.smiteCooldown - (currentTime - this.lastSmiteTime)), max: this.smiteCooldown, isActive: this.isSmiting };
@@ -2832,11 +2872,6 @@ export class ControlSystem extends System {
   }
 
   private performDeathGrasp(playerTransform: Transform): void {
-    // Check if using Runeblade
-    if (this.currentWeapon !== WeaponType.RUNEBLADE) {
-      return;
-    }
-
     // Check cooldown
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastDeathGraspTime < this.deathGraspCooldown) {
@@ -5309,7 +5344,7 @@ export class ControlSystem extends System {
       // Create proper ECS projectile entity
       const projectileConfig = {
         speed: 22, // Slightly faster than regular arrows (20)
-        damage: 113, // High damage for barrage arrows
+        damage: 91, // High damage for barrage arrows
         lifetime: 8,
         maxDistance: 25, // Limit barrage arrows to 25 units distance (same as regular arrows)
         piercing: false,

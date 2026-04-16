@@ -8,14 +8,12 @@ interface AnimatedDeathGraspProps {
   onHit: (targetId: string, position: Vector3) => void;
   onPullStart: () => void;
   onComplete: () => void;
-  // Enemy/player data for collision detection
+  // Enemy data for collision detection (NPC enemies only)
   enemyData?: Array<{
     id: string;
     position: Vector3;
     health: number;
   }>;
-  players?: Map<string, any>;
-  localSocketId?: string;
 }
 
 export default function AnimatedDeathGrasp({
@@ -25,8 +23,6 @@ export default function AnimatedDeathGrasp({
   onPullStart,
   onComplete,
   enemyData = [],
-  players,
-  localSocketId
 }: AnimatedDeathGraspProps) {
   const timeRef = useRef(0);
   const flickerRef = useRef(1);
@@ -220,7 +216,7 @@ export default function AnimatedDeathGrasp({
   });
 
   const checkForHits = (currentPos: Vector3) => {
-    // Check collision with enemies
+    // Death Grasp only targets enemy units (NPC enemies), not players
     if (enemyData && enemyData.length > 0) {
       for (const enemy of enemyData) {
         if (enemy.health <= 0) continue;
@@ -232,21 +228,6 @@ export default function AnimatedDeathGrasp({
           return;
         }
       }
-    }
-
-    // Check collision with players in PVP mode
-    if (players && localSocketId) {
-      players.forEach((player: any, playerId: string) => {
-        if (playerId === localSocketId || player.health <= 0) return;
-
-        const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
-        const distance = currentPos.distanceTo(playerPos);
-        if (distance <= 2.5) { // Collision radius
-          hitTargetRef.current = { id: playerId, position: playerPos.clone() };
-          onHit(playerId, playerPos.clone());
-          return;
-        }
-      });
     }
   };
 

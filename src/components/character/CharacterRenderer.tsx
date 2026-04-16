@@ -215,6 +215,10 @@ export default function CharacterRenderer({
         if (moveDir.length() > 0.01) {
           moveDir.normalize();
           next = dirToAnimState(facingDir, moveDir);
+          // Substitute Walk for Run while attack-slowed or icebeaming.
+          if (next === 'Run' && (movement.isAttackSlowed || movement.isIcebeaming)) {
+            next = 'Walk';
+          }
         } else {
           next = 'Idle';
         }
