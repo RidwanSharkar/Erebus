@@ -650,7 +650,7 @@ export default function Sabres({
 
   return (
     <group 
-      position={[0, -0.6, 0.4]} 
+      position={[0, -0.2, 0.8]} 
       rotation={[-0.4, 0, 0]}
       scale={[0.775, 0.775, 0.7]}
     >

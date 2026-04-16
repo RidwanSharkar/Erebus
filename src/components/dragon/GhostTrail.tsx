@@ -5,18 +5,25 @@ import { Group, MeshBasicMaterial } from '@/utils/three-exports';
 import { WeaponType, WeaponSubclass } from './weapons';
 import React from 'react';
 
+const DASH_LINGER_MS = 500; // how long the trail stays visible after dash ends
+
 interface GhostTrailProps {
   parentRef: React.RefObject<Group>;
   weaponType: WeaponType;
   weaponSubclass?: WeaponSubclass;
   targetPosition?: Vector3; // Optional for multiplayer - if provided, use this instead of parentRef position
   isStealthing?: boolean; // Whether the local player is currently in stealth mode
+  isDashingRef?: React.RefObject<boolean>; // Live ref to dashing state; trail only shows while dashing or within linger window
+  isSkyfalling?: boolean; // Divebomb ability — keeps trail visible for the full duration
+  yOffset?: number; // Additional Y lift — use when dragon body is hidden (character model)
 }
 
-const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPosition, isStealthing = false }: GhostTrailProps) => {
+const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPosition, isStealthing = false, isDashingRef, isSkyfalling = false, yOffset = 0 }: GhostTrailProps) => {
   const trailsRef = useRef<Mesh[]>([]);
   const positions = useRef<Vector3[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
+  const lastDashEndTime = useRef<number>(-Infinity); // timestamp when dashing last became false
+  const wasDashing = useRef<boolean>(false);
   const trailCount = 24;
   
   useEffect(() => {
@@ -121,7 +128,16 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
 
   useFrame(() => {
     if (!isInitialized) return;
-    
+
+    // Track dash linger window
+    const isDashingNow = isDashingRef ? (isDashingRef.current ?? false) : true; // if no ref provided, always show
+    if (wasDashing.current && !isDashingNow) {
+      lastDashEndTime.current = Date.now();
+    }
+    wasDashing.current = isDashingNow;
+    const withinLinger = Date.now() - lastDashEndTime.current < DASH_LINGER_MS;
+    const shouldShow = isDashingNow || withinLinger || isSkyfalling;
+
     // Use targetPosition if provided (for multiplayer), otherwise use parentRef position
     let newPos: Vector3;
     if (targetPosition && targetPosition.clone) {
@@ -132,10 +148,10 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
       return;
     }
     
-    // Adjust height to match bone plate position (lower the trail)
-    newPos.y += 0.3;
+    // Adjust height — base offset + optional lift for character model
+    newPos.y += 0.3 + yOffset;
 
-    // Update position history
+    // Always update position history so trail starts from the right place on next dash
     positions.current.unshift(newPos);
     positions.current = positions.current.slice(0, trailCount);
 
@@ -149,7 +165,7 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
         trail.scale.setScalar(scale);
         
         if (trail.material && trail.material instanceof MeshBasicMaterial) {
-          trail.material.opacity = (1 - i / trailCount) * 0.2;
+          trail.material.opacity = shouldShow ? (1 - i / trailCount) * 0.2 : 0;
         }
       }
     });

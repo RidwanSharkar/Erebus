@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useState, useEffect } from 'react';
 import { Group, Vector3 } from 'three';
 import React from 'react';
 import BonePlate from './BonePlate';
@@ -18,6 +18,7 @@ import SpearComponent from '../weapons/Spear';
 import Reanimate, { ReanimateRef } from '../weapons/Reanimate';
 import BoneTail from './BoneTail';
 import ArchmageCrest from './ArchmageCrest';
+import SpellCastingAura from '../weapons/SpellCastingAura';
 
 interface DragonUnitProps {
   position?: Vector3;
@@ -213,6 +214,54 @@ export default function DragonUnit({
 }: DragonUnitProps) {
   
   const groupRef = useRef<Group>(null);
+
+  // Track left mouse button state directly via DOM events so the aura works
+  // regardless of which weapon-specific charging prop is active.
+  const isLeftMouseHeldRef = useRef(false);
+  const spellAuraTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showSpellAura, setShowSpellAura] = useState(false);
+
+  useEffect(() => {
+    const AURA_WEAPONS = new Set([
+      WeaponType.BOW,
+      WeaponType.SWORD,
+      WeaponType.SABRES,
+      WeaponType.SCYTHE,
+      WeaponType.SPEAR,
+    ]);
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      if (!AURA_WEAPONS.has(currentWeapon)) return;
+      isLeftMouseHeldRef.current = true;
+      spellAuraTimerRef.current = setTimeout(() => {
+        if (isLeftMouseHeldRef.current) setShowSpellAura(true);
+      }, 1000);
+    };
+
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      isLeftMouseHeldRef.current = false;
+      if (spellAuraTimerRef.current) {
+        clearTimeout(spellAuraTimerRef.current);
+        spellAuraTimerRef.current = null;
+      }
+      setShowSpellAura(false);
+    };
+
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mouseup', onMouseUp);
+    // Also cancel aura if focus is lost (e.g. alt-tab)
+    document.addEventListener('visibilitychange', onMouseUp as any);
+
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('visibilitychange', onMouseUp as any);
+      if (spellAuraTimerRef.current) clearTimeout(spellAuraTimerRef.current);
+    };
+  // Re-register whenever the active weapon changes so AURA_WEAPONS check is fresh
+  }, [currentWeapon]);
 
   // Weapon rendering logic
   const renderWeapon = () => {
@@ -447,28 +496,35 @@ export default function DragonUnit({
           weaponSubclass={currentSubclass}
         />
 
-        {/* CREST */}
-        <ArchmageCrest
-          position={[0, 0.5, 0.15]}
-          scale={-0.625}
-          weaponType={currentWeapon}
-          weaponSubclass={currentSubclass}
-        />
-
-        {/* CHARGED ORBITALS */}
-        <ChargedOrbitals
-          parentRef={groupRef}
-          dashCharges={dashCharges}
-          weaponType={currentWeapon}
-          weaponSubclass={currentSubclass}
-          isCorruptedAuraActive={isCorruptedAuraActive}
-        />
-
         {/* BONE AURA */}
         <BoneAura
           parentRef={groupRef}
         />
       </>)}
+
+      {/* CREST — visible with or without dragon body, raised higher on character model */}
+      <ArchmageCrest
+        position={hideBody ? [0, 1.8, 0.15] : [0, 0.5, 0.15]}
+        scale={-0.625}
+        weaponType={currentWeapon}
+        weaponSubclass={currentSubclass}
+      />
+
+      {/* SPELL CASTING AURA — shown after 1 s of left-click hold on any weapon */}
+      <SpellCastingAura
+        parentRef={groupRef}
+        isActive={showSpellAura}
+      />
+
+      {/* CHARGED ORBITALS — visible with or without dragon body, raised to hip level on character model */}
+      <ChargedOrbitals
+        parentRef={groupRef}
+        dashCharges={dashCharges}
+        weaponType={currentWeapon}
+        weaponSubclass={currentSubclass}
+        isCorruptedAuraActive={isCorruptedAuraActive}
+        yOffset={hideBody ? 1.1 : 0}
+      />
 
       {/* WEAPON */}
       {renderWeapon()}

@@ -369,7 +369,7 @@ const SpearComponent = memo(function Spear({
   return (
     <>
       <group
-        position={[0, -0, 0.25]}
+        position={[0, 0.45, 0.25]}
         rotation={[-0.25, 0.15, -0]}
         scale={[0.825, 0.75, 0.75]}
       >

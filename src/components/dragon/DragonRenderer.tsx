@@ -493,6 +493,9 @@ export default function DragonRenderer({
         weaponSubclass={currentSubclass}
         targetPosition={effectiveRealTimePositionRef.current || undefined}
         isStealthing={isStealthing}
+        isDashingRef={isDashing}
+        isSkyfalling={isSkyfalling}
+        yOffset={hideBody ? 1.0 : 0}
       />
       
       {/* VIPER STING MANAGER - Only for local player with bow */}

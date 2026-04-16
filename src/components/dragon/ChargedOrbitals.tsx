@@ -15,9 +15,10 @@ interface ChargedOrbitalsProps {
   weaponType: WeaponType;
   weaponSubclass?: WeaponSubclass;
   isCorruptedAuraActive?: boolean;
+  yOffset?: number;
 }
 
-const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weaponSubclass, isCorruptedAuraActive }: ChargedOrbitalsProps) => {
+const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weaponSubclass, isCorruptedAuraActive, yOffset = 0 }: ChargedOrbitalsProps) => {
   const orbitalsRef = useRef<Group>(null);
   
   const getOrbitalColor = () => {
@@ -101,6 +102,7 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
     
     // Position the entire orbital group relative to parent
     orbitalsRef.current.position.copy(parentRef.current.position);
+    orbitalsRef.current.position.y += yOffset;
   });
 
   return (

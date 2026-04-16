@@ -245,7 +245,7 @@ export class PhysicsSystem extends BasePhysicsSystem {
   private calculateWallSliding(
     currentPosition: Vector3,
     deltaPosition: Vector3,
-    collision: { normal: Vector3; closestPoint: Vector3; segmentIndex: number }
+    collision: { normal: Vector3; closestPoint: Vector3; segmentIndex:  number }
   ): Vector3 {
     // Slide along the wall face (tangent perpendicular to push-out normal)
     const tangent = new Vector3(-collision.normal.z, 0, collision.normal.x);
