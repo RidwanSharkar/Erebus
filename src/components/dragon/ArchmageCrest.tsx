@@ -91,7 +91,7 @@ export default function ArchmageCrest({
       emissiveIntensity: 1.3,
       metalness: 0.8,
       roughness: 0.1,
-      opacity: 0.725,
+      opacity: 0.825,
       transparent: true,
       side: DoubleSide
     }),
@@ -100,14 +100,14 @@ export default function ArchmageCrest({
       emissive: colors.main,
       emissiveIntensity: 2.0,
       transparent: true,
-      opacity: 0.725
+      opacity: 0.825
     }),
     bladeGlow: new MeshStandardMaterial({
       color: colors.glow,
       emissive: colors.secondary,
       emissiveIntensity: 1.5,
       transparent: true,
-      opacity: 0.725
+      opacity: 0.825
     })
   }), [colors]);
 
@@ -174,7 +174,7 @@ export default function ArchmageCrest({
   const createWingHalf = (isLeft: boolean) => (
     <group
       ref={isLeft ? leftWingRef : rightWingRef}
-      position={[isLeft ? 0.25 : -0.25, 0.825, 0.155]}
+      position={[isLeft ? 0.25 : -0.25, 0.675, 0.155]}
       rotation={[Math.PI / 3.5, 0, isLeft ? Math.PI / 1.25 : -Math.PI / 1.25]}
     >
       {/* Main blade wing - large primary blade */}
@@ -185,7 +185,7 @@ export default function ArchmageCrest({
           isLeft ? Math.PI/1.85 + 0.375  : Math.PI/2.15 - 0.375,
           isLeft ? -Math.PI / 8 + 0.25 : -Math.PI / 8 + 0.25
         ]}
-        scale={[0.82, 0.425, 0.425]}
+        scale={[0.75, 0.375, 0.375]}
       >
         <mesh geometry={geometries.blade} material={materials.bladeCore}>
 

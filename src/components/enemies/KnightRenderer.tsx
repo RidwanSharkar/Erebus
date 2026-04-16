@@ -21,6 +21,10 @@ interface KnightRendererProps {
 }
 
 const ATTACK_DURATION = 1200; // ms — matches Mixamo attack clip length
+// Ability animation durations — must match the backend meleeLockUntil windows
+const SMITE_DURATION = 1200; // Red knight smite (ms)
+const HEAL_DURATION  = 1800; // Green/Purple aggro shout (ms)
+const FROST_DURATION = 2000; // Blue frost cast (ms)
 const FADE_DURATION = 1.5; // seconds
 // How quickly (per second) the rendered position chases the server-authoritative target.
 // 12 keeps the visual within ~0.17 units of the server position at knight speed (2 u/s),
@@ -48,6 +52,7 @@ export default function KnightRenderer({
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking, setIsWalking] = useState(false);
   const [attackVariant, setAttackVariant] = useState<1 | 2>(1);
+  const [abilityClip, setAbilityClip] = useState<'Smite' | 'Aggro' | 'Cast' | null>(null);
 
   // Server-authoritative targets — updated when props change (single source of truth).
   // The group is NEVER written to from effects; only useFrame lerps toward these refs.
@@ -55,6 +60,7 @@ export default function KnightRenderer({
   const targetRotation = useRef(rotation);
 
   const isAttackingRef = useRef(false);
+  const isAbilityRef   = useRef(false);
 
   // Timer handle for the delayed idle transition after server stops sending moves.
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -76,15 +82,22 @@ export default function KnightRenderer({
   // lerp timing — instead of sampling the rendered position in useFrame.
   useEffect(() => {
     const dist = targetPosition.current.distanceTo(position);
-    targetPosition.current.copy(position);
 
-    if (dist > 5.0 && groupRef.current) {
+    // While executing an attack or ability, ignore position updates entirely.
+    // The backend locks the knight in place during these windows; any in-flight
+    // packets that arrive during the animation should not cause sliding.
+    const isLocked = isAttackingRef.current || isAbilityRef.current;
+    if (!isLocked) {
+      targetPosition.current.copy(position);
+    }
+
+    if (dist > 5.0 && groupRef.current && !isLocked) {
       // Actual teleport (spawn, respawn) — snap so the knight doesn't swim the map.
       groupRef.current.position.copy(position);
     }
 
     // Server moved the knight a meaningful amount → it's walking.
-    if (dist > 0.01 && !isAttackingRef.current && !isDying) {
+    if (dist > 0.01 && !isLocked && !isDying) {
       if (!isWalking) setIsWalking(true);
 
       // Push back the idle-transition timer: as long as the server keeps sending
@@ -125,6 +138,53 @@ export default function KnightRenderer({
     return () => { socket.off('knight-attack-telegraph', handleKnightTelegraph); };
   }, [id, socket]);
 
+  // Ability animation triggers from server — one handler per soul-type ability.
+  useEffect(() => {
+    if (!socket) return;
+
+    // Red Knight — Smite
+    const handleSmiteTelegraph = (data: any) => {
+      if (data.knightId !== id) return;
+      isAbilityRef.current = true;
+      setAbilityClip('Smite');
+      setTimeout(() => {
+        setAbilityClip(null);
+        isAbilityRef.current = false;
+      }, SMITE_DURATION);
+    };
+
+    // Green / Purple Knight — Aggro Shout (self-heal)
+    const handleHealTelegraph = (data: any) => {
+      if (data.knightId !== id) return;
+      isAbilityRef.current = true;
+      setAbilityClip('Aggro');
+      setTimeout(() => {
+        setAbilityClip(null);
+        isAbilityRef.current = false;
+      }, HEAL_DURATION);
+    };
+
+    // Blue Knight — Frost Ray
+    const handleFrostTelegraph = (data: any) => {
+      if (data.knightId !== id) return;
+      isAbilityRef.current = true;
+      setAbilityClip('Cast');
+      setTimeout(() => {
+        setAbilityClip(null);
+        isAbilityRef.current = false;
+      }, FROST_DURATION);
+    };
+
+    socket.on('knight-smite-telegraph', handleSmiteTelegraph);
+    socket.on('knight-heal-telegraph',  handleHealTelegraph);
+    socket.on('knight-frost-telegraph', handleFrostTelegraph);
+    return () => {
+      socket.off('knight-smite-telegraph', handleSmiteTelegraph);
+      socket.off('knight-heal-telegraph',  handleHealTelegraph);
+      socket.off('knight-frost-telegraph', handleFrostTelegraph);
+    };
+  }, [id, socket]);
+
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
@@ -156,7 +216,7 @@ export default function KnightRenderer({
 
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
-      <KnightModel isWalking={isWalking} isAttacking={isAttacking} attackVariant={attackVariant} isDying={isDying} />
+      <KnightModel isWalking={isWalking} isAttacking={isAttacking} attackVariant={attackVariant} isDying={isDying} soulType={soulType} abilityClip={abilityClip} />
 
       {/* Glowing soul orb floating above the knight */}
       {soulType && !isDying && (

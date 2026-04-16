@@ -5,6 +5,7 @@ import { Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import WarlockModel from './WarlockModel';
+import WarlockTeleportEffect from './WarlockTeleportEffect';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
 
@@ -43,6 +44,9 @@ export default function WarlockRenderer({
   const [isBlinking,  setIsBlinking]  = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
 
+  type BlinkFx = { id: string; position: Vector3; type: 'start' | 'end' };
+  const [blinkFx, setBlinkFx] = useState<BlinkFx[]>([]);
+
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
   const fadeTimer      = useRef(0);
@@ -78,6 +82,7 @@ export default function WarlockRenderer({
 
     const handleWarlockBlink = (data: {
       warlockId: string;
+      startPosition: { x: number; y: number; z: number };
       endPosition: { x: number; y: number; z: number };
       rotation: number;
     }) => {
@@ -85,10 +90,23 @@ export default function WarlockRenderer({
 
       setIsBlinking(true);
 
+      const startPos = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
+      const newPos   = new Vector3(data.endPosition.x,   data.endPosition.y,   data.endPosition.z);
+
       // Immediately chase the new position so the lerp is already pulling there during the animation
-      const newPos = new Vector3(data.endPosition.x, data.endPosition.y, data.endPosition.z);
       targetPosition.current.copy(newPos);
       targetRotation.current = data.rotation;
+
+      const fxId = `${id}-${Date.now()}`;
+
+      // Departure effect at the original position
+      setBlinkFx(prev => [...prev, { id: `${fxId}-start`, position: startPos, type: 'start' }]);
+
+      // Arrival effect fires roughly halfway through the blink animation
+      const arrivalDelay = Math.round(BLINK_ANIMATION_DURATION * 0.45);
+      setTimeout(() => {
+        setBlinkFx(prev => [...prev, { id: `${fxId}-end`, position: newPos, type: 'end' }]);
+      }, arrivalDelay);
 
       setTimeout(() => {
         setIsBlinking(false);
@@ -148,6 +166,17 @@ export default function WarlockRenderer({
   });
 
   return (
+    <>
+      {/* Blink teleport effects — rendered in world space, outside the moving group */}
+      {blinkFx.map(fx => (
+        <WarlockTeleportEffect
+          key={fx.id}
+          position={fx.position}
+          type={fx.type}
+          onComplete={() => setBlinkFx(prev => prev.filter(f => f.id !== fx.id))}
+        />
+      ))}
+
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <WarlockModel isBlinking={isBlinking} isLaunching={isLaunching} isDying={isDying} />
 
@@ -179,5 +208,6 @@ export default function WarlockRenderer({
         )}
       </Billboard>
     </group>
+    </>
   );
 }

@@ -5,6 +5,7 @@ import { Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import ShadeModel from './ShadeModel';
+import ShadeTeleportEffect from './ShadeTeleportEffect';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
 
@@ -44,6 +45,9 @@ export default function ShadeRenderer({
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking,   setIsWalking]   = useState(false);
   const [isBlinking,  setIsBlinking]  = useState(false);
+
+  type BlinkFx = { id: string; position: Vector3; type: 'start' | 'end' };
+  const [blinkFx, setBlinkFx] = useState<BlinkFx[]>([]);
 
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
@@ -98,6 +102,7 @@ export default function ShadeRenderer({
 
     const handleShadeBlink = (data: {
       shadeId: string;
+      startPosition: { x: number; y: number; z: number };
       endPosition: { x: number; y: number; z: number };
       rotation: number;
     }) => {
@@ -106,9 +111,21 @@ export default function ShadeRenderer({
       setIsBlinking(true);
       isBlinkingRef.current = true;
 
-      const newPos = new Vector3(data.endPosition.x, data.endPosition.y, data.endPosition.z);
+      const startPos = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
+      const newPos   = new Vector3(data.endPosition.x,   data.endPosition.y,   data.endPosition.z);
       targetPosition.current.copy(newPos);
       targetRotation.current = data.rotation;
+
+      const fxId = `${id}-${Date.now()}`;
+
+      // Departure effect at the original position — fires immediately
+      setBlinkFx(prev => [...prev, { id: `${fxId}-start`, position: startPos, type: 'start' }]);
+
+      // Arrival effect at the destination — fires halfway through the blink slide
+      const arrivalDelay = Math.round(BLINK_DURATION * 0.4);
+      setTimeout(() => {
+        setBlinkFx(prev => [...prev, { id: `${fxId}-end`, position: newPos, type: 'end' }]);
+      }, arrivalDelay);
 
       // Hard-snap only after the slide finishes so the position is exactly correct.
       setTimeout(() => {
@@ -172,6 +189,17 @@ export default function ShadeRenderer({
   });
 
   return (
+    <>
+      {/* Blink teleport effects — rendered in world space, outside the moving group */}
+      {blinkFx.map(fx => (
+        <ShadeTeleportEffect
+          key={fx.id}
+          position={fx.position}
+          type={fx.type}
+          onComplete={() => setBlinkFx(prev => prev.filter(f => f.id !== fx.id))}
+        />
+      ))}
+
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <ShadeModel isWalking={isWalking} isAttacking={isAttacking} isBlinking={isBlinking} isDying={isDying} />
 
@@ -203,5 +231,6 @@ export default function ShadeRenderer({
         )}
       </Billboard>
     </group>
+    </>
   );
 }

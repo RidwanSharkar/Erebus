@@ -10,6 +10,9 @@ interface KnightModelProps {
   isAttacking: boolean;
   attackVariant: 1 | 2;
   isDying: boolean;
+  soulType?: 'green' | 'red' | 'blue' | 'purple';
+  /** Which ability animation is currently playing, or null when none. */
+  abilityClip?: 'Smite' | 'Aggro' | 'Cast' | null;
 }
 
 // Load mesh + skeleton from the "with skin" idle export.
@@ -18,26 +21,41 @@ interface KnightModelProps {
 // introduces when the animations target bones from different scene subtrees.
 useGLTF.preload('/models/knight_idle.glb');
 useGLTF.preload('/models/knight_walk.glb');
+useGLTF.preload('/models/knight_walk0.glb');
 useGLTF.preload('/models/knight_attack.glb');
 useGLTF.preload('/models/knight_attack2.glb');
 useGLTF.preload('/models/knight_death.glb');
+useGLTF.preload('/models/knight_smite.glb');
+useGLTF.preload('/models/knight_aggro.glb');
+useGLTF.preload('/models/knight_cast.glb');
  
 // GLB geometry is in centimeters (bboxMax Y ≈ 172.5 cm).
 // Target ≈ 2 game units tall → 2 / 172.5 ≈ 0.0116
 const SCALE = 0.015;
 
-export default function KnightModel({ isWalking, isAttacking, attackVariant, isDying }: KnightModelProps) {
+export default function KnightModel({ isWalking, isAttacking, attackVariant, isDying, soulType, abilityClip }: KnightModelProps) {
   // This ref is the root handed to useAnimations so the mixer can find bones
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
 
   // Scene (mesh + skeleton) comes from the idle GLB only
   const { scene, animations: idleAnims } = useGLTF('/models/knight_idle.glb');
-  // Pull animation clips from the separate single-animation GLBs
+  // Pull animation clips from the separate single-animation GLBs.
+  // Both walk variants are always loaded (hooks can't be conditional); we pick
+  // the active one based on soulType — purple uses the heavier knight_walk clip
+  // which matches its slower movement speed, while red/green/blue use knight_walk0.
   const { animations: walkAnims }    = useGLTF('/models/knight_walk.glb');
+  const { animations: walkAnims0 }   = useGLTF('/models/knight_walk0.glb');
   const { animations: attackAnims }  = useGLTF('/models/knight_attack.glb');
   const { animations: attack2Anims } = useGLTF('/models/knight_attack2.glb');
   const { animations: deathAnims }   = useGLTF('/models/knight_death.glb');
+  // Ability animation GLBs — one clip per soul-type ability
+  const { animations: smiteAnims }   = useGLTF('/models/knight_smite.glb');
+  const { animations: aggroAnims }   = useGLTF('/models/knight_aggro.glb');
+  const { animations: castAnims }    = useGLTF('/models/knight_cast.glb');
+
+  // Active walk clips: purple → knight_walk.glb, all others → knight_walk0.glb
+  const activeWalkAnims = soulType === 'purple' ? walkAnims : walkAnims0;
 
   // SkeletonUtils.clone() properly re-binds each clone's SkinnedMesh to its own
   // skeleton, so multiple knight instances are fully independent.
@@ -93,22 +111,25 @@ export default function KnightModel({ isWalking, isAttacking, attackVariant, isD
     };
 
     return [
-      ...rename(idleAnims,    'Idle').map(stripRootMotionXZ),
-      ...rename(walkAnims,    'Walk').map(stripRootMotionXZ),
-      ...rename(attackAnims,  'Attack'),
-      ...rename(attack2Anims, 'Attack2'),
-      ...rename(deathAnims,   'Death'),
+      ...rename(idleAnims,        'Idle').map(stripRootMotionXZ),
+      ...rename(activeWalkAnims,  'Walk').map(stripRootMotionXZ),
+      ...rename(attackAnims,      'Attack'),
+      ...rename(attack2Anims,     'Attack2'),
+      ...rename(deathAnims,       'Death'),
+      ...rename(smiteAnims,       'Smite'),
+      ...rename(aggroAnims,       'Aggro'),
+      ...rename(castAnims,        'Cast'),
     ];
-  }, [idleAnims, walkAnims, attackAnims, attack2Anims, deathAnims]);
+  }, [idleAnims, activeWalkAnims, attackAnims, attack2Anims, deathAnims, smiteAnims, aggroAnims, castAnims]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Bind the mixer to the clone's root so it can traverse to find bones by name
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
-  const getAction = (name: 'Idle' | 'Walk' | 'Attack' | 'Attack2' | 'Death'): AnimationAction | null =>
+  const getAction = (name: 'Idle' | 'Walk' | 'Attack' | 'Attack2' | 'Death' | 'Smite' | 'Aggro' | 'Cast'): AnimationAction | null =>
     actions[name] ?? null;
 
   // Transition to the right animation clip when state changes.
-  // Priority: Death > Attack > Walk > Idle
+  // Priority: Death > Attack > Ability > Walk > Idle
   useEffect(() => {
     if (!actions) return;
 
@@ -117,9 +138,11 @@ export default function KnightModel({ isWalking, isAttacking, attackVariant, isD
       ? getAction('Death')
       : isAttacking
         ? getAction(attackClip)
-        : isWalking
-          ? getAction('Walk')
-          : getAction('Idle');
+        : abilityClip
+          ? getAction(abilityClip)
+          : isWalking
+            ? getAction('Walk')
+            : getAction('Idle');
 
     if (!nextAction || nextAction === currentActionRef.current) return;
 
@@ -127,37 +150,31 @@ export default function KnightModel({ isWalking, isAttacking, attackVariant, isD
 
     if (isDying) {
       // Death is a one-shot that clamps on its last frame (corpse pose).
-      // Use a shorter fade-in so the collapse begins immediately.
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.15).play();
-    } else if (isAttacking) {
-      // Attack is one-shot — always restart from the beginning.
+    } else if (isAttacking || abilityClip) {
+      // Attack and ability animations are one-shot — always restart from frame 0.
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.2).play();
     } else {
-      // Walk / Idle are continuous loops. Resume from current playback time
-      // rather than resetting to frame 0, so a brief Idle→Walk flicker doesn't
-      // snap the character's legs back to the start pose.
-      //
-      // Re-enable explicitly: Three.js auto-disables actions whose weight
-      // reaches 0 after a fadeOut completes (_updateWeight sets enabled=false).
-      // Without this, a Walk that was faded out for Attack stays disabled and
-      // contributes zero weight no matter how many fadeIn/play calls follow.
+      // Walk / Idle are continuous loops.
+      // Re-enable explicitly: Three.js auto-disables actions whose weight reaches 0
+      // after a fadeOut (_updateWeight sets enabled=false).
       nextAction.enabled = true;
       nextAction.setLoop(LoopRepeat, Infinity);
       nextAction.fadeIn(0.2).play();
     }
 
     currentActionRef.current = nextAction;
-  }, [isWalking, isAttacking, isDying, attackVariant, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isWalking, isAttacking, isDying, attackVariant, abilityClip, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // After attack finishes, blend back to Walk or Idle.
-  // Guard against isDying so the Death animation's 'finished' event never
-  // triggers a fallback to Walk/Idle.
+  // After a one-shot animation (attack or ability) finishes, blend back to Walk or Idle.
+  // Guard against isDying so Death's 'finished' event never triggers a fallback.
   useEffect(() => {
-    if (!mixer || !isAttacking || isDying) return;
+    const isOneShot = isAttacking || !!abilityClip;
+    if (!mixer || !isOneShot || isDying) return;
 
     const handleFinish = () => {
       if (isDying) return;
@@ -172,7 +189,7 @@ export default function KnightModel({ isWalking, isAttacking, attackVariant, isD
 
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isAttacking, isDying, isWalking, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isAttacking, abilityClip, isDying, isWalking, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     // sceneGroupRef wraps the clone so the AnimationMixer can traverse into the

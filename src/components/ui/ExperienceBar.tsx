@@ -78,18 +78,6 @@ export default function ExperienceBar({
           </div>
         </div>
 
-        {/* ── Kill tracker — fills as enemies die, boss spawns at 12/12 (co-op only) ── */}
-        {showSkeletonTracker && (
-          <div className="mt-2 pt-2 border-t border-white/10">
-
-            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-300 ease-out bg-gradient-to-r from-red-600 to-rose-400"
-                style={{ width: `${skeletonProgress}%` }}
-              />
-            </div>
-          </div>
-        )}
 
       </div>
     </div>

@@ -60,6 +60,14 @@ class EnemyAI {
     // Ghoul attack cooldown tracking
     this.ghoulAttackCooldown = new Map(); // enemyId -> lastAttackTime
 
+    // Knight/Templar attack lock: timestamp until which the enemy is frozen mid-swing
+    // so it cannot move until the swing animation and damage window both resolve.
+    this.meleeLockUntil = new Map(); // enemyId -> lockExpiryTimestamp
+
+    // Knight special ability cooldown tracking
+    // Each soul type has one unique ability; all share this single cooldown map.
+    this.knightAbilityCooldown = new Map(); // enemyId -> lastAbilityTime
+
     // Titan circular-path tracking
     this.titanAngle = new Map(); // enemyId -> current angle in radians
   }
@@ -102,6 +110,8 @@ class EnemyAI {
     this.weaverSummonCooldown.clear();
     this.weaverSummonedGhouls.clear();
     this.ghoulAttackCooldown.clear();
+    this.meleeLockUntil.clear();
+    this.knightAbilityCooldown.clear();
     this.titanAngle.clear();
   }
 
@@ -367,16 +377,36 @@ class EnemyAI {
       return;
     }
 
+    const now = Date.now();
+
+    // While the swing animation is in progress the knight must stand completely
+    // still — no movement updates should be sent to clients.  The lock window
+    // covers the full telegraph + damage-check window (1 200 ms, matching the
+    // client-side ATTACK_DURATION) so the knight can never slide toward the
+    // player mid-swing.
+    const lockUntil = this.meleeLockUntil.get(knight.id) || 0;
+    if (now < lockUntil) return;
+
+    // ── Special ability (soul-type unique, higher priority than basic attack) ──
+    const abilityFired = this.tryKnightAbility(knight, targetPlayer, now, distance, attackRange);
+    if (abilityFired) return;
+
+    // ── Basic melee attack ────────────────────────────────────────────────────
     if (distance <= attackRange) {
       if (!this.bossAttackCooldown.has(knight.id)) {
         this.bossAttackCooldown.set(knight.id, 0);
       }
 
       const lastAttackTime = this.bossAttackCooldown.get(knight.id);
-      const now = Date.now();
 
       if (now - lastAttackTime >= attackCooldown) {
         this.bossAttackCooldown.set(knight.id, now);
+
+        // Freeze the knight for the full swing duration so it cannot move while
+        // the attack animation plays out on clients.
+        const SWING_LOCK_MS = 1200; // matches ATTACK_DURATION on the client
+        this.meleeLockUntil.set(knight.id, now + SWING_LOCK_MS);
+
         this.telegraphKnightAttack(knight, targetPlayer);
 
         setTimeout(() => {
@@ -388,11 +418,13 @@ class EnemyAI {
           const currentTarget = currentPlayers.find(p => p.id === targetPlayer.id);
           if (!currentTarget || currentTarget.health <= 0) return;
 
+          // Only deal damage if the player is still within the swing range.
+          // If they dodged out in time, the attack is a clean miss.
           const currentDistance = this.calculateDistance(knight.position, currentTarget.position);
           if (currentDistance <= attackRange) {
             this.knightAttackPlayer(knight, currentTarget);
           } else {
-            console.log(`⚔️ Knight ${knight.id} swing missed - player dodged!`);
+            console.log(`⚔️ Knight ${knight.id} swing missed - player dodged out of range!`);
           }
         }, 1000);
       }
@@ -427,6 +459,175 @@ class EnemyAI {
     }
 
     console.log(`⚔️ Knight ${knight.id} attacked player ${player.id} for ${damage} damage!`);
+  }
+
+  // ─── Knight Special Abilities ────────────────────────────────────────────────
+  // Returns true if an ability was triggered (so the caller can skip basic attack).
+
+  tryKnightAbility(knight, targetPlayer, now, distance, meleeRange) {
+    const lastAbility = this.knightAbilityCooldown.get(knight.id) || 0;
+
+    switch (knight.soulType) {
+      // ── Red: Smite — powered melee slam (75 dmg, 7 s CD, melee range) ───────
+      case 'red': {
+        const CD = 7000;
+        if (now - lastAbility < CD) return false;
+        if (distance > meleeRange) return false;
+
+        this.knightAbilityCooldown.set(knight.id, now);
+        // Smite animation locks movement for 1 200 ms (same as basic swing)
+        this.meleeLockUntil.set(knight.id, now + 1200);
+        this.knightCastSmite(knight, targetPlayer);
+        return true;
+      }
+
+      // ── Green / Purple: Aggro Shout — self-heal for 150 HP (8 s CD) ─────────
+      case 'green':
+      case 'purple': {
+        const CD = 8000;
+        if (now - lastAbility < CD) return false;
+        // Self-heal is useful only below max HP
+        if (knight.health >= knight.maxHealth) return false;
+
+        this.knightAbilityCooldown.set(knight.id, now);
+        // Aggro animation takes 1 800 ms — lock movement for the full duration
+        this.meleeLockUntil.set(knight.id, now + 1800);
+        this.knightCastHeal(knight);
+        return true;
+      }
+
+      // ── Blue: Frost Ray — ranged slow + 30 dmg (10 s CD, 9-unit range) ──────
+      case 'blue': {
+        const CD = 10000;
+        const FROST_RANGE = 9.0;
+        if (now - lastAbility < CD) return false;
+        if (distance > FROST_RANGE) return false;
+
+        this.knightAbilityCooldown.set(knight.id, now);
+        // Cast animation takes 2 000 ms — lock movement for the full duration
+        this.meleeLockUntil.set(knight.id, now + 2000);
+        this.knightCastFrost(knight, targetPlayer);
+        return true;
+      }
+
+      default:
+        return false;
+    }
+  }
+
+  // Red Knight — Smite (melee slam, 75 dmg)
+  knightCastSmite(knight, targetPlayer) {
+    if (this.io) {
+      this.io.to(this.roomId).emit('knight-smite-telegraph', {
+        knightId: knight.id,
+        targetPlayerId: targetPlayer.id,
+        position: knight.position,
+        timestamp: Date.now(),
+      });
+    }
+    console.log(`🔴⚡ Red Knight ${knight.id} charging Smite at player ${targetPlayer.id}!`);
+
+    // Damage lands at the visual impact point of the animation (~900 ms)
+    setTimeout(() => {
+      if (knight.isDying || !this.room?.getGameStarted()) return;
+      const currentPlayers = this.room?.getPlayers();
+      if (!currentPlayers) return;
+      const currentTarget = currentPlayers.find(p => p.id === targetPlayer.id);
+      if (!currentTarget || currentTarget.health <= 0) return;
+
+      const currentDistance = this.calculateDistance(knight.position, currentTarget.position);
+      const SMITE_RANGE = 2.6; // same melee range
+      if (currentDistance <= SMITE_RANGE) {
+        if (this.io) {
+          this.io.to(this.roomId).emit('knight-smite', {
+            knightId: knight.id,
+            targetPlayerId: currentTarget.id,
+            damage: 75,
+            position: knight.position,
+            timestamp: Date.now(),
+          });
+        }
+        console.log(`🔴⚡ Red Knight ${knight.id} SMITE hit player ${currentTarget.id} for 75 dmg!`);
+      } else {
+        console.log(`🔴 Red Knight ${knight.id} Smite missed — player dodged!`);
+      }
+    }, 900);
+  }
+
+  // Green / Purple Knight — Aggro Shout (self-heal 150 HP)
+  knightCastHeal(knight) {
+    if (this.io) {
+      this.io.to(this.roomId).emit('knight-heal-telegraph', {
+        knightId: knight.id,
+        position: knight.position,
+        timestamp: Date.now(),
+      });
+    }
+    console.log(`🟢💚 Knight ${knight.id} (${knight.soulType}) casting Heal!`);
+
+    // Apply the heal at the animation midpoint (~1 200 ms)
+    setTimeout(() => {
+      if (knight.isDying || !this.room?.getGameStarted()) return;
+      const liveKnight = this.room?.getEnemy(knight.id);
+      if (!liveKnight || liveKnight.isDying) return;
+
+      const prevHp = liveKnight.health;
+      liveKnight.health = Math.min(liveKnight.maxHealth, liveKnight.health + 150);
+      const healed = liveKnight.health - prevHp;
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-healed', {
+          enemyId:    liveKnight.id,
+          healAmount: healed,
+          newHealth:  liveKnight.health,
+          maxHealth:  liveKnight.maxHealth,
+          timestamp:  Date.now(),
+        });
+      }
+      console.log(`🟢💚 Knight ${knight.id} healed for ${healed} HP (${prevHp} → ${liveKnight.health})`);
+    }, 1200);
+  }
+
+  // Blue Knight — Frost Ray (30 dmg + 50% slow for 5 s)
+  knightCastFrost(knight, targetPlayer) {
+    if (this.io) {
+      this.io.to(this.roomId).emit('knight-frost-telegraph', {
+        knightId: knight.id,
+        targetPlayerId: targetPlayer.id,
+        startPosition: {
+          x: knight.position.x,
+          y: knight.position.y + 1.5, // torso height
+          z: knight.position.z,
+        },
+        targetPosition: {
+          x: targetPlayer.position.x,
+          y: targetPlayer.position.y + 1.0,
+          z: targetPlayer.position.z,
+        },
+        timestamp: Date.now(),
+      });
+    }
+    console.log(`🔵❄️ Blue Knight ${knight.id} casting Frost Ray at player ${targetPlayer.id}!`);
+
+    // Hit lands after the cast animation completes (~1 400 ms)
+    setTimeout(() => {
+      if (knight.isDying || !this.room?.getGameStarted()) return;
+      const currentPlayers = this.room?.getPlayers();
+      if (!currentPlayers) return;
+      const currentTarget = currentPlayers.find(p => p.id === targetPlayer.id);
+      if (!currentTarget || currentTarget.health <= 0) return;
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('knight-frost', {
+          knightId: knight.id,
+          targetPlayerId: currentTarget.id,
+          damage: 30,
+          slowDuration: 5000, // 5 s at 50% speed
+          timestamp: Date.now(),
+        });
+      }
+      console.log(`🔵❄️ Blue Knight ${knight.id} Frost Ray hit player ${currentTarget.id} for 30 dmg + slow!`);
+    }, 1400);
   }
 
   // ─── Shade AI ────────────────────────────────────────────────────────────────
@@ -1919,6 +2120,8 @@ class EnemyAI {
     this.weaverSummonCooldown.delete(enemyId);
     this.weaverSummonedGhouls.delete(enemyId);
     this.ghoulAttackCooldown.delete(enemyId);
+    this.meleeLockUntil.delete(enemyId);
+    this.knightAbilityCooldown.delete(enemyId);
     this.titanAngle.delete(enemyId);
 
     // If a ghoul dies, clear it from its summoner's slot so the weaver can resummon

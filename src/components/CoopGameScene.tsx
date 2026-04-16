@@ -3266,6 +3266,87 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       }
     };
 
+    // Red Knight — Smite (75 physical damage, same stat-reduction pipeline as basic attack)
+    const handleKnightSmite = (data: any) => {
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+
+        const statData = playerStatDataRef.current;
+        const damageReduction = statData ? StatSystem.getDamageReduction(statData.stats) : 0;
+        const reducedDamage = damageReduction > 0
+          ? Math.max(1, Math.round(data.damage * (1 - damageReduction)))
+          : data.damage;
+
+        health.takeDamage(reducedDamage, Date.now() / 1000, playerEntity, false);
+
+        const transform = playerEntity.getComponent(Transform);
+        if (transform) {
+          const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+          if (damageNumberManager?.addDamageNumber) {
+            const pos = transform.position.clone();
+            pos.y -= 0.5;
+            damageNumberManager.addDamageNumber(reducedDamage, false, pos, 'physical', true);
+          }
+        }
+
+        if (shield) updatePlayerShield(shield.currentShield, shield.maxShield);
+        if (wasAlive && health.isDead) handlePlayerDeath(socket.id, data.knightId);
+      }
+    };
+
+    // Blue Knight — Frost Ray (30 magic damage + 50% slow for 5 s)
+    const handleKnightFrost = (data: any) => {
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+
+        const statData = playerStatDataRef.current;
+        const damageReduction = statData ? StatSystem.getDamageReduction(statData.stats) : 0;
+        const reducedDamage = damageReduction > 0
+          ? Math.max(1, Math.round(data.damage * (1 - damageReduction)))
+          : data.damage;
+
+        health.takeDamage(reducedDamage, Date.now() / 1000, playerEntity, false);
+
+        const transform = playerEntity.getComponent(Transform);
+        if (transform) {
+          const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+          if (damageNumberManager?.addDamageNumber) {
+            const pos = transform.position.clone();
+            pos.y -= 0.5;
+            damageNumberManager.addDamageNumber(reducedDamage, false, pos, 'magical', true);
+          }
+        }
+
+        if (shield) updatePlayerShield(shield.currentShield, shield.maxShield);
+        if (wasAlive && health.isDead) handlePlayerDeath(socket.id, data.knightId);
+
+        // Apply 50% movement slow for the specified duration
+        const movement = playerEntity.getComponent(Movement);
+        if (movement) {
+          const slowDuration = data.slowDuration ?? 5000;
+          movement.slow(slowDuration, 0.5);
+          // Show a debuff indicator on the local player
+          if (transform) {
+            createPvpDebuffEffect(socket.id, 'slowed', transform.position.clone(), slowDuration);
+          }
+        }
+      }
+    };
+
     const handleTemplarAttack = (data: any) => {
       if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
 
@@ -4096,6 +4177,8 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     socket.on('boss-teleport', handleBossTeleport);
     socket.on('boss-skeleton-attack', handleBossSkeletonAttack);
     socket.on('knight-attack', handleKnightAttack);
+    socket.on('knight-smite',  handleKnightSmite);
+    socket.on('knight-frost',  handleKnightFrost);
     socket.on('templar-attack', handleTemplarAttack);
     socket.on('enemy-status-effect', handleEnemyStatusEffect);
     socket.on('knight-death-vortex', handleKnightDeathVortex);
@@ -4331,6 +4414,8 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       socket.off('boss-teleport', handleBossTeleport);
       socket.off('boss-skeleton-attack', handleBossSkeletonAttack);
       socket.off('knight-attack', handleKnightAttack);
+      socket.off('knight-smite',  handleKnightSmite);
+      socket.off('knight-frost',  handleKnightFrost);
       socket.off('templar-attack', handleTemplarAttack);
       socket.off('enemy-status-effect', handleEnemyStatusEffect);
       socket.off('knight-death-vortex', handleKnightDeathVortex);

@@ -5,7 +5,7 @@ import { Group, MeshBasicMaterial } from '@/utils/three-exports';
 import { WeaponType, WeaponSubclass } from './weapons';
 import React from 'react';
 
-const DASH_LINGER_MS = 500; // how long the trail stays visible after dash ends
+const DASH_LINGER_MS = 100; // how long the trail stays visible after dash ends
 
 interface GhostTrailProps {
   parentRef: React.RefObject<Group>;

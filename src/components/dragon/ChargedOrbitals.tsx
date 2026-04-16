@@ -115,7 +115,7 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
         return (
           <group key={index}>
             <mesh>
-              <sphereGeometry args={[0.1125, 8, 8]} />
+              <sphereGeometry args={[0.1025, 8, 8]} />
               <meshStandardMaterial
                 color={new Color(isAvailable ? activeColor : inactiveColor)}
                 emissive={new Color(isAvailable ? activeColor : inactiveColor)}
