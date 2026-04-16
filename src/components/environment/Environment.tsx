@@ -156,8 +156,9 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       {/* ── Doodads & scene props ──────────────────────────────────────── */}
 
-      {/* Low-lying mist wisps drifting across the arena floor */}
+      {/* GROUND FOG */}
       <GroundFogSystem />
+      
 
       {/* Rising fire embers above each camp beacon */}
       <InstancedEmbers />

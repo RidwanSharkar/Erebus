@@ -89,8 +89,8 @@ const GroundFogSystem: React.FC = () => {
     for (let i = 0; i < WISP_COUNT; i++) {
       // Spread across the arena floor, avoid center path (donut-ish)
       const angle = Math.random() * Math.PI * 2;
-      const minR = 4;
-      const maxR = 29;
+      const minR = 2;
+      const maxR = 18;
       const r = minR + Math.random() * (maxR - minR);
       pos.set(
         Math.cos(angle) * r,

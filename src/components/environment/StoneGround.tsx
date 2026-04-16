@@ -88,138 +88,109 @@ const STONE_FRAGMENT = `
 // Everything is one InstancedMesh — one BoxGeometry, one ShaderMaterial, one
 // draw call.  Three slab categories share the same unit-cube geometry:
 //
-//   PATH       y=0.055, thickness 0.09 — the main north-south road
-//   CONNECTOR  y=0.055, thickness 0.09 — branches off the path to each camp
-//   PLATFORM   y=0.06,  thickness 0.10 — large cobbled combat pads per camp
+//   PATH       y=0.055, thickness 0.09 — the main north-south road (7 u wide)
+//   CONNECTOR  y=0.057, thickness 0.09 — east/west branches to camps
+//                (y is 2 mm above PATH so no depth-fight in thin overlap zone)
+//   PLATFORM   y=0.06,  thickness 0.10 — cobbled combat pads per camp
+//                (sits clearly above both PATH and CONNECTOR — no depth-fight)
 //
-// 3 camp platforms (backend/gameRoom.js CAMP_POSITIONS):
-//   Camp 0 — North Fortress : center (0,-22)  → path leads directly north here
-//   Camp 1 — East Bastion   : center (22,8)   → east branch off path at z≈8
-//   Camp 2 — West Citadel   : center (-22,8)  → west branch off path at z≈8
+// All tiles are axis-aligned (rotY = 0) and spaced with a 0.1-unit grout gap
+// so coplanar faces never overlap — eliminating all z-fighting/jitter.
+//
+// Camp centres (backend/gameRoom.js CAMP_POSITIONS):
+//   Camp 0 — North Fortress : (0, -22)   path runs directly through the camp
+//   Camp 1 — East Bastion   : (22,  8)   east connector at z ≈ 8
+//   Camp 2 — West Citadel   : (-22, 8)   west connector at z ≈ 8
 // ---------------------------------------------------------------------------
 
 interface SlabDef {
   position: [number, number, number];
   scale:    [number, number, number]; // [width, thickness, depth]
-  rotY:     number;                   // radians
+  rotY:     number;
 }
 
-// ─── Helper — builds the 21-row alternating-wide/split main path ───────────
-const buildPath = (): SlabDef[] => {
-  // Rows every 2.5 units, z=26 → -24.  Even rows: one wide slab.  Odd rows:
-  // two flanking slabs.  Slight x-wobble and rotation for organic feel.
-  const xWobble  = [ 0.1,-0.2, 0.2,-0.1, 0.1, 0.0,-0.2, 0.1,-0.1, 0.2, 0.0];
-  const rotWide  = [ 0.03,-0.02, 0.04,-0.03, 0.02, 0.01,-0.02, 0.03,-0.04, 0.05,-0.01];
+// ─── Helper — axis-aligned grid with guaranteed 0.1-unit grout gap ─────────
+const makeGrid = (
+  cx: number, cz: number,
+  cols: number, rows: number,
+  stepX: number, stepZ: number,
+  tileW: number, tileD: number,
+  y: number,
+  thickness: number,
+): SlabDef[] => {
+  const x0 = cx - ((cols - 1) * stepX) / 2;
+  const z0 = cz - ((rows - 1) * stepZ) / 2;
   const slabs: SlabDef[] = [];
-  let wIdx = 0;
-  for (let row = 0; row <= 20; row++) {
-    const z = 26 - row * 2.5;
-    if (row % 2 === 0) {
-      // Wide row — single slab ~5 units wide
-      const w = wIdx % xWobble.length;
-      // Slightly wider plaza slab at the pedestal z≈1
-      const isPlaza = Math.abs(z - 1) < 1.5;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
       slabs.push({
-        position: [xWobble[w], 0.055, z],
-        scale:    [isPlaza ? 5.4 : 5.0, 0.09, isPlaza ? 2.5 : 2.3],
-        rotY:     rotWide[w],
+        position: [x0 + c * stepX, y, z0 + r * stepZ],
+        scale:    [tileW, thickness, tileD],
+        rotY:     0,
       });
-      wIdx++;
-    } else {
-      // Split row — two flanking slabs
-      const rotL = (row * 0.07 + 0.04) * (row % 4 < 2 ? 1 : -1);
-      const rotR = -rotL * 0.7;
-      slabs.push(
-        { position: [-1.3, 0.055, z], scale: [2.3, 0.09, 2.1], rotY:  rotL },
-        { position: [ 1.2, 0.055, z], scale: [2.2, 0.09, 2.0], rotY:  rotR },
-      );
     }
   }
   return slabs;
 };
 
-// ─── Camp 0 · North Fortress ──────────────────────────────────────────────
-// Main path terminates at z≈-24, two bridge slabs span the gap into the camp.
-// Large 3×3 platform covers the walled interior (x:-7 to 7, z:-28 to -17).
-const CAMP0_CONNECTOR: SlabDef[] = [
-  { position: [ 0.5, 0.055, -24.8], scale: [4.5, 0.09, 2.5], rotY:  0.03 },
-  { position: [ 0.0, 0.055, -22.0], scale: [5.0, 0.09, 2.5], rotY: -0.02 },
-];
-const CAMP0_PLATFORM: SlabDef[] = [
-  // back row  (z ≈ -27)
-  { position: [-4.0, 0.06, -27.2], scale: [6.0, 0.10, 4.0], rotY:  0.04 },
-  { position: [ 0.0, 0.06, -27.5], scale: [4.5, 0.10, 4.0], rotY: -0.03 },
-  { position: [ 4.0, 0.06, -27.0], scale: [6.0, 0.10, 4.0], rotY:  0.05 },
-  // mid row   (z ≈ -22)
-  { position: [-4.0, 0.06, -22.5], scale: [6.0, 0.10, 5.0], rotY: -0.04 },
-  { position: [ 0.0, 0.06, -22.0], scale: [4.5, 0.10, 5.5], rotY:  0.03 },
-  { position: [ 4.0, 0.06, -22.5], scale: [6.0, 0.10, 5.0], rotY: -0.05 },
-  // front row (z ≈ -18)
-  { position: [-4.0, 0.06, -17.8], scale: [6.0, 0.10, 4.0], rotY:  0.05 },
-  { position: [ 0.0, 0.06, -18.0], scale: [4.5, 0.10, 4.0], rotY: -0.04 },
-  { position: [ 4.0, 0.06, -17.5], scale: [6.0, 0.10, 4.0], rotY:  0.03 },
-];
+// ─── Main path (N-S) ───────────────────────────────────────────────────────
+// 21 rows · z = 26 → -24 · step 2.5 · single 7-wide slab per row · no rotation.
+// Tile depth 2.4 → 0.1-unit gap between successive rows (no overlap possible).
+const buildPath = (): SlabDef[] => {
+  const slabs: SlabDef[] = [];
+  for (let i = 0; i <= 20; i++) {
+    slabs.push({
+      position: [0, 0.055, 26 - i * 2.5],
+      scale:    [7.0, 0.09, 2.4],
+      rotY:     0,
+    });
+  }
+  return slabs; // last tile centre z = -24
+};
 
-// ─── Camp 1 · East Bastion ────────────────────────────────────────────────
-// Connector branches east from the path spine (x≈0) at z≈8, arriving at the
-// camp gate (x=15).  Large 3×3 platform covers x:15–29, z:2–14.
+// ─── Camp 0 · North Fortress  (camp centre x=0, z=-22) ────────────────────
+// The path already passes through this area; the platform sits 5 mm higher
+// (y=0.06) so there is no depth-fight with path tiles (y=0.055).
+// 4-col × 5-row grid · total footprint ≈ 14 × 18 units centred at (0, -23).
+//   stepX=3.6 → tileW=3.5 + 0.1 gap  |  stepZ=3.6 → tileD=3.5 + 0.1 gap
+const CAMP0_PLATFORM = makeGrid(0, -23, 4, 5, 3.6, 3.6, 3.5, 3.5, 0.06, 0.10);
+
+// ─── Camp 1 · East Bastion  (camp centre x=22, z=8) ───────────────────────
+// Connector: 5 tiles bridging from path edge (x≈3.5) to platform edge (x≈16).
+//   Each tile: 2.4 wide (travel dir) × 7.0 deep (z).  Step 2.5 → 0.1 gap.
+//   y=0.057 clears any depth-fight with path tiles (y=0.055) at x≈3.5.
 const CAMP1_CONNECTOR: SlabDef[] = [
-  { position: [ 4.5, 0.055,  7.8], scale: [3.5, 0.09, 2.5], rotY:  0.04 },
-  { position: [ 8.0, 0.055,  8.0], scale: [3.5, 0.09, 2.5], rotY: -0.03 },
-  { position: [11.5, 0.055,  7.9], scale: [3.0, 0.09, 2.5], rotY:  0.05 },
-  { position: [14.2, 0.055,  8.1], scale: [3.0, 0.09, 2.5], rotY: -0.04 },
+  { position: [ 4.7, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
+  { position: [ 7.2, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
+  { position: [ 9.7, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
+  { position: [12.2, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
+  { position: [14.7, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
 ];
-const CAMP1_PLATFORM: SlabDef[] = [
-  // west col  (x ≈ 17)
-  { position: [17.0, 0.06,  3.5], scale: [5.0, 0.10, 5.0], rotY:  0.04 },
-  { position: [17.0, 0.06,  8.0], scale: [5.0, 0.10, 5.5], rotY: -0.03 },
-  { position: [17.0, 0.06, 12.5], scale: [5.0, 0.10, 4.5], rotY:  0.06 },
-  // mid col   (x ≈ 22)
-  { position: [22.0, 0.06,  3.0], scale: [5.0, 0.10, 4.5], rotY: -0.04 },
-  { position: [22.0, 0.06,  8.0], scale: [5.5, 0.10, 5.5], rotY:  0.03 },
-  { position: [22.0, 0.06, 13.0], scale: [5.0, 0.10, 4.5], rotY: -0.05 },
-  // east col  (x ≈ 27)
-  { position: [27.0, 0.06,  3.5], scale: [4.5, 0.10, 5.0], rotY:  0.05 },
-  { position: [27.0, 0.06,  8.5], scale: [4.5, 0.10, 5.0], rotY: -0.04 },
-  { position: [27.0, 0.06, 12.5], scale: [4.5, 0.10, 4.5], rotY:  0.03 },
-];
+// Platform: 4×4 grid centred at (22, 8) · step 3.9+0.1=4.0 · tile 3.9×3.9
+const CAMP1_PLATFORM = makeGrid(22, 8, 4, 4, 4.0, 4.0, 3.9, 3.9, 0.06, 0.10);
 
-// ─── Camp 2 · West Citadel ────────────────────────────────────────────────
-// Mirror of Camp 1: branches west from path at z≈8, gate at x=-15.
-// Large 3×3 platform covers x:-29 to -15, z:2–14.
+// ─── Camp 2 · West Citadel  (camp centre x=-22, z=8) ─────────────────────
+// Mirror of Camp 1.
 const CAMP2_CONNECTOR: SlabDef[] = [
-  { position: [ -4.5, 0.055,  7.8], scale: [3.5, 0.09, 2.5], rotY: -0.04 },
-  { position: [ -8.0, 0.055,  8.0], scale: [3.5, 0.09, 2.5], rotY:  0.03 },
-  { position: [-11.5, 0.055,  7.9], scale: [3.0, 0.09, 2.5], rotY: -0.05 },
-  { position: [-14.2, 0.055,  8.1], scale: [3.0, 0.09, 2.5], rotY:  0.04 },
+  { position: [ -4.7, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
+  { position: [ -7.2, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
+  { position: [ -9.7, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
+  { position: [-12.2, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
+  { position: [-14.7, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
 ];
-const CAMP2_PLATFORM: SlabDef[] = [
-  // east col  (x ≈ -17)
-  { position: [-17.0, 0.06,  3.5], scale: [5.0, 0.10, 5.0], rotY: -0.04 },
-  { position: [-17.0, 0.06,  8.0], scale: [5.0, 0.10, 5.5], rotY:  0.03 },
-  { position: [-17.0, 0.06, 12.5], scale: [5.0, 0.10, 4.5], rotY: -0.06 },
-  // mid col   (x ≈ -22)
-  { position: [-22.0, 0.06,  3.0], scale: [5.0, 0.10, 4.5], rotY:  0.04 },
-  { position: [-22.0, 0.06,  8.0], scale: [5.5, 0.10, 5.5], rotY: -0.03 },
-  { position: [-22.0, 0.06, 13.0], scale: [5.0, 0.10, 4.5], rotY:  0.05 },
-  // west col  (x ≈ -27)
-  { position: [-27.0, 0.06,  3.5], scale: [4.5, 0.10, 5.0], rotY: -0.05 },
-  { position: [-27.0, 0.06,  8.5], scale: [4.5, 0.10, 5.0], rotY:  0.04 },
-  { position: [-27.0, 0.06, 12.5], scale: [4.5, 0.10, 4.5], rotY: -0.03 },
-];
+const CAMP2_PLATFORM = makeGrid(-22, 8, 4, 4, 4.0, 4.0, 3.9, 3.9, 0.06, 0.10);
 
 // ---------------------------------------------------------------------------
-// Merge everything into a single flat array — one InstancedMesh for the lot
+// Merge everything — one InstancedMesh, one draw call
 // ---------------------------------------------------------------------------
 const ALL_SLABS: SlabDef[] = [
-  ...buildPath(),        // 31 slabs — main N-S road
-  ...CAMP0_CONNECTOR,    //  2 slabs — north bridge to fortress
-  ...CAMP0_PLATFORM,     //  9 slabs — north fortress platform
-  ...CAMP1_CONNECTOR,    //  4 slabs — east branch road
-  ...CAMP1_PLATFORM,     //  9 slabs — east bastion platform
-  ...CAMP2_CONNECTOR,    //  4 slabs — west branch road
-  ...CAMP2_PLATFORM,     //  9 slabs — west citadel platform
-  // Total: 68 slabs — 1 draw call
+  ...buildPath(),        // 21 slabs — main N-S road (7 units wide)
+  ...CAMP0_PLATFORM,     // 20 slabs — North Fortress platform (4×5)
+  ...CAMP1_CONNECTOR,    //  5 slabs — East branch road
+  ...CAMP1_PLATFORM,     // 16 slabs — East Bastion platform (4×4)
+  ...CAMP2_CONNECTOR,    //  5 slabs — West branch road
+  ...CAMP2_PLATFORM,     // 16 slabs — West Citadel platform (4×4)
+  // Total: 83 slabs — 1 draw call
 ];
 
 const SLAB_COUNT = ALL_SLABS.length;

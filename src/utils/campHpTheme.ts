@@ -10,15 +10,15 @@ export interface CampHpPalette {
 }
 
 const PALETTES: Record<string, CampHpPalette> = {
-  blue:   { background: '#03071e', fill: '#1e44ff', text: '#99bbff' },
-  green:  { background: '#021a06', fill: '#22cc44', text: '#99ffbb' },
+  blue:   { background: '#03071e', fill: '#e01030', text: '#99bbff' },
+  green:  { background: '#021a06', fill: '#e01030', text: '#99ffbb' },
   red:    { background: '#1f0305', fill: '#e01030', text: '#ffaaaa' },
-  purple: { background: '#0f0320', fill: '#9922dd', text: '#dd99ff' },
+  purple: { background: '#0f0320', fill: '#e01030', text: '#dd99ff' },
 };
 
 const DEFAULT_PALETTE: CampHpPalette = {
   background: '#111111',
-  fill:       '#888888',
+  fill:       '#e01030',
   text:       '#ffffff',
 };
 

@@ -151,6 +151,7 @@ const CastleWalls: React.FC = () => {
     <instancedMesh
       ref={meshRef}
       args={[undefined, undefined, count]}
+      frustumCulled={false}
       castShadow
       receiveShadow
     >

@@ -13,7 +13,7 @@ interface EnhancedGroundProps {
  * Provides depth and visual interest to the game environment
  */
 const EnhancedGround: React.FC<EnhancedGroundProps> = ({
-  radius = 33,
+  radius = 28,
   height = 1,
   level = 1
 }) => {

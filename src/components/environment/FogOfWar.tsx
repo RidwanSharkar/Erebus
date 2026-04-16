@@ -80,7 +80,7 @@ const FogOfWar: React.FC<FogOfWarProps> = ({ playerPositionRef, discoveredCamps 
     uFogColor:     { value: new Color(0x020408) },
     uFogAlpha:     { value: 0.93 },
     uPlayerPos:    { value: new Vector3() },
-    uPlayerRadius: { value: 50.0 },
+    uPlayerRadius: { value: 10.0 },
     uEdgeSoftness: { value: 2.5 },
     uCampCenters:  { value: CAMP_DATA.map(c => new Vector2(c.x, c.z)) },
     uCampRadius:   { value: 11.0 },
@@ -108,7 +108,7 @@ const FogOfWar: React.FC<FogOfWarProps> = ({ playerPositionRef, discoveredCamps 
       renderOrder={50}
     >
       {/* 90×90 plane covers the full map (radius 33) plus generous buffer */}
-      <planeGeometry args={[90, 90]} />
+      <circleGeometry args={[32, 32]} />
       <shaderMaterial
         ref={matRef}
         uniforms={uniforms}
