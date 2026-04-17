@@ -1603,17 +1603,27 @@ export class ControlSystem extends System {
     spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
     spawnPosition.y += 1; // Slightly higher
     
+    // Randomly pick color variant with corresponding damage
+    const colorVariants = [
+      { colorVariant: 'purple', damage: 31 },
+      { colorVariant: 'blue',   damage: 36 },
+      { colorVariant: 'red',    damage: 41 },
+      { colorVariant: 'green',  damage: 33 },
+    ] as const;
+    const randomVariant = colorVariants[Math.floor(Math.random() * colorVariants.length)];
+
     // Create EntropicBolt projectile using the new method
     const entropicConfig = {
-      speed: 20, // Faster than CrossentropyBolt
-      damage: 31,
-      lifetime: 2, // Shorter lifetime
-      piercing: false, // Non-piercing so projectile gets destroyed on hit
-      explosive: false, // No explosion effect
-      explosionRadius: 0, // No explosion radius
+      speed: 20,
+      damage: randomVariant.damage,
+      lifetime: 0.7,
+      piercing: false,
+      explosive: false,
+      explosionRadius: 0,
       subclass: this.currentSubclass,
       level: this.currentLevel,
       opacity: 1.0,
+      colorVariant: randomVariant.colorVariant,
       sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown'
     };
     

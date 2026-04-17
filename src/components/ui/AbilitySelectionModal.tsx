@@ -189,14 +189,12 @@ export default function AbilitySelectionModal({ selectedWeapon, onConfirm, onBac
         </div>
 
         {/* Ability Grid — grouped by weapon */}
-        <div className="space-y-4 max-h-80 overflow-y-auto pr-1 custom-scrollbar">
+        <div className="space-y-1 max-h-140 overflow-y-auto pr-1 custom-scrollbar">
           {abilityGroups.map(({ weapon, abilities }) => {
             const colors = WEAPON_COLORS[weapon];
             return (
               <div key={weapon}>
-                <div className={`text-xs font-bold ${colors.text} uppercase tracking-widest mb-2 pl-1`}>
-                  {WEAPON_LABELS[weapon]}
-                </div>
+
                 <div className="grid grid-cols-3 gap-2">
                   {abilities.map(ability => {
                     const assignedSlot = isAssigned(ability.id);

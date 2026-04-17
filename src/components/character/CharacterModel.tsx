@@ -9,10 +9,12 @@ export type AnimState =
   | 'Idle' | 'Run' | 'Walk' | 'Backwards' | 'LeftStrafe' | 'RightStrafe' | 'LeftStrafeRun' | 'RightStrafeRun'
   | 'BackLeftStrafeRun' | 'BackRightStrafeRun'
   | 'Jump' | 'JumpFront' | 'JumpBack'
-  | 'Cast' | 'SwordCast' | 'DrawBow' | 'ReleaseBow';
+  | 'Cast' | 'SwordCast' | 'DrawBow' | 'ReleaseBow'
+  | 'Death';
 
 interface CharacterModelProps {
   animState: AnimState;
+  isDead?: boolean;
 }
 
 useGLTF.preload('/models/character_idle.glb');
@@ -30,6 +32,7 @@ useGLTF.preload('/models/character_cast.glb');
 useGLTF.preload('/models/character_swordCast.glb');
 useGLTF.preload('/models/character_drawBow.glb');
 useGLTF.preload('/models/character_releaseBow.glb');
+useGLTF.preload('/models/character_death.glb');
 
 // Adjust if the character GLB geometry is larger or smaller than expected.
 // Standard Mixamo / Character Creator exports at ~200 units tall (cm) → 0.01 gives ~2 world units.
@@ -43,7 +46,7 @@ const Y_OFFSET = -0.25;
 const FADE_NORMAL = 0.2;
 const FADE_JUMP   = 0.15;
 
-export default function CharacterModel({ animState }: CharacterModelProps) {
+export default function CharacterModel({ animState, isDead = false }: CharacterModelProps) {
   const sceneGroupRef   = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
 
@@ -62,6 +65,7 @@ export default function CharacterModel({ animState }: CharacterModelProps) {
   const { animations: swordCastAnims }          = useGLTF('/models/character_swordCast.glb');
   const { animations: drawBowAnims }            = useGLTF('/models/character_drawBow.glb');
   const { animations: releaseBowAnims }         = useGLTF('/models/character_releaseBow.glb');
+  const { animations: deathAnims }              = useGLTF('/models/character_death.glb');
 
   // Clone scene so each instance owns its materials (avoids shared fade / material state).
   const clonedScene = useMemo(() => {
@@ -115,13 +119,35 @@ export default function CharacterModel({ animState }: CharacterModelProps) {
       ...rename(swordCastAnims,      'SwordCast'     ).map(stripRootMotionXZ),
       ...rename(drawBowAnims,        'DrawBow'       ).map(stripRootMotionXZ),
       ...rename(releaseBowAnims,     'ReleaseBow'    ).map(stripRootMotionXZ),
+      ...rename(deathAnims,          'Death'         ).map(stripRootMotionXZ),
     ];
-  }, [idleAnims, runAnims, walkAnims, backAnims, leftAnims, rightAnims, leftStrafeRunAnims, rightStrafeRunAnims, jumpAnims, jumpFrontAnims, jumpBackAnims, castAnims, swordCastAnims, drawBowAnims, releaseBowAnims]);
+  }, [idleAnims, runAnims, walkAnims, backAnims, leftAnims, rightAnims, leftStrafeRunAnims, rightStrafeRunAnims, jumpAnims, jumpFrontAnims, jumpBackAnims, castAnims, swordCastAnims, drawBowAnims, releaseBowAnims, deathAnims]);
 
   const { actions } = useAnimations(animations, sceneGroupRef);
 
+  // When the player dies, force the Death animation immediately and ignore
+  // subsequent animState changes so nothing overrides the death pose.
+  const deathTriggeredRef = useRef(false);
+
   useEffect(() => {
     if (!actions) return;
+
+    if (isDead && !deathTriggeredRef.current) {
+      deathTriggeredRef.current = true;
+      const deathAction = actions['Death'] ?? null;
+      if (deathAction) {
+        currentActionRef.current?.fadeOut(FADE_NORMAL);
+        deathAction.enabled = true;
+        deathAction.setLoop(LoopOnce, 1);
+        deathAction.clampWhenFinished = true;
+        deathAction.reset().fadeIn(FADE_NORMAL).play();
+        currentActionRef.current = deathAction;
+      }
+      return;
+    }
+
+    // Block any animation changes once death has been triggered.
+    if (deathTriggeredRef.current) return;
 
     const nextAction = actions[animState] ?? null;
     if (!nextAction || nextAction === currentActionRef.current) return;
@@ -146,7 +172,12 @@ export default function CharacterModel({ animState }: CharacterModelProps) {
     }
 
     currentActionRef.current = nextAction;
-  }, [animState, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [animState, isDead, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset death flag when the component is re-mounted (e.g. after respawn).
+  useEffect(() => {
+    deathTriggeredRef.current = false;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group ref={sceneGroupRef} position-y={Y_OFFSET}>

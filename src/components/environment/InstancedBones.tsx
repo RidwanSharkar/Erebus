@@ -58,9 +58,9 @@ const SKULL_COUNT = 35;
 
 // Concentration near the 3 camp areas
 const CAMP_CENTERS: [number, number][] = [
-  [  0, -22 ],
-  [ 22,   8 ],
-  [-22,   8 ],
+  [  0, -20 ],
+  [ 20,   7 ],
+  [-20,   7 ],
 ];
 
 function bonePosition(i: number, total: number): Vector3 {

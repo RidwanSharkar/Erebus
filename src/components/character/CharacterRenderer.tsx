@@ -16,6 +16,7 @@ interface CharacterRendererProps {
   rotation?: { x: number; y: number; z: number };
   currentWeapon?: WeaponType;
   isCharging?: boolean;
+  isDead?: boolean;
 }
 
 const LERP_SPEED      = 15;  // snappy but smooth position interpolation
@@ -61,6 +62,7 @@ export default function CharacterRenderer({
   rotation,
   currentWeapon,
   isCharging = false,
+  isDead = false,
 }: CharacterRendererProps) {
   const groupRef         = useRef<Group | null>(null);
   const { camera }       = useThree();
@@ -175,7 +177,7 @@ export default function CharacterRenderer({
     if (!entity) return;
 
     const movement = entity.getComponent(Movement);
-    if (!movement || movement.constructor.name !== 'Movement') return;
+    if (!movement) return;
 
     let next: AnimState;
 
@@ -292,7 +294,7 @@ export default function CharacterRenderer({
 
   return (
     <group ref={setGroupRef}>
-      <CharacterModel animState={animState} />
+      <CharacterModel animState={animState} isDead={isDead} />
     </group>
   );
 }

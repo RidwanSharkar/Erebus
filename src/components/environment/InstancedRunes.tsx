@@ -123,9 +123,9 @@ const RUNE_COUNT = 30;
 // Placed on stone ground near camps and path intersections
 const RUNE_CLUSTERS: [number, number][] = [
   [  0,   0 ], // arena center
-  [  0, -22 ], // North camp
-  [ 22,   8 ], // East camp
-  [-22,   8 ], // West camp
+  [  0, -20 ], // North camp
+  [ 20,   7 ], // East camp
+  [-20,   7 ], // West camp
   [  0, -11 ], // path midpoint N
   [ 11,   4 ], // path midpoint E
   [-11,   4 ], // path midpoint W

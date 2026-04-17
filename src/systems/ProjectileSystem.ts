@@ -577,6 +577,7 @@ export class ProjectileSystem extends System {
       opacity?: number;
       sourcePlayerId?: string;
       isCryoflame?: boolean;
+      colorVariant?: string;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -588,9 +589,9 @@ export class ProjectileSystem extends System {
 
     // Add Projectile component with EntropicBolt-specific settings
     const projectile = world.createComponent(Projectile);
-    projectile.speed = config?.speed || 20; // Faster than CrossentropyBolt
-    projectile.damage = config?.damage || 20; // EntropicBolt damage
-    projectile.maxLifetime = config?.lifetime ||1.75; // Shorter lifetime
+    projectile.speed = config?.speed || 20;
+    projectile.damage = config?.damage || 31;
+    projectile.maxLifetime = config?.lifetime || 0.7;
     projectile.owner = ownerId;
     projectile.sourcePlayerId = config?.sourcePlayerId || 'unknown';
     projectile.setDirection(direction);
@@ -612,7 +613,7 @@ export class ProjectileSystem extends System {
       emissive: '#00ff44',
       emissiveIntensity: 0,
       transparent: true,
-      opacity: 0 // Very low opacity since React component will handle visuals
+      opacity: 0
     });
     const placeholderMesh = new Mesh(placeholderGeometry, placeholderMaterial);
     
@@ -621,6 +622,7 @@ export class ProjectileSystem extends System {
     placeholderMesh.userData.projectileEntity = projectileEntity;
     placeholderMesh.userData.direction = direction.clone();
     placeholderMesh.userData.isCryoflame = config?.isCryoflame || false;
+    placeholderMesh.userData.colorVariant = config?.colorVariant || 'purple';
     
     renderer.mesh = placeholderMesh;
     

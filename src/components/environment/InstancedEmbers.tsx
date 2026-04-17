@@ -81,9 +81,9 @@ const EMBER_FRAG = `
 // Camp centres — index matches campTypes[] order from the server
 // ---------------------------------------------------------------------------
 const CAMP_ORIGINS: [number, number, number][] = [
-  [  0, 0, -22 ],  // camp 0 — North Fortress
-  [ 22, 0,   8 ],  // camp 1 — East Bastion
-  [-22, 0,   8 ],  // camp 2 — West Citadel
+  [  0, 0, -20 ],  // camp 0 — North Fortress
+  [ 20, 0,   7 ],  // camp 1 — East Bastion
+  [-20, 0,   7 ],  // camp 2 — West Citadel
 ];
 
 // Per-theme palettes: [dim (cool / fading), bright (hot core)]

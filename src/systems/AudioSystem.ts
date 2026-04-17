@@ -72,6 +72,12 @@ export class AudioSystem extends System {
       { id: 'templar_damage_2', file: 'versus/TemplarDamage2.mp3' },
       { id: 'enemy_blink', file: 'versus/blink.mp3' },
       { id: 'enemy_death', file: 'versus/deathSFX.mp3' },
+      { id: 'shade_throw', file: 'versus/shadeThrow.mp3' },
+      { id: 'shade_damage_1', file: 'versus/shadeDamage1.mp3' },
+      { id: 'shade_damage_2', file: 'versus/shadeDamage2.mp3' },
+      { id: 'shade_damage_3', file: 'versus/shadeDamage3.mp3' },
+      { id: 'warlock_immolate', file: 'versus/immolate.mp3' },
+      { id: 'warlock_voidbolt', file: 'versus/voidbolt.mp3' },
       { id: 'spear_swing', file: 'spear/spear_swing.mp3' },
       { id: 'whirlwind_charge', file: 'spear/whirlwind_charge.mp3' },
       { id: 'whirlwind_release', file: 'spear/whirlwind_release.mp3' },
@@ -540,6 +546,41 @@ export class AudioSystem extends System {
   // don't need to import Vector3
   public playEnemyDeathSound(position: { x: number; y: number; z: number }) {
     return this.playWeaponSound('enemy_death', new Vector3(position.x, position.y, position.z), { volume: 0.95 });
+  }
+
+  // Play Shade dart throw sound (one call per dart, staggered by the caller)
+  public playShadeThrowSound(position: Vector3) {
+    return this.playWeaponSound('shade_throw', position, { volume: 0.85 });
+  }
+
+  // Play Shade dart hit-damage sound (variant matches which dart hit: 1, 2, or 3)
+  public playShadeDamageSound(position: Vector3, variant: 1 | 2 | 3) {
+    return this.playWeaponSound(`shade_damage_${variant}`, position, { volume: 0.9 });
+  }
+
+  // Play Viper enemy bow draw sound (when the Viper starts drawing its bow)
+  public playViperBowDrawSound(position: Vector3) {
+    return this.playWeaponSound('bow_draw', position, { volume: 0.55 });
+  }
+
+  // Play Viper enemy bow release sound (when the Viper fires its arrow)
+  public playViperBowReleaseSound(position: Vector3) {
+    return this.playWeaponSound('bow_release', position, { volume: 0.6 });
+  }
+
+  // Play the damage sound when the Viper arrow hits the player
+  public playViperArrowHitSound(position: Vector3) {
+    return this.playWeaponSound('shade_damage_3', position, { volume: 0.9 });
+  }
+
+  // Play Warlock flame-strike (immolate) sound — fires when the pillars erupt
+  public playWarlockImmolateSound(position: Vector3) {
+    return this.playWeaponSound('warlock_immolate', position, { volume: 0.9 });
+  }
+
+  // Play Warlock void-bolt hit sound — fires when the chaos orb hits the player
+  public playWarlockVoidboltSound(position: Vector3) {
+    return this.playWeaponSound('warlock_voidbolt', position, { volume: 0.9 });
   }
 
   // Play scythe mantra sound (totem summon)

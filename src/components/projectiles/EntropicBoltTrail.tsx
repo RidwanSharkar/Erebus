@@ -10,165 +10,177 @@ interface EntropicBoltTrailProps {
   isCryoflame?: boolean;
 }
 
+const TRAIL_LENGTH = 20;
+const ORBIT_RADIUS = 0.14;
+const ORBIT_SPEED = 10;
+const MIN_MOVEMENT = 0.06;
+const UPDATE_INTERVAL = 0.016;
+
 const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
   color,
   size,
   meshRef,
   opacity = 1,
-  isCryoflame = false
 }) => {
-  const particlesCount = 25; // Fewer particles than CrossentropyBoltTrail for simpler effect
-  const particlesRef = useRef<Points>(null);
-  const positionsRef = useRef<Float32Array>(new Float32Array(particlesCount * 3));
-  const opacitiesRef = useRef<Float32Array>(new Float32Array(particlesCount));
-  const scalesRef = useRef<Float32Array>(new Float32Array(particlesCount));
-  const isInitialized = useRef(false);
-  
-  // ref to store the last known position for smoother updates
-  const lastKnownPosition = useRef(new Vector3());
-  
-  // Control trail update frequency
-  const minMovementDistance = 0.08; // Slightly larger than CrossentropyBoltTrail
-  const updateTimer = useRef(0);
-  const updateInterval = 0.02; // Slightly slower update rate
+  const trail1Ref = useRef<Points>(null);
+  const trail2Ref = useRef<Points>(null);
 
-  // Initialize positions only once when mesh is available
+  // Path history: stores the bolt's center positions over time
+  const pathHistory = useRef<Vector3[]>([]);
+  const lastKnownPosition = useRef(new Vector3());
+  const isInitialized = useRef(false);
+  const timeRef = useRef(0);
+  const updateTimer = useRef(0);
+
+  // Separate position/opacity/scale buffers for each orbital trail
+  const pos1 = useRef<Float32Array>(new Float32Array(TRAIL_LENGTH * 3));
+  const opa1 = useRef<Float32Array>(new Float32Array(TRAIL_LENGTH));
+  const scl1 = useRef<Float32Array>(new Float32Array(TRAIL_LENGTH));
+
+  const pos2 = useRef<Float32Array>(new Float32Array(TRAIL_LENGTH * 3));
+  const opa2 = useRef<Float32Array>(new Float32Array(TRAIL_LENGTH));
+  const scl2 = useRef<Float32Array>(new Float32Array(TRAIL_LENGTH));
+
   useEffect(() => {
     if (meshRef.current && !isInitialized.current) {
-      // Get world position to handle coordinate space correctly
-      const worldPosition = new Vector3();
-      meshRef.current.getWorldPosition(worldPosition);
-      const { x, y, z } = worldPosition;
-      lastKnownPosition.current.set(x, y, z);
-      
-      // Initialize all particles at the starting position
-      for (let i = 0; i < particlesCount; i++) {
-        positionsRef.current[i * 3] = x;
-        positionsRef.current[i * 3 + 1] = y;
-        positionsRef.current[i * 3 + 2] = z;
-        opacitiesRef.current[i] = 0;
-        scalesRef.current[i] = 0;
+      const wp = new Vector3();
+      meshRef.current.getWorldPosition(wp);
+      lastKnownPosition.current.copy(wp);
+
+      for (let i = 0; i < TRAIL_LENGTH; i++) {
+        pathHistory.current.push(wp.clone());
+        pos1.current[i * 3] = wp.x;
+        pos1.current[i * 3 + 1] = wp.y;
+        pos1.current[i * 3 + 2] = wp.z;
+        pos2.current[i * 3] = wp.x;
+        pos2.current[i * 3 + 1] = wp.y;
+        pos2.current[i * 3 + 2] = wp.z;
+        opa1.current[i] = 0;
+        opa2.current[i] = 0;
+        scl1.current[i] = 0;
+        scl2.current[i] = 0;
       }
       isInitialized.current = true;
     }
   }, [meshRef]);
 
   useFrame((_, delta) => {
-    if (!particlesRef.current?.parent || !meshRef.current || !isInitialized.current) return;
+    if (!meshRef.current || !isInitialized.current) return;
+    if (!trail1Ref.current?.parent || !trail2Ref.current?.parent) return;
 
+    timeRef.current += delta;
     updateTimer.current += delta;
-    
-    // Only update at controlled intervals
-    if (updateTimer.current < updateInterval) return;
+    if (updateTimer.current < UPDATE_INTERVAL) return;
     updateTimer.current = 0;
 
-    // Get world position to handle coordinate space correctly
-    const worldPosition = new Vector3();
-    meshRef.current.getWorldPosition(worldPosition);
-    
-    // Calculate movement distance
-    const distance = worldPosition.distanceTo(lastKnownPosition.current);
-    
-    // Only update if there's meaningful movement
-    if (distance > minMovementDistance) {
-      lastKnownPosition.current.copy(worldPosition);
+    const wp = new Vector3();
+    meshRef.current.getWorldPosition(wp);
 
-      // Update particle positions by shifting them backward
-      for (let i = particlesCount - 1; i > 0; i--) {
-        positionsRef.current[i * 3] = positionsRef.current[(i - 1) * 3];
-        positionsRef.current[i * 3 + 1] = positionsRef.current[(i - 1) * 3 + 1];
-        positionsRef.current[i * 3 + 2] = positionsRef.current[(i - 1) * 3 + 2];
-      }
-
-      // Update lead particle
-      positionsRef.current[0] = worldPosition.x;
-      positionsRef.current[1] = worldPosition.y;
-      positionsRef.current[2] = worldPosition.z;
-
-      // Update geometry attributes
-      if (particlesRef.current) {
-        const geometry = particlesRef.current.geometry;
-        geometry.attributes.position.needsUpdate = true;
-      }
+    if (wp.distanceTo(lastKnownPosition.current) > MIN_MOVEMENT) {
+      lastKnownPosition.current.copy(wp);
+      pathHistory.current.unshift(wp.clone());
+      if (pathHistory.current.length > TRAIL_LENGTH) pathHistory.current.pop();
     }
 
-    // Update opacities and scales with parent opacity
-    for (let i = 0; i < particlesCount; i++) {
-      opacitiesRef.current[i] = Math.pow((1 - i / particlesCount), 2) * 0.7 * opacity;
-      scalesRef.current[i] = size * 0.6 * Math.pow((1 - i / particlesCount), 0.6);
+    const t = timeRef.current * ORBIT_SPEED;
+    const count = Math.min(pathHistory.current.length, TRAIL_LENGTH);
+
+    for (let i = 0; i < TRAIL_LENGTH; i++) {
+      if (i >= count) {
+        opa1.current[i] = 0;
+        opa2.current[i] = 0;
+        scl1.current[i] = 0;
+        scl2.current[i] = 0;
+        continue;
+      }
+
+      const center = pathHistory.current[i];
+      // Helix angle increases along the trail length and rotates over time
+      const angle = (i / TRAIL_LENGTH) * Math.PI * 3 + t;
+      const fade = Math.pow(1 - i / TRAIL_LENGTH, 1.8) * opacity;
+
+      // Trail 1: primary orbital position
+      pos1.current[i * 3]     = center.x + Math.cos(angle) * ORBIT_RADIUS;
+      pos1.current[i * 3 + 1] = center.y + Math.sin(angle) * ORBIT_RADIUS;
+      pos1.current[i * 3 + 2] = center.z;
+
+      // Trail 2: opposite phase (π offset) — swirls around trail 1
+      pos2.current[i * 3]     = center.x + Math.cos(angle + Math.PI) * ORBIT_RADIUS;
+      pos2.current[i * 3 + 1] = center.y + Math.sin(angle + Math.PI) * ORBIT_RADIUS;
+      pos2.current[i * 3 + 2] = center.z;
+
+      const particleSize = size * 0.65 * (1 - (i / TRAIL_LENGTH) * 0.5);
+      opa1.current[i] = fade * 0.95;
+      scl1.current[i] = particleSize;
+      opa2.current[i] = fade * 0.95;
+      scl2.current[i] = particleSize;
     }
 
-    if (particlesRef.current) {
-      const geometry = particlesRef.current.geometry;
-      geometry.attributes.opacity.needsUpdate = true;
-      geometry.attributes.scale.needsUpdate = true;
+    for (const ref of [trail1Ref, trail2Ref]) {
+      if (ref.current) {
+        ref.current.geometry.attributes.position.needsUpdate = true;
+        ref.current.geometry.attributes.opacity.needsUpdate = true;
+        ref.current.geometry.attributes.scale.needsUpdate = true;
+      }
     }
   });
 
+  const vertexShader = `
+    attribute float opacity;
+    attribute float scale;
+    varying float vOpacity;
+    void main() {
+      vOpacity = opacity;
+      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+      gl_Position = projectionMatrix * mvPosition;
+      gl_PointSize = scale * 20.0 * (300.0 / -mvPosition.z);
+    }
+  `;
+
+  const fragmentShader = `
+    varying float vOpacity;
+    uniform vec3 uColor;
+    void main() {
+      float d = length(gl_PointCoord - vec2(0.5));
+      float strength = smoothstep(0.5, 0.05, d);
+      gl_FragColor = vec4(uColor * 2.2, vOpacity * strength);
+    }
+  `;
+
   return (
-    <points ref={particlesRef}>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={particlesCount}
-          array={positionsRef.current}
-          itemSize={3}
+    <>
+      <points ref={trail1Ref}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" count={TRAIL_LENGTH} array={pos1.current} itemSize={3} />
+          <bufferAttribute attach="attributes-opacity"  count={TRAIL_LENGTH} array={opa1.current} itemSize={1} />
+          <bufferAttribute attach="attributes-scale"    count={TRAIL_LENGTH} array={scl1.current} itemSize={1} />
+        </bufferGeometry>
+        <shaderMaterial
+          transparent
+          depthWrite={false}
+          blending={AdditiveBlending}
+          vertexShader={vertexShader}
+          fragmentShader={fragmentShader}
+          uniforms={{ uColor: { value: color } }}
         />
-        <bufferAttribute
-          attach="attributes-opacity"
-          count={particlesCount}
-          array={opacitiesRef.current}
-          itemSize={1}
+      </points>
+
+      <points ref={trail2Ref}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" count={TRAIL_LENGTH} array={pos2.current} itemSize={3} />
+          <bufferAttribute attach="attributes-opacity"  count={TRAIL_LENGTH} array={opa2.current} itemSize={1} />
+          <bufferAttribute attach="attributes-scale"    count={TRAIL_LENGTH} array={scl2.current} itemSize={1} />
+        </bufferGeometry>
+        <shaderMaterial
+          transparent
+          depthWrite={false}
+          blending={AdditiveBlending}
+          vertexShader={vertexShader}
+          fragmentShader={fragmentShader}
+          uniforms={{ uColor: { value: color } }}
         />
-        <bufferAttribute
-          attach="attributes-scale"
-          count={particlesCount}
-          array={scalesRef.current}
-          itemSize={1}
-        />
-      </bufferGeometry>
-      <shaderMaterial
-        transparent
-        depthWrite={false}
-        blending={AdditiveBlending}
-        vertexShader={`
-          attribute float opacity;
-          attribute float scale;
-          varying float vOpacity;
-          void main() {
-            vOpacity = opacity;
-            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-            gl_Position = projectionMatrix * mvPosition;
-            gl_PointSize = scale * 18.0 * (300.0 / -mvPosition.z);
-          }
-        `}
-        fragmentShader={`
-          varying float vOpacity;
-          uniform vec3 uColor;
-          uniform bool uIsCryoflame;
-          void main() {
-            float d = length(gl_PointCoord - vec2(0.5));
-            float strength = smoothstep(0.5, 0.1, d);
-            vec3 glowColor;
-            float emissiveMultiplier = 0.5;
-            if (uIsCryoflame) {
-              // For Cryoflame: mix with a deep navy blue for a rich blue effect and increase emissive intensity
-              glowColor = mix(uColor, vec3(0.2, 0.4, 0.8), 0.4);
-              emissiveMultiplier = 2.0;
-            } else {
-              // For normal Entropic: mix with orange for fire effect
-              glowColor = mix(uColor, vec3(1.0, 0.6, 0.0), 0.4);
-              emissiveMultiplier = 1.0;
-            }
-            gl_FragColor = vec4(glowColor * emissiveMultiplier, vOpacity * strength);
-          }
-        `}
-        uniforms={{
-          uColor: { value: color },
-          uIsCryoflame: { value: isCryoflame },
-        }}
-      />
-    </points>
+      </points>
+    </>
   );
 };
 

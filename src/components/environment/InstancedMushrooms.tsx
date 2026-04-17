@@ -97,7 +97,7 @@ const CAP_FRAG = `
   }
 `;
 
-const SHROOM_COUNT  = 80;
+const SHROOM_COUNT  = 50;
 const INNER_RADIUS  = 11; // inside forest ring
 const OUTER_RADIUS  = 26;
 
@@ -142,7 +142,7 @@ const InstancedMushrooms: React.FC = () => {
       const z     = Math.sin(angle) * r;
 
       // Random height: tiny fairy shrooms to knee-high
-      const h  = 0.18 + Math.random() * 0.55;
+      const h  = 0.14 + Math.random() * 0.55;
       const cr = 0.7 + Math.random() * 1.4; // cap relative size
 
       // Stem

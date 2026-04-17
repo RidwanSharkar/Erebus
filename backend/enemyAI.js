@@ -1301,7 +1301,7 @@ class EnemyAI {
         isDying:   false,
         damage:    30,
         attackCooldown: 2000,
-        moveSpeed: 2.5,
+        moveSpeed: 0,   // Frozen during summon animation
         summonerId: weaver.id,
       };
 
@@ -1317,6 +1317,15 @@ class EnemyAI {
         });
       }
       console.log(`🧵 Weaver ${weaver.id} summoned ghoul ${ghoulId} at ritual circle!`);
+
+      // Unlock movement once the summon animation finishes (~2500ms)
+      setTimeout(() => {
+        const spawnedGhoul = this.room?.getEnemy(ghoulId);
+        if (spawnedGhoul && !spawnedGhoul.isDying) {
+          spawnedGhoul.moveSpeed = 2.5;
+          console.log(`💀 Ghoul ${ghoulId} summon animation complete — movement unlocked`);
+        }
+      }, 2500);
     }, 3000);
   }
 

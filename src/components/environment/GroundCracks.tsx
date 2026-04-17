@@ -98,9 +98,9 @@ const GroundCracks: React.FC = () => {
 
   // Camp paths + open stone areas to target
   const CAMP_CENTERS: [number, number][] = [
-    [  0, -22 ],
-    [ 22,   8 ],
-    [-22,   8 ],
+    [  0, -20 ],
+    [ 20,   7 ],
+    [-20,   7 ],
     [  0,   0 ], // arena center
   ];
 

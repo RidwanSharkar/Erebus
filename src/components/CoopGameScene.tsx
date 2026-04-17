@@ -124,6 +124,7 @@ interface CoopGameSceneProps {
   onExperienceUpdate?: (experience: number, level: number) => void;
   onEssenceUpdate?: (essence: number) => void;
   onMerchantUIUpdate?: (isVisible: boolean) => void;
+  onSceneReady?: () => void;
   selectedWeapons?: {
     primary: WeaponType;
     secondary: WeaponType;
@@ -287,7 +288,7 @@ function DroppedItemMesh({ item, playerPositionRef, onPickup }: DroppedItemMeshP
   );
 }
 
-export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCameraUpdate, onGameStateUpdate, onControlSystemUpdate, onExperienceUpdate, onEssenceUpdate, onMerchantUIUpdate, selectedWeapons, skillPointData, statPointData, abilityLoadout }: CoopGameSceneProps = {}) {
+export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCameraUpdate, onGameStateUpdate, onControlSystemUpdate, onExperienceUpdate, onEssenceUpdate, onMerchantUIUpdate, onSceneReady, selectedWeapons, skillPointData, statPointData, abilityLoadout }: CoopGameSceneProps = {}) {
   const { camera, gl, scene } = useThree();
   const {
     players,
@@ -788,6 +789,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     startPosition: Vector3;
     targetPosition: Vector3;
     damage: number;
+    daggerIndex: number; // 0, 1, or 2 — determines which damage sound plays on hit
   }
   const [shadeDaggers, setShadeDaggers] = useState<ShadeDaggerState[]>([]);
 
@@ -4195,6 +4197,9 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
             }
           }
 
+          // Play throw sound for this dart in rapid succession
+          (window as any).audioSystem?.playShadeThrowSound(start);
+
           setShadeDaggers(prev => [
             ...prev,
             {
@@ -4202,6 +4207,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
               startPosition: start.clone(),
               targetPosition: target,
               damage: data.damage,
+              daggerIndex: i,
             },
           ]);
         }, SHADE_THROW_DURATION + i * SHADE_DAGGER_INTERVAL);
@@ -4295,6 +4301,9 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       setTimeout(() => {
         const strikePos = new Vector3(data.position.x, data.position.y, data.position.z);
 
+        // Play immolate sound the moment the fire pillars erupt
+        (window as any).audioSystem?.playWarlockImmolateSound(strikePos);
+
         // Spawn the visual effect
         setWarlockFlameStrikes(prev => [
           ...prev,
@@ -4335,6 +4344,9 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       // Sample the player's live position at the moment of release for better tracking.
       const staleTarget = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
 
+      // Play draw sound immediately when the Viper starts drawing its bow
+      (window as any).audioSystem?.playViperBowDrawSound(start);
+
       setTimeout(() => {
         let target = staleTarget.clone();
         if (playerEntity) {
@@ -4343,6 +4355,9 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
             target = new Vector3(t.position.x, data.targetPosition.y, t.position.z);
           }
         }
+
+        // Play release sound the moment the arrow is fired
+        (window as any).audioSystem?.playViperBowReleaseSound(start);
 
         setViperArrows(prev => [
           ...prev,
@@ -4786,6 +4801,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       engine.start();
       console.log('✅ CoopGameScene: Engine started and ready');
       setEngineReady(true);
+      onSceneReady?.();
     });
 
     // Cleanup function
@@ -5742,6 +5758,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
           isLocalPlayer={true}
           currentWeapon={weaponState.currentWeapon}
           isCharging={weaponState.isCharging}
+          isDead={playerDeathStates.get(socket?.id ?? '')?.isDead ?? false}
         />
       )}
 
@@ -5951,6 +5968,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
               world={engineRef.current?.getWorld() || new World()}
               isLocalPlayer={false}
               rotation={player.rotation}
+              isDead={isPlayerDead}
             />
 
             {/* Weapon layer — dragon body hidden, only weapon rendered */}
@@ -6182,6 +6200,11 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
             if (!health) return;
             const wasAlive = !health.isDead;
             health.takeDamage(dagger.damage, Date.now() / 1000, playerEntity, false);
+            // Play the damage sound for whichever dart hit (1st, 2nd, or 3rd)
+            (window as any).audioSystem?.playShadeDamageSound(
+              dagger.startPosition,
+              (dagger.daggerIndex + 1) as 1 | 2 | 3,
+            );
             if (wasAlive && health.isDead && socket?.id) {
               handlePlayerDeath(socket.id, 'shade-dagger');
             }
@@ -6246,6 +6269,8 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
             if (!health) return;
             const wasAlive = !health.isDead;
             health.takeDamage(orb.damage, Date.now() / 1000, playerEntity, false);
+            // Play void-bolt impact sound when the chaos orb connects
+            (window as any).audioSystem?.playWarlockVoidboltSound(orb.startPosition);
             if (wasAlive && health.isDead && socket?.id) {
               handlePlayerDeath(socket.id, 'warlock-orb');
             }
@@ -6301,6 +6326,8 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
             if (!health) return;
             const wasAlive = !health.isDead;
             health.takeDamage(arrow.damage, Date.now() / 1000, playerEntity, false);
+            // Play damage sound when the Viper arrow lands
+            (window as any).audioSystem?.playViperArrowHitSound(arrow.startPosition);
             if (wasAlive && health.isDead && socket?.id) {
               handlePlayerDeath(socket.id, 'viper-arrow');
             }

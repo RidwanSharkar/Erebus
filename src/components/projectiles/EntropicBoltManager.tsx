@@ -13,6 +13,7 @@ interface EntropicBoltData {
   direction: Vector3;
   entityId: number;
   isCryoflame: boolean;
+  colorVariant: string;
 }
 
 interface EntropicBoltManagerProps {
@@ -52,14 +53,15 @@ export default function EntropicBoltManager({ world }: EntropicBoltManagerProps)
           // Create new bolt
           const direction = renderer.mesh.userData.direction || projectile.velocity.clone().normalize();
           const isCryoflame = renderer.mesh.userData.isCryoflame || false;
-          
+          const colorVariant = renderer.mesh.userData.colorVariant || 'purple';
           
           newBolts.push({
             id: boltIdCounter.current++,
             position: transform.position.clone(),
             direction: direction.clone(),
             entityId: entity.id,
-            isCryoflame: isCryoflame
+            isCryoflame: isCryoflame,
+            colorVariant: colorVariant
           });
         }
       }
@@ -85,6 +87,7 @@ export default function EntropicBoltManager({ world }: EntropicBoltManagerProps)
           position={bolt.position}
           direction={bolt.direction}
           isCryoflame={bolt.isCryoflame}
+          colorVariant={bolt.colorVariant}
           onImpact={() => {
             // Visual component lifecycle - just remove from visual state
             // ECS system handles all collision detection and damage

@@ -16,6 +16,7 @@ import MerchantUI from '../components/ui/MerchantUI';
 import StatsPanel from '../components/ui/StatsPanel';
 import { weaponAbilities, getAbilityIcon, type AbilityData, type AbilityLoadout } from '../utils/weaponAbilities';
 import AbilitySelectionModal from '../components/ui/AbilitySelectionModal';
+import LoadingScreen from '../components/ui/LoadingScreen';
 
 // Extend Window interface to include audioSystem
 declare global {
@@ -137,6 +138,8 @@ function HomeContent() {
 
   const [controlSystem, setControlSystem] = useState<any>(null);
   const [gameMode, setGameMode] = useState<'menu' | 'singleplayer' | 'multiplayer' | 'pvp' | 'coop'>('menu');
+  const [isGameLoading, setIsGameLoading] = useState(false);
+  const [showCanvas, setShowCanvas] = useState(false);
   const [showRoomJoin, setShowRoomJoin] = useState(false);
   const [roomJoinMode, setRoomJoinMode] = useState<'multiplayer' | 'pvp' | 'coop'>('multiplayer');
   const [playerExperience, setPlayerExperience] = useState(0);
@@ -712,6 +715,8 @@ function HomeContent() {
           <RoomJoin
             onJoinSuccess={() => {
               setShowRoomJoin(false);
+              setIsGameLoading(true);
+              setShowCanvas(true);
               setGameMode(roomJoinMode);
             }}
             onBack={() => {
@@ -723,39 +728,40 @@ function HomeContent() {
           />
         )}
 
-        <Canvas
-          camera={{ 
-            position: [0, 5, 10], 
-            fov: 75,
-            near: 0.1,
-            far: 1000 
-          }}
-          shadows
-          gl={{ 
-            antialias: true,
-            alpha: false,
-            powerPreference: "high-performance"
-          }}
-        >
-
-
-          {(gameMode === 'pvp' || gameMode === 'coop') && (
-            <CoopGameScene
-              onDamageNumbersUpdate={setDamageNumbers}
-              onDamageNumberComplete={handleDamageNumberComplete}
-              onCameraUpdate={handleCameraUpdate}
-              onGameStateUpdate={handleGameStateUpdate}
-              onControlSystemUpdate={handleControlSystemUpdate}
-              onExperienceUpdate={handleExperienceUpdate}
-              onEssenceUpdate={handleEssenceUpdate}
-              onMerchantUIUpdate={setShowMerchantUI}
-              selectedWeapons={selectedWeapons}
-              skillPointData={skillPointData}
-              statPointData={statPointData}
-              abilityLoadout={abilityLoadout}
-            />
-          )}
-        </Canvas>
+        {showCanvas && (
+          <Canvas
+            camera={{ 
+              position: [0, 5, 10], 
+              fov: 75,
+              near: 0.1,
+              far: 1000 
+            }}
+            shadows
+            gl={{ 
+              antialias: true,
+              alpha: false,
+              powerPreference: "high-performance"
+            }}
+          >
+            {(gameMode === 'pvp' || gameMode === 'coop') && (
+              <CoopGameScene
+                onDamageNumbersUpdate={setDamageNumbers}
+                onDamageNumberComplete={handleDamageNumberComplete}
+                onCameraUpdate={handleCameraUpdate}
+                onGameStateUpdate={handleGameStateUpdate}
+                onControlSystemUpdate={handleControlSystemUpdate}
+                onExperienceUpdate={handleExperienceUpdate}
+                onEssenceUpdate={handleEssenceUpdate}
+                onMerchantUIUpdate={setShowMerchantUI}
+                onSceneReady={() => setIsGameLoading(false)}
+                selectedWeapons={selectedWeapons}
+                skillPointData={skillPointData}
+                statPointData={statPointData}
+                abilityLoadout={abilityLoadout}
+              />
+            )}
+          </Canvas>
+        )}
       
         {/* UI Overlay - Only show during gameplay */}
         {gameMode !== 'menu' && (
@@ -900,6 +906,12 @@ function HomeContent() {
             y={tooltipPosition.y}
           />
         )}
+
+        {/* Loading Screen - shown between room join and scene ready */}
+        <LoadingScreen
+          isVisible={isGameLoading}
+          onFadeComplete={() => setIsGameLoading(false)}
+        />
 
       </main>
   );

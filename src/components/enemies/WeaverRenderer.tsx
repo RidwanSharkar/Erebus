@@ -48,6 +48,7 @@ export default function WeaverRenderer({
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer     = useRef(0);
   const opacity       = useRef(1);
+  const auraGroupRef  = useRef<Group | null>(null);
 
   const setGroupRef = useCallback((group: Group | null) => {
     groupRef.current = group;
@@ -140,10 +141,46 @@ export default function WeaverRenderer({
         }
       });
     }
+
+    if (auraGroupRef.current && !isDying) {
+      auraGroupRef.current.rotation.y += 0.15 * 0.008;
+    }
   });
 
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
+      {/* Permanent green aura — always visible beneath the Weaver */}
+      {!isDying && (
+        <group ref={auraGroupRef}>
+          <group position={[0, -0.7, 0]}>
+            {[0, Math.PI / 2, Math.PI, Math.PI * 1.5].map((rot, i) => (
+              <mesh key={i} rotation={[-Math.PI / 2, 0, rot]}>
+                <ringGeometry args={[0.85, 1.0, 3]} />
+                <meshStandardMaterial
+                  color="#00ff55"
+                  emissive="#00cc33"
+                  emissiveIntensity={2}
+                  transparent
+                  opacity={0.6}
+                  depthWrite={false}
+                />
+              </mesh>
+            ))}
+          </group>
+          <mesh position={[0, -0.6, 0]}>
+            <cylinderGeometry args={[0.925, 0.5, -0.1, 32]} />
+            <meshStandardMaterial
+              color="#00cc44"
+              emissive="#00aa22"
+              emissiveIntensity={1}
+              transparent
+              opacity={0.45}
+              depthWrite={false}
+            />
+          </mesh>
+        </group>
+      )}
+
       <WeaverModel
         isWalking={isWalking}
         isCastingHeal={isCastingHeal}

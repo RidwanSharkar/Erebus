@@ -51,11 +51,13 @@ class GameRoom {
  
   // ── Spawn areas for each camp ──────────────────────────────────────────────
   // Enemies are placed at random positions within these AABB bounds (y = 0).
+  // Areas are deliberately wide so enemies spread across the camp rather than
+  // clustering, and the path-facing edges are closer to the main routes.
   static get CAMP_AREAS() {
     return [
-      { name: 'North Fortress', xMin: -5.5, xMax: 5.5, zMin: -26.5, zMax: -17.5 },
-      { name: 'East Bastion',   xMin: 16.5, xMax: 27.5, zMin:  3.0,  zMax: 13.0 },
-      { name: 'West Citadel',   xMin: -27.5, xMax: -16.5, zMin: 3.0, zMax: 13.0 },
+      { name: 'North Fortress', xMin: -10,  xMax: 10,  zMin: -29, zMax: -12 },
+      { name: 'East Bastion',   xMin:  12,  xMax: 28,  zMin:  -2, zMax:  16 },
+      { name: 'West Citadel',   xMin: -28,  xMax: -12, zMin:  -2, zMax:  16 },
     ];
   }
 
