@@ -142,17 +142,21 @@ export default function WeaverRenderer({
       });
     }
 
+    // Aura is a scene-level sibling group — mirror the weaver's XZ, stay at ground Y
     if (auraGroupRef.current && !isDying) {
+      const pos = group.position;
+      auraGroupRef.current.position.set(pos.x, 0.04, pos.z);
       auraGroupRef.current.rotation.y += 0.15 * 0.008;
     }
   });
 
   return (
-    <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
-      {/* Permanent green aura — always visible beneath the Weaver */}
+    <>
+      {/* Permanent green aura — scene-level sibling, positioned at ground Y via useFrame */}
       {!isDying && (
         <group ref={auraGroupRef}>
-          <group position={[0, -0.7, 0]}>
+          {/* Four triangular ring segments, flat on the ground */}
+          <group>
             {[0, Math.PI / 2, Math.PI, Math.PI * 1.5].map((rot, i) => (
               <mesh key={i} rotation={[-Math.PI / 2, 0, rot]}>
                 <ringGeometry args={[0.85, 1.0, 3]} />
@@ -163,12 +167,14 @@ export default function WeaverRenderer({
                   transparent
                   opacity={0.6}
                   depthWrite={false}
+                  side={2}
                 />
               </mesh>
             ))}
           </group>
-          <mesh position={[0, -0.6, 0]}>
-            <cylinderGeometry args={[0.925, 0.5, -0.1, 32]} />
+          {/* Disc beneath the rings */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]}>
+            <circleGeometry args={[0.925, 32]} />
             <meshStandardMaterial
               color="#00cc44"
               emissive="#00aa22"
@@ -176,11 +182,13 @@ export default function WeaverRenderer({
               transparent
               opacity={0.45}
               depthWrite={false}
+              side={2}
             />
           </mesh>
         </group>
       )}
 
+      <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <WeaverModel
         isWalking={isWalking}
         isCastingHeal={isCastingHeal}
@@ -214,6 +222,7 @@ export default function WeaverRenderer({
           </>
         )}
       </Billboard>
-    </group>
+      </group>
+    </>
   );
 }

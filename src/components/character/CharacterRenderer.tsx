@@ -46,7 +46,7 @@ function dirToAnimState(facingDir: Vector3, moveDir: Vector3): AnimState {
   if (abs < Math.PI / 8)          return 'Run';                                          // ±22.5°       — forward
   if (abs > (7 * Math.PI) / 8)    return 'Backwards';                                   // ±157.5°+     — backward
   if (abs < (3 * Math.PI) / 8) {                                                         // 22.5°…67.5°  — forward diagonal
-    return angle > 0 ? 'RightStrafeRun' : 'LeftStrafeRun';
+    return angle > 0 ? 'RightStrafe' : 'LeftStrafe';
   }
   if (abs > (5 * Math.PI) / 8) {                                                         // 112.5°…157.5° — backward diagonal
     return angle > 0 ? 'BackRightStrafeRun' : 'BackLeftStrafeRun';
@@ -72,12 +72,14 @@ export default function CharacterRenderer({
   const targetRotationY   = useRef(0);
   const prevAnimState     = useRef<AnimState>('Idle');
   const walkStopTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isLeftMouseHeld   = useRef(false);
-  const wasGrounded       = useRef(true);
-  const jumpIsBack        = useRef(false);
-  const jumpIsFront       = useRef(false);
-  const prevIsCharging    = useRef(false);
-  const bowReleaseTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLeftMouseHeld      = useRef(false);
+  const wasGrounded          = useRef(true);
+  const jumpIsBack           = useRef(false);
+  const jumpIsFront          = useRef(false);
+  const prevIsCharging       = useRef(false);
+  const bowReleaseTimer      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isCastingAbility     = useRef(false);
+  const abilityAnimTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Snap to spawn position before first paint so the character never flashes at origin.
   const setGroupRef = useCallback((group: Group | null) => {
@@ -106,8 +108,9 @@ export default function CharacterRenderer({
 
   useEffect(() => {
     return () => {
-      if (walkStopTimer.current)  clearTimeout(walkStopTimer.current);
+      if (walkStopTimer.current)   clearTimeout(walkStopTimer.current);
       if (bowReleaseTimer.current) clearTimeout(bowReleaseTimer.current);
+      if (abilityAnimTimer.current) clearTimeout(abilityAnimTimer.current);
     };
   }, []);
 
@@ -128,6 +131,38 @@ export default function CharacterRenderer({
     }
     prevIsCharging.current = isCharging;
   }, [isCharging, currentWeapon, isLocalPlayer]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Listen for ability casts (Q/E/R/F abilities) and play the CastSingle animation
+  // when the character is not moving.
+  useEffect(() => {
+    if (!isLocalPlayer) return;
+
+    const handleAbilityCast = () => {
+      // Only trigger CastSingle when stationary; movement anims take priority.
+      const entity = world.getEntity(entityId);
+      const movement = entity?.getComponent(Movement);
+      if (movement && movement.inputStrength > 0.05) return;
+
+      // Clear any pending timer so rapid casts restart the clip.
+      if (abilityAnimTimer.current) clearTimeout(abilityAnimTimer.current);
+
+      isCastingAbility.current = true;
+      setAnimState('CastSingle');
+      prevAnimState.current = 'CastSingle';
+
+      // After the clip duration, return to Idle (clip is ~1.1 s; 1200 ms gives a
+      // small buffer so the animation always finishes before we switch back).
+      abilityAnimTimer.current = setTimeout(() => {
+        abilityAnimTimer.current = null;
+        isCastingAbility.current = false;
+        setAnimState('Idle');
+        prevAnimState.current = 'Idle';
+      }, 1200);
+    };
+
+    window.addEventListener('character-ability-cast', handleAbilityCast);
+    return () => { window.removeEventListener('character-ability-cast', handleAbilityCast); };
+  }, [isLocalPlayer, world, entityId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Track left mouse button for the local player so we can play the cast animation.
   useEffect(() => {
@@ -211,6 +246,15 @@ export default function CharacterRenderer({
       wasGrounded.current = true;
 
       if (movement.inputStrength > 0.05) {
+        // Movement cancels any in-progress ability cast animation.
+        if (isCastingAbility.current) {
+          isCastingAbility.current = false;
+          if (abilityAnimTimer.current) {
+            clearTimeout(abilityAnimTimer.current);
+            abilityAnimTimer.current = null;
+          }
+        }
+
         // Player is actively pressing a movement key — pick directional animation.
         const moveDir = movement.moveDirection.clone();
         moveDir.y = 0;
@@ -252,6 +296,12 @@ export default function CharacterRenderer({
         // No input, not casting.
         const isCastVariant = (s: AnimState) =>
           s === 'Cast' || s === 'SwordCast' || s === 'DrawBow';
+
+        // Let CastSingle play out on its own (driven by the ability-cast effect).
+        if (prevAnimState.current === 'CastSingle') return;
+
+        // If an ability cast is in progress, keep CastSingle running.
+        if (isCastingAbility.current) return;
 
         // Snap back to Idle instantly when a cast is released.
         if (isCastVariant(prevAnimState.current)) {

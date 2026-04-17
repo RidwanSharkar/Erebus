@@ -14,8 +14,7 @@ const DURATION = 2.5; // seconds — covers the ghoul_summon animation
 // Slightly larger than CorruptedAura (1.5× scale), red theme
 const INNER_RADIUS = 1.275;
 const OUTER_RADIUS = 1.5;
-const DISC_TOP    = 1.39;
-const DISC_BOTTOM = 0.75;
+const DISC_RADIUS  = 1.39;
 
 export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonRitualProps) {
   const elapsed    = useRef(0);
@@ -48,10 +47,10 @@ export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonR
   });
 
   return (
-    <group position={[position.x, 0.001, position.z]}>
+    <group position={[position.x, 0.04, position.z]}>
       <group ref={groupRef}>
         {/* Four rotating triangular ring segments — red theme, 1.5× scale */}
-        <group ref={ringsRef} position={[0, -0.7, 0]}>
+        <group ref={ringsRef}>
           {[0, Math.PI / 2, Math.PI, Math.PI * 1.5].map((rot, i) => (
             <mesh key={i} rotation={[-Math.PI / 2, 0, rot]}>
               <ringGeometry args={[INNER_RADIUS, OUTER_RADIUS, 3]} />
@@ -62,14 +61,15 @@ export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonR
                 transparent
                 opacity={0.6}
                 depthWrite={false}
+                side={2}
               />
             </mesh>
           ))}
         </group>
 
         {/* Disc — red theme, 1.5× scale */}
-        <mesh ref={discRef} position={[0, -0.6, 0]}>
-          <cylinderGeometry args={[DISC_TOP, DISC_BOTTOM, -0.1, 32]} />
+        <mesh ref={discRef} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[DISC_RADIUS, 32]} />
           <meshStandardMaterial
             color="#cc1100"
             emissive="#880000"
@@ -77,6 +77,7 @@ export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonR
             transparent
             opacity={0.45}
             depthWrite={false}
+            side={2}
           />
         </mesh>
       </group>

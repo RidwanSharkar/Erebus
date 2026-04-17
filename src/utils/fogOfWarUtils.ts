@@ -28,7 +28,7 @@ export const CAMP_DISCOVERY_RADIUS = 9;
 export const CAMP_TERRITORY_RADIUS = 13;
 
 /** Radius around the local player that always reveals enemies regardless of camp. */
-export const PLAYER_REVEAL_RADIUS = 7;
+export const PLAYER_REVEAL_RADIUS = 9;
 
 /**
  * Returns 0-3 if the world position is within a camp's territory, or -1 for

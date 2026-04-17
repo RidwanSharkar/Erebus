@@ -183,6 +183,22 @@ const CAMP2_PLATFORM = makeGrid(-22, 8, 4, 4, 4.0, 4.0, 3.9, 3.9, 0.06, 0.10);
 // ---------------------------------------------------------------------------
 // Merge everything — one InstancedMesh, one draw call
 // ---------------------------------------------------------------------------
+
+// Slabs whose corners protrude beyond the playable circle are invisible in the
+// darkness beyond the map boundary but can clip into view — clip them here.
+const MAP_RADIUS = 28;
+const isSlabInBounds = (slab: SlabDef): boolean => {
+  const [cx, , cz] = slab.position;
+  const hw = slab.scale[0] / 2;
+  const hd = slab.scale[2] / 2;
+  return (
+    Math.hypot(cx + hw, cz + hd) <= MAP_RADIUS &&
+    Math.hypot(cx + hw, cz - hd) <= MAP_RADIUS &&
+    Math.hypot(cx - hw, cz + hd) <= MAP_RADIUS &&
+    Math.hypot(cx - hw, cz - hd) <= MAP_RADIUS
+  );
+};
+
 const ALL_SLABS: SlabDef[] = [
   ...buildPath(),        // 21 slabs — main N-S road (7 units wide)
   ...CAMP0_PLATFORM,     // 20 slabs — North Fortress platform (4×5)
@@ -190,10 +206,9 @@ const ALL_SLABS: SlabDef[] = [
   ...CAMP1_PLATFORM,     // 16 slabs — East Bastion platform (4×4)
   ...CAMP2_CONNECTOR,    //  5 slabs — West branch road
   ...CAMP2_PLATFORM,     // 16 slabs — West Citadel platform (4×4)
-  // Total: 83 slabs — 1 draw call
-];
+].filter(isSlabInBounds);
 
-const SLAB_COUNT = ALL_SLABS.length;
+const SLAB_COUNT = ALL_SLABS.length; // varies after radius clipping
 
 // ---------------------------------------------------------------------------
 

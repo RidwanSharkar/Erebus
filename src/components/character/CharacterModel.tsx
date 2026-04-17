@@ -9,7 +9,7 @@ export type AnimState =
   | 'Idle' | 'Run' | 'Walk' | 'Backwards' | 'LeftStrafe' | 'RightStrafe' | 'LeftStrafeRun' | 'RightStrafeRun'
   | 'BackLeftStrafeRun' | 'BackRightStrafeRun'
   | 'Jump' | 'JumpFront' | 'JumpBack'
-  | 'Cast' | 'SwordCast' | 'DrawBow' | 'ReleaseBow'
+  | 'Cast' | 'CastSingle' | 'SwordCast' | 'DrawBow' | 'ReleaseBow'
   | 'Death';
 
 interface CharacterModelProps {
@@ -29,6 +29,7 @@ useGLTF.preload('/models/character_jump.glb');
 useGLTF.preload('/models/character_jumpFront.glb');
 useGLTF.preload('/models/character_jumpBack.glb');
 useGLTF.preload('/models/character_cast.glb');
+useGLTF.preload('/models/character_castSingle.glb');
 useGLTF.preload('/models/character_swordCast.glb');
 useGLTF.preload('/models/character_drawBow.glb');
 useGLTF.preload('/models/character_releaseBow.glb');
@@ -62,6 +63,7 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
   const { animations: jumpFrontAnims }          = useGLTF('/models/character_jumpFront.glb');
   const { animations: jumpBackAnims }           = useGLTF('/models/character_jumpBack.glb');
   const { animations: castAnims }               = useGLTF('/models/character_cast.glb');
+  const { animations: castSingleAnims }         = useGLTF('/models/character_castSingle.glb');
   const { animations: swordCastAnims }          = useGLTF('/models/character_swordCast.glb');
   const { animations: drawBowAnims }            = useGLTF('/models/character_drawBow.glb');
   const { animations: releaseBowAnims }         = useGLTF('/models/character_releaseBow.glb');
@@ -116,12 +118,13 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
       ...rename(jumpFrontAnims,      'JumpFront'     ).map(stripRootMotionXZ),
       ...rename(jumpBackAnims,       'JumpBack'      ).map(stripRootMotionXZ),
       ...rename(castAnims,           'Cast'          ).map(stripRootMotionXZ),
+      ...rename(castSingleAnims,     'CastSingle'    ).map(stripRootMotionXZ),
       ...rename(swordCastAnims,      'SwordCast'     ).map(stripRootMotionXZ),
       ...rename(drawBowAnims,        'DrawBow'       ).map(stripRootMotionXZ),
       ...rename(releaseBowAnims,     'ReleaseBow'    ).map(stripRootMotionXZ),
       ...rename(deathAnims,          'Death'         ).map(stripRootMotionXZ),
     ];
-  }, [idleAnims, runAnims, walkAnims, backAnims, leftAnims, rightAnims, leftStrafeRunAnims, rightStrafeRunAnims, jumpAnims, jumpFrontAnims, jumpBackAnims, castAnims, swordCastAnims, drawBowAnims, releaseBowAnims, deathAnims]);
+  }, [idleAnims, runAnims, walkAnims, backAnims, leftAnims, rightAnims, leftStrafeRunAnims, rightStrafeRunAnims, jumpAnims, jumpFrontAnims, jumpBackAnims, castAnims, castSingleAnims, swordCastAnims, drawBowAnims, releaseBowAnims, deathAnims]);
 
   const { actions } = useAnimations(animations, sceneGroupRef);
 
@@ -159,6 +162,10 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
     nextAction.enabled = true;
 
     if (animState === 'Jump' || animState === 'JumpFront' || animState === 'JumpBack' || animState === 'ReleaseBow') {
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = false;
+      nextAction.reset().fadeIn(fadeIn).play();
+    } else if (animState === 'CastSingle') {
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = false;
       nextAction.reset().fadeIn(fadeIn).play();

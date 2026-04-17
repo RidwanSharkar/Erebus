@@ -6,9 +6,10 @@ interface BossTeleportEffectProps {
   position: Vector3;
   onComplete: () => void;
   type?: 'start' | 'end'; // Different effects for teleport start vs end
+  scale?: number;          // Uniform scale applied to the effect geometry (default 1)
 }
 
-const BossTeleportEffect: React.FC<BossTeleportEffectProps> = React.memo(({ position, onComplete, type = 'start' }) => {
+const BossTeleportEffect: React.FC<BossTeleportEffectProps> = React.memo(({ position, onComplete, type = 'start', scale: effectScale = 1 }) => {
   const [time, setTime] = useState(0);
   const duration = 0.8; // Duration of the effect
   const hasCompletedRef = React.useRef(false);
@@ -66,6 +67,7 @@ const BossTeleportEffect: React.FC<BossTeleportEffectProps> = React.memo(({ posi
 
   return (
     <group position={position.toArray()}>
+      <group scale={[effectScale, effectScale, effectScale]}>
       {/* Central energy core */}
       <mesh position={[0, 0, 0]}>
         <sphereGeometry args={[0.4 * scale, 16, 16]} />
@@ -241,6 +243,7 @@ const BossTeleportEffect: React.FC<BossTeleportEffectProps> = React.memo(({ posi
         distance={5}
         decay={2}
       />
+      </group>
     </group>
   );
 });

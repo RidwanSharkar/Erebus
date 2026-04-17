@@ -20,6 +20,7 @@ interface SimpleBorderEffectsProps {
   count?: number;
   enableParticles?: boolean;
   particleCount?: number;
+  snowTheme?: boolean;
 }
 
 /**
@@ -30,7 +31,8 @@ const SimpleBorderEffects: React.FC<SimpleBorderEffectsProps> = ({
   radius = 25,
   count = 64,
   enableParticles = true,
-  particleCount = 100
+  particleCount = 100,
+  snowTheme = false,
 }) => {
   // Half height version with opposite rotation and purple theme
   return <SimpleBorderEffectsInner
@@ -38,6 +40,7 @@ const SimpleBorderEffects: React.FC<SimpleBorderEffectsProps> = ({
     count={count}
     enableParticles={enableParticles}
     particleCount={particleCount}
+    snowTheme={snowTheme}
     halfHeight={false}
     reverseRotation={false}
     purpleTheme={false}
@@ -55,6 +58,7 @@ const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
   count = 64,
   enableParticles = true,
   particleCount = 100,
+  snowTheme = false,
   halfHeight = false,
   reverseRotation = false,
   purpleTheme = false
@@ -198,41 +202,47 @@ const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
     return positions;
   }, [radius, count, halfHeight]);
 
-  // Materials - support purple theme from RuneCircle
+  const getThemeColor = (defaultRed: number, snowBlue: number, purple: number) => {
+    if (purpleTheme) return purple;
+    if (snowTheme) return snowBlue;
+    return defaultRed;
+  };
+
+  // Materials - support red, snow-blue, and purple themes
   const particleMaterial = useMemo(() => new MeshBasicMaterial({
-    color: purpleTheme ? 0x8a2be2 : 0xF40000, // Blue Violet for purple theme, red otherwise
+    color: getThemeColor(0xF40000, 0x7fc8ff, 0x8a2be2),
     transparent: true,
     opacity: 0.35,
     alphaTest: 0.1,
-  }), [purpleTheme]);
+  }), [purpleTheme, snowTheme]);
 
   const glowMaterial = useMemo(() => new MeshBasicMaterial({
-    color: purpleTheme ? 0xdda0dd : 0xF74F4F, // Plum for purple theme, light red otherwise
+    color: getThemeColor(0xF74F4F, 0xb8e4ff, 0xdda0dd),
     transparent: true,
     opacity: 0.435,
     alphaTest: 0.1,
-  }), [purpleTheme]);
+  }), [purpleTheme, snowTheme]);
 
   const archwayMaterial = useMemo(() => new MeshBasicMaterial({
-    color: purpleTheme ? 0x8a2be2 : 0xE63946, // Blue Violet for purple theme, darker red otherwise
+    color: getThemeColor(0xE63946, 0x62aef2, 0x8a2be2),
     transparent: true,
     opacity: 0.435,
     alphaTest: 0.1,
-  }), [purpleTheme]);
+  }), [purpleTheme, snowTheme]);
 
   const middlePolesMaterial = useMemo(() => new MeshBasicMaterial({
-    color: purpleTheme ? 0xdda0dd : 0xF74F4F, // Plum for purple theme, red otherwise
+    color: getThemeColor(0xF74F4F, 0xb8e4ff, 0xdda0dd),
     transparent: true,
     opacity: 0.435, // Same intensity as regular poles
     alphaTest: 0.1,
-  }), [purpleTheme]);
+  }), [purpleTheme, snowTheme]);
 
   const coneMaterial = useMemo(() => new MeshBasicMaterial({
-    color: purpleTheme ? 0xdda0dd : 0xF74F4F, // Plum for purple theme, match the pillar color
+    color: getThemeColor(0xF74F4F, 0xb8e4ff, 0xdda0dd),
     transparent: true,
     opacity: 0.435,
     alphaTest: 0.1,
-  }), [purpleTheme]);
+  }), [purpleTheme, snowTheme]);
 
   // Geometries - support half height
   const particleGeometry = useMemo(() => new PlaneGeometry(0.05, 0.05), []);
@@ -255,7 +265,7 @@ const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
       archwayMaterial.dispose();
       middlePolesMaterial.dispose();
     };
-  }, [particleGeometry, glowGeometry, coneGeometry, middlePolesGeometry, archwayGeometry, particleMaterial, glowMaterial, coneMaterial, archwayMaterial, middlePolesMaterial, halfHeight, purpleTheme]);
+  }, [particleGeometry, glowGeometry, coneGeometry, middlePolesGeometry, archwayGeometry, particleMaterial, glowMaterial, coneMaterial, archwayMaterial, middlePolesMaterial, halfHeight, purpleTheme, snowTheme]);
 
   // Update instanced matrices
   useEffect(() => {

@@ -16,7 +16,7 @@ import {
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const TREE_COUNT = 50;
+const TREE_COUNT = 60;
 
 // 3 overlapping sphere tiers making a rounded deciduous blob
 // yFrac = how far up within the canopy radius to offset the center
@@ -236,9 +236,9 @@ interface InstancedForestProps {
 // ---------------------------------------------------------------------------
 const InstancedForest: React.FC<InstancedForestProps> = ({
   count        = TREE_COUNT,
-  innerRadius  = 10,
+  innerRadius  = 12,
   outerRadius  = 51,
-  windStrength = 0.5,
+  windStrength = 0.65,
   trunkDark    = '#3d2b1f',
   trunkLight   = '#6b4a34',
   leafDark     = '#2a6b14',
@@ -325,7 +325,7 @@ const InstancedForest: React.FC<InstancedForestProps> = ({
       const z = Math.sin(treeAngle) * r;
 
       // Per-tree size variation
-      const trunkH  = 1.5 + Math.random() * 2.5;
+      const trunkH  = 2.5 + Math.random() * 2.5;
       const trunkR  = 0.20 + Math.random() * 0.16;
       const canopyR = (0.5 + Math.random() * 0.9) * trunkR * 6.5;
 
@@ -336,7 +336,7 @@ const InstancedForest: React.FC<InstancedForestProps> = ({
       scl.set(trunkR, trunkH, trunkR);
       mat.makeScale(scl.x, scl.y, scl.z);
       mat.premultiply(rotY);
-      pos.set(x, trunkH * 0.25 + 2.0, z);
+      pos.set(x, trunkH * 0.25 + 1.0, z);
       mat.setPosition(pos);
       trunkRef.current.setMatrixAt(i, mat);
 

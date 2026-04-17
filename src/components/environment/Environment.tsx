@@ -88,6 +88,7 @@ const Environment: React.FC<EnvironmentProps> = ({
 
   // Define merchant position near the tree
   const merchantPosition: [number, number, number] = useMemo(() => [18.4, 0, 9.2], []);
+  const snowThemeEnabled = useMemo(() => Math.random() < 0.5, []);
 
   return (
     <group name="environment">
@@ -95,10 +96,10 @@ const Environment: React.FC<EnvironmentProps> = ({
       {enableSky && <CustomSky />}
 
       {/* Perimeter clouds - red atmospheric clouds around map boundary */}
-      <PerimeterCloudSystem radius={31} />
+      <PerimeterCloudSystem radius={29} />
 
       {/* Instanced grass field — 80k blades, GPU-animated wind */}
-      {enableGrass && <StylizedGrass />}
+      {enableGrass && <StylizedGrass isSnowTheme={snowThemeEnabled} />}
 
       {/* Stone road + branch connectors + combat platforms — single draw call */}
       <StoneGround />
@@ -111,10 +112,11 @@ const Environment: React.FC<EnvironmentProps> = ({
             {/* Border effects - particles and glows around map perimeter */}
             {enableBorderEffects && (
         <SimpleBorderEffects
-          radius={31}
+          radius={28}
           count={48}
           enableParticles={true}
           particleCount={100}
+          snowTheme={snowThemeEnabled}
         />
       )}
 

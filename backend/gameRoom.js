@@ -124,7 +124,7 @@ class GameRoom {
 
       // Spawn base is at the south edge of the playable area
       const spawnBaseX = 0;
-      const spawnBaseZ = 28;
+      const spawnBaseZ = 25;
 
       // Arrange players in a tight arc around the base point, facing north (toward the action)
       const angleStep = (Math.PI * 2) / totalPlayers;
@@ -257,16 +257,25 @@ class GameRoom {
   }
 
   // Generate a random position within a camp area, avoiding positions too close to others.
+  // Positions outside the playable circle (radius 27) are rejected and retried.
   _randomCampPos(area, existing, minDist = 1.8) {
-    for (let attempt = 0; attempt < 40; attempt++) {
+    const MAX_MAP_RADIUS = 27; // keep enemies clearly inside the 28-unit map boundary
+    for (let attempt = 0; attempt < 60; attempt++) {
       const x = area.xMin + Math.random() * (area.xMax - area.xMin);
       const z = area.zMin + Math.random() * (area.zMax - area.zMin);
+      if (Math.hypot(x, z) > MAX_MAP_RADIUS) continue;
       const tooClose = existing.some(p => Math.hypot(p.x - x, p.z - z) < minDist);
       if (!tooClose) return { x, z };
     }
-    // Fallback: just use the center with small random offset
-    const cx = (area.xMin + area.xMax) / 2 + (Math.random() - 0.5) * 2;
-    const cz = (area.zMin + area.zMax) / 2 + (Math.random() - 0.5) * 2;
+    // Fallback: use the camp center, clamped inside the map radius
+    let cx = (area.xMin + area.xMax) / 2 + (Math.random() - 0.5) * 2;
+    let cz = (area.zMin + area.zMax) / 2 + (Math.random() - 0.5) * 2;
+    const dist = Math.hypot(cx, cz);
+    if (dist > MAX_MAP_RADIUS) {
+      const scale = MAX_MAP_RADIUS / dist;
+      cx *= scale;
+      cz *= scale;
+    }
     return { x: cx, z: cz };
   }
 

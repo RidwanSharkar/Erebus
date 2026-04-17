@@ -889,16 +889,22 @@ export class ControlSystem extends System {
     switch (abilityId) {
       // ── RUNEBLADE ─────────────────────────────────────────────────────
       case 'RUNEBLADE_Q': // Aegis (Deflect)
-        if (!this.isDeflecting && !this.isSmiting && !this.isSwinging && !this.isWraithStriking)
+        if (!this.isDeflecting && !this.isSmiting && !this.isSwinging && !this.isWraithStriking) {
+          window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performDeflect(playerTransform);
+        }
         break;
       case 'RUNEBLADE_E': // Wraith Strike
-        if (!this.isWraithStriking && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping)
+        if (!this.isWraithStriking && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping) {
+          window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performWraithStrike(playerTransform);
+        }
         break;
       case 'RUNEBLADE_R': // Colossus Strike (Smite)
-        if (!this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWraithStriking)
+        if (!this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWraithStriking) {
+          window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performSmite(playerTransform);
+        }
         break;
       // ── BOW ───────────────────────────────────────────────────────────
       case 'BOW_Q': // Frost Bite (Barrage)
@@ -915,25 +921,33 @@ export class ControlSystem extends System {
         break;
       // ── SCYTHE ────────────────────────────────────────────────────────
       case 'SCYTHE_Q': // Sunwell (Reanimate)
-        if (!this.isIcebeaming)
+        if (!this.isIcebeaming) {
+          window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performReanimateAbility(playerTransform);
+        }
         break;
       case 'SCYTHE_E': // Coldsnap (Frost Nova)
         if (!this.isIcebeaming)
           this.performFrostNovaAbility(playerTransform);
         break;
       case 'SCYTHE_R': // Crossentropy
-        if (!this.isIcebeaming && !this.isCrossentropyCharging)
+        if (!this.isIcebeaming && !this.isCrossentropyCharging) {
+          window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performCrossentropyAbility(playerTransform);
+        }
         break;
       // ── SABRES ────────────────────────────────────────────────────────
       case 'SABRES_Q': // Backstab
-        if (!this.isSwinging && !this.isSkyfalling && !this.isSundering)
+        if (!this.isSwinging && !this.isSkyfalling && !this.isSundering) {
+          window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performBackstab(playerTransform);
+        }
         break;
       case 'SABRES_E': // Flourish (Sunder)
-        if (!this.isSkyfalling && !this.isSundering)
+        if (!this.isSkyfalling && !this.isSundering) {
+          window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performSunder(playerTransform);
+        }
         break;
       case 'SABRES_R': // Divebomb (Skyfall)
         if (!this.isSkyfalling && !this.isSundering)
@@ -941,12 +955,16 @@ export class ControlSystem extends System {
         break;
       // ── SPEAR ─────────────────────────────────────────────────────────
       case 'SPEAR_Q': // Wind Shear (Throw Spear)
-        if (!this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging)
+        if (!this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging) {
+          window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performThrowSpear(playerTransform);
+        }
         break;
       case 'SPEAR_E': // Tempest Sweep (Whirlwind)
-        if (!this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging)
+        if (!this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging) {
+          window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performWhirlwind(playerTransform);
+        }
         break;
       case 'SPEAR_R': // Lightning Bolt
         if (!this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging && !this.isFlurryActive)
@@ -954,8 +972,10 @@ export class ControlSystem extends System {
         break;
       // ── UNIVERSAL ─────────────────────────────────────────────────────
       case 'DEATH_GRASP':
-        if (!this.isDeathGrasping)
+        if (!this.isDeathGrasping) {
+          window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performDeathGrasp(playerTransform);
+        }
         break;
       // ── FORMERLY F-KEY (now in universal loadout pool) ────────────────
       case 'RUNEBLADE_F': // Aura (Corrupted Aura toggle)
@@ -968,16 +988,20 @@ export class ControlSystem extends System {
       case 'BOW_P': // Tempest Rounds — passive, no active dispatch needed
         break;
       case 'SCYTHE_F': // Mantra (Summon Totem)
-        if (!this.isIcebeaming)
+        if (!this.isIcebeaming) {
+          window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performSummonTotemAbility(playerTransform);
+        }
         break;
       case 'SABRES_F': // Accretion (Stealth)
         if (!this.isSkyfalling && !this.isSundering)
           this.performStealth(playerTransform);
         break;
       case 'SPEAR_F': // Storm Shroud (Flurry)
-        if (!this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging)
+        if (!this.isSwinging && !this.isWhirlwindCharging && !this.isWhirlwinding && !this.isThrowSpearCharging) {
+          window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performFlurry(playerTransform);
+        }
         break;
     }
   }

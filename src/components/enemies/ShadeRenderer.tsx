@@ -6,6 +6,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import ShadeModel from './ShadeModel';
 import ShadeTeleportEffect from './ShadeTeleportEffect';
+import BossTeleportEffect from './BossTeleportEffect';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
 
@@ -48,6 +49,7 @@ export default function ShadeRenderer({
 
   type BlinkFx = { id: string; position: Vector3; type: 'start' | 'end' };
   const [blinkFx, setBlinkFx] = useState<BlinkFx[]>([]);
+  const [bossFx, setBossFx] = useState<BlinkFx[]>([]);
 
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
@@ -123,11 +125,13 @@ export default function ShadeRenderer({
 
       // Departure effect at the original position — fires immediately
       setBlinkFx(prev => [...prev, { id: `${fxId}-start`, position: startPos, type: 'start' }]);
+      setBossFx(prev => [...prev, { id: `${fxId}-boss-start`, position: startPos, type: 'start' }]);
 
       // Arrival effect at the destination — fires halfway through the blink slide
       const arrivalDelay = Math.round(BLINK_DURATION * 0.4);
       setTimeout(() => {
         setBlinkFx(prev => [...prev, { id: `${fxId}-end`, position: newPos, type: 'end' }]);
+        setBossFx(prev => [...prev, { id: `${fxId}-boss-end`, position: newPos, type: 'end' }]);
       }, arrivalDelay);
 
       // Hard-snap only after the slide finishes so the position is exactly correct.
@@ -200,6 +204,17 @@ export default function ShadeRenderer({
           position={fx.position}
           type={fx.type}
           onComplete={() => setBlinkFx(prev => prev.filter(f => f.id !== fx.id))}
+        />
+      ))}
+
+      {/* Boss-style teleport effects layered on top of the shade blink (scaled down for shade) */}
+      {bossFx.map(fx => (
+        <BossTeleportEffect
+          key={fx.id}
+          position={fx.position}
+          type={fx.type}
+          scale={0.45}
+          onComplete={() => setBossFx(prev => prev.filter(f => f.id !== fx.id))}
         />
       ))}
 

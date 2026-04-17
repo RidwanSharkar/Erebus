@@ -18,6 +18,7 @@ interface StylizedGrassProps {
   radius?: number;
   bladeHeight?: number;
   windStrength?: number;
+  isSnowTheme?: boolean;
   baseColor?: string;
   tipColor?: string;
   groundColor?: string;
@@ -100,18 +101,47 @@ const GRASS_FRAGMENT = `
   }
 `;
 
+const SNOW_COLORS = {
+  baseColor: '#b9cff0',
+  tipColor: '#eaf4ff',
+  groundColor: '#cfe3ff',
+  groundLightColor: '#9fc2f0',
+  groundLightIntensity: 0.3,
+};
+
+const GRASS_COLORS = {
+  baseColor: '#1a4d1a',
+  tipColor: '#4caf50',
+  groundColor: '#1a2e12',
+  groundLightColor: '#3a7a2a',
+  groundLightIntensity: 0.45,
+};
+
 const StylizedGrass: React.FC<StylizedGrassProps> = ({
   count = 80000,
-  radius = 31,
+  radius = 28,
   bladeHeight = 0.45,
   windStrength = 0.25,
-  baseColor = '#1a4d1a',
-  tipColor = '#4caf50',
-  groundColor = '#1a2e12',
-  groundLightColor = '#3a7a2a',
-  groundLightIntensity = 0.45,
+  isSnowTheme,
+  baseColor,
+  tipColor,
+  groundColor,
+  groundLightColor,
+  groundLightIntensity,
 }) => {
   const meshRef = useRef<InstancedMesh>(null);
+
+  // If no external theme is provided, randomly pick snow or normal once per mount
+  const randomSnow = useMemo(() => Math.random() < 0.5, []);
+  const isSnow = isSnowTheme ?? randomSnow;
+  const palette = isSnow ? SNOW_COLORS : GRASS_COLORS;
+
+  const resolvedBaseColor        = baseColor        ?? palette.baseColor;
+  const resolvedTipColor         = tipColor         ?? palette.tipColor;
+  const resolvedGroundColor      = groundColor      ?? palette.groundColor;
+  const resolvedGroundLightColor = groundLightColor ?? palette.groundLightColor;
+  const resolvedGroundLightIntensity =
+    groundLightIntensity ?? palette.groundLightIntensity;
 
   const bladeGeometry = useMemo(() => {
     const geo = new BufferGeometry();
@@ -144,21 +174,24 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
     return new ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
-        uBaseColor: { value: new Color(baseColor) },
-        uTipColor: { value: new Color(tipColor) },
+        uBaseColor: { value: new Color(resolvedBaseColor) },
+        uTipColor: { value: new Color(resolvedTipColor) },
         uWindStrength: { value: windStrength },
-        uGroundLightColor: { value: new Color(groundLightColor) },
-        uGroundLightIntensity: { value: groundLightIntensity },
+        uGroundLightColor: { value: new Color(resolvedGroundLightColor) },
+        uGroundLightIntensity: { value: resolvedGroundLightIntensity },
       },
       vertexShader: GRASS_VERTEX,
       fragmentShader: GRASS_FRAGMENT,
       side: DoubleSide,
     });
-  }, [baseColor, tipColor, windStrength, groundLightColor, groundLightIntensity]);
+  }, [resolvedBaseColor, resolvedTipColor, windStrength, resolvedGroundLightColor, resolvedGroundLightIntensity]);
 
   // Soil disc geometry + material (created once)
   const groundGeo = useMemo(() => new CircleGeometry(radius, 48), [radius]);
-  const groundMat = useMemo(() => new MeshBasicMaterial({ color: groundColor }), [groundColor]);
+  const groundMat = useMemo(
+    () => new MeshBasicMaterial({ color: resolvedGroundColor }),
+    [resolvedGroundColor]
+  );
 
   // Distribute blades once on mount
   useEffect(() => {

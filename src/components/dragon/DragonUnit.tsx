@@ -237,7 +237,7 @@ export default function DragonUnit({
       isLeftMouseHeldRef.current = true;
       spellAuraTimerRef.current = setTimeout(() => {
         if (isLeftMouseHeldRef.current) setShowSpellAura(true);
-      }, 1000);
+      }, 250);
     };
 
     const onMouseUp = (e: MouseEvent) => {

@@ -1,3 +1,17 @@
+const { WALL_SEGMENTS } = require('./wallData');
+
+// ─── Navigation grid constants ────────────────────────────────────────────────
+// The grid covers the playable area with 1-unit cells. Walls are "inflated" by
+// NAV_ENEMY_RADIUS so that enemy centres always stay clear of geometry.
+const NAV_MIN_X       = -32;
+const NAV_MIN_Z       = -32;
+const NAV_CELL_SIZE   = 1.0;
+const NAV_COLS        = 64;
+const NAV_ROWS        = 64;
+const NAV_ENEMY_RADIUS = 0.65;  // slightly wider than collision radius
+const NAV_WAYPOINT_REACH = 1.2; // advance to next waypoint when this close
+const NAV_RECOMPUTE_DIST = 2.5; // recompute path when target moves this far
+
 class EnemyAI {
   constructor(roomId, io) {
     this.roomId = roomId;
@@ -70,6 +84,10 @@ class EnemyAI {
 
     // Titan circular-path tracking
     this.titanAngle = new Map(); // enemyId -> current angle in radians
+
+    // Navigation / pathfinding
+    this.navGrid    = null;      // Uint8Array built once on first use
+    this.enemyPaths = new Map(); // enemyId -> { waypoints, wpIndex, lastTargetPos }
   }
 
   setRoom(room) {
@@ -113,6 +131,7 @@ class EnemyAI {
     this.meleeLockUntil.clear();
     this.knightAbilityCooldown.clear();
     this.titanAngle.clear();
+    this.enemyPaths.clear();
   }
 
   updateAI() {
@@ -366,7 +385,7 @@ class EnemyAI {
 
     // Once aggroed, stay aggroed until the player gets very far (leash at 3× aggro radius)
     const leashRadius = aggroRadius * 3;
-    if (!aggroData.isAggroed && distance <= aggroRadius) {
+    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(knight.position, targetPlayer.position)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
@@ -657,7 +676,7 @@ class EnemyAI {
     const aggroRadius = 7;
     const leashRadius = aggroRadius * 3;
 
-    if (!aggroData.isAggroed && distance <= aggroRadius) {
+    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(shade.position, targetPlayer.position)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
@@ -718,10 +737,22 @@ class EnemyAI {
     const blinkZ = Math.cos(theta) * fwdZ + Math.sin(theta) * leftZ;
 
     const blinkDist = 5;
+    const MAP_RADIUS = 28;
+    let rawX = shade.position.x + blinkX * blinkDist;
+    let rawZ = shade.position.z + blinkZ * blinkDist;
+
+    // Clamp end position inside the circular arena boundary
+    const rawDist = Math.sqrt(rawX * rawX + rawZ * rawZ);
+    if (rawDist > MAP_RADIUS) {
+      const clampScale = MAP_RADIUS / rawDist;
+      rawX *= clampScale;
+      rawZ *= clampScale;
+    }
+
     const endPosition = {
-      x: shade.position.x + blinkX * blinkDist,
+      x: rawX,
       y: shade.position.y,
-      z: shade.position.z + blinkZ * blinkDist,
+      z: rawZ,
     };
 
     // Update server position immediately
@@ -812,7 +843,7 @@ class EnemyAI {
     const aggroRadius = 8; // Slightly larger than knight/shade (5)
     const leashRadius = aggroRadius * 3;
 
-    if (!aggroData.isAggroed && distance <= aggroRadius) {
+    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(warlock.position, targetPlayer.position)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
@@ -956,7 +987,7 @@ class EnemyAI {
     const aggroRadius   = 6;
     const leashRadius   = aggroRadius * 3;
 
-    if (!aggroData.isAggroed && distance <= aggroRadius) {
+    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(templar.position, targetPlayer.position)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
@@ -1053,7 +1084,7 @@ class EnemyAI {
     const aggroRadius = 9;
     const leashRadius = aggroRadius * 3;
 
-    if (!aggroData.isAggroed && distance <= aggroRadius) {
+    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(viper.position, targetPlayer.position)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
@@ -1139,7 +1170,7 @@ class EnemyAI {
     const aggroRadius = 9;
     const leashRadius = aggroRadius * 3;
 
-    if (!aggroData.isAggroed && distance <= aggroRadius) {
+    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(weaver.position, targetPlayer.position)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
@@ -1949,47 +1980,45 @@ class EnemyAI {
 
   moveEnemyTowardsTarget(enemy, targetPlayer) {
     if (!targetPlayer) return;
-    
+
     const distance = this.calculateDistance(enemy.position, targetPlayer.position);
     const baseSpeed = enemy.moveSpeed ?? this.getEnemyMoveSpeed(enemy.type);
-    
-    // Apply status effect modifiers to movement speed
     const moveSpeed = this.getModifiedMovementSpeed(enemy.id, baseSpeed);
-    
-    // Don't move if too close (avoid jittering) or if frozen/stopped
+
     if (distance < 2.0 || moveSpeed === 0) return;
-    
-    // Calculate direction vector
-    const direction = {
-      x: targetPlayer.position.x - enemy.position.x,
-      y: 0, // Keep enemies on ground
-      z: targetPlayer.position.z - enemy.position.z
-    };
-    
-    // Normalize direction
-    const magnitude = Math.sqrt(direction.x * direction.x + direction.z * direction.z);
-    if (magnitude === 0) return;
-    
-    direction.x /= magnitude;
-    direction.z /= magnitude;
-    
-    // Apply movement
-    const deltaTime = this.updateInterval / 1000; // Convert to seconds
+
+    // Resolve next waypoint via A* when a wall blocks the direct path,
+    // otherwise head straight to the target.
+    const waypoint = this._getPathWaypoint(enemy, targetPlayer);
+
+    const dx = waypoint.x - enemy.position.x;
+    const dz = waypoint.z - enemy.position.z;
+    const mag = Math.sqrt(dx * dx + dz * dz);
+    if (mag === 0) return;
+
+    const dirX = dx / mag;
+    const dirZ = dz / mag;
+
+    const deltaTime   = this.updateInterval / 1000;
     const moveDistance = moveSpeed * deltaTime;
-    
-    enemy.position.x += direction.x * moveDistance;
-    enemy.position.z += direction.z * moveDistance;
-    
-    // Calculate rotation to face target
-    enemy.rotation = Math.atan2(direction.x, direction.z);
-    
-    // Broadcast position update to all players
+
+    const rawX = enemy.position.x + dirX * moveDistance;
+    const rawZ = enemy.position.z + dirZ * moveDistance;
+
+    // Safety AABB push-out in case the path clips a corner
+    const resolved = this.resolveEnemyWallCollisions(rawX, rawZ);
+    enemy.position.x = resolved.x;
+    enemy.position.z = resolved.z;
+
+    // Face the direction of travel
+    enemy.rotation = Math.atan2(dirX, dirZ);
+
     if (this.io) {
       this.io.to(this.roomId).emit('enemy-moved', {
-        enemyId: enemy.id,
-        position: enemy.position,
-        rotation: enemy.rotation,
-        timestamp: Date.now()
+        enemyId:   enemy.id,
+        position:  enemy.position,
+        rotation:  enemy.rotation,
+        timestamp: Date.now(),
       });
     }
   }
@@ -2066,6 +2095,303 @@ class EnemyAI {
     }
   }
 
+  // ─── Navigation / A* pathfinding ──────────────────────────────────────────
+
+  /**
+   * Build (once) a flat Uint8Array representing the nav grid.
+   * 0 = passable, 1 = blocked.  Walls are expanded by NAV_ENEMY_RADIUS so that
+   * enemy centres never clip geometry.
+   */
+  _buildNavGrid() {
+    const grid = new Uint8Array(NAV_COLS * NAV_ROWS);
+    for (let row = 0; row < NAV_ROWS; row++) {
+      for (let col = 0; col < NAV_COLS; col++) {
+        const wx = NAV_MIN_X + (col + 0.5) * NAV_CELL_SIZE;
+        const wz = NAV_MIN_Z + (row + 0.5) * NAV_CELL_SIZE;
+        for (const seg of WALL_SEGMENTS) {
+          if (
+            Math.abs(wx - seg.center[0]) < seg.sizeX / 2 + NAV_ENEMY_RADIUS &&
+            Math.abs(wz - seg.center[2]) < seg.sizeZ / 2 + NAV_ENEMY_RADIUS
+          ) {
+            grid[row * NAV_COLS + col] = 1;
+            break;
+          }
+        }
+      }
+    }
+    return grid;
+  }
+
+  _worldToGrid(wx, wz) {
+    return {
+      col: Math.max(0, Math.min(NAV_COLS - 1, Math.floor((wx - NAV_MIN_X) / NAV_CELL_SIZE))),
+      row: Math.max(0, Math.min(NAV_ROWS - 1, Math.floor((wz - NAV_MIN_Z) / NAV_CELL_SIZE))),
+    };
+  }
+
+  _gridToWorld(col, row) {
+    return {
+      x: NAV_MIN_X + (col + 0.5) * NAV_CELL_SIZE,
+      z: NAV_MIN_Z + (row + 0.5) * NAV_CELL_SIZE,
+    };
+  }
+
+  /**
+   * A* on the nav grid.  Returns an array of world-space {x,z} waypoints from
+   * the cell after start up to and including the goal cell, or null if no path
+   * exists.  8-directional movement; diagonal moves are blocked when either
+   * adjacent cardinal neighbour is solid (no corner-cutting).
+   */
+  _findPathAStar(startX, startZ, goalX, goalZ) {
+    if (!this.navGrid) this.navGrid = this._buildNavGrid();
+    const grid = this.navGrid;
+
+    const { col: sc, row: sr } = this._worldToGrid(startX, startZ);
+    const { col: gc, row: gr } = this._worldToGrid(goalX, goalZ);
+
+    if (sc === gc && sr === gr) return [];
+
+    const cellCount = NAV_COLS * NAV_ROWS;
+    const gScore   = new Float32Array(cellCount).fill(Infinity);
+    const cameFrom = new Int32Array(cellCount).fill(-1);
+    const inOpen   = new Uint8Array(cellCount);
+
+    const heuristic = (c, r) => Math.sqrt((c - gc) ** 2 + (r - gr) ** 2);
+
+    // Min-heap keyed on f = g + h
+    const heap = [];
+    const heapPush = (node) => {
+      heap.push(node);
+      let i = heap.length - 1;
+      while (i > 0) {
+        const p = (i - 1) >> 1;
+        if (heap[p].f <= heap[i].f) break;
+        [heap[p], heap[i]] = [heap[i], heap[p]];
+        i = p;
+      }
+    };
+    const heapPop = () => {
+      const top = heap[0];
+      const last = heap.pop();
+      if (heap.length > 0) {
+        heap[0] = last;
+        let i = 0;
+        for (;;) {
+          const l = 2 * i + 1, r = 2 * i + 2;
+          let m = i;
+          if (l < heap.length && heap[l].f < heap[m].f) m = l;
+          if (r < heap.length && heap[r].f < heap[m].f) m = r;
+          if (m === i) break;
+          [heap[i], heap[m]] = [heap[m], heap[i]];
+          i = m;
+        }
+      }
+      return top;
+    };
+
+    const startIdx = sr * NAV_COLS + sc;
+    gScore[startIdx] = 0;
+    inOpen[startIdx] = 1;
+    heapPush({ col: sc, row: sr, f: heuristic(sc, sr) });
+
+    // 8 directions: [dCol, dRow, moveCost]
+    const DIRS = [
+      [ 0, -1, 1], [ 0,  1, 1], [-1,  0, 1], [ 1,  0, 1],
+      [-1, -1, 1.414], [-1,  1, 1.414], [ 1, -1, 1.414], [ 1,  1, 1.414],
+    ];
+
+    let goalFound = false;
+
+    while (heap.length > 0) {
+      const { col: cc, row: cr } = heapPop();
+      const ci = cr * NAV_COLS + cc;
+      inOpen[ci] = 0;
+
+      if (cc === gc && cr === gr) { goalFound = true; break; }
+
+      for (const [dc, dr, cost] of DIRS) {
+        const nc = cc + dc, nr = cr + dr;
+        if (nc < 0 || nc >= NAV_COLS || nr < 0 || nr >= NAV_ROWS) continue;
+        const ni = nr * NAV_COLS + nc;
+        if (grid[ni] === 1) continue;
+        // No corner-cutting for diagonal moves
+        if (dc !== 0 && dr !== 0) {
+          if (grid[cr * NAV_COLS + (cc + dc)] === 1) continue;
+          if (grid[(cr + dr) * NAV_COLS + cc] === 1) continue;
+        }
+        const tentG = gScore[ci] + cost;
+        if (tentG < gScore[ni]) {
+          cameFrom[ni] = ci;
+          gScore[ni] = tentG;
+          if (!inOpen[ni]) {
+            inOpen[ni] = 1;
+            heapPush({ col: nc, row: nr, f: tentG + heuristic(nc, nr) });
+          }
+        }
+      }
+    }
+
+    if (!goalFound) return null;
+
+    // Reconstruct path (world-space waypoints, excluding the start cell)
+    const path = [];
+    let cur = gr * NAV_COLS + gc;
+    const startI = sr * NAV_COLS + sc;
+    while (cur !== startI) {
+      const c = cur % NAV_COLS;
+      const r = Math.floor(cur / NAV_COLS);
+      path.push(this._gridToWorld(c, r));
+      const prev = cameFrom[cur];
+      if (prev < 0) break;
+      cur = prev;
+    }
+    path.reverse();
+    return path;
+  }
+
+  /**
+   * Returns the world-space position the enemy should move TOWARD this tick.
+   * When line-of-sight to the player is clear the player position is returned
+   * directly (no grid overhead).  Otherwise a cached A* path is used and
+   * recomputed only when the player moves significantly.
+   */
+  _getPathWaypoint(enemy, targetPlayer) {
+    const tx = targetPlayer.position.x;
+    const tz = targetPlayer.position.z;
+
+    // Direct walk — no pathfinding needed
+    if (this.hasLineOfSight(enemy.position, targetPlayer.position)) {
+      this.enemyPaths.delete(enemy.id);
+      return targetPlayer.position;
+    }
+
+    const cached = this.enemyPaths.get(enemy.id);
+
+    // Decide whether to recompute
+    let needsRecompute = !cached || !cached.waypoints || cached.wpIndex >= cached.waypoints.length;
+    if (!needsRecompute) {
+      const ltp = cached.lastTargetPos;
+      if (Math.sqrt((tx - ltp.x) ** 2 + (tz - ltp.z) ** 2) > NAV_RECOMPUTE_DIST) {
+        needsRecompute = true;
+      }
+    }
+
+    if (needsRecompute) {
+      const wp = this._findPathAStar(enemy.position.x, enemy.position.z, tx, tz);
+      this.enemyPaths.set(enemy.id, {
+        waypoints:     wp || [],
+        wpIndex:       0,
+        lastTargetPos: { x: tx, z: tz },
+      });
+    }
+
+    const state = this.enemyPaths.get(enemy.id);
+    if (!state.waypoints || state.waypoints.length === 0) {
+      return targetPlayer.position; // no path found — try direct anyway
+    }
+
+    // Advance past waypoints the enemy has already reached
+    const ex = enemy.position.x, ez = enemy.position.z;
+    while (state.wpIndex < state.waypoints.length - 1) {
+      const wp = state.waypoints[state.wpIndex];
+      if (Math.sqrt((ex - wp.x) ** 2 + (ez - wp.z) ** 2) < NAV_WAYPOINT_REACH) {
+        state.wpIndex++;
+      } else {
+        break;
+      }
+    }
+
+    if (state.wpIndex >= state.waypoints.length) {
+      return targetPlayer.position;
+    }
+
+    return state.waypoints[state.wpIndex];
+  }
+
+  /**
+   * 2-D ray-AABB slab test (XZ plane only).
+   * Returns true when the straight line from posA to posB is not blocked by
+   * any castle wall segment, false if at least one wall intersects the segment.
+   */
+  hasLineOfSight(posA, posB) {
+    const ox = posA.x;
+    const oz = posA.z;
+    const dx = posB.x - posA.x;
+    const dz = posB.z - posA.z;
+
+    for (const seg of WALL_SEGMENTS) {
+      const halfX = seg.sizeX / 2;
+      const halfZ = seg.sizeZ / 2;
+      const bx0   = seg.center[0] - halfX;
+      const bx1   = seg.center[0] + halfX;
+      const bz0   = seg.center[2] - halfZ;
+      const bz1   = seg.center[2] + halfZ;
+
+      let tmin = 0;
+      let tmax = 1;
+
+      // X-axis slab
+      if (Math.abs(dx) < 1e-10) {
+        if (ox < bx0 || ox > bx1) continue; // parallel and outside
+      } else {
+        const tx1 = (bx0 - ox) / dx;
+        const tx2 = (bx1 - ox) / dx;
+        tmin = Math.max(tmin, Math.min(tx1, tx2));
+        tmax = Math.min(tmax, Math.max(tx1, tx2));
+        if (tmax < tmin) continue;
+      }
+
+      // Z-axis slab
+      if (Math.abs(dz) < 1e-10) {
+        if (oz < bz0 || oz > bz1) continue;
+      } else {
+        const tz1 = (bz0 - oz) / dz;
+        const tz2 = (bz1 - oz) / dz;
+        tmin = Math.max(tmin, Math.min(tz1, tz2));
+        tmax = Math.min(tmax, Math.max(tz1, tz2));
+      }
+
+      if (tmax >= tmin && tmin <= 1 && tmax >= 0) {
+        return false; // wall blocks the path
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * AABB push-out: resolves an enemy's proposed (x, z) position against every
+   * castle wall segment.  The enemy is treated as a small box of half-width
+   * ENEMY_RADIUS.  On overlap the enemy is pushed out along the axis of
+   * minimum penetration, which naturally produces wall-sliding behaviour when
+   * called every frame.
+   */
+  resolveEnemyWallCollisions(x, z) {
+    const ENEMY_RADIUS = 0.5;
+    let rx = x;
+    let rz = z;
+
+    for (const seg of WALL_SEGMENTS) {
+      const halfX = seg.sizeX / 2 + ENEMY_RADIUS;
+      const halfZ = seg.sizeZ / 2 + ENEMY_RADIUS;
+      const relX  = rx - seg.center[0];
+      const relZ  = rz - seg.center[2];
+
+      if (Math.abs(relX) < halfX && Math.abs(relZ) < halfZ) {
+        const overlapX = halfX - Math.abs(relX);
+        const overlapZ = halfZ - Math.abs(relZ);
+
+        if (overlapX < overlapZ) {
+          rx += relX >= 0 ? overlapX : -overlapX;
+        } else {
+          rz += relZ >= 0 ? overlapZ : -overlapZ;
+        }
+      }
+    }
+
+    return { x: rx, z: rz };
+  }
+
   calculateDistance(pos1, pos2) {
     const dx = pos1.x - pos2.x;
     const dy = pos1.y - pos2.y;
@@ -2132,6 +2458,7 @@ class EnemyAI {
     this.meleeLockUntil.delete(enemyId);
     this.knightAbilityCooldown.delete(enemyId);
     this.titanAngle.delete(enemyId);
+    this.enemyPaths.delete(enemyId);
 
     // If a ghoul dies, clear it from its summoner's slot so the weaver can resummon
     this.weaverSummonedGhouls.forEach((ghoulId, weaverId) => {
