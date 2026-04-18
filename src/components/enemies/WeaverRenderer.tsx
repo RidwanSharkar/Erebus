@@ -145,7 +145,7 @@ export default function WeaverRenderer({
     // Aura is a scene-level sibling group — mirror the weaver's XZ, stay at ground Y
     if (auraGroupRef.current && !isDying) {
       const pos = group.position;
-      auraGroupRef.current.position.set(pos.x, 0.04, pos.z);
+      auraGroupRef.current.position.set(pos.x, 0.2, pos.z);
       auraGroupRef.current.rotation.y += 0.15 * 0.008;
     }
   });

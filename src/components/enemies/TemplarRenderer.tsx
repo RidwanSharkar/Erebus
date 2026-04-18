@@ -18,7 +18,7 @@ interface TemplarRendererProps {
   campType?: string;
 }
 
-const ATTACK_DURATION = 1200; // ms — matches templar attack clip length
+const ATTACK_DURATION = 1200; // ms — matches templar attack clip; backend `meleeLockUntil` uses the same window
 const FADE_DURATION   = 1.5;  // seconds for death fade-out
 const LERP_SPEED      = 14;   // slightly faster than knight (12) to feel snappier
 const WALK_STOP_DELAY = 250;  // ms

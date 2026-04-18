@@ -6,6 +6,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import ShadeModel from './ShadeModel';
 import ShadeTeleportEffect from './ShadeTeleportEffect';
+import CubeSoulEffect from './CubeSoulEffect';
 import BossTeleportEffect from './BossTeleportEffect';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
@@ -220,6 +221,7 @@ export default function ShadeRenderer({
 
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <ShadeModel isWalking={isWalking} isAttacking={isAttacking} isBlinking={isBlinking} isDying={isDying} />
+      {!isDying && <CubeSoulEffect color="purple" posY={2.5} />}
 
       {/* Billboard health bar */}
       <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>

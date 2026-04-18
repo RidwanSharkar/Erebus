@@ -1,9 +1,21 @@
 'use client';
 
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector2, Vector3, ShaderMaterial, Color } from '@/utils/three-exports';
-import { CAMP_DATA } from '@/utils/fogOfWarUtils';
+import {
+  DataTexture,
+  RedFormat,
+  UnsignedByteType,
+  LinearFilter,
+  ClampToEdgeWrapping,
+} from 'three';
+import { Vector3, ShaderMaterial, Color } from '@/utils/three-exports';
+import {
+  FOG_GRID_SIZE,
+  MAP_HALF_SIZE,
+  PLAYER_VIEW_RADIUS,
+  markExplored,
+} from '@/utils/fogOfWarUtils';
 
 // ─── Shaders ─────────────────────────────────────────────────────────────────
 
@@ -18,14 +30,13 @@ const vertexShader = /* glsl */`
 `;
 
 const fragmentShader = /* glsl */`
-  uniform vec3  uFogColor;
-  uniform float uFogAlpha;
-  uniform vec3  uPlayerPos;
-  uniform float uPlayerRadius;
-  uniform float uEdgeSoftness;
-  uniform vec2  uCampCenters[4];
-  uniform float uCampRadius;
-  uniform float uDiscovered[4];
+  uniform vec3      uFogColor;
+  uniform float     uFogAlpha;
+  uniform vec3      uPlayerPos;
+  uniform float     uPlayerRadius;
+  uniform float     uEdgeSoftness;
+  uniform sampler2D uExploredMap;
+  uniform float     uMapHalfSize;
 
   varying vec3 vWorldPosition;
 
@@ -34,7 +45,7 @@ const fragmentShader = /* glsl */`
 
     float revealed = 0.0;
 
-    // Always reveal a circle around the local player
+    // Live vision circle around the player
     float playerDist = distance(worldXZ, vec2(uPlayerPos.x, uPlayerPos.z));
     float playerReveal = 1.0 - smoothstep(
       uPlayerRadius - uEdgeSoftness,
@@ -43,17 +54,11 @@ const fragmentShader = /* glsl */`
     );
     revealed = max(revealed, playerReveal);
 
-    // Reveal circles for each discovered camp
-    for (int i = 0; i < 4; i++) {
-      if (uDiscovered[i] > 0.5) {
-        float campDist = distance(worldXZ, uCampCenters[i]);
-        float campReveal = 1.0 - smoothstep(
-          uCampRadius - uEdgeSoftness,
-          uCampRadius + uEdgeSoftness,
-          campDist
-        );
-        revealed = max(revealed, campReveal);
-      }
+    // Previously explored areas (sampled from DataTexture)
+    vec2 uv = (worldXZ + uMapHalfSize) / (uMapHalfSize * 2.0);
+    if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
+      float explored = texture2D(uExploredMap, uv).r;
+      revealed = max(revealed, explored);
     }
 
     float alpha = uFogAlpha * (1.0 - revealed);
@@ -68,36 +73,59 @@ const fragmentShader = /* glsl */`
 interface FogOfWarProps {
   /** Ref to the local player's world position — updated every frame without triggering re-renders. */
   playerPositionRef: React.MutableRefObject<Vector3>;
-  /** Which of the four camps have been discovered (indices match CAMP_DATA). */
-  discoveredCamps: boolean[];
+  /**
+   * Shared Uint8Array (FOG_GRID_SIZE²) representing which map cells the player
+   * has visited. FogOfWar writes to this ref every frame; the scene reads from
+   * it to decide enemy visibility.
+   */
+  exploredGridRef: React.MutableRefObject<Uint8Array>;
 }
 
-const FogOfWar: React.FC<FogOfWarProps> = ({ playerPositionRef, discoveredCamps }) => {
+const FogOfWar: React.FC<FogOfWarProps> = ({ playerPositionRef, exploredGridRef }) => {
   const matRef = useRef<ShaderMaterial>(null!);
 
-  // Uniforms are created once; values are mutated in-place every frame.
+  // DataTexture backed by the same Uint8Array — updated in-place, no allocations per frame.
+  const exploredTex = useMemo(() => {
+    const tex = new DataTexture(
+      exploredGridRef.current as Uint8Array<ArrayBuffer>,
+      FOG_GRID_SIZE,
+      FOG_GRID_SIZE,
+      RedFormat,
+      UnsignedByteType,
+    );
+    tex.magFilter = LinearFilter;
+    tex.minFilter = LinearFilter;
+    tex.wrapS     = ClampToEdgeWrapping;
+    tex.wrapT     = ClampToEdgeWrapping;
+    tex.needsUpdate = true;
+    return tex;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => () => { exploredTex.dispose(); }, [exploredTex]);
+
+  // Uniforms created once; values are mutated in-place every frame.
   const uniforms = useMemo(() => ({
     uFogColor:     { value: new Color(0x020408) },
     uFogAlpha:     { value: 0.93 },
     uPlayerPos:    { value: new Vector3() },
-    uPlayerRadius: { value: 10.0 },
-    uEdgeSoftness: { value: 9.5 },
-    uCampCenters:  { value: CAMP_DATA.map(c => new Vector2(c.x, c.z)) },
-    uCampRadius:   { value: 11.0 },
-    uDiscovered:   { value: [0.0, 0.0, 0.0, 0.0] },
-  }), []);
+    uPlayerRadius: { value: PLAYER_VIEW_RADIUS },
+    uEdgeSoftness: { value: 6.5 },
+    uExploredMap:  { value: exploredTex },
+    uMapHalfSize:  { value: MAP_HALF_SIZE },
+  }), [exploredTex]);
 
   useFrame(() => {
     const mat = matRef.current;
     if (!mat) return;
 
-    // Sync player world position
-    (mat.uniforms.uPlayerPos.value as Vector3).copy(playerPositionRef.current);
+    const pos = playerPositionRef.current;
+    (mat.uniforms.uPlayerPos.value as Vector3).copy(pos);
 
-    // Sync discovered-camp flags
-    const disc = mat.uniforms.uDiscovered.value as number[];
-    for (let i = 0; i < 4; i++) {
-      disc[i] = discoveredCamps[i] ? 1.0 : 0.0;
+    // Mark the player's current vision footprint as permanently explored.
+    const changed = markExplored(exploredGridRef.current, pos.x, pos.z, PLAYER_VIEW_RADIUS);
+    if (changed) {
+      exploredTex.needsUpdate = true;
     }
   });
 
@@ -107,8 +135,8 @@ const FogOfWar: React.FC<FogOfWarProps> = ({ playerPositionRef, discoveredCamps 
       position={[0, 0.15, 0]}
       renderOrder={50}
     >
-      {/* 90×90 plane covers the full map (radius 33) plus generous buffer */}
-      <circleGeometry args={[28, 28]} />
+      {/* Circle covers the full playable map (radius 28) plus a small buffer */}
+      <circleGeometry args={[28.5, 64]} />
       <shaderMaterial
         ref={matRef}
         uniforms={uniforms}

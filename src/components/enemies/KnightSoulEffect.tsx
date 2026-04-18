@@ -76,9 +76,9 @@ export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
       {/* Point light — stronger radius and intensity */}
       <pointLight
         color={colors.light}
-        intensity={4.5}
+        intensity={7.5}
         distance={6.0}
-        decay={2}
+        decay={5}
       />
 
       {/* Core orb — larger */}

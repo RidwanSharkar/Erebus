@@ -16,7 +16,7 @@ interface GhoulRendererProps {
   isDying?: boolean;
 }
 
-const ATTACK_DURATION  = 1200; // ms — matches ghoul attack clip
+const ATTACK_DURATION  = 1200; // ms — matches ghoul attack clip; backend `meleeLockUntil` uses the same window
 const SUMMON_DURATION  = 2500; // ms — ghoul_summon clip plays on first spawn
 const FADE_DURATION    = 1.5;  // seconds
 const LERP_SPEED       = 14;

@@ -134,6 +134,8 @@ interface MultiplayerContextType {
   skeletonKillCount: number;
   gameStarted: boolean;
   gameMode: 'multiplayer' | 'coop';
+  /** Co-op session archetype for grass / border / camp lights (`['red'|'blue'|'green'|'purple']`). */
+  campTypes: string[];
 
   // Chat state
   chatMessages: ChatMessage[];
@@ -237,6 +239,28 @@ interface MultiplayerProviderProps {
   children: React.ReactNode;
 }
 
+const VALID_CAMP_KEYS = new Set(['red', 'blue', 'green', 'purple']);
+
+/** Normalize server `campTypes` or infer from `enemies[].campType` for environment theme sync. */
+function campArchetypeFromRoomPayload(data: {
+  campTypes?: string[];
+  enemies?: Enemy[];
+}): string[] {
+  if (Array.isArray(data.campTypes) && data.campTypes.length > 0) {
+    const k = String(data.campTypes[0]).toLowerCase();
+    if (VALID_CAMP_KEYS.has(k)) return [k];
+  }
+  const list = data.enemies;
+  if (Array.isArray(list)) {
+    for (const en of list) {
+      if (!en?.campType) continue;
+      const k = String(en.campType).toLowerCase();
+      if (VALID_CAMP_KEYS.has(k)) return [k];
+    }
+  }
+  return [];
+}
+
 export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -249,6 +273,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [skeletonKillCount, setSkeletonKillCount] = useState(0);
   const [gameStarted, setGameStarted] = useState(false);
   const [gameMode, setGameMode] = useState<'multiplayer' | 'coop'>('multiplayer');
+  const [campTypes, setCampTypes] = useState<string[]>([]);
   const [currentPreview, setCurrentPreview] = useState<RoomPreview | null>(null);
   const [selectedWeapons, setSelectedWeaponsState] = useState<{
     primary: WeaponType;
@@ -337,6 +362,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCurrentRoomId(null);
       setPlayers(new Map());
       setEnemies(new Map());
+      setCampTypes([]);
       setSkeletonKillCount(0);
       setDroppedItems(new Map());
       setInventory([]);
@@ -381,6 +407,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         });
       }
       setEnemies(enemiesMap);
+      setCampTypes(campArchetypeFromRoomPayload(data));
+    });
+
+    addEventHandler('camps-initialized', (data: { campTypes?: string[] }) => {
+      const next = campArchetypeFromRoomPayload({ campTypes: data.campTypes });
+      if (next.length > 0) setCampTypes(next);
     });
 
     addEventHandler('room-full', () => {
@@ -770,6 +802,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCurrentRoomId(null);
       setPlayers(new Map());
       setEnemies(new Map());
+      setCampTypes([]);
 
       // Clear heartbeat
       if (heartbeatInterval.current) {
@@ -830,6 +863,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setSkeletonKillCount(0);
     setGameStarted(false);
     setGameMode('multiplayer');
+    setCampTypes([]);
     setDroppedItems(new Map());
     setInventory([]);
     }
@@ -1208,6 +1242,18 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setIsChatOpen(false);
   }, []);
 
+  // If we never got `camps-initialized` / `room-joined` campTypes, infer from synced enemies (late-join / edge cases).
+  useEffect(() => {
+    setCampTypes((prev) => {
+      if (prev.length > 0) return prev;
+      for (const enemy of Array.from(enemies.values())) {
+        const k = enemy.campType?.toLowerCase();
+        if (k && VALID_CAMP_KEYS.has(k)) return [k];
+      }
+      return prev;
+    });
+  }, [enemies]);
+
   const contextValue: MultiplayerContextType = {
     socket,
     isConnected,
@@ -1220,6 +1266,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     skeletonKillCount,
     gameStarted,
     gameMode,
+    campTypes,
     currentPreview,
     joinRoom,
     leaveRoom,

@@ -9,7 +9,7 @@ interface GhoulSummonRitualProps {
   onComplete: () => void;
 }
 
-const DURATION = 2.5; // seconds — covers the ghoul_summon animation
+const DURATION = 6; // seconds — covers the full ghoul_summon animation (+2s extended)
 
 // Slightly larger than CorruptedAura (1.5× scale), red theme
 const INNER_RADIUS = 1.275;
@@ -47,7 +47,7 @@ export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonR
   });
 
   return (
-    <group position={[position.x, 0.04, position.z]}>
+    <group position={[position.x, 0.25, position.z]}>
       <group ref={groupRef}>
         {/* Four rotating triangular ring segments — red theme, 1.5× scale */}
         <group ref={ringsRef}>

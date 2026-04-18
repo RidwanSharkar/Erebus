@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import type { RoomBorderTheme } from './SimpleBorderEffects';
 import CustomSky from './CustomSky';
 import Planet from './Planet';
 import InstancedMountains from './InstancedMountains';
@@ -88,7 +89,13 @@ const Environment: React.FC<EnvironmentProps> = ({
 
   // Define merchant position near the tree
   const merchantPosition: [number, number, number] = useMemo(() => [18.4, 0, 9.2], []);
-  const snowThemeEnabled = useMemo(() => Math.random() < 0.5, []);
+
+  /** Server camp archetype for this session — drives grass + perimeter fence colours */
+  const roomArchetype: RoomBorderTheme = useMemo(() => {
+    const key = campTypes[0]?.toLowerCase();
+    if (key === 'blue' || key === 'green' || key === 'red' || key === 'purple') return key;
+    return 'red';
+  }, [campTypes]);
 
   return (
     <group name="environment">
@@ -99,7 +106,7 @@ const Environment: React.FC<EnvironmentProps> = ({
       <PerimeterCloudSystem radius={29} />
 
       {/* Instanced grass field — 80k blades, GPU-animated wind */}
-      {enableGrass && <StylizedGrass isSnowTheme={snowThemeEnabled} />}
+      {enableGrass && <StylizedGrass isSnowTheme={roomArchetype === 'blue'} />}
 
       {/* Stone road + branch connectors + combat platforms — single draw call */}
       <StoneGround />
@@ -116,7 +123,7 @@ const Environment: React.FC<EnvironmentProps> = ({
           count={48}
           enableParticles={true}
           particleCount={100}
-          snowTheme={snowThemeEnabled}
+          borderTheme={roomArchetype}
         />
       )}
 
@@ -158,9 +165,7 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       {/* ── Doodads & scene props ──────────────────────────────────────── */}
 
-      {/* GROUND FOG */}
-      <GroundFogSystem />
-      
+ 
 
       {/* Rising fire embers above each camp beacon — colour matches camp theme */}
       <InstancedEmbers campTypes={campTypes} />

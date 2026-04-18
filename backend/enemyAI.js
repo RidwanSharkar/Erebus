@@ -12,6 +12,10 @@ const NAV_ENEMY_RADIUS = 0.65;  // slightly wider than collision radius
 const NAV_WAYPOINT_REACH = 1.2; // advance to next waypoint when this close
 const NAV_RECOMPUTE_DIST = 2.5; // recompute path when target moves this far
 
+// Melee units advance until this much *inside* max swing range so the damage
+// check at swing end is harder to escape with a small back-step.
+const MELEE_CLOSE_INSET = 0.35;
+
 class EnemyAI {
   constructor(roomId, io) {
     this.roomId = roomId;
@@ -74,7 +78,7 @@ class EnemyAI {
     // Ghoul attack cooldown tracking
     this.ghoulAttackCooldown = new Map(); // enemyId -> lastAttackTime
 
-    // Knight/Templar attack lock: timestamp until which the enemy is frozen mid-swing
+    // Knight / Templar / Ghoul melee: timestamp until which the enemy is frozen mid-swing
     // so it cannot move until the swing animation and damage window both resolve.
     this.meleeLockUntil = new Map(); // enemyId -> lockExpiryTimestamp
 
@@ -380,6 +384,7 @@ class EnemyAI {
 
     const distance = this.calculateDistance(knight.position, targetPlayer.position);
     const attackRange = 2.6; // Slightly longer reach than skeleton (shield bash + sword)
+    const meleePressDistance = attackRange - MELEE_CLOSE_INSET;
     const attackCooldown = knight.attackCooldown ?? 2500; // Soul-type override, default 2.5s
     const aggroRadius = 5;   // Knight idles until a player steps within this range
 
@@ -446,6 +451,8 @@ class EnemyAI {
             console.log(`⚔️ Knight ${knight.id} swing missed - player dodged out of range!`);
           }
         }, 1000);
+      } else if (distance > meleePressDistance) {
+        this.moveEnemyTowardsTarget(knight, targetPlayer);
       }
     } else {
       this.moveEnemyTowardsTarget(knight, targetPlayer);
@@ -672,7 +679,7 @@ class EnemyAI {
     }
 
     const distance = this.calculateDistance(shade.position, targetPlayer.position);
-    const attackRange = 14.0;  // ranged throw
+    const attackRange = 12.0;  // ranged throw
     const aggroRadius = 7;
     const leashRadius = aggroRadius * 3;
 
@@ -699,7 +706,7 @@ class EnemyAI {
       }
 
       // Blink perpendicular then attack (4-second cooldown)
-      const blinkCooldown = 4250;
+      const blinkCooldown = 4750;
       const lastBlinkTime = this.shadeBlinkCooldown.get(shade.id) || 0;
       const now = Date.now();
 
@@ -995,16 +1002,23 @@ class EnemyAI {
 
     if (!aggroData.isAggroed) return;
 
+    const now = Date.now();
+    const lockUntil = this.meleeLockUntil.get(templar.id) || 0;
+    if (now < lockUntil) return;
+
+    const meleePressDistance = attackRange - MELEE_CLOSE_INSET;
+
     if (distance <= attackRange) {
       if (!this.bossAttackCooldown.has(templar.id)) {
         this.bossAttackCooldown.set(templar.id, 0);
       }
 
       const lastAttackTime = this.bossAttackCooldown.get(templar.id);
-      const now = Date.now();
 
       if (now - lastAttackTime >= attackCooldown) {
         this.bossAttackCooldown.set(templar.id, now);
+        const SWING_LOCK_MS = 1200; // matches ATTACK_DURATION on the client
+        this.meleeLockUntil.set(templar.id, now + SWING_LOCK_MS);
         this.telegraphTemplarAttack(templar, targetPlayer);
 
         setTimeout(() => {
@@ -1023,6 +1037,8 @@ class EnemyAI {
             console.log(`🛡️ Templar ${templar.id} swing missed — player dodged!`);
           }
         }, 1000);
+      } else if (distance > meleePressDistance) {
+        this.moveEnemyTowardsTarget(templar, targetPlayer);
       }
     } else {
       this.moveEnemyTowardsTarget(templar, targetPlayer);
@@ -1349,14 +1365,14 @@ class EnemyAI {
       }
       console.log(`🧵 Weaver ${weaver.id} summoned ghoul ${ghoulId} at ritual circle!`);
 
-      // Unlock movement once the summon animation finishes (~2500ms)
+      // Unlock movement once the summon animation finishes (~4500ms, extended to match ritual duration)
       setTimeout(() => {
         const spawnedGhoul = this.room?.getEnemy(ghoulId);
         if (spawnedGhoul && !spawnedGhoul.isDying) {
           spawnedGhoul.moveSpeed = 2.5;
           console.log(`💀 Ghoul ${ghoulId} summon animation complete — movement unlocked`);
         }
-      }, 2500);
+      }, 4500);
     }, 3000);
   }
 
@@ -1386,16 +1402,23 @@ class EnemyAI {
     const attackRange   = 2.4;
     const attackCooldown = ghoul.attackCooldown ?? 2000;
 
+    const now = Date.now();
+    const lockUntil = this.meleeLockUntil.get(ghoul.id) || 0;
+    if (now < lockUntil) return;
+
+    const meleePressDistance = attackRange - MELEE_CLOSE_INSET;
+
     if (distance <= attackRange) {
       if (!this.ghoulAttackCooldown.has(ghoul.id)) {
         this.ghoulAttackCooldown.set(ghoul.id, 0);
       }
 
       const lastAttackTime = this.ghoulAttackCooldown.get(ghoul.id);
-      const now = Date.now();
 
       if (now - lastAttackTime >= attackCooldown) {
         this.ghoulAttackCooldown.set(ghoul.id, now);
+        const SWING_LOCK_MS = 1200; // matches ATTACK_DURATION on the client
+        this.meleeLockUntil.set(ghoul.id, now + SWING_LOCK_MS);
         this.telegraphGhoulAttack(ghoul, targetPlayer);
 
         setTimeout(() => {
@@ -1410,8 +1433,12 @@ class EnemyAI {
           const currentDistance = this.calculateDistance(ghoul.position, currentTarget.position);
           if (currentDistance <= attackRange) {
             this.ghoulAttackPlayer(ghoul, currentTarget);
+          } else {
+            console.log(`💀 Ghoul ${ghoul.id} swing missed — player dodged!`);
           }
         }, 900);
+      } else if (distance > meleePressDistance) {
+        this.moveEnemyTowardsTarget(ghoul, targetPlayer);
       }
     } else {
       this.moveEnemyTowardsTarget(ghoul, targetPlayer);

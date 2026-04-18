@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useEffect } from 'react';
+import React, { useRef, useMemo, useEffect, useLayoutEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   InstancedMesh,
@@ -15,13 +15,47 @@ import {
   Quaternion
 } from '@/utils/three-exports';
 
+export type RoomBorderTheme = 'red' | 'blue' | 'green' | 'purple';
+
 interface SimpleBorderEffectsProps {
   radius?: number;
   count?: number;
   enableParticles?: boolean;
   particleCount?: number;
-  snowTheme?: boolean;
+  /** Matches server camp archetype: red / blue (ice grass) / green / purple */
+  borderTheme?: RoomBorderTheme;
 }
+
+/** Perimeter pillar + particle colours aligned with camp type */
+const BORDER_PALETTE: Record<
+  RoomBorderTheme,
+  { particle: number; glow: number; archway: number; poles: number }
+> = {
+  red: {
+    particle: 0xf40000,
+    glow: 0xf74f4f,
+    archway: 0xe63946,
+    poles: 0xf74f4f,
+  },
+  blue: {
+    particle: 0x7fc8ff,
+    glow: 0xb8e4ff,
+    archway: 0x62aef2,
+    poles: 0xb8e4ff,
+  },
+  green: {
+    particle: 0x15803d,
+    glow: 0x4ade80,
+    archway: 0x16a34a,
+    poles: 0x4ade80,
+  },
+  purple: {
+    particle: 0x8a2be2,
+    glow: 0xdda0dd,
+    archway: 0x8a2be2,
+    poles: 0xdda0dd,
+  },
+};
 
 /**
  * Ultra-performance circular gate effects with spinning pillars and curved archways
@@ -32,25 +66,22 @@ const SimpleBorderEffects: React.FC<SimpleBorderEffectsProps> = ({
   count = 64,
   enableParticles = true,
   particleCount = 100,
-  snowTheme = false,
+  borderTheme = 'red',
 }) => {
-  // Half height version with opposite rotation and purple theme
   return <SimpleBorderEffectsInner
     radius={radius}
     count={count}
     enableParticles={enableParticles}
     particleCount={particleCount}
-    snowTheme={snowTheme}
+    borderTheme={borderTheme}
     halfHeight={false}
     reverseRotation={false}
-    purpleTheme={false}
   />;
 };
 
 interface SimpleBorderEffectsInnerProps extends SimpleBorderEffectsProps {
   halfHeight?: boolean;
   reverseRotation?: boolean;
-  purpleTheme?: boolean;
 }
 
 const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
@@ -58,10 +89,9 @@ const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
   count = 64,
   enableParticles = true,
   particleCount = 100,
-  snowTheme = false,
+  borderTheme = 'red',
   halfHeight = false,
   reverseRotation = false,
-  purpleTheme = false
 }) => {
   const particleRef = useRef<InstancedMesh>(null);
   const glowRef = useRef<InstancedMesh>(null);
@@ -202,47 +232,78 @@ const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
     return positions;
   }, [radius, count, halfHeight]);
 
-  const getThemeColor = (defaultRed: number, snowBlue: number, purple: number) => {
-    if (purpleTheme) return purple;
-    if (snowTheme) return snowBlue;
-    return defaultRed;
-  };
+  // Stable material instances: R3F instancedMesh only applies `args` materials on first mount,
+  // so swapping material refs when campTypes arrives would leave meshes stuck on the old colour.
+  const particleMaterial = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.35,
+        alphaTest: 0.1,
+      }),
+    [],
+  );
 
-  // Materials - support red, snow-blue, and purple themes
-  const particleMaterial = useMemo(() => new MeshBasicMaterial({
-    color: getThemeColor(0xF40000, 0x7fc8ff, 0x8a2be2),
-    transparent: true,
-    opacity: 0.35,
-    alphaTest: 0.1,
-  }), [purpleTheme, snowTheme]);
+  const glowMaterial = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.435,
+        alphaTest: 0.1,
+      }),
+    [],
+  );
 
-  const glowMaterial = useMemo(() => new MeshBasicMaterial({
-    color: getThemeColor(0xF74F4F, 0xb8e4ff, 0xdda0dd),
-    transparent: true,
-    opacity: 0.435,
-    alphaTest: 0.1,
-  }), [purpleTheme, snowTheme]);
+  const archwayMaterial = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.435,
+        alphaTest: 0.1,
+      }),
+    [],
+  );
 
-  const archwayMaterial = useMemo(() => new MeshBasicMaterial({
-    color: getThemeColor(0xE63946, 0x62aef2, 0x8a2be2),
-    transparent: true,
-    opacity: 0.435,
-    alphaTest: 0.1,
-  }), [purpleTheme, snowTheme]);
+  const middlePolesMaterial = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.435,
+        alphaTest: 0.1,
+      }),
+    [],
+  );
 
-  const middlePolesMaterial = useMemo(() => new MeshBasicMaterial({
-    color: getThemeColor(0xF74F4F, 0xb8e4ff, 0xdda0dd),
-    transparent: true,
-    opacity: 0.435, // Same intensity as regular poles
-    alphaTest: 0.1,
-  }), [purpleTheme, snowTheme]);
+  const coneMaterial = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.435,
+        alphaTest: 0.1,
+      }),
+    [],
+  );
 
-  const coneMaterial = useMemo(() => new MeshBasicMaterial({
-    color: getThemeColor(0xF74F4F, 0xb8e4ff, 0xdda0dd),
-    transparent: true,
-    opacity: 0.435,
-    alphaTest: 0.1,
-  }), [purpleTheme, snowTheme]);
+  useLayoutEffect(() => {
+    const p = BORDER_PALETTE[borderTheme] ?? BORDER_PALETTE.red;
+    particleMaterial.color.setHex(p.particle);
+    glowMaterial.color.setHex(p.glow);
+    archwayMaterial.color.setHex(p.archway);
+    middlePolesMaterial.color.setHex(p.poles);
+    coneMaterial.color.setHex(p.poles);
+  }, [
+    borderTheme,
+    particleMaterial,
+    glowMaterial,
+    archwayMaterial,
+    middlePolesMaterial,
+    coneMaterial,
+  ]);
 
   // Geometries - support half height
   const particleGeometry = useMemo(() => new PlaneGeometry(0.05, 0.05), []);
@@ -265,7 +326,7 @@ const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
       archwayMaterial.dispose();
       middlePolesMaterial.dispose();
     };
-  }, [particleGeometry, glowGeometry, coneGeometry, middlePolesGeometry, archwayGeometry, particleMaterial, glowMaterial, coneMaterial, archwayMaterial, middlePolesMaterial, halfHeight, purpleTheme, snowTheme]);
+  }, [particleGeometry, glowGeometry, coneGeometry, middlePolesGeometry, archwayGeometry, particleMaterial, glowMaterial, coneMaterial, archwayMaterial, middlePolesMaterial, halfHeight]);
 
   // Update instanced matrices
   useEffect(() => {
@@ -326,7 +387,7 @@ const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
 
     const time = state.clock.getElapsedTime();
 
-    // Gentle rotation (reverse for purple theme)
+    // Gentle rotation (compact variant can reverse)
     const rotationDirection = reverseRotation ? -1 : 1;
     groupRef.current.rotation.y = time * 0.03 * rotationDirection;
 
@@ -388,13 +449,12 @@ const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
   );
 };
 
-// Compact version with half height, reverse rotation, and original red theme
+/** Compact half-height ring; inherits `borderTheme` from props (defaults to red) */
 export const CompactPurpleBorderEffects: React.FC<SimpleBorderEffectsProps> = (props) => {
   return <SimpleBorderEffectsInner
     {...props}
     halfHeight={true}
     reverseRotation={true}
-    purpleTheme={false}
   />;
 };
 

@@ -1,7 +1,89 @@
 'use client';
 
 import React, { useRef, useMemo, useEffect } from 'react';
-import { Matrix4, Vector3, Quaternion, InstancedMesh, Color } from '@/utils/three-exports';
+import {
+  Matrix4,
+  Vector3,
+  Quaternion,
+  InstancedMesh,
+  BoxGeometry,
+  ShaderMaterial,
+} from '@/utils/three-exports';
+
+// Procedural stone (aligned with StoneGround.tsx) — avoids MeshStandardMaterial
+// going fully black when scene lights don’t hit vertical faces (e.g. backlight).
+
+const WALL_VERTEX = `
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+  varying vec3 vNormal;
+
+  void main() {
+    vUv = uv;
+    vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+    vWorldPos = worldPos.xyz;
+    vNormal = normalize(mat3(modelMatrix * instanceMatrix) * normal);
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+  }
+`;
+
+const WALL_FRAGMENT = `
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+  varying vec3 vNormal;
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
+  float fbm(vec2 p) {
+    return noise(p) * 0.5 + noise(p * 2.1 + 1.7) * 0.25 + noise(p * 4.3 + 3.1) * 0.125;
+  }
+
+  void main() {
+    vec2 wp = vWorldPos.xz * 0.55 + vWorldPos.y * 0.12;
+
+    vec3 stone = vec3(0.35, 0.32, 0.28);
+
+    float macro = fbm(wp * 0.7);
+    stone += (macro - 0.5) * 0.18;
+    stone += noise(wp * 5.5 + 1.3) * 0.06;
+
+    float course = abs(sin(vWorldPos.y * 3.2 + noise(wp * 2.0) * 0.5));
+    stone *= 0.72 + smoothstep(0.1, 0.0, course) * 0.28;
+
+    float crackH = abs(sin(vUv.x * 9.0 + noise(wp * 2.0) * 3.0));
+    float crackV = abs(sin(vUv.y * 9.0 + noise(wp * 2.0 + 5.5) * 3.0));
+    stone *= 0.55 + smoothstep(0.04, 0.14, min(crackH, crackV)) * 0.45;
+
+    float mossMask = smoothstep(0.52, 0.68, noise(wp * 0.9 + 7.0))
+                   * noise(wp * 2.5 + 3.0) * 0.65;
+    stone = mix(stone, vec3(0.16, 0.26, 0.11), mossMask * 0.85);
+
+    float edgeU = 1.0 - smoothstep(0.0, 0.09, vUv.x) * smoothstep(0.0, 0.09, 1.0 - vUv.x);
+    float edgeV = 1.0 - smoothstep(0.0, 0.09, vUv.y) * smoothstep(0.0, 0.09, 1.0 - vUv.y);
+    stone *= 1.0 - max(edgeU, edgeV) * 0.45;
+
+    float diff = max(dot(vNormal, normalize(vec3(0.5, 1.0, 0.3))), 0.0) * 0.35 + 0.65;
+    stone *= diff;
+
+    float topFace = smoothstep(0.6, 0.9, vNormal.y);
+    stone = mix(stone * 0.55, stone, topFace);
+
+    gl_FragColor = vec4(stone, 1.0);
+  }
+`;
 
 // ─── Wall Segment Definitions ─────────────────────────────────────────────────
 // Each segment: center position and full dimensions (sizeX, sizeY, sizeZ)
@@ -115,6 +197,12 @@ function buildMerlonsForSegment(seg: WallSegmentDef): Matrix4[] {
 const CastleWalls: React.FC = () => {
   const meshRef = useRef<InstancedMesh>(null);
 
+  const geometry = useMemo(() => new BoxGeometry(1, 1, 1), []);
+  const material = useMemo(
+    () => new ShaderMaterial({ vertexShader: WALL_VERTEX, fragmentShader: WALL_FRAGMENT }),
+    [],
+  );
+
   const { count, matrices } = useMemo(() => {
     const all: Matrix4[] = [];
 
@@ -144,24 +232,20 @@ const CastleWalls: React.FC = () => {
     if (!mesh) return;
     matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
     mesh.instanceMatrix.needsUpdate = true;
-    // Single colour across all instances — no per-instance colour needed
-  }, [matrices]);
+    return () => {
+      geometry.dispose();
+      material.dispose();
+    };
+  }, [matrices, geometry, material]);
 
   return (
     <instancedMesh
       ref={meshRef}
-      args={[undefined, undefined, count]}
+      args={[geometry, material, count]}
       frustumCulled={false}
       castShadow
       receiveShadow
-    >
-      <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial
-        color={new Color(0x4a4340)}
-        roughness={0.92}
-        metalness={0.04}
-      />
-    </instancedMesh>
+    />
   );
 };
 

@@ -6,6 +6,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import WarlockModel from './WarlockModel';
 import WarlockTeleportEffect from './WarlockTeleportEffect';
+import CubeSoulEffect from './CubeSoulEffect';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
 
@@ -182,6 +183,7 @@ export default function WarlockRenderer({
 
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <WarlockModel isBlinking={isBlinking} isLaunching={isLaunching} isDying={isDying} />
+      {!isDying && <CubeSoulEffect color="red" posY={2.75} />}
 
       {/* Billboard health bar */}
       <Billboard position={[0, 4.5, 0]} follow lockX={false} lockY={false} lockZ={false}>

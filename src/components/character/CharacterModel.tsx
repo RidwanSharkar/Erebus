@@ -167,7 +167,7 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
       nextAction.reset().fadeIn(fadeIn).play();
     } else if (animState === 'CastSingle') {
       nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = false;
+      nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(fadeIn).play();
     } else if (animState === 'Cast' || animState === 'SwordCast' || animState === 'DrawBow') {
       // Always restart so the cast clip plays from the beginning on each new hold.

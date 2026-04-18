@@ -131,9 +131,7 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
 }) => {
   const meshRef = useRef<InstancedMesh>(null);
 
-  // If no external theme is provided, randomly pick snow or normal once per mount
-  const randomSnow = useMemo(() => Math.random() < 0.5, []);
-  const isSnow = isSnowTheme ?? randomSnow;
+  const isSnow = isSnowTheme ?? false;
   const palette = isSnow ? SNOW_COLORS : GRASS_COLORS;
 
   const resolvedBaseColor        = baseColor        ?? palette.baseColor;

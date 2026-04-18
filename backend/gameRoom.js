@@ -33,32 +33,22 @@ class GameRoom {
 
     // Kill tracking toward boss trigger (12 enemies must be killed across 3 camps)
     this.skeletonKillCount = 0;
+
+    /** Session archetype for co-op (`initializeEnemies`); sent on `camps-initialized` and `room-joined`. */
+    this.sessionCampTypes = [];
   }
 
-  // ── Camp type definitions ──────────────────────────────────────────────────
-  // Each game the 3 camps are each randomly assigned one of these 4 archetypes.
+  // ── Enemy archetype definitions ────────────────────────────────────────────
+  // One archetype is randomly chosen per game session. All 15 enemies share it.
   // enemyPool: unit types that can fill non-knight slots.
-  // knightSoulType: the soul colour used for knights in this camp.
-  // min/maxEnemies: total units to spawn in this camp.
+  // knightSoulType: the soul colour used for knights in this archetype.
   static get CAMP_TYPES() {
     return {
-      blue:   { color: 'blue',   knightSoulType: 'blue',   enemyPool: ['knight', 'shade', 'weaver' ], minEnemies: 4,  maxEnemies: 6 },
-      green:  { color: 'green',  knightSoulType: 'green',  enemyPool: ['knight', 'viper', ],          minEnemies: 4,  maxEnemies: 5  },
-      red:    { color: 'red',    knightSoulType: 'red',    enemyPool: ['knight', 'warlock','templar'],          minEnemies: 4,  maxEnemies: 5  },
-      purple: { color: 'purple', knightSoulType: 'purple', enemyPool: ['knight', 'shade'],            minEnemies: 5,  maxEnemies: 6 },
+      blue:   { color: 'blue',   knightSoulType: 'blue',   enemyPool: ['knight', 'shade', 'weaver'  ] },
+      green:  { color: 'green',  knightSoulType: 'green',  enemyPool: ['knight', 'viper'            ] },
+      red:    { color: 'red',    knightSoulType: 'red',    enemyPool: ['knight', 'warlock', 'templar'] },
+      purple: { color: 'purple', knightSoulType: 'purple', enemyPool: ['knight', 'shade'            ] },
     };
-  }
- 
-  // ── Spawn areas for each camp ──────────────────────────────────────────────
-  // Enemies are placed at random positions within these AABB bounds (y = 0).
-  // Areas are deliberately wide so enemies spread across the camp rather than
-  // clustering, and the path-facing edges are closer to the main routes.
-  static get CAMP_AREAS() {
-    return [
-      { name: 'North Fortress', xMin: -10,  xMax: 10,  zMin: -29, zMax: -12 },
-      { name: 'East Bastion',   xMin:  12,  xMax: 28,  zMin:  -2, zMax:  16 },
-      { name: 'West Citadel',   xMin: -28,  xMax: -12, zMin:  -2, zMax:  16 },
-    ];
   }
 
   // Start the actual game
@@ -74,7 +64,7 @@ class GameRoom {
 
     // Initialize enemies and AI for co-op mode
     if (this.gameMode === 'coop') {
-      this.initializeEnemies();
+      this.spawnEnemyWave();
 
       // Start enemy AI
       this.startEnemyAI();
@@ -179,11 +169,11 @@ class GameRoom {
   }
 
   // Enemy management
-  initializeEnemies() {
+  spawnEnemyWave() {
     if (!this.gameStarted) return;
 
     if (this.gameMode === 'coop') {
-      this.initializeCamps();
+      this.initializeEnemies();
       this.initializeTitan();
     }
   }
@@ -256,82 +246,124 @@ class GameRoom {
       health: 650, maxHealth: 650, damage: 70, attackCooldown: 5000, moveSpeed: 2.0 };
   }
 
-  // Generate a random position within a camp area, avoiding positions too close to others.
-  // Positions outside the playable circle (radius 27) are rejected and retried.
-  _randomCampPos(area, existing, minDist = 1.8) {
-    const MAX_MAP_RADIUS = 27; // keep enemies clearly inside the 28-unit map boundary
-    for (let attempt = 0; attempt < 60; attempt++) {
-      const x = area.xMin + Math.random() * (area.xMax - area.xMin);
-      const z = area.zMin + Math.random() * (area.zMax - area.zMin);
-      if (Math.hypot(x, z) > MAX_MAP_RADIUS) continue;
-      const tooClose = existing.some(p => Math.hypot(p.x - x, p.z - z) < minDist);
-      if (!tooClose) return { x, z };
+  // Pick a random point inside a circle on the map, excluding certain zones.
+  // Returns null if no valid position was found after MAX_ATTEMPTS.
+  _randomMapPos(mapRadius, exclusions, existing, minDistFromOthers) {
+    const MAX_ATTEMPTS = 120;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      // Uniform distribution within a circle
+      const angle = Math.random() * Math.PI * 2;
+      const r = Math.sqrt(Math.random()) * mapRadius;
+      const x = Math.cos(angle) * r;
+      const z = Math.sin(angle) * r;
+
+      // Check exclusion zones
+      if (exclusions.some(e => Math.hypot(x - e.x, z - e.z) < e.radius)) continue;
+
+      // Check minimum distance from existing positions
+      if (existing.some(p => Math.hypot(p.x - x, p.z - z) < minDistFromOthers)) continue;
+
+      return { x, z };
     }
-    // Fallback: use the camp center, clamped inside the map radius
-    let cx = (area.xMin + area.xMax) / 2 + (Math.random() - 0.5) * 2;
-    let cz = (area.zMin + area.zMax) / 2 + (Math.random() - 0.5) * 2;
-    const dist = Math.hypot(cx, cz);
-    if (dist > MAX_MAP_RADIUS) {
-      const scale = MAX_MAP_RADIUS / dist;
-      cx *= scale;
-      cz *= scale;
-    }
-    return { x: cx, z: cz };
+    return null;
   }
 
-  // Randomly assign each of the 3 camps one of the 4 archetypes and spawn
-  // the appropriate enemies inside. Emits 'camps-initialized' once done.
-  initializeCamps() {
-    const campTypeKeys = Object.keys(GameRoom.CAMP_TYPES);
-    const areas = GameRoom.CAMP_AREAS;
-    const campDefs = GameRoom.CAMP_TYPES;
+  // Generate 15 enemy positions spread across the map with organic clustering:
+  //   3 clusters of 3 units + 6 lone units = 15 total
+  _generateScatteredPositions(total) {
+    const MAX_MAP_RADIUS  = 25;  // keep well within the 28-unit boundary
+    const TITAN_EXCL_R    = 13;  // avoid the Titan's roaming circle
+    const SPAWN_EXCL_R    = 9;   // avoid the player spawn zone (0, 25)
+    const exclusions = [
+      { x:  0, z:  0, radius: TITAN_EXCL_R },
+      { x:  0, z: 25, radius: SPAWN_EXCL_R },
+    ];
 
-    // Randomly assign one of the 4 types to each of the 3 camps
-    const assignedTypes = areas.map(() => campTypeKeys[Math.floor(Math.random() * campTypeKeys.length)]);
+    const NUM_CLUSTERS    = 3;
+    const CLUSTER_SIZE    = 3;
+    const NUM_LONERS      = total - NUM_CLUSTERS * CLUSTER_SIZE; // 15 - 9 = 6
+
+    const positions = [];
+
+    // ── Clusters ──────────────────────────────────────────────────────────────
+    for (let c = 0; c < NUM_CLUSTERS; c++) {
+      // Pick a cluster seed well away from other seeds (min 10 units apart)
+      const seed = this._randomMapPos(MAX_MAP_RADIUS, exclusions, positions, 10);
+      if (!seed) continue;
+      positions.push(seed);
+
+      // Place remaining cluster members within 5 units of the seed
+      for (let m = 1; m < CLUSTER_SIZE; m++) {
+        let placed = false;
+        for (let attempt = 0; attempt < 60; attempt++) {
+          const angle = Math.random() * Math.PI * 2;
+          const r = 1.5 + Math.random() * 4.5; // 1.5–6 units from seed
+          const mx = seed.x + Math.cos(angle) * r;
+          const mz = seed.z + Math.sin(angle) * r;
+          if (Math.hypot(mx, mz) > MAX_MAP_RADIUS) continue;
+          if (exclusions.some(e => Math.hypot(mx - e.x, mz - e.z) < e.radius)) continue;
+          if (positions.some(p => Math.hypot(p.x - mx, p.z - mz) < 1.8)) continue;
+          positions.push({ x: mx, z: mz });
+          placed = true;
+          break;
+        }
+        if (!placed) {
+          // Fallback: put near seed with random offset
+          positions.push({ x: seed.x + (Math.random() - 0.5) * 3, z: seed.z + (Math.random() - 0.5) * 3 });
+        }
+      }
+    }
+
+    // ── Lone units ────────────────────────────────────────────────────────────
+    for (let i = 0; i < NUM_LONERS; i++) {
+      const pos = this._randomMapPos(MAX_MAP_RADIUS, exclusions, positions, 4);
+      if (pos) positions.push(pos);
+    }
+
+    return positions;
+  }
+
+  // Spawn all regular enemies using a single randomly chosen archetype.
+  // Enemies are distributed across the full map (clusters + lone units).
+  initializeEnemies() {
+    const campTypeKeys = Object.keys(GameRoom.CAMP_TYPES);
+    const typeKey      = campTypeKeys[Math.floor(Math.random() * campTypeKeys.length)];
+    const campDef      = GameRoom.CAMP_TYPES[typeKey];
+
+    this.sessionCampTypes = [typeKey];
+
+    const TOTAL_ENEMIES = 15;
+    const positions     = this._generateScatteredPositions(TOTAL_ENEMIES);
 
     let totalSpawned = 0;
-
-    assignedTypes.forEach((typeKey, campIndex) => {
-      const campDef = campDefs[typeKey];
-      const area = areas[campIndex];
-
-      const count = campDef.minEnemies + Math.floor(Math.random() * (campDef.maxEnemies - campDef.minEnemies + 1));
-      const positions = [];
-
-      for (let i = 0; i < count; i++) {
-        positions.push(this._randomCampPos(area, positions));
+    positions.forEach((pos, slotIndex) => {
+      // Always include at least one knight; the rest pull from the archetype pool
+      let unitType;
+      if (slotIndex === 0) {
+        unitType = 'knight';
+      } else {
+        const pool = campDef.enemyPool;
+        unitType = pool[Math.floor(Math.random() * pool.length)];
       }
 
-      positions.forEach((pos, slotIndex) => {
-        // Slot 0 is always a knight; remaining slots pull from the camp's pool
-        let unitType;
-        if (slotIndex === 0) {
-          unitType = 'knight';
-        } else {
-          const pool = campDef.enemyPool;
-          unitType = pool[Math.floor(Math.random() * pool.length)];
-        }
+      const enemy = this._buildEnemy(unitType, 0, slotIndex, pos, campDef);
+      this.enemies.set(enemy.id, enemy);
 
-        const enemy = this._buildEnemy(unitType, campIndex, slotIndex, pos, campDef);
-        this.enemies.set(enemy.id, enemy);
-
-        if (this.io) {
-          this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
-        }
-
-        totalSpawned++;
-      });
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+      }
+      totalSpawned++;
     });
 
-    // Tell clients which archetype each camp was assigned so they can apply themed lighting
+    // Tell clients which archetype was chosen for themed lighting
     if (this.io) {
       this.io.to(this.roomId).emit('camps-initialized', {
-        campTypes: assignedTypes,
+        campTypes: [typeKey],
         timestamp: Date.now()
       });
     }
 
-    console.log(`⚔️ Spawned ${totalSpawned} enemies across ${areas.length} camps — types: ${assignedTypes.join(', ')}`);
+    console.log(`⚔️ Spawned ${totalSpawned} enemies (archetype: ${typeKey}) scattered across the map`);
   }
 
   spawnEnemy(type) {
@@ -904,6 +936,11 @@ class GameRoom {
 
   getEnemies() {
     return Array.from(this.enemies.values());
+  }
+
+  /** Archetype list for clients (same shape as `camps-initialized`). */
+  getCampTypes() {
+    return [...this.sessionCampTypes];
   }
 
   getEnemy(enemyId) {

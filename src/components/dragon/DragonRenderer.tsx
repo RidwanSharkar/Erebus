@@ -101,6 +101,7 @@ interface DragonRendererProps {
   rageSpent?: number;
   combatSystem?: any;
   hideBody?: boolean;
+  playerLevel?: number;
 }
 
 export default function DragonRenderer({
@@ -168,7 +169,8 @@ export default function DragonRenderer({
   combatSystem,
   onHeal = () => {},
   purchasedItems = [],
-  hideBody = false
+  hideBody = false,
+  playerLevel = 1
 }: DragonRendererProps) {
   const mountRef = useRef(false);
   if (!mountRef.current) {
@@ -483,6 +485,7 @@ export default function DragonRenderer({
           combatSystem={combatSystem}
           purchasedItems={purchasedItems}
           hideBody={hideBody}
+          playerLevel={playerLevel}
         />
       </group>
       

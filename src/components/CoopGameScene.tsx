@@ -91,7 +91,7 @@ import { DamageNumberData } from '@/components/DamageNumbers';
 import { setGlobalCriticalRuneCount, setGlobalCritDamageRuneCount, setControlSystem } from '@/core/DamageCalculator';
 import Environment from '@/components/environment/Environment';
 import FogOfWar from '@/components/environment/FogOfWar';
-import { CAMP_DATA, CAMP_DISCOVERY_RADIUS, isEnemyVisible } from '@/utils/fogOfWarUtils';
+import { FOG_GRID_SIZE, isEnemyVisible } from '@/utils/fogOfWarUtils';
 import { useBowPowershot } from '@/components/projectiles/useBowPowershot';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import PVPSummonTotemManager from '@/components/projectiles/PVPSummonTotemManager';
@@ -322,6 +322,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     droppedItems,
     pickupItem,
     inventory,
+    campTypes,
   } = useMultiplayer();
 
   // Debug multiplayer state
@@ -363,12 +364,9 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
   const [playerPosition, setPlayerPosition] = useState(new Vector3(0, 0.5, 28));
   const [playerEntity, setPlayerEntity] = useState<any>(null);
 
-  // Fog of war — which of the four camps the local player has discovered
-  const [discoveredCamps, setDiscoveredCamps] = useState<boolean[]>([false, false, false, false]);
-  const discoveredCampsRef = useRef<boolean[]>([false, false, false, false]);
+  // Fog of war — persistent grid of explored map cells (written by FogOfWar, read for enemy visibility)
+  const exploredGridRef = useRef<Uint8Array>(new Uint8Array(FOG_GRID_SIZE * FOG_GRID_SIZE));
 
-  // Camp archetypes assigned by the server ('blue' | 'green' | 'red' | 'purple')
-  const [campTypes, setCampTypes] = useState<string[]>([]);
   const [engineReady, setEngineReady] = useState(false); // Track when engine is ready
 
   // PVP Kill Counter - tracks kills for all players
@@ -4454,13 +4452,6 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     socket.on('weaver-heal-telegraph', handleWeaverHealTelegraph);
     socket.on('weaver-summon-telegraph', handleWeaverSummonTelegraph);
 
-    const handleCampsInitialized = (data: { campTypes: string[] }) => {
-      if (Array.isArray(data.campTypes)) {
-        setCampTypes(data.campTypes);
-      }
-    };
-    socket.on('camps-initialized', handleCampsInitialized);
-
     return () => {
       socket.off('player-attacked', handlePlayerAttack);
       socket.off('player-used-ability', handlePlayerAbility);
@@ -4504,7 +4495,6 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       socket.off('ghoul-attack', handleGhoulAttack);
       socket.off('weaver-heal-telegraph', handleWeaverHealTelegraph);
       socket.off('weaver-summon-telegraph', handleWeaverSummonTelegraph);
-      socket.off('camps-initialized', handleCampsInitialized);
     };
   }, [socket, playerEntity]);
 
@@ -4939,26 +4929,6 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
           setPlayerPosition(newPosition);
           realTimePlayerPositionRef.current.copy(newPosition);
 
-          // Fog of war — check if the player has stepped into a new camp's discovery radius
-          {
-            const px = newPosition.x;
-            const pz = newPosition.z;
-            let fogUpdated = false;
-            for (let i = 0; i < CAMP_DATA.length; i++) {
-              if (!discoveredCampsRef.current[i]) {
-                const camp = CAMP_DATA[i];
-                const dx = px - camp.x;
-                const dz = pz - camp.z;
-                if (dx * dx + dz * dz < CAMP_DISCOVERY_RADIUS * CAMP_DISCOVERY_RADIUS) {
-                  discoveredCampsRef.current[i] = true;
-                  fogUpdated = true;
-                }
-              }
-            }
-            if (fogUpdated) {
-              setDiscoveredCamps([...discoveredCampsRef.current]);
-            }
-          }
 
           // Update Viper Sting parent ref with current position and camera rotation
           viperStingParentRef.current.position.copy(newPosition);
@@ -5725,10 +5695,10 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
         campTypes={campTypes}
       />
 
-      {/* Fog of War — dark veil over undiscovered camp areas */}
+      {/* Fog of War — reveals previously explored areas permanently */}
       <FogOfWar
         playerPositionRef={realTimePlayerPositionRef}
-        discoveredCamps={discoveredCamps}
+        exploredGridRef={exploredGridRef}
       />
 
       {/* Lighting */}
@@ -5805,6 +5775,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
           isLocalPlayer={true}
           isStealthing={controlSystemRef.current?.getIsStealthing() || false}
           isInvisible={controlSystemRef.current?.getIsInvisible() || false}
+          playerLevel={playerLevel}
           onDamageNumbersReady={handleDamageNumbersReady}
           combatSystem={engineRef.current?.getWorld().getSystem(require('@/systems/CombatSystem').CombatSystem)}
           onHeal={(amount: number) => {
@@ -6017,6 +5988,10 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
                 onWraithStrikeComplete={() => {}}
                 purchasedItems={player.purchasedItems || []}
                 hideBody={true}
+                playerLevel={
+                  player.level ??
+                  ExperienceSystem.getLevelFromExperience(player.experience ?? 0)
+                }
               />
             )}
           </React.Fragment>
@@ -6033,7 +6008,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
         if (!entityId) return null; // Wait for ECS sync
 
         // Hide boss in undiscovered camps
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
 
         // Check if this boss is currently taunted
         const isTaunted = enemyTauntEffects.some(effect => effect.enemyId === enemy.id);
@@ -6114,7 +6089,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       {Array.from(enemies.values()).map(enemy => {
         // Only render boss-skeleton type enemies
         if (enemy.isDying || enemy.type !== 'boss-skeleton') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
 
         return (
           <SummonedBossSkeleton
@@ -6132,7 +6107,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       {/* Knights (Co-op Mode) — Mixamo animated */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'knight') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
 
         return (
           <KnightRenderer
@@ -6165,7 +6140,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       {/* Shades (Co-op Mode) — ranged throw attackers */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'shade') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
         return (
           <ShadeRenderer
             key={enemy.id}
@@ -6216,7 +6191,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       {/* Warlocks (Co-op Mode) — stationary spellcasters that blink and launch chaos orbs */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'warlock') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
         return (
           <WarlockRenderer
             key={enemy.id}
@@ -6234,7 +6209,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       {/* Templars (Co-op Mode) — heavy melee fighters with alternating attack animations */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'templar') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
         return (
           <TemplarRenderer
             key={enemy.id}
@@ -6291,7 +6266,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       {/* Vipers (Co-op Mode) — ranged archers that draw and release energy arrows */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'viper') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
         return (
           <ViperRenderer
             key={enemy.id}
@@ -6339,7 +6314,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       {/* Weavers (Co-op Mode) — support spellcasters that heal allies and summon ghouls */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'weaver') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
         return (
           <WeaverRenderer
             key={enemy.id}
@@ -6366,7 +6341,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       {/* Ghouls (Co-op Mode) — weaver summons; melee undead creatures */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'ghoul') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, discoveredCamps)) return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
         return (
           <GhoulRenderer
             key={enemy.id}

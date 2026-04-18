@@ -3,18 +3,52 @@ import { useRef, useMemo } from 'react';
 import { Shape, ExtrudeGeometry, Group, MeshStandardMaterial, SphereGeometry, DoubleSide } from 'three';
 import { WeaponType, WeaponSubclass } from './weapons';
 
+/** Euler [x, y, z] in radians */
+export type WingEuler = [number, number, number];
+
+export interface WingRotationSpec {
+  /** Added to the shoulder / wing anchor group base rotation */
+  anchor?: WingEuler;
+  /** Added to the inner blade group base rotation */
+  blade?: WingEuler;
+}
+
+/** Mirror an Euler offset across the character sagittal plane (flip X and Z, keep Y). */
+export function mirrorWingEuler(e: WingEuler): WingEuler {
+  return [-e[0], e[1], -e[2]];
+}
+
+function addEuler(a: WingEuler, b: WingEuler): WingEuler {
+  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+}
+
 interface ArchmageCrestProps {
   position?: [number, number, number];
   scale?: number;
   weaponType: WeaponType;
   weaponSubclass?: WeaponSubclass;
+  /** Multiplier for horizontal wing separation (>1 pushes blades further apart). */
+  wingSpread?: number;
+  /** Root Euler rotation in radians [x, y, z]; offsets the whole crest from default orientation. */
+  rotation?: WingEuler;
+  /** Extra rotation for the left wing (anchor + blade groups). */
+  leftWing?: WingRotationSpec;
+  /** Extra rotation for the right wing. If omitted and `mirrorRightWingFromLeft` is true, derived from `leftWing`. */
+  rightWing?: WingRotationSpec;
+  /** When true and `rightWing` is omitted, right anchor/blade offsets mirror `leftWing` across X/Z flip. */
+  mirrorRightWingFromLeft?: boolean;
 }
 
 export default function ArchmageCrest({
   position = [0, 0, 0],
   scale = 1,
   weaponType,
-  weaponSubclass
+  weaponSubclass,
+  wingSpread = 1,
+  rotation = [0, 0, 0],
+  leftWing,
+  rightWing,
+  mirrorRightWingFromLeft = false
 }: ArchmageCrestProps) {
   const groupRef = useRef<Group>(null);
   const leftWingRef = useRef<Group>(null);
@@ -171,36 +205,50 @@ export default function ArchmageCrest({
     // rightWingRef.current.rotation.z = -Math.sin(time * 1.5) * 0.05;
   });
 
-  const createWingHalf = (isLeft: boolean) => (
-    <group
-      ref={isLeft ? leftWingRef : rightWingRef}
-      position={[isLeft ? 0.25 : -0.25, 0.675, 0.155]}
-      rotation={[Math.PI / 3.5, 0, isLeft ? Math.PI / 1.25 : -Math.PI / 1.25]}
-    >
-      {/* Main blade wing - large primary blade */}
+  const zero: WingEuler = [0, 0, 0];
+  const leftAnchorOff = leftWing?.anchor ?? zero;
+  const leftBladeOff = leftWing?.blade ?? zero;
+
+  let rightAnchorOff = rightWing?.anchor ?? zero;
+  let rightBladeOff = rightWing?.blade ?? zero;
+  if (mirrorRightWingFromLeft && leftWing && rightWing === undefined) {
+    rightAnchorOff = mirrorWingEuler(leftAnchorOff);
+    rightBladeOff = mirrorWingEuler(leftBladeOff);
+  }
+
+  const baseLeftAnchor: WingEuler = [Math.PI / 3.5, 0, Math.PI / 1.25];
+  const baseRightAnchor: WingEuler = [Math.PI / 3.5, 0, -Math.PI / 1.25];
+  const baseLeftBlade: WingEuler = [Math.PI, Math.PI / 1.85 + 0.375, -Math.PI / 8 + 0.25];
+  const baseRightBlade: WingEuler = [Math.PI, Math.PI / 2.15 - 0.375, -Math.PI / 8 + 0.25];
+
+  const createWingHalf = (isLeft: boolean) => {
+    const anchorOff = isLeft ? leftAnchorOff : rightAnchorOff;
+    const bladeOff = isLeft ? leftBladeOff : rightBladeOff;
+    const anchorRot = addEuler(isLeft ? baseLeftAnchor : baseRightAnchor, anchorOff);
+    const bladeRot = addEuler(isLeft ? baseLeftBlade : baseRightBlade, bladeOff);
+
+    return (
       <group
-        position={[isLeft ? 1.125 : -1.125, -0.1, 0.15]}
-        rotation={[
-          isLeft ? Math.PI : Math.PI,
-          isLeft ? Math.PI/1.85 + 0.375  : Math.PI/2.15 - 0.375,
-          isLeft ? -Math.PI / 8 + 0.25 : -Math.PI / 8 + 0.25
-        ]}
-        scale={[0.75, 0.375, 0.375]}
+        ref={isLeft ? leftWingRef : rightWingRef}
+        position={[isLeft ? 0.25 * wingSpread : -0.25 * wingSpread, 0.675, 0.155]}
+        rotation={anchorRot}
       >
-        <mesh geometry={geometries.blade} material={materials.bladeCore}>
-
-        </mesh>
+        <group
+          position={[isLeft ? 1.125 * wingSpread : -1.125 * wingSpread, -0.1, 0.15]}
+          rotation={bladeRot}
+          scale={[0.75, 0.375, 0.375]}
+        >
+          <mesh geometry={geometries.blade} material={materials.bladeCore} />
+        </group>
       </group>
-
-
-
-    </group>
-  );
+    );
+  };
 
   return (
     <group
       ref={groupRef}
       position={position}
+      rotation={rotation}
       scale={[scale, scale, scale]}
     >
 

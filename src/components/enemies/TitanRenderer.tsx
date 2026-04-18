@@ -127,7 +127,7 @@ export default function TitanRenderer({
       {!isDying && <TitanSoulEffect soulType={soulType} />}
 
       {/* Billboard HP bar — positioned higher to clear the titan's head */}
-      <Billboard position={[0, 5, 0]} follow lockX={false} lockY={false} lockZ={false}>
+      <Billboard position={[0, 6.25, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
             {/* Background track */}

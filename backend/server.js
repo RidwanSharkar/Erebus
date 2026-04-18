@@ -134,7 +134,8 @@ io.on('connection', (socket) => {
       enemies: room.getEnemies(),
       killCount: room.getKillCount(),
       gameStarted: room.getGameStarted(),
-      gameMode: room.gameMode || gameMode
+      gameMode: room.gameMode || gameMode,
+      campTypes: room.getCampTypes(),
     });
     
     // Notify other players

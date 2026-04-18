@@ -34,6 +34,8 @@ interface DragonUnitProps {
   isSwinging?: boolean;
   isSpinning?: boolean;
   purchasedItems?: string[]; // Purchased cosmetic items
+  /** Co-op / progression level — crest gains an outer layer at 2+. */
+  playerLevel?: number;
   onBowRelease?: (finalProgress: number, isPerfectShot?: boolean) => void;
   onScytheSwingComplete?: () => void;
   onSwordSwingComplete?: () => void;
@@ -210,7 +212,8 @@ export default function DragonUnit({
   isWingJetsActive = false,
   combatSystem,
   purchasedItems = [],
-  hideBody = false
+  hideBody = false,
+  playerLevel = 1
 }: DragonUnitProps) {
   
   const groupRef = useRef<Group>(null);
@@ -469,6 +472,8 @@ export default function DragonUnit({
     </group>
   ), [isDashing, hasAscendantWings]);
 
+  const crestPosition: [number, number, number] = hideBody ? [0, 1.8, 0.15] : [0, 0.5, 0.15];
+
   return (
     <group ref={groupRef} position={[position.x, position.y + 0.2, position.z]}>
 
@@ -505,11 +510,21 @@ export default function DragonUnit({
 
       {/* CREST — visible with or without dragon body, raised higher on character model */}
       <ArchmageCrest
-        position={hideBody ? [0, 1.8, 0.15] : [0, 0.5, 0.15]}
+        position={crestPosition}
         scale={-0.625}
         weaponType={currentWeapon}
         weaponSubclass={currentSubclass}
       />
+      {playerLevel >= 2 && (
+        <ArchmageCrest
+          position={crestPosition}
+          scale={-0.525}
+          weaponType={currentWeapon}
+          weaponSubclass={currentSubclass}
+          wingSpread={1.3}
+          rotation={[0.00, 0.00, 0.0]}
+        />
+      )}
 
       {/* SPELL CASTING AURA — shown after 1 s of left-click hold on any weapon */}
       <SpellCastingAura

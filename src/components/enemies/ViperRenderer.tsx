@@ -5,6 +5,7 @@ import { Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import ViperModel from './ViperModel';
+import CubeSoulEffect from './CubeSoulEffect';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
 
@@ -138,6 +139,7 @@ export default function ViperRenderer({
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <ViperModel isWalking={isWalking} attackKey={attackKey} isDying={isDying} />
+      {!isDying && <CubeSoulEffect color="green" posY={2.5} />}
 
       {/* Billboard health bar */}
       <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>

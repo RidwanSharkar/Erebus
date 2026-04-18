@@ -55,7 +55,7 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
 
         // Bow subclasses
         case WeaponSubclass.ELEMENTAL:
-          return '#85FFAE';
+          return '#E8CD57';
         case WeaponSubclass.VENOM:
           return '#17CC93';
       }
@@ -138,6 +138,15 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
                 blending={AdditiveBlending}
               />
             </mesh>
+
+
+            <pointLight
+              color={isAvailable ? activeColor : "#333333"}
+              intensity={isAvailable ? 1 : 0.1}
+              distance={2.3}
+              decay={3}
+            />
+
           </group>
         );
       })}

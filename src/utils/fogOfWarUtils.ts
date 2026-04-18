@@ -1,76 +1,96 @@
 /**
- * Fog of War utilities — camp positions, discovery radii, and enemy visibility.
- * Camp coordinates derived from CORNER_POSTS in CastleWalls.tsx.
+ * Fog of War utilities — grid-based exploration tracking and enemy visibility.
+ *
+ * The map is divided into a FOG_GRID_SIZE × FOG_GRID_SIZE grid. Each cell
+ * starts unexplored (0) and becomes permanently revealed (255) once the local
+ * player moves within PLAYER_VIEW_RADIUS world units of it. The fog shader
+ * reads this grid via a DataTexture uploaded every frame.
  */
 
-export interface CampData {
-  id: number;
-  name: string;
-  x: number;
-  z: number;
+/** Resolution of the exploration grid (cells per side). */
+export const FOG_GRID_SIZE = 128;
+
+/** Half-width of the playable map in world units (grid covers −MAP_HALF_SIZE → +MAP_HALF_SIZE). */
+export const MAP_HALF_SIZE = 28;
+
+/** World-space radius the player always reveals, both in the shader and for enemy visibility. */
+export const PLAYER_VIEW_RADIUS = 7.5;
+
+// Derived
+const MAP_FULL_SIZE    = MAP_HALF_SIZE * 2;        // 56 world units
+const CELLS_PER_UNIT   = FOG_GRID_SIZE / MAP_FULL_SIZE; // ~2.286 cells per world unit
+
+/**
+ * Convert a world-space (x, z) to a linear index into the exploration grid.
+ * Returns -1 for positions outside the mapped area.
+ */
+export function worldToGridIndex(wx: number, wz: number): number {
+  const nx = (wx + MAP_HALF_SIZE) / MAP_FULL_SIZE;
+  const nz = (wz + MAP_HALF_SIZE) / MAP_FULL_SIZE;
+  if (nx < 0 || nx > 1 || nz < 0 || nz > 1) return -1;
+  const gx = Math.floor(nx * FOG_GRID_SIZE);
+  const gz = Math.floor(nz * FOG_GRID_SIZE);
+  return gz * FOG_GRID_SIZE + gx;
 }
 
-/** The four camp corner positions (matches CORNER_POSTS in CastleWalls.tsx). */
-export const CAMP_DATA: CampData[] = [
-  { id: 0, name: 'NE Ruins',      x:  17.5, z: -12.5 },
-  { id: 1, name: 'East Outpost',  x:  22.5, z:  -2.0 },
-  { id: 2, name: 'South Grove',   x:  10.5, z:  18.5 },
-  { id: 3, name: 'West Crossing', x: -22.5, z:  -6.0 },
-];
-
-/** Player must enter within this distance of a camp corner to discover it. */
-export const CAMP_DISCOVERY_RADIUS = 9;
-
 /**
- * Enemies within this radius of a camp corner are considered part of that camp
- * and are hidden until the camp is discovered.
+ * Mark every grid cell within `radius` world units of (wx, wz) as explored.
+ * Returns true if at least one previously-unexplored cell was newly revealed,
+ * which signals the caller to upload the updated texture to the GPU.
  */
-export const CAMP_TERRITORY_RADIUS = 13;
+export function markExplored(
+  grid: Uint8Array,
+  wx: number,
+  wz: number,
+  radius: number,
+): boolean {
+  const cellRadius = Math.ceil(radius * CELLS_PER_UNIT);
+  const cx = Math.floor((wx + MAP_HALF_SIZE) * CELLS_PER_UNIT);
+  const cz = Math.floor((wz + MAP_HALF_SIZE) * CELLS_PER_UNIT);
+  const cr2 = cellRadius * cellRadius;
 
-/** Radius around the local player that always reveals enemies regardless of camp. */
-export const PLAYER_REVEAL_RADIUS = 9;
-
-/**
- * Returns 0-3 if the world position is within a camp's territory, or -1 for
- * open-world positions (which are always visible).
- */
-export function getCampIndex(x: number, z: number): number {
-  let closestCamp = -1;
-  let closestDist = Infinity;
-
-  for (const camp of CAMP_DATA) {
-    const dx = x - camp.x;
-    const dz = z - camp.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist < CAMP_TERRITORY_RADIUS && dist < closestDist) {
-      closestDist = dist;
-      closestCamp = camp.id;
+  let changed = false;
+  for (let dz = -cellRadius; dz <= cellRadius; dz++) {
+    for (let dx = -cellRadius; dx <= cellRadius; dx++) {
+      if (dx * dx + dz * dz > cr2) continue;
+      const gx = cx + dx;
+      const gz = cz + dz;
+      if (gx < 0 || gx >= FOG_GRID_SIZE || gz < 0 || gz >= FOG_GRID_SIZE) continue;
+      const idx = gz * FOG_GRID_SIZE + gx;
+      if (grid[idx] === 0) {
+        grid[idx] = 255;
+        changed = true;
+      }
     }
   }
-
-  return closestCamp;
+  return changed;
 }
 
 /**
- * Returns true if an enemy should be rendered.
+ * Returns true if the given world position has already been explored.
+ */
+export function isPositionExplored(grid: Uint8Array, wx: number, wz: number): boolean {
+  const idx = worldToGridIndex(wx, wz);
+  return idx !== -1 && grid[idx] > 0;
+}
+
+/**
+ * Returns true if an enemy at (enemyX, enemyZ) should be rendered.
  *
- * - Enemies within PLAYER_REVEAL_RADIUS of the local player are always visible.
- * - Enemies in open-world positions (no camp) are always visible.
- * - Enemies in a camp are only visible when that camp has been discovered.
+ * Visibility rules:
+ *  1. Always visible within PLAYER_VIEW_RADIUS of the local player.
+ *  2. Visible if the enemy's position has previously been explored.
+ *  3. Hidden otherwise (inside the fog).
  */
 export function isEnemyVisible(
   enemyX: number,
   enemyZ: number,
   playerX: number,
   playerZ: number,
-  discoveredCamps: boolean[],
+  exploredGrid: Uint8Array,
 ): boolean {
   const dx = enemyX - playerX;
   const dz = enemyZ - playerZ;
-  if (dx * dx + dz * dz < PLAYER_REVEAL_RADIUS * PLAYER_REVEAL_RADIUS) return true;
-
-  const campIndex = getCampIndex(enemyX, enemyZ);
-  if (campIndex === -1) return true;
-
-  return discoveredCamps[campIndex] ?? false;
+  if (dx * dx + dz * dz < PLAYER_VIEW_RADIUS * PLAYER_VIEW_RADIUS) return true;
+  return isPositionExplored(exploredGrid, enemyX, enemyZ);
 }
