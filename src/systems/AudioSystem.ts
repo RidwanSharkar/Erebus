@@ -2,6 +2,7 @@
 import { Howl, Howler } from 'howler';
 import { System } from '@/ecs/System';
 import { Vector3 } from 'three';
+import { WeaponType } from '@/components/dragon/weapons';
 
 export interface SoundConfig {
   volume?: number;
@@ -89,7 +90,11 @@ export class AudioSystem extends System {
       { id: 'ui_selection', file: 'ui/selection.mp3' },
       { id: 'ui_interface', file: 'ui/interface.mp3' },
       { id: 'ui_dash', file: 'ui/dash.mp3' },
-      { id: 'ui_hitbox', file: 'ui/HitBox.mp3' }
+      { id: 'ui_hitbox_bow', file: 'ui/bowHitbox.mp3' },
+      { id: 'ui_hitbox_sabres', file: 'ui/sabresHitbox.mp3' },
+      { id: 'ui_hitbox_scythe', file: 'ui/scytheHitbox.mp3' },
+      { id: 'ui_hitbox_spear', file: 'ui/spearHitbox.mp3' },
+      { id: 'ui_hitbox_sword', file: 'ui/swordHitbox.mp3' }
       // Removed background_music from preload - loaded lazily
     ];
 
@@ -653,9 +658,38 @@ export class AudioSystem extends System {
     return this.playWeaponSound('ui_dash', new Vector3(0, 0, 0), { volume: 0.8 });
   }
 
-  // Play enemy-hit confirmation sound
-  public playUIHitboxSound() {
-    return this.playWeaponSound('ui_hitbox', new Vector3(0, 0, 0), { volume: 0.2 });
+  private getCurrentWeaponFromControl(): WeaponType | undefined {
+    const controlSystemRef = (window as any).controlSystemRef;
+    if (controlSystemRef?.current?.getCurrentWeapon) {
+      return controlSystemRef.current.getCurrentWeapon();
+    }
+    return undefined;
+  }
+
+  private hitboxSoundIdForWeapon(weapon?: WeaponType): string {
+    switch (weapon) {
+      case WeaponType.BOW:
+        return 'ui_hitbox_bow';
+      case WeaponType.SABRES:
+        return 'ui_hitbox_sabres';
+      case WeaponType.SCYTHE:
+        return 'ui_hitbox_scythe';
+      case WeaponType.SPEAR:
+        return 'ui_hitbox_spear';
+      case WeaponType.SWORD:
+      case WeaponType.RUNEBLADE:
+      case WeaponType.KNIGHT:
+        return 'ui_hitbox_sword';
+      default:
+        return 'ui_hitbox_sword';
+    }
+  }
+
+  // Play enemy-hit confirmation sound (per equipped weapon)
+  public playUIHitboxSound(weapon?: WeaponType) {
+    const resolved = weapon ?? this.getCurrentWeaponFromControl();
+    const soundId = this.hitboxSoundIdForWeapon(resolved);
+    return this.playWeaponSound(soundId, new Vector3(0, 0, 0), { volume: 0.2 });
   }
 
   // Background music controls (local only, 50% volume)

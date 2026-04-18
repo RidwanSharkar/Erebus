@@ -89,46 +89,6 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
   // Throttling
   const lastUpdateTime = useRef(0);
 
-  // Collision detection for EntropicBolt
-  const checkEntropicBoltCollisions = (boltId: number, position: Vector3): boolean => {
-    if (!world) return false;
-
-    // Get all enemy entities
-    const allEntities = world.getAllEntities();
-
-    for (const entity of allEntities) {
-      const enemy = entity.getComponent(Enemy);
-      const health = entity.getComponent(Health);
-      const transform = entity.getComponent(Transform);
-      const collider = entity.getComponent(Collider);
-
-      // Skip if not an enemy or if dead
-      if (!enemy || !health || !transform || health.isDead) continue;
-
-      // Get collision center (account for collider offset)
-      const collisionCenter = transform.position.clone();
-      if (collider) {
-        collisionCenter.add((collider as Collider).offset);
-      }
-
-      // Check collision distance (using 2D distance for better gameplay)
-      const projectilePos2D = new Vector3(position.x, 0, position.z);
-      const enemyPos2D = new Vector3(collisionCenter.x, 0, collisionCenter.z);
-      const distance = projectilePos2D.distanceTo(enemyPos2D);
-
-      // EntropicBolt has effective radius of ~0.5, enemy collider radius varies
-      const projectileRadius = 0.5;
-      const enemyRadius = collider ? (collider as Collider).radius : 1.0;
-      const totalCollisionRadius = projectileRadius + enemyRadius;
-
-      if (distance <= totalCollisionRadius) {
-        return true; // Collision detected
-      }
-    }
-
-    return false; // No collision
-  };
-
   // Collision detection for CrossentropyBolt
   const checkCrossentropyBoltCollisions = (boltId: number, position: Vector3): boolean => {
     if (!world) return false;
@@ -414,7 +374,6 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
           id={bolt.id}
           position={bolt.position}
           direction={bolt.direction}
-          checkCollisions={checkEntropicBoltCollisions}
           isCryoflame={bolt.isCryoflame}
           onImpact={(impactPosition?: Vector3) => {
             // console.log(`⚡ EntropicBolt ${bolt.id} impact at position:`, impactPosition?.toArray());

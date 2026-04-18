@@ -596,7 +596,8 @@ export class ProjectileSystem extends System {
     projectile.sourcePlayerId = config?.sourcePlayerId || 'unknown';
     projectile.setDirection(direction);
     
-    if (config?.piercing) projectile.setPiercing(true);
+    // Entropic bolts pierce by default so they damage every enemy along the path
+    if (config?.piercing !== false) projectile.setPiercing(true);
     if (config?.explosive && config?.explosionRadius) {
       projectile.setExplosive(config.explosionRadius);
     }

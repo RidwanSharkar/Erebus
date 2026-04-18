@@ -1977,7 +1977,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
                     speed: entropicConfig.speed || 20, 
                     damage: entropicConfig.damage || 20, 
                     lifetime: entropicConfig.lifetime || 1.75, 
-                    piercing: entropicConfig.piercing || false, 
+                    piercing: entropicConfig.piercing ?? true, 
                     opacity: entropicConfig.opacity || 0.8,
                     isCryoflame: isCryoflame // Pass Cryoflame state to projectile system
                   }

@@ -374,7 +374,7 @@ export default function Runeblade({
         swingHasDealtDamage.current = false;
       }
 
-      swingProgress.current += delta * 8;
+      swingProgress.current += delta * 11;
       const swingPhase = Math.min(swingProgress.current / Math.PI/1.5, 1);
 
       // Use the stored combo step for this swing animation

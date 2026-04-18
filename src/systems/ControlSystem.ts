@@ -1641,7 +1641,7 @@ export class ControlSystem extends System {
       speed: 20,
       damage: randomVariant.damage,
       lifetime: 0.7,
-      piercing: false,
+      piercing: true,
       explosive: false,
       explosionRadius: 0,
       subclass: this.currentSubclass,

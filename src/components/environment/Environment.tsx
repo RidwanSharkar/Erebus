@@ -103,7 +103,7 @@ const Environment: React.FC<EnvironmentProps> = ({
       {enableSky && <CustomSky />}
 
       {/* Perimeter clouds - red atmospheric clouds around map boundary */}
-      <PerimeterCloudSystem radius={29} />
+      <PerimeterCloudSystem radius={28} />
 
       {/* Instanced grass field — 80k blades, GPU-animated wind */}
       {enableGrass && <StylizedGrass isSnowTheme={roomArchetype === 'blue'} />}
