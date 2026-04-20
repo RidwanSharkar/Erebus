@@ -57,6 +57,12 @@ export default function KnightRenderer({
   const [isWalking, setIsWalking] = useState(false);
   const [attackVariant, setAttackVariant] = useState<1 | 2>(1);
   const [abilityClip, setAbilityClip] = useState<'Smite' | 'Aggro' | 'Cast' | null>(null);
+  const [isImpacting, setIsImpacting] = useState(false);
+  const [impactVariant, setImpactVariant] = useState<1 | 2>(1);
+  const [impactPlayKey, setImpactPlayKey] = useState(0);
+
+  const prevHealthRef = useRef(health);
+  const nextImpactVariantRef = useRef<1 | 2>(1);
 
   // Server-authoritative targets — updated when props change (single source of truth).
   // The group is NEVER written to from effects; only useFrame lerps toward these refs.
@@ -122,6 +128,36 @@ export default function KnightRenderer({
   useEffect(() => {
     targetRotation.current = rotation;
   }, [rotation]);
+
+  const handleImpactFinished = useCallback(() => {
+    setIsImpacting(false);
+  }, []);
+
+  // Hit-react: server health drop while idle (not walk / attack / ability).
+  useEffect(() => {
+    if (
+      health < prevHealthRef.current &&
+      !isDying &&
+      !isWalking &&
+      !isAttacking &&
+      !abilityClip
+    ) {
+      const v = nextImpactVariantRef.current;
+      nextImpactVariantRef.current = v === 1 ? 2 : 1;
+      setImpactVariant(v);
+      setIsImpacting(true);
+      setImpactPlayKey(k => k + 1);
+    }
+    prevHealthRef.current = health;
+  }, [health, isDying, isWalking, isAttacking, abilityClip]);
+
+  // Higher-priority states interrupt impact (e.g. attack telegraph) so `isImpacting` cannot get stuck
+  // if the mixer never fires `finished` for a faded-out impact.
+  useEffect(() => {
+    if (isWalking || isAttacking || abilityClip) {
+      setIsImpacting(false);
+    }
+  }, [isWalking, isAttacking, abilityClip]);
 
   // Attack animation trigger from server.
   useEffect(() => {
@@ -220,7 +256,18 @@ export default function KnightRenderer({
 
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
-      <KnightModel isWalking={isWalking} isAttacking={isAttacking} attackVariant={attackVariant} isDying={isDying} soulType={soulType} abilityClip={abilityClip} />
+      <KnightModel
+        isWalking={isWalking}
+        isAttacking={isAttacking}
+        attackVariant={attackVariant}
+        isDying={isDying}
+        soulType={soulType}
+        abilityClip={abilityClip}
+        isImpacting={isImpacting}
+        impactVariant={impactVariant}
+        impactPlayKey={impactPlayKey}
+        onImpactFinished={handleImpactFinished}
+      />
 
       {showMeleeRangeRing && <EnemyMeleeAttackRangeRing radius={KNIGHT_MELEE_ATTACK_RANGE} />}
 

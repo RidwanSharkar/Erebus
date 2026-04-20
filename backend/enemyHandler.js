@@ -1,7 +1,7 @@
 function handleEnemyEvents(socket, gameRooms) {
   // Handle enemy damage from players
   socket.on('enemy-damage', (data) => {
-    const { roomId, enemyId, damage, sourcePlayerId } = data;
+    const { roomId, enemyId, damage, sourcePlayerId, damageType, infestedStrike } = data;
 
     console.log(`⚔️ Received enemy-damage: room=${roomId}, enemy=${enemyId}, damage=${damage}, source=${sourcePlayerId || socket.id}`);
 
@@ -14,21 +14,11 @@ function handleEnemyEvents(socket, gameRooms) {
     // Use sourcePlayerId if provided, otherwise fall back to socket.id for direct player damage
     const actualSourcePlayerId = sourcePlayerId || socket.id;
     const player = room.players.get(actualSourcePlayerId);
-    const result = room.damageEnemy(enemyId, damage, actualSourcePlayerId, player);
-
-    if (result) {
-      // Broadcast damage result to all players in the room
-      room.io.to(roomId).emit('enemy-damaged', {
-        enemyId: result.enemyId,
-        newHealth: result.newHealth,
-        maxHealth: result.maxHealth,
-        damage: result.damage,
-        fromPlayerId: result.fromPlayerId,
-        wasKilled: result.wasKilled,
-        timestamp: Date.now()
-      });
-      
-    }
+    const hitMeta =
+      damageType === 'wraith_strike' || infestedStrike
+        ? { damageType: damageType || undefined, infestedStrike: !!infestedStrike }
+        : null;
+    room.damageEnemy(enemyId, damage, actualSourcePlayerId, player, hitMeta);
   });
 
   // Handle enemy position updates from AI

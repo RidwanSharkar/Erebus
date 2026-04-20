@@ -6,20 +6,67 @@ export class DamageNumberManager {
   private damageNumbers: DamageNumberData[] = [];
   private nextId = 0;
 
+  /** Multiple barrage arrows can hit the same target in one volley — merge into one floating number. */
+  private barrageMergeByTarget = new Map<number, { id: string; lastHitMs: number }>();
+  private static readonly BARRAGE_MERGE_GAP_MS = 500;
+
   public addDamageNumber(
     damage: number,
     isCritical: boolean,
     position: Vector3,
     damageType?: string,
-    isIncomingDamage?: boolean
+    isIncomingDamage?: boolean,
+    /** ECS target id — with `damageType === 'barrage'`, consecutive hits on that target merge within ~500ms. */
+    mergeBarrageTargetEntityId?: number
   ): string {
+    const now = Date.now();
+
+    if (
+      damageType === 'barrage' &&
+      mergeBarrageTargetEntityId !== undefined &&
+      !isIncomingDamage
+    ) {
+      const pending = this.barrageMergeByTarget.get(mergeBarrageTargetEntityId);
+      if (
+        pending &&
+        now - pending.lastHitMs <= DamageNumberManager.BARRAGE_MERGE_GAP_MS
+      ) {
+        const existing = this.damageNumbers.find(dn => dn.id === pending.id);
+        if (existing) {
+          existing.damage += damage;
+          existing.timestamp = now;
+          existing.isCritical = existing.isCritical || isCritical;
+          pending.lastHitMs = now;
+          return pending.id;
+        }
+        this.barrageMergeByTarget.delete(mergeBarrageTargetEntityId);
+      }
+
+      const id = `damage_${this.nextId++}`;
+      const damageNumber: DamageNumberData = {
+        id,
+        damage,
+        isCritical,
+        position: position.clone(),
+        timestamp: now,
+        damageType,
+        isIncomingDamage,
+      };
+      this.damageNumbers.push(damageNumber);
+      this.barrageMergeByTarget.set(mergeBarrageTargetEntityId, {
+        id,
+        lastHitMs: now,
+      });
+      return id;
+    }
+
     const id = `damage_${this.nextId++}`;
     const damageNumber: DamageNumberData = {
       id,
       damage,
       isCritical,
       position: position.clone(), // Clone to avoid reference issues
-      timestamp: Date.now(),
+      timestamp: now,
       damageType,
       isIncomingDamage,
     };
@@ -31,7 +78,15 @@ export class DamageNumberManager {
   public removeDamageNumber(id: string): void {
     const index = this.damageNumbers.findIndex(dn => dn.id === id);
     if (index !== -1) {
+      const removed = this.damageNumbers[index];
       this.damageNumbers.splice(index, 1);
+      if (removed.damageType === 'barrage') {
+        this.barrageMergeByTarget.forEach((pending, targetId) => {
+          if (pending.id === id) {
+            this.barrageMergeByTarget.delete(targetId);
+          }
+        });
+      }
     }
   }
 
@@ -45,7 +100,13 @@ export class DamageNumberManager {
     this.damageNumbers = this.damageNumbers.filter(
       dn => now - dn.timestamp < 5000
     );
-    
+
+    this.barrageMergeByTarget.forEach((pending, targetId) => {
+      if (!this.damageNumbers.some(dn => dn.id === pending.id)) {
+        this.barrageMergeByTarget.delete(targetId);
+      }
+    });
+
     // Also limit total number of damage numbers to prevent memory issues
     if (this.damageNumbers.length > 50) {
       // Keep only the 50 most recent
@@ -57,6 +118,7 @@ export class DamageNumberManager {
   public clear(): void {
     this.damageNumbers.length = 0;
     this.nextId = 0;
+    this.barrageMergeByTarget.clear();
   }
 
   public getCount(): number {

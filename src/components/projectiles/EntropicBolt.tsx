@@ -156,14 +156,7 @@ export default function EntropicBolt({
         </>
       )}
 
-      {showImpact && impactPosition && (
-        <EntropicBoltImpact
-          position={impactPosition}
-          onComplete={handleImpactComplete}
-          isCryoflame={isCryoflame}
-          theme={theme}
-        />
-      )}
+
     </group>
   );
 }

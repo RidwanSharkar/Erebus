@@ -18,13 +18,14 @@ import WarlockRenderer from './enemies/WarlockRenderer';
 import WeaverRenderer from './enemies/WeaverRenderer';
 import WeaverHealEffect from './enemies/WeaverHealEffect';
 import GhoulRenderer from './enemies/GhoulRenderer';
+import ZombieRenderer from './enemies/ZombieRenderer';
 import GhoulSummonRitual from './enemies/GhoulSummonRitual';
 import TitanRenderer from './enemies/TitanRenderer';
 import WarlockProjectile from './enemies/WarlockProjectile';
 import WarlockFlameStrike from './enemies/WarlockFlameStrike';
 import Meteor from './enemies/Meteor';
 import BossTeleportEffect from './enemies/BossTeleportEffect';
-import { useMultiplayer, Player } from '@/contexts/MultiplayerContext';
+import { useMultiplayer, Player, EnemyDamageMeta } from '@/contexts/MultiplayerContext';
 import { SkillPointData } from '@/utils/SkillPointSystem';
 import { AbilityLoadout, getDefaultLoadoutForWeapon } from '@/utils/weaponAbilities';
 import { StatSystem, StatPointData } from '@/utils/StatSystem';
@@ -56,7 +57,6 @@ import { MerchantSystem } from '@/systems/MerchantSystem';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { ReanimateRef } from '@/components/weapons/Reanimate';
 
-import ColossusStrike from '@/components/weapons/ColossusStrike';
 import LightningStorm from '@/components/weapons/LightningStorm';
 import SmiteComponent from '@/components/weapons/Smite';
 import SabreReaperMistEffect from '@/components/weapons/SabreReaperMistEffect';
@@ -83,6 +83,7 @@ import { pvpStateBatcher, PVPStateUpdateHelpers } from '@/utils/PVPStateBatcher'
 import DeflectShieldManager, { triggerGlobalDeflectShield } from '@/components/weapons/DeflectShieldManager';
 import DeathGraspProjectile from '@/components/weapons/DeathGraspProjectile';
 import DeathEffect from '@/components/weapons/DeathEffect';
+import HauntedSoulEffect from '@/components/weapons/HauntedSoulEffect';
 import PlayerHealthBar from '@/components/ui/PlayerHealthBar';
 import EnhancedGround from '@/components/environment/EnhancedGround';
 
@@ -93,11 +94,15 @@ import Environment from '@/components/environment/Environment';
 import FogOfWar from '@/components/environment/FogOfWar';
 import ThroneRoom, {
   COOP_THRONE_ROOM_RADIUS,
+  THRONE_ABILITY_PEDESTAL_INTERACT_RADIUS,
+  THRONE_ABILITY_PEDESTAL_POSITION,
+  THRONE_TALENT_PEDESTAL_POSITION,
   THRONE_PORTAL_POSITION,
+  THRONE_PORTAL_POSITIONS,
   THRONE_PILLAR_POSITIONS,
   THRONE_WEAPON_INTERACT_DEFS,
   THRONE_WEAPON_INTERACT_RADIUS,
-  getThronePillarPhysicsObstacles,
+  getThronePrepPhysicsObstacles,
 } from '@/components/environment/ThroneRoom';
 import CastleWallCollision from '@/components/environment/CastleWallCollision';
 import PillarCollision from '@/components/environment/PillarCollision';
@@ -158,6 +163,12 @@ interface CoopGameSceneProps {
   skillPointData?: SkillPointData;
   statPointData?: StatPointData;
   abilityLoadout?: AbilityLoadout | null;
+  /** Parent overlay: throne prep UI (ability and/or talent modal) — when true, gameplay keys are disabled. */
+  throneAbilityModalOpen?: boolean;
+  /** Open ability customization for the given throne weapon (co-op prep room). */
+  onRequestThroneAbilityModal?: (weapon: WeaponType) => void;
+  /** Open talent customization for the given throne weapon (co-op prep room). */
+  onRequestThroneTalentModal?: (weapon: WeaponType) => void;
 }
 
 // Taunt Effect Indicator Component
@@ -314,7 +325,24 @@ function DroppedItemMesh({ item, playerPositionRef, onPickup }: DroppedItemMeshP
   );
 }
 
-export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, onCameraUpdate, onGameStateUpdate, onControlSystemUpdate, onExperienceUpdate, onEssenceUpdate, onMerchantUIUpdate, onSceneReady, selectedWeapons, skillPointData, statPointData, abilityLoadout }: CoopGameSceneProps = {}) {
+export function CoopGameScene({
+  onDamageNumbersUpdate,
+  onDamageNumberComplete,
+  onCameraUpdate,
+  onGameStateUpdate,
+  onControlSystemUpdate,
+  onExperienceUpdate,
+  onEssenceUpdate,
+  onMerchantUIUpdate,
+  onSceneReady,
+  selectedWeapons,
+  skillPointData,
+  statPointData,
+  abilityLoadout,
+  throneAbilityModalOpen = false,
+  onRequestThroneAbilityModal,
+  onRequestThroneTalentModal,
+}: CoopGameSceneProps = {}) {
   const { camera, gl, scene } = useThree();
   const {
     players,
@@ -350,10 +378,12 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     closeChat,
     setSelectedWeapons,
     setAbilityLoadout,
+    talentLoadout,
     droppedItems,
     pickupItem,
     inventory,
     campTypes,
+    thronePortalOffer,
   } = useMultiplayer();
 
   const inThroneRoom = useMemo(
@@ -403,6 +433,17 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
   // Fog of war — persistent grid of explored map cells (written by FogOfWar, read for enemy visibility)
   const exploredGridRef = useRef<Uint8Array>(new Uint8Array(FOG_GRID_SIZE * FOG_GRID_SIZE));
   const portalUseSentRef = useRef(false);
+  /** `useFrame` must read latest portal offer (set on `game-started`), not a stale render closure. */
+  const thronePortalOfferRef = useRef<string[]>([]);
+  thronePortalOfferRef.current = thronePortalOffer;
+  const throneAbilityModalOpenRef = useRef(false);
+  throneAbilityModalOpenRef.current = throneAbilityModalOpen;
+  const isChatOpenRef = useRef(false);
+  isChatOpenRef.current = isChatOpen;
+  const onRequestThroneAbilityModalRef = useRef(onRequestThroneAbilityModal);
+  onRequestThroneAbilityModalRef.current = onRequestThroneAbilityModal;
+  const onRequestThroneTalentModalRef = useRef(onRequestThroneTalentModal);
+  onRequestThroneTalentModalRef.current = onRequestThroneTalentModal;
   const throneInteractKeyPrevRef = useRef(false);
   const initialWeaponsForEngineRef = useRef(
     selectedWeapons ?? { primary: WeaponType.BOW, secondary: WeaponType.BOW },
@@ -426,7 +467,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     const phys = world.getSystem(PhysicsSystem);
     const r = inThroneRoom ? COOP_THRONE_ROOM_RADIUS + 2 : 28;
     phys?.setMapRadius(r);
-    const throneObstacles = inThroneRoom ? getThronePillarPhysicsObstacles() : null;
+    const throneObstacles = inThroneRoom ? getThronePrepPhysicsObstacles() : null;
     phys?.setCastleWallPhysicsEnabled(!inThroneRoom);
     phys?.setThronePillarObstacles(throneObstacles);
     controlSystemRef.current?.setPlayableRadius(r);
@@ -497,13 +538,14 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [isMerchantNearby, handleMerchantInteraction, isChatOpen, openChat]);
 
-  // Disable control system input and allow all keyboard input when chat is open
+  // Disable control system input when chat or throne ability modal is open
   useEffect(() => {
     if (controlSystemRef.current) {
-      controlSystemRef.current.setInputDisabled(isChatOpen);
+      const uiBlocksGame = isChatOpen || throneAbilityModalOpen;
+      controlSystemRef.current.setInputDisabled(uiBlocksGame);
       controlSystemRef.current.setAllowAllInput(isChatOpen);
     }
-  }, [isChatOpen]);
+  }, [isChatOpen, throneAbilityModalOpen]);
 
   // Function to increment kill count for a player
   const incrementKillCount = useCallback((playerId: string) => {
@@ -819,6 +861,11 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     id: number;
     position: Vector3;
     startTime: number;
+    playerId?: string;
+    duration?: number;
+    /** Wrathful Strike talent: red soul VFX */
+    wrathfulStrike?: boolean;
+    infestedStrike?: boolean;
   }>>([]);
   const nextHauntedSoulEffectId = useRef(0);
 
@@ -1392,16 +1439,20 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
 
 
   // Function to create haunted soul effect (for WraithStrike)
-  const createPvpHauntedSoulEffect = useCallback((position: Vector3) => {
-    const hauntedSoulEffect = {
-      id: nextHauntedSoulEffectId.current++,
-      position: position.clone(),
-      startTime: Date.now()
-    };
-    
-    setPvpHauntedSoulEffects(prev => [...prev, hauntedSoulEffect]);
-    
-  }, []);
+  const createPvpHauntedSoulEffect = useCallback(
+    (position: Vector3, wrathfulStrike?: boolean, infestedStrike?: boolean) => {
+      const hauntedSoulEffect = {
+        id: nextHauntedSoulEffectId.current++,
+        position: position.clone(),
+        startTime: Date.now(),
+        wrathfulStrike: !!wrathfulStrike,
+        infestedStrike: !!infestedStrike,
+      };
+
+      setPvpHauntedSoulEffects(prev => [...prev, hauntedSoulEffect]);
+    },
+    [],
+  );
 
   const createPvpVenomEffect = useCallback((playerId: string, position: Vector3, casterId?: string) => {
     // Debug: Check if this is the local player
@@ -1917,7 +1968,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
               position,
               direction,
               attackerEntityId,
-              { speed: 18, damage: 73, lifetime: 5, piercing: true, opacity: 0.8, projectileType: 'viper_sting', sourcePlayerId: data.playerId }
+              { speed: 18, damage: 93, lifetime: 5, piercing: true, opacity: 0.8, projectileType: 'viper_sting', sourcePlayerId: data.playerId }
             );
           }
           
@@ -2680,14 +2731,18 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
             return updated;
           });
 
-          // Create Haunted Soul effect for remote players
+          // Create Haunted Soul effect for remote players (caster talent → red VFX)
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
+          const wrathfulStrike = !!(data.extraData && data.extraData.wrathfulStrike);
+          const infestedStrike = !!(data.extraData && data.extraData.infestedStrike);
           setPvpHauntedSoulEffects(prev => [...prev, {
             id: Date.now(),
             playerId: data.playerId,
             position: position,
             startTime: Date.now(),
-            duration: 800 // Match the effect duration
+            duration: 800, // Match the effect duration
+            wrathfulStrike,
+            infestedStrike,
           }]);
         } else if (data.abilityType === 'charge') {
           setMultiplayerPlayerStates(prev => {
@@ -4993,7 +5048,13 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
   // Game loop integration with React Three Fiber
   useFrame((state, deltaTime) => {
     if (engineRef.current && engineRef.current.isEngineRunning() && gameStarted) {
-      if (inThroneRoom && playerEntity && controlSystemRef.current && !isChatOpen) {
+      if (
+        inThroneRoom &&
+        playerEntity &&
+        controlSystemRef.current &&
+        !isChatOpen &&
+        !throneAbilityModalOpenRef.current
+      ) {
         const cs = controlSystemRef.current;
         const transform = playerEntity.getComponent(Transform);
         if (transform) {
@@ -5003,20 +5064,64 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
           const edge = xDown && !throneInteractKeyPrevRef.current;
           throneInteractKeyPrevRef.current = xDown;
           if (edge) {
-            const r = THRONE_WEAPON_INTERACT_RADIUS;
-            const r2 = r * r;
-            let best: { weapon: WeaponType; d2: number } | null = null;
+            const rWeapon = THRONE_WEAPON_INTERACT_RADIUS;
+            const rWeapon2 = rWeapon * rWeapon;
+            const ax = THRONE_ABILITY_PEDESTAL_POSITION.x;
+            const az = THRONE_ABILITY_PEDESTAL_POSITION.z;
+            const adx = px - ax;
+            const adz = pz - az;
+            const ad2 = adx * adx + adz * adz;
+            const rAb2 = THRONE_ABILITY_PEDESTAL_INTERACT_RADIUS * THRONE_ABILITY_PEDESTAL_INTERACT_RADIUS;
+
+            const tx = THRONE_TALENT_PEDESTAL_POSITION.x;
+            const tz = THRONE_TALENT_PEDESTAL_POSITION.z;
+            const tdx = px - tx;
+            const tdz = pz - tz;
+            const td2 = tdx * tdx + tdz * tdz;
+
+            let bestWeapon: { weapon: WeaponType; d2: number } | null = null;
             for (const def of THRONE_WEAPON_INTERACT_DEFS) {
               const dx = px - def.x;
               const dz = pz - def.z;
               const d2 = dx * dx + dz * dz;
-              if (d2 <= r2 && (!best || d2 < best.d2)) {
-                best = { weapon: def.weapon, d2 };
+              if (d2 <= rWeapon2 && (!bestWeapon || d2 < bestWeapon.d2)) {
+                bestWeapon = { weapon: def.weapon, d2 };
               }
             }
+
+            const abilityInRange = ad2 <= rAb2;
+            const talentInRange = td2 <= rAb2;
             const cur = selectedWeaponsRef.current?.primary;
-            if (best && cur !== undefined && best.weapon !== cur) {
-              const w = best.weapon;
+
+            type ThroneXTarget =
+              | { kind: 'ability'; d2: number }
+              | { kind: 'talent'; d2: number }
+              | { kind: 'weapon'; d2: number; weapon: WeaponType };
+            const candidates: ThroneXTarget[] = [];
+            if (abilityInRange && onRequestThroneAbilityModalRef.current) {
+              candidates.push({ kind: 'ability', d2: ad2 });
+            }
+            if (talentInRange && onRequestThroneTalentModalRef.current) {
+              candidates.push({ kind: 'talent', d2: td2 });
+            }
+            if (bestWeapon && cur !== undefined && bestWeapon.weapon !== cur) {
+              candidates.push({ kind: 'weapon', d2: bestWeapon.d2, weapon: bestWeapon.weapon });
+            }
+            candidates.sort((a, b) => a.d2 - b.d2);
+
+            const pick = candidates[0];
+            if (pick?.kind === 'ability' && cur !== undefined) {
+              onRequestThroneAbilityModalRef.current?.(cur);
+              if ((window as any).audioSystem?.playUISelectionSound) {
+                (window as any).audioSystem.playUISelectionSound();
+              }
+            } else if (pick?.kind === 'talent' && cur !== undefined) {
+              onRequestThroneTalentModalRef.current?.(cur);
+              if ((window as any).audioSystem?.playUISelectionSound) {
+                (window as any).audioSystem.playUISelectionSound();
+              }
+            } else if (pick?.kind === 'weapon') {
+              const w = pick.weapon;
               setSelectedWeapons({ primary: w, secondary: w });
               setAbilityLoadout(getDefaultLoadoutForWeapon(w));
               updatePlayerWeapon(w, defaultSubclassForThroneWeapon(w));
@@ -5032,15 +5137,43 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
         inThroneRoom &&
         !portalUseSentRef.current &&
         playerEntity &&
-        socket?.id
+        socket?.id &&
+        !isChatOpenRef.current &&
+        !throneAbilityModalOpenRef.current
       ) {
         const transform = playerEntity.getComponent(Transform);
         if (transform) {
-          const dx = transform.position.x - THRONE_PORTAL_POSITION.x;
-          const dz = transform.position.z - THRONE_PORTAL_POSITION.z;
-          if (dx * dx + dz * dz < 2.9 * 2.9) {
-            portalUseSentRef.current = true;
-            enterCombatArena();
+          const px = transform.position.x;
+          const pz = transform.position.z;
+          const rPortal = 2.9;
+          const r2 = rPortal * rPortal;
+
+          const offer = thronePortalOfferRef.current;
+          if (offer.length >= 2) {
+            let bestI = 0;
+            let bestD2 = Infinity;
+            for (let i = 0; i < THRONE_PORTAL_POSITIONS.length; i++) {
+              const pos = THRONE_PORTAL_POSITIONS[i]!;
+              const dx = px - pos.x;
+              const dz = pz - pos.z;
+              const d2 = dx * dx + dz * dz;
+              if (d2 < bestD2) {
+                bestD2 = d2;
+                bestI = i;
+              }
+            }
+            if (bestD2 < r2) {
+              portalUseSentRef.current = true;
+              const chosen = offer[bestI] ?? offer[0];
+              enterCombatArena(chosen);
+            }
+          } else {
+            const dx = px - THRONE_PORTAL_POSITION.x;
+            const dz = pz - THRONE_PORTAL_POSITION.z;
+            if (dx * dx + dz * dz < r2) {
+              portalUseSentRef.current = true;
+              enterCombatArena(offer[0]);
+            }
           }
         }
       }
@@ -5770,15 +5903,18 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     });
 
     // Set up WraithStrike callback
-    controlSystem.setWraithStrikeCallback((position: Vector3, direction: Vector3) => {
+    controlSystem.setWraithStrikeCallback((position: Vector3, direction: Vector3, meta) => {
 
-      // Broadcast WraithStrike ability to other players
-      broadcastPlayerAbility('wraith_strike', position, direction);
+      // Broadcast WraithStrike ability to other players (extraData: Wrathful Strike for synced VFX tint)
+      broadcastPlayerAbility('wraith_strike', position, direction, undefined, {
+        wrathfulStrike: !!meta?.wrathfulStrike,
+        infestedStrike: !!meta?.infestedStrike,
+      });
     });
 
     // Set up Haunted Soul Effect callback (for WraithStrike)
-    controlSystem.setHauntedSoulEffectCallback((position: Vector3) => {
-      createPvpHauntedSoulEffect(position);
+    controlSystem.setHauntedSoulEffectCallback((position: Vector3, wrathfulStrike?: boolean, infestedStrike?: boolean) => {
+      createPvpHauntedSoulEffect(position, wrathfulStrike, infestedStrike);
     });
 
 
@@ -5796,6 +5932,9 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     if (abilityLoadout) {
       controlSystem.setAbilityLoadout(abilityLoadout);
     }
+    if (talentLoadout) {
+      controlSystem.setTalentLoadout(talentLoadout);
+    }
 
     // Cleanup function
     return () => {
@@ -5811,10 +5950,12 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     if (!engineRef.current || !engineReady) return;
     const combatSystem = engineRef.current.getWorld().getSystem(CombatSystem);
     if (!combatSystem) return;
-    combatSystem.setEnemyDamageCallback((enemyId: string, damage: number, sourcePlayerId?: string) => {
-      (window as any).audioSystem?.playUIHitboxSound();
-      damageEnemy(enemyId, damage, sourcePlayerId);
-    });
+    combatSystem.setEnemyDamageCallback(
+      (enemyId: string, damage: number, sourcePlayerId?: string, meta?: EnemyDamageMeta) => {
+        (window as any).audioSystem?.playUIHitboxSound();
+        damageEnemy(enemyId, damage, sourcePlayerId, meta);
+      },
+    );
   }, [damageEnemy, engineReady]);
 
   // Keep ECS weapon selection / level in sync when React state changes (e.g. throne room X-to-swap).
@@ -5841,6 +5982,12 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       controlSystemRef.current.setAbilityLoadout(abilityLoadout);
     }
   }, [abilityLoadout, engineReady]);
+
+  useEffect(() => {
+    if (controlSystemRef.current && talentLoadout) {
+      controlSystemRef.current.setTalentLoadout(talentLoadout);
+    }
+  }, [talentLoadout, engineReady]);
 
   // Expose damage number completion handler for parent component
   useEffect(() => {
@@ -5869,7 +6016,13 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
         <>
           {inThroneRoom ? (
             <>
-              <ThroneRoom isSnowTheme={campTypes[0]?.toLowerCase() === 'blue'} />
+              <ThroneRoom
+                isSnowTheme={
+                  campTypes[0]?.toLowerCase() === 'blue' ||
+                  thronePortalOffer.some((c) => String(c).toLowerCase() === 'blue')
+                }
+                thronePortalOffer={thronePortalOffer}
+              />
               {engineRef.current?.getWorld() && (
                 <PillarCollision world={engineRef.current.getWorld()} positions={THRONE_PILLAR_POSITIONS} />
               )}
@@ -6561,6 +6714,23 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
         );
       })}
 
+      {/* Player zombies — INFESTED STRIKE (Wraith Strike kills) */}
+      {Array.from(enemies.values()).map(enemy => {
+        if (enemy.type !== 'player-zombie') return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
+        return (
+          <ZombieRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={new Vector3(enemy.position.x, enemy.position.y, enemy.position.z)}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+          />
+        );
+      })}
+
       {/* Ghoul Summon Ritual Circles */}
       {ghoulSummonRituals.map(ritual => (
         <GhoulSummonRitual
@@ -7028,6 +7198,19 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
             />
           ))}
 
+          {/* Wraith Strike: souls rising from corrupted targets (local + remote ability sync) */}
+          {pvpHauntedSoulEffects.map(effect => (
+            <HauntedSoulEffect
+              key={effect.id}
+              position={effect.position}
+              wrathfulStrike={effect.wrathfulStrike}
+              infestedStrike={effect.infestedStrike}
+              onComplete={() => {
+                setPvpHauntedSoulEffects(prev => prev.filter(e => e.id !== effect.id));
+              }}
+            />
+          ))}
+
           {/* Dropped Amulet Items */}
           {Array.from(droppedItems.values()).map(item => (
             <DroppedItemMesh
@@ -7110,7 +7293,12 @@ function setupCoopGame(
   camera: PerspectiveCamera,
   renderer: WebGLRenderer,
   damagePlayerCallback: (playerId: string, damage: number, damageType?: string, isCritical?: boolean) => void,
-  damageEnemyCallback?: (enemyId: string, damage: number, sourcePlayerId?: string) => void,
+  damageEnemyCallback?: (
+    enemyId: string,
+    damage: number,
+    sourcePlayerId?: string,
+    meta?: EnemyDamageMeta,
+  ) => void,
   selectedWeapons?: {
     primary: WeaponType;
     secondary: WeaponType;
@@ -7155,7 +7343,7 @@ function setupCoopGame(
   controlSystem.setPlayableRadius(initialR);
   // Match throne-room physics toggles (see inThroneRoom effect). Applying here avoids a
   // one-frame / whole-session gap when the effect ran before PhysicsSystem was registered.
-  const throneObstaclesForInit = initialThroneMap ? getThronePillarPhysicsObstacles() : null;
+  const throneObstaclesForInit = initialThroneMap ? getThronePrepPhysicsObstacles() : null;
   physicsSystem.setCastleWallPhysicsEnabled(!initialThroneMap);
   physicsSystem.setThronePillarObstacles(throneObstaclesForInit);
   controlSystem.setCastleWallChargeCollision(!initialThroneMap);
@@ -7190,10 +7378,12 @@ function setupCoopGame(
 
   // Set up damage callbacks
   if (damageEnemyCallback) {
-    combatSystem.setEnemyDamageCallback((enemyId: string, damage: number, sourcePlayerId?: string) => {
+    combatSystem.setEnemyDamageCallback(
+      (enemyId: string, damage: number, sourcePlayerId?: string, meta?: EnemyDamageMeta) => {
       audioSystem.playUIHitboxSound();
-      damageEnemyCallback(enemyId, damage, sourcePlayerId);
-    });
+      damageEnemyCallback(enemyId, damage, sourcePlayerId, meta);
+    },
+    );
   }
   combatSystem.setPlayerDamageCallback(damagePlayerCallback);
 

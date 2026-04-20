@@ -20,12 +20,26 @@ import { WeaponSubclass, WeaponType } from '@/components/dragon/weapons';
 import { DeflectBarrier } from '@/components/weapons/DeflectBarrier';
 import { SkillPointSystem, SkillPointData } from '@/utils/SkillPointSystem';
 import { AbilityLoadout } from '@/utils/weaponAbilities';
+import {
+  TalentLoadout,
+  createDefaultTalentLoadout,
+  isWraithStrikeInLoadout,
+  WRATH_STRIKE_CRIT_CHANCE_ADD,
+  WRATH_STRIKE_CRIT_DAMAGE_MULT_ADD,
+} from '@/utils/talents';
 import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
 import { triggerGlobalCobraShot } from '@/components/projectiles/CobraShotManager';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import { triggerGlobalRejuvenatingShot } from '@/components/projectiles/RejuvenatingShotManager';
-import { setGlobalCriticalRuneCount, setGlobalCritDamageRuneCount, getGlobalRuneCounts, setControlSystem, calculateDamage, DamageResult } from '@/core/DamageCalculator';
+import {
+  setGlobalCriticalRuneCount,
+  setGlobalCritDamageRuneCount,
+  getGlobalRuneCounts,
+  setControlSystem,
+  calculateDamage,
+  DamageResult,
+} from '@/core/DamageCalculator';
 
 export class ControlSystem extends System {
   public readonly requiredComponents = [Transform, Movement];
@@ -122,7 +136,11 @@ export class ControlSystem extends System {
   private onDeathGraspCallback?: (position: Vector3, direction: Vector3) => void;
 
   // Callback for WraithStrike ability
-  private onWraithStrikeCallback?: (position: Vector3, direction: Vector3) => void;
+  private onWraithStrikeCallback?: (
+    position: Vector3,
+    direction: Vector3,
+    meta?: { wrathfulStrike: boolean; infestedStrike: boolean },
+  ) => void;
 
   // Callback for creating Sabre Reaper Mist effect
   private onCreateSabreMistEffectCallback?: (position: Vector3) => void;
@@ -136,8 +154,8 @@ export class ControlSystem extends System {
   // Callback for creating local debuff effects in PVP
   private onCreateLocalDebuffCallback?: (playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', position: Vector3, duration: number) => void;
 
-  // Callback for Haunted Soul effect (WraithStrike)
-  private onHauntedSoulEffectCallback?: (position: Vector3) => void;
+  // Callback for Haunted Soul effect (WraithStrike): wrathful = red talent, infested = green talent
+  private onHauntedSoulEffectCallback?: (position: Vector3, wrathfulStrike?: boolean, infestedStrike?: boolean) => void;
 
   // Callback for WindShear Tornado effect
   private onWindShearTornadoCallback?: (playerId: string, duration: number) => void;
@@ -186,14 +204,14 @@ export class ControlSystem extends System {
   private lastRejuvenatingShotTime = 0; // Separate tracking for Rejuvenating Shot ability
   private fireRate = 0.2; // Default for bow
   private swordFireRate = 0.825; // Rate for sword attacks
-  private runebladeFireRate = 0.725; // Runeblade attack rate
-  private sabresFireRate = 0.6; // Sabres dual attack rate (600ms between attacks)
-  private scytheFireRate = 0.525; // EntropicBolt rate (0.33s cooldown)
-  private crossentropyFireRate = 5; // CrossentropyBolt rate (1 per second)
+  private runebladeFireRate = 0.75; // Runeblade attack rate
+  private sabresFireRate = 0.625; // Sabres dual attack rate (600ms between attacks)
+  private scytheFireRate = 0.6; // EntropicBolt rate (0.33s cooldown)
+  private crossentropyFireRate = 6; // CrossentropyBolt rate (1 per second)
   private summonTotemFireRate = 6.0; // Summon Totem rate (5 seconds cooldown)
-  private viperStingFireRate = 4.0; // Viper Sting rate (2 seconds cooldown)
+  private viperStingFireRate = 6.0; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
-  private cobraShotFireRate = 4.0; // Cobra Shot rate (2 seconds cooldown)
+  private cobraShotFireRate = 6.0; // Cobra Shot rate (2 seconds cooldown)
   private rejuvenatingShotFireRate = 3.0; // Rejuvenating Shot rate (4 seconds cooldown)
   private lastBurstFireTime = 0; // Separate tracking for Bow burst fire
   private burstFireRate = 0.925; // 1 second cooldown between bursts
@@ -219,7 +237,7 @@ export class ControlSystem extends System {
   private isBarrageCharging = false;
   private barrageChargeProgress = 0;
   private lastBarrageTime = 0;
-  private barrageFireRate = 7.0; // 5 second cooldown (keeping as requested)
+  private barrageFireRate = 8.0; // 5 second cooldown (keeping as requested)
   
   // Cobra Shot charging state
   private isCobraShotCharging = false;
@@ -251,7 +269,7 @@ export class ControlSystem extends System {
   // Deflect ability state
   private isDeflecting = false;
   private lastDeflectTime = 0;
-  private deflectCooldown = 7.0; // 8 second cooldown
+  private deflectCooldown = 8; // 8 second cooldown
   private deflectDuration = 3.0; // 3 second duration
   private deflectBarrier: DeflectBarrier;
   
@@ -259,7 +277,7 @@ export class ControlSystem extends System {
   private isSkyfalling = false;
   private skyfallPhase: 'none' | 'ascending' | 'descending' | 'landing' = 'none';
   private lastSkyfallTime = 0;
-  private skyfallCooldown = 5.0; // 4 second cooldown
+  private skyfallCooldown = 8.0; // 4 second cooldown
   private skyfallStartTime = 0;
   private skyfallStartPosition = new Vector3();
   private skyfallTargetHeight = 0;
@@ -267,7 +285,7 @@ export class ControlSystem extends System {
   
   // Backstab ability state (Sabres)
   private lastBackstabTime = 0;
-  private backstabCooldown = 1.65; // 2 second cooldown
+  private backstabCooldown = 4; // 2 second cooldown
   private isBackstabbing = false;
   private backstabStartTime = 0;
   private backstabDuration = 1.0; // Total animation duration (0.3 + 0.4 + 0.3 seconds)
@@ -275,7 +293,7 @@ export class ControlSystem extends System {
   
   // Sunder ability state (Sabres)
   private lastSunderTime = 0;
-  private sunderCooldown = 1.65; // 1.5 second cooldown
+  private sunderCooldown = 1.75; // 1.5 second cooldown
   private isSundering = false;
   private sunderStartTime = 0;
   private sunderDuration = 1.0; // Same animation duration as backstab
@@ -297,7 +315,7 @@ export class ControlSystem extends System {
 
   // Throw Spear ability state (Spear)
   private lastThrowSpearTime = 0;
-  private throwSpearCooldown = 4.0; // 4 second cooldown
+  private throwSpearCooldown = 8.0; // 4 second cooldown
   private isThrowSpearCharging = false;
   private throwSpearChargeProgress = 0;
   private throwSpearChargeStartTime = 0;
@@ -313,7 +331,7 @@ export class ControlSystem extends System {
 
   // Lightning Storm ability state (Spear)
   private lastLightningStormTime = 0;
-  private lightningStormCooldown = 3.0; // 3 second cooldown
+  private lightningStormCooldown = 6.0; // 3 second cooldown
 
   // Public getter for stealth state
   public getIsStealthing(): boolean {
@@ -337,12 +355,12 @@ export class ControlSystem extends System {
 
   // Smite ability state (Runeblade)
   private lastSmiteTime = 0;
-  private smiteCooldown = 2.0; // 2 second cooldown
+  private smiteCooldown = 8.0; // 2 second cooldown
   private isSmiting = false;
 
   // Colossus Strike ability state (Sword)
   private lastColossusStrikeTime = 0;
-  private colossusStrikeCooldown = 5.0; // 2 second cooldown
+  private colossusStrikeCooldown = 8.0; // 2 second cooldown
   private isColossusStriking = false;
 
   // Wind Shear ability state (Sword)
@@ -362,7 +380,7 @@ export class ControlSystem extends System {
 
   // WraithStrike ability state (Runeblade)
   private lastWraithStrikeTime = 0;
-  private wraithStrikeCooldown = 3.0; // 3 second cooldown
+  private wraithStrikeCooldown = 4.5; // 3 second cooldown
   private isWraithStriking = false;
 
   // Corrupted Aura ability state (Runeblade)
@@ -397,6 +415,8 @@ export class ControlSystem extends System {
 
   // Ability loadout (universal ability selection per slot Q/E/R)
   private abilityLoadout: AbilityLoadout | null = null;
+
+  private talentLoadout: TalentLoadout = createDefaultTalentLoadout();
 
   // Titanheart passive tracking
   private titanheartMaxHealthApplied = false;
@@ -2247,7 +2267,13 @@ export class ControlSystem extends System {
     this.onDeathGraspCallback = callback;
   }
 
-  public setWraithStrikeCallback(callback: (position: Vector3, direction: Vector3) => void): void {
+  public setWraithStrikeCallback(
+    callback: (
+      position: Vector3,
+      direction: Vector3,
+      meta?: { wrathfulStrike: boolean; infestedStrike: boolean },
+    ) => void,
+  ): void {
     this.onWraithStrikeCallback = callback;
   }
 
@@ -2267,7 +2293,9 @@ export class ControlSystem extends System {
     this.onCreateLocalDebuffCallback = callback;
   }
 
-  public setHauntedSoulEffectCallback(callback: (position: Vector3) => void): void {
+  public setHauntedSoulEffectCallback(
+    callback: (position: Vector3, wrathfulStrike?: boolean, infestedStrike?: boolean) => void,
+  ): void {
     this.onHauntedSoulEffectCallback = callback;
   }
 
@@ -2643,8 +2671,8 @@ export class ControlSystem extends System {
     // Animation state broadcasting will handle sound synchronization for other players
     this.isSwinging = true;
 
-    // Perform melee damage in a cone in front of player
-    this.performMeleeDamage(playerTransform);
+    // Cone hit preview only — actual damage is applied in Sword.tsx (performSwingDamage) to avoid double hits
+    this.performMeleeDamage(playerTransform, false);
 
     // Note: Swing completion and combo advancement is now handled by onSwordSwingComplete callback
   }
@@ -2661,8 +2689,8 @@ export class ControlSystem extends System {
     // Set swinging state - completion will be handled by runeblade component callback
     this.isSwinging = true;
 
-    // Perform melee damage and decide hit vs miss sound based on result
-    const enemiesHit = this.performMeleeDamage(playerTransform);
+    // Cone hit preview only — actual damage is applied in Runeblade.tsx (performSwingDamage) to avoid double hits
+    const enemiesHit = this.performMeleeDamage(playerTransform, false);
     if (enemiesHit > 0) {
       // Hit an enemy — play the normal attack sound for this combo step
       this.audioSystem?.playSwordSwingSound(this.swordComboStep, playerTransform.position);
@@ -3048,7 +3076,10 @@ export class ControlSystem extends System {
 
     // Trigger wraith strike callback
     if (this.onWraithStrikeCallback) {
-      this.onWraithStrikeCallback(position, direction);
+      this.onWraithStrikeCallback(position, direction, {
+        wrathfulStrike: this.shouldApplyWrathStrikeTalent(),
+        infestedStrike: this.shouldApplyInfestedStrikeTalent(),
+      });
     }
 
     // Reset wraith striking state after animation duration (same as 2nd swing)
@@ -3069,8 +3100,8 @@ export class ControlSystem extends System {
     
     const wraithStrikeRange = 4.5; // Same range as melee attacks
     const wraithStrikeAngle = Math.PI / 2; // 90 degree cone
-    const wraithStrikeDamage = 140; // High damage for wraith strike
-    
+    const wraithStrikeBaseDamage = this.shouldApplyInfestedStrikeTalent() ? 190 : 140;
+
     let hitCount = 0;
     const currentTime = Date.now() / 1000;
     
@@ -3099,7 +3130,25 @@ export class ControlSystem extends System {
       // Apply damage
       const combatSystem = this.world.getSystem(CombatSystem);
       if (combatSystem) {
-        combatSystem.queueDamage(entity, wraithStrikeDamage, this.playerEntity!, 'wraith_strike', this.playerEntity?.userData?.playerId);
+        let dmg = wraithStrikeBaseDamage;
+        let critPreset: boolean | undefined = undefined;
+        if (this.shouldApplyWrathStrikeTalent()) {
+          const r = calculateDamage(wraithStrikeBaseDamage, this.getCurrentWeapon(), {
+            critChanceAdd: WRATH_STRIKE_CRIT_CHANCE_ADD,
+            critDamageMultAdd: WRATH_STRIKE_CRIT_DAMAGE_MULT_ADD,
+          });
+          dmg = r.damage;
+          critPreset = r.isCritical;
+        }
+        combatSystem.queueDamage(
+          entity,
+          dmg,
+          this.playerEntity!,
+          'wraith_strike',
+          this.playerEntity?.userData?.playerId,
+          critPreset,
+          this.shouldApplyInfestedStrikeTalent(),
+        );
         hitCount++;
         
         // Apply Corrupted debuff
@@ -3115,8 +3164,11 @@ export class ControlSystem extends System {
       // This is an enemy - apply corrupted debuff directly
       enemy.applyCorrupted(8.0, currentTime); // 8 second duration
       
-      // Trigger haunted soul visual effect
-      this.triggerHauntedSoulEffect(position);
+      this.triggerHauntedSoulEffect(
+        position,
+        this.shouldApplyWrathStrikeTalent(),
+        this.shouldApplyInfestedStrikeTalent(),
+      );
       
       // Send corrupted status to server for multiplayer (co-op mode)
       if (this.onApplyEnemyStatusEffectCallback && entity.userData?.serverEnemyId) {
@@ -3143,18 +3195,18 @@ export class ControlSystem extends System {
               this.onDebuffCallback(entity.id, 'corrupted', 8000, position); // 8 seconds in milliseconds
             }
         
-        // Trigger haunted soul visual effect
-        this.triggerHauntedSoulEffect(position);
+        this.triggerHauntedSoulEffect(
+          position,
+          this.shouldApplyWrathStrikeTalent(),
+          this.shouldApplyInfestedStrikeTalent(),
+        );
       }
     }
   }
 
-  private triggerHauntedSoulEffect(position: Vector3): void {
-    // Trigger haunted soul visual effect through callback
-    
-    // Call the haunted soul effect callback if available
+  private triggerHauntedSoulEffect(position: Vector3, wrathfulStrike?: boolean, infestedStrike?: boolean): void {
     if (this.onHauntedSoulEffectCallback) {
-      this.onHauntedSoulEffectCallback(position);
+      this.onHauntedSoulEffectCallback(position, wrathfulStrike, infestedStrike);
     }
   }
 
@@ -4444,6 +4496,18 @@ export class ControlSystem extends System {
     }
   }
 
+  public setTalentLoadout(loadout: TalentLoadout): void {
+    this.talentLoadout = { ...loadout };
+  }
+
+  private shouldApplyWrathStrikeTalent(): boolean {
+    return this.talentLoadout.wrathStrike && isWraithStrikeInLoadout(this.abilityLoadout);
+  }
+
+  private shouldApplyInfestedStrikeTalent(): boolean {
+    return this.talentLoadout.infestedStrike && isWraithStrikeInLoadout(this.abilityLoadout);
+  }
+
   /**
    * Directly unlocks the 'P' passive for the primary weapon slot based on the
    * selected passive ability id (e.g. 'BOW_P', 'SCYTHE_P'). Does not spend skill points.
@@ -4757,7 +4821,10 @@ export class ControlSystem extends System {
     }
   }
 
-  private performMeleeDamage(playerTransform: Transform): number {
+  /**
+   * @param dealDamage - When false, only counts enemies in the melee cone (for swing/miss audio). Weapon meshes apply real damage.
+   */
+  private performMeleeDamage(playerTransform: Transform, dealDamage: boolean = true): number {
     // Get all entities in the world to check for enemies
     const allEntities = this.world.getAllEntities();
     const playerPosition = playerTransform.position;
@@ -4812,8 +4879,8 @@ export class ControlSystem extends System {
         const angle = direction.angleTo(toEnemy);
 
         if (angle <= meleeAngle / 2) {
-          // Enemy is within attack cone - calculate damage with critical hits
-          if (combatSystem && this.playerEntity) {
+          enemiesHit++;
+          if (dealDamage && combatSystem && this.playerEntity) {
             // Calculate damage using DamageCalculator to get critical hit information
             const damageResult = calculateDamage(baseDamage, this.currentWeapon);
             const actualDamage = damageResult.damage;
@@ -4821,7 +4888,6 @@ export class ControlSystem extends System {
             // Queue damage through combat system (which will route to multiplayer for enemies)
             // Pass isCritical flag so CombatSystem doesn't recalculate critical damage
             combatSystem.queueDamage(entity, actualDamage, this.playerEntity, 'melee', this.playerEntity?.userData?.playerId, damageResult.isCritical);
-            enemiesHit++;
           }
         }
       }
@@ -5335,7 +5401,7 @@ export class ControlSystem extends System {
     if (this.onProjectileCreatedCallback) {
       this.onProjectileCreatedCallback('viper_sting_projectile', spawnPosition, direction, {
         speed: 18,
-        damage: 73,
+        damage: 91,
         lifetime: 5,
         isReturning: false
       });
@@ -5488,7 +5554,7 @@ export class ControlSystem extends System {
       // Create proper ECS projectile entity
       const projectileConfig = {
         speed: 22, // Slightly faster than regular arrows (20)
-        damage: 91, // High damage for barrage arrows
+        damage: 73, // High damage for barrage arrows
         lifetime: 8,
         maxDistance: 25, // Limit barrage arrows to 25 units distance (same as regular arrows)
         piercing: false,

@@ -73,7 +73,7 @@ function handlePlayerEvents(socket, gameRooms) {
 
   // Handle ability usage animations
   socket.on('player-ability', (data) => {
-    const { roomId, abilityType, position, direction, target } = data;
+    const { roomId, abilityType, position, direction, target, extraData } = data;
 
     if (!gameRooms.has(roomId)) return;
 
@@ -130,6 +130,7 @@ function handlePlayerEvents(socket, gameRooms) {
       position,
       direction,
       target,
+      extraData,
       timestamp: Date.now()
     });
   });

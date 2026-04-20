@@ -13,6 +13,12 @@ interface KnightModelProps {
   soulType?: 'green' | 'red' | 'blue' | 'purple' | 'yellow';
   /** Which ability animation is currently playing, or null when none. */
   abilityClip?: 'Smite' | 'Aggro' | 'Cast' | null;
+  /** Hit-react one-shots when damage is taken (renderer sets gates). */
+  isImpacting?: boolean;
+  impactVariant?: 1 | 2;
+  /** Incremented on each qualifying hit so the mixer can restart mid-clip. */
+  impactPlayKey?: number;
+  onImpactFinished?: () => void;
 }
 
 // Load mesh + skeleton from the "with skin" idle export.
@@ -28,15 +34,29 @@ useGLTF.preload('/models/knight_death.glb');
 useGLTF.preload('/models/knight_smite.glb');
 useGLTF.preload('/models/knight_aggro.glb');
 useGLTF.preload('/models/knight_cast.glb');
- 
+useGLTF.preload('/models/knight_impact1.glb');
+useGLTF.preload('/models/knight_impact2.glb');
+
 // GLB geometry is in centimeters (bboxMax Y ≈ 172.5 cm).
 // Target ≈ 2 game units tall → 2 / 172.5 ≈ 0.0116
 const SCALE = 0.015;
 
-export default function KnightModel({ isWalking, isAttacking, attackVariant, isDying, soulType, abilityClip }: KnightModelProps) {
+export default function KnightModel({
+  isWalking,
+  isAttacking,
+  attackVariant,
+  isDying,
+  soulType,
+  abilityClip,
+  isImpacting = false,
+  impactVariant = 1,
+  impactPlayKey = 0,
+  onImpactFinished,
+}: KnightModelProps) {
   // This ref is the root handed to useAnimations so the mixer can find bones
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
+  const lastImpactPlayKeyRef = useRef(-1);
 
   // Scene (mesh + skeleton) comes from the idle GLB only
   const { scene, animations: idleAnims } = useGLTF('/models/knight_idle.glb');
@@ -53,6 +73,8 @@ export default function KnightModel({ isWalking, isAttacking, attackVariant, isD
   const { animations: smiteAnims }   = useGLTF('/models/knight_smite.glb');
   const { animations: aggroAnims }   = useGLTF('/models/knight_aggro.glb');
   const { animations: castAnims }    = useGLTF('/models/knight_cast.glb');
+  const { animations: impact1Anims } = useGLTF('/models/knight_impact1.glb');
+  const { animations: impact2Anims } = useGLTF('/models/knight_impact2.glb');
 
   // Active walk clips: purple → knight_walk.glb, all others → knight_walk0.glb
   const activeWalkAnims = soulType === 'purple' ? walkAnims : walkAnims0; // yellow uses walk0 (idle-only dummy)
@@ -119,32 +141,41 @@ export default function KnightModel({ isWalking, isAttacking, attackVariant, isD
       ...rename(smiteAnims,       'Smite'),
       ...rename(aggroAnims,       'Aggro'),
       ...rename(castAnims,        'Cast'),
+      ...rename(impact1Anims,     'Impact1'),
+      ...rename(impact2Anims,     'Impact2'),
     ];
-  }, [idleAnims, activeWalkAnims, attackAnims, attack2Anims, deathAnims, smiteAnims, aggroAnims, castAnims]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idleAnims, activeWalkAnims, attackAnims, attack2Anims, deathAnims, smiteAnims, aggroAnims, castAnims, impact1Anims, impact2Anims]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Bind the mixer to the clone's root so it can traverse to find bones by name
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
-  const getAction = (name: 'Idle' | 'Walk' | 'Attack' | 'Attack2' | 'Death' | 'Smite' | 'Aggro' | 'Cast'): AnimationAction | null =>
+  const getAction = (name: 'Idle' | 'Walk' | 'Attack' | 'Attack2' | 'Death' | 'Smite' | 'Aggro' | 'Cast' | 'Impact1' | 'Impact2'): AnimationAction | null =>
     actions[name] ?? null;
 
   // Transition to the right animation clip when state changes.
-  // Priority: Death > Attack > Ability > Walk > Idle
+  // Priority: Death > Attack > Ability > Impact > Walk > Idle
   useEffect(() => {
     if (!actions) return;
 
     const attackClip = attackVariant === 2 ? 'Attack2' : 'Attack';
+    const impactClip = impactVariant === 1 ? 'Impact1' : 'Impact2';
     const nextAction = isDying
       ? getAction('Death')
       : isAttacking
         ? getAction(attackClip)
         : abilityClip
           ? getAction(abilityClip)
-          : isWalking
-            ? getAction('Walk')
-            : getAction('Idle');
+          : isImpacting
+            ? getAction(impactClip)
+            : isWalking
+              ? getAction('Walk')
+              : getAction('Idle');
 
-    if (!nextAction || nextAction === currentActionRef.current) return;
+    if (!nextAction) return;
+    if (nextAction === currentActionRef.current) {
+      const retriggerImpact = isImpacting && impactPlayKey !== lastImpactPlayKeyRef.current;
+      if (!retriggerImpact) return;
+    }
 
     currentActionRef.current?.fadeOut(0.2);
 
@@ -158,28 +189,33 @@ export default function KnightModel({ isWalking, isAttacking, attackVariant, isD
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.2).play();
+    } else if (isImpacting) {
+      lastImpactPlayKeyRef.current = impactPlayKey;
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.2).play();
     } else {
       // Walk / Idle are continuous loops.
       // Re-enable explicitly: Three.js auto-disables actions whose weight reaches 0
       // after a fadeOut (_updateWeight sets enabled=false).
+      if (!isImpacting) lastImpactPlayKeyRef.current = -1;
       nextAction.enabled = true;
       nextAction.setLoop(LoopRepeat, Infinity);
       nextAction.fadeIn(0.2).play();
     }
 
     currentActionRef.current = nextAction;
-  }, [isWalking, isAttacking, isDying, attackVariant, abilityClip, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isWalking, isAttacking, isDying, attackVariant, abilityClip, isImpacting, impactVariant, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // After a one-shot animation (attack or ability) finishes, blend back to Walk or Idle.
-  // Guard against isDying so Death's 'finished' event never triggers a fallback.
+  // After a one-shot animation (impact, attack, or ability) finishes, blend back to Walk or Idle.
+  // Do not run for Death — the corpse should stay in the last pose.
   useEffect(() => {
-    const isOneShot = isAttacking || !!abilityClip;
-    if (!mixer || !isOneShot || isDying) return;
+    if (!mixer || isDying) return;
 
-    const handleFinish = () => {
+    const blendToWalkOrIdle = () => {
       if (isDying) return;
       const fallback = isWalking ? getAction('Walk') : getAction('Idle');
-      if (fallback && fallback !== currentActionRef.current) {
+      if (fallback) {
         fallback.setLoop(LoopRepeat, Infinity);
         currentActionRef.current?.fadeOut(0.15);
         fallback.reset().fadeIn(0.15).play();
@@ -187,9 +223,24 @@ export default function KnightModel({ isWalking, isAttacking, attackVariant, isD
       }
     };
 
+    const handleFinish = (e: { action: AnimationAction }) => {
+      if (isDying) return;
+      const name = e.action.getClip().name;
+      if (name === 'Death') return;
+      if (name === 'Impact1' || name === 'Impact2') {
+        onImpactFinished?.();
+        lastImpactPlayKeyRef.current = -1;
+        blendToWalkOrIdle();
+        return;
+      }
+      if (name === 'Attack' || name === 'Attack2' || name === 'Smite' || name === 'Aggro' || name === 'Cast') {
+        blendToWalkOrIdle();
+      }
+    };
+
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isAttacking, abilityClip, isDying, isWalking, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isDying, isWalking, actions, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     // sceneGroupRef wraps the clone so the AnimationMixer can traverse into the

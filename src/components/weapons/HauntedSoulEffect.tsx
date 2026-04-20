@@ -1,16 +1,64 @@
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { Group, Vector3 } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 
 interface HauntedSoulEffectProps {
   position: Vector3;
+  /** Wrathful Strike talent (talents.ts): red spectral palette instead of purple */
+  wrathfulStrike?: boolean;
+  /** INFESTED STRIKE talent: green palette (wins over wrathful when both true) */
+  infestedStrike?: boolean;
   onComplete?: () => void;
 }
 
-export default function HauntedSoulEffect({ position, onComplete }: HauntedSoulEffectProps) {
+const SOUL_PALETTE = {
+  spectral: {
+    main: '#4a148c',
+    mainEmissive: '#6a1b9a',
+    inner: '#ba68c8',
+    innerEmissive: '#e1bee7',
+    trail: '#9c27b0',
+    trailEmissive: '#ce93d8',
+    wisp: '#7b1fa2',
+    wispEmissive: '#ab47bc',
+  },
+  wrathful: {
+    main: '#7f0000',
+    mainEmissive: '#b71c1c',
+    inner: '#ff5252',
+    innerEmissive: '#ffcdd2',
+    trail: '#c62828',
+    trailEmissive: '#ff8a80',
+    wisp: '#b71c1c',
+    wispEmissive: '#ff1744',
+  },
+  infested: {
+    main: '#1b5e20',
+    mainEmissive: '#2e7d32',
+    inner: '#66bb6a',
+    innerEmissive: '#c8e6c9',
+    trail: '#388e3c',
+    trailEmissive: '#a5d6a7',
+    wisp: '#2e7d32',
+    wispEmissive: '#69f0ae',
+  },
+} as const;
+
+export default function HauntedSoulEffect({
+  position,
+  wrathfulStrike = false,
+  infestedStrike = false,
+  onComplete,
+}: HauntedSoulEffectProps) {
   const soulRef = useRef<Group>(null);
   const progressRef = useRef(0);
   const startPosition = useRef(position.clone());
+  const colors = useMemo(() => {
+    if (infestedStrike) return SOUL_PALETTE.infested;
+    if (wrathfulStrike) return SOUL_PALETTE.wrathful;
+    return SOUL_PALETTE.spectral;
+  }, [wrathfulStrike, infestedStrike]);
+  const emissiveBoost = infestedStrike || wrathfulStrike;
 
   useFrame((_, delta) => {
     if (!soulRef.current) return;
@@ -34,10 +82,6 @@ export default function HauntedSoulEffect({ position, onComplete }: HauntedSoulE
       startPosition.current.y + height,
       startPosition.current.z
     );
-
-    // Fade out as it rises
-    const opacity = 1 - progressRef.current;
-    // The opacity will be applied to the materials in the JSX below
   });
 
   return (
@@ -46,11 +90,11 @@ export default function HauntedSoulEffect({ position, onComplete }: HauntedSoulE
       <mesh>
         <sphereGeometry args={[0.3, 16, 16]} />
         <meshStandardMaterial
-          color="#4a148c"
+          color={colors.main}
           transparent
           opacity={1 - progressRef.current}
-          emissive="#6a1b9a"
-          emissiveIntensity={0.5}
+          emissive={colors.mainEmissive}
+          emissiveIntensity={emissiveBoost ? 0.65 : 0.5}
         />
       </mesh>
 
@@ -58,11 +102,11 @@ export default function HauntedSoulEffect({ position, onComplete }: HauntedSoulE
       <mesh>
         <sphereGeometry args={[0.15, 8, 8]} />
         <meshStandardMaterial
-          color="#ba68c8"
+          color={colors.inner}
           transparent
           opacity={1 - progressRef.current}
-          emissive="#e1bee7"
-          emissiveIntensity={1.0}
+          emissive={colors.innerEmissive}
+          emissiveIntensity={emissiveBoost ? 1.15 : 1.0}
         />
       </mesh>
 
@@ -81,11 +125,11 @@ export default function HauntedSoulEffect({ position, onComplete }: HauntedSoulE
             <mesh key={i} position={[x, y, z]}>
               <sphereGeometry args={[0.05, 6, 6]} />
               <meshStandardMaterial
-                color="#9c27b0"
+                color={colors.trail}
                 transparent
                 opacity={(1 - progressRef.current) * 0.7}
-                emissive="#ce93d8"
-                emissiveIntensity={0.3}
+                emissive={colors.trailEmissive}
+                emissiveIntensity={emissiveBoost ? 0.4 : 0.3}
               />
             </mesh>
           );
@@ -103,11 +147,11 @@ export default function HauntedSoulEffect({ position, onComplete }: HauntedSoulE
           <mesh key={`wisp-${i}`} position={[x, progressRef.current * 6, z]}>
             <planeGeometry args={[0.1, 0.8]} />
             <meshStandardMaterial
-              color="#7b1fa2"
+              color={colors.wisp}
               transparent
               opacity={(1 - progressRef.current) * 0.4}
-              emissive="#ab47bc"
-              emissiveIntensity={0.2}
+              emissive={colors.wispEmissive}
+              emissiveIntensity={emissiveBoost ? 0.28 : 0.2}
               side={2} // DoubleSide
             />
           </mesh>

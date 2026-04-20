@@ -137,6 +137,7 @@ io.on('connection', (socket) => {
       gameMode: room.gameMode || gameMode,
       campTypes: room.getCampTypes(),
       combatArenaActive: room.gameMode !== 'coop' ? true : !!room.combatArenaActive,
+      thronePortalOffer: room.getThronePortalOffer(),
     });
     
     // Notify other players
@@ -221,13 +222,13 @@ io.on('connection', (socket) => {
 
   // Co-op: leave the throne prep room and start the main arena (enemies + AI)
   socket.on('enter-combat-arena', (data) => {
-    const { roomId } = data || {};
+    const { roomId, chosenCampType } = data || {};
     if (!roomId || !gameRooms.has(roomId)) return;
 
     const room = gameRooms.get(roomId);
     if (!room.getPlayer(socket.id)) return;
 
-    const activated = room.activateCombatArena();
+    const activated = room.activateCombatArena(chosenCampType);
     if (activated) {
       socket.emit('enter-combat-arena-success', { roomId, timestamp: Date.now() });
     }

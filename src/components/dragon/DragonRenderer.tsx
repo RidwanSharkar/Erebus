@@ -362,7 +362,11 @@ export default function DragonRenderer({
       
       // Update enemy data for weapon collision detection
       // Always update enemy data for weapons that need collision detection
-      if (currentWeapon === WeaponType.SWORD || currentWeapon === WeaponType.BOW) {
+      if (
+        currentWeapon === WeaponType.SWORD ||
+        currentWeapon === WeaponType.BOW ||
+        currentWeapon === WeaponType.RUNEBLADE
+      ) {
         const enemies = world.queryEntities([Transform, Health, Enemy]);
         const enemyDataArray = enemies.map(enemy => {
           const transform = enemy.getComponent(Transform)!;

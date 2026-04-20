@@ -131,6 +131,8 @@ const SwordComponent = memo(function Sword({
 
   // Swing collision tracking
   const lastSwingHitTime = useRef<Record<string, number>>({});
+  /** Horizontal attack forward from playerRotation.y (matches DragonRenderer camera yaw). */
+  const attackForwardScratch = useRef(new Vector3());
   const swingHasDealtDamage = useRef(false);
   const currentComboStep = useRef(comboStep);
   
@@ -814,11 +816,11 @@ const SwordComponent = memo(function Sword({
     
     const now = Date.now();
     
-    // Damage values for each combo step
+    // Damage values for each combo step (aligned with ControlSystem melee tiers; mesh is sole damage source)
     const damageValues = {
-      1: 25, // 1st hit
-      2: 30, // 2nd hit  
-      3: 40  // 3rd hit
+      1: 45,
+      2: 50,
+      3: 60
     };
     
     const baseDamage = damageValues[comboStep];
@@ -851,10 +853,10 @@ const SwordComponent = memo(function Sword({
           // Overhead strike hits in all directions around player
           shouldHit = true;
         } else {
-          // Side swings use a frontal hemisphere
+          const yaw = playerRotation?.y ?? 0;
+          attackForwardScratch.current.set(Math.sin(yaw), 0, Math.cos(yaw));
           const toEnemy = enemy.position.clone().sub(playerPosition).normalize();
-          // Check if enemy is roughly in front (very generous arc - 180 degrees)
-          const dotProduct = toEnemy.dot(new Vector3(0, 0, -1));
+          const dotProduct = toEnemy.dot(attackForwardScratch.current);
           shouldHit = dotProduct > -0.5; // Allows hits from front and sides
         }
         

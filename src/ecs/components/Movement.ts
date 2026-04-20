@@ -125,7 +125,7 @@ export class Movement extends Component {
     this.dashStartPosition = new Vector3(0, 0, 0);
     
     // Initialize multiple dash charges (3 charges, each with 6s cooldown)
-    this.maxDashCharges = 3;
+    this.maxDashCharges = 2;
     this.dashCharges = Array.from({ length: this.maxDashCharges }, () => ({
       isAvailable: true,
       cooldownStartTime: null
@@ -544,7 +544,7 @@ export class Movement extends Component {
     this.dashStartPosition.set(0, 0, 0);
     
     // Reset dash charges
-    this.maxDashCharges = 3;
+    this.maxDashCharges = 2;
     this.dashCharges = Array.from({ length: this.maxDashCharges }, () => ({
       isAvailable: true,
       cooldownStartTime: null

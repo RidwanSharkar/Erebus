@@ -6,8 +6,36 @@ import { universalAbilityPool, UniversalAbility, AbilityLoadout, getDefaultLoado
 
 interface AbilitySelectionModalProps {
   selectedWeapon: WeaponType;
+  /** When set, Q/E/R/passive are kept if still valid for this weapon. */
+  initialLoadout?: AbilityLoadout | null;
   onConfirm: (loadout: AbilityLoadout) => void;
   onBack: () => void;
+}
+
+function mergeSavedLoadout(weapon: WeaponType, saved: AbilityLoadout | null | undefined): AbilityLoadout {
+  const def = getDefaultLoadoutForWeapon(weapon);
+  if (!saved) return { ...def };
+
+  const slotOk = (id: string | null | undefined, slot: 'Q' | 'E' | 'R'): string | null => {
+    if (id == null) return def[slot];
+    const a = universalAbilityPool.find((x) => x.id === id);
+    return a && a.allowedWeapons.includes(weapon) ? id : def[slot];
+  };
+
+  const passiveOk =
+    saved.passive &&
+    universalAbilityPool.some(
+      (a) => a.id === saved.passive && a.sourceKey === 'P' && a.allowedWeapons.includes(weapon),
+    )
+      ? saved.passive
+      : null;
+
+  return {
+    Q: slotOk(saved.Q, 'Q'),
+    E: slotOk(saved.E, 'E'),
+    R: slotOk(saved.R, 'R'),
+    passive: passiveOk,
+  };
 }
 
 const WEAPON_LABELS: Record<WeaponType, string> = {
@@ -45,8 +73,13 @@ const SOURCE_WEAPON_ORDER: WeaponType[] = [
   WeaponType.SPEAR,
 ];
 
-export default function AbilitySelectionModal({ selectedWeapon, onConfirm, onBack }: AbilitySelectionModalProps) {
-  const [loadout, setLoadout] = useState<AbilityLoadout>(() => ({ ...getDefaultLoadoutForWeapon(selectedWeapon), passive: null }));
+export default function AbilitySelectionModal({
+  selectedWeapon,
+  initialLoadout,
+  onConfirm,
+  onBack,
+}: AbilitySelectionModalProps) {
+  const [loadout, setLoadout] = useState<AbilityLoadout>(() => mergeSavedLoadout(selectedWeapon, initialLoadout));
 
   // Only show active abilities (non-passive) that are allowed for the currently selected weapon, grouped by source
   const abilityGroups = useMemo(() => {
@@ -132,7 +165,7 @@ export default function AbilitySelectionModal({ selectedWeapon, onConfirm, onBac
   }, []);
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 overflow-y-auto py-4">
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] overflow-y-auto py-4">
       <div className="bg-gray-900/98 border-2 border-green-500 rounded-xl p-6 max-w-3xl w-11/12 mx-auto">
 
         {/* Header */}
@@ -309,7 +342,7 @@ export default function AbilitySelectionModal({ selectedWeapon, onConfirm, onBac
       {/* Tooltip */}
       {hoveredAbility && (
         <div
-          className="fixed z-50 pointer-events-none bg-gray-900 border border-gray-600 rounded-lg p-3 max-w-xs text-sm"
+          className="fixed z-[210] pointer-events-none bg-gray-900 border border-gray-600 rounded-lg p-3 max-w-xs text-sm"
           style={{ left: tooltipPos.x - 120, top: Math.max(8, tooltipPos.y - 120) }}
         >
           <div className="flex items-center gap-2 mb-1">

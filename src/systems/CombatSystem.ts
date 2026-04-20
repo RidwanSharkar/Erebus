@@ -24,6 +24,8 @@ interface DamageEvent {
   timestamp: number;
   sourcePlayerId?: string; // Player ID of the source for proper experience attribution
   isCritical?: boolean; // Whether this damage was a critical hit
+  /** Co-op routing: Infested Strike talent — only with damageType `wraith_strike`. */
+  infestedStrike?: boolean;
 }
 
 interface HealEvent {
@@ -47,7 +49,12 @@ export class CombatSystem extends System {
   private enemiesKilled = 0;
 
   // Multiplayer damage callback for routing enemy damage to server
-  private onEnemyDamageCallback?: (enemyId: string, damage: number, sourcePlayerId?: string) => void;
+  private onEnemyDamageCallback?: (
+    enemyId: string,
+    damage: number,
+    sourcePlayerId?: string,
+    meta?: { damageType?: string; infestedStrike?: boolean },
+  ) => void;
   
   // PVP damage callback for routing player damage to server
   private onPlayerDamageCallback?: (playerId: string, damage: number, damageType?: string, isCritical?: boolean) => void;
@@ -96,7 +103,14 @@ export class CombatSystem extends System {
   }
 
   // Set callback for routing enemy damage to multiplayer server
-  public setEnemyDamageCallback(callback: (enemyId: string, damage: number, sourcePlayerId?: string) => void): void {
+  public setEnemyDamageCallback(
+    callback: (
+      enemyId: string,
+      damage: number,
+      sourcePlayerId?: string,
+      meta?: { damageType?: string; infestedStrike?: boolean },
+    ) => void,
+  ): void {
     this.onEnemyDamageCallback = callback;
   }
   
@@ -270,7 +284,14 @@ export class CombatSystem extends System {
       // Use server enemy ID from entity userData instead of ECS entity ID
       const serverEnemyId = target.userData?.serverEnemyId || target.id.toString();
       // console.log(`🌐 Routing ${actualDamage} damage to enemy ${serverEnemyId} (ECS: ${target.id}) through multiplayer server from source player ${finalSourcePlayerId || 'unknown'}`);
-      this.onEnemyDamageCallback(serverEnemyId, actualDamage, finalSourcePlayerId);
+      const routeMeta =
+        damageType === 'wraith_strike'
+          ? {
+              damageType: 'wraith_strike' as const,
+              infestedStrike: damageEvent.infestedStrike === true,
+            }
+          : undefined;
+      this.onEnemyDamageCallback(serverEnemyId, actualDamage, finalSourcePlayerId, routeMeta);
 
       // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
       if (source && currentWeapon === WeaponType.RUNEBLADE) {
@@ -313,7 +334,9 @@ export class CombatSystem extends System {
             actualDamage,
             damageResult.isCritical,
             position,
-            damageType
+            damageType,
+            undefined,
+            damageType === 'barrage' ? target.id : undefined
           );
         }
       }
@@ -435,7 +458,9 @@ export class CombatSystem extends System {
               actualDamage,
               damageResult.isCritical,
               position,
-              damageType || 'melee'
+              damageType || 'melee',
+              undefined,
+              damageType === 'barrage' ? target.id : undefined
             );
           }
         }
@@ -507,7 +532,9 @@ export class CombatSystem extends System {
                 actualDamage,
                 damageResult.isCritical,
                 position,
-                damageType || 'melee'
+                damageType || 'melee',
+                undefined,
+                damageType === 'barrage' ? target.id : undefined
               );
             }
           }
@@ -581,7 +608,9 @@ export class CombatSystem extends System {
           actualDamage,
           damageResult.isCritical,
           position,
-          damageType
+          damageType,
+          undefined,
+          damageType === 'barrage' ? target.id : undefined
         );
       }
 
@@ -647,7 +676,9 @@ export class CombatSystem extends System {
           actualDamage,
           damageResult.isCritical,
           position,
-          damageType || 'tower'
+          damageType || 'tower',
+          undefined,
+          damageType === 'barrage' ? target.id : undefined
         );
       }
 
@@ -768,7 +799,9 @@ export class CombatSystem extends System {
               damageResult.damage, // Show the full damage in damage numbers
               damageResult.isCritical,
               position,
-              damageType || 'pvp'
+              damageType || 'pvp',
+              undefined,
+              damageType === 'barrage' ? target.id : undefined
             );
           } else {
             // console.warn('⚠️ Skipping PVP damage number creation - invalid position:', position);
@@ -813,7 +846,9 @@ export class CombatSystem extends System {
               actualDamage,
               damageResult.isCritical,
               position,
-              damageType
+              damageType,
+              undefined,
+              damageType === 'barrage' ? target.id : undefined
             );
           } else {
             // console.warn('⚠️ Skipping damage number creation - invalid position:', position);
@@ -1038,7 +1073,8 @@ export class CombatSystem extends System {
     source?: Entity,
     damageType?: string,
     sourcePlayerId?: string,
-    isCritical?: boolean
+    isCritical?: boolean,
+    infestedStrike?: boolean,
   ): void {
     this.damageQueue.push({
       target,
@@ -1047,7 +1083,8 @@ export class CombatSystem extends System {
       damageType,
       timestamp: Date.now() / 1000,
       sourcePlayerId,
-      isCritical
+      isCritical,
+      infestedStrike,
     });
   }
 
@@ -1108,7 +1145,9 @@ export class CombatSystem extends System {
               actualDamage,
               damageResult.isCritical,
               position,
-              damageType
+              damageType,
+              undefined,
+              damageType === 'barrage' ? target.id : undefined
             );
           }
         }
@@ -1154,7 +1193,9 @@ export class CombatSystem extends System {
             actualDamage,
             damageResult.isCritical,
             position,
-            damageType
+            damageType,
+            undefined,
+            damageType === 'barrage' ? target.id : undefined
           );
         }
       }

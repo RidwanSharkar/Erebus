@@ -1,6 +1,8 @@
 import { useCallback, useRef } from 'react';
 import { Vector3, Matrix4 } from '@/utils/three-exports';
 
+const BARRAGE_DAMAGE_NUMBER_MERGE_MS = 500;
+
 interface BarrageProjectile {
   id: number;
   position: Vector3;
@@ -47,6 +49,9 @@ export function useBarrage({
 }: UseBarrageProps) {
   const activeProjectilesRef = useRef<BarrageProjectile[]>([]);
   const nextProjectileId = useRef(0);
+  const barrageMergeByTarget = useRef(
+    new Map<string, { listId: number; lastMs: number }>()
+  );
 
   const shootBarrage = useCallback((unitPosition: Vector3, baseDirection: Vector3) => {
     // Create 3 arrows: center (0°), left (30°), right (-30°)
@@ -143,19 +148,47 @@ export function useBarrage({
             if (enemy.id !== localSocketId) {
               onHit(enemy.id, projectile.damage);
               
-              // Add damage number with slight random offset to prevent stacking
-              const damagePosition = enemy.position.clone();
-              // Add small random offset (-0.5 to 0.5 units) to spread damage numbers
-              damagePosition.x += (Math.random() - 0.5) * 2.0;
-              damagePosition.z += (Math.random() - 0.5) * 2.0;
-
-              setDamageNumbers(prev => [...prev, {
-                id: nextDamageNumberId.current++,
-                damage: projectile.damage,
-                position: damagePosition,
-                isCritical: false,
-                isBarrage: true
-              }]);
+              const targetKey = String(enemy.id);
+              const now = Date.now();
+              const merge = barrageMergeByTarget.current.get(targetKey);
+              if (
+                merge &&
+                now - merge.lastMs <= BARRAGE_DAMAGE_NUMBER_MERGE_MS
+              ) {
+                setDamageNumbers(prev => {
+                  const i = prev.findIndex(n => n.id === merge.listId);
+                  if (i === -1) {
+                    return prev;
+                  }
+                  const next = prev.slice();
+                  const row = next[i]!;
+                  next[i] = {
+                    ...row,
+                    damage: row.damage + projectile.damage,
+                  };
+                  return next;
+                });
+                merge.lastMs = now;
+              } else {
+                const listId = nextDamageNumberId.current++;
+                const damagePosition = enemy.position.clone();
+                damagePosition.x += (Math.random() - 0.5) * 2.0;
+                damagePosition.z += (Math.random() - 0.5) * 2.0;
+                barrageMergeByTarget.current.set(targetKey, {
+                  listId,
+                  lastMs: now,
+                });
+                setDamageNumbers(prev => [
+                  ...prev,
+                  {
+                    id: listId,
+                    damage: projectile.damage,
+                    position: damagePosition,
+                    isCritical: false,
+                    isBarrage: true,
+                  },
+                ]);
+              }
             }
 
             // This projectile stops after hitting one enemy
@@ -178,6 +211,7 @@ export function useBarrage({
 
   const cleanup = useCallback(() => {
     activeProjectilesRef.current = [];
+    barrageMergeByTarget.current.clear();
   }, []);
 
   return {

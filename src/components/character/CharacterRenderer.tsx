@@ -27,11 +27,11 @@ const WALK_STOP_DELAY = 120; // ms before switching to Idle after movement stops
 //
 //                 Run  (|angle| < π/8)
 //                /    \
-//  LeftStrafeRun        RightStrafeRun  (π/8 … 3π/8 each side)
+//  LeftStrafeForward    RightStrafeForward  (π/8 … 3π/8 each side)
 //       |                     |
-//  LeftStrafe             RightStrafe   (3π/8 … 5π/8 each side)
+//  LeftStrafe             RightStrafe   (3π/8 … 5π/8 each side — pure side)
 //       |                     |
-//  BackLeftStrafeRun  BackRightStrafeRun (5π/8 … 7π/8 each side)
+//  LeftStrafeBackward  RightStrafeBackward (5π/8 … 7π/8 each side)
 //                \    /
 //              Backwards  (|angle| > 7π/8)
 function dirToAnimState(facingDir: Vector3, moveDir: Vector3): AnimState {
@@ -46,10 +46,10 @@ function dirToAnimState(facingDir: Vector3, moveDir: Vector3): AnimState {
   if (abs < Math.PI / 8)          return 'Run';                                          // ±22.5°       — forward
   if (abs > (7 * Math.PI) / 8)    return 'Backwards';                                   // ±157.5°+     — backward
   if (abs < (3 * Math.PI) / 8) {                                                         // 22.5°…67.5°  — forward diagonal
-    return angle > 0 ? 'RightStrafe' : 'LeftStrafe';
+    return angle > 0 ? 'RightStrafeForward' : 'LeftStrafeForward';
   }
   if (abs > (5 * Math.PI) / 8) {                                                         // 112.5°…157.5° — backward diagonal
-    return angle > 0 ? 'BackRightStrafeRun' : 'BackLeftStrafeRun';
+    return angle > 0 ? 'RightStrafeBackward' : 'LeftStrafeBackward';
   }
   return angle > 0 ? 'RightStrafe' : 'LeftStrafe';                                      // 67.5°…112.5° — pure side
 }

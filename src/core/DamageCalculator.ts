@@ -8,6 +8,12 @@ export interface DamageResult {
   isCritical: boolean;
 }
 
+/** Optional crit modifiers (additive on top of runes / agility / passives). */
+export interface DamageCalcOptions {
+  critChanceAdd?: number;
+  critDamageMultAdd?: number;
+}
+
 // Global references
 let globalCriticalRuneCount = 0;
 let globalCritDamageRuneCount = 0;
@@ -30,7 +36,11 @@ export function setGlobalAgilityStatPoints(points: number) {
   globalAgilityStatPoints = points;
 }
 
-export function calculateDamage(baseAmount: number, weaponType?: WeaponType): DamageResult {
+export function calculateDamage(
+  baseAmount: number,
+  weaponType?: WeaponType,
+  opts?: DamageCalcOptions,
+): DamageResult {
   // Base crit chance is 11%, each rune adds 3%, each Agility point adds 1%
   let criticalChance = 0.11 + (globalCriticalRuneCount * 0.03) + (globalAgilityStatPoints * 0.01);
 
@@ -44,10 +54,17 @@ export function calculateDamage(baseAmount: number, weaponType?: WeaponType): Da
     }
   }
 
+  if (opts?.critChanceAdd) {
+    criticalChance += opts.critChanceAdd;
+  }
+
   const isCritical = Math.random() < criticalChance;
 
   // Base crit damage multiplier is 2x, each crit damage rune adds 0.15x, each Agility point adds 0.10x
-  const criticalDamageMultiplier = 2.0 + (globalCritDamageRuneCount * 0.15) + (globalAgilityStatPoints * 0.10);
+  let criticalDamageMultiplier = 2.0 + (globalCritDamageRuneCount * 0.15) + (globalAgilityStatPoints * 0.10);
+  if (opts?.critDamageMultAdd) {
+    criticalDamageMultiplier += opts.critDamageMultAdd;
+  }
   const rawDamage = isCritical ? baseAmount * criticalDamageMultiplier : baseAmount;
 
   // Round down to integer to avoid floating point precision issues

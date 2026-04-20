@@ -14,6 +14,8 @@ import { MultiplayerProvider, useMultiplayer } from '../contexts/MultiplayerCont
 import MerchantUI from '../components/ui/MerchantUI';
 import StatsPanel from '../components/ui/StatsPanel';
 import LoadingScreen from '../components/ui/LoadingScreen';
+import AbilitySelectionModal from '../components/ui/AbilitySelectionModal';
+import TalentSelectionModal from '../components/ui/TalentSelectionModal';
 
 // Extend Window interface to include audioSystem
 declare global {
@@ -42,6 +44,9 @@ function HomeContent() {
   const {
     selectedWeapons,
     abilityLoadout,
+    setAbilityLoadout,
+    talentLoadout,
+    setTalentLoadout,
     skillPointData,
     unlockAbility,
     updateSkillPointsForLevel,
@@ -117,6 +122,8 @@ function HomeContent() {
   const [playerEssence, setPlayerEssence] = useState(50); // Start with 50 essence
   const [showMerchantUI, setShowMerchantUI] = useState(false);
   const [showRulesPanel, setShowRulesPanel] = useState(false);
+  const [throneAbilityWeapon, setThroneAbilityWeapon] = useState<WeaponType | null>(null);
+  const [throneTalentWeapon, setThroneTalentWeapon] = useState<WeaponType | null>(null);
 
   const handleDamageNumberComplete = (id: string) => {
     // Use the global handler set by GameScene
@@ -355,6 +362,15 @@ function HomeContent() {
                 skillPointData={skillPointData}
                 statPointData={statPointData}
                 abilityLoadout={abilityLoadout}
+                throneAbilityModalOpen={throneAbilityWeapon !== null || throneTalentWeapon !== null}
+                onRequestThroneAbilityModal={(weapon) => {
+                  setThroneTalentWeapon(null);
+                  setThroneAbilityWeapon(weapon);
+                }}
+                onRequestThroneTalentModal={(weapon) => {
+                  setThroneAbilityWeapon(null);
+                  setThroneTalentWeapon(weapon);
+                }}
               />
             )}
           </Canvas>
@@ -376,7 +392,11 @@ function HomeContent() {
               <div>Right Click - Camera </div>
               <div>Left Click - Attack </div>
               <div>Space - Jump</div>
-              {gameMode === 'coop' && <div className="text-green-400/90 mt-1">Throne: X — equip weapon at pedestal</div>}
+              {gameMode === 'coop' && (
+                <div className="text-green-400/90 mt-1">
+                  X — Equip Weapon
+                </div>
+              )}
             </div>
             
             {/* Performance Stats */}
@@ -457,6 +477,33 @@ function HomeContent() {
               <EssenceDisplay
                 essence={playerEssence}
                 isLocalPlayer={true}
+              />
+            )}
+
+            {gameMode === 'coop' && throneAbilityWeapon !== null && (
+              <AbilitySelectionModal
+                key={`throne-ability-${throneAbilityWeapon}`}
+                selectedWeapon={throneAbilityWeapon}
+                initialLoadout={abilityLoadout}
+                onConfirm={(loadout) => {
+                  setAbilityLoadout(loadout);
+                  setThroneAbilityWeapon(null);
+                }}
+                onBack={() => setThroneAbilityWeapon(null)}
+              />
+            )}
+
+            {gameMode === 'coop' && throneTalentWeapon !== null && (
+              <TalentSelectionModal
+                key={`throne-talent-${throneTalentWeapon}`}
+                selectedWeapon={throneTalentWeapon}
+                abilityLoadout={abilityLoadout}
+                initialTalentLoadout={talentLoadout}
+                onConfirm={(loadout) => {
+                  setTalentLoadout(loadout);
+                  setThroneTalentWeapon(null);
+                }}
+                onBack={() => setThroneTalentWeapon(null)}
               />
             )}
 

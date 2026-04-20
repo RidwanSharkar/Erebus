@@ -75,6 +75,9 @@ class EnemyAI {
     // Weaver summoned ghoul tracking (1 ghoul per weaver at a time)
     this.weaverSummonedGhouls = new Map(); // weaverId -> ghoulId | null
 
+    // Player zombies (INFESTED STRIKE): owner -> Set(zombieId)
+    this.playerZombiesByOwner = new Map();
+
     // Ghoul attack cooldown tracking
     this.ghoulAttackCooldown = new Map(); // enemyId -> lastAttackTime
 
@@ -131,6 +134,7 @@ class EnemyAI {
     this.weaverHealCooldown.clear();
     this.weaverSummonCooldown.clear();
     this.weaverSummonedGhouls.clear();
+    this.playerZombiesByOwner.clear();
     this.ghoulAttackCooldown.clear();
     this.meleeLockUntil.clear();
     this.knightAbilityCooldown.clear();
@@ -204,6 +208,12 @@ class EnemyAI {
     // Special handling for weavers
     if (enemy.type === 'weaver') {
       this.updateWeaverAI(enemy, players);
+      return;
+    }
+
+    // Player-raised zombies (INFESTED STRIKE)
+    if (enemy.type === 'player-zombie') {
+      this.updatePlayerZombieAI(enemy, players);
       return;
     }
 
@@ -783,7 +793,7 @@ class EnemyAI {
         timestamp: Date.now()
       });
     }
-R
+
     const dirLabel = theta > 0 ? (Math.abs(theta) < Math.PI / 2 ? 'diagonal-fwd-left' : 'left') : (Math.abs(theta) < Math.PI / 2 ? 'diagonal-fwd-right' : 'right');
     console.log(`👻 Shade ${shade.id} blinked 4 units ${dirLabel} of target (θ=${(theta * 180 / Math.PI).toFixed(0)}°)`);
 
@@ -1099,7 +1109,7 @@ R
 
     const distance    = this.calculateDistance(viper.position, targetPlayer.position);
     const attackRange = 13.0; // Long-range archer
-    const aggroRadius = 9;
+    const aggroRadius = 7;
     const leashRadius = aggroRadius * 3;
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(viper.position, targetPlayer.position)) {
@@ -2120,7 +2130,161 @@ R
       case 'templar': return 3.5;
       case 'weaver':  return 2.0;
       case 'ghoul':   return 2.5;
+      case 'player-zombie': return 2.5;
       default: return 2.0;
+    }
+  }
+
+  countLivingPlayerZombies(ownerId) {
+    const ids = this.playerZombiesByOwner.get(ownerId);
+    if (!ids || ids.size === 0) return 0;
+    let n = 0;
+    for (const id of ids) {
+      const e = this.room?.getEnemy(id);
+      if (e && !e.isDying && e.health > 0) n++;
+    }
+    return n;
+  }
+
+  unregisterPlayerZombie(ownerId, zombieId) {
+    const set = this.playerZombiesByOwner.get(ownerId);
+    if (set) {
+      set.delete(zombieId);
+      if (set.size === 0) this.playerZombiesByOwner.delete(ownerId);
+    }
+    this.ghoulAttackCooldown.delete(zombieId);
+    this.meleeLockUntil.delete(zombieId);
+  }
+
+  trySpawnInfestedZombie(ownerId, position) {
+    if (!this.room || !ownerId) return;
+    if (this.countLivingPlayerZombies(ownerId) >= 3) return;
+
+    const zombieId = `player-zombie-${ownerId}-${Date.now()}`;
+    const now = Date.now();
+    const zombie = {
+      id: zombieId,
+      type: 'player-zombie',
+      ownerPlayerId: ownerId,
+      position: { x: position.x, y: position.y, z: position.z },
+      rotation: 0,
+      health: 400,
+      maxHealth: 400,
+      isDying: false,
+      damage: 25,
+      attackCooldown: 1500,
+      moveSpeed: 2.5,
+      expireAt: now + 30000,
+    };
+
+    if (!this.playerZombiesByOwner.has(ownerId)) {
+      this.playerZombiesByOwner.set(ownerId, new Set());
+    }
+    this.playerZombiesByOwner.get(ownerId).add(zombieId);
+
+    this.room.addEnemy(zombie);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-spawned', {
+        enemy: zombie,
+        timestamp: Date.now(),
+      });
+    }
+    console.log(`🧟 Infested zombie ${zombieId} raised for player ${ownerId}`);
+  }
+
+  findNearestHostileForZombie(zombie) {
+    if (!this.room) return null;
+    let best = null;
+    let bestD = Infinity;
+    for (const e of this.room.getEnemies()) {
+      if (!e || e.id === zombie.id || e.isDying) continue;
+      if (e.type === 'player-zombie') continue;
+      if (e.type === 'training-dummy') continue;
+      if (e.health <= 0) continue;
+      const d = this.calculateDistance(zombie.position, e.position);
+      if (d < bestD) {
+        bestD = d;
+        best = e;
+      }
+    }
+    return best;
+  }
+
+  telegraphPlayerZombieAttack(zombie, targetEnemy) {
+    if (this.io) {
+      this.io.to(this.roomId).emit('player-zombie-attack-telegraph', {
+        zombieId: zombie.id,
+        targetEnemyId: targetEnemy.id,
+        position: zombie.position,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  updatePlayerZombieAI(zombie, players) {
+    const now = Date.now();
+    if (zombie.expireAt && now >= zombie.expireAt && !zombie.isDying) {
+      zombie.isDying = true;
+      const zid = zombie.id;
+      const ownerId = zombie.ownerPlayerId;
+      setTimeout(() => {
+        if (!this.room?.getGameStarted()) return;
+        if (this.room?.enemies.has(zid)) {
+          this.room.enemies.delete(zid);
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-removed', { enemyId: zid, timestamp: Date.now() });
+          }
+        }
+        this.removeEnemyAggro(zid);
+        this.unregisterPlayerZombie(ownerId, zid);
+      }, 400);
+      return;
+    }
+    if (zombie.isDying) return;
+
+    const hostile = this.findNearestHostileForZombie(zombie);
+    const attackRange = 2.4;
+    const attackCooldown = zombie.attackCooldown ?? 1500;
+    const lockUntil = this.meleeLockUntil.get(zombie.id) || 0;
+    if (now < lockUntil) return;
+
+    if (hostile) {
+      const distance = this.calculateDistance(zombie.position, hostile.position);
+      const meleePressDistance = attackRange - MELEE_CLOSE_INSET;
+
+      if (distance <= attackRange) {
+        if (!this.ghoulAttackCooldown.has(zombie.id)) {
+          this.ghoulAttackCooldown.set(zombie.id, 0);
+        }
+        const lastAttackTime = this.ghoulAttackCooldown.get(zombie.id);
+        if (now - lastAttackTime >= attackCooldown) {
+          this.ghoulAttackCooldown.set(zombie.id, now);
+          const SWING_LOCK_MS = 1200;
+          this.meleeLockUntil.set(zombie.id, now + SWING_LOCK_MS);
+          this.telegraphPlayerZombieAttack(zombie, hostile);
+
+          setTimeout(() => {
+            if (zombie.isDying || !this.room?.getGameStarted()) return;
+            const liveHostile = this.room?.getEnemy(hostile.id);
+            if (!liveHostile || liveHostile.isDying || liveHostile.health <= 0) return;
+            const currentDist = this.calculateDistance(zombie.position, liveHostile.position);
+            if (currentDist <= attackRange + 0.5) {
+              const dmg = zombie.damage || 25;
+              this.room.damageEnemy(liveHostile.id, dmg, zombie.ownerPlayerId, null, null);
+            }
+          }, 900);
+        } else if (distance > meleePressDistance) {
+          this.moveEnemyTowardsTarget(zombie, { position: hostile.position, id: hostile.id });
+        }
+      } else {
+        this.moveEnemyTowardsTarget(zombie, { position: hostile.position, id: hostile.id });
+      }
+    } else {
+      const owner = players.find((p) => p.id === zombie.ownerPlayerId);
+      if (owner && owner.health > 0) {
+        this.moveEnemyTowardsTarget(zombie, owner);
+      }
     }
   }
 

@@ -146,6 +146,8 @@ export default function Runeblade({
 
   // Swing collision tracking
   const lastSwingHitTime = useRef<Record<string, number>>({});
+  /** Horizontal attack forward from playerRotation.y (matches DragonRenderer camera yaw). */
+  const attackForwardScratch = useRef(new Vector3());
   const swingHasDealtDamage = useRef(false);
   const currentComboStep = useRef(comboStep);
 
@@ -787,8 +789,10 @@ export default function Runeblade({
         if (comboStep === 3) {
           shouldHit = true;
         } else {
+          const yaw = playerRotation?.y ?? 0;
+          attackForwardScratch.current.set(Math.sin(yaw), 0, Math.cos(yaw));
           const toEnemy = enemy.position.clone().sub(playerPosition).normalize();
-          const dotProduct = toEnemy.dot(new Vector3(0, 0, -1));
+          const dotProduct = toEnemy.dot(attackForwardScratch.current);
           shouldHit = dotProduct > -0.5;
         }
 
@@ -1103,7 +1107,7 @@ export default function Runeblade({
       onToggle={onCorruptedAuraToggle}
     />
     
-    {/* Wraith Strike effect is now handled by HauntedSoulEffect in PVPGameScene */}
+    {/* Wraith Strike soul VFX: ControlSystem → HauntedSoulEffect callback; rendered in CoopGameScene */}
     </>
   );
 }

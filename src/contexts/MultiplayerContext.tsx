@@ -6,6 +6,7 @@ import { io, Socket } from 'socket.io-client';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { SkillPointSystem, SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
 import { AbilityLoadout, getDefaultLoadoutForWeapon } from '@/utils/weaponAbilities';
+import { TalentLoadout, createDefaultTalentLoadout } from '@/utils/talents';
 import { ExperienceSystem } from '@/utils/ExperienceSystem';
 import { StatSystem, StatPointData, StatKey, PlayerStats } from '@/utils/StatSystem';
 
@@ -35,6 +36,12 @@ export interface Player {
   stats?: PlayerStats;
 }
 
+/** Optional metadata for co-op `enemy-damage` (Wraith Strike + Infested Strike spawn rules). */
+export interface EnemyDamageMeta {
+  damageType?: string;
+  infestedStrike?: boolean;
+}
+
 /** Server enemy; `type` includes e.g. `knight`, `training-dummy` (throne prep). */
 export interface Enemy {
   id: string;
@@ -47,6 +54,9 @@ export interface Enemy {
   soulType?: 'green' | 'red' | 'blue' | 'purple' | 'yellow';
   campType?: string;
   campIndex?: number;
+  /** INFESTED STRIKE ally zombie */
+  ownerPlayerId?: string;
+  expireAt?: number;
 }
 
 export interface DroppedItem {
@@ -140,6 +150,9 @@ interface MultiplayerContextType {
   /** Co-op session archetype for grass / border / camp lights (`['red'|'blue'|'green'|'purple']`). */
   campTypes: string[];
 
+  /** Co-op throne: two distinct archetype keys shown on the paired portals until combat starts. */
+  thronePortalOffer: string[];
+
   // Chat state
   chatMessages: ChatMessage[];
   isChatOpen: boolean;
@@ -166,7 +179,7 @@ interface MultiplayerContextType {
   clearPreview: () => void;
   startGame: () => void;
   /** Co-op: request transition from throne room to main combat arena (server-authoritative). */
-  enterCombatArena: () => void;
+  enterCombatArena: (chosenCampType?: string) => void;
   
   // Player actions
   updatePlayerPosition: (position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: { x: number; y: number; z: number }) => void;
@@ -185,7 +198,7 @@ interface MultiplayerContextType {
   broadcastPlayerDeathEffect: (playerId: string, position: { x: number; y: number; z: number }, isStarting: boolean) => void;
   
   // Enemy actions
-  damageEnemy: (enemyId: string, damage: number, sourcePlayerId?: string) => void;
+  damageEnemy: (enemyId: string, damage: number, sourcePlayerId?: string, meta?: EnemyDamageMeta) => void;
   applyStatusEffect: (enemyId: string, effectType: string, duration: number) => void;
 
   // Experience system actions
@@ -204,6 +217,9 @@ interface MultiplayerContextType {
   // Ability loadout
   abilityLoadout: AbilityLoadout | null;
   setAbilityLoadout: (loadout: AbilityLoadout | null) => void;
+
+  talentLoadout: TalentLoadout;
+  setTalentLoadout: (loadout: TalentLoadout) => void;
 
   // Skill point system actions
   unlockAbility: (unlock: AbilityUnlock) => void;
@@ -280,6 +296,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [combatArenaActive, setCombatArenaActive] = useState(true);
   const [gameMode, setGameMode] = useState<'multiplayer' | 'coop'>('multiplayer');
   const [campTypes, setCampTypes] = useState<string[]>([]);
+  const [thronePortalOffer, setThronePortalOffer] = useState<string[]>([]);
   const [currentPreview, setCurrentPreview] = useState<RoomPreview | null>(null);
   const [selectedWeapons, setSelectedWeaponsState] = useState<{
     primary: WeaponType;
@@ -293,6 +310,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [abilityLoadout, setAbilityLoadoutState] = useState<AbilityLoadout | null>(() =>
     getDefaultLoadoutForWeapon(WeaponType.BOW),
   );
+  const [talentLoadout, setTalentLoadoutState] = useState<TalentLoadout>(() => createDefaultTalentLoadout());
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -424,6 +442,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       }
       setEnemies(enemiesMap);
       setCampTypes(campArchetypeFromRoomPayload(data));
+      if (Array.isArray((data as { thronePortalOffer?: string[] }).thronePortalOffer)) {
+        setThronePortalOffer([...(data as { thronePortalOffer: string[] }).thronePortalOffer]);
+      } else {
+        setThronePortalOffer([]);
+      }
     });
 
     addEventHandler('camps-initialized', (data: { campTypes?: string[] }) => {
@@ -690,10 +713,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           return next;
         });
       }
+      if (Array.isArray(data?.thronePortalOffer)) {
+        setThronePortalOffer([...data.thronePortalOffer]);
+      } else {
+        setThronePortalOffer([]);
+      }
     });
 
     addEventHandler('combat-arena-entered', (data: any) => {
       setCombatArenaActive(true);
+      setThronePortalOffer([]);
       if (data?.players && Array.isArray(data.players)) {
         setPlayers((prev) => {
           const next = new Map(prev);
@@ -919,6 +948,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setCombatArenaActive(true);
     setGameMode('multiplayer');
     setCampTypes([]);
+    setThronePortalOffer([]);
     setDroppedItems(new Map());
     setInventory([]);
     }
@@ -940,9 +970,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const enterCombatArena = useCallback(() => {
+  const enterCombatArena = useCallback((chosenCampType?: string) => {
     if (socket && currentRoomId) {
-      socket.emit('enter-combat-arena', { roomId: currentRoomId });
+      socket.emit('enter-combat-arena', { roomId: currentRoomId, chosenCampType });
     }
   }, [socket, currentRoomId]);
 
@@ -1013,13 +1043,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const damageEnemy = useCallback((enemyId: string, damage: number, sourcePlayerId?: string) => {
+  const damageEnemy = useCallback((enemyId: string, damage: number, sourcePlayerId?: string, meta?: EnemyDamageMeta) => {
     if (socket && currentRoomId) {
       socket.emit('enemy-damage', {
         roomId: currentRoomId,
         enemyId,
         damage,
-        sourcePlayerId: sourcePlayerId || socket.id // Always send the player ID for aggro tracking
+        sourcePlayerId: sourcePlayerId || socket.id, // Always send the player ID for aggro tracking
+        ...(meta?.damageType !== undefined ? { damageType: meta.damageType } : {}),
+        ...(meta?.infestedStrike ? { infestedStrike: true } : {}),
       });
     }
   }, [socket, currentRoomId]);
@@ -1183,6 +1215,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setAbilityLoadoutState(loadout);
   }, []);
 
+  const setTalentLoadout = useCallback((loadout: TalentLoadout) => {
+    setTalentLoadoutState(loadout);
+  }, []);
+
   const updatePlayerLevel = useCallback((playerId: string, level: number) => {
     if (socket && currentRoomId) {
       socket.emit('player-level-changed', {
@@ -1329,6 +1365,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     combatArenaActive,
     gameMode,
     campTypes,
+    thronePortalOffer,
     currentPreview,
     joinRoom,
     leaveRoom,
@@ -1360,6 +1397,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setSelectedWeapons,
     abilityLoadout,
     setAbilityLoadout,
+    talentLoadout,
+    setTalentLoadout,
     skillPointData,
     unlockAbility,
     updateSkillPointsForLevel,

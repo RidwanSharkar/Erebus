@@ -2,7 +2,7 @@ const { broadcastEnemySpawn } = require('./enemyHandler');
 const EnemyAI = require('./enemyAI');
 
 /** Keep in sync with ThroneRoom.tsx: THRONE_TRAINING_DUMMY_SPAWN_Z, THRONE_TRAINING_DUMMY_ID */
-const THRONE_TRAINING_DUMMY_Z = 7;
+const THRONE_TRAINING_DUMMY_Z = 10.75;
 const THRONE_TRAINING_DUMMY_ID = 'throne-training-dummy';
 
 class GameRoom {
@@ -43,6 +43,12 @@ class GameRoom {
 
     /** Session archetype for co-op (`initializeEnemies`); sent on `camps-initialized` and `room-joined`. */
     this.sessionCampTypes = [];
+
+    /** Co-op throne: two distinct main-room archetypes offered until a portal is used. */
+    this.thronePortalOffer = [];
+
+    /** Set in `activateCombatArena` — consumed by `initializeEnemies` on first combat spawn. */
+    this.pendingCoopArchetype = null;
   }
 
   // ── Enemy archetype definitions ────────────────────────────────────────────
@@ -72,6 +78,7 @@ class GameRoom {
     // Co-op: begin in the throne prep room — combat arena + enemies start after portal
     if (this.gameMode === 'coop') {
       this.combatArenaActive = false;
+      this._pickThronePortalOffer();
       this.teleportAllPlayersToThroneRoom();
       this.spawnThroneTrainingDummy();
     } else {
@@ -94,6 +101,7 @@ class GameRoom {
         players: this.getPlayers(),
         /** Full snapshot so clients never miss `enemy-spawned` (e.g. throne training dummy). */
         enemies: this.getEnemies(),
+        thronePortalOffer: this.gameMode === 'coop' ? [...this.thronePortalOffer] : [],
       });
     }
     
@@ -108,8 +116,8 @@ class GameRoom {
       type: 'training-dummy',
       position: { x: 0, y: 0, z: THRONE_TRAINING_DUMMY_Z },
       rotation: Math.PI,
-      health: 500,
-      maxHealth: 500,
+      health: 1000,
+      maxHealth: 1000,
       isDying: false,
       soulType: 'yellow',
       campType: 'yellow',
@@ -172,16 +180,45 @@ class GameRoom {
     }
   }
 
+  _pickThronePortalOffer() {
+    const keys = Object.keys(GameRoom.CAMP_TYPES);
+    const a = keys[Math.floor(Math.random() * keys.length)];
+    let b = keys[Math.floor(Math.random() * keys.length)];
+    while (b === a) {
+      b = keys[Math.floor(Math.random() * keys.length)];
+    }
+    this.thronePortalOffer = [a, b];
+  }
+
+  /** @returns {string[]} copy of the two offered archetype keys (co-op throne), or [] */
+  getThronePortalOffer() {
+    return [...this.thronePortalOffer];
+  }
+
   /**
    * First portal use activates the main arena for the whole room.
+   * @param {string} [chosenCampType] — must be one of `thronePortalOffer` (clients send nearest portal).
    * @returns {boolean} true if activation ran (first time), false if already active or invalid
    */
-  activateCombatArena() {
+  activateCombatArena(chosenCampType) {
     if (!this.gameStarted || this.combatArenaActive || this.gameMode !== 'coop') {
       return false;
     }
+    const offer = this.thronePortalOffer;
+    if (!offer || offer.length !== 2) {
+      return false;
+    }
+    let pick = chosenCampType != null ? String(chosenCampType).toLowerCase() : '';
+    if (!pick || !offer.includes(pick)) {
+      pick = offer[0];
+    }
+    if (!GameRoom.CAMP_TYPES[pick]) {
+      return false;
+    }
+    this.pendingCoopArchetype = pick;
     this.removeThroneTrainingDummy();
     this.combatArenaActive = true;
+    this.thronePortalOffer = [];
     this.teleportAllPlayersToCombatSpawn();
     this.spawnEnemyWave();
     this.startEnemyAI();
@@ -270,6 +307,8 @@ class GameRoom {
   stopGame() {
     this.gameStarted = false;
     this.combatArenaActive = false;
+    this.thronePortalOffer = [];
+    this.pendingCoopArchetype = null;
     this.stopEnemySpawning();
     this.stopEnemyAI();
 
@@ -302,7 +341,7 @@ class GameRoom {
   // Spawn the Titan — a single 3000-HP sentinel that roams the centre of the map.
   initializeTitan() {
     const ts = Date.now();
-    const CIRCLE_RADIUS = 10;
+    const CIRCLE_RADIUS = 8;
 
     // Start on the south side of the circle so it doesn't overlap the player spawn.
     const startAngle = Math.PI / 2; // 90° → (0, 10) in XZ
@@ -448,7 +487,11 @@ class GameRoom {
   // Enemies are distributed across the full map (clusters + lone units).
   initializeEnemies() {
     const campTypeKeys = Object.keys(GameRoom.CAMP_TYPES);
-    const typeKey      = campTypeKeys[Math.floor(Math.random() * campTypeKeys.length)];
+    let typeKey = this.pendingCoopArchetype;
+    this.pendingCoopArchetype = null;
+    if (!typeKey || !GameRoom.CAMP_TYPES[typeKey]) {
+      typeKey = campTypeKeys[Math.floor(Math.random() * campTypeKeys.length)];
+    }
     const campDef      = GameRoom.CAMP_TYPES[typeKey];
 
     this.sessionCampTypes = [typeKey];
@@ -507,7 +550,7 @@ class GameRoom {
     return { x: 0, y: 0, z: 0 };
   }
 
-  damageEnemy(enemyId, damage, fromPlayerId, player = null) {
+  damageEnemy(enemyId, damage, fromPlayerId, player = null, hitMeta = null) {
     const enemy = this.enemies.get(enemyId);
     if (!enemy || enemy.isDying) {
       // Silently reject damage to dying/dead enemies (prevents spam)
@@ -547,10 +590,42 @@ class GameRoom {
       wasKilled: previousHealth > 0 && enemy.health <= 0
     };
 
+    // Always sync HP to clients (socket `enemy-damage` and internal sources e.g. player-zombie hits).
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-damaged', {
+        enemyId: result.enemyId,
+        newHealth: result.newHealth,
+        maxHealth: result.maxHealth,
+        damage: result.damage,
+        fromPlayerId: result.fromPlayerId,
+        wasKilled: result.wasKilled,
+        timestamp: Date.now()
+      });
+    }
+
     if (result.wasKilled) {
       console.log(`💀 Enemy ${enemyId} killed by player ${fromPlayerId}`);
       enemy.isDying = true;
       enemy.deathTime = Date.now();
+
+      // INFESTED STRIKE: raise zombie on Wraith Strike kill (non-boss, non-dummy)
+      if (
+        hitMeta &&
+        hitMeta.damageType === 'wraith_strike' &&
+        hitMeta.infestedStrike &&
+        fromPlayerId &&
+        fromPlayerId !== 'unknown' &&
+        enemy.type !== 'training-dummy' &&
+        enemy.type !== 'boss' &&
+        enemy.type !== 'player-zombie' &&
+        this.enemyAI
+      ) {
+        this.enemyAI.trySpawnInfestedZombie(fromPlayerId, {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        });
+      }
 
       // Special rewards for boss kills
       if (enemy.type === 'boss') {
@@ -998,6 +1073,19 @@ class GameRoom {
           }
         }, 2500);
 
+        return result;
+
+      } else if (enemy.type === 'player-zombie') {
+        if (this.enemyAI) {
+          this.enemyAI.unregisterPlayerZombie(enemy.ownerPlayerId, enemyId);
+          this.enemyAI.removeEnemyAggro(enemyId);
+        }
+        setTimeout(() => {
+          this.enemies.delete(enemyId);
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-removed', { enemyId, timestamp: Date.now() });
+          }
+        }, 1500);
         return result;
 
       } else {
