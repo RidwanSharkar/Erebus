@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { WeaponType, WeaponSubclass } from '../components/dragon/weapons';
 import { Camera } from '../utils/three-exports';
@@ -11,11 +11,8 @@ import { getGlobalRuneCounts, getCriticalChance, getCriticalDamageMultiplier } f
 import ExperienceBar from '../components/ui/ExperienceBar';
 import EssenceDisplay from '../components/ui/EssenceDisplay';
 import { MultiplayerProvider, useMultiplayer } from '../contexts/MultiplayerContext';
-import RoomJoin from '../components/ui/RoomJoin';
 import MerchantUI from '../components/ui/MerchantUI';
 import StatsPanel from '../components/ui/StatsPanel';
-import { weaponAbilities, getAbilityIcon, type AbilityData, type AbilityLoadout } from '../utils/weaponAbilities';
-import AbilitySelectionModal from '../components/ui/AbilitySelectionModal';
 import LoadingScreen from '../components/ui/LoadingScreen';
 
 // Extend Window interface to include audioSystem
@@ -38,51 +35,28 @@ const CoopGameScene = dynamic(() => import('../components/CoopGameScene').then(m
   loading: () => null
 });
 
-// Weapon option interface
-interface WeaponOption {
-  type: WeaponType;
-  name: string;
-  icon: string;
-  description: string;
-  defaultSubclass: WeaponSubclass;
-}
-
-// Tooltip component for ability descriptions
-interface TooltipProps {
-  content: {
-    name: string;
-    description: string;
-    cooldown?: number;
-  };
-  visible: boolean;
-  x: number;
-  y: number;
-}
-
-function AbilityTooltip({ content, visible, x, y }: TooltipProps) {
-  if (!visible) return null;
-
-  return (
-    <div
-      className="fixed z-50 bg-gray-900 border border-gray-600 rounded-lg p-3 text-white text-sm max-w-xs pointer-events-none"
-      style={{
-        left: x - 150, // Center tooltip above cursor
-        top: y - 100,
-        transform: 'translateX(-50%)'
-      }}
-    >
-      <div className="font-semibold text-yellow-300 mb-1">{content.name}</div>
-      {content.cooldown !== undefined && (
-        <div className="text-yellow-400 text-xs mb-1">Cooldown: {content.cooldown}s</div>
-      )}
-      <div className="text-gray-300">{content.description}</div>
-    </div>
-  );
-}
+/** Prevents double bootstrap in React Strict Mode (ref resets on remount). */
+let coopEntryBootstrapStarted = false;
 
 function HomeContent() {
-  const { selectedWeapons, setSelectedWeapons, abilityLoadout, setAbilityLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, statPointData, allocateStatPoint, updateStatPointsForLevel: updateStatPointsForLvl, purchaseItem, players, socket, skeletonKillCount, enemies, inventory } = useMultiplayer();
-  const [showAbilitySelection, setShowAbilitySelection] = useState(false);
+  const {
+    selectedWeapons,
+    abilityLoadout,
+    skillPointData,
+    unlockAbility,
+    updateSkillPointsForLevel,
+    statPointData,
+    allocateStatPoint,
+    updateStatPointsForLevel: updateStatPointsForLvl,
+    purchaseItem,
+    players,
+    socket,
+    skeletonKillCount,
+    enemies,
+    inventory,
+    joinRoom,
+    isConnected,
+  } = useMultiplayer();
 
   const [damageNumbers, setDamageNumbers] = useState<DamageNumberData[]>([]);
   const [cameraInfo, setCameraInfo] = useState<{
@@ -126,172 +100,23 @@ function HomeContent() {
 
   // Update gameState when selectedWeapons changes
   useEffect(() => {
-    if (selectedWeapons?.primary) {
-      setGameState(prev => ({
-        ...prev,
-        currentWeapon: selectedWeapons.primary,
-        // Update subclass based on weapon type
-        currentSubclass: getDefaultSubclassForWeapon(selectedWeapons.primary)
-      }));
-    }
+    setGameState(prev => ({
+      ...prev,
+      currentWeapon: selectedWeapons.primary,
+      currentSubclass: getDefaultSubclassForWeapon(selectedWeapons.primary),
+    }));
   }, [selectedWeapons]);
 
   const [controlSystem, setControlSystem] = useState<any>(null);
   const [gameMode, setGameMode] = useState<'menu' | 'singleplayer' | 'multiplayer' | 'pvp' | 'coop'>('menu');
-  const [isGameLoading, setIsGameLoading] = useState(false);
+  const [isGameLoading, setIsGameLoading] = useState(true);
   const [showCanvas, setShowCanvas] = useState(false);
-  const [showRoomJoin, setShowRoomJoin] = useState(false);
-  const [roomJoinMode, setRoomJoinMode] = useState<'multiplayer' | 'pvp' | 'coop'>('multiplayer');
+  const bootstrapWeaponsRef = useRef(selectedWeapons);
   const [playerExperience, setPlayerExperience] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
   const [playerEssence, setPlayerEssence] = useState(50); // Start with 50 essence
   const [showMerchantUI, setShowMerchantUI] = useState(false);
   const [showRulesPanel, setShowRulesPanel] = useState(false);
-
-  // Local weapon selection state
-  const [tempSelectedWeapons, setTempSelectedWeapons] = useState<WeaponType[]>([]);
-  // Track weapon positions to maintain consistent primary/secondary assignment
-  const [weaponPositions, setWeaponPositions] = useState<{ [key: string]: 'primary' | 'secondary' }>({});
-
-  // Tooltip state for ability descriptions
-  const [tooltipContent, setTooltipContent] = useState<{
-    name: string;
-    description: string;
-    cooldown?: number;
-  } | null>(null);
-  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
-
-  // Get weapon position for consistent display
-  const getWeaponPosition = (weaponType: WeaponType): 'primary' | 'secondary' | null => {
-    return weaponPositions[weaponType] || null;
-  };
-
-  // Get weapon color scheme for selection styling
-  const getWeaponColorScheme = (weaponType: WeaponType) => {
-    switch (weaponType) {
-      case WeaponType.BOW:
-        return {
-          border: 'border-green-500',
-          background: 'bg-green-500/20',
-          shadow: 'shadow-green-500/30',
-          badge: 'bg-green-600'
-        };
-      case WeaponType.SCYTHE:
-        return {
-          border: 'border-purple-500',
-          background: 'bg-purple-500/20',
-          shadow: 'shadow-purple-500/30',
-          badge: 'bg-purple-600'
-        };
-      case WeaponType.RUNEBLADE:
-        return {
-          border: 'border-sky-400',
-          background: 'bg-sky-400/20',
-          shadow: 'shadow-sky-400/30',
-          badge: 'bg-sky-500'
-        };
-      case WeaponType.SABRES:
-        return {
-          border: 'border-red-500',
-          background: 'bg-red-500/20',
-          shadow: 'shadow-red-500/30',
-          badge: 'bg-red-600'
-        };
-      case WeaponType.SPEAR:
-        return {
-          border: 'border-gray-400',
-          background: 'bg-gray-400/20',
-          shadow: 'shadow-gray-400/30',
-          badge: 'bg-gray-500'
-        };
-      default:
-        return {
-          border: 'border-green-500',
-          background: 'bg-green-500/20',
-          shadow: 'shadow-green-500/30',
-          badge: 'bg-green-600'
-        };
-    }
-  };
-
-  // Weapon options
-  const weapons: WeaponOption[] = [
-    {
-      type: WeaponType.RUNEBLADE,
-      name: 'Sword',
-      icon: '⚜️',
-      description: 'TEMPLAR',
-      defaultSubclass: WeaponSubclass.ARCANE
-    },
-    {
-      type: WeaponType.SCYTHE,
-      name: 'Scythe',
-      icon: '🦋',
-      description: 'WEAVER',
-      defaultSubclass: WeaponSubclass.CHAOS
-    },
-    {
-      type: WeaponType.SABRES,
-      name: 'Sabres',
-      icon: '⚔️',
-      description: 'ASSASSIN',
-      defaultSubclass: WeaponSubclass.FROST
-    },
-    {
-      type: WeaponType.BOW,
-      name: 'Bow',
-      icon: '🏹',
-      description: 'VIPER',
-      defaultSubclass: WeaponSubclass.ELEMENTAL
-    },
-    {
-      type: WeaponType.SPEAR,
-      name: 'Spear',
-      icon: '🔱',
-      description: 'IMMORTAL',
-      defaultSubclass: WeaponSubclass.STORM
-    },
-  ];
-
-  const handleWeaponToggle = (weaponType: WeaponType) => {
-    if (window.audioSystem) {
-      window.audioSystem.playUISelectionSound();
-    }
-
-    const isSelected = tempSelectedWeapons.includes(weaponType);
-
-    if (isSelected) {
-      setTempSelectedWeapons([]);
-      setWeaponPositions({});
-      setAbilityLoadout(null);
-    } else {
-      setTempSelectedWeapons([weaponType]);
-      setWeaponPositions({ [weaponType]: 'primary' });
-      // Reset ability loadout when weapon changes — player picks abilities in-game
-      setAbilityLoadout(null);
-    }
-  };
-
-  // Tooltip handlers
-  const handleAbilityHover = useCallback((
-    e: React.MouseEvent,
-    ability: AbilityData
-  ) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setTooltipContent({
-      name: ability.name,
-      description: ability.description,
-      cooldown: ability.cooldown
-    });
-    setTooltipPosition({
-      x: rect.left + rect.width / 2,
-      y: rect.top
-    });
-  }, []);
-
-  const handleAbilityLeave = useCallback(() => {
-    setTooltipContent(null);
-  }, []);
 
   const handleDamageNumberComplete = (id: string) => {
     // Use the global handler set by GameScene
@@ -325,12 +150,31 @@ function HomeContent() {
     setControlSystem(newControlSystem);
   };
 
-  // Show ability selection modal when the game starts (if no loadout chosen yet)
+  // Auto-join default co-op room and start (throne-first entry; no weapon menu / room UI).
   useEffect(() => {
-    if ((gameMode === 'coop' || gameMode === 'pvp') && !abilityLoadout && selectedWeapons) {
-      setShowAbilitySelection(true);
-    }
-  }, [gameMode]);
+    if (!isConnected || !socket || coopEntryBootstrapStarted) return;
+    coopEntryBootstrapStarted = true;
+    void (async () => {
+      try {
+        const name = `Player${Math.floor(Math.random() * 10000)}`;
+        const sw = bootstrapWeaponsRef.current;
+        const joinedRoomId = await joinRoom(
+          'default',
+          name,
+          sw.primary,
+          getDefaultSubclassForWeapon(sw.primary),
+          'coop',
+        );
+        socket.emit('start-game', { roomId: joinedRoomId });
+        setGameMode('coop');
+        setShowCanvas(true);
+        setIsGameLoading(true);
+      } catch (e) {
+        console.error('Failed to bootstrap game:', e);
+        coopEntryBootstrapStarted = false;
+      }
+    })();
+  }, [isConnected, socket, joinRoom]);
 
   // Sync skill point data with control system
   useEffect(() => {
@@ -356,42 +200,6 @@ function HomeContent() {
   const handleEssenceUpdate = (essence: number) => {
     setPlayerEssence(essence);
   };
-
-  // Initialize tempSelectedWeapons and weapon positions when selectedWeapons changes
-  useEffect(() => {
-    if (selectedWeapons) {
-      const weapons = [selectedWeapons.primary]; // Only use primary weapon
-      setTempSelectedWeapons(weapons);
-
-      // Set up weapon positions
-      const positions: { [key: string]: 'primary' | 'secondary' } = {};
-      positions[selectedWeapons.primary] = 'primary';
-      setWeaponPositions(positions);
-    }
-  }, [selectedWeapons]);
-
-  // Auto-confirm selection when exactly 1 weapon is selected
-  useEffect(() => {
-    if (tempSelectedWeapons.length === 1) {
-      const selectedWeapon = tempSelectedWeapons[0];
-
-      // Only update if the weapon has actually changed
-      if (!selectedWeapons ||
-          selectedWeapons.primary !== selectedWeapon) {
-        setSelectedWeapons({
-          primary: selectedWeapon,
-          secondary: selectedWeapon // Use same weapon for secondary for compatibility
-        });
-      }
-    }
-  }, [tempSelectedWeapons]);
-
-  // Clear weapon positions when no weapons are selected
-  useEffect(() => {
-    if (tempSelectedWeapons.length === 0) {
-      setWeaponPositions({});
-    }
-  }, [tempSelectedWeapons]);
 
   // Sync localPurchasedItems with multiplayer context player data
   useEffect(() => {
@@ -439,188 +247,6 @@ function HomeContent() {
 
   return (
       <main className="w-full h-screen bg-black relative">
-        {/* Main Menu */}
-        {gameMode === 'menu' && (
-          <div className="absolute inset-0 flex items-center justify-center z-50 overflow-y-auto">
-            <div className="bg-gray-900/95 p-8 rounded-xl border-2 border-green-500 text-white max-w-5xl w-11/12 my-6 relative">
-              <button
-                onClick={() => setShowRulesPanel(true)}
-                className="absolute top-4 right-4 text-2xl hover:scale-110 transition-transform cursor-pointer text-yellow-400 hover:text-yellow-300"
-                title="Rulebook"
-              >
-                📜
-              </button>
-              <h1 className="text-xl font-bold mb-2 text-green-400 text-center"> EREBUS </h1>
-
-              {/* Weapon Selection Section */}
-              <div className="mb-6">
-     
-
-
-                <div className="flex flex-col gap-3 mb-4 max-w-4xl mx-auto">
-                  {/* First row - 3 weapons */}
-                  <div className="grid grid-cols-3 gap-3">
-                    {weapons.slice(0, 3).map((weapon) => {
-                      const isSelected = tempSelectedWeapons.includes(weapon.type);
-                      const canSelect = !isSelected && tempSelectedWeapons.length < 1;
-                      const colorScheme = getWeaponColorScheme(weapon.type);
-
-                      return (
-                        <div
-                          key={weapon.type}
-                          onClick={() => handleWeaponToggle(weapon.type)}
-                          className={`
-                            w-full p-3 rounded-lg border-2 cursor-pointer transition-all duration-300
-                            ${isSelected
-                              ? `${colorScheme.border} ${colorScheme.background} shadow-lg ${colorScheme.shadow}`
-                              : canSelect
-                                ? 'border-gray-600 bg-gray-800/50 hover:border-gray-400 hover:bg-gray-700/50'
-                                : 'border-gray-700 bg-gray-900/50 opacity-60 cursor-not-allowed'
-                            }
-                          `}
-                        >
-                          <div className="text-center mb-2">
-                            <div className="text-2xl mb-1">{weapon.icon}</div>
-                            <h3 className="text-base font-bold mb-1">{weapon.name}</h3>
-                          </div>
-
-                          <p className="text-xs text-gray-300 mb-2 text-center">
-                            {weapon.description}
-                          </p>
-
-                          {/* Weapon Abilities */}
-                          <div className="mb-2">
-                            <div className="text-xs text-gray-400 text-center mb-1">Abilities:</div>
-                            <div className="flex justify-center gap-1">
-                              {weaponAbilities[weapon.type]?.filter(ability => ability.key !== 'P').map((ability) => (
-                                <div
-                                  key={ability.key}
-                                  className="relative w-7 h-7 rounded border border-gray-600 bg-gray-800 hover:bg-gray-700 transition-colors cursor-pointer flex items-center justify-center"
-                                  onMouseEnter={(e) => handleAbilityHover(e, ability)}
-                                  onMouseLeave={handleAbilityLeave}
-                                >
-                                  {/* Hotkey indicator */}
-                                  <div className="absolute -top-1 -left-1 bg-gray-900 border border-gray-500 rounded text-xs text-white px-0.5 font-semibold leading-none text-[9px]">
-                                    {ability.key}
-                                  </div>
-                                  
-                                  {/* Ability icon */}
-                                  <div className="text-xs">
-                                    {getAbilityIcon(weapon.type, ability.key)}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {isSelected && (
-                            <div className="text-center">
-                              <span className={`inline-block px-1.5 py-0.5 ${colorScheme.badge} text-white text-xs rounded-full`}>
-                                Selected
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  
-                  {/* Second row - remaining weapons */}
-                  <div className="grid grid-cols-3 gap-3">
-                    {weapons.slice(3).map((weapon) => {
-                      const isSelected = tempSelectedWeapons.includes(weapon.type);
-                      const canSelect = !isSelected && tempSelectedWeapons.length < 1;
-                      const colorScheme = getWeaponColorScheme(weapon.type);
-
-                      return (
-                        <div
-                          key={weapon.type}
-                          onClick={() => handleWeaponToggle(weapon.type)}
-                          className={`
-                            w-full p-3 rounded-lg border-2 cursor-pointer transition-all duration-300
-                            ${isSelected
-                              ? `${colorScheme.border} ${colorScheme.background} shadow-lg ${colorScheme.shadow}`
-                              : canSelect
-                                ? 'border-gray-600 bg-gray-800/50 hover:border-gray-400 hover:bg-gray-700/50'
-                                : 'border-gray-700 bg-gray-900/50 opacity-60 cursor-not-allowed'
-                            }
-                          `}
-                        >
-                          <div className="text-center mb-2">
-                            <div className="text-2xl mb-1">{weapon.icon}</div>
-                            <h3 className="text-base font-bold mb-1">{weapon.name}</h3>
-                          </div>
-
-                          <p className="text-xs text-gray-300 mb-2 text-center">
-                            {weapon.description}
-                          </p>
-
-                          {/* Weapon Abilities */}
-                          <div className="mb-2">
-                            <div className="text-xs text-gray-400 text-center mb-1">Abilities:</div>
-                            <div className="flex justify-center gap-1">
-                              {weaponAbilities[weapon.type]?.filter(ability => ability.key !== 'P').map((ability) => (
-                                <div
-                                  key={ability.key}
-                                  className="relative w-7 h-7 rounded border border-gray-600 bg-gray-800 hover:bg-gray-700 transition-colors cursor-pointer flex items-center justify-center"
-                                  onMouseEnter={(e) => handleAbilityHover(e, ability)}
-                                  onMouseLeave={handleAbilityLeave}
-                                >
-                                  {/* Hotkey indicator */}
-                                  <div className="absolute -top-1 -left-1 bg-gray-900 border border-gray-500 rounded text-xs text-white px-0.5 font-semibold leading-none text-[9px]">
-                                    {ability.key}
-                                  </div>
-                                  
-                                  {/* Ability icon */}
-                                  <div className="text-xs">
-                                    {getAbilityIcon(weapon.type, ability.key)}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {isSelected && (
-                            <div className="text-center">
-                              <span className={`inline-block px-1.5 py-0.5 ${colorScheme.badge} text-white text-xs rounded-full`}>
-                                Selected
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Game Mode Buttons */}
-              <div className="flex flex-col gap-3 items-center">
-                <button
-                  className={`px-6 py-2.5 text-lg text-white border-none rounded-lg cursor-pointer transition-all duration-300 font-bold hover:-translate-y-1 w-1/2.5 ${
-                    selectedWeapons
-                      ? 'bg-red-500 hover:bg-red-600'
-                      : 'bg-gray-600 cursor-not-allowed'
-                  }`}
-                  onClick={() => {
-                    if (window.audioSystem) {
-                      window.audioSystem.playUIInterfaceSound();
-                    }
-                    if (selectedWeapons) {
-                      setRoomJoinMode('coop');
-                      setShowRoomJoin(true);
-                    }
-                  }}
-                  disabled={!selectedWeapons}
-                >
-                  ENTER
-                  {!selectedWeapons && ' (Select a Weapon First)'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Rules Panel */}
         {showRulesPanel && (
           <div
@@ -655,7 +281,7 @@ function HomeContent() {
                 <div className="border-b border-gray-600 pb-4">
                   <h3 className="text-lg font-semibold text-yellow-400 mb-2">⚔️ WEAPON SYSTEM</h3>
                   <p className="text-gray-300 mb-2">
-                    Choose 1 weapon to equip. All abilities for your chosen weapon are unlocked by default. Each weapon has unique abilities and playstyles:
+                    In the throne room, stand near a weapon and press <strong className="text-green-400">X</strong> to equip it. Each weapon has unique abilities and playstyles:
                   </p>
                   <ul className="text-gray-300 text-sm space-y-1 ml-4">
                     <li>• <strong className="text-green-400">Bow (VIPER) Ranged sniper with burst, harass and long-range siege potential</strong>:</li>
@@ -672,8 +298,9 @@ function HomeContent() {
                     <li>• <strong>Left Click</strong>: Attack</li>
                     <li>• <strong>Right Click</strong>: Camera control</li>
                     <li>• <strong>Space</strong>: Jump</li>
-                    <li>• <strong>1/2</strong>: Switch between primary/secondary weapons</li>
-                    <li>• <strong>Q/E/R/F</strong>: Weapon abilities (hover over abilities to see details)</li>
+                    <li>• <strong>1/2</strong>: Switch between primary/secondary weapons (when both slots differ)</li>
+                    <li>• <strong>X</strong>: Equip the weapon at the nearest throne pedestal (prep room)</li>
+                    <li>• <strong>Q/E/R/F</strong>: Weapon abilities</li>
                   </ul>
                 </div>
 
@@ -696,36 +323,6 @@ function HomeContent() {
               </div>
             </div>
           </div>
-        )}
-
-        {/* Ability Selection Modal */}
-        {showAbilitySelection && selectedWeapons && (
-          <AbilitySelectionModal
-            selectedWeapon={selectedWeapons.primary}
-            onConfirm={(loadout) => {
-              setAbilityLoadout(loadout);
-              setShowAbilitySelection(false);
-            }}
-            onBack={() => setShowAbilitySelection(false)}
-          />
-        )}
-
-        {/* Room Join UI */}
-        {showRoomJoin && selectedWeapons && (
-          <RoomJoin
-            onJoinSuccess={() => {
-              setShowRoomJoin(false);
-              setIsGameLoading(true);
-              setShowCanvas(true);
-              setGameMode(roomJoinMode);
-            }}
-            onBack={() => {
-              setShowRoomJoin(false);
-            }}
-            currentWeapon={selectedWeapons.primary}
-            currentSubclass={gameState.currentSubclass}
-            gameMode={roomJoinMode}
-          />
         )}
 
         {showCanvas && (
@@ -766,11 +363,20 @@ function HomeContent() {
         {/* UI Overlay - Only show during gameplay */}
         {gameMode !== 'menu' && (
           <>
+            <button
+              type="button"
+              onClick={() => setShowRulesPanel(true)}
+              className="absolute top-4 right-28 z-[100] text-2xl hover:scale-110 transition-transform cursor-pointer text-yellow-400 hover:text-yellow-300"
+              title="Rulebook"
+            >
+              📜
+            </button>
             <div className="absolute top-4 left-4 text-white font-mono text-sm">
               <div>WASD - Double Tap Dash</div>
               <div>Right Click - Camera </div>
               <div>Left Click - Attack </div>
               <div>Space - Jump</div>
+              {gameMode === 'coop' && <div className="text-green-400/90 mt-1">Throne: X — equip weapon at pedestal</div>}
             </div>
             
             {/* Performance Stats */}
@@ -800,7 +406,7 @@ function HomeContent() {
             <div className="absolute bottom-4 left-4">
               <GameUI
                 key={`gameui-${localPurchasedItems.length}-${localPurchasedItems.join(',')}`}
-                currentWeapon={controlSystem?.getCurrentWeapon() || selectedWeapons?.primary || gameState.currentWeapon}
+                currentWeapon={controlSystem?.getCurrentWeapon() || selectedWeapons.primary || gameState.currentWeapon}
                 playerHealth={gameState.playerHealth}
                 maxHealth={gameState.maxHealth}
                 playerShield={gameState.playerShield}
@@ -897,17 +503,7 @@ function HomeContent() {
           </>
         )}
 
-        {/* Ability Tooltip - Show during weapon selection */}
-        {gameMode === 'menu' && tooltipContent && (
-          <AbilityTooltip 
-            content={tooltipContent}
-            visible={true}
-            x={tooltipPosition.x}
-            y={tooltipPosition.y}
-          />
-        )}
-
-        {/* Loading Screen - shown between room join and scene ready */}
+        {/* Loading Screen - shown until scene ready */}
         <LoadingScreen
           isVisible={isGameLoading}
           onFadeComplete={() => setIsGameLoading(false)}

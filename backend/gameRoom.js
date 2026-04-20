@@ -1,6 +1,10 @@
 const { broadcastEnemySpawn } = require('./enemyHandler');
 const EnemyAI = require('./enemyAI');
 
+/** Keep in sync with ThroneRoom.tsx: THRONE_TRAINING_DUMMY_SPAWN_Z, THRONE_TRAINING_DUMMY_ID */
+const THRONE_TRAINING_DUMMY_Z = 7;
+const THRONE_TRAINING_DUMMY_ID = 'throne-training-dummy';
+
 class GameRoom {
   constructor(roomId, io) {
     this.roomId = roomId;
@@ -30,6 +34,9 @@ class GameRoom {
     // Track when game started for boss spawning
     this.gameStartTime = 0;
     this.bossSpawned = false;
+
+    /** Co-op: false until a player uses the throne-room portal (enemies + AI start then). */
+    this.combatArenaActive = false;
 
     // Kill tracking toward boss trigger (12 enemies must be killed across 3 camps)
     this.skeletonKillCount = 0;
@@ -62,11 +69,17 @@ class GameRoom {
     this.bossSpawned = false;
     this.skeletonKillCount = 0;
 
-    // Initialize enemies and AI for co-op mode
+    // Co-op: begin in the throne prep room — combat arena + enemies start after portal
     if (this.gameMode === 'coop') {
-      this.spawnEnemyWave();
+      this.combatArenaActive = false;
+      this.teleportAllPlayersToThroneRoom();
+      this.spawnThroneTrainingDummy();
+    } else {
+      this.combatArenaActive = true;
+    }
 
-      // Start enemy AI
+    if (this.gameMode === 'coop' && this.combatArenaActive) {
+      this.spawnEnemyWave();
       this.startEnemyAI();
     }
     
@@ -76,10 +89,109 @@ class GameRoom {
         roomId: this.roomId,
         initiatingPlayerId,
         killCount: this.killCount,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        combatArenaActive: this.combatArenaActive,
+        players: this.getPlayers(),
+        /** Full snapshot so clients never miss `enemy-spawned` (e.g. throne training dummy). */
+        enemies: this.getEnemies(),
       });
     }
     
+    return true;
+  }
+
+  /** Small radial staging area (client grass/play radius uses `COOP_THRONE_ROOM_RADIUS` in ThroneRoom). */
+  spawnThroneTrainingDummy() {
+    if (this.gameMode !== 'coop') return;
+    const dummy = {
+      id: THRONE_TRAINING_DUMMY_ID,
+      type: 'training-dummy',
+      position: { x: 0, y: 0, z: THRONE_TRAINING_DUMMY_Z },
+      rotation: Math.PI,
+      health: 500,
+      maxHealth: 500,
+      isDying: false,
+      soulType: 'yellow',
+      campType: 'yellow',
+    };
+    this.enemies.set(dummy.id, dummy);
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-spawned', { enemy: dummy, timestamp: Date.now() });
+    }
+  }
+
+  removeThroneTrainingDummy() {
+    if (!this.enemies.has(THRONE_TRAINING_DUMMY_ID)) return;
+    this.enemies.delete(THRONE_TRAINING_DUMMY_ID);
+    if (this.enemyAI) {
+      this.enemyAI.removeEnemyAggro(THRONE_TRAINING_DUMMY_ID);
+    }
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-removed', {
+        enemyId: THRONE_TRAINING_DUMMY_ID,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  teleportAllPlayersToThroneRoom() {
+    const THRONE_SPAWN_R = 3;
+    const ids = Array.from(this.players.keys());
+    const n = Math.max(ids.length, 1);
+    let idx = 0;
+    for (const id of ids) {
+      const player = this.players.get(id);
+      if (!player) continue;
+      const angle = (idx / n) * Math.PI * 2;
+      player.position = {
+        x: Math.sin(angle) * THRONE_SPAWN_R,
+        y: 1,
+        z: Math.cos(angle) * THRONE_SPAWN_R,
+      };
+      player.rotation = { x: 0, y: 0, z: 0 };
+      idx++;
+    }
+  }
+
+  teleportAllPlayersToCombatSpawn() {
+    const spawnBaseX = 0;
+    const spawnBaseZ = 25;
+    const totalPlayers = Math.max(this.players.size, 1);
+    let idx = 0;
+    for (const player of this.players.values()) {
+      const angleStep = (Math.PI * 2) / Math.max(3, totalPlayers);
+      const angle = idx * angleStep;
+      const spawnRadius = 2.5;
+      player.position = {
+        x: spawnBaseX + Math.sin(angle) * spawnRadius,
+        y: 1,
+        z: spawnBaseZ + Math.cos(angle) * spawnRadius,
+      };
+      player.rotation = { x: 0, y: Math.PI, z: 0 };
+      idx++;
+    }
+  }
+
+  /**
+   * First portal use activates the main arena for the whole room.
+   * @returns {boolean} true if activation ran (first time), false if already active or invalid
+   */
+  activateCombatArena() {
+    if (!this.gameStarted || this.combatArenaActive || this.gameMode !== 'coop') {
+      return false;
+    }
+    this.removeThroneTrainingDummy();
+    this.combatArenaActive = true;
+    this.teleportAllPlayersToCombatSpawn();
+    this.spawnEnemyWave();
+    this.startEnemyAI();
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('combat-arena-entered', {
+        players: this.getPlayers(),
+        timestamp: Date.now(),
+      });
+    }
     return true;
   }
 
@@ -107,32 +219,40 @@ class GameRoom {
       isInvisible: false // Whether player is currently invisible
     });
 
-    // Position players in a small cluster near the south edge for co-op mode
+    // Position players for co-op mode
     if (gameMode === 'coop') {
-      const playerIndex = this.players.size - 1; // Current player index (0-based, after adding)
-      const totalPlayers = 3; // Max players for positioning
-
-      // Spawn base is at the south edge of the playable area
-      const spawnBaseX = 0;
-      const spawnBaseZ = 25;
-
-      // Arrange players in a tight arc around the base point, facing north (toward the action)
-      const angleStep = (Math.PI * 2) / totalPlayers;
-      const angle = playerIndex * angleStep;
-      const spawnRadius = 2.5;
-
-      const playerPosition = {
-        x: spawnBaseX + Math.sin(angle) * spawnRadius,
-        y: 1,
-        z: spawnBaseZ + Math.cos(angle) * spawnRadius
-      };
-      const playerRotation = { x: 0, y: Math.PI, z: 0 }; // Face north toward the map center
-
-      // Update player object with correct position and rotation
+      const playerIndex = this.players.size - 1;
       const player = this.players.get(playerId);
-      if (player) {
-        player.position = playerPosition;
-        player.rotation = playerRotation;
+
+      if (this.gameStarted && !this.combatArenaActive) {
+        // Mid-session join while party is still in the throne room
+        const n = this.players.size;
+        const THRONE_SPAWN_R = 3;
+        const angle = (playerIndex / Math.max(n, 1)) * Math.PI * 2;
+        if (player) {
+          player.position = {
+            x: Math.sin(angle) * THRONE_SPAWN_R,
+            y: 1,
+            z: Math.cos(angle) * THRONE_SPAWN_R,
+          };
+          player.rotation = { x: 0, y: 0, z: 0 };
+        }
+      } else if (player) {
+        const totalPlayers = 3; // Max players for positioning
+
+        const spawnBaseX = 0;
+        const spawnBaseZ = 25;
+
+        const angleStep = (Math.PI * 2) / totalPlayers;
+        const angle = playerIndex * angleStep;
+        const spawnRadius = 2.5;
+
+        player.position = {
+          x: spawnBaseX + Math.sin(angle) * spawnRadius,
+          y: 1,
+          z: spawnBaseZ + Math.cos(angle) * spawnRadius
+        };
+        player.rotation = { x: 0, y: Math.PI, z: 0 };
       }
     }
   }
@@ -149,6 +269,7 @@ class GameRoom {
   // Stop the game
   stopGame() {
     this.gameStarted = false;
+    this.combatArenaActive = false;
     this.stopEnemySpawning();
     this.stopEnemyAI();
 
@@ -396,13 +517,17 @@ class GameRoom {
     const previousHealth = enemy.health;
     enemy.health = Math.max(0, enemy.health - damage);
 
+    if (enemy.type === 'training-dummy' && enemy.health <= 0) {
+      enemy.health = enemy.maxHealth;
+    }
+
     console.log(`💥 Enemy ${enemyId} (${enemy.type}) damaged by ${damage} from player ${fromPlayerId}. Health: ${previousHealth} -> ${enemy.health}`);
 
     // Track damage for aggro system
     if (this.enemyAI && fromPlayerId) {
       if (enemy.type === 'boss') {
         this.enemyAI.trackBossDamage(enemyId, fromPlayerId, damage, player);
-      } else {
+      } else if (enemy.type !== 'training-dummy') {
         // Apply aggro for regular enemies too
         let aggroAmount = damage;
         if (player && player.isStealthing) {

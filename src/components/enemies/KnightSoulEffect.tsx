@@ -4,7 +4,7 @@ import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Group, AdditiveBlending, Color } from 'three';
 
-type SoulType = 'green' | 'red' | 'blue' | 'purple';
+type SoulType = 'green' | 'red' | 'blue' | 'purple' | 'yellow';
 
 interface KnightSoulEffectProps {
   soulType: SoulType;
@@ -15,6 +15,7 @@ const SOUL_COLORS: Record<SoulType, { core: string; glow: string; light: string 
   red:    { core: '#ff3344', glow: '#cc1122', light: '#ff2233' },
   blue:   { core: '#44aaff', glow: '#2266dd', light: '#3399ff' },
   purple: { core: '#cc44ff', glow: '#8811cc', light: '#bb33ff' },
+  yellow: { core: '#ffe433', glow: '#cc9900', light: '#fff176' },
 };
 
 // 6 small orbiting particles for a denser ring

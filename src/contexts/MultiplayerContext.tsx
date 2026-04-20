@@ -5,7 +5,7 @@ import { unstable_batchedUpdates } from 'react-dom';
 import { io, Socket } from 'socket.io-client';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { SkillPointSystem, SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
-import { AbilityLoadout } from '@/utils/weaponAbilities';
+import { AbilityLoadout, getDefaultLoadoutForWeapon } from '@/utils/weaponAbilities';
 import { ExperienceSystem } from '@/utils/ExperienceSystem';
 import { StatSystem, StatPointData, StatKey, PlayerStats } from '@/utils/StatSystem';
 
@@ -35,6 +35,7 @@ export interface Player {
   stats?: PlayerStats;
 }
 
+/** Server enemy; `type` includes e.g. `knight`, `training-dummy` (throne prep). */
 export interface Enemy {
   id: string;
   type: string;
@@ -43,7 +44,7 @@ export interface Enemy {
   health: number;
   maxHealth: number;
   isDying?: boolean;
-  soulType?: 'green' | 'red' | 'blue' | 'purple';
+  soulType?: 'green' | 'red' | 'blue' | 'purple' | 'yellow';
   campType?: string;
   campIndex?: number;
 }
@@ -133,6 +134,8 @@ interface MultiplayerContextType {
   killCount: number;
   skeletonKillCount: number;
   gameStarted: boolean;
+  /** Co-op: false while the party is in the throne prep room (no enemies). True once the portal is used. */
+  combatArenaActive: boolean;
   gameMode: 'multiplayer' | 'coop';
   /** Co-op session archetype for grass / border / camp lights (`['red'|'blue'|'green'|'purple']`). */
   campTypes: string[];
@@ -145,7 +148,7 @@ interface MultiplayerContextType {
   selectedWeapons: {
     primary: WeaponType;
     secondary: WeaponType;
-  } | null;
+  };
 
   // Skill point system state
   skillPointData: SkillPointData;
@@ -157,11 +160,13 @@ interface MultiplayerContextType {
   currentPreview: RoomPreview | null;
   
   // Actions
-  joinRoom: (roomId: string, playerName: string, weapon: WeaponType, subclass?: WeaponSubclass, gameMode?: 'multiplayer' | 'coop') => Promise<void>;
+  joinRoom: (roomId: string, playerName: string, weapon: WeaponType, subclass?: WeaponSubclass, gameMode?: 'multiplayer' | 'coop') => Promise<string>;
   leaveRoom: () => void;
   previewRoom: (roomId: string) => void;
   clearPreview: () => void;
   startGame: () => void;
+  /** Co-op: request transition from throne room to main combat arena (server-authoritative). */
+  enterCombatArena: () => void;
   
   // Player actions
   updatePlayerPosition: (position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: { x: number; y: number; z: number }) => void;
@@ -272,16 +277,22 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [killCount, setKillCount] = useState(0);
   const [skeletonKillCount, setSkeletonKillCount] = useState(0);
   const [gameStarted, setGameStarted] = useState(false);
+  const [combatArenaActive, setCombatArenaActive] = useState(true);
   const [gameMode, setGameMode] = useState<'multiplayer' | 'coop'>('multiplayer');
   const [campTypes, setCampTypes] = useState<string[]>([]);
   const [currentPreview, setCurrentPreview] = useState<RoomPreview | null>(null);
   const [selectedWeapons, setSelectedWeaponsState] = useState<{
     primary: WeaponType;
     secondary: WeaponType;
-  } | null>(null);
+  }>({
+    primary: WeaponType.BOW,
+    secondary: WeaponType.BOW,
+  });
   const [skillPointData, setSkillPointData] = useState<SkillPointData>(SkillPointSystem.getInitialSkillPointData());
   const [statPointData, setStatPointData] = useState<StatPointData>(StatSystem.getInitialStatPointData());
-  const [abilityLoadout, setAbilityLoadoutState] = useState<AbilityLoadout | null>(null);
+  const [abilityLoadout, setAbilityLoadoutState] = useState<AbilityLoadout | null>(() =>
+    getDefaultLoadoutForWeapon(WeaponType.BOW),
+  );
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -390,6 +401,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setKillCount(data.killCount);
       setGameStarted(data.gameStarted);
       setGameMode(data.gameMode || 'multiplayer'); // Set game mode from server
+      if ((data.gameMode || 'multiplayer') === 'coop' && data.gameStarted) {
+        setCombatArenaActive(!!data.combatArenaActive);
+      } else {
+        setCombatArenaActive(true);
+      }
 
       // Update players
       const playersMap = new Map();
@@ -531,10 +547,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     addEventHandler('enemy-damaged', (data) => {
 
-      // Throttle enemy damage updates to prevent infinite re-renders
+      // Throttle enemy damage updates to prevent infinite re-renders (throne training dummy: always apply so HP bar stays accurate under rapid fire)
       const now = Date.now();
       const lastUpdate = lastEnemyDamageUpdate.current[data.enemyId] || 0;
-      if (now - lastUpdate < 50) { // Throttle to 20fps for damage updates
+      const isThroneDummy = data.enemyId === 'throne-training-dummy';
+      if (!isThroneDummy && now - lastUpdate < 50) {
         return;
       }
       lastEnemyDamageUpdate.current[data.enemyId] = now;
@@ -547,8 +564,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           enemy.health = data.newHealth;
           enemy.maxHealth = data.maxHealth;
 
-          // Handle enemy death
-          if (data.wasKilled) {
+          // Handle enemy death (throne training dummy resets HP on server — never mark dying)
+          if (data.wasKilled && enemy.type !== 'training-dummy') {
             enemy.isDying = true;
             // Play death sound at the enemy's position
             (window as any).audioSystem?.playEnemyDeathSound(enemy.position);
@@ -647,9 +664,46 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
-    addEventHandler('game-started', (data) => {
+    addEventHandler('game-started', (data: any) => {
       setGameStarted(true);
       setKillCount(data.killCount);
+      if (data && 'combatArenaActive' in data) {
+        setCombatArenaActive(!!data.combatArenaActive);
+      }
+      if (data?.players && Array.isArray(data.players)) {
+        setPlayers((prev) => {
+          const next = new Map(prev);
+          for (const p of data.players as Player[]) {
+            const old = next.get(p.id);
+            next.set(p.id, old ? { ...old, ...p } : p);
+          }
+          return next;
+        });
+      }
+      // Authoritative enemy list (co-op throne dummy + any spawns) — fixes missed `enemy-spawned` ordering.
+      if (data?.enemies && Array.isArray(data.enemies)) {
+        setEnemies((prev) => {
+          const next = new Map(prev);
+          for (const e of data.enemies as Enemy[]) {
+            next.set(e.id, e);
+          }
+          return next;
+        });
+      }
+    });
+
+    addEventHandler('combat-arena-entered', (data: any) => {
+      setCombatArenaActive(true);
+      if (data?.players && Array.isArray(data.players)) {
+        setPlayers((prev) => {
+          const next = new Map(prev);
+          for (const p of data.players as Player[]) {
+            const old = next.get(p.id);
+            next.set(p.id, old ? { ...old, ...p } : p);
+          }
+          return next;
+        });
+      }
     });
 
     addEventHandler('room-preview', (data) => {
@@ -817,7 +871,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       throw new Error('Not connected to server');
     }
 
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<string>((resolve, reject) => {
       socket.emit('join-room', {
         roomId,
         playerName,
@@ -832,11 +886,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       }, 10000);
 
       // Listen for successful room join
-      const handleRoomJoined = (data: any) => {
+      const handleRoomJoined = (data: { roomId?: string }) => {
         clearTimeout(timeout);
         socket.off('room-joined', handleRoomJoined);
         socket.off('room-full', handleRoomFull);
-        resolve();
+        resolve(data?.roomId ?? roomId);
       };
 
       // Listen for room full error
@@ -862,6 +916,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setKillCount(0);
     setSkeletonKillCount(0);
     setGameStarted(false);
+    setCombatArenaActive(true);
     setGameMode('multiplayer');
     setCampTypes([]);
     setDroppedItems(new Map());
@@ -882,6 +937,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const startGame = useCallback(() => {
     if (socket && currentRoomId) {
       socket.emit('start-game', { roomId: currentRoomId });
+    }
+  }, [socket, currentRoomId]);
+
+  const enterCombatArena = useCallback(() => {
+    if (socket && currentRoomId) {
+      socket.emit('enter-combat-arena', { roomId: currentRoomId });
     }
   }, [socket, currentRoomId]);
 
@@ -1265,6 +1326,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     killCount,
     skeletonKillCount,
     gameStarted,
+    combatArenaActive,
     gameMode,
     campTypes,
     currentPreview,
@@ -1273,6 +1335,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     previewRoom,
     clearPreview,
     startGame,
+    enterCombatArena,
     updatePlayerPosition,
     updatePlayerWeapon,
     updatePlayerHealth,

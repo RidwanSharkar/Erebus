@@ -10,7 +10,7 @@ interface KnightModelProps {
   isAttacking: boolean;
   attackVariant: 1 | 2;
   isDying: boolean;
-  soulType?: 'green' | 'red' | 'blue' | 'purple';
+  soulType?: 'green' | 'red' | 'blue' | 'purple' | 'yellow';
   /** Which ability animation is currently playing, or null when none. */
   abilityClip?: 'Smite' | 'Aggro' | 'Cast' | null;
 }
@@ -55,7 +55,7 @@ export default function KnightModel({ isWalking, isAttacking, attackVariant, isD
   const { animations: castAnims }    = useGLTF('/models/knight_cast.glb');
 
   // Active walk clips: purple → knight_walk.glb, all others → knight_walk0.glb
-  const activeWalkAnims = soulType === 'purple' ? walkAnims : walkAnims0;
+  const activeWalkAnims = soulType === 'purple' ? walkAnims : walkAnims0; // yellow uses walk0 (idle-only dummy)
 
   // SkeletonUtils.clone() properly re-binds each clone's SkinnedMesh to its own
   // skeleton, so multiple knight instances are fully independent.

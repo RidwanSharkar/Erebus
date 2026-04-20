@@ -15,7 +15,6 @@ import StylizedGrass from './StylizedGrass';
 import InstancedForest from './InstancedForest';
 import StoneGround from './StoneGround';
 import CastleWalls from './CastleWalls';
-import CastleWallCollision from './CastleWallCollision';
 import CampThemeLights from './CampThemeLights';
 import GroundFogSystem from './GroundFogSystem';
 import InstancedEmbers from './InstancedEmbers';
@@ -156,9 +155,6 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       {/* Castle walls — U-shaped ruins around each of the 3 camps, single draw call */}
       <CastleWalls />
-
-      {/* ECS BOX colliders for castle walls — blocks player + enemies (only if world is provided) */}
-      {world && <CastleWallCollision world={world} />}
 
       {/* Coloured theme lights inside each camp based on randomly assigned archetype */}
       {campTypes.length > 0 && <CampThemeLights campTypes={campTypes} />}

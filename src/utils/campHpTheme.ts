@@ -14,6 +14,7 @@ const PALETTES: Record<string, CampHpPalette> = {
   green:  { background: '#021a06', fill: '#e01030', text: '#99ffbb' },
   red:    { background: '#1f0305', fill: '#e01030', text: '#ffaaaa' },
   purple: { background: '#0f0320', fill: '#e01030', text: '#dd99ff' },
+  yellow: { background: '#1a1400', fill: '#ffd000', text: '#fff3b0' },
 };
 
 const DEFAULT_PALETTE: CampHpPalette = {

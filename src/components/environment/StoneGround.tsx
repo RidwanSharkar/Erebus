@@ -208,12 +208,32 @@ const ALL_SLABS: SlabDef[] = [
   ...CAMP2_PLATFORM,     // 16 slabs — West Citadel platform (4×4)
 ].filter(isSlabInBounds);
 
-const SLAB_COUNT = ALL_SLABS.length; // varies after radius clipping
+const THRONE_MAP_RADIUS = 10;
+const isSlabInThrone = (slab: SlabDef): boolean => {
+  const [cx, , cz] = slab.position;
+  const hw = slab.scale[0] / 2;
+  const hd = slab.scale[2] / 2;
+  const corners = [
+    Math.hypot(cx + hw, cz + hd),
+    Math.hypot(cx + hw, cz - hd),
+    Math.hypot(cx - hw, cz + hd),
+    Math.hypot(cx - hw, cz - hd),
+  ];
+  return corners.every((d) => d <= THRONE_MAP_RADIUS - 0.2);
+};
+
+/** Compact cobble pad for the pre-arena throne room (radius ~10). */
+const THRONE_SLABS: SlabDef[] = makeGrid(0, 0, 9, 9, 2.1, 2.1, 2.0, 2.0, 0.06, 0.10).filter(isSlabInThrone);
 
 // ---------------------------------------------------------------------------
 
-const StoneGround: React.FC = () => {
+type StoneGroundVariant = 'arena' | 'throne';
+
+const StoneGround: React.FC<{ variant?: StoneGroundVariant }> = ({ variant = 'arena' }) => {
   const meshRef = useRef<InstancedMesh>(null);
+
+  const slabs = variant === 'throne' ? THRONE_SLABS : ALL_SLABS;
+  const slabCount = slabs.length;
 
   // Unit cube — scaled per-instance via the matrix; single allocation for all 64 slabs
   const geometry = useMemo(() => new BoxGeometry(1, 1, 1), []);
@@ -232,7 +252,7 @@ const StoneGround: React.FC = () => {
     const scl   = new Vector3();
     const euler = new Euler();
 
-    ALL_SLABS.forEach((def, i) => {
+    slabs.forEach((def, i) => {
       pos.set(...def.position);
       euler.set(0, def.rotY, 0);
       quat.setFromEuler(euler);
@@ -247,12 +267,12 @@ const StoneGround: React.FC = () => {
       geometry.dispose();
       material.dispose();
     };
-  }, [geometry, material]);
+  }, [geometry, material, slabs]);
 
   return (
     <instancedMesh
       ref={meshRef}
-      args={[geometry, material, SLAB_COUNT]}
+      args={[geometry, material, slabCount]}
       frustumCulled={false}
     />
   );

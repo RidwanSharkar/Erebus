@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import { Vector3, Matrix4, Camera, PerspectiveCamera, Scene, WebGLRenderer, PCFSoftShadowMap, Color, Quaternion, Euler, Group, AdditiveBlending, MeshBasicMaterial } from '@/utils/three-exports';
 import DragonRenderer from './dragon/DragonRenderer';
@@ -26,7 +26,7 @@ import Meteor from './enemies/Meteor';
 import BossTeleportEffect from './enemies/BossTeleportEffect';
 import { useMultiplayer, Player } from '@/contexts/MultiplayerContext';
 import { SkillPointData } from '@/utils/SkillPointSystem';
-import { AbilityLoadout } from '@/utils/weaponAbilities';
+import { AbilityLoadout, getDefaultLoadoutForWeapon } from '@/utils/weaponAbilities';
 import { StatSystem, StatPointData } from '@/utils/StatSystem';
 import { setGlobalAgilityStatPoints } from '@/core/DamageCalculator';
 
@@ -91,6 +91,16 @@ import { DamageNumberData } from '@/components/DamageNumbers';
 import { setGlobalCriticalRuneCount, setGlobalCritDamageRuneCount, setControlSystem } from '@/core/DamageCalculator';
 import Environment from '@/components/environment/Environment';
 import FogOfWar from '@/components/environment/FogOfWar';
+import ThroneRoom, {
+  COOP_THRONE_ROOM_RADIUS,
+  THRONE_PORTAL_POSITION,
+  THRONE_PILLAR_POSITIONS,
+  THRONE_WEAPON_INTERACT_DEFS,
+  THRONE_WEAPON_INTERACT_RADIUS,
+  getThronePillarPhysicsObstacles,
+} from '@/components/environment/ThroneRoom';
+import CastleWallCollision from '@/components/environment/CastleWallCollision';
+import PillarCollision from '@/components/environment/PillarCollision';
 import { FOG_GRID_SIZE, isEnemyVisible } from '@/utils/fogOfWarUtils';
 import { useBowPowershot } from '@/components/projectiles/useBowPowershot';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
@@ -105,6 +115,22 @@ function getRuneCountForWeapon(weaponType: WeaponType, level: number): number {
     return Math.max(0, level - 1); // Level 1 = 0, Level 5 = 4
   }
   return 0; // Scythe and Runeblade don't get runes from leveling
+}
+
+function defaultSubclassForThroneWeapon(w: WeaponType): WeaponSubclass {
+  switch (w) {
+    case WeaponType.RUNEBLADE:
+      return WeaponSubclass.ARCANE;
+    case WeaponType.SCYTHE:
+      return WeaponSubclass.CHAOS;
+    case WeaponType.SABRES:
+      return WeaponSubclass.FROST;
+    case WeaponType.SPEAR:
+      return WeaponSubclass.STORM;
+    case WeaponType.BOW:
+    default:
+      return WeaponSubclass.ELEMENTAL;
+  }
 }
 
 
@@ -295,6 +321,9 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     setPlayers,
     enemies,
     gameStarted,
+    combatArenaActive,
+    gameMode,
+    enterCombatArena,
     isInRoom,
     currentRoomId,
     updatePlayerPosition,
@@ -319,11 +348,18 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     isChatOpen,
     openChat,
     closeChat,
+    setSelectedWeapons,
+    setAbilityLoadout,
     droppedItems,
     pickupItem,
     inventory,
     campTypes,
   } = useMultiplayer();
+
+  const inThroneRoom = useMemo(
+    () => gameMode === 'coop' && gameStarted && !combatArenaActive,
+    [gameMode, gameStarted, combatArenaActive],
+  );
 
   // Debug multiplayer state
   useEffect(() => {
@@ -366,8 +402,58 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
 
   // Fog of war — persistent grid of explored map cells (written by FogOfWar, read for enemy visibility)
   const exploredGridRef = useRef<Uint8Array>(new Uint8Array(FOG_GRID_SIZE * FOG_GRID_SIZE));
+  const portalUseSentRef = useRef(false);
+  const throneInteractKeyPrevRef = useRef(false);
+  const initialWeaponsForEngineRef = useRef(
+    selectedWeapons ?? { primary: WeaponType.BOW, secondary: WeaponType.BOW },
+  );
+  const selectedWeaponsRef = useRef(selectedWeapons ?? initialWeaponsForEngineRef.current);
+  selectedWeaponsRef.current = selectedWeapons ?? initialWeaponsForEngineRef.current;
 
   const [engineReady, setEngineReady] = useState(false); // Track when engine is ready
+
+  useEffect(() => {
+    if (inThroneRoom) {
+      portalUseSentRef.current = false;
+    }
+  }, [inThroneRoom]);
+
+  // Layout: apply before paint so castle wall ECS + PhysicsSystem AABB stay in sync (avoids one
+  // frame where wall colliders exist but maze AABB sliding is still disabled).
+  useLayoutEffect(() => {
+    if (!engineRef.current || !gameStarted) return;
+    const world = engineRef.current.getWorld();
+    const phys = world.getSystem(PhysicsSystem);
+    const r = inThroneRoom ? COOP_THRONE_ROOM_RADIUS + 2 : 28;
+    phys?.setMapRadius(r);
+    const throneObstacles = inThroneRoom ? getThronePillarPhysicsObstacles() : null;
+    phys?.setCastleWallPhysicsEnabled(!inThroneRoom);
+    phys?.setThronePillarObstacles(throneObstacles);
+    controlSystemRef.current?.setPlayableRadius(r);
+    controlSystemRef.current?.setCastleWallChargeCollision(!inThroneRoom);
+    controlSystemRef.current?.setThroneChargePillars(throneObstacles);
+  }, [inThroneRoom, gameStarted, engineReady]);
+
+  const prevInThroneRef = useRef(inThroneRoom);
+  useEffect(() => {
+    if (prevInThroneRef.current && !inThroneRoom) {
+      // Clear in-place: FogOfWar's DataTexture keeps a reference to the original buffer; assigning
+      // a new Uint8Array would desync GPU fog from gameplay and leak throne "explored" regions.
+      exploredGridRef.current.fill(0);
+      if (playerEntityRef.current !== null && engineRef.current && socket?.id) {
+        const me = players.get(socket.id);
+        if (me) {
+          const ent = engineRef.current.getWorld().getEntity(playerEntityRef.current);
+          const tr = ent?.getComponent(Transform);
+          if (tr) {
+            tr.setPosition(me.position.x, 0.5, me.position.z);
+          }
+        }
+        cameraSystemRef.current?.snapToTarget();
+      }
+    }
+    prevInThroneRef.current = inThroneRoom;
+  }, [inThroneRoom, players, socket?.id]);
 
   // PVP Kill Counter - tracks kills for all players
   const [playerKills, setPlayerKills] = useState<Map<string, number>>(new Map());
@@ -1738,7 +1824,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       setWeaponState(prev => ({
         ...prev,
         currentWeapon: selectedWeapons.primary,
-        currentSubclass: WeaponSubclass.ELEMENTAL // Default subclass, could be expanded later
+        currentSubclass: defaultSubclassForThroneWeapon(selectedWeapons.primary),
       }));
     }
   }, [selectedWeapons]);
@@ -4530,14 +4616,19 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
 
   // Sync server enemies with local ECS entities for co-op damage system
   useEffect(() => {
-    if (!engineRef.current || !gameStarted) return;
-    
+    // Must run after the engine exists AND `initialize()` has finished (`engineReady`).
+    // This effect is declared *before* the engine `useEffect` below; on first `gameStarted`
+    // tick `engineRef` is still null, so without `engineReady` in deps we never create ECS
+    // enemies (throne training dummy included) — arena knights "work" because `enemies` updates later.
+    if (!engineRef.current || !gameStarted || !engineReady) return;
+
     const world = engineRef.current.getWorld();
     
     // Create local ECS entities for enemies (for collision detection and damage)
     enemies.forEach((serverEnemy, enemyId) => {
-      if (serverEnemy.isDying) return; // Skip dying enemies
-      
+      // Training dummy is never removed and must stay damageable; never treat it as a dying enemy.
+      if (serverEnemy.isDying && serverEnemy.type !== 'training-dummy') return; // Skip dying enemies
+
       if (!serverEnemyEntities.current.has(enemyId)) {
         // Create a new local ECS entity for this server enemy
         const entity = world.createEntity();
@@ -4550,9 +4641,14 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
         // Add Health component
         const health = new Health(serverEnemy.maxHealth);
         health.currentHealth = serverEnemy.health;
+        if (serverEnemy.type === 'training-dummy') {
+          health.isDead = false;
+          health.isInvulnerable = false;
+          health.invulnerabilityTimer = 0;
+        }
         entity.addComponent(health);
         
-        // Add Enemy component
+        // Add Enemy component — training dummy uses ELITE like knights so combat treats it as a normal enemy unit.
         const enemyType = serverEnemy.type === 'boss' ? EnemyType.BOSS : EnemyType.ELITE;
         const enemy = new Enemy(enemyType, 1);
         entity.addComponent(enemy);
@@ -4560,11 +4656,12 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
         // Add Collider component for damage detection (non-solid, trigger only)
         const collider = world.createComponent(Collider);
         collider.type = ColliderType.SPHERE;
-        // Boss = 2.0, boss-skeleton = 1.2, knight = 1.3, shade = 1.0, elite = 1.5
+        // Boss = 2.0, boss-skeleton = 1.2, knight = 1.3, shade = 1.0, elite = 1.5; training dummy slightly larger for forgiving hits
         collider.radius = serverEnemy.type === 'boss' ? 2.0
           : serverEnemy.type === 'titan' ? 2.5
           : serverEnemy.type === 'boss-skeleton' ? 1.2
           : serverEnemy.type === 'knight' ? 1.3
+          : serverEnemy.type === 'training-dummy' ? 1.85
           : serverEnemy.type === 'shade' ? 1.0
           : 1.5;
         collider.layer = CollisionLayer.ENEMY;
@@ -4603,6 +4700,12 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
             health.currentHealth = serverEnemy.health;
             // Set isDead flag if health is 0 or less
             health.isDead = serverEnemy.health <= 0;
+            // Training dummy never counts as dead locally (server resets HP); clears invuln so projectiles/melee keep registering.
+            if (serverEnemy.type === 'training-dummy') {
+              health.isDead = false;
+              health.isInvulnerable = false;
+              health.invulnerabilityTimer = 0;
+            }
           }
           
           // Update rotation for backstab detection
@@ -4632,11 +4735,11 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     enemiesToRemove.forEach(enemyId => {
       serverEnemyEntities.current.delete(enemyId);
     });
-  }, [enemies, gameStarted]);
+  }, [enemies, gameStarted, engineReady]);
 
   // Sync server players and towers with local ECS entities for PVP damage system
   useEffect(() => {
-    if (!engineRef.current || !gameStarted) return;
+    if (!engineRef.current || !gameStarted || !engineReady) return;
     
     const world = engineRef.current.getWorld();
     
@@ -4890,6 +4993,58 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
   // Game loop integration with React Three Fiber
   useFrame((state, deltaTime) => {
     if (engineRef.current && engineRef.current.isEngineRunning() && gameStarted) {
+      if (inThroneRoom && playerEntity && controlSystemRef.current && !isChatOpen) {
+        const cs = controlSystemRef.current;
+        const transform = playerEntity.getComponent(Transform);
+        if (transform) {
+          const px = transform.position.x;
+          const pz = transform.position.z;
+          const xDown = cs.isKeyPressed('x');
+          const edge = xDown && !throneInteractKeyPrevRef.current;
+          throneInteractKeyPrevRef.current = xDown;
+          if (edge) {
+            const r = THRONE_WEAPON_INTERACT_RADIUS;
+            const r2 = r * r;
+            let best: { weapon: WeaponType; d2: number } | null = null;
+            for (const def of THRONE_WEAPON_INTERACT_DEFS) {
+              const dx = px - def.x;
+              const dz = pz - def.z;
+              const d2 = dx * dx + dz * dz;
+              if (d2 <= r2 && (!best || d2 < best.d2)) {
+                best = { weapon: def.weapon, d2 };
+              }
+            }
+            const cur = selectedWeaponsRef.current?.primary;
+            if (best && cur !== undefined && best.weapon !== cur) {
+              const w = best.weapon;
+              setSelectedWeapons({ primary: w, secondary: w });
+              setAbilityLoadout(getDefaultLoadoutForWeapon(w));
+              updatePlayerWeapon(w, defaultSubclassForThroneWeapon(w));
+              if ((window as any).audioSystem?.playUISelectionSound) {
+                (window as any).audioSystem.playUISelectionSound();
+              }
+            }
+          }
+        }
+      }
+
+      if (
+        inThroneRoom &&
+        !portalUseSentRef.current &&
+        playerEntity &&
+        socket?.id
+      ) {
+        const transform = playerEntity.getComponent(Transform);
+        if (transform) {
+          const dx = transform.position.x - THRONE_PORTAL_POSITION.x;
+          const dz = transform.position.z - THRONE_PORTAL_POSITION.z;
+          if (dx * dx + dz * dz < 2.9 * 2.9) {
+            portalUseSentRef.current = true;
+            enterCombatArena();
+          }
+        }
+      }
+
       // Update FPS counter
       updateFPSCounter(engineRef.current.getCurrentFPS());
 
@@ -5180,6 +5335,11 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
     // Store in ref for access from JSX
     damagePlayerCallbackRef.current = damagePlayerWithMapping;
 
+    const localPlayerForSpawn = players.get(socket?.id || '');
+    const spawnX = localPlayerForSpawn?.position.x ?? 0;
+    const spawnZ = localPlayerForSpawn?.position.z ?? 28;
+    const initialThroneMap = gameMode === 'coop' && !combatArenaActive;
+
     const { player, controlSystem } = setupCoopGame(
       engineRef.current,
       scene,
@@ -5187,9 +5347,10 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       gl,
       damagePlayerWithMapping,
       damageEnemy,
-      selectedWeapons,
+      initialWeaponsForEngineRef.current,
       skillPointData,
-      cameraSystemRef
+      cameraSystemRef,
+      { initialSpawn: { x: spawnX, y: 0.5, z: spawnZ }, initialThroneMap },
     );
 
     // Initialize merchant system
@@ -5642,7 +5803,30 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       playerEntityRef.current = null;
       controlSystemRef.current = null;
     };
-  }, [engineReady, selectedWeapons, socket?.id]); // Use socket?.id instead of socket to prevent unnecessary re-renders
+  }, [engineReady, socket?.id]); // Use socket?.id instead of socket to prevent unnecessary re-renders
+
+  // `setupCoopGame` only runs once when the engine becomes ready. If that happens before the socket
+  // has `currentRoomId`, the captured `damageEnemy` would never emit — keep the CombatSystem callback fresh.
+  useEffect(() => {
+    if (!engineRef.current || !engineReady) return;
+    const combatSystem = engineRef.current.getWorld().getSystem(CombatSystem);
+    if (!combatSystem) return;
+    combatSystem.setEnemyDamageCallback((enemyId: string, damage: number, sourcePlayerId?: string) => {
+      (window as any).audioSystem?.playUIHitboxSound();
+      damageEnemy(enemyId, damage, sourcePlayerId);
+    });
+  }, [damageEnemy, engineReady]);
+
+  // Keep ECS weapon selection / level in sync when React state changes (e.g. throne room X-to-swap).
+  useEffect(() => {
+    if (!controlSystemRef.current) return;
+    const sw = selectedWeapons ?? initialWeaponsForEngineRef.current;
+    const pl =
+      getRuneCountForWeapon(sw.primary, playerLevel) +
+      getRuneCountForWeapon(sw.secondary, playerLevel);
+    controlSystemRef.current.setSelectedWeapons(sw);
+    controlSystemRef.current.setWeaponLevel(pl);
+  }, [selectedWeapons, playerLevel]);
 
   // Sync skill point data with control system when it changes
   useEffect(() => {
@@ -5683,29 +5867,40 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       {/* Don't render game world if game hasn't started */}
       {!gameStarted ? null : (
         <>
-          {/* Environment (Sky, Planet, Mountains, Pillars, Pedestal) - No level progression in COOP */}
-      <Environment
-        level={1}
-        world={engineRef.current?.getWorld()}
-        camera={camera as PerspectiveCamera}
-        enableLargeTree={true}
-        isPVP={false}
-        merchantRotation={merchantRotation}
-        showMerchant={isMerchantVisible}
-        campTypes={campTypes}
-      />
+          {inThroneRoom ? (
+            <>
+              <ThroneRoom isSnowTheme={campTypes[0]?.toLowerCase() === 'blue'} />
+              {engineRef.current?.getWorld() && (
+                <PillarCollision world={engineRef.current.getWorld()} positions={THRONE_PILLAR_POSITIONS} />
+              )}
+            </>
+          ) : (
+            <>
+              <Environment
+                level={1}
+                world={engineRef.current?.getWorld()}
+                camera={camera as PerspectiveCamera}
+                enableLargeTree={true}
+                isPVP={false}
+                merchantRotation={merchantRotation}
+                showMerchant={isMerchantVisible}
+                campTypes={campTypes}
+              />
+              <FogOfWar
+                playerPositionRef={realTimePlayerPositionRef}
+                exploredGridRef={exploredGridRef}
+              />
+              {engineRef.current?.getWorld() && (
+                <CastleWallCollision world={engineRef.current.getWorld()} />
+              )}
+            </>
+          )}
 
-      {/* Fog of War — reveals previously explored areas permanently */}
-      <FogOfWar
-        playerPositionRef={realTimePlayerPositionRef}
-        exploredGridRef={exploredGridRef}
-      />
-
-      {/* Lighting */}
-      <ambientLight intensity={0.1} />
+      {/* Lighting — throne room brings its own fill; keep this subtle there */}
+      <ambientLight intensity={inThroneRoom ? 0.04 : 0.1} />
       <directionalLight
         position={[10, 10, 5]}
-        intensity={0.2}
+        intensity={inThroneRoom ? 0.1 : 0.2}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -6106,8 +6301,18 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
 
       {/* Knights (Co-op Mode) — Mixamo animated */}
       {Array.from(enemies.values()).map(enemy => {
-        if (enemy.type !== 'knight') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
+        if (enemy.type !== 'knight' && enemy.type !== 'training-dummy') return null;
+        if (
+          enemy.type !== 'training-dummy' &&
+          !isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)
+        ) {
+          return null;
+        }
+
+        const soulForKnight =
+          enemy.type === 'training-dummy'
+            ? ('yellow' as const)
+            : (enemy.soulType as 'green' | 'red' | 'blue' | 'purple' | undefined);
 
         return (
           <KnightRenderer
@@ -6118,8 +6323,9 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
             health={enemy.health}
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
-            soulType={enemy.soulType}
-            campType={enemy.campType}
+            soulType={soulForKnight}
+            campType={enemy.type === 'training-dummy' ? 'yellow' : enemy.campType}
+            showMeleeRangeRing={enemy.type !== 'training-dummy'}
           />
         );
       })}
@@ -6501,7 +6707,7 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
       {pvpSmiteEffects.map(effect => {
         // Prepare enemy data including BOSS and BOSS-SKELETON enemies
         const smiteEnemyData = Array.from(enemies.values())
-          .filter(enemy => !enemy.isDying && (enemy.type === 'boss' || enemy.type === 'boss-skeleton' || enemy.type === 'knight' || enemy.type === 'shade'))
+          .filter(enemy => !enemy.isDying && (enemy.type === 'boss' || enemy.type === 'boss-skeleton' || enemy.type === 'knight' || enemy.type === 'training-dummy' || enemy.type === 'shade'))
           .map(enemy => ({
             id: enemy.id,
             position: new Vector3(enemy.position.x, enemy.position.y, enemy.position.z),
@@ -6840,13 +7046,19 @@ export function CoopGameScene({ onDamageNumbersUpdate, onDamageNumberComplete, o
   );
 }
 
-function createCoopPlayer(world: World): any {
+function createCoopPlayer(
+  world: World,
+  spawn?: { x: number; y: number; z: number },
+): any {
   // Create player entity
   const player = world.createEntity();
 
   // Add Transform component
   const transform = world.createComponent(Transform);
-  transform.setPosition(0, 0.5, 28); // South edge spawn — away from the center knight groups
+  const sx = spawn?.x ?? 0;
+  const sy = spawn?.y ?? 0.5;
+  const sz = spawn?.z ?? 28;
+  transform.setPosition(sx, sy, sz);
   player.addComponent(transform);
 
   // Add Movement component
@@ -6904,7 +7116,8 @@ function setupCoopGame(
     secondary: WeaponType;
   } | null,
   skillPointData?: any,
-  cameraSystemRef?: React.MutableRefObject<CameraSystem | null>
+  cameraSystemRef?: React.MutableRefObject<CameraSystem | null>,
+  coopSpawnOptions?: { initialSpawn?: { x: number; y: number; z: number }; initialThroneMap?: boolean },
 ): { player: any; controlSystem: ControlSystem } {
   const world = engine.getWorld();
   const inputManager = engine.getInputManager();
@@ -6915,6 +7128,9 @@ function setupCoopGame(
 
   // Create systems for coop mode (similar to PVP but without towers/pillars)
   const physicsSystem = new PhysicsSystem();
+  const initialThroneMap = !!coopSpawnOptions?.initialThroneMap;
+  const initialR = initialThroneMap ? COOP_THRONE_ROOM_RADIUS + 2 : 28;
+  physicsSystem.setMapRadius(initialR);
   const collisionSystem = new CollisionSystem(5); // 5 unit cell size for spatial hash
   const combatSystem = new CombatSystem(world);
   const renderSystem = new RenderSystem(scene, camera, renderer);
@@ -6936,6 +7152,14 @@ function setupCoopGame(
     audioSystem,
     selectedWeapons
   );
+  controlSystem.setPlayableRadius(initialR);
+  // Match throne-room physics toggles (see inThroneRoom effect). Applying here avoids a
+  // one-frame / whole-session gap when the effect ran before PhysicsSystem was registered.
+  const throneObstaclesForInit = initialThroneMap ? getThronePillarPhysicsObstacles() : null;
+  physicsSystem.setCastleWallPhysicsEnabled(!initialThroneMap);
+  physicsSystem.setThronePillarObstacles(throneObstaclesForInit);
+  controlSystem.setCastleWallChargeCollision(!initialThroneMap);
+  controlSystem.setThroneChargePillars(throneObstaclesForInit);
   const cameraSystem = new CameraSystem(
     camera as PerspectiveCamera,
     inputManager,
@@ -6985,7 +7209,7 @@ function setupCoopGame(
   world.addSystem(cameraSystem);
 
   // Create player entity
-  const playerEntity = createCoopPlayer(world);
+  const playerEntity = createCoopPlayer(world, coopSpawnOptions?.initialSpawn);
 
   // Set player for control system and camera system
   controlSystem.setPlayer(playerEntity);

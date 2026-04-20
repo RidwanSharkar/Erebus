@@ -8,6 +8,8 @@ import { WALL_SEGMENTS } from './CastleWalls';
 
 interface CastleWallCollisionProps {
   world: World;
+  /** When false, no wall entities are created (e.g. co-op throne prep room). */
+  enabled?: boolean;
 }
 
 /**
@@ -15,11 +17,16 @@ interface CastleWallCollisionProps {
  * Static environment colliders — handled by CollisionSystem for both player
  * and enemy movement blocking (same pattern as PillarCollision).
  */
-const CastleWallCollision: React.FC<CastleWallCollisionProps> = ({ world }) => {
+const CastleWallCollision: React.FC<CastleWallCollisionProps> = ({ world, enabled = true }) => {
   const entitiesRef = useRef<Entity[]>([]);
 
   useEffect(() => {
     const created: Entity[] = [];
+
+    if (!enabled) {
+      entitiesRef.current = [];
+      return;
+    }
 
     for (const seg of WALL_SEGMENTS) {
       const entity = world.createEntity();
@@ -49,7 +56,7 @@ const CastleWallCollision: React.FC<CastleWallCollisionProps> = ({ world }) => {
       });
       entitiesRef.current = [];
     };
-  }, [world]);
+  }, [world, enabled]);
 
   return null;
 };

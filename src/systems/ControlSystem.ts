@@ -38,6 +38,14 @@ export class ControlSystem extends System {
 
   // Input control
   private inputDisabled: boolean = false;
+
+  /** Max horizontal distance from origin for dash/charge (matches PhysicsSystem map boundary). */
+  private playableRadius = 28;
+
+  /** When false, sword charge uses throne pillar circles instead of castle wall AABBs. */
+  private castleWallChargeEnabled = true;
+
+  private thronePillarChargeObstacles: Array<{ x: number; z: number; radius: number }> = [];
   
   // Callback for bow release effects
   private onBowReleaseCallback?: (finalProgress: number, isPerfectShot?: boolean) => void;
@@ -451,12 +459,42 @@ export class ControlSystem extends System {
     this.playerEntity = entity;
   }
 
+  public setPlayableRadius(radius: number): void {
+    this.playableRadius = Math.max(1, radius);
+  }
+
+  public setCastleWallChargeCollision(enabled: boolean): void {
+    this.castleWallChargeEnabled = enabled;
+  }
+
+  public setThroneChargePillars(obstacles: Array<{ x: number; z: number; radius: number }> | null): void {
+    this.thronePillarChargeObstacles = obstacles && obstacles.length > 0 ? obstacles.slice() : [];
+  }
+
   public setInputDisabled(disabled: boolean): void {
     this.inputDisabled = disabled;
   }
 
   public setAllowAllInput(allow: boolean): void {
     this.inputManager.setAllowAllInput(allow);
+  }
+
+  /** Read current keyboard state (lowercase key names, same as movement checks). */
+  public isKeyPressed(key: string): boolean {
+    return this.inputManager.isKeyPressed(key);
+  }
+
+  /**
+   * Update loadout slots used by 1/2 switching and passives. If `primary` changes, runs the same
+   * transition as a normal weapon swap (reset abilities, apply passives).
+   */
+  public setSelectedWeapons(weapons: { primary: WeaponType; secondary: WeaponType } | null): void {
+    const prevPrimary = this.selectedWeapons?.primary;
+    this.selectedWeapons = weapons;
+    if (!weapons) return;
+    if (weapons.primary !== prevPrimary) {
+      this.switchToWeapon(weapons.primary, Date.now() / 1000);
+    }
   }
 
   public update(entities: Entity[], deltaTime: number): void {
@@ -4839,7 +4877,7 @@ export class ControlSystem extends System {
 
     if (dashResult.newPosition) {
       // Apply bounds checking (similar to old implementation)
-      const MAX_DASH_BOUNDS = 28; // Maximum distance from origin (matches map boundary)
+      const MAX_DASH_BOUNDS = this.playableRadius;
       const distanceFromOrigin = dashResult.newPosition.length();
       
       if (distanceFromOrigin <= MAX_DASH_BOUNDS) {
@@ -4873,7 +4911,7 @@ export class ControlSystem extends System {
 
     if (chargeResult.newPosition) {
       // Apply bounds checking
-      const MAX_CHARGE_BOUNDS = 28; // Maximum distance from origin (matches map boundary)
+      const MAX_CHARGE_BOUNDS = this.playableRadius;
       const distanceFromOrigin = chargeResult.newPosition.length();
       
       // Check for pillar collision
@@ -4925,14 +4963,31 @@ export class ControlSystem extends System {
   private readonly WALL_PLAYER_RADIUS = 0.5;
 
   private checkPillarCollision(position: Vector3): { hasCollision: boolean; normal: Vector3; pillarCenter: Vector3 } {
-    // No standalone pillars remain — delegate to wall AABB check so that charge
-    // ability is cancelled when hitting any castle wall segment.
-    const wallResult = this.checkWallCollision(position);
-    return {
-      hasCollision: wallResult.hasCollision,
-      normal: wallResult.normal,
-      pillarCenter: new Vector3(position.x, 0, position.z),
-    };
+    if (this.castleWallChargeEnabled) {
+      const wallResult = this.checkWallCollision(position);
+      return {
+        hasCollision: wallResult.hasCollision,
+        normal: wallResult.normal,
+        pillarCenter: new Vector3(position.x, 0, position.z),
+      };
+    }
+
+    const horizontalPos = new Vector3(position.x, 0, position.z);
+    for (const p of this.thronePillarChargeObstacles) {
+      const center = new Vector3(p.x, 0, p.z);
+      const dist = horizontalPos.distanceTo(center);
+      if (dist < p.radius + this.WALL_PLAYER_RADIUS) {
+        let normal = horizontalPos.clone().sub(center);
+        if (normal.lengthSq() < 1e-6) {
+          normal.set(1, 0, 0);
+        } else {
+          normal.normalize();
+        }
+        return { hasCollision: true, normal, pillarCenter: center };
+      }
+    }
+
+    return { hasCollision: false, normal: new Vector3(), pillarCenter: new Vector3() };
   }
 
   private checkWallCollision(position: Vector3): { hasCollision: boolean; normal: Vector3 } {

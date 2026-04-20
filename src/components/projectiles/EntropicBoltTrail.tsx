@@ -10,7 +10,7 @@ interface EntropicBoltTrailProps {
   isCryoflame?: boolean;
 }
 
-const TRAIL_LENGTH = 20;
+const TRAIL_LENGTH = 15;
 const ORBIT_RADIUS = 0.14;
 const ORBIT_SPEED = 10;
 const MIN_MOVEMENT = 0.06;

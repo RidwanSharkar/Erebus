@@ -64,8 +64,8 @@ export default function EntropicBolt({
     if (!boltRef.current || hasCollided.current) return;
 
     timeElapsed.current += delta;
-    const totalDistance = 30;
-    const progress = Math.min(timeElapsed.current * (30 / totalDistance), 1);
+    const totalDistance = 15;
+    const progress = Math.min(timeElapsed.current * (15 / totalDistance), 1);
 
     const idealPosition = startPosition.current.clone().lerp(targetPosition.current, progress);
 

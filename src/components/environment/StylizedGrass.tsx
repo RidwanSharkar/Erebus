@@ -69,6 +69,8 @@ const GRASS_FRAGMENT = `
   uniform vec3 uTipColor;
   uniform vec3 uGroundLightColor;
   uniform float uGroundLightIntensity;
+  uniform float uGrassFadeInner;
+  uniform float uGrassFadeOuter;
 
   varying float vHeightRatio;
   varying vec3 vWorldPos;
@@ -93,9 +95,9 @@ const GRASS_FRAGMENT = `
     // Ambient occlusion at the base (raised floor 0.4 → 0.55 so base isn't so dark)
     col *= 0.55 + smoothstep(0.0, 0.25, vHeightRatio) * 0.45;
 
-    // Fade at the edge of the playable area (matches radius prop)
+    // Fade at the edge of the playable area (uniforms scale with map radius)
     float dist = length(vWorldPos.xz);
-    col *= 1.0 - smoothstep(27.5, 31.5, dist) * 0.5;
+    col *= 1.0 - smoothstep(uGrassFadeInner, uGrassFadeOuter, dist) * 0.5;
 
     gl_FragColor = vec4(col, 1.0);
   }
@@ -141,6 +143,9 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
   const resolvedGroundLightIntensity =
     groundLightIntensity ?? palette.groundLightIntensity;
 
+  const grassFadeInner = radius - 0.8;
+  const grassFadeOuter = radius + 3.5;
+
   const bladeGeometry = useMemo(() => {
     const geo = new BufferGeometry();
     const w = 0.07;
@@ -177,12 +182,14 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
         uWindStrength: { value: windStrength },
         uGroundLightColor: { value: new Color(resolvedGroundLightColor) },
         uGroundLightIntensity: { value: resolvedGroundLightIntensity },
+        uGrassFadeInner: { value: grassFadeInner },
+        uGrassFadeOuter: { value: grassFadeOuter },
       },
       vertexShader: GRASS_VERTEX,
       fragmentShader: GRASS_FRAGMENT,
       side: DoubleSide,
     });
-  }, [resolvedBaseColor, resolvedTipColor, windStrength, resolvedGroundLightColor, resolvedGroundLightIntensity]);
+  }, [resolvedBaseColor, resolvedTipColor, windStrength, resolvedGroundLightColor, resolvedGroundLightIntensity, grassFadeInner, grassFadeOuter]);
 
   // Soil disc geometry + material (created once)
   const groundGeo = useMemo(() => new CircleGeometry(radius, 48), [radius]);

@@ -9,9 +9,38 @@ import { WALL_SEGMENTS, WallSegmentDef } from '@/components/environment/CastleWa
 export class PhysicsSystem extends BasePhysicsSystem {
   public readonly requiredComponents = [Transform, Movement];
 
+  /** Horizontal circular map boundary (XZ distance from origin). */
+  private mapRadius = 28;
+
+  /** When false, castle wall AABB checks are skipped (co-op throne room). */
+  private castleWallPhysicsEnabled = true;
+
+  /** Circular XZ obstacles (throne pillars) — only used when castle walls are off. */
+  private thronePillarObstacles: Array<{ x: number; z: number; radius: number }> = [];
+
   constructor() {
     super();
     this.priority = 15; // Run after control system but before rendering
+  }
+
+  public setMapRadius(radius: number): void {
+    this.mapRadius = Math.max(1, radius);
+  }
+
+  public getMapRadius(): number {
+    return this.mapRadius;
+  }
+
+  public setCastleWallPhysicsEnabled(enabled: boolean): void {
+    this.castleWallPhysicsEnabled = enabled;
+  }
+
+  /**
+   * When castle walls are disabled, use these circular XZ obstacles (throne pillars).
+   * Pass null or [] to clear.
+   */
+  public setThronePillarObstacles(obstacles: Array<{ x: number; z: number; radius: number }> | null): void {
+    this.thronePillarObstacles = obstacles && obstacles.length > 0 ? obstacles.slice() : [];
   }
 
   public update(entities: Entity[], deltaTime: number): void {
@@ -68,15 +97,18 @@ export class PhysicsSystem extends BasePhysicsSystem {
     const potentialPosition = currentPosition.clone().add(deltaPosition);
     
     // Apply map boundary constraints with smooth sliding (matches enlarged grass / collision disc)
-    const MAP_RADIUS = 28;
+    const MAP_RADIUS = this.mapRadius;
     
     // Only check horizontal distance (ignore Y for boundary)
     const horizontalPosition = new Vector3(potentialPosition.x, 0, potentialPosition.z);
     const distanceFromCenter = horizontalPosition.length();
     
-    // Check for tree and castle-wall collisions
+    // Check for tree, throne pillars, and castle-wall collisions
     const treeCollision = this.checkTreeCollision(potentialPosition);
-    const wallCollision = this.checkWallCollision(potentialPosition);
+    const thronePillarCollision = this.checkThronePillarCollision(potentialPosition);
+    const wallCollision = this.castleWallPhysicsEnabled
+      ? this.checkWallCollision(potentialPosition)
+      : { hasCollision: false, normal: new Vector3(), closestPoint: new Vector3(), segmentIndex: -1 };
 
     if (distanceFromCenter >= MAP_RADIUS) {
       // If we hit the boundary, calculate tangent movement for smooth sliding
@@ -108,6 +140,17 @@ export class PhysicsSystem extends BasePhysicsSystem {
       // Reduce velocity in the direction of the tree to prevent bouncing
       const velocityNormalComponent = movement.velocity.clone().projectOnVector(treeCollision.normal);
       movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
+    } else if (thronePillarCollision.hasCollision) {
+      const slidePosition = this.calculateTreeSliding(
+        currentPosition,
+        deltaPosition,
+        { normal: thronePillarCollision.normal, treeCenter: thronePillarCollision.pillarCenter },
+        thronePillarCollision.blockRadius,
+      );
+      transform.setPosition(slidePosition.x, slidePosition.y, slidePosition.z);
+
+      const velocityNormalComponent = movement.velocity.clone().projectOnVector(thronePillarCollision.normal);
+      movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
     } else if (wallCollision.hasCollision) {
       // Handle castle-wall collision with smooth sliding (AABB)
       const slidePosition = this.calculateWallSliding(currentPosition, deltaPosition, wallCollision);
@@ -125,8 +168,12 @@ export class PhysicsSystem extends BasePhysicsSystem {
     transform.matrixNeedsUpdate = true;
   }
 
-  // Player body radius used for all AABB wall collision checks
-  private readonly PLAYER_RADIUS = 0.5;
+  /**
+   * Horizontal clearance for maze walls + throne pillars (XZ), vs. segment AABBs / circles.
+   * Must match the local player sphere radius in CoopGameScene so this pass agrees with
+   * CollisionSystem (sphere vs ENVIRONMENT boxes); a smaller value fights ECS every frame.
+   */
+  private readonly horizontalClearanceRadius = 1.2;
 
   // Wall segments imported directly from CastleWalls so positions stay in sync
   private readonly WALL_SEGMENTS: WallSegmentDef[] = WALL_SEGMENTS;
@@ -168,7 +215,12 @@ export class PhysicsSystem extends BasePhysicsSystem {
     return { hasCollision: false, normal: new Vector3(), treeCenter: new Vector3() };
   }
 
-  private calculateTreeSliding(currentPosition: Vector3, deltaPosition: Vector3, collision: { normal: Vector3; treeCenter: Vector3 }): Vector3 {
+  private calculateTreeSliding(
+    currentPosition: Vector3,
+    deltaPosition: Vector3,
+    collision: { normal: Vector3; treeCenter: Vector3 },
+    obstacleRadius: number = this.TREE_RADIUS,
+  ): Vector3 {
     // Calculate the tangent vector (perpendicular to normal in XZ plane)
     const tangent = new Vector3(-collision.normal.z, 0, collision.normal.x);
 
@@ -178,18 +230,18 @@ export class PhysicsSystem extends BasePhysicsSystem {
     // Calculate the new position with sliding movement
     const slidePosition = currentPosition.clone().add(tangentMovement);
 
-    // Ensure we maintain minimum distance from tree center
+    // Ensure we maintain minimum distance from obstacle center
     const treeHorizontal = new Vector3(collision.treeCenter.x, 0, collision.treeCenter.z);
     const slideHorizontal = new Vector3(slidePosition.x, 0, slidePosition.z);
     const distanceAfterSlide = slideHorizontal.distanceTo(treeHorizontal);
 
-    if (distanceAfterSlide < this.TREE_RADIUS) {
+    if (distanceAfterSlide < obstacleRadius) {
       // Push the position to maintain minimum distance
       const pushDirection = slideHorizontal.clone().sub(treeHorizontal).normalize();
       if (pushDirection.length() === 0) {
         pushDirection.set(1, 0, 0); // Default direction
       }
-      const correctedHorizontal = treeHorizontal.clone().add(pushDirection.multiplyScalar(this.TREE_RADIUS));
+      const correctedHorizontal = treeHorizontal.clone().add(pushDirection.multiplyScalar(obstacleRadius));
       slidePosition.x = correctedHorizontal.x;
       slidePosition.z = correctedHorizontal.z;
     }
@@ -197,9 +249,40 @@ export class PhysicsSystem extends BasePhysicsSystem {
     return slidePosition;
   }
 
+  private checkThronePillarCollision(position: Vector3): {
+    hasCollision: boolean;
+    normal: Vector3;
+    pillarCenter: Vector3;
+    blockRadius: number;
+  } {
+    const horizontalPos = new Vector3(position.x, 0, position.z);
+
+    for (const p of this.thronePillarObstacles) {
+      const center = new Vector3(p.x, 0, p.z);
+      const dist = horizontalPos.distanceTo(center);
+      const minCenterDist = p.radius + this.horizontalClearanceRadius;
+      if (dist < minCenterDist) {
+        let normal = horizontalPos.clone().sub(center);
+        if (normal.lengthSq() < 1e-6) {
+          normal = new Vector3(1, 0, 0);
+        } else {
+          normal.normalize();
+        }
+        return { hasCollision: true, normal, pillarCenter: center, blockRadius: minCenterDist };
+      }
+    }
+
+    return {
+      hasCollision: false,
+      normal: new Vector3(),
+      pillarCenter: new Vector3(),
+      blockRadius: 0,
+    };
+  }
+
   /**
    * AABB collision: find the closest point on each wall segment's footprint to the
-   * player position and check if it's within PLAYER_RADIUS.  Returns the push-out
+   * player position and check if it's within horizontalClearanceRadius.  Returns the push-out
    * normal (player-center → closest-point direction, inverted) and the segment index
    * so the sliding step can re-verify against the same box.
    */
@@ -226,7 +309,7 @@ export class PhysicsSystem extends BasePhysicsSystem {
       const dz = pz - closestZ;
       const dist = Math.sqrt(dx * dx + dz * dz);
 
-      if (dist < this.PLAYER_RADIUS) {
+      if (dist < this.horizontalClearanceRadius) {
         const normal = dist < 0.001
           ? new Vector3(1, 0, 0)
           : new Vector3(dx / dist, 0, dz / dist);
@@ -265,12 +348,12 @@ export class PhysicsSystem extends BasePhysicsSystem {
     const dz = slidePosition.z - closestZ;
     const dist = Math.sqrt(dx * dx + dz * dz);
 
-    if (dist < this.PLAYER_RADIUS) {
+    if (dist < this.horizontalClearanceRadius) {
       const pushDir = dist < 0.001
         ? new Vector3(1, 0, 0)
         : new Vector3(dx / dist, 0, dz / dist);
-      slidePosition.x = closestX + pushDir.x * this.PLAYER_RADIUS;
-      slidePosition.z = closestZ + pushDir.z * this.PLAYER_RADIUS;
+      slidePosition.x = closestX + pushDir.x * this.horizontalClearanceRadius;
+      slidePosition.z = closestZ + pushDir.z * this.horizontalClearanceRadius;
     }
 
     return slidePosition;

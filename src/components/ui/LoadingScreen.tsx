@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 
 interface LoadingScreenProps {
   isVisible: boolean;
@@ -21,6 +21,38 @@ const LOADING_TIPS = [
 
 const RUNE_SYMBOLS = ['ᚠ', 'ᚢ', 'ᚦ', 'ᚨ', 'ᚱ', 'ᚲ', 'ᚷ', 'ᚹ', 'ᚺ', 'ᚾ', 'ᛁ', 'ᛃ', 'ᛇ', 'ᛈ', 'ᛉ', 'ᛊ', 'ᛏ', 'ᛒ', 'ᛖ', 'ᛗ', 'ᛚ', 'ᛜ', 'ᛞ', 'ᛟ'];
 
+type RuneItem = {
+  symbol: string;
+  x: number;
+  y: number;
+  size: number;
+  duration: number;
+  delay: number;
+};
+
+/** Deterministic layout so SSR and first client paint match (avoids hydration errors). */
+function createDeterministicRunes(): RuneItem[] {
+  return Array.from({ length: 18 }, (_, i) => ({
+    symbol: RUNE_SYMBOLS[i % RUNE_SYMBOLS.length]!,
+    x: (i * 37) % 100,
+    y: (i * 53) % 100,
+    size: 14 + (i % 22),
+    duration: 6 + (i % 10),
+    delay: ((i * 27) % 50) / 10,
+  }));
+}
+
+function createRandomRunes(): RuneItem[] {
+  return Array.from({ length: 18 }, (_, i) => ({
+    symbol: RUNE_SYMBOLS[i % RUNE_SYMBOLS.length]!,
+    x: Math.random() * 100,
+    y: Math.random() * 100,
+    size: 14 + Math.random() * 22,
+    duration: 6 + Math.random() * 10,
+    delay: Math.random() * 5,
+  }));
+}
+
 function FloatingRune({ symbol, style }: { symbol: string; style: React.CSSProperties }) {
   return (
     <span
@@ -34,19 +66,16 @@ function FloatingRune({ symbol, style }: { symbol: string; style: React.CSSPrope
 
 export default function LoadingScreen({ isVisible, onFadeComplete }: LoadingScreenProps) {
   const [fadeOut, setFadeOut] = useState(false);
-  const [tipIndex, setTipIndex] = useState(() => Math.floor(Math.random() * LOADING_TIPS.length));
+  const [tipIndex, setTipIndex] = useState(0);
   const [dots, setDots] = useState('');
   const [progress, setProgress] = useState(0);
-  const [runes] = useState(() =>
-    Array.from({ length: 18 }, (_, i) => ({
-      symbol: RUNE_SYMBOLS[i % RUNE_SYMBOLS.length],
-      x: Math.random() * 100,
-      y: Math.random() * 100,
-      size: 14 + Math.random() * 22,
-      duration: 6 + Math.random() * 10,
-      delay: Math.random() * 5,
-    }))
-  );
+  const [runes, setRunes] = useState<RuneItem[]>(createDeterministicRunes);
+
+  // Randomize tips/runes only after mount so server HTML matches hydrated tree (Next.js).
+  useEffect(() => {
+    setRunes(createRandomRunes());
+    setTipIndex(Math.floor(Math.random() * LOADING_TIPS.length));
+  }, []);
 
   // Trigger fade-out when isVisible goes false
   useEffect(() => {

@@ -157,6 +157,8 @@ class EnemyAI {
   updateEnemyAI(enemy, players) {
     // Note: Taunt now works by giving aggro priority instead of overriding AI completely
 
+    if (enemy.type === 'training-dummy') return;
+
     // Special handling for boss enemies
     if (enemy.type === 'boss') {
       this.updateBossAI(enemy, players);
@@ -781,7 +783,7 @@ class EnemyAI {
         timestamp: Date.now()
       });
     }
-
+R
     const dirLabel = theta > 0 ? (Math.abs(theta) < Math.PI / 2 ? 'diagonal-fwd-left' : 'left') : (Math.abs(theta) < Math.PI / 2 ? 'diagonal-fwd-right' : 'right');
     console.log(`👻 Shade ${shade.id} blinked 4 units ${dirLabel} of target (θ=${(theta * 180 / Math.PI).toFixed(0)}°)`);
 

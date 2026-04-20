@@ -85,6 +85,7 @@ const FogOfWar: React.FC<FogOfWarProps> = ({ playerPositionRef, exploredGridRef 
   const matRef = useRef<ShaderMaterial>(null!);
 
   // DataTexture backed by the same Uint8Array — updated in-place, no allocations per frame.
+  // Callers must not replace `exploredGridRef.current` with a new array (GPU would keep the old buffer).
   const exploredTex = useMemo(() => {
     const tex = new DataTexture(
       exploredGridRef.current as Uint8Array<ArrayBuffer>,

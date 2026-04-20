@@ -136,6 +136,7 @@ io.on('connection', (socket) => {
       gameStarted: room.getGameStarted(),
       gameMode: room.gameMode || gameMode,
       campTypes: room.getCampTypes(),
+      combatArenaActive: room.gameMode !== 'coop' ? true : !!room.combatArenaActive,
     });
     
     // Notify other players
@@ -215,6 +216,20 @@ io.on('connection', (socket) => {
       });
     } else {
       socket.emit('start-game-failed', { error: 'Game already started' });
+    }
+  });
+
+  // Co-op: leave the throne prep room and start the main arena (enemies + AI)
+  socket.on('enter-combat-arena', (data) => {
+    const { roomId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (!room.getPlayer(socket.id)) return;
+
+    const activated = room.activateCombatArena();
+    if (activated) {
+      socket.emit('enter-combat-arena-success', { roomId, timestamp: Date.now() });
     }
   });
 

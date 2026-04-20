@@ -3,9 +3,11 @@ import { CylinderGeometry, SphereGeometry, MeshStandardMaterial, PointLight } fr
 
 interface PillarProps {
   position?: [number, number, number];
+  /** Hex color for the floating orb and its point light (default: ice blue). */
+  orbColorHex?: string;
 }
 
-const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0] }) => {
+const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], orbColorHex = '#5DADE2' }) => {
 
   // Create geometries and materials only once using useMemo
   const { pillarGeometries, materials } = useMemo(() => {
@@ -28,10 +30,9 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0] }) => {
     // Add sphere geometry for the orb
     const orbGeometry = new SphereGeometry(1, 32, 32);
 
-    // Add glowing material for the orb with light blue color
     const orbMaterial = new MeshStandardMaterial({
-      color: '#5DADE2',
-      emissive: '#5DADE2',
+      color: orbColorHex,
+      emissive: orbColorHex,
       metalness: 1,
       roughness: 0.2,
     });
@@ -48,7 +49,7 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0] }) => {
         orb: orbMaterial,
       }
     };
-  }, []);
+  }, [orbColorHex]);
 
   // rotation animation for the orb
   const [rotation, setRotation] = React.useState(0);
@@ -112,7 +113,7 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0] }) => {
         position={[0, 5, 0]}
         rotation={[rotation, rotation, 0]}
       >
-        <pointLight color="#5DADE2" intensity={1} distance={5} />
+        <pointLight color={orbColorHex} intensity={1} distance={5} />
       </mesh>
     </group>
   );

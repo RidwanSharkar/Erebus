@@ -17,8 +17,10 @@ interface KnightRendererProps {
   health: number;
   maxHealth: number;
   isDying?: boolean;
-  soulType?: 'green' | 'red' | 'blue' | 'purple';
+  soulType?: 'green' | 'red' | 'blue' | 'purple' | 'yellow';
   campType?: string;
+  /** When false, hides the red melee telegraph ring (e.g. throne training dummy). */
+  showMeleeRangeRing?: boolean;
 }
 
 const ATTACK_DURATION = 1200; // ms — matches Mixamo attack clip length
@@ -45,6 +47,7 @@ export default function KnightRenderer({
   isDying = false,
   soulType,
   campType,
+  showMeleeRangeRing = true,
 }: KnightRendererProps) {
   const theme = campHpTheme(campType);
   const { socket } = useMultiplayer();
@@ -219,7 +222,7 @@ export default function KnightRenderer({
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <KnightModel isWalking={isWalking} isAttacking={isAttacking} attackVariant={attackVariant} isDying={isDying} soulType={soulType} abilityClip={abilityClip} />
 
-      <EnemyMeleeAttackRangeRing radius={KNIGHT_MELEE_ATTACK_RANGE} />
+      {showMeleeRangeRing && <EnemyMeleeAttackRangeRing radius={KNIGHT_MELEE_ATTACK_RANGE} />}
 
       {/* Glowing soul orb floating above the knight */}
       {soulType && !isDying && (

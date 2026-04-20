@@ -689,7 +689,7 @@ export class AudioSystem extends System {
   public playUIHitboxSound(weapon?: WeaponType) {
     const resolved = weapon ?? this.getCurrentWeaponFromControl();
     const soundId = this.hitboxSoundIdForWeapon(resolved);
-    return this.playWeaponSound(soundId, new Vector3(0, 0, 0), { volume: 0.2 });
+    return this.playWeaponSound(soundId, new Vector3(0, 0, 0), { volume: 0.5 });
   }
 
   // Background music controls (local only, 50% volume)
