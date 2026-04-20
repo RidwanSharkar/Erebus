@@ -5,6 +5,7 @@ import { Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import TemplarModel from './TemplarModel';
+import EnemyMeleeAttackRangeRing, { TEMPLAR_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
 
@@ -135,6 +136,8 @@ export default function TemplarRenderer({
         attackVariant={attackVariant}
         isDying={isDying}
       />
+
+      <EnemyMeleeAttackRangeRing radius={TEMPLAR_MELEE_ATTACK_RANGE} />
 
       {/* Billboard health bar */}
       <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>

@@ -14,16 +14,18 @@ interface GhostTrailProps {
   targetPosition?: Vector3; // Optional for multiplayer - if provided, use this instead of parentRef position
   isStealthing?: boolean; // Whether the local player is currently in stealth mode
   isDashingRef?: React.RefObject<boolean>; // Live ref to dashing state; trail only shows while dashing or within linger window
+  /** Movement.startCharge (Sword/Runeblade Charge ability) — same trail treatment as regular dash */
+  isWeaponChargeMovingRef?: React.RefObject<boolean>;
   isSkyfalling?: boolean; // Divebomb ability — keeps trail visible for the full duration
   yOffset?: number; // Additional Y lift — use when dragon body is hidden (character model)
 }
 
-const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPosition, isStealthing = false, isDashingRef, isSkyfalling = false, yOffset = 0 }: GhostTrailProps) => {
+const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPosition, isStealthing = false, isDashingRef, isWeaponChargeMovingRef, isSkyfalling = false, yOffset = 0 }: GhostTrailProps) => {
   const trailsRef = useRef<Mesh[]>([]);
   const positions = useRef<Vector3[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
-  const lastDashEndTime = useRef<number>(-Infinity); // timestamp when dashing last became false
-  const wasDashing = useRef<boolean>(false);
+  const lastDashEndTime = useRef<number>(-Infinity); // timestamp when dash-like motion last became false
+  const wasTrailMotionActive = useRef<boolean>(false);
   const trailCount = 24;
   
   useEffect(() => {
@@ -129,14 +131,16 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
   useFrame(() => {
     if (!isInitialized) return;
 
-    // Track dash linger window
-    const isDashingNow = isDashingRef ? (isDashingRef.current ?? false) : true; // if no ref provided, always show
-    if (wasDashing.current && !isDashingNow) {
+    // Track dash / weapon-charge linger window (same UX as regular dash)
+    const isDashingNow = isDashingRef ? (isDashingRef.current ?? false) : false;
+    const isChargeMovingNow = isWeaponChargeMovingRef ? (isWeaponChargeMovingRef.current ?? false) : false;
+    const isTrailMotionActive = isDashingNow || isChargeMovingNow;
+    if (wasTrailMotionActive.current && !isTrailMotionActive) {
       lastDashEndTime.current = Date.now();
     }
-    wasDashing.current = isDashingNow;
+    wasTrailMotionActive.current = isTrailMotionActive;
     const withinLinger = Date.now() - lastDashEndTime.current < DASH_LINGER_MS;
-    const shouldShow = isDashingNow || withinLinger || isSkyfalling;
+    const shouldShow = isTrailMotionActive || withinLinger || isSkyfalling;
 
     // Use targetPosition if provided (for multiplayer), otherwise use parentRef position
     let newPos: Vector3;

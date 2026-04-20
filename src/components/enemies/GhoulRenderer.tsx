@@ -5,6 +5,7 @@ import { Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import GhoulModel from './GhoulModel';
+import EnemyMeleeAttackRangeRing, { GHOUL_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 
 interface GhoulRendererProps {
@@ -143,6 +144,8 @@ export default function GhoulRenderer({
         isSummoning={isSummoning}
         isDying={isDying}
       />
+
+      <EnemyMeleeAttackRangeRing radius={GHOUL_MELEE_ATTACK_RANGE} />
 
       <Billboard position={[0, 2.8, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && !isSummoning && (

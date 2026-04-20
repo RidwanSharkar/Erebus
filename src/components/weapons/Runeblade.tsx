@@ -4,6 +4,7 @@ import { Group, Vector3, Color, Shape, AdditiveBlending } from '@/utils/three-ex
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import DeflectShield from './DeflectShield';
 import CorruptedAura from './CorruptedAura';
+import { calculationCache } from '@/utils/CalculationCache';
 
 interface RunebladeProps {
   isSwinging: boolean;
@@ -75,6 +76,7 @@ interface RunebladeProps {
   playerRotation?: Vector3;
   dragonGroupRef?: React.RefObject<Group>; // Reference to dragon's group for real-time positioning
   playerEntityId?: number; // Player's entity ID to prevent self-damage
+  realTimePositionRef?: React.RefObject<Vector3>; // Player position during charge (matches Sword)
 }
 
 export default function Runeblade({
@@ -106,7 +108,8 @@ export default function Runeblade({
   playerPosition,
   playerRotation,
   dragonGroupRef,
-  playerEntityId
+  playerEntityId,
+  realTimePositionRef
 }: RunebladeProps) {
   // Color scheme based on corrupted aura state
   const primaryColor = isCorruptedAuraActive ? new Color("#ffaa00") : new Color(0x1097B5);
@@ -233,9 +236,188 @@ export default function Runeblade({
       return; // Don't process other animations during transition
     }
 
-    // Skip Charge, and other animations as requested
-    if (isCharging) {
+    // ── Charge: same flow as Sword (dash pose → movement phase → orbital spin → onChargeComplete)
+    if (isChargeSpinning.current) {
+      const TARGET_ROTATIONS = 1.5;
+      const MAX_ROTATION = TARGET_ROTATIONS * Math.PI * 2;
+      const SPIN_ROTATION_SPEED = 26.5;
+
+      chargeSpinRotation.current += delta * SPIN_ROTATION_SPEED;
+
+      if (chargeSpinRotation.current >= MAX_ROTATION) {
+        chargeSpinRotation.current = 0;
+        chargeSpinStartTime.current = null;
+        isChargeSpinning.current = false;
+
+        runebladeRef.current.position.set(...basePosition);
+        runebladeRef.current.rotation.set(0, 0, 0);
+
+        onChargeComplete?.();
+        return;
+      }
+
+      const angle = chargeSpinRotation.current;
+      const orbitRadius = 1.125;
+      const orbitalX = calculationCache.getTrigCalculation('cos', angle) * orbitRadius;
+      const orbitalZ = calculationCache.getTrigCalculation('sin', angle) * orbitRadius;
+      const fixedHeight = 0.65;
+
+      runebladeRef.current.position.set(orbitalX, fixedHeight, orbitalZ);
+      runebladeRef.current.rotation.set(
+        Math.PI / 4,
+        -angle + Math.PI,
+        1
+      );
+      runebladeRef.current.rotateY(-angle + Math.PI);
+
       return;
+    }
+
+    if (isCharging) {
+      const CHARGE_DISTANCE = 9.5;
+      const CHARGE_WINDUP_DURATION = 0.1;
+      const CHARGE_DURATION = 0.45;
+      const CHARGE_DAMAGE = 40;
+      const CHARGE_COLLISION_RADIUS = 2.5;
+      const MAX_CHARGE_BOUNDS = 25;
+      const CHARGE_FAILSAFE_TIMEOUT = 0.6;
+
+      if (!chargeStartTime.current) {
+        chargeStartTime.current = Date.now();
+        chargeStartPosition.current = playerPosition?.clone() || new Vector3(0, 0, 0);
+        chargeHitEnemies.current.clear();
+
+        if (chargeDirectionProp) {
+          chargeDirection.current = chargeDirectionProp.clone().normalize();
+        } else {
+          chargeDirection.current = new Vector3(0, 0, -1).normalize();
+        }
+      }
+
+      const elapsed = (Date.now() - chargeStartTime.current) / 1000;
+
+      if (elapsed > CHARGE_FAILSAFE_TIMEOUT) {
+        chargeStartTime.current = null;
+        chargeStartPosition.current = null;
+        chargeHitEnemies.current.clear();
+        chargeTrail.current = [];
+        runebladeRef.current.rotation.set(0, 0, 0);
+        runebladeRef.current.position.set(...basePosition);
+        onChargeComplete?.();
+        return;
+      }
+
+      if (elapsed < CHARGE_WINDUP_DURATION) {
+        const windupProgress = elapsed / CHARGE_WINDUP_DURATION;
+        const easeInOut = windupProgress < 0.5
+          ? 2 * windupProgress * windupProgress
+          : calculationCache.getEasingCalculation('easeInOut', windupProgress, 0, 1);
+
+        const targetRotationX = Math.PI / 2;
+        const currentRotationX = easeInOut * targetRotationX;
+        runebladeRef.current.rotation.set(currentRotationX, 0, 0);
+
+        const currentZ = basePosition[2] + (easeInOut * 1.5);
+        runebladeRef.current.position.set(basePosition[0], basePosition[1] + 0.2, currentZ);
+
+        return;
+      }
+
+      const dashElapsed = elapsed - CHARGE_WINDUP_DURATION;
+      const progress = Math.min(dashElapsed / CHARGE_DURATION, 1);
+      const easeOutQuad = calculationCache.getEasingCalculation('easeOutQuad', progress, 0, 1);
+
+      if (!chargeStartPosition.current || !chargeDirection.current || !playerPosition) {
+        chargeStartTime.current = null;
+        chargeStartPosition.current = null;
+        onChargeComplete?.();
+        return;
+      }
+
+      const displacement = chargeDirection.current.clone().multiplyScalar(CHARGE_DISTANCE * easeOutQuad);
+      const newPosition = chargeStartPosition.current.clone().add(displacement);
+      const distanceFromOrigin = newPosition.length();
+      if (distanceFromOrigin > MAX_CHARGE_BOUNDS) {
+        chargeStartTime.current = null;
+        chargeStartPosition.current = null;
+        onChargeComplete?.();
+        return;
+      }
+
+      const currentPosition = realTimePositionRef?.current || playerPosition;
+      if (enemyData && enemyData.length > 0 && onHit && progress > 0 && currentPosition) {
+        for (const enemy of enemyData) {
+          if (chargeHitEnemies.current.has(enemy.id)) continue;
+          if (enemy.health <= 0) continue;
+
+          const distance = currentPosition.distanceTo(enemy.position);
+
+          if (distance <= CHARGE_COLLISION_RADIUS) {
+            chargeHitEnemies.current.add(enemy.id);
+            onHit(enemy.id, CHARGE_DAMAGE);
+
+            if (setDamageNumbers && nextDamageNumberId) {
+              setDamageNumbers(prev => [...prev, {
+                id: nextDamageNumberId.current++,
+                damage: CHARGE_DAMAGE,
+                position: enemy.position.clone(),
+                isCritical: false,
+              }]);
+            }
+          }
+        }
+      }
+
+      runebladeRef.current.rotation.set(Math.PI / 2, 0, -0.175);
+      runebladeRef.current.position.set(basePosition[0], basePosition[1] + 0.2, basePosition[2] + 1.5);
+
+      return;
+    }
+
+    if (!isCharging && chargeStartTime.current !== null && !isChargeSpinning.current && !shouldStartSpin.current) {
+      shouldStartSpin.current = true;
+    }
+
+    if (!isCharging && chargeStartTime.current !== null && !isChargeSpinning.current && !shouldStartSpin.current) {
+      const timeSinceChargeEnd = (Date.now() - chargeStartTime.current) / 1000;
+      if (timeSinceChargeEnd > 2.0) {
+        chargeStartTime.current = null;
+        chargeStartPosition.current = null;
+        chargeHitEnemies.current.clear();
+        chargeTrail.current = [];
+        shouldStartSpin.current = false;
+        runebladeRef.current.rotation.set(0, 0, 0);
+        runebladeRef.current.position.set(...basePosition);
+        return;
+      }
+    }
+
+    if (shouldStartSpin.current && !isChargeSpinning.current) {
+      chargeStartTime.current = null;
+      chargeStartPosition.current = null;
+      chargeHitEnemies.current.clear();
+      chargeTrail.current = [];
+      shouldStartSpin.current = false;
+
+      isChargeSpinning.current = true;
+      chargeSpinRotation.current = 0;
+      chargeSpinStartTime.current = Date.now();
+    }
+
+    if (!isCharging && chargeStartTime.current !== null && !shouldStartSpin.current && !isChargeSpinning.current) {
+      chargeStartTime.current = null;
+      chargeStartPosition.current = null;
+      chargeHitEnemies.current.clear();
+      chargeTrail.current = [];
+      shouldStartSpin.current = false;
+      runebladeRef.current.rotation.set(0, 0, 0);
+      runebladeRef.current.position.set(...basePosition);
+    }
+
+    if (isCharging && !chargeStartTime.current) {
+      shouldStartSpin.current = false;
+      isChargeSpinning.current = false;
+      chargeSpinRotation.current = 0;
     }
 
     if (isSmiting) {
@@ -883,6 +1065,24 @@ export default function Runeblade({
           </group>
         )}
       </group>
+
+      {isCharging && chargeTrail.current.map(particle => (
+        <mesh
+          key={particle.id}
+          position={[particle.position.x, particle.position.y, particle.position.z]}
+          scale={[particle.life * 0.2, particle.life * 0.2, particle.life * 0.2]}
+        >
+          <sphereGeometry args={[0.5, 6, 6]} />
+          <meshStandardMaterial
+            color={new Color(0xB5B010)}
+            emissive={new Color(0xB5B010)}
+            emissiveIntensity={particle.life * 3}
+            transparent
+            opacity={particle.life * 0.9}
+            blending={AdditiveBlending}
+          />
+        </mesh>
+      ))}
     </group>
 
     {/* Deflect Shield - Rendered outside runeblade group to avoid inheriting transformations */}

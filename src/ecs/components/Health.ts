@@ -26,7 +26,7 @@ export class Health extends Component {
     this.invulnerabilityTimer = 0;
     this.isDead = false;
     this.canRegenerate = false;
-    this.regenerationRate = 5; // Health per second
+    this.regenerationRate = 0; // Health per second
     this.regenerationDelay = 3; // Seconds after damage before regeneration starts
     this.lastDamageTime = 0;
   }
@@ -161,7 +161,7 @@ export class Health extends Component {
     this.invulnerabilityTimer = 0;
     this.isDead = false;
     this.canRegenerate = false;
-    this.regenerationRate = 5;
+    this.regenerationRate = 0;
     this.regenerationDelay = 3;
     this.lastDamageTime = 0;
     this.enabled = true;

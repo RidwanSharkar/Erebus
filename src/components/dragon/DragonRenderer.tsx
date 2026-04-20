@@ -187,6 +187,8 @@ export default function DragonRenderer({
   const movementDirection = useRef(new Vector3(0, 0, 0));
   const lastPosition = useRef(position ? position.clone() : new Vector3(0, 0.5, 0));
   const isDashing = useRef(false);
+  /** Movement.isCharging — Sword/Runeblade ability dash (GhostTrail matches regular dash) */
+  const isWeaponChargeMoving = useRef(false);
   const [currentRotation, setCurrentRotation] = useState(new Vector3(0, 0, 0));
   const lastFacingDirection = useRef(new Vector3(0, 0, -1)); // Default facing forward
   const [enemyData, setEnemyData] = useState<Array<{
@@ -283,7 +285,8 @@ export default function DragonRenderer({
         
         if (isMovementComponent) {
           isDashing.current = movement.isDashing;
-          
+          isWeaponChargeMoving.current = movement.isCharging;
+
           // Update dash charges state
           if (typeof movement.getDashChargeStatus === 'function') {
             const currentChargeStatus = movement.getDashChargeStatus();
@@ -497,6 +500,7 @@ export default function DragonRenderer({
         targetPosition={effectiveRealTimePositionRef.current || undefined}
         isStealthing={isStealthing}
         isDashingRef={isDashing}
+        isWeaponChargeMovingRef={isWeaponChargeMoving}
         isSkyfalling={isSkyfalling}
         yOffset={hideBody ? 1.0 : 0}
       />

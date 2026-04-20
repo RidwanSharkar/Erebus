@@ -19,8 +19,8 @@ export class ExperienceSystem {
   };
 
   // Health scaling per level
-  private static readonly BASE_HEALTH = 250;
-  private static readonly HEALTH_PER_LEVEL = 100;
+  private static readonly BASE_HEALTH = 200;
+  private static readonly HEALTH_PER_LEVEL = 50;
 
   /**
    * Calculate the level based on total experience

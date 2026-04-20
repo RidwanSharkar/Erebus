@@ -110,7 +110,7 @@ const FogOfWar: React.FC<FogOfWarProps> = ({ playerPositionRef, exploredGridRef 
     uFogAlpha:     { value: 0.93 },
     uPlayerPos:    { value: new Vector3() },
     uPlayerRadius: { value: PLAYER_VIEW_RADIUS },
-    uEdgeSoftness: { value: 6.5 },
+    uEdgeSoftness: { value: 9.5 },
     uExploredMap:  { value: exploredTex },
     uMapHalfSize:  { value: MAP_HALF_SIZE },
   }), [exploredTex]);

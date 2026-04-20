@@ -38,6 +38,7 @@ const SLOT_COLORS: Record<'Q' | 'E' | 'R', { ring: string; bg: string; text: str
 
 const SOURCE_WEAPON_ORDER: WeaponType[] = [
   WeaponType.RUNEBLADE,
+  WeaponType.SWORD,
   WeaponType.BOW,
   WeaponType.SCYTHE,
   WeaponType.SABRES,

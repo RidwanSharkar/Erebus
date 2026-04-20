@@ -385,6 +385,7 @@ export default function DragonUnit({
           playerRotation={playerRotation}
           dragonGroupRef={groupRef}
           playerEntityId={entityId}
+          realTimePositionRef={realTimePositionRef}
         />
       );
     } else if (currentWeapon === WeaponType.SPEAR) {

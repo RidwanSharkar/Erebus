@@ -72,6 +72,14 @@ export const universalAbilityPool: UniversalAbility[] = [
     allowedWeapons: [WeaponType.SABRES, WeaponType.SPEAR, WeaponType.RUNEBLADE],
   },
 
+  // ── SWORD (Classic) — shared mechanics (e.g. Charge) usable on Runeblade ─
+  {
+    id: 'SWORD_E', sourceWeapon: WeaponType.SWORD, sourceKey: 'E',
+    name: 'Charge', cooldown: 8.0, icon: '🔱',
+    description: 'Dash forward, damaging enemies in your path.',
+    allowedWeapons: [WeaponType.SWORD, WeaponType.RUNEBLADE],
+  },
+
   // ── BOW ───────────────────────────────────────────────────────────────
   {
     id: 'BOW_Q', sourceWeapon: WeaponType.BOW, sourceKey: 'Q',

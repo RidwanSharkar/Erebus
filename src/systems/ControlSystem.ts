@@ -906,6 +906,23 @@ export class ControlSystem extends System {
           this.performSmite(playerTransform);
         }
         break;
+      // ── SWORD (Classic) ───────────────────────────────────────────────
+      case 'SWORD_E': // Charge (dash)
+        if (
+          !this.isSwordCharging &&
+          !this.isDeflecting &&
+          !this.isSwinging &&
+          !this.isSmiting &&
+          !this.isDeathGrasping &&
+          !this.isWraithStriking &&
+          !this.isBarrageCharging &&
+          !this.isViperStingCharging &&
+          !this.isCobraShotCharging
+        ) {
+          window.dispatchEvent(new CustomEvent('character-ability-cast'));
+          this.performCharge(playerTransform);
+        }
+        break;
       // ── BOW ───────────────────────────────────────────────────────────
       case 'BOW_Q': // Frost Bite (Barrage)
         if (!this.isBarrageCharging && !this.isCharging && !this.isViperStingCharging)
@@ -1076,6 +1093,7 @@ export class ControlSystem extends System {
       case 'SPEAR_R':     return { current: Math.max(0, this.lightningStormCooldown - (currentTime - this.lastLightningStormTime)), max: this.lightningStormCooldown, isActive: false };
       // ── Formerly F-key abilities ──────────────────────────────────────
       case 'RUNEBLADE_F': return { current: Math.max(0, this.corruptedAuraCooldown - (currentTime - this.lastCorruptedAuraTime)), max: this.corruptedAuraCooldown, isActive: this.corruptedAuraActive };
+      case 'SWORD_E':     return { current: Math.max(0, this.chargeCooldown - (currentTime - this.lastChargeTime)), max: this.chargeCooldown, isActive: this.isSwordCharging };
       case 'BOW_F':       return { current: Math.max(0, this.rejuvenatingShotFireRate - (currentTime - this.lastRejuvenatingShotTime)), max: this.rejuvenatingShotFireRate, isActive: false };
       case 'BOW_P':       return { current: 0, max: 0, isActive: false };
       case 'SCYTHE_F':    return { current: Math.max(0, this.summonTotemFireRate - (currentTime - this.lastSummonTotemTime)), max: this.summonTotemFireRate, isActive: false };
@@ -2557,7 +2575,7 @@ export class ControlSystem extends System {
 
   private handleRunebladeInput(playerTransform: Transform): void {
     // Handle runeblade melee attacks
-    if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isSmiting && !this.isDeathGrasping && !this.isWraithStriking) {
+    if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isSmiting && !this.isDeathGrasping && !this.isWraithStriking && !this.isSwordCharging) {
       this.performRunebladeMeleeAttack(playerTransform);
     }
 

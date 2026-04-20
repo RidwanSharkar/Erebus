@@ -6859,11 +6859,11 @@ function createCoopPlayer(world: World): any {
   // Add Health component with level-based max health
   const maxHealth = ExperienceSystem.getMaxHealthForLevel(1); // Start at level 1
   const health = new Health(maxHealth);
-  health.enableRegeneration(2, 5); // Slower regen in COOP: 1 HP per second after 10 seconds
+  health.enableRegeneration(0, 0); // Slower regen in COOP: 1 HP per second after 10 seconds
   player.addComponent(health);
 
   // Add Shield component with 250 max shield
-  const shield = new Shield(50, 15, 2.5); // 250 max shield, 20/s regen, 5s delay
+  const shield = new Shield(25, 12.5, 3); // 250 max shield, 20/s regen, 5s delay
   player.addComponent(shield);
 
   // Add Collider component for environment collision and enemy damage detection

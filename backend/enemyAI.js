@@ -304,7 +304,7 @@ class EnemyAI {
         this.telegraphSkeletonAttack(skeleton, targetPlayer);
 
         // After 1 second, confirm damage only if the player is still in range
-        const telegraphDelay = 1000;
+        const telegraphDelay = 750;
         setTimeout(() => {
           // Abort if skeleton died or room ended during the telegraph
           if (skeleton.isDying || !this.room?.getGameStarted()) return;

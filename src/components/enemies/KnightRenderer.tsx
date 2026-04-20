@@ -6,6 +6,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import KnightModel from './KnightModel';
 import KnightSoulEffect from './KnightSoulEffect';
+import EnemyMeleeAttackRangeRing, { KNIGHT_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
 
@@ -217,6 +218,8 @@ export default function KnightRenderer({
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <KnightModel isWalking={isWalking} isAttacking={isAttacking} attackVariant={attackVariant} isDying={isDying} soulType={soulType} abilityClip={abilityClip} />
+
+      <EnemyMeleeAttackRangeRing radius={KNIGHT_MELEE_ATTACK_RANGE} />
 
       {/* Glowing soul orb floating above the knight */}
       {soulType && !isDying && (
