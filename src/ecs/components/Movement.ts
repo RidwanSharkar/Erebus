@@ -287,6 +287,29 @@ export class Movement extends Component {
     return true;
   }
 
+  /**
+   * Consume up to `maxCount` dash charges without moving (e.g. TRINITY + Colossus Smite).
+   * Uses the same per-charge cooldown as `startDash`. Returns how many charges were consumed.
+   */
+  public consumeDashChargesWithoutDash(maxCount: number, currentTime: number): number {
+    let consumed = 0;
+    for (let n = 0; n < maxCount; n++) {
+      const availableChargeIndex = this.dashCharges.findIndex(charge => charge.isAvailable);
+      if (availableChargeIndex === -1) break;
+
+      this.dashCharges[availableChargeIndex].isAvailable = false;
+      this.dashCharges[availableChargeIndex].cooldownStartTime = currentTime;
+      const idx = availableChargeIndex;
+      setTimeout(() => {
+        this.dashCharges[idx].isAvailable = true;
+        this.dashCharges[idx].cooldownStartTime = null;
+      }, 8000);
+
+      consumed++;
+    }
+    return consumed;
+  }
+
   public updateDash(currentTime: number): { isComplete: boolean; newPosition: Vector3 | null } {
     if (!this.isDashing) {
       return { isComplete: false, newPosition: null };

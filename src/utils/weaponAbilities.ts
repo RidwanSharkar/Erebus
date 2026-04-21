@@ -211,7 +211,7 @@ export function getDefaultLoadout(): AbilityLoadout {
 export function getDefaultLoadoutForWeapon(weapon: WeaponType): AbilityLoadout {
   switch (weapon) {
     case WeaponType.RUNEBLADE:
-      return { Q: 'RUNEBLADE_E', E: 'RUNEBLADE_R', R: 'RUNEBLADE_Q' }; // Wraith Strike / Colossus Strike / Aegis
+      return { Q: 'RUNEBLADE_Q', E: 'RUNEBLADE_E', R: 'RUNEBLADE_R' }; // Wraith Strike / Colossus Strike / Aegis
     case WeaponType.SCYTHE:
       return { Q: 'SCYTHE_Q', E: 'SCYTHE_R', R: 'SCYTHE_F' };         // Sunwell / Crossentropy / Mantra
     case WeaponType.SPEAR:

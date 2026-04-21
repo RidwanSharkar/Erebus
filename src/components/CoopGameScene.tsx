@@ -32,6 +32,9 @@ import { useMultiplayer, Player, EnemyDamageMeta } from '@/contexts/MultiplayerC
 import { SkillPointData } from '@/utils/SkillPointSystem';
 import { AbilityLoadout, getDefaultLoadoutForWeapon } from '@/utils/weaponAbilities';
 import {
+  shouldApplyInfestedSmiteTalent,
+  shouldApplyInfernalSmiteTalent,
+  shouldApplyStaggeringSmiteTalent,
   shouldApplyStoredChargeTalent,
   shouldApplyStaggeringComboTalent,
   shouldApplyWrathfulTalonsTalent,
@@ -79,6 +82,7 @@ import IcebeamManager from '@/components/managers/IcebeamManager';
 import BowPowershotManager from '@/components/projectiles/BowPowershotManager';
 import FrostNovaManager, { addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import StunManager, { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
+import IgniteEffectManager, { addGlobalIgnitedEnemy } from '@/components/weapons/IgniteEffectManager';
 
 import CobraShotManager from '@/components/projectiles/CobraShotManager';
 
@@ -726,7 +730,11 @@ export function CoopGameScene({
     position: Vector3;
     startTime: number;
     duration: number;
-    onDamageDealt?: (totalDamage: number) => void;
+    onDamageDealt?: (totalDamage: number, meta?: { targetsHit: number }) => void;
+    sequenceDelaySec?: number;
+    infestedSmite?: boolean;
+    staggeringSmite?: boolean;
+    infernalSmite?: boolean;
   }>>([]);
   const nextSmiteEffectId = useRef(0);
 
@@ -1176,15 +1184,32 @@ export function CoopGameScene({
   }, []);
 
   // Function to create smite effect on PVP players
-  const createPvpSmiteEffect = useCallback((playerId: string, position: Vector3, onDamageDealt?: (totalDamage: number) => void) => {
+  const createPvpSmiteEffect = useCallback((
+    playerId: string,
+    position: Vector3,
+    onDamageDealt?: (totalDamage: number, meta?: { targetsHit: number }) => void,
+    opts?: {
+      sequenceDelaySec?: number;
+      infestedSmite?: boolean;
+      staggeringSmite?: boolean;
+      infernalSmite?: boolean;
+    },
+  ) => {
+    const sequenceDelaySec = opts?.sequenceDelaySec ?? 0;
+    const baseCleanupMs = 1200;
+    const duration = baseCleanupMs + sequenceDelaySec * 1000;
 
     const smiteEffect = {
       id: nextSmiteEffectId.current++,
       playerId,
       position: position.clone(),
       startTime: Date.now(),
-      duration: 1200, // 1.2 seconds - extended to account for start delay (0.05s) + animation (1.0s) + buffer (0.15s)
-      onDamageDealt: onDamageDealt // Include healing callback
+      duration,
+      onDamageDealt,
+      sequenceDelaySec,
+      infestedSmite: !!opts?.infestedSmite,
+      staggeringSmite: !!opts?.staggeringSmite,
+      infernalSmite: !!opts?.infernalSmite,
     };
 
     // Use batched updates for smite effects
@@ -2472,7 +2497,28 @@ export function CoopGameScene({
 
           // Create smite visual effect at the player's position
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
-          createPvpSmiteEffect(data.playerId, position, undefined); // No healing callback for remote players
+          const infestedSmite = !!(data.extraData && data.extraData.infestedSmite);
+          const staggeringSmite = !!(data.extraData && data.extraData.staggeringSmite);
+          const infernalSmite = !!(data.extraData && data.extraData.infernalSmite);
+          createPvpSmiteEffect(data.playerId, position, undefined, {
+            sequenceDelaySec: 0,
+            infestedSmite,
+            staggeringSmite,
+            infernalSmite,
+          });
+          const trinityExtras = data.extraData?.trinityExtras as
+            | Array<{ position: { x: number; y: number; z: number }; delaySec?: number }>
+            | undefined;
+          if (trinityExtras?.length) {
+            for (const ex of trinityExtras) {
+              createPvpSmiteEffect(
+                data.playerId,
+                new Vector3(ex.position.x, ex.position.y, ex.position.z),
+                undefined,
+                { sequenceDelaySec: ex.delaySec ?? 0, infestedSmite, staggeringSmite, infernalSmite },
+              );
+            }
+          }
 
           // Update player state to show smiting animation
           setMultiplayerPlayerStates(prev => {
@@ -4371,6 +4417,11 @@ export function CoopGameScene({
               }
             } else if (effectType === 'corrupted') {
               enemy.applyCorrupted(duration / 1000, currentTime);
+            } else if (effectType === 'ignite') {
+              const transform = entity.getComponent(Transform);
+              if (transform) {
+                addGlobalIgnitedEnemy(entity.id.toString(), transform.position.clone(), duration);
+              }
             }
           }
           break;
@@ -5920,12 +5971,46 @@ export function CoopGameScene({
     });
 
     // Set up Smite callback
-    controlSystem.setSmiteCallback((position: Vector3, direction: Vector3, onDamageDealt?: (totalDamage: number) => void) => {
-      // Create local Smite effect
-      createPvpSmiteEffect(socket?.id || '', position, onDamageDealt);
+    controlSystem.setSmiteCallback((
+      position: Vector3,
+      direction: Vector3,
+      onDamageDealt?: (totalDamage: number, meta?: { targetsHit: number }) => void,
+      meta?: { extraStrikes?: Array<{ position: Vector3; delaySec: number }> },
+    ) => {
+      const infestedSmite = shouldApplyInfestedSmiteTalent(
+        talentLoadoutRef.current,
+        abilityLoadoutRef.current,
+      );
+      const staggeringSmite = shouldApplyStaggeringSmiteTalent(
+        talentLoadoutRef.current,
+        abilityLoadoutRef.current,
+      );
+      const infernalSmite = shouldApplyInfernalSmiteTalent(
+        talentLoadoutRef.current,
+        abilityLoadoutRef.current,
+      );
+      const strikes: Array<{ pos: Vector3; delaySec: number }> = [
+        { pos: position.clone(), delaySec: 0 },
+        ...(meta?.extraStrikes?.map((s) => ({ pos: s.position.clone(), delaySec: s.delaySec })) ?? []),
+      ];
+      for (const s of strikes) {
+        createPvpSmiteEffect(socket?.id || '', s.pos, onDamageDealt, {
+          sequenceDelaySec: s.delaySec,
+          infestedSmite,
+          staggeringSmite,
+          infernalSmite,
+        });
+      }
 
-      // Broadcast Smite ability to other players
-      broadcastPlayerAbility('smite', position, direction);
+      broadcastPlayerAbility('smite', position, direction, undefined, {
+        infestedSmite,
+        staggeringSmite,
+        infernalSmite,
+        trinityExtras: meta?.extraStrikes?.map((s) => ({
+          position: { x: s.position.x, y: s.position.y, z: s.position.z },
+          delaySec: s.delaySec,
+        })),
+      });
     });
 
     // Set up Flurry healing effect callback
@@ -7043,27 +7128,34 @@ export function CoopGameScene({
 
       {/* PVP Smite Effects */}
       {pvpSmiteEffects.map(effect => {
-        // Prepare enemy data including BOSS and BOSS-SKELETON enemies
+        // All living PvE enemies (same idea as Lightning Storm); Smite applies its own strike radius in Smite.tsx
         const smiteEnemyData = Array.from(enemies.values())
-          .filter(enemy => !enemy.isDying && (enemy.type === 'boss' || enemy.type === 'boss-skeleton' || enemy.type === 'knight' || enemy.type === 'training-dummy' || enemy.type === 'shade'))
+          .filter(enemy => !enemy.isDying && enemy.health > 0)
           .map(enemy => ({
             id: enemy.id,
             position: new Vector3(enemy.position.x, enemy.position.y, enemy.position.z),
             health: enemy.health
           }));
 
-        // Debug: Check if boss/skeleton enemies are found
-        if (smiteEnemyData.length > 0) {
-          console.log('Runeblade R ability - Found enemies for damage:', smiteEnemyData.map(e => ({ id: e.id, type: enemies.get(e.id)?.type, distance: effect.position.distanceTo(e.position) })));
-        } else {
-          console.log('Runeblade R ability - No boss/skeleton enemies found in range');
-        }
+        const isLocalPlayerSmite = !!socket?.id && effect.playerId === socket.id;
+        const loadoutForSmite = talentLoadout;
+        const abilityForSmite = abilityLoadout ?? null;
+        const infestedSmiteVisual = isLocalPlayerSmite
+          ? shouldApplyInfestedSmiteTalent(loadoutForSmite, abilityForSmite)
+          : !!effect.infestedSmite;
+        const staggeringSmiteVisual = isLocalPlayerSmite
+          ? shouldApplyStaggeringSmiteTalent(loadoutForSmite, abilityForSmite)
+          : !!effect.staggeringSmite;
+        const infernalSmiteVisual = isLocalPlayerSmite
+          ? shouldApplyInfernalSmiteTalent(loadoutForSmite, abilityForSmite)
+          : !!effect.infernalSmite;
 
         return (
           <SmiteComponent
-            key={`smite-${effect.id}`}
+            key={`smite-${effect.id}-${infernalSmiteVisual ? 'I' : 'i'}${infestedSmiteVisual ? 'N' : 'n'}${staggeringSmiteVisual ? 'S' : 's'}`}
             weaponType={WeaponType.RUNEBLADE}
             position={effect.position}
+            sequenceDelaySec={effect.sequenceDelaySec ?? 0}
             onComplete={() => {
               // Remove effect after completion
               setPvpSmiteEffects(prev => prev.filter(e => e.id !== effect.id));
@@ -7079,17 +7171,17 @@ export function CoopGameScene({
                 });
               }
             }}
-            onDamageDealt={(totalDamage) => {
-              // Smite passes total damage directly
-              if (effect.onDamageDealt && totalDamage > 0) {
-                effect.onDamageDealt(totalDamage);
-              }
+            onDamageDealt={(totalDamage, meta) => {
+              effect.onDamageDealt?.(totalDamage, meta);
             }}
             enemyData={smiteEnemyData}
             setDamageNumbers={smiteDamageNumbers.setDamageNumbers}
             nextDamageNumberId={smiteDamageNumbers.nextDamageNumberId}
             combatSystem={engineRef.current?.getWorld().getSystem(CombatSystem)}
             isCorruptedAuraActive={false} // Not applicable for Runeblade R ability
+            infestedSmiteVisual={infestedSmiteVisual}
+            staggeringSmiteVisual={staggeringSmiteVisual}
+            infernalSmiteVisual={infernalSmiteVisual}
           />
         );
       })}
@@ -7289,6 +7381,7 @@ export function CoopGameScene({
           <BowPowershotManager />
           <FrostNovaManager world={engineRef.current.getWorld()} />
           <StunManager world={engineRef.current.getWorld()} />
+          <IgniteEffectManager world={engineRef.current.getWorld()} />
           <CobraShotManager world={engineRef.current.getWorld()} />
           <DeflectShieldManager />
           <PVPSummonTotemManager

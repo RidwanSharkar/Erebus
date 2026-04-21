@@ -254,7 +254,7 @@ export default function Runeblade({
       if (storedCharge) {
         const TAU = Math.PI * 2;
         const CHARGE_SPIN_DAMAGE = 75;
-        const CHARGE_SPIN_RADIUS = 2.5;
+        const CHARGE_SPIN_RADIUS = 2.75;
         const prevFloor = Math.floor(prevSpinAngle / TAU);
         const currFloor = Math.floor(currSpinAngle / TAU);
         if (currFloor > prevFloor && enemyData.length > 0 && onHit) {

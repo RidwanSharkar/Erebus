@@ -1,7 +1,7 @@
 function handleEnemyEvents(socket, gameRooms) {
   // Handle enemy damage from players
   socket.on('enemy-damage', (data) => {
-    const { roomId, enemyId, damage, sourcePlayerId, damageType, infestedStrike, staggerToAdd } = data;
+    const { roomId, enemyId, damage, sourcePlayerId, damageType, infestedStrike, staggerToAdd, infestedSmite, infernalSmite } = data;
 
     console.log(`⚔️ Received enemy-damage: room=${roomId}, enemy=${enemyId}, damage=${damage}, source=${sourcePlayerId || socket.id}`);
 
@@ -20,6 +20,13 @@ function handleEnemyEvents(socket, gameRooms) {
       if (damageType === 'wraith_strike' && typeof staggerToAdd === 'number' && staggerToAdd > 0) {
         hitMeta.staggerToAdd = staggerToAdd;
       }
+    } else if (damageType === 'smite') {
+      hitMeta = { damageType: 'smite', infestedSmite: !!infestedSmite, infernalSmite: !!infernalSmite };
+      if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
+    } else if (damageType === 'ignite') {
+      hitMeta = { damageType: 'ignite' };
     } else if (damageType === 'runeblade_combo' || damageType === 'sabre_left' || damageType === 'sabre_right') {
       hitMeta = { damageType };
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {

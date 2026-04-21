@@ -6,14 +6,24 @@ import type { AbilityLoadout } from '@/utils/weaponAbilities';
 import type { TalentLoadout } from '@/utils/talents';
 import {
   createDefaultTalentLoadout,
+  infestedSmiteTalentDefinition,
+  infernalSmiteTalentDefinition,
   infestedStrikeTalentDefinition,
+  staggeringSmiteTalentDefinition,
+  INFERNAL_SMITE_CRIT_CHANCE_ADD,
+  INFERNAL_SMITE_DOT_FRACTION,
+  INFERNAL_SMITE_DURATION_MS,
+  INFERNAL_SMITE_TICKS,
   isChargeInLoadout,
+  isColossusSmiteInLoadout,
   isReapingTalonsInLoadout,
   isWraithStrikeInLoadout,
   staggeringStrikeTalentDefinition,
   staggeringComboTalentDefinition,
   staggeringSwipesTalentDefinition,
   storedChargeTalentDefinition,
+  trinityTalentDefinition,
+  STAGGERING_SMITE_BEAM_STAGGER,
   wrathStrikeTalentDefinition,
   wrathfulTalonsTalentDefinition,
 } from '@/utils/talents';
@@ -62,12 +72,17 @@ export default function TalentSelectionModal({
     staggeringSwipes: initialTalentLoadout?.staggeringSwipes ?? def.staggeringSwipes,
     wrathfulTalons: initialTalentLoadout?.wrathfulTalons ?? def.wrathfulTalons,
     storedCharge: initialTalentLoadout?.storedCharge ?? def.storedCharge,
+    trinity: initialTalentLoadout?.trinity ?? def.trinity,
+    infestedSmite: initialTalentLoadout?.infestedSmite ?? def.infestedSmite,
+    staggeringSmite: initialTalentLoadout?.staggeringSmite ?? def.staggeringSmite,
+    infernalSmite: initialTalentLoadout?.infernalSmite ?? def.infernalSmite,
   };
   const [loadout, setLoadout] = useState<TalentLoadout>(() => merged);
 
   const wraithEquipped = useMemo(() => isWraithStrikeInLoadout(abilityLoadout), [abilityLoadout]);
   const reapingEquipped = useMemo(() => isReapingTalonsInLoadout(abilityLoadout), [abilityLoadout]);
   const chargeEquipped = useMemo(() => isChargeInLoadout(abilityLoadout), [abilityLoadout]);
+  const smiteEquipped = useMemo(() => isColossusSmiteInLoadout(abilityLoadout), [abilityLoadout]);
   const wc = WEAPON_COLORS[selectedWeapon];
 
   const toggleWrath = useCallback(() => {
@@ -94,6 +109,26 @@ export default function TalentSelectionModal({
     if (!chargeEquipped) return;
     setLoadout((prev) => ({ ...prev, storedCharge: !prev.storedCharge }));
   }, [chargeEquipped]);
+
+  const toggleTrinity = useCallback(() => {
+    if (!smiteEquipped) return;
+    setLoadout((prev) => ({ ...prev, trinity: !prev.trinity }));
+  }, [smiteEquipped]);
+
+  const toggleInfestedSmite = useCallback(() => {
+    if (!smiteEquipped) return;
+    setLoadout((prev) => ({ ...prev, infestedSmite: !prev.infestedSmite }));
+  }, [smiteEquipped]);
+
+  const toggleStaggeringSmite = useCallback(() => {
+    if (!smiteEquipped) return;
+    setLoadout((prev) => ({ ...prev, staggeringSmite: !prev.staggeringSmite }));
+  }, [smiteEquipped]);
+
+  const toggleInfernalSmite = useCallback(() => {
+    if (!smiteEquipped) return;
+    setLoadout((prev) => ({ ...prev, infernalSmite: !prev.infernalSmite }));
+  }, [smiteEquipped]);
 
   const toggleStaggeringCombo = useCallback(() => {
     setLoadout((prev) => ({ ...prev, staggeringCombo: !prev.staggeringCombo }));
@@ -255,6 +290,136 @@ export default function TalentSelectionModal({
               {!chargeEquipped && (
                 <p className="text-gray-500 text-xs mt-3 pl-7">
                   Equip <span className="text-gray-300">Charge</span> in your ability loadout at the other east pillar to enable this talent.
+                </p>
+              )}
+            </div>
+            <div
+              className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${smiteEquipped ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
+          `}
+            >
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="talent-trinity"
+                  checked={loadout.trinity}
+                  onChange={toggleTrinity}
+                  disabled={!smiteEquipped}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                />
+                <label htmlFor="talent-trinity" className={`flex-1 ${smiteEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                  <div className="text-white font-semibold">{trinityTalentDefinition.name}</div>
+                  {loadout.trinity && (
+                    <>
+                      <p className="text-gray-400 text-sm mt-1">{trinityTalentDefinition.description}</p>
+                      <p className="text-amber-200/90 text-xs mt-2 font-mono">Up to 2 dash charges · up to 2 bonus strikes at 165 each</p>
+                    </>
+                  )}
+                </label>
+              </div>
+              {!smiteEquipped && (
+                <p className="text-gray-500 text-xs mt-3 pl-7">
+                  Equip <span className="text-gray-300">Colossus Strike</span> (Runeblade R) in your ability loadout at the other east pillar to enable this talent.
+                </p>
+              )}
+            </div>
+            <div
+              className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${smiteEquipped ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
+          `}
+            >
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="talent-infested-smite"
+                  checked={loadout.infestedSmite}
+                  onChange={toggleInfestedSmite}
+                  disabled={!smiteEquipped}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                />
+                <label htmlFor="talent-infested-smite" className={`flex-1 ${smiteEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                  <div className="text-white font-semibold">{infestedSmiteTalentDefinition.name}</div>
+                  {loadout.infestedSmite && (
+                    <>
+                      <p className="text-gray-400 text-sm mt-1">{infestedSmiteTalentDefinition.description}</p>
+                      <p className="text-emerald-200/90 text-xs mt-2 font-mono">Green bolts · 5 heal per hit per beam · Smite kills spawn zombies (max 3)</p>
+                    </>
+                  )}
+                </label>
+              </div>
+              {!smiteEquipped && (
+                <p className="text-gray-500 text-xs mt-3 pl-7">
+                  Equip <span className="text-gray-300">Colossus Strike</span> (Runeblade R) in your ability loadout at the other east pillar to enable this talent.
+                </p>
+              )}
+            </div>
+            <div
+              className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${smiteEquipped ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
+          `}
+            >
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="talent-staggering-smite"
+                  checked={loadout.staggeringSmite}
+                  onChange={toggleStaggeringSmite}
+                  disabled={!smiteEquipped}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                />
+                <label htmlFor="talent-staggering-smite" className={`flex-1 ${smiteEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                  <div className="text-white font-semibold">{staggeringSmiteTalentDefinition.name}</div>
+                  {loadout.staggeringSmite && (
+                    <>
+                      <p className="text-gray-400 text-sm mt-1">{staggeringSmiteTalentDefinition.description}</p>
+                      <p className="text-sky-200/90 text-xs mt-2 font-mono">
+                        Blue bolts · {STAGGERING_SMITE_BEAM_STAGGER} stagger per enemy per beam · same 100 cap / proc as other stagger talents
+                      </p>
+                    </>
+                  )}
+                </label>
+              </div>
+              {!smiteEquipped && (
+                <p className="text-gray-500 text-xs mt-3 pl-7">
+                  Equip <span className="text-gray-300">Colossus Strike</span> (Runeblade R) in your ability loadout at the other east pillar to enable this talent.
+                </p>
+              )}
+            </div>
+            <div
+              className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${smiteEquipped ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
+          `}
+            >
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="talent-infernal-smite"
+                  checked={loadout.infernalSmite}
+                  onChange={toggleInfernalSmite}
+                  disabled={!smiteEquipped}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                />
+                <label htmlFor="talent-infernal-smite" className={`flex-1 ${smiteEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                  <div className="text-white font-semibold">{infernalSmiteTalentDefinition.name}</div>
+                  {loadout.infernalSmite && (
+                    <>
+                      <p className="text-gray-400 text-sm mt-1">{infernalSmiteTalentDefinition.description}</p>
+                      <p className="text-orange-200/90 text-xs mt-2 font-mono">
+                        Fiery bolts · +{INFERNAL_SMITE_CRIT_CHANCE_ADD * 100}% Smite crit chance · Ignite:{' '}
+                        {INFERNAL_SMITE_DOT_FRACTION * 100}% of beam hit damage over {INFERNAL_SMITE_DURATION_MS / 1000}s ({INFERNAL_SMITE_TICKS}{' '}
+                        ticks)
+                      </p>
+                    </>
+                  )}
+                </label>
+              </div>
+              {!smiteEquipped && (
+                <p className="text-gray-500 text-xs mt-3 pl-7">
+                  Equip <span className="text-gray-300">Colossus Strike</span> (Runeblade R) in your ability loadout at the other east pillar to enable this talent.
                 </p>
               )}
             </div>

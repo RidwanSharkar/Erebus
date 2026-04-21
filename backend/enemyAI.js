@@ -2181,7 +2181,7 @@ class EnemyAI {
       health: 250,
       maxHealth: 250,
       isDying: false,
-      damage: 32,
+      damage: 45,
       attackCooldown: 1000,
       moveSpeed: 1.75,
       expireAt: now + 30000,

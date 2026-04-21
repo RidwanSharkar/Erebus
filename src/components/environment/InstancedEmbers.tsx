@@ -82,8 +82,8 @@ const EMBER_FRAG = `
 // ---------------------------------------------------------------------------
 const CAMP_ORIGINS: [number, number, number][] = [
   [  0, 0, -20 ],  // camp 0 — North Fortress
-  [ 20, 0,   7 ],  // camp 1 — East Bastion
-  [-20, 0,   7 ],  // camp 2 — West Citadel
+  [ 10, 0,   7 ],  // camp 1 — East Bastion
+  [-10, 0,   7 ],  // camp 2 — West Citadel
 ];
 
 // Per-theme palettes: [dim (cool / fading), bright (hot core)]

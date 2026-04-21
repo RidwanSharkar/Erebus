@@ -145,13 +145,13 @@ const StunnedEffectComponent = memo(function StunnedEffect({
 
       {/* Lightning bolt rings */}
       {[...Array(3)].map((_, i) => (
-        <group key={i} rotation={[0, (i * Math.PI * 2) / 3 + Math.PI, 0]}>
+        <group key={i} rotation={[0, (i * Math.PI * 2) / 3 + Math.PI, 0]} position={[0, -0.125, 0]}>
           <mesh position={[0.6, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
             <cylinderGeometry args={[0.02, 0.02, 1.2, 4]} />
             <meshStandardMaterial
-              color={new Color(0xFFAA44)}      // Red-orange
-              emissive={new Color(0xFFAA44)}
-              emissiveIntensity={intensity * 1.75}
+              color={new Color("blue")}      // Red-orange
+              emissive={new Color("green")}
+              emissiveIntensity={intensity * 6.75}
               transparent
               opacity={fadeProgress * 0.8}
             />
@@ -164,11 +164,11 @@ const StunnedEffectComponent = memo(function StunnedEffect({
         <mesh key={`vertical-${i}`}
               position={[
                 0.4 * Math.cos(i * Math.PI / 2),
-                0,
+                -0.125,
                 0.4 * Math.sin(i * Math.PI / 2)
               ]}
               rotation={[0, 0, 0]}>
-          <cylinderGeometry args={[0.015, 0.015, 2, 4]} />
+          <cylinderGeometry args={[0.025, 0.025, 0.35, 4]} />
           <meshStandardMaterial
             color={new Color(0xDD4444)}       // Dark red
             emissive={new Color(0xDD4444)}
@@ -179,25 +179,8 @@ const StunnedEffectComponent = memo(function StunnedEffect({
         </mesh>
       ))}
 
-      {/* Outer electric ring */}
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[0.8, 0.05, 8, 16]} />
-        <meshStandardMaterial
-          color={new Color(0xFF4444)}
-          emissive={new Color(0xFF4444)}
-          emissiveIntensity={intensity * 5}
-          transparent
-          opacity={fadeProgress * 0.5}
-        />
-      </mesh>
 
-      {/* Point light for illumination */}
-      <pointLight
-        color={new Color(0xFF4444)}
-        intensity={intensity * 3}
-        distance={3}
-        decay={2}
-      />
+ 
 
       {/* Electric sparks */}
       {[...Array(8)].map((_, i) => (

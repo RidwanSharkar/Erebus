@@ -129,7 +129,6 @@ export default function ZombieRenderer({
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <ZombieModel isWalking={isWalking} isAttacking={isAttacking} isDying={isDying} />
 
-      <EnemyMeleeAttackRangeRing radius={GHOUL_MELEE_ATTACK_RANGE} />
 
       <Billboard position={[0, 2.8, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (

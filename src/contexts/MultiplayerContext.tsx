@@ -9,6 +9,7 @@ import { AbilityLoadout, getDefaultLoadoutForWeapon } from '@/utils/weaponAbilit
 import { TalentLoadout, createDefaultTalentLoadout } from '@/utils/talents';
 import { ExperienceSystem } from '@/utils/ExperienceSystem';
 import { StatSystem, StatPointData, StatKey, PlayerStats } from '@/utils/StatSystem';
+import { Vector3 } from '@/utils/three-exports';
 
 export interface Player {
   id: string;
@@ -40,7 +41,11 @@ export interface Player {
 export interface EnemyDamageMeta {
   damageType?: string;
   infestedStrike?: boolean;
-  /** Staggering Strike (`wraith_strike`), Runeblade combo (`runeblade_combo`), or Sabres (`sabre_left` / `sabre_right`): server accumulates stagger. */
+  /** Infested Smite talent — zombies on kill (server), with `damageType` `smite`. */
+  infestedSmite?: boolean;
+  /** Infernal Smite talent — server schedules Ignite DoT after smite hit. */
+  infernalSmite?: boolean;
+  /** Staggering Strike (`wraith_strike`), Runeblade combo (`runeblade_combo`), Sabres (`sabre_left` / `sabre_right`), or Staggering Smite (`smite` with `staggerToAdd`): server accumulates stagger. */
   staggerToAdd?: number;
 }
 
@@ -574,6 +579,18 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     addEventHandler('enemy-damaged', (data) => {
+      if (
+        data.damageType === 'ignite' &&
+        typeof data.damage === 'number' &&
+        data.damage > 0 &&
+        data.position
+      ) {
+        const mgr = (window as any).damageNumberManager;
+        if (mgr?.addDamageNumber) {
+          const pos = new Vector3(data.position.x, data.position.y + 1.5, data.position.z);
+          mgr.addDamageNumber(data.damage, false, pos, 'ignite');
+        }
+      }
 
       // Throttle enemy damage updates to prevent infinite re-renders (throne training dummy: always apply so HP bar stays accurate under rapid fire)
       const now = Date.now();
@@ -1068,6 +1085,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         sourcePlayerId: sourcePlayerId || socket.id, // Always send the player ID for aggro tracking
         ...(meta?.damageType !== undefined ? { damageType: meta.damageType } : {}),
         ...(meta?.infestedStrike ? { infestedStrike: true } : {}),
+        ...(meta?.infestedSmite ? { infestedSmite: true } : {}),
+        ...(meta?.infernalSmite ? { infernalSmite: true } : {}),
         ...(meta?.staggerToAdd != null && meta.staggerToAdd > 0 ? { staggerToAdd: meta.staggerToAdd } : {}),
       });
     }

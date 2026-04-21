@@ -28,6 +28,10 @@ interface DamageEvent {
   infestedStrike?: boolean;
   /** Co-op routing: Staggering Strike talent — only with damageType `wraith_strike`. */
   staggerToAdd?: number;
+  /** Co-op routing: Infested Smite talent — only with damageType `smite`. */
+  infestedSmite?: boolean;
+  /** Co-op routing: Infernal Smite talent — Ignite DoT scheduling on server, with damageType `smite`. */
+  infernalSmite?: boolean;
 }
 
 interface HealEvent {
@@ -55,7 +59,13 @@ export class CombatSystem extends System {
     enemyId: string,
     damage: number,
     sourcePlayerId?: string,
-    meta?: { damageType?: string; infestedStrike?: boolean; staggerToAdd?: number },
+    meta?: {
+      damageType?: string;
+      infestedStrike?: boolean;
+      infestedSmite?: boolean;
+      infernalSmite?: boolean;
+      staggerToAdd?: number;
+    },
   ) => void;
   
   // PVP damage callback for routing player damage to server
@@ -110,7 +120,13 @@ export class CombatSystem extends System {
       enemyId: string,
       damage: number,
       sourcePlayerId?: string,
-      meta?: { damageType?: string; infestedStrike?: boolean; staggerToAdd?: number },
+      meta?: {
+        damageType?: string;
+        infestedStrike?: boolean;
+        infestedSmite?: boolean;
+        infernalSmite?: boolean;
+        staggerToAdd?: number;
+      },
     ) => void,
   ): void {
     this.onEnemyDamageCallback = callback;
@@ -295,21 +311,33 @@ export class CombatSystem extends System {
                 ? { staggerToAdd: damageEvent.staggerToAdd }
                 : {}),
             }
-          : damageType === 'sword' &&
-              damageEvent.staggerToAdd != null &&
-              damageEvent.staggerToAdd > 0
+          : damageType === 'smite' &&
+              (damageEvent.infestedSmite === true ||
+                damageEvent.infernalSmite === true ||
+                (damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0))
             ? {
-                damageType: 'runeblade_combo' as const,
-                staggerToAdd: damageEvent.staggerToAdd,
+                damageType: 'smite' as const,
+                ...(damageEvent.infestedSmite === true ? { infestedSmite: true as const } : {}),
+                ...(damageEvent.infernalSmite === true ? { infernalSmite: true as const } : {}),
+                ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
+                  ? { staggerToAdd: damageEvent.staggerToAdd }
+                  : {}),
               }
-            : (damageType === 'sabre_left' || damageType === 'sabre_right') &&
+            : damageType === 'sword' &&
                 damageEvent.staggerToAdd != null &&
                 damageEvent.staggerToAdd > 0
               ? {
-                  damageType,
+                  damageType: 'runeblade_combo' as const,
                   staggerToAdd: damageEvent.staggerToAdd,
                 }
-              : undefined;
+              : (damageType === 'sabre_left' || damageType === 'sabre_right') &&
+                  damageEvent.staggerToAdd != null &&
+                  damageEvent.staggerToAdd > 0
+                ? {
+                    damageType,
+                    staggerToAdd: damageEvent.staggerToAdd,
+                  }
+                : undefined;
       this.onEnemyDamageCallback(serverEnemyId, actualDamage, finalSourcePlayerId, routeMeta);
 
       // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
@@ -1097,6 +1125,8 @@ export class CombatSystem extends System {
     isCritical?: boolean,
     infestedStrike?: boolean,
     staggerToAdd?: number,
+    infestedSmite?: boolean,
+    infernalSmite?: boolean,
   ): void {
     this.damageQueue.push({
       target,
@@ -1108,6 +1138,8 @@ export class CombatSystem extends System {
       isCritical,
       infestedStrike,
       staggerToAdd,
+      infestedSmite,
+      infernalSmite,
     });
   }
 

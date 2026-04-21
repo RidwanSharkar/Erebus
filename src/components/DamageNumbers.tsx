@@ -158,6 +158,8 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
                 ? 'text-yellow-400 text-lg'
                 : damageData.damageType === 'barrage'
                 ? 'text-blue-400 text-lg'
+                : damageData.damageType === 'ignite'
+                ? 'text-orange-500 text-lg font-bold drop-shadow-[0_0_6px_rgba(234,88,12,0.85)]'
                 : damageData.damageType === 'cobra_shot' ||
                   damageData.damageType === 'venom'
                 ? 'text-green-400 text-lg'

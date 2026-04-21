@@ -25,7 +25,14 @@ import {
   createDefaultTalentLoadout,
   isWraithStrikeInLoadout,
   shouldApplyStoredChargeTalent as computeStoredChargeTalentActive,
+  shouldApplyTrinityTalent as computeTrinityTalentActive,
+  shouldApplyInfestedSmiteTalent as computeInfestedSmiteTalentActive,
+  shouldApplyInfernalSmiteTalent as computeInfernalSmiteTalentActive,
+  shouldApplyStaggeringSmiteTalent as computeStaggeringSmiteTalentActive,
   shouldApplyWrathfulTalonsTalent as computeWrathfulTalonsTalentActive,
+  INFERNAL_SMITE_CRIT_CHANCE_ADD,
+  INFESTED_SMITE_HEAL_PER_TARGET,
+  STAGGERING_SMITE_BEAM_STAGGER,
   STAGGERING_STRIKE_WRAITH_STAGGER_ADD,
   STAGGERING_SWIPES_LEFT_BLADE_STAGGER,
   STAGGERING_SWIPES_RIGHT_BLADE_STAGGER,
@@ -128,8 +135,13 @@ export class ControlSystem extends System {
   // Callback for Sunder ability
   private onSunderCallback?: (position: Vector3, direction: Vector3, damage: number, stackCount: number) => void;
 
-  // Callback for Smite ability
-  private onSmiteCallback?: (position: Vector3, direction: Vector3, onDamageDealt?: (totalDamage: number) => void) => void;
+  // Callback for Smite ability (optional meta: TRINITY extra strike positions + stagger delays)
+  private onSmiteCallback?: (
+    position: Vector3,
+    direction: Vector3,
+    onDamageDealt?: (totalDamage: number, meta?: { targetsHit: number }) => void,
+    meta?: { extraStrikes?: Array<{ position: Vector3; delaySec: number }> },
+  ) => void;
 
   // Callback for Colossus Strike ability
   private onColossusStrikeCallback?: (position: Vector3, direction: Vector3, damage: number, onDamageDealt?: (damageDealt: boolean) => void) => void;
@@ -362,6 +374,8 @@ export class ControlSystem extends System {
   private lastSmiteTime = 0;
   private smiteCooldown = 8.0; // 2 second cooldown
   private isSmiting = false;
+  /** TRINITY: max `sequenceDelaySec` on follow-up strikes; used with `onSmiteComplete` / smite duration. */
+  private lastSmiteMaxFollowUpDelaySec = 0;
 
   // Colossus Strike ability state (Sword)
   private lastColossusStrikeTime = 0;
@@ -2254,7 +2268,14 @@ export class ControlSystem extends System {
     this.onSunderCallback = callback;
   }
 
-  public setSmiteCallback(callback: (position: Vector3, direction: Vector3, onDamageDealt?: (totalDamage: number) => void) => void): void {
+  public setSmiteCallback(
+    callback: (
+      position: Vector3,
+      direction: Vector3,
+      onDamageDealt?: (totalDamage: number, meta?: { targetsHit: number }) => void,
+      meta?: { extraStrikes?: Array<{ position: Vector3; delaySec: number }> },
+    ) => void,
+  ): void {
     this.onSmiteCallback = callback;
   }
 
@@ -2762,20 +2783,63 @@ export class ControlSystem extends System {
     // The healing will be triggered by the visual component's onDamageDealt callback
     // instead of the ControlSystem's performSmiteDamage method.
 
-    // Trigger smite callback with healing callback
-    if (this.onSmiteCallback) {
-      this.onSmiteCallback(smitePosition, direction, (totalDamage: number) => {
-        // Handle healing based on the actual damage dealt by the visual component
-        if (totalDamage > 0) {
-          this.performSmiteHealing(totalDamage);
+    let extraStrikes: Array<{ position: Vector3; delaySec: number }> | undefined;
+    if (
+      this.currentWeapon === WeaponType.RUNEBLADE &&
+      computeTrinityTalentActive(this.talentLoadout, this.abilityLoadout) &&
+      this.playerEntity
+    ) {
+      const playerMovement = this.playerEntity.getComponent(Movement);
+      if (playerMovement) {
+        const consumed = playerMovement.consumeDashChargesWithoutDash(2, currentTime);
+        if (consumed > 0) {
+          const perp = new Vector3(-direction.z, 0, direction.x);
+          if (perp.lengthSq() < 1e-8) perp.set(1, 0, 0);
+          else perp.normalize();
+          const spread = 0.65;
+          extraStrikes = [];
+          if (consumed >= 1) {
+            extraStrikes.push({
+              position: smitePosition.clone().add(perp.clone().multiplyScalar(spread)),
+              delaySec: 0.18,
+            });
+          }
+          if (consumed >= 2) {
+            extraStrikes.push({
+              position: smitePosition.clone().add(perp.clone().multiplyScalar(-spread)),
+              delaySec: 0.36,
+            });
+          }
         }
-      });
+      }
     }
 
-    // Reset smiting state after animation duration (same as the Smite component)
+    if (this.onSmiteCallback) {
+      this.onSmiteCallback(
+        smitePosition,
+        direction,
+        (_totalDamage: number, meta?: { targetsHit: number }) => {
+          if (computeInfestedSmiteTalentActive(this.talentLoadout, this.abilityLoadout)) {
+            const targetsHit = meta?.targetsHit ?? 0;
+            if (targetsHit > 0) {
+              this.performSmiteHealingFixedAmount(targetsHit * INFESTED_SMITE_HEAL_PER_TARGET);
+            }
+          }
+        },
+        extraStrikes?.length ? { extraStrikes } : undefined,
+      );
+    }
+
+    const maxStrikeDelaySec = extraStrikes?.length
+      ? Math.max(...extraStrikes.map((s) => s.delaySec))
+      : 0;
+    this.lastSmiteMaxFollowUpDelaySec = maxStrikeDelaySec;
+
+    // Smite VFX ~1s after each strike's gate; TRINITY delays follow-up gates (see `onSmiteComplete`)
     setTimeout(() => {
       this.isSmiting = false;
-    }, 1000); // 1.0 seconds matches the original animation duration
+      this.lastSmiteMaxFollowUpDelaySec = 0;
+    }, 1000 + maxStrikeDelaySec * 1000 + 200);
   }
 
   private performColossusStrike(playerTransform: Transform): void {
@@ -2940,11 +3004,27 @@ export class ControlSystem extends System {
         // Entity is within damage radius - calculate actual damage and queue it
         const combatSystem = this.world.getSystem(CombatSystem);
         if (combatSystem && this.playerEntity) {
-          // Calculate actual damage with critical hit mechanics
-          const damageResult: DamageResult = calculateDamage(baseSmiteDamage, this.currentWeapon);
+          // Calculate actual damage with critical hit mechanics (Infernal Smite: +50% crit chance, no crit damage add)
+          const infernalSmiteCrit = computeInfernalSmiteTalentActive(this.talentLoadout, this.abilityLoadout);
+          const damageResult: DamageResult = infernalSmiteCrit
+            ? calculateDamage(baseSmiteDamage, this.currentWeapon, { critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD })
+            : calculateDamage(baseSmiteDamage, this.currentWeapon);
           const actualDamage = damageResult.damage;
 
-          combatSystem.queueDamage(entity, actualDamage, this.playerEntity, 'smite', this.playerEntity?.userData?.playerId);
+          combatSystem.queueDamage(
+            entity,
+            actualDamage,
+            this.playerEntity,
+            'smite',
+            this.playerEntity?.userData?.playerId,
+            damageResult.isCritical,
+            undefined,
+            computeStaggeringSmiteTalentActive(this.talentLoadout, this.abilityLoadout)
+              ? STAGGERING_SMITE_BEAM_STAGGER
+              : undefined,
+            computeInfestedSmiteTalentActive(this.talentLoadout, this.abilityLoadout),
+            infernalSmiteCrit,
+          );
           damageDealt = true;
           totalDamage += actualDamage;
         }
@@ -2958,31 +3038,26 @@ export class ControlSystem extends System {
     return { damageDealt, totalDamage };
   }
 
-  private performSmiteHealing(healingAmount: number): void {
-    if (!this.playerEntity) {
+  /** Infested Smite only: fixed heal amount (already `targetsHit * INFESTED_SMITE_HEAL_PER_TARGET`). */
+  private performSmiteHealingFixedAmount(healAmount: number): void {
+    if (!this.playerEntity || healAmount <= 0) {
       return;
     }
 
-    // Get player's health component and heal for half the damage dealt
     const healthComponent = this.playerEntity.getComponent(Health);
     if (healthComponent) {
-      const oldHealth = healthComponent.currentHealth;
-      const maxHealth = healthComponent.maxHealth;
-
-      // Always attempt to heal, even if at full health (heal method handles this)
-      const actualHealingAmount = Math.floor(healingAmount / 2); // Heal for half the damage dealt
-      const didHeal = healthComponent.heal(actualHealingAmount); // Smite healing amount based on half damage dealt
+      const actualHealingAmount = Math.floor(healAmount);
+      const didHeal = healthComponent.heal(actualHealingAmount);
 
       if (didHeal) {
-        // Create healing damage number above player head
         const playerTransform = this.playerEntity.getComponent(Transform);
         if (playerTransform && this.onDamageNumbersUpdate) {
           const healingPosition = playerTransform.position.clone();
-          healingPosition.y += 1.5; // Position above player's head
+          healingPosition.y += 1.5;
 
           this.onDamageNumbersUpdate([{
             id: this.nextDamageNumberId.toString(),
-            damage: actualHealingAmount, // Smite heals for half the damage dealt
+            damage: actualHealingAmount,
             position: healingPosition,
             isCritical: false,
             timestamp: Date.now(),
@@ -2990,20 +3065,19 @@ export class ControlSystem extends System {
           }]);
           this.nextDamageNumberId++;
 
-          // Broadcast healing in PVP mode
           if (this.onBroadcastHealing) {
             this.onBroadcastHealing(actualHealingAmount, 'smite', healingPosition);
           }
         }
       }
     } else {
-      // Fallback: Try to heal through gameUI if health component is not available
       try {
         const gameUI = (window as any).gameUI;
         if (gameUI && typeof gameUI.gainHealth === 'function') {
-          gameUI.gainHealth(healingAmount);
+          gameUI.gainHealth(healAmount);
         }
-      } catch (error) {
+      } catch {
+        // ignore
       }
     }
   }
@@ -3252,8 +3326,10 @@ export class ControlSystem extends System {
   public onSmiteComplete(): void {
     if (!this.isSmiting) return; // Prevent multiple calls
 
-    // Reset smiting state
-    this.isSmiting = false;
+    // TRINITY follow-up bolts still animating — keep `isSmiting` until `performSmite` timeout
+    if (this.lastSmiteMaxFollowUpDelaySec <= 0) {
+      this.isSmiting = false;
+    }
   }
 
   // Called by sword component when colossus strike animation completes

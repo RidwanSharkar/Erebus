@@ -601,15 +601,54 @@ class GameRoom {
 
     // Always sync HP to clients (socket `enemy-damage` and internal sources e.g. player-zombie hits).
     if (this.io) {
-      this.io.to(this.roomId).emit('enemy-damaged', {
+      const damagedPayload = {
         enemyId: result.enemyId,
         newHealth: result.newHealth,
         maxHealth: result.maxHealth,
         damage: result.damage,
         fromPlayerId: result.fromPlayerId,
         wasKilled: result.wasKilled,
-        timestamp: Date.now()
-      });
+        timestamp: Date.now(),
+      };
+      if (hitMeta && hitMeta.damageType === 'ignite') {
+        damagedPayload.damageType = 'ignite';
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
+      }
+      this.io.to(this.roomId).emit('enemy-damaged', damagedPayload);
+    }
+
+    // Infernal Smite: Ignite DoT — 80% of smite hit over 3s in 3 ticks (non-lethal hits only)
+    if (
+      !result.wasKilled &&
+      hitMeta &&
+      hitMeta.damageType === 'smite' &&
+      hitMeta.infernalSmite &&
+      damage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0
+    ) {
+      this.applyStatusEffect(enemyId, 'ignite', 3000);
+      const totalDot = Math.floor(damage * 0.8);
+      if (totalDot > 0) {
+        const tickCount = 3;
+        const baseTick = Math.floor(totalDot / tickCount);
+        const remainder = totalDot - baseTick * tickCount;
+        const tickAmounts = [baseTick, baseTick, baseTick + remainder];
+        const delaysMs = [1000, 2000, 3000];
+        for (let i = 0; i < tickCount; i++) {
+          const tickDamage = tickAmounts[i];
+          if (tickDamage <= 0) continue;
+          setTimeout(() => {
+            const target = this.enemies.get(enemyId);
+            if (!target || target.isDying || target.health <= 0) return;
+            this.damageEnemy(enemyId, tickDamage, fromPlayerId, player, { damageType: 'ignite' });
+          }, delaysMs[i]);
+        }
+      }
     }
 
     // Staggering Strike / Staggering Combo / Staggering Swipes: build stagger; at 100, proc damage + stun + VFX
@@ -619,7 +658,8 @@ class GameRoom {
       (hitMeta.damageType === 'wraith_strike' ||
         hitMeta.damageType === 'runeblade_combo' ||
         hitMeta.damageType === 'sabre_left' ||
-        hitMeta.damageType === 'sabre_right') &&
+        hitMeta.damageType === 'sabre_right' ||
+        hitMeta.damageType === 'smite') &&
       typeof hitMeta.staggerToAdd === 'number' &&
       hitMeta.staggerToAdd > 0 &&
       !enemy.isDying
@@ -674,6 +714,25 @@ class GameRoom {
         hitMeta &&
         hitMeta.damageType === 'wraith_strike' &&
         hitMeta.infestedStrike &&
+        fromPlayerId &&
+        fromPlayerId !== 'unknown' &&
+        enemy.type !== 'training-dummy' &&
+        enemy.type !== 'boss' &&
+        enemy.type !== 'player-zombie' &&
+        this.enemyAI
+      ) {
+        this.enemyAI.trySpawnInfestedZombie(fromPlayerId, {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        });
+      }
+
+      // INFESTED SMITE: same zombie rules as Infested Strike (Wraith Strike kill)
+      if (
+        hitMeta &&
+        hitMeta.damageType === 'smite' &&
+        hitMeta.infestedSmite &&
         fromPlayerId &&
         fromPlayerId !== 'unknown' &&
         enemy.type !== 'training-dummy' &&

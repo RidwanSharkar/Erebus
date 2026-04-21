@@ -208,7 +208,7 @@ const ALL_SLABS: SlabDef[] = [
   ...CAMP2_PLATFORM,     // 16 slabs — West Citadel platform (4×4)
 ].filter(isSlabInBounds);
 
-const THRONE_MAP_RADIUS = 10;
+const THRONE_MAP_RADIUS = 12;
 const isSlabInThrone = (slab: SlabDef): boolean => {
   const [cx, , cz] = slab.position;
   const hw = slab.scale[0] / 2;

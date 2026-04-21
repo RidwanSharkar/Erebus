@@ -1,15 +1,31 @@
-import { useRef, useMemo, memo } from 'react';
-import { Group, Vector3, CylinderGeometry, TorusGeometry, SphereGeometry, MeshStandardMaterial, Euler } from '@/utils/three-exports';
+import { useRef, useMemo, useState, memo } from 'react';
+import {
+  Group,
+  Vector3,
+  CylinderGeometry,
+  TorusGeometry,
+  SphereGeometry,
+  RingGeometry,
+  CircleGeometry,
+  MeshStandardMaterial,
+  MeshBasicMaterial,
+  Euler,
+  AdditiveBlending,
+  DoubleSide,
+  Mesh,
+  PointLight,
+} from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { WeaponType } from '../dragon/weapons';
 import { calculateDamage, DamageResult } from '@/core/DamageCalculator';
+import { INFERNAL_SMITE_CRIT_CHANCE_ADD, STAGGERING_SMITE_BEAM_STAGGER } from '@/utils/talents';
 
 interface SmiteProps {
   weaponType: WeaponType;
   position: Vector3;
   onComplete: () => void;
   onHit?: (targetId: string, damage: number) => void;
-  onDamageDealt?: (totalDamage: number) => void;
+  onDamageDealt?: (totalDamage: number, meta?: { targetsHit: number }) => void;
   enemyData?: Array<{
     id: string;
     position: Vector3;
@@ -32,6 +48,14 @@ interface SmiteProps {
   nextDamageNumberId?: { current: number };
   combatSystem?: any; // CombatSystem for creating damage numbers
   isCorruptedAuraActive?: boolean; // Whether corrupted aura is active (affects colors and damage)
+  /** Infested Smite talent — green beam theme. */
+  infestedSmiteVisual?: boolean;
+  /** Staggering Smite talent — blue beam theme. */
+  staggeringSmiteVisual?: boolean;
+  /** Infernal Smite talent — red fiery orange beam (visual priority below corrupted, above infested/staggering). */
+  infernalSmiteVisual?: boolean;
+  /** Extra seconds before the bolt begins (TRINITY follow-up strikes). */
+  sequenceDelaySec?: number;
 }
 
 const SmiteComponent = memo(function Smite({
@@ -44,33 +68,63 @@ const SmiteComponent = memo(function Smite({
   setDamageNumbers,
   nextDamageNumberId,
   combatSystem,
-  isCorruptedAuraActive = false
+  isCorruptedAuraActive = false,
+  infestedSmiteVisual = false,
+  staggeringSmiteVisual = false,
+  infernalSmiteVisual = false,
+  sequenceDelaySec = 0
 }: SmiteProps) {
   const lightningRef = useRef<Group>(null);
   const progressRef = useRef(0);
   const animationDuration = 1.0; // Extended animation duration to ensure full visibility in PVP mode
   const delayTimer = useRef(0);
   const startDelay = 0.05; // Initial delay
+  const gateDelay = startDelay + sequenceDelaySec;
   const damageTriggered = useRef(false);
+  /** Ground explosion phase 0→1 after impact (ref-driven; no extra React renders). */
+  const groundBurstT = useRef(0);
+  const burstRingRef = useRef<Mesh>(null);
+  const burstCoreRef = useRef<Mesh>(null);
+  const burstLightRef = useRef<PointLight | null>(null);
+  /** Ref-based delay does not re-render; state flips visibility once the bolt should show. */
+  const [boltVisible, setBoltVisible] = useState(false);
 
   // useMemo for static geometries - made more narrow and concentrated
   const cylinderGeometries = useMemo(() => ({
     core: new CylinderGeometry(0.08, 0.08, 20, 16),    // Narrower core
-    inner: new CylinderGeometry(0.18, 0.18, 20, 16),    // More concentrated
-    outer: new CylinderGeometry(0.32, 0.32, 20, 16),    // Tighter outer beam
-    glow1: new CylinderGeometry(0.45, 0.45, 20, 16),    // Reduced glow
-    glow2: new CylinderGeometry(0.55, 0.45, 20, 16),    // More focused
-    outerGlow: new CylinderGeometry(0.6, 0.65, 20, 16),  // Concentrated outer glow
+    inner: new CylinderGeometry(0.2, 0.18, 20, 16),    // More concentrated
+    outer: new CylinderGeometry(0.35, 0.32, 20, 16),    // Tighter outer beam
+    glow1: new CylinderGeometry(0.4, 0.45, 20, 16),    // Reduced glow
+    glow2: new CylinderGeometry(0.45, 0.45, 20, 16),    // More focused
+    outerGlow: new CylinderGeometry(0.5, 0.65, 20, 16),  // Concentrated outer glow
     torus: new TorusGeometry(0.85, 0.08, 8, 32),       // Smaller spiral rings
     skyTorus: new TorusGeometry(0.7, 0.08, 32, 32),     // More compact sky effects
-    sphere: new SphereGeometry(0.12, 8, 8)               // Smaller particles
+    sphere: new SphereGeometry(0.12, 8, 8),               // Smaller particles
+    burstRing: new RingGeometry(0.12, 0.42, 40),
+    burstCore: new CircleGeometry(0.65, 24),
   }), []);
 
-  // Use useMemo for static materials - colors change based on corrupted aura status
+  // Use useMemo for static materials - corrupted > Infernal > Infested > Staggering > default orange
   const materials = useMemo(() => {
     const isCorrupted = isCorruptedAuraActive;
-    const primaryColor = isCorrupted ? "#FF4444" : "#FFA500";     // Red when corrupted, orange normally
-    const secondaryColor = isCorrupted ? "#FF8888" : "#FF8C00";   // Light red when corrupted, dark orange normally
+    let primaryColor: string;
+    let secondaryColor: string;
+    if (isCorrupted) {
+      primaryColor = "#FF4444";
+      secondaryColor = "#FF8888";
+    } else if (infernalSmiteVisual) {
+      primaryColor = "#DC2626";
+      secondaryColor = "#F97316";
+    } else if (infestedSmiteVisual) {
+      primaryColor = "#22C55E";
+      secondaryColor = "#4ADE80";
+    } else if (staggeringSmiteVisual) {
+      primaryColor = "#38BDF8";
+      secondaryColor = "#7DD3FC";
+    } else {
+      primaryColor = "#FFA500";
+      secondaryColor = "#FF8C00";
+    }
 
     return {
       core: new MeshStandardMaterial({
@@ -135,9 +189,25 @@ const SmiteComponent = memo(function Smite({
         emissiveIntensity: 10,
         transparent: true,
         opacity: 0.665
-      })
+      }),
+      burstRing: new MeshBasicMaterial({
+        color: primaryColor,
+        transparent: true,
+        opacity: 0.9,
+        blending: AdditiveBlending,
+        depthWrite: false,
+        side: DoubleSide,
+      }),
+      burstCore: new MeshBasicMaterial({
+        color: secondaryColor,
+        transparent: true,
+        opacity: 0.75,
+        blending: AdditiveBlending,
+        depthWrite: false,
+        side: DoubleSide,
+      }),
     };
-  }, [isCorruptedAuraActive]);
+  }, [isCorruptedAuraActive, infernalSmiteVisual, infestedSmiteVisual, staggeringSmiteVisual]);
 
   // Pre-calculate spiral positions
   const spiralPositions = useMemo(() => (
@@ -167,35 +237,29 @@ const SmiteComponent = memo(function Smite({
 
   // Function to perform damage in a radius around the impact location
   const performSmiteDamage = () => {
-    if (damageTriggered.current || !enemyData.length) return;
-
+    if (damageTriggered.current) return;
     damageTriggered.current = true;
-    const baseSmiteDamage = 165;
-    const damageRadius = 3.0; // Small radius around impact location
-    let totalDamage = 0;
 
-    // Debug: Log damage attempt
-    console.log('Smite damage attempt:', {
-      weaponType,
-      position: position.toArray(),
-      enemyCount: enemyData.length,
-      damageRadius
-    });
+    const baseSmiteDamage = 165;
+    const damageRadius = 3.0; // Horizontal radius around impact (Y ignored so hovering units still hit)
+    let totalDamage = 0;
+    let targetsHit = 0;
 
     enemyData.forEach(enemy => {
       if (!enemy.health || enemy.health <= 0) return;
 
-      const distance = position.distanceTo(enemy.position);
+      const dx = enemy.position.x - position.x;
+      const dz = enemy.position.z - position.z;
+      const horizontalDist = Math.hypot(dx, dz);
 
-      // Debug: Log distance check
-      console.log(`Smite target ${enemy.id} distance: ${distance.toFixed(2)}, in range: ${distance <= damageRadius}`);
-
-      if (distance <= damageRadius) {
+      if (horizontalDist <= damageRadius) {
         // Calculate critical hit damage (Corrupted Aura bonuses are already applied via global rune count modifications)
-        const damageResult: DamageResult = calculateDamage(baseSmiteDamage, weaponType ?? WeaponType.RUNEBLADE);
+        const damageResult: DamageResult = infernalSmiteVisual
+          ? calculateDamage(baseSmiteDamage, weaponType ?? WeaponType.RUNEBLADE, {
+              critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD,
+            })
+          : calculateDamage(baseSmiteDamage, weaponType ?? WeaponType.RUNEBLADE);
         const finalDamage = damageResult.damage;
-
-        console.log(`Smite damaging target ${enemy.id} for ${finalDamage} damage`);
 
         // Enemy is within damage radius - deal damage
         if (onHit) {
@@ -209,7 +273,19 @@ const SmiteComponent = memo(function Smite({
           const enemyEntity = allEntities.find((entity: any) => entity.userData?.serverEnemyId === enemy.id);
 
           if (enemyEntity) {
-            combatSystem.queueDamage(enemyEntity, finalDamage, null, 'smite', undefined);
+            const staggerToAdd = staggeringSmiteVisual ? STAGGERING_SMITE_BEAM_STAGGER : undefined;
+            combatSystem.queueDamage(
+              enemyEntity,
+              finalDamage,
+              null,
+              'smite',
+              undefined,
+              damageResult.isCritical,
+              undefined,
+              staggerToAdd,
+              infestedSmiteVisual,
+              infernalSmiteVisual,
+            );
           }
         }
 
@@ -237,12 +313,12 @@ const SmiteComponent = memo(function Smite({
         }
 
         totalDamage += finalDamage;
+        targetsHit += 1;
       }
     });
 
-    // Notify parent with total damage dealt
     if (onDamageDealt) {
-      onDamageDealt(totalDamage);
+      onDamageDealt(totalDamage, { targetsHit });
     }
   };
 
@@ -250,9 +326,14 @@ const SmiteComponent = memo(function Smite({
     if (!lightningRef.current) return;
 
     // Handle delay before starting the lightning effect
-    if (delayTimer.current < startDelay) {
+    if (delayTimer.current < gateDelay) {
       delayTimer.current += delta;
-      return;
+      if (delayTimer.current >= gateDelay) {
+        setBoltVisible(true);
+      }
+      if (delayTimer.current < gateDelay) {
+        return;
+      }
     }
 
     progressRef.current += delta;
@@ -266,9 +347,47 @@ const SmiteComponent = memo(function Smite({
       const currentY = startY + (targetY - startY) * progress;
       lightningRef.current.position.y = currentY;
 
+      if (!damageTriggered.current) {
+        groundBurstT.current = 0;
+        if (burstRingRef.current) {
+          burstRingRef.current.scale.set(0.001, 0.001, 1);
+          (burstRingRef.current.material as MeshBasicMaterial).opacity = 0;
+        }
+        if (burstCoreRef.current) {
+          burstCoreRef.current.scale.set(0.001, 0.001, 1);
+          (burstCoreRef.current.material as MeshBasicMaterial).opacity = 0;
+        }
+        if (burstLightRef.current) burstLightRef.current.intensity = 0;
+      }
+
       // Trigger damage when bolt hits the ground (around 80% progress)
       if (progress >= 0.8 && !damageTriggered.current) {
         performSmiteDamage();
+      }
+
+      if (damageTriggered.current) {
+        groundBurstT.current = Math.min(groundBurstT.current + delta * 3.8, 1);
+        const bt = groundBurstT.current;
+        const easeOut = 1 - Math.pow(1 - bt, 2);
+        const ring = burstRingRef.current;
+        const core = burstCoreRef.current;
+        const bl = burstLightRef.current;
+        if (ring) {
+          const s = 0.35 + easeOut * 2.4;
+          ring.scale.set(s, s, 1);
+          const m = ring.material as MeshBasicMaterial;
+          m.opacity = 0.85 * (1 - bt);
+        }
+        if (core) {
+          const cs = 0.2 + easeOut * 2.2;
+          core.scale.set(cs, cs, 1);
+          const m = core.material as MeshBasicMaterial;
+          m.opacity = 0.7 * (1 - Math.min(bt * 1.4, 1));
+        }
+        if (bl) {
+          bl.intensity = 22 * (1 - bt);
+          bl.distance = 5 + easeOut * 4;
+        }
       }
 
       // Adjust scale effect
@@ -280,10 +399,11 @@ const SmiteComponent = memo(function Smite({
   });
 
   return (
+    <group>
     <group
       ref={lightningRef}
       position={[position.x, position.y + 40, position.z]}
-      visible={delayTimer.current >= startDelay}
+      visible={boltVisible}
     >
       {/* Core lightning bolts using shared geometries and materials */}
       <mesh geometry={cylinderGeometries.core} material={materials.core} />
@@ -311,16 +431,72 @@ const SmiteComponent = memo(function Smite({
       {/* Lights */}
       <pointLight
         position={[0, -10, 0]}
-        color={isCorruptedAuraActive ? "#FF4444" : "#FFA500"}
+        color={
+          isCorruptedAuraActive
+            ? "#FF4444"
+            : infernalSmiteVisual
+              ? "#EF4444"
+              : infestedSmiteVisual
+                ? "#22C55E"
+                : staggeringSmiteVisual
+                  ? "#38BDF8"
+                  : "#FFA500"
+        }
         intensity={35}
         distance={25}
       />
       <pointLight
         position={[0, 0, 0]}
-        color={isCorruptedAuraActive ? "#FF8888" : "#FF8C00"}
+        color={
+          isCorruptedAuraActive
+            ? "#FF8888"
+            : infernalSmiteVisual
+              ? "#FB923C"
+              : infestedSmiteVisual
+                ? "#4ADE80"
+                : staggeringSmiteVisual
+                  ? "#7DD3FC"
+                  : "#FF8C00"
+        }
         intensity={10}
         distance={6}
       />
+    </group>
+
+    {/* Small ground burst at strike point (sibling so not parented to falling bolt) */}
+    <group position={[position.x, position.y + 1.25, position.z]} scale={[1.75, 1.75, 1.75]} visible={boltVisible}>
+      <mesh
+        ref={burstRingRef}
+        rotation={[-Math.PI / 2, 0, 0]}
+        geometry={cylinderGeometries.burstRing}
+        material={materials.burstRing}
+        renderOrder={1}
+      />
+      <mesh
+        ref={burstCoreRef}
+        rotation={[-Math.PI / 2, 0, 0]}
+        geometry={cylinderGeometries.burstCore}
+        material={materials.burstCore}
+        renderOrder={2}
+      />
+      <pointLight
+        ref={burstLightRef}
+        position={[0, 0.15, 0]}
+        color={
+          isCorruptedAuraActive
+            ? "#FF6666"
+            : infernalSmiteVisual
+              ? "#F97316"
+              : infestedSmiteVisual
+                ? "#34D399"
+                : staggeringSmiteVisual
+                  ? "#0EA5E9"
+                  : "#FFAA33"
+        }
+        intensity={0}
+        distance={10}
+      />
+    </group>
     </group>
   );
 }, (prevProps, nextProps) => {
@@ -345,6 +521,12 @@ const SmiteComponent = memo(function Smite({
   } else if (prevProps.playerPosition !== nextProps.playerPosition) {
     return false;
   }
+
+  if (prevProps.isCorruptedAuraActive !== nextProps.isCorruptedAuraActive) return false;
+  if (prevProps.infestedSmiteVisual !== nextProps.infestedSmiteVisual) return false;
+  if (prevProps.staggeringSmiteVisual !== nextProps.staggeringSmiteVisual) return false;
+  if (prevProps.infernalSmiteVisual !== nextProps.infernalSmiteVisual) return false;
+  if ((prevProps.sequenceDelaySec ?? 0) !== (nextProps.sequenceDelaySec ?? 0)) return false;
 
   return true;
 });

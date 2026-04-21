@@ -28,7 +28,7 @@ export default function IcebeamManager({
   // Beam properties
   const BEAM_LENGTH = 20;
   const BEAM_WIDTH = 1.375;
-  const DAMAGE_INTERVAL = 250; // Deal damage every 250ms
+  const DAMAGE_INTERVAL = 400; // Deal damage every 250ms
 
   // Cache vector instances to prevent garbage collection
   const beamPos2D = useMemo(() => new Vector3(), []);
