@@ -19,7 +19,7 @@ interface ZombieRendererProps {
   staggerBuildup?: number;
 }
 
-const ATTACK_DURATION = 1200;
+const ATTACK_DURATION = 1000;
 const FADE_DURATION = 1.5;
 const LERP_SPEED = 14;
 const WALK_STOP_DELAY = 250;

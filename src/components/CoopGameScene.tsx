@@ -22,6 +22,8 @@ import ZombieRenderer from './enemies/ZombieRenderer';
 import GhoulSummonRitual from './enemies/GhoulSummonRitual';
 import TitanRenderer from './enemies/TitanRenderer';
 import StaggerProcLightning from './enemies/StaggerProcLightning';
+import KnightSmiteLightning from './enemies/KnightSmiteLightning';
+import KnightFrostProjectile, { KnightFrostImpact } from './enemies/KnightFrostProjectile';
 import WarlockProjectile from './enemies/WarlockProjectile';
 import WarlockFlameStrike from './enemies/WarlockFlameStrike';
 import Meteor from './enemies/Meteor';
@@ -29,7 +31,12 @@ import BossTeleportEffect from './enemies/BossTeleportEffect';
 import { useMultiplayer, Player, EnemyDamageMeta } from '@/contexts/MultiplayerContext';
 import { SkillPointData } from '@/utils/SkillPointSystem';
 import { AbilityLoadout, getDefaultLoadoutForWeapon } from '@/utils/weaponAbilities';
-import { shouldApplyStoredChargeTalent, shouldApplyWrathfulTalonsTalent } from '@/utils/talents';
+import {
+  shouldApplyStoredChargeTalent,
+  shouldApplyStaggeringComboTalent,
+  shouldApplyWrathfulTalonsTalent,
+  STAGGER_PROC_DAMAGE,
+} from '@/utils/talents';
 import { StatSystem, StatPointData } from '@/utils/StatSystem';
 import { setGlobalAgilityStatPoints } from '@/core/DamageCalculator';
 
@@ -930,6 +937,26 @@ export function CoopGameScene({
     position: Vector3;
   }
   const [staggerProcEffects, setStaggerProcEffects] = useState<StaggerProcEffectState[]>([]);
+
+  interface KnightSmiteLightningState {
+    id: string;
+    position: Vector3;
+  }
+  const [knightSmiteLightnings, setKnightSmiteLightnings] = useState<KnightSmiteLightningState[]>([]);
+
+  interface KnightFrostProjectileState {
+    id: string;
+    startPosition: Vector3;
+    staleTarget: Vector3;
+    targetPlayerId: string;
+  }
+  const [knightFrostProjectiles, setKnightFrostProjectiles] = useState<KnightFrostProjectileState[]>([]);
+
+  interface KnightFrostImpactState {
+    id: string;
+    position: Vector3;
+  }
+  const [knightFrostImpacts, setKnightFrostImpacts] = useState<KnightFrostImpactState[]>([]);
 
   // Shade dagger projectile state — one entry per in-flight dagger
   interface ShadeDaggerState {
@@ -3459,8 +3486,35 @@ export function CoopGameScene({
       }
     };
 
+    const handleKnightFrostTelegraph = (data: {
+      knightId: string;
+      targetPlayerId: string;
+      startPosition: { x: number; y: number; z: number };
+      targetPosition: { x: number; y: number; z: number };
+    }) => {
+      const start = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
+      const staleTarget = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
+      setKnightFrostProjectiles(prev => [
+        ...prev,
+        {
+          id: `knight-frost-proj-${data.knightId}-${Date.now()}`,
+          startPosition: start.clone(),
+          staleTarget: staleTarget.clone(),
+          targetPlayerId: data.targetPlayerId,
+        },
+      ]);
+    };
+
     // Red Knight — Smite (75 physical damage, same stat-reduction pipeline as basic attack)
     const handleKnightSmite = (data: any) => {
+      if (data.targetPosition) {
+        const p = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
+        setKnightSmiteLightnings(prev => [
+          ...prev,
+          { id: `knight-smite-${data.knightId}-${Date.now()}`, position: p.clone() },
+        ]);
+      }
+
       if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
 
       const deathState = playerDeathStates.get(socket.id);
@@ -3496,6 +3550,14 @@ export function CoopGameScene({
 
     // Blue Knight — Frost Ray (30 magic damage + 50% slow for 5 s)
     const handleKnightFrost = (data: any) => {
+      if (data.targetPosition) {
+        const p = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
+        setKnightFrostImpacts(prev => [
+          ...prev,
+          { id: `knight-frost-impact-${data.knightId}-${Date.now()}`, position: p.clone() },
+        ]);
+      }
+
       if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
 
       const deathState = playerDeathStates.get(socket.id);
@@ -4324,9 +4386,21 @@ export function CoopGameScene({
       ]);
     };
 
-    const handleEnemyStaggerProc = (data: { enemyId: string; position: { x: number; y: number; z: number } }) => {
+    const handleEnemyStaggerProc = (data: {
+      enemyId: string;
+      position: { x: number; y: number; z: number };
+      damage?: number;
+      fromPlayerId?: string | null;
+    }) => {
       const p = new Vector3(data.position.x, data.position.y, data.position.z);
       (window as any).audioSystem?.playLightningBoltSound(p);
+      const dmg = typeof data.damage === 'number' ? data.damage : STAGGER_PROC_DAMAGE;
+      const numPos = p.clone();
+      numPos.y += 1.35;
+      const damageNumberManager = (window as any).damageNumberManager;
+      if (damageNumberManager?.addDamageNumber) {
+        damageNumberManager.addDamageNumber(dmg, false, numPos, 'stagger_break');
+      }
       setStaggerProcEffects(prev => [
         ...prev,
         { id: `stagger-proc-${data.enemyId}-${Date.now()}`, position: p.clone() },
@@ -4409,6 +4483,7 @@ export function CoopGameScene({
     socket.on('knight-attack', handleKnightAttack);
     socket.on('knight-smite',  handleKnightSmite);
     socket.on('knight-frost',  handleKnightFrost);
+    socket.on('knight-frost-telegraph', handleKnightFrostTelegraph);
     socket.on('templar-attack-telegraph', handleTemplarAttackTelegraph);
     socket.on('templar-attack', handleTemplarAttack);
     socket.on('enemy-status-effect', handleEnemyStatusEffect);
@@ -4651,6 +4726,7 @@ export function CoopGameScene({
       socket.off('knight-attack', handleKnightAttack);
       socket.off('knight-smite',  handleKnightSmite);
       socket.off('knight-frost',  handleKnightFrost);
+      socket.off('knight-frost-telegraph', handleKnightFrostTelegraph);
       socket.off('templar-attack-telegraph', handleTemplarAttackTelegraph);
       socket.off('templar-attack', handleTemplarAttack);
       // Clear any pending miss timers on cleanup
@@ -6163,6 +6239,7 @@ export function CoopGameScene({
           playerLevel={playerLevel}
           wrathfulTalonsReturnCrit={shouldApplyWrathfulTalonsTalent(talentLoadout, abilityLoadout ?? null)}
           runebladeStoredCharge={shouldApplyStoredChargeTalent(talentLoadout, abilityLoadout ?? null)}
+          runebladeStaggeringCombo={shouldApplyStaggeringComboTalent(talentLoadout)}
           onDamageNumbersReady={handleDamageNumbersReady}
           combatSystem={engineRef.current?.getWorld().getSystem(require('@/systems/CombatSystem').CombatSystem)}
           onHeal={(amount: number) => {
@@ -6544,6 +6621,38 @@ export function CoopGameScene({
           key={fx.id}
           position={fx.position}
           onComplete={() => setStaggerProcEffects(prev => prev.filter(e => e.id !== fx.id))}
+        />
+      ))}
+
+      {knightSmiteLightnings.map(fx => (
+        <KnightSmiteLightning
+          key={fx.id}
+          position={fx.position}
+          onComplete={() => setKnightSmiteLightnings(prev => prev.filter(e => e.id !== fx.id))}
+        />
+      ))}
+
+      {knightFrostProjectiles.map(p => (
+        <KnightFrostProjectile
+          key={p.id}
+          startPosition={p.startPosition}
+          staleTarget={p.staleTarget}
+          refineTarget={stale => {
+            if (p.targetPlayerId === socket?.id && playerEntity) {
+              const t = playerEntity.getComponent(Transform);
+              if (t) return new Vector3(t.position.x, stale.y, t.position.z);
+            }
+            return stale;
+          }}
+          onComplete={() => setKnightFrostProjectiles(prev => prev.filter(x => x.id !== p.id))}
+        />
+      ))}
+
+      {knightFrostImpacts.map(fx => (
+        <KnightFrostImpact
+          key={fx.id}
+          position={fx.position}
+          onComplete={() => setKnightFrostImpacts(prev => prev.filter(e => e.id !== fx.id))}
         />
       ))}
 

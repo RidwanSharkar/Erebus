@@ -612,11 +612,14 @@ class GameRoom {
       });
     }
 
-    // Staggering Strike: build stagger on Wraith Strike hits; at 100, proc damage + stun + VFX
+    // Staggering Strike / Staggering Combo / Staggering Swipes: build stagger; at 100, proc damage + stun + VFX
     if (
       !result.wasKilled &&
       hitMeta &&
-      hitMeta.damageType === 'wraith_strike' &&
+      (hitMeta.damageType === 'wraith_strike' ||
+        hitMeta.damageType === 'runeblade_combo' ||
+        hitMeta.damageType === 'sabre_left' ||
+        hitMeta.damageType === 'sabre_right') &&
       typeof hitMeta.staggerToAdd === 'number' &&
       hitMeta.staggerToAdd > 0 &&
       !enemy.isDying
@@ -626,7 +629,8 @@ class GameRoom {
         if (enemy.staggerBuildup == null) enemy.staggerBuildup = 0;
         enemy.staggerBuildup += hitMeta.staggerToAdd;
         const STAGGER_CAP = 100;
-        const PROC_DAMAGE = 125;
+        /** Keep in sync with `STAGGER_PROC_DAMAGE` in src/utils/talents.ts */
+        const PROC_DAMAGE = 175;
         let procEnemy = this.enemies.get(enemyId);
         while (
           procEnemy &&
@@ -642,6 +646,8 @@ class GameRoom {
             this.io.to(this.roomId).emit('enemy-stagger-proc', {
               enemyId,
               position: { x: procEnemy.position.x, y: procEnemy.position.y, z: procEnemy.position.z },
+              damage: PROC_DAMAGE,
+              fromPlayerId: fromPlayerId || null,
               timestamp: Date.now(),
             });
           }

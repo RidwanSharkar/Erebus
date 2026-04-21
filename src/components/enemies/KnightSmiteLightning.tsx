@@ -4,15 +4,16 @@ import { useRef, useMemo } from 'react';
 import { Vector3, AdditiveBlending, CylinderGeometry, MeshBasicMaterial } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 
-const DURATION_MS = 620;
-const SKY_Y = 24;
+const DURATION_MS = 450;
+const SKY_Y = 22;
 
-interface StaggerProcLightningProps {
+interface KnightSmiteLightningProps {
   position: Vector3;
   onComplete: () => void;
 }
 
-export default function StaggerProcLightning({ position, onComplete }: StaggerProcLightningProps) {
+/** Red sky-to-ground strike for Red Knight Smite — same mesh stack as StaggerProcLightning, crimson palette. */
+export default function KnightSmiteLightning({ position, onComplete }: KnightSmiteLightningProps) {
   const startRef = useRef<number | null>(null);
   const doneRef = useRef(false);
 
@@ -20,11 +21,11 @@ export default function StaggerProcLightning({ position, onComplete }: StaggerPr
     const baseX = position.x;
     const baseY = position.y;
     const baseZ = position.z;
-    const n = 16;
+    const n = 14;
     const pts: { x: number; y: number; z: number; h: number }[] = [];
     for (let i = 0; i < n; i++) {
       const t = i / (n - 1);
-      const jitter = (1 - t) * 0.52;
+      const jitter = (1 - t) * 0.35;
       pts.push({
         x: baseX + (Math.random() - 0.5) * jitter,
         y: baseY + SKY_Y * (1 - t),
@@ -38,9 +39,9 @@ export default function StaggerProcLightning({ position, onComplete }: StaggerPr
   const matCore = useMemo(
     () =>
       new MeshBasicMaterial({
-        color: '#e0f2fe',
+        color: '#fca5a5',
         transparent: true,
-        opacity: 1,
+        opacity: 0.95,
         blending: AdditiveBlending,
         depthWrite: false,
       }),
@@ -49,37 +50,24 @@ export default function StaggerProcLightning({ position, onComplete }: StaggerPr
   const matGlow = useMemo(
     () =>
       new MeshBasicMaterial({
-        color: '#38bdf8',
+        color: '#ef4444',
         transparent: true,
-        opacity: 0.72,
-        blending: AdditiveBlending,
-        depthWrite: false,
-      }),
-    [],
-  );
-  const matHalo = useMemo(
-    () =>
-      new MeshBasicMaterial({
-        color: '#7dd3fc',
-        transparent: true,
-        opacity: 0.35,
+        opacity: 0.55,
         blending: AdditiveBlending,
         depthWrite: false,
       }),
     [],
   );
 
-  const cyl = useMemo(() => new CylinderGeometry(0.09, 0.14, 1, 8), []);
+  const cyl = useMemo(() => new CylinderGeometry(0.07, 0.11, 1, 6), []);
 
   useFrame(() => {
     if (startRef.current === null) startRef.current = performance.now();
     const elapsed = performance.now() - startRef.current;
     const k = Math.min(1, elapsed / DURATION_MS);
     const fade = 1 - k;
-    const peak = 1 - Math.pow(2 * k - 1, 2) * 0.25;
-    matCore.opacity = Math.min(1, 0.98 * fade * peak);
-    matGlow.opacity = 0.72 * fade * peak;
-    matHalo.opacity = 0.35 * fade;
+    matCore.opacity = 0.95 * fade;
+    matGlow.opacity = 0.55 * fade;
     if (k >= 1 && !doneRef.current) {
       doneRef.current = true;
       onComplete();
@@ -88,8 +76,7 @@ export default function StaggerProcLightning({ position, onComplete }: StaggerPr
 
   return (
     <group>
-      <pointLight position={[position.x, position.y + 3.5, position.z]} color="#bae6fd" intensity={48} distance={22} decay={1.8} />
-      <pointLight position={[position.x, position.y + 0.4, position.z]} color="#38bdf8" intensity={36} distance={14} decay={2} />
+      <pointLight position={[position.x, position.y + 2, position.z]} color="#f97316" intensity={22} distance={16} decay={2} />
       {segments.slice(0, -1).map((p, i) => {
         const q = segments[i + 1];
         const midX = (p.x + q.x) / 2;
@@ -103,9 +90,8 @@ export default function StaggerProcLightning({ position, onComplete }: StaggerPr
         const pitch = -Math.asin(dy / len) + Math.PI / 2;
         return (
           <group key={i} position={[midX, midY, midZ]} rotation={[pitch, yaw, 0]}>
-            <mesh geometry={cyl} material={matHalo} scale={[2.1, len, 2.1]} />
-            <mesh geometry={cyl} material={matGlow} scale={[1.65, len, 1.65]} />
-            <mesh geometry={cyl} material={matCore} scale={[1.05, len, 1.05]} />
+            <mesh geometry={cyl} material={matGlow} scale={[1.4, len, 1.4]} />
+            <mesh geometry={cyl} material={matCore} scale={[1, len, 1]} />
           </group>
         );
       })}

@@ -9,6 +9,7 @@ import EnemyMeleeAttackRangeRing, { TEMPLAR_MELEE_ATTACK_RANGE } from './EnemyMe
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
+import TemplarSoulCrest from './TemplarSoulCrest';
 
 interface TemplarRendererProps {
   id: string;
@@ -139,6 +140,8 @@ export default function TemplarRenderer({
         attackVariant={attackVariant}
         isDying={isDying}
       />
+
+      {!isDying && <TemplarSoulCrest />}
 
       <EnemyMeleeAttackRangeRing radius={TEMPLAR_MELEE_ATTACK_RANGE} />
 

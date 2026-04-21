@@ -149,9 +149,11 @@ const SpellCastingAura = forwardRef<{ isActive: boolean }, SpellCastingAuraProps
                 depthWrite={false}
               />
             </mesh>
+
           </group>
         ))}
       </group>
+
 
       {/* Decorative counter-rotating rune ring */}
       <group position={[0, -0.48, 0]}>
@@ -201,6 +203,9 @@ const SpellCastingAura = forwardRef<{ isActive: boolean }, SpellCastingAuraProps
           depthWrite={false}
         />
       </mesh>
+  
+
+
 
     </group>
   );

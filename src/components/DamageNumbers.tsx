@@ -167,6 +167,8 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
                 ? 'text-teal-400 text-lg'
                 : damageData.damageType === 'frost_nova'
                 ? 'text-blue-300 text-lg'
+                : damageData.damageType === 'stagger_break'
+                ? 'text-sky-200 text-xl font-extrabold drop-shadow-[0_0_8px_rgba(56,189,248,0.9)]'
                 : damageData.damageType === 'entropic_cryoflame'
                 ? 'text-cyan-400 text-lg'
                 : damageData.damageType === 'icebeam'

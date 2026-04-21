@@ -582,6 +582,11 @@ class EnemyAI {
             targetPlayerId: currentTarget.id,
             damage: 75,
             position: knight.position,
+            targetPosition: {
+              x: currentTarget.position.x,
+              y: currentTarget.position.y + 1.0,
+              z: currentTarget.position.z,
+            },
             timestamp: Date.now(),
           });
         }
@@ -661,6 +666,11 @@ class EnemyAI {
           targetPlayerId: currentTarget.id,
           damage: 30,
           slowDuration: 5000, // 5 s at 50% speed
+          targetPosition: {
+            x: currentTarget.position.x,
+            y: currentTarget.position.y + 1.0,
+            z: currentTarget.position.z,
+          },
           timestamp: Date.now(),
         });
       }
@@ -2130,7 +2140,7 @@ class EnemyAI {
       case 'templar': return 3.5;
       case 'weaver':  return 2.0;
       case 'ghoul':   return 2.5;
-      case 'player-zombie': return 2.5;
+      case 'player-zombie': return 1.75;
       default: return 2.0;
     }
   }
@@ -2168,12 +2178,12 @@ class EnemyAI {
       ownerPlayerId: ownerId,
       position: { x: position.x, y: position.y, z: position.z },
       rotation: 0,
-      health: 400,
-      maxHealth: 400,
+      health: 250,
+      maxHealth: 250,
       isDying: false,
-      damage: 25,
-      attackCooldown: 1500,
-      moveSpeed: 2.5,
+      damage: 32,
+      attackCooldown: 1000,
+      moveSpeed: 1.75,
       expireAt: now + 30000,
       staggerBuildup: 0,
     };
@@ -2271,10 +2281,10 @@ class EnemyAI {
             if (!liveHostile || liveHostile.isDying || liveHostile.health <= 0) return;
             const currentDist = this.calculateDistance(zombie.position, liveHostile.position);
             if (currentDist <= attackRange + 0.5) {
-              const dmg = zombie.damage || 25;
+              const dmg = zombie.damage || 32;
               this.room.damageEnemy(liveHostile.id, dmg, zombie.ownerPlayerId, null, null);
             }
-          }, 900);
+          }, 700);
         } else if (distance > meleePressDistance) {
           this.moveEnemyTowardsTarget(zombie, { position: hostile.position, id: hostile.id });
         }

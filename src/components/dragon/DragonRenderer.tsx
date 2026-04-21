@@ -15,6 +15,11 @@ import { Health } from '@/ecs/components/Health';
 import { Enemy } from '@/ecs/components/Enemy';
 import { CombatSystem } from '@/systems/CombatSystem';
 import { ReanimateRef } from '../weapons/Reanimate';
+import {
+  STAGGERING_COMBO_HIT1_STAGGER,
+  STAGGERING_COMBO_HIT2_STAGGER,
+  STAGGERING_COMBO_HIT3_STAGGER,
+} from '@/utils/talents';
 
 interface DragonRendererProps {
   entityId: number;
@@ -106,6 +111,8 @@ interface DragonRendererProps {
   wrathfulTalonsReturnCrit?: boolean;
   /** STORED CHARGE: Runeblade Charge — 3 spin rotations + per-rotation damage. */
   runebladeStoredCharge?: boolean;
+  /** STAGGERING COMBO: basic attack combo adds stagger per hit (co-op server sync). */
+  runebladeStaggeringCombo?: boolean;
 }
 
 export default function DragonRenderer({
@@ -177,6 +184,7 @@ export default function DragonRenderer({
   playerLevel = 1,
   wrathfulTalonsReturnCrit = false,
   runebladeStoredCharge = false,
+  runebladeStaggeringCombo = false,
 }: DragonRendererProps) {
   const mountRef = useRef(false);
   if (!mountRef.current) {
@@ -411,7 +419,25 @@ export default function DragonRenderer({
       const combatSystem = world.getSystem(CombatSystem);
       if (combatSystem) {
         const damageType = isBlizzard ? 'blizzard' : 'sword';
-        combatSystem.queueDamage(targetEntity, damage, playerEntityObj, damageType, playerEntityObj?.userData?.playerId, isCritical);
+        let staggerToAdd: number | undefined;
+        if (currentWeapon === WeaponType.RUNEBLADE && runebladeStaggeringCombo && !isBlizzard) {
+          staggerToAdd =
+            swordComboStep === 1
+              ? STAGGERING_COMBO_HIT1_STAGGER
+              : swordComboStep === 2
+                ? STAGGERING_COMBO_HIT2_STAGGER
+                : STAGGERING_COMBO_HIT3_STAGGER;
+        }
+        combatSystem.queueDamage(
+          targetEntity,
+          damage,
+          playerEntityObj,
+          damageType,
+          playerEntityObj?.userData?.playerId,
+          isCritical,
+          undefined,
+          staggerToAdd,
+        );
       }
     }
   };

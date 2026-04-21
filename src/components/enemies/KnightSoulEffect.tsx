@@ -19,8 +19,8 @@ const SOUL_COLORS: Record<SoulType, { core: string; glow: string; light: string 
 };
 
 // 6 small orbiting particles for a denser ring
-const ORBIT_COUNT = 6;
-const ORBIT_RADIUS = 0.35;
+const ORBIT_COUNT = 4;
+const ORBIT_RADIUS = 0.5;
 
 export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
   const groupRef = useRef<Group>(null);
@@ -39,7 +39,7 @@ export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
 
     // Float the whole soul up and down — lowered base height
     if (groupRef.current) {
-      groupRef.current.position.y = 1.5 + Math.sin(t * 1.4) * 0.125;
+      groupRef.current.position.y = 1.5 + Math.sin(t * 1.4) * 0.025;
     }
 
     // Pulse the core orb scale — stronger throb
@@ -73,9 +73,9 @@ export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
 
   return (
     // Positioned relative to the knight group origin; Y handled in useFrame
-    <group ref={groupRef} position={[0, 2.2, 0]}>
+    <group ref={groupRef} position={[0, 1.5, 0]}>
       {/* Point light — stronger radius and intensity */}
-      <pointLight
+      <pointLight position={[0, 0.2, 0]}
         color={colors.light}
         intensity={7.5}
         distance={6.0}
@@ -83,8 +83,8 @@ export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
       />
 
       {/* Core orb — larger */}
-      <mesh ref={coreRef}>
-        <sphereGeometry args={[0.18, 14, 14]} />
+      <mesh ref={coreRef} position={[0, 0.325, 0]}>
+        <sphereGeometry args={[0.14, 14, 14]} />
         <meshBasicMaterial
           color={colors.core}
           toneMapped={false}
@@ -93,7 +93,7 @@ export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
 
       {/* Outer glow shell — wider and more opaque */}
       <mesh ref={glowRef}>
-        <sphereGeometry args={[0.36, 14, 14]} />
+        <sphereGeometry args={[0.3, 14, 14]} />
         <meshBasicMaterial
           color={colors.glow}
           transparent
@@ -105,7 +105,7 @@ export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
       </mesh>
 
       {/* Orbiting particles */}
-      <group ref={orbitGroupRef}>
+      <group ref={orbitGroupRef} position={[0, 0.25, 0]}>
         {Array.from({ length: ORBIT_COUNT }).map((_, i) => {
           const angle = (i / ORBIT_COUNT) * Math.PI * 2;
           const x = Math.cos(angle) * ORBIT_RADIUS;
@@ -125,23 +125,40 @@ export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
                 blending={AdditiveBlending}
                 depthWrite={false}
               />
+              <pointLight position={[0, 0.35, 0]}
+                color={colors.light}
+                intensity={1.25}
+                distance={6.0}
+                decay={5}
+              />
             </mesh>
           );
         })}
       </group>
+      
 
       {/* Wide aura disc beneath the orb — more visible */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
-        <ringGeometry args={[0.12, 0.7, 32]} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.35, 0]}>
+        <ringGeometry args={[0.60, 0.825, 32]} />
         <meshBasicMaterial
           color={colors.glow}
           transparent
-          opacity={0.28}
+          opacity={0.5}
           depthWrite={false}
           blending={AdditiveBlending}
           toneMapped={false}
           side={2}
         />
+
+<pointLight position={[0, -0.125, 0]}
+        color={colors.light}
+        intensity={7.5}
+        distance={6.0}
+        decay={5}
+      />
+
+
+        
       </mesh>
     </group>
   );

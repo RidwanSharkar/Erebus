@@ -40,7 +40,7 @@ export interface Player {
 export interface EnemyDamageMeta {
   damageType?: string;
   infestedStrike?: boolean;
-  /** Staggering Strike: server accumulates stagger on `wraith_strike` hits. */
+  /** Staggering Strike (`wraith_strike`), Runeblade combo (`runeblade_combo`), or Sabres (`sabre_left` / `sabre_right`): server accumulates stagger. */
   staggerToAdd?: number;
 }
 

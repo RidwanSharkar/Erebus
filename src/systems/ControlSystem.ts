@@ -27,6 +27,8 @@ import {
   shouldApplyStoredChargeTalent as computeStoredChargeTalentActive,
   shouldApplyWrathfulTalonsTalent as computeWrathfulTalonsTalentActive,
   STAGGERING_STRIKE_WRAITH_STAGGER_ADD,
+  STAGGERING_SWIPES_LEFT_BLADE_STAGGER,
+  STAGGERING_SWIPES_RIGHT_BLADE_STAGGER,
   WRATH_STRIKE_CRIT_CHANCE_ADD,
   WRATH_STRIKE_CRIT_DAMAGE_MULT_ADD,
 } from '@/utils/talents';
@@ -1768,7 +1770,7 @@ export class ControlSystem extends System {
     // Create CrossentropyBolt projectile using the existing method
     const crossentropyConfig = {
       speed: 25, // Slower than EntropicBolt
-      damage: 500, // Higher damage for R ability
+      damage: 370, // Higher damage for R ability
       lifetime: 2.5, // Longer lifetime
       piercing: false, // 
       explosive: false, // Disabled explosion effect for performance
@@ -3809,16 +3811,38 @@ export class ControlSystem extends System {
       // Target is within range and cone - apply damage from both sabres
       const combatSystem = this.world.getSystem(CombatSystem);
       if (combatSystem) {
+        const swipes = this.shouldApplyStaggeringSwipesTalent();
+        const leftStagger = swipes ? STAGGERING_SWIPES_LEFT_BLADE_STAGGER : undefined;
+        const rightStagger = swipes ? STAGGERING_SWIPES_RIGHT_BLADE_STAGGER : undefined;
+        const pid = this.playerEntity?.userData?.playerId;
         // Left sabre hit (immediate)
-        combatSystem.queueDamage(target, leftSabreDamage, this.playerEntity || undefined, 'sabre_left', this.playerEntity?.userData?.playerId);
-        
+        combatSystem.queueDamage(
+          target,
+          leftSabreDamage,
+          this.playerEntity || undefined,
+          'sabre_left',
+          pid,
+          undefined,
+          undefined,
+          leftStagger,
+        );
+
         // Right sabre hit (with small delay)
         setTimeout(() => {
           if (!targetHealth.isDead) {
-            combatSystem.queueDamage(target, rightSabreDamage, this.playerEntity || undefined, 'sabre_right', this.playerEntity?.userData?.playerId);
+            combatSystem.queueDamage(
+              target,
+              rightSabreDamage,
+              this.playerEntity || undefined,
+              'sabre_right',
+              pid,
+              undefined,
+              undefined,
+              rightStagger,
+            );
           }
         }, 100); // 100ms delay between sabre hits
-        
+
         hitCount++;
       }
     }
@@ -4513,7 +4537,7 @@ export class ControlSystem extends System {
   }
 
   public setTalentLoadout(loadout: TalentLoadout): void {
-    this.talentLoadout = { ...loadout };
+    this.talentLoadout = { ...createDefaultTalentLoadout(), ...loadout };
   }
 
   private shouldApplyWrathStrikeTalent(): boolean {
@@ -4526,6 +4550,16 @@ export class ControlSystem extends System {
 
   private shouldApplyStaggeringStrikeTalent(): boolean {
     return this.talentLoadout.staggeringStrike && isWraithStrikeInLoadout(this.abilityLoadout);
+  }
+
+  /** STAGGERING COMBO: Runeblade basic combo builds stagger per hit (`DragonRenderer` → CombatSystem). */
+  public shouldApplyStaggeringComboTalent(): boolean {
+    return this.talentLoadout.staggeringCombo === true && this.currentWeapon === WeaponType.RUNEBLADE;
+  }
+
+  /** STAGGERING SWIPES: Sabres dual-blade basic swing builds stagger (`performSabresMeleeDamage` → CombatSystem). */
+  public shouldApplyStaggeringSwipesTalent(): boolean {
+    return this.talentLoadout.staggeringSwipes === true && this.currentWeapon === WeaponType.SABRES;
   }
 
   /** STORED CHARGE: Runeblade Charge spin count and per-rotation damage (see Runeblade + talents). */

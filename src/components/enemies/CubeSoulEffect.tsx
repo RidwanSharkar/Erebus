@@ -19,7 +19,7 @@ const CUBE_COLORS: Record<CubeColor, { core: string; glow: string; light: string
 };
 
 // 6 orbiting cube particles in a ring
-const ORBIT_COUNT  = 7;
+const ORBIT_COUNT  = 6;
 const ORBIT_RADIUS = 0.55;
 
 export default function CubeSoulEffect({ color, posY = 2.0 }: CubeSoulEffectProps) {
@@ -39,7 +39,7 @@ export default function CubeSoulEffect({ color, posY = 2.0 }: CubeSoulEffectProp
 
     // Float the soul up and down
     if (groupRef.current) {
-      groupRef.current.position.y = posY + Math.sin(t * 1.4) * 0.13;
+      groupRef.current.position.y = posY + Math.sin(t * 1.4) * 0.02;
     }
 
     // Core cube: slow self-rotation + scale pulse
@@ -80,14 +80,13 @@ export default function CubeSoulEffect({ color, posY = 2.0 }: CubeSoulEffectProp
   return (
     <group ref={groupRef} position={[0, posY, 0]}>
       {/* Point light */}
-      <pointLight
+      <pointLight position={[0, -0.25, 0]}
         color={colors.light}
-        intensity={6.5}
+        intensity={5}
         distance={6.0}
-        decay={6}
+        decay={3}
       />
 
- 
 
 
       {/* Orbiting cube particles */}
@@ -118,6 +117,22 @@ export default function CubeSoulEffect({ color, posY = 2.0 }: CubeSoulEffectProp
       </group>
 
 
+      {/* Wide aura disc beneath the orb — more visible */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2.65, 0]}>
+        <ringGeometry args={[0.5, 0.825, 32]} />
+        <meshBasicMaterial
+          color={'#ff0000'}
+          transparent
+          opacity={0.28}
+          depthWrite={false}
+          blending={AdditiveBlending}
+          toneMapped={false}
+          side={2}
+        />
+
+
+        
+      </mesh>
     </group>
   );
 }

@@ -20,6 +20,11 @@ function handleEnemyEvents(socket, gameRooms) {
       if (damageType === 'wraith_strike' && typeof staggerToAdd === 'number' && staggerToAdd > 0) {
         hitMeta.staggerToAdd = staggerToAdd;
       }
+    } else if (damageType === 'runeblade_combo' || damageType === 'sabre_left' || damageType === 'sabre_right') {
+      hitMeta = { damageType };
+      if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
     } else if (damageType === 'stagger_break') {
       hitMeta = { damageType: 'stagger_break' };
     }

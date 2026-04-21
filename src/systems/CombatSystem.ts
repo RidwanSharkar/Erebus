@@ -295,7 +295,21 @@ export class CombatSystem extends System {
                 ? { staggerToAdd: damageEvent.staggerToAdd }
                 : {}),
             }
-          : undefined;
+          : damageType === 'sword' &&
+              damageEvent.staggerToAdd != null &&
+              damageEvent.staggerToAdd > 0
+            ? {
+                damageType: 'runeblade_combo' as const,
+                staggerToAdd: damageEvent.staggerToAdd,
+              }
+            : (damageType === 'sabre_left' || damageType === 'sabre_right') &&
+                damageEvent.staggerToAdd != null &&
+                damageEvent.staggerToAdd > 0
+              ? {
+                  damageType,
+                  staggerToAdd: damageEvent.staggerToAdd,
+                }
+              : undefined;
       this.onEnemyDamageCallback(serverEnemyId, actualDamage, finalSourcePlayerId, routeMeta);
 
       // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
@@ -335,6 +349,8 @@ export class CombatSystem extends System {
         if (transform) {
           const position = transform.getWorldPosition();
           position.y += 1.5;
+          if (damageType === 'sabre_right' || damageType === 'sabres_right') position.x += 0.3;
+          else if (damageType === 'sabre_left' || damageType === 'sabres_left') position.x -= 0.3;
           this.damageNumberManager.addDamageNumber(
             actualDamage,
             damageResult.isCritical,
@@ -794,9 +810,9 @@ export class CombatSystem extends System {
             position.y += 1.5;
 
             // Add slight position offset for delayed damage (like sabres right hit) to prevent overlap
-            if (damageType === 'sabres_right') {
+            if (damageType === 'sabres_right' || damageType === 'sabre_right') {
               position.x += 0.3; // Slight offset to the right for the right sabre
-            } else if (damageType === 'sabres_left') {
+            } else if (damageType === 'sabres_left' || damageType === 'sabre_left') {
               position.x -= 0.3; // Slight offset to the left for the left sabre
             }
 

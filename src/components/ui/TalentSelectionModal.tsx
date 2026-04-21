@@ -11,6 +11,8 @@ import {
   isReapingTalonsInLoadout,
   isWraithStrikeInLoadout,
   staggeringStrikeTalentDefinition,
+  staggeringComboTalentDefinition,
+  staggeringSwipesTalentDefinition,
   storedChargeTalentDefinition,
   wrathStrikeTalentDefinition,
   wrathfulTalonsTalentDefinition,
@@ -56,6 +58,8 @@ export default function TalentSelectionModal({
     wrathStrike: initialTalentLoadout?.wrathStrike ?? def.wrathStrike,
     infestedStrike: initialTalentLoadout?.infestedStrike ?? def.infestedStrike,
     staggeringStrike: initialTalentLoadout?.staggeringStrike ?? def.staggeringStrike,
+    staggeringCombo: initialTalentLoadout?.staggeringCombo ?? def.staggeringCombo,
+    staggeringSwipes: initialTalentLoadout?.staggeringSwipes ?? def.staggeringSwipes,
     wrathfulTalons: initialTalentLoadout?.wrathfulTalons ?? def.wrathfulTalons,
     storedCharge: initialTalentLoadout?.storedCharge ?? def.storedCharge,
   };
@@ -91,6 +95,14 @@ export default function TalentSelectionModal({
     setLoadout((prev) => ({ ...prev, storedCharge: !prev.storedCharge }));
   }, [chargeEquipped]);
 
+  const toggleStaggeringCombo = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, staggeringCombo: !prev.staggeringCombo }));
+  }, []);
+
+  const toggleStaggeringSwipes = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, staggeringSwipes: !prev.staggeringSwipes }));
+  }, []);
+
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] overflow-y-auto py-4">
       <div className="bg-gray-900/98 border-2 border-amber-500 rounded-xl p-6 max-w-lg w-11/12 mx-auto">
@@ -119,8 +131,12 @@ export default function TalentSelectionModal({
             />
             <label htmlFor="talent-wrath-strike" className={`flex-1 ${wraithEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
               <div className="text-white font-semibold">{wrathStrikeTalentDefinition.name}</div>
-              <p className="text-gray-400 text-sm mt-1">{wrathStrikeTalentDefinition.description}</p>
-              <p className="text-amber-200/90 text-xs mt-2 font-mono">+20% crit chance · +50% crit damage on Wraith Strike</p>
+              {loadout.wrathStrike && (
+                <>
+                  <p className="text-gray-400 text-sm mt-1">{wrathStrikeTalentDefinition.description}</p>
+                  <p className="text-amber-200/90 text-xs mt-2 font-mono">+20% crit chance · +50% crit damage on Wraith Strike</p>
+                </>
+              )}
             </label>
           </div>
           {!wraithEquipped && (
@@ -147,8 +163,12 @@ export default function TalentSelectionModal({
             />
             <label htmlFor="talent-infested-strike" className={`flex-1 ${wraithEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
               <div className="text-white font-semibold">{infestedStrikeTalentDefinition.name}</div>
-              <p className="text-gray-400 text-sm mt-1">{infestedStrikeTalentDefinition.description}</p>
-              <p className="text-emerald-200/90 text-xs mt-2 font-mono">190 damage · green VFX · zombies on kill (max 3)</p>
+              {loadout.infestedStrike && (
+                <>
+                  <p className="text-gray-400 text-sm mt-1">{infestedStrikeTalentDefinition.description}</p>
+                  <p className="text-emerald-200/90 text-xs mt-2 font-mono">190 damage · green VFX · zombies on kill (max 3)</p>
+                </>
+              )}
             </label>
           </div>
         </div>
@@ -170,39 +190,97 @@ export default function TalentSelectionModal({
             />
             <label htmlFor="talent-staggering-strike" className={`flex-1 ${wraithEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
               <div className="text-white font-semibold">{staggeringStrikeTalentDefinition.name}</div>
-              <p className="text-gray-400 text-sm mt-1">{staggeringStrikeTalentDefinition.description}</p>
-              <p className="text-sky-200/90 text-xs mt-2 font-mono">+40 stagger · 100 = lightning + 125 dmg + 3s stun</p>
+              {loadout.staggeringStrike && (
+                <>
+                  <p className="text-gray-400 text-sm mt-1">{staggeringStrikeTalentDefinition.description}</p>
+                  <p className="text-sky-200/90 text-xs mt-2 font-mono">+40 stagger · 100 = lightning + 125 dmg + 3s stun</p>
+                </>
+              )}
             </label>
           </div>
         </div>
 
         {selectedWeapon === WeaponType.RUNEBLADE && (
-          <div
-            className={`
+          <>
+            <div
+              className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${wc.border} ${wc.bg}
+          `}
+            >
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="talent-staggering-combo"
+                  checked={loadout.staggeringCombo}
+                  onChange={toggleStaggeringCombo}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+                />
+                <label htmlFor="talent-staggering-combo" className="flex-1 cursor-pointer">
+                  <div className="text-white font-semibold">{staggeringComboTalentDefinition.name}</div>
+                  {loadout.staggeringCombo && (
+                    <>
+                      <p className="text-gray-400 text-sm mt-1">{staggeringComboTalentDefinition.description}</p>
+                      <p className="text-sky-200/90 text-xs mt-2 font-mono">30 + 30 + 40 stagger per combo · 100 = lightning + proc</p>
+                    </>
+                  )}
+                </label>
+              </div>
+            </div>
+            <div
+              className={`
             rounded-xl border-2 p-4 mb-6 transition-all
             ${chargeEquipped ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
           `}
-          >
+            >
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="talent-stored-charge"
+                  checked={loadout.storedCharge}
+                  onChange={toggleStoredCharge}
+                  disabled={!chargeEquipped}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                />
+                <label htmlFor="talent-stored-charge" className={`flex-1 ${chargeEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                  <div className="text-white font-semibold">{storedChargeTalentDefinition.name}</div>
+                  {loadout.storedCharge && (
+                    <>
+                      <p className="text-gray-400 text-sm mt-1">{storedChargeTalentDefinition.description}</p>
+                      <p className="text-sky-200/90 text-xs mt-2 font-mono">3 full spins · Charge damage per rotation</p>
+                    </>
+                  )}
+                </label>
+              </div>
+              {!chargeEquipped && (
+                <p className="text-gray-500 text-xs mt-3 pl-7">
+                  Equip <span className="text-gray-300">Charge</span> in your ability loadout at the other east pillar to enable this talent.
+                </p>
+              )}
+            </div>
+          </>
+        )}
+
+        {selectedWeapon === WeaponType.SABRES && (
+          <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
             <div className="flex items-start gap-3">
               <input
                 type="checkbox"
-                id="talent-stored-charge"
-                checked={loadout.storedCharge}
-                onChange={toggleStoredCharge}
-                disabled={!chargeEquipped}
-                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                id="talent-staggering-swipes"
+                checked={loadout.staggeringSwipes}
+                onChange={toggleStaggeringSwipes}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
               />
-              <label htmlFor="talent-stored-charge" className={`flex-1 ${chargeEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
-                <div className="text-white font-semibold">{storedChargeTalentDefinition.name}</div>
-                <p className="text-gray-400 text-sm mt-1">{storedChargeTalentDefinition.description}</p>
-                <p className="text-sky-200/90 text-xs mt-2 font-mono">3 full spins · Charge damage per rotation</p>
+              <label htmlFor="talent-staggering-swipes" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{staggeringSwipesTalentDefinition.name}</div>
+                {loadout.staggeringSwipes && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{staggeringSwipesTalentDefinition.description}</p>
+                    <p className="text-sky-200/90 text-xs mt-2 font-mono">7 + 8 stagger per swing · 100 = lightning + proc</p>
+                  </>
+                )}
               </label>
             </div>
-            {!chargeEquipped && (
-              <p className="text-gray-500 text-xs mt-3 pl-7">
-                Equip <span className="text-gray-300">Charge</span> in your ability loadout at the other east pillar to enable this talent.
-              </p>
-            )}
           </div>
         )}
 
@@ -224,8 +302,12 @@ export default function TalentSelectionModal({
               />
               <label htmlFor="talent-wrathful-talons" className={`flex-1 ${reapingEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
                 <div className="text-white font-semibold">{wrathfulTalonsTalentDefinition.name}</div>
-                <p className="text-gray-400 text-sm mt-1">{wrathfulTalonsTalentDefinition.description}</p>
-                <p className="text-green-200/90 text-xs mt-2 font-mono">+40% crit chance · +100% crit damage on return arrow hit</p>
+                {loadout.wrathfulTalons && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{wrathfulTalonsTalentDefinition.description}</p>
+                    <p className="text-green-200/90 text-xs mt-2 font-mono">+40% crit chance · +100% crit damage on return arrow hit</p>
+                  </>
+                )}
               </label>
             </div>
             {!reapingEquipped && (

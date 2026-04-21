@@ -105,7 +105,7 @@ export class Movement extends Component {
     this.corruptedStartTime = 0;
     this.corruptedDuration = 0;
     this.corruptedInitialSlowPercent = 0.9; // 90% initial slow
-    this.corruptedRecoveryRate = 0.1; // 10% recovery per second
+    this.corruptedRecoveryRate = 0.2; // 10% recovery per second
 
     // Initialize Ice Beam debuff state
     this.isIcebeaming = false;
@@ -125,7 +125,7 @@ export class Movement extends Component {
     this.dashStartPosition = new Vector3(0, 0, 0);
     
     // Initialize multiple dash charges (3 charges, each with 6s cooldown)
-    this.maxDashCharges = 2;
+    this.maxDashCharges = 3;
     this.dashCharges = Array.from({ length: this.maxDashCharges }, () => ({
       isAvailable: true,
       cooldownStartTime: null
@@ -544,7 +544,7 @@ export class Movement extends Component {
     this.dashStartPosition.set(0, 0, 0);
     
     // Reset dash charges
-    this.maxDashCharges = 2;
+    this.maxDashCharges = 3;
     this.dashCharges = Array.from({ length: this.maxDashCharges }, () => ({
       isAvailable: true,
       cooldownStartTime: null
