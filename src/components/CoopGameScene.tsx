@@ -21,6 +21,7 @@ import GhoulRenderer from './enemies/GhoulRenderer';
 import ZombieRenderer from './enemies/ZombieRenderer';
 import GhoulSummonRitual from './enemies/GhoulSummonRitual';
 import TitanRenderer from './enemies/TitanRenderer';
+import StaggerProcLightning from './enemies/StaggerProcLightning';
 import WarlockProjectile from './enemies/WarlockProjectile';
 import WarlockFlameStrike from './enemies/WarlockFlameStrike';
 import Meteor from './enemies/Meteor';
@@ -28,6 +29,7 @@ import BossTeleportEffect from './enemies/BossTeleportEffect';
 import { useMultiplayer, Player, EnemyDamageMeta } from '@/contexts/MultiplayerContext';
 import { SkillPointData } from '@/utils/SkillPointSystem';
 import { AbilityLoadout, getDefaultLoadoutForWeapon } from '@/utils/weaponAbilities';
+import { shouldApplyStoredChargeTalent, shouldApplyWrathfulTalonsTalent } from '@/utils/talents';
 import { StatSystem, StatPointData } from '@/utils/StatSystem';
 import { setGlobalAgilityStatPoints } from '@/core/DamageCalculator';
 
@@ -385,6 +387,15 @@ export function CoopGameScene({
     campTypes,
     thronePortalOffer,
   } = useMultiplayer();
+
+  const talentLoadoutRef = useRef(talentLoadout);
+  const abilityLoadoutRef = useRef(abilityLoadout ?? null);
+  useEffect(() => {
+    talentLoadoutRef.current = talentLoadout;
+  }, [talentLoadout]);
+  useEffect(() => {
+    abilityLoadoutRef.current = abilityLoadout ?? null;
+  }, [abilityLoadout]);
 
   const inThroneRoom = useMemo(
     () => gameMode === 'coop' && gameStarted && !combatArenaActive,
@@ -913,6 +924,12 @@ export function CoopGameScene({
     soulType?: 'red' | 'purple' | 'green' | 'blue' | null;
   }
   const [knightDeathVortices, setKnightDeathVortices] = useState<KnightDeathVortexState[]>([]);
+
+  interface StaggerProcEffectState {
+    id: string;
+    position: Vector3;
+  }
+  const [staggerProcEffects, setStaggerProcEffects] = useState<StaggerProcEffectState[]>([]);
 
   // Shade dagger projectile state — one entry per in-flight dagger
   interface ShadeDaggerState {
@@ -1924,6 +1941,8 @@ export function CoopGameScene({
     lastAttackType?: string;
     lastAttackTime?: number;
     lastAnimationUpdate?: number;
+    /** Last remote Charge used STORED CHARGE (longer spin). */
+    runebladeStoredCharge?: boolean;
   }>>(new Map());
   
   // Perfect shot system
@@ -2199,6 +2218,7 @@ export function CoopGameScene({
         const animationData = data.animationData || {};
         const animationUpdateTime = Date.now();
         
+        const chargeStoredSpin = !!animationData.storedCharge;
         PVPStateUpdateHelpers.batchPlayerStateUpdates(setMultiplayerPlayerStates, [{
           playerId: data.playerId,
           stateUpdate: {
@@ -2210,7 +2230,8 @@ export function CoopGameScene({
             chargeProgress: animationData.chargeProgress || 0,
             lastAttackType: data.attackType,
             lastAttackTime: animationUpdateTime,
-            lastAnimationUpdate: animationUpdateTime
+            lastAnimationUpdate: animationUpdateTime,
+            ...(data.attackType === 'sword_charge_start' ? { runebladeStoredCharge: chargeStoredSpin } : {}),
           }
         }]);
           
@@ -2225,9 +2246,9 @@ export function CoopGameScene({
           
           // Special handling for sword charge attacks
           if (data.attackType === 'sword_charge_spin') {
-            // Charge spin lasts about 1 full rotation at 27.5 rotation speed
-            // (Math.PI * 2) / 27.5 / (1/60) ≈ 685ms for one full rotation
-            resetDuration = 50;
+            const SPIN_ROTATION_SPEED = 26.5;
+            const targetRotations = chargeStoredSpin ? 3 : 1.5;
+            resetDuration = (targetRotations * 2 * Math.PI) / SPIN_ROTATION_SPEED * 1000;
           } else if (data.attackType === 'sword_charge_start') {
             // Charge movement lasts about 1.5 seconds (matches ControlSystem chargeDuration)
             resetDuration = 450;
@@ -4303,6 +4324,15 @@ export function CoopGameScene({
       ]);
     };
 
+    const handleEnemyStaggerProc = (data: { enemyId: string; position: { x: number; y: number; z: number } }) => {
+      const p = new Vector3(data.position.x, data.position.y, data.position.z);
+      (window as any).audioSystem?.playLightningBoltSound(p);
+      setStaggerProcEffects(prev => [
+        ...prev,
+        { id: `stagger-proc-${data.enemyId}-${Date.now()}`, position: p.clone() },
+      ]);
+    };
+
     // How long (ms) into the shade throw animation the daggers are released.
     // 250 ms early relative to the full clip length (1500 ms) to sync with the
     // visual release point in the animation without changing the clip itself.
@@ -4382,6 +4412,7 @@ export function CoopGameScene({
     socket.on('templar-attack-telegraph', handleTemplarAttackTelegraph);
     socket.on('templar-attack', handleTemplarAttack);
     socket.on('enemy-status-effect', handleEnemyStatusEffect);
+    socket.on('enemy-stagger-proc', handleEnemyStaggerProc);
     socket.on('knight-death-vortex', handleKnightDeathVortex);
     socket.on('shade-attack-telegraph', handleShadeAttackTelegraph);
 
@@ -4628,6 +4659,7 @@ export function CoopGameScene({
       templarPendingMissTimers.current.forEach(clearTimeout);
       templarPendingMissTimers.current.clear();
       socket.off('enemy-status-effect', handleEnemyStatusEffect);
+      socket.off('enemy-stagger-proc', handleEnemyStaggerProc);
       socket.off('knight-death-vortex', handleKnightDeathVortex);
       socket.off('shade-attack-telegraph', handleShadeAttackTelegraph);
       socket.off('warlock-attack-telegraph', handleWarlockAttackTelegraph);
@@ -5642,7 +5674,11 @@ export function CoopGameScene({
       broadcastPlayerAbility('charge', position, direction);
       // Also broadcast as attack for animation
       broadcastPlayerAttack('sword_charge_start', position, direction, {
-        isSwordCharging: true
+        isSwordCharging: true,
+        storedCharge: shouldApplyStoredChargeTalent(
+          talentLoadoutRef.current,
+          abilityLoadoutRef.current,
+        ),
       });
     });
 
@@ -5909,6 +5945,7 @@ export function CoopGameScene({
       broadcastPlayerAbility('wraith_strike', position, direction, undefined, {
         wrathfulStrike: !!meta?.wrathfulStrike,
         infestedStrike: !!meta?.infestedStrike,
+        staggeringStrike: !!meta?.staggeringStrike,
       });
     });
 
@@ -6124,6 +6161,8 @@ export function CoopGameScene({
           isStealthing={controlSystemRef.current?.getIsStealthing() || false}
           isInvisible={controlSystemRef.current?.getIsInvisible() || false}
           playerLevel={playerLevel}
+          wrathfulTalonsReturnCrit={shouldApplyWrathfulTalonsTalent(talentLoadout, abilityLoadout ?? null)}
+          runebladeStoredCharge={shouldApplyStoredChargeTalent(talentLoadout, abilityLoadout ?? null)}
           onDamageNumbersReady={handleDamageNumbersReady}
           combatSystem={engineRef.current?.getWorld().getSystem(require('@/systems/CombatSystem').CombatSystem)}
           onHeal={(amount: number) => {
@@ -6195,7 +6234,8 @@ export function CoopGameScene({
             camera.getWorldDirection(direction);
             direction.normalize();
             broadcastPlayerAttack('sword_charge_spin', playerPosition, direction, {
-              isSpinning: true
+              isSpinning: true,
+              storedCharge: shouldApplyStoredChargeTalent(talentLoadout, abilityLoadout ?? null),
             });
           }}
           onDeflectComplete={() => {
@@ -6270,7 +6310,8 @@ export function CoopGameScene({
           isDeathGrasping: false,
           isWraithStriking: false,
           isCorruptedAuraActive: false,
-          isFrozen: false
+          isFrozen: false,
+          runebladeStoredCharge: false,
         };
 
         // Get the real-time position ref for this enemy player
@@ -6323,6 +6364,7 @@ export function CoopGameScene({
                 isDead={isPlayerDead}
                 rotation={player.rotation}
                 isLocalPlayer={false}
+                runebladeStoredCharge={playerState.runebladeStoredCharge ?? false}
                 onBowRelease={() => {}}
                 onScytheSwingComplete={() => {}}
                 onSwordSwingComplete={() => {}}
@@ -6479,6 +6521,7 @@ export function CoopGameScene({
             soulType={soulForKnight}
             campType={enemy.type === 'training-dummy' ? 'yellow' : enemy.campType}
             showMeleeRangeRing={enemy.type !== 'training-dummy'}
+            staggerBuildup={enemy.staggerBuildup ?? 0}
           />
         );
       })}
@@ -6496,6 +6539,14 @@ export function CoopGameScene({
         />
       ))}
 
+      {staggerProcEffects.map(fx => (
+        <StaggerProcLightning
+          key={fx.id}
+          position={fx.position}
+          onComplete={() => setStaggerProcEffects(prev => prev.filter(e => e.id !== fx.id))}
+        />
+      ))}
+
       {/* Shades (Co-op Mode) — ranged throw attackers */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'shade') return null;
@@ -6510,6 +6561,7 @@ export function CoopGameScene({
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
             campType={enemy.campType}
+            staggerBuildup={enemy.staggerBuildup ?? 0}
           />
         );
       })}
@@ -6561,6 +6613,7 @@ export function CoopGameScene({
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
             campType={enemy.campType}
+            staggerBuildup={enemy.staggerBuildup ?? 0}
           />
         );
       })}
@@ -6579,6 +6632,7 @@ export function CoopGameScene({
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
             campType={enemy.campType}
+            staggerBuildup={enemy.staggerBuildup ?? 0}
           />
         );
       })}
@@ -6636,6 +6690,7 @@ export function CoopGameScene({
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
             campType={enemy.campType}
+            staggerBuildup={enemy.staggerBuildup ?? 0}
           />
         );
       })}
@@ -6684,6 +6739,7 @@ export function CoopGameScene({
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
             campType={enemy.campType}
+            staggerBuildup={enemy.staggerBuildup ?? 0}
           />
         );
       })}
@@ -6710,6 +6766,7 @@ export function CoopGameScene({
             health={enemy.health}
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
+            staggerBuildup={enemy.staggerBuildup ?? 0}
           />
         );
       })}
@@ -6727,6 +6784,7 @@ export function CoopGameScene({
             health={enemy.health}
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
+            staggerBuildup={enemy.staggerBuildup ?? 0}
           />
         );
       })}
@@ -6752,6 +6810,7 @@ export function CoopGameScene({
             health={enemy.health}
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
+            staggerBuildup={enemy.staggerBuildup ?? 0}
           />
         );
       })}

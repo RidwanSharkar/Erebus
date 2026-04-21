@@ -24,6 +24,9 @@ import {
   TalentLoadout,
   createDefaultTalentLoadout,
   isWraithStrikeInLoadout,
+  shouldApplyStoredChargeTalent as computeStoredChargeTalentActive,
+  shouldApplyWrathfulTalonsTalent as computeWrathfulTalonsTalentActive,
+  STAGGERING_STRIKE_WRAITH_STAGGER_ADD,
   WRATH_STRIKE_CRIT_CHANCE_ADD,
   WRATH_STRIKE_CRIT_DAMAGE_MULT_ADD,
 } from '@/utils/talents';
@@ -139,7 +142,7 @@ export class ControlSystem extends System {
   private onWraithStrikeCallback?: (
     position: Vector3,
     direction: Vector3,
-    meta?: { wrathfulStrike: boolean; infestedStrike: boolean },
+    meta?: { wrathfulStrike: boolean; infestedStrike: boolean; staggeringStrike?: boolean },
   ) => void;
 
   // Callback for creating Sabre Reaper Mist effect
@@ -586,6 +589,14 @@ export class ControlSystem extends System {
       this.currentWeapon === WeaponType.BOW &&
       this.inputManager.isMouseButtonPressed(0);
 
+    const isRunebladeLmbHeld =
+      this.currentWeapon === WeaponType.RUNEBLADE &&
+      this.inputManager.isMouseButtonPressed(0);
+
+    const isSpearLmbHeld =
+      this.currentWeapon === WeaponType.SPEAR &&
+      this.inputManager.isMouseButtonPressed(0);
+
     movement.isAttackSlowed =
       // Sword — ColossusStrike duration
       this.isColossusStriking ||
@@ -593,6 +604,9 @@ export class ControlSystem extends System {
       this.isSmiting ||
       // Bow — LMB charged shot and Tempest Rounds rapidfire, plus Q/E/R abilities
       isBowLmbAttacking ||
+      // Runeblade / Spear — LMB held during primary melee (matches bow / scythe entropic stream)
+      isRunebladeLmbHeld ||
+      isSpearLmbHeld ||
       this.isBarrageCharging ||
       this.isCobraShotCharging ||
       this.isViperStingCharging ||
@@ -2271,7 +2285,7 @@ export class ControlSystem extends System {
     callback: (
       position: Vector3,
       direction: Vector3,
-      meta?: { wrathfulStrike: boolean; infestedStrike: boolean },
+      meta?: { wrathfulStrike: boolean; infestedStrike: boolean; staggeringStrike?: boolean },
     ) => void,
   ): void {
     this.onWraithStrikeCallback = callback;
@@ -3079,6 +3093,7 @@ export class ControlSystem extends System {
       this.onWraithStrikeCallback(position, direction, {
         wrathfulStrike: this.shouldApplyWrathStrikeTalent(),
         infestedStrike: this.shouldApplyInfestedStrikeTalent(),
+        staggeringStrike: this.shouldApplyStaggeringStrikeTalent(),
       });
     }
 
@@ -3148,6 +3163,7 @@ export class ControlSystem extends System {
           this.playerEntity?.userData?.playerId,
           critPreset,
           this.shouldApplyInfestedStrikeTalent(),
+          this.shouldApplyStaggeringStrikeTalent() ? STAGGERING_STRIKE_WRAITH_STAGGER_ADD : undefined,
         );
         hitCount++;
         
@@ -4506,6 +4522,20 @@ export class ControlSystem extends System {
 
   private shouldApplyInfestedStrikeTalent(): boolean {
     return this.talentLoadout.infestedStrike && isWraithStrikeInLoadout(this.abilityLoadout);
+  }
+
+  private shouldApplyStaggeringStrikeTalent(): boolean {
+    return this.talentLoadout.staggeringStrike && isWraithStrikeInLoadout(this.abilityLoadout);
+  }
+
+  /** STORED CHARGE: Runeblade Charge spin count and per-rotation damage (see Runeblade + talents). */
+  public shouldApplyStoredChargeTalentActive(): boolean {
+    return computeStoredChargeTalentActive(this.talentLoadout, this.abilityLoadout);
+  }
+
+  /** Wrathful Talons: Reaping Talons return-arrow preset crit (applied in `useViperSting`). */
+  public shouldApplyWrathfulTalonsTalentActive(): boolean {
+    return computeWrathfulTalonsTalentActive(this.talentLoadout, this.abilityLoadout);
   }
 
   /**

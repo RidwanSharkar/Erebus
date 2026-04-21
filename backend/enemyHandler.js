@@ -1,7 +1,7 @@
 function handleEnemyEvents(socket, gameRooms) {
   // Handle enemy damage from players
   socket.on('enemy-damage', (data) => {
-    const { roomId, enemyId, damage, sourcePlayerId, damageType, infestedStrike } = data;
+    const { roomId, enemyId, damage, sourcePlayerId, damageType, infestedStrike, staggerToAdd } = data;
 
     console.log(`⚔️ Received enemy-damage: room=${roomId}, enemy=${enemyId}, damage=${damage}, source=${sourcePlayerId || socket.id}`);
 
@@ -14,10 +14,15 @@ function handleEnemyEvents(socket, gameRooms) {
     // Use sourcePlayerId if provided, otherwise fall back to socket.id for direct player damage
     const actualSourcePlayerId = sourcePlayerId || socket.id;
     const player = room.players.get(actualSourcePlayerId);
-    const hitMeta =
-      damageType === 'wraith_strike' || infestedStrike
-        ? { damageType: damageType || undefined, infestedStrike: !!infestedStrike }
-        : null;
+    let hitMeta = null;
+    if (damageType === 'wraith_strike' || infestedStrike) {
+      hitMeta = { damageType: damageType || undefined, infestedStrike: !!infestedStrike };
+      if (damageType === 'wraith_strike' && typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
+    } else if (damageType === 'stagger_break') {
+      hitMeta = { damageType: 'stagger_break' };
+    }
     room.damageEnemy(enemyId, damage, actualSourcePlayerId, player, hitMeta);
   });
 

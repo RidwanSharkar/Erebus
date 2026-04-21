@@ -102,6 +102,10 @@ interface DragonRendererProps {
   combatSystem?: any;
   hideBody?: boolean;
   playerLevel?: number;
+  /** Wrathful Talons: Reaping Talons return arrow uses preset crit when local player has talent. */
+  wrathfulTalonsReturnCrit?: boolean;
+  /** STORED CHARGE: Runeblade Charge — 3 spin rotations + per-rotation damage. */
+  runebladeStoredCharge?: boolean;
 }
 
 export default function DragonRenderer({
@@ -170,7 +174,9 @@ export default function DragonRenderer({
   onHeal = () => {},
   purchasedItems = [],
   hideBody = false,
-  playerLevel = 1
+  playerLevel = 1,
+  wrathfulTalonsReturnCrit = false,
+  runebladeStoredCharge = false,
 }: DragonRendererProps) {
   const mountRef = useRef(false);
   if (!mountRef.current) {
@@ -493,6 +499,7 @@ export default function DragonRenderer({
           purchasedItems={purchasedItems}
           hideBody={hideBody}
           playerLevel={playerLevel}
+          runebladeStoredCharge={runebladeStoredCharge}
         />
       </group>
       
@@ -546,6 +553,7 @@ export default function DragonRenderer({
             }
           }}
           localSocketId="local-player" // For single-player mode, use a fixed ID
+          wrathfulTalonsReturnCrit={wrathfulTalonsReturnCrit}
         />
       )}
     </>

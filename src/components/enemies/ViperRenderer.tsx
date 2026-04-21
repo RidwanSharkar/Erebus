@@ -8,6 +8,7 @@ import ViperModel from './ViperModel';
 import CubeSoulEffect from './CubeSoulEffect';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
+import EnemyStaggerBar from './EnemyStaggerBar';
 
 interface ViperRendererProps {
   id: string;
@@ -17,6 +18,7 @@ interface ViperRendererProps {
   maxHealth: number;
   isDying?: boolean;
   campType?: string;
+  staggerBuildup?: number;
 }
 
 // How long isAttacking stays true — used to suppress walk state during the bow cycle.
@@ -34,6 +36,7 @@ export default function ViperRenderer({
   maxHealth,
   isDying = false,
   campType,
+  staggerBuildup = 0,
 }: ViperRendererProps) {
   const theme = campHpTheme(campType);
   const { socket } = useMultiplayer();
@@ -165,6 +168,7 @@ export default function ViperRenderer({
             >
               {`🐍 ${Math.ceil(health)}/${maxHealth}`}
             </Text>
+            <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}
       </Billboard>

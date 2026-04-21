@@ -10,6 +10,7 @@ import CubeSoulEffect from './CubeSoulEffect';
 import BossTeleportEffect from './BossTeleportEffect';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
+import EnemyStaggerBar from './EnemyStaggerBar';
 
 interface ShadeRendererProps {
   id: string;
@@ -19,6 +20,7 @@ interface ShadeRendererProps {
   maxHealth: number;
   isDying?: boolean;
   campType?: string;
+  staggerBuildup?: number;
 }
 
 // How long the throw animation plays before blending back to idle/walk.
@@ -39,6 +41,7 @@ export default function ShadeRenderer({
   maxHealth,
   isDying = false,
   campType,
+  staggerBuildup = 0,
 }: ShadeRendererProps) {
   const theme = campHpTheme(campType);
   const { socket } = useMultiplayer();
@@ -247,6 +250,7 @@ export default function ShadeRenderer({
             >
               {`👻 ${Math.ceil(health)}/${maxHealth}`}
             </Text>
+            <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}
       </Billboard>

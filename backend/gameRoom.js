@@ -121,6 +121,7 @@ class GameRoom {
       isDying: false,
       soulType: 'yellow',
       campType: 'yellow',
+      staggerBuildup: 0,
     };
     this.enemies.set(dummy.id, dummy);
     if (this.io) {
@@ -355,6 +356,7 @@ class GameRoom {
       isDying:   false,
       damage:    0, // Attack logic added later
       moveSpeed: 1.8,
+      staggerBuildup: 0,
     };
 
     this.enemies.set(titan.id, titan);
@@ -376,7 +378,14 @@ class GameRoom {
     };
 
     const ts = Date.now();
-    const base = { position: { x: pos.x, y: 0, z: pos.z }, rotation: 0, isDying: false, campIndex, campType: campDef.color };
+    const base = {
+      position: { x: pos.x, y: 0, z: pos.z },
+      rotation: 0,
+      isDying: false,
+      campIndex,
+      campType: campDef.color,
+      staggerBuildup: 0,
+    };
 
     if (type === 'knight') {
       const soulType = campDef.knightSoulType;
@@ -601,6 +610,52 @@ class GameRoom {
         wasKilled: result.wasKilled,
         timestamp: Date.now()
       });
+    }
+
+    // Staggering Strike: build stagger on Wraith Strike hits; at 100, proc damage + stun + VFX
+    if (
+      !result.wasKilled &&
+      hitMeta &&
+      hitMeta.damageType === 'wraith_strike' &&
+      typeof hitMeta.staggerToAdd === 'number' &&
+      hitMeta.staggerToAdd > 0 &&
+      !enemy.isDying
+    ) {
+      const noStaggerTypes = new Set(['boss', 'boss-skeleton', 'player-zombie']);
+      if (!noStaggerTypes.has(enemy.type)) {
+        if (enemy.staggerBuildup == null) enemy.staggerBuildup = 0;
+        enemy.staggerBuildup += hitMeta.staggerToAdd;
+        const STAGGER_CAP = 100;
+        const PROC_DAMAGE = 125;
+        let procEnemy = this.enemies.get(enemyId);
+        while (
+          procEnemy &&
+          !procEnemy.isDying &&
+          typeof procEnemy.staggerBuildup === 'number' &&
+          procEnemy.staggerBuildup >= STAGGER_CAP
+        ) {
+          procEnemy.staggerBuildup -= STAGGER_CAP;
+          this.damageEnemy(enemyId, PROC_DAMAGE, fromPlayerId, player, { damageType: 'stagger_break' });
+          this.applyStatusEffect(enemyId, 'stun', 3000);
+          procEnemy = this.enemies.get(enemyId);
+          if (this.io && procEnemy) {
+            this.io.to(this.roomId).emit('enemy-stagger-proc', {
+              enemyId,
+              position: { x: procEnemy.position.x, y: procEnemy.position.y, z: procEnemy.position.z },
+              timestamp: Date.now(),
+            });
+          }
+        }
+        const syncEnemy = this.enemies.get(enemyId);
+        if (this.io && syncEnemy && !syncEnemy.isDying) {
+          if (syncEnemy.staggerBuildup == null) syncEnemy.staggerBuildup = 0;
+          this.io.to(this.roomId).emit('enemy-stagger-updated', {
+            enemyId,
+            stagger: syncEnemy.staggerBuildup,
+            timestamp: Date.now(),
+          });
+        }
+      }
     }
 
     if (result.wasKilled) {
@@ -1202,7 +1257,8 @@ class GameRoom {
       health: maxHealth,
       maxHealth: maxHealth,
       spawnedAt: Date.now(),
-      isDying: false
+      isDying: false,
+      staggerBuildup: 0,
     };
 
     this.enemies.set(bossId, bossData);

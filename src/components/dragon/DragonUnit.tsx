@@ -36,6 +36,8 @@ interface DragonUnitProps {
   purchasedItems?: string[]; // Purchased cosmetic items
   /** Co-op / progression level — crest gains an outer layer at 2+. */
   playerLevel?: number;
+  /** STORED CHARGE talent — Runeblade Charge spin + damage. */
+  runebladeStoredCharge?: boolean;
   onBowRelease?: (finalProgress: number, isPerfectShot?: boolean) => void;
   onScytheSwingComplete?: () => void;
   onSwordSwingComplete?: () => void;
@@ -213,7 +215,8 @@ export default function DragonUnit({
   combatSystem,
   purchasedItems = [],
   hideBody = false,
-  playerLevel = 1
+  playerLevel = 1,
+  runebladeStoredCharge = false,
 }: DragonUnitProps) {
   
   const groupRef = useRef<Group>(null);
@@ -386,6 +389,7 @@ export default function DragonUnit({
           dragonGroupRef={groupRef}
           playerEntityId={entityId}
           realTimePositionRef={realTimePositionRef}
+          storedCharge={runebladeStoredCharge}
         />
       );
     } else if (currentWeapon === WeaponType.SPEAR) {

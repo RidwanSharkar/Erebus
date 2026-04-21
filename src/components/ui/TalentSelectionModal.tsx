@@ -7,8 +7,13 @@ import type { TalentLoadout } from '@/utils/talents';
 import {
   createDefaultTalentLoadout,
   infestedStrikeTalentDefinition,
+  isChargeInLoadout,
+  isReapingTalonsInLoadout,
   isWraithStrikeInLoadout,
+  staggeringStrikeTalentDefinition,
+  storedChargeTalentDefinition,
   wrathStrikeTalentDefinition,
+  wrathfulTalonsTalentDefinition,
 } from '@/utils/talents';
 
 interface TalentSelectionModalProps {
@@ -50,10 +55,15 @@ export default function TalentSelectionModal({
   const merged: TalentLoadout = {
     wrathStrike: initialTalentLoadout?.wrathStrike ?? def.wrathStrike,
     infestedStrike: initialTalentLoadout?.infestedStrike ?? def.infestedStrike,
+    staggeringStrike: initialTalentLoadout?.staggeringStrike ?? def.staggeringStrike,
+    wrathfulTalons: initialTalentLoadout?.wrathfulTalons ?? def.wrathfulTalons,
+    storedCharge: initialTalentLoadout?.storedCharge ?? def.storedCharge,
   };
   const [loadout, setLoadout] = useState<TalentLoadout>(() => merged);
 
   const wraithEquipped = useMemo(() => isWraithStrikeInLoadout(abilityLoadout), [abilityLoadout]);
+  const reapingEquipped = useMemo(() => isReapingTalonsInLoadout(abilityLoadout), [abilityLoadout]);
+  const chargeEquipped = useMemo(() => isChargeInLoadout(abilityLoadout), [abilityLoadout]);
   const wc = WEAPON_COLORS[selectedWeapon];
 
   const toggleWrath = useCallback(() => {
@@ -65,6 +75,21 @@ export default function TalentSelectionModal({
     if (!wraithEquipped) return;
     setLoadout((prev) => ({ ...prev, infestedStrike: !prev.infestedStrike }));
   }, [wraithEquipped]);
+
+  const toggleStaggering = useCallback(() => {
+    if (!wraithEquipped) return;
+    setLoadout((prev) => ({ ...prev, staggeringStrike: !prev.staggeringStrike }));
+  }, [wraithEquipped]);
+
+  const toggleWrathfulTalons = useCallback(() => {
+    if (!reapingEquipped) return;
+    setLoadout((prev) => ({ ...prev, wrathfulTalons: !prev.wrathfulTalons }));
+  }, [reapingEquipped]);
+
+  const toggleStoredCharge = useCallback(() => {
+    if (!chargeEquipped) return;
+    setLoadout((prev) => ({ ...prev, storedCharge: !prev.storedCharge }));
+  }, [chargeEquipped]);
 
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] overflow-y-auto py-4">
@@ -127,6 +152,89 @@ export default function TalentSelectionModal({
             </label>
           </div>
         </div>
+
+        <div
+          className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${wraithEquipped ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
+          `}
+        >
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="talent-staggering-strike"
+              checked={loadout.staggeringStrike}
+              onChange={toggleStaggering}
+              disabled={!wraithEquipped}
+              className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+            />
+            <label htmlFor="talent-staggering-strike" className={`flex-1 ${wraithEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+              <div className="text-white font-semibold">{staggeringStrikeTalentDefinition.name}</div>
+              <p className="text-gray-400 text-sm mt-1">{staggeringStrikeTalentDefinition.description}</p>
+              <p className="text-sky-200/90 text-xs mt-2 font-mono">+40 stagger · 100 = lightning + 125 dmg + 3s stun</p>
+            </label>
+          </div>
+        </div>
+
+        {selectedWeapon === WeaponType.RUNEBLADE && (
+          <div
+            className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${chargeEquipped ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
+          `}
+          >
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="talent-stored-charge"
+                checked={loadout.storedCharge}
+                onChange={toggleStoredCharge}
+                disabled={!chargeEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+              />
+              <label htmlFor="talent-stored-charge" className={`flex-1 ${chargeEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                <div className="text-white font-semibold">{storedChargeTalentDefinition.name}</div>
+                <p className="text-gray-400 text-sm mt-1">{storedChargeTalentDefinition.description}</p>
+                <p className="text-sky-200/90 text-xs mt-2 font-mono">3 full spins · Charge damage per rotation</p>
+              </label>
+            </div>
+            {!chargeEquipped && (
+              <p className="text-gray-500 text-xs mt-3 pl-7">
+                Equip <span className="text-gray-300">Charge</span> in your ability loadout at the other east pillar to enable this talent.
+              </p>
+            )}
+          </div>
+        )}
+
+        {selectedWeapon === WeaponType.BOW && (
+          <div
+            className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${reapingEquipped ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
+          `}
+          >
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="talent-wrathful-talons"
+                checked={loadout.wrathfulTalons}
+                onChange={toggleWrathfulTalons}
+                disabled={!reapingEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+              />
+              <label htmlFor="talent-wrathful-talons" className={`flex-1 ${reapingEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                <div className="text-white font-semibold">{wrathfulTalonsTalentDefinition.name}</div>
+                <p className="text-gray-400 text-sm mt-1">{wrathfulTalonsTalentDefinition.description}</p>
+                <p className="text-green-200/90 text-xs mt-2 font-mono">+40% crit chance · +100% crit damage on return arrow hit</p>
+              </label>
+            </div>
+            {!reapingEquipped && (
+              <p className="text-gray-500 text-xs mt-3 pl-7">
+                Equip <span className="text-gray-300">Reaping Talons</span> in your ability loadout at the other east pillar to enable this talent.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="flex justify-center gap-3">
           <button

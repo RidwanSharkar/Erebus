@@ -40,6 +40,8 @@ export interface Player {
 export interface EnemyDamageMeta {
   damageType?: string;
   infestedStrike?: boolean;
+  /** Staggering Strike: server accumulates stagger on `wraith_strike` hits. */
+  staggerToAdd?: number;
 }
 
 /** Server enemy; `type` includes e.g. `knight`, `training-dummy` (throne prep). */
@@ -57,6 +59,8 @@ export interface Enemy {
   /** INFESTED STRIKE ally zombie */
   ownerPlayerId?: string;
   expireAt?: number;
+  /** Staggering Strike buildup (0–100), server-authoritative. */
+  staggerBuildup?: number;
 }
 
 export interface DroppedItem {
@@ -185,7 +189,7 @@ interface MultiplayerContextType {
   updatePlayerPosition: (position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: { x: number; y: number; z: number }) => void;
   updatePlayerWeapon: (weapon: WeaponType, subclass?: WeaponSubclass) => void;
   updatePlayerHealth: (health: number, maxHealth?: number) => void;
-  broadcastPlayerAttack: (attackType: string, position: { x: number; y: number; z: number }, direction: { x: number; y: number; z: number }, animationData?: { comboStep?: 1 | 2 | 3; chargeProgress?: number; isSpinning?: boolean; isPerfectShot?: boolean; damage?: number; targetId?: number; hitPosition?: { x: number; y: number; z: number }; isSwordCharging?: boolean }) => void;
+  broadcastPlayerAttack: (attackType: string, position: { x: number; y: number; z: number }, direction: { x: number; y: number; z: number }, animationData?: { comboStep?: 1 | 2 | 3; chargeProgress?: number; isSpinning?: boolean; isPerfectShot?: boolean; damage?: number; targetId?: number; hitPosition?: { x: number; y: number; z: number }; isSwordCharging?: boolean; storedCharge?: boolean }) => void;
   broadcastPlayerAbility: (abilityType: string, position: { x: number; y: number; z: number }, direction?: { x: number; y: number; z: number }, target?: string, extraData?: any) => void;
   broadcastPlayerEffect: (effect: any) => void;
   broadcastPlayerDamage: (targetPlayerId: string, damage: number, damageType?: string, isCritical?: boolean) => void;
@@ -437,7 +441,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       const enemiesMap = new Map();
       if (data.enemies) {
         data.enemies.forEach((enemy: Enemy) => {
-          enemiesMap.set(enemy.id, enemy);
+          enemiesMap.set(enemy.id, { ...enemy, staggerBuildup: enemy.staggerBuildup ?? 0 });
         });
       }
       setEnemies(enemiesMap);
@@ -563,7 +567,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     addEventHandler('enemy-spawned', (data) => {
       setEnemies(prev => {
         const updated = new Map(prev);
-        updated.set(data.enemy.id, data.enemy);
+        const e = data.enemy as Enemy;
+        updated.set(e.id, { ...e, staggerBuildup: e.staggerBuildup ?? 0 });
         return updated;
       });
     });
@@ -595,6 +600,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           }
         }
         // Silently ignore if enemy not found - it may have been removed already (died)
+        return updated;
+      });
+    });
+
+    addEventHandler('enemy-stagger-updated', (data: { enemyId: string; stagger: number }) => {
+      setEnemies(prev => {
+        const updated = new Map(prev);
+        const enemy = updated.get(data.enemyId);
+        if (enemy) {
+          updated.set(data.enemyId, { ...enemy, staggerBuildup: data.stagger });
+        }
         return updated;
       });
     });
@@ -708,7 +724,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setEnemies((prev) => {
           const next = new Map(prev);
           for (const e of data.enemies as Enemy[]) {
-            next.set(e.id, e);
+            next.set(e.id, { ...e, staggerBuildup: e.staggerBuildup ?? 0 });
           }
           return next;
         });
@@ -1007,7 +1023,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const broadcastPlayerAttack = useCallback((attackType: string, position: { x: number; y: number; z: number }, direction: { x: number; y: number; z: number }, animationData?: { comboStep?: 1 | 2 | 3; chargeProgress?: number; isSpinning?: boolean; isPerfectShot?: boolean; damage?: number; targetId?: number; hitPosition?: { x: number; y: number; z: number }; isSwordCharging?: boolean }) => {
+  const broadcastPlayerAttack = useCallback((attackType: string, position: { x: number; y: number; z: number }, direction: { x: number; y: number; z: number }, animationData?: { comboStep?: 1 | 2 | 3; chargeProgress?: number; isSpinning?: boolean; isPerfectShot?: boolean; damage?: number; targetId?: number; hitPosition?: { x: number; y: number; z: number }; isSwordCharging?: boolean; storedCharge?: boolean }) => {
     if (socket && currentRoomId) {
       socket.emit('player-attack', {
         roomId: currentRoomId,
@@ -1052,6 +1068,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         sourcePlayerId: sourcePlayerId || socket.id, // Always send the player ID for aggro tracking
         ...(meta?.damageType !== undefined ? { damageType: meta.damageType } : {}),
         ...(meta?.infestedStrike ? { infestedStrike: true } : {}),
+        ...(meta?.staggerToAdd != null && meta.staggerToAdd > 0 ? { staggerToAdd: meta.staggerToAdd } : {}),
       });
     }
   }, [socket, currentRoomId]);

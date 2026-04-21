@@ -7,6 +7,7 @@ import { Billboard, Text } from '@react-three/drei';
 import GhoulModel from './GhoulModel';
 import EnemyMeleeAttackRangeRing, { GHOUL_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import EnemyStaggerBar from './EnemyStaggerBar';
 
 interface GhoulRendererProps {
   id: string;
@@ -15,6 +16,7 @@ interface GhoulRendererProps {
   health: number;
   maxHealth: number;
   isDying?: boolean;
+  staggerBuildup?: number;
 }
 
 const ATTACK_DURATION  = 1200; // ms — matches ghoul attack clip; backend `meleeLockUntil` uses the same window
@@ -30,6 +32,7 @@ export default function GhoulRenderer({
   health,
   maxHealth,
   isDying = false,
+  staggerBuildup = 0,
 }: GhoulRendererProps) {
   const { socket } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
@@ -170,6 +173,7 @@ export default function GhoulRenderer({
             >
               {`💀 ${Math.ceil(health)}/${maxHealth}`}
             </Text>
+            <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}
       </Billboard>

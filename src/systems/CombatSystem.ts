@@ -26,6 +26,8 @@ interface DamageEvent {
   isCritical?: boolean; // Whether this damage was a critical hit
   /** Co-op routing: Infested Strike talent — only with damageType `wraith_strike`. */
   infestedStrike?: boolean;
+  /** Co-op routing: Staggering Strike talent — only with damageType `wraith_strike`. */
+  staggerToAdd?: number;
 }
 
 interface HealEvent {
@@ -53,7 +55,7 @@ export class CombatSystem extends System {
     enemyId: string,
     damage: number,
     sourcePlayerId?: string,
-    meta?: { damageType?: string; infestedStrike?: boolean },
+    meta?: { damageType?: string; infestedStrike?: boolean; staggerToAdd?: number },
   ) => void;
   
   // PVP damage callback for routing player damage to server
@@ -108,7 +110,7 @@ export class CombatSystem extends System {
       enemyId: string,
       damage: number,
       sourcePlayerId?: string,
-      meta?: { damageType?: string; infestedStrike?: boolean },
+      meta?: { damageType?: string; infestedStrike?: boolean; staggerToAdd?: number },
     ) => void,
   ): void {
     this.onEnemyDamageCallback = callback;
@@ -289,6 +291,9 @@ export class CombatSystem extends System {
           ? {
               damageType: 'wraith_strike' as const,
               infestedStrike: damageEvent.infestedStrike === true,
+              ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
+                ? { staggerToAdd: damageEvent.staggerToAdd }
+                : {}),
             }
           : undefined;
       this.onEnemyDamageCallback(serverEnemyId, actualDamage, finalSourcePlayerId, routeMeta);
@@ -1075,6 +1080,7 @@ export class CombatSystem extends System {
     sourcePlayerId?: string,
     isCritical?: boolean,
     infestedStrike?: boolean,
+    staggerToAdd?: number,
   ): void {
     this.damageQueue.push({
       target,
@@ -1085,6 +1091,7 @@ export class CombatSystem extends System {
       sourcePlayerId,
       isCritical,
       infestedStrike,
+      staggerToAdd,
     });
   }
 

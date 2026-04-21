@@ -77,6 +77,8 @@ interface RunebladeProps {
   dragonGroupRef?: React.RefObject<Group>; // Reference to dragon's group for real-time positioning
   playerEntityId?: number; // Player's entity ID to prevent self-damage
   realTimePositionRef?: React.RefObject<Vector3>; // Player position during charge (matches Sword)
+  /** STORED CHARGE talent: 3 full post-dash spins + damage each full rotation. */
+  storedCharge?: boolean;
 }
 
 export default function Runeblade({
@@ -109,7 +111,8 @@ export default function Runeblade({
   playerRotation,
   dragonGroupRef,
   playerEntityId,
-  realTimePositionRef
+  realTimePositionRef,
+  storedCharge = false,
 }: RunebladeProps) {
   // Color scheme based on corrupted aura state
   const primaryColor = isCorruptedAuraActive ? new Color("#ffaa00") : new Color(0x1097B5);
@@ -133,7 +136,7 @@ export default function Runeblade({
   const chargeSpinRotation = useRef(0);
   const chargeSpinStartTime = useRef<number | null>(null);
   const isChargeSpinning = useRef(false);
-  const shouldStartSpin = useRef(false); 
+  const shouldStartSpin = useRef(false);
   const basePosition = [-1.18, 0.675, 0.675] as const; // POSITIONING
 
   // Chain Lightning Sparks
@@ -240,11 +243,44 @@ export default function Runeblade({
 
     // ── Charge: same flow as Sword (dash pose → movement phase → orbital spin → onChargeComplete)
     if (isChargeSpinning.current) {
-      const TARGET_ROTATIONS = 1.5;
+      const TARGET_ROTATIONS = storedCharge ? 3 : 1.5;
       const MAX_ROTATION = TARGET_ROTATIONS * Math.PI * 2;
       const SPIN_ROTATION_SPEED = 26.5;
 
+      const prevSpinAngle = chargeSpinRotation.current;
       chargeSpinRotation.current += delta * SPIN_ROTATION_SPEED;
+      const currSpinAngle = chargeSpinRotation.current;
+
+      if (storedCharge) {
+        const TAU = Math.PI * 2;
+        const CHARGE_SPIN_DAMAGE = 70;
+        const CHARGE_SPIN_RADIUS = 2.5;
+        const prevFloor = Math.floor(prevSpinAngle / TAU);
+        const currFloor = Math.floor(currSpinAngle / TAU);
+        if (currFloor > prevFloor && enemyData.length > 0 && onHit) {
+          const currentPosition = realTimePositionRef?.current || playerPosition;
+          if (currentPosition) {
+            for (let f = prevFloor + 1; f <= currFloor; f++) {
+              if (f < 1 || f > 3) continue;
+              for (const enemy of enemyData) {
+                if (enemy.health <= 0) continue;
+                const distance = currentPosition.distanceTo(enemy.position);
+                if (distance <= CHARGE_SPIN_RADIUS) {
+                  onHit(enemy.id, CHARGE_SPIN_DAMAGE);
+                  if (setDamageNumbers && nextDamageNumberId) {
+                    setDamageNumbers(prev => [...prev, {
+                      id: nextDamageNumberId.current++,
+                      damage: CHARGE_SPIN_DAMAGE,
+                      position: enemy.position.clone(),
+                      isCritical: false,
+                    }]);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
 
       if (chargeSpinRotation.current >= MAX_ROTATION) {
         chargeSpinRotation.current = 0;
@@ -258,7 +294,7 @@ export default function Runeblade({
         return;
       }
 
-      const angle = chargeSpinRotation.current;
+      const angle = currSpinAngle;
       const orbitRadius = 1.125;
       const orbitalX = calculationCache.getTrigCalculation('cos', angle) * orbitRadius;
       const orbitalZ = calculationCache.getTrigCalculation('sin', angle) * orbitRadius;

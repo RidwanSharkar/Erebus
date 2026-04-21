@@ -14,7 +14,7 @@ interface ViperStingManagerProps {
     health: number;
     isDying?: boolean;
   }>;
-  onHit: (targetId: string, damage: number) => void;
+  onHit: (targetId: string, damage: number, isCritical?: boolean) => void;
   setDamageNumbers: React.Dispatch<React.SetStateAction<Array<{
     id: number;
     damage: number;
@@ -41,6 +41,7 @@ interface ViperStingManagerProps {
     position: { x: number; y: number; z: number };
     health: number;
   }>;
+  wrathfulTalonsReturnCrit?: boolean;
 }
 
 interface SoulStealEffect {
@@ -89,7 +90,8 @@ export default function ViperStingManager({
   charges,
   setCharges,
   localSocketId,
-  players
+  players,
+  wrathfulTalonsReturnCrit,
 }: ViperStingManagerProps) {
   const [soulStealEffects, setSoulStealEffects] = useState<SoulStealEffect[]>([]);
   const nextSoulStealId = useRef(0);
@@ -113,7 +115,8 @@ export default function ViperStingManager({
     charges,
     setCharges,
     localSocketId, // Pass the local socket ID to prevent self-damage
-    players // Pass players data for dynamic PVP targeting
+    players, // Pass players data for dynamic PVP targeting
+    wrathfulTalonsReturnCrit,
   });
 
   // Register global manager

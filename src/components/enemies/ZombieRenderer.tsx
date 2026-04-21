@@ -7,6 +7,7 @@ import { Billboard, Text } from '@react-three/drei';
 import ZombieModel from './ZombieModel';
 import EnemyMeleeAttackRangeRing, { GHOUL_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import EnemyStaggerBar from './EnemyStaggerBar';
 
 interface ZombieRendererProps {
   id: string;
@@ -15,6 +16,7 @@ interface ZombieRendererProps {
   health: number;
   maxHealth: number;
   isDying?: boolean;
+  staggerBuildup?: number;
 }
 
 const ATTACK_DURATION = 1200;
@@ -29,6 +31,7 @@ export default function ZombieRenderer({
   health,
   maxHealth,
   isDying = false,
+  staggerBuildup = 0,
 }: ZombieRendererProps) {
   const { socket } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
@@ -151,6 +154,7 @@ export default function ZombieRenderer({
             >
               {`🧟 ${Math.ceil(health)}/${maxHealth}`}
             </Text>
+            <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}
       </Billboard>

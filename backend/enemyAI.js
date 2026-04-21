@@ -2175,6 +2175,7 @@ class EnemyAI {
       attackCooldown: 1500,
       moveSpeed: 2.5,
       expireAt: now + 30000,
+      staggerBuildup: 0,
     };
 
     if (!this.playerZombiesByOwner.has(ownerId)) {

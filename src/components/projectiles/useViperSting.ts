@@ -1,5 +1,11 @@
 import { useCallback, useRef, useEffect } from 'react';
 import { Vector3, Group } from 'three';
+import { WeaponType } from '@/components/dragon/weapons';
+import { calculateDamage } from '@/core/DamageCalculator';
+import {
+  WRATHFUL_TALONS_RETURN_CRIT_CHANCE_ADD,
+  WRATHFUL_TALONS_RETURN_CRIT_DAMAGE_MULT_ADD,
+} from '@/utils/talents';
 
 interface ViperStingProjectile {
   id: number;
@@ -16,6 +22,8 @@ interface ViperStingProjectile {
   returnHitEnemies: Set<string>;
   casterId?: string; // For PVP: remember which player cast this projectile
   casterPosition?: Vector3; // For PVP: remember the caster's position for return
+  /** Set at spawn: local caster with Wrathful Talons talent (remote spawns omit). */
+  wrathfulTalonsReturnCrit?: boolean;
 }
 
 interface SoulStealEffect {
@@ -29,7 +37,7 @@ interface SoulStealEffect {
 
 interface UseViperStingProps {
   parentRef: React.RefObject<Group>;
-  onHit: (targetId: string, damage: number) => void;
+  onHit: (targetId: string, damage: number, isCritical?: boolean) => void;
   enemyData: Array<{
     id: string;
     position: Vector3;
@@ -63,6 +71,8 @@ interface UseViperStingProps {
     position: { x: number; y: number; z: number };
     health: number;
   }>;
+  /** Local Reaping Talons: return-arrow preset crit (stored on projectile at spawn). */
+  wrathfulTalonsReturnCrit?: boolean;
 }
 
 export function useViperSting({
@@ -77,7 +87,8 @@ export function useViperSting({
   charges,
   setCharges,
   localSocketId,
-  players
+  players,
+  wrathfulTalonsReturnCrit = false,
 }: UseViperStingProps) {
   const projectilePool = useRef<ViperStingProjectile[]>([]);
   const soulStealEffects = useRef<SoulStealEffect[]>([]);
@@ -108,7 +119,8 @@ export function useViperSting({
       opacity: 1,
       fadeStartTime: null,
       isReturning: false,
-      returnHitEnemies: new Set()
+      returnHitEnemies: new Set(),
+      wrathfulTalonsReturnCrit: false,
     }));
   }, []);
 
@@ -165,6 +177,8 @@ export function useViperSting({
     // Set caster information for PVP return targeting
     projectile.casterId = casterId || localSocketId;
     projectile.casterPosition = unitPosition.clone();
+    const isRemoteSpawn = !!(overridePosition && overrideDirection);
+    projectile.wrathfulTalonsReturnCrit = !isRemoteSpawn && wrathfulTalonsReturnCrit;
 
     // Create beam effect for forward shot
     if (createBeamEffect) {
@@ -172,7 +186,7 @@ export function useViperSting({
     }
 
     return true;
-  }, [createBeamEffect, parentRef, getInactiveProjectile, charges, setCharges]);
+  }, [createBeamEffect, parentRef, getInactiveProjectile, charges, setCharges, wrathfulTalonsReturnCrit, localSocketId]);
 
   const createSoulStealEffect = useCallback((enemyPosition: Vector3) => {
     if (!parentRef.current) return;
@@ -349,8 +363,18 @@ export function useViperSting({
                 // Mark enemy as hit during return phase
                 projectile.returnHitEnemies.add(enemy.id);
 
-                // Apply damage through the onHit callback (which routes to CombatSystem)
-                onHit(enemy.id, DAMAGE);
+                let returnDamage = DAMAGE;
+                let returnIsCritical: boolean | undefined = undefined;
+                if (projectile.wrathfulTalonsReturnCrit) {
+                  const r = calculateDamage(DAMAGE, WeaponType.BOW, {
+                    critChanceAdd: WRATHFUL_TALONS_RETURN_CRIT_CHANCE_ADD,
+                    critDamageMultAdd: WRATHFUL_TALONS_RETURN_CRIT_DAMAGE_MULT_ADD,
+                  });
+                  returnDamage = r.damage;
+                  returnIsCritical = r.isCritical;
+                }
+
+                onHit(enemy.id, returnDamage, returnIsCritical);
 
                 // Apply DoT effect for return shot as well
                 if (applyDoT) {
@@ -361,9 +385,9 @@ export function useViperSting({
                 if (setDamageNumbers && nextDamageNumberId) {
                   setDamageNumbers(prev => [...prev, {
                     id: nextDamageNumberId.current++,
-                    damage: DAMAGE,
+                    damage: returnDamage,
                     position: enemy.position.clone(),
-                    isCritical: false,
+                    isCritical: !!returnIsCritical,
                     isViperSting: true // Flag for Viper Sting specific styling
                   }]);
                 }
@@ -393,7 +417,7 @@ export function useViperSting({
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [enemyData, onHit, setDamageNumbers, nextDamageNumberId, onHealthChange, createSoulStealEffect, parentRef, createBeamEffect, applyDoT]);
+  }, [enemyData, onHit, setDamageNumbers, nextDamageNumberId, onHealthChange, createSoulStealEffect, parentRef, createBeamEffect, applyDoT, localSocketId, players]);
 
   return {
     shootViperSting,

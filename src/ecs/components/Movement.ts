@@ -35,7 +35,7 @@ export class Movement extends Component {
   // Ice Beam debuff state (Scythe Ice Beam)
   public isIcebeaming: boolean;
 
-  // Attack-cast movement slow (Sword ColossusStrike, Bow abilities, Scythe casts, Spear charges)
+  // Attack-cast movement slow (Sword ColossusStrike, Bow/Scythe/Runeblade/Spear primary, abilities, Spear charges)
   public isAttackSlowed: boolean;
 
   // Input-based movement

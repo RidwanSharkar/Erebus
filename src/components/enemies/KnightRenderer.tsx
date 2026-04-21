@@ -7,6 +7,7 @@ import { Billboard, Text } from '@react-three/drei';
 import KnightModel from './KnightModel';
 import KnightSoulEffect from './KnightSoulEffect';
 import EnemyMeleeAttackRangeRing, { KNIGHT_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
+import EnemyStaggerBar from './EnemyStaggerBar';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
 
@@ -21,6 +22,8 @@ interface KnightRendererProps {
   campType?: string;
   /** When false, hides the red melee telegraph ring (e.g. throne training dummy). */
   showMeleeRangeRing?: boolean;
+  /** Staggering Strike buildup (0–100). */
+  staggerBuildup?: number;
 }
 
 const ATTACK_DURATION = 1200; // ms — matches Mixamo attack clip length
@@ -48,6 +51,7 @@ export default function KnightRenderer({
   soulType,
   campType,
   showMeleeRangeRing = true,
+  staggerBuildup = 0,
 }: KnightRendererProps) {
   const theme = campHpTheme(campType);
   const { socket } = useMultiplayer();
@@ -300,6 +304,7 @@ export default function KnightRenderer({
             >
               {`⚔ ${Math.ceil(health)}/${maxHealth}`}
             </Text>
+            <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}
       </Billboard>

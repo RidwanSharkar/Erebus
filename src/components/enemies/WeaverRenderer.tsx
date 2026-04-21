@@ -7,6 +7,7 @@ import { Billboard, Text } from '@react-three/drei';
 import WeaverModel from './WeaverModel';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
+import EnemyStaggerBar from './EnemyStaggerBar';
 
 interface WeaverRendererProps {
   id: string;
@@ -16,6 +17,7 @@ interface WeaverRendererProps {
   maxHealth: number;
   isDying?: boolean;
   campType?: string;
+  staggerBuildup?: number;
 }
 
 const CAST_HEAL_DURATION   = 2000; // ms — matches weaver_castheal clip length
@@ -32,6 +34,7 @@ export default function WeaverRenderer({
   maxHealth,
   isDying = false,
   campType,
+  staggerBuildup = 0,
 }: WeaverRendererProps) {
   const theme = campHpTheme(campType);
   const { socket } = useMultiplayer();
@@ -219,6 +222,7 @@ export default function WeaverRenderer({
             >
               {`🧵 ${Math.ceil(health)}/${maxHealth}`}
             </Text>
+            <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}
       </Billboard>

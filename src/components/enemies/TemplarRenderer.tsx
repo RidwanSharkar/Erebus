@@ -8,6 +8,7 @@ import TemplarModel from './TemplarModel';
 import EnemyMeleeAttackRangeRing, { TEMPLAR_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
+import EnemyStaggerBar from './EnemyStaggerBar';
 
 interface TemplarRendererProps {
   id: string;
@@ -17,6 +18,7 @@ interface TemplarRendererProps {
   maxHealth: number;
   isDying?: boolean;
   campType?: string;
+  staggerBuildup?: number;
 }
 
 const ATTACK_DURATION = 1200; // ms — matches templar attack clip; backend `meleeLockUntil` uses the same window
@@ -32,6 +34,7 @@ export default function TemplarRenderer({
   maxHealth,
   isDying = false,
   campType,
+  staggerBuildup = 0,
 }: TemplarRendererProps) {
   const theme = campHpTheme(campType);
   const { socket } = useMultiplayer();
@@ -163,6 +166,7 @@ export default function TemplarRenderer({
             >
               {`🛡 ${Math.ceil(health)}/${maxHealth}`}
             </Text>
+            <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}
       </Billboard>

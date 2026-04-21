@@ -6,6 +6,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import TitanModel from './TitanModel';
 import TitanSoulEffect from './TitanSoulEffect';
+import EnemyStaggerBar from './EnemyStaggerBar';
 
 const SOUL_TYPES = ['green', 'red', 'blue', 'purple'] as const;
 type SoulType = typeof SOUL_TYPES[number];
@@ -17,6 +18,7 @@ interface TitanRendererProps {
   health: number;
   maxHealth: number;
   isDying?: boolean;
+  staggerBuildup?: number;
 }
 
 const FADE_DURATION   = 2.5;  // seconds — longer fade for a dramatic death
@@ -39,6 +41,7 @@ export default function TitanRenderer({
   health,
   maxHealth,
   isDying = false,
+  staggerBuildup = 0,
 }: TitanRendererProps) {
   const groupRef = useRef<Group | null>(null);
 
@@ -152,6 +155,7 @@ export default function TitanRenderer({
             >
               {`🗿 TITAN  ${Math.ceil(health)} / ${maxHealth}`}
             </Text>
+            <EnemyStaggerBar stagger={staggerBuildup} width={HP_BAR_WIDTH} y={-0.28} />
           </>
         )}
       </Billboard>

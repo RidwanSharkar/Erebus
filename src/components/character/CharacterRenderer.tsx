@@ -54,6 +54,18 @@ function dirToAnimState(facingDir: Vector3, moveDir: Vector3): AnimState {
   return angle > 0 ? 'RightStrafe' : 'LeftStrafe';                                      // 67.5°…112.5° — pure side
 }
 
+// Four-way slow walk (attack slow / ice beam): forward + dedicated walk GLBs per side/back.
+function dirToSlowWalkAnimState(facingDir: Vector3, moveDir: Vector3): AnimState {
+  const dot    = facingDir.dot(moveDir);
+  const crossY = facingDir.x * moveDir.z - facingDir.z * moveDir.x;
+  const angle  = Math.atan2(crossY, dot);
+  const abs    = Math.abs(angle);
+
+  if (abs < Math.PI / 4) return 'Walk';
+  if (abs > (3 * Math.PI) / 4) return 'WalkBack';
+  return angle > 0 ? 'WalkRight' : 'WalkLeft';
+}
+
 export default function CharacterRenderer({
   entityId,
   position,
@@ -260,11 +272,10 @@ export default function CharacterRenderer({
         moveDir.y = 0;
         if (moveDir.length() > 0.01) {
           moveDir.normalize();
-          next = dirToAnimState(facingDir, moveDir);
-          // Substitute Walk for Run while attack-slowed or icebeaming.
-          if (next === 'Run' && (movement.isAttackSlowed || movement.isIcebeaming)) {
-            next = 'Walk';
-          }
+          const slowLocomotion = movement.isAttackSlowed || movement.isIcebeaming;
+          next = slowLocomotion
+            ? dirToSlowWalkAnimState(facingDir, moveDir)
+            : dirToAnimState(facingDir, moveDir);
         } else {
           next = 'Idle';
         }

@@ -6,7 +6,7 @@ import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyf
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 export type AnimState =
-  | 'Idle' | 'Run' | 'Walk' | 'Backwards'
+  | 'Idle' | 'Run' | 'Walk' | 'WalkBack' | 'WalkLeft' | 'WalkRight' | 'Backwards'
   | 'LeftStrafe' | 'RightStrafe'
   | 'LeftStrafeForward' | 'RightStrafeForward' | 'LeftStrafeBackward' | 'RightStrafeBackward'
   | 'Jump' | 'JumpFront' | 'JumpBack'
@@ -21,6 +21,9 @@ interface CharacterModelProps {
 useGLTF.preload('/models/character_idle.glb');
 useGLTF.preload('/models/character_run.glb');
 useGLTF.preload('/models/character_walk.glb');
+useGLTF.preload('/models/character_walkBack.glb');
+useGLTF.preload('/models/character_walkLeft.glb');
+useGLTF.preload('/models/character_walkRight.glb');
 useGLTF.preload('/models/character_backwards.glb');
 useGLTF.preload('/models/character_leftStrafe.glb');
 useGLTF.preload('/models/character_rightStrafe.glb');
@@ -57,6 +60,9 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
   const { scene, animations: idleAnims }        = useGLTF('/models/character_idle.glb');
   const { animations: runAnims }                = useGLTF('/models/character_run.glb');
   const { animations: walkAnims }               = useGLTF('/models/character_walk.glb');
+  const { animations: walkBackAnims }          = useGLTF('/models/character_walkBack.glb');
+  const { animations: walkLeftAnims }         = useGLTF('/models/character_walkLeft.glb');
+  const { animations: walkRightAnims }        = useGLTF('/models/character_walkRight.glb');
   const { animations: backAnims }               = useGLTF('/models/character_backwards.glb');
   const { animations: leftAnims }               = useGLTF('/models/character_leftStrafe.glb');
   const { animations: rightAnims }              = useGLTF('/models/character_rightStrafe.glb');
@@ -112,6 +118,9 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
       ...rename(idleAnims,           'Idle'          ).map(stripRootMotionXZ),
       ...rename(runAnims,            'Run'           ).map(stripRootMotionXZ),
       ...rename(walkAnims,           'Walk'          ).map(stripRootMotionXZ),
+      ...rename(walkBackAnims,       'WalkBack'      ).map(stripRootMotionXZ),
+      ...rename(walkLeftAnims,       'WalkLeft'      ).map(stripRootMotionXZ),
+      ...rename(walkRightAnims,      'WalkRight'     ).map(stripRootMotionXZ),
       ...rename(backAnims,           'Backwards'     ).map(stripRootMotionXZ),
       ...rename(leftAnims,               'LeftStrafe'          ).map(stripRootMotionXZ),
       ...rename(rightAnims,              'RightStrafe'         ).map(stripRootMotionXZ),
@@ -129,7 +138,7 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
       ...rename(releaseBowAnims,     'ReleaseBow'    ).map(stripRootMotionXZ),
       ...rename(deathAnims,          'Death'         ).map(stripRootMotionXZ),
     ];
-  }, [idleAnims, runAnims, walkAnims, backAnims, leftAnims, rightAnims, leftStrafeForwardAnims, rightStrafeForwardAnims, leftStrafeBackwardAnims, rightStrafeBackwardAnims, jumpAnims, jumpFrontAnims, jumpBackAnims, castAnims, castSingleAnims, swordCastAnims, drawBowAnims, releaseBowAnims, deathAnims]);
+  }, [idleAnims, runAnims, walkAnims, walkBackAnims, walkLeftAnims, walkRightAnims, backAnims, leftAnims, rightAnims, leftStrafeForwardAnims, rightStrafeForwardAnims, leftStrafeBackwardAnims, rightStrafeBackwardAnims, jumpAnims, jumpFrontAnims, jumpBackAnims, castAnims, castSingleAnims, swordCastAnims, drawBowAnims, releaseBowAnims, deathAnims]);
 
   const { actions } = useAnimations(animations, sceneGroupRef);
 

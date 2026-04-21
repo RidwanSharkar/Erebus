@@ -9,6 +9,7 @@ import WarlockTeleportEffect from './WarlockTeleportEffect';
 import CubeSoulEffect from './CubeSoulEffect';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
+import EnemyStaggerBar from './EnemyStaggerBar';
 
 interface WarlockRendererProps {
   id: string;
@@ -18,6 +19,7 @@ interface WarlockRendererProps {
   maxHealth: number;
   isDying?: boolean;
   campType?: string;
+  staggerBuildup?: number;
 }
 
 // How long the blink animation plays before we snap to the new position
@@ -37,6 +39,7 @@ export default function WarlockRenderer({
   maxHealth,
   isDying = false,
   campType,
+  staggerBuildup = 0,
 }: WarlockRendererProps) {
   const theme = campHpTheme(campType);
   const { socket } = useMultiplayer();
@@ -209,6 +212,7 @@ export default function WarlockRenderer({
             >
               {`🔮 ${Math.ceil(health)}/${maxHealth}`}
             </Text>
+            <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}
       </Billboard>
