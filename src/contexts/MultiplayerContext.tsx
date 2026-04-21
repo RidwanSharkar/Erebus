@@ -45,7 +45,7 @@ export interface EnemyDamageMeta {
   infestedSmite?: boolean;
   /** Infernal Smite talent — server schedules Ignite DoT after smite hit. */
   infernalSmite?: boolean;
-  /** Staggering Strike (`wraith_strike`), Runeblade combo (`runeblade_combo`), Sabres (`sabre_left` / `sabre_right`), or Staggering Smite (`smite` with `staggerToAdd`): server accumulates stagger. */
+  /** Staggering Strike (`wraith_strike`), Runeblade combo (`runeblade_combo`), Sabres (`sabre_left` / `sabre_right`), Staggering Smite (`smite` with `staggerToAdd`), or Stagger Shot (`projectile` with `staggerToAdd`): server accumulates stagger. */
   staggerToAdd?: number;
 }
 

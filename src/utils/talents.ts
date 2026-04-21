@@ -11,6 +11,7 @@ export const TALENT_TRINITY = 'TRINITY' as const;
 export const TALENT_INFESTED_SMITE = 'INFESTED_SMITE' as const;
 export const TALENT_STAGGERING_SMITE = 'STAGGERING_SMITE' as const;
 export const TALENT_INFERNAL_SMITE = 'INFERNAL_SMITE' as const;
+export const TALENT_STAGGER_SHOT = 'STAGGER_SHOT' as const;
 
 /** Infested Smite — heal per enemy hit per Smite beam. */
 export const INFESTED_SMITE_HEAL_PER_TARGET = 10;
@@ -33,7 +34,8 @@ export type TalentId =
   | typeof TALENT_TRINITY
   | typeof TALENT_INFESTED_SMITE
   | typeof TALENT_STAGGERING_SMITE
-  | typeof TALENT_INFERNAL_SMITE;
+  | typeof TALENT_INFERNAL_SMITE
+  | typeof TALENT_STAGGER_SHOT;
 
 /** Modifies Wraith Strike (`RUNEBLADE_E`) when equipped in Q/E/R. */
 export const WRATH_STRIKE_CRIT_CHANCE_ADD = 0.5;
@@ -46,7 +48,7 @@ export const WRATHFUL_TALONS_RETURN_CRIT_DAMAGE_MULT_ADD = 1.0;
 /** Staggering Strike — Wraith Strike (`RUNEBLADE_E`) builds stagger; at 100, proc lightning + damage + stun. */
 export const STAGGERING_STRIKE_WRAITH_STAGGER_ADD = 60;
 export const STAGGER_MAX = 100;
-export const STAGGER_PROC_DAMAGE = 155;
+export const STAGGER_PROC_DAMAGE = 160;
 export const STAGGER_PROC_STUN_SECONDS = 2;
 
 /** Staggering Combo — Runeblade basic attack combo adds stagger per hit (same 100 cap / proc as Staggering Strike). */
@@ -59,7 +61,13 @@ export const STAGGERING_SWIPES_LEFT_BLADE_STAGGER = 10;
 export const STAGGERING_SWIPES_RIGHT_BLADE_STAGGER = 10;
 
 /** Staggering Smite — each Colossus Smite beam adds this stagger per enemy hit (same 100 cap / proc as other stagger talents). */
-export const STAGGERING_SMITE_BEAM_STAGGER = 40;
+export const STAGGERING_SMITE_BEAM_STAGGER = 50;
+
+/** Stagger Shot — Bow LMB: uncharged, charged, perfect, and Tempest Rounds burst (same 100 cap / proc as other stagger talents). */
+export const STAGGER_SHOT_UNCHARGED_STAGGER = 10;
+export const STAGGER_SHOT_CHARGED_STAGGER = 35;
+export const STAGGER_SHOT_PERFECT_STAGGER = 50;
+export const STAGGER_SHOT_TEMPEST_ROUND_STAGGER = 25;
 
 export interface TalentDefinition {
   id: TalentId;
@@ -157,6 +165,14 @@ export const staggeringSwipesTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'SABRES_BASIC',
 };
 
+export const staggerShotTalentDefinition: TalentDefinition = {
+  id: TALENT_STAGGER_SHOT,
+  name: 'STAGGER SHOT',
+  description:
+    'Bow primary attacks apply stagger by shot type (uncharged, fully charged, perfect timing). With Tempest Rounds, each burst arrow applies stagger. Uses the same buildup, cap, and lightning proc as other stagger talents.',
+  modifiesAbilityId: 'BOW_BASIC',
+};
+
 export interface TalentLoadout {
   wrathStrike: boolean;
   infestedStrike: boolean;
@@ -169,6 +185,7 @@ export interface TalentLoadout {
   infestedSmite: boolean;
   staggeringSmite: boolean;
   infernalSmite: boolean;
+  staggerShot: boolean;
 }
 
 export function createDefaultTalentLoadout(): TalentLoadout {
@@ -184,6 +201,7 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     infestedSmite: false,
     staggeringSmite: false,
     infernalSmite: false,
+    staggerShot: false,
   };
 }
 
@@ -265,4 +283,9 @@ export function shouldApplyStaggeringComboTalent(talentLoadout: TalentLoadout | 
 /** Sabres basic-attack stagger; talent toggle only (use with Sabres equipped). */
 export function shouldApplyStaggeringSwipesTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.staggeringSwipes;
+}
+
+/** Bow LMB stagger; talent toggle only (use with Bow equipped). */
+export function shouldApplyStaggerShotTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.staggerShot;
 }

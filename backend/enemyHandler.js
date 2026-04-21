@@ -32,6 +32,8 @@ function handleEnemyEvents(socket, gameRooms) {
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
         hitMeta.staggerToAdd = staggerToAdd;
       }
+    } else if (damageType === 'projectile' && typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+      hitMeta = { damageType: 'projectile', staggerToAdd };
     } else if (damageType === 'stagger_break') {
       hitMeta = { damageType: 'stagger_break' };
     }

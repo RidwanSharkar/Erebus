@@ -337,7 +337,14 @@ export class CombatSystem extends System {
                     damageType,
                     staggerToAdd: damageEvent.staggerToAdd,
                   }
-                : undefined;
+                : damageType === 'projectile' &&
+                    damageEvent.staggerToAdd != null &&
+                    damageEvent.staggerToAdd > 0
+                  ? {
+                      damageType: 'projectile' as const,
+                      staggerToAdd: damageEvent.staggerToAdd,
+                    }
+                  : undefined;
       this.onEnemyDamageCallback(serverEnemyId, actualDamage, finalSourcePlayerId, routeMeta);
 
       // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)

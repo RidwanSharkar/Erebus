@@ -22,6 +22,8 @@ export class Projectile extends Component {
   public maxDistance: number; // Maximum distance before expiring
   public startPosition: Vector3; // Starting position for distance calculation
   public projectileType: string; // Type of projectile (e.g., 'viper_sting', 'arrow', etc.)
+  /** Co-op: stagger from talents (e.g. Stagger Shot) passed to CombatSystem on hit. */
+  public staggerToAdd?: number;
 
   // Homing properties
   public targetEntityId: number | null; // Entity ID to home towards
@@ -55,6 +57,7 @@ export class Projectile extends Component {
     this.maxDistance = Infinity; // Default to no distance limit
     this.startPosition = new Vector3(0, 0, 0);
     this.projectileType = projectileType;
+    this.staggerToAdd = undefined;
 
     // Initialize homing properties
     this.targetEntityId = null;
@@ -176,6 +179,7 @@ export class Projectile extends Component {
     this.maxDistance = Infinity;
     this.startPosition.set(0, 0, 0);
     this.projectileType = 'generic';
+    this.staggerToAdd = undefined;
     this.targetEntityId = null;
     this.homingStrength = 0;
     this.maxTurnRate = Math.PI;
@@ -198,6 +202,7 @@ export class Projectile extends Component {
     clone.targetEntityId = this.targetEntityId;
     clone.homingStrength = this.homingStrength;
     clone.maxTurnRate = this.maxTurnRate;
+    clone.staggerToAdd = this.staggerToAdd;
     return clone;
   }
 }

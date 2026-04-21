@@ -36,6 +36,10 @@ import {
   STAGGERING_STRIKE_WRAITH_STAGGER_ADD,
   STAGGERING_SWIPES_LEFT_BLADE_STAGGER,
   STAGGERING_SWIPES_RIGHT_BLADE_STAGGER,
+  STAGGER_SHOT_CHARGED_STAGGER,
+  STAGGER_SHOT_PERFECT_STAGGER,
+  STAGGER_SHOT_TEMPEST_ROUND_STAGGER,
+  STAGGER_SHOT_UNCHARGED_STAGGER,
   WRATH_STRIKE_CRIT_CHANCE_ADD,
   WRATH_STRIKE_CRIT_DAMAGE_MULT_ADD,
 } from '@/utils/talents';
@@ -1619,7 +1623,8 @@ export class ControlSystem extends System {
       subclass: this.currentSubclass,
       level: this.currentLevel,
       opacity: 1.0,
-      sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown'
+      sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
+      ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_UNCHARGED_STAGGER } : {}),
     };
     
     this.projectileSystem.createProjectile(
@@ -1669,7 +1674,8 @@ export class ControlSystem extends System {
       level: this.currentLevel,
       opacity: 1.0,
       projectileType: 'burst_arrow', // Mark as burst arrow for teal coloring
-      sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown'
+      sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
+      ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_TEMPEST_ROUND_STAGGER } : {}),
     };
 
     this.projectileSystem.createProjectile(
@@ -2148,7 +2154,8 @@ export class ControlSystem extends System {
       explosive: false, // No explosion, but could add special effects
       subclass: this.currentSubclass,
       level: this.currentLevel,
-      opacity: 1.0
+      opacity: 1.0,
+      ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_CHARGED_STAGGER } : {}),
     };
     
     this.projectileSystem.createChargedArrowProjectile(
@@ -2187,7 +2194,8 @@ export class ControlSystem extends System {
         explosive: false, // No explosion, but has special visual effects
         subclass: this.currentSubclass,
         level: this.currentLevel,
-        opacity: 1.0
+        opacity: 1.0,
+        ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_PERFECT_STAGGER } : {}),
       }
     );
     
@@ -4636,6 +4644,11 @@ export class ControlSystem extends System {
   /** STAGGERING SWIPES: Sabres dual-blade basic swing builds stagger (`performSabresMeleeDamage` → CombatSystem). */
   public shouldApplyStaggeringSwipesTalent(): boolean {
     return this.talentLoadout.staggeringSwipes === true && this.currentWeapon === WeaponType.SABRES;
+  }
+
+  /** Stagger Shot: Bow LMB / Tempest burst projectiles carry stagger (`ProjectileSystem` → CombatSystem). */
+  public shouldApplyStaggerShotTalent(): boolean {
+    return this.talentLoadout.staggerShot === true && this.currentWeapon === WeaponType.BOW;
   }
 
   /** STORED CHARGE: Runeblade Charge spin count and per-rotation damage (see Runeblade + talents). */

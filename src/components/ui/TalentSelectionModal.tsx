@@ -24,6 +24,11 @@ import {
   storedChargeTalentDefinition,
   trinityTalentDefinition,
   STAGGERING_SMITE_BEAM_STAGGER,
+  STAGGER_SHOT_CHARGED_STAGGER,
+  STAGGER_SHOT_PERFECT_STAGGER,
+  STAGGER_SHOT_TEMPEST_ROUND_STAGGER,
+  STAGGER_SHOT_UNCHARGED_STAGGER,
+  staggerShotTalentDefinition,
   wrathStrikeTalentDefinition,
   wrathfulTalonsTalentDefinition,
 } from '@/utils/talents';
@@ -76,6 +81,7 @@ export default function TalentSelectionModal({
     infestedSmite: initialTalentLoadout?.infestedSmite ?? def.infestedSmite,
     staggeringSmite: initialTalentLoadout?.staggeringSmite ?? def.staggeringSmite,
     infernalSmite: initialTalentLoadout?.infernalSmite ?? def.infernalSmite,
+    staggerShot: initialTalentLoadout?.staggerShot ?? def.staggerShot,
   };
   const [loadout, setLoadout] = useState<TalentLoadout>(() => merged);
 
@@ -136,6 +142,10 @@ export default function TalentSelectionModal({
 
   const toggleStaggeringSwipes = useCallback(() => {
     setLoadout((prev) => ({ ...prev, staggeringSwipes: !prev.staggeringSwipes }));
+  }, []);
+
+  const toggleStaggerShot = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, staggerShot: !prev.staggerShot }));
   }, []);
 
   return (
@@ -480,6 +490,32 @@ export default function TalentSelectionModal({
                 Equip <span className="text-gray-300">Reaping Talons</span> in your ability loadout at the other east pillar to enable this talent.
               </p>
             )}
+          </div>
+        )}
+
+        {selectedWeapon === WeaponType.BOW && (
+          <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="talent-stagger-shot"
+                checked={loadout.staggerShot}
+                onChange={toggleStaggerShot}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-stagger-shot" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{staggerShotTalentDefinition.name}</div>
+                {loadout.staggerShot && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{staggerShotTalentDefinition.description}</p>
+                    <p className="text-green-200/90 text-xs mt-2 font-mono">
+                      {STAGGER_SHOT_UNCHARGED_STAGGER} / {STAGGER_SHOT_CHARGED_STAGGER} / {STAGGER_SHOT_PERFECT_STAGGER} stagger (tap / full / perfect) ·{' '}
+                      {STAGGER_SHOT_TEMPEST_ROUND_STAGGER} per Tempest burst arrow · 100 = lightning + proc
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
           </div>
         )}
 

@@ -316,7 +316,16 @@ export class ProjectileSystem extends System {
       
 
       
-      this.combatSystem.queueDamage(target, projectile.damage, projectileEntity, damageType, projectile.sourcePlayerId);
+      this.combatSystem.queueDamage(
+        target,
+        projectile.damage,
+        projectileEntity,
+        damageType,
+        projectile.sourcePlayerId,
+        undefined,
+        undefined,
+        projectile.staggerToAdd != null && projectile.staggerToAdd > 0 ? projectile.staggerToAdd : undefined,
+      );
 
       // CRITICAL FIX: Emit explosion event for CrossentropyBolt hits
       // This ensures the local player sees the explosion visual effect
@@ -423,6 +432,7 @@ export class ProjectileSystem extends System {
       subclass?: WeaponSubclass;
       level?: number;
       opacity?: number;
+      staggerToAdd?: number;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -438,6 +448,9 @@ export class ProjectileSystem extends System {
     projectile.damage = config?.damage || 25; // Higher damage than regular arrows
     projectile.maxLifetime = config?.lifetime || 5; // Longer lifetime
     projectile.owner = ownerId;
+    if (config?.staggerToAdd != null && config.staggerToAdd > 0) {
+      projectile.staggerToAdd = config.staggerToAdd;
+    }
     projectile.setDirection(direction);
     
     if (config?.piercing) projectile.setPiercing(true);
@@ -662,6 +675,7 @@ export class ProjectileSystem extends System {
       maxDistance?: number;
       projectileType?: string; // Add projectile type for special handling
       sourcePlayerId?: string; // Add source player ID for multiplayer team validation
+      staggerToAdd?: number;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -679,6 +693,9 @@ export class ProjectileSystem extends System {
     projectile.owner = ownerId;
     projectile.sourcePlayerId = config?.sourcePlayerId || 'unknown';
     projectile.projectileType = config?.projectileType || 'generic';
+    if (config?.staggerToAdd != null && config.staggerToAdd > 0) {
+      projectile.staggerToAdd = config.staggerToAdd;
+    }
     projectile.setDirection(direction);
     projectile.setStartPosition(position);
     

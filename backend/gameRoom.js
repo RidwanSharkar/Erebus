@@ -659,7 +659,8 @@ class GameRoom {
         hitMeta.damageType === 'runeblade_combo' ||
         hitMeta.damageType === 'sabre_left' ||
         hitMeta.damageType === 'sabre_right' ||
-        hitMeta.damageType === 'smite') &&
+        hitMeta.damageType === 'smite' ||
+        hitMeta.damageType === 'projectile') &&
       typeof hitMeta.staggerToAdd === 'number' &&
       hitMeta.staggerToAdd > 0 &&
       !enemy.isDying
