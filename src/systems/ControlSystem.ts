@@ -1734,9 +1734,9 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Offset projectile spawn position slightly forward to avoid collision with player
+    // Offset spawn forward slightly more so the longer celestial bolt mesh clears the player
     const spawnPosition = position.clone();
-    spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
+    spawnPosition.add(direction.clone().multiplyScalar(1.14));
     spawnPosition.y += 1; // Slightly higher
     
     // Randomly pick color variant with corresponding damage

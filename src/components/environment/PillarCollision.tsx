@@ -4,6 +4,7 @@ import { World } from '@/ecs/World';
 import { Transform } from '@/ecs/components/Transform';
 import { Collider, ColliderType, CollisionLayer } from '@/ecs/components/Collider';
 import { Entity } from '@/ecs/Entity';
+import { THRONE_PILLAR_HULL_RADIUS } from './ThroneRoom';
 
 interface PillarCollisionProps {
   world: World;
@@ -30,10 +31,10 @@ const PillarCollision: React.FC<PillarCollisionProps> = ({ world, positions }) =
       transform.setPosition(position[0], position[1] + 1, position[2]); // Slightly elevated for pillar center
       entity.addComponent(transform);
 
-      // Add Collider component - cylinder shape to match pillar
+      // Add Collider component - cylinder shape to match movement physics (`PhysicsSystem` throne discs)
       const collider = world.createComponent(Collider);
       collider.type = ColliderType.CYLINDER;
-      collider.radius = 0.7; // Slightly larger than visual pillar for easier collision (pillar scale is 0.35, base radius is 2.2, so 2.2 * 0.35 = 0.77)
+      collider.radius = THRONE_PILLAR_HULL_RADIUS;
       collider.height = 3; // Height to cover the pillar structure (pillar scale is 0.35, total height ~8.5, so 8.5 * 0.35 = ~3)
       collider.layer = CollisionLayer.ENVIRONMENT;
       collider.isStatic = true; // Pillars don't move

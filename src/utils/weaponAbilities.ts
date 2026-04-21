@@ -134,7 +134,7 @@ export const universalAbilityPool: UniversalAbility[] = [
   {
     id: 'SCYTHE_F', sourceWeapon: WeaponType.SCYTHE, sourceKey: 'F',
     name: 'Mantra', cooldown: 5.0, icon: '🪬',
-    description: 'Summons a totem that heals you and allies for 40 HP per second while within its range. Lasts 8 seconds.',
+    description: 'Summons a totem that attacks nearby enemies and enemy players within range for 8 seconds.',
     allowedWeapons: ALL_WEAPONS,
   },
   {
@@ -316,7 +316,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Mantra',
       key: 'F',
       cooldown: 5.0,
-      description: 'Summons a totem that heals you and allies for 40 HP per second while within its range. Lasts 8 seconds.'
+      description: 'Summons a totem that attacks nearby enemies and enemy players within range for 8 seconds.'
     },
     {
       name: 'Icebeam',

@@ -13,10 +13,11 @@ import Sabres from '@/components/weapons/Sabres';
 import Runeblade from '@/components/weapons/Runeblade';
 import SpearComponent from '@/components/weapons/Spear';
 
-export const COOP_THRONE_ROOM_RADIUS = 15;
+export const COOP_THRONE_ROOM_RADIUS = 16;
 
-/** Cylinder radius for movement / charge (aligned with `PillarCollision` ~0.7). */
-export const THRONE_PILLAR_HULL_RADIUS = 0.72;
+
+/** XZ radius for movement physics, sword charge, and ECS `PillarCollision` cylinders on these pillars. */
+export const THRONE_PILLAR_HULL_RADIUS = 0.55;
 
 export type ThronePillarDef = {
   position: [number, number, number];
@@ -25,11 +26,11 @@ export type ThronePillarDef = {
 
 /** Five pillars in a ring — orb colours: green, yellow, red, blue, silver. */
 export const THRONE_PILLAR_DEFS: ThronePillarDef[] = [
-  { position: [5.2, 0, 0], orbColorHex: '#22c55e' },
-  { position: [1.61, 0, 4.95], orbColorHex: '#eab308' },
-  { position: [-4.21, 0, 3.06], orbColorHex: '#ef4444' },
-  { position: [-4.21, 0, -3.06], orbColorHex: '#3b82f6' },
-  { position: [1.61, 0, -4.95], orbColorHex: '#d1d5db' },
+  { position: [-6.0, 0, 1], orbColorHex: '#22c55e' },
+  { position: [-3.25, 0, -1.5], orbColorHex: '#eab308' },
+  { position: [0, 0, -3], orbColorHex: '#ef4444' },
+  { position: [3.25, 0, -1.5], orbColorHex: '#3b82f6' },
+  { position: [6.0, 0, 1], orbColorHex: '#d1d5db' },
 ];
 
 /** Stable reference for `PillarCollision` (avoid new array identity every React render). */
@@ -104,7 +105,7 @@ export const THRONE_TRAINING_DUMMY_POSITION = Object.freeze({
 export const THRONE_TRAINING_DUMMY_ROTATION = Math.PI;
 
 /** Distance from pillar base toward room center — weapon sits in front of the pillar (toward center). */
-export const THRONE_WEAPON_INSET = 1.38;
+export const THRONE_WEAPON_INSET = -0.25;
 
 /** Proximity radius (XZ) for “press X to equip” at each floating weapon replica. */
 export const THRONE_WEAPON_INTERACT_RADIUS = 2.35;
@@ -210,7 +211,7 @@ function ThroneWeaponPedestals() {
       {slots.map((slot) => (
         <ThroneFloatingWeapon key={slot.key} xz={xzTowardRoomCenter(slot.pillar, THRONE_WEAPON_INSET)} phase={slot.phase}>
           {slot.key === 'bow' && (
-            <group scale={1.05} rotation={[0.08, 0, -0.86]}>
+            <group scale={1.05} rotation={[1.08, 4.5, -0.2]} position={[1.25, 2, -1.20]}>
               <EtherealBow
                 position={bowPos}
                 direction={bowDir}
@@ -222,7 +223,7 @@ function ThroneWeaponPedestals() {
             </group>
           )}
           {slot.key === 'scythe' && (
-            <group scale={1.12} rotation={[0.1, 0.35, -0.05]}>
+            <group scale={1.12} rotation={[-0.3, 0.55, -0.05]} position={[0, 1.65, 0.25]}>
               <group ref={scytheParentRef} />
               <Scythe
                 parentRef={scytheParentRef}
@@ -232,7 +233,7 @@ function ThroneWeaponPedestals() {
             </group>
           )}
           {slot.key === 'sabres' && (
-            <group scale={1.05} rotation={[0.06, -0.2, 0.04]}>
+            <group scale={1.05} rotation={[0.06, -0, 0.04]} position={[0, 1.5, 0.5]}>
               <Sabres
                 isSwinging={false}
                 onSwingComplete={() => {}}
@@ -247,7 +248,7 @@ function ThroneWeaponPedestals() {
             </group>
           )}
           {slot.key === 'spear' && (
-            <group scale={1.08} rotation={[0.05, 0.25, -0.03]}>
+            <group scale={1.08} rotation={[4.875, 0.25, 0.25]} position={[0.5, 1.75, 0.75]}>
               <SpearComponent
                 isSwinging={false}
                 isWhirlwinding={false}
@@ -262,7 +263,7 @@ function ThroneWeaponPedestals() {
             </group>
           )}
           {slot.key === 'runeblade' && (
-            <group ref={runebladeAnchorRef} scale={1.05} rotation={[0.07, 0.15, -0.05]}>
+            <group ref={runebladeAnchorRef} scale={1.05} rotation={[1, 11.5, 1.25]} position={[0.75, 1.45, 1.75]}>
               <Runeblade
                 isSwinging={false}
                 isSmiting={false}

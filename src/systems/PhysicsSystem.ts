@@ -5,6 +5,7 @@ import { Entity } from '@/ecs/Entity';
 import { Transform } from '@/ecs/components/Transform';
 import { Movement } from '@/ecs/components/Movement';
 import { WALL_SEGMENTS, WallSegmentDef } from '@/components/environment/CastleWalls';
+import { THRONE_PILLAR_HULL_RADIUS } from '@/components/environment/ThroneRoom';
 
 export class PhysicsSystem extends BasePhysicsSystem {
   public readonly requiredComponents = [Transform, Movement];
@@ -249,6 +250,10 @@ export class PhysicsSystem extends BasePhysicsSystem {
     return slidePosition;
   }
 
+  /**
+   * XZ discs from `getThronePrepPhysicsObstacles()` / `setThronePillarObstacles` (ThroneRoom layout).
+   * Radius should match `THRONE_PILLAR_HULL_RADIUS` and ECS throne `PillarCollision` cylinders.
+   */
   private checkThronePillarCollision(position: Vector3): {
     hasCollision: boolean;
     normal: Vector3;
@@ -260,7 +265,8 @@ export class PhysicsSystem extends BasePhysicsSystem {
     for (const p of this.thronePillarObstacles) {
       const center = new Vector3(p.x, 0, p.z);
       const dist = horizontalPos.distanceTo(center);
-      const minCenterDist = p.radius + this.horizontalClearanceRadius;
+      const obstacleR = p.radius > 0 ? p.radius : THRONE_PILLAR_HULL_RADIUS;
+      const minCenterDist = obstacleR + this.horizontalClearanceRadius;
       if (dist < minCenterDist) {
         let normal = horizontalPos.clone().sub(center);
         if (normal.lengthSq() < 1e-6) {

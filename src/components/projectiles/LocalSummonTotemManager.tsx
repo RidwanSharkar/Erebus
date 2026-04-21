@@ -48,8 +48,7 @@ interface LocalSummonTotemManagerProps {
     isSummon?: boolean;
   }>) => void;
   nextDamageNumberId?: { current: number };
-  onHealPlayer?: (healAmount: number) => void;
-  playerId?: string; // Local player ID for healing
+  playerId?: string; // Local player id (caster + socket)
 }
 
 const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
@@ -59,13 +58,12 @@ const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
   activeEffects = [],
   setDamageNumbers,
   nextDamageNumberId,
-  onHealPlayer,
   playerId
 }) => {
   const managerRef = React.useRef<SummonTotemManagerRef>(null);
 
   React.useEffect(() => {
-    setGlobalSummonTotemTrigger((position, enemyDataParam, onDamageParam, setActiveEffectsParam, activeEffectsParam, setDamageNumbersParam, nextDamageNumberIdParam, onHealPlayerParam, casterId) => {
+    setGlobalSummonTotemTrigger((position, enemyDataParam, onDamageParam, setActiveEffectsParam, activeEffectsParam, setDamageNumbersParam, nextDamageNumberIdParam, casterId) => {
       if (managerRef.current) {
         const finalEnemyData = enemyDataParam || enemyData;
         managerRef.current.createTotem(
@@ -76,7 +74,8 @@ const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
           activeEffectsParam || activeEffects,
           setDamageNumbersParam || setDamageNumbers,
           nextDamageNumberIdParam || nextDamageNumberId,
-          onHealPlayerParam || onHealPlayer
+          casterId,
+          playerId
         );
       }
     });
@@ -84,7 +83,7 @@ const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
     return () => {
       setGlobalSummonTotemTrigger(() => {});
     };
-  }, [enemyData, onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, onHealPlayer, playerId]);
+  }, [enemyData, onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, playerId]);
 
   return (
     <SummonTotemManager

@@ -1,6 +1,14 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, Group, Mesh, Color, AdditiveBlending } from '@/utils/three-exports';
+import {
+  Vector3,
+  Group,
+  Mesh,
+  Color,
+  AdditiveBlending,
+  Quaternion,
+  DoubleSide,
+} from '@/utils/three-exports';
 import EntropicBoltTrail from './EntropicBoltTrail';
 
 interface EntropicBoltProps {
@@ -20,14 +28,30 @@ type BoltColorTheme = {
 };
 
 function getBoltColorTheme(colorVariant: string | undefined, isCryoflame: boolean): BoltColorTheme {
-  if (isCryoflame) return { primary: '#1e40af', secondary: '#3b82f6', light: '#1e40af' };
+  if (isCryoflame) return { primary: '#1e40af', secondary: '#3b82f6', light: '#60a5fa' };
   switch (colorVariant) {
-    case 'blue':   return { primary: '#3b82f6', secondary: '#93c5fd', light: '#3b82f6' };
-    case 'red':    return { primary: '#ef4444', secondary: '#fca5a5', light: '#ef4444' };
-    case 'green':  return { primary: '#22c55e', secondary: '#86efac', light: '#22c55e' };
+    case 'blue':   return { primary: '#3b82f6', secondary: '#93c5fd', light: '#93c5fd' };
+    case 'red':    return { primary: '#ef4444', secondary: '#fca5a5', light: '#fecaca' };
+    case 'green':  return { primary: '#22c55e', secondary: '#86efac', light: '#bbf7d0' };
     case 'purple':
-    default:       return { primary: '#9333ea', secondary: '#c084fc', light: '#9333ea' };
+    default:       return { primary: '#9333ea', secondary: '#c084fc', light: '#e9d5ff' };
   }
+}
+
+const AXIS_Y = new Vector3(0, 1, 0);
+const FALLBACK_UP = new Vector3(0, 0, 1);
+const _dir = new Vector3();
+const _quat = new Quaternion();
+
+function alignBoltToDirection(group: Group | null, direction: Vector3) {
+  if (!group) return;
+  _dir.copy(direction).normalize();
+  if (Math.abs(_dir.dot(AXIS_Y)) > 0.985) {
+    _quat.setFromUnitVectors(FALLBACK_UP, _dir);
+  } else {
+    _quat.setFromUnitVectors(AXIS_Y, _dir);
+  }
+  group.quaternion.copy(_quat);
 }
 
 export default function EntropicBolt({
@@ -41,8 +65,12 @@ export default function EntropicBolt({
 }: EntropicBoltProps) {
   const boltRef = useRef<Group>(null);
   const boltMeshRef = useRef<Mesh>(null);
+  const orientRef = useRef<Group>(null);
+  const coronaRef = useRef<Mesh>(null);
+  const tipRingRef = useRef<Mesh>(null);
   const startPosition = useRef(position.clone());
   const hasCollided = useRef(false);
+  const [flightActive, setFlightActive] = useState(true);
   const [showImpact, setShowImpact] = useState(false);
   const [impactPosition, setImpactPosition] = useState<Vector3 | null>(null);
 
@@ -52,7 +80,15 @@ export default function EntropicBolt({
   const chaoticOffset = useRef(new Vector3());
 
   const theme = getBoltColorTheme(colorVariant, isCryoflame);
-  const trailColor = new Color(theme.primary);
+  const trailColor = useMemo(() => new Color(theme.primary), [theme.primary]);
+  const trailAccent = useMemo(() => {
+    const c = new Color(theme.secondary);
+    c.lerp(new Color('#ffffff'), isCryoflame ? 0.2 : 0.38);
+    return c;
+  }, [theme.secondary, isCryoflame]);
+
+  const primaryColor = useMemo(() => new Color(theme.primary), [theme.primary]);
+  const secondaryColor = useMemo(() => new Color(theme.secondary), [theme.secondary]);
 
   useEffect(() => {
     if (boltRef.current) {
@@ -60,7 +96,24 @@ export default function EntropicBolt({
     }
   }, [position]);
 
+  useEffect(() => {
+    alignBoltToDirection(orientRef.current, direction);
+  }, [direction]);
+
   useFrame((_, delta) => {
+    if (orientRef.current) {
+      alignBoltToDirection(orientRef.current, direction);
+    }
+
+    const t = timeElapsed.current;
+    const pulse = 1 + Math.sin(t * 16) * 0.07 + Math.sin(t * 7.3) * 0.04;
+    if (coronaRef.current) {
+      coronaRef.current.scale.setScalar(pulse);
+    }
+    if (tipRingRef.current) {
+      tipRingRef.current.rotation.z += delta * 5.5;
+    }
+
     if (!boltRef.current || hasCollided.current) return;
 
     timeElapsed.current += delta;
@@ -71,28 +124,7 @@ export default function EntropicBolt({
 
     let finalPosition = idealPosition;
 
-    if (!isCryoflame) {
-      const time = timeElapsed.current;
-      const seed = randomSeed.current;
-
-      // Subtle chaotic movement — reduced amplitude for cleaner look
-      const chaoticX = Math.sin(time * 6 + seed) * 0.12 * Math.sin(time * 2.5 + seed * 0.5);
-      const chaoticY = Math.cos(time * 5 + seed * 1.5) * 0.12 * Math.sin(time * 3 + seed * 0.8);
-      const chaoticZ = Math.sin(time * 5.5 + seed * 2) * 0.1 * Math.cos(time * 4 + seed * 1.2);
-
-      const jitterIntensity = (1 - progress) * 0.04;
-      const jitterX = (Math.random() - 0.5) * jitterIntensity;
-      const jitterY = (Math.random() - 0.5) * jitterIntensity;
-      const jitterZ = (Math.random() - 0.5) * jitterIntensity;
-
-      chaoticOffset.current.set(
-        chaoticX + jitterX,
-        chaoticY + jitterY,
-        chaoticZ + jitterZ
-      );
-
-      finalPosition = idealPosition.clone().add(chaoticOffset.current);
-    }
+   
 
     boltRef.current.position.copy(finalPosition);
 
@@ -102,6 +134,7 @@ export default function EntropicBolt({
 
       if (hitSomething) {
         hasCollided.current = true;
+        setFlightActive(false);
         setImpactPosition(currentPos);
         setShowImpact(true);
         if (onImpact) onImpact(currentPos);
@@ -112,6 +145,7 @@ export default function EntropicBolt({
     if (progress >= 1) {
       if (!hasCollided.current) {
         hasCollided.current = true;
+        setFlightActive(false);
         setImpactPosition(targetPosition.current.clone());
         setShowImpact(true);
         if (onImpact) onImpact(targetPosition.current.clone());
@@ -120,6 +154,7 @@ export default function EntropicBolt({
   });
 
   const handleImpactComplete = () => {
+    setShowImpact(false);
     setTimeout(() => {
       if (onImpact) onImpact();
     }, 200);
@@ -127,36 +162,105 @@ export default function EntropicBolt({
 
   return (
     <group>
-      {!hasCollided.current && (
+      {flightActive && (
         <>
           <EntropicBoltTrail
             color={trailColor}
-            size={0.3}
+            accentColor={trailAccent}
+            size={0.325}
             meshRef={boltRef}
             opacity={1}
             isCryoflame={isCryoflame}
           />
 
           <group ref={boltRef} position={position.toArray()}>
-            <group
-              rotation={[
-                0,
-                Math.atan2(direction.x, direction.z),
-                0
-              ]}
-            >
+            <group ref={orientRef}>
+              <mesh ref={boltMeshRef}>
+                <cylinderGeometry args={[0.048, 0.028, 0.78, 10, 1, false]} />
+                <meshStandardMaterial
+                  color={primaryColor}
+                  emissive={secondaryColor}
+                  emissiveIntensity={2.8}
+                  transparent
+                  opacity={0.95}
+                  blending={AdditiveBlending}
+                  depthWrite={false}
+                />
+              </mesh>
+
+              <mesh ref={coronaRef}>
+                <cylinderGeometry args={[0.088, 0.055, 0.86, 12, 1, true]} />
+                <meshStandardMaterial
+                  color={secondaryColor}
+                  emissive={primaryColor}
+                  emissiveIntensity={1.35}
+                  transparent
+                  opacity={0.22}
+                  blending={AdditiveBlending}
+                  depthWrite={false}
+                  side={DoubleSide}
+                />
+              </mesh>
+
+              <mesh position={[0, 0.42, 0]} ref={tipRingRef}>
+                <torusGeometry args={[0.09, 0.012, 8, 20]} />
+                <meshStandardMaterial
+                  color={secondaryColor}
+                  emissive={secondaryColor}
+                  emissiveIntensity={3.2}
+                  transparent
+                  opacity={0.55}
+                  blending={AdditiveBlending}
+                  depthWrite={false}
+                />
+              </mesh>
+
+              <mesh position={[0, -0.36, 0]} rotation={[0, 0, Math.PI / 5]}>
+                <torusGeometry args={[0.065, 0.008, 6, 16]} />
+                <meshStandardMaterial
+                  color={primaryColor}
+                  emissive={secondaryColor}
+                  emissiveIntensity={2.0}
+                  transparent
+                  opacity={0.35}
+                  blending={AdditiveBlending}
+                  depthWrite={false}
+                />
+              </mesh>
+
+              <mesh position={[0, 0.46, 0]}>
+                <sphereGeometry args={[0.06, 10, 10]} />
+                <meshStandardMaterial
+                  color={secondaryColor}
+                  emissive={secondaryColor}
+                  emissiveIntensity={4.5}
+                  transparent
+                  opacity={0.9}
+                  blending={AdditiveBlending}
+                  depthWrite={false}
+                />
+              </mesh>
+
               <pointLight
                 color={theme.light}
-                intensity={3}
-                distance={4}
+                intensity={5.5}
+                distance={7}
                 decay={2}
+                position={[0, 0.15, 0]}
               />
             </group>
           </group>
         </>
       )}
 
-
+      {showImpact && impactPosition && (
+        <EntropicBoltImpact
+          position={impactPosition}
+          theme={theme}
+          isCryoflame={isCryoflame}
+          onComplete={handleImpactComplete}
+        />
+      )}
     </group>
   );
 }

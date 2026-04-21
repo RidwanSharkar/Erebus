@@ -58,7 +58,6 @@ interface SummonTotemData {
     isSummon?: boolean;
   }>) => void;
   nextDamageNumberId?: { current: number };
-  onHealPlayer?: (healAmount: number, targetPlayerId?: string) => void;
   casterId?: string;
   localSocketId?: string;
 }
@@ -117,7 +116,6 @@ export interface SummonTotemManagerRef {
       isSummon?: boolean;
     }>) => void,
     nextDamageNumberId?: { current: number },
-    onHealPlayer?: (healAmount: number, targetPlayerId?: string) => void,
     casterId?: string,
     localSocketId?: string
   ) => number;
@@ -178,7 +176,6 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
       isSummon?: boolean;
     }>) => void,
     nextDamageNumberId?: { current: number },
-    onHealPlayer?: (healAmount: number, targetPlayerId?: string) => void,
     casterId?: string,
     localSocketId?: string
   ) => {
@@ -190,6 +187,15 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
       onTotemComplete?.(totemId);
     };
 
+    const onDamageForTotem =
+      onDamage &&
+      ((targetId: string, damage: number, impactPosition: Vector3, isCritical?: boolean) => {
+        if (casterId != null && localSocketId != null && casterId !== localSocketId) {
+          return;
+        }
+        onDamage(targetId, damage, impactPosition, isCritical);
+      });
+
     const newTotem: SummonTotemData = {
       id: totemId,
       startTime,
@@ -197,12 +203,11 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
       position: position.clone(),
       onComplete: handleTotemComplete,
       enemyData,
-      onDamage,
+      onDamage: onDamageForTotem || undefined,
       setActiveEffects,
       activeEffects: activeEffects || [],
       setDamageNumbers,
       nextDamageNumberId,
-      onHealPlayer,
       casterId: casterId,
       localSocketId
     };
@@ -237,7 +242,6 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
           activeEffects={totem.activeEffects}
           setDamageNumbers={totem.setDamageNumbers}
           nextDamageNumberId={totem.nextDamageNumberId}
-          onHealPlayer={totem.onHealPlayer}
           casterId={totem.casterId}
         />
       ))}
@@ -288,7 +292,7 @@ let globalSummonTotemTriggerCallback: ((position: Vector3, enemyData?: Array<{ i
   position: Vector3;
   isCritical: boolean;
   isSummon?: boolean;
-}>) => void, nextDamageNumberId?: { current: number }, onHealPlayer?: (healAmount: number, targetPlayerId?: string) => void, casterId?: string) => void) | null = null;
+}>) => void, nextDamageNumberId?: { current: number }, casterId?: string) => void) | null = null;
 
 export const setGlobalSummonTotemTrigger = (callback: (position: Vector3, enemyData?: Array<{ id: string; position: Vector3; health: number }>, onDamage?: (targetId: string, damage: number, impactPosition: Vector3, isCritical?: boolean) => void, setActiveEffects?: (callback: (prev: Array<{
   id: number;
@@ -329,7 +333,7 @@ export const setGlobalSummonTotemTrigger = (callback: (position: Vector3, enemyD
   position: Vector3;
   isCritical: boolean;
   isSummon?: boolean;
-}>) => void, nextDamageNumberId?: { current: number }, onHealPlayer?: (healAmount: number, targetPlayerId?: string) => void, casterId?: string) => void) => {
+}>) => void, nextDamageNumberId?: { current: number }, casterId?: string) => void) => {
   globalSummonTotemTriggerCallback = callback;
 };
 
@@ -380,7 +384,6 @@ export const triggerGlobalSummonTotem = (
     isSummon?: boolean;
   }>) => void,
   nextDamageNumberId?: { current: number },
-  onHealPlayer?: (healAmount: number, targetPlayerId?: string) => void,
   casterId?: string
 ) => {
   if (globalSummonTotemTriggerCallback) {
@@ -392,7 +395,6 @@ export const triggerGlobalSummonTotem = (
       activeEffects,
       setDamageNumbers,
       nextDamageNumberId,
-      onHealPlayer,
       casterId
     );
   }
@@ -445,7 +447,6 @@ export const createSummonTotem = (
     isSummon?: boolean;
   }>) => void,
   nextDamageNumberId?: { current: number },
-  onHealPlayer?: (healAmount: number, targetPlayerId?: string) => void,
   casterId?: string
 ): number | null => {
   // This function can be called from external systems to create totems

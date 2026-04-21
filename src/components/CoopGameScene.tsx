@@ -661,6 +661,38 @@ export function CoopGameScene({
     setSmiteDamageNumbers({ setDamageNumbers, nextDamageNumberId });
   }, []);
 
+  const summonTotemEnemyData = useMemo(
+    () => [
+      ...Array.from(players.values())
+        .filter((p: Player) => p.id !== socket?.id)
+        .map((p: Player) => ({
+          id: p.id,
+          position: new Vector3(p.position.x, p.position.y, p.position.z),
+          health: p.health,
+        })),
+      ...Array.from(enemies.values())
+        .filter((e) => !e.isDying && e.health > 0)
+        .map((e) => ({
+          id: e.id,
+          position: new Vector3(e.position.x, e.position.y, e.position.z),
+          health: e.health,
+        })),
+    ],
+    [players, enemies, socket?.id],
+  );
+
+  const handleSummonTotemDamage = useCallback(
+    (targetId: string, damage: number, _impactPosition: Vector3, isCritical?: boolean) => {
+      if (!socket?.id) return;
+      if (enemies.has(targetId)) {
+        damageEnemy(targetId, damage, socket.id);
+      } else {
+        broadcastPlayerDamage(targetId, damage, 'summon_totem', isCritical);
+      }
+    },
+    [damageEnemy, broadcastPlayerDamage, enemies, socket?.id],
+  );
+
   // Create a ref for the Viper Sting manager that includes position and rotation
   const viperStingParentRef = useRef({
     position: new Vector3(0, 0.5, 28),
@@ -3223,8 +3255,7 @@ export function CoopGameScene({
               undefined, // Let PVPSummonTotemManager handle active effects
               undefined, // Let PVPSummonTotemManager handle damage numbers
               undefined, // Let PVPSummonTotemManager handle damage number ID
-              undefined, // Remote totems healing is handled by the server
-              data.playerId // Pass remote caster ID
+              data.playerId // Remote caster ID (visual-only damage; local client does not apply hits)
             );
           }
         }
@@ -5716,69 +5747,18 @@ export function CoopGameScene({
 
     // Set up Summon Totem callback
     controlSystem.setSummonTotemCallback((position) => {
-      // Broadcast to other players first
       broadcastPlayerAbility('summon_totem', position);
 
-      // Trigger local totem creation via PVPSummonTotemManager with healing callback
       if (socket?.id && (window as any).triggerGlobalSummonTotem) {
         (window as any).triggerGlobalSummonTotem(
           position,
-          undefined, // Let PVPSummonTotemManager handle enemy data
-          undefined, // Let PVPSummonTotemManager handle damage callback
-          undefined, // Let PVPSummonTotemManager handle effects
-          undefined, // Let PVPSummonTotemManager handle active effects
-          undefined, // Let PVPSummonTotemManager handle damage numbers
-          undefined, // Let PVPSummonTotemManager handle damage number ID
-          (healAmount: number, targetPlayerId?: string) => {
-            // Heal callback - broadcast healing to specific player or all nearby players
-            if (targetPlayerId && player && socket && currentRoomId) {
-              const transform = player.getComponent(Transform);
-              if (transform) {
-                // Broadcast single-target healing (totem heals specific player)
-                socket.emit('player-healing', {
-                  roomId: currentRoomId,
-                  healingAmount: healAmount,
-                  healingType: 'summon_totem',
-                  position: {
-                    x: transform.position.x,
-                    y: transform.position.y,
-                    z: transform.position.z
-                  },
-                  targetPlayerId: targetPlayerId, // Heal the specific target player
-                  sourcePlayerId: socket.id
-                });
-
-                // If healing the local player, apply it immediately with visual feedback
-                if (targetPlayerId === socket.id) {
-                  const healthComponent = player.getComponent(Health);
-                  if (healthComponent) {
-                    const previousHealth = healthComponent.currentHealth;
-                    healthComponent.heal(healAmount);
-                    const actualHealingAmount = healthComponent.currentHealth - previousHealth;
-                    
-                    // Show local healing visual feedback
-                    if (actualHealingAmount > 0) {
-                      const damageNumberManager = (window as any).damageNumberManager;
-                      if (damageNumberManager) {
-                        const healingPosition = new Vector3(
-                          transform.position.x,
-                          transform.position.y + 1.5,
-                          transform.position.z
-                        );
-                        damageNumberManager.addDamageNumber(
-                          actualHealingAmount,
-                          false,
-                          healingPosition,
-                          'summon_totem_healing'
-                        );
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          socket.id  // Pass caster ID
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          socket.id
         );
       }
     });
@@ -6199,13 +6179,6 @@ export function CoopGameScene({
       };
     }
   }, [onDamageNumberComplete]);
-
-  // Real-time enemy data for Summon Totem Manager (not memoized to get real-time positions)
-  const summonTotemEnemyData = Array.from(players.values()).filter((player: Player) => player.id !== socket?.id).map((player: Player) => ({
-    id: player.id,
-    position: new Vector3(player.position.x, player.position.y, player.position.z),
-    health: player.health
-  }));
 
   return (
     <>
@@ -7387,21 +7360,10 @@ export function CoopGameScene({
           <PVPSummonTotemManager
             players={players}
             localSocketId={socket?.id}
-            onHealPlayer={(healAmount: number, targetPlayerId?: string) => {
-              // Broadcast totem healing to server
-              if (targetPlayerId) {
-                // Get the target player's position for the healing effect
-                const targetPlayer = players.get(targetPlayerId);
-                if (targetPlayer) {
-                  const targetPosition = {
-                    x: targetPlayer.position.x,
-                    y: targetPlayer.position.y + 1.5, // Position above player's head
-                    z: targetPlayer.position.z
-                  };
-                  broadcastPlayerHealing(healAmount, 'totem', targetPosition, targetPlayerId);
-                }
-              }
-            }}
+            enemyData={summonTotemEnemyData}
+            onDamage={handleSummonTotemDamage}
+            setDamageNumbers={smiteDamageNumbers.setDamageNumbers}
+            nextDamageNumberId={smiteDamageNumbers.nextDamageNumberId}
           />
           <RejuvenatingShotManager
             world={engineRef.current.getWorld()}

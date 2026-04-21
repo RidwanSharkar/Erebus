@@ -50,9 +50,6 @@ interface PVPSummonTotemManagerProps {
     isSummon?: boolean;
   }>) => void;
   nextDamageNumberId?: { current: number };
-  onHealPlayer?: (healAmount: number, targetPlayerId?: string) => void;
-  playerId?: string; // Add player ID for healing
-  onHealPlayerCallback?: (healAmount: number, targetPlayerId?: string) => void; // Additional healing callback
 }
 
 const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
@@ -64,9 +61,6 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
   activeEffects = [],
   setDamageNumbers,
   nextDamageNumberId,
-  onHealPlayer,
-  playerId,
-  onHealPlayerCallback
 }) => {
   const managerRef = React.useRef<SummonTotemManagerRef>(null);
 
@@ -84,7 +78,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
   }, [enemyData]);
 
   React.useEffect(() => {
-    setGlobalSummonTotemTrigger((position, enemyDataParam, onDamageParam, setActiveEffectsParam, activeEffectsParam, setDamageNumbersParam, nextDamageNumberIdParam, onHealPlayerParam, casterId) => {
+    setGlobalSummonTotemTrigger((position, enemyDataParam, onDamageParam, setActiveEffectsParam, activeEffectsParam, setDamageNumbersParam, nextDamageNumberIdParam, casterId) => {
 
       if (managerRef.current) {
         let finalEnemyData: Array<{ id: string; position: Vector3; health: number }> = [];
@@ -107,8 +101,8 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
           }
 
           // Also include any provided enemyData prop (NPCs)
-          if (enemyData && enemyData.length > 0) {
-            finalEnemyData = [...finalEnemyData, ...enemyData];
+          if (enemyDataRef.current && enemyDataRef.current.length > 0) {
+            finalEnemyData = [...finalEnemyData, ...enemyDataRef.current];
           }
         }
 
@@ -124,12 +118,6 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
           activeEffectsParam || activeEffects,
           setDamageNumbersParam || setDamageNumbers,
           nextDamageNumberIdParam || nextDamageNumberId,
-          onHealPlayerParam || (casterId && localSocketId && casterId !== localSocketId ? ((healAmount: number, targetPlayerId?: string) => {
-            // Remote totems should not heal anyone locally - healing is handled by the server
-          }) : onHealPlayer) || onHealPlayerCallback || ((healAmount: number, targetPlayerId?: string) => {
-            // Heal players - this should be handled by the parent component
-            // The targetPlayerId parameter allows healing specific players
-          }),
           casterId,
           effectiveLocalSocketId
         );
@@ -139,7 +127,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
     return () => {
       setGlobalSummonTotemTrigger(() => {});
     };
-  }, [onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, onHealPlayer, onHealPlayerCallback, playerId, enemyData, players, localSocketId]);
+  }, [onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, enemyData, players, localSocketId]);
 
   return (
     <SummonTotemManager

@@ -1,8 +1,9 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { Group, Vector3, AdditiveBlending } from 'three';
+import { Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import TotemModel from './TotemModel';
 import UnholyAura from './UnholyAura';
+import TotemEntropicBolt from './TotemEntropicBolt';
 import { calculateDamage } from '@/core/DamageCalculator';
 import { WeaponType } from '@/components/dragon/weapons';
 
@@ -61,7 +62,6 @@ interface SummonProps {
     isSummon?: boolean;
   }>) => void;
   nextDamageNumberId?: { current: number };
-  onHealPlayer?: (healAmount: number, targetPlayerId?: string) => void; // Callback for healing players (with optional target ID)
   casterId?: string; // ID of the player who cast the totem
 }
 
@@ -77,12 +77,15 @@ export default function SummonedTotem({
   activeEffects = [],
   setDamageNumbers,
   nextDamageNumberId,
-  onHealPlayer,
   casterId
 }: SummonProps) {
 
   const groupRef = useRef<Group>(null);
+  const boltIdRef = useRef(0);
   const [currentTarget, setCurrentTarget] = useState<{ id: string; position: Vector3; health: number } | null>(null);
+  const [activeBolts, setActiveBolts] = useState<
+    Array<{ id: number; from: Vector3; to: Vector3; targetId: string }>
+  >([]);
 
   const constants = useRef({
     lastAttackTime: 0,
@@ -90,15 +93,10 @@ export default function SummonedTotem({
     hasTriggeredCleanup: false,
     mountId: Date.now(),
     ATTACK_COOLDOWN: 500, // 0.5 seconds
-    RANGE: 6, // 6 units range for PVP targeting
-    HEAL_RANGE: 5, // 5 units range for healing
+    RANGE: 6, // 6 units range for targeting
     DURATION: 8000, // 8 seconds
     BASE_DAMAGE: 20, // Same as scythe basic attack damage
     EFFECT_DURATION: 225,
-    // Removed TARGET_SWITCH_INTERVAL - continuously check for targets
-    HEAL_INTERVAL: 1000, // Heal every 1 second
-    HEAL_AMOUNT: 40, // 40 HP per second (updated from 20)
-    lastHealTime: Date.now()
   }).current;
 
   const calculateDistance = useCallback((pos1: Vector3, pos2: Vector3) => {
@@ -114,8 +112,6 @@ export default function SummonedTotem({
 
     // Add real-time player positions
     if (players) {
-      const allPlayerIds = Array.from(players.keys());
-
       const playerEnemies = Array.from(players.entries())
         .filter(([playerId]) => !casterId || playerId !== casterId) // Exclude the caster of the totem (if casterId is defined)
         .map(([playerId, playerData]) => ({
@@ -129,13 +125,6 @@ export default function SummonedTotem({
 
     return currentEnemies;
   }, [players, casterId, enemyData]);
-
-  // Log initial enemy data
-  const initialEnemyData = getCurrentEnemyData();
-
-  // Log PVP player detection
-  const pvpPlayers = initialEnemyData.filter(e => !e.id.startsWith('enemy-'));
-  const npcs = initialEnemyData.filter(e => e.id.startsWith('enemy-'));
 
   const findNewTarget = useCallback((excludeCurrentTarget: boolean = false): { id: string; position: Vector3; health: number } | null => {
     if (!groupRef.current) {
@@ -162,13 +151,6 @@ export default function SummonedTotem({
         continue;
       }
 
-      // In PVP mode, only target enemy players (not NPCs)
-      // Enemy players have socket IDs, NPCs have IDs starting with 'enemy-'
-      if (enemy.id.startsWith('enemy-')) {
-        // Skip enemy NPCs in PVP mode
-        continue;
-      }
-
       if (excludeCurrentTarget && currentTarget && enemy.id === currentTarget.id) {
         continue;
       }
@@ -188,8 +170,7 @@ export default function SummonedTotem({
   }, [getCurrentEnemyData, calculateDistance, currentTarget, constants.RANGE]);
 
   const handleAttack = useCallback((target: { id: string; position: Vector3; health: number }) => {
-    if (!target || target.health <= 0 || !onDamage || !nextDamageNumberId || !setDamageNumbers || !setActiveEffects) {
-
+    if (!target || target.health <= 0 || !onDamage || !nextDamageNumberId || !setDamageNumbers) {
       return;
     }
 
@@ -216,8 +197,6 @@ export default function SummonedTotem({
     // Call the damage callback to route damage to server
     onDamage(target.id, damageResult.damage, currentWorldImpactPosition, damageResult.isCritical);
 
-    const effectId = Date.now();
-
     // Create explosion effect that tracks the target player's current position
     // Instead of using the internal activeEffects system, broadcast to the global PVP system
     if (typeof window !== 'undefined' && (window as any).triggerSummonTotemExplosion) {
@@ -232,62 +211,7 @@ export default function SummonedTotem({
       isCritical: damageResult.isCritical,
       isSummon: true // Mark as summon damage for proper attribution
     }]);
-  }, [constants, onDamage, setActiveEffects, setDamageNumbers, nextDamageNumberId, getCurrentEnemyData, casterId]);
-
-  const handleHealing = useCallback(() => {
-    if (!onHealPlayer || !groupRef.current) {
-      return;
-    }
-
-    const now = Date.now();
-    if (now - constants.lastHealTime >= constants.HEAL_INTERVAL) {
-      // Get totem's world position
-      const totemWorldPosition = new Vector3();
-      groupRef.current.getWorldPosition(totemWorldPosition);
-
-      // Track if we've healed the caster
-      let casterHealedFromPlayersMap = false;
-      let casterPositionFromMap: Vector3 | null = null;
-
-      // Heal ALL players within HEAL_RANGE (5 units)
-      if (players) {
-        players.forEach((player, playerId) => {
-          const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
-          const distance = calculateDistance(totemWorldPosition, playerPos);
-          
-          // Track caster's position from map for fallback check
-          if (playerId === casterId) {
-            casterPositionFromMap = playerPos;
-          }
-          
-          // Heal player if within range
-          if (distance <= constants.HEAL_RANGE) {
-            // Call healing callback with player ID to heal specific player
-            onHealPlayer(constants.HEAL_AMOUNT, playerId);
-            
-            // Track if caster was healed
-            if (playerId === casterId) {
-              casterHealedFromPlayersMap = true;
-            }
-          }
-        });
-      }
-      
-      // CRITICAL FIX: If the caster wasn't healed from the players map (due to stale position),
-      // check if their stale position is close enough with a generous range multiplier
-      // This accounts for network lag and position update delays (2-3x normal range)
-      if (casterId && !casterHealedFromPlayersMap && casterPositionFromMap) {
-        const distanceFromStalePosition = calculateDistance(totemWorldPosition, casterPositionFromMap);
-        // Use 3x the normal healing range to account for position lag (15 units instead of 5)
-        if (distanceFromStalePosition <= constants.HEAL_RANGE * 3) {
-          // Caster is likely within range despite stale position data
-          onHealPlayer(constants.HEAL_AMOUNT, casterId);
-        }
-      }
-      
-      constants.lastHealTime = now;
-    }
-  }, [constants, onHealPlayer, players, casterId, calculateDistance]);
+  }, [constants, onDamage, setDamageNumbers, nextDamageNumberId, getCurrentEnemyData, casterId]);
 
   useFrame(() => {
     const now = Date.now();
@@ -302,9 +226,6 @@ export default function SummonedTotem({
       return;
     }
 
-    // Handle healing every second
-    handleHealing();
-
     // Check attack cooldown
     if (now - constants.lastAttackTime < constants.ATTACK_COOLDOWN) {
       return;
@@ -314,16 +235,27 @@ export default function SummonedTotem({
     // Continuously check for the closest enemy in range
     const closestEnemy = findNewTarget();
 
-    // Attack if we have a valid target in range
+    // Attack if we have a valid target in range — spawn a totem bolt; damage applies on impact
     if (closestEnemy && closestEnemy.health > 0) {
-      const currentTotemPosition = new Vector3();
       if (groupRef.current) {
-        groupRef.current.getWorldPosition(currentTotemPosition);
+        const from = new Vector3();
+        groupRef.current.getWorldPosition(from);
+        from.y += 0.42;
+        const to = closestEnemy.position.clone();
+        to.y = Math.max(to.y, 0.35) + 1.05;
+        const id = boltIdRef.current++;
+        setCurrentTarget(closestEnemy);
+        setActiveBolts((prev) => [
+          ...prev,
+          {
+            id,
+            from: from.clone(),
+            to: to.clone(),
+            targetId: closestEnemy.id,
+          },
+        ]);
+        constants.lastAttackTime = now;
       }
-      const distance = calculateDistance(closestEnemy.position, currentTotemPosition);
-      setCurrentTarget(closestEnemy);
-      handleAttack(closestEnemy);
-      constants.lastAttackTime = now;
     } else {
       // No enemy in range, clear current target
       if (currentTarget) {
@@ -345,11 +277,33 @@ export default function SummonedTotem({
     };
   }, [setActiveEffects, constants.mountId]);
 
-  return (
-    <group ref={groupRef} position={position.toArray()}>
-      <TotemModel isAttacking={!!currentTarget} />
-      <UnholyAura />
+  const onTotemBoltImpact = useCallback(
+    (boltId: number, targetId: string) => {
+      setActiveBolts((prev) => prev.filter((b) => b.id !== boltId));
+      const currentEnemyData = getCurrentEnemyData();
+      const currentEnemy = currentEnemyData.find((e) => e.id === targetId && e.health > 0);
+      if (!currentEnemy) {
+        return;
+      }
+      handleAttack(currentEnemy);
+    },
+    [getCurrentEnemyData, handleAttack],
+  );
 
-    </group>
+  return (
+    <>
+      <group ref={groupRef} position={position.toArray()}>
+        <TotemModel isAttacking={!!currentTarget} />
+        <UnholyAura />
+      </group>
+      {activeBolts.map((b) => (
+        <TotemEntropicBolt
+          key={b.id}
+          from={b.from}
+          to={b.to}
+          onImpact={() => onTotemBoltImpact(b.id, b.targetId)}
+        />
+      ))}
+    </>
   );
 }

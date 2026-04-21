@@ -30,6 +30,7 @@ interface ProjectileData {
   opacity?: number;
   ownerId?: string; // For tower projectiles
   isCryoflame?: boolean; // For Entropic Bolt Cryoflame mode
+  colorVariant?: string; // Entropic bolt roll color (purple / blue / red / green)
   projectileType?: string; // For projectile type differentiation (e.g., burst_arrow)
 }
 
@@ -201,7 +202,8 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             position: transform.position.clone(),
             direction: direction.clone(),
             entityId: entity.id,
-            isCryoflame: userData.isCryoflame || false
+            isCryoflame: userData.isCryoflame || false,
+            colorVariant: userData.colorVariant || 'purple'
           });
         }
       } else if (userData.isChargedArrow) {
@@ -375,6 +377,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
           position={bolt.position}
           direction={bolt.direction}
           isCryoflame={bolt.isCryoflame}
+          colorVariant={bolt.colorVariant}
           onImpact={(impactPosition?: Vector3) => {
             // console.log(`⚡ EntropicBolt ${bolt.id} impact at position:`, impactPosition?.toArray());
           }}
