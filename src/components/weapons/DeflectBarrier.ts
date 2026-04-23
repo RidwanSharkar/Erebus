@@ -47,7 +47,12 @@ export class DeflectBarrier {
     }
   }
 
-  public activate(playerPosition: Vector3, playerRotation: Vector3, playerEntity?: Entity): void {
+  public activate(
+    playerPosition: Vector3,
+    playerRotation: Vector3,
+    playerEntity?: Entity,
+    invulnerableDurationSec: number = 3,
+  ): void {
     if (this.isActive) return;
 
     this.playerPosition.copy(playerPosition);
@@ -59,7 +64,7 @@ export class DeflectBarrier {
     if (this.playerEntity) {
       const playerHealth = this.playerEntity.getComponent(Health);
       if (playerHealth) {
-        playerHealth.setInvulnerable(3.0); // 3 second invulnerability
+        playerHealth.setInvulnerable(invulnerableDurationSec, 'aegis');
       }
     }
 

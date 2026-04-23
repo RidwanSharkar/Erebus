@@ -50,6 +50,7 @@ interface PVPSummonTotemManagerProps {
     isSummon?: boolean;
   }>) => void;
   nextDamageNumberId?: { current: number };
+  onTotemFloatingDamage?: (damage: number, isCritical: boolean, position: Vector3) => void;
 }
 
 const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
@@ -61,6 +62,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
   activeEffects = [],
   setDamageNumbers,
   nextDamageNumberId,
+  onTotemFloatingDamage,
 }) => {
   const managerRef = React.useRef<SummonTotemManagerRef>(null);
 
@@ -127,7 +129,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
     return () => {
       setGlobalSummonTotemTrigger(() => {});
     };
-  }, [onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, enemyData, players, localSocketId]);
+  }, [onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, onTotemFloatingDamage, enemyData, players, localSocketId]);
 
   return (
     <SummonTotemManager
@@ -136,6 +138,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
       }}
       players={players}
       localSocketId={localSocketId}
+      onTotemFloatingDamage={onTotemFloatingDamage}
     />
   );
 };

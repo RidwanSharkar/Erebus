@@ -1,6 +1,18 @@
-import { useRef, useEffect } from 'react';
-import { useFrame, useThree } from '@react-three/fiber';
-import { Group, Vector3, Color, AdditiveBlending, DoubleSide } from '@/utils/three-exports';
+import { useRef, useEffect, useMemo, useLayoutEffect } from 'react';
+import { useFrame } from '@react-three/fiber';
+import { Group, Vector3, Color, AdditiveBlending, DoubleSide, BackSide } from '@/utils/three-exports';
+import { WeaponType } from '@/components/dragon/weapons';
+import { getAegisShieldPalette } from '@/utils/aegisShieldPalette';
+
+function tagShieldMaterials(root: Group) {
+  root.traverse((child: any) => {
+    if (child.material && child.userData.shieldBaseTagged !== 'v1') {
+      child.userData.shieldBaseOpacity = child.material.opacity;
+      child.userData.shieldBaseEmissive = child.material.emissiveIntensity ?? 1;
+      child.userData.shieldBaseTagged = 'v1';
+    }
+  });
+}
 
 interface DeflectShieldProps {
   isActive: boolean;
@@ -8,45 +20,63 @@ interface DeflectShieldProps {
   onComplete?: () => void;
   playerPosition?: Vector3;
   playerRotation?: Vector3;
-  dragonGroupRef?: React.RefObject<Group>; // Reference to the dragon's group for real-time position
+  dragonGroupRef?: React.RefObject<Group>;
+  weaponType?: WeaponType;
+  /** Local player only: pulse shell on `aegis-block` window event. */
+  enableBlockFlash?: boolean;
 }
 
-export default function DeflectShield({ 
-  isActive, 
-  duration, 
+export default function DeflectShield({
+  isActive,
+  duration,
   onComplete,
   playerPosition = new Vector3(0, 0, 0),
   playerRotation = new Vector3(0, 0, 0),
-  dragonGroupRef
+  dragonGroupRef,
+  weaponType = WeaponType.RUNEBLADE,
+  enableBlockFlash = false,
 }: DeflectShieldProps) {
-  const shieldRef = useRef<Group>(null);
+  const bodyShellRef = useRef<Group>(null);
+  const forwardGroupRef = useRef<Group>(null);
   const startTime = useRef<number | null>(null);
-  const animationProgress = useRef(0);
+  const blockFlashEndMs = useRef(0);
 
-  // Reset when shield becomes active
+  const palette = useMemo(() => getAegisShieldPalette(weaponType), [weaponType]);
+
+  useEffect(() => {
+    if (!enableBlockFlash || typeof window === 'undefined') return;
+    const onBlock = () => {
+      blockFlashEndMs.current = Date.now() + 150;
+    };
+    window.addEventListener('aegis-block', onBlock);
+    return () => window.removeEventListener('aegis-block', onBlock);
+  }, [enableBlockFlash]);
+
   useEffect(() => {
     if (isActive) {
       startTime.current = Date.now();
-      animationProgress.current = 0;
     } else {
       startTime.current = null;
-      animationProgress.current = 0;
     }
   }, [isActive]);
 
-  useFrame((_, delta) => {
-    if (!shieldRef.current || !isActive || !startTime.current) return;
+  useLayoutEffect(() => {
+    if (!isActive) return;
+    if (bodyShellRef.current) tagShieldMaterials(bodyShellRef.current);
+    if (forwardGroupRef.current) tagShieldMaterials(forwardGroupRef.current);
+  }, [isActive, weaponType, palette]);
+
+  useFrame(() => {
+    if (!isActive || !startTime.current) return;
+    if (!bodyShellRef.current || !forwardGroupRef.current) return;
 
     const elapsed = (Date.now() - startTime.current) / 1000;
     const progress = Math.min(elapsed / duration, 1);
-    animationProgress.current = progress;
 
-    // Get real-time position and rotation from dragon group if available
     let currentPosition = playerPosition;
     let currentRotation = playerRotation;
-    
+
     if (dragonGroupRef?.current) {
-      // Use the dragon's actual current position and rotation
       currentPosition = dragonGroupRef.current.position;
       currentRotation = new Vector3(
         dragonGroupRef.current.rotation.x,
@@ -55,60 +85,56 @@ export default function DeflectShield({
       );
     }
 
-    // Position shield in front of player using REAL-TIME position and rotation
-    // Calculate forward direction based on current rotation (Y rotation only for horizontal facing)
+    const bodyCenter = currentPosition.clone();
+    bodyCenter.y += 1.05;
+    bodyShellRef.current.position.copy(bodyCenter);
+
     const forwardDirection = new Vector3(
-      Math.sin(currentRotation.y), // X component
-      0,                          // Y component (keep level)
-      Math.cos(currentRotation.y - 0.75) // FRONT is Z+
+      Math.sin(currentRotation.y),
+      0,
+      Math.cos(currentRotation.y - 0.75)
     );
-    
-    // Position shield 2.5 units in front of player using REAL-TIME position
     const shieldPosition = currentPosition.clone().add(forwardDirection.multiplyScalar(2.5));
-    shieldPosition.y += 0.25; // Raise shield to player center height
-    
-    shieldRef.current.position.copy(shieldPosition);
-    
-    // Rotate shield to face same direction as player using REAL-TIME rotation
-    shieldRef.current.rotation.set(
+    shieldPosition.y += 0.25;
+
+    forwardGroupRef.current.position.copy(shieldPosition);
+    forwardGroupRef.current.rotation.set(
       currentRotation.x,
       currentRotation.y,
       currentRotation.z
     );
 
-    // Animate shield appearance and disappearance - KEEP CONSISTENT SIZE
-    let opacity = 1;
-    const scale = 0.325; // Scale down the visual effect by half
-    
+    let opacityMul = 1;
+    const scale = 0.325;
     if (progress < 0.1) {
-      // Fade in quickly - only change opacity, not scale
-      const fadeProgress = progress / 0.1;
-      opacity = fadeProgress;
+      opacityMul = progress / 0.1;
     } else if (progress > 0.9) {
-      // Fade out quickly - only change opacity, not scale
-      const fadeProgress = (progress - 0.9) / 0.1;
-      opacity = 1 - fadeProgress;
+      opacityMul = 1 - (progress - 0.9) / 0.1;
     }
 
-    // Apply consistent scale and update materials
-    shieldRef.current.scale.setScalar(scale);
-    
-    // Update material opacity for all children
-    shieldRef.current.traverse((child: any) => {
-      if (child.material) {
-        child.material.opacity = opacity;
-      }
-    });
+    const bodyScale = scale * 1.15;
+    bodyShellRef.current.scale.setScalar(bodyScale);
+    forwardGroupRef.current.scale.setScalar(scale);
 
-    // Pulsing effect
-    const pulseIntensity = 1 + Math.sin(elapsed * 8) * 0.3;
-    shieldRef.current.traverse((child: any) => {
-      if (child.material && child.material.emissiveIntensity !== undefined) {
-        child.material.emissiveIntensity = pulseIntensity;
-      }
-    });
+    const applyOpacityPulse = (root: Group, mul: number, pulseMul: number) => {
+      root.traverse((child: any) => {
+        if (child.material) {
+          const bOp = child.userData.shieldBaseOpacity ?? 1;
+          const bEm = child.userData.shieldBaseEmissive ?? 1;
+          child.material.opacity = bOp * mul;
+          if (child.material.emissiveIntensity !== undefined) {
+            child.material.emissiveIntensity = bEm * pulseMul;
+          }
+        }
+      });
+    };
 
-    // Complete when duration is reached
+    const flashBoost = Date.now() < blockFlashEndMs.current ? 2.0 : 1;
+    const pulseIntensity = (1 + Math.sin(elapsed * 8) * 0.3) * flashBoost;
+
+    applyOpacityPulse(bodyShellRef.current, opacityMul, pulseIntensity);
+    applyOpacityPulse(forwardGroupRef.current, opacityMul, pulseIntensity);
+
     if (progress >= 1) {
       onComplete?.();
     }
@@ -116,135 +142,157 @@ export default function DeflectShield({
 
   if (!isActive) return null;
 
+  const cMain = new Color(palette.main);
+  const cEm = new Color(palette.emissive);
+  const cDeep = new Color(palette.emissiveDeep);
+  const cAccent = new Color(palette.accent);
+
   return (
-    <group ref={shieldRef}>
-      {/* Main shield disc */}
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[3, 3, 0.1, 32]} />
-        <meshStandardMaterial
-          color={new Color(0xFFD700)}
-          emissive={new Color(0xFFA500)}
-          emissiveIntensity={1.5}
-          transparent
-          opacity={0.7}
-          side={DoubleSide}
-          blending={AdditiveBlending}
-        />
-      </mesh>
-
-      {/* Inner glow ring */}
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[2.2, 2.2, 0.05, 32]} />
-        <meshStandardMaterial
-          color={new Color(0xFFFFFF)}
-          emissive={new Color(0xFFD700)}
-          emissiveIntensity={2}
-          transparent
-          opacity={0.5}
-          side={DoubleSide}
-          blending={AdditiveBlending}
-        />
-      </mesh>
-
-      {/* Outer energy ring */}
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[3.5, 3.5, 0.02, 32]} />
-        <meshStandardMaterial
-          color={new Color(0xFFA500)}
-          emissive={new Color(0xFF6F00)}
-          emissiveIntensity={1}
-          transparent
-          opacity={0.3}
-          side={DoubleSide}
-          blending={AdditiveBlending}
-        />
-      </mesh>
-
-      {/* Central star pattern */}
-      <group rotation={[Math.PI / 2, 0, 0]}>
-        {[...Array(8)].map((_, i) => (
-          <mesh 
-            key={i} 
-            position={[
-              Math.cos(i * Math.PI / 4) * 1.5,
-              Math.sin(i * Math.PI / 4) * 1.5,
-              0.05
-            ]}
-            rotation={[0, 0, i * Math.PI / 4]}
-          >
-            <boxGeometry args={[0.8, 0.1, 0.05]} />
-            <meshStandardMaterial
-              color={new Color(0xFFFFFF)}
-              emissive={new Color(0xFFD700)}
-              emissiveIntensity={3}
-              transparent
-              opacity={0.8}
-              blending={AdditiveBlending}
-            />
-          </mesh>
-        ))}
+    <>
+      <group ref={bodyShellRef}>
+        <mesh>
+          <sphereGeometry args={[1.75, 40, 40]} />
+          <meshStandardMaterial
+            color={cMain}
+            emissive={cEm}
+            emissiveIntensity={1.2}
+            transparent
+            opacity={0.55}
+            side={BackSide}
+            blending={AdditiveBlending}
+            depthWrite={false}
+          />
+        </mesh>
+        <mesh scale={1.04}>
+          <sphereGeometry args={[1.75, 32, 32]} />
+          <meshStandardMaterial
+            color={cAccent}
+            emissive={cDeep}
+            emissiveIntensity={0.8}
+            transparent
+            opacity={0.22}
+            side={DoubleSide}
+            blending={AdditiveBlending}
+            depthWrite={false}
+          />
+        </mesh>
+        <pointLight color={cMain} intensity={1.2} distance={6} decay={2} />
       </group>
 
-      {/* Divine cross in center */}
-      <group rotation={[Math.PI / 2, 0, 0]}>
-        {/* Vertical beam */}
-        <mesh position={[0, 0, 0.1]}>
-          <boxGeometry args={[0.15, 2.5, 0.05]} />
+      <group ref={forwardGroupRef}>
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[3, 3, 0.1, 32]} />
           <meshStandardMaterial
-            color={new Color(0xFFFFFF)}
-            emissive={new Color(0xFFD700)}
-            emissiveIntensity={4}
+            color={cMain}
+            emissive={cEm}
+            emissiveIntensity={1.5}
             transparent
-            opacity={0.9}
+            opacity={0.7}
+            side={DoubleSide}
             blending={AdditiveBlending}
           />
         </mesh>
-        
-        {/* Horizontal beam */}
-        <mesh position={[0, 0, 0.1]}>
-          <boxGeometry args={[2.5, 0.15, 0.05]} />
+
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[2.2, 2.2, 0.05, 32]} />
           <meshStandardMaterial
-            color={new Color(0xFFFFFF)}
-            emissive={new Color(0xFFD700)}
-            emissiveIntensity={4}
+            color={cAccent}
+            emissive={cEm}
+            emissiveIntensity={2}
             transparent
-            opacity={0.9}
+            opacity={0.5}
+            side={DoubleSide}
             blending={AdditiveBlending}
           />
         </mesh>
-      </group>
 
-      {/* Particle effects around the shield */}
-      <group rotation={[Math.PI / 2, 0, 0]}>
-        {[...Array(12)].map((_, i) => (
-          <mesh 
-            key={`particle-${i}`}
-            position={[
-              Math.cos(i * Math.PI / 6) * (3.8 + Math.sin(Date.now() * 0.005 + i) * 0.3),
-              Math.sin(i * Math.PI / 6) * (3.8 + Math.sin(Date.now() * 0.005 + i) * 0.3),
-              Math.sin(Date.now() * 0.003 + i) * 0.2
-            ]}
-          >
-            <sphereGeometry args={[0.08, 8, 8]} />
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[3.5, 3.5, 0.02, 32]} />
+          <meshStandardMaterial
+            color={cEm}
+            emissive={cDeep}
+            emissiveIntensity={1}
+            transparent
+            opacity={0.3}
+            side={DoubleSide}
+            blending={AdditiveBlending}
+          />
+        </mesh>
+
+        <group rotation={[Math.PI / 2, 0, 0]}>
+          {[...Array(8)].map((_, i) => (
+            <mesh
+              key={i}
+              position={[
+                Math.cos((i * Math.PI) / 4) * 1.5,
+                Math.sin((i * Math.PI) / 4) * 1.5,
+                0.05,
+              ]}
+              rotation={[0, 0, (i * Math.PI) / 4]}
+            >
+              <boxGeometry args={[0.8, 0.1, 0.05]} />
+              <meshStandardMaterial
+                color={cAccent}
+                emissive={cEm}
+                emissiveIntensity={3}
+                transparent
+                opacity={0.8}
+                blending={AdditiveBlending}
+              />
+            </mesh>
+          ))}
+        </group>
+
+        <group rotation={[Math.PI / 2, 0, 0]}>
+          <mesh position={[0, 0, 0.1]}>
+            <boxGeometry args={[0.15, 2.5, 0.05]} />
             <meshStandardMaterial
-              color={new Color(0xFFD700)}
-              emissive={new Color(0xFFA500)}
-              emissiveIntensity={2}
+              color={cAccent}
+              emissive={cEm}
+              emissiveIntensity={4}
               transparent
-              opacity={0.6}
+              opacity={0.9}
               blending={AdditiveBlending}
             />
           </mesh>
-        ))}
-      </group>
+          <mesh position={[0, 0, 0.1]}>
+            <boxGeometry args={[2.5, 0.15, 0.05]} />
+            <meshStandardMaterial
+              color={cAccent}
+              emissive={cEm}
+              emissiveIntensity={4}
+              transparent
+              opacity={0.9}
+              blending={AdditiveBlending}
+            />
+          </mesh>
+        </group>
 
-      {/* Point light for illumination */}
-      <pointLight 
-        color={new Color(0xFFD700)}
-        intensity={2}
-        distance={8}
-        decay={2}
-      />
-    </group>
+        <group rotation={[Math.PI / 2, 0, 0]}>
+          {[...Array(12)].map((_, i) => (
+            <mesh
+              key={`particle-${i}`}
+              position={[
+                Math.cos((i * Math.PI) / 6) * (3.8 + Math.sin(Date.now() * 0.005 + i) * 0.3),
+                Math.sin((i * Math.PI) / 6) * (3.8 + Math.sin(Date.now() * 0.005 + i) * 0.3),
+                Math.sin(Date.now() * 0.003 + i) * 0.2,
+              ]}
+            >
+              <sphereGeometry args={[0.08, 8, 8]} />
+              <meshStandardMaterial
+                color={cMain}
+                emissive={cEm}
+                emissiveIntensity={2}
+                transparent
+                opacity={0.6}
+                blending={AdditiveBlending}
+              />
+            </mesh>
+          ))}
+        </group>
+
+        <pointLight color={cMain} intensity={2} distance={8} decay={2} />
+      </group>
+    </>
   );
 }

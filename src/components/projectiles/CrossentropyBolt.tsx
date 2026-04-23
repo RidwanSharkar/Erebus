@@ -2,18 +2,31 @@ import React, { useRef, useState } from 'react';
 import { AdditiveBlending } from '@/utils/three-exports';
 
 import { Mesh, Vector3, Clock, Color } from 'three';
-import { useFrame, useThree } from '@react-three/fiber';
+import { useFrame } from '@react-three/fiber';
 import CrossentropyBoltTrail from './CrossentropyBoltTrail';
+import { CROSSENTROPY_MAX_TRAVEL_DISTANCE } from '@/utils/talents';
 
 interface CrossentropyBoltProps {
   id: number;
   position: Vector3;
   direction: Vector3;
+  /** INFERNO talent — red fiery visual theme. */
+  infernoVisual?: boolean;
+  /** Reaper: follow ECS `position` each frame (pierce line), no client collision. */
+  reaperEcsDriven?: boolean;
   onImpact?: (position?: Vector3) => void;
   checkCollisions?: (boltId: number, position: Vector3) => boolean;
 }
 
-export default function CrossentropyBolt({ id, position, direction, onImpact, checkCollisions }: CrossentropyBoltProps) {
+export default function CrossentropyBolt({
+  id,
+  position,
+  direction,
+  infernoVisual = false,
+  reaperEcsDriven = false,
+  onImpact,
+  checkCollisions,
+}: CrossentropyBoltProps) {
   const fireball1Ref = useRef<Mesh>(null);
   const fireball2Ref = useRef<Mesh>(null);
   const fireball3Ref = useRef<Mesh>(null);
@@ -21,7 +34,7 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
   const startSpeed = 0.03;
   const maxSpeed = 2;
   const accelerationDistance = 20; // Distance over which to accelerate from start to max speed
-  const maxRange = 20; // Maximum range before fading
+  const maxRange = CROSSENTROPY_MAX_TRAVEL_DISTANCE; // Aligned with ECS maxDistance for Crossentropy
   const lifespan = 3; // Fallback lifespan
   const currentPosition = useRef(position.clone());
   const startPosition = useRef(position.clone());
@@ -30,9 +43,10 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
   const fadeStartTime = useRef<number | null>(null);
   const fadeDuration = 0.5; // 500ms fade duration
   const [opacity, setOpacity] = useState(1);
-  const { scene } = useThree();
   const size = 0.26;
-  const color = new Color('#FF4500');
+  const color = new Color(infernoVisual ? '#FF2200' : '#FF4500');
+  const meshColor = infernoVisual ? '#E62E2E' : '#FF4500';
+  const meshEmissive = infernoVisual ? '#FF1100' : '#FF6600';
 
   // Spiral parameters
   const spiralRadius = 0.4875;
@@ -46,6 +60,52 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
     if (!fireball1Ref.current || !fireball2Ref.current || !fireball3Ref.current) return;
 
     const currentTime = Date.now();
+
+    if (reaperEcsDriven) {
+      if (fadeStartTime.current !== null) {
+        const fadeElapsed = currentTime - fadeStartTime.current;
+        const fadeProgress = Math.min(fadeElapsed / (fadeDuration * 1000), 1);
+        const newOpacity = 1 - fadeProgress;
+        setOpacity(newOpacity);
+        if (fadeProgress >= 1) {
+          fireball1Ref.current.removeFromParent();
+          fireball2Ref.current.removeFromParent();
+          fireball3Ref.current.removeFromParent();
+          onImpact?.();
+        }
+        return;
+      }
+      if (hasCollided.current) return;
+      currentPosition.current.copy(position);
+      time.current += delta;
+      const spiralAngle = time.current * spiralSpeed * Math.PI * 2;
+      const spiralOffset1 = new Vector3(
+        Math.cos(spiralAngle) * spiralRadius,
+        Math.sin(spiralAngle * 0.5) * spiralRadius * 0.3,
+        0
+      );
+      const spiralOffset2 = new Vector3(
+        Math.cos(spiralAngle + Math.PI) * spiralRadius,
+        Math.sin((spiralAngle + Math.PI) * 0.5) * spiralRadius * 0.3,
+        0
+      );
+      const spiralOffset3 = new Vector3(
+        Math.cos(spiralAngle + (2 * Math.PI) / 3) * spiralRadius,
+        Math.sin((spiralAngle + (2 * Math.PI) / 3) * 0.5) * spiralRadius * 0.3,
+        0
+      );
+      const right = new Vector3();
+      const up = new Vector3(0, 1, 0);
+      right.crossVectors(direction, up).normalize();
+      up.crossVectors(right, direction).normalize();
+      const finalOffset1 = right.clone().multiplyScalar(spiralOffset1.x).add(up.clone().multiplyScalar(spiralOffset1.y));
+      const finalOffset2 = right.clone().multiplyScalar(spiralOffset2.x).add(up.clone().multiplyScalar(spiralOffset2.y));
+      const finalOffset3 = right.clone().multiplyScalar(spiralOffset3.x).add(up.clone().multiplyScalar(spiralOffset3.y));
+      fireball1Ref.current.position.copy(currentPosition.current.clone().add(finalOffset1));
+      fireball2Ref.current.position.copy(currentPosition.current.clone().add(finalOffset2));
+      fireball3Ref.current.position.copy(currentPosition.current.clone().add(finalOffset3));
+      return;
+    }
 
     // Handle fading
     if (fadeStartTime.current !== null) {
@@ -156,8 +216,8 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
       <mesh ref={fireball1Ref} position={currentPosition.current}>
         <sphereGeometry args={[size, 32, 32]} />
         <meshStandardMaterial
-          color="#FF4500"
-          emissive="#FF6600"
+          color={meshColor}
+          emissive={meshEmissive}
           emissiveIntensity={2 * opacity}
           transparent
           opacity={0.9 * opacity}
@@ -170,8 +230,8 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
       <mesh ref={fireball2Ref} position={currentPosition.current}>
         <sphereGeometry args={[size, 32, 32]} />
         <meshStandardMaterial
-          color="#FF4500"
-          emissive="#FF6600"
+          color={meshColor}
+          emissive={meshEmissive}
           emissiveIntensity={2 * opacity}
           transparent
           opacity={0.9 * opacity}
@@ -184,8 +244,8 @@ export default function CrossentropyBolt({ id, position, direction, onImpact, ch
       <mesh ref={fireball3Ref} position={currentPosition.current}>
         <sphereGeometry args={[size, 32, 32]} />
         <meshStandardMaterial
-          color="#FF4500"
-          emissive="#FF6600"
+          color={meshColor}
+          emissive={meshEmissive}
           emissiveIntensity={2 * opacity}
           transparent
           opacity={0.9 * opacity}

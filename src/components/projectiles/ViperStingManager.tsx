@@ -42,6 +42,7 @@ interface ViperStingManagerProps {
     health: number;
   }>;
   wrathfulTalonsReturnCrit?: boolean;
+  onExecuteFirstForwardHit?: () => number;
 }
 
 interface SoulStealEffect {
@@ -92,6 +93,7 @@ export default function ViperStingManager({
   localSocketId,
   players,
   wrathfulTalonsReturnCrit,
+  onExecuteFirstForwardHit,
 }: ViperStingManagerProps) {
   const [soulStealEffects, setSoulStealEffects] = useState<SoulStealEffect[]>([]);
   const nextSoulStealId = useRef(0);
@@ -117,6 +119,7 @@ export default function ViperStingManager({
     localSocketId, // Pass the local socket ID to prevent self-damage
     players, // Pass players data for dynamic PVP targeting
     wrathfulTalonsReturnCrit,
+    onExecuteFirstForwardHit,
   });
 
   // Register global manager

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, type MutableRefObject } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Color, Mesh, Group, Points, Vector3, AdditiveBlending } from '@/utils/three-exports';
 
@@ -9,13 +9,38 @@ interface EntropicBoltTrailProps {
   opacity?: number;
   isCryoflame?: boolean;
   accentColor?: Color;
+  /** Normalized travel direction; used when path history is too short for a stable tangent. */
+  flightDirectionRef?: MutableRefObject<Vector3> | null;
 }
 
-const TRAIL_LENGTH = 15;
-const ORBIT_RADIUS = 0.1;
-const ORBIT_SPEED = 8.5;
+const TRAIL_LENGTH = 25;
+const ORBIT_RADIUS = 0.4;
+const ORBIT_SPEED = 4.5;
 const MIN_MOVEMENT = 0.06;
 const UPDATE_INTERVAL = 0.020;
+
+const AXIS_Y = new Vector3(0, 1, 0);
+const FALLBACK_UP = new Vector3(0, 0, 1);
+const _T = new Vector3();
+const _N = new Vector3();
+const _B = new Vector3();
+const _P = new Vector3();
+
+const DEFAULT_TANGENT = new Vector3(0, 1, 0);
+
+function setPerpBasisFromTangent(tangent: Vector3, outN: Vector3, outB: Vector3) {
+  if (Math.abs(tangent.dot(AXIS_Y)) > 0.985) {
+    outB.crossVectors(tangent, FALLBACK_UP);
+  } else {
+    outB.crossVectors(AXIS_Y, tangent);
+  }
+  if (outB.lengthSq() < 1e-8) {
+    outB.crossVectors(tangent, FALLBACK_UP);
+  }
+  outB.normalize();
+  outN.crossVectors(outB, tangent);
+  outN.normalize();
+}
 
 const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
   color,
@@ -24,6 +49,7 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
   meshRef,
   opacity = 1,
   isCryoflame = false,
+  flightDirectionRef = null,
 }) => {
   const trail1Ref = useRef<Points>(null);
   const trail2Ref = useRef<Points>(null);
@@ -96,6 +122,18 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
 
     const t = timeRef.current * ORBIT_SPEED;
     const count = Math.min(pathHistory.current.length, TRAIL_LENGTH);
+    const hist = pathHistory.current;
+    const n = hist.length;
+
+    const useFallbackT = (dest: Vector3) => {
+      if (flightDirectionRef?.current) {
+        dest.copy(flightDirectionRef.current);
+        if (dest.lengthSq() < 1e-8) dest.copy(DEFAULT_TANGENT);
+        else dest.normalize();
+      } else {
+        dest.copy(DEFAULT_TANGENT);
+      }
+    };
 
     for (let i = 0; i < TRAIL_LENGTH; i++) {
       if (i >= count) {
@@ -108,20 +146,43 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
         continue;
       }
 
-      const center = pathHistory.current[i];
+      const center = hist[i];
       const trailAge = i / TRAIL_LENGTH;
-      // Ribbon-like helix: phase tied to index + time for a looser twist
+      // Helix: phase tied to arc index + time so strands precess around the beam
       const angle = trailAge * Math.PI * 4.2 + t * 0.85 + i * 0.31;
       const fade = Math.pow(1 - trailAge, isCryoflame ? 2.0 : 1.65) * opacity;
       const lateral = ORBIT_RADIUS * (0.85 + trailAge * 0.35);
 
-      pos1.current[i * 3]     = center.x + Math.cos(angle) * lateral;
-      pos1.current[i * 3 + 1] = center.y + Math.sin(angle * 1.08) * lateral;
-      pos1.current[i * 3 + 2] = center.z + Math.sin(angle * 0.65) * lateral * 0.45;
+      if (n >= 2) {
+        if (i === 0) {
+          _T.subVectors(hist[0], hist[1]);
+        } else if (i >= n - 1) {
+          _T.subVectors(hist[i - 1], hist[i]);
+        } else {
+          _T.subVectors(hist[i - 1], hist[i + 1]);
+        }
+        if (_T.lengthSq() < 1e-8) {
+          useFallbackT(_T);
+        } else {
+          _T.normalize();
+        }
+      } else {
+        useFallbackT(_T);
+      }
 
-      pos2.current[i * 3]     = center.x + Math.cos(angle + Math.PI * 0.92) * lateral;
-      pos2.current[i * 3 + 1] = center.y + Math.sin(angle * 1.08 + Math.PI) * lateral;
-      pos2.current[i * 3 + 2] = center.z - Math.sin(angle * 0.65) * lateral * 0.45;
+      setPerpBasisFromTangent(_T, _N, _B);
+
+      const c = Math.cos(angle);
+      const s = Math.sin(angle);
+      // Strand 1: offset strictly in plane perpendicular to T (double-helix partner is opposite)
+      _P.copy(_N).multiplyScalar(c * lateral).addScaledVector(_B, s * lateral);
+      pos1.current[i * 3]     = center.x + _P.x;
+      pos1.current[i * 3 + 1] = center.y + _P.y;
+      pos1.current[i * 3 + 2] = center.z + _P.z;
+
+      pos2.current[i * 3]     = center.x - _P.x;
+      pos2.current[i * 3 + 1] = center.y - _P.y;
+      pos2.current[i * 3 + 2] = center.z - _P.z;
 
       const particleSize = size * 0.68 * (1 - trailAge * 0.48);
       opa1.current[i] = fade * 0.96;

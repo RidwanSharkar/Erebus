@@ -3,6 +3,9 @@ import type { ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { AdditiveBlending, BackSide, Color, Group, MeshBasicMaterial, Vector3 } from '@/utils/three-exports';
 import CustomSky from './CustomSky';
+import type { RoomBorderTheme } from './SimpleBorderEffects';
+import SimpleBorderEffects from './SimpleBorderEffects';
+import PerimeterCloudSystem from './PerimeterCloudSystem';
 import StylizedGrass from './StylizedGrass';
 import StoneGround from './StoneGround';
 import Pillar from './Pillar';
@@ -279,7 +282,6 @@ function ThroneWeaponPedestals() {
                 onWraithStrikeComplete={() => {}}
                 onOathstrikeComplete={() => {}}
                 onChargeComplete={() => {}}
-                onDeflectComplete={() => {}}
                 onCorruptedAuraToggle={() => {}}
                 comboStep={1}
                 currentSubclass={WeaponSubclass.ARCANE}
@@ -364,28 +366,37 @@ function ThronePortalRing({ campType }: { campType: ThroneMainRoomCamp }) {
 }
 
 interface ThroneRoomProps {
-  /** Match main arena grass when camp archetype is blue (snow). */
+  /** Cooler fill light when the session is snow/blue; grass in this room stays green. */
   isSnowTheme?: boolean;
   /**
    * Two distinct main-room archetypes for the side-by-side portals (west = index 0, east = index 1).
    * From server `thronePortalOffer`; defaults used only for visuals if omitted or short.
    */
   thronePortalOffer?: readonly string[];
+  /** Session camp archetype — drives perimeter border colours (same as main `Environment`). */
+  campTypes?: string[];
 }
 
 /**
  * Pre-combat staging space: same grass + stone language as the main map, smaller radius.
  */
-export default function ThroneRoom({ isSnowTheme, thronePortalOffer }: ThroneRoomProps) {
+export default function ThroneRoom({ isSnowTheme, thronePortalOffer, campTypes = [] }: ThroneRoomProps) {
   const keyColor = isSnowTheme ? new Color('#9fc2f0') : new Color('#4a2d6e');
 
   const o = thronePortalOffer;
   const leftCamp = o && o.length > 0 ? normalizeThroneCamp(o[0]) : 'purple';
   const rightCamp = o && o.length >= 2 ? normalizeThroneCamp(o[1]) : 'red';
 
+  const borderTheme: RoomBorderTheme = useMemo(() => {
+    const key = campTypes[0]?.toLowerCase();
+    if (key === 'blue' || key === 'green' || key === 'red' || key === 'purple') return key;
+    return 'red';
+  }, [campTypes]);
+
   return (
     <group name="throne-room">
       <CustomSky />
+      <PerimeterCloudSystem radius={COOP_THRONE_ROOM_RADIUS} />
       <ambientLight intensity={0.14} />
       <hemisphereLight color={keyColor} groundColor="#1a1020" intensity={0.35} />
       <directionalLight
@@ -405,9 +416,16 @@ export default function ThroneRoom({ isSnowTheme, thronePortalOffer }: ThroneRoo
         count={THRONE_GRASS_COUNT}
         bladeHeight={0.42}
         windStrength={0.2}
-        isSnowTheme={isSnowTheme}
+        isSnowTheme={false}
       />
       <StoneGround variant="throne" />
+      <SimpleBorderEffects
+        radius={COOP_THRONE_ROOM_RADIUS}
+        count={30}
+        enableParticles
+        particleCount={60}
+        borderTheme={borderTheme}
+      />
       {THRONE_PILLAR_DEFS.map((def, i) => (
         <Pillar key={`throne-pillar-${i}`} position={def.position} orbColorHex={def.orbColorHex} />
       ))}

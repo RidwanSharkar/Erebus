@@ -19,6 +19,7 @@ import Reanimate, { ReanimateRef } from '../weapons/Reanimate';
 import BoneTail from './BoneTail';
 import ArchmageCrest from './ArchmageCrest';
 import SpellCastingAura from '../weapons/SpellCastingAura';
+import DeflectShield from '../weapons/DeflectShield';
 
 interface DragonUnitProps {
   position?: Vector3;
@@ -56,6 +57,8 @@ interface DragonUnitProps {
   isInvisible?: boolean;
   isSwordCharging?: boolean;
   isDeflecting?: boolean;
+  deflectShieldActive?: boolean;
+  deflectShieldDurationSec?: number;
   isSmiting?: boolean;
   isColossusStriking?: boolean;
   isDeathGrasping?: boolean;
@@ -136,6 +139,7 @@ interface DragonUnitProps {
   isWingJetsActive?: boolean;
   combatSystem?: any; // CombatSystem for  Strike damage numbers
   hideBody?: boolean; // When true, only the weapon is rendered (no dragon body/wings/orbitals)
+  isLocalPlayer?: boolean;
 }
 
 export default function DragonUnit({
@@ -173,6 +177,8 @@ export default function DragonUnit({
   isInvisible = false,
   isSwordCharging = false,
   isDeflecting = false,
+  deflectShieldActive: deflectShieldActiveProp,
+  deflectShieldDurationSec = 3,
   isSmiting = false,
   isColossusStriking = false,
   isDeathGrasping = false,
@@ -217,8 +223,10 @@ export default function DragonUnit({
   hideBody = false,
   playerLevel = 1,
   runebladeStoredCharge = false,
+  isLocalPlayer = false,
 }: DragonUnitProps) {
-  
+  const effectiveDeflectShield = deflectShieldActiveProp ?? isDeflecting;
+
   const groupRef = useRef<Group>(null);
 
   // Track left mouse button state directly via DOM events so the aura works
@@ -318,7 +326,6 @@ export default function DragonUnit({
           onColossusStrikeComplete={onColossusStrikeComplete}
           onOathstrikeComplete={() => {}}
           onChargeComplete={onChargeComplete}
-          onDeflectComplete={onDeflectComplete}
           hasChainLightning={false}
           comboStep={swordComboStep}
           currentSubclass={currentSubclass}
@@ -375,7 +382,6 @@ export default function DragonUnit({
           onCorruptedAuraToggle={onCorruptedAuraToggle}
           onOathstrikeComplete={() => {}}
           onChargeComplete={onChargeComplete}
-          onDeflectComplete={onDeflectComplete}
           hasChainLightning={false}
           comboStep={swordComboStep}
           currentSubclass={currentSubclass}
@@ -555,6 +561,19 @@ export default function DragonUnit({
         <Reanimate
           parentRef={groupRef}
           ref={reanimateRef}
+        />
+      )}
+
+      {effectiveDeflectShield && (
+        <DeflectShield
+          isActive={effectiveDeflectShield}
+          duration={deflectShieldDurationSec}
+          onComplete={onDeflectComplete}
+          playerPosition={playerPosition}
+          playerRotation={playerRotation}
+          dragonGroupRef={groupRef}
+          weaponType={currentWeapon}
+          enableBlockFlash={isLocalPlayer}
         />
       )}
 

@@ -16,6 +16,7 @@ import {
   PLAYER_VIEW_RADIUS,
   markExplored,
 } from '@/utils/fogOfWarUtils';
+import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
 
 // ─── Shaders ─────────────────────────────────────────────────────────────────
 
@@ -136,8 +137,8 @@ const FogOfWar: React.FC<FogOfWarProps> = ({ playerPositionRef, exploredGridRef 
       position={[0, 0.15, 0]}
       renderOrder={50}
     >
-      {/* Circle covers the full playable map (radius 28) plus a small buffer */}
-      <circleGeometry args={[28.5, 64]} />
+      {/* Circle covers the full playable disc plus a small buffer */}
+      <circleGeometry args={[MAIN_MAP_RADIUS + 0.5, 64]} />
       <shaderMaterial
         ref={matRef}
         uniforms={uniforms}

@@ -325,11 +325,15 @@ export class ProjectileSystem extends System {
         undefined,
         undefined,
         projectile.staggerToAdd != null && projectile.staggerToAdd > 0 ? projectile.staggerToAdd : undefined,
+        undefined,
+        undefined,
+        isCrossentropyBolt && projectile.infernoCrossentropy === true,
+        isCrossentropyBolt && projectile.reaperCrossentropy === true,
       );
 
       // CRITICAL FIX: Emit explosion event for CrossentropyBolt hits
       // This ensures the local player sees the explosion visual effect
-      if (isCrossentropyBolt) {
+      if (isCrossentropyBolt && !projectile.reaperCrossentropy) {
         const projectileTransform = projectileEntity.getComponent(Transform);
         const targetTransform = target.getComponent(Transform);
         
@@ -341,13 +345,15 @@ export class ProjectileSystem extends System {
           explosionPosition.y = Math.max(1.5, explosionPosition.y);
 
           // Emit explosion event for CrossentropyBolt
+          const inferno = projectile.infernoCrossentropy === true;
           this.world.emitEvent('explosion', {
             position: explosionPosition,
-            color: new Color('#8B00FF'), // Purple/magenta explosion for Crossentropy
+            color: inferno ? new Color('#FF3300') : new Color('#8B00FF'),
             size: 2.0, // Increased size for better visibility on large bosses
             duration: 1.0,
             type: 'crossentropy' as const,
-            chargeTime: 1.0 // Default charge time
+            chargeTime: 1.0, // Default charge time
+            infernoCrossentropy: inferno,
           });
         }
       }
@@ -433,6 +439,7 @@ export class ProjectileSystem extends System {
       level?: number;
       opacity?: number;
       staggerToAdd?: number;
+      dualCoilLane?: 0 | 1;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -450,6 +457,9 @@ export class ProjectileSystem extends System {
     projectile.owner = ownerId;
     if (config?.staggerToAdd != null && config.staggerToAdd > 0) {
       projectile.staggerToAdd = config.staggerToAdd;
+    }
+    if (config?.dualCoilLane !== undefined) {
+      projectile.dualCoilLane = config.dualCoilLane;
     }
     projectile.setDirection(direction);
     
@@ -510,6 +520,9 @@ export class ProjectileSystem extends System {
       level?: number;
       opacity?: number;
       sourcePlayerId?: string; // CRITICAL FIX: Add sourcePlayerId to config
+      infernoCrossentropy?: boolean;
+      reaperCrossentropy?: boolean;
+      maxDistance?: number;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -527,12 +540,24 @@ export class ProjectileSystem extends System {
     projectile.owner = ownerId;
     projectile.sourcePlayerId = config?.sourcePlayerId || 'unknown'; // CRITICAL FIX: Set sourcePlayerId for proper damage attribution
     projectile.setDirection(direction);
+    projectile.setStartPosition(position.clone());
+    if (config?.infernoCrossentropy) {
+      projectile.infernoCrossentropy = true;
+    }
+    if (config?.reaperCrossentropy) {
+      projectile.reaperCrossentropy = true;
+    }
     
     if (config?.piercing) projectile.setPiercing(true);
     if (config?.explosive && config?.explosionRadius) {
       projectile.setExplosive(config.explosionRadius);
     }
-    
+    if (config?.reaperCrossentropy && config?.maxDistance != null) {
+      projectile.setMaxDistance(config.maxDistance);
+    } else if (config?.maxDistance != null) {
+      projectile.setMaxDistance(config.maxDistance);
+    }
+
     projectileEntity.addComponent(projectile);
 
     // Add Renderer component - we'll use a special marker for CrossentropyBolt
@@ -553,6 +578,12 @@ export class ProjectileSystem extends System {
     placeholderMesh.userData.isCrossentropyBolt = true;
     placeholderMesh.userData.projectileEntity = projectileEntity;
     placeholderMesh.userData.direction = direction.clone();
+    if (config?.infernoCrossentropy) {
+      placeholderMesh.userData.crossentropyInferno = true;
+    }
+    if (config?.reaperCrossentropy) {
+      placeholderMesh.userData.reaperCrossentropy = true;
+    }
     
     renderer.mesh = placeholderMesh;
     
@@ -676,6 +707,9 @@ export class ProjectileSystem extends System {
       projectileType?: string; // Add projectile type for special handling
       sourcePlayerId?: string; // Add source player ID for multiplayer team validation
       staggerToAdd?: number;
+      /** Wrathful Bite talent — replicated to other clients for Barrage visuals. */
+      wrathfulBiteBarrage?: boolean;
+      dualCoilLane?: 0 | 1;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -695,6 +729,9 @@ export class ProjectileSystem extends System {
     projectile.projectileType = config?.projectileType || 'generic';
     if (config?.staggerToAdd != null && config.staggerToAdd > 0) {
       projectile.staggerToAdd = config.staggerToAdd;
+    }
+    if (config?.dualCoilLane !== undefined) {
+      projectile.dualCoilLane = config.dualCoilLane;
     }
     projectile.setDirection(direction);
     projectile.setStartPosition(position);

@@ -32,6 +32,12 @@ interface ProjectileData {
   isCryoflame?: boolean; // For Entropic Bolt Cryoflame mode
   colorVariant?: string; // Entropic bolt roll color (purple / blue / red / green)
   projectileType?: string; // For projectile type differentiation (e.g., burst_arrow)
+  /** Wrathful Bite talent — red Barrage theme. */
+  barrageWrathfulBite?: boolean;
+  /** INFERNO talent — fiery Crossentropy theme. */
+  infernoCrossentropy?: boolean;
+  /** Reaper — pierce, visuals follow ECS, no impact explosion. */
+  reaperCrossentropy?: boolean;
 }
 
 interface SwordProjectileData {
@@ -49,6 +55,7 @@ interface ExplosionData {
   duration: number;
   type?: 'crossentropy' | 'generic'; // Add type to distinguish explosion types
   chargeTime?: number; // For crossentropy explosions
+  infernoCrossentropy?: boolean;
 }
 
 interface UnifiedProjectileManagerProps {
@@ -182,13 +189,17 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
         const existing = projectileData.crossentropy.find(p => p.entityId === entity.id);
         if (existing) {
           existing.position.copy(transform.position);
+          if (userData.crossentropyInferno) existing.infernoCrossentropy = true;
+          if (userData.reaperCrossentropy) existing.reaperCrossentropy = true;
           newCrossentropy.push(existing);
         } else {
           newCrossentropy.push({
             id: crossentropyIdCounter.current++,
             position: transform.position.clone(),
             direction: direction.clone(),
-            entityId: entity.id
+            entityId: entity.id,
+            infernoCrossentropy: userData.crossentropyInferno === true,
+            reaperCrossentropy: userData.reaperCrossentropy === true,
           });
         }
       } else if (userData.isEntropicBolt) {
@@ -235,7 +246,8 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             entityId: entity.id,
             subclass: userData.subclass,
             level: userData.level,
-            opacity: userData.opacity || 1.0
+            opacity: userData.opacity || 1.0,
+            barrageWrathfulBite: userData.barrageWrathfulBite === true,
           });
         }
       } else if (userData.isRegularArrow || userData.projectileType === 'burst_arrow') {
@@ -286,7 +298,8 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
         size: event.size || 1,
         duration: event.duration || 2,
         type: event.type || 'generic',
-        chargeTime: event.chargeTime
+        chargeTime: event.chargeTime,
+        infernoCrossentropy: event.infernoCrossentropy === true,
       };
       newExplosions.push(newExplosion);
     }
@@ -344,24 +357,27 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
           id={bolt.id}
           position={bolt.position}
           direction={bolt.direction}
-          checkCollisions={checkCrossentropyBoltCollisions}
+          infernoVisual={bolt.infernoCrossentropy === true}
+          reaperEcsDriven={bolt.reaperCrossentropy === true}
+          checkCollisions={bolt.reaperCrossentropy ? undefined : checkCrossentropyBoltCollisions}
           onImpact={(impactPosition?: Vector3) => {
-            
+            if (bolt.reaperCrossentropy) return;
             // Create Crossentropy explosion effect at impact position
             if (impactPosition) {
               // Ensure explosion is visible by setting it at a consistent height
               // Boss entities have colliders centered at y=1, so position explosion at y=1.5 for visibility
               const explosionPosition = impactPosition.clone();
               explosionPosition.y = Math.max(1.5, impactPosition.y); // Minimum y=1.5 to ensure visibility on bosses
-              
+              const inferno = bolt.infernoCrossentropy === true;
               const explosion = {
                 id: explosionIdCounter.current++,
                 position: explosionPosition,
-                color: new Color('#8B00FF'), // Purple/magenta explosion for Crossentropy
+                color: inferno ? new Color('#FF3300') : new Color('#8B00FF'),
                 size: 2.0, // Increased size from 1.75 to 2.0 for better visibility on large bosses
                 duration: 1.0, // Duration for Crossentropy explosion
                 type: 'crossentropy' as const,
-                chargeTime: 1.0 // Default charge time, could be dynamic based on player charge
+                chargeTime: 1.0, // Default charge time, could be dynamic based on player charge
+                infernoCrossentropy: inferno,
               };
               setExplosions(prev => [...prev, explosion]);
             }
@@ -440,7 +456,8 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             hasCollided: false, 
             hitEnemies: new Set(),
             opacity: arrow.opacity,
-            distanceTraveled: distanceTraveled
+            distanceTraveled: distanceTraveled,
+            wrathfulBite: arrow.barrageWrathfulBite === true,
           };
         })}
       />
@@ -466,6 +483,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
               position={explosion.position}
               chargeTime={explosion.chargeTime || 1.0}
               explosionStartTime={Date.now()}
+              infernoVisual={explosion.infernoCrossentropy === true}
               onComplete={() => handleExplosionComplete(explosion.id)}
             />
           );

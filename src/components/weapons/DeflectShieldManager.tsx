@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3 } from '@/utils/three-exports';
+import { WeaponType } from '@/components/dragon/weapons';
 import DeflectShield from './DeflectShield';
 
 interface DeflectShieldEffect {
@@ -9,7 +10,8 @@ interface DeflectShieldEffect {
   rotation: Vector3;
   startTime: number;
   duration: number;
-  playerId?: string; // For PVP tracking
+  playerId?: string;
+  weaponType: WeaponType;
 }
 
 interface DeflectShieldManagerProps {
@@ -21,14 +23,20 @@ let globalDeflectShieldEffects: DeflectShieldEffect[] = [];
 let nextDeflectShieldId = 1;
 
 // Global functions for triggering Deflect Shield effects
-export function triggerGlobalDeflectShield(position: Vector3, rotation: Vector3, playerId?: string): number {
+export function triggerGlobalDeflectShield(
+  position: Vector3,
+  rotation: Vector3,
+  playerId?: string,
+  weaponType: WeaponType = WeaponType.RUNEBLADE
+): number {
   const effect: DeflectShieldEffect = {
     id: nextDeflectShieldId++,
     position: position.clone(),
     rotation: rotation.clone(),
     startTime: Date.now(),
-    duration: 3250, // 3 seconds
-    playerId
+    duration: 3250,
+    playerId,
+    weaponType,
   };
   
   globalDeflectShieldEffects.push(effect);
@@ -66,9 +74,10 @@ export default function DeflectShieldManager({ }: DeflectShieldManagerProps) {
         <DeflectShield
           key={effect.id}
           isActive={true}
-          duration={effect.duration / 1000} // Convert to seconds
+          duration={effect.duration / 1000}
           playerPosition={effect.position}
           playerRotation={effect.rotation}
+          weaponType={effect.weaponType}
           onComplete={() => {
             clearDeflectShieldEffect(effect.id);
           }}

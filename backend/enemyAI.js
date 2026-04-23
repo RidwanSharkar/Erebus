@@ -16,6 +16,9 @@ const NAV_RECOMPUTE_DIST = 2.5; // recompute path when target moves this far
 // check at swing end is harder to escape with a small back-step.
 const MELEE_CLOSE_INSET = 0.35;
 
+// Leash to current target after the enemy has taken player damage (arena ~64×64).
+const DAMAGE_THREAT_LEASH = 90;
+
 class EnemyAI {
   constructor(roomId, io) {
     this.roomId = roomId;
@@ -401,11 +404,12 @@ class EnemyAI {
     const aggroRadius = 5;   // Knight idles until a player steps within this range
 
     // Once aggroed, stay aggroed until the player gets very far (leash at 3× aggro radius)
-    const leashRadius = aggroRadius * 3;
+    const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(knight.position, targetPlayer.position)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
+      aggroData.threatFromDamage = false;
     }
 
     if (!aggroData.isAggroed) {
@@ -702,13 +706,14 @@ class EnemyAI {
 
     const distance = this.calculateDistance(shade.position, targetPlayer.position);
     const attackRange = 12.0;  // ranged throw
-    const aggroRadius = 7;
-    const leashRadius = aggroRadius * 3;
+    const aggroRadius = 6;
+    const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(shade.position, targetPlayer.position)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
+      aggroData.threatFromDamage = false;
     }
 
     if (!aggroData.isAggroed) return;
@@ -766,7 +771,7 @@ class EnemyAI {
     const blinkZ = Math.cos(theta) * fwdZ + Math.sin(theta) * leftZ;
 
     const blinkDist = 5;
-    const MAP_RADIUS = 28;
+    const MAP_RADIUS = 20;
     let rawX = shade.position.x + blinkX * blinkDist;
     let rawZ = shade.position.z + blinkZ * blinkDist;
 
@@ -831,7 +836,7 @@ class EnemyAI {
         // (shade model is ~2× taller than knight after the scale adjustment)
         startPosition: {
           x: shade.position.x,
-          y: shade.position.y + 2.0,
+          y: shade.position.y + 1.5,
           z: shade.position.z
         },
         targetPosition: {
@@ -870,12 +875,13 @@ class EnemyAI {
 
     const distance    = this.calculateDistance(warlock.position, targetPlayer.position);
     const aggroRadius = 8; // Slightly larger than knight/shade (5)
-    const leashRadius = aggroRadius * 3;
+    const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(warlock.position, targetPlayer.position)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
+      aggroData.threatFromDamage = false;
     }
 
     if (!aggroData.isAggroed) return;
@@ -907,8 +913,8 @@ class EnemyAI {
 
     // ── Launch (6-second cooldown) ───────────────────────────────────────────
     // Fires a large chaotic projectile at the target's current position.
-    const launchRange    = 14.0; // Slightly more than shade attack range (9.0)
-    const launchCooldown = 6000;
+    const launchRange    = 12.0; // Slightly more than shade attack range (9.0)
+    const launchCooldown = 7000;
     const lastLaunchTime = this.warlockLaunchCooldown.get(warlock.id) || 0;
 
     if (distance <= launchRange && now - lastLaunchTime >= launchCooldown) {
@@ -926,7 +932,7 @@ class EnemyAI {
     const len = Math.sqrt(dx * dx + dz * dz);
     if (len === 0) return;
 
-    const blinkDist = 7; // Teleport 5 units closer
+    const blinkDist = 5; // Teleport 5 units closer
     const endPosition = {
       x: warlock.position.x + (dx / len) * blinkDist,
       y: warlock.position.y,
@@ -957,7 +963,7 @@ class EnemyAI {
       this.io.to(this.roomId).emit('warlock-flame-strike', {
         warlockId: warlock.id,
         position:  endPosition,
-        damage:    50,
+        damage:    40,
         radius:    3.0,
         timestamp: Date.now()
       });
@@ -980,7 +986,7 @@ class EnemyAI {
           y: targetPlayer.position.y + 1.0,
           z: targetPlayer.position.z,
         },
-        damage: 60,
+        damage: 50,
         timestamp: Date.now()
       });
     }
@@ -1014,12 +1020,13 @@ class EnemyAI {
     const attackRange   = 2.6;
     const attackCooldown = templar.attackCooldown ?? 2000; // Slightly faster than knight (2500 ms)
     const aggroRadius   = 6;
-    const leashRadius   = aggroRadius * 3;
+    const leashRadius   = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(templar.position, targetPlayer.position)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
+      aggroData.threatFromDamage = false;
     }
 
     if (!aggroData.isAggroed) return;
@@ -1120,12 +1127,13 @@ class EnemyAI {
     const distance    = this.calculateDistance(viper.position, targetPlayer.position);
     const attackRange = 13.0; // Long-range archer
     const aggroRadius = 7;
-    const leashRadius = aggroRadius * 3;
+    const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(viper.position, targetPlayer.position)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
+      aggroData.threatFromDamage = false;
     }
 
     if (!aggroData.isAggroed) return;
@@ -1206,12 +1214,13 @@ class EnemyAI {
 
     const distance    = this.calculateDistance(weaver.position, targetPlayer.position);
     const aggroRadius = 9;
-    const leashRadius = aggroRadius * 3;
+    const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(weaver.position, targetPlayer.position)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
+      aggroData.threatFromDamage = false;
     }
 
     if (!aggroData.isAggroed) return;
@@ -2721,15 +2730,39 @@ class EnemyAI {
     return tauntData ? tauntData.taunterPlayerId : null;
   }
 
+  getCombatLeashRadius(aggroData, aggroRadius) {
+    const base = aggroRadius * 3;
+    if (aggroData.threatFromDamage) {
+      return Math.max(base, DAMAGE_THREAT_LEASH);
+    }
+    return base;
+  }
+
   // Update aggro when player damages enemy
   updateAggro(enemyId, playerId, aggroAmount = 50) {
-    const aggroData = this.enemyAggro.get(enemyId);
-    if (aggroData) {
-      // Switch target to the player who damaged the enemy
-      aggroData.targetPlayerId = playerId;
-      aggroData.aggro += aggroAmount;
-      aggroData.lastUpdate = Date.now();
+    const players = this.room?.getPlayers?.();
+    if (!players || !playerId) return;
+
+    const attacker = players.find(p => p.id === playerId && p.health > 0);
+    if (!attacker) return;
+
+    let aggroData = this.enemyAggro.get(enemyId);
+    if (!aggroData) {
+      const enemy = this.room?.enemies?.get?.(enemyId);
+      if (!enemy) return;
+      aggroData = {
+        targetPlayerId: playerId,
+        lastUpdate: Date.now(),
+        aggro: 100
+      };
+      this.enemyAggro.set(enemyId, aggroData);
     }
+
+    aggroData.targetPlayerId = playerId;
+    aggroData.aggro += aggroAmount;
+    aggroData.lastUpdate = Date.now();
+    aggroData.isAggroed = true;
+    aggroData.threatFromDamage = true;
   }
 
   // Remove player from all aggro charts when they die
@@ -2750,6 +2783,8 @@ class EnemyAI {
         // Clear the target for this enemy - it will find a new target on next update
         aggroData.targetPlayerId = null;
         aggroData.aggro = 0;
+        aggroData.isAggroed = false;
+        aggroData.threatFromDamage = false;
         console.log(`  - Cleared ${deadPlayerId} as target for enemy ${enemyId}`);
       }
     });

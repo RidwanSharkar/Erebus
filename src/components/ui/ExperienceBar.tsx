@@ -7,13 +7,14 @@ interface ExperienceBarProps {
   experience: number;
   level: number;
   isLocalPlayer?: boolean;
-  /** Co-op: how many of the 12 starting enemies have been killed (0–12) */
+  /** Co-op: how many of the starting wave enemies have been killed */
   skeletonKillCount?: number;
   /** Co-op: whether the boss has already been spawned */
   bossSpawned?: boolean;
 }
 
-const KNIGHT_KILLS_REQUIRED = 12;
+/** Must match `COOP_WAVE_ENEMY_COUNT` in backend/gameRoom.js */
+const KNIGHT_KILLS_REQUIRED = 10;
 
 export default function ExperienceBar({
   experience,

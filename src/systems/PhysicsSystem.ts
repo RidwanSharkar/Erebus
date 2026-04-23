@@ -6,12 +6,13 @@ import { Transform } from '@/ecs/components/Transform';
 import { Movement } from '@/ecs/components/Movement';
 import { WALL_SEGMENTS, WallSegmentDef } from '@/components/environment/CastleWalls';
 import { THRONE_PILLAR_HULL_RADIUS } from '@/components/environment/ThroneRoom';
+import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
 
 export class PhysicsSystem extends BasePhysicsSystem {
   public readonly requiredComponents = [Transform, Movement];
 
   /** Horizontal circular map boundary (XZ distance from origin). */
-  private mapRadius = 28;
+  private mapRadius = MAIN_MAP_RADIUS;
 
   /** When false, castle wall AABB checks are skipped (co-op throne room). */
   private castleWallPhysicsEnabled = true;
@@ -181,13 +182,12 @@ export class PhysicsSystem extends BasePhysicsSystem {
 
   // Define tree positions (same as in Environment.tsx - reduced by half)
   private readonly TREE_POSITIONS = [
-    // Middle ring trees (selectively kept)
-    new Vector3(15, 0, 5), new Vector3(-15, 0, 5), new Vector3(5, 0, 15),
-    // Outer ring trees (kept all - furthest from center)
-    new Vector3(20, 0, 10), new Vector3(-20, 0, 10), new Vector3(20, 0, -10), new Vector3(-20, 0, -10),
-    new Vector3(10, 0, 20), new Vector3(-10, 0, 20), new Vector3(10, 0, -20), new Vector3(-10, 0, -20),
-    // Additional scattered tree (kept one for natural look)
-    new Vector3(12, 0, 12)
+    // Middle ring (scaled to smaller main map)
+    new Vector3(10.7, 0, 3.6), new Vector3(-10.7, 0, 3.6), new Vector3(3.6, 0, 10.7),
+    // Outer ring
+    new Vector3(14.3, 0, 7.1), new Vector3(-14.3, 0, 7.1), new Vector3(14.3, 0, -7.1), new Vector3(-14.3, 0, -7.1),
+    new Vector3(7.1, 0, 14.3), new Vector3(-7.1, 0, 14.3), new Vector3(7.1, 0, -14.3), new Vector3(-7.1, 0, -14.3),
+    new Vector3(8.6, 0, 8.6)
   ];
   private readonly TREE_RADIUS = 0.3; // Roughly half the pillar diameter
 

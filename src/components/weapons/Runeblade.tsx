@@ -2,7 +2,6 @@ import { useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Color, Shape, AdditiveBlending } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
-import DeflectShield from './DeflectShield';
 import CorruptedAura from './CorruptedAura';
 import { calculationCache } from '@/utils/CalculationCache';
 
@@ -22,7 +21,6 @@ interface RunebladeProps {
   onWraithStrikeComplete?: () => void;
   onOathstrikeComplete?: () => void;
   onChargeComplete?: () => void;
-  onDeflectComplete?: () => void;
   onCorruptedAuraToggle?: (active: boolean) => void;
   hasChainLightning?: boolean;
   comboStep?: 1 | 2 | 3;
@@ -97,7 +95,6 @@ export default function Runeblade({
   onWraithStrikeComplete,
   onOathstrikeComplete,
   onChargeComplete,
-  onDeflectComplete,
   onCorruptedAuraToggle,
   hasChainLightning = false,
   comboStep = 1,
@@ -245,7 +242,7 @@ export default function Runeblade({
     if (isChargeSpinning.current) {
       const TARGET_ROTATIONS = storedCharge ? 3 : 1.5;
       const MAX_ROTATION = TARGET_ROTATIONS * Math.PI * 2;
-      const SPIN_ROTATION_SPEED = 26.5;
+      const SPIN_ROTATION_SPEED = 32.5;
 
       const prevSpinAngle = chargeSpinRotation.current;
       chargeSpinRotation.current += delta * SPIN_ROTATION_SPEED;
@@ -253,8 +250,8 @@ export default function Runeblade({
 
       if (storedCharge) {
         const TAU = Math.PI * 2;
-        const CHARGE_SPIN_DAMAGE = 75;
-        const CHARGE_SPIN_RADIUS = 2.75;
+        const CHARGE_SPIN_DAMAGE = 70;
+        const CHARGE_SPIN_RADIUS = 2.95;
         const prevFloor = Math.floor(prevSpinAngle / TAU);
         const currFloor = Math.floor(currSpinAngle / TAU);
         if (currFloor > prevFloor && enemyData.length > 0 && onHit) {
@@ -312,10 +309,10 @@ export default function Runeblade({
     }
 
     if (isCharging) {
-      const CHARGE_DISTANCE = 9.5;
+      const CHARGE_DISTANCE = 8.5;
       const CHARGE_WINDUP_DURATION = 0.1;
       const CHARGE_DURATION = 0.45;
-      const CHARGE_DAMAGE = 40;
+      const CHARGE_DAMAGE = 60;
       const CHARGE_COLLISION_RADIUS = 2.5;
       const MAX_CHARGE_BOUNDS = 25;
       const CHARGE_FAILSAFE_TIMEOUT = 0.6;
@@ -794,7 +791,7 @@ export default function Runeblade({
     }
   };
 
-  // Function to perform swing damage based on combo step
+  // Runeblade LMB damage: `onHit` forwards to DragonRenderer.handleSwordHit (crits, Infested Combo, Guard Combo talents).
   const performSwingDamage = (comboStep: 1 | 2 | 3) => {
     if (!playerPosition || !enemyData.length) return;
 
@@ -1124,16 +1121,6 @@ export default function Runeblade({
         </mesh>
       ))}
     </group>
-
-    {/* Deflect Shield - Rendered outside runeblade group to avoid inheriting transformations */}
-    <DeflectShield
-      isActive={isDeflecting}
-      duration={3.0}
-      onComplete={onDeflectComplete}
-      playerPosition={playerPosition}
-      playerRotation={playerRotation}
-      dragonGroupRef={dragonGroupRef}
-    />
 
     {/* Corrupted Aura - Rendered outside runeblade group to avoid inheriting transformations */}
     <CorruptedAura

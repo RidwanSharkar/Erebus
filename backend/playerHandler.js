@@ -373,6 +373,11 @@ function handlePlayerEvents(socket, gameRooms) {
         console.log(`⚠️ WARNING: Player ${playerId} has no position data!`);
         return;
       }
+
+      // Caster is healed only on the client (ControlSystem); skip to avoid double player-healing
+      if (playerId === socket.id) {
+        return;
+      }
       
       // Calculate distance from healer position to this player
       const distance = calculateDistance(position, player.position);

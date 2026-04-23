@@ -23,9 +23,9 @@ const CAMP_TORCH_OFFSETS: [number, number, number][] = [
 ];
 
 const CAMP_CENTERS: [number, number, number][] = [
-  [  0, 0, -20 ], // Camp 0 — North Fortress
-  [ 20, 0,   7 ], // Camp 1 — East Bastion
-  [-20, 0,   7 ], // Camp 2 — West Citadel
+  [   0, 0, -14.3 ], // Camp 0 — North Fortress
+  [  14.3, 0,  5.0 ], // Camp 1 — East Bastion
+  [ -14.3, 0,  5.0 ], // Camp 2 — West Citadel
 ];
 
 // ─── Single pulsing torch / beacon light ──────────────────────────────────

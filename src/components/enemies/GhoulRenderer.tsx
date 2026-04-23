@@ -148,7 +148,6 @@ export default function GhoulRenderer({
         isDying={isDying}
       />
 
-      <EnemyMeleeAttackRangeRing radius={GHOUL_MELEE_ATTACK_RANGE} />
 
       <Billboard position={[0, 2.8, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && !isSummoning && (

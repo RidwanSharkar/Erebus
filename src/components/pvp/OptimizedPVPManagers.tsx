@@ -779,8 +779,7 @@ export function OptimizedPVPCrossentropyManager({
             projectile.addHitTarget(playerEntityId);
             hitTracker.current.add(hitKey);
             
-            // Crossentropy bolt damage (burning stacks removed)
-            const finalDamage = 140; // Base Crossentropy damage
+            const finalDamage = projectile.damage > 0 ? Math.floor(projectile.damage) : 140;
 
             onPlayerHit(player.id, finalDamage); // Crossentropy damage
 
@@ -795,18 +794,18 @@ export function OptimizedPVPCrossentropyManager({
               );
             }
 
-            // Trigger explosion effect at the HIT player's position
-            // Use pooled Vector3 for the explosion position
-            const explosionPosition = pvpObjectPool.acquireVector3(
-              player.position.x, 
-              player.position.y, 
-              player.position.z
-            );
-            
-            onPlayerExplosion(player.id, explosionPosition);
-            
-            // Release the Vector3 back to pool
-            pvpObjectPool.releaseVector3(explosionPosition);
+            if (projectile.reaperCrossentropy !== true) {
+              // Trigger explosion effect at the HIT player's position
+              const explosionPosition = pvpObjectPool.acquireVector3(
+                player.position.x,
+                player.position.y,
+                player.position.z
+              );
+
+              onPlayerExplosion(player.id, explosionPosition);
+
+              pvpObjectPool.releaseVector3(explosionPosition);
+            }
             
             // Clean up hit tracker after a delay to prevent memory leaks
             setTimeout(() => {

@@ -12,11 +12,15 @@ import {
   Color,
   DoubleSide,
 } from '@/utils/three-exports';
+import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 const TREE_COUNT = 60;
+/** Forest ring scales with main map radius (was 12 / 28 and 51 / 28 at R=28). */
+const DEFAULT_INNER_R  = MAIN_MAP_RADIUS * (12 / 28);
+const DEFAULT_OUTER_R  = MAIN_MAP_RADIUS * (51 / 28);
 
 // 3 overlapping sphere tiers making a rounded deciduous blob
 // yFrac = how far up within the canopy radius to offset the center
@@ -175,7 +179,7 @@ const CANOPY_FRAG = `
 
     // Depth fade at map edge
     float dist = length(vWorldPos.xz);
-    col *= 1.0 - smoothstep(22.0, 28.0, dist) * 0.30;
+    col *= 1.0 - smoothstep(16.0, 20.0, dist) * 0.30;
 
     gl_FragColor = vec4(col, 1.0);
   }
@@ -236,8 +240,8 @@ interface InstancedForestProps {
 // ---------------------------------------------------------------------------
 const InstancedForest: React.FC<InstancedForestProps> = ({
   count        = TREE_COUNT,
-  innerRadius  = 12,
-  outerRadius  = 51,
+  innerRadius  = DEFAULT_INNER_R,
+  outerRadius  = DEFAULT_OUTER_R,
   windStrength = 0.65,
   trunkDark    = '#3d2b1f',
   trunkLight   = '#6b4a34',

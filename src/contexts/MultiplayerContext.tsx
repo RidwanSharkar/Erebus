@@ -43,8 +43,14 @@ export interface EnemyDamageMeta {
   infestedStrike?: boolean;
   /** Infested Smite talent — zombies on kill (server), with `damageType` `smite`. */
   infestedSmite?: boolean;
+  /** Infested Combo talent — zombies on kill (server), with `damageType` `runeblade_combo`. */
+  infestedCombo?: boolean;
   /** Infernal Smite talent — server schedules Ignite DoT after smite hit. */
   infernalSmite?: boolean;
+  /** INFERNO talent (Crossentropy) — server schedules Ignite DoT after crossentropy hit. */
+  infernoCrossentropy?: boolean;
+  /** Reaper talent (Crossentropy) — server counts kills for Reaper stack. */
+  reaperCrossentropy?: boolean;
   /** Staggering Strike (`wraith_strike`), Runeblade combo (`runeblade_combo`), Sabres (`sabre_left` / `sabre_right`), Staggering Smite (`smite` with `staggerToAdd`), or Stagger Shot (`projectile` with `staggerToAdd`): server accumulates stagger. */
   staggerToAdd?: number;
 }
@@ -423,6 +429,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     // Room event handlers
     addEventHandler('room-joined', (data) => {
       console.log('🏠 Joined room:', data);
+      (window as any).controlSystemRef?.current?.setReaperCrossentropyStack(0);
       setIsInRoom(true);
       setCurrentRoomId(data.roomId);
       setKillCount(data.killCount);
@@ -576,6 +583,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         updated.set(e.id, { ...e, staggerBuildup: e.staggerBuildup ?? 0 });
         return updated;
       });
+    });
+
+    addEventHandler('reaper-crossentropy-stack', (data: { stacks: number }) => {
+      (window as any).controlSystemRef?.current?.setReaperCrossentropyStack(data.stacks ?? 0);
     });
 
     addEventHandler('enemy-damaged', (data) => {
@@ -1086,7 +1097,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.damageType !== undefined ? { damageType: meta.damageType } : {}),
         ...(meta?.infestedStrike ? { infestedStrike: true } : {}),
         ...(meta?.infestedSmite ? { infestedSmite: true } : {}),
+        ...(meta?.infestedCombo ? { infestedCombo: true } : {}),
         ...(meta?.infernalSmite ? { infernalSmite: true } : {}),
+        ...(meta?.infernoCrossentropy ? { infernoCrossentropy: true } : {}),
+        ...(meta?.reaperCrossentropy ? { reaperCrossentropy: true } : {}),
         ...(meta?.staggerToAdd != null && meta.staggerToAdd > 0 ? { staggerToAdd: meta.staggerToAdd } : {}),
       });
     }

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { Group, Vector3 } from '@/utils/three-exports';
 import { useFrame, useThree } from '@react-three/fiber';
 import React from 'react';
@@ -14,11 +14,15 @@ import { Transform } from '@/ecs/components/Transform';
 import { Health } from '@/ecs/components/Health';
 import { Enemy } from '@/ecs/components/Enemy';
 import { CombatSystem } from '@/systems/CombatSystem';
+import { calculateDamage } from '@/core/DamageCalculator';
 import { ReanimateRef } from '../weapons/Reanimate';
 import {
   STAGGERING_COMBO_HIT1_STAGGER,
   STAGGERING_COMBO_HIT2_STAGGER,
   STAGGERING_COMBO_HIT3_STAGGER,
+  EXECUTE_REAPING_TALONS_BONUS_DAMAGE,
+  WRATHFUL_COMBO_CRIT_CHANCE_ADD,
+  WRATHFUL_COMBO_CRIT_DAMAGE_MULT_ADD,
 } from '@/utils/talents';
 
 interface DragonRendererProps {
@@ -49,6 +53,9 @@ interface DragonRendererProps {
   isSundering?: boolean;
   isSwordCharging?: boolean;
   isDeflecting?: boolean;
+  /** Deflect shield VFX (Aegis and/or Wraith Guard). */
+  deflectShieldActive?: boolean;
+  deflectShieldDurationSec?: number;
   isSmiting?: boolean;
   isColossusStriking?: boolean;
   isDeathGrasping?: boolean;
@@ -109,10 +116,18 @@ interface DragonRendererProps {
   playerLevel?: number;
   /** Wrathful Talons: Reaping Talons return arrow uses preset crit when local player has talent. */
   wrathfulTalonsReturnCrit?: boolean;
+  /** EXECUTE: Reaping Talons first forward hit may consume a dash for bonus damage. */
+  executeReapingTalons?: boolean;
   /** STORED CHARGE: Runeblade Charge — 3 spin rotations + per-rotation damage. */
   runebladeStoredCharge?: boolean;
   /** STAGGERING COMBO: basic attack combo adds stagger per hit (co-op server sync). */
   runebladeStaggeringCombo?: boolean;
+  /** Wrathful Combo: 3rd basic hit uses bonus crit roll (client + server damage). */
+  runebladeWrathfulCombo?: boolean;
+  /** Infested Combo: basic hits heal and can spawn zombies on kill (server). */
+  runebladeInfestedCombo?: boolean;
+  /** Local player: roll Guard Combo proc after each basic hit (chance in ControlSystem). */
+  onRunebladeGuardComboProc?: () => void;
 }
 
 export default function DragonRenderer({
@@ -129,6 +144,8 @@ export default function DragonRenderer({
   isSwinging = false,
   isSpinning = false,
   isDeflecting = false,
+  deflectShieldActive: deflectShieldActiveProp,
+  deflectShieldDurationSec = 3,
   isDead = false,
   isSmiting = false,
   isColossusStriking = false,
@@ -183,9 +200,14 @@ export default function DragonRenderer({
   hideBody = false,
   playerLevel = 1,
   wrathfulTalonsReturnCrit = false,
+  executeReapingTalons = false,
   runebladeStoredCharge = false,
   runebladeStaggeringCombo = false,
+  runebladeWrathfulCombo = false,
+  runebladeInfestedCombo = false,
+  onRunebladeGuardComboProc,
 }: DragonRendererProps) {
+  const effectiveDeflectShieldActive = deflectShieldActiveProp ?? isDeflecting;
   const mountRef = useRef(false);
   if (!mountRef.current) {
     console.log('🐉 DragonRenderer mounting:', {
@@ -428,21 +450,62 @@ export default function DragonRenderer({
                 ? STAGGERING_COMBO_HIT2_STAGGER
                 : STAGGERING_COMBO_HIT3_STAGGER;
         }
+
+        let outgoingDamage = damage;
+        let critPreset = isCritical;
+        if (
+          currentWeapon === WeaponType.RUNEBLADE &&
+          !isBlizzard &&
+          runebladeWrathfulCombo &&
+          swordComboStep === 3
+        ) {
+          const r = calculateDamage(damage, WeaponType.RUNEBLADE, {
+            critChanceAdd: WRATHFUL_COMBO_CRIT_CHANCE_ADD,
+            critDamageMultAdd: WRATHFUL_COMBO_CRIT_DAMAGE_MULT_ADD,
+          });
+          outgoingDamage = r.damage;
+          critPreset = r.isCritical;
+        }
+
+        const infestedCombo =
+          currentWeapon === WeaponType.RUNEBLADE && !isBlizzard && runebladeInfestedCombo;
+
         combatSystem.queueDamage(
           targetEntity,
-          damage,
+          outgoingDamage,
           playerEntityObj,
           damageType,
           playerEntityObj?.userData?.playerId,
-          isCritical,
+          critPreset,
           undefined,
           staggerToAdd,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          infestedCombo,
         );
+
+        if (
+          isLocalPlayer &&
+          currentWeapon === WeaponType.RUNEBLADE &&
+          !isBlizzard &&
+          onRunebladeGuardComboProc
+        ) {
+          onRunebladeGuardComboProc();
+        }
       }
     }
   };
 
-  
+  const onExecuteFirstForwardHit = useCallback((): number => {
+    const ent = world.getEntity(entityId);
+    const m = ent?.getComponent(Movement);
+    if (!m) return 0;
+    const consumed = m.consumeDashChargesWithoutDash(1, Date.now() / 1000);
+    return consumed > 0 ? EXECUTE_REAPING_TALONS_BONUS_DAMAGE : 0;
+  }, [world, entityId]);
+
   return (
     <>
       <group ref={groupRef}>
@@ -484,6 +547,8 @@ export default function DragonRenderer({
           isInvisible={isInvisible}
           isSwordCharging={isSwordCharging}
           isDeflecting={isDeflecting}
+          deflectShieldActive={effectiveDeflectShieldActive}
+          deflectShieldDurationSec={deflectShieldDurationSec}
           isSmiting={isSmiting}
           isColossusStriking={isColossusStriking}
           isDeathGrasping={isDeathGrasping}
@@ -526,6 +591,7 @@ export default function DragonRenderer({
           hideBody={hideBody}
           playerLevel={playerLevel}
           runebladeStoredCharge={runebladeStoredCharge}
+          isLocalPlayer={isLocalPlayer}
         />
       </group>
       
@@ -580,6 +646,7 @@ export default function DragonRenderer({
           }}
           localSocketId="local-player" // For single-player mode, use a fixed ID
           wrathfulTalonsReturnCrit={wrathfulTalonsReturnCrit}
+          onExecuteFirstForwardHit={executeReapingTalons ? onExecuteFirstForwardHit : undefined}
         />
       )}
     </>

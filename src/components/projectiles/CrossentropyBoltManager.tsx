@@ -12,6 +12,7 @@ interface CrossentropyBoltData {
   position: Vector3;
   direction: Vector3;
   entityId: number;
+  infernoVisual?: boolean;
 }
 
 interface CrossentropyBoltManagerProps {
@@ -46,6 +47,7 @@ export default function CrossentropyBoltManager({ world }: CrossentropyBoltManag
         if (existingBolt) {
           // Update existing bolt position
           existingBolt.position.copy(transform.position);
+          if (renderer.mesh.userData.crossentropyInferno) existingBolt.infernoVisual = true;
           newBolts.push(existingBolt);
         } else {
           // Create new bolt
@@ -54,7 +56,8 @@ export default function CrossentropyBoltManager({ world }: CrossentropyBoltManag
             id: boltIdCounter.current++,
             position: transform.position.clone(),
             direction: direction.clone(),
-            entityId: entity.id
+            entityId: entity.id,
+            infernoVisual: renderer.mesh.userData.crossentropyInferno === true,
           });
         }
       }
@@ -79,6 +82,7 @@ export default function CrossentropyBoltManager({ world }: CrossentropyBoltManag
           id={bolt.id}
           position={bolt.position}
           direction={bolt.direction}
+          infernoVisual={bolt.infernoVisual === true}
           onImpact={() => {
             // Visual component lifecycle - just remove from visual state
             // ECS system handles all collision detection and damage

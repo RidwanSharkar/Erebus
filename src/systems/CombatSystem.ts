@@ -1,4 +1,5 @@
 // Combat system for handling damage, healing, and combat mechanics
+import { Vector3 } from '@/utils/three-exports';
 import { System } from '@/ecs/System';
 import { Entity } from '@/ecs/Entity';
 import { Health } from '@/ecs/components/Health';
@@ -8,7 +9,13 @@ import { Transform } from '@/ecs/components/Transform';
 import { Renderer } from '@/ecs/components/Renderer';
 import { Movement } from '@/ecs/components/Movement';
 import { World } from '@/ecs/World';
-import { calculateDamage, DamageResult, getGlobalRuneCounts } from '@/core/DamageCalculator';
+import { calculateDamage, DamageResult, getGlobalRuneCounts, type DamageCalcOptions } from '@/core/DamageCalculator';
+import {
+  DUAL_COIL_DAMAGE_NUMBER_LATERAL_OFFSET,
+  getDualCoilLateralVector,
+  INFERNAL_SMITE_CRIT_CHANCE_ADD,
+  INFESTED_COMBO_LIFESTEAL,
+} from '@/utils/talents';
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
 import { SummonedUnit } from '@/ecs/components/SummonedUnit';
 import { Projectile } from '@/ecs/components/Projectile';
@@ -32,6 +39,12 @@ interface DamageEvent {
   infestedSmite?: boolean;
   /** Co-op routing: Infernal Smite talent — Ignite DoT scheduling on server, with damageType `smite`. */
   infernalSmite?: boolean;
+  /** Co-op routing: INFERNO talent — with damageType `crossentropy`. */
+  crossentropyInferno?: boolean;
+  /** Co-op routing: Reaper talent — with damageType `crossentropy` (pierce + kill stack on server). */
+  reaperCrossentropy?: boolean;
+  /** Co-op routing: Infested Combo talent — with damageType `sword` / routed as `runeblade_combo`. */
+  infestedCombo?: boolean;
 }
 
 interface HealEvent {
@@ -64,7 +77,10 @@ export class CombatSystem extends System {
       infestedStrike?: boolean;
       infestedSmite?: boolean;
       infernalSmite?: boolean;
+      infernoCrossentropy?: boolean;
+      reaperCrossentropy?: boolean;
       staggerToAdd?: number;
+      infestedCombo?: boolean;
     },
   ) => void;
   
@@ -104,6 +120,13 @@ export class CombatSystem extends System {
     return undefined;
   }
 
+  /** Wrathful Bite talent — additive crit for `damageType === 'barrage'` from the local ControlSystem. */
+  private getBarrageCritCalcOpts(damageType?: string): DamageCalcOptions | undefined {
+    if (damageType !== 'barrage') return undefined;
+    const cs = (window as any).controlSystemRef?.current;
+    return cs?.getBarrageCritDamageCalcOpts?.();
+  }
+
   // Throttled logging to reduce spam
   private shouldLogDamage(): boolean {
     const now = Date.now();
@@ -112,6 +135,28 @@ export class CombatSystem extends System {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Dual Coil: spread floating damage numbers side-by-side (world offset + `dualCoilSlot` for UI).
+   * Returns the lane (0/1) when applied.
+   */
+  private applyDualCoilDamageNumberLateral(
+    position: Vector3,
+    source: Entity | undefined,
+  ): 0 | 1 | undefined {
+    if (!source) return undefined;
+    const projectile = source.getComponent(Projectile);
+    if (projectile?.dualCoilLane === undefined) return undefined;
+    const vel = projectile.velocity;
+    if (!vel || vel.lengthSq() < 1e-8) return undefined;
+    const dir = vel.clone().normalize();
+    const off = getDualCoilLateralVector(dir, DUAL_COIL_DAMAGE_NUMBER_LATERAL_OFFSET);
+    if (projectile.dualCoilLane === 1) {
+      off.negate();
+    }
+    position.add(off);
+    return projectile.dualCoilLane;
   }
 
   // Set callback for routing enemy damage to multiplayer server
@@ -125,6 +170,8 @@ export class CombatSystem extends System {
         infestedStrike?: boolean;
         infestedSmite?: boolean;
         infernalSmite?: boolean;
+        infernoCrossentropy?: boolean;
+        reaperCrossentropy?: boolean;
         staggerToAdd?: number;
       },
     ) => void,
@@ -280,7 +327,13 @@ export class CombatSystem extends System {
         damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
       } else {
         // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
-        damageResult = calculateDamage(baseDamage, currentWeapon);
+        const critOpts: DamageCalcOptions | undefined =
+          damageType === 'barrage'
+            ? this.getBarrageCritCalcOpts(damageType)
+            : damageType === 'crossentropy' && damageEvent.crossentropyInferno === true
+              ? { critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD }
+              : undefined;
+        damageResult = calculateDamage(baseDamage, currentWeapon, critOpts);
       }
 
       const actualDamage = damageResult.damage;
@@ -324,11 +377,15 @@ export class CombatSystem extends System {
                   : {}),
               }
             : damageType === 'sword' &&
-                damageEvent.staggerToAdd != null &&
-                damageEvent.staggerToAdd > 0
+                currentWeapon === WeaponType.RUNEBLADE &&
+                ((damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0) ||
+                  damageEvent.infestedCombo === true)
               ? {
                   damageType: 'runeblade_combo' as const,
-                  staggerToAdd: damageEvent.staggerToAdd,
+                  ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
+                    ? { staggerToAdd: damageEvent.staggerToAdd }
+                    : {}),
+                  ...(damageEvent.infestedCombo === true ? { infestedCombo: true as const } : {}),
                 }
               : (damageType === 'sabre_left' || damageType === 'sabre_right') &&
                   damageEvent.staggerToAdd != null &&
@@ -344,7 +401,17 @@ export class CombatSystem extends System {
                       damageType: 'projectile' as const,
                       staggerToAdd: damageEvent.staggerToAdd,
                     }
-                  : undefined;
+                  : damageType === 'crossentropy'
+                    ? {
+                        damageType: 'crossentropy' as const,
+                        ...(damageEvent.crossentropyInferno === true
+                          ? { infernoCrossentropy: true as const }
+                          : {}),
+                        ...(damageEvent.reaperCrossentropy === true
+                          ? { reaperCrossentropy: true as const }
+                          : {}),
+                      }
+                    : undefined;
       this.onEnemyDamageCallback(serverEnemyId, actualDamage, finalSourcePlayerId, routeMeta);
 
       // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
@@ -376,6 +443,27 @@ export class CombatSystem extends System {
         }
       }
 
+      // Infested Combo: heal for a fraction of final hit damage (after crit)
+      if (
+        source &&
+        currentWeapon === WeaponType.RUNEBLADE &&
+        damageEvent.infestedCombo === true
+      ) {
+        const infestedHeal = Math.floor(actualDamage * INFESTED_COMBO_LIFESTEAL);
+        if (infestedHeal > 0) {
+          const sourceHealth = source.getComponent(Health);
+          if (sourceHealth) {
+            sourceHealth.heal(infestedHeal);
+            const sourceTransform = source.getComponent(Transform);
+            if (sourceTransform) {
+              const healPosition = sourceTransform.getWorldPosition().clone();
+              healPosition.y += 1.5;
+              this.damageNumberManager.addDamageNumber(infestedHeal, false, healPosition, 'healing');
+            }
+          }
+        }
+      }
+
       // Skip damage numbers for tower projectiles - players will see their own damage taken display
       const isTowerProjectile = source && (source as any).isTowerProjectile === true;
       if (!isTowerProjectile) {
@@ -386,18 +474,21 @@ export class CombatSystem extends System {
           position.y += 1.5;
           if (damageType === 'sabre_right' || damageType === 'sabres_right') position.x += 0.3;
           else if (damageType === 'sabre_left' || damageType === 'sabres_left') position.x -= 0.3;
+          const dualCoilSlot = this.applyDualCoilDamageNumberLateral(position, source);
           this.damageNumberManager.addDamageNumber(
             actualDamage,
             damageResult.isCritical,
             position,
             damageType,
             undefined,
-            damageType === 'barrage' ? target.id : undefined
+            damageType === 'barrage' ? target.id : undefined,
+            dualCoilSlot
           );
         }
       }
 
-
+      this.maybeTriggerFrostpath(damageType, source, target);
+      this.maybeTriggerSolarRecharge(damageType, source, target);
 
       return; // Don't apply damage locally for enemies
     }
@@ -419,7 +510,7 @@ export class CombatSystem extends System {
         damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
       } else {
         // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
-        damageResult = calculateDamage(baseDamage, currentWeapon);
+        damageResult = calculateDamage(baseDamage, currentWeapon, this.getBarrageCritCalcOpts(damageType));
       }
 
       const actualDamage = damageResult.damage;
@@ -559,7 +650,7 @@ export class CombatSystem extends System {
         damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
       } else {
         // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
-        damageResult = calculateDamage(baseDamage, currentWeapon);
+        damageResult = calculateDamage(baseDamage, currentWeapon, this.getBarrageCritCalcOpts(damageType));
       }
 
       const actualDamage = damageResult.damage;
@@ -628,7 +719,7 @@ export class CombatSystem extends System {
         damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
       } else {
         // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
-        damageResult = calculateDamage(baseDamage, currentWeapon);
+        damageResult = calculateDamage(baseDamage, currentWeapon, this.getBarrageCritCalcOpts(damageType));
       }
 
       const actualDamage = damageResult.damage;
@@ -685,7 +776,7 @@ export class CombatSystem extends System {
         damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
       } else {
         // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
-        damageResult = calculateDamage(baseDamage, currentWeapon);
+        damageResult = calculateDamage(baseDamage, currentWeapon, this.getBarrageCritCalcOpts(damageType));
       }
 
       const actualDamage = damageResult.damage;
@@ -785,7 +876,13 @@ export class CombatSystem extends System {
         damageResult = { damage: finalDamage, isCritical: damageEvent.isCritical };
       } else {
         // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
-        damageResult = calculateDamage(finalDamage, currentWeapon);
+        const pvpCritOpts: DamageCalcOptions | undefined =
+          damageType === 'barrage'
+            ? this.getBarrageCritCalcOpts(damageType)
+            : damageType === 'crossentropy' && damageEvent.crossentropyInferno === true
+              ? { critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD }
+              : this.getBarrageCritCalcOpts(damageType);
+        damageResult = calculateDamage(finalDamage, currentWeapon, pvpCritOpts);
       }
 
       // Debug logging for sabre damage
@@ -878,7 +975,11 @@ export class CombatSystem extends System {
 
     // For non-enemies and non-summoned units (like players in non-PVP mode), apply damage locally as before
     const currentWeapon = this.getCurrentWeapon();
-    const damageResult: DamageResult = calculateDamage(baseDamage, currentWeapon);
+    const damageResult: DamageResult = calculateDamage(
+      baseDamage,
+      currentWeapon,
+      this.getBarrageCritCalcOpts(damageType),
+    );
     const actualDamage = damageResult.damage;
 
     // Apply damage (pass entity so Health can use Shield component)
@@ -947,6 +1048,31 @@ export class CombatSystem extends System {
 
       // Trigger damage effects
       this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
+      this.maybeTriggerFrostpath(damageType, source, target);
+      this.maybeTriggerSolarRecharge(damageType, source, target);
+    } else if (actualDamage > 0 && health.isAegisInvulnerable()) {
+      const transform = target.getComponent(Transform);
+      if (transform) {
+        const position = transform.getWorldPosition().clone();
+        position.y -= 0.5;
+        this.damageNumberManager.addDamageNumber(
+          0,
+          false,
+          position,
+          'aegis_blocked',
+          true,
+          undefined,
+          undefined,
+          'AEGIS'
+        );
+      }
+      if (
+        this.localPlayerEntityId !== null &&
+        target.id === this.localPlayerEntityId &&
+        typeof window !== 'undefined'
+      ) {
+        window.dispatchEvent(new CustomEvent('aegis-block'));
+      }
     }
   }
 
@@ -1134,6 +1260,9 @@ export class CombatSystem extends System {
     staggerToAdd?: number,
     infestedSmite?: boolean,
     infernalSmite?: boolean,
+    crossentropyInferno?: boolean,
+    reaperCrossentropy?: boolean,
+    infestedCombo?: boolean,
   ): void {
     this.damageQueue.push({
       target,
@@ -1147,6 +1276,9 @@ export class CombatSystem extends System {
       staggerToAdd,
       infestedSmite,
       infernalSmite,
+      crossentropyInferno,
+      reaperCrossentropy,
+      infestedCombo,
     });
   }
 
@@ -1182,7 +1314,7 @@ export class CombatSystem extends System {
     if (summonedUnitComponent) {
       // Calculate actual damage with critical hit mechanics
       const currentWeapon = this.getCurrentWeapon();
-      const damageResult: DamageResult = calculateDamage(damage, currentWeapon);
+      const damageResult: DamageResult = calculateDamage(damage, currentWeapon, this.getBarrageCritCalcOpts(damageType));
       const actualDamage = damageResult.damage;
 
       const currentTime = Date.now() / 1000;
@@ -1203,13 +1335,15 @@ export class CombatSystem extends System {
             const position = transform.getWorldPosition();
             // Offset slightly above the target
             position.y += 1.5;
+            const dualCoilSlot = this.applyDualCoilDamageNumberLateral(position, source);
             this.damageNumberManager.addDamageNumber(
               actualDamage,
               damageResult.isCritical,
               position,
               damageType,
               undefined,
-              damageType === 'barrage' ? target.id : undefined
+              damageType === 'barrage' ? target.id : undefined,
+              dualCoilSlot
             );
           }
         }
@@ -1233,7 +1367,7 @@ export class CombatSystem extends System {
 
     // Calculate actual damage with critical hit mechanics
     const currentWeapon = this.getCurrentWeapon();
-    const damageResult: DamageResult = calculateDamage(damage, currentWeapon);
+    const damageResult: DamageResult = calculateDamage(damage, currentWeapon, this.getBarrageCritCalcOpts(damageType));
     const actualDamage = damageResult.damage;
 
     const currentTime = Date.now() / 1000;
@@ -1251,13 +1385,15 @@ export class CombatSystem extends System {
           const position = transform.getWorldPosition();
           // Offset slightly above the target
           position.y += 1.5;
+          const dualCoilSlot = this.applyDualCoilDamageNumberLateral(position, source);
           this.damageNumberManager.addDamageNumber(
             actualDamage,
             damageResult.isCritical,
             position,
             damageType,
             undefined,
-            damageType === 'barrage' ? target.id : undefined
+            damageType === 'barrage' ? target.id : undefined,
+            dualCoilSlot
           );
         }
       }
@@ -1267,17 +1403,17 @@ export class CombatSystem extends System {
         // Enemy deaths in multiplayer/PVP mode are handled by the server
         const enemy = target.getComponent(Enemy);
         const shouldHandleDeathLocally = !enemy || !this.onEnemyDamageCallback;
-        
-        if (shouldHandleDeathLocally) {
-          this.handleEntityDeath(target, source, currentTime, sourcePlayerId);
-        } 
+          
+          if (shouldHandleDeathLocally) {
+            this.handleEntityDeath(target, source, currentTime, sourcePlayerId);
+          }
+        }
+
+        this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
       }
 
-      this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
+      return damageDealt;
     }
-
-    return damageDealt;
-  }
 
   public healImmediate(
     target: Entity, 
@@ -1397,6 +1533,40 @@ export class CombatSystem extends System {
       if (!wasSlowedByOtherEffect || movement.movementSpeedMultiplier === 0.1) { // 0.1 is typical corrupted slow value
         movement.movementSpeedMultiplier = 1.0;
       }
+    }
+  }
+
+  /** Frostpath talent: Entropic Bolt hit on PvE enemy — delegate to ControlSystem (routed + local apply paths). */
+  private maybeTriggerFrostpath(
+    damageType: string | undefined,
+    source: Entity | undefined,
+    target: Entity,
+  ): void {
+    if (damageType !== 'entropic' || !source) return;
+    if (!target.getComponent(Enemy)) return;
+    const proj = source.getComponent(Projectile);
+    if (!proj) return;
+    if (this.localPlayerEntityId === null || proj.owner !== this.localPlayerEntityId) return;
+    const cs = (window as any).controlSystemRef?.current;
+    if (cs?.tryProcFrostpathOnEntropicHit) {
+      cs.tryProcFrostpathOnEntropicHit(target, source);
+    }
+  }
+
+  /** Solar Recharge talent: Entropic Bolt hit on PvE enemy — delegate to ControlSystem (routed + local apply paths). */
+  private maybeTriggerSolarRecharge(
+    damageType: string | undefined,
+    source: Entity | undefined,
+    target: Entity,
+  ): void {
+    if (damageType !== 'entropic' || !source) return;
+    if (!target.getComponent(Enemy)) return;
+    const proj = source.getComponent(Projectile);
+    if (!proj) return;
+    if (this.localPlayerEntityId === null || proj.owner !== this.localPlayerEntityId) return;
+    const cs = (window as any).controlSystemRef?.current;
+    if (cs?.tryProcSolarRechargeOnEntropicHit) {
+      cs.tryProcSolarRechargeOnEntropicHit(target, source);
     }
   }
 

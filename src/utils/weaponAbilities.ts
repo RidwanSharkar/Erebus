@@ -1,4 +1,5 @@
 import { WeaponType } from '@/components/dragon/weapons';
+import { REANIMATE_SUNWELL_COOLDOWN_SEC } from '@/utils/talents';
 
 export interface AbilityData {
   name: string;
@@ -115,7 +116,7 @@ export const universalAbilityPool: UniversalAbility[] = [
   // ── SCYTHE ────────────────────────────────────────────────────────────
   {
     id: 'SCYTHE_Q', sourceWeapon: WeaponType.SCYTHE, sourceKey: 'Q',
-    name: 'Sunwell', cooldown: 1.0, icon: '🔆',
+    name: 'Sunwell', cooldown: REANIMATE_SUNWELL_COOLDOWN_SEC, icon: '🔆',
     description: 'Heals you and nearby allies for 60 HP.',
     allowedWeapons: ALL_WEAPONS,
   },
@@ -297,7 +298,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
     {
       name: 'Sunwell',
       key: 'Q',
-      cooldown: 1.0,
+      cooldown: REANIMATE_SUNWELL_COOLDOWN_SEC,
       description: 'Heals you and nearby allies for 60 HP.'
     },
     {

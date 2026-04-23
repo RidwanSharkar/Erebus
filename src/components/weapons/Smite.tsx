@@ -56,6 +56,8 @@ interface SmiteProps {
   infernalSmiteVisual?: boolean;
   /** Extra seconds before the bolt begins (TRINITY follow-up strikes). */
   sequenceDelaySec?: number;
+  /** Local player: invoked once per PvE enemy hit when beam damage is applied (e.g. Colossus Guard proc). */
+  onBeamEnemyHit?: () => void;
 }
 
 const SmiteComponent = memo(function Smite({
@@ -72,7 +74,8 @@ const SmiteComponent = memo(function Smite({
   infestedSmiteVisual = false,
   staggeringSmiteVisual = false,
   infernalSmiteVisual = false,
-  sequenceDelaySec = 0
+  sequenceDelaySec = 0,
+  onBeamEnemyHit,
 }: SmiteProps) {
   const lightningRef = useRef<Group>(null);
   const progressRef = useRef(0);
@@ -286,6 +289,7 @@ const SmiteComponent = memo(function Smite({
               infestedSmiteVisual,
               infernalSmiteVisual,
             );
+            onBeamEnemyHit?.();
           }
         }
 
@@ -527,6 +531,7 @@ const SmiteComponent = memo(function Smite({
   if (prevProps.staggeringSmiteVisual !== nextProps.staggeringSmiteVisual) return false;
   if (prevProps.infernalSmiteVisual !== nextProps.infernalSmiteVisual) return false;
   if ((prevProps.sequenceDelaySec ?? 0) !== (nextProps.sequenceDelaySec ?? 0)) return false;
+  if (prevProps.onBeamEnemyHit !== nextProps.onBeamEnemyHit) return false;
 
   return true;
 });

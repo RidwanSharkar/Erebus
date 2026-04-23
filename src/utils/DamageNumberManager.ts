@@ -17,7 +17,10 @@ export class DamageNumberManager {
     damageType?: string,
     isIncomingDamage?: boolean,
     /** ECS target id — with `damageType === 'barrage'`, consecutive hits on that target merge within ~500ms. */
-    mergeBarrageTargetEntityId?: number
+    mergeBarrageTargetEntityId?: number,
+    /** Bow Dual Coil: lane index so paired numbers don’t share one stack slot and get extra screen spread. */
+    dualCoilSlot?: 0 | 1,
+    displayText?: string
   ): string {
     const now = Date.now();
 
@@ -51,6 +54,8 @@ export class DamageNumberManager {
         timestamp: now,
         damageType,
         isIncomingDamage,
+        ...(dualCoilSlot !== undefined ? { dualCoilSlot } : {}),
+        ...(displayText !== undefined ? { displayText } : {}),
       };
       this.damageNumbers.push(damageNumber);
       this.barrageMergeByTarget.set(mergeBarrageTargetEntityId, {
@@ -69,6 +74,8 @@ export class DamageNumberManager {
       timestamp: now,
       damageType,
       isIncomingDamage,
+      ...(dualCoilSlot !== undefined ? { dualCoilSlot } : {}),
+      ...(displayText !== undefined ? { displayText } : {}),
     };
 
     this.damageNumbers.push(damageNumber);

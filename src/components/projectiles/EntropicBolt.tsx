@@ -78,6 +78,7 @@ export default function EntropicBolt({
   const timeElapsed = useRef(0);
   const randomSeed = useRef(Math.random() * 1000);
   const chaoticOffset = useRef(new Vector3());
+  const flightDirectionRef = useRef(direction.clone().normalize());
 
   const theme = getBoltColorTheme(colorVariant, isCryoflame);
   const trailColor = useMemo(() => new Color(theme.primary), [theme.primary]);
@@ -100,7 +101,15 @@ export default function EntropicBolt({
     alignBoltToDirection(orientRef.current, direction);
   }, [direction]);
 
+  useEffect(() => {
+    if (direction.lengthSq() < 1e-8) flightDirectionRef.current.set(0, 1, 0);
+    else flightDirectionRef.current.copy(direction).normalize();
+  }, [direction]);
+
   useFrame((_, delta) => {
+    if (direction.lengthSq() < 1e-8) flightDirectionRef.current.set(0, 1, 0);
+    else flightDirectionRef.current.copy(direction).normalize();
+
     if (orientRef.current) {
       alignBoltToDirection(orientRef.current, direction);
     }
@@ -167,10 +176,11 @@ export default function EntropicBolt({
           <EntropicBoltTrail
             color={trailColor}
             accentColor={trailAccent}
-            size={0.325}
+            size={0.225}
             meshRef={boltRef}
             opacity={1}
             isCryoflame={isCryoflame}
+            flightDirectionRef={flightDirectionRef}
           />
 
           <group ref={boltRef} position={position.toArray()}>
@@ -180,7 +190,7 @@ export default function EntropicBolt({
                 <meshStandardMaterial
                   color={primaryColor}
                   emissive={secondaryColor}
-                  emissiveIntensity={2.8}
+                  emissiveIntensity={0.8}
                   transparent
                   opacity={0.95}
                   blending={AdditiveBlending}
@@ -207,7 +217,7 @@ export default function EntropicBolt({
                 <meshStandardMaterial
                   color={secondaryColor}
                   emissive={secondaryColor}
-                  emissiveIntensity={3.2}
+                  emissiveIntensity={1.2}
                   transparent
                   opacity={0.55}
                   blending={AdditiveBlending}
@@ -220,7 +230,7 @@ export default function EntropicBolt({
                 <meshStandardMaterial
                   color={primaryColor}
                   emissive={secondaryColor}
-                  emissiveIntensity={2.0}
+                  emissiveIntensity={1.0}
                   transparent
                   opacity={0.35}
                   blending={AdditiveBlending}
@@ -233,7 +243,7 @@ export default function EntropicBolt({
                 <meshStandardMaterial
                   color={secondaryColor}
                   emissive={secondaryColor}
-                  emissiveIntensity={4.5}
+                  emissiveIntensity={2.5}
                   transparent
                   opacity={0.9}
                   blending={AdditiveBlending}
@@ -243,7 +253,7 @@ export default function EntropicBolt({
 
               <pointLight
                 color={theme.light}
-                intensity={5.5}
+                intensity={3.5}
                 distance={7}
                 decay={2}
                 position={[0, 0.15, 0]}
@@ -253,14 +263,6 @@ export default function EntropicBolt({
         </>
       )}
 
-      {showImpact && impactPosition && (
-        <EntropicBoltImpact
-          position={impactPosition}
-          theme={theme}
-          isCryoflame={isCryoflame}
-          onComplete={handleImpactComplete}
-        />
-      )}
     </group>
   );
 }
@@ -376,7 +378,7 @@ function EntropicBoltImpact({ position, onComplete, isCryoflame = false, theme }
 
       <pointLight
         color={theme.light}
-        intensity={8 * fade}
+        intensity={4 * fade}
         distance={4}
         decay={2}
       />

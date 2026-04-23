@@ -91,9 +91,23 @@ const PerimeterCloudSystem: React.FC<PerimeterCloudSystemProps> = ({ radius }) =
   const [activeClouds, setActiveClouds] = useState<PerimeterCloud[]>([]);
   const cloudIdCounterRef = useRef(0);
   const lastCloudTimeRef = useRef(0);
+  const mountedRef = useRef(true);
+  const spawnTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      for (const id of spawnTimeoutsRef.current) {
+        clearTimeout(id);
+      }
+      spawnTimeoutsRef.current = [];
+    };
+  }, []);
 
   const spawnCloud = useCallback(
     (currentTime: number) => {
+      if (!mountedRef.current) return;
       const angle = Math.random() * Math.PI * 2;
       const perimeterOffset = (Math.random() - 0.5) * 2.0;
       const distance = radius + perimeterOffset;
@@ -163,7 +177,9 @@ const PerimeterCloudSystem: React.FC<PerimeterCloudSystemProps> = ({ radius }) =
         rotationOffset,
       };
 
-      setActiveClouds((prev) => [...prev, newCloud]);
+      if (mountedRef.current) {
+        setActiveClouds((prev) => [...prev, newCloud]);
+      }
     },
     [radius]
   );
@@ -191,13 +207,20 @@ const PerimeterCloudSystem: React.FC<PerimeterCloudSystemProps> = ({ radius }) =
   }, []);
 
   useFrame(({ clock }) => {
+    if (!mountedRef.current) return;
     const t = clock.getElapsedTime();
     const timeSinceLastCloud = t - lastCloudTimeRef.current;
 
     if (timeSinceLastCloud > 0.25 + Math.random() * 1.0 || lastCloudTimeRef.current === 0) {
       const cloudCount = 14 + Math.floor(Math.random() * 10);
       for (let i = 0; i < cloudCount; i++) {
-        setTimeout(() => spawnCloud(t + i * 0.1), i * 100);
+        const delay = i * 100;
+        const id = setTimeout(() => {
+          const idx = spawnTimeoutsRef.current.indexOf(id);
+          if (idx >= 0) spawnTimeoutsRef.current.splice(idx, 1);
+          spawnCloud(t + i * 0.1);
+        }, delay);
+        spawnTimeoutsRef.current.push(id);
       }
       lastCloudTimeRef.current = t;
     }

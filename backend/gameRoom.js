@@ -5,6 +5,9 @@ const EnemyAI = require('./enemyAI');
 const THRONE_TRAINING_DUMMY_Z = 10.75;
 const THRONE_TRAINING_DUMMY_ID = 'throne-training-dummy';
 
+/** Co-op arena: regular enemies spawned per wave; boss spawns after this many kills. */
+const COOP_WAVE_ENEMY_COUNT = 10;
+
 class GameRoom {
   constructor(roomId, io) {
     this.roomId = roomId;
@@ -38,7 +41,7 @@ class GameRoom {
     /** Co-op: false until a player uses the throne-room portal (enemies + AI start then). */
     this.combatArenaActive = false;
 
-    // Kill tracking toward boss trigger (12 enemies must be killed across 3 camps)
+    // Kill tracking toward boss trigger (COOP_WAVE_ENEMY_COUNT regular enemies per wave)
     this.skeletonKillCount = 0;
 
     /** Session archetype for co-op (`initializeEnemies`); sent on `camps-initialized` and `room-joined`. */
@@ -52,7 +55,7 @@ class GameRoom {
   }
 
   // ── Enemy archetype definitions ────────────────────────────────────────────
-  // One archetype is randomly chosen per game session. All 15 enemies share it.
+  // One archetype is randomly chosen per game session. All regular wave enemies share it.
   // enemyPool: unit types that can fill non-knight slots.
   // knightSoulType: the soul colour used for knights in this archetype.
   static get CAMP_TYPES() {
@@ -164,7 +167,7 @@ class GameRoom {
 
   teleportAllPlayersToCombatSpawn() {
     const spawnBaseX = 0;
-    const spawnBaseZ = 25;
+    const spawnBaseZ = 18; // main map radius 20 — south cluster (see client COOP_MAIN_DEFAULT_SPAWN_Z)
     const totalPlayers = Math.max(this.players.size, 1);
     let idx = 0;
     for (const player of this.players.values()) {
@@ -254,7 +257,8 @@ class GameRoom {
       movementDirection: { x: 0, y: 0, z: 0 },
       joinedAt: Date.now(),
       isStealthing: false, // Sabres stealth ability state
-      isInvisible: false // Whether player is currently invisible
+      isInvisible: false, // Whether player is currently invisible
+      reaperCrossentropyStack: 0, // Reaper talent: +base damage from Crossentropy kills (session)
     });
 
     // Position players for co-op mode
@@ -279,7 +283,7 @@ class GameRoom {
         const totalPlayers = 3; // Max players for positioning
 
         const spawnBaseX = 0;
-        const spawnBaseZ = 25;
+        const spawnBaseZ = 18;
 
         const angleStep = (Math.PI * 2) / totalPlayers;
         const angle = playerIndex * angleStep;
@@ -437,20 +441,20 @@ class GameRoom {
     return null;
   }
 
-  // Generate 15 enemy positions spread across the map with organic clustering:
-  //   3 clusters of 3 units + 6 lone units = 15 total
+  // Generate enemy positions spread across the map with organic clustering:
+  //   3 clusters of 3 units + (N − 9) lone units (e.g. N=10 → 3×3 + 1 loner)
   _generateScatteredPositions(total) {
-    const MAX_MAP_RADIUS  = 25;  // keep well within the 28-unit boundary
+    const MAX_MAP_RADIUS  = 18;  // keep well within the main map radius (20)
     const TITAN_EXCL_R    = 13;  // avoid the Titan's roaming circle
-    const SPAWN_EXCL_R    = 9;   // avoid the player spawn zone (0, 25)
+    const SPAWN_EXCL_R    = 9;   // avoid the player spawn zone (0, 18)
     const exclusions = [
       { x:  0, z:  0, radius: TITAN_EXCL_R },
-      { x:  0, z: 25, radius: SPAWN_EXCL_R },
+      { x:  0, z: 18, radius: SPAWN_EXCL_R },
     ];
 
     const NUM_CLUSTERS    = 3;
     const CLUSTER_SIZE    = 3;
-    const NUM_LONERS      = total - NUM_CLUSTERS * CLUSTER_SIZE; // 15 - 9 = 6
+    const NUM_LONERS      = total - NUM_CLUSTERS * CLUSTER_SIZE;
 
     const positions = [];
 
@@ -505,7 +509,7 @@ class GameRoom {
 
     this.sessionCampTypes = [typeKey];
 
-    const TOTAL_ENEMIES = 15;
+    const TOTAL_ENEMIES = COOP_WAVE_ENEMY_COUNT;
     const positions     = this._generateScatteredPositions(TOTAL_ENEMIES);
 
     let totalSpawned = 0;
@@ -621,16 +625,16 @@ class GameRoom {
       this.io.to(this.roomId).emit('enemy-damaged', damagedPayload);
     }
 
-    // Infernal Smite: Ignite DoT — 80% of smite hit over 3s in 3 ticks (non-lethal hits only)
-    if (
+    // Infernal Smite / INFERNO (Crossentropy): Ignite DoT — 80% of hit over 3s in 3 ticks (non-lethal hits only)
+    const infernoDotEligible =
       !result.wasKilled &&
       hitMeta &&
-      hitMeta.damageType === 'smite' &&
-      hitMeta.infernalSmite &&
       damage > 0 &&
       !enemy.isDying &&
-      enemy.health > 0
-    ) {
+      enemy.health > 0 &&
+      ((hitMeta.damageType === 'smite' && hitMeta.infernalSmite) ||
+        (hitMeta.damageType === 'crossentropy' && hitMeta.infernoCrossentropy));
+    if (infernoDotEligible) {
       this.applyStatusEffect(enemyId, 'ignite', 3000);
       const totalDot = Math.floor(damage * 0.8);
       if (totalDot > 0) {
@@ -748,6 +752,42 @@ class GameRoom {
         });
       }
 
+      // INFESTED COMBO: Runeblade basic (runeblade_combo) kill — same zombie rules as Infested Smite
+      if (
+        hitMeta &&
+        hitMeta.damageType === 'runeblade_combo' &&
+        hitMeta.infestedCombo &&
+        fromPlayerId &&
+        fromPlayerId !== 'unknown' &&
+        enemy.type !== 'training-dummy' &&
+        enemy.type !== 'boss' &&
+        enemy.type !== 'player-zombie' &&
+        this.enemyAI
+      ) {
+        this.enemyAI.trySpawnInfestedZombie(fromPlayerId, {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        });
+      }
+
+      // Reaper (Crossentropy): +1 base damage for this room session per kill
+      if (
+        hitMeta &&
+        hitMeta.damageType === 'crossentropy' &&
+        hitMeta.reaperCrossentropy &&
+        fromPlayerId &&
+        fromPlayerId !== 'unknown' &&
+        enemy.type !== 'training-dummy' &&
+        this.io
+      ) {
+        const p = this.players.get(fromPlayerId);
+        if (p) {
+          p.reaperCrossentropyStack = (p.reaperCrossentropyStack || 0) + 1;
+          this.io.to(fromPlayerId).emit('reaper-crossentropy-stack', { stacks: p.reaperCrossentropyStack });
+        }
+      }
+
       // Special rewards for boss kills
       if (enemy.type === 'boss') {
         // Award significant EXP to all players for defeating the boss
@@ -794,18 +834,18 @@ class GameRoom {
         // Track boss-skeleton kills (boss-summoned only — won't trigger boss since bossSpawned is true)
         if (!this.bossSpawned) {
           this.skeletonKillCount++;
-          console.log(`💀 Skeleton killed (${this.skeletonKillCount}/12)`);
+          console.log(`💀 Skeleton killed (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
 
           if (this.io) {
             this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
               skeletonKillCount: this.skeletonKillCount,
-              required: 12,
+              required: COOP_WAVE_ENEMY_COUNT,
               timestamp: Date.now()
             });
           }
 
-          if (this.skeletonKillCount >= 12) {
-            console.log('💀💀💀 12 enemies killed - Boss is appearing!');
+          if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
+            console.log(`💀💀💀 ${COOP_WAVE_ENEMY_COUNT} enemies killed - Boss is appearing!`);
             this.spawnBoss();
             this.bossSpawned = true;
           }
@@ -848,21 +888,21 @@ class GameRoom {
           });
         }
 
-        // Knights count toward the boss-trigger kill count (all 15 must die)
+        // Knights count toward the boss-trigger kill count
         if (!this.bossSpawned) {
           this.skeletonKillCount++;
-          console.log(`⚔️ Knight killed (${this.skeletonKillCount}/12)`);
+          console.log(`⚔️ Knight killed (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
 
           if (this.io) {
             this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
               skeletonKillCount: this.skeletonKillCount,
-              required: 12,
+              required: COOP_WAVE_ENEMY_COUNT,
               timestamp: Date.now()
             });
           }
 
-          if (this.skeletonKillCount >= 12) {
-            console.log('⚔️⚔️⚔️ All 12 enemies killed - Boss is appearing!');
+          if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
+            console.log(`⚔️⚔️⚔️ All ${COOP_WAVE_ENEMY_COUNT} enemies killed - Boss is appearing!`);
             this.spawnBoss();
             this.bossSpawned = true;
           }
@@ -919,17 +959,17 @@ class GameRoom {
         // Shade kills count toward the boss-spawn threshold
         if (!this.bossSpawned) {
           this.skeletonKillCount++;
-          console.log(`👻 Shade killed (${this.skeletonKillCount}/12)`);
+          console.log(`👻 Shade killed (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
 
           if (this.io) {
             this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
               skeletonKillCount: this.skeletonKillCount,
-              required: 12,
+              required: COOP_WAVE_ENEMY_COUNT,
               timestamp: Date.now()
             });
           }
 
-          if (this.skeletonKillCount >= 12) {
+          if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
             console.log('👻👻👻 Kill threshold reached - Boss is appearing!');
             this.spawnBoss();
             this.bossSpawned = true;
@@ -975,17 +1015,17 @@ class GameRoom {
         // Warlock kills count toward the boss-spawn threshold
         if (!this.bossSpawned) {
           this.skeletonKillCount++;
-          console.log(`🔮 Warlock killed (${this.skeletonKillCount}/12)`);
+          console.log(`🔮 Warlock killed (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
 
           if (this.io) {
             this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
               skeletonKillCount: this.skeletonKillCount,
-              required: 12,
+              required: COOP_WAVE_ENEMY_COUNT,
               timestamp: Date.now()
             });
           }
 
-          if (this.skeletonKillCount >= 12) {
+          if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
             console.log('🔮🔮🔮 Kill threshold reached — Boss is appearing!');
             this.spawnBoss();
             this.bossSpawned = true;
@@ -1031,17 +1071,17 @@ class GameRoom {
         // Templar kills count toward the boss-spawn threshold
         if (!this.bossSpawned) {
           this.skeletonKillCount++;
-          console.log(`🛡️ Templar killed (${this.skeletonKillCount}/12)`);
+          console.log(`🛡️ Templar killed (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
 
           if (this.io) {
             this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
               skeletonKillCount: this.skeletonKillCount,
-              required: 12,
+              required: COOP_WAVE_ENEMY_COUNT,
               timestamp: Date.now()
             });
           }
 
-          if (this.skeletonKillCount >= 12) {
+          if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
             console.log('🛡️🛡️🛡️ Kill threshold reached — Boss is appearing!');
             this.spawnBoss();
             this.bossSpawned = true;
@@ -1086,17 +1126,17 @@ class GameRoom {
 
         if (!this.bossSpawned) {
           this.skeletonKillCount++;
-          console.log(`🧵 Weaver killed (${this.skeletonKillCount}/12)`);
+          console.log(`🧵 Weaver killed (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
 
           if (this.io) {
             this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
               skeletonKillCount: this.skeletonKillCount,
-              required: 12,
+              required: COOP_WAVE_ENEMY_COUNT,
               timestamp: Date.now()
             });
           }
 
-          if (this.skeletonKillCount >= 12) {
+          if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
             console.log('🧵🧵🧵 Kill threshold reached — Boss is appearing!');
             this.spawnBoss();
             this.bossSpawned = true;
@@ -1161,17 +1201,17 @@ class GameRoom {
 
         if (!this.bossSpawned) {
           this.skeletonKillCount++;
-          console.log(`🐍 Viper killed (${this.skeletonKillCount}/12)`);
+          console.log(`🐍 Viper killed (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
 
           if (this.io) {
             this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
               skeletonKillCount: this.skeletonKillCount,
-              required: 12,
+              required: COOP_WAVE_ENEMY_COUNT,
               timestamp: Date.now()
             });
           }
 
-          if (this.skeletonKillCount >= 12) {
+          if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
             console.log('🐍🐍🐍 Kill threshold reached — Boss is appearing!');
             this.spawnBoss();
             this.bossSpawned = true;

@@ -1,6 +1,7 @@
 import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Mesh, ShaderMaterial, CylinderGeometry, Color, RepeatWrapping, CanvasTexture } from '@/utils/three-exports';
+import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
 
 interface EnhancedGroundProps {
   radius?: number;
@@ -13,7 +14,7 @@ interface EnhancedGroundProps {
  * Provides depth and visual interest to the game environment
  */
 const EnhancedGround: React.FC<EnhancedGroundProps> = ({
-  radius = 28,
+  radius = MAIN_MAP_RADIUS,
   height = 1,
   level = 1
 }) => {

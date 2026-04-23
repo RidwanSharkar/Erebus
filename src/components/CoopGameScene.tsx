@@ -35,10 +35,17 @@ import {
   shouldApplyInfestedSmiteTalent,
   shouldApplyInfernalSmiteTalent,
   shouldApplyStaggeringSmiteTalent,
-  shouldApplyStoredChargeTalent,
+  shouldApplyRunebladeStoredChargeSpin,
   shouldApplyStaggeringComboTalent,
+  shouldApplyWrathfulComboTalent,
+  shouldApplyInfestedComboTalent,
+  shouldApplyGuardComboTalent,
   shouldApplyWrathfulTalonsTalent,
+  shouldApplyExecuteTalent,
   STAGGER_PROC_DAMAGE,
+  getDualCoilLateralVector,
+  CROSSENTROPY_MAX_TRAVEL_DISTANCE,
+  REANIMATE_SUNWELL_HEAL,
 } from '@/utils/talents';
 import { StatSystem, StatPointData } from '@/utils/StatSystem';
 import { setGlobalAgilityStatPoints } from '@/core/DamageCalculator';
@@ -120,6 +127,10 @@ import ThroneRoom, {
 import CastleWallCollision from '@/components/environment/CastleWallCollision';
 import PillarCollision from '@/components/environment/PillarCollision';
 import { FOG_GRID_SIZE, isEnemyVisible } from '@/utils/fogOfWarUtils';
+import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+
+/** Default south-ish spawn on the main map (inside the play disc). */
+const COOP_MAIN_DEFAULT_SPAWN_Z = MAIN_MAP_RADIUS - 2;
 import { useBowPowershot } from '@/components/projectiles/useBowPowershot';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import PVPSummonTotemManager from '@/components/projectiles/PVPSummonTotemManager';
@@ -446,10 +457,10 @@ export function CoopGameScene({
   // Alternating damage-sound variant (1 or 2) for knight and templar
   const knightDamageVariant = useRef<1 | 2>(1);
   const templarDamageVariant = useRef<1 | 2>(1);
-  const realTimePlayerPositionRef = useRef<Vector3>(new Vector3(0, 0.5, 28));
+  const realTimePlayerPositionRef = useRef<Vector3>(new Vector3(0, 0.5, COOP_MAIN_DEFAULT_SPAWN_Z));
   // Real-time position refs for enemy players to enable ghost trail updates
   const enemyPlayerPositionRefs = useRef<Map<string, { current: Vector3 }>>(new Map());
-  const [playerPosition, setPlayerPosition] = useState(new Vector3(0, 0.5, 28));
+  const [playerPosition, setPlayerPosition] = useState(new Vector3(0, 0.5, COOP_MAIN_DEFAULT_SPAWN_Z));
   const [playerEntity, setPlayerEntity] = useState<any>(null);
 
   // Fog of war — persistent grid of explored map cells (written by FogOfWar, read for enemy visibility)
@@ -487,7 +498,7 @@ export function CoopGameScene({
     if (!engineRef.current || !gameStarted) return;
     const world = engineRef.current.getWorld();
     const phys = world.getSystem(PhysicsSystem);
-    const r = inThroneRoom ? COOP_THRONE_ROOM_RADIUS + 2 : 28;
+    const r = inThroneRoom ? COOP_THRONE_ROOM_RADIUS + 2 : MAIN_MAP_RADIUS;
     phys?.setMapRadius(r);
     const throneObstacles = inThroneRoom ? getThronePrepPhysicsObstacles() : null;
     phys?.setCastleWallPhysicsEnabled(!inThroneRoom);
@@ -693,9 +704,24 @@ export function CoopGameScene({
     [damageEnemy, broadcastPlayerDamage, enemies, socket?.id],
   );
 
+  const addTotemFloatingDamage = useCallback(
+    (damage: number, isCritical: boolean, position: Vector3) => {
+      const world = engineRef.current?.getWorld();
+      if (!world) return;
+      const combatSystem = world.getSystem(CombatSystem) as CombatSystem | undefined;
+      combatSystem?.getDamageNumberManager().addDamageNumber(
+        damage,
+        isCritical,
+        position,
+        'summon_totem',
+      );
+    },
+    [],
+  );
+
   // Create a ref for the Viper Sting manager that includes position and rotation
   const viperStingParentRef = useRef({
-    position: new Vector3(0, 0.5, 28),
+    position: new Vector3(0, 0.5, COOP_MAIN_DEFAULT_SPAWN_Z),
     quaternion: { x: 0, y: 0, z: 0, w: 1 }
   });
 
@@ -1263,6 +1289,10 @@ export function CoopGameScene({
     }, smiteEffect.duration);
   }, []);
 
+  const onSmiteBeamEnemyHitColossusGuard = useCallback(() => {
+    controlSystemRef.current?.tryColossusGuardProcFromSmiteBeamHit();
+  }, []);
+
   // Function to trigger Flurry healing effect
   const triggerFlurryHealingEffect = useCallback((position: Vector3) => {
     const healingEffect = {
@@ -1676,9 +1706,9 @@ export function CoopGameScene({
           health.revive();
           
           // Teleport back to south-edge spawn point
-          transform.setPosition(0, 0.5, 28);
+          transform.setPosition(0, 0.5, COOP_MAIN_DEFAULT_SPAWN_Z);
           
-          console.log(`✅ Player respawned at south spawn: (0, 0.5, 28) with ${health.currentHealth}/${health.maxHealth} HP`);
+          console.log(`✅ Player respawned at south spawn: (0, 0.5, ${COOP_MAIN_DEFAULT_SPAWN_Z}) with ${health.currentHealth}/${health.maxHealth} HP`);
         }
       }
     }
@@ -1728,13 +1758,13 @@ export function CoopGameScene({
       } else {
         // Fallback to players Map if transform not available
         const player = players.get(deadPlayerId);
-        deathPosition = player ? new Vector3(player.position.x, player.position.y, player.position.z) : new Vector3(0, 0.5, 28);
+        deathPosition = player ? new Vector3(player.position.x, player.position.y, player.position.z) : new Vector3(0, 0.5, COOP_MAIN_DEFAULT_SPAWN_Z);
         console.log(`💀 Local player death - fallback to players Map: (${deathPosition.x.toFixed(2)}, ${deathPosition.y.toFixed(2)}, ${deathPosition.z.toFixed(2)})`);
       }
     } else {
       // Remote player - use players Map position
       const player = players.get(deadPlayerId);
-      deathPosition = player ? new Vector3(player.position.x, player.position.y, player.position.z) : new Vector3(0, 0.5, 28);
+      deathPosition = player ? new Vector3(player.position.x, player.position.y, player.position.z) : new Vector3(0, 0.5, COOP_MAIN_DEFAULT_SPAWN_Z);
       console.log(`💀 Remote player ${deadPlayerId} death - using players Map: (${deathPosition.x.toFixed(2)}, ${deathPosition.y.toFixed(2)}, ${deathPosition.z.toFixed(2)})`);
     }
     
@@ -1952,6 +1982,8 @@ export function CoopGameScene({
     swordComboStep: 1 as 1 | 2 | 3,
     isSwordCharging: false,
     isDeflecting: false,
+    deflectShieldActive: false,
+    deflectShieldDurationSec: 3,
     isViperStingCharging: false,
     viperStingChargeProgress: 0,
     isBarrageCharging: false,
@@ -2223,15 +2255,32 @@ export function CoopGameScene({
                   }
                 );
                 break;
-              case 'crossentropy_bolt':
+              case 'crossentropy_bolt': {
+                const crossCfg = data.animationData?.projectileConfig || {};
+                const reaper = !!crossCfg.reaperCrossentropy;
+                const speed = crossCfg.speed ?? 15;
+                const lifetime = crossCfg.lifetime ?? 2.5;
                 projectileSystem.createCrossentropyBoltProjectile(
                   engineRef.current.getWorld(),
                   position,
                   direction,
                   attackerEntityId,
-                  { speed: 15, damage: 90, lifetime: 2.5, piercing: false, opacity: 0.8 }
+                  {
+                    speed,
+                    damage: crossCfg.damage ?? 90,
+                    lifetime,
+                    maxDistance: reaper
+                      ? (crossCfg.maxDistance ?? CROSSENTROPY_MAX_TRAVEL_DISTANCE)
+                      : crossCfg.maxDistance,
+                    piercing: reaper || (crossCfg.piercing ?? false),
+                    opacity: crossCfg.opacity ?? 0.8,
+                    sourcePlayerId: data.playerId,
+                    infernoCrossentropy: !!crossCfg.infernoCrossentropy,
+                    reaperCrossentropy: reaper,
+                  }
                 );
                 break;
+              }
               case 'perfect_shot':
                 // Only create visual effect for perfect shots - no damage-dealing projectile
                 // The local player already created the damage-dealing projectile
@@ -2256,14 +2305,25 @@ export function CoopGameScene({
                   true  // isElementalShotsUnlocked
                 );
                 break;
-              case 'barrage_projectile':
+              case 'barrage_projectile': {
+                const barrageCfg = data.animationData?.projectileConfig || {};
+                const wrathfulBiteBarrage = !!barrageCfg.wrathfulBiteBarrage;
                 // Create Barrage projectiles for PVP
                 const barrageEntity = projectileSystem.createProjectile(
                   engineRef.current.getWorld(),
                   position,
                   direction,
                   attackerEntityId,
-                  { speed: 22, damage: 30, lifetime: 3, maxDistance: 25, piercing: false, opacity: 0.8, sourcePlayerId: data.playerId }
+                  {
+                    speed: 22,
+                    damage: 30,
+                    lifetime: 3,
+                    maxDistance: 25,
+                    piercing: false,
+                    opacity: 0.8,
+                    sourcePlayerId: data.playerId,
+                    wrathfulBiteBarrage,
+                  }
                 );
                 
                 // Mark as barrage arrow for proper visual rendering
@@ -2271,8 +2331,12 @@ export function CoopGameScene({
                 if (renderer?.mesh) {
                   renderer.mesh.userData.isBarrageArrow = true;
                   renderer.mesh.userData.isRegularArrow = false;
+                  if (wrathfulBiteBarrage) {
+                    renderer.mesh.userData.barrageWrathfulBite = true;
+                  }
                 }
                 break;
+              }
               case 'burst_arrow':
                 // Create Tempest Rounds burst projectiles for PVP
                 const burstEntity = projectileSystem.createProjectile(
@@ -2927,7 +2991,8 @@ export function CoopGameScene({
           
           // Calculate rotation from direction for shield positioning
           const rotation = new Vector3(0, Math.atan2(direction.x, direction.z), 0);
-          triggerGlobalDeflectShield(position, rotation, data.playerId);
+          const remoteWeapon = players.get(data.playerId)?.weapon ?? WeaponType.RUNEBLADE;
+          triggerGlobalDeflectShield(position, rotation, data.playerId, remoteWeapon);
           
           setMultiplayerPlayerStates(prev => {
             const updated = new Map(prev);
@@ -3344,28 +3409,45 @@ export function CoopGameScene({
           // Bypass invulnerability for PVP damage to allow rapid attacks like bursts to land multiple hits,
           // but respect deflect invulnerability (3 seconds) which is much longer than standard invulnerability (0.5s)
           const bypassInvulnerability = !health.isInvulnerable || health.invulnerabilityTimer <= 1.0;
-          health.takeDamage(reducedDamageDisplay, Date.now() / 1000, playerEntity, bypassInvulnerability);
+          const damageApplied = health.takeDamage(
+            reducedDamageDisplay,
+            Date.now() / 1000,
+            playerEntity,
+            bypassInvulnerability
+          );
 
-          // Display incoming damage numbers
           if (playerEntity) {
             const transform = playerEntity.getComponent(Transform);
             if (transform) {
-              // Use the critical hit information passed from the server
               const isCritical = data.isCritical || false;
-
-              // Directly add damage numbers using the combat system's damage number manager
               const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
               if (damageNumberManager && damageNumberManager.addDamageNumber) {
                 const incomingDamagePosition = transform.position.clone();
-                incomingDamagePosition.y -= 0.5; // Position below player's feet
+                incomingDamagePosition.y -= 0.5;
 
-                damageNumberManager.addDamageNumber(
-                  reducedDamageDisplay,
-                  isCritical,
-                  incomingDamagePosition,
-                  data.damageType,
-                  true // isIncomingDamage = true
-                );
+                if (damageApplied) {
+                  damageNumberManager.addDamageNumber(
+                    reducedDamageDisplay,
+                    isCritical,
+                    incomingDamagePosition,
+                    data.damageType,
+                    true
+                  );
+                } else if (reducedDamageDisplay > 0 && health.isAegisInvulnerable()) {
+                  damageNumberManager.addDamageNumber(
+                    0,
+                    false,
+                    incomingDamagePosition,
+                    'aegis_blocked',
+                    true,
+                    undefined,
+                    undefined,
+                    'AEGIS'
+                  );
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('aegis-block'));
+                  }
+                }
               }
             }
           }
@@ -5446,6 +5528,12 @@ export function CoopGameScene({
           swordComboStep: controlSystemRef.current.getSwordComboStep(),
           isSwordCharging: controlSystemRef.current.isChargeActive(),
           isDeflecting: controlSystemRef.current.isDeflectActive(),
+          deflectShieldActive:
+            controlSystemRef.current.isDeflectActive() ||
+            controlSystemRef.current.isWraithGuardShieldActive() ||
+            controlSystemRef.current.isColossusGuardShieldActive() ||
+            controlSystemRef.current.isGuardComboShieldActive(),
+          deflectShieldDurationSec: controlSystemRef.current.getDeflectShieldDurationSec(),
           isViperStingCharging: controlSystemRef.current.isViperStingChargingActive(),
           viperStingChargeProgress: controlSystemRef.current.getViperStingChargeProgress(),
           isBarrageCharging: controlSystemRef.current.isBarrageChargingActive(),
@@ -5660,7 +5748,7 @@ export function CoopGameScene({
 
     const localPlayerForSpawn = players.get(socket?.id || '');
     const spawnX = localPlayerForSpawn?.position.x ?? 0;
-    const spawnZ = localPlayerForSpawn?.position.z ?? 28;
+    const spawnZ = localPlayerForSpawn?.position.z ?? COOP_MAIN_DEFAULT_SPAWN_Z;
     const initialThroneMap = gameMode === 'coop' && !combatArenaActive;
 
     const { player, controlSystem } = setupCoopGame(
@@ -5716,14 +5804,33 @@ export function CoopGameScene({
             direction.applyMatrix4(rotationMatrix);
             direction.normalize();
 
-            // Create perfect shot effect
-            const effectId = createPowershotEffect(
-              transform.position.clone(),
-              direction,
-              controlSystem.getCurrentSubclass(),
-              true, // isPerfectShot
-              true  // isElementalShotsUnlocked
-            );
+            const basePos = transform.position.clone();
+            const sub = controlSystem.getCurrentSubclass();
+            if (controlSystem.shouldApplyDualCoilForBow()) {
+              const d = getDualCoilLateralVector(direction);
+              createPowershotEffect(
+                basePos.clone().add(d),
+                direction,
+                sub,
+                true,
+                true
+              );
+              createPowershotEffect(
+                basePos.clone().sub(d),
+                direction,
+                sub,
+                true,
+                true
+              );
+            } else {
+              createPowershotEffect(
+                basePos,
+                direction,
+                sub,
+                true,
+                true
+              );
+            }
           }
         }
       }
@@ -5782,7 +5889,7 @@ export function CoopGameScene({
       // Also broadcast as attack for animation
       broadcastPlayerAttack('sword_charge_start', position, direction, {
         isSwordCharging: true,
-        storedCharge: shouldApplyStoredChargeTalent(
+        storedCharge: shouldApplyRunebladeStoredChargeSpin(
           talentLoadoutRef.current,
           abilityLoadoutRef.current,
         ),
@@ -5936,7 +6043,7 @@ export function CoopGameScene({
           if (socket && currentRoomId) {
             socket.emit('heal-nearby-allies', {
               roomId: currentRoomId,
-              healAmount: 60,
+              healAmount: REANIMATE_SUNWELL_HEAL,
               abilityType: 'reanimate',
               position: {
                 x: transform.position.x,
@@ -6193,6 +6300,7 @@ export function CoopGameScene({
                   thronePortalOffer.some((c) => String(c).toLowerCase() === 'blue')
                 }
                 thronePortalOffer={thronePortalOffer}
+                campTypes={campTypes}
               />
               {engineRef.current?.getWorld() && (
                 <PillarCollision world={engineRef.current.getWorld()} positions={THRONE_PILLAR_POSITIONS} />
@@ -6210,10 +6318,7 @@ export function CoopGameScene({
                 showMerchant={isMerchantVisible}
                 campTypes={campTypes}
               />
-              <FogOfWar
-                playerPositionRef={realTimePlayerPositionRef}
-                exploredGridRef={exploredGridRef}
-              />
+
               {engineRef.current?.getWorld() && (
                 <CastleWallCollision world={engineRef.current.getWorld()} />
               )}
@@ -6268,6 +6373,8 @@ export function CoopGameScene({
           swordComboStep={weaponState.swordComboStep}
           isSwordCharging={weaponState.isSwordCharging}
           isDeflecting={weaponState.isDeflecting}
+          deflectShieldActive={weaponState.deflectShieldActive}
+          deflectShieldDurationSec={weaponState.deflectShieldDurationSec}
           isViperStingCharging={weaponState.isViperStingCharging}
           viperStingChargeProgress={weaponState.viperStingChargeProgress}
           isBarrageCharging={weaponState.isBarrageCharging}
@@ -6296,8 +6403,14 @@ export function CoopGameScene({
           isInvisible={controlSystemRef.current?.getIsInvisible() || false}
           playerLevel={playerLevel}
           wrathfulTalonsReturnCrit={shouldApplyWrathfulTalonsTalent(talentLoadout, abilityLoadout ?? null)}
-          runebladeStoredCharge={shouldApplyStoredChargeTalent(talentLoadout, abilityLoadout ?? null)}
+          executeReapingTalons={shouldApplyExecuteTalent(talentLoadout, abilityLoadout ?? null)}
+          runebladeStoredCharge={shouldApplyRunebladeStoredChargeSpin(talentLoadout, abilityLoadout ?? null)}
           runebladeStaggeringCombo={shouldApplyStaggeringComboTalent(talentLoadout)}
+          runebladeWrathfulCombo={shouldApplyWrathfulComboTalent(talentLoadout)}
+          runebladeInfestedCombo={shouldApplyInfestedComboTalent(talentLoadout)}
+          onRunebladeGuardComboProc={() =>
+            controlSystemRef.current?.tryGuardComboProcFromRunebladeBasicHit()
+          }
           onDamageNumbersReady={handleDamageNumbersReady}
           combatSystem={engineRef.current?.getWorld().getSystem(require('@/systems/CombatSystem').CombatSystem)}
           onHeal={(amount: number) => {
@@ -6370,7 +6483,7 @@ export function CoopGameScene({
             direction.normalize();
             broadcastPlayerAttack('sword_charge_spin', playerPosition, direction, {
               isSpinning: true,
-              storedCharge: shouldApplyStoredChargeTalent(talentLoadout, abilityLoadout ?? null),
+              storedCharge: shouldApplyRunebladeStoredChargeSpin(talentLoadout, abilityLoadout ?? null),
             });
           }}
           onDeflectComplete={() => {
@@ -7155,6 +7268,7 @@ export function CoopGameScene({
             infestedSmiteVisual={infestedSmiteVisual}
             staggeringSmiteVisual={staggeringSmiteVisual}
             infernalSmiteVisual={infernalSmiteVisual}
+            onBeamEnemyHit={isLocalPlayerSmite ? onSmiteBeamEnemyHitColossusGuard : undefined}
           />
         );
       })}
@@ -7362,8 +7476,7 @@ export function CoopGameScene({
             localSocketId={socket?.id}
             enemyData={summonTotemEnemyData}
             onDamage={handleSummonTotemDamage}
-            setDamageNumbers={smiteDamageNumbers.setDamageNumbers}
-            nextDamageNumberId={smiteDamageNumbers.nextDamageNumberId}
+            onTotemFloatingDamage={addTotemFloatingDamage}
           />
           <RejuvenatingShotManager
             world={engineRef.current.getWorld()}
@@ -7463,7 +7576,7 @@ function createCoopPlayer(
   const transform = world.createComponent(Transform);
   const sx = spawn?.x ?? 0;
   const sy = spawn?.y ?? 0.5;
-  const sz = spawn?.z ?? 28;
+  const sz = spawn?.z ?? COOP_MAIN_DEFAULT_SPAWN_Z;
   transform.setPosition(sx, sy, sz);
   player.addComponent(transform);
 
@@ -7540,7 +7653,7 @@ function setupCoopGame(
   // Create systems for coop mode (similar to PVP but without towers/pillars)
   const physicsSystem = new PhysicsSystem();
   const initialThroneMap = !!coopSpawnOptions?.initialThroneMap;
-  const initialR = initialThroneMap ? COOP_THRONE_ROOM_RADIUS + 2 : 28;
+  const initialR = initialThroneMap ? COOP_THRONE_ROOM_RADIUS + 2 : MAIN_MAP_RADIUS;
   physicsSystem.setMapRadius(initialR);
   const collisionSystem = new CollisionSystem(5); // 5 unit cell size for spatial hash
   const combatSystem = new CombatSystem(world);

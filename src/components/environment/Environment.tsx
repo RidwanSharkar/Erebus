@@ -29,6 +29,7 @@ import { generateMountains } from '@/utils/MountainGenerator';
 import { World } from '@/ecs/World';
 import { Vector3, Color, PerspectiveCamera } from '@/utils/three-exports';
 import PerimeterCloudSystem from './PerimeterCloudSystem';
+import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
 
 interface EnvironmentProps {
   level?: number;
@@ -87,7 +88,7 @@ const Environment: React.FC<EnvironmentProps> = ({
   const pedestalPosition: [number, number, number] = useMemo(() => [0, 0, 0], []);
 
   // Define merchant position near the tree
-  const merchantPosition: [number, number, number] = useMemo(() => [18.4, 0, 9.2], []);
+  const merchantPosition: [number, number, number] = useMemo(() => [13.1, 0, 6.6], []);
 
   /** Server camp archetype for this session — drives grass + perimeter fence colours */
   const roomArchetype: RoomBorderTheme = useMemo(() => {
@@ -102,7 +103,7 @@ const Environment: React.FC<EnvironmentProps> = ({
       {enableSky && <CustomSky />}
 
       {/* Perimeter clouds - red atmospheric clouds around map boundary */}
-      <PerimeterCloudSystem radius={28} />
+      <PerimeterCloudSystem radius={MAIN_MAP_RADIUS} />
 
       {/* Instanced grass field — 80k blades, GPU-animated wind */}
       {enableGrass && <StylizedGrass isSnowTheme={roomArchetype === 'blue'} />}
@@ -118,7 +119,7 @@ const Environment: React.FC<EnvironmentProps> = ({
             {/* Border effects - particles and glows around map perimeter */}
             {enableBorderEffects && (
         <SimpleBorderEffects
-          radius={28}
+          radius={MAIN_MAP_RADIUS}
           count={48}
           enableParticles={true}
           particleCount={100}
@@ -153,7 +154,7 @@ const Environment: React.FC<EnvironmentProps> = ({
         <PillarCollision world={world} positions={pillarPositions} />
       )}
 
-      {/* Castle walls — U-shaped ruins around each of the 3 camps, single draw call */}
+      {/* Castle walls — perimeter ring (closed square), single draw call */}
       <CastleWalls />
 
       {/* Coloured theme lights inside each camp based on randomly assigned archetype */}

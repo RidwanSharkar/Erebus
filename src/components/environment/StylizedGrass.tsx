@@ -12,6 +12,7 @@ import {
   CircleGeometry,
   MeshBasicMaterial,
 } from '@/utils/three-exports';
+import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
 
 interface StylizedGrassProps {
   count?: number;
@@ -121,7 +122,7 @@ const GRASS_COLORS = {
 
 const StylizedGrass: React.FC<StylizedGrassProps> = ({
   count = 80000,
-  radius = 28,
+  radius = MAIN_MAP_RADIUS,
   bladeHeight = 0.45,
   windStrength = 0.25,
   isSnowTheme,

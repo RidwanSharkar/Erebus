@@ -12,6 +12,10 @@ export interface DamageNumberData {
   timestamp: number;
   damageType?: string; // Added to distinguish damage types
   isIncomingDamage?: boolean; // Whether this damage was received by the local player
+  /** Bow Dual Coil: 0/1 so paired hits aren’t deduped into one stack; adds screen spread. */
+  dualCoilSlot?: 0 | 1;
+  /** When set, shown instead of numeric damage (e.g. AEGIS block). */
+  displayText?: string;
 }
 
 interface DamageNumberProps {
@@ -94,7 +98,7 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
     };
 
     animate();
-  }, [damageData.id, onComplete, stackIndex, damageData.isIncomingDamage]);
+  }, [damageData.id, onComplete, stackIndex, damageData.isIncomingDamage, damageData.displayText]);
 
   // Proper 3D to 2D projection using the camera
   let x = 0;
@@ -111,8 +115,11 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
     // Convert normalized device coordinates (-1 to 1) to screen coordinates
     x = (screenPosition.x * 0.5 + 0.5) * size.width;
     y = (screenPosition.y * -0.5 + 0.5) * size.height;
-    
 
+    if (damageData.dualCoilSlot !== undefined && !damageData.isIncomingDamage) {
+      const pairSpreadPx = 40;
+      x += (damageData.dualCoilSlot * 2 - 1) * pairSpreadPx;
+    }
   } else {
     // Fallback to simple projection if camera not available
     const projectionScale = 50;
@@ -137,7 +144,11 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
     >
       <span
         className={`${
-          damageData.isIncomingDamage
+          damageData.displayText
+            ? damageData.damageType === 'aegis_blocked'
+              ? 'text-sky-200 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(56,189,248,0.95)] tracking-widest'
+              : 'text-slate-200 text-lg font-bold'
+            : damageData.isIncomingDamage
             ? // Incoming damage: red for all damage
               'text-red-400 text-lg font-bold'
             : // Outgoing damage: original logic
@@ -175,27 +186,35 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
                 ? 'text-cyan-400 text-lg'
                 : damageData.damageType === 'icebeam'
                 ? 'text-blue-300 text-lg'
+                : damageData.damageType === 'summon_totem'
+                ? 'text-violet-300 text-lg drop-shadow-[0_0_8px_rgba(167,139,250,0.75)]'
                 : 'text-red-400'
         }`}
       >
-        {damageData.isIncomingDamage && '-'}
-        {(damageData.damageType === 'healing' ||
-          damageData.damageType === 'reanimate_healing' ||
-          damageData.damageType === 'smite_healing' ||
-          damageData.damageType === 'viper_sting_healing' ||
-          damageData.damageType === 'summon_totem_healing' ||
-          damageData.damageType === 'rejuvenating_shot_healing' ||
-          damageData.damageType === 'flurry_healing') && '+'}
-        {damageData.damageType === 'healing' ||
-         damageData.damageType === 'reanimate_healing' ||
-         damageData.damageType === 'smite_healing' ||
-         damageData.damageType === 'viper_sting_healing' ||
-         damageData.damageType === 'summon_totem_healing' ||
-         damageData.damageType === 'rejuvenating_shot_healing' ||
-         damageData.damageType === 'flurry_healing'
-          ? Math.round(damageData.damage)
-          : damageData.damage}
-        {damageData.isCritical && '!'}
+        {damageData.displayText ? (
+          damageData.displayText
+        ) : (
+          <>
+            {damageData.isIncomingDamage && '-'}
+            {(damageData.damageType === 'healing' ||
+              damageData.damageType === 'reanimate_healing' ||
+              damageData.damageType === 'smite_healing' ||
+              damageData.damageType === 'viper_sting_healing' ||
+              damageData.damageType === 'summon_totem_healing' ||
+              damageData.damageType === 'rejuvenating_shot_healing' ||
+              damageData.damageType === 'flurry_healing') && '+'}
+            {damageData.damageType === 'healing' ||
+             damageData.damageType === 'reanimate_healing' ||
+             damageData.damageType === 'smite_healing' ||
+             damageData.damageType === 'viper_sting_healing' ||
+             damageData.damageType === 'summon_totem_healing' ||
+             damageData.damageType === 'rejuvenating_shot_healing' ||
+             damageData.damageType === 'flurry_healing'
+              ? Math.round(damageData.damage)
+              : damageData.damage}
+            {damageData.isCritical && '!'}
+          </>
+        )}
       </span>
     </div>
   );
@@ -209,6 +228,8 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
     prevProps.damageData.isIncomingDamage === nextProps.damageData.isIncomingDamage &&
     prevProps.damageData.timestamp === nextProps.damageData.timestamp &&
     prevProps.damageData.position.equals(nextProps.damageData.position) &&
+    prevProps.damageData.dualCoilSlot === nextProps.damageData.dualCoilSlot &&
+    prevProps.damageData.displayText === nextProps.damageData.displayText &&
     prevProps.stackIndex === nextProps.stackIndex &&
     prevProps.camera === nextProps.camera &&
     prevProps.size.width === nextProps.size.width &&
@@ -229,7 +250,11 @@ const DamageNumbersComponent = memo(function DamageNumbers({ damageNumbers, onDa
   
   damageNumbers.forEach(damageData => {
     // Create a position key with some tolerance for grouping nearby damage
-    const posKey = `${Math.round(damageData.position.x * 2)}_${Math.round(damageData.position.z * 2)}`;
+    const baseKey = `${Math.round(damageData.position.x * 2)}_${Math.round(damageData.position.z * 2)}`;
+    const posKey =
+      damageData.dualCoilSlot !== undefined
+        ? `${baseKey}_dc${damageData.dualCoilSlot}`
+        : baseKey;
     if (!positionGroups.has(posKey)) {
       positionGroups.set(posKey, []);
     }
@@ -246,7 +271,11 @@ const DamageNumbersComponent = memo(function DamageNumbers({ damageNumbers, onDa
     <div className="fixed inset-0 pointer-events-none">
       {Array.from(positionGroups.values()).flat().map((damageData) => {
         // Find the stack index for this damage number
-        const posKey = `${Math.round(damageData.position.x * 2)}_${Math.round(damageData.position.z * 2)}`;
+        const baseKey = `${Math.round(damageData.position.x * 2)}_${Math.round(damageData.position.z * 2)}`;
+        const posKey =
+          damageData.dualCoilSlot !== undefined
+            ? `${baseKey}_dc${damageData.dualCoilSlot}`
+            : baseKey;
         const group = positionGroups.get(posKey)!;
         const stackIndex = group.findIndex(d => d.id === damageData.id);
 
@@ -274,6 +303,8 @@ const DamageNumbersComponent = memo(function DamageNumbers({ damageNumbers, onDa
              prev?.isCritical === next?.isCritical &&
              prev?.damageType === next?.damageType &&
              prev?.isIncomingDamage === next?.isIncomingDamage &&
+             prev?.dualCoilSlot === next?.dualCoilSlot &&
+             prev?.displayText === next?.displayText &&
              prev?.timestamp === next?.timestamp;
     }) &&
     prevProps.camera === nextProps.camera &&

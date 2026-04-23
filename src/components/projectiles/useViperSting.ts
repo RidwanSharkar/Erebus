@@ -24,6 +24,8 @@ interface ViperStingProjectile {
   casterPosition?: Vector3; // For PVP: remember the caster's position for return
   /** Set at spawn: local caster with Wrathful Talons talent (remote spawns omit). */
   wrathfulTalonsReturnCrit?: boolean;
+  /** EXECUTE: after first forward hit resolution (consume attempt once per cast). */
+  forwardExecuteResolved: boolean;
 }
 
 interface SoulStealEffect {
@@ -73,6 +75,8 @@ interface UseViperStingProps {
   }>;
   /** Local Reaping Talons: return-arrow preset crit (stored on projectile at spawn). */
   wrathfulTalonsReturnCrit?: boolean;
+  /** EXECUTE talent: first forward hit only — return bonus damage to add (0 if no dash consumed). */
+  onExecuteFirstForwardHit?: () => number;
 }
 
 export function useViperSting({
@@ -89,6 +93,7 @@ export function useViperSting({
   localSocketId,
   players,
   wrathfulTalonsReturnCrit = false,
+  onExecuteFirstForwardHit,
 }: UseViperStingProps) {
   const projectilePool = useRef<ViperStingProjectile[]>([]);
   const soulStealEffects = useRef<SoulStealEffect[]>([]);
@@ -121,6 +126,7 @@ export function useViperSting({
       isReturning: false,
       returnHitEnemies: new Set(),
       wrathfulTalonsReturnCrit: false,
+      forwardExecuteResolved: false,
     }));
   }, []);
 
@@ -179,6 +185,7 @@ export function useViperSting({
     projectile.casterPosition = unitPosition.clone();
     const isRemoteSpawn = !!(overridePosition && overrideDirection);
     projectile.wrathfulTalonsReturnCrit = !isRemoteSpawn && wrathfulTalonsReturnCrit;
+    projectile.forwardExecuteResolved = false;
 
     // Create beam effect for forward shot
     if (createBeamEffect) {
@@ -262,8 +269,15 @@ export function useViperSting({
                 // Mark enemy as hit during forward phase
                 projectile.hitEnemies.add(enemy.id);
 
+                let forwardDamage = DAMAGE;
+                if (!projectile.forwardExecuteResolved && onExecuteFirstForwardHit) {
+                  const bonus = onExecuteFirstForwardHit();
+                  projectile.forwardExecuteResolved = true;
+                  forwardDamage = DAMAGE + bonus;
+                }
+
                 // Apply damage through the onHit callback (which routes to CombatSystem)
-                onHit(enemy.id, DAMAGE);
+                onHit(enemy.id, forwardDamage);
 
                 // Apply DoT effect
                 if (applyDoT) {
@@ -274,7 +288,7 @@ export function useViperSting({
                 if (setDamageNumbers && nextDamageNumberId) {
                   setDamageNumbers(prev => [...prev, {
                     id: nextDamageNumberId.current++,
-                    damage: DAMAGE,
+                    damage: forwardDamage,
                     position: enemy.position.clone(),
                     isCritical: false,
                     isViperSting: true // Flag for Viper Sting specific styling
@@ -417,7 +431,7 @@ export function useViperSting({
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [enemyData, onHit, setDamageNumbers, nextDamageNumberId, onHealthChange, createSoulStealEffect, parentRef, createBeamEffect, applyDoT, localSocketId, players]);
+  }, [enemyData, onHit, setDamageNumbers, nextDamageNumberId, onHealthChange, createSoulStealEffect, parentRef, createBeamEffect, applyDoT, localSocketId, players, onExecuteFirstForwardHit]);
 
   return {
     shootViperSting,

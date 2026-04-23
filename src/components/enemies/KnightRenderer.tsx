@@ -273,7 +273,6 @@ export default function KnightRenderer({
         onImpactFinished={handleImpactFinished}
       />
 
-      {showMeleeRangeRing && <EnemyMeleeAttackRangeRing radius={KNIGHT_MELEE_ATTACK_RANGE} />}
 
       {/* Glowing soul orb floating above the knight */}
       {soulType && !isDying && (

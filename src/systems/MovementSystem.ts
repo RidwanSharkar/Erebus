@@ -1,5 +1,7 @@
 // Movement system with WASD controls and physics
 import { Camera, Vector3 } from '@/utils/three-exports';
+import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+import { CASTLE_WALL_DEPTH_OFFSET, CASTLE_WALL_HALF_THICKNESS } from '@/components/environment/CastleWalls';
 import { System } from '@/ecs/System';
 import { Entity, Component } from '@/ecs/Entity';
 import { Transform } from '@/ecs/components/Transform';
@@ -171,7 +173,7 @@ export class MovementSystem extends System {
     const potentialPosition = currentPosition.clone().add(deltaPosition);
     
     // Apply map boundary constraints with smooth sliding (matches enlarged grass / collision disc)
-    const MAP_RADIUS = 28;
+    const MAP_RADIUS = MAIN_MAP_RADIUS;
     
     // Only check horizontal distance (ignore Y for boundary)
     const horizontalPosition = new Vector3(potentialPosition.x, 0, potentialPosition.z);
@@ -219,26 +221,12 @@ export class MovementSystem extends System {
     transform.matrixNeedsUpdate = true;
   }
 
-  // Castle wall AABB segments — mirrors CastleWalls.tsx WALL_SEGMENTS (half-extents)
+  // Castle wall AABB segments — mirrors CastleWalls perimeter (half-extents)
   private readonly WALL_SEGMENTS = [
-    // Maze Wall 1 · NW Barrier (east-west)
-    { cx: -14,   cz: -18,   hx: 6,    hz: 0.3  },
-    // Maze Wall 2 · North Shard (north-south)
-    { cx:   5,   cz: -22,   hx: 0.3,  hz: 5    },
-    // Maze Wall 3 · East Spine (north-south)
-    { cx:  18,   cz:  -8,   hx: 0.3,  hz: 6    },
-    // Maze Wall 4 · Center-East Divider (east-west)
-    { cx:  12,   cz:   2,   hx: 5,    hz: 0.3  },
-    // Maze Wall 5 · Central Chokepoint (north-south)
-    { cx:   0,   cz:   8,   hx: 0.3,  hz: 5    },
-    // Maze Wall 6 · SE Corridor (east-west)
-    { cx:  14,   cz:  18,   hx: 6,    hz: 0.3  },
-    // Maze Wall 7 · SW Channel (north-south)
-    { cx: -16,   cz:  15,   hx: 0.3,  hz: 5    },
-    // Maze Wall 8 · West Divider (east-west)
-    { cx: -20,   cz:   0,   hx: 5,    hz: 0.3  },
-    // Maze Wall 9 · NW-Center Rib (north-south)
-    { cx:  -6,   cz:  -8,   hx: 0.3,  hz: 4    },
+    { cx: 0,   cz:  CASTLE_WALL_DEPTH_OFFSET,  hx: MAIN_MAP_RADIUS, hz: CASTLE_WALL_HALF_THICKNESS },
+    { cx: 0,   cz: -CASTLE_WALL_DEPTH_OFFSET,  hx: MAIN_MAP_RADIUS, hz: CASTLE_WALL_HALF_THICKNESS },
+    { cx:  CASTLE_WALL_DEPTH_OFFSET, cz: 0,  hx: CASTLE_WALL_HALF_THICKNESS, hz: MAIN_MAP_RADIUS },
+    { cx: -CASTLE_WALL_DEPTH_OFFSET, cz: 0,  hx: CASTLE_WALL_HALF_THICKNESS, hz: MAIN_MAP_RADIUS },
   ];
   private readonly WALL_PLAYER_RADIUS = 0.5;
 

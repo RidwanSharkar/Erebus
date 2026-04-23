@@ -66,6 +66,7 @@ interface SummonTotemManagerProps {
   onTotemComplete?: (totemId: number) => void;
   players?: Map<string, any>; // Real-time players data
   localSocketId?: string; // Local player ID to exclude from targets
+  onTotemFloatingDamage?: (damage: number, isCritical: boolean, position: Vector3) => void;
 }
 
 export interface SummonTotemManagerRef {
@@ -121,7 +122,7 @@ export interface SummonTotemManagerRef {
   ) => number;
 }
 
-const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerProps>(({ onTotemComplete, players, localSocketId }, ref) => {
+const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerProps>(({ onTotemComplete, players, localSocketId, onTotemFloatingDamage }, ref) => {
   const [activeTotems, setActiveTotems] = useState<SummonTotemData[]>([]);
   const totemIdCounter = useRef(0);
 
@@ -242,6 +243,7 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
           activeEffects={totem.activeEffects}
           setDamageNumbers={totem.setDamageNumbers}
           nextDamageNumberId={totem.nextDamageNumberId}
+          onTotemFloatingDamage={onTotemFloatingDamage}
           casterId={totem.casterId}
         />
       ))}

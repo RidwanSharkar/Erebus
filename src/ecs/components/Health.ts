@@ -2,6 +2,8 @@
 import { Component } from '../Entity';
 import { Shield } from './Shield';
 
+export type InvulnerabilitySource = 'none' | 'aegis' | 'hit_iframe' | 'other';
+
 export class Health extends Component {
   public static readonly componentType = 'Health'; // Explicit type identifier
   public readonly componentType = 'Health'; // Instance identifier
@@ -10,6 +12,8 @@ export class Health extends Component {
   public isInvulnerable: boolean;
   public invulnerabilityDuration: number;
   public invulnerabilityTimer: number;
+  /** Why the player is invulnerable (Aegis barrier vs short post-hit i-frames, etc.). */
+  public invulnerabilitySource: InvulnerabilitySource;
   public isDead: boolean;
   public canRegenerate: boolean;
   public regenerationRate: number;
@@ -24,6 +28,7 @@ export class Health extends Component {
     this.isInvulnerable = false;
     this.invulnerabilityDuration = 0.5; // 0.5 seconds of invulnerability after damage
     this.invulnerabilityTimer = 0;
+    this.invulnerabilitySource = 'none';
     this.isDead = false;
     this.canRegenerate = false;
     this.regenerationRate = 0; // Health per second
@@ -58,6 +63,7 @@ export class Health extends Component {
       // Start invulnerability period
       this.isInvulnerable = true;
       this.invulnerabilityTimer = this.invulnerabilityDuration;
+      this.invulnerabilitySource = 'hit_iframe';
 
       // Check if dead
       if (this.currentHealth <= 0) {
@@ -114,6 +120,7 @@ export class Health extends Component {
       this.maxHealth;
     this.isInvulnerable = false;
     this.invulnerabilityTimer = 0;
+    this.invulnerabilitySource = 'none';
   }
 
   public update(deltaTime: number, currentTime: number = Date.now() / 1000): void {
@@ -123,6 +130,7 @@ export class Health extends Component {
       if (this.invulnerabilityTimer <= 0) {
         this.isInvulnerable = false;
         this.invulnerabilityTimer = 0;
+        this.invulnerabilitySource = 'none';
       }
     }
 
@@ -135,14 +143,30 @@ export class Health extends Component {
     }
   }
 
-  public setInvulnerable(duration: number): void {
+  public setInvulnerable(duration: number, source: InvulnerabilitySource = 'other'): void {
     this.isInvulnerable = true;
     this.invulnerabilityTimer = duration;
+    this.invulnerabilitySource = source;
+  }
+
+  /** Add to remaining invulnerability time, or start invuln if not active. */
+  public addInvulnerabilityTime(seconds: number, extendAegis: boolean = false): void {
+    if (seconds <= 0) return;
+    this.isInvulnerable = true;
+    this.invulnerabilityTimer += seconds;
+    if (extendAegis) {
+      this.invulnerabilitySource = 'aegis';
+    }
+  }
+
+  public isAegisInvulnerable(): boolean {
+    return this.isInvulnerable && this.invulnerabilitySource === 'aegis';
   }
 
   public removeInvulnerability(): void {
     this.isInvulnerable = false;
     this.invulnerabilityTimer = 0;
+    this.invulnerabilitySource = 'none';
   }
 
   public enableRegeneration(rate: number = 5, delay: number = 3): void {
@@ -159,6 +183,7 @@ export class Health extends Component {
     this.currentHealth = this.maxHealth;
     this.isInvulnerable = false;
     this.invulnerabilityTimer = 0;
+    this.invulnerabilitySource = 'none';
     this.isDead = false;
     this.canRegenerate = false;
     this.regenerationRate = 0;
@@ -173,6 +198,7 @@ export class Health extends Component {
     clone.isInvulnerable = this.isInvulnerable;
     clone.invulnerabilityDuration = this.invulnerabilityDuration;
     clone.invulnerabilityTimer = this.invulnerabilityTimer;
+    clone.invulnerabilitySource = this.invulnerabilitySource;
     clone.isDead = this.isDead;
     clone.canRegenerate = this.canRegenerate;
     clone.regenerationRate = this.regenerationRate;

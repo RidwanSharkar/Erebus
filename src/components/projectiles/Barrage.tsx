@@ -14,6 +14,8 @@ interface BarrageProjectile {
   opacity?: number;
   fadeStartTime?: number | null;
   distanceTraveled?: number;
+  /** Wrathful Bite talent — red theme instead of default blue. */
+  wrathfulBite?: boolean;
 }
 
 interface BarrageProps {
@@ -24,9 +26,12 @@ export default function Barrage({ projectiles }: BarrageProps) {
   return (
     <>
       {projectiles.map(projectile => {
+        const mainColor = projectile.wrathfulBite ? '#cc2222' : '#0088ff';
+        const emissiveColor = projectile.wrathfulBite ? '#ff3333' : '#0088ff';
+
         // Calculate distance-based fading (same logic as RegularArrow)
         const distanceTraveled = projectile.distanceTraveled || projectile.position.distanceTo(projectile.startPosition);
-        const maxDistance = projectile.maxDistance || 25;
+        const maxDistance = projectile.maxDistance || 20;
         const fadeStartDistance = maxDistance * 0.7; // Start fading at 70% of max distance
         const fadeProgress = Math.max(0, Math.min(1, (distanceTraveled - fadeStartDistance) / (maxDistance - fadeStartDistance)));
         const distanceOpacity = Math.max(0.1, 1 - fadeProgress); // Minimum opacity of 0.1
@@ -48,8 +53,8 @@ export default function Barrage({ projectiles }: BarrageProps) {
             <mesh rotation={[Math.PI/2, 0, 0]}>
               <cylinderGeometry args={[0.025, 0.1, 1.8, 6]} />
               <meshStandardMaterial
-                color="#0088ff"
-                emissive="#0088ff"
+                color={mainColor}
+                emissive={emissiveColor}
                 emissiveIntensity={1.2 * finalOpacity}
                 transparent
                 opacity={finalOpacity}
@@ -65,8 +70,8 @@ export default function Barrage({ projectiles }: BarrageProps) {
               >
                 <torusGeometry args={[0.1 + i * 0.03, 0.04, 6, 10]} />
                 <meshStandardMaterial
-                  color="#0088ff"
-                  emissive="#0088ff"
+                  color={mainColor}
+                  emissive={emissiveColor}
                   emissiveIntensity={2.5 * finalOpacity}
                   transparent
                   opacity={(0.8 - i * 0.1) * finalOpacity}
@@ -77,7 +82,7 @@ export default function Barrage({ projectiles }: BarrageProps) {
 
             {/* Single light */}
             <pointLight 
-              color="#0088ff" 
+              color={mainColor} 
               intensity={2.5 * finalOpacity} 
               distance={4}
               decay={2}

@@ -2,7 +2,6 @@ import { useRef, useState, useEffect, memo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Color, Shape, AdditiveBlending } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
-import DeflectShield from './DeflectShield';
 import { calculationCache } from '@/utils/CalculationCache';;
 
 interface SwordProps {
@@ -18,7 +17,6 @@ interface SwordProps {
   onColossusStrikeComplete?: () => void;
   onOathstrikeComplete?: () => void;
   onChargeComplete?: () => void;
-  onDeflectComplete?: () => void;
   hasChainLightning?: boolean;
   comboStep?: 1 | 2 | 3;
   currentSubclass?: WeaponSubclass;
@@ -86,7 +84,6 @@ const SwordComponent = memo(function Sword({
   onColossusStrikeComplete,
   onOathstrikeComplete,
   onChargeComplete,
-  onDeflectComplete,
   hasChainLightning = false,
   comboStep = 1,
   currentSubclass,
@@ -1164,16 +1161,6 @@ const SwordComponent = memo(function Sword({
 
 
     </group>
-    
-    {/* Deflect Shield - Rendered outside sword group to avoid inheriting transformations */}
-    <DeflectShield
-      isActive={isDeflecting}
-      duration={3.0}
-      onComplete={onDeflectComplete}
-      playerPosition={playerPosition}
-      playerRotation={playerRotation}
-      dragonGroupRef={dragonGroupRef}
-    />
 
   </>
   );

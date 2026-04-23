@@ -11,6 +11,7 @@ import { Shield } from '@/ecs/components/Shield';
 import { Enemy } from '@/ecs/components/Enemy';
 import { Renderer } from '@/ecs/components/Renderer';
 import { Collider } from '@/ecs/components/Collider';
+import { Projectile } from '@/ecs/components/Projectile';
 import { InputManager } from '@/core/InputManager';
 import { World } from '@/ecs/World';
 import { ProjectileSystem } from './ProjectileSystem';
@@ -20,6 +21,7 @@ import { WeaponSubclass, WeaponType } from '@/components/dragon/weapons';
 import { DeflectBarrier } from '@/components/weapons/DeflectBarrier';
 import { SkillPointSystem, SkillPointData } from '@/utils/SkillPointSystem';
 import { AbilityLoadout } from '@/utils/weaponAbilities';
+import type { DamageCalcOptions } from '@/core/DamageCalculator';
 import {
   TalentLoadout,
   createDefaultTalentLoadout,
@@ -30,6 +32,33 @@ import {
   shouldApplyInfernalSmiteTalent as computeInfernalSmiteTalentActive,
   shouldApplyStaggeringSmiteTalent as computeStaggeringSmiteTalentActive,
   shouldApplyWrathfulTalonsTalent as computeWrathfulTalonsTalentActive,
+  shouldApplyConcentratedVolleyTalent as computeConcentratedVolleyTalentActive,
+  shouldApplyWrathfulBiteTalent,
+  shouldApplyInfernoTalent,
+  shouldApplyReaperTalent,
+  shouldApplyWraithGuardTalent,
+  shouldApplyColossusGuardTalent,
+  shouldApplyGuardComboTalent,
+  shouldApplyFrostpathTalent,
+  shouldApplySolarRechargeTalent,
+  shouldApplyWindfuryTalent,
+  FROSTPATH_PROC_CHANCE,
+  SOLAR_RECHARGE_PROC_CHANCE,
+  WINDFURY_PROC_CHANCE,
+  WRAITH_GUARD_DURATION_SEC,
+  WRAITH_GUARD_PROC_CHANCE,
+  GUARD_COMBO_DURATION_SEC,
+  GUARD_COMBO_PROC_CHANCE,
+  COLOSSUS_GUARD_PROC_CHANCE,
+  COLOSSUS_GUARD_STACK_SEC,
+  COLOSSUS_GUARD_MAX_REMAINING_SEC,
+  CROSSENTROPY_BASE_DAMAGE,
+  CROSSENTROPY_REAPER_DAMAGE_PER_KILL,
+  CROSSENTROPY_MAX_TRAVEL_DISTANCE,
+  REANIMATE_SUNWELL_HEAL,
+  REANIMATE_SUNWELL_COOLDOWN_SEC,
+  WRATHFUL_BITE_BARRAGE_CRIT_CHANCE_ADD,
+  WRATHFUL_BITE_BARRAGE_CRIT_DAMAGE_MULT_ADD,
   INFERNAL_SMITE_CRIT_CHANCE_ADD,
   INFESTED_SMITE_HEAL_PER_TARGET,
   STAGGERING_SMITE_BEAM_STAGGER,
@@ -42,6 +71,10 @@ import {
   STAGGER_SHOT_UNCHARGED_STAGGER,
   WRATH_STRIKE_CRIT_CHANCE_ADD,
   WRATH_STRIKE_CRIT_DAMAGE_MULT_ADD,
+  getDualCoilLateralVector,
+  shouldApplyDualCoilTalent,
+  BLADE_RUSH_CHARGE_COOLDOWN_SEC,
+  shouldApplyBladeRushTalent,
 } from '@/utils/talents';
 import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
@@ -56,6 +89,8 @@ import {
   calculateDamage,
   DamageResult,
 } from '@/core/DamageCalculator';
+import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+import { CASTLE_WALL_DEPTH_OFFSET, CASTLE_WALL_HALF_THICKNESS } from '@/components/environment/CastleWalls';
 
 export class ControlSystem extends System {
   public readonly requiredComponents = [Transform, Movement];
@@ -70,7 +105,7 @@ export class ControlSystem extends System {
   private inputDisabled: boolean = false;
 
   /** Max horizontal distance from origin for dash/charge (matches PhysicsSystem map boundary). */
-  private playableRadius = 28;
+  private playableRadius = MAIN_MAP_RADIUS;
 
   /** When false, sword charge uses throne pillar circles instead of castle wall AABBs. */
   private castleWallChargeEnabled = true;
@@ -285,6 +320,8 @@ export class ControlSystem extends System {
   // Charge ability state
   private isSwordCharging = false;
   private lastChargeTime = 0;
+  /** Double-tap Blade Rush (Runeblade) — separate from E-key `lastChargeTime`. */
+  private lastBladeRushChargeTime = 0;
   private chargeCooldown = 8.0; // 8 second cooldown
   
   // Deflect ability state
@@ -293,6 +330,20 @@ export class ControlSystem extends System {
   private deflectCooldown = 8; // 8 second cooldown
   private deflectDuration = 3.0; // 3 second duration
   private deflectBarrier: DeflectBarrier;
+  /** Wraith Guard talent: barrier spawned without Aegis; separate from `isDeflecting` for UI/cooldown. */
+  private wraithGuardShieldActive = false;
+  private wraithGuardOwnsBarrier = false;
+  private wraithGuardBarrierEndMs = 0;
+  /** Colossus Guard talent: same barrier path as Wraith Guard; stacked remaining time capped at max. */
+  private colossusGuardShieldActive = false;
+  private colossusGuardOwnsBarrier = false;
+  private colossusGuardBarrierEndMs = 0;
+  /** Guard Combo talent: Runeblade basic-hit proc; same barrier path as Wraith Guard. */
+  private guardComboShieldActive = false;
+  private guardComboOwnsBarrier = false;
+  private guardComboBarrierEndMs = 0;
+  /** Single teardown timer for Wraith Guard + Colossus Guard + Guard Combo (max of end times). */
+  private talentBarrierEndTimeout: ReturnType<typeof setTimeout> | null = null;
   
   // Skyfall ability state (Sabres)
   private isSkyfalling = false;
@@ -440,6 +491,9 @@ export class ControlSystem extends System {
   private abilityLoadout: AbilityLoadout | null = null;
 
   private talentLoadout: TalentLoadout = createDefaultTalentLoadout();
+
+  /** Reaper: +damage per Crossentropy kill this session (server-synchronized in co-op). */
+  private reaperCrossentropyStack = 0;
 
   // Titanheart passive tracking
   private titanheartMaxHealthApplied = false;
@@ -1174,7 +1228,7 @@ export class ControlSystem extends System {
       case 'BOW_Q':       return { current: Math.max(0, this.barrageFireRate - (currentTime - this.lastBarrageTime)), max: this.barrageFireRate, isActive: this.isBarrageCharging };
       case 'BOW_E':       return { current: Math.max(0, this.cobraShotFireRate - (currentTime - this.lastCobraShotTime)), max: this.cobraShotFireRate, isActive: this.isCobraShotCharging };
       case 'BOW_R':       return { current: Math.max(0, this.viperStingFireRate - (currentTime - this.lastViperStingTime)), max: this.viperStingFireRate, isActive: this.isViperStingCharging };
-      case 'SCYTHE_Q':    return { current: Math.max(0, 1.0 - (currentTime - this.lastReanimateTime)), max: 1.0, isActive: false };
+      case 'SCYTHE_Q':    return { current: Math.max(0, REANIMATE_SUNWELL_COOLDOWN_SEC - (currentTime - this.lastReanimateTime)), max: REANIMATE_SUNWELL_COOLDOWN_SEC, isActive: false };
       case 'SCYTHE_E':    return { current: Math.max(0, this.frostNovaFireRate - (currentTime - this.lastFrostNovaTime)), max: this.frostNovaFireRate, isActive: false };
       case 'SCYTHE_R':    return { current: Math.max(0, this.crossentropyFireRate - (currentTime - this.lastCrossentropyTime)), max: this.crossentropyFireRate, isActive: this.isCrossentropyCharging };
       case 'SABRES_Q':    return { current: Math.max(0, this.backstabCooldown - (currentTime - this.lastBackstabTime)), max: this.backstabCooldown, isActive: this.isBackstabbing };
@@ -1559,11 +1613,11 @@ export class ControlSystem extends System {
     // Wind Shear projectile config - 120 piercing damage, 15 unit range, increased speed
     const projectileConfig = {
       speed: 32.5, // Increased projectile speed by 30% (matches visual speed)
-      damage: 120, // 120 piercing damage as requested
+      damage: 120, // 120 piercing damage 
       lifetime: 2.0, // 2 seconds lifetime (enough for 15 units at 32.5 speed)
       piercing: true, // Piercing damage - hits multiple targets as it travels
       explosive: false,
-      maxDistance: 15, // 15 unit range as requested
+      maxDistance: 15, // 15 unit range
       projectileType: 'wind_shear', // Custom projectile type for identification
       sourcePlayerId: 'unknown' // Will be set by broadcasting system if needed
     };
@@ -1610,9 +1664,16 @@ export class ControlSystem extends System {
     }
     
     // Offset projectile spawn position slightly forward to avoid collision with player
-    const spawnPosition = position.clone();
-    spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
-    spawnPosition.y += 0.75; // Slightly higher
+    const baseSpawn = position.clone();
+    baseSpawn.add(direction.clone().multiplyScalar(1)); // 1 unit forward
+    baseSpawn.y += 0.75; // Slightly higher
+
+    const spawns: Vector3[] = this.shouldApplyDualCoilForBow()
+      ? (() => {
+          const d = getDualCoilLateralVector(direction);
+          return [baseSpawn.clone().add(d), baseSpawn.clone().sub(d)];
+        })()
+      : [baseSpawn];
     
     // Create projectile using the ProjectileSystem with current weapon config
     const projectileConfig = {
@@ -1627,17 +1688,19 @@ export class ControlSystem extends System {
       ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_UNCHARGED_STAGGER } : {}),
     };
     
-    this.projectileSystem.createProjectile(
-      this.world,
-      spawnPosition,
-      direction,
-      this.playerEntity.id,
-      projectileConfig
-    );
-    
-    // Broadcast projectile creation to other players
-    if (this.onProjectileCreatedCallback) {
-      this.onProjectileCreatedCallback('regular_arrow', spawnPosition, direction, projectileConfig);
+    const useDualCoil = this.shouldApplyDualCoilForBow();
+    for (let i = 0; i < spawns.length; i++) {
+      const spawnPosition = spawns[i];
+      this.projectileSystem.createProjectile(
+        this.world,
+        spawnPosition,
+        direction,
+        this.playerEntity.id,
+        { ...projectileConfig, ...(useDualCoil ? { dualCoilLane: i as 0 | 1 } : {}) }
+      );
+      if (this.onProjectileCreatedCallback) {
+        this.onProjectileCreatedCallback('regular_arrow', spawnPosition, direction, projectileConfig);
+      }
     }
   }
 
@@ -1659,40 +1722,46 @@ export class ControlSystem extends System {
       return;
     }
 
-    // Offset projectile spawn position slightly forward to avoid collision with player
-    const spawnPosition = position.clone();
-    spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
-    spawnPosition.y += 0.75; // Slightly higher
+    const baseSpawn = position.clone();
+    baseSpawn.add(direction.clone().multiplyScalar(1)); // 1 unit forward
+    baseSpawn.y += 0.75; // Slightly higher
 
-    // Create burst projectile with higher damage
+    const spawns: Vector3[] = this.shouldApplyDualCoilForBow()
+      ? (() => {
+          const d = getDualCoilLateralVector(direction);
+          return [baseSpawn.clone().add(d), baseSpawn.clone().sub(d)];
+        })()
+      : [baseSpawn];
+
     const projectileConfig = {
       speed: 35,
       damage: 25, // Burst arrows deal 30 damage each
       lifetime: 3,
-      maxDistance: 25, // Limit bow arrows to 25 units distance
+      maxDistance: 20, // Limit bow arrows to 25 units distance
       subclass: this.currentSubclass,
       level: this.currentLevel,
       opacity: 1.0,
-      projectileType: 'burst_arrow', // Mark as burst arrow for teal coloring
+      projectileType: 'burst_arrow' as const, // Mark as burst arrow for teal coloring
       sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
       ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_TEMPEST_ROUND_STAGGER } : {}),
     };
 
-    this.projectileSystem.createProjectile(
-      this.world,
-      spawnPosition,
-      direction,
-      this.playerEntity.id,
-      projectileConfig
-    );
-
-    // Play bow release sound locally for Tempest Rounds burst
-    this.audioSystem?.playBowReleaseSound(spawnPosition);
-
-    // Broadcast projectile creation to other players
-    if (this.onProjectileCreatedCallback) {
-      this.onProjectileCreatedCallback('burst_arrow', spawnPosition, direction, projectileConfig);
+    const useDualCoil = this.shouldApplyDualCoilForBow();
+    for (let i = 0; i < spawns.length; i++) {
+      const spawnPosition = spawns[i];
+      this.projectileSystem.createProjectile(
+        this.world,
+        spawnPosition,
+        direction,
+        this.playerEntity.id,
+        { ...projectileConfig, ...(useDualCoil ? { dualCoilLane: i as 0 | 1 } : {}) }
+      );
+      if (this.onProjectileCreatedCallback) {
+        this.onProjectileCreatedCallback('burst_arrow', spawnPosition, direction, projectileConfig);
+      }
     }
+
+    this.audioSystem?.playBowReleaseSound(spawns[0]);
   }
 
   private fireBurstAttack(position: Vector3, direction: Vector3): void {
@@ -1739,14 +1808,26 @@ export class ControlSystem extends System {
     spawnPosition.add(direction.clone().multiplyScalar(1.14));
     spawnPosition.y += 1; // Slightly higher
     
-    // Randomly pick color variant with corresponding damage
+    const frost = shouldApplyFrostpathTalent(this.talentLoadout);
+    const solar = shouldApplySolarRechargeTalent(this.talentLoadout);
     const colorVariants = [
-      { colorVariant: 'purple', damage: 31 },
-      { colorVariant: 'blue',   damage: 36 },
-      { colorVariant: 'red',    damage: 41 },
-      { colorVariant: 'green',  damage: 33 },
+      { colorVariant: 'purple' as const, damage: 31 },
+      { colorVariant: 'blue' as const,   damage: 36 },
+      { colorVariant: 'red' as const,    damage: 41 },
+      { colorVariant: 'green' as const,  damage: 33 },
     ] as const;
-    const randomVariant = colorVariants[Math.floor(Math.random() * colorVariants.length)];
+    let randomVariant: { colorVariant: 'purple' | 'blue' | 'red' | 'green'; damage: number };
+    if (frost && solar) {
+      randomVariant = Math.random() < 0.5
+        ? { colorVariant: 'blue', damage: 36 }
+        : { colorVariant: 'red', damage: 41 };
+    } else if (frost) {
+      randomVariant = { colorVariant: 'blue', damage: 36 };
+    } else if (solar) {
+      randomVariant = { colorVariant: 'red', damage: 41 };
+    } else {
+      randomVariant = colorVariants[Math.floor(Math.random() * colorVariants.length)];
+    }
 
     // Create EntropicBolt projectile using the new method
     const entropicConfig = {
@@ -1787,18 +1868,26 @@ export class ControlSystem extends System {
     spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
     spawnPosition.y += 1; // Slightly higher
     
+    const reaper = shouldApplyReaperTalent(this.talentLoadout, this.abilityLoadout);
+    const speed = 25;
+    const lifetime = 2.5;
+    const stackBonus = reaper ? this.reaperCrossentropyStack * CROSSENTROPY_REAPER_DAMAGE_PER_KILL : 0;
+
     // Create CrossentropyBolt projectile using the existing method
     const crossentropyConfig = {
-      speed: 25, // Slower than EntropicBolt
-      damage: 370, // Higher damage for R ability
-      lifetime: 2.5, // Longer lifetime
-      piercing: false, // 
+      speed,
+      damage: CROSSENTROPY_BASE_DAMAGE + stackBonus,
+      lifetime,
+      ...(reaper
+        ? { maxDistance: CROSSENTROPY_MAX_TRAVEL_DISTANCE, reaperCrossentropy: true, piercing: true }
+        : { piercing: false }),
       explosive: false, // Disabled explosion effect for performance
       explosionRadius: 0, // No explosion radius
       subclass: this.currentSubclass,
       level: this.currentLevel,
       opacity: 1.0,
-      sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown' // CRITICAL FIX: Include sourcePlayerId for proper damage attribution
+      sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown', // CRITICAL FIX: Include sourcePlayerId for proper damage attribution
+      infernoCrossentropy: shouldApplyInfernoTalent(this.talentLoadout, this.abilityLoadout),
     };
     
     this.projectileSystem.createCrossentropyBoltProjectile(
@@ -1818,9 +1907,8 @@ export class ControlSystem extends System {
   private performReanimateAbility(playerTransform: Transform): void {
     if (!this.playerEntity) return;
     
-    // Rate limiting - prevent spam casting (1 second cooldown)
     const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastReanimateTime < 1.0) {
+    if (currentTime - this.lastReanimateTime < REANIMATE_SUNWELL_COOLDOWN_SEC) {
       return;
     }
     this.lastReanimateTime = currentTime;
@@ -1831,14 +1919,27 @@ export class ControlSystem extends System {
     // Always trigger the visual effect first, regardless of healing success
     this.triggerReanimateEffect(playerTransform);
     
-    // Get player's health component and heal for 30 HP 
     const healthComponent = this.playerEntity.getComponent(Health);
     if (healthComponent) {
-      const didHeal = healthComponent.heal(60); // REANIMATE HEAL AMOUNT
+      healthComponent.heal(REANIMATE_SUNWELL_HEAL);
     }
-    
-    // Heal nearby allies within 5 units (co-op mode)
-    this.healNearbyAllies(playerTransform, 60, 5.0);
+
+    this.healNearbyAllies(playerTransform, REANIMATE_SUNWELL_HEAL, 5.0);
+  }
+
+  /**
+   * Solar Recharge talent: same Sunwell outcome as `performReanimateAbility` but does not check or
+   * advance Q cooldown (independent of manual Sunwell usage).
+   */
+  private performReanimateAsSolarRechargeProc(playerTransform: Transform): void {
+    if (!this.playerEntity) return;
+    this.audioSystem?.playScytheSunwellSound(playerTransform.getWorldPosition());
+    this.triggerReanimateEffect(playerTransform);
+    const healthComponent = this.playerEntity.getComponent(Health);
+    if (healthComponent) {
+      healthComponent.heal(REANIMATE_SUNWELL_HEAL);
+    }
+    this.healNearbyAllies(playerTransform, REANIMATE_SUNWELL_HEAL, 5.0);
   }
 
   private triggerReanimateEffect(playerTransform: Transform): void {
@@ -1855,18 +1956,13 @@ export class ControlSystem extends System {
     if (this.onDamageNumbersUpdate) {
       this.onDamageNumbersUpdate([{
         id: this.nextDamageNumberId.toString(),
-        damage: 60, // Reanimate heals for 60 HP
+        damage: REANIMATE_SUNWELL_HEAL,
         position: playerPosition,
         isCritical: false,
         timestamp: Date.now(),
         damageType: 'reanimate_healing'
       }]);
       this.nextDamageNumberId++;
-    }
-
-    // Broadcast healing in PVP mode
-    if (this.onBroadcastHealing) {
-      this.onBroadcastHealing(60, 'reanimate', playerPosition);
     }
   }
 
@@ -1979,6 +2075,66 @@ export class ControlSystem extends System {
     
     // Trigger global frost nova visual effect
     triggerGlobalFrostNova(playerPosition);
+  }
+
+  /**
+   * Frostpath talent: Coldsnap burst at world position (no SCYTHE_E cooldown).
+   * Uses the same freeze radius and networking as `performFrostNovaAbility`, but centered on `impact`.
+   */
+  private triggerFrostpathAtImpact(impact: Vector3): void {
+    if (!this.playerEntity) return;
+
+    const currentTime = Date.now() / 1000;
+    this.audioSystem?.playFrostNovaSound(impact);
+
+    const direction = new Vector3();
+    this.camera.getWorldDirection(direction);
+    direction.normalize();
+
+    if (this.onFrostNovaCallback) {
+      this.onFrostNovaCallback(impact, direction);
+    }
+
+    this.freezeEnemiesInRadius(impact, 6.0, currentTime);
+    triggerGlobalFrostNova(impact);
+  }
+
+  /**
+   * Called from CombatSystem when an Entropic Bolt hits a PvE enemy; rolls proc and attributes to local player projectiles only.
+   */
+  public tryProcFrostpathOnEntropicHit(target: Entity, projectileSource: Entity): void {
+    if (!this.playerEntity) return;
+    if (!shouldApplyFrostpathTalent(this.talentLoadout)) return;
+    if (Math.random() >= FROSTPATH_PROC_CHANCE) return;
+
+    if (!target.getComponent(Enemy)) return;
+
+    const proj = projectileSource.getComponent(Projectile);
+    if (!proj || proj.owner !== this.playerEntity.id) return;
+
+    const targetTransform = target.getComponent(Transform);
+    if (!targetTransform) return;
+
+    this.triggerFrostpathAtImpact(targetTransform.getWorldPosition());
+  }
+
+  /**
+   * Solar Recharge talent: Sunwell (Reanimate) on Entropic hit vs PvE; roll independent of Q cooldown.
+   */
+  public tryProcSolarRechargeOnEntropicHit(target: Entity, projectileSource: Entity): void {
+    if (!this.playerEntity) return;
+    if (!shouldApplySolarRechargeTalent(this.talentLoadout)) return;
+    if (Math.random() >= SOLAR_RECHARGE_PROC_CHANCE) return;
+
+    if (!target.getComponent(Enemy)) return;
+
+    const proj = projectileSource.getComponent(Projectile);
+    if (!proj || proj.owner !== this.playerEntity.id) return;
+
+    const playerTransform = this.playerEntity.getComponent(Transform);
+    if (!playerTransform) return;
+
+    this.performReanimateAsSolarRechargeProc(playerTransform);
   }
 
   private performCobraShot(playerTransform: Transform): void {
@@ -2140,12 +2296,17 @@ export class ControlSystem extends System {
   private createChargedArrowProjectile(position: Vector3, direction: Vector3): void {
     if (!this.playerEntity) return;
     
-    // Offset projectile spawn position slightly forward to avoid collision with player
-    const spawnPosition = position.clone();
-    spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
-    spawnPosition.y += 0.5; // Slightly higher
+    const baseSpawn = position.clone();
+    baseSpawn.add(direction.clone().multiplyScalar(1)); // 1 unit forward
+    baseSpawn.y += 0.5; // Slightly higher
+
+    const spawns: Vector3[] = this.shouldApplyDualCoilForBow()
+      ? (() => {
+          const d = getDualCoilLateralVector(direction);
+          return [baseSpawn.clone().add(d), baseSpawn.clone().sub(d)];
+        })()
+      : [baseSpawn];
     
-    // Create charged arrow projectile - more powerful than regular arrows
     const chargedArrowConfig = {
       speed: 35, // Faster than regular arrows (25)
       damage: 50, // Much higher damage than regular arrows (10)
@@ -2158,58 +2319,69 @@ export class ControlSystem extends System {
       ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_CHARGED_STAGGER } : {}),
     };
     
-    this.projectileSystem.createChargedArrowProjectile(
-      this.world,
-      spawnPosition,
-      direction,
-      this.playerEntity.id,
-      chargedArrowConfig
-    );
-    
-    // Broadcast projectile creation to other players
-    if (this.onProjectileCreatedCallback) {
-      this.onProjectileCreatedCallback('charged_arrow', spawnPosition, direction, chargedArrowConfig);
+    const useDualCoil = this.shouldApplyDualCoilForBow();
+    for (let i = 0; i < spawns.length; i++) {
+      const spawnPosition = spawns[i];
+      this.projectileSystem.createChargedArrowProjectile(
+        this.world,
+        spawnPosition,
+        direction,
+        this.playerEntity.id,
+        { ...chargedArrowConfig, ...(useDualCoil ? { dualCoilLane: i as 0 | 1 } : {}) }
+      );
+      if (this.onProjectileCreatedCallback) {
+        this.onProjectileCreatedCallback('charged_arrow', spawnPosition, direction, chargedArrowConfig);
+      }
     }
   }
 
   private createPerfectShotProjectile(position: Vector3, direction: Vector3): void {
     if (!this.playerEntity) return;
     
-    // Offset projectile spawn position slightly forward to avoid collision with player
-    const spawnPosition = position.clone();
-    spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
-    spawnPosition.y += 0.5; // Slightly higher
+    const baseSpawn = position.clone();
+    baseSpawn.add(direction.clone().multiplyScalar(1)); // 1 unit forward
+    baseSpawn.y += 0.5; // Slightly higher
+
+    const spawns: Vector3[] = this.shouldApplyDualCoilForBow()
+      ? (() => {
+          const d = getDualCoilLateralVector(direction);
+          return [baseSpawn.clone().add(d), baseSpawn.clone().sub(d)];
+        })()
+      : [baseSpawn];
+
+    const perfectConfig = {
+      speed: 40, // Faster than regular charged arrows (35)
+      damage: 75, // Higher damage than regular charged arrows (50)
+      lifetime: 6, // Longer lifetime than regular charged arrows (5)
+      piercing: true, // Perfect shots can pierce through enemies
+      explosive: false, // No explosion, but has special visual effects
+      subclass: this.currentSubclass,
+      level: this.currentLevel,
+      opacity: 1.0,
+      ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_PERFECT_STAGGER } : {}),
+    };
     
-    // Create perfect shot projectile - enhanced charged arrow with special effects
-    this.projectileSystem.createChargedArrowProjectile(
-      this.world,
-      spawnPosition,
-      direction,
-      this.playerEntity.id,
-      {
-        speed: 40, // Faster than regular charged arrows (35)
-        damage: 75, // Higher damage than regular charged arrows (50)
-        lifetime: 6, // Longer lifetime than regular charged arrows (5)
-        piercing: true, // Perfect shots can pierce through enemies
-        explosive: false, // No explosion, but has special visual effects
-        subclass: this.currentSubclass,
-        level: this.currentLevel,
-        opacity: 1.0,
-        ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_PERFECT_STAGGER } : {}),
+    const useDualCoil = this.shouldApplyDualCoilForBow();
+    for (let i = 0; i < spawns.length; i++) {
+      const spawnPosition = spawns[i];
+      this.projectileSystem.createChargedArrowProjectile(
+        this.world,
+        spawnPosition,
+        direction,
+        this.playerEntity.id,
+        { ...perfectConfig, ...(useDualCoil ? { dualCoilLane: i as 0 | 1 } : {}) }
+      );
+      if (this.onProjectileCreatedCallback) {
+        this.onProjectileCreatedCallback('perfect_shot', spawnPosition, direction, {
+          speed: 40,
+          damage: 75,
+          lifetime: 6,
+          piercing: true,
+          subclass: this.currentSubclass,
+          level: this.currentLevel,
+          opacity: 1.0
+        });
       }
-    );
-    
-    // Broadcast projectile creation to other players
-    if (this.onProjectileCreatedCallback) {
-      this.onProjectileCreatedCallback('perfect_shot', spawnPosition, direction, {
-        speed: 40,
-        damage: 75,
-        lifetime: 6,
-        piercing: true,
-        subclass: this.currentSubclass,
-        level: this.currentLevel,
-        opacity: 1.0
-      });
     }
   }
 
@@ -3250,6 +3422,15 @@ export class ControlSystem extends System {
           this.shouldApplyStaggeringStrikeTalent() ? STAGGERING_STRIKE_WRAITH_STAGGER_ADD : undefined,
         );
         hitCount++;
+
+        const struckEnemy = entity.getComponent(Enemy);
+        if (
+          struckEnemy &&
+          shouldApplyWraithGuardTalent(this.talentLoadout, this.abilityLoadout) &&
+          Math.random() < WRAITH_GUARD_PROC_CHANCE
+        ) {
+          this.applyWraithGuardEffect(playerTransform);
+        }
         
         // Apply Corrupted debuff
         this.applyCorruptedDebuff(entity, targetTransform.position, currentTime);
@@ -3472,6 +3653,15 @@ export class ControlSystem extends System {
       }
     });
 
+    const currentTime = Date.now() / 1000;
+    if (
+      enemiesHit > 0 &&
+      shouldApplyWindfuryTalent(this.talentLoadout) &&
+      Math.random() < WINDFURY_PROC_CHANCE
+    ) {
+      this.applyStormShroudFlurry(playerTransform, 'windfury', currentTime);
+    }
+
     // If Flurry is active and enemies were hit, heal the player
     if (this.isFlurryActive && enemiesHit > 0 && this.playerEntity) {
       const healPerHit = 15;
@@ -3533,7 +3723,7 @@ export class ControlSystem extends System {
   }
 
   private updateWhirlwindCharging(playerTransform: Transform, currentTime: number): void {
-    const maxChargeTime = 2.0; // Max 2 seconds charge
+    const maxChargeTime = 2.5; // Max 2 seconds charge
     const chargeTime = currentTime - this.whirlwindStartTime;
     
     // Update charge progress (0 to 1)
@@ -3551,7 +3741,7 @@ export class ControlSystem extends System {
     this.isWhirlwindCharging = false;
 
     // Calculate damage based on charge progress (50 to 200)
-    const minDamage = 50;
+    const minDamage = 100;
     const maxDamage = 400;
     const chargeDamage = minDamage + (maxDamage - minDamage) * this.whirlwindChargeProgress;
 
@@ -3589,7 +3779,7 @@ export class ControlSystem extends System {
     // Get all entities that could be damaged
     const allEntities = this.world.getAllEntities();
     const playerPosition = playerTransform.position;
-    const whirlwindRadius = 6.5; // 3.5 unit radius for damage
+    const whirlwindRadius = 4.5; // 3.5 unit radius for damage
 
     // Get combat system
     const combatSystem = this.world.getSystem(CombatSystem);
@@ -3733,43 +3923,47 @@ export class ControlSystem extends System {
     this.throwSpearChargeStartTime = 0;
   }
 
+  /**
+   * Storm Shroud (Flurry) — shared by SPEAR F and Windfury talent proc.
+   * Ability key sets F cooldown; Windfury never touches `lastFlurryTime`.
+   */
+  private applyStormShroudFlurry(
+    playerTransform: Transform,
+    source: 'ability' | 'windfury',
+    currentTime: number
+  ): void {
+    if (source === 'windfury') {
+      if (this.isFlurryActive) {
+        this.flurryStartTime = currentTime;
+        return;
+      }
+      this.isFlurryActive = true;
+      this.flurryStartTime = currentTime;
+    } else {
+      this.isFlurryActive = true;
+      this.flurryStartTime = currentTime;
+      this.lastFlurryTime = currentTime;
+    }
+
+    this.audioSystem?.playFlurrySound(playerTransform.position);
+
+    if (this.onWindShearTornadoCallback) {
+      this.onWindShearTornadoCallback(this.localSocketId || 'local', this.flurryDuration * 1000);
+    }
+
+    if (this.onFlurryCallback) {
+      this.onFlurryCallback(playerTransform.position.clone());
+    }
+  }
+
   private performFlurry(playerTransform: Transform): void {
     const currentTime = Date.now() / 1000;
 
-    console.log('⚔️ performFlurry called!');
-
-    // Check cooldown
     if (currentTime - this.lastFlurryTime < this.flurryCooldown) {
-      console.log('⚔️ Flurry on cooldown');
       return;
     }
 
-    console.log('⚔️ Activating Flurry!');
-
-    // Activate Flurry
-    this.isFlurryActive = true;
-    this.flurryStartTime = currentTime;
-    this.lastFlurryTime = currentTime;
-
-    // Play flurry activation sound
-    this.audioSystem?.playFlurrySound(playerTransform.position);
-
-    // Trigger the WindShear Tornado effect (visual effect for Flurry)
-    if (this.onWindShearTornadoCallback) {
-      console.log('⚔️ Calling onWindShearTornadoCallback for Flurry');
-      // Use local player ID and flurry duration (5 seconds)
-      this.onWindShearTornadoCallback(this.localSocketId || 'local', this.flurryDuration * 1000);
-    } else {
-      console.log('⚔️ onWindShearTornadoCallback is not set');
-    }
-
-    // Trigger the Flurry callback if set
-    if (this.onFlurryCallback) {
-      console.log('⚔️ Calling onFlurryCallback');
-      this.onFlurryCallback(playerTransform.position.clone());
-    } else {
-      console.log('⚔️ onFlurryCallback is not set');
-    }
+    this.applyStormShroudFlurry(playerTransform, 'ability', currentTime);
   }
 
   private performLightningStorm(playerTransform: Transform): void {
@@ -4501,6 +4695,20 @@ export class ControlSystem extends System {
     this.isDeflecting = false;
     this.isWraithStriking = false; // Reset WraithStrike when switching weapons
 
+    this.clearTalentBarrierEndTimeout();
+    this.wraithGuardShieldActive = false;
+    this.wraithGuardOwnsBarrier = false;
+    this.wraithGuardBarrierEndMs = 0;
+    this.colossusGuardShieldActive = false;
+    this.colossusGuardOwnsBarrier = false;
+    this.colossusGuardBarrierEndMs = 0;
+    this.guardComboShieldActive = false;
+    this.guardComboOwnsBarrier = false;
+    this.guardComboBarrierEndMs = 0;
+    if (this.deflectBarrier.isBarrierActive()) {
+      this.deflectBarrier.deactivate();
+    }
+
     // Reset Corrupted Aura and restore original rune counts when switching weapons
     if (this.corruptedAuraActive) {
       this.deactivateCorruptedAura();
@@ -4624,6 +4832,14 @@ export class ControlSystem extends System {
     this.talentLoadout = { ...createDefaultTalentLoadout(), ...loadout };
   }
 
+  public setReaperCrossentropyStack(stacks: number): void {
+    this.reaperCrossentropyStack = Math.max(0, Math.floor(stacks));
+  }
+
+  public getReaperCrossentropyStack(): number {
+    return this.reaperCrossentropyStack;
+  }
+
   private shouldApplyWrathStrikeTalent(): boolean {
     return this.talentLoadout.wrathStrike && isWraithStrikeInLoadout(this.abilityLoadout);
   }
@@ -4651,6 +4867,11 @@ export class ControlSystem extends System {
     return this.talentLoadout.staggerShot === true && this.currentWeapon === WeaponType.BOW;
   }
 
+  /** Dual Coil: twin Bow LMB projectiles and paired perfect-shot beam VFX. */
+  public shouldApplyDualCoilForBow(): boolean {
+    return shouldApplyDualCoilTalent(this.talentLoadout) && this.currentWeapon === WeaponType.BOW;
+  }
+
   /** STORED CHARGE: Runeblade Charge spin count and per-rotation damage (see Runeblade + talents). */
   public shouldApplyStoredChargeTalentActive(): boolean {
     return computeStoredChargeTalentActive(this.talentLoadout, this.abilityLoadout);
@@ -4659,6 +4880,15 @@ export class ControlSystem extends System {
   /** Wrathful Talons: Reaping Talons return-arrow preset crit (applied in `useViperSting`). */
   public shouldApplyWrathfulTalonsTalentActive(): boolean {
     return computeWrathfulTalonsTalentActive(this.talentLoadout, this.abilityLoadout);
+  }
+
+  /** Wrathful Bite: Barrage / Frostbite crit modifiers (read by `CombatSystem` via `controlSystemRef`). */
+  public getBarrageCritDamageCalcOpts(): DamageCalcOptions | undefined {
+    if (!shouldApplyWrathfulBiteTalent(this.talentLoadout, this.abilityLoadout)) return undefined;
+    return {
+      critChanceAdd: WRATHFUL_BITE_BARRAGE_CRIT_CHANCE_ADD,
+      critDamageMultAdd: WRATHFUL_BITE_BARRAGE_CRIT_DAMAGE_MULT_ADD,
+    };
   }
 
   /**
@@ -5049,6 +5279,21 @@ export class ControlSystem extends System {
     return enemiesHit;
   }
 
+  /** Same readiness as `dispatchAbility` → `SWORD_E` (Charge). */
+  private canAttemptSwordChargeMovement(): boolean {
+    return (
+      !this.isSwordCharging &&
+      !this.isDeflecting &&
+      !this.isSwinging &&
+      !this.isSmiting &&
+      !this.isDeathGrasping &&
+      !this.isWraithStriking &&
+      !this.isBarrageCharging &&
+      !this.isViperStingCharging &&
+      !this.isCobraShotCharging
+    );
+  }
+
   private checkForDashInput(movement: Movement, transform: Transform): void {
     // Prevent dashing while dead and waiting to respawn
     if (this.isPlayerDead) {
@@ -5065,25 +5310,36 @@ export class ControlSystem extends System {
 
     for (const { key, direction } of dashDirections) {
       if (this.inputManager.checkDoubleTap(key)) {
-        // Debug: Log the double tap detection
-        const debugInfo = this.inputManager.getDoubleTapDebugInfo(key);
-        
-        // Convert input direction to world space based on camera orientation
         const worldDirection = this.getWorldSpaceDirection(direction);
-        
-        // Attempt to start dash
-        const currentTime = Date.now() / 1000; // Convert to seconds
-        const dashStarted = movement.startDash(worldDirection, transform.position, currentTime);
-        
-        if (dashStarted) {
-          // Play dash sound
-          this.audioSystem?.playUIDashSound();
+        const currentTime = Date.now() / 1000;
 
-          // Reset the double-tap state to prevent multiple dashes
+        let handled = false;
+        if (
+          key === 'w' &&
+          this.currentWeapon === WeaponType.RUNEBLADE &&
+          shouldApplyBladeRushTalent(this.talentLoadout) &&
+          currentTime - this.lastBladeRushChargeTime >= BLADE_RUSH_CHARGE_COOLDOWN_SEC &&
+          this.canAttemptSwordChargeMovement() &&
+          movement.getAvailableDashCharges() >= 1
+        ) {
+          if (this.performBladeRushChargeFromForwardDash(transform)) {
+            movement.consumeDashChargesWithoutDash(1, currentTime);
+            handled = true;
+          }
+        }
+
+        if (!handled) {
+          const dashStarted = movement.startDash(worldDirection, transform.position, currentTime);
+          if (dashStarted) {
+            this.audioSystem?.playUIDashSound();
+          }
+        }
+
+        if (handled || movement.isDashing) {
           this.inputManager.resetDoubleTap(key);
         }
-        
-        break; // Only process one dash per frame
+
+        break;
       }
     }
   }
@@ -5158,26 +5414,12 @@ export class ControlSystem extends System {
     }
   }
 
-  // Castle wall segments — mirrors CastleWalls.tsx WALL_SEGMENTS (AABB half-extents)
+  // Castle wall segments — mirrors CastleWalls perimeter (AABB half-extents)
   private readonly WALL_SEGMENTS = [
-    // Maze Wall 1 · NW Barrier (east-west)
-    { cx: -14,   cz: -18,   hx: 6,    hz: 0.3  },
-    // Maze Wall 2 · North Shard (north-south)
-    { cx:   5,   cz: -22,   hx: 0.3,  hz: 5    },
-    // Maze Wall 3 · East Spine (north-south)
-    { cx:  18,   cz:  -8,   hx: 0.3,  hz: 6    },
-    // Maze Wall 4 · Center-East Divider (east-west)
-    { cx:  12,   cz:   2,   hx: 5,    hz: 0.3  },
-    // Maze Wall 5 · Central Chokepoint (north-south)
-    { cx:   0,   cz:   8,   hx: 0.3,  hz: 5    },
-    // Maze Wall 6 · SE Corridor (east-west)
-    { cx:  14,   cz:  18,   hx: 6,    hz: 0.3  },
-    // Maze Wall 7 · SW Channel (north-south)
-    { cx: -16,   cz:  15,   hx: 0.3,  hz: 5    },
-    // Maze Wall 8 · West Divider (east-west)
-    { cx: -20,   cz:   0,   hx: 5,    hz: 0.3  },
-    // Maze Wall 9 · NW-Center Rib (north-south)
-    { cx:  -6,   cz:  -8,   hx: 0.3,  hz: 4    },
+    { cx: 0,   cz:  CASTLE_WALL_DEPTH_OFFSET,  hx: MAIN_MAP_RADIUS, hz: CASTLE_WALL_HALF_THICKNESS },
+    { cx: 0,   cz: -CASTLE_WALL_DEPTH_OFFSET,  hx: MAIN_MAP_RADIUS, hz: CASTLE_WALL_HALF_THICKNESS },
+    { cx:  CASTLE_WALL_DEPTH_OFFSET, cz: 0,  hx: CASTLE_WALL_HALF_THICKNESS, hz: MAIN_MAP_RADIUS },
+    { cx: -CASTLE_WALL_DEPTH_OFFSET, cz: 0,  hx: CASTLE_WALL_HALF_THICKNESS, hz: MAIN_MAP_RADIUS },
   ];
   private readonly WALL_PLAYER_RADIUS = 0.5;
 
@@ -5255,48 +5497,62 @@ export class ControlSystem extends System {
 
 
   private performCharge(playerTransform: Transform): void {
-    // Check cooldown
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastChargeTime < this.chargeCooldown) {
       return;
     }
+    if (!this.executeChargeCore(playerTransform, currentTime)) {
+      return;
+    }
+    this.lastChargeTime = currentTime;
+  }
+
+  /** Blade Rush: Charge movement without advancing E-key cooldown; gated by `lastBladeRushChargeTime`. */
+  private performBladeRushChargeFromForwardDash(playerTransform: Transform): boolean {
+    const currentTime = Date.now() / 1000;
+    if (currentTime - this.lastBladeRushChargeTime < BLADE_RUSH_CHARGE_COOLDOWN_SEC) {
+      return false;
+    }
+    if (!this.executeChargeCore(playerTransform, currentTime)) {
+      return false;
+    }
+    this.lastBladeRushChargeTime = currentTime;
+    return true;
+  }
+
+  /** Shared Charge execution after cooldown checks. Sets `isSwordCharging` only if `startCharge` succeeds. */
+  private executeChargeCore(playerTransform: Transform, currentTime: number): boolean {
+    this.audioSystem?.playSwordChargeSound(playerTransform.position);
+    this.chargeStoppedByCollision = false;
+
+    if (this.onChargeCallback) {
+      const cbDir = new Vector3();
+      this.camera.getWorldDirection(cbDir);
+      cbDir.normalize();
+      this.onChargeCallback(playerTransform.position.clone(), cbDir);
+    }
+
+    if (!this.playerEntity) {
+      return false;
+    }
+    const playerMovement = this.playerEntity.getComponent(Movement);
+    if (!playerMovement) {
+      return false;
+    }
+
+    const direction = new Vector3();
+    this.camera.getWorldDirection(direction);
+    direction.y = 0;
+    direction.normalize();
+
+    const chargeStarted = playerMovement.startCharge(direction, playerTransform.position, currentTime);
+    if (!chargeStarted) {
+      return false;
+    }
 
     this.isSwordCharging = true;
-    this.lastChargeTime = currentTime;
-
-    // Play charge sound
-    this.audioSystem?.playSwordChargeSound(playerTransform.position);
-
-    // Reset collision tracking for new charge
-    this.chargeStoppedByCollision = false;
-    
-    // Trigger Charge callback for multiplayer
-    if (this.onChargeCallback) {
-      const direction = new Vector3();
-      this.camera.getWorldDirection(direction);
-      direction.normalize();
-      this.onChargeCallback(playerTransform.position.clone(), direction);
-    }
-    
-    // Start the charge movement using the separate charge system
-    if (this.playerEntity) {
-      const playerMovement = this.playerEntity.getComponent(Movement);
-      if (playerMovement) {
-        // Get charge direction from camera
-        const direction = new Vector3();
-        this.camera.getWorldDirection(direction);
-        direction.y = 0; // Keep movement horizontal
-        direction.normalize();
-        
-        // Start charge with 10.5 distance (separate from dash system)
-        const chargeStarted = playerMovement.startCharge(direction, playerTransform.position, currentTime);
-        
-        if (chargeStarted) {
-          // Schedule charge damage detection during movement
-          this.scheduleChargeDamage(playerTransform, direction, currentTime);
-        }
-      }
-    }
+    this.scheduleChargeDamage(playerTransform, direction, currentTime);
+    return true;
   }
 
   // Track charge hit entities to prevent multiple hits and enable collision stopping
@@ -5457,6 +5713,20 @@ export class ControlSystem extends System {
       return;
     }
 
+    this.clearTalentBarrierEndTimeout();
+    this.wraithGuardOwnsBarrier = false;
+    this.wraithGuardShieldActive = false;
+    this.wraithGuardBarrierEndMs = 0;
+    this.colossusGuardOwnsBarrier = false;
+    this.colossusGuardShieldActive = false;
+    this.colossusGuardBarrierEndMs = 0;
+    this.guardComboOwnsBarrier = false;
+    this.guardComboShieldActive = false;
+    this.guardComboBarrierEndMs = 0;
+    if (this.deflectBarrier.isBarrierActive()) {
+      this.deflectBarrier.deactivate();
+    }
+
     this.isDeflecting = true;
     this.lastDeflectTime = currentTime;
 
@@ -5472,7 +5742,7 @@ export class ControlSystem extends System {
     }
     
     // Set up deflect barrier that blocks damage and reflects projectiles
-    this.setupDeflectBarrier(playerTransform);
+    this.setupDeflectBarrier(playerTransform, this.deflectDuration);
     
     // Auto-complete deflect after duration
     setTimeout(() => {
@@ -5691,8 +5961,13 @@ export class ControlSystem extends System {
     direction.normalize();
     
     // Create 5 arrows: center (0°), left (15°, 30°), right (-15°, -30°) using proper ECS projectiles
-    const angles = [0, Math.PI / 12, -Math.PI / 12, Math.PI / 6, -Math.PI / 6]; // 0°, 15°, -15°, 30°, -30°
-    
+    const fanAngles = [0, Math.PI / 12, -Math.PI / 12, Math.PI / 6, -Math.PI / 6]; // 0°, 15°, -15°, 30°, -30°
+    const angles = computeConcentratedVolleyTalentActive(this.talentLoadout, this.abilityLoadout)
+      ? Array.from({ length: 5 }, () => 0)
+      : fanAngles;
+
+    const wrathfulBiteBarrage = shouldApplyWrathfulBiteTalent(this.talentLoadout, this.abilityLoadout);
+
     angles.forEach(angle => {
       // Rotate the base direction by the specified angle around the Y axis
       const projectileDirection = direction.clone();
@@ -5706,15 +5981,16 @@ export class ControlSystem extends System {
       
       // Create proper ECS projectile entity
       const projectileConfig = {
-        speed: 22, // Slightly faster than regular arrows (20)
+        speed: 36, // Slightly faster than regular arrows (20)
         damage: 73, // High damage for barrage arrows
         lifetime: 8,
-        maxDistance: 25, // Limit barrage arrows to 25 units distance (same as regular arrows)
+        maxDistance: 20, // Limit barrage arrows to 25 units distance (same as regular arrows)
         piercing: false,
         subclass: this.currentSubclass,
         level: 1,
         opacity: 1.0,
-        sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown'
+        sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown',
+        wrathfulBiteBarrage,
       };
       
       const projectileEntity = this.projectileSystem.createProjectile(
@@ -5730,6 +6006,9 @@ export class ControlSystem extends System {
       if (renderer?.mesh) {
         renderer.mesh.userData.isBarrageArrow = true;
         renderer.mesh.userData.isRegularArrow = false; // Override regular arrow marking
+        if (wrathfulBiteBarrage) {
+          renderer.mesh.userData.barrageWrathfulBite = true;
+        }
       }
       
       // Broadcast projectile creation to other players
@@ -5746,7 +6025,7 @@ export class ControlSystem extends System {
     
   }
 
-  private setupDeflectBarrier(playerTransform: Transform): void {
+  private setupDeflectBarrier(playerTransform: Transform, invulnerableDurationSec: number = 3): void {
     // Activate the deflect barrier
     const playerPosition = playerTransform.getWorldPosition();
     const playerRotation = new Vector3(0, 0, 0);
@@ -5769,7 +6048,182 @@ export class ControlSystem extends System {
       }
     }
     
-    this.deflectBarrier.activate(playerPosition, playerRotation, this.playerEntity || undefined);
+    this.deflectBarrier.activate(
+      playerPosition,
+      playerRotation,
+      this.playerEntity || undefined,
+      invulnerableDurationSec,
+    );
+  }
+
+  private clearTalentBarrierEndTimeout(): void {
+    if (this.talentBarrierEndTimeout !== null) {
+      clearTimeout(this.talentBarrierEndTimeout);
+      this.talentBarrierEndTimeout = null;
+    }
+  }
+
+  private finishTalentBarrierTeardown(): void {
+    if (
+      !this.isDeflecting &&
+      (this.wraithGuardOwnsBarrier || this.colossusGuardOwnsBarrier || this.guardComboOwnsBarrier)
+    ) {
+      if (this.deflectBarrier.isBarrierActive()) {
+        this.deflectBarrier.deactivate();
+      }
+    }
+    this.wraithGuardOwnsBarrier = false;
+    this.wraithGuardShieldActive = false;
+    this.wraithGuardBarrierEndMs = 0;
+    this.colossusGuardOwnsBarrier = false;
+    this.colossusGuardShieldActive = false;
+    this.colossusGuardBarrierEndMs = 0;
+    this.guardComboOwnsBarrier = false;
+    this.guardComboShieldActive = false;
+    this.guardComboBarrierEndMs = 0;
+  }
+
+  private onTalentBarrierTeardown(): void {
+    this.talentBarrierEndTimeout = null;
+    if (this.isDeflecting) {
+      return;
+    }
+    const now = Date.now();
+    let maxEnd = 0;
+    if (this.wraithGuardShieldActive && this.wraithGuardBarrierEndMs > now) {
+      maxEnd = Math.max(maxEnd, this.wraithGuardBarrierEndMs);
+    }
+    if (this.colossusGuardShieldActive && this.colossusGuardBarrierEndMs > now) {
+      maxEnd = Math.max(maxEnd, this.colossusGuardBarrierEndMs);
+    }
+    if (this.guardComboShieldActive && this.guardComboBarrierEndMs > now) {
+      maxEnd = Math.max(maxEnd, this.guardComboBarrierEndMs);
+    }
+    if (maxEnd > now) {
+      this.talentBarrierEndTimeout = setTimeout(() => this.onTalentBarrierTeardown(), maxEnd - now);
+      return;
+    }
+    this.finishTalentBarrierTeardown();
+  }
+
+  private rescheduleTalentBarrierTeardown(): void {
+    this.clearTalentBarrierEndTimeout();
+    if (this.isDeflecting) {
+      return;
+    }
+    const now = Date.now();
+    let maxEnd = 0;
+    if (this.wraithGuardShieldActive) {
+      maxEnd = Math.max(maxEnd, this.wraithGuardBarrierEndMs);
+    }
+    if (this.colossusGuardShieldActive) {
+      maxEnd = Math.max(maxEnd, this.colossusGuardBarrierEndMs);
+    }
+    if (this.guardComboShieldActive) {
+      maxEnd = Math.max(maxEnd, this.guardComboBarrierEndMs);
+    }
+    if (maxEnd <= now) {
+      this.finishTalentBarrierTeardown();
+      return;
+    }
+    this.talentBarrierEndTimeout = setTimeout(() => this.onTalentBarrierTeardown(), maxEnd - now);
+  }
+
+  private applyWraithGuardEffect(playerTransform: Transform): void {
+    this.audioSystem?.playSwordDeflectSound(playerTransform.position);
+    const health = this.playerEntity?.getComponent(Health);
+
+    if (this.deflectBarrier.isBarrierActive()) {
+      if (health) {
+        health.addInvulnerabilityTime(WRAITH_GUARD_DURATION_SEC, true);
+      }
+      if (this.isDeflecting) {
+        return;
+      }
+      this.wraithGuardShieldActive = true;
+      this.wraithGuardBarrierEndMs = Date.now() + WRAITH_GUARD_DURATION_SEC * 1000;
+      this.rescheduleTalentBarrierTeardown();
+      return;
+    }
+
+    this.wraithGuardOwnsBarrier = true;
+    this.wraithGuardShieldActive = true;
+    this.wraithGuardBarrierEndMs = Date.now() + WRAITH_GUARD_DURATION_SEC * 1000;
+    this.setupDeflectBarrier(playerTransform, WRAITH_GUARD_DURATION_SEC);
+    this.rescheduleTalentBarrierTeardown();
+  }
+
+  public tryColossusGuardProcFromSmiteBeamHit(): void {
+    if (!this.playerEntity) return;
+    const playerTransform = this.playerEntity.getComponent(Transform);
+    if (!playerTransform) return;
+    if (!shouldApplyColossusGuardTalent(this.talentLoadout, this.abilityLoadout)) return;
+    if (Math.random() >= COLOSSUS_GUARD_PROC_CHANCE) return;
+    this.applyColossusGuardEffect(playerTransform);
+  }
+
+  public tryGuardComboProcFromRunebladeBasicHit(): void {
+    if (!this.playerEntity) return;
+    if (this.currentWeapon !== WeaponType.RUNEBLADE) return;
+    if (!shouldApplyGuardComboTalent(this.talentLoadout)) return;
+    if (Math.random() >= GUARD_COMBO_PROC_CHANCE) return;
+    const playerTransform = this.playerEntity.getComponent(Transform);
+    if (!playerTransform) return;
+    this.applyGuardComboEffect(playerTransform);
+  }
+
+  private applyGuardComboEffect(playerTransform: Transform): void {
+    this.audioSystem?.playSwordDeflectSound(playerTransform.position);
+    const health = this.playerEntity?.getComponent(Health);
+
+    if (this.deflectBarrier.isBarrierActive()) {
+      if (health) {
+        health.addInvulnerabilityTime(GUARD_COMBO_DURATION_SEC, true);
+      }
+      if (this.isDeflecting) {
+        return;
+      }
+      this.guardComboShieldActive = true;
+      this.guardComboBarrierEndMs = Date.now() + GUARD_COMBO_DURATION_SEC * 1000;
+      this.rescheduleTalentBarrierTeardown();
+      return;
+    }
+
+    this.guardComboOwnsBarrier = true;
+    this.guardComboShieldActive = true;
+    this.guardComboBarrierEndMs = Date.now() + GUARD_COMBO_DURATION_SEC * 1000;
+    this.setupDeflectBarrier(playerTransform, GUARD_COMBO_DURATION_SEC);
+    this.rescheduleTalentBarrierTeardown();
+  }
+
+  private applyColossusGuardEffect(playerTransform: Transform): void {
+    this.audioSystem?.playSwordDeflectSound(playerTransform.position);
+    const health = this.playerEntity?.getComponent(Health);
+    const now = Date.now();
+    const currentColRem = this.colossusGuardShieldActive
+      ? Math.max(0, (this.colossusGuardBarrierEndMs - now) / 1000)
+      : 0;
+    const newRem = Math.min(currentColRem + COLOSSUS_GUARD_STACK_SEC, COLOSSUS_GUARD_MAX_REMAINING_SEC);
+    if (newRem <= 0) return;
+
+    const invulnDelta = newRem - currentColRem;
+    this.colossusGuardBarrierEndMs = now + newRem * 1000;
+    this.colossusGuardShieldActive = true;
+
+    if (this.deflectBarrier.isBarrierActive()) {
+      if (health && invulnDelta > 0) {
+        health.addInvulnerabilityTime(invulnDelta, true);
+      }
+      if (this.isDeflecting) {
+        return;
+      }
+      this.rescheduleTalentBarrierTeardown();
+      return;
+    }
+
+    this.colossusGuardOwnsBarrier = true;
+    this.setupDeflectBarrier(playerTransform, newRem);
+    this.rescheduleTalentBarrierTeardown();
   }
 
   private updateDeflectBarrier(playerTransform: Transform): void {
@@ -5804,7 +6258,51 @@ export class ControlSystem extends System {
   // Called by sword component when Deflect completes
   public onDeflectComplete(): void {
     this.isDeflecting = false;
+    this.clearTalentBarrierEndTimeout();
+    this.wraithGuardOwnsBarrier = false;
+    this.wraithGuardShieldActive = false;
+    this.wraithGuardBarrierEndMs = 0;
+    this.colossusGuardOwnsBarrier = false;
+    this.colossusGuardShieldActive = false;
+    this.colossusGuardBarrierEndMs = 0;
+    this.guardComboOwnsBarrier = false;
+    this.guardComboShieldActive = false;
+    this.guardComboBarrierEndMs = 0;
     this.deflectBarrier.deactivate();
+  }
+
+  public isWraithGuardShieldActive(): boolean {
+    return this.wraithGuardShieldActive;
+  }
+
+  public isColossusGuardShieldActive(): boolean {
+    return this.colossusGuardShieldActive;
+  }
+
+  public isGuardComboShieldActive(): boolean {
+    return this.guardComboShieldActive;
+  }
+
+  /** Duration (seconds) for local DeflectShield VFX while Aegis or talent guard shield is showing. */
+  public getDeflectShieldDurationSec(): number {
+    if (this.isDeflecting) {
+      return this.deflectDuration;
+    }
+    const now = Date.now();
+    let maxRem = 0;
+    if (this.wraithGuardShieldActive) {
+      maxRem = Math.max(maxRem, Math.max(0, (this.wraithGuardBarrierEndMs - now) / 1000));
+    }
+    if (this.colossusGuardShieldActive) {
+      maxRem = Math.max(maxRem, Math.max(0, (this.colossusGuardBarrierEndMs - now) / 1000));
+    }
+    if (this.guardComboShieldActive) {
+      maxRem = Math.max(maxRem, Math.max(0, (this.guardComboBarrierEndMs - now) / 1000));
+    }
+    if (maxRem > 0) {
+      return Math.max(maxRem, 0.25);
+    }
+    return this.deflectDuration;
   }
 
 
@@ -5900,8 +6398,8 @@ export class ControlSystem extends System {
       };
     } else if (this.currentWeapon === WeaponType.SCYTHE) {
       cooldowns['Q'] = {
-        current: Math.max(0, 1.0 - (currentTime - this.lastReanimateTime)),
-        max: 1.0,
+        current: Math.max(0, REANIMATE_SUNWELL_COOLDOWN_SEC - (currentTime - this.lastReanimateTime)),
+        max: REANIMATE_SUNWELL_COOLDOWN_SEC,
         isActive: false
       };
       cooldowns['E'] = {

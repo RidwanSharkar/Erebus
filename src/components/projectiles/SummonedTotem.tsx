@@ -62,6 +62,8 @@ interface SummonProps {
     isSummon?: boolean;
   }>) => void;
   nextDamageNumberId?: { current: number };
+  /** When set, routes floating damage text through CombatSystem (same overlay as `DamageNumbers.tsx`). */
+  onTotemFloatingDamage?: (damage: number, isCritical: boolean, position: Vector3) => void;
   casterId?: string; // ID of the player who cast the totem
 }
 
@@ -77,6 +79,7 @@ export default function SummonedTotem({
   activeEffects = [],
   setDamageNumbers,
   nextDamageNumberId,
+  onTotemFloatingDamage,
   casterId
 }: SummonProps) {
 
@@ -126,6 +129,9 @@ export default function SummonedTotem({
     return currentEnemies;
   }, [players, casterId, enemyData]);
 
+  const getCurrentEnemyDataRef = useRef(getCurrentEnemyData);
+  getCurrentEnemyDataRef.current = getCurrentEnemyData;
+
   const findNewTarget = useCallback((excludeCurrentTarget: boolean = false): { id: string; position: Vector3; health: number } | null => {
     if (!groupRef.current) {
       return null;
@@ -170,7 +176,9 @@ export default function SummonedTotem({
   }, [getCurrentEnemyData, calculateDistance, currentTarget, constants.RANGE]);
 
   const handleAttack = useCallback((target: { id: string; position: Vector3; health: number }) => {
-    if (!target || target.health <= 0 || !onDamage || !nextDamageNumberId || !setDamageNumbers) {
+    const canShowFloating =
+      onTotemFloatingDamage || (setDamageNumbers && nextDamageNumberId);
+    if (!target || target.health <= 0 || !onDamage || !canShowFloating) {
       return;
     }
 
@@ -203,15 +211,33 @@ export default function SummonedTotem({
       (window as any).triggerSummonTotemExplosion(target.id, currentWorldImpactPosition);
     }
 
-    // Add damage number locally for immediate visual feedback (attributed to summoner)
-    setDamageNumbers(prev => [...prev, {
-      id: nextDamageNumberId.current++,
-      damage: damageResult.damage,
-      position: currentWorldImpactPosition.clone(),
-      isCritical: damageResult.isCritical,
-      isSummon: true // Mark as summon damage for proper attribution
-    }]);
-  }, [constants, onDamage, setDamageNumbers, nextDamageNumberId, getCurrentEnemyData, casterId]);
+    if (onTotemFloatingDamage) {
+      onTotemFloatingDamage(
+        damageResult.damage,
+        damageResult.isCritical,
+        currentWorldImpactPosition.clone(),
+      );
+    } else if (setDamageNumbers && nextDamageNumberId) {
+      setDamageNumbers((prev) => [
+        ...prev,
+        {
+          id: nextDamageNumberId.current++,
+          damage: damageResult.damage,
+          position: currentWorldImpactPosition.clone(),
+          isCritical: damageResult.isCritical,
+          isSummon: true,
+        },
+      ]);
+    }
+  }, [
+    constants,
+    onDamage,
+    onTotemFloatingDamage,
+    setDamageNumbers,
+    nextDamageNumberId,
+    getCurrentEnemyData,
+    casterId,
+  ]);
 
   useFrame(() => {
     const now = Date.now();
@@ -290,6 +316,21 @@ export default function SummonedTotem({
     [getCurrentEnemyData, handleAttack],
   );
 
+  const boltImpactScratch = useRef(new Vector3());
+
+  const getBoltImpactWorld = useCallback((targetId: string) => {
+    return () => {
+      const data = getCurrentEnemyDataRef.current();
+      const e = data.find((x) => x.id === targetId && x.health > 0);
+      if (!e) {
+        return null;
+      }
+      const out = boltImpactScratch.current.copy(e.position);
+      out.y = Math.max(out.y, 0.35) + 1.05;
+      return out;
+    };
+  }, []);
+
   return (
     <>
       <group ref={groupRef} position={position.toArray()}>
@@ -301,6 +342,7 @@ export default function SummonedTotem({
           key={b.id}
           from={b.from}
           to={b.to}
+          getImpactWorld={getBoltImpactWorld(b.targetId)}
           onImpact={() => onTotemBoltImpact(b.id, b.targetId)}
         />
       ))}

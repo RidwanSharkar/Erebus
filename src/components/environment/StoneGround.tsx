@@ -8,6 +8,7 @@ import {
   Euler,
   Quaternion,
 } from '@/utils/three-exports';
+import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
 
 // ---------------------------------------------------------------------------
 // Procedural stone shader — mossy cracked tiles, no textures needed
@@ -186,7 +187,7 @@ const CAMP2_PLATFORM = makeGrid(-22, 8, 4, 4, 4.0, 4.0, 3.9, 3.9, 0.06, 0.10);
 
 // Slabs whose corners protrude beyond the playable circle are invisible in the
 // darkness beyond the map boundary but can clip into view — clip them here.
-const MAP_RADIUS = 28;
+const MAP_RADIUS = MAIN_MAP_RADIUS;
 const isSlabInBounds = (slab: SlabDef): boolean => {
   const [cx, , cz] = slab.position;
   const hw = slab.scale[0] / 2;

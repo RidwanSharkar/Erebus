@@ -7,18 +7,20 @@
  * reads this grid via a DataTexture uploaded every frame.
  */
 
+import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+
 /** Resolution of the exploration grid (cells per side). */
 export const FOG_GRID_SIZE = 128;
 
-/** Half-width of the playable map in world units (grid covers −MAP_HALF_SIZE → +MAP_HALF_SIZE). */
-export const MAP_HALF_SIZE = 28;
+/** Half-width of the fog grid in world units (grid covers −MAP_HALF_SIZE → +MAP_HALF_SIZE). Matches main map radius. */
+export const MAP_HALF_SIZE = MAIN_MAP_RADIUS;
 
 /** World-space radius the player always reveals, both in the shader and for enemy visibility. */
-export const PLAYER_VIEW_RADIUS = 7.5;
+export const PLAYER_VIEW_RADIUS = 20;
 
 // Derived
-const MAP_FULL_SIZE    = MAP_HALF_SIZE * 2;        // 56 world units
-const CELLS_PER_UNIT   = FOG_GRID_SIZE / MAP_FULL_SIZE; // ~2.286 cells per world unit
+const MAP_FULL_SIZE    = MAP_HALF_SIZE * 2;
+const CELLS_PER_UNIT   = FOG_GRID_SIZE / MAP_FULL_SIZE;
 
 /**
  * Convert a world-space (x, z) to a linear index into the exploration grid.
