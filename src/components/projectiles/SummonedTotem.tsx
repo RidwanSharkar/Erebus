@@ -129,9 +129,6 @@ export default function SummonedTotem({
     return currentEnemies;
   }, [players, casterId, enemyData]);
 
-  const getCurrentEnemyDataRef = useRef(getCurrentEnemyData);
-  getCurrentEnemyDataRef.current = getCurrentEnemyData;
-
   const findNewTarget = useCallback((excludeCurrentTarget: boolean = false): { id: string; position: Vector3; health: number } | null => {
     if (!groupRef.current) {
       return null;
@@ -316,21 +313,6 @@ export default function SummonedTotem({
     [getCurrentEnemyData, handleAttack],
   );
 
-  const boltImpactScratch = useRef(new Vector3());
-
-  const getBoltImpactWorld = useCallback((targetId: string) => {
-    return () => {
-      const data = getCurrentEnemyDataRef.current();
-      const e = data.find((x) => x.id === targetId && x.health > 0);
-      if (!e) {
-        return null;
-      }
-      const out = boltImpactScratch.current.copy(e.position);
-      out.y = Math.max(out.y, 0.35) + 1.05;
-      return out;
-    };
-  }, []);
-
   return (
     <>
       <group ref={groupRef} position={position.toArray()}>
@@ -342,7 +324,6 @@ export default function SummonedTotem({
           key={b.id}
           from={b.from}
           to={b.to}
-          getImpactWorld={getBoltImpactWorld(b.targetId)}
           onImpact={() => onTotemBoltImpact(b.id, b.targetId)}
         />
       ))}

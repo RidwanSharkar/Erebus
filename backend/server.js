@@ -50,6 +50,7 @@ const io = socketIo(server, {
   maxHttpBufferSize: 1e8
 });
 
+/** Default matches Next dev client `NEXT_PUBLIC_BACKEND_URL` fallback in MultiplayerContext. */
 const PORT = process.env.PORT || 8080;
 
 // Game state management
@@ -138,6 +139,8 @@ io.on('connection', (socket) => {
       campTypes: room.getCampTypes(),
       combatArenaActive: room.gameMode !== 'coop' ? true : !!room.combatArenaActive,
       thronePortalOffer: room.getThronePortalOffer(),
+      thronePortalLayout: room.getThronePortalLayout(),
+      coopMainArenaPortalPhase: room.getCoopMainArenaPortalPhase(),
     });
     
     // Notify other players
@@ -228,8 +231,13 @@ io.on('connection', (socket) => {
     const room = gameRooms.get(roomId);
     if (!room.getPlayer(socket.id)) return;
 
-    const activated = room.activateCombatArena(chosenCampType);
-    if (activated) {
+    let ok = false;
+    if (room.coopMainArenaPortalPhase) {
+      ok = room.resolveMainArenaPortal(chosenCampType);
+    } else {
+      ok = room.activateCombatArena(chosenCampType);
+    }
+    if (ok) {
       socket.emit('enter-combat-arena-success', { roomId, timestamp: Date.now() });
     }
   });

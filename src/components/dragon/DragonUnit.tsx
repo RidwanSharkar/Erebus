@@ -39,6 +39,18 @@ interface DragonUnitProps {
   playerLevel?: number;
   /** STORED CHARGE talent — Runeblade Charge spin + damage. */
   runebladeStoredCharge?: boolean;
+  /** Local: Windfury proc + Flurry heal after Runeblade LMB swing resolves hits. */
+  onRunebladePrimaryHits?: (enemiesHit: number) => void;
+  /** Local: live combo step from ControlSystem for Runeblade swings. */
+  runebladeComboStepResolver?: () => 1 | 2 | 3;
+  /** Local: EXECUTIONER additive base damage (consumed in Runeblade performSwingDamage). */
+  getRunebladeExecutionerFlatBonus?: () => number;
+  /** Local: Crusader talent — flat additive LMB damage while buff is active. */
+  getRunebladeCrusaderLmbFlatBonus?: () => number;
+  /** Local: Crusader — corrupted palette on Runeblade meshes (F aura VFX separate). */
+  crusaderBladeThemeActive?: boolean;
+  /** Local: Blizzard talent — storm visibility from ControlSystem (omit when talent not taken). */
+  getRunebladeBlizzardTalentActive?: () => boolean;
   onBowRelease?: (finalProgress: number, isPerfectShot?: boolean) => void;
   onScytheSwingComplete?: () => void;
   onSwordSwingComplete?: () => void;
@@ -184,6 +196,8 @@ export default function DragonUnit({
   isDeathGrasping = false,
   isWraithStriking = false,
   isCorruptedAuraActive = false,
+  crusaderBladeThemeActive = false,
+  getRunebladeBlizzardTalentActive,
   onSmiteComplete = () => {},
   onColossusStrikeComplete = () => {},
   onDeathGraspComplete = () => {},
@@ -223,6 +237,10 @@ export default function DragonUnit({
   hideBody = false,
   playerLevel = 1,
   runebladeStoredCharge = false,
+  onRunebladePrimaryHits,
+  runebladeComboStepResolver,
+  getRunebladeExecutionerFlatBonus,
+  getRunebladeCrusaderLmbFlatBonus,
   isLocalPlayer = false,
 }: DragonUnitProps) {
   const effectiveDeflectShield = deflectShieldActiveProp ?? isDeflecting;
@@ -280,6 +298,9 @@ export default function DragonUnit({
 
   // Weapon rendering logic
   const renderWeapon = () => {
+    if (currentWeapon === WeaponType.NONE || currentWeapon == null) {
+      return null;
+    }
     if (currentWeapon === WeaponType.BOW) {
       return (
         <EtherealBow
@@ -371,6 +392,7 @@ export default function DragonUnit({
           isDeathGrasping={isDeathGrasping}
           isWraithStriking={isWraithStriking}
           isCorruptedAuraActive={isCorruptedAuraActive}
+          crusaderBladeThemeActive={crusaderBladeThemeActive}
           isOathstriking={false}
           isCharging={isSwordCharging}
           isDeflecting={isDeflecting}
@@ -396,6 +418,11 @@ export default function DragonUnit({
           playerEntityId={entityId}
           realTimePositionRef={realTimePositionRef}
           storedCharge={runebladeStoredCharge}
+          onPrimaryHitsResolved={onRunebladePrimaryHits}
+          comboStepResolver={runebladeComboStepResolver}
+          getExecutionerFlatBonus={getRunebladeExecutionerFlatBonus}
+          getCrusaderLmbFlatBonus={getRunebladeCrusaderLmbFlatBonus}
+          getBlizzardTalentActive={getRunebladeBlizzardTalentActive}
         />
       );
     } else if (currentWeapon === WeaponType.SPEAR) {

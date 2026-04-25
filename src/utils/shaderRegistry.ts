@@ -355,10 +355,10 @@ class ShaderRegistry {
           vec2 center = gl_PointCoord - vec2(0.5);
           float dist = length(center);
           float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
-          vec3 deepRed = vec3(0.8, 0.1, 0.1);
-          vec3 brightRed = vec3(1.0, 0.3, 0.2);
-          vec3 hotCore = vec3(1.0, 0.6, 0.4);
-          vec3 color = mix(deepRed, brightRed, vHeat);
+          vec3 deepGold = vec3(0.6, 0.45, 0.05);
+          vec3 brightGold = vec3(1.0, 0.82, 0.25);
+          vec3 hotCore = vec3(1.0, 0.95, 0.55);
+          vec3 color = mix(deepGold, brightGold, vHeat);
           float core = 1.0 - smoothstep(0.0, 0.2, dist);
           color = mix(color, hotCore, core * vHeat * 0.4);
           gl_FragColor = vec4(color, alpha * vAlpha);

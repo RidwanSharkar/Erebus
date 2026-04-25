@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { AdditiveBlending, BackSide, Color, Group, MeshBasicMaterial, Vector3 } from '@/utils/three-exports';
 import CustomSky from './CustomSky';
-import type { RoomBorderTheme } from './SimpleBorderEffects';
+import type { RoomBorderTheme, SimpleBorderColorTheme } from './SimpleBorderEffects';
 import SimpleBorderEffects from './SimpleBorderEffects';
 import PerimeterCloudSystem from './PerimeterCloudSystem';
 import StylizedGrass from './StylizedGrass';
@@ -14,7 +14,6 @@ import EtherealBow from '@/components/weapons/EtherBow';
 import Scythe from '@/components/weapons/Scythe';
 import Sabres from '@/components/weapons/Sabres';
 import Runeblade from '@/components/weapons/Runeblade';
-import SpearComponent from '@/components/weapons/Spear';
 
 export const COOP_THRONE_ROOM_RADIUS = 16;
 
@@ -27,13 +26,12 @@ export type ThronePillarDef = {
   orbColorHex: string;
 };
 
-/** Five pillars in a ring — orb colours: green, yellow, red, blue, silver. */
+/** Four pillars in a ring — orb colours: green, yellow, red, blue. */
 export const THRONE_PILLAR_DEFS: ThronePillarDef[] = [
-  { position: [-6.0, 0, 1], orbColorHex: '#22c55e' },
-  { position: [-3.25, 0, -1.5], orbColorHex: '#eab308' },
-  { position: [0, 0, -3], orbColorHex: '#ef4444' },
-  { position: [3.25, 0, -1.5], orbColorHex: '#3b82f6' },
-  { position: [6.0, 0, 1], orbColorHex: '#d1d5db' },
+  { position: [-5.5, 0, 1], orbColorHex: '#22c55e' },
+  { position: [5.5, 0, 1], orbColorHex: '#eab308' },
+  { position: [-3.25, 0, -2], orbColorHex: '#ef4444' },
+  { position: [3.25, 0, -2], orbColorHex: '#3b82f6' },
 ];
 
 /** Stable reference for `PillarCollision` (avoid new array identity every React render). */
@@ -51,6 +49,9 @@ export function getThronePillarPhysicsObstacles(): Array<{ x: number; z: number;
 
 /** Inset from grass radius so portal / dummy sit just inside the rim. */
 export const THRONE_RIM_INSET = 1.25;
+
+/** Tile centers for outer cobble ring: half radial slab depth (~1) + gap inside fence. */
+const THRONE_PERIMETER_RING_CENTER_R = COOP_THRONE_ROOM_RADIUS - 1.35;
 
 const THRONE_PORTAL_Y = 1.15;
 const THRONE_PORTAL_Z = -(COOP_THRONE_ROOM_RADIUS - THRONE_RIM_INSET);
@@ -72,6 +73,23 @@ export const THRONE_PORTAL_POSITIONS: ReadonlyArray<{ readonly x: number; readon
     Object.freeze({ x: THRONE_PORTAL_HALF_SPACING_X, y: THRONE_PORTAL_Y, z: THRONE_PORTAL_Z }),
   ]);
 
+/** Main co-op combat map: wave-2 choice portals (north-ish; keep in sync with co-op layout). */
+export const MAIN_COMBAT_CHOICE_PORTAL_POSITIONS: ReadonlyArray<{
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}> = Object.freeze([
+  Object.freeze({ x: -14, y: THRONE_PORTAL_Y, z: 7 }),
+  Object.freeze({ x: 14, y: THRONE_PORTAL_Y, z: 7 }),
+]);
+
+/** Main map: boss-gate ring after wave 2. */
+export const MAIN_COMBAT_BOSS_PORTAL_POSITION = Object.freeze({
+  x: 0,
+  y: THRONE_PORTAL_Y,
+  z: 0,
+});
+
 export type ThroneMainRoomCamp = 'purple' | 'blue' | 'red' | 'green';
 
 const THRONE_PORTAL_COLOR_HEX: Record<ThroneMainRoomCamp, string> = {
@@ -81,27 +99,37 @@ const THRONE_PORTAL_COLOR_HEX: Record<ThroneMainRoomCamp, string> = {
   green: '#22c55e',
 };
 
-function normalizeThroneCamp(s: string | undefined): ThroneMainRoomCamp {
+export function normalizeThroneCamp(s: string | undefined): ThroneMainRoomCamp {
   const k = String(s || '').toLowerCase();
   if (k === 'purple' || k === 'blue' || k === 'red' || k === 'green') return k;
   return 'purple';
 }
 
-/** Stable server + client id for the co-op throne training dummy. */
+/** Must match `gameRoom.js` throne training dummy id. */
 export const THRONE_TRAINING_DUMMY_ID = 'throne-training-dummy';
 
-/**
- * North of center (portal is on the south rim). Slightly inside the north rim
- * (`COOP_THRONE_ROOM_RADIUS - THRONE_RIM_INSET`) so it stays on playable grass.
- * Keep in sync with backend/gameRoom.js `THRONE_TRAINING_DUMMY_Z`.
- */
-export const THRONE_TRAINING_DUMMY_SPAWN_Z = COOP_THRONE_ROOM_RADIUS - THRONE_RIM_INSET - 1;
+export type ThroneTrainingDummyVisual = 'knight';
 
-/** World-space foot position (XZ). */
+/**
+ * North rim, centered on X (mirrors portal pair on south rim). Keep in sync with `backend/gameRoom.js` `THRONE_TRAINING_DUMMY_*`.
+ */
+export const THRONE_TRAINING_DUMMY_SPAWN_Z = 10.75;
+
+/** Server spawn list: stable id, foot XZ, and which model the client draws. */
+export const THRONE_TRAINING_DUMMY_SPAWNS: ReadonlyArray<{
+  readonly id: string;
+  readonly x: number;
+  readonly z: number;
+  readonly dummyVisual: ThroneTrainingDummyVisual;
+}> = Object.freeze([
+  { id: THRONE_TRAINING_DUMMY_ID, x: 0, z: THRONE_TRAINING_DUMMY_SPAWN_Z, dummyVisual: 'knight' },
+]);
+
+/** World-space foot position of the training dummy. */
 export const THRONE_TRAINING_DUMMY_POSITION = Object.freeze({
-  x: 0,
+  x: THRONE_TRAINING_DUMMY_SPAWNS[0]!.x,
   y: 0,
-  z: THRONE_TRAINING_DUMMY_SPAWN_Z,
+  z: THRONE_TRAINING_DUMMY_SPAWNS[0]!.z,
 });
 
 /** Faces toward the portal (-Z). */
@@ -115,9 +143,9 @@ export const THRONE_WEAPON_INTERACT_RADIUS = 2.35;
 
 /** East rim — plain stone pillar for ability loadout (press X). XZ foot position. */
 export const THRONE_ABILITY_PEDESTAL_POSITION = Object.freeze({
-  x: COOP_THRONE_ROOM_RADIUS - THRONE_RIM_INSET - 0.65,
+  x: COOP_THRONE_ROOM_RADIUS - THRONE_RIM_INSET - 2.75,
   y: 0,
-  z: 0,
+  z: -1,
 });
 
 export const THRONE_ABILITY_PEDESTAL_INTERACT_RADIUS = THRONE_WEAPON_INTERACT_RADIUS;
@@ -126,7 +154,7 @@ export const THRONE_ABILITY_PEDESTAL_INTERACT_RADIUS = THRONE_WEAPON_INTERACT_RA
 export const THRONE_TALENT_PEDESTAL_POSITION = Object.freeze({
   x: THRONE_ABILITY_PEDESTAL_POSITION.x,
   y: 0,
-  z: THRONE_ABILITY_PEDESTAL_POSITION.z + 2.85,
+  z: THRONE_ABILITY_PEDESTAL_POSITION.z + 2,
 });
 
 export const THRONE_TALENT_PEDESTAL_INTERACT_RADIUS = THRONE_ABILITY_PEDESTAL_INTERACT_RADIUS;
@@ -168,7 +196,7 @@ export type ThroneWeaponInteractDef = {
 
 /**
  * World XZ of each throne weapon pedestal (same construction as `ThroneWeaponPedestals` slots).
- * Order: runeblade, sabres, scythe, spear, bow — pillar indices [1,2,3,4,0].
+ * Order: runeblade, sabres, scythe, bow — pillar indices [1,2,3,0].
  */
 export const THRONE_WEAPON_INTERACT_DEFS: ThroneWeaponInteractDef[] = (() => {
   const mk = (pillar: [number, number, number], weapon: WeaponType) => {
@@ -179,7 +207,6 @@ export const THRONE_WEAPON_INTERACT_DEFS: ThroneWeaponInteractDef[] = (() => {
     mk(THRONE_PILLAR_DEFS[1]!.position, WeaponType.RUNEBLADE),
     mk(THRONE_PILLAR_DEFS[2]!.position, WeaponType.SABRES),
     mk(THRONE_PILLAR_DEFS[3]!.position, WeaponType.SCYTHE),
-    mk(THRONE_PILLAR_DEFS[4]!.position, WeaponType.SPEAR),
     mk(THRONE_PILLAR_DEFS[0]!.position, WeaponType.BOW),
   ];
 })();
@@ -201,8 +228,6 @@ function ThroneWeaponPedestals() {
       { pillar: THRONE_PILLAR_DEFS[2]!.position, key: 'sabres' as const, phase: 1.1 },
       // SCYTHE — blue
       { pillar: THRONE_PILLAR_DEFS[3]!.position, key: 'scythe' as const, phase: 2.2 },
-      // SPEAR — silver
-      { pillar: THRONE_PILLAR_DEFS[4]!.position, key: 'spear' as const, phase: 0.7 },
       // BOW — green
       { pillar: THRONE_PILLAR_DEFS[0]!.position, key: 'bow' as const, phase: 1.8 },
     ],
@@ -214,7 +239,7 @@ function ThroneWeaponPedestals() {
       {slots.map((slot) => (
         <ThroneFloatingWeapon key={slot.key} xz={xzTowardRoomCenter(slot.pillar, THRONE_WEAPON_INSET)} phase={slot.phase}>
           {slot.key === 'bow' && (
-            <group scale={1.05} rotation={[1.08, 4.5, -0.2]} position={[1.25, 2, -1.20]}>
+            <group scale={1.05} rotation={[1.28, 4.75, -0.25]} position={[0.75, 2.2, -1.0]}>
               <EtherealBow
                 position={bowPos}
                 direction={bowDir}
@@ -226,7 +251,7 @@ function ThroneWeaponPedestals() {
             </group>
           )}
           {slot.key === 'scythe' && (
-            <group scale={1.12} rotation={[-0.3, 0.55, -0.05]} position={[0, 1.65, 0.25]}>
+            <group scale={1.12} rotation={[-0.3, 0.55, -0.05]} position={[-0, 1, -0]}>
               <group ref={scytheParentRef} />
               <Scythe
                 parentRef={scytheParentRef}
@@ -236,7 +261,7 @@ function ThroneWeaponPedestals() {
             </group>
           )}
           {slot.key === 'sabres' && (
-            <group scale={1.05} rotation={[0.06, -0, 0.04]} position={[0, 1.5, 0.5]}>
+            <group scale={1.05} rotation={[0.5, 0.5, -0.25]} position={[0, 1.35, -0]}>
               <Sabres
                 isSwinging={false}
                 onSwingComplete={() => {}}
@@ -250,23 +275,8 @@ function ThroneWeaponPedestals() {
               />
             </group>
           )}
-          {slot.key === 'spear' && (
-            <group scale={1.08} rotation={[4.875, 0.25, 0.25]} position={[0.5, 1.75, 0.75]}>
-              <SpearComponent
-                isSwinging={false}
-                isWhirlwinding={false}
-                currentSubclass={WeaponSubclass.STORM}
-                isThrowSpearCharging={false}
-                throwSpearChargeProgress={0}
-                isThrowSpearReleasing={false}
-                isSpearThrown={false}
-                isWhirlwindCharging={false}
-                whirlwindChargeProgress={0}
-              />
-            </group>
-          )}
           {slot.key === 'runeblade' && (
-            <group ref={runebladeAnchorRef} scale={1.05} rotation={[1, 11.5, 1.25]} position={[0.75, 1.45, 1.75]}>
+            <group ref={runebladeAnchorRef} scale={1.05} rotation={[0, 0, 5.5]} position={[-0.5, 0.35, 0.75]}>
               <Runeblade
                 isSwinging={false}
                 isSmiting={false}
@@ -325,7 +335,7 @@ function ThroneFloatingWeapon({
   );
 }
 
-function ThronePortalRing({ campType }: { campType: ThroneMainRoomCamp }) {
+export function ThronePortalRing({ campType }: { campType: ThroneMainRoomCamp }) {
   const ringRef = useRef<any>(null);
   const innerRef = useRef<any>(null);
 
@@ -369,8 +379,8 @@ interface ThroneRoomProps {
   /** Cooler fill light when the session is snow/blue; grass in this room stays green. */
   isSnowTheme?: boolean;
   /**
-   * Two distinct main-room archetypes for the side-by-side portals (west = index 0, east = index 1).
-   * From server `thronePortalOffer`; defaults used only for visuals if omitted or short.
+   * Two distinct main-room archetypes for the side-by-side portals on the south rim.
+   * From server `thronePortalOffer` (initial prep only).
    */
   thronePortalOffer?: readonly string[];
   /** Session camp archetype — drives perimeter border colours (same as main `Environment`). */
@@ -393,9 +403,12 @@ export default function ThroneRoom({ isSnowTheme, thronePortalOffer, campTypes =
     return 'red';
   }, [campTypes]);
 
+  const simpleBorderColorTheme: SimpleBorderColorTheme =
+    borderTheme === 'red' ? 'gold' : borderTheme;
+
   return (
     <group name="throne-room">
-      <CustomSky />
+      <CustomSky skyPreset="throneBlue" />
       <PerimeterCloudSystem radius={COOP_THRONE_ROOM_RADIUS} />
       <ambientLight intensity={0.14} />
       <hemisphereLight color={keyColor} groundColor="#1a1020" intensity={0.35} />
@@ -418,13 +431,17 @@ export default function ThroneRoom({ isSnowTheme, thronePortalOffer, campTypes =
         windStrength={0.2}
         isSnowTheme={false}
       />
-      <StoneGround variant="throne" />
+      <StoneGround
+        variant="throne"
+        roomTheme={borderTheme}
+        thronePerimeterRingRadius={THRONE_PERIMETER_RING_CENTER_R}
+      />
       <SimpleBorderEffects
         radius={COOP_THRONE_ROOM_RADIUS}
         count={30}
         enableParticles
         particleCount={60}
-        borderTheme={borderTheme}
+        borderTheme={simpleBorderColorTheme}
       />
       {THRONE_PILLAR_DEFS.map((def, i) => (
         <Pillar key={`throne-pillar-${i}`} position={def.position} orbColorHex={def.orbColorHex} />

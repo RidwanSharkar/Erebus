@@ -15,6 +15,7 @@ import {
   getDualCoilLateralVector,
   INFERNAL_SMITE_CRIT_CHANCE_ADD,
   INFESTED_COMBO_LIFESTEAL,
+  CHILL_SLOW_PER_STACK,
 } from '@/utils/talents';
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
 import { SummonedUnit } from '@/ecs/components/SummonedUnit';
@@ -45,6 +46,8 @@ interface DamageEvent {
   reaperCrossentropy?: boolean;
   /** Co-op routing: Infested Combo talent — with damageType `sword` / routed as `runeblade_combo`. */
   infestedCombo?: boolean;
+  /** Wyvern Bite — Barrage hit applies Concentrated Venom stack (co-op: server; local: ECS). */
+  wyvernBiteConcentratedVenom?: boolean;
 }
 
 interface HealEvent {
@@ -81,6 +84,7 @@ export class CombatSystem extends System {
       reaperCrossentropy?: boolean;
       staggerToAdd?: number;
       infestedCombo?: boolean;
+      wyvernBiteVenom?: boolean;
     },
   ) => void;
   
@@ -104,6 +108,11 @@ export class CombatSystem extends System {
   // Local player entity ID for distinguishing caster vs target damage numbers
   private localPlayerEntityId: number | null = null;
 
+  /** Runeblade LMB: armed from ControlSystem when cone preview hits; crit aggregated from resolved damage, flushed end of `processDamageQueue`. */
+  private runebladeLmbSfxArmed: { step: 1 | 2 | 3; position: Vector3 } | null = null;
+  private runebladeLmbSfxQueueProcessed = 0;
+  private runebladeLmbSfxQueueAnyCrit = false;
+
   constructor(world: World) {
     super();
     this.world = world;
@@ -125,6 +134,35 @@ export class CombatSystem extends System {
     if (damageType !== 'barrage') return undefined;
     const cs = (window as any).controlSystemRef?.current;
     return cs?.getBarrageCritDamageCalcOpts?.();
+  }
+
+  public armRunebladeLmbHitSound(comboStep: 1 | 2 | 3, position: Vector3): void {
+    this.runebladeLmbSfxArmed = { step: comboStep, position: position.clone() };
+  }
+
+  private maybeRecordRunebladeLmbSfx(damageType: string | undefined, damageResult: DamageResult): void {
+    if (damageType !== 'sword' || !this.runebladeLmbSfxArmed) return;
+    if (this.getCurrentWeapon() !== WeaponType.RUNEBLADE) return;
+    this.runebladeLmbSfxQueueAnyCrit = this.runebladeLmbSfxQueueAnyCrit || damageResult.isCritical;
+    this.runebladeLmbSfxQueueProcessed += 1;
+  }
+
+  private flushRunebladeLmbHitSoundIfReady(): void {
+    if (!this.runebladeLmbSfxArmed || this.runebladeLmbSfxQueueProcessed === 0) return;
+    const armed = this.runebladeLmbSfxArmed;
+    const anyCrit = this.runebladeLmbSfxQueueAnyCrit;
+    this.runebladeLmbSfxArmed = null;
+    this.runebladeLmbSfxQueueProcessed = 0;
+    this.runebladeLmbSfxQueueAnyCrit = false;
+    const audio = (window as any).controlSystemRef?.current?.getAudioSystem?.() as
+      | { playSwordSwingSound: (s: 1 | 2 | 3, p: Vector3) => void; playRunebladeSwingHitSound: (p: Vector3) => void }
+      | undefined;
+    if (!audio) return;
+    if (anyCrit) {
+      audio.playSwordSwingSound(armed.step, armed.position);
+    } else {
+      audio.playRunebladeSwingHitSound(armed.position);
+    }
   }
 
   // Throttled logging to reduce spam
@@ -173,6 +211,7 @@ export class CombatSystem extends System {
         infernoCrossentropy?: boolean;
         reaperCrossentropy?: boolean;
         staggerToAdd?: number;
+        wyvernBiteVenom?: boolean;
       },
     ) => void,
   ): void {
@@ -276,6 +315,14 @@ export class CombatSystem extends System {
         enemy.updateFreezeStatus(currentTime);
         enemy.updateStunStatus(currentTime);
         enemy.updateCorruptedStatus(currentTime);
+        enemy.updateChillStatus(currentTime);
+
+        if (!this.onEnemyDamageCallback) {
+          const cv = enemy.updateConcentratedVenomStatus(currentTime);
+          if (cv.shouldDealDamage && cv.damage > 0) {
+            this.queueDamage(entity, cv.damage, undefined, 'venom');
+          }
+        }
         
         // Synchronize enemy debuffs with movement component
         this.synchronizeEnemyDebuffsWithMovement(entity, enemy);
@@ -284,9 +331,12 @@ export class CombatSystem extends System {
   }
 
   private processDamageQueue(currentTime: number): void {
+    this.runebladeLmbSfxQueueProcessed = 0;
+    this.runebladeLmbSfxQueueAnyCrit = false;
     for (const damageEvent of this.damageQueue) {
       this.applyDamage(damageEvent, currentTime);
     }
+    this.flushRunebladeLmbHitSoundIfReady();
   }
 
   private processHealQueue(currentTime: number): void {
@@ -337,6 +387,7 @@ export class CombatSystem extends System {
       }
 
       const actualDamage = damageResult.damage;
+      this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
 
       // Get source player ID for proper kill attribution
       // Use the sourcePlayerId from damage event if available, otherwise extract from source entity
@@ -401,17 +452,26 @@ export class CombatSystem extends System {
                       damageType: 'projectile' as const,
                       staggerToAdd: damageEvent.staggerToAdd,
                     }
-                  : damageType === 'crossentropy'
+                  : damageType === 'barrage'
                     ? {
-                        damageType: 'crossentropy' as const,
-                        ...(damageEvent.crossentropyInferno === true
-                          ? { infernoCrossentropy: true as const }
-                          : {}),
-                        ...(damageEvent.reaperCrossentropy === true
-                          ? { reaperCrossentropy: true as const }
+                        damageType: 'barrage' as const,
+                        ...(damageEvent.wyvernBiteConcentratedVenom === true
+                          ? { wyvernBiteVenom: true as const }
                           : {}),
                       }
-                    : undefined;
+                    : damageType === 'crossentropy'
+                      ? {
+                          damageType: 'crossentropy' as const,
+                          ...(damageEvent.crossentropyInferno === true
+                            ? { infernoCrossentropy: true as const }
+                            : {}),
+                          ...(damageEvent.reaperCrossentropy === true
+                            ? { reaperCrossentropy: true as const }
+                            : {}),
+                        }
+                      : damageType === 'blizzard'
+                        ? { damageType: 'blizzard' as const }
+                        : undefined;
       this.onEnemyDamageCallback(serverEnemyId, actualDamage, finalSourcePlayerId, routeMeta);
 
       // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
@@ -558,6 +618,7 @@ export class CombatSystem extends System {
         finalSourcePlayerId,
         damageType
       );
+      this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
 
       // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
       if (source && currentWeapon === WeaponType.RUNEBLADE) {
@@ -654,6 +715,7 @@ export class CombatSystem extends System {
       }
 
       const actualDamage = damageResult.damage;
+      this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
 
       // Apply damage locally (pass entity so Health can use Shield component)
       const damageDealt = health.takeDamage(actualDamage, currentTime, target);
@@ -745,6 +807,7 @@ export class CombatSystem extends System {
       }
 
       this.onPillarDamageCallback(serverPillarId, actualDamage, finalSourcePlayerId);
+      this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
 
       // Create damage number for visual feedback
       const transform = target.getComponent(Transform);
@@ -813,6 +876,7 @@ export class CombatSystem extends System {
       }
 
       this.onTowerDamageCallback(serverTowerId, actualDamage, finalSourcePlayerId, damageType);
+      this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
 
       // Create damage number for visual feedback
       const transform = target.getComponent(Transform);
@@ -895,6 +959,7 @@ export class CombatSystem extends System {
         // console.log(`⚔️ Routing ${damageResult.damage} PVP ${damageType || 'damage'} to player ${target.id} through multiplayer server`);
       }
       this.onPlayerDamageCallback(target.id.toString(), damageResult.damage, damageType, damageResult.isCritical); // Send damage and critical flag, let receiver handle shields
+      this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
 
       // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
       if (source && currentWeapon === WeaponType.RUNEBLADE) {
@@ -981,6 +1046,7 @@ export class CombatSystem extends System {
       this.getBarrageCritCalcOpts(damageType),
     );
     const actualDamage = damageResult.damage;
+    this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
 
     // Apply damage (pass entity so Health can use Shield component)
     const damageDealt = health.takeDamage(actualDamage, currentTime, target);
@@ -1047,9 +1113,35 @@ export class CombatSystem extends System {
         }
 
       // Trigger damage effects
-      this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
+        this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
+
+      const enemyForVenom = target.getComponent(Enemy);
+      if (
+        enemyForVenom &&
+        damageType === 'barrage' &&
+        damageEvent.wyvernBiteConcentratedVenom === true
+      ) {
+        enemyForVenom.applyConcentratedVenomStack(currentTime);
+      }
+
+      const enemyForBlizzard = target.getComponent(Enemy);
+      if (
+        enemyForBlizzard &&
+        damageType === 'blizzard' &&
+        damageDealt &&
+        !this.onEnemyDamageCallback
+      ) {
+        const t = target.getComponent(Transform);
+        if (t) {
+          enemyForBlizzard.applyBlizzardChillStack(
+            currentTime,
+            target.id.toString(),
+            t.getWorldPosition().clone(),
+          );
+        }
+      }
     } else if (actualDamage > 0 && health.isAegisInvulnerable()) {
       const transform = target.getComponent(Transform);
       if (transform) {
@@ -1263,6 +1355,7 @@ export class CombatSystem extends System {
     crossentropyInferno?: boolean,
     reaperCrossentropy?: boolean,
     infestedCombo?: boolean,
+    wyvernBiteConcentratedVenom?: boolean,
   ): void {
     this.damageQueue.push({
       target,
@@ -1279,6 +1372,7 @@ export class CombatSystem extends System {
       crossentropyInferno,
       reaperCrossentropy,
       infestedCombo,
+      wyvernBiteConcentratedVenom,
     });
   }
 
@@ -1497,42 +1591,28 @@ export class CombatSystem extends System {
     const movement = entity.getComponent(Movement);
     if (!movement) return;
 
-    // Calculate the effective movement speed multiplier based on enemy debuffs
     let speedMultiplier = 1.0;
+    const nowSec = Date.now() / 1000;
 
-    // Apply corrupted debuff slow effect
     if (enemy.isCorrupted) {
-      const currentTime = Date.now() / 1000;
-      const elapsed = currentTime - enemy.corruptedStartTime;
-      
-      // Calculate current slow percentage based on gradual recovery
-      // Initial: 90% slow, recovers 10% per second
-      const currentSlowPercent = Math.max(0, enemy.corruptedInitialSlowPercent - (elapsed * enemy.corruptedRecoveryRate));
-      
-      // Apply the slow effect (reduce speed by the slow percentage)
-      speedMultiplier *= (1 - currentSlowPercent);
-      
-      // Debug logging for corrupted debuff (only log occasionally to avoid spam)
-      const logInterval = 1.0; // Log every second
-      if (elapsed % logInterval < 0.1) {
-        // console.log(`👻 Corrupted debuff on ${enemy.getDisplayName()}: ${(currentSlowPercent * 100).toFixed(1)}% slow (${(speedMultiplier * 100).toFixed(1)}% speed remaining)`);
-      }
+      const elapsed = nowSec - enemy.corruptedStartTime;
+      const currentSlowPercent = Math.max(
+        0,
+        enemy.corruptedInitialSlowPercent - elapsed * enemy.corruptedRecoveryRate,
+      );
+      speedMultiplier *= 1 - currentSlowPercent;
     }
 
-    // Only update the movement speed multiplier if it's different from the current value
-    // This prevents overriding other effects unnecessarily
+    if (
+      enemy.chillStacks > 0 &&
+      nowSec < enemy.chillExpiresAtSec &&
+      !enemy.isFrozen
+    ) {
+      speedMultiplier *= 1 - CHILL_SLOW_PER_STACK * Math.min(4, enemy.chillStacks);
+    }
+
     if (Math.abs(movement.movementSpeedMultiplier - speedMultiplier) > 0.01) {
       movement.movementSpeedMultiplier = speedMultiplier;
-    }
-
-    // Reset to normal speed if no debuffs are active
-    if (!enemy.isCorrupted && movement.movementSpeedMultiplier !== 1.0) {
-      // Only reset if no other systems are managing the speed multiplier
-      // Check if this might be from another debuff system (like Corrupted Aura)
-      const wasSlowedByOtherEffect = movement.movementSpeedMultiplier < 1.0;
-      if (!wasSlowedByOtherEffect || movement.movementSpeedMultiplier === 0.1) { // 0.1 is typical corrupted slow value
-        movement.movementSpeedMultiplier = 1.0;
-      }
     }
   }
 

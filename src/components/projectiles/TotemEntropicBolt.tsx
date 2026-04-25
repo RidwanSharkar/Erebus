@@ -18,11 +18,6 @@ export interface TotemEntropicBoltProps {
   to: Vector3;
   /** Called once when the bolt reaches `to`. */
   onImpact: (impactWorld: Vector3) => void;
-  /**
-   * When set, `endRef` is refreshed each frame so the bolt can follow a moving target.
-   * Return `null` to keep the last resolved end (e.g. target temporarily missing).
-   */
-  getImpactWorld?: () => Vector3 | null;
 }
 
 const AXIS_Y = new Vector3(0, 1, 0);
@@ -42,7 +37,7 @@ function alignBoltToDirection(group: Group | null, direction: Vector3) {
 }
 
 /** Simplified Entropic-style bolt using the same `EntropicBoltTrail` as `EntropicBolt`. */
-export default function TotemEntropicBolt({ from, to, onImpact, getImpactWorld }: TotemEntropicBoltProps) {
+export default function TotemEntropicBolt({ from, to, onImpact }: TotemEntropicBoltProps) {
   const boltRef = useRef<Group>(null);
   const orientRef = useRef<Group>(null);
   const coronaRef = useRef<Mesh>(null);
@@ -52,10 +47,8 @@ export default function TotemEntropicBolt({ from, to, onImpact, getImpactWorld }
   const elapsed = useRef(0);
   const doneRef = useRef(false);
   const [flightActive, setFlightActive] = useState(true);
-  const durationFlightRef = useRef(0.22);
-  const durationInitializedRef = useRef(false);
 
-  const durationStatic = useMemo(() => {
+  const duration = useMemo(() => {
     const d = from.distanceTo(to);
     return Math.max(0.11, Math.min(0.38, d / 34));
   }, [from, to]);
@@ -82,10 +75,6 @@ export default function TotemEntropicBolt({ from, to, onImpact, getImpactWorld }
   useEffect(() => {
     startRef.current.copy(from);
     endRef.current.copy(to);
-    elapsed.current = 0;
-    doneRef.current = false;
-    durationInitializedRef.current = false;
-    setFlightActive(true);
     flightDir.current.copy(endRef.current).sub(startRef.current);
     if (flightDir.current.lengthSq() < 1e-6) {
       flightDir.current.set(0, 1, 0);
@@ -101,32 +90,8 @@ export default function TotemEntropicBolt({ from, to, onImpact, getImpactWorld }
   useFrame((_, delta) => {
     if (doneRef.current || !boltRef.current) return;
 
-    if (getImpactWorld) {
-      const next = getImpactWorld();
-      if (next) {
-        endRef.current.copy(next);
-      }
-      if (!durationInitializedRef.current) {
-        durationInitializedRef.current = true;
-        const d = startRef.current.distanceTo(endRef.current);
-        durationFlightRef.current = Math.max(0.11, Math.min(0.38, d / 34));
-      }
-    }
-
     elapsed.current += delta;
-    const duration = getImpactWorld ? durationFlightRef.current : durationStatic;
     const t = Math.min(1, elapsed.current / duration);
-
-    if (getImpactWorld) {
-      flightDir.current.copy(endRef.current).sub(boltRef.current.position);
-    } else {
-      flightDir.current.copy(endRef.current).sub(startRef.current);
-    }
-    if (flightDir.current.lengthSq() < 1e-6) {
-      flightDir.current.set(0, 1, 0);
-    } else {
-      flightDir.current.normalize();
-    }
 
     alignBoltToDirection(orientRef.current, flightDir.current);
 
@@ -154,7 +119,6 @@ export default function TotemEntropicBolt({ from, to, onImpact, getImpactWorld }
             size={0.26}
             meshRef={boltRef}
             opacity={0.95}
-            flightDirectionRef={flightDir}
           />
 
           <group ref={boltRef} position={startRef.current.toArray()}>

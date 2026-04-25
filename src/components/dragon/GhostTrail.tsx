@@ -113,6 +113,8 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
     
     // Fallback to weapon type colors
     switch (weaponType) {
+      case WeaponType.NONE:
+        return '#8A2BE2';
       case WeaponType.SCYTHE:
         return '#17CE54'; // 39ff14
       case WeaponType.SWORD:

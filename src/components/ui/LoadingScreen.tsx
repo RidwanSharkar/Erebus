@@ -8,15 +8,15 @@ interface LoadingScreenProps {
 }
 
 const LOADING_TIPS = [
-  'Double-tap a direction to dash.',
-  'Destroy enemy Inhibitors to upgrade your Summoned Units into Elites.',
-  'Only Summoned Units can damage the opposing Tower — protect your minions.',
-  'Invest Skill Points wisely; each ability can be upgraded once.',
-  'Killing enemy players awards significantly more experience than minions.',
-  'Use the merchant to spend Essence on permanent combat upgrades.',
-  'Your Summoned Units spawn every 45 seconds — time your pushes with the wave.',
-  'Destroying all three enemy Inhibitors grants an elite minion wave advantage.',
-  'Watch your shield — it regenerates between fights, your health does not.',
+  'In the throne room, press X near a floating weapon to equip it and start your run.',
+  'After you pick a weapon, choose one of three random class boons — they stick with you for the run.',
+  'Set Q, E, and R at the east prep pillar; boons and talents stack as you progress.',
+  'Clear your first combat room, then pick one of three room boons tied to that room’s color.',
+  'Runeblade, Bow, and Scythe each have their own class pools and color-room offerings.',
+  'Double-tap WASD to dash; Executioner and some talents care whether it was a real dash.',
+  'Tempest Rounds and Icebeam are earned as boons or dev talents — not the passive row on Bow/Scythe.',
+  'Your shield recovers between fights; health does not — position and boons matter.',
+  'Step through portals when offered to push deeper; tougher rooms can mean stronger picks.',
 ];
 
 const RUNE_SYMBOLS = ['ᚠ', 'ᚢ', 'ᚦ', 'ᚨ', 'ᚱ', 'ᚲ', 'ᚷ', 'ᚹ', 'ᚺ', 'ᚾ', 'ᛁ', 'ᛃ', 'ᛇ', 'ᛈ', 'ᛉ', 'ᛊ', 'ᛏ', 'ᛒ', 'ᛖ', 'ᛗ', 'ᛚ', 'ᛜ', 'ᛞ', 'ᛟ'];

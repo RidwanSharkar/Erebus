@@ -80,7 +80,7 @@ const CRACK_FRAG = `
   }
 `;
 
-const CRACK_COUNT = 50;
+const CRACK_COUNT = 40;
 
 const GroundCracks: React.FC = () => {
   const meshRef = useRef<InstancedMesh>(null);
@@ -98,9 +98,9 @@ const GroundCracks: React.FC = () => {
 
   // Camp paths + open stone areas to target
   const CAMP_CENTERS: [number, number][] = [
-    [  0, -20 ],
-    [ 20,   7 ],
-    [-20,   7 ],
+    [  0, -15 ],
+    [ 15,   7 ],
+    [-15,   7 ],
     [  0,   0 ], // arena center
   ];
 

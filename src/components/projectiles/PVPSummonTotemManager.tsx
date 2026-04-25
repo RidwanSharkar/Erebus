@@ -137,6 +137,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
       onTotemComplete={(totemId) => {
       }}
       players={players}
+      enemyData={enemyData}
       localSocketId={localSocketId}
       onTotemFloatingDamage={onTotemFloatingDamage}
     />

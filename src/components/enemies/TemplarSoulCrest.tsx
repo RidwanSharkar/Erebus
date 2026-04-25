@@ -1,7 +1,7 @@
 'use client';
 
 import { useFrame } from '@react-three/fiber';
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { Shape, ExtrudeGeometry, Group, MeshStandardMaterial, DoubleSide } from 'three';
 import {
   mirrorWingEuler,
@@ -72,10 +72,8 @@ export default function TemplarSoulCrest({
     () => ({
       steps: 1,
       depth: 0.0001,
-      bevelEnabled: true,
-      bevelThickness: 0.026,
-      bevelSize: 0.032,
-      bevelSegments: 1,
+      // Bevel was ~200× larger than depth; Three's bevel pass can OOM. Keep paper-thin extrusion, no bevel.
+      bevelEnabled: false,
       curveSegments: 16,
     }),
     []
@@ -87,6 +85,13 @@ export default function TemplarSoulCrest({
     }),
     [bladeShape, bladeExtrudeSettings]
   );
+
+  useEffect(() => {
+    return () => {
+      geometries.blade.dispose();
+      materials.bladeCore.dispose();
+    };
+  }, [geometries.blade, materials.bladeCore]);
 
   useFrame(({ clock }) => {
     const t = clock.getElapsedTime() + phaseOffset;
@@ -125,13 +130,13 @@ export default function TemplarSoulCrest({
     return (
       <group
         ref={isLeft ? leftWingRef : rightWingRef}
-        position={[isLeft ? 0.25 * wingSpread : -0.25 * wingSpread, 0.675, 0.155]}
+        position={[isLeft ? 0.25 * wingSpread : -0.25 * wingSpread, 0.675, -0.455]}
         rotation={anchorRot}
       >
         <group
-          position={[isLeft ? 1.125 * wingSpread : -1.125 * wingSpread, -0.1, 0.15]}
+          position={[isLeft ? 1.125 * wingSpread : -1.125 * wingSpread, -0.3, 0.15]}
           rotation={bladeRot}
-          scale={[0.75, 0.375, 0.375]}
+          scale={[0.75, -0.375, 0.375]}
         >
           <mesh geometry={geometries.blade} material={materials.bladeCore} />
         </group>

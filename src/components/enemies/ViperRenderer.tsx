@@ -46,10 +46,13 @@ export default function ViperRenderer({
   const [attackKey,   setAttackKey]   = useState(0);
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking,   setIsWalking]   = useState(false);
+  const [isImpacting,  setIsImpacting]  = useState(false);
+  const [impactPlayKey, setImpactPlayKey] = useState(0);
 
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
   const isAttackingRef = useRef(false);
+  const prevHealthRef  = useRef(health);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer     = useRef(0);
@@ -89,6 +92,30 @@ export default function ViperRenderer({
   useEffect(() => {
     targetRotation.current = rotation;
   }, [rotation]);
+
+  const handleImpactFinished = useCallback(() => {
+    setIsImpacting(false);
+  }, []);
+
+  // Hit-react: health drop while idle (not walk / bow attack).
+  useEffect(() => {
+    if (
+      health < prevHealthRef.current &&
+      !isDying &&
+      !isWalking &&
+      !isAttacking
+    ) {
+      setIsImpacting(true);
+      setImpactPlayKey(k => k + 1);
+    }
+    prevHealthRef.current = health;
+  }, [health, isDying, isWalking, isAttacking]);
+
+  useEffect(() => {
+    if (isWalking || isAttacking) {
+      setIsImpacting(false);
+    }
+  }, [isWalking, isAttacking]);
 
   // Listen for the server's attack telegraph to drive the bow-draw animation.
   useEffect(() => {
@@ -141,7 +168,14 @@ export default function ViperRenderer({
 
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
-      <ViperModel isWalking={isWalking} attackKey={attackKey} isDying={isDying} />
+      <ViperModel
+        isWalking={isWalking}
+        attackKey={attackKey}
+        isDying={isDying}
+        isImpacting={isImpacting}
+        impactPlayKey={impactPlayKey}
+        onImpactFinished={handleImpactFinished}
+      />
       {!isDying && <CubeSoulEffect color="green" posY={2.5} />}
 
       {/* Billboard health bar */}

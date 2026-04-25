@@ -1,8 +1,8 @@
 // Stat System for player character progression
-// STRENGTH: -20% damage taken per point
-// STAMINA:  +50 max health per point
-// AGILITY:  +1% crit chance and +0.10x crit damage multiplier per point
-// INTELLECT: +50 mana pool and +1/s mana regen per point
+// STRENGTH: +5% critical strike damage per point (additive crit multiplier)
+// STAMINA:  +10 max health per point
+// AGILITY:  +1% crit chance per point (no crit damage from Agility)
+// INTELLECT: +2 max shield capacity per point (base max shield 25)
 
 export type StatKey = 'strength' | 'stamina' | 'agility' | 'intellect';
 
@@ -22,13 +22,11 @@ export class StatSystem {
   private static readonly INITIAL_STAT_POINTS = 5;
   private static readonly STAT_POINTS_PER_LEVEL = 1;
 
-  // Per-stat effect constants
-  static readonly STRENGTH_DAMAGE_REDUCTION_PER_POINT = 0.10;
-  static readonly STAMINA_HEALTH_PER_POINT = 25;
-  static readonly AGILITY_CRIT_CHANCE_PER_POINT = 0.02;
-  static readonly AGILITY_CRIT_DAMAGE_PER_POINT = 0.10;
-  static readonly INTELLECT_MANA_PER_POINT = 30;
-  static readonly INTELLECT_MANA_REGEN_PER_POINT = 0.25; // mana per second
+  static readonly BASE_MAX_SHIELD = 25;
+  static readonly STRENGTH_CRIT_DAMAGE_MULT_PER_POINT = 0.05;
+  static readonly STAMINA_HEALTH_PER_POINT = 10;
+  static readonly AGILITY_CRIT_CHANCE_PER_POINT = 0.01;
+  static readonly INTELLECT_MAX_SHIELD_PER_POINT = 2;
 
   static getInitialStatPointData(): StatPointData {
     return {
@@ -70,11 +68,6 @@ export class StatSystem {
 
   // ── Derived stat helpers ──────────────────────────────────────────────────
 
-  /** Fraction of incoming damage to absorb (e.g. 0.40 = 40% reduction, capped at 80%) */
-  static getDamageReduction(stats: PlayerStats): number {
-    return Math.min(stats.strength * StatSystem.STRENGTH_DAMAGE_REDUCTION_PER_POINT, 0.80);
-  }
-
   /** Bonus flat HP from Stamina */
   static getBonusMaxHealth(stats: PlayerStats): number {
     return stats.stamina * StatSystem.STAMINA_HEALTH_PER_POINT;
@@ -85,22 +78,14 @@ export class StatSystem {
     return stats.agility * StatSystem.AGILITY_CRIT_CHANCE_PER_POINT;
   }
 
-  /** Additional crit damage multiplier from Agility (e.g. 3 Agility → +0.30x on top of base 2x) */
-  static getCritDamageBonus(stats: PlayerStats): number {
-    return stats.agility * StatSystem.AGILITY_CRIT_DAMAGE_PER_POINT;
+  /** Additive crit damage multiplier from Strength (e.g. 2 Strength → +0.10 on top of base 2x) */
+  static getStrengthCritDamageMultiplierBonus(stats: PlayerStats): number {
+    return stats.strength * StatSystem.STRENGTH_CRIT_DAMAGE_MULT_PER_POINT;
   }
 
-  /** Bonus flat mana from Intellect */
-  static getBonusMana(stats: PlayerStats): number {
-    return stats.intellect * StatSystem.INTELLECT_MANA_PER_POINT;
-  }
-
-  /**
-   * Extra mana restored per 500 ms regen tick from Intellect.
-   * Base regen is applied every 500 ms; 1 Intellect point = +1/s = +0.5 per tick.
-   */
-  static getManaRegenBonusPerTick(stats: PlayerStats): number {
-    return stats.intellect * (StatSystem.INTELLECT_MANA_REGEN_PER_POINT / 2);
+  /** Max shield from Intellect only (excludes items like Warding Shield). */
+  static getMaxShieldFromStats(stats: PlayerStats): number {
+    return StatSystem.BASE_MAX_SHIELD + stats.intellect * StatSystem.INTELLECT_MAX_SHIELD_PER_POINT;
   }
 
   // ── Display helpers ──────────────────────────────────────────────────────
@@ -127,20 +112,20 @@ export class StatSystem {
 
   static getStatColor(stat: StatKey): string {
     const colors: Record<StatKey, string> = {
-      strength: '#f97316',
-      stamina: '#ef4444',
-      agility: '#eab308',
-      intellect: '#8b5cf6'
+      strength: '#ef4444',
+      stamina: '#22c55e',
+      agility: '#3b82f6',
+      intellect: '#a855f7'
     };
     return colors[stat];
   }
 
   static getStatDescription(stat: StatKey): string {
     const descs: Record<StatKey, string> = {
-      strength: '-10% damage taken per point',
-      stamina: '+50 max health per point',
-      agility: '+1% crit chance & +10% crit damage per point',
-      intellect: '+50 mana pool & +1/s mana regen per point'
+      strength: '+5% critical strike damage per point',
+      stamina: '+10 max health per point',
+      agility: '+1% crit chance per point',
+      intellect: '+2 max shield per point (base 25)'
     };
     return descs[stat];
   }
@@ -149,13 +134,13 @@ export class StatSystem {
     if (value === 0) return 'No bonus';
     switch (stat) {
       case 'strength':
-        return `-${Math.round(StatSystem.getDamageReduction({ strength: value, stamina: 0, agility: 0, intellect: 0 }) * 100)}% damage taken`;
+        return `+${Math.round(StatSystem.getStrengthCritDamageMultiplierBonus({ strength: value, stamina: 0, agility: 0, intellect: 0 }) * 100)}% crit damage`;
       case 'stamina':
         return `+${StatSystem.getBonusMaxHealth({ strength: 0, stamina: value, agility: 0, intellect: 0 })} max HP`;
       case 'agility':
-        return `+${value}% crit chance, +${Math.round(StatSystem.getCritDamageBonus({ strength: 0, stamina: 0, agility: value, intellect: 0 }) * 100)}% crit dmg`;
+        return `+${value}% crit chance`;
       case 'intellect':
-        return `+${StatSystem.getBonusMana({ strength: 0, stamina: 0, agility: 0, intellect: value })} mana, +${value}/s regen`;
+        return `+${value * StatSystem.INTELLECT_MAX_SHIELD_PER_POINT} max shield`;
       default:
         return '';
     }

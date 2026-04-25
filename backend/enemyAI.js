@@ -1,23 +1,50 @@
 const { WALL_SEGMENTS } = require('./wallData');
+const { rotationYTowardEntry } = require('./coopArenaLayout');
 
 // ─── Navigation grid constants ────────────────────────────────────────────────
 // The grid covers the playable area with 1-unit cells. Walls are "inflated" by
 // NAV_ENEMY_RADIUS so that enemy centres always stay clear of geometry.
 const NAV_MIN_X       = -32;
 const NAV_MIN_Z       = -32;
-const NAV_CELL_SIZE   = 1.0;
+const NAV_CELL_SIZE   = 0.25;
 const NAV_COLS        = 64;
 const NAV_ROWS        = 64;
-const NAV_ENEMY_RADIUS = 0.65;  // slightly wider than collision radius
-const NAV_WAYPOINT_REACH = 1.2; // advance to next waypoint when this close
-const NAV_RECOMPUTE_DIST = 2.5; // recompute path when target moves this far
+const NAV_ENEMY_RADIUS = 0.2;  // slightly wider than collision radius
+const NAV_WAYPOINT_REACH = 0.2; // advance to next waypoint when this close
+const NAV_RECOMPUTE_DIST = 0.5; // recompute path when target moves this far
 
 // Melee units advance until this much *inside* max swing range so the damage
 // check at swing end is harder to escape with a small back-step.
 const MELEE_CLOSE_INSET = 0.35;
 
+// Knight / templar / ghoul / martyr: ring goals + peer separation (radii match client CoopGameScene hit spheres).
+const MELEE_SURROUND_TYPES = new Set(['knight', 'templar', 'ghoul', 'martyr']);
+const MELEE_PEER_SEP_PADDING = 0.05;
+// Tight ring: closer to player than ~0.82×attackRange so units path/hug obstacles less awkwardly.
+const MELEE_SURROUND_STANDOFF_FRAC = 0.18;
+const MELEE_SURROUND_STANDOFF_MIN = 0.3;
+const MELEE_SURROUND_STANDOFF_MARGIN = 0.08; 
+
 // Leash to current target after the enemy has taken player damage (arena ~64×64).
 const DAMAGE_THREAT_LEASH = 90;
+
+// Co-op Viper: client projectile + ground line use this (see ViperArrowProjectile, CoopGameScene).
+const VIPER_ARROW_MAX_RANGE = 18;
+
+// Templar Blink Smite: first cast 15s after aggro, then every 15s; windup 1s then AOE in front of templar
+const TEMPLAR_BLINK_SMITE_INTERVAL_MS = 15000;
+const TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS = 1000;
+const TEMPLAR_BLINK_SMITE_IMPACT_OFFSET = 2.25;
+const TEMPLAR_BLINK_SMITE_DAMAGE = 100;
+const TEMPLAR_BLINK_SMITE_RADIUS = 3.0;
+const TEMPLAR_BLINK_SMITE_ABILITY_LOCK_MS = 2500; // no move/melee during windup + post-strike
+const TELEPORT_BEHIND_DISTANCE = 2.5; // same as boss blink
+
+// Martyr: self-detonation (matches client AOE)
+const MARTYR_MELEE_RANGE = 1.4;
+const MARTYR_DETONATION_RADIUS = 6;
+const MARTYR_DETONATION_DAMAGE = 200;
+const MARTYR_DETONATION_DELAY_MS = 2000;
 
 class EnemyAI {
   constructor(roomId, io) {
@@ -64,6 +91,7 @@ class EnemyAI {
     // Warlock ability cooldown tracking
     this.warlockBlinkCooldown  = new Map(); // enemyId -> lastBlinkTime
     this.warlockLaunchCooldown = new Map(); // enemyId -> lastLaunchTime
+    this.warlockMeteorCooldown = new Map(); // enemyId -> lastMeteorTime (purple warlock meteor swarm)
 
     // Shade blink+attack cooldown tracking (4-second cooldown)
     this.shadeBlinkCooldown = new Map(); // enemyId -> lastBlinkTime
@@ -74,6 +102,7 @@ class EnemyAI {
     // Weaver ability cooldown tracking
     this.weaverHealCooldown   = new Map(); // enemyId -> lastHealTime
     this.weaverSummonCooldown = new Map(); // enemyId -> lastSummonTime
+    this.weaverLightningCooldown = new Map(); // enemyId -> lastLightningTime (blue weaver)
 
     // Weaver summoned ghoul tracking (1 ghoul per weaver at a time)
     this.weaverSummonedGhouls = new Map(); // weaverId -> ghoulId | null
@@ -92,12 +121,12 @@ class EnemyAI {
     // Each soul type has one unique ability; all share this single cooldown map.
     this.knightAbilityCooldown = new Map(); // enemyId -> lastAbilityTime
 
-    // Titan circular-path tracking
-    this.titanAngle = new Map(); // enemyId -> current angle in radians
-
     // Navigation / pathfinding
     this.navGrid    = null;      // Uint8Array built once on first use
     this.enemyPaths = new Map(); // enemyId -> { waypoints, wpIndex, lastTargetPos }
+
+    // Templar Blink Smite: timestamp when next cast is allowed (per templar; initialized on first aggro)
+    this.templarBlinkSmiteNextAt = new Map();
   }
 
   setRoom(room) {
@@ -132,17 +161,19 @@ class EnemyAI {
     this.bossBladeEnhanced.clear();
     this.warlockBlinkCooldown.clear();
     this.warlockLaunchCooldown.clear();
+    this.warlockMeteorCooldown.clear();
     this.shadeBlinkCooldown.clear();
     this.viperAttackCooldown.clear();
     this.weaverHealCooldown.clear();
     this.weaverSummonCooldown.clear();
+    this.weaverLightningCooldown.clear();
     this.weaverSummonedGhouls.clear();
     this.playerZombiesByOwner.clear();
     this.ghoulAttackCooldown.clear();
     this.meleeLockUntil.clear();
     this.knightAbilityCooldown.clear();
-    this.titanAngle.clear();
     this.enemyPaths.clear();
+    this.templarBlinkSmiteNextAt.clear();
   }
 
   updateAI() {
@@ -214,6 +245,11 @@ class EnemyAI {
       return;
     }
 
+    if (enemy.type === 'martyr') {
+      this.updateMartyrAI(enemy, players);
+      return;
+    }
+
     // Player-raised zombies (INFESTED STRIKE)
     if (enemy.type === 'player-zombie') {
       this.updatePlayerZombieAI(enemy, players);
@@ -223,12 +259,6 @@ class EnemyAI {
     // Special handling for ghouls (weaver summons)
     if (enemy.type === 'ghoul') {
       this.updateGhoulAI(enemy, players);
-      return;
-    }
-
-    // Special handling for the Titan — always roaming in a circle, no aggro yet
-    if (enemy.type === 'titan') {
-      this.updateTitanAI(enemy);
       return;
     }
 
@@ -401,7 +431,7 @@ class EnemyAI {
     const attackRange = 2.6; // Slightly longer reach than skeleton (shield bash + sword)
     const meleePressDistance = attackRange - MELEE_CLOSE_INSET;
     const attackCooldown = knight.attackCooldown ?? 2500; // Soul-type override, default 2.5s
-    const aggroRadius = 5;   // Knight idles until a player steps within this range
+    const aggroRadius = 10;   // Knight idles until a player steps within this range
 
     // Once aggroed, stay aggroed until the player gets very far (leash at 3× aggro radius)
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
@@ -468,10 +498,10 @@ class EnemyAI {
           }
         }, 1000);
       } else if (distance > meleePressDistance) {
-        this.moveEnemyTowardsTarget(knight, targetPlayer);
+        this.moveEnemyTowardsTarget(knight, targetPlayer, { meleeSurroundAttackRange: attackRange });
       }
     } else {
-      this.moveEnemyTowardsTarget(knight, targetPlayer);
+      this.moveEnemyTowardsTarget(knight, targetPlayer, { meleeSurroundAttackRange: attackRange });
     }
   }
 
@@ -538,10 +568,10 @@ class EnemyAI {
         return true;
       }
 
-      // ── Blue: Frost Ray — ranged slow + 30 dmg (10 s CD, 9-unit range) ──────
+      // ── Blue: Frost Ray — ranged slow + 30 dmg (14 s CD, extended range) ──────
       case 'blue': {
         const CD = 14000;
-        const FROST_RANGE = 9.0;
+        const FROST_RANGE = 13.0;
         if (now - lastAbility < CD) return false;
         if (distance > FROST_RANGE) return false;
 
@@ -637,49 +667,99 @@ class EnemyAI {
 
   // Blue Knight — Frost Ray (30 dmg + 50% slow for 5 s)
   knightCastFrost(knight, targetPlayer) {
+    const FROST_CAST_LAUNCH_MS = 1000; // half of 2 s cast; matches client FROST_DURATION
+    const FROST_PROJECTILE_TRAVEL_MS = 420;
+    const FROST_HIT_RADIUS = 1.35; // XZ — dash out of this to dodge
+
+    const fdx = targetPlayer.position.x - knight.position.x;
+    const fdz = targetPlayer.position.z - knight.position.z;
+    if (fdx !== 0 || fdz !== 0) {
+      knight.rotation = Math.atan2(fdx, fdz);
+    }
+
     if (this.io) {
+      this.io.to(this.roomId).emit('enemy-moved', {
+        enemyId: knight.id,
+        position: knight.position,
+        rotation: knight.rotation,
+        timestamp: Date.now(),
+      });
       this.io.to(this.roomId).emit('knight-frost-telegraph', {
         knightId: knight.id,
         targetPlayerId: targetPlayer.id,
-        startPosition: {
-          x: knight.position.x,
-          y: knight.position.y + 1.5, // torso height
-          z: knight.position.z,
-        },
-        targetPosition: {
-          x: targetPlayer.position.x,
-          y: targetPlayer.position.y + 1.0,
-          z: targetPlayer.position.z,
-        },
         timestamp: Date.now(),
       });
     }
     console.log(`🔵❄️ Blue Knight ${knight.id} casting Frost Ray at player ${targetPlayer.id}!`);
 
-    // Hit lands after the cast animation completes (~1 400 ms)
+    const targetId = targetPlayer.id;
+    const knightId = knight.id;
+
     setTimeout(() => {
-      if (knight.isDying || !this.room?.getGameStarted()) return;
+      if (!this.room?.getGameStarted()) return;
+      const liveKnight = this.room?.getEnemy(knightId);
+      if (!liveKnight || liveKnight.isDying) return;
+
       const currentPlayers = this.room?.getPlayers();
       if (!currentPlayers) return;
-      const currentTarget = currentPlayers.find(p => p.id === targetPlayer.id);
-      if (!currentTarget || currentTarget.health <= 0) return;
+      const launchTarget = currentPlayers.find(p => p.id === targetId);
+      if (!launchTarget || launchTarget.health <= 0) return;
+
+      const startPosition = {
+        x: liveKnight.position.x,
+        y: liveKnight.position.y + 1.5,
+        z: liveKnight.position.z,
+      };
+      const endPosition = {
+        x: launchTarget.position.x,
+        y: launchTarget.position.y + 1.0,
+        z: launchTarget.position.z,
+      };
+      const snapX = endPosition.x;
+      const snapZ = endPosition.z;
 
       if (this.io) {
-        this.io.to(this.roomId).emit('knight-frost', {
-          knightId: knight.id,
-          targetPlayerId: currentTarget.id,
-          damage: 30,
-          slowDuration: 5000, // 5 s at 50% speed
-          targetPosition: {
-            x: currentTarget.position.x,
-            y: currentTarget.position.y + 1.0,
-            z: currentTarget.position.z,
-          },
+        this.io.to(this.roomId).emit('knight-frost-projectile', {
+          knightId,
+          startPosition,
+          endPosition,
+          travelMs: FROST_PROJECTILE_TRAVEL_MS,
           timestamp: Date.now(),
         });
       }
-      console.log(`🔵❄️ Blue Knight ${knight.id} Frost Ray hit player ${currentTarget.id} for 30 dmg + slow!`);
-    }, 1400);
+
+      setTimeout(() => {
+        if (!this.room?.getGameStarted()) return;
+        const players = this.room?.getPlayers();
+        if (!players) return;
+        const currentTarget = players.find(p => p.id === targetId);
+        if (!currentTarget || currentTarget.health <= 0) return;
+
+        const dx = currentTarget.position.x - snapX;
+        const dz = currentTarget.position.z - snapZ;
+        const distXZ = Math.sqrt(dx * dx + dz * dz);
+
+        if (distXZ <= FROST_HIT_RADIUS) {
+          if (this.io) {
+            this.io.to(this.roomId).emit('knight-frost', {
+              knightId,
+              targetPlayerId: currentTarget.id,
+              damage: 30,
+              slowDuration: 5000,
+              targetPosition: {
+                x: currentTarget.position.x,
+                y: currentTarget.position.y + 1.0,
+                z: currentTarget.position.z,
+              },
+              timestamp: Date.now(),
+            });
+          }
+          console.log(`🔵❄️ Blue Knight ${knightId} Frost Ray hit player ${currentTarget.id} for 30 dmg + slow!`);
+        } else {
+          console.log(`🔵 Blue Knight ${knightId} Frost Ray missed — player dodged!`);
+        }
+      }, FROST_PROJECTILE_TRAVEL_MS);
+    }, FROST_CAST_LAUNCH_MS);
   }
 
   // ─── Shade AI ────────────────────────────────────────────────────────────────
@@ -706,7 +786,7 @@ class EnemyAI {
 
     const distance = this.calculateDistance(shade.position, targetPlayer.position);
     const attackRange = 12.0;  // ranged throw
-    const aggroRadius = 6;
+    const aggroRadius = 10;
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(shade.position, targetPlayer.position)) {
@@ -775,13 +855,9 @@ class EnemyAI {
     let rawX = shade.position.x + blinkX * blinkDist;
     let rawZ = shade.position.z + blinkZ * blinkDist;
 
-    // Clamp end position inside the circular arena boundary
-    const rawDist = Math.sqrt(rawX * rawX + rawZ * rawZ);
-    if (rawDist > MAP_RADIUS) {
-      const clampScale = MAP_RADIUS / rawDist;
-      rawX *= clampScale;
-      rawZ *= clampScale;
-    }
+    // Clamp inside the square arena (inner castle wall faces at ±MAP_RADIUS)
+    rawX = Math.max(-MAP_RADIUS, Math.min(MAP_RADIUS, rawX));
+    rawZ = Math.max(-MAP_RADIUS, Math.min(MAP_RADIUS, rawZ));
 
     const endPosition = {
       x: rawX,
@@ -900,18 +976,33 @@ class EnemyAI {
     }
 
     const now = Date.now();
+    const isPurpleWarlock = warlock.soulType === 'purple';
 
-    // ── Blink (5-second cooldown) ─────────────────────────────────────────────
-    // Teleports 5 units closer to the target; plays blink animation on clients.
-    const blinkCooldown = 8000;
-    const lastBlinkTime = this.warlockBlinkCooldown.get(warlock.id) || 0;
+    if (isPurpleWarlock) {
+      // Meteor Swarm: 10s between casts; first tick after aggro seeds cooldown so the first
+      // volley happens 10s after pull (matches planned pacing vs instant first cast).
+      if (!this.warlockMeteorCooldown.has(warlock.id)) {
+        this.warlockMeteorCooldown.set(warlock.id, now);
+      }
+      const lastMeteorTime = this.warlockMeteorCooldown.get(warlock.id) || 0;
+      const meteorCooldown = 10000;
+      if (players.length > 0 && now - lastMeteorTime >= meteorCooldown) {
+        this.warlockMeteorCooldown.set(warlock.id, now);
+        this.warlockCastMeteor(warlock, players);
+      }
+    } else {
+      // ── Blink (8-second cooldown) ───────────────────────────────────────────
+      // Teleports 5 units closer to the target; plays blink animation on clients.
+      const blinkCooldown = 8000;
+      const lastBlinkTime = this.warlockBlinkCooldown.get(warlock.id) || 0;
 
-    if (now - lastBlinkTime >= blinkCooldown && distance > 3) {
-      this.warlockBlinkCooldown.set(warlock.id, now);
-      this.warlockCastBlink(warlock, targetPlayer);
+      if (now - lastBlinkTime >= blinkCooldown && distance > 3) {
+        this.warlockBlinkCooldown.set(warlock.id, now);
+        this.warlockCastBlink(warlock, targetPlayer);
+      }
     }
 
-    // ── Launch (6-second cooldown) ───────────────────────────────────────────
+    // ── Launch (7-second cooldown) — red and purple ───────────────────────────
     // Fires a large chaotic projectile at the target's current position.
     const launchRange    = 12.0; // Slightly more than shade attack range (9.0)
     const launchCooldown = 7000;
@@ -994,6 +1085,32 @@ class EnemyAI {
     console.log(`🔮 Warlock ${warlock.id} launching chaotic orb at player ${targetPlayer.id}!`);
   }
 
+  /** Purple warlock: same meteor cast as the boss (client uses boss-meteor-cast + Meteor). */
+  warlockCastMeteor(warlock, players) {
+    const targetPositions = players.map(player => ({
+      x: player.position.x,
+      y: player.position.y,
+      z: player.position.z
+    }));
+
+    if (targetPositions.length === 0) {
+      return;
+    }
+
+    const meteorId = `meteor-${warlock.id}-${Date.now()}`;
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('boss-meteor-cast', {
+        bossId: warlock.id,
+        meteorId: meteorId,
+        targetPositions: targetPositions,
+        timestamp: Date.now()
+      });
+    }
+
+    console.log(`☄️ Warlock ${warlock.id} casting meteor swarm at ${targetPositions.length} player position(s)`);
+  }
+
   // ─── Templar AI ──────────────────────────────────────────────────────────────
 
   updateTemplarAI(templar, players) {
@@ -1019,7 +1136,7 @@ class EnemyAI {
     const distance      = this.calculateDistance(templar.position, targetPlayer.position);
     const attackRange   = 2.6;
     const attackCooldown = templar.attackCooldown ?? 2000; // Slightly faster than knight (2500 ms)
-    const aggroRadius   = 6;
+    const aggroRadius   = 10;
     const leashRadius   = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(templar.position, targetPlayer.position)) {
@@ -1032,6 +1149,18 @@ class EnemyAI {
     if (!aggroData.isAggroed) return;
 
     const now = Date.now();
+
+    // Blink Smite: first cast 15s after first aggro, then every 15s (before melee lock gate)
+    if (!templar.isDying) {
+      if (!this.templarBlinkSmiteNextAt.has(templar.id)) {
+        this.templarBlinkSmiteNextAt.set(templar.id, now + TEMPLAR_BLINK_SMITE_INTERVAL_MS);
+      } else if (now >= this.templarBlinkSmiteNextAt.get(templar.id)) {
+        this.templarCastBlinkSmite(templar, targetPlayer);
+        this.templarBlinkSmiteNextAt.set(templar.id, now + TEMPLAR_BLINK_SMITE_INTERVAL_MS);
+        return;
+      }
+    }
+
     const lockUntil = this.meleeLockUntil.get(templar.id) || 0;
     if (now < lockUntil) return;
 
@@ -1067,10 +1196,10 @@ class EnemyAI {
           }
         }, 1000);
       } else if (distance > meleePressDistance) {
-        this.moveEnemyTowardsTarget(templar, targetPlayer);
+        this.moveEnemyTowardsTarget(templar, targetPlayer, { meleeSurroundAttackRange: attackRange });
       }
     } else {
-      this.moveEnemyTowardsTarget(templar, targetPlayer);
+      this.moveEnemyTowardsTarget(templar, targetPlayer, { meleeSurroundAttackRange: attackRange });
     }
   }
 
@@ -1102,6 +1231,91 @@ class EnemyAI {
     console.log(`🛡️ Templar ${templar.id} attacked player ${player.id} for ${damage} damage!`);
   }
 
+  /**
+   * Shared boss / templar: snap enemy behind the target and face them (boss teleport, templar blink smite).
+   * Mutates `enemy.position` and `enemy.rotation`. Returns VFX + sync payloads.
+   */
+  teleportEnemyBehindTarget(enemy, targetPlayer) {
+    const startPosition = {
+      x: enemy.position.x,
+      y: enemy.position.y,
+      z: enemy.position.z
+    };
+    const playerRotation = targetPlayer.rotation?.y || 0;
+    const facingX = Math.sin(playerRotation);
+    const facingZ = Math.cos(playerRotation);
+    const endPosition = {
+      x: targetPlayer.position.x - facingX * TELEPORT_BEHIND_DISTANCE,
+      y: targetPlayer.position.y,
+      z: targetPlayer.position.z - facingZ * TELEPORT_BEHIND_DISTANCE
+    };
+    enemy.position.x = endPosition.x;
+    enemy.position.y = endPosition.y;
+    enemy.position.z = endPosition.z;
+    const rotDx = targetPlayer.position.x - endPosition.x;
+    const rotDz = targetPlayer.position.z - endPosition.z;
+    enemy.rotation = Math.atan2(rotDx, rotDz);
+    return { startPosition, endPosition };
+  }
+
+  templarCastBlinkSmite(templar, targetPlayer) {
+    if (!targetPlayer) return;
+    const { startPosition, endPosition } = this.teleportEnemyBehindTarget(templar, targetPlayer);
+    const blinkTime = Date.now();
+    this.meleeLockUntil.set(templar.id, blinkTime + TEMPLAR_BLINK_SMITE_ABILITY_LOCK_MS);
+    if (!this.bossAttackCooldown.has(templar.id)) {
+      this.bossAttackCooldown.set(templar.id, 0);
+    }
+    this.bossAttackCooldown.set(templar.id, Math.max(
+      this.bossAttackCooldown.get(templar.id) || 0,
+      blinkTime + TEMPLAR_BLINK_SMITE_ABILITY_LOCK_MS
+    ));
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-moved', {
+        enemyId: templar.id,
+        position: { ...templar.position },
+        rotation: templar.rotation,
+        timestamp: blinkTime
+      });
+      this.io.to(this.roomId).emit('templar-teleport', {
+        templarId: templar.id,
+        startPosition,
+        endPosition,
+        rotation: templar.rotation,
+        targetPlayerId: targetPlayer.id,
+        timestamp: blinkTime
+      });
+      this.io.to(this.roomId).emit('templar-blink-smite-windup', {
+        templarId: templar.id,
+        targetPlayerId: targetPlayer.id,
+        timestamp: blinkTime
+      });
+    }
+    const templarId = templar.id;
+    setTimeout(() => {
+      if (!this.room?.getGameStarted()) return;
+      const e = this.room?.enemies?.get(templarId);
+      if (!e || e.isDying || e.type !== 'templar') return;
+      const r = e.rotation || 0;
+      const forwardX = Math.sin(r);
+      const forwardZ = Math.cos(r);
+      const smiteX = e.position.x + forwardX * TEMPLAR_BLINK_SMITE_IMPACT_OFFSET;
+      const smiteZ = e.position.z + forwardZ * TEMPLAR_BLINK_SMITE_IMPACT_OFFSET;
+      const smiteY = e.position.y;
+      if (this.io) {
+        this.io.to(this.roomId).emit('templar-blink-smite-impact', {
+          templarId: e.id,
+          position: { x: smiteX, y: smiteY, z: smiteZ },
+          rotation: r,
+          radius: TEMPLAR_BLINK_SMITE_RADIUS,
+          damage: TEMPLAR_BLINK_SMITE_DAMAGE,
+          timestamp: Date.now()
+        });
+      }
+    }, TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS);
+    console.log(`🛡️ Templar ${templar.id} Blink Smite — behind ${targetPlayer.id}, strike in ${TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS}ms`);
+  }
+
   // ─── Viper AI ────────────────────────────────────────────────────────────────
 
   updateViperAI(viper, players) {
@@ -1126,7 +1340,7 @@ class EnemyAI {
 
     const distance    = this.calculateDistance(viper.position, targetPlayer.position);
     const attackRange = 13.0; // Long-range archer
-    const aggroRadius = 7;
+    const aggroRadius = 10;
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(viper.position, targetPlayer.position)) {
@@ -1169,19 +1383,35 @@ class EnemyAI {
 
   telegraphViperAttack(viper, targetPlayer) {
     if (this.io) {
+      const startY = viper.position.y + 1.5;
+      const startX = viper.position.x;
+      const startZ = viper.position.z;
+      const tx = targetPlayer.position.x;
+      const ty = targetPlayer.position.y + 1.0;
+      const tz = targetPlayer.position.z;
+      const dx = tx - startX;
+      const dy = ty - startY;
+      const dz = tz - startZ;
+      const len = Math.hypot(dx, dy, dz) || 1e-6;
       this.io.to(this.roomId).emit('viper-attack-telegraph', {
         viperId:  viper.id,
         targetPlayerId: targetPlayer.id,
         // Launch arrow from chest height of the viper model.
         startPosition: {
-          x: viper.position.x,
-          y: viper.position.y + 1.5,
-          z: viper.position.z
+          x: startX,
+          y: startY,
+          z: startZ
         },
         targetPosition: {
-          x: targetPlayer.position.x,
-          y: targetPlayer.position.y + 1.0,
-          z: targetPlayer.position.z
+          x: tx,
+          y: ty,
+          z: tz
+        },
+        maxRange:      VIPER_ARROW_MAX_RANGE,
+        endPosition: {
+          x: startX + (dx / len) * VIPER_ARROW_MAX_RANGE,
+          y: startY + (dy / len) * VIPER_ARROW_MAX_RANGE,
+          z: startZ + (dz / len) * VIPER_ARROW_MAX_RANGE
         },
         damage:    70,
         timestamp: Date.now()
@@ -1213,7 +1443,7 @@ class EnemyAI {
     }
 
     const distance    = this.calculateDistance(weaver.position, targetPlayer.position);
-    const aggroRadius = 9;
+    const aggroRadius = 10;
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(weaver.position, targetPlayer.position)) {
@@ -1239,29 +1469,43 @@ class EnemyAI {
     }
 
     const now = Date.now();
+    const isBlueWeaver = weaver.soulType === 'blue';
 
-    // ── Summon Ghoul (30-second cooldown; max 1 active ghoul) ────────────────
-    const summonCooldown = 30000;
-    const lastSummonTime = this.weaverSummonCooldown.get(weaver.id) || 0;
-    const activeGhoulId  = this.weaverSummonedGhouls.get(weaver.id);
-    const ghoulAlive     = activeGhoulId && this.room?.enemies.has(activeGhoulId) &&
-                           !this.room?.enemies.get(activeGhoulId)?.isDying;
+    if (isBlueWeaver) {
+      // Blue weaver: ground-targeted lightning (no heal, no ghoul)
+      if (!this.weaverLightningCooldown.has(weaver.id)) {
+        this.weaverLightningCooldown.set(weaver.id, now);
+      }
+      const lastLightning = this.weaverLightningCooldown.get(weaver.id) || 0;
+      const lightningCooldown = 7000;
+      if (players.length > 0 && now - lastLightning >= lightningCooldown) {
+        this.weaverLightningCooldown.set(weaver.id, now);
+        this.weaverCastLightning(weaver, targetPlayer, now);
+      }
+    } else {
+      // ── Summon Ghoul (30-second cooldown; max 1 active ghoul) ────────────
+      const summonCooldown = 30000;
+      const lastSummonTime = this.weaverSummonCooldown.get(weaver.id) || 0;
+      const activeGhoulId  = this.weaverSummonedGhouls.get(weaver.id);
+      const ghoulAlive     = activeGhoulId && this.room?.enemies.has(activeGhoulId) &&
+                             !this.room?.enemies.get(activeGhoulId)?.isDying;
 
-    if (!ghoulAlive && now - lastSummonTime >= summonCooldown) {
-      this.weaverSummonCooldown.set(weaver.id, now);
-      this.weaverCastSummon(weaver);
-    }
+      if (!ghoulAlive && now - lastSummonTime >= summonCooldown) {
+        this.weaverSummonCooldown.set(weaver.id, now);
+        this.weaverCastSummon(weaver);
+      }
 
-    // ── Heal (5-second cooldown) ─────────────────────────────────────────────
-    const healCooldown   = 5000;
-    const healRange      = 10.0;
-    const lastHealTime   = this.weaverHealCooldown.get(weaver.id) || 0;
+      // ── Heal (5-second cooldown) ───────────────────────────────────────────
+      const healCooldown   = 5000;
+      const healRange      = 10.0;
+      const lastHealTime   = this.weaverHealCooldown.get(weaver.id) || 0;
 
-    if (now - lastHealTime >= healCooldown) {
-      const healTarget = this.findLowestHpPercentEnemy(weaver, healRange);
-      if (healTarget) {
-        this.weaverHealCooldown.set(weaver.id, now);
-        this.weaverCastHeal(weaver, healTarget);
+      if (now - lastHealTime >= healCooldown) {
+        const healTarget = this.findLowestHpPercentEnemy(weaver, healRange);
+        if (healTarget) {
+          this.weaverHealCooldown.set(weaver.id, now);
+          this.weaverCastHeal(weaver, healTarget);
+        }
       }
     }
 
@@ -1339,6 +1583,26 @@ class EnemyAI {
     }, 1800);
   }
 
+  weaverCastLightning(weaver, targetPlayer, now) {
+    // Client shows a blue ground circle; after CHARGE_MS, same dodge/damage as meteor (local check).
+    const CHARGE_MS = 2000;
+    if (this.io) {
+      this.io.to(this.roomId).emit('weaver-lightning-telegraph', {
+        weaverId: weaver.id,
+        targetPosition: {
+          x: targetPlayer.position.x,
+          y: 0,
+          z: targetPlayer.position.z
+        },
+        strikeAt: now + CHARGE_MS,
+        damage: 35,
+        radius: 2.99,
+        timestamp: now
+      });
+    }
+    console.log(`🧵 Weaver ${weaver.id} calling lightning at (${targetPlayer.position.x.toFixed(1)}, ${targetPlayer.position.z.toFixed(1)}) in ${CHARGE_MS}ms`);
+  }
+
   weaverCastSummon(weaver) {
     if (!this.room) return;
 
@@ -1373,7 +1637,7 @@ class EnemyAI {
         id:        ghoulId,
         type:      'ghoul',
         position:  { ...ritualPosition },
-        rotation:  weaver.rotation,
+        rotation:  rotationYTowardEntry(ritualPosition.x, ritualPosition.z),
         health:    500,
         maxHealth: 500,
         isDying:   false,
@@ -1469,11 +1733,80 @@ class EnemyAI {
           }
         }, 900);
       } else if (distance > meleePressDistance) {
-        this.moveEnemyTowardsTarget(ghoul, targetPlayer);
+        this.moveEnemyTowardsTarget(ghoul, targetPlayer, { meleeSurroundAttackRange: attackRange });
       }
     } else {
-      this.moveEnemyTowardsTarget(ghoul, targetPlayer);
+      this.moveEnemyTowardsTarget(ghoul, targetPlayer, { meleeSurroundAttackRange: attackRange });
     }
+  }
+
+  updateMartyrAI(martyr, players) {
+    if (martyr.martyrState === 'priming') {
+      return;
+    }
+
+    let aggroData = this.enemyAggro.get(martyr.id);
+    if (!aggroData) {
+      const closestPlayer = this.findClosestPlayer(martyr, players);
+      if (!closestPlayer) return;
+      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100, isAggroed: true };
+      this.enemyAggro.set(martyr.id, aggroData);
+    }
+
+    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
+    if (!targetPlayer || targetPlayer.health <= 0) {
+      const newTarget = this.findClosestPlayer(martyr, players);
+      if (newTarget) {
+        aggroData.targetPlayerId = newTarget.id;
+        targetPlayer = newTarget;
+      } else {
+        return;
+      }
+    }
+
+    const distance = this.calculateDistance(martyr.position, targetPlayer.position);
+    const attackRange = MARTYR_MELEE_RANGE;
+
+    if (distance <= attackRange) {
+      const detX = martyr.position.x;
+      const detY = martyr.position.y;
+      const detZ = martyr.position.z;
+      martyr.martyrState = 'priming';
+      this.meleeLockUntil.set(martyr.id, Date.now() + MARTYR_DETONATION_DELAY_MS + 5000);
+
+      const now = Date.now();
+      if (this.io) {
+        this.io.to(this.roomId).emit('martyr-detonation-telegraph', {
+          martyrId: martyr.id,
+          position: { x: detX, y: detY, z: detZ },
+          radius: MARTYR_DETONATION_RADIUS,
+          detonateAt: now + MARTYR_DETONATION_DELAY_MS,
+          durationMs: MARTYR_DETONATION_DELAY_MS,
+          timestamp: now,
+        });
+      }
+
+      const martyrId = martyr.id;
+      setTimeout(() => {
+        if (!this.room?.getGameStarted()) return;
+        if (this.io) {
+          this.io.to(this.roomId).emit('martyr-detonation-impact', {
+            martyrId,
+            position: { x: detX, y: detY, z: detZ },
+            radius: MARTYR_DETONATION_RADIUS,
+            damage: MARTYR_DETONATION_DAMAGE,
+            timestamp: Date.now(),
+          });
+        }
+        const e = this.room?.enemies?.get(martyrId);
+        if (e && !e.isDying && e.health > 0) {
+          this.room.damageEnemy(martyrId, MARTYR_DETONATION_DAMAGE, null, null, { damageType: 'martyr_self' });
+        }
+      }, MARTYR_DETONATION_DELAY_MS);
+      return;
+    }
+
+    this.moveEnemyTowardsTarget(martyr, targetPlayer, { meleeSurroundAttackRange: attackRange });
   }
 
   telegraphGhoulAttack(ghoul, player) {
@@ -1502,48 +1835,6 @@ class EnemyAI {
     }
     console.log(`💀 Ghoul ${ghoul.id} attacked player ${player.id} for ${damage} damage!`);
   }
-
-  // ─── Titan AI ────────────────────────────────────────────────────────────────
-  // The Titan perpetually patrols a circle centred on (0, 0) with no aggro logic.
-  // Aggro and attack behaviour will be added in a later pass.
-
-  updateTitanAI(titan) {
-    const CIRCLE_RADIUS   = 10;    // units — matches gameRoom.js spawn radius
-    const ANGULAR_SPEED   = 0.22;  // radians per second ≈ 28-second lap
-    const deltaTime       = this.updateInterval / 1000;
-
-    // Seed starting angle from current position so the titan continues from
-    // wherever it spawned rather than snapping to 0°.
-    if (!this.titanAngle.has(titan.id)) {
-      const startAngle = Math.atan2(titan.position.z, titan.position.x);
-      this.titanAngle.set(titan.id, startAngle);
-    }
-
-    const currentAngle = this.titanAngle.get(titan.id);
-    const newAngle     = currentAngle + ANGULAR_SPEED * deltaTime;
-    this.titanAngle.set(titan.id, newAngle);
-
-    // Place the titan exactly on the circle — no drift accumulation.
-    titan.position.x = Math.cos(newAngle) * CIRCLE_RADIUS;
-    titan.position.z = Math.sin(newAngle) * CIRCLE_RADIUS;
-
-    // Face the tangential (forward) direction of the circle.
-    // Tangent of a CCW circle at angle θ is (-sin θ, cos θ) in XZ.
-    const facingX = -Math.sin(newAngle);
-    const facingZ =  Math.cos(newAngle);
-    titan.rotation = Math.atan2(facingX, facingZ);
-
-    if (this.io) {
-      this.io.to(this.roomId).emit('enemy-moved', {
-        enemyId:   titan.id,
-        position:  titan.position,
-        rotation:  titan.rotation,
-        timestamp: Date.now(),
-      });
-    }
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
 
   updateBossAI(boss, players) {
     // Note: Taunt now works by giving aggro priority instead of overriding AI completely
@@ -1814,44 +2105,9 @@ class EnemyAI {
       return;
     }
 
-    // Store the starting position for the teleport effect
-    const startPosition = {
-      x: boss.position.x,
-      y: boss.position.y,
-      z: boss.position.z
-    };
-
-    // Calculate position behind the target player
-    // Get the player's Y rotation (horizontal facing direction) in radians
+    const { startPosition, endPosition } = this.teleportEnemyBehindTarget(boss, targetPlayer);
     const playerRotation = targetPlayer.rotation?.y || 0;
-    
-    // Calculate position 2.5 units behind the player based on their facing direction
-    // Player rotation.y is in radians, where 0 points along +Z axis
-    const teleportDistance = 2.5;
-    
-    // Calculate the direction the player is facing
-    const facingX = Math.sin(playerRotation);
-    const facingZ = Math.cos(playerRotation);
-    
-    // Position boss behind the player (opposite to facing direction)
-    const endPosition = {
-      x: targetPlayer.position.x - facingX * teleportDistance,
-      y: targetPlayer.position.y,
-      z: targetPlayer.position.z - facingZ * teleportDistance
-    };
-    
     console.log(`📍 Teleport calculation: Player at (${targetPlayer.position.x.toFixed(2)}, ${targetPlayer.position.z.toFixed(2)}) rotation: ${playerRotation.toFixed(2)}, Boss teleporting to (${endPosition.x.toFixed(2)}, ${endPosition.z.toFixed(2)})`);
-
-
-    // Update boss position immediately
-    boss.position.x = endPosition.x;
-    boss.position.y = endPosition.y;
-    boss.position.z = endPosition.z;
-
-    // Calculate rotation to face the player after teleporting
-    const rotDx = targetPlayer.position.x - endPosition.x;
-    const rotDz = targetPlayer.position.z - endPosition.z;
-    boss.rotation = Math.atan2(rotDx, rotDz);
 
     // Activate blade-enhanced state: next attack within 2.5s deals double damage
     const bladeEnhancedDuration = 2500;
@@ -1904,7 +2160,7 @@ class EnemyAI {
       id: skeletonId,
       type: 'boss-skeleton',
       position: skeletonPosition,
-      rotation: 0,
+      rotation: rotationYTowardEntry(skeletonPosition.x, skeletonPosition.z),
       health: 666,
       maxHealth: 666,
       isDying: false,
@@ -2036,18 +2292,112 @@ class EnemyAI {
     }
   }
 
-  moveEnemyTowardsTarget(enemy, targetPlayer) {
+  getMeleeBodyRadius(type) {
+    switch (type) {
+      case 'knight': return 1.3;
+      case 'templar':
+      case 'ghoul':
+        return 1.5;
+      case 'martyr': return 1.1;
+      default:
+        return 1.4;
+    }
+  }
+
+  /**
+   * Ring point on the ray from player through this enemy so units spread around the target.
+   */
+  computeMeleeSurroundGoal(enemy, playerPos, attackRange) {
+    const px = playerPos.x;
+    const pz = playerPos.z;
+    const ex = enemy.position.x;
+    const ez = enemy.position.z;
+    let rdx = ex - px;
+    let rdz = ez - pz;
+    let len = Math.sqrt(rdx * rdx + rdz * rdz);
+    if (len < 1e-4) {
+      const rot = enemy.rotation || 0;
+      rdx = Math.sin(rot);
+      rdz = Math.cos(rot);
+      len = 1;
+    } else {
+      rdx /= len;
+      rdz /= len;
+    }
+    const standoff = Math.max(
+      MELEE_SURROUND_STANDOFF_MIN,
+      Math.min(attackRange - MELEE_SURROUND_STANDOFF_MARGIN, attackRange * MELEE_SURROUND_STANDOFF_FRAC),
+    );
+    return {
+      x: px + rdx * standoff,
+      y: playerPos.y ?? 0,
+      z: pz + rdz * standoff,
+    };
+  }
+
+  /**
+   * Push this enemy's proposed position away from other melee peers (2 passes).
+   */
+  resolveMeleePeerSeparation(selfEnemy, x, z) {
+    if (!this.room || !MELEE_SURROUND_TYPES.has(selfEnemy.type)) {
+      return { x, z };
+    }
+    const rSelf = this.getMeleeBodyRadius(selfEnemy.type);
+    let rx = x;
+    let rz = z;
+
+    for (let iter = 0; iter < 2; iter++) {
+      for (const other of this.room.getEnemies()) {
+        if (!other || other.id === selfEnemy.id || other.isDying || other.health <= 0) continue;
+        if (!MELEE_SURROUND_TYPES.has(other.type)) continue;
+
+        const ox = other.position.x;
+        const oz = other.position.z;
+        let dx = rx - ox;
+        let dz = rz - oz;
+        let dist = Math.sqrt(dx * dx + dz * dz);
+        const rOther = this.getMeleeBodyRadius(other.type);
+        const minDist = rSelf + rOther + MELEE_PEER_SEP_PADDING;
+
+        if (dist < 1e-6) {
+          const s = (iter + (selfEnemy.id?.length || 0)) * 1.7;
+          dx = Math.sin(s);
+          dz = Math.cos(s);
+          dist = 1;
+        }
+        if (dist < minDist) {
+          const push = (minDist - dist) / dist;
+          rx += dx * push;
+          rz += dz * push;
+        }
+      }
+    }
+
+    return this.resolveEnemyWallCollisions(rx, rz);
+  }
+
+  moveEnemyTowardsTarget(enemy, targetPlayer, options = {}) {
     if (!targetPlayer) return;
 
-    const distance = this.calculateDistance(enemy.position, targetPlayer.position);
+    const meleeRange = options?.meleeSurroundAttackRange;
+    const useSurround = meleeRange != null && MELEE_SURROUND_TYPES.has(enemy.type);
+
+    let moveTarget = targetPlayer;
+    if (useSurround) {
+      const goal = this.computeMeleeSurroundGoal(enemy, targetPlayer.position, meleeRange);
+      moveTarget = { position: goal, id: targetPlayer.id };
+    }
+
+    const distanceToGoal = this.calculateDistance(enemy.position, moveTarget.position);
     const baseSpeed = enemy.moveSpeed ?? this.getEnemyMoveSpeed(enemy.type);
     const moveSpeed = this.getModifiedMovementSpeed(enemy.id, baseSpeed);
 
-    if (distance < 2.0 || moveSpeed === 0) return;
+    const stopThreshold = useSurround ? 0.18 : 2.0;
+    if (distanceToGoal < stopThreshold || moveSpeed === 0) return;
 
     // Resolve next waypoint via A* when a wall blocks the direct path,
     // otherwise head straight to the target.
-    const waypoint = this._getPathWaypoint(enemy, targetPlayer);
+    const waypoint = this._getPathWaypoint(enemy, moveTarget);
 
     const dx = waypoint.x - enemy.position.x;
     const dz = waypoint.z - enemy.position.z;
@@ -2063,8 +2413,10 @@ class EnemyAI {
     const rawX = enemy.position.x + dirX * moveDistance;
     const rawZ = enemy.position.z + dirZ * moveDistance;
 
-    // Safety AABB push-out in case the path clips a corner
-    const resolved = this.resolveEnemyWallCollisions(rawX, rawZ);
+    let resolved = this.resolveEnemyWallCollisions(rawX, rawZ);
+    if (useSurround) {
+      resolved = this.resolveMeleePeerSeparation(enemy, resolved.x, resolved.z);
+    }
     enemy.position.x = resolved.x;
     enemy.position.z = resolved.z;
 
@@ -2107,6 +2459,10 @@ class EnemyAI {
       const corruptedMultiplier = this.getCorruptedSlowMultiplier(enemyId);
       modifiedSpeed *= (1 - corruptedMultiplier);
     }
+
+    if (this.room.getBlizzardChillMoveMultiplier) {
+      modifiedSpeed *= this.room.getBlizzardChillMoveMultiplier(enemyId);
+    }
     
     return Math.max(0, modifiedSpeed);
   }
@@ -2140,7 +2496,6 @@ class EnemyAI {
     // Different enemy types have different movement speeds
     switch (enemyType) {
       case 'elite': return 0.0;   // Stationary training dummies
-      case 'titan': return 1.8;
       case 'boss': return 1.25;
       case 'boss-skeleton': return 1.75;
       case 'shade':   return 2.0;
@@ -2149,6 +2504,7 @@ class EnemyAI {
       case 'templar': return 3.5;
       case 'weaver':  return 2.0;
       case 'ghoul':   return 2.5;
+      case 'martyr':  return 3.0;
       case 'player-zombie': return 1.75;
       default: return 2.0;
     }
@@ -2186,7 +2542,7 @@ class EnemyAI {
       type: 'player-zombie',
       ownerPlayerId: ownerId,
       position: { x: position.x, y: position.y, z: position.z },
-      rotation: 0,
+      rotation: rotationYTowardEntry(position.x, position.z),
       health: 250,
       maxHealth: 250,
       isDying: false,
@@ -2662,16 +3018,18 @@ class EnemyAI {
     this.bossBladeEnhanced.delete(enemyId);
     this.warlockBlinkCooldown.delete(enemyId);
     this.warlockLaunchCooldown.delete(enemyId);
+    this.warlockMeteorCooldown.delete(enemyId);
     this.shadeBlinkCooldown.delete(enemyId);
     this.viperAttackCooldown.delete(enemyId);
     this.weaverHealCooldown.delete(enemyId);
     this.weaverSummonCooldown.delete(enemyId);
+    this.weaverLightningCooldown.delete(enemyId);
     this.weaverSummonedGhouls.delete(enemyId);
     this.ghoulAttackCooldown.delete(enemyId);
     this.meleeLockUntil.delete(enemyId);
     this.knightAbilityCooldown.delete(enemyId);
-    this.titanAngle.delete(enemyId);
     this.enemyPaths.delete(enemyId);
+    this.templarBlinkSmiteNextAt.delete(enemyId);
 
     // If a ghoul dies, clear it from its summoner's slot so the weaver can resummon
     this.weaverSummonedGhouls.forEach((ghoulId, weaverId) => {

@@ -5,6 +5,7 @@ import { Enemy as EnemyComponent } from '@/ecs/components/Enemy';
 import { Transform } from '@/ecs/components/Transform';
 import { CombatSystem } from '@/systems/CombatSystem';
 import Icebeam from '@/components/weapons/Icebeam';
+import { ICEBEAM_MAX_HOLD_SEC } from '@/utils/icebeamConstants';
 
 interface IcebeamManagerProps {
   world: World;
@@ -28,7 +29,7 @@ export default function IcebeamManager({
   // Beam properties
   const BEAM_LENGTH = 20;
   const BEAM_WIDTH = 1.375;
-  const DAMAGE_INTERVAL = 400; // Deal damage every 250ms
+  const DAMAGE_INTERVAL = 300; // Deal damage every 250ms
 
   // Cache vector instances to prevent garbage collection
   const beamPos2D = useMemo(() => new Vector3(), []);
@@ -61,11 +62,11 @@ export default function IcebeamManager({
     }
 
     const currentTime = Date.now();
-    const timeActive = icebeamStartTime.current ? (currentTime - icebeamStartTime.current) / 1000 : 0;
-    
-    // Calculate damage scaling - increases every second held
-    const baseDamage = 31;
-    const damageMultiplier = 1 + Math.floor(timeActive) * 0.5; // +50% damage per second held
+    const rawTimeActive = icebeamStartTime.current ? (currentTime - icebeamStartTime.current) / 1000 : 0;
+    const timeActive = Math.min(rawTimeActive, ICEBEAM_MAX_HOLD_SEC);
+
+    const baseDamage = 21;
+    const damageMultiplier = 1 + Math.floor(timeActive) * 0.5; // +50% damage per second held (capped at max channel)
     const finalDamage = Math.floor(baseDamage * damageMultiplier);
 
     // Get current beam position and direction from player
@@ -114,15 +115,12 @@ export default function IcebeamManager({
       const perpendicularDistance = enemyPos2D.distanceTo(projectedPoint);
       
       if (perpendicularDistance < BEAM_WIDTH) {
-        // Enemy is hit by the beam - apply damage through combat system
-        const isCritical = damageMultiplier >= 2; // Critical display if 2x+ damage
         combatSystem.queueDamage(
           entity,
           finalDamage,
-          undefined, // source entity
+          undefined,
           'icebeam',
-          undefined, // sourcePlayerId
-          isCritical
+          undefined
         );
         
         lastDamageTime.current[entity.id] = now;
@@ -176,7 +174,10 @@ export default function IcebeamManager({
   // Calculate intensity for visual feedback
   const getIntensity = () => {
     if (!icebeamStartTime.current) return 1;
-    const timeActive = (Date.now() - icebeamStartTime.current) / 1000;
+    const timeActive = Math.min(
+      (Date.now() - icebeamStartTime.current) / 1000,
+      ICEBEAM_MAX_HOLD_SEC
+    );
     return 1 + Math.floor(timeActive) * 0.5;
   };
 

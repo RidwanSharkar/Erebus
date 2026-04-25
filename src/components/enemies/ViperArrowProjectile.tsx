@@ -13,8 +13,10 @@ interface ViperArrowProjectileProps {
   onComplete: () => void;
 }
 
-const SPEED      = 28;   // units per second
+const SPEED = 25; // units per second
 const HIT_RADIUS = 1.05;
+/** Must match `VIPER_ARROW_MAX_RANGE` in backend `enemyAI.js` → `telegraphViperAttack`. */
+export const VIPER_ARROW_MAX_RANGE = 18;
 
 export default function ViperArrowProjectile({
   startPosition,
@@ -28,23 +30,21 @@ export default function ViperArrowProjectile({
   const timeRef  = useRef(0);
   const doneRef  = useRef(false);
 
-  const direction = useMemo(
-    () => targetPosition.clone().sub(startPosition).normalize(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
-  const totalDist = useMemo(
-    () => startPosition.distanceTo(targetPosition),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
-  const duration = totalDist / SPEED;
-
-  // Align local +Z with travel direction.
-  const yaw   = Math.atan2(direction.x, direction.z);
-  const pitch = Math.atan2(-direction.y, Math.sqrt(direction.x ** 2 + direction.z ** 2));
+  // `targetPosition` is the aim point; the arrow always travels `VIPER_ARROW_MAX_RANGE` along that ray.
+  const { direction, totalDist, duration, yaw, pitch } = useMemo(() => {
+    const d = new Vector3().subVectors(targetPosition, startPosition);
+    const lenSq = d.lengthSq();
+    if (lenSq < 1e-8) d.set(0, 0, -1);
+    else d.normalize();
+    const dist = VIPER_ARROW_MAX_RANGE;
+    return {
+      direction: d,
+      totalDist: dist,
+      duration:  dist / SPEED,
+      yaw:   Math.atan2(d.x, d.z),
+      pitch: Math.atan2(-d.y, Math.sqrt(d.x * d.x + d.z * d.z)),
+    };
+  }, [startPosition, targetPosition]);
 
   // ─── Materials ─────────────────────────────────────────────────────────────
   // White-hot core → lime outer glow → dark-green trail — all additive so they
@@ -100,7 +100,7 @@ export default function ViperArrowProjectile({
     if (!groupRef.current) return;
     groupRef.current.position.copy(startPosition);
     groupRef.current.rotation.set(pitch, yaw, 0, 'YXZ');
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [startPosition, pitch, yaw]);
 
   useFrame((_, delta) => {
     if (doneRef.current || !groupRef.current) return;

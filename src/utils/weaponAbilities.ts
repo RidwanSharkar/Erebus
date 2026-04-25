@@ -211,23 +211,34 @@ export function getDefaultLoadout(): AbilityLoadout {
 /** Returns the pre-selected default loadout for a given weapon */
 export function getDefaultLoadoutForWeapon(weapon: WeaponType): AbilityLoadout {
   switch (weapon) {
+    case WeaponType.NONE:
+      return getDefaultLoadout();
     case WeaponType.RUNEBLADE:
-      return { Q: 'RUNEBLADE_Q', E: 'RUNEBLADE_E', R: 'RUNEBLADE_R' }; // Wraith Strike / Colossus Strike / Aegis
+      return { Q: 'RUNEBLADE_E', E: 'RUNEBLADE_R', R: null }; // Wraith Strike / Colossus Smite / (R unlocks later)
     case WeaponType.SCYTHE:
-      return { Q: 'SCYTHE_Q', E: 'SCYTHE_R', R: 'SCYTHE_F' };         // Sunwell / Crossentropy / Mantra
+      return { Q: 'SCYTHE_F', E: 'SCYTHE_R', R: null }; // Mantra / Crossentropy / (R unlocks later)
     case WeaponType.SPEAR:
-      return { Q: 'SPEAR_Q', E: 'SPEAR_E', R: 'SPEAR_F' };            // Wind Shear / Tempest Sweep / Storm Shroud
+      return { Q: 'SPEAR_Q', E: 'SPEAR_E', R: 'SPEAR_F' }; // Wind Shear / Tempest Sweep / Storm Shroud
     case WeaponType.BOW:
-      return { Q: 'BOW_E', E: 'BOW_Q', R: 'BOW_R' };                  // Cobra Shot / Frostbite / Reaping Talons
+      return { Q: 'BOW_Q', E: 'BOW_R', R: null }; // Frostbite / Reaping Talons / (R unlocks later)
     case WeaponType.SABRES:
-      return { Q: 'SABRES_Q', E: 'SABRES_E', R: 'SABRES_R' };         // Backstab / Flourish / Divebomb
+      return { Q: 'SABRES_Q', E: 'SABRES_E', R: 'SABRES_R' }; // Backstab / Flourish / Divebomb
     default:
       return { Q: null, E: null, R: null };
   }
 }
 
+/** True when Q and E are filled, and R is filled if this weapon’s baseline default includes R. */
+export function isAbilityLoadoutCompleteForWeapon(weapon: WeaponType, loadout: AbilityLoadout): boolean {
+  if (loadout.Q == null || loadout.E == null) return false;
+  const baselineR = getDefaultLoadoutForWeapon(weapon).R;
+  if (baselineR === null) return true;
+  return loadout.R != null;
+}
+
 // Weapon abilities data - extracted from HotkeyPanel for reuse
 export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
+  [WeaponType.NONE]: [],
   [WeaponType.SWORD]: [
     {
       name: 'Fullguard',
@@ -431,6 +442,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
 
 // Ability icons mapping
 export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | 'F' | 'P', string>>> = {
+  [WeaponType.NONE]: {},
   [WeaponType.SWORD]: {
     Q: '🛡️', // Fullguard
     E: '🔱', // Charge

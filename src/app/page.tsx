@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { WeaponType, WeaponSubclass } from '../components/dragon/weapons';
 import { Camera } from '../utils/three-exports';
@@ -16,6 +16,16 @@ import StatsPanel from '../components/ui/StatsPanel';
 import LoadingScreen from '../components/ui/LoadingScreen';
 import AbilitySelectionModal from '../components/ui/AbilitySelectionModal';
 import TalentSelectionModal from '../components/ui/TalentSelectionModal';
+import CoopBoonPickerModal from '../components/ui/CoopBoonPickerModal';
+import {
+  TALENT_BLADE_RUSH,
+  applyTalentIdToLoadout,
+  buildClassBoonPoolForWeapon,
+  buildRoomBoonPoolForColor,
+  pickRandomDistinctFromPool,
+  writeBladeRushBoonMetaUnlocked,
+} from '../utils/talents';
+import type { TalentId } from '../utils/talents';
 
 // Extend Window interface to include audioSystem
 declare global {
@@ -40,6 +50,9 @@ const CoopGameScene = dynamic(() => import('../components/CoopGameScene').then(m
 /** Prevents double bootstrap in React Strict Mode (ref resets on remount). */
 let coopEntryBootstrapStarted = false;
 
+const DEV_TALENT_MODAL =
+  process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_DEV_TALENT_MODAL === '1';
+
 function HomeContent() {
   const {
     selectedWeapons,
@@ -61,6 +74,13 @@ function HomeContent() {
     inventory,
     joinRoom,
     isConnected,
+    coopTransitionOverlay,
+    combatArenaActive,
+    coopMainArenaIntermissionSeq,
+    coopMainArenaPortalPhase,
+    campTypes,
+    coopClearedRoomColor,
+    clearCoopClearedRoomColor,
   } = useMultiplayer();
 
   const [damageNumbers, setDamageNumbers] = useState<DamageNumberData[]>([]);
@@ -77,7 +97,7 @@ function HomeContent() {
     maxHealth: 200,
     playerShield: 100,
     maxShield: 100,
-    currentWeapon: WeaponType.BOW,
+    currentWeapon: WeaponType.NONE,
     currentSubclass: WeaponSubclass.ELEMENTAL,
     mana: 150,
     maxMana: 150
@@ -86,6 +106,8 @@ function HomeContent() {
   // Helper function to get default subclass for a weapon
   const getDefaultSubclassForWeapon = (weapon: WeaponType): WeaponSubclass => {
     switch (weapon) {
+      case WeaponType.NONE:
+        return WeaponSubclass.ELEMENTAL;
       case WeaponType.BOW:
         return WeaponSubclass.ELEMENTAL;
       case WeaponType.SCYTHE:
@@ -124,6 +146,12 @@ function HomeContent() {
   const [showRulesPanel, setShowRulesPanel] = useState(false);
   const [throneAbilityWeapon, setThroneAbilityWeapon] = useState<WeaponType | null>(null);
   const [throneTalentWeapon, setThroneTalentWeapon] = useState<WeaponType | null>(null);
+  const [coopBoon, setCoopBoon] = useState<{
+    kind: 'class' | 'room';
+    options: TalentId[];
+  } | null>(null);
+  const classBoonPickedThisRunRef = useRef(false);
+  const roomBoonIntermissionDoneSeqRef = useRef(-1);
 
   const handleDamageNumberComplete = (id: string) => {
     // Use the global handler set by GameScene
@@ -182,6 +210,51 @@ function HomeContent() {
       }
     })();
   }, [isConnected, socket, joinRoom]);
+
+  // First wave cleared → 3 room-color boons (co-op main-arena intermission, wave 2 pick).
+  useEffect(() => {
+    if (gameMode !== 'coop') return;
+    if (coopMainArenaPortalPhase !== 'pick_wave2') return;
+    if (roomBoonIntermissionDoneSeqRef.current === coopMainArenaIntermissionSeq) return;
+
+    const color = coopClearedRoomColor ?? campTypes[0] ?? null;
+    const pool = buildRoomBoonPoolForColor(color, selectedWeapons.primary);
+    const options = pickRandomDistinctFromPool(pool, 3);
+    roomBoonIntermissionDoneSeqRef.current = coopMainArenaIntermissionSeq;
+    if (options.length === 0) return;
+    setCoopBoon({ kind: 'room', options });
+  }, [
+    gameMode,
+    coopMainArenaIntermissionSeq,
+    coopMainArenaPortalPhase,
+    coopClearedRoomColor,
+    campTypes,
+    selectedWeapons.primary,
+  ]);
+
+  const handleThroneWeaponEquipped = useCallback(
+    (weapon: WeaponType) => {
+      if (combatArenaActive) return;
+      if (classBoonPickedThisRunRef.current) return;
+      const pool = buildClassBoonPoolForWeapon(weapon);
+      if (pool.length === 0) return;
+      const options = pickRandomDistinctFromPool(pool, 3);
+      if (options.length === 0) return;
+      setCoopBoon({ kind: 'class', options });
+    },
+    [combatArenaActive],
+  );
+
+  const handleCoopBoonPick = useCallback(
+    (id: TalentId, kind: 'class' | 'room') => {
+      setTalentLoadout((prev) => applyTalentIdToLoadout(prev, id));
+      if (id === TALENT_BLADE_RUSH) writeBladeRushBoonMetaUnlocked(true);
+      if (kind === 'room') clearCoopClearedRoomColor();
+      if (kind === 'class') classBoonPickedThisRunRef.current = true;
+      setCoopBoon(null);
+    },
+    [clearCoopClearedRoomColor, setTalentLoadout],
+  );
 
   // Sync skill point data with control system
   useEffect(() => {
@@ -270,63 +343,71 @@ function HomeContent() {
 
               <div className="text-white space-y-4">
                 <div className="border-b border-gray-600 pb-4">
-                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">🎯 OVERVIEW</h3>
-                  <p className="text-gray-300">
-                  <ul className="text-gray-300 text-sm space-y-1 ml-4">
-                    <li>• Each player has a Tower and 3 Inhibitors.</li>
-                    <li>• Each player's Tower summons 3 Units every 45 seconds.</li>
-                    <li>• Player kills and Summoned Unit kills award experience points.</li>
-                    <li>• Leveling up grants a Skill Point to unlock additional abilities.</li>
-                    <li>• Players respawn upon 10 seconds after death.</li>
-                    <li>• Only Summoned Units can damage the opposing player's Tower.</li>
-                    <li>• Players can destroy the opposing player's Inhibitors to upgrade their Summoned Units into ELITES.</li>
-                    <li>• The first player to destroy the opposing player's Tower wins.</li>
-                  </ul>
+                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">Co-op run (roguelike flow)</h3>
+                  <p className="text-gray-300 text-sm mb-2">
+                    You start in the <strong className="text-green-400">throne room</strong>: pick a weapon, shape your ability bar, then enter the arena. Combat is room- and wave-based; between beats you choose where to go next. Boons you pick <strong>stack</strong> for the rest of the run (Hades-style).
                   </p>
-                </div>
-
-                <div className="border-b border-gray-600 pb-4">
-                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">⚔️ WEAPON SYSTEM</h3>
-                  <p className="text-gray-300 mb-2">
-                    In the throne room, stand near a weapon and press <strong className="text-green-400">X</strong> to equip it. Each weapon has unique abilities and playstyles:
-                  </p>
-                  <ul className="text-gray-300 text-sm space-y-1 ml-4">
-                    <li>• <strong className="text-green-400">Bow (VIPER) Ranged sniper with burst, harass and long-range siege potential</strong>:</li>
-                    <li>• <strong className="text-yellow-400">Scythe (WEAVER) Mana-based caster with offensive and defensive fire and ice spells</strong>:</li>
-                    <li>• <strong className="text-sky-400">Runeblade (TEMPLAR) Mana-based knight with life-stealing, area control and debuff abilities</strong>: </li>
-                    <li>• <strong className="text-red-400">Sabres (ASSASSIN) Stealth-based close-quarters specialist with high-risk, high-reward damage</strong>:</li>
+                  <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
+                    <li>Stand by a floating weapon and press <strong className="text-green-400">X</strong> to equip it (resets default Q/E/R for that weapon).</li>
+                    <li>Use the east <strong>ability pillar</strong> with <strong className="text-green-400">X</strong> to assign Q, E, and R from the shared pool.</li>
+                    <li>When a <strong>class boon</strong> modal appears, pick 1 of 3 random talents for your <strong>current weapon</strong> (once per run after that weapon is equipped).</li>
+                    <li>After you <strong>clear the first combat room</strong>, a <strong>room boon</strong> offers 3 picks from a pool determined by <strong>that room&apos;s color</strong> (blue / green / purple / red). Weapon matters: Runeblade, Bow, and Scythe see different room pools.</li>
+                    <li>Use rim <strong>portals</strong> to leave prep or, in the arena, to choose the next challenge when prompted.</li>
                   </ul>
                 </div>
 
                 <div className="border-b border-gray-600 pb-4">
-                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">🎮 CONTROLS</h3>
-                  <ul className="text-gray-300 text-sm space-y-1">
-                    <li>• <strong>WASD</strong>: Movement (Double-tap to dash)</li>
-                    <li>• <strong>Left Click</strong>: Attack</li>
-                    <li>• <strong>Right Click</strong>: Camera control</li>
-                    <li>• <strong>Space</strong>: Jump</li>
-                    <li>• <strong>1/2</strong>: Switch between primary/secondary weapons (when both slots differ)</li>
-                    <li>• <strong>X</strong>: Equip the weapon at the nearest throne pedestal (prep room)</li>
-                    <li>• <strong>Q/E/R/F</strong>: Weapon abilities</li>
+                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">Boons at a glance</h3>
+                  <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
+                    <li><strong className="text-sky-300">Runeblade</strong>: class pool includes Trinity, Vengeance, Crusader, Windfury, Blizzard, Blade Rush or Stored Charge (after meta unlock), Double Strike, Spellblade, and more by weapon.</li>
+                    <li><strong className="text-green-300">Bow</strong>: class pool includes Execute, Explosive Talons, Concentrated Volley, Dual Coil, Tempest Rounds. Room colors gate talents like Stagger Shot, Wrathful Bite/Talons, Wyvern Sting/Bite.</li>
+                    <li><strong className="text-purple-300">Scythe</strong>: class pool includes Frostpath, Icebeam, Solar Recharge, Reaper. Red rooms can offer Inferno; other colors may offer no room boon yet.</li>
+                    <li><strong>Tempest Rounds</strong> (Bow) and <strong>Icebeam</strong> (Scythe) are <strong>talents / boons</strong>, not passives on the ability picker.</li>
+                  </ul>
+
+                </div>
+
+                <div className="border-b border-gray-600 pb-4">
+                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">Weapons</h3>
+                  <p className="text-gray-300 text-sm mb-2">
+                    Each weapon has a distinct fantasy and boon lists; abilities are chosen at the prep pillar, not only via leveling.
+                  </p>
+                  <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
+                    <li><strong className="text-green-400">Bow</strong> — Ranged pressure, crit scaling, Barrage and Talons lines.</li>
+                    <li><strong className="text-purple-400">Scythe</strong> — Entropic Bolt, Crossentropy, heals and control.</li>
+                    <li><strong className="text-sky-400">Runeblade</strong> — Combo, Smite, stagger and guard talents.</li>
+                    <li><strong className="text-red-400">Sabres</strong> — Assassin melee (where enabled).</li>
                   </ul>
                 </div>
 
                 <div className="border-b border-gray-600 pb-4">
-                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">🏆 OBJECTIVE</h3>
-                  <p className="text-gray-300 mb-2">
-                    Level up by killing enemy Players and their Summoned Units. Unlock skill points to enhance your abilities.
-                  </p>
-                  <ul className="text-gray-300 text-sm space-y-1 ml-4">
-                    <li>• Defend your Tower from the enemy player's Summoned Units</li>
-                    <li>• Defend your Inhibitors from the enemy Player</li>
-                    <li>• Use your Summoned Units to damage the enemy Player's Tower</li>
-                    <li>• Destroy the enemy Player's Inhibitors to upgrade your Summoned Units into ELITES</li>
-                    <li>• Level up to gain combat bonuses and to invest Skill Points into additional weapon abilities</li>
-                    <li>• Destroy the enemy Player's Tower to win the game</li>
+                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">Controls</h3>
+                  <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
+                    <li><strong>WASD</strong> — Move (double-tap to dash).</li>
+                    <li><strong>Left click</strong> — Primary attack.</li>
+                    <li><strong>Right click</strong> — Camera.</li>
+                    <li><strong>Space</strong> — Jump.</li>
+                    <li><strong>Q / E / R / F</strong> — Abilities (loadout-dependent).</li>
+                    <li><strong>X</strong> — Throne prep: nearest interact (weapon swap, ability pillar, or talent pillar by proximity).</li>
+                    <li><strong>1 / 2</strong> — Swap primary/secondary weapon when slots differ (non-throne contexts).</li>
                   </ul>
                 </div>
 
-              
+                <div className="border-b border-gray-600 pb-4">
+                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">Progression and survival</h3>
+                  <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
+                    <li>Kills and objectives still feed <strong>experience</strong>; levels can unlock <strong>skill points</strong> for extra abilities where that system applies.</li>
+                    <li><strong>Shield</strong> recovers between fights; <strong>health</strong> is precious — use boons and positioning.</li>
+                    <li>Room difficulty and portal choices shape what you face next; read boon text before you commit.</li>
+                  </ul>
+                </div>
+
+                <div className="pb-2">
+                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">PVP (other mode)</h3>
+                  <p className="text-gray-300 text-sm">
+                    In PVP, the classic MOBA loop still applies: towers, inhibitors, summoned units, essence and merchant upgrades. Co-op runs above are separate from that structure.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -362,15 +443,23 @@ function HomeContent() {
                 skillPointData={skillPointData}
                 statPointData={statPointData}
                 abilityLoadout={abilityLoadout}
-                throneAbilityModalOpen={throneAbilityWeapon !== null || throneTalentWeapon !== null}
+                throneAbilityModalOpen={
+                  throneAbilityWeapon !== null || throneTalentWeapon !== null || coopBoon !== null
+                }
                 onRequestThroneAbilityModal={(weapon) => {
                   setThroneTalentWeapon(null);
                   setThroneAbilityWeapon(weapon);
                 }}
-                onRequestThroneTalentModal={(weapon) => {
-                  setThroneAbilityWeapon(null);
-                  setThroneTalentWeapon(weapon);
-                }}
+                onRequestThroneTalentModal={
+                  DEV_TALENT_MODAL
+                    ? (weapon) => {
+                        setThroneAbilityWeapon(null);
+                        setThroneTalentWeapon(weapon);
+                      }
+                    : undefined
+                }
+                onThroneWeaponEquipped={handleThroneWeaponEquipped}
+                throneDevTalentShortcutEnabled={DEV_TALENT_MODAL}
               />
             )}
           </Canvas>
@@ -394,7 +483,10 @@ function HomeContent() {
               <div>Space - Jump</div>
               {gameMode === 'coop' && (
                 <div className="text-green-400/90 mt-1">
-                  X — Equip Weapon
+                  <div>X — Prep interact (weapon / abilities)</div>
+                  {DEV_TALENT_MODAL && (
+                    <div className="text-amber-400/90">Dev: T — Talent pillar (when in range)</div>
+                  )}
                 </div>
               )}
             </div>
@@ -493,7 +585,7 @@ function HomeContent() {
               />
             )}
 
-            {gameMode === 'coop' && throneTalentWeapon !== null && (
+            {gameMode === 'coop' && DEV_TALENT_MODAL && throneTalentWeapon !== null && (
               <TalentSelectionModal
                 key={`throne-talent-${throneTalentWeapon}`}
                 selectedWeapon={throneTalentWeapon}
@@ -504,6 +596,16 @@ function HomeContent() {
                   setThroneTalentWeapon(null);
                 }}
                 onBack={() => setThroneTalentWeapon(null)}
+              />
+            )}
+
+            {gameMode === 'coop' && coopBoon !== null && (
+              <CoopBoonPickerModal
+                kind={coopBoon.kind}
+                weapon={selectedWeapons.primary}
+                roomColor={coopBoon.kind === 'room' ? coopClearedRoomColor ?? campTypes[0] : undefined}
+                options={coopBoon.options}
+                onPick={(id) => handleCoopBoonPick(id, coopBoon.kind)}
               />
             )}
 
@@ -552,7 +654,7 @@ function HomeContent() {
 
         {/* Loading Screen - shown until scene ready */}
         <LoadingScreen
-          isVisible={isGameLoading}
+          isVisible={isGameLoading || coopTransitionOverlay}
           onFadeComplete={() => setIsGameLoading(false)}
         />
 

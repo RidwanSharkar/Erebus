@@ -9,11 +9,6 @@ interface SummonTotemData {
   isActive: boolean;
   position: Vector3;
   onComplete: () => void;
-  enemyData?: Array<{
-    id: string;
-    position: Vector3;
-    health: number;
-  }>;
   onDamage?: (targetId: string, damage: number, impactPosition: Vector3, isCritical?: boolean) => void;
   setActiveEffects?: (callback: (prev: Array<{
     id: number;
@@ -62,9 +57,17 @@ interface SummonTotemData {
   localSocketId?: string;
 }
 
+export type SummonTotemEnemyEntry = {
+  id: string;
+  position: Vector3;
+  health: number;
+};
+
 interface SummonTotemManagerProps {
   onTotemComplete?: (totemId: number) => void;
   players?: Map<string, any>; // Real-time players data
+  /** Live NPC + player targets; updated each frame so totems track movement. */
+  enemyData?: SummonTotemEnemyEntry[];
   localSocketId?: string; // Local player ID to exclude from targets
   onTotemFloatingDamage?: (damage: number, isCritical: boolean, position: Vector3) => void;
 }
@@ -122,7 +125,7 @@ export interface SummonTotemManagerRef {
   ) => number;
 }
 
-const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerProps>(({ onTotemComplete, players, localSocketId, onTotemFloatingDamage }, ref) => {
+const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerProps>(({ onTotemComplete, players, enemyData = [], localSocketId, onTotemFloatingDamage }, ref) => {
   const [activeTotems, setActiveTotems] = useState<SummonTotemData[]>([]);
   const totemIdCounter = useRef(0);
 
@@ -203,7 +206,6 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
       isActive: true,
       position: position.clone(),
       onComplete: handleTotemComplete,
-      enemyData,
       onDamage: onDamageForTotem || undefined,
       setActiveEffects,
       activeEffects: activeEffects || [],
@@ -236,7 +238,7 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
           position={totem.position}
           players={players}
           localSocketId={totem.localSocketId}
-          enemyData={totem.enemyData}
+          enemyData={enemyData}
           onDamage={totem.onDamage}
           onComplete={totem.onComplete}
           setActiveEffects={totem.setActiveEffects}

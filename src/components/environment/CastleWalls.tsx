@@ -88,8 +88,7 @@ const WALL_FRAGMENT = `
 
 // ─── Wall segment definitions ───────────────────────────────────────────────
 // Each segment: center position and full dimensions (sizeX, sizeY, sizeZ). Four
-// sides form a closed square, tangent to the circular playable disc (|XZ| = R),
-// with wall thickness just outside the play radius.
+// sides form a closed square; inner faces sit at x = ±R and z = ±R (playable interior).
 
 export interface WallSegmentDef {
   center: [number, number, number];

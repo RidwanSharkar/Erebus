@@ -112,7 +112,8 @@ export class PhysicsSystem extends BasePhysicsSystem {
       ? this.checkWallCollision(potentialPosition)
       : { hasCollision: false, normal: new Vector3(), closestPoint: new Vector3(), segmentIndex: -1 };
 
-    if (distanceFromCenter >= MAP_RADIUS) {
+    // Circular clamp only when castle walls are off (throne prep). Main arena uses wall AABBs + square interior.
+    if (!this.castleWallPhysicsEnabled && distanceFromCenter >= MAP_RADIUS) {
       // If we hit the boundary, calculate tangent movement for smooth sliding
       const currentHorizontalPos = new Vector3(currentPosition.x, 0, currentPosition.z);
       const toCenter = currentHorizontalPos.clone().normalize();

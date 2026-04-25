@@ -10,23 +10,39 @@ interface ShadeModelProps {
   isAttacking: boolean;
   isBlinking: boolean;
   isDying: boolean;
+  isImpacting?: boolean;
+  impactPlayKey?: number;
+  onImpactFinished?: () => void;
 }
 
 useGLTF.preload('/models/shade_idle.glb');
 useGLTF.preload('/models/shade_walk.glb');
 useGLTF.preload('/models/shade_throw.glb');
+useGLTF.preload('/models/shade_death.glb');
+useGLTF.preload('/models/shade_impact.glb');
 
 // Doubled from the knight baseline (0.0135) since the shade GLB geometry
 // is smaller than the knight's — this brings it to a similar in-world size.
 const SCALE = 0.0375;
 
-export default function ShadeModel({ isWalking, isAttacking, isBlinking: _isBlinking, isDying }: ShadeModelProps) {
+export default function ShadeModel({
+  isWalking,
+  isAttacking,
+  isBlinking: _isBlinking,
+  isDying,
+  isImpacting = false,
+  impactPlayKey = 0,
+  onImpactFinished,
+}: ShadeModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
+  const lastImpactPlayKeyRef = useRef(-1);
 
   const { scene, animations: idleAnims } = useGLTF('/models/shade_idle.glb');
   const { animations: walkAnims }  = useGLTF('/models/shade_walk.glb');
   const { animations: throwAnims } = useGLTF('/models/shade_throw.glb');
+  const { animations: deathAnims } = useGLTF('/models/shade_death.glb');
+  const { animations: impactAnims } = useGLTF('/models/shade_impact.glb');
 
   // Clone + own materials so a dying shade's fade-out doesn't affect other instances.
   const clonedScene = useMemo(() => {
@@ -66,50 +82,69 @@ export default function ShadeModel({ isWalking, isAttacking, isBlinking: _isBlin
       ...rename(idleAnims, 'Idle').map(stripRootMotionXZ),
       ...rename(walkAnims, 'Walk').map(stripRootMotionXZ),
       ...rename(throwAnims, 'Throw'),
+      ...rename(deathAnims, 'Death'),
+      ...rename(impactAnims, 'Impact'),
     ];
-  }, [idleAnims, walkAnims, throwAnims]);
+  }, [idleAnims, walkAnims, throwAnims, deathAnims, impactAnims]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
-  const getAction = (name: 'Idle' | 'Walk' | 'Throw'): AnimationAction | null =>
+  const getAction = (name: 'Idle' | 'Walk' | 'Throw' | 'Death' | 'Impact'): AnimationAction | null =>
     actions[name] ?? null;
 
-  // Priority: Attacking > Walking > Idle. No dedicated death clip — the renderer
-  // fades the mesh opacity to zero when isDying.
+  // Priority: Death > Throw > Impact > Walk > Idle
   useEffect(() => {
     if (!actions) return;
 
-    const nextAction = isAttacking
-      ? getAction('Throw')
-      : isWalking
-        ? getAction('Walk')
-        : getAction('Idle');
+    const nextAction = isDying
+      ? getAction('Death')
+      : isAttacking
+        ? getAction('Throw')
+        : isImpacting
+          ? getAction('Impact')
+          : isWalking
+            ? getAction('Walk')
+            : getAction('Idle');
 
-    if (!nextAction || nextAction === currentActionRef.current) return;
+    if (!nextAction) return;
+    if (nextAction === currentActionRef.current) {
+      const retriggerImpact = isImpacting && impactPlayKey !== lastImpactPlayKeyRef.current;
+      if (!retriggerImpact) return;
+    }
 
     currentActionRef.current?.fadeOut(0.2);
 
-    if (isAttacking) {
+    if (isDying) {
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.15).play();
+    } else if (isAttacking) {
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.2).play();
+    } else if (isImpacting) {
+      lastImpactPlayKeyRef.current = impactPlayKey;
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.2).play();
     } else {
+      if (!isImpacting) lastImpactPlayKeyRef.current = -1;
       nextAction.enabled = true;
       nextAction.setLoop(LoopRepeat, Infinity);
       nextAction.fadeIn(0.2).play();
     }
 
     currentActionRef.current = nextAction;
-  }, [isWalking, isAttacking, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isWalking, isAttacking, isDying, isImpacting, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // After throw finishes, blend back to Walk or Idle.
+  // After one-shot (throw, impact) finishes, blend back to Walk or Idle.
   useEffect(() => {
-    if (!mixer || !isAttacking || isDying) return;
+    if (!mixer || isDying) return;
 
-    const handleFinish = () => {
+    const blendToWalkOrIdle = () => {
       if (isDying) return;
       const fallback = isWalking ? getAction('Walk') : getAction('Idle');
-      if (fallback && fallback !== currentActionRef.current) {
+      if (fallback) {
         fallback.setLoop(LoopRepeat, Infinity);
         currentActionRef.current?.fadeOut(0.15);
         fallback.reset().fadeIn(0.15).play();
@@ -117,9 +152,24 @@ export default function ShadeModel({ isWalking, isAttacking, isBlinking: _isBlin
       }
     };
 
+    const handleFinish = (e: { action: AnimationAction }) => {
+      if (isDying) return;
+      const name = e.action.getClip().name;
+      if (name === 'Death') return;
+      if (name === 'Impact') {
+        onImpactFinished?.();
+        lastImpactPlayKeyRef.current = -1;
+        blendToWalkOrIdle();
+        return;
+      }
+      if (name === 'Throw') {
+        blendToWalkOrIdle();
+      }
+    };
+
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isAttacking, isDying, isWalking, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isDying, isWalking, actions, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group ref={sceneGroupRef}>

@@ -13,9 +13,8 @@ import {
 // Fire embers — GPU-animated floating sparks near camps and torch areas
 // Single Points draw call, additive blending, all motion in vertex shader.
 //
-// Color design: each ember carries an integer camp index (aCampIdx = 0|1|2).
-// The vertex shader looks up the camp's color pair from uniform arrays
-// uColorDim[3] / uColorBright[3].  When campTypes arrives from the server,
+// Color design: embers use the room theme (aCampIdx = 0) from uniform arrays
+// uColorDim[1] / uColorBright[1].  When campTypes[0] arrives from the server,
 // useEffect patches those 6 uniforms in-place — no geometry rebuild needed.
 // ---------------------------------------------------------------------------
 
@@ -24,11 +23,11 @@ const EMBER_VERT = `
   attribute vec3  aOrigin;
   attribute float aSpeed;
   attribute float aSize;
-  attribute float aCampIdx;   // 0, 1, or 2 — integer camp id
+  attribute float aCampIdx;   // 0 — room theme palette index
 
   uniform float uTime;
-  uniform vec3  uColorDim[3];     // cool / fading colour per camp
-  uniform vec3  uColorBright[3];  // hot / core colour per camp
+  uniform vec3  uColorDim[1];     // cool / fading — room theme
+  uniform vec3  uColorBright[1];  // hot / core — room theme
 
   varying float vAlpha;
   varying vec3  vColor;
@@ -78,12 +77,10 @@ const EMBER_FRAG = `
 `;
 
 // ---------------------------------------------------------------------------
-// Camp centres — index matches campTypes[] order from the server
+// Centre beacon only — color uses campTypes[0] (same room theme as the map)
 // ---------------------------------------------------------------------------
 const CAMP_ORIGINS: [number, number, number][] = [
-  [  0, 0, -20 ],  // camp 0 — North Fortress
-  [ 10, 0,   7 ],  // camp 1 — East Bastion
-  [-10, 0,   7 ],  // camp 2 — West Citadel
+  [0, 0, 8], // North Fortress
 ];
 
 // Per-theme palettes: [dim (cool / fading), bright (hot core)]
@@ -96,7 +93,7 @@ const FLAME_PALETTES: Record<string, [[number,number,number],[number,number,numb
 };
 const DEFAULT_PALETTE = FLAME_PALETTES.red;
 
-const EMBERS_PER_CAMP = 20;
+const EMBERS_PER_CAMP = 35;
 const TOTAL = EMBERS_PER_CAMP * CAMP_ORIGINS.length;
 
 // Build the two uniform Vector3[] arrays for a given campTypes list.
@@ -137,7 +134,7 @@ const InstancedEmbers: React.FC<InstancedEmbersProps> = ({ campTypes = [] }) => 
         campIdxs[idx] = campIdx;
 
         const a = Math.random() * Math.PI * 2;
-        const r = Math.random() * 3.5;
+        const r = Math.random() * 1.25;
         origins[idx * 3    ] = cx + Math.cos(a) * r;
         origins[idx * 3 + 1] = cy;
         origins[idx * 3 + 2] = cz + Math.sin(a) * r;

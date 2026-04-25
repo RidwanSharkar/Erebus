@@ -118,6 +118,8 @@ interface DragonRendererProps {
   wrathfulTalonsReturnCrit?: boolean;
   /** EXECUTE: Reaping Talons first forward hit may consume a dash for bonus damage. */
   executeReapingTalons?: boolean;
+  /** EXPLOSIVE TALONS: Reaping Talons detonates at max range; no return arrow. */
+  explosiveTalons?: boolean;
   /** STORED CHARGE: Runeblade Charge — 3 spin rotations + per-rotation damage. */
   runebladeStoredCharge?: boolean;
   /** STAGGERING COMBO: basic attack combo adds stagger per hit (co-op server sync). */
@@ -128,6 +130,18 @@ interface DragonRendererProps {
   runebladeInfestedCombo?: boolean;
   /** Local player: roll Guard Combo proc after each basic hit (chance in ControlSystem). */
   onRunebladeGuardComboProc?: () => void;
+  /** Local player: Windfury + Flurry heal once per Runeblade swing (ControlSystem). */
+  onRunebladePrimaryHits?: (enemiesHit: number) => void;
+  /** Local: live Runeblade combo step from ControlSystem. */
+  runebladeComboStepResolver?: () => 1 | 2 | 3;
+  /** Local: EXECUTIONER flat bonus (ControlSystem getAndClear). */
+  getRunebladeExecutionerFlatBonus?: () => number;
+  /** Local: Crusader flat bonus while buff active. */
+  getRunebladeCrusaderLmbFlatBonus?: () => number;
+  /** Local: Crusader corrupted blade palette. */
+  crusaderBladeThemeActive?: boolean;
+  /** Local: Blizzard talent storm (omit when talent not taken). */
+  getRunebladeBlizzardTalentActive?: () => boolean;
 }
 
 export default function DragonRenderer({
@@ -136,8 +150,8 @@ export default function DragonRenderer({
   realTimePositionRef,
   world,
   onMeshReady,
-  currentWeapon = WeaponType.BOW,
-  currentSubclass = WeaponSubclass.ELEMENTAL,
+  currentWeapon = WeaponType.NONE,
+  currentSubclass,
   isCharging = false,
   chargeProgress = 0,
   chargeDirection,
@@ -152,6 +166,7 @@ export default function DragonRenderer({
   isDeathGrasping = false,
   isWraithStriking = false,
   isCorruptedAuraActive = false,
+  crusaderBladeThemeActive = false,
   onSmiteComplete = () => {},
   onColossusStrikeComplete = () => {},
   onDeathGraspComplete = () => {},
@@ -201,11 +216,17 @@ export default function DragonRenderer({
   playerLevel = 1,
   wrathfulTalonsReturnCrit = false,
   executeReapingTalons = false,
+  explosiveTalons = false,
   runebladeStoredCharge = false,
   runebladeStaggeringCombo = false,
   runebladeWrathfulCombo = false,
   runebladeInfestedCombo = false,
   onRunebladeGuardComboProc,
+  onRunebladePrimaryHits,
+  runebladeComboStepResolver,
+  getRunebladeExecutionerFlatBonus,
+  getRunebladeCrusaderLmbFlatBonus,
+  getRunebladeBlizzardTalentActive,
 }: DragonRendererProps) {
   const effectiveDeflectShieldActive = deflectShieldActiveProp ?? isDeflecting;
   const mountRef = useRef(false);
@@ -441,12 +462,16 @@ export default function DragonRenderer({
       const combatSystem = world.getSystem(CombatSystem);
       if (combatSystem) {
         const damageType = isBlizzard ? 'blizzard' : 'sword';
+        const rbComboStep =
+          currentWeapon === WeaponType.RUNEBLADE && runebladeComboStepResolver
+            ? runebladeComboStepResolver()
+            : swordComboStep;
         let staggerToAdd: number | undefined;
         if (currentWeapon === WeaponType.RUNEBLADE && runebladeStaggeringCombo && !isBlizzard) {
           staggerToAdd =
-            swordComboStep === 1
+            rbComboStep === 1
               ? STAGGERING_COMBO_HIT1_STAGGER
-              : swordComboStep === 2
+              : rbComboStep === 2
                 ? STAGGERING_COMBO_HIT2_STAGGER
                 : STAGGERING_COMBO_HIT3_STAGGER;
         }
@@ -457,7 +482,7 @@ export default function DragonRenderer({
           currentWeapon === WeaponType.RUNEBLADE &&
           !isBlizzard &&
           runebladeWrathfulCombo &&
-          swordComboStep === 3
+          rbComboStep === 3
         ) {
           const r = calculateDamage(damage, WeaponType.RUNEBLADE, {
             critChanceAdd: WRATHFUL_COMBO_CRIT_CHANCE_ADD,
@@ -554,6 +579,7 @@ export default function DragonRenderer({
           isDeathGrasping={isDeathGrasping}
           isWraithStriking={isWraithStriking}
           isCorruptedAuraActive={isCorruptedAuraActive}
+          crusaderBladeThemeActive={crusaderBladeThemeActive}
           onSmiteComplete={onSmiteComplete}
           onColossusStrikeComplete={onColossusStrikeComplete}
           onDeathGraspComplete={onDeathGraspComplete}
@@ -591,6 +617,11 @@ export default function DragonRenderer({
           hideBody={hideBody}
           playerLevel={playerLevel}
           runebladeStoredCharge={runebladeStoredCharge}
+          onRunebladePrimaryHits={onRunebladePrimaryHits}
+          runebladeComboStepResolver={runebladeComboStepResolver}
+          getRunebladeExecutionerFlatBonus={getRunebladeExecutionerFlatBonus}
+          getRunebladeCrusaderLmbFlatBonus={getRunebladeCrusaderLmbFlatBonus}
+          getRunebladeBlizzardTalentActive={getRunebladeBlizzardTalentActive}
           isLocalPlayer={isLocalPlayer}
         />
       </group>
@@ -646,6 +677,7 @@ export default function DragonRenderer({
           }}
           localSocketId="local-player" // For single-player mode, use a fixed ID
           wrathfulTalonsReturnCrit={wrathfulTalonsReturnCrit}
+          explosiveTalons={explosiveTalons}
           onExecuteFirstForwardHit={executeReapingTalons ? onExecuteFirstForwardHit : undefined}
         />
       )}

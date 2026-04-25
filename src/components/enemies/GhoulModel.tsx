@@ -11,6 +11,9 @@ interface GhoulModelProps {
   attackVariant: 1 | 2;
   isSummoning: boolean;
   isDying: boolean;
+  isImpacting?: boolean;
+  impactPlayKey?: number;
+  onImpactFinished?: () => void;
 }
 
 useGLTF.preload('/models/ghoul_idle.glb');
@@ -18,18 +21,32 @@ useGLTF.preload('/models/ghoul_run.glb');
 useGLTF.preload('/models/ghoul_attack.glb');
 useGLTF.preload('/models/ghoul_attack2.glb');
 useGLTF.preload('/models/ghoul_summon.glb');
+useGLTF.preload('/models/ghoul_death.glb');
+useGLTF.preload('/models/ghoul_impact.glb');
 
 const SCALE = 0.014;
 
-export default function GhoulModel({ isWalking, isAttacking, attackVariant, isSummoning, isDying }: GhoulModelProps) {
+export default function GhoulModel({
+  isWalking,
+  isAttacking,
+  attackVariant,
+  isSummoning,
+  isDying,
+  isImpacting = false,
+  impactPlayKey = 0,
+  onImpactFinished,
+}: GhoulModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
+  const lastImpactPlayKeyRef = useRef(-1);
 
   const { scene, animations: idleAnims }    = useGLTF('/models/ghoul_idle.glb');
   const { animations: runAnims }            = useGLTF('/models/ghoul_run.glb');
   const { animations: attackAnims }         = useGLTF('/models/ghoul_attack.glb');
   const { animations: attack2Anims }        = useGLTF('/models/ghoul_attack2.glb');
   const { animations: summonAnims }         = useGLTF('/models/ghoul_summon.glb');
+  const { animations: deathAnims }          = useGLTF('/models/ghoul_death.glb');
+  const { animations: impactAnims }         = useGLTF('/models/ghoul_impact.glb');
 
   const clonedScene = useMemo(() => {
     const clone = SkeletonUtils.clone(scene) as Group;
@@ -69,53 +86,72 @@ export default function GhoulModel({ isWalking, isAttacking, attackVariant, isSu
       ...rename(attackAnims,  'Attack'),
       ...rename(attack2Anims, 'Attack2'),
       ...rename(summonAnims,  'Summon'),
+      ...rename(deathAnims,   'Death'),
+      ...rename(impactAnims,  'Impact'),
     ];
-  }, [idleAnims, runAnims, attackAnims, attack2Anims, summonAnims]);
+  }, [idleAnims, runAnims, attackAnims, attack2Anims, summonAnims, deathAnims, impactAnims]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
-  const getAction = (name: 'Idle' | 'Run' | 'Attack' | 'Attack2' | 'Summon'): AnimationAction | null =>
+  const getAction = (name: 'Idle' | 'Run' | 'Attack' | 'Attack2' | 'Summon' | 'Death' | 'Impact'): AnimationAction | null =>
     actions[name] ?? null;
 
-  // Priority: Summon > Attack > Run > Idle
+  // Priority: Death > Summon > Attack > Impact > Run > Idle
   useEffect(() => {
     if (!actions) return;
 
     const attackClip = attackVariant === 2 ? 'Attack2' : 'Attack';
-    const nextAction = isSummoning
-      ? getAction('Summon')
-      : isAttacking
-        ? getAction(attackClip)
-        : isWalking
-          ? getAction('Run')
-          : getAction('Idle');
+    const nextAction = isDying
+      ? getAction('Death')
+      : isSummoning
+        ? getAction('Summon')
+        : isAttacking
+          ? getAction(attackClip)
+          : isImpacting
+            ? getAction('Impact')
+            : isWalking
+              ? getAction('Run')
+              : getAction('Idle');
 
-    if (!nextAction || nextAction === currentActionRef.current) return;
+    if (!nextAction) return;
+    if (nextAction === currentActionRef.current) {
+      const retriggerImpact = isImpacting && impactPlayKey !== lastImpactPlayKeyRef.current;
+      if (!retriggerImpact) return;
+    }
 
     currentActionRef.current?.fadeOut(0.2);
 
-    if (isSummoning || isAttacking) {
+    if (isDying) {
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.15).play();
+    } else if (isSummoning || isAttacking) {
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.2).play();
+    } else if (isImpacting) {
+      lastImpactPlayKeyRef.current = impactPlayKey;
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.2).play();
     } else {
+      if (!isImpacting) lastImpactPlayKeyRef.current = -1;
       nextAction.enabled = true;
       nextAction.setLoop(LoopRepeat, Infinity);
       nextAction.fadeIn(0.2).play();
     }
 
     currentActionRef.current = nextAction;
-  }, [isWalking, isAttacking, attackVariant, isSummoning, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isWalking, isAttacking, attackVariant, isSummoning, isDying, isImpacting, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // After summon or attack finishes, blend back to Run or Idle.
+  // After one-shot (summon, attack, impact) finishes, blend back to Run or Idle.
   useEffect(() => {
-    if (!mixer || (!isAttacking && !isSummoning) || isDying) return;
+    if (!mixer || isDying) return;
 
-    const handleFinish = () => {
+    const blendToRunOrIdle = () => {
       if (isDying) return;
       const fallback = isWalking ? getAction('Run') : getAction('Idle');
-      if (fallback && fallback !== currentActionRef.current) {
-        fallback.enabled = true;
+      if (fallback) {
         fallback.setLoop(LoopRepeat, Infinity);
         currentActionRef.current?.fadeOut(0.15);
         fallback.reset().fadeIn(0.15).play();
@@ -123,9 +159,24 @@ export default function GhoulModel({ isWalking, isAttacking, attackVariant, isSu
       }
     };
 
+    const handleFinish = (e: { action: AnimationAction }) => {
+      if (isDying) return;
+      const name = e.action.getClip().name;
+      if (name === 'Death') return;
+      if (name === 'Impact') {
+        onImpactFinished?.();
+        lastImpactPlayKeyRef.current = -1;
+        blendToRunOrIdle();
+        return;
+      }
+      if (name === 'Summon' || name === 'Attack' || name === 'Attack2') {
+        blendToRunOrIdle();
+      }
+    };
+
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isAttacking, isSummoning, isDying, isWalking, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isDying, isWalking, actions, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group ref={sceneGroupRef}>

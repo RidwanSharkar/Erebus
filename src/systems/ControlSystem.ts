@@ -21,6 +21,11 @@ import { WeaponSubclass, WeaponType } from '@/components/dragon/weapons';
 import { DeflectBarrier } from '@/components/weapons/DeflectBarrier';
 import { SkillPointSystem, SkillPointData } from '@/utils/SkillPointSystem';
 import { AbilityLoadout } from '@/utils/weaponAbilities';
+import {
+  ICEBEAM_MAX_HOLD_SEC,
+  ICEBEAM_COOLDOWN_AFTER_RELEASE_SEC,
+  ICEBEAM_COOLDOWN_AFTER_MAX_HOLD_SEC,
+} from '@/utils/icebeamConstants';
 import type { DamageCalcOptions } from '@/core/DamageCalculator';
 import {
   TalentLoadout,
@@ -30,21 +35,35 @@ import {
   shouldApplyTrinityTalent as computeTrinityTalentActive,
   shouldApplyInfestedSmiteTalent as computeInfestedSmiteTalentActive,
   shouldApplyInfernalSmiteTalent as computeInfernalSmiteTalentActive,
+  shouldApplyVengeanceSmiteTalent,
+  getVengeanceSmiteOutgoingDamageMultiplier,
   shouldApplyStaggeringSmiteTalent as computeStaggeringSmiteTalentActive,
   shouldApplyWrathfulTalonsTalent as computeWrathfulTalonsTalentActive,
+  shouldApplyExplosiveTalonsTalent,
   shouldApplyConcentratedVolleyTalent as computeConcentratedVolleyTalentActive,
   shouldApplyWrathfulBiteTalent,
+  shouldApplyWyvernBiteTalent,
   shouldApplyInfernoTalent,
   shouldApplyReaperTalent,
   shouldApplyWraithGuardTalent,
+  shouldApplyDoubleStrikeTalent,
   shouldApplyColossusGuardTalent,
   shouldApplyGuardComboTalent,
+  shouldApplyDashGuardTalent,
+  shouldApplyExecutionerTalent,
   shouldApplyFrostpathTalent,
   shouldApplySolarRechargeTalent,
   shouldApplyWindfuryTalent,
+  shouldApplyCrusaderTalent,
+  shouldApplyBlizzardTalent,
   FROSTPATH_PROC_CHANCE,
   SOLAR_RECHARGE_PROC_CHANCE,
   WINDFURY_PROC_CHANCE,
+  CRUSADER_PROC_CHANCE,
+  CRUSADER_DURATION_SEC,
+  CRUSADER_LMB_FLAT_BONUS,
+  BLIZZARD_PROC_CHANCE,
+  BLIZZARD_DURATION_SEC,
   WRAITH_GUARD_DURATION_SEC,
   WRAITH_GUARD_PROC_CHANCE,
   GUARD_COMBO_DURATION_SEC,
@@ -52,6 +71,9 @@ import {
   COLOSSUS_GUARD_PROC_CHANCE,
   COLOSSUS_GUARD_STACK_SEC,
   COLOSSUS_GUARD_MAX_REMAINING_SEC,
+  DASH_GUARD_DURATION_SEC,
+  EXECUTIONER_POST_DASH_WINDOW_MS,
+  EXECUTIONER_BASE_DAMAGE_ADD,
   CROSSENTROPY_BASE_DAMAGE,
   CROSSENTROPY_REAPER_DAMAGE_PER_KILL,
   CROSSENTROPY_MAX_TRAVEL_DISTANCE,
@@ -73,8 +95,14 @@ import {
   WRATH_STRIKE_CRIT_DAMAGE_MULT_ADD,
   getDualCoilLateralVector,
   shouldApplyDualCoilTalent,
+  shouldApplyWyvernStingTalent,
+  WYVERN_STING_COOLDOWN_SEC,
   BLADE_RUSH_CHARGE_COOLDOWN_SEC,
   shouldApplyBladeRushTalent,
+  WRAITH_STRIKE_COOLDOWN_SEC,
+  WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES,
+  shouldApplySpellbladeTalent,
+  SPELLBLADE_WRAITH_STRIKE_SHIELD_RESTORE,
 } from '@/utils/talents';
 import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
@@ -89,7 +117,8 @@ import {
   calculateDamage,
   DamageResult,
 } from '@/core/DamageCalculator';
-import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+import { MAIN_MAP_RADIUS, isInsideMainArenaXZ } from '@/utils/mapConstants';
+import { BOW_FULL_CHARGE_MS, isBowPerfectShotProgress } from '@/utils/bowConstants';
 import { CASTLE_WALL_DEPTH_OFFSET, CASTLE_WALL_HALF_THICKNESS } from '@/components/environment/CastleWalls';
 
 export class ControlSystem extends System {
@@ -120,7 +149,11 @@ export class ControlSystem extends System {
   private onProjectileCreatedCallback?: (projectileType: string, position: Vector3, direction: Vector3, config: any) => void;
   
   // Callback for Viper Sting activation
-  private onViperStingCallback?: (position: Vector3, direction: Vector3) => void;
+  private onViperStingCallback?: (
+    position: Vector3,
+    direction: Vector3,
+    meta?: { explosiveTalons?: boolean },
+  ) => void;
 
   // Callback for Rejuvenating Shot activation
   private onRejuvenatingShotCallback?: (position: Vector3, direction: Vector3) => void;
@@ -251,11 +284,12 @@ export class ControlSystem extends System {
   private isIcebeaming = false;
   private icebeamStartTime = 0;
   private lastIcebeamTime = 0;
-  private icebeamCooldown = 1.0; // 1 second cooldown
+  private icebeamCooldownDurationSec = ICEBEAM_COOLDOWN_AFTER_RELEASE_SEC;
   private onIcebeamStateChangeCallback?: (isActive: boolean) => void;
   private lastViperStingTime = 0;
   private lastFrostNovaTime = 0; // Separate tracking for Frost Nova ability
   private lastCobraShotTime = 0; // Separate tracking for Cobra Shot ability
+  private lastWyvernStingTime = 0; // Wyvern Sting talent: bonus Cobra on perfect shot (separate from BOW_E)
   private lastSummonTotemTime = 0; // Separate tracking for Summon Totem ability
   private lastRejuvenatingShotTime = 0; // Separate tracking for Rejuvenating Shot ability
   private fireRate = 0.2; // Default for bow
@@ -283,6 +317,8 @@ export class ControlSystem extends System {
   // Weapon-specific states
   private isCharging = false;
   private chargeProgress = 0;
+  /** Wall-clock start for normal bow primary charge; null when not holding LMB charge. */
+  private bowPrimaryChargeStartMs: number | null = null;
   private isSwinging = false;
   
   // Viper Sting charging state
@@ -342,7 +378,18 @@ export class ControlSystem extends System {
   private guardComboShieldActive = false;
   private guardComboOwnsBarrier = false;
   private guardComboBarrierEndMs = 0;
-  /** Single teardown timer for Wraith Guard + Colossus Guard + Guard Combo (max of end times). */
+  /** Dash Guard talent: double-tap dash; same barrier path as Wraith Guard. */
+  private dashGuardShieldActive = false;
+  private dashGuardOwnsBarrier = false;
+  private dashGuardBarrierEndMs = 0;
+
+  /** EXECUTIONER: next Runeblade LMB after startDash within window; 0 = inactive. */
+  private executionerBuffDeadlineMs = 0;
+  private runebladeExecutionerFlatBonusPending = 0;
+  /** Crusader talent: LMB flat damage + blade theme while Date.now() < this. */
+  private runebladeCrusaderBuffEndMs = 0;
+  private runebladeBlizzardEndMs = 0;
+  /** Single teardown timer for Wraith Guard + Colossus Guard + Guard Combo + Dash Guard (max of end times). */
   private talentBarrierEndTimeout: ReturnType<typeof setTimeout> | null = null;
   
   // Skyfall ability state (Sabres)
@@ -454,8 +501,12 @@ export class ControlSystem extends System {
 
   // WraithStrike ability state (Runeblade)
   private lastWraithStrikeTime = 0;
-  private wraithStrikeCooldown = 4.5; // 3 second cooldown
+  private wraithStrikeCooldown = WRAITH_STRIKE_COOLDOWN_SEC;
   private isWraithStriking = false;
+  /** Double Strike talent: staggered charge recharge (one timer at a time). */
+  private wraithStrikeDoubleStrikeActive = false;
+  private wraithStrikeCharges = 0;
+  private wraithStrikeNextChargeAt: number | null = null;
 
   // Corrupted Aura ability state (Runeblade)
   private corruptedAuraActive = false;
@@ -526,7 +577,7 @@ export class ControlSystem extends System {
     this.skillPointData = SkillPointSystem.getInitialSkillPointData();
 
     // Initialize weapon and subclass based on selected weapons
-    this.currentWeapon = selectedWeapons?.primary || WeaponType.BOW;
+    this.currentWeapon = selectedWeapons?.primary ?? WeaponType.NONE;
     this.currentSubclass = this.getDefaultSubclassForWeapon(this.currentWeapon);
 
     // Set reference in DamageCalculator for passive ability checks
@@ -535,6 +586,8 @@ export class ControlSystem extends System {
 
   private getDefaultSubclassForWeapon(weapon: WeaponType): WeaponSubclass {
     switch (weapon) {
+      case WeaponType.NONE:
+        return WeaponSubclass.ELEMENTAL;
       case WeaponType.SWORD:
         return WeaponSubclass.DIVINITY;
       case WeaponType.BOW:
@@ -554,6 +607,10 @@ export class ControlSystem extends System {
 
   public setPlayer(entity: Entity): void {
     this.playerEntity = entity;
+  }
+
+  public getAudioSystem(): AudioSystem | null {
+    return this.audioSystem;
   }
 
   public setPlayableRadius(radius: number): void {
@@ -782,11 +839,19 @@ export class ControlSystem extends System {
     }
 
     // Handle weapon switching with number keys based on selected weapons
-    if (this.inputManager.isKeyPressed('1') && this.selectedWeapons?.primary) {
+    if (
+      this.inputManager.isKeyPressed('1') &&
+      this.selectedWeapons?.primary &&
+      this.selectedWeapons.primary !== WeaponType.NONE
+    ) {
       if (this.currentWeapon !== this.selectedWeapons.primary) {
         this.switchToWeapon(this.selectedWeapons.primary, currentTime);
       }
-    } else if (this.inputManager.isKeyPressed('2') && this.selectedWeapons?.secondary) {
+    } else if (
+      this.inputManager.isKeyPressed('2') &&
+      this.selectedWeapons?.secondary &&
+      this.selectedWeapons.secondary !== WeaponType.NONE
+    ) {
       if (this.currentWeapon !== this.selectedWeapons.secondary) {
         this.switchToWeapon(this.selectedWeapons.secondary, currentTime);
       }
@@ -827,6 +892,9 @@ export class ControlSystem extends System {
       case WeaponType.SPEAR:
         this.currentSubclass = WeaponSubclass.STORM;
         break;
+      case WeaponType.NONE:
+        this.currentSubclass = WeaponSubclass.ELEMENTAL;
+        break;
     }
 
     this.lastWeaponSwitchTime = currentTime;
@@ -838,6 +906,8 @@ export class ControlSystem extends System {
   private applyPassiveAbilities(weaponType: WeaponType): void {
     // First, apply global passive effects that persist regardless of current weapon
     this.applyGlobalPassiveEffects();
+
+    if (weaponType === WeaponType.NONE) return;
 
     // Determine weapon slot
     let weaponSlot: 'primary' | 'secondary' | null = null;
@@ -1218,12 +1288,85 @@ export class ControlSystem extends System {
     }
   }
 
+  /** Sync Double Strike charge mode with talent + loadout; init or clear charge state on transitions. */
+  private syncWraithStrikeDoubleStrikeMode(): boolean {
+    const active = shouldApplyDoubleStrikeTalent(this.talentLoadout, this.abilityLoadout);
+    if (!active) {
+      if (this.wraithStrikeDoubleStrikeActive) {
+        this.wraithStrikeDoubleStrikeActive = false;
+        this.wraithStrikeCharges = 0;
+        this.wraithStrikeNextChargeAt = null;
+      }
+      return false;
+    }
+    if (!this.wraithStrikeDoubleStrikeActive) {
+      this.wraithStrikeDoubleStrikeActive = true;
+      this.wraithStrikeCharges = WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES;
+      this.wraithStrikeNextChargeAt = null;
+    }
+    return true;
+  }
+
+  /** Apply completed Wraith Strike charge timers (Double Strike only). */
+  private advanceWraithStrikeChargeRecharges(now: number): void {
+    const maxC = WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES;
+    while (
+      this.wraithStrikeNextChargeAt !== null &&
+      now >= this.wraithStrikeNextChargeAt &&
+      this.wraithStrikeCharges < maxC
+    ) {
+      this.wraithStrikeCharges++;
+      if (this.wraithStrikeCharges < maxC) {
+        this.wraithStrikeNextChargeAt += this.wraithStrikeCooldown;
+      } else {
+        this.wraithStrikeNextChargeAt = null;
+      }
+    }
+  }
+
+  private getWraithStrikeCooldownInfo(
+    currentTime: number,
+  ): { current: number; max: number; isActive: boolean; charges?: number; maxCharges?: number } {
+    if (this.syncWraithStrikeDoubleStrikeMode()) {
+      this.advanceWraithStrikeChargeRecharges(currentTime);
+      const maxC = WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES;
+      if (this.wraithStrikeCharges > 0) {
+        return {
+          current: 0,
+          max: this.wraithStrikeCooldown,
+          isActive: this.isWraithStriking,
+          charges: this.wraithStrikeCharges,
+          maxCharges: maxC,
+        };
+      }
+      const until =
+        this.wraithStrikeNextChargeAt != null
+          ? Math.max(0, this.wraithStrikeNextChargeAt - currentTime)
+          : this.wraithStrikeCooldown;
+      return {
+        current: until,
+        max: this.wraithStrikeCooldown,
+        isActive: this.isWraithStriking,
+        charges: 0,
+        maxCharges: maxC,
+      };
+    }
+    return {
+      current: Math.max(0, this.wraithStrikeCooldown - (currentTime - this.lastWraithStrikeTime)),
+      max: this.wraithStrikeCooldown,
+      isActive: this.isWraithStriking,
+    };
+  }
+
   /** Return the cooldown info for a specific universal ability id. */
-  private getCooldownForAbility(abilityId: string, currentTime: number): { current: number; max: number; isActive: boolean } {
+  private getCooldownForAbility(
+    abilityId: string,
+    currentTime: number,
+  ): { current: number; max: number; isActive: boolean; charges?: number; maxCharges?: number } {
     switch (abilityId) {
       case 'DEATH_GRASP':
       case 'RUNEBLADE_Q': return { current: Math.max(0, this.deathGraspCooldown - (currentTime - this.lastDeathGraspTime)), max: this.deathGraspCooldown, isActive: this.isDeathGrasping };
-      case 'RUNEBLADE_E': return { current: Math.max(0, this.wraithStrikeCooldown - (currentTime - this.lastWraithStrikeTime)), max: this.wraithStrikeCooldown, isActive: this.isWraithStriking };
+      case 'RUNEBLADE_E': return this.getWraithStrikeCooldownInfo(currentTime);
       case 'RUNEBLADE_R': return { current: Math.max(0, this.smiteCooldown - (currentTime - this.lastSmiteTime)), max: this.smiteCooldown, isActive: this.isSmiting };
       case 'BOW_Q':       return { current: Math.max(0, this.barrageFireRate - (currentTime - this.lastBarrageTime)), max: this.barrageFireRate, isActive: this.isBarrageCharging };
       case 'BOW_E':       return { current: Math.max(0, this.cobraShotFireRate - (currentTime - this.lastCobraShotTime)), max: this.cobraShotFireRate, isActive: this.isCobraShotCharging };
@@ -1255,6 +1398,7 @@ export class ControlSystem extends System {
       return;
     }
 
+    if (this.currentWeapon !== WeaponType.NONE) {
     if (this.currentWeapon === WeaponType.BOW) {
       this.handleBowInput(playerTransform);
     } else if (this.currentWeapon === WeaponType.SCYTHE) {
@@ -1268,6 +1412,7 @@ export class ControlSystem extends System {
     } else if (this.currentWeapon === WeaponType.SPEAR) {
       this.handleSpearInput(playerTransform);
     }
+    }
 
     // Dispatch Q/E/R to the player's chosen ability loadout (cross-weapon)
     this.handleLoadoutAbilityKeys(playerTransform);
@@ -1277,8 +1422,11 @@ export class ControlSystem extends System {
   }
 
   private handleBowInput(playerTransform: Transform): void {
-    // Check if RAPIDFIRE passive is unlocked
-    const hasRapidfirePassive = this.isPassiveAbilityUnlocked('P', WeaponType.BOW, this.currentWeapon === this.selectedWeapons?.primary ? 'primary' : 'secondary');
+    const bowSlot: 'primary' | 'secondary' =
+      this.currentWeapon === this.selectedWeapons?.primary ? 'primary' : 'secondary';
+    const hasRapidfirePassive =
+      this.isPassiveAbilityUnlocked('P', WeaponType.BOW, bowSlot) ||
+      (this.currentWeapon === WeaponType.BOW && this.talentLoadout.tempestRounds === true);
 
     // Q/E/R abilities are now handled by handleLoadoutAbilityKeys via the universal dispatch.
 
@@ -1288,6 +1436,7 @@ export class ControlSystem extends System {
       // Ensure charging state is reset since we don't use charging in burst mode
       this.isCharging = false;
       this.chargeProgress = 0;
+      this.bowPrimaryChargeStartMs = null;
 
       if (this.inputManager.isMouseButtonPressed(0)) { // Left mouse button pressed
         const currentTime = Date.now() / 1000; // Convert to seconds
@@ -1322,19 +1471,25 @@ export class ControlSystem extends System {
         if (!this.isCharging && !this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging && !this.isRejuvenatingShotCharging) {
           this.isCharging = true;
           this.chargeProgress = 0;
+          this.bowPrimaryChargeStartMs = performance.now();
 
           // Play bow draw sound when starting to charge
           this.audioSystem?.playBowDrawSound(playerTransform.position);
         }
-        // Increase charge progress (could be time-based)
         if (!this.isViperStingCharging && !this.isBarrageCharging && !this.isCobraShotCharging && !this.isRejuvenatingShotCharging) {
-          this.chargeProgress = Math.min(this.chargeProgress + 0.0125, 1.0); // BOW CHARGE SPEED
+          if (this.bowPrimaryChargeStartMs != null) {
+            this.chargeProgress = Math.min(
+              1,
+              (performance.now() - this.bowPrimaryChargeStartMs) / BOW_FULL_CHARGE_MS
+            );
+          }
         }
       } else if (this.isCharging) {
         // Check if any ability is charging - if so, cancel the regular bow shot
         if (this.isViperStingCharging || this.isBarrageCharging || this.isCobraShotCharging || this.isRejuvenatingShotCharging) {
           this.isCharging = false;
           this.chargeProgress = 0;
+          this.bowPrimaryChargeStartMs = null;
           return;
         }
 
@@ -1351,6 +1506,7 @@ export class ControlSystem extends System {
         this.fireProjectile(playerTransform);
         this.isCharging = false;
         this.chargeProgress = 0;
+        this.bowPrimaryChargeStartMs = null;
 
         // Trigger visual effects callback with the stored charge progress
         this.triggerBowReleaseEffects(finalChargeProgress);
@@ -1360,7 +1516,9 @@ export class ControlSystem extends System {
 
   private handleScytheInput(playerTransform: Transform): void {
     const weaponSlot: 'primary' | 'secondary' = this.currentWeapon === this.selectedWeapons?.primary ? 'primary' : 'secondary';
-    const isIcebeamUnlocked = this.isPassiveAbilityUnlocked('P', WeaponType.SCYTHE, weaponSlot);
+    const isIcebeamUnlocked =
+      this.isPassiveAbilityUnlocked('P', WeaponType.SCYTHE, weaponSlot) ||
+      (this.currentWeapon === WeaponType.SCYTHE && this.talentLoadout.icebeam === true);
 
     // Handle Scythe left click:
     // - default: Entropic Bolt primary
@@ -1370,7 +1528,7 @@ export class ControlSystem extends System {
         if (!this.isIcebeaming) {
           // Check cooldown
           const currentTime = Date.now() / 1000;
-          if (currentTime - this.lastIcebeamTime < this.icebeamCooldown) {
+          if (currentTime - this.lastIcebeamTime < this.icebeamCooldownDurationSec) {
             return; // On cooldown
           }
 
@@ -1402,6 +1560,10 @@ export class ControlSystem extends System {
         } else {
           // Continue spinning animation while Icebeaming
           this.chargeProgress += 0.03; // Continuously increase for spinning
+          const heldSec = (Date.now() - this.icebeamStartTime) / 1000;
+          if (heldSec >= ICEBEAM_MAX_HOLD_SEC) {
+            this.stopIcebeam(true);
+          }
         }
       } else if (this.isIcebeaming) {
         // Stop Icebeam when mouse is released
@@ -1422,10 +1584,13 @@ export class ControlSystem extends System {
     // Q/E/R abilities are now handled by handleLoadoutAbilityKeys via the universal dispatch.
   }
 
-  private stopIcebeam(): void {
+  private stopIcebeam(endedByMaxHold = false): void {
     this.isIcebeaming = false;
     this.icebeamStartTime = 0;
-    this.lastIcebeamTime = Date.now() / 1000; // Set cooldown
+    this.icebeamCooldownDurationSec = endedByMaxHold
+      ? ICEBEAM_COOLDOWN_AFTER_MAX_HOLD_SEC
+      : ICEBEAM_COOLDOWN_AFTER_RELEASE_SEC;
+    this.lastIcebeamTime = Date.now() / 1000;
     // Remove movement and camera speed debuffs
     const playerMovement = this.playerEntity?.getComponent(Movement);
     if (playerMovement) {
@@ -1476,10 +1641,7 @@ export class ControlSystem extends System {
     direction.applyMatrix4(rotationMatrix);
     direction.normalize();
     
-    // Perfect shot timing constants
-    const perfectShotMinThreshold = 0.7; // 85% charge
-    const perfectShotMaxThreshold = 0.98; // 95% charge
-    const isPerfectShot = this.chargeProgress >= perfectShotMinThreshold && this.chargeProgress <= perfectShotMaxThreshold;
+    const isPerfectShot = isBowPerfectShotProgress(this.chargeProgress);
     
     // Check if bow is fully charged for special projectile
     if (this.chargeProgress >= 1.0) {
@@ -1860,8 +2022,6 @@ export class ControlSystem extends System {
 
   private createCrossentropyBoltProjectile(position: Vector3, direction: Vector3): void {
     if (!this.playerEntity) return;
-
-    // Note: Mana was already checked and consumed in performCrossentropyAbility()
     
     // Offset projectile spawn position slightly forward to avoid collision with player
     const spawnPosition = position.clone();
@@ -2164,9 +2324,6 @@ export class ControlSystem extends System {
       if (this.cobraShotChargeProgress >= 1.0) {
         clearInterval(chargeInterval);
 
-        // Play cobra shot release sound when firing
-        this.audioSystem?.playCobraShotReleaseSound(playerTransform.position);
-
         this.fireCobraShot(playerTransform);
         this.isCobraShotCharging = false;
         this.cobraShotChargeProgress = 0;
@@ -2174,42 +2331,35 @@ export class ControlSystem extends System {
     }, 16); // ~60fps updates
   }
 
-  private fireCobraShot(playerTransform: Transform): void {
-    // Get player position and direction (same as other projectiles)
+  /** Shared Cobra Shot emit: BOW_E after charge and Wyvern Sting on perfect shot. */
+  private emitCobraShotFromPlayerTransform(playerTransform: Transform): void {
+    this.audioSystem?.playCobraShotReleaseSound(playerTransform.position);
+
     const playerPosition = playerTransform.getWorldPosition();
     playerPosition.y += 0.825; // Shoot from chest level like Viper Sting
-    
+
     const direction = new Vector3();
     this.camera.getWorldDirection(direction);
     direction.normalize();
-    
-    // Apply same downward angle compensation as other projectiles
+
     const compensationAngle = Math.PI / 6; // 30 degrees downward compensation
     const cameraRight = new Vector3();
     cameraRight.crossVectors(direction, new Vector3(0, 1, 0)).normalize();
-    
-    // Apply rotation around the right axis to tilt the direction downward
+
     const rotationMatrix = new Matrix4();
     rotationMatrix.makeRotationAxis(cameraRight, compensationAngle);
     direction.applyMatrix4(rotationMatrix);
     direction.normalize();
-    
-    // Offset spawn position slightly forward to avoid collision with player
+
     const spawnPosition = playerPosition.clone();
     spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
-    
-    // Note: Cobra Shot damage is handled by CobraShotManager, not ECS projectiles
-    // This prevents duplicate projectiles and damage (similar to Viper Sting)
-    
-    // Trigger Cobra Shot callback for visual effects
+
     if (this.onCobraShotCallback) {
       this.onCobraShotCallback(spawnPosition, direction);
     }
-    
-    // Trigger global cobra shot with proper positioning (handles local visual effects and damage)
+
     triggerGlobalCobraShot(spawnPosition, direction);
-    
-    // Broadcast projectile creation to other players
+
     if (this.onProjectileCreatedCallback) {
       this.onProjectileCreatedCallback('cobra_shot_projectile', spawnPosition, direction, {
         speed: 20, // Consistent speed for PVP
@@ -2218,6 +2368,10 @@ export class ControlSystem extends System {
         venomDuration: 6
       });
     }
+  }
+
+  private fireCobraShot(playerTransform: Transform): void {
+    this.emitCobraShotFromPlayerTransform(playerTransform);
   }
 
   private freezeEnemiesInRadius(centerPosition: Vector3, radius: number, currentTime: number): void {
@@ -2340,7 +2494,7 @@ export class ControlSystem extends System {
     
     const baseSpawn = position.clone();
     baseSpawn.add(direction.clone().multiplyScalar(1)); // 1 unit forward
-    baseSpawn.y += 0.5; // Slightly higher
+    baseSpawn.y += 1.0; // Slightly higher
 
     const spawns: Vector3[] = this.shouldApplyDualCoilForBow()
       ? (() => {
@@ -2383,6 +2537,17 @@ export class ControlSystem extends System {
         });
       }
     }
+
+    if (this.shouldApplyWyvernStingForBow()) {
+      const now = Date.now() / 1000;
+      if (now - this.lastWyvernStingTime >= WYVERN_STING_COOLDOWN_SEC) {
+        const playerTransform = this.playerEntity.getComponent(Transform) as Transform | undefined;
+        if (playerTransform) {
+          this.lastWyvernStingTime = now;
+          this.emitCobraShotFromPlayerTransform(playerTransform);
+        }
+      }
+    }
   }
 
   // Methods to configure weapon for testing
@@ -2400,7 +2565,9 @@ export class ControlSystem extends System {
     this.onProjectileCreatedCallback = callback;
   }
   
-  public setViperStingCallback(callback: (position: Vector3, direction: Vector3) => void): void {
+  public setViperStingCallback(
+    callback: (position: Vector3, direction: Vector3, meta?: { explosiveTalons?: boolean }) => void,
+  ): void {
     this.onViperStingCallback = callback;
   }
 
@@ -2634,12 +2801,7 @@ export class ControlSystem extends System {
   // Method to trigger bow release effects
   private triggerBowReleaseEffects(finalChargeProgress: number): void {
     if (this.onBowReleaseCallback) {
-      // Check if this was a perfect shot
-      const perfectShotMinThreshold = 0.75; // 85% charge
-      const perfectShotMaxThreshold = 0.98; // 95% charge
-      const isPerfectShot = finalChargeProgress >= perfectShotMinThreshold && finalChargeProgress <= perfectShotMaxThreshold;
-      
-      this.onBowReleaseCallback(finalChargeProgress, isPerfectShot);
+      this.onBowReleaseCallback(finalChargeProgress, isBowPerfectShotProgress(finalChargeProgress));
     }
   }
 
@@ -2729,6 +2891,29 @@ export class ControlSystem extends System {
     return this.swordComboStep;
   }
 
+  /** Runeblade EXECUTIONER: additive base damage for current swing (consumed once per performSwingDamage). */
+  public getAndClearRunebladeExecutionerFlatBonus(): number {
+    const v = this.runebladeExecutionerFlatBonusPending;
+    this.runebladeExecutionerFlatBonusPending = 0;
+    return v;
+  }
+
+  public isRunebladeCrusaderBuffActive(): boolean {
+    if (!shouldApplyCrusaderTalent(this.talentLoadout)) return false;
+    if (this.runebladeCrusaderBuffEndMs <= 0) return false;
+    return Date.now() < this.runebladeCrusaderBuffEndMs;
+  }
+
+  public isRunebladeBlizzardTalentActive(): boolean {
+    if (!shouldApplyBlizzardTalent(this.talentLoadout)) return false;
+    if (this.runebladeBlizzardEndMs <= 0) return false;
+    return Date.now() < this.runebladeBlizzardEndMs;
+  }
+
+  public getRunebladeCrusaderLmbFlatBonus(): number {
+    if (!this.isRunebladeCrusaderBuffActive()) return 0;
+    return CRUSADER_LMB_FLAT_BONUS;
+  }
 
   public isChargeActive(): boolean {
     return this.isSwordCharging;
@@ -2760,6 +2945,14 @@ export class ControlSystem extends System {
 
   public isSmiteActive(): boolean {
     return this.isSmiting;
+  }
+
+  /** Vengeance talent: 1 at full HP, up to 3× at 0 HP (+200% extra). */
+  public getVengeanceSmiteDamageMultiplier(): number {
+    if (!shouldApplyVengeanceSmiteTalent(this.talentLoadout, this.abilityLoadout)) return 1;
+    const h = this.playerEntity?.getComponent(Health);
+    if (!h || h.maxHealth <= 0) return 1;
+    return getVengeanceSmiteOutgoingDamageMultiplier(h.currentHealth, h.maxHealth);
   }
 
   public isColossusStrikeActive(): boolean {
@@ -2895,11 +3088,25 @@ export class ControlSystem extends System {
   }
 
   private performRunebladeMeleeAttack(playerTransform: Transform): void {
-    // Rate limiting - prevent spam clicking (use runeblade-specific fire rate)
     const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastRunebladeFireTime < this.runebladeFireRate) {
+    let effectiveFireRate = this.runebladeFireRate;
+    if (this.isFlurryActive) {
+      effectiveFireRate /= 1.5;
+    }
+    if (currentTime - this.lastRunebladeFireTime < effectiveFireRate) {
       return;
     }
+
+    if (
+      shouldApplyExecutionerTalent(this.talentLoadout) &&
+      this.executionerBuffDeadlineMs > 0 &&
+      Date.now() < this.executionerBuffDeadlineMs
+    ) {
+      this.executionerBuffDeadlineMs = 0;
+      this.swordComboStep = 3;
+      this.runebladeExecutionerFlatBonusPending = EXECUTIONER_BASE_DAMAGE_ADD;
+    }
+
     this.lastRunebladeFireTime = currentTime;
     this.lastSwordAttackTime = currentTime;
 
@@ -2909,8 +3116,11 @@ export class ControlSystem extends System {
     // Cone hit preview only — actual damage is applied in Runeblade.tsx (performSwingDamage) to avoid double hits
     const enemiesHit = this.performMeleeDamage(playerTransform, false);
     if (enemiesHit > 0) {
-      // Hit an enemy — play the normal attack sound for this combo step
-      this.audioSystem?.playSwordSwingSound(this.swordComboStep, playerTransform.position);
+      // Hit sound: crit vs non-crit after damage resolves in CombatSystem (sword_swing_1–3 vs runeblade_swing)
+      this.world.getSystem(CombatSystem)?.armRunebladeLmbHitSound(
+        this.swordComboStep,
+        playerTransform.position,
+      );
     } else {
       // Missed — play the appropriate miss sound (swordMiss2 on 3rd combo step)
       this.audioSystem?.playRunebladeMissSound(this.swordComboStep, playerTransform.position);
@@ -3308,10 +3518,15 @@ export class ControlSystem extends System {
   }
 
   private performWraithStrike(playerTransform: Transform): void {
-    // Check cooldown
     const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastWraithStrikeTime < this.wraithStrikeCooldown) {
-      return; // Still on cooldown
+
+    if (this.syncWraithStrikeDoubleStrikeMode()) {
+      this.advanceWraithStrikeChargeRecharges(currentTime);
+      if (this.wraithStrikeCharges <= 0) {
+        return;
+      }
+    } else if (currentTime - this.lastWraithStrikeTime < this.wraithStrikeCooldown) {
+      return;
     }
 
     // Check if already wraith striking
@@ -3319,8 +3534,29 @@ export class ControlSystem extends System {
       return;
     }
 
-    this.lastWraithStrikeTime = currentTime;
+    if (this.wraithStrikeDoubleStrikeActive) {
+      this.wraithStrikeCharges--;
+      if (
+        this.wraithStrikeCharges < WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES &&
+        this.wraithStrikeNextChargeAt === null
+      ) {
+        this.wraithStrikeNextChargeAt = currentTime + this.wraithStrikeCooldown;
+      }
+    } else {
+      this.lastWraithStrikeTime = currentTime;
+    }
     this.isWraithStriking = true;
+
+    if (shouldApplySpellbladeTalent(this.talentLoadout, this.abilityLoadout) && this.playerEntity) {
+      const shieldComponent = this.playerEntity.getComponent(Shield);
+      if (shieldComponent) {
+        const newShieldValue = Math.min(
+          shieldComponent.maxShield,
+          shieldComponent.currentShield + SPELLBLADE_WRAITH_STRIKE_SHIELD_RESTORE,
+        );
+        shieldComponent.setShield(newShieldValue, shieldComponent.maxShield);
+      }
+    }
 
     // Play wraithblade sound
     this.audioSystem?.playRunebladeWraithbladeSound(playerTransform.position);
@@ -3597,6 +3833,63 @@ export class ControlSystem extends System {
     }
   }
 
+  private tryWindfuryProcAfterPrimaryHit(playerTransform: Transform): void {
+    if (!shouldApplyWindfuryTalent(this.talentLoadout)) return;
+    if (Math.random() >= WINDFURY_PROC_CHANCE) return;
+    this.applyStormShroudFlurry(playerTransform, 'windfury', Date.now() / 1000);
+  }
+
+  private tryCrusaderProcFromRunebladePrimaryHit(_playerTransform: Transform): void {
+    if (!shouldApplyCrusaderTalent(this.talentLoadout)) return;
+    if (Math.random() >= CRUSADER_PROC_CHANCE) return;
+    this.runebladeCrusaderBuffEndMs = Date.now() + CRUSADER_DURATION_SEC * 1000;
+  }
+
+  private tryBlizzardProcFromRunebladePrimaryHit(_playerTransform: Transform): void {
+    if (!shouldApplyBlizzardTalent(this.talentLoadout)) return;
+    if (Math.random() >= BLIZZARD_PROC_CHANCE) return;
+    const now = Date.now();
+    const extendFrom = Math.max(this.runebladeBlizzardEndMs, now);
+    this.runebladeBlizzardEndMs = extendFrom + BLIZZARD_DURATION_SEC * 1000;
+  }
+
+  private applyFlurryHealingForPrimaryHits(playerTransform: Transform, enemiesHit: number): void {
+    if (!this.isFlurryActive || enemiesHit <= 0 || !this.playerEntity) return;
+    const combatSystem = this.world.getSystem(CombatSystem);
+    const healPerHit = 15;
+    const totalHealing = healPerHit * enemiesHit;
+    const playerHealth = this.playerEntity.getComponent(Health);
+    if (!playerHealth || !combatSystem) return;
+
+    console.log(`⚔️ Flurry healing: ${totalHealing} HP from ${enemiesHit} hit(s)`);
+    const didHeal = playerHealth.heal(totalHealing);
+
+    if (didHeal) {
+      const healingPosition = playerTransform.position.clone();
+      healingPosition.y += 1.5;
+
+      if (this.onDamageNumbersUpdate) {
+        this.onDamageNumbersUpdate([{
+          id: this.nextDamageNumberId.toString(),
+          damage: totalHealing,
+          position: healingPosition,
+          isCritical: false,
+          timestamp: Date.now(),
+          damageType: 'flurry_healing'
+        }]);
+        this.nextDamageNumberId++;
+      }
+
+      if (this.onFlurryHealingEffectCallback) {
+        this.onFlurryHealingEffectCallback(playerTransform.position.clone());
+      }
+
+      if (this.onBroadcastHealing) {
+        this.onBroadcastHealing(totalHealing, 'flurry', healingPosition);
+      }
+    }
+  }
+
   private performSpearMeleeDamage(playerTransform: Transform): number {
     // Get all entities in the world to check for enemies
     const allEntities = this.world.getAllEntities();
@@ -3653,54 +3946,10 @@ export class ControlSystem extends System {
       }
     });
 
-    const currentTime = Date.now() / 1000;
-    if (
-      enemiesHit > 0 &&
-      shouldApplyWindfuryTalent(this.talentLoadout) &&
-      Math.random() < WINDFURY_PROC_CHANCE
-    ) {
-      this.applyStormShroudFlurry(playerTransform, 'windfury', currentTime);
+    if (enemiesHit > 0) {
+      this.tryWindfuryProcAfterPrimaryHit(playerTransform);
     }
-
-    // If Flurry is active and enemies were hit, heal the player
-    if (this.isFlurryActive && enemiesHit > 0 && this.playerEntity) {
-      const healPerHit = 15;
-      const totalHealing = healPerHit * enemiesHit;
-      
-      const playerHealth = this.playerEntity.getComponent(Health);
-      if (playerHealth && combatSystem) {
-        console.log(`⚔️ Flurry healing: ${totalHealing} HP from ${enemiesHit} hit(s)`);
-        const didHeal = playerHealth.heal(totalHealing);
-        
-        if (didHeal) {
-          // Create healing damage number above player head
-          const healingPosition = playerTransform.position.clone();
-          healingPosition.y += 1.5; // Position above player's head
-
-          if (this.onDamageNumbersUpdate) {
-            this.onDamageNumbersUpdate([{
-              id: this.nextDamageNumberId.toString(),
-              damage: totalHealing,
-              position: healingPosition,
-              isCritical: false,
-              timestamp: Date.now(),
-              damageType: 'flurry_healing'
-            }]);
-            this.nextDamageNumberId++;
-          }
-
-          // Trigger Flurry healing visual effect
-          if (this.onFlurryHealingEffectCallback) {
-            this.onFlurryHealingEffectCallback(playerTransform.position.clone());
-          }
-
-          // Broadcast healing in multiplayer
-          if (this.onBroadcastHealing) {
-            this.onBroadcastHealing(totalHealing, 'flurry', healingPosition);
-          }
-        }
-      }
-    }
+    this.applyFlurryHealingForPrimaryHits(playerTransform, enemiesHit);
 
     return enemiesHit;
   }
@@ -4652,6 +4901,7 @@ export class ControlSystem extends System {
     this.isSwinging = false; // Reset swinging state to prevent sound overlap
     this.isCharging = false; // Reset bow charging state
     this.chargeProgress = 0; // Reset charge progress
+    this.bowPrimaryChargeStartMs = null;
     this.isViperStingCharging = false; // Reset viper sting charging
     this.viperStingChargeProgress = 0;
     this.isBarrageCharging = false; // Reset barrage charging
@@ -4705,6 +4955,13 @@ export class ControlSystem extends System {
     this.guardComboShieldActive = false;
     this.guardComboOwnsBarrier = false;
     this.guardComboBarrierEndMs = 0;
+    this.dashGuardShieldActive = false;
+    this.dashGuardOwnsBarrier = false;
+    this.dashGuardBarrierEndMs = 0;
+    this.executionerBuffDeadlineMs = 0;
+    this.runebladeExecutionerFlatBonusPending = 0;
+    this.runebladeCrusaderBuffEndMs = 0;
+    this.runebladeBlizzardEndMs = 0;
     if (this.deflectBarrier.isBarrierActive()) {
       this.deflectBarrier.deactivate();
     }
@@ -4830,6 +5087,12 @@ export class ControlSystem extends System {
 
   public setTalentLoadout(loadout: TalentLoadout): void {
     this.talentLoadout = { ...createDefaultTalentLoadout(), ...loadout };
+    if (!shouldApplyCrusaderTalent(this.talentLoadout)) {
+      this.runebladeCrusaderBuffEndMs = 0;
+    }
+    if (!shouldApplyBlizzardTalent(this.talentLoadout)) {
+      this.runebladeBlizzardEndMs = 0;
+    }
   }
 
   public setReaperCrossentropyStack(stacks: number): void {
@@ -4870,6 +5133,20 @@ export class ControlSystem extends System {
   /** Dual Coil: twin Bow LMB projectiles and paired perfect-shot beam VFX. */
   public shouldApplyDualCoilForBow(): boolean {
     return shouldApplyDualCoilTalent(this.talentLoadout) && this.currentWeapon === WeaponType.BOW;
+  }
+
+  /** Tempest Rounds: P passive unlock or co-op talent — used for bow crit bonus in DamageCalculator. */
+  public isBowTempestRoundsActive(): boolean {
+    if (this.currentWeapon !== WeaponType.BOW || !this.selectedWeapons) return false;
+    const weaponSlot = this.selectedWeapons.primary === WeaponType.BOW ? 'primary' : 'secondary';
+    return (
+      this.isPassiveAbilityUnlocked('P', WeaponType.BOW, weaponSlot) || this.talentLoadout.tempestRounds === true
+    );
+  }
+
+  /** Wyvern Sting: bonus Cobra Shot on perfect primary shot (Bow + talent toggle). */
+  private shouldApplyWyvernStingForBow(): boolean {
+    return shouldApplyWyvernStingTalent(this.talentLoadout) && this.currentWeapon === WeaponType.BOW;
   }
 
   /** STORED CHARGE: Runeblade Charge spin count and per-rotation damage (see Runeblade + talents). */
@@ -4920,6 +5197,10 @@ export class ControlSystem extends System {
       this.isInvisible = false;
       this.stealthStartTime = 0;
       this.broadcastStealthState(false);
+      this.executionerBuffDeadlineMs = 0;
+      this.runebladeExecutionerFlatBonusPending = 0;
+      this.runebladeCrusaderBuffEndMs = 0;
+      this.runebladeBlizzardEndMs = 0;
     }
   }
 
@@ -5218,7 +5499,7 @@ export class ControlSystem extends System {
     direction.normalize();
     
     // Melee attack parameters -  for PVP combat
-    const meleeRange = 4.5; //  attack range for PVP
+    const meleeRange = 5; //  attack range for PVP
     const meleeAngle = Math.PI / 2; // 120 degree cone (60 degrees each side)
     
     // Base damage values based on combo step and weapon type
@@ -5332,6 +5613,18 @@ export class ControlSystem extends System {
           const dashStarted = movement.startDash(worldDirection, transform.position, currentTime);
           if (dashStarted) {
             this.audioSystem?.playUIDashSound();
+            if (
+              this.currentWeapon === WeaponType.RUNEBLADE &&
+              shouldApplyDashGuardTalent(this.talentLoadout)
+            ) {
+              this.applyDashGuardEffect(transform);
+            }
+            if (
+              this.currentWeapon === WeaponType.RUNEBLADE &&
+              shouldApplyExecutionerTalent(this.talentLoadout)
+            ) {
+              this.executionerBuffDeadlineMs = Date.now() + EXECUTIONER_POST_DASH_WINDOW_MS;
+            }
           }
         }
 
@@ -5351,11 +5644,10 @@ export class ControlSystem extends System {
     const dashResult = movement.updateDash(currentTime);
 
     if (dashResult.newPosition) {
-      // Apply bounds checking (similar to old implementation)
       const MAX_DASH_BOUNDS = this.playableRadius;
-      const distanceFromOrigin = dashResult.newPosition.length();
-      
-      if (distanceFromOrigin <= MAX_DASH_BOUNDS) {
+      const { x, z } = dashResult.newPosition;
+
+      if (isInsideMainArenaXZ(x, z, MAX_DASH_BOUNDS)) {
         transform.position.copy(dashResult.newPosition);
       } else {
         // Cancel dash if it would move too far from origin
@@ -5385,14 +5677,13 @@ export class ControlSystem extends System {
     const chargeResult = movement.updateCharge(currentTime);
 
     if (chargeResult.newPosition) {
-      // Apply bounds checking
       const MAX_CHARGE_BOUNDS = this.playableRadius;
-      const distanceFromOrigin = chargeResult.newPosition.length();
-      
+      const { x, z } = chargeResult.newPosition;
+
       // Check for pillar collision
       const pillarCollision = this.checkPillarCollision(chargeResult.newPosition);
-      
-      if (distanceFromOrigin > MAX_CHARGE_BOUNDS) {
+
+      if (!isInsideMainArenaXZ(x, z, MAX_CHARGE_BOUNDS)) {
         // Cancel charge if it would move too far from origin
         movement.cancelCharge();
         // Notify sword component that charge was cancelled
@@ -5723,6 +6014,9 @@ export class ControlSystem extends System {
     this.guardComboOwnsBarrier = false;
     this.guardComboShieldActive = false;
     this.guardComboBarrierEndMs = 0;
+    this.dashGuardOwnsBarrier = false;
+    this.dashGuardShieldActive = false;
+    this.dashGuardBarrierEndMs = 0;
     if (this.deflectBarrier.isBarrierActive()) {
       this.deflectBarrier.deactivate();
     }
@@ -5814,7 +6108,8 @@ export class ControlSystem extends System {
     
     // Trigger Viper Sting callback for visual effects
     if (this.onViperStingCallback) {
-      this.onViperStingCallback(playerPosition, direction);
+      const explosiveTalons = shouldApplyExplosiveTalonsTalent(this.talentLoadout, this.abilityLoadout);
+      this.onViperStingCallback(playerPosition, direction, { explosiveTalons });
     }
     
     // Trigger the global Viper Sting manager for visual effects
@@ -5826,7 +6121,8 @@ export class ControlSystem extends System {
         speed: 18,
         damage: 91,
         lifetime: 5,
-        isReturning: false
+        isReturning: false,
+        explosiveTalons: shouldApplyExplosiveTalonsTalent(this.talentLoadout, this.abilityLoadout),
       });
     }
   }
@@ -5967,6 +6263,7 @@ export class ControlSystem extends System {
       : fanAngles;
 
     const wrathfulBiteBarrage = shouldApplyWrathfulBiteTalent(this.talentLoadout, this.abilityLoadout);
+    const wyvernBiteBarrage = shouldApplyWyvernBiteTalent(this.talentLoadout, this.abilityLoadout);
 
     angles.forEach(angle => {
       // Rotate the base direction by the specified angle around the Y axis
@@ -5981,16 +6278,17 @@ export class ControlSystem extends System {
       
       // Create proper ECS projectile entity
       const projectileConfig = {
-        speed: 36, // Slightly faster than regular arrows (20)
-        damage: 73, // High damage for barrage arrows
+        speed: 30, // Slightly faster than regular arrows (20)
+        damage: 79, // High damage for barrage arrows
         lifetime: 8,
-        maxDistance: 20, // Limit barrage arrows to 25 units distance (same as regular arrows)
+        maxDistance: 16, // Limit barrage arrows to 25 units distance (same as regular arrows)
         piercing: false,
         subclass: this.currentSubclass,
         level: 1,
         opacity: 1.0,
         sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown',
         wrathfulBiteBarrage,
+        wyvernBiteBarrage,
       };
       
       const projectileEntity = this.projectileSystem.createProjectile(
@@ -6008,6 +6306,9 @@ export class ControlSystem extends System {
         renderer.mesh.userData.isRegularArrow = false; // Override regular arrow marking
         if (wrathfulBiteBarrage) {
           renderer.mesh.userData.barrageWrathfulBite = true;
+        }
+        if (wyvernBiteBarrage) {
+          renderer.mesh.userData.barrageWyvernBite = true;
         }
       }
       
@@ -6066,7 +6367,10 @@ export class ControlSystem extends System {
   private finishTalentBarrierTeardown(): void {
     if (
       !this.isDeflecting &&
-      (this.wraithGuardOwnsBarrier || this.colossusGuardOwnsBarrier || this.guardComboOwnsBarrier)
+      (this.wraithGuardOwnsBarrier ||
+        this.colossusGuardOwnsBarrier ||
+        this.guardComboOwnsBarrier ||
+        this.dashGuardOwnsBarrier)
     ) {
       if (this.deflectBarrier.isBarrierActive()) {
         this.deflectBarrier.deactivate();
@@ -6081,6 +6385,9 @@ export class ControlSystem extends System {
     this.guardComboOwnsBarrier = false;
     this.guardComboShieldActive = false;
     this.guardComboBarrierEndMs = 0;
+    this.dashGuardOwnsBarrier = false;
+    this.dashGuardShieldActive = false;
+    this.dashGuardBarrierEndMs = 0;
   }
 
   private onTalentBarrierTeardown(): void {
@@ -6098,6 +6405,9 @@ export class ControlSystem extends System {
     }
     if (this.guardComboShieldActive && this.guardComboBarrierEndMs > now) {
       maxEnd = Math.max(maxEnd, this.guardComboBarrierEndMs);
+    }
+    if (this.dashGuardShieldActive && this.dashGuardBarrierEndMs > now) {
+      maxEnd = Math.max(maxEnd, this.dashGuardBarrierEndMs);
     }
     if (maxEnd > now) {
       this.talentBarrierEndTimeout = setTimeout(() => this.onTalentBarrierTeardown(), maxEnd - now);
@@ -6121,6 +6431,9 @@ export class ControlSystem extends System {
     }
     if (this.guardComboShieldActive) {
       maxEnd = Math.max(maxEnd, this.guardComboBarrierEndMs);
+    }
+    if (this.dashGuardShieldActive) {
+      maxEnd = Math.max(maxEnd, this.dashGuardBarrierEndMs);
     }
     if (maxEnd <= now) {
       this.finishTalentBarrierTeardown();
@@ -6172,6 +6485,20 @@ export class ControlSystem extends System {
     this.applyGuardComboEffect(playerTransform);
   }
 
+  /** Windfury proc + Flurry heal — called once per Runeblade swing after real hits (Runeblade.tsx). */
+  public notifyRunebladePrimaryHits(enemiesHit: number): void {
+    if (!this.playerEntity) return;
+    if (this.currentWeapon !== WeaponType.RUNEBLADE) return;
+    const playerTransform = this.playerEntity.getComponent(Transform);
+    if (!playerTransform) return;
+    if (enemiesHit > 0) {
+      this.tryWindfuryProcAfterPrimaryHit(playerTransform);
+      this.tryCrusaderProcFromRunebladePrimaryHit(playerTransform);
+      this.tryBlizzardProcFromRunebladePrimaryHit(playerTransform);
+    }
+    this.applyFlurryHealingForPrimaryHits(playerTransform, enemiesHit);
+  }
+
   private applyGuardComboEffect(playerTransform: Transform): void {
     this.audioSystem?.playSwordDeflectSound(playerTransform.position);
     const health = this.playerEntity?.getComponent(Health);
@@ -6193,6 +6520,30 @@ export class ControlSystem extends System {
     this.guardComboShieldActive = true;
     this.guardComboBarrierEndMs = Date.now() + GUARD_COMBO_DURATION_SEC * 1000;
     this.setupDeflectBarrier(playerTransform, GUARD_COMBO_DURATION_SEC);
+    this.rescheduleTalentBarrierTeardown();
+  }
+
+  private applyDashGuardEffect(playerTransform: Transform): void {
+    this.audioSystem?.playSwordDeflectSound(playerTransform.position);
+    const health = this.playerEntity?.getComponent(Health);
+
+    if (this.deflectBarrier.isBarrierActive()) {
+      if (health) {
+        health.addInvulnerabilityTime(DASH_GUARD_DURATION_SEC, true);
+      }
+      if (this.isDeflecting) {
+        return;
+      }
+      this.dashGuardShieldActive = true;
+      this.dashGuardBarrierEndMs = Date.now() + DASH_GUARD_DURATION_SEC * 1000;
+      this.rescheduleTalentBarrierTeardown();
+      return;
+    }
+
+    this.dashGuardOwnsBarrier = true;
+    this.dashGuardShieldActive = true;
+    this.dashGuardBarrierEndMs = Date.now() + DASH_GUARD_DURATION_SEC * 1000;
+    this.setupDeflectBarrier(playerTransform, DASH_GUARD_DURATION_SEC);
     this.rescheduleTalentBarrierTeardown();
   }
 
@@ -6268,6 +6619,9 @@ export class ControlSystem extends System {
     this.guardComboOwnsBarrier = false;
     this.guardComboShieldActive = false;
     this.guardComboBarrierEndMs = 0;
+    this.dashGuardOwnsBarrier = false;
+    this.dashGuardShieldActive = false;
+    this.dashGuardBarrierEndMs = 0;
     this.deflectBarrier.deactivate();
   }
 
@@ -6281,6 +6635,10 @@ export class ControlSystem extends System {
 
   public isGuardComboShieldActive(): boolean {
     return this.guardComboShieldActive;
+  }
+
+  public isDashGuardShieldActive(): boolean {
+    return this.dashGuardShieldActive;
   }
 
   /** Duration (seconds) for local DeflectShield VFX while Aegis or talent guard shield is showing. */
@@ -6298,6 +6656,9 @@ export class ControlSystem extends System {
     }
     if (this.guardComboShieldActive) {
       maxRem = Math.max(maxRem, Math.max(0, (this.guardComboBarrierEndMs - now) / 1000));
+    }
+    if (this.dashGuardShieldActive) {
+      maxRem = Math.max(maxRem, Math.max(0, (this.dashGuardBarrierEndMs - now) / 1000));
     }
     if (maxRem > 0) {
       return Math.max(maxRem, 0.25);
@@ -6337,7 +6698,10 @@ export class ControlSystem extends System {
     }
   }
 
-  public getAbilityCooldowns(): Record<string, { current: number; max: number; isActive: boolean }> {
+  public getAbilityCooldowns(): Record<
+    string,
+    { current: number; max: number; isActive: boolean; charges?: number; maxCharges?: number }
+  > {
     const currentTime = Date.now() / 1000;
     const cooldowns: Record<string, { current: number; max: number; isActive: boolean }> = {};
 
@@ -6445,11 +6809,7 @@ export class ControlSystem extends System {
         max: this.deathGraspCooldown,
         isActive: this.isDeathGrasping
       };
-      cooldowns['E'] = {
-        current: Math.max(0, this.wraithStrikeCooldown - (currentTime - this.lastWraithStrikeTime)),
-        max: this.wraithStrikeCooldown,
-        isActive: this.isWraithStriking
-      };
+      cooldowns['E'] = this.getWraithStrikeCooldownInfo(currentTime);
       cooldowns['R'] = {
         current: Math.max(0, this.smiteCooldown - (currentTime - this.lastSmiteTime)),
         max: this.smiteCooldown,

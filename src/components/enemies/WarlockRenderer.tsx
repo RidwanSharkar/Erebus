@@ -19,6 +19,8 @@ interface WarlockRendererProps {
   maxHealth: number;
   isDying?: boolean;
   campType?: string;
+  /** Co-op camp soul colour; drives CubeSoulEffect (purple = meteor warlock, red = default). */
+  soulType?: 'red' | 'purple' | 'green' | 'blue' | 'yellow';
   staggerBuildup?: number;
 }
 
@@ -39,6 +41,7 @@ export default function WarlockRenderer({
   maxHealth,
   isDying = false,
   campType,
+  soulType,
   staggerBuildup = 0,
 }: WarlockRendererProps) {
   const theme = campHpTheme(campType);
@@ -47,12 +50,15 @@ export default function WarlockRenderer({
 
   const [isBlinking,  setIsBlinking]  = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
+  const [isImpacting, setIsImpacting] = useState(false);
+  const [impactPlayKey, setImpactPlayKey] = useState(0);
 
   type BlinkFx = { id: string; position: Vector3; type: 'start' | 'end' };
   const [blinkFx, setBlinkFx] = useState<BlinkFx[]>([]);
 
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
+  const prevHealthRef  = useRef(health);
   const fadeTimer      = useRef(0);
   const opacity        = useRef(1);
 
@@ -79,6 +85,30 @@ export default function WarlockRenderer({
   useEffect(() => {
     targetRotation.current = rotation;
   }, [rotation]);
+
+  const handleImpactFinished = useCallback(() => {
+    setIsImpacting(false);
+  }, []);
+
+  // Hit-react: health drop while not blinking / launching.
+  useEffect(() => {
+    if (
+      health < prevHealthRef.current &&
+      !isDying &&
+      !isBlinking &&
+      !isLaunching
+    ) {
+      setIsImpacting(true);
+      setImpactPlayKey(k => k + 1);
+    }
+    prevHealthRef.current = health;
+  }, [health, isDying, isBlinking, isLaunching]);
+
+  useEffect(() => {
+    if (isBlinking || isLaunching) {
+      setIsImpacting(false);
+    }
+  }, [isBlinking, isLaunching]);
 
   // Blink telegraph: plays blink animation then snaps the rendered position to endPosition
   useEffect(() => {
@@ -156,7 +186,7 @@ export default function WarlockRenderer({
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
 
-    // Death fade-out — no dedicated death clip so we dissolve the materials
+    // Death fade-out (death clip plays on the model underneath)
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
@@ -185,8 +215,20 @@ export default function WarlockRenderer({
       ))}
 
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
-      <WarlockModel isBlinking={isBlinking} isLaunching={isLaunching} isDying={isDying} />
-      {!isDying && <CubeSoulEffect color="red" posY={2.75} />}
+      <WarlockModel
+        isBlinking={isBlinking}
+        isLaunching={isLaunching}
+        isDying={isDying}
+        isImpacting={isImpacting}
+        impactPlayKey={impactPlayKey}
+        onImpactFinished={handleImpactFinished}
+      />
+      {!isDying && (
+        <CubeSoulEffect
+          color={soulType === 'purple' ? 'purple' : 'red'}
+          posY={2.75}
+        />
+      )}
 
       {/* Billboard health bar */}
       <Billboard position={[0, 4.5, 0]} follow lockX={false} lockY={false} lockZ={false}>

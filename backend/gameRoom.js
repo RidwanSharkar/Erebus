@@ -1,12 +1,60 @@
 const { broadcastEnemySpawn } = require('./enemyHandler');
 const EnemyAI = require('./enemyAI');
+const {
+  COOP_MAIN_ENTRY_X,
+  COOP_MAIN_ENTRY_Z,
+  rotationYTowardEntry,
+  rotationYTowardArenaCenter,
+} = require('./coopArenaLayout');
 
-/** Keep in sync with ThroneRoom.tsx: THRONE_TRAINING_DUMMY_SPAWN_Z, THRONE_TRAINING_DUMMY_ID */
+/**
+ * Z and X offsets must match ThroneRoom.tsx `THRONE_TRAINING_DUMMY_SPAWNS` / `THRONE_TRAINING_DUMMY_SPAWN_Z`.
+ */
 const THRONE_TRAINING_DUMMY_Z = 10.75;
+
+/**
+ * @typedef {'knight'} ThDummyVisual
+ * @type {ReadonlyArray<{ id: string; x: number; z: number; dummyVisual: ThDummyVisual }>}
+ */
+const THRONE_TRAINING_DUMMY_SPAWNS = Object.freeze([
+  { id: 'throne-training-dummy', x: 0, z: THRONE_TRAINING_DUMMY_Z, dummyVisual: 'knight' },
+]);
+
+/** @deprecated use THRONE_TRAINING_DUMMY_SPAWNS; kept for client imports */
 const THRONE_TRAINING_DUMMY_ID = 'throne-training-dummy';
+
+/** Runeblade Blizzard talent — Chill; keep in sync with src/utils/talents.ts */
+const BLIZZARD_CHILL_STACK_DURATION_MS = 4000;
+const BLIZZARD_CHILL_STACKS_TO_FREEZE = 5;
+const BLIZZARD_CHILL_SLOW_PER_STACK = 0.2;
 
 /** Co-op arena: regular enemies spawned per wave; boss spawns after this many kills. */
 const COOP_WAVE_ENEMY_COUNT = 10;
+/** Staged spawns: initial on map, then +2 after this many wave kills, then +3 after this many (cumulative). */
+const COOP_WAVE_INITIAL_ON_MAP = 5;
+const COOP_WAVE_FIRST_RESERVE_AT_KILLS = 3;
+const COOP_WAVE_FIRST_RESERVE_COUNT = 2;
+const COOP_WAVE_SECOND_RESERVE_AT_KILLS = 5;
+const COOP_WAVE_SECOND_RESERVE_COUNT = 3;
+if (
+  COOP_WAVE_INITIAL_ON_MAP + COOP_WAVE_FIRST_RESERVE_COUNT + COOP_WAVE_SECOND_RESERVE_COUNT !==
+  COOP_WAVE_ENEMY_COUNT
+) {
+  throw new Error('Co-op staged spawn counts must sum to COOP_WAVE_ENEMY_COUNT');
+}
+
+/** Mirror client `MAIN_MAP_RADIUS` — inner castle wall faces at ±this on X/Z. */
+const MAIN_MAP_RADIUS = 20;
+/** Keep foot XZ inside the playable square with margin for collision radius. */
+const MAIN_ARENA_SPAWN_INSET = 1.5;
+
+function clampPositionToMainArenaXZ(x, z) {
+  const m = MAIN_MAP_RADIUS - MAIN_ARENA_SPAWN_INSET;
+  return {
+    x: Math.max(-m, Math.min(m, x)),
+    z: Math.max(-m, Math.min(m, z)),
+  };
+}
 
 class GameRoom {
   constructor(roomId, io) {
@@ -26,6 +74,8 @@ class GameRoom {
 
     // Status effect tracking for enemies
     this.enemyStatusEffects = new Map(); // enemyId -> { stun: expiration, freeze: expiration, slow: expiration }
+    /** Blizzard talent: enemyId -> { stacks, expiresAt } (expiresAt = epoch ms) */
+    this.enemyChill = new Map();
 
     // Initialize enemy AI system but don't start it yet
     this.enemyAI = new EnemyAI(roomId, io);
@@ -46,12 +96,34 @@ class GameRoom {
 
     /** Session archetype for co-op (`initializeEnemies`); sent on `camps-initialized` and `room-joined`. */
     this.sessionCampTypes = [];
+    /** Last wave camp key (red/green/blue/purple); kept for loot when `sessionCampTypes` is cleared (e.g. boss intermission). */
+    this.lastCoopWaveCampColor = null;
 
     /** Co-op throne: two distinct main-room archetypes offered until a portal is used. */
     this.thronePortalOffer = [];
 
     /** Set in `activateCombatArena` — consumed by `initializeEnemies` on first combat spawn. */
     this.pendingCoopArchetype = null;
+
+    /**
+     * Co-op: initial prep only (`rim` portals). Main-map intermissions use `coopMainArenaPortalPhase`.
+     */
+    this.coopThroneStep = 'rim';
+    /** 0 = in throne or waiting for main-arena portal, 1 = first combat wave, 2 = second combat wave. */
+    this.coopWaveIndex = 0;
+    /**
+     * Set between waves on the main combat map (not throne): players pick next wave / boss in arena center.
+     * @type {null | 'pick_wave2' | 'pick_boss'}
+     */
+    this.coopMainArenaPortalPhase = null;
+
+    /**
+     * Co-op wave: precomputed slots for staged spawn (5 + 2 + 3). Null when not in an active wave layout.
+     * @type {null | { campDef: object, entries: { unitType: string, pos: { x: number, z: number } }[] }}
+     */
+    this.coopWaveSpawnPlan = null;
+    /** How many reserve batches already emitted (0 = only initial 5, 1 = +2 released, 2 = +3 released). */
+    this.coopWaveReserveReleased = 0;
   }
 
   // ── Enemy archetype definitions ────────────────────────────────────────────
@@ -61,9 +133,9 @@ class GameRoom {
   static get CAMP_TYPES() {
     return {
       blue:   { color: 'blue',   knightSoulType: 'blue',   enemyPool: ['knight', 'shade', 'weaver'  ] },
-      green:  { color: 'green',  knightSoulType: 'green',  enemyPool: ['knight', 'viper'            ] },
+      green:  { color: 'green',  knightSoulType: 'green',  enemyPool: ['knight', 'viper', 'weaver'            ] },
       red:    { color: 'red',    knightSoulType: 'red',    enemyPool: ['knight', 'warlock', 'templar'] },
-      purple: { color: 'purple', knightSoulType: 'purple', enemyPool: ['knight', 'shade'            ] },
+      purple: { color: 'purple', knightSoulType: 'purple', enemyPool: ['knight', 'shade', 'warlock' ] },
     };
   }
 
@@ -77,6 +149,9 @@ class GameRoom {
     this.gameStartTime = Date.now();
     this.bossSpawned = false;
     this.skeletonKillCount = 0;
+    this.coopThroneStep = 'rim';
+    this.coopWaveIndex = 0;
+    this.coopMainArenaPortalPhase = null;
 
     // Co-op: begin in the throne prep room — combat arena + enemies start after portal
     if (this.gameMode === 'coop') {
@@ -105,6 +180,8 @@ class GameRoom {
         /** Full snapshot so clients never miss `enemy-spawned` (e.g. throne training dummy). */
         enemies: this.getEnemies(),
         thronePortalOffer: this.gameMode === 'coop' ? [...this.thronePortalOffer] : [],
+        thronePortalLayout: this.getThronePortalLayout(),
+        coopMainArenaPortalPhase: this.gameMode === 'coop' ? this.getCoopMainArenaPortalPhase() : null,
       });
     }
     
@@ -114,35 +191,40 @@ class GameRoom {
   /** Small radial staging area (client grass/play radius uses `COOP_THRONE_ROOM_RADIUS` in ThroneRoom). */
   spawnThroneTrainingDummy() {
     if (this.gameMode !== 'coop') return;
-    const dummy = {
-      id: THRONE_TRAINING_DUMMY_ID,
-      type: 'training-dummy',
-      position: { x: 0, y: 0, z: THRONE_TRAINING_DUMMY_Z },
-      rotation: Math.PI,
-      health: 1000,
-      maxHealth: 1000,
-      isDying: false,
-      soulType: 'yellow',
-      campType: 'yellow',
-      staggerBuildup: 0,
-    };
-    this.enemies.set(dummy.id, dummy);
-    if (this.io) {
-      this.io.to(this.roomId).emit('enemy-spawned', { enemy: dummy, timestamp: Date.now() });
+    for (const def of THRONE_TRAINING_DUMMY_SPAWNS) {
+      const dummy = {
+        id: def.id,
+        type: 'training-dummy',
+        position: { x: def.x, y: 0, z: def.z },
+        rotation: rotationYTowardEntry(def.x, def.z),
+        health: 1000,
+        maxHealth: 1000,
+        isDying: false,
+        soulType: 'yellow',
+        campType: 'yellow',
+        dummyVisual: def.dummyVisual,
+        staggerBuildup: 0,
+      };
+      this.enemies.set(dummy.id, dummy);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-spawned', { enemy: dummy, timestamp: Date.now() });
+      }
     }
   }
 
   removeThroneTrainingDummy() {
-    if (!this.enemies.has(THRONE_TRAINING_DUMMY_ID)) return;
-    this.enemies.delete(THRONE_TRAINING_DUMMY_ID);
-    if (this.enemyAI) {
-      this.enemyAI.removeEnemyAggro(THRONE_TRAINING_DUMMY_ID);
-    }
-    if (this.io) {
-      this.io.to(this.roomId).emit('enemy-removed', {
-        enemyId: THRONE_TRAINING_DUMMY_ID,
-        timestamp: Date.now(),
-      });
+    for (const def of THRONE_TRAINING_DUMMY_SPAWNS) {
+      if (!this.enemies.has(def.id)) continue;
+      this.enemies.delete(def.id);
+      if (this.enemyAI) {
+        this.enemyAI.removeEnemyAggro(def.id);
+      }
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-removed', {
+          enemyId: def.id,
+          timestamp: Date.now(),
+        });
+      }
     }
   }
 
@@ -166,20 +248,24 @@ class GameRoom {
   }
 
   teleportAllPlayersToCombatSpawn() {
-    const spawnBaseX = 0;
-    const spawnBaseZ = 18; // main map radius 20 — south cluster (see client COOP_MAIN_DEFAULT_SPAWN_Z)
+    const spawnBaseX = COOP_MAIN_ENTRY_X;
+    const spawnBaseZ = COOP_MAIN_ENTRY_Z;
     const totalPlayers = Math.max(this.players.size, 1);
     let idx = 0;
     for (const player of this.players.values()) {
       const angleStep = (Math.PI * 2) / Math.max(3, totalPlayers);
       const angle = idx * angleStep;
-      const spawnRadius = 2.5;
+      const spawnRadius = 1.25;
+      const rawX = spawnBaseX + Math.sin(angle) * spawnRadius;
+      const rawZ = spawnBaseZ + Math.cos(angle) * spawnRadius;
+      const c = clampPositionToMainArenaXZ(rawX, rawZ);
       player.position = {
-        x: spawnBaseX + Math.sin(angle) * spawnRadius,
+        x: c.x,
         y: 1,
-        z: spawnBaseZ + Math.cos(angle) * spawnRadius,
+        z: c.z,
       };
-      player.rotation = { x: 0, y: Math.PI, z: 0 };
+      const y = rotationYTowardArenaCenter(c.x, c.z);
+      player.rotation = { x: 0, y, z: 0 };
       idx++;
     }
   }
@@ -199,15 +285,111 @@ class GameRoom {
     return [...this.thronePortalOffer];
   }
 
+  /** Thrine prep: portals stay on the south rim only. */
+  getThronePortalLayout() {
+    return 'rim';
+  }
+
+  getCoopMainArenaPortalPhase() {
+    return this.coopMainArenaPortalPhase;
+  }
+
+  _clearAllCombatEnemies() {
+    this.coopWaveSpawnPlan = null;
+    this.coopWaveReserveReleased = 0;
+    this.stopEnemyAI();
+    const ids = Array.from(this.enemies.keys());
+    for (const id of ids) {
+      if (this.enemyAI) {
+        this.enemyAI.removeEnemyAggro(id);
+      }
+      this.enemies.delete(id);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-removed', { enemyId: id, timestamp: Date.now() });
+      }
+    }
+  }
+
   /**
-   * First portal use activates the main arena for the whole room.
-   * @param {string} [chosenCampType] — must be one of `thronePortalOffer` (clients send nearest portal).
-   * @returns {boolean} true if activation ran (first time), false if already active or invalid
+   * After wave 1 or 2: stay on main map, show portals in the combat arena center.
+   * @param {'second_wave'|'boss_gate'} phase
+   */
+  startMainArenaPortalIntermission(phase) {
+    this._clearAllCombatEnemies();
+    this.skeletonKillCount = 0;
+    this.coopWaveIndex = 0;
+    this.pendingCoopArchetype = null;
+    const clearedColor =
+      Array.isArray(this.sessionCampTypes) && this.sessionCampTypes.length > 0
+        ? String(this.sessionCampTypes[0]).toLowerCase()
+        : null;
+    this.sessionCampTypes = [];
+    this.combatArenaActive = true;
+
+    if (phase === 'second_wave') {
+      this._pickThronePortalOffer();
+      this.coopMainArenaPortalPhase = 'pick_wave2';
+    } else {
+      this.thronePortalOffer = ['boss'];
+      this.coopMainArenaPortalPhase = 'pick_boss';
+    }
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('coop-main-arena-intermission', {
+        combatArenaActive: true,
+        thronePortalOffer: [...this.thronePortalOffer],
+        coopMainArenaPortalPhase: this.coopMainArenaPortalPhase,
+        coopClearedRoomColor: clearedColor,
+        players: this.getPlayers(),
+        enemies: this.getEnemies(),
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  _onCoopWaveThresholdMet() {
+    if (this.coopWaveIndex === 1) {
+      console.log('🌀 Wave 1 complete — main arena: choose next room (center portals).');
+      this.startMainArenaPortalIntermission('second_wave');
+    } else if (this.coopWaveIndex === 2) {
+      console.log('🌀 Wave 2 complete — main arena: boss gate.');
+      this.startMainArenaPortalIntermission('boss_gate');
+    }
+  }
+
+  _registerCoopWaveKill(emojiLog) {
+    if (this.gameMode !== 'coop' || !this.combatArenaActive || this.bossSpawned) return;
+    if (this.coopWaveIndex !== 1 && this.coopWaveIndex !== 2) return;
+    this.skeletonKillCount++;
+    console.log(`${emojiLog} (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
+    if (this.io) {
+      this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
+        skeletonKillCount: this.skeletonKillCount,
+        required: COOP_WAVE_ENEMY_COUNT,
+        timestamp: Date.now(),
+      });
+    }
+    if (
+      this.skeletonKillCount === COOP_WAVE_FIRST_RESERVE_AT_KILLS ||
+      this.skeletonKillCount === COOP_WAVE_SECOND_RESERVE_AT_KILLS
+    ) {
+      this._spawnCoopWaveReserveBatch();
+    }
+    if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
+      this._onCoopWaveThresholdMet();
+    }
+  }
+
+  /**
+   * Throne prep only: first time entering the main map (south-rim two portals in throne).
+   * @param {string} [chosenCampType] — must be one of `thronePortalOffer`
+   * @returns {boolean} true if activation ran, false if already active or invalid
    */
   activateCombatArena(chosenCampType) {
     if (!this.gameStarted || this.combatArenaActive || this.gameMode !== 'coop') {
       return false;
     }
+
     const offer = this.thronePortalOffer;
     if (!offer || offer.length !== 2) {
       return false;
@@ -223,6 +405,9 @@ class GameRoom {
     this.removeThroneTrainingDummy();
     this.combatArenaActive = true;
     this.thronePortalOffer = [];
+    this.coopMainArenaPortalPhase = null;
+    this.coopWaveIndex = 1;
+    this.coopThroneStep = 'rim';
     this.teleportAllPlayersToCombatSpawn();
     this.spawnEnemyWave();
     this.startEnemyAI();
@@ -234,6 +419,78 @@ class GameRoom {
       });
     }
     return true;
+  }
+
+  /**
+   * Main combat map: after wave 1 or 2, two portals or boss gate at arena center.
+   * @param {string} [chosenCampType] — camp or `boss`
+   * @returns {boolean}
+   */
+  resolveMainArenaPortal(chosenCampType) {
+    if (!this.gameStarted || this.gameMode !== 'coop' || !this.combatArenaActive) {
+      return false;
+    }
+    const phase = this.coopMainArenaPortalPhase;
+    if (!phase) {
+      return false;
+    }
+
+    if (phase === 'pick_wave2') {
+      const offer = this.thronePortalOffer;
+      if (!offer || offer.length !== 2) {
+        return false;
+      }
+      let pick = chosenCampType != null ? String(chosenCampType).toLowerCase() : '';
+      if (!pick || !offer.includes(pick)) {
+        pick = offer[0];
+      }
+      if (!GameRoom.CAMP_TYPES[pick]) {
+        return false;
+      }
+      this.pendingCoopArchetype = pick;
+      this.thronePortalOffer = [];
+      this.coopMainArenaPortalPhase = null;
+      this.coopWaveIndex = 2;
+      this.skeletonKillCount = 0;
+      this.teleportAllPlayersToCombatSpawn();
+      this.spawnEnemyWave();
+      this.startEnemyAI();
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('combat-arena-entered', {
+          players: this.getPlayers(),
+          timestamp: Date.now(),
+        });
+      }
+      return true;
+    }
+
+    if (phase === 'pick_boss') {
+      const offer = this.thronePortalOffer;
+      if (!offer || offer.length !== 1 || String(offer[0]).toLowerCase() !== 'boss') {
+        return false;
+      }
+      if (String(chosenCampType != null ? chosenCampType : 'boss').toLowerCase() !== 'boss') {
+        return false;
+      }
+      this.thronePortalOffer = [];
+      this.coopMainArenaPortalPhase = null;
+      this.coopWaveIndex = 0;
+      this.teleportAllPlayersToCombatSpawn();
+      this.spawnBoss();
+      this.bossSpawned = true;
+      this.startEnemyAI();
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('combat-arena-entered', {
+          players: this.getPlayers(),
+          timestamp: Date.now(),
+        });
+      }
+      return true;
+    }
+
+    return false;
   }
 
   // Player management
@@ -282,19 +539,23 @@ class GameRoom {
       } else if (player) {
         const totalPlayers = 3; // Max players for positioning
 
-        const spawnBaseX = 0;
-        const spawnBaseZ = 18;
+        const spawnBaseX = COOP_MAIN_ENTRY_X;
+        const spawnBaseZ = COOP_MAIN_ENTRY_Z;
 
         const angleStep = (Math.PI * 2) / totalPlayers;
         const angle = playerIndex * angleStep;
-        const spawnRadius = 2.5;
+        const spawnRadius = 1.25;
+        const rawX = spawnBaseX + Math.sin(angle) * spawnRadius;
+        const rawZ = spawnBaseZ + Math.cos(angle) * spawnRadius;
+        const c = clampPositionToMainArenaXZ(rawX, rawZ);
 
         player.position = {
-          x: spawnBaseX + Math.sin(angle) * spawnRadius,
+          x: c.x,
           y: 1,
-          z: spawnBaseZ + Math.cos(angle) * spawnRadius
+          z: c.z,
         };
-        player.rotation = { x: 0, y: Math.PI, z: 0 };
+        const y = rotationYTowardArenaCenter(c.x, c.z);
+        player.rotation = { x: 0, y, z: 0 };
       }
     }
   }
@@ -314,6 +575,13 @@ class GameRoom {
     this.combatArenaActive = false;
     this.thronePortalOffer = [];
     this.pendingCoopArchetype = null;
+    this.bossSpawned = false;
+    this.skeletonKillCount = 0;
+    this.coopThroneStep = 'rim';
+    this.coopWaveIndex = 0;
+    this.coopMainArenaPortalPhase = null;
+    this.coopWaveSpawnPlan = null;
+    this.coopWaveReserveReleased = 0;
     this.stopEnemySpawning();
     this.stopEnemyAI();
 
@@ -339,37 +607,7 @@ class GameRoom {
 
     if (this.gameMode === 'coop') {
       this.initializeEnemies();
-      this.initializeTitan();
     }
-  }
-
-  // Spawn the Titan — a single 3000-HP sentinel that roams the centre of the map.
-  initializeTitan() {
-    const ts = Date.now();
-    const CIRCLE_RADIUS = 8;
-
-    // Start on the south side of the circle so it doesn't overlap the player spawn.
-    const startAngle = Math.PI / 2; // 90° → (0, 10) in XZ
-    const titan = {
-      id:        `titan-${ts}`,
-      type:      'titan',
-      position:  { x: Math.cos(startAngle) * CIRCLE_RADIUS, y: 0, z: Math.sin(startAngle) * CIRCLE_RADIUS },
-      rotation:  0,
-      health:    3000,
-      maxHealth: 3000,
-      isDying:   false,
-      damage:    0, // Attack logic added later
-      moveSpeed: 1.8,
-      staggerBuildup: 0,
-    };
-
-    this.enemies.set(titan.id, titan);
-
-    if (this.io) {
-      this.io.to(this.roomId).emit('enemy-spawned', { enemy: titan, timestamp: Date.now() });
-    }
-
-    console.log(`🗿 Titan spawned — roaming centre of map (radius ${CIRCLE_RADIUS})`);
   }
 
   // Build one enemy object at the given position for the given type/camp.
@@ -384,7 +622,7 @@ class GameRoom {
     const ts = Date.now();
     const base = {
       position: { x: pos.x, y: 0, z: pos.z },
-      rotation: 0,
+      rotation: rotationYTowardEntry(pos.x, pos.z),
       isDying: false,
       campIndex,
       campType: campDef.color,
@@ -404,7 +642,8 @@ class GameRoom {
     }
     if (type === 'warlock') {
       return { id: `warlock-${campIndex}-${slotIndex}-${ts}`, type: 'warlock', ...base,
-        health: 800, maxHealth: 800, damage: 100, moveSpeed: 0 };
+        health: 800, maxHealth: 800, damage: 100, moveSpeed: 0,
+        soulType: campDef.knightSoulType };
     }
     if (type === 'templar') {
       return { id: `templar-${campIndex}-${slotIndex}-${ts}`, type: 'templar', ...base,
@@ -412,7 +651,13 @@ class GameRoom {
     }
     if (type === 'weaver') {
       return { id: `weaver-${campIndex}-${slotIndex}-${ts}`, type: 'weaver', ...base,
-        health: 700, maxHealth: 700, damage: 0, moveSpeed: 2.0 };
+        health: 700, maxHealth: 700, damage: 0, moveSpeed: 2.0,
+        soulType: campDef.knightSoulType };
+    }
+    if (type === 'martyr') {
+      return { id: `martyr-${campIndex}-${slotIndex}-${ts}`, type: 'martyr', ...base,
+        health: 200, maxHealth: 200, damage: 0, moveSpeed: 3.0,
+        soulType: campDef.knightSoulType };
     }
     // viper
     return { id: `viper-${campIndex}-${slotIndex}-${ts}`, type: 'viper', ...base,
@@ -424,11 +669,9 @@ class GameRoom {
   _randomMapPos(mapRadius, exclusions, existing, minDistFromOthers) {
     const MAX_ATTEMPTS = 120;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      // Uniform distribution within a circle
-      const angle = Math.random() * Math.PI * 2;
-      const r = Math.sqrt(Math.random()) * mapRadius;
-      const x = Math.cos(angle) * r;
-      const z = Math.sin(angle) * r;
+      // Uniform distribution within the axis-aligned square [-mapRadius, mapRadius]²
+      const x = (Math.random() * 2 - 1) * mapRadius;
+      const z = (Math.random() * 2 - 1) * mapRadius;
 
       // Check exclusion zones
       if (exclusions.some(e => Math.hypot(x - e.x, z - e.z) < e.radius)) continue;
@@ -445,11 +688,9 @@ class GameRoom {
   //   3 clusters of 3 units + (N − 9) lone units (e.g. N=10 → 3×3 + 1 loner)
   _generateScatteredPositions(total) {
     const MAX_MAP_RADIUS  = 18;  // keep well within the main map radius (20)
-    const TITAN_EXCL_R    = 13;  // avoid the Titan's roaming circle
-    const SPAWN_EXCL_R    = 9;   // avoid the player spawn zone (0, 18)
+    const SPAWN_EXCL_R    = 9;   // avoid the player entry zone (co-op main entry XZ)
     const exclusions = [
-      { x:  0, z:  0, radius: TITAN_EXCL_R },
-      { x:  0, z: 18, radius: SPAWN_EXCL_R },
+      { x: COOP_MAIN_ENTRY_X, z: COOP_MAIN_ENTRY_Z, radius: SPAWN_EXCL_R },
     ];
 
     const NUM_CLUSTERS    = 3;
@@ -473,7 +714,7 @@ class GameRoom {
           const r = 1.5 + Math.random() * 4.5; // 1.5–6 units from seed
           const mx = seed.x + Math.cos(angle) * r;
           const mz = seed.z + Math.sin(angle) * r;
-          if (Math.hypot(mx, mz) > MAX_MAP_RADIUS) continue;
+          if (Math.abs(mx) > MAX_MAP_RADIUS || Math.abs(mz) > MAX_MAP_RADIUS) continue;
           if (exclusions.some(e => Math.hypot(mx - e.x, mz - e.z) < e.radius)) continue;
           if (positions.some(p => Math.hypot(p.x - mx, p.z - mz) < 1.8)) continue;
           positions.push({ x: mx, z: mz });
@@ -496,43 +737,86 @@ class GameRoom {
     return positions;
   }
 
+  /** Release the next reserve batch (+2 at 3 kills, +3 at 5 kills). */
+  _spawnCoopWaveReserveBatch() {
+    if (this.gameMode !== 'coop' || !this.combatArenaActive || this.bossSpawned) return;
+    if (this.coopWaveIndex !== 1 && this.coopWaveIndex !== 2) return;
+    const plan = this.coopWaveSpawnPlan;
+    if (!plan || !plan.entries || plan.entries.length !== COOP_WAVE_ENEMY_COUNT) return;
+
+    let sliceStart;
+    let sliceEnd;
+    if (this.coopWaveReserveReleased === 0) {
+      sliceStart = COOP_WAVE_INITIAL_ON_MAP;
+      sliceEnd = COOP_WAVE_INITIAL_ON_MAP + COOP_WAVE_FIRST_RESERVE_COUNT;
+      this.coopWaveReserveReleased = 1;
+    } else if (this.coopWaveReserveReleased === 1) {
+      sliceStart = COOP_WAVE_INITIAL_ON_MAP + COOP_WAVE_FIRST_RESERVE_COUNT;
+      sliceEnd = sliceStart + COOP_WAVE_SECOND_RESERVE_COUNT;
+      this.coopWaveReserveReleased = 2;
+    } else {
+      return;
+    }
+
+    const { campDef, entries } = plan;
+    for (let slotIndex = sliceStart; slotIndex < sliceEnd; slotIndex++) {
+      const cell = entries[slotIndex];
+      if (!cell) continue;
+      const enemy = this._buildEnemy(cell.unitType, 0, slotIndex, cell.pos, campDef);
+      this.enemies.set(enemy.id, enemy);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+      }
+    }
+    console.log(`⚔️ Co-op reserve batch: slots ${sliceStart}–${sliceEnd - 1} (${sliceEnd - sliceStart} enemies)`);
+  }
+
   // Spawn all regular enemies using a single randomly chosen archetype.
-  // Enemies are distributed across the full map (clusters + lone units).
+  // Precomputes 10 slots; only the first 5 enter the map until kill thresholds release +2 and +3.
   initializeEnemies() {
+    this.coopWaveSpawnPlan = null;
+    this.coopWaveReserveReleased = 0;
+
     const campTypeKeys = Object.keys(GameRoom.CAMP_TYPES);
     let typeKey = this.pendingCoopArchetype;
     this.pendingCoopArchetype = null;
     if (!typeKey || !GameRoom.CAMP_TYPES[typeKey]) {
       typeKey = campTypeKeys[Math.floor(Math.random() * campTypeKeys.length)];
     }
-    const campDef      = GameRoom.CAMP_TYPES[typeKey];
+    const campDef = GameRoom.CAMP_TYPES[typeKey];
 
     this.sessionCampTypes = [typeKey];
+    this.lastCoopWaveCampColor = typeKey;
 
-    const TOTAL_ENEMIES = COOP_WAVE_ENEMY_COUNT;
-    const positions     = this._generateScatteredPositions(TOTAL_ENEMIES);
-
-    let totalSpawned = 0;
-    positions.forEach((pos, slotIndex) => {
-      // Always include at least one knight; the rest pull from the archetype pool
+    const positions = this._generateScatteredPositions(COOP_WAVE_ENEMY_COUNT);
+    const martyrCount = 2 + Math.floor(Math.random() * 4); // 2–5 inclusive
+    const entries = [];
+    for (let slotIndex = 0; slotIndex < COOP_WAVE_ENEMY_COUNT; slotIndex++) {
+      const pos = positions[slotIndex];
       let unitType;
       if (slotIndex === 0) {
         unitType = 'knight';
+      } else if (slotIndex >= 1 && slotIndex < 1 + martyrCount) {
+        unitType = 'martyr';
       } else {
         const pool = campDef.enemyPool;
         unitType = pool[Math.floor(Math.random() * pool.length)];
       }
+      entries.push({ unitType, pos });
+    }
+    this.coopWaveSpawnPlan = { campDef, entries };
 
+    let totalSpawned = 0;
+    for (let slotIndex = 0; slotIndex < COOP_WAVE_INITIAL_ON_MAP; slotIndex++) {
+      const { unitType, pos } = entries[slotIndex];
       const enemy = this._buildEnemy(unitType, 0, slotIndex, pos, campDef);
       this.enemies.set(enemy.id, enemy);
-
       if (this.io) {
         this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
       }
       totalSpawned++;
-    });
+    }
 
-    // Tell clients which archetype was chosen for themed lighting
     if (this.io) {
       this.io.to(this.roomId).emit('camps-initialized', {
         campTypes: [typeKey],
@@ -540,7 +824,10 @@ class GameRoom {
       });
     }
 
-    console.log(`⚔️ Spawned ${totalSpawned} enemies (archetype: ${typeKey}) scattered across the map`);
+    const reserved = COOP_WAVE_ENEMY_COUNT - totalSpawned;
+    console.log(
+      `⚔️ Spawned ${totalSpawned} enemies (${reserved} staged), archetype: ${typeKey}`
+    );
   }
 
   spawnEnemy(type) {
@@ -621,8 +908,26 @@ class GameRoom {
           y: enemy.position.y,
           z: enemy.position.z,
         };
+      } else if (hitMeta && hitMeta.damageType === 'venom') {
+        damagedPayload.damageType = 'venom';
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
       }
       this.io.to(this.roomId).emit('enemy-damaged', damagedPayload);
+    }
+
+    if (
+      hitMeta &&
+      hitMeta.damageType === 'blizzard' &&
+      damage > 0 &&
+      !result.wasKilled &&
+      !enemy.isDying &&
+      enemy.health > 0
+    ) {
+      this.applyBlizzardChillOnHit(enemyId);
     }
 
     // Infernal Smite / INFERNO (Crossentropy): Ignite DoT — 80% of hit over 3s in 3 ticks (non-lethal hits only)
@@ -652,6 +957,60 @@ class GameRoom {
             this.damageEnemy(enemyId, tickDamage, fromPlayerId, player, { damageType: 'ignite' });
           }, delaysMs[i]);
         }
+      }
+    }
+
+    // Wyvern Bite — Concentrated Venom: +1 stack per Barrage hit (max 5), 17 DPS per stack, 8s from last stack
+    const wyvernVenomDpsPerStack = 17;
+    const wyvernVenomMaxStacks = 5;
+    const wyvernVenomDurationMs = 8000;
+    if (
+      !result.wasKilled &&
+      hitMeta &&
+      hitMeta.damageType === 'barrage' &&
+      hitMeta.wyvernBiteVenom &&
+      damage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0
+    ) {
+      if (enemy.concentratedVenomStacks == null) enemy.concentratedVenomStacks = 0;
+      enemy.concentratedVenomStacks = Math.min(
+        wyvernVenomMaxStacks,
+        enemy.concentratedVenomStacks + 1,
+      );
+      enemy.concentratedVenomExpireAt = Date.now() + wyvernVenomDurationMs;
+      enemy.concentratedVenomLastPlayerId = fromPlayerId;
+
+      if (!enemy._concentratedVenomIntervalId) {
+        enemy._concentratedVenomIntervalId = setInterval(() => {
+          const e = this.enemies.get(enemyId);
+          if (!e || e.isDying || e.health <= 0) {
+            if (e && e._concentratedVenomIntervalId) {
+              clearInterval(e._concentratedVenomIntervalId);
+              e._concentratedVenomIntervalId = null;
+            }
+            return;
+          }
+          const now = Date.now();
+          if (!e.concentratedVenomExpireAt || now >= e.concentratedVenomExpireAt) {
+            if (e._concentratedVenomIntervalId) {
+              clearInterval(e._concentratedVenomIntervalId);
+              e._concentratedVenomIntervalId = null;
+            }
+            e.concentratedVenomStacks = 0;
+            return;
+          }
+          const stacks = e.concentratedVenomStacks || 0;
+          if (stacks <= 0) return;
+          const tickPlayer = this.players.get(e.concentratedVenomLastPlayerId);
+          this.damageEnemy(
+            enemyId,
+            stacks * wyvernVenomDpsPerStack,
+            e.concentratedVenomLastPlayerId,
+            tickPlayer || null,
+            { damageType: 'venom' },
+          );
+        }, 1000);
       }
     }
 
@@ -711,6 +1070,11 @@ class GameRoom {
 
     if (result.wasKilled) {
       console.log(`💀 Enemy ${enemyId} killed by player ${fromPlayerId}`);
+      if (enemy._concentratedVenomIntervalId) {
+        clearInterval(enemy._concentratedVenomIntervalId);
+        enemy._concentratedVenomIntervalId = null;
+      }
+      enemy.concentratedVenomStacks = 0;
       enemy.isDying = true;
       enemy.deathTime = Date.now();
 
@@ -831,29 +1195,9 @@ class GameRoom {
           });
         }
 
-        // Track boss-skeleton kills (boss-summoned only — won't trigger boss since bossSpawned is true)
-        if (!this.bossSpawned) {
-          this.skeletonKillCount++;
-          console.log(`💀 Skeleton killed (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
-
-          if (this.io) {
-            this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
-              skeletonKillCount: this.skeletonKillCount,
-              required: COOP_WAVE_ENEMY_COUNT,
-              timestamp: Date.now()
-            });
-          }
-
-          if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
-            console.log(`💀💀💀 ${COOP_WAVE_ENEMY_COUNT} enemies killed - Boss is appearing!`);
-            this.spawnBoss();
-            this.bossSpawned = true;
-          }
-        }
-
         // 10% chance to drop an amulet on skeleton death
         if (Math.random() < 0.10) {
-          this.spawnItemDrop(enemy.position);
+          this.spawnItemDrop(enemy.position, enemy);
         }
 
         // Remove skeleton immediately (no death animation delay)
@@ -888,29 +1232,11 @@ class GameRoom {
           });
         }
 
-        // Knights count toward the boss-trigger kill count
-        if (!this.bossSpawned) {
-          this.skeletonKillCount++;
-          console.log(`⚔️ Knight killed (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
-
-          if (this.io) {
-            this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
-              skeletonKillCount: this.skeletonKillCount,
-              required: COOP_WAVE_ENEMY_COUNT,
-              timestamp: Date.now()
-            });
-          }
-
-          if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
-            console.log(`⚔️⚔️⚔️ All ${COOP_WAVE_ENEMY_COUNT} enemies killed - Boss is appearing!`);
-            this.spawnBoss();
-            this.bossSpawned = true;
-          }
-        }
+        this._registerCoopWaveKill('⚔️ Knight killed');
 
         // 15% chance to drop an amulet on knight death
         if (Math.random() < 0.15) {
-          this.spawnItemDrop(enemy.position);
+          this.spawnItemDrop(enemy.position, enemy);
         }
 
         // Emit vortex death effect BEFORE removing so clients know the position
@@ -956,29 +1282,11 @@ class GameRoom {
           });
         }
 
-        // Shade kills count toward the boss-spawn threshold
-        if (!this.bossSpawned) {
-          this.skeletonKillCount++;
-          console.log(`👻 Shade killed (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
-
-          if (this.io) {
-            this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
-              skeletonKillCount: this.skeletonKillCount,
-              required: COOP_WAVE_ENEMY_COUNT,
-              timestamp: Date.now()
-            });
-          }
-
-          if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
-            console.log('👻👻👻 Kill threshold reached - Boss is appearing!');
-            this.spawnBoss();
-            this.bossSpawned = true;
-          }
-        }
+        this._registerCoopWaveKill('👻 Shade killed');
 
         // Small item drop chance
         if (Math.random() < 0.15) {
-          this.spawnItemDrop(enemy.position);
+          this.spawnItemDrop(enemy.position, enemy);
         }
 
         // Stop AI immediately; delay removal so the client fade-out completes.
@@ -1012,29 +1320,11 @@ class GameRoom {
           });
         }
 
-        // Warlock kills count toward the boss-spawn threshold
-        if (!this.bossSpawned) {
-          this.skeletonKillCount++;
-          console.log(`🔮 Warlock killed (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
-
-          if (this.io) {
-            this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
-              skeletonKillCount: this.skeletonKillCount,
-              required: COOP_WAVE_ENEMY_COUNT,
-              timestamp: Date.now()
-            });
-          }
-
-          if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
-            console.log('🔮🔮🔮 Kill threshold reached — Boss is appearing!');
-            this.spawnBoss();
-            this.bossSpawned = true;
-          }
-        }
+        this._registerCoopWaveKill('🔮 Warlock killed');
 
         // Small item drop chance
         if (Math.random() < 0.15) {
-          this.spawnItemDrop(enemy.position);
+          this.spawnItemDrop(enemy.position, enemy);
         }
 
         // Stop AI immediately; delay removal so the client fade-out completes.
@@ -1068,29 +1358,11 @@ class GameRoom {
           });
         }
 
-        // Templar kills count toward the boss-spawn threshold
-        if (!this.bossSpawned) {
-          this.skeletonKillCount++;
-          console.log(`🛡️ Templar killed (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
-
-          if (this.io) {
-            this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
-              skeletonKillCount: this.skeletonKillCount,
-              required: COOP_WAVE_ENEMY_COUNT,
-              timestamp: Date.now()
-            });
-          }
-
-          if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
-            console.log('🛡️🛡️🛡️ Kill threshold reached — Boss is appearing!');
-            this.spawnBoss();
-            this.bossSpawned = true;
-          }
-        }
+        this._registerCoopWaveKill('🛡️ Templar killed');
 
         // Slightly higher item drop chance than shade/warlock
         if (Math.random() < 0.20) {
-          this.spawnItemDrop(enemy.position);
+          this.spawnItemDrop(enemy.position, enemy);
         }
 
         // Stop AI immediately; delay removal for client fade-out.
@@ -1124,27 +1396,10 @@ class GameRoom {
           });
         }
 
-        if (!this.bossSpawned) {
-          this.skeletonKillCount++;
-          console.log(`🧵 Weaver killed (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
-
-          if (this.io) {
-            this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
-              skeletonKillCount: this.skeletonKillCount,
-              required: COOP_WAVE_ENEMY_COUNT,
-              timestamp: Date.now()
-            });
-          }
-
-          if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
-            console.log('🧵🧵🧵 Kill threshold reached — Boss is appearing!');
-            this.spawnBoss();
-            this.bossSpawned = true;
-          }
-        }
+        this._registerCoopWaveKill('🧵 Weaver killed');
 
         if (Math.random() < 0.18) {
-          this.spawnItemDrop(enemy.position);
+          this.spawnItemDrop(enemy.position, enemy);
         }
 
         if (this.enemyAI) {
@@ -1187,6 +1442,37 @@ class GameRoom {
 
         return result;
 
+      } else if (enemy.type === 'martyr') {
+        if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
+          this.io.to(this.roomId).emit('player-experience-gained', {
+            playerId: fromPlayerId,
+            experienceGained: 50,
+            source: 'martyr_kill',
+            enemyId: enemyId,
+            timestamp: Date.now()
+          });
+        }
+
+        this._registerCoopWaveKill('💣 Martyr killed');
+
+        if (Math.random() < 0.1) {
+          this.spawnItemDrop(enemy.position, enemy);
+        }
+
+        if (this.enemyAI) {
+          this.enemyAI.removeEnemyAggro(enemyId);
+        }
+
+        setTimeout(() => {
+          this.enemies.delete(enemyId);
+          console.log(`🗑️ Martyr ${enemyId} removed from enemies map after death fade`);
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-removed', { enemyId, timestamp: Date.now() });
+          }
+        }, 2500);
+
+        return result;
+
       } else if (enemy.type === 'viper') {
         // Award EXP for viper kills
         if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
@@ -1199,27 +1485,10 @@ class GameRoom {
           });
         }
 
-        if (!this.bossSpawned) {
-          this.skeletonKillCount++;
-          console.log(`🐍 Viper killed (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
-
-          if (this.io) {
-            this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
-              skeletonKillCount: this.skeletonKillCount,
-              required: COOP_WAVE_ENEMY_COUNT,
-              timestamp: Date.now()
-            });
-          }
-
-          if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
-            console.log('🐍🐍🐍 Kill threshold reached — Boss is appearing!');
-            this.spawnBoss();
-            this.bossSpawned = true;
-          }
-        }
+        this._registerCoopWaveKill('🐍 Viper killed');
 
         if (Math.random() < 0.12) {
-          this.spawnItemDrop(enemy.position);
+          this.spawnItemDrop(enemy.position, enemy);
         }
 
         if (this.enemyAI) {
@@ -1359,7 +1628,7 @@ class GameRoom {
       type: 'boss',
       position,
       initialPosition: { ...position },
-      rotation: 0,
+      rotation: rotationYTowardEntry(0, 0),
       health: maxHealth,
       maxHealth: maxHealth,
       spawnedAt: Date.now(),
@@ -1456,16 +1725,93 @@ class GameRoom {
     return activeEffects;
   }
 
-  // Spawn a random amulet item at the given position
-  spawnItemDrop(position) {
-    const itemTypes = [
-      { type: 'AMULET_OF_STRENGTH', stat: 'strength', label: 'Amulet of Strength' },
-      { type: 'AMULET_OF_STAMINA',  stat: 'stamina',  label: 'Amulet of Stamina'  },
-      { type: 'AMULET_OF_AGILITY',  stat: 'agility',  label: 'Amulet of Agility'  },
-      { type: 'AMULET_OF_INTELLECT',stat: 'intellect',label: 'Amulet of Intellect' },
-    ];
+  getBlizzardChillMoveMultiplier(enemyId) {
+    const chill = this.enemyChill.get(enemyId);
+    if (!chill) return 1;
+    const now = Date.now();
+    if (now > chill.expiresAt) {
+      this.enemyChill.delete(enemyId);
+      return 1;
+    }
+    return 1 - BLIZZARD_CHILL_SLOW_PER_STACK * Math.min(4, chill.stacks);
+  }
 
-    const chosen = itemTypes[Math.floor(Math.random() * itemTypes.length)];
+  applyBlizzardChillOnHit(enemyId) {
+    const enemy = this.enemies.get(enemyId);
+    if (!enemy || enemy.isDying || enemy.health <= 0) return;
+    if (this.isEnemyAffectedBy(enemyId, 'freeze')) return;
+
+    const now = Date.now();
+    let chill = this.enemyChill.get(enemyId);
+    if (!chill || chill.expiresAt < now) {
+      chill = { stacks: 0, expiresAt: 0 };
+    }
+
+    chill.stacks += 1;
+    chill.expiresAt = now + BLIZZARD_CHILL_STACK_DURATION_MS;
+
+    if (chill.stacks >= BLIZZARD_CHILL_STACKS_TO_FREEZE) {
+      this.enemyChill.delete(enemyId);
+      this.applyStatusEffect(enemyId, 'freeze', 4000);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-chill-sync', {
+          enemyId,
+          stacks: 0,
+          expiresAt: now,
+          timestamp: now,
+        });
+      }
+    } else {
+      this.enemyChill.set(enemyId, chill);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-chill-sync', {
+          enemyId,
+          stacks: chill.stacks,
+          expiresAt: chill.expiresAt,
+          timestamp: now,
+        });
+      }
+    }
+  }
+
+  /** @param {{ campType?: string, type?: string, id?: string }} enemy */
+  _resolveAmuletCampColor(enemy) {
+    const valid = new Set(['red', 'green', 'blue', 'purple']);
+    if (enemy && enemy.campType != null) {
+      const c = String(enemy.campType).toLowerCase();
+      if (valid.has(c)) return c;
+    }
+    if (enemy && enemy.type === 'boss-skeleton') {
+      const k =
+        (Array.isArray(this.sessionCampTypes) && this.sessionCampTypes[0]) || this.lastCoopWaveCampColor;
+      if (k != null) {
+        const c = String(k).toLowerCase();
+        if (valid.has(c)) return c;
+      }
+    }
+    return null;
+  }
+
+  // Spawn an amulet matching the wave room color (red/green/blue/purple) at the given position
+  spawnItemDrop(position, enemy) {
+    const color = this._resolveAmuletCampColor(enemy || {});
+    if (!color) {
+      console.log(`💍 No amulet drop: no valid camp color (enemy ${enemy?.id || '?'})`);
+      return null;
+    }
+
+    const byColor = {
+      red: { type: 'AMULET_OF_STRENGTH', stat: 'strength', label: 'Amulet of Strength' },
+      green: { type: 'AMULET_OF_STAMINA', stat: 'stamina', label: 'Amulet of Stamina' },
+      blue: { type: 'AMULET_OF_AGILITY', stat: 'agility', label: 'Amulet of Agility' },
+      purple: { type: 'AMULET_OF_INTELLECT', stat: 'intellect', label: 'Amulet of Intellect' },
+    };
+
+    const chosen = byColor[color];
+    if (!chosen) {
+      console.log(`💍 No amulet drop: unknown color ${color}`);
+      return null;
+    }
     const itemId = `item-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
 
     const item = {
@@ -1573,11 +1919,17 @@ class GameRoom {
     this.players.clear();
     this.enemies.clear();
     this.enemyStatusEffects.clear();
+    this.enemyChill.clear();
     this.droppedItems.clear();
     this.gameStarted = false;
     this.killCount = 0;
     this.bossSpawned = false;
     this.skeletonKillCount = 0;
+    this.coopThroneStep = 'rim';
+    this.coopWaveIndex = 0;
+    this.coopMainArenaPortalPhase = null;
+    this.coopWaveSpawnPlan = null;
+    this.coopWaveReserveReleased = 0;
   }
 
   // Get room summary for debugging

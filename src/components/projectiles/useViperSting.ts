@@ -5,6 +5,10 @@ import { calculateDamage } from '@/core/DamageCalculator';
 import {
   WRATHFUL_TALONS_RETURN_CRIT_CHANCE_ADD,
   WRATHFUL_TALONS_RETURN_CRIT_DAMAGE_MULT_ADD,
+  REAPING_TALONS_MAX_TRAVEL_DISTANCE,
+  EXPLOSIVE_TALONS_REAPING_TALONS_MAX_TRAVEL_DISTANCE,
+  EXPLOSIVE_TALONS_EXPLOSION_DAMAGE,
+  EXPLOSIVE_TALONS_EXPLOSION_RADIUS,
 } from '@/utils/talents';
 
 interface ViperStingProjectile {
@@ -24,6 +28,10 @@ interface ViperStingProjectile {
   casterPosition?: Vector3; // For PVP: remember the caster's position for return
   /** Set at spawn: local caster with Wrathful Talons talent (remote spawns omit). */
   wrathfulTalonsReturnCrit?: boolean;
+  /** EXPLOSIVE TALONS: no return; detonate at max range (from local prop or remote opts). */
+  explosiveTalons?: boolean;
+  /** PVP: player AoE from OptimizedPVPViperStingManager applied once per cast. */
+  explosiveTalonsPvpAoEDone?: boolean;
   /** EXECUTE: after first forward hit resolution (consume attempt once per cast). */
   forwardExecuteResolved: boolean;
 }
@@ -75,8 +83,12 @@ interface UseViperStingProps {
   }>;
   /** Local Reaping Talons: return-arrow preset crit (stored on projectile at spawn). */
   wrathfulTalonsReturnCrit?: boolean;
+  /** EXPLOSIVE TALONS: forward-only + end-of-range explosion (local prop; remote via spawn opts). */
+  explosiveTalons?: boolean;
   /** EXECUTE talent: first forward hit only — return bonus damage to add (0 if no dash consumed). */
   onExecuteFirstForwardHit?: () => number;
+  /** EXPLOSIVE TALONS: one-shot VFX at detonation center (max range). */
+  onExplosiveTalonsDetonate?: (position: Vector3) => void;
 }
 
 export function useViperSting({
@@ -93,7 +105,9 @@ export function useViperSting({
   localSocketId,
   players,
   wrathfulTalonsReturnCrit = false,
+  explosiveTalons = false,
   onExecuteFirstForwardHit,
+  onExplosiveTalonsDetonate,
 }: UseViperStingProps) {
   const projectilePool = useRef<ViperStingProjectile[]>([]);
   const soulStealEffects = useRef<SoulStealEffect[]>([]);
@@ -106,7 +120,6 @@ export function useViperSting({
   const PROJECTILE_SPEED = 0.625; // Slightly faster than regular arrows
   const PROJECTILE_RETURN_SPEED = 0.525; // Slightly slower for return phase
   const DAMAGE = 91;
-  const MAX_DISTANCE = 20; // Reduced max distance for return mechanic
   const FADE_DURATION = 350;
   const SOUL_STEAL_DURATION = 1250; // 1.25 seconds to travel back
 
@@ -117,7 +130,7 @@ export function useViperSting({
       position: new Vector3(),
       direction: new Vector3(),
       startPosition: new Vector3(),
-      maxDistance: MAX_DISTANCE,
+      maxDistance: REAPING_TALONS_MAX_TRAVEL_DISTANCE,
       active: false,
       startTime: 0,
       hitEnemies: new Set(),
@@ -126,6 +139,8 @@ export function useViperSting({
       isReturning: false,
       returnHitEnemies: new Set(),
       wrathfulTalonsReturnCrit: false,
+      explosiveTalons: false,
+      explosiveTalonsPvpAoEDone: false,
       forwardExecuteResolved: false,
     }));
   }, []);
@@ -134,7 +149,12 @@ export function useViperSting({
     return projectilePool.current.find(p => !p.active);
   }, []);
 
-  const shootViperSting = useCallback((overridePosition?: Vector3, overrideDirection?: Vector3, casterId?: string) => {
+  const shootViperSting = useCallback((
+    overridePosition?: Vector3,
+    overrideDirection?: Vector3,
+    casterId?: string,
+    opts?: { explosiveTalons?: boolean },
+  ) => {
     const now = Date.now();
     if (now - lastShotTime.current < SHOT_COOLDOWN) return false;
 
@@ -185,7 +205,12 @@ export function useViperSting({
     projectile.casterPosition = unitPosition.clone();
     const isRemoteSpawn = !!(overridePosition && overrideDirection);
     projectile.wrathfulTalonsReturnCrit = !isRemoteSpawn && wrathfulTalonsReturnCrit;
+    projectile.explosiveTalons = isRemoteSpawn ? !!opts?.explosiveTalons : explosiveTalons;
+    projectile.explosiveTalonsPvpAoEDone = false;
     projectile.forwardExecuteResolved = false;
+    projectile.maxDistance = projectile.explosiveTalons
+      ? EXPLOSIVE_TALONS_REAPING_TALONS_MAX_TRAVEL_DISTANCE
+      : REAPING_TALONS_MAX_TRAVEL_DISTANCE;
 
     // Create beam effect for forward shot
     if (createBeamEffect) {
@@ -193,7 +218,7 @@ export function useViperSting({
     }
 
     return true;
-  }, [createBeamEffect, parentRef, getInactiveProjectile, charges, setCharges, wrathfulTalonsReturnCrit, localSocketId]);
+  }, [createBeamEffect, parentRef, getInactiveProjectile, charges, setCharges, wrathfulTalonsReturnCrit, explosiveTalons, localSocketId]);
 
   const createSoulStealEffect = useCallback((enemyPosition: Vector3) => {
     if (!parentRef.current) return;
@@ -300,14 +325,43 @@ export function useViperSting({
               }
             }
           } else if (!projectile.fadeStartTime) {
-            // Switch to return mode when max distance reached
-            projectile.isReturning = true;
-            // Reverse direction to point back toward start position
-            projectile.direction = new Vector3().subVectors(projectile.startPosition, projectile.position).normalize();
-            
-            // Create beam effect for return shot
-            if (createBeamEffect) {
-              createBeamEffect(projectile.position, projectile.direction, true);
+            if (projectile.explosiveTalons) {
+              const cx = projectile.position.x;
+              const cz = projectile.position.z;
+              if (onExplosiveTalonsDetonate) {
+                onExplosiveTalonsDetonate(projectile.position.clone());
+              }
+              for (const enemy of enemyData) {
+                if (enemy.isDying || enemy.health <= 0) continue;
+                if (localSocketId && enemy.id === localSocketId) continue;
+
+                const horiz = Math.hypot(enemy.position.x - cx, enemy.position.z - cz);
+                if (horiz > EXPLOSIVE_TALONS_EXPLOSION_RADIUS) continue;
+
+                onHit(enemy.id, EXPLOSIVE_TALONS_EXPLOSION_DAMAGE);
+                if (applyDoT) {
+                  applyDoT(enemy.id);
+                }
+                if (setDamageNumbers && nextDamageNumberId) {
+                  setDamageNumbers(prev => [...prev, {
+                    id: nextDamageNumberId.current++,
+                    damage: EXPLOSIVE_TALONS_EXPLOSION_DAMAGE,
+                    position: enemy.position.clone(),
+                    isCritical: false,
+                    isViperSting: true,
+                  }]);
+                }
+                createSoulStealEffect(enemy.position);
+              }
+              projectile.fadeStartTime = now;
+            } else {
+              // Switch to return mode when max distance reached
+              projectile.isReturning = true;
+              projectile.direction = new Vector3().subVectors(projectile.startPosition, projectile.position).normalize();
+
+              if (createBeamEffect) {
+                createBeamEffect(projectile.position, projectile.direction, true);
+              }
             }
           }
         } else {
@@ -431,7 +485,7 @@ export function useViperSting({
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [enemyData, onHit, setDamageNumbers, nextDamageNumberId, onHealthChange, createSoulStealEffect, parentRef, createBeamEffect, applyDoT, localSocketId, players, onExecuteFirstForwardHit]);
+  }, [enemyData, onHit, setDamageNumbers, nextDamageNumberId, onHealthChange, createSoulStealEffect, parentRef, createBeamEffect, applyDoT, localSocketId, players, onExecuteFirstForwardHit, onExplosiveTalonsDetonate]);
 
   return {
     shootViperSting,

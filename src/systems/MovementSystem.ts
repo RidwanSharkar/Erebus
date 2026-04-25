@@ -14,6 +14,9 @@ export class MovementSystem extends System {
   private inputManager: InputManager;
   private camera: Camera | null = null;
 
+  /** When true, skip circular map clamp and rely on castle wall AABBs (matches PhysicsSystem). */
+  private castleWallPhysicsEnabled = true;
+
   constructor(inputManager: InputManager) {
     super();
     this.inputManager = inputManager;
@@ -22,6 +25,10 @@ export class MovementSystem extends System {
 
   public setCamera(camera: Camera): void {
     this.camera = camera;
+  }
+
+  public setCastleWallPhysicsEnabled(enabled: boolean): void {
+    this.castleWallPhysicsEnabled = enabled;
   }
 
   public update(entities: Entity[], deltaTime: number): void {
@@ -181,8 +188,8 @@ export class MovementSystem extends System {
     
     // Check for wall collisions first
     const wallCollision = this.checkWallCollision(potentialPosition);
-    
-    if (distanceFromCenter >= MAP_RADIUS) {
+
+    if (!this.castleWallPhysicsEnabled && distanceFromCenter >= MAP_RADIUS) {
       // If we hit the boundary, calculate tangent movement for smooth sliding
       const currentHorizontalPos = new Vector3(currentPosition.x, 0, currentPosition.z);
       const toCenter = currentHorizontalPos.clone().normalize();

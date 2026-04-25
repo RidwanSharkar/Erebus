@@ -1,9 +1,12 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Color, Shape, AdditiveBlending } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import CorruptedAura from './CorruptedAura';
+import Blizzard from './Blizzard/Blizzard';
+import { BLIZZARD_DURATION_SEC, BLIZZARD_DPS_PER_TICK } from '@/utils/talents';
 import { calculationCache } from '@/utils/CalculationCache';
+import { MAIN_MAP_RADIUS, isInsideMainArenaXZ } from '@/utils/mapConstants';
 
 interface RunebladeProps {
   isSwinging: boolean;
@@ -14,6 +17,8 @@ interface RunebladeProps {
   isCharging?: boolean;
   isDeflecting?: boolean;
   isCorruptedAuraActive?: boolean;
+  /** Crusader talent — use corrupted-aura palette on blade only (F aura / CorruptedAura VFX unchanged). */
+  crusaderBladeThemeActive?: boolean;
   chargeDirectionProp?: Vector3;
   onSwingComplete?: () => void;
   onSmiteComplete?: () => void;
@@ -30,7 +35,7 @@ interface RunebladeProps {
     position: Vector3;
     health: number;
   }>;
-  onHit?: (targetId: string, damage: number) => void;
+  onHit?: (targetId: string, damage: number, isCritical?: boolean, position?: Vector3, isBlizzard?: boolean) => void;
   setDamageNumbers?: (callback: (prev: Array<{
     id: number;
     damage: number;
@@ -77,6 +82,16 @@ interface RunebladeProps {
   realTimePositionRef?: React.RefObject<Vector3>; // Player position during charge (matches Sword)
   /** STORED CHARGE talent: 3 full post-dash spins + damage each full rotation. */
   storedCharge?: boolean;
+  /** Windfury / Flurry — once per swing after real enemy hits (local player only). */
+  onPrimaryHitsResolved?: (enemiesHit: number) => void;
+  /** Local: live ControlSystem combo step (avoids throttled React prop on swing start). */
+  comboStepResolver?: () => 1 | 2 | 3;
+  /** Local: EXECUTIONER flat bonus consumed once when swing damage resolves. */
+  getExecutionerFlatBonus?: () => number;
+  /** Local: Crusader talent — additive base damage while buff is active (not consumed per swing). */
+  getCrusaderLmbFlatBonus?: () => number;
+  /** Local: Blizzard class talent — storm active while ControlSystem window is up. */
+  getBlizzardTalentActive?: () => boolean;
 }
 
 export default function Runeblade({
@@ -88,6 +103,7 @@ export default function Runeblade({
   isCharging = false,
   isDeflecting = false,
   isCorruptedAuraActive = false,
+  crusaderBladeThemeActive = false,
   chargeDirectionProp,
   onSwingComplete,
   onSmiteComplete,
@@ -110,12 +126,22 @@ export default function Runeblade({
   playerEntityId,
   realTimePositionRef,
   storedCharge = false,
+  onPrimaryHitsResolved,
+  comboStepResolver,
+  getExecutionerFlatBonus,
+  getCrusaderLmbFlatBonus,
+  getBlizzardTalentActive,
 }: RunebladeProps) {
-  // Color scheme based on corrupted aura state
-  const primaryColor = isCorruptedAuraActive ? new Color("#ffaa00") : new Color(0x1097B5);
-  const primaryEmissive = isCorruptedAuraActive ? new Color("#ff8800") : new Color(0x1097B5);
-  const secondaryColor = isCorruptedAuraActive ? new Color("#ff8800") : new Color(0x87CEEB);
-  const secondaryEmissive = isCorruptedAuraActive ? new Color("#ff6600") : new Color(0x4682B4);
+  const [blizzardStormVisible, setBlizzardStormVisible] = useState(false);
+  const [blizzardMountKey, setBlizzardMountKey] = useState(0);
+  const blizzardEdgeRef = useRef(false);
+
+  const useCorruptedPalette = isCorruptedAuraActive || crusaderBladeThemeActive;
+  // Color scheme: F-key Corrupted Aura or Crusader talent blade theme
+  const primaryColor = useCorruptedPalette ? new Color("#ffaa00") : new Color(0x1097B5);
+  const primaryEmissive = useCorruptedPalette ? new Color("#ff8800") : new Color(0x1097B5);
+  const secondaryColor = useCorruptedPalette ? new Color("#ff8800") : new Color(0x87CEEB);
+  const secondaryEmissive = useCorruptedPalette ? new Color("#ff6600") : new Color(0x4682B4);
 
   const runebladeRef = useRef<Group>(null);
   const corruptedAuraRef = useRef<{ toggle: () => void; isActive: boolean }>(null);
@@ -166,6 +192,15 @@ export default function Runeblade({
   }, [comboStep]);
 
   useFrame((_, delta) => {
+    if (getBlizzardTalentActive) {
+      const bz = getBlizzardTalentActive();
+      if (bz !== blizzardEdgeRef.current) {
+        blizzardEdgeRef.current = bz;
+        if (bz) setBlizzardMountKey(k => k + 1);
+        setBlizzardStormVisible(bz);
+      }
+    }
+
     if (!runebladeRef.current) return;
 
     const now = Date.now();
@@ -309,12 +344,12 @@ export default function Runeblade({
     }
 
     if (isCharging) {
-      const CHARGE_DISTANCE = 8.5;
+      const CHARGE_DISTANCE = 8;
       const CHARGE_WINDUP_DURATION = 0.1;
       const CHARGE_DURATION = 0.45;
       const CHARGE_DAMAGE = 60;
       const CHARGE_COLLISION_RADIUS = 2.5;
-      const MAX_CHARGE_BOUNDS = 25;
+      const MAX_CHARGE_BOUNDS = MAIN_MAP_RADIUS;
       const CHARGE_FAILSAFE_TIMEOUT = 0.6;
 
       if (!chargeStartTime.current) {
@@ -371,8 +406,7 @@ export default function Runeblade({
 
       const displacement = chargeDirection.current.clone().multiplyScalar(CHARGE_DISTANCE * easeOutQuad);
       const newPosition = chargeStartPosition.current.clone().add(displacement);
-      const distanceFromOrigin = newPosition.length();
-      if (distanceFromOrigin > MAX_CHARGE_BOUNDS) {
+      if (!isInsideMainArenaXZ(newPosition.x, newPosition.z, MAX_CHARGE_BOUNDS)) {
         chargeStartTime.current = null;
         chargeStartPosition.current = null;
         onChargeComplete?.();
@@ -581,9 +615,9 @@ export default function Runeblade({
 
     // Handle regular swinging animation
     if (isSwinging) {
-      // Always keep currentComboStep synchronized with the prop
-      if (currentComboStep.current !== comboStep) {
-        currentComboStep.current = comboStep;
+      const resolvedStep = (comboStepResolver?.() ?? comboStep) as 1 | 2 | 3;
+      if (currentComboStep.current !== resolvedStep) {
+        currentComboStep.current = resolvedStep;
       }
 
       // Update current combo step when swing starts
@@ -793,6 +827,8 @@ export default function Runeblade({
 
   // Runeblade LMB damage: `onHit` forwards to DragonRenderer.handleSwordHit (crits, Infested Combo, Guard Combo talents).
   const performSwingDamage = (comboStep: 1 | 2 | 3) => {
+    const execBonus = getExecutionerFlatBonus?.() ?? 0;
+    const crusaderBonus = getCrusaderLmbFlatBonus?.() ?? 0;
     if (!playerPosition || !enemyData.length) return;
 
     const now = Date.now();
@@ -803,7 +839,7 @@ export default function Runeblade({
       3: 60
     };
 
-    const baseDamage = damageValues[comboStep];
+    const baseDamage = damageValues[comboStep] + execBonus + crusaderBonus;
     const attackRange = 5;
 
     let enemiesHitThisSwing = 0;
@@ -848,6 +884,7 @@ export default function Runeblade({
       }
     });
 
+    onPrimaryHitsResolved?.(enemiesHitThisSwing);
   };
 
   // Create custom runeblade shape
@@ -1121,6 +1158,21 @@ export default function Runeblade({
         </mesh>
       ))}
     </group>
+
+    {getBlizzardTalentActive && blizzardStormVisible && dragonGroupRef && (
+      <Blizzard
+        key={blizzardMountKey}
+        position={new Vector3(0, 0, 0)}
+        durationSeconds={BLIZZARD_DURATION_SEC}
+        flatDamagePerTick={BLIZZARD_DPS_PER_TICK}
+        onComplete={() => {}}
+        enemyData={enemyData}
+        parentRef={dragonGroupRef}
+        onHitTarget={(targetId, damage, isCritical, hitPosition, isBlizzard) => {
+          onHit?.(targetId, damage, isCritical, hitPosition, isBlizzard);
+        }}
+      />
+    )}
 
     {/* Corrupted Aura - Rendered outside runeblade group to avoid inheriting transformations */}
     <CorruptedAura

@@ -49,10 +49,7 @@ function ScytheModel({
   const bladeExtradeSettings = {
     steps: 1,
     depth: 0.00010,
-    bevelEnabled: true,
-    bevelThickness: 0.030,
-    bevelSize: 0.035,
-    bevelSegments: 1,
+    bevelEnabled: false,
     curveSegments: 16
   };
 

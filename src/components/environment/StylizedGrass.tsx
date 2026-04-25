@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useEffect } from 'react';
+import React, { useRef, useMemo, useCallback, useLayoutEffect, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   InstancedMesh,
@@ -10,15 +10,76 @@ import {
   Color,
   DoubleSide,
   CircleGeometry,
+  PlaneGeometry,
   MeshBasicMaterial,
 } from '@/utils/three-exports';
 import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+import type { RoomBorderTheme } from './SimpleBorderEffects';
+
+type TerrainPalette = {
+  baseColor: string;
+  tipColor: string;
+  groundColor: string;
+  groundLightColor: string;
+  groundLightIntensity: number;
+};
+
+const SNOW_COLORS_SOFT: TerrainPalette = {
+  baseColor: '#9eb8d4',
+  tipColor: '#d4e4f0',
+  groundColor: '#aabecf',
+  groundLightColor: '#8eacc8',
+  groundLightIntensity: 0.26,
+};
+
+const ARID_COLORS: TerrainPalette = {
+  baseColor: '#4a3020',
+  tipColor: '#c4783a',
+  groundColor: '#2e2118',
+  groundLightColor: '#8a4a2a',
+  groundLightIntensity: 0.28,
+};
+
+const PURPLE_FIELD_COLORS: TerrainPalette = {
+  baseColor: '#2a1f2e',
+  tipColor: '#4a3a55',
+  groundColor: '#3a3d48',
+  groundLightColor: '#4a3d58',
+  groundLightIntensity: 0.22,
+};
+
+const THEME_COUNTS: Record<RoomBorderTheme, number> = {
+  green: 80_000,
+  red: 80_000,
+  blue: 80_000,
+  purple: 16_000,
+};
+
+const THEME_WIND: Partial<Record<RoomBorderTheme, number>> = {
+  red: 0.2,
+  blue: 0.22,
+  purple: 0.2,
+};
+
+function resolveRoomTheme(
+  roomTheme: RoomBorderTheme | undefined,
+  isSnowTheme: boolean | undefined,
+): RoomBorderTheme {
+  if (roomTheme) return roomTheme;
+  if (isSnowTheme) return 'blue';
+  return 'green';
+}
 
 interface StylizedGrassProps {
+  /** `disc` = throne / circular fields; `square` = main arena (matches castle wall inner square). */
+  fieldShape?: 'disc' | 'square';
   count?: number;
   radius?: number;
   bladeHeight?: number;
   windStrength?: number;
+  /** Coop room archetype — drives default palette, density (purple), and wind. */
+  roomTheme?: RoomBorderTheme;
+  /** Legacy: when true, same as `roomTheme="blue"`. Ignored if `roomTheme` is set. */
   isSnowTheme?: boolean;
   baseColor?: string;
   tipColor?: string;
@@ -72,6 +133,7 @@ const GRASS_FRAGMENT = `
   uniform float uGroundLightIntensity;
   uniform float uGrassFadeInner;
   uniform float uGrassFadeOuter;
+  uniform float uUseSquareEdgeFade;
 
   varying float vHeightRatio;
   varying vec3 vWorldPos;
@@ -96,23 +158,17 @@ const GRASS_FRAGMENT = `
     // Ambient occlusion at the base (raised floor 0.4 → 0.55 so base isn't so dark)
     col *= 0.55 + smoothstep(0.0, 0.25, vHeightRatio) * 0.45;
 
-    // Fade at the edge of the playable area (uniforms scale with map radius)
-    float dist = length(vWorldPos.xz);
+    // Fade at the edge: radial (disc) or Chebyshev / max-edge (square arena)
+    float dist = uUseSquareEdgeFade > 0.5
+      ? max(abs(vWorldPos.x), abs(vWorldPos.z))
+      : length(vWorldPos.xz);
     col *= 1.0 - smoothstep(uGrassFadeInner, uGrassFadeOuter, dist) * 0.5;
 
     gl_FragColor = vec4(col, 1.0);
   }
 `;
 
-const SNOW_COLORS = {
-  baseColor: '#b9cff0',
-  tipColor: '#eaf4ff',
-  groundColor: '#cfe3ff',
-  groundLightColor: '#9fc2f0',
-  groundLightIntensity: 0.3,
-};
-
-const GRASS_COLORS = {
+const GRASS_COLORS: TerrainPalette = {
   baseColor: '#1a4d1a',
   tipColor: '#4caf50',
   groundColor: '#1a2e12',
@@ -120,11 +176,26 @@ const GRASS_COLORS = {
   groundLightIntensity: 0.45,
 };
 
+function paletteForTheme(theme: RoomBorderTheme): TerrainPalette {
+  switch (theme) {
+    case 'red':
+      return ARID_COLORS;
+    case 'blue':
+      return SNOW_COLORS_SOFT;
+    case 'purple':
+      return PURPLE_FIELD_COLORS;
+    default:
+      return GRASS_COLORS;
+  }
+}
+
 const StylizedGrass: React.FC<StylizedGrassProps> = ({
-  count = 80000,
+  fieldShape = 'disc',
+  count: countOverride,
   radius = MAIN_MAP_RADIUS,
   bladeHeight = 0.45,
-  windStrength = 0.25,
+  windStrength: windOverride,
+  roomTheme,
   isSnowTheme,
   baseColor,
   tipColor,
@@ -134,8 +205,10 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
 }) => {
   const meshRef = useRef<InstancedMesh>(null);
 
-  const isSnow = isSnowTheme ?? false;
-  const palette = isSnow ? SNOW_COLORS : GRASS_COLORS;
+  const effectiveTheme = resolveRoomTheme(roomTheme, isSnowTheme);
+  const defaultCount = THEME_COUNTS[effectiveTheme];
+  const count = countOverride ?? defaultCount;
+  const palette = paletteForTheme(effectiveTheme);
 
   const resolvedBaseColor        = baseColor        ?? palette.baseColor;
   const resolvedTipColor         = tipColor         ?? palette.tipColor;
@@ -143,6 +216,7 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
   const resolvedGroundLightColor = groundLightColor ?? palette.groundLightColor;
   const resolvedGroundLightIntensity =
     groundLightIntensity ?? palette.groundLightIntensity;
+  const windStrength = windOverride ?? THEME_WIND[effectiveTheme] ?? 0.25;
 
   const grassFadeInner = radius - 0.8;
   const grassFadeOuter = radius + 3.5;
@@ -174,6 +248,8 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
     return geo;
   }, []);
 
+  const useSquareEdge = fieldShape === 'square';
+
   const material = useMemo(() => {
     return new ShaderMaterial({
       uniforms: {
@@ -185,24 +261,31 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
         uGroundLightIntensity: { value: resolvedGroundLightIntensity },
         uGrassFadeInner: { value: grassFadeInner },
         uGrassFadeOuter: { value: grassFadeOuter },
+        uUseSquareEdgeFade: { value: useSquareEdge ? 1.0 : 0.0 },
       },
       vertexShader: GRASS_VERTEX,
       fragmentShader: GRASS_FRAGMENT,
       side: DoubleSide,
     });
-  }, [resolvedBaseColor, resolvedTipColor, windStrength, resolvedGroundLightColor, resolvedGroundLightIntensity, grassFadeInner, grassFadeOuter]);
+  }, [resolvedBaseColor, resolvedTipColor, windStrength, resolvedGroundLightColor, resolvedGroundLightIntensity, grassFadeInner, grassFadeOuter, useSquareEdge]);
 
-  // Soil disc geometry + material (created once)
-  const groundGeo = useMemo(() => new CircleGeometry(radius, 48), [radius]);
+  const groundGeo = useMemo(
+    () =>
+      useSquareEdge
+        ? new PlaneGeometry(radius * 2, radius * 2)
+        : new CircleGeometry(radius, 48),
+    [radius, useSquareEdge],
+  );
   const groundMat = useMemo(
     () => new MeshBasicMaterial({ color: resolvedGroundColor }),
     [resolvedGroundColor]
   );
 
-  // Distribute blades once on mount
-  useEffect(() => {
+  // After InstancedMesh commits (or recreates on count change), fill matrices. useLayoutEffect
+  // + rAF fallback avoids an empty instanced draw when the ref is not set in the same tick.
+  const fillInstanceMatrices = useCallback((): boolean => {
     const mesh = meshRef.current;
-    if (!mesh) return;
+    if (!mesh) return false;
 
     const mat = new Matrix4();
     const lean = new Matrix4();
@@ -210,12 +293,18 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
     const pos = new Vector3();
 
     for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const r = Math.sqrt(Math.random()) * radius;
-      const x = Math.cos(angle) * r;
-      const z = Math.sin(angle) * r;
+      let x: number;
+      let z: number;
+      if (useSquareEdge) {
+        x = (Math.random() * 2 - 1) * radius;
+        z = (Math.random() * 2 - 1) * radius;
+      } else {
+        const angle = Math.random() * Math.PI * 2;
+        const r = Math.sqrt(Math.random()) * radius;
+        x = Math.cos(angle) * r;
+        z = Math.sin(angle) * r;
+      }
 
-      // Positional height clumping — creates natural taller / shorter patches
       const clump =
         Math.sin(x * 0.3 + 0.7) * Math.cos(z * 0.5 + 1.2) * 0.4 + 0.6;
 
@@ -237,7 +326,47 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
     }
 
     mesh.instanceMatrix.needsUpdate = true;
-  }, [count, radius, bladeHeight]);
+    return true;
+  }, [count, radius, bladeHeight, useSquareEdge]);
+
+  useLayoutEffect(() => {
+    if (fillInstanceMatrices()) return;
+    let cancelled = false;
+    let raf = 0;
+    let attempts = 0;
+    const maxRafAttempts = 90;
+    const tick = () => {
+      if (cancelled) return;
+      if (fillInstanceMatrices()) return;
+      if (++attempts >= maxRafAttempts) return;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [fillInstanceMatrices]);
+
+  useEffect(
+    () => () => {
+      bladeGeometry.dispose();
+    },
+    [bladeGeometry],
+  );
+  useEffect(
+    () => () => {
+      material.dispose();
+    },
+    [material],
+  );
+  useEffect(
+    () => () => {
+      groundGeo.dispose();
+      groundMat.dispose();
+    },
+    [groundGeo, groundMat],
+  );
 
   useFrame((_, delta) => {
     material.uniforms.uTime.value += delta;
@@ -254,6 +383,7 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
       />
 
       <instancedMesh
+        key={`grass-instances-${count}`}
         ref={meshRef}
         args={[bladeGeometry, material, count]}
         frustumCulled={false}

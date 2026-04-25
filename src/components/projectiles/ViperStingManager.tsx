@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Vector3, Group } from 'three';
 import ViperSting from './ViperSting';
 import ViperStingBeam from './ViperStingBeam';
 import SoulStealEffect from './SoulStealEffect';
+import ExplosiveTalonsDetonation from './ExplosiveTalonsDetonation';
 import { useViperSting } from './useViperSting';
 import { useViperStingBeam } from './useViperStingBeam';
 
@@ -42,6 +43,7 @@ interface ViperStingManagerProps {
     health: number;
   }>;
   wrathfulTalonsReturnCrit?: boolean;
+  explosiveTalons?: boolean;
   onExecuteFirstForwardHit?: () => number;
 }
 
@@ -54,16 +56,31 @@ interface SoulStealEffect {
   active: boolean;
 }
 
+interface ExplosiveTalonsDetonationEntry {
+  id: number;
+  position: Vector3;
+}
+
 // Global state for Viper Sting manager
 let globalViperStingManager: {
-  shootViperSting?: (position?: Vector3, direction?: Vector3, casterId?: string) => boolean;
+  shootViperSting?: (
+    position?: Vector3,
+    direction?: Vector3,
+    casterId?: string,
+    opts?: { explosiveTalons?: boolean },
+  ) => boolean;
   getProjectiles?: () => any[];
   createSoulSteal?: (enemyPosition: Vector3) => void;
 } = {};
 
-export const triggerGlobalViperSting = (position?: Vector3, direction?: Vector3, casterId?: string): boolean => {
+export const triggerGlobalViperSting = (
+  position?: Vector3,
+  direction?: Vector3,
+  casterId?: string,
+  opts?: { explosiveTalons?: boolean },
+): boolean => {
   if (globalViperStingManager.shootViperSting) {
-    return globalViperStingManager.shootViperSting(position, direction, casterId);
+    return globalViperStingManager.shootViperSting(position, direction, casterId, opts);
   }
   return false;
 };
@@ -93,10 +110,20 @@ export default function ViperStingManager({
   localSocketId,
   players,
   wrathfulTalonsReturnCrit,
+  explosiveTalons,
   onExecuteFirstForwardHit,
 }: ViperStingManagerProps) {
   const [soulStealEffects, setSoulStealEffects] = useState<SoulStealEffect[]>([]);
   const nextSoulStealId = useRef(0);
+  const [explosiveTalonsDetonations, setExplosiveTalonsDetonations] = useState<
+    ExplosiveTalonsDetonationEntry[]
+  >([]);
+  const nextExplosiveTalonsDetonationId = useRef(0);
+
+  const onExplosiveTalonsDetonate = useCallback((pos: Vector3) => {
+    const id = nextExplosiveTalonsDetonationId.current++;
+    setExplosiveTalonsDetonations((prev) => [...prev, { id, position: pos.clone() }]);
+  }, []);
   
   // Beam effects management
   const { activeEffects: beamEffects, createBeamEffect, removeEffect: removeBeamEffect } = useViperStingBeam();
@@ -119,7 +146,9 @@ export default function ViperStingManager({
     localSocketId, // Pass the local socket ID to prevent self-damage
     players, // Pass players data for dynamic PVP targeting
     wrathfulTalonsReturnCrit,
+    explosiveTalons,
     onExecuteFirstForwardHit,
+    onExplosiveTalonsDetonate,
   });
 
   // Register global manager
@@ -153,6 +182,16 @@ export default function ViperStingManager({
           direction={effect.direction}
           isReturning={effect.isReturning}
           onComplete={() => removeBeamEffect(effect.id)}
+        />
+      ))}
+
+      {explosiveTalonsDetonations.map((d) => (
+        <ExplosiveTalonsDetonation
+          key={d.id}
+          position={d.position}
+          onComplete={() =>
+            setExplosiveTalonsDetonations((prev) => prev.filter((x) => x.id !== d.id))
+          }
         />
       ))}
 

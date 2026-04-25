@@ -2,7 +2,13 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
-import { universalAbilityPool, UniversalAbility, AbilityLoadout, getDefaultLoadoutForWeapon } from '@/utils/weaponAbilities';
+import {
+  universalAbilityPool,
+  UniversalAbility,
+  AbilityLoadout,
+  getDefaultLoadoutForWeapon,
+  isAbilityLoadoutCompleteForWeapon,
+} from '@/utils/weaponAbilities';
 
 interface AbilitySelectionModalProps {
   selectedWeapon: WeaponType;
@@ -24,6 +30,8 @@ function mergeSavedLoadout(weapon: WeaponType, saved: AbilityLoadout | null | un
 
   const passiveOk =
     saved.passive &&
+    saved.passive !== 'BOW_P' &&
+    saved.passive !== 'SCYTHE_P' &&
     universalAbilityPool.some(
       (a) => a.id === saved.passive && a.sourceKey === 'P' && a.allowedWeapons.includes(weapon),
     )
@@ -38,7 +46,15 @@ function mergeSavedLoadout(weapon: WeaponType, saved: AbilityLoadout | null | un
   };
 }
 
+function computeInitialActiveSlot(weapon: WeaponType, merged: AbilityLoadout): 'Q' | 'E' | 'R' | null {
+  if (merged.Q == null) return 'Q';
+  if (merged.E == null) return 'E';
+  if (getDefaultLoadoutForWeapon(weapon).R !== null && merged.R == null) return 'R';
+  return null;
+}
+
 const WEAPON_LABELS: Record<WeaponType, string> = {
+  [WeaponType.NONE]: 'Unarmed',
   [WeaponType.RUNEBLADE]: 'Sword',
   [WeaponType.BOW]: 'Bow',
   [WeaponType.SCYTHE]: 'Scythe',
@@ -49,6 +65,7 @@ const WEAPON_LABELS: Record<WeaponType, string> = {
 };
 
 const WEAPON_COLORS: Record<WeaponType, { border: string; bg: string; text: string; badge: string }> = {
+  [WeaponType.NONE]: { border: 'border-violet-400', bg: 'bg-violet-900/30', text: 'text-violet-200', badge: 'bg-violet-600' },
   [WeaponType.RUNEBLADE]: { border: 'border-sky-400', bg: 'bg-sky-900/30', text: 'text-sky-300', badge: 'bg-sky-600' },
   [WeaponType.BOW]:       { border: 'border-green-400', bg: 'bg-green-900/30', text: 'text-green-300', badge: 'bg-green-600' },
   [WeaponType.SCYTHE]:    { border: 'border-purple-400', bg: 'bg-purple-900/30', text: 'text-purple-300', badge: 'bg-purple-600' },
@@ -80,6 +97,9 @@ export default function AbilitySelectionModal({
   onBack,
 }: AbilitySelectionModalProps) {
   const [loadout, setLoadout] = useState<AbilityLoadout>(() => mergeSavedLoadout(selectedWeapon, initialLoadout));
+  const [activeSlot, setActiveSlot] = useState<'Q' | 'E' | 'R' | null>(() =>
+    computeInitialActiveSlot(selectedWeapon, mergeSavedLoadout(selectedWeapon, initialLoadout)),
+  );
 
   // Only show active abilities (non-passive) that are allowed for the currently selected weapon, grouped by source
   const abilityGroups = useMemo(() => {
@@ -96,16 +116,21 @@ export default function AbilitySelectionModal({
   // Passive abilities available for this weapon (shown separately, not assignable to Q/E/R)
   const passiveAbilities = useMemo(() => {
     return universalAbilityPool.filter(
-      a => a.sourceKey === 'P' && a.allowedWeapons.includes(selectedWeapon)
+      (a) =>
+        a.sourceKey === 'P' &&
+        a.allowedWeapons.includes(selectedWeapon) &&
+        a.id !== 'BOW_P' &&
+        a.id !== 'SCYTHE_P',
     );
   }, [selectedWeapon]);
   const defaultLoadout = getDefaultLoadoutForWeapon(selectedWeapon);
-  const initialSlot = defaultLoadout.Q === null ? 'Q' : defaultLoadout.E === null ? 'E' : defaultLoadout.R === null ? 'R' : null;
-  const [activeSlot, setActiveSlot] = useState<'Q' | 'E' | 'R' | null>(initialSlot);
+  const baselineExpectsR = defaultLoadout.R !== null;
   const [hoveredAbility, setHoveredAbility] = useState<UniversalAbility | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
-  const isComplete = loadout.Q !== null && loadout.E !== null && loadout.R !== null;
+  const isComplete = isAbilityLoadoutCompleteForWeapon(selectedWeapon, loadout);
+  const requiredSlotCount = baselineExpectsR ? 3 : 2;
+  const filledRequiredCount = [loadout.Q, loadout.E, ...(baselineExpectsR ? [loadout.R] : [])].filter(Boolean).length;
 
   const getSlotAbility = useCallback((slot: 'Q' | 'E' | 'R'): UniversalAbility | null => {
     const id = loadout[slot];
@@ -176,10 +201,18 @@ export default function AbilitySelectionModal({
             <span className={`font-semibold ${WEAPON_COLORS[selectedWeapon].text}`}>
               {WEAPON_LABELS[selectedWeapon]}
             </span>
-            . Assign one to each of your{' '}
-            <span className="text-white font-semibold">Q</span>,{' '}
-            <span className="text-white font-semibold">E</span>, and{' '}
-            <span className="text-white font-semibold">R</span> hotkeys.
+            . Assign one ability each to{' '}
+            <span className="text-white font-semibold">Q</span> and{' '}
+            <span className="text-white font-semibold">E</span>
+            {baselineExpectsR ? (
+              <>
+                , and one to <span className="text-white font-semibold">R</span>.
+              </>
+            ) : (
+              <>
+                . <span className="text-white font-semibold">R</span> is optional and unlocks later in the run.
+              </>
+            )}
           </p>
         </div>
 
@@ -308,6 +341,14 @@ export default function AbilitySelectionModal({
           </div>
         )}
 
+        {(selectedWeapon === WeaponType.BOW || selectedWeapon === WeaponType.SCYTHE) && (
+          <p className="mt-3 text-gray-500 text-xs pl-1">
+            {selectedWeapon === WeaponType.BOW
+              ? 'Tempest Rounds is granted by the co-op class boon or dev talent pillar, not this passive row.'
+              : 'Icebeam is granted by the co-op class boon or dev talent pillar, not this passive row.'}
+          </p>
+        )}
+
         {/* Footer */}
         <div className="flex gap-3 mt-5 justify-between items-center">
           <button
@@ -321,7 +362,9 @@ export default function AbilitySelectionModal({
             {isComplete ? (
               <span className="text-green-400">✓ Loadout ready</span>
             ) : (
-              <span>{[loadout.Q, loadout.E, loadout.R].filter(Boolean).length} / 3 assigned</span>
+              <span>
+                {filledRequiredCount} / {requiredSlotCount} required slots filled
+              </span>
             )}
           </div>
 

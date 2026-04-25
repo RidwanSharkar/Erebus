@@ -88,7 +88,7 @@ const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
   return (
     <SummonTotemManager
       ref={managerRef}
-
+      enemyData={enemyData}
     />
   );
 };

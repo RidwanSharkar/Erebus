@@ -10,23 +10,39 @@ interface WeaverModelProps {
   isCastingHeal: boolean;
   isCastingSummon: boolean;
   isDying: boolean;
+  isImpacting?: boolean;
+  impactPlayKey?: number;
+  onImpactFinished?: () => void;
 }
 
 useGLTF.preload('/models/weaver_idle.glb');
 useGLTF.preload('/models/weaver_walk.glb');
 useGLTF.preload('/models/weaver_castheal.glb');
 useGLTF.preload('/models/weaver_castsummon.glb');
+useGLTF.preload('/models/weaver_death.glb');
+useGLTF.preload('/models/weaver_impact.glb');
 
 const SCALE = 0.01235;
 
-export default function WeaverModel({ isWalking, isCastingHeal, isCastingSummon, isDying }: WeaverModelProps) {
+export default function WeaverModel({
+  isWalking,
+  isCastingHeal,
+  isCastingSummon,
+  isDying,
+  isImpacting = false,
+  impactPlayKey = 0,
+  onImpactFinished,
+}: WeaverModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
+  const lastImpactPlayKeyRef = useRef(-1);
 
   const { scene, animations: idleAnims }    = useGLTF('/models/weaver_idle.glb');
   const { animations: walkAnims }           = useGLTF('/models/weaver_walk.glb');
   const { animations: castHealAnims }       = useGLTF('/models/weaver_castheal.glb');
   const { animations: castSummonAnims }     = useGLTF('/models/weaver_castsummon.glb');
+  const { animations: deathAnims }          = useGLTF('/models/weaver_death.glb');
+  const { animations: impactAnims }         = useGLTF('/models/weaver_impact.glb');
 
   const clonedScene = useMemo(() => {
     const clone = SkeletonUtils.clone(scene) as Group;
@@ -65,52 +81,71 @@ export default function WeaverModel({ isWalking, isCastingHeal, isCastingSummon,
       ...rename(walkAnims,       'Walk').map(stripRootMotionXZ),
       ...rename(castHealAnims,   'CastHeal'),
       ...rename(castSummonAnims, 'CastSummon'),
+      ...rename(deathAnims,      'Death'),
+      ...rename(impactAnims,     'Impact'),
     ];
-  }, [idleAnims, walkAnims, castHealAnims, castSummonAnims]);
+  }, [idleAnims, walkAnims, castHealAnims, castSummonAnims, deathAnims, impactAnims]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
-  const getAction = (name: 'Idle' | 'Walk' | 'CastHeal' | 'CastSummon'): AnimationAction | null =>
+  const getAction = (name: 'Idle' | 'Walk' | 'CastHeal' | 'CastSummon' | 'Death' | 'Impact'): AnimationAction | null =>
     actions[name] ?? null;
 
-  // Priority: CastSummon > CastHeal > Walk > Idle
+  // Priority: Death > CastSummon > CastHeal > Impact > Walk > Idle
   useEffect(() => {
     if (!actions) return;
 
-    const nextAction = isCastingSummon
-      ? getAction('CastSummon')
-      : isCastingHeal
-        ? getAction('CastHeal')
-        : isWalking
-          ? getAction('Walk')
-          : getAction('Idle');
+    const nextAction = isDying
+      ? getAction('Death')
+      : isCastingSummon
+        ? getAction('CastSummon')
+        : isCastingHeal
+          ? getAction('CastHeal')
+          : isImpacting
+            ? getAction('Impact')
+            : isWalking
+              ? getAction('Walk')
+              : getAction('Idle');
 
-    if (!nextAction || nextAction === currentActionRef.current) return;
+    if (!nextAction) return;
+    if (nextAction === currentActionRef.current) {
+      const retriggerImpact = isImpacting && impactPlayKey !== lastImpactPlayKeyRef.current;
+      if (!retriggerImpact) return;
+    }
 
     currentActionRef.current?.fadeOut(0.2);
 
-    if (isCastingSummon || isCastingHeal) {
+    if (isDying) {
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.15).play();
+    } else if (isCastingSummon || isCastingHeal) {
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.2).play();
+    } else if (isImpacting) {
+      lastImpactPlayKeyRef.current = impactPlayKey;
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.2).play();
     } else {
+      if (!isImpacting) lastImpactPlayKeyRef.current = -1;
       nextAction.enabled = true;
       nextAction.setLoop(LoopRepeat, Infinity);
       nextAction.fadeIn(0.2).play();
     }
 
     currentActionRef.current = nextAction;
-  }, [isWalking, isCastingHeal, isCastingSummon, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isWalking, isCastingHeal, isCastingSummon, isDying, isImpacting, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // After a cast finishes, blend back to Walk or Idle.
+  // After one-shot (impact, cast) finishes, blend back to Walk or Idle.
   useEffect(() => {
-    if (!mixer || (!isCastingHeal && !isCastingSummon) || isDying) return;
+    if (!mixer || isDying) return;
 
-    const handleFinish = () => {
+    const blendToWalkOrIdle = () => {
       if (isDying) return;
       const fallback = isWalking ? getAction('Walk') : getAction('Idle');
-      if (fallback && fallback !== currentActionRef.current) {
-        fallback.enabled = true;
+      if (fallback) {
         fallback.setLoop(LoopRepeat, Infinity);
         currentActionRef.current?.fadeOut(0.15);
         fallback.reset().fadeIn(0.15).play();
@@ -118,9 +153,24 @@ export default function WeaverModel({ isWalking, isCastingHeal, isCastingSummon,
       }
     };
 
+    const handleFinish = (e: { action: AnimationAction }) => {
+      if (isDying) return;
+      const name = e.action.getClip().name;
+      if (name === 'Death') return;
+      if (name === 'Impact') {
+        onImpactFinished?.();
+        lastImpactPlayKeyRef.current = -1;
+        blendToWalkOrIdle();
+        return;
+      }
+      if (name === 'CastHeal' || name === 'CastSummon') {
+        blendToWalkOrIdle();
+      }
+    };
+
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isCastingHeal, isCastingSummon, isDying, isWalking, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isDying, isWalking, actions, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group ref={sceneGroupRef}>

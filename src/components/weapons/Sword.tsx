@@ -2,7 +2,8 @@ import { useRef, useState, useEffect, memo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Color, Shape, AdditiveBlending } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
-import { calculationCache } from '@/utils/CalculationCache';;
+import { calculationCache } from '@/utils/CalculationCache';
+import { MAIN_MAP_RADIUS, isInsideMainArenaXZ } from '@/utils/mapConstants';
 
 interface SwordProps {
   isSwinging: boolean;
@@ -285,7 +286,7 @@ const SwordComponent = memo(function Sword({
       const CHARGE_DURATION = 0.45; // Dash duration in seconds
       const CHARGE_DAMAGE = 40; // Base damage for charge collision
       const CHARGE_COLLISION_RADIUS = 2.5; // Collision radius - increased for better hit detection
-      const MAX_CHARGE_BOUNDS = 25; // Maximum distance from origin
+      const MAX_CHARGE_BOUNDS = MAIN_MAP_RADIUS; // Inner castle wall square (half-extent)
       const CHARGE_FAILSAFE_TIMEOUT = 0.6; // Total expected duration + buffer
 
       // Initialize charge on first active frame
@@ -358,9 +359,7 @@ const SwordComponent = memo(function Sword({
       const displacement = chargeDirection.current.clone().multiplyScalar(CHARGE_DISTANCE * easeOutQuad);
       const newPosition = chargeStartPosition.current.clone().add(displacement);
 
-      // Bounds checking
-      const distanceFromOrigin = newPosition.length();
-      if (distanceFromOrigin > MAX_CHARGE_BOUNDS) {
+      if (!isInsideMainArenaXZ(newPosition.x, newPosition.z, MAX_CHARGE_BOUNDS)) {
         chargeStartTime.current = null;
         chargeStartPosition.current = null;
         onChargeComplete?.();

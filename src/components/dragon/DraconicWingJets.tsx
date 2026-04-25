@@ -75,6 +75,8 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
 
     // Fallback to weapon type colors
     switch (weaponType) {
+      case WeaponType.NONE:
+        return { main: '#8A2BE2', emissive: '#9370DB', particle: '#DA70D6' };
       case WeaponType.SCYTHE:
         return { main: '#17CE54', emissive: '#00CED1', particle: '#AFEEEE' }; // 39ff14
       case WeaponType.SWORD:

@@ -20,6 +20,8 @@ interface TemplarRendererProps {
   isDying?: boolean;
   campType?: string;
   staggerBuildup?: number;
+  /** Melee range telegraph; false e.g. for throne training replica */
+  showMeleeRangeRing?: boolean;
 }
 
 const ATTACK_DURATION = 1200; // ms — matches templar attack clip; backend `meleeLockUntil` uses the same window
@@ -36,6 +38,7 @@ export default function TemplarRenderer({
   isDying = false,
   campType,
   staggerBuildup = 0,
+  showMeleeRangeRing = true,
 }: TemplarRendererProps) {
   const theme = campHpTheme(campType);
   const { socket } = useMultiplayer();
@@ -44,10 +47,16 @@ export default function TemplarRenderer({
   const [isAttacking,   setIsAttacking]   = useState(false);
   const [isWalking,     setIsWalking]     = useState(false);
   const [attackVariant, setAttackVariant] = useState<1 | 2>(1);
+  const [isImpacting,   setIsImpacting]   = useState(false);
+  const [impactPlayKey, setImpactPlayKey] = useState(0);
+  const [isBlinkSmite,  setIsBlinkSmite]  = useState(false);
+  const [blinkSmitePlayKey, setBlinkSmitePlayKey] = useState(0);
+  const isBlinkSmiteRef = useRef(false);
 
   const targetPosition  = useRef(position.clone());
   const targetRotation  = useRef(rotation);
   const isAttackingRef  = useRef(false);
+  const prevHealthRef   = useRef(health);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer     = useRef(0);
@@ -87,12 +96,46 @@ export default function TemplarRenderer({
     targetRotation.current = rotation;
   }, [rotation]);
 
+  const handleImpactFinished = useCallback(() => {
+    setIsImpacting(false);
+  }, []);
+
+  const handleBlinkSmiteFinished = useCallback(() => {
+    setIsBlinkSmite(false);
+    isBlinkSmiteRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    isBlinkSmiteRef.current = isBlinkSmite;
+  }, [isBlinkSmite]);
+
+  // Hit-react: health drop while idle (not walk / attack).
+  useEffect(() => {
+    if (
+      health < prevHealthRef.current &&
+      !isDying &&
+      !isWalking &&
+      !isAttacking
+    ) {
+      setIsImpacting(true);
+      setImpactPlayKey(k => k + 1);
+    }
+    prevHealthRef.current = health;
+  }, [health, isDying, isWalking, isAttacking]);
+
+  useEffect(() => {
+    if (isWalking || isAttacking || isBlinkSmite) {
+      setIsImpacting(false);
+    }
+  }, [isWalking, isAttacking, isBlinkSmite]);
+
   // Attack animation — driven by server telegraph.
   useEffect(() => {
     if (!socket) return;
 
     const handleTemplarTelegraph = (data: any) => {
       if (data.templarId !== id) return;
+      if (isBlinkSmiteRef.current) return;
       setAttackVariant(Math.random() < 0.5 ? 1 : 2);
       setIsAttacking(true);
       isAttackingRef.current = true;
@@ -102,8 +145,21 @@ export default function TemplarRenderer({
       }, ATTACK_DURATION);
     };
 
+    const handleTemplarBlinkSmiteWindup = (data: any) => {
+      if (data.templarId !== id) return;
+      setIsBlinkSmite(true);
+      isBlinkSmiteRef.current = true;
+      setBlinkSmitePlayKey(k => k + 1);
+      setIsAttacking(false);
+      isAttackingRef.current = false;
+    };
+
     socket.on('templar-attack-telegraph', handleTemplarTelegraph);
-    return () => { socket.off('templar-attack-telegraph', handleTemplarTelegraph); };
+    socket.on('templar-blink-smite-windup', handleTemplarBlinkSmiteWindup);
+    return () => {
+      socket.off('templar-attack-telegraph', handleTemplarTelegraph);
+      socket.off('templar-blink-smite-windup', handleTemplarBlinkSmiteWindup);
+    };
   }, [id, socket]);
 
   useFrame((_, delta) => {
@@ -135,15 +191,19 @@ export default function TemplarRenderer({
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <TemplarModel
-        isWalking={isWalking}
-        isAttacking={isAttacking}
+        isWalking={isWalking && !isBlinkSmite}
+        isAttacking={isAttacking && !isBlinkSmite}
         attackVariant={attackVariant}
         isDying={isDying}
+        isImpacting={isImpacting}
+        impactPlayKey={impactPlayKey}
+        onImpactFinished={handleImpactFinished}
+        isBlinkSmite={isBlinkSmite}
+        blinkSmitePlayKey={blinkSmitePlayKey}
+        onBlinkSmiteFinished={handleBlinkSmiteFinished}
       />
 
       {!isDying && <TemplarSoulCrest />}
-
-      <EnemyMeleeAttackRangeRing radius={TEMPLAR_MELEE_ATTACK_RANGE} />
 
       {/* Billboard health bar */}
       <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>

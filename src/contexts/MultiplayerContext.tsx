@@ -5,7 +5,7 @@ import { unstable_batchedUpdates } from 'react-dom';
 import { io, Socket } from 'socket.io-client';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { SkillPointSystem, SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
-import { AbilityLoadout, getDefaultLoadoutForWeapon } from '@/utils/weaponAbilities';
+import { AbilityLoadout, getDefaultLoadout } from '@/utils/weaponAbilities';
 import { TalentLoadout, createDefaultTalentLoadout } from '@/utils/talents';
 import { ExperienceSystem } from '@/utils/ExperienceSystem';
 import { StatSystem, StatPointData, StatKey, PlayerStats } from '@/utils/StatSystem';
@@ -53,6 +53,8 @@ export interface EnemyDamageMeta {
   reaperCrossentropy?: boolean;
   /** Staggering Strike (`wraith_strike`), Runeblade combo (`runeblade_combo`), Sabres (`sabre_left` / `sabre_right`), Staggering Smite (`smite` with `staggerToAdd`), or Stagger Shot (`projectile` with `staggerToAdd`): server accumulates stagger. */
   staggerToAdd?: number;
+  /** Wyvern Bite — Barrage hit applies Concentrated Venom stack on server. */
+  wyvernBiteVenom?: boolean;
 }
 
 /** Server enemy; `type` includes e.g. `knight`, `training-dummy` (throne prep). */
@@ -64,6 +66,8 @@ export interface Enemy {
   health: number;
   maxHealth: number;
   isDying?: boolean;
+  /** Co-op throne prep: which model to show for `training-dummy` */
+  dummyVisual?: 'knight';
   soulType?: 'green' | 'red' | 'blue' | 'purple' | 'yellow';
   campType?: string;
   campIndex?: number;
@@ -167,6 +171,26 @@ interface MultiplayerContextType {
 
   /** Co-op throne: two distinct archetype keys shown on the paired portals until combat starts. */
   thronePortalOffer: string[];
+  /** Co-op: south-rim only in throne; main-map portal rounds use `coopMainArenaPortalPhase`. */
+  thronePortalLayout: 'rim' | 'center';
+  /** Co-op: main combat map — two portals (wave 2) or boss gate between waves. Null otherwise. */
+  coopMainArenaPortalPhase: 'pick_wave2' | 'pick_boss' | null;
+  /**
+   * Full-screen loading overlay for portal transitions (throne → arena, wave picks, boss).
+   * Set true on `combat-arena-entered`; clear via `endCoopPortalTransition` after the scene settles.
+   */
+  coopTransitionOverlay: boolean;
+  /** Increments on each `combat-arena-entered` so the game scene can schedule overlay teardown. */
+  coopCombatArenaEnterSeq: number;
+  /** Increments on each `coop-main-arena-intermission` (wave clear; choice portals; server does not move players). */
+  coopMainArenaIntermissionSeq: number;
+  /**
+   * Co-op: camp color of the wave just cleared (first wave, etc.); from `coop-main-arena-intermission`.
+   * Cleared on `combat-arena-entered` so the next transition does not reuse a stale value.
+   */
+  coopClearedRoomColor: string | null;
+  clearCoopClearedRoomColor: () => void;
+  endCoopPortalTransition: () => void;
 
   // Chat state
   chatMessages: ChatMessage[];
@@ -234,7 +258,7 @@ interface MultiplayerContextType {
   setAbilityLoadout: (loadout: AbilityLoadout | null) => void;
 
   talentLoadout: TalentLoadout;
-  setTalentLoadout: (loadout: TalentLoadout) => void;
+  setTalentLoadout: (loadout: TalentLoadout | ((prev: TalentLoadout) => TalentLoadout)) => void;
 
   // Skill point system actions
   unlockAbility: (unlock: AbilityUnlock) => void;
@@ -277,6 +301,15 @@ interface MultiplayerProviderProps {
 
 const VALID_CAMP_KEYS = new Set(['red', 'blue', 'green', 'purple']);
 
+function normalizeThronePortalLayout(v: unknown): 'rim' | 'center' {
+  return v === 'center' ? 'center' : 'rim';
+}
+
+function normalizeCoopMainArenaPhase(v: unknown): 'pick_wave2' | 'pick_boss' | null {
+  if (v === 'pick_wave2' || v === 'pick_boss') return v;
+  return null;
+}
+
 /** Normalize server `campTypes` or infer from `enemies[].campType` for environment theme sync. */
 function campArchetypeFromRoomPayload(data: {
   campTypes?: string[];
@@ -312,19 +345,23 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [gameMode, setGameMode] = useState<'multiplayer' | 'coop'>('multiplayer');
   const [campTypes, setCampTypes] = useState<string[]>([]);
   const [thronePortalOffer, setThronePortalOffer] = useState<string[]>([]);
+  const [thronePortalLayout, setThronePortalLayout] = useState<'rim' | 'center'>('rim');
+  const [coopMainArenaPortalPhase, setCoopMainArenaPortalPhase] = useState<'pick_wave2' | 'pick_boss' | null>(null);
+  const [coopTransitionOverlay, setCoopTransitionOverlay] = useState(false);
+  const [coopCombatArenaEnterSeq, setCoopCombatArenaEnterSeq] = useState(0);
+  const [coopMainArenaIntermissionSeq, setCoopMainArenaIntermissionSeq] = useState(0);
+  const [coopClearedRoomColor, setCoopClearedRoomColor] = useState<string | null>(null);
   const [currentPreview, setCurrentPreview] = useState<RoomPreview | null>(null);
   const [selectedWeapons, setSelectedWeaponsState] = useState<{
     primary: WeaponType;
     secondary: WeaponType;
   }>({
-    primary: WeaponType.BOW,
-    secondary: WeaponType.BOW,
+    primary: WeaponType.NONE,
+    secondary: WeaponType.NONE,
   });
   const [skillPointData, setSkillPointData] = useState<SkillPointData>(SkillPointSystem.getInitialSkillPointData());
   const [statPointData, setStatPointData] = useState<StatPointData>(StatSystem.getInitialStatPointData());
-  const [abilityLoadout, setAbilityLoadoutState] = useState<AbilityLoadout | null>(() =>
-    getDefaultLoadoutForWeapon(WeaponType.BOW),
-  );
+  const [abilityLoadout, setAbilityLoadoutState] = useState<AbilityLoadout | null>(() => getDefaultLoadout());
   const [talentLoadout, setTalentLoadoutState] = useState<TalentLoadout>(() => createDefaultTalentLoadout());
 
   // Chat state
@@ -336,12 +373,25 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
 
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
+  /** Deferred `io()` so React Strict Mode’s mount→unmount→mount does not disconnect a half-open socket. */
+  const socketConnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeSocketRef = useRef<Socket | null>(null);
 
   // Throttling refs to prevent infinite re-render loops
   const lastPlayerMoveUpdate = useRef<{ [playerId: string]: number }>({});
   const lastPlayerHealthUpdate = useRef<{ [playerId: string]: number }>({});
   const lastEnemyMoveUpdate = useRef<{ [enemyId: string]: number }>({});
   const lastEnemyDamageUpdate = useRef<{ [enemyId: string]: number }>({});
+  /** Coalesce many `enemy-removed` events (wave end) into one `setEnemies` per frame. */
+  const pendingEnemyRemovalsRef = useRef<Set<string>>(new Set());
+  const enemyRemovalRafRef = useRef<number | null>(null);
+  const cancelPendingEnemyRemovals = useCallback(() => {
+    if (enemyRemovalRafRef.current != null) {
+      cancelAnimationFrame(enemyRemovalRafRef.current);
+      enemyRemovalRafRef.current = null;
+    }
+    pendingEnemyRemovalsRef.current.clear();
+  }, []);
 
   // Initialize socket connection
   useEffect(() => {
@@ -352,7 +402,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     console.log('🔌 Connecting to multiplayer server:', serverUrl);
 
-    const newSocket = io(serverUrl, {
+    socketConnectTimerRef.current = setTimeout(() => {
+      socketConnectTimerRef.current = null;
+      const newSocket = io(serverUrl, {
       transports: ['websocket', 'polling'], // Prefer websocket first
       timeout: 20000,
       forceNew: true,
@@ -364,6 +416,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       upgrade: true, // Allow transport upgrades
       rememberUpgrade: true // Remember successful upgrades
     });
+
+    activeSocketRef.current = newSocket;
 
     // Store the socket in state
     setSocket(newSocket);
@@ -400,6 +454,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     addEventHandler('disconnect', (reason) => {
       console.log('❌ Disconnected from server:', reason);
+      cancelPendingEnemyRemovals();
       setIsConnected(false);
       setSocket(null); // Clear socket reference
       setIsInRoom(false);
@@ -430,6 +485,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     addEventHandler('room-joined', (data) => {
       console.log('🏠 Joined room:', data);
       (window as any).controlSystemRef?.current?.setReaperCrossentropyStack(0);
+      cancelPendingEnemyRemovals();
       setIsInRoom(true);
       setCurrentRoomId(data.roomId);
       setKillCount(data.killCount);
@@ -463,6 +519,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       } else {
         setThronePortalOffer([]);
       }
+      setThronePortalLayout(
+        normalizeThronePortalLayout((data as { thronePortalLayout?: string }).thronePortalLayout),
+      );
+      setCoopMainArenaPortalPhase(
+        normalizeCoopMainArenaPhase((data as { coopMainArenaPortalPhase?: string }).coopMainArenaPortalPhase),
+      );
     });
 
     addEventHandler('camps-initialized', (data: { campTypes?: string[] }) => {
@@ -591,7 +653,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     addEventHandler('enemy-damaged', (data) => {
       if (
-        data.damageType === 'ignite' &&
+        (data.damageType === 'ignite' || data.damageType === 'venom') &&
         typeof data.damage === 'number' &&
         data.damage > 0 &&
         data.position
@@ -599,14 +661,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         const mgr = (window as any).damageNumberManager;
         if (mgr?.addDamageNumber) {
           const pos = new Vector3(data.position.x, data.position.y + 1.5, data.position.z);
-          mgr.addDamageNumber(data.damage, false, pos, 'ignite');
+          mgr.addDamageNumber(data.damage, false, pos, data.damageType === 'venom' ? 'venom' : 'ignite');
         }
       }
 
       // Throttle enemy damage updates to prevent infinite re-renders (throne training dummy: always apply so HP bar stays accurate under rapid fire)
       const now = Date.now();
       const lastUpdate = lastEnemyDamageUpdate.current[data.enemyId] || 0;
-      const isThroneDummy = data.enemyId === 'throne-training-dummy';
+      const isThroneDummy = String(data.enemyId || '').startsWith('throne-training-dummy');
       if (!isThroneDummy && now - lastUpdate < 50) {
         return;
       }
@@ -624,7 +686,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           if (data.wasKilled && enemy.type !== 'training-dummy') {
             enemy.isDying = true;
             // Play death sound at the enemy's position
-            (window as any).audioSystem?.playEnemyDeathSound(enemy.position);
+            (window as any).audioSystem?.playEnemyDeathSound(enemy.position, enemy.type);
           }
         }
         // Silently ignore if enemy not found - it may have been removed already (died)
@@ -732,6 +794,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     addEventHandler('game-started', (data: any) => {
+      cancelPendingEnemyRemovals();
       setGameStarted(true);
       setKillCount(data.killCount);
       if (data && 'combatArenaActive' in data) {
@@ -762,11 +825,63 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       } else {
         setThronePortalOffer([]);
       }
+      if (data && 'thronePortalLayout' in data) {
+        setThronePortalLayout(normalizeThronePortalLayout(data.thronePortalLayout));
+      } else {
+        setThronePortalLayout('rim');
+      }
+      if (data && 'coopMainArenaPortalPhase' in data) {
+        setCoopMainArenaPortalPhase(normalizeCoopMainArenaPhase(data.coopMainArenaPortalPhase));
+      } else {
+        setCoopMainArenaPortalPhase(null);
+      }
+    });
+
+    addEventHandler('coop-main-arena-intermission', (data: any) => {
+      cancelPendingEnemyRemovals();
+      setCoopMainArenaIntermissionSeq((s) => s + 1);
+      if (data && 'coopClearedRoomColor' in data && data.coopClearedRoomColor != null) {
+        const c = String(data.coopClearedRoomColor).toLowerCase();
+        setCoopClearedRoomColor(VALID_CAMP_KEYS.has(c) ? c : null);
+      } else {
+        setCoopClearedRoomColor(null);
+      }
+      if (data && 'combatArenaActive' in data) {
+        setCombatArenaActive(!!data.combatArenaActive);
+      }
+      if (Array.isArray(data?.thronePortalOffer)) {
+        setThronePortalOffer([...data.thronePortalOffer]);
+      }
+      setCoopMainArenaPortalPhase(normalizeCoopMainArenaPhase(data?.coopMainArenaPortalPhase));
+      if (data?.players && Array.isArray(data.players)) {
+        setPlayers((prev) => {
+          const next = new Map(prev);
+          for (const p of data.players as Player[]) {
+            const old = next.get(p.id);
+            next.set(p.id, old ? { ...old, ...p } : p);
+          }
+          return next;
+        });
+      }
+      if (data?.enemies && Array.isArray(data.enemies)) {
+        setEnemies(() => {
+          const m = new Map<string, Enemy>();
+          for (const e of data.enemies as Enemy[]) {
+            m.set(e.id, { ...e, staggerBuildup: e.staggerBuildup ?? 0 });
+          }
+          return m;
+        });
+      }
     });
 
     addEventHandler('combat-arena-entered', (data: any) => {
       setCombatArenaActive(true);
+      setCoopClearedRoomColor(null);
       setThronePortalOffer([]);
+      setThronePortalLayout('rim');
+      setCoopMainArenaPortalPhase(null);
+      setCoopTransitionOverlay(true);
+      setCoopCombatArenaEnterSeq((s) => s + 1);
       if (data?.players && Array.isArray(data.players)) {
         setPlayers((prev) => {
           const next = new Map(prev);
@@ -907,21 +1022,44 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     addEventHandler('enemy-removed', (data) => {
-      // Immediately remove enemy from local state (for instant cleanup of skeletons)
-      setEnemies(prev => {
-        const updated = new Map(prev);
-        updated.delete(data.enemyId);
-        console.log(`🗑️ Removed enemy ${data.enemyId} from local state`);
-        return updated;
+      const id = data?.enemyId;
+      if (typeof id !== 'string' || !id) return;
+      pendingEnemyRemovalsRef.current.add(id);
+      if (enemyRemovalRafRef.current != null) return;
+      enemyRemovalRafRef.current = requestAnimationFrame(() => {
+        enemyRemovalRafRef.current = null;
+        const batch = pendingEnemyRemovalsRef.current;
+        pendingEnemyRemovalsRef.current = new Set();
+        if (batch.size === 0) return;
+        setEnemies((prev) => {
+          if (batch.size === 0) return prev;
+          const next = new Map(prev);
+          batch.forEach((eid) => {
+            next.delete(eid);
+          });
+          return next;
+        });
+        if (process.env.NODE_ENV === 'development' && batch.size > 0) {
+          console.log(`🗑️ Removed ${batch.size} enemy id(s) from local state (batched)`);
+        }
       });
     });
 
+    }, 0);
+
     // Cleanup function
     return () => {
-      console.log('🧹 Cleaning up socket connection');
-      if (newSocket) {
-        newSocket.removeAllListeners();
-        newSocket.disconnect();
+      cancelPendingEnemyRemovals();
+      if (socketConnectTimerRef.current != null) {
+        clearTimeout(socketConnectTimerRef.current);
+        socketConnectTimerRef.current = null;
+      }
+      const s = activeSocketRef.current;
+      activeSocketRef.current = null;
+      if (s) {
+        console.log('🧹 Cleaning up socket connection');
+        s.removeAllListeners();
+        s.disconnect();
       }
       setSocket(null);
       setIsConnected(false);
@@ -937,7 +1075,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         heartbeatInterval.current = null;
       }
     };
-  }, []); // Only run once on mount
+  }, [cancelPendingEnemyRemovals]); // `cancel` stable; handlers need fresh ref to cancel batching
 
   const joinRoom = useCallback(async (roomId: string, playerName: string, weapon: WeaponType, subclass?: WeaponSubclass, gameMode?: 'multiplayer' | 'coop') => {
     if (!socket || !isConnected) {
@@ -993,8 +1131,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setGameMode('multiplayer');
     setCampTypes([]);
     setThronePortalOffer([]);
+    setThronePortalLayout('rim');
+    setCoopMainArenaPortalPhase(null);
+    setCoopTransitionOverlay(false);
+    setCoopCombatArenaEnterSeq(0);
+    setCoopMainArenaIntermissionSeq(0);
     setDroppedItems(new Map());
     setInventory([]);
+    setSelectedWeaponsState({ primary: WeaponType.NONE, secondary: WeaponType.NONE });
+    setAbilityLoadoutState(getDefaultLoadout());
     }
   }, [socket]);
 
@@ -1019,6 +1164,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       socket.emit('enter-combat-arena', { roomId: currentRoomId, chosenCampType });
     }
   }, [socket, currentRoomId]);
+
+  const endCoopPortalTransition = useCallback(() => {
+    setCoopTransitionOverlay(false);
+  }, []);
+
+  const clearCoopClearedRoomColor = useCallback(() => {
+    setCoopClearedRoomColor(null);
+  }, []);
 
   const updatePlayerPosition = useCallback((position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: { x: number; y: number; z: number }) => {
     if (socket && currentRoomId) {
@@ -1102,6 +1255,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.infernoCrossentropy ? { infernoCrossentropy: true } : {}),
         ...(meta?.reaperCrossentropy ? { reaperCrossentropy: true } : {}),
         ...(meta?.staggerToAdd != null && meta.staggerToAdd > 0 ? { staggerToAdd: meta.staggerToAdd } : {}),
+        ...(meta?.wyvernBiteVenom ? { wyvernBiteVenom: true } : {}),
       });
     }
   }, [socket, currentRoomId]);
@@ -1265,9 +1419,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setAbilityLoadoutState(loadout);
   }, []);
 
-  const setTalentLoadout = useCallback((loadout: TalentLoadout) => {
-    setTalentLoadoutState(loadout);
-  }, []);
+  const setTalentLoadout = useCallback(
+    (loadout: TalentLoadout | ((prev: TalentLoadout) => TalentLoadout)) => {
+      setTalentLoadoutState(loadout);
+    },
+    [],
+  );
 
   const updatePlayerLevel = useCallback((playerId: string, level: number) => {
     if (socket && currentRoomId) {
@@ -1416,6 +1573,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     gameMode,
     campTypes,
     thronePortalOffer,
+    thronePortalLayout,
+    coopMainArenaPortalPhase,
+    coopTransitionOverlay,
+    coopCombatArenaEnterSeq,
+    coopMainArenaIntermissionSeq,
+    coopClearedRoomColor,
+    clearCoopClearedRoomColor,
+    endCoopPortalTransition,
     currentPreview,
     joinRoom,
     leaveRoom,

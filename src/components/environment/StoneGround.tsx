@@ -9,6 +9,14 @@ import {
   Quaternion,
 } from '@/utils/three-exports';
 import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+import type { RoomBorderTheme } from './SimpleBorderEffects';
+
+const THEME_ID: Record<RoomBorderTheme, number> = {
+  green: 0,
+  red: 1,
+  blue: 2,
+  purple: 3,
+};
 
 // ---------------------------------------------------------------------------
 // Procedural stone shader — mossy cracked tiles, no textures needed
@@ -29,6 +37,8 @@ const STONE_VERTEX = `
 `;
 
 const STONE_FRAGMENT = `
+  uniform float uTheme;
+
   varying vec2 vUv;
   varying vec3 vWorldPos;
   varying vec3 vNormal;
@@ -68,7 +78,22 @@ const STONE_FRAGMENT = `
 
     float mossMask = smoothstep(0.52, 0.68, noise(wp * 0.9 + 7.0))
                    * noise(wp * 2.5 + 3.0) * 0.65;
-    stone = mix(stone, vec3(0.16, 0.26, 0.11), mossMask);
+
+    float mossK = 1.0;
+    if (uTheme > 0.5 && uTheme < 1.5) mossK = 0.05;
+    else if (uTheme > 1.5 && uTheme < 2.5) mossK = 0.1;
+    else if (uTheme > 2.5) mossK = 0.07;
+    stone = mix(stone, vec3(0.16, 0.26, 0.11), mossMask * mossK);
+
+    if (uTheme > 0.5 && uTheme < 1.5) {
+      stone *= vec3(1.1, 0.88, 0.72);
+      stone += vec3(0.05, 0.015, 0.0);
+    } else if (uTheme > 1.5 && uTheme < 2.5) {
+      stone = mix(stone, stone * vec3(0.88, 0.92, 1.04) + vec3(0.04, 0.05, 0.1), 0.4);
+    } else if (uTheme > 2.5) {
+      stone *= vec3(0.86, 0.84, 0.9);
+      stone += vec3(0.02, 0.015, 0.04);
+    }
 
     float edgeU = 1.0 - smoothstep(0.0, 0.09, vUv.x) * smoothstep(0.0, 0.09, 1.0 - vUv.x);
     float edgeV = 1.0 - smoothstep(0.0, 0.09, vUv.y) * smoothstep(0.0, 0.09, 1.0 - vUv.y);
@@ -185,19 +210,20 @@ const CAMP2_PLATFORM = makeGrid(-22, 8, 4, 4, 4.0, 4.0, 3.9, 3.9, 0.06, 0.10);
 // Merge everything — one InstancedMesh, one draw call
 // ---------------------------------------------------------------------------
 
-// Slabs whose corners protrude beyond the playable circle are invisible in the
-// darkness beyond the map boundary but can clip into view — clip them here.
+// Slabs whose corners protrude outside the playable square (inner castle wall
+// faces at ±MAIN_MAP_RADIUS) are culled — clip them here.
 const MAP_RADIUS = MAIN_MAP_RADIUS;
 const isSlabInBounds = (slab: SlabDef): boolean => {
   const [cx, , cz] = slab.position;
   const hw = slab.scale[0] / 2;
   const hd = slab.scale[2] / 2;
-  return (
-    Math.hypot(cx + hw, cz + hd) <= MAP_RADIUS &&
-    Math.hypot(cx + hw, cz - hd) <= MAP_RADIUS &&
-    Math.hypot(cx - hw, cz + hd) <= MAP_RADIUS &&
-    Math.hypot(cx - hw, cz - hd) <= MAP_RADIUS
-  );
+  const corners: [number, number][] = [
+    [cx + hw, cz + hd],
+    [cx + hw, cz - hd],
+    [cx - hw, cz + hd],
+    [cx - hw, cz - hd],
+  ];
+  return corners.every(([x, z]) => Math.abs(x) <= MAP_RADIUS && Math.abs(z) <= MAP_RADIUS);
 };
 
 const ALL_SLABS: SlabDef[] = [
@@ -226,22 +252,63 @@ const isSlabInThrone = (slab: SlabDef): boolean => {
 /** Compact cobble pad for the pre-arena throne room (radius ~10). */
 const THRONE_SLABS: SlabDef[] = makeGrid(0, 0, 9, 9, 2.1, 2.1, 2.0, 2.0, 0.06, 0.10).filter(isSlabInThrone);
 
+/** Tangential pavers around the grass rim — matches inner pad y/thickness. */
+const THRONE_PERIM_GROUT = 0.1;
+const THRONE_PERIM_TILE_W = 2.0;
+const THRONE_PERIM_RADIAL_D = 2.0;
+const THRONE_PERIM_Y = 0.06;
+const THRONE_PERIM_THICK = 0.1;
+
+function buildThronePerimeterSlabs(ringRadius: number): SlabDef[] {
+  const step = THRONE_PERIM_TILE_W + THRONE_PERIM_GROUT;
+  const n = Math.max(8, Math.round((2 * Math.PI * ringRadius) / step));
+  const phase = 0.12;
+  const slabs: SlabDef[] = [];
+  for (let i = 0; i < n; i++) {
+    const angle = (i / n) * Math.PI * 2 + phase;
+    const x = Math.cos(angle) * ringRadius;
+    const z = Math.sin(angle) * ringRadius;
+    // Local +Z → radial outward; +X → tangential (same box convention as grid slabs).
+    const rotY = Math.PI / 2 - angle;
+    slabs.push({
+      position: [x, THRONE_PERIM_Y, z],
+      scale: [THRONE_PERIM_TILE_W, THRONE_PERIM_THICK, THRONE_PERIM_RADIAL_D],
+      rotY,
+    });
+  }
+  return slabs;
+}
+
 // ---------------------------------------------------------------------------
 
 type StoneGroundVariant = 'arena' | 'throne';
 
-const StoneGround: React.FC<{ variant?: StoneGroundVariant }> = ({ variant = 'arena' }) => {
+const StoneGround: React.FC<{
+  variant?: StoneGroundVariant;
+  roomTheme?: RoomBorderTheme;
+  /** When set with `variant="throne"`, adds a circular ring at this radius (tile centers). */
+  thronePerimeterRingRadius?: number;
+}> = ({ variant = 'arena', roomTheme = 'green', thronePerimeterRingRadius }) => {
   const meshRef = useRef<InstancedMesh>(null);
 
-  const slabs = variant === 'throne' ? THRONE_SLABS : ALL_SLABS;
+  const slabs = useMemo(() => {
+    if (variant !== 'throne') return ALL_SLABS;
+    if (thronePerimeterRingRadius == null) return THRONE_SLABS;
+    return [...THRONE_SLABS, ...buildThronePerimeterSlabs(thronePerimeterRingRadius)];
+  }, [variant, thronePerimeterRingRadius]);
+
   const slabCount = slabs.length;
 
   // Unit cube — scaled per-instance via the matrix; single allocation for all 64 slabs
   const geometry = useMemo(() => new BoxGeometry(1, 1, 1), []);
-  const material = useMemo(
-    () => new ShaderMaterial({ vertexShader: STONE_VERTEX, fragmentShader: STONE_FRAGMENT }),
-    [],
-  );
+  const material = useMemo(() => {
+    const tid = THEME_ID[roomTheme] ?? 0;
+    return new ShaderMaterial({
+      vertexShader: STONE_VERTEX,
+      fragmentShader: STONE_FRAGMENT,
+      uniforms: { uTheme: { value: tid } },
+    });
+  }, [roomTheme]);
 
   useEffect(() => {
     const mesh = meshRef.current;

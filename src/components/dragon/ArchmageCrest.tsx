@@ -60,7 +60,7 @@ export default function ArchmageCrest({
       switch (weaponSubclass) {
         // Scythe subclasses
         case WeaponSubclass.CHAOS:
-          return { main: '#3FAEFC', emissive: '#3FAEFC', glow: '#3FAEFC', secondary: '#3FAEFC' };
+          return { main: '#3EB0FC', emissive: '#87CEEB', glow: '#E0F6FF', secondary: '#A5F3FC' };
         case WeaponSubclass.ABYSSAL:
           return { main: '#17CE54', emissive: '#4A90E2', glow: '#A5F3FC', secondary: '#87CEEB' };
 
@@ -82,12 +82,10 @@ export default function ArchmageCrest({
         case WeaponSubclass.NATURE:
           return { main: '#00FF88', emissive: '#32CD32', glow: '#90EE90', secondary: '#66CDAA' };
 
-        // Bow subclasses
-        case WeaponSubclass.ELEMENTAL:
-          return { main: '#17CE54', emissive: '#00CED1', glow: '#AFEEEE', secondary: '#87CEEB' };
-        case WeaponSubclass.VENOM:
-          return { main: '#17CC93', emissive: '#20B2AA', glow: '#87CEEB', secondary: '#48D1CC' };
-
+          case WeaponSubclass.ELEMENTAL:
+            return { main: '#F2992D', emissive: '#FFC278', glow: '#FFC278', secondary: '#FFC278' };
+          case WeaponSubclass.VENOM:
+            return { main: '#17CC93', emissive: '#20B2AA', glow: '#87CEEB', secondary: '#48D1CC' };
         // Spear subclasses
         case WeaponSubclass.STORM:
           return { main: '#E8CD57', emissive: '#E8CD57', glow: '#E8CD57', secondary: '#B0E0E6' };
@@ -98,6 +96,8 @@ export default function ArchmageCrest({
 
     // Fallback to weapon type colors
     switch (weaponType) {
+      case WeaponType.NONE:
+        return { main: '#8A2BE2', emissive: '#9370DB', glow: '#DA70D6', secondary: '#BA55D3' };
       case WeaponType.SCYTHE:
         return { main: '#17CE54', emissive: '#00CED1', glow: '#AFEEEE', secondary: '#87CEEB' };
       case WeaponType.SWORD:
@@ -168,10 +168,7 @@ export default function ArchmageCrest({
   const bladeExtrudeSettings = useMemo(() => ({
     steps: 1,
     depth: 0.00010,
-    bevelEnabled: true,
-    bevelThickness: 0.030,
-    bevelSize: 0.035,
-    bevelSegments: 1,
+    bevelEnabled: false,
     curveSegments: 16
   }), []);
 

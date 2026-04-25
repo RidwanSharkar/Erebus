@@ -8,6 +8,10 @@ import { Projectile } from '@/ecs/components/Projectile';
 import { Renderer } from '@/ecs/components/Renderer';
 import { CobraShotProjectile } from '@/components/projectiles/CobraShot';
 import { pvpObjectPool } from '@/utils/PVPObjectPool';
+import {
+  EXPLOSIVE_TALONS_EXPLOSION_DAMAGE,
+  EXPLOSIVE_TALONS_EXPLOSION_RADIUS,
+} from '@/utils/talents';
 
 // Define ViperStingProjectile interface for PVP collision detection
 interface ViperStingProjectile {
@@ -25,6 +29,8 @@ interface ViperStingProjectile {
   returnHitEnemies: Set<string>;
   casterId?: string; // For PVP: remember which player cast this projectile
   casterPosition?: Vector3; // For PVP: remember the caster's position for return
+  explosiveTalons?: boolean;
+  explosiveTalonsPvpAoEDone?: boolean;
 }
 
 // Interfaces for PVP managers
@@ -456,12 +462,63 @@ export function OptimizedPVPViperStingManager({
       // CRITICAL FIX: Handle projectile lifecycle in PVP mode
       // Since enemyData is empty in PVP, we need to manage return phase transition here
       if (!projectile.isReturning) {
-        // Check if projectile has reached max distance and should return
         const distanceTraveled = projectile.position.distanceTo(projectile.startPosition);
         if (distanceTraveled >= projectile.maxDistance && !projectile.fadeStartTime) {
-          projectile.isReturning = true;
-          // Initialize return direction - will be updated dynamically below
+          if (!projectile.explosiveTalons) {
+            projectile.isReturning = true;
+          }
         }
+      }
+
+      const distForExplosive = projectile.position.distanceTo(projectile.startPosition);
+      if (
+        projectile.explosiveTalons &&
+        !projectile.explosiveTalonsPvpAoEDone &&
+        distForExplosive >= projectile.maxDistance
+      ) {
+        projectile.explosiveTalonsPvpAoEDone = true;
+        const cx = projectile.position.x;
+        const cz = projectile.position.z;
+        players.forEach((player) => {
+          if (player.id === localSocketId) return;
+          if (projectile.casterId && player.id === projectile.casterId) return;
+
+          const horiz = Math.hypot(player.position.x - cx, player.position.z - cz);
+          if (horiz > EXPLOSIVE_TALONS_EXPLOSION_RADIUS) return;
+
+          onPlayerHit(player.id, EXPLOSIVE_TALONS_EXPLOSION_DAMAGE);
+
+          if (damageNumberManager && damageNumberManager.addDamageNumber) {
+            const hitPosition = new Vector3(player.position.x, player.position.y + 1.5, player.position.z);
+            damageNumberManager.addDamageNumber(
+              EXPLOSIVE_TALONS_EXPLOSION_DAMAGE,
+              false,
+              hitPosition,
+              'viper_sting',
+            );
+          }
+
+          if (onSoulStealCreated) {
+            const hitPosition = new Vector3(player.position.x, player.position.y, player.position.z);
+            onSoulStealCreated(hitPosition);
+
+            setTimeout(() => {
+              const multiplayerContext = (window as any).multiplayerContext;
+              if (multiplayerContext && multiplayerContext.broadcastPlayerHealing && multiplayerContext.players) {
+                const ctxPlayers = Array.from(multiplayerContext.players.values()) as any[];
+                const localPlayer = ctxPlayers.find((p: any) => p.id === localSocketId);
+                if (localPlayer && localPlayer.position) {
+                  const healingPosition = {
+                    x: localPlayer.position.x,
+                    y: localPlayer.position.y + 1.5,
+                    z: localPlayer.position.z,
+                  };
+                  multiplayerContext.broadcastPlayerHealing(20, 'viper_sting', healingPosition);
+                }
+              }
+            }, 1750);
+          }
+        });
       }
 
       // Handle dynamic return direction toward current player position

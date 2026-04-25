@@ -8,7 +8,7 @@ export interface DamageResult {
   isCritical: boolean;
 }
 
-/** Optional crit modifiers (additive on top of runes / agility / passives). */
+/** Optional crit modifiers (additive on top of runes / stats / passives). */
 export interface DamageCalcOptions {
   critChanceAdd?: number;
   critDamageMultAdd?: number;
@@ -18,7 +18,8 @@ export interface DamageCalcOptions {
 let globalCriticalRuneCount = 0;
 let globalCritDamageRuneCount = 0;
 let globalControlSystem: any = null; // Reference to control system for passive ability checks
-let globalAgilityStatPoints = 0; // Agility stat: +1% crit chance and +0.10x crit damage per point
+let globalAgilityStatPoints = 0; // +1% crit chance per point
+let globalStrengthStatPoints = 0; // +0.05 crit damage multiplier per point
 
 export function setControlSystem(controlSystem: any) {
   globalControlSystem = controlSystem;
@@ -36,6 +37,10 @@ export function setGlobalAgilityStatPoints(points: number) {
   globalAgilityStatPoints = points;
 }
 
+export function setGlobalStrengthStatPoints(points: number) {
+  globalStrengthStatPoints = points;
+}
+
 export function calculateDamage(
   baseAmount: number,
   weaponType?: WeaponType,
@@ -44,14 +49,9 @@ export function calculateDamage(
   // Base crit chance is 11%, each rune adds 3%, each Agility point adds 1%
   let criticalChance = 0.11 + (globalCriticalRuneCount * 0.03) + (globalAgilityStatPoints * 0.01);
 
-  // Add Bow passive: TEMPEST ROUNDS (+5% crit chance)
-  if (weaponType === WeaponType.BOW && globalControlSystem) {
-    // Check if Bow passive is unlocked
-    const weaponSlot = globalControlSystem.selectedWeapons?.primary === WeaponType.BOW ? 'primary' : 'secondary';
-    if (weaponSlot && globalControlSystem.isPassiveAbilityUnlocked &&
-        globalControlSystem.isPassiveAbilityUnlocked('P', WeaponType.BOW, weaponSlot)) {
-      criticalChance += 0.10; // +5% crit chance
-    }
+  // Add Bow passive / talent: TEMPEST ROUNDS (+10% crit chance; matches legacy P unlock)
+  if (weaponType === WeaponType.BOW && globalControlSystem?.isBowTempestRoundsActive?.()) {
+    criticalChance += 0.1;
   }
 
   if (opts?.critChanceAdd) {
@@ -60,8 +60,8 @@ export function calculateDamage(
 
   const isCritical = Math.random() < criticalChance;
 
-  // Base crit damage multiplier is 2x, each crit damage rune adds 0.15x, each Agility point adds 0.10x
-  let criticalDamageMultiplier = 2.0 + (globalCritDamageRuneCount * 0.15) + (globalAgilityStatPoints * 0.10);
+  // Base crit damage multiplier is 2x, each crit damage rune adds 0.15x, each Strength point adds 0.05x
+  let criticalDamageMultiplier = 2.0 + (globalCritDamageRuneCount * 0.15) + (globalStrengthStatPoints * 0.05);
   if (opts?.critDamageMultAdd) {
     criticalDamageMultiplier += opts.critDamageMultAdd;
   }
@@ -79,21 +79,15 @@ export function calculateDamage(
 export function getCriticalChance(weaponType?: WeaponType): number {
   let criticalChance = 0.11 + (globalCriticalRuneCount * 0.03) + (globalAgilityStatPoints * 0.01);
 
-  // Add Bow passive: TEMPEST ROUNDS (+5% crit chance)
-  if (weaponType === WeaponType.BOW && globalControlSystem) {
-    // Check if Bow passive is unlocked
-    const weaponSlot = globalControlSystem.selectedWeapons?.primary === WeaponType.BOW ? 'primary' : 'secondary';
-    if (weaponSlot && globalControlSystem.isPassiveAbilityUnlocked &&
-        globalControlSystem.isPassiveAbilityUnlocked('P', WeaponType.BOW, weaponSlot)) {
-      criticalChance += 0.05; // +5% crit chance
-    }
+  if (weaponType === WeaponType.BOW && globalControlSystem?.isBowTempestRoundsActive?.()) {
+    criticalChance += 0.1;
   }
 
   return criticalChance;
 }
 
 export function getCriticalDamageMultiplier(): number {
-  return 2.0 + (globalCritDamageRuneCount * 0.15) + (globalAgilityStatPoints * 0.10);
+  return 2.0 + (globalCritDamageRuneCount * 0.15) + (globalStrengthStatPoints * 0.05);
 }
 
 export function getGlobalRuneCounts(): { criticalRunes: number; critDamageRunes: number } {

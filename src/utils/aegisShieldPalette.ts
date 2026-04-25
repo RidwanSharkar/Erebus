@@ -10,6 +10,13 @@ export interface AegisShieldPalette {
 /** Class-colored Aegis / Wraith Guard plasma (RUNEBLADE_Q can be taken on any weapon). */
 export function getAegisShieldPalette(weapon: WeaponType): AegisShieldPalette {
   switch (weapon) {
+    case WeaponType.NONE:
+      return {
+        main: 0x8a2be2,
+        emissive: 0x9370db,
+        emissiveDeep: 0x6b21a8,
+        accent: 0xda70d6,
+      };
     case WeaponType.RUNEBLADE:
     case WeaponType.SWORD:
       return {

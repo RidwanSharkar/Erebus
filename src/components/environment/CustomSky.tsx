@@ -1,6 +1,96 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useMemo, useLayoutEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { ShaderMaterial, SphereGeometry, Vector3, Color, BackSide } from '@/utils/three-exports';
+import type { RoomBorderTheme } from './SimpleBorderEffects';
+
+/** Per-room sky: gradient, sun, and subtle atmosphere so clouds match the combat palette. */
+type SkyThemeUniforms = {
+  zenith: string;
+  upperMid: string;
+  midHorizon: string;
+  horizon: string;
+  ground: string;
+  sunColor: string;
+  sunDir: [number, number, number];
+  /** Sun corona tints (match previous warm look on red, cool on blue). */
+  sunHalo0: string;
+  sunHalo1: string;
+  sunHalo2: string;
+  /** 0 = cool/icy clouds, 1 = warm sunset-style cloud bellies. */
+  cloudWarmth: number;
+};
+
+/** Clear daytime blue — throne prep room only (decoupled from perimeter camp tint). */
+export const SKY_THRONE_BLUE: SkyThemeUniforms = {
+  zenith: '#1e6fd4',
+  upperMid: '#4a9ae8',
+  midHorizon: '#7ec0f0',
+  horizon: '#b8daf8',
+  ground: '#0c1828',
+  sunColor: '#fffef5',
+  // Keep Y modest (not zenith): isometric cameras rarely look straight up, so a high sun
+  // never enters the tight cosA cone and reads as “no sun”.
+  sunDir: [0.52, 0.32, -0.48],
+  sunHalo0: '#ffffff',
+  sunHalo1: '#d4ecff',
+  sunHalo2: '#7ab8ec',
+  cloudWarmth: 0.12,
+};
+
+const SKY_BY_ROOM: Record<RoomBorderTheme, SkyThemeUniforms> = {
+  green: {
+    zenith: '#1e3d5c',
+    upperMid: '#3d6a8a',
+    midHorizon: '#6a9a7a',
+    horizon: '#a8c896',
+    ground: '#0a1208',
+    sunColor: '#f5f0d5',
+    sunDir: [0.45, 0.45, -0.35],
+    sunHalo0: '#fff8d8',
+    sunHalo1: '#c8d8a0',
+    sunHalo2: '#8aa878',
+    cloudWarmth: 0.35,
+  },
+  red: {
+    zenith: '#0e0b2a',
+    upperMid: '#3a1a5c',
+    midHorizon: '#b84010',
+    horizon: '#ff7a2a',
+    ground: '#0d0704',
+    sunColor: '#fff6d0',
+    sunDir: [0.6, 0.15, -0.5],
+    sunHalo0: '#fff0c8',
+    sunHalo1: '#ff8a22',
+    sunHalo2: '#c45818',
+    cloudWarmth: 1.0,
+  },
+  blue: {
+    zenith: '#0c1520',
+    upperMid: '#1a2e44',
+    midHorizon: '#3a5568',
+    horizon: '#6a7d8a',
+    ground: '#040608',
+    sunColor: '#c8d8e8',
+    sunDir: [0.2, 0.55, -0.25],
+    sunHalo0: '#a8c0d8',
+    sunHalo1: '#6a8aa0',
+    sunHalo2: '#3a4a58',
+    cloudWarmth: 0.0,
+  },
+  purple: {
+    zenith: '#120818',
+    upperMid: '#2a1050',
+    midHorizon: '#5a2088',
+    horizon: '#a060c0',
+    ground: '#050308',
+    sunColor: '#e8d0f8',
+    sunDir: [0.5, 0.12, -0.45],
+    sunHalo0: '#e0a8ff',
+    sunHalo1: '#a040c8',
+    sunHalo2: '#601878',
+    cloudWarmth: 0.5,
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Shaders
@@ -48,6 +138,10 @@ const SKY_FRAG = `
   uniform vec3  uGround;
   uniform vec3  uSunColor;
   uniform vec3  uSunDir;
+  uniform vec3  uSunHalo0;
+  uniform vec3  uSunHalo1;
+  uniform vec3  uSunHalo2;
+  uniform float uCloudWarmth;
   uniform float uTime;
 
   varying vec3 vDir;
@@ -65,10 +159,10 @@ const SKY_FRAG = `
 
     // ── Sun ─────────────────────────────────────────────────────────────────
     float cosA = dot(dir, normalize(uSunDir));
-    sky += uSunColor             * smoothstep(0.9994, 0.9998, cosA);          // hard disk
-    sky += vec3(1.0, 0.85, 0.55) * pow(max(0.0, cosA), 120.0) * 0.60;       // inner glow
-    sky += vec3(1.0, 0.52, 0.12) * pow(max(0.0, cosA),   8.0) * 0.30;       // outer glow
-    sky += vec3(0.9, 0.38, 0.08) * pow(max(0.0, cosA),   3.0) * 0.12;       // atmosphere scatter
+    sky += uSunColor  * smoothstep(0.9994, 0.9998, cosA);
+    sky += uSunHalo0 * pow(max(0.0, cosA), 120.0) * 0.60;
+    sky += uSunHalo1 * pow(max(0.0, cosA),   8.0) * 0.30;
+    sky += uSunHalo2 * pow(max(0.0, cosA),   3.0) * 0.12;
 
     // ── Clouds ──────────────────────────────────────────────────────────────
     if (h > -0.02) {
@@ -80,12 +174,12 @@ const SKY_FRAG = `
       float c2 = fbm(cUv * 0.19 + vec2( uTime * 0.013, -uTime * 0.005)) * 0.55;
       float cloud = smoothstep(0.47, 0.73, c1 + c2 * 0.35);
 
-      // Warm sunset tint on clouds — lower = more orange
-      float warmth = 1.0 - smoothstep(0.0, 0.38, h);
+      float warmthH = 1.0 - smoothstep(0.0, 0.38, h);
       vec3  cLit   = mix(vec3(0.98, 0.88, 0.72), vec3(1.00, 0.98, 0.96), h);
-      vec3  cWarm  = mix(cLit, vec3(1.0, 0.60, 0.26), warmth * 0.65);
-      // Dark belly effect
-      vec3  cColor = mix(cWarm * 0.42, cWarm, 0.62);
+      vec3  cWarm  = mix(cLit, vec3(1.0, 0.60, 0.26), warmthH * 0.65);
+      vec3  cCool  = mix(cLit * vec3(0.75, 0.82, 0.95), mix(uMidHorizon, uHorizon, 0.4), 0.55);
+      vec3  cBlend = mix(cCool, cWarm, uCloudWarmth);
+      vec3  cColor = mix(cBlend * 0.42, cBlend, 0.62);
 
       float cFade = smoothstep(0.0, 0.10, h) * (1.0 - smoothstep(0.72, 0.94, h));
       sky = mix(sky, cColor, cloud * cFade * 0.82);
@@ -95,29 +189,67 @@ const SKY_FRAG = `
   }
 `;
 
+export type CustomSkyPreset = RoomBorderTheme | 'throneBlue';
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
-const CustomSky: React.FC = () => {
-  const material = useMemo(() => new ShaderMaterial({
-    uniforms: {
-      uZenith:     { value: new Color('#0e0b2a') }, // deep purple-blue zenith
-      uUpperMid:   { value: new Color('#3a1a5c') }, // warm purple upper sky
-      uMidHorizon: { value: new Color('#b84010') }, // orange-red band
-      uHorizon:    { value: new Color('#ff7a2a') }, // bright gold-orange horizon
-      uGround:     { value: new Color('#0d0704') }, // below horizon
-      uSunColor:   { value: new Color('#fff6d0') }, // warm white sun disk
-      uSunDir:     { value: new Vector3(0.6, 0.15, -0.5).normalize() }, // low evening sun
-      uTime:       { value: 0 },
-    },
-    vertexShader:   SKY_VERT,
-    fragmentShader: SKY_FRAG,
-    side: BackSide,
-  }), []);
+function skyUniformsForPreset(preset: CustomSkyPreset): SkyThemeUniforms {
+  if (preset === 'throneBlue') return SKY_THRONE_BLUE;
+  return SKY_BY_ROOM[preset] ?? SKY_BY_ROOM.red;
+}
+
+function applySkyTheme(material: ShaderMaterial, preset: CustomSkyPreset) {
+  const t = skyUniformsForPreset(preset);
+  material.uniforms.uZenith.value.set(t.zenith);
+  material.uniforms.uUpperMid.value.set(t.upperMid);
+  material.uniforms.uMidHorizon.value.set(t.midHorizon);
+  material.uniforms.uHorizon.value.set(t.horizon);
+  material.uniforms.uGround.value.set(t.ground);
+  material.uniforms.uSunColor.value.set(t.sunColor);
+  material.uniforms.uSunDir.value.set(...t.sunDir).normalize();
+  material.uniforms.uSunHalo0.value.set(t.sunHalo0);
+  material.uniforms.uSunHalo1.value.set(t.sunHalo1);
+  material.uniforms.uSunHalo2.value.set(t.sunHalo2);
+  material.uniforms.uCloudWarmth.value = t.cloudWarmth;
+}
+
+const CustomSky: React.FC<{
+  roomTheme?: RoomBorderTheme;
+  /** When set, overrides `roomTheme` (e.g. throne prep always uses clear blue sky). */
+  skyPreset?: CustomSkyPreset;
+}> = ({ roomTheme = 'red', skyPreset }) => {
+  const effectivePreset: CustomSkyPreset = skyPreset ?? roomTheme;
+  const material = useMemo(
+    () =>
+      new ShaderMaterial({
+        uniforms: {
+          uZenith:       { value: new Color() },
+          uUpperMid:     { value: new Color() },
+          uMidHorizon:   { value: new Color() },
+          uHorizon:      { value: new Color() },
+          uGround:       { value: new Color() },
+          uSunColor:     { value: new Color() },
+          uSunDir:       { value: new Vector3(0, 1, 0) },
+          uSunHalo0:     { value: new Color() },
+          uSunHalo1:     { value: new Color() },
+          uSunHalo2:     { value: new Color() },
+          uCloudWarmth:  { value: 1.0 },
+          uTime:         { value: 0 },
+        },
+        vertexShader: SKY_VERT,
+        fragmentShader: SKY_FRAG,
+        side: BackSide,
+      }),
+    [],
+  );
+
+  useLayoutEffect(() => {
+    applySkyTheme(material, effectivePreset);
+  }, [material, effectivePreset]);
 
   const geo = useMemo(() => new SphereGeometry(500, 32, 16), []);
 
-  // Animate clouds
   useFrame((_, delta) => {
     material.uniforms.uTime.value += delta;
   });

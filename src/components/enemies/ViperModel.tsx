@@ -11,25 +11,40 @@ interface ViperModelProps {
   // the previous animation hasn't finished yet, so DrawBow always restarts.
   attackKey: number;
   isDying: boolean;
+  isImpacting?: boolean;
+  impactPlayKey?: number;
+  onImpactFinished?: () => void;
 }
 
 useGLTF.preload('/models/viper_idle.glb');
 useGLTF.preload('/models/viper_walk.glb');
 useGLTF.preload('/models/viper_drawbow.glb');
 useGLTF.preload('/models/viper_releasebow.glb');
+useGLTF.preload('/models/viper_death.glb');
+useGLTF.preload('/models/viper_impact.glb');
 
 const SCALE = 0.0125;
 
-export default function ViperModel({ isWalking, attackKey, isDying }: ViperModelProps) {
+export default function ViperModel({
+  isWalking,
+  attackKey,
+  isDying,
+  isImpacting = false,
+  impactPlayKey = 0,
+  onImpactFinished,
+}: ViperModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
   // Tracks which sub-phase of the draw→release cycle we're in.
   const attackPhaseRef = useRef<'draw' | 'release' | 'done'>('done');
+  const lastImpactPlayKeyRef = useRef(-1);
 
   const { scene, animations: idleAnims }   = useGLTF('/models/viper_idle.glb');
   const { animations: walkAnims }          = useGLTF('/models/viper_walk.glb');
-  const { animations: drawBowAnims }       = useGLTF('/models/viper_drawbow.glb');
+  const { animations: drawBowAnims }     = useGLTF('/models/viper_drawbow.glb');
   const { animations: releaseBowAnims }    = useGLTF('/models/viper_releasebow.glb');
+  const { animations: deathAnims }         = useGLTF('/models/viper_death.glb');
+  const { animations: impactAnims }      = useGLTF('/models/viper_impact.glb');
 
   const clonedScene = useMemo(() => {
     const clone = SkeletonUtils.clone(scene) as Group;
@@ -67,14 +82,49 @@ export default function ViperModel({ isWalking, attackKey, isDying }: ViperModel
       ...rename(idleAnims,      'Idle').map(stripRootMotionXZ),
       ...rename(walkAnims,      'Walk').map(stripRootMotionXZ),
       ...rename(drawBowAnims,   'DrawBow'),
-      ...rename(releaseBowAnims,'ReleaseBow'),
+      ...rename(releaseBowAnims, 'ReleaseBow'),
+      ...rename(deathAnims,     'Death'),
+      ...rename(impactAnims,    'Impact'),
     ];
-  }, [idleAnims, walkAnims, drawBowAnims, releaseBowAnims]);
+  }, [idleAnims, walkAnims, drawBowAnims, releaseBowAnims, deathAnims, impactAnims]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
-  const getAction = (name: 'Idle' | 'Walk' | 'DrawBow' | 'ReleaseBow'): AnimationAction | null =>
+  const getAction = (name: 'Idle' | 'Walk' | 'DrawBow' | 'ReleaseBow' | 'Death' | 'Impact'): AnimationAction | null =>
     actions[name] ?? null;
+
+  // Death overrides everything
+  useEffect(() => {
+    if (!actions || !isDying) return;
+    attackPhaseRef.current = 'done';
+    const d = getAction('Death');
+    if (!d) return;
+    currentActionRef.current?.fadeOut(0.15);
+    d.setLoop(LoopOnce, 1);
+    d.clampWhenFinished = true;
+    d.reset().fadeIn(0.15).play();
+    currentActionRef.current = d;
+  }, [isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Hit-react (idle / walk only — not during bow cycle)
+  useEffect(() => {
+    if (!actions || isDying || !isImpacting) return;
+    if (attackPhaseRef.current !== 'done') return;
+
+    const im = getAction('Impact');
+    if (!im) return;
+    if (im === currentActionRef.current) {
+      const retrigger = impactPlayKey !== lastImpactPlayKeyRef.current;
+      if (!retrigger) return;
+    }
+
+    lastImpactPlayKeyRef.current = impactPlayKey;
+    currentActionRef.current?.fadeOut(0.2);
+    im.setLoop(LoopOnce, 1);
+    im.clampWhenFinished = true;
+    im.reset().fadeIn(0.2).play();
+    currentActionRef.current = im;
+  }, [isImpacting, impactPlayKey, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Attack trigger ─────────────────────────────────────────────────────────
   // Fires every time attackKey increments (once per server telegraph), regardless
@@ -87,6 +137,7 @@ export default function ViperModel({ isWalking, attackKey, isDying }: ViperModel
     if (!drawAction) return;
 
     attackPhaseRef.current = 'draw';
+    lastImpactPlayKeyRef.current = -1;
     currentActionRef.current?.fadeOut(0.1);
     drawAction.setLoop(LoopOnce, 1);
     drawAction.clampWhenFinished = true;
@@ -95,11 +146,11 @@ export default function ViperModel({ isWalking, attackKey, isDying }: ViperModel
   }, [attackKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Idle / Walk transitions ────────────────────────────────────────────────
-  // Only runs when the viper is NOT in the middle of an attack cycle.
+  // Only runs when the viper is NOT in the middle of an attack cycle or impact.
   useEffect(() => {
     if (!actions || isDying) return;
-    // Don't interrupt an active attack with a walk/idle transition.
     if (attackPhaseRef.current !== 'done') return;
+    if (isImpacting) return;
 
     const nextAction = isWalking ? getAction('Walk') : getAction('Idle');
     if (!nextAction || nextAction === currentActionRef.current) return;
@@ -109,15 +160,31 @@ export default function ViperModel({ isWalking, attackKey, isDying }: ViperModel
     nextAction.setLoop(LoopRepeat, Infinity);
     nextAction.fadeIn(0.2).play();
     currentActionRef.current = nextAction;
-  }, [isWalking, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isWalking, isDying, isImpacting, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── DrawBow → ReleaseBow → Idle/Walk chain ────────────────────────────────
+  // ── DrawBow → ReleaseBow → Idle/Walk, plus Impact/Death one-shots ─────────
   useEffect(() => {
     if (!mixer || isDying) return;
 
-    const handleFinish = (event: any) => {
+    const handleFinish = (event: { action: AnimationAction }) => {
       if (isDying) return;
-      const finishedAction: AnimationAction = event.action;
+      const finishedAction = event.action;
+      const clipName = finishedAction.getClip().name;
+
+      if (clipName === 'Death') return;
+
+      if (clipName === 'Impact') {
+        onImpactFinished?.();
+        lastImpactPlayKeyRef.current = -1;
+        const fallback = isWalking ? getAction('Walk') : getAction('Idle');
+        if (fallback) {
+          fallback.setLoop(LoopRepeat, Infinity);
+          currentActionRef.current?.fadeOut(0.15);
+          fallback.reset().fadeIn(0.15).play();
+          currentActionRef.current = fallback;
+        }
+        return;
+      }
 
       if (finishedAction === getAction('DrawBow') && attackPhaseRef.current === 'draw') {
         const releaseAction = getAction('ReleaseBow');
@@ -147,7 +214,7 @@ export default function ViperModel({ isWalking, attackKey, isDying }: ViperModel
 
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isDying, isWalking, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isDying, isWalking, actions, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group ref={sceneGroupRef}>

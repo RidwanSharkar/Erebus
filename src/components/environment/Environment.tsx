@@ -9,11 +9,11 @@ import PillarCollision from './PillarCollision';
 import DetailedTrees, { DetailedTree } from './DetailedTrees';
 import TreeCollision from './TreeCollision';
 import AtmosphericParticles from './AtmosphericParticles';
-import SimpleBorderEffects from './SimpleBorderEffects';
 import CustomSkeleton from './CustomSkeleton';
 import StylizedGrass from './StylizedGrass';
 import InstancedForest from './InstancedForest';
 import StoneGround from './StoneGround';
+import ArenaFallingSnow from './ArenaFallingSnow';
 import CastleWalls from './CastleWalls';
 import CampThemeLights from './CampThemeLights';
 import GroundFogSystem from './GroundFogSystem';
@@ -28,9 +28,6 @@ import VolumetricMoonRays from './VolumetricMoonRays';
 import { generateMountains } from '@/utils/MountainGenerator';
 import { World } from '@/ecs/World';
 import { Vector3, Color, PerspectiveCamera } from '@/utils/three-exports';
-import PerimeterCloudSystem from './PerimeterCloudSystem';
-import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
-
 interface EnvironmentProps {
   level?: number;
   enableMountains?: boolean;
@@ -38,7 +35,6 @@ interface EnvironmentProps {
   enableSky?: boolean;
   enableGrass?: boolean; // Enable stylized instanced grass
   enableForest?: boolean; // Enable instanced forest ring
-  enableBorderEffects?: boolean; // Enable border particle and glow effects
   world?: World; // Optional world for collision system
   camera?: PerspectiveCamera; // Optional camera for LOD calculations
   enableLargeTree?: boolean; // Enable large tree rendering
@@ -60,7 +56,6 @@ const Environment: React.FC<EnvironmentProps> = ({
   enableSky = true,
   enableGrass = true,
   enableForest = true,
-  enableBorderEffects = true,
   world,
   camera,
   enableLargeTree = false,
@@ -100,33 +95,22 @@ const Environment: React.FC<EnvironmentProps> = ({
   return (
     <group name="environment">
       {/* Custom sky with level-based colors */}
-      {enableSky && <CustomSky />}
+      {enableSky && <CustomSky roomTheme={roomArchetype} />}
 
-      {/* Perimeter clouds - red atmospheric clouds around map boundary */}
-      <PerimeterCloudSystem radius={MAIN_MAP_RADIUS} />
-
-      {/* Instanced grass field — 80k blades, GPU-animated wind */}
-      {enableGrass && <StylizedGrass isSnowTheme={roomArchetype === 'blue'} />}
+      {/* Instanced grass field — density per room (purple sparse), GPU-animated wind */}
+      {enableGrass && (
+        <StylizedGrass fieldShape="square" roomTheme={roomArchetype} />
+      )}
 
       {/* Stone road + branch connectors + combat platforms — single draw call */}
-      <StoneGround />
+      <StoneGround roomTheme={roomArchetype} />
+
+      {roomArchetype === 'blue' && <ArenaFallingSnow />}
 
       {/* Instanced forest ring — 220 trees, 4 draw calls, GPU wind */}
       {enableForest && <InstancedForest />}
 
       <Planet />
-
-            {/* Border effects - particles and glows around map perimeter */}
-            {enableBorderEffects && (
-        <SimpleBorderEffects
-          radius={MAIN_MAP_RADIUS}
-          count={48}
-          enableParticles={true}
-          particleCount={100}
-          borderTheme={roomArchetype}
-        />
-      )}
-
 
       {/* Merchant positioned near the tree edge - only render when player is nearby for performance */}
       {showMerchant && <CustomSkeleton position={merchantPosition} rotation={merchantRotation} />}
@@ -164,7 +148,7 @@ const Environment: React.FC<EnvironmentProps> = ({
 
  
 
-      {/* Rising fire embers above each camp beacon — colour matches camp theme */}
+      {/* Rising fire embers at the centre — colour matches room (campTypes[0]) */}
       <InstancedEmbers campTypes={campTypes} />
 
       {/* Scattered rubble, rocks and stone chunks across the arena */}

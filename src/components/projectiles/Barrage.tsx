@@ -16,6 +16,8 @@ interface BarrageProjectile {
   distanceTraveled?: number;
   /** Wrathful Bite talent — red theme instead of default blue. */
   wrathfulBite?: boolean;
+  /** Wyvern Bite talent — green theme (overrides Wrathful Bite when both). */
+  wyvernBite?: boolean;
 }
 
 interface BarrageProps {
@@ -26,8 +28,16 @@ export default function Barrage({ projectiles }: BarrageProps) {
   return (
     <>
       {projectiles.map(projectile => {
-        const mainColor = projectile.wrathfulBite ? '#cc2222' : '#0088ff';
-        const emissiveColor = projectile.wrathfulBite ? '#ff3333' : '#0088ff';
+        const mainColor = projectile.wyvernBite
+          ? '#00aa20'
+          : projectile.wrathfulBite
+            ? '#cc2222'
+            : '#0088ff';
+        const emissiveColor = projectile.wyvernBite
+          ? '#00ff40'
+          : projectile.wrathfulBite
+            ? '#ff3333'
+            : '#0088ff';
 
         // Calculate distance-based fading (same logic as RegularArrow)
         const distanceTraveled = projectile.distanceTraveled || projectile.position.distanceTo(projectile.startPosition);

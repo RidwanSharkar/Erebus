@@ -3,6 +3,10 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { PointLight, Mesh, Color } from '@/utils/three-exports';
+import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+
+/** South inner edge — camp 0’s session “room color” orb sits here (opposite the north camp). */
+const ROOM_COLOR_BEACON_Z = MAIN_MAP_RADIUS - 1.5;
 
 // ─── Per-type palette ──────────────────────────────────────────────────────
 export const CAMP_TYPE_COLORS: Record<string, { beacon: string; torch: string; emissive: string }> = {
@@ -137,8 +141,10 @@ function CampLightRig({
         />
       ))}
 
-      {/* Floating glowing orb — emissive mesh visible regardless of shader type */}
-      <CampBeaconOrb color={palette.emissive} phaseOffset={campIndex * 2.1} />
+      {/* Floating orb for camps 1–2 stays above each bastion; session room orb is south (see below). */}
+      {campIndex !== 0 && (
+        <CampBeaconOrb color={palette.emissive} phaseOffset={campIndex * 2.1} />
+      )}
     </group>
   );
 }
@@ -150,6 +156,9 @@ interface CampThemeLightsProps {
 
 const CampThemeLights: React.FC<CampThemeLightsProps> = ({ campTypes }) => {
   if (!campTypes || campTypes.length === 0) return null;
+
+  const roomType = campTypes[0];
+  const roomPalette = roomType ? CAMP_TYPE_COLORS[roomType] : null;
 
   return (
     <>
@@ -165,6 +174,11 @@ const CampThemeLights: React.FC<CampThemeLightsProps> = ({ campTypes }) => {
           />
         );
       })}
+      {roomPalette && (
+        <group position={[0, 0, ROOM_COLOR_BEACON_Z]}>
+          <CampBeaconOrb color={roomPalette.emissive} phaseOffset={0} />
+        </group>
+      )}
     </>
   );
 };

@@ -1,29 +1,27 @@
 'use client';
 
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useLayoutEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, Mesh, PointLight, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
 
-const TRAVEL_MS = 1400;
-
 interface KnightFrostProjectileProps {
   startPosition: Vector3;
-  staleTarget: Vector3;
-  /** When the local player is the victim, snap X/Z to their live position each frame; keep Y from stale. */
-  refineTarget?: (stale: Vector3) => Vector3;
+  endPosition: Vector3;
+  travelMs: number;
   onComplete: () => void;
 }
 
 export default function KnightFrostProjectile({
   startPosition,
-  staleTarget,
-  refineTarget,
+  endPosition,
+  travelMs,
   onComplete,
 }: KnightFrostProjectileProps) {
   const groupRef = useRef<Group>(null);
   const spinRef = useRef<Group>(null);
   const startTimeRef = useRef<number | null>(null);
   const doneRef = useRef(false);
+  const endFixedRef = useRef(endPosition.clone());
 
   const coreMat = useMemo(
     () =>
@@ -59,16 +57,67 @@ export default function KnightFrostProjectile({
     [],
   );
 
+  const trail1Mat = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: new Color('#bae6fd'),
+        transparent: true,
+        opacity: 0.5,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+    [],
+  );
+  const trail2Mat = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: new Color('#7dd3fc'),
+        transparent: true,
+        opacity: 0.35,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+    [],
+  );
+  const trail3Mat = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: new Color('#38bdf8'),
+        transparent: true,
+        opacity: 0.22,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+    [],
+  );
+  const trail4Mat = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: new Color('#0284c7'),
+        transparent: true,
+        opacity: 0.12,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+    [],
+  );
+
+  useLayoutEffect(() => {
+    if (!groupRef.current) return;
+    const dx = endPosition.x - startPosition.x;
+    const dz = endPosition.z - startPosition.z;
+    if (dx !== 0 || dz !== 0) {
+      groupRef.current.rotation.y = Math.atan2(dx, dz);
+    }
+  }, [startPosition, endPosition]);
+
   useFrame((_, delta) => {
     if (doneRef.current || !groupRef.current) return;
     if (startTimeRef.current === null) startTimeRef.current = performance.now();
     const elapsed = performance.now() - startTimeRef.current;
-    const k = Math.min(1, elapsed / TRAVEL_MS);
+    const k = Math.min(1, elapsed / travelMs);
 
-    let end = staleTarget.clone();
-    if (refineTarget) end = refineTarget(end);
-
-    groupRef.current.position.lerpVectors(startPosition, end, k);
+    groupRef.current.position.lerpVectors(startPosition, endFixedRef.current, k);
 
     if (spinRef.current) {
       spinRef.current.rotation.y += delta * 5;
@@ -78,6 +127,11 @@ export default function KnightFrostProjectile({
     const pulse = 0.85 + Math.sin(elapsed * 0.012) * 0.15;
     coreMat.opacity = 0.92 * pulse;
     midMat.opacity = 0.65 * pulse;
+    const trailFade = 1 - k * 0.35;
+    trail1Mat.opacity = 0.5 * trailFade;
+    trail2Mat.opacity = 0.35 * trailFade;
+    trail3Mat.opacity = 0.22 * trailFade;
+    trail4Mat.opacity = 0.12 * trailFade;
 
     if (k >= 1 && !doneRef.current) {
       doneRef.current = true;
@@ -96,6 +150,18 @@ export default function KnightFrostProjectile({
         </mesh>
         <mesh material={coreMat}>
           <sphereGeometry args={[0.14, 10, 10]} />
+        </mesh>
+        <mesh material={trail1Mat} position={[0, 0, 0.85]}>
+          <sphereGeometry args={[0.22, 8, 8]} />
+        </mesh>
+        <mesh material={trail2Mat} position={[0, 0, 1.5]}>
+          <sphereGeometry args={[0.16, 7, 7]} />
+        </mesh>
+        <mesh material={trail3Mat} position={[0, 0, 2.15]}>
+          <sphereGeometry args={[0.1, 6, 6]} />
+        </mesh>
+        <mesh material={trail4Mat} position={[0, 0, 2.75]}>
+          <sphereGeometry args={[0.06, 5, 5]} />
         </mesh>
       </group>
       <pointLight color="#7dd3fc" intensity={14} distance={10} decay={2} />

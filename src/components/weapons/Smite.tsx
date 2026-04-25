@@ -58,6 +58,8 @@ interface SmiteProps {
   sequenceDelaySec?: number;
   /** Local player: invoked once per PvE enemy hit when beam damage is applied (e.g. Colossus Guard proc). */
   onBeamEnemyHit?: () => void;
+  /** Local caster: Vengeance talent — called at strike time; scales damage after crit roll. */
+  getVengeanceSmiteDamageMultiplier?: () => number;
 }
 
 const SmiteComponent = memo(function Smite({
@@ -76,6 +78,7 @@ const SmiteComponent = memo(function Smite({
   infernalSmiteVisual = false,
   sequenceDelaySec = 0,
   onBeamEnemyHit,
+  getVengeanceSmiteDamageMultiplier,
 }: SmiteProps) {
   const lightningRef = useRef<Group>(null);
   const progressRef = useRef(0);
@@ -262,7 +265,8 @@ const SmiteComponent = memo(function Smite({
               critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD,
             })
           : calculateDamage(baseSmiteDamage, weaponType ?? WeaponType.RUNEBLADE);
-        const finalDamage = damageResult.damage;
+        const vengeanceMult = getVengeanceSmiteDamageMultiplier?.() ?? 1;
+        const finalDamage = Math.max(0, Math.floor(damageResult.damage * vengeanceMult));
 
         // Enemy is within damage radius - deal damage
         if (onHit) {
@@ -532,6 +536,7 @@ const SmiteComponent = memo(function Smite({
   if (prevProps.infernalSmiteVisual !== nextProps.infernalSmiteVisual) return false;
   if ((prevProps.sequenceDelaySec ?? 0) !== (nextProps.sequenceDelaySec ?? 0)) return false;
   if (prevProps.onBeamEnemyHit !== nextProps.onBeamEnemyHit) return false;
+  if (!!prevProps.getVengeanceSmiteDamageMultiplier !== !!nextProps.getVengeanceSmiteDamageMultiplier) return false;
 
   return true;
 });

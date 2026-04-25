@@ -34,6 +34,8 @@ interface ProjectileData {
   projectileType?: string; // For projectile type differentiation (e.g., burst_arrow)
   /** Wrathful Bite talent — red Barrage theme. */
   barrageWrathfulBite?: boolean;
+  /** Wyvern Bite talent — green Barrage theme. */
+  barrageWyvernBite?: boolean;
   /** INFERNO talent — fiery Crossentropy theme. */
   infernoCrossentropy?: boolean;
   /** Reaper — pierce, visuals follow ECS, no impact explosion. */
@@ -237,6 +239,8 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
         const existing = projectileData.barrage.find(p => p.entityId === entity.id);
         if (existing) {
           existing.position.copy(transform.position);
+          existing.barrageWrathfulBite = userData.barrageWrathfulBite === true;
+          existing.barrageWyvernBite = userData.barrageWyvernBite === true;
           newBarrage.push(existing);
         } else {
           newBarrage.push({
@@ -248,6 +252,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             level: userData.level,
             opacity: userData.opacity || 1.0,
             barrageWrathfulBite: userData.barrageWrathfulBite === true,
+            barrageWyvernBite: userData.barrageWyvernBite === true,
           });
         }
       } else if (userData.isRegularArrow || userData.projectileType === 'burst_arrow') {
@@ -458,6 +463,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             opacity: arrow.opacity,
             distanceTraveled: distanceTraveled,
             wrathfulBite: arrow.barrageWrathfulBite === true,
+            wyvernBite: arrow.barrageWyvernBite === true,
           };
         })}
       />

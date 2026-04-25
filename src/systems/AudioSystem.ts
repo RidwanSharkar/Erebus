@@ -64,6 +64,7 @@ export class AudioSystem extends System {
       { id: 'runeblade_smite', file: 'runeblade/smite.mp3' },
       { id: 'runeblade_wraithblade', file: 'runeblade/wraithblade.mp3' },
       { id: 'runeblade_void_grasp', file: 'runeblade/void_grasp.mp3' },
+      { id: 'runeblade_swing_hit', file: 'runeblade/runeblade_swing.mp3' },
       { id: 'sword_miss_1', file: 'runeblade/swordMiss1.mp3' },
       { id: 'sword_miss_2', file: 'runeblade/swordMiss2.mp3' },
       { id: 'knight_miss', file: 'sabres/sabreMiss3.mp3' },
@@ -73,6 +74,11 @@ export class AudioSystem extends System {
       { id: 'templar_damage_2', file: 'versus/TemplarDamage2.mp3' },
       { id: 'enemy_blink', file: 'versus/blink.mp3' },
       { id: 'enemy_death', file: 'versus/deathSFX.mp3' },
+      { id: 'enemy_death_ghoul', file: 'versus/ghoulDeathSFX.mp3' },
+      { id: 'enemy_death_warlock', file: 'versus/warlockdeath.mp3' },
+      { id: 'enemy_death_shade', file: 'versus/shadedeath.mp3' },
+      { id: 'enemy_death_viper', file: 'versus/viperdeath.mp3' },
+      { id: 'enemy_death_templar', file: 'versus/templardeath.mp3' },
       { id: 'shade_throw', file: 'versus/shadeThrow.mp3' },
       { id: 'shade_damage_1', file: 'versus/shadeDamage1.mp3' },
       { id: 'shade_damage_2', file: 'versus/shadeDamage2.mp3' },
@@ -381,6 +387,11 @@ export class AudioSystem extends System {
     return this.playWeaponSound(soundId, position, { volume: 0.1 }); // 0.8 * 0.25
   }
 
+  /** Remote player Runeblade LMB — same asset as `playRunebladeSwingHitSound` at enemy volume. */
+  public playEnemyRunebladeSwingHitSound(position: Vector3) {
+    return this.playWeaponSound('runeblade_swing_hit', position, { volume: 0.2 }); // 0.8 * 0.25
+  }
+
   // Play enemy sword deflect sound
   public playEnemySwordDeflectSound(position: Vector3) {
     return this.playWeaponSound('sword_deflect', position, { volume: 0.75 }); // 0.9 * 0.5
@@ -511,6 +522,11 @@ export class AudioSystem extends System {
     return this.playWeaponSound('runeblade_void_grasp', position, { volume: 0.9 });
   }
 
+  /** Runeblade LMB connect — non-crit; crits use `playSwordSwingSound` (sword_swing_1–3). */
+  public playRunebladeSwingHitSound(position: Vector3) {
+    return this.playWeaponSound('runeblade_swing_hit', position, { volume: 0.8 });
+  }
+
   // Play runeblade miss sound (swing into empty air, combo-step aware)
   public playRunebladeMissSound(comboStep: 1 | 2 | 3, position: Vector3) {
     const soundId = comboStep === 3 ? 'sword_miss_2' : 'sword_miss_1';
@@ -548,9 +564,37 @@ export class AudioSystem extends System {
   }
 
   // Play enemy death sound — accepts a plain object so callers outside Three.js contexts
-  // don't need to import Vector3
-  public playEnemyDeathSound(position: { x: number; y: number; z: number }) {
-    return this.playWeaponSound('enemy_death', new Vector3(position.x, position.y, position.z), { volume: 0.95 });
+  // don't need to import Vector3. `deathSFX.mp3` is reserved for knight / weaver only.
+  public playEnemyDeathSound(position: { x: number; y: number; z: number }, enemyType?: string) {
+    const soundId = this.resolveEnemyDeathSoundId(enemyType);
+    return this.playWeaponSound(soundId, new Vector3(position.x, position.y, position.z), { volume: 0.95 });
+  }
+
+  private resolveEnemyDeathSoundId(enemyType?: string): string {
+    if (enemyType === undefined) {
+      return 'enemy_death';
+    }
+    switch (enemyType) {
+      case 'knight':
+      case 'weaver':
+        return 'enemy_death';
+      case 'ghoul':
+      case 'boss-skeleton':
+      case 'player-zombie':
+      case 'martyr':
+        return 'enemy_death_ghoul';
+      case 'warlock':
+        return 'enemy_death_warlock';
+      case 'shade':
+        return 'enemy_death_shade';
+      case 'viper':
+        return 'enemy_death_viper';
+      case 'templar':
+      case 'boss':
+        return 'enemy_death_templar';
+      default:
+        return 'enemy_death_templar';
+    }
   }
 
   // Play Shade dart throw sound (one call per dart, staggered by the caller)
@@ -668,6 +712,8 @@ export class AudioSystem extends System {
 
   private hitboxSoundIdForWeapon(weapon?: WeaponType): string {
     switch (weapon) {
+      case WeaponType.NONE:
+        return 'ui_hitbox_sword';
       case WeaponType.BOW:
         return 'ui_hitbox_bow';
       case WeaponType.SABRES:

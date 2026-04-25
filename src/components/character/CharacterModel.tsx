@@ -8,7 +8,6 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 export type AnimState =
   | 'Idle' | 'Run' | 'Walk' | 'WalkBack' | 'WalkLeft' | 'WalkRight' | 'Backwards'
   | 'LeftStrafe' | 'RightStrafe'
-  | 'LeftStrafeForward' | 'RightStrafeForward' | 'LeftStrafeBackward' | 'RightStrafeBackward'
   | 'Jump' | 'JumpFront' | 'JumpBack'
   | 'Cast' | 'CastSingle' | 'SwordCast' | 'DrawBow' | 'ReleaseBow'
   | 'Death';
@@ -27,10 +26,6 @@ useGLTF.preload('/models/character_walkRight.glb');
 useGLTF.preload('/models/character_backwards.glb');
 useGLTF.preload('/models/character_leftStrafe.glb');
 useGLTF.preload('/models/character_rightStrafe.glb');
-useGLTF.preload('/models/character_leftStrafeForward.glb');
-useGLTF.preload('/models/character_rightStrafeForward.glb');
-useGLTF.preload('/models/character_leftStrafeBackward.glb');
-useGLTF.preload('/models/character_rightStrafeBackward.glb');
 useGLTF.preload('/models/character_jump.glb');
 useGLTF.preload('/models/character_jumpFront.glb');
 useGLTF.preload('/models/character_jumpBack.glb');
@@ -64,12 +59,8 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
   const { animations: walkLeftAnims }         = useGLTF('/models/character_walkLeft.glb');
   const { animations: walkRightAnims }        = useGLTF('/models/character_walkRight.glb');
   const { animations: backAnims }               = useGLTF('/models/character_backwards.glb');
-  const { animations: leftAnims }               = useGLTF('/models/character_leftStrafe.glb');
-  const { animations: rightAnims }              = useGLTF('/models/character_rightStrafe.glb');
-  const { animations: leftStrafeForwardAnims }  = useGLTF('/models/character_leftStrafeForward.glb');
-  const { animations: rightStrafeForwardAnims }   = useGLTF('/models/character_rightStrafeForward.glb');
-  const { animations: leftStrafeBackwardAnims }   = useGLTF('/models/character_leftStrafeBackward.glb');
-  const { animations: rightStrafeBackwardAnims }  = useGLTF('/models/character_rightStrafeBackward.glb');
+  const { animations: leftAnims }  = useGLTF('/models/character_leftStrafe.glb');
+  const { animations: rightAnims } = useGLTF('/models/character_rightStrafe.glb');
   const { animations: jumpAnims }               = useGLTF('/models/character_jump.glb');
   const { animations: jumpFrontAnims }          = useGLTF('/models/character_jumpFront.glb');
   const { animations: jumpBackAnims }           = useGLTF('/models/character_jumpBack.glb');
@@ -122,12 +113,8 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
       ...rename(walkLeftAnims,       'WalkLeft'      ).map(stripRootMotionXZ),
       ...rename(walkRightAnims,      'WalkRight'     ).map(stripRootMotionXZ),
       ...rename(backAnims,           'Backwards'     ).map(stripRootMotionXZ),
-      ...rename(leftAnims,               'LeftStrafe'          ).map(stripRootMotionXZ),
-      ...rename(rightAnims,              'RightStrafe'         ).map(stripRootMotionXZ),
-      ...rename(leftStrafeForwardAnims,  'LeftStrafeForward'  ).map(stripRootMotionXZ),
-      ...rename(rightStrafeForwardAnims, 'RightStrafeForward' ).map(stripRootMotionXZ),
-      ...rename(leftStrafeBackwardAnims, 'LeftStrafeBackward' ).map(stripRootMotionXZ),
-      ...rename(rightStrafeBackwardAnims, 'RightStrafeBackward').map(stripRootMotionXZ),
+      ...rename(leftAnims,  'LeftStrafe' ).map(stripRootMotionXZ),
+      ...rename(rightAnims, 'RightStrafe').map(stripRootMotionXZ),
       ...rename(jumpAnims,           'Jump'          ).map(stripRootMotionXZ),
       ...rename(jumpFrontAnims,      'JumpFront'     ).map(stripRootMotionXZ),
       ...rename(jumpBackAnims,       'JumpBack'      ).map(stripRootMotionXZ),
@@ -138,7 +125,7 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
       ...rename(releaseBowAnims,     'ReleaseBow'    ).map(stripRootMotionXZ),
       ...rename(deathAnims,          'Death'         ).map(stripRootMotionXZ),
     ];
-  }, [idleAnims, runAnims, walkAnims, walkBackAnims, walkLeftAnims, walkRightAnims, backAnims, leftAnims, rightAnims, leftStrafeForwardAnims, rightStrafeForwardAnims, leftStrafeBackwardAnims, rightStrafeBackwardAnims, jumpAnims, jumpFrontAnims, jumpBackAnims, castAnims, castSingleAnims, swordCastAnims, drawBowAnims, releaseBowAnims, deathAnims]);
+  }, [idleAnims, runAnims, walkAnims, walkBackAnims, walkLeftAnims, walkRightAnims, backAnims, leftAnims, rightAnims, jumpAnims, jumpFrontAnims, jumpBackAnims, castAnims, castSingleAnims, swordCastAnims, drawBowAnims, releaseBowAnims, deathAnims]);
 
   const { actions } = useAnimations(animations, sceneGroupRef);
 

@@ -17,6 +17,8 @@ interface WeaverRendererProps {
   maxHealth: number;
   isDying?: boolean;
   campType?: string;
+  /** Co-op: green = support weaver, blue = lightning weaver (aura colour) */
+  soulType?: 'green' | 'blue' | 'red' | 'purple' | 'yellow';
   staggerBuildup?: number;
 }
 
@@ -34,19 +36,30 @@ export default function WeaverRenderer({
   maxHealth,
   isDying = false,
   campType,
+  soulType,
   staggerBuildup = 0,
 }: WeaverRendererProps) {
   const theme = campHpTheme(campType);
+  const isBlue = soulType === 'blue';
+  const auraRing = isBlue
+    ? { color: '#44aaff', emissive: '#2060c0' }
+    : { color: '#00ff55', emissive: '#00cc33' };
+  const auraDisc = isBlue
+    ? { color: '#3388dd', emissive: '#1a50aa' }
+    : { color: '#00cc44', emissive: '#00aa22' };
   const { socket } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
 
   const [isCastingHeal,   setIsCastingHeal]   = useState(false);
   const [isCastingSummon, setIsCastingSummon] = useState(false);
   const [isWalking,       setIsWalking]       = useState(false);
+  const [isImpacting,     setIsImpacting]     = useState(false);
+  const [impactPlayKey,   setImpactPlayKey]   = useState(0);
 
   const targetPosition   = useRef(position.clone());
   const targetRotation   = useRef(rotation);
   const isCastingRef     = useRef(false);
+  const prevHealthRef    = useRef(health);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer     = useRef(0);
@@ -83,6 +96,31 @@ export default function WeaverRenderer({
   useEffect(() => {
     targetRotation.current = rotation;
   }, [rotation]);
+
+  const handleImpactFinished = useCallback(() => {
+    setIsImpacting(false);
+  }, []);
+
+  // Hit-react: health drop while idle (not walk / cast).
+  useEffect(() => {
+    if (
+      health < prevHealthRef.current &&
+      !isDying &&
+      !isWalking &&
+      !isCastingHeal &&
+      !isCastingSummon
+    ) {
+      setIsImpacting(true);
+      setImpactPlayKey(k => k + 1);
+    }
+    prevHealthRef.current = health;
+  }, [health, isDying, isWalking, isCastingHeal, isCastingSummon]);
+
+  useEffect(() => {
+    if (isWalking || isCastingHeal || isCastingSummon) {
+      setIsImpacting(false);
+    }
+  }, [isWalking, isCastingHeal, isCastingSummon]);
 
   // Weaver heal cast telegraph
   useEffect(() => {
@@ -155,7 +193,7 @@ export default function WeaverRenderer({
 
   return (
     <>
-      {/* Permanent green aura — scene-level sibling, positioned at ground Y via useFrame */}
+      {/* Permanent ground aura — green (support) or blue (lightning) */}
       {!isDying && (
         <group ref={auraGroupRef}>
           {/* Four triangular ring segments, flat on the ground */}
@@ -164,8 +202,8 @@ export default function WeaverRenderer({
               <mesh key={i} rotation={[-Math.PI / 2, 0, rot]}>
                 <ringGeometry args={[0.85, 1.0, 3]} />
                 <meshStandardMaterial
-                  color="#00ff55"
-                  emissive="#00cc33"
+                  color={auraRing.color}
+                  emissive={auraRing.emissive}
                   emissiveIntensity={2}
                   transparent
                   opacity={0.6}
@@ -179,8 +217,8 @@ export default function WeaverRenderer({
           <mesh rotation={[-Math.PI / 2, 0, 0]}>
             <circleGeometry args={[0.925, 32]} />
             <meshStandardMaterial
-              color="#00cc44"
-              emissive="#00aa22"
+              color={auraDisc.color}
+              emissive={auraDisc.emissive}
               emissiveIntensity={1}
               transparent
               opacity={0.45}
@@ -188,6 +226,9 @@ export default function WeaverRenderer({
               side={2}
             />
           </mesh>
+
+          <pointLight color="auraRing.color" intensity={0.5} distance={12} decay={6} position={[0, 2, -0.5]} />
+          <pointLight color="auraDisc.color" intensity={3} distance={8} decay={2} position={[0, 1, 0]} />
         </group>
       )}
 
@@ -197,6 +238,9 @@ export default function WeaverRenderer({
         isCastingHeal={isCastingHeal}
         isCastingSummon={isCastingSummon}
         isDying={isDying}
+        isImpacting={isImpacting}
+        impactPlayKey={impactPlayKey}
+        onImpactFinished={handleImpactFinished}
       />
 
       <Billboard position={[0, 3.2, 0]} follow lockX={false} lockY={false} lockZ={false}>

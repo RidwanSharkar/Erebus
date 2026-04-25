@@ -110,7 +110,8 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
   if (selectedWeapons) {
     // Primary weapon - key 1
     const primaryWeapon = {
-      name: selectedWeapons.primary === WeaponType.SWORD ? 'Sword' :
+      name: selectedWeapons.primary === WeaponType.NONE ? 'Unarmed' :
+            selectedWeapons.primary === WeaponType.SWORD ? 'Sword' :
             selectedWeapons.primary === WeaponType.BOW ? 'Bow' :
             selectedWeapons.primary === WeaponType.SCYTHE ? 'Scythe' :
             selectedWeapons.primary === WeaponType.SABRES ? 'Sabres' :
@@ -118,7 +119,8 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
             selectedWeapons.primary === WeaponType.SPEAR ? 'Spear' : 'Unknown',
       type: selectedWeapons.primary,
       key: '1' as const,
-      icon: selectedWeapons.primary === WeaponType.SWORD ? '💎' :
+      icon: selectedWeapons.primary === WeaponType.NONE ? '✦' :
+            selectedWeapons.primary === WeaponType.SWORD ? '💎' :
             selectedWeapons.primary === WeaponType.BOW ? '🏹' :
             selectedWeapons.primary === WeaponType.SCYTHE ? '🦋' :
             selectedWeapons.primary === WeaponType.SABRES ? '⚔️' :
@@ -320,8 +322,11 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
 
             {/* Ability Icons — driven by abilityLoadout (Q / E / R) */}
             {loadoutAbilities.map(({ slot, ability }) => {
-              const currentCooldown = cooldowns[slot] || 0;
+              const cdSlot = controlSystem?.getAbilityCooldowns?.()?.[slot];
+              const currentCooldown = cdSlot?.current ?? (cooldowns[slot] || 0);
               const isOnCooldown = currentCooldown > 0;
+              const showChargeStacks =
+                cdSlot?.charges != null && cdSlot.maxCharges != null && cdSlot.maxCharges > 1;
 
               // Determine active / charging state from controlSystem
               const getActiveOverlay = (): React.ReactNode => {
@@ -381,6 +386,12 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
                   <div className="absolute -top-2 -left-2 bg-gray-800 border border-gray-600 rounded text-xs text-white px-1 py-0.5 font-semibold">
                     {slot}
                   </div>
+
+                  {ability && showChargeStacks && (
+                    <div className="absolute -bottom-1.5 -right-1.5 min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded bg-gray-900 border border-amber-500/80 text-amber-200 text-xs font-bold tabular-nums">
+                      {cdSlot?.charges}
+                    </div>
+                  )}
 
                   {/* Ability icon */}
                   <div className={`w-8 h-8 rounded flex items-center justify-center text-lg font-bold ${

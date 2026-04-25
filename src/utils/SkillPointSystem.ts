@@ -50,20 +50,24 @@ export class SkillPointSystem {
     const unlockableKeys: Array<'Q' | 'E' | 'R' | 'F' | 'P'> = ['Q', 'E', 'R', 'F', 'P'];
 
     // Check primary weapon abilities
-    const primaryKey = `${selectedWeapons.primary}_primary`;
-    const primaryUnlocked = skillPointData.unlockedAbilities[primaryKey] || new Set();
-    for (const key of unlockableKeys) {
-      if (!primaryUnlocked.has(key)) {
-        available.push({ weaponType: selectedWeapons.primary, abilityKey: key, weaponSlot: 'primary' });
+    if (selectedWeapons.primary !== WeaponType.NONE) {
+      const primaryKey = `${selectedWeapons.primary}_primary`;
+      const primaryUnlocked = skillPointData.unlockedAbilities[primaryKey] || new Set();
+      for (const key of unlockableKeys) {
+        if (!primaryUnlocked.has(key)) {
+          available.push({ weaponType: selectedWeapons.primary, abilityKey: key, weaponSlot: 'primary' });
+        }
       }
     }
 
     // Check secondary weapon abilities
-    const secondaryKey = `${selectedWeapons.secondary}_secondary`;
-    const secondaryUnlocked = skillPointData.unlockedAbilities[secondaryKey] || new Set();
-    for (const key of unlockableKeys) {
-      if (!secondaryUnlocked.has(key)) {
-        available.push({ weaponType: selectedWeapons.secondary, abilityKey: key, weaponSlot: 'secondary' });
+    if (selectedWeapons.secondary !== WeaponType.NONE) {
+      const secondaryKey = `${selectedWeapons.secondary}_secondary`;
+      const secondaryUnlocked = skillPointData.unlockedAbilities[secondaryKey] || new Set();
+      for (const key of unlockableKeys) {
+        if (!secondaryUnlocked.has(key)) {
+          available.push({ weaponType: selectedWeapons.secondary, abilityKey: key, weaponSlot: 'secondary' });
+        }
       }
     }
 
@@ -153,6 +157,12 @@ export class SkillPointSystem {
    */
   static getAbilityName(weaponType: WeaponType, abilityKey: 'Q' | 'E' | 'R' | 'F'): string {
     const abilityNames: Record<WeaponType, Record<'Q' | 'E' | 'R' | 'F', string>> = {
+      [WeaponType.NONE]: {
+        Q: '',
+        E: '',
+        R: '',
+        F: ''
+      },
       [WeaponType.SWORD]: {
         Q: 'Fullguard',
         E: 'Charge',
@@ -205,6 +215,7 @@ export class SkillPointSystem {
    */
   static getWeaponDisplayName(weaponType: WeaponType): string {
     const weaponNames: Record<WeaponType, string> = {
+      [WeaponType.NONE]: 'Unarmed',
       [WeaponType.SWORD]: 'Sword',
       [WeaponType.BOW]: 'Bow',
       [WeaponType.SCYTHE]: 'Scythe',

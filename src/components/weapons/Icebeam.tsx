@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { Group, Vector3 } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
+import { ICEBEAM_MAX_HOLD_SEC } from '@/utils/icebeamConstants';
 
 interface IcebeamProps {
   parentRef: React.RefObject<Group>;
@@ -115,7 +116,7 @@ export default function Icebeam({
       }
     } else if (isActive) {
       // Handle intensity increase over time (scales with external intensity from damage multiplier)
-      const activeTime = (currentTime - startTime) / 1000;
+      const activeTime = Math.min((currentTime - startTime) / 1000, ICEBEAM_MAX_HOLD_SEC);
       const baseIntensity = Math.min(1 + activeTime * 0.3, 2.5); // Max 1.5x intensity
       const newIntensity = baseIntensity * externalIntensity;
       // Cap visual scaling at 1.3x while keeping damage scaling unlimited
@@ -129,8 +130,9 @@ export default function Icebeam({
     beamRef.current.scale.setScalar(scale);
   });
 
-  // Get current beam colors based on active time
-  const activeTime = isActive ? (Date.now() - startTime) / 1000 : 0;
+  const activeTime = isActive
+    ? Math.min((Date.now() - startTime) / 1000, ICEBEAM_MAX_HOLD_SEC)
+    : 0;
   const beamColors = getBeamColors(activeTime);
 
   return (

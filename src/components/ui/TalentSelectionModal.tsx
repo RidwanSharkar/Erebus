@@ -8,6 +8,8 @@ import {
   createDefaultTalentLoadout,
   infestedSmiteTalentDefinition,
   infernalSmiteTalentDefinition,
+  vengeanceSmiteTalentDefinition,
+  VENGEANCE_SMITE_MAX_EXTRA_DAMAGE_MULT,
   infestedStrikeTalentDefinition,
   staggeringSmiteTalentDefinition,
   INFERNAL_SMITE_CRIT_CHANCE_ADD,
@@ -27,6 +29,10 @@ import {
   WRATHFUL_BITE_BARRAGE_CRIT_CHANCE_ADD,
   WRATHFUL_BITE_BARRAGE_CRIT_DAMAGE_MULT_ADD,
   wrathfulBiteTalentDefinition,
+  wyvernBiteTalentDefinition,
+  WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK,
+  WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS,
+  WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC,
   isChargeInLoadout,
   isColossusSmiteInLoadout,
   isFrostBiteInLoadout,
@@ -40,8 +46,25 @@ import {
   wrathfulComboTalentDefinition,
   infestedComboTalentDefinition,
   guardComboTalentDefinition,
+  dashGuardTalentDefinition,
+  executionerTalentDefinition,
   GUARD_COMBO_PROC_CHANCE,
   GUARD_COMBO_DURATION_SEC,
+  DASH_GUARD_DURATION_SEC,
+  EXECUTIONER_POST_DASH_WINDOW_MS,
+  EXECUTIONER_BASE_DAMAGE_ADD,
+  crusaderTalentDefinition,
+  CRUSADER_PROC_CHANCE,
+  CRUSADER_DURATION_SEC,
+  CRUSADER_LMB_FLAT_BONUS,
+  blizzardTalentDefinition,
+  BLIZZARD_PROC_CHANCE,
+  BLIZZARD_DURATION_SEC,
+  BLIZZARD_DPS_PER_TICK,
+  CHILL_STACK_DURATION_SEC,
+  CHILL_SLOW_PER_STACK,
+  CHILL_STACKS_TO_FREEZE,
+  BLIZZARD_FREEZE_DURATION_SEC,
   WRATHFUL_COMBO_CRIT_CHANCE_ADD,
   WRATHFUL_COMBO_CRIT_DAMAGE_MULT_ADD,
   INFESTED_COMBO_LIFESTEAL,
@@ -58,10 +81,25 @@ import {
   STAGGER_SHOT_UNCHARGED_STAGGER,
   staggerShotTalentDefinition,
   dualCoilTalentDefinition,
+  wyvernStingTalentDefinition,
+  WYVERN_STING_COOLDOWN_SEC,
   wrathStrikeTalentDefinition,
   wraithGuardTalentDefinition,
+  doubleStrikeTalentDefinition,
+  spellbladeTalentDefinition,
+  SPELLBLADE_INTELLECT_BONUS,
+  SPELLBLADE_WRAITH_STRIKE_SHIELD_RESTORE,
+  WRAITH_STRIKE_COOLDOWN_SEC,
+  WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES,
   wrathfulTalonsTalentDefinition,
   executeTalentDefinition,
+  explosiveTalonsTalentDefinition,
+  EXPLOSIVE_TALONS_EXPLOSION_DAMAGE,
+  EXPLOSIVE_TALONS_EXPLOSION_RADIUS,
+  REAPING_TALONS_MAX_TRAVEL_DISTANCE,
+  EXPLOSIVE_TALONS_REAPING_TALONS_MAX_TRAVEL_DISTANCE,
+  tempestRoundsTalentDefinition,
+  icebeamTalentDefinition,
 } from '@/utils/talents';
 
 interface TalentSelectionModalProps {
@@ -73,6 +111,7 @@ interface TalentSelectionModalProps {
 }
 
 const WEAPON_LABELS: Record<WeaponType, string> = {
+  [WeaponType.NONE]: 'Unarmed',
   [WeaponType.RUNEBLADE]: 'Sword',
   [WeaponType.BOW]: 'Bow',
   [WeaponType.SCYTHE]: 'Scythe',
@@ -83,6 +122,7 @@ const WEAPON_LABELS: Record<WeaponType, string> = {
 };
 
 const WEAPON_COLORS: Record<WeaponType, { border: string; bg: string; text: string }> = {
+  [WeaponType.NONE]: { border: 'border-violet-400', bg: 'bg-violet-900/30', text: 'text-violet-200' },
   [WeaponType.RUNEBLADE]: { border: 'border-sky-400', bg: 'bg-sky-900/30', text: 'text-sky-300' },
   [WeaponType.BOW]: { border: 'border-green-400', bg: 'bg-green-900/30', text: 'text-green-300' },
   [WeaponType.SCYTHE]: { border: 'border-purple-400', bg: 'bg-purple-900/30', text: 'text-purple-300' },
@@ -109,25 +149,37 @@ export default function TalentSelectionModal({
     staggeringSwipes: initialTalentLoadout?.staggeringSwipes ?? def.staggeringSwipes,
     wrathfulTalons: initialTalentLoadout?.wrathfulTalons ?? def.wrathfulTalons,
     execute: initialTalentLoadout?.execute ?? def.execute,
+    explosiveTalons: initialTalentLoadout?.explosiveTalons ?? def.explosiveTalons,
     storedCharge: initialTalentLoadout?.storedCharge ?? def.storedCharge,
     trinity: initialTalentLoadout?.trinity ?? def.trinity,
     infestedSmite: initialTalentLoadout?.infestedSmite ?? def.infestedSmite,
     staggeringSmite: initialTalentLoadout?.staggeringSmite ?? def.staggeringSmite,
     infernalSmite: initialTalentLoadout?.infernalSmite ?? def.infernalSmite,
+    vengeanceSmite: initialTalentLoadout?.vengeanceSmite ?? def.vengeanceSmite,
     colossusGuard: initialTalentLoadout?.colossusGuard ?? def.colossusGuard,
     staggerShot: initialTalentLoadout?.staggerShot ?? def.staggerShot,
     concentratedVolley: initialTalentLoadout?.concentratedVolley ?? def.concentratedVolley,
     wrathfulBite: initialTalentLoadout?.wrathfulBite ?? def.wrathfulBite,
+    wyvernBite: initialTalentLoadout?.wyvernBite ?? def.wyvernBite,
     inferno: initialTalentLoadout?.inferno ?? def.inferno,
     reaper: initialTalentLoadout?.reaper ?? def.reaper,
     frostPath: initialTalentLoadout?.frostPath ?? def.frostPath,
     solarRecharge: initialTalentLoadout?.solarRecharge ?? def.solarRecharge,
     windFury: initialTalentLoadout?.windFury ?? def.windFury,
     dualCoil: initialTalentLoadout?.dualCoil ?? def.dualCoil,
+    wyvernSting: initialTalentLoadout?.wyvernSting ?? def.wyvernSting,
     bladeRush: initialTalentLoadout?.bladeRush ?? def.bladeRush,
     wrathfulCombo: initialTalentLoadout?.wrathfulCombo ?? def.wrathfulCombo,
     infestedCombo: initialTalentLoadout?.infestedCombo ?? def.infestedCombo,
     guardCombo: initialTalentLoadout?.guardCombo ?? def.guardCombo,
+    dashGuard: initialTalentLoadout?.dashGuard ?? def.dashGuard,
+    executioner: initialTalentLoadout?.executioner ?? def.executioner,
+    crusader: initialTalentLoadout?.crusader ?? def.crusader,
+    blizzard: initialTalentLoadout?.blizzard ?? def.blizzard,
+    doubleStrike: initialTalentLoadout?.doubleStrike ?? def.doubleStrike,
+    spellblade: initialTalentLoadout?.spellblade ?? def.spellblade,
+    tempestRounds: initialTalentLoadout?.tempestRounds ?? def.tempestRounds,
+    icebeam: initialTalentLoadout?.icebeam ?? def.icebeam,
   };
   const [loadout, setLoadout] = useState<TalentLoadout>(() => merged);
 
@@ -159,6 +211,16 @@ export default function TalentSelectionModal({
     setLoadout((prev) => ({ ...prev, wraithGuard: !prev.wraithGuard }));
   }, [wraithEquipped]);
 
+  const toggleDoubleStrike = useCallback(() => {
+    if (!wraithEquipped) return;
+    setLoadout((prev) => ({ ...prev, doubleStrike: !prev.doubleStrike }));
+  }, [wraithEquipped]);
+
+  const toggleSpellblade = useCallback(() => {
+    if (!wraithEquipped) return;
+    setLoadout((prev) => ({ ...prev, spellblade: !prev.spellblade }));
+  }, [wraithEquipped]);
+
   const toggleWrathfulTalons = useCallback(() => {
     if (!reapingEquipped) return;
     setLoadout((prev) => ({ ...prev, wrathfulTalons: !prev.wrathfulTalons }));
@@ -167,6 +229,11 @@ export default function TalentSelectionModal({
   const toggleExecute = useCallback(() => {
     if (!reapingEquipped) return;
     setLoadout((prev) => ({ ...prev, execute: !prev.execute }));
+  }, [reapingEquipped]);
+
+  const toggleExplosiveTalons = useCallback(() => {
+    if (!reapingEquipped) return;
+    setLoadout((prev) => ({ ...prev, explosiveTalons: !prev.explosiveTalons }));
   }, [reapingEquipped]);
 
   const toggleStoredCharge = useCallback(() => {
@@ -200,6 +267,11 @@ export default function TalentSelectionModal({
     setLoadout((prev) => ({ ...prev, infernalSmite: !prev.infernalSmite }));
   }, [smiteEquipped]);
 
+  const toggleVengeanceSmite = useCallback(() => {
+    if (!smiteEquipped) return;
+    setLoadout((prev) => ({ ...prev, vengeanceSmite: !prev.vengeanceSmite }));
+  }, [smiteEquipped]);
+
   const toggleColossusGuard = useCallback(() => {
     if (!smiteEquipped) return;
     setLoadout((prev) => ({ ...prev, colossusGuard: !prev.colossusGuard }));
@@ -221,6 +293,22 @@ export default function TalentSelectionModal({
     setLoadout((prev) => ({ ...prev, guardCombo: !prev.guardCombo }));
   }, []);
 
+  const toggleDashGuard = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, dashGuard: !prev.dashGuard }));
+  }, []);
+
+  const toggleExecutioner = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, executioner: !prev.executioner }));
+  }, []);
+
+  const toggleCrusader = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, crusader: !prev.crusader }));
+  }, []);
+
+  const toggleBlizzard = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, blizzard: !prev.blizzard }));
+  }, []);
+
   const toggleStaggeringSwipes = useCallback(() => {
     setLoadout((prev) => ({ ...prev, staggeringSwipes: !prev.staggeringSwipes }));
   }, []);
@@ -233,6 +321,10 @@ export default function TalentSelectionModal({
     setLoadout((prev) => ({ ...prev, dualCoil: !prev.dualCoil }));
   }, []);
 
+  const toggleWyvernSting = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, wyvernSting: !prev.wyvernSting }));
+  }, []);
+
   const toggleConcentratedVolley = useCallback(() => {
     if (!frostbiteEquipped) return;
     setLoadout((prev) => ({ ...prev, concentratedVolley: !prev.concentratedVolley }));
@@ -241,6 +333,11 @@ export default function TalentSelectionModal({
   const toggleWrathfulBite = useCallback(() => {
     if (!frostbiteEquipped) return;
     setLoadout((prev) => ({ ...prev, wrathfulBite: !prev.wrathfulBite }));
+  }, [frostbiteEquipped]);
+
+  const toggleWyvernBite = useCallback(() => {
+    if (!frostbiteEquipped) return;
+    setLoadout((prev) => ({ ...prev, wyvernBite: !prev.wyvernBite }));
   }, [frostbiteEquipped]);
 
   const toggleInferno = useCallback(() => {
@@ -263,6 +360,14 @@ export default function TalentSelectionModal({
 
   const toggleWindFury = useCallback(() => {
     setLoadout((prev) => ({ ...prev, windFury: !prev.windFury }));
+  }, []);
+
+  const toggleTempestRounds = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, tempestRounds: !prev.tempestRounds }));
+  }, []);
+
+  const toggleIcebeam = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, icebeam: !prev.icebeam }));
   }, []);
 
   return (
@@ -389,6 +494,64 @@ export default function TalentSelectionModal({
           </div>
         </div>
 
+        <div
+          className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${wraithEquipped ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
+          `}
+        >
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="talent-double-strike"
+              checked={loadout.doubleStrike}
+              onChange={toggleDoubleStrike}
+              disabled={!wraithEquipped}
+              className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+            />
+            <label htmlFor="talent-double-strike" className={`flex-1 ${wraithEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+              <div className="text-white font-semibold">{doubleStrikeTalentDefinition.name}</div>
+              {loadout.doubleStrike && (
+                <>
+                  <p className="text-gray-400 text-sm mt-1">{doubleStrikeTalentDefinition.description}</p>
+                  <p className="text-amber-200/90 text-xs mt-2 font-mono">
+                    {WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES} charges · {WRAITH_STRIKE_COOLDOWN_SEC}s per charge · one recharge at a time
+                  </p>
+                </>
+              )}
+            </label>
+          </div>
+        </div>
+
+        <div
+          className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${wraithEquipped ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
+          `}
+        >
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="talent-spellblade"
+              checked={loadout.spellblade}
+              onChange={toggleSpellblade}
+              disabled={!wraithEquipped}
+              className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+            />
+            <label htmlFor="talent-spellblade" className={`flex-1 ${wraithEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+              <div className="text-white font-semibold">{spellbladeTalentDefinition.name}</div>
+              {loadout.spellblade && (
+                <>
+                  <p className="text-gray-400 text-sm mt-1">{spellbladeTalentDefinition.description}</p>
+                  <p className="text-amber-200/90 text-xs mt-2 font-mono">
+                    +{SPELLBLADE_INTELLECT_BONUS} intellect (+{SPELLBLADE_INTELLECT_BONUS * 2} max shield) · +{SPELLBLADE_WRAITH_STRIKE_SHIELD_RESTORE} shield per Wraith Strike
+                  </p>
+                </>
+              )}
+            </label>
+          </div>
+        </div>
+
         {selectedWeapon === WeaponType.RUNEBLADE && (
           <>
             <div
@@ -480,6 +643,36 @@ export default function TalentSelectionModal({
               <div className="flex items-start gap-3">
                 <input
                   type="checkbox"
+                  id="talent-blizzard"
+                  checked={loadout.blizzard}
+                  onChange={toggleBlizzard}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+                />
+                <label htmlFor="talent-blizzard" className="flex-1 cursor-pointer">
+                  <div className="text-white font-semibold">{blizzardTalentDefinition.name}</div>
+                  {loadout.blizzard && (
+                    <>
+                      <p className="text-gray-400 text-sm mt-1">{blizzardTalentDefinition.description}</p>
+                      <p className="text-sky-200/90 text-xs mt-2 font-mono">
+                        {BLIZZARD_PROC_CHANCE * 100}% per Runeblade combo hit (enemy damaged) · {BLIZZARD_DURATION_SEC}s
+                        storm · {BLIZZARD_DPS_PER_TICK} DPS in radius · Chill {CHILL_SLOW_PER_STACK * 100}% slow per stack (
+                        {CHILL_STACK_DURATION_SEC}s refresh) · {CHILL_STACKS_TO_FREEZE} stacks →{' '}
+                        {BLIZZARD_FREEZE_DURATION_SEC}s freeze
+                      </p>
+                    </>
+                  )}
+                </label>
+              </div>
+            </div>
+            <div
+              className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${wc.border} ${wc.bg}
+          `}
+            >
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
                   id="talent-guard-combo"
                   checked={loadout.guardCombo}
                   onChange={toggleGuardCombo}
@@ -492,6 +685,90 @@ export default function TalentSelectionModal({
                       <p className="text-gray-400 text-sm mt-1">{guardComboTalentDefinition.description}</p>
                       <p className="text-sky-200/90 text-xs mt-2 font-mono">
                         {Math.round(GUARD_COMBO_PROC_CHANCE * 100)}% per enemy hit · {GUARD_COMBO_DURATION_SEC}s deflect + invuln · no Aegis cooldown
+                      </p>
+                    </>
+                  )}
+                </label>
+              </div>
+            </div>
+            <div
+              className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${wc.border} ${wc.bg}
+          `}
+            >
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="talent-dash-guard"
+                  checked={loadout.dashGuard}
+                  onChange={toggleDashGuard}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+                />
+                <label htmlFor="talent-dash-guard" className="flex-1 cursor-pointer">
+                  <div className="text-white font-semibold">{dashGuardTalentDefinition.name}</div>
+                  {loadout.dashGuard && (
+                    <>
+                      <p className="text-gray-400 text-sm mt-1">{dashGuardTalentDefinition.description}</p>
+                      <p className="text-sky-200/90 text-xs mt-2 font-mono">
+                        {DASH_GUARD_DURATION_SEC}s deflect + invuln on dash · no Aegis cooldown
+                      </p>
+                    </>
+                  )}
+                </label>
+              </div>
+            </div>
+            <div
+              className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${wc.border} ${wc.bg}
+          `}
+            >
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="talent-executioner"
+                  checked={loadout.executioner}
+                  onChange={toggleExecutioner}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+                />
+                <label htmlFor="talent-executioner" className="flex-1 cursor-pointer">
+                  <div className="text-white font-semibold">{executionerTalentDefinition.name}</div>
+                  {loadout.executioner && (
+                    <>
+                      <p className="text-gray-400 text-sm mt-1">{executionerTalentDefinition.description}</p>
+                      <p className="text-sky-200/90 text-xs mt-2 font-mono">
+                        Real dash only (not Blade Rush) · {EXECUTIONER_POST_DASH_WINDOW_MS / 1000}s window · 3rd-hit combo · +
+                        {EXECUTIONER_BASE_DAMAGE_ADD} base before crit
+                      </p>
+                    </>
+                  )}
+                </label>
+              </div>
+            </div>
+            <div
+              className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${wc.border} ${wc.bg}
+          `}
+            >
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="talent-crusader"
+                  checked={loadout.crusader}
+                  onChange={toggleCrusader}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+                />
+                <label htmlFor="talent-crusader" className="flex-1 cursor-pointer">
+                  <div className="text-white font-semibold">{crusaderTalentDefinition.name}</div>
+                  {loadout.crusader && (
+                    <>
+                      <p className="text-gray-400 text-sm mt-1">{crusaderTalentDefinition.description}</p>
+                      <p className="text-sky-200/90 text-xs mt-2 font-mono">
+                        {CRUSADER_PROC_CHANCE * 100}% per Runeblade combo hit (enemy damaged) · {CRUSADER_DURATION_SEC}s · +
+                        {CRUSADER_LMB_FLAT_BONUS} base per swing · corrupted blade colors (F unchanged) · refresh on
+                        proc
                       </p>
                     </>
                   )}
@@ -698,6 +975,39 @@ export default function TalentSelectionModal({
               <div className="flex items-start gap-3">
                 <input
                   type="checkbox"
+                  id="talent-vengeance-smite"
+                  checked={loadout.vengeanceSmite}
+                  onChange={toggleVengeanceSmite}
+                  disabled={!smiteEquipped}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                />
+                <label htmlFor="talent-vengeance-smite" className={`flex-1 ${smiteEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                  <div className="text-white font-semibold">{vengeanceSmiteTalentDefinition.name}</div>
+                  {loadout.vengeanceSmite && (
+                    <>
+                      <p className="text-gray-400 text-sm mt-1">{vengeanceSmiteTalentDefinition.description}</p>
+                      <p className="text-rose-200/90 text-xs mt-2 font-mono">
+                        Up to +{VENGEANCE_SMITE_MAX_EXTRA_DAMAGE_MULT * 100}% damage at 0 HP · scales with missing health
+                      </p>
+                    </>
+                  )}
+                </label>
+              </div>
+              {!smiteEquipped && (
+                <p className="text-gray-500 text-xs mt-3 pl-7">
+                  Equip <span className="text-gray-300">Colossus Strike</span> (Runeblade R) in your ability loadout at the other east pillar to enable this talent.
+                </p>
+              )}
+            </div>
+            <div
+              className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${smiteEquipped ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
+          `}
+            >
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
                   id="talent-colossus-guard"
                   checked={loadout.colossusGuard}
                   onChange={toggleColossusGuard}
@@ -794,6 +1104,27 @@ export default function TalentSelectionModal({
                 )}
               </label>
             </div>
+            <div className="flex items-start gap-3 mt-4">
+              <input
+                type="checkbox"
+                id="talent-explosive-talons"
+                checked={loadout.explosiveTalons}
+                onChange={toggleExplosiveTalons}
+                disabled={!reapingEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+              />
+              <label htmlFor="talent-explosive-talons" className={`flex-1 ${reapingEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                <div className="text-white font-semibold">{explosiveTalonsTalentDefinition.name}</div>
+                {loadout.explosiveTalons && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{explosiveTalonsTalentDefinition.description}</p>
+                    <p className="text-green-200/90 text-xs mt-2 font-mono">
+                      Forward {EXPLOSIVE_TALONS_REAPING_TALONS_MAX_TRAVEL_DISTANCE} (base {REAPING_TALONS_MAX_TRAVEL_DISTANCE}) · {EXPLOSIVE_TALONS_EXPLOSION_DAMAGE} dmg · radius {EXPLOSIVE_TALONS_EXPLOSION_RADIUS}
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
             {!reapingEquipped && (
               <p className="text-gray-500 text-xs mt-3 pl-7">
                 Equip <span className="text-gray-300">Reaping Talons</span> in your ability loadout at the other east pillar to enable this talent.
@@ -879,6 +1210,46 @@ export default function TalentSelectionModal({
         )}
 
         {selectedWeapon === WeaponType.BOW && (
+          <div
+            className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${frostbiteEquipped ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
+          `}
+          >
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="talent-wyvern-bite"
+                checked={loadout.wyvernBite}
+                onChange={toggleWyvernBite}
+                disabled={!frostbiteEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+              />
+              <label
+                htmlFor="talent-wyvern-bite"
+                className={`flex-1 ${frostbiteEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+              >
+                <div className="text-white font-semibold">{wyvernBiteTalentDefinition.name}</div>
+                {loadout.wyvernBite && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{wyvernBiteTalentDefinition.description}</p>
+                    <p className="text-emerald-200/90 text-xs mt-2 font-mono">
+                      +1 Concentrated Venom stack per Barrage hit · {WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK} DPS per stack · max{' '}
+                      {WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS} · {WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC}s · green Barrage
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+            {!frostbiteEquipped && (
+              <p className="text-gray-500 text-xs mt-3 pl-7">
+                Equip <span className="text-gray-300">Frostbite</span> in your ability loadout at the other east pillar to enable this talent.
+              </p>
+            )}
+          </div>
+        )}
+
+        {selectedWeapon === WeaponType.BOW && (
           <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
             <div className="flex items-start gap-3">
               <input
@@ -918,6 +1289,51 @@ export default function TalentSelectionModal({
                 <div className="text-white font-semibold">{dualCoilTalentDefinition.name}</div>
                 {loadout.dualCoil && (
                   <p className="text-gray-400 text-sm mt-1">{dualCoilTalentDefinition.description}</p>
+                )}
+              </label>
+            </div>
+          </div>
+        )}
+
+        {selectedWeapon === WeaponType.BOW && (
+          <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="talent-wyvern-sting"
+                checked={loadout.wyvernSting}
+                onChange={toggleWyvernSting}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-wyvern-sting" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{wyvernStingTalentDefinition.name}</div>
+                {loadout.wyvernSting && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{wyvernStingTalentDefinition.description}</p>
+                    <p className="text-emerald-200/90 text-xs mt-2 font-mono">
+                      Bonus Cobra Shot internal cooldown: {WYVERN_STING_COOLDOWN_SEC}s (separate from Cobra Shot on E)
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+          </div>
+        )}
+
+        {selectedWeapon === WeaponType.BOW && (
+          <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="talent-tempest-rounds"
+                checked={loadout.tempestRounds}
+                onChange={toggleTempestRounds}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-tempest-rounds" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{tempestRoundsTalentDefinition.name}</div>
+                {loadout.tempestRounds && (
+                  <p className="text-gray-400 text-sm mt-1">{tempestRoundsTalentDefinition.description}</p>
                 )}
               </label>
             </div>
@@ -1017,10 +1433,25 @@ export default function TalentSelectionModal({
                 )}
               </label>
             </div>
+            <div className="flex items-start gap-3 mt-4">
+              <input
+                type="checkbox"
+                id="talent-icebeam"
+                checked={loadout.icebeam}
+                onChange={toggleIcebeam}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-icebeam" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{icebeamTalentDefinition.name}</div>
+                {loadout.icebeam && (
+                  <p className="text-gray-400 text-sm mt-1">{icebeamTalentDefinition.description}</p>
+                )}
+              </label>
+            </div>
           </div>
         )}
 
-        {selectedWeapon === WeaponType.SPEAR && (
+        {(selectedWeapon === WeaponType.SPEAR || selectedWeapon === WeaponType.RUNEBLADE) && (
           <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
             <div className="flex items-start gap-3">
               <input
@@ -1036,7 +1467,7 @@ export default function TalentSelectionModal({
                   <>
                     <p className="text-gray-400 text-sm mt-1">{windFuryTalentDefinition.description}</p>
                     <p className="text-cyan-200/90 text-xs mt-2 font-mono">
-                      {WINDFURY_PROC_CHANCE * 100}% per spear primary hit (that damages an enemy) · Storm Shroud (Flurry) VFX, attack speed, heal on hit · does not put F on cooldown
+                      {WINDFURY_PROC_CHANCE * 100}% per spear primary or Runeblade combo hit (that damages an enemy) · Storm Shroud (Flurry) VFX, attack speed, heal on hit · does not put F on cooldown
                     </p>
                   </>
                 )}

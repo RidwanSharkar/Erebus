@@ -25,15 +25,11 @@ const WALK_STOP_DELAY = 120; // ms before switching to Idle after movement stops
 // Return the animation state based on the signed angle (radians) between
 // the character's facing direction and the movement direction.
 //
-//                 Run  (|angle| < π/8)
-//                /    \
-//  LeftStrafeForward    RightStrafeForward  (π/8 … 3π/8 each side)
-//       |                     |
-//  LeftStrafe             RightStrafe   (3π/8 … 5π/8 each side — pure side)
-//       |                     |
-//  LeftStrafeBackward  RightStrafeBackward (5π/8 … 7π/8 each side)
-//                \    /
-//              Backwards  (|angle| > 7π/8)
+//  Run (|angle| < π/8) — W
+//       |
+//  LeftStrafe / RightStrafe (π/8 … 7π/8) — WA/WD/SA/SD, pure A/D, and diagonals
+//       |                    reuse one side-strafe clip per direction; gameplay still moves diagonally.
+//  Backwards (|angle| > 7π/8) — S
 function dirToAnimState(facingDir: Vector3, moveDir: Vector3): AnimState {
   // Signed angle from facing to movement around the Y axis.
   //   dot    = cos(angle)
@@ -43,15 +39,9 @@ function dirToAnimState(facingDir: Vector3, moveDir: Vector3): AnimState {
   const angle  = Math.atan2(crossY, dot);
   const abs    = Math.abs(angle);
 
-  if (abs < Math.PI / 8)          return 'Run';                                          // ±22.5°       — forward
-  if (abs > (7 * Math.PI) / 8)    return 'Backwards';                                   // ±157.5°+     — backward
-  if (abs < (3 * Math.PI) / 8) {                                                         // 22.5°…67.5°  — forward diagonal
-    return angle > 0 ? 'RightStrafeForward' : 'LeftStrafeForward';
-  }
-  if (abs > (5 * Math.PI) / 8) {                                                         // 112.5°…157.5° — backward diagonal
-    return angle > 0 ? 'RightStrafeBackward' : 'LeftStrafeBackward';
-  }
-  return angle > 0 ? 'RightStrafe' : 'LeftStrafe';                                      // 67.5°…112.5° — pure side
+  if (abs < Math.PI / 8)       return 'Run';       // ±22.5°   — forward
+  if (abs > (7 * Math.PI) / 8) return 'Backwards'; // ±157.5°+ — backward
+  return angle > 0 ? 'RightStrafe' : 'LeftStrafe';
 }
 
 // Four-way slow walk (attack slow / ice beam): forward + dedicated walk GLBs per side/back.
@@ -292,7 +282,12 @@ export default function CharacterRenderer({
           walkStopTimer.current = null;
         }
         next = 'DrawBow';
-      } else if (isLocalPlayer && isLeftMouseHeld.current) {
+      } else if (
+        isLocalPlayer &&
+        isLeftMouseHeld.current &&
+        currentWeapon != null &&
+        currentWeapon !== WeaponType.NONE
+      ) {
         // Stationary + holding left mouse — weapon-specific cast animation.
         if (walkStopTimer.current) {
           clearTimeout(walkStopTimer.current);

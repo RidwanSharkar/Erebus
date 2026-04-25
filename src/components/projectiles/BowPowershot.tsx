@@ -1,7 +1,7 @@
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { AdditiveBlending } from '@/utils/three-exports';
 
-import { Vector3, Group } from 'three';
+import { Vector3, Group, Quaternion } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 
@@ -64,6 +64,16 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
   };
 
   const colors = getColors();
+
+  // Align beam +Z with projectile direction (includes pitch from bow compensation).
+  const beamAlignQuat = useMemo(() => {
+    const dir = direction.clone();
+    if (dir.lengthSq() < 1e-10) return new Quaternion();
+    dir.normalize();
+    const q = new Quaternion();
+    q.setFromUnitVectors(new Vector3(0, 0, 1), dir);
+    return q;
+  }, [direction.x, direction.y, direction.z]);
   
   useFrame(() => {
     const elapsed = Date.now() - startTimeRef.current;
@@ -91,13 +101,7 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
   return (
     <group ref={groupRef} position={position.toArray()}>
       {/* Main beam trail - very thin like firebeam but 1/4 diameter */}
-      <group
-        rotation={[
-          0,
-          Math.atan2(direction.x, direction.z),
-          0
-        ]}
-      >
+      <group quaternion={beamAlignQuat}>
         {/* Core beam - ultra thin, enhanced for perfect shots */}
         <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 10]}>
           <cylinderGeometry args={[isPerfectShot ? 0.035 : 0.025, isPerfectShot ? 0.035 : 0.025, 20, 8]} />

@@ -1,5 +1,16 @@
 // Enemy component for identifying enemy entities
 import { Component } from '../Entity';
+import { Vector3 } from '@/utils/three-exports';
+import { addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
+import {
+  WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK,
+  WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC,
+  WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS,
+  CHILL_STACK_DURATION_SEC,
+  CHILL_SLOW_PER_STACK,
+  CHILL_STACKS_TO_FREEZE,
+  BLIZZARD_FREEZE_DURATION_SEC,
+} from '@/utils/talents';
 
 export enum EnemyType {
   DUMMY = 'dummy',
@@ -43,6 +54,11 @@ export class Enemy extends Component {
   public venomDuration: number;
   public venomDamagePerSecond: number;
   public lastVenomDamageTime: number;
+
+  /** Wyvern Bite — Concentrated Venom (local / offline; co-op uses server). */
+  public concentratedVenomStacks: number;
+  public concentratedVenomEndTime: number;
+  public lastConcentratedVenomTickTime: number;
   
   // Sunder stacks effect
   public sunderStacks: number;
@@ -55,6 +71,10 @@ export class Enemy extends Component {
   public corruptedDuration: number;
   public corruptedInitialSlowPercent: number; // Initial slow percentage (90%)
   public corruptedRecoveryRate: number; // Recovery rate per second (10%)
+
+  /** Blizzard talent — Chill stacks (local + client mirror of server in co-op). */
+  public chillStacks: number;
+  public chillExpiresAtSec: number;
 
   constructor(
     type: EnemyType = EnemyType.DUMMY,
@@ -94,6 +114,10 @@ export class Enemy extends Component {
     this.venomDuration = 0;
     this.venomDamagePerSecond = 0;
     this.lastVenomDamageTime = 0;
+
+    this.concentratedVenomStacks = 0;
+    this.concentratedVenomEndTime = 0;
+    this.lastConcentratedVenomTickTime = 0;
     
     // Initialize sunder stacks
     this.sunderStacks = 0;
@@ -106,6 +130,9 @@ export class Enemy extends Component {
     this.corruptedDuration = 8.0; // 8 seconds
     this.corruptedInitialSlowPercent = 0.9; // 90% slow initially
     this.corruptedRecoveryRate = 0.1; // 10% recovery per second
+
+    this.chillStacks = 0;
+    this.chillExpiresAtSec = 0;
   }
 
   private calculateExperienceReward(): number {
@@ -206,8 +233,11 @@ export class Enemy extends Component {
     this.unstun();
     // Clear venom status on respawn
     this.removeVenom();
+    this.removeConcentratedVenom();
     // Clear corrupted status on respawn
     this.removeCorrupted();
+    this.chillStacks = 0;
+    this.chillExpiresAtSec = 0;
   }
   
   public freeze(duration: number, currentTime: number): void {
@@ -263,6 +293,38 @@ export class Enemy extends Component {
       this.unstun();
     }
   }
+
+  public updateChillStatus(currentTime: number): void {
+    if (this.chillStacks <= 0) return;
+    if (currentTime >= this.chillExpiresAtSec) {
+      this.chillStacks = 0;
+      this.chillExpiresAtSec = 0;
+    }
+  }
+
+  /**
+   * One Blizzard damage tick → +1 Chill; at 5 stacks, freeze and clear (Runeblade talent).
+   */
+  public applyBlizzardChillStack(currentTime: number, ecsEntityIdForVfx: string, position: Vector3): void {
+    if (this.isDead || this.isFrozen) return;
+
+    this.chillStacks += 1;
+    this.chillExpiresAtSec = currentTime + CHILL_STACK_DURATION_SEC;
+
+    if (this.chillStacks >= CHILL_STACKS_TO_FREEZE) {
+      this.chillStacks = 0;
+      this.chillExpiresAtSec = 0;
+      this.freeze(BLIZZARD_FREEZE_DURATION_SEC, currentTime);
+      addGlobalFrozenEnemy(ecsEntityIdForVfx, position.clone());
+    }
+  }
+
+  /** Co-op: server-authoritative chill stacks → local ECS (movement multiplier + UI). */
+  public syncChillFromServer(stacks: number, expiresAtMs: number): void {
+    if (this.isDead) return;
+    this.chillStacks = Math.max(0, Math.floor(stacks));
+    this.chillExpiresAtSec = expiresAtMs / 1000;
+  }
   
   public canMove(): boolean {
     return !this.isFrozen && !this.isStunned && !this.isDead;
@@ -283,6 +345,11 @@ export class Enemy extends Component {
     if (this.isCorrupted) {
       const slowMultiplier = this.getCorruptedSlowMultiplier();
       speed *= (1 - slowMultiplier);
+    }
+
+    const t = Date.now() / 1000;
+    if (this.chillStacks > 0 && t < this.chillExpiresAtSec) {
+      speed *= 1 - CHILL_SLOW_PER_STACK * Math.min(4, this.chillStacks);
     }
     
     return speed;
@@ -335,6 +402,39 @@ export class Enemy extends Component {
       return { shouldDealDamage: true, damage: this.venomDamagePerSecond };
     }
     
+    return { shouldDealDamage: false, damage: 0 };
+  }
+
+  public applyConcentratedVenomStack(currentTime: number): void {
+    if (this.isDead) return;
+    this.concentratedVenomStacks = Math.min(
+      WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS,
+      this.concentratedVenomStacks + 1,
+    );
+    this.concentratedVenomEndTime = currentTime + WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC;
+    this.lastConcentratedVenomTickTime = currentTime;
+  }
+
+  public removeConcentratedVenom(): void {
+    this.concentratedVenomStacks = 0;
+    this.concentratedVenomEndTime = 0;
+    this.lastConcentratedVenomTickTime = 0;
+  }
+
+  public updateConcentratedVenomStatus(currentTime: number): { shouldDealDamage: boolean; damage: number } {
+    if (this.concentratedVenomStacks <= 0) return { shouldDealDamage: false, damage: 0 };
+    if (currentTime >= this.concentratedVenomEndTime) {
+      this.removeConcentratedVenom();
+      return { shouldDealDamage: false, damage: 0 };
+    }
+    const timeSinceLast = currentTime - this.lastConcentratedVenomTickTime;
+    if (timeSinceLast >= 1.0) {
+      this.lastConcentratedVenomTickTime = currentTime;
+      return {
+        shouldDealDamage: true,
+        damage: this.concentratedVenomStacks * WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK,
+      };
+    }
     return { shouldDealDamage: false, damage: 0 };
   }
   
@@ -423,10 +523,17 @@ export class Enemy extends Component {
     this.venomDuration = 0;
     this.venomDamagePerSecond = 0;
     this.lastVenomDamageTime = 0;
+
+    this.concentratedVenomStacks = 0;
+    this.concentratedVenomEndTime = 0;
+    this.lastConcentratedVenomTickTime = 0;
     
     // Reset sunder stacks
     this.sunderStacks = 0;
     this.sunderLastApplied = 0;
+
+    this.chillStacks = 0;
+    this.chillExpiresAtSec = 0;
   }
 
   public clone(): Enemy {
@@ -461,6 +568,10 @@ export class Enemy extends Component {
     clone.venomDuration = this.venomDuration;
     clone.venomDamagePerSecond = this.venomDamagePerSecond;
     clone.lastVenomDamageTime = this.lastVenomDamageTime;
+
+    clone.concentratedVenomStacks = this.concentratedVenomStacks;
+    clone.concentratedVenomEndTime = this.concentratedVenomEndTime;
+    clone.lastConcentratedVenomTickTime = this.lastConcentratedVenomTickTime;
     
     // Clone sunder stacks
     clone.sunderStacks = this.sunderStacks;
@@ -472,6 +583,9 @@ export class Enemy extends Component {
     clone.corruptedDuration = this.corruptedDuration;
     clone.corruptedInitialSlowPercent = this.corruptedInitialSlowPercent;
     clone.corruptedRecoveryRate = this.corruptedRecoveryRate;
+
+    clone.chillStacks = this.chillStacks;
+    clone.chillExpiresAtSec = this.chillExpiresAtSec;
     
     return clone;
   }

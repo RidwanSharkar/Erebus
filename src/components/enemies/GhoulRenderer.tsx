@@ -41,11 +41,14 @@ export default function GhoulRenderer({
   const [isWalking,      setIsWalking]      = useState(false);
   const [isSummoning,    setIsSummoning]    = useState(true); // Start with summon anim
   const [attackVariant,  setAttackVariant]  = useState<1 | 2>(1);
+  const [isImpacting,    setIsImpacting]    = useState(false);
+  const [impactPlayKey,  setImpactPlayKey]  = useState(0);
 
   const targetPosition  = useRef(position.clone());
   const targetRotation  = useRef(rotation);
   const isAttackingRef  = useRef(false);
   const isSummoningRef  = useRef(true);
+  const prevHealthRef   = useRef(health);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer     = useRef(0);
@@ -91,6 +94,31 @@ export default function GhoulRenderer({
   useEffect(() => {
     targetRotation.current = rotation;
   }, [rotation]);
+
+  const handleImpactFinished = useCallback(() => {
+    setIsImpacting(false);
+  }, []);
+
+  // Hit-react: health drop while idle (not walk / attack / summon).
+  useEffect(() => {
+    if (
+      health < prevHealthRef.current &&
+      !isDying &&
+      !isWalking &&
+      !isAttacking &&
+      !isSummoning
+    ) {
+      setIsImpacting(true);
+      setImpactPlayKey(k => k + 1);
+    }
+    prevHealthRef.current = health;
+  }, [health, isDying, isWalking, isAttacking, isSummoning]);
+
+  useEffect(() => {
+    if (isWalking || isAttacking || isSummoning) {
+      setIsImpacting(false);
+    }
+  }, [isWalking, isAttacking, isSummoning]);
 
   // Ghoul melee attack telegraph
   useEffect(() => {
@@ -146,6 +174,9 @@ export default function GhoulRenderer({
         attackVariant={attackVariant}
         isSummoning={isSummoning}
         isDying={isDying}
+        isImpacting={isImpacting}
+        impactPlayKey={impactPlayKey}
+        onImpactFinished={handleImpactFinished}
       />
 
 

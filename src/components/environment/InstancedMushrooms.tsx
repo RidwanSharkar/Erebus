@@ -97,9 +97,9 @@ const CAP_FRAG = `
   }
 `;
 
-const SHROOM_COUNT  = 50;
-const INNER_RADIUS  = 11; // inside forest ring
-const OUTER_RADIUS  = 26;
+const SHROOM_COUNT  = 20;
+const INNER_RADIUS  = 5; // inside forest ring
+const OUTER_RADIUS  = 25;
 
 const InstancedMushrooms: React.FC = () => {
   const stemRef = useRef<InstancedMesh>(null);

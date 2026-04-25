@@ -12,7 +12,7 @@
 const WALL_HEIGHT    = 3.0;
 const WALL_THICKNESS = 0.6;
 
-// Mirror: MAIN_MAP_RADIUS = 20, four-sided ring tangent to the play disc.
+// Mirror: MAIN_MAP_RADIUS = 20, inner wall faces at ±R (square playable interior).
 const R = 20;
 const t = WALL_THICKNESS;
 const wallCenterOffset = R + t / 2;

@@ -50,6 +50,8 @@ export default function ShadeRenderer({
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking,   setIsWalking]   = useState(false);
   const [isBlinking,  setIsBlinking]  = useState(false);
+  const [isImpacting,  setIsImpacting]  = useState(false);
+  const [impactPlayKey, setImpactPlayKey] = useState(0);
 
   type BlinkFx = { id: string; position: Vector3; type: 'start' | 'end' };
   const [blinkFx, setBlinkFx] = useState<BlinkFx[]>([]);
@@ -59,6 +61,7 @@ export default function ShadeRenderer({
   const targetRotation = useRef(rotation);
   const isAttackingRef = useRef(false);
   const isBlinkingRef  = useRef(false);
+  const prevHealthRef  = useRef(health);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer  = useRef(0);
@@ -100,6 +103,31 @@ export default function ShadeRenderer({
   useEffect(() => {
     targetRotation.current = rotation;
   }, [rotation]);
+
+  const handleImpactFinished = useCallback(() => {
+    setIsImpacting(false);
+  }, []);
+
+  // Hit-react: health drop while idle (not walk / attack / blink).
+  useEffect(() => {
+    if (
+      health < prevHealthRef.current &&
+      !isDying &&
+      !isWalking &&
+      !isAttacking &&
+      !isBlinking
+    ) {
+      setIsImpacting(true);
+      setImpactPlayKey(k => k + 1);
+    }
+    prevHealthRef.current = health;
+  }, [health, isDying, isWalking, isAttacking, isBlinking]);
+
+  useEffect(() => {
+    if (isWalking || isAttacking || isBlinking) {
+      setIsImpacting(false);
+    }
+  }, [isWalking, isAttacking, isBlinking]);
 
   // Blink telegraph: set the target position and let the high-speed lerp pull the
   // mesh there — this produces the same fast-slide look as the Warlock's blink.
@@ -183,7 +211,7 @@ export default function ShadeRenderer({
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
 
-    // Death fade-out (no dedicated death clip — just dissolve the materials)
+    // Death fade-out (death clip on model underneath)
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
@@ -223,7 +251,15 @@ export default function ShadeRenderer({
       ))}
 
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
-      <ShadeModel isWalking={isWalking} isAttacking={isAttacking} isBlinking={isBlinking} isDying={isDying} />
+      <ShadeModel
+        isWalking={isWalking}
+        isAttacking={isAttacking}
+        isBlinking={isBlinking}
+        isDying={isDying}
+        isImpacting={isImpacting}
+        impactPlayKey={impactPlayKey}
+        onImpactFinished={handleImpactFinished}
+      />
       {!isDying && <CubeSoulEffect color="purple" posY={2.5} />}
 
       {/* Billboard health bar */}

@@ -304,6 +304,7 @@ export class ProjectileSystem extends System {
       const isCrossentropyBolt = renderer?.mesh?.userData?.isCrossentropyBolt;
       const isEntropicBolt = renderer?.mesh?.userData?.isEntropicBolt;
       const isBarrageArrow = renderer?.mesh?.userData?.isBarrageArrow;
+      const wyvernBiteConcentratedVenom = renderer?.mesh?.userData?.barrageWyvernBite === true;
 
       let damageType = 'projectile';
       if (isCrossentropyBolt) {
@@ -329,6 +330,8 @@ export class ProjectileSystem extends System {
         undefined,
         isCrossentropyBolt && projectile.infernoCrossentropy === true,
         isCrossentropyBolt && projectile.reaperCrossentropy === true,
+        undefined,
+        wyvernBiteConcentratedVenom,
       );
 
       // CRITICAL FIX: Emit explosion event for CrossentropyBolt hits
@@ -709,6 +712,8 @@ export class ProjectileSystem extends System {
       staggerToAdd?: number;
       /** Wrathful Bite talent — replicated to other clients for Barrage visuals. */
       wrathfulBiteBarrage?: boolean;
+      /** Wyvern Bite talent — green Barrage + Concentrated Venom. */
+      wyvernBiteBarrage?: boolean;
       dualCoilLane?: 0 | 1;
     }
   ): Entity {

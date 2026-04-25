@@ -1,7 +1,8 @@
-import { useRef, memo } from 'react';
+import { useRef, useState, memo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, CatmullRomCurve3, CubicBezierCurve3, Shape, DoubleSide } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
+import { isBowPerfectShotProgress } from '@/utils/bowConstants';
 
 interface EtherealBowProps {
   position: Vector3;
@@ -42,24 +43,18 @@ const EtherBowComponent = memo(function EtherealBow({
   const maxDrawDistance = 1.35;
   const prevIsCharging = useRef(isCharging);
   const basePosition = [-0.9, 0.075, 0.75] as const;  // Match other weapons' base positioning
+  const [perfectEmissivePulse, setPerfectEmissivePulse] = useState(4);
+  const isPerfectShotWindow = isBowPerfectShotProgress(chargeProgress);
   
-  // Perfect shot timing constants
-  const perfectShotMinThreshold = 0.8; // 85% charge
-  const perfectShotMaxThreshold = 0.98; // 95% charge
-  const isPerfectShotWindow = chargeProgress >= perfectShotMinThreshold && chargeProgress <= perfectShotMaxThreshold;
-  
-  // Charge Release Logic - only trigger for actual bow charging, not ability animations
-  useFrame(() => {
-    // Only track charging state for actual bow charging, not ability animations
+  // Perfect-window pulse (R3F clock) + charge release: only real bow draw, not ability animations
+  useFrame(({ clock }) => {
+    if (isPerfectShotWindow) {
+      setPerfectEmissivePulse(4.0 + Math.sin(clock.elapsedTime * 20) * 2.0);
+    }
     const actualIsCharging = isCharging && !isAbilityBowAnimation && !isViperStingCharging && !isBarrageCharging && !isCobraShotCharging && !isRejuvenatingShotCharging;
 
-    // Only trigger onRelease for actual bow charging, not ability animations
     if (prevIsCharging.current && !actualIsCharging && !isViperStingCharging && !isBarrageCharging && !isCobraShotCharging && !isRejuvenatingShotCharging) {
-      // Use the chargeProgress prop instead of calculating our own
-      // Check if this was a perfect shot using the same chargeProgress used for visuals
-      const wasPerfectShot = chargeProgress >= perfectShotMinThreshold && chargeProgress <= perfectShotMaxThreshold;
-
-      onRelease(chargeProgress, wasPerfectShot);
+      onRelease(chargeProgress, isBowPerfectShotProgress(chargeProgress));
     }
 
     prevIsCharging.current = actualIsCharging;
@@ -123,7 +118,7 @@ const EtherBowComponent = memo(function EtherealBow({
   return (
     <group
       position={[0.6, 1.0, 1.375]}
-      rotation={[-Math.PI/2.0, -Math.PI/2,  -Math.PI/2]}   // Reset base rotation
+      rotation={[-Math.PI/2.0, -Math.PI/2,  -Math.PI/1.95]}   // Reset base rotation
       scale={[0.875, 0.8, 0.8]}
     >
       <group
@@ -162,7 +157,7 @@ const EtherBowComponent = memo(function EtherealBow({
               "#C18C4B"
             }
             emissiveIntensity={
-              isPerfectShotWindow ? 4.0 + Math.sin(Date.now() * 0.02) * 2.0 : // Pulsing effect during perfect window
+              isPerfectShotWindow ? perfectEmissivePulse : // Pulsing effect during perfect window
               isBarrageCharging ? 2.0 + barrageChargeProgress * 2.0 : // Barrage charging glow
               isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
               isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
@@ -217,7 +212,7 @@ const EtherBowComponent = memo(function EtherealBow({
                 "#C18C4B"
               }
               emissiveIntensity={
-                isPerfectShotWindow ? 4.0 + Math.sin(Date.now() * 0.02) * 2.0 : // Pulsing effect during perfect window
+                isPerfectShotWindow ? perfectEmissivePulse : // Pulsing effect during perfect window
                 isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
                 isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
                 currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? 2.5 :
@@ -256,7 +251,7 @@ const EtherBowComponent = memo(function EtherealBow({
                 "#C18C4B"
               }
               emissiveIntensity={
-                isPerfectShotWindow ? 4.0 + Math.sin(Date.now() * 0.02) * 2.0 : // Pulsing effect during perfect window
+                isPerfectShotWindow ? perfectEmissivePulse : // Pulsing effect during perfect window
                 isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
                 isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
                 currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? 2.5 :
@@ -298,7 +293,7 @@ const EtherBowComponent = memo(function EtherealBow({
                 "#C18C4B"
               }
               emissiveIntensity={
-                isPerfectShotWindow ? 4.0 + Math.sin(Date.now() * 0.02) * 2.0 : // Pulsing effect during perfect window
+                isPerfectShotWindow ? perfectEmissivePulse : // Pulsing effect during perfect window
                 isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
                 isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
                 currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? 2.5 :
@@ -340,7 +335,7 @@ const EtherBowComponent = memo(function EtherealBow({
                 "#C18C4B"
               }
               emissiveIntensity={
-                isPerfectShotWindow ? 4.0 + Math.sin(Date.now() * 0.02) * 2.0 : // Pulsing effect during perfect window
+                isPerfectShotWindow ? perfectEmissivePulse : // Pulsing effect during perfect window
                 isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
                 isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
                 currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? 2.5 :

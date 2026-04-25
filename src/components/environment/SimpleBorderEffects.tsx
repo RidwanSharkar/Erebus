@@ -17,18 +17,21 @@ import {
 
 export type RoomBorderTheme = 'red' | 'blue' | 'green' | 'purple';
 
+/** Superset for instanced border tinting (e.g. throne uses `gold` instead of red). */
+export type SimpleBorderColorTheme = RoomBorderTheme | 'gold';
+
 interface SimpleBorderEffectsProps {
   radius?: number;
   count?: number;
   enableParticles?: boolean;
   particleCount?: number;
-  /** Matches server camp archetype: red / blue (ice grass) / green / purple */
-  borderTheme?: RoomBorderTheme;
+  /** Camp archetype, or `gold` (throne) */
+  borderTheme?: SimpleBorderColorTheme;
 }
 
 /** Perimeter pillar + particle colours aligned with camp type */
 const BORDER_PALETTE: Record<
-  RoomBorderTheme,
+  SimpleBorderColorTheme,
   { particle: number; glow: number; archway: number; poles: number }
 > = {
   red: {
@@ -36,6 +39,12 @@ const BORDER_PALETTE: Record<
     glow: 0xf74f4f,
     archway: 0xe63946,
     poles: 0xf74f4f,
+  },
+  gold: {
+    particle: 0xca8a04,
+    glow: 0xfde047,
+    archway: 0xfacc15,
+    poles: 0xfacc15,
   },
   blue: {
     particle: 0x7fc8ff,

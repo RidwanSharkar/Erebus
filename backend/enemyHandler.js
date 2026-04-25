@@ -1,7 +1,7 @@
 function handleEnemyEvents(socket, gameRooms) {
   // Handle enemy damage from players
   socket.on('enemy-damage', (data) => {
-    const { roomId, enemyId, damage, sourcePlayerId, damageType, infestedStrike, staggerToAdd, infestedSmite, infestedCombo, infernalSmite, infernoCrossentropy, reaperCrossentropy } = data;
+    const { roomId, enemyId, damage, sourcePlayerId, damageType, infestedStrike, staggerToAdd, infestedSmite, infestedCombo, infernalSmite, infernoCrossentropy, reaperCrossentropy, wyvernBiteVenom } = data;
 
     console.log(`⚔️ Received enemy-damage: room=${roomId}, enemy=${enemyId}, damage=${damage}, source=${sourcePlayerId || socket.id}`);
 
@@ -29,6 +29,10 @@ function handleEnemyEvents(socket, gameRooms) {
       hitMeta = { damageType: 'crossentropy', infernoCrossentropy: !!infernoCrossentropy, reaperCrossentropy: !!reaperCrossentropy };
     } else if (damageType === 'ignite') {
       hitMeta = { damageType: 'ignite' };
+    } else if (damageType === 'barrage') {
+      hitMeta = { damageType: 'barrage', wyvernBiteVenom: !!wyvernBiteVenom };
+    } else if (damageType === 'venom') {
+      hitMeta = { damageType: 'venom' };
     } else if (damageType === 'runeblade_combo' || damageType === 'sabre_left' || damageType === 'sabre_right') {
       hitMeta = { damageType };
       if (damageType === 'runeblade_combo' && infestedCombo) {
@@ -41,6 +45,8 @@ function handleEnemyEvents(socket, gameRooms) {
       hitMeta = { damageType: 'projectile', staggerToAdd };
     } else if (damageType === 'stagger_break') {
       hitMeta = { damageType: 'stagger_break' };
+    } else if (damageType === 'blizzard') {
+      hitMeta = { damageType: 'blizzard' };
     }
     room.damageEnemy(enemyId, damage, actualSourcePlayerId, player, hitMeta);
   });
