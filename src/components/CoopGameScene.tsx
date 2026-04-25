@@ -5132,7 +5132,7 @@ export function CoopGameScene({
     }) => {
       // Delay heal burst to match cast animation finish (~1.8s)
       setTimeout(() => {
-        const pos = new Vector3(data.targetPosition.x, data.targetPosition.y + 0.5, data.targetPosition.z);
+        const pos = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
         setWeaverHealEffects(prev => [
           ...prev,
           { id: `weaver-heal-${data.weaverId}-${Date.now()}`, position: pos },

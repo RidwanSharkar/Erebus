@@ -237,6 +237,7 @@ export default function ArchmageCrest({
         >
           <mesh geometry={geometries.blade} material={materials.bladeCore} />
         </group>
+        <pointLight color={colors.glow} intensity={0.5} position={[0, -1, 0]} />
       </group>
     );
   };
