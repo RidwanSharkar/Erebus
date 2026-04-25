@@ -11,6 +11,7 @@ import { pvpObjectPool } from '@/utils/PVPObjectPool';
 import {
   EXPLOSIVE_TALONS_EXPLOSION_DAMAGE,
   EXPLOSIVE_TALONS_EXPLOSION_RADIUS,
+  REAPING_TALONS_RETURN_HEAL_PER_ORB,
 } from '@/utils/talents';
 
 // Define ViperStingProjectile interface for PVP collision detection
@@ -513,7 +514,7 @@ export function OptimizedPVPViperStingManager({
                     y: localPlayer.position.y + 1.5,
                     z: localPlayer.position.z,
                   };
-                  multiplayerContext.broadcastPlayerHealing(20, 'viper_sting', healingPosition);
+                  multiplayerContext.broadcastPlayerHealing(REAPING_TALONS_RETURN_HEAL_PER_ORB, 'viper_sting', healingPosition);
                 }
               }
             }, 1750);
@@ -625,7 +626,7 @@ export function OptimizedPVPViperStingManager({
                       };
 
                       // Broadcast healing to all players (this will create damage numbers via handlePlayerHealing)
-                      multiplayerContext.broadcastPlayerHealing(20, 'viper_sting', healingPosition);
+                      multiplayerContext.broadcastPlayerHealing(REAPING_TALONS_RETURN_HEAL_PER_ORB, 'viper_sting', healingPosition);
 
 
                     }
@@ -726,7 +727,7 @@ export function OptimizedPVPViperStingManager({
                         };
 
                         // Broadcast healing to all players (this will create damage numbers via handlePlayerHealing)
-                        multiplayerContext.broadcastPlayerHealing(20, 'viper_sting', healingPosition);
+                        multiplayerContext.broadcastPlayerHealing(REAPING_TALONS_RETURN_HEAL_PER_ORB, 'viper_sting', healingPosition);
 
  
                       }

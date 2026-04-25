@@ -32,6 +32,7 @@ const FADE_DURATION   = 1.5;  // seconds for death fade-out
 const LERP_SPEED      = 20;   // position + rotation chase speed — high value gives the fast-slide blink feel
 // Debounce: server must stop sending moves for this long before we switch to Idle.
 const WALK_STOP_DELAY = 250; // ms
+const HIT_REACT_IMPACT_COOLDOWN_MS = 1500; // min time between shade_impact.glb hit-react plays
 
 export default function ShadeRenderer({
   id,
@@ -62,6 +63,7 @@ export default function ShadeRenderer({
   const isAttackingRef = useRef(false);
   const isBlinkingRef  = useRef(false);
   const prevHealthRef  = useRef(health);
+  const lastHitImpactAtRef = useRef(0);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer  = useRef(0);
@@ -117,8 +119,12 @@ export default function ShadeRenderer({
       !isAttacking &&
       !isBlinking
     ) {
-      setIsImpacting(true);
-      setImpactPlayKey(k => k + 1);
+      const now = performance.now();
+      if (now - lastHitImpactAtRef.current >= HIT_REACT_IMPACT_COOLDOWN_MS) {
+        lastHitImpactAtRef.current = now;
+        setIsImpacting(true);
+        setImpactPlayKey(k => k + 1);
+      }
     }
     prevHealthRef.current = health;
   }, [health, isDying, isWalking, isAttacking, isBlinking]);

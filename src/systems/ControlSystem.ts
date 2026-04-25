@@ -8,7 +8,7 @@ import { Transform } from '@/ecs/components/Transform';
 import { Movement } from '@/ecs/components/Movement';
 import { Health } from '@/ecs/components/Health';
 import { Shield } from '@/ecs/components/Shield';
-import { Enemy } from '@/ecs/components/Enemy';
+import { Enemy, EnemyType } from '@/ecs/components/Enemy';
 import { Renderer } from '@/ecs/components/Renderer';
 import { Collider } from '@/ecs/components/Collider';
 import { Projectile } from '@/ecs/components/Projectile';
@@ -83,6 +83,8 @@ import {
   WRATHFUL_BITE_BARRAGE_CRIT_DAMAGE_MULT_ADD,
   INFERNAL_SMITE_CRIT_CHANCE_ADD,
   INFESTED_SMITE_HEAL_PER_TARGET,
+  RUNEBLADE_SMITE_BASE_HEAL,
+  RUNEBLADE_FLURRY_HEAL_PER_SLASH,
   STAGGERING_SMITE_BEAM_STAGGER,
   STAGGERING_STRIKE_WRAITH_STAGGER_ADD,
   STAGGERING_SWIPES_LEFT_BLADE_STAGGER,
@@ -140,6 +142,9 @@ export class ControlSystem extends System {
   private castleWallChargeEnabled = true;
 
   private thronePillarChargeObstacles: Array<{ x: number; z: number; radius: number }> = [];
+
+  /** Red co-op corner mountain discs (main arena + castle wall charge). */
+  private chargeCornerMountains: Array<{ x: number; z: number; radius: number }> = [];
   
   // Callback for bow release effects
   private onBowReleaseCallback?: (finalProgress: number, isPerfectShot?: boolean) => void;
@@ -305,6 +310,8 @@ export class ControlSystem extends System {
   private rejuvenatingShotFireRate = 3.0; // Rejuvenating Shot rate (4 seconds cooldown)
   private lastBurstFireTime = 0; // Separate tracking for Bow burst fire
   private burstFireRate = 0.925; // 1 second cooldown between bursts
+  /** Monotonic id per Tempest Rounds arrow (EtherBow muzzle flash + PVP sync). */
+  private tempestBurstShotSeq = 0;
 
   // Key press tracking for toggle abilities
   private fKeyWasPressed = false;
@@ -623,6 +630,12 @@ export class ControlSystem extends System {
 
   public setThroneChargePillars(obstacles: Array<{ x: number; z: number; radius: number }> | null): void {
     this.thronePillarChargeObstacles = obstacles && obstacles.length > 0 ? obstacles.slice() : [];
+  }
+
+  public setChargeCornerMountains(
+    obstacles: Array<{ x: number; z: number; radius: number }> | null,
+  ): void {
+    this.chargeCornerMountains = obstacles && obstacles.length > 0 ? obstacles.slice() : [];
   }
 
   public setInputDisabled(disabled: boolean): void {
@@ -1869,6 +1882,10 @@ export class ControlSystem extends System {
   private createBurstProjectile(position: Vector3, direction: Vector3): void {
     if (!this.playerEntity) return;
 
+    // Bump before target/broadcast gating so EtherBow muzzle VFX & getTempestBurstShotSeq() still advance
+    // when there are no valid targets and no PVP callback (solo / empty world).
+    const tempestBurstSeq = ++this.tempestBurstShotSeq;
+
     // Check if there are any valid targets in the world before creating projectiles
     const potentialTargets = this.world.queryEntities([Transform, Health, Collider]);
     const validTargets = potentialTargets.filter(target =>
@@ -1905,6 +1922,7 @@ export class ControlSystem extends System {
       opacity: 1.0,
       projectileType: 'burst_arrow' as const, // Mark as burst arrow for teal coloring
       sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
+      tempestBurstSeq,
       ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_TEMPEST_ROUND_STAGGER } : {}),
     };
 
@@ -3209,12 +3227,13 @@ export class ControlSystem extends System {
         smitePosition,
         direction,
         (_totalDamage: number, meta?: { targetsHit: number }) => {
-          if (computeInfestedSmiteTalentActive(this.talentLoadout, this.abilityLoadout)) {
-            const targetsHit = meta?.targetsHit ?? 0;
-            if (targetsHit > 0) {
-              this.performSmiteHealingFixedAmount(targetsHit * INFESTED_SMITE_HEAL_PER_TARGET);
-            }
-          }
+          const targetsHit = meta?.targetsHit ?? 0;
+          if (targetsHit <= 0) return;
+          const infested = computeInfestedSmiteTalentActive(this.talentLoadout, this.abilityLoadout);
+          const totalHeal =
+            RUNEBLADE_SMITE_BASE_HEAL +
+            (infested ? targetsHit * INFESTED_SMITE_HEAL_PER_TARGET : 0);
+          this.performSmiteHealingFixedAmount(totalHeal);
         },
         extraStrikes?.length ? { extraStrikes } : undefined,
       );
@@ -3428,7 +3447,7 @@ export class ControlSystem extends System {
     return { damageDealt, totalDamage };
   }
 
-  /** Infested Smite only: fixed heal amount (already `targetsHit * INFESTED_SMITE_HEAL_PER_TARGET`). */
+  /** Runeblade Smite self-heal (base + optional Infested sum); fixed HP via `heal()`. */
   private performSmiteHealingFixedAmount(healAmount: number): void {
     if (!this.playerEntity || healAmount <= 0) {
       return;
@@ -3605,7 +3624,7 @@ export class ControlSystem extends System {
     this.camera.getWorldDirection(playerDirection);
     playerDirection.normalize();
     
-    const wraithStrikeRange = 4.5; // Same range as melee attacks
+    const wraithStrikeRange = 5.0; // Same range as melee attacks
     const wraithStrikeAngle = Math.PI / 2; // 90 degree cone
     const wraithStrikeBaseDamage = this.shouldApplyInfestedStrikeTalent() ? 190 : 140;
 
@@ -3676,7 +3695,14 @@ export class ControlSystem extends System {
 
   private applyCorruptedDebuff(entity: Entity, position: Vector3, currentTime: number): void {
     const enemy = entity.getComponent(Enemy);
-    
+    const coopServerType = entity.userData?.coopServerEnemyType as string | undefined;
+    if (
+      enemy &&
+      (enemy.type === EnemyType.BOSS || coopServerType === 'boss-skeleton')
+    ) {
+      return;
+    }
+
     if (enemy) {
       // This is an enemy - apply corrupted debuff directly
       enemy.applyCorrupted(8.0, currentTime); // 8 second duration
@@ -3855,13 +3881,12 @@ export class ControlSystem extends System {
 
   private applyFlurryHealingForPrimaryHits(playerTransform: Transform, enemiesHit: number): void {
     if (!this.isFlurryActive || enemiesHit <= 0 || !this.playerEntity) return;
-    const combatSystem = this.world.getSystem(CombatSystem);
-    const healPerHit = 15;
-    const totalHealing = healPerHit * enemiesHit;
+    const totalHealing =
+      this.currentWeapon === WeaponType.RUNEBLADE
+        ? RUNEBLADE_FLURRY_HEAL_PER_SLASH
+        : 15 * enemiesHit;
     const playerHealth = this.playerEntity.getComponent(Health);
-    if (!playerHealth || !combatSystem) return;
-
-    console.log(`⚔️ Flurry healing: ${totalHealing} HP from ${enemiesHit} hit(s)`);
+    if (!playerHealth) return;
     const didHeal = playerHealth.heal(totalHealing);
 
     if (didHeal) {
@@ -4295,7 +4320,7 @@ export class ControlSystem extends System {
     );
 
     // SABRES DAMAGE
-    const attackRange = 3.8;
+    const attackRange = 4;
     const attackAngle = Math.PI / 2;
 
     // Base damage values
@@ -4642,7 +4667,7 @@ export class ControlSystem extends System {
     this.camera.getWorldDirection(playerDirection);
     playerDirection.normalize();
     
-    const sunderRange = 3.5; // Same range as backstab
+    const sunderRange = 4; // Same range as backstab
     let hitCount = 0;
     const currentTime = Date.now() / 1000;
     
@@ -5144,6 +5169,11 @@ export class ControlSystem extends System {
     );
   }
 
+  /** Latest Tempest Rounds shot sequence (drives EtherBow muzzle VFX; matches `projectileConfig.tempestBurstSeq`). */
+  public getTempestBurstShotSeq(): number {
+    return this.tempestBurstShotSeq;
+  }
+
   /** Wyvern Sting: bonus Cobra Shot on perfect primary shot (Bow + talent toggle). */
   private shouldApplyWyvernStingForBow(): boolean {
     return shouldApplyWyvernStingTalent(this.talentLoadout) && this.currentWeapon === WeaponType.BOW;
@@ -5307,7 +5337,7 @@ export class ControlSystem extends System {
     this.camera.getWorldDirection(playerDirection);
     playerDirection.normalize();
     
-    const backstabRange = 4.25; // Sabre melee range
+    const backstabRange = 4.75; // Sabre melee range
     let hitCount = 0;
     
     for (const entity of allEntities) {
@@ -5499,7 +5529,7 @@ export class ControlSystem extends System {
     direction.normalize();
     
     // Melee attack parameters -  for PVP combat
-    const meleeRange = 5; //  attack range for PVP
+    const meleeRange = 5.5; //  attack range for PVP
     const meleeAngle = Math.PI / 2; // 120 degree cone (60 degrees each side)
     
     // Base damage values based on combo step and weapon type
@@ -5716,6 +5746,10 @@ export class ControlSystem extends System {
 
   private checkPillarCollision(position: Vector3): { hasCollision: boolean; normal: Vector3; pillarCenter: Vector3 } {
     if (this.castleWallChargeEnabled) {
+      const mtn = this.checkCornerMountainChargeCollision(position);
+      if (mtn.hasCollision) {
+        return mtn;
+      }
       const wallResult = this.checkWallCollision(position);
       return {
         hasCollision: wallResult.hasCollision,
@@ -5739,6 +5773,27 @@ export class ControlSystem extends System {
       }
     }
 
+    return { hasCollision: false, normal: new Vector3(), pillarCenter: new Vector3() };
+  }
+
+  private checkCornerMountainChargeCollision(
+    position: Vector3,
+  ): { hasCollision: boolean; normal: Vector3; pillarCenter: Vector3 } {
+    const horizontalPos = new Vector3(position.x, 0, position.z);
+    const r = this.WALL_PLAYER_RADIUS;
+    for (const p of this.chargeCornerMountains) {
+      const center = new Vector3(p.x, 0, p.z);
+      const dist = horizontalPos.distanceTo(center);
+      if (dist < p.radius + r) {
+        let normal = horizontalPos.clone().sub(center);
+        if (normal.lengthSq() < 1e-6) {
+          normal.set(1, 0, 0);
+        } else {
+          normal.normalize();
+        }
+        return { hasCollision: true, normal, pillarCenter: center };
+      }
+    }
     return { hasCollision: false, normal: new Vector3(), pillarCenter: new Vector3() };
   }
 

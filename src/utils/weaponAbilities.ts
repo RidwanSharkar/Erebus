@@ -97,7 +97,7 @@ export const universalAbilityPool: UniversalAbility[] = [
   {
     id: 'BOW_R', sourceWeapon: WeaponType.BOW, sourceKey: 'R',
     name: 'Reaping Talons', cooldown: 2.0, icon: '🪶',
-    description: 'Fires a powerful piercing arrow that returns to you after a short delay. Each hit on an enemy creates a soul fragment that heals you for 20 HP each when returned.',
+    description: 'Fires a powerful piercing arrow that returns to you after a short delay. Each hit on an enemy creates a soul fragment that heals you for 4 HP each when returned.',
     allowedWeapons: [WeaponType.BOW],
   },
   {
@@ -289,7 +289,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Reaping Talons',
       key: 'R',
       cooldown: 2.0,
-      description: 'Fires a powerful piercing arrow that returns to you after a short delay. Each hit on an enemy creates a soul fragment that heals you for 20 HP each when returned.'
+      description: 'Fires a powerful piercing arrow that returns to you after a short delay. Each hit on an enemy creates a soul fragment that heals you for 4 HP each when returned.'
     },
     {
       name: 'Rejuvenating Shot',

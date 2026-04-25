@@ -6,6 +6,7 @@ import SoulStealEffect from './SoulStealEffect';
 import ExplosiveTalonsDetonation from './ExplosiveTalonsDetonation';
 import { useViperSting } from './useViperSting';
 import { useViperStingBeam } from './useViperStingBeam';
+import { REAPING_TALONS_RETURN_HEAL_PER_ORB } from '@/utils/talents';
 
 interface ViperStingManagerProps {
   parentRef: React.RefObject<Group>;
@@ -216,8 +217,7 @@ export default function ViperStingManager({
             const isPVPMode = !onHealthChange || onHealthChange.toString().includes('No-op');
             
             if (!isPVPMode && onHealthChange) {
-              // Non-PVP mode: Heal 20 HP when soul reaches player
-              onHealthChange(20);
+              onHealthChange(REAPING_TALONS_RETURN_HEAL_PER_ORB);
 
               // Show healing damage number
               if (parentRef.current && setDamageNumbers && typeof setDamageNumbers === 'function') {
@@ -225,7 +225,7 @@ export default function ViperStingManager({
                 try {
                   setDamageNumbers(prev => [...prev, {
                     id: nextDamageNumberId.current++,
-                    damage: 20,
+                    damage: REAPING_TALONS_RETURN_HEAL_PER_ORB,
                     position: healingPosition,
                     isCritical: false,
                     isHealing: true

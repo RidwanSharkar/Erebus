@@ -26,13 +26,18 @@ import MartyrDetonationTelegraph from './enemies/MartyrDetonationTelegraph';
 import MartyrDetonationExplosion from './enemies/MartyrDetonationExplosion';
 import ZombieRenderer from './enemies/ZombieRenderer';
 import GhoulSummonRitual from './enemies/GhoulSummonRitual';
+import InfestedZombieRiseVFX from './enemies/InfestedZombieRiseVFX';
 import StaggerProcLightning from './enemies/StaggerProcLightning';
 import KnightSmiteLightning from './enemies/KnightSmiteLightning';
 import KnightFrostProjectile, { KnightFrostImpact } from './enemies/KnightFrostProjectile';
+import KnightDeathGraspProjectile from './enemies/KnightDeathGraspProjectile';
 import WarlockProjectile from './enemies/WarlockProjectile';
 import WarlockFlameStrike from './enemies/WarlockFlameStrike';
 import Meteor from './enemies/Meteor';
 import BossTeleportEffect from './enemies/BossTeleportEffect';
+import BossLeapTelegraph from './enemies/BossLeapTelegraph';
+import BossTectonicSpike from './enemies/BossTectonicSpike';
+import BossTectonicSpikeTelegraph from './enemies/BossTectonicSpikeTelegraph';
 import TemplarBlinkSmiteGround from './enemies/TemplarBlinkSmiteGround';
 import { useMultiplayer, Player, EnemyDamageMeta, type Enemy as ServerEnemy } from '@/contexts/MultiplayerContext';
 import { SkillPointData } from '@/utils/SkillPointSystem';
@@ -139,9 +144,11 @@ import ThroneRoom, {
   getThronePrepPhysicsObstacles,
 } from '@/components/environment/ThroneRoom';
 import CastleWallCollision from '@/components/environment/CastleWallCollision';
+import MountainBaseCollision from '@/components/environment/MountainBaseCollision';
 import PillarCollision from '@/components/environment/PillarCollision';
 import { FOG_GRID_SIZE, isEnemyVisible } from '@/utils/fogOfWarUtils';
 import { MAIN_MAP_RADIUS, clampToMainArenaXZ } from '@/utils/mapConstants';
+import { getRedCornerMountainDiscs } from '@/utils/cornerMountainsConstants';
 import { COOP_MAIN_ENTRY_Z, rotationYTowardArenaCenter } from '@/utils/coopArenaLayout';
 
 /** Default main combat entry Z (ring centered here; matches server `teleportAllPlayersToCombatSpawn`). */
@@ -457,9 +464,11 @@ export function CoopGameScene({
     campTypes,
     thronePortalOffer,
     coopMainArenaPortalPhase,
+    coopBossThroneArena,
     coopCombatArenaEnterSeq,
     coopMainArenaIntermissionSeq,
     endCoopPortalTransition,
+    coopClearedRoomColor,
   } = useMultiplayer();
 
   const talentLoadoutRef = useRef(talentLoadout);
@@ -475,6 +484,19 @@ export function CoopGameScene({
     () => gameMode === 'coop' && gameStarted && !combatArenaActive,
     [gameMode, gameStarted, combatArenaActive],
   );
+
+  /** Stripped throne shell: boss fight + post-boss portal pause (server `coopBossThroneArena`). */
+  const inBossThroneArena = useMemo(
+    () => gameMode === 'coop' && gameStarted && combatArenaActive && coopBossThroneArena,
+    [gameMode, gameStarted, combatArenaActive, coopBossThroneArena],
+  );
+
+  const coopArenaClampHalfExtent = useMemo(() => {
+    if (inThroneRoom || inBossThroneArena) return COOP_THRONE_ROOM_RADIUS;
+    return MAIN_MAP_RADIUS;
+  }, [inThroneRoom, inBossThroneArena]);
+
+  const dimThroneLikeLighting = inThroneRoom || inBossThroneArena;
 
   /** After `combat-arena-entered`, keep the HTML loading overlay until React/WebGL settle (rAF×2) + min display time. */
   const COOP_PORTAL_OVERLAY_MIN_MS = 280;
@@ -593,15 +615,25 @@ export function CoopGameScene({
     if (!engineRef.current || !gameStarted) return;
     const world = engineRef.current.getWorld();
     const phys = world.getSystem(PhysicsSystem);
-    const r = inThroneRoom ? COOP_THRONE_ROOM_RADIUS + 2 : MAIN_MAP_RADIUS;
+    const r =
+      inThroneRoom || inBossThroneArena ? COOP_THRONE_ROOM_RADIUS + 2 : MAIN_MAP_RADIUS;
     phys?.setMapRadius(r);
     const throneObstacles = inThroneRoom ? getThronePrepPhysicsObstacles() : null;
-    phys?.setCastleWallPhysicsEnabled(!inThroneRoom);
+    const redCornerDiscs =
+      !inThroneRoom &&
+      !inBossThroneArena &&
+      campTypes[0]?.toLowerCase() === 'red'
+        ? getRedCornerMountainDiscs()
+        : null;
+    const castleWallsOn = !inThroneRoom && !inBossThroneArena;
+    phys?.setCastleWallPhysicsEnabled(castleWallsOn);
     phys?.setThronePillarObstacles(throneObstacles);
+    phys?.setCornerMountainObstacles(redCornerDiscs);
     controlSystemRef.current?.setPlayableRadius(r);
-    controlSystemRef.current?.setCastleWallChargeCollision(!inThroneRoom);
+    controlSystemRef.current?.setCastleWallChargeCollision(castleWallsOn);
     controlSystemRef.current?.setThroneChargePillars(throneObstacles);
-  }, [inThroneRoom, gameStarted, engineReady]);
+    controlSystemRef.current?.setChargeCornerMountains(redCornerDiscs);
+  }, [inThroneRoom, inBossThroneArena, gameStarted, engineReady, campTypes]);
 
   const prevInThroneRef = useRef(inThroneRoom);
   useEffect(() => {
@@ -615,7 +647,7 @@ export function CoopGameScene({
           const ent = engineRef.current.getWorld().getEntity(playerEntityRef.current);
           const tr = ent?.getComponent(Transform);
           if (tr) {
-            const c = clampToMainArenaXZ(me.position.x, me.position.z);
+            const c = clampToMainArenaXZ(me.position.x, me.position.z, coopArenaClampHalfExtent);
             tr.setPosition(c.x, 0.5, c.z);
           }
         }
@@ -623,7 +655,7 @@ export function CoopGameScene({
       }
     }
     prevInThroneRef.current = inThroneRoom;
-  }, [inThroneRoom, players, socket?.id]);
+  }, [inThroneRoom, players, socket?.id, coopArenaClampHalfExtent]);
 
   /** `combat-arena-entered` (server teleports) or `coop-main-arena-intermission` (server state sync, no entry snap); align local ECS. */
   useEffect(() => {
@@ -635,7 +667,7 @@ export function CoopGameScene({
     const ent = engineRef.current.getWorld().getEntity(playerEntityRef.current);
     const tr = ent?.getComponent(Transform);
     if (tr) {
-      const c = clampToMainArenaXZ(me.position.x, me.position.z);
+      const c = clampToMainArenaXZ(me.position.x, me.position.z, coopArenaClampHalfExtent);
       tr.setPosition(c.x, 0.5, c.z);
     }
     const movement = ent?.getComponent(Movement);
@@ -646,7 +678,7 @@ export function CoopGameScene({
     cameraSystemRef.current?.snapToTarget();
     // Intentionally omit `players` from deps: run only when seq/engine gates change; `players` is fresh from that commit when seq bumps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, gameStarted, engineReady, socket?.id]);
+  }, [coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, gameStarted, engineReady, socket?.id, coopArenaClampHalfExtent]);
 
   /**
    * Local hero rotation follows the camera. Default orbit (theta=0) puts the camera on the "wrong" side
@@ -660,13 +692,13 @@ export function CoopGameScene({
     if (!cameraSystemRef.current) return;
     const me = players.get(socket.id);
     if (!me) return;
-    const c = clampToMainArenaXZ(me.position.x, me.position.z);
+    const c = clampToMainArenaXZ(me.position.x, me.position.z, coopArenaClampHalfExtent);
     const faceY = rotationYTowardArenaCenter(c.x, c.z);
     const phi = cameraSystemRef.current.getVerticalAngle();
     cameraSystemRef.current.setAngles(faceY + Math.PI, phi);
     cameraSystemRef.current.snapToTarget();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coopCombatArenaEnterSeq, gameStarted, engineReady, socket?.id]);
+  }, [coopCombatArenaEnterSeq, gameStarted, engineReady, socket?.id, coopArenaClampHalfExtent]);
 
   // PVP Kill Counter - tracks kills for all players
   const [playerKills, setPlayerKills] = useState<Map<string, number>>(new Map());
@@ -1102,22 +1134,22 @@ export function CoopGameScene({
   }>>([]);
   const nextTauntEffectId = useRef(0);
 
-  // Boss Attack Animation State
-  const [bossAttackStates, setBossAttackStates] = useState<Map<string, {
-    isAttacking: boolean;
-    attackingHand: 'left' | 'right' | null;
-    lastAttackTime: number;
-  }>>(new Map());
-
-  // Boss blade glow state (active after blink, cleared on next attack or 1.5s expiry)
-  const [bossBladesGlowing, setBossBladesGlowing] = useState<Map<string, boolean>>(new Map());
-  const bossBladeGlowTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // Boss leap landing telegraph (server boss-leap-start) + tectonic spikes
+  const [bossLeapTelegraphs, setBossLeapTelegraphs] = useState<
+    { id: string; x: number; y: number; z: number; durationMs: number }[]
+  >([]);
+  const [bossTectonicSpikes, setBossTectonicSpikes] = useState<{ id: string; position: Vector3 }[]>([]);
+  const [bossTectonicTelegraphs, setBossTectonicTelegraphs] = useState<
+    { id: string; x: number; y: number; z: number; durationMs: number }[]
+  >([]);
 
   // Boss Meteor State
   interface MeteorState {
     id: string;
     targetPosition: Vector3;
     timestamp: number;
+    /** Same event may set per-cast (e.g. warlock 100); boss uses Meteor default. */
+    damage?: number;
   }
   const [activeMeteors, setActiveMeteors] = useState<MeteorState[]>([]);
 
@@ -1179,6 +1211,8 @@ export function CoopGameScene({
     travelMs: number;
   }
   const [knightFrostProjectiles, setKnightFrostProjectiles] = useState<KnightFrostProjectileState[]>([]);
+
+  const [knightDeathGraspProjectiles, setKnightDeathGraspProjectiles] = useState<KnightFrostProjectileState[]>([]);
 
   interface KnightFrostImpactState {
     id: string;
@@ -1252,6 +1286,12 @@ export function CoopGameScene({
     position: Vector3;
   }
   const [ghoulSummonRituals, setGhoulSummonRituals] = useState<GhoulSummonRitualState[]>([]);
+
+  interface InfestedZombieSummonVfxState {
+    id: string;
+    position: Vector3;
+  }
+  const [infestedZombieSummonVfx, setInfestedZombieSummonVfx] = useState<InfestedZombieSummonVfxState[]>([]);
 
   // Function to create enemy taunt effect (for Deathgrasp)
   const createEnemyTauntEffect = useCallback((enemyId: string, duration: number = 10000) => {
@@ -2134,7 +2174,7 @@ export function CoopGameScene({
       if (cloakCount > 0) {
         const movement = playerEntity.getComponent(Movement);
         if (movement) {
-          movement.maxSpeed = 3.75 + (cloakCount * 1.25); // 5.0 per cloak
+          movement.maxSpeed = 3.625 + (cloakCount * 1.25); // 5.0 per cloak
           movement.jumpForce = 8 + (cloakCount * 2);      // 12 per cloak
         }
       }
@@ -2175,7 +2215,8 @@ export function CoopGameScene({
     isSundering: false,
     isCorruptedAuraActive: false,
     isFrozen: false,
-    isIcebeaming: false
+    isIcebeaming: false,
+    tempestBurstShotSeq: 0,
   });
 
   // Use a ref to store current weapon state to avoid infinite re-renders
@@ -2239,6 +2280,8 @@ export function CoopGameScene({
     lastAnimationUpdate?: number;
     /** Last remote Charge used STORED CHARGE (longer spin). */
     runebladeStoredCharge?: boolean;
+    /** Tempest Rounds: sync with `projectileConfig.tempestBurstSeq` per `burst_arrow` for EtherBow muzzle VFX. */
+    tempestBurstShotSeq?: number;
   }>>(new Map());
   
   // Perfect shot system
@@ -2545,6 +2588,8 @@ export function CoopGameScene({
         // Update the player state to show attack animation using batched updates
         const animationData = data.animationData || {};
         const animationUpdateTime = Date.now();
+        const burstSeqFromConfig =
+          (animationData as { projectileConfig?: { tempestBurstSeq?: number } }).projectileConfig?.tempestBurstSeq;
         
         const chargeStoredSpin = !!animationData.storedCharge;
         PVPStateUpdateHelpers.batchPlayerStateUpdates(setMultiplayerPlayerStates, [{
@@ -2560,6 +2605,9 @@ export function CoopGameScene({
             lastAttackTime: animationUpdateTime,
             lastAnimationUpdate: animationUpdateTime,
             ...(data.attackType === 'sword_charge_start' ? { runebladeStoredCharge: chargeStoredSpin } : {}),
+            ...(data.attackType === 'burst_arrow' && typeof burstSeqFromConfig === 'number'
+              ? { tempestBurstShotSeq: burstSeqFromConfig }
+              : {}),
           }
         }]);
           
@@ -3825,6 +3873,64 @@ export function CoopGameScene({
       ]);
     };
 
+    const handleKnightDeathGraspProjectile = (data: {
+      knightId: string;
+      startPosition: { x: number; y: number; z: number };
+      endPosition: { x: number; y: number; z: number };
+      travelMs: number;
+    }) => {
+      const start = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
+      const end = new Vector3(data.endPosition.x, data.endPosition.y, data.endPosition.z);
+      setKnightDeathGraspProjectiles(prev => [
+        ...prev,
+        {
+          id: `knight-dg-proj-${data.knightId}-${Date.now()}`,
+          startPosition: start.clone(),
+          endPosition: end.clone(),
+          travelMs: data.travelMs,
+        },
+      ]);
+    };
+
+    const handleKnightDeathGraspPull = (data: {
+      knightId: string;
+      targetPlayerId: string;
+      position: { x: number; y: number; z: number };
+      rotation: { x: number; y: number; z: number };
+    }) => {
+      setPlayers(prev => {
+        const updated = new Map(prev);
+        const pl = updated.get(data.targetPlayerId);
+        if (pl) {
+          updated.set(data.targetPlayerId, {
+            ...pl,
+            position: { ...data.position },
+            rotation: { ...data.rotation },
+          });
+        }
+        return updated;
+      });
+
+      if (data.targetPlayerId === socket?.id) {
+        if (playerEntityRef.current !== null && engineRef.current) {
+          const world = engineRef.current.getWorld();
+          const ent = world.getEntity(playerEntityRef.current);
+          if (ent) {
+            const transform = ent.getComponent(Transform);
+            if (transform) {
+              transform.setPosition(data.position.x, data.position.y, data.position.z);
+            }
+            const movement = ent.getComponent(Movement);
+            if (movement) {
+              movement.velocity.set(0, 0, 0);
+              movement.acceleration.set(0, 0, 0);
+            }
+          }
+        }
+        updatePlayerPosition(data.position, data.rotation, { x: 0, y: 0, z: 0 });
+      }
+    };
+
     // Red Knight — Smite (75 physical damage)
     const handleKnightSmite = (data: any) => {
       if (data.targetPosition) {
@@ -4471,56 +4577,14 @@ export function CoopGameScene({
       }
     };
 
-    const handleBossAttack = (data: any) => {
-      const { bossId, targetPlayerId, damage, position, bladeEnhancedConsumed, timestamp } = data;
+    const handleBossAttack = (data: {
+      bossId: string;
+      targetPlayerId: string;
+      damage: number;
+      meleeIndex?: number;
+    }) => {
+      const { targetPlayerId, damage } = data;
 
-      // If the blade-enhanced buff was consumed on this attack, clear the glow immediately
-      if (bladeEnhancedConsumed) {
-        const existingTimer = bossBladeGlowTimers.current.get(bossId);
-        if (existingTimer) {
-          clearTimeout(existingTimer);
-          bossBladeGlowTimers.current.delete(bossId);
-        }
-        setBossBladesGlowing(prev => {
-          const updated = new Map(prev);
-          updated.set(bossId, false);
-          return updated;
-        });
-      }
-
-      // Update boss attack animation state for all bosses
-      setBossAttackStates(prev => {
-        const updated = new Map(prev);
-        // Alternate hands for attack animation
-        const currentState = updated.get(bossId) || { isAttacking: false, attackingHand: null, lastAttackTime: 0 };
-        const newHand = currentState.attackingHand === 'left' ? 'right' : 'left';
-
-        updated.set(bossId, {
-          isAttacking: true,
-          attackingHand: newHand,
-          lastAttackTime: Date.now()
-        });``
-
-        // Reset attack state after animation duration
-        setTimeout(() => {
-          setBossAttackStates(prevStates => {
-            const resetUpdated = new Map(prevStates);
-            const state = resetUpdated.get(bossId);
-            if (state) {
-              resetUpdated.set(bossId, {
-                ...state,
-                isAttacking: false,
-                attackingHand: null
-              });
-            }
-            return resetUpdated;
-          });
-        }, 1200); // Match boss animation duration
-
-        return updated;
-      });
-
-      // Only handle boss attacks targeting the local player
       if (targetPlayerId === socket?.id && playerEntity) {
 
         // Apply damage to local player
@@ -4567,65 +4631,78 @@ export function CoopGameScene({
       }
     };
 
-    const handleBossMeteorCast = (data: any) => {
-      const { meteorId, targetPositions, timestamp } = data;
+    const handleBossMeteorCast = (data: {
+      bossId?: string;
+      meteorId: string;
+      targetPositions: { x: number; y: number; z: number }[];
+      timestamp: number;
+      damage?: number;
+      staggerIntervalMs?: number;
+    }) => {
+      if (data.bossId) {
+        const src = enemies.get(data.bossId);
+        if (src?.type === 'boss') return;
+      }
+      const { meteorId, targetPositions, timestamp, damage, staggerIntervalMs } = data;
+      const stepMs = staggerIntervalMs !== undefined && staggerIntervalMs >= 0 ? staggerIntervalMs : 1000;
 
-      // Create meteors for each target position with 1-second offset per player for natural timing
-      const newMeteors: MeteorState[] = targetPositions.map((pos: { x: number; y: number; z: number }, index: number) => ({
+      const newMeteors: MeteorState[] = targetPositions.map((pos, index) => ({
         id: `${meteorId}_${index}`,
         targetPosition: new Vector3(pos.x, pos.y, pos.z),
-        timestamp: timestamp + (index * 1000) // Add 1 second offset per player
+        timestamp: timestamp + (index * stepMs),
+        ...(damage !== undefined ? { damage } : {}),
       }));
 
       setActiveMeteors(prev => [...prev, ...newMeteors]);
     };
 
-    const handleBossTeleport = (data: any) => {
-      const { bossId, startPosition, endPosition, rotation, targetPlayerId, bladesEnhanced, timestamp } = data;
+    const handleBossLeapStart = (data: {
+      bossId: string;
+      landPosition: { x: number; y: number; z: number };
+      durationMs?: number;
+      timestamp: number;
+    }) => {
+      const d = data.durationMs ?? 1100;
+      const id = `leap-tg-${data.bossId}-${data.timestamp}`;
+      setBossLeapTelegraphs((prev) => [
+        ...prev,
+        { id, x: data.landPosition.x, y: data.landPosition.y, z: data.landPosition.z, durationMs: d },
+      ]);
+    };
 
-      // Create teleport effect at start position (boss disappearing)
-      const startEffect: TeleportEffectState = {
-        id: `${bossId}-teleport-start-${timestamp}`,
-        position: new Vector3(startPosition.x, startPosition.y, startPosition.z),
-        type: 'start',
-        timestamp
-      };
+    const handleBossLeapLand = (data: { bossId: string }) => {
+      setBossLeapTelegraphs((prev) => prev.filter((t) => !t.id.includes(data.bossId)));
+    };
 
-      // Create teleport effect at end position (boss appearing)
-      const endEffect: TeleportEffectState = {
-        id: `${bossId}-teleport-end-${timestamp}`,
-        position: new Vector3(endPosition.x, endPosition.y, endPosition.z),
-        type: 'end',
-        timestamp
-      };
+    const handleBossTectonicSpikeTelegraph = (data: {
+      bossId: string;
+      spikeId: string;
+      position: { x: number; y: number; z: number };
+      warningMs?: number;
+      timestamp: number;
+    }) => {
+      const w = data.warningMs !== undefined && data.warningMs >= 0 ? data.warningMs : 750;
+      setBossTectonicTelegraphs((prev) => [
+        ...prev,
+        {
+          id: `tg-${data.spikeId}`,
+          x: data.position.x,
+          y: data.position.y,
+          z: data.position.z,
+          durationMs: w,
+        },
+      ]);
+    };
 
-      setActiveTeleportEffects(prev => [...prev, startEffect, endEffect]);
-
-      // Activate blade glow for 1.5 seconds after blink
-      if (bladesEnhanced) {
-        // Clear any existing timer for this boss
-        const existingTimer = bossBladeGlowTimers.current.get(bossId);
-        if (existingTimer) clearTimeout(existingTimer);
-
-        setBossBladesGlowing(prev => {
-          const updated = new Map(prev);
-          updated.set(bossId, true);
-          return updated;
-        });
-
-        const timer = setTimeout(() => {
-          setBossBladesGlowing(prev => {
-            const updated = new Map(prev);
-            updated.set(bossId, false);
-            return updated;
-          });
-          bossBladeGlowTimers.current.delete(bossId);
-        }, 2500);
-
-        bossBladeGlowTimers.current.set(bossId, timer);
-      }
-
-      console.log(`✨ Boss ${bossId} teleported from (${startPosition.x.toFixed(1)}, ${startPosition.z.toFixed(1)}) to (${endPosition.x.toFixed(1)}, ${endPosition.z.toFixed(1)})`);
+    const handleBossTectonicSpikeAppear = (data: {
+      bossId: string;
+      spikeId: string;
+      position: { x: number; y: number; z: number };
+      timestamp: number;
+    }) => {
+      const id = `spike-${data.spikeId}`;
+      const pos = new Vector3(data.position.x, data.position.y, data.position.z);
+      setBossTectonicSpikes((prev) => [...prev, { id, position: pos }]);
     };
 
     const handleTemplarTeleport = (data: any) => {
@@ -4797,6 +4874,10 @@ export function CoopGameScene({
                 addGlobalFrozenEnemy(entity.id.toString(), transform.position);
               }
             } else if (effectType === 'corrupted') {
+              const sk = entity.userData?.coopServerEnemyType;
+              if (enemy.type === EnemyType.BOSS || sk === 'boss-skeleton') {
+                break;
+              }
               enemy.applyCorrupted(duration / 1000, currentTime);
             } else if (effectType === 'ignite') {
               const transform = entity.getComponent(Transform);
@@ -4866,6 +4947,8 @@ export function CoopGameScene({
       startPosition: { x: number; y: number; z: number };
       targetPosition: { x: number; y: number; z: number };
       damage: number;
+      maxRange?: number;
+      endPosition?: { x: number; y: number; z: number };
     }) => {
       const start       = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
       // Fallback snapshot — used only when the local player entity isn't available.
@@ -4923,7 +5006,10 @@ export function CoopGameScene({
     socket.on('boss-attack', handleBossAttack);
     socket.on('boss-defeated', handleBossDefeated);
     socket.on('boss-meteor-cast', handleBossMeteorCast);
-    socket.on('boss-teleport', handleBossTeleport);
+    socket.on('boss-leap-start', handleBossLeapStart);
+    socket.on('boss-leap-land', handleBossLeapLand);
+    socket.on('boss-tectonic-spike-telegraph', handleBossTectonicSpikeTelegraph);
+    socket.on('boss-tectonic-spike-appear', handleBossTectonicSpikeAppear);
     socket.on('templar-teleport', handleTemplarTeleport);
     socket.on('templar-blink-smite-impact', handleTemplarBlinkSmiteImpact);
     socket.on('martyr-detonation-telegraph', handleMartyrDetonationTelegraph);
@@ -4934,6 +5020,8 @@ export function CoopGameScene({
     socket.on('knight-smite',  handleKnightSmite);
     socket.on('knight-frost',  handleKnightFrost);
     socket.on('knight-frost-projectile', handleKnightFrostProjectile);
+    socket.on('knight-deathgrasp-projectile', handleKnightDeathGraspProjectile);
+    socket.on('knight-deathgrasp-pull', handleKnightDeathGraspPull);
     socket.on('templar-attack-telegraph', handleTemplarAttackTelegraph);
     socket.on('templar-attack', handleTemplarAttack);
     socket.on('enemy-status-effect', handleEnemyStatusEffect);
@@ -5184,10 +5272,23 @@ export function CoopGameScene({
       ]);
     };
 
+    const handleInfestedZombieSummon = (data: {
+      zombieId: string;
+      position: { x: number; y: number; z: number };
+    }) => {
+      if (!data.position) return;
+      const pos = new Vector3(data.position.x, data.position.y, data.position.z);
+      setInfestedZombieSummonVfx(prev => [
+        ...prev,
+        { id: `infested-rise-${data.zombieId}-${Date.now()}`, position: pos },
+      ]);
+    };
+
     socket.on('ghoul-attack', handleGhoulAttack);
     socket.on('weaver-heal-telegraph', handleWeaverHealTelegraph);
     socket.on('weaver-summon-telegraph', handleWeaverSummonTelegraph);
     socket.on('weaver-lightning-telegraph', handleWeaverLightningTelegraph);
+    socket.on('infested-zombie-summon', handleInfestedZombieSummon);
 
     return () => {
       viperAttackScheduleTimeoutsRef.current.forEach(t => { clearTimeout(t); });
@@ -5212,7 +5313,10 @@ export function CoopGameScene({
       socket.off('boss-attack', handleBossAttack);
       socket.off('boss-defeated', handleBossDefeated);
       socket.off('boss-meteor-cast', handleBossMeteorCast);
-      socket.off('boss-teleport', handleBossTeleport);
+      socket.off('boss-leap-start', handleBossLeapStart);
+      socket.off('boss-leap-land', handleBossLeapLand);
+      socket.off('boss-tectonic-spike-telegraph', handleBossTectonicSpikeTelegraph);
+      socket.off('boss-tectonic-spike-appear', handleBossTectonicSpikeAppear);
       socket.off('templar-teleport', handleTemplarTeleport);
       socket.off('templar-blink-smite-impact', handleTemplarBlinkSmiteImpact);
       socket.off('martyr-detonation-telegraph', handleMartyrDetonationTelegraph);
@@ -5223,6 +5327,8 @@ export function CoopGameScene({
       socket.off('knight-smite',  handleKnightSmite);
       socket.off('knight-frost',  handleKnightFrost);
       socket.off('knight-frost-projectile', handleKnightFrostProjectile);
+      socket.off('knight-deathgrasp-projectile', handleKnightDeathGraspProjectile);
+      socket.off('knight-deathgrasp-pull', handleKnightDeathGraspPull);
       socket.off('templar-attack-telegraph', handleTemplarAttackTelegraph);
       socket.off('templar-attack', handleTemplarAttack);
       // Clear any pending miss timers on cleanup
@@ -5242,8 +5348,9 @@ export function CoopGameScene({
       socket.off('weaver-heal-telegraph', handleWeaverHealTelegraph);
       socket.off('weaver-summon-telegraph', handleWeaverSummonTelegraph);
       socket.off('weaver-lightning-telegraph', handleWeaverLightningTelegraph);
+      socket.off('infested-zombie-summon', handleInfestedZombieSummon);
     };
-  }, [socket, playerEntity]);
+  }, [socket, playerEntity, setPlayers, updatePlayerPosition, enemies]);
 
   // Add a cleanup effect to prevent stuck animations
   useEffect(() => {
@@ -5334,6 +5441,7 @@ export function CoopGameScene({
         // Store server enemy ID and rotation in entity userData for damage routing and backstab detection
         entity.userData = entity.userData || {};
         entity.userData.serverEnemyId = enemyId;
+        entity.userData.coopServerEnemyType = serverEnemy.type;
         entity.userData.rotation = serverEnemy.rotation || 0; // Store rotation for backstab mechanic
 
         // Notify systems that the entity is ready
@@ -5374,6 +5482,7 @@ export function CoopGameScene({
             entity.userData = {};
           }
           entity.userData.rotation = serverEnemy.rotation || 0;
+          entity.userData.coopServerEnemyType = serverEnemy.type;
         }
       }
     });
@@ -5435,7 +5544,7 @@ export function CoopGameScene({
         // Remote players don't use this for actual movement (they're position-synced from server)
         // but having it ensures equal collision resolution in CollisionSystem
         const movement = world.createComponent(Movement);
-        movement.maxSpeed = 3.75; // Match local player settings
+        movement.maxSpeed = 3.625; // Match local player settings
         movement.jumpForce = 4;
         movement.friction = 0.85;
         movement.canMove = false; // Disable actual movement since position comes from server
@@ -5849,7 +5958,10 @@ export function CoopGameScene({
           const r2 = rPortal * rPortal;
           const offer = thronePortalOfferRef.current;
           const phase = coopMainArenaPortalPhaseRef.current;
-          if (phase === 'pick_wave2' && offer.length >= 2) {
+          if (
+            (phase === 'pick_wave2' || phase === 'pick_post_boss') &&
+            offer.length >= 2
+          ) {
             let bestI = 0;
             let bestD2 = Infinity;
             for (let i = 0; i < MAIN_COMBAT_CHOICE_PORTAL_POSITIONS.length; i++) {
@@ -5984,7 +6096,8 @@ export function CoopGameScene({
           isSundering: controlSystemRef.current.isSunderActive(),
           isCorruptedAuraActive: controlSystemRef.current.isCorruptedAuraActive(),
           isFrozen: weaponStateRef.current.isFrozen,
-          isIcebeaming: controlSystemRef.current.isIcebeamActive()
+          isIcebeaming: controlSystemRef.current.isIcebeamActive(),
+          tempestBurstShotSeq: controlSystemRef.current.getTempestBurstShotSeq(),
         };
 
         // Update the ref immediately
@@ -6749,9 +6862,29 @@ export function CoopGameScene({
                 }
                 thronePortalOffer={thronePortalOffer}
                 campTypes={campTypes}
+                coopClearedRoomColor={coopClearedRoomColor}
               />
               {engineRef.current?.getWorld() && (
                 <PillarCollision world={engineRef.current.getWorld()} positions={THRONE_PILLAR_POSITIONS} />
+              )}
+            </>
+          ) : inBossThroneArena ? (
+            <>
+              <ThroneRoom
+                layout="bossArena"
+                isSnowTheme={
+                  campTypes[0]?.toLowerCase() === 'blue' ||
+                  thronePortalOffer.some((c) => String(c).toLowerCase() === 'blue')
+                }
+                thronePortalOffer={thronePortalOffer}
+                campTypes={campTypes}
+                coopClearedRoomColor={coopClearedRoomColor}
+              />
+              {combatArenaActive && coopMainArenaPortalPhase && (
+                <CoopMainArenaPortals
+                  thronePortalOffer={thronePortalOffer}
+                  phase={coopMainArenaPortalPhase}
+                />
               )}
             </>
           ) : (
@@ -6771,6 +6904,11 @@ export function CoopGameScene({
               {engineRef.current?.getWorld() && (
                 <CastleWallCollision world={engineRef.current.getWorld()} />
               )}
+              {engineRef.current?.getWorld() &&
+                !inThroneRoom &&
+                campTypes[0]?.toLowerCase() === 'red' && (
+                  <MountainBaseCollision world={engineRef.current.getWorld()} />
+                )}
               {combatArenaActive && coopMainArenaPortalPhase && (
                 <CoopMainArenaPortals
                   thronePortalOffer={thronePortalOffer}
@@ -6781,10 +6919,10 @@ export function CoopGameScene({
           )}
 
       {/* Lighting — throne room brings its own fill; keep this subtle there */}
-      <ambientLight intensity={inThroneRoom ? 0.04 : 0.1} />
+      <ambientLight intensity={dimThroneLikeLighting ? 0.04 : 0.1} />
       <directionalLight
         position={[10, 10, 5]}
-        intensity={inThroneRoom ? 0.1 : 0.2}
+        intensity={dimThroneLikeLighting ? 0.1 : 0.2}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -6838,6 +6976,7 @@ export function CoopGameScene({
           barrageChargeProgress={weaponState.barrageChargeProgress}
           isCobraShotCharging={weaponState.isCobraShotCharging}
           cobraShotChargeProgress={weaponState.cobraShotChargeProgress}
+          tempestBurstShotSeq={weaponState.tempestBurstShotSeq}
           isRejuvenatingShotCharging={controlSystemRef.current?.isRejuvenatingShotChargingActive() || false}
           rejuvenatingShotChargeProgress={controlSystemRef.current?.getRejuvenatingShotChargeProgress() || 0}
           isWhirlwindCharging={controlSystemRef.current?.isWhirlwindChargingActive() || false}
@@ -7038,6 +7177,7 @@ export function CoopGameScene({
           isCorruptedAuraActive: false,
           isFrozen: false,
           runebladeStoredCharge: false,
+          tempestBurstShotSeq: 0,
         };
 
         // Get the real-time position ref for this enemy player
@@ -7082,6 +7222,7 @@ export function CoopGameScene({
                 barrageChargeProgress={playerState.barrageChargeProgress}
                 isCobraShotCharging={playerState.isCobraShotCharging}
                 cobraShotChargeProgress={playerState.cobraShotChargeProgress}
+                tempestBurstShotSeq={playerState.tempestBurstShotSeq ?? 0}
                 isSkyfalling={playerState.isSkyfalling}
                 isBackstabbing={playerState.isBackstabbing}
                 isSundering={playerState.isSundering || false}
@@ -7132,60 +7273,15 @@ export function CoopGameScene({
         // Check if this boss is currently taunted
         const isTaunted = enemyTauntEffects.some(effect => effect.enemyId === enemy.id);
 
-        // Get boss attack state
-        const bossAttackState = bossAttackStates.get(enemy.id) || { isAttacking: false, attackingHand: null, lastAttackTime: 0 };
-
-        // Determine boss target position for rotation
-        let targetPosition: Vector3 | null = null;
-
-        // First priority: player being attacked
-        if (bossAttackState.isAttacking) {
-          // Find the player being attacked by checking recent damage
-          let targetPlayerId: string | null = null;
-
-          // Check boss damage tracking to find who it's targeting
-          const damageMap = new Map(); // We don't have access to this directly, so let's find the target differently
-
-          // For now, find the closest player as the target
-          let closestDistance = Infinity;
-          Array.from(players.values()).forEach(player => {
-            const distance = Math.sqrt(
-              Math.pow(player.position.x - enemy.position.x, 2) +
-              Math.pow(player.position.z - enemy.position.z, 2)
-            );
-
-            if (distance < closestDistance) {
-              closestDistance = distance;
-              targetPosition = new Vector3(player.position.x, player.position.y, player.position.z);
-            }
-          });
-        } else {
-          // Not attacking, still face nearest player for intimidation
-          let closestDistance = Infinity;
-          Array.from(players.values()).forEach(player => {
-            const distance = Math.sqrt(
-              Math.pow(player.position.x - enemy.position.x, 2) +
-              Math.pow(player.position.z - enemy.position.z, 2)
-            );
-
-            if (distance < closestDistance) {
-              closestDistance = distance;
-              targetPosition = new Vector3(player.position.x, player.position.y, player.position.z);
-            }
-          });
-        }
-
         return (
           <group key={enemy.id}>
             <BossRenderer
+              id={enemy.id}
               entityId={entityId}
               position={new Vector3(enemy.position.x, enemy.position.y, enemy.position.z)}
               world={engineRef.current!.getWorld()}
-              isAttacking={bossAttackState.isAttacking}
-              attackingHand={bossAttackState.attackingHand}
-              targetPosition={targetPosition}
               rotation={enemy.rotation}
-              bladesGlowing={bossBladesGlowing.get(enemy.id) ?? false}
+              isDying={!!enemy.isDying}
               isStunned={(() => {
                 const world = engineRef.current!.getWorld();
                 const entity = world.getEntity(entityId);
@@ -7291,6 +7387,16 @@ export function CoopGameScene({
           endPosition={p.endPosition}
           travelMs={p.travelMs}
           onComplete={() => setKnightFrostProjectiles(prev => prev.filter(x => x.id !== p.id))}
+        />
+      ))}
+
+      {knightDeathGraspProjectiles.map(p => (
+        <KnightDeathGraspProjectile
+          key={p.id}
+          startPosition={p.startPosition}
+          endPosition={p.endPosition}
+          travelMs={p.travelMs}
+          onComplete={() => setKnightDeathGraspProjectiles(prev => prev.filter(x => x.id !== p.id))}
         />
       ))}
 
@@ -7623,6 +7729,14 @@ export function CoopGameScene({
         />
       ))}
 
+      {infestedZombieSummonVfx.map(fx => (
+        <InfestedZombieRiseVFX
+          key={fx.id}
+          position={fx.position}
+          onComplete={() => setInfestedZombieSummonVfx(prev => prev.filter(e => e.id !== fx.id))}
+        />
+      ))}
+
       {/* Boss Meteors */}
       {activeMeteors.map(meteor => {
         return (
@@ -7630,6 +7744,7 @@ export function CoopGameScene({
             key={meteor.id}
             targetPosition={meteor.targetPosition}
             timestamp={meteor.timestamp}
+            damage={meteor.damage}
             onImpact={(damage, position) => {
               // Only apply damage if local player is within range
               if (playerEntity) {
@@ -7676,7 +7791,39 @@ export function CoopGameScene({
         );
       })}
 
-      {/* Boss Teleport Effects */}
+      {bossLeapTelegraphs.map((tg) => (
+        <group key={tg.id} position={[tg.x, tg.y, tg.z]}>
+          <BossLeapTelegraph
+            durationMs={tg.durationMs}
+            onEnd={() => {
+              setBossLeapTelegraphs((prev) => prev.filter((t) => t.id !== tg.id));
+            }}
+          />
+        </group>
+      ))}
+
+      {bossTectonicTelegraphs.map((tg) => (
+        <group key={tg.id} position={[tg.x, tg.y, tg.z]}>
+          <BossTectonicSpikeTelegraph
+            durationMs={tg.durationMs}
+            onEnd={() => {
+              setBossTectonicTelegraphs((prev) => prev.filter((t) => t.id !== tg.id));
+            }}
+          />
+        </group>
+      ))}
+
+      {bossTectonicSpikes.map((sp) => (
+        <BossTectonicSpike
+          key={sp.id}
+          worldPosition={sp.position}
+          onComplete={() => {
+            setBossTectonicSpikes((prev) => prev.filter((x) => x.id !== sp.id));
+          }}
+        />
+      ))}
+
+      {/* Boss Teleport Effects (legacy: main boss no longer blinks) */}
       {activeTeleportEffects.map(effect => {
         return (
           <BossTeleportEffect
@@ -8148,7 +8295,7 @@ function createCoopPlayer(
 
   // Add Movement component
   const movement = world.createComponent(Movement);
-  movement.maxSpeed = 3.75; // Reduced from 8 to 3.65 for slower movement
+  movement.maxSpeed = 3.625; // Reduced from 8 to 3.65 for slower movement
   movement.jumpForce = 4;
   movement.friction = 0.85;
   player.addComponent(movement);
@@ -8248,8 +8395,10 @@ function setupCoopGame(
   const throneObstaclesForInit = initialThroneMap ? getThronePrepPhysicsObstacles() : null;
   physicsSystem.setCastleWallPhysicsEnabled(!initialThroneMap);
   physicsSystem.setThronePillarObstacles(throneObstaclesForInit);
+  physicsSystem.setCornerMountainObstacles(null);
   controlSystem.setCastleWallChargeCollision(!initialThroneMap);
   controlSystem.setThroneChargePillars(throneObstaclesForInit);
+  controlSystem.setChargeCornerMountains(null);
   const cameraSystem = new CameraSystem(
     camera as PerspectiveCamera,
     inputManager,

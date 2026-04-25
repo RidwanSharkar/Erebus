@@ -8,6 +8,8 @@ interface MeteorProps {
   onImpact: (damage: number, position: Vector3) => void;
   onComplete: () => void;
   timestamp?: number; // Optional timestamp for staggered meteor timing
+  /** Override default boss meteor damage (e.g. purple warlock swarm). */
+  damage?: number;
 }
 
 const DAMAGE_RADIUS = 2.99;
@@ -101,7 +103,7 @@ const createMeteorImpactEffect = (position: Vector3, startTime: number, onComple
   );
 };
 
-export default function Meteor({ targetPosition, onImpact, onComplete, timestamp }: MeteorProps) {
+export default function Meteor({ targetPosition, onImpact, onComplete, timestamp, damage: damageOverride }: MeteorProps) {
   const meteorGroupRef = useRef<Group>(null);
   const meteorMeshRef = useRef<Mesh>(null);
 
@@ -147,7 +149,7 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
       
       // Call impact with the meteor's impact position (ground level for damage check)
       tempTargetGroundPos.set(initialTargetPos.x, 0, initialTargetPos.z);
-      onImpact(METEOR_DAMAGE, tempTargetGroundPos.clone());
+      onImpact(damageOverride ?? METEOR_DAMAGE, tempTargetGroundPos.clone());
     }
 
     const speed = METEOR_SPEED * delta;

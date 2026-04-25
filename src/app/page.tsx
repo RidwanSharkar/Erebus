@@ -76,7 +76,11 @@ function HomeContent() {
     isConnected,
     coopTransitionOverlay,
     combatArenaActive,
+    gameMode: sessionGameMode,
+    gameStarted,
+    coopCombatArenaEnterSeq,
     coopMainArenaIntermissionSeq,
+    coopBossClearedBgmSeq,
     coopMainArenaPortalPhase,
     campTypes,
     coopClearedRoomColor,
@@ -152,6 +156,16 @@ function HomeContent() {
   } | null>(null);
   const classBoonPickedThisRunRef = useRef(false);
   const roomBoonIntermissionDoneSeqRef = useRef(-1);
+  const [coopBgmSyncTick, setCoopBgmSyncTick] = useState(0);
+  const lastCoopIntermissionBgmRef = useRef(0);
+  const lastCoopEnterBgmRef = useRef(0);
+  const lastCoopBossBgmRef = useRef(0);
+  /** Latest co-op arena flags for async BGM preload callback (avoids layering Empyrea over combat). */
+  const coopBgmBootstrapGateRef = useRef({
+    sessionGameMode,
+    gameStarted,
+    combatArenaActive,
+  });
 
   const handleDamageNumberComplete = (id: string) => {
     // Use the global handler set by GameScene
@@ -214,7 +228,7 @@ function HomeContent() {
   // First wave cleared → 3 room-color boons (co-op main-arena intermission, wave 2 pick).
   useEffect(() => {
     if (gameMode !== 'coop') return;
-    if (coopMainArenaPortalPhase !== 'pick_wave2') return;
+    if (coopMainArenaPortalPhase !== 'pick_wave2' && coopMainArenaPortalPhase !== 'pick_post_boss') return;
     if (roomBoonIntermissionDoneSeqRef.current === coopMainArenaIntermissionSeq) return;
 
     const color = coopClearedRoomColor ?? campTypes[0] ?? null;
@@ -298,6 +312,10 @@ function HomeContent() {
     }
   }, [players, socket?.id]);
 
+  useEffect(() => {
+    coopBgmBootstrapGateRef.current = { sessionGameMode, gameStarted, combatArenaActive };
+  }, [sessionGameMode, gameStarted, combatArenaActive]);
+
   // Initialize audio system for UI sounds
   useEffect(() => {
     const initAudioSystem = async () => {
@@ -311,8 +329,13 @@ function HomeContent() {
 
         // Lazy load background music in the background (doesn't block UI)
         audioSystem.preloadBackgroundMusic().then(() => {
-          // Start background music once loaded (35% volume for subtle background)
-          audioSystem.startBackgroundMusic();
+          const g = coopBgmBootstrapGateRef.current;
+          const inCoopArena =
+            g.sessionGameMode === 'coop' && g.gameStarted && g.combatArenaActive;
+          if (!inCoopArena) {
+            audioSystem.startBackgroundMusic();
+          }
+          setCoopBgmSyncTick((n) => n + 1);
         }).catch((error) => {
           console.warn('Background music failed to load:', error);
         });
@@ -324,6 +347,52 @@ function HomeContent() {
 
     initAudioSystem();
   }, []);
+
+  // Co-op BGM: Empyrea on throne, random room tracks in combat, chaos between rooms / after boss
+  useEffect(() => {
+    const audio = typeof window !== 'undefined' ? window.audioSystem : undefined;
+    if (!audio) {
+      return;
+    }
+    if (sessionGameMode !== 'coop') {
+      audio.coopSyncNonCoopMode();
+      return;
+    }
+    if (!gameStarted) {
+      return;
+    }
+    if (!combatArenaActive) {
+      lastCoopIntermissionBgmRef.current = coopMainArenaIntermissionSeq;
+      lastCoopEnterBgmRef.current = coopCombatArenaEnterSeq;
+      lastCoopBossBgmRef.current = coopBossClearedBgmSeq;
+      audio.coopEnterHubMusic();
+      return;
+    }
+    if (coopMainArenaIntermissionSeq > lastCoopIntermissionBgmRef.current) {
+      lastCoopIntermissionBgmRef.current = coopMainArenaIntermissionSeq;
+      lastCoopEnterBgmRef.current = coopCombatArenaEnterSeq;
+      lastCoopBossBgmRef.current = coopBossClearedBgmSeq;
+      audio.coopEnterChaosIntermissionMusic();
+    }
+    if (coopBossClearedBgmSeq > lastCoopBossBgmRef.current) {
+      lastCoopBossBgmRef.current = coopBossClearedBgmSeq;
+      lastCoopEnterBgmRef.current = coopCombatArenaEnterSeq;
+      lastCoopIntermissionBgmRef.current = coopMainArenaIntermissionSeq;
+      audio.coopEnterChaosIntermissionMusic();
+    }
+    if (coopCombatArenaEnterSeq > lastCoopEnterBgmRef.current) {
+      lastCoopEnterBgmRef.current = coopCombatArenaEnterSeq;
+      void audio.coopEnterRandomCombatRoomMusic();
+    }
+  }, [
+    sessionGameMode,
+    gameStarted,
+    combatArenaActive,
+    coopMainArenaIntermissionSeq,
+    coopCombatArenaEnterSeq,
+    coopBossClearedBgmSeq,
+    coopBgmSyncTick,
+  ]);
 
   return (
       <main className="w-full h-screen bg-black relative">
@@ -477,18 +546,7 @@ function HomeContent() {
               📜
             </button>
             <div className="absolute top-4 left-4 text-white font-mono text-sm">
-              <div>WASD - Double Tap Dash</div>
-              <div>Right Click - Camera </div>
-              <div>Left Click - Attack </div>
-              <div>Space - Jump</div>
-              {gameMode === 'coop' && (
-                <div className="text-green-400/90 mt-1">
-                  <div>X — Prep interact (weapon / abilities)</div>
-                  {DEV_TALENT_MODAL && (
-                    <div className="text-amber-400/90">Dev: T — Talent pillar (when in range)</div>
-                  )}
-                </div>
-              )}
+            {/* CONTROLS */}
             </div>
             
             {/* Performance Stats */}

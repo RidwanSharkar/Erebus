@@ -80,6 +80,8 @@ interface DragonRendererProps {
   barrageChargeProgress?: number;
   isCobraShotCharging?: boolean;
   cobraShotChargeProgress?: number;
+  /** Tempest Rounds: monotonic per-arrow id for EtherBow muzzle VFX. */
+  tempestBurstShotSeq?: number;
   isRejuvenatingShotCharging?: boolean;
   rejuvenatingShotChargeProgress?: number;
   isWhirlwindCharging?: boolean;
@@ -197,6 +199,7 @@ export default function DragonRenderer({
   barrageChargeProgress = 0,
   isCobraShotCharging = false,
   cobraShotChargeProgress = 0,
+  tempestBurstShotSeq = 0,
   isRejuvenatingShotCharging = false,
   rejuvenatingShotChargeProgress = 0,
   isWhirlwindCharging = false,
@@ -600,6 +603,7 @@ export default function DragonRenderer({
           barrageChargeProgress={barrageChargeProgress}
           isCobraShotCharging={isCobraShotCharging}
           cobraShotChargeProgress={cobraShotChargeProgress}
+          tempestBurstShotSeq={tempestBurstShotSeq}
           isRejuvenatingShotCharging={isRejuvenatingShotCharging}
           rejuvenatingShotChargeProgress={rejuvenatingShotChargeProgress}
           isWhirlwindCharging={isWhirlwindCharging}

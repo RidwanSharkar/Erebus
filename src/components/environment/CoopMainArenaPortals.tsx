@@ -7,7 +7,7 @@ import {
   MAIN_COMBAT_BOSS_PORTAL_POSITION,
 } from '@/components/environment/ThroneRoom';
 
-type Phase = 'pick_wave2' | 'pick_boss';
+type Phase = 'pick_wave2' | 'pick_boss' | 'pick_post_boss';
 
 export function CoopMainArenaPortals({
   thronePortalOffer,
@@ -17,6 +17,7 @@ export function CoopMainArenaPortals({
   phase: Phase;
 }) {
   const isBoss = phase === 'pick_boss';
+  const isDualChoice = phase === 'pick_wave2' || phase === 'pick_post_boss';
   const o = thronePortalOffer;
 
   const { left, right } = useMemo(() => {
@@ -35,6 +36,10 @@ export function CoopMainArenaPortals({
         <ThronePortalRing campType="purple" />
       </group>
     );
+  }
+
+  if (!isDualChoice) {
+    return null;
   }
 
   return (

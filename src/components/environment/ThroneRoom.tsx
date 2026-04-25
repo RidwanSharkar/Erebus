@@ -379,29 +379,51 @@ interface ThroneRoomProps {
   /** Cooler fill light when the session is snow/blue; grass in this room stays green. */
   isSnowTheme?: boolean;
   /**
+   * `prep`: full staging room (pillars, pedestals, weapons, south-rim portals).
+   * `bossArena`: same shell only — used for co-op boss fight + post-boss portals (`CoopMainArenaPortals`).
+   */
+  layout?: 'prep' | 'bossArena';
+  /**
    * Two distinct main-room archetypes for the side-by-side portals on the south rim.
    * From server `thronePortalOffer` (initial prep only).
    */
   thronePortalOffer?: readonly string[];
   /** Session camp archetype — drives perimeter border colours (same as main `Environment`). */
   campTypes?: string[];
+  /**
+   * Wave colour from server intermission (`coopClearedRoomColor`). Used in `bossArena` so borders match
+   * prep throne SimpleBorderEffects when `campTypes` is empty after gate transitions.
+   */
+  coopClearedRoomColor?: string | null;
 }
 
 /**
  * Pre-combat staging space: same grass + stone language as the main map, smaller radius.
  */
-export default function ThroneRoom({ isSnowTheme, thronePortalOffer, campTypes = [] }: ThroneRoomProps) {
+export default function ThroneRoom({
+  isSnowTheme,
+  layout = 'prep',
+  thronePortalOffer,
+  campTypes = [],
+  coopClearedRoomColor = null,
+}: ThroneRoomProps) {
   const keyColor = isSnowTheme ? new Color('#9fc2f0') : new Color('#4a2d6e');
+  const isPrep = layout === 'prep';
 
   const o = thronePortalOffer;
   const leftCamp = o && o.length > 0 ? normalizeThroneCamp(o[0]) : 'purple';
   const rightCamp = o && o.length >= 2 ? normalizeThroneCamp(o[1]) : 'red';
 
   const borderTheme: RoomBorderTheme = useMemo(() => {
-    const key = campTypes[0]?.toLowerCase();
-    if (key === 'blue' || key === 'green' || key === 'red' || key === 'purple') return key;
+    const candidates =
+      layout === 'bossArena' ? [coopClearedRoomColor, campTypes[0]] : [campTypes[0]];
+    for (const raw of candidates) {
+      if (raw == null || raw === '') continue;
+      const key = String(raw).toLowerCase();
+      if (key === 'blue' || key === 'green' || key === 'red' || key === 'purple') return key;
+    }
     return 'red';
-  }, [campTypes]);
+  }, [layout, coopClearedRoomColor, campTypes]);
 
   const simpleBorderColorTheme: SimpleBorderColorTheme =
     borderTheme === 'red' ? 'gold' : borderTheme;
@@ -443,25 +465,29 @@ export default function ThroneRoom({ isSnowTheme, thronePortalOffer, campTypes =
         particleCount={60}
         borderTheme={simpleBorderColorTheme}
       />
-      {THRONE_PILLAR_DEFS.map((def, i) => (
-        <Pillar key={`throne-pillar-${i}`} position={def.position} orbColorHex={def.orbColorHex} />
-      ))}
-      <Pillar
-        position={[THRONE_ABILITY_PEDESTAL_POSITION.x, THRONE_ABILITY_PEDESTAL_POSITION.y, THRONE_ABILITY_PEDESTAL_POSITION.z]}
-        showOrb={false}
-      />
-      <Pillar
-        position={[THRONE_TALENT_PEDESTAL_POSITION.x, THRONE_TALENT_PEDESTAL_POSITION.y, THRONE_TALENT_PEDESTAL_POSITION.z]}
-        showOrb={false}
-      />
-      <ThroneWeaponPedestals />
-      <group>
-        {THRONE_PORTAL_POSITIONS.map((pos, i) => (
-          <group key={`throne-portal-${i}`} position={[pos.x, pos.y, pos.z]}>
-            <ThronePortalRing campType={i === 0 ? leftCamp : rightCamp} />
+      {isPrep && (
+        <>
+          {THRONE_PILLAR_DEFS.map((def, i) => (
+            <Pillar key={`throne-pillar-${i}`} position={def.position} orbColorHex={def.orbColorHex} />
+          ))}
+          <Pillar
+            position={[THRONE_ABILITY_PEDESTAL_POSITION.x, THRONE_ABILITY_PEDESTAL_POSITION.y, THRONE_ABILITY_PEDESTAL_POSITION.z]}
+            showOrb={false}
+          />
+          <Pillar
+            position={[THRONE_TALENT_PEDESTAL_POSITION.x, THRONE_TALENT_PEDESTAL_POSITION.y, THRONE_TALENT_PEDESTAL_POSITION.z]}
+            showOrb={false}
+          />
+          <ThroneWeaponPedestals />
+          <group>
+            {THRONE_PORTAL_POSITIONS.map((pos, i) => (
+              <group key={`throne-portal-${i}`} position={[pos.x, pos.y, pos.z]}>
+                <ThronePortalRing campType={i === 0 ? leftCamp : rightCamp} />
+              </group>
+            ))}
           </group>
-        ))}
-      </group>
+        </>
+      )}
     </group>
   );
 }

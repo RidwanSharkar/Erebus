@@ -173,8 +173,13 @@ interface MultiplayerContextType {
   thronePortalOffer: string[];
   /** Co-op: south-rim only in throne; main-map portal rounds use `coopMainArenaPortalPhase`. */
   thronePortalLayout: 'rim' | 'center';
-  /** Co-op: main combat map — two portals (wave 2) or boss gate between waves. Null otherwise. */
-  coopMainArenaPortalPhase: 'pick_wave2' | 'pick_boss' | null;
+  /** Co-op: main combat map — two portals (wave 2), boss gate, or post-boss continuation. Null otherwise. */
+  coopMainArenaPortalPhase: 'pick_wave2' | 'pick_boss' | 'pick_post_boss' | null;
+  /**
+   * Co-op: stripped throne shell (boss fight + post-boss portal pause). False on prep throne and main castle map.
+   * Authoritative from server (`room-joined`, `combat-arena-entered`, `coop-main-arena-intermission`).
+   */
+  coopBossThroneArena: boolean;
   /**
    * Full-screen loading overlay for portal transitions (throne → arena, wave picks, boss).
    * Set true on `combat-arena-entered`; clear via `endCoopPortalTransition` after the scene settles.
@@ -184,6 +189,8 @@ interface MultiplayerContextType {
   coopCombatArenaEnterSeq: number;
   /** Increments on each `coop-main-arena-intermission` (wave clear; choice portals; server does not move players). */
   coopMainArenaIntermissionSeq: number;
+  /** Increments on each `boss-defeated` (co-op final boss; no `coop-main-arena-intermission` from the server). Used for BGM. */
+  coopBossClearedBgmSeq: number;
   /**
    * Co-op: camp color of the wave just cleared (first wave, etc.); from `coop-main-arena-intermission`.
    * Cleared on `combat-arena-entered` so the next transition does not reuse a stale value.
@@ -305,9 +312,13 @@ function normalizeThronePortalLayout(v: unknown): 'rim' | 'center' {
   return v === 'center' ? 'center' : 'rim';
 }
 
-function normalizeCoopMainArenaPhase(v: unknown): 'pick_wave2' | 'pick_boss' | null {
-  if (v === 'pick_wave2' || v === 'pick_boss') return v;
+function normalizeCoopMainArenaPhase(v: unknown): 'pick_wave2' | 'pick_boss' | 'pick_post_boss' | null {
+  if (v === 'pick_wave2' || v === 'pick_boss' || v === 'pick_post_boss') return v;
   return null;
+}
+
+function normalizeCoopBossThroneArena(v: unknown): boolean {
+  return v === true;
 }
 
 /** Normalize server `campTypes` or infer from `enemies[].campType` for environment theme sync. */
@@ -346,10 +357,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [campTypes, setCampTypes] = useState<string[]>([]);
   const [thronePortalOffer, setThronePortalOffer] = useState<string[]>([]);
   const [thronePortalLayout, setThronePortalLayout] = useState<'rim' | 'center'>('rim');
-  const [coopMainArenaPortalPhase, setCoopMainArenaPortalPhase] = useState<'pick_wave2' | 'pick_boss' | null>(null);
+  const [coopMainArenaPortalPhase, setCoopMainArenaPortalPhase] = useState<
+    'pick_wave2' | 'pick_boss' | 'pick_post_boss' | null
+  >(null);
+  const [coopBossThroneArena, setCoopBossThroneArena] = useState(false);
   const [coopTransitionOverlay, setCoopTransitionOverlay] = useState(false);
   const [coopCombatArenaEnterSeq, setCoopCombatArenaEnterSeq] = useState(0);
   const [coopMainArenaIntermissionSeq, setCoopMainArenaIntermissionSeq] = useState(0);
+  const [coopBossClearedBgmSeq, setCoopBossClearedBgmSeq] = useState(0);
   const [coopClearedRoomColor, setCoopClearedRoomColor] = useState<string | null>(null);
   const [currentPreview, setCurrentPreview] = useState<RoomPreview | null>(null);
   const [selectedWeapons, setSelectedWeaponsState] = useState<{
@@ -524,6 +539,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       );
       setCoopMainArenaPortalPhase(
         normalizeCoopMainArenaPhase((data as { coopMainArenaPortalPhase?: string }).coopMainArenaPortalPhase),
+      );
+      setCoopBossThroneArena(
+        normalizeCoopBossThroneArena((data as { coopBossThroneArena?: boolean }).coopBossThroneArena),
       );
     });
 
@@ -835,6 +853,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       } else {
         setCoopMainArenaPortalPhase(null);
       }
+      if (data && 'coopBossThroneArena' in data) {
+        setCoopBossThroneArena(normalizeCoopBossThroneArena(data.coopBossThroneArena));
+      } else {
+        setCoopBossThroneArena(false);
+      }
+    });
+
+    addEventHandler('boss-defeated', () => {
+      setCoopBossClearedBgmSeq((s) => s + 1);
     });
 
     addEventHandler('coop-main-arena-intermission', (data: any) => {
@@ -853,6 +880,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setThronePortalOffer([...data.thronePortalOffer]);
       }
       setCoopMainArenaPortalPhase(normalizeCoopMainArenaPhase(data?.coopMainArenaPortalPhase));
+      if (data && 'coopBossThroneArena' in data) {
+        setCoopBossThroneArena(normalizeCoopBossThroneArena(data.coopBossThroneArena));
+      }
       if (data?.players && Array.isArray(data.players)) {
         setPlayers((prev) => {
           const next = new Map(prev);
@@ -876,10 +906,18 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     addEventHandler('combat-arena-entered', (data: any) => {
       setCombatArenaActive(true);
-      setCoopClearedRoomColor(null);
+      // Boss throne shell: keep gate intermission colour so perimeter matches SimpleBorderEffects / prep throne.
+      if (!normalizeCoopBossThroneArena(data?.coopBossThroneArena)) {
+        setCoopClearedRoomColor(null);
+      }
       setThronePortalOffer([]);
       setThronePortalLayout('rim');
       setCoopMainArenaPortalPhase(null);
+      if (data && 'coopBossThroneArena' in data) {
+        setCoopBossThroneArena(normalizeCoopBossThroneArena(data.coopBossThroneArena));
+      } else {
+        setCoopBossThroneArena(false);
+      }
       setCoopTransitionOverlay(true);
       setCoopCombatArenaEnterSeq((s) => s + 1);
       if (data?.players && Array.isArray(data.players)) {
@@ -1133,9 +1171,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setThronePortalOffer([]);
     setThronePortalLayout('rim');
     setCoopMainArenaPortalPhase(null);
+    setCoopBossThroneArena(false);
     setCoopTransitionOverlay(false);
     setCoopCombatArenaEnterSeq(0);
     setCoopMainArenaIntermissionSeq(0);
+    setCoopBossClearedBgmSeq(0);
     setDroppedItems(new Map());
     setInventory([]);
     setSelectedWeaponsState({ primary: WeaponType.NONE, secondary: WeaponType.NONE });
@@ -1575,9 +1615,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     thronePortalOffer,
     thronePortalLayout,
     coopMainArenaPortalPhase,
+    coopBossThroneArena,
     coopTransitionOverlay,
     coopCombatArenaEnterSeq,
     coopMainArenaIntermissionSeq,
+    coopBossClearedBgmSeq,
     coopClearedRoomColor,
     clearCoopClearedRoomColor,
     endCoopPortalTransition,

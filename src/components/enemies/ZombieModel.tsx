@@ -8,22 +8,27 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 interface ZombieModelProps {
   isWalking: boolean;
   isAttacking: boolean;
+  isSummoning: boolean;
   isDying: boolean;
 }
 
 useGLTF.preload('/models/zombie_idle.glb');
 useGLTF.preload('/models/zombie_walk.glb');
 useGLTF.preload('/models/zombie_attack.glb');
+useGLTF.preload('/models/zombie_summon.glb');
+useGLTF.preload('/models/zombie_death.glb');
 
 const SCALE = 0.014;
 
-export default function ZombieModel({ isWalking, isAttacking, isDying }: ZombieModelProps) {
+export default function ZombieModel({ isWalking, isAttacking, isSummoning, isDying }: ZombieModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
 
   const { scene, animations: idleAnims } = useGLTF('/models/zombie_idle.glb');
   const { animations: walkAnims } = useGLTF('/models/zombie_walk.glb');
   const { animations: attackAnims } = useGLTF('/models/zombie_attack.glb');
+  const { animations: summonAnims } = useGLTF('/models/zombie_summon.glb');
+  const { animations: deathAnims } = useGLTF('/models/zombie_death.glb');
 
   const clonedScene = useMemo(() => {
     const clone = SkeletonUtils.clone(scene) as Group;
@@ -65,27 +70,38 @@ export default function ZombieModel({ isWalking, isAttacking, isDying }: ZombieM
       ...rename(idleAnims, 'Idle').map(stripRootMotionXZ),
       ...rename(walkAnims, 'Walk').map(stripRootMotionXZ),
       ...rename(attackAnims, 'Attack'),
+      ...rename(summonAnims, 'Summon'),
+      ...rename(deathAnims, 'Death'),
     ];
-  }, [idleAnims, walkAnims, attackAnims]);
+  }, [idleAnims, walkAnims, attackAnims, summonAnims, deathAnims]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
-  const getAction = (name: 'Idle' | 'Walk' | 'Attack'): AnimationAction | null => actions[name] ?? null;
+  const getAction = (name: 'Idle' | 'Walk' | 'Attack' | 'Summon' | 'Death'): AnimationAction | null =>
+    actions[name] ?? null;
 
   useEffect(() => {
     if (!actions) return;
 
-    const nextAction = isAttacking
-      ? getAction('Attack')
-      : isWalking
-        ? getAction('Walk')
-        : getAction('Idle');
+    const nextAction = isDying
+      ? getAction('Death')
+      : isSummoning
+        ? getAction('Summon')
+        : isAttacking
+          ? getAction('Attack')
+          : isWalking
+            ? getAction('Walk')
+            : getAction('Idle');
 
     if (!nextAction || nextAction === currentActionRef.current) return;
 
     currentActionRef.current?.fadeOut(0.2);
 
-    if (isAttacking) {
+    if (isDying) {
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.15).play();
+    } else if (isSummoning || isAttacking) {
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.2).play();
@@ -96,16 +112,15 @@ export default function ZombieModel({ isWalking, isAttacking, isDying }: ZombieM
     }
 
     currentActionRef.current = nextAction;
-  }, [isWalking, isAttacking, isDying, actions]);
+  }, [isWalking, isAttacking, isSummoning, isDying, actions]);
 
   useEffect(() => {
-    if (!mixer || !isAttacking || isDying) return;
+    if (!mixer || isDying) return;
 
-    const handleFinish = () => {
+    const blendToWalkOrIdle = () => {
       if (isDying) return;
       const fallback = isWalking ? getAction('Walk') : getAction('Idle');
-      if (fallback && fallback !== currentActionRef.current) {
-        fallback.enabled = true;
+      if (fallback) {
         fallback.setLoop(LoopRepeat, Infinity);
         currentActionRef.current?.fadeOut(0.15);
         fallback.reset().fadeIn(0.15).play();
@@ -113,9 +128,18 @@ export default function ZombieModel({ isWalking, isAttacking, isDying }: ZombieM
       }
     };
 
+    const handleFinish = (e: { action: AnimationAction }) => {
+      if (isDying) return;
+      const name = e.action.getClip().name;
+      if (name === 'Death') return;
+      if (name === 'Summon' || name === 'Attack') {
+        blendToWalkOrIdle();
+      }
+    };
+
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isAttacking, isDying, isWalking, actions]);
+  }, [mixer, isDying, isWalking, actions]);
 
   return (
     <group ref={sceneGroupRef}>

@@ -840,7 +840,7 @@ export default function Runeblade({
     };
 
     const baseDamage = damageValues[comboStep] + execBonus + crusaderBonus;
-    const attackRange = 5;
+    const attackRange = 5.25;
 
     let enemiesHitThisSwing = 0;
 

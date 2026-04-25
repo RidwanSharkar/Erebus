@@ -74,7 +74,7 @@ export class Movement extends Component {
   public knockbackStartPosition: Vector3;
 
   constructor(
-    maxSpeed: number = 3.75,
+    maxSpeed: number = 3.625,
     friction: number = 0.8,
     jumpForce: number = 35.0,
     gravity: number = -12.5
@@ -104,7 +104,7 @@ export class Movement extends Component {
     this.isCorrupted = false;
     this.corruptedStartTime = 0;
     this.corruptedDuration = 0;
-    this.corruptedInitialSlowPercent = 0.9; // 90% initial slow
+    this.corruptedInitialSlowPercent = 0.8; // 90% initial slow
     this.corruptedRecoveryRate = 0.2; // 10% recovery per second
 
     // Initialize Ice Beam debuff state
@@ -245,7 +245,7 @@ export class Movement extends Component {
 
     // Apply Ice Beam movement speed reduction (50% slower)
     if (this.isIcebeaming) {
-      speed *= 0.5;
+      speed *= 1.0;
     }
 
     // Apply attack-cast movement slow (50% slower while casting restricted abilities)
@@ -543,7 +543,7 @@ export class Movement extends Component {
     this.canMove = true;
     this.canJump = true;
     this.canFly = false;
-    this.maxSpeed = 3.75;
+    this.maxSpeed = 3.625;
     this.friction = 0.8;
     this.jumpForce = 25.0;
     this.gravity = -12.5;

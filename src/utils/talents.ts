@@ -64,15 +64,24 @@ export const REANIMATE_SUNWELL_COOLDOWN_SEC = 5;
 /** Infested Smite — heal per enemy hit per Smite beam. */
 export const INFESTED_SMITE_HEAL_PER_TARGET = 10;
 
+/** Runeblade Smite — flat self-heal when the beam hits at least one target (stacks with Infested Smite). */
+export const RUNEBLADE_SMITE_BASE_HEAL = 10;
+
+/** Reaping Talons — HP healed when each soul fragment returns to the player. */
+export const REAPING_TALONS_RETURN_HEAL_PER_ORB = 4;
+
+/** Runeblade — HP healed per successful LMB swing while Storm Shroud (Flurry) is active (Windfury / ability). */
+export const RUNEBLADE_FLURRY_HEAL_PER_SLASH = 3;
+
 /** Infernal Smite — Ignite DoT: this fraction of the smite hit damage over INFERNAL_SMITE_DURATION_MS. */
-export const INFERNAL_SMITE_DOT_FRACTION = 0.8;
+export const INFERNAL_SMITE_DOT_FRACTION = 0.7;
 export const INFERNAL_SMITE_DURATION_MS = 3000;
 export const INFERNAL_SMITE_TICKS = 3;
 /** Infernal Smite — additive critical strike chance on each Smite beam (crit damage multiplier unchanged). */
 export const INFERNAL_SMITE_CRIT_CHANCE_ADD = 0.4;
 
 /** Vengeance — Colossus Smite: max extra damage multiplier at 0 HP (+200% → 3× total vs full HP). Linear in missing health fraction. */
-export const VENGEANCE_SMITE_MAX_EXTRA_DAMAGE_MULT = 2;
+export const VENGEANCE_SMITE_MAX_EXTRA_DAMAGE_MULT = 2.5;
 
 export type TalentId =
   | typeof TALENT_WRATH_STRIKE
@@ -146,7 +155,7 @@ export const EXPLOSIVE_TALONS_EXPLOSION_RADIUS = 4.0;
 
 /** Wrathful Bite — Frostbite / Barrage (`BOW_Q`) hits use these additive crit modifiers in CombatSystem. */
 export const WRATHFUL_BITE_BARRAGE_CRIT_CHANCE_ADD = 0.4;
-export const WRATHFUL_BITE_BARRAGE_CRIT_DAMAGE_MULT_ADD = 0.7;
+export const WRATHFUL_BITE_BARRAGE_CRIT_DAMAGE_MULT_ADD = 0.75;
 
 /** Wyvern Bite — Concentrated Venom from Barrage hits (co-op server + local ECS). */
 export const WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK = 17;
@@ -164,11 +173,11 @@ export const COLOSSUS_GUARD_STACK_SEC = 2;
 export const COLOSSUS_GUARD_MAX_REMAINING_SEC = 6;
 
 /** Wrathful Combo — Runeblade basic 3rd hit only: additive crit chance and crit damage multiplier. */
-export const WRATHFUL_COMBO_CRIT_CHANCE_ADD = 0.6;
+export const WRATHFUL_COMBO_CRIT_CHANCE_ADD = 0.35;
 export const WRATHFUL_COMBO_CRIT_DAMAGE_MULT_ADD = 1.0;
 
 /** Infested Combo — heal fraction of final hit damage dealt (after crit) on each left-click hit. */
-export const INFESTED_COMBO_LIFESTEAL = 0.1;
+export const INFESTED_COMBO_LIFESTEAL = 0.05;
 
 /** Guard Combo — Runeblade basic hits can proc Aegis-like barrier + invuln (no Aegis cooldown). */
 export const GUARD_COMBO_PROC_CHANCE = 0.25;
@@ -180,13 +189,13 @@ export const DASH_GUARD_DURATION_SEC = 1.0;
 /** EXECUTIONER — after a real dash (Movement.startDash), next Runeblade LMB within this window is treated as combo hit 3. */
 export const EXECUTIONER_POST_DASH_WINDOW_MS = 3000;
 /** Additive base damage on that EXECUTIONER swing (before crit). */
-export const EXECUTIONER_BASE_DAMAGE_ADD = 25;
+export const EXECUTIONER_BASE_DAMAGE_ADD = 40;
 
 /** Frostpath — Entropic Bolt (scythe LMB) hits on PvE enemies can proc Coldsnap at impact (no E cooldown). */
-export const FROSTPATH_PROC_CHANCE = 0.2;
+export const FROSTPATH_PROC_CHANCE = 0.15;
 
 /** Solar Recharge — Entropic Bolt hits on PvE enemies can proc Sunwell (Reanimate) (no Q cooldown; does not require Sunwell in loadout). */
-export const SOLAR_RECHARGE_PROC_CHANCE = 0.2;
+export const SOLAR_RECHARGE_PROC_CHANCE = 0.15;
 
 /** Windfury — Spear primary or Runeblade left-click combo hits that damage an enemy can proc Storm Shroud (Flurry) without F cooldown. */
 export const WINDFURY_PROC_CHANCE = 0.15;
@@ -212,9 +221,9 @@ export const STAGGER_PROC_DAMAGE = 150;
 export const STAGGER_PROC_STUN_SECONDS = 2;
 
 /** Staggering Combo — Runeblade basic attack combo adds stagger per hit (same 100 cap / proc as Staggering Strike). */
-export const STAGGERING_COMBO_HIT1_STAGGER = 20;
-export const STAGGERING_COMBO_HIT2_STAGGER = 25;
-export const STAGGERING_COMBO_HIT3_STAGGER = 30;
+export const STAGGERING_COMBO_HIT1_STAGGER = 15;
+export const STAGGERING_COMBO_HIT2_STAGGER = 20;
+export const STAGGERING_COMBO_HIT3_STAGGER = 25;
 
 /** Staggering Swipes — Sabres basic dual swing: 15 stagger total per swing (split across blades). Same 100 cap / proc as other stagger talents. */
 export const STAGGERING_SWIPES_LEFT_BLADE_STAGGER = 10;

@@ -25,7 +25,7 @@ import GroundCracks from './GroundCracks';
 import InstancedRunes from './InstancedRunes';
 import VolumetricMoonRays from './VolumetricMoonRays';
 
-import { generateMountains } from '@/utils/MountainGenerator';
+import { RED_CORNER_MOUNTAINS } from '@/utils/cornerMountainsConstants';
 import { World } from '@/ecs/World';
 import { Vector3, Color, PerspectiveCamera } from '@/utils/three-exports';
 interface EnvironmentProps {
@@ -65,9 +65,6 @@ const Environment: React.FC<EnvironmentProps> = ({
   showMerchant = false,
   campTypes = [],
 }) => {
-  // Generate mountains once and memoize for performance
-  const mountains = useMemo(() => generateMountains(), []);
-
   // Define pillar positions - use PVP positions if provided, otherwise default triangle
   const pillarPositions: Array<[number, number, number]> = useMemo(() => {
     if (isPVP && pvpPillarPositions) {
@@ -140,6 +137,8 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       {/* Castle walls — perimeter ring (closed square), single draw call */}
       <CastleWalls />
+
+      {roomArchetype === 'red' && <InstancedMountains mountains={RED_CORNER_MOUNTAINS} />}
 
       {/* Coloured theme lights inside each camp based on randomly assigned archetype */}
       {campTypes.length > 0 && <CampThemeLights campTypes={campTypes} />}

@@ -95,10 +95,10 @@ export default function SummonedTotem({
     startTime: Date.now(),
     hasTriggeredCleanup: false,
     mountId: Date.now(),
-    ATTACK_COOLDOWN: 500, // 0.5 seconds
-    RANGE: 6, // 6 units range for targeting
+    ATTACK_COOLDOWN: 650, // 0.5 seconds
+    RANGE: 7.5, // 6 units range for targeting
     DURATION: 8000, // 8 seconds
-    BASE_DAMAGE: 20, // Same as scythe basic attack damage
+    BASE_DAMAGE: 25, // Same as scythe basic attack damage
     EFFECT_DURATION: 225,
   }).current;
 

@@ -20,6 +20,9 @@ export class PhysicsSystem extends BasePhysicsSystem {
   /** Circular XZ obstacles (throne pillars) — only used when castle walls are off. */
   private thronePillarObstacles: Array<{ x: number; z: number; radius: number }> = [];
 
+  /** Red co-op corner mountain base discs (main arena, castle walls on). */
+  private cornerMountainObstacles: Array<{ x: number; z: number; radius: number }> = [];
+
   constructor() {
     super();
     this.priority = 15; // Run after control system but before rendering
@@ -43,6 +46,13 @@ export class PhysicsSystem extends BasePhysicsSystem {
    */
   public setThronePillarObstacles(obstacles: Array<{ x: number; z: number; radius: number }> | null): void {
     this.thronePillarObstacles = obstacles && obstacles.length > 0 ? obstacles.slice() : [];
+  }
+
+  /** Pass null or [] to clear. Same disc layout as `MountainBaseCollision` / `getRedCornerMountainDiscs`. */
+  public setCornerMountainObstacles(
+    obstacles: Array<{ x: number; z: number; radius: number }> | null,
+  ): void {
+    this.cornerMountainObstacles = obstacles && obstacles.length > 0 ? obstacles.slice() : [];
   }
 
   public update(entities: Entity[], deltaTime: number): void {
@@ -105,8 +115,9 @@ export class PhysicsSystem extends BasePhysicsSystem {
     const horizontalPosition = new Vector3(potentialPosition.x, 0, potentialPosition.z);
     const distanceFromCenter = horizontalPosition.length();
     
-    // Check for tree, throne pillars, and castle-wall collisions
+    // Check for tree, corner mountains, throne pillars, and castle-wall collisions
     const treeCollision = this.checkTreeCollision(potentialPosition);
+    const cornerMountainCollision = this.checkCornerMountainCollision(potentialPosition);
     const thronePillarCollision = this.checkThronePillarCollision(potentialPosition);
     const wallCollision = this.castleWallPhysicsEnabled
       ? this.checkWallCollision(potentialPosition)
@@ -142,6 +153,19 @@ export class PhysicsSystem extends BasePhysicsSystem {
 
       // Reduce velocity in the direction of the tree to prevent bouncing
       const velocityNormalComponent = movement.velocity.clone().projectOnVector(treeCollision.normal);
+      movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
+    } else if (cornerMountainCollision.hasCollision) {
+      const slidePosition = this.calculateTreeSliding(
+        currentPosition,
+        deltaPosition,
+        { normal: cornerMountainCollision.normal, treeCenter: cornerMountainCollision.center },
+        cornerMountainCollision.blockRadius,
+      );
+      transform.setPosition(slidePosition.x, slidePosition.y, slidePosition.z);
+
+      const velocityNormalComponent = movement.velocity
+        .clone()
+        .projectOnVector(cornerMountainCollision.normal);
       movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
     } else if (thronePillarCollision.hasCollision) {
       const slidePosition = this.calculateTreeSliding(
@@ -249,6 +273,38 @@ export class PhysicsSystem extends BasePhysicsSystem {
     }
 
     return slidePosition;
+  }
+
+  /** Red co-op quarter corners — same layout as `getRedCornerMountainDiscs` / `MountainBaseCollision`. */
+  private checkCornerMountainCollision(position: Vector3): {
+    hasCollision: boolean;
+    normal: Vector3;
+    center: Vector3;
+    blockRadius: number;
+  } {
+    const horizontalPos = new Vector3(position.x, 0, position.z);
+
+    for (const p of this.cornerMountainObstacles) {
+      const center = new Vector3(p.x, 0, p.z);
+      const dist = horizontalPos.distanceTo(center);
+      const minCenterDist = p.radius + this.horizontalClearanceRadius;
+      if (dist < minCenterDist) {
+        let normal = horizontalPos.clone().sub(center);
+        if (normal.lengthSq() < 1e-6) {
+          normal = new Vector3(1, 0, 0);
+        } else {
+          normal.normalize();
+        }
+        return { hasCollision: true, normal, center, blockRadius: minCenterDist };
+      }
+    }
+
+    return {
+      hasCollision: false,
+      normal: new Vector3(),
+      center: new Vector3(),
+      blockRadius: 0,
+    };
   }
 
   /**

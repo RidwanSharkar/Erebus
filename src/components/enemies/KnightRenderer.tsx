@@ -10,6 +10,7 @@ import EnemyMeleeAttackRangeRing, { KNIGHT_MELEE_ATTACK_RANGE } from './EnemyMel
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
+import { KNIGHT_CAST_ABILITY_LOCK_MS } from '@/utils/knightCoopAbilitiesConstants';
 
 interface KnightRendererProps {
   id: string;
@@ -30,7 +31,9 @@ const ATTACK_DURATION = 1200; // ms — matches Mixamo attack clip length
 // Ability animation durations — must match the backend meleeLockUntil windows
 const SMITE_DURATION = 1200; // Red knight smite (ms)
 const HEAL_DURATION  = 1800; // Green/Purple aggro shout (ms)
-const FROST_DURATION = 2000; // Blue frost cast (ms)
+// knight_cast.glb / Cast clip — see knightCoopAbilitiesConstants (backend enemyAI)
+const CAST_ABILITY_MS = KNIGHT_CAST_ABILITY_LOCK_MS;
+const FROST_DURATION = CAST_ABILITY_MS; // Blue frost cast (ms)
 const FADE_DURATION = 1.5; // seconds
 // How quickly (per second) the rendered position chases the server-authoritative target.
 // 12 keeps the visual within ~0.17 units of the server position at knight speed (2 u/s),
@@ -216,16 +219,29 @@ export default function KnightRenderer({
       setTimeout(() => {
         setAbilityClip(null);
         isAbilityRef.current = false;
-      }, FROST_DURATION);
+      }, CAST_ABILITY_MS);
+    };
+
+    // Red / Green — Death Grasp (same cast clip as frost)
+    const handleDeathGraspTelegraph = (data: any) => {
+      if (data.knightId !== id) return;
+      isAbilityRef.current = true;
+      setAbilityClip('Cast');
+      setTimeout(() => {
+        setAbilityClip(null);
+        isAbilityRef.current = false;
+      }, CAST_ABILITY_MS);
     };
 
     socket.on('knight-smite-telegraph', handleSmiteTelegraph);
     socket.on('knight-heal-telegraph',  handleHealTelegraph);
     socket.on('knight-frost-telegraph', handleFrostTelegraph);
+    socket.on('knight-deathgrasp-telegraph', handleDeathGraspTelegraph);
     return () => {
       socket.off('knight-smite-telegraph', handleSmiteTelegraph);
       socket.off('knight-heal-telegraph',  handleHealTelegraph);
       socket.off('knight-frost-telegraph', handleFrostTelegraph);
+      socket.off('knight-deathgrasp-telegraph', handleDeathGraspTelegraph);
     };
   }, [id, socket]);
 

@@ -822,7 +822,7 @@ const SwordComponent = memo(function Sword({
     const baseDamage = damageValues[comboStep];
     
     // Attack range - increased for better hit detection
-    const attackRange = 5; // Increased from 3.0
+    const attackRange = 5.5; // Increased from 3.0
     
     let enemiesHitThisSwing = 0;
     

@@ -59,7 +59,7 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
   const POOL_SIZE = 3;
   const PROJECTILE_SPEED = 1.0; // Increased speed for better hit detection
   const DAMAGE = 29; // Base damage
-  const MAX_DISTANCE = 25; // Longer range than Viper Sting since it doesn't return
+  const MAX_DISTANCE = 20; // Longer range than Viper Sting since it doesn't return
   const FADE_DURATION = 1000;
   const VENOM_DURATION = 6; // 6 seconds venom debuff
   const VENOM_DAMAGE_PER_SECOND = 29; // 17 damage per second

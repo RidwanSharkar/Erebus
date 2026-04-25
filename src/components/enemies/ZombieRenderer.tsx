@@ -20,6 +20,7 @@ interface ZombieRendererProps {
 }
 
 const ATTACK_DURATION = 1000;
+const SUMMON_DURATION = 2800;
 const FADE_DURATION = 1.5;
 const LERP_SPEED = 14;
 const WALK_STOP_DELAY = 250;
@@ -38,6 +39,8 @@ export default function ZombieRenderer({
 
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking, setIsWalking] = useState(false);
+  const [isSummoning, setIsSummoning] = useState(true);
+  const isSummoningRef = useRef(true);
 
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
@@ -56,6 +59,14 @@ export default function ZombieRenderer({
   }, []);
 
   useEffect(() => {
+    const t = setTimeout(() => {
+      setIsSummoning(false);
+      isSummoningRef.current = false;
+    }, SUMMON_DURATION);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
     const dist = targetPosition.current.distanceTo(position);
     targetPosition.current.copy(position);
 
@@ -63,7 +74,7 @@ export default function ZombieRenderer({
       groupRef.current.position.copy(position);
     }
 
-    if (dist > 0.01 && !isAttackingRef.current && !isDying) {
+    if (dist > 0.01 && !isAttackingRef.current && !isDying && !isSummoningRef.current) {
       if (!isWalking) setIsWalking(true);
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
@@ -85,6 +96,7 @@ export default function ZombieRenderer({
 
     const handleTelegraph = (data: { zombieId: string }) => {
       if (data.zombieId !== id) return;
+      if (isSummoningRef.current) return;
       setIsAttacking(true);
       isAttackingRef.current = true;
       setTimeout(() => {
@@ -127,11 +139,16 @@ export default function ZombieRenderer({
 
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
-      <ZombieModel isWalking={isWalking} isAttacking={isAttacking} isDying={isDying} />
+      <ZombieModel
+        isWalking={isWalking}
+        isAttacking={isAttacking}
+        isSummoning={isSummoning}
+        isDying={isDying}
+      />
 
 
       <Billboard position={[0, 2.8, 0]} follow lockX={false} lockY={false} lockZ={false}>
-        {health > 0 && !isDying && (
+        {health > 0 && !isDying && !isSummoning && (
           <>
             <mesh position={[0, 0, 0]}>
               <planeGeometry args={[1.8, 0.22]} />

@@ -10,6 +10,11 @@ export interface SoundConfig {
   rate?: number;
 }
 
+type CoopBgmMode = 'hub' | 'combat' | 'chaos' | 'none';
+
+/** Large music files: HTML5 Audio streams instead of full Web Audio decode (lower memory). */
+const LARGE_BGM_HTML5 = true;
+
 export class AudioSystem extends System {
   public readonly requiredComponents = []; // Audio system doesn't require specific components
 
@@ -17,6 +22,10 @@ export class AudioSystem extends System {
   private masterVolume = 0.7;
   private sfxVolume = 0.8;
   private listenerPosition = new Vector3(0, 0, 0);
+  private coopBgmMode: CoopBgmMode = 'none';
+  private coopChaosInstance: number | null = null;
+  private coopRoomInstance: number | null = null;
+  private currentCoopRoomTrackId: string | null = null;
 
   constructor() {
     super();
@@ -143,8 +152,8 @@ export class AudioSystem extends System {
         src: ['/audio/sfx/ui/Empyrea.mp3'],
         volume: this.sfxVolume * this.masterVolume,
         preload: true,
-        html5: false, // Use Web Audio API for better performance
-        loop: true // Enable looping for background music
+        html5: LARGE_BGM_HTML5,
+        loop: true,
       });
 
       // Wait for sound to load
@@ -742,7 +751,189 @@ export class AudioSystem extends System {
   private backgroundMusicInstance: number | null = null;
   private backgroundAudioElement: HTMLAudioElement | null = null; // For streaming fallback
 
+  private getCoopBgmVolume(): number {
+    return 0.25 * this.sfxVolume * this.masterVolume;
+  }
+
+  private stopAllCoopRoomTracks(): void {
+    for (let n = 1; n <= 7; n++) {
+      const id = `coop_room_${n}`;
+      const h = this.soundCache.get(id);
+      if (h) {
+        h.stop();
+      }
+    }
+    this.coopRoomInstance = null;
+    this.currentCoopRoomTrackId = null;
+  }
+
+  /** Remove all coop room Howls from memory (large files). Call after stop. */
+  private unloadCoopRoomHowlsFromCache(): void {
+    for (let n = 1; n <= 7; n++) {
+      const id = `coop_room_${n}`;
+      const h = this.soundCache.get(id);
+      if (h) {
+        h.stop();
+        h.unload();
+        this.soundCache.delete(id);
+      }
+    }
+  }
+
+  private unloadCoopChaosFromCache(): void {
+    const chaos = this.soundCache.get('coop_chaos');
+    if (chaos) {
+      chaos.stop();
+      chaos.unload();
+      this.soundCache.delete('coop_chaos');
+    }
+  }
+
+  /** Stop all hub (Empyrea) Howl instances and remove from cache so nothing keeps playing in the background. */
+  private evictHubMusicFromMemory(): void {
+    const bgMusic = this.soundCache.get('background_music');
+    if (bgMusic) {
+      bgMusic.stop();
+      bgMusic.unload();
+      this.soundCache.delete('background_music');
+    }
+    this.backgroundMusicInstance = null;
+    this.stopBackgroundMusicStreaming();
+  }
+
+  private stopCoopChaosOnly(): void {
+    const chaos = this.soundCache.get('coop_chaos');
+    if (chaos && this.coopChaosInstance !== null) {
+      chaos.stop(this.coopChaosInstance);
+    } else if (chaos) {
+      chaos.stop();
+    }
+    this.coopChaosInstance = null;
+  }
+
+  /**
+   * Co-op throne / hub: Empyrea. Idempotent; stops room + chaos.
+   */
+  public coopEnterHubMusic(): void {
+    this.stopAllCoopRoomTracks();
+    this.unloadCoopRoomHowlsFromCache();
+    this.stopCoopChaosOnly();
+    this.unloadCoopChaosFromCache();
+    if (this.coopBgmMode === 'hub' && this.backgroundMusicInstance !== null && this.soundCache.has('background_music')) {
+      return;
+    }
+    this.coopBgmMode = 'hub';
+    void this.preloadBackgroundMusic().then(() => {
+      if (this.coopBgmMode !== 'hub') {
+        return;
+      }
+      this.startBackgroundMusic();
+    });
+  }
+
+  /**
+   * Co-op wave clear / intermission: cut combat music, loop chaos. Idempotent.
+   */
+  public coopEnterChaosIntermissionMusic(): void {
+    this.stopAllCoopRoomTracks();
+    this.unloadCoopRoomHowlsFromCache();
+    this.evictHubMusicFromMemory();
+    if (this.coopBgmMode === 'chaos' && this.coopChaosInstance !== null) {
+      return;
+    }
+    this.coopBgmMode = 'chaos';
+    void this._ensureChaosAndPlay();
+  }
+
+  private async _ensureChaosAndPlay(): Promise<void> {
+    if (!this.soundCache.has('coop_chaos')) {
+      const sound = new Howl({
+        src: ['/audio/sfx/ui/chaosLoop.mp3'],
+        volume: this.getCoopBgmVolume(),
+        loop: true,
+        preload: true,
+        html5: LARGE_BGM_HTML5,
+      });
+      try {
+        await new Promise<void>((resolve, reject) => {
+          sound.on('load', () => resolve());
+          sound.on('loaderror', (_id, err) => reject(new Error(String(err))));
+        });
+        this.soundCache.set('coop_chaos', sound);
+      } catch (e) {
+        console.warn('Failed to load chaosLoop:', e);
+        this.coopBgmMode = 'none';
+        return;
+      }
+    }
+    if (this.coopBgmMode !== 'chaos') {
+      return;
+    }
+    const chaos = this.soundCache.get('coop_chaos');
+    if (!chaos) return;
+    chaos.volume(this.getCoopBgmVolume());
+    this.coopChaosInstance = chaos.play();
+  }
+
+  /**
+   * Co-op combat room: random track1–7, loop. Stops hub + chaos.
+   */
+  public async coopEnterRandomCombatRoomMusic(): Promise<void> {
+    this.stopAllCoopRoomTracks();
+    this.unloadCoopRoomHowlsFromCache();
+    this.stopCoopChaosOnly();
+    this.unloadCoopChaosFromCache();
+    this.evictHubMusicFromMemory();
+    const n = Math.floor(Math.random() * 7) + 1;
+    const id = `coop_room_${n}`;
+    this.coopBgmMode = 'combat';
+    this.currentCoopRoomTrackId = id;
+
+    if (!this.soundCache.has(id)) {
+      const path = `/audio/sfx/ui/track${n}.mp3`;
+      const sound = new Howl({
+        src: [path],
+        volume: this.getCoopBgmVolume(),
+        loop: true,
+        preload: true,
+        html5: LARGE_BGM_HTML5,
+      });
+      try {
+        await new Promise<void>((resolve, reject) => {
+          sound.on('load', () => resolve());
+          sound.on('loaderror', (_id, err) => reject(new Error(String(err))));
+        });
+        this.soundCache.set(id, sound);
+      } catch (e) {
+        console.warn(`Failed to load ${path}:`, e);
+        this.coopBgmMode = 'none';
+        this.currentCoopRoomTrackId = null;
+        return;
+      }
+    }
+    if (this.coopBgmMode !== 'combat' || this.currentCoopRoomTrackId !== id) {
+      return;
+    }
+    const h = this.soundCache.get(id);
+    if (!h) return;
+    h.volume(this.getCoopBgmVolume());
+    this.coopRoomInstance = h.play();
+  }
+
+  /** Stop combat-only and chaos; restore hub (Empyrea). Call when leaving co-op for other modes. */
+  public coopSyncNonCoopMode(): void {
+    this.stopAllCoopRoomTracks();
+    this.unloadCoopRoomHowlsFromCache();
+    this.stopCoopChaosOnly();
+    this.unloadCoopChaosFromCache();
+    this.coopBgmMode = 'none';
+    void this.preloadBackgroundMusic().then(() => this.startBackgroundMusic());
+  }
+
   public startBackgroundMusic() {
+    if (this.coopBgmMode === 'combat' || this.coopBgmMode === 'chaos') {
+      return;
+    }
     if (this.backgroundMusicInstance !== null) {
       return; // Already playing
     }
@@ -757,21 +948,20 @@ export class AudioSystem extends System {
   }
 
   public stopBackgroundMusic() {
-    // Stop Howl-based playback
     const bgMusic = this.soundCache.get('background_music');
-    if (bgMusic && this.backgroundMusicInstance !== null) {
-      bgMusic.stop(this.backgroundMusicInstance);
-      this.backgroundMusicInstance = null;
+    if (bgMusic) {
+      bgMusic.stop();
     }
-
-    // Also stop streaming playback if active
+    this.backgroundMusicInstance = null;
     this.stopBackgroundMusicStreaming();
-
     console.log('🎵 Stopped background music');
   }
 
   // Clean up resources
   public dispose() {
+    this.stopAllCoopRoomTracks();
+    this.stopCoopChaosOnly();
+    this.coopBgmMode = 'none';
     // Stop and clean up background music
     this.stopBackgroundMusic();
 

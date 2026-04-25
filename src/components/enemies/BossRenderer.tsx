@@ -1,127 +1,134 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group } from '@/utils/three-exports';
 import { World } from '@/ecs/World';
 import { Enemy } from '@/ecs/components/Enemy';
-import { Movement } from '@/ecs/components/Movement';
-import BossModel from './BossModel';
+import BossGlbModel from './BossGlbModel';
+import { useMultiplayer } from '@/contexts/MultiplayerContext';
+
+const WALK_STOP_DELAY = 200;
 
 interface BossRendererProps {
+  id: string;
   entityId: number;
   position: Vector3;
   world: World;
   onMeshReady?: (mesh: Group) => void;
-  isAttacking?: boolean;
-  attackingHand?: 'left' | 'right' | null;
-  targetPosition?: Vector3 | null;
-  rotation?: number; // Server-authoritative rotation in radians
-  isStunned?: boolean; // Whether the enemy is currently stunned
-  bladesGlowing?: boolean; // Red blade glow after blink
+  rotation?: number;
+  isStunned?: boolean;
+  isDying?: boolean;
 }
 
 export default function BossRenderer({
+  id,
   entityId,
   position,
   world,
   onMeshReady,
-  isAttacking = false,
-  attackingHand = null,
-  targetPosition = null,
   rotation,
   isStunned = false,
-  bladesGlowing = false
+  isDying = false,
 }: BossRendererProps) {
+  const { socket } = useMultiplayer();
   const groupRef = useRef<Group>(null);
-  const timeRef = useRef(0);
   const currentRotationRef = useRef(0);
-  
-  // Update entity userData with visual rotation for backstab detection every frame
+  const [isWalking, setIsWalking] = useState(false);
+  const [isLeaping, setIsLeaping] = useState(false);
+  const [tectonicJumpTrigger, setTectonicJumpTrigger] = useState(0);
+  const [attackTrigger, setAttackTrigger] = useState(0);
+  const [meleeIndex, setMeleeIndex] = useState<0 | 1 | 2>(0);
+  const [isImpacting, setIsImpacting] = useState(false);
+  const [impactPlayKey, setImpactPlayKey] = useState(0);
+  const targetPosition = useRef(position.clone());
+  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     const updateVisualRotation = () => {
       const entity = world.getEntity(entityId);
       if (entity && groupRef.current) {
-        if (!entity.userData) {
-          entity.userData = {};
-        }
+        if (!entity.userData) entity.userData = {};
         entity.userData.visualRotation = groupRef.current.rotation.y;
       }
     };
-    
-    const intervalId = setInterval(updateVisualRotation, 16); // ~60fps
+    const intervalId = setInterval(updateVisualRotation, 16);
     return () => clearInterval(intervalId);
   }, [world, entityId]);
 
-  // Lightning effect handler
-  const handleLightningStart = (hand: 'left' | 'right') => {
+  useEffect(() => {
+    const dist = targetPosition.current.distanceTo(position);
+    targetPosition.current.copy(position);
+    if (dist > 0.02 && !isDying) {
+      setIsWalking(true);
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
+    }
+  }, [position.x, position.y, position.z, isDying]);
 
-  };
+  useEffect(
+    () => () => {
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const onAttack = (data: { bossId: string; meleeIndex?: number }) => {
+      if (data.bossId !== id) return;
+      const m = (data.meleeIndex ?? 0) % 3;
+      setMeleeIndex(m as 0 | 1 | 2);
+      setAttackTrigger((k) => k + 1);
+    };
+    const onLeapStart = (data: { bossId: string }) => {
+      if (data.bossId !== id) return;
+      setIsLeaping(true);
+    };
+    const onLeapLand = (data: { bossId: string }) => {
+      if (data.bossId !== id) return;
+      setIsLeaping(false);
+    };
+    const onTectonic = (data: { bossId: string }) => {
+      if (data.bossId !== id) return;
+      setTectonicJumpTrigger((k) => k + 1);
+    };
+    const onHitReact = (data: { bossId: string }) => {
+      if (data.bossId !== id) return;
+      setIsImpacting(true);
+      setImpactPlayKey((k) => k + 1);
+    };
+
+    socket.on('boss-attack', onAttack);
+    socket.on('boss-leap-start', onLeapStart);
+    socket.on('boss-leap-land', onLeapLand);
+    socket.on('boss-tectonic-jump', onTectonic);
+    socket.on('boss-hit-react', onHitReact);
+
+    return () => {
+      socket.off('boss-attack', onAttack);
+      socket.off('boss-leap-start', onLeapStart);
+      socket.off('boss-leap-land', onLeapLand);
+      socket.off('boss-tectonic-jump', onTectonic);
+      socket.off('boss-hit-react', onHitReact);
+    };
+  }, [socket, id]);
+
+  const handleImpactFinished = useCallback(() => {
+    setIsImpacting(false);
+  }, []);
 
   useFrame((_, delta) => {
-    timeRef.current += delta;
-
     if (groupRef.current) {
-      // Update position from ECS
       groupRef.current.position.copy(position);
+      if (isStunned) return;
 
-      // Gentle floating animation for boss
-      groupRef.current.position.y += Math.sin(timeRef.current * 1.5) * 0.02;
-
-      // Prevent rotation if stunned
-      if (isStunned) {
-        // Keep current rotation, don't update it
-        return;
-      }
-
-      // Use server rotation if available (preferred for multiplayer sync)
       if (rotation !== undefined) {
-        // Server provides authoritative rotation - use smooth interpolation for visual smoothness
-        const ROTATION_SPEED = 6.0; // Fast but smooth rotation
+        const ROTATION_SPEED = 6.0;
         const currentRotationY = groupRef.current.rotation.y;
-
-        // Calculate shortest rotation path to server rotation
         let rotationDiff = rotation - currentRotationY;
-
-        // Normalize angle difference to [-π, π] (avoid spinning wrong way)
         while (rotationDiff > Math.PI) rotationDiff -= Math.PI * 2;
         while (rotationDiff < -Math.PI) rotationDiff += Math.PI * 2;
-
-        // Apply smooth rotation (clamped to avoid overshooting)
         groupRef.current.rotation.y += rotationDiff * Math.min(1, ROTATION_SPEED * delta);
-
-        // Update ref for next frame
-        currentRotationRef.current = groupRef.current.rotation.y;
-      }
-      // Fallback: Rotate boss to face target if no server rotation (backward compatibility)
-      else if (targetPosition) {
-        // Calculate direction to target
-        const direction = new Vector3()
-          .subVectors(targetPosition, position)
-          .setY(0) // Ignore Y difference for rotation
-          .normalize();
-
-        // Calculate target rotation angle using same formula as AscendantUnit
-        // Math.atan2(x, z) gives rotation in world space
-        const targetRotation = Math.atan2(direction.x, direction.z);
-
-        // Smooth rotation interpolation (like AscendantUnit)
-        const ROTATION_SPEED = 6.0; // Fast but smooth rotation
-        const currentRotationY = groupRef.current.rotation.y;
-        
-        // Calculate shortest rotation path
-        let rotationDiff = targetRotation - currentRotationY;
-        
-        // Normalize angle difference to [-π, π] (avoid spinning wrong way)
-        while (rotationDiff > Math.PI) rotationDiff -= Math.PI * 2;
-        while (rotationDiff < -Math.PI) rotationDiff += Math.PI * 2;
-        
-        // Apply smooth rotation (clamped to avoid overshooting)
-        groupRef.current.rotation.y += rotationDiff * Math.min(1, ROTATION_SPEED * delta);
-        
-        // Update ref for next frame
-        currentRotationRef.current = groupRef.current.rotation.y;
-      } else {
-        // No target and no server rotation, gentle idle rotation
-        groupRef.current.rotation.y = Math.sin(timeRef.current * 0.3) * 0.3;
         currentRotationRef.current = groupRef.current.rotation.y;
       }
     }
@@ -135,13 +142,20 @@ export default function BossRenderer({
 
   return (
     <group ref={groupRef}>
-      <BossModel
-        isAttacking={isAttacking}
-        attackingHand={attackingHand}
-        onLightningStart={handleLightningStart}
-        bladesGlowing={bladesGlowing}
+      <BossGlbModel
+        isWalking={isWalking && !isLeaping}
+        isDying={isDying}
+        isLeaping={isLeaping}
+        tectonicJumpTrigger={tectonicJumpTrigger}
+        attackTrigger={attackTrigger}
+        meleeIndex={meleeIndex}
+        isImpacting={isImpacting}
+        impactPlayKey={impactPlayKey}
+        onImpactFinished={handleImpactFinished}
+        onLeapFinished={() => setIsLeaping(false)}
+        onTectonicJumpFinished={() => {}}
+        onAttackFinished={() => {}}
       />
     </group>
   );
 }
-

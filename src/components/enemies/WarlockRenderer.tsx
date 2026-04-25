@@ -29,6 +29,8 @@ const BLINK_ANIMATION_DURATION = 800;  // ms
 // How long the launch animation plays
 const LAUNCH_ANIMATION_DURATION = 1400; // ms
 const FADE_DURATION = 1.5; // seconds for death fade-out
+const WALK_STOP_DELAY = 250; // ms — purple warlock walks on server; debounce idle
+const HIT_REACT_IMPACT_COOLDOWN_MS = 1500; // min time between warlock_impact.glb hit-react plays
 
 // Fast lerp: the warlock only moves via teleport, so we want position corrections to be snappy
 const LERP_SPEED = 20;
@@ -50,6 +52,7 @@ export default function WarlockRenderer({
 
   const [isBlinking,  setIsBlinking]  = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
+  const [isWalking,   setIsWalking]   = useState(false);
   const [isImpacting, setIsImpacting] = useState(false);
   const [impactPlayKey, setImpactPlayKey] = useState(0);
 
@@ -59,8 +62,10 @@ export default function WarlockRenderer({
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
   const prevHealthRef  = useRef(health);
+  const lastHitImpactAtRef = useRef(0);
   const fadeTimer      = useRef(0);
   const opacity        = useRef(1);
+  const walkStopTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Snap to server position before the first frame so the warlock is never rendered at the world origin
   const setGroupRef = useCallback((group: Group | null) => {
@@ -71,16 +76,32 @@ export default function WarlockRenderer({
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Track server position changes — warlocks don't walk, but can blink
+  // Track server position — red: blink teleports; purple: incremental walk updates
   useEffect(() => {
     const dist = targetPosition.current.distanceTo(position);
     targetPosition.current.copy(position);
 
-    // Snap immediately for any meaningful position jump (spawn, respawn, or blink)
     if (dist > 2.0 && groupRef.current) {
       groupRef.current.position.copy(position);
     }
-  }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    if (
+      soulType === 'purple' &&
+      dist > 0.01 &&
+      dist <= 2.0 &&
+      !isBlinking &&
+      !isLaunching &&
+      !isDying
+    ) {
+      setIsWalking(true);
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
+    }
+  }, [position.x, position.y, position.z, soulType, isBlinking, isLaunching, isDying]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    return () => { if (walkStopTimer.current) clearTimeout(walkStopTimer.current); };
+  }, []);
 
   useEffect(() => {
     targetRotation.current = rotation;
@@ -98,8 +119,12 @@ export default function WarlockRenderer({
       !isBlinking &&
       !isLaunching
     ) {
-      setIsImpacting(true);
-      setImpactPlayKey(k => k + 1);
+      const now = performance.now();
+      if (now - lastHitImpactAtRef.current >= HIT_REACT_IMPACT_COOLDOWN_MS) {
+        lastHitImpactAtRef.current = now;
+        setIsImpacting(true);
+        setImpactPlayKey(k => k + 1);
+      }
     }
     prevHealthRef.current = health;
   }, [health, isDying, isBlinking, isLaunching]);
@@ -216,6 +241,7 @@ export default function WarlockRenderer({
 
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <WarlockModel
+        isWalking={isWalking}
         isBlinking={isBlinking}
         isLaunching={isLaunching}
         isDying={isDying}

@@ -28,23 +28,69 @@ const MELEE_SURROUND_STANDOFF_MARGIN = 0.08;
 // Leash to current target after the enemy has taken player damage (arena ~64×64).
 const DAMAGE_THREAT_LEASH = 90;
 
+// Infested player-zombie summon lock — keep in sync with client ZombieRenderer SUMMON_DURATION
+const INFESTED_ZOMBIE_SUMMON_LOCK_MS = 2800;
+
 // Co-op Viper: client projectile + ground line use this (see ViperArrowProjectile, CoopGameScene).
 const VIPER_ARROW_MAX_RANGE = 18;
+// Shade daggers: same fixed ray length (telegraphShadeAttack maxRange / endPosition).
+const SHADE_DAGGER_MAX_RANGE = VIPER_ARROW_MAX_RANGE;
 
 // Templar Blink Smite: first cast 15s after aggro, then every 15s; windup 1s then AOE in front of templar
-const TEMPLAR_BLINK_SMITE_INTERVAL_MS = 15000;
-const TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS = 1000;
-const TEMPLAR_BLINK_SMITE_IMPACT_OFFSET = 2.25;
-const TEMPLAR_BLINK_SMITE_DAMAGE = 100;
-const TEMPLAR_BLINK_SMITE_RADIUS = 3.0;
+const TEMPLAR_BLINK_SMITE_INTERVAL_MS = 12500;
+const TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS = 750;
+const TEMPLAR_BLINK_SMITE_IMPACT_OFFSET = 2.75;
+const TEMPLAR_BLINK_SMITE_DAMAGE = 65;
+const TEMPLAR_BLINK_SMITE_RADIUS = 2.5;
 const TEMPLAR_BLINK_SMITE_ABILITY_LOCK_MS = 2500; // no move/melee during windup + post-strike
-const TELEPORT_BEHIND_DISTANCE = 2.5; // same as boss blink
+const TELEPORT_BEHIND_DISTANCE = 2.2; // same as boss blink (templar blink smite; not used by main co-op boss)
+
+// Co-op main boss (GLB): melee + leap + tectonic
+const BOSS_MELEE_RANGE = 3;
+const BOSS_MELEE_COOLDOWN_MS = 2750;
+const BOSS_MELEE_DAMAGE = 40;
+/** No translation during melee swing (matches knight `SWING_LOCK_MS`). */
+const BOSS_MELEE_ATTACK_LOCK_MS = 1200;
+/** Leap only once at or below this health fraction (not at full HP). */
+const BOSS_LEAP_MAX_HP_PCT = 0.95;
+const BOSS_STANDOFF_M = 3.2;
+const BOSS_LEAP_LAND_STANDOFF_M = 0.65; // land near player for leap (not full walk standoff 3.2m)
+const BOSS_LEAP_COOLDOWN_MS = 8000;
+const BOSS_LEAP_MAX_TRAVEL = 20;
+/** Inside co-op boss throne shell (~`COOP_THRONE_ROOM_RADIUS` 16); keep leaps shorter. */
+const BOSS_LEAP_MAX_TRAVEL_THRONE = 12;
+/** Playable disc inset so boss feet stay inside grass ring. */
+const COOP_BOSS_THRONE_ARENA_CLAMP_R = 14;
+const BOSS_LEAP_DURATION_MS = 1000;
+const BOSS_LEAP_LANDING_RADIUS = 3;
+const BOSS_LEAP_DAMAGE = 50;
+const BOSS_TECTONIC_COOLDOWN_MS = 20000;
+const BOSS_TECTONIC_MAX_HP_PCT = 0.75;
+const BOSS_TECTONIC_CENTER_DIST = 0.85;
+const BOSS_TECTONIC_JUMP_INTERVAL_MS = 1000;
+const BOSS_TECTONIC_JUMP_COUNT = 10;
+const BOSS_TECTONIC_SPIKE_WARN_MS = 750;
+// Keep in sync with TECTONIC_HIT_RADIUS in src/components/enemies/BossTectonicSpikeTelegraph.tsx
+const BOSS_TECTONIC_SHARD_RADIUS = 2.5;
+const BOSS_TECTONIC_SHARD_DAMAGE = 40;
+const BOSS_STATIONARY_EPS = 0.03;
+const BOSS_TECTONIC_CENTER = { x: 0, y: 0, z: 0 };
 
 // Martyr: self-detonation (matches client AOE)
 const MARTYR_MELEE_RANGE = 1.4;
-const MARTYR_DETONATION_RADIUS = 6;
-const MARTYR_DETONATION_DAMAGE = 200;
-const MARTYR_DETONATION_DELAY_MS = 2000;
+const MARTYR_DETONATION_RADIUS = 5.5;
+const MARTYR_DETONATION_DAMAGE = 175;
+const MARTYR_DETONATION_DELAY_MS = 2160;
+
+// Purple warlock: matches WARLOCK_LAUNCH_DURATION in CoopGameScene.tsx — no walk during cast wind-up
+const WARLOCK_LAUNCH_MOVE_LOCK_MS = 1400;
+const WARLOCK_PREFERRED_STAND_RANGE = 9.5; // same as movement stop distance; launch only at or inside this
+const WARLOCK_METEOR_PER_HIT_DAMAGE = 100;
+const WARLOCK_METEOR_STAGGER_MS = 500;
+// Meteor swarm: offset radius around primary target, clamped to co-op square arena
+const WARLOCK_METEOR_OFFSET_MIN = 2;
+const WARLOCK_METEOR_OFFSET_MAX = 6;
+const WARLOCK_METEOR_ARENA_EXTENT = 20; // same half-extent as shade blink (inner castle)
 
 class EnemyAI {
   constructor(roomId, io) {
@@ -63,17 +109,16 @@ class EnemyAI {
     // Boss attack cooldown tracking
     this.bossAttackCooldown = new Map(); // enemyId -> lastAttackTime
 
-    // Boss meteor cooldown tracking
-    this.bossMeteorCooldown = new Map(); // enemyId -> lastMeteorTime
-
-    // Boss DeathGrasp cooldown tracking
-    this.bossDeathGraspCooldown = new Map(); // enemyId -> lastDeathGraspTime
-
-    // Boss teleport cooldown tracking
-    this.bossTeleportCooldown = new Map(); // enemyId -> lastTeleportTime
-
-    // Blade-enhanced state after blink (next attack deals double damage for 1.5s)
-    this.bossBladeEnhanced = new Map(); // enemyId -> expiryTimestamp
+    this.bossLeapCooldown = new Map();
+    this.bossTectonicCooldown = new Map();
+    this.bossMeleePatternIndex = new Map();
+    this.bossTectonicData = new Map();
+    this.bossLeapEndAt = new Map();
+    this.bossLeapLand = new Map();
+    this.bossLeapFrom = new Map(); // bossId -> { x, z } leap start (for in-flight lerp)
+    this.bossLeapTimeout = new Map();
+    this.bossTectonicSpikePendingTimeouts = new Map(); // bossId -> timeout ids
+    this.bossLastAiPos = new Map();
 
     // Boss skeleton summoning tracking
     this.bossSkeletonSummonCooldown = new Map(); // enemyId -> lastSummonTime
@@ -92,6 +137,7 @@ class EnemyAI {
     this.warlockBlinkCooldown  = new Map(); // enemyId -> lastBlinkTime
     this.warlockLaunchCooldown = new Map(); // enemyId -> lastLaunchTime
     this.warlockMeteorCooldown = new Map(); // enemyId -> lastMeteorTime (purple warlock meteor swarm)
+    this.warlockLaunchMoveLockUntil = new Map(); // enemyId -> timestamp: purple warlock cannot walk until
 
     // Shade blink+attack cooldown tracking (4-second cooldown)
     this.shadeBlinkCooldown = new Map(); // enemyId -> lastBlinkTime
@@ -120,6 +166,9 @@ class EnemyAI {
     // Knight special ability cooldown tracking
     // Each soul type has one unique ability; all share this single cooldown map.
     this.knightAbilityCooldown = new Map(); // enemyId -> lastAbilityTime
+
+    // Red / Green: Death Grasp (independent 15s CD from knightAbilityCooldown)
+    this.knightDeathGraspCooldown = new Map(); // enemyId -> lastCastMs
 
     // Navigation / pathfinding
     this.navGrid    = null;      // Uint8Array built once on first use
@@ -152,16 +201,28 @@ class EnemyAI {
     this.bossDamageTracking.clear();
     this.bossAttackCooldown.clear();
     this.bossSpawnTime.clear();
-    this.bossMeteorCooldown.clear();
-    this.bossDeathGraspCooldown.clear();
+    this.bossLeapCooldown.clear();
+    this.bossTectonicCooldown.clear();
+    this.bossMeleePatternIndex.clear();
+    this.bossTectonicData.clear();
+    this.bossLeapEndAt.clear();
+    this.bossLeapLand.clear();
+    this.bossLeapFrom.clear();
+    this.bossLastAiPos.clear();
+    this.bossLeapTimeout.forEach((t) => clearTimeout(t));
+    this.bossLeapTimeout.clear();
+    this.bossTectonicSpikePendingTimeouts.forEach((ids) => {
+      (ids || []).forEach((tid) => clearTimeout(tid));
+    });
+    this.bossTectonicSpikePendingTimeouts.clear();
     this.bossSkeletonSummonCooldown.clear();
     this.bossSummonedSkeletons.clear();
     this._lastMeteorDebugLog.clear();
     this.enemyTaunts.clear();
-    this.bossBladeEnhanced.clear();
     this.warlockBlinkCooldown.clear();
     this.warlockLaunchCooldown.clear();
     this.warlockMeteorCooldown.clear();
+    this.warlockLaunchMoveLockUntil.clear();
     this.shadeBlinkCooldown.clear();
     this.viperAttackCooldown.clear();
     this.weaverHealCooldown.clear();
@@ -172,6 +233,7 @@ class EnemyAI {
     this.ghoulAttackCooldown.clear();
     this.meleeLockUntil.clear();
     this.knightAbilityCooldown.clear();
+    this.knightDeathGraspCooldown.clear();
     this.enemyPaths.clear();
     this.templarBlinkSmiteNextAt.clear();
   }
@@ -265,75 +327,49 @@ class EnemyAI {
     // Get or create aggro data for this enemy
     let aggroData = this.enemyAggro.get(enemy.id);
     if (!aggroData) {
-      // Find closest player as initial target
       const closestPlayer = this.findClosestPlayer(enemy, players);
       if (!closestPlayer) return;
 
       aggroData = {
         targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
         lastUpdate: Date.now(),
         aggro: 100
       };
       this.enemyAggro.set(enemy.id, aggroData);
     }
 
-    // Find current target player
-    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
-    
-    // If target is dead or doesn't exist, find a new target
-    if (!targetPlayer || targetPlayer.health <= 0) {
-      const newTarget = this.findClosestPlayer(enemy, players);
-      if (newTarget) {
-        aggroData.targetPlayerId = newTarget.id;
-        targetPlayer = newTarget;
-      } else {
-        // No valid targets available
-        return;
-      }
-    }
+    const resolved = this.resolveAggroCombatTarget(aggroData, enemy, players);
+    if (!resolved) return;
 
-    // Move enemy towards target
-    this.moveEnemyTowardsTarget(enemy, targetPlayer);
+    this.moveEnemyTowardsTarget(enemy, this.aggroTargetToMoveTarget(resolved));
   }
 
   updateBossSkeletonAI(skeleton, players) {
-    // Get or create aggro data for this skeleton
     let aggroData = this.enemyAggro.get(skeleton.id);
     if (!aggroData) {
-      // Find closest player as initial target
       const closestPlayer = this.findClosestPlayer(skeleton, players);
       if (!closestPlayer) return;
 
       aggroData = {
         targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
         lastUpdate: Date.now(),
         aggro: 100
       };
       this.enemyAggro.set(skeleton.id, aggroData);
     }
 
-    // Find current target player
-    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
-    
-    // If target is dead or doesn't exist, find a new target
-    if (!targetPlayer || targetPlayer.health <= 0) {
-      const newTarget = this.findClosestPlayer(skeleton, players);
-      if (newTarget) {
-        aggroData.targetPlayerId = newTarget.id;
-        targetPlayer = newTarget;
-      } else {
-        // No valid targets available
-        return;
-      }
-    }
+    const resolved = this.resolveAggroCombatTarget(aggroData, skeleton, players);
+    if (!resolved) return;
 
-    // Check if skeleton can attack target (within range)
-    const distance = this.calculateDistance(skeleton.position, targetPlayer.position);
+    const moveTarget = this.aggroTargetToMoveTarget(resolved);
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(skeleton.position, tpos);
     const attackRange = 2.4;
-    const attackCooldown = 2000; // 2 seconds between attacks
+    const attackCooldown = 2000;
 
     if (distance <= attackRange) {
-      // Within attack range - check attack cooldown
       if (!this.bossAttackCooldown.has(skeleton.id)) {
         this.bossAttackCooldown.set(skeleton.id, 0);
       }
@@ -342,36 +378,46 @@ class EnemyAI {
       const now = Date.now();
 
       if (now - lastAttackTime >= attackCooldown) {
-        // Lock cooldown immediately so the telegraph doesn't re-trigger
         this.bossAttackCooldown.set(skeleton.id, now);
 
-        // Telegraph the attack (starts animation on clients)
-        this.telegraphSkeletonAttack(skeleton, targetPlayer);
-
-        // After 1 second, confirm damage only if the player is still in range
-        const telegraphDelay = 750;
-        setTimeout(() => {
-          // Abort if skeleton died or room ended during the telegraph
-          if (skeleton.isDying || !this.room?.getGameStarted()) return;
-
-          const currentPlayers = this.room?.getPlayers();
-          if (!currentPlayers) return;
-
-          const currentTarget = currentPlayers.find(p => p.id === targetPlayer.id);
-          if (!currentTarget || currentTarget.health <= 0) return;
-
-          // Only deal damage if player is still within attack range
-          const currentDistance = this.calculateDistance(skeleton.position, currentTarget.position);
-          if (currentDistance <= attackRange) {
-            this.bossSkeletonAttackPlayer(skeleton, currentTarget);
-          } else {
-            console.log(`💀 Skeleton ${skeleton.id} attack missed - player ${currentTarget.id} dodged out of range!`);
-          }
-        }, telegraphDelay);
+        if (resolved.kind === 'player') {
+          this.telegraphSkeletonAttack(skeleton, resolved.player);
+          const telegraphDelay = 250;
+          const pid = resolved.player.id;
+          setTimeout(() => {
+            if (skeleton.isDying || !this.room?.getGameStarted()) return;
+            const currentPlayers = this.room?.getPlayers();
+            if (!currentPlayers) return;
+            const currentTarget = currentPlayers.find(p => p.id === pid);
+            if (!currentTarget || currentTarget.health <= 0) return;
+            const currentDistance = this.calculateDistance(skeleton.position, currentTarget.position);
+            if (currentDistance <= attackRange) {
+              this.bossSkeletonAttackPlayer(skeleton, currentTarget);
+            } else {
+              console.log(`💀 Skeleton ${skeleton.id} attack missed - player ${currentTarget.id} dodged out of range!`);
+            }
+          }, telegraphDelay);
+        } else {
+          const zid = resolved.zombie.id;
+          this.telegraphSkeletonAttack(skeleton, {
+            id: resolved.zombie.ownerPlayerId || zid,
+            position: resolved.zombie.position,
+          });
+          const telegraphDelay = 250;
+          setTimeout(() => {
+            if (skeleton.isDying || !this.room?.getGameStarted()) return;
+            const z = this.room?.getEnemy(zid);
+            if (!z || z.isDying || z.health <= 0) return;
+            const currentDistance = this.calculateDistance(skeleton.position, z.position);
+            if (currentDistance <= attackRange) {
+              const damage = skeleton.damage || 17;
+              this.damagePlayerZombieFromMob(skeleton, z, damage, 'boss_skeleton_melee');
+            }
+          }, telegraphDelay);
+        }
       }
     } else {
-      // Outside attack range - move towards target
-      this.moveEnemyTowardsTarget(skeleton, targetPlayer);
+      this.moveEnemyTowardsTarget(skeleton, moveTarget);
     }
   }
 
@@ -412,30 +458,28 @@ class EnemyAI {
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(knight, players);
       if (!closestPlayer) return;
-      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100 };
+      aggroData = {
+        targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
+        lastUpdate: Date.now(),
+        aggro: 100,
+      };
       this.enemyAggro.set(knight.id, aggroData);
     }
 
-    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
-    if (!targetPlayer || targetPlayer.health <= 0) {
-      const newTarget = this.findClosestPlayer(knight, players);
-      if (newTarget) {
-        aggroData.targetPlayerId = newTarget.id;
-        targetPlayer = newTarget;
-      } else {
-        return;
-      }
-    }
+    const resolved = this.resolveAggroCombatTarget(aggroData, knight, players);
+    if (!resolved) return;
 
-    const distance = this.calculateDistance(knight.position, targetPlayer.position);
-    const attackRange = 2.6; // Slightly longer reach than skeleton (shield bash + sword)
+    const moveTarget = this.aggroTargetToMoveTarget(resolved);
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(knight.position, tpos);
+    const attackRange = 2.6;
     const meleePressDistance = attackRange - MELEE_CLOSE_INSET;
-    const attackCooldown = knight.attackCooldown ?? 2500; // Soul-type override, default 2.5s
-    const aggroRadius = 10;   // Knight idles until a player steps within this range
+    const attackCooldown = knight.attackCooldown ?? 2500;
+    const aggroRadius = 10;
 
-    // Once aggroed, stay aggroed until the player gets very far (leash at 3× aggro radius)
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
-    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(knight.position, targetPlayer.position)) {
+    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(knight.position, tpos)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
@@ -443,65 +487,99 @@ class EnemyAI {
     }
 
     if (!aggroData.isAggroed) {
-      // Player is out of aggro range — stand still, client shows Idle automatically
       return;
     }
 
     const now = Date.now();
 
-    // While the swing animation is in progress the knight must stand completely
-    // still — no movement updates should be sent to clients.  The lock window
-    // covers the full telegraph + damage-check window (1 200 ms, matching the
-    // client-side ATTACK_DURATION) so the knight can never slide toward the
-    // player mid-swing.
     const lockUntil = this.meleeLockUntil.get(knight.id) || 0;
     if (now < lockUntil) return;
 
-    // ── Special ability (soul-type unique, higher priority than basic attack) ──
-    const abilityFired = this.tryKnightAbility(knight, targetPlayer, now, distance, attackRange);
-    if (abilityFired) return;
+    if (resolved.kind === 'player') {
+      const targetPlayer = resolved.player;
+      const deathGraspFired = this.tryKnightDeathGrasp(knight, targetPlayer, now, distance);
+      if (deathGraspFired) return;
 
-    // ── Basic melee attack ────────────────────────────────────────────────────
-    if (distance <= attackRange) {
-      if (!this.bossAttackCooldown.has(knight.id)) {
-        this.bossAttackCooldown.set(knight.id, 0);
-      }
+      const abilityFired = this.tryKnightAbility(knight, targetPlayer, now, distance, attackRange);
+      if (abilityFired) return;
 
-      const lastAttackTime = this.bossAttackCooldown.get(knight.id);
+      if (distance <= attackRange) {
+        if (!this.bossAttackCooldown.has(knight.id)) {
+          this.bossAttackCooldown.set(knight.id, 0);
+        }
 
-      if (now - lastAttackTime >= attackCooldown) {
-        this.bossAttackCooldown.set(knight.id, now);
+        const lastAttackTime = this.bossAttackCooldown.get(knight.id);
 
-        // Freeze the knight for the full swing duration so it cannot move while
-        // the attack animation plays out on clients.
-        const SWING_LOCK_MS = 1200; // matches ATTACK_DURATION on the client
-        this.meleeLockUntil.set(knight.id, now + SWING_LOCK_MS);
+        if (now - lastAttackTime >= attackCooldown) {
+          this.bossAttackCooldown.set(knight.id, now);
 
-        this.telegraphKnightAttack(knight, targetPlayer);
+          const SWING_LOCK_MS = 1200;
+          this.meleeLockUntil.set(knight.id, now + SWING_LOCK_MS);
 
-        setTimeout(() => {
-          if (knight.isDying || !this.room?.getGameStarted()) return;
+          this.telegraphKnightAttack(knight, targetPlayer);
+          const pid = targetPlayer.id;
 
-          const currentPlayers = this.room?.getPlayers();
-          if (!currentPlayers) return;
+          setTimeout(() => {
+            if (knight.isDying || !this.room?.getGameStarted()) return;
 
-          const currentTarget = currentPlayers.find(p => p.id === targetPlayer.id);
-          if (!currentTarget || currentTarget.health <= 0) return;
+            const currentPlayers = this.room?.getPlayers();
+            if (!currentPlayers) return;
 
-          // Only deal damage if the player is still within the swing range.
-          // If they dodged out in time, the attack is a clean miss.
-          const currentDistance = this.calculateDistance(knight.position, currentTarget.position);
-          if (currentDistance <= attackRange) {
-            this.knightAttackPlayer(knight, currentTarget);
-          } else {
-            console.log(`⚔️ Knight ${knight.id} swing missed - player dodged out of range!`);
-          }
-        }, 1000);
-      } else if (distance > meleePressDistance) {
-        this.moveEnemyTowardsTarget(knight, targetPlayer, { meleeSurroundAttackRange: attackRange });
+            const currentTarget = currentPlayers.find(p => p.id === pid);
+            if (!currentTarget || currentTarget.health <= 0) return;
+
+            const currentDistance = this.calculateDistance(knight.position, currentTarget.position);
+            if (currentDistance <= attackRange) {
+              this.knightAttackPlayer(knight, currentTarget);
+            } else {
+              console.log(`⚔️ Knight ${knight.id} swing missed - player dodged out of range!`);
+            }
+          }, 1000);
+        } else if (distance > meleePressDistance) {
+          this.moveEnemyTowardsTarget(knight, moveTarget, { meleeSurroundAttackRange: attackRange });
+        }
+      } else {
+        this.moveEnemyTowardsTarget(knight, moveTarget, { meleeSurroundAttackRange: attackRange });
       }
     } else {
-      this.moveEnemyTowardsTarget(knight, targetPlayer, { meleeSurroundAttackRange: attackRange });
+      const z = resolved.zombie;
+      if (distance <= attackRange) {
+        if (!this.bossAttackCooldown.has(knight.id)) {
+          this.bossAttackCooldown.set(knight.id, 0);
+        }
+
+        const lastAttackTime = this.bossAttackCooldown.get(knight.id);
+
+        if (now - lastAttackTime >= attackCooldown) {
+          this.bossAttackCooldown.set(knight.id, now);
+
+          const SWING_LOCK_MS = 1200;
+          this.meleeLockUntil.set(knight.id, now + SWING_LOCK_MS);
+
+          this.telegraphKnightAttack(knight, {
+            id: z.ownerPlayerId || z.id,
+            position: z.position,
+          });
+          const zid = z.id;
+
+          setTimeout(() => {
+            if (knight.isDying || !this.room?.getGameStarted()) return;
+            const liveZ = this.room?.getEnemy(zid);
+            if (!liveZ || liveZ.isDying || liveZ.health <= 0) return;
+            const currentDistance = this.calculateDistance(knight.position, liveZ.position);
+            if (currentDistance <= attackRange) {
+              const damage = knight.damage || 25;
+              this.damagePlayerZombieFromMob(knight, liveZ, damage, 'knight_melee');
+            } else {
+              console.log(`⚔️ Knight ${knight.id} swing missed — zombie dodged out of range!`);
+            }
+          }, 1000);
+        } else if (distance > meleePressDistance) {
+          this.moveEnemyTowardsTarget(knight, moveTarget, { meleeSurroundAttackRange: attackRange });
+        }
+      } else {
+        this.moveEnemyTowardsTarget(knight, moveTarget, { meleeSurroundAttackRange: attackRange });
+      }
     }
   }
 
@@ -531,6 +609,147 @@ class EnemyAI {
     }
 
     console.log(`⚔️ Knight ${knight.id} attacked player ${player.id} for ${damage} damage!`);
+  }
+
+  // ─── Knight Death Grasp (red + green only) ──────────────────────────────────
+  // Timings/numbers: keep in sync with src/utils/knightCoopAbilitiesConstants.ts
+  // 15s CD, 5u < range ≤ 13u; mirrors frost cast + projectile + dodge test.
+
+  tryKnightDeathGrasp(knight, targetPlayer, now, distance) {
+    if (knight.soulType !== 'red' && knight.soulType !== 'green') return false;
+
+    const DEATH_GRASP_MIN_RANGE = 5.0; // must be *over* 5u (strict)
+    const DEATH_GRASP_MAX_RANGE = 13.0;
+    const DEATH_GRASP_COOLDOWN_MS = 15000;
+
+    if (distance <= DEATH_GRASP_MIN_RANGE || distance > DEATH_GRASP_MAX_RANGE) return false;
+    if (targetPlayer.health <= 0) return false;
+
+    const lastDg = this.knightDeathGraspCooldown.get(knight.id) || 0;
+    if (now - lastDg < DEATH_GRASP_COOLDOWN_MS) return false;
+
+    this.knightDeathGraspCooldown.set(knight.id, now);
+    this.meleeLockUntil.set(knight.id, now + 2000); // same as blue frost cast lock
+    this.knightCastDeathGrasp(knight, targetPlayer);
+    return true;
+  }
+
+  knightCastDeathGrasp(knight, targetPlayer) {
+    const CAST_LAUNCH_MS = 1000; // with blue frost
+    const PROJECTILE_TRAVEL_MS = 420;
+    const HIT_RADIUS = 1.35; // XZ — same as frost
+    const STANDOFF = 1.2;
+
+    const tdx = targetPlayer.position.x - knight.position.x;
+    const tdz = targetPlayer.position.z - knight.position.z;
+    if (tdx !== 0 || tdz !== 0) {
+      knight.rotation = Math.atan2(tdx, tdz);
+    }
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-moved', {
+        enemyId: knight.id,
+        position: knight.position,
+        rotation: knight.rotation,
+        timestamp: Date.now(),
+      });
+      this.io.to(this.roomId).emit('knight-deathgrasp-telegraph', {
+        knightId: knight.id,
+        targetPlayerId: targetPlayer.id,
+        timestamp: Date.now(),
+      });
+    }
+    console.log(`💀 Knight ${knight.id} (${knight.soulType}) casting Death Grasp at player ${targetPlayer.id}!`);
+
+    const targetId = targetPlayer.id;
+    const knightId = knight.id;
+
+    setTimeout(() => {
+      if (!this.room?.getGameStarted()) return;
+      const liveKnight = this.room?.getEnemy(knightId);
+      if (!liveKnight || liveKnight.isDying) return;
+
+      const currentPlayers = this.room?.getPlayers();
+      if (!currentPlayers) return;
+      const launchTarget = currentPlayers.find(p => p.id === targetId);
+      if (!launchTarget || launchTarget.health <= 0) return;
+
+      const startPosition = {
+        x: liveKnight.position.x,
+        y: liveKnight.position.y + 1.5,
+        z: liveKnight.position.z,
+      };
+      const endPosition = {
+        x: launchTarget.position.x,
+        y: launchTarget.position.y + 1.0,
+        z: launchTarget.position.z,
+      };
+      const snapX = endPosition.x;
+      const snapZ = endPosition.z;
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('knight-deathgrasp-projectile', {
+          knightId,
+          startPosition,
+          endPosition,
+          travelMs: PROJECTILE_TRAVEL_MS,
+          timestamp: Date.now(),
+        });
+      }
+
+      setTimeout(() => {
+        if (!this.room?.getGameStarted()) return;
+        const players = this.room?.getPlayers();
+        if (!players) return;
+        const currentTarget = players.find(p => p.id === targetId);
+        if (!currentTarget || currentTarget.health <= 0) return;
+
+        const k = this.room?.getEnemy(knightId);
+        if (!k || k.isDying) return;
+
+        const dx = currentTarget.position.x - snapX;
+        const dz = currentTarget.position.z - snapZ;
+        const distXZ = Math.sqrt(dx * dx + dz * dz);
+
+        if (distXZ > HIT_RADIUS) {
+          console.log(`💀 Knight ${knightId} Death Grasp missed — player dodged!`);
+          return;
+        }
+
+        const pdx = currentTarget.position.x - k.position.x;
+        const pdz = currentTarget.position.z - k.position.z;
+        const pLen = Math.sqrt(pdx * pdx + pdz * pdz) || 1;
+        const nx = pdx / pLen;
+        const nz = pdz / pLen;
+        const pullY = currentTarget.position.y;
+        const newPosition = {
+          x: k.position.x + nx * STANDOFF,
+          y: pullY,
+          z: k.position.z + nz * STANDOFF,
+        };
+
+        const p = this.room.getPlayer(targetId);
+        if (!p) return;
+        const rot = p.rotation || { x: 0, y: 0, z: 0 };
+        this.room.updatePlayerPosition(
+          targetId,
+          newPosition,
+          rot,
+          { x: 0, y: 0, z: 0 },
+        );
+
+        if (this.io) {
+          this.io.to(this.roomId).emit('knight-deathgrasp-pull', {
+            knightId: knightId,
+            targetPlayerId: targetId,
+            position: newPosition,
+            rotation: rot,
+            timestamp: Date.now(),
+          });
+        }
+        console.log(`💀 Knight ${knightId} Death Grasp pulled player ${targetId} to standoff!`);
+      }, PROJECTILE_TRAVEL_MS);
+    }, CAST_LAUNCH_MS);
   }
 
   // ─── Knight Special Abilities ────────────────────────────────────────────────
@@ -769,27 +988,26 @@ class EnemyAI {
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(shade, players);
       if (!closestPlayer) return;
-      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100 };
+      aggroData = {
+        targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
+        lastUpdate: Date.now(),
+        aggro: 100,
+      };
       this.enemyAggro.set(shade.id, aggroData);
     }
 
-    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
-    if (!targetPlayer || targetPlayer.health <= 0) {
-      const newTarget = this.findClosestPlayer(shade, players);
-      if (newTarget) {
-        aggroData.targetPlayerId = newTarget.id;
-        targetPlayer = newTarget;
-      } else {
-        return;
-      }
-    }
+    const resolved = this.resolveAggroCombatTarget(aggroData, shade, players);
+    if (!resolved) return;
 
-    const distance = this.calculateDistance(shade.position, targetPlayer.position);
-    const attackRange = 12.0;  // ranged throw
+    const moveTarget = this.aggroTargetToMoveTarget(resolved);
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(shade.position, tpos);
+    const attackRange = 12.0;
     const aggroRadius = 10;
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
-    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(shade.position, targetPlayer.position)) {
+    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(shade.position, tpos)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
@@ -798,31 +1016,46 @@ class EnemyAI {
 
     if (!aggroData.isAggroed) return;
 
-    if (distance <= attackRange) {
-      // Face the target even while standing still
-      const dx = targetPlayer.position.x - shade.position.x;
-      const dz = targetPlayer.position.z - shade.position.z;
-      shade.rotation = Math.atan2(dx, dz);
-      if (this.io) {
-        this.io.to(this.roomId).emit('enemy-moved', {
-          enemyId: shade.id,
-          position: shade.position,
-          rotation: shade.rotation,
-          timestamp: Date.now()
-        });
-      }
+    const dx = tpos.x - shade.position.x;
+    const dz = tpos.z - shade.position.z;
+    shade.rotation = Math.atan2(dx, dz);
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-moved', {
+        enemyId: shade.id,
+        position: shade.position,
+        rotation: shade.rotation,
+        timestamp: Date.now()
+      });
+    }
 
-      // Blink perpendicular then attack (4-second cooldown)
+    if (distance <= attackRange) {
       const blinkCooldown = 4750;
       const lastBlinkTime = this.shadeBlinkCooldown.get(shade.id) || 0;
       const now = Date.now();
 
       if (now - lastBlinkTime >= blinkCooldown) {
         this.shadeBlinkCooldown.set(shade.id, now);
-        this.shadeCastBlinkAndAttack(shade, targetPlayer);
+        if (resolved.kind === 'player') {
+          this.shadeCastBlinkAndAttack(shade, resolved.player);
+        } else {
+          const z = resolved.zombie;
+          const fakeTarget = { id: z.ownerPlayerId || z.id, position: z.position };
+          this.telegraphShadeAttack(shade, fakeTarget);
+          const zid = z.id;
+          const shadeId = shade.id;
+          [1000, 1250, 1500].forEach((delay) => {
+            setTimeout(() => {
+              if (shade.isDying || !this.room?.getGameStarted()) return;
+              const zz = this.room?.getEnemy(zid);
+              if (!zz || zz.isDying || zz.health <= 0) return;
+              if (this.calculateDistance(shade.position, zz.position) > attackRange + 1.5) return;
+              this.damagePlayerZombieFromMob({ id: shadeId }, zz, 25, 'shade_dagger');
+            }, delay);
+          });
+        }
       }
     } else {
-      this.moveEnemyTowardsTarget(shade, targetPlayer);
+      this.moveEnemyTowardsTarget(shade, moveTarget);
     }
   }
 
@@ -905,20 +1138,36 @@ class EnemyAI {
 
   telegraphShadeAttack(shade, targetPlayer) {
     if (this.io) {
+      const startY = shade.position.y + 1.5;
+      const startX = shade.position.x;
+      const startZ = shade.position.z;
+      const tx = targetPlayer.position.x;
+      const ty = targetPlayer.position.y + 1.0;
+      const tz = targetPlayer.position.z;
+      const dx = tx - startX;
+      const dy = ty - startY;
+      const dz = tz - startZ;
+      const len = Math.hypot(dx, dy, dz) || 1e-6;
       this.io.to(this.roomId).emit('shade-attack-telegraph', {
         shadeId: shade.id,
         targetPlayerId: targetPlayer.id,
         // Offset positions upward so daggers fly at torso/chest height
         // (shade model is ~2× taller than knight after the scale adjustment)
         startPosition: {
-          x: shade.position.x,
-          y: shade.position.y + 1.5,
-          z: shade.position.z
+          x: startX,
+          y: startY,
+          z: startZ
         },
         targetPosition: {
-          x: targetPlayer.position.x,
-          y: targetPlayer.position.y + 1.0,
-          z: targetPlayer.position.z
+          x: tx,
+          y: ty,
+          z: tz
+        },
+        maxRange: SHADE_DAGGER_MAX_RANGE,
+        endPosition: {
+          x: startX + (dx / len) * SHADE_DAGGER_MAX_RANGE,
+          y: startY + (dy / len) * SHADE_DAGGER_MAX_RANGE,
+          z: startZ + (dz / len) * SHADE_DAGGER_MAX_RANGE
         },
         damage: 25,
         timestamp: Date.now()
@@ -934,26 +1183,25 @@ class EnemyAI {
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(warlock, players);
       if (!closestPlayer) return;
-      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100 };
+      aggroData = {
+        targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
+        lastUpdate: Date.now(),
+        aggro: 100,
+      };
       this.enemyAggro.set(warlock.id, aggroData);
     }
 
-    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
-    if (!targetPlayer || targetPlayer.health <= 0) {
-      const newTarget = this.findClosestPlayer(warlock, players);
-      if (newTarget) {
-        aggroData.targetPlayerId = newTarget.id;
-        targetPlayer = newTarget;
-      } else {
-        return;
-      }
-    }
+    const resolved = this.resolveAggroCombatTarget(aggroData, warlock, players);
+    if (!resolved) return;
 
-    const distance    = this.calculateDistance(warlock.position, targetPlayer.position);
-    const aggroRadius = 8; // Slightly larger than knight/shade (5)
+    const moveTarget = this.aggroTargetToMoveTarget(resolved);
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(warlock.position, tpos);
+    const aggroRadius = 8;
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
-    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(warlock.position, targetPlayer.position)) {
+    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(warlock.position, tpos)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
@@ -962,9 +1210,8 @@ class EnemyAI {
 
     if (!aggroData.isAggroed) return;
 
-    // Always face the target (even while idle)
-    const dx = targetPlayer.position.x - warlock.position.x;
-    const dz = targetPlayer.position.z - warlock.position.z;
+    const dx = tpos.x - warlock.position.x;
+    const dz = tpos.z - warlock.position.z;
     warlock.rotation = Math.atan2(dx, dz);
     if (this.io) {
       this.io.to(this.roomId).emit('enemy-moved', {
@@ -978,21 +1225,39 @@ class EnemyAI {
     const now = Date.now();
     const isPurpleWarlock = warlock.soulType === 'purple';
 
+    if (resolved.kind === 'zombie') {
+      const z = resolved.zombie;
+      const launchRange = 12.0;
+      const launchCooldown = 7000;
+      const lastLaunchTime = this.warlockLaunchCooldown.get(warlock.id) || 0;
+      if (distance <= launchRange && now - lastLaunchTime >= launchCooldown) {
+        this.warlockLaunchCooldown.set(warlock.id, now);
+        this.damagePlayerZombieFromMob(warlock, z, 50, 'warlock_chaos_chip');
+      }
+      if (isPurpleWarlock) {
+        const lockUntil = this.warlockLaunchMoveLockUntil.get(warlock.id) || 0;
+        if (distance > WARLOCK_PREFERRED_STAND_RANGE && now >= lockUntil) {
+          this.moveEnemyTowardsTarget(warlock, moveTarget);
+        }
+      } else if (distance > launchRange) {
+        this.moveEnemyTowardsTarget(warlock, moveTarget);
+      }
+      return;
+    }
+
+    const targetPlayer = resolved.player;
+
     if (isPurpleWarlock) {
-      // Meteor Swarm: 10s between casts; first tick after aggro seeds cooldown so the first
-      // volley happens 10s after pull (matches planned pacing vs instant first cast).
       if (!this.warlockMeteorCooldown.has(warlock.id)) {
         this.warlockMeteorCooldown.set(warlock.id, now);
       }
       const lastMeteorTime = this.warlockMeteorCooldown.get(warlock.id) || 0;
-      const meteorCooldown = 10000;
+      const meteorCooldown = 9000;
       if (players.length > 0 && now - lastMeteorTime >= meteorCooldown) {
         this.warlockMeteorCooldown.set(warlock.id, now);
-        this.warlockCastMeteor(warlock, players);
+        this.warlockCastMeteor(warlock, targetPlayer);
       }
     } else {
-      // ── Blink (8-second cooldown) ───────────────────────────────────────────
-      // Teleports 5 units closer to the target; plays blink animation on clients.
       const blinkCooldown = 8000;
       const lastBlinkTime = this.warlockBlinkCooldown.get(warlock.id) || 0;
 
@@ -1002,15 +1267,26 @@ class EnemyAI {
       }
     }
 
-    // ── Launch (7-second cooldown) — red and purple ───────────────────────────
-    // Fires a large chaotic projectile at the target's current position.
-    const launchRange    = 12.0; // Slightly more than shade attack range (9.0)
+    const launchRange = 12.0;
     const launchCooldown = 7000;
     const lastLaunchTime = this.warlockLaunchCooldown.get(warlock.id) || 0;
+    const canLaunchByCooldown = distance <= launchRange && now - lastLaunchTime >= launchCooldown;
+    const purpleCanLaunch = isPurpleWarlock && canLaunchByCooldown && distance <= WARLOCK_PREFERRED_STAND_RANGE;
+    const redCanLaunch = !isPurpleWarlock && canLaunchByCooldown;
 
-    if (distance <= launchRange && now - lastLaunchTime >= launchCooldown) {
+    if (purpleCanLaunch || redCanLaunch) {
       this.warlockLaunchCooldown.set(warlock.id, now);
       this.warlockCastLaunch(warlock, targetPlayer);
+      if (isPurpleWarlock) {
+        this.warlockLaunchMoveLockUntil.set(warlock.id, now + WARLOCK_LAUNCH_MOVE_LOCK_MS);
+      }
+    }
+
+    if (isPurpleWarlock) {
+      const lockUntil = this.warlockLaunchMoveLockUntil.get(warlock.id) || 0;
+      if (distance > WARLOCK_PREFERRED_STAND_RANGE && now >= lockUntil) {
+        this.moveEnemyTowardsTarget(warlock, moveTarget);
+      }
     }
   }
 
@@ -1023,7 +1299,7 @@ class EnemyAI {
     const len = Math.sqrt(dx * dx + dz * dz);
     if (len === 0) return;
 
-    const blinkDist = 5; // Teleport 5 units closer
+    const blinkDist = 6; // Teleport 5 units closer
     const endPosition = {
       x: warlock.position.x + (dx / len) * blinkDist,
       y: warlock.position.y,
@@ -1054,7 +1330,7 @@ class EnemyAI {
       this.io.to(this.roomId).emit('warlock-flame-strike', {
         warlockId: warlock.id,
         position:  endPosition,
-        damage:    40,
+        damage:    36,
         radius:    3.0,
         timestamp: Date.now()
       });
@@ -1077,7 +1353,7 @@ class EnemyAI {
           y: targetPlayer.position.y + 1.0,
           z: targetPlayer.position.z,
         },
-        damage: 50,
+        damage: 42,
         timestamp: Date.now()
       });
     }
@@ -1085,17 +1361,31 @@ class EnemyAI {
     console.log(`🔮 Warlock ${warlock.id} launching chaotic orb at player ${targetPlayer.id}!`);
   }
 
-  /** Purple warlock: same meteor cast as the boss (client uses boss-meteor-cast + Meteor). */
-  warlockCastMeteor(warlock, players) {
-    const targetPositions = players.map(player => ({
-      x: player.position.x,
-      y: player.position.y,
-      z: player.position.z
-    }));
-
-    if (targetPositions.length === 0) {
+  /** Purple warlock: 3 meteors near the aggro target; client uses boss-meteor-cast + Meteor. */
+  warlockCastMeteor(warlock, targetPlayer) {
+    if (!targetPlayer) {
       return;
     }
+
+    const y = targetPlayer.position.y;
+    const ex = WARLOCK_METEOR_ARENA_EXTENT;
+    const clampXZ = (x, z) => ({
+      x: Math.max(-ex, Math.min(ex, x)),
+      y,
+      z: Math.max(-ex, Math.min(ex, z)),
+    });
+
+    const x0 = targetPlayer.position.x;
+    const z0 = targetPlayer.position.z;
+    const primary = clampXZ(x0, z0);
+
+    const offsetNearPrimary = () => {
+      const r = WARLOCK_METEOR_OFFSET_MIN + Math.random() * (WARLOCK_METEOR_OFFSET_MAX - WARLOCK_METEOR_OFFSET_MIN);
+      const a = Math.random() * Math.PI * 2;
+      return clampXZ(x0 + Math.cos(a) * r, z0 + Math.sin(a) * r);
+    };
+
+    const targetPositions = [primary, offsetNearPrimary(), offsetNearPrimary()];
 
     const meteorId = `meteor-${warlock.id}-${Date.now()}`;
 
@@ -1104,11 +1394,13 @@ class EnemyAI {
         bossId: warlock.id,
         meteorId: meteorId,
         targetPositions: targetPositions,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        damage: WARLOCK_METEOR_PER_HIT_DAMAGE,
+        staggerIntervalMs: WARLOCK_METEOR_STAGGER_MS,
       });
     }
 
-    console.log(`☄️ Warlock ${warlock.id} casting meteor swarm at ${targetPositions.length} player position(s)`);
+    console.log(`☄️ Warlock ${warlock.id} casting meteor swarm (3 impacts near player ${targetPlayer.id})`);
   }
 
   // ─── Templar AI ──────────────────────────────────────────────────────────────
@@ -1118,28 +1410,27 @@ class EnemyAI {
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(templar, players);
       if (!closestPlayer) return;
-      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100 };
+      aggroData = {
+        targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
+        lastUpdate: Date.now(),
+        aggro: 100,
+      };
       this.enemyAggro.set(templar.id, aggroData);
     }
 
-    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
-    if (!targetPlayer || targetPlayer.health <= 0) {
-      const newTarget = this.findClosestPlayer(templar, players);
-      if (newTarget) {
-        aggroData.targetPlayerId = newTarget.id;
-        targetPlayer = newTarget;
-      } else {
-        return;
-      }
-    }
+    const resolved = this.resolveAggroCombatTarget(aggroData, templar, players);
+    if (!resolved) return;
 
-    const distance      = this.calculateDistance(templar.position, targetPlayer.position);
-    const attackRange   = 2.6;
-    const attackCooldown = templar.attackCooldown ?? 2000; // Slightly faster than knight (2500 ms)
-    const aggroRadius   = 10;
-    const leashRadius   = this.getCombatLeashRadius(aggroData, aggroRadius);
+    const moveTarget = this.aggroTargetToMoveTarget(resolved);
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(templar.position, tpos);
+    const attackRange = 2.6;
+    const attackCooldown = templar.attackCooldown ?? 2000;
+    const aggroRadius = 10;
+    const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
-    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(templar.position, targetPlayer.position)) {
+    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(templar.position, tpos)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
@@ -1150,12 +1441,11 @@ class EnemyAI {
 
     const now = Date.now();
 
-    // Blink Smite: first cast 15s after first aggro, then every 15s (before melee lock gate)
-    if (!templar.isDying) {
+    if (resolved.kind === 'player' && !templar.isDying) {
       if (!this.templarBlinkSmiteNextAt.has(templar.id)) {
         this.templarBlinkSmiteNextAt.set(templar.id, now + TEMPLAR_BLINK_SMITE_INTERVAL_MS);
       } else if (now >= this.templarBlinkSmiteNextAt.get(templar.id)) {
-        this.templarCastBlinkSmite(templar, targetPlayer);
+        this.templarCastBlinkSmite(templar, resolved.player);
         this.templarBlinkSmiteNextAt.set(templar.id, now + TEMPLAR_BLINK_SMITE_INTERVAL_MS);
         return;
       }
@@ -1166,40 +1456,81 @@ class EnemyAI {
 
     const meleePressDistance = attackRange - MELEE_CLOSE_INSET;
 
-    if (distance <= attackRange) {
-      if (!this.bossAttackCooldown.has(templar.id)) {
-        this.bossAttackCooldown.set(templar.id, 0);
-      }
+    if (resolved.kind === 'player') {
+      const targetPlayer = resolved.player;
+      if (distance <= attackRange) {
+        if (!this.bossAttackCooldown.has(templar.id)) {
+          this.bossAttackCooldown.set(templar.id, 0);
+        }
 
-      const lastAttackTime = this.bossAttackCooldown.get(templar.id);
+        const lastAttackTime = this.bossAttackCooldown.get(templar.id);
 
-      if (now - lastAttackTime >= attackCooldown) {
-        this.bossAttackCooldown.set(templar.id, now);
-        const SWING_LOCK_MS = 1200; // matches ATTACK_DURATION on the client
-        this.meleeLockUntil.set(templar.id, now + SWING_LOCK_MS);
-        this.telegraphTemplarAttack(templar, targetPlayer);
+        if (now - lastAttackTime >= attackCooldown) {
+          this.bossAttackCooldown.set(templar.id, now);
+          const SWING_LOCK_MS = 1200;
+          this.meleeLockUntil.set(templar.id, now + SWING_LOCK_MS);
+          this.telegraphTemplarAttack(templar, targetPlayer);
+          const pid = targetPlayer.id;
 
-        setTimeout(() => {
-          if (templar.isDying || !this.room?.getGameStarted()) return;
+          setTimeout(() => {
+            if (templar.isDying || !this.room?.getGameStarted()) return;
 
-          const currentPlayers = this.room?.getPlayers();
-          if (!currentPlayers) return;
+            const currentPlayers = this.room?.getPlayers();
+            if (!currentPlayers) return;
 
-          const currentTarget = currentPlayers.find(p => p.id === targetPlayer.id);
-          if (!currentTarget || currentTarget.health <= 0) return;
+            const currentTarget = currentPlayers.find(p => p.id === pid);
+            if (!currentTarget || currentTarget.health <= 0) return;
 
-          const currentDistance = this.calculateDistance(templar.position, currentTarget.position);
-          if (currentDistance <= attackRange) {
-            this.templarAttackPlayer(templar, currentTarget);
-          } else {
-            console.log(`🛡️ Templar ${templar.id} swing missed — player dodged!`);
-          }
-        }, 1000);
-      } else if (distance > meleePressDistance) {
-        this.moveEnemyTowardsTarget(templar, targetPlayer, { meleeSurroundAttackRange: attackRange });
+            const currentDistance = this.calculateDistance(templar.position, currentTarget.position);
+            if (currentDistance <= attackRange) {
+              this.templarAttackPlayer(templar, currentTarget);
+            } else {
+              console.log(`🛡️ Templar ${templar.id} swing missed — player dodged!`);
+            }
+          }, 1000);
+        } else if (distance > meleePressDistance) {
+          this.moveEnemyTowardsTarget(templar, moveTarget, { meleeSurroundAttackRange: attackRange });
+        }
+      } else {
+        this.moveEnemyTowardsTarget(templar, moveTarget, { meleeSurroundAttackRange: attackRange });
       }
     } else {
-      this.moveEnemyTowardsTarget(templar, targetPlayer, { meleeSurroundAttackRange: attackRange });
+      const z = resolved.zombie;
+      if (distance <= attackRange) {
+        if (!this.bossAttackCooldown.has(templar.id)) {
+          this.bossAttackCooldown.set(templar.id, 0);
+        }
+
+        const lastAttackTime = this.bossAttackCooldown.get(templar.id);
+
+        if (now - lastAttackTime >= attackCooldown) {
+          this.bossAttackCooldown.set(templar.id, now);
+          const SWING_LOCK_MS = 1200;
+          this.meleeLockUntil.set(templar.id, now + SWING_LOCK_MS);
+          this.telegraphTemplarAttack(templar, {
+            id: z.ownerPlayerId || z.id,
+            position: z.position,
+          });
+          const zid = z.id;
+
+          setTimeout(() => {
+            if (templar.isDying || !this.room?.getGameStarted()) return;
+            const liveZ = this.room?.getEnemy(zid);
+            if (!liveZ || liveZ.isDying || liveZ.health <= 0) return;
+            const currentDistance = this.calculateDistance(templar.position, liveZ.position);
+            if (currentDistance <= attackRange) {
+              const damage = templar.damage || 48;
+              this.damagePlayerZombieFromMob(templar, liveZ, damage, 'templar_melee');
+            } else {
+              console.log(`🛡️ Templar ${templar.id} swing missed — zombie dodged!`);
+            }
+          }, 1000);
+        } else if (distance > meleePressDistance) {
+          this.moveEnemyTowardsTarget(templar, moveTarget, { meleeSurroundAttackRange: attackRange });
+        }
+      } else {
+        this.moveEnemyTowardsTarget(templar, moveTarget, { meleeSurroundAttackRange: attackRange });
+      }
     }
   }
 
@@ -1216,7 +1547,7 @@ class EnemyAI {
   }
 
   templarAttackPlayer(templar, player) {
-    const damage = templar.damage || 60;
+    const damage = templar.damage || 48;
 
     if (this.io) {
       this.io.to(this.roomId).emit('templar-attack', {
@@ -1323,27 +1654,26 @@ class EnemyAI {
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(viper, players);
       if (!closestPlayer) return;
-      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100 };
+      aggroData = {
+        targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
+        lastUpdate: Date.now(),
+        aggro: 100,
+      };
       this.enemyAggro.set(viper.id, aggroData);
     }
 
-    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
-    if (!targetPlayer || targetPlayer.health <= 0) {
-      const newTarget = this.findClosestPlayer(viper, players);
-      if (newTarget) {
-        aggroData.targetPlayerId = newTarget.id;
-        targetPlayer = newTarget;
-      } else {
-        return;
-      }
-    }
+    const resolved = this.resolveAggroCombatTarget(aggroData, viper, players);
+    if (!resolved) return;
 
-    const distance    = this.calculateDistance(viper.position, targetPlayer.position);
-    const attackRange = 13.0; // Long-range archer
-    const aggroRadius = 10;
+    const moveTarget = this.aggroTargetToMoveTarget(resolved);
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(viper.position, tpos);
+    const attackRange = 12.0;
+    const aggroRadius = 12;
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
-    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(viper.position, targetPlayer.position)) {
+    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(viper.position, tpos)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
@@ -1352,32 +1682,45 @@ class EnemyAI {
 
     if (!aggroData.isAggroed) return;
 
-    // Always face the target while aggroed.
-    const dx = targetPlayer.position.x - viper.position.x;
-    const dz = targetPlayer.position.z - viper.position.z;
+    const dx = tpos.x - viper.position.x;
+    const dz = tpos.z - viper.position.z;
     viper.rotation = Math.atan2(dx, dz);
     if (this.io) {
       this.io.to(this.roomId).emit('enemy-moved', {
-        enemyId:   viper.id,
-        position:  viper.position,
-        rotation:  viper.rotation,
+        enemyId: viper.id,
+        position: viper.position,
+        rotation: viper.rotation,
         timestamp: Date.now()
       });
     }
 
-    if (distance <= attackRange) {
-      // In range — check the 2-second attack cooldown.
-      const attackCooldown = viper.attackCooldown ?? 5000;
-      const lastAttackTime = this.viperAttackCooldown.get(viper.id) || 0;
-      const now = Date.now();
+    const attackCooldown = viper.attackCooldown ?? 5000;
+    const lastAttackTime = this.viperAttackCooldown.get(viper.id) || 0;
+    const now = Date.now();
 
+    if (distance <= attackRange) {
       if (now - lastAttackTime >= attackCooldown) {
         this.viperAttackCooldown.set(viper.id, now);
-        this.telegraphViperAttack(viper, targetPlayer);
+        if (resolved.kind === 'player') {
+          this.telegraphViperAttack(viper, resolved.player);
+        } else {
+          const z = resolved.zombie;
+          this.telegraphViperAttack(viper, {
+            id: z.ownerPlayerId || z.id,
+            position: z.position,
+          });
+          const zid = z.id;
+          setTimeout(() => {
+            if (viper.isDying || !this.room?.getGameStarted()) return;
+            const zz = this.room?.getEnemy(zid);
+            if (!zz || zz.isDying || zz.health <= 0) return;
+            if (this.calculateDistance(viper.position, zz.position) > attackRange + 1) return;
+            this.damagePlayerZombieFromMob(viper, zz, 70, 'viper_arrow');
+          }, 800);
+        }
       }
     } else {
-      // Out of range — close the distance.
-      this.moveEnemyTowardsTarget(viper, targetPlayer);
+      this.moveEnemyTowardsTarget(viper, moveTarget);
     }
   }
 
@@ -1427,26 +1770,25 @@ class EnemyAI {
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(weaver, players);
       if (!closestPlayer) return;
-      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100 };
+      aggroData = {
+        targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
+        lastUpdate: Date.now(),
+        aggro: 100,
+      };
       this.enemyAggro.set(weaver.id, aggroData);
     }
 
-    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
-    if (!targetPlayer || targetPlayer.health <= 0) {
-      const newTarget = this.findClosestPlayer(weaver, players);
-      if (newTarget) {
-        aggroData.targetPlayerId = newTarget.id;
-        targetPlayer = newTarget;
-      } else {
-        return;
-      }
-    }
+    const resolved = this.resolveAggroCombatTarget(aggroData, weaver, players);
+    if (!resolved) return;
 
-    const distance    = this.calculateDistance(weaver.position, targetPlayer.position);
+    const moveTarget = this.aggroTargetToMoveTarget(resolved);
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(weaver.position, tpos);
     const aggroRadius = 10;
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
-    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(weaver.position, targetPlayer.position)) {
+    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(weaver.position, tpos)) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
@@ -1455,15 +1797,14 @@ class EnemyAI {
 
     if (!aggroData.isAggroed) return;
 
-    // Always face the nearest player while aggroed.
-    const dx = targetPlayer.position.x - weaver.position.x;
-    const dz = targetPlayer.position.z - weaver.position.z;
+    const dx = tpos.x - weaver.position.x;
+    const dz = tpos.z - weaver.position.z;
     weaver.rotation = Math.atan2(dx, dz);
     if (this.io) {
       this.io.to(this.roomId).emit('enemy-moved', {
-        enemyId:   weaver.id,
-        position:  weaver.position,
-        rotation:  weaver.rotation,
+        enemyId: weaver.id,
+        position: weaver.position,
+        rotation: weaver.rotation,
         timestamp: Date.now()
       });
     }
@@ -1472,15 +1813,18 @@ class EnemyAI {
     const isBlueWeaver = weaver.soulType === 'blue';
 
     if (isBlueWeaver) {
-      // Blue weaver: ground-targeted lightning (no heal, no ghoul)
       if (!this.weaverLightningCooldown.has(weaver.id)) {
         this.weaverLightningCooldown.set(weaver.id, now);
       }
       const lastLightning = this.weaverLightningCooldown.get(weaver.id) || 0;
       const lightningCooldown = 7000;
-      if (players.length > 0 && now - lastLightning >= lightningCooldown) {
+      if (now - lastLightning >= lightningCooldown) {
         this.weaverLightningCooldown.set(weaver.id, now);
-        this.weaverCastLightning(weaver, targetPlayer, now);
+        if (resolved.kind === 'player') {
+          this.weaverCastLightning(weaver, resolved.player, now);
+        } else {
+          this.weaverCastLightningOnZombie(weaver, resolved.zombie, now);
+        }
       }
     } else {
       // ── Summon Ghoul (30-second cooldown; max 1 active ghoul) ────────────
@@ -1509,11 +1853,38 @@ class EnemyAI {
       }
     }
 
-    // Move toward target player (stay at moderate range)
-    const preferredRange = 8.0; // Weaver keeps distance
+    const preferredRange = 8.0;
     if (distance > preferredRange) {
-      this.moveEnemyTowardsTarget(weaver, targetPlayer);
+      this.moveEnemyTowardsTarget(weaver, moveTarget);
     }
+  }
+
+  weaverCastLightningOnZombie(weaver, zombie, now) {
+    const CHARGE_MS = 1500;
+    const tx = zombie.position.x;
+    const tz = zombie.position.z;
+    if (this.io) {
+      this.io.to(this.roomId).emit('weaver-lightning-telegraph', {
+        weaverId: weaver.id,
+        targetPosition: { x: tx, y: 0, z: tz },
+        strikeAt: now + CHARGE_MS,
+        damage: 35,
+        radius: 2.99,
+        timestamp: now
+      });
+    }
+    const zid = zombie.id;
+    setTimeout(() => {
+      if (!this.room?.getGameStarted()) return;
+      const zz = this.room?.getEnemy(zid);
+      if (!zz || zz.isDying || zz.health <= 0) return;
+      const rdx = zz.position.x - tx;
+      const rdz = zz.position.z - tz;
+      if (Math.sqrt(rdx * rdx + rdz * rdz) <= 2.99) {
+        this.damagePlayerZombieFromMob(weaver, zz, 35, 'weaver_lightning');
+      }
+    }, CHARGE_MS);
+    console.log(`🧵 Weaver ${weaver.id} lightning (zombie) at (${tx.toFixed(1)}, ${tz.toFixed(1)})`);
   }
 
   // Find the allied enemy (not a player) within healRange of the weaver that has
@@ -1585,7 +1956,7 @@ class EnemyAI {
 
   weaverCastLightning(weaver, targetPlayer, now) {
     // Client shows a blue ground circle; after CHARGE_MS, same dodge/damage as meteor (local check).
-    const CHARGE_MS = 2000;
+    const CHARGE_MS = 1500;
     if (this.io) {
       this.io.to(this.roomId).emit('weaver-lightning-telegraph', {
         weaverId: weaver.id,
@@ -1638,10 +2009,10 @@ class EnemyAI {
         type:      'ghoul',
         position:  { ...ritualPosition },
         rotation:  rotationYTowardEntry(ritualPosition.x, ritualPosition.z),
-        health:    500,
-        maxHealth: 500,
+        health:    400,
+        maxHealth: 400,
         isDying:   false,
-        damage:    30,
+        damage:    28,
         attackCooldown: 2000,
         moveSpeed: 0,   // Frozen during summon animation
         summonerId: weaver.id,
@@ -1678,23 +2049,23 @@ class EnemyAI {
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(ghoul, players);
       if (!closestPlayer) return;
-      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100, isAggroed: true };
+      aggroData = {
+        targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
+        lastUpdate: Date.now(),
+        aggro: 100,
+        isAggroed: true,
+      };
       this.enemyAggro.set(ghoul.id, aggroData);
     }
 
-    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
-    if (!targetPlayer || targetPlayer.health <= 0) {
-      const newTarget = this.findClosestPlayer(ghoul, players);
-      if (newTarget) {
-        aggroData.targetPlayerId = newTarget.id;
-        targetPlayer = newTarget;
-      } else {
-        return;
-      }
-    }
+    const resolved = this.resolveAggroCombatTarget(aggroData, ghoul, players);
+    if (!resolved) return;
 
-    const distance      = this.calculateDistance(ghoul.position, targetPlayer.position);
-    const attackRange   = 2.4;
+    const moveTarget = this.aggroTargetToMoveTarget(resolved);
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(ghoul.position, tpos);
+    const attackRange = 2.4;
     const attackCooldown = ghoul.attackCooldown ?? 2000;
 
     const now = Date.now();
@@ -1712,31 +2083,53 @@ class EnemyAI {
 
       if (now - lastAttackTime >= attackCooldown) {
         this.ghoulAttackCooldown.set(ghoul.id, now);
-        const SWING_LOCK_MS = 1200; // matches ATTACK_DURATION on the client
+        const SWING_LOCK_MS = 1200;
         this.meleeLockUntil.set(ghoul.id, now + SWING_LOCK_MS);
-        this.telegraphGhoulAttack(ghoul, targetPlayer);
 
-        setTimeout(() => {
-          if (ghoul.isDying || !this.room?.getGameStarted()) return;
+        if (resolved.kind === 'player') {
+          this.telegraphGhoulAttack(ghoul, resolved.player);
+          const pid = resolved.player.id;
+          setTimeout(() => {
+            if (ghoul.isDying || !this.room?.getGameStarted()) return;
 
-          const currentPlayers = this.room?.getPlayers();
-          if (!currentPlayers) return;
+            const currentPlayers = this.room?.getPlayers();
+            if (!currentPlayers) return;
 
-          const currentTarget = currentPlayers.find(p => p.id === targetPlayer.id);
-          if (!currentTarget || currentTarget.health <= 0) return;
+            const currentTarget = currentPlayers.find(p => p.id === pid);
+            if (!currentTarget || currentTarget.health <= 0) return;
 
-          const currentDistance = this.calculateDistance(ghoul.position, currentTarget.position);
-          if (currentDistance <= attackRange) {
-            this.ghoulAttackPlayer(ghoul, currentTarget);
-          } else {
-            console.log(`💀 Ghoul ${ghoul.id} swing missed — player dodged!`);
-          }
-        }, 900);
+            const currentDistance = this.calculateDistance(ghoul.position, currentTarget.position);
+            if (currentDistance <= attackRange) {
+              this.ghoulAttackPlayer(ghoul, currentTarget);
+            } else {
+              console.log(`💀 Ghoul ${ghoul.id} swing missed — player dodged!`);
+            }
+          }, 900);
+        } else {
+          const z = resolved.zombie;
+          this.telegraphGhoulAttack(ghoul, {
+            id: z.ownerPlayerId || z.id,
+            position: z.position,
+          });
+          const zid = z.id;
+          setTimeout(() => {
+            if (ghoul.isDying || !this.room?.getGameStarted()) return;
+            const zz = this.room?.getEnemy(zid);
+            if (!zz || zz.isDying || zz.health <= 0) return;
+            const currentDistance = this.calculateDistance(ghoul.position, zz.position);
+            if (currentDistance <= attackRange) {
+              const damage = ghoul.damage || 30;
+              this.damagePlayerZombieFromMob(ghoul, zz, damage, 'ghoul_melee');
+            } else {
+              console.log(`💀 Ghoul ${ghoul.id} swing missed — zombie dodged!`);
+            }
+          }, 900);
+        }
       } else if (distance > meleePressDistance) {
-        this.moveEnemyTowardsTarget(ghoul, targetPlayer, { meleeSurroundAttackRange: attackRange });
+        this.moveEnemyTowardsTarget(ghoul, moveTarget, { meleeSurroundAttackRange: attackRange });
       }
     } else {
-      this.moveEnemyTowardsTarget(ghoul, targetPlayer, { meleeSurroundAttackRange: attackRange });
+      this.moveEnemyTowardsTarget(ghoul, moveTarget, { meleeSurroundAttackRange: attackRange });
     }
   }
 
@@ -1749,22 +2142,22 @@ class EnemyAI {
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(martyr, players);
       if (!closestPlayer) return;
-      aggroData = { targetPlayerId: closestPlayer.id, lastUpdate: Date.now(), aggro: 100, isAggroed: true };
+      aggroData = {
+        targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
+        lastUpdate: Date.now(),
+        aggro: 100,
+        isAggroed: true,
+      };
       this.enemyAggro.set(martyr.id, aggroData);
     }
 
-    let targetPlayer = players.find(p => p.id === aggroData.targetPlayerId);
-    if (!targetPlayer || targetPlayer.health <= 0) {
-      const newTarget = this.findClosestPlayer(martyr, players);
-      if (newTarget) {
-        aggroData.targetPlayerId = newTarget.id;
-        targetPlayer = newTarget;
-      } else {
-        return;
-      }
-    }
+    const resolved = this.resolveAggroCombatTarget(aggroData, martyr, players);
+    if (!resolved) return;
 
-    const distance = this.calculateDistance(martyr.position, targetPlayer.position);
+    const moveTarget = this.aggroTargetToMoveTarget(resolved);
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(martyr.position, tpos);
     const attackRange = MARTYR_MELEE_RANGE;
 
     if (distance <= attackRange) {
@@ -1787,6 +2180,7 @@ class EnemyAI {
       }
 
       const martyrId = martyr.id;
+      const blastCenter = { x: detX, y: detY, z: detZ };
       setTimeout(() => {
         if (!this.room?.getGameStarted()) return;
         if (this.io) {
@@ -1802,11 +2196,20 @@ class EnemyAI {
         if (e && !e.isDying && e.health > 0) {
           this.room.damageEnemy(martyrId, MARTYR_DETONATION_DAMAGE, null, null, { damageType: 'martyr_self' });
         }
+        if (this.room?.getEnemies) {
+          for (const other of this.room.getEnemies()) {
+            if (!other || other.id === martyrId || other.isDying || other.health <= 0) continue;
+            if (other.type !== 'player-zombie') continue;
+            if (this.calculateDistance(blastCenter, other.position) <= MARTYR_DETONATION_RADIUS) {
+              this.room.damageEnemy(other.id, MARTYR_DETONATION_DAMAGE, null, null, { damageType: 'martyr_detonation' });
+            }
+          }
+        }
       }, MARTYR_DETONATION_DELAY_MS);
       return;
     }
 
-    this.moveEnemyTowardsTarget(martyr, targetPlayer, { meleeSurroundAttackRange: attackRange });
+    this.moveEnemyTowardsTarget(martyr, moveTarget, { meleeSurroundAttackRange: attackRange });
   }
 
   telegraphGhoulAttack(ghoul, player) {
@@ -1836,46 +2239,306 @@ class EnemyAI {
     console.log(`💀 Ghoul ${ghoul.id} attacked player ${player.id} for ${damage} damage!`);
   }
 
+  clearBossAggroForTectonic(boss) {
+    if (this.bossDamageTracking.has(boss.id)) {
+      this.bossDamageTracking.get(boss.id).clear();
+    }
+    boss.currentTarget = null;
+    this.enemyTaunts.delete(boss.id);
+  }
+
+  clearTectonicSpikePendingTimeoutsForBoss(bossId) {
+    const arr = this.bossTectonicSpikePendingTimeouts.get(bossId);
+    if (arr) {
+      arr.forEach((tid) => clearTimeout(tid));
+      this.bossTectonicSpikePendingTimeouts.delete(bossId);
+    }
+  }
+
+  removeTectonicSpikePendingTimeoutHandle(bossId, handle) {
+    const arr = this.bossTectonicSpikePendingTimeouts.get(bossId);
+    if (!arr) return;
+    const i = arr.indexOf(handle);
+    if (i >= 0) arr.splice(i, 1);
+    if (arr.length === 0) this.bossTectonicSpikePendingTimeouts.delete(bossId);
+  }
+
+  scheduleTectonicSpikeHit(boss, landX, landZ, index, tickNow) {
+    const spikeId = `tectonic-spike-${boss.id}-${tickNow}-${index}`;
+    if (this.io) {
+      this.io.to(this.roomId).emit('boss-tectonic-spike-telegraph', {
+        bossId: boss.id,
+        spikeId,
+        position: { x: landX, y: 0, z: landZ },
+        warningMs: BOSS_TECTONIC_SPIKE_WARN_MS,
+        timestamp: tickNow,
+      });
+    }
+    const handle = setTimeout(() => {
+      this.removeTectonicSpikePendingTimeoutHandle(boss.id, handle);
+      const b = this.room?.enemies?.get(boss.id);
+      if (!b || b.isDying || b.health <= 0) return;
+      if (this.room) {
+        this.room.damagePlayersInHorizontalRing(
+          { x: landX, y: 0, z: landZ },
+          BOSS_TECTONIC_SHARD_RADIUS,
+          BOSS_TECTONIC_SHARD_DAMAGE,
+          'boss_tectonic',
+        );
+      }
+      if (this.io) {
+        this.io.to(this.roomId).emit('boss-tectonic-spike-appear', {
+          bossId: boss.id,
+          spikeId,
+          position: { x: landX, y: 0, z: landZ },
+          timestamp: Date.now(),
+        });
+      }
+    }, BOSS_TECTONIC_SPIKE_WARN_MS);
+    if (!this.bossTectonicSpikePendingTimeouts.has(boss.id)) {
+      this.bossTectonicSpikePendingTimeouts.set(boss.id, []);
+    }
+    this.bossTectonicSpikePendingTimeouts.get(boss.id).push(handle);
+  }
+
+  computeBossLeapLandXZ(boss, targetPlayer) {
+    const bx = boss.position.x;
+    const bz = boss.position.z;
+    const tx = targetPlayer.position.x;
+    const tz = targetPlayer.position.z;
+    const dx = tx - bx;
+    const dz = tz - bz;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < 0.01) return { x: bx, z: bz };
+    const ndx = dx / dist;
+    const ndz = dz / dist;
+    const want = dist - BOSS_LEAP_LAND_STANDOFF_M;
+    const leapCap =
+      this.room && this.room.coopBossThroneArena ? BOSS_LEAP_MAX_TRAVEL_THRONE : BOSS_LEAP_MAX_TRAVEL;
+    const travel = Math.max(0, Math.min(leapCap, want));
+    let lx = bx + ndx * travel;
+    let lz = bz + ndz * travel;
+    if (this.resolveEnemyWallCollisions) {
+      const r = this.resolveEnemyWallCollisions(lx, lz);
+      lx = r.x;
+      lz = r.z;
+    }
+    return { x: lx, z: lz };
+  }
+
+  moveBossTowardPoint(boss, px, pz) {
+    const d = this.calculateDistance(boss.position, { x: px, y: 0, z: pz });
+    const baseSpeed = boss.moveSpeed ?? this.getEnemyMoveSpeed('boss');
+    const moveSpeed = this.getModifiedMovementSpeed(boss.id, baseSpeed);
+    if (d < 0.45 || moveSpeed === 0) return;
+    const dx = px - boss.position.x;
+    const dz = pz - boss.position.z;
+    const mag = Math.sqrt(dx * dx + dz * dz);
+    if (mag === 0) return;
+    const dirX = dx / mag;
+    const dirZ = dz / mag;
+    const deltaTime = this.updateInterval / 1000;
+    const moveDistance = moveSpeed * deltaTime;
+    const rawX = boss.position.x + dirX * moveDistance;
+    const rawZ = boss.position.z + dirZ * moveDistance;
+    const resolved = this.resolveEnemyWallCollisions(rawX, rawZ);
+    boss.position.x = resolved.x;
+    boss.position.z = resolved.z;
+    boss.rotation = Math.atan2(dirX, dirZ);
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-moved', {
+        enemyId: boss.id,
+        position: boss.position,
+        rotation: boss.rotation,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  bossStartLeap(boss, targetPlayer) {
+    const fromX = boss.position.x;
+    const fromZ = boss.position.z;
+    const { x: landX, z: landZ } = this.computeBossLeapLandXZ(boss, targetPlayer);
+    const endAt = Date.now() + BOSS_LEAP_DURATION_MS;
+    this.bossLeapEndAt.set(boss.id, endAt);
+    this.bossLeapLand.set(boss.id, { x: landX, z: landZ });
+    this.bossLeapFrom.set(boss.id, { x: fromX, z: fromZ });
+    if (this.io) {
+      this.io.to(this.roomId).emit('boss-leap-start', {
+        bossId: boss.id,
+        startPosition: { x: boss.position.x, y: boss.position.y, z: boss.position.z },
+        landPosition: { x: landX, y: 0, z: landZ },
+        durationMs: BOSS_LEAP_DURATION_MS,
+        timestamp: Date.now(),
+      });
+    }
+    const t = setTimeout(() => {
+      this.bossCompleteLeap(boss.id);
+    }, BOSS_LEAP_DURATION_MS);
+    this.bossLeapTimeout.set(boss.id, t);
+  }
+
+  bossCompleteLeap(bossId) {
+    this.bossLeapTimeout.delete(bossId);
+    this.bossLeapEndAt.delete(bossId);
+    const land = this.bossLeapLand.get(bossId);
+    this.bossLeapLand.delete(bossId);
+    this.bossLeapFrom.delete(bossId);
+    const boss = this.room?.enemies?.get(bossId);
+    if (!boss || boss.isDying || boss.health <= 0) return;
+    if (land) {
+      boss.position.x = land.x;
+      boss.position.z = land.z;
+    }
+    this.bossLeapCooldown.set(bossId, Date.now());
+    if (this.room) {
+      this.room.damagePlayersInHorizontalRing(land, BOSS_LEAP_LANDING_RADIUS, BOSS_LEAP_DAMAGE, 'boss_leap');
+    }
+    if (this.io) {
+      this.io.to(this.roomId).emit('boss-leap-land', {
+        bossId,
+        landPosition: land ? { x: land.x, y: 0, z: land.z } : { x: boss.position.x, y: 0, z: boss.position.z },
+        timestamp: Date.now(),
+      });
+      this.io.to(this.roomId).emit('enemy-moved', {
+        enemyId: bossId,
+        position: { ...boss.position },
+        rotation: boss.rotation,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
   updateBossAI(boss, players) {
-    // Note: Taunt now works by giving aggro priority instead of overriding AI completely
-
-    // console.log(`🤖 Updating Boss AI for ${boss.id}, current target: ${boss.currentTarget || 'none'}`);
-
-    // Initialize damage tracking for this boss if not exists
     if (!this.bossDamageTracking.has(boss.id)) {
       this.bossDamageTracking.set(boss.id, new Map());
     }
+    if (!this.bossSpawnTime.has(boss.id)) {
+      this.bossSpawnTime.set(boss.id, boss.spawnedAt || Date.now());
+    }
+
+    const now = Date.now();
+    const lastPos = this.bossLastAiPos.get(boss.id);
+    this.bossLastAiPos.set(boss.id, { x: boss.position.x, z: boss.position.z });
+
+    const tectonic = this.bossTectonicData.get(boss.id);
+    if (tectonic) {
+      if (tectonic.phase === 'move') {
+        const d = this.calculateDistance(boss.position, BOSS_TECTONIC_CENTER);
+        const forwardR = rotationYTowardEntry(0, 0);
+        const cur = boss.rotation || 0;
+        let rDiff = forwardR - cur;
+        while (rDiff > Math.PI) rDiff -= Math.PI * 2;
+        while (rDiff < -Math.PI) rDiff += Math.PI * 2;
+        const deltaTime = this.updateInterval / 1000;
+        boss.rotation = cur + rDiff * Math.min(1, 4.0 * deltaTime);
+        if (d <= BOSS_TECTONIC_CENTER_DIST) {
+          tectonic.phase = 'jumps';
+          tectonic.jumpIndex = 0;
+          tectonic.nextAt = now;
+        } else {
+          this.moveBossTowardPoint(boss, 0, 0);
+        }
+        boss.bossStationary = false;
+        return;
+      }
+      if (tectonic.phase === 'jumps') {
+        boss.rotation = rotationYTowardEntry(0, 0);
+        if (now < tectonic.nextAt) {
+          boss.bossStationary = false;
+          return;
+        }
+        const idx = tectonic.jumpIndex;
+        if (this.io) {
+          this.io.to(this.roomId).emit('boss-tectonic-jump', {
+            bossId: boss.id,
+            index: idx,
+            timestamp: now,
+          });
+          this.io.to(this.roomId).emit('enemy-moved', {
+            enemyId: boss.id,
+            position: boss.position,
+            rotation: boss.rotation,
+            timestamp: now,
+          });
+        }
+        if (idx % 2 === 1) {
+          const alive = players.filter((p) => p.health > 0);
+          let landX = boss.position.x;
+          let landZ = boss.position.z;
+          if (alive.length) {
+            const pick = alive[Math.floor(Math.random() * alive.length)];
+            landX = pick.position.x;
+            landZ = pick.position.z;
+          }
+          this.scheduleTectonicSpikeHit(boss, landX, landZ, idx, now);
+        }
+        tectonic.jumpIndex = idx + 1;
+        if (idx + 1 >= BOSS_TECTONIC_JUMP_COUNT) {
+          this.bossTectonicData.delete(boss.id);
+          this.bossTectonicCooldown.set(boss.id, now);
+        } else {
+          tectonic.nextAt = now + BOSS_TECTONIC_JUMP_INTERVAL_MS;
+        }
+        boss.bossStationary = false;
+        return;
+      }
+    }
+
+    if (this.bossLeapEndAt.has(boss.id)) {
+      const end = this.bossLeapEndAt.get(boss.id);
+      const land = this.bossLeapLand.get(boss.id);
+      const from = this.bossLeapFrom.get(boss.id);
+      if (now < end && land && from) {
+        const startTime = end - BOSS_LEAP_DURATION_MS;
+        let u = (now - startTime) / BOSS_LEAP_DURATION_MS;
+        if (u < 0) u = 0;
+        if (u > 1) u = 1;
+        const su = u * u * (3 - 2 * u);
+        boss.position.x = from.x + (land.x - from.x) * su;
+        boss.position.z = from.z + (land.z - from.z) * su;
+        boss.rotation = Math.atan2(land.x - from.x, land.z - from.z);
+        if (this.io) {
+          this.io.to(this.roomId).emit('enemy-moved', {
+            enemyId: boss.id,
+            position: boss.position,
+            rotation: boss.rotation,
+            timestamp: Date.now(),
+          });
+        }
+        boss.bossStationary = false;
+        return;
+      }
+      if (now < end) {
+        boss.bossStationary = false;
+        return;
+      }
+      if (this.bossLeapLand.has(boss.id)) {
+        this.bossCompleteLeap(boss.id);
+      }
+      return;
+    }
+
+    const bossMeleeLockUntil = this.meleeLockUntil.get(boss.id) || 0;
+    if (now < bossMeleeLockUntil) {
+      boss.bossStationary = true;
+      return;
+    }
 
     const damageMap = this.bossDamageTracking.get(boss.id);
-
-    // Determine target based on damage dealt (with taunt priority)
     let targetPlayer = null;
     let maxDamage = 0;
     let topDamagePlayerId = null;
-
-    // Check if boss is currently taunted
     const isTaunted = this.isEnemyTaunted(boss.id);
     const tauntTargetId = isTaunted ? this.getEnemyTauntTarget(boss.id) : null;
 
-    // console.log(`📊 Boss ${boss.id} damage tracking:`, Array.from(damageMap.entries()));
-
-    // Find player who dealt most damage (taunted player gets massive priority bonus)
     damageMap.forEach((damage, playerId) => {
-      const player = players.find(p => p.id === playerId);
-      
-      // Skip dead players
-      if (!player || player.health <= 0) {
-        return;
-      }
-
+      const player = players.find((p) => p.id === playerId);
+      if (!player || player.health <= 0) return;
       let effectiveDamage = damage;
-
-      // If this player is the taunt target, give them massive damage bonus for targeting
       if (isTaunted && playerId === tauntTargetId) {
-        effectiveDamage += 10000; // Massive bonus to ensure taunt priority
-        console.log(`🎯 Boss ${boss.id} prioritizing taunted player ${playerId} (${damage} + 10000 bonus)`);
+        effectiveDamage += 10000;
       }
-
       if (effectiveDamage > maxDamage) {
         maxDamage = effectiveDamage;
         topDamagePlayerId = playerId;
@@ -1883,260 +2546,86 @@ class EnemyAI {
       }
     });
 
-    // If no damage dealt yet, target closest player
     if (!targetPlayer || maxDamage === 0) {
       targetPlayer = this.findClosestPlayer(boss, players);
-      if (targetPlayer) {
-        console.log(`🎯 Boss targeting closest player: ${targetPlayer.name} (no damage dealt yet)`);
-      }
-    } else if (targetPlayer) {
-      // Log target switch (only when it changes)
-      if (!boss.currentTarget || boss.currentTarget !== topDamagePlayerId) {
-        console.log(`🎯 Boss switching target to ${targetPlayer.name} (${maxDamage} total damage)`);
-        boss.currentTarget = topDamagePlayerId;
-      }
+    } else if (targetPlayer && (!boss.currentTarget || boss.currentTarget !== topDamagePlayerId)) {
+      boss.currentTarget = topDamagePlayerId;
     }
 
-    if (!targetPlayer) return;
-
-    // Check if boss can attack target (within range)
-    const distance = this.calculateDistance(boss.position, targetPlayer.position);
-    const attackRange = 3.0; // Boss attack range
-    const attackCooldown = 800; // 2 seconds between attacks
-
-    // ALWAYS update rotation to face target, even when standing still
-    this.updateBossRotation(boss, targetPlayer);
-
-    // Track boss spawn time if not already tracked
-    if (!this.bossSpawnTime.has(boss.id)) {
-      // Use boss.spawnedAt from boss data, or current time as fallback
-      const spawnTime = boss.spawnedAt || Date.now();
-      this.bossSpawnTime.set(boss.id, spawnTime);
-      console.log(`🕐 Boss ${boss.id} spawn time tracked: ${new Date(spawnTime).toISOString()} (using ${boss.spawnedAt ? 'boss.spawnedAt' : 'current time as fallback'})`);
-      
-      // Verify the spawn time is reasonable (not in the future, not too far in the past)
-      const now = Date.now();
-      if (spawnTime > now) {
-        console.warn(`⚠️ Boss ${boss.id} has spawn time in the future! Correcting to current time.`);
-        this.bossSpawnTime.set(boss.id, now);
-      } else if (now - spawnTime > 3600000) { // More than 1 hour ago
-        console.warn(`⚠️ Boss ${boss.id} has spawn time more than 1 hour in the past (${((now - spawnTime) / 60000).toFixed(1)} minutes ago). This might be from an old session.`);
+    if (
+      !this.bossTectonicData.has(boss.id) &&
+      !this.bossLeapEndAt.has(boss.id) &&
+      boss.maxHealth > 0 &&
+      boss.health / boss.maxHealth <= BOSS_TECTONIC_MAX_HP_PCT
+    ) {
+      const lastT = this.bossTectonicCooldown.get(boss.id);
+      const tectonicReady = lastT == null || now - lastT >= BOSS_TECTONIC_COOLDOWN_MS;
+      if (tectonicReady) {
+        this.clearBossAggroForTectonic(boss);
+        this.bossTectonicData.set(boss.id, { phase: 'move' });
+        boss.bossStationary = false;
+        return;
       }
     }
 
-    // Check meteor cooldown (20 seconds) and initial 60 second delay
-    const meteorCooldown = 20000;
-    const initialMeteorDelay = 60000; // 60 seconds before first meteor
-    const lastMeteorTime = this.bossMeteorCooldown.get(boss.id) || 0;
-    const bossSpawnTime = this.bossSpawnTime.get(boss.id);
-    const now = Date.now();
-    const timeSinceSpawn = now - bossSpawnTime;
-
-    // Only allow meteor if:
-    // 1. At least 60 seconds have passed since boss spawned
-    // 2. Normal cooldown has passed since last meteor
-    if (timeSinceSpawn >= initialMeteorDelay && now - lastMeteorTime >= meteorCooldown) {
-      // Cast meteor ability at all player positions
-      console.log(`☄️ Boss ${boss.id} casting meteor (${(timeSinceSpawn / 1000).toFixed(1)}s since spawn, ${((now - lastMeteorTime) / 1000).toFixed(1)}s since last meteor)`);
-      this.bossCastMeteor(boss, players);
-      this.bossMeteorCooldown.set(boss.id, now);
-    } else {
-      // Debug: Log why meteor was blocked (only log every 5 seconds to avoid spam)
-      const debugKey = `${boss.id}-meteor-debug`;
-      const lastDebugLog = this._lastMeteorDebugLog.get(debugKey) || 0;
-      if (now - lastDebugLog >= 5000) { // Log every 5 seconds
-        const timeUntilMeteor = Math.max(0, initialMeteorDelay - timeSinceSpawn);
-        const reason = timeSinceSpawn < initialMeteorDelay 
-          ? `Initial 60s delay (${(timeUntilMeteor / 1000).toFixed(1)}s remaining)`
-          : `Normal cooldown (${((meteorCooldown - (now - lastMeteorTime)) / 1000).toFixed(1)}s remaining)`;
-        console.log(`⏳ Boss ${boss.id} meteor blocked: ${reason} [${(timeSinceSpawn / 1000).toFixed(1)}s since spawn]`);
-        this._lastMeteorDebugLog.set(debugKey, now);
-      }
-    }
-
-    // Check DeathGrasp cooldown (10 seconds)
-    const deathGraspCooldown = 10000;
-    const lastDeathGraspTime = this.bossDeathGraspCooldown.get(boss.id) || 0;
-
-    if (now - lastDeathGraspTime >= deathGraspCooldown) {
-      // Cast DeathGrasp at a random player
-      this.bossCastDeathGrasp(boss, players);
-      this.bossDeathGraspCooldown.set(boss.id, now);
-    }
-
-    // Check Teleport cooldown (10 seconds) with initial 15 second delay
-    const teleportCooldown = 10000;
-    const initialTeleportDelay = 15000; // 15 seconds before first teleport
-    const lastTeleportTime = this.bossTeleportCooldown.get(boss.id) || 0;
-
-    // Only allow teleport if:
-    // 1. At least 15 seconds have passed since boss spawned
-    // 2. Normal cooldown has passed since last teleport
-    // 3. Target player exists
-    if (timeSinceSpawn >= initialTeleportDelay && now - lastTeleportTime >= teleportCooldown && targetPlayer) {
-      // Teleport behind the target player
-      console.log(`✨ Boss ${boss.id} initiating teleport to player ${targetPlayer.name || targetPlayer.id} (${(timeSinceSpawn / 1000).toFixed(1)}s since spawn, ${((now - lastTeleportTime) / 1000).toFixed(1)}s since last teleport)`);
-      this.bossCastTeleport(boss, targetPlayer);
-      this.bossTeleportCooldown.set(boss.id, now);
-    }
-
-    if (distance <= attackRange) {
-      // Within attack range - stop moving but keep rotating
-      // Check attack cooldown
-      const lastAttackTime = this.bossAttackCooldown.get(boss.id) || 0;
-
-      if (now - lastAttackTime >= attackCooldown) {
-        // Attack the player
-        this.bossAttackPlayer(boss, targetPlayer);
-        this.bossAttackCooldown.set(boss.id, now);
-      }
-    } else {
-      // Outside attack range - move towards target
-      this.moveEnemyTowardsTarget(boss, targetPlayer);
-    }
-  }
-
-  bossAttackPlayer(boss, player) {
-    // Check if boss is facing the player before allowing attack
-    const isFacingTarget = this.isBossFacingTarget(boss, player);
-    if (!isFacingTarget) {
+    if (!targetPlayer) {
+      const moved = lastPos
+        ? Math.hypot(boss.position.x - lastPos.x, boss.position.z - lastPos.z) >= BOSS_STATIONARY_EPS
+        : true;
+      boss.bossStationary = !moved;
       return;
     }
 
-    const baseDamage = 47; // Boss deals 47 damage per hit
+    const distance = this.calculateDistance(boss.position, targetPlayer.position);
+    this.updateBossRotation(boss, targetPlayer);
 
-    // Check if the blade-enhanced buff is still active (from blink)
-    const enhancedExpiry = this.bossBladeEnhanced.get(boss.id) || 0;
-    const isEnhanced = Date.now() < enhancedExpiry;
-    const damage = isEnhanced ? baseDamage * 2 : baseDamage;
-
-    // Consume the buff on first attack (whether or not it was still active)
-    if (this.bossBladeEnhanced.has(boss.id)) {
-      this.bossBladeEnhanced.delete(boss.id);
+    if (distance > BOSS_MELEE_RANGE) {
+      const hpFrac = boss.maxHealth > 0 ? boss.health / boss.maxHealth : 1;
+      const canLeap =
+        hpFrac <= BOSS_LEAP_MAX_HP_PCT &&
+        (this.bossLeapCooldown.get(boss.id) == null || now - (this.bossLeapCooldown.get(boss.id) || 0) >= BOSS_LEAP_COOLDOWN_MS) &&
+        !this.bossLeapEndAt.has(boss.id);
+      if (canLeap) {
+        this.bossStartLeap(boss, targetPlayer);
+        boss.bossStationary = false;
+        return;
+      }
+      this.moveEnemyTowardsTarget(boss, targetPlayer);
+    } else {
+      const lastAttackTime = this.bossAttackCooldown.get(boss.id) || 0;
+      if (now - lastAttackTime >= BOSS_MELEE_COOLDOWN_MS) {
+        this.bossAttackPlayer(boss, targetPlayer);
+        this.bossAttackCooldown.set(boss.id, now);
+      }
     }
 
-    // Broadcast boss attack to all players
+    const movedN = lastPos
+      ? Math.hypot(boss.position.x - lastPos.x, boss.position.z - lastPos.z) >= BOSS_STATIONARY_EPS
+      : true;
+    boss.bossStationary = !movedN;
+  }
+
+  bossAttackPlayer(boss, player) {
+    const isFacingTarget = this.isBossFacingTarget(boss, player);
+    if (!isFacingTarget) return;
+
+    const idx = this.bossMeleePatternIndex.get(boss.id) || 0;
+    const meleeIndex = idx % 3;
+    this.bossMeleePatternIndex.set(boss.id, idx + 1);
+    const damage = BOSS_MELEE_DAMAGE;
+
     if (this.io) {
       this.io.to(this.roomId).emit('boss-attack', {
         bossId: boss.id,
         targetPlayerId: player.id,
-        damage: damage,
+        damage,
         position: boss.position,
-        bladeEnhancedConsumed: true, // Signal clients to clear the glow
-        timestamp: Date.now()
+        meleeIndex,
+        timestamp: Date.now(),
       });
     }
-
-    if (isEnhanced) {
-      console.log(`🔴🔥 Boss ${boss.id} EMPOWERED STRIKE! Attacked player ${player.id} for ${damage} damage (2x)!`);
-    } else {
-      console.log(`🔥 Boss ${boss.id} attacked player ${player.id} for ${damage} damage!`);
-    }
-  }
-
-  bossCastMeteor(boss, players) {
-    // Get positions of all players in the game
-    const targetPositions = players.map(player => ({
-      x: player.position.x,
-      y: player.position.y,
-      z: player.position.z
-    }));
-
-    if (targetPositions.length === 0) {
-      console.log(`⚠️ Boss ${boss.id} tried to cast meteor but no players found`);
-      return;
-    }
-
-    const meteorId = `meteor-${boss.id}-${Date.now()}`;
-    const spawnTime = this.bossSpawnTime.get(boss.id);
-    const timeSinceSpawn = spawnTime ? ((Date.now() - spawnTime) / 1000).toFixed(1) : 'unknown';
-
-    // Broadcast meteor cast to all players
-    if (this.io) {
-      this.io.to(this.roomId).emit('boss-meteor-cast', {
-        bossId: boss.id,
-        meteorId: meteorId,
-        targetPositions: targetPositions,
-        timestamp: Date.now()
-      });
-    }
-
-    console.log(`☄️☄️☄️ METEOR CAST: Boss ${boss.id} cast meteor at ${targetPositions.length} player positions! (${timeSinceSpawn}s since spawn)`);
-  }
-
-  bossCastDeathGrasp(boss, players) {
-    // Select a random player to target
-    if (players.length === 0) {
-      console.log(`⚠️ Boss ${boss.id} tried to cast DeathGrasp but no players found`);
-      return;
-    }
-
-    const randomPlayer = players[Math.floor(Math.random() * players.length)];
-    const deathGraspId = `deathgrasp-${boss.id}-${Date.now()}`;
-
-    // Calculate direction from boss to target player
-    const dx = randomPlayer.position.x - boss.position.x;
-    const dz = randomPlayer.position.z - boss.position.z;
-    const length = Math.sqrt(dx * dx + dz * dz);
-    const direction = {
-      x: length > 0 ? dx / length : 0,
-      y: 0,
-      z: length > 0 ? dz / length : 0
-    };
-
-    // Broadcast DeathGrasp cast to all players
-    if (this.io) {
-      this.io.to(this.roomId).emit('boss-deathgrasp-cast', {
-        bossId: boss.id,
-        deathGraspId: deathGraspId,
-        startPosition: boss.position,
-        direction: direction,
-        targetPlayerId: randomPlayer.id,
-        timestamp: Date.now()
-      });
-    }
-
-    console.log(`💀 Boss ${boss.id} casting DeathGrasp at player ${randomPlayer.name || randomPlayer.id}!`);
-  }
-
-  bossCastTeleport(boss, targetPlayer) {
-    if (!targetPlayer) {
-      console.log(`⚠️ Boss ${boss.id} tried to teleport but no target player found`);
-      return;
-    }
-
-    const { startPosition, endPosition } = this.teleportEnemyBehindTarget(boss, targetPlayer);
-    const playerRotation = targetPlayer.rotation?.y || 0;
-    console.log(`📍 Teleport calculation: Player at (${targetPlayer.position.x.toFixed(2)}, ${targetPlayer.position.z.toFixed(2)}) rotation: ${playerRotation.toFixed(2)}, Boss teleporting to (${endPosition.x.toFixed(2)}, ${endPosition.z.toFixed(2)})`);
-
-    // Activate blade-enhanced state: next attack within 2.5s deals double damage
-    const bladeEnhancedDuration = 2500;
-    const blinkTime = Date.now();
-    this.bossBladeEnhanced.set(boss.id, blinkTime + bladeEnhancedDuration);
-
-    // Delay the boss's next attack by 1 second so players have time to react.
-    // We do this by moving the last-attack timestamp forward by (1000 - attackCooldown),
-    // which makes the cooldown check pass exactly 1000ms after the blink.
-    const attackCooldown = 800;
-    const telegraphDelay = 1000;
-    this.bossAttackCooldown.set(boss.id, blinkTime + (telegraphDelay - attackCooldown));
-
-    console.log(`🔴 Boss ${boss.id} blades enhanced after blink! Next attack deals double damage (${bladeEnhancedDuration}ms window, ${telegraphDelay}ms telegraph)`);
-
-    // Broadcast teleport event to all players
-    if (this.io) {
-      this.io.to(this.roomId).emit('boss-teleport', {
-        bossId: boss.id,
-        startPosition: startPosition,
-        endPosition: endPosition,
-        rotation: boss.rotation,
-        targetPlayerId: targetPlayer.id,
-        bladesEnhanced: true,
-        timestamp: Date.now()
-      });
-    }
-
-    console.log(`✨✨✨ TELEPORT SUCCESS: Boss ${boss.id} teleported behind player ${targetPlayer.name || targetPlayer.id} from (${startPosition.x.toFixed(2)}, ${startPosition.z.toFixed(2)}) to (${endPosition.x.toFixed(2)}, ${endPosition.z.toFixed(2)})!`);
+    this.meleeLockUntil.set(boss.id, Date.now() + BOSS_MELEE_ATTACK_LOCK_MS);
+    console.log(`🔥 Boss ${boss.id} attacked player ${player.id} for ${damage} damage (melee ${meleeIndex})`);
   }
 
   bossSummonSkeleton(boss) {
@@ -2483,8 +2972,8 @@ class EnemyAI {
     const elapsed = totalDuration - (corruptedExpiration - now);
     
     // Initial: 90% slow, recovers 10% per second
-    const initialSlowPercent = 0.9;
-    const recoveryRate = 0.1; // 10% per second
+    const initialSlowPercent = 0.8;
+    const recoveryRate = 0.2; // 10% per second
     const elapsedSeconds = elapsed / 1000;
     
     const currentSlowPercent = Math.max(0, initialSlowPercent - (elapsedSeconds * recoveryRate));
@@ -2496,16 +2985,16 @@ class EnemyAI {
     // Different enemy types have different movement speeds
     switch (enemyType) {
       case 'elite': return 0.0;   // Stationary training dummies
-      case 'boss': return 1.25;
+      case 'boss': return 2.35;
       case 'boss-skeleton': return 1.75;
       case 'shade':   return 2.0;
       case 'warlock': return 0.0; // Stationary — moves only via blink
       case 'viper':   return 2.0;
       case 'templar': return 3.5;
       case 'weaver':  return 2.0;
-      case 'ghoul':   return 2.5;
+      case 'ghoul':   return 2.25;
       case 'martyr':  return 3.0;
-      case 'player-zombie': return 1.75;
+      case 'player-zombie': return 2.0;
       default: return 2.0;
     }
   }
@@ -2537,6 +3026,7 @@ class EnemyAI {
 
     const zombieId = `player-zombie-${ownerId}-${Date.now()}`;
     const now = Date.now();
+    const summonLockMs = INFESTED_ZOMBIE_SUMMON_LOCK_MS;
     const zombie = {
       id: zombieId,
       type: 'player-zombie',
@@ -2548,9 +3038,10 @@ class EnemyAI {
       isDying: false,
       damage: 45,
       attackCooldown: 1000,
-      moveSpeed: 1.75,
+      moveSpeed: 0,
       expireAt: now + 30000,
       staggerBuildup: 0,
+      summonUnlockAt: now + summonLockMs,
     };
 
     if (!this.playerZombiesByOwner.has(ownerId)) {
@@ -2565,7 +3056,22 @@ class EnemyAI {
         enemy: zombie,
         timestamp: Date.now(),
       });
+      this.io.to(this.roomId).emit('infested-zombie-summon', {
+        zombieId,
+        position: { x: position.x, y: position.y, z: position.z },
+        durationMs: summonLockMs,
+        timestamp: Date.now(),
+      });
     }
+
+    setTimeout(() => {
+      const spawned = this.room?.getEnemy(zombieId);
+      if (spawned && !spawned.isDying && spawned.type === 'player-zombie') {
+        spawned.moveSpeed = 1.75;
+        spawned.summonUnlockAt = null;
+      }
+    }, summonLockMs);
+
     console.log(`🧟 Infested zombie ${zombieId} raised for player ${ownerId}`);
   }
 
@@ -2612,12 +3118,15 @@ class EnemyAI {
             this.io.to(this.roomId).emit('enemy-removed', { enemyId: zid, timestamp: Date.now() });
           }
         }
+        this.clearZombieAsAggroTarget(zid);
         this.removeEnemyAggro(zid);
         this.unregisterPlayerZombie(ownerId, zid);
       }, 400);
       return;
     }
     if (zombie.isDying) return;
+
+    if (zombie.summonUnlockAt && now < zombie.summonUnlockAt) return;
 
     const hostile = this.findNearestHostileForZombie(zombie);
     const attackRange = 2.4;
@@ -2647,7 +3156,9 @@ class EnemyAI {
             const currentDist = this.calculateDistance(zombie.position, liveHostile.position);
             if (currentDist <= attackRange + 0.5) {
               const dmg = zombie.damage || 32;
-              this.room.damageEnemy(liveHostile.id, dmg, zombie.ownerPlayerId, null, null);
+              this.room.damageEnemy(liveHostile.id, dmg, zombie.ownerPlayerId, null, {
+                sourceZombieId: zombie.id,
+              });
             }
           }, 700);
         } else if (distance > meleePressDistance) {
@@ -2958,6 +3469,15 @@ class EnemyAI {
       }
     }
 
+    if (this.room && this.room.coopBossThroneArena) {
+      const len = Math.hypot(rx, rz);
+      if (len > COOP_BOSS_THRONE_ARENA_CLAMP_R) {
+        const s = COOP_BOSS_THRONE_ARENA_CLAMP_R / len;
+        rx *= s;
+        rz *= s;
+      }
+    }
+
     return { x: rx, z: rz };
   }
 
@@ -3012,13 +3532,24 @@ class EnemyAI {
     this.bossDamageTracking.delete(enemyId);
     this.bossAttackCooldown.delete(enemyId);
     this.bossSpawnTime.delete(enemyId);
-    this.bossMeteorCooldown.delete(enemyId);
+    this.bossLeapCooldown.delete(enemyId);
+    this.bossTectonicCooldown.delete(enemyId);
+    this.bossMeleePatternIndex.delete(enemyId);
+    this.bossTectonicData.delete(enemyId);
+    this.clearTectonicSpikePendingTimeoutsForBoss(enemyId);
+    this.bossLeapEndAt.delete(enemyId);
+    this.bossLeapLand.delete(enemyId);
+    this.bossLeapFrom.delete(enemyId);
+    this.bossLastAiPos.delete(enemyId);
+    const leapT = this.bossLeapTimeout.get(enemyId);
+    if (leapT) clearTimeout(leapT);
+    this.bossLeapTimeout.delete(enemyId);
     this.bossSkeletonSummonCooldown.delete(enemyId);
     this.bossSummonedSkeletons.delete(enemyId);
-    this.bossBladeEnhanced.delete(enemyId);
     this.warlockBlinkCooldown.delete(enemyId);
     this.warlockLaunchCooldown.delete(enemyId);
     this.warlockMeteorCooldown.delete(enemyId);
+    this.warlockLaunchMoveLockUntil.delete(enemyId);
     this.shadeBlinkCooldown.delete(enemyId);
     this.viperAttackCooldown.delete(enemyId);
     this.weaverHealCooldown.delete(enemyId);
@@ -3096,6 +3627,95 @@ class EnemyAI {
     return base;
   }
 
+  /** When a player-zombie dies, mobs should stop targeting it. */
+  clearZombieAsAggroTarget(zombieId) {
+    this.enemyAggro.forEach((data) => {
+      if (data.targetZombieId === zombieId) data.targetZombieId = null;
+    });
+  }
+
+  /**
+   * Threat from infested zombie melee — mob focuses the zombie, keeps owner as player fallback for leash/retarget.
+   */
+  applyZombieThreat(defenderEnemyId, zombieId, aggroAmount = 50) {
+    const z = this.room?.enemies?.get?.(zombieId);
+    if (!z || z.type !== 'player-zombie' || z.isDying || z.health <= 0) return;
+
+    const ownerId = z.ownerPlayerId;
+    const players = this.room?.getPlayers?.();
+    let fallbackPlayerId = ownerId;
+    if (players && ownerId) {
+      const owner = players.find((p) => p.id === ownerId && p.health > 0);
+      if (!owner) fallbackPlayerId = null;
+    }
+
+    let aggroData = this.enemyAggro.get(defenderEnemyId);
+    if (!aggroData) {
+      const enemy = this.room?.enemies?.get?.(defenderEnemyId);
+      if (!enemy) return;
+      aggroData = {
+        targetPlayerId: fallbackPlayerId,
+        targetZombieId: zombieId,
+        lastUpdate: Date.now(),
+        aggro: 100,
+      };
+      this.enemyAggro.set(defenderEnemyId, aggroData);
+    }
+
+    aggroData.targetZombieId = zombieId;
+    if (fallbackPlayerId) aggroData.targetPlayerId = fallbackPlayerId;
+    aggroData.aggro += aggroAmount;
+    aggroData.lastUpdate = Date.now();
+    aggroData.isAggroed = true;
+    aggroData.threatFromDamage = true;
+  }
+
+  /**
+   * Prefer combat vs an infested zombie when threat says so; otherwise resolve player target.
+   * @returns {{ kind: 'player', player: object } | { kind: 'zombie', zombie: object } | null}
+   */
+  resolveAggroCombatTarget(aggroData, moverEnemy, players) {
+    if (!aggroData || !moverEnemy || !players) return null;
+
+    const zid = aggroData.targetZombieId;
+    if (zid) {
+      const z = this.room?.enemies?.get(zid);
+      if (z && z.type === 'player-zombie' && !z.isDying && z.health > 0) {
+        return { kind: 'zombie', zombie: z };
+      }
+      aggroData.targetZombieId = null;
+    }
+
+    let targetPlayer = players.find((p) => p.id === aggroData.targetPlayerId);
+    if (!targetPlayer || targetPlayer.health <= 0) {
+      const newTarget = this.findClosestPlayer(moverEnemy, players);
+      if (newTarget) {
+        aggroData.targetPlayerId = newTarget.id;
+        targetPlayer = newTarget;
+      } else {
+        return null;
+      }
+    }
+    return { kind: 'player', player: targetPlayer };
+  }
+
+  aggroTargetToMoveTarget(resolved) {
+    if (!resolved) return null;
+    return resolved.kind === 'player'
+      ? resolved.player
+      : { id: resolved.zombie.id, position: resolved.zombie.position };
+  }
+
+  combatTargetPosition(resolved) {
+    if (!resolved) return null;
+    return resolved.kind === 'player' ? resolved.player.position : resolved.zombie.position;
+  }
+
+  damagePlayerZombieFromMob(mob, zombie, damage, damageType) {
+    if (!this.room || !zombie || zombie.type !== 'player-zombie') return;
+    this.room.damageEnemy(zombie.id, damage, null, null, { damageType, sourceEnemyId: mob?.id });
+  }
+
   // Update aggro when player damages enemy
   updateAggro(enemyId, playerId, aggroAmount = 50) {
     const players = this.room?.getPlayers?.();
@@ -3110,6 +3730,7 @@ class EnemyAI {
       if (!enemy) return;
       aggroData = {
         targetPlayerId: playerId,
+        targetZombieId: null,
         lastUpdate: Date.now(),
         aggro: 100
       };
@@ -3117,6 +3738,7 @@ class EnemyAI {
     }
 
     aggroData.targetPlayerId = playerId;
+    aggroData.targetZombieId = null;
     aggroData.aggro += aggroAmount;
     aggroData.lastUpdate = Date.now();
     aggroData.isAggroed = true;
@@ -3140,6 +3762,7 @@ class EnemyAI {
       if (aggroData.targetPlayerId === deadPlayerId) {
         // Clear the target for this enemy - it will find a new target on next update
         aggroData.targetPlayerId = null;
+        aggroData.targetZombieId = null;
         aggroData.aggro = 0;
         aggroData.isAggroed = false;
         aggroData.threatFromDamage = false;

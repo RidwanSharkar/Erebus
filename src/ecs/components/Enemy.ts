@@ -592,7 +592,8 @@ export class Enemy extends Component {
   
   public applyCorrupted(duration: number, currentTime: number): void {
     if (this.isDead) return; // Can't apply corrupted to dead enemies
-    
+    if (this.type === EnemyType.BOSS) return;
+
     this.isCorrupted = true;
     this.corruptedStartTime = currentTime;
     this.corruptedDuration = duration;

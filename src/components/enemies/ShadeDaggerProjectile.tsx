@@ -3,6 +3,9 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
+import { VIPER_ARROW_MAX_RANGE } from './ViperArrowProjectile';
+
+// Travel distance matches VIPER_ARROW_MAX_RANGE; keep in sync with backend enemyAI (shade-attack-telegraph maxRange).
 
 interface ShadeDaggerProjectileProps {
   startPosition: Vector3;
@@ -13,8 +16,8 @@ interface ShadeDaggerProjectileProps {
   onComplete: () => void;
 }
 
-const SPEED = 24;       // units per second
-const HIT_RADIUS = 1.1; // collision radius against the local player
+const SPEED = 25; // units per second — match ViperArrowProjectile
+const HIT_RADIUS = 1.05; // match ViperArrowProjectile
 
 export default function ShadeDaggerProjectile({
   startPosition,
@@ -28,23 +31,21 @@ export default function ShadeDaggerProjectile({
   const timeRef = useRef(0);
   const doneRef = useRef(false);
 
-  const direction = useMemo(
-    () => targetPosition.clone().sub(startPosition).normalize(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
-  const totalDist = useMemo(
-    () => startPosition.distanceTo(targetPosition),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
-  const duration = totalDist / SPEED;
-
-  // Euler to align the dagger's local +Z axis with the travel direction.
-  const yaw   = Math.atan2(direction.x, direction.z);
-  const pitch  = Math.atan2(-direction.y, Math.sqrt(direction.x ** 2 + direction.z ** 2));
+  // `targetPosition` is the aim point; the dagger always travels `VIPER_ARROW_MAX_RANGE` along that ray.
+  const { direction, totalDist, duration, yaw, pitch } = useMemo(() => {
+    const d = new Vector3().subVectors(targetPosition, startPosition);
+    const lenSq = d.lengthSq();
+    if (lenSq < 1e-8) d.set(0, 0, -1);
+    else d.normalize();
+    const dist = VIPER_ARROW_MAX_RANGE;
+    return {
+      direction: d,
+      totalDist: dist,
+      duration: dist / SPEED,
+      yaw: Math.atan2(d.x, d.z),
+      pitch: Math.atan2(-d.y, Math.sqrt(d.x * d.x + d.z * d.z)),
+    };
+  }, [startPosition, targetPosition]);
 
   const daggerMat = useMemo(() => new MeshBasicMaterial({
     color: new Color('#9b30ff'),
@@ -70,33 +71,31 @@ export default function ShadeDaggerProjectile({
     depthWrite: false,
   }), []);
 
-  // Snap to start position and set fixed rotation before the first frame.
   useEffect(() => {
     if (!groupRef.current) return;
     groupRef.current.position.copy(startPosition);
     groupRef.current.rotation.set(pitch, yaw, 0, 'YXZ');
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [startPosition, pitch, yaw]);
 
   useFrame((_, delta) => {
     if (doneRef.current || !groupRef.current) return;
 
     timeRef.current += delta;
-    const progress = Math.min(timeRef.current / duration, 1.0);
+    const t = timeRef.current;
+    const progress = Math.min(t / duration, 1.0);
 
-    const currentPos = startPosition
-      .clone()
-      .addScaledVector(direction, progress * totalDist);
+    groupRef.current.position.copy(
+      startPosition.clone().addScaledVector(direction, progress * totalDist)
+    );
 
-    groupRef.current.position.copy(currentPos);
-
-    // Fade out in the final 15% of travel
-    const opacity = progress > 0.85 ? 1 - (progress - 0.85) / 0.15 : 1.0;
+    // Fade out in the last 25% of travel — match ViperArrowProjectile
+    const opacity = progress > 0.75 ? 1 - (progress - 0.75) / 0.25 : 1.0;
     daggerMat.opacity = 0.95 * opacity;
     glowMat.opacity   = 0.5  * opacity;
     trailMat.opacity  = 0.3  * opacity;
 
-    // Client-side collision check against the local player
     const playerPos = getPlayerPosition();
+    const currentPos = groupRef.current.position;
     if (playerPos && currentPos.distanceTo(playerPos) < HIT_RADIUS) {
       doneRef.current = true;
       onHitPlayer();
@@ -111,20 +110,15 @@ export default function ShadeDaggerProjectile({
   });
 
   return (
-    // groupRef position and rotation are set imperatively; the JSX values
-    // serve as fallback initial values only.
     <group ref={groupRef}>
-      {/* Blade core — thin box aligned along local +Z */}
       <mesh material={daggerMat}>
         <boxGeometry args={[0.07, 0.07, 0.55]} />
       </mesh>
 
-      {/* Soft outer glow */}
       <mesh material={glowMat}>
         <boxGeometry args={[0.2, 0.2, 0.7]} />
       </mesh>
 
-      {/* Trailing wake — offset behind the blade tip */}
       <mesh material={trailMat} position={[0, 0, 0.55]}>
         <boxGeometry args={[0.13, 0.13, 0.9]} />
       </mesh>

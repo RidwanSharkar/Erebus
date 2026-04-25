@@ -27,6 +27,7 @@ const CAST_SUMMON_DURATION = 3000; // ms — matches weaver_castsummon clip leng
 const FADE_DURATION        = 1.5;  // seconds for death fade-out
 const LERP_SPEED           = 12;
 const WALK_STOP_DELAY      = 250;  // ms
+const HIT_REACT_IMPACT_COOLDOWN_MS = 1500; // min time between weaver_impact.glb hit-react plays
 
 export default function WeaverRenderer({
   id,
@@ -60,6 +61,7 @@ export default function WeaverRenderer({
   const targetRotation   = useRef(rotation);
   const isCastingRef     = useRef(false);
   const prevHealthRef    = useRef(health);
+  const lastHitImpactAtRef = useRef(0);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer     = useRef(0);
@@ -110,8 +112,12 @@ export default function WeaverRenderer({
       !isCastingHeal &&
       !isCastingSummon
     ) {
-      setIsImpacting(true);
-      setImpactPlayKey(k => k + 1);
+      const now = performance.now();
+      if (now - lastHitImpactAtRef.current >= HIT_REACT_IMPACT_COOLDOWN_MS) {
+        lastHitImpactAtRef.current = now;
+        setIsImpacting(true);
+        setImpactPlayKey(k => k + 1);
+      }
     }
     prevHealthRef.current = health;
   }, [health, isDying, isWalking, isCastingHeal, isCastingSummon]);

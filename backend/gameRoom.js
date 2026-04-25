@@ -109,13 +109,18 @@ class GameRoom {
      * Co-op: initial prep only (`rim` portals). Main-map intermissions use `coopMainArenaPortalPhase`.
      */
     this.coopThroneStep = 'rim';
-    /** 0 = in throne or waiting for main-arena portal, 1 = first combat wave, 2 = second combat wave. */
+    /** 0 = intermission/boss; 1–3 = combat waves on main map. */
     this.coopWaveIndex = 0;
     /**
      * Set between waves on the main combat map (not throne): players pick next wave / boss in arena center.
-     * @type {null | 'pick_wave2' | 'pick_boss'}
+     * @type {null | 'pick_wave2' | 'pick_boss' | 'pick_post_boss'}
      */
     this.coopMainArenaPortalPhase = null;
+
+    /** Co-op: true during boss fight on stripped throne shell and post-boss portal pause. */
+    this.coopBossThroneArena = false;
+    /** Co-op: ensure post-boss intermission emits once per boss kill. */
+    this._postBossIntermissionScheduled = false;
 
     /**
      * Co-op wave: precomputed slots for staged spawn (5 + 2 + 3). Null when not in an active wave layout.
@@ -152,6 +157,8 @@ class GameRoom {
     this.coopThroneStep = 'rim';
     this.coopWaveIndex = 0;
     this.coopMainArenaPortalPhase = null;
+    this.coopBossThroneArena = false;
+    this._postBossIntermissionScheduled = false;
 
     // Co-op: begin in the throne prep room — combat arena + enemies start after portal
     if (this.gameMode === 'coop') {
@@ -182,6 +189,7 @@ class GameRoom {
         thronePortalOffer: this.gameMode === 'coop' ? [...this.thronePortalOffer] : [],
         thronePortalLayout: this.getThronePortalLayout(),
         coopMainArenaPortalPhase: this.gameMode === 'coop' ? this.getCoopMainArenaPortalPhase() : null,
+        coopBossThroneArena: this.gameMode === 'coop' ? this.getCoopBossThroneArena() : false,
       });
     }
     
@@ -294,6 +302,10 @@ class GameRoom {
     return this.coopMainArenaPortalPhase;
   }
 
+  getCoopBossThroneArena() {
+    return !!this.coopBossThroneArena;
+  }
+
   _clearAllCombatEnemies() {
     this.coopWaveSpawnPlan = null;
     this.coopWaveReserveReleased = 0;
@@ -326,6 +338,8 @@ class GameRoom {
     this.sessionCampTypes = [];
     this.combatArenaActive = true;
 
+    this.coopBossThroneArena = false;
+
     if (phase === 'second_wave') {
       this._pickThronePortalOffer();
       this.coopMainArenaPortalPhase = 'pick_wave2';
@@ -339,6 +353,7 @@ class GameRoom {
         combatArenaActive: true,
         thronePortalOffer: [...this.thronePortalOffer],
         coopMainArenaPortalPhase: this.coopMainArenaPortalPhase,
+        coopBossThroneArena: false,
         coopClearedRoomColor: clearedColor,
         players: this.getPlayers(),
         enemies: this.getEnemies(),
@@ -354,12 +369,15 @@ class GameRoom {
     } else if (this.coopWaveIndex === 2) {
       console.log('🌀 Wave 2 complete — main arena: boss gate.');
       this.startMainArenaPortalIntermission('boss_gate');
+    } else if (this.coopWaveIndex === 3) {
+      console.log('🌀 Wave 3 complete — main arena: choose next room (center portals).');
+      this.startMainArenaPortalIntermission('second_wave');
     }
   }
 
   _registerCoopWaveKill(emojiLog) {
     if (this.gameMode !== 'coop' || !this.combatArenaActive || this.bossSpawned) return;
-    if (this.coopWaveIndex !== 1 && this.coopWaveIndex !== 2) return;
+    if (this.coopWaveIndex !== 1 && this.coopWaveIndex !== 2 && this.coopWaveIndex !== 3) return;
     this.skeletonKillCount++;
     console.log(`${emojiLog} (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
     if (this.io) {
@@ -415,6 +433,7 @@ class GameRoom {
     if (this.io) {
       this.io.to(this.roomId).emit('combat-arena-entered', {
         players: this.getPlayers(),
+        coopBossThroneArena: false,
         timestamp: Date.now(),
       });
     }
@@ -459,6 +478,7 @@ class GameRoom {
       if (this.io) {
         this.io.to(this.roomId).emit('combat-arena-entered', {
           players: this.getPlayers(),
+          coopBossThroneArena: false,
           timestamp: Date.now(),
         });
       }
@@ -476,6 +496,8 @@ class GameRoom {
       this.thronePortalOffer = [];
       this.coopMainArenaPortalPhase = null;
       this.coopWaveIndex = 0;
+      this.coopBossThroneArena = true;
+      this._postBossIntermissionScheduled = false;
       this.teleportAllPlayersToCombatSpawn();
       this.spawnBoss();
       this.bossSpawned = true;
@@ -484,6 +506,40 @@ class GameRoom {
       if (this.io) {
         this.io.to(this.roomId).emit('combat-arena-entered', {
           players: this.getPlayers(),
+          coopBossThroneArena: true,
+          timestamp: Date.now(),
+        });
+      }
+      return true;
+    }
+
+    if (phase === 'pick_post_boss') {
+      const offer = this.thronePortalOffer;
+      if (!offer || offer.length !== 2) {
+        return false;
+      }
+      let pick = chosenCampType != null ? String(chosenCampType).toLowerCase() : '';
+      if (!pick || !offer.includes(pick)) {
+        pick = offer[0];
+      }
+      if (!GameRoom.CAMP_TYPES[pick]) {
+        return false;
+      }
+      this.pendingCoopArchetype = pick;
+      this.thronePortalOffer = [];
+      this.coopMainArenaPortalPhase = null;
+      this.coopWaveIndex = 3;
+      this.skeletonKillCount = 0;
+      this.coopBossThroneArena = false;
+      this.bossSpawned = false;
+      this.teleportAllPlayersToCombatSpawn();
+      this.spawnEnemyWave();
+      this.startEnemyAI();
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('combat-arena-entered', {
+          players: this.getPlayers(),
+          coopBossThroneArena: false,
           timestamp: Date.now(),
         });
       }
@@ -491,6 +547,46 @@ class GameRoom {
     }
 
     return false;
+  }
+
+  /**
+   * After boss death: two random camp portals on the boss throne shell (delayed so removal/VFX can finish).
+   */
+  _schedulePostBossPortalIntermission() {
+    if (this.gameMode !== 'coop' || !this.combatArenaActive) return;
+    if (!this.coopBossThroneArena) return;
+    if (this._postBossIntermissionScheduled) return;
+    this._postBossIntermissionScheduled = true;
+
+    setTimeout(() => {
+      if (!this.gameStarted || this.gameMode !== 'coop' || !this.combatArenaActive) return;
+      if (!this.coopBossThroneArena) return;
+
+      this.bossSpawned = false;
+      this.skeletonKillCount = 0;
+      this.coopWaveIndex = 0;
+      this.pendingCoopArchetype = null;
+      const clearedColor = this.lastCoopWaveCampColor
+        ? String(this.lastCoopWaveCampColor).toLowerCase()
+        : null;
+      this.sessionCampTypes = [];
+
+      this._pickThronePortalOffer();
+      this.coopMainArenaPortalPhase = 'pick_post_boss';
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('coop-main-arena-intermission', {
+          combatArenaActive: true,
+          thronePortalOffer: [...this.thronePortalOffer],
+          coopMainArenaPortalPhase: this.coopMainArenaPortalPhase,
+          coopBossThroneArena: true,
+          coopClearedRoomColor: clearedColor,
+          players: this.getPlayers(),
+          enemies: this.getEnemies(),
+          timestamp: Date.now(),
+        });
+      }
+    }, 1550);
   }
 
   // Player management
@@ -580,6 +676,8 @@ class GameRoom {
     this.coopThroneStep = 'rim';
     this.coopWaveIndex = 0;
     this.coopMainArenaPortalPhase = null;
+    this.coopBossThroneArena = false;
+    this._postBossIntermissionScheduled = false;
     this.coopWaveSpawnPlan = null;
     this.coopWaveReserveReleased = 0;
     this.stopEnemySpawning();
@@ -601,6 +699,41 @@ class GameRoom {
     return this.players.size;
   }
 
+  /**
+   * Boss leap / tectonic shards: apply damage to all players in a horizontal XZ ring.
+   */
+  damagePlayersInHorizontalRing(center, radius, damage, damageType = 'boss_aoe') {
+    if (!this.io || !this.players || radius <= 0 || damage <= 0 || !center) return;
+    const cx = center.x;
+    const cz = center.z;
+    const r2 = radius * radius;
+    for (const [playerId, player] of this.players) {
+      if (!player || player.health <= 0) continue;
+      const dx = player.position.x - cx;
+      const dz = player.position.z - cz;
+      if (dx * dx + dz * dz > r2) continue;
+      const previousHealth = player.health;
+      player.health = Math.max(0, player.health - damage);
+      const wasKilled = previousHealth > 0 && player.health <= 0;
+      this.io.to(this.roomId).emit('player-damaged', {
+        sourcePlayerId: null,
+        targetPlayerId: playerId,
+        damage,
+        damageType,
+        isCritical: false,
+        newHealth: player.health,
+        maxHealth: player.maxHealth,
+        wasKilled,
+        timestamp: Date.now()
+      });
+      this.io.to(this.roomId).emit('player-health-updated', {
+        playerId,
+        health: player.health,
+        maxHealth: player.maxHealth
+      });
+    }
+  }
+
   // Enemy management
   spawnEnemyWave() {
     if (!this.gameStarted) return;
@@ -614,8 +747,8 @@ class GameRoom {
   _buildEnemy(type, campIndex, slotIndex, pos, campDef) {
     const soulStats = {
       green:  { health: 1400, maxHealth: 1400, damage: 25,  attackCooldown: 2500, moveSpeed: 2.0 },
-      red:    { health: 1050,  maxHealth: 1050,  damage: 50,  attackCooldown: 2500, moveSpeed: 2.0 },
-      blue:   { health: 900,  maxHealth: 900,  damage: 25,  attackCooldown: 1250, moveSpeed: 2.0 },
+      red:    { health: 1050,  maxHealth: 1050,  damage: 40,  attackCooldown: 2500, moveSpeed: 2.0 },
+      blue:   { health: 900,  maxHealth: 900,  damage: 22,  attackCooldown: 1250, moveSpeed: 2.0 },
       purple: { health: 850,  maxHealth: 850,  damage: 30,  attackCooldown: 2500, moveSpeed: 4.0 },
     };
 
@@ -638,16 +771,18 @@ class GameRoom {
     }
     if (type === 'shade') {
       return { id: `shade-${campIndex}-${slotIndex}-${ts}`, type: 'shade', ...base,
-        health: 750, maxHealth: 750, damage: 25, attackCooldown: 3500, moveSpeed: 2.0 };
+        health: 750, maxHealth: 750, damage: 25, attackCooldown: 5500, moveSpeed: 2.0 };
     }
     if (type === 'warlock') {
+      const isPurple = campDef.knightSoulType === 'purple';
       return { id: `warlock-${campIndex}-${slotIndex}-${ts}`, type: 'warlock', ...base,
-        health: 800, maxHealth: 800, damage: 100, moveSpeed: 0,
+        health: 800, maxHealth: 800, damage: 100,
+        moveSpeed: isPurple ? 1.75 : 0,
         soulType: campDef.knightSoulType };
     }
     if (type === 'templar') {
       return { id: `templar-${campIndex}-${slotIndex}-${ts}`, type: 'templar', ...base,
-        health: 1000, maxHealth: 1000, damage: 60, attackCooldown: 2000, moveSpeed: 3.5 };
+        health: 1000, maxHealth: 1000, damage: 48, attackCooldown: 1600, moveSpeed: 3.5 };
     }
     if (type === 'weaver') {
       return { id: `weaver-${campIndex}-${slotIndex}-${ts}`, type: 'weaver', ...base,
@@ -656,12 +791,12 @@ class GameRoom {
     }
     if (type === 'martyr') {
       return { id: `martyr-${campIndex}-${slotIndex}-${ts}`, type: 'martyr', ...base,
-        health: 200, maxHealth: 200, damage: 0, moveSpeed: 3.0,
+        health: 200, maxHealth: 175, damage: 0, moveSpeed: 3.0,
         soulType: campDef.knightSoulType };
     }
     // viper
     return { id: `viper-${campIndex}-${slotIndex}-${ts}`, type: 'viper', ...base,
-      health: 650, maxHealth: 650, damage: 70, attackCooldown: 5000, moveSpeed: 2.0 };
+      health: 650, maxHealth: 650, damage: 55, attackCooldown: 5000, moveSpeed: 2.0 };
   }
 
   // Pick a random point inside a circle on the map, excluding certain zones.
@@ -740,7 +875,7 @@ class GameRoom {
   /** Release the next reserve batch (+2 at 3 kills, +3 at 5 kills). */
   _spawnCoopWaveReserveBatch() {
     if (this.gameMode !== 'coop' || !this.combatArenaActive || this.bossSpawned) return;
-    if (this.coopWaveIndex !== 1 && this.coopWaveIndex !== 2) return;
+    if (this.coopWaveIndex !== 1 && this.coopWaveIndex !== 2 && this.coopWaveIndex !== 3) return;
     const plan = this.coopWaveSpawnPlan;
     if (!plan || !plan.entries || plan.entries.length !== COOP_WAVE_ENEMY_COUNT) return;
 
@@ -836,12 +971,10 @@ class GameRoom {
   }
 
   getEnemyMaxHealth(type) {
-    // Co-op mode only supports boss enemies
     if (type === 'boss') {
-      return 37500; // Boss has fixed 37,500 HP
+      return 5000;
     }
-    
-    return 37500; // Fallback to boss health
+    return 5000;
   }
 
   generateRandomPosition() {
@@ -857,6 +990,15 @@ class GameRoom {
       return null;
     }
 
+    // Infested zombies (player-zombie) must not take damage from their summoner
+    if (
+      enemy.type === 'player-zombie' &&
+      fromPlayerId &&
+      enemy.ownerPlayerId === fromPlayerId
+    ) {
+      return null;
+    }
+
     const previousHealth = enemy.health;
     enemy.health = Math.max(0, enemy.health - damage);
 
@@ -867,17 +1009,22 @@ class GameRoom {
     console.log(`💥 Enemy ${enemyId} (${enemy.type}) damaged by ${damage} from player ${fromPlayerId}. Health: ${previousHealth} -> ${enemy.health}`);
 
     // Track damage for aggro system
-    if (this.enemyAI && fromPlayerId) {
+    if (this.enemyAI) {
       if (enemy.type === 'boss') {
-        this.enemyAI.trackBossDamage(enemyId, fromPlayerId, damage, player);
+        if (fromPlayerId) {
+          this.enemyAI.trackBossDamage(enemyId, fromPlayerId, damage, player);
+        }
       } else if (enemy.type !== 'training-dummy') {
-        // Apply aggro for regular enemies too
         let aggroAmount = damage;
         if (player && player.isStealthing) {
           aggroAmount *= 10.0; // Same 10x multiplier as bosses
           console.log(`👤 Stealth aggro bonus: Player ${fromPlayerId} stealth attack on enemy ${enemyId} (${damage} -> ${aggroAmount} aggro)`);
         }
-        this.enemyAI.updateAggro(enemyId, fromPlayerId, aggroAmount);
+        if (hitMeta && hitMeta.sourceZombieId) {
+          this.enemyAI.applyZombieThreat(enemyId, hitMeta.sourceZombieId, aggroAmount);
+        } else if (fromPlayerId) {
+          this.enemyAI.updateAggro(enemyId, fromPlayerId, aggroAmount);
+        }
       }
     }
 
@@ -917,6 +1064,17 @@ class GameRoom {
         };
       }
       this.io.to(this.roomId).emit('enemy-damaged', damagedPayload);
+    }
+
+    if (
+      this.io &&
+      enemy.type === 'boss' &&
+      damage > 200 &&
+      !result.wasKilled &&
+      enemy.health > 0 &&
+      enemy.bossStationary
+    ) {
+      this.io.to(this.roomId).emit('boss-hit-react', { bossId: enemy.id, timestamp: Date.now() });
     }
 
     if (
@@ -1176,6 +1334,8 @@ class GameRoom {
           // Always drop 2 random unique boss reward items
           this.spawnBossItemDrops(enemy.position);
         }
+
+        this._schedulePostBossPortalIntermission();
         
         console.log(`🎉 BOSS DEFEATED by player ${fromPlayerId}!`);
       } else if (enemy.type === 'boss-skeleton') {
@@ -1507,6 +1667,7 @@ class GameRoom {
 
       } else if (enemy.type === 'player-zombie') {
         if (this.enemyAI) {
+          this.enemyAI.clearZombieAsAggroTarget(enemyId);
           this.enemyAI.unregisterPlayerZombie(enemy.ownerPlayerId, enemyId);
           this.enemyAI.removeEnemyAggro(enemyId);
         }
@@ -1622,7 +1783,7 @@ class GameRoom {
     // Spawn boss at center of arena
     const position = { x: 0, y: 0, z: 0 };
 
-    const maxHealth = 6900;
+    const maxHealth = 5000;
     const bossData = {
       id: bossId,
       type: 'boss',
@@ -1631,9 +1792,11 @@ class GameRoom {
       rotation: rotationYTowardEntry(0, 0),
       health: maxHealth,
       maxHealth: maxHealth,
+      moveSpeed: 2.5,
       spawnedAt: Date.now(),
       isDying: false,
       staggerBuildup: 0,
+      bossStationary: false,
     };
 
     this.enemies.set(bossId, bossData);
@@ -1670,7 +1833,15 @@ class GameRoom {
 
   // Status effect management methods
   applyStatusEffect(enemyId, effectType, duration) {
-    if (!this.enemies.has(enemyId)) return false;
+    const enemy = this.enemies.get(enemyId);
+    if (!enemy) return false;
+
+    if (
+      effectType === 'corrupted' &&
+      (enemy.type === 'boss' || enemy.type === 'boss-skeleton')
+    ) {
+      return false;
+    }
 
     if (!this.enemyStatusEffects.has(enemyId)) {
       this.enemyStatusEffects.set(enemyId, {});
@@ -1928,6 +2099,8 @@ class GameRoom {
     this.coopThroneStep = 'rim';
     this.coopWaveIndex = 0;
     this.coopMainArenaPortalPhase = null;
+    this.coopBossThroneArena = false;
+    this._postBossIntermissionScheduled = false;
     this.coopWaveSpawnPlan = null;
     this.coopWaveReserveReleased = 0;
   }

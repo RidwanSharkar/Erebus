@@ -1,5 +1,14 @@
 import { Vector3, ConeGeometry, BufferGeometry, BufferAttribute } from '@/utils/three-exports';
 
+/** Must match the base `ConeGeometry` in `createMountainBaseVariants` (jagged displacements are relative to this). */
+export const MOUNTAIN_BASE_CONE_RADIUS = 22;
+export const MOUNTAIN_BASE_CONE_HEIGHT = 34.5;
+
+/** `InstancedMountains` peak group offset (world: × scale) and `ConeGeometry(5,8)` for snow mesh. */
+export const MOUNTAIN_PEAK_Y_OFFSET = 14;
+export const MOUNTAIN_PEAK_CONE_HEIGHT = 8;
+export const MOUNTAIN_PEAK_CONE_RADIUS = 5;
+
 export interface MountainData {
   position: Vector3;
   scale: number;
@@ -59,7 +68,7 @@ export const createMountainBaseVariants = (): BufferGeometry[] => {
     const seed = variant * 0.25; // Different seed for each variant
     
     // Start with a cone geometry as base
-    const baseGeometry = new ConeGeometry(22, 34.5, 24, 6);
+    const baseGeometry = new ConeGeometry(MOUNTAIN_BASE_CONE_RADIUS, MOUNTAIN_BASE_CONE_HEIGHT, 24, 6);
     const geometry = baseGeometry.clone();
     const positions = geometry.attributes.position.array as Float32Array;
     
@@ -70,7 +79,7 @@ export const createMountainBaseVariants = (): BufferGeometry[] => {
       const z = positions[i + 2];
       
       // Height-based variation - only affect bottom half of mountain
-      const normalizedHeight = (y + 17.25) / 34.5;
+      const normalizedHeight = (y + MOUNTAIN_BASE_CONE_HEIGHT / 2) / MOUNTAIN_BASE_CONE_HEIGHT;
       const heightFactor = normalizedHeight <= 0.5 ? normalizedHeight * 2 : 0;
       
       if (heightFactor > 0) {
@@ -103,6 +112,50 @@ export const createMountainBaseVariants = (): BufferGeometry[] => {
   return variants;
 };
 
+/** Procedural jaggedness extends vertices beyond the nominal cone; max ‖(x,z)‖ per base variant. */
+let cachedBaseMaxRByVariant: Readonly<[number, number, number]> | null = null;
+
+/**
+ * After displacement, the XZ footprint is larger than `MOUNTAIN_BASE_CONE_RADIUS`. Use with
+ * `InstancedMountains` which assigns variant `index % 3` per instance.
+ */
+export function getMountainBaseMaxRadiusXZByVariantUnscaled(): Readonly<[number, number, number]> {
+  if (cachedBaseMaxRByVariant) {
+    return cachedBaseMaxRByVariant;
+  }
+  const geoms = createMountainBaseVariants();
+  const out: [number, number, number] = [0, 0, 0];
+  geoms.forEach((geo, vi) => {
+    const pos = geo.attributes.position.array as Float32Array;
+    let m = 0;
+    for (let i = 0; i < pos.length; i += 3) {
+      const r = Math.hypot(pos[i]!, pos[i + 2]!);
+      if (r > m) m = r;
+    }
+    out[vi] = m;
+  });
+  cachedBaseMaxRByVariant = out;
+  return out;
+}
+
+/**
+ * World vertical extent: jagged base (origin y = 0) + offset snow peak (matches `InstancedMountains` layout).
+ * Uniform `scale` on both meshes; peak XZ is smaller than the base, so it stays inside the base disc.
+ */
+export function getMountainCombinedVerticalWorldBounds(
+  scale: number,
+): { minY: number; maxY: number; height: number; centerY: number } {
+  const s = scale;
+  const baseHalf = MOUNTAIN_BASE_CONE_HEIGHT / 2;
+  const minY = -baseHalf * s;
+  const baseTopY = baseHalf * s;
+  const ph = MOUNTAIN_PEAK_CONE_HEIGHT / 2;
+  const peakMaxY = MOUNTAIN_PEAK_Y_OFFSET * s + ph * s;
+  const maxY = Math.max(baseTopY, peakMaxY);
+  const height = maxY - minY;
+  return { minY, maxY, height, centerY: (minY + maxY) / 2 };
+}
+
 /**
  * Creates varied peak geometries for natural snowtop variation
  * Uses deterministic randomness based on index for consistent results
@@ -112,7 +165,12 @@ export const createPeakGeometry = (index: number): ConeGeometry => {
   const seed = index * 0.618033988749; // Golden ratio for good distribution
   
   // Create detailed cone geometry with higher resolution
-  const geometry = new ConeGeometry(5, 8, 16, 8);
+  const geometry = new ConeGeometry(
+    MOUNTAIN_PEAK_CONE_RADIUS,
+    MOUNTAIN_PEAK_CONE_HEIGHT,
+    16,
+    8,
+  );
   const positions = geometry.attributes.position.array as Float32Array;
   
   // Add natural variation to the peak shape with multiple noise layers

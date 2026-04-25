@@ -141,6 +141,7 @@ io.on('connection', (socket) => {
       thronePortalOffer: room.getThronePortalOffer(),
       thronePortalLayout: room.getThronePortalLayout(),
       coopMainArenaPortalPhase: room.getCoopMainArenaPortalPhase(),
+      coopBossThroneArena: room.getCoopBossThroneArena(),
     });
     
     // Notify other players

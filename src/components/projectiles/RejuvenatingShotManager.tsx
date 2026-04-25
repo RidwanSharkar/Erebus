@@ -67,7 +67,7 @@ export default function RejuvenatingShotManager({ world, playerPositions = [], o
   
   const POOL_SIZE = 3;
   const PROJECTILE_SPEED = 1.0; // Same speed as Cobra Shot
-  const MAX_DISTANCE = 25; // Same range as Cobra Shot
+  const MAX_DISTANCE = 20; // Same range as Cobra Shot
   const FADE_DURATION = 1000;
 
   // Initialize projectile pool

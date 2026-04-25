@@ -17,9 +17,9 @@ import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const TREE_COUNT = 50;
+const TREE_COUNT = 40;
 /** Forest ring scales with main map radius (was 12 / 28 and 51 / 28 at R=28). */
-const DEFAULT_INNER_R  = MAIN_MAP_RADIUS * (15 / 28);
+const DEFAULT_INNER_R  = MAIN_MAP_RADIUS * (18 / 28);
 const DEFAULT_OUTER_R  = MAIN_MAP_RADIUS * (40 / 28);
 
 // 3 overlapping sphere tiers making a rounded deciduous blob

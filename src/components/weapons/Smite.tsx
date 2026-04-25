@@ -2,6 +2,8 @@ import { useRef, useMemo, useState, memo } from 'react';
 import {
   Group,
   Vector3,
+  Color,
+  MathUtils,
   CylinderGeometry,
   TorusGeometry,
   SphereGeometry,
@@ -19,6 +21,48 @@ import { useFrame } from '@react-three/fiber';
 import { WeaponType } from '../dragon/weapons';
 import { calculateDamage, DamageResult } from '@/core/DamageCalculator';
 import { INFERNAL_SMITE_CRIT_CHANCE_ADD, STAGGERING_SMITE_BEAM_STAGGER } from '@/utils/talents';
+
+const _hslScratch = { h: 0, s: 0, l: 0 };
+
+/** Saturated, punchy smite colors (Three.js) per talent theme. */
+function smiteVividColorPair(
+  isCorrupted: boolean,
+  infernal: boolean,
+  infested: boolean,
+  staggering: boolean,
+): { primary: Color; secondary: Color } {
+  const p = new Color();
+  const s = new Color();
+  if (isCorrupted) {
+    p.set('#ff2222');
+    s.set('#ff8c8c');
+  } else if (infernal) {
+    p.set('#e01510');
+    s.set('#ff8f1a');
+  } else if (infested) {
+    p.set('#00e65c');
+    s.set('#8fff9a');
+  } else if (staggering) {
+    p.set('#00b8ff');
+    s.set('#a8f0ff');
+  } else {
+    p.set('#ff8c00');
+    s.set('#ffe033');
+  }
+  p.getHSL(_hslScratch);
+  p.setHSL(
+    _hslScratch.h,
+    MathUtils.clamp(_hslScratch.s * 1.18, 0, 1),
+    MathUtils.clamp(_hslScratch.l * 1.07, 0.22, 0.88),
+  );
+  s.getHSL(_hslScratch);
+  s.setHSL(
+    _hslScratch.h,
+    MathUtils.clamp(_hslScratch.s * 1.22, 0, 1),
+    MathUtils.clamp(_hslScratch.l * 1.1, 0.28, 0.95),
+  );
+  return { primary: p, secondary: s };
+}
 
 interface SmiteProps {
   weaponType: WeaponType;
@@ -95,111 +139,106 @@ const SmiteComponent = memo(function Smite({
   /** Ref-based delay does not re-render; state flips visibility once the bolt should show. */
   const [boltVisible, setBoltVisible] = useState(false);
 
-  // useMemo for static geometries - made more narrow and concentrated
+  // useMemo for static geometries — tight column, reduced outer halo
   const cylinderGeometries = useMemo(() => ({
-    core: new CylinderGeometry(0.08, 0.08, 20, 16),    // Narrower core
-    inner: new CylinderGeometry(0.2, 0.18, 20, 16),    // More concentrated
-    outer: new CylinderGeometry(0.35, 0.32, 20, 16),    // Tighter outer beam
-    glow1: new CylinderGeometry(0.4, 0.45, 20, 16),    // Reduced glow
-    glow2: new CylinderGeometry(0.45, 0.45, 20, 16),    // More focused
-    outerGlow: new CylinderGeometry(0.5, 0.65, 20, 16),  // Concentrated outer glow
-    torus: new TorusGeometry(0.85, 0.08, 8, 32),       // Smaller spiral rings
-    skyTorus: new TorusGeometry(0.7, 0.08, 32, 32),     // More compact sky effects
-    sphere: new SphereGeometry(0.12, 8, 8),               // Smaller particles
-    burstRing: new RingGeometry(0.12, 0.42, 40),
-    burstCore: new CircleGeometry(0.65, 24),
+    core: new CylinderGeometry(0.055, 0.055, 20, 20),
+    inner: new CylinderGeometry(0.14, 0.12, 20, 20),
+    outer: new CylinderGeometry(0.26, 0.24, 20, 18),
+    glow1: new CylinderGeometry(0.3, 0.32, 20, 16),
+    glow2: new CylinderGeometry(0.34, 0.36, 20, 16),
+    outerGlow: new CylinderGeometry(0.38, 0.48, 20, 16),
+    torus: new TorusGeometry(0.65, 0.055, 8, 32),
+    skyTorus: new TorusGeometry(0.5, 0.055, 32, 32),
+    sphere: new SphereGeometry(0.1, 8, 8),
+    burstRing: new RingGeometry(0.1, 0.38, 40),
+    burstCore: new CircleGeometry(0.58, 24),
   }), []);
 
-  // Use useMemo for static materials - corrupted > Infernal > Infested > Staggering > default orange
-  const materials = useMemo(() => {
-    const isCorrupted = isCorruptedAuraActive;
-    let primaryColor: string;
-    let secondaryColor: string;
-    if (isCorrupted) {
-      primaryColor = "#FF4444";
-      secondaryColor = "#FF8888";
-    } else if (infernalSmiteVisual) {
-      primaryColor = "#DC2626";
-      secondaryColor = "#F97316";
-    } else if (infestedSmiteVisual) {
-      primaryColor = "#22C55E";
-      secondaryColor = "#4ADE80";
-    } else if (staggeringSmiteVisual) {
-      primaryColor = "#38BDF8";
-      secondaryColor = "#7DD3FC";
-    } else {
-      primaryColor = "#FFA500";
-      secondaryColor = "#FF8C00";
-    }
+  // corrupted > Infernal > Infested > Staggering > default — vivid `Color` for materials + lights
+  const { primary: primaryColor, secondary: secondaryColor } = useMemo(
+    () => smiteVividColorPair(
+      isCorruptedAuraActive,
+      infernalSmiteVisual,
+      infestedSmiteVisual,
+      staggeringSmiteVisual,
+    ),
+    [isCorruptedAuraActive, infernalSmiteVisual, infestedSmiteVisual, staggeringSmiteVisual],
+  );
 
+  const burstPointColor = useMemo(
+    () => primaryColor.clone().lerp(secondaryColor, 0.35),
+    [primaryColor, secondaryColor],
+  );
+
+  const materials = useMemo(() => {
     return {
       core: new MeshStandardMaterial({
         color: primaryColor,
         emissive: primaryColor,
-        emissiveIntensity: 50,
+        emissiveIntensity: 64,
         transparent: true,
-        opacity: 0.995
+        opacity: 0.998,
       }),
       inner: new MeshStandardMaterial({
         color: primaryColor,
         emissive: primaryColor,
-        emissiveIntensity: 30,
+        emissiveIntensity: 42,
         transparent: true,
-        opacity: 0.675
+        opacity: 0.7,
       }),
       outer: new MeshStandardMaterial({
         color: primaryColor,
         emissive: primaryColor,
-        emissiveIntensity: 20,
+        emissiveIntensity: 24,
         transparent: true,
-        opacity: 0.625
+        opacity: 0.6,
       }),
       glow1: new MeshStandardMaterial({
         color: primaryColor,
         emissive: primaryColor,
-        emissiveIntensity: 4,
+        emissiveIntensity: 5.5,
         transparent: true,
-        opacity: 0.55
+        opacity: 0.5,
       }),
       glow2: new MeshStandardMaterial({
         color: primaryColor,
         emissive: secondaryColor,
-        emissiveIntensity: 3,
+        emissiveIntensity: 4.2,
         transparent: true,
-        opacity: 0.425
+        opacity: 0.4,
       }),
       outerGlow: new MeshStandardMaterial({
         color: primaryColor,
         emissive: secondaryColor,
-        emissiveIntensity: 1.5,
+        emissiveIntensity: 1.8,
         transparent: true,
-        opacity: 0.2
+        opacity: 0.18,
       }),
       spiral: new MeshStandardMaterial({
         color: primaryColor,
         emissive: secondaryColor,
-        emissiveIntensity: 10,
+        emissiveIntensity: 12,
         transparent: true,
-        opacity: 0.5
+        opacity: 0.48,
       }),
       skySpiral: new MeshStandardMaterial({
         color: primaryColor,
         emissive: secondaryColor,
-        emissiveIntensity: 10,
+        emissiveIntensity: 11,
         transparent: true,
-        opacity: 0.4
+        opacity: 0.36,
       }),
       particle: new MeshStandardMaterial({
         color: primaryColor,
         emissive: secondaryColor,
-        emissiveIntensity: 10,
+        emissiveIntensity: 12,
         transparent: true,
-        opacity: 0.665
+        opacity: 0.62,
       }),
       burstRing: new MeshBasicMaterial({
         color: primaryColor,
         transparent: true,
-        opacity: 0.9,
+        opacity: 0.92,
         blending: AdditiveBlending,
         depthWrite: false,
         side: DoubleSide,
@@ -207,13 +246,13 @@ const SmiteComponent = memo(function Smite({
       burstCore: new MeshBasicMaterial({
         color: secondaryColor,
         transparent: true,
-        opacity: 0.75,
+        opacity: 0.78,
         blending: AdditiveBlending,
         depthWrite: false,
         side: DoubleSide,
       }),
     };
-  }, [isCorruptedAuraActive, infernalSmiteVisual, infestedSmiteVisual, staggeringSmiteVisual]);
+  }, [primaryColor, secondaryColor]);
 
   // Pre-calculate spiral positions
   const spiralPositions = useMemo(() => (
@@ -222,22 +261,21 @@ const SmiteComponent = memo(function Smite({
     }))
   ), []);
 
-  // Pre-calculate sky spiral positions - more concentrated
+  // Pre-calculate sky spiral positions — fewer rings, tighter column read
   const skySpiralPositions = useMemo(() => (
-    Array(16).fill(0).map((_, i) => ({
+    Array(10).fill(0).map((_, i) => ({
       rotation: new Euler(0, (i * Math.PI) / 1.5, 0),
-      position: new Vector3(0, 6.0, 0)  // concentration
+      position: new Vector3(0, 5.5, 0),
     }))
   ), []);
 
-  // Pre-calculate particle positions
   const particlePositions = useMemo(() => (
-    Array(8).fill(0).map((_, i) => ({
+    Array(6).fill(0).map((_, i) => ({
       position: new Vector3(
-        Math.cos((i * Math.PI) / 4) * 0.6,  // Reduced from 1.0 to 0.6
-        (i - 4) * 1.5,                     // vertical spread 
-        Math.sin((i * Math.PI) / 4) * 0.6   // Reduced from 1.0 to 0.6
-      )
+        Math.cos((i * Math.PI) / 3) * 0.45,
+        (i - 3) * 1.35,
+        Math.sin((i * Math.PI) / 3) * 0.45,
+      ),
     }))
   ), []);
 
@@ -393,7 +431,7 @@ const SmiteComponent = memo(function Smite({
           m.opacity = 0.7 * (1 - Math.min(bt * 1.4, 1));
         }
         if (bl) {
-          bl.intensity = 22 * (1 - bt);
+          bl.intensity = 30 * (1 - bt);
           bl.distance = 5 + easeOut * 4;
         }
       }
@@ -436,43 +474,12 @@ const SmiteComponent = memo(function Smite({
         <mesh key={i} position={props.position} geometry={cylinderGeometries.sphere} material={materials.particle} />
       ))}
 
-      {/* Lights */}
-      <pointLight
-        position={[0, -10, 0]}
-        color={
-          isCorruptedAuraActive
-            ? "#FF4444"
-            : infernalSmiteVisual
-              ? "#EF4444"
-              : infestedSmiteVisual
-                ? "#22C55E"
-                : staggeringSmiteVisual
-                  ? "#38BDF8"
-                  : "#FFA500"
-        }
-        intensity={35}
-        distance={25}
-      />
-      <pointLight
-        position={[0, 0, 0]}
-        color={
-          isCorruptedAuraActive
-            ? "#FF8888"
-            : infernalSmiteVisual
-              ? "#FB923C"
-              : infestedSmiteVisual
-                ? "#4ADE80"
-                : staggeringSmiteVisual
-                  ? "#7DD3FC"
-                  : "#FF8C00"
-        }
-        intensity={10}
-        distance={6}
-      />
+      <pointLight position={[0, -10, 0]} color={primaryColor} intensity={44} distance={28} />
+      <pointLight position={[0, 0, 0]} color={secondaryColor} intensity={14} distance={5.5} />
     </group>
 
     {/* Small ground burst at strike point (sibling so not parented to falling bolt) */}
-    <group position={[position.x, position.y + 1.25, position.z]} scale={[1.75, 1.75, 1.75]} visible={boltVisible}>
+    <group position={[position.x, position.y + 1.25, position.z]} scale={[1.55, 1.55, 1.55]} visible={boltVisible}>
       <mesh
         ref={burstRingRef}
         rotation={[-Math.PI / 2, 0, 0]}
@@ -490,19 +497,9 @@ const SmiteComponent = memo(function Smite({
       <pointLight
         ref={burstLightRef}
         position={[0, 0.15, 0]}
-        color={
-          isCorruptedAuraActive
-            ? "#FF6666"
-            : infernalSmiteVisual
-              ? "#F97316"
-              : infestedSmiteVisual
-                ? "#34D399"
-                : staggeringSmiteVisual
-                  ? "#0EA5E9"
-                  : "#FFAA33"
-        }
+        color={burstPointColor}
         intensity={0}
-        distance={10}
+        distance={11}
       />
     </group>
     </group>

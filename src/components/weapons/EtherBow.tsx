@@ -1,6 +1,16 @@
 import { useRef, useState, memo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, CatmullRomCurve3, CubicBezierCurve3, Shape, DoubleSide } from '@/utils/three-exports';
+import {
+  Group,
+  Vector3,
+  CatmullRomCurve3,
+  CubicBezierCurve3,
+  Shape,
+  DoubleSide,
+  PointLight,
+  Mesh,
+  MeshBasicMaterial,
+} from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import { isBowPerfectShotProgress } from '@/utils/bowConstants';
 
@@ -21,6 +31,8 @@ interface EtherealBowProps {
   cobraShotChargeProgress?: number;
   isRejuvenatingShotCharging?: boolean;
   rejuvenatingShotChargeProgress?: number;
+  /** Monotonic per Tempest Rounds arrow — triggers muzzle flash on increase. */
+  tempestBurstShotSeq?: number;
 }
 
 const EtherBowComponent = memo(function EtherealBow({
@@ -37,9 +49,16 @@ const EtherBowComponent = memo(function EtherealBow({
   isCobraShotCharging = false,
   cobraShotChargeProgress = 0,
   isRejuvenatingShotCharging = false,
-  rejuvenatingShotChargeProgress = 0
+  rejuvenatingShotChargeProgress = 0,
+  tempestBurstShotSeq = 0
 }: EtherealBowProps) {
   const bowRef = useRef<Group>(null);
+  const muzzleLightRef = useRef<PointLight | null>(null);
+  const muzzleFlareRef = useRef<Mesh | null>(null);
+  const tempestSeqRef = useRef(0);
+  tempestSeqRef.current = tempestBurstShotSeq;
+  const prevTempestSeqRef = useRef(0);
+  const muzzleFlashStrengthRef = useRef(0);
   const maxDrawDistance = 1.35;
   const prevIsCharging = useRef(isCharging);
   const basePosition = [-0.9, 0.075, 0.75] as const;  // Match other weapons' base positioning
@@ -47,9 +66,28 @@ const EtherBowComponent = memo(function EtherealBow({
   const isPerfectShotWindow = isBowPerfectShotProgress(chargeProgress);
   
   // Perfect-window pulse (R3F clock) + charge release: only real bow draw, not ability animations
-  useFrame(({ clock }) => {
+  useFrame((state, delta) => {
+    const seq = tempestSeqRef.current;
+    if (seq > prevTempestSeqRef.current) {
+      muzzleFlashStrengthRef.current = 1;
+      prevTempestSeqRef.current = seq;
+    }
+    muzzleFlashStrengthRef.current = Math.max(0, muzzleFlashStrengthRef.current * Math.exp(-delta * 12));
+    const t = muzzleFlashStrengthRef.current;
+    const muzzle = muzzleLightRef.current;
+    if (muzzle) {
+      muzzle.intensity = t * 22;
+    }
+    const flare = muzzleFlareRef.current;
+    if (flare) {
+      const mat = flare.material as MeshBasicMaterial;
+      mat.opacity = Math.min(1, t * 0.92);
+      const s = 0.15 + t * 1.1;
+      flare.scale.set(s, s, s);
+    }
+
     if (isPerfectShotWindow) {
-      setPerfectEmissivePulse(4.0 + Math.sin(clock.elapsedTime * 20) * 2.0);
+      setPerfectEmissivePulse(4.0 + Math.sin(state.clock.elapsedTime * 20) * 2.0);
     }
     const actualIsCharging = isCharging && !isAbilityBowAnimation && !isViperStingCharging && !isBarrageCharging && !isCobraShotCharging && !isRejuvenatingShotCharging;
 
@@ -130,6 +168,25 @@ const EtherBowComponent = memo(function EtherealBow({
           0
         ]}
       >
+        <pointLight
+          ref={muzzleLightRef}
+          position={[0, 0, 0.45]}
+          color="#ff7722"
+          distance={3.5}
+          decay={1.2}
+          intensity={0}
+        />
+        {/* Unlit muzzle pop — always visible (not dependent on scene lighting) */}
+        <mesh ref={muzzleFlareRef} position={[0, 0, 0.5]} renderOrder={2}>
+          <sphereGeometry args={[0.12, 10, 10]} />
+          <meshBasicMaterial
+            color="#ffaa44"
+            transparent
+            opacity={0}
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
         {/* Bow body with dynamic color for instant powershot, charging, and perfect shot timing */}
         <mesh rotation={[Math.PI/2, 0, 0]}>
           <tubeGeometry args={[createBowCurve(), 64, 0.035, 8, false]} />
@@ -401,6 +458,7 @@ const EtherBowComponent = memo(function EtherealBow({
     prevProps.cobraShotChargeProgress === nextProps.cobraShotChargeProgress &&
     prevProps.isRejuvenatingShotCharging === nextProps.isRejuvenatingShotCharging &&
     prevProps.rejuvenatingShotChargeProgress === nextProps.rejuvenatingShotChargeProgress &&
+    prevProps.tempestBurstShotSeq === nextProps.tempestBurstShotSeq &&
     (!prevProps.position || !nextProps.position || prevProps.position.equals(nextProps.position)) &&
     (!prevProps.direction || !nextProps.direction || prevProps.direction.equals(nextProps.direction))
   );
