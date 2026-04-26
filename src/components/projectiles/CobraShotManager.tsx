@@ -12,6 +12,12 @@ import { Enemy } from '@/ecs/components/Enemy';
 import { Health } from '@/ecs/components/Health';
 import { Transform } from '@/ecs/components/Transform';
 import { CombatSystem } from '@/systems/CombatSystem';
+import {
+  COBRA_SHOT_HIT_DAMAGE,
+  COBRA_SHOT_VENOM_DAMAGE_PER_SECOND,
+  COBRA_SHOT_VENOM_DURATION_SEC,
+  shouldApplyWyvernStingTalent,
+} from '@/utils/talents';
 
 interface VenomEffectInstance {
   id: number;
@@ -58,11 +64,11 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
   
   const POOL_SIZE = 3;
   const PROJECTILE_SPEED = 1.0; // Increased speed for better hit detection
-  const DAMAGE = 29; // Base damage
+  const DAMAGE = COBRA_SHOT_HIT_DAMAGE;
   const MAX_DISTANCE = 20; // Longer range than Viper Sting since it doesn't return
   const FADE_DURATION = 1000;
-  const VENOM_DURATION = 6; // 6 seconds venom debuff
-  const VENOM_DAMAGE_PER_SECOND = 29; // 17 damage per second
+  const VENOM_DURATION = COBRA_SHOT_VENOM_DURATION_SEC;
+  const VENOM_DAMAGE_PER_SECOND = COBRA_SHOT_VENOM_DAMAGE_PER_SECOND;
 
   // Initialize projectile pool
   useEffect(() => {
@@ -234,8 +240,25 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
 
       const venomStatus = enemy.updateVenomStatus(currentTime / 1000);
       if (venomStatus.shouldDealDamage && combatSystem) {
-        // Deal venom damage
-        combatSystem.queueDamage(entity, venomStatus.damage, undefined, 'venom');
+        const cs = (window as any).controlSystemRef?.current;
+        const wyvernZombie = cs && shouldApplyWyvernStingTalent(cs.talentLoadout);
+        combatSystem.queueDamage(
+          entity,
+          venomStatus.damage,
+          undefined,
+          'venom',
+          undefined,
+          false,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          wyvernZombie,
+        );
         
         // Create venom effect animation every second (one-time pulse effect)
         createVenomEffect(transform.position);

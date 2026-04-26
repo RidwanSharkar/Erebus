@@ -4,6 +4,7 @@ import { Group, Vector3, Color, Shape, AdditiveBlending } from '@/utils/three-ex
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import { calculationCache } from '@/utils/CalculationCache';
 import { MAIN_MAP_RADIUS, isInsideMainArenaXZ } from '@/utils/mapConstants';
+import { forEachMushroomHitBySwing } from '@/utils/mushroomMeleeUtils';
 
 interface SwordProps {
   isSwinging: boolean;
@@ -27,6 +28,9 @@ interface SwordProps {
     health: number;
   }>;
   onHit?: (targetId: string, damage: number) => void;
+  /** Co-op: instanced mushroom hit test (server `mushroom-damage`). */
+  mushroomTargets?: Array<{ index: number; position: Vector3 }>;
+  onMushroomHit?: (index: number, baseDamage: number) => void;
   setDamageNumbers?: (callback: (prev: Array<{
     id: number;
     damage: number;
@@ -97,7 +101,9 @@ const SwordComponent = memo(function Sword({
   playerRotation,
   dragonGroupRef,
   playerEntityId,
-  realTimePositionRef
+  realTimePositionRef,
+  mushroomTargets,
+  onMushroomHit,
 }: SwordProps) {
   const swordRef = useRef<Group>(null);
   const swingProgress = useRef(0);
@@ -808,17 +814,18 @@ const SwordComponent = memo(function Sword({
 
   // Function to perform swing damage based on combo step
   const performSwingDamage = (comboStep: 1 | 2 | 3) => {
-    if (!playerPosition || !enemyData.length) return;
-    
+    if (!playerPosition) return;
+    if (!enemyData.length && !mushroomTargets?.length) return;
+
     const now = Date.now();
-    
+
     // Damage values for each combo step (aligned with ControlSystem melee tiers; mesh is sole damage source)
     const damageValues = {
       1: 45,
       2: 50,
-      3: 60
+      3: 60,
     };
-    
+
     const baseDamage = damageValues[comboStep];
     
     // Attack range - increased for better hit detection
@@ -826,7 +833,7 @@ const SwordComponent = memo(function Sword({
     
     let enemiesHitThisSwing = 0;
     
-    enemyData.forEach(enemy => {
+    enemyData.forEach((enemy) => {
       if (!enemy.health || enemy.health <= 0) return;
       
       // Prevent hitting the same enemy multiple times in one swing
@@ -878,7 +885,35 @@ const SwordComponent = memo(function Sword({
         }
       }
     });
-    
+
+    if (mushroomTargets?.length && onMushroomHit) {
+      const yaw = playerRotation?.y ?? 0;
+      forEachMushroomHitBySwing(
+        playerPosition,
+        yaw,
+        comboStep,
+        mushroomTargets,
+        (index) => {
+          onMushroomHit(index, baseDamage);
+          if (setDamageNumbers && nextDamageNumberId) {
+            const m = mushroomTargets.find((t) => t.index === index);
+            if (m) {
+              setDamageNumbers((prev) => [
+                ...prev,
+                {
+                  id: nextDamageNumberId.current++,
+                  damage: baseDamage,
+                  position: m.position.clone(),
+                  isCritical: false,
+                },
+              ]);
+            }
+          }
+        },
+        now,
+        lastSwingHitTime.current,
+      );
+    }
   };
 
 

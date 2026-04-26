@@ -142,6 +142,7 @@ io.on('connection', (socket) => {
       thronePortalLayout: room.getThronePortalLayout(),
       coopMainArenaPortalPhase: room.getCoopMainArenaPortalPhase(),
       coopBossThroneArena: room.getCoopBossThroneArena(),
+      mushroomState: typeof room.getMushroomState === 'function' ? room.getMushroomState() : null,
     });
     
     // Notify other players
@@ -184,6 +185,16 @@ io.on('connection', (socket) => {
     if (result) {
       console.log(`🏛️ Pillar ${pillarId} took ${damage} damage from player ${sourcePlayerId || socket.id}`);
     }
+  });
+
+  // Co-op destructible mushrooms (server-authoritative HP + eruption)
+  socket.on('mushroom-damage', (data) => {
+    const { roomId, index, damage, sourcePlayerId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.damageMushroom !== 'function') return;
+    const pid = sourcePlayerId || socket.id;
+    room.damageMushroom(index, damage, pid);
   });
 
   // Handle heartbeat from client

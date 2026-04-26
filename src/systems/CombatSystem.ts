@@ -22,6 +22,7 @@ import { SummonedUnit } from '@/ecs/components/SummonedUnit';
 import { Projectile } from '@/ecs/components/Projectile';
 import { Tower } from '@/ecs/components/Tower';
 import { Pillar } from '@/ecs/components/Pillar';
+import { DestructibleMushroom } from '@/ecs/components/DestructibleMushroom';
 import { WeaponType } from '@/components/dragon/weapons';
 
 interface DamageEvent {
@@ -48,6 +49,10 @@ interface DamageEvent {
   infestedCombo?: boolean;
   /** Wyvern Bite — Barrage hit applies Concentrated Venom stack (co-op: server; local: ECS). */
   wyvernBiteConcentratedVenom?: boolean;
+  /** Co-op: Cobra venom DoT tick — Wyvern Sting talent may raise zombie on kill. */
+  wyvernStingVenomZombie?: boolean;
+  /** Co-op: Concentrated Venom DoT tick — eligible for zombie on kill (Wyvern Bite). */
+  wyvernBiteConcentratedDoT?: boolean;
 }
 
 interface HealEvent {
@@ -85,6 +90,8 @@ export class CombatSystem extends System {
       staggerToAdd?: number;
       infestedCombo?: boolean;
       wyvernBiteVenom?: boolean;
+      wyvernStingVenomZombie?: boolean;
+      wyvernBiteConcentratedDoT?: boolean;
     },
   ) => void;
   
@@ -100,6 +107,8 @@ export class CombatSystem extends System {
   // Tower damage callback for routing tower damage to server
   private onTowerDamageCallback?: (towerId: string, damage: number, sourcePlayerId?: string, damageType?: string) => void;
   private onPillarDamageCallback?: (pillarId: string, damage: number, sourcePlayerId?: string) => void;
+
+  private onMushroomDamageCallback?: (index: number, damage: number, sourcePlayerId: string | undefined, damageType?: string) => void;
 
   // Log throttling to reduce spam
   private lastDamageLogTime = 0;
@@ -211,11 +220,19 @@ export class CombatSystem extends System {
         infernoCrossentropy?: boolean;
         reaperCrossentropy?: boolean;
         staggerToAdd?: number;
+        infestedCombo?: boolean;
         wyvernBiteVenom?: boolean;
+        wyvernStingVenomZombie?: boolean;
+        wyvernBiteConcentratedDoT?: boolean;
       },
     ) => void,
   ): void {
     this.onEnemyDamageCallback = callback;
+  }
+
+  /** True when enemy damage is routed to the co-op server (no local CV ticks; use server for CV detonate). */
+  public usesNetworkedEnemyDamage(): boolean {
+    return !!this.onEnemyDamageCallback;
   }
   
   // Set callback for routing player damage to multiplayer server (PVP)
@@ -233,6 +250,12 @@ export class CombatSystem extends System {
 
   public setPillarDamageCallback(callback: (pillarId: string, damage: number, sourcePlayerId?: string) => void): void {
     this.onPillarDamageCallback = callback;
+  }
+
+  public setMushroomDamageCallback(
+    callback: (index: number, damage: number, sourcePlayerId: string | undefined, damageType?: string) => void,
+  ): void {
+    this.onMushroomDamageCallback = callback;
   }
 
   public setCoopMode(isCoop: boolean): void {
@@ -320,7 +343,24 @@ export class CombatSystem extends System {
         if (!this.onEnemyDamageCallback) {
           const cv = enemy.updateConcentratedVenomStatus(currentTime);
           if (cv.shouldDealDamage && cv.damage > 0) {
-            this.queueDamage(entity, cv.damage, undefined, 'venom');
+            this.queueDamage(
+              entity,
+              cv.damage,
+              undefined,
+              'venom',
+              undefined,
+              false,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              true,
+            );
           }
         }
         
@@ -469,9 +509,21 @@ export class CombatSystem extends System {
                             ? { reaperCrossentropy: true as const }
                             : {}),
                         }
-                      : damageType === 'blizzard'
-                        ? { damageType: 'blizzard' as const }
-                        : undefined;
+                      : damageType === 'venom'
+                        ? {
+                            damageType: 'venom' as const,
+                            ...(damageEvent.wyvernStingVenomZombie === true
+                              ? { wyvernStingVenomZombie: true as const }
+                              : {}),
+                            ...(damageEvent.wyvernBiteConcentratedDoT === true
+                              ? { wyvernBiteConcentratedDoT: true as const }
+                              : {}),
+                          }
+                        : damageType === 'wyvern_talons_detonate'
+                          ? { damageType: 'wyvern_talons_detonate' as const }
+                          : damageType === 'blizzard'
+                            ? { damageType: 'blizzard' as const }
+                            : undefined;
       this.onEnemyDamageCallback(serverEnemyId, actualDamage, finalSourcePlayerId, routeMeta);
 
       // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
@@ -551,6 +603,68 @@ export class CombatSystem extends System {
       this.maybeTriggerSolarRecharge(damageType, source, target);
 
       return; // Don't apply damage locally for enemies
+    }
+
+    const destructibleMushroom = target.getComponent(DestructibleMushroom);
+    if (destructibleMushroom && !health.isDead && this.onMushroomDamageCallback) {
+      const currentWeapon = this.getCurrentWeapon();
+      let damageResult: DamageResult;
+      if (damageEvent.isCritical !== undefined) {
+        damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
+      } else {
+        const critOpts: DamageCalcOptions | undefined =
+          damageType === 'barrage'
+            ? this.getBarrageCritCalcOpts(damageType)
+            : damageType === 'crossentropy' && damageEvent.crossentropyInferno === true
+              ? { critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD }
+              : undefined;
+        damageResult = calculateDamage(baseDamage, currentWeapon, critOpts);
+      }
+      const actualDamage = damageResult.damage;
+      this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
+
+      let finalSourcePlayerId = sourcePlayerId;
+      if (!finalSourcePlayerId && source) {
+        const projectileComponent = source.getComponent(Projectile);
+        if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
+          finalSourcePlayerId = (projectileComponent as any).sourcePlayerId;
+        } else if (source.userData?.playerId) {
+          finalSourcePlayerId = source.userData.playerId;
+        }
+      }
+
+      this.onMushroomDamageCallback(
+        destructibleMushroom.mushroomIndex,
+        actualDamage,
+        finalSourcePlayerId,
+        damageType,
+      );
+
+      const isTowerProjectile = source && (source as any).isTowerProjectile === true;
+      if (!isTowerProjectile) {
+        const transform = target.getComponent(Transform);
+        if (transform) {
+          const position = transform.getWorldPosition();
+          position.y += 1.5;
+          if (damageType === 'sabre_right' || damageType === 'sabres_right') position.x += 0.3;
+          else if (damageType === 'sabre_left' || damageType === 'sabres_left') position.x -= 0.3;
+          const dualCoilSlot = this.applyDualCoilDamageNumberLateral(position, source);
+          this.damageNumberManager.addDamageNumber(
+            actualDamage,
+            damageResult.isCritical,
+            position,
+            damageType,
+            undefined,
+            damageType === 'barrage' ? target.id : undefined,
+            dualCoilSlot,
+          );
+        }
+      }
+
+      this.maybeTriggerFrostpath(damageType, source, target);
+      this.maybeTriggerSolarRecharge(damageType, source, target);
+
+      return;
     }
 
     // Check if target is a summoned unit - route through server for synchronization
@@ -1356,6 +1470,8 @@ export class CombatSystem extends System {
     reaperCrossentropy?: boolean,
     infestedCombo?: boolean,
     wyvernBiteConcentratedVenom?: boolean,
+    wyvernStingVenomZombie?: boolean,
+    wyvernBiteConcentratedDoT?: boolean,
   ): void {
     this.damageQueue.push({
       target,
@@ -1373,6 +1489,8 @@ export class CombatSystem extends System {
       reaperCrossentropy,
       infestedCombo,
       wyvernBiteConcentratedVenom,
+      wyvernStingVenomZombie,
+      wyvernBiteConcentratedDoT,
     });
   }
 

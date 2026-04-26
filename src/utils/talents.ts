@@ -24,6 +24,8 @@ export const TALENT_INFERNO = 'INFERNO' as const;
 export const TALENT_REAPER = 'REAPER' as const;
 export const TALENT_DUAL_COIL = 'DUAL_COIL' as const;
 export const TALENT_WYVERN_STING = 'WYVERN_STING' as const;
+/** Reaping Talons — detonate remaining Cobra / Concentrated Venom DoT on hit. */
+export const TALENT_WYVERN_TALONS = 'WYVERN_TALONS' as const;
 export const TALENT_WRAITH_GUARD = 'WRAITH_GUARD' as const;
 export const TALENT_FROSTPATH = 'FROSTPATH' as const;
 export const TALENT_SOLAR_RECHARGE = 'SOLAR_RECHARGE' as const;
@@ -106,6 +108,7 @@ export type TalentId =
   | typeof TALENT_REAPER
   | typeof TALENT_DUAL_COIL
   | typeof TALENT_WYVERN_STING
+  | typeof TALENT_WYVERN_TALONS
   | typeof TALENT_WRAITH_GUARD
   | typeof TALENT_FROSTPATH
   | typeof TALENT_SOLAR_RECHARGE
@@ -161,6 +164,11 @@ export const WRATHFUL_BITE_BARRAGE_CRIT_DAMAGE_MULT_ADD = 0.75;
 export const WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK = 17;
 export const WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS = 5;
 export const WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC = 8;
+
+/** Cobra Shot — impact and venom DPS (same value). */
+export const COBRA_SHOT_VENOM_DAMAGE_PER_SECOND = 29;
+export const COBRA_SHOT_VENOM_DURATION_SEC = 6;
+export const COBRA_SHOT_HIT_DAMAGE = COBRA_SHOT_VENOM_DAMAGE_PER_SECOND;
  
 /** Wraith Guard — Wraith Strike (`RUNEBLADE_E`) enemy hits can proc Aegis-like barrier + invuln (no Aegis cooldown). */
 export const WRAITH_GUARD_PROC_CHANCE = 0.75;
@@ -524,6 +532,14 @@ export const wyvernBiteTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'BOW_Q',
 };
 
+export const wyvernTalonsTalentDefinition: TalentDefinition = {
+  id: TALENT_WYVERN_TALONS,
+  name: 'Wyvern Talons',
+  description:
+    'While Reaping Talons is in your ability loadout, each hit detonates active Cobra Shot venom or Wyvern Bite Concentrated Venom: deals all remaining DoT damage instantly and ends the effect.',
+  modifiesAbilityId: 'BOW_R',
+};
+
 export const infernoTalentDefinition: TalentDefinition = {
   id: TALENT_INFERNO,
   name: 'INFERNO',
@@ -608,6 +624,7 @@ export interface TalentLoadout {
   windFury: boolean;
   dualCoil: boolean;
   wyvernSting: boolean;
+  wyvernTalons: boolean;
   bladeRush: boolean;
   wrathfulCombo: boolean;
   infestedCombo: boolean;
@@ -651,6 +668,7 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     windFury: false,
     dualCoil: false,
     wyvernSting: false,
+    wyvernTalons: false,
     bladeRush: false,
     wrathfulCombo: false,
     infestedCombo: false,
@@ -712,6 +730,13 @@ export function shouldApplyExplosiveTalonsTalent(
   abilityLoadout: AbilityLoadout | null | undefined,
 ): boolean {
   return !!talentLoadout?.explosiveTalons && isReapingTalonsInLoadout(abilityLoadout);
+}
+
+export function shouldApplyWyvernTalonsTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.wyvernTalons && isReapingTalonsInLoadout(abilityLoadout);
 }
 
 export function isChargeInLoadout(loadout: AbilityLoadout | null | undefined): boolean {
@@ -1024,7 +1049,7 @@ export function buildRoomBoonPoolForColor(
       case 'green':
         return [];
       case 'purple':
-        return [TALENT_WYVERN_STING, TALENT_WYVERN_BITE];
+        return [TALENT_WYVERN_STING, TALENT_WYVERN_BITE, TALENT_WYVERN_TALONS];
       case 'red':
         return [TALENT_WRATHFUL_BITE, TALENT_WRATHFUL_TALONS];
       default:
@@ -1153,6 +1178,9 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_WYVERN_STING:
       next.wyvernSting = true;
       return next;
+    case TALENT_WYVERN_TALONS:
+      next.wyvernTalons = true;
+      return next;
     case TALENT_WRAITH_GUARD:
       next.wraithGuard = true;
       return next;
@@ -1246,6 +1274,7 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_REAPER]: reaperTalentDefinition,
   [TALENT_DUAL_COIL]: dualCoilTalentDefinition,
   [TALENT_WYVERN_STING]: wyvernStingTalentDefinition,
+  [TALENT_WYVERN_TALONS]: wyvernTalonsTalentDefinition,
   [TALENT_SPELLBLADE]: spellbladeTalentDefinition,
   [TALENT_TEMPEST_ROUNDS]: tempestRoundsTalentDefinition,
   [TALENT_ICEBEAM]: icebeamTalentDefinition,

@@ -6,7 +6,8 @@ import { useFrame, useThree } from '@react-three/fiber';
 import CharacterModel, { AnimState } from './CharacterModel';
 import { World } from '@/ecs/World';
 import { Movement } from '@/ecs/components/Movement';
-import { WeaponType } from '@/components/dragon/weapons';
+import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
+import DraconicWingJets from '@/components/dragon/DraconicWingJets';
 
 interface CharacterRendererProps {
   entityId: number;
@@ -15,6 +16,7 @@ interface CharacterRendererProps {
   isLocalPlayer?: boolean;
   rotation?: { x: number; y: number; z: number };
   currentWeapon?: WeaponType;
+  weaponSubclass?: WeaponSubclass;
   isCharging?: boolean;
   isDead?: boolean;
 }
@@ -63,12 +65,16 @@ export default function CharacterRenderer({
   isLocalPlayer = true,
   rotation,
   currentWeapon,
+  weaponSubclass,
   isCharging = false,
   isDead = false,
 }: CharacterRendererProps) {
   const groupRef         = useRef<Group | null>(null);
   const { camera }       = useThree();
   const [animState, setAnimState] = useState<AnimState>('Idle');
+  const [dashJetsActive, setDashJetsActive] = useState(false);
+  const dashFlagsRef = useRef({ isBackward: false, isLeft: false, isRight: false });
+  const lastIsDashingRef = useRef(false);
 
   const targetPosition    = useRef(position.clone());
   const targetRotationY   = useRef(0);
@@ -216,6 +222,26 @@ export default function CharacterRenderer({
     const movement = entity.getComponent(Movement);
     if (!movement) return;
 
+    if (lastIsDashingRef.current !== movement.isDashing) {
+      lastIsDashingRef.current = movement.isDashing;
+      setDashJetsActive(movement.isDashing);
+    }
+
+    // Update dash direction flags synchronously into a ref so DraconicWingJets
+    // always reads the correct direction in the same frame particles are spawned,
+    // avoiding the 1-frame stale-state ghost trail on dash transitions.
+    if (movement.isDashing) {
+      const backDot = facingDir.dot(movement.dashDirection);
+      const rightDot = facingDir.z * movement.dashDirection.x - facingDir.x * movement.dashDirection.z;
+      dashFlagsRef.current = {
+        isBackward: backDot < -0.3,
+        isRight:    rightDot > 0.3,
+        isLeft:     rightDot < -0.3,
+      };
+    } else {
+      dashFlagsRef.current = { isBackward: false, isLeft: false, isRight: false };
+    }
+
     let next: AnimState;
 
     if (!movement.isGrounded) {
@@ -348,9 +374,35 @@ export default function CharacterRenderer({
     }
   });
 
+  const wType = currentWeapon ?? WeaponType.NONE;
+  const showDashJets =
+    dashJetsActive && wType !== WeaponType.KNIGHT;
+  const jetSubclass =
+    wType === WeaponType.NONE ? undefined : weaponSubclass;
+
   return (
     <group ref={setGroupRef}>
       <CharacterModel animState={animState} isDead={isDead} />
+      <group position={[0, 1.0, -0.12]}>
+        <DraconicWingJets
+          isActive={showDashJets}
+          collectedBones={0}
+          isLeftWing
+          parentRef={groupRef as React.RefObject<Group>}
+          weaponType={wType}
+          weaponSubclass={jetSubclass}
+          dashFlagsRef={dashFlagsRef}
+        />
+        <DraconicWingJets
+          isActive={showDashJets}
+          collectedBones={0}
+          isLeftWing={false}
+          parentRef={groupRef as React.RefObject<Group>}
+          weaponType={wType}
+          weaponSubclass={jetSubclass}
+          dashFlagsRef={dashFlagsRef}
+        />
+      </group>
     </group>
   );
 }

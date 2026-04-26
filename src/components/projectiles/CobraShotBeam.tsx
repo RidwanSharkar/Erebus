@@ -111,42 +111,16 @@ const CobraShotBeam: React.FC<CobraShotBeamProps> = ({
           return (
             <group key={`ring-${i}`} position={[0, 0, offset]}>
               {/* Smoke ring effect */}
-              <mesh
-                rotation={[0, Date.now() * 0.002 + i, 0]}
-                scale={[scale, scale, scale]}
-              >
-                <torusGeometry args={[0.4, 0.08, 6, 12]} />
-                <meshStandardMaterial
-                  color={colors.outer}
-                  emissive={colors.emissive}
-                  emissiveIntensity={2 * ringFade}
-                  transparent
-                  opacity={0.4 * ringFade * (1 - ringProgress * 0.5)}
-                  blending={2} // AdditiveBlending
-                />
-              </mesh>
+
 
               {/* Secondary swirl */}
-              <mesh
-                rotation={[Math.PI/2, Date.now() * -0.003 + i, 0]}
-                scale={[scale * 0.7, scale * 0.7, scale * 0.7]}
-              >
-                <torusGeometry args={[0.3, 0.06, 6, 12]} />
-                <meshStandardMaterial
-                  color={colors.core}
-                  emissive={colors.emissive}
-                  emissiveIntensity={1.5 * ringFade}
-                  transparent
-                  opacity={0.3 * ringFade * (1 - ringProgress * 0.3)}
-                  blending={2} // AdditiveBlending
-                />
-              </mesh>
+
             </group>
           );
         })}
 
         {/* Cobra energy particles */}
-        {[...Array(12)].map((_, i) => {
+        {[...Array(0)].map((_, i) => {
           const particleProgress = Math.min(1, (Date.now() - startTimeRef.current) / (duration * 0.9));
           const particlePosition = particleProgress * 20 - 10;
           const particleOffset = Math.sin(particleProgress * Math.PI * 6 + i) * 0.5;

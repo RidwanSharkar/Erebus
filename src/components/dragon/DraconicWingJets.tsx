@@ -3,6 +3,12 @@ import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Euler, AdditiveBlending } from 'three';
 import { WeaponType, WeaponSubclass } from './weapons';
 
+interface DashFlags {
+  isBackward: boolean;
+  isLeft: boolean;
+  isRight: boolean;
+}
+
 interface WingJetProps {
   isActive: boolean;
   collectedBones: number;
@@ -10,6 +16,7 @@ interface WingJetProps {
   parentRef: React.RefObject<Group>;
   weaponType: WeaponType;
   weaponSubclass?: WeaponSubclass;
+  dashFlagsRef?: React.RefObject<DashFlags>;
 }
 
 const DraconicWingJets: React.FC<WingJetProps> = ({
@@ -17,7 +24,8 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
   collectedBones,
   isLeftWing,
   weaponType,
-  weaponSubclass
+  weaponSubclass,
+  dashFlagsRef,
 }) => {
   const jetGroupRef = useRef<Group>(null);
   const [jetParticles, setJetParticles] = useState(() =>
@@ -37,7 +45,7 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
       switch (weaponSubclass) {
         // Scythe subclasses
         case WeaponSubclass.CHAOS:
-          return { main: '#8783D1', emissive: '#A890F0', particle: '#D4C4F7' };
+          return { main: '#8A2BE2' };
         case WeaponSubclass.ABYSSAL:
           return { main: '#17CE54', emissive: '#4A90E2', particle: '#A5F3FC' }; // Purple for abyssal
 
@@ -76,7 +84,7 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
     // Fallback to weapon type colors
     switch (weaponType) {
       case WeaponType.NONE:
-        return { main: '#8A2BE2', emissive: '#9370DB', particle: '#DA70D6' };
+        return { main: '#17CE54', emissive: '#9370DB', particle: '#DA70D6' };
       case WeaponType.SCYTHE:
         return { main: '#17CE54', emissive: '#00CED1', particle: '#AFEEEE' }; // 39ff14
       case WeaponType.SWORD:
@@ -162,11 +170,22 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
         particle.position.y += Math.sin(randomAngle) * randomRadius * 0.5; // Less vertical spread
         particle.position.z += (Math.random() - 0.5) * 0.1; // Small Z variation
 
-        // Jet direction based on bone rotation and wing side
+        // Read dash flags synchronously from the ref so the direction is always
+        // current in the same frame a particle is born (no stale-state ghost trails).
+        const flags = dashFlagsRef?.current;
+        const isDashingBackward = flags?.isBackward ?? false;
+        const isDashingLeft     = flags?.isLeft     ?? false;
+        const isDashingRight    = flags?.isRight    ?? false;
+
+        // - Backward dash: flip Z so jets fire forward (thrust opposes travel).
+        // - Right dash: right wing fires inward (X flips to -1) to push character right.
+        // - Left dash: left wing fires inward (X flips to +1) to push character left.
+        const outwardX = isLeftWing ? -1 : 1;
+        const flipX = (isDashingRight && !isLeftWing) || (isDashingLeft && isLeftWing);
         const jetDirection = new Vector3(
-          isLeftWing ? -1 : 1, // Outward from body
-          -0.3, // Slightly downward
-          -0.8  // Backward thrust
+          flipX ? -outwardX : outwardX,
+          -0.3,
+          isDashingBackward ? 0.8 : -0.8
         ).normalize();
 
         particle.velocity.copy(jetDirection).multiplyScalar(2 + Math.random() * 3);

@@ -4,10 +4,10 @@ import React, { useMemo } from 'react';
 import { Vector3 } from 'three';
 import { DoubleSide } from 'three';
 
-const LINE_WIDTH = 0.35;
+const DEFAULT_LINE_WIDTH = 0.35;
 const LINE_THICK = 0.04;
 const EPS_Y = 0.03;
-const COLOR = '#c94a3a';
+const DEFAULT_COLOR = '#c94a3a';
 const OPACITY = 0.62;
 
 export interface ViperShotTelegraphLineProps {
@@ -15,13 +15,21 @@ export interface ViperShotTelegraphLineProps {
   start: Vector3;
   /** World-space end of the ground strip (20m horizontal in co-op Viper). */
   end: Vector3;
+  /** XZ width of the box (Viper: narrow; tentacle: wide to match line hit half-width). */
+  lineWidth?: number;
+  color?: string;
 }
 
 /**
  * Red flat strip on the ground — matches co-op Viper 20m shot danger zone in XZ.
  */
-export default function ViperShotTelegraphLine({ start, end }: ViperShotTelegraphLineProps) {
-  const { center, rotY, length } = useMemo(() => {
+export default function ViperShotTelegraphLine({
+  start,
+  end,
+  lineWidth = DEFAULT_LINE_WIDTH,
+  color = DEFAULT_COLOR,
+}: ViperShotTelegraphLineProps) {
+  const { center, rotY, length, width } = useMemo(() => {
     const dx = end.x - start.x;
     const dz = end.z - start.z;
     const len = Math.hypot(dx, dz);
@@ -34,8 +42,9 @@ export default function ViperShotTelegraphLine({ start, end }: ViperShotTelegrap
       ),
       rotY: Math.atan2(dx, dz),
       length: safeLen,
+      width: lineWidth,
     };
-  }, [start, end]);
+  }, [start, end, lineWidth]);
 
   return (
     <mesh
@@ -44,9 +53,9 @@ export default function ViperShotTelegraphLine({ start, end }: ViperShotTelegrap
       renderOrder={2}
       frustumCulled={false}
     >
-      <boxGeometry args={[LINE_WIDTH, LINE_THICK, length]} />
+      <boxGeometry args={[width, LINE_THICK, length]} />
       <meshBasicMaterial
-        color={COLOR}
+        color={color}
         transparent
         opacity={OPACITY}
         depthWrite={false}

@@ -13,11 +13,11 @@ interface EntropicBoltTrailProps {
   flightDirectionRef?: MutableRefObject<Vector3> | null;
 }
 
-const TRAIL_LENGTH = 25;
+const TRAIL_LENGTH = 55;
 const ORBIT_RADIUS = 0.4;
-const ORBIT_SPEED = 4.5;
+const ORBIT_SPEED = 15;
 const MIN_MOVEMENT = 0.06;
-const UPDATE_INTERVAL = 0.020;
+
 
 const AXIS_Y = new Vector3(0, 1, 0);
 const FALLBACK_UP = new Vector3(0, 0, 1);
@@ -108,8 +108,7 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
 
     timeRef.current += delta;
     updateTimer.current += delta;
-    if (updateTimer.current < UPDATE_INTERVAL) return;
-    updateTimer.current = 0;
+
 
     const wp = new Vector3();
     meshRef.current.getWorldPosition(wp);

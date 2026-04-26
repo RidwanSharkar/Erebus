@@ -65,6 +65,11 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
 
   const colors = getColors();
 
+  // Perfect shot: slightly shorter beam (19 vs 20) for tighter read vs actual range.
+  const beamLength = isPerfectShot ? 19 : 20;
+  const halfZ = beamLength * 0.5;
+  const lenScale = beamLength / 20;
+
   // Align beam +Z with projectile direction (includes pitch from bow compensation).
   const beamAlignQuat = useMemo(() => {
     const dir = direction.clone();
@@ -103,8 +108,8 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
       {/* Main beam trail - very thin like firebeam but 1/4 diameter */}
       <group quaternion={beamAlignQuat}>
         {/* Core beam - ultra thin, enhanced for perfect shots */}
-        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 10]}>
-          <cylinderGeometry args={[isPerfectShot ? 0.035 : 0.025, isPerfectShot ? 0.035 : 0.025, 20, 8]} />
+        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, halfZ]}>
+          <cylinderGeometry args={[isPerfectShot ? 0.035 : 0.025, isPerfectShot ? 0.035 : 0.025, beamLength, 8]} />
           <meshStandardMaterial
             color={colors.core}
             emissive={colors.emissive}
@@ -115,8 +120,8 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
         </mesh>
 
         {/* Inner glow - enhanced for perfect shots */}
-        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 10]}>
-          <cylinderGeometry args={[isPerfectShot ? 0.08 : 0.0625, isPerfectShot ? 0.08 : 0.0625, 20, 8]} />
+        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, halfZ]}>
+          <cylinderGeometry args={[isPerfectShot ? 0.08 : 0.0625, isPerfectShot ? 0.08 : 0.0625, beamLength, 8]} />
           <meshStandardMaterial
             color={colors.core}
             emissive={colors.emissive}
@@ -127,8 +132,8 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
         </mesh>
 
         {/* Outer glow - enhanced for perfect shots */}
-        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 10]}>
-          <cylinderGeometry args={[isPerfectShot ? 0.095 : 0.075, isPerfectShot ? 0.095 : 0.075, 20, 8]} />
+        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, halfZ]}>
+          <cylinderGeometry args={[isPerfectShot ? 0.095 : 0.075, isPerfectShot ? 0.095 : 0.075, beamLength, 8]} />
           <meshStandardMaterial
             color={colors.outer}
             emissive={colors.emissive}
@@ -145,7 +150,7 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
             ? Math.max(0, 1 - (Date.now() - fadeStartTime.current) / 600) // Longer fade for rings
             : 1;
           
-          const offset = i * 3;
+          const offset = i * 3 * lenScale;
           const scale = 1 - (i * 0.1);
           
           return (
@@ -189,9 +194,9 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
         <pointLight
           color={colors.core}
           intensity={(isPerfectShot ? 20 : 15) * fadeProgress}
-          distance={isPerfectShot ? 10 : 8}
+          distance={isPerfectShot ? 10 * lenScale : 8}
           decay={2}
-          position={[0, 0, 10]}
+          position={[0, 0, halfZ]}
         />
 
         {/* Additional perfect shot effects */}
@@ -205,7 +210,7 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
                 <group key={`lightning-${i}`} position={[
                   Math.sin(angle + Date.now() * 0.01) * radius,
                   Math.cos(angle + Date.now() * 0.01) * radius,
-                  10 + Math.sin(Date.now() * 0.005 + i) * 2
+                  halfZ + Math.sin(Date.now() * 0.005 + i) * 2 * lenScale
                 ]}>
                   <mesh>
                     <sphereGeometry args={[0.02, 4, 4]} />
@@ -223,8 +228,8 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
             })}
             
             {/* Perfect shot aura */}
-            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 10]}>
-              <cylinderGeometry args={[0.12, 0.12, 20, 8]} />
+            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, halfZ]}>
+              <cylinderGeometry args={[0.12, 0.12, beamLength, 8]} />
               <meshStandardMaterial
                 color="#ffffff"
                 emissive="#ffffff"

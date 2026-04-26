@@ -88,6 +88,7 @@ export class AudioSystem extends System {
       { id: 'enemy_death_shade', file: 'versus/shadedeath.mp3' },
       { id: 'enemy_death_viper', file: 'versus/viperdeath.mp3' },
       { id: 'enemy_death_templar', file: 'versus/templardeath.mp3' },
+      { id: 'enemy_death_tentacle_spine', file: 'versus/spinedeath.mp3' },
       { id: 'shade_throw', file: 'versus/shadeThrow.mp3' },
       { id: 'shade_damage_1', file: 'versus/shadeDamage1.mp3' },
       { id: 'shade_damage_2', file: 'versus/shadeDamage2.mp3' },
@@ -601,6 +602,8 @@ export class AudioSystem extends System {
       case 'templar':
       case 'boss':
         return 'enemy_death_templar';
+      case 'tentacle-spine':
+        return 'enemy_death_tentacle_spine';
       default:
         return 'enemy_death_templar';
     }

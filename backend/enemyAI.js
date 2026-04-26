@@ -48,7 +48,7 @@ const TELEPORT_BEHIND_DISTANCE = 2.2; // same as boss blink (templar blink smite
 // Co-op main boss (GLB): melee + leap + tectonic
 const BOSS_MELEE_RANGE = 3;
 const BOSS_MELEE_COOLDOWN_MS = 2750;
-const BOSS_MELEE_DAMAGE = 40;
+const BOSS_MELEE_DAMAGE = 10;
 /** No translation during melee swing (matches knight `SWING_LOCK_MS`). */
 const BOSS_MELEE_ATTACK_LOCK_MS = 1200;
 /** Leap only once at or below this health fraction (not at full HP). */
@@ -62,8 +62,8 @@ const BOSS_LEAP_MAX_TRAVEL_THRONE = 12;
 /** Playable disc inset so boss feet stay inside grass ring. */
 const COOP_BOSS_THRONE_ARENA_CLAMP_R = 14;
 const BOSS_LEAP_DURATION_MS = 1000;
-const BOSS_LEAP_LANDING_RADIUS = 3;
-const BOSS_LEAP_DAMAGE = 50;
+const BOSS_LEAP_LANDING_RADIUS = 4;
+const BOSS_LEAP_DAMAGE = 25;
 const BOSS_TECTONIC_COOLDOWN_MS = 20000;
 const BOSS_TECTONIC_MAX_HP_PCT = 0.75;
 const BOSS_TECTONIC_CENTER_DIST = 0.85;
@@ -72,7 +72,7 @@ const BOSS_TECTONIC_JUMP_COUNT = 10;
 const BOSS_TECTONIC_SPIKE_WARN_MS = 750;
 // Keep in sync with TECTONIC_HIT_RADIUS in src/components/enemies/BossTectonicSpikeTelegraph.tsx
 const BOSS_TECTONIC_SHARD_RADIUS = 2.5;
-const BOSS_TECTONIC_SHARD_DAMAGE = 40;
+const BOSS_TECTONIC_SHARD_DAMAGE = 30;
 const BOSS_STATIONARY_EPS = 0.03;
 const BOSS_TECTONIC_CENTER = { x: 0, y: 0, z: 0 };
 
@@ -81,6 +81,30 @@ const MARTYR_MELEE_RANGE = 1.4;
 const MARTYR_DETONATION_RADIUS = 5.5;
 const MARTYR_DETONATION_DAMAGE = 175;
 const MARTYR_DETONATION_DELAY_MS = 2160;
+
+// Tentacle-spine environmental trap (co-op wave)
+const TENTACLE_SPINE_TRIGGER_R = 5;
+const TENTACLE_SPINE_LINE_LEN = 7;
+const TENTACLE_SPINE_LINE_HALF_W = 0.85;
+const TENTACLE_SPINE_WINDUP_MS = 1000;
+const TENTACLE_SPINE_COOLDOWN_MS = 4000;
+const TENTACLE_SPINE_DMG_PLAYER = 40;
+const TENTACLE_SPINE_DMG_MOB = 250;
+
+function distPointSegmentSqXZ(px, pz, ax, az, bx, bz) {
+  const abx = bx - ax;
+  const abz = bz - az;
+  const abLen2 = abx * abx + abz * abz;
+  const apx = px - ax;
+  const apz = pz - az;
+  let t = abLen2 > 1e-8 ? (apx * abx + apz * abz) / abLen2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const qx = ax + t * abx;
+  const qz = az + t * abz;
+  const dx = px - qx;
+  const dz = pz - qz;
+  return dx * dx + dz * dz;
+}
 
 // Purple warlock: matches WARLOCK_LAUNCH_DURATION in CoopGameScene.tsx — no walk during cast wind-up
 const WARLOCK_LAUNCH_MOVE_LOCK_MS = 1400;
@@ -176,6 +200,9 @@ class EnemyAI {
 
     // Templar Blink Smite: timestamp when next cast is allowed (per templar; initialized on first aggro)
     this.templarBlinkSmiteNextAt = new Map();
+
+    /** tentacle-spine id -> windup slam setTimeout id */
+    this.tentacleSlamTimeouts = new Map();
   }
 
   setRoom(room) {
@@ -211,6 +238,8 @@ class EnemyAI {
     this.bossLastAiPos.clear();
     this.bossLeapTimeout.forEach((t) => clearTimeout(t));
     this.bossLeapTimeout.clear();
+    this.tentacleSlamTimeouts.forEach((t) => clearTimeout(t));
+    this.tentacleSlamTimeouts.clear();
     this.bossTectonicSpikePendingTimeouts.forEach((ids) => {
       (ids || []).forEach((tid) => clearTimeout(tid));
     });
@@ -258,6 +287,11 @@ class EnemyAI {
     // Note: Taunt now works by giving aggro priority instead of overriding AI completely
 
     if (enemy.type === 'training-dummy') return;
+
+    if (enemy.type === 'tentacle-spine') {
+      this.updateTentacleSpineTrap(enemy, players);
+      return;
+    }
 
     // Special handling for boss enemies
     if (enemy.type === 'boss') {
@@ -333,6 +367,7 @@ class EnemyAI {
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
+        targetTrapId: null,
         lastUpdate: Date.now(),
         aggro: 100
       };
@@ -354,6 +389,7 @@ class EnemyAI {
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
+        targetTrapId: null,
         lastUpdate: Date.now(),
         aggro: 100
       };
@@ -397,7 +433,7 @@ class EnemyAI {
               console.log(`💀 Skeleton ${skeleton.id} attack missed - player ${currentTarget.id} dodged out of range!`);
             }
           }, telegraphDelay);
-        } else {
+        } else if (resolved.kind === 'zombie') {
           const zid = resolved.zombie.id;
           this.telegraphSkeletonAttack(skeleton, {
             id: resolved.zombie.ownerPlayerId || zid,
@@ -412,6 +448,27 @@ class EnemyAI {
             if (currentDistance <= attackRange) {
               const damage = skeleton.damage || 17;
               this.damagePlayerZombieFromMob(skeleton, z, damage, 'boss_skeleton_melee');
+            }
+          }, telegraphDelay);
+        } else {
+          const trap = resolved.trap;
+          this.telegraphSkeletonAttack(skeleton, {
+            id: trap.id,
+            position: trap.position,
+          });
+          const telegraphDelay = 250;
+          const trapId = trap.id;
+          setTimeout(() => {
+            if (skeleton.isDying || !this.room?.getGameStarted()) return;
+            const t = this.room?.getEnemy(trapId);
+            if (!t || t.isDying || t.health <= 0 || t.type !== 'tentacle-spine') return;
+            const currentDistance = this.calculateDistance(skeleton.position, t.position);
+            if (currentDistance <= attackRange) {
+              const damage = skeleton.damage || 17;
+              this.room.damageEnemy(trapId, damage, null, null, {
+                sourceEnemyId: skeleton.id,
+                damageType: 'boss_skeleton_melee',
+              });
             }
           }, telegraphDelay);
         }
@@ -461,6 +518,7 @@ class EnemyAI {
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
+        targetTrapId: null,
         lastUpdate: Date.now(),
         aggro: 100,
       };
@@ -541,7 +599,7 @@ class EnemyAI {
       } else {
         this.moveEnemyTowardsTarget(knight, moveTarget, { meleeSurroundAttackRange: attackRange });
       }
-    } else {
+    } else if (resolved.kind === 'zombie') {
       const z = resolved.zombie;
       if (distance <= attackRange) {
         if (!this.bossAttackCooldown.has(knight.id)) {
@@ -572,6 +630,46 @@ class EnemyAI {
               this.damagePlayerZombieFromMob(knight, liveZ, damage, 'knight_melee');
             } else {
               console.log(`⚔️ Knight ${knight.id} swing missed — zombie dodged out of range!`);
+            }
+          }, 1000);
+        } else if (distance > meleePressDistance) {
+          this.moveEnemyTowardsTarget(knight, moveTarget, { meleeSurroundAttackRange: attackRange });
+        }
+      } else {
+        this.moveEnemyTowardsTarget(knight, moveTarget, { meleeSurroundAttackRange: attackRange });
+      }
+    } else {
+      const tr = resolved.trap;
+      if (distance <= attackRange) {
+        if (!this.bossAttackCooldown.has(knight.id)) {
+          this.bossAttackCooldown.set(knight.id, 0);
+        }
+
+        const lastAttackTime = this.bossAttackCooldown.get(knight.id);
+
+        if (now - lastAttackTime >= attackCooldown) {
+          this.bossAttackCooldown.set(knight.id, now);
+
+          const SWING_LOCK_MS = 1200;
+          this.meleeLockUntil.set(knight.id, now + SWING_LOCK_MS);
+
+          this.telegraphKnightAttack(knight, {
+            id: tr.id,
+            position: tr.position,
+          });
+          const trapId = tr.id;
+
+          setTimeout(() => {
+            if (knight.isDying || !this.room?.getGameStarted()) return;
+            const liveT = this.room?.getEnemy(trapId);
+            if (!liveT || liveT.isDying || liveT.health <= 0 || liveT.type !== 'tentacle-spine') return;
+            const currentDistance = this.calculateDistance(knight.position, liveT.position);
+            if (currentDistance <= attackRange) {
+              const damage = knight.damage || 25;
+              this.room.damageEnemy(trapId, damage, null, null, {
+                sourceEnemyId: knight.id,
+                damageType: 'knight_melee',
+              });
             }
           }, 1000);
         } else if (distance > meleePressDistance) {
@@ -991,6 +1089,7 @@ class EnemyAI {
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
+        targetTrapId: null,
         lastUpdate: Date.now(),
         aggro: 100,
       };
@@ -1037,7 +1136,7 @@ class EnemyAI {
         this.shadeBlinkCooldown.set(shade.id, now);
         if (resolved.kind === 'player') {
           this.shadeCastBlinkAndAttack(shade, resolved.player);
-        } else {
+        } else if (resolved.kind === 'zombie') {
           const z = resolved.zombie;
           const fakeTarget = { id: z.ownerPlayerId || z.id, position: z.position };
           this.telegraphShadeAttack(shade, fakeTarget);
@@ -1050,6 +1149,23 @@ class EnemyAI {
               if (!zz || zz.isDying || zz.health <= 0) return;
               if (this.calculateDistance(shade.position, zz.position) > attackRange + 1.5) return;
               this.damagePlayerZombieFromMob({ id: shadeId }, zz, 25, 'shade_dagger');
+            }, delay);
+          });
+        } else {
+          const tr = resolved.trap;
+          this.telegraphShadeAttack(shade, { id: tr.id, position: tr.position });
+          const trapId = tr.id;
+          const shadeId = shade.id;
+          [1000, 1250, 1500].forEach((delay) => {
+            setTimeout(() => {
+              if (shade.isDying || !this.room?.getGameStarted()) return;
+              const tt = this.room?.getEnemy(trapId);
+              if (!tt || tt.isDying || tt.health <= 0 || tt.type !== 'tentacle-spine') return;
+              if (this.calculateDistance(shade.position, tt.position) > attackRange + 1.5) return;
+              this.room.damageEnemy(trapId, 25, null, null, {
+                sourceEnemyId: shadeId,
+                damageType: 'shade_dagger',
+              });
             }, delay);
           });
         }
@@ -1186,6 +1302,7 @@ class EnemyAI {
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
+        targetTrapId: null,
         lastUpdate: Date.now(),
         aggro: 100,
       };
@@ -1224,6 +1341,29 @@ class EnemyAI {
 
     const now = Date.now();
     const isPurpleWarlock = warlock.soulType === 'purple';
+
+    if (resolved.kind === 'trap') {
+      const tr = resolved.trap;
+      const launchRange = 12.0;
+      const launchCooldown = 7000;
+      const lastLaunchTime = this.warlockLaunchCooldown.get(warlock.id) || 0;
+      if (distance <= launchRange && now - lastLaunchTime >= launchCooldown) {
+        this.warlockLaunchCooldown.set(warlock.id, now);
+        this.room.damageEnemy(tr.id, 50, null, null, {
+          sourceEnemyId: warlock.id,
+          damageType: 'warlock_chaos_chip',
+        });
+      }
+      if (isPurpleWarlock) {
+        const lockUntil = this.warlockLaunchMoveLockUntil.get(warlock.id) || 0;
+        if (distance > WARLOCK_PREFERRED_STAND_RANGE && now >= lockUntil) {
+          this.moveEnemyTowardsTarget(warlock, moveTarget);
+        }
+      } else if (distance > launchRange) {
+        this.moveEnemyTowardsTarget(warlock, moveTarget);
+      }
+      return;
+    }
 
     if (resolved.kind === 'zombie') {
       const z = resolved.zombie;
@@ -1413,6 +1553,7 @@ class EnemyAI {
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
+        targetTrapId: null,
         lastUpdate: Date.now(),
         aggro: 100,
       };
@@ -1494,7 +1635,7 @@ class EnemyAI {
       } else {
         this.moveEnemyTowardsTarget(templar, moveTarget, { meleeSurroundAttackRange: attackRange });
       }
-    } else {
+    } else if (resolved.kind === 'zombie') {
       const z = resolved.zombie;
       if (distance <= attackRange) {
         if (!this.bossAttackCooldown.has(templar.id)) {
@@ -1523,6 +1664,44 @@ class EnemyAI {
               this.damagePlayerZombieFromMob(templar, liveZ, damage, 'templar_melee');
             } else {
               console.log(`🛡️ Templar ${templar.id} swing missed — zombie dodged!`);
+            }
+          }, 1000);
+        } else if (distance > meleePressDistance) {
+          this.moveEnemyTowardsTarget(templar, moveTarget, { meleeSurroundAttackRange: attackRange });
+        }
+      } else {
+        this.moveEnemyTowardsTarget(templar, moveTarget, { meleeSurroundAttackRange: attackRange });
+      }
+    } else {
+      const tr = resolved.trap;
+      if (distance <= attackRange) {
+        if (!this.bossAttackCooldown.has(templar.id)) {
+          this.bossAttackCooldown.set(templar.id, 0);
+        }
+
+        const lastAttackTime = this.bossAttackCooldown.get(templar.id);
+
+        if (now - lastAttackTime >= attackCooldown) {
+          this.bossAttackCooldown.set(templar.id, now);
+          const SWING_LOCK_MS = 1200;
+          this.meleeLockUntil.set(templar.id, now + SWING_LOCK_MS);
+          this.telegraphTemplarAttack(templar, {
+            id: tr.id,
+            position: tr.position,
+          });
+          const trapId = tr.id;
+
+          setTimeout(() => {
+            if (templar.isDying || !this.room?.getGameStarted()) return;
+            const liveT = this.room?.getEnemy(trapId);
+            if (!liveT || liveT.isDying || liveT.health <= 0 || liveT.type !== 'tentacle-spine') return;
+            const currentDistance = this.calculateDistance(templar.position, liveT.position);
+            if (currentDistance <= attackRange) {
+              const damage = templar.damage || 48;
+              this.room.damageEnemy(trapId, damage, null, null, {
+                sourceEnemyId: templar.id,
+                damageType: 'templar_melee',
+              });
             }
           }, 1000);
         } else if (distance > meleePressDistance) {
@@ -1657,6 +1836,7 @@ class EnemyAI {
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
+        targetTrapId: null,
         lastUpdate: Date.now(),
         aggro: 100,
       };
@@ -1703,7 +1883,7 @@ class EnemyAI {
         this.viperAttackCooldown.set(viper.id, now);
         if (resolved.kind === 'player') {
           this.telegraphViperAttack(viper, resolved.player);
-        } else {
+        } else if (resolved.kind === 'zombie') {
           const z = resolved.zombie;
           this.telegraphViperAttack(viper, {
             id: z.ownerPlayerId || z.id,
@@ -1716,6 +1896,23 @@ class EnemyAI {
             if (!zz || zz.isDying || zz.health <= 0) return;
             if (this.calculateDistance(viper.position, zz.position) > attackRange + 1) return;
             this.damagePlayerZombieFromMob(viper, zz, 70, 'viper_arrow');
+          }, 800);
+        } else {
+          const tr = resolved.trap;
+          this.telegraphViperAttack(viper, {
+            id: tr.id,
+            position: tr.position,
+          });
+          const trapId = tr.id;
+          setTimeout(() => {
+            if (viper.isDying || !this.room?.getGameStarted()) return;
+            const tt = this.room?.getEnemy(trapId);
+            if (!tt || tt.isDying || tt.health <= 0 || tt.type !== 'tentacle-spine') return;
+            if (this.calculateDistance(viper.position, tt.position) > attackRange + 1) return;
+            this.room.damageEnemy(trapId, 70, null, null, {
+              sourceEnemyId: viper.id,
+              damageType: 'viper_arrow',
+            });
           }, 800);
         }
       }
@@ -1773,6 +1970,7 @@ class EnemyAI {
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
+        targetTrapId: null,
         lastUpdate: Date.now(),
         aggro: 100,
       };
@@ -1822,8 +2020,10 @@ class EnemyAI {
         this.weaverLightningCooldown.set(weaver.id, now);
         if (resolved.kind === 'player') {
           this.weaverCastLightning(weaver, resolved.player, now);
-        } else {
+        } else if (resolved.kind === 'zombie') {
           this.weaverCastLightningOnZombie(weaver, resolved.zombie, now);
+        } else {
+          this.weaverCastLightningOnTrap(weaver, resolved.trap, now);
         }
       }
     } else {
@@ -1887,6 +2087,37 @@ class EnemyAI {
     console.log(`🧵 Weaver ${weaver.id} lightning (zombie) at (${tx.toFixed(1)}, ${tz.toFixed(1)})`);
   }
 
+  weaverCastLightningOnTrap(weaver, trap, now) {
+    const CHARGE_MS = 1500;
+    const tx = trap.position.x;
+    const tz = trap.position.z;
+    if (this.io) {
+      this.io.to(this.roomId).emit('weaver-lightning-telegraph', {
+        weaverId: weaver.id,
+        targetPosition: { x: tx, y: 0, z: tz },
+        strikeAt: now + CHARGE_MS,
+        damage: 35,
+        radius: 2.99,
+        timestamp: now,
+      });
+    }
+    const trapId = trap.id;
+    setTimeout(() => {
+      if (!this.room?.getGameStarted()) return;
+      const tt = this.room?.getEnemy(trapId);
+      if (!tt || tt.isDying || tt.health <= 0 || tt.type !== 'tentacle-spine') return;
+      const rdx = tt.position.x - tx;
+      const rdz = tt.position.z - tz;
+      if (Math.sqrt(rdx * rdx + rdz * rdz) <= 2.99) {
+        this.room.damageEnemy(trapId, 35, null, null, {
+          sourceEnemyId: weaver.id,
+          damageType: 'weaver_lightning',
+        });
+      }
+    }, CHARGE_MS);
+    console.log(`🧵 Weaver ${weaver.id} lightning (trap) at (${tx.toFixed(1)}, ${tz.toFixed(1)})`);
+  }
+
   // Find the allied enemy (not a player) within healRange of the weaver that has
   // the lowest current HP percentage, skipping dying/dead enemies and the weaver itself.
   findLowestHpPercentEnemy(weaver, range) {
@@ -1898,6 +2129,7 @@ class EnemyAI {
     this.room.getEnemies().forEach(enemy => {
       if (enemy.id === weaver.id) return;
       if (enemy.isDying || enemy.health <= 0) return;
+      if (enemy.type === 'tentacle-spine') return;
       if (enemy.health >= enemy.maxHealth) return; // Already full — no point healing
 
       const dist = this.calculateDistance(weaver.position, enemy.position);
@@ -2052,6 +2284,7 @@ class EnemyAI {
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
+        targetTrapId: null,
         lastUpdate: Date.now(),
         aggro: 100,
         isAggroed: true,
@@ -2105,7 +2338,7 @@ class EnemyAI {
               console.log(`💀 Ghoul ${ghoul.id} swing missed — player dodged!`);
             }
           }, 900);
-        } else {
+        } else if (resolved.kind === 'zombie') {
           const z = resolved.zombie;
           this.telegraphGhoulAttack(ghoul, {
             id: z.ownerPlayerId || z.id,
@@ -2122,6 +2355,26 @@ class EnemyAI {
               this.damagePlayerZombieFromMob(ghoul, zz, damage, 'ghoul_melee');
             } else {
               console.log(`💀 Ghoul ${ghoul.id} swing missed — zombie dodged!`);
+            }
+          }, 900);
+        } else {
+          const tr = resolved.trap;
+          this.telegraphGhoulAttack(ghoul, {
+            id: tr.id,
+            position: tr.position,
+          });
+          const trapId = tr.id;
+          setTimeout(() => {
+            if (ghoul.isDying || !this.room?.getGameStarted()) return;
+            const tt = this.room?.getEnemy(trapId);
+            if (!tt || tt.isDying || tt.health <= 0 || tt.type !== 'tentacle-spine') return;
+            const currentDistance = this.calculateDistance(ghoul.position, tt.position);
+            if (currentDistance <= attackRange) {
+              const damage = ghoul.damage || 30;
+              this.room.damageEnemy(trapId, damage, null, null, {
+                sourceEnemyId: ghoul.id,
+                damageType: 'ghoul_melee',
+              });
             }
           }, 900);
         }
@@ -2145,6 +2398,7 @@ class EnemyAI {
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
+        targetTrapId: null,
         lastUpdate: Date.now(),
         aggro: 100,
         isAggroed: true,
@@ -2990,7 +3244,7 @@ class EnemyAI {
       case 'shade':   return 2.0;
       case 'warlock': return 0.0; // Stationary — moves only via blink
       case 'viper':   return 2.0;
-      case 'templar': return 3.5;
+      case 'templar': return 3.25;
       case 'weaver':  return 2.0;
       case 'ghoul':   return 2.25;
       case 'martyr':  return 3.0;
@@ -3528,6 +3782,11 @@ class EnemyAI {
 
   // Remove enemy from aggro tracking when it dies
   removeEnemyAggro(enemyId) {
+    const tst = this.tentacleSlamTimeouts.get(enemyId);
+    if (tst) {
+      clearTimeout(tst);
+      this.tentacleSlamTimeouts.delete(enemyId);
+    }
     this.enemyAggro.delete(enemyId);
     this.bossDamageTracking.delete(enemyId);
     this.bossAttackCooldown.delete(enemyId);
@@ -3656,6 +3915,7 @@ class EnemyAI {
       aggroData = {
         targetPlayerId: fallbackPlayerId,
         targetZombieId: zombieId,
+        targetTrapId: null,
         lastUpdate: Date.now(),
         aggro: 100,
       };
@@ -3663,6 +3923,7 @@ class EnemyAI {
     }
 
     aggroData.targetZombieId = zombieId;
+    aggroData.targetTrapId = null;
     if (fallbackPlayerId) aggroData.targetPlayerId = fallbackPlayerId;
     aggroData.aggro += aggroAmount;
     aggroData.lastUpdate = Date.now();
@@ -3670,12 +3931,186 @@ class EnemyAI {
     aggroData.threatFromDamage = true;
   }
 
+  clearTrapPendingSlam(trapId) {
+    const t = this.tentacleSlamTimeouts.get(trapId);
+    if (t) {
+      clearTimeout(t);
+      this.tentacleSlamTimeouts.delete(trapId);
+    }
+  }
+
+  clearTrapAsAggroTarget(trapId) {
+    this.enemyAggro.forEach((data) => {
+      if (data.targetTrapId === trapId) data.targetTrapId = null;
+    });
+  }
+
   /**
-   * Prefer combat vs an infested zombie when threat says so; otherwise resolve player target.
-   * @returns {{ kind: 'player', player: object } | { kind: 'zombie', zombie: object } | null}
+   * Threat from tentacle-spine line — mob focuses the trap (clears zombie focus).
+   */
+  applyTrapThreat(defenderEnemyId, trapId, aggroAmount = 50) {
+    const tr = this.room?.enemies?.get?.(trapId);
+    if (!tr || tr.type !== 'tentacle-spine' || tr.isDying || tr.health <= 0) return;
+
+    const players = this.room?.getPlayers?.();
+    let fallbackPlayerId = null;
+    const selfEnemy = this.room?.enemies?.get?.(defenderEnemyId);
+    if (players && selfEnemy) {
+      const closest = this.findClosestPlayer(selfEnemy, players);
+      if (closest) fallbackPlayerId = closest.id;
+    }
+
+    let aggroData = this.enemyAggro.get(defenderEnemyId);
+    if (!aggroData) {
+      const enemy = this.room?.enemies?.get?.(defenderEnemyId);
+      if (!enemy) return;
+      aggroData = {
+        targetPlayerId: fallbackPlayerId,
+        targetZombieId: null,
+        targetTrapId: trapId,
+        lastUpdate: Date.now(),
+        aggro: 100,
+      };
+      this.enemyAggro.set(defenderEnemyId, aggroData);
+    }
+
+    aggroData.targetTrapId = trapId;
+    aggroData.targetZombieId = null;
+    if (fallbackPlayerId) aggroData.targetPlayerId = fallbackPlayerId;
+    aggroData.aggro += aggroAmount;
+    aggroData.lastUpdate = Date.now();
+    aggroData.isAggroed = true;
+    aggroData.threatFromDamage = true;
+  }
+
+  updateTentacleSpineTrap(trap, players) {
+    if (!this.room || trap.isDying || trap.health <= 0) return;
+    const now = Date.now();
+    if (now < (trap.trapNextReadyAt || 0)) return;
+    if (this.tentacleSlamTimeouts.has(trap.id)) return;
+
+    const triggerR2 = TENTACLE_SPINE_TRIGGER_R * TENTACLE_SPINE_TRIGGER_R;
+    let best = null;
+    let bestD = Infinity;
+
+    for (const p of players) {
+      if (!p || p.health <= 0) continue;
+      const dx = p.position.x - trap.position.x;
+      const dz = p.position.z - trap.position.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 <= triggerR2 && d2 < bestD) {
+        bestD = d2;
+        best = { kind: 'player', position: p.position };
+      }
+    }
+
+    for (const e of this.room.getEnemies()) {
+      if (!e || e.id === trap.id || e.isDying || e.health <= 0) continue;
+      if (e.type === 'tentacle-spine' || e.type === 'training-dummy') continue;
+      if (e.type === 'boss' || e.type === 'boss-skeleton') continue;
+      const dx = e.position.x - trap.position.x;
+      const dz = e.position.z - trap.position.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 <= triggerR2 && d2 < bestD) {
+        bestD = d2;
+        best = { kind: 'enemy', position: e.position };
+      }
+    }
+
+    if (!best) return;
+
+    const dx = best.position.x - trap.position.x;
+    const dz = best.position.z - trap.position.z;
+    const len = Math.hypot(dx, dz) || 1e-6;
+    const dirX = dx / len;
+    const dirZ = dz / len;
+    trap.rotation = Math.atan2(dx, dz);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-moved', {
+        enemyId: trap.id,
+        position: trap.position,
+        rotation: trap.rotation,
+        timestamp: Date.now(),
+      });
+      this.io.to(this.roomId).emit('tentacle-spine-windup', {
+        enemyId: trap.id,
+        dirX,
+        dirZ,
+        position: { x: trap.position.x, y: trap.position.y, z: trap.position.z },
+        lineLength: TENTACLE_SPINE_LINE_LEN,
+        timestamp: Date.now(),
+      });
+    }
+
+    const trapId = trap.id;
+    const tid = setTimeout(() => {
+      this.tentacleSlamTimeouts.delete(trapId);
+      this._executeTentacleSpineSlam(trapId, dirX, dirZ);
+    }, TENTACLE_SPINE_WINDUP_MS);
+    this.tentacleSlamTimeouts.set(trap.id, tid);
+  }
+
+  _executeTentacleSpineSlam(trapId, dirX, dirZ) {
+    if (!this.room?.getGameStarted()) return;
+    const live = this.room.getEnemy(trapId);
+    if (!live || live.type !== 'tentacle-spine' || live.isDying || live.health <= 0) return;
+
+    const ax = live.position.x;
+    const az = live.position.z;
+    const bx = ax + dirX * TENTACLE_SPINE_LINE_LEN;
+    const bz = az + dirZ * TENTACLE_SPINE_LINE_LEN;
+    const hw = TENTACLE_SPINE_LINE_HALF_W;
+    const hw2 = hw * hw;
+
+    this.room.damagePlayersInLineSegment(
+      ax,
+      az,
+      bx,
+      bz,
+      hw,
+      TENTACLE_SPINE_DMG_PLAYER,
+      'tentacle_spine',
+    );
+
+    const hit = new Set();
+    for (const e of this.room.getEnemies()) {
+      if (!e || e.id === trapId || e.isDying || e.health <= 0) continue;
+      if (e.type === 'tentacle-spine' || e.type === 'training-dummy') continue;
+      if (e.type === 'boss' || e.type === 'boss-skeleton') continue;
+      if (distPointSegmentSqXZ(e.position.x, e.position.z, ax, az, bx, bz) > hw2) continue;
+      if (hit.has(e.id)) continue;
+      hit.add(e.id);
+      this.room.damageEnemy(e.id, TENTACLE_SPINE_DMG_MOB, null, null, {
+        sourceTrapId: trapId,
+        damageType: 'tentacle_spine',
+      });
+    }
+
+    live.trapNextReadyAt = Date.now() + TENTACLE_SPINE_COOLDOWN_MS;
+    if (this.io) {
+      this.io.to(this.roomId).emit('tentacle-spine-slam', {
+        enemyId: trapId,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  /**
+   * Prefer trap → zombie → player.
+   * @returns {{ kind: 'player', player: object } | { kind: 'zombie', zombie: object } | { kind: 'trap', trap: object } | null}
    */
   resolveAggroCombatTarget(aggroData, moverEnemy, players) {
     if (!aggroData || !moverEnemy || !players) return null;
+
+    const tid = aggroData.targetTrapId;
+    if (tid) {
+      const tr = this.room?.enemies?.get(tid);
+      if (tr && tr.type === 'tentacle-spine' && !tr.isDying && tr.health > 0) {
+        return { kind: 'trap', trap: tr };
+      }
+      aggroData.targetTrapId = null;
+    }
 
     const zid = aggroData.targetZombieId;
     if (zid) {
@@ -3701,14 +4136,16 @@ class EnemyAI {
 
   aggroTargetToMoveTarget(resolved) {
     if (!resolved) return null;
-    return resolved.kind === 'player'
-      ? resolved.player
-      : { id: resolved.zombie.id, position: resolved.zombie.position };
+    if (resolved.kind === 'player') return resolved.player;
+    if (resolved.kind === 'trap') return { id: resolved.trap.id, position: resolved.trap.position };
+    return { id: resolved.zombie.id, position: resolved.zombie.position };
   }
 
   combatTargetPosition(resolved) {
     if (!resolved) return null;
-    return resolved.kind === 'player' ? resolved.player.position : resolved.zombie.position;
+    if (resolved.kind === 'player') return resolved.player.position;
+    if (resolved.kind === 'trap') return resolved.trap.position;
+    return resolved.zombie.position;
   }
 
   damagePlayerZombieFromMob(mob, zombie, damage, damageType) {
@@ -3731,6 +4168,7 @@ class EnemyAI {
       aggroData = {
         targetPlayerId: playerId,
         targetZombieId: null,
+        targetTrapId: null,
         lastUpdate: Date.now(),
         aggro: 100
       };
@@ -3739,6 +4177,7 @@ class EnemyAI {
 
     aggroData.targetPlayerId = playerId;
     aggroData.targetZombieId = null;
+    aggroData.targetTrapId = null;
     aggroData.aggro += aggroAmount;
     aggroData.lastUpdate = Date.now();
     aggroData.isAggroed = true;
@@ -3763,6 +4202,7 @@ class EnemyAI {
         // Clear the target for this enemy - it will find a new target on next update
         aggroData.targetPlayerId = null;
         aggroData.targetZombieId = null;
+        aggroData.targetTrapId = null;
         aggroData.aggro = 0;
         aggroData.isAggroed = false;
         aggroData.threatFromDamage = false;

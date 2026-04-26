@@ -28,10 +28,10 @@ export type ThronePillarDef = {
 
 /** Four pillars in a ring — orb colours: green, yellow, red, blue. */
 export const THRONE_PILLAR_DEFS: ThronePillarDef[] = [
-  { position: [-5.5, 0, 1], orbColorHex: '#22c55e' },
-  { position: [5.5, 0, 1], orbColorHex: '#eab308' },
-  { position: [-3.25, 0, -2], orbColorHex: '#ef4444' },
-  { position: [3.25, 0, -2], orbColorHex: '#3b82f6' },
+  { position: [-5.5, 0, 1], orbColorHex: '#22c55e' }, // BOW
+  { position: [5.5, 0, 1], orbColorHex: '#eab308' }, // SWORD
+  { position: [-3.25, 0, -2], orbColorHex: '#ef4444' }, // SABRES
+  { position: [3.25, 0, -2], orbColorHex: '#3b82f6' }, // SCYTHE
 ];
 
 /** Stable reference for `PillarCollision` (avoid new array identity every React render). */

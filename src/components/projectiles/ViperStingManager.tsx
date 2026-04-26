@@ -182,6 +182,7 @@ export default function ViperStingManager({
           position={effect.position}
           direction={effect.direction}
           isReturning={effect.isReturning}
+          beamLength={effect.beamLength}
           onComplete={() => removeBeamEffect(effect.id)}
         />
       ))}

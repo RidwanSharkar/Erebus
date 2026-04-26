@@ -88,6 +88,8 @@ interface DragonUnitProps {
     position: Vector3;
     health: number;
   }>;
+  mushroomTargets?: Array<{ index: number; position: Vector3 }>;
+  onMushroomHit?: (index: number, baseDamage: number) => void;
   onHit?: (targetId: string, damage: number, isCritical?: boolean, position?: Vector3, isBlizzard?: boolean) => void;
   setDamageNumbers?: (callback: (prev: Array<{
     id: number;
@@ -208,6 +210,8 @@ export default function DragonUnit({
   onChargeComplete = () => {},
   onDeflectComplete = () => {},
   enemyData = [],
+  mushroomTargets,
+  onMushroomHit,
   onHit = () => {},
   setDamageNumbers = () => {},
   nextDamageNumberId = { current: 0 },
@@ -364,8 +368,8 @@ export default function DragonUnit({
           dragonGroupRef={groupRef}
           playerEntityId={entityId}
           realTimePositionRef={realTimePositionRef}
-
-
+          mushroomTargets={mushroomTargets}
+          onMushroomHit={onMushroomHit}
         />
       );
     } else if (currentWeapon === WeaponType.SABRES) {
@@ -427,6 +431,8 @@ export default function DragonUnit({
           getExecutionerFlatBonus={getRunebladeExecutionerFlatBonus}
           getCrusaderLmbFlatBonus={getRunebladeCrusaderLmbFlatBonus}
           getBlizzardTalentActive={getRunebladeBlizzardTalentActive}
+          mushroomTargets={mushroomTargets}
+          onMushroomHit={onMushroomHit}
         />
       );
     } else if (currentWeapon === WeaponType.SPEAR) {

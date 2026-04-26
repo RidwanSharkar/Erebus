@@ -22,6 +22,7 @@ import WeaverHealEffect from './enemies/WeaverHealEffect';
 import WeaverLightningStrike from './enemies/WeaverLightningStrike';
 import GhoulRenderer from './enemies/GhoulRenderer';
 import MartyrRenderer from './enemies/MartyrRenderer';
+import TentacleSpineRenderer from './enemies/TentacleSpineRenderer';
 import MartyrDetonationTelegraph from './enemies/MartyrDetonationTelegraph';
 import MartyrDetonationExplosion from './enemies/MartyrDetonationExplosion';
 import ZombieRenderer from './enemies/ZombieRenderer';
@@ -43,6 +44,12 @@ import { useMultiplayer, Player, EnemyDamageMeta, type Enemy as ServerEnemy } fr
 import { SkillPointData } from '@/utils/SkillPointSystem';
 import { AbilityLoadout, getDefaultLoadoutForWeapon } from '@/utils/weaponAbilities';
 import {
+  TENTACLE_GROUND_TELEGRAPH_LEAD_MS,
+  TENTACLE_SPINE_TELEGRAPH_COLOR,
+  TENTACLE_SPINE_TELEGRAPH_STRIP_WIDTH,
+  TENTACLE_SPINE_WINDUP_MS,
+} from '@/utils/tentacleSpineClientConstants';
+import {
   shouldApplyInfestedSmiteTalent,
   shouldApplyInfernalSmiteTalent,
   shouldApplyVengeanceSmiteTalent,
@@ -55,6 +62,7 @@ import {
   shouldApplyWrathfulTalonsTalent,
   shouldApplyExecuteTalent,
   shouldApplyExplosiveTalonsTalent,
+  shouldApplyWyvernTalonsTalent,
   STAGGER_PROC_DAMAGE,
   getDualCoilLateralVector,
   CROSSENTROPY_MAX_TRAVEL_DISTANCE,
@@ -72,6 +80,7 @@ import { World } from '@/ecs/World';
 import { Transform } from '@/ecs/components/Transform';
 import { Movement } from '@/ecs/components/Movement';
 import { Health } from '@/ecs/components/Health';
+import { DestructibleMushroom } from '@/ecs/components/DestructibleMushroom';
 import { Shield } from '@/ecs/components/Shield';
 import { Enemy, EnemyType } from '@/ecs/components/Enemy';
 
@@ -150,6 +159,9 @@ import { FOG_GRID_SIZE, isEnemyVisible } from '@/utils/fogOfWarUtils';
 import { MAIN_MAP_RADIUS, clampToMainArenaXZ } from '@/utils/mapConstants';
 import { getRedCornerMountainDiscs } from '@/utils/cornerMountainsConstants';
 import { COOP_MAIN_ENTRY_Z, rotationYTowardArenaCenter } from '@/utils/coopArenaLayout';
+import { MUSHROOM_COUNT, buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
+import { MUSHROOM_MAX_HP } from '@/utils/mushroomConstants';
+import MushroomEruptionVfx from '@/components/environment/MushroomEruptionVfx';
 
 /** Default main combat entry Z (ring centered here; matches server `teleportAllPlayersToCombatSpawn`). */
 const COOP_MAIN_DEFAULT_SPAWN_Z = COOP_MAIN_ENTRY_Z;
@@ -189,6 +201,8 @@ function defaultSubclassForThroneWeapon(w: WeaponType): WeaponSubclass {
 
 interface CoopGameSceneProps {
   onDamageNumbersUpdate?: (damageNumbers: DamageNumberData[]) => void;
+  /** Wyvern Talons detonation floats — separate pool from main damage numbers. */
+  onWyvernTalonsDetonationDamageNumbersUpdate?: (damageNumbers: DamageNumberData[]) => void;
   onDamageNumberComplete?: (id: string) => void;
   onCameraUpdate?: (camera: Camera, size: { width: number; height: number }) => void;
   onGameStateUpdate?: (gameState: {
@@ -404,6 +418,7 @@ function ThroneTrainingDummyEntry({ enemy }: { enemy: ServerEnemy }) {
 
 export function CoopGameScene({
   onDamageNumbersUpdate,
+  onWyvernTalonsDetonationDamageNumbersUpdate,
   onDamageNumberComplete,
   onCameraUpdate,
   onGameStateUpdate,
@@ -449,6 +464,9 @@ export function CoopGameScene({
     broadcastPlayerDeathEffect, // For broadcasting death effects
     broadcastPlayerKnockback, // For broadcasting knockback effects
     damageEnemy, // New function for enemy damage with source player tracking
+    damageMushroom,
+    mushroomState,
+    detonateWyvernConcentratedVenom,
     applyStatusEffect, // For applying status effects to enemies (freeze, slow, corrupted)
     socket,
     updatePlayerEssence,
@@ -497,6 +515,62 @@ export function CoopGameScene({
   }, [inThroneRoom, inBossThroneArena]);
 
   const dimThroneLikeLighting = inThroneRoom || inBossThroneArena;
+
+  const effectiveMushroomHealth = useMemo(() => {
+    if (mushroomState?.health?.length === MUSHROOM_COUNT) return mushroomState.health;
+    return Array.from({ length: MUSHROOM_COUNT }, () => MUSHROOM_MAX_HP);
+  }, [mushroomState]);
+
+  const mushroomHiddenIndices = useMemo(() => {
+    const s = new Set<number>();
+    effectiveMushroomHealth.forEach((h, i) => {
+      if (h <= 0) s.add(i);
+    });
+    return s;
+  }, [effectiveMushroomHealth]);
+
+  const mushroomTargetsForMelee = useMemo(() => {
+    const instances = buildMushroomInstances();
+    const out: Array<{ index: number; position: Vector3 }> = [];
+    for (const inst of instances) {
+      if (effectiveMushroomHealth[inst.index] > 0) {
+        const c = getMushroomColliderCenter(inst);
+        out.push({ index: inst.index, position: new Vector3(c.x, c.y, c.z) });
+      }
+    }
+    return out;
+  }, [effectiveMushroomHealth]);
+
+  const prevMushroomHealthRef = useRef<number[] | null>(null);
+  const [mushroomEruptionFx, setMushroomEruptionFx] = useState<Array<{ id: string; pos: Vector3 }>>([]);
+
+  useEffect(() => {
+    const prev =
+      prevMushroomHealthRef.current && prevMushroomHealthRef.current.length === effectiveMushroomHealth.length
+        ? prevMushroomHealthRef.current
+        : Array.from({ length: effectiveMushroomHealth.length }, () => MUSHROOM_MAX_HP);
+    const spawned: Array<{ id: string; pos: Vector3 }> = [];
+    for (let i = 0; i < effectiveMushroomHealth.length; i++) {
+      if (prev[i] > 0 && effectiveMushroomHealth[i] <= 0) {
+        const inst = buildMushroomInstances()[i];
+        if (inst) {
+          const id = `mushroom-erupt-${i}-${Date.now()}`;
+          spawned.push({ id, pos: new Vector3(inst.x, 0.1, inst.z) });
+        }
+      }
+    }
+    prevMushroomHealthRef.current = [...effectiveMushroomHealth];
+    if (spawned.length > 0) {
+      setMushroomEruptionFx((fx) => [...fx, ...spawned]);
+    }
+  }, [effectiveMushroomHealth]);
+
+  const onMushroomMeleeHit = useCallback(
+    (index: number, baseDamage: number) => {
+      damageMushroom(index, baseDamage, socket?.id);
+    },
+    [damageMushroom, socket?.id],
+  );
 
   /** After `combat-arena-entered`, keep the HTML loading overlay until React/WebGL settle (rAF×2) + min display time. */
   const COOP_PORTAL_OVERLAY_MIN_MS = 280;
@@ -556,6 +630,10 @@ export function CoopGameScene({
   const templarPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   /** Pending Viper line + arrow setTimeouts; cleared on socket effect cleanup. */
   const viperAttackScheduleTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  /** tentacle ground telegraph: per-enemy windup add/failsafe timers */
+  const tentacleSpinePendingByEnemyRef = useRef<
+    Map<string, { tAdd: ReturnType<typeof setTimeout>; tFail: ReturnType<typeof setTimeout>; lineId: string }>
+  >(new Map());
   // Alternating damage-sound variant (1 or 2) for knight and templar
   const knightDamageVariant = useRef<1 | 2>(1);
   const templarDamageVariant = useRef<1 | 2>(1);
@@ -904,6 +982,7 @@ export function CoopGameScene({
   
   // Track server enemy to local ECS entity mapping for co-op damage
   const serverEnemyEntities = useRef<Map<string, number>>(new Map());
+  const mushroomEntityByIndexRef = useRef<Map<number, number>>(new Map());
 
   // Track stealth states for players
   const playerStealthStates = useRef<Map<string, boolean>>(new Map());
@@ -1263,6 +1342,14 @@ export function CoopGameScene({
   }
   const [viperShotTelegraphs, setViperShotTelegraphs] = useState<ViperShotTelegraphState[]>([]);
 
+  interface TentacleSpineTelegraphState {
+    id: string;
+    enemyId: string;
+    start: Vector3;
+    end: Vector3;
+  }
+  const [tentacleSpineTelegraphs, setTentacleSpineTelegraphs] = useState<TentacleSpineTelegraphState[]>([]);
+
   // Weaver heal VFX — one entry per active heal burst
   interface WeaverHealEffectState {
     id: string;
@@ -1286,6 +1373,11 @@ export function CoopGameScene({
     position: Vector3;
   }
   const [ghoulSummonRituals, setGhoulSummonRituals] = useState<GhoulSummonRitualState[]>([]);
+
+  /** Server-driven windup/slam cues for tentacle-spine VFX */
+  const [tentacleSpineFxById, setTentacleSpineFxById] = useState<
+    Map<string, { windSeq: number; slamSeq: number; dir: { x: number; z: number } }>
+  >(() => new Map());
 
   interface InfestedZombieSummonVfxState {
     id: string;
@@ -3807,6 +3899,78 @@ export function CoopGameScene({
       knightPendingMissTimers.current.set(data.knightId, timer);
     };
 
+    const clearTentacleSpineGroundTelegraph = (enemyId: string) => {
+      const p = tentacleSpinePendingByEnemyRef.current.get(enemyId);
+      if (p) {
+        clearTimeout(p.tAdd);
+        clearTimeout(p.tFail);
+        tentacleSpinePendingByEnemyRef.current.delete(enemyId);
+      }
+      setTentacleSpineTelegraphs((prev) => prev.filter((t) => t.enemyId !== enemyId));
+    };
+
+    const handleTentacleSpineWindup = (data: {
+      enemyId?: string;
+      dirX?: number;
+      dirZ?: number;
+      position?: { x: number; y: number; z: number };
+      lineLength?: number;
+    }) => {
+      const enemyId = data?.enemyId;
+      if (!enemyId || !data.position) return;
+      const lineLen = data.lineLength ?? 7;
+      const dirX = data.dirX ?? 0;
+      const dirZ = data.dirZ ?? 1;
+      const hLen = Math.hypot(dirX, dirZ) || 1e-6;
+      const nx = dirX / hLen;
+      const nz = dirZ / hLen;
+      const { x, y, z } = data.position;
+      const groundY = y + 0.03;
+      const from = new Vector3(x, groundY, z);
+      const to = new Vector3(x + nx * lineLen, groundY, z + nz * lineLen);
+      const lineId = `tentacle-tg-${enemyId}-${Date.now()}`;
+
+      clearTentacleSpineGroundTelegraph(enemyId);
+
+      setTentacleSpineFxById((prev) => {
+        const m = new Map(prev);
+        const cur = m.get(enemyId) ?? { windSeq: 0, slamSeq: 0, dir: { x: 0, z: 1 } };
+        m.set(enemyId, {
+          windSeq: cur.windSeq + 1,
+          slamSeq: cur.slamSeq,
+          dir: { x: data.dirX ?? 0, z: data.dirZ ?? 1 },
+        });
+        return m;
+      });
+
+      const lineDelay = Math.max(0, TENTACLE_SPINE_WINDUP_MS - TENTACLE_GROUND_TELEGRAPH_LEAD_MS);
+      const tAdd = setTimeout(() => {
+        setTentacleSpineTelegraphs((prev) => {
+          if (prev.some((s) => s.id === lineId)) return prev;
+          return [...prev, { id: lineId, enemyId, start: from.clone(), end: to.clone() }];
+        });
+      }, lineDelay);
+      const tFail = setTimeout(() => {
+        setTentacleSpineTelegraphs((prev) => prev.filter((t) => t.id !== lineId));
+        if (tentacleSpinePendingByEnemyRef.current.get(enemyId)?.lineId === lineId) {
+          tentacleSpinePendingByEnemyRef.current.delete(enemyId);
+        }
+      }, TENTACLE_SPINE_WINDUP_MS);
+      tentacleSpinePendingByEnemyRef.current.set(enemyId, { tAdd, tFail, lineId });
+    };
+
+    const handleTentacleSpineSlamSocket = (data: { enemyId?: string }) => {
+      const enemyId = data?.enemyId;
+      if (!enemyId) return;
+      clearTentacleSpineGroundTelegraph(enemyId);
+      setTentacleSpineFxById((prev) => {
+        const m = new Map(prev);
+        const cur = m.get(enemyId) ?? { windSeq: 0, slamSeq: 0, dir: { x: 0, z: 1 } };
+        m.set(enemyId, { ...cur, slamSeq: cur.slamSeq + 1 });
+        return m;
+      });
+    };
+
     const handleKnightAttack = (data: any) => {
       if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
 
@@ -5016,6 +5180,8 @@ export function CoopGameScene({
     socket.on('martyr-detonation-impact', handleMartyrDetonationImpact);
     socket.on('boss-skeleton-attack', handleBossSkeletonAttack);
     socket.on('knight-attack-telegraph', handleKnightAttackTelegraph);
+    socket.on('tentacle-spine-windup', handleTentacleSpineWindup);
+    socket.on('tentacle-spine-slam', handleTentacleSpineSlamSocket);
     socket.on('knight-attack', handleKnightAttack);
     socket.on('knight-smite',  handleKnightSmite);
     socket.on('knight-frost',  handleKnightFrost);
@@ -5293,6 +5459,12 @@ export function CoopGameScene({
     return () => {
       viperAttackScheduleTimeoutsRef.current.forEach(t => { clearTimeout(t); });
       viperAttackScheduleTimeoutsRef.current = [];
+      tentacleSpinePendingByEnemyRef.current.forEach(p => {
+        clearTimeout(p.tAdd);
+        clearTimeout(p.tFail);
+      });
+      tentacleSpinePendingByEnemyRef.current.clear();
+      setTentacleSpineTelegraphs([]);
       socket.off('player-attacked', handlePlayerAttack);
       socket.off('player-used-ability', handlePlayerAbility);
       socket.off('player-damaged', handlePlayerDamaged);
@@ -5323,6 +5495,8 @@ export function CoopGameScene({
       socket.off('martyr-detonation-impact', handleMartyrDetonationImpact);
       socket.off('boss-skeleton-attack', handleBossSkeletonAttack);
       socket.off('knight-attack-telegraph', handleKnightAttackTelegraph);
+      socket.off('tentacle-spine-windup', handleTentacleSpineWindup);
+      socket.off('tentacle-spine-slam', handleTentacleSpineSlamSocket);
       socket.off('knight-attack', handleKnightAttack);
       socket.off('knight-smite',  handleKnightSmite);
       socket.off('knight-frost',  handleKnightFrost);
@@ -5351,6 +5525,26 @@ export function CoopGameScene({
       socket.off('infested-zombie-summon', handleInfestedZombieSummon);
     };
   }, [socket, playerEntity, setPlayers, updatePlayerPosition, enemies]);
+
+  useEffect(() => {
+    const pending = tentacleSpinePendingByEnemyRef.current;
+    const toRemove: string[] = [];
+    pending.forEach((p, enemyId) => {
+      const e = enemies.get(enemyId);
+      if (!e || e.type !== 'tentacle-spine' || e.isDying) {
+        clearTimeout(p.tAdd);
+        clearTimeout(p.tFail);
+        toRemove.push(enemyId);
+      }
+    });
+    toRemove.forEach((enemyId) => pending.delete(enemyId));
+    setTentacleSpineTelegraphs((prev) =>
+      prev.filter((t) => {
+        const e = enemies.get(t.enemyId);
+        return e && e.type === 'tentacle-spine' && !e.isDying;
+      })
+    );
+  }, [enemies]);
 
   // Add a cleanup effect to prevent stuck animations
   useEffect(() => {
@@ -5431,11 +5625,12 @@ export function CoopGameScene({
           : serverEnemy.type === 'training-dummy' ? 1.85
           : serverEnemy.type === 'shade' ? 1.0
           : serverEnemy.type === 'martyr' ? 1.1
+          : serverEnemy.type === 'tentacle-spine' ? 0.55
           : 1.5;
         collider.layer = CollisionLayer.ENEMY;
         collider.isTrigger = true; // IMPORTANT: Trigger only, doesn't push players
         collider.setMask(CollisionLayer.PROJECTILE); // Only detect projectiles, not physical collision with players
-        collider.setOffset(0, 1, 0); // Center on enemy
+        collider.setOffset(0, serverEnemy.type === 'tentacle-spine' ? 1.15 : 1, 0);
         entity.addComponent(collider);
 
         // Store server enemy ID and rotation in entity userData for damage routing and backstab detection
@@ -5506,6 +5701,82 @@ export function CoopGameScene({
       serverEnemyEntities.current.delete(enemyId);
     });
   }, [enemies, gameStarted, engineReady]);
+
+  // Co-op main map: destructible mushroom props (server HP; ECS for projectiles)
+  useEffect(() => {
+    if (!engineRef.current || !gameStarted || !engineReady || gameMode !== 'coop') return;
+
+    const world = engineRef.current.getWorld();
+    const clearAllMushrooms = () => {
+      mushroomEntityByIndexRef.current.forEach((eid) => {
+        if (world.getEntity(eid)) world.destroyEntity(eid);
+      });
+      mushroomEntityByIndexRef.current.clear();
+    };
+
+    if (inThroneRoom || inBossThroneArena) {
+      clearAllMushrooms();
+      return;
+    }
+
+    const instances = buildMushroomInstances();
+    const healthArr = effectiveMushroomHealth;
+
+    for (const [idx, eid] of Array.from(mushroomEntityByIndexRef.current.entries())) {
+      if (healthArr[idx] <= 0) {
+        if (world.getEntity(eid)) world.destroyEntity(eid);
+        mushroomEntityByIndexRef.current.delete(idx);
+      }
+    }
+
+    for (let i = 0; i < MUSHROOM_COUNT; i++) {
+      if (healthArr[i] <= 0) continue;
+      const inst = instances[i]!;
+      const c = getMushroomColliderCenter(inst);
+      if (mushroomEntityByIndexRef.current.has(i)) {
+        const eid = mushroomEntityByIndexRef.current.get(i)!;
+        const ent = world.getEntity(eid);
+        if (ent) {
+          const h = ent.getComponent(Health);
+          if (h) {
+            h.currentHealth = healthArr[i];
+            h.maxHealth = MUSHROOM_MAX_HP;
+            h.isDead = false;
+          }
+          const t = ent.getComponent(Transform);
+          if (t) t.setPosition(c.x, c.y, c.z);
+        }
+        continue;
+      }
+
+      const entity = world.createEntity();
+      const transform = world.createComponent(Transform);
+      transform.setPosition(c.x, c.y, c.z);
+      entity.addComponent(transform);
+
+      const health = new Health(MUSHROOM_MAX_HP);
+      health.currentHealth = healthArr[i];
+      health.invulnerabilityDuration = 0;
+      health.invulnerabilityTimer = 0;
+      health.isInvulnerable = false;
+      entity.addComponent(health);
+
+      const collider = world.createComponent(Collider);
+      collider.type = ColliderType.SPHERE;
+      collider.radius = 0.55;
+      collider.layer = CollisionLayer.ENEMY;
+      collider.isTrigger = true;
+      collider.setMask(CollisionLayer.PROJECTILE);
+      collider.setOffset(0, 0, 0);
+      entity.addComponent(collider);
+
+      const dm = new DestructibleMushroom(i);
+      entity.addComponent(dm);
+      entity.userData = { ...entity.userData, mushroomIndex: i };
+      world.notifyEntityAdded(entity);
+      mushroomEntityByIndexRef.current.set(i, entity.id);
+    }
+  }, [gameStarted, engineReady, gameMode, inThroneRoom, inBossThroneArena, effectiveMushroomHealth]);
 
   // Sync server players and towers with local ECS entities for PVP damage system
   useEffect(() => {
@@ -6802,7 +7073,10 @@ export function CoopGameScene({
         damageEnemy(enemyId, damage, sourcePlayerId, meta);
       },
     );
-  }, [damageEnemy, engineReady]);
+    combatSystem.setMushroomDamageCallback((index, damage, sourcePlayerId) => {
+      damageMushroom(index, damage, sourcePlayerId ?? socket?.id);
+    });
+  }, [damageEnemy, damageMushroom, engineReady, socket?.id]);
 
   // Keep ECS weapon selection / level in sync when React state changes (e.g. throne room X-to-swap).
   useEffect(() => {
@@ -6899,7 +7173,16 @@ export function CoopGameScene({
                 merchantRotation={merchantRotation}
                 showMerchant={isMerchantVisible}
                 campTypes={campTypes}
+                mushroomHiddenIndices={mushroomHiddenIndices}
               />
+
+              {mushroomEruptionFx.map((fx) => (
+                <MushroomEruptionVfx
+                  key={fx.id}
+                  origin={fx.pos}
+                  onDone={() => setMushroomEruptionFx((prev) => prev.filter((e) => e.id !== fx.id))}
+                />
+              ))}
 
               {engineRef.current?.getWorld() && (
                 <CastleWallCollision world={engineRef.current.getWorld()} />
@@ -6944,6 +7227,11 @@ export function CoopGameScene({
           world={engineRef.current.getWorld()}
           isLocalPlayer={true}
           currentWeapon={weaponState.currentWeapon}
+          weaponSubclass={
+            weaponState.currentWeapon === WeaponType.NONE
+              ? undefined
+              : weaponState.currentSubclass
+          }
           isCharging={weaponState.isCharging}
           isDead={playerDeathStates.get(socket?.id ?? '')?.isDead ?? false}
         />
@@ -7001,6 +7289,8 @@ export function CoopGameScene({
           wrathfulTalonsReturnCrit={shouldApplyWrathfulTalonsTalent(talentLoadout, abilityLoadout ?? null)}
           executeReapingTalons={shouldApplyExecuteTalent(talentLoadout, abilityLoadout ?? null)}
           explosiveTalons={shouldApplyExplosiveTalonsTalent(talentLoadout, abilityLoadout ?? null)}
+          wyvernTalons={shouldApplyWyvernTalonsTalent(talentLoadout, abilityLoadout ?? null)}
+          detonateWyvernConcentratedVenomCoop={detonateWyvernConcentratedVenom}
           runebladeStoredCharge={shouldApplyRunebladeStoredChargeSpin(talentLoadout, abilityLoadout ?? null)}
           runebladeStaggeringCombo={shouldApplyStaggeringComboTalent(talentLoadout)}
           runebladeWrathfulCombo={shouldApplyWrathfulComboTalent(talentLoadout)}
@@ -7028,6 +7318,8 @@ export function CoopGameScene({
               ? () => controlSystemRef.current?.isRunebladeBlizzardTalentActive() ?? false
               : undefined
           }
+          mushroomTargets={!inThroneRoom && !inBossThroneArena ? mushroomTargetsForMelee : []}
+          onMushroomHit={!inThroneRoom && !inBossThroneArena ? onMushroomMeleeHit : undefined}
           onDamageNumbersReady={handleDamageNumbersReady}
           combatSystem={engineRef.current?.getWorld().getSystem(require('@/systems/CombatSystem').CombatSystem)}
           onHeal={(amount: number) => {
@@ -7195,6 +7487,9 @@ export function CoopGameScene({
               isLocalPlayer={false}
               rotation={player.rotation}
               currentWeapon={player.weapon}
+              weaponSubclass={
+                player.weapon === WeaponType.NONE ? undefined : player.subclass
+              }
               isDead={isPlayerDead}
             />
 
@@ -7562,6 +7857,16 @@ export function CoopGameScene({
         <ViperShotTelegraphLine key={t.id} start={t.start} end={t.end} />
       ))}
 
+      {tentacleSpineTelegraphs.map(t => (
+        <ViperShotTelegraphLine
+          key={t.id}
+          start={t.start}
+          end={t.end}
+          lineWidth={TENTACLE_SPINE_TELEGRAPH_STRIP_WIDTH}
+          color={TENTACLE_SPINE_TELEGRAPH_COLOR}
+        />
+      ))}
+
       {/* Viper Energy Arrow Projectiles */}
       {viperArrows.map(arrow => (
         <ViperArrowProjectile
@@ -7680,6 +7985,25 @@ export function CoopGameScene({
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
             staggerBuildup={enemy.staggerBuildup ?? 0}
+          />
+        );
+      })}
+
+      {/* Tentacle spine — environmental trap (no HP bar) */}
+      {Array.from(enemies.values()).map(enemy => {
+        if (enemy.type !== 'tentacle-spine') return null;
+        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
+        const fx = tentacleSpineFxById.get(enemy.id);
+        return (
+          <TentacleSpineRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={new Vector3(enemy.position.x, enemy.position.y, enemy.position.z)}
+            rotation={enemy.rotation || 0}
+            isDying={!!enemy.isDying}
+            windSeq={fx?.windSeq ?? 0}
+            slamSeq={fx?.slamSeq ?? 0}
+            windDirXZ={fx?.dir ?? { x: 0, z: 1 }}
           />
         );
       })}

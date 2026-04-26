@@ -107,18 +107,14 @@ export default function EntropicBolt({
 
     const t = timeElapsed.current;
     const pulse = 1 + Math.sin(t * 16) * 0.07 + Math.sin(t * 7.3) * 0.04;
-    if (coronaRef.current) {
-      coronaRef.current.scale.setScalar(pulse);
-    }
-    if (tipRingRef.current) {
-      tipRingRef.current.rotation.z += delta * 5.5;
-    }
+
+
 
     if (!boltRef.current || hasCollided.current) return;
 
     timeElapsed.current += delta;
     const totalDistance = 15;
-    const progress = Math.min(timeElapsed.current * (15 / totalDistance), 1);
+    const progress = Math.min(timeElapsed.current * (15 / totalDistance), 0);
 
     const idealPosition = startPosition.current.clone().lerp(targetPosition.current, progress);
 
@@ -153,12 +149,7 @@ export default function EntropicBolt({
     }
   });
 
-  const handleImpactComplete = () => {
-    setShowImpact(false);
-    setTimeout(() => {
-      if (onImpact) onImpact();
-    }, 200);
-  };
+
 
   return (
     <group>
@@ -166,8 +157,8 @@ export default function EntropicBolt({
         <>
           <EntropicBoltTrail
             color={trailColor}
-            accentColor={trailAccent}
-            size={0.325}
+            accentColor={trailColor}
+            size={0.25}
             meshRef={boltRef}
             opacity={1}
             isCryoflame={isCryoflame}
@@ -175,71 +166,11 @@ export default function EntropicBolt({
 
           <group ref={boltRef} position={position.toArray()}>
             <group ref={orientRef}>
-              <mesh ref={boltMeshRef}>
-                <cylinderGeometry args={[0.048, 0.028, 0.78, 10, 1, false]} />
-                <meshStandardMaterial
-                  color={primaryColor}
-                  emissive={secondaryColor}
-                  emissiveIntensity={2.8}
-                  transparent
-                  opacity={0.95}
-                  blending={AdditiveBlending}
-                  depthWrite={false}
-                />
-              </mesh>
+   
 
-              <mesh ref={coronaRef}>
-                <cylinderGeometry args={[0.088, 0.055, 0.86, 12, 1, true]} />
-                <meshStandardMaterial
-                  color={secondaryColor}
-                  emissive={primaryColor}
-                  emissiveIntensity={1.35}
-                  transparent
-                  opacity={0.22}
-                  blending={AdditiveBlending}
-                  depthWrite={false}
-                  side={DoubleSide}
-                />
-              </mesh>
 
-              <mesh position={[0, 0.42, 0]} ref={tipRingRef}>
-                <torusGeometry args={[0.09, 0.012, 8, 20]} />
-                <meshStandardMaterial
-                  color={secondaryColor}
-                  emissive={secondaryColor}
-                  emissiveIntensity={3.2}
-                  transparent
-                  opacity={0.55}
-                  blending={AdditiveBlending}
-                  depthWrite={false}
-                />
-              </mesh>
 
-              <mesh position={[0, -0.36, 0]} rotation={[0, 0, Math.PI / 5]}>
-                <torusGeometry args={[0.065, 0.008, 6, 16]} />
-                <meshStandardMaterial
-                  color={primaryColor}
-                  emissive={secondaryColor}
-                  emissiveIntensity={2.0}
-                  transparent
-                  opacity={0.35}
-                  blending={AdditiveBlending}
-                  depthWrite={false}
-                />
-              </mesh>
-
-              <mesh position={[0, 0.46, 0]}>
-                <sphereGeometry args={[0.06, 10, 10]} />
-                <meshStandardMaterial
-                  color={secondaryColor}
-                  emissive={secondaryColor}
-                  emissiveIntensity={4.5}
-                  transparent
-                  opacity={0.9}
-                  blending={AdditiveBlending}
-                  depthWrite={false}
-                />
-              </mesh>
+   
 
               <pointLight
                 color={theme.light}
@@ -253,14 +184,7 @@ export default function EntropicBolt({
         </>
       )}
 
-      {showImpact && impactPosition && (
-        <EntropicBoltImpact
-          position={impactPosition}
-          theme={theme}
-          isCryoflame={isCryoflame}
-          onComplete={handleImpactComplete}
-        />
-      )}
+
     </group>
   );
 }
@@ -305,74 +229,8 @@ function EntropicBoltImpact({ position, onComplete, isCryoflame = false, theme }
 
   return (
     <group position={position}>
-      <mesh>
-        <sphereGeometry args={[0.675 * (1 + elapsed * 1.5), 12, 12]} />
-        <meshStandardMaterial
-          color={theme.primary}
-          emissive={theme.secondary}
-          emissiveIntensity={2.0 * fade}
-          transparent
-          opacity={0.6 * fade}
-          blending={AdditiveBlending}
-          depthWrite={false}
-        />
-      </mesh>
 
-      <mesh>
-        <sphereGeometry args={[0.45 * (1 + elapsed * 2), 8, 8]} />
-        <meshStandardMaterial
-          color={theme.secondary}
-          emissive={theme.primary}
-          emissiveIntensity={2.0 * fade}
-          transparent
-          opacity={0.7 * fade}
-          blending={AdditiveBlending}
-          depthWrite={false}
-        />
-      </mesh>
 
-      {[...Array(8)].map((_, i) => {
-        const angle = (i / 8) * Math.PI * 2;
-        const radius = 1 * (1 + elapsed * 1.2);
-
-        return (
-          <mesh
-            key={i}
-            position={[
-              Math.sin(angle) * radius,
-              Math.cos(angle) * radius * 0.2,
-              Math.cos(angle + Math.PI / 3) * radius * 0.4
-            ]}
-            rotation={[Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI]}
-          >
-            <coneGeometry args={[0.08, 0.4, 4]} />
-            <meshStandardMaterial
-              color={theme.secondary}
-              emissive={theme.secondary}
-              emissiveIntensity={3.0 * fade}
-              transparent
-              opacity={0.8 * fade}
-            />
-          </mesh>
-        );
-      })}
-
-      {[...Array(2)].map((_, i) => (
-        <mesh
-          key={`energy-ring-${i}`}
-          rotation={[-Math.PI / 2, 0, i * Math.PI / 2]}
-        >
-          <torusGeometry args={[1 * (1 + elapsed * 1.5) + i * 0.2, 0.08, 6, 16]} />
-          <meshStandardMaterial
-            color={theme.primary}
-            emissive={theme.secondary}
-            emissiveIntensity={3.0 * fade}
-            transparent
-            opacity={0.5 * fade * (1 - i * 0.3)}
-            blending={AdditiveBlending}
-          />
-        </mesh>
-      ))}
 
       <pointLight
         color={theme.light}

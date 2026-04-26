@@ -82,6 +82,7 @@ import {
   staggerShotTalentDefinition,
   dualCoilTalentDefinition,
   wyvernStingTalentDefinition,
+  wyvernTalonsTalentDefinition,
   WYVERN_STING_COOLDOWN_SEC,
   wrathStrikeTalentDefinition,
   wraithGuardTalentDefinition,
@@ -168,6 +169,7 @@ export default function TalentSelectionModal({
     windFury: initialTalentLoadout?.windFury ?? def.windFury,
     dualCoil: initialTalentLoadout?.dualCoil ?? def.dualCoil,
     wyvernSting: initialTalentLoadout?.wyvernSting ?? def.wyvernSting,
+    wyvernTalons: initialTalentLoadout?.wyvernTalons ?? def.wyvernTalons,
     bladeRush: initialTalentLoadout?.bladeRush ?? def.bladeRush,
     wrathfulCombo: initialTalentLoadout?.wrathfulCombo ?? def.wrathfulCombo,
     infestedCombo: initialTalentLoadout?.infestedCombo ?? def.infestedCombo,
@@ -234,6 +236,11 @@ export default function TalentSelectionModal({
   const toggleExplosiveTalons = useCallback(() => {
     if (!reapingEquipped) return;
     setLoadout((prev) => ({ ...prev, explosiveTalons: !prev.explosiveTalons }));
+  }, [reapingEquipped]);
+
+  const toggleWyvernTalons = useCallback(() => {
+    if (!reapingEquipped) return;
+    setLoadout((prev) => ({ ...prev, wyvernTalons: !prev.wyvernTalons }));
   }, [reapingEquipped]);
 
   const toggleStoredCharge = useCallback(() => {
@@ -1122,6 +1129,22 @@ export default function TalentSelectionModal({
                       Forward {EXPLOSIVE_TALONS_REAPING_TALONS_MAX_TRAVEL_DISTANCE} (base {REAPING_TALONS_MAX_TRAVEL_DISTANCE}) · {EXPLOSIVE_TALONS_EXPLOSION_DAMAGE} dmg · radius {EXPLOSIVE_TALONS_EXPLOSION_RADIUS}
                     </p>
                   </>
+                )}
+              </label>
+            </div>
+            <div className="flex items-start gap-3 mt-4">
+              <input
+                type="checkbox"
+                id="talent-wyvern-talons"
+                checked={loadout.wyvernTalons}
+                onChange={toggleWyvernTalons}
+                disabled={!reapingEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+              />
+              <label htmlFor="talent-wyvern-talons" className={`flex-1 ${reapingEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                <div className="text-white font-semibold">{wyvernTalonsTalentDefinition.name}</div>
+                {loadout.wyvernTalons && (
+                  <p className="text-gray-400 text-sm mt-1">{wyvernTalonsTalentDefinition.description}</p>
                 )}
               </label>
             </div>

@@ -245,7 +245,7 @@ export class Movement extends Component {
 
     // Apply Ice Beam movement speed reduction (50% slower)
     if (this.isIcebeaming) {
-      speed *= 1.0;
+      speed *= 0.1;
     }
 
     // Apply attack-cast movement slow (50% slower while casting restricted abilities)

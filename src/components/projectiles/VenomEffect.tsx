@@ -107,7 +107,7 @@ const VenomEffectComponent = memo(function VenomEffect({
     >
       {/* Main venom cloud */}
       <mesh>
-        <sphereGeometry args={[0.4, 16, 16]} />
+        <sphereGeometry args={[0.2, 16, 16]} />
         <meshStandardMaterial 
           color="#00FF44"
           emissive="#00FF44"
@@ -121,7 +121,7 @@ const VenomEffectComponent = memo(function VenomEffect({
       
       {/* Inner toxic core */}
       <mesh>
-        <sphereGeometry args={[0.2, 12, 12]} />
+        <sphereGeometry args={[0.15, 12, 12]} />
         <meshStandardMaterial 
           color="#33FF33"
           emissive="#33FF33"
@@ -136,8 +136,8 @@ const VenomEffectComponent = memo(function VenomEffect({
       {/* Toxic tendrils */}
       {[...Array(6)].map((_, i) => {
         const angle = (i / 6) * Math.PI * 2;
-        const radiusX = 0.3 + Math.random() * 0.2;
-        const radiusZ = 0.3 + Math.random() * 0.2;
+        const radiusX = 0.2 + Math.random() * 0.2;
+        const radiusZ = 0.2 + Math.random() * 0.2;
         return (
           <mesh 
             key={i}
@@ -164,7 +164,7 @@ const VenomEffectComponent = memo(function VenomEffect({
       {/* Toxic particles */}
       {[...Array(10)].map((_, i) => {
         const angle = Math.random() * Math.PI * 2;
-        const radius = Math.random() * 0.5;
+        const radius = Math.random() * 0.35;
         const height = Math.random() * 0.4 - 0.2;
         return (
           <mesh 

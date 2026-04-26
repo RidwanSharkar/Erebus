@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { Vector3 } from 'three';
+import { REAPING_TALONS_MAX_TRAVEL_DISTANCE } from '@/utils/talents';
 
 export interface ViperStingBeamEffect {
   id: number;
@@ -7,6 +8,7 @@ export interface ViperStingBeamEffect {
   direction: Vector3;
   isReturning: boolean;
   startTime: number;
+  beamLength: number;
 }
 
 export const useViperStingBeam = () => {
@@ -16,7 +18,8 @@ export const useViperStingBeam = () => {
   const createBeamEffect = useCallback((
     position: Vector3,
     direction: Vector3,
-    isReturning: boolean = false
+    isReturning: boolean = false,
+    beamLength: number = REAPING_TALONS_MAX_TRAVEL_DISTANCE
   ) => {
     const effectId = nextEffectId.current++;
     
@@ -25,7 +28,8 @@ export const useViperStingBeam = () => {
       position: position.clone(),
       direction: direction.clone().normalize(),
       isReturning,
-      startTime: Date.now()
+      startTime: Date.now(),
+      beamLength,
     };
 
     setActiveEffects(prev => [...prev, newEffect]);

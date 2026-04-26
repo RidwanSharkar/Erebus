@@ -116,12 +116,20 @@ interface DragonRendererProps {
   combatSystem?: any;
   hideBody?: boolean;
   playerLevel?: number;
+  /** Co-op: mushroom ring melee (Sword/Runeblade) — server `mushroom-damage`. */
+  mushroomTargets?: Array<{ index: number; position: Vector3 }>;
+  onMushroomHit?: (index: number, baseDamage: number) => void;
+
   /** Wrathful Talons: Reaping Talons return arrow uses preset crit when local player has talent. */
   wrathfulTalonsReturnCrit?: boolean;
   /** EXECUTE: Reaping Talons first forward hit may consume a dash for bonus damage. */
   executeReapingTalons?: boolean;
   /** EXPLOSIVE TALONS: Reaping Talons detonates at max range; no return arrow. */
   explosiveTalons?: boolean;
+  /** Wyvern Talons: Reaping hits detonate Cobra + Concentrated Venom remaining DoT. */
+  wyvernTalons?: boolean;
+  /** Co-op: server applies CV remainder + optional Cobra remainder as one Wyvern Talons hit. */
+  detonateWyvernConcentratedVenomCoop?: (serverEnemyId: string, cobraRemainingDamage?: number) => void;
   /** STORED CHARGE: Runeblade Charge — 3 spin rotations + per-rotation damage. */
   runebladeStoredCharge?: boolean;
   /** STAGGERING COMBO: basic attack combo adds stagger per hit (co-op server sync). */
@@ -220,6 +228,8 @@ export default function DragonRenderer({
   wrathfulTalonsReturnCrit = false,
   executeReapingTalons = false,
   explosiveTalons = false,
+  wyvernTalons = false,
+  detonateWyvernConcentratedVenomCoop,
   runebladeStoredCharge = false,
   runebladeStaggeringCombo = false,
   runebladeWrathfulCombo = false,
@@ -230,6 +240,8 @@ export default function DragonRenderer({
   getRunebladeExecutionerFlatBonus,
   getRunebladeCrusaderLmbFlatBonus,
   getRunebladeBlizzardTalentActive,
+  mushroomTargets,
+  onMushroomHit,
 }: DragonRendererProps) {
   const effectiveDeflectShieldActive = deflectShieldActiveProp ?? isDeflecting;
   const mountRef = useRef(false);
@@ -464,6 +476,35 @@ export default function DragonRenderer({
       // Use combat system to deal damage (this will handle damage numbers automatically)
       const combatSystem = world.getSystem(CombatSystem);
       if (combatSystem) {
+        if (currentWeapon === WeaponType.BOW && wyvernTalons) {
+          const enemyForWyvern = targetEntity.getComponent(Enemy);
+          if (enemyForWyvern) {
+            const t = Date.now() / 1000;
+            const cobraBurst = enemyForWyvern.getRemainingCobraVenomDamageInstant(t);
+            if (combatSystem.usesNetworkedEnemyDamage() && detonateWyvernConcentratedVenomCoop) {
+              const sid = targetEntity.userData?.serverEnemyId || String(targetEntity.id);
+              if (cobraBurst > 0) {
+                enemyForWyvern.removeVenom();
+              }
+              detonateWyvernConcentratedVenomCoop(sid, cobraBurst);
+            } else {
+              const cvBurst = enemyForWyvern.getRemainingConcentratedVenomDamageInstant(t);
+              const totalDetonate = cobraBurst + cvBurst;
+              if (totalDetonate > 0) {
+                if (cobraBurst > 0) enemyForWyvern.removeVenom();
+                if (cvBurst > 0) enemyForWyvern.removeConcentratedVenom();
+                combatSystem.queueDamage(
+                  targetEntity,
+                  totalDetonate,
+                  playerEntityObj,
+                  'wyvern_talons_detonate',
+                  playerEntityObj.userData?.playerId,
+                );
+              }
+            }
+          }
+        }
+
         const damageType = isBlizzard ? 'blizzard' : 'sword';
         const rbComboStep =
           currentWeapon === WeaponType.RUNEBLADE && runebladeComboStepResolver
@@ -626,6 +667,8 @@ export default function DragonRenderer({
           getRunebladeExecutionerFlatBonus={getRunebladeExecutionerFlatBonus}
           getRunebladeCrusaderLmbFlatBonus={getRunebladeCrusaderLmbFlatBonus}
           getRunebladeBlizzardTalentActive={getRunebladeBlizzardTalentActive}
+          mushroomTargets={mushroomTargets}
+          onMushroomHit={onMushroomHit}
           isLocalPlayer={isLocalPlayer}
         />
       </group>

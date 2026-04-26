@@ -6,6 +6,8 @@ const {
   rotationYTowardEntry,
   rotationYTowardArenaCenter,
 } = require('./coopArenaLayout');
+const mushroomLayout = require('./mushroomLayout');
+const mushroomConstants = require('./mushroomConstants');
 
 /**
  * Z and X offsets must match ThroneRoom.tsx `THRONE_TRAINING_DUMMY_SPAWNS` / `THRONE_TRAINING_DUMMY_SPAWN_Z`.
@@ -129,6 +131,15 @@ class GameRoom {
     this.coopWaveSpawnPlan = null;
     /** How many reserve batches already emitted (0 = only initial 5, 1 = +2 released, 2 = +3 released). */
     this.coopWaveReserveReleased = 0;
+
+    /** Co-op: per-index HP for `mushroomLayout` instances; reset on new game. */
+    this.mushroomHealth = null;
+    this._resetMushroomState();
+  }
+
+  _resetMushroomState() {
+    const n = mushroomLayout.MUSHROOM_COUNT;
+    this.mushroomHealth = new Array(n).fill(mushroomConstants.MUSHROOM_MAX_HP);
   }
 
   // ── Enemy archetype definitions ────────────────────────────────────────────
@@ -159,6 +170,7 @@ class GameRoom {
     this.coopMainArenaPortalPhase = null;
     this.coopBossThroneArena = false;
     this._postBossIntermissionScheduled = false;
+    this._resetMushroomState();
 
     // Co-op: begin in the throne prep room — combat arena + enemies start after portal
     if (this.gameMode === 'coop') {
@@ -190,6 +202,7 @@ class GameRoom {
         thronePortalLayout: this.getThronePortalLayout(),
         coopMainArenaPortalPhase: this.gameMode === 'coop' ? this.getCoopMainArenaPortalPhase() : null,
         coopBossThroneArena: this.gameMode === 'coop' ? this.getCoopBossThroneArena() : false,
+        mushroomState: this.getMushroomState(),
       });
     }
     
@@ -702,6 +715,51 @@ class GameRoom {
   /**
    * Boss leap / tectonic shards: apply damage to all players in a horizontal XZ ring.
    */
+  /**
+   * Damage players whose XZ foot position lies within `halfWidth` of segment A→B (inclusive caps).
+   */
+  damagePlayersInLineSegment(ax, az, bx, bz, halfWidth, damage, damageType = 'tentacle_spine') {
+    if (!this.io || !this.players || halfWidth <= 0 || damage <= 0) return;
+    const hw2 = halfWidth * halfWidth;
+    const abx = bx - ax;
+    const abz = bz - az;
+    const abLen2 = abx * abx + abz * abz;
+    for (const [playerId, player] of this.players) {
+      if (!player || player.health <= 0) continue;
+      const px = player.position.x;
+      const pz = player.position.z;
+      const apx = px - ax;
+      const apz = pz - az;
+      let t = abLen2 > 1e-8 ? (apx * abx + apz * abz) / abLen2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      const qx = ax + t * abx;
+      const qz = az + t * abz;
+      const dx = px - qx;
+      const dz = pz - qz;
+      if (dx * dx + dz * dz > hw2) continue;
+
+      const previousHealth = player.health;
+      player.health = Math.max(0, player.health - damage);
+      const wasKilled = previousHealth > 0 && player.health <= 0;
+      this.io.to(this.roomId).emit('player-damaged', {
+        sourcePlayerId: null,
+        targetPlayerId: playerId,
+        damage,
+        damageType,
+        isCritical: false,
+        newHealth: player.health,
+        maxHealth: player.maxHealth,
+        wasKilled,
+        timestamp: Date.now(),
+      });
+      this.io.to(this.roomId).emit('player-health-updated', {
+        playerId,
+        health: player.health,
+        maxHealth: player.maxHealth,
+      });
+    }
+  }
+
   damagePlayersInHorizontalRing(center, radius, damage, damageType = 'boss_aoe') {
     if (!this.io || !this.players || radius <= 0 || damage <= 0 || !center) return;
     const cx = center.x;
@@ -732,6 +790,92 @@ class GameRoom {
         maxHealth: player.maxHealth
       });
     }
+  }
+
+  /**
+   * @param { { x: number, z: number } } center
+   * @param { number } radius
+   * @param { number } damage
+   * @param { string } [damageType]
+   */
+  damageEnemiesInHorizontalRing(center, radius, damage, damageType = 'mushroom_eruption') {
+    if (!this.enemies || radius <= 0 || damage <= 0 || !center) return;
+    const cx = center.x;
+    const cz = center.z;
+    const r2 = radius * radius;
+    for (const [enemyId, enemy] of this.enemies) {
+      if (!enemy || enemy.isDying) continue;
+      if (enemy.health != null && enemy.health <= 0) continue;
+      const ex = enemy.position?.x ?? 0;
+      const ez = enemy.position?.z ?? 0;
+      const dx = ex - cx;
+      const dz = ez - cz;
+      if (dx * dx + dz * dz > r2) continue;
+      this.damageEnemy(enemyId, damage, null, null, { damageType });
+    }
+  }
+
+  getMushroomState() {
+    if (!this.mushroomHealth || this.mushroomHealth.length === 0) {
+      this._resetMushroomState();
+    }
+    return { health: [...this.mushroomHealth], maxHealth: mushroomConstants.MUSHROOM_MAX_HP };
+  }
+
+  /**
+   * @param { number } index
+   * @param { number } damage
+   * @param { string } playerId
+   * @returns { { newHealth: number, destroyed: boolean } | null }
+   */
+  damageMushroom(index, damage, playerId) {
+    if (!this.gameStarted) return null;
+    const { MUSHROOM_COUNT, getEruptionPosition, getInstances } = mushroomLayout;
+    if (typeof index !== 'number' || index < 0 || index >= MUSHROOM_COUNT) return null;
+    const d = Math.min(
+      Math.max(0, Number(damage) || 0),
+      mushroomConstants.MUSHROOM_MAX_DAMAGE_PER_HIT,
+    );
+    if (d <= 0) return null;
+    if (!this.mushroomHealth || this.mushroomHealth[index] <= 0) return null;
+    const player = this.players.get(playerId);
+    if (!player) return null;
+    const inst = getInstances()[index];
+    if (!inst) return null;
+    const dx = player.position.x - inst.x;
+    const dz = player.position.z - inst.z;
+    if (dx * dx + dz * dz > 14 * 14) return null;
+
+    this.mushroomHealth[index] = Math.max(0, this.mushroomHealth[index] - d);
+    const newHealth = this.mushroomHealth[index];
+    if (this.io) {
+      this.io.to(this.roomId).emit('mushroom-damaged', {
+        index,
+        newHealth,
+        maxHealth: mushroomConstants.MUSHROOM_MAX_HP,
+        damage: d,
+        timestamp: Date.now(),
+      });
+    }
+    if (newHealth <= 0) {
+      const pos = getEruptionPosition(index);
+      this.damagePlayersInHorizontalRing(
+        pos,
+        mushroomConstants.MUSHROOM_ERUPTION_RADIUS,
+        mushroomConstants.MUSHROOM_ERUPTION_PLAYER_DMG,
+        'mushroom_eruption',
+      );
+      this.damageEnemiesInHorizontalRing(
+        pos,
+        mushroomConstants.MUSHROOM_ERUPTION_RADIUS,
+        mushroomConstants.MUSHROOM_ERUPTION_ENEMY_DMG,
+        'mushroom_eruption',
+      );
+      if (this.io) {
+        this.io.to(this.roomId).emit('mushroom-destroyed', { index, position: pos, timestamp: Date.now() });
+      }
+    }
+    return { newHealth, destroyed: newHealth <= 0 };
   }
 
   // Enemy management
@@ -793,6 +937,10 @@ class GameRoom {
       return { id: `martyr-${campIndex}-${slotIndex}-${ts}`, type: 'martyr', ...base,
         health: 200, maxHealth: 175, damage: 0, moveSpeed: 3.0,
         soulType: campDef.knightSoulType };
+    }
+    if (type === 'tentacle-spine') {
+      return { id: `tentacle-spine-${campIndex}-${slotIndex}-${ts}`, type: 'tentacle-spine', ...base,
+        health: 250, maxHealth: 250, damage: 0, moveSpeed: 0, isTrap: true };
     }
     // viper
     return { id: `viper-${campIndex}-${slotIndex}-${ts}`, type: 'viper', ...base,
@@ -870,6 +1018,32 @@ class GameRoom {
     }
 
     return positions;
+  }
+
+  /**
+   * 1–3 stationary trap enemies per co-op wave; avoids wave spawn points + entry zone.
+   * @param {Array<{x:number,z:number}>} wavePositions
+   * @param {object} campDef
+   */
+  _spawnTentacleSpinesForWave(wavePositions, campDef) {
+    const MAX_MAP_RADIUS = 18;
+    const SPAWN_EXCL_R = 9;
+    const exclusions = [
+      { x: COOP_MAIN_ENTRY_X, z: COOP_MAIN_ENTRY_Z, radius: SPAWN_EXCL_R },
+    ];
+    const n = 1 + Math.floor(Math.random() * 3);
+    const existing = wavePositions.map((p) => ({ x: p.x, z: p.z }));
+    const SLOT_BASE = 900;
+    for (let i = 0; i < n; i++) {
+      const pos = this._randomMapPos(MAX_MAP_RADIUS, exclusions, existing, 3.5);
+      if (!pos) continue;
+      existing.push({ x: pos.x, z: pos.z });
+      const enemy = this._buildEnemy('tentacle-spine', 0, SLOT_BASE + i, pos, campDef);
+      this.enemies.set(enemy.id, enemy);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+      }
+    }
   }
 
   /** Release the next reserve batch (+2 at 3 kills, +3 at 5 kills). */
@@ -952,6 +1126,8 @@ class GameRoom {
       totalSpawned++;
     }
 
+    this._spawnTentacleSpinesForWave(entries.map((e) => e.pos), campDef);
+
     if (this.io) {
       this.io.to(this.roomId).emit('camps-initialized', {
         campTypes: [typeKey],
@@ -981,6 +1157,54 @@ class GameRoom {
     // Not used for boss (boss always spawns at center)
     // Kept for compatibility but returns center position
     return { x: 0, y: 0, z: 0 };
+  }
+
+  /**
+   * Wyvern Talons: instant remaining Concentrated Venom + optional Cobra venom remainder (client) as one hit.
+   * Clears server CV. Cobra cap matches client COBRA_SHOT venom (29 DPS × 6s).
+   */
+  detonateWyvernConcentratedVenom(enemyId, fromPlayerId, cobraRemainingRaw = 0) {
+    const WYVERN_COBRA_VENOM_MAX_BURST = 29 * 6;
+    let cobraRemaining = Math.max(0, Math.floor(Number(cobraRemainingRaw) || 0));
+    cobraRemaining = Math.min(cobraRemaining, WYVERN_COBRA_VENOM_MAX_BURST);
+
+    const enemy = this.enemies.get(enemyId);
+    if (!enemy || enemy.isDying) return;
+
+    const now = Date.now();
+    const wyvernVenomDpsPerStack = 17;
+    let cvDamage = 0;
+    const stacks = enemy.concentratedVenomStacks || 0;
+    const cvLastPlayerId = enemy.concentratedVenomLastPlayerId;
+
+    if (stacks > 0) {
+      if (!enemy.concentratedVenomExpireAt || now >= enemy.concentratedVenomExpireAt) {
+        if (enemy._concentratedVenomIntervalId) {
+          clearInterval(enemy._concentratedVenomIntervalId);
+          enemy._concentratedVenomIntervalId = null;
+        }
+        enemy.concentratedVenomStacks = 0;
+        enemy.concentratedVenomExpireAt = null;
+      } else {
+        const remainingSec = (enemy.concentratedVenomExpireAt - now) / 1000;
+        if (remainingSec > 0) {
+          cvDamage = Math.max(0, Math.floor(remainingSec * stacks * wyvernVenomDpsPerStack));
+        }
+        if (enemy._concentratedVenomIntervalId) {
+          clearInterval(enemy._concentratedVenomIntervalId);
+          enemy._concentratedVenomIntervalId = null;
+        }
+        enemy.concentratedVenomStacks = 0;
+        enemy.concentratedVenomExpireAt = null;
+      }
+    }
+
+    const total = cvDamage + cobraRemaining;
+    if (total <= 0) return;
+
+    const sourceId = cobraRemaining > 0 ? fromPlayerId : (cvLastPlayerId || fromPlayerId);
+    const tickPlayer = this.players.get(sourceId);
+    this.damageEnemy(enemyId, total, sourceId, tickPlayer || null, { damageType: 'wyvern_talons_detonate' });
   }
 
   damageEnemy(enemyId, damage, fromPlayerId, player = null, hitMeta = null) {
@@ -1014,7 +1238,7 @@ class GameRoom {
         if (fromPlayerId) {
           this.enemyAI.trackBossDamage(enemyId, fromPlayerId, damage, player);
         }
-      } else if (enemy.type !== 'training-dummy') {
+      } else if (enemy.type !== 'training-dummy' && enemy.type !== 'tentacle-spine') {
         let aggroAmount = damage;
         if (player && player.isStealthing) {
           aggroAmount *= 10.0; // Same 10x multiplier as bosses
@@ -1022,6 +1246,8 @@ class GameRoom {
         }
         if (hitMeta && hitMeta.sourceZombieId) {
           this.enemyAI.applyZombieThreat(enemyId, hitMeta.sourceZombieId, aggroAmount);
+        } else if (hitMeta && hitMeta.sourceTrapId) {
+          this.enemyAI.applyTrapThreat(enemyId, hitMeta.sourceTrapId, aggroAmount);
         } else if (fromPlayerId) {
           this.enemyAI.updateAggro(enemyId, fromPlayerId, aggroAmount);
         }
@@ -1057,6 +1283,13 @@ class GameRoom {
         };
       } else if (hitMeta && hitMeta.damageType === 'venom') {
         damagedPayload.damageType = 'venom';
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
+      } else if (hitMeta && hitMeta.damageType === 'wyvern_talons_detonate') {
+        damagedPayload.damageType = 'wyvern_talons_detonate';
         damagedPayload.position = {
           x: enemy.position.x,
           y: enemy.position.y,
@@ -1166,7 +1399,7 @@ class GameRoom {
             stacks * wyvernVenomDpsPerStack,
             e.concentratedVenomLastPlayerId,
             tickPlayer || null,
-            { damageType: 'venom' },
+            { damageType: 'venom', wyvernBiteConcentratedDoT: true },
           );
         }, 1000);
       }
@@ -1186,7 +1419,7 @@ class GameRoom {
       hitMeta.staggerToAdd > 0 &&
       !enemy.isDying
     ) {
-      const noStaggerTypes = new Set(['boss', 'boss-skeleton', 'player-zombie']);
+      const noStaggerTypes = new Set(['boss', 'boss-skeleton', 'player-zombie', 'tentacle-spine']);
       if (!noStaggerTypes.has(enemy.type)) {
         if (enemy.staggerBuildup == null) enemy.staggerBuildup = 0;
         enemy.staggerBuildup += hitMeta.staggerToAdd;
@@ -1279,6 +1512,44 @@ class GameRoom {
         hitMeta &&
         hitMeta.damageType === 'runeblade_combo' &&
         hitMeta.infestedCombo &&
+        fromPlayerId &&
+        fromPlayerId !== 'unknown' &&
+        enemy.type !== 'training-dummy' &&
+        enemy.type !== 'boss' &&
+        enemy.type !== 'player-zombie' &&
+        this.enemyAI
+      ) {
+        this.enemyAI.trySpawnInfestedZombie(fromPlayerId, {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        });
+      }
+
+      // WYVERN STING: Cobra venom DoT kill (client sends meta)
+      if (
+        hitMeta &&
+        hitMeta.damageType === 'venom' &&
+        hitMeta.wyvernStingVenomZombie &&
+        fromPlayerId &&
+        fromPlayerId !== 'unknown' &&
+        enemy.type !== 'training-dummy' &&
+        enemy.type !== 'boss' &&
+        enemy.type !== 'player-zombie' &&
+        this.enemyAI
+      ) {
+        this.enemyAI.trySpawnInfestedZombie(fromPlayerId, {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        });
+      }
+
+      // WYVERN BITE: Concentrated Venom DoT kill
+      if (
+        hitMeta &&
+        hitMeta.damageType === 'venom' &&
+        hitMeta.wyvernBiteConcentratedDoT &&
         fromPlayerId &&
         fromPlayerId !== 'unknown' &&
         enemy.type !== 'training-dummy' &&
@@ -1663,6 +1934,20 @@ class GameRoom {
           }
         }, 2500);
 
+        return result;
+
+      } else if (enemy.type === 'tentacle-spine') {
+        if (this.enemyAI) {
+          this.enemyAI.clearTrapPendingSlam(enemyId);
+          this.enemyAI.clearTrapAsAggroTarget(enemyId);
+          this.enemyAI.removeEnemyAggro(enemyId);
+        }
+        setTimeout(() => {
+          this.enemies.delete(enemyId);
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-removed', { enemyId, timestamp: Date.now() });
+          }
+        }, 600);
         return result;
 
       } else if (enemy.type === 'player-zombie') {

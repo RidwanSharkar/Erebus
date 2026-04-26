@@ -7,6 +7,7 @@ import Blizzard from './Blizzard/Blizzard';
 import { BLIZZARD_DURATION_SEC, BLIZZARD_DPS_PER_TICK } from '@/utils/talents';
 import { calculationCache } from '@/utils/CalculationCache';
 import { MAIN_MAP_RADIUS, isInsideMainArenaXZ } from '@/utils/mapConstants';
+import { forEachMushroomHitBySwing } from '@/utils/mushroomMeleeUtils';
 
 interface RunebladeProps {
   isSwinging: boolean;
@@ -36,6 +37,8 @@ interface RunebladeProps {
     health: number;
   }>;
   onHit?: (targetId: string, damage: number, isCritical?: boolean, position?: Vector3, isBlizzard?: boolean) => void;
+  mushroomTargets?: Array<{ index: number; position: Vector3 }>;
+  onMushroomHit?: (index: number, baseDamage: number) => void;
   setDamageNumbers?: (callback: (prev: Array<{
     id: number;
     damage: number;
@@ -128,6 +131,8 @@ export default function Runeblade({
   storedCharge = false,
   onPrimaryHitsResolved,
   comboStepResolver,
+  mushroomTargets,
+  onMushroomHit,
   getExecutionerFlatBonus,
   getCrusaderLmbFlatBonus,
   getBlizzardTalentActive,
@@ -829,22 +834,24 @@ export default function Runeblade({
   const performSwingDamage = (comboStep: 1 | 2 | 3) => {
     const execBonus = getExecutionerFlatBonus?.() ?? 0;
     const crusaderBonus = getCrusaderLmbFlatBonus?.() ?? 0;
-    if (!playerPosition || !enemyData.length) return;
+    if (!playerPosition) return;
+    if (!enemyData.length && !mushroomTargets?.length) return;
 
     const now = Date.now();
 
     const damageValues = {
       1: 45,
       2: 50,
-      3: 60
+      3: 60,
     };
 
     const baseDamage = damageValues[comboStep] + execBonus + crusaderBonus;
     const attackRange = 5.25;
 
     let enemiesHitThisSwing = 0;
+    let mushroomsHitThisSwing = 0;
 
-    enemyData.forEach(enemy => {
+    enemyData.forEach((enemy) => {
       if (!enemy.health || enemy.health <= 0) return;
 
       const lastHitTime = lastSwingHitTime.current[enemy.id] || 0;
@@ -884,7 +891,37 @@ export default function Runeblade({
       }
     });
 
-    onPrimaryHitsResolved?.(enemiesHitThisSwing);
+    if (mushroomTargets?.length && onMushroomHit) {
+      const yaw = playerRotation?.y ?? 0;
+      forEachMushroomHitBySwing(
+        playerPosition,
+        yaw,
+        comboStep,
+        mushroomTargets,
+        (index) => {
+          onMushroomHit(index, baseDamage);
+          mushroomsHitThisSwing++;
+          if (setDamageNumbers && nextDamageNumberId) {
+            const m = mushroomTargets.find((t) => t.index === index);
+            if (m) {
+              setDamageNumbers((prev) => [
+                ...prev,
+                {
+                  id: nextDamageNumberId.current++,
+                  damage: baseDamage,
+                  position: m.position.clone(),
+                  isCritical: false,
+                },
+              ]);
+            }
+          }
+        },
+        now,
+        lastSwingHitTime.current,
+      );
+    }
+
+    onPrimaryHitsResolved?.(enemiesHitThisSwing + mushroomsHitThisSwing);
   };
 
   // Create custom runeblade shape

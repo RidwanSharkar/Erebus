@@ -299,12 +299,12 @@ export class ControlSystem extends System {
   private lastRejuvenatingShotTime = 0; // Separate tracking for Rejuvenating Shot ability
   private fireRate = 0.2; // Default for bow
   private swordFireRate = 0.825; // Rate for sword attacks
-  private runebladeFireRate = 0.75; // Runeblade attack rate
+  private runebladeFireRate = 0.775; // Runeblade attack rate
   private sabresFireRate = 0.625; // Sabres dual attack rate (600ms between attacks)
   private scytheFireRate = 0.6; // EntropicBolt rate (0.33s cooldown)
   private crossentropyFireRate = 6; // CrossentropyBolt rate (1 per second)
   private summonTotemFireRate = 6.0; // Summon Totem rate (5 seconds cooldown)
-  private viperStingFireRate = 6.0; // Viper Sting rate (2 seconds cooldown)
+  private viperStingFireRate = 7.0; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
   private cobraShotFireRate = 6.0; // Cobra Shot rate (2 seconds cooldown)
   private rejuvenatingShotFireRate = 3.0; // Rejuvenating Shot rate (4 seconds cooldown)
@@ -312,9 +312,6 @@ export class ControlSystem extends System {
   private burstFireRate = 0.925; // 1 second cooldown between bursts
   /** Monotonic id per Tempest Rounds arrow (EtherBow muzzle flash + PVP sync). */
   private tempestBurstShotSeq = 0;
-
-  // Key press tracking for toggle abilities
-  private fKeyWasPressed = false;
   
   // Current weapon configuration
   private currentWeapon: WeaponType;

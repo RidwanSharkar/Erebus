@@ -1,7 +1,23 @@
 function handleEnemyEvents(socket, gameRooms) {
   // Handle enemy damage from players
   socket.on('enemy-damage', (data) => {
-    const { roomId, enemyId, damage, sourcePlayerId, damageType, infestedStrike, staggerToAdd, infestedSmite, infestedCombo, infernalSmite, infernoCrossentropy, reaperCrossentropy, wyvernBiteVenom } = data;
+    const {
+      roomId,
+      enemyId,
+      damage,
+      sourcePlayerId,
+      damageType,
+      infestedStrike,
+      staggerToAdd,
+      infestedSmite,
+      infestedCombo,
+      infernalSmite,
+      infernoCrossentropy,
+      reaperCrossentropy,
+      wyvernBiteVenom,
+      wyvernStingVenomZombie,
+      wyvernBiteConcentratedDoT,
+    } = data;
 
     console.log(`⚔️ Received enemy-damage: room=${roomId}, enemy=${enemyId}, damage=${damage}, source=${sourcePlayerId || socket.id}`);
 
@@ -32,7 +48,13 @@ function handleEnemyEvents(socket, gameRooms) {
     } else if (damageType === 'barrage') {
       hitMeta = { damageType: 'barrage', wyvernBiteVenom: !!wyvernBiteVenom };
     } else if (damageType === 'venom') {
-      hitMeta = { damageType: 'venom' };
+      hitMeta = {
+        damageType: 'venom',
+        wyvernStingVenomZombie: !!wyvernStingVenomZombie,
+        wyvernBiteConcentratedDoT: !!wyvernBiteConcentratedDoT,
+      };
+    } else if (damageType === 'wyvern_talons_detonate') {
+      hitMeta = { damageType: 'wyvern_talons_detonate' };
     } else if (damageType === 'runeblade_combo' || damageType === 'sabre_left' || damageType === 'sabre_right') {
       hitMeta = { damageType };
       if (damageType === 'runeblade_combo' && infestedCombo) {
@@ -49,6 +71,17 @@ function handleEnemyEvents(socket, gameRooms) {
       hitMeta = { damageType: 'blizzard' };
     }
     room.damageEnemy(enemyId, damage, actualSourcePlayerId, player, hitMeta);
+  });
+
+  socket.on('wyvern-talons-detonate-cv', (data) => {
+    const { roomId, enemyId, cobraRemainingDamage } = data;
+    if (!roomId || !enemyId) return;
+    if (!gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    const fromPlayerId = socket.id;
+    if (typeof room.detonateWyvernConcentratedVenom === 'function') {
+      room.detonateWyvernConcentratedVenom(enemyId, fromPlayerId, cobraRemainingDamage);
+    }
   });
 
   // Handle enemy position updates from AI

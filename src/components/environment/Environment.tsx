@@ -43,6 +43,8 @@ interface EnvironmentProps {
   merchantRotation?: [number, number, number]; // Merchant rotation for interactions
   showMerchant?: boolean; // Whether to render the merchant (for performance optimization)
   campTypes?: string[]; // Assigned archetype per camp ('blue'|'green'|'red'|'purple')
+  /** Co-op: destroyed mushroom instance indices (hide instanced meshes). */
+  mushroomHiddenIndices?: ReadonlySet<number>;
 }
 
 /**
@@ -64,6 +66,7 @@ const Environment: React.FC<EnvironmentProps> = ({
   merchantRotation = [0, 0, 0],
   showMerchant = false,
   campTypes = [],
+  mushroomHiddenIndices,
 }) => {
   // Define pillar positions - use PVP positions if provided, otherwise default triangle
   const pillarPositions: Array<[number, number, number]> = useMemo(() => {
@@ -154,7 +157,7 @@ const Environment: React.FC<EnvironmentProps> = ({
       <InstancedDebris />
 
       {/* Bioluminescent mushrooms near the forest ring */}
-      <InstancedMushrooms />
+      <InstancedMushrooms hiddenIndices={mushroomHiddenIndices} />
 
       {/* Aged bones and crude skulls near camp areas */}
       <InstancedBones />

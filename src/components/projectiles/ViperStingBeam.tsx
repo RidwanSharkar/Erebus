@@ -1,20 +1,26 @@
 import React, { useRef } from 'react';
 import { Vector3, Group, AdditiveBlending } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
+import { REAPING_TALONS_MAX_TRAVEL_DISTANCE } from '@/utils/talents';
 
 interface ViperStingBeamProps {
   position: Vector3;
   direction: Vector3;
   onComplete: () => void;
   isReturning?: boolean;
+  /** Matches Reaping Talons max travel (e.g. shorter with Explosive Talons). */
+  beamLength?: number;
 }
 
 const ViperStingBeam: React.FC<ViperStingBeamProps> = ({ 
   position, 
   direction, 
   onComplete,
-  isReturning = false
+  isReturning = false,
+  beamLength = REAPING_TALONS_MAX_TRAVEL_DISTANCE,
 }) => {
+  const lenScale = beamLength / REAPING_TALONS_MAX_TRAVEL_DISTANCE;
+  const halfZ = beamLength * 0.5;
   const groupRef = useRef<Group>(null);
   const startTimeRef = useRef(Date.now());
   const duration = 200; // Slightly longer than bow powershot
@@ -61,8 +67,8 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
         ]}
       >
         {/* Core beam - ultra thin with venom glow */}
-        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 10]}>
-          <cylinderGeometry args={[0.03, 0.03, 20, 8]} />
+        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, halfZ]}>
+          <cylinderGeometry args={[0.03, 0.03, beamLength, 8]} />
           <meshStandardMaterial
             color={colors.core}
             emissive={colors.emissive}
@@ -73,8 +79,8 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
         </mesh>
 
         {/* Inner glow - venomous aura */}
-        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 10]}>
-          <cylinderGeometry args={[0.07, 0.07, 20, 8]} />
+        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, halfZ]}>
+          <cylinderGeometry args={[0.07, 0.07, beamLength, 8]} />
           <meshStandardMaterial
             color={colors.emissive}
             emissive={colors.emissive}
@@ -85,8 +91,8 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
         </mesh>
 
         {/* Outer glow - toxic mist */}
-        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 10]}>
-          <cylinderGeometry args={[0.09, 0.09, 20, 8]} />
+        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, halfZ]}>
+          <cylinderGeometry args={[0.09, 0.09, beamLength, 8]} />
           <meshStandardMaterial
             color={colors.outer}
             emissive={colors.core}
@@ -103,7 +109,7 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
             ? Math.max(0, 1 - (Date.now() - fadeStartTime.current) / 700) // Longer fade for rings
             : 1;
           
-          const offset = i * 2.8;
+          const offset = i * 2.8 * lenScale;
           const scale = 1 - (i * 0.08);
           
           return (
@@ -152,7 +158,7 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
             <group key={`venom-particle-${i}`} position={[
               Math.sin(angle + Date.now() * 0.002) * radius,
               Math.cos(angle + Date.now() * 0.002) * radius + floatOffset,
-              8 + Math.sin(Date.now() * 0.004 + i) * 3
+              8 * lenScale + Math.sin(Date.now() * 0.004 + i) * 3 * lenScale
             ]}>
               <mesh>
                 <sphereGeometry args={[0.025, 4, 4]} />
@@ -173,9 +179,9 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
         <pointLight
           color={colors.emissive}
           intensity={18 * fadeProgress}
-          distance={9}
+          distance={9 * lenScale}
           decay={2}
-          position={[0, 0, 10]}
+          position={[0, 0, halfZ]}
         />
 
         {/* Additional returning shot effects */}
@@ -189,7 +195,7 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
                 <group key={`soul-energy-${i}`} position={[
                   Math.sin(angle + Date.now() * 0.012) * radius,
                   Math.cos(angle + Date.now() * 0.012) * radius,
-                  10 + Math.sin(Date.now() * 0.006 + i) * 2.5
+                  halfZ + Math.sin(Date.now() * 0.006 + i) * 2.5 * lenScale
                 ]}>
                   <mesh>
                     <sphereGeometry args={[0.03, 4, 4]} />
@@ -207,8 +213,8 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
             })}
             
             {/* Soul steal aura for returning shots */}
-            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 10]}>
-              <cylinderGeometry args={[0.15, 0.15, 20, 8]} />
+            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, halfZ]}>
+              <cylinderGeometry args={[0.15, 0.15, beamLength, 8]} />
               <meshStandardMaterial
                 color="#ff6600"
                 emissive="#ff6600"

@@ -55,6 +55,10 @@ export interface EnemyDamageMeta {
   staggerToAdd?: number;
   /** Wyvern Bite — Barrage hit applies Concentrated Venom stack on server. */
   wyvernBiteVenom?: boolean;
+  /** Wyvern Sting — Cobra venom DoT kill may raise infested zombie. */
+  wyvernStingVenomZombie?: boolean;
+  /** Wyvern Bite Concentrated Venom DoT tick — kill may raise infested zombie. */
+  wyvernBiteConcentratedDoT?: boolean;
 }
 
 /** Server enemy; `type` includes e.g. `knight`, `training-dummy` (throne prep). */
@@ -245,7 +249,13 @@ interface MultiplayerContextType {
   
   // Enemy actions
   damageEnemy: (enemyId: string, damage: number, sourcePlayerId?: string, meta?: EnemyDamageMeta) => void;
+  /** Co-op: server clears Wyvern Bite CV + applies optional Cobra remainder as one combined hit. */
+  detonateWyvernConcentratedVenom: (enemyId: string, cobraRemainingDamage?: number) => void;
   applyStatusEffect: (enemyId: string, effectType: string, duration: number) => void;
+
+  /** Co-op: ring mushroom HP (server sync). */
+  mushroomState: { health: number[]; maxHealth: number } | null;
+  damageMushroom: (index: number, damage: number, sourcePlayerId?: string) => void;
 
   // Experience system actions
   updatePlayerExperience: (playerId: string, experience: number) => void;
@@ -366,6 +376,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopMainArenaIntermissionSeq, setCoopMainArenaIntermissionSeq] = useState(0);
   const [coopBossClearedBgmSeq, setCoopBossClearedBgmSeq] = useState(0);
   const [coopClearedRoomColor, setCoopClearedRoomColor] = useState<string | null>(null);
+  const [mushroomState, setMushroomState] = useState<{ health: number[]; maxHealth: number } | null>(null);
   const [currentPreview, setCurrentPreview] = useState<RoomPreview | null>(null);
   const [selectedWeapons, setSelectedWeaponsState] = useState<{
     primary: WeaponType;
@@ -543,6 +554,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopBossThroneArena(
         normalizeCoopBossThroneArena((data as { coopBossThroneArena?: boolean }).coopBossThroneArena),
       );
+      const ms = (data as { mushroomState?: { health?: number[]; maxHealth?: number } }).mushroomState;
+      if (ms?.health && Array.isArray(ms.health)) {
+        setMushroomState({ health: [...ms.health], maxHealth: ms.maxHealth ?? 10 });
+      } else {
+        setMushroomState(null);
+      }
     });
 
     addEventHandler('camps-initialized', (data: { campTypes?: string[] }) => {
@@ -669,9 +686,29 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       (window as any).controlSystemRef?.current?.setReaperCrossentropyStack(data.stacks ?? 0);
     });
 
+    addEventHandler('mushroom-damaged', (data: { index: number; newHealth: number; maxHealth: number }) => {
+      setMushroomState((prev) => {
+        if (!prev) return prev;
+        const h = [...prev.health];
+        if (data.index >= 0 && data.index < h.length) h[data.index] = data.newHealth;
+        return { health: h, maxHealth: data.maxHealth ?? prev.maxHealth };
+      });
+    });
+
+    addEventHandler('mushroom-destroyed', (data: { index: number }) => {
+      setMushroomState((prev) => {
+        if (!prev) return prev;
+        const h = [...prev.health];
+        if (data.index >= 0 && data.index < h.length) h[data.index] = 0;
+        return { ...prev, health: h };
+      });
+    });
+
     addEventHandler('enemy-damaged', (data) => {
       if (
-        (data.damageType === 'ignite' || data.damageType === 'venom') &&
+        (data.damageType === 'ignite' ||
+          data.damageType === 'venom' ||
+          data.damageType === 'wyvern_talons_detonate') &&
         typeof data.damage === 'number' &&
         data.damage > 0 &&
         data.position
@@ -679,7 +716,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         const mgr = (window as any).damageNumberManager;
         if (mgr?.addDamageNumber) {
           const pos = new Vector3(data.position.x, data.position.y + 1.5, data.position.z);
-          mgr.addDamageNumber(data.damage, false, pos, data.damageType === 'venom' ? 'venom' : 'ignite');
+          const dt =
+            data.damageType === 'venom' || data.damageType === 'wyvern_talons_detonate' ? 'venom' : 'ignite';
+          mgr.addDamageNumber(data.damage, false, pos, dt);
         }
       }
 
@@ -857,6 +896,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopBossThroneArena(normalizeCoopBossThroneArena(data.coopBossThroneArena));
       } else {
         setCoopBossThroneArena(false);
+      }
+      if (data?.mushroomState?.health && Array.isArray(data.mushroomState.health)) {
+        setMushroomState({
+          health: [...data.mushroomState.health],
+          maxHealth: data.mushroomState.maxHealth ?? 10,
+        });
       }
     });
 
@@ -1176,6 +1221,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setCoopCombatArenaEnterSeq(0);
     setCoopMainArenaIntermissionSeq(0);
     setCoopBossClearedBgmSeq(0);
+    setMushroomState(null);
     setDroppedItems(new Map());
     setInventory([]);
     setSelectedWeaponsState({ primary: WeaponType.NONE, secondary: WeaponType.NONE });
@@ -1280,6 +1326,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
+  const damageMushroom = useCallback((index: number, damage: number, sourcePlayerId?: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('mushroom-damage', {
+        roomId: currentRoomId,
+        index,
+        damage,
+        sourcePlayerId: sourcePlayerId || socket.id,
+      });
+    }
+  }, [socket, currentRoomId]);
+
   const damageEnemy = useCallback((enemyId: string, damage: number, sourcePlayerId?: string, meta?: EnemyDamageMeta) => {
     if (socket && currentRoomId) {
       socket.emit('enemy-damage', {
@@ -1296,9 +1353,26 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.reaperCrossentropy ? { reaperCrossentropy: true } : {}),
         ...(meta?.staggerToAdd != null && meta.staggerToAdd > 0 ? { staggerToAdd: meta.staggerToAdd } : {}),
         ...(meta?.wyvernBiteVenom ? { wyvernBiteVenom: true } : {}),
+        ...(meta?.wyvernStingVenomZombie ? { wyvernStingVenomZombie: true } : {}),
+        ...(meta?.wyvernBiteConcentratedDoT ? { wyvernBiteConcentratedDoT: true } : {}),
       });
     }
   }, [socket, currentRoomId]);
+
+  const detonateWyvernConcentratedVenom = useCallback(
+    (enemyId: string, cobraRemainingDamage?: number) => {
+      if (socket && currentRoomId) {
+        socket.emit('wyvern-talons-detonate-cv', {
+          roomId: currentRoomId,
+          enemyId,
+          ...(typeof cobraRemainingDamage === 'number' && cobraRemainingDamage > 0
+            ? { cobraRemainingDamage }
+            : {}),
+        });
+      }
+    },
+    [socket, currentRoomId],
+  );
 
   const applyStatusEffect = useCallback((enemyId: string, effectType: string, duration: number) => {
     if (socket && currentRoomId) {
@@ -1645,7 +1719,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     broadcastPlayerTornadoEffect,
     broadcastPlayerDeathEffect,
     damageEnemy,
+    damageMushroom,
+    detonateWyvernConcentratedVenom,
     applyStatusEffect,
+    mushroomState,
     updatePlayerExperience,
     updatePlayerLevel,
     updatePlayerEssence,

@@ -27,13 +27,13 @@ const KEY_LIGHT_DISTANCE = 14;
 const RIM_LIGHT_INTENSITY = 0.85;
 const RIM_LIGHT_DISTANCE = 10;
 
-const ORBIT_RADIUS = 1.05;
-const ORBIT_Y = 1.05;
-const ORBIT_ROT_SPEED = 0.42;
+const ORBIT_RADIUS = 2.05;
+const ORBIT_Y = 2.05;
+const ORBIT_ROT_SPEED = 0.62;
 const ORB_LIGHT_INTENSITY = 1.35;
-const ORB_LIGHT_DISTANCE = 5;
-const ORB_EMISSIVE_INTENSITY = 1.8;
-const ORB_COUNT = 4;
+const ORB_LIGHT_DISTANCE = 6;
+const ORB_EMISSIVE_INTENSITY = 2.8;
+const ORB_COUNT = 6;
 
 function BossLightRig({ isDying }: { isDying: boolean }) {
   const orbitRef = useRef<Group>(null);
@@ -82,7 +82,7 @@ function BossLightRig({ isDying }: { isDying: boolean }) {
         intensity={KEY_LIGHT_INTENSITY}
         distance={KEY_LIGHT_DISTANCE}
         decay={2}
-        position={[0, 1.15, 0]}
+        position={[0, 2.15, 0]}
       />
       <pointLight
         ref={rimLightRef}
@@ -90,7 +90,7 @@ function BossLightRig({ isDying }: { isDying: boolean }) {
         intensity={RIM_LIGHT_INTENSITY}
         distance={RIM_LIGHT_DISTANCE}
         decay={2}
-        position={[-0.55, 0.95, 0.45]}
+        position={[-0.55, 1.95, 0.45]}
       />
 
       <group ref={orbitRef} position={[0, ORBIT_Y, 0]}>

@@ -1,4 +1,4 @@
-import { ShaderMaterial, Color, Vector3 } from './three-exports';
+import { ShaderMaterial, Color, Vector3, AdditiveBlending } from './three-exports';
 
 // Shader registry for precompiled shaders to improve performance
 class ShaderRegistry {
@@ -152,8 +152,11 @@ class ShaderRegistry {
           float outwardDist = particleProgress * speed * uDistance;
           float spreadAngle = aRandom * uSpread;
           float spreadRotation = aParticleIndex * 2.39996 + aRandom * 1.5;
-          vec3 perpendicular1 = normalize(cross(uEruptionDirection, vec3(0.0, 1.0, 0.0)));
-          if (length(perpendicular1) < 0.1) perpendicular1 = normalize(cross(uEruptionDirection, vec3(1.0, 0.0, 0.0)));
+          vec3 perpendicular1 = cross(uEruptionDirection, vec3(0.0, 1.0, 0.0));
+          if (length(perpendicular1) < 0.1) {
+            perpendicular1 = cross(uEruptionDirection, vec3(1.0, 0.0, 0.0));
+          }
+          perpendicular1 = normalize(perpendicular1);
           vec3 perpendicular2 = normalize(cross(uEruptionDirection, perpendicular1));
           vec3 spreadOffset = (perpendicular1 * cos(spreadRotation) + perpendicular2 * sin(spreadRotation))
                              * spreadAngle * outwardDist * (0.35 + uScale * 0.5);
@@ -197,7 +200,7 @@ class ShaderRegistry {
         }
       `,
       transparent: true,
-      blending: 1, // AdditiveBlending
+      blending: AdditiveBlending,
       depthWrite: false,
     });
   }
@@ -268,7 +271,7 @@ class ShaderRegistry {
         }
       `,
       transparent: true,
-      blending: 1, // AdditiveBlending
+      blending: AdditiveBlending,
       depthWrite: false,
       side: 2, // DoubleSide
     });

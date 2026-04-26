@@ -63,7 +63,7 @@ interface UseViperStingProps {
   }>>>;
   nextDamageNumberId: React.MutableRefObject<number>;
   onHealthChange?: (deltaHealth: number) => void;
-  createBeamEffect?: (position: Vector3, direction: Vector3, isReturning?: boolean) => void;
+  createBeamEffect?: (position: Vector3, direction: Vector3, isReturning?: boolean, beamLength?: number) => void;
   applyDoT?: (enemyId: string) => void;
   charges: Array<{
     id: number;
@@ -214,7 +214,7 @@ export function useViperSting({
 
     // Create beam effect for forward shot
     if (createBeamEffect) {
-      createBeamEffect(unitPosition, direction, false);
+      createBeamEffect(unitPosition, direction, false, projectile.maxDistance);
     }
 
     return true;
@@ -360,7 +360,7 @@ export function useViperSting({
               projectile.direction = new Vector3().subVectors(projectile.startPosition, projectile.position).normalize();
 
               if (createBeamEffect) {
-                createBeamEffect(projectile.position, projectile.direction, true);
+                createBeamEffect(projectile.position, projectile.direction, true, projectile.maxDistance);
               }
             }
           }

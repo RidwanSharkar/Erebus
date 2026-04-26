@@ -437,6 +437,24 @@ export class Enemy extends Component {
     }
     return { shouldDealDamage: false, damage: 0 };
   }
+
+  /** Remaining Cobra venom damage if applied as one instant hit (duration remaining × DPS). */
+  public getRemainingCobraVenomDamageInstant(currentTime: number): number {
+    if (!this.isVenomous) return 0;
+    const end = this.venomStartTime + this.venomDuration;
+    if (currentTime >= end) return 0;
+    const remainingSec = end - currentTime;
+    return Math.max(0, Math.floor(remainingSec * this.venomDamagePerSecond));
+  }
+
+  /** Remaining Wyvern Bite Concentrated Venom as one instant hit. */
+  public getRemainingConcentratedVenomDamageInstant(currentTime: number): number {
+    if (this.concentratedVenomStacks <= 0) return 0;
+    if (currentTime >= this.concentratedVenomEndTime) return 0;
+    const remainingSec = this.concentratedVenomEndTime - currentTime;
+    const dps = this.concentratedVenomStacks * WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK;
+    return Math.max(0, Math.floor(remainingSec * dps));
+  }
   
   public applySunderStack(currentTime: number): void {
     if (this.isDead) return; // Can't apply sunder to dead enemies
