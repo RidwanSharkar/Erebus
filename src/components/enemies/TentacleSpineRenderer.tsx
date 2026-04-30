@@ -64,6 +64,8 @@ const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
   const leanDirRef = useRef({ x: 0, z: 1 });
   const slamPhaseRef = useRef<'idle' | 'fwd' | 'rebound'>('idle');
   const slamReboundTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Keep rotation in a ref so useFrame always reads the latest value without stale closure
+  const rotationRef = useRef(rotation);
 
   const layout = useMemo(() => getForestSingleTreeLayoutFromId(id), [id]);
   const { trunkH, trunkR, canopyR, rotAngle } = layout;
@@ -204,6 +206,11 @@ const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
     });
   }, [canopyMatrices]);
 
+  // Keep rotationRef in sync so useFrame always converts world→local correctly
+  useLayoutEffect(() => {
+    rotationRef.current = rotation;
+  }, [rotation]);
+
   useFrame((_, delta) => {
     trunkMat.uniforms.uTime.value += delta;
     canopyMats.forEach((m) => {
@@ -221,6 +228,13 @@ const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
     _dir.set(ld.x, 0, ld.z);
     if (_dir.lengthSq() < 1e-6) _dir.set(0, 0, 1);
     _dir.normalize();
+    // leanDir is world-space; segments live under a Y-rotated root group, so
+    // transform into local space: local = R(-rotation) * world
+    const c = Math.cos(rotationRef.current);
+    const s = Math.sin(rotationRef.current);
+    const lx = _dir.x * c + _dir.z * s;
+    const lz = -_dir.x * s + _dir.z * c;
+    _dir.set(lx, 0, lz).normalize();
     _axis.set(-_dir.z, 0, _dir.x).normalize();
     const n = TRUNK_SEGMENTS;
     for (let i = 0; i < n; i++) {

@@ -10,9 +10,15 @@ interface MartyrModelProps {
   isDying: boolean;
 }
 
-useGLTF.preload('/models/martyr_idle.glb');
-useGLTF.preload('/models/martyr_run.glb');
-useGLTF.preload('/models/martyr_death.glb');
+const MARTYR_MODEL_PATHS = [
+  '/models/martyr_idle.glb',
+  '/models/martyr_run.glb',
+  '/models/martyr_death.glb',
+];
+
+export function preloadMartyrModels(): void {
+  MARTYR_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+}
 
 const SCALE = 0.008;
 

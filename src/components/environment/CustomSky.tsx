@@ -104,7 +104,7 @@ const SKY_VERT = `
 `;
 
 const SKY_FRAG = `
-  // Value noise helpers — no texture lookups, pure math
+  // Value noise — no texture lookups, pure math
   float hash21(vec2 p) {
     p = fract(p * vec2(127.1, 311.7));
     p += dot(p, p + 19.19);
@@ -120,10 +120,20 @@ const SKY_FRAG = `
       f.y
     );
   }
-  // 5-octave FBM for soft fluffy clouds
+  // 5-octave FBM — fine cloud detail
   float fbm(vec2 p) {
     float v = 0.0, a = 0.5;
     for (int i = 0; i < 5; i++) {
+      v += a * smoothNoise(p);
+      p  = p * 2.13 + vec2(0.4, 0.8);
+      a *= 0.5;
+    }
+    return v;
+  }
+  // 3-octave FBM — domain warp + large-scale formation mask
+  float fbm3(vec2 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 3; i++) {
       v += a * smoothNoise(p);
       p  = p * 2.13 + vec2(0.4, 0.8);
       a *= 0.5;
@@ -164,26 +174,59 @@ const SKY_FRAG = `
     sky += uSunHalo1 * pow(max(0.0, cosA),   8.0) * 0.30;
     sky += uSunHalo2 * pow(max(0.0, cosA),   3.0) * 0.12;
 
-    // ── Clouds ──────────────────────────────────────────────────────────────
-    if (h > -0.02) {
-      float yDamp  = max(dir.y, 0.08);
-      vec2  cUv    = dir.xz / yDamp;
+    // ── Clouds (upper dome + under-horizon sea; domain-warped FBM) ──────────
+    float yDamp = max(abs(h), 0.07);
+    vec2  cUv   = dir.xz / yDamp;
 
-      // Two cloud layers at different altitudes / speeds
-      float c1 = fbm(cUv * 0.11 + vec2( uTime * 0.008,  uTime * 0.003));
-      float c2 = fbm(cUv * 0.19 + vec2( uTime * 0.013, -uTime * 0.005)) * 0.55;
-      float cloud = smoothstep(0.47, 0.73, c1 + c2 * 0.35);
+    // Domain warp: two independent 3-oct FBMs displace the UV before sampling,
+    // breaking grid-aligned repetition into organic billowing shapes.
+    float warpX = fbm3(cUv * 0.09 + vec2(1.70 + uTime * 0.004, 9.20 + uTime * 0.003));
+    float warpY = fbm3(cUv * 0.09 + vec2(8.30 + uTime * 0.003, 2.80 + uTime * 0.004));
+    vec2  wUv   = cUv + (vec2(warpX, warpY) * 2.0 - 1.0) * 1.1;
 
-      float warmthH = 1.0 - smoothstep(0.0, 0.38, h);
-      vec3  cLit   = mix(vec3(0.98, 0.88, 0.72), vec3(1.00, 0.98, 0.96), h);
-      vec3  cWarm  = mix(cLit, vec3(1.0, 0.60, 0.26), warmthH * 0.65);
-      vec3  cCool  = mix(cLit * vec3(0.75, 0.82, 0.95), mix(uMidHorizon, uHorizon, 0.4), 0.55);
-      vec3  cBlend = mix(cCool, cWarm, uCloudWarmth);
-      vec3  cColor = mix(cBlend * 0.42, cBlend, 0.62);
+    // Large-scale formation mask: slow low-frequency field that creates cloud
+    // banks vs. clear sky regions instead of uniform coverage everywhere.
+    float macro = smoothstep(0.28, 0.68,
+      fbm3(cUv * 0.048 + vec2(uTime * 0.002, uTime * 0.0015))
+    );
 
-      float cFade = smoothstep(0.0, 0.10, h) * (1.0 - smoothstep(0.72, 0.94, h));
-      sky = mix(sky, cColor, cloud * cFade * 0.82);
-    }
+    // Fine-detail cloud shapes on the warped UVs
+    float detail   = fbm(wUv * 0.11 + vec2(uTime * 0.008, uTime * 0.003));
+    float rawCloud = detail * (0.60 + 0.60 * macro);
+    float cloud    = smoothstep(0.44, 0.72, rawCloud);
+
+    // ── Cloud color ─────────────────────────────────────────────────────────
+    float hPos    = max(h, 0.0);
+    float warmthH = 1.0 - smoothstep(0.0, 0.38, hPos);
+    vec3  cLit    = mix(vec3(0.98, 0.88, 0.72), vec3(1.00, 0.98, 0.96), hPos);
+    vec3  cWarm   = mix(cLit, vec3(1.0, 0.60, 0.26), warmthH * 0.65);
+    vec3  cCool   = mix(cLit * vec3(0.75, 0.82, 0.95), mix(uMidHorizon, uHorizon, 0.4), 0.55);
+    float warmthMix = uCloudWarmth * smoothstep(-0.28, 0.10, h);
+    vec3  cBlend  = mix(cCool, cWarm, warmthMix);
+
+    // Lit top / dark belly: thick cloud cores shade their undersides.
+    // rawCloud density drives the belly→top gradient so thin edges stay
+    // semi-transparent while dense centers have proper atmospheric depth.
+    vec3  cBelly  = mix(cBlend * 0.28, cBlend * 0.48, smoothstep(-0.15, 0.15, h));
+    vec3  cColor  = mix(cBelly, cBlend * 1.04, smoothstep(0.44, 0.75, rawCloud));
+
+    // Atmospheric haze: clouds just above/below the horizon fade into the
+    // sky palette, creating natural depth and a seamless horizon join.
+    float hazeT = 1.0 - smoothstep(0.0, 0.22, abs(h));
+    cColor = mix(cColor, mix(uHorizon, uMidHorizon, 0.35) * 0.72, hazeT * 0.60);
+
+    // ── Opacity fades ────────────────────────────────────────────────────────
+    float cFadeUp  = smoothstep(0.0, 0.10, h) * (1.0 - smoothstep(0.72, 0.94, h));
+    float cFadeLow = (1.0 - smoothstep(-0.06, 0.14, h)) * smoothstep(-0.88, -0.12, h);
+    float cFade    = max(cFadeUp, cFadeLow * 0.92);
+
+    sky = mix(sky, cColor, cloud * cFade * 0.85);
+
+    // Silver lining: bright rim on sun-facing cloud edges — zero extra samples.
+    // cloudEdge peaks at coverage boundaries (cloud * (1-cloud) → 0 at 0 and 1).
+    float sunDot    = max(0.0, dot(normalize(dir.xz), uSunDir.xz / max(length(uSunDir.xz), 0.001)));
+    float cloudEdge = cloud * (1.0 - cloud) * 4.0;
+    sky += uSunHalo1 * (cloudEdge * sunDot * 0.38 * cFade);
 
     gl_FragColor = vec4(sky, 1.0);
   }

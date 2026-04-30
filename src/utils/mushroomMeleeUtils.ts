@@ -1,4 +1,5 @@
 import { Vector3 } from '@/utils/three-exports';
+import { MELEE_ARC_MIN_DOT } from './meleeArcConstants';
 import { MUSHROOM_MELEE_RANGE } from './mushroomConstants';
 
 export interface MushroomMeleeTarget {
@@ -41,7 +42,7 @@ export function forEachMushroomHitBySwing(
     }
     toT.normalize();
     const dot = toT.dot(forward);
-    if (dot > -0.5) {
+    if (dot > MELEE_ARC_MIN_DOT) {
       lastHitTime[key] = now;
       onHit(m.index);
     }

@@ -10,6 +10,8 @@ import CubeSoulEffect from './CubeSoulEffect';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
+import GhostTrail from '../dragon/GhostTrail';
+import { WeaponType } from '../dragon/weapons';
 
 interface WarlockRendererProps {
   id: string;
@@ -51,6 +53,7 @@ export default function WarlockRenderer({
   const groupRef = useRef<Group | null>(null);
 
   const [isBlinking,  setIsBlinking]  = useState(false);
+  const isBlinkingRef = useRef(false);
   const [isLaunching, setIsLaunching] = useState(false);
   const [isWalking,   setIsWalking]   = useState(false);
   const [isImpacting, setIsImpacting] = useState(false);
@@ -81,7 +84,7 @@ export default function WarlockRenderer({
     const dist = targetPosition.current.distanceTo(position);
     targetPosition.current.copy(position);
 
-    if (dist > 2.0 && groupRef.current) {
+    if (dist > 2.0 && groupRef.current && !isBlinkingRef.current) {
       groupRef.current.position.copy(position);
     }
 
@@ -148,6 +151,7 @@ export default function WarlockRenderer({
       if (data.warlockId !== id) return;
 
       setIsBlinking(true);
+      isBlinkingRef.current = true;
 
       const startPos = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
       const newPos   = new Vector3(data.endPosition.x,   data.endPosition.y,   data.endPosition.z);
@@ -155,6 +159,10 @@ export default function WarlockRenderer({
       // Immediately chase the new position so the lerp is already pulling there during the animation
       targetPosition.current.copy(newPos);
       targetRotation.current = data.rotation;
+      if (groupRef.current) {
+        groupRef.current.position.copy(startPos);
+        groupRef.current.rotation.y = data.rotation;
+      }
 
       // Play blink sound at the departure position
       (window as any).audioSystem?.playEnemyBlinkSound(startPos);
@@ -172,6 +180,7 @@ export default function WarlockRenderer({
 
       setTimeout(() => {
         setIsBlinking(false);
+        isBlinkingRef.current = false;
         // Hard snap after animation completes to ensure the position is exact
         if (groupRef.current) {
           groupRef.current.position.copy(newPos);
@@ -238,6 +247,14 @@ export default function WarlockRenderer({
           onComplete={() => setBlinkFx(prev => prev.filter(f => f.id !== fx.id))}
         />
       ))}
+
+      <GhostTrail
+        parentRef={groupRef as React.RefObject<Group>}
+        weaponType={WeaponType.NONE}
+        fixedTrailColor="#ff5500"
+        isTrailMotionRef={isBlinkingRef}
+        yOffset={1.0}
+      />
 
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <WarlockModel

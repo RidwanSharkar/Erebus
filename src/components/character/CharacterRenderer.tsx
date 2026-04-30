@@ -3,11 +3,13 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Group, Vector3 } from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
-import CharacterModel, { AnimState } from './CharacterModel';
+import CharacterModel, { AnimState, preloadCharacterModels } from './CharacterModel';
 import { World } from '@/ecs/World';
 import { Movement } from '@/ecs/components/Movement';
+import { Transform } from '@/ecs/components/Transform';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import DraconicWingJets from '@/components/dragon/DraconicWingJets';
+import DashFireTrail from '@/components/dragon/DashFireTrail';
 
 interface CharacterRendererProps {
   entityId: number;
@@ -17,12 +19,20 @@ interface CharacterRendererProps {
   rotation?: { x: number; y: number; z: number };
   currentWeapon?: WeaponType;
   weaponSubclass?: WeaponSubclass;
+  /** Primary (LMB) bow charge — see also ability charges below. */
   isCharging?: boolean;
+  isBarrageCharging?: boolean;
+  isCobraShotCharging?: boolean;
   isDead?: boolean;
+  /** Co-op remote: SwordCast/Cast when replicated melee/channel state mirrors LMB posture. */
+  remotePrimaryWeaponCastHold?: boolean;
 }
 
 const LERP_SPEED      = 15;  // snappy but smooth position interpolation
 const WALK_STOP_DELAY = 120; // ms before switching to Idle after movement stops
+
+// The controllable player must never wait behind enemy/boss asset staging.
+preloadCharacterModels();
 
 // Return the animation state based on the signed angle (radians) between
 // the character's facing direction and the movement direction.
@@ -67,14 +77,20 @@ export default function CharacterRenderer({
   currentWeapon,
   weaponSubclass,
   isCharging = false,
+  isBarrageCharging = false,
+  isCobraShotCharging = false,
   isDead = false,
+  remotePrimaryWeaponCastHold = false,
 }: CharacterRendererProps) {
   const groupRef         = useRef<Group | null>(null);
   const { camera }       = useThree();
   const [animState, setAnimState] = useState<AnimState>('Idle');
   const [dashJetsActive, setDashJetsActive] = useState(false);
+  const [dashBurstId, setDashBurstId] = useState(0);
   const dashFlagsRef = useRef({ isBackward: false, isLeft: false, isRight: false });
   const lastIsDashingRef = useRef(false);
+  const dashFireWorldPosRef = useRef(new Vector3());
+  const isDashingRef = useRef(false);
 
   const targetPosition    = useRef(position.clone());
   const targetRotationY   = useRef(0);
@@ -84,7 +100,12 @@ export default function CharacterRenderer({
   const wasGrounded          = useRef(true);
   const jumpIsBack           = useRef(false);
   const jumpIsFront          = useRef(false);
-  const prevIsCharging       = useRef(false);
+  /** True while LMB or Barrage/Cobra warmup is holding DrawBow pose (bow only). */
+  const bowDrawHoldActive =
+    currentWeapon === WeaponType.BOW &&
+    (isCharging || isBarrageCharging || isCobraShotCharging);
+
+  const prevBowDrawHold = useRef(false);
   const bowReleaseTimer      = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isCastingAbility     = useRef(false);
   const abilityAnimTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -122,10 +143,9 @@ export default function CharacterRenderer({
     };
   }, []);
 
-  // When a bow charge is released, play the ReleaseBow animation briefly then return to Idle.
+  // When any bow draw hold ends (LMB, Barrage, or Cobra Shot), play ReleaseBow then Idle.
   useEffect(() => {
-    if (!isLocalPlayer) return;
-    if (prevIsCharging.current && !isCharging && currentWeapon === WeaponType.BOW) {
+    if (prevBowDrawHold.current && !bowDrawHoldActive && currentWeapon === WeaponType.BOW) {
       if (bowReleaseTimer.current) clearTimeout(bowReleaseTimer.current);
       setAnimState('ReleaseBow');
       prevAnimState.current = 'ReleaseBow';
@@ -137,8 +157,8 @@ export default function CharacterRenderer({
         }
       }, 500);
     }
-    prevIsCharging.current = isCharging;
-  }, [isCharging, currentWeapon, isLocalPlayer]); // eslint-disable-line react-hooks/exhaustive-deps
+    prevBowDrawHold.current = bowDrawHoldActive;
+  }, [bowDrawHoldActive, currentWeapon]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Listen for ability casts (Q/E/R/F abilities) and play the CastSingle animation
   // when the character is not moving.
@@ -222,9 +242,18 @@ export default function CharacterRenderer({
     const movement = entity.getComponent(Movement);
     if (!movement) return;
 
+    const transform = entity.getComponent(Transform);
+    if (transform?.position) {
+      dashFireWorldPosRef.current.copy(transform.position);
+    }
+    isDashingRef.current = movement.isDashing;
+
     if (lastIsDashingRef.current !== movement.isDashing) {
       lastIsDashingRef.current = movement.isDashing;
       setDashJetsActive(movement.isDashing);
+      if (movement.isDashing) {
+        setDashBurstId(id => id + 1);
+      }
     }
 
     // Update dash direction flags synchronously into a ref so DraconicWingJets
@@ -301,20 +330,25 @@ export default function CharacterRenderer({
           clearTimeout(walkStopTimer.current);
           walkStopTimer.current = null;
         }
-      } else if (isLocalPlayer && isCharging && currentWeapon === WeaponType.BOW) {
-        // Bow is being charged — play draw animation.
+      } else if (bowDrawHoldActive) {
+        // LMB or ability (Barrage / Cobra) warmup — DrawBow clip (local + replicated co-op peers).
         if (walkStopTimer.current) {
           clearTimeout(walkStopTimer.current);
           walkStopTimer.current = null;
         }
         next = 'DrawBow';
       } else if (
-        isLocalPlayer &&
-        isLeftMouseHeld.current &&
-        currentWeapon != null &&
-        currentWeapon !== WeaponType.NONE
+        (isLocalPlayer &&
+          isLeftMouseHeld.current &&
+          currentWeapon != null &&
+          currentWeapon !== WeaponType.NONE) ||
+        (!isLocalPlayer &&
+          remotePrimaryWeaponCastHold &&
+          currentWeapon != null &&
+          currentWeapon !== WeaponType.NONE &&
+          currentWeapon !== WeaponType.BOW)
       ) {
-        // Stationary + holding left mouse — weapon-specific cast animation.
+        // Stationary + holding primary or replicated co-op melee/channel pose.
         if (walkStopTimer.current) {
           clearTimeout(walkStopTimer.current);
           walkStopTimer.current = null;
@@ -322,7 +356,7 @@ export default function CharacterRenderer({
         if (currentWeapon === WeaponType.SWORD) {
           next = 'SwordCast';
         } else {
-          next = 'Cast'; // SCYTHE, SPEAR, SABRES, RUNEBLADE, etc.
+          next = 'Cast'; // SCYTHE, SPEAR, SABRES, RUNEBLADE, Bow generic cast fallback, etc.
         }
       } else {
         // No input, not casting.
@@ -381,28 +415,37 @@ export default function CharacterRenderer({
     wType === WeaponType.NONE ? undefined : weaponSubclass;
 
   return (
-    <group ref={setGroupRef}>
-      <CharacterModel animState={animState} isDead={isDead} />
-      <group position={[0, 1.0, -0.12]}>
-        <DraconicWingJets
-          isActive={showDashJets}
-          collectedBones={0}
-          isLeftWing
-          parentRef={groupRef as React.RefObject<Group>}
-          weaponType={wType}
-          weaponSubclass={jetSubclass}
-          dashFlagsRef={dashFlagsRef}
-        />
-        <DraconicWingJets
-          isActive={showDashJets}
-          collectedBones={0}
-          isLeftWing={false}
-          parentRef={groupRef as React.RefObject<Group>}
-          weaponType={wType}
-          weaponSubclass={jetSubclass}
-          dashFlagsRef={dashFlagsRef}
-        />
+    <>
+      <group ref={setGroupRef}>
+        <CharacterModel animState={animState} isDead={isDead} />
+        <group position={[0, 1.0, -0.12]}>
+          <DraconicWingJets
+            key={`left-dash-jets-${dashBurstId}`}
+            isActive={showDashJets}
+            collectedBones={0}
+            isLeftWing
+            parentRef={groupRef as React.RefObject<Group>}
+            weaponType={wType}
+            weaponSubclass={jetSubclass}
+            dashFlagsRef={dashFlagsRef}
+          />
+          <DraconicWingJets
+            key={`right-dash-jets-${dashBurstId}`}
+            isActive={showDashJets}
+            collectedBones={0}
+            isLeftWing={false}
+            parentRef={groupRef as React.RefObject<Group>}
+            weaponType={wType}
+            weaponSubclass={jetSubclass}
+            dashFlagsRef={dashFlagsRef}
+          />
+        </group>
       </group>
-    </group>
+      <DashFireTrail
+        worldPositionRef={dashFireWorldPosRef}
+        isDashingRef={isDashingRef}
+        disabled={wType === WeaponType.KNIGHT}
+      />
+    </>
   );
 }

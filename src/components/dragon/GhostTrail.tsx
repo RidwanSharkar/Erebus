@@ -18,9 +18,13 @@ interface GhostTrailProps {
   isWeaponChargeMovingRef?: React.RefObject<boolean>;
   isSkyfalling?: boolean; // Divebomb ability — keeps trail visible for the full duration
   yOffset?: number; // Additional Y lift — use when dragon body is hidden (character model)
+  /** When set, overrides weapon-based trail color (e.g. enemy blink). */
+  fixedTrailColor?: string;
+  /** When set, drive visibility from this ref only (e.g. isBlinking); omit to use dash / weapon-charge refs. */
+  isTrailMotionRef?: React.RefObject<boolean>;
 }
 
-const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPosition, isStealthing = false, isDashingRef, isWeaponChargeMovingRef, isSkyfalling = false, yOffset = 0 }: GhostTrailProps) => {
+const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPosition, isStealthing = false, isDashingRef, isWeaponChargeMovingRef, isSkyfalling = false, yOffset = 0, fixedTrailColor, isTrailMotionRef }: GhostTrailProps) => {
   const trailsRef = useRef<Mesh[]>([]);
   const positions = useRef<Vector3[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -68,6 +72,10 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
     // If player is stealthing, use dark grey for all trails
     if (isStealthing) {
       return '#333333'; // Dark grey color for stealth mode
+    }
+
+    if (fixedTrailColor) {
+      return fixedTrailColor;
     }
 
     if (weaponSubclass) {
@@ -133,10 +141,11 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
   useFrame(() => {
     if (!isInitialized) return;
 
-    // Track dash / weapon-charge linger window (same UX as regular dash)
-    const isDashingNow = isDashingRef ? (isDashingRef.current ?? false) : false;
-    const isChargeMovingNow = isWeaponChargeMovingRef ? (isWeaponChargeMovingRef.current ?? false) : false;
-    const isTrailMotionActive = isDashingNow || isChargeMovingNow;
+    // Track dash / weapon-charge / external motion linger window (same UX as regular dash)
+    const isTrailMotionActive = isTrailMotionRef
+      ? (isTrailMotionRef.current ?? false)
+      : (isDashingRef ? (isDashingRef.current ?? false) : false) ||
+        (isWeaponChargeMovingRef ? (isWeaponChargeMovingRef.current ?? false) : false);
     if (wasTrailMotionActive.current && !isTrailMotionActive) {
       lastDashEndTime.current = Date.now();
     }

@@ -15,12 +15,18 @@ interface WeaverModelProps {
   onImpactFinished?: () => void;
 }
 
-useGLTF.preload('/models/weaver_idle.glb');
-useGLTF.preload('/models/weaver_walk.glb');
-useGLTF.preload('/models/weaver_castheal.glb');
-useGLTF.preload('/models/weaver_castsummon.glb');
-useGLTF.preload('/models/weaver_death.glb');
-useGLTF.preload('/models/weaver_impact.glb');
+const WEAVER_MODEL_PATHS = [
+  '/models/weaver_idle.glb',
+  '/models/weaver_walk.glb',
+  '/models/weaver_castheal.glb',
+  '/models/weaver_castsummon.glb',
+  '/models/weaver_death.glb',
+  '/models/weaver_impact.glb',
+];
+
+export function preloadWeaverModels(): void {
+  WEAVER_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+}
 
 const SCALE = 0.01235;
 

@@ -15,12 +15,18 @@ interface WarlockModelProps {
   onImpactFinished?: () => void;
 }
 
-useGLTF.preload('/models/warlock_idle.glb');
-useGLTF.preload('/models/warlock_walk.glb');
-useGLTF.preload('/models/warlock_blink.glb');
-useGLTF.preload('/models/warlock_launch.glb');
-useGLTF.preload('/models/warlock_death.glb');
-useGLTF.preload('/models/warlock_impact.glb');
+const WARLOCK_MODEL_PATHS = [
+  '/models/warlock_idle.glb',
+  '/models/warlock_walk.glb',
+  '/models/warlock_blink.glb',
+  '/models/warlock_launch.glb',
+  '/models/warlock_death.glb',
+  '/models/warlock_impact.glb',
+];
+
+export function preloadWarlockModels(): void {
+  WARLOCK_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+}
 
 const SCALE = 0.0125;
 

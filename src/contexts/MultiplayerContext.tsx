@@ -11,6 +11,20 @@ import { ExperienceSystem } from '@/utils/ExperienceSystem';
 import { StatSystem, StatPointData, StatKey, PlayerStats } from '@/utils/StatSystem';
 import { Vector3 } from '@/utils/three-exports';
 
+export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'chaos' | 'healing' | 'boss';
+
+export interface PlayerMovementDirection {
+  x: number;
+  y: number;
+  z: number;
+  inputStrength?: number;
+  isGrounded?: boolean;
+  isDashing?: boolean;
+  dashDirection?: { x: number; y: number; z: number };
+  isAttackSlowed?: boolean;
+  isIcebeaming?: boolean;
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -22,7 +36,7 @@ export interface Player {
   maxHealth: number;
   shield?: number;
   maxShield?: number;
-  movementDirection?: { x: number; y: number; z: number };
+  movementDirection?: PlayerMovementDirection;
   // Co-op Experience system
   experience?: number;
   level?: number;
@@ -51,7 +65,7 @@ export interface EnemyDamageMeta {
   infernoCrossentropy?: boolean;
   /** Reaper talent (Crossentropy) — server counts kills for Reaper stack. */
   reaperCrossentropy?: boolean;
-  /** Staggering Strike (`wraith_strike`), Runeblade combo (`runeblade_combo`), Sabres (`sabre_left` / `sabre_right`), Staggering Smite (`smite` with `staggerToAdd`), or Stagger Shot (`projectile` with `staggerToAdd`): server accumulates stagger. */
+  /** Staggering Strike (`wraith_strike`), Runeblade combo (`runeblade_combo`), Sabres (`sabre_left` / `sabre_right`), Staggering Smite (`smite` with `staggerToAdd`), Stagger Shot (`projectile` with `staggerToAdd`), TEMPEST Crossentropy (`crossentropy` with `staggerToAdd`): server accumulates stagger. */
   staggerToAdd?: number;
   /** Wyvern Bite — Barrage hit applies Concentrated Venom stack on server. */
   wyvernBiteVenom?: boolean;
@@ -59,6 +73,24 @@ export interface EnemyDamageMeta {
   wyvernStingVenomZombie?: boolean;
   /** Wyvern Bite Concentrated Venom DoT tick — kill may raise infested zombie. */
   wyvernBiteConcentratedDoT?: boolean;
+  /** Scythe Wrathful Entropic bolt — coop routing (crit computed client-side). */
+  entropicWrathful?: boolean;
+  /** Scythe Infesting Entropic bolt — zombie on kill (server). */
+  entropicInfesting?: boolean;
+  /** Scythe Wrathful Entropic beam. */
+  icebeamWrathful?: boolean;
+  /** Scythe Infesting Entropic beam — zombie + heal on kill (server). */
+  icebeamInfested?: boolean;
+  /** Sabres Backstab — server zombie on kill routing. */
+  infestedBackstab?: boolean;
+  /** Sabres LMB — Infesting Swipes talent; server zombie on kill. */
+  sabreInfestingSwipes?: boolean;
+  /** Sabres Flourish — Infested Flourish talent; server zombie on kill (`damageType` `sunder`). */
+  infestedFlourish?: boolean;
+  /** Sabres Killstreak — stack increment on Backstab kill (server). */
+  killstreakBackstab?: boolean;
+  /** Sabres Relentless — heal + cooldown RPC on Backstab kill (server). */
+  relentlessBackstab?: boolean;
 }
 
 /** Server enemy; `type` includes e.g. `knight`, `training-dummy` (throne prep). */
@@ -179,11 +211,20 @@ interface MultiplayerContextType {
   thronePortalLayout: 'rim' | 'center';
   /** Co-op: main combat map — two portals (wave 2), boss gate, or post-boss continuation. Null otherwise. */
   coopMainArenaPortalPhase: 'pick_wave2' | 'pick_boss' | 'pick_post_boss' | null;
+  /** Co-op: active destination/reward kind for environment and pedestal behavior. */
+  coopCurrentRoomKind: CoopRoomKind | null;
+  /** Co-op: completed room kind for the current pedestal reward. */
+  coopClearedRoomKind: CoopRoomKind | null;
   /**
    * Co-op: stripped throne shell (boss fight + post-boss portal pause). False on prep throne and main castle map.
    * Authoritative from server (`room-joined`, `combat-arena-entered`, `coop-main-arena-intermission`).
    */
   coopBossThroneArena: boolean;
+  /**
+   * Co-op: which boss the throne fight is (boss tier 1, Archon tier 2, or Weaver Nexus tier 3).
+   * From `room-joined`, `combat-arena-entered`, `coop-main-arena-intermission`, `game-started`.
+   */
+  coopThroneBossKind: 'boss' | 'boss2' | 'boss3' | null;
   /**
    * Full-screen loading overlay for portal transitions (throne → arena, wave picks, boss).
    * Set true on `combat-arena-entered`; clear via `endCoopPortalTransition` after the scene settles.
@@ -232,7 +273,7 @@ interface MultiplayerContextType {
   enterCombatArena: (chosenCampType?: string) => void;
   
   // Player actions
-  updatePlayerPosition: (position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: { x: number; y: number; z: number }) => void;
+  updatePlayerPosition: (position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: PlayerMovementDirection) => void;
   updatePlayerWeapon: (weapon: WeaponType, subclass?: WeaponSubclass) => void;
   updatePlayerHealth: (health: number, maxHealth?: number) => void;
   broadcastPlayerAttack: (attackType: string, position: { x: number; y: number; z: number }, direction: { x: number; y: number; z: number }, animationData?: { comboStep?: 1 | 2 | 3; chargeProgress?: number; isSpinning?: boolean; isPerfectShot?: boolean; damage?: number; targetId?: number; hitPosition?: { x: number; y: number; z: number }; isSwordCharging?: boolean; storedCharge?: boolean }) => void;
@@ -280,10 +321,12 @@ interface MultiplayerContextType {
   // Skill point system actions
   unlockAbility: (unlock: AbilityUnlock) => void;
   updateSkillPointsForLevel: (level: number) => void;
+  grantSkillPoints: (amount: number) => void;
 
   // Stat point system actions
   allocateStatPoint: (stat: StatKey) => void;
   updateStatPointsForLevel: (level: number) => void;
+  grantStatPoints: (amount: number) => void;
 
   // Item drop & inventory
   droppedItems: Map<string, DroppedItem>;
@@ -317,6 +360,7 @@ interface MultiplayerProviderProps {
 }
 
 const VALID_CAMP_KEYS = new Set(['red', 'blue', 'green', 'purple']);
+const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'chaos', 'healing', 'boss']);
 
 function normalizeThronePortalLayout(v: unknown): 'rim' | 'center' {
   return v === 'center' ? 'center' : 'rim';
@@ -327,8 +371,21 @@ function normalizeCoopMainArenaPhase(v: unknown): 'pick_wave2' | 'pick_boss' | '
   return null;
 }
 
+function normalizeCoopRoomKind(v: unknown): CoopRoomKind | null {
+  const k = String(v || '').toLowerCase();
+  return VALID_COOP_ROOM_KINDS.has(k) ? (k as CoopRoomKind) : null;
+}
+
 function normalizeCoopBossThroneArena(v: unknown): boolean {
   return v === true;
+}
+
+function normalizeCoopThroneBossKind(v: unknown): 'boss' | 'boss2' | 'boss3' | null {
+  const k = String(v || '').toLowerCase();
+  if (k === 'boss3') return 'boss3';
+  if (k === 'boss2') return 'boss2';
+  if (k === 'boss') return 'boss';
+  return null;
 }
 
 /** Normalize server `campTypes` or infer from `enemies[].campType` for environment theme sync. */
@@ -370,8 +427,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopMainArenaPortalPhase, setCoopMainArenaPortalPhase] = useState<
     'pick_wave2' | 'pick_boss' | 'pick_post_boss' | null
   >(null);
+  const [coopCurrentRoomKind, setCoopCurrentRoomKind] = useState<CoopRoomKind | null>(null);
+  const [coopClearedRoomKind, setCoopClearedRoomKind] = useState<CoopRoomKind | null>(null);
   const [coopBossThroneArena, setCoopBossThroneArena] = useState(false);
+  const [coopThroneBossKind, setCoopThroneBossKind] = useState<'boss' | 'boss2' | 'boss3' | null>(null);
   const [coopTransitionOverlay, setCoopTransitionOverlay] = useState(false);
+  const [coopCombatTransitionId, setCoopCombatTransitionId] = useState<number | null>(null);
   const [coopCombatArenaEnterSeq, setCoopCombatArenaEnterSeq] = useState(0);
   const [coopMainArenaIntermissionSeq, setCoopMainArenaIntermissionSeq] = useState(0);
   const [coopBossClearedBgmSeq, setCoopBossClearedBgmSeq] = useState(0);
@@ -511,6 +572,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     addEventHandler('room-joined', (data) => {
       console.log('🏠 Joined room:', data);
       (window as any).controlSystemRef?.current?.setReaperCrossentropyStack(0);
+      (window as any).controlSystemRef?.current?.setBackstabKillstreakStack(0);
       cancelPendingEnemyRemovals();
       setIsInRoom(true);
       setCurrentRoomId(data.roomId);
@@ -554,6 +616,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopBossThroneArena(
         normalizeCoopBossThroneArena((data as { coopBossThroneArena?: boolean }).coopBossThroneArena),
       );
+      if ('coopThroneBossKind' in (data as object)) {
+        setCoopThroneBossKind(normalizeCoopThroneBossKind((data as { coopThroneBossKind?: unknown }).coopThroneBossKind));
+      } else {
+        setCoopThroneBossKind(null);
+      }
+      setCoopCurrentRoomKind(normalizeCoopRoomKind((data as { coopCurrentRoomKind?: string }).coopCurrentRoomKind));
+      setCoopClearedRoomKind(normalizeCoopRoomKind((data as { coopClearedRoomKind?: string }).coopClearedRoomKind));
       const ms = (data as { mushroomState?: { health?: number[]; maxHealth?: number } }).mushroomState;
       if (ms?.health && Array.isArray(ms.health)) {
         setMushroomState({ health: [...ms.health], maxHealth: ms.maxHealth ?? 10 });
@@ -562,9 +631,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       }
     });
 
-    addEventHandler('camps-initialized', (data: { campTypes?: string[] }) => {
+    addEventHandler('camps-initialized', (data: { campTypes?: string[]; coopCurrentRoomKind?: string }) => {
       const next = campArchetypeFromRoomPayload({ campTypes: data.campTypes });
       if (next.length > 0) setCampTypes(next);
+      if (data.coopCurrentRoomKind != null) {
+        setCoopCurrentRoomKind(normalizeCoopRoomKind(data.coopCurrentRoomKind));
+      }
     });
 
     addEventHandler('room-full', () => {
@@ -686,6 +758,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       (window as any).controlSystemRef?.current?.setReaperCrossentropyStack(data.stacks ?? 0);
     });
 
+    addEventHandler('backstab-killstreak-stack', (data: { stacks: number }) => {
+      (window as any).controlSystemRef?.current?.setBackstabKillstreakStack(data.stacks ?? 0);
+    });
+
+    addEventHandler('sabres-relentless-backstab-kill', () => {
+      (window as any).controlSystemRef?.current?.resetBackstabCooldownForRelentless();
+    });
+
     addEventHandler('mushroom-damaged', (data: { index: number; newHealth: number; maxHealth: number }) => {
       setMushroomState((prev) => {
         if (!prev) return prev;
@@ -705,7 +785,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     addEventHandler('enemy-damaged', (data) => {
+      const isThroneDummy = String(data.enemyId || '').startsWith('throne-training-dummy');
+      /** Do not stack floating DoT text on lethal / zero-HP snapshots (death uses other VFX/sounds). */
+      const skipDotFloating =
+        data.wasKilled === true ||
+        (typeof data.newHealth === 'number' &&
+          data.newHealth <= 0 &&
+          !isThroneDummy);
+
       if (
+        !skipDotFloating &&
         (data.damageType === 'ignite' ||
           data.damageType === 'venom' ||
           data.damageType === 'wyvern_talons_detonate') &&
@@ -722,11 +811,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         }
       }
 
-      // Throttle enemy damage updates to prevent infinite re-renders (throne training dummy: always apply so HP bar stays accurate under rapid fire)
+      // Throttle enemy damage updates to prevent infinite re-renders (throne training dummy: always apply so HP bar stays accurate under rapid fire). Never throttle kill packets — dropping wasKilled breaks death VFX/sync.
       const now = Date.now();
       const lastUpdate = lastEnemyDamageUpdate.current[data.enemyId] || 0;
-      const isThroneDummy = String(data.enemyId || '').startsWith('throne-training-dummy');
-      if (!isThroneDummy && now - lastUpdate < 50) {
+      const urgent = data.wasKilled === true;
+      if (!isThroneDummy && !urgent && now - lastUpdate < 50) {
         return;
       }
       lastEnemyDamageUpdate.current[data.enemyId] = now;
@@ -739,11 +828,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           enemy.health = data.newHealth;
           enemy.maxHealth = data.maxHealth;
 
-          // Handle enemy death (throne training dummy resets HP on server — never mark dying)
-          if (data.wasKilled && enemy.type !== 'training-dummy') {
-            enemy.isDying = true;
-            // Play death sound at the enemy's position
-            (window as any).audioSystem?.playEnemyDeathSound(enemy.position, enemy.type);
+          // Mark dying so renderers run death animations (throne / training dummies excluded)
+          if (enemy.type !== 'training-dummy' && !isThroneDummy) {
+            const shouldMarkDying =
+              data.wasKilled === true ||
+              (typeof data.newHealth === 'number' && data.newHealth <= 0);
+            if (shouldMarkDying) {
+              enemy.isDying = true;
+              if (data.wasKilled === true) {
+                (window as any).audioSystem?.playEnemyDeathSound(enemy.position, enemy.type);
+              }
+            }
           }
         }
         // Silently ignore if enemy not found - it may have been removed already (died)
@@ -897,6 +992,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       } else {
         setCoopBossThroneArena(false);
       }
+      if (data && 'coopThroneBossKind' in data) {
+        setCoopThroneBossKind(normalizeCoopThroneBossKind(data.coopThroneBossKind));
+      } else {
+        setCoopThroneBossKind(null);
+      }
+      setCoopCurrentRoomKind(normalizeCoopRoomKind(data?.coopCurrentRoomKind));
+      setCoopClearedRoomKind(normalizeCoopRoomKind(data?.coopClearedRoomKind));
       if (data?.mushroomState?.health && Array.isArray(data.mushroomState.health)) {
         setMushroomState({
           health: [...data.mushroomState.health],
@@ -927,6 +1029,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopMainArenaPortalPhase(normalizeCoopMainArenaPhase(data?.coopMainArenaPortalPhase));
       if (data && 'coopBossThroneArena' in data) {
         setCoopBossThroneArena(normalizeCoopBossThroneArena(data.coopBossThroneArena));
+      }
+      if (data && 'coopThroneBossKind' in data) {
+        setCoopThroneBossKind(normalizeCoopThroneBossKind(data.coopThroneBossKind));
+      }
+      if (data && 'coopCurrentRoomKind' in data) {
+        setCoopCurrentRoomKind(normalizeCoopRoomKind(data.coopCurrentRoomKind));
+      }
+      if (data && 'coopClearedRoomKind' in data) {
+        setCoopClearedRoomKind(normalizeCoopRoomKind(data.coopClearedRoomKind));
+      } else {
+        setCoopClearedRoomKind(normalizeCoopRoomKind(data?.coopClearedRoomColor));
       }
       if (data?.players && Array.isArray(data.players)) {
         setPlayers((prev) => {
@@ -963,6 +1076,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       } else {
         setCoopBossThroneArena(false);
       }
+      if (data && 'coopThroneBossKind' in data) {
+        setCoopThroneBossKind(normalizeCoopThroneBossKind(data.coopThroneBossKind));
+      } else {
+        setCoopThroneBossKind(null);
+      }
+      setCoopCurrentRoomKind(normalizeCoopRoomKind(data?.coopCurrentRoomKind));
+      setCoopClearedRoomKind(null);
+      const transitionId = data?.coopCombatTransitionId != null
+        ? Number(data.coopCombatTransitionId)
+        : NaN;
+      setCoopCombatTransitionId(Number.isFinite(transitionId) ? transitionId : null);
       setCoopTransitionOverlay(true);
       setCoopCombatArenaEnterSeq((s) => s + 1);
       if (data?.players && Array.isArray(data.players)) {
@@ -1217,7 +1341,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setThronePortalLayout('rim');
     setCoopMainArenaPortalPhase(null);
     setCoopBossThroneArena(false);
+    setCoopThroneBossKind(null);
     setCoopTransitionOverlay(false);
+    setCoopCombatTransitionId(null);
     setCoopCombatArenaEnterSeq(0);
     setCoopMainArenaIntermissionSeq(0);
     setCoopBossClearedBgmSeq(0);
@@ -1252,14 +1378,23 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   }, [socket, currentRoomId]);
 
   const endCoopPortalTransition = useCallback(() => {
+    if (socket && currentRoomId && coopCombatTransitionId != null) {
+      socket.emit('coop-combat-transition-ready', {
+        roomId: currentRoomId,
+        transitionId: coopCombatTransitionId,
+        timestamp: Date.now(),
+      });
+    }
+    setCoopCombatTransitionId(null);
     setCoopTransitionOverlay(false);
-  }, []);
+  }, [socket, currentRoomId, coopCombatTransitionId]);
 
   const clearCoopClearedRoomColor = useCallback(() => {
     setCoopClearedRoomColor(null);
+    setCoopClearedRoomKind(null);
   }, []);
 
-  const updatePlayerPosition = useCallback((position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: { x: number; y: number; z: number }) => {
+  const updatePlayerPosition = useCallback((position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: PlayerMovementDirection) => {
     if (socket && currentRoomId) {
       socket.emit('player-update', {
         roomId: currentRoomId,
@@ -1355,6 +1490,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.wyvernBiteVenom ? { wyvernBiteVenom: true } : {}),
         ...(meta?.wyvernStingVenomZombie ? { wyvernStingVenomZombie: true } : {}),
         ...(meta?.wyvernBiteConcentratedDoT ? { wyvernBiteConcentratedDoT: true } : {}),
+        ...(meta?.entropicWrathful ? { entropicWrathful: true } : {}),
+        ...(meta?.entropicInfesting ? { entropicInfesting: true } : {}),
+        ...(meta?.icebeamWrathful ? { icebeamWrathful: true } : {}),
+        ...(meta?.icebeamInfested ? { icebeamInfested: true } : {}),
+        ...(meta?.infestedBackstab ? { infestedBackstab: true } : {}),
+        ...(meta?.sabreInfestingSwipes ? { sabreInfestingSwipes: true } : {}),
+        ...(meta?.infestedFlourish ? { infestedFlourish: true } : {}),
+        ...(meta?.killstreakBackstab ? { killstreakBackstab: true } : {}),
+        ...(meta?.relentlessBackstab ? { relentlessBackstab: true } : {}),
       });
     }
   }, [socket, currentRoomId]);
@@ -1396,6 +1540,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
 
   const broadcastPlayerDamage = useCallback((targetPlayerId: string, damage: number, damageType?: string, isCritical?: boolean) => {
+    if (gameMode === 'coop') {
+      return;
+    }
+
     if (socket && currentRoomId) {
 
       socket.emit('player-damage', {
@@ -1406,7 +1554,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         isCritical
       });
     }
-  }, [socket, currentRoomId]);
+  }, [socket, currentRoomId, gameMode]);
 
   const broadcastPlayerHealing = useCallback((healingAmount: number, healingType: string, position: { x: number; y: number; z: number }, targetPlayerId?: string) => {
     if (socket && currentRoomId) {
@@ -1569,6 +1717,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setSkillPointData(newSkillPointData);
   }, [skillPointData]);
 
+  const grantSkillPoints = useCallback((amount: number) => {
+    setSkillPointData((prev) => SkillPointSystem.grantSkillPoints(prev, amount));
+  }, []);
+
   const allocateStatPoint = useCallback((stat: StatKey) => {
     try {
       const newStatPointData = StatSystem.allocateStat(statPointData, stat);
@@ -1582,6 +1734,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     const newStatPointData = StatSystem.updateStatPointsForLevel(statPointData, level);
     setStatPointData(newStatPointData);
   }, [statPointData]);
+
+  const grantStatPoints = useCallback((amount: number) => {
+    setStatPointData((prev) => StatSystem.grantStatPoints(prev, amount));
+  }, []);
 
   const purchaseItem = useCallback((itemId: string, cost: number, currency: 'essence'): boolean => {
     // Try to find local player by socket ID first, then by looking for any player (for single-player mode)
@@ -1689,7 +1845,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     thronePortalOffer,
     thronePortalLayout,
     coopMainArenaPortalPhase,
+    coopCurrentRoomKind,
+    coopClearedRoomKind,
     coopBossThroneArena,
+    coopThroneBossKind,
     coopTransitionOverlay,
     coopCombatArenaEnterSeq,
     coopMainArenaIntermissionSeq,
@@ -1736,9 +1895,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     skillPointData,
     unlockAbility,
     updateSkillPointsForLevel,
+    grantSkillPoints,
     statPointData,
     allocateStatPoint,
     updateStatPointsForLevel,
+    grantStatPoints,
     purchaseItem,
     droppedItems,
     inventory,

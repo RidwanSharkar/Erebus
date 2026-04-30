@@ -6,6 +6,13 @@ import { Transform } from '@/ecs/components/Transform';
 import { CombatSystem } from '@/systems/CombatSystem';
 import Icebeam from '@/components/weapons/Icebeam';
 import { ICEBEAM_MAX_HOLD_SEC } from '@/utils/icebeamConstants';
+import {
+  shouldApplyWrathfulEntropicTalent,
+  shouldApplyStaggeringEntropicTalent,
+  shouldApplyInfestingEntropicTalent,
+  STAGGERING_ENTROPIC_BEAM_STAGGER_PER_TICK,
+} from '@/utils/talents';
+import type { Entity } from '@/ecs/Entity';
 
 interface IcebeamManagerProps {
   world: World;
@@ -115,14 +122,40 @@ export default function IcebeamManager({
       const perpendicularDistance = enemyPos2D.distanceTo(projectedPoint);
       
       if (perpendicularDistance < BEAM_WIDTH) {
+        const cs = (window as any).controlSystemRef?.current;
+        const talentLoadout = cs?.talentLoadout;
+        const icebeamBoon = talentLoadout?.icebeam === true;
+        const playerEntity = cs?.playerEntity as Entity | undefined;
+        const sourcePlayerId =
+          playerEntity?.userData?.playerId ?? playerEntity?.userData?.player_id ?? undefined;
+
+        const staggeringBeam =
+          icebeamBoon && shouldApplyStaggeringEntropicTalent(talentLoadout);
+        const wrathBeam = icebeamBoon && shouldApplyWrathfulEntropicTalent(talentLoadout);
+        const infestBeam = icebeamBoon && shouldApplyInfestingEntropicTalent(talentLoadout);
+
         combatSystem.queueDamage(
           entity,
           finalDamage,
-          undefined,
+          playerEntity,
           'icebeam',
-          undefined
+          sourcePlayerId,
+          undefined,
+          undefined,
+          staggeringBeam ? STAGGERING_ENTROPIC_BEAM_STAGGER_PER_TICK : undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          wrathBeam === true ? true : undefined,
+          infestBeam === true ? true : undefined,
         );
-        
+
         lastDamageTime.current[entity.id] = now;
       }
     });

@@ -43,14 +43,59 @@ export const TALENT_BLIZZARD = 'BLIZZARD' as const;
 export const TALENT_SPELLBLADE = 'SPELLBLADE' as const;
 export const TALENT_TEMPEST_ROUNDS = 'TEMPEST_ROUNDS' as const;
 export const TALENT_ICEBEAM = 'ICEBEAM' as const;
+export const TALENT_BREATH_WEAPON = 'BREATH_WEAPON' as const;
+export const TALENT_STAGGERING_BITE = 'STAGGERING_BITE' as const;
+export const TALENT_STAGGERING_TALONS = 'STAGGERING_TALONS' as const;
+export const TALENT_WRATHFUL_SHOTS = 'WRATHFUL_SHOTS' as const;
+/** Scythe LMB Entropic Bolt + Icebeam paired boons (mutex with each other). */
+export const TALENT_WRATHFUL_ENTROPIC = 'WRATHFUL_ENTROPIC' as const;
+export const TALENT_STAGGERING_ENTROPIC = 'STAGGERING_ENTROPIC' as const;
+export const TALENT_INFESTING_ENTROPIC = 'INFESTING_ENTROPIC' as const;
+/** Mantra (Summon Totem, `SCYTHE_F`): bolt tint + stagger / crit / zombies (mutex with each other). */
+export const TALENT_WRATHFUL_TOTEM = 'WRATHFUL_TOTEM' as const;
+export const TALENT_STAGGERING_TOTEM = 'STAGGERING_TOTEM' as const;
+export const TALENT_INFESTING_TOTEM = 'INFESTING_TOTEM' as const;
+/** Crossentropy (`SCYTHE_R`) room boon: blue stagger theme + VFX. */
+export const TALENT_CROSSENTROPY_TEMPEST = 'CROSSENTROPY_TEMPEST' as const;
+/** Crossentropy (`SCYTHE_R`) room boon: green damage theme + VFX. */
+export const TALENT_CROSSENTROPY_PLAGUE = 'CROSSENTROPY_PLAGUE' as const;
+/** SHAMAN — extra Mantra (`SCYTHE_F`) charge (same staggered recharge as Double Strike). */
+export const TALENT_SHAMAN = 'SHAMAN' as const;
+
+/** Sabres Backstab (`SABRES_Q`) room boons — mutex with each other. */
+export const TALENT_STAGGERING_STAB = 'STAGGERING_STAB' as const;
+export const TALENT_WRATHFUL_STAB = 'WRATHFUL_STAB' as const;
+/** Killing an enemy with Backstab raises a zombie — same rules as Infested Strike; not INFESTED_STRIKE (Runeblade E). */
+export const TALENT_INFESTED_BACKSTAB = 'INFESTED_BACKSTAB' as const;
+/** Sabres LMB room boons — mutex with staggering swipes line. */
+export const TALENT_WRATHFUL_SABRES_SWIPES = 'WRATHFUL_SABRES_SWIPES' as const;
+export const TALENT_INFESTING_SABRES_SWIPES = 'INFESTING_SABRES_SWIPES' as const;
+/** Sabres Flourish (`SABRES_E`) room boons — mutex with each other. */
+export const TALENT_STAGGERING_FLOURISH = 'STAGGERING_FLOURISH' as const;
+export const TALENT_WRATHFUL_FLOURISH = 'WRATHFUL_FLOURISH' as const;
+export const TALENT_INFESTED_FLOURISH = 'INFESTED_FLOURISH' as const;
+
+/** Sabres class boons — Backstab (`SABRES_Q`) session stacking / on-kill (see room boons for palette picks). */
+export const TALENT_KILLSTREAK = 'KILLSTREAK' as const;
+export const TALENT_RELENTLESS = 'RELENTLESS' as const;
 
 /** Blade Rush — double-tap forward Charge on Runeblade; separate from E-key Charge cooldown. */
 export const BLADE_RUSH_CHARGE_COOLDOWN_SEC = 3;
 
 /** Crossentropy (`SCYTHE_R`) base hit damage before Reaper stack bonus. */
 export const CROSSENTROPY_BASE_DAMAGE = 370;
+/** PLAGUE boon: Crossentropy base hit damage before Reaper stack bonus. */
+export const CROSSENTROPY_PLAGUE_DAMAGE = 500;
+/** TEMPEST boon: stagger added per Crossentropy hit. */
+export const CROSSENTROPY_TEMPEST_STAGGER = 100;
 /** Reaper: +1 base damage per enemy kill (session). */
 export const CROSSENTROPY_REAPER_DAMAGE_PER_KILL = 1;
+/** Killstreak (Sabres): +base Backstab damage per Backstab kill this session (server-synced in co-op). */
+export const BACKSTAB_KILLSTREAK_DAMAGE_PER_KILL = 2;
+/** Relentless (Sabres): HP healed when Backstab kills an enemy (server). */
+export const RELENTLESS_BACKSTAB_KILL_HEAL = 10;
+/** Reaper: HP healed to the caster per enemy hit by piercing Crossentropy (client-applied; excludes training dummy in co-op). */
+export const CROSSENTROPY_REAPER_HIT_HEAL = 1;
 /**
  * Max world units the Crossentropy bolt travels (matches legacy VFX in CrossentropyBolt).
  * Reaper uses this for ECS `maxDistance` so the pierce line does not outrange normal Crossentropy.
@@ -58,7 +103,7 @@ export const CROSSENTROPY_REAPER_DAMAGE_PER_KILL = 1;
 export const CROSSENTROPY_MAX_TRAVEL_DISTANCE = 20;
 
 /** Scythe Q — Sunwell (Reanimate) self-heal and ally heal amount (HP). */
-export const REANIMATE_SUNWELL_HEAL = 30;
+export const REANIMATE_SUNWELL_HEAL = 15;
 
 /** Scythe Q — Sunwell (Reanimate) cooldown in seconds. */
 export const REANIMATE_SUNWELL_COOLDOWN_SEC = 5;
@@ -73,7 +118,15 @@ export const RUNEBLADE_SMITE_BASE_HEAL = 10;
 export const REAPING_TALONS_RETURN_HEAL_PER_ORB = 4;
 
 /** Runeblade — HP healed per successful LMB swing while Storm Shroud (Flurry) is active (Windfury / ability). */
-export const RUNEBLADE_FLURRY_HEAL_PER_SLASH = 3;
+export const RUNEBLADE_FLURRY_HEAL_PER_SLASH = 2;
+
+/** Runeblade only: `effectiveFireRate /=` this while Flurry is active (Spear/Sword use 1.5). */
+export const RUNEBLADE_FLURRY_ATTACK_SPEED_FACTOR = 1.35;
+
+/** Min ms between Flurry heal floating VFX (ControlSystem). */
+export const FLURRY_HEAL_VFX_MIN_INTERVAL_MS = 300;
+/** Min ms between flurry heal damage numbers and co-op healing broadcast. */
+export const FLURRY_HEAL_NUMBER_MIN_INTERVAL_MS = 350;
 
 /** Infernal Smite — Ignite DoT: this fraction of the smite hit damage over INFERNAL_SMITE_DURATION_MS. */
 export const INFERNAL_SMITE_DOT_FRACTION = 0.7;
@@ -125,16 +178,55 @@ export type TalentId =
   | typeof TALENT_BLIZZARD
   | typeof TALENT_SPELLBLADE
   | typeof TALENT_TEMPEST_ROUNDS
-  | typeof TALENT_ICEBEAM;
+  | typeof TALENT_ICEBEAM
+  | typeof TALENT_BREATH_WEAPON
+  | typeof TALENT_STAGGERING_BITE
+  | typeof TALENT_STAGGERING_TALONS
+  | typeof TALENT_WRATHFUL_SHOTS
+  | typeof TALENT_WRATHFUL_ENTROPIC
+  | typeof TALENT_STAGGERING_ENTROPIC
+  | typeof TALENT_INFESTING_ENTROPIC
+  | typeof TALENT_WRATHFUL_TOTEM
+  | typeof TALENT_STAGGERING_TOTEM
+  | typeof TALENT_INFESTING_TOTEM
+  | typeof TALENT_CROSSENTROPY_TEMPEST
+  | typeof TALENT_CROSSENTROPY_PLAGUE
+  | typeof TALENT_SHAMAN
+  | typeof TALENT_STAGGERING_STAB
+  | typeof TALENT_WRATHFUL_STAB
+  | typeof TALENT_INFESTED_BACKSTAB
+  | typeof TALENT_WRATHFUL_SABRES_SWIPES
+  | typeof TALENT_INFESTING_SABRES_SWIPES
+  | typeof TALENT_STAGGERING_FLOURISH
+  | typeof TALENT_WRATHFUL_FLOURISH
+  | typeof TALENT_INFESTED_FLOURISH
+  | typeof TALENT_KILLSTREAK
+  | typeof TALENT_RELENTLESS;
+
+/** Crossentropy bolt / explosion palette (Inferno overrides Tempest/Plague). */
+export type CrossentropyVisualTheme = 'default' | 'inferno' | 'tempest' | 'plague';
+
+/** Mantra totem bolt visual + damage tuning (exclusive in boon UX). */
+export type TotemBoltVariant = 'wrathful' | 'staggering' | 'infesting';
 
 /** Wraith Strike (`RUNEBLADE_E`) base cooldown in seconds (single charge or per-charge recharge with Double Strike). */
 export const WRAITH_STRIKE_COOLDOWN_SEC = 4.5;
 /** Double Strike — max stored Wraith Strike uses; recharges one charge at a time at `WRAITH_STRIKE_COOLDOWN_SEC`. */
 export const WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES = 2;
 
+/** SHAMAN — max stored Mantra (`SCYTHE_F`) uses; recharges one charge at a time at summon totem cooldown (see ControlSystem `summonTotemFireRate`). */
+export const MANTRA_SHAMAN_MAX_CHARGES = 2;
+
 /** SPELLBLADE — +effective intellect while Wraith Strike is in loadout (+2 max shield per point, see StatSystem). */
 export const SPELLBLADE_INTELLECT_BONUS = 10;
 export const SPELLBLADE_WRAITH_STRIKE_SHIELD_RESTORE = 30;
+
+/** Aftershock (talent id `BREATH_WEAPON`) — Wraith Strike ground strip; detonation after delay. */
+export const BREATH_WEAPON_DAMAGE = 100;
+export const AFTERSHOCK_STRIP_LENGTH = 7.5;
+export const AFTERSHOCK_DETONATION_DELAY_MS = 1000;
+/** Lateral distance from strip centerline (XZ) for hit and VFX width. */
+export const AFTERSHOCK_STRIP_HALF_WIDTH = 1;
 
 /** Modifies Wraith Strike (`RUNEBLADE_E`) when equipped in Q/E/R. */
 export const WRATH_STRIKE_CRIT_CHANCE_ADD = 0.5;
@@ -171,7 +263,7 @@ export const COBRA_SHOT_VENOM_DURATION_SEC = 6;
 export const COBRA_SHOT_HIT_DAMAGE = COBRA_SHOT_VENOM_DAMAGE_PER_SECOND;
  
 /** Wraith Guard — Wraith Strike (`RUNEBLADE_E`) enemy hits can proc Aegis-like barrier + invuln (no Aegis cooldown). */
-export const WRAITH_GUARD_PROC_CHANCE = 0.75;
+export const WRAITH_GUARD_PROC_CHANCE = 1.0;
 export const WRAITH_GUARD_DURATION_SEC = 2;
 
 /** Colossus Guard — Colossus Smite (`RUNEBLADE_R`) beam hits on PvE enemies can proc Aegis-like barrier + invuln (no Aegis cooldown). */
@@ -192,7 +284,7 @@ export const GUARD_COMBO_PROC_CHANCE = 0.25;
 export const GUARD_COMBO_DURATION_SEC = 2;
 
 /** Dash Guard — double-tap dash (Movement.startDash) grants Aegis-like barrier + invuln (no Aegis cooldown). */
-export const DASH_GUARD_DURATION_SEC = 1.0;
+export const DASH_GUARD_DURATION_SEC = 2.0;
 
 /** EXECUTIONER — after a real dash (Movement.startDash), next Runeblade LMB within this window is treated as combo hit 3. */
 export const EXECUTIONER_POST_DASH_WINDOW_MS = 3000;
@@ -203,10 +295,13 @@ export const EXECUTIONER_BASE_DAMAGE_ADD = 40;
 export const FROSTPATH_PROC_CHANCE = 0.15;
 
 /** Solar Recharge — Entropic Bolt hits on PvE enemies can proc Sunwell (Reanimate) (no Q cooldown; does not require Sunwell in loadout). */
-export const SOLAR_RECHARGE_PROC_CHANCE = 0.15;
+export const SOLAR_RECHARGE_PROC_CHANCE = 0.1175;
+
+/** Min wall-clock ms between successful Frostpath Coldsnap execution or Solar Recharge Sunwell proc (separate per talent). */
+export const FROST_SOLAR_PROC_EFFECT_ICD_MS = 2500;
 
 /** Windfury — Spear primary or Runeblade left-click combo hits that damage an enemy can proc Storm Shroud (Flurry) without F cooldown. */
-export const WINDFURY_PROC_CHANCE = 0.15;
+export const WINDFURY_PROC_CHANCE = 0.1175;
 
 /** Crusader — Runeblade left-click hits that damage an enemy; matches Windfury proc rate. */
 export const CRUSADER_PROC_CHANCE = 0.15;
@@ -217,6 +312,8 @@ export const CRUSADER_LMB_FLAT_BONUS = 50;
 export const BLIZZARD_PROC_CHANCE = 0.15;
 export const BLIZZARD_DURATION_SEC = 7;
 export const BLIZZARD_DPS_PER_TICK = 42;
+/** World units: enemies within this radius (XZ, see Blizzard.tsx) of the storm center take tick damage; ≥ melee arc range so LMB hits align with storm. */
+export const BLIZZARD_STORM_HIT_RADIUS = 4.5;
 export const CHILL_STACK_DURATION_SEC = 4;
 export const CHILL_SLOW_PER_STACK = 0.2;
 export const CHILL_STACKS_TO_FREEZE = 5;
@@ -237,6 +334,24 @@ export const STAGGERING_COMBO_HIT3_STAGGER = 25;
 export const STAGGERING_SWIPES_LEFT_BLADE_STAGGER = 10;
 export const STAGGERING_SWIPES_RIGHT_BLADE_STAGGER = 10;
 
+/** Staggering Stab — Backstab applies this stagger server-side (`damageType` `backstab`). */
+export const STAGGERING_STAB_BACKSTAB_STAGGER = 80;
+/** Wrathful Stab — Backstab additive crit (see `calculateDamage`). */
+export const WRATHFUL_STAB_CRIT_CHANCE_ADD = 0.3;
+export const WRATHFUL_STAB_CRIT_DAMAGE_MULT_ADD = 0.6;
+/** Wrathful Sabres Swipes — LMB dual blades additive crit (see `calculateDamage`). */
+export const WRATHFUL_SABRES_SWIPES_CRIT_CHANCE_ADD = 0.2;
+export const WRATHFUL_SABRES_SWIPES_CRIT_DAMAGE_MULT_ADD = 1.0;
+/** Infesting Swipes — non-stealth LMB base damage (left / right sabre); stealth branch unchanged in ControlSystem. */
+export const INFESTING_SABRES_SWIPES_LEFT_DAMAGE = 29;
+export const INFESTING_SABRES_SWIPES_RIGHT_DAMAGE = 24;
+
+/** Staggering Flourish — Sunder (`damageType` `sunder`) stagger server-side. */
+export const STAGGERING_FLOURISH_STAGGER = 40;
+/** Wrathful Flourish — Flourish additive crit (see `calculateDamage` in ControlSystem). */
+export const WRATHFUL_FLOURISH_CRIT_CHANCE_ADD = 0.25;
+export const WRATHFUL_FLOURISH_CRIT_DAMAGE_MULT_ADD = 0.4;
+
 /** Staggering Smite — each Colossus Smite beam adds this stagger per enemy hit (same 100 cap / proc as other stagger talents). */
 export const STAGGERING_SMITE_BEAM_STAGGER = 40;
 
@@ -246,11 +361,31 @@ export const STAGGER_SHOT_CHARGED_STAGGER = 25;
 export const STAGGER_SHOT_PERFECT_STAGGER = 30;
 export const STAGGER_SHOT_TEMPEST_ROUND_STAGGER = 15;
 
+/** Staggering Bite — each Barrage arrow (Frostbite) adds this stagger. Same 100 cap / proc as other stagger talents. */
+export const STAGGERING_BITE_BARRAGE_STAGGER_PER_HIT = 20;
+/** Staggering Talons — Reaping Talons forward and return hit only (not Explosive end explosion). */
+export const STAGGERING_TALONS_HIT_STAGGER = 40;
+/** Wrathful Shots — perfect-timing bow primary only. */
+export const WRATHFUL_SHOTS_PERFECT_CRIT_CHANCE_ADD = 0.4;
+export const WRATHFUL_SHOTS_PERFECT_CRIT_DAMAGE_MULT_ADD = 0.5;
+
 /** Dual Coil — left/right offset for the twin Bow LMB spawns and perfect-shot beams (world units, half the pair’s separation is this distance from center). */
 export const DUAL_COIL_LATERAL_OFFSET = 0.16;
 
 /** Wyvern Sting — internal cooldown after a perfect shot procs a bonus Cobra Shot (separate from BOW_E). */
 export const WYVERN_STING_COOLDOWN_SEC = 5;
+
+/** Wrathful Entropic — bolts + beam additive crit (crit damage multiplier unchanged). */
+export const WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD = 0.4;
+export const WRATHFUL_ENTROPIC_BEAM_CRIT_CHANCE_ADD = 0.3;
+/** Staggering Entropic — bolt hit stagger and beam tick stagger (same cap/proc as other stagger talents). */
+export const STAGGERING_ENTROPIC_BOLT_STAGGER = 15;
+export const STAGGERING_ENTROPIC_BEAM_STAGGER_PER_TICK = 5;
+/** Infesting Entropic — bolt base damage when talent active; beam heal on kill. */
+export const INFESTING_ENTROPIC_BOLT_DAMAGE = 53;
+export const INFESTED_ENTROPIC_BEAM_KILL_HEAL = 5;
+/** Staggering Totem — stagger per bolt hit (`enemy-damage` entropic stagger path). */
+export const STAGGERING_TOTEM_STAGGER = 10;
 
 /** Wider lateral offset at hit point so paired floating damage numbers read side-by-side. */
 export const DUAL_COIL_DAMAGE_NUMBER_LATERAL_OFFSET = 0.48;
@@ -404,11 +539,27 @@ export const doubleStrikeTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'RUNEBLADE_E',
 };
 
+export const shamanTalentDefinition: TalentDefinition = {
+  id: TALENT_SHAMAN,
+  name: 'SHAMAN',
+  description:
+    'While Mantra is in your ability loadout, Mantra holds 2 charges. Each charge shares your Mantra cooldown; only one charge recharges at a time.',
+  modifiesAbilityId: 'SCYTHE_F',
+};
+
 export const spellbladeTalentDefinition: TalentDefinition = {
   id: TALENT_SPELLBLADE,
   name: 'SPELLBLADE',
   description:
     'While Wraith Strike is in your ability loadout, gain +10 Intellect (+20 max shield). Each Wraith Strike use restores 30 shield.',
+  modifiesAbilityId: 'RUNEBLADE_E',
+};
+
+export const breathWeaponTalentDefinition: TalentDefinition = {
+  id: TALENT_BREATH_WEAPON,
+  name: 'Aftershock',
+  description:
+    'When you cast Wraith Strike, scorch the ground in a forward strip (7.5u long, 2u wide). After 1 second, the strip erupts in flame pillars, dealing 100 damage to enemies still in the area.',
   modifiesAbilityId: 'RUNEBLADE_E',
 };
 
@@ -468,6 +619,90 @@ export const staggeringSwipesTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'SABRES_BASIC',
 };
 
+export const staggeringStabTalentDefinition: TalentDefinition = {
+  id: TALENT_STAGGERING_STAB,
+  name: 'Staggering Stab',
+  description:
+    'Backstab applies 80 stagger on hit. Uses the same stagger threshold, lightning proc, and stun as other stagger talents.',
+  modifiesAbilityId: 'SABRES_Q',
+};
+
+export const wrathfulStabTalentDefinition: TalentDefinition = {
+  id: TALENT_WRATHFUL_STAB,
+  name: 'Wrathful Stab',
+  description:
+    'Backstab gains +30% critical strike chance and +60% critical strike damage (additive to your normal crit stats).',
+  modifiesAbilityId: 'SABRES_Q',
+};
+
+export const infestedBackstabTalentDefinition: TalentDefinition = {
+  id: TALENT_INFESTED_BACKSTAB,
+  name: 'Infested Stab',
+  description:
+    'Killing an enemy with Backstab raises a zombie ally for 30s (max 3), same rules as Infested Strike and Infested Combo.',
+  modifiesAbilityId: 'SABRES_Q',
+};
+
+export const killstreakTalentDefinition: TalentDefinition = {
+  id: TALENT_KILLSTREAK,
+  name: 'KILLSTREAK',
+  description:
+    'Each enemy kill with Backstab grants +' +
+    BACKSTAB_KILLSTREAK_DAMAGE_PER_KILL +
+    ' permanent base damage to Backstab (positional backstab hit), for the rest of this run.',
+  modifiesAbilityId: 'SABRES_Q',
+};
+
+export const relentlessTalentDefinition: TalentDefinition = {
+  id: TALENT_RELENTLESS,
+  name: 'RELENTLESS',
+  description:
+    'Killing an enemy with Backstab fully resets Backstab cooldown and heals you for +' +
+    RELENTLESS_BACKSTAB_KILL_HEAL +
+    ' HP.',
+  modifiesAbilityId: 'SABRES_Q',
+};
+
+export const wrathfulSabresSwipesTalentDefinition: TalentDefinition = {
+  id: TALENT_WRATHFUL_SABRES_SWIPES,
+  name: 'Wrathful Swipes',
+  description:
+    'Sabres left-click attacks gain +20% critical strike chance and +100% critical strike damage.',
+  modifiesAbilityId: 'SABRES_BASIC',
+};
+
+export const infestingSabresSwipesTalentDefinition: TalentDefinition = {
+  id: TALENT_INFESTING_SABRES_SWIPES,
+  name: 'Infesting Swipes',
+  description:
+    'Sabres left-click base damage becomes 29 (left) and 24 (right). Killing an enemy with these attacks raises a zombie ally (same rules as other infesting talents).',
+  modifiesAbilityId: 'SABRES_BASIC',
+};
+
+export const staggeringFlourishTalentDefinition: TalentDefinition = {
+  id: TALENT_STAGGERING_FLOURISH,
+  name: 'Staggering Flourish',
+  description:
+    `Flourish (Sunder) applies ${STAGGERING_FLOURISH_STAGGER} stagger on hit. Same stagger threshold, lightning proc, and stun as other stagger talents.`,
+  modifiesAbilityId: 'SABRES_E',
+};
+
+export const wrathfulFlourishTalentDefinition: TalentDefinition = {
+  id: TALENT_WRATHFUL_FLOURISH,
+  name: 'Wrathful Flourish',
+  description:
+    `Flourish gains +${WRATHFUL_FLOURISH_CRIT_CHANCE_ADD * 100}% critical strike chance and +${WRATHFUL_FLOURISH_CRIT_DAMAGE_MULT_ADD * 100}% critical strike damage (additive to your normal crit stats).`,
+  modifiesAbilityId: 'SABRES_E',
+};
+
+export const infestedFlourishTalentDefinition: TalentDefinition = {
+  id: TALENT_INFESTED_FLOURISH,
+  name: 'Infested Flourish',
+  description:
+    'Killing an enemy with Flourish raises a zombie ally (same rules as Infested Stab and Infesting Swipes).',
+  modifiesAbilityId: 'SABRES_E',
+};
+
 export const staggerShotTalentDefinition: TalentDefinition = {
   id: TALENT_STAGGER_SHOT,
   name: 'STAGGER SHOT',
@@ -520,7 +755,7 @@ export const wrathfulBiteTalentDefinition: TalentDefinition = {
   id: TALENT_WRATHFUL_BITE,
   name: 'WRATHFUL BITE',
   description:
-    'While Frostbite is in your ability loadout, Barrage gains +40% critical strike chance and +40% critical strike damage, and Barrage arrows use a red theme instead of blue.',
+    'While Frostbite is in your ability loadout, Barrage gains +40% critical strike chance and +40% critical strike damage. Barrage arrows use a red theme (overrides the default orange-yellow Barrage look and Staggering Bite’s blue; Wyvern Bite’s green still takes precedence).',
   modifiesAbilityId: 'BOW_Q',
 };
 
@@ -528,8 +763,32 @@ export const wyvernBiteTalentDefinition: TalentDefinition = {
   id: TALENT_WYVERN_BITE,
   name: 'WYVERN BITE',
   description:
-    'While Frostbite is in your ability loadout, each Barrage arrow hit applies Concentrated Venom: 17 damage per second per stack (max 5 stacks) for 8 seconds, and Barrage arrows use a green theme.',
+    'While Frostbite is in your ability loadout, each Barrage arrow hit applies Concentrated Venom: 17 damage per second per stack (max 5 stacks) for 8 seconds. Barrage arrows use a green theme (overrides Wrathful Bite red and Staggering Bite blue).',
   modifiesAbilityId: 'BOW_Q',
+};
+
+export const staggeringBiteTalentDefinition: TalentDefinition = {
+  id: TALENT_STAGGERING_BITE,
+  name: 'STAGGERING BITE',
+  description:
+    'While Frostbite is in your ability loadout, each Barrage arrow hit applies stagger. Uses the same buildup, cap, and lightning proc as Stagger Shot and other stagger talents. Barrage arrows use a blue theme unless Wyvern Bite (green) or Wrathful Bite (red) is also active.',
+  modifiesAbilityId: 'BOW_Q',
+};
+
+export const staggeringTalonsTalentDefinition: TalentDefinition = {
+  id: TALENT_STAGGERING_TALONS,
+  name: 'STAGGERING TALONS',
+  description:
+    'While Reaping Talons is in your ability loadout, its forward and return hits each apply stagger. Uses the same buildup, cap, and lightning proc as other stagger talents.',
+  modifiesAbilityId: 'BOW_R',
+};
+
+export const wrathfulShotsTalentDefinition: TalentDefinition = {
+  id: TALENT_WRATHFUL_SHOTS,
+  name: 'WRATHFUL SHOTS',
+  description:
+    'Perfect-timing bow primary shots gain +40% critical strike chance and +50% critical strike damage.',
+  modifiesAbilityId: 'BOW_BASIC',
 };
 
 export const wyvernTalonsTalentDefinition: TalentDefinition = {
@@ -552,7 +811,23 @@ export const reaperTalentDefinition: TalentDefinition = {
   id: TALENT_REAPER,
   name: 'Reaper',
   description:
-    'While Crossentropy is in your ability loadout, the bolt travels to full range, pierces all enemies, and no longer spawns an explosion on hit. Killing an enemy with Crossentropy grants +1 base damage to Crossentropy for the rest of the session (stacks).',
+    'While Crossentropy is in your ability loadout, the bolt travels to full range, pierces all enemies, and no longer spawns an explosion on hit. The bolt trail uses a purple theme. Each enemy hit by the bolt heals you for 1 HP. Killing an enemy with Crossentropy grants +1 base damage to Crossentropy for the rest of the session (stacks).',
+  modifiesAbilityId: 'SCYTHE_R',
+};
+
+export const crossentropyTempestTalentDefinition: TalentDefinition = {
+  id: TALENT_CROSSENTROPY_TEMPEST,
+  name: 'TEMPEST',
+  description:
+    'While Crossentropy is in your ability loadout, Crossentropy uses a blue bolt and explosion theme and each hit applies 100 stagger.',
+  modifiesAbilityId: 'SCYTHE_R',
+};
+
+export const crossentropyPlagueTalentDefinition: TalentDefinition = {
+  id: TALENT_CROSSENTROPY_PLAGUE,
+  name: 'PLAGUE',
+  description:
+    'While Crossentropy is in your ability loadout, Crossentropy uses a green bolt and explosion theme and its base damage is 500 (before Reaper stacks).',
   modifiesAbilityId: 'SCYTHE_R',
 };
 
@@ -560,7 +835,7 @@ export const frostPathTalentDefinition: TalentDefinition = {
   id: TALENT_FROSTPATH,
   name: 'Frostpath',
   description:
-    'Each Entropic Bolt that hits a PvE enemy has a 20% chance to trigger a Coldsnap-style burst centered on that enemy (freeze and VFX; does not require or consume the Coldsnap ability).',
+    'Each Entropic Bolt that hits a PvE enemy has a 20% chance to trigger a Coldsnap-style burst centered on that enemy (freeze and VFX; does not require or consume the Coldsnap ability). Effects cannot occur more than once every 2.5 seconds.',
   modifiesAbilityId: 'SCYTHE_BASIC',
 };
 
@@ -568,8 +843,56 @@ export const solarRechargeTalentDefinition: TalentDefinition = {
   id: TALENT_SOLAR_RECHARGE,
   name: 'Solar Recharge',
   description:
-    'Each Entropic Bolt that hits a PvE enemy has a 10% chance to trigger Sunwell (Reanimate): self-heal, ally healing in range, and VFX (does not require or consume the Sunwell ability on Q).',
+    'Each Entropic Bolt that hits a PvE enemy has a 10% chance to trigger Sunwell (Reanimate): self-heal, ally healing in range, and VFX (does not require or consume the Sunwell ability on Q). Effects cannot occur more than once every 2.5 seconds.',
   modifiesAbilityId: 'SCYTHE_BASIC',
+};
+
+export const wrathfulEntropicTalentDefinition: TalentDefinition = {
+  id: TALENT_WRATHFUL_ENTROPIC,
+  name: 'Wrathful Bolts',
+  description:
+    'Entropic Bolts stay red, always deal 41 damage, and gain +40% increased critical strike chance. While Icebeam is your primary (class boon), each beam damage tick gains +30% critical strike chance.',
+  modifiesAbilityId: 'SCYTHE_BASIC',
+};
+
+export const staggeringEntropicTalentDefinition: TalentDefinition = {
+  id: TALENT_STAGGERING_ENTROPIC,
+  name: 'Staggering Bolts',
+  description:
+    'Entropic Bolts stay blue, always deal 36 damage, and each hit applies 15 stagger to enemies. While Icebeam is your primary, each beam tick applies 5 stagger.',
+  modifiesAbilityId: 'SCYTHE_BASIC',
+};
+
+export const infestingEntropicTalentDefinition: TalentDefinition = {
+  id: TALENT_INFESTING_ENTROPIC,
+  name: 'Infesting Bolts',
+  description:
+    'Entropic Bolts stay green and deal 53 damage. Enemies killed by Infesting Bolts raise an allied zombie (same rules as other infesting talents). While Icebeam is your primary, beam kills raise a zombie and heal you for 5 HP.',
+  modifiesAbilityId: 'SCYTHE_BASIC',
+};
+
+export const wrathfulTotemTalentDefinition: TalentDefinition = {
+  id: TALENT_WRATHFUL_TOTEM,
+  name: 'Wrathful Totem',
+  description:
+    'Mantra\'s Totem shoots red Entropic-style bolts; totem bolts deal 30 base damage and gain +40% critical strike chance.',
+  modifiesAbilityId: 'SCYTHE_F',
+};
+
+export const staggeringTotemTalentDefinition: TalentDefinition = {
+  id: TALENT_STAGGERING_TOTEM,
+  name: 'Staggering Totem',
+  description:
+    'Mantra\'s Totem shoots blue Entropic-style bolts; each hit applies 10 stagger to enemies.',
+  modifiesAbilityId: 'SCYTHE_F',
+};
+
+export const infestingTotemTalentDefinition: TalentDefinition = {
+  id: TALENT_INFESTING_TOTEM,
+  name: 'Infesting Totem',
+  description:
+    'Mantra\'s Totem shoots green Entropic-style bolts; each hit deals 40 base damage and enemies killed may raise an allied zombie (same rules as Infesting Bolts).',
+  modifiesAbilityId: 'SCYTHE_F',
 };
 
 export const windFuryTalentDefinition: TalentDefinition = {
@@ -637,6 +960,29 @@ export interface TalentLoadout {
   spellblade: boolean;
   tempestRounds: boolean;
   icebeam: boolean;
+  breathWeapon: boolean;
+  staggeringBite: boolean;
+  staggeringTalons: boolean;
+  wrathfulShots: boolean;
+  wrathfulEntropic: boolean;
+  staggeringEntropic: boolean;
+  infestingEntropic: boolean;
+  wrathfulTotem: boolean;
+  staggeringTotem: boolean;
+  infestingTotem: boolean;
+  crossentropyTempest: boolean;
+  crossentropyPlague: boolean;
+  shaman: boolean;
+  staggeringStab: boolean;
+  wrathfulStab: boolean;
+  infestedBackstab: boolean;
+  wrathfulSabresSwipes: boolean;
+  infestingSabresSwipes: boolean;
+  staggeringFlourish: boolean;
+  wrathfulFlourish: boolean;
+  infestedFlourish: boolean;
+  killstreak: boolean;
+  relentless: boolean;
 }
 
 export function createDefaultTalentLoadout(): TalentLoadout {
@@ -681,6 +1027,29 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     spellblade: false,
     tempestRounds: false,
     icebeam: false,
+    breathWeapon: false,
+    staggeringBite: false,
+    staggeringTalons: false,
+    wrathfulShots: false,
+    wrathfulEntropic: false,
+    staggeringEntropic: false,
+    infestingEntropic: false,
+    wrathfulTotem: false,
+    staggeringTotem: false,
+    infestingTotem: false,
+    crossentropyTempest: false,
+    crossentropyPlague: false,
+    shaman: false,
+    staggeringStab: false,
+    wrathfulStab: false,
+    infestedBackstab: false,
+    wrathfulSabresSwipes: false,
+    infestingSabresSwipes: false,
+    staggeringFlourish: false,
+    wrathfulFlourish: false,
+    infestedFlourish: false,
+    killstreak: false,
+    relentless: false,
   };
 }
 // DEFAULT TALENTS DEFAULTTALENTS
@@ -703,6 +1072,12 @@ export function isFrostBiteInLoadout(loadout: AbilityLoadout | null | undefined)
 export function isCrossentropyInLoadout(loadout: AbilityLoadout | null | undefined): boolean {
   if (!loadout) return false;
   return loadout.Q === 'SCYTHE_R' || loadout.E === 'SCYTHE_R' || loadout.R === 'SCYTHE_R';
+}
+
+/** Mantra / Summon Totem (`SCYTHE_F`) in any universal slot. */
+export function isMantraInLoadout(loadout: AbilityLoadout | null | undefined): boolean {
+  if (!loadout) return false;
+  return loadout.Q === 'SCYTHE_F' || loadout.E === 'SCYTHE_F' || loadout.R === 'SCYTHE_F';
 }
 
 /** Coldsnap / Scythe E (`SCYTHE_E`) in any universal slot. */
@@ -834,11 +1209,25 @@ export function shouldApplyDoubleStrikeTalent(
   return !!talentLoadout?.doubleStrike && isWraithStrikeInLoadout(abilityLoadout);
 }
 
+export function shouldApplyShamanTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.shaman && isMantraInLoadout(abilityLoadout);
+}
+
 export function shouldApplySpellbladeTalent(
   talentLoadout: TalentLoadout | null | undefined,
   abilityLoadout: AbilityLoadout | null | undefined,
 ): boolean {
   return !!talentLoadout?.spellblade && isWraithStrikeInLoadout(abilityLoadout);
+}
+
+export function shouldApplyBreathWeaponTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.breathWeapon && isWraithStrikeInLoadout(abilityLoadout);
 }
 
 export function shouldApplyColossusGuardTalent(
@@ -918,6 +1307,25 @@ export function shouldApplyWyvernBiteTalent(
   return !!talentLoadout?.wyvernBite && isFrostBiteInLoadout(abilityLoadout);
 }
 
+export function shouldApplyStaggeringBiteTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.staggeringBite && isFrostBiteInLoadout(abilityLoadout);
+}
+
+export function shouldApplyStaggeringTalonsTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.staggeringTalons && isReapingTalonsInLoadout(abilityLoadout);
+}
+
+/** Bow perfect-shot crit; talent toggle — use with Bow equipped (ControlSystem checks current weapon). */
+export function shouldApplyWrathfulShotsTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.wrathfulShots;
+}
+
 export function shouldApplyInfernoTalent(
   talentLoadout: TalentLoadout | null | undefined,
   abilityLoadout: AbilityLoadout | null | undefined,
@@ -932,6 +1340,42 @@ export function shouldApplyReaperTalent(
   return !!talentLoadout?.reaper && isCrossentropyInLoadout(abilityLoadout);
 }
 
+export function shouldApplyCrossentropyTempestTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.crossentropyTempest && isCrossentropyInLoadout(abilityLoadout);
+}
+
+export function shouldApplyCrossentropyPlagueTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.crossentropyPlague && isCrossentropyInLoadout(abilityLoadout);
+}
+
+/** Base Crossentropy hit damage before Reaper kill stacks (PLAGUE uses higher base). */
+export function getCrossentropyBaseDamage(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): number {
+  if (shouldApplyCrossentropyPlagueTalent(talentLoadout, abilityLoadout)) {
+    return CROSSENTROPY_PLAGUE_DAMAGE;
+  }
+  return CROSSENTROPY_BASE_DAMAGE;
+}
+
+/** Inferno wins, then Tempest, then Plague, else default orange fire. */
+export function resolveCrossentropyVisualTheme(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): CrossentropyVisualTheme {
+  if (shouldApplyInfernoTalent(talentLoadout, abilityLoadout)) return 'inferno';
+  if (shouldApplyCrossentropyTempestTalent(talentLoadout, abilityLoadout)) return 'tempest';
+  if (shouldApplyCrossentropyPlagueTalent(talentLoadout, abilityLoadout)) return 'plague';
+  return 'default';
+}
+
 /** Toggle only — use with scythe Entropic Bolts; no ability slot requirement. */
 export function shouldApplyFrostpathTalent(
   talentLoadout: TalentLoadout | null | undefined,
@@ -944,6 +1388,177 @@ export function shouldApplySolarRechargeTalent(
   talentLoadout: TalentLoadout | null | undefined,
 ): boolean {
   return !!talentLoadout?.solarRecharge;
+}
+
+/** Wrathful Bolts — fixed red bolts + wrathful beam crit when Icebeam replaces LMB. */
+export function shouldApplyWrathfulEntropicTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.wrathfulEntropic;
+}
+
+/** Staggering Bolts — fixed blue bolts + stagger on bolts/beam ticks. */
+export function shouldApplyStaggeringEntropicTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.staggeringEntropic;
+}
+
+/** Infesting Bolts — fixed green bolts + zombie on kill; beam kill heal + zombie with Icebeam. */
+export function shouldApplyInfestingEntropicTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.infestingEntropic;
+}
+
+export function getTotemBoltVariantFromTalentLoadout(
+  talentLoadout: TalentLoadout | null | undefined,
+): TotemBoltVariant | undefined {
+  if (!talentLoadout) return undefined;
+  if (talentLoadout.wrathfulTotem) return 'wrathful';
+  if (talentLoadout.staggeringTotem) return 'staggering';
+  if (talentLoadout.infestingTotem) return 'infesting';
+  return undefined;
+}
+
+export function shouldApplyWrathfulTotemTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.wrathfulTotem && isMantraInLoadout(abilityLoadout);
+}
+
+export function shouldApplyStaggeringTotemTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.staggeringTotem && isMantraInLoadout(abilityLoadout);
+}
+
+export function shouldApplyInfestingTotemTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.infestingTotem && isMantraInLoadout(abilityLoadout);
+}
+
+/** Scythe colored-room boons: Wrathful / Staggering / Infesting Entropic (one branch per run). */
+const SCYTHE_ENTROPIC_BOON_MUTEX_GROUP: readonly TalentId[] = [
+  TALENT_WRATHFUL_ENTROPIC,
+  TALENT_STAGGERING_ENTROPIC,
+  TALENT_INFESTING_ENTROPIC,
+];
+
+export function getScytheEntropicBoonMutexSlot(id: TalentId): 'entropic' | null {
+  return SCYTHE_ENTROPIC_BOON_MUTEX_GROUP.includes(id) ? 'entropic' : null;
+}
+
+export function expandScytheEntropicExclusionsAfterPick(picked: TalentId): TalentId[] {
+  if (!SCYTHE_ENTROPIC_BOON_MUTEX_GROUP.includes(picked)) return [];
+  return SCYTHE_ENTROPIC_BOON_MUTEX_GROUP.filter((x) => x !== picked);
+}
+
+/** Scythe Mantra boons: Wrathful / Staggering / Infesting Totem (one branch per run). */
+const SCYTHE_TOTEM_BOON_MUTEX_GROUP: readonly TalentId[] = [
+  TALENT_WRATHFUL_TOTEM,
+  TALENT_STAGGERING_TOTEM,
+  TALENT_INFESTING_TOTEM,
+];
+
+export function getScytheTotemBoonMutexSlot(id: TalentId): 'totem' | null {
+  return SCYTHE_TOTEM_BOON_MUTEX_GROUP.includes(id) ? 'totem' : null;
+}
+
+export function expandScytheTotemExclusionsAfterPick(picked: TalentId): TalentId[] {
+  if (!SCYTHE_TOTEM_BOON_MUTEX_GROUP.includes(picked)) return [];
+  return SCYTHE_TOTEM_BOON_MUTEX_GROUP.filter((x) => x !== picked);
+}
+
+/** Scythe Crossentropy room boons: TEMPEST / PLAGUE (one branch per run). */
+const SCYTHE_CROSSENTROPY_BOON_MUTEX_GROUP: readonly TalentId[] = [
+  TALENT_CROSSENTROPY_TEMPEST,
+  TALENT_CROSSENTROPY_PLAGUE,
+];
+
+export function expandScytheCrossentropyExclusionsAfterPick(picked: TalentId): TalentId[] {
+  if (!SCYTHE_CROSSENTROPY_BOON_MUTEX_GROUP.includes(picked)) return [];
+  return SCYTHE_CROSSENTROPY_BOON_MUTEX_GROUP.filter((x) => x !== picked);
+}
+
+/** Sabres colored-room boons: Backstab branch. */
+const SABRES_BACKSTAB_BOON_MUTEX_GROUP: readonly TalentId[] = [
+  TALENT_STAGGERING_STAB,
+  TALENT_WRATHFUL_STAB,
+  TALENT_INFESTED_BACKSTAB,
+];
+
+/** Sabres colored-room boons: LMB swipes branch (includes Staggering Swipes). */
+const SABRES_SWIPES_BOON_MUTEX_GROUP: readonly TalentId[] = [
+  TALENT_STAGGERING_SWIPES,
+  TALENT_WRATHFUL_SABRES_SWIPES,
+  TALENT_INFESTING_SABRES_SWIPES,
+];
+
+/** Sabres colored-room boons: Flourish (`SABRES_E`) branch. */
+const SABRES_FLOURISH_BOON_MUTEX_GROUP: readonly TalentId[] = [
+  TALENT_STAGGERING_FLOURISH,
+  TALENT_WRATHFUL_FLOURISH,
+  TALENT_INFESTED_FLOURISH,
+];
+
+export function expandSabresBackstabRoomBoonExclusionsAfterPick(picked: TalentId): TalentId[] {
+  if (!SABRES_BACKSTAB_BOON_MUTEX_GROUP.includes(picked)) return [];
+  return [...SABRES_BACKSTAB_BOON_MUTEX_GROUP];
+}
+
+export function expandSabresSwipesRoomBoonExclusionsAfterPick(picked: TalentId): TalentId[] {
+  if (!SABRES_SWIPES_BOON_MUTEX_GROUP.includes(picked)) return [];
+  return [...SABRES_SWIPES_BOON_MUTEX_GROUP];
+}
+
+export function expandSabresFlourishRoomBoonExclusionsAfterPick(picked: TalentId): TalentId[] {
+  if (!SABRES_FLOURISH_BOON_MUTEX_GROUP.includes(picked)) return [];
+  return [...SABRES_FLOURISH_BOON_MUTEX_GROUP];
+}
+
+export function shouldApplyStaggeringStabTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.staggeringStab;
+}
+
+export function shouldApplyWrathfulStabTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.wrathfulStab;
+}
+
+export function shouldApplyInfestedBackstabTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.infestedBackstab;
+}
+
+export function shouldApplyKillstreakTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.killstreak;
+}
+
+export function shouldApplyRelentlessTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.relentless;
+}
+
+export function shouldApplyWrathfulSabresSwipesTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.wrathfulSabresSwipes;
+}
+
+export function shouldApplyInfestingSabresSwipesTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.infestingSabresSwipes;
+}
+
+export function shouldApplyStaggeringFlourishTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.staggeringFlourish;
+}
+
+export function shouldApplyWrathfulFlourishTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.wrathfulFlourish;
+}
+
+export function shouldApplyInfestedFlourishTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.infestedFlourish;
 }
 
 /** Toggle only — Spear primary or Runeblade combo (ControlSystem + Runeblade.tsx); no F slot requirement. */
@@ -1007,6 +1622,7 @@ export function buildRunebladeClassBoonPool(): TalentId[] {
     rushOrStored,
     TALENT_DOUBLE_STRIKE,
     TALENT_SPELLBLADE,
+    TALENT_BREATH_WEAPON,//Aftershock
   ];
 }
 
@@ -1021,9 +1637,20 @@ export function buildBowClassBoonPool(): TalentId[] {
   ];
 }
 
-/** Scythe class boon pool (co-op). */
+/** Scythe class boon pool (co-op): core kit only — colored Wrath/Stagger/Infest totem & entropic lines come from room boons. */
 export function buildScytheClassBoonPool(): TalentId[] {
-  return [TALENT_FROSTPATH, TALENT_ICEBEAM, TALENT_SOLAR_RECHARGE, TALENT_REAPER];
+  return [
+    TALENT_ICEBEAM,
+    TALENT_REAPER,
+    TALENT_FROSTPATH,
+    TALENT_SOLAR_RECHARGE,
+    TALENT_SHAMAN,
+  ];
+}
+
+/** Sabres class boon pool (co-op): Backstab-focused talents — colored Backstab/Swipes/Flourish lines stay room boons. */
+export function buildSabresClassBoonPool(): TalentId[] {
+  return [TALENT_KILLSTREAK, TALENT_RELENTLESS];
 }
 
 export function buildClassBoonPoolForWeapon(weapon: WeaponType): TalentId[] {
@@ -1031,6 +1658,7 @@ export function buildClassBoonPoolForWeapon(weapon: WeaponType): TalentId[] {
   if (weapon === WeaponType.RUNEBLADE) return buildRunebladeClassBoonPool();
   if (weapon === WeaponType.BOW) return buildBowClassBoonPool();
   if (weapon === WeaponType.SCYTHE) return buildScytheClassBoonPool();
+  if (weapon === WeaponType.SABRES) return buildSabresClassBoonPool();
   return [];
 }
 
@@ -1045,22 +1673,37 @@ export function buildRoomBoonPoolForColor(
   if (weapon === WeaponType.BOW) {
     switch (k) {
       case 'blue':
-        return [TALENT_STAGGER_SHOT];
+        return [TALENT_STAGGER_SHOT, TALENT_STAGGERING_BITE, TALENT_STAGGERING_TALONS];
       case 'green':
-        return [];
-      case 'purple':
         return [TALENT_WYVERN_STING, TALENT_WYVERN_BITE, TALENT_WYVERN_TALONS];
+      case 'purple':
+        return [];
       case 'red':
-        return [TALENT_WRATHFUL_BITE, TALENT_WRATHFUL_TALONS];
+        return [TALENT_WRATHFUL_SHOTS, TALENT_WRATHFUL_BITE, TALENT_WRATHFUL_TALONS];
       default:
         return [];
     }
   }
 
+  // Scythe: Entropic = bolts + colored beam when Icebeam is primary; Totem = Mantra branch per palette.
   if (weapon === WeaponType.SCYTHE) {
     switch (k) {
+      case 'blue':
+        return [
+          TALENT_CROSSENTROPY_TEMPEST,
+          TALENT_STAGGERING_ENTROPIC,
+          TALENT_STAGGERING_TOTEM,
+        ];
+      case 'green':
+        return [
+          TALENT_CROSSENTROPY_PLAGUE,
+          TALENT_INFESTING_ENTROPIC,
+          TALENT_INFESTING_TOTEM,
+        ];
+      case 'purple':
+        return [];
       case 'red':
-        return [TALENT_INFERNO];
+        return [TALENT_WRATHFUL_ENTROPIC, TALENT_WRATHFUL_TOTEM, TALENT_INFERNO];
       default:
         return [];
     }
@@ -1071,7 +1714,7 @@ export function buildRoomBoonPoolForColor(
       case 'blue':
         return [TALENT_STAGGERING_SMITE, TALENT_STAGGERING_COMBO, TALENT_STAGGERING_STRIKE];
       case 'green':
-        return [TALENT_INFESTED_STRIKE, TALENT_INFESTED_SMITE, TALENT_INFESTED_COMBO];
+        return [TALENT_INFESTED_COMBO, TALENT_INFESTED_STRIKE, TALENT_INFESTED_SMITE, ];
       case 'purple':
         return [TALENT_GUARD_COMBO, TALENT_COLOSSUS_GUARD, TALENT_WRAITH_GUARD, TALENT_DASH_GUARD];
       case 'red':
@@ -1081,7 +1724,73 @@ export function buildRoomBoonPoolForColor(
     }
   }
 
+  if (weapon === WeaponType.SABRES) {
+    switch (k) {
+      case 'blue':
+        return [TALENT_STAGGERING_STAB, TALENT_STAGGERING_SWIPES, TALENT_STAGGERING_FLOURISH];
+      case 'green':
+        return [TALENT_INFESTED_BACKSTAB, TALENT_INFESTING_SABRES_SWIPES, TALENT_INFESTED_FLOURISH];
+      case 'purple':
+        return [];
+      case 'red':
+        return [TALENT_WRATHFUL_STAB, TALENT_WRATHFUL_SABRES_SWIPES, TALENT_WRATHFUL_FLOURISH];
+      default:
+        return [];
+    }
+  }
+
   return [];
+}
+
+/** Runeblade colored-room boons: one branch per run for LMB combo, Wraith Strike, and Colossus Smite (12 ids). */
+export type RunebladeRoomBoonMutexSlot = 'combo' | 'strike' | 'smite';
+
+const RUNEBLADE_ROOM_BOON_MUTEX_BY_SLOT: Record<RunebladeRoomBoonMutexSlot, readonly TalentId[]> = {
+  combo: [TALENT_INFESTED_COMBO, TALENT_WRATHFUL_COMBO, TALENT_STAGGERING_COMBO, TALENT_GUARD_COMBO],
+  strike: [TALENT_INFESTED_STRIKE, TALENT_WRATH_STRIKE, TALENT_STAGGERING_STRIKE, TALENT_WRAITH_GUARD],
+  smite: [TALENT_INFESTED_SMITE, TALENT_INFERNAL_SMITE, TALENT_STAGGERING_SMITE, TALENT_COLOSSUS_GUARD],
+};
+
+export function getRunebladeRoomBoonMutexSlot(id: TalentId): RunebladeRoomBoonMutexSlot | null {
+  switch (id) {
+    case TALENT_INFESTED_COMBO:
+    case TALENT_WRATHFUL_COMBO:
+    case TALENT_STAGGERING_COMBO:
+    case TALENT_GUARD_COMBO:
+      return 'combo';
+    case TALENT_INFESTED_STRIKE:
+    case TALENT_WRATH_STRIKE:
+    case TALENT_STAGGERING_STRIKE:
+    case TALENT_WRAITH_GUARD:
+      return 'strike';
+    case TALENT_INFESTED_SMITE:
+    case TALENT_INFERNAL_SMITE:
+    case TALENT_STAGGERING_SMITE:
+    case TALENT_COLOSSUS_GUARD:
+      return 'smite';
+    default:
+      return null;
+  }
+}
+
+export function getRunebladeRoomBoonMutexGroupForSlot(
+  slot: RunebladeRoomBoonMutexSlot,
+): readonly TalentId[] {
+  return RUNEBLADE_ROOM_BOON_MUTEX_BY_SLOT[slot];
+}
+
+/** After a room-boon pick, all four ids in that slot are excluded from future room pools for the run. */
+export function expandRunebladeRoomBoonExclusionsAfterPick(picked: TalentId): TalentId[] {
+  const slot = getRunebladeRoomBoonMutexSlot(picked);
+  if (!slot) return [];
+  return [...getRunebladeRoomBoonMutexGroupForSlot(slot)];
+}
+
+export function filterTalentIdsByExclusionSet(
+  pool: readonly TalentId[],
+  excluded: ReadonlySet<TalentId>,
+): TalentId[] {
+  return pool.filter((id) => !excluded.has(id));
 }
 
 /**
@@ -1232,6 +1941,75 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_ICEBEAM:
       next.icebeam = true;
       return next;
+    case TALENT_BREATH_WEAPON:
+      next.breathWeapon = true;
+      return next;
+    case TALENT_STAGGERING_BITE:
+      next.staggeringBite = true;
+      return next;
+    case TALENT_STAGGERING_TALONS:
+      next.staggeringTalons = true;
+      return next;
+    case TALENT_WRATHFUL_SHOTS:
+      next.wrathfulShots = true;
+      return next;
+    case TALENT_WRATHFUL_ENTROPIC:
+      next.wrathfulEntropic = true;
+      return next;
+    case TALENT_STAGGERING_ENTROPIC:
+      next.staggeringEntropic = true;
+      return next;
+    case TALENT_INFESTING_ENTROPIC:
+      next.infestingEntropic = true;
+      return next;
+    case TALENT_WRATHFUL_TOTEM:
+      next.wrathfulTotem = true;
+      return next;
+    case TALENT_STAGGERING_TOTEM:
+      next.staggeringTotem = true;
+      return next;
+    case TALENT_INFESTING_TOTEM:
+      next.infestingTotem = true;
+      return next;
+    case TALENT_CROSSENTROPY_TEMPEST:
+      next.crossentropyTempest = true;
+      return next;
+    case TALENT_CROSSENTROPY_PLAGUE:
+      next.crossentropyPlague = true;
+      return next;
+    case TALENT_SHAMAN:
+      next.shaman = true;
+      return next;
+    case TALENT_STAGGERING_STAB:
+      next.staggeringStab = true;
+      return next;
+    case TALENT_WRATHFUL_STAB:
+      next.wrathfulStab = true;
+      return next;
+    case TALENT_INFESTED_BACKSTAB:
+      next.infestedBackstab = true;
+      return next;
+    case TALENT_WRATHFUL_SABRES_SWIPES:
+      next.wrathfulSabresSwipes = true;
+      return next;
+    case TALENT_INFESTING_SABRES_SWIPES:
+      next.infestingSabresSwipes = true;
+      return next;
+    case TALENT_STAGGERING_FLOURISH:
+      next.staggeringFlourish = true;
+      return next;
+    case TALENT_WRATHFUL_FLOURISH:
+      next.wrathfulFlourish = true;
+      return next;
+    case TALENT_INFESTED_FLOURISH:
+      next.infestedFlourish = true;
+      return next;
+    case TALENT_KILLSTREAK:
+      next.killstreak = true;
+      return next;
+    case TALENT_RELENTLESS:
+      next.relentless = true;
+      return next;
     default:
       return next;
   }
@@ -1278,7 +2056,173 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_SPELLBLADE]: spellbladeTalentDefinition,
   [TALENT_TEMPEST_ROUNDS]: tempestRoundsTalentDefinition,
   [TALENT_ICEBEAM]: icebeamTalentDefinition,
+  [TALENT_BREATH_WEAPON]: breathWeaponTalentDefinition,
+  [TALENT_STAGGERING_BITE]: staggeringBiteTalentDefinition,
+  [TALENT_STAGGERING_TALONS]: staggeringTalonsTalentDefinition,
+  [TALENT_WRATHFUL_SHOTS]: wrathfulShotsTalentDefinition,
+  [TALENT_WRATHFUL_ENTROPIC]: wrathfulEntropicTalentDefinition,
+  [TALENT_STAGGERING_ENTROPIC]: staggeringEntropicTalentDefinition,
+  [TALENT_INFESTING_ENTROPIC]: infestingEntropicTalentDefinition,
+  [TALENT_WRATHFUL_TOTEM]: wrathfulTotemTalentDefinition,
+  [TALENT_STAGGERING_TOTEM]: staggeringTotemTalentDefinition,
+  [TALENT_INFESTING_TOTEM]: infestingTotemTalentDefinition,
+  [TALENT_CROSSENTROPY_TEMPEST]: crossentropyTempestTalentDefinition,
+  [TALENT_CROSSENTROPY_PLAGUE]: crossentropyPlagueTalentDefinition,
+  [TALENT_SHAMAN]: shamanTalentDefinition,
+  [TALENT_STAGGERING_STAB]: staggeringStabTalentDefinition,
+  [TALENT_WRATHFUL_STAB]: wrathfulStabTalentDefinition,
+  [TALENT_INFESTED_BACKSTAB]: infestedBackstabTalentDefinition,
+  [TALENT_WRATHFUL_SABRES_SWIPES]: wrathfulSabresSwipesTalentDefinition,
+  [TALENT_INFESTING_SABRES_SWIPES]: infestingSabresSwipesTalentDefinition,
+  [TALENT_STAGGERING_FLOURISH]: staggeringFlourishTalentDefinition,
+  [TALENT_WRATHFUL_FLOURISH]: wrathfulFlourishTalentDefinition,
+  [TALENT_INFESTED_FLOURISH]: infestedFlourishTalentDefinition,
+  [TALENT_KILLSTREAK]: killstreakTalentDefinition,
+  [TALENT_RELENTLESS]: relentlessTalentDefinition,
 };
+
+/**
+ * Public URL path for talent picker / HUD icons (`public/icons/*.svg`).
+ * `null` when no asset exists yet (UI may show ✦ fallback).
+ */
+export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
+  [TALENT_WRATH_STRIKE]: '/icons/strike.svg',
+  [TALENT_INFESTED_STRIKE]: '/icons/strike.svg',
+  [TALENT_WRATHFUL_TALONS]: '/icons/talon.svg',
+  [TALENT_EXECUTE]: '/icons/execute.svg',
+  [TALENT_EXPLOSIVE_TALONS]: '/icons/explosiveTalons.svg',
+  [TALENT_STORED_CHARGE]: '/icons/storedCharge.svg',
+  [TALENT_STAGGERING_STRIKE]: '/icons/strike.svg',
+  [TALENT_STAGGERING_COMBO]: '/icons/combo.svg',
+  [TALENT_STAGGERING_SWIPES]: null,
+  [TALENT_TRINITY]: '/icons/trinity.svg',
+  [TALENT_INFESTED_SMITE]: '/icons/smite.svg',
+  [TALENT_STAGGERING_SMITE]: '/icons/smite.svg',
+  [TALENT_INFERNAL_SMITE]: '/icons/smite.svg',
+  [TALENT_VENGEANCE]: '/icons/vengeance.svg',
+  [TALENT_STAGGER_SHOT]: '/icons/shot.svg',
+  [TALENT_CONCENTRATED_VOLLEY]: '/icons/concentratedVolley.svg',
+  [TALENT_WRATHFUL_BITE]: '/icons/bite.svg',
+  [TALENT_WYVERN_BITE]: '/icons/bite.svg',
+  [TALENT_INFERNO]: '/icons/crossentropy.svg',
+  [TALENT_REAPER]: '/icons/reaper.svg',
+  [TALENT_DUAL_COIL]: '/icons/dualCoil.svg',
+  [TALENT_WYVERN_STING]: '/icons/shot.svg',
+  [TALENT_WYVERN_TALONS]: '/icons/talon.svg',
+  [TALENT_WRAITH_GUARD]: '/icons/strike.svg',
+  [TALENT_FROSTPATH]: '/icons/frostpath.svg',
+  [TALENT_SOLAR_RECHARGE]: '/icons/solarRecharge.svg',
+  [TALENT_WINDFURY]: '/icons/windFury.svg',
+  [TALENT_BLADE_RUSH]: '/icons/bladerush.svg',
+  [TALENT_COLOSSUS_GUARD]: '/icons/smite.svg',
+  [TALENT_WRATHFUL_COMBO]: '/icons/combo.svg',
+  [TALENT_INFESTED_COMBO]: '/icons/combo.svg',
+  [TALENT_GUARD_COMBO]: '/icons/combo.svg',
+  [TALENT_DASH_GUARD]: '/icons/dash.svg',
+  [TALENT_EXECUTIONER]: '/icons/dash.svg',
+  [TALENT_DOUBLE_STRIKE]: '/icons/doubleStrike.svg',
+  [TALENT_CRUSADER]: '/icons/crusader.svg',
+  [TALENT_BLIZZARD]: '/icons/blizzard.svg',
+  [TALENT_SPELLBLADE]: '/icons/spellblade.svg',
+  [TALENT_TEMPEST_ROUNDS]: '/icons/tempestRounds.svg',
+  [TALENT_ICEBEAM]: '/icons/icebeam.svg',
+  [TALENT_BREATH_WEAPON]: '/icons/aftershock.svg',
+  [TALENT_STAGGERING_BITE]: '/icons/bite.svg',
+  [TALENT_STAGGERING_TALONS]: '/icons/talon.svg',
+  [TALENT_WRATHFUL_SHOTS]: '/icons/shot.svg',
+  [TALENT_WRATHFUL_ENTROPIC]: '/icons/bolt.svg',
+  [TALENT_STAGGERING_ENTROPIC]: '/icons/bolt.svg',
+  [TALENT_INFESTING_ENTROPIC]: '/icons/bolt.svg',
+  [TALENT_WRATHFUL_TOTEM]: '/icons/totem.svg',
+  [TALENT_STAGGERING_TOTEM]: '/icons/totem.svg',
+  [TALENT_INFESTING_TOTEM]: '/icons/totem.svg',
+  [TALENT_CROSSENTROPY_TEMPEST]: '/icons/crossentropy.svg',
+  [TALENT_CROSSENTROPY_PLAGUE]: '/icons/crossentropy.svg',
+  [TALENT_SHAMAN]: '/icons/shaman.svg',
+  [TALENT_STAGGERING_STAB]: '/icons/strike.svg',
+  [TALENT_WRATHFUL_STAB]: '/icons/strike.svg',
+  [TALENT_INFESTED_BACKSTAB]: '/icons/strike.svg',
+  [TALENT_WRATHFUL_SABRES_SWIPES]: '/icons/combo.svg',
+  [TALENT_INFESTING_SABRES_SWIPES]: '/icons/combo.svg',
+  [TALENT_STAGGERING_FLOURISH]: '/icons/strike.svg',
+  [TALENT_WRATHFUL_FLOURISH]: '/icons/strike.svg',
+  [TALENT_INFESTED_FLOURISH]: '/icons/strike.svg',
+  [TALENT_KILLSTREAK]: '/icons/combo.svg',
+  [TALENT_RELENTLESS]: '/icons/strike.svg',
+};
+
+export function getTalentIconSrc(id: TalentId): string | null {
+  return TALENT_ICON_SRC[id] ?? null;
+}
+
+/** All enabled talent ids for HUD / tooltips (order matches loadout field declaration). */
+export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
+  const out: TalentId[] = [];
+  if (loadout.wrathStrike) out.push(TALENT_WRATH_STRIKE);
+  if (loadout.infestedStrike) out.push(TALENT_INFESTED_STRIKE);
+  if (loadout.wraithGuard) out.push(TALENT_WRAITH_GUARD);
+  if (loadout.staggeringStrike) out.push(TALENT_STAGGERING_STRIKE);
+  if (loadout.staggeringCombo) out.push(TALENT_STAGGERING_COMBO);
+  if (loadout.staggeringSwipes) out.push(TALENT_STAGGERING_SWIPES);
+  if (loadout.wrathfulTalons) out.push(TALENT_WRATHFUL_TALONS);
+  if (loadout.execute) out.push(TALENT_EXECUTE);
+  if (loadout.explosiveTalons) out.push(TALENT_EXPLOSIVE_TALONS);
+  if (loadout.storedCharge) out.push(TALENT_STORED_CHARGE);
+  if (loadout.trinity) out.push(TALENT_TRINITY);
+  if (loadout.infestedSmite) out.push(TALENT_INFESTED_SMITE);
+  if (loadout.staggeringSmite) out.push(TALENT_STAGGERING_SMITE);
+  if (loadout.infernalSmite) out.push(TALENT_INFERNAL_SMITE);
+  if (loadout.vengeanceSmite) out.push(TALENT_VENGEANCE);
+  if (loadout.colossusGuard) out.push(TALENT_COLOSSUS_GUARD);
+  if (loadout.staggerShot) out.push(TALENT_STAGGER_SHOT);
+  if (loadout.concentratedVolley) out.push(TALENT_CONCENTRATED_VOLLEY);
+  if (loadout.wrathfulBite) out.push(TALENT_WRATHFUL_BITE);
+  if (loadout.wyvernBite) out.push(TALENT_WYVERN_BITE);
+  if (loadout.inferno) out.push(TALENT_INFERNO);
+  if (loadout.reaper) out.push(TALENT_REAPER);
+  if (loadout.frostPath) out.push(TALENT_FROSTPATH);
+  if (loadout.solarRecharge) out.push(TALENT_SOLAR_RECHARGE);
+  if (loadout.windFury) out.push(TALENT_WINDFURY);
+  if (loadout.dualCoil) out.push(TALENT_DUAL_COIL);
+  if (loadout.wyvernSting) out.push(TALENT_WYVERN_STING);
+  if (loadout.wyvernTalons) out.push(TALENT_WYVERN_TALONS);
+  if (loadout.bladeRush) out.push(TALENT_BLADE_RUSH);
+  if (loadout.wrathfulCombo) out.push(TALENT_WRATHFUL_COMBO);
+  if (loadout.infestedCombo) out.push(TALENT_INFESTED_COMBO);
+  if (loadout.guardCombo) out.push(TALENT_GUARD_COMBO);
+  if (loadout.dashGuard) out.push(TALENT_DASH_GUARD);
+  if (loadout.executioner) out.push(TALENT_EXECUTIONER);
+  if (loadout.doubleStrike) out.push(TALENT_DOUBLE_STRIKE);
+  if (loadout.crusader) out.push(TALENT_CRUSADER);
+  if (loadout.blizzard) out.push(TALENT_BLIZZARD);
+  if (loadout.spellblade) out.push(TALENT_SPELLBLADE);
+  if (loadout.tempestRounds) out.push(TALENT_TEMPEST_ROUNDS);
+  if (loadout.icebeam) out.push(TALENT_ICEBEAM);
+  if (loadout.breathWeapon) out.push(TALENT_BREATH_WEAPON);
+  if (loadout.staggeringBite) out.push(TALENT_STAGGERING_BITE);
+  if (loadout.staggeringTalons) out.push(TALENT_STAGGERING_TALONS);
+  if (loadout.wrathfulShots) out.push(TALENT_WRATHFUL_SHOTS);
+  if (loadout.wrathfulEntropic) out.push(TALENT_WRATHFUL_ENTROPIC);
+  if (loadout.staggeringEntropic) out.push(TALENT_STAGGERING_ENTROPIC);
+  if (loadout.infestingEntropic) out.push(TALENT_INFESTING_ENTROPIC);
+  if (loadout.wrathfulTotem) out.push(TALENT_WRATHFUL_TOTEM);
+  if (loadout.staggeringTotem) out.push(TALENT_STAGGERING_TOTEM);
+  if (loadout.infestingTotem) out.push(TALENT_INFESTING_TOTEM);
+  if (loadout.crossentropyTempest) out.push(TALENT_CROSSENTROPY_TEMPEST);
+  if (loadout.crossentropyPlague) out.push(TALENT_CROSSENTROPY_PLAGUE);
+  if (loadout.shaman) out.push(TALENT_SHAMAN);
+  if (loadout.staggeringStab) out.push(TALENT_STAGGERING_STAB);
+  if (loadout.wrathfulStab) out.push(TALENT_WRATHFUL_STAB);
+  if (loadout.infestedBackstab) out.push(TALENT_INFESTED_BACKSTAB);
+  if (loadout.wrathfulSabresSwipes) out.push(TALENT_WRATHFUL_SABRES_SWIPES);
+  if (loadout.infestingSabresSwipes) out.push(TALENT_INFESTING_SABRES_SWIPES);
+  if (loadout.staggeringFlourish) out.push(TALENT_STAGGERING_FLOURISH);
+  if (loadout.wrathfulFlourish) out.push(TALENT_WRATHFUL_FLOURISH);
+  if (loadout.infestedFlourish) out.push(TALENT_INFESTED_FLOURISH);
+  if (loadout.killstreak) out.push(TALENT_KILLSTREAK);
+  if (loadout.relentless) out.push(TALENT_RELENTLESS);
+  return out;
+}
 
 /** UI copy for co-op 3-boon picks (falls back to id if missing). */
 export function getTalentBoonDefinition(id: TalentId): TalentDefinition | null {

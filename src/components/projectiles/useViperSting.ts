@@ -47,7 +47,14 @@ interface SoulStealEffect {
 
 interface UseViperStingProps {
   parentRef: React.RefObject<Group>;
-  onHit: (targetId: string, damage: number, isCritical?: boolean) => void;
+  onHit: (
+    targetId: string,
+    damage: number,
+    isCritical?: boolean,
+    position?: Vector3,
+    isBlizzard?: boolean,
+    viperPhase?: 'forward' | 'return' | 'explosion',
+  ) => void;
   enemyData: Array<{
     id: string;
     position: Vector3;
@@ -302,7 +309,7 @@ export function useViperSting({
                 }
 
                 // Apply damage through the onHit callback (which routes to CombatSystem)
-                onHit(enemy.id, forwardDamage);
+                onHit(enemy.id, forwardDamage, undefined, undefined, undefined, 'forward');
 
                 // Apply DoT effect
                 if (applyDoT) {
@@ -338,7 +345,7 @@ export function useViperSting({
                 const horiz = Math.hypot(enemy.position.x - cx, enemy.position.z - cz);
                 if (horiz > EXPLOSIVE_TALONS_EXPLOSION_RADIUS) continue;
 
-                onHit(enemy.id, EXPLOSIVE_TALONS_EXPLOSION_DAMAGE);
+                onHit(enemy.id, EXPLOSIVE_TALONS_EXPLOSION_DAMAGE, undefined, undefined, undefined, 'explosion');
                 if (applyDoT) {
                   applyDoT(enemy.id);
                 }
@@ -442,7 +449,7 @@ export function useViperSting({
                   returnIsCritical = r.isCritical;
                 }
 
-                onHit(enemy.id, returnDamage, returnIsCritical);
+                onHit(enemy.id, returnDamage, returnIsCritical, undefined, undefined, 'return');
 
                 // Apply DoT effect for return shot as well
                 if (applyDoT) {

@@ -17,6 +17,11 @@ function handleEnemyEvents(socket, gameRooms) {
       wyvernBiteVenom,
       wyvernStingVenomZombie,
       wyvernBiteConcentratedDoT,
+      infestedBackstab,
+      sabreInfestingSwipes,
+      infestedFlourish,
+      killstreakBackstab,
+      relentlessBackstab,
     } = data;
 
     console.log(`⚔️ Received enemy-damage: room=${roomId}, enemy=${enemyId}, damage=${damage}, source=${sourcePlayerId || socket.id}`);
@@ -42,11 +47,26 @@ function handleEnemyEvents(socket, gameRooms) {
         hitMeta.staggerToAdd = staggerToAdd;
       }
     } else if (damageType === 'crossentropy') {
-      hitMeta = { damageType: 'crossentropy', infernoCrossentropy: !!infernoCrossentropy, reaperCrossentropy: !!reaperCrossentropy };
+      hitMeta = {
+        damageType: 'crossentropy',
+        infernoCrossentropy: !!infernoCrossentropy,
+        reaperCrossentropy: !!reaperCrossentropy,
+      };
+      if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
     } else if (damageType === 'ignite') {
       hitMeta = { damageType: 'ignite' };
+    } else if (damageType === 'reaping_talons') {
+      hitMeta = { damageType: 'reaping_talons' };
+      if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
     } else if (damageType === 'barrage') {
       hitMeta = { damageType: 'barrage', wyvernBiteVenom: !!wyvernBiteVenom };
+      if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
     } else if (damageType === 'venom') {
       hitMeta = {
         damageType: 'venom',
@@ -55,6 +75,14 @@ function handleEnemyEvents(socket, gameRooms) {
       };
     } else if (damageType === 'wyvern_talons_detonate') {
       hitMeta = { damageType: 'wyvern_talons_detonate' };
+    } else if (damageType === 'backstab') {
+      hitMeta = { damageType: 'backstab' };
+      if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
+      if (infestedBackstab) hitMeta.infestedBackstab = true;
+      if (killstreakBackstab) hitMeta.killstreakBackstab = true;
+      if (relentlessBackstab) hitMeta.relentlessBackstab = true;
     } else if (damageType === 'runeblade_combo' || damageType === 'sabre_left' || damageType === 'sabre_right') {
       hitMeta = { damageType };
       if (damageType === 'runeblade_combo' && infestedCombo) {
@@ -63,12 +91,37 @@ function handleEnemyEvents(socket, gameRooms) {
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
         hitMeta.staggerToAdd = staggerToAdd;
       }
+      if ((damageType === 'sabre_left' || damageType === 'sabre_right') && sabreInfestingSwipes) {
+        hitMeta.sabreInfestingSwipes = true;
+      }
+    } else if (damageType === 'sunder') {
+      hitMeta = { damageType: 'sunder' };
+      if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
+      if (infestedFlourish) hitMeta.infestedFlourish = true;
     } else if (damageType === 'projectile' && typeof staggerToAdd === 'number' && staggerToAdd > 0) {
       hitMeta = { damageType: 'projectile', staggerToAdd };
     } else if (damageType === 'stagger_break') {
       hitMeta = { damageType: 'stagger_break' };
     } else if (damageType === 'blizzard') {
       hitMeta = { damageType: 'blizzard' };
+    } else if (damageType === 'breath_weapon') {
+      hitMeta = { damageType: 'breath_weapon' };
+    } else if (damageType === 'entropic') {
+      hitMeta = { damageType: 'entropic' };
+      if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
+      if (data.entropicWrathful) hitMeta.entropicWrathful = true;
+      if (data.entropicInfesting) hitMeta.entropicInfesting = true;
+    } else if (damageType === 'icebeam') {
+      hitMeta = { damageType: 'icebeam' };
+      if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
+      if (data.icebeamWrathful) hitMeta.icebeamWrathful = true;
+      if (data.icebeamInfested) hitMeta.icebeamInfested = true;
     }
     room.damageEnemy(enemyId, damage, actualSourcePlayerId, player, hitMeta);
   });

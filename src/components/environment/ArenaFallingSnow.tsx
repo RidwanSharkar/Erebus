@@ -54,7 +54,7 @@ const SNOW_FRAG = `
   }
 `;
 
-const DEFAULT_COUNT = 2600;
+const DEFAULT_COUNT = 600;
 
 interface ArenaFallingSnowProps {
   count?: number;

@@ -9,6 +9,7 @@ import {
   Quaternion,
   DoubleSide,
 } from '@/utils/three-exports';
+import type { TotemBoltVariant } from '@/utils/talents';
 import EntropicBoltTrail from './EntropicBoltTrail';
 
 export interface TotemEntropicBoltProps {
@@ -18,6 +19,8 @@ export interface TotemEntropicBoltProps {
   to: Vector3;
   /** Called once when the bolt reaches `to`. */
   onImpact: (impactWorld: Vector3) => void;
+  /** Boon tint; default purple aligns with baseline Mantra bolts. */
+  totemBoltVariant?: TotemBoltVariant;
 }
 
 const AXIS_Y = new Vector3(0, 1, 0);
@@ -36,8 +39,26 @@ function alignBoltToDirection(group: Group | null, direction: Vector3) {
   group.quaternion.copy(_quat);
 }
 
+/** Match `EntropicBolt` palettes for red/green/blue; default aligns with purple Entropic LMB. */
+function getTotemBoltTheme(variant: TotemBoltVariant | undefined): {
+  primary: string;
+  secondary: string;
+  light: string;
+} {
+  switch (variant) {
+    case 'wrathful':
+      return { primary: '#ef4444', secondary: '#fca5a5', light: '#fecaca' };
+    case 'staggering':
+      return { primary: '#3b82f6', secondary: '#93c5fd', light: '#93c5fd' };
+    case 'infesting':
+      return { primary: '#22c55e', secondary: '#86efac', light: '#bbf7d0' };
+    default:
+      return { primary: '#9333ea', secondary: '#c084fc', light: '#e9d5ff' };
+  }
+}
+
 /** Simplified Entropic-style bolt using the same `EntropicBoltTrail` as `EntropicBolt`. */
-export default function TotemEntropicBolt({ from, to, onImpact }: TotemEntropicBoltProps) {
+export default function TotemEntropicBolt({ from, to, onImpact, totemBoltVariant }: TotemEntropicBoltProps) {
   const boltRef = useRef<Group>(null);
   const orientRef = useRef<Group>(null);
   const coronaRef = useRef<Mesh>(null);
@@ -53,14 +74,7 @@ export default function TotemEntropicBolt({ from, to, onImpact }: TotemEntropicB
     return Math.max(0.11, Math.min(0.38, d / 34));
   }, [from, to]);
 
-  const theme = useMemo(
-    () => ({
-      primary: '#7c3aed',
-      secondary: '#c4b5fd',
-      light: '#ede9fe',
-    }),
-    [],
-  );
+  const theme = useMemo(() => getTotemBoltTheme(totemBoltVariant), [totemBoltVariant]);
 
   const trailColor = useMemo(() => new Color(theme.primary), [theme.primary]);
   const trailAccent = useMemo(() => {
@@ -115,10 +129,10 @@ export default function TotemEntropicBolt({ from, to, onImpact }: TotemEntropicB
         <>
           <EntropicBoltTrail
             color={trailColor}
-            accentColor={trailAccent}
-            size={0.26}
+            accentColor={trailColor}
+            size={0.125}
             meshRef={boltRef}
-            opacity={0.95}
+            opacity={0.85}
           />
 
           <group ref={boltRef} position={startRef.current.toArray()}>

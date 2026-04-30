@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "backend": "cd backend && npm install && npm run dev"
+    "backend": "cd backend && npm install && npm run dev",
+    "assets:startup-report": "node scripts/startup-asset-report.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^9.122.0",

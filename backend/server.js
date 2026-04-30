@@ -142,6 +142,9 @@ io.on('connection', (socket) => {
       thronePortalLayout: room.getThronePortalLayout(),
       coopMainArenaPortalPhase: room.getCoopMainArenaPortalPhase(),
       coopBossThroneArena: room.getCoopBossThroneArena(),
+      coopThroneBossKind: typeof room.getCoopThroneBossKind === 'function' ? room.getCoopThroneBossKind() : null,
+      coopCurrentRoomKind: typeof room.getCoopCurrentRoomKind === 'function' ? room.getCoopCurrentRoomKind() : null,
+      coopClearedRoomKind: typeof room.getCoopClearedRoomKind === 'function' ? room.getCoopClearedRoomKind() : null,
       mushroomState: typeof room.getMushroomState === 'function' ? room.getMushroomState() : null,
     });
     
@@ -244,7 +247,14 @@ io.on('connection', (socket) => {
     if (!room.getPlayer(socket.id)) return;
 
     let ok = false;
-    if (room.coopMainArenaPortalPhase) {
+    const camp = String(chosenCampType || '').toLowerCase();
+    if (camp === 'dev_boss') {
+      ok = room.activateDevBossArena();
+    } else if (camp === 'dev_boss2') {
+      ok = room.activateDevBoss2Arena();
+    } else if (camp === 'dev_boss3') {
+      ok = room.activateDevBoss3Arena();
+    } else if (room.coopMainArenaPortalPhase) {
       ok = room.resolveMainArenaPortal(chosenCampType);
     } else {
       ok = room.activateCombatArena(chosenCampType);
@@ -252,6 +262,17 @@ io.on('connection', (socket) => {
     if (ok) {
       socket.emit('enter-combat-arena-success', { roomId, timestamp: Date.now() });
     }
+  });
+
+  socket.on('coop-combat-transition-ready', (data) => {
+    const { roomId, transitionId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (!room.getPlayer(socket.id)) return;
+    if (typeof room.markCoopCombatTransitionReady !== 'function') return;
+
+    room.markCoopCombatTransitionReady(socket.id, transitionId);
   });
 
   // Handle chat messages

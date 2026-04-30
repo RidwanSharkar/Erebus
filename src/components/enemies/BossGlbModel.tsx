@@ -17,29 +17,36 @@ import {
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 // Target ≈ 2+ units — tune if asset scale differs
-const SCALE = 0.0275;
+const SCALE = 0.0205;
 
 const BOSS_CORE_GLOW = '#BA55D3';
 const BOSS_TECTONIC_ACCENT = '#ff8c42';
 
-const KEY_LIGHT_INTENSITY = 2.2;
-const KEY_LIGHT_DISTANCE = 14;
-const RIM_LIGHT_INTENSITY = 0.85;
-const RIM_LIGHT_DISTANCE = 10;
+const KEY_LIGHT_INTENSITY = 3.2;
+const KEY_LIGHT_DISTANCE = 20;
+const RIM_LIGHT_INTENSITY = 1.1;
+const RIM_LIGHT_DISTANCE = 12;
 
-const ORBIT_RADIUS = 2.05;
-const ORBIT_Y = 2.05;
+const ORBIT_RADIUS = 2.55;
+const ORBIT_Y = 2.15;
 const ORBIT_ROT_SPEED = 0.62;
-const ORB_LIGHT_INTENSITY = 1.35;
-const ORB_LIGHT_DISTANCE = 6;
+const ORB_LIGHT_INTENSITY = 1.7;
+const ORB_LIGHT_DISTANCE = 7.5;
 const ORB_EMISSIVE_INTENSITY = 2.8;
+const ORB_ICOSAHEDRON_RADIUS = 0.35;
 const ORB_COUNT = 6;
+
+/** Broad, uniform fill so the GLB isn’t only lit from one side (moves with boss). */
+const FILL_LIGHT_INTENSITY = 2.6;
+const FILL_LIGHT_DISTANCE = 26;
+const FILL_LIGHT_COLOR = '#ddd8e8';
 
 function BossLightRig({ isDying }: { isDying: boolean }) {
   const orbitRef = useRef<Group>(null);
   const fadeRef = useRef(1);
   const keyLightRef = useRef<PointLight>(null);
   const rimLightRef = useRef<PointLight>(null);
+  const fillLightRef = useRef<PointLight>(null);
   const orbLightRefs = useRef<(PointLight | null)[]>([]);
   const orbMeshRefs = useRef<(Mesh | null)[]>([]);
 
@@ -63,6 +70,9 @@ function BossLightRig({ isDying }: { isDying: boolean }) {
     if (rimLightRef.current) {
       rimLightRef.current.intensity = RIM_LIGHT_INTENSITY * f;
     }
+    if (fillLightRef.current) {
+      fillLightRef.current.intensity = FILL_LIGHT_INTENSITY * f;
+    }
 
     for (let i = 0; i < ORB_COUNT; i++) {
       const L = orbLightRefs.current[i];
@@ -77,12 +87,20 @@ function BossLightRig({ isDying }: { isDying: boolean }) {
   return (
     <>
       <pointLight
+        ref={fillLightRef}
+        color={FILL_LIGHT_COLOR}
+        intensity={FILL_LIGHT_INTENSITY}
+        distance={FILL_LIGHT_DISTANCE}
+        decay={2}
+        position={[0, 1.95, 0]}
+      />
+      <pointLight
         ref={keyLightRef}
         color={BOSS_CORE_GLOW}
         intensity={KEY_LIGHT_INTENSITY}
         distance={KEY_LIGHT_DISTANCE}
         decay={2}
-        position={[0, 2.15, 0]}
+        position={[0, 2.2, 0]}
       />
       <pointLight
         ref={rimLightRef}
@@ -106,7 +124,7 @@ function BossLightRig({ isDying }: { isDying: boolean }) {
                   orbMeshRefs.current[i] = el;
                 }}
               >
-                <icosahedronGeometry args={[0.065, 0]} />
+                <icosahedronGeometry args={[ORB_ICOSAHEDRON_RADIUS, 0]} />
                 <meshStandardMaterial
                   color={color}
                   emissive={color}
@@ -120,9 +138,9 @@ function BossLightRig({ isDying }: { isDying: boolean }) {
                   orbLightRefs.current[i] = el;
                 }}
                 color={color}
-                intensity={ORB_LIGHT_INTENSITY}
+                intensity={ORB_LIGHT_INTENSITY *10}
                 distance={ORB_LIGHT_DISTANCE}
-                decay={2}
+                decay={6}
               />
             </group>
           );
@@ -132,15 +150,21 @@ function BossLightRig({ isDying }: { isDying: boolean }) {
   );
 }
 
-useGLTF.preload('/models/boss_idle.glb');
-useGLTF.preload('/models/boss_walk.glb');
-useGLTF.preload('/models/boss_attack1.glb');
-useGLTF.preload('/models/boss_attack2.glb');
-useGLTF.preload('/models/boss_attack3.glb');
-useGLTF.preload('/models/boss_leap.glb');
-useGLTF.preload('/models/boss_jump.glb');
-useGLTF.preload('/models/boss_impact.glb');
-useGLTF.preload('/models/boss_death.glb');
+const BOSS_MODEL_PATHS = [
+  '/models/boss_idle.glb',
+  '/models/boss_walk.glb',
+  '/models/boss_attack1.glb',
+  '/models/boss_attack2.glb',
+  '/models/boss_throw.glb',
+  '/models/boss_leap.glb',
+  '/models/boss_jump.glb',
+  '/models/boss_impact.glb',
+  '/models/boss_death.glb',
+];
+
+export function preloadBossModels(): void {
+  BOSS_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+}
 
 export interface BossGlbModelProps {
   isWalking: boolean;
@@ -150,13 +174,16 @@ export interface BossGlbModelProps {
   tectonicJumpTrigger: number;
   /** Bumps to play one-shot melee (uses meleeIndex on bump frame). */
   attackTrigger: number;
-  meleeIndex: 0 | 1 | 2;
+  meleeIndex: 0 | 1;
+  /** Bumps to play the one-shot throw animation. */
+  throwTrigger: number;
   isImpacting: boolean;
   impactPlayKey: number;
   onImpactFinished?: () => void;
   onTectonicJumpFinished?: () => void;
   onAttackFinished?: () => void;
   onLeapFinished?: () => void;
+  onThrowAnimFinished?: () => void;
 }
 
 export default function BossGlbModel({
@@ -166,24 +193,27 @@ export default function BossGlbModel({
   tectonicJumpTrigger,
   attackTrigger,
   meleeIndex,
+  throwTrigger,
   isImpacting,
   impactPlayKey,
   onImpactFinished,
   onTectonicJumpFinished,
   onAttackFinished,
   onLeapFinished,
+  onThrowAnimFinished,
 }: BossGlbModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
   const lastImpactPlayKeyRef = useRef(-1);
   const lastTectonicTriggerRef = useRef(0);
   const lastAttackTriggerRef = useRef(0);
+  const lastThrowTriggerRef = useRef(0);
 
   const { scene, animations: idleAnims } = useGLTF('/models/boss_idle.glb');
   const { animations: walkAnims } = useGLTF('/models/boss_walk.glb');
   const { animations: atk1 } = useGLTF('/models/boss_attack1.glb');
   const { animations: atk2 } = useGLTF('/models/boss_attack2.glb');
-  const { animations: atk3 } = useGLTF('/models/boss_attack3.glb');
+  const { animations: throwAnims } = useGLTF('/models/boss_throw.glb');
   const { animations: leapAnims } = useGLTF('/models/boss_leap.glb');
   const { animations: jumpAnims } = useGLTF('/models/boss_jump.glb');
   const { animations: impactAnims } = useGLTF('/models/boss_impact.glb');
@@ -231,13 +261,13 @@ export default function BossGlbModel({
       ...rename(walkAnims, 'Walk').map(stripRootMotionXZ),
       ...rename(atk1, 'Attack0').map(stripRootMotionXZ),
       ...rename(atk2, 'Attack1').map(stripRootMotionXZ),
-      ...rename(atk3, 'Attack2').map(stripRootMotionXZ),
+      ...rename(throwAnims, 'Throw').map(stripRootMotionXZ),
       ...rename(leapAnims, 'Leap').map(stripRootMotionXZ),
       ...rename(jumpAnims, 'TectonicJump').map(stripRootMotionXZ),
       ...rename(impactAnims, 'Impact').map(stripRootMotionXZ),
       ...rename(deathAnims, 'Death').map(stripRootMotionXZ),
     ];
-  }, [idleAnims, walkAnims, atk1, atk2, atk3, leapAnims, jumpAnims, impactAnims, deathAnims]);
+  }, [idleAnims, walkAnims, atk1, atk2, throwAnims, leapAnims, jumpAnims, impactAnims, deathAnims]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
@@ -296,9 +326,21 @@ export default function BossGlbModel({
     } else {
       lastImpactPlayKeyRef.current = -1;
     }
+    if (throwTrigger > 0 && throwTrigger !== lastThrowTriggerRef.current) {
+      lastThrowTriggerRef.current = throwTrigger;
+      const a = getAction('Throw');
+      if (a) {
+        currentActionRef.current?.fadeOut(0.08);
+        a.setLoop(LoopOnce, 1);
+        a.clampWhenFinished = true;
+        a.reset().fadeIn(0.1).play();
+        currentActionRef.current = a;
+        return;
+      }
+    }
     if (attackTrigger > 0 && attackTrigger !== lastAttackTriggerRef.current) {
       lastAttackTriggerRef.current = attackTrigger;
-      const key = `Attack${meleeIndex}` as 'Attack0' | 'Attack1' | 'Attack2';
+      const key = `Attack${meleeIndex}` as 'Attack0' | 'Attack1';
       const a = getAction(key);
       if (a) {
         currentActionRef.current?.fadeOut(0.08);
@@ -318,7 +360,7 @@ export default function BossGlbModel({
         currentActionRef.current = next;
       }
     }
-  }, [isDying, isWalking, isLeaping, isImpacting, tectonicJumpTrigger, attackTrigger, meleeIndex, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isDying, isWalking, isLeaping, isImpacting, tectonicJumpTrigger, attackTrigger, meleeIndex, throwTrigger, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!mixer || isDying) return;
@@ -354,7 +396,12 @@ export default function BossGlbModel({
         blendToIdleOrWalk();
         return;
       }
-      if (clipName === 'Attack0' || clipName === 'Attack1' || clipName === 'Attack2') {
+      if (clipName === 'Throw') {
+        onThrowAnimFinished?.();
+        blendToIdleOrWalk();
+        return;
+      }
+      if (clipName === 'Attack0' || clipName === 'Attack1') {
         onAttackFinished?.();
         blendToIdleOrWalk();
         return;
@@ -363,7 +410,7 @@ export default function BossGlbModel({
 
     mixer.addEventListener('finished', onFinish);
     return () => mixer.removeEventListener('finished', onFinish);
-  }, [mixer, isDying, isWalking, onImpactFinished, onTectonicJumpFinished, onAttackFinished, onLeapFinished]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isDying, isWalking, onImpactFinished, onTectonicJumpFinished, onAttackFinished, onLeapFinished, onThrowAnimFinished]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group ref={sceneGroupRef}>

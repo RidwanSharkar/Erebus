@@ -39,7 +39,7 @@ export default function FrozenEffect({
     return () => {
       clearTimeout(timeout);
     };
-  }, [duration, onComplete, enemyId]);
+  }, [duration, onComplete, enemyId, startTime]);
 
   // MEMORY FIX: Cleanup geometries and materials on unmount
   useEffect(() => {

@@ -58,6 +58,13 @@ export class StatSystem {
     };
   }
 
+  /** Grant bonus points to spend on STR/STA/AGI/INT (e.g. co-op stat-room pedestal). */
+  static grantStatPoints(data: StatPointData, amount: number): StatPointData {
+    const n = Math.max(0, Math.floor(Number(amount) || 0));
+    if (n <= 0) return data;
+    return { ...data, statPoints: data.statPoints + n };
+  }
+
   /** Grant +1 to a stat from an item drop — does NOT consume a stat point */
   static grantItemStat(data: StatPointData, stat: StatKey): StatPointData {
     return {

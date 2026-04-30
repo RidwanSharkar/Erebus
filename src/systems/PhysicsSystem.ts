@@ -16,11 +16,12 @@ export class PhysicsSystem extends BasePhysicsSystem {
 
   /** When false, castle wall AABB checks are skipped (co-op throne room). */
   private castleWallPhysicsEnabled = true;
+  private arenaBoundaryMode: 'circle' | 'square' | 'hex' = 'square';
 
   /** Circular XZ obstacles (throne pillars) — only used when castle walls are off. */
   private thronePillarObstacles: Array<{ x: number; z: number; radius: number }> = [];
 
-  /** Red co-op corner mountain base discs (main arena, castle walls on). */
+  /** Optional circular XZ disc obstacles (typically empty). */
   private cornerMountainObstacles: Array<{ x: number; z: number; radius: number }> = [];
 
   constructor() {
@@ -38,6 +39,11 @@ export class PhysicsSystem extends BasePhysicsSystem {
 
   public setCastleWallPhysicsEnabled(enabled: boolean): void {
     this.castleWallPhysicsEnabled = enabled;
+    this.arenaBoundaryMode = enabled ? 'square' : 'circle';
+  }
+
+  public setArenaBoundaryMode(mode: 'circle' | 'square' | 'hex'): void {
+    this.arenaBoundaryMode = mode;
   }
 
   /**
@@ -48,7 +54,7 @@ export class PhysicsSystem extends BasePhysicsSystem {
     this.thronePillarObstacles = obstacles && obstacles.length > 0 ? obstacles.slice() : [];
   }
 
-  /** Pass null or [] to clear. Same disc layout as `MountainBaseCollision` / `getRedCornerMountainDiscs`. */
+  /** Optional circular XZ obstacles (e.g. legacy corner discs). Pass null or [] to clear. */
   public setCornerMountainObstacles(
     obstacles: Array<{ x: number; z: number; radius: number }> | null,
   ): void {
@@ -114,6 +120,9 @@ export class PhysicsSystem extends BasePhysicsSystem {
     // Only check horizontal distance (ignore Y for boundary)
     const horizontalPosition = new Vector3(potentialPosition.x, 0, potentialPosition.z);
     const distanceFromCenter = horizontalPosition.length();
+    const hexBoundary = this.arenaBoundaryMode === 'hex'
+      ? this.getHexBoundaryCorrection(potentialPosition)
+      : null;
     
     // Check for tree, corner mountains, throne pillars, and castle-wall collisions
     const treeCollision = this.checkTreeCollision(potentialPosition);
@@ -124,7 +133,12 @@ export class PhysicsSystem extends BasePhysicsSystem {
       : { hasCollision: false, normal: new Vector3(), closestPoint: new Vector3(), segmentIndex: -1 };
 
     // Circular clamp only when castle walls are off (throne prep). Main arena uses wall AABBs + square interior.
-    if (!this.castleWallPhysicsEnabled && distanceFromCenter >= MAP_RADIUS) {
+    if (hexBoundary && hexBoundary.outside) {
+      const corrected = this.clampToHexBoundary(potentialPosition);
+      transform.setPosition(corrected.x, currentPosition.y + deltaPosition.y, corrected.z);
+      const velocityNormalComponent = movement.velocity.clone().projectOnVector(hexBoundary.normal);
+      movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
+    } else if (!this.castleWallPhysicsEnabled && distanceFromCenter >= MAP_RADIUS) {
       // If we hit the boundary, calculate tangent movement for smooth sliding
       const currentHorizontalPos = new Vector3(currentPosition.x, 0, currentPosition.z);
       const toCenter = currentHorizontalPos.clone().normalize();
@@ -205,6 +219,41 @@ export class PhysicsSystem extends BasePhysicsSystem {
   // Wall segments imported directly from CastleWalls so positions stay in sync
   private readonly WALL_SEGMENTS: WallSegmentDef[] = WALL_SEGMENTS;
 
+  private getHexBoundaryCorrection(position: Vector3): { outside: boolean; normal: Vector3 } {
+    const apothem = this.mapRadius * Math.cos(Math.PI / 6) - this.horizontalClearanceRadius;
+    let maxExcess = 0;
+    let strongestNormal = new Vector3(1, 0, 0);
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i;
+      const normal = new Vector3(Math.cos(a), 0, Math.sin(a));
+      const excess = position.x * normal.x + position.z * normal.z - apothem;
+      if (excess > maxExcess) {
+        maxExcess = excess;
+        strongestNormal = normal;
+      }
+    }
+    return { outside: maxExcess > 0, normal: strongestNormal };
+  }
+
+  private clampToHexBoundary(position: Vector3): Vector3 {
+    const apothem = this.mapRadius * Math.cos(Math.PI / 6) - this.horizontalClearanceRadius;
+    let x = position.x;
+    let z = position.z;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < 6; i++) {
+        const a = (Math.PI / 3) * i;
+        const nx = Math.cos(a);
+        const nz = Math.sin(a);
+        const excess = x * nx + z * nz - apothem;
+        if (excess > 0) {
+          x -= nx * excess;
+          z -= nz * excess;
+        }
+      }
+    }
+    return new Vector3(x, position.y, z);
+  }
+
   // Define tree positions (same as in Environment.tsx - reduced by half)
   private readonly TREE_POSITIONS = [
     // Middle ring (scaled to smaller main map)
@@ -275,7 +324,7 @@ export class PhysicsSystem extends BasePhysicsSystem {
     return slidePosition;
   }
 
-  /** Red co-op quarter corners — same layout as `getRedCornerMountainDiscs` / `MountainBaseCollision`. */
+  /** Corner disc obstacles when `setCornerMountainObstacles` is populated. */
   private checkCornerMountainCollision(position: Vector3): {
     hasCollision: boolean;
     normal: Vector3;

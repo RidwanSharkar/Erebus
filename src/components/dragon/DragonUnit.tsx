@@ -90,7 +90,14 @@ interface DragonUnitProps {
   }>;
   mushroomTargets?: Array<{ index: number; position: Vector3 }>;
   onMushroomHit?: (index: number, baseDamage: number) => void;
-  onHit?: (targetId: string, damage: number, isCritical?: boolean, position?: Vector3, isBlizzard?: boolean) => void;
+  onHit?: (
+    targetId: string,
+    damage: number,
+    isCritical?: boolean,
+    position?: Vector3,
+    isBlizzard?: boolean,
+    viperPhase?: 'forward' | 'return' | 'explosion',
+  ) => void;
   setDamageNumbers?: (callback: (prev: Array<{
     id: number;
     damage: number;

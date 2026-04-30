@@ -6,13 +6,21 @@ import { World } from '@/ecs/World';
 import { Transform } from '@/ecs/components/Transform';
 import { Projectile } from '@/ecs/components/Projectile';
 import { Renderer } from '@/ecs/components/Renderer';
+import type { CrossentropyVisualTheme } from '@/utils/talents';
+
+function crossentropyThemeFromUserData(ud: Record<string, unknown>): CrossentropyVisualTheme {
+  if (ud.crossentropyInferno === true) return 'inferno';
+  if (ud.crossentropyTempest === true) return 'tempest';
+  if (ud.crossentropyPlague === true) return 'plague';
+  return 'default';
+}
 
 interface CrossentropyBoltData {
   id: number;
   position: Vector3;
   direction: Vector3;
   entityId: number;
-  infernoVisual?: boolean;
+  visualTheme?: CrossentropyVisualTheme;
 }
 
 interface CrossentropyBoltManagerProps {
@@ -45,19 +53,19 @@ export default function CrossentropyBoltManager({ world }: CrossentropyBoltManag
         const existingBolt = activeBolts.find(bolt => bolt.entityId === entity.id);
         
         if (existingBolt) {
-          // Update existing bolt position
           existingBolt.position.copy(transform.position);
-          if (renderer.mesh.userData.crossentropyInferno) existingBolt.infernoVisual = true;
+          existingBolt.visualTheme = crossentropyThemeFromUserData(
+            renderer.mesh.userData as Record<string, unknown>,
+          );
           newBolts.push(existingBolt);
         } else {
-          // Create new bolt
           const direction = renderer.mesh.userData.direction || projectile.velocity.clone().normalize();
           newBolts.push({
             id: boltIdCounter.current++,
             position: transform.position.clone(),
             direction: direction.clone(),
             entityId: entity.id,
-            infernoVisual: renderer.mesh.userData.crossentropyInferno === true,
+            visualTheme: crossentropyThemeFromUserData(renderer.mesh.userData as Record<string, unknown>),
           });
         }
       }
@@ -82,7 +90,7 @@ export default function CrossentropyBoltManager({ world }: CrossentropyBoltManag
           id={bolt.id}
           position={bolt.position}
           direction={bolt.direction}
-          infernoVisual={bolt.infernoVisual === true}
+          visualTheme={bolt.visualTheme ?? 'default'}
           onImpact={() => {
             // Visual component lifecycle - just remove from visual state
             // ECS system handles all collision detection and damage

@@ -1,27 +1,39 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { WeaponType, WeaponSubclass } from '../components/dragon/weapons';
 import { Camera } from '../utils/three-exports';
 import type { DamageNumberData } from '../components/DamageNumbers';
 import DamageNumbers from '../components/DamageNumbers';
 import GameUI from '../components/ui/GameUI';
+import StrikeIndicator from '../components/ui/StrikeIndicator';
+import PlayerDamageFeedbackOverlay from '../components/ui/PlayerDamageFeedbackOverlay';
 import { getGlobalRuneCounts, getCriticalChance, getCriticalDamageMultiplier } from '../core/DamageCalculator';
 import ExperienceBar from '../components/ui/ExperienceBar';
 import EssenceDisplay from '../components/ui/EssenceDisplay';
 import { MultiplayerProvider, useMultiplayer } from '../contexts/MultiplayerContext';
+import type { CoopRoomKind } from '../contexts/MultiplayerContext';
 import MerchantUI from '../components/ui/MerchantUI';
 import StatsPanel from '../components/ui/StatsPanel';
 import LoadingScreen from '../components/ui/LoadingScreen';
 import AbilitySelectionModal from '../components/ui/AbilitySelectionModal';
 import TalentSelectionModal from '../components/ui/TalentSelectionModal';
 import CoopBoonPickerModal from '../components/ui/CoopBoonPickerModal';
+import DefeatRetryDialog from '../components/ui/DefeatRetryDialog';
 import {
   TALENT_BLADE_RUSH,
   applyTalentIdToLoadout,
   buildClassBoonPoolForWeapon,
   buildRoomBoonPoolForColor,
+  expandRunebladeRoomBoonExclusionsAfterPick,
+  expandScytheEntropicExclusionsAfterPick,
+  expandSabresBackstabRoomBoonExclusionsAfterPick,
+  expandSabresSwipesRoomBoonExclusionsAfterPick,
+  expandSabresFlourishRoomBoonExclusionsAfterPick,
+  expandScytheTotemExclusionsAfterPick,
+  expandScytheCrossentropyExclusionsAfterPick,
+  filterTalentIdsByExclusionSet,
   pickRandomDistinctFromPool,
   writeBladeRushBoonMetaUnlocked,
 } from '../utils/talents';
@@ -50,6 +62,24 @@ const CoopGameScene = dynamic(() => import('../components/CoopGameScene').then(m
 /** Prevents double bootstrap in React Strict Mode (ref resets on remount). */
 let coopEntryBootstrapStarted = false;
 
+const COOP_CAMP_COLORS = new Set<string>(['red', 'blue', 'green', 'purple']);
+
+function coopRoomBoonColorFromContext(
+  coopClearedRoomColor: string | null,
+  coopClearedRoomKind: CoopRoomKind | null,
+  campTypes: readonly string[],
+): string | null {
+  if (coopClearedRoomColor && COOP_CAMP_COLORS.has(coopClearedRoomColor)) {
+    return coopClearedRoomColor;
+  }
+  if (coopClearedRoomKind && COOP_CAMP_COLORS.has(coopClearedRoomKind)) {
+    return coopClearedRoomKind;
+  }
+  const c0 = campTypes[0] != null ? String(campTypes[0]).toLowerCase() : '';
+  if (COOP_CAMP_COLORS.has(c0)) return c0;
+  return null;
+}
+
 const DEV_TALENT_MODAL =
   process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_DEV_TALENT_MODAL === '1';
 
@@ -66,6 +96,7 @@ function HomeContent() {
     statPointData,
     allocateStatPoint,
     updateStatPointsForLevel: updateStatPointsForLvl,
+    grantStatPoints,
     purchaseItem,
     players,
     socket,
@@ -73,6 +104,7 @@ function HomeContent() {
     enemies,
     inventory,
     joinRoom,
+    currentRoomId,
     isConnected,
     coopTransitionOverlay,
     combatArenaActive,
@@ -84,6 +116,8 @@ function HomeContent() {
     coopMainArenaPortalPhase,
     campTypes,
     coopClearedRoomColor,
+    coopCurrentRoomKind,
+    coopClearedRoomKind,
     clearCoopClearedRoomColor,
   } = useMultiplayer();
 
@@ -140,6 +174,11 @@ function HomeContent() {
 
   const [controlSystem, setControlSystem] = useState<any>(null);
   const [gameMode, setGameMode] = useState<'menu' | 'singleplayer' | 'multiplayer' | 'pvp' | 'coop'>('menu');
+  const [coopInteractHint, setCoopInteractHint] = useState<string | null>(null);
+  const onCoopInteractHintChange = useCallback((hint: string | null) => {
+    setCoopInteractHint(hint);
+  }, []);
+  const [loadingSceneBootstrapReady, setLoadingSceneBootstrapReady] = useState(false);
   const [isGameLoading, setIsGameLoading] = useState(true);
   const [showCanvas, setShowCanvas] = useState(false);
   const bootstrapWeaponsRef = useRef(selectedWeapons);
@@ -148,24 +187,61 @@ function HomeContent() {
   const [playerEssence, setPlayerEssence] = useState(50); // Start with 50 essence
   const [showMerchantUI, setShowMerchantUI] = useState(false);
   const [showRulesPanel, setShowRulesPanel] = useState(false);
+  const [defeatDialogOpen, setDefeatDialogOpen] = useState(false);
+  const defeatDialogRevealTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (defeatDialogRevealTimeoutRef.current !== null) {
+        clearTimeout(defeatDialogRevealTimeoutRef.current);
+        defeatDialogRevealTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  const onLocalPlayerDefeated = useCallback(() => {
+    if (defeatDialogRevealTimeoutRef.current !== null) {
+      clearTimeout(defeatDialogRevealTimeoutRef.current);
+    }
+    defeatDialogRevealTimeoutRef.current = setTimeout(() => {
+      defeatDialogRevealTimeoutRef.current = null;
+      setDefeatDialogOpen(true);
+    }, 3000);
+  }, []);
+
+  const onLocalPlayerRevived = useCallback(() => {
+    if (defeatDialogRevealTimeoutRef.current !== null) {
+      clearTimeout(defeatDialogRevealTimeoutRef.current);
+      defeatDialogRevealTimeoutRef.current = null;
+    }
+    setDefeatDialogOpen(false);
+  }, []);
   const [throneAbilityWeapon, setThroneAbilityWeapon] = useState<WeaponType | null>(null);
   const [throneTalentWeapon, setThroneTalentWeapon] = useState<WeaponType | null>(null);
   const [coopBoon, setCoopBoon] = useState<{
     kind: 'class' | 'room';
     options: TalentId[];
   } | null>(null);
+  const [chaosSacrificeChoices, setChaosSacrificeChoices] = useState<Array<{ id: string; title: string; description: string }> | null>(null);
   const classBoonPickedThisRunRef = useRef(false);
   const roomBoonIntermissionDoneSeqRef = useRef(-1);
-  const [coopBgmSyncTick, setCoopBgmSyncTick] = useState(0);
+  /** Runeblade colored-room boon mutex: excludes entire combo / strike / smite slot after one pick (per co-op room session). */
+  const runebladeRoomBoonExcludedIdsRef = useRef<Set<TalentId>>(new Set());
+  /** Scythe Entropic bolt boon mutex (Wrathful / Staggering / Infesting Entropic). */
+  const scytheEntropicRoomBoonExcludedIdsRef = useRef<Set<TalentId>>(new Set());
+  /** Sabres colored-room mutex: Backstab trio + Swipes trio. */
+  const sabresRoomBoonExcludedIdsRef = useRef<Set<TalentId>>(new Set());
+  /** True after the player interacts with the combat pedestal (X), triggering the boon picker. */
+  const [pedestalInteracted, setPedestalInteracted] = useState(false);
+  /** True after the boon has been picked (or no boon options), unlocking the portals. */
+  const [portalsUnlocked, setPortalsUnlocked] = useState(false);
   const lastCoopIntermissionBgmRef = useRef(0);
   const lastCoopEnterBgmRef = useRef(0);
   const lastCoopBossBgmRef = useRef(0);
-  /** Latest co-op arena flags for async BGM preload callback (avoids layering Empyrea over combat). */
-  const coopBgmBootstrapGateRef = useRef({
-    sessionGameMode,
-    gameStarted,
-    combatArenaActive,
-  });
+  /** Guards room-clear finish SFX vs mount / mid-phase sync. */
+  const prevCoopMainArenaPortalPhaseRef = useRef<
+    typeof coopMainArenaPortalPhase | 'unset'
+  >('unset');
 
   const handleDamageNumberComplete = (id: string) => {
     // Use the global handler set by GameScene
@@ -217,6 +293,7 @@ function HomeContent() {
         socket.emit('start-game', { roomId: joinedRoomId });
         setGameMode('coop');
         setShowCanvas(true);
+        setLoadingSceneBootstrapReady(false);
         setIsGameLoading(true);
       } catch (e) {
         console.error('Failed to bootstrap game:', e);
@@ -225,25 +302,112 @@ function HomeContent() {
     })();
   }, [isConnected, socket, joinRoom]);
 
-  // First wave cleared → 3 room-color boons (co-op main-arena intermission, wave 2 pick).
+  // Reset pedestal / portal state each time the player enters a new combat arena.
+  const lastArenaEnterSeqRef = useRef(-1);
   useEffect(() => {
+    if (coopCombatArenaEnterSeq === lastArenaEnterSeqRef.current) return;
+    lastArenaEnterSeqRef.current = coopCombatArenaEnterSeq;
+    setPedestalInteracted(false);
+    setPortalsUnlocked(false);
+    setChaosSacrificeChoices(null);
+  }, [coopCombatArenaEnterSeq]);
+
+  useEffect(() => {
+    runebladeRoomBoonExcludedIdsRef.current.clear();
+    scytheEntropicRoomBoonExcludedIdsRef.current.clear();
+    sabresRoomBoonExcludedIdsRef.current.clear();
+  }, [currentRoomId]);
+
+  /**
+   * Called by CoopGameScene when the player presses X near the combat pedestal.
+   * Builds and shows the room-boon picker, or immediately unlocks portals if the
+   * boon pool is empty (e.g. boss-gate phase).
+   */
+  const handleCombatArenaPedestalInteract = useCallback((rewardKindFromScene?: string | null) => {
     if (gameMode !== 'coop') return;
-    if (coopMainArenaPortalPhase !== 'pick_wave2' && coopMainArenaPortalPhase !== 'pick_post_boss') return;
     if (roomBoonIntermissionDoneSeqRef.current === coopMainArenaIntermissionSeq) return;
 
-    const color = coopClearedRoomColor ?? campTypes[0] ?? null;
-    const pool = buildRoomBoonPoolForColor(color, selectedWeapons.primary);
-    const options = pickRandomDistinctFromPool(pool, 3);
     roomBoonIntermissionDoneSeqRef.current = coopMainArenaIntermissionSeq;
-    if (options.length === 0) return;
-    setCoopBoon({ kind: 'room', options });
+    setPedestalInteracted(true);
+
+    const rewardKind = (rewardKindFromScene ?? coopClearedRoomKind ?? coopCurrentRoomKind) as CoopRoomKind | null;
+
+    if (rewardKind === 'boss') {
+      const options = pickRandomDistinctFromPool(buildClassBoonPoolForWeapon(selectedWeapons.primary), 3);
+      if (options.length > 0) {
+        setCoopBoon({ kind: 'class', options });
+        return;
+      }
+      setPortalsUnlocked(true);
+      return;
+    }
+
+    if (rewardKind === 'stat') {
+      grantStatPoints(5);
+      clearCoopClearedRoomColor();
+      setPortalsUnlocked(true);
+      return;
+    }
+
+    if (rewardKind === 'healing') {
+      clearCoopClearedRoomColor();
+      setPortalsUnlocked(true);
+      return;
+    }
+
+    if (rewardKind === 'chaos') {
+      setChaosSacrificeChoices([
+        {
+          id: 'dash-for-damage',
+          title: 'Bloodletting Momentum',
+          description: 'Placeholder: lose a dash charge for increased damage later.',
+        },
+        {
+          id: 'health-for-power',
+          title: 'Fractured Vitality',
+          description: 'Placeholder: sacrifice max health for greater power later.',
+        },
+        {
+          id: 'shield-for-speed',
+          title: 'Shattered Ward',
+          description: 'Placeholder: trade shield strength for speed later.',
+        },
+      ]);
+      return;
+    }
+
+    if (coopMainArenaPortalPhase === 'pick_wave2' || coopMainArenaPortalPhase === 'pick_post_boss') {
+      const color = coopRoomBoonColorFromContext(coopClearedRoomColor, coopClearedRoomKind, campTypes);
+      const rawPool = buildRoomBoonPoolForColor(color, selectedWeapons.primary);
+      let pool = rawPool;
+      if (selectedWeapons.primary === WeaponType.RUNEBLADE) {
+        pool = filterTalentIdsByExclusionSet(rawPool, runebladeRoomBoonExcludedIdsRef.current);
+      } else if (selectedWeapons.primary === WeaponType.SCYTHE) {
+        pool = filterTalentIdsByExclusionSet(rawPool, scytheEntropicRoomBoonExcludedIdsRef.current);
+      } else if (selectedWeapons.primary === WeaponType.SABRES) {
+        pool = filterTalentIdsByExclusionSet(rawPool, sabresRoomBoonExcludedIdsRef.current);
+      }
+      const options = pickRandomDistinctFromPool(pool, 3);
+      if (options.length > 0) {
+        setCoopBoon({ kind: 'room', options });
+        // portalsUnlocked will be set in handleCoopBoonPick after the player chooses
+        return;
+      }
+    }
+
+    // No boon to show (boss gate or empty pool) — unlock portals immediately
+    setPortalsUnlocked(true);
   }, [
     gameMode,
     coopMainArenaIntermissionSeq,
     coopMainArenaPortalPhase,
     coopClearedRoomColor,
+    coopClearedRoomKind,
+    coopCurrentRoomKind,
     campTypes,
     selectedWeapons.primary,
+    grantStatPoints,
+    clearCoopClearedRoomColor,
   ]);
 
   const handleThroneWeaponEquipped = useCallback(
@@ -263,11 +427,41 @@ function HomeContent() {
     (id: TalentId, kind: 'class' | 'room') => {
       setTalentLoadout((prev) => applyTalentIdToLoadout(prev, id));
       if (id === TALENT_BLADE_RUSH) writeBladeRushBoonMetaUnlocked(true);
-      if (kind === 'room') clearCoopClearedRoomColor();
-      if (kind === 'class') classBoonPickedThisRunRef.current = true;
+      if (kind === 'room') {
+        for (const exId of expandRunebladeRoomBoonExclusionsAfterPick(id)) {
+          runebladeRoomBoonExcludedIdsRef.current.add(exId);
+        }
+        for (const exId of expandScytheEntropicExclusionsAfterPick(id)) {
+          scytheEntropicRoomBoonExcludedIdsRef.current.add(exId);
+        }
+        for (const exId of expandScytheTotemExclusionsAfterPick(id)) {
+          scytheEntropicRoomBoonExcludedIdsRef.current.add(exId);
+        }
+        for (const exId of expandScytheCrossentropyExclusionsAfterPick(id)) {
+          scytheEntropicRoomBoonExcludedIdsRef.current.add(exId);
+        }
+        for (const exId of expandSabresBackstabRoomBoonExclusionsAfterPick(id)) {
+          sabresRoomBoonExcludedIdsRef.current.add(exId);
+        }
+        for (const exId of expandSabresSwipesRoomBoonExclusionsAfterPick(id)) {
+          sabresRoomBoonExcludedIdsRef.current.add(exId);
+        }
+        for (const exId of expandSabresFlourishRoomBoonExclusionsAfterPick(id)) {
+          sabresRoomBoonExcludedIdsRef.current.add(exId);
+        }
+        clearCoopClearedRoomColor();
+        setPortalsUnlocked(true);
+      }
+      if (kind === 'class') {
+        classBoonPickedThisRunRef.current = true;
+        if (coopMainArenaPortalPhase !== null) {
+          clearCoopClearedRoomColor();
+          setPortalsUnlocked(true);
+        }
+      }
       setCoopBoon(null);
     },
-    [clearCoopClearedRoomColor, setTalentLoadout],
+    [clearCoopClearedRoomColor, coopMainArenaPortalPhase, setTalentLoadout],
   );
 
   // Sync skill point data with control system
@@ -312,10 +506,6 @@ function HomeContent() {
     }
   }, [players, socket?.id]);
 
-  useEffect(() => {
-    coopBgmBootstrapGateRef.current = { sessionGameMode, gameStarted, combatArenaActive };
-  }, [sessionGameMode, gameStarted, combatArenaActive]);
-
   // Initialize audio system for UI sounds
   useEffect(() => {
     const initAudioSystem = async () => {
@@ -323,23 +513,20 @@ function HomeContent() {
         const { AudioSystem } = await import('../systems/AudioSystem');
         const audioSystem = new AudioSystem();
         (window as any).audioSystem = audioSystem;
+        void audioSystem.preloadStartupSounds();
 
-        // Only preload weapon sounds (fast loading)
-        await audioSystem.preloadWeaponSounds();
+        const preloadAllSounds = () => {
+          void audioSystem.preloadWeaponSounds();
+        };
 
-        // Lazy load background music in the background (doesn't block UI)
-        audioSystem.preloadBackgroundMusic().then(() => {
-          const g = coopBgmBootstrapGateRef.current;
-          const inCoopArena =
-            g.sessionGameMode === 'coop' && g.gameStarted && g.combatArenaActive;
-          if (!inCoopArena) {
-            audioSystem.startBackgroundMusic();
-          }
-          setCoopBgmSyncTick((n) => n + 1);
-        }).catch((error) => {
-          console.warn('Background music failed to load:', error);
-        });
-
+        const win = window as Window & {
+          requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+        };
+        if (win.requestIdleCallback) {
+          win.requestIdleCallback(preloadAllSounds, { timeout: 5000 });
+        } else {
+          win.setTimeout(preloadAllSounds, 1500);
+        }
       } catch (error) {
         console.warn('Failed to initialize audio system:', error);
       }
@@ -348,7 +535,7 @@ function HomeContent() {
     initAudioSystem();
   }, []);
 
-  // Co-op BGM: Empyrea on throne, random room tracks in combat, chaos between rooms / after boss
+  // Co-op BGM: silent throne prep, random room tracks in combat, chaos between rooms / after boss
   useEffect(() => {
     const audio = typeof window !== 'undefined' ? window.audioSystem : undefined;
     if (!audio) {
@@ -391,7 +578,34 @@ function HomeContent() {
     coopMainArenaIntermissionSeq,
     coopCombatArenaEnterSeq,
     coopBossClearedBgmSeq,
-    coopBgmSyncTick,
+  ]);
+
+  // Co-op room clear: portal phase unlocks (pedestal) — plays once per null → phase transition.
+  useEffect(() => {
+    const audio = typeof window !== 'undefined' ? window.audioSystem : undefined;
+    const prev = prevCoopMainArenaPortalPhaseRef.current;
+
+    if (prev === 'unset') {
+      prevCoopMainArenaPortalPhaseRef.current = coopMainArenaPortalPhase;
+      return;
+    }
+
+    if (
+      sessionGameMode === 'coop' &&
+      gameStarted &&
+      combatArenaActive &&
+      prev === null &&
+      coopMainArenaPortalPhase !== null
+    ) {
+      audio?.playCoopRoomClearFinish?.();
+    }
+
+    prevCoopMainArenaPortalPhaseRef.current = coopMainArenaPortalPhase;
+  }, [
+    sessionGameMode,
+    gameStarted,
+    combatArenaActive,
+    coopMainArenaPortalPhase,
   ]);
 
   return (
@@ -421,6 +635,7 @@ function HomeContent() {
                     <li>Use the east <strong>ability pillar</strong> with <strong className="text-green-400">X</strong> to assign Q, E, and R from the shared pool.</li>
                     <li>When a <strong>class boon</strong> modal appears, pick 1 of 3 random talents for your <strong>current weapon</strong> (once per run after that weapon is equipped).</li>
                     <li>After you <strong>clear the first combat room</strong>, a <strong>room boon</strong> offers 3 picks from a pool determined by <strong>that room&apos;s color</strong> (blue / green / purple / red). Weapon matters: Runeblade, Bow, and Scythe see different room pools.</li>
+                    <li>On the <strong>main arena map</strong>, every <strong>third</strong> combat room you clear opens a <strong>boss portal</strong> (Boss 1 → Boss 2 → …; room color does not change that cadence). After a boss, you return to three rooms before the next boss gate.</li>
                     <li>Use rim <strong>portals</strong> to leave prep or, in the arena, to choose the next challenge when prompted.</li>
                   </ul>
                 </div>
@@ -428,9 +643,10 @@ function HomeContent() {
                 <div className="border-b border-gray-600 pb-4">
                   <h3 className="text-lg font-semibold text-yellow-400 mb-2">Boons at a glance</h3>
                   <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
-                    <li><strong className="text-sky-300">Runeblade</strong>: class pool includes Trinity, Vengeance, Crusader, Windfury, Blizzard, Blade Rush or Stored Charge (after meta unlock), Double Strike, Spellblade, and more by weapon.</li>
+                    <li><strong className="text-sky-300">Runeblade</strong>: class pool includes Trinity, Vengeance, Crusader, Windfury, Blizzard, Blade Rush or Stored Charge (after meta unlock), Double Strike, Spellblade, and more by weapon. Colored <strong>room</strong> boons for your basic combo, Wraith Strike, and Smite are mutually exclusive branches for the rest of that run (one palette per branch); class boons ignore this split.</li>
                     <li><strong className="text-green-300">Bow</strong>: class pool includes Execute, Explosive Talons, Concentrated Volley, Dual Coil, Tempest Rounds. Room colors gate talents like Stagger Shot, Wrathful Bite/Talons, Wyvern Sting/Bite.</li>
-                    <li><strong className="text-purple-300">Scythe</strong>: class pool includes Frostpath, Icebeam, Solar Recharge, Reaper. Red rooms can offer Inferno; other colors may offer no room boon yet.</li>
+                    <li><strong className="text-purple-300">Scythe</strong>: class pool includes Icebeam, Reaper, Frostpath, and Solar Recharge. Colored <strong>room</strong> boons: red — Wrathful Entropic &amp; Totem; blue — Staggering Entropic &amp; Totem; green — Infesting Entropic &amp; Totem; purple — Inferno.</li>
+                    <li><strong className="text-red-400">Sabres</strong>: class pool includes Killstreak and Relentless (Backstab). Colored <strong>room</strong> boons still gate Backstab / Swipes / Flourish branches.</li>
                     <li><strong>Tempest Rounds</strong> (Bow) and <strong>Icebeam</strong> (Scythe) are <strong>talents / boons</strong>, not passives on the ability picker.</li>
                   </ul>
 
@@ -439,7 +655,7 @@ function HomeContent() {
                 <div className="border-b border-gray-600 pb-4">
                   <h3 className="text-lg font-semibold text-yellow-400 mb-2">Weapons</h3>
                   <p className="text-gray-300 text-sm mb-2">
-                    Each weapon has a distinct fantasy and boon lists; abilities are chosen at the prep pillar, not only via leveling.
+                    Each weapon has a distinct fantasy and boon lists
                   </p>
                   <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
                     <li><strong className="text-green-400">Bow</strong> — Ranged pressure, crit scaling, Barrage and Talons lines.</li>
@@ -497,40 +713,53 @@ function HomeContent() {
               powerPreference: "high-performance"
             }}
           >
-            {(gameMode === 'pvp' || gameMode === 'coop') && (
-              <CoopGameScene
-                onDamageNumbersUpdate={setDamageNumbers}
-                onDamageNumberComplete={handleDamageNumberComplete}
-                onCameraUpdate={handleCameraUpdate}
-                onGameStateUpdate={handleGameStateUpdate}
-                onControlSystemUpdate={handleControlSystemUpdate}
-                onExperienceUpdate={handleExperienceUpdate}
-                onEssenceUpdate={handleEssenceUpdate}
-                onMerchantUIUpdate={setShowMerchantUI}
-                onSceneReady={() => setIsGameLoading(false)}
-                selectedWeapons={selectedWeapons}
-                skillPointData={skillPointData}
-                statPointData={statPointData}
-                abilityLoadout={abilityLoadout}
-                throneAbilityModalOpen={
-                  throneAbilityWeapon !== null || throneTalentWeapon !== null || coopBoon !== null
-                }
-                onRequestThroneAbilityModal={(weapon) => {
-                  setThroneTalentWeapon(null);
-                  setThroneAbilityWeapon(weapon);
-                }}
-                onRequestThroneTalentModal={
-                  DEV_TALENT_MODAL
-                    ? (weapon) => {
-                        setThroneAbilityWeapon(null);
-                        setThroneTalentWeapon(weapon);
-                      }
-                    : undefined
-                }
-                onThroneWeaponEquipped={handleThroneWeaponEquipped}
-                throneDevTalentShortcutEnabled={DEV_TALENT_MODAL}
-              />
-            )}
+            <Suspense fallback={null}>
+              {(gameMode === 'pvp' || gameMode === 'coop') && (
+                <CoopGameScene
+                  onDamageNumbersUpdate={setDamageNumbers}
+                  onDamageNumberComplete={handleDamageNumberComplete}
+                  onCameraUpdate={handleCameraUpdate}
+                  onGameStateUpdate={handleGameStateUpdate}
+                  onControlSystemUpdate={handleControlSystemUpdate}
+                  onExperienceUpdate={handleExperienceUpdate}
+                  onEssenceUpdate={handleEssenceUpdate}
+                  onMerchantUIUpdate={setShowMerchantUI}
+                  onSceneReady={() => {
+                    setLoadingSceneBootstrapReady(true);
+                    requestAnimationFrame(() => {
+                      requestAnimationFrame(() => setIsGameLoading(false));
+                    });
+                  }}
+                  selectedWeapons={selectedWeapons}
+                  skillPointData={skillPointData}
+                  statPointData={statPointData}
+                  abilityLoadout={abilityLoadout}
+                  throneAbilityModalOpen={
+                    throneAbilityWeapon !== null || throneTalentWeapon !== null || coopBoon !== null || chaosSacrificeChoices !== null
+                  }
+                  onRequestThroneAbilityModal={(weapon) => {
+                    setThroneTalentWeapon(null);
+                    setThroneAbilityWeapon(weapon);
+                  }}
+                  onRequestThroneTalentModal={
+                    DEV_TALENT_MODAL
+                      ? (weapon) => {
+                          setThroneAbilityWeapon(null);
+                          setThroneTalentWeapon(weapon);
+                        }
+                      : undefined
+                  }
+                  onThroneWeaponEquipped={handleThroneWeaponEquipped}
+                  throneDevTalentShortcutEnabled={DEV_TALENT_MODAL}
+                  pedestalBoonReady={coopMainArenaPortalPhase !== null && !pedestalInteracted}
+                  portalsUnlocked={portalsUnlocked}
+                  onCombatArenaPedestalInteract={handleCombatArenaPedestalInteract}
+                  onInteractHintChange={onCoopInteractHintChange}
+                  onLocalPlayerDefeated={onLocalPlayerDefeated}
+                  onLocalPlayerRevived={onLocalPlayerRevived}
+                />
+              )}
+            </Suspense>
           </Canvas>
         )}
       
@@ -571,7 +800,16 @@ function HomeContent() {
                 />
               </div>
             )}
-            
+
+            <StrikeIndicator
+              enabled
+              camera={cameraInfo.camera}
+              size={cameraInfo.size}
+            />
+            <PlayerDamageFeedbackOverlay />
+
+            <DefeatRetryDialog open={defeatDialogOpen} />
+
             {/* Game UI - Outside Canvas */}
             <div className="absolute bottom-4 left-4">
               <GameUI
@@ -596,6 +834,8 @@ function HomeContent() {
                 critDamageRuneCount={getGlobalRuneCounts().critDamageRunes}
                 criticalChance={getCriticalChance()}
                 criticalDamageMultiplier={getCriticalDamageMultiplier()}
+                talentLoadout={talentLoadout}
+                interactHint={gameMode === 'coop' ? coopInteractHint : null}
               />
             </div>
 
@@ -607,7 +847,7 @@ function HomeContent() {
                 isLocalPlayer={true}
                 skeletonKillCount={gameMode === 'coop' ? skeletonKillCount : undefined}
                 bossSpawned={gameMode === 'coop'
-                  ? Array.from(enemies.values()).some(e => e.type === 'boss' && !e.isDying)
+                  ? Array.from(enemies.values()).some(e => (e.type === 'boss' || e.type === 'boss2' || e.type === 'boss3') && !e.isDying)
                   : undefined}
               />
             )}
@@ -667,6 +907,33 @@ function HomeContent() {
               />
             )}
 
+            {gameMode === 'coop' && chaosSacrificeChoices !== null && (
+              <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200]">
+                <div className="bg-gray-950/98 border-2 border-gray-800 rounded-xl p-6 max-w-3xl w-11/12 mx-auto shadow-2xl">
+                  <div className="text-center mb-5">
+                    <h2 className="text-xl font-bold text-gray-100 mb-1">CHAOS SACRIFICE</h2>
+                    <p className="text-gray-400 text-sm">Choose one placeholder sacrifice. Effects will be implemented later.</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {chaosSacrificeChoices.map((choice) => (
+                      <button
+                        key={choice.id}
+                        onClick={() => {
+                          setChaosSacrificeChoices(null);
+                          clearCoopClearedRoomColor();
+                          setPortalsUnlocked(true);
+                        }}
+                        className="text-left rounded-lg border border-gray-700 bg-gray-900/80 p-4 hover:border-gray-400 hover:bg-gray-800 transition-colors"
+                      >
+                        <div className="text-white font-bold text-sm mb-2">{choice.title}</div>
+                        <div className="text-gray-400 text-xs leading-relaxed">{choice.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Merchant UI - Only show in PVP mode */}
             {gameMode === 'pvp' && (
               <MerchantUI
@@ -713,6 +980,9 @@ function HomeContent() {
         {/* Loading Screen - shown until scene ready */}
         <LoadingScreen
           isVisible={isGameLoading || coopTransitionOverlay}
+          sceneBootstrapReady={
+            loadingSceneBootstrapReady || Boolean(!isGameLoading && coopTransitionOverlay)
+          }
           onFadeComplete={() => setIsGameLoading(false)}
         />
 

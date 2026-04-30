@@ -18,6 +18,14 @@ import TowerProjectile from '@/components/projectiles/TowerProjectile';
 import ExplosionEffect from '@/components/projectiles/ExplosionEffect';
 import CrossentropyExplosion from '@/components/projectiles/CrossentropyExplosion';
 import { Vector3, Color } from '@/utils/three-exports';
+import type { CrossentropyVisualTheme } from '@/utils/talents';
+
+function crossentropyThemeFromUserData(userData: Record<string, unknown>): CrossentropyVisualTheme {
+  if (userData.crossentropyInferno === true) return 'inferno';
+  if (userData.crossentropyTempest === true) return 'tempest';
+  if (userData.crossentropyPlague === true) return 'plague';
+  return 'default';
+}
 
 // Data interfaces for each projectile type
 interface ProjectileData {
@@ -36,10 +44,13 @@ interface ProjectileData {
   barrageWrathfulBite?: boolean;
   /** Wyvern Bite talent — green Barrage theme. */
   barrageWyvernBite?: boolean;
+  /** Staggering Bite talent — blue Barrage theme (when Wyvern/Wrathful not active). */
+  barrageStaggeringBite?: boolean;
   /** INFERNO talent — fiery Crossentropy theme. */
   infernoCrossentropy?: boolean;
   /** Reaper — pierce, visuals follow ECS, no impact explosion. */
   reaperCrossentropy?: boolean;
+  crossentropyVisualTheme?: CrossentropyVisualTheme;
 }
 
 interface SwordProjectileData {
@@ -58,13 +69,15 @@ interface ExplosionData {
   type?: 'crossentropy' | 'generic'; // Add type to distinguish explosion types
   chargeTime?: number; // For crossentropy explosions
   infernoCrossentropy?: boolean;
+  crossentropyVisualTheme?: CrossentropyVisualTheme;
 }
 
 interface UnifiedProjectileManagerProps {
   world: World;
+  onHauntedSoulAt?: (position: Vector3) => void;
 }
 
-export default function UnifiedProjectileManager({ world }: UnifiedProjectileManagerProps) {
+export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileManagerProps) {
   // State for all projectile types
   const [projectileData, setProjectileData] = useState<{
     crossentropy: ProjectileData[];
@@ -189,10 +202,12 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
         }
       } else if (userData.isCrossentropyBolt) {
         const existing = projectileData.crossentropy.find(p => p.entityId === entity.id);
+        const theme = crossentropyThemeFromUserData(userData as Record<string, unknown>);
         if (existing) {
           existing.position.copy(transform.position);
           if (userData.crossentropyInferno) existing.infernoCrossentropy = true;
           if (userData.reaperCrossentropy) existing.reaperCrossentropy = true;
+          existing.crossentropyVisualTheme = theme;
           newCrossentropy.push(existing);
         } else {
           newCrossentropy.push({
@@ -202,6 +217,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             entityId: entity.id,
             infernoCrossentropy: userData.crossentropyInferno === true,
             reaperCrossentropy: userData.reaperCrossentropy === true,
+            crossentropyVisualTheme: theme,
           });
         }
       } else if (userData.isEntropicBolt) {
@@ -241,6 +257,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
           existing.position.copy(transform.position);
           existing.barrageWrathfulBite = userData.barrageWrathfulBite === true;
           existing.barrageWyvernBite = userData.barrageWyvernBite === true;
+          existing.barrageStaggeringBite = userData.barrageStaggeringBite === true;
           newBarrage.push(existing);
         } else {
           newBarrage.push({
@@ -253,6 +270,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             opacity: userData.opacity || 1.0,
             barrageWrathfulBite: userData.barrageWrathfulBite === true,
             barrageWyvernBite: userData.barrageWyvernBite === true,
+            barrageStaggeringBite: userData.barrageStaggeringBite === true,
           });
         }
       } else if (userData.isRegularArrow || userData.projectileType === 'burst_arrow') {
@@ -305,6 +323,9 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
         type: event.type || 'generic',
         chargeTime: event.chargeTime,
         infernoCrossentropy: event.infernoCrossentropy === true,
+        crossentropyVisualTheme:
+          (event.crossentropyVisualTheme as CrossentropyVisualTheme | undefined) ??
+          (event.infernoCrossentropy === true ? 'inferno' : 'default'),
       };
       newExplosions.push(newExplosion);
     }
@@ -312,6 +333,17 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
     // Clear processed explosion events
     if (explosionEvents.length > 0) {
       world.clearEvents?.('explosion');
+    }
+
+    // Haunted soul VFX (e.g. Reaper Crossentropy hits) — emitted by ProjectileSystem
+    const hauntedSoulEvents = world.getEvents?.('hauntedSoulEffect') || [];
+    for (const ev of hauntedSoulEvents) {
+      if (onHauntedSoulAt && ev?.position) {
+        onHauntedSoulAt(ev.position.clone());
+      }
+    }
+    if (hauntedSoulEvents.length > 0) {
+      world.clearEvents?.('hauntedSoulEffect');
     }
 
     // Update state only if there are changes
@@ -362,27 +394,33 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
           id={bolt.id}
           position={bolt.position}
           direction={bolt.direction}
-          infernoVisual={bolt.infernoCrossentropy === true}
+          visualTheme={bolt.crossentropyVisualTheme ?? 'default'}
           reaperEcsDriven={bolt.reaperCrossentropy === true}
           checkCollisions={bolt.reaperCrossentropy ? undefined : checkCrossentropyBoltCollisions}
           onImpact={(impactPosition?: Vector3) => {
             if (bolt.reaperCrossentropy) return;
-            // Create Crossentropy explosion effect at impact position
             if (impactPosition) {
-              // Ensure explosion is visible by setting it at a consistent height
-              // Boss entities have colliders centered at y=1, so position explosion at y=1.5 for visibility
               const explosionPosition = impactPosition.clone();
-              explosionPosition.y = Math.max(1.5, impactPosition.y); // Minimum y=1.5 to ensure visibility on bosses
-              const inferno = bolt.infernoCrossentropy === true;
+              explosionPosition.y = Math.max(1.5, impactPosition.y);
+              const theme = bolt.crossentropyVisualTheme ?? 'default';
+              const color =
+                theme === 'inferno'
+                  ? new Color('#FF3300')
+                  : theme === 'tempest'
+                    ? new Color('#2288FF')
+                    : theme === 'plague'
+                      ? new Color('#33DD66')
+                      : new Color('#8B00FF');
               const explosion = {
                 id: explosionIdCounter.current++,
                 position: explosionPosition,
-                color: inferno ? new Color('#FF3300') : new Color('#8B00FF'),
-                size: 2.0, // Increased size from 1.75 to 2.0 for better visibility on large bosses
-                duration: 1.0, // Duration for Crossentropy explosion
+                color,
+                size: 2.0,
+                duration: 1.0,
                 type: 'crossentropy' as const,
-                chargeTime: 1.0, // Default charge time, could be dynamic based on player charge
-                infernoCrossentropy: inferno,
+                chargeTime: 1.0,
+                infernoCrossentropy: theme === 'inferno',
+                crossentropyVisualTheme: theme,
               };
               setExplosions(prev => [...prev, explosion]);
             }
@@ -464,6 +502,7 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
             distanceTraveled: distanceTraveled,
             wrathfulBite: arrow.barrageWrathfulBite === true,
             wyvernBite: arrow.barrageWyvernBite === true,
+            staggeringBite: arrow.barrageStaggeringBite === true,
           };
         })}
       />
@@ -489,7 +528,10 @@ export default function UnifiedProjectileManager({ world }: UnifiedProjectileMan
               position={explosion.position}
               chargeTime={explosion.chargeTime || 1.0}
               explosionStartTime={Date.now()}
-              infernoVisual={explosion.infernoCrossentropy === true}
+              visualTheme={
+                explosion.crossentropyVisualTheme ??
+                (explosion.infernoCrossentropy ? 'inferno' : 'default')
+              }
               onComplete={() => handleExplosionComplete(explosion.id)}
             />
           );

@@ -151,19 +151,19 @@ export default function KnightDeathGraspProjectile({
         <mesh material={coreMat}>
           <sphereGeometry args={[0.16, 10, 10]} />
         </mesh>
-        <mesh material={trail1Mat} position={[0, 0, 0.85]}>
-          <sphereGeometry args={[0.24, 8, 8]} />
-        </mesh>
-        <mesh material={trail2Mat} position={[0, 0, 1.55]}>
-          <sphereGeometry args={[0.18, 7, 7]} />
-        </mesh>
-        <mesh material={trail3Mat} position={[0, 0, 2.2]}>
-          <sphereGeometry args={[0.11, 6, 6]} />
-        </mesh>
-        <mesh material={trail4Mat} position={[0, 0, 2.8]}>
-          <sphereGeometry args={[0.07, 5, 5]} />
-        </mesh>
       </group>
+      <mesh material={trail1Mat} position={[0, 0, -0.85]}>
+        <sphereGeometry args={[0.24, 8, 8]} />
+      </mesh>
+      <mesh material={trail2Mat} position={[0, 0, -1.55]}>
+        <sphereGeometry args={[0.18, 7, 7]} />
+      </mesh>
+      <mesh material={trail3Mat} position={[0, 0, -2.2]}>
+        <sphereGeometry args={[0.11, 6, 6]} />
+      </mesh>
+      <mesh material={trail4Mat} position={[0, 0, -2.8]}>
+        <sphereGeometry args={[0.07, 5, 5]} />
+      </mesh>
       <pointLight color="#a78bfa" intensity={12} distance={10} decay={2} />
     </group>
   );

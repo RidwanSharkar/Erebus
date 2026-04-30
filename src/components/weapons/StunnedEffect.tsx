@@ -42,7 +42,7 @@ const StunnedEffectComponent = memo(function StunnedEffect({
     return () => {
       clearTimeout(timeout);
     };
-  }, [duration, onComplete, enemyId]);
+  }, [duration, onComplete, enemyId, startTime]);
 
   // Handle camera rotation disable for sabre stuns
   useEffect(() => {
@@ -67,7 +67,7 @@ const StunnedEffectComponent = memo(function StunnedEffect({
         }
       };
     }
-  }, [disableCameraRotation, enemyId, duration]);
+  }, [disableCameraRotation, enemyId, duration, startTime]);
 
   // MEMORY FIX: Cleanup geometries and materials on unmount
   useEffect(() => {

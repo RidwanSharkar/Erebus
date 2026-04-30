@@ -120,6 +120,15 @@ export class SkillPointSystem {
       unlockedAbilities: newUnlockedAbilities
     };
   }
+
+  static grantSkillPoints(skillPointData: SkillPointData, amount: number): SkillPointData {
+    const points = Math.max(0, Math.floor(amount));
+    if (points === 0) return skillPointData;
+    return {
+      ...skillPointData,
+      skillPoints: skillPointData.skillPoints + points
+    };
+  }
   
   /**
    * Update skill points when player levels up

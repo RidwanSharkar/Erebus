@@ -39,6 +39,11 @@ export class CameraSystem extends System {
   private currentPosition = new Vector3();
   private currentLookAt = new Vector3();
   private targetLookAt = new Vector3();
+  private damageShakeOffset = new Vector3();
+  private damageShakeTime = 0;
+  private damageShakeDuration = 0;
+  private damageShakeIntensity = 0;
+  private damageShakeSeed = 0;
   
   // Mouse state for camera rotation
   private isRightMouseDown = false;
@@ -99,9 +104,63 @@ export class CameraSystem extends System {
     this.currentPosition.lerp(this.targetPosition, this.config.smoothing);
     this.currentLookAt.lerp(this.targetLookAt, this.config.smoothing);
 
+    const shakeOffset = this.getDamageShakeOffset(deltaTime);
+
     // Update camera
-    this.camera.position.copy(this.currentPosition);
+    this.camera.position.copy(this.currentPosition).add(shakeOffset);
     this.camera.lookAt(this.currentLookAt);
+  }
+
+  public addDamageShake(intensity = 0.25, duration = 0.16): void {
+    const nextIntensity = MathUtils.clamp(intensity, 0.04, 0.75);
+    const nextDuration = MathUtils.clamp(duration, 0.08, 0.35);
+
+    this.damageShakeIntensity = Math.max(this.damageShakeIntensity * 0.7, nextIntensity);
+    this.damageShakeDuration = Math.max(this.damageShakeTime, nextDuration);
+    this.damageShakeTime = Math.max(this.damageShakeTime, nextDuration);
+    this.damageShakeSeed = Math.random() * 1000;
+  }
+
+  private getDamageShakeOffset(deltaTime: number): Vector3 {
+    this.damageShakeOffset.set(0, 0, 0);
+    if (this.damageShakeTime <= 0 || this.damageShakeDuration <= 0) {
+      return this.damageShakeOffset;
+    }
+
+    this.damageShakeTime = Math.max(0, this.damageShakeTime - deltaTime);
+    const elapsed = this.damageShakeDuration - this.damageShakeTime;
+    const remaining = this.damageShakeTime / this.damageShakeDuration;
+    const decay = remaining * remaining;
+    const strength = this.damageShakeIntensity * decay;
+
+    const forward = this.currentLookAt.clone().sub(this.currentPosition);
+    if (forward.lengthSq() > 1e-6) {
+      forward.normalize();
+    } else {
+      forward.set(0, 0, -1);
+    }
+
+    const right = new Vector3().crossVectors(forward, new Vector3(0, 1, 0));
+    if (right.lengthSq() > 1e-6) {
+      right.normalize();
+    } else {
+      right.set(1, 0, 0);
+    }
+
+    const horizontal = Math.sin(this.damageShakeSeed + elapsed * 82) * strength;
+    const vertical = Math.sin(this.damageShakeSeed * 1.37 + elapsed * 97) * strength * 0.65;
+    const depth = Math.sin(this.damageShakeSeed * 2.11 + elapsed * 61) * strength * 0.22;
+
+    this.damageShakeOffset.addScaledVector(right, horizontal);
+    this.damageShakeOffset.y += vertical;
+    this.damageShakeOffset.addScaledVector(forward, depth);
+
+    if (this.damageShakeTime === 0) {
+      this.damageShakeIntensity = 0;
+      this.damageShakeDuration = 0;
+    }
+
+    return this.damageShakeOffset;
   }
 
   private handleMouseInput(): void {
@@ -199,6 +258,15 @@ export class CameraSystem extends System {
 
   public getVerticalAngle(): number {
     return this.spherical.phi;
+  }
+
+  /** Map polar angle to [-1, 1] for HUD alignment (e.g. strike indicator): -1 at min pitch, +1 at max. */
+  public getVerticalAimNormalized(): number {
+    const lo = this.config.minPolarAngle;
+    const hi = this.config.maxPolarAngle;
+    if (hi <= lo) return 0;
+    const t = (this.spherical.phi - lo) / (hi - lo);
+    return Math.max(-1, Math.min(1, t * 2 - 1));
   }
 
   public setAngles(horizontal: number, vertical: number): void {

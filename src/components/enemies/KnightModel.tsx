@@ -25,17 +25,23 @@ interface KnightModelProps {
 // Walk/Attack are loaded separately so each clip lives in its own single-scene
 // GLB — avoiding the multi-scene node-index confusion that gltf-transform merge
 // introduces when the animations target bones from different scene subtrees.
-useGLTF.preload('/models/knight_idle.glb');
-useGLTF.preload('/models/knight_walk.glb');
-useGLTF.preload('/models/knight_walk0.glb');
-useGLTF.preload('/models/knight_attack.glb');
-useGLTF.preload('/models/knight_attack2.glb');
-useGLTF.preload('/models/knight_death.glb');
-useGLTF.preload('/models/knight_smite.glb');
-useGLTF.preload('/models/knight_aggro.glb');
-useGLTF.preload('/models/knight_cast.glb');
-useGLTF.preload('/models/knight_impact1.glb');
-useGLTF.preload('/models/knight_impact2.glb');
+const KNIGHT_MODEL_PATHS = [
+  '/models/knight_idle.glb',
+  '/models/knight_walk.glb',
+  '/models/knight_walk0.glb',
+  '/models/knight_attack.glb',
+  '/models/knight_attack2.glb',
+  '/models/knight_death.glb',
+  '/models/knight_smite.glb',
+  '/models/knight_aggro.glb',
+  '/models/knight_cast.glb',
+  '/models/knight_impact1.glb',
+  '/models/knight_impact2.glb',
+];
+
+export function preloadKnightModels(): void {
+  KNIGHT_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+}
 
 // GLB geometry is in centimeters (bboxMax Y ≈ 172.5 cm).
 // Target ≈ 2 game units tall → 2 / 172.5 ≈ 0.0116

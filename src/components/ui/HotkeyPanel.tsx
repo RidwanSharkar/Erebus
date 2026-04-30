@@ -1,7 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
 import { SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
 import { universalAbilityPool, getUniversalAbilityById, type AbilityLoadout, type UniversalAbility } from '@/utils/weaponAbilities';
+import type { TalentId, TalentLoadout } from '@/utils/talents';
+import {
+  getEnabledTalentIds,
+  getTalentBoonDefinition,
+  getTalentIconSrc,
+} from '@/utils/talents';
 
 interface HotkeyPanelProps {
   currentWeapon: WeaponType;
@@ -15,6 +21,7 @@ interface HotkeyPanelProps {
   abilityLoadout?: AbilityLoadout | null;
   onUnlockAbility?: (unlock: AbilityUnlock) => void;
   purchasedItems?: string[];
+  talentLoadout?: TalentLoadout | null;
 }
 
 interface WeaponData {
@@ -39,15 +46,22 @@ function Tooltip({ content, visible, x, y }: TooltipProps) {
 
   return (
     <div
-      className="fixed z-50 bg-gray-900 border border-gray-600 rounded-lg p-3 text-white text-sm max-w-xs pointer-events-none"
+      className="fixed z-50 text-white text-sm max-w-xs pointer-events-none"
       style={{
-        left: x - 150, // Center tooltip above cursor
-        top: y - 80,
-        transform: 'translateX(-50%)'
+        left: x - 150,
+        top: y - 92,
+        transform: 'translateX(-50%)',
+        background: 'rgba(6,6,18,0.97)',
+        border: '1px solid rgba(100,140,255,0.3)',
+        borderTop: '2px solid rgba(120,160,255,0.75)',
+        borderRadius: '8px',
+        padding: '10px 14px',
+        boxShadow:
+          '0 8px 32px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.04)',
       }}
     >
-      <div className="font-semibold text-blue-300 mb-1">{content.name}</div>
-      <div className="text-gray-300">{content.description}</div>
+      <div className="font-semibold text-blue-300 mb-1 text-[13px]">{content.name}</div>
+      <div className="text-gray-400 text-xs leading-relaxed">{content.description}</div>
     </div>
   );
 }
@@ -95,7 +109,17 @@ const RoundedSquareProgress: React.FC<{
   );
 };
 
-export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeapons, onWeaponSwitch, skillPointData, abilityLoadout, onUnlockAbility, purchasedItems = [] }: HotkeyPanelProps) {
+export default function HotkeyPanel({
+  currentWeapon,
+  controlSystem,
+  selectedWeapons,
+  onWeaponSwitch,
+  skillPointData,
+  abilityLoadout,
+  onUnlockAbility,
+  purchasedItems = [],
+  talentLoadout = null,
+}: HotkeyPanelProps) {
   const [tooltipContent, setTooltipContent] = useState<{
     name: string;
     description: string;
@@ -169,6 +193,11 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
     ? (getUniversalAbilityById(abilityLoadout.passive) ?? null)
     : null;
 
+  const enabledTalentIds = useMemo(
+    () => (talentLoadout ? getEnabledTalentIds(talentLoadout) : []),
+    [talentLoadout]
+  );
+
   // Update cooldowns from control system
   useEffect(() => {
     if (!controlSystem || !controlSystem.getAbilityCooldowns) return;
@@ -231,14 +260,41 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
     setTooltipContent(null);
   }, []);
 
+  const handleTalentHover = useCallback((e: React.MouseEvent, talentId: TalentId) => {
+    const def = getTalentBoonDefinition(talentId);
+    const rect = e.currentTarget.getBoundingClientRect();
+    setTooltipContent({
+      name: def?.name ?? talentId,
+      description: def?.description ?? '',
+    });
+    setTooltipPosition({
+      x: rect.left + rect.width / 2,
+      y: rect.top,
+    });
+  }, []);
+
   // Always render even without a loadout (shows empty slots)
 
 
   return (
     <>
       <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-40">
-        <div className="bg-black bg-opacity-70 backdrop-blur-sm rounded-lg p-3 border border-gray-600">
-          <div className="flex items-center space-x-4">
+        <div
+          className="backdrop-blur-md px-4 pt-5 pb-3"
+          style={{
+            background:
+              'linear-gradient(180deg, rgba(8,8,20,0.78) 0%, rgba(4,4,14,0.90) 100%)',
+            borderTop: '1px solid rgba(255,255,255,0.09)',
+            borderLeft: '1px solid rgba(255,255,255,0.05)',
+            borderRight: '1px solid rgba(255,255,255,0.05)',
+            borderBottom: '1px solid rgba(255,255,255,0.04)',
+            clipPath:
+              'polygon(10px 0%, calc(100% - 10px) 0%, 100% 10px, 100% 100%, 0% 100%, 0% 10px)',
+            boxShadow:
+              '0 -1px 0 rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.55)',
+          }}
+        >
+          <div className="flex flex-nowrap items-center justify-center gap-2">
             {/* Weapon Icons */}
             {weapons.map((weapon) => {
               const isCurrentWeapon = weapon.type === currentWeapon;
@@ -255,46 +311,71 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
                 }
               }, [isOnCooldown, onWeaponSwitch, weapon.key, weapon]);
 
+              const isPurchased = (weapon as any).isPurchasedItem;
+              const slotBorder = isPurchased
+                ? '1px solid rgba(192,132,252,0.7)'
+                : isCurrentWeapon
+                  ? '1px solid rgba(251,191,36,0.85)'
+                  : isOnCooldown
+                    ? '1px solid rgba(239,68,68,0.55)'
+                    : '1px solid rgba(100,100,130,0.38)';
+              const slotBg = isPurchased
+                ? 'linear-gradient(135deg, rgba(88,28,135,0.45), rgba(60,10,100,0.3))'
+                : isCurrentWeapon
+                  ? 'linear-gradient(135deg, rgba(120,80,0,0.45), rgba(80,50,0,0.25))'
+                  : isOnCooldown
+                    ? 'rgba(60,10,10,0.55)'
+                    : 'rgba(10,10,22,0.82)';
+              const slotShadow = isPurchased
+                ? '0 0 14px rgba(192,132,252,0.35), inset 0 1px 0 rgba(255,255,255,0.07)'
+                : isCurrentWeapon
+                  ? '0 0 14px rgba(251,191,36,0.4), inset 0 1px 0 rgba(255,255,255,0.1)'
+                  : 'inset 0 1px 0 rgba(255,255,255,0.05)';
+              const iconColor = isPurchased
+                ? '#d8b4fe'
+                : isCurrentWeapon
+                  ? '#fbbf24'
+                  : isOnCooldown
+                    ? '#f87171'
+                    : '#9ca3af';
+
               return (
                 <div
                   key={weapon.key}
-                  className={`relative w-12 h-12 rounded-lg border-2 transition-all duration-200 ${
-                    (weapon as any).isPurchasedItem
-                      ? 'border-purple-400 bg-purple-900 bg-opacity-50'
-                      : isCurrentWeapon
-                        ? 'border-yellow-400 bg-yellow-900 bg-opacity-50'
-                        : isOnCooldown
-                          ? 'border-red-500 bg-red-900 bg-opacity-30'
-                          : 'border-gray-400 bg-gray-900 bg-opacity-30 hover:bg-opacity-50'
-                  } ${(weapon as any).isPurchasedItem ? 'cursor-default' : 'cursor-pointer'} flex items-center justify-center`}
+                  className={`relative w-12 h-12 rounded-lg transition-all duration-200 flex items-center justify-center ${isPurchased ? 'cursor-default' : 'cursor-pointer'}`}
+                  style={{ background: slotBg, border: slotBorder, boxShadow: slotShadow }}
                   onClick={handleWeaponClick}
                   onMouseEnter={(e) => handleWeaponHover(e, weapon)}
                   onMouseLeave={handleAbilityLeave}
                 >
-                  {/* Hotkey indicator */}
-                  <div className="absolute -top-2 -left-2 bg-gray-800 border border-gray-600 rounded text-xs text-white px-1 py-0.5 font-semibold">
+                  {/* Key badge — centered above */}
+                  <div
+                    className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full px-2 py-px text-[10px] font-mono font-bold"
+                    style={{
+                      background: 'rgba(18,18,34,0.97)',
+                      border: '1px solid rgba(120,120,160,0.5)',
+                      color: 'rgba(200,200,220,0.9)',
+                      boxShadow: '0 1px 4px rgba(0,0,0,0.7)',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     {weapon.key}
                   </div>
 
                   {/* Weapon icon */}
-                  <div className={`text-2xl ${
-                    (weapon as any).isPurchasedItem
-                      ? 'text-purple-400'
-                      : isCurrentWeapon
-                        ? 'text-yellow-400'
-                        : isOnCooldown
-                          ? 'text-red-400'
-                          : 'text-gray-300'
-                  }`}>
+                  <div className="text-xl" style={{ filter: isCurrentWeapon ? `drop-shadow(0 0 6px rgba(251,191,36,0.6))` : undefined, color: iconColor }}>
                     {weapon.icon}
                   </div>
 
                   {/* Cooldown overlay */}
                   {isOnCooldown && (
                     <>
-                      <div className="absolute inset-0 bg-black bg-opacity-60 rounded-lg" />
+                      <div className="absolute inset-0 rounded-lg" style={{ background: 'rgba(0,0,0,0.58)' }} />
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-white text-sm font-bold bg-black bg-opacity-60 rounded px-1">
+                        <span
+                          className="text-white text-sm font-bold tabular-nums"
+                          style={{ textShadow: '0 1px 4px rgba(0,0,0,1)' }}
+                        >
                           {Math.ceil(weaponSwitchCooldown.current)}
                         </span>
                       </div>
@@ -305,16 +386,41 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
             })}
 
             {/* Separator */}
-            <div className="w-px h-8 bg-gray-600" />
+            <div className="flex flex-col items-center justify-center gap-1.5 px-0.5">
+              <div className="w-px h-3 rounded" style={{ background: 'rgba(120,120,160,0.3)' }} />
+              <span className="text-[9px]" style={{ color: 'rgba(120,120,160,0.55)' }}>◆</span>
+              <div className="w-px h-3 rounded" style={{ background: 'rgba(120,120,160,0.3)' }} />
+            </div>
 
             {/* Passive Ability Icon — no hotkey, displayed after Q/E/R */}
             {passiveAbility && (
               <div
-                className="relative w-12 h-12 rounded-lg border-2 border-violet-400 bg-violet-900 bg-opacity-30 flex items-center justify-center"
+                className="relative w-12 h-12 rounded-lg flex items-center justify-center cursor-default"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(60,10,100,0.45), rgba(30,5,60,0.3))',
+                  border: '1px solid rgba(167,139,250,0.6)',
+                  boxShadow: '0 0 12px rgba(167,139,250,0.3), inset 0 1px 0 rgba(255,255,255,0.07)',
+                }}
                 onMouseEnter={(e) => handleAbilityHover(e, passiveAbility)}
                 onMouseLeave={handleAbilityLeave}
               >
-                <div className="w-8 h-8 rounded flex items-center justify-center text-lg font-bold text-violet-300">
+                {/* "P" badge */}
+                <div
+                  className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full px-1.5 py-px text-[10px] font-mono font-bold"
+                  style={{
+                    background: 'rgba(18,18,34,0.97)',
+                    border: '1px solid rgba(167,139,250,0.45)',
+                    color: 'rgba(196,181,253,0.9)',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.7)',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  P
+                </div>
+                <div
+                  className="w-7 h-7 rounded flex items-center justify-center text-base font-bold"
+                  style={{ color: '#c4b5fd', filter: 'drop-shadow(0 0 5px rgba(167,139,250,0.6))' }}
+                >
                   {passiveAbility.icon}
                 </div>
               </div>
@@ -369,44 +475,101 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
                 return null;
               };
 
+              const abilityBorder = !ability
+                ? '1px dashed rgba(80,80,100,0.4)'
+                : isOnCooldown
+                  ? '1px solid rgba(239,68,68,0.5)'
+                  : '1px solid rgba(52,211,153,0.55)';
+              const abilityBg = !ability
+                ? 'rgba(10,10,20,0.6)'
+                : isOnCooldown
+                  ? 'rgba(50,8,8,0.55)'
+                  : 'linear-gradient(135deg, rgba(6,40,28,0.55), rgba(4,25,18,0.4))';
+              const abilityShadow = !ability
+                ? 'none'
+                : isOnCooldown
+                  ? 'inset 0 1px 0 rgba(255,255,255,0.04)'
+                  : '0 0 10px rgba(52,211,153,0.2), inset 0 1px 0 rgba(255,255,255,0.07)';
+              const abilityIconColor = !ability
+                ? 'rgba(80,80,100,0.5)'
+                : isOnCooldown
+                  ? '#f87171'
+                  : '#6ee7b7';
+
               return (
                 <div
                   key={slot}
-                  className={`relative w-12 h-12 rounded-lg border-2 transition-all duration-200 ${
-                    !ability
-                      ? 'border-dashed border-gray-600 bg-gray-800 opacity-50'
-                      : isOnCooldown
-                        ? 'border-red-500 bg-red-900 bg-opacity-30 cursor-pointer'
-                        : 'border-green-400 bg-green-900 bg-opacity-30 hover:bg-opacity-50 cursor-pointer'
-                  } flex items-center justify-center`}
+                  className={`relative w-12 h-12 rounded-lg transition-all duration-200 flex items-center justify-center ${ability ? 'cursor-pointer' : ''}`}
+                  style={{
+                    background: abilityBg,
+                    border: abilityBorder,
+                    boxShadow: abilityShadow,
+                    opacity: !ability ? 0.55 : 1,
+                  }}
                   onMouseEnter={ability ? (e) => handleAbilityHover(e, ability) : undefined}
                   onMouseLeave={handleAbilityLeave}
                 >
-                  {/* Slot key badge */}
-                  <div className="absolute -top-2 -left-2 bg-gray-800 border border-gray-600 rounded text-xs text-white px-1 py-0.5 font-semibold">
+                  {/* Key badge — centered above */}
+                  <div
+                    className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full px-2 py-px text-[10px] font-mono font-bold"
+                    style={{
+                      background: 'rgba(18,18,34,0.97)',
+                      border: ability && !isOnCooldown
+                        ? '1px solid rgba(52,211,153,0.45)'
+                        : '1px solid rgba(120,120,160,0.4)',
+                      color: ability && !isOnCooldown
+                        ? 'rgba(110,231,183,0.9)'
+                        : 'rgba(180,180,200,0.8)',
+                      boxShadow: '0 1px 4px rgba(0,0,0,0.7)',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     {slot}
                   </div>
 
                   {ability && showChargeStacks && (
-                    <div className="absolute -bottom-1.5 -right-1.5 min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded bg-gray-900 border border-amber-500/80 text-amber-200 text-xs font-bold tabular-nums">
+                    <div
+                      className="absolute -bottom-2 -right-2 min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full tabular-nums text-xs font-bold"
+                      style={{
+                        background: 'rgba(12,12,26,0.97)',
+                        border: '1px solid rgba(245,158,11,0.75)',
+                        color: '#fde68a',
+                        boxShadow: '0 0 8px rgba(245,158,11,0.3)',
+                      }}
+                    >
                       {cdSlot?.charges}
                     </div>
                   )}
 
                   {/* Ability icon */}
-                  <div className={`w-8 h-8 rounded flex items-center justify-center text-lg font-bold ${
-                    !ability ? 'text-gray-600' : isOnCooldown ? 'text-red-400' : 'text-green-400'
-                  }`}>
+                  <div
+                    className="w-7 h-7 rounded flex items-center justify-center text-base font-bold"
+                    style={{
+                      color: abilityIconColor,
+                      filter: ability && !isOnCooldown
+                        ? 'drop-shadow(0 0 4px rgba(52,211,153,0.5))'
+                        : undefined,
+                    }}
+                  >
                     {ability ? ability.icon : '·'}
                   </div>
 
-                  {/* Cooldown number */}
+                  {/* Cooldown overlay + number */}
                   {isOnCooldown && ability && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-white text-sm font-bold bg-black bg-opacity-60 rounded px-1">
-                        {Math.ceil(currentCooldown)}
-                      </span>
-                    </div>
+                    <>
+                      <div
+                        className="absolute inset-0 rounded-lg"
+                        style={{ background: 'rgba(0,0,0,0.52)' }}
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span
+                          className="text-white text-sm font-bold tabular-nums"
+                          style={{ textShadow: '0 1px 4px rgba(0,0,0,1)' }}
+                        >
+                          {Math.ceil(currentCooldown)}
+                        </span>
+                      </div>
+                    </>
                   )}
 
                   {/* Active / charge overlay */}
@@ -414,6 +577,54 @@ export default function HotkeyPanel({ currentWeapon, controlSystem, selectedWeap
                 </div>
               );
             })}
+
+            {enabledTalentIds.length > 0 && (
+              <>
+                <div className="flex flex-col items-center justify-center gap-1.5 px-0.5">
+                  <div className="w-px h-3 rounded" style={{ background: 'rgba(120,120,160,0.3)' }} />
+                  <span className="text-[9px]" style={{ color: 'rgba(120,120,160,0.55)' }}>
+                    ★
+                  </span>
+                  <div className="w-px h-3 rounded" style={{ background: 'rgba(120,120,160,0.3)' }} />
+                </div>
+                {enabledTalentIds.map((talentId) => {
+                  const src = getTalentIconSrc(talentId);
+                  return (
+                    <div
+                      key={talentId}
+                      className="relative h-12 w-12 shrink-0 rounded-lg transition-all duration-200 flex items-center justify-center cursor-default"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(54,42,14,0.55), rgba(24,18,8,0.45))',
+                        border: '1px solid rgba(251,191,36,0.45)',
+                        boxShadow: '0 0 10px rgba(251,191,36,0.15), inset 0 1px 0 rgba(255,255,255,0.06)',
+                      }}
+                      onMouseEnter={(e) => handleTalentHover(e, talentId)}
+                      onMouseLeave={handleAbilityLeave}
+                    >
+                      <div className="flex h-7 w-7 items-center justify-center">
+                        {src ? (
+                          <img
+                            src={src}
+                            alt=""
+                            className="h-7 w-7 object-contain"
+                            style={{
+                              filter: 'drop-shadow(0 0 3px rgba(251,191,36,0.35))',
+                            }}
+                          />
+                        ) : (
+                          <span
+                            className="select-none text-lg leading-none"
+                            style={{ color: 'rgba(253,224,71,0.85)' }}
+                          >
+                            ✦
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            )}
           </div>
         </div>
       </div>

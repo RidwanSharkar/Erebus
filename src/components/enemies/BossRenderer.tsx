@@ -36,7 +36,8 @@ export default function BossRenderer({
   const [isLeaping, setIsLeaping] = useState(false);
   const [tectonicJumpTrigger, setTectonicJumpTrigger] = useState(0);
   const [attackTrigger, setAttackTrigger] = useState(0);
-  const [meleeIndex, setMeleeIndex] = useState<0 | 1 | 2>(0);
+  const [meleeIndex, setMeleeIndex] = useState<0 | 1>(0);
+  const [throwTrigger, setThrowTrigger] = useState(0);
   const [isImpacting, setIsImpacting] = useState(false);
   const [impactPlayKey, setImpactPlayKey] = useState(0);
   const targetPosition = useRef(position.clone());
@@ -76,9 +77,13 @@ export default function BossRenderer({
 
     const onAttack = (data: { bossId: string; meleeIndex?: number }) => {
       if (data.bossId !== id) return;
-      const m = (data.meleeIndex ?? 0) % 3;
-      setMeleeIndex(m as 0 | 1 | 2);
+      const m = (data.meleeIndex ?? 0) % 2;
+      setMeleeIndex(m as 0 | 1);
       setAttackTrigger((k) => k + 1);
+    };
+    const onThrowStart = (data: { bossId: string }) => {
+      if (data.bossId !== id) return;
+      setThrowTrigger((k) => k + 1);
     };
     const onLeapStart = (data: { bossId: string }) => {
       if (data.bossId !== id) return;
@@ -99,6 +104,7 @@ export default function BossRenderer({
     };
 
     socket.on('boss-attack', onAttack);
+    socket.on('boss-throw-start', onThrowStart);
     socket.on('boss-leap-start', onLeapStart);
     socket.on('boss-leap-land', onLeapLand);
     socket.on('boss-tectonic-jump', onTectonic);
@@ -106,6 +112,7 @@ export default function BossRenderer({
 
     return () => {
       socket.off('boss-attack', onAttack);
+      socket.off('boss-throw-start', onThrowStart);
       socket.off('boss-leap-start', onLeapStart);
       socket.off('boss-leap-land', onLeapLand);
       socket.off('boss-tectonic-jump', onTectonic);
@@ -149,12 +156,14 @@ export default function BossRenderer({
         tectonicJumpTrigger={tectonicJumpTrigger}
         attackTrigger={attackTrigger}
         meleeIndex={meleeIndex}
+        throwTrigger={throwTrigger}
         isImpacting={isImpacting}
         impactPlayKey={impactPlayKey}
         onImpactFinished={handleImpactFinished}
         onLeapFinished={() => setIsLeaping(false)}
         onTectonicJumpFinished={() => {}}
         onAttackFinished={() => {}}
+        onThrowAnimFinished={() => {}}
       />
     </group>
   );

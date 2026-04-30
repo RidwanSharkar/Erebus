@@ -1,17 +1,17 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { AdditiveBlending } from '@/utils/three-exports';
 
 import { Mesh, Vector3, Clock, Color } from 'three';
 import { useFrame } from '@react-three/fiber';
 import CrossentropyBoltTrail from './CrossentropyBoltTrail';
 import { CROSSENTROPY_MAX_TRAVEL_DISTANCE } from '@/utils/talents';
-
+import type { CrossentropyVisualTheme } from '@/utils/talents';
 interface CrossentropyBoltProps {
   id: number;
   position: Vector3;
   direction: Vector3;
-  /** INFERNO talent — red fiery visual theme. */
-  infernoVisual?: boolean;
+  /** Bolt + explosion palette (Inferno overrides Tempest/Plague). */
+  visualTheme?: CrossentropyVisualTheme;
   /** Reaper: follow ECS `position` each frame (pierce line), no client collision. */
   reaperEcsDriven?: boolean;
   onImpact?: (position?: Vector3) => void;
@@ -22,7 +22,7 @@ export default function CrossentropyBolt({
   id,
   position,
   direction,
-  infernoVisual = false,
+  visualTheme = 'default',
   reaperEcsDriven = false,
   onImpact,
   checkCollisions,
@@ -44,9 +44,39 @@ export default function CrossentropyBolt({
   const fadeDuration = 0.5; // 500ms fade duration
   const [opacity, setOpacity] = useState(1);
   const size = 0.26;
-  const color = new Color(infernoVisual ? '#FF2200' : '#FF4500');
-  const meshColor = infernoVisual ? '#E62E2E' : '#FF4500';
-  const meshEmissive = infernoVisual ? '#FF1100' : '#FF6600';
+  const { color, meshColor, meshEmissive } = useMemo(() => {
+    if (visualTheme === 'inferno') {
+      return {
+        color: new Color('#FF2200'),
+        meshColor: '#E62E2E',
+        meshEmissive: '#FF1100',
+      };
+    }
+    if (visualTheme === 'tempest') {
+      return {
+        color: new Color('#44AAFF'),
+        meshColor: '#1E6EEB',
+        meshEmissive: '#88DDFF',
+      };
+    }
+    if (visualTheme === 'plague') {
+      return {
+        color: new Color('#44FF88'),
+        meshColor: '#1E8B4A',
+        meshEmissive: '#66FFAA',
+      };
+    }
+    return {
+      color: new Color('#FF4500'),
+      meshColor: '#FF4500',
+      meshEmissive: '#FF6600',
+    };
+  }, [visualTheme]);
+
+  const trailColor = useMemo(
+    () => (reaperEcsDriven ? new Color('#B866FF') : color),
+    [reaperEcsDriven, color],
+  );
 
   // Spiral parameters
   const spiralRadius = 0.4875;
@@ -256,7 +286,8 @@ export default function CrossentropyBolt({
         <pointLight color={color} intensity={5 * opacity} distance={12} />
       </mesh>
       <CrossentropyBoltTrail
-        color={color}
+        color={trailColor}
+        reaperPurple={reaperEcsDriven}
         size={size * 0.875}
         mesh1Ref={fireball1Ref}
         mesh2Ref={fireball2Ref}

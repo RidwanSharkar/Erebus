@@ -3,6 +3,7 @@ import { WeaponType } from '@/components/dragon/weapons';
 import HotkeyPanel from './HotkeyPanel';
 import { SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
 import { AbilityLoadout } from '@/utils/weaponAbilities';
+import type { TalentLoadout } from '@/utils/talents';
 import { RuneCounter } from './RuneCounter';
 import ChatUI from './ChatUI';
 
@@ -26,17 +27,73 @@ interface GameUIProps {
   critDamageRuneCount?: number;
   criticalChance?: number;
   criticalDamageMultiplier?: number;
+  talentLoadout?: TalentLoadout | null;
+  /** Shown above the health bar when near a co-op interactable (e.g. pedestal, portal). */
+  interactHint?: string | null;
 }
 
 
-function ResourceBar({ current, max, color, backgroundColor = '#333' }: { current: number; max: number; color: string; backgroundColor?: string }) {
+function ResourceBar({
+  current,
+  max,
+  gradientFrom,
+  gradientTo,
+  glowColor,
+  icon,
+}: {
+  current: number;
+  max: number;
+  gradientFrom: string;
+  gradientTo: string;
+  glowColor: string;
+  icon: string;
+}) {
   const percentage = Math.max(0, Math.min(100, (current / max) * 100));
   return (
-    <div className="w-full">
-      <div className="w-full h-6 rounded-lg border-2 border-gray-600 overflow-hidden relative" style={{ backgroundColor }}>
-        <div className="h-full transition-all duration-300 ease-out rounded-sm" style={{ width: `${percentage}%`, backgroundColor: color, boxShadow: `0 0 10px ${color}40` }} />
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-sm text-white font-medium drop-shadow-lg">{Math.round(current)}/{max}</span>
+    <div className="flex items-center gap-2.5 w-full">
+      <span
+        className="text-base w-5 text-center select-none flex-shrink-0"
+        style={{ filter: `drop-shadow(0 0 5px ${glowColor})` }}
+      >
+        {icon}
+      </span>
+      <div
+        className="flex-1 relative h-[22px] rounded"
+        style={{
+          background: 'rgba(0,0,0,0.55)',
+          boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.7)',
+        }}
+      >
+        <div
+          className="absolute inset-0 rounded pointer-events-none"
+          style={{ border: `1px solid ${glowColor}35` }}
+        />
+        <div
+          className="h-full rounded transition-all duration-300 ease-out relative overflow-hidden"
+          style={{
+            width: `${percentage}%`,
+            background: `linear-gradient(90deg, ${gradientFrom}, ${gradientTo})`,
+            boxShadow: `0 0 10px ${glowColor}55, inset 0 1px 0 rgba(255,255,255,0.18)`,
+          }}
+        >
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                'linear-gradient(180deg, rgba(255,255,255,0.13) 0%, transparent 55%)',
+            }}
+          />
+        </div>
+        <div className="absolute inset-0 flex items-center justify-end pr-2.5 pointer-events-none">
+          <span
+            className="text-xs font-bold tabular-nums"
+            style={{
+              color: 'rgba(255,255,255,0.88)',
+              textShadow: '0 1px 4px rgba(0,0,0,1)',
+            }}
+          >
+            {Math.round(current)}/{max}
+          </span>
         </div>
       </div>
     </div>
@@ -60,6 +117,8 @@ export default function GameUI({
   critDamageRuneCount = 0,
   criticalChance = 0,
   criticalDamageMultiplier = 2.0,
+  talentLoadout,
+  interactHint = null,
 }: GameUIProps) {
 
   // Wrapper for unlockAbility to ensure ControlSystem is updated immediately
@@ -86,41 +145,52 @@ export default function GameUI({
 
       {/* Main UI Panel - positioned above the hotkey panel */}
       <div className="fixed bottom-32 left-1/2 transform -translate-x-1/2 z-50">
-        <div className="bg-black bg-opacity-60 backdrop-blur-sm rounded-lg p-4 border border-gray-600 min-w-80">
-          {/* Shield Bar - Thinner bar above health */}
-          <div className="w-full mb-2">
-            <div 
-              className="w-full h-3 rounded-lg border border-blue-500 overflow-hidden relative"
-              style={{ backgroundColor: '#1a2332' }}
+        <div
+          className="backdrop-blur-md px-5 py-3 flex flex-col gap-2.5"
+          style={{
+            minWidth: '340px',
+            background:
+              'linear-gradient(180deg, rgba(10,10,22,0.88) 0%, rgba(5,5,14,0.94) 100%)',
+            borderTop: '1px solid rgba(100,160,255,0.22)',
+            borderLeft: '1px solid rgba(255,255,255,0.06)',
+            borderRight: '1px solid rgba(255,255,255,0.06)',
+            borderBottom: '1px solid rgba(255,255,255,0.04)',
+            clipPath:
+              'polygon(14px 0%, calc(100% - 14px) 0%, 100% 14px, 100% calc(100% - 14px), calc(100% - 14px) 100%, 14px 100%, 0% calc(100% - 14px), 0% 14px)',
+            boxShadow:
+              '0 4px 32px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.04)',
+          }}
+          >
+          {interactHint ? (
+            <p
+              className="text-center text-xs font-medium tracking-wide m-0 pb-1.5"
+              style={{
+                color: 'rgba(220, 230, 255, 0.92)',
+                textShadow: '0 1px 6px rgba(0,0,0,0.9)',
+              }}
             >
-              <div
-                className="h-full transition-all duration-300 ease-out rounded-sm"
-                style={{
-                  width: `${Math.max(0, Math.min(100, (playerShield / maxShield) * 100))}%`,
-                  backgroundColor: '#4A90E2',
-                  boxShadow: '0 0 8px #4A90E240'
-                }}
-              />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-xs text-white font-medium drop-shadow-lg">
-                  {Math.round(playerShield)}/{maxShield}
-                </span>
-              </div>
-            </div>
-          </div>
-          
+              {interactHint}
+            </p>
+          ) : null}
+          {/* Shield Bar */}
+          <ResourceBar
+            current={playerShield}
+            max={maxShield}
+            gradientFrom="#1D4ED8"
+            gradientTo="#7DD3FC"
+            glowColor="#4A90E2"
+            icon="🛡"
+          />
+
           {/* HP Bar */}
-          <div className="mb-2">
-            <ResourceBar
-              current={playerHealth}
-              max={maxHealth}
-              color="#DC2626"
-              backgroundColor="#331a1a"
-            />
-          </div>
-          
-
-
+          <ResourceBar
+            current={playerHealth}
+            max={maxHealth}
+            gradientFrom="#991B1B"
+            gradientTo="#F87171"
+            glowColor="#DC2626"
+            icon="♥"
+          />
         </div>
       </div>
       
@@ -134,6 +204,7 @@ export default function GameUI({
         abilityLoadout={abilityLoadout}
         onUnlockAbility={handleUnlockAbility}
         purchasedItems={purchasedItems}
+        talentLoadout={talentLoadout ?? null}
       />
 
       {/* Chat UI */}

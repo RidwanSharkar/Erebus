@@ -1,3 +1,4 @@
+// src/ 
 import { useRef } from 'react';
 import { Mesh, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
@@ -14,10 +15,10 @@ export default function BlizzardShard({ initialPosition, onComplete, type }: Bli
   const fallSpeed = useRef(Math.random() * 1.5 + 3.65);
   const rotationSpeed = useRef({
     x: Math.random() * 1.5,
-    y: Math.random() * 0.25,
+    y: Math.random() * 2.25,
     z: Math.random() * 1
   });
-  const orbitRadius = useRef(Math.min(initialPosition.length(), 2)); // More compact orbit
+  const orbitRadius = useRef(Math.min(initialPosition.length(), 2.7));
   const orbitAngle = useRef(Math.atan2(initialPosition.z, initialPosition.x));
 
   useFrame((_, delta) => {
@@ -25,7 +26,7 @@ export default function BlizzardShard({ initialPosition, onComplete, type }: Bli
 
     if (type === 'falling') {
       meshRef.current.position.y -= fallSpeed.current * delta;
-
+      
       if (meshRef.current.position.y < 0) {
         onComplete();
       }
@@ -34,7 +35,7 @@ export default function BlizzardShard({ initialPosition, onComplete, type }: Bli
       orbitAngle.current += delta;
       meshRef.current.position.x = Math.cos(orbitAngle.current) * orbitRadius.current;
       meshRef.current.position.z = Math.sin(orbitAngle.current) * orbitRadius.current;
-
+      
       // Remove after a few rotations
       if (orbitAngle.current > Math.PI * 2) {
         onComplete();
@@ -48,8 +49,8 @@ export default function BlizzardShard({ initialPosition, onComplete, type }: Bli
   });
 
   return (
-    <mesh
-      ref={meshRef}
+    <mesh 
+      ref={meshRef} 
       position={initialPosition}
       geometry={sharedGeometries.tetrahedron}
       material={sharedMaterials.shard}

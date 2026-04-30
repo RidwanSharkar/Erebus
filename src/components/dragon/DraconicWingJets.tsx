@@ -34,7 +34,7 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
       position: new Vector3(0, 0, 0),
       velocity: new Vector3(0, 0, 0),
       scale: Math.random() * 0.12 + 0.08,
-      life: Math.random(),
+      life: 0,
       maxLife: Math.random() * 0.6 + 0.5
     }))
   );

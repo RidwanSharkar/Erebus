@@ -5,6 +5,7 @@ import { WeaponSubclass } from '@/components/dragon/weapons';
 import { calculationCache } from '@/utils/CalculationCache';
 import { MAIN_MAP_RADIUS, isInsideMainArenaXZ } from '@/utils/mapConstants';
 import { forEachMushroomHitBySwing } from '@/utils/mushroomMeleeUtils';
+import { MELEE_ARC_MIN_DOT, MELEE_ARC_RANGE } from '@/utils/meleeArcConstants';
 
 interface SwordProps {
   isSwinging: boolean;
@@ -828,9 +829,6 @@ const SwordComponent = memo(function Sword({
 
     const baseDamage = damageValues[comboStep];
     
-    // Attack range - increased for better hit detection
-    const attackRange = 5.5; // Increased from 3.0
-    
     let enemiesHitThisSwing = 0;
     
     enemyData.forEach((enemy) => {
@@ -844,7 +842,7 @@ const SwordComponent = memo(function Sword({
       const distance = playerPosition.distanceTo(enemy.position);
       
       
-      if (distance <= attackRange) {
+      if (distance <= MELEE_ARC_RANGE) {
         // Simplified hit detection - use spherical range instead of cone
         // This ensures enemies close to the player will always be hit
         
@@ -858,9 +856,14 @@ const SwordComponent = memo(function Sword({
         } else {
           const yaw = playerRotation?.y ?? 0;
           attackForwardScratch.current.set(Math.sin(yaw), 0, Math.cos(yaw));
-          const toEnemy = enemy.position.clone().sub(playerPosition).normalize();
-          const dotProduct = toEnemy.dot(attackForwardScratch.current);
-          shouldHit = dotProduct > -0.5; // Allows hits from front and sides
+          const toEnemy = enemy.position.clone().sub(playerPosition);
+          toEnemy.y = 0;
+          if (toEnemy.lengthSq() < 1e-8) {
+            shouldHit = true;
+          } else {
+            toEnemy.normalize();
+            shouldHit = toEnemy.dot(attackForwardScratch.current) > MELEE_ARC_MIN_DOT;
+          }
         }
         
         if (shouldHit) {

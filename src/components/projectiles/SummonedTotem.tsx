@@ -6,6 +6,31 @@ import UnholyAura from './UnholyAura';
 import TotemEntropicBolt from './TotemEntropicBolt';
 import { calculateDamage } from '@/core/DamageCalculator';
 import { WeaponType } from '@/components/dragon/weapons';
+import type { EnemyDamageMeta } from '@/contexts/MultiplayerContext';
+import type { TotemBoltVariant } from '@/utils/talents';
+import {
+  WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD,
+  STAGGERING_TOTEM_STAGGER,
+} from '@/utils/talents';
+
+function totemBoltBaseDamage(variant?: TotemBoltVariant): number {
+  if (variant === 'wrathful') return 30;
+  if (variant === 'infesting') return 40;
+  return 25;
+}
+
+function coopEnemyMetaForTotemBolt(variant?: TotemBoltVariant): EnemyDamageMeta | undefined {
+  if (variant === 'wrathful') {
+    return { damageType: 'entropic', entropicWrathful: true };
+  }
+  if (variant === 'staggering') {
+    return { damageType: 'entropic', staggerToAdd: STAGGERING_TOTEM_STAGGER };
+  }
+  if (variant === 'infesting') {
+    return { damageType: 'entropic', entropicInfesting: true };
+  }
+  return undefined;
+}
 
 interface SummonProps {
   position: Vector3;
@@ -16,7 +41,14 @@ interface SummonProps {
     position: Vector3;
     health: number;
   }>;
-  onDamage?: (targetId: string, damage: number, impactPosition: Vector3, isCritical?: boolean) => void;
+  onDamage?: (
+    targetId: string,
+    damage: number,
+    impactPosition: Vector3,
+    isCritical?: boolean,
+    coopEnemyDamageMeta?: EnemyDamageMeta,
+  ) => void;
+  totemBoltVariant?: TotemBoltVariant;
   onComplete?: () => void;
   onStartCooldown?: () => void;
   setActiveEffects?: (callback: (prev: Array<{
@@ -65,6 +97,7 @@ interface SummonProps {
   /** When set, routes floating damage text through CombatSystem (same overlay as `DamageNumbers.tsx`). */
   onTotemFloatingDamage?: (damage: number, isCritical: boolean, position: Vector3) => void;
   casterId?: string; // ID of the player who cast the totem
+  allowPlayerTargets?: boolean;
 }
 
 export default function SummonedTotem({
@@ -80,7 +113,9 @@ export default function SummonedTotem({
   setDamageNumbers,
   nextDamageNumberId,
   onTotemFloatingDamage,
-  casterId
+  casterId,
+  allowPlayerTargets = false,
+  totemBoltVariant,
 }: SummonProps) {
 
   const groupRef = useRef<Group>(null);
@@ -95,10 +130,9 @@ export default function SummonedTotem({
     startTime: Date.now(),
     hasTriggeredCleanup: false,
     mountId: Date.now(),
-    ATTACK_COOLDOWN: 650, // 0.5 seconds
-    RANGE: 7.5, // 6 units range for targeting
+    ATTACK_COOLDOWN: 670, // 0.5 seconds
+    RANGE: 8.5, // 6 units range for targeting
     DURATION: 8000, // 8 seconds
-    BASE_DAMAGE: 25, // Same as scythe basic attack damage
     EFFECT_DURATION: 225,
   }).current;
 
@@ -114,7 +148,7 @@ export default function SummonedTotem({
     let currentEnemies: Array<{ id: string; position: Vector3; health: number }> = [...enemyData];
 
     // Add real-time player positions
-    if (players) {
+    if (allowPlayerTargets && players) {
       const playerEnemies = Array.from(players.entries())
         .filter(([playerId]) => !casterId || playerId !== casterId) // Exclude the caster of the totem (if casterId is defined)
         .map(([playerId, playerData]) => ({
@@ -127,7 +161,7 @@ export default function SummonedTotem({
     }
 
     return currentEnemies;
-  }, [players, casterId, enemyData]);
+  }, [players, casterId, enemyData, allowPlayerTargets]);
 
   const findNewTarget = useCallback((excludeCurrentTarget: boolean = false): { id: string; position: Vector3; health: number } | null => {
     if (!groupRef.current) {
@@ -186,8 +220,12 @@ export default function SummonedTotem({
       return;
     }
 
-    // Calculate damage using the same system as scythe basic attacks
-    const damageResult = calculateDamage(constants.BASE_DAMAGE, WeaponType.SCYTHE);
+    const base = totemBoltBaseDamage(totemBoltVariant);
+    const dmgOpts =
+      totemBoltVariant === 'wrathful' ? { critChanceAdd: WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD } : undefined;
+    const damageResult = calculateDamage(base, WeaponType.SCYTHE, dmgOpts);
+
+    const coopEnemyDamageMeta = coopEnemyMetaForTotemBolt(totemBoltVariant);
 
     // Use the enemy's current real-time position for damage numbers and effects (not cached target position)
     const currentWorldImpactPosition = currentEnemy.position.clone().setY(1.5);
@@ -199,8 +237,13 @@ export default function SummonedTotem({
       return;
     }
 
-    // Call the damage callback to route damage to server
-    onDamage(target.id, damageResult.damage, currentWorldImpactPosition, damageResult.isCritical);
+    onDamage(
+      target.id,
+      damageResult.damage,
+      currentWorldImpactPosition,
+      damageResult.isCritical,
+      coopEnemyDamageMeta,
+    );
 
     // Create explosion effect that tracks the target player's current position
     // Instead of using the internal activeEffects system, broadcast to the global PVP system
@@ -234,6 +277,7 @@ export default function SummonedTotem({
     nextDamageNumberId,
     getCurrentEnemyData,
     casterId,
+    totemBoltVariant,
   ]);
 
   useFrame(() => {
@@ -324,6 +368,7 @@ export default function SummonedTotem({
           key={b.id}
           from={b.from}
           to={b.to}
+          totemBoltVariant={totemBoltVariant}
           onImpact={() => onTotemBoltImpact(b.id, b.targetId)}
         />
       ))}

@@ -2,32 +2,22 @@ import React, { useMemo } from 'react';
 import type { RoomBorderTheme } from './SimpleBorderEffects';
 import CustomSky from './CustomSky';
 import Planet from './Planet';
-import InstancedMountains from './InstancedMountains';
 import Pillar from './Pillar';
-import EnhancedGround from './EnhancedGround';
 import PillarCollision from './PillarCollision';
-import DetailedTrees, { DetailedTree } from './DetailedTrees';
-import TreeCollision from './TreeCollision';
 import AtmosphericParticles from './AtmosphericParticles';
-import CustomSkeleton from './CustomSkeleton';
 import StylizedGrass from './StylizedGrass';
 import InstancedForest from './InstancedForest';
 import StoneGround from './StoneGround';
 import ArenaFallingSnow from './ArenaFallingSnow';
 import CastleWalls from './CastleWalls';
-import CampThemeLights from './CampThemeLights';
-import GroundFogSystem from './GroundFogSystem';
 import InstancedEmbers from './InstancedEmbers';
 import InstancedDebris from './InstancedDebris';
 import InstancedMushrooms from './InstancedMushrooms';
-import InstancedBones from './InstancedBones';
 import GroundCracks from './GroundCracks';
-import InstancedRunes from './InstancedRunes';
 import VolumetricMoonRays from './VolumetricMoonRays';
 
-import { RED_CORNER_MOUNTAINS } from '@/utils/cornerMountainsConstants';
 import { World } from '@/ecs/World';
-import { Vector3, Color, PerspectiveCamera } from '@/utils/three-exports';
+import { PerspectiveCamera } from '@/utils/three-exports';
 interface EnvironmentProps {
   level?: number;
   enableMountains?: boolean;
@@ -40,8 +30,6 @@ interface EnvironmentProps {
   enableLargeTree?: boolean; // Enable large tree rendering
   isPVP?: boolean; // Enable PVP-specific pillar positioning
   pvpPillarPositions?: Array<[number, number, number]>; // PVP pillar positions
-  merchantRotation?: [number, number, number]; // Merchant rotation for interactions
-  showMerchant?: boolean; // Whether to render the merchant (for performance optimization)
   campTypes?: string[]; // Assigned archetype per camp ('blue'|'green'|'red'|'purple')
   /** Co-op: destroyed mushroom instance indices (hide instanced meshes). */
   mushroomHiddenIndices?: ReadonlySet<number>;
@@ -63,8 +51,6 @@ const Environment: React.FC<EnvironmentProps> = ({
   enableLargeTree = false,
   isPVP = false,
   pvpPillarPositions,
-  merchantRotation = [0, 0, 0],
-  showMerchant = false,
   campTypes = [],
   mushroomHiddenIndices,
 }) => {
@@ -82,28 +68,28 @@ const Environment: React.FC<EnvironmentProps> = ({
   // Define pedestal position
   const pedestalPosition: [number, number, number] = useMemo(() => [0, 0, 0], []);
 
-  // Define merchant position near the tree
-  const merchantPosition: [number, number, number] = useMemo(() => [13.1, 0, 6.6], []);
-
-  /** Server camp archetype for this session — drives grass + perimeter fence colours */
+  /** Server camp archetype — embers and identity; red co-op arena borrows purple terrain/sky visuals. */
   const roomArchetype: RoomBorderTheme = useMemo(() => {
     const key = campTypes[0]?.toLowerCase();
     if (key === 'blue' || key === 'green' || key === 'red' || key === 'purple') return key;
     return 'red';
   }, [campTypes]);
 
+  const visualRoomTheme: RoomBorderTheme =
+    roomArchetype === 'red' ? 'purple' : roomArchetype;
+
   return (
     <group name="environment">
       {/* Custom sky with level-based colors */}
-      {enableSky && <CustomSky roomTheme={roomArchetype} />}
+      {enableSky && <CustomSky roomTheme={visualRoomTheme} />}
 
       {/* Instanced grass field — density per room (purple sparse), GPU-animated wind */}
       {enableGrass && (
-        <StylizedGrass fieldShape="square" roomTheme={roomArchetype} />
+        <StylizedGrass fieldShape="square" roomTheme={visualRoomTheme} />
       )}
 
       {/* Stone road + branch connectors + combat platforms — single draw call */}
-      <StoneGround roomTheme={roomArchetype} />
+      <StoneGround roomTheme={visualRoomTheme} />
 
       {roomArchetype === 'blue' && <ArenaFallingSnow />}
 
@@ -111,19 +97,6 @@ const Environment: React.FC<EnvironmentProps> = ({
       {enableForest && <InstancedForest />}
 
       <Planet />
-
-      {/* Merchant positioned near the tree edge - only render when player is nearby for performance */}
-      {showMerchant && <CustomSkeleton position={merchantPosition} rotation={merchantRotation} />}
-
-      {/* Atmospheric particles around central area */}
-      <AtmosphericParticles
-        position={pedestalPosition}
-        count={30}
-        radius={8}
-        color="#ffffff"
-        speed={0.3}
-        size={0.02}
-      />
 
       {/* Three pillars in triangle formation */}
       {pillarPositions.map((pillarPos, index) => (
@@ -141,14 +114,7 @@ const Environment: React.FC<EnvironmentProps> = ({
       {/* Castle walls — perimeter ring (closed square), single draw call */}
       <CastleWalls />
 
-      {roomArchetype === 'red' && <InstancedMountains mountains={RED_CORNER_MOUNTAINS} />}
-
-      {/* Coloured theme lights inside each camp based on randomly assigned archetype */}
-      {campTypes.length > 0 && <CampThemeLights campTypes={campTypes} />}
-
       {/* ── Doodads & scene props ──────────────────────────────────────── */}
-
- 
 
       {/* Rising fire embers at the centre — colour matches room (campTypes[0]) */}
       <InstancedEmbers campTypes={campTypes} />
@@ -159,16 +125,11 @@ const Environment: React.FC<EnvironmentProps> = ({
       {/* Bioluminescent mushrooms near the forest ring */}
       <InstancedMushrooms hiddenIndices={mushroomHiddenIndices} />
 
-      {/* Aged bones and crude skulls near camp areas */}
-      <InstancedBones />
-
       {/* Procedural crack decals on stone paths */}
       <GroundCracks />
 
-
       {/* Glowing arcane runes on ground near pillars and camp centers */}
     
-
       {/* Volumetric god-ray shafts descending from the blood moon */}
       <VolumetricMoonRays />
 

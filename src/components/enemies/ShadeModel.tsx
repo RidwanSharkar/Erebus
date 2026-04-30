@@ -15,11 +15,17 @@ interface ShadeModelProps {
   onImpactFinished?: () => void;
 }
 
-useGLTF.preload('/models/shade_idle.glb');
-useGLTF.preload('/models/shade_walk.glb');
-useGLTF.preload('/models/shade_throw.glb');
-useGLTF.preload('/models/shade_death.glb');
-useGLTF.preload('/models/shade_impact.glb');
+const SHADE_MODEL_PATHS = [
+  '/models/shade_idle.glb',
+  '/models/shade_walk.glb',
+  '/models/shade_throw.glb',
+  '/models/shade_death.glb',
+  '/models/shade_impact.glb',
+];
+
+export function preloadShadeModels(): void {
+  SHADE_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+}
 
 // Doubled from the knight baseline (0.0135) since the shade GLB geometry
 // is smaller than the knight's — this brings it to a similar in-world size.

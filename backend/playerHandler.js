@@ -87,7 +87,7 @@ function handlePlayerEvents(socket, gameRooms) {
 
       for (const [enemyId, enemy] of gameRoom.enemies) {
         // Only taunt boss enemies for now
-        if (enemy.type === 'boss') {
+        if (enemy.type === 'boss' || enemy.type === 'boss2' || enemy.type === 'boss3') {
           const distance = Math.sqrt(
             Math.pow(enemy.position.x - position.x, 2) +
             Math.pow(enemy.position.z - position.z, 2)
@@ -544,6 +544,10 @@ function handlePlayerEvents(socket, gameRooms) {
     if (!gameRooms.has(roomId)) return;
     
     const room = gameRooms.get(roomId);
+    if (room.gameMode === 'coop') {
+      return;
+    }
+
     const sourcePlayer = room.getPlayer(socket.id);
     const targetPlayer = room.getPlayer(targetPlayerId);
     

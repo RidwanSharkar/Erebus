@@ -17,24 +17,30 @@ interface CharacterModelProps {
   isDead?: boolean;
 }
 
-useGLTF.preload('/models/character_idle.glb');
-useGLTF.preload('/models/character_run.glb');
-useGLTF.preload('/models/character_walk.glb');
-useGLTF.preload('/models/character_walkBack.glb');
-useGLTF.preload('/models/character_walkLeft.glb');
-useGLTF.preload('/models/character_walkRight.glb');
-useGLTF.preload('/models/character_backwards.glb');
-useGLTF.preload('/models/character_leftStrafe.glb');
-useGLTF.preload('/models/character_rightStrafe.glb');
-useGLTF.preload('/models/character_jump.glb');
-useGLTF.preload('/models/character_jumpFront.glb');
-useGLTF.preload('/models/character_jumpBack.glb');
-useGLTF.preload('/models/character_cast.glb');
-useGLTF.preload('/models/character_castSingle.glb');
-useGLTF.preload('/models/character_swordCast.glb');
-useGLTF.preload('/models/character_drawBow.glb');
-useGLTF.preload('/models/character_releaseBow.glb');
-useGLTF.preload('/models/character_death.glb');
+const CHARACTER_MODEL_PATHS = [
+  '/models/character_idle.glb',
+  '/models/character_run.glb',
+  '/models/character_walk.glb',
+  '/models/character_walkBack.glb',
+  '/models/character_walkLeft.glb',
+  '/models/character_walkRight.glb',
+  '/models/character_backwards.glb',
+  '/models/character_leftStrafe.glb',
+  '/models/character_rightStrafe.glb',
+  '/models/character_jump.glb',
+  '/models/character_jumpFront.glb',
+  '/models/character_jumpBack.glb',
+  '/models/character_cast.glb',
+  '/models/character_castSingle.glb',
+  '/models/character_swordCast.glb',
+  '/models/character_drawBow.glb',
+  '/models/character_releaseBow.glb',
+  '/models/character_death.glb',
+];
+
+export function preloadCharacterModels(): void {
+  CHARACTER_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+}
 
 // Adjust if the character GLB geometry is larger or smaller than expected.
 // Standard Mixamo / Character Creator exports at ~200 units tall (cm) → 0.01 gives ~2 world units.

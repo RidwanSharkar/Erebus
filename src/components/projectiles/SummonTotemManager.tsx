@@ -1,7 +1,17 @@
 import React, { useState, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3 } from '@/utils/three-exports';
+import type { EnemyDamageMeta } from '@/contexts/MultiplayerContext';
+import type { TotemBoltVariant } from '@/utils/talents';
 import SummonedTotem from './SummonedTotem';
+
+export type SummonTotemDamageHandler = (
+  targetId: string,
+  damage: number,
+  impactPosition: Vector3,
+  isCritical?: boolean,
+  coopEnemyDamageMeta?: EnemyDamageMeta,
+) => void;
 
 interface SummonTotemData {
   id: number;
@@ -9,7 +19,7 @@ interface SummonTotemData {
   isActive: boolean;
   position: Vector3;
   onComplete: () => void;
-  onDamage?: (targetId: string, damage: number, impactPosition: Vector3, isCritical?: boolean) => void;
+  onDamage?: SummonTotemDamageHandler;
   setActiveEffects?: (callback: (prev: Array<{
     id: number;
     type: string;
@@ -55,6 +65,8 @@ interface SummonTotemData {
   nextDamageNumberId?: { current: number };
   casterId?: string;
   localSocketId?: string;
+  totemBoltVariant?: TotemBoltVariant;
+  allowPlayerTargets?: boolean;
 }
 
 export type SummonTotemEnemyEntry = {
@@ -70,13 +82,14 @@ interface SummonTotemManagerProps {
   enemyData?: SummonTotemEnemyEntry[];
   localSocketId?: string; // Local player ID to exclude from targets
   onTotemFloatingDamage?: (damage: number, isCritical: boolean, position: Vector3) => void;
+  allowPlayerTargets?: boolean;
 }
 
 export interface SummonTotemManagerRef {
   createTotem: (
     position: Vector3,
     enemyData?: Array<{ id: string; position: Vector3; health: number }>,
-    onDamage?: (targetId: string, damage: number, impactPosition: Vector3, isCritical?: boolean) => void,
+    onDamage?: SummonTotemDamageHandler,
     setActiveEffects?: (callback: (prev: Array<{
       id: number;
       type: string;
@@ -121,11 +134,13 @@ export interface SummonTotemManagerRef {
     }>) => void,
     nextDamageNumberId?: { current: number },
     casterId?: string,
-    localSocketId?: string
+    localSocketId?: string,
+    totemBoltVariant?: TotemBoltVariant,
+    allowPlayerTargets?: boolean,
   ) => number;
 }
 
-const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerProps>(({ onTotemComplete, players, enemyData = [], localSocketId, onTotemFloatingDamage }, ref) => {
+const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerProps>(({ onTotemComplete, players, enemyData = [], localSocketId, onTotemFloatingDamage, allowPlayerTargets = false }, ref) => {
   const [activeTotems, setActiveTotems] = useState<SummonTotemData[]>([]);
   const totemIdCounter = useRef(0);
 
@@ -136,7 +151,7 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
   const createTotem = useCallback((
     position: Vector3,
     enemyData: Array<{ id: string; position: Vector3; health: number }> = [],
-    onDamage?: (targetId: string, damage: number, impactPosition: Vector3, isCritical?: boolean) => void,
+    onDamage?: SummonTotemDamageHandler,
     setActiveEffects?: (callback: (prev: Array<{
       id: number;
       type: string;
@@ -181,7 +196,9 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
     }>) => void,
     nextDamageNumberId?: { current: number },
     casterId?: string,
-    localSocketId?: string
+    localSocketId?: string,
+    totemBoltVariantProp?: TotemBoltVariant,
+    allowPlayerTargetsForTotem: boolean = allowPlayerTargets,
   ) => {
     const totemId = totemIdCounter.current++;
     const startTime = Date.now();
@@ -193,11 +210,17 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
 
     const onDamageForTotem =
       onDamage &&
-      ((targetId: string, damage: number, impactPosition: Vector3, isCritical?: boolean) => {
+      ((
+        targetId: string,
+        damage: number,
+        impactPosition: Vector3,
+        isCritical?: boolean,
+        coopEnemyDamageMeta?: EnemyDamageMeta,
+      ) => {
         if (casterId != null && localSocketId != null && casterId !== localSocketId) {
           return;
         }
-        onDamage(targetId, damage, impactPosition, isCritical);
+        onDamage(targetId, damage, impactPosition, isCritical, coopEnemyDamageMeta);
       });
 
     const newTotem: SummonTotemData = {
@@ -212,7 +235,9 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
       setDamageNumbers,
       nextDamageNumberId,
       casterId: casterId,
-      localSocketId
+      localSocketId,
+      totemBoltVariant: totemBoltVariantProp,
+      allowPlayerTargets: allowPlayerTargetsForTotem,
     };
 
     setActiveTotems(prev => [...prev, newTotem]);
@@ -223,7 +248,7 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
     }, 8000);
 
     return totemId;
-  }, [onTotemComplete]);
+  }, [onTotemComplete, allowPlayerTargets]);
 
   // Update totems each frame
   useFrame(() => {
@@ -247,6 +272,8 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
           nextDamageNumberId={totem.nextDamageNumberId}
           onTotemFloatingDamage={onTotemFloatingDamage}
           casterId={totem.casterId}
+          allowPlayerTargets={totem.allowPlayerTargets}
+          totemBoltVariant={totem.totemBoltVariant}
         />
       ))}
     </>
@@ -257,138 +284,37 @@ SummonTotemManager.displayName = 'SummonTotemManager';
 
 export default SummonTotemManager;
 
-let globalSummonTotemTriggerCallback: ((position: Vector3, enemyData?: Array<{ id: string; position: Vector3; health: number }>, onDamage?: (targetId: string, damage: number, impactPosition: Vector3, isCritical?: boolean) => void, setActiveEffects?: (callback: (prev: Array<{
-  id: number;
-  type: string;
-  position: Vector3;
-  direction: Vector3;
-  duration?: number;
-  startTime?: number;
-  summonId?: number;
-  targetId?: string;
-}>) => Array<{
-  id: number;
-  type: string;
-  position: Vector3;
-  direction: Vector3;
-  duration?: number;
-  startTime?: number;
-  summonId?: number;
-  targetId?: string;
-}>) => void, activeEffects?: Array<{
-  id: number;
-  type: string;
-  position: Vector3;
-  direction: Vector3;
-  duration?: number;
-  startTime?: number;
-  summonId?: number;
-  targetId?: string;
-}>, setDamageNumbers?: (callback: (prev: Array<{
-  id: number;
-  damage: number;
-  position: Vector3;
-  isCritical: boolean;
-  isSummon?: boolean;
-}>) => Array<{
-  id: number;
-  damage: number;
-  position: Vector3;
-  isCritical: boolean;
-  isSummon?: boolean;
-}>) => void, nextDamageNumberId?: { current: number }, casterId?: string) => void) | null = null;
+/** Window / PVPSummonTotem glue: positional args mirror `SummonTotemManagerRef.createTotem`. */
+export type SummonTotemTriggerCallback = (
+  position: Vector3,
+  enemyData?: Array<{ id: string; position: Vector3; health: number }>,
+  onDamage?: SummonTotemDamageHandler,
+  setActiveEffects?: SummonTotemData['setActiveEffects'],
+  activeEffects?: SummonTotemData['activeEffects'],
+  setDamageNumbers?: SummonTotemData['setDamageNumbers'],
+  nextDamageNumberId?: { current: number },
+  casterId?: string,
+  totemBoltVariant?: TotemBoltVariant,
+  allowPlayerTargets?: boolean,
+) => void;
 
-export const setGlobalSummonTotemTrigger = (callback: (position: Vector3, enemyData?: Array<{ id: string; position: Vector3; health: number }>, onDamage?: (targetId: string, damage: number, impactPosition: Vector3, isCritical?: boolean) => void, setActiveEffects?: (callback: (prev: Array<{
-  id: number;
-  type: string;
-  position: Vector3;
-  direction: Vector3;
-  duration?: number;
-  startTime?: number;
-  summonId?: number;
-  targetId?: string;
-}>) => Array<{
-  id: number;
-  type: string;
-  position: Vector3;
-  direction: Vector3;
-  duration?: number;
-  startTime?: number;
-  summonId?: number;
-  targetId?: string;
-}>) => void, activeEffects?: Array<{
-  id: number;
-  type: string;
-  position: Vector3;
-  direction: Vector3;
-  duration?: number;
-  startTime?: number;
-  summonId?: number;
-  targetId?: string;
-}>, setDamageNumbers?: (callback: (prev: Array<{
-  id: number;
-  damage: number;
-  position: Vector3;
-  isCritical: boolean;
-  isSummon?: boolean;
-}>) => Array<{
-  id: number;
-  damage: number;
-  position: Vector3;
-  isCritical: boolean;
-  isSummon?: boolean;
-}>) => void, nextDamageNumberId?: { current: number }, casterId?: string) => void) => {
+let globalSummonTotemTriggerCallback: SummonTotemTriggerCallback | null = null;
+
+export const setGlobalSummonTotemTrigger = (callback: SummonTotemTriggerCallback) => {
   globalSummonTotemTriggerCallback = callback;
 };
 
 export const triggerGlobalSummonTotem = (
   position: Vector3,
   enemyData?: Array<{ id: string; position: Vector3; health: number }>,
-  onDamage?: (targetId: string, damage: number, impactPosition: Vector3, isCritical?: boolean) => void,
-  setActiveEffects?: (callback: (prev: Array<{
-    id: number;
-    type: string;
-    position: Vector3;
-    direction: Vector3;
-    duration?: number;
-    startTime?: number;
-    summonId?: number;
-    targetId?: string;
-  }>) => Array<{
-    id: number;
-    type: string;
-    position: Vector3;
-    direction: Vector3;
-    duration?: number;
-    startTime?: number;
-    summonId?: number;
-    targetId?: string;
-  }>) => void,
-  activeEffects?: Array<{
-    id: number;
-    type: string;
-    position: Vector3;
-    direction: Vector3;
-    duration?: number;
-    startTime?: number;
-    summonId?: number;
-    targetId?: string;
-  }>,
-  setDamageNumbers?: (callback: (prev: Array<{
-    id: number;
-    damage: number;
-    position: Vector3;
-    isCritical: boolean;
-    isSummon?: boolean;
-  }>) => Array<{
-    id: number;
-    damage: number;
-    position: Vector3;
-    isCritical: boolean;
-    isSummon?: boolean;
-  }>) => void,
+  onDamage?: SummonTotemDamageHandler,
+  setActiveEffects?: SummonTotemData['setActiveEffects'],
+  activeEffects?: SummonTotemData['activeEffects'],
+  setDamageNumbers?: SummonTotemData['setDamageNumbers'],
   nextDamageNumberId?: { current: number },
-  casterId?: string
+  casterId?: string,
+  totemBoltVariant?: TotemBoltVariant,
+  allowPlayerTargets?: boolean,
 ) => {
   if (globalSummonTotemTriggerCallback) {
     globalSummonTotemTriggerCallback(
@@ -399,7 +325,9 @@ export const triggerGlobalSummonTotem = (
       activeEffects,
       setDamageNumbers,
       nextDamageNumberId,
-      casterId
+      casterId,
+      totemBoltVariant,
+      allowPlayerTargets,
     );
   }
 };
@@ -407,7 +335,7 @@ export const triggerGlobalSummonTotem = (
 export const createSummonTotem = (
   position: Vector3,
   enemyData?: Array<{ id: string; position: Vector3; health: number }>,
-  onDamage?: (targetId: string, damage: number, impactPosition: Vector3, isCritical?: boolean) => void,
+  onDamage?: SummonTotemDamageHandler,
   setActiveEffects?: (callback: (prev: Array<{
     id: number;
     type: string;

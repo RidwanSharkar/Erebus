@@ -11,6 +11,8 @@ import BossTeleportEffect from './BossTeleportEffect';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
+import GhostTrail from '../dragon/GhostTrail';
+import { WeaponType } from '../dragon/weapons';
 
 interface ShadeRendererProps {
   id: string;
@@ -24,7 +26,7 @@ interface ShadeRendererProps {
 }
 
 // How long the throw animation plays before blending back to idle/walk.
-// Tune to match the shade_throw.glb clip length.
+// Tune to match shade_throw.glb; must match backend enemyAI SHADE_THROW_ANIMATION_MS.
 const ATTACK_DURATION = 1500; // ms
 // How long the blink "teleport" lasts before we hard-snap the mesh.
 const BLINK_DURATION  = 600;  // ms — must match shadeCastBlinkAndAttack in enemyAI.js
@@ -85,7 +87,7 @@ export default function ShadeRenderer({
     targetPosition.current.copy(position);
 
     // Teleport snap for large jumps (spawn / respawn only — blink uses lerp)
-    if (dist > 8.0 && groupRef.current) {
+    if (dist > 8.0 && groupRef.current && !isBlinkingRef.current) {
       groupRef.current.position.copy(position);
     }
 
@@ -155,6 +157,10 @@ export default function ShadeRenderer({
       const newPos   = new Vector3(data.endPosition.x,   data.endPosition.y,   data.endPosition.z);
       targetPosition.current.copy(newPos);
       targetRotation.current = data.rotation;
+      if (groupRef.current) {
+        groupRef.current.position.copy(startPos);
+        groupRef.current.rotation.y = data.rotation;
+      }
 
       // Play blink sound at the departure position
       (window as any).audioSystem?.playEnemyBlinkSound(startPos);
@@ -255,6 +261,14 @@ export default function ShadeRenderer({
           onComplete={() => setBossFx(prev => prev.filter(f => f.id !== fx.id))}
         />
       ))}
+
+      <GhostTrail
+        parentRef={groupRef as React.RefObject<Group>}
+        weaponType={WeaponType.NONE}
+        fixedTrailColor="#9b30ff"
+        isTrailMotionRef={isBlinkingRef}
+        yOffset={1.0}
+      />
 
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <ShadeModel

@@ -1,0 +1,42 @@
+import { Vector3 } from '@/utils/three-exports';
+
+export interface ImpactEffectEvent {
+  id: string;
+  type: 'bow-shot-impact' | 'entropic-bolt-impact';
+  position: Vector3;
+  /** Normalized projectile velocity direction at point of impact. */
+  direction: Vector3;
+  timestamp: number;
+}
+
+export class ImpactEffectManager {
+  private impacts: ImpactEffectEvent[] = [];
+  private nextId = 0;
+
+  public addImpact(
+    type: ImpactEffectEvent['type'],
+    position: Vector3,
+    direction: Vector3,
+  ): void {
+    this.impacts.push({
+      id: `impact_${this.nextId++}`,
+      type,
+      position: position.clone(),
+      direction: direction.clone(),
+      timestamp: Date.now(),
+    });
+  }
+
+  public getImpacts(): ImpactEffectEvent[] {
+    return [...this.impacts];
+  }
+
+  public clearConsumed(): void {
+    this.impacts.length = 0;
+  }
+
+  public clear(): void {
+    this.impacts.length = 0;
+    this.nextId = 0;
+  }
+}

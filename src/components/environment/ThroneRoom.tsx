@@ -90,18 +90,46 @@ export const MAIN_COMBAT_BOSS_PORTAL_POSITION = Object.freeze({
   z: 0,
 });
 
-export type ThroneMainRoomCamp = 'purple' | 'blue' | 'red' | 'green';
+/** Main map: reward pedestal at the far end of the arena (opposite the player entry). */
+export const MAIN_COMBAT_PEDESTAL_POSITION = Object.freeze({ x: 0, y: 0, z: 15 });
 
-const THRONE_PORTAL_COLOR_HEX: Record<ThroneMainRoomCamp, string> = {
+/** XZ interaction radius for the combat arena pedestal. */
+export const MAIN_COMBAT_PEDESTAL_INTERACT_RADIUS = 3.0;
+
+export type ThroneMainRoomCamp = 'purple' | 'blue' | 'red' | 'green';
+export type CoopPortalKind = ThroneMainRoomCamp | 'stat' | 'chaos' | 'healing' | 'boss';
+
+const THRONE_PORTAL_COLOR_HEX: Record<CoopPortalKind, string> = {
   purple: '#6c3dff',
   blue: '#3b82f6',
   red: '#ef4444',
   green: '#22c55e',
+  stat: '#f97316',
+  chaos: '#030712',
+  healing: '#ec4899',
+  boss: '#6c3dff',
 };
 
 export function normalizeThroneCamp(s: string | undefined): ThroneMainRoomCamp {
   const k = String(s || '').toLowerCase();
   if (k === 'purple' || k === 'blue' || k === 'red' || k === 'green') return k;
+  return 'purple';
+}
+
+export function normalizeCoopPortalKind(s: string | undefined): CoopPortalKind {
+  const k = String(s || '').toLowerCase();
+  if (
+    k === 'purple' ||
+    k === 'blue' ||
+    k === 'red' ||
+    k === 'green' ||
+    k === 'stat' ||
+    k === 'chaos' ||
+    k === 'healing' ||
+    k === 'boss'
+  ) {
+    return k;
+  }
   return 'purple';
 }
 
@@ -159,6 +187,32 @@ export const THRONE_TALENT_PEDESTAL_POSITION = Object.freeze({
 
 export const THRONE_TALENT_PEDESTAL_INTERACT_RADIUS = THRONE_ABILITY_PEDESTAL_INTERACT_RADIUS;
 
+/** West rim X (opposite east ability/talent pedestals), just inside grass border — matches south-rim inset. */
+export const THRONE_DEV_BOSS_EDGE_X = -(COOP_THRONE_ROOM_RADIUS - THRONE_RIM_INSET);
+
+/**
+ * Development-only: three boss shortcut portals on the west rim, spaced on Z (`dev_boss` / `dev_boss2` / `dev_boss3` in `enter-combat-arena`).
+ */
+export const THRONE_DEV_BOSS_PORTAL_POSITION = Object.freeze({
+  x: THRONE_DEV_BOSS_EDGE_X,
+  y: THRONE_PORTAL_Y,
+  z: -THRONE_PORTAL_HALF_SPACING_X,
+});
+
+export const THRONE_DEV_BOSS2_PORTAL_POSITION = Object.freeze({
+  x: THRONE_DEV_BOSS_EDGE_X,
+  y: THRONE_PORTAL_Y,
+  z: 0,
+});
+
+export const THRONE_DEV_BOSS3_PORTAL_POSITION = Object.freeze({
+  x: THRONE_DEV_BOSS_EDGE_X,
+  y: THRONE_PORTAL_Y,
+  z: THRONE_PORTAL_HALF_SPACING_X,
+});
+
+export const THRONE_DEV_BOSS_PORTAL_INTERACT_RADIUS = 1.25;
+
 /** Pillars + ability + talent pedestal hulls for movement / charge collision in the prep room. */
 export function getThronePrepPhysicsObstacles(): Array<{ x: number; z: number; radius: number }> {
   return [
@@ -178,6 +232,8 @@ export function getThronePrepPhysicsObstacles(): Array<{ x: number; z: number; r
 
 /** Area scales ~r²; keep blade density similar when expanding grass radius. */
 const THRONE_GRASS_COUNT = Math.round(18000 * (COOP_THRONE_ROOM_RADIUS / 10) ** 2);
+/** Match main-map purple sparsity vs green (`StylizedGrass` THEME_COUNTS). */
+const THRONE_PURPLE_GRASS_COUNT = Math.round(THRONE_GRASS_COUNT * (16000 / 80000));
 
 export function xzTowardRoomCenter(pillar: [number, number, number], inset: number): [number, number] {
   const [px, , pz] = pillar;
@@ -335,7 +391,14 @@ function ThroneFloatingWeapon({
   );
 }
 
-export function ThronePortalRing({ campType }: { campType: ThroneMainRoomCamp }) {
+export function ThronePortalRing({
+  campType,
+  locked = false,
+}: {
+  campType: CoopPortalKind;
+  /** When true the portal renders grey and dimmed to signal it is not yet usable. */
+  locked?: boolean;
+}) {
   const ringRef = useRef<any>(null);
   const innerRef = useRef<any>(null);
 
@@ -347,30 +410,42 @@ export function ThronePortalRing({ campType }: { campType: ThroneMainRoomCamp })
     if (innerRef.current) {
       innerRef.current.rotation.y = t * 1.2;
       const m = innerRef.current.material as MeshBasicMaterial;
-      m.opacity = 0.35 + Math.sin(t * 3) * 0.12;
+      m.opacity = locked
+        ? 0.15 + Math.sin(t * 2) * 0.05
+        : 0.35 + Math.sin(t * 3) * 0.12;
     }
   });
 
-  const portalColor = THRONE_PORTAL_COLOR_HEX[campType];
+  const portalColor = locked ? '#888888' : THRONE_PORTAL_COLOR_HEX[campType];
 
   return (
     <group>
       <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[2.1, 0.12, 10, 48]} />
-        <meshBasicMaterial color={portalColor} transparent opacity={0.85} depthWrite={false} />
+        <meshBasicMaterial
+          color={portalColor}
+          transparent
+          opacity={locked ? 0.45 : 0.85}
+          depthWrite={false}
+        />
       </mesh>
       <mesh ref={innerRef}>
         <sphereGeometry args={[1.35, 24, 24]} />
         <meshBasicMaterial
           color={portalColor}
           transparent
-          opacity={0.4}
+          opacity={locked ? 0.15 : 0.4}
           depthWrite={false}
           side={BackSide}
           blending={AdditiveBlending}
         />
       </mesh>
-      <pointLight color={portalColor} intensity={2.2} distance={14} position={[0, 0.4, 0]} />
+      <pointLight
+        color={portalColor}
+        intensity={locked ? 0.5 : 2.2}
+        distance={locked ? 6 : 14}
+        position={[0, 0.4, 0]}
+      />
     </group>
   );
 }
@@ -395,6 +470,10 @@ interface ThroneRoomProps {
    * prep throne SimpleBorderEffects when `campTypes` is empty after gate transitions.
    */
   coopClearedRoomColor?: string | null;
+  /** When set with `layout="bossArena"`, identifies Archon (boss2) vs first boss vs Weaver Nexus (boss3) for purple room visuals. */
+  bossThroneKind?: 'boss' | 'boss2' | 'boss3' | null;
+  /** When true, the south-rim portals render grey — prevents entry before a weapon is chosen. */
+  thronePortalsLocked?: boolean;
 }
 
 /**
@@ -406,13 +485,20 @@ export default function ThroneRoom({
   thronePortalOffer,
   campTypes = [],
   coopClearedRoomColor = null,
+  thronePortalsLocked = false,
+  bossThroneKind = null,
 }: ThroneRoomProps) {
-  const keyColor = isSnowTheme ? new Color('#9fc2f0') : new Color('#4a2d6e');
+  const isArchonBossArena = layout === 'bossArena' && bossThroneKind === 'boss2';
+  const keyColor = isArchonBossArena
+    ? new Color('#c4a8e8')
+    : isSnowTheme
+      ? new Color('#9fc2f0')
+      : new Color('#4a2d6e');
   const isPrep = layout === 'prep';
 
   const o = thronePortalOffer;
-  const leftCamp = o && o.length > 0 ? normalizeThroneCamp(o[0]) : 'purple';
-  const rightCamp = o && o.length >= 2 ? normalizeThroneCamp(o[1]) : 'red';
+  const leftCamp = o && o.length > 0 ? normalizeCoopPortalKind(o[0]) : 'purple';
+  const rightCamp = o && o.length >= 2 ? normalizeCoopPortalKind(o[1]) : 'red';
 
   const borderTheme: RoomBorderTheme = useMemo(() => {
     const candidates =
@@ -428,15 +514,22 @@ export default function ThroneRoom({
   const simpleBorderColorTheme: SimpleBorderColorTheme =
     borderTheme === 'red' ? 'gold' : borderTheme;
 
+  const groundRoomTheme: RoomBorderTheme = isArchonBossArena ? 'purple' : borderTheme;
+  const borderEffectsTheme: SimpleBorderColorTheme = isArchonBossArena ? 'purple' : simpleBorderColorTheme;
+
   return (
     <group name="throne-room">
-      <CustomSky skyPreset="throneBlue" />
+      {isArchonBossArena ? <CustomSky roomTheme="purple" /> : <CustomSky skyPreset="throneBlue" />}
       <PerimeterCloudSystem radius={COOP_THRONE_ROOM_RADIUS} />
-      <ambientLight intensity={0.14} />
-      <hemisphereLight color={keyColor} groundColor="#1a1020" intensity={0.35} />
+      <ambientLight intensity={isArchonBossArena ? 0.1 : 0.14} />
+      <hemisphereLight
+        color={keyColor}
+        groundColor={isArchonBossArena ? '#0a0612' : '#1a1020'}
+        intensity={isArchonBossArena ? 0.32 : 0.35}
+      />
       <directionalLight
         position={[8, 16, 6]}
-        intensity={0.42}
+        intensity={isArchonBossArena ? 0.38 : 0.42}
         castShadow
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
@@ -448,14 +541,15 @@ export default function ThroneRoom({
       />
       <StylizedGrass
         radius={COOP_THRONE_ROOM_RADIUS}
-        count={THRONE_GRASS_COUNT}
+        count={isArchonBossArena ? THRONE_PURPLE_GRASS_COUNT : THRONE_GRASS_COUNT}
         bladeHeight={0.42}
         windStrength={0.2}
         isSnowTheme={false}
+        roomTheme={isArchonBossArena ? 'purple' : undefined}
       />
       <StoneGround
         variant="throne"
-        roomTheme={borderTheme}
+        roomTheme={groundRoomTheme}
         thronePerimeterRingRadius={THRONE_PERIMETER_RING_CENTER_R}
       />
       <SimpleBorderEffects
@@ -463,7 +557,7 @@ export default function ThroneRoom({
         count={30}
         enableParticles
         particleCount={60}
-        borderTheme={simpleBorderColorTheme}
+        borderTheme={borderEffectsTheme}
       />
       {isPrep && (
         <>
@@ -482,10 +576,44 @@ export default function ThroneRoom({
           <group>
             {THRONE_PORTAL_POSITIONS.map((pos, i) => (
               <group key={`throne-portal-${i}`} position={[pos.x, pos.y, pos.z]}>
-                <ThronePortalRing campType={i === 0 ? leftCamp : rightCamp} />
+                <ThronePortalRing campType={i === 0 ? leftCamp : rightCamp} locked={thronePortalsLocked} />
               </group>
             ))}
           </group>
+          {process.env.NODE_ENV !== 'production' && (
+            <>
+              <group
+                position={[
+                  THRONE_DEV_BOSS_PORTAL_POSITION.x,
+                  THRONE_DEV_BOSS_PORTAL_POSITION.y,
+                  THRONE_DEV_BOSS_PORTAL_POSITION.z,
+                ]}
+                scale={0.34}
+              >
+                <ThronePortalRing campType="boss" locked />
+              </group>
+              <group
+                position={[
+                  THRONE_DEV_BOSS2_PORTAL_POSITION.x,
+                  THRONE_DEV_BOSS2_PORTAL_POSITION.y,
+                  THRONE_DEV_BOSS2_PORTAL_POSITION.z,
+                ]}
+                scale={0.34}
+              >
+                <ThronePortalRing campType="red" locked />
+              </group>
+              <group
+                position={[
+                  THRONE_DEV_BOSS3_PORTAL_POSITION.x,
+                  THRONE_DEV_BOSS3_PORTAL_POSITION.y,
+                  THRONE_DEV_BOSS3_PORTAL_POSITION.z,
+                ]}
+                scale={0.34}
+              >
+                <ThronePortalRing campType="green" locked />
+              </group>
+            </>
+          )}
         </>
       )}
     </group>

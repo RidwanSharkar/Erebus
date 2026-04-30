@@ -1,10 +1,15 @@
 import React, { useRef, useEffect } from 'react';
-import SummonTotemManager, { setGlobalSummonTotemTrigger, SummonTotemManagerRef } from './SummonTotemManager';
+import SummonTotemManager, {
+  setGlobalSummonTotemTrigger,
+  SummonTotemManagerRef,
+  type SummonTotemDamageHandler,
+} from './SummonTotemManager';
 import { Vector3 } from '@/utils/three-exports';
+import type { TotemBoltVariant } from '@/utils/talents';
 
 interface LocalSummonTotemManagerProps {
   enemyData?: Array<{ id: string; position: Vector3; health: number }>;
-  onDamage?: (targetId: string, damage: number, impactPosition: Vector3, isCritical?: boolean) => void;
+  onDamage?: SummonTotemDamageHandler;
   setActiveEffects?: (callback: (prev: Array<{
     id: number;
     type: string;
@@ -49,6 +54,7 @@ interface LocalSummonTotemManagerProps {
   }>) => void;
   nextDamageNumberId?: { current: number };
   playerId?: string; // Local player id (caster + socket)
+  totemBoltVariant?: TotemBoltVariant;
 }
 
 const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
@@ -58,14 +64,31 @@ const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
   activeEffects = [],
   setDamageNumbers,
   nextDamageNumberId,
-  playerId
+  playerId,
+  totemBoltVariant,
 }) => {
   const managerRef = React.useRef<SummonTotemManagerRef>(null);
+  const totemBoltVariantRef = React.useRef(totemBoltVariant);
 
   React.useEffect(() => {
-    setGlobalSummonTotemTrigger((position, enemyDataParam, onDamageParam, setActiveEffectsParam, activeEffectsParam, setDamageNumbersParam, nextDamageNumberIdParam, casterId) => {
+    totemBoltVariantRef.current = totemBoltVariant;
+  }, [totemBoltVariant]);
+
+  React.useEffect(() => {
+    setGlobalSummonTotemTrigger((
+      position,
+      enemyDataParam,
+      onDamageParam,
+      setActiveEffectsParam,
+      activeEffectsParam,
+      setDamageNumbersParam,
+      nextDamageNumberIdParam,
+      casterId,
+      totemBoltVariantParam,
+    ) => {
       if (managerRef.current) {
         const finalEnemyData = enemyDataParam || enemyData;
+        const boltVariantResolved = totemBoltVariantParam ?? totemBoltVariantRef.current;
         managerRef.current.createTotem(
           position,
           finalEnemyData,
@@ -75,7 +98,8 @@ const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
           setDamageNumbersParam || setDamageNumbers,
           nextDamageNumberIdParam || nextDamageNumberId,
           casterId,
-          playerId
+          playerId,
+          boltVariantResolved ?? undefined,
         );
       }
     });
@@ -83,7 +107,7 @@ const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
     return () => {
       setGlobalSummonTotemTrigger(() => {});
     };
-  }, [enemyData, onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, playerId]);
+  }, [enemyData, onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, playerId, totemBoltVariant]);
 
   return (
     <SummonTotemManager

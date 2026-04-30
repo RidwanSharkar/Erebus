@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Group, Vector3, TorusGeometry, TetrahedronGeometry, MeshStandardMaterial } from 'three';
 import { useFrame } from '@react-three/fiber';
 import BlizzardShard from './BlizzardShard';
+import { BLIZZARD_STORM_HIT_RADIUS } from '@/utils/talents';
 
 export const sharedGeometries = {
   torus: new TorusGeometry(0.8, 0.075, 8, 32),
@@ -10,15 +11,15 @@ export const sharedGeometries = {
 
 export const sharedMaterials = {
   blizzard: new MeshStandardMaterial({
-    color: "#FF544E",
-    emissive: "#FF544E",
+    color: "#80ffff",
+    emissive: "#40a0ff",
     emissiveIntensity: 2,
     transparent: true,
     opacity: 0.3
   }),
   shard: new MeshStandardMaterial({
-    color: "#FF544E",
-    emissive: "#FF544E",
+    color: "#80ffff",
+    emissive: "#40a0ff",
     emissiveIntensity: 1,
     transparent: true,
     opacity: 0.7
@@ -50,16 +51,17 @@ export default function Blizzard({
   flatDamagePerTick,
 }: BlizzardProps) {
   const stormRef = useRef<Group>(null);
+  const stormWorldPositionRef = useRef(new Vector3());
   const progressRef = useRef(0);
   const lastDamageTime = useRef<number>(0);
   const endedRef = useRef(false);
   const shardsRef = useRef<Array<{ id: number; position: Vector3; type: 'orbital' | 'falling' }>>([]);
   const aurasRef = useRef<Array<{ id: number }>>([]);
 
-  const ORBITAL_RADIUS = 1;
-  const FALLING_RADIUS = 0.5;
-  const ORBITAL_HEIGHT = 0.75;
-  const FALLING_HEIGHT = 0.75;
+  const ORBITAL_RADIUS = .8;        // Radius of the orbital shard spawn area
+  const FALLING_RADIUS = 2.5;        // Radius of the falling shard spawn area
+  const ORBITAL_HEIGHT = 2.35;        // Height of orbital shards
+  const FALLING_HEIGHT = 1.2;       // Starting height of falling shards
 
   useEffect(() => {
     endedRef.current = false;
@@ -132,10 +134,11 @@ export default function Blizzard({
       lastDamageTime.current = now;
 
       if (enemyData && onHitTarget) {
+        stormRef.current.getWorldPosition(stormWorldPositionRef.current);
         const hits =
           flatDamagePerTick != null
-            ? calculateBlizzardDamageFlat(stormRef.current.position, enemyData, flatDamagePerTick)
-            : calculateBlizzardDamageScaled(stormRef.current.position, enemyData, level);
+            ? calculateBlizzardDamageFlat(stormWorldPositionRef.current, enemyData, flatDamagePerTick)
+            : calculateBlizzardDamageScaled(stormWorldPositionRef.current, enemyData, level);
         hits.forEach(hit => {
           onHitTarget(
             hit.targetId,
@@ -166,7 +169,12 @@ export default function Blizzard({
   );
 }
 
-const DAMAGE_RADIUS = 1.5;
+const DAMAGE_RADIUS = BLIZZARD_STORM_HIT_RADIUS;
+
+/** Horizontal reach only — matches Runeblade LMB (XZ cone) and avoids false misses from Y (feet vs torso). */
+function distanceXZ(a: Vector3, b: Vector3): number {
+  return Math.hypot(a.x - b.x, a.z - b.z);
+}
 
 function calculateBlizzardDamageScaled(
   centerPosition: Vector3,
@@ -176,9 +184,9 @@ function calculateBlizzardDamageScaled(
   const hits: Array<{ targetId: string; damage: number; isCritical: boolean; position: Vector3 }> = [];
 
   for (const enemy of enemyData) {
-    const distance = centerPosition.distanceTo(enemy.position);
+    const distance = distanceXZ(centerPosition, enemy.position);
     if (distance <= DAMAGE_RADIUS) {
-      const baseDamage = 15 + (level * 3);
+      const baseDamage = 15 + (level * 3); // OLD DAMAGE LOGIC
       const damage = Math.floor(baseDamage * (1 - distance / DAMAGE_RADIUS));
 
       hits.push({
@@ -201,7 +209,7 @@ function calculateBlizzardDamageFlat(
   const hits: Array<{ targetId: string; damage: number; isCritical: boolean; position: Vector3 }> = [];
 
   for (const enemy of enemyData) {
-    const distance = centerPosition.distanceTo(enemy.position);
+    const distance = distanceXZ(centerPosition, enemy.position);
     if (distance <= DAMAGE_RADIUS) {
       hits.push({
         targetId: enemy.id,

@@ -8,7 +8,6 @@ import { Health } from '@/ecs/components/Health';
 import StunnedEffect from './StunnedEffect';
 
 interface StunnedEnemyData {
-  id: number;
   enemyId: string;
   position: Vector3;
   startTime: number;
@@ -19,7 +18,6 @@ interface StunManagerProps {
   world?: World;
 }
 
-// Global state for triggering stun effects from ControlSystem
 let globalStunManager: {
   addStunnedEnemy: (enemyId: string, position: Vector3, duration?: number) => void;
   getActiveStunnedEnemies: () => StunnedEnemyData[];
@@ -42,13 +40,11 @@ export const getActiveStunnedEnemies = (): StunnedEnemyData[] => {
 
 export default function StunManager({ world }: StunManagerProps) {
   const [stunnedEnemies, setStunnedEnemies] = useState<StunnedEnemyData[]>([]);
-  const stunnedEnemyIdCounter = useRef(0);
   const lastUpdateTime = useRef(0);
 
-  // Get enemy data for stunned effect positioning
   const getEnemyData = useCallback(() => {
     if (!world) return [];
-    
+
     const allEntities = world.getAllEntities();
     return allEntities
       .filter(entity => entity.hasComponent(Enemy) && entity.hasComponent(Transform) && entity.hasComponent(Health))
@@ -56,105 +52,81 @@ export default function StunManager({ world }: StunManagerProps) {
         const enemy = entity.getComponent(Enemy)!;
         const transform = entity.getComponent(Transform)!;
         const health = entity.getComponent(Health)!;
-        
+
         return {
           id: entity.id.toString(),
           position: transform.position.clone(),
           health: health.currentHealth,
           isDying: health.isDead,
-          deathStartTime: health.isDead ? Date.now() : undefined
+          deathStartTime: health.isDead ? Date.now() : undefined,
         };
       });
   }, [world]);
 
   const addStunnedEnemy = useCallback((enemyId: string, position: Vector3, duration: number = 4000) => {
-    const newStunnedEnemy: StunnedEnemyData = {
-      id: stunnedEnemyIdCounter.current++,
-      enemyId,
-      position: position.clone(),
-      startTime: Date.now(),
-      duration: duration // Dynamic stun duration
-    };
-    
-    console.log(`✨ StunManager: Adding stun effect for enemy ${enemyId} with duration ${duration}ms`);
-    setStunnedEnemies(prev => [...prev, newStunnedEnemy]);
+    setStunnedEnemies(prev => {
+      const rest = prev.filter(se => se.enemyId !== enemyId);
+      return [
+        ...rest,
+        {
+          enemyId,
+          position: position.clone(),
+          startTime: Date.now(),
+          duration,
+        },
+      ];
+    });
   }, []);
 
-  const getActiveStunnedEnemies = useCallback(() => {
-    return stunnedEnemies;
-  }, [stunnedEnemies]);
+  const getActiveStunnedEnemies = useCallback(() => stunnedEnemies, [stunnedEnemies]);
 
-  // Register global manager
   React.useEffect(() => {
     globalStunManager = {
       addStunnedEnemy,
-      getActiveStunnedEnemies
+      getActiveStunnedEnemies,
     };
-    
+
     return () => {
       globalStunManager = null;
     };
   }, [addStunnedEnemy, getActiveStunnedEnemies]);
 
-  // Update stunned enemies based on world state
-  useFrame((state) => {
-    // Throttle updates
+  useFrame(state => {
     const currentTime = state.clock.getElapsedTime();
-    if (currentTime - lastUpdateTime.current < 0.1) return; // Update every 100ms
+    if (currentTime - lastUpdateTime.current < 0.1) return;
     lastUpdateTime.current = currentTime;
 
     if (!world) return;
 
     const now = Date.now();
-
-    // Check for newly stunned enemies and add stun effects
     const allEntities = world.getAllEntities();
-    allEntities.forEach(entity => {
-      const enemy = entity.getComponent(Enemy);
-      const transform = entity.getComponent(Transform);
-      
-      if (enemy && transform && enemy.isFrozen) {
-        // Check if this is a stun effect (we reuse the freeze mechanism but with different visuals)
-        // We'll identify stun effects by checking if they were applied by Sunder
-        const existingStunnedEffect = stunnedEnemies.find(se => se.enemyId === entity.id.toString());
-        
-        if (!existingStunnedEffect) {
-          // Check if this enemy was recently hit by Sunder (this is a simple heuristic)
-          // In a more complex system, we might add a separate stun flag to the Enemy component
-          // For now, we'll add stun effects for all newly frozen enemies
-          // The ControlSystem will call addGlobalStunnedEnemy directly for Sunder stuns
-        }
-      }
-    });
 
-    // Clean up stunned effects based on multiple criteria
-    setStunnedEnemies(prev => prev.filter(stunnedEnemy => {
-      const elapsed = now - stunnedEnemy.startTime;
-      
-      // Remove if duration has passed
-      if (elapsed >= stunnedEnemy.duration) {
-        return false;
-      }
-      
-      // Remove if enemy no longer exists or is dead
-      const entity = allEntities.find(e => e.id.toString() === stunnedEnemy.enemyId);
-      if (!entity) {
-        return false;
-      }
-      
-      const health = entity.getComponent(Health);
-      if (health && health.isDead) {
-        return false;
-      }
-      
-      // Remove if enemy is no longer stunned
-      const enemy = entity.getComponent(Enemy);
-      if (enemy && !enemy.isStunned) {
-        return false;
-      }
-      
-      return true;
-    }));
+    setStunnedEnemies(prev =>
+      prev.filter(stunnedEnemy => {
+        const elapsed = now - stunnedEnemy.startTime;
+
+        if (elapsed >= stunnedEnemy.duration) {
+          return false;
+        }
+
+        const entity = allEntities.find(e => e.id.toString() === stunnedEnemy.enemyId);
+        if (!entity) {
+          return false;
+        }
+
+        const health = entity.getComponent(Health);
+        if (health && health.isDead) {
+          return false;
+        }
+
+        const enemy = entity.getComponent(Enemy);
+        if (enemy && !enemy.isStunned) {
+          return false;
+        }
+
+        return true;
+      }),
+    );
   });
 
   const enemyData = getEnemyData();
@@ -163,14 +135,14 @@ export default function StunManager({ world }: StunManagerProps) {
     <>
       {stunnedEnemies.map(stunnedEnemy => (
         <StunnedEffect
-          key={stunnedEnemy.id}
+          key={stunnedEnemy.enemyId}
           position={stunnedEnemy.position}
           duration={stunnedEnemy.duration}
           startTime={stunnedEnemy.startTime}
           enemyId={stunnedEnemy.enemyId}
           enemyData={enemyData}
           onComplete={() => {
-            setStunnedEnemies(prev => prev.filter(se => se.id !== stunnedEnemy.id));
+            setStunnedEnemies(prev => prev.filter(se => se.enemyId !== stunnedEnemy.enemyId));
           }}
         />
       ))}

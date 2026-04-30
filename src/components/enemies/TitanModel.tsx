@@ -10,8 +10,14 @@ interface TitanModelProps {
   isDying: boolean;
 }
 
-useGLTF.preload('/models/titan_idle.glb');
-useGLTF.preload('/models/titan_walk.glb');
+const TITAN_MODEL_PATHS = [
+  '/models/titan_idle.glb',
+  '/models/titan_walk.glb',
+];
+
+export function preloadTitanModels(): void {
+  TITAN_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+}
 
 // Adjust if the titan GLB geometry is larger or smaller than expected.
 const SCALE = 0.02775;

@@ -11,6 +11,8 @@ import EnemyStaggerBar from './EnemyStaggerBar';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
 import { KNIGHT_CAST_ABILITY_LOCK_MS } from '@/utils/knightCoopAbilitiesConstants';
+import GhostTrail from '../dragon/GhostTrail';
+import { WeaponType } from '../dragon/weapons';
 
 interface KnightRendererProps {
   id: string;
@@ -39,6 +41,8 @@ const FADE_DURATION = 1.5; // seconds
 // 12 keeps the visual within ~0.17 units of the server position at knight speed (2 u/s),
 // tight enough to avoid visible lag while still smoothing out 33 ms server steps.
 const LERP_SPEED = 12;
+const DASH_LERP_SPEED = 24;
+const DASH_DURATION = 350;
 // After the server stops sending position updates for this long, transition to idle.
 // Must comfortably exceed 2× the server tick (33ms) plus network jitter to avoid
 // premature Walk→Idle flicker when the client-side throttle drops an update.
@@ -64,6 +68,7 @@ export default function KnightRenderer({
   const [isWalking, setIsWalking] = useState(false);
   const [attackVariant, setAttackVariant] = useState<1 | 2>(1);
   const [abilityClip, setAbilityClip] = useState<'Smite' | 'Aggro' | 'Cast' | null>(null);
+  const [isDashing, setIsDashing] = useState(false);
   const [isImpacting, setIsImpacting] = useState(false);
   const [impactVariant, setImpactVariant] = useState<1 | 2>(1);
   const [impactPlayKey, setImpactPlayKey] = useState(0);
@@ -78,9 +83,11 @@ export default function KnightRenderer({
 
   const isAttackingRef = useRef(false);
   const isAbilityRef   = useRef(false);
+  const isDashingRef   = useRef(false);
 
   // Timer handle for the delayed idle transition after server stops sending moves.
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer = useRef(0);
   const opacity = useRef(1);
 
@@ -103,7 +110,7 @@ export default function KnightRenderer({
     // While executing an attack or ability, ignore position updates entirely.
     // The backend locks the knight in place during these windows; any in-flight
     // packets that arrive during the animation should not cause sliding.
-    const isLocked = isAttackingRef.current || isAbilityRef.current;
+    const isLocked = isAttackingRef.current || isAbilityRef.current || isDashingRef.current;
     if (!isLocked) {
       targetPosition.current.copy(position);
     }
@@ -128,7 +135,10 @@ export default function KnightRenderer({
 
   // Clean up the walk-stop timer on unmount.
   useEffect(() => {
-    return () => { if (walkStopTimer.current) clearTimeout(walkStopTimer.current); };
+    return () => {
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      if (dashTimer.current) clearTimeout(dashTimer.current);
+    };
   }, []);
 
   // Update target rotation — lerped in useFrame to stay consistent with position.
@@ -147,6 +157,7 @@ export default function KnightRenderer({
       !isDying &&
       !isWalking &&
       !isAttacking &&
+      !isDashing &&
       !abilityClip
     ) {
       const v = nextImpactVariantRef.current;
@@ -156,15 +167,15 @@ export default function KnightRenderer({
       setImpactPlayKey(k => k + 1);
     }
     prevHealthRef.current = health;
-  }, [health, isDying, isWalking, isAttacking, abilityClip]);
+  }, [health, isDying, isWalking, isAttacking, isDashing, abilityClip]);
 
   // Higher-priority states interrupt impact (e.g. attack telegraph) so `isImpacting` cannot get stuck
   // if the mixer never fires `finished` for a faded-out impact.
   useEffect(() => {
-    if (isWalking || isAttacking || abilityClip) {
+    if (isWalking || isAttacking || isDashing || abilityClip) {
       setIsImpacting(false);
     }
-  }, [isWalking, isAttacking, abilityClip]);
+  }, [isWalking, isAttacking, isDashing, abilityClip]);
 
   // Attack animation trigger from server.
   useEffect(() => {
@@ -183,6 +194,52 @@ export default function KnightRenderer({
 
     socket.on('knight-attack-telegraph', handleKnightTelegraph);
     return () => { socket.off('knight-attack-telegraph', handleKnightTelegraph); };
+  }, [id, socket]);
+
+  // Post-boss mobility: server-authoritative dash, visually matched to player dash timing.
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleKnightDash = (data: {
+      knightId: string;
+      startPosition: { x: number; y: number; z: number };
+      endPosition: { x: number; y: number; z: number };
+      rotation: number;
+      durationMs?: number;
+    }) => {
+      if (data.knightId !== id) return;
+
+      const startPos = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
+      const endPos = new Vector3(data.endPosition.x, data.endPosition.y, data.endPosition.z);
+      const duration = data.durationMs ?? DASH_DURATION;
+
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      if (dashTimer.current) clearTimeout(dashTimer.current);
+
+      setIsWalking(false);
+      setIsImpacting(false);
+      setIsDashing(true);
+      isDashingRef.current = true;
+      targetPosition.current.copy(endPos);
+      targetRotation.current = data.rotation;
+
+      if (groupRef.current) {
+        groupRef.current.position.copy(startPos);
+        groupRef.current.rotation.y = data.rotation;
+      }
+
+      dashTimer.current = setTimeout(() => {
+        setIsDashing(false);
+        isDashingRef.current = false;
+        if (groupRef.current) {
+          groupRef.current.position.copy(endPos);
+          groupRef.current.rotation.y = data.rotation;
+        }
+      }, duration);
+    };
+
+    socket.on('knight-dash', handleKnightDash);
+    return () => { socket.off('knight-dash', handleKnightDash); };
   }, [id, socket]);
 
   // Ability animation triggers from server — one handler per soul-type ability.
@@ -250,7 +307,7 @@ export default function KnightRenderer({
     const group = groupRef.current;
 
     // Smoothly move the rendered position toward the server-authoritative target.
-    group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
+    group.position.lerp(targetPosition.current, Math.min(1, delta * (isDashingRef.current ? DASH_LERP_SPEED : LERP_SPEED)));
 
     // Lerp rotation with shortest-arc wrapping so the knight never spins the long way.
     let deltaAngle = targetRotation.current - group.rotation.y;
@@ -275,6 +332,15 @@ export default function KnightRenderer({
   });
 
   return (
+    <>
+    <GhostTrail
+      parentRef={groupRef as React.RefObject<Group>}
+      weaponType={WeaponType.NONE}
+      fixedTrailColor="#d8d8d8"
+      isTrailMotionRef={isDashingRef}
+      yOffset={1.0}
+    />
+
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <KnightModel
         isWalking={isWalking}
@@ -324,5 +390,6 @@ export default function KnightRenderer({
         )}
       </Billboard>
     </group>
+    </>
   );
 }

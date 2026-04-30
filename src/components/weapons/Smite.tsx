@@ -1,4 +1,4 @@
-import { useRef, useMemo, useState, memo } from 'react';
+import { useRef, useMemo, useState, memo, useEffect } from 'react';
 import {
   Group,
   Vector3,
@@ -21,6 +21,7 @@ import { useFrame } from '@react-three/fiber';
 import { WeaponType } from '../dragon/weapons';
 import { calculateDamage, DamageResult } from '@/core/DamageCalculator';
 import { INFERNAL_SMITE_CRIT_CHANCE_ADD, STAGGERING_SMITE_BEAM_STAGGER } from '@/utils/talents';
+import { createBeamCylinderAdditiveMaterial } from '@/utils/beamCylinderAdditiveMaterial';
 
 const _hslScratch = { h: 0, s: 0, l: 0 };
 
@@ -170,79 +171,62 @@ const SmiteComponent = memo(function Smite({
     [primaryColor, secondaryColor],
   );
 
-  const materials = useMemo(() => {
+  const beamCylinderMaterials = useMemo(() => {
+    const glow2Color = primaryColor.clone().lerp(secondaryColor, 0.42);
+    const outerGlowColor = primaryColor.clone().lerp(secondaryColor, 0.52);
     return {
-      core: new MeshStandardMaterial({
-        color: primaryColor,
-        emissive: primaryColor,
-        emissiveIntensity: 64,
-        transparent: true,
-        opacity: 0.998,
-      }),
-      inner: new MeshStandardMaterial({
-        color: primaryColor,
-        emissive: primaryColor,
-        emissiveIntensity: 42,
-        transparent: true,
-        opacity: 0.7,
-      }),
-      outer: new MeshStandardMaterial({
-        color: primaryColor,
-        emissive: primaryColor,
-        emissiveIntensity: 24,
-        transparent: true,
-        opacity: 0.6,
-      }),
-      glow1: new MeshStandardMaterial({
-        color: primaryColor,
-        emissive: primaryColor,
-        emissiveIntensity: 5.5,
-        transparent: true,
-        opacity: 0.5,
-      }),
-      glow2: new MeshStandardMaterial({
-        color: primaryColor,
-        emissive: secondaryColor,
-        emissiveIntensity: 4.2,
-        transparent: true,
-        opacity: 0.4,
-      }),
-      outerGlow: new MeshStandardMaterial({
-        color: primaryColor,
-        emissive: secondaryColor,
-        emissiveIntensity: 1.8,
-        transparent: true,
-        opacity: 0.18,
-      }),
-      spiral: new MeshStandardMaterial({
-        color: primaryColor,
-        emissive: secondaryColor,
-        emissiveIntensity: 12,
-        transparent: true,
-        opacity: 0.48,
-      }),
-      skySpiral: new MeshStandardMaterial({
-        color: primaryColor,
-        emissive: secondaryColor,
-        emissiveIntensity: 11,
-        transparent: true,
-        opacity: 0.36,
-      }),
-      particle: new MeshStandardMaterial({
-        color: primaryColor,
-        emissive: secondaryColor,
-        emissiveIntensity: 12,
-        transparent: true,
-        opacity: 0.62,
-      }),
-      burstRing: new MeshBasicMaterial({
-        color: primaryColor,
-        transparent: true,
-        opacity: 0.92,
-        blending: AdditiveBlending,
-        depthWrite: false,
-        side: DoubleSide,
-      }),
+      core: createBeamCylinderAdditiveMaterial(primaryColor, 0.92, 0.32),
+      inner: createBeamCylinderAdditiveMaterial(primaryColor, 0.78, 0.3),
+      outer: createBeamCylinderAdditiveMaterial(primaryColor, 0.62, 0.28),
+      glow1: createBeamCylinderAdditiveMaterial(primaryColor, 0.48, 0.26),
+      glow2: createBeamCylinderAdditiveMaterial(glow2Color, 0.38, 0.24),
+      outerGlow: createBeamCylinderAdditiveMaterial(outerGlowColor, 0.22, 0.2),
+    };
+  }, [primaryColor, secondaryColor]);
+
+  useEffect(() => {
+    const m = beamCylinderMaterials;
+    return () => {
+      m.core.dispose();
+      m.inner.dispose();
+      m.outer.dispose();
+      m.glow1.dispose();
+      m.glow2.dispose();
+      m.outerGlow.dispose();
+    };
+  }, [beamCylinderMaterials]);
+
+  const materials = useMemo(() => ({
+    ...beamCylinderMaterials,
+    spiral: new MeshStandardMaterial({
+      color: primaryColor,
+      emissive: secondaryColor,
+      emissiveIntensity: 12,
+      transparent: true,
+      opacity: 0.48,
+    }),
+    skySpiral: new MeshStandardMaterial({
+      color: primaryColor,
+      emissive: secondaryColor,
+      emissiveIntensity: 11,
+      transparent: true,
+      opacity: 0.36,
+    }),
+    particle: new MeshStandardMaterial({
+      color: primaryColor,
+      emissive: secondaryColor,
+      emissiveIntensity: 12,
+      transparent: true,
+      opacity: 0.62,
+    }),
+    burstRing: new MeshBasicMaterial({
+      color: primaryColor,
+      transparent: true,
+      opacity: 0.92,
+      blending: AdditiveBlending,
+      depthWrite: false,
+      side: DoubleSide,
+    }),
       burstCore: new MeshBasicMaterial({
         color: secondaryColor,
         transparent: true,
@@ -251,8 +235,7 @@ const SmiteComponent = memo(function Smite({
         depthWrite: false,
         side: DoubleSide,
       }),
-    };
-  }, [primaryColor, secondaryColor]);
+    }), [beamCylinderMaterials, primaryColor, secondaryColor]);
 
   // Pre-calculate spiral positions
   const spiralPositions = useMemo(() => (
@@ -284,7 +267,7 @@ const SmiteComponent = memo(function Smite({
     if (damageTriggered.current) return;
     damageTriggered.current = true;
 
-    const baseSmiteDamage = 165;
+    const baseSmiteDamage = 170;
     const damageRadius = 3.0; // Horizontal radius around impact (Y ignored so hovering units still hit)
     let totalDamage = 0;
     let targetsHit = 0;
@@ -474,12 +457,12 @@ const SmiteComponent = memo(function Smite({
         <mesh key={i} position={props.position} geometry={cylinderGeometries.sphere} material={materials.particle} />
       ))}
 
-      <pointLight position={[0, -10, 0]} color={primaryColor} intensity={44} distance={28} />
-      <pointLight position={[0, 0, 0]} color={secondaryColor} intensity={14} distance={5.5} />
+      <pointLight position={[0, -10, 0]} color={primaryColor} intensity={34} distance={28} />
+      <pointLight position={[0, 0, 0]} color={secondaryColor} intensity={11} distance={5.5} />
     </group>
 
     {/* Small ground burst at strike point (sibling so not parented to falling bolt) */}
-    <group position={[position.x, position.y + 1.25, position.z]} scale={[1.55, 1.55, 1.55]} visible={boltVisible}>
+    <group position={[position.x, position.y + 1.075, position.z]} scale={[1.55, 1.55, 1.55]} visible={boltVisible}>
       <mesh
         ref={burstRingRef}
         rotation={[-Math.PI / 2, 0, 0]}

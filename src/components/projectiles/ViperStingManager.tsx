@@ -16,7 +16,14 @@ interface ViperStingManagerProps {
     health: number;
     isDying?: boolean;
   }>;
-  onHit: (targetId: string, damage: number, isCritical?: boolean) => void;
+  onHit: (
+    targetId: string,
+    damage: number,
+    isCritical?: boolean,
+    position?: Vector3,
+    isBlizzard?: boolean,
+    viperPhase?: 'forward' | 'return' | 'explosion',
+  ) => void;
   setDamageNumbers: React.Dispatch<React.SetStateAction<Array<{
     id: number;
     damage: number;

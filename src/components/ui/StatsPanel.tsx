@@ -21,24 +21,18 @@ const AMULET_ICONS: Record<string, string> = {
 };
 
 const BOSS_ITEM_ICONS: Record<string, string> = {
-  CLOAK_OF_SPEED:  '🌀',
   WARDING_SHIELD:  '🔵',
   HOLY_RELIC:      '✴️',
-  TITAN_HEART:     '🔥',
 };
 
 const BOSS_ITEM_COLORS: Record<string, string> = {
-  CLOAK_OF_SPEED:  '#00cfff',
   WARDING_SHIELD:  '#4169e1',
   HOLY_RELIC:      '#ffd700',
-  TITAN_HEART:     '#ff4500',
 };
 
 const BOSS_ITEM_DESCRIPTIONS: Record<string, string> = {
-  CLOAK_OF_SPEED:  'Speed +5.0 · Jump ×1.5',
   WARDING_SHIELD:  'Max Shield +75',
   HOLY_RELIC:      'Mana Regen ×2',
-  TITAN_HEART:     'HP Regen +4/s',
 };
 
 export default function StatsPanel({

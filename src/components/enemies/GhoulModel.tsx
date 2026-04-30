@@ -16,13 +16,19 @@ interface GhoulModelProps {
   onImpactFinished?: () => void;
 }
 
-useGLTF.preload('/models/ghoul_idle.glb');
-useGLTF.preload('/models/ghoul_run.glb');
-useGLTF.preload('/models/ghoul_attack.glb');
-useGLTF.preload('/models/ghoul_attack2.glb');
-useGLTF.preload('/models/ghoul_summon.glb');
-useGLTF.preload('/models/ghoul_death.glb');
-useGLTF.preload('/models/ghoul_impact.glb');
+const GHOUL_MODEL_PATHS = [
+  '/models/ghoul_idle.glb',
+  '/models/ghoul_run.glb',
+  '/models/ghoul_attack.glb',
+  '/models/ghoul_attack2.glb',
+  '/models/ghoul_summon.glb',
+  '/models/ghoul_death.glb',
+  '/models/ghoul_impact.glb',
+];
+
+export function preloadGhoulModels(): void {
+  GHOUL_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+}
 
 const SCALE = 0.014;
 

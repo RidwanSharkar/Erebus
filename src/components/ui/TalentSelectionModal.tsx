@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
 import type { AbilityLoadout } from '@/utils/weaponAbilities';
-import type { TalentLoadout } from '@/utils/talents';
+import type { TalentId, TalentLoadout } from '@/utils/talents';
 import {
   createDefaultTalentLoadout,
   infestedSmiteTalentDefinition,
@@ -18,13 +18,19 @@ import {
   INFERNAL_SMITE_TICKS,
   infernoTalentDefinition,
   reaperTalentDefinition,
+  crossentropyTempestTalentDefinition,
+  crossentropyPlagueTalentDefinition,
+  CROSSENTROPY_TEMPEST_STAGGER,
+  CROSSENTROPY_PLAGUE_DAMAGE,
   frostPathTalentDefinition,
   FROSTPATH_PROC_CHANCE,
+  FROST_SOLAR_PROC_EFFECT_ICD_MS,
   solarRechargeTalentDefinition,
   SOLAR_RECHARGE_PROC_CHANCE,
   windFuryTalentDefinition,
   WINDFURY_PROC_CHANCE,
   isCrossentropyInLoadout,
+  isMantraInLoadout,
   concentratedVolleyTalentDefinition,
   WRATHFUL_BITE_BARRAGE_CRIT_CHANCE_ADD,
   WRATHFUL_BITE_BARRAGE_CRIT_DAMAGE_MULT_ADD,
@@ -80,6 +86,13 @@ import {
   STAGGER_SHOT_TEMPEST_ROUND_STAGGER,
   STAGGER_SHOT_UNCHARGED_STAGGER,
   staggerShotTalentDefinition,
+  staggeringBiteTalentDefinition,
+  staggeringTalonsTalentDefinition,
+  STAGGERING_BITE_BARRAGE_STAGGER_PER_HIT,
+  STAGGERING_TALONS_HIT_STAGGER,
+  wrathfulShotsTalentDefinition,
+  WRATHFUL_SHOTS_PERFECT_CRIT_CHANCE_ADD,
+  WRATHFUL_SHOTS_PERFECT_CRIT_DAMAGE_MULT_ADD,
   dualCoilTalentDefinition,
   wyvernStingTalentDefinition,
   wyvernTalonsTalentDefinition,
@@ -92,6 +105,11 @@ import {
   SPELLBLADE_WRAITH_STRIKE_SHIELD_RESTORE,
   WRAITH_STRIKE_COOLDOWN_SEC,
   WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES,
+  breathWeaponTalentDefinition,
+  BREATH_WEAPON_DAMAGE,
+  AFTERSHOCK_STRIP_LENGTH,
+  AFTERSHOCK_STRIP_HALF_WIDTH,
+  AFTERSHOCK_DETONATION_DELAY_MS,
   wrathfulTalonsTalentDefinition,
   executeTalentDefinition,
   explosiveTalonsTalentDefinition,
@@ -101,6 +119,35 @@ import {
   EXPLOSIVE_TALONS_REAPING_TALONS_MAX_TRAVEL_DISTANCE,
   tempestRoundsTalentDefinition,
   icebeamTalentDefinition,
+  getTalentIconSrc,
+  wrathfulEntropicTalentDefinition,
+  staggeringEntropicTalentDefinition,
+  infestingEntropicTalentDefinition,
+  wrathfulTotemTalentDefinition,
+  staggeringTotemTalentDefinition,
+  infestingTotemTalentDefinition,
+  staggeringStabTalentDefinition,
+  wrathfulStabTalentDefinition,
+  infestedBackstabTalentDefinition,
+  wrathfulSabresSwipesTalentDefinition,
+  infestingSabresSwipesTalentDefinition,
+  staggeringFlourishTalentDefinition,
+  wrathfulFlourishTalentDefinition,
+  infestedFlourishTalentDefinition,
+  STAGGERING_FLOURISH_STAGGER,
+  WRATHFUL_FLOURISH_CRIT_CHANCE_ADD,
+  WRATHFUL_FLOURISH_CRIT_DAMAGE_MULT_ADD,
+  STAGGERING_STAB_BACKSTAB_STAGGER,
+  WRATHFUL_STAB_CRIT_CHANCE_ADD,
+  WRATHFUL_STAB_CRIT_DAMAGE_MULT_ADD,
+  WRATHFUL_SABRES_SWIPES_CRIT_CHANCE_ADD,
+  WRATHFUL_SABRES_SWIPES_CRIT_DAMAGE_MULT_ADD,
+  INFESTING_SABRES_SWIPES_LEFT_DAMAGE,
+  INFESTING_SABRES_SWIPES_RIGHT_DAMAGE,
+  BACKSTAB_KILLSTREAK_DAMAGE_PER_KILL,
+  RELENTLESS_BACKSTAB_KILL_HEAL,
+  killstreakTalentDefinition,
+  relentlessTalentDefinition,
 } from '@/utils/talents';
 
 interface TalentSelectionModalProps {
@@ -121,6 +168,19 @@ const WEAPON_LABELS: Record<WeaponType, string> = {
   [WeaponType.SWORD]: 'Sword (Classic)',
   [WeaponType.KNIGHT]: 'Knight',
 };
+
+function TalentRowIcon({ id, dimmed }: { id: TalentId; dimmed?: boolean }) {
+  const src = getTalentIconSrc(id);
+  return (
+    <div
+      className={`mt-0.5 w-10 h-10 shrink-0 rounded border flex items-center justify-center ${
+        dimmed ? 'border-gray-700 bg-gray-900/50 opacity-55' : 'border-gray-600/70 bg-gray-900/85'
+      }`}
+    >
+      {src ? <img src={src} alt="" className="w-7 h-7 object-contain" /> : <span className="text-[15px] leading-none text-gray-500 select-none">✦</span>}
+    </div>
+  );
+}
 
 const WEAPON_COLORS: Record<WeaponType, { border: string; bg: string; text: string }> = {
   [WeaponType.NONE]: { border: 'border-violet-400', bg: 'bg-violet-900/30', text: 'text-violet-200' },
@@ -182,6 +242,29 @@ export default function TalentSelectionModal({
     spellblade: initialTalentLoadout?.spellblade ?? def.spellblade,
     tempestRounds: initialTalentLoadout?.tempestRounds ?? def.tempestRounds,
     icebeam: initialTalentLoadout?.icebeam ?? def.icebeam,
+    breathWeapon: initialTalentLoadout?.breathWeapon ?? def.breathWeapon,
+    staggeringBite: initialTalentLoadout?.staggeringBite ?? def.staggeringBite,
+    staggeringTalons: initialTalentLoadout?.staggeringTalons ?? def.staggeringTalons,
+    wrathfulShots: initialTalentLoadout?.wrathfulShots ?? def.wrathfulShots,
+    wrathfulEntropic: initialTalentLoadout?.wrathfulEntropic ?? def.wrathfulEntropic,
+    staggeringEntropic: initialTalentLoadout?.staggeringEntropic ?? def.staggeringEntropic,
+    infestingEntropic: initialTalentLoadout?.infestingEntropic ?? def.infestingEntropic,
+    wrathfulTotem: initialTalentLoadout?.wrathfulTotem ?? def.wrathfulTotem,
+    staggeringTotem: initialTalentLoadout?.staggeringTotem ?? def.staggeringTotem,
+    infestingTotem: initialTalentLoadout?.infestingTotem ?? def.infestingTotem,
+    crossentropyTempest: initialTalentLoadout?.crossentropyTempest ?? def.crossentropyTempest,
+    crossentropyPlague: initialTalentLoadout?.crossentropyPlague ?? def.crossentropyPlague,
+    shaman: initialTalentLoadout?.shaman ?? def.shaman,
+    staggeringStab: initialTalentLoadout?.staggeringStab ?? def.staggeringStab,
+    wrathfulStab: initialTalentLoadout?.wrathfulStab ?? def.wrathfulStab,
+    infestedBackstab: initialTalentLoadout?.infestedBackstab ?? def.infestedBackstab,
+    wrathfulSabresSwipes: initialTalentLoadout?.wrathfulSabresSwipes ?? def.wrathfulSabresSwipes,
+    infestingSabresSwipes: initialTalentLoadout?.infestingSabresSwipes ?? def.infestingSabresSwipes,
+    staggeringFlourish: initialTalentLoadout?.staggeringFlourish ?? def.staggeringFlourish,
+    wrathfulFlourish: initialTalentLoadout?.wrathfulFlourish ?? def.wrathfulFlourish,
+    infestedFlourish: initialTalentLoadout?.infestedFlourish ?? def.infestedFlourish,
+    killstreak: initialTalentLoadout?.killstreak ?? def.killstreak,
+    relentless: initialTalentLoadout?.relentless ?? def.relentless,
   };
   const [loadout, setLoadout] = useState<TalentLoadout>(() => merged);
 
@@ -191,6 +274,7 @@ export default function TalentSelectionModal({
   const chargeEquipped = useMemo(() => isChargeInLoadout(abilityLoadout), [abilityLoadout]);
   const smiteEquipped = useMemo(() => isColossusSmiteInLoadout(abilityLoadout), [abilityLoadout]);
   const crossentropyEquipped = useMemo(() => isCrossentropyInLoadout(abilityLoadout), [abilityLoadout]);
+  const mantraEquipped = useMemo(() => isMantraInLoadout(abilityLoadout), [abilityLoadout]);
   const wc = WEAPON_COLORS[selectedWeapon];
 
   const toggleWrath = useCallback(() => {
@@ -223,6 +307,11 @@ export default function TalentSelectionModal({
     setLoadout((prev) => ({ ...prev, spellblade: !prev.spellblade }));
   }, [wraithEquipped]);
 
+  const toggleBreathWeapon = useCallback(() => {
+    if (!wraithEquipped) return;
+    setLoadout((prev) => ({ ...prev, breathWeapon: !prev.breathWeapon }));
+  }, [wraithEquipped]);
+
   const toggleWrathfulTalons = useCallback(() => {
     if (!reapingEquipped) return;
     setLoadout((prev) => ({ ...prev, wrathfulTalons: !prev.wrathfulTalons }));
@@ -241,6 +330,11 @@ export default function TalentSelectionModal({
   const toggleWyvernTalons = useCallback(() => {
     if (!reapingEquipped) return;
     setLoadout((prev) => ({ ...prev, wyvernTalons: !prev.wyvernTalons }));
+  }, [reapingEquipped]);
+
+  const toggleStaggeringTalons = useCallback(() => {
+    if (!reapingEquipped) return;
+    setLoadout((prev) => ({ ...prev, staggeringTalons: !prev.staggeringTalons }));
   }, [reapingEquipped]);
 
   const toggleStoredCharge = useCallback(() => {
@@ -320,8 +414,52 @@ export default function TalentSelectionModal({
     setLoadout((prev) => ({ ...prev, staggeringSwipes: !prev.staggeringSwipes }));
   }, []);
 
+  const toggleStaggeringStab = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, staggeringStab: !prev.staggeringStab }));
+  }, []);
+
+  const toggleWrathfulStab = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, wrathfulStab: !prev.wrathfulStab }));
+  }, []);
+
+  const toggleInfestedBackstab = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, infestedBackstab: !prev.infestedBackstab }));
+  }, []);
+
+  const toggleWrathfulSabresSwipes = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, wrathfulSabresSwipes: !prev.wrathfulSabresSwipes }));
+  }, []);
+
+  const toggleInfestingSabresSwipes = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, infestingSabresSwipes: !prev.infestingSabresSwipes }));
+  }, []);
+
+  const toggleStaggeringFlourish = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, staggeringFlourish: !prev.staggeringFlourish }));
+  }, []);
+
+  const toggleWrathfulFlourish = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, wrathfulFlourish: !prev.wrathfulFlourish }));
+  }, []);
+
+  const toggleInfestedFlourish = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, infestedFlourish: !prev.infestedFlourish }));
+  }, []);
+
+  const toggleKillstreak = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, killstreak: !prev.killstreak }));
+  }, []);
+
+  const toggleRelentless = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, relentless: !prev.relentless }));
+  }, []);
+
   const toggleStaggerShot = useCallback(() => {
     setLoadout((prev) => ({ ...prev, staggerShot: !prev.staggerShot }));
+  }, []);
+
+  const toggleWrathfulShots = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, wrathfulShots: !prev.wrathfulShots }));
   }, []);
 
   const toggleDualCoil = useCallback(() => {
@@ -342,6 +480,11 @@ export default function TalentSelectionModal({
     setLoadout((prev) => ({ ...prev, wrathfulBite: !prev.wrathfulBite }));
   }, [frostbiteEquipped]);
 
+  const toggleStaggeringBite = useCallback(() => {
+    if (!frostbiteEquipped) return;
+    setLoadout((prev) => ({ ...prev, staggeringBite: !prev.staggeringBite }));
+  }, [frostbiteEquipped]);
+
   const toggleWyvernBite = useCallback(() => {
     if (!frostbiteEquipped) return;
     setLoadout((prev) => ({ ...prev, wyvernBite: !prev.wyvernBite }));
@@ -355,6 +498,24 @@ export default function TalentSelectionModal({
   const toggleReaper = useCallback(() => {
     if (!crossentropyEquipped) return;
     setLoadout((prev) => ({ ...prev, reaper: !prev.reaper }));
+  }, [crossentropyEquipped]);
+
+  const toggleCrossentropyTempest = useCallback(() => {
+    if (!crossentropyEquipped) return;
+    setLoadout((prev) => {
+      const on = !prev.crossentropyTempest;
+      if (!on) return { ...prev, crossentropyTempest: false };
+      return { ...prev, crossentropyTempest: true, crossentropyPlague: false };
+    });
+  }, [crossentropyEquipped]);
+
+  const toggleCrossentropyPlague = useCallback(() => {
+    if (!crossentropyEquipped) return;
+    setLoadout((prev) => {
+      const on = !prev.crossentropyPlague;
+      if (!on) return { ...prev, crossentropyPlague: false };
+      return { ...prev, crossentropyPlague: true, crossentropyTempest: false };
+    });
   }, [crossentropyEquipped]);
 
   const toggleFrostPath = useCallback(() => {
@@ -377,10 +538,91 @@ export default function TalentSelectionModal({
     setLoadout((prev) => ({ ...prev, icebeam: !prev.icebeam }));
   }, []);
 
+  const toggleWrathfulEntropic = useCallback(() => {
+    setLoadout((prev) => {
+      const on = !prev.wrathfulEntropic;
+      if (!on) return { ...prev, wrathfulEntropic: false };
+      return {
+        ...prev,
+        wrathfulEntropic: true,
+        staggeringEntropic: false,
+        infestingEntropic: false,
+      };
+    });
+  }, []);
+
+  const toggleStaggeringEntropic = useCallback(() => {
+    setLoadout((prev) => {
+      const on = !prev.staggeringEntropic;
+      if (!on) return { ...prev, staggeringEntropic: false };
+      return {
+        ...prev,
+        staggeringEntropic: true,
+        wrathfulEntropic: false,
+        infestingEntropic: false,
+      };
+    });
+  }, []);
+
+  const toggleInfestingEntropic = useCallback(() => {
+    setLoadout((prev) => {
+      const on = !prev.infestingEntropic;
+      if (!on) return { ...prev, infestingEntropic: false };
+      return {
+        ...prev,
+        infestingEntropic: true,
+        wrathfulEntropic: false,
+        staggeringEntropic: false,
+      };
+    });
+  }, []);
+
+  const toggleWrathfulTotem = useCallback(() => {
+    if (!mantraEquipped) return;
+    setLoadout((prev) => {
+      const on = !prev.wrathfulTotem;
+      if (!on) return { ...prev, wrathfulTotem: false };
+      return {
+        ...prev,
+        wrathfulTotem: true,
+        staggeringTotem: false,
+        infestingTotem: false,
+      };
+    });
+  }, [mantraEquipped]);
+
+  const toggleStaggeringTotem = useCallback(() => {
+    if (!mantraEquipped) return;
+    setLoadout((prev) => {
+      const on = !prev.staggeringTotem;
+      if (!on) return { ...prev, staggeringTotem: false };
+      return {
+        ...prev,
+        staggeringTotem: true,
+        wrathfulTotem: false,
+        infestingTotem: false,
+      };
+    });
+  }, [mantraEquipped]);
+
+  const toggleInfestingTotem = useCallback(() => {
+    if (!mantraEquipped) return;
+    setLoadout((prev) => {
+      const on = !prev.infestingTotem;
+      if (!on) return { ...prev, infestingTotem: false };
+      return {
+        ...prev,
+        infestingTotem: true,
+        wrathfulTotem: false,
+        staggeringTotem: false,
+      };
+    });
+  }, [mantraEquipped]);
+
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] overflow-y-auto py-4">
-      <div className="bg-gray-900/98 border-2 border-amber-500 rounded-xl p-6 max-w-lg w-11/12 mx-auto">
-        <div className="text-center mb-5">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-hidden bg-black/80 p-4">
+      <div className="flex max-h-[min(90vh,calc(100vh-2rem))] min-h-0 w-full max-w-lg flex-col rounded-xl border-2 border-amber-500 bg-gray-900/98 p-6 shadow-xl">
+        <div className="mb-5 shrink-0 text-center">
           <h2 className="text-xl font-bold text-amber-400 mb-1">TALENTS</h2>
           <p className="text-gray-400 text-sm">
             Talents modify your equipped abilities. Current weapon:{' '}
@@ -388,6 +630,7 @@ export default function TalentSelectionModal({
           </p>
         </div>
 
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-2">
         <div
           className={`
             rounded-xl border-2 p-4 mb-6 transition-all
@@ -395,6 +638,7 @@ export default function TalentSelectionModal({
           `}
         >
           <div className="flex items-start gap-3">
+            <TalentRowIcon id={wrathStrikeTalentDefinition.id} dimmed={!wraithEquipped} />
             <input
               type="checkbox"
               id="talent-wrath-strike"
@@ -427,6 +671,7 @@ export default function TalentSelectionModal({
           `}
         >
           <div className="flex items-start gap-3">
+            <TalentRowIcon id={infestedStrikeTalentDefinition.id} dimmed={!wraithEquipped} />
             <input
               type="checkbox"
               id="talent-infested-strike"
@@ -454,6 +699,7 @@ export default function TalentSelectionModal({
           `}
         >
           <div className="flex items-start gap-3">
+            <TalentRowIcon id={staggeringStrikeTalentDefinition.id} dimmed={!wraithEquipped} />
             <input
               type="checkbox"
               id="talent-staggering-strike"
@@ -481,6 +727,7 @@ export default function TalentSelectionModal({
           `}
         >
           <div className="flex items-start gap-3">
+            <TalentRowIcon id={wraithGuardTalentDefinition.id} dimmed={!wraithEquipped} />
             <input
               type="checkbox"
               id="talent-wraith-guard"
@@ -508,6 +755,7 @@ export default function TalentSelectionModal({
           `}
         >
           <div className="flex items-start gap-3">
+            <TalentRowIcon id={doubleStrikeTalentDefinition.id} dimmed={!wraithEquipped} />
             <input
               type="checkbox"
               id="talent-double-strike"
@@ -537,6 +785,7 @@ export default function TalentSelectionModal({
           `}
         >
           <div className="flex items-start gap-3">
+            <TalentRowIcon id={spellbladeTalentDefinition.id} dimmed={!wraithEquipped} />
             <input
               type="checkbox"
               id="talent-spellblade"
@@ -559,6 +808,36 @@ export default function TalentSelectionModal({
           </div>
         </div>
 
+        <div
+          className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${wraithEquipped ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
+          `}
+        >
+          <div className="flex items-start gap-3">
+            <TalentRowIcon id={breathWeaponTalentDefinition.id} dimmed={!wraithEquipped} />
+            <input
+              type="checkbox"
+              id="talent-aftershock"
+              checked={loadout.breathWeapon}
+              onChange={toggleBreathWeapon}
+              disabled={!wraithEquipped}
+              className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+            />
+            <label htmlFor="talent-aftershock" className={`flex-1 ${wraithEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+              <div className="text-white font-semibold">{breathWeaponTalentDefinition.name}</div>
+              {loadout.breathWeapon && (
+                <>
+                  <p className="text-gray-400 text-sm mt-1">{breathWeaponTalentDefinition.description}</p>
+                  <p className="text-emerald-200/90 text-xs mt-2 font-mono">
+                    +{BREATH_WEAPON_DAMAGE} damage after {AFTERSHOCK_DETONATION_DELAY_MS / 1000}s · {AFTERSHOCK_STRIP_LENGTH}u × {AFTERSHOCK_STRIP_HALF_WIDTH * 2}u strip · flame pillar detonation VFX
+                  </p>
+                </>
+              )}
+            </label>
+          </div>
+        </div>
+
         {selectedWeapon === WeaponType.RUNEBLADE && (
           <>
             <div
@@ -568,6 +847,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={staggeringComboTalentDefinition.id} />
                 <input
                   type="checkbox"
                   id="talent-staggering-combo"
@@ -593,6 +873,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={wrathfulComboTalentDefinition.id} />
                 <input
                   type="checkbox"
                   id="talent-wrathful-combo"
@@ -621,6 +902,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={infestedComboTalentDefinition.id} />
                 <input
                   type="checkbox"
                   id="talent-infested-combo"
@@ -648,6 +930,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={blizzardTalentDefinition.id} />
                 <input
                   type="checkbox"
                   id="talent-blizzard"
@@ -678,6 +961,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={guardComboTalentDefinition.id} />
                 <input
                   type="checkbox"
                   id="talent-guard-combo"
@@ -705,6 +989,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={dashGuardTalentDefinition.id} />
                 <input
                   type="checkbox"
                   id="talent-dash-guard"
@@ -732,6 +1017,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={executionerTalentDefinition.id} />
                 <input
                   type="checkbox"
                   id="talent-executioner"
@@ -760,6 +1046,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={crusaderTalentDefinition.id} />
                 <input
                   type="checkbox"
                   id="talent-crusader"
@@ -789,6 +1076,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={bladeRushTalentDefinition.id} />
                 <input
                   type="checkbox"
                   id="talent-blade-rush"
@@ -816,6 +1104,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={storedChargeTalentDefinition.id} dimmed={!(chargeEquipped || loadout.bladeRush)} />
                 <input
                   type="checkbox"
                   id="talent-stored-charge"
@@ -850,6 +1139,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={trinityTalentDefinition.id} dimmed={!smiteEquipped} />
                 <input
                   type="checkbox"
                   id="talent-trinity"
@@ -881,6 +1171,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={infestedSmiteTalentDefinition.id} dimmed={!smiteEquipped} />
                 <input
                   type="checkbox"
                   id="talent-infested-smite"
@@ -912,6 +1203,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={staggeringSmiteTalentDefinition.id} dimmed={!smiteEquipped} />
                 <input
                   type="checkbox"
                   id="talent-staggering-smite"
@@ -945,6 +1237,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={infernalSmiteTalentDefinition.id} dimmed={!smiteEquipped} />
                 <input
                   type="checkbox"
                   id="talent-infernal-smite"
@@ -980,6 +1273,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={vengeanceSmiteTalentDefinition.id} dimmed={!smiteEquipped} />
                 <input
                   type="checkbox"
                   id="talent-vengeance-smite"
@@ -1013,6 +1307,7 @@ export default function TalentSelectionModal({
           `}
             >
               <div className="flex items-start gap-3">
+                <TalentRowIcon id={colossusGuardTalentDefinition.id} dimmed={!smiteEquipped} />
                 <input
                   type="checkbox"
                   id="talent-colossus-guard"
@@ -1045,7 +1340,115 @@ export default function TalentSelectionModal({
 
         {selectedWeapon === WeaponType.SABRES && (
           <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
+            <div className="text-gray-400 text-xs font-semibold tracking-wide uppercase mb-3">Class boons</div>
             <div className="flex items-start gap-3">
+              <TalentRowIcon id={killstreakTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-killstreak"
+                checked={loadout.killstreak}
+                onChange={toggleKillstreak}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-killstreak" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{killstreakTalentDefinition.name}</div>
+                {loadout.killstreak && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{killstreakTalentDefinition.description}</p>
+                    <p className="text-rose-200/90 text-xs mt-2 font-mono">
+                      +{BACKSTAB_KILLSTREAK_DAMAGE_PER_KILL} base Backstab damage per Backstab kill this run (positional hit)
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={relentlessTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-relentless"
+                checked={loadout.relentless}
+                onChange={toggleRelentless}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-relentless" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{relentlessTalentDefinition.name}</div>
+                {loadout.relentless && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{relentlessTalentDefinition.description}</p>
+                    <p className="text-emerald-200/90 text-xs mt-2 font-mono">
+                      Full Backstab cooldown refresh · +{RELENTLESS_BACKSTAB_KILL_HEAL} HP on kill
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+          </div>
+        )}
+
+        {selectedWeapon === WeaponType.SABRES && (
+          <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
+            <div className="text-gray-400 text-xs font-semibold tracking-wide uppercase mb-3">Backstab (Q)</div>
+            <div className="flex items-start gap-3">
+              <TalentRowIcon id={staggeringStabTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-staggering-stab"
+                checked={loadout.staggeringStab}
+                onChange={toggleStaggeringStab}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-staggering-stab" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{staggeringStabTalentDefinition.name}</div>
+                {loadout.staggeringStab && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{staggeringStabTalentDefinition.description}</p>
+                    <p className="text-sky-200/90 text-xs mt-2 font-mono">{STAGGERING_STAB_BACKSTAB_STAGGER} stagger on Backstab</p>
+                  </>
+                )}
+              </label>
+            </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={wrathfulStabTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-wrathful-stab"
+                checked={loadout.wrathfulStab}
+                onChange={toggleWrathfulStab}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-wrathful-stab" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{wrathfulStabTalentDefinition.name}</div>
+                {loadout.wrathfulStab && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{wrathfulStabTalentDefinition.description}</p>
+                    <p className="text-red-200/90 text-xs mt-2 font-mono">
+                      +{(WRATHFUL_STAB_CRIT_CHANCE_ADD * 100).toFixed(0)}% crit chance · +{(WRATHFUL_STAB_CRIT_DAMAGE_MULT_ADD * 100).toFixed(0)}% crit damage mult
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={infestedBackstabTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-infested-backstab"
+                checked={loadout.infestedBackstab}
+                onChange={toggleInfestedBackstab}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-infested-backstab" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{infestedBackstabTalentDefinition.name}</div>
+                {loadout.infestedBackstab && (
+                  <p className="text-gray-400 text-sm mt-1">{infestedBackstabTalentDefinition.description}</p>
+                )}
+              </label>
+            </div>
+
+            <div className="text-gray-400 text-xs font-semibold tracking-wide uppercase mt-6 mb-3">Swipes (LMB)</div>
+            <div className="flex items-start gap-3">
+              <TalentRowIcon id={staggeringSwipesTalentDefinition.id} />
               <input
                 type="checkbox"
                 id="talent-staggering-swipes"
@@ -1058,8 +1461,108 @@ export default function TalentSelectionModal({
                 {loadout.staggeringSwipes && (
                   <>
                     <p className="text-gray-400 text-sm mt-1">{staggeringSwipesTalentDefinition.description}</p>
-                    <p className="text-sky-200/90 text-xs mt-2 font-mono">7 + 8 stagger per swing · 100 = lightning + proc</p>
+                    <p className="text-sky-200/90 text-xs mt-2 font-mono">10 + 10 stagger per swing · 100 = lightning + proc</p>
                   </>
+                )}
+              </label>
+            </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={wrathfulSabresSwipesTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-wrathful-sabres-swipes"
+                checked={loadout.wrathfulSabresSwipes}
+                onChange={toggleWrathfulSabresSwipes}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-wrathful-sabres-swipes" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{wrathfulSabresSwipesTalentDefinition.name}</div>
+                {loadout.wrathfulSabresSwipes && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{wrathfulSabresSwipesTalentDefinition.description}</p>
+                    <p className="text-red-200/90 text-xs mt-2 font-mono">
+                      +{(WRATHFUL_SABRES_SWIPES_CRIT_CHANCE_ADD * 100).toFixed(0)}% crit chance · +{(WRATHFUL_SABRES_SWIPES_CRIT_DAMAGE_MULT_ADD * 100).toFixed(0)}% crit damage mult
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={infestingSabresSwipesTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-infesting-sabres-swipes"
+                checked={loadout.infestingSabresSwipes}
+                onChange={toggleInfestingSabresSwipes}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-infesting-sabres-swipes" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{infestingSabresSwipesTalentDefinition.name}</div>
+                {loadout.infestingSabresSwipes && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{infestingSabresSwipesTalentDefinition.description}</p>
+                    <p className="text-emerald-200/90 text-xs mt-2 font-mono">
+                      {INFESTING_SABRES_SWIPES_LEFT_DAMAGE} / {INFESTING_SABRES_SWIPES_RIGHT_DAMAGE} base (non-stealth) · zombie on kill
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+
+            <div className="text-gray-400 text-xs font-semibold tracking-wide uppercase mt-6 mb-3">Flourish (E)</div>
+            <div className="flex items-start gap-3">
+              <TalentRowIcon id={staggeringFlourishTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-staggering-flourish"
+                checked={loadout.staggeringFlourish}
+                onChange={toggleStaggeringFlourish}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-staggering-flourish" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{staggeringFlourishTalentDefinition.name}</div>
+                {loadout.staggeringFlourish && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{staggeringFlourishTalentDefinition.description}</p>
+                    <p className="text-sky-200/90 text-xs mt-2 font-mono">{STAGGERING_FLOURISH_STAGGER} stagger on Flourish</p>
+                  </>
+                )}
+              </label>
+            </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={wrathfulFlourishTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-wrathful-flourish"
+                checked={loadout.wrathfulFlourish}
+                onChange={toggleWrathfulFlourish}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-wrathful-flourish" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{wrathfulFlourishTalentDefinition.name}</div>
+                {loadout.wrathfulFlourish && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{wrathfulFlourishTalentDefinition.description}</p>
+                    <p className="text-red-200/90 text-xs mt-2 font-mono">
+                      +{(WRATHFUL_FLOURISH_CRIT_CHANCE_ADD * 100).toFixed(0)}% crit chance · +{(WRATHFUL_FLOURISH_CRIT_DAMAGE_MULT_ADD * 100).toFixed(0)}% crit damage mult
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={infestedFlourishTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-infested-flourish"
+                checked={loadout.infestedFlourish}
+                onChange={toggleInfestedFlourish}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-infested-flourish" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{infestedFlourishTalentDefinition.name}</div>
+                {loadout.infestedFlourish && (
+                  <p className="text-gray-400 text-sm mt-1">{infestedFlourishTalentDefinition.description}</p>
                 )}
               </label>
             </div>
@@ -1074,6 +1577,7 @@ export default function TalentSelectionModal({
           `}
           >
             <div className="flex items-start gap-3">
+              <TalentRowIcon id={wrathfulTalonsTalentDefinition.id} dimmed={!reapingEquipped} />
               <input
                 type="checkbox"
                 id="talent-wrathful-talons"
@@ -1093,6 +1597,7 @@ export default function TalentSelectionModal({
               </label>
             </div>
             <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={executeTalentDefinition.id} dimmed={!reapingEquipped} />
               <input
                 type="checkbox"
                 id="talent-execute"
@@ -1112,6 +1617,7 @@ export default function TalentSelectionModal({
               </label>
             </div>
             <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={explosiveTalonsTalentDefinition.id} dimmed={!reapingEquipped} />
               <input
                 type="checkbox"
                 id="talent-explosive-talons"
@@ -1133,6 +1639,7 @@ export default function TalentSelectionModal({
               </label>
             </div>
             <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={wyvernTalonsTalentDefinition.id} dimmed={!reapingEquipped} />
               <input
                 type="checkbox"
                 id="talent-wyvern-talons"
@@ -1145,6 +1652,28 @@ export default function TalentSelectionModal({
                 <div className="text-white font-semibold">{wyvernTalonsTalentDefinition.name}</div>
                 {loadout.wyvernTalons && (
                   <p className="text-gray-400 text-sm mt-1">{wyvernTalonsTalentDefinition.description}</p>
+                )}
+              </label>
+            </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={staggeringTalonsTalentDefinition.id} dimmed={!reapingEquipped} />
+              <input
+                type="checkbox"
+                id="talent-staggering-talons"
+                checked={loadout.staggeringTalons}
+                onChange={toggleStaggeringTalons}
+                disabled={!reapingEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+              />
+              <label htmlFor="talent-staggering-talons" className={`flex-1 ${reapingEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                <div className="text-white font-semibold">{staggeringTalonsTalentDefinition.name}</div>
+                {loadout.staggeringTalons && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{staggeringTalonsTalentDefinition.description}</p>
+                    <p className="text-amber-200/90 text-xs mt-2 font-mono">
+                      {STAGGERING_TALONS_HIT_STAGGER} stagger forward/return per hit · 100 = lightning + proc
+                    </p>
+                  </>
                 )}
               </label>
             </div>
@@ -1164,6 +1693,7 @@ export default function TalentSelectionModal({
           `}
           >
             <div className="flex items-start gap-3">
+              <TalentRowIcon id={concentratedVolleyTalentDefinition.id} dimmed={!frostbiteEquipped} />
               <input
                 type="checkbox"
                 id="talent-concentrated-volley"
@@ -1201,6 +1731,7 @@ export default function TalentSelectionModal({
           `}
           >
             <div className="flex items-start gap-3">
+              <TalentRowIcon id={wrathfulBiteTalentDefinition.id} dimmed={!frostbiteEquipped} />
               <input
                 type="checkbox"
                 id="talent-wrathful-bite"
@@ -1240,6 +1771,7 @@ export default function TalentSelectionModal({
           `}
           >
             <div className="flex items-start gap-3">
+              <TalentRowIcon id={wyvernBiteTalentDefinition.id} dimmed={!frostbiteEquipped} />
               <input
                 type="checkbox"
                 id="talent-wyvern-bite"
@@ -1273,8 +1805,49 @@ export default function TalentSelectionModal({
         )}
 
         {selectedWeapon === WeaponType.BOW && (
+          <div
+            className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${frostbiteEquipped ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
+          `}
+          >
+            <div className="flex items-start gap-3">
+              <TalentRowIcon id={staggeringBiteTalentDefinition.id} dimmed={!frostbiteEquipped} />
+              <input
+                type="checkbox"
+                id="talent-staggering-bite"
+                checked={loadout.staggeringBite}
+                onChange={toggleStaggeringBite}
+                disabled={!frostbiteEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+              />
+              <label
+                htmlFor="talent-staggering-bite"
+                className={`flex-1 ${frostbiteEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+              >
+                <div className="text-white font-semibold">{staggeringBiteTalentDefinition.name}</div>
+                {loadout.staggeringBite && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{staggeringBiteTalentDefinition.description}</p>
+                    <p className="text-amber-200/90 text-xs mt-2 font-mono">
+                      {STAGGERING_BITE_BARRAGE_STAGGER_PER_HIT} stagger per Barrage hit · 100 = lightning + proc
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+            {!frostbiteEquipped && (
+              <p className="text-gray-500 text-xs mt-3 pl-7">
+                Equip <span className="text-gray-300">Frostbite</span> in your ability loadout at the other east pillar to enable this talent.
+              </p>
+            )}
+          </div>
+        )}
+
+        {selectedWeapon === WeaponType.BOW && (
           <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
             <div className="flex items-start gap-3">
+              <TalentRowIcon id={staggerShotTalentDefinition.id} />
               <input
                 type="checkbox"
                 id="talent-stagger-shot"
@@ -1301,6 +1874,33 @@ export default function TalentSelectionModal({
         {selectedWeapon === WeaponType.BOW && (
           <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
             <div className="flex items-start gap-3">
+              <TalentRowIcon id={wrathfulShotsTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-wrathful-shots"
+                checked={loadout.wrathfulShots}
+                onChange={toggleWrathfulShots}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-wrathful-shots" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{wrathfulShotsTalentDefinition.name}</div>
+                {loadout.wrathfulShots && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{wrathfulShotsTalentDefinition.description}</p>
+                    <p className="text-rose-200/90 text-xs mt-2 font-mono">
+                      +{WRATHFUL_SHOTS_PERFECT_CRIT_CHANCE_ADD * 100}% crit chance · +{WRATHFUL_SHOTS_PERFECT_CRIT_DAMAGE_MULT_ADD * 100}% crit damage on perfect LMB
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+          </div>
+        )}
+
+        {selectedWeapon === WeaponType.BOW && (
+          <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
+            <div className="flex items-start gap-3">
+              <TalentRowIcon id={dualCoilTalentDefinition.id} />
               <input
                 type="checkbox"
                 id="talent-dual-coil"
@@ -1321,6 +1921,7 @@ export default function TalentSelectionModal({
         {selectedWeapon === WeaponType.BOW && (
           <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
             <div className="flex items-start gap-3">
+              <TalentRowIcon id={wyvernStingTalentDefinition.id} />
               <input
                 type="checkbox"
                 id="talent-wyvern-sting"
@@ -1346,6 +1947,7 @@ export default function TalentSelectionModal({
         {selectedWeapon === WeaponType.BOW && (
           <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
             <div className="flex items-start gap-3">
+              <TalentRowIcon id={tempestRoundsTalentDefinition.id} />
               <input
                 type="checkbox"
                 id="talent-tempest-rounds"
@@ -1371,6 +1973,7 @@ export default function TalentSelectionModal({
           `}
           >
             <div className="flex items-start gap-3">
+              <TalentRowIcon id={infernoTalentDefinition.id} dimmed={!crossentropyEquipped} />
               <input
                 type="checkbox"
                 id="talent-inferno"
@@ -1393,6 +1996,7 @@ export default function TalentSelectionModal({
               </label>
             </div>
             <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={reaperTalentDefinition.id} dimmed={!crossentropyEquipped} />
               <input
                 type="checkbox"
                 id="talent-reaper"
@@ -1406,6 +2010,56 @@ export default function TalentSelectionModal({
                 {loadout.reaper && <p className="text-gray-400 text-sm mt-1">{reaperTalentDefinition.description}</p>}
               </label>
             </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={crossentropyTempestTalentDefinition.id} dimmed={!crossentropyEquipped} />
+              <input
+                type="checkbox"
+                id="talent-crossentropy-tempest"
+                checked={loadout.crossentropyTempest}
+                onChange={toggleCrossentropyTempest}
+                disabled={!crossentropyEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+              />
+              <label
+                htmlFor="talent-crossentropy-tempest"
+                className={`flex-1 ${crossentropyEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+              >
+                <div className="text-white font-semibold">{crossentropyTempestTalentDefinition.name}</div>
+                {loadout.crossentropyTempest && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{crossentropyTempestTalentDefinition.description}</p>
+                    <p className="text-sky-200/90 text-xs mt-2 font-mono">
+                      +{CROSSENTROPY_TEMPEST_STAGGER} stagger per hit · mutually exclusive with {crossentropyPlagueTalentDefinition.name}
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={crossentropyPlagueTalentDefinition.id} dimmed={!crossentropyEquipped} />
+              <input
+                type="checkbox"
+                id="talent-crossentropy-plague"
+                checked={loadout.crossentropyPlague}
+                onChange={toggleCrossentropyPlague}
+                disabled={!crossentropyEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+              />
+              <label
+                htmlFor="talent-crossentropy-plague"
+                className={`flex-1 ${crossentropyEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+              >
+                <div className="text-white font-semibold">{crossentropyPlagueTalentDefinition.name}</div>
+                {loadout.crossentropyPlague && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{crossentropyPlagueTalentDefinition.description}</p>
+                    <p className="text-emerald-200/90 text-xs mt-2 font-mono">
+                      Base hit damage {CROSSENTROPY_PLAGUE_DAMAGE} (before Reaper stacks) · mutually exclusive with {crossentropyTempestTalentDefinition.name}
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
             {!crossentropyEquipped && (
               <p className="text-gray-500 text-xs mt-3 pl-7">
                 Equip <span className="text-gray-300">Crossentropy</span> in your ability loadout at the other east pillar to enable this talent.
@@ -1417,6 +2071,7 @@ export default function TalentSelectionModal({
         {selectedWeapon === WeaponType.SCYTHE && (
           <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
             <div className="flex items-start gap-3">
+              <TalentRowIcon id={frostPathTalentDefinition.id} />
               <input
                 type="checkbox"
                 id="talent-frostpath"
@@ -1430,13 +2085,14 @@ export default function TalentSelectionModal({
                   <>
                     <p className="text-gray-400 text-sm mt-1">{frostPathTalentDefinition.description}</p>
                     <p className="text-cyan-200/90 text-xs mt-2 font-mono">
-                      {FROSTPATH_PROC_CHANCE * 100}% per Entropic Bolt hit on PvE enemies · Coldsnap-style burst at impact
+                      {FROSTPATH_PROC_CHANCE * 100}% per Entropic Bolt hit on PvE enemies · Coldsnap-style burst at impact · min {FROST_SOLAR_PROC_EFFECT_ICD_MS / 1000}s between procs
                     </p>
                   </>
                 )}
               </label>
             </div>
             <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={solarRechargeTalentDefinition.id} />
               <input
                 type="checkbox"
                 id="talent-solar-recharge"
@@ -1450,13 +2106,14 @@ export default function TalentSelectionModal({
                   <>
                     <p className="text-gray-400 text-sm mt-1">{solarRechargeTalentDefinition.description}</p>
                     <p className="text-orange-200/90 text-xs mt-2 font-mono">
-                      {SOLAR_RECHARGE_PROC_CHANCE * 100}% per Entropic Bolt hit on PvE enemies · Sunwell (Reanimate) heal and VFX · does not put Q on cooldown
+                      {SOLAR_RECHARGE_PROC_CHANCE * 100}% per Entropic Bolt hit on PvE enemies · Sunwell (Reanimate) heal and VFX · does not put Q on cooldown · min {FROST_SOLAR_PROC_EFFECT_ICD_MS / 1000}s between procs
                     </p>
                   </>
                 )}
               </label>
             </div>
             <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={icebeamTalentDefinition.id} />
               <input
                 type="checkbox"
                 id="talent-icebeam"
@@ -1471,12 +2128,120 @@ export default function TalentSelectionModal({
                 )}
               </label>
             </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={wrathfulEntropicTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-wrathful-entropic"
+                checked={loadout.wrathfulEntropic}
+                onChange={toggleWrathfulEntropic}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-wrathful-entropic" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{wrathfulEntropicTalentDefinition.name}</div>
+                {loadout.wrathfulEntropic && (
+                  <p className="text-gray-400 text-sm mt-1">{wrathfulEntropicTalentDefinition.description}</p>
+                )}
+              </label>
+            </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={staggeringEntropicTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-staggering-entropic"
+                checked={loadout.staggeringEntropic}
+                onChange={toggleStaggeringEntropic}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-staggering-entropic" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{staggeringEntropicTalentDefinition.name}</div>
+                {loadout.staggeringEntropic && (
+                  <p className="text-gray-400 text-sm mt-1">{staggeringEntropicTalentDefinition.description}</p>
+                )}
+              </label>
+            </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={infestingEntropicTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-infesting-entropic"
+                checked={loadout.infestingEntropic}
+                onChange={toggleInfestingEntropic}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-infesting-entropic" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{infestingEntropicTalentDefinition.name}</div>
+                {loadout.infestingEntropic && (
+                  <p className="text-gray-400 text-sm mt-1">{infestingEntropicTalentDefinition.description}</p>
+                )}
+              </label>
+            </div>
+            <div className="mt-6 border-t border-purple-500/30 pt-5">
+              <p className="text-purple-300/90 text-xs font-semibold uppercase tracking-wide mb-3">Mantra</p>
+              <div className={`flex items-start gap-3 ${!mantraEquipped ? 'opacity-60' : ''}`}>
+                <TalentRowIcon id={wrathfulTotemTalentDefinition.id} dimmed={!mantraEquipped} />
+                <input
+                  type="checkbox"
+                  id="talent-wrathful-totem"
+                  checked={loadout.wrathfulTotem}
+                  onChange={toggleWrathfulTotem}
+                  disabled={!mantraEquipped}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                />
+                <label htmlFor="talent-wrathful-totem" className={`flex-1 ${mantraEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                  <div className="text-white font-semibold">{wrathfulTotemTalentDefinition.name}</div>
+                  {loadout.wrathfulTotem && (
+                    <p className="text-gray-400 text-sm mt-1">{wrathfulTotemTalentDefinition.description}</p>
+                  )}
+                </label>
+              </div>
+              <div className={`flex items-start gap-3 mt-4 ${!mantraEquipped ? 'opacity-60' : ''}`}>
+                <TalentRowIcon id={staggeringTotemTalentDefinition.id} dimmed={!mantraEquipped} />
+                <input
+                  type="checkbox"
+                  id="talent-staggering-totem"
+                  checked={loadout.staggeringTotem}
+                  onChange={toggleStaggeringTotem}
+                  disabled={!mantraEquipped}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                />
+                <label htmlFor="talent-staggering-totem" className={`flex-1 ${mantraEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                  <div className="text-white font-semibold">{staggeringTotemTalentDefinition.name}</div>
+                  {loadout.staggeringTotem && (
+                    <p className="text-gray-400 text-sm mt-1">{staggeringTotemTalentDefinition.description}</p>
+                  )}
+                </label>
+              </div>
+              <div className={`flex items-start gap-3 mt-4 ${!mantraEquipped ? 'opacity-60' : ''}`}>
+                <TalentRowIcon id={infestingTotemTalentDefinition.id} dimmed={!mantraEquipped} />
+                <input
+                  type="checkbox"
+                  id="talent-infesting-totem"
+                  checked={loadout.infestingTotem}
+                  onChange={toggleInfestingTotem}
+                  disabled={!mantraEquipped}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                />
+                <label htmlFor="talent-infesting-totem" className={`flex-1 ${mantraEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                  <div className="text-white font-semibold">{infestingTotemTalentDefinition.name}</div>
+                  {loadout.infestingTotem && (
+                    <p className="text-gray-400 text-sm mt-1">{infestingTotemTalentDefinition.description}</p>
+                  )}
+                </label>
+              </div>
+              {!mantraEquipped && (
+                <p className="text-gray-500 text-xs mt-3 pl-7">
+                  Equip <span className="text-gray-300">Mantra</span> in your universal ability loadout to enable these talents.
+                </p>
+              )}
+            </div>
           </div>
         )}
 
         {(selectedWeapon === WeaponType.SPEAR || selectedWeapon === WeaponType.RUNEBLADE) && (
           <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
             <div className="flex items-start gap-3">
+              <TalentRowIcon id={windFuryTalentDefinition.id} />
               <input
                 type="checkbox"
                 id="talent-windfury"
@@ -1499,7 +2264,9 @@ export default function TalentSelectionModal({
           </div>
         )}
 
-        <div className="flex justify-center gap-3">
+        </div>
+
+        <div className="mt-4 flex shrink-0 justify-center gap-3 border-t border-gray-700/80 pt-4">
           <button
             type="button"
             onClick={onBack}

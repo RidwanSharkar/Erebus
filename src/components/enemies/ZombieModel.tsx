@@ -12,11 +12,17 @@ interface ZombieModelProps {
   isDying: boolean;
 }
 
-useGLTF.preload('/models/zombie_idle.glb');
-useGLTF.preload('/models/zombie_walk.glb');
-useGLTF.preload('/models/zombie_attack.glb');
-useGLTF.preload('/models/zombie_summon.glb');
-useGLTF.preload('/models/zombie_death.glb');
+const ZOMBIE_MODEL_PATHS = [
+  '/models/zombie_idle.glb',
+  '/models/zombie_walk.glb',
+  '/models/zombie_attack.glb',
+  '/models/zombie_summon.glb',
+  '/models/zombie_death.glb',
+];
+
+export function preloadZombieModels(): void {
+  ZOMBIE_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+}
 
 const SCALE = 0.014;
 

@@ -16,7 +16,6 @@ interface FrostNovaData {
 }
 
 interface FrozenEnemyData {
-  id: number;
   enemyId: string;
   position: Vector3;
   startTime: number;
@@ -27,10 +26,11 @@ interface FrostNovaManagerProps {
   world?: World;
 }
 
-// Global state for triggering frost nova from ControlSystem
+const DEFAULT_FROZEN_VFX_MS = 5000;
+
 let globalFrostNovaManager: {
   triggerFrostNova: (position: Vector3) => void;
-  addFrozenEnemy: (enemyId: string, position: Vector3) => void;
+  addFrozenEnemy: (enemyId: string, position: Vector3, durationMs?: number) => void;
   getActiveFrostNovas: () => FrostNovaData[];
 } | null = null;
 
@@ -42,9 +42,13 @@ export const triggerGlobalFrostNova = (position: Vector3): boolean => {
   return false;
 };
 
-export const addGlobalFrozenEnemy = (enemyId: string, position: Vector3): boolean => {
+export const addGlobalFrozenEnemy = (
+  enemyId: string,
+  position: Vector3,
+  durationMs?: number,
+): boolean => {
   if (globalFrostNovaManager) {
-    globalFrostNovaManager.addFrozenEnemy(enemyId, position);
+    globalFrostNovaManager.addFrozenEnemy(enemyId, position, durationMs);
     return true;
   }
   return false;
@@ -61,13 +65,11 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
   const [activeFrostNovas, setActiveFrostNovas] = useState<FrostNovaData[]>([]);
   const [frozenEnemies, setFrozenEnemies] = useState<FrozenEnemyData[]>([]);
   const frostNovaIdCounter = useRef(0);
-  const frozenEnemyIdCounter = useRef(0);
   const lastUpdateTime = useRef(0);
 
-  // Get enemy data for frozen effect positioning
   const getEnemyData = useCallback(() => {
     if (!world) return [];
-    
+
     const allEntities = world.getAllEntities();
     return allEntities
       .filter(entity => entity.hasComponent(Enemy) && entity.hasComponent(Transform) && entity.hasComponent(Health))
@@ -75,13 +77,13 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
         const enemy = entity.getComponent(Enemy)!;
         const transform = entity.getComponent(Transform)!;
         const health = entity.getComponent(Health)!;
-        
+
         return {
           id: entity.id.toString(),
           position: transform.position.clone(),
           health: health.currentHealth,
           isDying: health.isDead,
-          deathStartTime: health.isDead ? Date.now() : undefined
+          deathStartTime: health.isDead ? Date.now() : undefined,
         };
       });
   }, [world]);
@@ -91,117 +93,102 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
       id: frostNovaIdCounter.current++,
       position: position.clone(),
       startTime: Date.now(),
-      duration: 1200 // 2 seconds
+      duration: 1200,
     };
-    
+
     setActiveFrostNovas(prev => [...prev, newFrostNova]);
   }, []);
 
-  const addFrozenEnemy = useCallback((enemyId: string, position: Vector3) => {
-    const newFrozenEnemy: FrozenEnemyData = {
-      id: frozenEnemyIdCounter.current++,
-      enemyId,
-      position: position.clone(),
-      startTime: Date.now(),
-      duration: 5000 // 5 seconds
-    };
-    
-    setFrozenEnemies(prev => [...prev, newFrozenEnemy]);
-  }, []);
+  const addFrozenEnemy = useCallback(
+    (enemyId: string, position: Vector3, durationMs: number = DEFAULT_FROZEN_VFX_MS) => {
+      setFrozenEnemies(prev => {
+        const rest = prev.filter(fe => fe.enemyId !== enemyId);
+        return [
+          ...rest,
+          {
+            enemyId,
+            position: position.clone(),
+            startTime: Date.now(),
+            duration: durationMs,
+          },
+        ];
+      });
+    },
+    [],
+  );
 
-  const getActiveFrostNovas = useCallback(() => {
-    return activeFrostNovas;
-  }, [activeFrostNovas]);
+  const getActiveFrostNovas = useCallback(() => activeFrostNovas, [activeFrostNovas]);
 
-  // Register global manager
   React.useEffect(() => {
     globalFrostNovaManager = {
       triggerFrostNova,
       addFrozenEnemy,
-      getActiveFrostNovas
+      getActiveFrostNovas,
     };
-    
+
     return () => {
       globalFrostNovaManager = null;
     };
   }, [triggerFrostNova, addFrozenEnemy, getActiveFrostNovas]);
 
-  // Update frozen enemies based on world state
-  useFrame((state) => {
-    // Throttle updates
+  useFrame(state => {
     const currentTime = state.clock.getElapsedTime();
-    if (currentTime - lastUpdateTime.current < 0.1) return; // Update every 100ms
+    if (currentTime - lastUpdateTime.current < 0.1) return;
     lastUpdateTime.current = currentTime;
 
     if (!world) return;
 
     const now = Date.now();
 
-    // NOTE: We no longer automatically add freeze visuals to all frozen enemies.
-    // This is because enemy.freeze() is used for both Frost Nova (freeze) and Sabre stuns.
-    // Freeze visuals are now only added when explicitly called via addGlobalFrozenEnemy().
-    // The StunManager handles stun visuals separately via addGlobalStunnedEnemy().
-    
     const allEntities = world.getAllEntities();
 
-    // Clean up frozen effects based on multiple criteria
     setFrozenEnemies(prev => {
       return prev.filter(frozenEnemy => {
-        // First check: Has the effect duration expired?
         const effectElapsed = now - frozenEnemy.startTime;
         if (effectElapsed >= frozenEnemy.duration) {
-          return false; // Remove expired effects
+          return false;
         }
 
-        // Second check: Does the entity still exist?
         const entity = allEntities.find(e => e.id.toString() === frozenEnemy.enemyId);
         if (!entity) {
-          return false; // Entity no longer exists
+          return false;
         }
-        
+
         const enemy = entity.getComponent(Enemy);
         const health = entity.getComponent(Health);
-        
-        // Third check: Is the entity still valid?
+
         if (!enemy || !health) {
           return false;
         }
 
-        // Fourth check: Is the enemy dead?
         if (health.isDead) {
-          return false; // Enemy is dead
+          return false;
         }
-        
-        // Keep the effect if it's still valid and within duration
+
         return true;
       });
     });
 
-    // Also clean up expired frost nova explosion effects
-    setActiveFrostNovas(prev => {
-      return prev.filter(frostNova => {
+    setActiveFrostNovas(prev =>
+      prev.filter(frostNova => {
         const effectElapsed = now - frostNova.startTime;
-        if (effectElapsed >= frostNova.duration) {
-          return false;
-        }
-        return true;
-      });
-    });
+        return effectElapsed < frostNova.duration;
+      }),
+    );
   });
 
   const handleFrostNovaComplete = (frostNovaId: number) => {
     setActiveFrostNovas(prev => prev.filter(fn => fn.id !== frostNovaId));
   };
 
-  const handleFrozenEffectComplete = (frozenId: number) => {
-    setFrozenEnemies(prev => prev.filter(fe => fe.id !== frozenId));
+  const handleFrozenEffectComplete = (enemyKey: string) => {
+    setFrozenEnemies(prev => prev.filter(fe => fe.enemyId !== enemyKey));
   };
 
   const enemyData = getEnemyData();
 
   return (
     <>
-      {/* Frost Nova explosion effects */}
       {activeFrostNovas.map(frostNova => (
         <FrostNova
           key={frostNova.id}
@@ -212,16 +199,15 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
         />
       ))}
 
-      {/* Frozen enemy effects */}
       {frozenEnemies.map(frozenEnemy => (
         <FrozenEffect
-          key={frozenEnemy.id}
+          key={frozenEnemy.enemyId}
           position={frozenEnemy.position}
           duration={frozenEnemy.duration}
           startTime={frozenEnemy.startTime}
           enemyId={frozenEnemy.enemyId}
           enemyData={enemyData}
-          onComplete={() => handleFrozenEffectComplete(frozenEnemy.id)}
+          onComplete={() => handleFrozenEffectComplete(frozenEnemy.enemyId)}
         />
       ))}
     </>

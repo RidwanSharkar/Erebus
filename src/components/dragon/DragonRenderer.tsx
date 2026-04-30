@@ -4,9 +4,12 @@ import { useFrame, useThree } from '@react-three/fiber';
 import React from 'react';
 
 import DragonUnit from './DragonUnit';
+import RunebladeSlashImpact from '../weapons/RunebladeSlashImpact';
+import RunebladeWraithStrikeImpact from '../weapons/RunebladeWraithStrikeImpact';
 import { DashChargeStatus } from './ChargedOrbitals';
 import ViperStingManager, { triggerGlobalViperSting } from '../projectiles/ViperStingManager';
 import GhostTrail from './GhostTrail';
+import DashFireTrail from './DashFireTrail';
 import { WeaponType, WeaponSubclass } from './weapons';
 import { World } from '@/ecs/World';
 import { Movement } from '@/ecs/components/Movement';
@@ -20,6 +23,7 @@ import {
   STAGGERING_COMBO_HIT1_STAGGER,
   STAGGERING_COMBO_HIT2_STAGGER,
   STAGGERING_COMBO_HIT3_STAGGER,
+  STAGGERING_TALONS_HIT_STAGGER,
   EXECUTE_REAPING_TALONS_BONUS_DAMAGE,
   WRATHFUL_COMBO_CRIT_CHANCE_ADD,
   WRATHFUL_COMBO_CRIT_DAMAGE_MULT_ADD,
@@ -105,6 +109,21 @@ interface DragonRendererProps {
     isCritical: boolean;
     isSmite?: boolean;
   }>) => void, nextDamageNumberId: { current: number }) => void;
+  /** Local player: register queue fn for Wraith Strike slash VFX (ControlSystem → activeEffects). */
+  onWraithStrikeSlashImpactQueueReady?: (
+    queue:
+      | ((
+          pos: Vector3,
+          dir: Vector3,
+          meta?: {
+            wrathfulStrike?: boolean;
+            infestedStrike?: boolean;
+            wraithGuard?: boolean;
+            staggeringStrike?: boolean;
+          },
+        ) => void)
+      | null,
+  ) => void;
   // PVP-specific props
   targetPlayerData?: Array<{
     id: string;
@@ -128,6 +147,8 @@ interface DragonRendererProps {
   explosiveTalons?: boolean;
   /** Wyvern Talons: Reaping hits detonate Cobra + Concentrated Venom remaining DoT. */
   wyvernTalons?: boolean;
+  /** Staggering Talons: forward + return Reaping hits apply server stagger. */
+  staggeringTalonsActive?: boolean;
   /** Co-op: server applies CV remainder + optional Cobra remainder as one Wyvern Talons hit. */
   detonateWyvernConcentratedVenomCoop?: (serverEnemyId: string, cobraRemainingDamage?: number) => void;
   /** STORED CHARGE: Runeblade Charge — 3 spin rotations + per-rotation damage. */
@@ -220,6 +241,7 @@ export default function DragonRenderer({
   targetPlayerData,
   rageSpent,
   onDamageNumbersReady,
+  onWraithStrikeSlashImpactQueueReady,
   combatSystem,
   onHeal = () => {},
   purchasedItems = [],
@@ -229,6 +251,7 @@ export default function DragonRenderer({
   executeReapingTalons = false,
   explosiveTalons = false,
   wyvernTalons = false,
+  staggeringTalonsActive = false,
   detonateWyvernConcentratedVenomCoop,
   runebladeStoredCharge = false,
   runebladeStaggeringCombo = false,
@@ -300,7 +323,45 @@ export default function DragonRenderer({
     startTime?: number;
     summonId?: number;
     targetId?: string;
+    wrathfulStrike?: boolean;
+    infestedStrike?: boolean;
+    wraithGuard?: boolean;
+    staggeringStrike?: boolean;
   }>>([]);
+
+  useEffect(() => {
+    if (!isLocalPlayer || !onWraithStrikeSlashImpactQueueReady) return;
+    const queue = (
+      pos: Vector3,
+      dir: Vector3,
+      meta?: {
+        wrathfulStrike?: boolean;
+        infestedStrike?: boolean;
+        wraithGuard?: boolean;
+        staggeringStrike?: boolean;
+      },
+    ) => {
+      setActiveEffects((prev) => [
+        ...prev,
+        {
+          id: Date.now() + Math.random(),
+          type: 'runeblade-wraith-strike-impact',
+          position: pos.clone(),
+          direction: dir.clone(),
+          startTime: Date.now(),
+          duration: 0.5,
+          wrathfulStrike: meta?.wrathfulStrike,
+          infestedStrike: meta?.infestedStrike,
+          wraithGuard: meta?.wraithGuard,
+          staggeringStrike: meta?.staggeringStrike,
+        },
+      ]);
+    };
+    onWraithStrikeSlashImpactQueueReady(queue);
+    return () => {
+      onWraithStrikeSlashImpactQueueReady(null);
+    };
+  }, [isLocalPlayer, onWraithStrikeSlashImpactQueueReady]);
 
   // Real-time position ref for charge trail particles
   // Use the passed ref if available (for local player), otherwise create our own (for remote players)
@@ -396,11 +457,8 @@ export default function DragonRenderer({
         // Calculate the angle to face the camera direction
         const angle = Math.atan2(cameraDirection.x, cameraDirection.z);
         groupRef.current.rotation.y = angle;
-        
-        // For weapons (like deflect shield), use movement direction if moving, otherwise last facing direction
-        const entity = world.getEntity(entityId);
-        let weaponRotation = new Vector3(0, angle, 0); // Default to camera direction
 
+        const entity = world.getEntity(entityId);
         if (entity) {
           // Update real-time position ref for charge trail particles
           const transform = entity.getComponent(Transform);
@@ -409,23 +467,19 @@ export default function DragonRenderer({
           }
 
           const movement = entity.getComponent(Movement);
-          if (movement && movement.inputStrength > 0.1) {
-            // Player is actively moving - use movement direction for weapons
-            const moveDir = movement.moveDirection;
-            if (moveDir.length() > 0.1) {
-              const moveAngle = Math.atan2(moveDir.x, moveDir.z);
-              weaponRotation = new Vector3(0, moveAngle, 0);
-              // Update last facing direction when moving
-              lastFacingDirection.current.set(moveDir.x, 0, moveDir.z).normalize();
-            }
+          if (movement && movement.inputStrength > 0.1 && movement.moveDirection.length() > 0.1) {
+            lastFacingDirection.current
+              .set(movement.moveDirection.x, 0, movement.moveDirection.z)
+              .normalize();
           } else {
-            // Not moving - use last facing direction for weapons
-            const lastFacingAngle = Math.atan2(lastFacingDirection.current.x, lastFacingDirection.current.z);
-            weaponRotation = new Vector3(0, lastFacingAngle, 0);
+            // Idle: keep ref aligned with camera so future logic stays consistent
+            lastFacingDirection.current.set(Math.sin(angle), 0, Math.cos(angle));
           }
         }
-        
-        setCurrentRotation(weaponRotation);
+
+        // Sword/Runeblade cones use playerRotation — must match dragon mesh (camera horizontal yaw),
+        // not stale move-only yaw (fixes LMB deadzone when orbiting camera without moving).
+        setCurrentRotation(new Vector3(0, angle, 0));
       } else if (!isLocalPlayer && rotation) {
         // Other players: use their actual rotation from server
         groupRef.current.rotation.set(rotation.x, rotation.y, rotation.z);
@@ -468,7 +522,14 @@ export default function DragonRenderer({
   }, [onMeshReady]);
   
   // Handle sword damage through combat system
-  const handleSwordHit = (targetId: string, damage: number, isCritical?: boolean, position?: Vector3, isBlizzard?: boolean) => {
+  const handleSwordHit = (
+    targetId: string,
+    damage: number,
+    isCritical?: boolean,
+    position?: Vector3,
+    isBlizzard?: boolean,
+    viperPhase?: 'forward' | 'return' | 'explosion',
+  ) => {
     const targetEntity = world.getEntity(parseInt(targetId));
     const playerEntityObj = world.getEntity(entityId);
 
@@ -505,13 +566,26 @@ export default function DragonRenderer({
           }
         }
 
-        const damageType = isBlizzard ? 'blizzard' : 'sword';
+        const damageType =
+          isBlizzard
+            ? 'blizzard'
+            : currentWeapon === WeaponType.BOW &&
+                staggeringTalonsActive &&
+                (viperPhase === 'forward' || viperPhase === 'return')
+              ? 'reaping_talons'
+              : 'sword';
         const rbComboStep =
           currentWeapon === WeaponType.RUNEBLADE && runebladeComboStepResolver
             ? runebladeComboStepResolver()
             : swordComboStep;
         let staggerToAdd: number | undefined;
-        if (currentWeapon === WeaponType.RUNEBLADE && runebladeStaggeringCombo && !isBlizzard) {
+        if (
+          currentWeapon === WeaponType.BOW &&
+          staggeringTalonsActive &&
+          (viperPhase === 'forward' || viperPhase === 'return')
+        ) {
+          staggerToAdd = STAGGERING_TALONS_HIT_STAGGER;
+        } else if (currentWeapon === WeaponType.RUNEBLADE && runebladeStaggeringCombo && !isBlizzard) {
           staggerToAdd =
             rbComboStep === 1
               ? STAGGERING_COMBO_HIT1_STAGGER
@@ -685,6 +759,11 @@ export default function DragonRenderer({
         isSkyfalling={isSkyfalling}
         yOffset={hideBody ? 1.0 : 0}
       />
+      <DashFireTrail
+        worldPositionRef={effectiveRealTimePositionRef}
+        isDashingRef={isDashing}
+        yOffset={hideBody ? 1.0 : 0}
+      />
       
       {/* VIPER STING MANAGER - Only for local player with bow */}
       {isLocalPlayer && currentWeapon === WeaponType.BOW && (
@@ -728,6 +807,36 @@ export default function DragonRenderer({
           onExecuteFirstForwardHit={executeReapingTalons ? onExecuteFirstForwardHit : undefined}
         />
       )}
+
+      {/* RUNEBLADE SLASH IMPACT — crescent arc + hit flash spawned per local LMB hit */}
+      {activeEffects
+        .filter(e => e.type === 'runeblade-slash-impact')
+        .map(e => (
+          <RunebladeSlashImpact
+            key={e.id}
+            position={e.position}
+            direction={e.direction}
+            onComplete={() =>
+              setActiveEffects(prev => prev.filter(x => x.id !== e.id))
+            }
+          />
+        ))}
+      {activeEffects
+        .filter(e => e.type === 'runeblade-wraith-strike-impact')
+        .map(e => (
+          <RunebladeWraithStrikeImpact
+            key={e.id}
+            position={e.position}
+            direction={e.direction}
+            wrathfulStrike={e.wrathfulStrike}
+            infestedStrike={e.infestedStrike}
+            wraithGuard={e.wraithGuard}
+            staggeringStrike={e.staggeringStrike}
+            onComplete={() =>
+              setActiveEffects(prev => prev.filter(x => x.id !== e.id))
+            }
+          />
+        ))}
     </>
   );
 }

@@ -15,12 +15,18 @@ import {
   getDualCoilLateralVector,
   INFERNAL_SMITE_CRIT_CHANCE_ADD,
   INFESTED_COMBO_LIFESTEAL,
+  INFESTED_ENTROPIC_BEAM_KILL_HEAL,
+  CROSSENTROPY_REAPER_HIT_HEAL,
+  WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD,
+  WRATHFUL_ENTROPIC_BEAM_CRIT_CHANCE_ADD,
+  WRATHFUL_SABRES_SWIPES_CRIT_CHANCE_ADD,
+  WRATHFUL_SABRES_SWIPES_CRIT_DAMAGE_MULT_ADD,
   CHILL_SLOW_PER_STACK,
 } from '@/utils/talents';
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
-import { SummonedUnit } from '@/ecs/components/SummonedUnit';
+import { ImpactEffectManager } from '@/utils/ImpactEffectManager';
+import type { ImpactEffectEvent } from '@/utils/ImpactEffectManager';
 import { Projectile } from '@/ecs/components/Projectile';
-import { Tower } from '@/ecs/components/Tower';
 import { Pillar } from '@/ecs/components/Pillar';
 import { DestructibleMushroom } from '@/ecs/components/DestructibleMushroom';
 import { WeaponType } from '@/components/dragon/weapons';
@@ -53,6 +59,26 @@ interface DamageEvent {
   wyvernStingVenomZombie?: boolean;
   /** Co-op: Concentrated Venom DoT tick — eligible for zombie on kill (Wyvern Bite). */
   wyvernBiteConcentratedDoT?: boolean;
+  /** Scythe Wrathful Entropic bolt — additive crit chance in calculateDamage. */
+  entropicWrathful?: boolean;
+  /** Scythe Infesting Entropic bolt — coop zombie on kill routing. */
+  entropicInfesting?: boolean;
+  /** Scythe Wrathful Entropic beam (Icebeam) — additive crit per tick. */
+  icebeamWrathful?: boolean;
+  /** Scythe Infesting Entropic beam — coop zombie + heal on kill routing. */
+  icebeamInfested?: boolean;
+  /** Sabres LMB — Wrathful Sabres Swipes talent crit modifiers. */
+  sabreWrathfulSwipes?: boolean;
+  /** Sabres LMB — Infesting Sabres Swipes talent (zombie routing on kill). */
+  sabreInfestingSwipes?: boolean;
+  /** Sabres Backstab — Infested Backstab talent (zombie routing on kill). */
+  infestedBackstab?: boolean;
+  /** Sabres Flourish — Infested Flourish talent (zombie routing on kill). */
+  infestedFlourish?: boolean;
+  /** Sabres Killstreak — co-op stack routing on Backstab kill. */
+  killstreakBackstab?: boolean;
+  /** Sabres Relentless — co-op heal + cooldown RPC on Backstab kill. */
+  relentlessBackstab?: boolean;
 }
 
 interface HealEvent {
@@ -69,6 +95,7 @@ export class CombatSystem extends System {
   private healQueue: HealEvent[] = [];
   private deadEntities: Entity[] = [];
   private damageNumberManager: DamageNumberManager;
+  private impactEffectManager = new ImpactEffectManager();
   
   // Combat statistics
   private totalDamageDealt = 0;
@@ -92,7 +119,18 @@ export class CombatSystem extends System {
       wyvernBiteVenom?: boolean;
       wyvernStingVenomZombie?: boolean;
       wyvernBiteConcentratedDoT?: boolean;
+      entropicWrathful?: boolean;
+      entropicInfesting?: boolean;
+      icebeamWrathful?: boolean;
+      icebeamInfested?: boolean;
+      sabreWrathfulSwipes?: boolean;
+      sabreInfestingSwipes?: boolean;
+      infestedBackstab?: boolean;
+      infestedFlourish?: boolean;
+      killstreakBackstab?: boolean;
+      relentlessBackstab?: boolean;
     },
+    hitWorldPosition?: { x: number; y: number; z: number },
   ) => void;
   
   // PVP damage callback for routing player damage to server
@@ -101,11 +139,6 @@ export class CombatSystem extends System {
   // Co-op mode flag - prevents player-to-player damage
   private isCoopMode: boolean = false;
 
-  // Summoned unit damage callback for routing summoned unit damage to server
-  private onSummonedUnitDamageCallback?: (unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string, damageType?: string) => void;
-
-  // Tower damage callback for routing tower damage to server
-  private onTowerDamageCallback?: (towerId: string, damage: number, sourcePlayerId?: string, damageType?: string) => void;
   private onPillarDamageCallback?: (pillarId: string, damage: number, sourcePlayerId?: string) => void;
 
   private onMushroomDamageCallback?: (index: number, damage: number, sourcePlayerId: string | undefined, damageType?: string) => void;
@@ -143,6 +176,44 @@ export class CombatSystem extends System {
     if (damageType !== 'barrage') return undefined;
     const cs = (window as any).controlSystemRef?.current;
     return cs?.getBarrageCritDamageCalcOpts?.();
+  }
+
+  /** Wrathful Shots — perfect bow primary: additive crit from ControlSystem when projectile is flagged. */
+  private getWrathfulShotsPerfectCritOptsFromSource(source: Entity | undefined): DamageCalcOptions | undefined {
+    if (!source) return undefined;
+    const proj = source.getComponent(Projectile);
+    if (!proj?.isPerfectShot) return undefined;
+    const cs = (window as any).controlSystemRef?.current;
+    return cs?.getWrathfulShotsPerfectCritOpts?.();
+  }
+
+  /** Entropic bolts / Icebeam Wrathful Entropic — additive crit from queued damage meta. */
+  private getCritCalcOptsForQueuedDamage(
+    damageType: string | undefined,
+    damageEvent: DamageEvent,
+    source?: Entity,
+  ): DamageCalcOptions | undefined {
+    if (damageType === 'barrage') return this.getBarrageCritCalcOpts(damageType);
+    if (damageType === 'crossentropy' && damageEvent.crossentropyInferno === true) {
+      return { critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD };
+    }
+    if (damageType === 'projectile') return this.getWrathfulShotsPerfectCritOptsFromSource(source);
+    if (damageType === 'entropic' && damageEvent.entropicWrathful === true) {
+      return { critChanceAdd: WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD };
+    }
+    if (damageType === 'icebeam' && damageEvent.icebeamWrathful === true) {
+      return { critChanceAdd: WRATHFUL_ENTROPIC_BEAM_CRIT_CHANCE_ADD };
+    }
+    if (
+      (damageType === 'sabre_left' || damageType === 'sabre_right') &&
+      damageEvent.sabreWrathfulSwipes === true
+    ) {
+      return {
+        critChanceAdd: WRATHFUL_SABRES_SWIPES_CRIT_CHANCE_ADD,
+        critDamageMultAdd: WRATHFUL_SABRES_SWIPES_CRIT_DAMAGE_MULT_ADD,
+      };
+    }
+    return undefined;
   }
 
   public armRunebladeLmbHitSound(comboStep: 1 | 2 | 3, position: Vector3): void {
@@ -206,6 +277,36 @@ export class CombatSystem extends System {
     return projectile.dualCoilLane;
   }
 
+  /** Bow / Entropic Bolt hit-feedback — used on both local-apply and server-routed enemy damage paths. */
+  private maybeAddBowOrEntropicImpactVfx(
+    source: Entity | undefined,
+    target: Entity,
+    damageType: string | undefined,
+    shouldShow: boolean,
+  ): void {
+    if (!shouldShow) return;
+    const proj = source?.getComponent(Projectile);
+    if (!proj || this.localPlayerEntityId === null || proj.owner !== this.localPlayerEntityId) {
+      return;
+    }
+    const isBow = damageType === 'projectile';
+    const isEntropic = damageType === 'entropic' || damageType === 'entropic_cryoflame';
+    if (!isBow && !isEntropic) return;
+    const hitTransform = target.getComponent(Transform);
+    if (!hitTransform) return;
+    const hitPos = hitTransform.getWorldPosition();
+    if (!hitPos) return;
+    const dir =
+      proj.velocity.length() > 0
+        ? proj.velocity.clone().normalize()
+        : new Vector3(0, 0, 1);
+    this.impactEffectManager.addImpact(
+      isBow ? 'bow-shot-impact' : 'entropic-bolt-impact',
+      hitPos,
+      dir,
+    );
+  }
+
   // Set callback for routing enemy damage to multiplayer server
   public setEnemyDamageCallback(
     callback: (
@@ -224,7 +325,18 @@ export class CombatSystem extends System {
         wyvernBiteVenom?: boolean;
         wyvernStingVenomZombie?: boolean;
         wyvernBiteConcentratedDoT?: boolean;
+        entropicWrathful?: boolean;
+        entropicInfesting?: boolean;
+        icebeamWrathful?: boolean;
+        icebeamInfested?: boolean;
+        sabreWrathfulSwipes?: boolean;
+        sabreInfestingSwipes?: boolean;
+        infestedBackstab?: boolean;
+        infestedFlourish?: boolean;
+        killstreakBackstab?: boolean;
+        relentlessBackstab?: boolean;
       },
+      hitWorldPosition?: { x: number; y: number; z: number },
     ) => void,
   ): void {
     this.onEnemyDamageCallback = callback;
@@ -238,14 +350,6 @@ export class CombatSystem extends System {
   // Set callback for routing player damage to multiplayer server (PVP)
   public setPlayerDamageCallback(callback: (playerId: string, damage: number, damageType?: string, isCritical?: boolean) => void): void {
     this.onPlayerDamageCallback = callback;
-  }
-
-  public setSummonedUnitDamageCallback(callback: (unitId: string, unitOwnerId: string, damage: number, sourcePlayerId: string, damageType?: string) => void): void {
-    this.onSummonedUnitDamageCallback = callback;
-  }
-
-  public setTowerDamageCallback(callback: (towerId: string, damage: number, sourcePlayerId?: string, damageType?: string) => void): void {
-    this.onTowerDamageCallback = callback;
   }
 
   public setPillarDamageCallback(callback: (pillarId: string, damage: number, sourcePlayerId?: string) => void): void {
@@ -262,35 +366,6 @@ export class CombatSystem extends System {
     this.isCoopMode = isCoop;
   }
 
-  // Apply summoned unit damage received from server
-  public applySummonedUnitDamage(unitId: string, damage: number, sourcePlayerId: string): void {
-    const unitEntity = this.world.getEntity(parseInt(unitId));
-    if (!unitEntity) {
-      return;
-    }
-
-    const health = unitEntity.getComponent(Health);
-    const summonedUnitComponent = unitEntity.getComponent(SummonedUnit);
-    if (!health || !summonedUnitComponent) {
-      return;
-    }
-
-    const currentTime = Date.now() / 1000;
-    
-    // Apply damage locally (pass entity so Health can use Shield component)
-    const damageDealt = health.takeDamage(damage, currentTime, unitEntity);
-
-    if (damageDealt) {
-
-      // Check if target died
-      if (health.isDead) {
-        this.handleEntityDeath(unitEntity, undefined, currentTime);
-      }
-
-      // Trigger damage effects
-      this.triggerDamageEffects(unitEntity, damage, undefined, 'melee', false);
-    }
-  }
 
   public update(entities: Entity[], deltaTime: number): void {
     const currentTime = Date.now() / 1000;
@@ -385,6 +460,61 @@ export class CombatSystem extends System {
     }
   }
 
+  private maybeApplyReaperCrossentropyHitHeal(
+    damageEvent: DamageEvent,
+    target: Entity,
+    source: Entity | undefined,
+    damageType: string | undefined,
+    actualDamage: number,
+  ): void {
+    if (
+      damageType !== 'crossentropy' ||
+      damageEvent.reaperCrossentropy !== true ||
+      actualDamage <= 0 ||
+      !source ||
+      !target.getComponent(Enemy)
+    ) {
+      return;
+    }
+    if (target.userData?.coopServerEnemyType === 'training-dummy') {
+      return;
+    }
+    if (CROSSENTROPY_REAPER_HIT_HEAL <= 0) return;
+
+    const projectile = source.getComponent(Projectile);
+    let caster: Entity | undefined;
+    if (projectile) {
+      if (
+        this.localPlayerEntityId !== null &&
+        projectile.owner !== this.localPlayerEntityId
+      ) {
+        return;
+      }
+      caster = this.world.getEntity(projectile.owner);
+    } else {
+      caster = source;
+    }
+
+    if (!caster) return;
+    const sourceHealth = caster.getComponent(Health);
+    if (!sourceHealth) return;
+
+    const didHeal = sourceHealth.heal(CROSSENTROPY_REAPER_HIT_HEAL);
+    if (!didHeal) return;
+
+    const sourceTransform = caster.getComponent(Transform);
+    if (sourceTransform) {
+      const healPosition = sourceTransform.getWorldPosition().clone();
+      healPosition.y += 1.5;
+      this.damageNumberManager.addDamageNumber(
+        CROSSENTROPY_REAPER_HIT_HEAL,
+        false,
+        healPosition,
+        'healing',
+      );
+    }
+  }
+
   private applyDamage(damageEvent: DamageEvent, currentTime: number): void {
     const { target, damage: baseDamage, source, sourcePlayerId } = damageEvent;
     let damageType = damageEvent.damageType;
@@ -392,19 +522,16 @@ export class CombatSystem extends System {
     const health = target.getComponent(Health);
     if (!health || !health.enabled) return;
 
-    // Import SummonedUnit component dynamically to avoid circular dependency
-    const SummonedUnit = require('@/ecs/components/SummonedUnit').SummonedUnit;
+    const enemy = target.getComponent(Enemy);
+    if (enemy && this.onEnemyDamageCallback && target.userData?.coopEnemyDying) {
+      return;
+    }
 
-    // Debug: Log all damage events for charge damage
-    if (damageType === 'charge') {
-      const enemy = target.getComponent(Enemy);
-      const summonedUnitComponent = target.getComponent(SummonedUnit);
-      const summonedUnit = summonedUnitComponent ? summonedUnitComponent as typeof SummonedUnit.prototype : null;
-      const entityType = enemy ? `Enemy(${enemy.getDisplayName()})` : summonedUnit ? `SummonedUnit(${summonedUnit.getDisplayName()})` : `Player(${target.id})`;
+    if (this.isCoopMode && !enemy && target.userData?.isCoopAllyPlayer) {
+      return;
     }
 
     // Check if target is an enemy - if so, route damage through multiplayer
-    const enemy = target.getComponent(Enemy);
     if (enemy && !health.isDead && this.onEnemyDamageCallback) {
       // Calculate actual damage with critical hit mechanics
       // For abilities that already determined critical hits (like backstab), preserve the original critical flag
@@ -417,12 +544,7 @@ export class CombatSystem extends System {
         damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
       } else {
         // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
-        const critOpts: DamageCalcOptions | undefined =
-          damageType === 'barrage'
-            ? this.getBarrageCritCalcOpts(damageType)
-            : damageType === 'crossentropy' && damageEvent.crossentropyInferno === true
-              ? { critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD }
-              : undefined;
+        const critOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source);
         damageResult = calculateDamage(baseDamage, currentWeapon, critOpts);
       }
 
@@ -479,11 +601,16 @@ export class CombatSystem extends System {
                   ...(damageEvent.infestedCombo === true ? { infestedCombo: true as const } : {}),
                 }
               : (damageType === 'sabre_left' || damageType === 'sabre_right') &&
-                  damageEvent.staggerToAdd != null &&
-                  damageEvent.staggerToAdd > 0
+                  ((damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0) ||
+                    damageEvent.sabreInfestingSwipes === true)
                 ? {
                     damageType,
-                    staggerToAdd: damageEvent.staggerToAdd,
+                    ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
+                      ? { staggerToAdd: damageEvent.staggerToAdd }
+                      : {}),
+                    ...(damageEvent.sabreInfestingSwipes === true
+                      ? { sabreInfestingSwipes: true as const }
+                      : {}),
                   }
                 : damageType === 'projectile' &&
                     damageEvent.staggerToAdd != null &&
@@ -492,11 +619,21 @@ export class CombatSystem extends System {
                       damageType: 'projectile' as const,
                       staggerToAdd: damageEvent.staggerToAdd,
                     }
+                  : damageType === 'reaping_talons' &&
+                      damageEvent.staggerToAdd != null &&
+                      damageEvent.staggerToAdd > 0
+                    ? {
+                        damageType: 'reaping_talons' as const,
+                        staggerToAdd: damageEvent.staggerToAdd,
+                      }
                   : damageType === 'barrage'
                     ? {
                         damageType: 'barrage' as const,
                         ...(damageEvent.wyvernBiteConcentratedVenom === true
                           ? { wyvernBiteVenom: true as const }
+                          : {}),
+                        ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
+                          ? { staggerToAdd: damageEvent.staggerToAdd }
                           : {}),
                       }
                     : damageType === 'crossentropy'
@@ -507,6 +644,9 @@ export class CombatSystem extends System {
                             : {}),
                           ...(damageEvent.reaperCrossentropy === true
                             ? { reaperCrossentropy: true as const }
+                            : {}),
+                          ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
+                            ? { staggerToAdd: damageEvent.staggerToAdd }
                             : {}),
                         }
                       : damageType === 'venom'
@@ -523,8 +663,74 @@ export class CombatSystem extends System {
                           ? { damageType: 'wyvern_talons_detonate' as const }
                           : damageType === 'blizzard'
                             ? { damageType: 'blizzard' as const }
-                            : undefined;
-      this.onEnemyDamageCallback(serverEnemyId, actualDamage, finalSourcePlayerId, routeMeta);
+                        : damageType === 'breath_weapon'
+                          ? { damageType: 'breath_weapon' as const }
+                          : damageType === 'entropic' &&
+                              ((damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0) ||
+                                damageEvent.entropicWrathful === true ||
+                                damageEvent.entropicInfesting === true)
+                            ? {
+                                damageType: 'entropic' as const,
+                                ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
+                                  ? { staggerToAdd: damageEvent.staggerToAdd }
+                                  : {}),
+                                ...(damageEvent.entropicWrathful === true
+                                  ? { entropicWrathful: true as const }
+                                  : {}),
+                                ...(damageEvent.entropicInfesting === true
+                                  ? { entropicInfesting: true as const }
+                                  : {}),
+                              }
+                            : damageType === 'icebeam' &&
+                                ((damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0) ||
+                                  damageEvent.icebeamWrathful === true ||
+                                  damageEvent.icebeamInfested === true)
+                              ? {
+                                  damageType: 'icebeam' as const,
+                                  ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
+                                    ? { staggerToAdd: damageEvent.staggerToAdd }
+                                    : {}),
+                                  ...(damageEvent.icebeamWrathful === true
+                                    ? { icebeamWrathful: true as const }
+                                    : {}),
+                                  ...(damageEvent.icebeamInfested === true
+                                    ? { icebeamInfested: true as const }
+                                    : {}),
+                                }
+                              : damageType === 'backstab'
+                                ? {
+                                    damageType: 'backstab' as const,
+                                    ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
+                                      ? { staggerToAdd: damageEvent.staggerToAdd }
+                                      : {}),
+                                    ...(damageEvent.infestedBackstab === true
+                                      ? { infestedBackstab: true as const }
+                                      : {}),
+                                    ...(damageEvent.killstreakBackstab === true
+                                      ? { killstreakBackstab: true as const }
+                                      : {}),
+                                    ...(damageEvent.relentlessBackstab === true
+                                      ? { relentlessBackstab: true as const }
+                                      : {}),
+                                  }
+                                : damageType === 'sunder'
+                                  ? {
+                                      damageType: 'sunder' as const,
+                                      ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
+                                        ? { staggerToAdd: damageEvent.staggerToAdd }
+                                        : {}),
+                                      ...(damageEvent.infestedFlourish === true
+                                        ? { infestedFlourish: true as const }
+                                        : {}),
+                                    }
+                                  : undefined;
+      let hitWorldPosition: { x: number; y: number; z: number } | undefined;
+      const hitTransform = target.getComponent(Transform);
+      if (hitTransform) {
+        const p = hitTransform.getWorldPosition();
+        hitWorldPosition = { x: p.x, y: p.y + 1.5, z: p.z };
+      }
+      this.onEnemyDamageCallback(serverEnemyId, actualDamage, finalSourcePlayerId, routeMeta, hitWorldPosition);
 
       // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
       if (source && currentWeapon === WeaponType.RUNEBLADE) {
@@ -576,31 +782,31 @@ export class CombatSystem extends System {
         }
       }
 
-      // Skip damage numbers for tower projectiles - players will see their own damage taken display
-      const isTowerProjectile = source && (source as any).isTowerProjectile === true;
-      if (!isTowerProjectile) {
-        // Still create local damage numbers for immediate visual feedback
-        const transform = target.getComponent(Transform);
-        if (transform) {
-          const position = transform.getWorldPosition();
-          position.y += 1.5;
-          if (damageType === 'sabre_right' || damageType === 'sabres_right') position.x += 0.3;
-          else if (damageType === 'sabre_left' || damageType === 'sabres_left') position.x -= 0.3;
-          const dualCoilSlot = this.applyDualCoilDamageNumberLateral(position, source);
-          this.damageNumberManager.addDamageNumber(
-            actualDamage,
-            damageResult.isCritical,
-            position,
-            damageType,
-            undefined,
-            damageType === 'barrage' ? target.id : undefined,
-            dualCoilSlot
-          );
-        }
+      this.maybeApplyReaperCrossentropyHitHeal(damageEvent, target, source, damageType, actualDamage);
+
+      // Still create local damage numbers for immediate visual feedback
+      const transform = target.getComponent(Transform);
+      if (transform) {
+        const position = transform.getWorldPosition();
+        position.y += 1.5;
+        if (damageType === 'sabre_right' || damageType === 'sabres_right') position.x += 0.3;
+        else if (damageType === 'sabre_left' || damageType === 'sabres_left') position.x -= 0.3;
+        const dualCoilSlot = this.applyDualCoilDamageNumberLateral(position, source);
+        this.damageNumberManager.addDamageNumber(
+          actualDamage,
+          damageResult.isCritical,
+          position,
+          damageType,
+          undefined,
+          damageType === 'barrage' ? target.id : undefined,
+          dualCoilSlot
+        );
       }
 
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
+
+      this.maybeAddBowOrEntropicImpactVfx(source, target, damageType, actualDamage > 0);
 
       return; // Don't apply damage locally for enemies
     }
@@ -612,12 +818,7 @@ export class CombatSystem extends System {
       if (damageEvent.isCritical !== undefined) {
         damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
       } else {
-        const critOpts: DamageCalcOptions | undefined =
-          damageType === 'barrage'
-            ? this.getBarrageCritCalcOpts(damageType)
-            : damageType === 'crossentropy' && damageEvent.crossentropyInferno === true
-              ? { critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD }
-              : undefined;
+        const critOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source);
         damageResult = calculateDamage(baseDamage, currentWeapon, critOpts);
       }
       const actualDamage = damageResult.damage;
@@ -640,247 +841,28 @@ export class CombatSystem extends System {
         damageType,
       );
 
-      const isTowerProjectile = source && (source as any).isTowerProjectile === true;
-      if (!isTowerProjectile) {
-        const transform = target.getComponent(Transform);
-        if (transform) {
-          const position = transform.getWorldPosition();
-          position.y += 1.5;
-          if (damageType === 'sabre_right' || damageType === 'sabres_right') position.x += 0.3;
-          else if (damageType === 'sabre_left' || damageType === 'sabres_left') position.x -= 0.3;
-          const dualCoilSlot = this.applyDualCoilDamageNumberLateral(position, source);
-          this.damageNumberManager.addDamageNumber(
-            actualDamage,
-            damageResult.isCritical,
-            position,
-            damageType,
-            undefined,
-            damageType === 'barrage' ? target.id : undefined,
-            dualCoilSlot,
-          );
-        }
+      const transform = target.getComponent(Transform);
+      if (transform) {
+        const position = transform.getWorldPosition();
+        position.y += 1.5;
+        if (damageType === 'sabre_right' || damageType === 'sabres_right') position.x += 0.3;
+        else if (damageType === 'sabre_left' || damageType === 'sabres_left') position.x -= 0.3;
+        const dualCoilSlot = this.applyDualCoilDamageNumberLateral(position, source);
+        this.damageNumberManager.addDamageNumber(
+          actualDamage,
+          damageResult.isCritical,
+          position,
+          damageType,
+          undefined,
+          damageType === 'barrage' ? target.id : undefined,
+          dualCoilSlot,
+        );
       }
 
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
 
       return;
-    }
-
-    // Check if target is a summoned unit - route through server for synchronization
-    const summonedUnitComponent = target.getComponent(SummonedUnit);
-    if (summonedUnitComponent && this.onSummonedUnitDamageCallback) {
-      // Cast to proper type
-      const summonedUnit = summonedUnitComponent as typeof SummonedUnit.prototype;
-
-      // Calculate actual damage with critical hit mechanics
-      // For abilities that already determined critical hits (like backstab), preserve the original critical flag
-      const currentWeapon = this.getCurrentWeapon();
-      let damageResult: DamageResult;
-
-      if (damageEvent.isCritical !== undefined) {
-        // Preserve pre-calculated critical hit and damage (e.g., from backstab)
-        // The damage is already calculated correctly, just preserve the critical flag
-        damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
-      } else {
-        // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
-        damageResult = calculateDamage(baseDamage, currentWeapon, this.getBarrageCritCalcOpts(damageType));
-      }
-
-      const actualDamage = damageResult.damage;
-
-      // Get source player ID for team validation
-      // Use the sourcePlayerId from damage event if available, otherwise extract from source entity
-      let finalSourcePlayerId = sourcePlayerId || 'unknown';
-      if (finalSourcePlayerId === 'unknown' && source) {
-        // Check if source is a projectile with stored player info
-        const projectileComponent = source.getComponent(Projectile);
-        if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
-          finalSourcePlayerId = (projectileComponent as any).sourcePlayerId;
-        } else if (source.userData?.playerId) {
-          finalSourcePlayerId = source.userData.playerId;
-        }
-      }
-
-      // Get the server unit ID from userData (set during ECS sync)
-      const serverUnitId = target.userData?.serverUnitId || summonedUnit.unitId;
-      const serverUnitOwnerId = target.userData?.serverUnitOwnerId || summonedUnit.ownerId;
-
-      // Route summoned unit damage through multiplayer server instead of applying locally
-
-      // Debug: Log the source information
-      if (source) {
-        const projectileComponent = source.getComponent(Projectile);
-      }
-
-
-      // Block damage to own units
-      if (finalSourcePlayerId === serverUnitOwnerId) {
-        return;
-      }
-
-      // Additional check: Don't send damage for units that are already dead locally
-      if (health.isDead || health.currentHealth <= 0) {
-        return;
-      }
-      
-      // Call the server damage callback with server unit ID
-      this.onSummonedUnitDamageCallback(
-        serverUnitId,
-        serverUnitOwnerId,
-        actualDamage,
-        finalSourcePlayerId,
-        damageType
-      );
-      this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
-
-      // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
-      if (source && currentWeapon === WeaponType.RUNEBLADE) {
-        const controlSystemRef = (window as any).controlSystemRef;
-        if (controlSystemRef && controlSystemRef.current) {
-          const controlSystem = controlSystemRef.current;
-          // Check if Runeblade passive is unlocked
-          const weaponSlot = controlSystem.selectedWeapons?.primary === WeaponType.RUNEBLADE ? 'primary' :
-                            controlSystem.selectedWeapons?.secondary === WeaponType.RUNEBLADE ? 'secondary' : null;
-          if (weaponSlot && controlSystem.isPassiveAbilityUnlocked && controlSystem.isPassiveAbilityUnlocked('P', WeaponType.RUNEBLADE, weaponSlot)) {
-            const healingAmount = Math.floor(actualDamage * 0.15); // 10% of damage dealt
-            if (healingAmount > 0) {
-              // Apply healing to source player
-              const sourceHealth = source.getComponent(Health);
-              if (sourceHealth) {
-                sourceHealth.heal(healingAmount);
-
-                // Create healing number for visual feedback
-                const sourceTransform = source.getComponent(Transform);
-                if (sourceTransform) {
-                  const healPosition = sourceTransform.getWorldPosition().clone();
-                  healPosition.y += 1.5;
-                  this.damageNumberManager.addDamageNumber(healingAmount, false, healPosition, 'healing');
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // Skip damage numbers for tower projectiles or summoned units - players will see their own damage taken display
-      const isTowerProjectile = source && (source as any).isTowerProjectile === true;
-      const sourceSummonedUnit = source ? source.getComponent(SummonedUnit) : null;
-      const shouldShowDamageNumbers = !sourceSummonedUnit && !isTowerProjectile; // Show numbers unless source is a summoned unit or tower projectile
-
-      if (shouldShowDamageNumbers) {
-        const transform = target.getComponent(Transform);
-        if (transform) {
-          const position = transform.getWorldPosition();
-          // Only create damage number if position is valid
-          if (position && position.x !== undefined && position.y !== undefined && position.z !== undefined) {
-            // Offset slightly above the target
-            position.y += 2;
-            this.damageNumberManager.addDamageNumber(
-              actualDamage,
-              damageResult.isCritical,
-              position,
-              damageType || 'melee',
-              undefined,
-              damageType === 'barrage' ? target.id : undefined
-            );
-          }
-        }
-      }
-
-      return; // Don't apply damage locally for summoned units
-    }
-
-    // Fallback: If no callback is set, apply damage locally (for single-player or testing)
-    if (summonedUnitComponent && !this.onSummonedUnitDamageCallback) {
-      // Cast to proper type
-      const summonedUnit = summonedUnitComponent as typeof SummonedUnit.prototype;
-
-      // Get source player ID for team validation (same logic as above)
-      // Use the sourcePlayerId from damage event if available, otherwise extract from source entity
-      let finalSourcePlayerId = sourcePlayerId || 'unknown';
-      if (finalSourcePlayerId === 'unknown' && source) {
-        const projectileComponent = source.getComponent(Projectile);
-        if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
-          finalSourcePlayerId = (projectileComponent as any).sourcePlayerId;
-        } else if (source.userData?.playerId) {
-          finalSourcePlayerId = source.userData.playerId;
-        }
-      }
-
-      // TEMPORARY: Block all damage to own units for testing (even in fallback)
-      if (finalSourcePlayerId === summonedUnit.ownerId) {
-        // console.warn(`🚫 FALLBACK BLOCKED: Player ${finalSourcePlayerId} tried to damage their own summoned unit ${target.id}`);
-        return; // Block the damage
-      }
-
-      // Calculate actual damage with critical hit mechanics
-      // For abilities that already determined critical hits (like backstab), preserve the original critical flag
-      const currentWeapon = this.getCurrentWeapon();
-      let damageResult: DamageResult;
-
-      if (damageEvent.isCritical !== undefined) {
-        // Preserve pre-calculated critical hit and damage (e.g., from backstab)
-        // The damage is already calculated correctly, just preserve the critical flag
-        damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
-      } else {
-        // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
-        damageResult = calculateDamage(baseDamage, currentWeapon, this.getBarrageCritCalcOpts(damageType));
-      }
-
-      const actualDamage = damageResult.damage;
-      this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
-
-      // Apply damage locally (pass entity so Health can use Shield component)
-      const damageDealt = health.takeDamage(actualDamage, currentTime, target);
-
-      if (damageDealt) {
-        this.totalDamageDealt += actualDamage;
-
-        // Skip damage numbers for tower projectiles or summoned units - players will see their own damage taken display
-        const isTowerProjectile = source && (source as any).isTowerProjectile === true;
-        const sourceSummonedUnit = source ? source.getComponent(SummonedUnit) : null;
-        const shouldShowDamageNumbers = !sourceSummonedUnit && !isTowerProjectile; // Show numbers unless source is a summoned unit or tower projectile
-
-        if (shouldShowDamageNumbers) {
-          // Create damage number at target position for damage from players/enemies
-          const transform = target.getComponent(Transform);
-          if (transform) {
-            const position = transform.getWorldPosition();
-            // Only create damage number if position is valid
-            if (position && position.x !== undefined && position.y !== undefined && position.z !== undefined) {
-              // Offset slightly above the target
-              position.y += 2;
-              this.damageNumberManager.addDamageNumber(
-                actualDamage,
-                damageResult.isCritical,
-                position,
-                damageType || 'melee',
-                undefined,
-                damageType === 'barrage' ? target.id : undefined
-              );
-            }
-          }
-        }
-
-        // Log for debugging (throttled to reduce spam)
-        if (this.shouldLogDamage()) {
-          const sourceName = source ? `Entity ${source.id}` : 'Unknown';
-          const targetName = summonedUnit.getDisplayName();
-          const critText = damageResult.isCritical ? ' CRITICAL' : '';
-          // console.log(`⚔️ ${sourceName} dealt ${actualDamage}${critText} ${damageType || 'damage'} to ${targetName} (${health.currentHealth}/${health.maxHealth} HP)`);
-        }
-
-        // Check if target died
-        if (health.isDead) {
-          this.handleEntityDeath(target, source, currentTime, finalSourcePlayerId);
-        }
-
-        // Trigger damage effects
-        this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
-      }
-
-      return; // Don't process further for summoned units
     }
 
     // Check if target is a pillar - if so, route damage through multiplayer server
@@ -895,7 +877,8 @@ export class CombatSystem extends System {
         damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
       } else {
         // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
-        damageResult = calculateDamage(baseDamage, currentWeapon, this.getBarrageCritCalcOpts(damageType));
+        const critOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source);
+        damageResult = calculateDamage(baseDamage, currentWeapon, critOpts);
       }
 
       const actualDamage = damageResult.damage;
@@ -939,75 +922,6 @@ export class CombatSystem extends System {
       }
 
       return; // Don't process further for pillars
-    }
-
-    // Check if target is a tower - if so, route damage through multiplayer server
-    const tower = target.getComponent(Tower);
-    if (tower && this.onTowerDamageCallback) {
-      // Calculate actual damage with critical hit mechanics
-      const currentWeapon = this.getCurrentWeapon();
-      let damageResult: DamageResult;
-
-      if (damageEvent.isCritical !== undefined) {
-        // Preserve pre-calculated critical hit and damage
-        damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
-      } else {
-        // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
-        damageResult = calculateDamage(baseDamage, currentWeapon, this.getBarrageCritCalcOpts(damageType));
-      }
-
-      const actualDamage = damageResult.damage;
-
-      // Get source player ID for proper attribution
-      let finalSourcePlayerId = sourcePlayerId;
-      if (!finalSourcePlayerId && source) {
-        // Check if source is a projectile with stored player info
-        const projectileComponent = source.getComponent(Projectile);
-        if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
-          finalSourcePlayerId = (projectileComponent as any).sourcePlayerId;
-        } else if (source.userData?.playerId) {
-          finalSourcePlayerId = source.userData.playerId;
-        }
-      }
-
-      // Get the server tower ID from userData (set during ECS sync)
-      const serverTowerId = target.userData?.serverTowerId || `tower_${tower.ownerId}`;
-
-      // Route tower damage through multiplayer server instead of applying locally
-
-      // CRITICAL: Only allow damage from summoned units, not from players directly
-      const sourceSummonedUnitComponent = source ? source.getComponent(SummonedUnit) : null;
-      if (!sourceSummonedUnitComponent) {
-        return;
-      }
-
-      // Cast to proper type to access ownerId
-      const sourceSummonedUnit = sourceSummonedUnitComponent as typeof SummonedUnit.prototype;
-
-      // Ensure the summoned unit belongs to an enemy player (not the tower owner)
-      if (sourceSummonedUnit.ownerId === tower.ownerId) {
-        return;
-      }
-
-      this.onTowerDamageCallback(serverTowerId, actualDamage, finalSourcePlayerId, damageType);
-      this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
-
-      // Create damage number for visual feedback
-      const transform = target.getComponent(Transform);
-      if (transform) {
-        const position = transform.getWorldPosition();
-        position.y += 2; // Position above tower
-        this.damageNumberManager.addDamageNumber(
-          actualDamage,
-          damageResult.isCritical,
-          position,
-          damageType || 'tower',
-          undefined,
-          damageType === 'barrage' ? target.id : undefined
-        );
-      }
-
-      return; // Don't apply damage locally for towers
     }
 
     // Check if target is a player - if so, route damage through multiplayer (only in PVP mode)
@@ -1054,12 +968,7 @@ export class CombatSystem extends System {
         damageResult = { damage: finalDamage, isCritical: damageEvent.isCritical };
       } else {
         // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
-        const pvpCritOpts: DamageCalcOptions | undefined =
-          damageType === 'barrage'
-            ? this.getBarrageCritCalcOpts(damageType)
-            : damageType === 'crossentropy' && damageEvent.crossentropyInferno === true
-              ? { critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD }
-              : this.getBarrageCritCalcOpts(damageType);
+        const pvpCritOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source);
         damageResult = calculateDamage(finalDamage, currentWeapon, pvpCritOpts);
       }
 
@@ -1104,12 +1013,11 @@ export class CombatSystem extends System {
         }
       }
 
-      // Skip damage numbers for tower projectiles and specific projectile types that use damage taken system
+      // Specific projectile types use the damage taken system.
       // Exception: Show damage numbers for crossentropy and entropic bolts when local player is the caster (not the target)
-      const isTowerProjectile = source && (source as any).isTowerProjectile === true;
       const isProjectileWithDamageTaken = damageType === 'crossentropy' || damageType === 'entropic' || damageType === 'entropic_cryoflame' || damageType === 'projectile';
       const isLocalPlayerCaster = this.localPlayerEntityId !== null && this.localPlayerEntityId !== target.id;
-      const shouldShowDamageNumbers = !isTowerProjectile && (!isProjectileWithDamageTaken || (isProjectileWithDamageTaken && isLocalPlayerCaster));
+      const shouldShowDamageNumbers = !isProjectileWithDamageTaken || (isProjectileWithDamageTaken && isLocalPlayerCaster);
 
       if (shouldShowDamageNumbers) {
         // Create local damage numbers for immediate visual feedback
@@ -1152,13 +1060,10 @@ export class CombatSystem extends System {
       return; // Don't apply damage locally for PVP players
     }
 
-    // For non-enemies and non-summoned units (like players in non-PVP mode), apply damage locally as before
+    // For non-enemies (like players in non-PVP mode), apply damage locally as before
     const currentWeapon = this.getCurrentWeapon();
-    const damageResult: DamageResult = calculateDamage(
-      baseDamage,
-      currentWeapon,
-      this.getBarrageCritCalcOpts(damageType),
-    );
+    const localFallbackCritOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source);
+    const damageResult: DamageResult = calculateDamage(baseDamage, currentWeapon, localFallbackCritOpts);
     const actualDamage = damageResult.damage;
     this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
 
@@ -1168,28 +1073,24 @@ export class CombatSystem extends System {
     if (damageDealt) {
       this.totalDamageDealt += actualDamage;
 
-      // Skip damage numbers for tower projectiles - players will see their own damage taken display
-      const isTowerProjectile = source && (source as any).isTowerProjectile === true;
-      if (!isTowerProjectile) {
-        // Create damage number at target position
-        const transform = target.getComponent(Transform);
-        if (transform) {
-          const position = transform.getWorldPosition();
-          // Only create damage number if position is valid
-          if (position && position.x !== undefined && position.y !== undefined && position.z !== undefined) {
-            // Offset slightly above the target
-            position.y += 3;
-            this.damageNumberManager.addDamageNumber(
-              actualDamage,
-              damageResult.isCritical,
-              position,
-              damageType,
-              undefined,
-              damageType === 'barrage' ? target.id : undefined
-            );
-          } else {
-            // console.warn('⚠️ Skipping damage number creation - invalid position:', position);
-          }
+      // Create damage number at target position
+      const transform = target.getComponent(Transform);
+      if (transform) {
+        const position = transform.getWorldPosition();
+        // Only create damage number if position is valid
+        if (position && position.x !== undefined && position.y !== undefined && position.z !== undefined) {
+          // Offset slightly above the target
+          position.y += 3;
+          this.damageNumberManager.addDamageNumber(
+            actualDamage,
+            damageResult.isCritical,
+            position,
+            damageType,
+            undefined,
+            damageType === 'barrage' ? target.id : undefined
+          );
+        } else {
+          // console.warn('⚠️ Skipping damage number creation - invalid position:', position);
         }
       }
 
@@ -1201,33 +1102,66 @@ export class CombatSystem extends System {
         // console.log(`💥 ${sourceName} dealt ${actualDamage}${critText} ${damageType || 'damage'} to ${targetName} (${health.currentHealth}/${health.maxHealth} HP)`);
       }
 
-        // Check if target died
-        if (health.isDead) {
-          // Only handle death locally if this is not an enemy in multiplayer mode
-          // Enemy deaths in multiplayer/PVP mode are handled by the server
-          const enemy = target.getComponent(Enemy);
-          const shouldHandleDeathLocally = !enemy || !this.onEnemyDamageCallback;
-          
-          if (shouldHandleDeathLocally) {
-            // Try to get source player ID from the source entity
-            let sourcePlayerIdForDeath: string | undefined;
-            if (source) {
-              const projectileComponent = source.getComponent(Projectile);
-              if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
-                sourcePlayerIdForDeath = (projectileComponent as any).sourcePlayerId;
-              } else if (source.userData?.playerId) {
-                sourcePlayerIdForDeath = source.userData.playerId;
-              }
+      this.maybeAddBowOrEntropicImpactVfx(source, target, damageType, damageDealt);
+
+      this.maybeApplyReaperCrossentropyHitHeal(damageEvent, target, source, damageType, actualDamage);
+
+      // Check if target died
+      if (health.isDead) {
+        // Only handle death locally if this is not an enemy in multiplayer mode
+        // Enemy deaths in multiplayer/PVP mode are handled by the server
+        const enemy = target.getComponent(Enemy);
+        const shouldHandleDeathLocally = !enemy || !this.onEnemyDamageCallback;
+
+        if (shouldHandleDeathLocally) {
+          this.handleEntityDeath(target, source, currentTime);
+        } else {
+          // Enemy death in multiplayer mode - let server handle experience and death effects
+          // console.log(`🌐 Enemy ${target.id} died locally but death handling is deferred to server in multiplayer mode`);
+        }
+
+        // Solo / non–co-op-routed: Infested Entropic beam kill heal (co-op heal is server-authoritative)
+        if (
+          enemy &&
+          damageType === 'icebeam' &&
+          damageEvent.icebeamInfested === true &&
+          !this.onEnemyDamageCallback
+        ) {
+          const cs = (window as any).controlSystemRef?.current;
+          const playerEntity = cs?.playerEntity as Entity | undefined;
+          const playerHealth = playerEntity?.getComponent(Health);
+          if (playerHealth && INFESTED_ENTROPIC_BEAM_KILL_HEAL > 0) {
+            playerHealth.heal(INFESTED_ENTROPIC_BEAM_KILL_HEAL);
+            const pt = playerEntity?.getComponent(Transform);
+            if (pt) {
+              const healPos = pt.getWorldPosition().clone();
+              healPos.y += 1.5;
+              this.damageNumberManager.addDamageNumber(
+                INFESTED_ENTROPIC_BEAM_KILL_HEAL,
+                false,
+                healPos,
+                'healing',
+              );
             }
-            this.handleEntityDeath(target, source, currentTime, sourcePlayerIdForDeath);
-          } else {
-            // Enemy death in multiplayer mode - let server handle experience and death effects
-            // console.log(`🌐 Enemy ${target.id} died locally but death handling is deferred to server in multiplayer mode`);
           }
         }
 
+        if (
+          enemy &&
+          damageType === 'backstab' &&
+          health.isDead &&
+          !this.onEnemyDamageCallback
+        ) {
+          const cs = (window as any).controlSystemRef?.current;
+          cs?.applySabresBackstabKillRewards?.({
+            killstreak: damageEvent.killstreakBackstab === true,
+            relentless: damageEvent.relentlessBackstab === true,
+          });
+        }
+      }
+
       // Trigger damage effects
-        this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
+      this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
 
@@ -1304,7 +1238,7 @@ export class CombatSystem extends System {
     }
   }
 
-  private handleEntityDeath(entity: Entity, killer?: Entity, currentTime?: number, sourcePlayerId?: string): void {
+  private handleEntityDeath(entity: Entity, killer?: Entity, currentTime?: number): void {
     const enemy = entity.getComponent(Enemy);
 
     if (enemy) {
@@ -1316,30 +1250,6 @@ export class CombatSystem extends System {
       // Experience awards are now handled by the backend server
 
       // Trigger death effects
-      this.triggerDeathEffects(entity, killer);
-    }
-
-    // Handle SummonedUnit death
-    const SummonedUnit = require('@/ecs/components/SummonedUnit').SummonedUnit;
-    const summonedUnitComponent = entity.getComponent(SummonedUnit);
-    if (summonedUnitComponent) {
-      const summonedUnit = summonedUnitComponent as typeof SummonedUnit.prototype;
-      summonedUnit.die(currentTime || Date.now() / 1000);
-
-      // Immediately disable to prevent further targeting
-      summonedUnit.isActive = false;
-
-
-      // Experience awards for summoned unit kills are now handled by the backend server
-      if (sourcePlayerId && sourcePlayerId !== 'unknown') {
-        if (summonedUnit.ownerId !== sourcePlayerId) {
-          // console.log(`🎯 Player ${sourcePlayerId} killed enemy summoned unit owned by ${summonedUnit.ownerId}! EXP will be awarded by server.`);
-        } else {
-          // console.log(`🤝 Player ${sourcePlayerId} killed their own summoned unit - no EXP awarded`);
-        }
-      }
-
-      // Trigger death effects for summoned units
       this.triggerDeathEffects(entity, killer);
     }
 
@@ -1442,14 +1352,6 @@ export class CombatSystem extends System {
       return enemy.getDisplayName();
     }
 
-    // Import SummonedUnit component dynamically to avoid circular dependency
-    const SummonedUnit = require('@/ecs/components/SummonedUnit').SummonedUnit;
-    const summonedUnitComponent = entity.getComponent(SummonedUnit);
-    if (summonedUnitComponent) {
-      const summonedUnit = summonedUnitComponent as typeof SummonedUnit.prototype;
-      return summonedUnit.getDisplayName();
-    }
-
     // Could check for other components that provide names
     return `Entity ${entity.id}`;
   }
@@ -1472,6 +1374,16 @@ export class CombatSystem extends System {
     wyvernBiteConcentratedVenom?: boolean,
     wyvernStingVenomZombie?: boolean,
     wyvernBiteConcentratedDoT?: boolean,
+    entropicWrathful?: boolean,
+    entropicInfesting?: boolean,
+    icebeamWrathful?: boolean,
+    icebeamInfested?: boolean,
+    sabreWrathfulSwipes?: boolean,
+    sabreInfestingSwipes?: boolean,
+    infestedBackstab?: boolean,
+    infestedFlourish?: boolean,
+    killstreakBackstab?: boolean,
+    relentlessBackstab?: boolean,
   ): void {
     this.damageQueue.push({
       target,
@@ -1491,6 +1403,16 @@ export class CombatSystem extends System {
       wyvernBiteConcentratedVenom,
       wyvernStingVenomZombie,
       wyvernBiteConcentratedDoT,
+      entropicWrathful,
+      entropicInfesting,
+      icebeamWrathful,
+      icebeamInfested,
+      sabreWrathfulSwipes,
+      sabreInfestingSwipes,
+      infestedBackstab,
+      infestedFlourish,
+      killstreakBackstab,
+      relentlessBackstab,
     });
   }
 
@@ -1518,68 +1440,15 @@ export class CombatSystem extends System {
     const health = target.getComponent(Health);
     if (!health || !health.enabled) return false;
 
-    // Import SummonedUnit component dynamically to avoid circular dependency
-    const SummonedUnit = require('@/ecs/components/SummonedUnit').SummonedUnit;
-
-    // Check if target is a summoned unit - skip damage numbers only if source is also a summoned unit
-    const summonedUnitComponent = target.getComponent(SummonedUnit);
-    if (summonedUnitComponent) {
-      // Calculate actual damage with critical hit mechanics
-      const currentWeapon = this.getCurrentWeapon();
-      const damageResult: DamageResult = calculateDamage(damage, currentWeapon, this.getBarrageCritCalcOpts(damageType));
-      const actualDamage = damageResult.damage;
-
-      const currentTime = Date.now() / 1000;
-      const damageDealt = health.takeDamage(actualDamage, currentTime, target);
-
-      if (damageDealt) {
-        this.totalDamageDealt += actualDamage;
-
-        // Skip damage numbers for tower projectiles or summoned units - players will see their own damage taken display
-        const isTowerProjectile = source && (source as any).isTowerProjectile === true;
-        const sourceSummonedUnit = source ? source.getComponent(SummonedUnit) : null;
-        const shouldShowDamageNumbers = !sourceSummonedUnit && !isTowerProjectile; // Show numbers unless source is a summoned unit or tower projectile
-
-        if (shouldShowDamageNumbers) {
-          // Create damage number at target position for damage from players/enemies
-          const transform = target.getComponent(Transform);
-          if (transform) {
-            const position = transform.getWorldPosition();
-            // Offset slightly above the target
-            position.y += 1.5;
-            const dualCoilSlot = this.applyDualCoilDamageNumberLateral(position, source);
-            this.damageNumberManager.addDamageNumber(
-              actualDamage,
-              damageResult.isCritical,
-              position,
-              damageType,
-              undefined,
-              damageType === 'barrage' ? target.id : undefined,
-              dualCoilSlot
-            );
-          }
-        }
-
-        if (health.isDead) {
-          // Only handle death locally if this is not an enemy in multiplayer mode
-          // Enemy deaths in multiplayer/PVP mode are handled by the server
-          const enemy = target.getComponent(Enemy);
-          const shouldHandleDeathLocally = !enemy || !this.onEnemyDamageCallback;
-          
-          if (shouldHandleDeathLocally) {
-            this.handleEntityDeath(target, source, currentTime, sourcePlayerId);
-          }
-        }
-
-        this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
-      }
-
-      return damageDealt;
-    }
-
     // Calculate actual damage with critical hit mechanics
     const currentWeapon = this.getCurrentWeapon();
-    const damageResult: DamageResult = calculateDamage(damage, currentWeapon, this.getBarrageCritCalcOpts(damageType));
+    const immediateCritOpts: DamageCalcOptions | undefined =
+      damageType === 'barrage'
+        ? this.getBarrageCritCalcOpts(damageType)
+        : damageType === 'projectile'
+          ? this.getWrathfulShotsPerfectCritOptsFromSource(source)
+          : undefined;
+    const damageResult: DamageResult = calculateDamage(damage, currentWeapon, immediateCritOpts);
     const actualDamage = damageResult.damage;
 
     const currentTime = Date.now() / 1000;
@@ -1588,26 +1457,22 @@ export class CombatSystem extends System {
     if (damageDealt) {
       this.totalDamageDealt += actualDamage;
 
-      // Skip damage numbers for tower projectiles - players will see their own damage taken display
-      const isTowerProjectile = source && (source as any).isTowerProjectile === true;
-      if (!isTowerProjectile) {
-        // Create damage number at target position
-        const transform = target.getComponent(Transform);
-        if (transform) {
-          const position = transform.getWorldPosition();
-          // Offset slightly above the target
-          position.y += 1.5;
-          const dualCoilSlot = this.applyDualCoilDamageNumberLateral(position, source);
-          this.damageNumberManager.addDamageNumber(
-            actualDamage,
-            damageResult.isCritical,
-            position,
-            damageType,
-            undefined,
-            damageType === 'barrage' ? target.id : undefined,
-            dualCoilSlot
-          );
-        }
+      // Create damage number at target position
+      const transform = target.getComponent(Transform);
+      if (transform) {
+        const position = transform.getWorldPosition();
+        // Offset slightly above the target
+        position.y += 1.5;
+        const dualCoilSlot = this.applyDualCoilDamageNumberLateral(position, source);
+        this.damageNumberManager.addDamageNumber(
+          actualDamage,
+          damageResult.isCritical,
+          position,
+          damageType,
+          undefined,
+          damageType === 'barrage' ? target.id : undefined,
+          dualCoilSlot
+        );
       }
 
       if (health.isDead) {
@@ -1617,7 +1482,7 @@ export class CombatSystem extends System {
         const shouldHandleDeathLocally = !enemy || !this.onEnemyDamageCallback;
           
           if (shouldHandleDeathLocally) {
-            this.handleEntityDeath(target, source, currentTime, sourcePlayerId);
+            this.handleEntityDeath(target, source, currentTime);
           }
         }
 
@@ -1687,6 +1552,14 @@ export class CombatSystem extends System {
   // Damage numbers management
   public getDamageNumbers() {
     return this.damageNumberManager.getDamageNumbers();
+  }
+
+  public getImpactEffects(): ImpactEffectEvent[] {
+    return this.impactEffectManager.getImpacts();
+  }
+
+  public clearConsumedImpacts(): void {
+    this.impactEffectManager.clearConsumed();
   }
 
   public removeDamageNumber(id: string): void {

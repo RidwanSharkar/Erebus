@@ -16,12 +16,18 @@ interface ViperModelProps {
   onImpactFinished?: () => void;
 }
 
-useGLTF.preload('/models/viper_idle.glb');
-useGLTF.preload('/models/viper_walk.glb');
-useGLTF.preload('/models/viper_drawbow.glb');
-useGLTF.preload('/models/viper_releasebow.glb');
-useGLTF.preload('/models/viper_death.glb');
-useGLTF.preload('/models/viper_impact.glb');
+const VIPER_MODEL_PATHS = [
+  '/models/viper_idle.glb',
+  '/models/viper_walk.glb',
+  '/models/viper_drawbow.glb',
+  '/models/viper_releasebow.glb',
+  '/models/viper_death.glb',
+  '/models/viper_impact.glb',
+];
+
+export function preloadViperModels(): void {
+  VIPER_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+}
 
 const SCALE = 0.0125;
 

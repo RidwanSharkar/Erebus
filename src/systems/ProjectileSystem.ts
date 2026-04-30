@@ -12,8 +12,16 @@ import { World } from '@/ecs/World';
 import { ObjectPool } from '@/utils/ObjectPool';
 
 import { WeaponSubclass } from '@/components/dragon/weapons';
+import { STAGGERING_ENTROPIC_BOLT_STAGGER, CROSSENTROPY_TEMPEST_STAGGER } from '@/utils/talents';
+import type { CrossentropyVisualTheme } from '@/utils/talents';
 import { CombatSystem } from './CombatSystem';
-import CrossentropyBolt from '@/components/projectiles/CrossentropyBolt';
+
+function crossentropyThemeFromProjectile(projectile: Projectile): CrossentropyVisualTheme {
+  if (projectile.infernoCrossentropy === true) return 'inferno';
+  if (projectile.crossentropyTempest === true) return 'tempest';
+  if (projectile.crossentropyPlague === true) return 'plague';
+  return 'default';
+}
 
 export class ProjectileSystem extends System {
   public readonly requiredComponents = [Transform, Projectile];
@@ -244,6 +252,10 @@ export class ProjectileSystem extends System {
         continue;
       }
 
+      if (target.userData?.isCoopAllyPlayer) {
+        continue;
+      }
+
       // Check if projectile can hit this target (layer-based collision)
       // In PVP mode, projectiles can hit both ENEMY (remote players) and PLAYER (local player) layers
       if (targetCollider.layer !== CollisionLayer.ENEMY && targetCollider.layer !== CollisionLayer.PLAYER) {
@@ -317,6 +329,10 @@ export class ProjectileSystem extends System {
       
 
       
+      const entropicTalent =
+        projectile.entropicBoltTalent ??
+        (renderer?.mesh?.userData?.entropicBoltTalent as 'wrathful' | 'staggering' | 'infesting' | undefined);
+
       this.combatSystem.queueDamage(
         target,
         projectile.damage,
@@ -332,7 +348,24 @@ export class ProjectileSystem extends System {
         isCrossentropyBolt && projectile.reaperCrossentropy === true,
         undefined,
         wyvernBiteConcentratedVenom,
+        undefined,
+        undefined,
+        isEntropicBolt && entropicTalent === 'wrathful',
+        isEntropicBolt && entropicTalent === 'infesting',
       );
+
+      if (
+        isCrossentropyBolt &&
+        projectile.reaperCrossentropy === true &&
+        target.getComponent(Enemy)
+      ) {
+        const hitTransform = target.getComponent(Transform);
+        if (hitTransform) {
+          const soulPos = hitTransform.position.clone();
+          soulPos.y = Math.max(1.5, soulPos.y);
+          this.world.emitEvent('hauntedSoulEffect', { position: soulPos });
+        }
+      }
 
       // CRITICAL FIX: Emit explosion event for CrossentropyBolt hits
       // This ensures the local player sees the explosion visual effect
@@ -348,15 +381,24 @@ export class ProjectileSystem extends System {
           explosionPosition.y = Math.max(1.5, explosionPosition.y);
 
           // Emit explosion event for CrossentropyBolt
-          const inferno = projectile.infernoCrossentropy === true;
+          const theme = crossentropyThemeFromProjectile(projectile);
+          const color =
+            theme === 'inferno'
+              ? new Color('#FF3300')
+              : theme === 'tempest'
+                ? new Color('#2288FF')
+                : theme === 'plague'
+                  ? new Color('#33DD66')
+                  : new Color('#8B00FF');
           this.world.emitEvent('explosion', {
             position: explosionPosition,
-            color: inferno ? new Color('#FF3300') : new Color('#8B00FF'),
+            color,
             size: 2.0, // Increased size for better visibility on large bosses
             duration: 1.0,
             type: 'crossentropy' as const,
             chargeTime: 1.0, // Default charge time
-            infernoCrossentropy: inferno,
+            infernoCrossentropy: theme === 'inferno',
+            crossentropyVisualTheme: theme,
           });
         }
       }
@@ -390,6 +432,7 @@ export class ProjectileSystem extends System {
 
     for (const target of potentialTargets) {
       if (target.id === projectile.owner) continue; // Don't damage owner
+      if (target.userData?.isCoopAllyPlayer) continue;
 
       const targetTransform = target.getComponent(Transform)!;
       const targetHealth = target.getComponent(Health)!;
@@ -443,6 +486,8 @@ export class ProjectileSystem extends System {
       opacity?: number;
       staggerToAdd?: number;
       dualCoilLane?: 0 | 1;
+      /** Bow perfect window — Wrathful Shots crit. */
+      isPerfectShot?: boolean;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -463,6 +508,9 @@ export class ProjectileSystem extends System {
     }
     if (config?.dualCoilLane !== undefined) {
       projectile.dualCoilLane = config.dualCoilLane;
+    }
+    if (config?.isPerfectShot === true) {
+      projectile.isPerfectShot = true;
     }
     projectile.setDirection(direction);
     
@@ -525,6 +573,8 @@ export class ProjectileSystem extends System {
       sourcePlayerId?: string; // CRITICAL FIX: Add sourcePlayerId to config
       infernoCrossentropy?: boolean;
       reaperCrossentropy?: boolean;
+      crossentropyTempest?: boolean;
+      crossentropyPlague?: boolean;
       maxDistance?: number;
     }
   ): Entity {
@@ -549,6 +599,13 @@ export class ProjectileSystem extends System {
     }
     if (config?.reaperCrossentropy) {
       projectile.reaperCrossentropy = true;
+    }
+    if (config?.crossentropyTempest) {
+      projectile.crossentropyTempest = true;
+      projectile.staggerToAdd = CROSSENTROPY_TEMPEST_STAGGER;
+    }
+    if (config?.crossentropyPlague) {
+      projectile.crossentropyPlague = true;
     }
     
     if (config?.piercing) projectile.setPiercing(true);
@@ -586,6 +643,12 @@ export class ProjectileSystem extends System {
     }
     if (config?.reaperCrossentropy) {
       placeholderMesh.userData.reaperCrossentropy = true;
+    }
+    if (config?.crossentropyTempest) {
+      placeholderMesh.userData.crossentropyTempest = true;
+    }
+    if (config?.crossentropyPlague) {
+      placeholderMesh.userData.crossentropyPlague = true;
     }
     
     renderer.mesh = placeholderMesh;
@@ -625,6 +688,7 @@ export class ProjectileSystem extends System {
       sourcePlayerId?: string;
       isCryoflame?: boolean;
       colorVariant?: string;
+      entropicBoltTalent?: 'wrathful' | 'staggering' | 'infesting';
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -647,6 +711,14 @@ export class ProjectileSystem extends System {
     if (config?.piercing !== false) projectile.setPiercing(true);
     if (config?.explosive && config?.explosionRadius) {
       projectile.setExplosive(config.explosionRadius);
+    }
+
+    const entropicTalent = config?.entropicBoltTalent;
+    if (entropicTalent) {
+      projectile.entropicBoltTalent = entropicTalent;
+      if (entropicTalent === 'staggering') {
+        projectile.staggerToAdd = STAGGERING_ENTROPIC_BOLT_STAGGER;
+      }
     }
     
     projectileEntity.addComponent(projectile);
@@ -671,9 +743,10 @@ export class ProjectileSystem extends System {
     placeholderMesh.userData.direction = direction.clone();
     placeholderMesh.userData.isCryoflame = config?.isCryoflame || false;
     placeholderMesh.userData.colorVariant = config?.colorVariant || 'purple';
-    
+    placeholderMesh.userData.entropicBoltTalent = entropicTalent;
+
     renderer.mesh = placeholderMesh;
-    
+
     // Set shadow casting with safety check
     if (typeof renderer.setCastShadow === 'function') {
       renderer.setCastShadow(false);
@@ -714,7 +787,11 @@ export class ProjectileSystem extends System {
       wrathfulBiteBarrage?: boolean;
       /** Wyvern Bite talent — green Barrage + Concentrated Venom. */
       wyvernBiteBarrage?: boolean;
+      /** Staggering Bite — Barrage stagger; replicated for remote clients. */
+      staggeringBiteBarrage?: boolean;
       dualCoilLane?: 0 | 1;
+      /** Bow perfect — Wrathful Shots. */
+      isPerfectShot?: boolean;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -737,6 +814,9 @@ export class ProjectileSystem extends System {
     }
     if (config?.dualCoilLane !== undefined) {
       projectile.dualCoilLane = config.dualCoilLane;
+    }
+    if (config?.isPerfectShot === true) {
+      projectile.isPerfectShot = true;
     }
     projectile.setDirection(direction);
     projectile.setStartPosition(position);

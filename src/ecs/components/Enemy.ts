@@ -315,7 +315,7 @@ export class Enemy extends Component {
       this.chillStacks = 0;
       this.chillExpiresAtSec = 0;
       this.freeze(BLIZZARD_FREEZE_DURATION_SEC, currentTime);
-      addGlobalFrozenEnemy(ecsEntityIdForVfx, position.clone());
+      addGlobalFrozenEnemy(ecsEntityIdForVfx, position.clone(), BLIZZARD_FREEZE_DURATION_SEC * 1000);
     }
   }
 

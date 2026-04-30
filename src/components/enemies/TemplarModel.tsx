@@ -19,13 +19,19 @@ interface TemplarModelProps {
   onBlinkSmiteFinished?: () => void;
 }
 
-useGLTF.preload('/models/templar_idle.glb');
-useGLTF.preload('/models/templar_run.glb');
-useGLTF.preload('/models/templar_attack.glb');
-useGLTF.preload('/models/templar_attack2.glb');
-useGLTF.preload('/models/templar_death.glb');
-useGLTF.preload('/models/templar_impact.glb');
-useGLTF.preload('/models/templar_smite.glb');
+const TEMPLAR_MODEL_PATHS = [
+  '/models/templar_idle.glb',
+  '/models/templar_run.glb',
+  '/models/templar_attack.glb',
+  '/models/templar_attack2.glb',
+  '/models/templar_death.glb',
+  '/models/templar_impact.glb',
+  '/models/templar_smite.glb',
+];
+
+export function preloadTemplarModels(): void {
+  TEMPLAR_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+}
 
 // Scale to match in-world height (~2 game units). Tune if GLB geometry differs.
 const SCALE = 0.013;

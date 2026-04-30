@@ -16,6 +16,7 @@ interface ShadeDaggerProjectileProps {
   onComplete: () => void;
 }
 
+// Must match backend enemyAI SHADE_DAGGER_PROJECTILE_SPEED (post-attack blink delay uses this).
 const SPEED = 25; // units per second — match ViperArrowProjectile
 const HIT_RADIUS = 1.05; // match ViperArrowProjectile
 

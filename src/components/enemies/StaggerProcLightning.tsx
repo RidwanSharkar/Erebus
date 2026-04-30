@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useMemo } from 'react';
-import { Vector3, AdditiveBlending, CylinderGeometry, MeshBasicMaterial } from '@/utils/three-exports';
+import { Vector3, Quaternion, AdditiveBlending, CylinderGeometry, MeshBasicMaterial } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 
 const DURATION_MS = 620;
@@ -20,19 +20,44 @@ export default function StaggerProcLightning({ position, onComplete }: StaggerPr
     const baseX = position.x;
     const baseY = position.y;
     const baseZ = position.z;
-    const n = 16;
-    const pts: { x: number; y: number; z: number; h: number }[] = [];
+    const n = 20;
+    const pts: { x: number; y: number; z: number }[] = [];
+
+    // Random walk — each point continues from the tip of the previous segment
+    let curX = baseX + (Math.random() - 0.5) * 0.4;
+    let curZ = baseZ + (Math.random() - 0.5) * 0.4;
+
     for (let i = 0; i < n; i++) {
       const t = i / (n - 1);
-      const jitter = (1 - t) * 0.52;
-      pts.push({
-        x: baseX + (Math.random() - 0.5) * jitter,
-        y: baseY + SKY_Y * (1 - t),
-        z: baseZ + (Math.random() - 0.5) * jitter,
-        h: 0.12 + (1 - t) * 0.08,
-      });
+      const spread = 1.1 * Math.sin(t * Math.PI) + 0.35;
+      pts.push({ x: curX, y: baseY + SKY_Y * (1 - t), z: curZ });
+      curX += (Math.random() - 0.5) * spread * 2;
+      curZ += (Math.random() - 0.5) * spread * 2;
     }
-    return pts;
+
+    // Snap the final point back to the target so the bolt always lands on the enemy
+    pts[n - 1].x = baseX;
+    pts[n - 1].z = baseZ;
+
+    // Precompute per-segment geometry: midpoint, length, and quaternion alignment.
+    // CylinderGeometry is oriented along +Y by default, so we rotate +Y onto the
+    // segment direction using setFromUnitVectors — this is the only reliable way to
+    // orient cylinders for arbitrary 3D directions (Euler decomposition causes misalignment).
+    const yAxis = new Vector3(0, 1, 0);
+    return pts.slice(0, -1).map((p, i) => {
+      const q = pts[i + 1];
+      const dx = q.x - p.x;
+      const dy = q.y - p.y;
+      const dz = q.z - p.z;
+      const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.001;
+      const dir = new Vector3(dx / len, dy / len, dz / len);
+      const quat = new Quaternion().setFromUnitVectors(yAxis, dir);
+      return {
+        mid: [(p.x + q.x) / 2, (p.y + q.y) / 2, (p.z + q.z) / 2] as [number, number, number],
+        len,
+        quat,
+      };
+    });
   }, [position.x, position.y, position.z]);
 
   const matCore = useMemo(
@@ -90,25 +115,13 @@ export default function StaggerProcLightning({ position, onComplete }: StaggerPr
     <group>
       <pointLight position={[position.x, position.y + 3.5, position.z]} color="#bae6fd" intensity={48} distance={22} decay={1.8} />
       <pointLight position={[position.x, position.y + 0.4, position.z]} color="#38bdf8" intensity={36} distance={14} decay={2} />
-      {segments.slice(0, -1).map((p, i) => {
-        const q = segments[i + 1];
-        const midX = (p.x + q.x) / 2;
-        const midY = (p.y + q.y) / 2;
-        const midZ = (p.z + q.z) / 2;
-        const dx = q.x - p.x;
-        const dy = q.y - p.y;
-        const dz = q.z - p.z;
-        const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.001;
-        const yaw = Math.atan2(dx, dz);
-        const pitch = -Math.asin(dy / len) + Math.PI / 2;
-        return (
-          <group key={i} position={[midX, midY, midZ]} rotation={[pitch, yaw, 0]}>
-            <mesh geometry={cyl} material={matHalo} scale={[2.1, len, 2.1]} />
-            <mesh geometry={cyl} material={matGlow} scale={[1.65, len, 1.65]} />
-            <mesh geometry={cyl} material={matCore} scale={[1.05, len, 1.05]} />
-          </group>
-        );
-      })}
+      {segments.map(({ mid, len, quat }, i) => (
+        <group key={i} position={mid} quaternion={quat}>
+          <mesh geometry={cyl} material={matHalo} scale={[2.1, len, 2.1]} />
+          <mesh geometry={cyl} material={matGlow} scale={[1.65, len, 1.65]} />
+          <mesh geometry={cyl} material={matCore} scale={[1.05, len, 1.05]} />
+        </group>
+      ))}
     </group>
   );
 }

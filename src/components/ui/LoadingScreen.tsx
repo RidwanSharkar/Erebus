@@ -5,19 +5,21 @@ import { useEffect, useState } from 'react';
 interface LoadingScreenProps {
   isVisible: boolean;
   onFadeComplete?: () => void;
+  /** Scene/engine bootstrap finished — progress can complete (vs fake ~90% cap). */
+  sceneBootstrapReady?: boolean;
 }
 
 const LOADING_TIPS = [
-  'In the throne room, press X near a floating weapon to equip it and start your run.',
-  'After you pick a weapon, choose one of three random class boons — they stick with you for the run.',
-  'Set Q, E, and R at the east prep pillar; boons and talents stack as you progress.',
-  'Clear your first combat room, then pick one of three room boons tied to that room’s color.',
-  'Runeblade, Bow, and Scythe each have their own class pools and color-room offerings.',
-  'Double-tap WASD to dash; Executioner and some talents care whether it was a real dash.',
-  'Tempest Rounds and Icebeam are earned as boons or dev talents — not the passive row on Bow/Scythe.',
-  'Your shield recovers between fights; health does not — position and boons matter.',
-  'Step through portals when offered to push deeper; tougher rooms can mean stronger picks.',
-];
+  'Press X by a throne weapon to equip it; Q/E/R default for that weapon.',
+  'Pick one permanent class talent after equipping—it (once per weapon).',
+  'After your first room clear, pick a room boon tied to that room’s color.',
+  'Runeblade, Bow, and Scythe each use different class and color-room pools.',
+  'Every third combat room opens a boss portal.',
+  'Double-tap WASD to dash.',
+  'Tempest Rounds (Bow) and Icebeam (Scythe) drop from boons—not the passive row.',
+  'Shield ticks up between fights; health does not.',
+  'Press X near a portal when it appears to travel to the next trial.',
+] as const;
 
 const RUNE_SYMBOLS = ['ᚠ', 'ᚢ', 'ᚦ', 'ᚨ', 'ᚱ', 'ᚲ', 'ᚷ', 'ᚹ', 'ᚺ', 'ᚾ', 'ᛁ', 'ᛃ', 'ᛇ', 'ᛈ', 'ᛉ', 'ᛊ', 'ᛏ', 'ᛒ', 'ᛖ', 'ᛗ', 'ᛚ', 'ᛜ', 'ᛞ', 'ᛟ'];
 
@@ -64,7 +66,11 @@ function FloatingRune({ symbol, style }: { symbol: string; style: React.CSSPrope
   );
 }
 
-export default function LoadingScreen({ isVisible, onFadeComplete }: LoadingScreenProps) {
+export default function LoadingScreen({
+  isVisible,
+  onFadeComplete,
+  sceneBootstrapReady = false,
+}: LoadingScreenProps) {
   const [fadeOut, setFadeOut] = useState(false);
   const [tipIndex, setTipIndex] = useState(0);
   const [dots, setDots] = useState('');
@@ -109,17 +115,20 @@ export default function LoadingScreen({ isVisible, onFadeComplete }: LoadingScre
     return () => clearInterval(interval);
   }, [isVisible]);
 
-  // Animate progress bar (fake, but feels responsive)
+  /* Indeterminate easing until `sceneBootstrapReady`, then reflects real readiness (avoids misleading 90% stall). */
   useEffect(() => {
     if (!isVisible) return;
+    if (sceneBootstrapReady) {
+      setProgress(100);
+      return;
+    }
     let current = 0;
     const tick = setInterval(() => {
-      // Ease in — approaches 90% quickly, then slows, waits for real ready signal
-      current += (90 - current) * 0.04;
-      setProgress(Math.min(current, 90));
+      current += (82 - current) * 0.04;
+      setProgress(Math.min(current, 82));
     }, 80);
     return () => clearInterval(tick);
-  }, [isVisible]);
+  }, [isVisible, sceneBootstrapReady]);
 
   // Jump to 100 when fading out
   useEffect(() => {
@@ -247,15 +256,22 @@ export default function LoadingScreen({ isVisible, onFadeComplete }: LoadingScre
           Loading{dots}
         </div>
 
-        {/* Tip */}
-        <div
-          className="border border-green-900/60 rounded-lg px-5 py-3 bg-green-950/20 text-center max-w-sm"
-          style={{ minHeight: 64 }}
-        >
-          <div className="text-green-600/60 text-xs uppercase tracking-widest mb-1 font-mono">Tip</div>
-          <p className="text-green-300/80 text-sm font-mono leading-relaxed">
-            {LOADING_TIPS[tipIndex]}
-          </p>
+        {/* Tips */}
+        <div className="border border-green-900/60 rounded-lg px-5 py-3 bg-green-950/20 max-w-sm w-full">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <span className="text-green-600/60 text-xs uppercase tracking-widest font-mono">Tips</span>
+            <span className="text-green-600/35 text-[10px] font-mono tabular-nums">
+              {tipIndex + 1}/{LOADING_TIPS.length}
+            </span>
+          </div>
+          <div className="min-h-[4.25rem] flex items-center justify-center text-center">
+            <p
+              key={tipIndex}
+              className="text-green-300/90 text-sm font-mono leading-snug tip-line"
+            >
+              {LOADING_TIPS[tipIndex]}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -282,6 +298,17 @@ export default function LoadingScreen({ isVisible, onFadeComplete }: LoadingScre
         @keyframes pulse {
           0%, 100% { opacity: 0.4; transform: scale(1); }
           50% { opacity: 1; transform: scale(1.15); }
+        }
+        @keyframes tipEnter {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+        .tip-line {
+          animation: tipEnter 0.22s ease-out forwards;
         }
       `}</style>
     </div>

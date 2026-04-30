@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Color, Shape, AdditiveBlending } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
@@ -8,6 +8,7 @@ import { BLIZZARD_DURATION_SEC, BLIZZARD_DPS_PER_TICK } from '@/utils/talents';
 import { calculationCache } from '@/utils/CalculationCache';
 import { MAIN_MAP_RADIUS, isInsideMainArenaXZ } from '@/utils/mapConstants';
 import { forEachMushroomHitBySwing } from '@/utils/mushroomMeleeUtils';
+import { MELEE_ARC_MIN_DOT, MELEE_ARC_RANGE } from '@/utils/meleeArcConstants';
 
 interface RunebladeProps {
   isSwinging: boolean;
@@ -196,6 +197,83 @@ export default function Runeblade({
     }
   }, [comboStep]);
 
+  const bladeShape = useMemo(() => {
+    const shape = new Shape();
+
+    shape.moveTo(0, 0);
+
+    shape.lineTo(-0.25, 0.25);
+    shape.lineTo(-0.15, -0.15);
+    shape.lineTo(0, 0);
+
+    shape.lineTo(0.25, 0.25);
+    shape.lineTo(0.15, -0.15);
+    shape.lineTo(0, 0);
+
+    shape.lineTo(0, 0.08);
+    shape.lineTo(-0.2, 0.12);
+    shape.quadraticCurveTo(0.8, -0.15, -0.15, 0.12);
+    shape.quadraticCurveTo(1.8, -0, 1.75, 0.05);
+    shape.quadraticCurveTo(2.15, 0.05, 2.35, 0.225);
+
+    shape.quadraticCurveTo(2.125, -0.125, 2.0, -0.25);
+    shape.quadraticCurveTo(1.8, -0.45, 1.675, -0.55);
+    shape.quadraticCurveTo(0.9, -0.35, 0.125, -0.325);
+    shape.lineTo(0, -0.08);
+    shape.lineTo(0, 0);
+
+    return shape;
+  }, []);
+
+  const innerBladeShape = useMemo(() => {
+    const shape = new Shape();
+    shape.moveTo(0, 0);
+
+    shape.lineTo(0, 0.06);
+    shape.lineTo(-0.15, 0.09);
+    shape.quadraticCurveTo(0.6, -0.11, -0.11, 0.09);
+    shape.quadraticCurveTo(1.35, -0.11, 1.575, 0.04);
+    shape.quadraticCurveTo(1.61, 0.015, 2.12, 0);
+
+    shape.quadraticCurveTo(1.975, -0.094, 1.9, -0.188);
+    shape.quadraticCurveTo(1.7, -0.338, 1.606, -0.413);
+    shape.quadraticCurveTo(0.85, -0.263, 0.094, -0.244);
+    shape.lineTo(0, -0.06);
+    shape.lineTo(0, 0);
+
+    return shape;
+  }, []);
+
+  const bladeExtrudeSettings = useMemo(
+    () => ({
+      steps: 2,
+      depth: 0.05,
+      bevelEnabled: true,
+      bevelThickness: 0.014,
+      bevelSize: 0.02,
+      bevelOffset: 0.04,
+      bevelSegments: 2,
+    }),
+    [],
+  );
+
+  const innerBladeExtrudeSettings = useMemo(
+    () => ({
+      ...bladeExtrudeSettings,
+      depth: 0.06,
+      bevelThickness: 0.02,
+      bevelSize: 0.02,
+      bevelOffset: 0,
+      bevelSegments: 6,
+    }),
+    [bladeExtrudeSettings],
+  );
+
+  const chainLightningBladeExtrudeSettings = useMemo(
+    () => ({ ...bladeExtrudeSettings, depth: 0.07 }),
+    [bladeExtrudeSettings],
+  );
+
   useFrame((_, delta) => {
     if (getBlizzardTalentActive) {
       const bz = getBlizzardTalentActive();
@@ -352,7 +430,7 @@ export default function Runeblade({
       const CHARGE_DISTANCE = 8;
       const CHARGE_WINDUP_DURATION = 0.1;
       const CHARGE_DURATION = 0.45;
-      const CHARGE_DAMAGE = 60;
+      const CHARGE_DAMAGE = 75;
       const CHARGE_COLLISION_RADIUS = 2.5;
       const MAX_CHARGE_BOUNDS = MAIN_MAP_RADIUS;
       const CHARGE_FAILSAFE_TIMEOUT = 0.6;
@@ -846,7 +924,6 @@ export default function Runeblade({
     };
 
     const baseDamage = damageValues[comboStep] + execBonus + crusaderBonus;
-    const attackRange = 5.25;
 
     let enemiesHitThisSwing = 0;
     let mushroomsHitThisSwing = 0;
@@ -859,7 +936,7 @@ export default function Runeblade({
 
       const distance = playerPosition.distanceTo(enemy.position);
 
-      if (distance <= attackRange) {
+      if (distance <= MELEE_ARC_RANGE) {
         let shouldHit = false;
 
         if (comboStep === 3) {
@@ -867,15 +944,29 @@ export default function Runeblade({
         } else {
           const yaw = playerRotation?.y ?? 0;
           attackForwardScratch.current.set(Math.sin(yaw), 0, Math.cos(yaw));
-          const toEnemy = enemy.position.clone().sub(playerPosition).normalize();
-          const dotProduct = toEnemy.dot(attackForwardScratch.current);
-          shouldHit = dotProduct > -0.5;
+          const toEnemy = enemy.position.clone().sub(playerPosition);
+          toEnemy.y = 0;
+          if (toEnemy.lengthSq() < 1e-8) {
+            shouldHit = true;
+          } else {
+            toEnemy.normalize();
+            shouldHit = toEnemy.dot(attackForwardScratch.current) > MELEE_ARC_MIN_DOT;
+          }
         }
 
         if (shouldHit) {
           lastSwingHitTime.current[enemy.id] = now;
 
           onHit?.(enemy.id, baseDamage);
+
+          setActiveEffects?.(prev => [...prev, {
+            id: Date.now() + Math.random(),
+            type: 'runeblade-slash-impact',
+            position: enemy.position.clone(),
+            direction: attackForwardScratch.current.clone(),
+            startTime: Date.now(),
+            duration: 0.5,
+          }]);
 
           enemiesHitThisSwing++;
 
@@ -922,84 +1013,6 @@ export default function Runeblade({
     }
 
     onPrimaryHitsResolved?.(enemiesHitThisSwing + mushroomsHitThisSwing);
-  };
-
-  // Create custom runeblade shape
-  const createBladeShape = () => {
-    const shape = new Shape();
-    
-    // Start at center
-    shape.moveTo(0, 0);
-    
-    // Left side guard (fixed symmetry)
-    shape.lineTo(-0.25, 0.25);  
-    shape.lineTo(-0.15, -0.15); 
-    shape.lineTo(0, 0);
-    
-    // Right side guard (matches left exactly)
-    shape.lineTo(0.25, 0.25);
-    shape.lineTo(0.15, -0.15);
-    shape.lineTo(0, 0);
-    
-    // Curved blade shape - asymmetrical with curve flipped to bottom edge
-    // Upper edge (back edge) - straighter, more subtle curve
-    shape.lineTo(0, 0.08);
-    shape.lineTo(-0.2, 0.12);   // Gentle start
-    shape.quadraticCurveTo(0.8, -0.15, -0.15, 0.12);  // Subtle curve along back
-    shape.quadraticCurveTo(1.8, -0, 1.75, 0.05);  // Gentle curve towards tip
-    shape.quadraticCurveTo(2.15, 0.05, 2.35, 0.225);    // Sharp point
-    
-    // Lower edge (cutting edge) - more curved and pronounced (flipped)
-    shape.quadraticCurveTo(2.125, -0.125, 2.0, -0.25); // Start curve from tip
-    shape.quadraticCurveTo(1.8, -0.45, 1.675, -0.55);  // Peak of the curve (increased)
-    shape.quadraticCurveTo(0.9, -0.35, 0.125, -0.325);   // Curve back towards guard
-    shape.lineTo(0, -0.08);
-    shape.lineTo(0, 0);
-    
-    return shape;
-  };
-
-  // inner blade shape
-  const createInnerBladeShape = () => {
-    const shape = new Shape();
-    shape.moveTo(0, 0);
-
-    // Inner blade follows the same curved pattern but smaller (inset from outer shape)
-    // Upper edge (back edge) - straighter, more subtle curve
-    shape.lineTo(0, 0.06);
-    shape.lineTo(-0.15, 0.09);   // Gentle start, inset from outer
-    shape.quadraticCurveTo(0.6, -0.11, -0.11, 0.09);  // Subtle curve along back, inset
-    shape.quadraticCurveTo(1.35, -0.11, 1.575, 0.04);  // Gentle curve towards tip, inset
-    shape.quadraticCurveTo(1.61, 0.015, 2.12, 0);    // Sharp point, slightly longer
-
-    // Lower edge (cutting edge) - more curved and pronounced (flipped)
-    shape.quadraticCurveTo(1.975, -0.094, 1.9, -0.188); // Start curve from tip, slightly longer
-    shape.quadraticCurveTo(1.7, -0.338, 1.606, -0.413);  // Peak of the curve, slightly longer
-    shape.quadraticCurveTo(0.85, -0.263, 0.094, -0.244);   // Curve back towards guard, slightly longer
-    shape.lineTo(0, -0.06);
-    shape.lineTo(0, 0);
-
-    return shape;
-  };
-
-
-  const bladeExtrudeSettings = {
-    steps: 2,
-    depth: 0.05,
-    bevelEnabled: true,
-    bevelThickness: 0.014,
-    bevelSize: 0.02,
-    bevelOffset: 0.04,
-    bevelSegments: 2
-  };
-
-  const innerBladeExtrudeSettings = {
-    ...bladeExtrudeSettings,
-    depth: 0.06,
-    bevelThickness: 0.02,
-    bevelSize: 0.02,
-    bevelOffset: 0,
-    bevelSegments: 6
   };
 
   return (
@@ -1112,7 +1125,7 @@ export default function Runeblade({
         <group position={[0.25, 0.5, 0.35]} rotation={[0, -Math.PI / 2, Math.PI / 2]}>
           {/* Base blade */}
           <mesh>
-            <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
+            <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
             <meshStandardMaterial
               color={primaryColor}  // Dynamic theme based on corrupted aura
               emissive={primaryEmissive}
@@ -1124,7 +1137,7 @@ export default function Runeblade({
 
           {/* Blade glowing core */}
           <mesh>
-            <extrudeGeometry args={[createInnerBladeShape(), innerBladeExtrudeSettings]} />
+            <extrudeGeometry args={[innerBladeShape, innerBladeExtrudeSettings]} />
             <meshStandardMaterial
               color={primaryColor}  // Dynamic theme based on corrupted aura
               emissive={primaryEmissive}
@@ -1143,7 +1156,7 @@ export default function Runeblade({
             {/* Electrical aura around blade */}
             <group position={[0.25, 0.7, 0.35]} rotation={[0, -Math.PI / 2, Math.PI / 2]} scale={[0.95, 1.10, 0.95]}>
               <mesh>
-                <extrudeGeometry args={[createBladeShape(), { ...bladeExtrudeSettings, depth: 0.07 }]} />
+                <extrudeGeometry args={[bladeShape, chainLightningBladeExtrudeSettings]} />
                 <meshStandardMaterial
                   color={secondaryColor}
                   emissive={secondaryEmissive}

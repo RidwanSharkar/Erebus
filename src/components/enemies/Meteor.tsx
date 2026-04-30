@@ -184,18 +184,6 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
           />
         </mesh>
 
-        {/* Rotating outer glow ring */}
-        <mesh
-          rotation={[-Math.PI / 2, Date.now() * 0.0035, 0]}
-        >
-          <primitive object={outerGlowGeometry} />
-          <meshBasicMaterial
-            color="#BA55D3"
-            transparent
-            opacity={0.25}
-            side={DoubleSide}
-          />
-        </mesh>
 
         {/* Rising fire particles */}
         {[...Array(FIRE_PARTICLES_COUNT)].map((_, i) => (

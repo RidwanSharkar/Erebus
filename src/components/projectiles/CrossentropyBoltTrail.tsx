@@ -9,7 +9,34 @@ interface CrossentropyBoltTrailProps {
   mesh2Ref: React.RefObject<Mesh>;
   mesh3Ref: React.RefObject<Mesh>;
   opacity?: number;
+  /** Reaper Crossentropy: purple accent in trail mix instead of orange. */
+  reaperPurple?: boolean;
 }
+
+const TRAIL_VERTEX_SHADER = `
+  attribute float opacity;
+  attribute float scale;
+  varying float vOpacity;
+  void main() {
+    vOpacity = opacity;
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
+    gl_PointSize = scale * 20.0 * (300.0 / -mvPosition.z);
+  }
+`;
+
+const TRAIL_FRAGMENT_SHADER = `
+  varying float vOpacity;
+  uniform vec3 uColor;
+  uniform float uReaper;
+  void main() {
+    float d = length(gl_PointCoord - vec2(0.5));
+    float strength = smoothstep(0.5, 0.1, d);
+    vec3 mixTarget = mix(vec3(1.0, 0.6, 0.0), vec3(0.72, 0.35, 1.0), uReaper);
+    vec3 glowColor = mix(uColor, mixTarget, 0.4);
+    gl_FragColor = vec4(glowColor, vOpacity * strength);
+  }
+`;
 
 const CrossentropyBoltTrail: React.FC<CrossentropyBoltTrailProps> = ({
   color,
@@ -17,7 +44,8 @@ const CrossentropyBoltTrail: React.FC<CrossentropyBoltTrailProps> = ({
   mesh1Ref,
   mesh2Ref,
   mesh3Ref,
-  opacity = 1
+  opacity = 1,
+  reaperPurple = false,
 }) => {
   const particlesCount = 50;
   const particles1Ref = useRef<Points>(null);
@@ -186,29 +214,11 @@ const CrossentropyBoltTrail: React.FC<CrossentropyBoltTrailProps> = ({
           transparent
           depthWrite={false}
           blending={AdditiveBlending}
-          vertexShader={`
-            attribute float opacity;
-            attribute float scale;
-            varying float vOpacity;
-            void main() {
-              vOpacity = opacity;
-              vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-              gl_Position = projectionMatrix * mvPosition;
-              gl_PointSize = scale * 20.0 * (300.0 / -mvPosition.z);
-            }
-          `}
-          fragmentShader={`
-            varying float vOpacity;
-            uniform vec3 uColor;
-            void main() {
-              float d = length(gl_PointCoord - vec2(0.5));
-              float strength = smoothstep(0.5, 0.1, d);
-              vec3 glowColor = mix(uColor, vec3(1.0, 0.6, 0.0), 0.4);
-              gl_FragColor = vec4(glowColor, vOpacity * strength);
-            }
-          `}
+          vertexShader={TRAIL_VERTEX_SHADER}
+          fragmentShader={TRAIL_FRAGMENT_SHADER}
           uniforms={{
             uColor: { value: color },
+            uReaper: { value: reaperPurple ? 1 : 0 },
           }}
         />
       </points>
@@ -237,29 +247,11 @@ const CrossentropyBoltTrail: React.FC<CrossentropyBoltTrailProps> = ({
           transparent
           depthWrite={false}
           blending={AdditiveBlending}
-          vertexShader={`
-            attribute float opacity;
-            attribute float scale;
-            varying float vOpacity;
-            void main() {
-              vOpacity = opacity;
-              vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-              gl_Position = projectionMatrix * mvPosition;
-              gl_PointSize = scale * 20.0 * (300.0 / -mvPosition.z);
-            }
-          `}
-          fragmentShader={`
-            varying float vOpacity;
-            uniform vec3 uColor;
-            void main() {
-              float d = length(gl_PointCoord - vec2(0.5));
-              float strength = smoothstep(0.5, 0.1, d);
-              vec3 glowColor = mix(uColor, vec3(1.0, 0.6, 0.0), 0.4);
-              gl_FragColor = vec4(glowColor, vOpacity * strength);
-            }
-          `}
+          vertexShader={TRAIL_VERTEX_SHADER}
+          fragmentShader={TRAIL_FRAGMENT_SHADER}
           uniforms={{
             uColor: { value: color },
+            uReaper: { value: reaperPurple ? 1 : 0 },
           }}
         />
       </points>
@@ -288,29 +280,11 @@ const CrossentropyBoltTrail: React.FC<CrossentropyBoltTrailProps> = ({
           transparent
           depthWrite={false}
           blending={AdditiveBlending}
-          vertexShader={`
-            attribute float opacity;
-            attribute float scale;
-            varying float vOpacity;
-            void main() {
-              vOpacity = opacity;
-              vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-              gl_Position = projectionMatrix * mvPosition;
-              gl_PointSize = scale * 20.0 * (300.0 / -mvPosition.z);
-            }
-          `}
-          fragmentShader={`
-            varying float vOpacity;
-            uniform vec3 uColor;
-            void main() {
-              float d = length(gl_PointCoord - vec2(0.5));
-              float strength = smoothstep(0.5, 0.1, d);
-              vec3 glowColor = mix(uColor, vec3(1.0, 0.6, 0.0), 0.4);
-              gl_FragColor = vec4(glowColor, vOpacity * strength);
-            }
-          `}
+          vertexShader={TRAIL_VERTEX_SHADER}
+          fragmentShader={TRAIL_FRAGMENT_SHADER}
           uniforms={{
             uColor: { value: color },
+            uReaper: { value: reaperPurple ? 1 : 0 },
           }}
         />
       </points>

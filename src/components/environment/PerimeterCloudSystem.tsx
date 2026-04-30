@@ -185,7 +185,7 @@ const PerimeterCloudSystem: React.FC<PerimeterCloudSystemProps> = ({ radius }) =
   );
 
   const cloudGeometry = useMemo(() => {
-    const particleCount = 17;
+    const particleCount =24;
     const positions = new Float32Array(particleCount * 3);
     const randoms = new Float32Array(particleCount);
     const particleIndices = new Float32Array(particleCount);
