@@ -19,7 +19,8 @@ interface BossLeapShockwaveProps {
 const DURATION = 1.8; // seconds
 const RING_COUNT = 4;
 const DUST_COUNT = 16;
-const GROUND_Y = 0.04;
+/** Sits just above throne stone tiles to avoid z-fighting with the slab mesh. */
+const GROUND_Y = 0.1;
 
 // Staggered ring parameters: [startDelay, maxRadius, thickness, baseOpacity]
 const RING_PARAMS: [number, number, number, number][] = [

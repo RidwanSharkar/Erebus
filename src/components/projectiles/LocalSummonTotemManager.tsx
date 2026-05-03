@@ -55,6 +55,7 @@ interface LocalSummonTotemManagerProps {
   nextDamageNumberId?: { current: number };
   playerId?: string; // Local player id (caster + socket)
   totemBoltVariant?: TotemBoltVariant;
+  superconductor?: boolean;
 }
 
 const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
@@ -66,13 +67,19 @@ const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
   nextDamageNumberId,
   playerId,
   totemBoltVariant,
+  superconductor = false,
 }) => {
   const managerRef = React.useRef<SummonTotemManagerRef>(null);
   const totemBoltVariantRef = React.useRef(totemBoltVariant);
+  const superconductorRef = React.useRef(superconductor);
 
   React.useEffect(() => {
     totemBoltVariantRef.current = totemBoltVariant;
   }, [totemBoltVariant]);
+
+  React.useEffect(() => {
+    superconductorRef.current = superconductor;
+  }, [superconductor]);
 
   React.useEffect(() => {
     setGlobalSummonTotemTrigger((
@@ -85,10 +92,12 @@ const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
       nextDamageNumberIdParam,
       casterId,
       totemBoltVariantParam,
+      superconductorParam,
     ) => {
       if (managerRef.current) {
         const finalEnemyData = enemyDataParam || enemyData;
         const boltVariantResolved = totemBoltVariantParam ?? totemBoltVariantRef.current;
+        const superconductorResolved = superconductorParam ?? superconductorRef.current;
         managerRef.current.createTotem(
           position,
           finalEnemyData,
@@ -100,6 +109,7 @@ const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
           casterId,
           playerId,
           boltVariantResolved ?? undefined,
+          superconductorResolved,
         );
       }
     });
@@ -107,7 +117,7 @@ const LocalSummonTotemManager: React.FC<LocalSummonTotemManagerProps> = ({
     return () => {
       setGlobalSummonTotemTrigger(() => {});
     };
-  }, [enemyData, onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, playerId, totemBoltVariant]);
+  }, [enemyData, onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, playerId, totemBoltVariant, superconductor]);
 
   return (
     <SummonTotemManager

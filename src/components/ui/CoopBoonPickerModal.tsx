@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
 import type { TalentId } from '@/utils/talents';
 import { getTalentBoonDefinition, getTalentIconSrc } from '@/utils/talents';
@@ -114,6 +114,7 @@ const ABILITY_LABELS: Record<string, string> = {
   BOW_Q:           'Barrage',
   BOW_BASIC:       'Primary Shot',
   SCYTHE_R:        'Crossentropy',
+  SCYTHE_F:        'Mantra',
   SCYTHE_BASIC:    'Entropic Bolt',
   SABRES_BASIC:    'Swipes',
   SABRES_Q:        'Backstab',
@@ -127,7 +128,7 @@ const FLAVOR_SUBTITLES: Record<string, string> = {
   room:   'A blessing earned through the blood of your enemies.',
   blue:   'The lightning does not strike twice — but the stagger might.',
   green:  'Nature reclaims what was taken from it by force.',
-  purple: 'The shield endures only as long as the will behind it.',
+  purple: 'Ice settles where steel fell — chill first, then silence.',
   red:    'Those who walk through fire emerge forever changed.',
 };
 
@@ -170,10 +171,12 @@ function DiamondFrame({
   );
 }
 
+/** Build `options` with talents already granted this run removed (`excludeOwnedTalentsFromBoonPool` in `@/utils/talents`). */
 interface CoopBoonPickerModalProps {
   kind: CoopBoonKind;
   weapon?: WeaponType;
   roomColor?: string | null;
+  /** Up to three distinct picks; callers should omit owned talents — duplicate ids here are stripped in display order. */
   options: readonly TalentId[];
   onPick: (id: TalentId) => void;
 }
@@ -186,6 +189,17 @@ export default function CoopBoonPickerModal({
   onPick,
 }: CoopBoonPickerModalProps) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+
+  const displayOptions = useMemo(() => {
+    const seen = new Set<TalentId>();
+    const out: TalentId[] = [];
+    for (const id of options) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+    return out;
+  }, [options]);
 
   const rc = String(roomColor ?? '').toLowerCase();
   const accent: AccentTheme =
@@ -209,16 +223,17 @@ export default function CoopBoonPickerModal({
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       const idx = parseInt(e.key, 10) - 1;
-      if (!isNaN(idx) && idx >= 0 && idx < options.length) {
-        const id = options[idx];
+      if (!isNaN(idx) && idx >= 0 && idx < displayOptions.length) {
+        const id = displayOptions[idx];
         if (id !== undefined) onPick(id);
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [options, onPick]);
+  }, [displayOptions, onPick]);
 
-  const hoveredId = hoveredIdx !== null ? options[hoveredIdx] : undefined;
+  const hoveredId =
+    hoveredIdx !== null ? displayOptions[hoveredIdx] : undefined;
   const hoveredDef = hoveredId !== undefined ? getTalentBoonDefinition(hoveredId) : null;
 
   return (
@@ -279,7 +294,7 @@ export default function CoopBoonPickerModal({
 
           {/* Boon cards */}
           <div className={`border-x-2 border-b-2 ${accent.border} rounded-b-xl overflow-hidden`}>
-            {options.map((id, idx) => {
+            {displayOptions.map((id, idx) => {
               const def = getTalentBoonDefinition(id);
               const name = def?.name ?? id;
               const description = def?.description ?? '';

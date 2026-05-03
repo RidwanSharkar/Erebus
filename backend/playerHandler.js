@@ -32,6 +32,22 @@ function handlePlayerEvents(socket, gameRooms) {
     });
   });
 
+  /** Co-op: sync TalentLoadout green zombie room flags for server-authored infested zombies. */
+  socket.on('coop-zombie-room-boons', (data) => {
+    const roomId = data?.roomId;
+    const raw = data?.coopZombieBoons ?? {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    const player = room.players?.get(socket.id);
+    if (!player) return;
+    player.coopZombieBoons = {
+      packHunter: !!raw.packHunter,
+      everliving: !!raw.everliving,
+      adrenaline: !!raw.adrenaline,
+      juggernautStrain: !!raw.juggernautStrain,
+    };
+  });
+
   // Handle weapon selection changes
   socket.on('weapon-changed', (data) => {
     const { roomId, weapon, subclass } = data;

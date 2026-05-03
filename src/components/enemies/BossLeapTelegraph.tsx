@@ -23,7 +23,7 @@ export default function BossLeapTelegraph({ durationMs = BOSS_LEAP_DEFAULT_MS, o
   });
 
   return (
-    <group ref={group} position={[0, 0.03, 0]}>
+    <group ref={group} position={[0, 0.25, 0]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[0.2, 2.5, 64]} />
         <meshBasicMaterial

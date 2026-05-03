@@ -32,7 +32,7 @@ export default function BossTectonicSpikeTelegraph({
   });
 
   return (
-    <group ref={group} position={[0, 0.04, 0]}>
+    <group ref={group} position={[0, 0.25, 0]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[0.2, TECTONIC_HIT_RADIUS, 64]} />
         <meshBasicMaterial color="#5c3d1e" transparent opacity={0.65} depthWrite={false} />

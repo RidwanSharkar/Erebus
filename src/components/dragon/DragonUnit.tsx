@@ -13,6 +13,7 @@ import EtherealBow from '../weapons/EtherBow';
 import Scythe from '../weapons/Scythe';
 import Sword from '../weapons/Sword';
 import Sabres from '../weapons/Sabres';
+import VorpalGustVfx from '../weapons/VorpalGustVfx';
 import Runeblade from '../weapons/Runeblade';
 import SpearComponent from '../weapons/Spear';
 import Reanimate, { ReanimateRef } from '../weapons/Reanimate';
@@ -20,6 +21,7 @@ import BoneTail from './BoneTail';
 import ArchmageCrest from './ArchmageCrest';
 import SpellCastingAura from '../weapons/SpellCastingAura';
 import DeflectShield from '../weapons/DeflectShield';
+import type { VorpalGustStabBoonBeamTheme } from '@/utils/talents';
 
 interface DragonUnitProps {
   position?: Vector3;
@@ -64,6 +66,8 @@ interface DragonUnitProps {
   swordComboStep?: 1 | 2 | 3;
   isSkyfalling?: boolean;
   isBackstabbing?: boolean;
+  showVorpalGustBeam?: boolean;
+  vorpalGustStabBoonBeamTheme?: VorpalGustStabBoonBeamTheme;
   isSundering?: boolean;
   isStealthing?: boolean;
   isInvisible?: boolean;
@@ -87,6 +91,8 @@ interface DragonUnitProps {
     id: string;
     position: Vector3;
     health: number;
+    maxHealth?: number;
+    isBoss?: boolean;
   }>;
   mushroomTargets?: Array<{ index: number; position: Vector3 }>;
   onMushroomHit?: (index: number, baseDamage: number) => void;
@@ -195,6 +201,8 @@ export default function DragonUnit({
   swordComboStep = 1,
   isSkyfalling = false,
   isBackstabbing = false,
+  showVorpalGustBeam = false,
+  vorpalGustStabBoonBeamTheme = 'default',
   isSundering = false,
   isStealthing = false,
   isInvisible = false,
@@ -381,23 +389,31 @@ export default function DragonUnit({
       );
     } else if (currentWeapon === WeaponType.SABRES) {
       return (
-        <Sabres
-          isSwinging={isSwinging}
-          onSwingComplete={onSabresSwingComplete || (() => {})}
-          onLeftSwingStart={onSabresLeftSwingStart || (() => {})}
-          onRightSwingStart={onSabresRightSwingStart || (() => {})}
-          isCharging={isCharging}
-          isSkyfalling={isSkyfalling}
-          isBackstabbing={isBackstabbing}
-          isSundering={isSundering}
-          isStealthing={isStealthing}
-          isInvisible={isInvisible}
-          onBackstabComplete={onBackstabComplete}
-          onSunderComplete={onSunderComplete}
-          subclass={currentSubclass}
-          enemyData={enemyData}
-          onHit={onHit}
-        />
+        <>
+          <Sabres
+            isSwinging={isSwinging}
+            onSwingComplete={onSabresSwingComplete || (() => {})}
+            onLeftSwingStart={onSabresLeftSwingStart || (() => {})}
+            onRightSwingStart={onSabresRightSwingStart || (() => {})}
+            isCharging={isCharging}
+            isSkyfalling={isSkyfalling}
+            isBackstabbing={isBackstabbing}
+            isSundering={isSundering}
+            isStealthing={isStealthing}
+            isInvisible={isInvisible}
+            onBackstabComplete={onBackstabComplete}
+            onSunderComplete={onSunderComplete}
+            subclass={currentSubclass}
+            enemyData={enemyData}
+            onHit={onHit}
+          />
+          {isBackstabbing && showVorpalGustBeam ? (
+            <VorpalGustVfx
+              active={isBackstabbing && showVorpalGustBeam}
+              stabBoonTheme={vorpalGustStabBoonBeamTheme}
+            />
+          ) : null}
+        </>
       );
     } else if (currentWeapon === WeaponType.RUNEBLADE) {
       return (

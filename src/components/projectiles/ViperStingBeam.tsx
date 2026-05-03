@@ -10,6 +10,8 @@ interface ViperStingBeamProps {
   isReturning?: boolean;
   /** Matches Reaping Talons max travel (e.g. shorter with Explosive Talons). */
   beamLength?: number;
+  /** Glacial Talons co-op boon — deep blue palette (aligned with Arctic Sting perfect shot). */
+  glacialTalonsTheme?: boolean;
 }
 
 const ViperStingBeam: React.FC<ViperStingBeamProps> = ({ 
@@ -18,6 +20,7 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
   onComplete,
   isReturning = false,
   beamLength = REAPING_TALONS_MAX_TRAVEL_DISTANCE,
+  glacialTalonsTheme = false,
 }) => {
   const lenScale = beamLength / REAPING_TALONS_MAX_TRAVEL_DISTANCE;
   const halfZ = beamLength * 0.5;
@@ -26,12 +29,15 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
   const duration = 200; // Slightly longer than bow powershot
   const fadeStartTime = useRef<number | null>(null);
   
-  // Reddish-orange PerfectShot theme colors
-  const colors = {
-    core: "#ff4400",      // Reddish-orange
-    emissive: "#cc0000",   // Dark red
-    outer: "#ff6600"       // Orange
-  };
+  // Default: reddish-orange venom beam; Glacial Talons: deep blue (BowPowershot arctic palette).
+  const colors = glacialTalonsTheme
+    ? { core: '#0a3d6e', emissive: '#051a38', outer: '#1a6ba3' }
+    : {
+        core: "#ff4400",
+        emissive: "#cc0000",
+        outer: "#ff6600",
+      };
+  const returnAccent = glacialTalonsTheme ? '#4da6ff' : '#ff6600';
   
   useFrame(() => {
     const elapsed = Date.now() - startTimeRef.current;
@@ -200,8 +206,8 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
                   <mesh>
                     <sphereGeometry args={[0.03, 4, 4]} />
                     <meshStandardMaterial
-                      color="#ff6600"
-                      emissive="#ff6600"
+                      color={returnAccent}
+                      emissive={returnAccent}
                       emissiveIntensity={10 * fadeProgress}
                       transparent
                       opacity={0.9 * fadeProgress}
@@ -216,8 +222,8 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
             <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, halfZ]}>
               <cylinderGeometry args={[0.15, 0.15, beamLength, 8]} />
               <meshStandardMaterial
-                color="#ff6600"
-                emissive="#ff6600"
+                color={returnAccent}
+                emissive={returnAccent}
                 emissiveIntensity={3 * fadeProgress}
                 transparent
                 opacity={0.4 * fadeProgress}

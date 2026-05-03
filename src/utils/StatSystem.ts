@@ -19,11 +19,11 @@ export interface StatPointData {
 }
 
 export class StatSystem {
-  private static readonly INITIAL_STAT_POINTS = 5;
-  private static readonly STAT_POINTS_PER_LEVEL = 1;
+  private static readonly INITIAL_STAT_POINTS = 2;
+  private static readonly STAT_POINTS_PER_LEVEL = 2;
 
   static readonly BASE_MAX_SHIELD = 25;
-  static readonly STRENGTH_CRIT_DAMAGE_MULT_PER_POINT = 0.05;
+  static readonly STRENGTH_CRIT_DAMAGE_MULT_PER_POINT = 0.04;
   static readonly STAMINA_HEALTH_PER_POINT = 10;
   static readonly AGILITY_CRIT_CHANCE_PER_POINT = 0.01;
   static readonly INTELLECT_MAX_SHIELD_PER_POINT = 2;
@@ -65,11 +65,13 @@ export class StatSystem {
     return { ...data, statPoints: data.statPoints + n };
   }
 
-  /** Grant +1 to a stat from an item drop — does NOT consume a stat point */
-  static grantItemStat(data: StatPointData, stat: StatKey): StatPointData {
+  /** Grant flat stat points from an item drop — does NOT consume a stat point */
+  static grantItemStat(data: StatPointData, stat: StatKey, amount: number = 1): StatPointData {
+    const n = Math.max(0, Math.floor(Number(amount) || 0));
+    if (n <= 0) return data;
     return {
       ...data,
-      stats: { ...data.stats, [stat]: data.stats[stat] + 1 }
+      stats: { ...data.stats, [stat]: data.stats[stat] + n }
     };
   }
 
@@ -90,7 +92,7 @@ export class StatSystem {
     return stats.strength * StatSystem.STRENGTH_CRIT_DAMAGE_MULT_PER_POINT;
   }
 
-  /** Max shield from Intellect only (excludes items like Warding Shield). */
+  /** Max shield from Intellect (includes item-granted Intellect). */
   static getMaxShieldFromStats(stats: PlayerStats): number {
     return StatSystem.BASE_MAX_SHIELD + stats.intellect * StatSystem.INTELLECT_MAX_SHIELD_PER_POINT;
   }

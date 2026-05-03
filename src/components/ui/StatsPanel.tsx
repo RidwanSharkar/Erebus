@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { StatSystem, StatPointData, StatKey } from '@/utils/StatSystem';
 import { InventoryItem } from '@/contexts/MultiplayerContext';
+import { ITEM_RARITY_COLORS, formatRarityLabel, isItemRarity } from '@/utils/itemRarity';
 
 interface StatsPanelProps {
   statPointData: StatPointData;
@@ -21,18 +22,10 @@ const AMULET_ICONS: Record<string, string> = {
 };
 
 const BOSS_ITEM_ICONS: Record<string, string> = {
-  WARDING_SHIELD:  '🔵',
-  HOLY_RELIC:      '✴️',
-};
-
-const BOSS_ITEM_COLORS: Record<string, string> = {
-  WARDING_SHIELD:  '#4169e1',
-  HOLY_RELIC:      '#ffd700',
-};
-
-const BOSS_ITEM_DESCRIPTIONS: Record<string, string> = {
-  WARDING_SHIELD:  'Max Shield +75',
-  HOLY_RELIC:      'Mana Regen ×2',
+  MANA_SHIELD:    '✨',
+  COLOSSUS_LUNGS: '🫁',
+  REAPER_CLAWS:   '⚔️',
+  TITAN_HEART:    '💪',
 };
 
 export default function StatsPanel({
@@ -187,19 +180,43 @@ export default function StatsPanel({
                           </p>
                           <div className="space-y-1">
                             {bossDrops.map((item, idx) => {
-                              const color = BOSS_ITEM_COLORS[item.type] || '#ffffff';
-                              const icon  = BOSS_ITEM_ICONS[item.type] || '👑';
-                              const desc  = BOSS_ITEM_DESCRIPTIONS[item.type] || '';
+                              const rarityColor =
+                                item.rarity && isItemRarity(item.rarity)
+                                  ? ITEM_RARITY_COLORS[item.rarity]
+                                  : '#fbbf24';
+                              const icon = BOSS_ITEM_ICONS[item.type] || '👑';
+                              const statColor = item.stat ? StatSystem.getStatColor(item.stat) : rarityColor;
+                              const bonusLine =
+                                item.stat != null && item.statBonus != null
+                                  ? `+${item.statBonus} ${StatSystem.getStatDisplayName(item.stat)}`
+                                  : '';
                               return (
                                 <div
                                   key={`${item.id}-${idx}`}
                                   className="flex items-center gap-2 rounded-lg px-2 py-1.5"
-                                  style={{ background: `${color}18`, border: `1px solid ${color}35` }}
+                                  style={{ background: `${rarityColor}18`, border: `1px solid ${rarityColor}35` }}
                                 >
                                   <span className="text-sm">{icon}</span>
                                   <div className="flex-1 min-w-0">
-                                    <p className="text-xs text-white/90 font-semibold truncate">{item.label}</p>
-                                    <p className="text-[10px] truncate" style={{ color }}>{desc}</p>
+                                    <p
+                                      className="text-xs font-semibold truncate"
+                                      style={{ color: rarityColor }}
+                                    >
+                                      {item.label}
+                                    </p>
+                                    {item.rarity && isItemRarity(item.rarity) && (
+                                      <p
+                                        className="text-[9px] font-black uppercase tracking-wider truncate"
+                                        style={{ color: rarityColor }}
+                                      >
+                                        {formatRarityLabel(item.rarity)}
+                                      </p>
+                                    )}
+                                    {bonusLine && (
+                                      <p className="text-[10px] truncate" style={{ color: statColor }}>
+                                        {bonusLine}
+                                      </p>
+                                    )}
                                   </div>
                                 </div>
                               );
@@ -236,11 +253,15 @@ export default function StatsPanel({
                         </div>
                       )}
 
-                      {/* Stat bonuses summary */}
-                      {amulets.length > 0 && (
+                      {/* Stat bonuses summary (amulet count + boss flat bonuses per stat) */}
+                      {(amulets.length > 0 || bossDrops.length > 0) && (
                         <div className="pt-1.5 border-t border-white/10 grid grid-cols-2 gap-1">
                           {STAT_KEYS.map(stat => {
-                            const bonus = amulets.filter(i => i.stat === stat).length;
+                            const fromAmulets = amulets.filter(i => i.stat === stat).length;
+                            const fromBoss = bossDrops
+                              .filter(i => i.stat === stat)
+                              .reduce((s, i) => s + (i.statBonus ?? 0), 0);
+                            const bonus = fromAmulets + fromBoss;
                             if (bonus === 0) return null;
                             const color = StatSystem.getStatColor(stat);
                             return (

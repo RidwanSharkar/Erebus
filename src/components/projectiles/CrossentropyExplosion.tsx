@@ -64,6 +64,26 @@ export default function CrossentropyExplosion({
         plAmb: '#CC2200',
       };
     }
+    if (visualTheme === 'glacial') {
+      return {
+        c1: '#064E8A',
+        c1e: '#0B74C4',
+        c2: '#0A5FAD',
+        c2e: '#3DB3FF',
+        c3: '#1273C4',
+        c3e: '#7DD3FC',
+        ringC: '#1E56A0',
+        ringE: '#60C4FF',
+        sparkMain: '#94DDFF',
+        sparkMainE: '#E0F5FF',
+        sparkSmall: '#2080CC',
+        sparkSmallE: '#6EC8FF',
+        pl1: '#0D5A9E',
+        pl2: '#4AB8FF',
+        plFlash: '#C8ECFF',
+        plAmb: '#063666',
+      };
+    }
     if (visualTheme === 'tempest') {
       return {
         c1: '#0D47A1',

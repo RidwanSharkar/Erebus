@@ -10,13 +10,41 @@ import {
   CHILL_SLOW_PER_STACK,
   CHILL_STACKS_TO_FREEZE,
   BLIZZARD_FREEZE_DURATION_SEC,
+  BOSS_MAX_FREEZE_DURATION_SEC,
+  BOSS_MAX_FREEZE_DURATION_MS,
 } from '@/utils/talents';
 
 export enum EnemyType {
   DUMMY = 'dummy',
   GRUNT = 'grunt',
   ELITE = 'elite',
-  BOSS = 'boss'
+  BOSS = 'boss',
+}
+
+const COOP_BOSS_SERVER_TYPES_FOR_FREEZE = new Set(['boss', 'boss2', 'boss3', 'boss-skeleton']);
+
+function isBossForFreezeCap(enemy: { type: EnemyType }, coopServerEnemyType?: string | null): boolean {
+  if (enemy.type === EnemyType.BOSS) return true;
+  if (coopServerEnemyType == null) return false;
+  return COOP_BOSS_SERVER_TYPES_FOR_FREEZE.has(String(coopServerEnemyType));
+}
+
+export function capFreezeSecForEnemy(
+  enemy: { type: EnemyType },
+  durationSec: number,
+  coopServerEnemyType?: string | null,
+): number {
+  if (!isBossForFreezeCap(enemy, coopServerEnemyType)) return durationSec;
+  return Math.min(durationSec, BOSS_MAX_FREEZE_DURATION_SEC);
+}
+
+export function capFreezeMsForEnemy(
+  enemy: { type: EnemyType },
+  durationMs: number,
+  coopServerEnemyType?: string | null,
+): number {
+  if (!isBossForFreezeCap(enemy, coopServerEnemyType)) return durationMs;
+  return Math.min(durationMs, BOSS_MAX_FREEZE_DURATION_MS);
 }
 
 export class Enemy extends Component {
@@ -240,12 +268,13 @@ export class Enemy extends Component {
     this.chillExpiresAtSec = 0;
   }
   
-  public freeze(duration: number, currentTime: number): void {
+  public freeze(duration: number, currentTime: number, coopServerEnemyType?: string | null): void {
     if (this.isDead) return; // Can't freeze dead enemies
-    
+
+    const effective = capFreezeSecForEnemy(this, duration, coopServerEnemyType);
     this.isFrozen = true;
     this.freezeStartTime = currentTime;
-    this.freezeDuration = duration;
+    this.freezeDuration = effective;
     // Set movement speed to 0 when frozen
     this.movementSpeed = 0;
   }
@@ -305,7 +334,13 @@ export class Enemy extends Component {
   /**
    * One Blizzard damage tick → +1 Chill; at 5 stacks, freeze and clear (Runeblade talent).
    */
-  public applyBlizzardChillStack(currentTime: number, ecsEntityIdForVfx: string, position: Vector3): void {
+  public applyBlizzardChillStack(
+    currentTime: number,
+    ecsEntityIdForVfx: string,
+    position: Vector3,
+    freezeDurationSec: number = BLIZZARD_FREEZE_DURATION_SEC,
+    coopServerEnemyType?: string | null,
+  ): void {
     if (this.isDead || this.isFrozen) return;
 
     this.chillStacks += 1;
@@ -314,8 +349,9 @@ export class Enemy extends Component {
     if (this.chillStacks >= CHILL_STACKS_TO_FREEZE) {
       this.chillStacks = 0;
       this.chillExpiresAtSec = 0;
-      this.freeze(BLIZZARD_FREEZE_DURATION_SEC, currentTime);
-      addGlobalFrozenEnemy(ecsEntityIdForVfx, position.clone(), BLIZZARD_FREEZE_DURATION_SEC * 1000);
+      this.freeze(freezeDurationSec, currentTime, coopServerEnemyType);
+      const vfxMs = capFreezeMsForEnemy(this, freezeDurationSec * 1000, coopServerEnemyType);
+      addGlobalFrozenEnemy(ecsEntityIdForVfx, position.clone(), vfxMs);
     }
   }
 

@@ -26,6 +26,12 @@ export const TALENT_DUAL_COIL = 'DUAL_COIL' as const;
 export const TALENT_WYVERN_STING = 'WYVERN_STING' as const;
 /** Reaping Talons — detonate remaining Cobra / Concentrated Venom DoT on hit. */
 export const TALENT_WYVERN_TALONS = 'WYVERN_TALONS' as const;
+/** Bow purple room — perfect shot spawns Arctic Shards–style blizzard on first hit (ICD). */
+export const TALENT_ARCTIC_STING = 'ARCTIC_STING' as const;
+/** Bow purple room — Barrage chill stacks (Frostbite equipped). */
+export const TALENT_GLACIAL_BITE = 'GLACIAL_BITE' as const;
+/** Bow purple room — Reaping Talons vs frozen (E equipped). */
+export const TALENT_GLACIAL_TALONS = 'GLACIAL_TALONS' as const;
 export const TALENT_WRAITH_GUARD = 'WRAITH_GUARD' as const;
 export const TALENT_FROSTPATH = 'FROSTPATH' as const;
 export const TALENT_SOLAR_RECHARGE = 'SOLAR_RECHARGE' as const;
@@ -59,8 +65,22 @@ export const TALENT_INFESTING_TOTEM = 'INFESTING_TOTEM' as const;
 export const TALENT_CROSSENTROPY_TEMPEST = 'CROSSENTROPY_TEMPEST' as const;
 /** Crossentropy (`SCYTHE_R`) room boon: green damage theme + VFX. */
 export const TALENT_CROSSENTROPY_PLAGUE = 'CROSSENTROPY_PLAGUE' as const;
+/** Purple room — Entropic LMB: deep blue bolts; 15% hit proc concentrated blizzard. */
+export const TALENT_ARCTIC_SHARDS = 'ARCTIC_SHARDS' as const;
+/** Purple room — Crossentropy: deep blue (unless Inferno); each hit spawns blizzard + coldsnap. */
+export const TALENT_GLACIAL_STORM = 'GLACIAL_STORM' as const;
+/** Purple room — Mantra totem: deep blue bolts; double damage vs frozen; chill on hit. */
+export const TALENT_FROST_TOTEM = 'FROST_TOTEM' as const;
 /** SHAMAN — extra Mantra (`SCYTHE_F`) charge (same staggered recharge as Double Strike). */
 export const TALENT_SHAMAN = 'SHAMAN' as const;
+/** Superconductor — Mantra totems periodically arc lightning at their current target. */
+export const TALENT_SUPERCONDUCTOR = 'SUPERCONDUCTOR' as const;
+/** Accelerator — while Mantra + Crossentropy are in loadout: faster Crossentropy cooldown near your totems. */
+export const TALENT_ACCELERATOR = 'ACCELERATOR' as const;
+/** Giantkiller — Reaping Talons (`BOW_R`): return hit on a target also hit by the forward leg deals extra % max HP damage. */
+export const TALENT_GIANTKILLER = 'GIANTKILLER' as const;
+/** Healing Stream — while Mantra totems (`SCYTHE_F`) are up: heal per second per owned totem within horizontal range (same radius as ACCELERATOR). */
+export const TALENT_HEALING_STREAM = 'HEALING_STREAM' as const;
 
 /** Sabres Backstab (`SABRES_Q`) room boons — mutex with each other. */
 export const TALENT_STAGGERING_STAB = 'STAGGERING_STAB' as const;
@@ -74,18 +94,71 @@ export const TALENT_INFESTING_SABRES_SWIPES = 'INFESTING_SABRES_SWIPES' as const
 export const TALENT_STAGGERING_FLOURISH = 'STAGGERING_FLOURISH' as const;
 export const TALENT_WRATHFUL_FLOURISH = 'WRATHFUL_FLOURISH' as const;
 export const TALENT_INFESTED_FLOURISH = 'INFESTED_FLOURISH' as const;
+/** Sabres purple room — LMB each blade can proc shared Aegis-like shield (mutex with other swipe room boons). */
+export const TALENT_GUARD_SABRES_SWIPES = 'GUARD_SABRES_SWIPES' as const;
+/** Sabres purple room — Backstab hits proc shield (mutex with other Backstab room boons). */
+export const TALENT_GUARD_SABRES_STAB = 'GUARD_SABRES_STAB' as const;
+/** Sabres purple room — Flourish / Sunder hits proc shield (mutex with other Flourish room boons). */
+export const TALENT_GUARD_SABRES_FLOURISH = 'GUARD_SABRES_FLOURISH' as const;
 
 /** Sabres class boons — Backstab (`SABRES_Q`) session stacking / on-kill (see room boons for palette picks). */
 export const TALENT_KILLSTREAK = 'KILLSTREAK' as const;
 export const TALENT_RELENTLESS = 'RELENTLESS' as const;
+/** Sabres class boon — Backstab becomes a forward piercing wind gust beam. */
+export const TALENT_VORPAL_GUST = 'VORPAL_GUST' as const;
+
+/** Green co-op room: affects any player zombie raised by infesting / Wyvern / etc.; weapon-agnostic. */
+export const TALENT_PACK_HUNTER = 'PACK_HUNTER' as const;
+export const TALENT_EVERLIVING = 'EVERLIVING' as const;
+export const TALENT_ADRENALINE = 'ADRENALINE' as const;
+export const TALENT_JUGGERNAUT_STRAIN = 'JUGGERNAUT_STRAIN' as const;
+/** Weapon-agnostic colored room dash boons — mutually exclusive for the run. */
+export const TALENT_INFERNAL_DASH = 'INFERNAL_DASH' as const;
+export const TALENT_GLACIAL_DASH = 'GLACIAL_DASH' as const;
+export const TALENT_MENDING_DASH = 'MENDING_DASH' as const;
+export const TALENT_STAGGERING_DASH = 'STAGGERING_DASH' as const;
+/** Weapon-agnostic colored room combat boons. */
+export const TALENT_GUARDBREAK = 'GUARDBREAK' as const;
+export const TALENT_BLOODLEECH = 'BLOODLEECH' as const;
 
 /** Blade Rush — double-tap forward Charge on Runeblade; separate from E-key Charge cooldown. */
 export const BLADE_RUSH_CHARGE_COOLDOWN_SEC = 3;
+
+export const INFERNAL_DASH_DAMAGE = 120;
+export const INFERNAL_DASH_RADIUS = 2.5;
+export const GLACIAL_DASH_RADIUS = 2;
+export const GLACIAL_DASH_FREEZE_DURATION_MS = 3000;
+export const GLACIAL_DASH_COOLDOWN_MS = 5000;
+export const MENDING_DASH_COOLDOWN_MS = 6000;
+export const STAGGERING_DASH_RANGE = 6;
+export const STAGGERING_DASH_MIN_DAMAGE = 40;
+export const STAGGERING_DASH_MAX_DAMAGE = 160;
+export const STAGGERING_DASH_MIN_STAGGER = 15;
+export const STAGGERING_DASH_MAX_STAGGER = 60;
+export const STAGGERING_DASH_COOLDOWN_MS = 4000;
+export const GUARDBREAK_STUNNED_DAMAGE_MULT = 1.3;
+
+/** Crossentropy (`SCYTHE_R`) ability cooldown after starting a bolt (seconds). */
+export const CROSSENTROPY_COOLDOWN_SEC = 8;
+/** Accelerator — horizontal distance (xz) within which each owned totem counts toward Crossentropy recharge. */
+export const ACCELERATOR_TOTEM_AURA_RADIUS_UNITS = 3;
+
+/** GIANTKILLER — extra damage vs non-boss: fraction of target max HP on Reaping Talons return hit after a forward hit on the same target. */
+export const GIANTKILLER_MAX_HP_DAMAGE_FRAC = 0.1;
+/** GIANTKILLER — same vs bosses (`EnemyType.BOSS`, including co-op boss variants mapped to BOSS). */
+export const GIANTKILLER_MAX_HP_DAMAGE_FRAC_BOSS = 0.06;
+/**
+ * HEALING STREAM — HP healed per second per owned totem in range.
+ * Range matches `ACCELERATOR_TOTEM_AURA_RADIUS_UNITS` (horizontal xz).
+ */
+export const HEALING_STREAM_HP_PER_SEC_PER_TOTEM = 1;
 
 /** Crossentropy (`SCYTHE_R`) base hit damage before Reaper stack bonus. */
 export const CROSSENTROPY_BASE_DAMAGE = 370;
 /** PLAGUE boon: Crossentropy base hit damage before Reaper stack bonus. */
 export const CROSSENTROPY_PLAGUE_DAMAGE = 500;
+/** PLAGUE Crossentropy — ground venom-style VFX at explosion (matches VenomEffect one-shot ms). */
+export const CROSSENTROPY_PLAGUE_VENOM_MS = 2000;
 /** TEMPEST boon: stagger added per Crossentropy hit. */
 export const CROSSENTROPY_TEMPEST_STAGGER = 100;
 /** Reaper: +1 base damage per enemy kill (session). */
@@ -94,6 +167,43 @@ export const CROSSENTROPY_REAPER_DAMAGE_PER_KILL = 1;
 export const BACKSTAB_KILLSTREAK_DAMAGE_PER_KILL = 2;
 /** Relentless (Sabres): HP healed when Backstab kills an enemy (server). */
 export const RELENTLESS_BACKSTAB_KILL_HEAL = 10;
+/** Vorpal Gust — piercing beam along horizontal camera forward (XZ). */
+export const VORPAL_GUST_BEAM_LENGTH = 6;
+export const VORPAL_GUST_BEAM_RADIUS = 1;
+export const VORPAL_GUST_BEAM_ORIGIN_FORWARD_OFFSET = 0.5;
+/** Beam VFX origin height in DragonUnit local space (weapon root; ~bow/chest). */
+export const VORPAL_GUST_BEAM_ORIGIN_Y_LOCAL = 0.9;
+
+/**
+ * Horizontal beam hit-test for Vorpal Gust (shared by ControlSystem + co-op remote damage).
+ * `forward` is typically camera world direction; XZ component is normalized for the ray.
+ */
+export function evaluateVorpalGustBeamHit(
+  origin: Vector3,
+  forward: Vector3,
+  targetXZ: Vector3,
+): { ok: boolean; t: number } {
+  let fx = forward.x;
+  let fz = forward.z;
+  const flen = Math.hypot(fx, fz);
+  if (flen < 1e-8) {
+    return { ok: false, t: 0 };
+  }
+  fx /= flen;
+  fz /= flen;
+  const ox = origin.x + fx * VORPAL_GUST_BEAM_ORIGIN_FORWARD_OFFSET;
+  const oz = origin.z + fz * VORPAL_GUST_BEAM_ORIGIN_FORWARD_OFFSET;
+  const dx = targetXZ.x - ox;
+  const dz = targetXZ.z - oz;
+  const t = dx * fx + dz * fz;
+  if (t <= 0 || t > VORPAL_GUST_BEAM_LENGTH) {
+    return { ok: false, t };
+  }
+  const px = dx - t * fx;
+  const pz = dz - t * fz;
+  const dist = Math.hypot(px, pz);
+  return { ok: dist <= VORPAL_GUST_BEAM_RADIUS, t };
+}
 /** Reaper: HP healed to the caster per enemy hit by piercing Crossentropy (client-applied; excludes training dummy in co-op). */
 export const CROSSENTROPY_REAPER_HIT_HEAL = 1;
 /**
@@ -101,6 +211,24 @@ export const CROSSENTROPY_REAPER_HIT_HEAL = 1;
  * Reaper uses this for ECS `maxDistance` so the pierce line does not outrange normal Crossentropy.
  */
 export const CROSSENTROPY_MAX_TRAVEL_DISTANCE = 20;
+
+/** Arctic Shards — Entropic hit chance to spawn concentrated blizzard. */
+export const ARCTIC_SHARDS_PROC_CHANCE = 0.15;
+/** Arctic Shards — fixed entropic bolt damage (purple room LMB line). */
+export const ARCTIC_ENTROPIC_BOLT_DAMAGE = 36;
+/** Arctic / Glacial ground blizzard — duration at fixed point (seconds). */
+export const ARCTIC_BLIZZARD_DURATION_SEC = 6;
+/** Damage tick interval for concentrated arctic blizzard (ms). */
+export const ARCTIC_BLIZZARD_TICK_MS = 500;
+export const ARCTIC_BLIZZARD_DAMAGE_PER_TICK = 30;
+/** XZ radius for arctic ground blizzard ticks. */
+export const ARCTIC_BLIZZARD_HIT_RADIUS = 3;
+/** At 5 chill stacks from arctic blizzard ticks — freeze duration (seconds). */
+export const ARCTIC_CHILL_FREEZE_DURATION_SEC = 4;
+
+/** Boss / boss-skeleton — max freeze duration (seconds); longer CC is clamped. */
+export const BOSS_MAX_FREEZE_DURATION_SEC = 1;
+export const BOSS_MAX_FREEZE_DURATION_MS = BOSS_MAX_FREEZE_DURATION_SEC * 1000;
 
 /** Scythe Q — Sunwell (Reanimate) self-heal and ally heal amount (HP). */
 export const REANIMATE_SUNWELL_HEAL = 15;
@@ -162,6 +290,9 @@ export type TalentId =
   | typeof TALENT_DUAL_COIL
   | typeof TALENT_WYVERN_STING
   | typeof TALENT_WYVERN_TALONS
+  | typeof TALENT_ARCTIC_STING
+  | typeof TALENT_GLACIAL_BITE
+  | typeof TALENT_GLACIAL_TALONS
   | typeof TALENT_WRAITH_GUARD
   | typeof TALENT_FROSTPATH
   | typeof TALENT_SOLAR_RECHARGE
@@ -191,7 +322,14 @@ export type TalentId =
   | typeof TALENT_INFESTING_TOTEM
   | typeof TALENT_CROSSENTROPY_TEMPEST
   | typeof TALENT_CROSSENTROPY_PLAGUE
+  | typeof TALENT_ARCTIC_SHARDS
+  | typeof TALENT_GLACIAL_STORM
+  | typeof TALENT_FROST_TOTEM
   | typeof TALENT_SHAMAN
+  | typeof TALENT_SUPERCONDUCTOR
+  | typeof TALENT_ACCELERATOR
+  | typeof TALENT_GIANTKILLER
+  | typeof TALENT_HEALING_STREAM
   | typeof TALENT_STAGGERING_STAB
   | typeof TALENT_WRATHFUL_STAB
   | typeof TALENT_INFESTED_BACKSTAB
@@ -200,14 +338,31 @@ export type TalentId =
   | typeof TALENT_STAGGERING_FLOURISH
   | typeof TALENT_WRATHFUL_FLOURISH
   | typeof TALENT_INFESTED_FLOURISH
+  | typeof TALENT_GUARD_SABRES_SWIPES
+  | typeof TALENT_GUARD_SABRES_STAB
+  | typeof TALENT_GUARD_SABRES_FLOURISH
   | typeof TALENT_KILLSTREAK
-  | typeof TALENT_RELENTLESS;
+  | typeof TALENT_RELENTLESS
+  | typeof TALENT_VORPAL_GUST
+  | typeof TALENT_PACK_HUNTER
+  | typeof TALENT_EVERLIVING
+  | typeof TALENT_ADRENALINE
+  | typeof TALENT_JUGGERNAUT_STRAIN
+  | typeof TALENT_INFERNAL_DASH
+  | typeof TALENT_GLACIAL_DASH
+  | typeof TALENT_MENDING_DASH
+  | typeof TALENT_STAGGERING_DASH
+  | typeof TALENT_GUARDBREAK
+  | typeof TALENT_BLOODLEECH;
 
-/** Crossentropy bolt / explosion palette (Inferno overrides Tempest/Plague). */
-export type CrossentropyVisualTheme = 'default' | 'inferno' | 'tempest' | 'plague';
+/** Crossentropy bolt / explosion palette (Inferno overrides Glacial / Tempest / Plague). */
+export type CrossentropyVisualTheme = 'default' | 'inferno' | 'tempest' | 'plague' | 'glacial';
 
 /** Mantra totem bolt visual + damage tuning (exclusive in boon UX). */
-export type TotemBoltVariant = 'wrathful' | 'staggering' | 'infesting';
+export type TotemBoltVariant = 'wrathful' | 'staggering' | 'infesting' | 'frost';
+
+/** Scythe entropic room boon bolt kind (LMB). */
+export type EntropicBoltBoonKind = 'wrathful' | 'staggering' | 'infesting' | 'arctic';
 
 /** Wraith Strike (`RUNEBLADE_E`) base cooldown in seconds (single charge or per-charge recharge with Double Strike). */
 export const WRAITH_STRIKE_COOLDOWN_SEC = 4.5;
@@ -216,6 +371,18 @@ export const WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES = 2;
 
 /** SHAMAN — max stored Mantra (`SCYTHE_F`) uses; recharges one charge at a time at summon totem cooldown (see ControlSystem `summonTotemFireRate`). */
 export const MANTRA_SHAMAN_MAX_CHARGES = 2;
+/** SHAMAN — minimum delay between spending stored Mantra charges. */
+export const MANTRA_SHAMAN_INTERNAL_COOLDOWN_SEC = 0.75;
+/** Superconductor — bonus Mantra totem lightning damage. */
+export const SUPERCONDUCTOR_TOTEM_DAMAGE = 85;
+/** Superconductor + Infesting Totem — shock base damage before crit. */
+export const SUPERCONDUCTOR_INFESTING_DAMAGE = 100;
+/** Superconductor + Staggering Totem — stagger per shock (totem bolts use `STAGGERING_TOTEM_STAGGER`). */
+export const SUPERCONDUCTOR_STAGGERING_STRIKE_STAGGER = 15;
+/** Superconductor + Wrathful Totem — additive crit chance on shock (crit damage multiplier unchanged). */
+export const SUPERCONDUCTOR_WRATHFUL_CRIT_CHANCE_ADD = 0.5;
+/** Superconductor — seconds between bonus lightning casts per totem. */
+export const SUPERCONDUCTOR_TOTEM_COOLDOWN_SEC = 3;
 
 /** SPELLBLADE — +effective intellect while Wraith Strike is in loadout (+2 max shield per point, see StatSystem). */
 export const SPELLBLADE_INTELLECT_BONUS = 10;
@@ -277,11 +444,16 @@ export const WRATHFUL_COMBO_CRIT_CHANCE_ADD = 0.35;
 export const WRATHFUL_COMBO_CRIT_DAMAGE_MULT_ADD = 1.0;
 
 /** Infested Combo — heal fraction of final hit damage dealt (after crit) on each left-click hit. */
-export const INFESTED_COMBO_LIFESTEAL = 0.05;
+export const INFESTED_COMBO_LIFESTEAL = 0.02;
 
 /** Guard Combo — Runeblade basic hits can proc Aegis-like barrier + invuln (no Aegis cooldown). */
-export const GUARD_COMBO_PROC_CHANCE = 0.25;
+export const GUARD_COMBO_PROC_CHANCE = 0.35;
 export const GUARD_COMBO_DURATION_SEC = 2;
+
+/** Guard Sabres Swipes — each LMB blade (`sabre_left` / `sabre_right`) rolls independently (see ControlSystem). */
+export const GUARD_SABRES_SWIPES_PROC_CHANCE = 0.2;
+/** Sabres purple guard shield duration (shared barrier channel for swipe / stab / flourish procs). */
+export const GUARD_SABRES_PURPLE_SHIELD_DURATION_SEC = WRAITH_GUARD_DURATION_SEC;
 
 /** Dash Guard — double-tap dash (Movement.startDash) grants Aegis-like barrier + invuln (no Aegis cooldown). */
 export const DASH_GUARD_DURATION_SEC = 2.0;
@@ -317,11 +489,14 @@ export const BLIZZARD_STORM_HIT_RADIUS = 4.5;
 export const CHILL_STACK_DURATION_SEC = 4;
 export const CHILL_SLOW_PER_STACK = 0.2;
 export const CHILL_STACKS_TO_FREEZE = 5;
-export const BLIZZARD_FREEZE_DURATION_SEC = 4;
+export const BLIZZARD_FREEZE_DURATION_SEC = 6;
 
 /** Staggering Strike — Wraith Strike (`RUNEBLADE_E`) builds stagger; at 100, proc lightning + damage + stun. */
 export const STAGGERING_STRIKE_WRAITH_STAGGER_ADD = 60;
+/** Non-boss PvE: stagger needed for lightning proc + stun (co-op server must match). */
 export const STAGGER_MAX = 100;
+/** Co-op bosses (`boss`, `boss2`, `boss3`): same proc at this buildup (see `backend/gameRoom.js`). */
+export const STAGGER_MAX_BOSS = 300;
 export const STAGGER_PROC_DAMAGE = 150;
 export const STAGGER_PROC_STUN_SECONDS = 2;
 
@@ -374,6 +549,8 @@ export const DUAL_COIL_LATERAL_OFFSET = 0.16;
 
 /** Wyvern Sting — internal cooldown after a perfect shot procs a bonus Cobra Shot (separate from BOW_E). */
 export const WYVERN_STING_COOLDOWN_SEC = 5;
+/** Arctic Sting — min seconds between perfect-shot blizzard spawns. */
+export const ARCTIC_STING_BLIZZARD_ICD_SEC = 4;
 
 /** Wrathful Entropic — bolts + beam additive crit (crit damage multiplier unchanged). */
 export const WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD = 0.4;
@@ -547,6 +724,38 @@ export const shamanTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'SCYTHE_F',
 };
 
+export const superconductorTalentDefinition: TalentDefinition = {
+  id: TALENT_SUPERCONDUCTOR,
+  name: 'Superconductor',
+  description:
+    'While Mantra is in your ability loadout, each Totem periodically arcs lightning at its current target for 85 damage (3 second cooldown; does not change normal Totem attacks). Lightning color and mechanics match your Mantra Totem boon when you have Wrathful, Staggering, or Infesting Totem: red with +50% critical strike chance; blue with 85 damage and +15 stagger; green with 100 damage and zombies on kill.',
+  modifiesAbilityId: 'SCYTHE_F',
+};
+
+export const acceleratorTalentDefinition: TalentDefinition = {
+  id: TALENT_ACCELERATOR,
+  name: 'ACCELERATOR',
+  description:
+    'While Mantra and Crossentropy are in your ability loadout, Crossentropy recharges faster for each of your Totems within 3 units (horizontal distance). Each Totem in range doubles recharge speed cumulatively (e.g. one Totem: 8s fills in ~4s; two: ~2s). Normal recharge returns when you leave range or Totems expire.',
+  modifiesAbilityId: 'SCYTHE_F',
+};
+
+export const giantKillerTalentDefinition: TalentDefinition = {
+  id: TALENT_GIANTKILLER,
+  name: 'GIANTKILLER',
+  description:
+    'While Reaping Talons is in your ability loadout, if its return shot hits an enemy you already hit with the forward shot, that return hit deals additional damage equal to 10% of the target\'s maximum health (6% on bosses).',
+  modifiesAbilityId: 'BOW_R',
+};
+
+export const healingStreamTalentDefinition: TalentDefinition = {
+  id: TALENT_HEALING_STREAM,
+  name: 'HEALING STREAM',
+  description:
+    'While Mantra is in your ability loadout, you heal 1 health per second for each of your Totems within 3 units (horizontal distance), stacking with multiple Totems. Uses the same range as ACCELERATOR.',
+  modifiesAbilityId: 'SCYTHE_F',
+};
+
 export const spellbladeTalentDefinition: TalentDefinition = {
   id: TALENT_SPELLBLADE,
   name: 'SPELLBLADE',
@@ -599,7 +808,7 @@ export const dashGuardTalentDefinition: TalentDefinition = {
   id: TALENT_DASH_GUARD,
   name: 'DASH GUARD',
   description:
-    'Each time you dash (double-tap W/A/S/D), gain 1 second of Aegis deflection and invulnerability. Does not put Aegis on cooldown and does not require Aegis in your loadout. Blade Rush forward uses Charge, not a dash — it does not trigger this talent.',
+    `Each time you dash (double-tap W/A/S/D), gain ${DASH_GUARD_DURATION_SEC} seconds of Aegis deflection and invulnerability on Runeblade or Sabres. Does not put Aegis on cooldown and does not require Aegis in your loadout. Blade Rush forward uses Charge, not a dash — it does not trigger this talent.`,
   modifiesAbilityId: 'RUNEBLADE_DASH',
 };
 
@@ -663,6 +872,94 @@ export const relentlessTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'SABRES_Q',
 };
 
+export const vorpalGustTalentDefinition: TalentDefinition = {
+  id: TALENT_VORPAL_GUST,
+  name: 'VORPAL GUST',
+  description:
+    'Backstab becomes a piercing wind gust up to ' +
+    String(VORPAL_GUST_BEAM_LENGTH) +
+    ' units in a line forward, hitting every enemy in its path. Uses the same stab animation. Positional Backstab damage, criticals, and all Backstab talents behave as before on each target.',
+  modifiesAbilityId: 'SABRES_Q',
+};
+
+export const packHunterTalentDefinition: TalentDefinition = {
+  id: TALENT_PACK_HUNTER,
+  name: 'PACK HUNTER',
+  description:
+    'Each of your zombies deals +25% damage for each other zombie you control within 5 units (not counting itself), up to +100%.',
+  modifiesAbilityId: 'COOP_GREEN_ROOM',
+};
+
+export const everlivingTalentDefinition: TalentDefinition = {
+  id: TALENT_EVERLIVING,
+  name: 'EVERLIVING',
+  description: 'Zombies from any source have double health.',
+  modifiesAbilityId: 'COOP_GREEN_ROOM',
+};
+
+export const adrenalineTalentDefinition: TalentDefinition = {
+  id: TALENT_ADRENALINE,
+  name: 'ADRENALINE',
+  description: 'Zombies from any source move +50% faster.',
+  modifiesAbilityId: 'COOP_GREEN_ROOM',
+};
+
+export const juggernautStrainTalentDefinition: TalentDefinition = {
+  id: TALENT_JUGGERNAUT_STRAIN,
+  name: 'JUGGERNAUT STRAIN',
+  description:
+    '25% chance when any zombie is raised to summon a Juggernaut instead: larger, same speed rules, 500 base health and 100 base damage; otherwise identical to normal zombies and receives every other zombie bonus.',
+  modifiesAbilityId: 'COOP_GREEN_ROOM',
+};
+
+export const infernalDashTalentDefinition: TalentDefinition = {
+  id: TALENT_INFERNAL_DASH,
+  name: 'INFERNAL DASH',
+  description:
+    'Forward dashes erupt in fiery pillars at your destination, dealing 120 damage and igniting enemies within 2.5 units. No internal cooldown.',
+  modifiesAbilityId: 'COOP_RED_ROOM',
+};
+
+export const glacialDashTalentDefinition: TalentDefinition = {
+  id: TALENT_GLACIAL_DASH,
+  name: 'GLACIAL DASH',
+  description:
+    'Backward dashes leave a compact Coldsnap Frost Nova at your origin, freezing enemies within 2 units for 3 seconds. 5s internal cooldown.',
+  modifiesAbilityId: 'COOP_PURPLE_ROOM',
+};
+
+export const mendingDashTalentDefinition: TalentDefinition = {
+  id: TALENT_MENDING_DASH,
+  name: 'MENDING DASH',
+  description:
+    'Any dash releases a green Sunwell burst and heals you for your current Stamina points. 6s internal cooldown.',
+  modifiesAbilityId: 'COOP_GREEN_ROOM',
+};
+
+export const staggeringDashTalentDefinition: TalentDefinition = {
+  id: TALENT_STAGGERING_DASH,
+  name: 'STAGGERING DASH',
+  description:
+    'Any dash arcs light-blue lightning to the nearest enemy within 6 units, dealing 40-160 damage and applying 15-60 stagger. 4s internal cooldown.',
+  modifiesAbilityId: 'COOP_BLUE_ROOM',
+};
+
+export const guardbreakTalentDefinition: TalentDefinition = {
+  id: TALENT_GUARDBREAK,
+  name: 'GUARDBREAK',
+  description:
+    'Stunned enemies take +30% more damage from all of your attacks.',
+  modifiesAbilityId: 'COOP_BLUE_ROOM',
+};
+
+export const bloodleechTalentDefinition: TalentDefinition = {
+  id: TALENT_BLOODLEECH,
+  name: 'BLOODLEECH',
+  description:
+    'Critical strikes you deal to enemies heal you for your current Strength points.',
+  modifiesAbilityId: 'COOP_RED_ROOM',
+};
+
 export const wrathfulSabresSwipesTalentDefinition: TalentDefinition = {
   id: TALENT_WRATHFUL_SABRES_SWIPES,
   name: 'Wrathful Swipes',
@@ -700,6 +997,30 @@ export const infestedFlourishTalentDefinition: TalentDefinition = {
   name: 'Infested Flourish',
   description:
     'Killing an enemy with Flourish raises a zombie ally (same rules as Infested Stab and Infesting Swipes).',
+  modifiesAbilityId: 'SABRES_E',
+};
+
+export const guardSabresSwipesTalentDefinition: TalentDefinition = {
+  id: TALENT_GUARD_SABRES_SWIPES,
+  name: 'Guard Swipes',
+  description:
+    `Sabres left-click applies damage from each blade separately; each blade hit has a ${GUARD_SABRES_SWIPES_PROC_CHANCE * 100}% chance to grant ${GUARD_SABRES_PURPLE_SHIELD_DURATION_SEC} seconds of Aegis deflection and invulnerability. Does not put Aegis on cooldown and does not require Aegis in your loadout.`,
+  modifiesAbilityId: 'SABRES_BASIC',
+};
+
+export const guardSabresStabTalentDefinition: TalentDefinition = {
+  id: TALENT_GUARD_SABRES_STAB,
+  name: 'Guard Stab',
+  description:
+    `Each enemy damaged by Backstab grants ${GUARD_SABRES_PURPLE_SHIELD_DURATION_SEC} seconds of Aegis deflection and invulnerability. Does not put Aegis on cooldown and does not require Aegis in your loadout.`,
+  modifiesAbilityId: 'SABRES_Q',
+};
+
+export const guardSabresFlourishTalentDefinition: TalentDefinition = {
+  id: TALENT_GUARD_SABRES_FLOURISH,
+  name: 'Guard Flourish',
+  description:
+    `Each enemy damaged by Flourish grants ${GUARD_SABRES_PURPLE_SHIELD_DURATION_SEC} seconds of Aegis deflection and invulnerability. Does not put Aegis on cooldown and does not require Aegis in your loadout.`,
   modifiesAbilityId: 'SABRES_E',
 };
 
@@ -799,6 +1120,30 @@ export const wyvernTalonsTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'BOW_R',
 };
 
+export const arcticStingTalentDefinition: TalentDefinition = {
+  id: TALENT_ARCTIC_STING,
+  name: 'Arctic Sting',
+  description:
+    'Perfect-timing bow primary shots use a deep blue beam. The first enemy hit by that shot spawns the same concentrated blizzard as Arctic Shards (6s, 30 damage per 0.5s, radius 3, same Chill rules). You can spawn another blizzard from this effect only once every 4 seconds.',
+  modifiesAbilityId: 'BOW_BASIC',
+};
+
+export const glacialBiteTalentDefinition: TalentDefinition = {
+  id: TALENT_GLACIAL_BITE,
+  name: 'Glacial Bite',
+  description:
+    'While Frostbite is in your ability loadout, Barrage arrows use a light blue theme. Each arrow hit applies 1 stack of Chill (same buildup as blizzard Chill); at 5 stacks the target is Frozen for 6 seconds.',
+  modifiesAbilityId: 'BOW_Q',
+};
+
+export const glacialTalonsTalentDefinition: TalentDefinition = {
+  id: TALENT_GLACIAL_TALONS,
+  name: 'Glacial Talons',
+  description:
+    'While Reaping Talons is in your ability loadout, Reaping Talons uses a deep blue beam theme. Reaping Talons deals double damage to Frozen enemies.',
+  modifiesAbilityId: 'BOW_R',
+};
+
 export const infernoTalentDefinition: TalentDefinition = {
   id: TALENT_INFERNO,
   name: 'INFERNO',
@@ -827,8 +1172,32 @@ export const crossentropyPlagueTalentDefinition: TalentDefinition = {
   id: TALENT_CROSSENTROPY_PLAGUE,
   name: 'PLAGUE',
   description:
-    'While Crossentropy is in your ability loadout, Crossentropy uses a green bolt and explosion theme and its base damage is 500 (before Reaper stacks).',
+    'While Crossentropy is in your ability loadout, Crossentropy uses a green bolt and explosion theme and its base damage is 500 (before Reaper stacks). Impacts spawn a concentrated venom-style ground effect at the explosion for 2 seconds. Each enemy kill with Crossentropy raises up to two allied zombies (same rules and max 3 cap as Infesting Strikes/Bolts).',
   modifiesAbilityId: 'SCYTHE_R',
+};
+
+export const arcticShardsTalentDefinition: TalentDefinition = {
+  id: TALENT_ARCTIC_SHARDS,
+  name: 'ARCTIC SHARDS',
+  description:
+    'Entropic Bolts use a deep blue theme and fixed damage. Each bolt that hits an enemy has a 15% chance to summon a concentrated ice storm at that location for 6 seconds: 30 damage every 0.5s in radius 3. Each tick applies Chill; at 5 stacks the target is Frozen for 4 seconds.',
+  modifiesAbilityId: 'SCYTHE_BASIC',
+};
+
+export const glacialStormTalentDefinition: TalentDefinition = {
+  id: TALENT_GLACIAL_STORM,
+  name: 'GLACIAL STORM',
+  description:
+    'While Crossentropy is in your ability loadout, Crossentropy uses a deep blue bolt and explosion theme (unless Inferno overrides the visuals). Each enemy hit spawns the same concentrated blizzard and a Coldsnap-style freeze burst at the impact (4s root), as with Frostpath.',
+  modifiesAbilityId: 'SCYTHE_R',
+};
+
+export const frostTotemTalentDefinition: TalentDefinition = {
+  id: TALENT_FROST_TOTEM,
+  name: 'FROST TOTEM',
+  description:
+    'While Mantra is in your ability loadout, totem bolts use a deep blue theme. Totem hits apply Chill; at 5 stacks the target can be Frozen for 4 seconds. Frost totems deal double damage to Frozen enemies.',
+  modifiesAbilityId: 'SCYTHE_F',
 };
 
 export const frostPathTalentDefinition: TalentDefinition = {
@@ -948,6 +1317,9 @@ export interface TalentLoadout {
   dualCoil: boolean;
   wyvernSting: boolean;
   wyvernTalons: boolean;
+  arcticSting: boolean;
+  glacialBite: boolean;
+  glacialTalons: boolean;
   bladeRush: boolean;
   wrathfulCombo: boolean;
   infestedCombo: boolean;
@@ -972,7 +1344,14 @@ export interface TalentLoadout {
   infestingTotem: boolean;
   crossentropyTempest: boolean;
   crossentropyPlague: boolean;
+  arcticShards: boolean;
+  glacialStorm: boolean;
+  frostTotem: boolean;
   shaman: boolean;
+  superconductor: boolean;
+  accelerator: boolean;
+  giantKiller: boolean;
+  healingStream: boolean;
   staggeringStab: boolean;
   wrathfulStab: boolean;
   infestedBackstab: boolean;
@@ -981,8 +1360,32 @@ export interface TalentLoadout {
   staggeringFlourish: boolean;
   wrathfulFlourish: boolean;
   infestedFlourish: boolean;
+  guardSabresSwipes: boolean;
+  guardSabresStab: boolean;
+  guardSabresFlourish: boolean;
   killstreak: boolean;
   relentless: boolean;
+  vorpalGust: boolean;
+  /** Co-op green room — Pack Hunter zombie pack damage aura. */
+  packHunterRoom: boolean;
+  /** Co-op green room — zombies have double HP. */
+  everlivingRoom: boolean;
+  /** Co-op green room — +50% zombie move speed. */
+  adrenalineRoom: boolean;
+  /** Co-op green room — roll for juggernaut zombie substitution. */
+  juggernautStrainRoom: boolean;
+  /** Co-op red room — forward dash creates an infernal flame strike at the destination. */
+  infernalDashRoom: boolean;
+  /** Co-op purple room — backward dash leaves a frozen nova at the origin. */
+  glacialDashRoom: boolean;
+  /** Co-op green room — any dash heals for current Stamina points. */
+  mendingDashRoom: boolean;
+  /** Co-op blue room — any dash arcs lightning to a nearby enemy. */
+  staggeringDashRoom: boolean;
+  /** Co-op blue room — stunned enemies take bonus damage from your attacks. */
+  guardbreakRoom: boolean;
+  /** Co-op red room — your critical strikes heal for current Strength points. */
+  bloodleechRoom: boolean;
 }
 
 export function createDefaultTalentLoadout(): TalentLoadout {
@@ -1015,6 +1418,9 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     dualCoil: false,
     wyvernSting: false,
     wyvernTalons: false,
+    arcticSting: false,
+    glacialBite: false,
+    glacialTalons: false,
     bladeRush: false,
     wrathfulCombo: false,
     infestedCombo: false,
@@ -1039,7 +1445,14 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     infestingTotem: false,
     crossentropyTempest: false,
     crossentropyPlague: false,
+    arcticShards: false,
+    glacialStorm: false,
+    frostTotem: false,
     shaman: false,
+    superconductor: false,
+    accelerator: false,
+    giantKiller: false,
+    healingStream: false,
     staggeringStab: false,
     wrathfulStab: false,
     infestedBackstab: false,
@@ -1048,8 +1461,22 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     staggeringFlourish: false,
     wrathfulFlourish: false,
     infestedFlourish: false,
+    guardSabresSwipes: false,
+    guardSabresStab: false,
+    guardSabresFlourish: false,
     killstreak: false,
     relentless: false,
+    vorpalGust: false,
+    packHunterRoom: false,
+    everlivingRoom: false,
+    adrenalineRoom: false,
+    juggernautStrainRoom: false,
+    infernalDashRoom: false,
+    glacialDashRoom: false,
+    mendingDashRoom: false,
+    staggeringDashRoom: false,
+    guardbreakRoom: false,
+    bloodleechRoom: false,
   };
 }
 // DEFAULT TALENTS DEFAULTTALENTS
@@ -1216,6 +1643,38 @@ export function shouldApplyShamanTalent(
   return !!talentLoadout?.shaman && isMantraInLoadout(abilityLoadout);
 }
 
+export function shouldApplySuperconductorTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.superconductor && isMantraInLoadout(abilityLoadout);
+}
+
+export function shouldApplyAcceleratorTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return (
+    !!talentLoadout?.accelerator &&
+    isMantraInLoadout(abilityLoadout) &&
+    isCrossentropyInLoadout(abilityLoadout)
+  );
+}
+
+export function shouldApplyGiantKillerTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.giantKiller && isReapingTalonsInLoadout(abilityLoadout);
+}
+
+export function shouldApplyHealingStreamTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.healingStream && isMantraInLoadout(abilityLoadout);
+}
+
 export function shouldApplySpellbladeTalent(
   talentLoadout: TalentLoadout | null | undefined,
   abilityLoadout: AbilityLoadout | null | undefined,
@@ -1262,6 +1721,30 @@ export function shouldApplyDashGuardTalent(talentLoadout: TalentLoadout | null |
   return !!talentLoadout?.dashGuard;
 }
 
+export function shouldApplyInfernalDashTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.infernalDashRoom;
+}
+
+export function shouldApplyGlacialDashTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.glacialDashRoom;
+}
+
+export function shouldApplyMendingDashTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.mendingDashRoom;
+}
+
+export function shouldApplyStaggeringDashTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.staggeringDashRoom;
+}
+
+export function shouldApplyGuardbreakTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.guardbreakRoom;
+}
+
+export function shouldApplyBloodleechTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.bloodleechRoom;
+}
+
 /** EXECUTIONER — post-dash empowered Runeblade LMB; talent toggle only. */
 export function shouldApplyExecutionerTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.executioner;
@@ -1284,6 +1767,25 @@ export function shouldApplyDualCoilTalent(talentLoadout: TalentLoadout | null | 
 /** Bow perfect-shot bonus Cobra Shot; talent toggle only (use with Bow equipped). */
 export function shouldApplyWyvernStingTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.wyvernSting;
+}
+
+/** Bow perfect-shot Arctic Sting blizzard; talent toggle only (Bow checked at call sites). */
+export function shouldApplyArcticStingTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.arcticSting;
+}
+
+export function shouldApplyGlacialBiteTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.glacialBite && isFrostBiteInLoadout(abilityLoadout);
+}
+
+export function shouldApplyGlacialTalonsTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.glacialTalons && isReapingTalonsInLoadout(abilityLoadout);
 }
 
 export function shouldApplyConcentratedVolleyTalent(
@@ -1365,12 +1867,13 @@ export function getCrossentropyBaseDamage(
   return CROSSENTROPY_BASE_DAMAGE;
 }
 
-/** Inferno wins, then Tempest, then Plague, else default orange fire. */
+/** Inferno wins, then Glacial, Tempest, Plague, else default orange fire. */
 export function resolveCrossentropyVisualTheme(
   talentLoadout: TalentLoadout | null | undefined,
   abilityLoadout: AbilityLoadout | null | undefined,
 ): CrossentropyVisualTheme {
   if (shouldApplyInfernoTalent(talentLoadout, abilityLoadout)) return 'inferno';
+  if (shouldApplyGlacialStormTalent(talentLoadout, abilityLoadout)) return 'glacial';
   if (shouldApplyCrossentropyTempestTalent(talentLoadout, abilityLoadout)) return 'tempest';
   if (shouldApplyCrossentropyPlagueTalent(talentLoadout, abilityLoadout)) return 'plague';
   return 'default';
@@ -1411,6 +1914,29 @@ export function shouldApplyInfestingEntropicTalent(
   return !!talentLoadout?.infestingEntropic;
 }
 
+/** Purple room — deep blue entropic bolts + Arctic Shards procs. */
+export function shouldApplyArcticShardsEntropicTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.arcticShards;
+}
+
+/** Purple room — Glacial Crossentropy (requires R in loadout for full effect). */
+export function shouldApplyGlacialStormTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.glacialStorm && isCrossentropyInLoadout(abilityLoadout);
+}
+
+/** Purple room — Frost totem (requires Mantra in loadout). */
+export function shouldApplyFrostTotemTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.frostTotem && isMantraInLoadout(abilityLoadout);
+}
+
 export function getTotemBoltVariantFromTalentLoadout(
   talentLoadout: TalentLoadout | null | undefined,
 ): TotemBoltVariant | undefined {
@@ -1418,6 +1944,7 @@ export function getTotemBoltVariantFromTalentLoadout(
   if (talentLoadout.wrathfulTotem) return 'wrathful';
   if (talentLoadout.staggeringTotem) return 'staggering';
   if (talentLoadout.infestingTotem) return 'infesting';
+  if (talentLoadout.frostTotem) return 'frost';
   return undefined;
 }
 
@@ -1447,6 +1974,7 @@ const SCYTHE_ENTROPIC_BOON_MUTEX_GROUP: readonly TalentId[] = [
   TALENT_WRATHFUL_ENTROPIC,
   TALENT_STAGGERING_ENTROPIC,
   TALENT_INFESTING_ENTROPIC,
+  TALENT_ARCTIC_SHARDS,
 ];
 
 export function getScytheEntropicBoonMutexSlot(id: TalentId): 'entropic' | null {
@@ -1455,7 +1983,7 @@ export function getScytheEntropicBoonMutexSlot(id: TalentId): 'entropic' | null 
 
 export function expandScytheEntropicExclusionsAfterPick(picked: TalentId): TalentId[] {
   if (!SCYTHE_ENTROPIC_BOON_MUTEX_GROUP.includes(picked)) return [];
-  return SCYTHE_ENTROPIC_BOON_MUTEX_GROUP.filter((x) => x !== picked);
+  return [...SCYTHE_ENTROPIC_BOON_MUTEX_GROUP];
 }
 
 /** Scythe Mantra boons: Wrathful / Staggering / Infesting Totem (one branch per run). */
@@ -1463,6 +1991,7 @@ const SCYTHE_TOTEM_BOON_MUTEX_GROUP: readonly TalentId[] = [
   TALENT_WRATHFUL_TOTEM,
   TALENT_STAGGERING_TOTEM,
   TALENT_INFESTING_TOTEM,
+  TALENT_FROST_TOTEM,
 ];
 
 export function getScytheTotemBoonMutexSlot(id: TalentId): 'totem' | null {
@@ -1471,18 +2000,20 @@ export function getScytheTotemBoonMutexSlot(id: TalentId): 'totem' | null {
 
 export function expandScytheTotemExclusionsAfterPick(picked: TalentId): TalentId[] {
   if (!SCYTHE_TOTEM_BOON_MUTEX_GROUP.includes(picked)) return [];
-  return SCYTHE_TOTEM_BOON_MUTEX_GROUP.filter((x) => x !== picked);
+  return [...SCYTHE_TOTEM_BOON_MUTEX_GROUP];
 }
 
-/** Scythe Crossentropy room boons: TEMPEST / PLAGUE (one branch per run). */
+/** Scythe Crossentropy (`SCYTHE_R`) room boons — Tempest / Plague / Inferno / Glacial Storm (one branch per run). */
 const SCYTHE_CROSSENTROPY_BOON_MUTEX_GROUP: readonly TalentId[] = [
   TALENT_CROSSENTROPY_TEMPEST,
   TALENT_CROSSENTROPY_PLAGUE,
+  TALENT_INFERNO,
+  TALENT_GLACIAL_STORM,
 ];
 
 export function expandScytheCrossentropyExclusionsAfterPick(picked: TalentId): TalentId[] {
   if (!SCYTHE_CROSSENTROPY_BOON_MUTEX_GROUP.includes(picked)) return [];
-  return SCYTHE_CROSSENTROPY_BOON_MUTEX_GROUP.filter((x) => x !== picked);
+  return [...SCYTHE_CROSSENTROPY_BOON_MUTEX_GROUP];
 }
 
 /** Sabres colored-room boons: Backstab branch. */
@@ -1490,6 +2021,7 @@ const SABRES_BACKSTAB_BOON_MUTEX_GROUP: readonly TalentId[] = [
   TALENT_STAGGERING_STAB,
   TALENT_WRATHFUL_STAB,
   TALENT_INFESTED_BACKSTAB,
+  TALENT_GUARD_SABRES_STAB,
 ];
 
 /** Sabres colored-room boons: LMB swipes branch (includes Staggering Swipes). */
@@ -1497,6 +2029,7 @@ const SABRES_SWIPES_BOON_MUTEX_GROUP: readonly TalentId[] = [
   TALENT_STAGGERING_SWIPES,
   TALENT_WRATHFUL_SABRES_SWIPES,
   TALENT_INFESTING_SABRES_SWIPES,
+  TALENT_GUARD_SABRES_SWIPES,
 ];
 
 /** Sabres colored-room boons: Flourish (`SABRES_E`) branch. */
@@ -1504,6 +2037,7 @@ const SABRES_FLOURISH_BOON_MUTEX_GROUP: readonly TalentId[] = [
   TALENT_STAGGERING_FLOURISH,
   TALENT_WRATHFUL_FLOURISH,
   TALENT_INFESTED_FLOURISH,
+  TALENT_GUARD_SABRES_FLOURISH,
 ];
 
 export function expandSabresBackstabRoomBoonExclusionsAfterPick(picked: TalentId): TalentId[] {
@@ -1541,6 +2075,10 @@ export function shouldApplyRelentlessTalent(talentLoadout: TalentLoadout | null 
   return !!talentLoadout?.relentless;
 }
 
+export function shouldApplyVorpalGustTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.vorpalGust;
+}
+
 export function shouldApplyWrathfulSabresSwipesTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.wrathfulSabresSwipes;
 }
@@ -1559,6 +2097,31 @@ export function shouldApplyWrathfulFlourishTalent(talentLoadout: TalentLoadout |
 
 export function shouldApplyInfestedFlourishTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.infestedFlourish;
+}
+
+export function shouldApplyGuardSabresSwipesTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.guardSabresSwipes;
+}
+
+export function shouldApplyGuardSabresStabTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.guardSabresStab;
+}
+
+/** Vorpal Gust beam palette when a Sabres backstab room boon is active (mutex group). */
+export type VorpalGustStabBoonBeamTheme = 'default' | 'wrathful' | 'staggering' | 'infested' | 'guard';
+
+export function getVorpalGustStabBoonBeamTheme(
+  talentLoadout: TalentLoadout | null | undefined,
+): VorpalGustStabBoonBeamTheme {
+  if (shouldApplyWrathfulStabTalent(talentLoadout)) return 'wrathful';
+  if (shouldApplyStaggeringStabTalent(talentLoadout)) return 'staggering';
+  if (shouldApplyInfestedBackstabTalent(talentLoadout)) return 'infested';
+  if (shouldApplyGuardSabresStabTalent(talentLoadout)) return 'guard';
+  return 'default';
+}
+
+export function shouldApplyGuardSabresFlourishTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.guardSabresFlourish;
 }
 
 /** Toggle only — Spear primary or Runeblade combo (ControlSystem + Runeblade.tsx); no F slot requirement. */
@@ -1610,6 +2173,49 @@ function isCoopRoomColor(s: string | null | undefined): s is CoopRoomColor {
   return s === 'blue' || s === 'green' || s === 'purple' || s === 'red';
 }
 
+/** Universal green coop room zombie boons — merged into weapon-specific green pools (and standalone for weapons without a green line). */
+export const GREEN_COOP_UNIVERSAL_ZOMBIE_BOONS: readonly TalentId[] = [
+  TALENT_PACK_HUNTER,
+  TALENT_EVERLIVING,
+  TALENT_ADRENALINE,
+  TALENT_JUGGERNAUT_STRAIN,
+];
+
+const UNIVERSAL_GREEN_ZOMBIE_BOON_SET = new Set<TalentId>(GREEN_COOP_UNIVERSAL_ZOMBIE_BOONS);
+
+/** After picking a universal green zombie room boon, exclude that id from future green pools this co-op arena session (see page.tsx ref). */
+export function expandUniversalGreenZombieBoonIdsAfterPick(picked: TalentId): TalentId[] {
+  return UNIVERSAL_GREEN_ZOMBIE_BOON_SET.has(picked) ? [picked] : [];
+}
+
+export const ROOM_BOOM_DASH_BOON_MUTEX_GROUP: readonly TalentId[] = [
+  TALENT_INFERNAL_DASH,
+  TALENT_GLACIAL_DASH,
+  TALENT_MENDING_DASH,
+  TALENT_STAGGERING_DASH,
+];
+
+export function expandRoomBoomDashExclusionsAfterPick(picked: TalentId): TalentId[] {
+  return ROOM_BOOM_DASH_BOON_MUTEX_GROUP.includes(picked)
+    ? [...ROOM_BOOM_DASH_BOON_MUTEX_GROUP]
+    : [];
+}
+
+/** Payload for `coop-zombie-room-boons` Socket.IO sync (server applies to raised zombies). */
+export function getCoopZombieRoomBoonsPayload(loadout: TalentLoadout): {
+  packHunter: boolean;
+  everliving: boolean;
+  adrenaline: boolean;
+  juggernautStrain: boolean;
+} {
+  return {
+    packHunter: !!loadout.packHunterRoom,
+    everliving: !!loadout.everlivingRoom,
+    adrenaline: !!loadout.adrenalineRoom,
+    juggernautStrain: !!loadout.juggernautStrainRoom,
+  };
+}
+
 /** Runeblade class boon pool (v1). Blade Rush is replaced by Stored Charge after meta unlock. */
 export function buildRunebladeClassBoonPool(): TalentId[] {
   const rushOrStored = readBladeRushBoonMetaUnlocked() ? TALENT_STORED_CHARGE : TALENT_BLADE_RUSH;
@@ -1634,6 +2240,7 @@ export function buildBowClassBoonPool(): TalentId[] {
     TALENT_CONCENTRATED_VOLLEY,
     TALENT_DUAL_COIL,
     TALENT_TEMPEST_ROUNDS,
+    TALENT_GIANTKILLER,
   ];
 }
 
@@ -1645,12 +2252,15 @@ export function buildScytheClassBoonPool(): TalentId[] {
     TALENT_FROSTPATH,
     TALENT_SOLAR_RECHARGE,
     TALENT_SHAMAN,
+    TALENT_SUPERCONDUCTOR,
+    TALENT_ACCELERATOR,
+    TALENT_HEALING_STREAM,
   ];
 }
 
 /** Sabres class boon pool (co-op): Backstab-focused talents — colored Backstab/Swipes/Flourish lines stay room boons. */
 export function buildSabresClassBoonPool(): TalentId[] {
-  return [TALENT_KILLSTREAK, TALENT_RELENTLESS];
+  return [TALENT_KILLSTREAK, TALENT_RELENTLESS, TALENT_VORPAL_GUST];
 }
 
 export function buildClassBoonPoolForWeapon(weapon: WeaponType): TalentId[] {
@@ -1662,7 +2272,7 @@ export function buildClassBoonPoolForWeapon(weapon: WeaponType): TalentId[] {
   return [];
 }
 
-/** Post–first-room boon pool from the camp color of the cleared wave (weapon-specific). */
+/** Post–first-room boon pool from the camp color of the cleared wave (weapon-specific + universal greens). */
 export function buildRoomBoonPoolForColor(
   color: string | null | undefined,
   weapon: WeaponType,
@@ -1670,76 +2280,147 @@ export function buildRoomBoonPoolForColor(
   const k = String(color ?? '').toLowerCase();
   if (!isCoopRoomColor(k)) return [];
 
+  let pool: TalentId[] = [];
+
   if (weapon === WeaponType.BOW) {
     switch (k) {
       case 'blue':
-        return [TALENT_STAGGER_SHOT, TALENT_STAGGERING_BITE, TALENT_STAGGERING_TALONS];
+        pool = [TALENT_STAGGER_SHOT, TALENT_STAGGERING_BITE, TALENT_STAGGERING_TALONS];
+        break;
       case 'green':
-        return [TALENT_WYVERN_STING, TALENT_WYVERN_BITE, TALENT_WYVERN_TALONS];
+        pool = [TALENT_WYVERN_STING, TALENT_WYVERN_BITE, TALENT_WYVERN_TALONS];
+        break;
       case 'purple':
-        return [];
+        pool = [TALENT_ARCTIC_STING, TALENT_GLACIAL_BITE, TALENT_GLACIAL_TALONS];
+        break;
       case 'red':
-        return [TALENT_WRATHFUL_SHOTS, TALENT_WRATHFUL_BITE, TALENT_WRATHFUL_TALONS];
+        pool = [TALENT_WRATHFUL_SHOTS, TALENT_WRATHFUL_BITE, TALENT_WRATHFUL_TALONS];
+        break;
       default:
-        return [];
+        pool = [];
     }
-  }
-
-  // Scythe: Entropic = bolts + colored beam when Icebeam is primary; Totem = Mantra branch per palette.
-  if (weapon === WeaponType.SCYTHE) {
+  } else if (weapon === WeaponType.SCYTHE) {
     switch (k) {
       case 'blue':
-        return [
+        pool = [
           TALENT_CROSSENTROPY_TEMPEST,
           TALENT_STAGGERING_ENTROPIC,
           TALENT_STAGGERING_TOTEM,
         ];
+        break;
       case 'green':
-        return [
+        pool = [
           TALENT_CROSSENTROPY_PLAGUE,
           TALENT_INFESTING_ENTROPIC,
           TALENT_INFESTING_TOTEM,
         ];
+        break;
       case 'purple':
-        return [];
+        pool = [TALENT_ARCTIC_SHARDS, TALENT_GLACIAL_STORM, TALENT_FROST_TOTEM];
+        break;
       case 'red':
-        return [TALENT_WRATHFUL_ENTROPIC, TALENT_WRATHFUL_TOTEM, TALENT_INFERNO];
+        pool = [TALENT_WRATHFUL_ENTROPIC, TALENT_WRATHFUL_TOTEM, TALENT_INFERNO];
+        break;
       default:
-        return [];
+        pool = [];
     }
-  }
-
-  if (weapon === WeaponType.RUNEBLADE) {
+  } else if (weapon === WeaponType.RUNEBLADE) {
     switch (k) {
       case 'blue':
-        return [TALENT_STAGGERING_SMITE, TALENT_STAGGERING_COMBO, TALENT_STAGGERING_STRIKE];
+        pool = [TALENT_STAGGERING_SMITE, TALENT_STAGGERING_COMBO, TALENT_STAGGERING_STRIKE];
+        break;
       case 'green':
-        return [TALENT_INFESTED_COMBO, TALENT_INFESTED_STRIKE, TALENT_INFESTED_SMITE, ];
+        pool = [TALENT_INFESTED_COMBO, TALENT_INFESTED_STRIKE, TALENT_INFESTED_SMITE];
+        break;
       case 'purple':
-        return [TALENT_GUARD_COMBO, TALENT_COLOSSUS_GUARD, TALENT_WRAITH_GUARD, TALENT_DASH_GUARD];
+        pool = [TALENT_GUARD_COMBO, TALENT_COLOSSUS_GUARD, TALENT_WRAITH_GUARD, TALENT_DASH_GUARD];
+        break;
       case 'red':
-        return [TALENT_WRATHFUL_COMBO, TALENT_WRATH_STRIKE, TALENT_INFERNAL_SMITE, TALENT_EXECUTIONER];
+        pool = [TALENT_WRATHFUL_COMBO, TALENT_WRATH_STRIKE, TALENT_INFERNAL_SMITE, TALENT_EXECUTIONER];
+        break;
       default:
-        return [];
+        pool = [];
     }
-  }
-
-  if (weapon === WeaponType.SABRES) {
+  } else if (weapon === WeaponType.SABRES) {
     switch (k) {
       case 'blue':
-        return [TALENT_STAGGERING_STAB, TALENT_STAGGERING_SWIPES, TALENT_STAGGERING_FLOURISH];
+        pool = [TALENT_STAGGERING_STAB, TALENT_STAGGERING_SWIPES, TALENT_STAGGERING_FLOURISH];
+        break;
       case 'green':
-        return [TALENT_INFESTED_BACKSTAB, TALENT_INFESTING_SABRES_SWIPES, TALENT_INFESTED_FLOURISH];
+        pool = [TALENT_INFESTED_BACKSTAB, TALENT_INFESTING_SABRES_SWIPES, TALENT_INFESTED_FLOURISH];
+        break;
       case 'purple':
-        return [];
+        pool = [
+          TALENT_GUARD_SABRES_SWIPES,
+          TALENT_GUARD_SABRES_STAB,
+          TALENT_GUARD_SABRES_FLOURISH,
+          TALENT_DASH_GUARD,
+        ];
+        break;
       case 'red':
-        return [TALENT_WRATHFUL_STAB, TALENT_WRATHFUL_SABRES_SWIPES, TALENT_WRATHFUL_FLOURISH];
+        pool = [TALENT_WRATHFUL_STAB, TALENT_WRATHFUL_SABRES_SWIPES, TALENT_WRATHFUL_FLOURISH];
+        break;
       default:
-        return [];
+        pool = [];
     }
   }
 
-  return [];
+  if (k === 'green') {
+    return [...pool, TALENT_MENDING_DASH, ...GREEN_COOP_UNIVERSAL_ZOMBIE_BOONS];
+  }
+
+  switch (k) {
+    case 'red':
+      return [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH];
+    case 'purple':
+      return [...pool, TALENT_GLACIAL_DASH];
+    case 'blue':
+      return [...pool, TALENT_STAGGERING_DASH, TALENT_GUARDBREAK];
+    default:
+      return pool;
+  }
+}
+
+/** Bow colored-room boons: primary / Q / E branches (mutually exclusive per slot for the run). */
+export type BowRoomBoonMutexSlot = 'primary' | 'q' | 'e';
+
+const BOW_ROOM_BOON_MUTEX_BY_SLOT: Record<BowRoomBoonMutexSlot, readonly TalentId[]> = {
+  primary: [TALENT_STAGGER_SHOT, TALENT_WYVERN_STING, TALENT_ARCTIC_STING, TALENT_WRATHFUL_SHOTS],
+  q: [TALENT_WYVERN_BITE, TALENT_WRATHFUL_BITE, TALENT_STAGGERING_BITE, TALENT_GLACIAL_BITE],
+  e: [TALENT_WYVERN_TALONS, TALENT_WRATHFUL_TALONS, TALENT_STAGGERING_TALONS, TALENT_GLACIAL_TALONS],
+};
+
+export function getBowRoomBoonMutexSlot(id: TalentId): BowRoomBoonMutexSlot | null {
+  switch (id) {
+    case TALENT_STAGGER_SHOT:
+    case TALENT_WYVERN_STING:
+    case TALENT_ARCTIC_STING:
+    case TALENT_WRATHFUL_SHOTS:
+      return 'primary';
+    case TALENT_WYVERN_BITE:
+    case TALENT_WRATHFUL_BITE:
+    case TALENT_STAGGERING_BITE:
+    case TALENT_GLACIAL_BITE:
+      return 'q';
+    case TALENT_WYVERN_TALONS:
+    case TALENT_WRATHFUL_TALONS:
+    case TALENT_STAGGERING_TALONS:
+    case TALENT_GLACIAL_TALONS:
+      return 'e';
+    default:
+      return null;
+  }
+}
+
+export function getBowRoomBoonMutexGroupForSlot(slot: BowRoomBoonMutexSlot): readonly TalentId[] {
+  return BOW_ROOM_BOON_MUTEX_BY_SLOT[slot];
+}
+
+/** After a room-boon pick, all four ids in that slot are excluded from future room pools for the run. */
+export function expandBowRoomBoonExclusionsAfterPick(picked: TalentId): TalentId[] {
+  const slot = getBowRoomBoonMutexSlot(picked);
+  if (!slot) return [];
+  return [...getBowRoomBoonMutexGroupForSlot(slot)];
 }
 
 /** Runeblade colored-room boons: one branch per run for LMB combo, Wraith Strike, and Colossus Smite (12 ids). */
@@ -1890,6 +2571,15 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_WYVERN_TALONS:
       next.wyvernTalons = true;
       return next;
+    case TALENT_ARCTIC_STING:
+      next.arcticSting = true;
+      return next;
+    case TALENT_GLACIAL_BITE:
+      next.glacialBite = true;
+      return next;
+    case TALENT_GLACIAL_TALONS:
+      next.glacialTalons = true;
+      return next;
     case TALENT_WRAITH_GUARD:
       next.wraithGuard = true;
       return next;
@@ -1977,8 +2667,29 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_CROSSENTROPY_PLAGUE:
       next.crossentropyPlague = true;
       return next;
+    case TALENT_ARCTIC_SHARDS:
+      next.arcticShards = true;
+      return next;
+    case TALENT_GLACIAL_STORM:
+      next.glacialStorm = true;
+      return next;
+    case TALENT_FROST_TOTEM:
+      next.frostTotem = true;
+      return next;
     case TALENT_SHAMAN:
       next.shaman = true;
+      return next;
+    case TALENT_SUPERCONDUCTOR:
+      next.superconductor = true;
+      return next;
+    case TALENT_ACCELERATOR:
+      next.accelerator = true;
+      return next;
+    case TALENT_GIANTKILLER:
+      next.giantKiller = true;
+      return next;
+    case TALENT_HEALING_STREAM:
+      next.healingStream = true;
       return next;
     case TALENT_STAGGERING_STAB:
       next.staggeringStab = true;
@@ -2004,11 +2715,53 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_INFESTED_FLOURISH:
       next.infestedFlourish = true;
       return next;
+    case TALENT_GUARD_SABRES_SWIPES:
+      next.guardSabresSwipes = true;
+      return next;
+    case TALENT_GUARD_SABRES_STAB:
+      next.guardSabresStab = true;
+      return next;
+    case TALENT_GUARD_SABRES_FLOURISH:
+      next.guardSabresFlourish = true;
+      return next;
     case TALENT_KILLSTREAK:
       next.killstreak = true;
       return next;
     case TALENT_RELENTLESS:
       next.relentless = true;
+      return next;
+    case TALENT_VORPAL_GUST:
+      next.vorpalGust = true;
+      return next;
+    case TALENT_PACK_HUNTER:
+      next.packHunterRoom = true;
+      return next;
+    case TALENT_EVERLIVING:
+      next.everlivingRoom = true;
+      return next;
+    case TALENT_ADRENALINE:
+      next.adrenalineRoom = true;
+      return next;
+    case TALENT_JUGGERNAUT_STRAIN:
+      next.juggernautStrainRoom = true;
+      return next;
+    case TALENT_INFERNAL_DASH:
+      next.infernalDashRoom = true;
+      return next;
+    case TALENT_GLACIAL_DASH:
+      next.glacialDashRoom = true;
+      return next;
+    case TALENT_MENDING_DASH:
+      next.mendingDashRoom = true;
+      return next;
+    case TALENT_STAGGERING_DASH:
+      next.staggeringDashRoom = true;
+      return next;
+    case TALENT_GUARDBREAK:
+      next.guardbreakRoom = true;
+      return next;
+    case TALENT_BLOODLEECH:
+      next.bloodleechRoom = true;
       return next;
     default:
       return next;
@@ -2053,6 +2806,9 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_DUAL_COIL]: dualCoilTalentDefinition,
   [TALENT_WYVERN_STING]: wyvernStingTalentDefinition,
   [TALENT_WYVERN_TALONS]: wyvernTalonsTalentDefinition,
+  [TALENT_ARCTIC_STING]: arcticStingTalentDefinition,
+  [TALENT_GLACIAL_BITE]: glacialBiteTalentDefinition,
+  [TALENT_GLACIAL_TALONS]: glacialTalonsTalentDefinition,
   [TALENT_SPELLBLADE]: spellbladeTalentDefinition,
   [TALENT_TEMPEST_ROUNDS]: tempestRoundsTalentDefinition,
   [TALENT_ICEBEAM]: icebeamTalentDefinition,
@@ -2068,7 +2824,14 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_INFESTING_TOTEM]: infestingTotemTalentDefinition,
   [TALENT_CROSSENTROPY_TEMPEST]: crossentropyTempestTalentDefinition,
   [TALENT_CROSSENTROPY_PLAGUE]: crossentropyPlagueTalentDefinition,
+  [TALENT_ARCTIC_SHARDS]: arcticShardsTalentDefinition,
+  [TALENT_GLACIAL_STORM]: glacialStormTalentDefinition,
+  [TALENT_FROST_TOTEM]: frostTotemTalentDefinition,
   [TALENT_SHAMAN]: shamanTalentDefinition,
+  [TALENT_SUPERCONDUCTOR]: superconductorTalentDefinition,
+  [TALENT_ACCELERATOR]: acceleratorTalentDefinition,
+  [TALENT_GIANTKILLER]: giantKillerTalentDefinition,
+  [TALENT_HEALING_STREAM]: healingStreamTalentDefinition,
   [TALENT_STAGGERING_STAB]: staggeringStabTalentDefinition,
   [TALENT_WRATHFUL_STAB]: wrathfulStabTalentDefinition,
   [TALENT_INFESTED_BACKSTAB]: infestedBackstabTalentDefinition,
@@ -2077,8 +2840,22 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_STAGGERING_FLOURISH]: staggeringFlourishTalentDefinition,
   [TALENT_WRATHFUL_FLOURISH]: wrathfulFlourishTalentDefinition,
   [TALENT_INFESTED_FLOURISH]: infestedFlourishTalentDefinition,
+  [TALENT_GUARD_SABRES_SWIPES]: guardSabresSwipesTalentDefinition,
+  [TALENT_GUARD_SABRES_STAB]: guardSabresStabTalentDefinition,
+  [TALENT_GUARD_SABRES_FLOURISH]: guardSabresFlourishTalentDefinition,
   [TALENT_KILLSTREAK]: killstreakTalentDefinition,
   [TALENT_RELENTLESS]: relentlessTalentDefinition,
+  [TALENT_VORPAL_GUST]: vorpalGustTalentDefinition,
+  [TALENT_PACK_HUNTER]: packHunterTalentDefinition,
+  [TALENT_EVERLIVING]: everlivingTalentDefinition,
+  [TALENT_ADRENALINE]: adrenalineTalentDefinition,
+  [TALENT_JUGGERNAUT_STRAIN]: juggernautStrainTalentDefinition,
+  [TALENT_INFERNAL_DASH]: infernalDashTalentDefinition,
+  [TALENT_GLACIAL_DASH]: glacialDashTalentDefinition,
+  [TALENT_MENDING_DASH]: mendingDashTalentDefinition,
+  [TALENT_STAGGERING_DASH]: staggeringDashTalentDefinition,
+  [TALENT_GUARDBREAK]: guardbreakTalentDefinition,
+  [TALENT_BLOODLEECH]: bloodleechTalentDefinition,
 };
 
 /**
@@ -2109,6 +2886,9 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_DUAL_COIL]: '/icons/dualCoil.svg',
   [TALENT_WYVERN_STING]: '/icons/shot.svg',
   [TALENT_WYVERN_TALONS]: '/icons/talon.svg',
+  [TALENT_ARCTIC_STING]: '/icons/shot.svg',
+  [TALENT_GLACIAL_BITE]: '/icons/bite.svg',
+  [TALENT_GLACIAL_TALONS]: '/icons/talon.svg',
   [TALENT_WRAITH_GUARD]: '/icons/strike.svg',
   [TALENT_FROSTPATH]: '/icons/frostpath.svg',
   [TALENT_SOLAR_RECHARGE]: '/icons/solarRecharge.svg',
@@ -2138,7 +2918,14 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_INFESTING_TOTEM]: '/icons/totem.svg',
   [TALENT_CROSSENTROPY_TEMPEST]: '/icons/crossentropy.svg',
   [TALENT_CROSSENTROPY_PLAGUE]: '/icons/crossentropy.svg',
+  [TALENT_ARCTIC_SHARDS]: '/icons/bolt.svg',
+  [TALENT_GLACIAL_STORM]: '/icons/crossentropy.svg',
+  [TALENT_FROST_TOTEM]: '/icons/totem.svg',
   [TALENT_SHAMAN]: '/icons/shaman.svg',
+  [TALENT_SUPERCONDUCTOR]: '/icons/totem.svg',
+  [TALENT_ACCELERATOR]: '/icons/bolt.svg',
+  [TALENT_GIANTKILLER]: '/icons/talon.svg',
+  [TALENT_HEALING_STREAM]: '/icons/totem.svg',
   [TALENT_STAGGERING_STAB]: '/icons/strike.svg',
   [TALENT_WRATHFUL_STAB]: '/icons/strike.svg',
   [TALENT_INFESTED_BACKSTAB]: '/icons/strike.svg',
@@ -2147,8 +2934,22 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_STAGGERING_FLOURISH]: '/icons/strike.svg',
   [TALENT_WRATHFUL_FLOURISH]: '/icons/strike.svg',
   [TALENT_INFESTED_FLOURISH]: '/icons/strike.svg',
+  [TALENT_GUARD_SABRES_SWIPES]: '/icons/combo.svg',
+  [TALENT_GUARD_SABRES_STAB]: '/icons/strike.svg',
+  [TALENT_GUARD_SABRES_FLOURISH]: '/icons/strike.svg',
   [TALENT_KILLSTREAK]: '/icons/combo.svg',
   [TALENT_RELENTLESS]: '/icons/strike.svg',
+  [TALENT_VORPAL_GUST]: '/icons/windFury.svg',
+  [TALENT_PACK_HUNTER]: '/icons/strike.svg',
+  [TALENT_EVERLIVING]: null,
+  [TALENT_ADRENALINE]: null,
+  [TALENT_JUGGERNAUT_STRAIN]: '/icons/combo.svg',
+  [TALENT_INFERNAL_DASH]: '/icons/dash.svg',
+  [TALENT_GLACIAL_DASH]: '/icons/dash.svg',
+  [TALENT_MENDING_DASH]: '/icons/dash.svg',
+  [TALENT_STAGGERING_DASH]: '/icons/dash.svg',
+  [TALENT_GUARDBREAK]: '/icons/strike.svg',
+  [TALENT_BLOODLEECH]: '/icons/strike.svg',
 };
 
 export function getTalentIconSrc(id: TalentId): string | null {
@@ -2186,6 +2987,9 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.dualCoil) out.push(TALENT_DUAL_COIL);
   if (loadout.wyvernSting) out.push(TALENT_WYVERN_STING);
   if (loadout.wyvernTalons) out.push(TALENT_WYVERN_TALONS);
+  if (loadout.arcticSting) out.push(TALENT_ARCTIC_STING);
+  if (loadout.glacialBite) out.push(TALENT_GLACIAL_BITE);
+  if (loadout.glacialTalons) out.push(TALENT_GLACIAL_TALONS);
   if (loadout.bladeRush) out.push(TALENT_BLADE_RUSH);
   if (loadout.wrathfulCombo) out.push(TALENT_WRATHFUL_COMBO);
   if (loadout.infestedCombo) out.push(TALENT_INFESTED_COMBO);
@@ -2208,9 +3012,16 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.wrathfulTotem) out.push(TALENT_WRATHFUL_TOTEM);
   if (loadout.staggeringTotem) out.push(TALENT_STAGGERING_TOTEM);
   if (loadout.infestingTotem) out.push(TALENT_INFESTING_TOTEM);
-  if (loadout.crossentropyTempest) out.push(TALENT_CROSSENTROPY_TEMPEST);
-  if (loadout.crossentropyPlague) out.push(TALENT_CROSSENTROPY_PLAGUE);
-  if (loadout.shaman) out.push(TALENT_SHAMAN);
+    if (loadout.crossentropyTempest) out.push(TALENT_CROSSENTROPY_TEMPEST);
+    if (loadout.crossentropyPlague) out.push(TALENT_CROSSENTROPY_PLAGUE);
+    if (loadout.arcticShards) out.push(TALENT_ARCTIC_SHARDS);
+    if (loadout.glacialStorm) out.push(TALENT_GLACIAL_STORM);
+    if (loadout.frostTotem) out.push(TALENT_FROST_TOTEM);
+    if (loadout.shaman) out.push(TALENT_SHAMAN);
+  if (loadout.superconductor) out.push(TALENT_SUPERCONDUCTOR);
+  if (loadout.accelerator) out.push(TALENT_ACCELERATOR);
+  if (loadout.giantKiller) out.push(TALENT_GIANTKILLER);
+  if (loadout.healingStream) out.push(TALENT_HEALING_STREAM);
   if (loadout.staggeringStab) out.push(TALENT_STAGGERING_STAB);
   if (loadout.wrathfulStab) out.push(TALENT_WRATHFUL_STAB);
   if (loadout.infestedBackstab) out.push(TALENT_INFESTED_BACKSTAB);
@@ -2219,9 +3030,32 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.staggeringFlourish) out.push(TALENT_STAGGERING_FLOURISH);
   if (loadout.wrathfulFlourish) out.push(TALENT_WRATHFUL_FLOURISH);
   if (loadout.infestedFlourish) out.push(TALENT_INFESTED_FLOURISH);
+  if (loadout.guardSabresSwipes) out.push(TALENT_GUARD_SABRES_SWIPES);
+  if (loadout.guardSabresStab) out.push(TALENT_GUARD_SABRES_STAB);
+  if (loadout.guardSabresFlourish) out.push(TALENT_GUARD_SABRES_FLOURISH);
   if (loadout.killstreak) out.push(TALENT_KILLSTREAK);
   if (loadout.relentless) out.push(TALENT_RELENTLESS);
+  if (loadout.vorpalGust) out.push(TALENT_VORPAL_GUST);
+  if (loadout.packHunterRoom) out.push(TALENT_PACK_HUNTER);
+  if (loadout.everlivingRoom) out.push(TALENT_EVERLIVING);
+  if (loadout.adrenalineRoom) out.push(TALENT_ADRENALINE);
+  if (loadout.juggernautStrainRoom) out.push(TALENT_JUGGERNAUT_STRAIN);
+  if (loadout.infernalDashRoom) out.push(TALENT_INFERNAL_DASH);
+  if (loadout.glacialDashRoom) out.push(TALENT_GLACIAL_DASH);
+  if (loadout.mendingDashRoom) out.push(TALENT_MENDING_DASH);
+  if (loadout.staggeringDashRoom) out.push(TALENT_STAGGERING_DASH);
+  if (loadout.guardbreakRoom) out.push(TALENT_GUARDBREAK);
+  if (loadout.bloodleechRoom) out.push(TALENT_BLOODLEECH);
   return out;
+}
+
+/** Remove talents the player already has this run before rolling co-op class/room boon choices. */
+export function excludeOwnedTalentsFromBoonPool(
+  pool: readonly TalentId[],
+  talentLoadout: TalentLoadout | null | undefined,
+): TalentId[] {
+  if (talentLoadout == null) return pool.slice();
+  return filterTalentIdsByExclusionSet(pool, new Set(getEnabledTalentIds(talentLoadout)));
 }
 
 /** UI copy for co-op 3-boon picks (falls back to id if missing). */

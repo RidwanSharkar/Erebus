@@ -15,7 +15,7 @@ import { World } from '@/ecs/World';
 import { Movement } from '@/ecs/components/Movement';
 import { Transform } from '@/ecs/components/Transform';
 import { Health } from '@/ecs/components/Health';
-import { Enemy } from '@/ecs/components/Enemy';
+import { Enemy, EnemyType } from '@/ecs/components/Enemy';
 import { CombatSystem } from '@/systems/CombatSystem';
 import { calculateDamage } from '@/core/DamageCalculator';
 import { ReanimateRef } from '../weapons/Reanimate';
@@ -27,6 +27,7 @@ import {
   EXECUTE_REAPING_TALONS_BONUS_DAMAGE,
   WRATHFUL_COMBO_CRIT_CHANCE_ADD,
   WRATHFUL_COMBO_CRIT_DAMAGE_MULT_ADD,
+  type VorpalGustStabBoonBeamTheme,
 } from '@/utils/talents';
 
 interface DragonRendererProps {
@@ -54,6 +55,9 @@ interface DragonRendererProps {
   swordComboStep?: 1 | 2 | 3;
   isSkyfalling?: boolean;
   isBackstabbing?: boolean;
+  /** Sabres — show Vorpal Gust beam during Backstab when talent owned or synced from attacker. */
+  showVorpalGustBeam?: boolean;
+  vorpalGustStabBoonBeamTheme?: VorpalGustStabBoonBeamTheme;
   isSundering?: boolean;
   isSwordCharging?: boolean;
   isDeflecting?: boolean;
@@ -145,10 +149,14 @@ interface DragonRendererProps {
   executeReapingTalons?: boolean;
   /** EXPLOSIVE TALONS: Reaping Talons detonates at max range; no return arrow. */
   explosiveTalons?: boolean;
+  /** GIANTKILLER: Reaping Talons return hit bonus when forward leg hit same target. */
+  giantKillerReapingTalons?: boolean;
   /** Wyvern Talons: Reaping hits detonate Cobra + Concentrated Venom remaining DoT. */
   wyvernTalons?: boolean;
   /** Staggering Talons: forward + return Reaping hits apply server stagger. */
   staggeringTalonsActive?: boolean;
+  /** Glacial Talons room boon — deep-blue Reaping Talons beams + 2× vs frozen (R routed in CombatSystem). */
+  glacialTalonsTheme?: boolean;
   /** Co-op: server applies CV remainder + optional Cobra remainder as one Wyvern Talons hit. */
   detonateWyvernConcentratedVenomCoop?: (serverEnemyId: string, cobraRemainingDamage?: number) => void;
   /** STORED CHARGE: Runeblade Charge — 3 spin rotations + per-rotation damage. */
@@ -173,6 +181,8 @@ interface DragonRendererProps {
   crusaderBladeThemeActive?: boolean;
   /** Local: Blizzard talent storm (omit when talent not taken). */
   getRunebladeBlizzardTalentActive?: () => boolean;
+  /** Room-boom dash boons override the weapon ghost trail while unlocked. */
+  roomBoomGhostTrailColor?: string;
 }
 
 export default function DragonRenderer({
@@ -214,6 +224,8 @@ export default function DragonRenderer({
   swordComboStep = 1,
   isSkyfalling = false,
   isBackstabbing = false,
+  showVorpalGustBeam = false,
+  vorpalGustStabBoonBeamTheme = 'default',
   isSundering = false,
   isSwordCharging = false,
   onChargeComplete = () => {},
@@ -250,8 +262,10 @@ export default function DragonRenderer({
   wrathfulTalonsReturnCrit = false,
   executeReapingTalons = false,
   explosiveTalons = false,
+  giantKillerReapingTalons = false,
   wyvernTalons = false,
   staggeringTalonsActive = false,
+  glacialTalonsTheme = false,
   detonateWyvernConcentratedVenomCoop,
   runebladeStoredCharge = false,
   runebladeStaggeringCombo = false,
@@ -263,6 +277,7 @@ export default function DragonRenderer({
   getRunebladeExecutionerFlatBonus,
   getRunebladeCrusaderLmbFlatBonus,
   getRunebladeBlizzardTalentActive,
+  roomBoomGhostTrailColor,
   mushroomTargets,
   onMushroomHit,
 }: DragonRendererProps) {
@@ -290,6 +305,8 @@ export default function DragonRenderer({
     id: string;
     position: Vector3;
     health: number;
+    maxHealth: number;
+    isBoss: boolean;
   }>>([]);
   const [dashCharges, setDashCharges] = useState<Array<DashChargeStatus>>([
     { isAvailable: true, cooldownRemaining: 0 },
@@ -497,10 +514,13 @@ export default function DragonRenderer({
         const enemyDataArray = enemies.map(enemy => {
           const transform = enemy.getComponent(Transform)!;
           const health = enemy.getComponent(Health)!;
+          const ec = enemy.getComponent(Enemy);
           return {
             id: enemy.id.toString(),
             position: transform.getWorldPosition(),
-            health: health.currentHealth
+            health: health.currentHealth,
+            maxHealth: health.maxHealth,
+            isBoss: ec != null && ec.type === EnemyType.BOSS,
           };
         }).filter(enemy => enemy.health > 0);
         
@@ -566,14 +586,14 @@ export default function DragonRenderer({
           }
         }
 
-        const damageType =
-          isBlizzard
-            ? 'blizzard'
-            : currentWeapon === WeaponType.BOW &&
-                staggeringTalonsActive &&
-                (viperPhase === 'forward' || viperPhase === 'return')
-              ? 'reaping_talons'
-              : 'sword';
+        const isReapingViperPhase =
+          currentWeapon === WeaponType.BOW &&
+          !isBlizzard &&
+          (viperPhase === 'forward' || viperPhase === 'return' || viperPhase === 'explosion');
+
+        const damageType = isBlizzard ? 'blizzard' : isReapingViperPhase ? 'reaping_talons' : 'sword';
+
+        const glacialTalonsForHit = glacialTalonsTheme && isReapingViperPhase;
         const rbComboStep =
           currentWeapon === WeaponType.RUNEBLADE && runebladeComboStepResolver
             ? runebladeComboStepResolver()
@@ -627,6 +647,22 @@ export default function DragonRenderer({
           undefined,
           undefined,
           infestedCombo,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          glacialTalonsForHit,
         );
 
         if (
@@ -685,6 +721,8 @@ export default function DragonRenderer({
           swordComboStep={swordComboStep}
           isSkyfalling={isSkyfalling}
           isBackstabbing={isBackstabbing}
+          showVorpalGustBeam={showVorpalGustBeam}
+          vorpalGustStabBoonBeamTheme={vorpalGustStabBoonBeamTheme}
           isSundering={isSundering}
           isStealthing={isStealthing}
           isInvisible={isInvisible}
@@ -758,6 +796,7 @@ export default function DragonRenderer({
         isWeaponChargeMovingRef={isWeaponChargeMoving}
         isSkyfalling={isSkyfalling}
         yOffset={hideBody ? 1.0 : 0}
+        fixedTrailColor={roomBoomGhostTrailColor}
       />
       <DashFireTrail
         worldPositionRef={effectiveRealTimePositionRef}
@@ -805,6 +844,8 @@ export default function DragonRenderer({
           wrathfulTalonsReturnCrit={wrathfulTalonsReturnCrit}
           explosiveTalons={explosiveTalons}
           onExecuteFirstForwardHit={executeReapingTalons ? onExecuteFirstForwardHit : undefined}
+          giantKiller={giantKillerReapingTalons}
+          glacialTalonsTheme={glacialTalonsTheme}
         />
       )}
 

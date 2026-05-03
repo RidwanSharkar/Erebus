@@ -8,7 +8,7 @@ import { Transform } from '@/ecs/components/Transform';
 import { Movement } from '@/ecs/components/Movement';
 import { Health } from '@/ecs/components/Health';
 import { Shield } from '@/ecs/components/Shield';
-import { Enemy, EnemyType } from '@/ecs/components/Enemy';
+import { Enemy, EnemyType, capFreezeMsForEnemy } from '@/ecs/components/Enemy';
 import { Renderer } from '@/ecs/components/Renderer';
 import { Collider } from '@/ecs/components/Collider';
 import { Projectile } from '@/ecs/components/Projectile';
@@ -19,6 +19,7 @@ import { AudioSystem } from './AudioSystem';
 import { CombatSystem } from './CombatSystem';
 import { WeaponSubclass, WeaponType } from '@/components/dragon/weapons';
 import { DeflectBarrier } from '@/components/weapons/DeflectBarrier';
+import { spawnArcticGroundBlizzardAtFromReact } from '@/components/weapons/Blizzard/arcticBlizzardSpawnBridge';
 import { SkillPointSystem, SkillPointData } from '@/utils/SkillPointSystem';
 import { AbilityLoadout } from '@/utils/weaponAbilities';
 import {
@@ -53,11 +54,27 @@ import {
   shouldApplyStaggeringEntropicTalent,
   shouldApplyInfestingEntropicTalent,
   INFESTING_ENTROPIC_BOLT_DAMAGE,
+  shouldApplyArcticShardsEntropicTalent,
+  ARCTIC_SHARDS_PROC_CHANCE,
+  ARCTIC_ENTROPIC_BOLT_DAMAGE,
+  shouldApplyGlacialStormTalent,
   shouldApplyWraithGuardTalent,
   shouldApplyDoubleStrikeTalent,
   shouldApplyColossusGuardTalent,
   shouldApplyGuardComboTalent,
   shouldApplyDashGuardTalent,
+  shouldApplyGuardSabresSwipesTalent,
+  shouldApplyGuardSabresStabTalent,
+  shouldApplyGuardSabresFlourishTalent,
+  shouldApplyInfernalDashTalent,
+  shouldApplyGlacialDashTalent,
+  shouldApplyMendingDashTalent,
+  shouldApplyStaggeringDashTalent,
+  shouldApplyGuardbreakTalent,
+  shouldApplyBloodleechTalent,
+  GLACIAL_DASH_COOLDOWN_MS,
+  MENDING_DASH_COOLDOWN_MS,
+  STAGGERING_DASH_COOLDOWN_MS,
   shouldApplyExecutionerTalent,
   shouldApplyFrostpathTalent,
   shouldApplySolarRechargeTalent,
@@ -80,6 +97,8 @@ import {
   WRAITH_GUARD_PROC_CHANCE,
   GUARD_COMBO_DURATION_SEC,
   GUARD_COMBO_PROC_CHANCE,
+  GUARD_SABRES_SWIPES_PROC_CHANCE,
+  GUARD_SABRES_PURPLE_SHIELD_DURATION_SEC,
   COLOSSUS_GUARD_PROC_CHANCE,
   COLOSSUS_GUARD_STACK_SEC,
   COLOSSUS_GUARD_MAX_REMAINING_SEC,
@@ -89,6 +108,11 @@ import {
   getCrossentropyBaseDamage,
   CROSSENTROPY_REAPER_DAMAGE_PER_KILL,
   CROSSENTROPY_MAX_TRAVEL_DISTANCE,
+  CROSSENTROPY_COOLDOWN_SEC,
+  ACCELERATOR_TOTEM_AURA_RADIUS_UNITS,
+  shouldApplyAcceleratorTalent,
+  shouldApplyHealingStreamTalent,
+  HEALING_STREAM_HP_PER_SEC_PER_TOTEM,
   REANIMATE_SUNWELL_HEAL,
   REANIMATE_SUNWELL_COOLDOWN_SEC,
   WRATHFUL_BITE_BARRAGE_CRIT_CHANCE_ADD,
@@ -112,6 +136,9 @@ import {
   shouldApplyDualCoilTalent,
   shouldApplyWyvernStingTalent,
   WYVERN_STING_COOLDOWN_SEC,
+  ARCTIC_STING_BLIZZARD_ICD_SEC,
+  shouldApplyArcticStingTalent,
+  shouldApplyGlacialBiteTalent,
   shouldApplyWrathfulShotsTalent,
   WRATHFUL_SHOTS_PERFECT_CRIT_CHANCE_ADD,
   WRATHFUL_SHOTS_PERFECT_CRIT_DAMAGE_MULT_ADD,
@@ -120,6 +147,7 @@ import {
   WRAITH_STRIKE_COOLDOWN_SEC,
   WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES,
   MANTRA_SHAMAN_MAX_CHARGES,
+  MANTRA_SHAMAN_INTERNAL_COOLDOWN_SEC,
   shouldApplyShamanTalent,
   shouldApplySpellbladeTalent,
   SPELLBLADE_WRAITH_STRIKE_SHIELD_RESTORE,
@@ -140,6 +168,8 @@ import {
   RELENTLESS_BACKSTAB_KILL_HEAL,
   shouldApplyKillstreakTalent,
   shouldApplyRelentlessTalent,
+  evaluateVorpalGustBeamHit,
+  shouldApplyVorpalGustTalent,
   shouldApplyWrathfulSabresSwipesTalent,
   shouldApplyInfestingSabresSwipesTalent,
   STAGGERING_FLOURISH_STAGGER,
@@ -162,9 +192,24 @@ import {
   calculateDamage,
   DamageResult,
 } from '@/core/DamageCalculator';
+import {
+  acceleratorOwnedTotemFlatXYZ,
+  acceleratorOwnedTotemTripletCount,
+} from '@/components/projectiles/SummonTotemManager';
 import { MAIN_MAP_RADIUS, isInsideMainArenaXZ } from '@/utils/mapConstants';
 import { BOW_FULL_CHARGE_MS, isBowPerfectShotProgress } from '@/utils/bowConstants';
 import { CASTLE_WALL_DEPTH_OFFSET, CASTLE_WALL_HALF_THICKNESS } from '@/components/environment/CastleWalls';
+
+export type RoomBoomDashVariant = 'infernal' | 'glacial' | 'mending' | 'staggering';
+export type RoomBoomDashKey = 'w' | 'a' | 's' | 'd';
+
+export interface RoomBoomDashPayload {
+  variant: RoomBoomDashVariant;
+  key: RoomBoomDashKey;
+  origin: Vector3;
+  destination: Vector3;
+  direction: Vector3;
+}
 
 export class ControlSystem extends System {
   public readonly requiredComponents = [Transform, Movement];
@@ -229,12 +274,14 @@ export class ControlSystem extends System {
   // Callback for Frost Nova activation
   private onFrostNovaCallback?: (position: Vector3, direction: Vector3) => void;
 
+  private onRoomBoomDashCallback?: (payload: RoomBoomDashPayload) => void;
+
   // Callback for Cobra Shot activation
   private onCobraShotCallback?: (position: Vector3, direction: Vector3) => void;
 
   // Callback for Summon Totem activation
   private onSummonTotemCallback?: (position: Vector3) => void;
-  
+
   // Callback for Charge activation
   private onChargeCallback?: (position: Vector3, direction: Vector3) => void;
   
@@ -338,7 +385,6 @@ export class ControlSystem extends System {
   private lastSwordFireTime = 0; // Sword melee attacks
   private lastRunebladeFireTime = 0; // Runeblade melee attacks
   private lastSabresFireTime = 0; // Sabres melee attacks
-  private lastCrossentropyTime = 0; // Separate tracking for CrossentropyBolt
   private lastReanimateTime = 0; // Separate tracking for Reanimate ability
 
   // Icebeam state tracking
@@ -351,6 +397,9 @@ export class ControlSystem extends System {
   private lastFrostNovaTime = 0; // Separate tracking for Frost Nova ability
   private lastCobraShotTime = 0; // Separate tracking for Cobra Shot ability
   private lastWyvernStingTime = 0; // Wyvern Sting talent: bonus Cobra on perfect shot (separate from BOW_E)
+  private perfectShotVolleySerial = 0;
+  private lastArcticStingBlizzardTimeSec = 0;
+  private pendingArcticStingVolleyId: number | null = null;
   private lastSummonTotemTime = 0; // Separate tracking for Summon Totem ability
   private lastRejuvenatingShotTime = 0; // Separate tracking for Rejuvenating Shot ability
   private fireRate = 0.2; // Default for bow
@@ -358,8 +407,7 @@ export class ControlSystem extends System {
   private runebladeFireRate = 0.775; // Runeblade attack rate
   private sabresFireRate = 0.625; // Sabres dual attack rate (600ms between attacks)
   private scytheFireRate = 0.6; // EntropicBolt rate (0.33s cooldown)
-  private crossentropyFireRate = 6; // CrossentropyBolt rate (1 per second)
-  private summonTotemFireRate = 6.0; // Summon Totem rate (5 seconds cooldown)
+  private summonTotemFireRate = 6.0; // Summon Totem cooldown
   private viperStingFireRate = 7.0; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
   private cobraShotFireRate = 6.0; // Cobra Shot rate (2 seconds cooldown)
@@ -405,6 +453,9 @@ export class ControlSystem extends System {
   // Crossentropy Bolt charging state
   private isCrossentropyCharging = false;
   private crossentropyChargeProgress = 0;
+  /** Recharge accumulator for Crossentropy (0 … full); Accelerator scales effective dt toward full. */
+  private crossentropyRechargeAccumulator = CROSSENTROPY_COOLDOWN_SEC;
+  private crossentropyCooldownReconcileWallSec: number | null = null;
 
   // Summon Totem charging state
   private isSummonTotemCharging = false;
@@ -413,6 +464,7 @@ export class ControlSystem extends System {
   private summonTotemShamanActive = false;
   private summonTotemCharges = 0;
   private summonTotemNextChargeAt: number | null = null;
+  private lastSummonTotemShamanChargeSpendTime = Number.NEGATIVE_INFINITY;
 
   // Sword-specific states
   private swordComboStep: 1 | 2 | 3 = 1;
@@ -449,6 +501,10 @@ export class ControlSystem extends System {
   private dashGuardShieldActive = false;
   private dashGuardOwnsBarrier = false;
   private dashGuardBarrierEndMs = 0;
+  /** Sabres purple-room guard talents (swipe/stab/flourish): shared barrier channel. */
+  private sabresPurpleGuardShieldActive = false;
+  private sabresPurpleGuardOwnsBarrier = false;
+  private sabresPurpleGuardBarrierEndMs = 0;
 
   /** EXECUTIONER: next Runeblade LMB after startDash within window; 0 = inactive. */
   private executionerBuffDeadlineMs = 0;
@@ -456,7 +512,7 @@ export class ControlSystem extends System {
   /** Crusader talent: LMB flat damage + blade theme while Date.now() < this. */
   private runebladeCrusaderBuffEndMs = 0;
   private runebladeBlizzardEndMs = 0;
-  /** Single teardown timer for Wraith Guard + Colossus Guard + Guard Combo + Dash Guard (max of end times). */
+  /** Single teardown timer for talent-spawned deflect shields (max of end times). */
   private talentBarrierEndTimeout: ReturnType<typeof setTimeout> | null = null;
   
   // Skyfall ability state (Sabres)
@@ -518,6 +574,8 @@ export class ControlSystem extends System {
   private lastSolarRechargeProcEffectWallClockMs = 0;
   private lastFlurryHealVfxWallClockMs = 0;
   private lastFlurryHealNumberWallClockMs = 0;
+  private healingStreamHealCarry = 0;
+  private lastHealingStreamHealNumberWallClockMs = 0;
 
   // Lightning Storm ability state (Spear)
   private lastLightningStormTime = 0;
@@ -613,6 +671,9 @@ export class ControlSystem extends System {
   private abilityLoadout: AbilityLoadout | null = null;
 
   private talentLoadout: TalentLoadout = createDefaultTalentLoadout();
+  private lastGlacialDashRoomBoomMs = 0;
+  private lastMendingDashRoomBoomMs = 0;
+  private lastStaggeringDashRoomBoomMs = 0;
 
   /** Reaper: +damage per Crossentropy kill this session (server-synchronized in co-op). */
   private reaperCrossentropyStack = 0;
@@ -625,6 +686,7 @@ export class ControlSystem extends System {
 
   // Death state tracking
   private isPlayerDead = false;
+  private playerStunnedUntilMs = 0;
 
   constructor(
     camera: PerspectiveCamera,
@@ -714,6 +776,14 @@ export class ControlSystem extends System {
     this.inputDisabled = disabled;
   }
 
+  public stunPlayer(durationMs: number): void {
+    this.playerStunnedUntilMs = Math.max(this.playerStunnedUntilMs, Date.now() + durationMs);
+  }
+
+  public isLocalPlayerStunned(): boolean {
+    return Date.now() < this.playerStunnedUntilMs;
+  }
+
   public setAllowAllInput(allow: boolean): void {
     this.inputManager.setAllowAllInput(allow);
   }
@@ -744,6 +814,11 @@ export class ControlSystem extends System {
 
     if (!playerTransform || !playerMovement) return;
 
+    const crossentropyWallNowSec = Date.now() / 1000;
+    const playerWorldPos = playerTransform.getWorldPosition();
+    this.reconcileCrossentropyCooldown(crossentropyWallNowSec, playerWorldPos);
+    this.tickHealingStreamTalent(deltaTime, playerWorldPos);
+
     // If input is disabled (e.g., chat / modal open), skip input processing but clear locomotion so
     // stale moveDirection/inputStrength is not reapplied by PhysicsSystem.
     if (this.inputDisabled) {
@@ -771,6 +846,33 @@ export class ControlSystem extends System {
     // Update debuff states first
     if (typeof playerMovement.updateDebuffs === 'function') {
       playerMovement.updateDebuffs();
+    }
+
+    if (this.isLocalPlayerStunned()) {
+      playerMovement.setMoveDirection(new Vector3(0, 0, 0), 0);
+      playerMovement.velocity.x = 0;
+      playerMovement.velocity.z = 0;
+      playerMovement.acceleration.set(0, 0, 0);
+      if (playerMovement.isDashing) {
+        playerMovement.cancelDash();
+      }
+      if (playerMovement.isCharging) {
+        playerMovement.cancelCharge();
+        this.onChargeComplete();
+      }
+      this.audioSystem?.setFootstepsPlaying(false);
+      return;
+    }
+
+    if (playerMovement.isFrozen) {
+      playerMovement.setMoveDirection(new Vector3(0, 0, 0), 0);
+      if (playerMovement.isDashing) {
+        playerMovement.cancelDash();
+      }
+      if (playerMovement.isCharging) {
+        playerMovement.cancelCharge();
+        this.onChargeComplete();
+      }
     }
 
     // Clean up expired Sunder stacks periodically
@@ -1471,6 +1573,7 @@ export class ControlSystem extends System {
         this.summonTotemShamanActive = false;
         this.summonTotemCharges = 0;
         this.summonTotemNextChargeAt = null;
+        this.lastSummonTotemShamanChargeSpendTime = Number.NEGATIVE_INFINITY;
       }
       return false;
     }
@@ -1478,6 +1581,7 @@ export class ControlSystem extends System {
       this.summonTotemShamanActive = true;
       this.summonTotemCharges = MANTRA_SHAMAN_MAX_CHARGES;
       this.summonTotemNextChargeAt = null;
+      this.lastSummonTotemShamanChargeSpendTime = Number.NEGATIVE_INFINITY;
     }
     return true;
   }
@@ -1506,9 +1610,13 @@ export class ControlSystem extends System {
       this.advanceSummonTotemChargeRecharges(currentTime);
       const maxC = MANTRA_SHAMAN_MAX_CHARGES;
       if (this.summonTotemCharges > 0) {
+        const internalCooldownRemaining = Math.max(
+          0,
+          MANTRA_SHAMAN_INTERNAL_COOLDOWN_SEC - (currentTime - this.lastSummonTotemShamanChargeSpendTime),
+        );
         return {
-          current: 0,
-          max: this.summonTotemFireRate,
+          current: internalCooldownRemaining,
+          max: internalCooldownRemaining > 0 ? MANTRA_SHAMAN_INTERNAL_COOLDOWN_SEC : this.summonTotemFireRate,
           isActive: false,
           charges: this.summonTotemCharges,
           maxCharges: maxC,
@@ -1533,6 +1641,128 @@ export class ControlSystem extends System {
     };
   }
 
+  private countAcceleratorTotemsInRangeXZ(px: number, pz: number): number {
+    const R = ACCELERATOR_TOTEM_AURA_RADIUS_UNITS;
+    const r2 = R * R;
+    const nTrip = acceleratorOwnedTotemTripletCount;
+    const buf = acceleratorOwnedTotemFlatXYZ;
+    let c = 0;
+    for (let i = 0, ix = 0; i < nTrip; i++, ix += 3) {
+      const dx = buf[ix] - px;
+      const dz = buf[ix + 2] - pz;
+      if (dx * dx + dz * dz <= r2) {
+        c++;
+      }
+    }
+    return c;
+  }
+
+  private tickHealingStreamTalent(deltaTime: number, playerPos: Vector3): void {
+    if (!shouldApplyHealingStreamTalent(this.talentLoadout, this.abilityLoadout)) {
+      return;
+    }
+    if (this.isPlayerDead || !this.playerEntity) {
+      return;
+    }
+    const health = this.playerEntity.getComponent(Health);
+    if (!health || health.isDead) {
+      return;
+    }
+    if (health.currentHealth >= health.maxHealth) {
+      this.healingStreamHealCarry = 0;
+      return;
+    }
+    const n = this.countAcceleratorTotemsInRangeXZ(playerPos.x, playerPos.z);
+    if (n <= 0) {
+      return;
+    }
+    this.healingStreamHealCarry += deltaTime * HEALING_STREAM_HP_PER_SEC_PER_TOTEM * n;
+    let whole = Math.floor(this.healingStreamHealCarry);
+    this.healingStreamHealCarry -= whole;
+    if (whole <= 0) {
+      return;
+    }
+    const cap = Math.max(0, health.maxHealth - health.currentHealth);
+    whole = Math.min(whole, cap);
+    if (whole <= 0) {
+      return;
+    }
+    const didHeal = health.heal(whole);
+    if (!didHeal) {
+      return;
+    }
+    const healingPosition = playerPos.clone();
+    healingPosition.y += 1.5;
+    const wallNow = Date.now();
+    const showNumbers =
+      wallNow - this.lastHealingStreamHealNumberWallClockMs >= FLURRY_HEAL_NUMBER_MIN_INTERVAL_MS;
+    if (showNumbers && this.onDamageNumbersUpdate) {
+      this.lastHealingStreamHealNumberWallClockMs = wallNow;
+      this.onDamageNumbersUpdate([
+        {
+          id: this.nextDamageNumberId.toString(),
+          damage: whole,
+          position: healingPosition,
+          isCritical: false,
+          timestamp: wallNow,
+          damageType: 'healing_stream',
+        },
+      ]);
+      this.nextDamageNumberId++;
+    }
+    if (showNumbers && this.onBroadcastHealing) {
+      this.onBroadcastHealing(whole, 'healing_stream', healingPosition);
+    }
+  }
+
+  /** Wall-clock reconcile; call from `update` / cooldown queries so Accelerator tracks time outside ECS gaps. */
+  private reconcileCrossentropyCooldown(now: number, playerPos: Vector3): void {
+    if (this.crossentropyCooldownReconcileWallSec === null) {
+      this.crossentropyCooldownReconcileWallSec = now;
+      return;
+    }
+    let dt = now - this.crossentropyCooldownReconcileWallSec;
+    if (dt < 0) {
+      dt = 0;
+    }
+    dt = Math.min(dt, 0.25);
+    this.crossentropyCooldownReconcileWallSec = now;
+
+    const maxSec = CROSSENTROPY_COOLDOWN_SEC;
+    if (this.crossentropyRechargeAccumulator >= maxSec) {
+      return;
+    }
+
+    let mult = 1;
+    if (shouldApplyAcceleratorTalent(this.talentLoadout, this.abilityLoadout)) {
+      mult = Math.pow(2, this.countAcceleratorTotemsInRangeXZ(playerPos.x, playerPos.z));
+    }
+
+    this.crossentropyRechargeAccumulator = Math.min(
+      maxSec,
+      this.crossentropyRechargeAccumulator + dt * mult,
+    );
+  }
+
+  private getCrossentropyCooldownHud(currentTime: number): {
+    current: number;
+    max: number;
+    isActive: boolean;
+  } {
+    const pt = this.playerEntity?.getComponent(Transform);
+    const p = pt?.getWorldPosition();
+    if (p) {
+      this.reconcileCrossentropyCooldown(currentTime, p);
+    }
+    const maxSec = CROSSENTROPY_COOLDOWN_SEC;
+    const remaining = Math.max(0, maxSec - this.crossentropyRechargeAccumulator);
+    return {
+      current: remaining,
+      max: maxSec,
+      isActive: this.isCrossentropyCharging,
+    };
+  }
+
   /** Return the cooldown info for a specific universal ability id. */
   private getCooldownForAbility(
     abilityId: string,
@@ -1548,7 +1778,7 @@ export class ControlSystem extends System {
       case 'BOW_R':       return { current: Math.max(0, this.viperStingFireRate - (currentTime - this.lastViperStingTime)), max: this.viperStingFireRate, isActive: this.isViperStingCharging };
       case 'SCYTHE_Q':    return { current: Math.max(0, REANIMATE_SUNWELL_COOLDOWN_SEC - (currentTime - this.lastReanimateTime)), max: REANIMATE_SUNWELL_COOLDOWN_SEC, isActive: false };
       case 'SCYTHE_E':    return { current: Math.max(0, this.frostNovaFireRate - (currentTime - this.lastFrostNovaTime)), max: this.frostNovaFireRate, isActive: false };
-      case 'SCYTHE_R':    return { current: Math.max(0, this.crossentropyFireRate - (currentTime - this.lastCrossentropyTime)), max: this.crossentropyFireRate, isActive: this.isCrossentropyCharging };
+      case 'SCYTHE_R':    return this.getCrossentropyCooldownHud(currentTime);
       case 'SABRES_Q':    return { current: Math.max(0, this.backstabCooldown - (currentTime - this.lastBackstabTime)), max: this.backstabCooldown, isActive: this.isBackstabbing };
       case 'SABRES_E':    return { current: Math.max(0, this.sunderCooldown - (currentTime - this.lastSunderTime)), max: this.sunderCooldown, isActive: this.isSundering };
       case 'SABRES_R':    return { current: Math.max(0, this.skyfallCooldown - (currentTime - this.lastSkyfallTime)), max: this.skyfallCooldown, isActive: this.isSkyfalling };
@@ -1677,7 +1907,11 @@ export class ControlSystem extends System {
         // Release the bow
         const didFireProjectile = this.fireProjectile(playerTransform);
         if (didFireProjectile) {
-          this.audioSystem?.playBowReleaseSound(playerTransform.position, finalChargeProgress);
+          this.audioSystem?.playBowReleaseSound(
+            playerTransform.position,
+            finalChargeProgress,
+            isBowPerfectShotProgress(finalChargeProgress)
+          );
         }
         this.isCharging = false;
         this.chargeProgress = 0;
@@ -1865,15 +2099,17 @@ export class ControlSystem extends System {
   private performCrossentropyAbility(playerTransform: Transform): void {
     if (!this.playerEntity) return;
 
-    // Check cooldown
     const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastCrossentropyTime < this.crossentropyFireRate) {
+    const ppos = playerTransform.getWorldPosition();
+    this.reconcileCrossentropyCooldown(currentTime, ppos);
+    const eps = 1e-6;
+    if (this.crossentropyRechargeAccumulator + eps < CROSSENTROPY_COOLDOWN_SEC) {
       return;
     }
 
     this.isCrossentropyCharging = true;
     this.crossentropyChargeProgress = 0;
-    this.lastCrossentropyTime = currentTime;
+    this.crossentropyRechargeAccumulator = 0;
 
     // Play crossentropy sound at the start of the ability
     this.audioSystem?.playCrossentropySound(playerTransform.position);
@@ -1928,12 +2164,16 @@ export class ControlSystem extends System {
       if (this.summonTotemCharges <= 0) {
         return;
       }
+      if (currentTime - this.lastSummonTotemShamanChargeSpendTime < MANTRA_SHAMAN_INTERNAL_COOLDOWN_SEC) {
+        return;
+      }
     } else if (currentTime - this.lastSummonTotemTime < this.summonTotemFireRate) {
       return;
     }
 
     if (this.summonTotemShamanActive) {
       this.summonTotemCharges--;
+      this.lastSummonTotemShamanChargeSpendTime = currentTime;
       if (
         this.summonTotemCharges < MANTRA_SHAMAN_MAX_CHARGES &&
         this.summonTotemNextChargeAt === null
@@ -2175,12 +2415,13 @@ export class ControlSystem extends System {
     const wrathEnt = shouldApplyWrathfulEntropicTalent(this.talentLoadout);
     const stagEnt = shouldApplyStaggeringEntropicTalent(this.talentLoadout);
     const infestEnt = shouldApplyInfestingEntropicTalent(this.talentLoadout);
+    const arcticEnt = shouldApplyArcticShardsEntropicTalent(this.talentLoadout);
 
     let randomVariant: {
-      colorVariant: 'purple' | 'blue' | 'red' | 'green';
+      colorVariant: 'purple' | 'blue' | 'red' | 'green' | 'arctic';
       damage: number;
     };
-    let entropicBoltTalent: 'wrathful' | 'staggering' | 'infesting' | undefined;
+    let entropicBoltTalent: 'wrathful' | 'staggering' | 'infesting' | 'arctic' | undefined;
     if (wrathEnt) {
       randomVariant = { colorVariant: 'red', damage: 41 };
       entropicBoltTalent = 'wrathful';
@@ -2190,6 +2431,9 @@ export class ControlSystem extends System {
     } else if (infestEnt) {
       randomVariant = { colorVariant: 'green', damage: INFESTING_ENTROPIC_BOLT_DAMAGE };
       entropicBoltTalent = 'infesting';
+    } else if (arcticEnt) {
+      randomVariant = { colorVariant: 'arctic', damage: ARCTIC_ENTROPIC_BOLT_DAMAGE };
+      entropicBoltTalent = 'arctic';
     } else {
       randomVariant = colorVariants[Math.floor(Math.random() * colorVariants.length)];
     }
@@ -2239,6 +2483,7 @@ export class ControlSystem extends System {
     const baseDamage = getCrossentropyBaseDamage(this.talentLoadout, this.abilityLoadout);
     const crossentropyTempest = shouldApplyCrossentropyTempestTalent(this.talentLoadout, this.abilityLoadout);
     const crossentropyPlague = shouldApplyCrossentropyPlagueTalent(this.talentLoadout, this.abilityLoadout);
+    const crossentropyGlacial = shouldApplyGlacialStormTalent(this.talentLoadout, this.abilityLoadout);
 
     // Create CrossentropyBolt projectile using the existing method
     const crossentropyConfig = {
@@ -2257,6 +2502,7 @@ export class ControlSystem extends System {
       infernoCrossentropy: shouldApplyInfernoTalent(this.talentLoadout, this.abilityLoadout),
       crossentropyTempest,
       crossentropyPlague,
+      crossentropyGlacial,
     };
     
     this.projectileSystem.createCrossentropyBoltProjectile(
@@ -2512,6 +2758,49 @@ export class ControlSystem extends System {
     this.performReanimateAsSolarRechargeProc(playerTransform);
   }
 
+  private spawnArcticGroundBlizzardAt(worldPosition: Vector3): void {
+    spawnArcticGroundBlizzardAtFromReact(worldPosition);
+  }
+
+  /** Arctic Shards room boon — 15% proc (roll in ControlSystem; CombatSystem gates talent + owner). */
+  public tryProcArcticShardsOnEntropicHit(target: Entity, projectileSource: Entity): void {
+    if (!this.playerEntity) return;
+    if (!shouldApplyArcticShardsEntropicTalent(this.talentLoadout)) return;
+    if (Math.random() >= ARCTIC_SHARDS_PROC_CHANCE) return;
+    if (!target.getComponent(Enemy)) return;
+    const proj = projectileSource.getComponent(Projectile);
+    if (!proj || proj.owner !== this.playerEntity.id) return;
+    const tt = target.getComponent(Transform);
+    if (!tt) return;
+    const p = tt.getWorldPosition().clone();
+    p.y = Math.max(1.5, p.y);
+    this.spawnArcticGroundBlizzardAt(p);
+  }
+
+  /** Glacial Storm — each Crossentropy hit: same concentrated blizzard + 4s coldsnap burst. */
+  public applyGlacialStormOnCrossentropyHit(impact: Vector3): void {
+    if (!this.playerEntity) return;
+    if (!shouldApplyGlacialStormTalent(this.talentLoadout, this.abilityLoadout)) return;
+    const p = impact.clone();
+    p.y = Math.max(1.5, p.y);
+    this.spawnArcticGroundBlizzardAt(p);
+
+    const currentTime = Date.now() / 1000;
+    this.audioSystem?.playFrostNovaSound(p);
+    const direction = new Vector3();
+    this.camera.getWorldDirection(direction);
+    direction.normalize();
+    if (this.onFrostNovaCallback) {
+      this.onFrostNovaCallback(p, direction);
+    }
+    this.freezeEnemiesInRadius(p, 6.0, currentTime, 4);
+    triggerGlobalFrostNova(p);
+  }
+
+  public getPlayerEntity(): Entity | null {
+    return this.playerEntity;
+  }
+
   private performCobraShot(playerTransform: Transform): void {
     if (!this.playerEntity) return;
     
@@ -2589,7 +2878,7 @@ export class ControlSystem extends System {
     this.emitCobraShotFromPlayerTransform(playerTransform);
   }
 
-  private freezeEnemiesInRadius(centerPosition: Vector3, radius: number, currentTime: number): void {
+  private freezeEnemiesInRadius(centerPosition: Vector3, radius: number, currentTime: number, freezeDurationSec = 6): void {
     // Get all entities in the world
     const allEntities = this.world.getAllEntities();
     let frozenCount = 0;
@@ -2615,16 +2904,22 @@ export class ControlSystem extends System {
         const enemy = entity.getComponent(Enemy);
         
         if (enemy) {
+          const sk = entity.userData?.coopServerEnemyType as string | undefined;
           // This is an enemy - freeze it (single player mode)
-          enemy.freeze(6.0, currentTime);
+          enemy.freeze(freezeDurationSec, currentTime, sk);
           frozenCount++;
-          
+
+          const freezeMs = capFreezeMsForEnemy(enemy, freezeDurationSec * 1000, sk);
           // Add frozen visual effect for this enemy
-          addGlobalFrozenEnemy(entity.id.toString(), entityPosition, 6000);
-          
+          addGlobalFrozenEnemy(entity.id.toString(), entityPosition, freezeMs);
+
           // Send freeze status to server for multiplayer (co-op mode)
           if (this.onApplyEnemyStatusEffectCallback && entity.userData?.serverEnemyId) {
-            this.onApplyEnemyStatusEffectCallback(entity.userData.serverEnemyId, 'freeze', 6000); // 6 seconds in ms
+            this.onApplyEnemyStatusEffectCallback(
+              entity.userData.serverEnemyId,
+              'freeze',
+              freezeMs,
+            );
           }
         } else {
           // This is likely another player in PVP mode - deal damage and freeze
@@ -2653,7 +2948,7 @@ export class ControlSystem extends System {
             
             // Broadcast freeze effect to the target player so they get frozen on their end
             if (this.onDebuffCallback) {
-              this.onDebuffCallback(entity.id, 'frozen', 6000, entityPosition);
+              this.onDebuffCallback(entity.id, 'frozen', freezeDurationSec * 1000, entityPosition);
             }
           }
         }
@@ -2718,6 +3013,11 @@ export class ControlSystem extends System {
         })()
       : [baseSpawn];
 
+    const volleyId = ++this.perfectShotVolleySerial;
+    if (shouldApplyArcticStingTalent(this.talentLoadout)) {
+      this.pendingArcticStingVolleyId = volleyId;
+    }
+
     const perfectConfig = {
       speed: 40, // Faster than regular charged arrows (35)
       damage: 75, // Higher damage than regular charged arrows (50)
@@ -2728,6 +3028,7 @@ export class ControlSystem extends System {
       level: this.currentLevel,
       opacity: 1.0,
       isPerfectShot: true,
+      perfectShotVolleyId: volleyId,
       ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_PERFECT_STAGGER } : {}),
     };
     
@@ -2764,6 +3065,26 @@ export class ControlSystem extends System {
         }
       }
     }
+  }
+
+  /** Arctic Sting: first enemy hit per perfect-shot volley may spawn concentrated blizzard (ICD). */
+  public tryArcticStingBlizzardOnPerfectShotFirstHit(volleyId: number | undefined, target: Entity): void {
+    if (!this.playerEntity || volleyId == null) return;
+    if (!shouldApplyArcticStingTalent(this.talentLoadout) || this.currentWeapon !== WeaponType.BOW) return;
+    if (this.pendingArcticStingVolleyId !== volleyId) return;
+    if (!target.getComponent(Enemy)) return;
+
+    this.pendingArcticStingVolleyId = null;
+
+    const now = Date.now() / 1000;
+    if (now - this.lastArcticStingBlizzardTimeSec < ARCTIC_STING_BLIZZARD_ICD_SEC) return;
+
+    const tt = target.getComponent(Transform);
+    if (!tt) return;
+    const p = tt.getWorldPosition().clone();
+    p.y = Math.max(1.5, p.y);
+    this.lastArcticStingBlizzardTimeSec = now;
+    this.spawnArcticGroundBlizzardAt(p);
   }
 
   // Methods to configure weapon for testing
@@ -2803,6 +3124,10 @@ export class ControlSystem extends System {
     this.onFrostNovaCallback = callback;
   }
   
+  public setRoomBoomDashCallback(callback: (payload: RoomBoomDashPayload) => void): void {
+    this.onRoomBoomDashCallback = callback;
+  }
+
   public setCobraShotCallback(callback: (position: Vector3, direction: Vector3) => void): void {
     this.onCobraShotCallback = callback;
   }
@@ -4715,6 +5040,8 @@ export class ControlSystem extends System {
           infestSabreSwipes,
         );
 
+        this.tryGuardSabresSwipesBladeProc(playerTransform);
+
         // Right sabre hit (with small delay)
         setTimeout(() => {
           if (!targetHealth.isDead) {
@@ -4743,6 +5070,7 @@ export class ControlSystem extends System {
               wrathSabreSwipes,
               infestSabreSwipes,
             );
+            this.tryGuardSabresSwipesBladeProc(playerTransform);
           }
         }, 100); // 100ms delay between sabre hits
 
@@ -5092,6 +5420,10 @@ export class ControlSystem extends System {
           undefined,
           infestedFlourishFlag,
         );
+
+        if (shouldApplyGuardSabresFlourishTalent(this.talentLoadout)) {
+          this.applySabresPurpleGuardEffect(playerTransform);
+        }
         
         // Apply stun effect if at 3 stacks
         if (isStunned) {
@@ -5324,6 +5656,8 @@ export class ControlSystem extends System {
     this.rejuvenatingShotChargeProgress = 0;
     this.isCrossentropyCharging = false; // Reset crossentropy charging
     this.crossentropyChargeProgress = 0;
+    this.crossentropyRechargeAccumulator = CROSSENTROPY_COOLDOWN_SEC;
+    this.crossentropyCooldownReconcileWallSec = null;
     this.isSummonTotemCharging = false; // Reset summon totem charging
     this.summonTotemChargeProgress = 0;
     this.isWindShearCharging = false; // Reset wind shear charging
@@ -5341,6 +5675,8 @@ export class ControlSystem extends System {
     this.lastSolarRechargeProcEffectWallClockMs = 0;
     this.lastFlurryHealVfxWallClockMs = 0;
     this.lastFlurryHealNumberWallClockMs = 0;
+    this.healingStreamHealCarry = 0;
+    this.lastHealingStreamHealNumberWallClockMs = 0;
     this.isSkyfalling = false;
     this.skyfallPhase = 'none';
     this.isBackstabbing = false;
@@ -5374,6 +5710,9 @@ export class ControlSystem extends System {
     this.dashGuardShieldActive = false;
     this.dashGuardOwnsBarrier = false;
     this.dashGuardBarrierEndMs = 0;
+    this.sabresPurpleGuardShieldActive = false;
+    this.sabresPurpleGuardOwnsBarrier = false;
+    this.sabresPurpleGuardBarrierEndMs = 0;
     this.executionerBuffDeadlineMs = 0;
     this.runebladeExecutionerFlatBonusPending = 0;
     this.runebladeCrusaderBuffEndMs = 0;
@@ -5581,6 +5920,18 @@ export class ControlSystem extends System {
     return this.talentLoadout.staggerShot === true && this.currentWeapon === WeaponType.BOW;
   }
 
+  public shouldApplyGuardbreakRoomTalent(): boolean {
+    return shouldApplyGuardbreakTalent(this.talentLoadout);
+  }
+
+  public shouldApplyBloodleechRoomTalent(): boolean {
+    return shouldApplyBloodleechTalent(this.talentLoadout);
+  }
+
+  public broadcastRoomBoonHealing(healingAmount: number, healingType: string, position: Vector3): void {
+    this.onBroadcastHealing?.(healingAmount, healingType, position);
+  }
+
   /** Dual Coil: twin Bow LMB projectiles and paired perfect-shot beam VFX. */
   public shouldApplyDualCoilForBow(): boolean {
     return shouldApplyDualCoilTalent(this.talentLoadout) && this.currentWeapon === WeaponType.BOW;
@@ -5765,223 +6116,232 @@ export class ControlSystem extends System {
   }
 
   private performBackstabDamage(playerTransform: Transform): void {
-    // Get all entities in the world to check for enemies/players
     const allEntities = this.world.getAllEntities();
     const playerPosition = playerTransform.position;
-    
-    // Get player facing direction (camera direction)
+
     const playerDirection = new Vector3();
     this.camera.getWorldDirection(playerDirection);
     playerDirection.normalize();
-    
-    const backstabRange = 4.75; // Sabre melee range
-    let hitCount = 0;
-    
+
+    const vorpalGust = shouldApplyVorpalGustTalent(this.talentLoadout);
+    const backstabRange = 4.75;
+    const hitState = { hitCount: 0 };
+
+    if (vorpalGust) {
+      const beamHits: { entity: Entity; t: number }[] = [];
+      for (const entity of allEntities) {
+        if (entity === this.playerEntity) continue;
+        const targetHealth = entity.getComponent(Health);
+        const targetTransform = entity.getComponent(Transform);
+        if (!targetHealth || !targetTransform || targetHealth.isDead) continue;
+        const beam = evaluateVorpalGustBeamHit(playerPosition, playerDirection, targetTransform.position);
+        if (beam.ok) beamHits.push({ entity, t: beam.t });
+      }
+      beamHits.sort((a, b) => a.t - b.t);
+      for (const { entity } of beamHits) {
+        this.applyBackstabDamageToTarget(entity, playerTransform, playerPosition, playerDirection, hitState);
+      }
+      return;
+    }
+
     for (const entity of allEntities) {
       if (entity === this.playerEntity) continue;
-      
+
       const targetHealth = entity.getComponent(Health);
       const targetTransform = entity.getComponent(Transform);
-      
+
       if (!targetHealth || !targetTransform || targetHealth.isDead) continue;
-      
-      // Check if target is in range
+
       const distance = playerPosition.distanceTo(targetTransform.position);
       if (distance > backstabRange) continue;
-      
-      // Check if target is in front of player (cone attack)
+
       const directionToTarget = new Vector3()
         .subVectors(targetTransform.position, playerPosition)
         .normalize();
-      
+
       const dotProduct = playerDirection.dot(directionToTarget);
       const angleThreshold = Math.cos(Math.PI / 3); // 60 degree cone
-      
+
       if (dotProduct < angleThreshold) continue;
-      
-      // Determine if this is a backstab (attacking from behind the target)
-      let isBackstab = false;
-      let baseDamage = 95; // Base damage
 
-      // For PVP players, check if we're behind them
-      const pvpPlayers = (window as any).pvpPlayers;
-      const localSocketId = (window as any).localSocketId;
+      this.applyBackstabDamageToTarget(entity, playerTransform, playerPosition, playerDirection, hitState);
+    }
+  }
 
-      if (pvpPlayers && localSocketId) {
-        // Find the target player in PVP players map
-        let targetPlayer = null;
-        for (const [playerId, player] of pvpPlayers) {
-          if (playerId !== localSocketId) {
-            const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
-            if (playerPos.distanceTo(targetTransform.position) < 0.5) {
-              targetPlayer = player;
-              break;
-            }
+  /** Positional logic + damage queue shared by melee cone Backstab and Vorpal Gust beam order. */
+  private applyBackstabDamageToTarget(
+    entity: Entity,
+    playerTransform: Transform,
+    playerPosition: Vector3,
+    _playerDirection: Vector3,
+    hitState: { hitCount: number },
+  ): void {
+    const targetHealth = entity.getComponent(Health);
+    const targetTransform = entity.getComponent(Transform);
+    if (!targetHealth || !targetTransform || targetHealth.isDead) return;
+
+    let isBackstab = false;
+    let baseDamage = 95;
+
+    const pvpPlayers = (window as any).pvpPlayers;
+    const localSocketId = (window as any).localSocketId;
+
+    if (pvpPlayers && localSocketId) {
+      let targetPlayer = null;
+      for (const [playerId, player] of pvpPlayers) {
+        if (playerId !== localSocketId) {
+          const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
+          if (playerPos.distanceTo(targetTransform.position) < 0.5) {
+            targetPlayer = player;
+            break;
           }
-        }
-
-        if (targetPlayer) {
-          // Calculate target's facing direction from their rotation
-          const targetFacingDirection = new Vector3(
-            Math.sin(targetPlayer.rotation.y),
-            0,
-            Math.cos(targetPlayer.rotation.y)
-          ).normalize();
-
-          // Vector from target to attacker
-          const attackerDirection = new Vector3()
-            .subVectors(playerPosition, targetTransform.position)
-            .normalize();
-
-          // Check if attacker is behind target (dot product < 0 means opposite direction)
-          const behindDotProduct = targetFacingDirection.dot(attackerDirection);
-          isBackstab = behindDotProduct < -0.3; // 70 degree cone behind target
-
-          if (isBackstab) {
-            baseDamage = 175; // Backstab base damage (before critical calculation)
-          }
-        }
-      } else {
-        // Check for enemies (bosses and summoned skeletons)
-        const enemy = entity.getComponent(Enemy);
-        
-        // Use captured rotation from when backstab started, not current rotation
-        // Prefer visualRotation (from mesh) over rotation (from server) as it lags behind due to interpolation
-        const capturedRotation = this.backstabTargetRotations.get(entity.id);
-        const visualRotation = entity.userData?.visualRotation;
-        const serverRotation = entity.userData?.rotation;
-        
-        // Priority: captured > visual > server
-        const rotationToUse = capturedRotation !== undefined ? capturedRotation : 
-                             (visualRotation !== undefined ? visualRotation : serverRotation);
-        
-        console.log(`🗡️ Backstab Debug - Entity ${entity.id}:`, {
-          hasEnemy: !!enemy,
-          hasUserData: !!entity.userData,
-          serverRotation: serverRotation,
-          visualRotation: visualRotation,
-          capturedRotation: capturedRotation,
-          rotationToUse: rotationToUse,
-          usingVisual: visualRotation !== undefined && capturedRotation === undefined,
-          serverEnemyId: entity.userData?.serverEnemyId
-        });
-        
-        if (enemy && rotationToUse !== undefined) {
-          // Calculate enemy's facing direction from their rotation (in radians)
-          const targetFacingDirection = new Vector3(
-            Math.sin(rotationToUse),
-            0,
-            Math.cos(rotationToUse)
-          ).normalize();
-
-          // Vector from target to attacker
-          const attackerDirection = new Vector3()
-            .subVectors(playerPosition, targetTransform.position)
-            .normalize();
-
-          // Check if attacker is behind target (dot product < 0 means opposite direction)
-          const behindDotProduct = targetFacingDirection.dot(attackerDirection);
-          isBackstab = behindDotProduct < -0.3; // 70 degree cone behind target
-
-          console.log(`🗡️ Backstab Calculation:`, {
-            entityRotation: rotationToUse,
-            targetFacing: targetFacingDirection,
-            attackerDirection: attackerDirection,
-            behindDotProduct: behindDotProduct,
-            isBackstab: isBackstab,
-            threshold: -0.3
-          });
-
-          if (isBackstab) {
-            baseDamage = 285; // Backstab base damage (before critical calculation)
-            console.log(`✅ BACKSTAB SUCCESS! Base damage increased to 215`);
-          } else {
-            console.log(`❌ Not a backstab. Dot product ${behindDotProduct.toFixed(2)} >= -0.3`);
-          }
-        } else {
-          console.log(`❌ Backstab failed checks - enemy: ${!!enemy}, rotation defined: ${rotationToUse !== undefined}`);
         }
       }
 
-      if (isBackstab && shouldApplyKillstreakTalent(this.talentLoadout)) {
-        baseDamage += this.backstabKillstreakStack * BACKSTAB_KILLSTREAK_DAMAGE_PER_KILL;
+      if (targetPlayer) {
+        const targetFacingDirection = new Vector3(
+          Math.sin(targetPlayer.rotation.y),
+          0,
+          Math.cos(targetPlayer.rotation.y),
+        ).normalize();
+
+        const attackerDirection = new Vector3()
+          .subVectors(playerPosition, targetTransform.position)
+          .normalize();
+
+        const behindDotProduct = targetFacingDirection.dot(attackerDirection);
+        isBackstab = behindDotProduct < -0.3;
+
+        if (isBackstab) {
+          baseDamage = 175;
+        }
       }
-
-      // Use DamageCalculator for proper critical chance and damage scaling
-      const wrathStab = shouldApplyWrathfulStabTalent(this.talentLoadout);
-      const damageResult = wrathStab
-        ? calculateDamage(baseDamage, WeaponType.SABRES, {
-            critChanceAdd: WRATHFUL_STAB_CRIT_CHANCE_ADD,
-            critDamageMultAdd: WRATHFUL_STAB_CRIT_DAMAGE_MULT_ADD,
-          })
-        : calculateDamage(baseDamage, WeaponType.SABRES);
-      const damage = damageResult.damage;
-      
-      console.log(`🗡️ Final Backstab Damage:`, {
-        baseDamage: baseDamage,
-        isBackstab: isBackstab,
-        finalDamage: damage,
-        isCritical: damageResult.isCritical
-      });
-      
-      // Check if target is stunned (for energy refund)
-      let isTargetStunned = false;
-
-      // Check for enemy stun status (single player mode)
+    } else {
       const enemy = entity.getComponent(Enemy);
-      if (enemy) {
-        // Check if enemy is currently frozen/stunned
-        isTargetStunned = enemy.isFrozen;
+
+      const capturedRotation = this.backstabTargetRotations.get(entity.id);
+      const visualRotation = entity.userData?.visualRotation;
+      const serverRotation = entity.userData?.rotation;
+
+      const rotationToUse =
+        capturedRotation !== undefined
+          ? capturedRotation
+          : visualRotation !== undefined
+            ? visualRotation
+            : serverRotation;
+
+      console.log(`🗡️ Backstab Debug - Entity ${entity.id}:`, {
+        hasEnemy: !!enemy,
+        hasUserData: !!entity.userData,
+        serverRotation: serverRotation,
+        visualRotation: visualRotation,
+        capturedRotation: capturedRotation,
+        rotationToUse: rotationToUse,
+        usingVisual: visualRotation !== undefined && capturedRotation === undefined,
+        serverEnemyId: entity.userData?.serverEnemyId,
+      });
+
+      if (enemy && rotationToUse !== undefined) {
+        const targetFacingDirection = new Vector3(
+          Math.sin(rotationToUse),
+          0,
+          Math.cos(rotationToUse),
+        ).normalize();
+
+        const attackerDirection = new Vector3()
+          .subVectors(playerPosition, targetTransform.position)
+          .normalize();
+
+        const behindDotProduct = targetFacingDirection.dot(attackerDirection);
+        isBackstab = behindDotProduct < -0.3;
+
+        console.log(`🗡️ Backstab Calculation:`, {
+          entityRotation: rotationToUse,
+          targetFacing: targetFacingDirection,
+          attackerDirection: attackerDirection,
+          behindDotProduct: behindDotProduct,
+          isBackstab: isBackstab,
+          threshold: -0.3,
+        });
+
+        if (isBackstab) {
+          baseDamage = 285;
+          console.log(`✅ BACKSTAB SUCCESS! Base damage increased to 215`);
+        } else {
+          console.log(`❌ Not a backstab. Dot product ${behindDotProduct.toFixed(2)} >= -0.3`);
+        }
       } else {
-        // Check for PVP player stun status using ControlSystem's internal tracking
-        isTargetStunned = this.isPlayerStunned(entity.id);
+        console.log(
+          `❌ Backstab failed checks - enemy: ${!!enemy}, rotation defined: ${rotationToUse !== undefined}`,
+        );
+      }
+    }
+
+    if (isBackstab && shouldApplyKillstreakTalent(this.talentLoadout)) {
+      baseDamage += this.backstabKillstreakStack * BACKSTAB_KILLSTREAK_DAMAGE_PER_KILL;
+    }
+
+    const wrathStab = shouldApplyWrathfulStabTalent(this.talentLoadout);
+    const damageResult = wrathStab
+      ? calculateDamage(baseDamage, WeaponType.SABRES, {
+          critChanceAdd: WRATHFUL_STAB_CRIT_CHANCE_ADD,
+          critDamageMultAdd: WRATHFUL_STAB_CRIT_DAMAGE_MULT_ADD,
+        })
+      : calculateDamage(baseDamage, WeaponType.SABRES);
+    const damage = damageResult.damage;
+
+    console.log(`🗡️ Final Backstab Damage:`, {
+      baseDamage: baseDamage,
+      isBackstab: isBackstab,
+      finalDamage: damage,
+      isCritical: damageResult.isCritical,
+    });
+
+    const combatSystem = this.world.getSystem(CombatSystem);
+    if (combatSystem) {
+      const staggeringStab = shouldApplyStaggeringStabTalent(this.talentLoadout);
+      const infestedBackstab = shouldApplyInfestedBackstabTalent(this.talentLoadout);
+      const killstreakBackstab = shouldApplyKillstreakTalent(this.talentLoadout);
+      const relentlessBackstab = shouldApplyRelentlessTalent(this.talentLoadout);
+      combatSystem.queueDamage(
+        entity,
+        damage,
+        this.playerEntity!,
+        'backstab',
+        this.playerEntity?.userData?.playerId,
+        damageResult.isCritical,
+        undefined,
+        staggeringStab ? STAGGERING_STAB_BACKSTAB_STAGGER : undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        infestedBackstab,
+        undefined,
+        killstreakBackstab ? true : undefined,
+        relentlessBackstab ? true : undefined,
+      );
+
+      if (shouldApplyGuardSabresStabTalent(this.talentLoadout)) {
+        this.applySabresPurpleGuardEffect(playerTransform);
       }
 
-      // Apply damage
-      const combatSystem = this.world.getSystem(CombatSystem);
-      if (combatSystem) {
-        const staggeringStab = shouldApplyStaggeringStabTalent(this.talentLoadout);
-        const infestedBackstab = shouldApplyInfestedBackstabTalent(this.talentLoadout);
-        const killstreakBackstab = shouldApplyKillstreakTalent(this.talentLoadout);
-        const relentlessBackstab = shouldApplyRelentlessTalent(this.talentLoadout);
-        combatSystem.queueDamage(
-          entity,
-          damage,
-          this.playerEntity!,
-          'backstab',
-          this.playerEntity?.userData?.playerId,
-          damageResult.isCritical,
-          undefined,
-          staggeringStab ? STAGGERING_STAB_BACKSTAB_STAGGER : undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          infestedBackstab,
-          undefined,
-          killstreakBackstab ? true : undefined,
-          relentlessBackstab ? true : undefined,
-        );
+      hitState.hitCount++;
 
-        hitCount++;
-
-        // Trigger callback for multiplayer/visual effects with correct backstab status
-        if (this.onBackstabCallback && hitCount === 1) { // Only trigger once per backstab ability use
-          const direction = new Vector3();
-          this.camera.getWorldDirection(direction);
-          this.onBackstabCallback(playerTransform.position, direction, damage, isBackstab);
-        }
-
+      if (this.onBackstabCallback && hitState.hitCount === 1) {
+        const direction = new Vector3();
+        this.camera.getWorldDirection(direction);
+        this.onBackstabCallback(playerTransform.position, direction, damage, isBackstab);
       }
     }
   }
@@ -6088,7 +6448,7 @@ export class ControlSystem extends System {
     }
 
     // Check for double-tap on movement keys
-    const dashDirections = [
+    const dashDirections: Array<{ key: RoomBoomDashKey; direction: Vector3 }> = [
       { key: 'w', direction: new Vector3(0, 0, -1) }, // Forward
       { key: 's', direction: new Vector3(0, 0, 1) },  // Backward
       { key: 'a', direction: new Vector3(-1, 0, 0) }, // Left
@@ -6119,8 +6479,10 @@ export class ControlSystem extends System {
           const dashStarted = movement.startDash(worldDirection, transform.position, currentTime);
           if (dashStarted) {
             this.audioSystem?.playUIDashSound();
+            this.tryTriggerRoomBoomDashTalent(key, movement, transform.position, worldDirection);
             if (
-              this.currentWeapon === WeaponType.RUNEBLADE &&
+              (this.currentWeapon === WeaponType.RUNEBLADE ||
+                this.currentWeapon === WeaponType.SABRES) &&
               shouldApplyDashGuardTalent(this.talentLoadout)
             ) {
               this.applyDashGuardEffect(transform);
@@ -6141,6 +6503,60 @@ export class ControlSystem extends System {
         break;
       }
     }
+  }
+
+  private tryTriggerRoomBoomDashTalent(
+    key: RoomBoomDashKey,
+    movement: Movement,
+    originPosition: Vector3,
+    worldDirection: Vector3,
+  ): void {
+    if (!this.onRoomBoomDashCallback) return;
+
+    const nowMs = Date.now();
+    let variant: RoomBoomDashVariant | null = null;
+
+    if (key === 'w' && shouldApplyInfernalDashTalent(this.talentLoadout)) {
+      variant = 'infernal';
+    } else if (
+      key === 's' &&
+      shouldApplyGlacialDashTalent(this.talentLoadout) &&
+      nowMs - this.lastGlacialDashRoomBoomMs >= GLACIAL_DASH_COOLDOWN_MS
+    ) {
+      variant = 'glacial';
+    } else if (
+      shouldApplyMendingDashTalent(this.talentLoadout) &&
+      nowMs - this.lastMendingDashRoomBoomMs >= MENDING_DASH_COOLDOWN_MS
+    ) {
+      variant = 'mending';
+    } else if (
+      shouldApplyStaggeringDashTalent(this.talentLoadout) &&
+      nowMs - this.lastStaggeringDashRoomBoomMs >= STAGGERING_DASH_COOLDOWN_MS
+    ) {
+      variant = 'staggering';
+    }
+
+    if (!variant) return;
+
+    const origin = originPosition.clone();
+    const direction = worldDirection.clone().normalize();
+    const destination = origin.clone().add(direction.clone().multiplyScalar(movement.dashDistance));
+
+    if (!this.isInsidePlayableArena(destination.x, destination.z, this.playableRadius)) {
+      return;
+    }
+
+    if (variant === 'glacial') this.lastGlacialDashRoomBoomMs = nowMs;
+    else if (variant === 'mending') this.lastMendingDashRoomBoomMs = nowMs;
+    else if (variant === 'staggering') this.lastStaggeringDashRoomBoomMs = nowMs;
+
+    this.onRoomBoomDashCallback({
+      variant,
+      key,
+      origin,
+      destination,
+      direction,
+    });
   }
 
   private handleDashMovement(movement: Movement, transform: Transform): void {
@@ -6560,6 +6976,9 @@ export class ControlSystem extends System {
     this.dashGuardOwnsBarrier = false;
     this.dashGuardShieldActive = false;
     this.dashGuardBarrierEndMs = 0;
+    this.sabresPurpleGuardOwnsBarrier = false;
+    this.sabresPurpleGuardShieldActive = false;
+    this.sabresPurpleGuardBarrierEndMs = 0;
     if (this.deflectBarrier.isBarrierActive()) {
       this.deflectBarrier.deactivate();
     }
@@ -6817,6 +7236,7 @@ export class ControlSystem extends System {
     const wrathfulBiteBarrage = shouldApplyWrathfulBiteTalent(this.talentLoadout, this.abilityLoadout);
     const wyvernBiteBarrage = shouldApplyWyvernBiteTalent(this.talentLoadout, this.abilityLoadout);
     const staggeringBiteBarrage = shouldApplyStaggeringBiteTalent(this.talentLoadout, this.abilityLoadout);
+    const glacialBiteBarrage = shouldApplyGlacialBiteTalent(this.talentLoadout, this.abilityLoadout);
 
     if (this.onBarrageCallback) {
       this.onBarrageCallback(initialPos.clone(), initialDir.clone());
@@ -6850,6 +7270,7 @@ export class ControlSystem extends System {
           wrathfulBiteBarrage,
           wyvernBiteBarrage,
           staggeringBiteBarrage,
+          glacialBiteBarrage,
           ...(staggeringBiteBarrage ? { staggerToAdd: STAGGERING_BITE_BARRAGE_STAGGER_PER_HIT } : {}),
         };
 
@@ -6873,6 +7294,9 @@ export class ControlSystem extends System {
           }
           if (staggeringBiteBarrage) {
             renderer.mesh.userData.barrageStaggeringBite = true;
+          }
+          if (glacialBiteBarrage) {
+            renderer.mesh.userData.barrageGlacialBite = true;
           }
         }
 
@@ -6932,7 +7356,8 @@ export class ControlSystem extends System {
       (this.wraithGuardOwnsBarrier ||
         this.colossusGuardOwnsBarrier ||
         this.guardComboOwnsBarrier ||
-        this.dashGuardOwnsBarrier)
+        this.dashGuardOwnsBarrier ||
+        this.sabresPurpleGuardOwnsBarrier)
     ) {
       if (this.deflectBarrier.isBarrierActive()) {
         this.deflectBarrier.deactivate();
@@ -6950,6 +7375,9 @@ export class ControlSystem extends System {
     this.dashGuardOwnsBarrier = false;
     this.dashGuardShieldActive = false;
     this.dashGuardBarrierEndMs = 0;
+    this.sabresPurpleGuardOwnsBarrier = false;
+    this.sabresPurpleGuardShieldActive = false;
+    this.sabresPurpleGuardBarrierEndMs = 0;
   }
 
   private onTalentBarrierTeardown(): void {
@@ -6970,6 +7398,9 @@ export class ControlSystem extends System {
     }
     if (this.dashGuardShieldActive && this.dashGuardBarrierEndMs > now) {
       maxEnd = Math.max(maxEnd, this.dashGuardBarrierEndMs);
+    }
+    if (this.sabresPurpleGuardShieldActive && this.sabresPurpleGuardBarrierEndMs > now) {
+      maxEnd = Math.max(maxEnd, this.sabresPurpleGuardBarrierEndMs);
     }
     if (maxEnd > now) {
       this.talentBarrierEndTimeout = setTimeout(() => this.onTalentBarrierTeardown(), maxEnd - now);
@@ -6996,6 +7427,9 @@ export class ControlSystem extends System {
     }
     if (this.dashGuardShieldActive) {
       maxEnd = Math.max(maxEnd, this.dashGuardBarrierEndMs);
+    }
+    if (this.sabresPurpleGuardShieldActive) {
+      maxEnd = Math.max(maxEnd, this.sabresPurpleGuardBarrierEndMs);
     }
     if (maxEnd <= now) {
       this.finishTalentBarrierTeardown();
@@ -7045,6 +7479,14 @@ export class ControlSystem extends System {
     const playerTransform = this.playerEntity.getComponent(Transform);
     if (!playerTransform) return;
     this.applyGuardComboEffect(playerTransform);
+  }
+
+  private tryGuardSabresSwipesBladeProc(playerTransform: Transform): void {
+    if (!this.playerEntity) return;
+    if (this.currentWeapon !== WeaponType.SABRES) return;
+    if (!shouldApplyGuardSabresSwipesTalent(this.talentLoadout)) return;
+    if (Math.random() >= GUARD_SABRES_SWIPES_PROC_CHANCE) return;
+    this.applySabresPurpleGuardEffect(playerTransform);
   }
 
   /** Windfury proc + Flurry heal — called once per Runeblade swing after real hits (Runeblade.tsx). */
@@ -7106,6 +7548,32 @@ export class ControlSystem extends System {
     this.dashGuardShieldActive = true;
     this.dashGuardBarrierEndMs = Date.now() + DASH_GUARD_DURATION_SEC * 1000;
     this.setupDeflectBarrier(playerTransform, DASH_GUARD_DURATION_SEC);
+    this.rescheduleTalentBarrierTeardown();
+  }
+
+  private applySabresPurpleGuardEffect(playerTransform: Transform): void {
+    this.audioSystem?.playSwordDeflectSound(playerTransform.position);
+    const health = this.playerEntity?.getComponent(Health);
+
+    if (this.deflectBarrier.isBarrierActive()) {
+      if (health) {
+        health.addInvulnerabilityTime(GUARD_SABRES_PURPLE_SHIELD_DURATION_SEC, true);
+      }
+      if (this.isDeflecting) {
+        return;
+      }
+      this.sabresPurpleGuardShieldActive = true;
+      this.sabresPurpleGuardBarrierEndMs =
+        Date.now() + GUARD_SABRES_PURPLE_SHIELD_DURATION_SEC * 1000;
+      this.rescheduleTalentBarrierTeardown();
+      return;
+    }
+
+    this.sabresPurpleGuardOwnsBarrier = true;
+    this.sabresPurpleGuardShieldActive = true;
+    this.sabresPurpleGuardBarrierEndMs =
+      Date.now() + GUARD_SABRES_PURPLE_SHIELD_DURATION_SEC * 1000;
+    this.setupDeflectBarrier(playerTransform, GUARD_SABRES_PURPLE_SHIELD_DURATION_SEC);
     this.rescheduleTalentBarrierTeardown();
   }
 
@@ -7184,6 +7652,9 @@ export class ControlSystem extends System {
     this.dashGuardOwnsBarrier = false;
     this.dashGuardShieldActive = false;
     this.dashGuardBarrierEndMs = 0;
+    this.sabresPurpleGuardOwnsBarrier = false;
+    this.sabresPurpleGuardShieldActive = false;
+    this.sabresPurpleGuardBarrierEndMs = 0;
     this.deflectBarrier.deactivate();
   }
 
@@ -7221,6 +7692,9 @@ export class ControlSystem extends System {
     }
     if (this.dashGuardShieldActive) {
       maxRem = Math.max(maxRem, Math.max(0, (this.dashGuardBarrierEndMs - now) / 1000));
+    }
+    if (this.sabresPurpleGuardShieldActive) {
+      maxRem = Math.max(maxRem, Math.max(0, (this.sabresPurpleGuardBarrierEndMs - now) / 1000));
     }
     if (maxRem > 0) {
       return Math.max(maxRem, 0.25);
@@ -7333,11 +7807,7 @@ export class ControlSystem extends System {
         max: this.frostNovaFireRate,
         isActive: false
       };
-      cooldowns['R'] = {
-        current: Math.max(0, this.crossentropyFireRate - (currentTime - this.lastCrossentropyTime)),
-        max: this.crossentropyFireRate,
-        isActive: this.isCrossentropyCharging
-      };
+      cooldowns['R'] = this.getCrossentropyCooldownHud(currentTime);
       cooldowns['F'] = this.getSummonTotemCooldownInfo(currentTime);
       cooldowns['F'].isActive = this.isSummonTotemCharging;
     } else if (this.currentWeapon === WeaponType.SABRES) {

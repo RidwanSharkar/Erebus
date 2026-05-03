@@ -11,8 +11,6 @@ import {
   AnimationClip,
   VectorKeyframeTrack,
   PointLight,
-  Mesh,
-  MeshStandardMaterial,
 } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 
@@ -27,43 +25,22 @@ const KEY_LIGHT_DISTANCE = 20;
 const RIM_LIGHT_INTENSITY = 1.1;
 const RIM_LIGHT_DISTANCE = 12;
 
-const ORBIT_RADIUS = 2.55;
-const ORBIT_Y = 2.15;
-const ORBIT_ROT_SPEED = 0.62;
-const ORB_LIGHT_INTENSITY = 1.7;
-const ORB_LIGHT_DISTANCE = 7.5;
-const ORB_EMISSIVE_INTENSITY = 2.8;
-const ORB_ICOSAHEDRON_RADIUS = 0.35;
-const ORB_COUNT = 6;
-
 /** Broad, uniform fill so the GLB isn’t only lit from one side (moves with boss). */
 const FILL_LIGHT_INTENSITY = 2.6;
 const FILL_LIGHT_DISTANCE = 26;
 const FILL_LIGHT_COLOR = '#ddd8e8';
 
 function BossLightRig({ isDying }: { isDying: boolean }) {
-  const orbitRef = useRef<Group>(null);
   const fadeRef = useRef(1);
   const keyLightRef = useRef<PointLight>(null);
   const rimLightRef = useRef<PointLight>(null);
   const fillLightRef = useRef<PointLight>(null);
-  const orbLightRefs = useRef<(PointLight | null)[]>([]);
-  const orbMeshRefs = useRef<(Mesh | null)[]>([]);
-
-  const orbPhases = useMemo(
-    () => Array.from({ length: ORB_COUNT }, (_, i) => (i / ORB_COUNT) * Math.PI * 2),
-    []
-  );
 
   useFrame((_, delta) => {
     const target = isDying ? 0 : 1;
     fadeRef.current += (target - fadeRef.current) * Math.min(1, delta * 5);
 
     const f = fadeRef.current;
-    if (orbitRef.current) {
-      orbitRef.current.rotation.y += delta * ORBIT_ROT_SPEED;
-    }
-
     if (keyLightRef.current) {
       keyLightRef.current.intensity = KEY_LIGHT_INTENSITY * f;
     }
@@ -72,15 +49,6 @@ function BossLightRig({ isDying }: { isDying: boolean }) {
     }
     if (fillLightRef.current) {
       fillLightRef.current.intensity = FILL_LIGHT_INTENSITY * f;
-    }
-
-    for (let i = 0; i < ORB_COUNT; i++) {
-      const L = orbLightRefs.current[i];
-      if (L) L.intensity = ORB_LIGHT_INTENSITY * f;
-      const mesh = orbMeshRefs.current[i];
-      if (mesh?.material && !Array.isArray(mesh.material)) {
-        (mesh.material as MeshStandardMaterial).emissiveIntensity = ORB_EMISSIVE_INTENSITY * f;
-      }
     }
   });
 
@@ -110,42 +78,6 @@ function BossLightRig({ isDying }: { isDying: boolean }) {
         decay={2}
         position={[-0.55, 1.95, 0.45]}
       />
-
-      <group ref={orbitRef} position={[0, ORBIT_Y, 0]}>
-        {orbPhases.map((phase, i) => {
-          const accent = i % 2 === 1;
-          const color = accent ? BOSS_TECTONIC_ACCENT : BOSS_CORE_GLOW;
-          const x = Math.cos(phase) * ORBIT_RADIUS;
-          const z = Math.sin(phase) * ORBIT_RADIUS;
-          return (
-            <group key={i} position={[x, 0, z]}>
-              <mesh
-                ref={(el) => {
-                  orbMeshRefs.current[i] = el;
-                }}
-              >
-                <icosahedronGeometry args={[ORB_ICOSAHEDRON_RADIUS, 0]} />
-                <meshStandardMaterial
-                  color={color}
-                  emissive={color}
-                  emissiveIntensity={ORB_EMISSIVE_INTENSITY}
-                  transparent
-                  opacity={0.92}
-                />
-              </mesh>
-              <pointLight
-                ref={(el) => {
-                  orbLightRefs.current[i] = el;
-                }}
-                color={color}
-                intensity={ORB_LIGHT_INTENSITY *10}
-                distance={ORB_LIGHT_DISTANCE}
-                decay={6}
-              />
-            </group>
-          );
-        })}
-      </group>
     </>
   );
 }

@@ -13,10 +13,10 @@ const LOADING_TIPS = [
   'Press X by a throne weapon to equip it; Q/E/R default for that weapon.',
   'Pick one permanent class talent after equipping—it (once per weapon).',
   'After your first room clear, pick a room boon tied to that room’s color.',
-  'Runeblade, Bow, and Scythe each use different class and color-room pools.',
+  'Different colored rooms have different types of rewards.',
   'Every third combat room opens a boss portal.',
   'Double-tap WASD to dash.',
-  'Tempest Rounds (Bow) and Icebeam (Scythe) drop from boons—not the passive row.',
+  'Interact with pedestal after each room to obtain the reward.',
   'Shield ticks up between fights; health does not.',
   'Press X near a portal when it appears to travel to the next trial.',
 ] as const;
@@ -31,7 +31,7 @@ type RuneItem = {
   duration: number;
   delay: number;
 };
-
+ 
 /** Deterministic layout so SSR and first client paint match (avoids hydration errors). */
 function createDeterministicRunes(): RuneItem[] {
   return Array.from({ length: 18 }, (_, i) => ({

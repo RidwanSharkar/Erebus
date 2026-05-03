@@ -30,6 +30,8 @@ type BoltColorTheme = {
 function getBoltColorTheme(colorVariant: string | undefined, isCryoflame: boolean): BoltColorTheme {
   if (isCryoflame) return { primary: '#1e40af', secondary: '#3b82f6', light: '#60a5fa' };
   switch (colorVariant) {
+    case 'arctic':
+      return { primary: '#0c4a6e', secondary: '#0284c7', light: '#7dd3fc' };
     case 'blue':   return { primary: '#3b82f6', secondary: '#93c5fd', light: '#93c5fd' };
     case 'red':    return { primary: '#ef4444', secondary: '#fca5a5', light: '#fecaca' };
     case 'green':  return { primary: '#22c55e', secondary: '#86efac', light: '#bbf7d0' };

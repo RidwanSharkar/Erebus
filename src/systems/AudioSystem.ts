@@ -21,6 +21,7 @@ type SfxAsset = { id: string; file: string };
 const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'bow_draw', file: 'bow/draw.mp3' },
   { id: 'bow_release', file: 'bow/release.mp3' },
+  { id: 'bow_power_release', file: 'bow/powerRelease.mp3' },
   { id: 'bow_viper_sting_release', file: 'bow/viper_sting_release.mp3' },
   { id: 'bow_barrage_release', file: 'bow/barrage_release.mp3' },
   { id: 'bow_cobra_shot_release', file: 'bow/cobra_shot_release.mp3' },
@@ -249,12 +250,13 @@ export class AudioSystem extends System {
   }
 
   // Play bow release sound (called when arrow is fired)
-  public playBowReleaseSound(position: Vector3, chargeProgress?: number) {
+  public playBowReleaseSound(position: Vector3, chargeProgress?: number, isPerfectShot?: boolean) {
     // Adjust volume/pitch based on charge level
     const volume = 0.7 + (chargeProgress || 0) * 0.3; // 0.7 to 1.0
     const rate = 0.9 + (chargeProgress || 0) * 0.2; // 0.9 to 1.1
+    const soundId = isPerfectShot === true ? 'bow_power_release' : 'bow_release';
 
-    return this.playWeaponSound('bow_release', position, {
+    return this.playWeaponSound(soundId, position, {
       volume,
       rate
     });
@@ -300,6 +302,13 @@ export class AudioSystem extends System {
     return this.playWeaponSound('sabres_skyfall', position, { volume: 1.0 });
   }
 
+  /** Sabres Q/E impact — layered connect tick (separate from ability wind-up / backstab cue). */
+  public playSabresAbilityImpactSound(position: Vector3) {
+    return this.playWeaponSound('runeblade_swing_hit', position, {
+      volume: 0.42,
+      rate: 1.08,
+    });
+  }
 
   // Play entropic bolt sound
   public playEntropicBoltSound(position: Vector3) {
@@ -355,10 +364,11 @@ export class AudioSystem extends System {
   }
 
   // Play enemy bow release sound
-  public playEnemyBowReleaseSound(position: Vector3, chargeProgress?: number) {
+  public playEnemyBowReleaseSound(position: Vector3, chargeProgress?: number, isPerfectShot?: boolean) {
     const volume = (0.7 + (chargeProgress || 0) * 0.3) * 0.25; // 25% of original volume
     const rate = 0.9 + (chargeProgress || 0) * 0.2;
-    return this.playWeaponSound('bow_release', position, { volume, rate });
+    const soundId = isPerfectShot === true ? 'bow_power_release' : 'bow_release';
+    return this.playWeaponSound(soundId, position, { volume, rate });
   }
 
   // Play enemy viper sting release sound

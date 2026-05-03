@@ -1,16 +1,70 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { Group } from 'three';
 import { useFrame } from '@react-three/fiber';
+import type { TotemBoltVariant } from '@/utils/talents';
 
-export default function UnholyAura() {
+function auraPalette(variant?: TotemBoltVariant) {
+  switch (variant) {
+    case 'wrathful':
+      return {
+        outer: '#ef4444',
+        plane: '#fca5a5',
+        innerColor: '#b91c1c',
+        streamColor: '#7f1d1d',
+        streamEmissive: '#ef4444',
+        ambient: '#fca5a5',
+      };
+    case 'staggering':
+      return {
+        outer: '#3b82f6',
+        plane: '#93c5fd',
+        innerColor: '#1d4ed8',
+        streamColor: '#1e3a8a',
+        streamEmissive: '#3b82f6',
+        ambient: '#93c5fd',
+      };
+    case 'infesting':
+      return {
+        outer: '#22c55e',
+        plane: '#86efac',
+        innerColor: '#15803d',
+        streamColor: '#14532d',
+        streamEmissive: '#22c55e',
+        ambient: '#86efac',
+      };
+    case 'frost':
+      return {
+        outer: '#0369a1',
+        plane: '#7dd3fc',
+        innerColor: '#0c4a6e',
+        streamColor: '#082f49',
+        streamEmissive: '#0284c7',
+        ambient: '#bae6fd',
+      };
+    default:
+      return {
+        outer: '#0099ff',
+        plane: '#0099ff',
+        innerColor: '#0088cc',
+        streamColor: '#002244',
+        streamEmissive: '#0099ff',
+        ambient: '#0099ff',
+      };
+  }
+}
+
+interface UnholyAuraProps {
+  totemBoltVariant?: TotemBoltVariant;
+}
+
+export default function UnholyAura({ totemBoltVariant }: UnholyAuraProps) {
   const auraRef = useRef<Group>(null);
   const rotationSpeed = 0.12;
 
+  const pal = useMemo(() => auraPalette(totemBoltVariant), [totemBoltVariant]);
+
   useFrame(() => {
     if (auraRef.current) {
-      // Position the aura relative to the parent totem (at the base level)
-      // Totem base is at y=0.3 in local space, totem positioned at y=-0.80
-      // So base is effectively at y=-0.5, we want aura slightly below that
       auraRef.current.position.set(0, -0.925, 0);
       auraRef.current.rotation.y += rotationSpeed * 0.008;
     }
@@ -22,8 +76,8 @@ export default function UnholyAura() {
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
         <ringGeometry args={[1.0, 1.2, 64]} />
         <meshStandardMaterial
-          color="#0099ff"
-          emissive="#0099ff"
+          color={pal.outer}
+          emissive={pal.outer}
           emissiveIntensity={1.5}
           transparent
           opacity={0.3}
@@ -41,8 +95,8 @@ export default function UnholyAura() {
           >
             <planeGeometry args={[0.2, 1.3]} />
             <meshStandardMaterial
-              color="#0099ff"
-              emissive="#0099ff"
+              color={pal.plane}
+              emissive={pal.plane}
               emissiveIntensity={2}
               transparent
               opacity={0.4 + Math.sin(Date.now() * 0.003 + i) * 0.2}
@@ -69,8 +123,8 @@ export default function UnholyAura() {
             >
               <planeGeometry args={[0.3, 0.3]} />
               <meshStandardMaterial
-                color="#0088cc"
-                emissive="#0099ff"
+                color={pal.innerColor}
+                emissive={pal.outer}
                 emissiveIntensity={2}
                 transparent
                 opacity={0.3 + Math.sin(Date.now() * 0.002 + i * 0.5) * 0.2}
@@ -98,8 +152,8 @@ export default function UnholyAura() {
             >
               <planeGeometry args={[0.1, 0.4]} />
               <meshStandardMaterial
-                color="#002244"
-                emissive="#0099ff"
+                color={pal.streamColor}
+                emissive={pal.streamEmissive}
                 emissiveIntensity={3}
                 transparent
                 opacity={0.2 + Math.sin(Date.now() * 0.004 + i) * 0.1}
@@ -115,7 +169,7 @@ export default function UnholyAura() {
         <ringGeometry args={[0.1, 0.5, 32]} />
         <meshStandardMaterial
           color="#001122"
-          emissive="#0099ff"
+          emissive={pal.outer}
           emissiveIntensity={1.5}
           transparent
           opacity={0.4}
@@ -127,8 +181,8 @@ export default function UnholyAura() {
       <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
       <ringGeometry args={[1.0, 1.1, 64, 1]} />
         <meshStandardMaterial
-          color="#0099ff"
-          emissive="#0099ff"
+          color={pal.ambient}
+          emissive={pal.ambient}
           emissiveIntensity={0.3}
           transparent
           opacity={0.6}

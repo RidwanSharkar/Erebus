@@ -14,6 +14,7 @@ function handleEnemyEvents(socket, gameRooms) {
       infernalSmite,
       infernoCrossentropy,
       reaperCrossentropy,
+      crossentropyPlague,
       wyvernBiteVenom,
       wyvernStingVenomZombie,
       wyvernBiteConcentratedDoT,
@@ -22,6 +23,11 @@ function handleEnemyEvents(socket, gameRooms) {
       infestedFlourish,
       killstreakBackstab,
       relentlessBackstab,
+      arcticBlizzard,
+      frostTotemChill,
+      guardbreakRoom,
+      glacialBiteChill,
+      glacialTalons,
     } = data;
 
     console.log(`⚔️ Received enemy-damage: room=${roomId}, enemy=${enemyId}, damage=${damage}, source=${sourcePlayerId || socket.id}`);
@@ -51,6 +57,7 @@ function handleEnemyEvents(socket, gameRooms) {
         damageType: 'crossentropy',
         infernoCrossentropy: !!infernoCrossentropy,
         reaperCrossentropy: !!reaperCrossentropy,
+        crossentropyPlague: !!crossentropyPlague,
       };
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
         hitMeta.staggerToAdd = staggerToAdd;
@@ -62,8 +69,10 @@ function handleEnemyEvents(socket, gameRooms) {
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
         hitMeta.staggerToAdd = staggerToAdd;
       }
+      if (glacialTalons) hitMeta.glacialTalons = true;
     } else if (damageType === 'barrage') {
       hitMeta = { damageType: 'barrage', wyvernBiteVenom: !!wyvernBiteVenom };
+      if (glacialBiteChill) hitMeta.glacialBiteChill = true;
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
         hitMeta.staggerToAdd = staggerToAdd;
       }
@@ -105,7 +114,7 @@ function handleEnemyEvents(socket, gameRooms) {
     } else if (damageType === 'stagger_break') {
       hitMeta = { damageType: 'stagger_break' };
     } else if (damageType === 'blizzard') {
-      hitMeta = { damageType: 'blizzard' };
+      hitMeta = { damageType: 'blizzard', arcticBlizzard: !!arcticBlizzard };
     } else if (damageType === 'breath_weapon') {
       hitMeta = { damageType: 'breath_weapon' };
     } else if (damageType === 'entropic') {
@@ -115,6 +124,7 @@ function handleEnemyEvents(socket, gameRooms) {
       }
       if (data.entropicWrathful) hitMeta.entropicWrathful = true;
       if (data.entropicInfesting) hitMeta.entropicInfesting = true;
+      if (frostTotemChill) hitMeta.frostTotemChill = true;
     } else if (damageType === 'icebeam') {
       hitMeta = { damageType: 'icebeam' };
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
@@ -122,6 +132,10 @@ function handleEnemyEvents(socket, gameRooms) {
       }
       if (data.icebeamWrathful) hitMeta.icebeamWrathful = true;
       if (data.icebeamInfested) hitMeta.icebeamInfested = true;
+    }
+    if (guardbreakRoom) {
+      hitMeta = hitMeta || {};
+      hitMeta.guardbreakRoom = true;
     }
     room.damageEnemy(enemyId, damage, actualSourcePlayerId, player, hitMeta);
   });

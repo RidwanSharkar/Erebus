@@ -12,6 +12,7 @@ import BoneAura from '../dragon/BoneAura';
 import { WeaponType } from '../dragon/weapons';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import EnemyStaggerBar from './EnemyStaggerBar';
+import { STAGGER_MAX_BOSS } from '@/utils/talents';
 
 interface Boss2RendererProps {
   id: string;
@@ -25,6 +26,7 @@ interface Boss2RendererProps {
 
 const BLINK_ANIMATION_DURATION = 800;
 const LAUNCH_ANIMATION_DURATION = 1400;
+const DEATH_GRASP_ANIMATION_DURATION = 1000;
 const WALK_STOP_DELAY = 250;
 const LERP_SPEED = 12;
 const FADE_DURATION = 1.5;
@@ -45,6 +47,7 @@ export default function Boss2Renderer({
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const launchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer = useRef(0);
   const opacity = useRef(1);
 
@@ -83,6 +86,7 @@ export default function Boss2Renderer({
   useEffect(() => {
     return () => {
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      if (launchTimer.current) clearTimeout(launchTimer.current);
     };
   }, []);
 
@@ -121,18 +125,37 @@ export default function Boss2Renderer({
       }, BLINK_ANIMATION_DURATION);
     };
 
-    const handleArchonLightning = (data: { bossId: string }) => {
-      if (data.bossId !== id) return;
+    const playLaunchAnimation = (durationMs: number) => {
+      if (launchTimer.current) clearTimeout(launchTimer.current);
       setIsLaunching(true);
       setIsWalking(false);
-      setTimeout(() => setIsLaunching(false), LAUNCH_ANIMATION_DURATION);
+      launchTimer.current = setTimeout(() => {
+        setIsLaunching(false);
+        launchTimer.current = null;
+      }, durationMs);
+    };
+
+    const handleArchonLightning = (data: { bossId: string }) => {
+      if (data.bossId !== id) return;
+      playLaunchAnimation(LAUNCH_ANIMATION_DURATION);
+    };
+
+    const handleDeathGrasp = (data: { bossId: string; castMs?: number }) => {
+      if (data.bossId !== id) return;
+      playLaunchAnimation(data.castMs ?? DEATH_GRASP_ANIMATION_DURATION);
     };
 
     socket.on('warlock-blink-telegraph', handleBlink);
     socket.on('boss2-archon-lightning', handleArchonLightning);
+    socket.on('boss2-deathgrasp-telegraph', handleDeathGrasp);
     return () => {
       socket.off('warlock-blink-telegraph', handleBlink);
       socket.off('boss2-archon-lightning', handleArchonLightning);
+      socket.off('boss2-deathgrasp-telegraph', handleDeathGrasp);
+      if (launchTimer.current) {
+        clearTimeout(launchTimer.current);
+        launchTimer.current = null;
+      }
     };
   }, [id, socket]);
 
@@ -217,7 +240,7 @@ export default function Boss2Renderer({
               >
                 {`ARCHON ${Math.ceil(health)}/${maxHealth}`}
               </Text>
-              <EnemyStaggerBar stagger={staggerBuildup} />
+              <EnemyStaggerBar stagger={staggerBuildup} staggerMax={STAGGER_MAX_BOSS} />
             </>
           )}
         </Billboard>

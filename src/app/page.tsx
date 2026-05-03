@@ -26,18 +26,23 @@ import {
   applyTalentIdToLoadout,
   buildClassBoonPoolForWeapon,
   buildRoomBoonPoolForColor,
+  expandBowRoomBoonExclusionsAfterPick,
+  expandRoomBoomDashExclusionsAfterPick,
   expandRunebladeRoomBoonExclusionsAfterPick,
-  expandScytheEntropicExclusionsAfterPick,
   expandSabresBackstabRoomBoonExclusionsAfterPick,
   expandSabresSwipesRoomBoonExclusionsAfterPick,
   expandSabresFlourishRoomBoonExclusionsAfterPick,
-  expandScytheTotemExclusionsAfterPick,
   expandScytheCrossentropyExclusionsAfterPick,
+  expandScytheEntropicExclusionsAfterPick,
+  expandScytheTotemExclusionsAfterPick,
+  expandUniversalGreenZombieBoonIdsAfterPick,
+  excludeOwnedTalentsFromBoonPool,
   filterTalentIdsByExclusionSet,
   pickRandomDistinctFromPool,
   writeBladeRushBoonMetaUnlocked,
 } from '../utils/talents';
 import type { TalentId } from '../utils/talents';
+import { DpsTracker, type DpsSnapshot } from '../utils/DpsTracker';
 
 // Extend Window interface to include audioSystem
 declare global {
@@ -119,6 +124,7 @@ function HomeContent() {
     coopCurrentRoomKind,
     coopClearedRoomKind,
     clearCoopClearedRoomColor,
+    subscribeEnemyDamage,
   } = useMultiplayer();
 
   const [damageNumbers, setDamageNumbers] = useState<DamageNumberData[]>([]);
@@ -139,6 +145,16 @@ function HomeContent() {
     currentSubclass: WeaponSubclass.ELEMENTAL,
     mana: 150,
     maxMana: 150
+  });
+  const dpsTrackerRef = useRef<DpsTracker | null>(null);
+  if (dpsTrackerRef.current === null) {
+    dpsTrackerRef.current = new DpsTracker();
+  }
+  const [dpsSnapshot, setDpsSnapshot] = useState<DpsSnapshot>({
+    currentDps: 0,
+    totalDamage: 0,
+    peakDps: 0,
+    recentDamage: 0,
   });
 
   // Helper function to get default subclass for a weapon
@@ -178,6 +194,43 @@ function HomeContent() {
   const onCoopInteractHintChange = useCallback((hint: string | null) => {
     setCoopInteractHint(hint);
   }, []);
+
+  useEffect(() => {
+    const tracker = dpsTrackerRef.current;
+    if (!tracker || !socket?.id) return;
+
+    return subscribeEnemyDamage((event) => {
+      if (event.fromPlayerId !== socket.id || event.damage <= 0) return;
+      tracker.recordDamage(event.damageEventId, event.damage, Date.now());
+    });
+  }, [socket?.id, subscribeEnemyDamage]);
+
+  useEffect(() => {
+    const tracker = dpsTrackerRef.current;
+    if (!tracker) return;
+
+    tracker.reset();
+    setDpsSnapshot(tracker.getSnapshot());
+  }, [currentRoomId, gameStarted, coopCombatArenaEnterSeq]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      const tracker = dpsTrackerRef.current;
+      if (!tracker) return;
+      setDpsSnapshot(tracker.getSnapshot());
+    }, 250);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  const handleClearDpsData = useCallback(() => {
+    const tracker = dpsTrackerRef.current;
+    if (!tracker) return;
+
+    tracker.reset();
+    setDpsSnapshot(tracker.getSnapshot());
+  }, []);
+
   const [loadingSceneBootstrapReady, setLoadingSceneBootstrapReady] = useState(false);
   const [isGameLoading, setIsGameLoading] = useState(true);
   const [showCanvas, setShowCanvas] = useState(false);
@@ -231,6 +284,12 @@ function HomeContent() {
   const scytheEntropicRoomBoonExcludedIdsRef = useRef<Set<TalentId>>(new Set());
   /** Sabres colored-room mutex: Backstab trio + Swipes trio. */
   const sabresRoomBoonExcludedIdsRef = useRef<Set<TalentId>>(new Set());
+  /** Bow colored-room mutex: primary / Q / E branches. */
+  const bowRoomBoonExcludedIdsRef = useRef<Set<TalentId>>(new Set());
+  /** Universal green zombie room boons — each id excluded after pick for this arena session. */
+  const universalGreenZombieRoomBoonExcludedIdsRef = useRef<Set<TalentId>>(new Set());
+  /** Weapon-agnostic room-boom dash boons — choosing one excludes the other colored dash boons for this run. */
+  const roomBoomDashBoonExcludedIdsRef = useRef<Set<TalentId>>(new Set());
   /** True after the player interacts with the combat pedestal (X), triggering the boon picker. */
   const [pedestalInteracted, setPedestalInteracted] = useState(false);
   /** True after the boon has been picked (or no boon options), unlocking the portals. */
@@ -316,12 +375,15 @@ function HomeContent() {
     runebladeRoomBoonExcludedIdsRef.current.clear();
     scytheEntropicRoomBoonExcludedIdsRef.current.clear();
     sabresRoomBoonExcludedIdsRef.current.clear();
+    bowRoomBoonExcludedIdsRef.current.clear();
+    universalGreenZombieRoomBoonExcludedIdsRef.current.clear();
+    roomBoomDashBoonExcludedIdsRef.current.clear();
   }, [currentRoomId]);
 
   /**
    * Called by CoopGameScene when the player presses X near the combat pedestal.
    * Builds and shows the room-boon picker, or immediately unlocks portals if the
-   * boon pool is empty (e.g. boss-gate phase).
+   * boon pool is empty.
    */
   const handleCombatArenaPedestalInteract = useCallback((rewardKindFromScene?: string | null) => {
     if (gameMode !== 'coop') return;
@@ -333,7 +395,11 @@ function HomeContent() {
     const rewardKind = (rewardKindFromScene ?? coopClearedRoomKind ?? coopCurrentRoomKind) as CoopRoomKind | null;
 
     if (rewardKind === 'boss') {
-      const options = pickRandomDistinctFromPool(buildClassBoonPoolForWeapon(selectedWeapons.primary), 3);
+      const classPool = excludeOwnedTalentsFromBoonPool(
+        buildClassBoonPoolForWeapon(selectedWeapons.primary),
+        talentLoadout,
+      );
+      const options = pickRandomDistinctFromPool(classPool, 3);
       if (options.length > 0) {
         setCoopBoon({ kind: 'class', options });
         return;
@@ -376,17 +442,28 @@ function HomeContent() {
       return;
     }
 
-    if (coopMainArenaPortalPhase === 'pick_wave2' || coopMainArenaPortalPhase === 'pick_post_boss') {
+    if (
+      coopMainArenaPortalPhase === 'pick_wave2' ||
+      coopMainArenaPortalPhase === 'pick_boss' ||
+      coopMainArenaPortalPhase === 'pick_post_boss'
+    ) {
       const color = coopRoomBoonColorFromContext(coopClearedRoomColor, coopClearedRoomKind, campTypes);
       const rawPool = buildRoomBoonPoolForColor(color, selectedWeapons.primary);
-      let pool = rawPool;
+      let pool = filterTalentIdsByExclusionSet(
+        rawPool,
+        universalGreenZombieRoomBoonExcludedIdsRef.current,
+      );
+      pool = filterTalentIdsByExclusionSet(pool, roomBoomDashBoonExcludedIdsRef.current);
       if (selectedWeapons.primary === WeaponType.RUNEBLADE) {
-        pool = filterTalentIdsByExclusionSet(rawPool, runebladeRoomBoonExcludedIdsRef.current);
+        pool = filterTalentIdsByExclusionSet(pool, runebladeRoomBoonExcludedIdsRef.current);
       } else if (selectedWeapons.primary === WeaponType.SCYTHE) {
-        pool = filterTalentIdsByExclusionSet(rawPool, scytheEntropicRoomBoonExcludedIdsRef.current);
+        pool = filterTalentIdsByExclusionSet(pool, scytheEntropicRoomBoonExcludedIdsRef.current);
       } else if (selectedWeapons.primary === WeaponType.SABRES) {
-        pool = filterTalentIdsByExclusionSet(rawPool, sabresRoomBoonExcludedIdsRef.current);
+        pool = filterTalentIdsByExclusionSet(pool, sabresRoomBoonExcludedIdsRef.current);
+      } else if (selectedWeapons.primary === WeaponType.BOW) {
+        pool = filterTalentIdsByExclusionSet(pool, bowRoomBoonExcludedIdsRef.current);
       }
+      pool = excludeOwnedTalentsFromBoonPool(pool, talentLoadout);
       const options = pickRandomDistinctFromPool(pool, 3);
       if (options.length > 0) {
         setCoopBoon({ kind: 'room', options });
@@ -395,7 +472,7 @@ function HomeContent() {
       }
     }
 
-    // No boon to show (boss gate or empty pool) — unlock portals immediately
+    // No boon to show (empty pool or non-boon reward) — unlock portals immediately
     setPortalsUnlocked(true);
   }, [
     gameMode,
@@ -408,19 +485,23 @@ function HomeContent() {
     selectedWeapons.primary,
     grantStatPoints,
     clearCoopClearedRoomColor,
+    talentLoadout,
   ]);
 
   const handleThroneWeaponEquipped = useCallback(
     (weapon: WeaponType) => {
       if (combatArenaActive) return;
       if (classBoonPickedThisRunRef.current) return;
-      const pool = buildClassBoonPoolForWeapon(weapon);
+      const pool = excludeOwnedTalentsFromBoonPool(
+        buildClassBoonPoolForWeapon(weapon),
+        talentLoadout,
+      );
       if (pool.length === 0) return;
       const options = pickRandomDistinctFromPool(pool, 3);
       if (options.length === 0) return;
       setCoopBoon({ kind: 'class', options });
     },
-    [combatArenaActive],
+    [combatArenaActive, talentLoadout],
   );
 
   const handleCoopBoonPick = useCallback(
@@ -428,6 +509,9 @@ function HomeContent() {
       setTalentLoadout((prev) => applyTalentIdToLoadout(prev, id));
       if (id === TALENT_BLADE_RUSH) writeBladeRushBoonMetaUnlocked(true);
       if (kind === 'room') {
+        for (const exId of expandBowRoomBoonExclusionsAfterPick(id)) {
+          bowRoomBoonExcludedIdsRef.current.add(exId);
+        }
         for (const exId of expandRunebladeRoomBoonExclusionsAfterPick(id)) {
           runebladeRoomBoonExcludedIdsRef.current.add(exId);
         }
@@ -448,6 +532,12 @@ function HomeContent() {
         }
         for (const exId of expandSabresFlourishRoomBoonExclusionsAfterPick(id)) {
           sabresRoomBoonExcludedIdsRef.current.add(exId);
+        }
+        for (const exId of expandUniversalGreenZombieBoonIdsAfterPick(id)) {
+          universalGreenZombieRoomBoonExcludedIdsRef.current.add(exId);
+        }
+        for (const exId of expandRoomBoomDashExclusionsAfterPick(id)) {
+          roomBoomDashBoonExcludedIdsRef.current.add(exId);
         }
         clearCoopClearedRoomColor();
         setPortalsUnlocked(true);
@@ -514,19 +604,6 @@ function HomeContent() {
         const audioSystem = new AudioSystem();
         (window as any).audioSystem = audioSystem;
         void audioSystem.preloadStartupSounds();
-
-        const preloadAllSounds = () => {
-          void audioSystem.preloadWeaponSounds();
-        };
-
-        const win = window as Window & {
-          requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
-        };
-        if (win.requestIdleCallback) {
-          win.requestIdleCallback(preloadAllSounds, { timeout: 5000 });
-        } else {
-          win.setTimeout(preloadAllSounds, 1500);
-        }
       } catch (error) {
         console.warn('Failed to initialize audio system:', error);
       }
@@ -634,7 +711,7 @@ function HomeContent() {
                     <li>Stand by a floating weapon and press <strong className="text-green-400">X</strong> to equip it (resets default Q/E/R for that weapon).</li>
                     <li>Use the east <strong>ability pillar</strong> with <strong className="text-green-400">X</strong> to assign Q, E, and R from the shared pool.</li>
                     <li>When a <strong>class boon</strong> modal appears, pick 1 of 3 random talents for your <strong>current weapon</strong> (once per run after that weapon is equipped).</li>
-                    <li>After you <strong>clear the first combat room</strong>, a <strong>room boon</strong> offers 3 picks from a pool determined by <strong>that room&apos;s color</strong> (blue / green / purple / red). Weapon matters: Runeblade, Bow, and Scythe see different room pools.</li>
+                    <li>After you <strong>clear the first combat room</strong>, a <strong>room boon</strong> offers 3 picks from a pool determined by <strong>that room&apos;s color</strong> (blue / green / purple / red). Weapon affects most colors; green rooms always add universal zombie boons usable with any weapon.</li>
                     <li>On the <strong>main arena map</strong>, every <strong>third</strong> combat room you clear opens a <strong>boss portal</strong> (Boss 1 → Boss 2 → …; room color does not change that cadence). After a boss, you return to three rooms before the next boss gate.</li>
                     <li>Use rim <strong>portals</strong> to leave prep or, in the arena, to choose the next challenge when prompted.</li>
                   </ul>
@@ -645,8 +722,8 @@ function HomeContent() {
                   <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
                     <li><strong className="text-sky-300">Runeblade</strong>: class pool includes Trinity, Vengeance, Crusader, Windfury, Blizzard, Blade Rush or Stored Charge (after meta unlock), Double Strike, Spellblade, and more by weapon. Colored <strong>room</strong> boons for your basic combo, Wraith Strike, and Smite are mutually exclusive branches for the rest of that run (one palette per branch); class boons ignore this split.</li>
                     <li><strong className="text-green-300">Bow</strong>: class pool includes Execute, Explosive Talons, Concentrated Volley, Dual Coil, Tempest Rounds. Room colors gate talents like Stagger Shot, Wrathful Bite/Talons, Wyvern Sting/Bite.</li>
-                    <li><strong className="text-purple-300">Scythe</strong>: class pool includes Icebeam, Reaper, Frostpath, and Solar Recharge. Colored <strong>room</strong> boons: red — Wrathful Entropic &amp; Totem; blue — Staggering Entropic &amp; Totem; green — Infesting Entropic &amp; Totem; purple — Inferno.</li>
-                    <li><strong className="text-red-400">Sabres</strong>: class pool includes Killstreak and Relentless (Backstab). Colored <strong>room</strong> boons still gate Backstab / Swipes / Flourish branches.</li>
+                    <li><strong className="text-purple-300">Scythe</strong>: class pool includes Icebeam, Reaper, Frostpath, Solar Recharge, SHAMAN, and Superconductor. Colored <strong>room</strong> boons: red — Wrathful Entropic &amp; Totem; blue — Staggering Entropic &amp; Totem; green — Infesting Entropic &amp; Totem; purple — Inferno.</li>
+                    <li><strong className="text-red-400">Sabres</strong>: class pool includes Killstreak, Relentless, and Vorpal Gust (Backstab). Colored <strong>room</strong> boons still gate Backstab / Swipes / Flourish branches.</li>
                     <li><strong>Tempest Rounds</strong> (Bow) and <strong>Icebeam</strong> (Scythe) are <strong>talents / boons</strong>, not passives on the ability picker.</li>
                   </ul>
 
@@ -774,8 +851,22 @@ function HomeContent() {
             >
               📜
             </button>
-            <div className="absolute top-4 left-4 text-white font-mono text-sm">
-            {/* CONTROLS */}
+            <div className="absolute top-4 left-4 text-white font-mono text-sm pointer-events-none">
+              <div className="rounded-md bg-black/45 px-3 py-2 shadow-lg backdrop-blur-sm">
+                <div className="text-yellow-300 font-semibold">
+                  DPS: {Math.round(dpsSnapshot.currentDps).toLocaleString()}
+                </div>
+                <div className="text-white/80 text-xs">
+                  Total: {Math.round(dpsSnapshot.totalDamage).toLocaleString()}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClearDpsData}
+                  className="pointer-events-auto mt-2 rounded border border-white/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-white/70 transition-colors hover:border-yellow-300/60 hover:text-yellow-200"
+                >
+                  Clear
+                </button>
+              </div>
             </div>
             
             {/* Performance Stats */}

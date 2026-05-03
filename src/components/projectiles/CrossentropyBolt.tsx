@@ -41,7 +41,7 @@ export default function CrossentropyBolt({
   const hasCollided = useRef(false);
   const hasExploded = useRef(false);
   const fadeStartTime = useRef<number | null>(null);
-  const fadeDuration = 0.5; // 500ms fade duration
+  const fadeDuration = 0.75; // 500ms fade duration
   const [opacity, setOpacity] = useState(1);
   const size = 0.26;
   const { color, meshColor, meshEmissive } = useMemo(() => {
@@ -50,6 +50,13 @@ export default function CrossentropyBolt({
         color: new Color('#FF2200'),
         meshColor: '#E62E2E',
         meshEmissive: '#FF1100',
+      };
+    }
+    if (visualTheme === 'glacial') {
+      return {
+        color: new Color('#0e5090'),
+        meshColor: '#0a3d6e',
+        meshEmissive: '#40a0f0',
       };
     }
     if (visualTheme === 'tempest') {

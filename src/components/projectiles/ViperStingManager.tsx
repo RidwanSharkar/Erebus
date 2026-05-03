@@ -14,6 +14,8 @@ interface ViperStingManagerProps {
     id: string;
     position: Vector3;
     health: number;
+    maxHealth?: number;
+    isBoss?: boolean;
     isDying?: boolean;
   }>;
   onHit: (
@@ -53,6 +55,8 @@ interface ViperStingManagerProps {
   wrathfulTalonsReturnCrit?: boolean;
   explosiveTalons?: boolean;
   onExecuteFirstForwardHit?: () => number;
+  giantKiller?: boolean;
+  glacialTalonsTheme?: boolean;
 }
 
 interface SoulStealEffect {
@@ -120,6 +124,8 @@ export default function ViperStingManager({
   wrathfulTalonsReturnCrit,
   explosiveTalons,
   onExecuteFirstForwardHit,
+  giantKiller,
+  glacialTalonsTheme,
 }: ViperStingManagerProps) {
   const [soulStealEffects, setSoulStealEffects] = useState<SoulStealEffect[]>([]);
   const nextSoulStealId = useRef(0);
@@ -157,6 +163,8 @@ export default function ViperStingManager({
     explosiveTalons,
     onExecuteFirstForwardHit,
     onExplosiveTalonsDetonate,
+    giantKiller,
+    glacialTalonsTheme,
   });
 
   // Register global manager
@@ -190,6 +198,7 @@ export default function ViperStingManager({
           direction={effect.direction}
           isReturning={effect.isReturning}
           beamLength={effect.beamLength}
+          glacialTalonsTheme={effect.glacialTalonsTheme}
           onComplete={() => removeBeamEffect(effect.id)}
         />
       ))}

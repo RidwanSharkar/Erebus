@@ -40,7 +40,7 @@ function alignBoltToDirection(group: Group | null, direction: Vector3) {
 }
 
 /** Match `EntropicBolt` palettes for red/green/blue; default aligns with purple Entropic LMB. */
-function getTotemBoltTheme(variant: TotemBoltVariant | undefined): {
+export function getTotemBoltTheme(variant: TotemBoltVariant | undefined): {
   primary: string;
   secondary: string;
   light: string;
@@ -52,6 +52,8 @@ function getTotemBoltTheme(variant: TotemBoltVariant | undefined): {
       return { primary: '#3b82f6', secondary: '#93c5fd', light: '#93c5fd' };
     case 'infesting':
       return { primary: '#22c55e', secondary: '#86efac', light: '#bbf7d0' };
+    case 'frost':
+      return { primary: '#075985', secondary: '#0369a1', light: '#7dd3fc' };
     default:
       return { primary: '#9333ea', secondary: '#c084fc', light: '#e9d5ff' };
   }

@@ -66,7 +66,47 @@ interface SummonTotemData {
   casterId?: string;
   localSocketId?: string;
   totemBoltVariant?: TotemBoltVariant;
+  superconductor?: boolean;
   allowPlayerTargets?: boolean;
+}
+
+/** Max XYZ triplets for Accelerator telemetry (published each R3F frame). */
+const ACCELERATOR_PUBLISHED_TOTEM_CAP = 32;
+
+/** Flat xyz… triplets owned by local player totems (`length` = triplets × 3, use `acceleratorOwnedTotemTripletCount`). */
+export const acceleratorOwnedTotemFlatXYZ = new Float64Array(ACCELERATOR_PUBLISHED_TOTEM_CAP * 3);
+
+/** Valid triplets in `acceleratorOwnedTotemFlatXYZ` (≤ cap). Written in SummonTotemManager `useFrame`. */
+export let acceleratorOwnedTotemTripletCount = 0;
+
+function isAcceleratorLocalOwnedTotem(
+  totem: SummonTotemData,
+  managerLocalSocketId: string | undefined,
+): boolean {
+  if (managerLocalSocketId != null && managerLocalSocketId !== '') {
+    return totem.casterId === managerLocalSocketId;
+  }
+  // Offline / no socket: treat unnamed casters as local (legacy summon path).
+  return totem.casterId == null || totem.casterId === '';
+}
+
+function rebuildAcceleratorTotemProbe(
+  totems: SummonTotemData[],
+  managerLocalSocketId: string | undefined,
+): void {
+  let wi = 0;
+  let count = 0;
+  const buf = acceleratorOwnedTotemFlatXYZ;
+  const cap = buf.length;
+  for (const t of totems) {
+    if (!isAcceleratorLocalOwnedTotem(t, managerLocalSocketId)) continue;
+    if (wi + 3 > cap) break;
+    buf[wi++] = t.position.x;
+    buf[wi++] = t.position.y;
+    buf[wi++] = t.position.z;
+    count++;
+  }
+  acceleratorOwnedTotemTripletCount = count;
 }
 
 export type SummonTotemEnemyEntry = {
@@ -83,6 +123,7 @@ interface SummonTotemManagerProps {
   localSocketId?: string; // Local player ID to exclude from targets
   onTotemFloatingDamage?: (damage: number, isCritical: boolean, position: Vector3) => void;
   allowPlayerTargets?: boolean;
+  resolveTotemEnemyFrozen?: (enemyId: string) => boolean;
 }
 
 export interface SummonTotemManagerRef {
@@ -136,12 +177,15 @@ export interface SummonTotemManagerRef {
     casterId?: string,
     localSocketId?: string,
     totemBoltVariant?: TotemBoltVariant,
+    superconductor?: boolean,
     allowPlayerTargets?: boolean,
   ) => number;
 }
 
-const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerProps>(({ onTotemComplete, players, enemyData = [], localSocketId, onTotemFloatingDamage, allowPlayerTargets = false }, ref) => {
+const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerProps>(({ onTotemComplete, players, enemyData = [], localSocketId, onTotemFloatingDamage, allowPlayerTargets = false, resolveTotemEnemyFrozen }, ref) => {
   const [activeTotems, setActiveTotems] = useState<SummonTotemData[]>([]);
+  const activeTotemsRef = useRef<SummonTotemData[]>(activeTotems);
+  activeTotemsRef.current = activeTotems;
   const totemIdCounter = useRef(0);
 
   useImperativeHandle(ref, () => ({
@@ -198,6 +242,7 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
     casterId?: string,
     localSocketId?: string,
     totemBoltVariantProp?: TotemBoltVariant,
+    superconductor: boolean = false,
     allowPlayerTargetsForTotem: boolean = allowPlayerTargets,
   ) => {
     const totemId = totemIdCounter.current++;
@@ -237,6 +282,7 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
       casterId: casterId,
       localSocketId,
       totemBoltVariant: totemBoltVariantProp,
+      superconductor,
       allowPlayerTargets: allowPlayerTargetsForTotem,
     };
 
@@ -250,9 +296,8 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
     return totemId;
   }, [onTotemComplete, allowPlayerTargets]);
 
-  // Update totems each frame
   useFrame(() => {
-    // Active totems are managed by their own timeouts
+    rebuildAcceleratorTotemProbe(activeTotemsRef.current, localSocketId);
   });
 
   return (
@@ -274,6 +319,8 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
           casterId={totem.casterId}
           allowPlayerTargets={totem.allowPlayerTargets}
           totemBoltVariant={totem.totemBoltVariant}
+          superconductor={totem.superconductor}
+          resolveTotemEnemyFrozen={resolveTotemEnemyFrozen}
         />
       ))}
     </>
@@ -295,6 +342,7 @@ export type SummonTotemTriggerCallback = (
   nextDamageNumberId?: { current: number },
   casterId?: string,
   totemBoltVariant?: TotemBoltVariant,
+  superconductor?: boolean,
   allowPlayerTargets?: boolean,
 ) => void;
 
@@ -314,6 +362,7 @@ export const triggerGlobalSummonTotem = (
   nextDamageNumberId?: { current: number },
   casterId?: string,
   totemBoltVariant?: TotemBoltVariant,
+  superconductor?: boolean,
   allowPlayerTargets?: boolean,
 ) => {
   if (globalSummonTotemTriggerCallback) {
@@ -327,6 +376,7 @@ export const triggerGlobalSummonTotem = (
       nextDamageNumberId,
       casterId,
       totemBoltVariant,
+      superconductor,
       allowPlayerTargets,
     );
   }

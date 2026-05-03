@@ -8,6 +8,8 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 interface WeaverModelProps {
   isWalking: boolean;
   isCastingHeal: boolean;
+  /** When true, CastHeal clips loop until `isCastingHeal` clears (Boss 3 beam channel). */
+  castHealLoop?: boolean;
   isCastingSummon: boolean;
   isDying: boolean;
   isImpacting?: boolean;
@@ -33,6 +35,7 @@ const SCALE = 0.01235;
 export default function WeaverModel({
   isWalking,
   isCastingHeal,
+  castHealLoop = false,
   isCastingSummon,
   isDying,
   isImpacting = false,
@@ -114,8 +117,16 @@ export default function WeaverModel({
               : getAction('Idle');
 
     if (!nextAction) return;
-    if (nextAction === currentActionRef.current) {
+
+    const sameClip = nextAction === currentActionRef.current;
+    if (sameClip) {
       const retriggerImpact = isImpacting && impactPlayKey !== lastImpactPlayKeyRef.current;
+      if (isCastingHeal && castHealLoop && getAction('CastHeal') === nextAction) {
+        nextAction.setLoop(LoopRepeat, Infinity);
+        nextAction.clampWhenFinished = false;
+        if (!nextAction.isRunning()) nextAction.play();
+        return;
+      }
       if (!retriggerImpact) return;
     }
 
@@ -125,9 +136,18 @@ export default function WeaverModel({
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.15).play();
-    } else if (isCastingSummon || isCastingHeal) {
+    } else if (isCastingSummon) {
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.2).play();
+    } else if (isCastingHeal) {
+      if (castHealLoop) {
+        nextAction.setLoop(LoopRepeat, Infinity);
+        nextAction.clampWhenFinished = false;
+      } else {
+        nextAction.setLoop(LoopOnce, 1);
+        nextAction.clampWhenFinished = true;
+      }
       nextAction.reset().fadeIn(0.2).play();
     } else if (isImpacting) {
       lastImpactPlayKeyRef.current = impactPlayKey;
@@ -142,7 +162,7 @@ export default function WeaverModel({
     }
 
     currentActionRef.current = nextAction;
-  }, [isWalking, isCastingHeal, isCastingSummon, isDying, isImpacting, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isWalking, isCastingHeal, castHealLoop, isCastingSummon, isDying, isImpacting, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After one-shot (impact, cast) finishes, blend back to Walk or Idle.
   useEffect(() => {
@@ -170,13 +190,14 @@ export default function WeaverModel({
         return;
       }
       if (name === 'CastHeal' || name === 'CastSummon') {
+        if (name === 'CastHeal' && castHealLoop) return;
         blendToWalkOrIdle();
       }
     };
 
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isDying, isWalking, actions, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isDying, isWalking, isCastingHeal, castHealLoop, actions, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group ref={sceneGroupRef}>

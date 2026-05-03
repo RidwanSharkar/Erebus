@@ -56,9 +56,11 @@ interface PVPSummonTotemManagerProps {
   }>) => void;
   nextDamageNumberId?: { current: number };
   onTotemFloatingDamage?: (damage: number, isCritical: boolean, position: Vector3) => void;
-  /** Local player's Mantra bolt talent (remote totems supply variant via `triggerGlobalSummonTotem` last arg). */
+  /** Local player's Mantra bolt talent (remote totems supply variant via `triggerGlobalSummonTotem`). */
   totemBoltVariant?: TotemBoltVariant;
+  superconductor?: boolean;
   allowPlayerTargets?: boolean;
+  resolveTotemEnemyFrozen?: (enemyId: string) => boolean;
 }
 
 const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
@@ -72,7 +74,9 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
   nextDamageNumberId,
   onTotemFloatingDamage,
   totemBoltVariant,
+  superconductor = false,
   allowPlayerTargets = false,
+  resolveTotemEnemyFrozen,
 }) => {
   const managerRef = React.useRef<SummonTotemManagerRef>(null);
 
@@ -80,6 +84,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
   const playersRef = React.useRef(players);
   const enemyDataRef = React.useRef(enemyData);
   const totemBoltVariantRef = React.useRef(totemBoltVariant);
+  const superconductorRef = React.useRef(superconductor);
 
   // Update refs when props change
   React.useEffect(() => {
@@ -95,6 +100,10 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
   }, [totemBoltVariant]);
 
   React.useEffect(() => {
+    superconductorRef.current = superconductor;
+  }, [superconductor]);
+
+  React.useEffect(() => {
     setGlobalSummonTotemTrigger((
       position,
       enemyDataParam,
@@ -105,6 +114,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
       nextDamageNumberIdParam,
       casterId,
       totemBoltVariantParam,
+      superconductorParam,
       allowPlayerTargetsParam,
     ) => {
       const canTargetPlayers = allowPlayerTargetsParam ?? allowPlayerTargets;
@@ -140,6 +150,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
         const effectiveLocalSocketId = enemyDataParam ? casterId : localSocketId;
 
         const boltVariantResolved = totemBoltVariantParam ?? totemBoltVariantRef.current;
+        const superconductorResolved = superconductorParam ?? superconductorRef.current;
 
         managerRef.current.createTotem(
           position,
@@ -152,6 +163,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
           casterId,
           effectiveLocalSocketId,
           boltVariantResolved ?? undefined,
+          superconductorResolved,
           canTargetPlayers,
         );
       }
@@ -160,7 +172,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
     return () => {
       setGlobalSummonTotemTrigger(() => {});
     };
-  }, [onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, onTotemFloatingDamage, enemyData, players, localSocketId, totemBoltVariant, allowPlayerTargets]);
+  }, [onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, onTotemFloatingDamage, enemyData, players, localSocketId, totemBoltVariant, superconductor, allowPlayerTargets]);
 
   return (
     <SummonTotemManager
@@ -172,6 +184,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
       localSocketId={localSocketId}
       onTotemFloatingDamage={onTotemFloatingDamage}
       allowPlayerTargets={allowPlayerTargets}
+      resolveTotemEnemyFrozen={resolveTotemEnemyFrozen}
     />
   );
 };

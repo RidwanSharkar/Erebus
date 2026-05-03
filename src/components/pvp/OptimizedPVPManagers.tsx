@@ -428,7 +428,8 @@ export function useOptimizedPVPEffects() {
 
 /**
  * Optimized Viper Sting Manager with Object Pooling
- * Handles PVP collision detection for Viper Sting projectiles
+ * Handles PVP collision detection for Viper Sting projectiles.
+ * GIANTKILLER (Bow class talent) is applied only on the PvE `useViperSting` path — not here (no per-target max HP on this hit path).
  */
 export function OptimizedPVPViperStingManager({
   world: ecsWorld,

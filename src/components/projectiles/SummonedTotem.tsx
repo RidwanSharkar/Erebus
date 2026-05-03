@@ -4,11 +4,17 @@ import { useFrame } from '@react-three/fiber';
 import TotemModel from './TotemModel';
 import UnholyAura from './UnholyAura';
 import TotemEntropicBolt from './TotemEntropicBolt';
+import TotemSuperconductorLightning from './TotemSuperconductorLightning';
 import { calculateDamage } from '@/core/DamageCalculator';
 import { WeaponType } from '@/components/dragon/weapons';
 import type { EnemyDamageMeta } from '@/contexts/MultiplayerContext';
 import type { TotemBoltVariant } from '@/utils/talents';
 import {
+  SUPERCONDUCTOR_INFESTING_DAMAGE,
+  SUPERCONDUCTOR_STAGGERING_STRIKE_STAGGER,
+  SUPERCONDUCTOR_TOTEM_COOLDOWN_SEC,
+  SUPERCONDUCTOR_TOTEM_DAMAGE,
+  SUPERCONDUCTOR_WRATHFUL_CRIT_CHANCE_ADD,
   WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD,
   STAGGERING_TOTEM_STAGGER,
 } from '@/utils/talents';
@@ -16,6 +22,7 @@ import {
 function totemBoltBaseDamage(variant?: TotemBoltVariant): number {
   if (variant === 'wrathful') return 30;
   if (variant === 'infesting') return 40;
+  if (variant === 'frost') return 25;
   return 25;
 }
 
@@ -28,6 +35,26 @@ function coopEnemyMetaForTotemBolt(variant?: TotemBoltVariant): EnemyDamageMeta 
   }
   if (variant === 'infesting') {
     return { damageType: 'entropic', entropicInfesting: true };
+  }
+  if (variant === 'frost') {
+    return { damageType: 'entropic', frostTotemChill: true };
+  }
+  return undefined;
+}
+
+/** Superconductor shock: staggers 15 vs totem bolts' 10 for staggering variant; same wrath/infest flags as bolts. */
+function coopEnemyMetaForSuperconductorStrike(variant?: TotemBoltVariant): EnemyDamageMeta | undefined {
+  if (variant === 'wrathful') {
+    return { damageType: 'entropic', entropicWrathful: true };
+  }
+  if (variant === 'staggering') {
+    return { damageType: 'entropic', staggerToAdd: SUPERCONDUCTOR_STAGGERING_STRIKE_STAGGER };
+  }
+  if (variant === 'infesting') {
+    return { damageType: 'entropic', entropicInfesting: true };
+  }
+  if (variant === 'frost') {
+    return { damageType: 'entropic', frostTotemChill: true };
   }
   return undefined;
 }
@@ -98,6 +125,9 @@ interface SummonProps {
   onTotemFloatingDamage?: (damage: number, isCritical: boolean, position: Vector3) => void;
   casterId?: string; // ID of the player who cast the totem
   allowPlayerTargets?: boolean;
+  superconductor?: boolean;
+  /** Server doubles damage when frozen; use for floating numbers only. Optional in offline/PVP. */
+  resolveTotemEnemyFrozen?: (enemyId: string) => boolean;
 }
 
 export default function SummonedTotem({
@@ -116,6 +146,8 @@ export default function SummonedTotem({
   casterId,
   allowPlayerTargets = false,
   totemBoltVariant,
+  superconductor = false,
+  resolveTotemEnemyFrozen,
 }: SummonProps) {
 
   const groupRef = useRef<Group>(null);
@@ -124,13 +156,18 @@ export default function SummonedTotem({
   const [activeBolts, setActiveBolts] = useState<
     Array<{ id: number; from: Vector3; to: Vector3; targetId: string }>
   >([]);
+  const [activeLightning, setActiveLightning] = useState<
+    Array<{ id: number; from: Vector3; to: Vector3; totemBoltVariant?: TotemBoltVariant }>
+  >([]);
 
   const constants = useRef({
     lastAttackTime: 0,
+    lastSuperconductorTime: Date.now(),
     startTime: Date.now(),
     hasTriggeredCleanup: false,
     mountId: Date.now(),
     ATTACK_COOLDOWN: 670, // 0.5 seconds
+    SUPERCONDUCTOR_COOLDOWN: SUPERCONDUCTOR_TOTEM_COOLDOWN_SEC * 1000,
     RANGE: 8.5, // 6 units range for targeting
     DURATION: 8000, // 8 seconds
     EFFECT_DURATION: 225,
@@ -226,6 +263,11 @@ export default function SummonedTotem({
     const damageResult = calculateDamage(base, WeaponType.SCYTHE, dmgOpts);
 
     const coopEnemyDamageMeta = coopEnemyMetaForTotemBolt(totemBoltVariant);
+    const baseDamage = damageResult.damage;
+    const displayDamage =
+      totemBoltVariant === 'frost' && resolveTotemEnemyFrozen?.(currentEnemy.id)
+        ? Math.floor(baseDamage * 2)
+        : baseDamage;
 
     // Use the enemy's current real-time position for damage numbers and effects (not cached target position)
     const currentWorldImpactPosition = currentEnemy.position.clone().setY(1.5);
@@ -239,7 +281,7 @@ export default function SummonedTotem({
 
     onDamage(
       target.id,
-      damageResult.damage,
+      baseDamage,
       currentWorldImpactPosition,
       damageResult.isCritical,
       coopEnemyDamageMeta,
@@ -253,7 +295,7 @@ export default function SummonedTotem({
 
     if (onTotemFloatingDamage) {
       onTotemFloatingDamage(
-        damageResult.damage,
+        displayDamage,
         damageResult.isCritical,
         currentWorldImpactPosition.clone(),
       );
@@ -262,7 +304,7 @@ export default function SummonedTotem({
         ...prev,
         {
           id: nextDamageNumberId.current++,
-          damage: damageResult.damage,
+          damage: displayDamage,
           position: currentWorldImpactPosition.clone(),
           isCritical: damageResult.isCritical,
           isSummon: true,
@@ -278,6 +320,73 @@ export default function SummonedTotem({
     getCurrentEnemyData,
     casterId,
     totemBoltVariant,
+    resolveTotemEnemyFrozen,
+  ]);
+
+  const handleSuperconductorStrike = useCallback((target: { id: string; position: Vector3; health: number }) => {
+    const canShowFloating =
+      onTotemFloatingDamage || (setDamageNumbers && nextDamageNumberId);
+    if (!target || target.health <= 0 || !onDamage || !canShowFloating) {
+      return;
+    }
+
+    const currentEnemyData = getCurrentEnemyData();
+    const currentEnemy = currentEnemyData.find(e => e.id === target.id && e.health > 0);
+    if (!currentEnemy || (casterId && target.id === casterId)) {
+      return;
+    }
+
+    const base =
+      totemBoltVariant === 'infesting' ? SUPERCONDUCTOR_INFESTING_DAMAGE : SUPERCONDUCTOR_TOTEM_DAMAGE;
+    const dmgOpts =
+      totemBoltVariant === 'wrathful'
+        ? { critChanceAdd: SUPERCONDUCTOR_WRATHFUL_CRIT_CHANCE_ADD }
+        : undefined;
+    const damageResult = calculateDamage(base, WeaponType.SCYTHE, dmgOpts);
+    const coopEnemyDamageMeta = coopEnemyMetaForSuperconductorStrike(totemBoltVariant);
+    const baseDamage = damageResult.damage;
+    const displayDamage =
+      totemBoltVariant === 'frost' && resolveTotemEnemyFrozen?.(currentEnemy.id)
+        ? Math.floor(baseDamage * 2)
+        : baseDamage;
+
+    const currentWorldImpactPosition = currentEnemy.position.clone().setY(1.5);
+
+    onDamage(
+      target.id,
+      baseDamage,
+      currentWorldImpactPosition,
+      damageResult.isCritical,
+      coopEnemyDamageMeta,
+    );
+
+    if (onTotemFloatingDamage) {
+      onTotemFloatingDamage(
+        displayDamage,
+        damageResult.isCritical,
+        currentWorldImpactPosition.clone(),
+      );
+    } else if (setDamageNumbers && nextDamageNumberId) {
+      setDamageNumbers((prev) => [
+        ...prev,
+        {
+          id: nextDamageNumberId.current++,
+          damage: displayDamage,
+          position: currentWorldImpactPosition.clone(),
+          isCritical: damageResult.isCritical,
+          isSummon: true,
+        },
+      ]);
+    }
+  }, [
+    onDamage,
+    onTotemFloatingDamage,
+    setDamageNumbers,
+    nextDamageNumberId,
+    getCurrentEnemyData,
+    casterId,
+    totemBoltVariant,
+    resolveTotemEnemyFrozen,
   ]);
 
   useFrame(() => {
@@ -293,35 +402,56 @@ export default function SummonedTotem({
       return;
     }
 
-    // Check attack cooldown
-    if (now - constants.lastAttackTime < constants.ATTACK_COOLDOWN) {
-      return;
-    }
-
-
     // Continuously check for the closest enemy in range
     const closestEnemy = findNewTarget();
 
-    // Attack if we have a valid target in range — spawn a totem bolt; damage applies on impact
     if (closestEnemy && closestEnemy.health > 0) {
-      if (groupRef.current) {
+      if (
+        superconductor &&
+        groupRef.current &&
+        now - constants.lastSuperconductorTime >= constants.SUPERCONDUCTOR_COOLDOWN
+      ) {
         const from = new Vector3();
         groupRef.current.getWorldPosition(from);
-        from.y += 0.42;
+        from.y += 0.58;
         const to = closestEnemy.position.clone();
-        to.y = Math.max(to.y, 0.35) + 1.05;
+        to.y = Math.max(to.y, 0.35) + 1.1;
         const id = boltIdRef.current++;
-        setCurrentTarget(closestEnemy);
-        setActiveBolts((prev) => [
+
+        setActiveLightning((prev) => [
           ...prev,
           {
             id,
             from: from.clone(),
             to: to.clone(),
-            targetId: closestEnemy.id,
+            totemBoltVariant,
           },
         ]);
-        constants.lastAttackTime = now;
+        constants.lastSuperconductorTime = now;
+        handleSuperconductorStrike(closestEnemy);
+      }
+
+      // Attack if we have a valid target in range — spawn a totem bolt; damage applies on impact
+      if (groupRef.current) {
+        if (now - constants.lastAttackTime >= constants.ATTACK_COOLDOWN) {
+          const from = new Vector3();
+          groupRef.current.getWorldPosition(from);
+          from.y += 0.42;
+          const to = closestEnemy.position.clone();
+          to.y = Math.max(to.y, 0.35) + 1.05;
+          const id = boltIdRef.current++;
+          setCurrentTarget(closestEnemy);
+          setActiveBolts((prev) => [
+            ...prev,
+            {
+              id,
+              from: from.clone(),
+              to: to.clone(),
+              targetId: closestEnemy.id,
+            },
+          ]);
+          constants.lastAttackTime = now;
+        }
       }
     } else {
       // No enemy in range, clear current target
@@ -357,11 +487,15 @@ export default function SummonedTotem({
     [getCurrentEnemyData, handleAttack],
   );
 
+  const onSuperconductorComplete = useCallback((id: number) => {
+    setActiveLightning((prev) => prev.filter((b) => b.id !== id));
+  }, []);
+
   return (
     <>
       <group ref={groupRef} position={position.toArray()}>
-        <TotemModel isAttacking={!!currentTarget} />
-        <UnholyAura />
+        <TotemModel isAttacking={!!currentTarget} totemBoltVariant={totemBoltVariant} />
+        <UnholyAura totemBoltVariant={totemBoltVariant} />
       </group>
       {activeBolts.map((b) => (
         <TotemEntropicBolt
@@ -370,6 +504,15 @@ export default function SummonedTotem({
           to={b.to}
           totemBoltVariant={totemBoltVariant}
           onImpact={() => onTotemBoltImpact(b.id, b.targetId)}
+        />
+      ))}
+      {activeLightning.map((b) => (
+        <TotemSuperconductorLightning
+          key={b.id}
+          from={b.from}
+          to={b.to}
+          totemBoltVariant={b.totemBoltVariant}
+          onComplete={() => onSuperconductorComplete(b.id)}
         />
       ))}
     </>

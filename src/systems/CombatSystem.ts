@@ -9,7 +9,7 @@ import { Transform } from '@/ecs/components/Transform';
 import { Renderer } from '@/ecs/components/Renderer';
 import { Movement } from '@/ecs/components/Movement';
 import { World } from '@/ecs/World';
-import { calculateDamage, DamageResult, getGlobalRuneCounts, type DamageCalcOptions } from '@/core/DamageCalculator';
+import { calculateDamage, DamageResult, getGlobalRuneCounts, getGlobalStrengthStatPoints, type DamageCalcOptions } from '@/core/DamageCalculator';
 import {
   DUAL_COIL_DAMAGE_NUMBER_LATERAL_OFFSET,
   getDualCoilLateralVector,
@@ -22,6 +22,8 @@ import {
   WRATHFUL_SABRES_SWIPES_CRIT_CHANCE_ADD,
   WRATHFUL_SABRES_SWIPES_CRIT_DAMAGE_MULT_ADD,
   CHILL_SLOW_PER_STACK,
+  ARCTIC_CHILL_FREEZE_DURATION_SEC,
+  BLIZZARD_FREEZE_DURATION_SEC,
 } from '@/utils/talents';
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
 import { ImpactEffectManager } from '@/utils/ImpactEffectManager';
@@ -51,10 +53,14 @@ interface DamageEvent {
   crossentropyInferno?: boolean;
   /** Co-op routing: Reaper talent — with damageType `crossentropy` (pierce + kill stack on server). */
   reaperCrossentropy?: boolean;
+  /** Co-op routing: PLAGUE Crossentropy — venom FX + zombies on kill (server). */
+  crossentropyPlague?: boolean;
   /** Co-op routing: Infested Combo talent — with damageType `sword` / routed as `runeblade_combo`. */
   infestedCombo?: boolean;
   /** Wyvern Bite — Barrage hit applies Concentrated Venom stack (co-op: server; local: ECS). */
   wyvernBiteConcentratedVenom?: boolean;
+  /** Glacial Bite — Barrage hit applies Blizzard-style chill (5 stacks → 6s freeze locally; server mirrors). */
+  glacialBiteChill?: boolean;
   /** Co-op: Cobra venom DoT tick — Wyvern Sting talent may raise zombie on kill. */
   wyvernStingVenomZombie?: boolean;
   /** Co-op: Concentrated Venom DoT tick — eligible for zombie on kill (Wyvern Bite). */
@@ -79,6 +85,12 @@ interface DamageEvent {
   killstreakBackstab?: boolean;
   /** Sabres Relentless — co-op heal + cooldown RPC on Backstab kill. */
   relentlessBackstab?: boolean;
+  /** Arctic / Glacial concentrated blizzard ticks — 4s freeze at 5 chill stacks. */
+  blizzardArctic?: boolean;
+  /** Frost totem hit — server chill stack + double damage vs frozen. */
+  frostTotemChill?: boolean;
+  /** Glacial Talons — Reaping Talons vs frozen (server doubles damage). */
+  glacialTalons?: boolean;
 }
 
 interface HealEvent {
@@ -114,6 +126,7 @@ export class CombatSystem extends System {
       infernalSmite?: boolean;
       infernoCrossentropy?: boolean;
       reaperCrossentropy?: boolean;
+      crossentropyPlague?: boolean;
       staggerToAdd?: number;
       infestedCombo?: boolean;
       wyvernBiteVenom?: boolean;
@@ -129,6 +142,11 @@ export class CombatSystem extends System {
       infestedFlourish?: boolean;
       killstreakBackstab?: boolean;
       relentlessBackstab?: boolean;
+      arcticBlizzard?: boolean;
+      frostTotemChill?: boolean;
+      guardbreakRoom?: boolean;
+      glacialBiteChill?: boolean;
+      glacialTalons?: boolean;
     },
     hitWorldPosition?: { x: number; y: number; z: number },
   ) => void;
@@ -169,6 +187,36 @@ export class CombatSystem extends System {
       return controlSystemRef.current.getCurrentWeapon();
     }
     return undefined;
+  }
+
+  private getControlSystem(): any {
+    return (window as any).controlSystemRef?.current;
+  }
+
+  private shouldApplyGuardbreakRoomTalent(): boolean {
+    return this.getControlSystem()?.shouldApplyGuardbreakRoomTalent?.() === true;
+  }
+
+  private shouldApplyBloodleechRoomTalent(): boolean {
+    return this.getControlSystem()?.shouldApplyBloodleechRoomTalent?.() === true;
+  }
+
+  private maybeApplyBloodleechCriticalHeal(damageResult: DamageResult, source?: Entity): void {
+    if (!damageResult.isCritical || !source || !this.shouldApplyBloodleechRoomTalent()) return;
+    const healingAmount = Math.max(0, Math.floor(getGlobalStrengthStatPoints()));
+    if (healingAmount <= 0) return;
+
+    const controlSystem = this.getControlSystem();
+    const playerEntity = controlSystem?.playerEntity as Entity | undefined;
+    const playerHealth = playerEntity?.getComponent(Health);
+    if (!playerEntity || !playerHealth || !playerHealth.heal(healingAmount)) return;
+
+    const playerTransform = playerEntity.getComponent(Transform);
+    const healPosition = playerTransform
+      ? playerTransform.getWorldPosition().clone().add(new Vector3(0, 1.5, 0))
+      : new Vector3(0, 1.5, 0);
+    this.damageNumberManager.addDamageNumber(healingAmount, false, healPosition, 'healing');
+    controlSystem?.broadcastRoomBoonHealing?.(healingAmount, 'room_boon_bloodleech', healPosition);
   }
 
   /** Wrathful Bite talent — additive crit for `damageType === 'barrage'` from the local ControlSystem. */
@@ -307,6 +355,55 @@ export class CombatSystem extends System {
     );
   }
 
+  /** Sabres Q/E (backstab / sunder) hit-feedback — local player only. */
+  private maybeAddSabreAbilityImpactVfx(
+    source: Entity | undefined,
+    target: Entity,
+    damageType: string | undefined,
+    shouldShow: boolean,
+  ): void {
+    if (!shouldShow) return;
+    if (damageType !== 'backstab' && damageType !== 'sunder') return;
+    if (
+      this.localPlayerEntityId === null ||
+      !source ||
+      source.id !== this.localPlayerEntityId
+    ) {
+      return;
+    }
+    if (this.getCurrentWeapon() !== WeaponType.SABRES) return;
+
+    const hitTransform = target.getComponent(Transform);
+    const sourceTransform = source.getComponent(Transform);
+    if (!hitTransform || !sourceTransform) return;
+
+    const hitPos = hitTransform.getWorldPosition().clone();
+    hitPos.y += 1.5;
+
+    const srcWorld = sourceTransform.getWorldPosition().clone();
+    let dir = new Vector3(hitPos.x - srcWorld.x, 0, hitPos.z - srcWorld.z);
+    if (dir.lengthSq() < 1e-8) {
+      const cs = (window as any).controlSystemRef?.current;
+      if (cs?.camera?.getWorldDirection) {
+        dir = new Vector3();
+        cs.camera.getWorldDirection(dir);
+        dir.y = 0;
+      }
+    }
+    if (dir.lengthSq() < 1e-8) {
+      dir.set(0, 0, 1);
+    } else {
+      dir.normalize();
+    }
+
+    this.impactEffectManager.addImpact('sabre-impact-effect', hitPos, dir);
+
+    const audio = (window as any).controlSystemRef?.current?.getAudioSystem?.() as
+      | { playSabresAbilityImpactSound?: (p: Vector3) => void }
+      | undefined;
+    audio?.playSabresAbilityImpactSound?.(hitPos);
+  }
+
   // Set callback for routing enemy damage to multiplayer server
   public setEnemyDamageCallback(
     callback: (
@@ -335,6 +432,7 @@ export class CombatSystem extends System {
         infestedFlourish?: boolean;
         killstreakBackstab?: boolean;
         relentlessBackstab?: boolean;
+        guardbreakRoom?: boolean;
       },
       hitWorldPosition?: { x: number; y: number; z: number },
     ) => void,
@@ -550,6 +648,7 @@ export class CombatSystem extends System {
 
       const actualDamage = damageResult.damage;
       this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
+      this.maybeApplyBloodleechCriticalHeal(damageResult, source);
 
       // Get source player ID for proper kill attribution
       // Use the sourcePlayerId from damage event if available, otherwise extract from source entity
@@ -568,7 +667,7 @@ export class CombatSystem extends System {
       // Use server enemy ID from entity userData instead of ECS entity ID
       const serverEnemyId = target.userData?.serverEnemyId || target.id.toString();
       // console.log(`🌐 Routing ${actualDamage} damage to enemy ${serverEnemyId} (ECS: ${target.id}) through multiplayer server from source player ${finalSourcePlayerId || 'unknown'}`);
-      const routeMeta =
+      const baseRouteMeta =
         damageType === 'wraith_strike'
           ? {
               damageType: 'wraith_strike' as const,
@@ -619,18 +718,24 @@ export class CombatSystem extends System {
                       damageType: 'projectile' as const,
                       staggerToAdd: damageEvent.staggerToAdd,
                     }
-                  : damageType === 'reaping_talons' &&
-                      damageEvent.staggerToAdd != null &&
-                      damageEvent.staggerToAdd > 0
+                  : damageType === 'reaping_talons'
                     ? {
                         damageType: 'reaping_talons' as const,
-                        staggerToAdd: damageEvent.staggerToAdd,
+                        ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
+                          ? { staggerToAdd: damageEvent.staggerToAdd }
+                          : {}),
+                        ...(damageEvent.glacialTalons === true
+                          ? { glacialTalons: true as const }
+                          : {}),
                       }
                   : damageType === 'barrage'
                     ? {
                         damageType: 'barrage' as const,
                         ...(damageEvent.wyvernBiteConcentratedVenom === true
                           ? { wyvernBiteVenom: true as const }
+                          : {}),
+                        ...(damageEvent.glacialBiteChill === true
+                          ? { glacialBiteChill: true as const }
                           : {}),
                         ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
                           ? { staggerToAdd: damageEvent.staggerToAdd }
@@ -644,6 +749,9 @@ export class CombatSystem extends System {
                             : {}),
                           ...(damageEvent.reaperCrossentropy === true
                             ? { reaperCrossentropy: true as const }
+                            : {}),
+                          ...(damageEvent.crossentropyPlague === true
+                            ? { crossentropyPlague: true as const }
                             : {}),
                           ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
                             ? { staggerToAdd: damageEvent.staggerToAdd }
@@ -662,13 +770,19 @@ export class CombatSystem extends System {
                         : damageType === 'wyvern_talons_detonate'
                           ? { damageType: 'wyvern_talons_detonate' as const }
                           : damageType === 'blizzard'
-                            ? { damageType: 'blizzard' as const }
+                            ? {
+                                damageType: 'blizzard' as const,
+                                ...(damageEvent.blizzardArctic === true
+                                  ? { arcticBlizzard: true as const }
+                                  : {}),
+                              }
                         : damageType === 'breath_weapon'
                           ? { damageType: 'breath_weapon' as const }
                           : damageType === 'entropic' &&
                               ((damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0) ||
                                 damageEvent.entropicWrathful === true ||
-                                damageEvent.entropicInfesting === true)
+                                damageEvent.entropicInfesting === true ||
+                                damageEvent.frostTotemChill === true)
                             ? {
                                 damageType: 'entropic' as const,
                                 ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
@@ -679,6 +793,9 @@ export class CombatSystem extends System {
                                   : {}),
                                 ...(damageEvent.entropicInfesting === true
                                   ? { entropicInfesting: true as const }
+                                  : {}),
+                                ...(damageEvent.frostTotemChill === true
+                                  ? { frostTotemChill: true as const }
                                   : {}),
                               }
                             : damageType === 'icebeam' &&
@@ -724,6 +841,9 @@ export class CombatSystem extends System {
                                         : {}),
                                     }
                                   : undefined;
+      const routeMeta = this.shouldApplyGuardbreakRoomTalent()
+        ? { ...(baseRouteMeta ?? {}), guardbreakRoom: true as const }
+        : baseRouteMeta;
       let hitWorldPosition: { x: number; y: number; z: number } | undefined;
       const hitTransform = target.getComponent(Transform);
       if (hitTransform) {
@@ -805,8 +925,10 @@ export class CombatSystem extends System {
 
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
+      this.maybeTriggerArcticShards(damageType, source, target);
 
       this.maybeAddBowOrEntropicImpactVfx(source, target, damageType, actualDamage > 0);
+      this.maybeAddSabreAbilityImpactVfx(source, target, damageType, actualDamage > 0);
 
       return; // Don't apply damage locally for enemies
     }
@@ -861,6 +983,7 @@ export class CombatSystem extends System {
 
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
+      this.maybeTriggerArcticShards(damageType, source, target);
 
       return;
     }
@@ -1063,7 +1186,18 @@ export class CombatSystem extends System {
     // For non-enemies (like players in non-PVP mode), apply damage locally as before
     const currentWeapon = this.getCurrentWeapon();
     const localFallbackCritOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source);
-    const damageResult: DamageResult = calculateDamage(baseDamage, currentWeapon, localFallbackCritOpts);
+    const enemyForGlacialTalons = target.getComponent(Enemy);
+    let localBase = baseDamage;
+    if (
+      enemyForGlacialTalons &&
+      !this.onEnemyDamageCallback &&
+      damageType === 'reaping_talons' &&
+      damageEvent.glacialTalons === true &&
+      enemyForGlacialTalons.isFrozen
+    ) {
+      localBase = Math.floor(baseDamage * 2);
+    }
+    const damageResult: DamageResult = calculateDamage(localBase, currentWeapon, localFallbackCritOpts);
     const actualDamage = damageResult.damage;
     this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
 
@@ -1072,6 +1206,9 @@ export class CombatSystem extends System {
 
     if (damageDealt) {
       this.totalDamageDealt += actualDamage;
+      if (target.getComponent(Enemy)) {
+        this.maybeApplyBloodleechCriticalHeal(damageResult, source);
+      }
 
       // Create damage number at target position
       const transform = target.getComponent(Transform);
@@ -1103,6 +1240,7 @@ export class CombatSystem extends System {
       }
 
       this.maybeAddBowOrEntropicImpactVfx(source, target, damageType, damageDealt);
+      this.maybeAddSabreAbilityImpactVfx(source, target, damageType, damageDealt);
 
       this.maybeApplyReaperCrossentropyHitHeal(damageEvent, target, source, damageType, actualDamage);
 
@@ -1164,6 +1302,7 @@ export class CombatSystem extends System {
       this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
+      this.maybeTriggerArcticShards(damageType, source, target);
 
       const enemyForVenom = target.getComponent(Enemy);
       if (
@@ -1172,6 +1311,26 @@ export class CombatSystem extends System {
         damageEvent.wyvernBiteConcentratedVenom === true
       ) {
         enemyForVenom.applyConcentratedVenomStack(currentTime);
+      }
+
+      const enemyGlacialBite = target.getComponent(Enemy);
+      if (
+        enemyGlacialBite &&
+        damageType === 'barrage' &&
+        damageEvent.glacialBiteChill === true &&
+        damageDealt &&
+        !this.onEnemyDamageCallback
+      ) {
+        const t = target.getComponent(Transform);
+        if (t) {
+          enemyGlacialBite.applyBlizzardChillStack(
+            currentTime,
+            target.id.toString(),
+            t.getWorldPosition().clone(),
+            BLIZZARD_FREEZE_DURATION_SEC,
+            target.userData?.coopServerEnemyType as string | undefined,
+          );
+        }
       }
 
       const enemyForBlizzard = target.getComponent(Enemy);
@@ -1183,10 +1342,14 @@ export class CombatSystem extends System {
       ) {
         const t = target.getComponent(Transform);
         if (t) {
+          const freezeSec =
+            damageEvent.blizzardArctic === true ? ARCTIC_CHILL_FREEZE_DURATION_SEC : undefined;
           enemyForBlizzard.applyBlizzardChillStack(
             currentTime,
             target.id.toString(),
             t.getWorldPosition().clone(),
+            freezeSec,
+            target.userData?.coopServerEnemyType as string | undefined,
           );
         }
       }
@@ -1384,6 +1547,9 @@ export class CombatSystem extends System {
     infestedFlourish?: boolean,
     killstreakBackstab?: boolean,
     relentlessBackstab?: boolean,
+    crossentropyPlague?: boolean,
+    glacialBiteChill?: boolean,
+    glacialTalons?: boolean,
   ): void {
     this.damageQueue.push({
       target,
@@ -1413,6 +1579,27 @@ export class CombatSystem extends System {
       infestedFlourish,
       killstreakBackstab,
       relentlessBackstab,
+      crossentropyPlague,
+      glacialBiteChill,
+      glacialTalons,
+    });
+  }
+
+  /** Concentrated arctic / glacial ground blizzard ticks (co-op: `arcticBlizzard` hitMeta). */
+  public queueDamageWithBlizzardArctic(
+    target: Entity,
+    damage: number,
+    source?: Entity,
+    sourcePlayerId?: string,
+  ): void {
+    this.damageQueue.push({
+      target,
+      damage,
+      source,
+      damageType: 'blizzard',
+      timestamp: Date.now() / 1000,
+      sourcePlayerId,
+      blizzardArctic: true,
     });
   }
 
@@ -1456,6 +1643,9 @@ export class CombatSystem extends System {
 
     if (damageDealt) {
       this.totalDamageDealt += actualDamage;
+      if (target.getComponent(Enemy)) {
+        this.maybeApplyBloodleechCriticalHeal(damageResult, source);
+      }
 
       // Create damage number at target position
       const transform = target.getComponent(Transform);
@@ -1638,6 +1828,23 @@ export class CombatSystem extends System {
     const cs = (window as any).controlSystemRef?.current;
     if (cs?.tryProcSolarRechargeOnEntropicHit) {
       cs.tryProcSolarRechargeOnEntropicHit(target, source);
+    }
+  }
+
+  /** Arctic Shards room boon: 15% on entropic hit to spawn concentrated blizzard. */
+  private maybeTriggerArcticShards(
+    damageType: string | undefined,
+    source: Entity | undefined,
+    target: Entity,
+  ): void {
+    if (damageType !== 'entropic' || !source) return;
+    if (!target.getComponent(Enemy)) return;
+    const proj = source.getComponent(Projectile);
+    if (!proj || proj.entropicBoltTalent !== 'arctic') return;
+    if (this.localPlayerEntityId === null || proj.owner !== this.localPlayerEntityId) return;
+    const cs = (window as any).controlSystemRef?.current;
+    if (cs?.tryProcArcticShardsOnEntropicHit) {
+      cs.tryProcArcticShardsOnEntropicHit(target, source);
     }
   }
 

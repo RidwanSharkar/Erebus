@@ -9,6 +9,8 @@ import {
   EXPLOSIVE_TALONS_REAPING_TALONS_MAX_TRAVEL_DISTANCE,
   EXPLOSIVE_TALONS_EXPLOSION_DAMAGE,
   EXPLOSIVE_TALONS_EXPLOSION_RADIUS,
+  GIANTKILLER_MAX_HP_DAMAGE_FRAC,
+  GIANTKILLER_MAX_HP_DAMAGE_FRAC_BOSS,
 } from '@/utils/talents';
 
 interface ViperStingProjectile {
@@ -59,6 +61,8 @@ interface UseViperStingProps {
     id: string;
     position: Vector3;
     health: number;
+    maxHealth?: number;
+    isBoss?: boolean;
     isDying?: boolean;
   }>;
   setDamageNumbers: React.Dispatch<React.SetStateAction<Array<{
@@ -70,7 +74,13 @@ interface UseViperStingProps {
   }>>>;
   nextDamageNumberId: React.MutableRefObject<number>;
   onHealthChange?: (deltaHealth: number) => void;
-  createBeamEffect?: (position: Vector3, direction: Vector3, isReturning?: boolean, beamLength?: number) => void;
+  createBeamEffect?: (
+    position: Vector3,
+    direction: Vector3,
+    isReturning?: boolean,
+    beamLength?: number,
+    glacialTalonsTheme?: boolean,
+  ) => void;
   applyDoT?: (enemyId: string) => void;
   charges: Array<{
     id: number;
@@ -94,6 +104,10 @@ interface UseViperStingProps {
   explosiveTalons?: boolean;
   /** EXECUTE talent: first forward hit only — return bonus damage to add (0 if no dash consumed). */
   onExecuteFirstForwardHit?: () => number;
+  /** GIANTKILLER: extra return-hit damage when forward leg already hit this target (PvE only). */
+  giantKiller?: boolean;
+  /** Glacial Talons room boon — deep blue beam VFX. */
+  glacialTalonsTheme?: boolean;
   /** EXPLOSIVE TALONS: one-shot VFX at detonation center (max range). */
   onExplosiveTalonsDetonate?: (position: Vector3) => void;
 }
@@ -114,6 +128,8 @@ export function useViperSting({
   wrathfulTalonsReturnCrit = false,
   explosiveTalons = false,
   onExecuteFirstForwardHit,
+  giantKiller = false,
+  glacialTalonsTheme = false,
   onExplosiveTalonsDetonate,
 }: UseViperStingProps) {
   const projectilePool = useRef<ViperStingProjectile[]>([]);
@@ -221,11 +237,11 @@ export function useViperSting({
 
     // Create beam effect for forward shot
     if (createBeamEffect) {
-      createBeamEffect(unitPosition, direction, false, projectile.maxDistance);
+      createBeamEffect(unitPosition, direction, false, projectile.maxDistance, glacialTalonsTheme);
     }
 
     return true;
-  }, [createBeamEffect, parentRef, getInactiveProjectile, charges, setCharges, wrathfulTalonsReturnCrit, explosiveTalons, localSocketId]);
+  }, [createBeamEffect, parentRef, getInactiveProjectile, charges, setCharges, wrathfulTalonsReturnCrit, explosiveTalons, glacialTalonsTheme, localSocketId]);
 
   const createSoulStealEffect = useCallback((enemyPosition: Vector3) => {
     if (!parentRef.current) return;
@@ -367,7 +383,7 @@ export function useViperSting({
               projectile.direction = new Vector3().subVectors(projectile.startPosition, projectile.position).normalize();
 
               if (createBeamEffect) {
-                createBeamEffect(projectile.position, projectile.direction, true, projectile.maxDistance);
+                createBeamEffect(projectile.position, projectile.direction, true, projectile.maxDistance, glacialTalonsTheme);
               }
             }
           }
@@ -449,6 +465,18 @@ export function useViperSting({
                   returnIsCritical = r.isCritical;
                 }
 
+                if (
+                  giantKiller &&
+                  projectile.hitEnemies.has(enemy.id) &&
+                  typeof enemy.maxHealth === 'number' &&
+                  enemy.maxHealth > 0
+                ) {
+                  const frac = enemy.isBoss
+                    ? GIANTKILLER_MAX_HP_DAMAGE_FRAC_BOSS
+                    : GIANTKILLER_MAX_HP_DAMAGE_FRAC;
+                  returnDamage += Math.floor(enemy.maxHealth * frac);
+                }
+
                 onHit(enemy.id, returnDamage, returnIsCritical, undefined, undefined, 'return');
 
                 // Apply DoT effect for return shot as well
@@ -492,7 +520,7 @@ export function useViperSting({
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [enemyData, onHit, setDamageNumbers, nextDamageNumberId, onHealthChange, createSoulStealEffect, parentRef, createBeamEffect, applyDoT, localSocketId, players, onExecuteFirstForwardHit, onExplosiveTalonsDetonate]);
+  }, [enemyData, onHit, setDamageNumbers, nextDamageNumberId, onHealthChange, createSoulStealEffect, parentRef, createBeamEffect, applyDoT, localSocketId, players, onExecuteFirstForwardHit, giantKiller, glacialTalonsTheme, onExplosiveTalonsDetonate]);
 
   return {
     shootViperSting,

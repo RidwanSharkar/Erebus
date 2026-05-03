@@ -9,6 +9,8 @@ export interface ViperStingBeamEffect {
   isReturning: boolean;
   startTime: number;
   beamLength: number;
+  /** Glacial Talons room boon — deep blue beam palette. */
+  glacialTalonsTheme?: boolean;
 }
 
 export const useViperStingBeam = () => {
@@ -19,7 +21,8 @@ export const useViperStingBeam = () => {
     position: Vector3,
     direction: Vector3,
     isReturning: boolean = false,
-    beamLength: number = REAPING_TALONS_MAX_TRAVEL_DISTANCE
+    beamLength: number = REAPING_TALONS_MAX_TRAVEL_DISTANCE,
+    glacialTalonsTheme: boolean = false,
   ) => {
     const effectId = nextEffectId.current++;
     
@@ -30,6 +33,7 @@ export const useViperStingBeam = () => {
       isReturning,
       startTime: Date.now(),
       beamLength,
+      ...(glacialTalonsTheme ? { glacialTalonsTheme: true as const } : {}),
     };
 
     setActiveEffects(prev => [...prev, newEffect]);

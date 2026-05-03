@@ -18,6 +18,7 @@ import { CombatSystem } from './CombatSystem';
 
 function crossentropyThemeFromProjectile(projectile: Projectile): CrossentropyVisualTheme {
   if (projectile.infernoCrossentropy === true) return 'inferno';
+  if (projectile.crossentropyGlacial === true) return 'glacial';
   if (projectile.crossentropyTempest === true) return 'tempest';
   if (projectile.crossentropyPlague === true) return 'plague';
   return 'default';
@@ -317,6 +318,7 @@ export class ProjectileSystem extends System {
       const isEntropicBolt = renderer?.mesh?.userData?.isEntropicBolt;
       const isBarrageArrow = renderer?.mesh?.userData?.isBarrageArrow;
       const wyvernBiteConcentratedVenom = renderer?.mesh?.userData?.barrageWyvernBite === true;
+      const glacialBiteChill = isBarrageArrow === true && renderer?.mesh?.userData?.barrageGlacialBite === true;
 
       let damageType = 'projectile';
       if (isCrossentropyBolt) {
@@ -331,7 +333,12 @@ export class ProjectileSystem extends System {
       
       const entropicTalent =
         projectile.entropicBoltTalent ??
-        (renderer?.mesh?.userData?.entropicBoltTalent as 'wrathful' | 'staggering' | 'infesting' | undefined);
+        (renderer?.mesh?.userData?.entropicBoltTalent as
+          | 'wrathful'
+          | 'staggering'
+          | 'infesting'
+          | 'arctic'
+          | undefined);
 
       this.combatSystem.queueDamage(
         target,
@@ -352,7 +359,45 @@ export class ProjectileSystem extends System {
         undefined,
         isEntropicBolt && entropicTalent === 'wrathful',
         isEntropicBolt && entropicTalent === 'infesting',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        isCrossentropyBolt && projectile.crossentropyPlague === true,
+        glacialBiteChill,
       );
+
+      if (
+        projectile.isPerfectShot === true &&
+        target.getComponent(Enemy)
+      ) {
+        const cs = (window as any).controlSystemRef?.current;
+        const localEnt = cs?.getPlayerEntity?.() as { id: number } | null | undefined;
+        if (localEnt && projectile.owner === localEnt.id) {
+          cs?.tryArcticStingBlizzardOnPerfectShotFirstHit?.(
+            projectile.perfectShotVolleyId,
+            target,
+          );
+        }
+      }
+
+      if (
+        isCrossentropyBolt &&
+        projectile.crossentropyGlacial === true &&
+        target.getComponent(Enemy)
+      ) {
+        const glacialTransform = target.getComponent(Transform);
+        if (glacialTransform) {
+          const gp = glacialTransform.getWorldPosition().clone();
+          gp.y = Math.max(1.5, gp.y);
+          const cs = (window as any).controlSystemRef?.current;
+          cs?.applyGlacialStormOnCrossentropyHit?.(gp);
+        }
+      }
 
       if (
         isCrossentropyBolt &&
@@ -385,11 +430,13 @@ export class ProjectileSystem extends System {
           const color =
             theme === 'inferno'
               ? new Color('#FF3300')
-              : theme === 'tempest'
-                ? new Color('#2288FF')
-                : theme === 'plague'
-                  ? new Color('#33DD66')
-                  : new Color('#8B00FF');
+              : theme === 'glacial'
+                ? new Color('#0a3d5c')
+                : theme === 'tempest'
+                  ? new Color('#2288FF')
+                  : theme === 'plague'
+                    ? new Color('#33DD66')
+                    : new Color('#8B00FF');
           this.world.emitEvent('explosion', {
             position: explosionPosition,
             color,
@@ -400,6 +447,11 @@ export class ProjectileSystem extends System {
             infernoCrossentropy: theme === 'inferno',
             crossentropyVisualTheme: theme,
           });
+          if (projectile.crossentropyPlague === true) {
+            this.world.emitEvent('crossentropyPlagueVenom', {
+              position: explosionPosition.clone(),
+            });
+          }
         }
       }
     } else {
@@ -488,6 +540,7 @@ export class ProjectileSystem extends System {
       dualCoilLane?: 0 | 1;
       /** Bow perfect window — Wrathful Shots crit. */
       isPerfectShot?: boolean;
+      perfectShotVolleyId?: number;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -511,6 +564,9 @@ export class ProjectileSystem extends System {
     }
     if (config?.isPerfectShot === true) {
       projectile.isPerfectShot = true;
+    }
+    if (config?.perfectShotVolleyId != null) {
+      projectile.perfectShotVolleyId = config.perfectShotVolleyId;
     }
     projectile.setDirection(direction);
     
@@ -575,6 +631,7 @@ export class ProjectileSystem extends System {
       reaperCrossentropy?: boolean;
       crossentropyTempest?: boolean;
       crossentropyPlague?: boolean;
+      crossentropyGlacial?: boolean;
       maxDistance?: number;
     }
   ): Entity {
@@ -606,6 +663,9 @@ export class ProjectileSystem extends System {
     }
     if (config?.crossentropyPlague) {
       projectile.crossentropyPlague = true;
+    }
+    if (config?.crossentropyGlacial) {
+      projectile.crossentropyGlacial = true;
     }
     
     if (config?.piercing) projectile.setPiercing(true);
@@ -650,6 +710,9 @@ export class ProjectileSystem extends System {
     if (config?.crossentropyPlague) {
       placeholderMesh.userData.crossentropyPlague = true;
     }
+    if (config?.crossentropyGlacial) {
+      placeholderMesh.userData.crossentropyGlacial = true;
+    }
     
     renderer.mesh = placeholderMesh;
     
@@ -688,7 +751,7 @@ export class ProjectileSystem extends System {
       sourcePlayerId?: string;
       isCryoflame?: boolean;
       colorVariant?: string;
-      entropicBoltTalent?: 'wrathful' | 'staggering' | 'infesting';
+      entropicBoltTalent?: 'wrathful' | 'staggering' | 'infesting' | 'arctic';
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -789,6 +852,8 @@ export class ProjectileSystem extends System {
       wyvernBiteBarrage?: boolean;
       /** Staggering Bite — Barrage stagger; replicated for remote clients. */
       staggeringBiteBarrage?: boolean;
+      /** Glacial Bite — light blue Barrage + chill on hit. */
+      glacialBiteBarrage?: boolean;
       dualCoilLane?: 0 | 1;
       /** Bow perfect — Wrathful Shots. */
       isPerfectShot?: boolean;

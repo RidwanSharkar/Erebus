@@ -22,6 +22,7 @@ import {
   crossentropyPlagueTalentDefinition,
   CROSSENTROPY_TEMPEST_STAGGER,
   CROSSENTROPY_PLAGUE_DAMAGE,
+  CROSSENTROPY_PLAGUE_VENOM_MS,
   frostPathTalentDefinition,
   FROSTPATH_PROC_CHANCE,
   FROST_SOLAR_PROC_EFFECT_ICD_MS,
@@ -96,6 +97,10 @@ import {
   dualCoilTalentDefinition,
   wyvernStingTalentDefinition,
   wyvernTalonsTalentDefinition,
+  arcticStingTalentDefinition,
+  glacialBiteTalentDefinition,
+  glacialTalonsTalentDefinition,
+  ARCTIC_STING_BLIZZARD_ICD_SEC,
   WYVERN_STING_COOLDOWN_SEC,
   wrathStrikeTalentDefinition,
   wraithGuardTalentDefinition,
@@ -119,10 +124,20 @@ import {
   EXPLOSIVE_TALONS_REAPING_TALONS_MAX_TRAVEL_DISTANCE,
   tempestRoundsTalentDefinition,
   icebeamTalentDefinition,
+  shamanTalentDefinition,
+  superconductorTalentDefinition,
+  acceleratorTalentDefinition,
+  giantKillerTalentDefinition,
+  healingStreamTalentDefinition,
   getTalentIconSrc,
   wrathfulEntropicTalentDefinition,
   staggeringEntropicTalentDefinition,
   infestingEntropicTalentDefinition,
+  arcticShardsTalentDefinition,
+  glacialStormTalentDefinition,
+  frostTotemTalentDefinition,
+  ARCTIC_SHARDS_PROC_CHANCE,
+  ARCTIC_ENTROPIC_BOLT_DAMAGE,
   wrathfulTotemTalentDefinition,
   staggeringTotemTalentDefinition,
   infestingTotemTalentDefinition,
@@ -134,6 +149,11 @@ import {
   staggeringFlourishTalentDefinition,
   wrathfulFlourishTalentDefinition,
   infestedFlourishTalentDefinition,
+  guardSabresSwipesTalentDefinition,
+  guardSabresStabTalentDefinition,
+  guardSabresFlourishTalentDefinition,
+  GUARD_SABRES_SWIPES_PROC_CHANCE,
+  GUARD_SABRES_PURPLE_SHIELD_DURATION_SEC,
   STAGGERING_FLOURISH_STAGGER,
   WRATHFUL_FLOURISH_CRIT_CHANCE_ADD,
   WRATHFUL_FLOURISH_CRIT_DAMAGE_MULT_ADD,
@@ -148,6 +168,7 @@ import {
   RELENTLESS_BACKSTAB_KILL_HEAL,
   killstreakTalentDefinition,
   relentlessTalentDefinition,
+  vorpalGustTalentDefinition,
 } from '@/utils/talents';
 
 interface TalentSelectionModalProps {
@@ -230,6 +251,9 @@ export default function TalentSelectionModal({
     dualCoil: initialTalentLoadout?.dualCoil ?? def.dualCoil,
     wyvernSting: initialTalentLoadout?.wyvernSting ?? def.wyvernSting,
     wyvernTalons: initialTalentLoadout?.wyvernTalons ?? def.wyvernTalons,
+    arcticSting: initialTalentLoadout?.arcticSting ?? def.arcticSting,
+    glacialBite: initialTalentLoadout?.glacialBite ?? def.glacialBite,
+    glacialTalons: initialTalentLoadout?.glacialTalons ?? def.glacialTalons,
     bladeRush: initialTalentLoadout?.bladeRush ?? def.bladeRush,
     wrathfulCombo: initialTalentLoadout?.wrathfulCombo ?? def.wrathfulCombo,
     infestedCombo: initialTalentLoadout?.infestedCombo ?? def.infestedCombo,
@@ -249,12 +273,19 @@ export default function TalentSelectionModal({
     wrathfulEntropic: initialTalentLoadout?.wrathfulEntropic ?? def.wrathfulEntropic,
     staggeringEntropic: initialTalentLoadout?.staggeringEntropic ?? def.staggeringEntropic,
     infestingEntropic: initialTalentLoadout?.infestingEntropic ?? def.infestingEntropic,
+    arcticShards: initialTalentLoadout?.arcticShards ?? def.arcticShards,
     wrathfulTotem: initialTalentLoadout?.wrathfulTotem ?? def.wrathfulTotem,
     staggeringTotem: initialTalentLoadout?.staggeringTotem ?? def.staggeringTotem,
     infestingTotem: initialTalentLoadout?.infestingTotem ?? def.infestingTotem,
+    frostTotem: initialTalentLoadout?.frostTotem ?? def.frostTotem,
     crossentropyTempest: initialTalentLoadout?.crossentropyTempest ?? def.crossentropyTempest,
     crossentropyPlague: initialTalentLoadout?.crossentropyPlague ?? def.crossentropyPlague,
+    glacialStorm: initialTalentLoadout?.glacialStorm ?? def.glacialStorm,
     shaman: initialTalentLoadout?.shaman ?? def.shaman,
+    superconductor: initialTalentLoadout?.superconductor ?? def.superconductor,
+    accelerator: initialTalentLoadout?.accelerator ?? def.accelerator,
+    giantKiller: initialTalentLoadout?.giantKiller ?? def.giantKiller,
+    healingStream: initialTalentLoadout?.healingStream ?? def.healingStream,
     staggeringStab: initialTalentLoadout?.staggeringStab ?? def.staggeringStab,
     wrathfulStab: initialTalentLoadout?.wrathfulStab ?? def.wrathfulStab,
     infestedBackstab: initialTalentLoadout?.infestedBackstab ?? def.infestedBackstab,
@@ -263,8 +294,22 @@ export default function TalentSelectionModal({
     staggeringFlourish: initialTalentLoadout?.staggeringFlourish ?? def.staggeringFlourish,
     wrathfulFlourish: initialTalentLoadout?.wrathfulFlourish ?? def.wrathfulFlourish,
     infestedFlourish: initialTalentLoadout?.infestedFlourish ?? def.infestedFlourish,
+    guardSabresSwipes: initialTalentLoadout?.guardSabresSwipes ?? def.guardSabresSwipes,
+    guardSabresStab: initialTalentLoadout?.guardSabresStab ?? def.guardSabresStab,
+    guardSabresFlourish: initialTalentLoadout?.guardSabresFlourish ?? def.guardSabresFlourish,
     killstreak: initialTalentLoadout?.killstreak ?? def.killstreak,
     relentless: initialTalentLoadout?.relentless ?? def.relentless,
+    vorpalGust: initialTalentLoadout?.vorpalGust ?? def.vorpalGust,
+    packHunterRoom: initialTalentLoadout?.packHunterRoom ?? def.packHunterRoom,
+    everlivingRoom: initialTalentLoadout?.everlivingRoom ?? def.everlivingRoom,
+    adrenalineRoom: initialTalentLoadout?.adrenalineRoom ?? def.adrenalineRoom,
+    juggernautStrainRoom: initialTalentLoadout?.juggernautStrainRoom ?? def.juggernautStrainRoom,
+    infernalDashRoom: initialTalentLoadout?.infernalDashRoom ?? def.infernalDashRoom,
+    glacialDashRoom: initialTalentLoadout?.glacialDashRoom ?? def.glacialDashRoom,
+    mendingDashRoom: initialTalentLoadout?.mendingDashRoom ?? def.mendingDashRoom,
+    staggeringDashRoom: initialTalentLoadout?.staggeringDashRoom ?? def.staggeringDashRoom,
+    guardbreakRoom: initialTalentLoadout?.guardbreakRoom ?? def.guardbreakRoom,
+    bloodleechRoom: initialTalentLoadout?.bloodleechRoom ?? def.bloodleechRoom,
   };
   const [loadout, setLoadout] = useState<TalentLoadout>(() => merged);
 
@@ -335,6 +380,11 @@ export default function TalentSelectionModal({
   const toggleStaggeringTalons = useCallback(() => {
     if (!reapingEquipped) return;
     setLoadout((prev) => ({ ...prev, staggeringTalons: !prev.staggeringTalons }));
+  }, [reapingEquipped]);
+
+  const toggleGiantKiller = useCallback(() => {
+    if (!reapingEquipped) return;
+    setLoadout((prev) => ({ ...prev, giantKiller: !prev.giantKiller }));
   }, [reapingEquipped]);
 
   const toggleStoredCharge = useCallback(() => {
@@ -446,12 +496,28 @@ export default function TalentSelectionModal({
     setLoadout((prev) => ({ ...prev, infestedFlourish: !prev.infestedFlourish }));
   }, []);
 
+  const toggleGuardSabresSwipes = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, guardSabresSwipes: !prev.guardSabresSwipes }));
+  }, []);
+
+  const toggleGuardSabresStab = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, guardSabresStab: !prev.guardSabresStab }));
+  }, []);
+
+  const toggleGuardSabresFlourish = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, guardSabresFlourish: !prev.guardSabresFlourish }));
+  }, []);
+
   const toggleKillstreak = useCallback(() => {
     setLoadout((prev) => ({ ...prev, killstreak: !prev.killstreak }));
   }, []);
 
   const toggleRelentless = useCallback(() => {
     setLoadout((prev) => ({ ...prev, relentless: !prev.relentless }));
+  }, []);
+
+  const toggleVorpalGust = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, vorpalGust: !prev.vorpalGust }));
   }, []);
 
   const toggleStaggerShot = useCallback(() => {
@@ -505,7 +571,7 @@ export default function TalentSelectionModal({
     setLoadout((prev) => {
       const on = !prev.crossentropyTempest;
       if (!on) return { ...prev, crossentropyTempest: false };
-      return { ...prev, crossentropyTempest: true, crossentropyPlague: false };
+      return { ...prev, crossentropyTempest: true, crossentropyPlague: false, glacialStorm: false };
     });
   }, [crossentropyEquipped]);
 
@@ -514,7 +580,21 @@ export default function TalentSelectionModal({
     setLoadout((prev) => {
       const on = !prev.crossentropyPlague;
       if (!on) return { ...prev, crossentropyPlague: false };
-      return { ...prev, crossentropyPlague: true, crossentropyTempest: false };
+      return { ...prev, crossentropyPlague: true, crossentropyTempest: false, glacialStorm: false };
+    });
+  }, [crossentropyEquipped]);
+
+  const toggleGlacialStorm = useCallback(() => {
+    if (!crossentropyEquipped) return;
+    setLoadout((prev) => {
+      const on = !prev.glacialStorm;
+      if (!on) return { ...prev, glacialStorm: false };
+      return {
+        ...prev,
+        glacialStorm: true,
+        crossentropyTempest: false,
+        crossentropyPlague: false,
+      };
     });
   }, [crossentropyEquipped]);
 
@@ -538,6 +618,26 @@ export default function TalentSelectionModal({
     setLoadout((prev) => ({ ...prev, icebeam: !prev.icebeam }));
   }, []);
 
+  const toggleShaman = useCallback(() => {
+    if (!mantraEquipped) return;
+    setLoadout((prev) => ({ ...prev, shaman: !prev.shaman }));
+  }, [mantraEquipped]);
+
+  const toggleSuperconductor = useCallback(() => {
+    if (!mantraEquipped) return;
+    setLoadout((prev) => ({ ...prev, superconductor: !prev.superconductor }));
+  }, [mantraEquipped]);
+
+  const toggleAccelerator = useCallback(() => {
+    if (!mantraEquipped) return;
+    setLoadout((prev) => ({ ...prev, accelerator: !prev.accelerator }));
+  }, [mantraEquipped]);
+
+  const toggleHealingStream = useCallback(() => {
+    if (!mantraEquipped) return;
+    setLoadout((prev) => ({ ...prev, healingStream: !prev.healingStream }));
+  }, [mantraEquipped]);
+
   const toggleWrathfulEntropic = useCallback(() => {
     setLoadout((prev) => {
       const on = !prev.wrathfulEntropic;
@@ -547,6 +647,7 @@ export default function TalentSelectionModal({
         wrathfulEntropic: true,
         staggeringEntropic: false,
         infestingEntropic: false,
+        arcticShards: false,
       };
     });
   }, []);
@@ -560,6 +661,7 @@ export default function TalentSelectionModal({
         staggeringEntropic: true,
         wrathfulEntropic: false,
         infestingEntropic: false,
+        arcticShards: false,
       };
     });
   }, []);
@@ -573,6 +675,21 @@ export default function TalentSelectionModal({
         infestingEntropic: true,
         wrathfulEntropic: false,
         staggeringEntropic: false,
+        arcticShards: false,
+      };
+    });
+  }, []);
+
+  const toggleArcticShards = useCallback(() => {
+    setLoadout((prev) => {
+      const on = !prev.arcticShards;
+      if (!on) return { ...prev, arcticShards: false };
+      return {
+        ...prev,
+        arcticShards: true,
+        wrathfulEntropic: false,
+        staggeringEntropic: false,
+        infestingEntropic: false,
       };
     });
   }, []);
@@ -587,6 +704,7 @@ export default function TalentSelectionModal({
         wrathfulTotem: true,
         staggeringTotem: false,
         infestingTotem: false,
+        frostTotem: false,
       };
     });
   }, [mantraEquipped]);
@@ -601,6 +719,7 @@ export default function TalentSelectionModal({
         staggeringTotem: true,
         wrathfulTotem: false,
         infestingTotem: false,
+        frostTotem: false,
       };
     });
   }, [mantraEquipped]);
@@ -615,6 +734,22 @@ export default function TalentSelectionModal({
         infestingTotem: true,
         wrathfulTotem: false,
         staggeringTotem: false,
+        frostTotem: false,
+      };
+    });
+  }, [mantraEquipped]);
+
+  const toggleFrostTotem = useCallback(() => {
+    if (!mantraEquipped) return;
+    setLoadout((prev) => {
+      const on = !prev.frostTotem;
+      if (!on) return { ...prev, frostTotem: false };
+      return {
+        ...prev,
+        frostTotem: true,
+        wrathfulTotem: false,
+        staggeringTotem: false,
+        infestingTotem: false,
       };
     });
   }, [mantraEquipped]);
@@ -1003,7 +1138,7 @@ export default function TalentSelectionModal({
                     <>
                       <p className="text-gray-400 text-sm mt-1">{dashGuardTalentDefinition.description}</p>
                       <p className="text-sky-200/90 text-xs mt-2 font-mono">
-                        {DASH_GUARD_DURATION_SEC}s deflect + invuln on dash · no Aegis cooldown
+                        {DASH_GUARD_DURATION_SEC}s deflect + invuln on dash · Runeblade or Sabres · no Aegis cooldown
                       </p>
                     </>
                   )}
@@ -1383,6 +1518,22 @@ export default function TalentSelectionModal({
                 )}
               </label>
             </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={vorpalGustTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-vorpal-gust"
+                checked={loadout.vorpalGust}
+                onChange={toggleVorpalGust}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-vorpal-gust" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{vorpalGustTalentDefinition.name}</div>
+                {loadout.vorpalGust && (
+                  <p className="text-gray-400 text-sm mt-1">{vorpalGustTalentDefinition.description}</p>
+                )}
+              </label>
+            </div>
           </div>
         )}
 
@@ -1442,6 +1593,27 @@ export default function TalentSelectionModal({
                 <div className="text-white font-semibold">{infestedBackstabTalentDefinition.name}</div>
                 {loadout.infestedBackstab && (
                   <p className="text-gray-400 text-sm mt-1">{infestedBackstabTalentDefinition.description}</p>
+                )}
+              </label>
+            </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={guardSabresStabTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-guard-sabres-stab"
+                checked={loadout.guardSabresStab}
+                onChange={toggleGuardSabresStab}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-guard-sabres-stab" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{guardSabresStabTalentDefinition.name}</div>
+                {loadout.guardSabresStab && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{guardSabresStabTalentDefinition.description}</p>
+                    <p className="text-violet-200/90 text-xs mt-2 font-mono">
+                      100% per enemy hit · {GUARD_SABRES_PURPLE_SHIELD_DURATION_SEC}s deflect + invuln · no Aegis cooldown
+                    </p>
+                  </>
                 )}
               </label>
             </div>
@@ -1508,6 +1680,28 @@ export default function TalentSelectionModal({
                 )}
               </label>
             </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={guardSabresSwipesTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-guard-sabres-swipes"
+                checked={loadout.guardSabresSwipes}
+                onChange={toggleGuardSabresSwipes}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-guard-sabres-swipes" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{guardSabresSwipesTalentDefinition.name}</div>
+                {loadout.guardSabresSwipes && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{guardSabresSwipesTalentDefinition.description}</p>
+                    <p className="text-violet-200/90 text-xs mt-2 font-mono">
+                      {Math.round(GUARD_SABRES_SWIPES_PROC_CHANCE * 100)}% per blade hit ·{' '}
+                      {GUARD_SABRES_PURPLE_SHIELD_DURATION_SEC}s deflect + invuln · no Aegis cooldown
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
 
             <div className="text-gray-400 text-xs font-semibold tracking-wide uppercase mt-6 mb-3">Flourish (E)</div>
             <div className="flex items-start gap-3">
@@ -1563,6 +1757,52 @@ export default function TalentSelectionModal({
                 <div className="text-white font-semibold">{infestedFlourishTalentDefinition.name}</div>
                 {loadout.infestedFlourish && (
                   <p className="text-gray-400 text-sm mt-1">{infestedFlourishTalentDefinition.description}</p>
+                )}
+              </label>
+            </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={guardSabresFlourishTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-guard-sabres-flourish"
+                checked={loadout.guardSabresFlourish}
+                onChange={toggleGuardSabresFlourish}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-guard-sabres-flourish" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{guardSabresFlourishTalentDefinition.name}</div>
+                {loadout.guardSabresFlourish && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{guardSabresFlourishTalentDefinition.description}</p>
+                    <p className="text-violet-200/90 text-xs mt-2 font-mono">
+                      100% per enemy hit · {GUARD_SABRES_PURPLE_SHIELD_DURATION_SEC}s deflect + invuln · no Aegis cooldown
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+
+            <div className="text-gray-400 text-xs font-semibold tracking-wide uppercase mt-6 mb-3">
+              Dash (double-tap W/A/S/D)
+            </div>
+            <div className="flex items-start gap-3">
+              <TalentRowIcon id={dashGuardTalentDefinition.id} />
+              <input
+                type="checkbox"
+                id="talent-sabres-dash-guard"
+                checked={loadout.dashGuard}
+                onChange={toggleDashGuard}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor="talent-sabres-dash-guard" className="flex-1 cursor-pointer">
+                <div className="text-white font-semibold">{dashGuardTalentDefinition.name}</div>
+                {loadout.dashGuard && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{dashGuardTalentDefinition.description}</p>
+                    <p className="text-sky-200/90 text-xs mt-2 font-mono">
+                      {DASH_GUARD_DURATION_SEC}s deflect + invuln on dash · Runeblade or Sabres · no Aegis cooldown
+                    </p>
+                  </>
                 )}
               </label>
             </div>
@@ -1674,6 +1914,23 @@ export default function TalentSelectionModal({
                       {STAGGERING_TALONS_HIT_STAGGER} stagger forward/return per hit · 100 = lightning + proc
                     </p>
                   </>
+                )}
+              </label>
+            </div>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon id={giantKillerTalentDefinition.id} dimmed={!reapingEquipped} />
+              <input
+                type="checkbox"
+                id="talent-giantkiller"
+                checked={loadout.giantKiller}
+                onChange={toggleGiantKiller}
+                disabled={!reapingEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+              />
+              <label htmlFor="talent-giantkiller" className={`flex-1 ${reapingEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                <div className="text-white font-semibold">{giantKillerTalentDefinition.name}</div>
+                {loadout.giantKiller && (
+                  <p className="text-gray-400 text-sm mt-1">{giantKillerTalentDefinition.description}</p>
                 )}
               </label>
             </div>
@@ -1965,6 +2222,55 @@ export default function TalentSelectionModal({
           </div>
         )}
 
+        {selectedWeapon === WeaponType.BOW &&
+          (loadout.arcticSting || loadout.glacialBite || loadout.glacialTalons) && (
+            <div className={`rounded-xl border-2 border-violet-500/40 bg-violet-950/25 p-4 mb-6`}>
+              <p className="text-violet-200/90 text-xs font-semibold uppercase tracking-wide mb-3">
+                Co-op · Purple room (active on this character)
+              </p>
+              {loadout.arcticSting && (
+                <div className="flex items-start gap-3 mb-4">
+                  <TalentRowIcon id={arcticStingTalentDefinition.id} />
+                  <div>
+                    <div className="text-white font-semibold">{arcticStingTalentDefinition.name}</div>
+                    <p className="text-gray-400 text-sm mt-1">{arcticStingTalentDefinition.description}</p>
+                    <p className="text-sky-200/90 text-xs mt-2 font-mono">
+                      Blizzard proc internal cooldown: {ARCTIC_STING_BLIZZARD_ICD_SEC}s
+                    </p>
+                  </div>
+                </div>
+              )}
+              {loadout.glacialBite && (
+                <div className="flex items-start gap-3 mb-4">
+                  <TalentRowIcon id={glacialBiteTalentDefinition.id} />
+                  <div>
+                    <div className="text-white font-semibold">{glacialBiteTalentDefinition.name}</div>
+                    <p className="text-gray-400 text-sm mt-1">{glacialBiteTalentDefinition.description}</p>
+                    {!frostbiteEquipped && (
+                      <p className="text-amber-200/90 text-xs mt-2">
+                        Equip Frostbite in your ability loadout for this boon’s mechanics to apply.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+              {loadout.glacialTalons && (
+                <div className="flex items-start gap-3">
+                  <TalentRowIcon id={glacialTalonsTalentDefinition.id} />
+                  <div>
+                    <div className="text-white font-semibold">{glacialTalonsTalentDefinition.name}</div>
+                    <p className="text-gray-400 text-sm mt-1">{glacialTalonsTalentDefinition.description}</p>
+                    {!reapingEquipped && (
+                      <p className="text-amber-200/90 text-xs mt-2">
+                        Equip Reaping Talons in your ability loadout for this boon’s mechanics to apply.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
         {selectedWeapon === WeaponType.SCYTHE && (
           <div
             className={`
@@ -2029,7 +2335,8 @@ export default function TalentSelectionModal({
                   <>
                     <p className="text-gray-400 text-sm mt-1">{crossentropyTempestTalentDefinition.description}</p>
                     <p className="text-sky-200/90 text-xs mt-2 font-mono">
-                      +{CROSSENTROPY_TEMPEST_STAGGER} stagger per hit · mutually exclusive with {crossentropyPlagueTalentDefinition.name}
+                      +{CROSSENTROPY_TEMPEST_STAGGER} stagger per hit · mutually exclusive with {crossentropyPlagueTalentDefinition.name}{' '}
+                      and {glacialStormTalentDefinition.name}
                     </p>
                   </>
                 )}
@@ -2054,11 +2361,44 @@ export default function TalentSelectionModal({
                   <>
                     <p className="text-gray-400 text-sm mt-1">{crossentropyPlagueTalentDefinition.description}</p>
                     <p className="text-emerald-200/90 text-xs mt-2 font-mono">
-                      Base hit damage {CROSSENTROPY_PLAGUE_DAMAGE} (before Reaper stacks) · mutually exclusive with {crossentropyTempestTalentDefinition.name}
+                      Base hit damage {CROSSENTROPY_PLAGUE_DAMAGE} · {CROSSENTROPY_PLAGUE_VENOM_MS / 1000}s venom at impact · up to 2
+                      zombies/kill · max 3 zombies · mutually exclusive with {crossentropyTempestTalentDefinition.name} and{' '}
+                      {glacialStormTalentDefinition.name}
                     </p>
                   </>
                 )}
               </label>
+            </div>
+            <div className="mt-6 border-t border-violet-500/30 pt-5">
+              <p className="text-violet-300/90 text-xs font-semibold uppercase tracking-wide mb-3">
+                Purple room · Crossentropy
+              </p>
+              <div className="flex items-start gap-3">
+                <TalentRowIcon id={glacialStormTalentDefinition.id} dimmed={!crossentropyEquipped} />
+                <input
+                  type="checkbox"
+                  id="talent-glacial-storm"
+                  checked={loadout.glacialStorm}
+                  onChange={toggleGlacialStorm}
+                  disabled={!crossentropyEquipped}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                />
+                <label
+                  htmlFor="talent-glacial-storm"
+                  className={`flex-1 ${crossentropyEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                >
+                  <div className="text-white font-semibold">{glacialStormTalentDefinition.name}</div>
+                  {loadout.glacialStorm && (
+                    <>
+                      <p className="text-gray-400 text-sm mt-1">{glacialStormTalentDefinition.description}</p>
+                      <p className="text-sky-200/90 text-xs mt-2 font-mono">
+                        Mutually exclusive with {crossentropyTempestTalentDefinition.name} and {crossentropyPlagueTalentDefinition.name}{' '}
+                        · Inferno overrides bolt visuals when both are enabled
+                      </p>
+                    </>
+                  )}
+                </label>
+              </div>
             </div>
             {!crossentropyEquipped && (
               <p className="text-gray-500 text-xs mt-3 pl-7">
@@ -2128,6 +2468,79 @@ export default function TalentSelectionModal({
                 )}
               </label>
             </div>
+            <div className={`flex items-start gap-3 mt-4 ${!mantraEquipped ? 'opacity-60' : ''}`}>
+              <TalentRowIcon id={shamanTalentDefinition.id} dimmed={!mantraEquipped} />
+              <input
+                type="checkbox"
+                id="talent-shaman"
+                checked={loadout.shaman}
+                onChange={toggleShaman}
+                disabled={!mantraEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+              />
+              <label htmlFor="talent-shaman" className={`flex-1 ${mantraEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                <div className="text-white font-semibold">{shamanTalentDefinition.name}</div>
+                {loadout.shaman && (
+                  <p className="text-gray-400 text-sm mt-1">{shamanTalentDefinition.description}</p>
+                )}
+              </label>
+            </div>
+            <div className={`flex items-start gap-3 mt-4 ${!mantraEquipped ? 'opacity-60' : ''}`}>
+              <TalentRowIcon id={superconductorTalentDefinition.id} dimmed={!mantraEquipped} />
+              <input
+                type="checkbox"
+                id="talent-superconductor"
+                checked={loadout.superconductor}
+                onChange={toggleSuperconductor}
+                disabled={!mantraEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+              />
+              <label htmlFor="talent-superconductor" className={`flex-1 ${mantraEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                <div className="text-white font-semibold">{superconductorTalentDefinition.name}</div>
+                {loadout.superconductor && (
+                  <p className="text-gray-400 text-sm mt-1">{superconductorTalentDefinition.description}</p>
+                )}
+              </label>
+            </div>
+            <div className={`flex items-start gap-3 mt-4 ${!mantraEquipped ? 'opacity-60' : ''}`}>
+              <TalentRowIcon id={acceleratorTalentDefinition.id} dimmed={!mantraEquipped} />
+              <input
+                type="checkbox"
+                id="talent-accelerator"
+                checked={loadout.accelerator}
+                onChange={toggleAccelerator}
+                disabled={!mantraEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+              />
+              <label htmlFor="talent-accelerator" className={`flex-1 ${mantraEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                <div className="text-white font-semibold">{acceleratorTalentDefinition.name}</div>
+                {mantraEquipped && !crossentropyEquipped && (
+                  <p className="text-amber-600/85 text-xs mt-1">
+                    Requires Crossentropy in your ability bar for the cooldown bonus to apply in combat.
+                  </p>
+                )}
+                {loadout.accelerator && (
+                  <p className="text-gray-400 text-sm mt-1">{acceleratorTalentDefinition.description}</p>
+                )}
+              </label>
+            </div>
+            <div className={`flex items-start gap-3 mt-4 ${!mantraEquipped ? 'opacity-60' : ''}`}>
+              <TalentRowIcon id={healingStreamTalentDefinition.id} dimmed={!mantraEquipped} />
+              <input
+                type="checkbox"
+                id="talent-healing-stream"
+                checked={loadout.healingStream}
+                onChange={toggleHealingStream}
+                disabled={!mantraEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+              />
+              <label htmlFor="talent-healing-stream" className={`flex-1 ${mantraEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                <div className="text-white font-semibold">{healingStreamTalentDefinition.name}</div>
+                {loadout.healingStream && (
+                  <p className="text-gray-400 text-sm mt-1">{healingStreamTalentDefinition.description}</p>
+                )}
+              </label>
+            </div>
             <div className="flex items-start gap-3 mt-4">
               <TalentRowIcon id={wrathfulEntropicTalentDefinition.id} />
               <input
@@ -2175,6 +2588,33 @@ export default function TalentSelectionModal({
                   <p className="text-gray-400 text-sm mt-1">{infestingEntropicTalentDefinition.description}</p>
                 )}
               </label>
+            </div>
+            <div className="mt-6 border-t border-violet-500/30 pt-5">
+              <p className="text-violet-300/90 text-xs font-semibold uppercase tracking-wide mb-3">
+                Purple room · Entropic Bolt
+              </p>
+              <div className="flex items-start gap-3">
+                <TalentRowIcon id={arcticShardsTalentDefinition.id} />
+                <input
+                  type="checkbox"
+                  id="talent-arctic-shards"
+                  checked={loadout.arcticShards}
+                  onChange={toggleArcticShards}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+                />
+                <label htmlFor="talent-arctic-shards" className="flex-1 cursor-pointer">
+                  <div className="text-white font-semibold">{arcticShardsTalentDefinition.name}</div>
+                  {loadout.arcticShards && (
+                    <>
+                      <p className="text-gray-400 text-sm mt-1">{arcticShardsTalentDefinition.description}</p>
+                      <p className="text-sky-200/90 text-xs mt-2 font-mono">
+                        Fixed {ARCTIC_ENTROPIC_BOLT_DAMAGE} bolt damage · {ARCTIC_SHARDS_PROC_CHANCE * 100}% chance per hit to spawn ice storm · mutually
+                        exclusive with colored Entropic room bolts
+                      </p>
+                    </>
+                  )}
+                </label>
+              </div>
             </div>
             <div className="mt-6 border-t border-purple-500/30 pt-5">
               <p className="text-purple-300/90 text-xs font-semibold uppercase tracking-wide mb-3">Mantra</p>
@@ -2228,6 +2668,31 @@ export default function TalentSelectionModal({
                     <p className="text-gray-400 text-sm mt-1">{infestingTotemTalentDefinition.description}</p>
                   )}
                 </label>
+              </div>
+              <div className="mt-6 border-t border-violet-500/30 pt-5">
+                <p className="text-violet-300/90 text-xs font-semibold uppercase tracking-wide mb-3">Purple room · Mantra</p>
+                <div className={`flex items-start gap-3 ${!mantraEquipped ? 'opacity-60' : ''}`}>
+                  <TalentRowIcon id={frostTotemTalentDefinition.id} dimmed={!mantraEquipped} />
+                  <input
+                    type="checkbox"
+                    id="talent-frost-totem"
+                    checked={loadout.frostTotem}
+                    onChange={toggleFrostTotem}
+                    disabled={!mantraEquipped}
+                    className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                  />
+                  <label htmlFor="talent-frost-totem" className={`flex-1 ${mantraEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                    <div className="text-white font-semibold">{frostTotemTalentDefinition.name}</div>
+                    {loadout.frostTotem && (
+                      <>
+                        <p className="text-gray-400 text-sm mt-1">{frostTotemTalentDefinition.description}</p>
+                        <p className="text-sky-200/90 text-xs mt-2 font-mono">
+                          Mutually exclusive with other colored totem room variants
+                        </p>
+                      </>
+                    )}
+                  </label>
+                </div>
               </div>
               {!mantraEquipped && (
                 <p className="text-gray-500 text-xs mt-3 pl-7">

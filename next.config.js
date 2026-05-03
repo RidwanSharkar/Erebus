@@ -96,9 +96,18 @@ const nextConfig = {
     unoptimized: false,
   },
 
-  // Add caching headers for audio files
+  // Add caching headers for large immutable static assets
   async headers() {
     return [
+      {
+        source: '/models/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
       {
         source: '/audio/sfx/:path*',
         headers: [

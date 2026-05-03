@@ -4,6 +4,9 @@
 const COOP_MAIN_ENTRY_X = 0;
 const COOP_MAIN_ENTRY_Z = -15;
 
+/** Min distance from entry XZ for enemy spawns: ≥ max mob aggro (12) + player spawn ring (~1.25) + margin. */
+const COOP_PLAYER_START_CLEAR_RADIUS = 16;
+
 function rotationYTowardEntry(fromX, fromZ) {
   return Math.atan2(COOP_MAIN_ENTRY_X - fromX, COOP_MAIN_ENTRY_Z - fromZ);
 }
@@ -16,6 +19,7 @@ function rotationYTowardArenaCenter(fromX, fromZ) {
 module.exports = {
   COOP_MAIN_ENTRY_X,
   COOP_MAIN_ENTRY_Z,
+  COOP_PLAYER_START_CLEAR_RADIUS,
   rotationYTowardEntry,
   rotationYTowardArenaCenter,
 };

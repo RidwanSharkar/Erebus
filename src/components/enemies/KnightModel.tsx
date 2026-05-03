@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
 
 interface KnightModelProps {
   isWalking: boolean;
@@ -39,8 +40,31 @@ const KNIGHT_MODEL_PATHS = [
   '/models/knight_impact2.glb',
 ];
 
+type KnightDeferredAnimationName =
+  | 'Walk'
+  | 'Attack'
+  | 'Attack2'
+  | 'Death'
+  | 'Smite'
+  | 'Aggro'
+  | 'Cast'
+  | 'Impact1'
+  | 'Impact2';
+
+const KNIGHT_DEFERRED_MODEL_PATHS: Record<Exclude<KnightDeferredAnimationName, 'Walk'>, string> = {
+  Attack: '/models/knight_attack.glb',
+  Attack2: '/models/knight_attack2.glb',
+  Death: '/models/knight_death.glb',
+  Smite: '/models/knight_smite.glb',
+  Aggro: '/models/knight_aggro.glb',
+  Cast: '/models/knight_cast.glb',
+  Impact1: '/models/knight_impact1.glb',
+  Impact2: '/models/knight_impact2.glb',
+};
+
 export function preloadKnightModels(): void {
-  KNIGHT_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+  useGLTF.preload('/models/knight_idle.glb');
+  preloadGltfAnimationClips(KNIGHT_MODEL_PATHS.filter(path => path !== '/models/knight_idle.glb'));
 }
 
 // GLB geometry is in centimeters (bboxMax Y ≈ 172.5 cm).
@@ -62,28 +86,52 @@ export default function KnightModel({
   // This ref is the root handed to useAnimations so the mixer can find bones
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
+  const isMountedRef = useRef(true);
   const lastImpactPlayKeyRef = useRef(-1);
+  const requestedDeferredStatesRef = useRef<Set<KnightDeferredAnimationName>>(new Set());
+  const [deferredAnimationClips, setDeferredAnimationClips] = useState<
+    Partial<Record<KnightDeferredAnimationName, AnimationClip[]>>
+  >({});
 
   // Scene (mesh + skeleton) comes from the idle GLB only
   const { scene, animations: idleAnims } = useGLTF('/models/knight_idle.glb');
-  // Pull animation clips from the separate single-animation GLBs.
-  // Both walk variants are always loaded (hooks can't be conditional); we pick
-  // the active one based on soulType — purple uses the heavier knight_walk clip
-  // which matches its slower movement speed, while red/green/blue use knight_walk0.
-  const { animations: walkAnims }    = useGLTF('/models/knight_walk.glb');
-  const { animations: walkAnims0 }   = useGLTF('/models/knight_walk0.glb');
-  const { animations: attackAnims }  = useGLTF('/models/knight_attack.glb');
-  const { animations: attack2Anims } = useGLTF('/models/knight_attack2.glb');
-  const { animations: deathAnims }   = useGLTF('/models/knight_death.glb');
-  // Ability animation GLBs — one clip per soul-type ability
-  const { animations: smiteAnims }   = useGLTF('/models/knight_smite.glb');
-  const { animations: aggroAnims }   = useGLTF('/models/knight_aggro.glb');
-  const { animations: castAnims }    = useGLTF('/models/knight_cast.glb');
-  const { animations: impact1Anims } = useGLTF('/models/knight_impact1.glb');
-  const { animations: impact2Anims } = useGLTF('/models/knight_impact2.glb');
 
-  // Active walk clips: purple → knight_walk.glb, all others → knight_walk0.glb
-  const activeWalkAnims = soulType === 'purple' ? walkAnims : walkAnims0; // yellow uses walk0 (idle-only dummy)
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const names = new Set<KnightDeferredAnimationName>();
+    if (isWalking) names.add('Walk');
+    if (isDying) names.add('Death');
+    if (isAttacking) names.add(attackVariant === 2 ? 'Attack2' : 'Attack');
+    if (abilityClip) names.add(abilityClip);
+    if (isImpacting) names.add(impactVariant === 1 ? 'Impact1' : 'Impact2');
+
+    names.forEach((name) => {
+      const path = name === 'Walk'
+        ? (soulType === 'purple' ? '/models/knight_walk.glb' : '/models/knight_walk0.glb')
+        : KNIGHT_DEFERRED_MODEL_PATHS[name];
+      if (deferredAnimationClips[name] || requestedDeferredStatesRef.current.has(name)) {
+        return;
+      }
+
+      requestedDeferredStatesRef.current.add(name);
+      loadGltfAnimationClips(path)
+        .then((clips) => {
+          if (!isMountedRef.current) return;
+          setDeferredAnimationClips((prev) =>
+            prev[name] ? prev : { ...prev, [name]: clips }
+          );
+        })
+        .catch((error) => {
+          requestedDeferredStatesRef.current.delete(name);
+          console.warn(`Failed to load knight animation ${name}:`, error);
+        });
+    });
+  }, [isWalking, isDying, isAttacking, attackVariant, abilityClip, isImpacting, impactVariant, soulType, deferredAnimationClips]);
 
   // SkeletonUtils.clone() properly re-binds each clone's SkinnedMesh to its own
   // skeleton, so multiple knight instances are fully independent.
@@ -140,17 +188,17 @@ export default function KnightModel({
 
     return [
       ...rename(idleAnims,        'Idle').map(stripRootMotionXZ),
-      ...rename(activeWalkAnims,  'Walk').map(stripRootMotionXZ),
-      ...rename(attackAnims,      'Attack'),
-      ...rename(attack2Anims,     'Attack2'),
-      ...rename(deathAnims,       'Death'),
-      ...rename(smiteAnims,       'Smite'),
-      ...rename(aggroAnims,       'Aggro'),
-      ...rename(castAnims,        'Cast'),
-      ...rename(impact1Anims,     'Impact1'),
-      ...rename(impact2Anims,     'Impact2'),
+      ...rename(deferredAnimationClips.Walk ?? [],    'Walk').map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.Attack ?? [],  'Attack'),
+      ...rename(deferredAnimationClips.Attack2 ?? [], 'Attack2'),
+      ...rename(deferredAnimationClips.Death ?? [],   'Death'),
+      ...rename(deferredAnimationClips.Smite ?? [],   'Smite'),
+      ...rename(deferredAnimationClips.Aggro ?? [],   'Aggro'),
+      ...rename(deferredAnimationClips.Cast ?? [],    'Cast'),
+      ...rename(deferredAnimationClips.Impact1 ?? [], 'Impact1'),
+      ...rename(deferredAnimationClips.Impact2 ?? [], 'Impact2'),
     ];
-  }, [idleAnims, activeWalkAnims, attackAnims, attack2Anims, deathAnims, smiteAnims, aggroAnims, castAnims, impact1Anims, impact2Anims]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idleAnims, deferredAnimationClips]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Bind the mixer to the clone's root so it can traverse to find bones by name
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);

@@ -6,6 +6,7 @@ interface FrostNovaProps {
   position: Vector3;
   duration?: number;
   startTime?: number;
+  visualScale?: number;
   onComplete?: () => void;
 }
 
@@ -13,6 +14,7 @@ export default function FrostNova({
   position, 
   duration = 1500, // 2 seconds for the explosion effect
   startTime = Date.now(),
+  visualScale = 1,
   onComplete 
 }: FrostNovaProps) {
   const effectRef = useRef<Group>(null);
@@ -97,7 +99,7 @@ export default function FrostNova({
   const ringScale = baseScale * 1.15;
 
   return (
-    <group ref={effectRef} position={position}>
+    <group ref={effectRef} position={position} scale={[visualScale, visualScale, visualScale]}>
       {/* Central ice explosion core */}
       <mesh position={[0, 0.5, 0]}>
         <sphereGeometry args={[1 * baseScale, 16, 16]} />

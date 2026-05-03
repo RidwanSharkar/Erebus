@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
+import { peek as suspendPeek } from 'suspend-react';
+import { GLTFLoader } from 'three-stdlib';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { loadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
 
 export type AnimState =
   | 'Idle' | 'Run' | 'Walk' | 'WalkBack' | 'WalkLeft' | 'WalkRight' | 'Backwards'
@@ -17,7 +20,7 @@ interface CharacterModelProps {
   isDead?: boolean;
 }
 
-const CHARACTER_MODEL_PATHS = [
+const CHARACTER_INITIAL_MODEL_PATHS = [
   '/models/character_idle.glb',
   '/models/character_run.glb',
   '/models/character_walk.glb',
@@ -27,19 +30,91 @@ const CHARACTER_MODEL_PATHS = [
   '/models/character_backwards.glb',
   '/models/character_leftStrafe.glb',
   '/models/character_rightStrafe.glb',
-  '/models/character_jump.glb',
-  '/models/character_jumpFront.glb',
-  '/models/character_jumpBack.glb',
-  '/models/character_cast.glb',
-  '/models/character_castSingle.glb',
-  '/models/character_swordCast.glb',
-  '/models/character_drawBow.glb',
-  '/models/character_releaseBow.glb',
-  '/models/character_death.glb',
-];
+] as const;
+
+const CHARACTER_DEFERRED_MODEL_PATHS: Partial<Record<AnimState, string>> = {
+  Jump: '/models/character_jump.glb',
+  JumpFront: '/models/character_jumpFront.glb',
+  JumpBack: '/models/character_jumpBack.glb',
+  Cast: '/models/character_cast.glb',
+  CastSingle: '/models/character_castSingle.glb',
+  SwordCast: '/models/character_swordCast.glb',
+  DrawBow: '/models/character_drawBow.glb',
+  ReleaseBow: '/models/character_releaseBow.glb',
+  Death: '/models/character_death.glb',
+};
+
+const CHARACTER_DEFERRED_ANIMATION_PATHS = Object.values(CHARACTER_DEFERRED_MODEL_PATHS).filter(
+  (path): path is string => Boolean(path),
+);
+
+const CHARACTER_EXTRA_ANIMATION_PATHS = [
+  '/models/character_dash.glb',
+] as const;
 
 export function preloadCharacterModels(): void {
-  CHARACTER_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+  CHARACTER_INITIAL_MODEL_PATHS.forEach((path) => useGLTF.preload(path));
+  [...CHARACTER_DEFERRED_ANIMATION_PATHS, ...CHARACTER_EXTRA_ANIMATION_PATHS].forEach((path) => {
+    void loadGltfAnimationClips(path).catch((error) => {
+      console.warn(`Failed to preload character animation ${path}:`, error);
+    });
+  });
+}
+
+/**
+ * Peek key must match @react-three/drei useGLTF: useLoader(three-stdlib GLTFLoader, url, extensions).
+ */
+const fiberCharacterGltfPeekKey = (url: string): [typeof GLTFLoader, string] => [GLTFLoader, url];
+
+/**
+ * Ensures Fiber's suspend-react cache is populated before `CharacterModel` mounts.
+ * Drei's useGLTF.preload is fire-and-forget; we poll `suspend-react`'s `peek` until each GLB resolves.
+ */
+function waitForFiberGltfCache(url: string, timeoutMs = 45_000): Promise<void> {
+  useGLTF.preload(url);
+  const peekKey = fiberCharacterGltfPeekKey(url);
+  const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  return new Promise((resolve, reject) => {
+    function tick(): void {
+      const ready = suspendPeek(peekKey) !== undefined;
+      if (ready) {
+        resolve();
+        return;
+      }
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (now - t0 > timeoutMs) {
+        reject(new Error(`GLTF warmup timed out (${timeoutMs}ms): ${url}`));
+        return;
+      }
+      requestAnimationFrame(tick);
+    }
+    tick();
+  });
+}
+
+/** Warm only `character_idle.glb` — call from scene mount to overlap with socket / gameStarted latency. */
+export async function warmupCharacterIdleGltf(): Promise<void> {
+  try {
+    await waitForFiberGltfCache(CHARACTER_INITIAL_MODEL_PATHS[0]!);
+  } catch (e) {
+    console.warn('Character idle GLB warmup failed:', e);
+  }
+}
+
+export async function warmupCharacterLocomotionGltf(): Promise<void> {
+  try {
+    const idle = CHARACTER_INITIAL_MODEL_PATHS[0]!;
+    const run = CHARACTER_INITIAL_MODEL_PATHS[1]!;
+    await waitForFiberGltfCache(idle);
+    await waitForFiberGltfCache(run);
+    await Promise.all([
+      ...CHARACTER_INITIAL_MODEL_PATHS.slice(2).map((p) => waitForFiberGltfCache(p)),
+      ...CHARACTER_DEFERRED_ANIMATION_PATHS.map((p) => loadGltfAnimationClips(p).then(() => undefined)),
+      ...CHARACTER_EXTRA_ANIMATION_PATHS.map((p) => loadGltfAnimationClips(p).then(() => undefined)),
+    ]);
+  } catch (e) {
+    console.warn('Character GLB warmup failed:', e);
+  }
 }
 
 // Adjust if the character GLB geometry is larger or smaller than expected.
@@ -54,9 +129,31 @@ const Y_OFFSET = -0.25;
 const FADE_NORMAL = 0.2;
 const FADE_JUMP   = 0.15;
 
+/** Drei `useAnimations` lazy `actions[name]` can be undefined before the mixer root ref syncs; bounded retries avoid startup T-pose. */
+const MAX_ANIM_APPLY_RETRIES = 15;
+
+function stripRootMotionXZ(clip: AnimationClip): AnimationClip {
+  clip.tracks = clip.tracks.map(track => {
+    if (!track.name.endsWith('.position')) return track;
+    if (!track.name.toLowerCase().includes('hips')) return track;
+    const values = Float32Array.from(track.values);
+    for (let i = 0; i < values.length; i += 3) {
+      values[i]     = 0;
+      values[i + 2] = 0;
+    }
+    return new VectorKeyframeTrack(track.name, Array.from(track.times), Array.from(values));
+  });
+  return clip;
+}
+
 export default function CharacterModel({ animState, isDead = false }: CharacterModelProps) {
   const sceneGroupRef   = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
+  const isMountedRef = useRef(true);
+  const initialPoseAppliedRef = useRef(false);
+  const requestedDeferredStatesRef = useRef<Set<AnimState>>(new Set());
+  const [initialPoseApplied, setInitialPoseApplied] = useState(false);
+  const [deferredAnimationClips, setDeferredAnimationClips] = useState<Partial<Record<AnimState, AnimationClip[]>>>({});
 
   const { scene, animations: idleAnims }        = useGLTF('/models/character_idle.glb');
   const { animations: runAnims }                = useGLTF('/models/character_run.glb');
@@ -67,15 +164,33 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
   const { animations: backAnims }               = useGLTF('/models/character_backwards.glb');
   const { animations: leftAnims }  = useGLTF('/models/character_leftStrafe.glb');
   const { animations: rightAnims } = useGLTF('/models/character_rightStrafe.glb');
-  const { animations: jumpAnims }               = useGLTF('/models/character_jump.glb');
-  const { animations: jumpFrontAnims }          = useGLTF('/models/character_jumpFront.glb');
-  const { animations: jumpBackAnims }           = useGLTF('/models/character_jumpBack.glb');
-  const { animations: castAnims }               = useGLTF('/models/character_cast.glb');
-  const { animations: castSingleAnims }         = useGLTF('/models/character_castSingle.glb');
-  const { animations: swordCastAnims }          = useGLTF('/models/character_swordCast.glb');
-  const { animations: drawBowAnims }            = useGLTF('/models/character_drawBow.glb');
-  const { animations: releaseBowAnims }         = useGLTF('/models/character_releaseBow.glb');
-  const { animations: deathAnims }              = useGLTF('/models/character_death.glb');
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const neededState = isDead ? 'Death' : animState;
+    const path = CHARACTER_DEFERRED_MODEL_PATHS[neededState];
+    if (!path || deferredAnimationClips[neededState] || requestedDeferredStatesRef.current.has(neededState)) {
+      return;
+    }
+
+    requestedDeferredStatesRef.current.add(neededState);
+    loadGltfAnimationClips(path)
+      .then((clips) => {
+        if (!isMountedRef.current) return;
+        setDeferredAnimationClips((prev) =>
+          prev[neededState] ? prev : { ...prev, [neededState]: clips }
+        );
+      })
+      .catch((error) => {
+        requestedDeferredStatesRef.current.delete(neededState);
+        console.warn(`Failed to load character animation ${neededState}:`, error);
+      });
+  }, [animState, isDead, deferredAnimationClips]);
 
   // Clone scene so each instance owns its materials (avoids shared fade / material state).
   const clonedScene = useMemo(() => {
@@ -96,21 +211,6 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
     const rename = (clips: AnimationClip[], name: string) =>
       clips.map(c => { const r = c.clone(); r.name = name; return r; });
 
-    // Strip root-motion X/Z so gameplay position stays authoritative.
-    const stripRootMotionXZ = (clip: AnimationClip): AnimationClip => {
-      clip.tracks = clip.tracks.map(track => {
-        if (!track.name.endsWith('.position')) return track;
-        if (!track.name.toLowerCase().includes('hips')) return track;
-        const values = Float32Array.from(track.values);
-        for (let i = 0; i < values.length; i += 3) {
-          values[i]     = 0;
-          values[i + 2] = 0;
-        }
-        return new VectorKeyframeTrack(track.name, Array.from(track.times), Array.from(values));
-      });
-      return clip;
-    };
-
     return [
       ...rename(idleAnims,           'Idle'          ).map(stripRootMotionXZ),
       ...rename(runAnims,            'Run'           ).map(stripRootMotionXZ),
@@ -121,72 +221,139 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
       ...rename(backAnims,           'Backwards'     ).map(stripRootMotionXZ),
       ...rename(leftAnims,  'LeftStrafe' ).map(stripRootMotionXZ),
       ...rename(rightAnims, 'RightStrafe').map(stripRootMotionXZ),
-      ...rename(jumpAnims,           'Jump'          ).map(stripRootMotionXZ),
-      ...rename(jumpFrontAnims,      'JumpFront'     ).map(stripRootMotionXZ),
-      ...rename(jumpBackAnims,       'JumpBack'      ).map(stripRootMotionXZ),
-      ...rename(castAnims,           'Cast'          ).map(stripRootMotionXZ),
-      ...rename(castSingleAnims,     'CastSingle'    ).map(stripRootMotionXZ),
-      ...rename(swordCastAnims,      'SwordCast'     ).map(stripRootMotionXZ),
-      ...rename(drawBowAnims,        'DrawBow'       ).map(stripRootMotionXZ),
-      ...rename(releaseBowAnims,     'ReleaseBow'    ).map(stripRootMotionXZ),
-      ...rename(deathAnims,          'Death'         ).map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.Jump ?? [],       'Jump'       ).map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.JumpFront ?? [],  'JumpFront'  ).map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.JumpBack ?? [],   'JumpBack'   ).map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.Cast ?? [],       'Cast'       ).map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.CastSingle ?? [], 'CastSingle' ).map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.SwordCast ?? [],  'SwordCast'  ).map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.DrawBow ?? [],    'DrawBow'    ).map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.ReleaseBow ?? [], 'ReleaseBow' ).map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.Death ?? [],      'Death'      ).map(stripRootMotionXZ),
     ];
-  }, [idleAnims, runAnims, walkAnims, walkBackAnims, walkLeftAnims, walkRightAnims, backAnims, leftAnims, rightAnims, jumpAnims, jumpFrontAnims, jumpBackAnims, castAnims, castSingleAnims, swordCastAnims, drawBowAnims, releaseBowAnims, deathAnims]);
+  }, [idleAnims, runAnims, walkAnims, walkBackAnims, walkLeftAnims, walkRightAnims, backAnims, leftAnims, rightAnims, deferredAnimationClips]);
 
-  const { actions } = useAnimations(animations, sceneGroupRef);
+  const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
   // When the player dies, force the Death animation immediately and ignore
   // subsequent animState changes so nothing overrides the death pose.
   const deathTriggeredRef = useRef(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!actions) return;
 
-    if (isDead && !deathTriggeredRef.current) {
-      deathTriggeredRef.current = true;
-      const deathAction = actions['Death'] ?? null;
-      if (deathAction) {
-        currentActionRef.current?.fadeOut(FADE_NORMAL);
-        deathAction.enabled = true;
-        deathAction.setLoop(LoopOnce, 1);
-        deathAction.clampWhenFinished = true;
-        deathAction.reset().fadeIn(FADE_NORMAL).play();
-        currentActionRef.current = deathAction;
+    let rafId = 0;
+    let retryCount = 0;
+
+    const clipRegistered = (name: AnimState): boolean =>
+      animations.some((c) => c.name === name);
+
+    const revealAfterFirstPose = (): void => {
+      if (initialPoseAppliedRef.current) return;
+      initialPoseAppliedRef.current = true;
+      setInitialPoseApplied(true);
+    };
+
+    const scheduleRetry = (apply: () => void): boolean => {
+      if (retryCount >= MAX_ANIM_APPLY_RETRIES) return false;
+      retryCount += 1;
+      rafId = requestAnimationFrame(apply);
+      return true;
+    };
+
+    const apply = (): void => {
+      if (!actions) return;
+
+      if (isDead && !deathTriggeredRef.current) {
+        const deathAction = actions['Death'] ?? null;
+        if (deathAction) {
+          deathTriggeredRef.current = true;
+          currentActionRef.current?.fadeOut(FADE_NORMAL);
+          deathAction.enabled = true;
+          deathAction.setLoop(LoopOnce, 1);
+          deathAction.clampWhenFinished = true;
+          deathAction.reset().fadeIn(FADE_NORMAL).play();
+          currentActionRef.current = deathAction;
+          mixer?.update(0.016);
+          revealAfterFirstPose();
+          return;
+        }
+        if (clipRegistered('Death') && scheduleRetry(apply)) return;
+        return;
       }
-      return;
-    }
 
-    // Block any animation changes once death has been triggered.
-    if (deathTriggeredRef.current) return;
+      // Block any animation changes once death has been triggered.
+      if (deathTriggeredRef.current) return;
 
-    const nextAction = actions[animState] ?? null;
-    if (!nextAction || nextAction === currentActionRef.current) return;
+      const nextAction = actions[animState] ?? null;
 
-    const fadeOut = animState === 'Jump' ? FADE_JUMP : FADE_NORMAL;
-    const fadeIn  = fadeOut;
+      if (!nextAction) {
+        if (clipRegistered(animState) && scheduleRetry(apply)) return;
+        return;
+      }
 
-    currentActionRef.current?.fadeOut(fadeOut);
-    nextAction.enabled = true;
+      if (nextAction === currentActionRef.current) return;
 
-    if (animState === 'Jump' || animState === 'JumpFront' || animState === 'JumpBack' || animState === 'ReleaseBow') {
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = false;
-      nextAction.reset().fadeIn(fadeIn).play();
-    } else if (animState === 'CastSingle') {
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = true;
-      nextAction.reset().fadeIn(fadeIn).play();
-    } else if (animState === 'Cast' || animState === 'SwordCast' || animState === 'DrawBow') {
-      // Always restart so the cast clip plays from the beginning on each new hold.
-      nextAction.setLoop(LoopRepeat, Infinity);
-      nextAction.reset().fadeIn(fadeIn).play();
-    } else {
-      nextAction.setLoop(LoopRepeat, Infinity);
-      nextAction.fadeIn(fadeIn).play();
-    }
+      const isInitialAction = currentActionRef.current === null;
+      const fadeOut = animState === 'Jump' ? FADE_JUMP : FADE_NORMAL;
+      const fadeIn  = fadeOut;
 
-    currentActionRef.current = nextAction;
-  }, [animState, isDead, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+      currentActionRef.current?.fadeOut(fadeOut);
+      nextAction.enabled = true;
+
+      const configureNextAction = (): void => {
+        if (animState === 'Jump' || animState === 'JumpFront' || animState === 'JumpBack' || animState === 'ReleaseBow') {
+          nextAction.setLoop(LoopOnce, 1);
+          nextAction.clampWhenFinished = false;
+        } else if (animState === 'CastSingle') {
+          nextAction.setLoop(LoopOnce, 1);
+          nextAction.clampWhenFinished = true;
+        } else {
+          nextAction.setLoop(LoopRepeat, Infinity);
+          nextAction.clampWhenFinished = false;
+        }
+      };
+
+      if (isInitialAction) {
+        configureNextAction();
+        nextAction.reset();
+        nextAction.setEffectiveWeight(1);
+        nextAction.setEffectiveTimeScale(1);
+        nextAction.play();
+        currentActionRef.current = nextAction;
+        mixer?.update(0.016);
+        revealAfterFirstPose();
+        return;
+      }
+
+      if (animState === 'Jump' || animState === 'JumpFront' || animState === 'JumpBack' || animState === 'ReleaseBow') {
+        nextAction.setLoop(LoopOnce, 1);
+        nextAction.clampWhenFinished = false;
+        nextAction.reset().fadeIn(fadeIn).play();
+      } else if (animState === 'CastSingle') {
+        nextAction.setLoop(LoopOnce, 1);
+        nextAction.clampWhenFinished = true;
+        nextAction.reset().fadeIn(fadeIn).play();
+      } else if (animState === 'Cast' || animState === 'SwordCast' || animState === 'DrawBow') {
+        // Always restart so the cast clip plays from the beginning on each new hold.
+        nextAction.setLoop(LoopRepeat, Infinity);
+        nextAction.reset().fadeIn(fadeIn).play();
+      } else {
+        nextAction.setLoop(LoopRepeat, Infinity);
+        nextAction.fadeIn(fadeIn).play();
+      }
+
+      currentActionRef.current = nextAction;
+      mixer?.update(0.016);
+      revealAfterFirstPose();
+    };
+
+    apply();
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [animState, isDead, actions, mixer, animations]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset death flag when the component is re-mounted (e.g. after respawn).
   useEffect(() => {
@@ -194,7 +361,7 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <group ref={sceneGroupRef} position-y={Y_OFFSET}>
+    <group ref={sceneGroupRef} position-y={Y_OFFSET} visible={initialPoseApplied}>
       <group scale={[SCALE, SCALE, SCALE]}>
         <primitive object={clonedScene} />
       </group>

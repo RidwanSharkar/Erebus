@@ -23,6 +23,8 @@ interface CharacterRendererProps {
   isCharging?: boolean;
   isBarrageCharging?: boolean;
   isCobraShotCharging?: boolean;
+  /** Reaping Talons (`BOW_R`) charge window — same flag as EtherealBow viper-sting draw. */
+  isViperStingCharging?: boolean;
   isDead?: boolean;
   /** Co-op remote: SwordCast/Cast when replicated melee/channel state mirrors LMB posture. */
   remotePrimaryWeaponCastHold?: boolean;
@@ -79,6 +81,7 @@ export default function CharacterRenderer({
   isCharging = false,
   isBarrageCharging = false,
   isCobraShotCharging = false,
+  isViperStingCharging = false,
   isDead = false,
   remotePrimaryWeaponCastHold = false,
 }: CharacterRendererProps) {
@@ -100,10 +103,10 @@ export default function CharacterRenderer({
   const wasGrounded          = useRef(true);
   const jumpIsBack           = useRef(false);
   const jumpIsFront          = useRef(false);
-  /** True while LMB or Barrage/Cobra warmup is holding DrawBow pose (bow only). */
+  /** True while LMB or bow ability warmup holds DrawBow pose (Barrage, Cobra, Reaping Talons). */
   const bowDrawHoldActive =
     currentWeapon === WeaponType.BOW &&
-    (isCharging || isBarrageCharging || isCobraShotCharging);
+    (isCharging || isBarrageCharging || isCobraShotCharging || isViperStingCharging);
 
   const prevBowDrawHold = useRef(false);
   const bowReleaseTimer      = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -143,7 +146,7 @@ export default function CharacterRenderer({
     };
   }, []);
 
-  // When any bow draw hold ends (LMB, Barrage, or Cobra Shot), play ReleaseBow then Idle.
+  // When any bow draw hold ends (LMB, Barrage, Cobra, or Reaping Talons charge), play ReleaseBow then Idle.
   useEffect(() => {
     if (prevBowDrawHold.current && !bowDrawHoldActive && currentWeapon === WeaponType.BOW) {
       if (bowReleaseTimer.current) clearTimeout(bowReleaseTimer.current);
@@ -331,7 +334,7 @@ export default function CharacterRenderer({
           walkStopTimer.current = null;
         }
       } else if (bowDrawHoldActive) {
-        // LMB or ability (Barrage / Cobra) warmup — DrawBow clip (local + replicated co-op peers).
+        // LMB or bow ability warmup — DrawBow clip (local + replicated co-op peers).
         if (walkStopTimer.current) {
           clearTimeout(walkStopTimer.current);
           walkStopTimer.current = null;

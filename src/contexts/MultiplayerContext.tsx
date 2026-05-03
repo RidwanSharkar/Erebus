@@ -6,9 +6,10 @@ import { io, Socket } from 'socket.io-client';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { SkillPointSystem, SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
 import { AbilityLoadout, getDefaultLoadout } from '@/utils/weaponAbilities';
-import { TalentLoadout, createDefaultTalentLoadout } from '@/utils/talents';
+import { TalentLoadout, createDefaultTalentLoadout, getCoopZombieRoomBoonsPayload } from '@/utils/talents';
 import { ExperienceSystem } from '@/utils/ExperienceSystem';
 import { StatSystem, StatPointData, StatKey, PlayerStats } from '@/utils/StatSystem';
+import type { ItemRarity } from '@/utils/itemRarity';
 import { Vector3 } from '@/utils/three-exports';
 
 export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'chaos' | 'healing' | 'boss';
@@ -65,6 +66,8 @@ export interface EnemyDamageMeta {
   infernoCrossentropy?: boolean;
   /** Reaper talent (Crossentropy) — server counts kills for Reaper stack. */
   reaperCrossentropy?: boolean;
+  /** PLAGUE Crossentropy — server zombies on kill; client venom FX. */
+  crossentropyPlague?: boolean;
   /** Staggering Strike (`wraith_strike`), Runeblade combo (`runeblade_combo`), Sabres (`sabre_left` / `sabre_right`), Staggering Smite (`smite` with `staggerToAdd`), Stagger Shot (`projectile` with `staggerToAdd`), TEMPEST Crossentropy (`crossentropy` with `staggerToAdd`): server accumulates stagger. */
   staggerToAdd?: number;
   /** Wyvern Bite — Barrage hit applies Concentrated Venom stack on server. */
@@ -91,6 +94,16 @@ export interface EnemyDamageMeta {
   killstreakBackstab?: boolean;
   /** Sabres Relentless — heal + cooldown RPC on Backstab kill (server). */
   relentlessBackstab?: boolean;
+  /** Arctic / Glacial ground blizzard tick — 4s freeze at max chill (server uses standard blizzard chill). */
+  arcticBlizzard?: boolean;
+  /** Frost totem hit — chill stack routing (server). */
+  frostTotemChill?: boolean;
+  /** Guardbreak room boon — server applies bonus damage if target is stunned. */
+  guardbreakRoom?: boolean;
+  /** Glacial Bite — Barrage chill stacks; 5 stacks → 6s freeze on server. */
+  glacialBiteChill?: boolean;
+  /** Glacial Talons — Reaping Talons double damage vs frozen on server. */
+  glacialTalons?: boolean;
 }
 
 /** Server enemy; `type` includes e.g. `knight`, `training-dummy` (throne prep). */
@@ -110,9 +123,26 @@ export interface Enemy {
   /** INFESTED STRIKE ally zombie */
   ownerPlayerId?: string;
   expireAt?: number;
+  /** Juggernaut Strain coop room boon — larger client model when `juggernaut`. */
+  zombieVariant?: 'standard' | 'juggernaut';
   /** Staggering Strike buildup (0–100), server-authoritative. */
   staggerBuildup?: number;
 }
+
+export interface ConfirmedEnemyDamageEvent {
+  damageEventId: number;
+  enemyId: string;
+  newHealth: number;
+  maxHealth: number;
+  damage: number;
+  fromPlayerId?: string | null;
+  wasKilled?: boolean;
+  timestamp: number;
+  damageType?: string;
+  position?: { x: number; y: number; z: number };
+}
+
+export type ConfirmedEnemyDamageListener = (event: ConfirmedEnemyDamageEvent) => void;
 
 export interface DroppedItem {
   id: string;
@@ -122,6 +152,9 @@ export interface DroppedItem {
   category?: 'amulet' | 'boss_drop';
   position: { x: number; y: number; z: number };
   droppedAt: number;
+  /** Boss drops: flat stat points granted on pickup */
+  statBonus?: number;
+  rarity?: ItemRarity;
 }
 
 export interface InventoryItem {
@@ -131,6 +164,8 @@ export interface InventoryItem {
   label: string;
   category?: 'amulet' | 'boss_drop';
   pickedUpAt: number;
+  statBonus?: number;
+  rarity?: ItemRarity;
 }
 
 
@@ -290,6 +325,7 @@ interface MultiplayerContextType {
   
   // Enemy actions
   damageEnemy: (enemyId: string, damage: number, sourcePlayerId?: string, meta?: EnemyDamageMeta) => void;
+  subscribeEnemyDamage: (listener: ConfirmedEnemyDamageListener) => () => void;
   /** Co-op: server clears Wyvern Bite CV + applies optional Cobra remainder as one combined hit. */
   detonateWyvernConcentratedVenom: (enemyId: string, cobraRemainingDamage?: number) => void;
   applyStatusEffect: (enemyId: string, effectType: string, duration: number) => void;
@@ -469,6 +505,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const lastPlayerHealthUpdate = useRef<{ [playerId: string]: number }>({});
   const lastEnemyMoveUpdate = useRef<{ [enemyId: string]: number }>({});
   const lastEnemyDamageUpdate = useRef<{ [enemyId: string]: number }>({});
+  const enemyDamageListenersRef = useRef<Set<ConfirmedEnemyDamageListener>>(new Set());
   /** Coalesce many `enemy-removed` events (wave end) into one `setEnemies` per frame. */
   const pendingEnemyRemovalsRef = useRef<Set<string>>(new Set());
   const enemyRemovalRafRef = useRef<number | null>(null);
@@ -478,6 +515,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       enemyRemovalRafRef.current = null;
     }
     pendingEnemyRemovalsRef.current.clear();
+  }, []);
+
+  const subscribeEnemyDamage = useCallback((listener: ConfirmedEnemyDamageListener) => {
+    enemyDamageListenersRef.current.add(listener);
+    return () => {
+      enemyDamageListenersRef.current.delete(listener);
+    };
+  }, []);
+
+  const notifyEnemyDamageListeners = useCallback((event: ConfirmedEnemyDamageEvent) => {
+    enemyDamageListenersRef.current.forEach((listener) => listener(event));
   }, []);
 
   // Initialize socket connection
@@ -811,6 +859,27 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         }
       }
 
+      if (
+        typeof data.damageEventId === 'number' &&
+        typeof data.enemyId === 'string' &&
+        typeof data.damage === 'number' &&
+        typeof data.newHealth === 'number' &&
+        typeof data.maxHealth === 'number'
+      ) {
+        notifyEnemyDamageListeners({
+          damageEventId: data.damageEventId,
+          enemyId: data.enemyId,
+          newHealth: data.newHealth,
+          maxHealth: data.maxHealth,
+          damage: data.damage,
+          fromPlayerId: data.fromPlayerId ?? null,
+          wasKilled: data.wasKilled,
+          timestamp: typeof data.timestamp === 'number' ? data.timestamp : Date.now(),
+          damageType: typeof data.damageType === 'string' ? data.damageType : undefined,
+          position: data.position,
+        });
+      }
+
       // Throttle enemy damage updates to prevent infinite re-renders (throne training dummy: always apply so HP bar stays accurate under rapid fire). Never throttle kill packets — dropping wasKilled breaks death VFX/sync.
       const now = Date.now();
       const lastUpdate = lastEnemyDamageUpdate.current[data.enemyId] || 0;
@@ -919,9 +988,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
       // Grant stat only to the player who picked it up
       if (newSocket.id && data.playerId === newSocket.id) {
-        // Only amulets grant a stat bonus; boss drops have their own effects
-        if (data.item.stat) {
-          setStatPointData(prev => StatSystem.grantItemStat(prev, data.item.stat!));
+        if (data.item.stat != null) {
+          const bonus = data.item.statBonus;
+          if (bonus != null && bonus > 0) {
+            setStatPointData(prev => StatSystem.grantItemStat(prev, data.item.stat!, bonus));
+          } else if (bonus == null) {
+            setStatPointData(prev => StatSystem.grantItemStat(prev, data.item.stat!));
+          }
         }
         setInventory(prev => [
           ...prev,
@@ -931,6 +1004,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
             stat: data.item.stat,
             label: data.item.label,
             category: data.item.category,
+            statBonus: data.item.statBonus,
+            rarity: data.item.rarity,
             pickedUpAt: Date.now()
           }
         ]);
@@ -1282,7 +1357,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         heartbeatInterval.current = null;
       }
     };
-  }, [cancelPendingEnemyRemovals]); // `cancel` stable; handlers need fresh ref to cancel batching
+  }, [cancelPendingEnemyRemovals, notifyEnemyDamageListeners]); // `cancel` stable; handlers need fresh ref to cancel batching
 
   const joinRoom = useCallback(async (roomId: string, playerName: string, weapon: WeaponType, subclass?: WeaponSubclass, gameMode?: 'multiplayer' | 'coop') => {
     if (!socket || !isConnected) {
@@ -1486,6 +1561,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.infernalSmite ? { infernalSmite: true } : {}),
         ...(meta?.infernoCrossentropy ? { infernoCrossentropy: true } : {}),
         ...(meta?.reaperCrossentropy ? { reaperCrossentropy: true } : {}),
+        ...(meta?.crossentropyPlague ? { crossentropyPlague: true } : {}),
         ...(meta?.staggerToAdd != null && meta.staggerToAdd > 0 ? { staggerToAdd: meta.staggerToAdd } : {}),
         ...(meta?.wyvernBiteVenom ? { wyvernBiteVenom: true } : {}),
         ...(meta?.wyvernStingVenomZombie ? { wyvernStingVenomZombie: true } : {}),
@@ -1499,6 +1575,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.infestedFlourish ? { infestedFlourish: true } : {}),
         ...(meta?.killstreakBackstab ? { killstreakBackstab: true } : {}),
         ...(meta?.relentlessBackstab ? { relentlessBackstab: true } : {}),
+        ...(meta?.arcticBlizzard ? { arcticBlizzard: true } : {}),
+        ...(meta?.frostTotemChill ? { frostTotemChill: true } : {}),
+        ...(meta?.guardbreakRoom ? { guardbreakRoom: true } : {}),
+        ...(meta?.glacialBiteChill ? { glacialBiteChill: true } : {}),
+        ...(meta?.glacialTalons ? { glacialTalons: true } : {}),
       });
     }
   }, [socket, currentRoomId]);
@@ -1687,6 +1768,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     },
     [],
   );
+
+  useEffect(() => {
+    if (!socket || !currentRoomId || gameMode !== 'coop') return;
+    if (!socket.connected) return;
+    socket.emit('coop-zombie-room-boons', {
+      roomId: currentRoomId,
+      coopZombieBoons: getCoopZombieRoomBoonsPayload(talentLoadout),
+    });
+  }, [socket, currentRoomId, gameMode, talentLoadout]);
 
   const updatePlayerLevel = useCallback((playerId: string, level: number) => {
     if (socket && currentRoomId) {
@@ -1878,6 +1968,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     broadcastPlayerTornadoEffect,
     broadcastPlayerDeathEffect,
     damageEnemy,
+    subscribeEnemyDamage,
     damageMushroom,
     detonateWyvernConcentratedVenom,
     applyStatusEffect,

@@ -1,5 +1,22 @@
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { Group, MeshStandardMaterial, CylinderGeometry, ConeGeometry, PlaneGeometry, SphereGeometry } from 'three';
+import type { TotemBoltVariant } from '@/utils/talents';
+
+/** Baseline blue is default Mantra; colored boons retint runic glow only. */
+function totemGlowForVariant(variant?: TotemBoltVariant): string {
+  switch (variant) {
+    case 'wrathful':
+      return '#ef4444';
+    case 'staggering':
+      return '#3b82f6';
+    case 'infesting':
+      return '#22c55e';
+    case 'frost':
+      return '#0284c7';
+    default:
+      return '#0099ff';
+  }
+}
 
 const SHARED_MATERIALS = {
   bone: new MeshStandardMaterial({
@@ -11,12 +28,6 @@ const SHARED_MATERIALS = {
     color: "#8BB8D0",
     roughness: 0.3,
     metalness: 0.7
-  }),
-  runes: new MeshStandardMaterial({
-    color: "#0099ff",
-    emissive: "#0099ff",
-    transparent: true,
-    opacity: 0.9
   }),
   crown: new MeshStandardMaterial({
     color: "#B8D8F0",
@@ -37,10 +48,21 @@ const SHARED_GEOMETRIES = {
 
 interface TotemModelProps {
   isAttacking: boolean;
+  totemBoltVariant?: TotemBoltVariant;
 }
 
-export default function TotemModel({ isAttacking }: TotemModelProps) {
+export default function TotemModel({ isAttacking, totemBoltVariant }: TotemModelProps) {
   const totemRef = useRef<Group>(null);
+
+  const runesMat = useMemo(() => {
+    const hex = totemGlowForVariant(totemBoltVariant);
+    return new MeshStandardMaterial({
+      color: hex,
+      emissive: hex,
+      transparent: true,
+      opacity: 0.9,
+    });
+  }, [totemBoltVariant]);
 
   return (
     <group ref={totemRef} scale={0.3} position={[0, -0.80, 0]}>
@@ -56,7 +78,7 @@ export default function TotemModel({ isAttacking }: TotemModelProps) {
         <group key={i} position={[0, height, 0]}>
           <mesh rotation={[-Math.PI / 2, 0, 0]}>
             <torusGeometry args={[0.75, 0.075, 16, 32]} />
-            <primitive object={SHARED_MATERIALS.runes} emissiveIntensity={isAttacking ? 3 : 1} />
+            <primitive object={runesMat} emissiveIntensity={isAttacking ? 3 : 1} />
           </mesh>
           {/* Floating rune symbols */}
           {[...Array(4)].map((_, j) => (
@@ -69,7 +91,7 @@ export default function TotemModel({ isAttacking }: TotemModelProps) {
               ]}
             >
               <primitive object={SHARED_GEOMETRIES.rune} />
-              <primitive object={SHARED_MATERIALS.runes} emissiveIntensity={isAttacking ? 4 : 2} opacity={0.8} side={2} />
+              <primitive object={runesMat} emissiveIntensity={isAttacking ? 4 : 2} opacity={0.8} side={2} />
             </mesh>
           ))}
         </group>
@@ -77,12 +99,11 @@ export default function TotemModel({ isAttacking }: TotemModelProps) {
 
       {/* Top crown structure */}
       <group position={[0, 3.75, 0]}>
-  
 
         {/* Central eye */}
         <mesh position={[0, 0.35, 0]}>
           <primitive object={SHARED_GEOMETRIES.eye} />
-          <primitive object={SHARED_MATERIALS.runes} emissiveIntensity={isAttacking ? 5 : 3} />
+          <primitive object={runesMat} emissiveIntensity={isAttacking ? 5 : 3} />
         </mesh>
       </group>
 

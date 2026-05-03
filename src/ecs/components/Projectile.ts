@@ -26,6 +26,8 @@ export class Projectile extends Component {
   public staggerToAdd?: number;
   /** Bow perfect-timing primary — Wrathful Shots crit (CombatSystem + Projectile). */
   public isPerfectShot?: boolean;
+  /** Bow perfect shot volley id (Dual Coil shares one id per release; Arctic Sting first-hit). */
+  public perfectShotVolleyId?: number;
   /** INFERNO talent: Crossentropy bolt — crit + server Ignite routing. */
   public infernoCrossentropy?: boolean;
   /** Reaper talent: Crossentropy pierces, no impact explosion, stack routing on kill. */
@@ -34,10 +36,12 @@ export class Projectile extends Component {
   public crossentropyTempest?: boolean;
   /** PLAGUE boon: VFX + higher base damage (used for explosion theme). */
   public crossentropyPlague?: boolean;
+  /** GLACIAL STORM room boon: deep blue theme + blizzard/coldsnap on hit (Inferno may override VFX only). */
+  public crossentropyGlacial?: boolean;
   /** Dual Coil: which parallel lane (0/1) for damage number lateral offset. */
   public dualCoilLane?: 0 | 1;
   /** Scythe Wrathful / Staggering / Infesting Entropic boons — bolt hit rules in CombatSystem. */
-  public entropicBoltTalent?: 'wrathful' | 'staggering' | 'infesting';
+  public entropicBoltTalent?: 'wrathful' | 'staggering' | 'infesting' | 'arctic';
 
   // Homing properties
   public targetEntityId: number | null; // Entity ID to home towards
@@ -198,6 +202,7 @@ export class Projectile extends Component {
     this.reaperCrossentropy = undefined;
     this.crossentropyTempest = undefined;
     this.crossentropyPlague = undefined;
+    this.crossentropyGlacial = undefined;
     this.dualCoilLane = undefined;
     this.entropicBoltTalent = undefined;
     this.targetEntityId = null;
@@ -227,6 +232,7 @@ export class Projectile extends Component {
     clone.reaperCrossentropy = this.reaperCrossentropy;
     clone.crossentropyTempest = this.crossentropyTempest;
     clone.crossentropyPlague = this.crossentropyPlague;
+    clone.crossentropyGlacial = this.crossentropyGlacial;
     clone.dualCoilLane = this.dualCoilLane;
     clone.entropicBoltTalent = this.entropicBoltTalent;
     return clone;

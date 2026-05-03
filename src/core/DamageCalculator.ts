@@ -41,6 +41,10 @@ export function setGlobalStrengthStatPoints(points: number) {
   globalStrengthStatPoints = points;
 }
 
+export function getGlobalStrengthStatPoints(): number {
+  return globalStrengthStatPoints;
+}
+
 export function calculateDamage(
   baseAmount: number,
   weaponType?: WeaponType,

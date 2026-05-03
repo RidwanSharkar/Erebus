@@ -30,6 +30,8 @@ interface BlizzardProps {
   position: Vector3;
   onComplete: () => void;
   enemyData?: Array<{ id: string; position: Vector3; health: number }>;
+  /** When set, called each damage tick instead of `enemyData` (fresh positions without parent re-render). */
+  resolveEnemyData?: () => Array<{ id: string; position: Vector3; health: number }>;
   onHitTarget?: (targetId: string, damage: number, isCritical: boolean, position: Vector3, isBlizzard: boolean) => void;
   parentRef?: React.RefObject<Group>;
   /** Sabres stealth: level-scaled damage with falloff. Ignored when `flatDamagePerTick` is set. */
@@ -38,17 +40,26 @@ interface BlizzardProps {
   durationSeconds?: number;
   /** Runeblade Blizzard talent: fixed damage per 1s tick, no falloff, no random crit. */
   flatDamagePerTick?: number;
+  /** Default 1000. Arctic concentrated blizzard uses 500ms. */
+  damageTickIntervalMs?: number;
+  /** XZ hit radius; default `BLIZZARD_STORM_HIT_RADIUS`. */
+  hitRadius?: number;
+  visualPreset?: 'default' | 'concentrated';
 }
 
 export default function Blizzard({
   position,
   onComplete,
   enemyData = [],
+  resolveEnemyData,
   onHitTarget,
   parentRef,
   level = 2,
   durationSeconds = 5,
   flatDamagePerTick,
+  damageTickIntervalMs = 1000,
+  hitRadius = BLIZZARD_STORM_HIT_RADIUS,
+  visualPreset = 'default',
 }: BlizzardProps) {
   const stormRef = useRef<Group>(null);
   const stormWorldPositionRef = useRef(new Vector3());
@@ -58,16 +69,18 @@ export default function Blizzard({
   const shardsRef = useRef<Array<{ id: number; position: Vector3; type: 'orbital' | 'falling' }>>([]);
   const aurasRef = useRef<Array<{ id: number }>>([]);
 
-  const ORBITAL_RADIUS = .8;        // Radius of the orbital shard spawn area
-  const FALLING_RADIUS = 2.5;        // Radius of the falling shard spawn area
-  const ORBITAL_HEIGHT = 2.35;        // Height of orbital shards
-  const FALLING_HEIGHT = 1.2;       // Starting height of falling shards
+  const ORBITAL_RADIUS = visualPreset === 'concentrated' ? 0.35 : 0.8;
+  const FALLING_RADIUS = visualPreset === 'concentrated' ? 1.1 : 2.5;
+  const ORBITAL_HEIGHT = visualPreset === 'concentrated' ? 1.55 : 2.35;
+  const FALLING_HEIGHT = visualPreset === 'concentrated' ? 0.85 : 1.2;
+  const orbitalSpawnChance = visualPreset === 'concentrated' ? 0.42 : 0.3;
+  const fallingSpawnChance = visualPreset === 'concentrated' ? 0.75 : 0.8;
 
   useEffect(() => {
     endedRef.current = false;
     progressRef.current = 0;
     lastDamageTime.current = 0;
-  }, [durationSeconds, flatDamagePerTick]);
+  }, [durationSeconds, flatDamagePerTick, damageTickIntervalMs, hitRadius, visualPreset]);
 
   useFrame((_, delta) => {
     if (!stormRef.current) return;
@@ -89,7 +102,7 @@ export default function Blizzard({
 
     stormRef.current.rotation.y += delta * 7;
 
-    if (Math.random() < 0.3) {
+    if (Math.random() < orbitalSpawnChance) {
       const angle = Math.random() * Math.PI * 2;
       const spawnRadius = Math.random() * ORBITAL_RADIUS / 50;
 
@@ -106,7 +119,7 @@ export default function Blizzard({
       });
     }
 
-    if (Math.random() > 0.2) {
+    if (Math.random() < fallingSpawnChance) {
       const angle = Math.random() * Math.PI * 2;
       const spawnRadius = Math.random() * FALLING_RADIUS;
 
@@ -123,22 +136,23 @@ export default function Blizzard({
       });
     }
 
-    if (Math.random() < 0.1) {
+    if (Math.random() < (visualPreset === 'concentrated' ? 0.14 : 0.1)) {
       aurasRef.current.push({
         id: Date.now() + Math.random(),
       });
     }
 
     const now = Date.now();
-    if (now - lastDamageTime.current >= 1000) {
+    if (now - lastDamageTime.current >= damageTickIntervalMs) {
       lastDamageTime.current = now;
 
-      if (enemyData && onHitTarget) {
+      const enemies = resolveEnemyData ? resolveEnemyData() : enemyData;
+      if (enemies && enemies.length > 0 && onHitTarget) {
         stormRef.current.getWorldPosition(stormWorldPositionRef.current);
         const hits =
           flatDamagePerTick != null
-            ? calculateBlizzardDamageFlat(stormWorldPositionRef.current, enemyData, flatDamagePerTick)
-            : calculateBlizzardDamageScaled(stormWorldPositionRef.current, enemyData, level);
+            ? calculateBlizzardDamageFlat(stormWorldPositionRef.current, enemies, flatDamagePerTick, hitRadius)
+            : calculateBlizzardDamageScaled(stormWorldPositionRef.current, enemies, level, hitRadius);
         hits.forEach(hit => {
           onHitTarget(
             hit.targetId,
@@ -169,8 +183,6 @@ export default function Blizzard({
   );
 }
 
-const DAMAGE_RADIUS = BLIZZARD_STORM_HIT_RADIUS;
-
 /** Horizontal reach only — matches Runeblade LMB (XZ cone) and avoids false misses from Y (feet vs torso). */
 function distanceXZ(a: Vector3, b: Vector3): number {
   return Math.hypot(a.x - b.x, a.z - b.z);
@@ -180,14 +192,15 @@ function calculateBlizzardDamageScaled(
   centerPosition: Vector3,
   enemyData: Array<{ id: string; position: Vector3; health: number }>,
   level: number,
+  damageRadius: number,
 ) {
   const hits: Array<{ targetId: string; damage: number; isCritical: boolean; position: Vector3 }> = [];
 
   for (const enemy of enemyData) {
     const distance = distanceXZ(centerPosition, enemy.position);
-    if (distance <= DAMAGE_RADIUS) {
+    if (distance <= damageRadius) {
       const baseDamage = 15 + (level * 3); // OLD DAMAGE LOGIC
-      const damage = Math.floor(baseDamage * (1 - distance / DAMAGE_RADIUS));
+      const damage = Math.floor(baseDamage * (1 - distance / damageRadius));
 
       hits.push({
         targetId: enemy.id,
@@ -205,12 +218,13 @@ function calculateBlizzardDamageFlat(
   centerPosition: Vector3,
   enemyData: Array<{ id: string; position: Vector3; health: number }>,
   flatDamage: number,
+  damageRadius: number,
 ) {
   const hits: Array<{ targetId: string; damage: number; isCritical: boolean; position: Vector3 }> = [];
 
   for (const enemy of enemyData) {
     const distance = distanceXZ(centerPosition, enemy.position);
-    if (distance <= DAMAGE_RADIUS) {
+    if (distance <= damageRadius) {
       hits.push({
         targetId: enemy.id,
         damage: flatDamage,

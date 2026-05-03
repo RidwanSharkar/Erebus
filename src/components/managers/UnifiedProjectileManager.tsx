@@ -17,11 +17,13 @@ import Barrage from '@/components/projectiles/Barrage';
 import TowerProjectile from '@/components/projectiles/TowerProjectile';
 import ExplosionEffect from '@/components/projectiles/ExplosionEffect';
 import CrossentropyExplosion from '@/components/projectiles/CrossentropyExplosion';
+import VenomEffect from '@/components/projectiles/VenomEffect';
 import { Vector3, Color } from '@/utils/three-exports';
-import type { CrossentropyVisualTheme } from '@/utils/talents';
+import { CROSSENTROPY_PLAGUE_VENOM_MS, type CrossentropyVisualTheme } from '@/utils/talents';
 
 function crossentropyThemeFromUserData(userData: Record<string, unknown>): CrossentropyVisualTheme {
   if (userData.crossentropyInferno === true) return 'inferno';
+  if (userData.crossentropyGlacial === true) return 'glacial';
   if (userData.crossentropyTempest === true) return 'tempest';
   if (userData.crossentropyPlague === true) return 'plague';
   return 'default';
@@ -38,7 +40,8 @@ interface ProjectileData {
   opacity?: number;
   ownerId?: string; // For tower projectiles
   isCryoflame?: boolean; // For Entropic Bolt Cryoflame mode
-  colorVariant?: string; // Entropic bolt roll color (purple / blue / red / green)
+  colorVariant?: string; // Entropic bolt roll color (purple / blue / red / green / arctic)
+  entropicBoltTalent?: 'wrathful' | 'staggering' | 'infesting' | 'arctic';
   projectileType?: string; // For projectile type differentiation (e.g., burst_arrow)
   /** Wrathful Bite talent — red Barrage theme. */
   barrageWrathfulBite?: boolean;
@@ -46,11 +49,15 @@ interface ProjectileData {
   barrageWyvernBite?: boolean;
   /** Staggering Bite talent — blue Barrage theme (when Wyvern/Wrathful not active). */
   barrageStaggeringBite?: boolean;
+  /** Glacial Bite room boon — light blue Barrage when higher-precedence bites are off. */
+  barrageGlacialBite?: boolean;
   /** INFERNO talent — fiery Crossentropy theme. */
   infernoCrossentropy?: boolean;
   /** Reaper — pierce, visuals follow ECS, no impact explosion. */
   reaperCrossentropy?: boolean;
   crossentropyVisualTheme?: CrossentropyVisualTheme;
+  /** PLAGUE boon (mechanics + venom FX); Inferno/Glacial/etc. may override `crossentropyVisualTheme`). */
+  crossentropyPlague?: boolean;
 }
 
 interface SwordProjectileData {
@@ -98,6 +105,9 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
   });
 
   const [explosions, setExplosions] = useState<ExplosionData[]>([]);
+  const [crossentropyPlagueVenoms, setCrossentropyPlagueVenoms] = useState<Array<{ id: number; position: Vector3 }>>(
+    [],
+  );
 
   // Counters for unique IDs
   const crossentropyIdCounter = useRef(0);
@@ -108,6 +118,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
   const barrageIdCounter = useRef(0);
   const towerIdCounter = useRef(0);
   const explosionIdCounter = useRef(0);
+  const plagueVenomEffectIdCounter = useRef(0);
 
   // Throttling
   const lastUpdateTime = useRef(0);
@@ -208,6 +219,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
           if (userData.crossentropyInferno) existing.infernoCrossentropy = true;
           if (userData.reaperCrossentropy) existing.reaperCrossentropy = true;
           existing.crossentropyVisualTheme = theme;
+          existing.crossentropyPlague = userData.crossentropyPlague === true;
           newCrossentropy.push(existing);
         } else {
           newCrossentropy.push({
@@ -218,12 +230,18 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             infernoCrossentropy: userData.crossentropyInferno === true,
             reaperCrossentropy: userData.reaperCrossentropy === true,
             crossentropyVisualTheme: theme,
+            crossentropyPlague: userData.crossentropyPlague === true,
           });
         }
       } else if (userData.isEntropicBolt) {
         const existing = projectileData.entropic.find(p => p.entityId === entity.id);
+        const entropicTalent = userData.entropicBoltTalent as ProjectileData['entropicBoltTalent'] | undefined;
+        const colorVariant =
+          entropicTalent === 'arctic' ? 'arctic' : (userData.colorVariant as string | undefined) || 'purple';
         if (existing) {
           existing.position.copy(transform.position);
+          existing.colorVariant = colorVariant;
+          existing.entropicBoltTalent = entropicTalent;
           newEntropic.push(existing);
         } else {
           newEntropic.push({
@@ -232,7 +250,8 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             direction: direction.clone(),
             entityId: entity.id,
             isCryoflame: userData.isCryoflame || false,
-            colorVariant: userData.colorVariant || 'purple'
+            colorVariant,
+            entropicBoltTalent: entropicTalent,
           });
         }
       } else if (userData.isChargedArrow) {
@@ -258,6 +277,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
           existing.barrageWrathfulBite = userData.barrageWrathfulBite === true;
           existing.barrageWyvernBite = userData.barrageWyvernBite === true;
           existing.barrageStaggeringBite = userData.barrageStaggeringBite === true;
+          existing.barrageGlacialBite = userData.barrageGlacialBite === true;
           newBarrage.push(existing);
         } else {
           newBarrage.push({
@@ -271,6 +291,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             barrageWrathfulBite: userData.barrageWrathfulBite === true,
             barrageWyvernBite: userData.barrageWyvernBite === true,
             barrageStaggeringBite: userData.barrageStaggeringBite === true,
+            barrageGlacialBite: userData.barrageGlacialBite === true,
           });
         }
       } else if (userData.isRegularArrow || userData.projectileType === 'burst_arrow') {
@@ -346,6 +367,27 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
       world.clearEvents?.('hauntedSoulEffect');
     }
 
+    const crossentropyPlagueVenomEvents = world.getEvents?.('crossentropyPlagueVenom') || [];
+    if (crossentropyPlagueVenomEvents.length > 0) {
+      world.clearEvents?.('crossentropyPlagueVenom');
+      const spawned: Array<{ id: number; position: Vector3 }> = [];
+      for (const raw of crossentropyPlagueVenomEvents) {
+        const pos =
+          raw != null &&
+          typeof raw === 'object' &&
+          'position' in raw &&
+          raw.position != null &&
+          typeof (raw as { position: Vector3 }).position.clone === 'function'
+            ? (raw as { position: Vector3 }).position.clone()
+            : null;
+        if (!pos) continue;
+        spawned.push({ id: plagueVenomEffectIdCounter.current++, position: pos });
+      }
+      if (spawned.length > 0) {
+        setCrossentropyPlagueVenoms((prev) => [...prev, ...spawned]);
+      }
+    }
+
     // Update state only if there are changes
     const hasProjectileChanges = (
       newCrossentropy.length !== projectileData.crossentropy.length ||
@@ -387,6 +429,16 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
 
   return (
     <>
+      {crossentropyPlagueVenoms.map((vfx) => (
+        <VenomEffect
+          key={vfx.id}
+          position={vfx.position}
+          duration={CROSSENTROPY_PLAGUE_VENOM_MS}
+          onComplete={() =>
+            setCrossentropyPlagueVenoms((prev) => prev.filter((p) => p.id !== vfx.id))
+          }
+        />
+      ))}
       {/* Crossentropy Bolts */}
       {projectileData.crossentropy.map(bolt => (
         <CrossentropyBolt
@@ -406,7 +458,9 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
               const color =
                 theme === 'inferno'
                   ? new Color('#FF3300')
-                  : theme === 'tempest'
+                  : theme === 'glacial'
+                    ? new Color('#1188DD')
+                    : theme === 'tempest'
                     ? new Color('#2288FF')
                     : theme === 'plague'
                       ? new Color('#33DD66')
@@ -423,6 +477,9 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
                 crossentropyVisualTheme: theme,
               };
               setExplosions(prev => [...prev, explosion]);
+              if (bolt.crossentropyPlague === true && world.emitEvent) {
+                world.emitEvent('crossentropyPlagueVenom', { position: explosionPosition.clone() });
+              }
             }
           }}
         />
@@ -503,6 +560,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             wrathfulBite: arrow.barrageWrathfulBite === true,
             wyvernBite: arrow.barrageWyvernBite === true,
             staggeringBite: arrow.barrageStaggeringBite === true,
+            glacialBite: arrow.barrageGlacialBite === true,
           };
         })}
       />

@@ -37,6 +37,19 @@ const DAMAGE_THREAT_LEASH = 90;
 // Infested player-zombie summon lock — keep in sync with client ZombieRenderer SUMMON_DURATION
 const INFESTED_ZOMBIE_SUMMON_LOCK_MS = 2800;
 
+// Universal green coop room zombie boons — mirrored from client TalentLoadout (see `coop-zombie-room-boons`)
+const PLAYER_ZOMBIE_STANDARD_HP = 250;
+const PLAYER_ZOMBIE_STANDARD_DAMAGE = 45;
+const PLAYER_ZOMBIE_JUGGERNAUT_HP = 500;
+const PLAYER_ZOMBIE_JUGGERNAUT_DAMAGE = 100;
+const JUGGERNAUT_STRAIN_ROLL_CHANCE = 0.25;
+const EVERLIVING_ZOMBIE_HP_MULT = 2;
+const ADRENALINE_ZOMBIE_MOVE_MULT = 1.5;
+const PLAYER_ZOMBIE_UNLOCK_MOVE_SPEED = 1.75;
+const PACK_HUNTER_RADIUS_UNITS = 5;
+const PACK_HUNTER_BONUS_PER_ALLY = 0.25;
+const PACK_HUNTER_MAX_STACKING_ALLIES = 4;
+
 // Co-op Viper: client projectile + ground line use this (see ViperArrowProjectile, CoopGameScene).
 const VIPER_ARROW_MAX_RANGE = 18;
 // Shade daggers: same fixed ray length (telegraphShadeAttack maxRange / endPosition).
@@ -106,6 +119,21 @@ const BOSS2_ARCHON_LIGHTNING_RANGE = 14;
 /** Phase 1 perpendicular arm half-length at target (capped). */
 const BOSS2_ARCHON_LIGHTNING_CROSS_HALF_MIN = 4;
 const BOSS2_BLINK_COOLDOWN_MS = 8_000;
+const BOSS2_DEATH_GRASP_CAST_MS = 1_000;
+const BOSS2_DEATH_GRASP_TRAVEL_MS = 520;
+const BOSS2_DEATH_GRASP_HIT_RADIUS = 1.35;
+const BOSS2_DEATH_GRASP_STANDOFF = 1.2;
+const BOSS2_DEATH_GRASP_RANGE = 13;
+const BOSS2_DEATH_GRASP_ARC_RADIANS = Math.PI / 9;
+const BOSS2_FLAME_PILLAR_DAMAGE = 50;
+const BOSS2_FLAME_PILLAR_RADIUS = 1.35;
+/** Same as WarlockRenderer / CoopGameScene blink slide — pillars erupt after landing. */
+const BOSS2_FLAME_PILLAR_BLINK_DELAY_MS = 800;
+const BOSS2_FLAME_PILLAR_STAGGER_MS = 250;
+const BOSS2_FLAME_PILLAR_FORWARD_1 = 1.82;
+const BOSS2_FLAME_PILLAR_FORWARD_2 = 2.42;
+const BOSS2_WARLOCK_SUMMON_INTERVAL_MS = 20_000;
+const BOSS2_SUMMON_ARENA_EXTENT = 12;
 
 // Boss 3: Weaver Nexus (scaled weaver + arcane nova)
 const BOSS3_CENTER_HOLD_DIST = 1.2;
@@ -117,6 +145,22 @@ const BOSS3_NOVA_TRAVEL_MS = 1500;
 const BOSS3_NOVA_HALF_WIDTH = 0.85;
 const BOSS3_NOVA_DAMAGE = 50;
 const BOSS3_NOVA_STEPS = 26;
+const BOSS3_LIGHTNING_HEALTH_PCT = 0.5;
+const BOSS3_LIGHTNING_INTERVAL_MS = 6_000;
+const BOSS3_LIGHTNING_CHARGE_MS = 1_500;
+const BOSS3_LIGHTNING_STAGGER_MS = 500;
+const BOSS3_LIGHTNING_DAMAGE = 45;
+const BOSS3_LIGHTNING_RADIUS = 2.99;
+const BOSS3_LIGHTNING_ARENA_EXTENT = 20;
+const BOSS3_LIGHTNING_OFFSET_MIN = 2;
+const BOSS3_LIGHTNING_OFFSET_MAX = 6;
+const BOSS3_GREEN_BEAM_DURATION_MS = 8000;
+const BOSS3_GREEN_BEAM_TICK_MS = 1000;
+const BOSS3_GREEN_BEAM_DPS = 50;
+const BOSS3_GREEN_BEAM_RANGE = 22;
+const BOSS3_GREEN_BEAM_HALF_WIDTH = 0.52;
+/** Radians/sec — slower than default boss snap so players can sidestep the beam. */
+const BOSS3_GREEN_BEAM_ROT_SPEED = 0.88;
 
 // Martyr: self-detonation (matches client AOE)
 const MARTYR_MELEE_RANGE = 1.4;
@@ -196,12 +240,22 @@ class EnemyAI {
     /** bossId -> 0 | 1 | 2 — advances each Archon Lightning cast (1 beam → X → fan → …). */
     this.boss2ArchonLightningComboPhase = new Map();
     this.boss2BlinkCooldown = new Map();
+    this.boss2DeathGraspTimeouts = new Map();
+    /** @type {Map<string, ReturnType<typeof setTimeout>[]>} */
+    this.boss2FlamePillarTimeouts = new Map();
+    this.boss2WarlockSummonLastAt = new Map();
 
     // Boss 3 (Weaver Nexus): nova + summon locks
     this.boss3LockUntil = new Map();
     this.boss3NovaLastRelease = new Map();
     this.boss3NovaWindupTimeout = new Map();
     this.boss3NovaSweepInterval = new Map();
+    this.boss3LightningInterval = new Map();
+    this.boss3GreenBeamEndAt = new Map();
+    /** @type {Map<string, ReturnType<typeof setInterval>>} */
+    this.boss3GreenBeamDamageInterval = new Map();
+    /** @type {Map<string, { p75: boolean; p50: boolean; p25: boolean }>} */
+    this.boss3GreenBeamStages = new Map();
 
     // Boss skeleton summoning tracking
     this.bossSkeletonSummonCooldown = new Map(); // enemyId -> lastSummonTime
@@ -310,10 +364,25 @@ class EnemyAI {
     this.boss2ArchonLightningTimeout.clear();
     this.boss2ArchonLightningComboPhase.clear();
     this.boss2BlinkCooldown.clear();
+    this.boss2DeathGraspTimeouts.forEach((timers) => {
+      (timers || []).forEach((t) => clearTimeout(t));
+    });
+    this.boss2DeathGraspTimeouts.clear();
+    this.boss2FlamePillarTimeouts.forEach((ids) => {
+      (ids || []).forEach((t) => clearTimeout(t));
+    });
+    this.boss2FlamePillarTimeouts.clear();
+    this.boss2WarlockSummonLastAt.clear();
     this.boss3NovaWindupTimeout.forEach((t) => clearTimeout(t));
     this.boss3NovaWindupTimeout.clear();
     this.boss3NovaSweepInterval.forEach((t) => clearInterval(t));
     this.boss3NovaSweepInterval.clear();
+    this.boss3LightningInterval.forEach((t) => clearInterval(t));
+    this.boss3LightningInterval.clear();
+    this.boss3GreenBeamDamageInterval.forEach((t) => clearInterval(t));
+    this.boss3GreenBeamDamageInterval.clear();
+    this.boss3GreenBeamEndAt.clear();
+    this.boss3GreenBeamStages.clear();
     this.boss3LockUntil.clear();
     this.boss3NovaLastRelease.clear();
     this.tentacleSlamTimeouts.forEach((t) => clearTimeout(t));
@@ -349,7 +418,8 @@ class EnemyAI {
 
   updateAI() {
     if (!this.room || !this.room.getGameStarted()) return;
-    
+    if (this.room.isCoopCombatTransitionActive && this.room.isCoopCombatTransitionActive()) return;
+
     const enemies = this.room.getEnemies();
     const players = this.room.getPlayers();
     
@@ -361,6 +431,14 @@ class EnemyAI {
       
       this.updateEnemyAI(enemy, players);
     });
+  }
+
+  /** Co-op portal loading gate — skip emitting player-bound melee hit events. */
+  coopTransitionBlocksOutgoingPlayerHits() {
+    return (
+      typeof this.room?.isCoopCombatTransitionActive === 'function' &&
+      this.room.isCoopCombatTransitionActive()
+    );
   }
 
   updateEnemyAI(enemy, players) {
@@ -588,6 +666,7 @@ class EnemyAI {
   }
 
   bossSkeletonAttackPlayer(skeleton, player) {
+    if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
     const damage = skeleton.damage || 17;
 
     if (this.io) {
@@ -918,6 +997,7 @@ class EnemyAI {
   }
 
   knightAttackPlayer(knight, player) {
+    if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
     const damage = knight.damage || 25;
 
     if (this.io) {
@@ -2000,6 +2080,7 @@ class EnemyAI {
   }
 
   templarAttackPlayer(templar, player) {
+    if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
     const damage = templar.damage || 48;
 
     if (this.io) {
@@ -2644,7 +2725,7 @@ class EnemyAI {
             if (!tt || tt.isDying || tt.health <= 0 || tt.type !== 'tentacle-spine') return;
             const currentDistance = this.calculateDistance(ghoul.position, tt.position);
             if (currentDistance <= attackRange) {
-              const damage = ghoul.damage || 30;
+              const damage = ghoul.damage || 28;
               this.room.damageEnemy(trapId, damage, null, null, {
                 sourceEnemyId: ghoul.id,
                 damageType: 'ghoul_melee',
@@ -2753,6 +2834,7 @@ class EnemyAI {
   }
 
   ghoulAttackPlayer(ghoul, player) {
+    if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
     const damage = ghoul.damage || 30;
 
     if (this.io) {
@@ -2981,6 +3063,17 @@ class EnemyAI {
     }
 
     const now = Date.now();
+
+    let lastSummon = this.boss2WarlockSummonLastAt.get(boss.id);
+    if (lastSummon === undefined) {
+      lastSummon = now;
+      this.boss2WarlockSummonLastAt.set(boss.id, lastSummon);
+    }
+    if (now - lastSummon >= BOSS2_WARLOCK_SUMMON_INTERVAL_MS) {
+      this.boss2WarlockSummonLastAt.set(boss.id, now);
+      this.boss2SummonPurpleWarlock(boss);
+    }
+
     const targetPlayer = this.getBossThreatTarget(boss, players);
     if (!targetPlayer) return;
 
@@ -3016,6 +3109,225 @@ class EnemyAI {
     }
   }
 
+  addBoss2DeathGraspTimer(bossId, timer) {
+    const timers = this.boss2DeathGraspTimeouts.get(bossId) || [];
+    timers.push(timer);
+    this.boss2DeathGraspTimeouts.set(bossId, timers);
+  }
+
+  clearBoss2DeathGraspTimers(bossId) {
+    const timers = this.boss2DeathGraspTimeouts.get(bossId);
+    if (timers) {
+      timers.forEach((t) => clearTimeout(t));
+    }
+    this.boss2DeathGraspTimeouts.delete(bossId);
+  }
+
+  addBoss2FlamePillarTimeout(bossId, handle) {
+    const arr = this.boss2FlamePillarTimeouts.get(bossId) || [];
+    arr.push(handle);
+    this.boss2FlamePillarTimeouts.set(bossId, arr);
+  }
+
+  clearBoss2FlamePillarTimers(bossId) {
+    const arr = this.boss2FlamePillarTimeouts.get(bossId);
+    if (arr) {
+      arr.forEach((t) => clearTimeout(t));
+    }
+    this.boss2FlamePillarTimeouts.delete(bossId);
+  }
+
+  boss2SummonPurpleWarlock(boss) {
+    if (!this.room || !boss || boss.type !== 'boss2') return;
+
+    const ex = BOSS2_SUMMON_ARENA_EXTENT;
+    const clampXZ = (x, z) => ({
+      x: Math.max(-ex, Math.min(ex, x)),
+      y: 0,
+      z: Math.max(-ex, Math.min(ex, z)),
+    });
+
+    const bx = boss.position.x;
+    const bz = boss.position.z;
+    let pos = { ...clampXZ(bx + 5, bz), y: 0 };
+    for (let attempt = 0; attempt < 48; attempt += 1) {
+      const a = Math.random() * Math.PI * 2;
+      const rad = 3.5 + Math.random() * (ex - 3.5);
+      const rawX = Math.sin(a) * rad;
+      const rawZ = Math.cos(a) * rad;
+      const p = clampXZ(rawX, rawZ);
+      if (Math.hypot(p.x - bx, p.z - bz) < 2.8) continue;
+      const resolved = this.resolveEnemyWallCollisions(p.x, p.z);
+      pos = { x: resolved.x, y: 0, z: resolved.z };
+      break;
+    }
+
+    const warlockId = `warlock-boss2-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const warlock = {
+      id: warlockId,
+      type: 'warlock',
+      position: { x: pos.x, y: 0, z: pos.z },
+      rotation: rotationYTowardEntry(pos.x, pos.z),
+      health: 800,
+      maxHealth: 800,
+      damage: 100,
+      moveSpeed: 1.75,
+      isDying: false,
+      staggerBuildup: 0,
+      soulType: 'purple',
+      campType: 'purple',
+      campIndex: 0,
+      bossId: null,
+      summonedByBoss2Id: boss.id,
+      spawnedAt: Date.now(),
+    };
+
+    this.room.addEnemy(warlock);
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-spawned', {
+        enemy: warlock,
+        timestamp: Date.now(),
+      });
+    }
+    console.log(`👹 Boss2 ${boss.id} summoned purple warlock ${warlockId} at (${pos.x.toFixed(2)}, ${pos.z.toFixed(2)})`);
+  }
+
+  boss2CastDeathGraspArc(boss, targetPlayer, onComplete) {
+    if (!this.room || !boss || !targetPlayer) return;
+
+    this.clearBoss2DeathGraspTimers(boss.id);
+
+    const bossId = boss.id;
+    const targetId = targetPlayer.id;
+    const startedAt = Date.now();
+
+    const dx = targetPlayer.position.x - boss.position.x;
+    const dz = targetPlayer.position.z - boss.position.z;
+    if (dx !== 0 || dz !== 0) {
+      boss.rotation = Math.atan2(dx, dz);
+    }
+
+    this.boss2ArchonLightningLockUntil.set(
+      bossId,
+      startedAt + BOSS2_DEATH_GRASP_CAST_MS + BOSS2_DEATH_GRASP_TRAVEL_MS + 200,
+    );
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-moved', {
+        enemyId: bossId,
+        position: boss.position,
+        rotation: boss.rotation,
+        timestamp: startedAt,
+      });
+      this.io.to(this.roomId).emit('boss2-deathgrasp-telegraph', {
+        bossId,
+        targetPlayerId: targetId,
+        castMs: BOSS2_DEATH_GRASP_CAST_MS,
+        timestamp: startedAt,
+      });
+    }
+
+    const launchTimer = setTimeout(() => {
+      const liveBoss = this.room?.getEnemy(bossId);
+      if (!this.room?.getGameStarted() || !liveBoss || liveBoss.isDying || liveBoss.health <= 0) return;
+
+      const players = this.room?.getPlayers();
+      if (!players || players.length === 0) return;
+
+      const launchTarget = players.find((p) => p.id === targetId && p.health > 0) || this.getBossThreatTarget(liveBoss, players);
+      if (!launchTarget || launchTarget.health <= 0) return;
+
+      const sx = liveBoss.position.x;
+      const sz = liveBoss.position.z;
+      const startPosition = {
+        x: sx,
+        y: liveBoss.position.y + 1.5,
+        z: sz,
+      };
+      const tdx = launchTarget.position.x - sx;
+      const tdz = launchTarget.position.z - sz;
+      const targetDistance = Math.min(BOSS2_DEATH_GRASP_RANGE, Math.hypot(tdx, tdz) || BOSS2_DEATH_GRASP_RANGE);
+      const baseAngle = Math.atan2(tdx, tdz);
+      const deltas = [-BOSS2_DEATH_GRASP_ARC_RADIANS, 0, BOSS2_DEATH_GRASP_ARC_RADIANS];
+      const projectiles = deltas.map((delta) => {
+        const angle = baseAngle + delta;
+        return {
+          startPosition,
+          endPosition: {
+            x: sx + Math.sin(angle) * targetDistance,
+            y: launchTarget.position.y + 1.0,
+            z: sz + Math.cos(angle) * targetDistance,
+          },
+        };
+      });
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('boss2-deathgrasp-projectiles', {
+          bossId,
+          projectiles,
+          travelMs: BOSS2_DEATH_GRASP_TRAVEL_MS,
+          timestamp: Date.now(),
+        });
+      }
+
+      const resolveTimer = setTimeout(() => {
+        const k = this.room?.getEnemy(bossId);
+        const currentPlayers = this.room?.getPlayers();
+        if (!this.room?.getGameStarted() || !k || k.isDying || k.health <= 0 || !currentPlayers) return;
+
+        const hitPlayerIds = new Set();
+        projectiles.forEach(({ endPosition }) => {
+          currentPlayers.forEach((currentPlayer) => {
+            if (!currentPlayer || currentPlayer.health <= 0 || hitPlayerIds.has(currentPlayer.id)) return;
+
+            const pdx = currentPlayer.position.x - endPosition.x;
+            const pdz = currentPlayer.position.z - endPosition.z;
+            if (Math.hypot(pdx, pdz) > BOSS2_DEATH_GRASP_HIT_RADIUS) return;
+
+            hitPlayerIds.add(currentPlayer.id);
+
+            const bdx = currentPlayer.position.x - k.position.x;
+            const bdz = currentPlayer.position.z - k.position.z;
+            const bLen = Math.hypot(bdx, bdz) || 1;
+            const newPosition = {
+              x: k.position.x + (bdx / bLen) * BOSS2_DEATH_GRASP_STANDOFF,
+              y: currentPlayer.position.y,
+              z: k.position.z + (bdz / bLen) * BOSS2_DEATH_GRASP_STANDOFF,
+            };
+            const player = this.room.getPlayer(currentPlayer.id);
+            if (!player) return;
+
+            const rot = player.rotation || { x: 0, y: 0, z: 0 };
+            this.room.updatePlayerPosition(
+              currentPlayer.id,
+              newPosition,
+              rot,
+              { x: 0, y: 0, z: 0 },
+            );
+
+            if (this.io) {
+              this.io.to(this.roomId).emit('boss2-deathgrasp-pull', {
+                bossId,
+                targetPlayerId: currentPlayer.id,
+                position: newPosition,
+                rotation: rot,
+                timestamp: Date.now(),
+              });
+            }
+          });
+        });
+
+        this.clearBoss2DeathGraspTimers(bossId);
+
+        if (onComplete) {
+          onComplete();
+        }
+      }, BOSS2_DEATH_GRASP_TRAVEL_MS);
+      this.addBoss2DeathGraspTimer(bossId, resolveTimer);
+    }, BOSS2_DEATH_GRASP_CAST_MS);
+    this.addBoss2DeathGraspTimer(bossId, launchTimer);
+  }
+
   updateBoss3AI(boss, players) {
     if (!this.bossDamageTracking.has(boss.id)) {
       this.bossDamageTracking.set(boss.id, new Map());
@@ -3025,6 +3337,41 @@ class EnemyAI {
     }
 
     const now = Date.now();
+
+    const beamEndStored = this.boss3GreenBeamEndAt.get(boss.id);
+    if (beamEndStored !== undefined && now >= beamEndStored) {
+      this.boss3GreenBeamEndAt.delete(boss.id);
+      const iv = this.boss3GreenBeamDamageInterval.get(boss.id);
+      if (iv) clearInterval(iv);
+      this.boss3GreenBeamDamageInterval.delete(boss.id);
+      if (this.io) {
+        this.io.to(this.roomId).emit('boss3-green-beam-end', {
+          bossId: boss.id,
+          timestamp: Date.now(),
+        });
+      }
+    }
+
+    const beamActiveUntil = this.boss3GreenBeamEndAt.get(boss.id);
+    if (beamActiveUntil !== undefined && now < beamActiveUntil) {
+      const targetPlayer = this.getBossThreatTarget(boss, players);
+      if (targetPlayer) {
+        this.updateBoss3GreenBeamRotation(boss, targetPlayer);
+      } else if (this.io) {
+        this.io.to(this.roomId).emit('enemy-moved', {
+          enemyId: boss.id,
+          position: boss.position,
+          rotation: boss.rotation,
+          timestamp: Date.now(),
+        });
+      }
+      boss.bossStationary = true;
+      return;
+    }
+
+    this.boss3MaybeTriggerGreenBeamStages(boss, now);
+
+    this.boss3MaybeStartLightningPhase(boss);
 
     const targetPlayer = this.getBossThreatTarget(boss, players);
     if (!targetPlayer) {
@@ -3064,8 +3411,6 @@ class EnemyAI {
     let charges = boss.summonChargesLeft;
     if (charges === undefined || charges === null) charges = 2;
 
-    const lastSummonTime = this.weaverSummonCooldown.get(boss.id) || 0;
-    const summonCooldown = 30000;
     const activeGhoulId = this.weaverSummonedGhouls.get(boss.id);
     const ghoulAlive =
       activeGhoulId &&
@@ -3075,7 +3420,6 @@ class EnemyAI {
     const canSummon =
       charges > 0 &&
       !ghoulAlive &&
-      now - lastSummonTime >= summonCooldown &&
       !(this.boss3NovaWindupTimeout.has(boss.id) || this.boss3NovaSweepInterval.has(boss.id));
 
     if (canSummon) {
@@ -3095,6 +3439,192 @@ class EnemyAI {
     if (!castingBlocked && novaReady) {
       this.boss3StartNovaWindup(boss, targetPlayer, now);
     }
+  }
+
+  updateBoss3GreenBeamRotation(boss, targetPlayer) {
+    if (!targetPlayer) return;
+
+    const direction = {
+      x: targetPlayer.position.x - boss.position.x,
+      y: 0,
+      z: targetPlayer.position.z - boss.position.z,
+    };
+
+    const magnitude = Math.sqrt(direction.x * direction.x + direction.z * direction.z);
+    if (magnitude === 0) return;
+
+    direction.x /= magnitude;
+    direction.z /= magnitude;
+
+    const targetRotation = Math.atan2(direction.x, direction.z);
+    const currentRotation = boss.rotation || 0;
+
+    let rotationDiff = targetRotation - currentRotation;
+    while (rotationDiff > Math.PI) rotationDiff -= Math.PI * 2;
+    while (rotationDiff < -Math.PI) rotationDiff += Math.PI * 2;
+
+    const deltaTime = this.updateInterval / 1000;
+    const rotationStep = rotationDiff * Math.min(1, BOSS3_GREEN_BEAM_ROT_SPEED * deltaTime);
+
+    boss.rotation = currentRotation + rotationStep;
+
+    while (boss.rotation > Math.PI) boss.rotation -= Math.PI * 2;
+    while (boss.rotation < -Math.PI) boss.rotation += Math.PI * 2;
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-moved', {
+        enemyId: boss.id,
+        position: boss.position,
+        rotation: boss.rotation,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  boss3MaybeTriggerGreenBeamStages(boss, now) {
+    if (!boss || boss.type !== 'boss3' || boss.isDying || boss.health <= 0) return;
+    const activeUntil = this.boss3GreenBeamEndAt.get(boss.id);
+    if (activeUntil !== undefined && now < activeUntil) return;
+
+    let stages = this.boss3GreenBeamStages.get(boss.id);
+    if (!stages) {
+      stages = { p75: false, p50: false, p25: false };
+      this.boss3GreenBeamStages.set(boss.id, stages);
+    }
+
+    const hpFrac = boss.maxHealth > 0 ? boss.health / boss.maxHealth : 1;
+
+    if (!stages.p75 && hpFrac <= 0.75) {
+      stages.p75 = true;
+      this.boss3StartGreenBeam(boss, now);
+      return;
+    }
+    if (!stages.p50 && hpFrac <= 0.5) {
+      stages.p50 = true;
+      this.boss3StartGreenBeam(boss, now);
+      return;
+    }
+    if (!stages.p25 && hpFrac <= 0.25) {
+      stages.p25 = true;
+      this.boss3StartGreenBeam(boss, now);
+    }
+  }
+
+  boss3StartGreenBeam(boss, now) {
+    if (!this.room || !boss || boss.type !== 'boss3') return;
+
+    const bossId = boss.id;
+    const oldIv = this.boss3GreenBeamDamageInterval.get(bossId);
+    if (oldIv) clearInterval(oldIv);
+    this.boss3GreenBeamDamageInterval.delete(bossId);
+
+    const endAt = now + BOSS3_GREEN_BEAM_DURATION_MS;
+    this.boss3GreenBeamEndAt.set(bossId, endAt);
+    this.boss3LockUntil.set(bossId, endAt);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('boss3-green-beam-start', {
+        bossId,
+        durationMs: BOSS3_GREEN_BEAM_DURATION_MS,
+        timestamp: now,
+      });
+    }
+
+    const applyTick = () => {
+      const live = this.room?.getEnemy(bossId);
+      if (!this.room?.getGameStarted() || !live || live.isDying || live.health <= 0 || live.type !== 'boss3') {
+        return;
+      }
+      const br = live.rotation || 0;
+      const fx = Math.sin(br);
+      const fz = Math.cos(br);
+      const ax = live.position.x + fx * 0.65;
+      const az = live.position.z + fz * 0.65;
+      const bx = live.position.x + fx * BOSS3_GREEN_BEAM_RANGE;
+      const bz = live.position.z + fz * BOSS3_GREEN_BEAM_RANGE;
+      this.room.damagePlayersInLineSegment(
+        ax,
+        az,
+        bx,
+        bz,
+        BOSS3_GREEN_BEAM_HALF_WIDTH,
+        BOSS3_GREEN_BEAM_DPS,
+        'boss3_green_beam',
+      );
+    };
+
+    applyTick();
+    const intervalId = setInterval(applyTick, BOSS3_GREEN_BEAM_TICK_MS);
+    this.boss3GreenBeamDamageInterval.set(bossId, intervalId);
+
+    console.log(`🕸 Boss3 ${bossId} green beam channel (${BOSS3_GREEN_BEAM_DURATION_MS}ms).`);
+  }
+
+  boss3MaybeStartLightningPhase(boss) {
+    if (!boss || boss.type !== 'boss3') return;
+    if (this.boss3LightningInterval.has(boss.id)) return;
+    if (!boss.maxHealth || boss.health / boss.maxHealth > BOSS3_LIGHTNING_HEALTH_PCT) return;
+
+    const castLightningGroup = () => {
+      const live = this.room?.getEnemy(boss.id);
+      const livePlayers = this.room?.getPlayers()?.filter((p) => p && p.health > 0) || [];
+      if (
+        !this.room?.getGameStarted() ||
+        !live ||
+        live.isDying ||
+        live.health <= 0 ||
+        live.type !== 'boss3' ||
+        livePlayers.length === 0
+      ) {
+        const interval = this.boss3LightningInterval.get(boss.id);
+        if (interval) clearInterval(interval);
+        this.boss3LightningInterval.delete(boss.id);
+        return;
+      }
+
+      const primaryTarget = this.getBossThreatTarget(live, livePlayers) || livePlayers[Math.floor(Math.random() * livePlayers.length)];
+      const positions = this.boss3CreateLightningTargets(primaryTarget);
+      const groupStartedAt = Date.now();
+
+      positions.forEach((position, index) => {
+        if (!this.io) return;
+        this.io.to(this.roomId).emit('weaver-lightning-telegraph', {
+          weaverId: live.id,
+          targetPosition: position,
+          strikeAt: groupStartedAt + BOSS3_LIGHTNING_CHARGE_MS + (index * BOSS3_LIGHTNING_STAGGER_MS),
+          damage: BOSS3_LIGHTNING_DAMAGE,
+          radius: BOSS3_LIGHTNING_RADIUS,
+          timestamp: groupStartedAt + index,
+        });
+      });
+
+      console.log(`🕸 Boss3 ${live.id} 50% lightning phase — 3 staggered strikes.`);
+    };
+
+    castLightningGroup();
+    const interval = setInterval(castLightningGroup, BOSS3_LIGHTNING_INTERVAL_MS);
+    this.boss3LightningInterval.set(boss.id, interval);
+    console.log(`🕸 Boss3 ${boss.id} entered persistent lightning phase at ${Math.round((boss.health / boss.maxHealth) * 100)}% HP.`);
+  }
+
+  boss3CreateLightningTargets(primaryTarget) {
+    const ex = BOSS3_LIGHTNING_ARENA_EXTENT;
+    const clampXZ = (x, z) => ({
+      x: Math.max(-ex, Math.min(ex, x)),
+      y: 0,
+      z: Math.max(-ex, Math.min(ex, z)),
+    });
+
+    const x0 = primaryTarget?.position?.x || 0;
+    const z0 = primaryTarget?.position?.z || 0;
+
+    const offsetNearPrimary = () => {
+      const r = BOSS3_LIGHTNING_OFFSET_MIN + Math.random() * (BOSS3_LIGHTNING_OFFSET_MAX - BOSS3_LIGHTNING_OFFSET_MIN);
+      const a = Math.random() * Math.PI * 2;
+      return clampXZ(x0 + Math.cos(a) * r, z0 + Math.sin(a) * r);
+    };
+
+    return [clampXZ(x0, z0), offsetNearPrimary(), offsetNearPrimary()];
   }
 
   boss3StartNovaWindup(boss, targetPlayer, startedAt) {
@@ -3260,6 +3790,40 @@ class EnemyAI {
         timestamp: Date.now(),
       });
     }
+
+    const bossId = boss.id;
+    const r = boss.rotation;
+    const fx = Math.sin(r);
+    const fz = Math.cos(r);
+    const py = boss.position.y;
+    const pillar1 = {
+      x: boss.position.x + fx * BOSS2_FLAME_PILLAR_FORWARD_1,
+      y: py,
+      z: boss.position.z + fz * BOSS2_FLAME_PILLAR_FORWARD_1,
+    };
+    const pillar2 = {
+      x: boss.position.x + fx * BOSS2_FLAME_PILLAR_FORWARD_2,
+      y: py,
+      z: boss.position.z + fz * BOSS2_FLAME_PILLAR_FORWARD_2,
+    };
+
+    const erupt = (center) => {
+      const live = this.room?.getEnemy(bossId);
+      if (!this.room?.getGameStarted() || !live || live.isDying || live.health <= 0 || live.type !== 'boss2') return;
+      if (this.io) {
+        this.io.to(this.roomId).emit('boss2-flame-pillar', {
+          bossId,
+          position: { x: center.x, y: center.y, z: center.z },
+          timestamp: Date.now(),
+        });
+      }
+      this.room.damagePlayersInHorizontalRing(center, BOSS2_FLAME_PILLAR_RADIUS, BOSS2_FLAME_PILLAR_DAMAGE, 'boss2_flame_pillar');
+    };
+
+    const h1 = setTimeout(() => erupt(pillar1), BOSS2_FLAME_PILLAR_BLINK_DELAY_MS);
+    const h2 = setTimeout(() => erupt(pillar2), BOSS2_FLAME_PILLAR_BLINK_DELAY_MS + BOSS2_FLAME_PILLAR_STAGGER_MS);
+    this.addBoss2FlamePillarTimeout(bossId, h1);
+    this.addBoss2FlamePillarTimeout(bossId, h2);
   }
 
   boss2StartArchonLightning(boss, targetPlayer) {
@@ -3372,6 +3936,23 @@ class EnemyAI {
           BOSS2_ARCHON_LIGHTNING_DAMAGE,
           'boss2_archon_lightning',
         );
+      }
+
+      if (comboPhase === 1) {
+        const players = this.room?.getPlayers();
+        const deathGraspTarget = players ? this.getBossThreatTarget(liveBoss, players) : null;
+        if (!deathGraspTarget) return;
+
+        this.boss2CastDeathGraspArc(liveBoss, deathGraspTarget, () => {
+          const nextBoss = this.room?.getEnemy(boss.id);
+          const nextPlayers = this.room?.getPlayers();
+          if (!nextBoss || nextBoss.isDying || nextBoss.health <= 0 || !nextPlayers) return;
+
+          const nextTarget = this.getBossThreatTarget(nextBoss, nextPlayers);
+          if (!nextTarget) return;
+
+          this.boss2StartArchonLightning(nextBoss, nextTarget);
+        });
       }
     }, BOSS2_ARCHON_LIGHTNING_WINDUP_MS);
 
@@ -3594,6 +4175,7 @@ class EnemyAI {
   }
 
   bossAttackPlayer(boss, player) {
+    if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
     const isFacingTarget = this.isBossFacingTarget(boss, player);
     if (!isFacingTarget) return;
 
@@ -4070,9 +4652,61 @@ class EnemyAI {
     this.meleeLockUntil.delete(zombieId);
   }
 
+  /** @returns {{ packHunter: boolean; everliving: boolean; adrenaline: boolean; juggernautStrain: boolean }} */
+  getCoopZombieBoons(ownerId) {
+    const p = this.room?.players?.get(ownerId);
+    const z = p?.coopZombieBoons;
+    return {
+      packHunter: !!z?.packHunter,
+      everliving: !!z?.everliving,
+      adrenaline: !!z?.adrenaline,
+      juggernautStrain: !!z?.juggernautStrain,
+    };
+  }
+
+  /**
+   * Damage multiplier from Pack Hunter (+25% per other owned zombie within range, capped at +100%).
+   * @param {object} zombie - live player-zombie entity
+   */
+  getPackHunterDamageMultiplier(zombie) {
+    if (!this.room || !zombie?.ownerPlayerId) return 1;
+    const boons = this.getCoopZombieBoons(zombie.ownerPlayerId);
+    if (!boons.packHunter) return 1;
+
+    let near = 0;
+    const ownerId = zombie.ownerPlayerId;
+    for (const e of this.room.getEnemies()) {
+      if (!e || e.id === zombie.id || e.type !== 'player-zombie' || e.isDying || e.health <= 0) continue;
+      if (e.ownerPlayerId !== ownerId) continue;
+      if (this.calculateDistance(zombie.position, e.position) <= PACK_HUNTER_RADIUS_UNITS) near++;
+    }
+
+    const capped = Math.min(near, PACK_HUNTER_MAX_STACKING_ALLIES);
+    return 1 + capped * PACK_HUNTER_BONUS_PER_ALLY;
+  }
+
   trySpawnInfestedZombie(ownerId, position) {
     if (!this.room || !ownerId) return;
     if (this.countLivingPlayerZombies(ownerId) >= 3) return;
+
+    const boons = this.getCoopZombieBoons(ownerId);
+    let maxHp = PLAYER_ZOMBIE_STANDARD_HP;
+    let damage = PLAYER_ZOMBIE_STANDARD_DAMAGE;
+    /** @type {'standard' | 'juggernaut'} */
+    let zombieVariant = 'standard';
+
+    if (
+      boons.juggernautStrain &&
+      Math.random() < JUGGERNAUT_STRAIN_ROLL_CHANCE
+    ) {
+      zombieVariant = 'juggernaut';
+      maxHp = PLAYER_ZOMBIE_JUGGERNAUT_HP;
+      damage = PLAYER_ZOMBIE_JUGGERNAUT_DAMAGE;
+    }
+
+    if (boons.everliving) {
+      maxHp *= EVERLIVING_ZOMBIE_HP_MULT;
+    }
 
     const zombieId = `player-zombie-${ownerId}-${Date.now()}`;
     const now = Date.now();
@@ -4083,15 +4717,16 @@ class EnemyAI {
       ownerPlayerId: ownerId,
       position: { x: position.x, y: position.y, z: position.z },
       rotation: rotationYTowardEntry(position.x, position.z),
-      health: 250,
-      maxHealth: 250,
+      health: maxHp,
+      maxHealth: maxHp,
       isDying: false,
-      damage: 45,
+      damage,
       attackCooldown: 1000,
       moveSpeed: 0,
       expireAt: now + 30000,
       staggerBuildup: 0,
       summonUnlockAt: now + summonLockMs,
+      zombieVariant,
     };
 
     if (!this.playerZombiesByOwner.has(ownerId)) {
@@ -4117,7 +4752,10 @@ class EnemyAI {
     setTimeout(() => {
       const spawned = this.room?.getEnemy(zombieId);
       if (spawned && !spawned.isDying && spawned.type === 'player-zombie') {
-        spawned.moveSpeed = 1.75;
+        let moveSpeed = PLAYER_ZOMBIE_UNLOCK_MOVE_SPEED;
+        const nowBoons = this.getCoopZombieBoons(ownerId);
+        if (nowBoons.adrenaline) moveSpeed *= ADRENALINE_ZOMBIE_MOVE_MULT;
+        spawned.moveSpeed = moveSpeed;
         spawned.summonUnlockAt = null;
       }
     }, summonLockMs);
@@ -4201,13 +4839,15 @@ class EnemyAI {
 
           setTimeout(() => {
             if (zombie.isDying || !this.room?.getGameStarted()) return;
+            const attacker = this.room?.getEnemy(zombie.id) || zombie;
             const liveHostile = this.room?.getEnemy(hostile.id);
             if (!liveHostile || liveHostile.isDying || liveHostile.health <= 0) return;
-            const currentDist = this.calculateDistance(zombie.position, liveHostile.position);
+            const currentDist = this.calculateDistance(attacker.position, liveHostile.position);
             if (currentDist <= attackRange + 0.5) {
-              const dmg = zombie.damage || 32;
-              this.room.damageEnemy(liveHostile.id, dmg, zombie.ownerPlayerId, null, {
-                sourceZombieId: zombie.id,
+              let dmg = attacker.damage || 32;
+              dmg *= this.getPackHunterDamageMultiplier(attacker);
+              this.room.damageEnemy(liveHostile.id, Math.round(dmg), attacker.ownerPlayerId, null, {
+                sourceZombieId: attacker.id,
               });
             }
           }, 700);
@@ -4608,12 +5248,23 @@ class EnemyAI {
     this.boss2ArchonLightningTimeout.delete(enemyId);
     this.boss2ArchonLightningComboPhase.delete(enemyId);
     this.boss2BlinkCooldown.delete(enemyId);
+    this.clearBoss2DeathGraspTimers(enemyId);
+    this.clearBoss2FlamePillarTimers(enemyId);
+    this.boss2WarlockSummonLastAt.delete(enemyId);
+    const b3gb = this.boss3GreenBeamDamageInterval.get(enemyId);
+    if (b3gb) clearInterval(b3gb);
+    this.boss3GreenBeamDamageInterval.delete(enemyId);
+    this.boss3GreenBeamEndAt.delete(enemyId);
+    this.boss3GreenBeamStages.delete(enemyId);
     const b3wup = this.boss3NovaWindupTimeout.get(enemyId);
     if (b3wup) clearTimeout(b3wup);
     this.boss3NovaWindupTimeout.delete(enemyId);
     const b3si = this.boss3NovaSweepInterval.get(enemyId);
     if (b3si) clearInterval(b3si);
     this.boss3NovaSweepInterval.delete(enemyId);
+    const b3Lightning = this.boss3LightningInterval.get(enemyId);
+    if (b3Lightning) clearInterval(b3Lightning);
+    this.boss3LightningInterval.delete(enemyId);
     this.boss3LockUntil.delete(enemyId);
     this.boss3NovaLastRelease.delete(enemyId);
     this.warlockBlinkCooldown.delete(enemyId);

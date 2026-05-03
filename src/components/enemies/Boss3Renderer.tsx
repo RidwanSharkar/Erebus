@@ -7,6 +7,8 @@ import { Group, Vector3 } from 'three';
 import WeaverModel from './WeaverModel';
 import BoneWings from '../dragon/BoneWings';
 import EnemyStaggerBar from './EnemyStaggerBar';
+import Boss3GreenBeam from './Boss3GreenBeam';
+import { STAGGER_MAX_BOSS } from '@/utils/talents';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 
 interface Boss3RendererProps {
@@ -28,6 +30,9 @@ const BOSS_OUTER_SCALE = 1.75;
 /** Server `BOSS3_NOVA_WINDUP_MS` — keeps castsummon in sync during nova wind-up */
 const BOSS3_NOVA_WINDUP_MS = 3000;
 
+/** Server `BOSS3_GREEN_BEAM_DURATION_MS` — cast-heal loop + beam VFX */
+const BOSS3_GREEN_BEAM_DURATION_MS = 8000;
+
 export default function Boss3Renderer({
   id,
   position,
@@ -47,6 +52,7 @@ export default function Boss3Renderer({
 
   const [isWalking, setIsWalking] = useState(false);
   const [isCastingSummon, setIsCastingSummon] = useState(false);
+  const [greenBeamHold, setGreenBeamHold] = useState<{ startTime: number; isActive: boolean } | null>(null);
 
   const setGroupRef = useCallback((group: Group | null) => {
     groupRef.current = group;
@@ -64,12 +70,20 @@ export default function Boss3Renderer({
       groupRef.current.position.copy(position);
     }
 
-    if (dist > 0.01 && !isCastingSummon && !isDying) {
+    if (dist > 0.01 && !isCastingSummon && !isDying && !(greenBeamHold && greenBeamHold.isActive)) {
       setIsWalking(true);
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
     }
-  }, [position.x, position.y, position.z, isCastingSummon, isDying]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [
+    position.x,
+    position.y,
+    position.z,
+    isCastingSummon,
+    isDying,
+    greenBeamHold?.isActive,
+    greenBeamHold?.startTime,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     targetRotation.current = rotation;
@@ -98,12 +112,32 @@ export default function Boss3Renderer({
       setTimeout(() => setIsCastingSummon(false), w);
     };
 
+    const handleGreenBeamStart = (data: { bossId: string; durationMs?: number }) => {
+      if (data.bossId !== id) return;
+      const d =
+        typeof data.durationMs === 'number' && data.durationMs > 0 ? data.durationMs : BOSS3_GREEN_BEAM_DURATION_MS;
+      const startTime = Date.now();
+      setGreenBeamHold({ startTime, isActive: true });
+      setTimeout(() => {
+        setGreenBeamHold((prev) => (prev && prev.startTime === startTime ? { ...prev, isActive: false } : prev));
+      }, d);
+    };
+
+    const handleGreenBeamEnd = (data: { bossId: string }) => {
+      if (data.bossId !== id) return;
+      setGreenBeamHold((prev) => (prev ? { ...prev, isActive: false } : null));
+    };
+
     socket.on('weaver-summon-telegraph', handleSummonTelegraph);
     socket.on('boss3-nova-start', handleNovaStart);
+    socket.on('boss3-green-beam-start', handleGreenBeamStart);
+    socket.on('boss3-green-beam-end', handleGreenBeamEnd);
 
     return () => {
       socket.off('weaver-summon-telegraph', handleSummonTelegraph);
       socket.off('boss3-nova-start', handleNovaStart);
+      socket.off('boss3-green-beam-start', handleGreenBeamStart);
+      socket.off('boss3-green-beam-end', handleGreenBeamEnd);
     };
   }, [id, socket]);
 
@@ -132,12 +166,16 @@ export default function Boss3Renderer({
     }
   });
 
+  const greenBeamChanneling = !!(greenBeamHold && greenBeamHold.isActive);
+  const greenBeamIsActive = greenBeamHold?.isActive ?? false;
+
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <group scale={[BOSS_OUTER_SCALE, BOSS_OUTER_SCALE, BOSS_OUTER_SCALE]}>
         <WeaverModel
-          isWalking={isWalking && !isCastingSummon}
-          isCastingHeal={false}
+          isWalking={isWalking && !isCastingSummon && !greenBeamChanneling}
+          isCastingHeal={greenBeamChanneling}
+          castHealLoop={greenBeamChanneling}
           isCastingSummon={isCastingSummon}
           isDying={isDying}
         />
@@ -146,6 +184,15 @@ export default function Boss3Renderer({
           <BoneWings isLeftWing={false} parentRef={groupRef as React.RefObject<Group>} isDashing={false} />
         </group>
       </group>
+
+      {greenBeamHold && (
+        <Boss3GreenBeam
+          parentRef={groupRef as React.RefObject<Group | null>}
+          isActive={greenBeamIsActive}
+          startTime={greenBeamHold.startTime}
+          onComplete={() => setGreenBeamHold(null)}
+        />
+      )}
 
       <pointLight color="#44ffaa" intensity={4} distance={14} decay={2} position={[0, 3.2, 0]} />
 
@@ -170,7 +217,7 @@ export default function Boss3Renderer({
             >
               {`WEAVER NEXUS ${Math.ceil(health)}/${maxHealth}`}
             </Text>
-            <EnemyStaggerBar stagger={staggerBuildup} />
+            <EnemyStaggerBar stagger={staggerBuildup} staggerMax={STAGGER_MAX_BOSS} />
           </>
         )}
       </Billboard>

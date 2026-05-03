@@ -15,7 +15,7 @@ export default function BlizzardShard({ initialPosition, onComplete, type }: Bli
   const fallSpeed = useRef(Math.random() * 1.5 + 3.65);
   const rotationSpeed = useRef({
     x: Math.random() * 1.5,
-    y: Math.random() * 2.25,
+    y: Math.random() * 0.25,
     z: Math.random() * 1
   });
   const orbitRadius = useRef(Math.min(initialPosition.length(), 2.7));

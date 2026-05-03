@@ -470,8 +470,6 @@ interface ThroneRoomProps {
    * prep throne SimpleBorderEffects when `campTypes` is empty after gate transitions.
    */
   coopClearedRoomColor?: string | null;
-  /** When set with `layout="bossArena"`, identifies Archon (boss2) vs first boss vs Weaver Nexus (boss3) for purple room visuals. */
-  bossThroneKind?: 'boss' | 'boss2' | 'boss3' | null;
   /** When true, the south-rim portals render grey — prevents entry before a weapon is chosen. */
   thronePortalsLocked?: boolean;
 }
@@ -486,10 +484,10 @@ export default function ThroneRoom({
   campTypes = [],
   coopClearedRoomColor = null,
   thronePortalsLocked = false,
-  bossThroneKind = null,
 }: ThroneRoomProps) {
-  const isArchonBossArena = layout === 'bossArena' && bossThroneKind === 'boss2';
-  const keyColor = isArchonBossArena
+  /** All co-op boss tiers + post-boss intermission share the same purple shell (legacy Boss 2 / Archon look). */
+  const usePurpleBossArenaShell = layout === 'bossArena';
+  const keyColor = usePurpleBossArenaShell
     ? new Color('#c4a8e8')
     : isSnowTheme
       ? new Color('#9fc2f0')
@@ -514,22 +512,22 @@ export default function ThroneRoom({
   const simpleBorderColorTheme: SimpleBorderColorTheme =
     borderTheme === 'red' ? 'gold' : borderTheme;
 
-  const groundRoomTheme: RoomBorderTheme = isArchonBossArena ? 'purple' : borderTheme;
-  const borderEffectsTheme: SimpleBorderColorTheme = isArchonBossArena ? 'purple' : simpleBorderColorTheme;
+  const groundRoomTheme: RoomBorderTheme = usePurpleBossArenaShell ? 'purple' : borderTheme;
+  const borderEffectsTheme: SimpleBorderColorTheme = usePurpleBossArenaShell ? 'purple' : simpleBorderColorTheme;
 
   return (
     <group name="throne-room">
-      {isArchonBossArena ? <CustomSky roomTheme="purple" /> : <CustomSky skyPreset="throneBlue" />}
+      {usePurpleBossArenaShell ? <CustomSky roomTheme="purple" /> : <CustomSky skyPreset="throneBlue" />}
       <PerimeterCloudSystem radius={COOP_THRONE_ROOM_RADIUS} />
-      <ambientLight intensity={isArchonBossArena ? 0.1 : 0.14} />
+      <ambientLight intensity={usePurpleBossArenaShell ? 0.1 : 0.14} />
       <hemisphereLight
         color={keyColor}
-        groundColor={isArchonBossArena ? '#0a0612' : '#1a1020'}
-        intensity={isArchonBossArena ? 0.32 : 0.35}
+        groundColor={usePurpleBossArenaShell ? '#0a0612' : '#1a1020'}
+        intensity={usePurpleBossArenaShell ? 0.32 : 0.35}
       />
       <directionalLight
         position={[8, 16, 6]}
-        intensity={isArchonBossArena ? 0.38 : 0.42}
+        intensity={usePurpleBossArenaShell ? 0.38 : 0.42}
         castShadow
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
@@ -541,11 +539,11 @@ export default function ThroneRoom({
       />
       <StylizedGrass
         radius={COOP_THRONE_ROOM_RADIUS}
-        count={isArchonBossArena ? THRONE_PURPLE_GRASS_COUNT : THRONE_GRASS_COUNT}
+        count={usePurpleBossArenaShell ? THRONE_PURPLE_GRASS_COUNT : THRONE_GRASS_COUNT}
         bladeHeight={0.42}
         windStrength={0.2}
         isSnowTheme={false}
-        roomTheme={isArchonBossArena ? 'purple' : undefined}
+        roomTheme={usePurpleBossArenaShell ? 'purple' : undefined}
       />
       <StoneGround
         variant="throne"

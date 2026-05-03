@@ -3,6 +3,7 @@ const EnemyAI = require('./enemyAI');
 const {
   COOP_MAIN_ENTRY_X,
   COOP_MAIN_ENTRY_Z,
+  COOP_PLAYER_START_CLEAR_RADIUS,
   rotationYTowardEntry,
   rotationYTowardArenaCenter,
 } = require('./coopArenaLayout');
@@ -11,6 +12,11 @@ const mushroomConstants = require('./mushroomConstants');
 
 /** Co-op boss encounters (GLB tier 1, Archon tier 2, Weaver Nexus tier 3). */
 const COOP_BOSS_TYPES = new Set(['boss', 'boss2', 'boss3']);
+/** Max freeze duration (ms) for boss-tier enemies (server + client). */
+const BOSS_MAX_FREEZE_MS = 1000;
+/** Keep in sync with `STAGGER_MAX` / `STAGGER_MAX_BOSS` in `src/utils/talents.ts`. */
+const STAGGER_CAP_NORMAL = 100;
+const STAGGER_CAP_BOSS = 300;
 const COOP_COMBAT_TRANSITION_FALLBACK_MS = 3000;
 
 /**
@@ -93,6 +99,7 @@ class GameRoom {
     this.enemies = new Map();
     this.lastUpdate = Date.now();
     this.io = io; // Store io reference for broadcasting
+    this.nextDamageEventId = 1;
 
     // Game state management
     this.gameStarted = false;
@@ -983,6 +990,13 @@ class GameRoom {
       isInvisible: false, // Whether player is currently invisible
       reaperCrossentropyStack: 0, // Reaper talent: +base damage from Crossentropy kills (session)
       backstabKillstreakStack: 0, // Killstreak talent: +base Backstab damage from Backstab kills (session)
+      /** Co-op: universal green zombie room boons synced from client (`coop-zombie-room-boons`). */
+      coopZombieBoons: {
+        packHunter: false,
+        everliving: false,
+        adrenaline: false,
+        juggernautStrain: false,
+      },
     });
 
     // Position players for co-op mode
@@ -1393,8 +1407,9 @@ class GameRoom {
   //   3 clusters of 3 units + (N − 9) lone units (e.g. N=10 → 3×3 + 1 loner)
   _generateScatteredPositions(total, useHexInterior = false) {
     const MAX_MAP_RADIUS = 18; // keep well within the main map radius (20); hex uses same sampling square + floor test
-    const SPAWN_EXCL_R = 9; // avoid the player entry zone (co-op main entry XZ)
-    const exclusions = [{ x: COOP_MAIN_ENTRY_X, z: COOP_MAIN_ENTRY_Z, radius: SPAWN_EXCL_R }];
+    const exclusions = [
+      { x: COOP_MAIN_ENTRY_X, z: COOP_MAIN_ENTRY_Z, radius: COOP_PLAYER_START_CLEAR_RADIUS },
+    ];
 
     const NUM_CLUSTERS = 3;
     const CLUSTER_SIZE = 3;
@@ -1473,9 +1488,8 @@ class GameRoom {
    */
   _spawnTentacleSpinesForWave(wavePositions, campDef) {
     const MAX_MAP_RADIUS = 18;
-    const SPAWN_EXCL_R = 9;
     const exclusions = [
-      { x: COOP_MAIN_ENTRY_X, z: COOP_MAIN_ENTRY_Z, radius: SPAWN_EXCL_R },
+      { x: COOP_MAIN_ENTRY_X, z: COOP_MAIN_ENTRY_Z, radius: COOP_PLAYER_START_CLEAR_RADIUS },
     ];
     const n = 1 + Math.floor(Math.random() * 3);
     const existing = wavePositions.map((p) => ({ x: p.x, z: p.z }));
@@ -1705,6 +1719,31 @@ class GameRoom {
       return null;
     }
 
+    let appliedDamage = damage;
+    if (
+      hitMeta &&
+      hitMeta.guardbreakRoom &&
+      this.isEnemyAffectedBy(enemyId, 'stun')
+    ) {
+      appliedDamage = Math.floor(appliedDamage * 1.3);
+    }
+    if (
+      hitMeta &&
+      hitMeta.frostTotemChill &&
+      hitMeta.damageType === 'entropic' &&
+      this.isEnemyAffectedBy(enemyId, 'freeze')
+    ) {
+      appliedDamage = Math.floor(appliedDamage * 2);
+    }
+    if (
+      hitMeta &&
+      hitMeta.glacialTalons &&
+      hitMeta.damageType === 'reaping_talons' &&
+      this.isEnemyAffectedBy(enemyId, 'freeze')
+    ) {
+      appliedDamage = Math.floor(appliedDamage * 2);
+    }
+
     // Infested zombies (player-zombie) must not take damage from their summoner
     if (
       enemy.type === 'player-zombie' &&
@@ -1715,25 +1754,25 @@ class GameRoom {
     }
 
     const previousHealth = enemy.health;
-    enemy.health = Math.max(0, enemy.health - damage);
+    enemy.health = Math.max(0, enemy.health - appliedDamage);
 
     if (enemy.type === 'training-dummy' && enemy.health <= 0) {
       enemy.health = enemy.maxHealth;
     }
 
-    console.log(`💥 Enemy ${enemyId} (${enemy.type}) damaged by ${damage} from player ${fromPlayerId}. Health: ${previousHealth} -> ${enemy.health}`);
+    console.log(`💥 Enemy ${enemyId} (${enemy.type}) damaged by ${appliedDamage} from player ${fromPlayerId}. Health: ${previousHealth} -> ${enemy.health}`);
 
     // Track damage for aggro system
     if (this.enemyAI) {
       if (COOP_BOSS_TYPES.has(enemy.type)) {
         if (fromPlayerId) {
-          this.enemyAI.trackBossDamage(enemyId, fromPlayerId, damage, player);
+          this.enemyAI.trackBossDamage(enemyId, fromPlayerId, appliedDamage, player);
         }
       } else if (enemy.type !== 'training-dummy' && enemy.type !== 'tentacle-spine') {
-        let aggroAmount = damage;
+        let aggroAmount = appliedDamage;
         if (player && player.isStealthing) {
           aggroAmount *= 10.0; // Same 10x multiplier as bosses
-          console.log(`👤 Stealth aggro bonus: Player ${fromPlayerId} stealth attack on enemy ${enemyId} (${damage} -> ${aggroAmount} aggro)`);
+          console.log(`👤 Stealth aggro bonus: Player ${fromPlayerId} stealth attack on enemy ${enemyId} (${appliedDamage} -> ${aggroAmount} aggro)`);
         }
         if (hitMeta && hitMeta.sourceZombieId) {
           this.enemyAI.applyZombieThreat(enemyId, hitMeta.sourceZombieId, aggroAmount);
@@ -1749,7 +1788,7 @@ class GameRoom {
       enemyId,
       newHealth: enemy.health,
       maxHealth: enemy.maxHealth,
-      damage,
+      damage: appliedDamage,
       fromPlayerId,
       wasKilled: previousHealth > 0 && enemy.health <= 0
     };
@@ -1757,6 +1796,7 @@ class GameRoom {
     // Always sync HP to clients (socket `enemy-damage` and internal sources e.g. player-zombie hits).
     if (this.io) {
       const damagedPayload = {
+        damageEventId: this.nextDamageEventId++,
         enemyId: result.enemyId,
         newHealth: result.newHealth,
         maxHealth: result.maxHealth,
@@ -1793,7 +1833,7 @@ class GameRoom {
     if (
       this.io &&
       COOP_BOSS_TYPES.has(enemy.type) &&
-      damage > 200 &&
+      appliedDamage > 200 &&
       !result.wasKilled &&
       enemy.health > 0 &&
       enemy.bossStationary
@@ -1803,8 +1843,9 @@ class GameRoom {
 
     if (
       hitMeta &&
-      hitMeta.damageType === 'blizzard' &&
-      damage > 0 &&
+      (hitMeta.damageType === 'blizzard' ||
+        (hitMeta.damageType === 'entropic' && hitMeta.frostTotemChill)) &&
+      appliedDamage > 0 &&
       !result.wasKilled &&
       !enemy.isDying &&
       enemy.health > 0
@@ -1816,14 +1857,14 @@ class GameRoom {
     const infernoDotEligible =
       !result.wasKilled &&
       hitMeta &&
-      damage > 0 &&
+      appliedDamage > 0 &&
       !enemy.isDying &&
       enemy.health > 0 &&
       ((hitMeta.damageType === 'smite' && hitMeta.infernalSmite) ||
         (hitMeta.damageType === 'crossentropy' && hitMeta.infernoCrossentropy));
     if (infernoDotEligible) {
       this.applyStatusEffect(enemyId, 'ignite', 3000);
-      const totalDot = Math.floor(damage * 0.8);
+      const totalDot = Math.floor(appliedDamage * 0.8);
       if (totalDot > 0) {
         const tickCount = 3;
         const baseTick = Math.floor(totalDot / tickCount);
@@ -1896,7 +1937,20 @@ class GameRoom {
       }
     }
 
-    // Staggering Strike / Staggering Combo / Staggering Swipes / TEMPEST Crossentropy: build stagger; at 100, proc damage + stun + VFX
+    // Glacial Bite — +1 chill per Barrage hit; 5 stacks → 6s freeze (longer than blizzard tick freeze)
+    if (
+      !result.wasKilled &&
+      hitMeta &&
+      hitMeta.damageType === 'barrage' &&
+      hitMeta.glacialBiteChill &&
+      damage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0
+    ) {
+      this.applyGlacialBiteChillOnHit(enemyId);
+    }
+
+    // Stagger talents: build stagger; at 100 (300 for coop bosses) proc damage + stun + VFX
     if (
       !result.wasKilled &&
       hitMeta &&
@@ -1917,11 +1971,11 @@ class GameRoom {
       hitMeta.staggerToAdd > 0 &&
       !enemy.isDying
     ) {
-      const noStaggerTypes = new Set(['boss', 'boss2', 'boss3', 'boss-skeleton', 'player-zombie', 'tentacle-spine']);
+      const noStaggerTypes = new Set(['boss-skeleton', 'player-zombie', 'tentacle-spine']);
       if (!noStaggerTypes.has(enemy.type)) {
         if (enemy.staggerBuildup == null) enemy.staggerBuildup = 0;
         enemy.staggerBuildup += hitMeta.staggerToAdd;
-        const STAGGER_CAP = 100;
+        const staggerCap = COOP_BOSS_TYPES.has(enemy.type) ? STAGGER_CAP_BOSS : STAGGER_CAP_NORMAL;
         /** Keep in sync with `STAGGER_PROC_DAMAGE` in src/utils/talents.ts */
         const PROC_DAMAGE = 175;
         let procEnemy = this.enemies.get(enemyId);
@@ -1929,9 +1983,9 @@ class GameRoom {
           procEnemy &&
           !procEnemy.isDying &&
           typeof procEnemy.staggerBuildup === 'number' &&
-          procEnemy.staggerBuildup >= STAGGER_CAP
+          procEnemy.staggerBuildup >= staggerCap
         ) {
-          procEnemy.staggerBuildup -= STAGGER_CAP;
+          procEnemy.staggerBuildup -= staggerCap;
           this.damageEnemy(enemyId, PROC_DAMAGE, fromPlayerId, player, { damageType: 'stagger_break' });
           this.applyStatusEffect(enemyId, 'stun', 3000);
           procEnemy = this.enemies.get(enemyId);
@@ -2168,6 +2222,27 @@ class GameRoom {
         });
       }
 
+      // PLAGUE Crossentropy — up to two allied zombies per kill (`trySpawnInfestedZombie` respects max 3)
+      if (
+        hitMeta &&
+        hitMeta.damageType === 'crossentropy' &&
+        hitMeta.crossentropyPlague &&
+        fromPlayerId &&
+        fromPlayerId !== 'unknown' &&
+        enemy.type !== 'training-dummy' &&
+        !COOP_BOSS_TYPES.has(enemy.type) &&
+        enemy.type !== 'player-zombie' &&
+        this.enemyAI
+      ) {
+        const pos = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
+        this.enemyAI.trySpawnInfestedZombie(fromPlayerId, pos);
+        this.enemyAI.trySpawnInfestedZombie(fromPlayerId, pos);
+      }
+
       // Reaper (Crossentropy): +1 base damage for this room session per kill
       if (
         hitMeta &&
@@ -2247,7 +2322,7 @@ class GameRoom {
             timestamp: Date.now()
           });
 
-          // Always drop 2 random unique boss reward items
+          // Drop 1 random boss reward item (random type + rarity)
           this.spawnBossItemDrops(enemy.position);
         }
 
@@ -2807,16 +2882,24 @@ class GameRoom {
       this.enemyStatusEffects.set(enemyId, {});
     }
 
+    let effectiveDuration = duration;
+    if (
+      effectType === 'freeze' &&
+      (COOP_BOSS_TYPES.has(enemy.type) || enemy.type === 'boss-skeleton')
+    ) {
+      effectiveDuration = Math.min(duration, BOSS_MAX_FREEZE_MS);
+    }
+
     const effects = this.enemyStatusEffects.get(enemyId);
-    effects[effectType] = Date.now() + duration;
+    effects[effectType] = Date.now() + effectiveDuration;
 
     // Broadcast status effect to all players
     if (this.io) {
       this.io.to(this.roomId).emit('enemy-status-effect', {
         enemyId,
         effectType,
-        duration,
-        timestamp: Date.now()
+        duration: effectiveDuration,
+        timestamp: Date.now(),
       });
     }
 
@@ -2884,6 +2967,44 @@ class GameRoom {
     if (chill.stacks >= BLIZZARD_CHILL_STACKS_TO_FREEZE) {
       this.enemyChill.delete(enemyId);
       this.applyStatusEffect(enemyId, 'freeze', 4000);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-chill-sync', {
+          enemyId,
+          stacks: 0,
+          expiresAt: now,
+          timestamp: now,
+        });
+      }
+    } else {
+      this.enemyChill.set(enemyId, chill);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-chill-sync', {
+          enemyId,
+          stacks: chill.stacks,
+          expiresAt: chill.expiresAt,
+          timestamp: now,
+        });
+      }
+    }
+  }
+
+  applyGlacialBiteChillOnHit(enemyId) {
+    const enemy = this.enemies.get(enemyId);
+    if (!enemy || enemy.isDying || enemy.health <= 0) return;
+    if (this.isEnemyAffectedBy(enemyId, 'freeze')) return;
+
+    const now = Date.now();
+    let chill = this.enemyChill.get(enemyId);
+    if (!chill || chill.expiresAt < now) {
+      chill = { stacks: 0, expiresAt: 0 };
+    }
+
+    chill.stacks += 1;
+    chill.expiresAt = now + BLIZZARD_CHILL_STACK_DURATION_MS;
+
+    if (chill.stacks >= BLIZZARD_CHILL_STACKS_TO_FREEZE) {
+      this.enemyChill.delete(enemyId);
+      this.applyStatusEffect(enemyId, 'freeze', 6000);
       if (this.io) {
         this.io.to(this.roomId).emit('enemy-chill-sync', {
           enemyId,
@@ -2974,47 +3095,56 @@ class GameRoom {
     return item;
   }
 
-  // Always drop 2 unique random boss reward items when the boss is slain
+  // Drop 1 random boss reward item (type + weighted rarity) when the boss is slain
   spawnBossItemDrops(position) {
+    const rollBossItemRarity = () => {
+      const r = Math.random();
+      if (r < 0.6) return 'common';
+      if (r < 0.85) return 'rare';
+      if (r < 0.95) return 'epic';
+      return 'legendary';
+    };
+
     const bossItemPool = [
-      { type: 'WARDING_SHIELD',  label: 'Warding Shield',  category: 'boss_drop' },
-      { type: 'HOLY_RELIC',      label: 'Holy Relic',      category: 'boss_drop' },
+      { type: 'MANA_SHIELD', label: 'Mana Shield', stat: 'intellect', bonuses: { common: 8, rare: 15, epic: 20, legendary: 30 } },
+      { type: 'COLOSSUS_LUNGS', label: 'Colossus Lungs', stat: 'stamina', bonuses: { common: 6, rare: 10, epic: 14, legendary: 20 } },
+      { type: 'REAPER_CLAWS', label: 'Reaper Claws', stat: 'agility', bonuses: { common: 6, rare: 10, epic: 14, legendary: 20 } },
+      { type: 'TITAN_HEART', label: 'Titan Heart', stat: 'strength', bonuses: { common: 5, rare: 10, epic: 14, legendary: 20 } },
     ];
 
-    // Shuffle and pick 2 distinct items
-    const shuffled = [...bossItemPool].sort(() => Math.random() - 0.5);
-    const chosen = shuffled.slice(0, 2);
+    const itemDef = bossItemPool[Math.floor(Math.random() * bossItemPool.length)];
+    const rarity = rollBossItemRarity();
+    const statBonus = itemDef.bonuses[rarity];
 
-    const offsets = [-2.0, 2.0];
-    chosen.forEach((itemDef, index) => {
-      const itemId = `boss-item-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-      const item = {
-        id: itemId,
-        type: itemDef.type,
-        label: itemDef.label,
-        category: itemDef.category,
-        position: { x: position.x + offsets[index], y: 0.3, z: position.z },
-        droppedAt: Date.now(),
-      };
+    const itemId = `boss-item-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+    const item = {
+      id: itemId,
+      type: itemDef.type,
+      label: itemDef.label,
+      category: 'boss_drop',
+      stat: itemDef.stat,
+      statBonus,
+      rarity,
+      position: { x: position.x, y: 0.3, z: position.z },
+      droppedAt: Date.now(),
+    };
 
-      this.droppedItems.set(itemId, item);
+    this.droppedItems.set(itemId, item);
 
-      if (this.io) {
-        this.io.to(this.roomId).emit('item-dropped', { item, timestamp: Date.now() });
-      }
+    if (this.io) {
+      this.io.to(this.roomId).emit('item-dropped', { item, timestamp: Date.now() });
+    }
 
-      // Boss items persist for 3 minutes
-      setTimeout(() => {
-        if (this.droppedItems.has(itemId)) {
-          this.droppedItems.delete(itemId);
-          if (this.io) {
-            this.io.to(this.roomId).emit('item-expired', { itemId, timestamp: Date.now() });
-          }
+    setTimeout(() => {
+      if (this.droppedItems.has(itemId)) {
+        this.droppedItems.delete(itemId);
+        if (this.io) {
+          this.io.to(this.roomId).emit('item-expired', { itemId, timestamp: Date.now() });
         }
-      }, 180000);
+      }
+    }, 180000);
 
-      console.log(`👑 Boss drop: ${item.label} (${itemId}) at (${item.position.x.toFixed(1)}, ${item.position.z.toFixed(1)})`);
-    });
+    console.log(`👑 Boss drop: ${item.label} [${rarity}] +${statBonus} ${itemDef.stat} (${itemId}) at (${item.position.x.toFixed(1)}, ${item.position.z.toFixed(1)})`);
   }
 
   // Handle a player picking up an item

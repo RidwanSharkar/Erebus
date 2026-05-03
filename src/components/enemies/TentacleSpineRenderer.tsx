@@ -235,7 +235,7 @@ const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
     const lx = _dir.x * c + _dir.z * s;
     const lz = -_dir.x * s + _dir.z * c;
     _dir.set(lx, 0, lz).normalize();
-    _axis.set(-_dir.z, 0, _dir.x).normalize();
+    _axis.set(_dir.z, 0, -_dir.x).normalize();
     const n = TRUNK_SEGMENTS;
     for (let i = 0; i < n; i++) {
       const g = segmentGroupRefs.current[i];

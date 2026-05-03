@@ -12,6 +12,7 @@ interface BowPowershotProps {
   subclass: WeaponSubclass;
   isElementalShotsUnlocked?: boolean;
   isPerfectShot?: boolean;
+  arcticStingTheme?: boolean;
 }
 
 const BowPowershot: React.FC<BowPowershotProps> = ({ 
@@ -20,7 +21,8 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
   onComplete, 
   subclass,
   isElementalShotsUnlocked = true,
-  isPerfectShot = false
+  isPerfectShot = false,
+  arcticStingTheme = false,
 }) => {
   const groupRef = useRef<Group>(null);
   const startTimeRef = useRef(Date.now());
@@ -63,7 +65,14 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
     };
   };
 
-  const colors = getColors();
+  const colors =
+    isPerfectShot && arcticStingTheme
+      ? {
+          core: '#0a3d6e',
+          emissive: '#051a38',
+          outer: '#1a6ba3',
+        }
+      : getColors();
 
   // Perfect shot: slightly shorter beam (19 vs 20) for tighter read vs actual range.
   const beamLength = isPerfectShot ? 19 : 20;

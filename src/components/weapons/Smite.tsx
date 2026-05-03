@@ -294,9 +294,10 @@ const SmiteComponent = memo(function Smite({
           onHit(enemy.id, finalDamage); // Pass target ID and damage amount
         }
 
-        // Also queue damage directly to combat system if available (like WraithStrike does)
+        // Queue damage on the combat system when we can resolve the enemy entity.
+        // applyDamage() already spawns the floating damage number — do not also add one here or it doubles.
+        let queuedToCombatSystem = false;
         if (combatSystem) {
-          // Find the enemy entity by server enemy ID
           const allEntities = combatSystem.world?.getAllEntities() || [];
           const enemyEntity = allEntities.find((entity: any) => entity.userData?.serverEnemyId === enemy.id);
 
@@ -314,30 +315,29 @@ const SmiteComponent = memo(function Smite({
               infestedSmiteVisual,
               infernalSmiteVisual,
             );
+            queuedToCombatSystem = true;
             onBeamEnemyHit?.();
           }
         }
 
-        // Create damage number for visual feedback using CombatSystem
-        if (combatSystem && combatSystem.damageNumberManager) {
+        if (!queuedToCombatSystem && combatSystem?.damageNumberManager) {
           const damagePosition = enemy.position.clone();
-          damagePosition.y += 1.5; // Offset above target
+          damagePosition.y += 1.5;
           combatSystem.damageNumberManager.addDamageNumber(
             finalDamage,
             damageResult.isCritical,
             damagePosition,
-            'smite'
+            'smite',
           );
         }
 
-        // Also create damage number using setDamageNumbers if provided
-        if (setDamageNumbers && nextDamageNumberId) {
+        if (!queuedToCombatSystem && setDamageNumbers && nextDamageNumberId) {
           setDamageNumbers(prev => [...prev, {
             id: nextDamageNumberId.current++,
             damage: finalDamage,
             position: enemy.position.clone(),
             isCritical: damageResult.isCritical,
-            isSmite: true
+            isSmite: true,
           }]);
         }
 

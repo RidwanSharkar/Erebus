@@ -17,6 +17,7 @@ interface ZombieRendererProps {
   maxHealth: number;
   isDying?: boolean;
   staggerBuildup?: number;
+  visualScale?: number;
 }
 
 const ATTACK_DURATION = 1000;
@@ -33,6 +34,7 @@ export default function ZombieRenderer({
   maxHealth,
   isDying = false,
   staggerBuildup = 0,
+  visualScale = 1,
 }: ZombieRendererProps) {
   const { socket } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
@@ -138,7 +140,7 @@ export default function ZombieRenderer({
   });
 
   return (
-    <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
+    <group ref={setGroupRef} scale={[visualScale, visualScale, visualScale]} visible={!isDying || opacity.current > 0}>
       <ZombieModel
         isWalking={isWalking}
         isAttacking={isAttacking}

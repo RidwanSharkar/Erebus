@@ -9,6 +9,8 @@ export interface BowPowershotEffect {
   subclass: WeaponSubclass;
   isElementalShotsUnlocked: boolean;
   isPerfectShot: boolean;
+  /** Arctic Sting room boon — deep blue perfect-shot beam. */
+  arcticStingTheme?: boolean;
   startTime: number;
 }
 
@@ -23,7 +25,8 @@ export const createGlobalPowershotEffect = (
   direction: Vector3,
   subclass: WeaponSubclass,
   isPerfectShot: boolean = false,
-  isElementalShotsUnlocked: boolean = true
+  isElementalShotsUnlocked: boolean = true,
+  arcticStingTheme: boolean = false,
 ): number => {
   const effectId = globalNextEffectId++;
   
@@ -34,6 +37,7 @@ export const createGlobalPowershotEffect = (
     subclass,
     isElementalShotsUnlocked,
     isPerfectShot,
+    arcticStingTheme: arcticStingTheme && isPerfectShot,
     startTime: Date.now()
   };
 
@@ -65,9 +69,17 @@ export const useBowPowershot = () => {
     direction: Vector3,
     subclass: WeaponSubclass,
     isPerfectShot: boolean = false,
-    isElementalShotsUnlocked: boolean = true
+    isElementalShotsUnlocked: boolean = true,
+    arcticStingTheme: boolean = false,
   ) => {
-    return createGlobalPowershotEffect(position, direction, subclass, isPerfectShot, isElementalShotsUnlocked);
+    return createGlobalPowershotEffect(
+      position,
+      direction,
+      subclass,
+      isPerfectShot,
+      isElementalShotsUnlocked,
+      arcticStingTheme,
+    );
   }, []);
 
   const removeEffect = useCallback((effectId: number) => {

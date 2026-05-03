@@ -20,6 +20,8 @@ interface BarrageProjectile {
   wyvernBite?: boolean;
   /** Staggering Bite talent — blue theme when no higher-precedence bite talent. */
   staggeringBite?: boolean;
+  /** Glacial Bite room boon — light blue (after Wyvern/Wrathful, before Staggering). */
+  glacialBite?: boolean;
 }
 
 interface BarrageProps {
@@ -30,21 +32,25 @@ export default function Barrage({ projectiles }: BarrageProps) {
   return (
     <>
       {projectiles.map(projectile => {
-        // Wyvern > Wrathful > Staggering (blue) > default orange-yellow (perfect-shot palette)
+        // Wyvern > Wrathful > Glacial Bite > Staggering (blue) > default orange-yellow
         const mainColor = projectile.wyvernBite
           ? '#00aa20'
           : projectile.wrathfulBite
             ? '#cc2222'
-            : projectile.staggeringBite
-              ? '#0088ff'
-              : '#ff4400';
+            : projectile.glacialBite
+              ? '#6ec8ff'
+              : projectile.staggeringBite
+                ? '#0088ff'
+                : '#ff4400';
         const emissiveColor = projectile.wyvernBite
           ? '#00ff40'
           : projectile.wrathfulBite
             ? '#ff3333'
-            : projectile.staggeringBite
-              ? '#0088ff'
-              : '#ff6600';
+            : projectile.glacialBite
+              ? '#a8e8ff'
+              : projectile.staggeringBite
+                ? '#0088ff'
+                : '#ff6600';
 
         // Calculate distance-based fading (same logic as RegularArrow)
         const distanceTraveled = projectile.distanceTraveled || projectile.position.distanceTo(projectile.startPosition);
