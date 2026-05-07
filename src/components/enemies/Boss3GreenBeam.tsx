@@ -9,6 +9,15 @@ import { useFrame } from '@react-three/fiber';
 import { Color, Vector3, Group, CylinderGeometry, TorusGeometry, BoxGeometry } from '@/utils/three-exports';
 import { createBeamCylinderAdditiveMaterial } from '@/utils/beamCylinderAdditiveMaterial';
 
+/** Keep in sync with backend `enemyAI.js` (`boss3StartGreenBeam` / BOSS3_GREEN_BEAM_*). */
+const BOSS3_GREEN_BEAM_RANGE = 22;
+const BOSS3_GREEN_BEAM_START_OFFSET = 0.65;
+const BOSS3_GREEN_BEAM_HALF_WIDTH = 0.52;
+
+const BEAM_SEGMENT_LENGTH = BOSS3_GREEN_BEAM_RANGE - BOSS3_GREEN_BEAM_START_OFFSET;
+const BEAM_AXIS_MID_Z = (BOSS3_GREEN_BEAM_START_OFFSET + BOSS3_GREEN_BEAM_RANGE) / 2;
+const BEAM_RADIUS_SCALE = BOSS3_GREEN_BEAM_HALF_WIDTH / 0.375;
+
 const BEAM_HOLD_SEC = 8;
 const BEAM_BRI_GAIN = 24;
 
@@ -112,10 +121,30 @@ export default function Boss3GreenBeam({
 
   const beamGeometries = useMemo(
     () => ({
-      core: new CylinderGeometry((0.1 * intensity) / 2, 0.1 * intensity, 20, 16),
-      inner: new CylinderGeometry((0.25 * intensity) / 2, 0.275 * intensity, 20, 16),
-      outer: new CylinderGeometry(0.3 * intensity, 0.375 * intensity, 20, 16),
-      outermost: new CylinderGeometry(0.35 * intensity, 0.375 * intensity, 20, 16),
+      core: new CylinderGeometry(
+        (0.1 * intensity * BEAM_RADIUS_SCALE) / 2,
+        0.1 * intensity * BEAM_RADIUS_SCALE,
+        BEAM_SEGMENT_LENGTH,
+        16,
+      ),
+      inner: new CylinderGeometry(
+        (0.25 * intensity * BEAM_RADIUS_SCALE) / 2,
+        0.275 * intensity * BEAM_RADIUS_SCALE,
+        BEAM_SEGMENT_LENGTH,
+        16,
+      ),
+      outer: new CylinderGeometry(
+        0.3 * intensity * BEAM_RADIUS_SCALE,
+        0.375 * intensity * BEAM_RADIUS_SCALE,
+        BEAM_SEGMENT_LENGTH,
+        16,
+      ),
+      outermost: new CylinderGeometry(
+        0.35 * intensity * BEAM_RADIUS_SCALE,
+        0.375 * intensity * BEAM_RADIUS_SCALE,
+        BEAM_SEGMENT_LENGTH,
+        16,
+      ),
     }),
     [intensity],
   );
@@ -132,7 +161,10 @@ export default function Boss3GreenBeam({
 
   const spiralCount = Math.floor(5 * intensity);
   const spiralGeometries = useMemo(
-    () => Array.from({ length: spiralCount }, () => new TorusGeometry(0.35 * intensity, 0.05, 8, 32)),
+    () =>
+      Array.from({ length: spiralCount }, () =>
+        new TorusGeometry(0.35 * intensity * BEAM_RADIUS_SCALE, 0.05, 8, 32),
+      ),
     [spiralCount, intensity],
   );
 
@@ -159,6 +191,23 @@ export default function Boss3GreenBeam({
     }
   }, [isActive, isFadingOut]);
 
+  const shardCount = Math.floor(24 * intensity);
+  const zShardSpan = BEAM_SEGMENT_LENGTH * 0.42;
+  const shardLayouts = useMemo(() => {
+    const rnd = (s: number) => {
+      const x = Math.sin(s * 12.9898) * 43758.5453;
+      return x - Math.floor(x);
+    };
+    return Array.from({ length: Math.max(48, shardCount) }, (_, i) => ({
+      x: (rnd(i + 0.3) - 0.5) * BOSS3_GREEN_BEAM_HALF_WIDTH * 2.1,
+      y: (rnd(i + 0.7) - 0.5) * 1.2,
+      z: (rnd(i + 1.1) - 0.5) * zShardSpan,
+      rx: rnd(i + 1.9) * Math.PI * 2,
+      ry: rnd(i + 2.3) * Math.PI * 2,
+      rz: rnd(i + 2.7) * Math.PI * 2,
+    }));
+  }, [shardCount, zShardSpan]);
+
   useFrame(() => {
     if (!beamRef.current) return;
 
@@ -168,7 +217,6 @@ export default function Boss3GreenBeam({
 
     if (parentRef.current) {
       currentPosition.current.copy(parentRef.current.position);
-      currentPosition.current.y += 1;
 
       currentDirection.current.set(0, 0, 1);
       currentDirection.current.applyQuaternion(parentRef.current.quaternion);
@@ -211,11 +259,10 @@ export default function Boss3GreenBeam({
 
   const activeTime = isActive ? Math.min((Date.now() - startTime) / 1000, BEAM_HOLD_SEC) : 0;
   const beamColors = getGreenBeamColors(activeTime);
-  const shardCount = Math.floor(24 * intensity);
 
   return (
     <group ref={beamRef}>
-      <group position={[0, -1.1, 2]}>
+      <group position={[0, 0.35, BOSS3_GREEN_BEAM_START_OFFSET]}>
         <mesh>
           <sphereGeometry args={[0.45 * intensity, 16, 16]} />
           <meshStandardMaterial
@@ -241,7 +288,7 @@ export default function Boss3GreenBeam({
         <pointLight color={beamColors.emissive} intensity={15 * intensity * fadeProgress} distance={3 * intensity} />
       </group>
 
-      <group position={[0, -1.1, 11.85]}>
+      <group position={[0, 0.12, BEAM_AXIS_MID_Z]}>
         <mesh rotation={[Math.PI / 2, 0, 0]} geometry={beamGeometries.core} material={cylinderMaterials.core} />
         <mesh rotation={[Math.PI / 2, 0, 0]} geometry={beamGeometries.inner} material={cylinderMaterials.inner} />
         <mesh rotation={[Math.PI / 2, 0, 0]} geometry={beamGeometries.outer} material={cylinderMaterials.outer} />
@@ -255,7 +302,7 @@ export default function Boss3GreenBeam({
           <mesh
             key={i}
             rotation={[-Math.PI / 4, 0, (i * Math.PI) / -1.5]}
-            position={[0, 0, 10]}
+            position={[0, 0, 0]}
             geometry={geo}
           >
             <meshStandardMaterial
@@ -268,29 +315,28 @@ export default function Boss3GreenBeam({
           </mesh>
         ))}
 
-        {[...Array(shardCount)].map((_, i) => (
-          <mesh
-            key={`gshard-${i}`}
-            geometry={shardGeometry}
-            position={[
-              (Math.random() - 0.5) * 1.0 * intensity,
-              (Math.random() - 0.5) * 1.75 * intensity,
-              Math.random() * 5 - 11,
-            ]}
-            rotation={[Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2]}
-          >
-            <meshStandardMaterial
-              color={beamColors.color}
-              emissive={beamColors.emissive}
-              emissiveIntensity={2 * intensity * fadeProgress}
-              transparent
-              opacity={0.74 * fadeProgress}
-            />
-          </mesh>
-        ))}
+        {[...Array(shardCount)].map((_, i) => {
+          const L = shardLayouts[i];
+          return (
+            <mesh
+              key={`gshard-${i}`}
+              geometry={shardGeometry}
+              position={[L.x * intensity, L.y * intensity, L.z]}
+              rotation={[L.rx, L.ry, L.rz]}
+            >
+              <meshStandardMaterial
+                color={beamColors.color}
+                emissive={beamColors.emissive}
+                emissiveIntensity={2 * intensity * fadeProgress}
+                transparent
+                opacity={0.74 * fadeProgress}
+              />
+            </mesh>
+          );
+        })}
 
         <pointLight
-          position={[0, 0, 12]}
+          position={[0, 0, BEAM_SEGMENT_LENGTH * 0.22]}
           color={beamColors.emissive}
           intensity={10 * intensity * fadeProgress}
           distance={4 * intensity}

@@ -9,7 +9,7 @@ import {
   BoxGeometry,
   ShaderMaterial,
 } from '@/utils/three-exports';
-import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+import { MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z } from '@/utils/mapConstants';
 
 // Procedural stone (aligned with StoneGround.tsx) — avoids MeshStandardMaterial
 // going fully black when scene lights don’t hit vertical faces (e.g. backlight).
@@ -88,7 +88,7 @@ const WALL_FRAGMENT = `
 
 // ─── Wall segment definitions ───────────────────────────────────────────────
 // Each segment: center position and full dimensions (sizeX, sizeY, sizeZ). Four
-// sides form a closed square; inner faces sit at x = ±R and z = ±R (playable interior).
+// sides form a closed rectangle; inner faces sit at x = ±halfX and z = ±halfZ.
 
 export interface WallSegmentDef {
   center: [number, number, number];
@@ -100,30 +100,31 @@ export interface WallSegmentDef {
 const WALL_HEIGHT = 3.0;
 const WALL_THICKNESS = 0.6;
 
-const R = MAIN_MAP_RADIUS;
 const t = WALL_THICKNESS;
-/** Wall box centre offset from origin so the inner face lies on the play circle. */
-export const CASTLE_WALL_DEPTH_OFFSET = R + t / 2;
-const wallCenterOffset = CASTLE_WALL_DEPTH_OFFSET;
+/** Wall box centre offsets from origin so each inner face lies on the playable rectangle. */
+export const CASTLE_WALL_X_OFFSET = MAIN_MAP_HALF_X + t / 2;
+export const CASTLE_WALL_Z_OFFSET = MAIN_MAP_HALF_Z + t / 2;
 /** Half wall thickness in XZ (for AABB helpers mirroring ECS boxes). */
 export const CASTLE_WALL_HALF_THICKNESS = t / 2;
-const longSpan = 2 * R;
+const CASTLE_WALL_FULL_WIDTH = MAIN_MAP_HALF_X * 2 + t * 2;
+const CASTLE_WALL_FULL_DEPTH = MAIN_MAP_HALF_Z * 2 + t * 2;
 
 export const WALL_SEGMENTS: WallSegmentDef[] = [
-  { center: [0,  WALL_HEIGHT / 2,  wallCenterOffset], sizeX: longSpan,       sizeY: WALL_HEIGHT, sizeZ: t },
-  { center: [0,  WALL_HEIGHT / 2, -wallCenterOffset], sizeX: longSpan,       sizeY: WALL_HEIGHT, sizeZ: t },
-  { center: [ wallCenterOffset,  WALL_HEIGHT / 2, 0], sizeX: t, sizeY: WALL_HEIGHT, sizeZ: longSpan        },
-  { center: [-wallCenterOffset,  WALL_HEIGHT / 2, 0], sizeX: t, sizeY: WALL_HEIGHT, sizeZ: longSpan        },
+  { center: [0,  WALL_HEIGHT / 2,  CASTLE_WALL_Z_OFFSET], sizeX: CASTLE_WALL_FULL_WIDTH, sizeY: WALL_HEIGHT, sizeZ: t },
+  { center: [0,  WALL_HEIGHT / 2, -CASTLE_WALL_Z_OFFSET], sizeX: CASTLE_WALL_FULL_WIDTH, sizeY: WALL_HEIGHT, sizeZ: t },
+  { center: [ CASTLE_WALL_X_OFFSET,  WALL_HEIGHT / 2, 0], sizeX: t, sizeY: WALL_HEIGHT, sizeZ: CASTLE_WALL_FULL_DEPTH },
+  { center: [-CASTLE_WALL_X_OFFSET,  WALL_HEIGHT / 2, 0], sizeX: t, sizeY: WALL_HEIGHT, sizeZ: CASTLE_WALL_FULL_DEPTH },
 ];
 
 const CORNER_POST_SIZE = 0.85;
 const CORNER_POST_HEIGHT = WALL_HEIGHT + 1.0;
-const c = wallCenterOffset;
+const cx = CASTLE_WALL_X_OFFSET;
+const cz = CASTLE_WALL_Z_OFFSET;
 const CORNER_POSTS: [number, number, number][] = [
-  [ c,  CORNER_POST_HEIGHT / 2,  c],
-  [ c,  CORNER_POST_HEIGHT / 2, -c],
-  [-c,  CORNER_POST_HEIGHT / 2,  c],
-  [-c,  CORNER_POST_HEIGHT / 2, -c],
+  [ cx,  CORNER_POST_HEIGHT / 2,  cz],
+  [ cx,  CORNER_POST_HEIGHT / 2, -cz],
+  [-cx,  CORNER_POST_HEIGHT / 2,  cz],
+  [-cx,  CORNER_POST_HEIGHT / 2, -cz],
 ];
 
 // ─── Battlement (merlon) constants ──────────────────────────────────────────

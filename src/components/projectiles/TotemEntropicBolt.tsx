@@ -91,6 +91,7 @@ export default function TotemEntropicBolt({ from, to, onImpact, totemBoltVariant
   useEffect(() => {
     startRef.current.copy(from);
     endRef.current.copy(to);
+    (window as any).audioSystem?.playTotemBoltLaunchSound?.(startRef.current.clone());
     flightDir.current.copy(endRef.current).sub(startRef.current);
     if (flightDir.current.lengthSq() < 1e-6) {
       flightDir.current.set(0, 1, 0);
@@ -132,9 +133,9 @@ export default function TotemEntropicBolt({ from, to, onImpact, totemBoltVariant
           <EntropicBoltTrail
             color={trailColor}
             accentColor={trailColor}
-            size={0.125}
+            size={0.1025}
             meshRef={boltRef}
-            opacity={0.85}
+            opacity={0.95}
           />
 
           <group ref={boltRef} position={startRef.current.toArray()}>

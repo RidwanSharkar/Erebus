@@ -3,6 +3,8 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
+import { GLTFLoader } from 'three-stdlib';
+import { peek as suspendPeek } from 'suspend-react';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
 
@@ -65,6 +67,34 @@ const KNIGHT_DEFERRED_MODEL_PATHS: Record<Exclude<KnightDeferredAnimationName, '
 export function preloadKnightModels(): void {
   useGLTF.preload('/models/knight_idle.glb');
   preloadGltfAnimationClips(KNIGHT_MODEL_PATHS.filter(path => path !== '/models/knight_idle.glb'));
+}
+
+function waitForGltfUrl(url: string, timeoutMs = 30_000): Promise<void> {
+  useGLTF.preload(url);
+  const peekKey: [typeof GLTFLoader, string] = [GLTFLoader, url];
+  const t0 = Date.now();
+  return new Promise<void>((resolve) => {
+    function tick(): void {
+      if (suspendPeek(peekKey) !== undefined) { resolve(); return; }
+      if (Date.now() - t0 > timeoutMs) { resolve(); return; }
+      requestAnimationFrame(tick);
+    }
+    tick();
+  });
+}
+
+/** Warm all knight GLBs so the model is ready when the 2nd room loads. */
+export async function warmupKnightModels(): Promise<void> {
+  try {
+    await waitForGltfUrl('/models/knight_idle.glb');
+    await Promise.all(
+      KNIGHT_MODEL_PATHS
+        .filter(p => p !== '/models/knight_idle.glb')
+        .map(p => loadGltfAnimationClips(p).then(() => undefined as void).catch(() => {})),
+    );
+  } catch (e) {
+    console.warn('Knight warmup failed:', e);
+  }
 }
 
 // GLB geometry is in centimeters (bboxMax Y ≈ 172.5 cm).

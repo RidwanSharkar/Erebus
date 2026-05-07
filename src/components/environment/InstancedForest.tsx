@@ -5,7 +5,7 @@ import {
   Matrix4,
   Vector3,
 } from '@/utils/three-exports';
-import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+import { MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z } from '@/utils/mapConstants';
 import {
   FOREST_CANOPY_TIERS,
   createForestTrunkGeometry,
@@ -19,10 +19,9 @@ import {
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const TREE_COUNT = 40;
-/** Forest ring scales with main map radius (was 12 / 28 and 51 / 28 at R=28). */
-const DEFAULT_INNER_R = MAIN_MAP_RADIUS * (18 / 28);
-const DEFAULT_OUTER_R = MAIN_MAP_RADIUS * (40 / 28);
+const TREE_COUNT = 24;
+const DEFAULT_INNER_R = MAIN_MAP_HALF_X - 1.8;
+const DEFAULT_OUTER_R = MAIN_MAP_HALF_X - 0.7;
 
 // ---------------------------------------------------------------------------
 // Props
@@ -82,11 +81,10 @@ const InstancedForest: React.FC<InstancedForestProps> = ({
     const rotY = new Matrix4();
 
     for (let i = 0; i < count; i++) {
-      const treeAngle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
+      const side = i % 2 === 0 ? 1 : -1;
       const t = Math.pow(Math.random(), 0.55);
-      const r = innerRadius + t * (outerRadius - innerRadius);
-      const x = Math.cos(treeAngle) * r;
-      const z = Math.sin(treeAngle) * r;
+      const x = side * (innerRadius + t * Math.max(0.1, outerRadius - innerRadius));
+      const z = (Math.random() * 2 - 1) * (MAIN_MAP_HALF_Z - 2.0);
 
       const trunkH = 2.5 + Math.random() * 2.5;
       const trunkR = 0.2 + Math.random() * 0.16;

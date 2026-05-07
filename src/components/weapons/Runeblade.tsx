@@ -6,7 +6,7 @@ import CorruptedAura from './CorruptedAura';
 import Blizzard from './Blizzard/Blizzard';
 import { BLIZZARD_DURATION_SEC, BLIZZARD_DPS_PER_TICK } from '@/utils/talents';
 import { calculationCache } from '@/utils/CalculationCache';
-import { MAIN_MAP_RADIUS, isInsideMainArenaXZ } from '@/utils/mapConstants';
+import { isInsideMainArenaXZ } from '@/utils/mapConstants';
 import { forEachMushroomHitBySwing } from '@/utils/mushroomMeleeUtils';
 import { MELEE_ARC_MIN_DOT, MELEE_ARC_RANGE } from '@/utils/meleeArcConstants';
 
@@ -432,7 +432,6 @@ export default function Runeblade({
       const CHARGE_DURATION = 0.45;
       const CHARGE_DAMAGE = 75;
       const CHARGE_COLLISION_RADIUS = 2.5;
-      const MAX_CHARGE_BOUNDS = MAIN_MAP_RADIUS;
       const CHARGE_FAILSAFE_TIMEOUT = 0.6;
 
       if (!chargeStartTime.current) {
@@ -489,7 +488,7 @@ export default function Runeblade({
 
       const displacement = chargeDirection.current.clone().multiplyScalar(CHARGE_DISTANCE * easeOutQuad);
       const newPosition = chargeStartPosition.current.clone().add(displacement);
-      if (!isInsideMainArenaXZ(newPosition.x, newPosition.z, MAX_CHARGE_BOUNDS)) {
+      if (!isInsideMainArenaXZ(newPosition.x, newPosition.z)) {
         chargeStartTime.current = null;
         chargeStartPosition.current = null;
         onChargeComplete?.();

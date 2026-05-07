@@ -115,6 +115,12 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
     return [initTarget, start, traj];
   }, [targetPosition]);
 
+  useEffect(() => {
+    (window as any).audioSystem?.playMeteorIndicatorSound?.(
+      new Vector3(initialTargetPos.x, 0, initialTargetPos.z),
+    );
+  }, [initialTargetPos]);
+
   // state management
   const [state, setState] = useState({
     impactOccurred: false,

@@ -14,10 +14,44 @@ const mushroomConstants = require('./mushroomConstants');
 const COOP_BOSS_TYPES = new Set(['boss', 'boss2', 'boss3']);
 /** Max freeze duration (ms) for boss-tier enemies (server + client). */
 const BOSS_MAX_FREEZE_MS = 1000;
+const ENTANGLEMENT_DURATION_MS = 5000;
+const ENTANGLEMENT_DAMAGE_PER_SECOND = 20;
 /** Keep in sync with `STAGGER_MAX` / `STAGGER_MAX_BOSS` in `src/utils/talents.ts`. */
 const STAGGER_CAP_NORMAL = 100;
 const STAGGER_CAP_BOSS = 300;
-const COOP_COMBAT_TRANSITION_FALLBACK_MS = 3000;
+// Safety-net only: released when every connected player sends 'coop-combat-transition-ready'
+// (after their loading screen fully fades).  This fallback only fires if a client crashes or
+// disconnects mid-transition and never sends the confirmation.  Keep it large enough to never
+// race with a legitimate slow load.
+const COOP_COMBAT_TRANSITION_FALLBACK_MS = 30000;
+const CROSSENTROPY_METEOR_SINGLE_CHANCE = 0.8;
+const CROSSENTROPY_METEOR_DOUBLE_CHANCE = 0.15;
+const CROSSENTROPY_METEOR_TRIPLE_CHANCE = 0.05;
+const CROSSENTROPY_METEOR_STAGGER_MS = 500;
+const CROSSENTROPY_METEOR_DAMAGE = 230;
+const CROSSENTROPY_METEOR_RADIUS = 2.99;
+const CROSSENTROPY_METEOR_WARNING_MS = 100;
+const CROSSENTROPY_METEOR_SPEED = 31;
+const CROSSENTROPY_METEOR_SKY_OFFSET_MIN = 2.5;
+const CROSSENTROPY_METEOR_SKY_OFFSET_MAX = 8;
+const CROSSENTROPY_METEOR_SKY_HEIGHT_MIN = 44;
+const CROSSENTROPY_METEOR_SKY_HEIGHT_MAX = 66;
+const ALLIED_KNIGHT_ID = 'allied-knight';
+const ALLIED_KNIGHT_MAX_HP = 500;
+const ALLIED_KNIGHT_DAMAGE = 50;
+const ALLIED_KNIGHT_MOVE_SPEED = 2.85;
+const ALLIED_KNIGHT_ATTACK_COOLDOWN_MS = 1375;
+const ALLIED_KNIGHT_ORB_COUNT = 3;
+const ALLIED_HEALER_ID = 'allied-healer';
+const ALLIED_HEALER_MAX_HP = 350;
+const ALLIED_HEALER_MOVE_SPEED = 2.0;
+
+function rollCrossentropyMeteorStrikeCount() {
+  const roll = Math.random();
+  if (roll < CROSSENTROPY_METEOR_SINGLE_CHANCE) return 1;
+  if (roll < CROSSENTROPY_METEOR_SINGLE_CHANCE + CROSSENTROPY_METEOR_DOUBLE_CHANCE) return 2;
+  return 3;
+}
 
 /**
  * Z and X offsets must match ThroneRoom.tsx `THRONE_TRAINING_DUMMY_SPAWNS` / `THRONE_TRAINING_DUMMY_SPAWN_Z`.
@@ -36,40 +70,60 @@ const THRONE_TRAINING_DUMMY_SPAWNS = Object.freeze([
 const THRONE_TRAINING_DUMMY_ID = 'throne-training-dummy';
 
 /** Runeblade Blizzard talent — Chill; keep in sync with src/utils/talents.ts */
-const BLIZZARD_CHILL_STACK_DURATION_MS = 4000;
+const BLIZZARD_CHILL_STACK_DURATION_MS = 6000;
 const BLIZZARD_CHILL_STACKS_TO_FREEZE = 5;
 const BLIZZARD_CHILL_SLOW_PER_STACK = 0.2;
 
-/** Co-op arena: regular enemies spawned per wave; boss spawns after this many kills. */
+/**
+ * Co-op arena: non-martyr kills needed to clear a colored room and trigger the boss.
+ * Enemies spawn from the far north edge in batches of 3. After 2 non-martyr kills from
+ * the current batch a new batch is released, continuing until 12 total kills clear the room.
+ */
 const COOP_WAVE_ENEMY_COUNT = 10;
 const COOP_COLORED_ROOM_TYPES = Object.freeze(['blue', 'red', 'green', 'purple']);
-const COOP_SPECIAL_ROOM_TYPES = Object.freeze(['stat', 'chaos', 'healing']);
+const COOP_SPECIAL_ROOM_TYPES = Object.freeze(['stat', 'trial', 'healing']);
 const COOP_ROOM_TYPES = Object.freeze([...COOP_COLORED_ROOM_TYPES, ...COOP_SPECIAL_ROOM_TYPES, 'boss']);
-/** Staged spawns: initial on map, then three kill-gated reserve batches (+2,+2,+1). Martyrs spawn only in reserves. */
-const COOP_WAVE_INITIAL_ON_MAP = 5;
-const COOP_WAVE_FIRST_RESERVE_AT_KILLS = 3;
-const COOP_WAVE_FIRST_RESERVE_COUNT = 2;
-const COOP_WAVE_SECOND_RESERVE_AT_KILLS = 6;
-const COOP_WAVE_SECOND_RESERVE_COUNT = 2;
-const COOP_WAVE_THIRD_RESERVE_AT_KILLS = 8;
-const COOP_WAVE_THIRD_RESERVE_COUNT = 1;
-if (
-  COOP_WAVE_INITIAL_ON_MAP +
-    COOP_WAVE_FIRST_RESERVE_COUNT +
-    COOP_WAVE_SECOND_RESERVE_COUNT +
-    COOP_WAVE_THIRD_RESERVE_COUNT !==
-  COOP_WAVE_ENEMY_COUNT
-) {
-  throw new Error('Co-op staged spawn counts must sum to COOP_WAVE_ENEMY_COUNT');
-}
-
-/** Mirror client `MAIN_MAP_RADIUS` — inner castle wall faces at ±this on X/Z. */
-const MAIN_MAP_RADIUS = 20;
-/** Keep foot XZ inside the playable square with margin for collision radius. */
+const COOP_TERRAIN_THEMES = Object.freeze(['purple', 'blue', 'green']);
+/** Edge-spawn wave settings for colored rooms (red/blue/green/purple). */
+const COOP_WAVE_BATCH_SIZE = 3;           // enemies per batch
+const COOP_WAVE_BATCH_TRIGGER_KILLS = 2;  // non-martyr kills before next batch spawns
+const COOP_WAVE_MARTYR_ROOM_CHANCE = 0.33; // 30% of colored rooms have martyr spawns
+/** Mixed-room (stat/trial) wave settings — scatter-spawn logic. */
+const COOP_MIXED_WAVE_COUNT = 10;
+const COOP_MIXED_INITIAL_ON_MAP = 4;
+const COOP_MIXED_FIRST_RESERVE_AT_KILLS = 3;
+const COOP_MIXED_SECOND_RESERVE_AT_KILLS = 6;
+const COOP_MIXED_THIRD_RESERVE_AT_KILLS = 8;
+const COOP_MIXED_FIRST_RESERVE_COUNT = 2;
+const COOP_MIXED_SECOND_RESERVE_COUNT = 2;
+const COOP_MIXED_THIRD_RESERVE_COUNT = 2;
+const GOLD_DROP_EXPIRE_MS = 60000;
+const GOLD_VISUAL_PIECE_CAP = 25;
+const GOLD_REWARD_TABLE = Object.freeze({
+  'knight:red': { min: 8, max: 10 },
+  'knight:blue': { min: 7, max: 9 },
+  'knight:green': { min: 6, max: 8 },
+  'knight:purple': { min: 6, max: 8 },
+  'viper': { min: 6, max: 8 },
+  'shade': { min: 6, max: 8 },
+  'templar': { min: 16, max: 24 },
+  'warlock:purple': { min: 9, max: 14 },
+  'warlock:red': { min: 12, max: 18 },
+  'weaver:green': { min: 9, max: 14 },
+  'weaver:blue': { min: 8, max: 12 },
+  'ghoul': { min: 0, max: 4 },
+  'boss': { fixed: 50 },
+  'boss2': { fixed: 100 },
+  'boss3': { fixed: 150 },
+});
+/** Mirror client `MAIN_MAP_HALF_X/Z` — inner castle wall faces at x=±16 and z=±35. */
+const MAIN_MAP_HALF_X = 16;
+const MAIN_MAP_HALF_Z = 35;
+/** Keep foot XZ inside the playable rectangle with margin for collision radius. */
 const MAIN_ARENA_SPAWN_INSET = 1.5;
 
 /**
- * Hex combat arena (stat / chaos) — must match `HexCombatArena.tsx`:
+ * Hex combat arena (stat / trial) — must match `HexCombatArena.tsx`:
  * `HEX_ARENA_RADIUS` and `HexTileField` apothem − `HEX_FLOOR_MARGIN`.
  */
 const HEX_ARENA_RADIUS = 22;
@@ -85,10 +139,11 @@ function isInsideHexArenaFloor(x, z, apothem = HEX_INNER_APOTHEM) {
 }
 
 function clampPositionToMainArenaXZ(x, z) {
-  const m = MAIN_MAP_RADIUS - MAIN_ARENA_SPAWN_INSET;
+  const mx = MAIN_MAP_HALF_X - MAIN_ARENA_SPAWN_INSET;
+  const mz = MAIN_MAP_HALF_Z - MAIN_ARENA_SPAWN_INSET;
   return {
-    x: Math.max(-m, Math.min(m, x)),
-    z: Math.max(-m, Math.min(m, z)),
+    x: Math.max(-mx, Math.min(mx, x)),
+    z: Math.max(-mz, Math.min(mz, z)),
   };
 }
 
@@ -108,6 +163,7 @@ class GameRoom {
 
     // Item drop system
     this.droppedItems = new Map(); // itemId -> { id, type, stat, label, position, droppedAt }
+    this.goldDrops = new Map(); // dropId -> { id, amount, pieceCount, position, droppedAt, enemyType, soulType }
 
     // Status effect tracking for enemies
     this.enemyStatusEffects = new Map(); // enemyId -> { stun: expiration, freeze: expiration, slow: expiration }
@@ -181,12 +237,14 @@ class GameRoom {
     this._postBossIntermissionScheduled = false;
 
     /**
-     * Co-op wave: precomputed slots for staged spawn (5 + 2 + 2 + 1). Null when not in an active wave layout.
-     * @type {null | { campDef: object, entries: { unitType: string, pos: { x: number, z: number } }[] }}
+     * Co-op wave: spawn plan for the current room. For colored rooms, only { campDef } is stored.
+     * @type {null | { campDef: object, isMixed?: boolean, entries?: { unitType: string, pos: { x: number, z: number } }[] }}
      */
     this.coopWaveSpawnPlan = null;
-    /** How many reserve batches already emitted (0–3: initial only through all +2/+2/+1 released). */
+    /** How many edge batches have been sent beyond the initial one (colored rooms). */
     this.coopWaveReserveReleased = 0;
+    /** Whether the current colored room has martyr spawning enabled (30% chance, rolled per room). */
+    this.roomHasMartyrs = false;
 
     /** Co-op: per-index HP for `mushroomLayout` instances; reset on new game. */
     this.mushroomHealth = null;
@@ -280,6 +338,7 @@ class GameRoom {
         coopMainArenaPortalPhase: this.gameMode === 'coop' ? this.getCoopMainArenaPortalPhase() : null,
         coopBossThroneArena: this.gameMode === 'coop' ? this.getCoopBossThroneArena() : false,
         coopThroneBossKind: this.gameMode === 'coop' ? this.getCoopThroneBossKind() : null,
+        coopTerrainTheme: this.gameMode === 'coop' ? this.getCoopTerrainTheme() : null,
         coopCurrentRoomKind: this.gameMode === 'coop' ? this.getCoopCurrentRoomKind() : null,
         coopClearedRoomKind: this.gameMode === 'coop' ? this.getCoopClearedRoomKind() : null,
         mushroomState: this.getMushroomState(),
@@ -371,6 +430,69 @@ class GameRoom {
     }
   }
 
+  isAlliedUnitEnemy(enemy) {
+    return !!enemy && enemy.alliedUnit === true;
+  }
+
+  spawnOrReviveAlliedKnightForEnemyRoom() {
+    return this.spawnOrReviveAlliedUnitsForEnemyRoom()?.knight ?? null;
+  }
+
+  spawnOrReviveAlliedUnitsForEnemyRoom() {
+    if (this.gameMode !== 'coop' || !this.gameStarted || !this.combatArenaActive) return null;
+    if (this.coopBossThroneArena || this.bossSpawned || this.currentCoopRoomKind === 'boss' || this.currentCoopRoomKind === 'healing') {
+      return null;
+    }
+
+    const knightPos = clampPositionToMainArenaXZ(COOP_MAIN_ENTRY_X + 2.1, COOP_MAIN_ENTRY_Z + 0.6);
+    const healerPos = clampPositionToMainArenaXZ(COOP_MAIN_ENTRY_X - 2.1, COOP_MAIN_ENTRY_Z + 0.6);
+    const knight = {
+      id: ALLIED_KNIGHT_ID,
+      type: 'allied-knight',
+      position: { x: knightPos.x, y: 0, z: knightPos.z },
+      rotation: rotationYTowardArenaCenter(knightPos.x, knightPos.z),
+      health: ALLIED_KNIGHT_MAX_HP,
+      maxHealth: ALLIED_KNIGHT_MAX_HP,
+      isDying: false,
+      damage: ALLIED_KNIGHT_DAMAGE,
+      attackCooldown: ALLIED_KNIGHT_ATTACK_COOLDOWN_MS,
+      moveSpeed: ALLIED_KNIGHT_MOVE_SPEED,
+      alliedUnit: true,
+      combatInitiated: false,
+      alliedTargetEnemyId: null,
+      staggerBuildup: 0,
+      alliedOrbSlots: Array(ALLIED_KNIGHT_ORB_COUNT).fill(true),
+      alliedOrbRecoverAt: Array(ALLIED_KNIGHT_ORB_COUNT).fill(0),
+      alliedSmiteCooldownUntil: 0,
+    };
+    const healer = {
+      id: ALLIED_HEALER_ID,
+      type: 'allied-healer',
+      position: { x: healerPos.x, y: 0, z: healerPos.z },
+      rotation: rotationYTowardArenaCenter(healerPos.x, healerPos.z),
+      health: ALLIED_HEALER_MAX_HP,
+      maxHealth: ALLIED_HEALER_MAX_HP,
+      isDying: false,
+      damage: 0,
+      attackCooldown: 0,
+      moveSpeed: ALLIED_HEALER_MOVE_SPEED,
+      alliedUnit: true,
+      combatInitiated: false,
+      staggerBuildup: 0,
+      alliedGreaterHealCooldownUntil: 0,
+      allyHealerAttackCooldownUntil: 0,
+    };
+
+    this.addEnemy(knight);
+    this.addEnemy(healer);
+    if (this.io) {
+      const timestamp = Date.now();
+      this.io.to(this.roomId).emit('enemy-spawned', { enemy: knight, timestamp });
+      this.io.to(this.roomId).emit('enemy-spawned', { enemy: healer, timestamp });
+    }
+    return { knight, healer };
+  }
+
   _pickThronePortalOffer() {
     const keys = COOP_COLORED_ROOM_TYPES;
     const a = keys[Math.floor(Math.random() * keys.length)];
@@ -420,6 +542,12 @@ class GameRoom {
 
   getCoopThroneBossKind() {
     return this.coopThroneBossKind;
+  }
+
+  getCoopTerrainTheme() {
+    if (this.coopBossesDefeatedCount <= 0) return COOP_TERRAIN_THEMES[0];
+    if (this.coopBossesDefeatedCount === 1) return COOP_TERRAIN_THEMES[1];
+    return COOP_TERRAIN_THEMES[2];
   }
 
   _beginCoopCombatTransition({ startAIOnRelease = true } = {}) {
@@ -493,6 +621,7 @@ class GameRoom {
   _clearAllCombatEnemies() {
     this.coopWaveSpawnPlan = null;
     this.coopWaveReserveReleased = 0;
+    this.roomHasMartyrs = false;
     this._clearCoopCombatTransitionTimer();
     this.coopCombatTransition = null;
     this.stopEnemyAI();
@@ -544,6 +673,7 @@ class GameRoom {
         coopMainArenaPortalPhase: this.coopMainArenaPortalPhase,
         coopBossThroneArena: false,
         coopThroneBossKind: null,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
         coopClearedRoomColor: clearedColor,
         coopCurrentRoomKind: this.currentCoopRoomKind,
         coopClearedRoomKind: this.clearedCoopRoomKind,
@@ -569,26 +699,60 @@ class GameRoom {
     }
   }
 
-  _registerCoopWaveKill(emojiLog) {
+  /**
+   * Record an enemy kill for the current co-op wave.
+   * - Colored rooms: martyr kills are excluded from the 12-kill room-clear target.
+   *   A new edge batch spawns every COOP_WAVE_BATCH_TRIGGER_KILLS non-martyr kills.
+   * - Mixed rooms (stat/trial): all kills count; reserve slices release at old thresholds (3/6/8).
+   * @param {string} emojiLog
+   * @param {{ isMartyr?: boolean }} [opts]
+   */
+  _registerCoopWaveKill(emojiLog, opts = {}) {
     if (this.gameMode !== 'coop' || !this.combatArenaActive || this.bossSpawned) return;
     if (this.coopWaveIndex !== 1 && this.coopWaveIndex !== 2 && this.coopWaveIndex !== 3) return;
+
+    const isMixedRoom = this.coopWaveSpawnPlan?.isMixed === true;
+
+    if (!isMixedRoom && opts.isMartyr) {
+      // Martyrs are excluded from the 12-kill target in colored rooms.
+      console.log(`${emojiLog} (martyr – not counted toward room clear)`);
+      return;
+    }
+
     this.skeletonKillCount++;
-    console.log(`${emojiLog} (${this.skeletonKillCount}/${COOP_WAVE_ENEMY_COUNT})`);
+    const killTarget = isMixedRoom ? COOP_MIXED_WAVE_COUNT : COOP_WAVE_ENEMY_COUNT;
+    console.log(`${emojiLog} (${this.skeletonKillCount}/${killTarget})`);
     if (this.io) {
       this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
         skeletonKillCount: this.skeletonKillCount,
-        required: COOP_WAVE_ENEMY_COUNT,
+        required: killTarget,
         timestamp: Date.now(),
       });
     }
-    if (
-      this.skeletonKillCount === COOP_WAVE_FIRST_RESERVE_AT_KILLS ||
-      this.skeletonKillCount === COOP_WAVE_SECOND_RESERVE_AT_KILLS ||
-      this.skeletonKillCount === COOP_WAVE_THIRD_RESERVE_AT_KILLS
-    ) {
-      this._spawnCoopWaveReserveBatch();
+
+    if (isMixedRoom) {
+      // Mixed rooms: release pre-planned reserve slices at fixed kill thresholds.
+      if (
+        this.skeletonKillCount === COOP_MIXED_FIRST_RESERVE_AT_KILLS ||
+        this.skeletonKillCount === COOP_MIXED_SECOND_RESERVE_AT_KILLS ||
+        this.skeletonKillCount === COOP_MIXED_THIRD_RESERVE_AT_KILLS
+      ) {
+        this._spawnMixedRoomReserveBatch();
+      }
+    } else {
+      // Colored rooms: spawn next edge batch every COOP_WAVE_BATCH_TRIGGER_KILLS kills,
+      // capped so total batches never exceed what the 12-kill quota requires.
+      const maxBatches = Math.ceil(COOP_WAVE_ENEMY_COUNT / COOP_WAVE_BATCH_SIZE);
+      if (
+        this.skeletonKillCount % COOP_WAVE_BATCH_TRIGGER_KILLS === 0 &&
+        this.skeletonKillCount < COOP_WAVE_ENEMY_COUNT &&
+        this.coopWaveReserveReleased < maxBatches
+      ) {
+        this._spawnCoopWaveBatch();
+      }
     }
-    if (this.skeletonKillCount >= COOP_WAVE_ENEMY_COUNT) {
+
+    if (this.skeletonKillCount >= killTarget) {
       this._onCoopWaveThresholdMet();
     }
   }
@@ -633,6 +797,7 @@ class GameRoom {
         players: this.getPlayers(),
         coopBossThroneArena: false,
         coopThroneBossKind: null,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
         coopCurrentRoomKind: this.currentCoopRoomKind,
         coopClearedRoomKind: null,
         coopCombatTransitionId,
@@ -676,6 +841,7 @@ class GameRoom {
         players: this.getPlayers(),
         coopBossThroneArena: true,
         coopThroneBossKind: this.coopThroneBossKind,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
         coopCurrentRoomKind: this.currentCoopRoomKind,
         coopClearedRoomKind: null,
         coopCombatTransitionId,
@@ -719,6 +885,7 @@ class GameRoom {
         players: this.getPlayers(),
         coopBossThroneArena: true,
         coopThroneBossKind: this.coopThroneBossKind,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
         coopCurrentRoomKind: this.currentCoopRoomKind,
         coopClearedRoomKind: null,
         coopCombatTransitionId,
@@ -762,6 +929,7 @@ class GameRoom {
         players: this.getPlayers(),
         coopBossThroneArena: true,
         coopThroneBossKind: this.coopThroneBossKind,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
         coopCurrentRoomKind: this.currentCoopRoomKind,
         coopClearedRoomKind: null,
         coopCombatTransitionId,
@@ -822,6 +990,7 @@ class GameRoom {
           players: this.getPlayers(),
           coopBossThroneArena: false,
           coopThroneBossKind: null,
+          coopTerrainTheme: this.getCoopTerrainTheme(),
           coopCurrentRoomKind: this.currentCoopRoomKind,
           coopClearedRoomKind: null,
           coopCombatTransitionId,
@@ -867,6 +1036,7 @@ class GameRoom {
           players: this.getPlayers(),
           coopBossThroneArena: true,
           coopThroneBossKind: this.coopThroneBossKind,
+          coopTerrainTheme: this.getCoopTerrainTheme(),
           coopCurrentRoomKind: this.currentCoopRoomKind,
           coopClearedRoomKind: null,
           coopCombatTransitionId,
@@ -908,6 +1078,7 @@ class GameRoom {
           players: this.getPlayers(),
           coopBossThroneArena: false,
           coopThroneBossKind: null,
+          coopTerrainTheme: this.getCoopTerrainTheme(),
           coopCurrentRoomKind: this.currentCoopRoomKind,
           coopClearedRoomKind: null,
           coopCombatTransitionId,
@@ -955,6 +1126,7 @@ class GameRoom {
           coopMainArenaPortalPhase: this.coopMainArenaPortalPhase,
           coopBossThroneArena: true,
           coopThroneBossKind: null,
+          coopTerrainTheme: this.getCoopTerrainTheme(),
           coopClearedRoomColor: clearedColor,
           coopCurrentRoomKind: this.currentCoopRoomKind,
           coopClearedRoomKind: this.clearedCoopRoomKind,
@@ -984,6 +1156,7 @@ class GameRoom {
       maxHealth: maxHealth,
       level: 1, // Start at level 1
       essence: 0,
+      gold: 0,
       movementDirection: { x: 0, y: 0, z: 0 },
       joinedAt: Date.now(),
       isStealthing: false, // Sabres stealth ability state
@@ -1047,6 +1220,19 @@ class GameRoom {
     // Stop game if no players left
     if (this.players.size === 0 && this.gameStarted) {
       this.stopGame();
+      return;
+    }
+
+    // If this player was the last one blocking a co-op combat transition, release it.
+    const transition = this.coopCombatTransition;
+    if (transition) {
+      const activePlayerIds = Array.from(this.players.keys());
+      if (
+        activePlayerIds.length > 0 &&
+        activePlayerIds.every((id) => transition.readyPlayerIds.has(id))
+      ) {
+        this._releaseCoopCombatTransition(transition.id, 'player-disconnected');
+      }
     }
   }
 
@@ -1071,6 +1257,7 @@ class GameRoom {
     this.coopBossesDefeatedCount = 0;
     this.coopWaveSpawnPlan = null;
     this.coopWaveReserveReleased = 0;
+    this.roomHasMartyrs = false;
     this._devSpawnBoss2 = false;
     this._devSpawnBoss3 = false;
     this.stopEnemySpawning();
@@ -1098,9 +1285,10 @@ class GameRoom {
   /**
    * Damage players whose XZ foot position lies within `halfWidth` of segment A→B (inclusive caps).
    */
-  damagePlayersInLineSegment(ax, az, bx, bz, halfWidth, damage, damageType = 'tentacle_spine') {
-    if (!this.io || !this.players || halfWidth <= 0 || damage <= 0) return;
-    if (this.isCoopCombatTransitionActive()) return;
+  damagePlayersInLineSegment(ax, az, bx, bz, halfWidth, damage, damageType = 'tentacle_spine', meta = null) {
+    if (!this.io || !this.players || halfWidth <= 0 || damage <= 0) return 0;
+    if (this.isCoopCombatTransitionActive()) return 0;
+    let hitCount = 0;
     const hw2 = halfWidth * halfWidth;
     const abx = bx - ax;
     const abz = bz - az;
@@ -1121,7 +1309,11 @@ class GameRoom {
 
       const previousHealth = player.health;
       player.health = Math.max(0, player.health - damage);
+      hitCount += 1;
       const wasKilled = previousHealth > 0 && player.health <= 0;
+      if (meta?.sourceEnemyId && this.enemyAI) {
+        this.enemyAI.recordAlliedProtectionThreat(meta.sourceEnemyId, playerId, damage);
+      }
       this.io.to(this.roomId).emit('player-damaged', {
         sourcePlayerId: null,
         targetPlayerId: playerId,
@@ -1139,13 +1331,14 @@ class GameRoom {
         maxHealth: player.maxHealth,
       });
     }
+    return hitCount;
   }
 
   /**
    * Like `damagePlayersInLineSegment`, but only damages each player at most once per `hitPlayerIds` Set (mutated on hit).
    * Used by boss 3 nova discs so corridor sweeps cannot multi-tick one player incorrectly.
    */
-  damagePlayersInLineSegmentFirstHit(ax, az, bx, bz, halfWidth, damage, damageType = 'boss3_arcane_disc', hitPlayerIds) {
+  damagePlayersInLineSegmentFirstHit(ax, az, bx, bz, halfWidth, damage, damageType = 'boss3_arcane_disc', hitPlayerIds, meta = null) {
     if (!this.io || !this.players || halfWidth <= 0 || damage <= 0 || !hitPlayerIds) return;
     if (this.isCoopCombatTransitionActive()) return;
     const hw2 = halfWidth * halfWidth;
@@ -1171,6 +1364,9 @@ class GameRoom {
       const previousHealth = player.health;
       player.health = Math.max(0, player.health - damage);
       const wasKilled = previousHealth > 0 && player.health <= 0;
+      if (meta?.sourceEnemyId && this.enemyAI) {
+        this.enemyAI.recordAlliedProtectionThreat(meta.sourceEnemyId, playerId, damage);
+      }
       this.io.to(this.roomId).emit('player-damaged', {
         sourcePlayerId: null,
         targetPlayerId: playerId,
@@ -1190,7 +1386,7 @@ class GameRoom {
     }
   }
 
-  damagePlayersInHorizontalRing(center, radius, damage, damageType = 'boss_aoe') {
+  damagePlayersInHorizontalRing(center, radius, damage, damageType = 'boss_aoe', meta = null) {
     if (!this.io || !this.players || radius <= 0 || damage <= 0 || !center) return;
     if (this.isCoopCombatTransitionActive()) return;
     const cx = center.x;
@@ -1204,6 +1400,9 @@ class GameRoom {
       const previousHealth = player.health;
       player.health = Math.max(0, player.health - damage);
       const wasKilled = previousHealth > 0 && player.health <= 0;
+      if (meta?.sourceEnemyId && this.enemyAI) {
+        this.enemyAI.recordAlliedProtectionThreat(meta.sourceEnemyId, playerId, damage);
+      }
       this.io.to(this.roomId).emit('player-damaged', {
         sourcePlayerId: null,
         targetPlayerId: playerId,
@@ -1244,6 +1443,79 @@ class GameRoom {
       if (dx * dx + dz * dz > r2) continue;
       this.damageEnemy(enemyId, damage, null, null, { damageType });
     }
+  }
+
+  getRandomCrossentropyMeteorStartPosition(center) {
+    const angle = Math.random() * Math.PI * 2;
+    const distance =
+      CROSSENTROPY_METEOR_SKY_OFFSET_MIN +
+      Math.random() * (CROSSENTROPY_METEOR_SKY_OFFSET_MAX - CROSSENTROPY_METEOR_SKY_OFFSET_MIN);
+    const height =
+      CROSSENTROPY_METEOR_SKY_HEIGHT_MIN +
+      Math.random() * (CROSSENTROPY_METEOR_SKY_HEIGHT_MAX - CROSSENTROPY_METEOR_SKY_HEIGHT_MIN);
+    return {
+      x: center.x + Math.cos(angle) * distance,
+      y: height,
+      z: center.z + Math.sin(angle) * distance,
+    };
+  }
+
+  tryProcCrossentropyMeteor(center, fromPlayerId, player, hitMeta) {
+    if (!center || !fromPlayerId || fromPlayerId === 'unknown') return;
+    if (!hitMeta || hitMeta.damageType !== 'crossentropy') return;
+    if (!hitMeta.crossentropyMeteor) return;
+    if (hitMeta.crossentropyMeteorDamage) return;
+    const meteorCount = rollCrossentropyMeteorStrikeCount();
+    for (let i = 0; i < meteorCount; i++) {
+      setTimeout(() => {
+        this.spawnOneCrossentropyMeteor(center, fromPlayerId, player, hitMeta, i);
+      }, i * CROSSENTROPY_METEOR_STAGGER_MS);
+    }
+  }
+
+  spawnOneCrossentropyMeteor(center, fromPlayerId, player, hitMeta, meteorIndex) {
+    const startPosition = this.getRandomCrossentropyMeteorStartPosition(center);
+    const dx = center.x - startPosition.x;
+    const dy = -3 - startPosition.y;
+    const dz = center.z - startPosition.z;
+    const travelDistance = Math.hypot(dx, dy, dz);
+    const travelTimeMs = (travelDistance / CROSSENTROPY_METEOR_SPEED) * 1000;
+    const castTimestamp = Date.now();
+    if (this.io) {
+      this.io.to(this.roomId).emit('crossentropy-meteor-cast', {
+        meteorId: `crossentropy-meteor-${fromPlayerId}-${castTimestamp}-${meteorIndex}`,
+        targetPosition: { x: center.x, y: center.y ?? 0, z: center.z },
+        startPosition,
+        timestamp: castTimestamp,
+        damage: CROSSENTROPY_METEOR_DAMAGE,
+      });
+    }
+
+    const impactDelayMs = CROSSENTROPY_METEOR_WARNING_MS + travelTimeMs;
+    setTimeout(() => {
+      if (!this.enemies) return;
+      const radiusSq = CROSSENTROPY_METEOR_RADIUS * CROSSENTROPY_METEOR_RADIUS;
+      const meteorHitMeta = {
+        damageType: 'crossentropy',
+        infernoCrossentropy: !!hitMeta.infernoCrossentropy,
+        reaperCrossentropy: !!hitMeta.reaperCrossentropy,
+        crossentropyPlague: !!hitMeta.crossentropyPlague,
+        crossentropyMeteorDamage: true,
+        ...(typeof hitMeta.staggerToAdd === 'number' && hitMeta.staggerToAdd > 0
+          ? { staggerToAdd: hitMeta.staggerToAdd }
+          : {}),
+      };
+      for (const [enemyId, enemy] of this.enemies) {
+        if (!enemy || enemy.isDying) continue;
+        if (enemy.health != null && enemy.health <= 0) continue;
+        const ex = enemy.position?.x ?? 0;
+        const ez = enemy.position?.z ?? 0;
+        const ddx = ex - center.x;
+        const ddz = ez - center.z;
+        if (ddx * ddx + ddz * ddz > radiusSq) continue;
+        this.damageEnemy(enemyId, CROSSENTROPY_METEOR_DAMAGE, fromPlayerId, player || null, meteorHitMeta);
+      }
+    }, impactDelayMs);
   }
 
   getMushroomState() {
@@ -1315,13 +1587,14 @@ class GameRoom {
 
     if (this.gameMode === 'coop') {
       this.initializeEnemies();
+      this.spawnOrReviveAlliedUnitsForEnemyRoom();
     }
   }
 
   // Build one enemy object at the given position for the given type/camp.
   _buildEnemy(type, campIndex, slotIndex, pos, campDef) {
     const soulStats = {
-      green:  { health: 1400, maxHealth: 1400, damage: 25,  attackCooldown: 2500, moveSpeed: 2.0 },
+      green:  { health: 1300, maxHealth: 1300, damage: 25,  attackCooldown: 2500, moveSpeed: 2.0 },
       red:    { health: 1050,  maxHealth: 1050,  damage: 40,  attackCooldown: 2500, moveSpeed: 2.0 },
       blue:   { health: 900,  maxHealth: 900,  damage: 22,  attackCooldown: 1250, moveSpeed: 2.0 },
       purple: { health: 850,  maxHealth: 850,  damage: 30,  attackCooldown: 2500, moveSpeed: 4.0 },
@@ -1378,18 +1651,18 @@ class GameRoom {
       health: 650, maxHealth: 650, damage: 55, attackCooldown: 5000, moveSpeed: 2.0 };
   }
 
-  // Pick a random point inside a circle on the map, excluding certain zones.
+  // Pick a random point inside the main arena rectangle, excluding certain zones.
   // Returns null if no valid position was found after MAX_ATTEMPTS.
-  _randomMapPos(mapRadius, exclusions, existing, minDistFromOthers, useHexInterior = false) {
+  _randomMapPos(mapHalfX, mapHalfZ, exclusions, existing, minDistFromOthers, useHexInterior = false) {
     const MAX_ATTEMPTS = 120;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      // Uniform distribution within the axis-aligned square [-mapRadius, mapRadius]²
-      const x = (Math.random() * 2 - 1) * mapRadius;
-      const z = (Math.random() * 2 - 1) * mapRadius;
+      // Uniform distribution within the axis-aligned rectangle.
+      const x = (Math.random() * 2 - 1) * mapHalfX;
+      const z = (Math.random() * 2 - 1) * mapHalfZ;
 
       const inBounds = useHexInterior
         ? isInsideHexArenaFloor(x, z)
-        : Math.abs(x) <= mapRadius && Math.abs(z) <= mapRadius;
+        : Math.abs(x) <= mapHalfX && Math.abs(z) <= mapHalfZ;
       if (!inBounds) continue;
 
       // Check exclusion zones
@@ -1406,7 +1679,8 @@ class GameRoom {
   // Generate enemy positions spread across the map with organic clustering:
   //   3 clusters of 3 units + (N − 9) lone units (e.g. N=10 → 3×3 + 1 loner)
   _generateScatteredPositions(total, useHexInterior = false) {
-    const MAX_MAP_RADIUS = 18; // keep well within the main map radius (20); hex uses same sampling square + floor test
+    const MAP_HALF_X = useHexInterior ? 18 : MAIN_MAP_HALF_X - MAIN_ARENA_SPAWN_INSET;
+    const MAP_HALF_Z = useHexInterior ? 18 : MAIN_MAP_HALF_Z - MAIN_ARENA_SPAWN_INSET;
     const exclusions = [
       { x: COOP_MAIN_ENTRY_X, z: COOP_MAIN_ENTRY_Z, radius: COOP_PLAYER_START_CLEAR_RADIUS },
     ];
@@ -1420,7 +1694,7 @@ class GameRoom {
     // ── Clusters ──────────────────────────────────────────────────────────────
     for (let c = 0; c < NUM_CLUSTERS; c++) {
       // Pick a cluster seed well away from other seeds (min 10 units apart)
-      const seed = this._randomMapPos(MAX_MAP_RADIUS, exclusions, positions, 10, useHexInterior);
+      const seed = this._randomMapPos(MAP_HALF_X, MAP_HALF_Z, exclusions, positions, 10, useHexInterior);
       if (!seed) continue;
       positions.push(seed);
 
@@ -1434,7 +1708,7 @@ class GameRoom {
           const mz = seed.z + Math.sin(angle) * r;
           const inBounds = useHexInterior
             ? isInsideHexArenaFloor(mx, mz)
-            : Math.abs(mx) <= MAX_MAP_RADIUS && Math.abs(mz) <= MAX_MAP_RADIUS;
+            : Math.abs(mx) <= MAP_HALF_X && Math.abs(mz) <= MAP_HALF_Z;
           if (!inBounds) continue;
           if (exclusions.some(e => Math.hypot(mx - e.x, mz - e.z) < e.radius)) continue;
           if (positions.some(p => Math.hypot(p.x - mx, p.z - mz) < 1.8)) continue;
@@ -1449,7 +1723,7 @@ class GameRoom {
             const oz = seed.z + (Math.random() - 0.5) * 3;
             const ok = useHexInterior
               ? isInsideHexArenaFloor(ox, oz)
-              : Math.abs(ox) <= MAX_MAP_RADIUS && Math.abs(oz) <= MAX_MAP_RADIUS;
+              : Math.abs(ox) <= MAP_HALF_X && Math.abs(oz) <= MAP_HALF_Z;
             if (!ok) continue;
             if (exclusions.some(e => Math.hypot(ox - e.x, oz - e.z) < e.radius)) continue;
             if (positions.some(p => Math.hypot(p.x - ox, p.z - oz) < 1.8)) continue;
@@ -1464,14 +1738,14 @@ class GameRoom {
 
     // ── Lone units ────────────────────────────────────────────────────────────
     for (let i = 0; i < NUM_LONERS; i++) {
-      const pos = this._randomMapPos(MAX_MAP_RADIUS, exclusions, positions, 4, useHexInterior);
+      const pos = this._randomMapPos(MAP_HALF_X, MAP_HALF_Z, exclusions, positions, 4, useHexInterior);
       if (pos) positions.push(pos);
     }
 
     let pad = 0;
     while (positions.length < total && pad < 300) {
       pad += 1;
-      const looser = this._randomMapPos(MAX_MAP_RADIUS, exclusions, positions, 1.2, useHexInterior);
+      const looser = this._randomMapPos(MAP_HALF_X, MAP_HALF_Z, exclusions, positions, 1.2, useHexInterior);
       if (looser) positions.push(looser);
     }
     while (positions.length < total) {
@@ -1482,12 +1756,44 @@ class GameRoom {
   }
 
   /**
+   * Generate `count` spawn positions near the far north edge of the arena (opposite the player
+   * start at z=−30). Enemies spawned here will march south toward players.
+   * @param {number} count
+   * @returns {Array<{x:number,z:number}>}
+   */
+  _generateEdgeSpawnPositions(count) {
+    const MAP_HALF_X = MAIN_MAP_HALF_X - MAIN_ARENA_SPAWN_INSET;
+    const farZ = MAIN_MAP_HALF_Z - MAIN_ARENA_SPAWN_INSET; // ≈ +33.5
+    const positions = [];
+    for (let i = 0; i < count; i++) {
+      let x, z;
+      let placed = false;
+      for (let attempt = 0; attempt < 80; attempt++) {
+        x = (Math.random() * 2 - 1) * MAP_HALF_X;
+        z = farZ - Math.random() * 3; // 0–3 units inward from the north rim
+        if (!positions.some((p) => Math.hypot(p.x - x, p.z - z) < 2.5)) {
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        // Fallback: evenly space along the edge
+        x = -MAP_HALF_X + (i / Math.max(count - 1, 1)) * MAP_HALF_X * 2;
+        z = farZ - 1;
+      }
+      positions.push({ x, z });
+    }
+    return positions;
+  }
+
+  /**
    * 1–3 stationary trap enemies per co-op wave; avoids wave spawn points + entry zone.
    * @param {Array<{x:number,z:number}>} wavePositions
    * @param {object} campDef
    */
   _spawnTentacleSpinesForWave(wavePositions, campDef) {
-    const MAX_MAP_RADIUS = 18;
+    const MAP_HALF_X = MAIN_MAP_HALF_X - MAIN_ARENA_SPAWN_INSET;
+    const MAP_HALF_Z = MAIN_MAP_HALF_Z - MAIN_ARENA_SPAWN_INSET;
     const exclusions = [
       { x: COOP_MAIN_ENTRY_X, z: COOP_MAIN_ENTRY_Z, radius: COOP_PLAYER_START_CLEAR_RADIUS },
     ];
@@ -1495,7 +1801,7 @@ class GameRoom {
     const existing = wavePositions.map((p) => ({ x: p.x, z: p.z }));
     const SLOT_BASE = 900;
     for (let i = 0; i < n; i++) {
-      const pos = this._randomMapPos(MAX_MAP_RADIUS, exclusions, existing, 3.5);
+      const pos = this._randomMapPos(MAP_HALF_X, MAP_HALF_Z, exclusions, existing, 3.5);
       if (!pos) continue;
       existing.push({ x: pos.x, z: pos.z });
       const enemy = this._buildEnemy('tentacle-spine', 0, SLOT_BASE + i, pos, campDef);
@@ -1506,29 +1812,28 @@ class GameRoom {
     }
   }
 
-  /** Release the next reserve batch (+2 at 3 kills, +2 at 6 kills, +1 at 8 kills). */
-  _spawnCoopWaveReserveBatch() {
+  /**
+   * Release the next pre-planned reserve slice for stat/trial mixed rooms.
+   * Mirrors the original staged-spawn logic: +2 at 3 kills, +2 at 6, +2 at 8.
+   */
+  _spawnMixedRoomReserveBatch() {
     if (this.gameMode !== 'coop' || !this.combatArenaActive || this.bossSpawned) return;
-    if (this.coopWaveIndex !== 1 && this.coopWaveIndex !== 2 && this.coopWaveIndex !== 3) return;
     const plan = this.coopWaveSpawnPlan;
-    if (!plan || !plan.entries || plan.entries.length !== COOP_WAVE_ENEMY_COUNT) return;
+    if (!plan || !plan.isMixed || !plan.entries) return;
 
     let sliceStart;
     let sliceEnd;
     if (this.coopWaveReserveReleased === 0) {
-      sliceStart = COOP_WAVE_INITIAL_ON_MAP;
-      sliceEnd = COOP_WAVE_INITIAL_ON_MAP + COOP_WAVE_FIRST_RESERVE_COUNT;
+      sliceStart = COOP_MIXED_INITIAL_ON_MAP;
+      sliceEnd = sliceStart + COOP_MIXED_FIRST_RESERVE_COUNT;
       this.coopWaveReserveReleased = 1;
     } else if (this.coopWaveReserveReleased === 1) {
-      sliceStart = COOP_WAVE_INITIAL_ON_MAP + COOP_WAVE_FIRST_RESERVE_COUNT;
-      sliceEnd = sliceStart + COOP_WAVE_SECOND_RESERVE_COUNT;
+      sliceStart = COOP_MIXED_INITIAL_ON_MAP + COOP_MIXED_FIRST_RESERVE_COUNT;
+      sliceEnd = sliceStart + COOP_MIXED_SECOND_RESERVE_COUNT;
       this.coopWaveReserveReleased = 2;
     } else if (this.coopWaveReserveReleased === 2) {
-      sliceStart =
-        COOP_WAVE_INITIAL_ON_MAP +
-        COOP_WAVE_FIRST_RESERVE_COUNT +
-        COOP_WAVE_SECOND_RESERVE_COUNT;
-      sliceEnd = sliceStart + COOP_WAVE_THIRD_RESERVE_COUNT;
+      sliceStart = COOP_MIXED_INITIAL_ON_MAP + COOP_MIXED_FIRST_RESERVE_COUNT + COOP_MIXED_SECOND_RESERVE_COUNT;
+      sliceEnd = sliceStart + COOP_MIXED_THIRD_RESERVE_COUNT;
       this.coopWaveReserveReleased = 3;
     } else {
       return;
@@ -1545,11 +1850,61 @@ class GameRoom {
         this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
       }
     }
-    console.log(`⚔️ Co-op reserve batch: slots ${sliceStart}–${sliceEnd - 1} (${sliceEnd - sliceStart} enemies)`);
+    console.log(`⚔️ Mixed room reserve: slots ${sliceStart}–${sliceEnd - 1} (${sliceEnd - sliceStart} enemies)`);
   }
 
-  // Spawn all regular enemies using a single randomly chosen archetype.
-  // Precomputes 10 slots; first 5 on map until kill thresholds release +2,+2,+1 (martyrs only in reserves).
+  /**
+   * Spawn the next kill-gated batch of COOP_WAVE_BATCH_SIZE enemies at the far north edge.
+   * Called by _registerCoopWaveKill every COOP_WAVE_BATCH_TRIGGER_KILLS non-martyr kills.
+   */
+  _spawnCoopWaveBatch() {
+    if (this.gameMode !== 'coop' || !this.combatArenaActive || this.bossSpawned) return;
+    if (this.coopWaveIndex !== 1 && this.coopWaveIndex !== 2 && this.coopWaveIndex !== 3) return;
+    const plan = this.coopWaveSpawnPlan;
+    if (!plan || !plan.campDef || plan.isMixed) return;
+
+    const { campDef } = plan;
+    const positions = this._generateEdgeSpawnPositions(COOP_WAVE_BATCH_SIZE);
+    const batchIndex = this.coopWaveReserveReleased;
+
+    for (let i = 0; i < COOP_WAVE_BATCH_SIZE; i++) {
+      const pos = positions[i] || { x: 0, z: MAIN_MAP_HALF_Z - MAIN_ARENA_SPAWN_INSET };
+      let unitType;
+      if (i === 0) {
+        unitType = 'knight';
+      } else if (this.roomHasMartyrs && Math.random() < 0.33) {
+        unitType = 'martyr';
+      } else {
+        const pool = campDef.enemyPool;
+        unitType = pool[Math.floor(Math.random() * pool.length)];
+      }
+      const slotIndex = COOP_WAVE_BATCH_SIZE * (batchIndex + 1) + i;
+      const enemy = this._buildEnemy(unitType, 0, slotIndex, pos, campDef);
+      this.enemies.set(enemy.id, enemy);
+      // Pre-seed aggro so the enemy immediately marches toward players without
+      // needing to enter the short (8–12 unit) proximity aggro radius first.
+      this.enemyAI.forceAggroOnEnemy(enemy);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+      }
+    }
+
+    this.coopWaveReserveReleased++;
+    console.log(`⚔️ Co-op edge batch ${batchIndex + 2} spawned (${COOP_WAVE_BATCH_SIZE} enemies at north edge)`);
+  }
+
+  /**
+   * Spawn the initial wave of enemies for the current room.
+   *
+   * Colored rooms (red/blue/green/purple):
+   *   - 30% chance the room contains martyr spawns (rolled once here).
+   *   - First batch of COOP_WAVE_BATCH_SIZE enemies spawns at the far north edge.
+   *   - Subsequent batches are triggered every COOP_WAVE_BATCH_TRIGGER_KILLS non-martyr kills
+   *     via _registerCoopWaveKill → _spawnCoopWaveBatch.
+   *   - Room clears after COOP_WAVE_ENEMY_COUNT (12) non-martyr kills.
+   *
+   * Mixed rooms (stat/trial) keep the original scattered-placement logic unchanged.
+   */
   initializeEnemies() {
     this.coopWaveSpawnPlan = null;
     this.coopWaveReserveReleased = 0;
@@ -1559,7 +1914,7 @@ class GameRoom {
     const roomKind = this.pendingCoopRoomKind || this.currentCoopRoomKind || typeKey;
     this.pendingCoopArchetype = null;
     this.pendingCoopRoomKind = null;
-    const isMixedRoom = roomKind === 'stat' || roomKind === 'chaos';
+    const isMixedRoom = roomKind === 'stat' || roomKind === 'trial';
     if (!typeKey || !GameRoom.CAMP_TYPES[typeKey]) {
       typeKey = campTypeKeys[Math.floor(Math.random() * campTypeKeys.length)];
     }
@@ -1569,78 +1924,113 @@ class GameRoom {
     this.lastCoopWaveCampColor = typeKey;
     this.currentCoopRoomKind = roomKind || typeKey;
 
-    const positions = this._generateScatteredPositions(COOP_WAVE_ENEMY_COUNT, isMixedRoom);
-    /** @type {{ pos: { x: number, z: number }, slotCampDef: object }[]} */
-    const slotMeta = [];
-    for (let slotIndex = 0; slotIndex < COOP_WAVE_ENEMY_COUNT; slotIndex++) {
-      const pos = positions[slotIndex];
-      const slotTypeKey = isMixedRoom
-        ? campTypeKeys[Math.floor(Math.random() * campTypeKeys.length)]
-        : typeKey;
-      const slotCampDef = GameRoom.CAMP_TYPES[slotTypeKey];
-      slotMeta.push({ pos, slotCampDef });
-    }
+    if (isMixedRoom) {
+      // ── Mixed rooms: scattered-spawn logic ───────────────────────────────────
+      const MIXED_WAVE_COUNT = 10;
+      const positions = this._generateScatteredPositions(MIXED_WAVE_COUNT, true);
+      const MIXED_INITIAL = 4;
 
-    const pickPool = (slotCampDef) => {
-      const pool = slotCampDef.enemyPool;
-      return pool[Math.floor(Math.random() * pool.length)];
-    };
+      const entries = [];
 
-    const reserve1Start = COOP_WAVE_INITIAL_ON_MAP;
-    const reserve1End = reserve1Start + COOP_WAVE_FIRST_RESERVE_COUNT;
-    const reserve2End = reserve1End + COOP_WAVE_SECOND_RESERVE_COUNT;
-    const martyrReserve1 = Math.min(1 + Math.floor(Math.random() * 3), COOP_WAVE_FIRST_RESERVE_COUNT);
-    const martyrReserve2 = Math.min(1 + Math.floor(Math.random() * 3), COOP_WAVE_SECOND_RESERVE_COUNT);
-    const martyrReserve3 = Math.min(1 + Math.floor(Math.random() * 3), COOP_WAVE_THIRD_RESERVE_COUNT);
-
-    const entries = [];
-    for (let slotIndex = 0; slotIndex < COOP_WAVE_ENEMY_COUNT; slotIndex++) {
-      const { pos, slotCampDef } = slotMeta[slotIndex];
-      let unitType;
-      if (slotIndex === 0) {
-        unitType = 'knight';
-      } else if (slotIndex < COOP_WAVE_INITIAL_ON_MAP) {
-        unitType = pickPool(slotCampDef);
-      } else if (slotIndex < reserve1End) {
-        const local = slotIndex - reserve1Start;
-        unitType = local < martyrReserve1 ? 'martyr' : pickPool(slotCampDef);
-      } else if (slotIndex < reserve2End) {
-        const local = slotIndex - reserve1End;
-        unitType = local < martyrReserve2 ? 'martyr' : pickPool(slotCampDef);
+      if (roomKind === 'trial') {
+        // ── Trial room: fixed homogeneous composition picked at random ──────────
+        const TRIAL_RECIPES = [
+          // 10 knights, each a random camp color
+          () => campTypeKeys.map((_k, i) => ({
+            unitType: 'knight',
+            campDef: GameRoom.CAMP_TYPES[campTypeKeys[i % campTypeKeys.length]],
+          })).concat(Array.from({ length: 6 }, (_, i) => ({
+            unitType: 'knight',
+            campDef: GameRoom.CAMP_TYPES[campTypeKeys[(i + 2) % campTypeKeys.length]],
+          }))).slice(0, MIXED_WAVE_COUNT).map((e, i) => ({
+            ...e,
+            campDef: GameRoom.CAMP_TYPES[campTypeKeys[Math.floor(Math.random() * campTypeKeys.length)]],
+            pos: positions[i],
+          })),
+          // 10 shades — use blue camp (shades exist in blue + purple; blue gives variety)
+          () => Array.from({ length: MIXED_WAVE_COUNT }, (_, i) => ({
+            unitType: 'shade',
+            campDef: GameRoom.CAMP_TYPES[campTypeKeys[i % campTypeKeys.length]],
+            pos: positions[i],
+          })),
+          // 10 vipers — alternate blue/green camps (both have vipers)
+          () => Array.from({ length: MIXED_WAVE_COUNT }, (_, i) => ({
+            unitType: 'viper',
+            campDef: GameRoom.CAMP_TYPES[i % 2 === 0 ? 'blue' : 'green'],
+            pos: positions[i],
+          })),
+          // 10 warlocks — 5 purple, 5 red
+          () => Array.from({ length: MIXED_WAVE_COUNT }, (_, i) => ({
+            unitType: 'warlock',
+            campDef: GameRoom.CAMP_TYPES[i < 5 ? 'purple' : 'red'],
+            pos: positions[i],
+          })),
+          // 10 weavers — 5 green, 5 blue
+          () => Array.from({ length: MIXED_WAVE_COUNT }, (_, i) => ({
+            unitType: 'weaver',
+            campDef: GameRoom.CAMP_TYPES[i < 5 ? 'green' : 'blue'],
+            pos: positions[i],
+          })),
+          // 10 templars — alternate red/purple
+          () => Array.from({ length: MIXED_WAVE_COUNT }, (_, i) => ({
+            unitType: 'templar',
+            campDef: GameRoom.CAMP_TYPES[i % 2 === 0 ? 'red' : 'purple'],
+            pos: positions[i],
+          })),
+        ];
+        const recipe = TRIAL_RECIPES[Math.floor(Math.random() * TRIAL_RECIPES.length)];
+        entries.push(...recipe());
       } else {
-        unitType = martyrReserve3 >= 1 ? 'martyr' : pickPool(slotCampDef);
+        // ── Stat room: original random mixed camp/pool behavior ─────────────────
+        const pickPool = (def) => { const p = def.enemyPool; return p[Math.floor(Math.random() * p.length)]; };
+        for (let slotIndex = 0; slotIndex < MIXED_WAVE_COUNT; slotIndex++) {
+          const pos = positions[slotIndex];
+          const slotTypeKey = campTypeKeys[Math.floor(Math.random() * campTypeKeys.length)];
+          const slotCampDef = GameRoom.CAMP_TYPES[slotTypeKey];
+          const unitType = slotIndex === 0 ? 'knight' : pickPool(slotCampDef);
+          entries.push({ unitType, pos, campDef: slotCampDef });
+        }
       }
-      entries.push({ unitType, pos, campDef: slotCampDef });
-    }
-    this.coopWaveSpawnPlan = { campDef, entries };
 
-    let totalSpawned = 0;
-    for (let slotIndex = 0; slotIndex < COOP_WAVE_INITIAL_ON_MAP; slotIndex++) {
-      const { unitType, pos, campDef: slotCampDef } = entries[slotIndex];
-      const enemy = this._buildEnemy(unitType, 0, slotIndex, pos, slotCampDef || campDef);
-      this.enemies.set(enemy.id, enemy);
-      if (this.io) {
-        this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+      this.coopWaveSpawnPlan = { campDef, entries, isMixed: true };
+
+      let totalSpawned = 0;
+      for (let slotIndex = 0; slotIndex < MIXED_INITIAL; slotIndex++) {
+        const { unitType, pos, campDef: slotCampDef } = entries[slotIndex];
+        const enemy = this._buildEnemy(unitType, 0, slotIndex, pos, slotCampDef || campDef);
+        this.enemies.set(enemy.id, enemy);
+        if (this.io) {
+          this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+        }
+        totalSpawned++;
       }
-      totalSpawned++;
-    }
+      console.log(`⚔️ Mixed room: spawned ${totalSpawned}/${MIXED_WAVE_COUNT} enemies, room: ${this.currentCoopRoomKind}`);
+    } else {
+      // ── Colored rooms: edge-spawn batch system ────────────────────────────────
+      this.roomHasMartyrs = Math.random() < COOP_WAVE_MARTYR_ROOM_CHANCE;
+      // Store a minimal plan so _spawnCoopWaveBatch knows the pool.
+      this.coopWaveSpawnPlan = { campDef };
 
-    if (!isMixedRoom) {
-      this._spawnTentacleSpinesForWave(entries.map((e) => e.pos), campDef);
+      // Spawn initial batch at the far north edge.
+      this._spawnCoopWaveBatch();
+
+      // Spawn tentacle-spine traps scattered around the arena.
+      const edgePositions = this._generateEdgeSpawnPositions(COOP_WAVE_BATCH_SIZE);
+      this._spawnTentacleSpinesForWave(edgePositions, campDef);
+
+      console.log(
+        `⚔️ Colored room (${typeKey}): batch 1 at north edge, martyrs=${this.roomHasMartyrs}, room: ${this.currentCoopRoomKind}`
+      );
     }
 
     if (this.io) {
       this.io.to(this.roomId).emit('camps-initialized', {
         campTypes: this.sessionCampTypes,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
         coopCurrentRoomKind: this.currentCoopRoomKind,
         timestamp: Date.now()
       });
     }
-
-    const reserved = COOP_WAVE_ENEMY_COUNT - totalSpawned;
-    console.log(
-      `⚔️ Spawned ${totalSpawned} enemies (${reserved} staged), room: ${this.currentCoopRoomKind}`
-    );
   }
 
   spawnEnemy(type) {
@@ -1712,6 +2102,68 @@ class GameRoom {
     this.damageEnemy(enemyId, total, sourceId, tickPlayer || null, { damageType: 'wyvern_talons_detonate' });
   }
 
+  applyEntanglementOnHit(enemyId, fromPlayerId, player) {
+    const enemy = this.enemies.get(enemyId);
+    if (!enemy || enemy.isDying || enemy.health <= 0) return;
+
+    this.applyStatusEffect(enemyId, 'entangle', ENTANGLEMENT_DURATION_MS);
+    enemy.entanglementExpireAt = Date.now() + ENTANGLEMENT_DURATION_MS;
+    enemy.entanglementLastPlayerId = fromPlayerId;
+    enemy.entanglementTicksRemaining = Math.ceil(ENTANGLEMENT_DURATION_MS / 1000);
+
+    if (enemy._entanglementIntervalId) {
+      clearInterval(enemy._entanglementIntervalId);
+      enemy._entanglementIntervalId = null;
+    }
+
+    enemy._entanglementIntervalId = setInterval(() => {
+      const e = this.enemies.get(enemyId);
+      if (!e || e.isDying || e.health <= 0) {
+        if (e && e._entanglementIntervalId) {
+          clearInterval(e._entanglementIntervalId);
+          e._entanglementIntervalId = null;
+        }
+        return;
+      }
+
+      if (!e.entanglementTicksRemaining || e.entanglementTicksRemaining <= 0) {
+        clearInterval(e._entanglementIntervalId);
+        e._entanglementIntervalId = null;
+        return;
+      }
+
+      const tickPlayerId = e.entanglementLastPlayerId || fromPlayerId;
+      const tickPlayer = this.players.get(tickPlayerId) || player || null;
+      e.entanglementTicksRemaining -= 1;
+      this.damageEnemy(enemyId, ENTANGLEMENT_DAMAGE_PER_SECOND, tickPlayerId, tickPlayer, {
+        damageType: 'entanglement',
+      });
+    }, 1000);
+  }
+
+  /**
+   * Co-op allied units only — horizontal disk vs center xz (enemy mob AOEs).
+   * @returns first damageEnemy result or null if no ally is hit.
+   */
+  tryDamageAlliedKnightInXZDisk(center, radius, damage, hitMeta = null) {
+    if (!center || radius <= 0 || damage <= 0 || !this.enemies) return null;
+    const cx = center.x ?? 0;
+    const cz = center.z ?? 0;
+    const r2 = radius * radius;
+    let firstResult = null;
+    for (const ally of this.enemies.values()) {
+      if (!this.isAlliedUnitEnemy(ally) || ally.isDying || ally.health <= 0) continue;
+      const ax = ally.position?.x ?? 0;
+      const az = ally.position?.z ?? 0;
+      const dx = ax - cx;
+      const dz = az - cz;
+      if (dx * dx + dz * dz > r2) continue;
+      const result = this.damageEnemy(ally.id, damage, null, null, hitMeta);
+      if (!firstResult) firstResult = result;
+    }
+    return firstResult;
+  }
+
   damageEnemy(enemyId, damage, fromPlayerId, player = null, hitMeta = null) {
     const enemy = this.enemies.get(enemyId);
     if (!enemy || enemy.isDying) {
@@ -1752,6 +2204,9 @@ class GameRoom {
     ) {
       return null;
     }
+    if (this.isAlliedUnitEnemy(enemy) && fromPlayerId) {
+      return null;
+    }
 
     const previousHealth = enemy.health;
     enemy.health = Math.max(0, enemy.health - appliedDamage);
@@ -1774,7 +2229,9 @@ class GameRoom {
           aggroAmount *= 10.0; // Same 10x multiplier as bosses
           console.log(`👤 Stealth aggro bonus: Player ${fromPlayerId} stealth attack on enemy ${enemyId} (${appliedDamage} -> ${aggroAmount} aggro)`);
         }
-        if (hitMeta && hitMeta.sourceZombieId) {
+        if (hitMeta && hitMeta.sourceAlliedUnitId) {
+          this.enemyAI.applyAlliedUnitThreat(enemyId, hitMeta.sourceAlliedUnitId, aggroAmount);
+        } else if (hitMeta && hitMeta.sourceZombieId) {
           this.enemyAI.applyZombieThreat(enemyId, hitMeta.sourceZombieId, aggroAmount);
         } else if (hitMeta && hitMeta.sourceTrapId) {
           this.enemyAI.applyTrapThreat(enemyId, hitMeta.sourceTrapId, aggroAmount);
@@ -1826,6 +2283,21 @@ class GameRoom {
           y: enemy.position.y,
           z: enemy.position.z,
         };
+      } else if (hitMeta && hitMeta.damageType === 'entanglement') {
+        damagedPayload.damageType = 'entanglement';
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
+      } else if (hitMeta && hitMeta.damageType === 'crossentropy' && hitMeta.crossentropyMeteorDamage) {
+        damagedPayload.damageType = 'crossentropy';
+        damagedPayload.crossentropyMeteorDamage = true;
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
       }
       this.io.to(this.roomId).emit('enemy-damaged', damagedPayload);
     }
@@ -1851,6 +2323,20 @@ class GameRoom {
       enemy.health > 0
     ) {
       this.applyBlizzardChillOnHit(enemyId);
+    }
+
+    if (
+      hitMeta &&
+      hitMeta.damageType === 'crossentropy' &&
+      !hitMeta.crossentropyMeteorDamage &&
+      appliedDamage > 0
+    ) {
+      this.tryProcCrossentropyMeteor(
+        { x: enemy.position.x, y: enemy.position.y, z: enemy.position.z },
+        fromPlayerId,
+        player,
+        hitMeta,
+      );
     }
 
     // Infernal Smite / INFERNO (Crossentropy): Ignite DoT — 80% of hit over 3s in 3 ticks (non-lethal hits only)
@@ -1937,6 +2423,19 @@ class GameRoom {
       }
     }
 
+    // Entanglement — Barrage hit roots ordinary movement + 20 DPS for 5s.
+    if (
+      !result.wasKilled &&
+      hitMeta &&
+      hitMeta.damageType === 'barrage' &&
+      hitMeta.entanglementBarrage &&
+      damage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0
+    ) {
+      this.applyEntanglementOnHit(enemyId, fromPlayerId, player);
+    }
+
     // Glacial Bite — +1 chill per Barrage hit; 5 stacks → 6s freeze (longer than blizzard tick freeze)
     if (
       !result.wasKilled &&
@@ -1961,6 +2460,7 @@ class GameRoom {
         hitMeta.damageType === 'sabre_right' ||
         hitMeta.damageType === 'smite' ||
         hitMeta.damageType === 'sunder' ||
+        hitMeta.damageType === 'fan_of_knives' ||
         hitMeta.damageType === 'barrage' ||
         hitMeta.damageType === 'reaping_talons' ||
         hitMeta.damageType === 'projectile' ||
@@ -2017,9 +2517,31 @@ class GameRoom {
         clearInterval(enemy._concentratedVenomIntervalId);
         enemy._concentratedVenomIntervalId = null;
       }
+      if (enemy._entanglementIntervalId) {
+        clearInterval(enemy._entanglementIntervalId);
+        enemy._entanglementIntervalId = null;
+      }
+      enemy.entanglementTicksRemaining = 0;
       enemy.concentratedVenomStacks = 0;
       enemy.isDying = true;
       enemy.deathTime = Date.now();
+
+      if (this.isAlliedUnitEnemy(enemy)) {
+        if (this.enemyAI) {
+          this.enemyAI.clearZombieAsAggroTarget(enemyId);
+          this.enemyAI.removeEnemyAggro(enemyId);
+        }
+        setTimeout(() => {
+          this.enemies.delete(enemyId);
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-removed', {
+              enemyId,
+              timestamp: Date.now(),
+            });
+          }
+        }, 2500);
+        return result;
+      }
 
       // INFESTED STRIKE: raise zombie on Wraith Strike kill (non-boss, non-dummy)
       if (
@@ -2116,10 +2638,10 @@ class GameRoom {
         });
       }
 
-      // INFESTED FLOURISH: Sabres Flourish (sunder) kill — same zombie rules as Infesting Swipes
+      // INFESTED FLOURISH: Sabres Flourish (sunder / Fan of Knives) kill — same zombie rules as Infesting Swipes
       if (
         hitMeta &&
-        hitMeta.damageType === 'sunder' &&
+        (hitMeta.damageType === 'sunder' || hitMeta.damageType === 'fan_of_knives') &&
         hitMeta.infestedFlourish &&
         fromPlayerId &&
         fromPlayerId !== 'unknown' &&
@@ -2300,6 +2822,9 @@ class GameRoom {
           this.io.to(fromPlayerId).emit('sabres-relentless-backstab-kill');
         }
       }
+
+      // Spawn a world gold pile for eligible enemy kills.
+      this.spawnGoldDropForKill(enemy);
 
       // Special rewards for boss kills
       if (COOP_BOSS_TYPES.has(enemy.type)) {
@@ -2605,7 +3130,7 @@ class GameRoom {
           });
         }
 
-        this._registerCoopWaveKill('💣 Martyr killed');
+        this._registerCoopWaveKill('💣 Martyr killed', { isMartyr: true });
 
         if (Math.random() < 0.1) {
           this.spawnItemDrop(enemy.position, enemy);
@@ -2738,6 +3263,9 @@ class GameRoom {
       // Schedule enemy removal after death animation
       setTimeout(() => {
         this.enemies.delete(enemyId);
+        if (this.io) {
+          this.io.to(this.roomId).emit('enemy-removed', { enemyId, timestamp: Date.now() });
+        }
       }, 1500); // Match death animation duration
     }
 
@@ -2765,11 +3293,12 @@ class GameRoom {
 
   // Function to calculate level based on kill count (same as Scene.tsx)
   getLevel(kills) {
-    if (kills < 10) return 1;
-    if (kills < 25) return 2;
-    if (kills < 45) return 3;
-    if (kills < 70) return 4;
-    return 5;                      // Level 5: 70+ kills
+    // Kill thresholds scaled ~1.75× from 10 / 25 / 45 / 70 (aligned with client EXP pacing)
+    if (kills < 18) return 1;
+    if (kills < 44) return 2;
+    if (kills < 79) return 3;
+    if (kills < 123) return 4;
+    return 5;
   }
 
   // Stop enemy spawning (no-op now that spawning is replaced by fixed placement)
@@ -3044,6 +3573,137 @@ class GameRoom {
     return null;
   }
 
+  _resolveGoldRewardRule(enemy) {
+    if (!enemy || !enemy.type) return null;
+    const type = String(enemy.type).toLowerCase();
+    const soulType = enemy.soulType != null ? String(enemy.soulType).toLowerCase() : null;
+    const keyedType = type === 'knight' || type === 'warlock' || type === 'weaver';
+    const key = keyedType && soulType ? `${type}:${soulType}` : type;
+    return GOLD_REWARD_TABLE[key] || null;
+  }
+
+  _rollGoldReward(enemy) {
+    const rule = this._resolveGoldRewardRule(enemy);
+    if (!rule) return 0;
+    if (typeof rule.fixed === 'number') return Math.max(0, Math.floor(rule.fixed));
+    const min = Number.isFinite(rule.min) ? Math.floor(rule.min) : 0;
+    const max = Number.isFinite(rule.max) ? Math.floor(rule.max) : min;
+    if (max <= min) return Math.max(0, min);
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  _getGoldRecipientIds() {
+    return Array.from(this.players.keys()).sort();
+  }
+
+  _splitGoldAcrossRecipients(amount, recipientIds) {
+    const total = Math.max(0, Math.floor(amount));
+    const ids = Array.isArray(recipientIds) ? recipientIds : [];
+    if (ids.length === 0 || total <= 0) return new Map();
+    const base = Math.floor(total / ids.length);
+    let remainder = total % ids.length;
+    const out = new Map();
+    for (const playerId of ids) {
+      const bonus = remainder > 0 ? 1 : 0;
+      if (remainder > 0) remainder -= 1;
+      out.set(playerId, base + bonus);
+    }
+    return out;
+  }
+
+  spawnGoldDropForKill(enemy) {
+    const amount = this._rollGoldReward(enemy);
+    if (amount <= 0) return null;
+    return this.spawnGoldDrop(enemy?.position, amount, enemy);
+  }
+
+  spawnGoldDrop(position, amount, enemy = null) {
+    if (!position || amount <= 0) return null;
+    const dropId = `gold-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const drop = {
+      id: dropId,
+      amount: Math.floor(amount),
+      pieceCount: Math.min(Math.floor(amount), GOLD_VISUAL_PIECE_CAP),
+      position: {
+        x: position.x,
+        y: 0.25,
+        z: position.z,
+      },
+      enemyType: enemy?.type || null,
+      soulType: enemy?.soulType || null,
+      droppedAt: Date.now(),
+    };
+
+    this.goldDrops.set(dropId, drop);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('gold-dropped', {
+        drop,
+        timestamp: Date.now(),
+      });
+    }
+
+    setTimeout(() => {
+      if (this.goldDrops.has(dropId)) {
+        this.goldDrops.delete(dropId);
+        if (this.io) {
+          this.io.to(this.roomId).emit('gold-expired', { dropId, timestamp: Date.now() });
+        }
+      }
+    }, GOLD_DROP_EXPIRE_MS);
+
+    return drop;
+  }
+
+  pickupGoldDrop(dropId, pickerPlayerId) {
+    const drop = this.goldDrops.get(dropId);
+    if (!drop) {
+      return null;
+    }
+
+    this.goldDrops.delete(dropId);
+
+    const recipientIds = this._getGoldRecipientIds();
+    const split = this._splitGoldAcrossRecipients(drop.amount, recipientIds);
+    const allocations = [];
+
+    for (const playerId of recipientIds) {
+      const player = this.players.get(playerId);
+      if (!player) continue;
+      const gain = split.get(playerId) || 0;
+      if (gain <= 0) continue;
+      player.gold = (player.gold || 0) + gain;
+      allocations.push({
+        playerId,
+        amount: gain,
+        totalGold: player.gold,
+      });
+      if (this.io) {
+        this.io.to(this.roomId).emit('player-gold-changed', {
+          playerId,
+          gold: player.gold,
+          timestamp: Date.now(),
+        });
+      }
+    }
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('gold-picked-up', {
+        dropId,
+        pickerPlayerId,
+        drop,
+        allocations,
+        timestamp: Date.now(),
+      });
+    }
+
+    return { drop, allocations };
+  }
+
+  getGoldDrops() {
+    return Array.from(this.goldDrops.values());
+  }
+
   // Spawn an amulet matching the wave room color (red/green/blue/purple) at the given position
   spawnItemDrop(position, enemy) {
     const color = this._resolveAmuletCampColor(enemy || {});
@@ -3180,6 +3840,7 @@ class GameRoom {
     this.enemyStatusEffects.clear();
     this.enemyChill.clear();
     this.droppedItems.clear();
+    this.goldDrops.clear();
     this.gameStarted = false;
     this.killCount = 0;
     this.bossSpawned = false;
@@ -3194,6 +3855,7 @@ class GameRoom {
     this.coopBossesDefeatedCount = 0;
     this.coopWaveSpawnPlan = null;
     this.coopWaveReserveReleased = 0;
+    this.roomHasMartyrs = false;
     this._clearCoopCombatTransitionTimer();
     this.coopCombatTransition = null;
     this.coopCombatTransitionId = 0;

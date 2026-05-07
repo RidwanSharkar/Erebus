@@ -813,17 +813,24 @@ function handlePlayerEvents(socket, gameRooms) {
       }
 
       // Only handle essence currency
-      if (currency !== 'essence') {
+      if (currency !== 'essence' && currency !== 'gold') {
         return; // Invalid currency
       }
 
-      // Check if player has enough essence
-      if ((player.essence || 0) < cost) {
+      // Check if player has enough currency
+      if (currency === 'essence' && (player.essence || 0) < cost) {
         return; // Not enough essence
       }
+      if (currency === 'gold' && (player.gold || 0) < cost) {
+        return; // Not enough gold
+      }
 
-      // Deduct essence and add item
-      player.essence = (player.essence || 0) - cost;
+      // Deduct currency and add item
+      if (currency === 'essence') {
+        player.essence = (player.essence || 0) - cost;
+      } else if (currency === 'gold') {
+        player.gold = (player.gold || 0) - cost;
+      }
       player.purchasedItems.push(itemId);
 
       // Broadcast purchase to all players in the room
@@ -835,10 +842,39 @@ function handlePlayerEvents(socket, gameRooms) {
         timestamp: Date.now()
       });
 
-      // Also broadcast essence update
-      room.io.to(roomId).emit('player-essence-changed', {
+      // Also broadcast currency update
+      if (currency === 'essence') {
+        room.io.to(roomId).emit('player-essence-changed', {
+          playerId: playerId || socket.id,
+          essence: player.essence,
+          timestamp: Date.now()
+        });
+      } else if (currency === 'gold') {
+        room.io.to(roomId).emit('player-gold-changed', {
+          playerId: playerId || socket.id,
+          gold: player.gold,
+          timestamp: Date.now()
+        });
+      }
+    }
+  });
+
+  // Handle player gold changes
+  socket.on('player-gold-changed', (data) => {
+    const { roomId, playerId, gold } = data;
+
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    const player = room.getPlayer(playerId || socket.id);
+
+    if (player) {
+      const currentGold = player.gold || 0;
+      player.gold = currentGold + gold;
+
+      room.io.to(roomId).emit('player-gold-changed', {
         playerId: playerId || socket.id,
-        essence: player.essence,
+        gold: player.gold,
         timestamp: Date.now()
       });
     }

@@ -6,7 +6,7 @@ import {
   ShaderMaterial,
   AdditiveBlending,
 } from '@/utils/three-exports';
-import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+import { MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z } from '@/utils/mapConstants';
 
 // GPU-only snowfall across the main arena (blue room).
 const SNOW_VERT = `
@@ -58,23 +58,26 @@ const DEFAULT_COUNT = 600;
 
 interface ArenaFallingSnowProps {
   count?: number;
-  radius?: number;
+  halfX?: number;
+  halfZ?: number;
 }
 
 const ArenaFallingSnow: React.FC<ArenaFallingSnowProps> = ({
   count = DEFAULT_COUNT,
-  radius = MAIN_MAP_RADIUS,
+  halfX = MAIN_MAP_HALF_X,
+  halfZ = MAIN_MAP_HALF_Z,
 }) => {
   const { geometry: geo, material: mat } = useMemo(() => {
-    const rMax = radius - 0.7;
+    const xMax = halfX - 0.7;
+    const zMax = halfZ - 0.7;
     const geometry = new BufferGeometry();
     const origins = new Float32Array(count * 3);
     const rands = new Float32Array(count);
     const speeds = new Float32Array(count);
     for (let i = 0; i < count; i++) {
-      origins[i * 3] = (Math.random() * 2 - 1) * rMax;
+      origins[i * 3] = (Math.random() * 2 - 1) * xMax;
       origins[i * 3 + 1] = 0;
-      origins[i * 3 + 2] = (Math.random() * 2 - 1) * rMax;
+      origins[i * 3 + 2] = (Math.random() * 2 - 1) * zMax;
       rands[i] = Math.random();
       speeds[i] = 0.35 + Math.random() * 0.65;
     }
@@ -92,7 +95,7 @@ const ArenaFallingSnow: React.FC<ArenaFallingSnowProps> = ({
       uniforms: { uTime: { value: 0 } },
     });
     return { geometry, material };
-  }, [count, radius]);
+  }, [count, halfX, halfZ]);
 
   useFrame((_, delta) => {
     mat.uniforms.uTime.value += delta;

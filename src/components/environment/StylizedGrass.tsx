@@ -13,7 +13,7 @@ import {
   PlaneGeometry,
   MeshBasicMaterial,
 } from '@/utils/three-exports';
-import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+import { MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z, MAIN_MAP_RADIUS } from '@/utils/mapConstants';
 import type { RoomBorderTheme } from './SimpleBorderEffects';
 
 type TerrainPalette = {
@@ -75,6 +75,8 @@ interface StylizedGrassProps {
   fieldShape?: 'disc' | 'square';
   count?: number;
   radius?: number;
+  halfX?: number;
+  halfZ?: number;
   bladeHeight?: number;
   windStrength?: number;
   /** Coop room archetype — drives default palette, density (purple), and wind. */
@@ -133,6 +135,8 @@ const GRASS_FRAGMENT = `
   uniform float uGroundLightIntensity;
   uniform float uGrassFadeInner;
   uniform float uGrassFadeOuter;
+  uniform float uGrassHalfX;
+  uniform float uGrassHalfZ;
   uniform float uUseSquareEdgeFade;
 
   varying float vHeightRatio;
@@ -158,9 +162,9 @@ const GRASS_FRAGMENT = `
     // Ambient occlusion at the base (raised floor 0.4 → 0.55 so base isn't so dark)
     col *= 0.55 + smoothstep(0.0, 0.25, vHeightRatio) * 0.45;
 
-    // Fade at the edge: radial (disc) or Chebyshev / max-edge (square arena)
+    // Fade at the edge: radial (disc) or normalized rectangle edge (main arena)
     float dist = uUseSquareEdgeFade > 0.5
-      ? max(abs(vWorldPos.x), abs(vWorldPos.z))
+      ? max(abs(vWorldPos.x) / uGrassHalfX, abs(vWorldPos.z) / uGrassHalfZ)
       : length(vWorldPos.xz);
     col *= 1.0 - smoothstep(uGrassFadeInner, uGrassFadeOuter, dist) * 0.5;
 
@@ -193,6 +197,8 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
   fieldShape = 'disc',
   count: countOverride,
   radius = MAIN_MAP_RADIUS,
+  halfX = MAIN_MAP_HALF_X,
+  halfZ = MAIN_MAP_HALF_Z,
   bladeHeight = 0.45,
   windStrength: windOverride,
   roomTheme,
@@ -218,8 +224,9 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
     groundLightIntensity ?? palette.groundLightIntensity;
   const windStrength = windOverride ?? THEME_WIND[effectiveTheme] ?? 0.25;
 
-  const grassFadeInner = radius - 0.8;
-  const grassFadeOuter = radius + 3.5;
+  const useSquareEdge = fieldShape === 'square';
+  const grassFadeInner = useSquareEdge ? 0.93 : radius - 0.8;
+  const grassFadeOuter = useSquareEdge ? 1.08 : radius + 3.5;
 
   const bladeGeometry = useMemo(() => {
     const geo = new BufferGeometry();
@@ -248,8 +255,6 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
     return geo;
   }, []);
 
-  const useSquareEdge = fieldShape === 'square';
-
   const material = useMemo(() => {
     return new ShaderMaterial({
       uniforms: {
@@ -261,20 +266,22 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
         uGroundLightIntensity: { value: resolvedGroundLightIntensity },
         uGrassFadeInner: { value: grassFadeInner },
         uGrassFadeOuter: { value: grassFadeOuter },
+        uGrassHalfX: { value: halfX },
+        uGrassHalfZ: { value: halfZ },
         uUseSquareEdgeFade: { value: useSquareEdge ? 1.0 : 0.0 },
       },
       vertexShader: GRASS_VERTEX,
       fragmentShader: GRASS_FRAGMENT,
       side: DoubleSide,
     });
-  }, [resolvedBaseColor, resolvedTipColor, windStrength, resolvedGroundLightColor, resolvedGroundLightIntensity, grassFadeInner, grassFadeOuter, useSquareEdge]);
+  }, [resolvedBaseColor, resolvedTipColor, windStrength, resolvedGroundLightColor, resolvedGroundLightIntensity, grassFadeInner, grassFadeOuter, halfX, halfZ, useSquareEdge]);
 
   const groundGeo = useMemo(
     () =>
       useSquareEdge
-        ? new PlaneGeometry(radius * 2, radius * 2)
+        ? new PlaneGeometry(halfX * 2, halfZ * 2)
         : new CircleGeometry(radius, 48),
-    [radius, useSquareEdge],
+    [halfX, halfZ, radius, useSquareEdge],
   );
   const groundMat = useMemo(
     () => new MeshBasicMaterial({ color: resolvedGroundColor }),
@@ -296,8 +303,8 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
       let x: number;
       let z: number;
       if (useSquareEdge) {
-        x = (Math.random() * 2 - 1) * radius;
-        z = (Math.random() * 2 - 1) * radius;
+        x = (Math.random() * 2 - 1) * halfX;
+        z = (Math.random() * 2 - 1) * halfZ;
       } else {
         const angle = Math.random() * Math.PI * 2;
         const r = Math.sqrt(Math.random()) * radius;
@@ -327,7 +334,7 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
 
     mesh.instanceMatrix.needsUpdate = true;
     return true;
-  }, [count, radius, bladeHeight, useSquareEdge]);
+  }, [count, radius, halfX, halfZ, bladeHeight, useSquareEdge]);
 
   useLayoutEffect(() => {
     if (fillInstanceMatrices()) return;

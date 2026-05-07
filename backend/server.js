@@ -143,9 +143,11 @@ io.on('connection', (socket) => {
       coopMainArenaPortalPhase: room.getCoopMainArenaPortalPhase(),
       coopBossThroneArena: room.getCoopBossThroneArena(),
       coopThroneBossKind: typeof room.getCoopThroneBossKind === 'function' ? room.getCoopThroneBossKind() : null,
+      coopTerrainTheme: typeof room.getCoopTerrainTheme === 'function' ? room.getCoopTerrainTheme() : null,
       coopCurrentRoomKind: typeof room.getCoopCurrentRoomKind === 'function' ? room.getCoopCurrentRoomKind() : null,
       coopClearedRoomKind: typeof room.getCoopClearedRoomKind === 'function' ? room.getCoopClearedRoomKind() : null,
       mushroomState: typeof room.getMushroomState === 'function' ? room.getMushroomState() : null,
+      goldDrops: typeof room.getGoldDrops === 'function' ? room.getGoldDrops() : [],
     });
     
     // Notify other players

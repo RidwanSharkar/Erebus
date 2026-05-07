@@ -11,15 +11,18 @@ import { Collider } from '@/ecs/components/Collider';
 // Import individual projectile components
 import CrossentropyBolt from '@/components/projectiles/CrossentropyBolt';
 import EntropicBolt from '@/components/projectiles/EntropicBolt';
+import { ENTROPIC_TRAIL_FADE_OUT_DURATION } from '@/components/projectiles/EntropicBoltTrail';
 import ChargedArrow from '@/components/projectiles/ChargedArrow';
 import RegularArrow from '@/components/projectiles/RegularArrow';
 import Barrage from '@/components/projectiles/Barrage';
+import FanOfKnivesDagger from '@/components/projectiles/FanOfKnivesDagger';
 import TowerProjectile from '@/components/projectiles/TowerProjectile';
 import ExplosionEffect from '@/components/projectiles/ExplosionEffect';
 import CrossentropyExplosion from '@/components/projectiles/CrossentropyExplosion';
+import CrossentropyMeteor from '@/components/projectiles/CrossentropyMeteor';
 import VenomEffect from '@/components/projectiles/VenomEffect';
 import { Vector3, Color } from '@/utils/three-exports';
-import { CROSSENTROPY_PLAGUE_VENOM_MS, type CrossentropyVisualTheme } from '@/utils/talents';
+import { CROSSENTROPY_PLAGUE_VENOM_MS, type CrossentropyVisualTheme, type FanOfKnivesFlourishTint, getFanOfKnivesDaggerColorsFromTint } from '@/utils/talents';
 
 function crossentropyThemeFromUserData(userData: Record<string, unknown>): CrossentropyVisualTheme {
   if (userData.crossentropyInferno === true) return 'inferno';
@@ -28,6 +31,8 @@ function crossentropyThemeFromUserData(userData: Record<string, unknown>): Cross
   if (userData.crossentropyPlague === true) return 'plague';
   return 'default';
 }
+
+const ENTROPIC_VISUAL_ONLY_LIFETIME_SEC = 1.35;
 
 // Data interfaces for each projectile type
 interface ProjectileData {
@@ -42,7 +47,10 @@ interface ProjectileData {
   isCryoflame?: boolean; // For Entropic Bolt Cryoflame mode
   colorVariant?: string; // Entropic bolt roll color (purple / blue / red / green / arctic)
   entropicBoltTalent?: 'wrathful' | 'staggering' | 'infesting' | 'arctic';
+  curveDirection?: 'left' | 'right';
   projectileType?: string; // For projectile type differentiation (e.g., burst_arrow)
+  /** Trigger Finger talent — red uncharged bow tap arrow. */
+  triggerFingerUncharged?: boolean;
   /** Wrathful Bite talent — red Barrage theme. */
   barrageWrathfulBite?: boolean;
   /** Wyvern Bite talent — green Barrage theme. */
@@ -51,6 +59,10 @@ interface ProjectileData {
   barrageStaggeringBite?: boolean;
   /** Glacial Bite room boon — light blue Barrage when higher-precedence bites are off. */
   barrageGlacialBite?: boolean;
+  /** Entanglement talent — Barrage hit roots and squeezes the target. */
+  barrageEntanglement?: boolean;
+  /** Fan of Knives Flourish tint. */
+  fanOfKnivesFlourishTint?: FanOfKnivesFlourishTint;
   /** INFERNO talent — fiery Crossentropy theme. */
   infernoCrossentropy?: boolean;
   /** Reaper — pierce, visuals follow ECS, no impact explosion. */
@@ -58,6 +70,19 @@ interface ProjectileData {
   crossentropyVisualTheme?: CrossentropyVisualTheme;
   /** PLAGUE boon (mechanics + venom FX); Inferno/Glacial/etc. may override `crossentropyVisualTheme`). */
   crossentropyPlague?: boolean;
+  /** When the ECS entity despawns, R3F clock elapsed — trail fades out visually only. */
+  trailFadeOutStartElapsed?: number;
+}
+
+interface EntropicVisualBoltData {
+  id: number;
+  position: Vector3;
+  direction: Vector3;
+  isCryoflame?: boolean;
+  colorVariant?: string;
+  entropicBoltTalent?: ProjectileData['entropicBoltTalent'];
+  curveDirection?: ProjectileData['curveDirection'];
+  createdAtElapsed: number;
 }
 
 interface SwordProjectileData {
@@ -79,6 +104,14 @@ interface ExplosionData {
   crossentropyVisualTheme?: CrossentropyVisualTheme;
 }
 
+interface CrossentropyMeteorData {
+  id: number;
+  targetPosition: Vector3;
+  timestamp?: number;
+  damage?: number;
+  startPosition?: Vector3;
+}
+
 interface UnifiedProjectileManagerProps {
   world: World;
   onHauntedSoulAt?: (position: Vector3) => void;
@@ -93,6 +126,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
     regular: ProjectileData[];
     sword: SwordProjectileData[];
     barrage: ProjectileData[];
+    fanOfKnives: ProjectileData[];
     tower: ProjectileData[];
   }>({
     crossentropy: [],
@@ -101,6 +135,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
     regular: [],
     sword: [],
     barrage: [],
+    fanOfKnives: [],
     tower: []
   });
 
@@ -108,6 +143,8 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
   const [crossentropyPlagueVenoms, setCrossentropyPlagueVenoms] = useState<Array<{ id: number; position: Vector3 }>>(
     [],
   );
+  const [crossentropyMeteors, setCrossentropyMeteors] = useState<CrossentropyMeteorData[]>([]);
+  const [visualEntropicBolts, setVisualEntropicBolts] = useState<EntropicVisualBoltData[]>([]);
 
   // Counters for unique IDs
   const crossentropyIdCounter = useRef(0);
@@ -116,9 +153,11 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
   const regularIdCounter = useRef(0);
   const swordIdCounter = useRef(0);
   const barrageIdCounter = useRef(0);
+  const fanOfKnivesIdCounter = useRef(0);
   const towerIdCounter = useRef(0);
   const explosionIdCounter = useRef(0);
   const plagueVenomEffectIdCounter = useRef(0);
+  const crossentropyMeteorIdCounter = useRef(0);
 
   // Throttling
   const lastUpdateTime = useRef(0);
@@ -181,6 +220,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
     const newRegular: ProjectileData[] = [];
     const newSword: SwordProjectileData[] = [];
     const newBarrage: ProjectileData[] = [];
+    const newFanOfKnives: ProjectileData[] = [];
     const newTower: ProjectileData[] = [];
 
     for (const entity of allProjectileEntities) {
@@ -238,10 +278,13 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
         const entropicTalent = userData.entropicBoltTalent as ProjectileData['entropicBoltTalent'] | undefined;
         const colorVariant =
           entropicTalent === 'arctic' ? 'arctic' : (userData.colorVariant as string | undefined) || 'purple';
+        const curveDirection = userData.curveDirection as ProjectileData['curveDirection'] | undefined;
         if (existing) {
           existing.position.copy(transform.position);
           existing.colorVariant = colorVariant;
           existing.entropicBoltTalent = entropicTalent;
+          existing.curveDirection = curveDirection;
+          delete existing.trailFadeOutStartElapsed;
           newEntropic.push(existing);
         } else {
           newEntropic.push({
@@ -252,6 +295,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             isCryoflame: userData.isCryoflame || false,
             colorVariant,
             entropicBoltTalent: entropicTalent,
+            curveDirection,
           });
         }
       } else if (userData.isChargedArrow) {
@@ -278,6 +322,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
           existing.barrageWyvernBite = userData.barrageWyvernBite === true;
           existing.barrageStaggeringBite = userData.barrageStaggeringBite === true;
           existing.barrageGlacialBite = userData.barrageGlacialBite === true;
+          existing.barrageEntanglement = userData.barrageEntanglement === true;
           newBarrage.push(existing);
         } else {
           newBarrage.push({
@@ -292,12 +337,36 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             barrageWyvernBite: userData.barrageWyvernBite === true,
             barrageStaggeringBite: userData.barrageStaggeringBite === true,
             barrageGlacialBite: userData.barrageGlacialBite === true,
+            barrageEntanglement: userData.barrageEntanglement === true,
+          });
+        }
+      } else if (userData.isFanOfKnivesDagger || userData.projectileType === 'fan_of_knives') {
+        const existing = projectileData.fanOfKnives.find((p) => p.entityId === entity.id);
+        const fanTint = (userData.fanOfKnivesFlourishTint as FanOfKnivesFlourishTint | undefined) ?? 'default';
+        if (existing) {
+          existing.position.copy(transform.position);
+          existing.direction.copy(direction);
+          existing.fanOfKnivesFlourishTint = fanTint;
+          newFanOfKnives.push(existing);
+        } else {
+          newFanOfKnives.push({
+            id: fanOfKnivesIdCounter.current++,
+            position: transform.position.clone(),
+            direction: direction.clone(),
+            entityId: entity.id,
+            subclass: userData.subclass,
+            level: userData.level,
+            opacity: userData.opacity || 1.0,
+            projectileType: 'fan_of_knives',
+            fanOfKnivesFlourishTint: fanTint,
           });
         }
       } else if (userData.isRegularArrow || userData.projectileType === 'burst_arrow') {
         const existing = projectileData.regular.find(p => p.entityId === entity.id);
+        const triggerFinger = userData.triggerFingerUncharged === true;
         if (existing) {
           existing.position.copy(transform.position);
+          existing.triggerFingerUncharged = triggerFinger;
           newRegular.push(existing);
         } else {
           newRegular.push({
@@ -308,7 +377,8 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             subclass: userData.subclass,
             level: userData.level,
             opacity: userData.opacity || 1.0,
-            projectileType: userData.projectileType // Pass projectile type for color differentiation
+            projectileType: userData.projectileType,
+            triggerFingerUncharged: triggerFinger,
           });
         }
       } else if (userData.projectileType === 'wind_shear') {
@@ -388,32 +458,163 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
       }
     }
 
+    const crossentropyMeteorEvents = world.getEvents?.('crossentropyMeteorCast') || [];
+    if (crossentropyMeteorEvents.length > 0) {
+      world.clearEvents?.('crossentropyMeteorCast');
+      const spawned: CrossentropyMeteorData[] = [];
+      for (const raw of crossentropyMeteorEvents) {
+        const target =
+          raw != null &&
+          typeof raw === 'object' &&
+          'targetPosition' in raw &&
+          raw.targetPosition != null &&
+          typeof (raw as { targetPosition: Vector3 }).targetPosition.clone === 'function'
+            ? (raw as { targetPosition: Vector3 }).targetPosition.clone()
+            : null;
+        if (!target) continue;
+        const timestamp =
+          raw != null &&
+          typeof raw === 'object' &&
+          'timestamp' in raw &&
+          typeof (raw as { timestamp?: unknown }).timestamp === 'number'
+            ? ((raw as { timestamp: number }).timestamp)
+            : undefined;
+        const damage =
+          raw != null &&
+          typeof raw === 'object' &&
+          'damage' in raw &&
+          typeof (raw as { damage?: unknown }).damage === 'number'
+            ? ((raw as { damage: number }).damage)
+            : undefined;
+        const startPosition =
+          raw != null &&
+          typeof raw === 'object' &&
+          'startPosition' in raw &&
+          raw.startPosition != null &&
+          typeof (raw as { startPosition: Vector3 }).startPosition.clone === 'function'
+            ? (raw as { startPosition: Vector3 }).startPosition.clone()
+            : undefined;
+        spawned.push({
+          id: crossentropyMeteorIdCounter.current++,
+          targetPosition: target,
+          ...(timestamp != null ? { timestamp } : {}),
+          ...(damage != null ? { damage } : {}),
+          ...(startPosition ? { startPosition } : {}),
+        });
+      }
+      if (spawned.length > 0) {
+        setCrossentropyMeteors((prev) => [...prev, ...spawned]);
+      }
+    }
+
+    const entropicVisualEvents = world.getEvents?.('entropicBoltVisual') || [];
+    const liveVisualEntropicBolts = visualEntropicBolts.filter(
+      (bolt) => currentTime - bolt.createdAtElapsed < ENTROPIC_VISUAL_ONLY_LIFETIME_SEC,
+    );
+    if (entropicVisualEvents.length > 0) {
+      world.clearEvents?.('entropicBoltVisual');
+      for (const raw of entropicVisualEvents) {
+        const position =
+          raw != null &&
+          typeof raw === 'object' &&
+          'position' in raw &&
+          raw.position != null &&
+          typeof (raw as { position: Vector3 }).position.clone === 'function'
+            ? (raw as { position: Vector3 }).position.clone()
+            : null;
+        const direction =
+          raw != null &&
+          typeof raw === 'object' &&
+          'direction' in raw &&
+          raw.direction != null &&
+          typeof (raw as { direction: Vector3 }).direction.clone === 'function'
+            ? (raw as { direction: Vector3 }).direction.clone()
+            : null;
+        if (!position || !direction) continue;
+        const entropicTalent =
+          raw != null && typeof raw === 'object'
+            ? ((raw as { entropicBoltTalent?: ProjectileData['entropicBoltTalent'] }).entropicBoltTalent)
+            : undefined;
+        liveVisualEntropicBolts.push({
+          id: entropicIdCounter.current++,
+          position,
+          direction,
+          isCryoflame:
+            raw != null && typeof raw === 'object'
+              ? (raw as { isCryoflame?: boolean }).isCryoflame === true
+              : false,
+          colorVariant:
+            entropicTalent === 'arctic'
+              ? 'arctic'
+              : raw != null && typeof raw === 'object'
+                ? (raw as { colorVariant?: string }).colorVariant || 'purple'
+                : 'purple',
+          entropicBoltTalent: entropicTalent,
+          curveDirection:
+            raw != null && typeof raw === 'object'
+              ? (raw as { curveDirection?: ProjectileData['curveDirection'] }).curveDirection
+              : undefined,
+          createdAtElapsed: currentTime,
+        });
+      }
+    }
+    const visualEntropicChanged =
+      entropicVisualEvents.length > 0 ||
+      liveVisualEntropicBolts.length !== visualEntropicBolts.length;
+    if (visualEntropicChanged) {
+      setVisualEntropicBolts(liveVisualEntropicBolts);
+    }
+
+    // Entropic bolts: linger briefly after ECS despawn so the trail can fade out (see EntropicBoltTrail).
+    const liveEntropicIds = new Set(newEntropic.map((b) => b.entityId));
+    const mergedEntropic: ProjectileData[] = [...newEntropic];
+    for (const b of projectileData.entropic) {
+      if (!liveEntropicIds.has(b.entityId)) {
+        if (b.trailFadeOutStartElapsed === undefined) {
+          mergedEntropic.push({ ...b, trailFadeOutStartElapsed: currentTime });
+        } else if (currentTime - b.trailFadeOutStartElapsed < ENTROPIC_TRAIL_FADE_OUT_DURATION) {
+          mergedEntropic.push(b);
+        }
+      }
+    }
+
+    const entropicDataChanged =
+      mergedEntropic.length !== projectileData.entropic.length ||
+      mergedEntropic.some((p) => {
+        const ex = projectileData.entropic.find((e) => e.entityId === p.entityId);
+        if (!ex) return true;
+        return (ex.trailFadeOutStartElapsed ?? -1) !== (p.trailFadeOutStartElapsed ?? -1);
+      }) ||
+      projectileData.entropic.some((p) => !mergedEntropic.find((e) => e.entityId === p.entityId));
+
     // Update state only if there are changes
     const hasProjectileChanges = (
       newCrossentropy.length !== projectileData.crossentropy.length ||
-      newEntropic.length !== projectileData.entropic.length ||
+      entropicDataChanged ||
       newCharged.length !== projectileData.charged.length ||
       newRegular.length !== projectileData.regular.length ||
       newSword.length !== projectileData.sword.length ||
       newBarrage.length !== projectileData.barrage.length ||
+      newFanOfKnives.length !== projectileData.fanOfKnives.length ||
       newTower.length !== projectileData.tower.length ||
       newCrossentropy.some(p => !projectileData.crossentropy.find(existing => existing.entityId === p.entityId)) ||
-      newEntropic.some(p => !projectileData.entropic.find(existing => existing.entityId === p.entityId)) ||
       newCharged.some(p => !projectileData.charged.find(existing => existing.entityId === p.entityId)) ||
       newRegular.some(p => !projectileData.regular.find(existing => existing.entityId === p.entityId)) ||
       newSword.some(p => !projectileData.sword.find(existing => existing.entityId === p.entityId)) ||
       newBarrage.some(p => !projectileData.barrage.find(existing => existing.entityId === p.entityId)) ||
+      newFanOfKnives.some(p => !projectileData.fanOfKnives.find(existing => existing.entityId === p.entityId)) ||
       newTower.some(p => !projectileData.tower.find(existing => existing.entityId === p.entityId))
     );
 
     if (hasProjectileChanges) {
       setProjectileData({
         crossentropy: newCrossentropy,
-        entropic: newEntropic,
+        entropic: mergedEntropic,
         charged: newCharged,
         regular: newRegular,
         sword: newSword,
         barrage: newBarrage,
+        fanOfKnives: newFanOfKnives,
         tower: newTower
       });
     }
@@ -436,6 +637,21 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
           duration={CROSSENTROPY_PLAGUE_VENOM_MS}
           onComplete={() =>
             setCrossentropyPlagueVenoms((prev) => prev.filter((p) => p.id !== vfx.id))
+          }
+        />
+      ))}
+      {crossentropyMeteors.map((meteor) => (
+        <CrossentropyMeteor
+          key={meteor.id}
+          targetPosition={meteor.targetPosition}
+          timestamp={meteor.timestamp}
+          damage={meteor.damage}
+          startPosition={meteor.startPosition}
+          onImpact={(_damage, _position) => {
+            // Damage is applied by ProjectileSystem / backend; this is VFX only.
+          }}
+          onComplete={() =>
+            setCrossentropyMeteors((prev) => prev.filter((m) => m.id !== meteor.id))
           }
         />
       ))}
@@ -494,9 +710,23 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
           direction={bolt.direction}
           isCryoflame={bolt.isCryoflame}
           colorVariant={bolt.colorVariant}
+          curveDirection={bolt.curveDirection}
+          trailFadeOutStartElapsed={bolt.trailFadeOutStartElapsed}
           onImpact={(impactPosition?: Vector3) => {
             // console.log(`⚡ EntropicBolt ${bolt.id} impact at position:`, impactPosition?.toArray());
           }}
+        />
+      ))}
+
+      {visualEntropicBolts.map((bolt) => (
+        <EntropicBolt
+          key={`visual-entropic-${bolt.id}`}
+          id={bolt.id}
+          position={bolt.position}
+          direction={bolt.direction}
+          isCryoflame={bolt.isCryoflame}
+          colorVariant={bolt.colorVariant}
+          curveDirection={bolt.curveDirection}
         />
       ))}
 
@@ -528,6 +758,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             distanceTraveled={distanceTraveled}
             maxDistance={maxDistance}
             projectileType={arrow.projectileType}
+            triggerFingerUncharged={arrow.triggerFingerUncharged === true}
             onImpact={() => {
               // console.log(`🏹 RegularArrow ${arrow.id} impact`);
             }}
@@ -561,6 +792,31 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             wyvernBite: arrow.barrageWyvernBite === true,
             staggeringBite: arrow.barrageStaggeringBite === true,
             glacialBite: arrow.barrageGlacialBite === true,
+            entanglement: arrow.barrageEntanglement === true,
+          };
+        })}
+      />
+
+      <FanOfKnivesDagger
+        projectiles={projectileData.fanOfKnives.map((knife) => {
+          const projectileEntity = world?.getEntity(knife.entityId);
+          const projectileComp = projectileEntity?.getComponent(Projectile);
+          const distanceTraveled = projectileComp?.distanceTraveled ?? 0;
+          const maxDistance =
+            projectileComp?.maxDistance != null && projectileComp.maxDistance !== Infinity
+              ? projectileComp.maxDistance
+              : 7;
+          const startPos =
+            projectileComp?.startPosition != null ? projectileComp.startPosition.clone() : knife.position.clone();
+          const tint = knife.fanOfKnivesFlourishTint ?? 'default';
+          return {
+            id: knife.id,
+            position: knife.position,
+            direction: knife.direction.clone(),
+            startPosition: startPos,
+            maxDistance,
+            distanceTraveled,
+            colors: getFanOfKnivesDaggerColorsFromTint(tint),
           };
         })}
       />

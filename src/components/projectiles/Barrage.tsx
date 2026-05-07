@@ -22,6 +22,8 @@ interface BarrageProjectile {
   staggeringBite?: boolean;
   /** Glacial Bite room boon — light blue (after Wyvern/Wrathful, before Staggering). */
   glacialBite?: boolean;
+  /** Entanglement talent — green root-themed Barrage. */
+  entanglement?: boolean;
 }
 
 interface BarrageProps {
@@ -32,9 +34,11 @@ export default function Barrage({ projectiles }: BarrageProps) {
   return (
     <>
       {projectiles.map(projectile => {
-        // Wyvern > Wrathful > Glacial Bite > Staggering (blue) > default orange-yellow
+        // Wyvern > Entanglement > Wrathful > Glacial Bite > Staggering (blue) > default orange-yellow
         const mainColor = projectile.wyvernBite
           ? '#00aa20'
+          : projectile.entanglement
+            ? '#2faa38'
           : projectile.wrathfulBite
             ? '#cc2222'
             : projectile.glacialBite
@@ -44,6 +48,8 @@ export default function Barrage({ projectiles }: BarrageProps) {
                 : '#ff4400';
         const emissiveColor = projectile.wyvernBite
           ? '#00ff40'
+          : projectile.entanglement
+            ? '#66ff66'
           : projectile.wrathfulBite
             ? '#ff3333'
             : projectile.glacialBite

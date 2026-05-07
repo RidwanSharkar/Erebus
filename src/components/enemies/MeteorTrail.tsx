@@ -1,14 +1,28 @@
 import React, { useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Color, Mesh, Group, Points, BufferAttribute, AdditiveBlending } from 'three';
+import { Color, Mesh, Group, Points, BufferAttribute, AdditiveBlending, Vector3 } from 'three';
 
 interface MeteorTrailProps {
   color: Color;
   size: number;
   meshRef: React.RefObject<Mesh | Group>;
+  /**
+   * Unit vector from the meteor head toward older trail samples (behind the rock).
+   * When set, segment spacing follows this axis (use for angled Crossentropy meteors).
+   * When omitted, uses world +Y (legacy vertical fall).
+   */
+  backwardDir?: Vector3;
+  /** Distance between trail samples along `backwardDir` (or +Y when default). */
+  segmentSpacing?: number;
 }
 
-export default function MeteorTrail({ color, size, meshRef }: MeteorTrailProps) {
+export default function MeteorTrail({
+  color,
+  size,
+  meshRef,
+  backwardDir,
+  segmentSpacing = 0.5,
+}: MeteorTrailProps) {
   const particlesCount = 17;
   const particlesRef = useRef<Points>(null);
   const positionsRef = useRef<Float32Array>(new Float32Array(particlesCount * 3));
@@ -36,14 +50,16 @@ export default function MeteorTrail({ color, size, meshRef }: MeteorTrailProps) 
     if (!particlesRef.current?.parent || !meshRef.current || !isInitialized.current) return;
 
     const position = meshRef.current.position;
+    const sx = backwardDir ? backwardDir.x * segmentSpacing : 0;
+    const sy = backwardDir ? backwardDir.y * segmentSpacing : segmentSpacing;
+    const sz = backwardDir ? backwardDir.z * segmentSpacing : 0;
 
-    // Update trail positions with upward spacing for falling meteor
     for (let i = particlesCount - 1; i > 0; i--) {
-      positionsRef.current[i * 3] = positionsRef.current[(i - 1) * 3];
-      positionsRef.current[i * 3 + 1] = positionsRef.current[(i - 1) * 3 + 1] + 0.5;
-      positionsRef.current[i * 3 + 2] = positionsRef.current[(i - 1) * 3 + 2];
+      positionsRef.current[i * 3] = positionsRef.current[(i - 1) * 3] + sx;
+      positionsRef.current[i * 3 + 1] = positionsRef.current[(i - 1) * 3 + 1] + sy;
+      positionsRef.current[i * 3 + 2] = positionsRef.current[(i - 1) * 3 + 2] + sz;
 
-      opacitiesRef.current[i] = Math.pow((1 - i / particlesCount), 0.3) * 0.9;
+      opacitiesRef.current[i] = Math.pow(1 - i / particlesCount, 0.3) * 0.9;
       scalesRef.current[i] = size * (2 - (i / particlesCount) * 0.5);
     }
 
@@ -126,4 +142,3 @@ export default function MeteorTrail({ color, size, meshRef }: MeteorTrailProps) 
     </points>
   );
 }
-

@@ -73,6 +73,11 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
     const allEntities = world.getAllEntities();
     return allEntities
       .filter(entity => entity.hasComponent(Enemy) && entity.hasComponent(Transform) && entity.hasComponent(Health))
+      .filter(
+        entity =>
+          !entity.userData?.isCoopAlliedUnit &&
+          entity.userData?.coopServerEnemyType !== 'allied-knight',
+      )
       .map(entity => {
         const enemy = entity.getComponent(Enemy)!;
         const transform = entity.getComponent(Transform)!;
@@ -101,6 +106,7 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
 
   const addFrozenEnemy = useCallback(
     (enemyId: string, position: Vector3, durationMs: number = DEFAULT_FROZEN_VFX_MS) => {
+      (window as any).audioSystem?.playFrozenStatusSound?.(position);
       setFrozenEnemies(prev => {
         const rest = prev.filter(fe => fe.enemyId !== enemyId);
         return [

@@ -238,7 +238,7 @@ export default function Icebeam({
     <group ref={beamRef}>
       <group position={[0, -1.1, 2]}>
         <mesh>
-          <sphereGeometry args={[0.45 * intensity, 16, 16]} />
+          <sphereGeometry args={[0.4 * intensity, 16, 16]} />
           <meshStandardMaterial
             color={beamColors.color}
             emissive={beamColors.emissive}
@@ -249,7 +249,7 @@ export default function Icebeam({
         </mesh>
 
         <mesh>
-          <sphereGeometry args={[0.65 * intensity, 16, 16]} />
+          <sphereGeometry args={[0.5 * intensity, 16, 16]} />
           <meshStandardMaterial
             color={beamColors.color}
             emissive={beamColors.emissive}

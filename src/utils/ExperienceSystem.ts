@@ -1,21 +1,21 @@
 // Experience System Utilities for co-op and PVP modes
 
 export class ExperienceSystem {
-  // Cumulative EXP needed to reach each level
+  // Cumulative EXP needed to reach each level (~1.75× prior thresholds)
   private static readonly LEVEL_REQUIREMENTS: Record<number, number> = {
-    1: 0,     // Starting level
-    2: 500,  // 1 000 total EXP to reach level 2
-    3: 2000,  // 3 000 total EXP to reach level 3 (+2 000 from L2)
-    4: 5000,  // 7 000 total EXP to reach level 4 (+4 000 from L3)
-    5: 7500  // 15 000 total EXP to reach level 5 (+8 000 from L4, max)
+    1: 0,
+    2: 875,
+    3: 3500,
+    4: 8750,
+    5: 13125,
   };
 
-  // EXP needed to go from level N to level N+1
+  // EXP needed to go from level N to level N+1 (matches LEVEL_REQUIREMENTS gaps)
   private static readonly EXP_PER_LEVEL_INCREMENT: Record<number, number> = {
-    1: 1000,  // 0    → 1 000
-    2: 2000,  // 1000 → 3 000
-    3: 4000,  // 3000 → 7 000
-    4: 8000   // 7000 → 15 000
+    1: 875,
+    2: 2625,
+    3: 5250,
+    4: 4375,
   };
 
   // Health scaling per level

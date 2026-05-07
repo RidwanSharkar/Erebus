@@ -13,6 +13,7 @@ import { campHpTheme } from '@/utils/campHpTheme';
 import { KNIGHT_CAST_ABILITY_LOCK_MS } from '@/utils/knightCoopAbilitiesConstants';
 import GhostTrail from '../dragon/GhostTrail';
 import { WeaponType } from '../dragon/weapons';
+import ChargedOrbitals, { DashChargeStatus } from '../dragon/ChargedOrbitals';
 
 interface KnightRendererProps {
   id: string;
@@ -27,6 +28,14 @@ interface KnightRendererProps {
   showMeleeRangeRing?: boolean;
   /** Staggering Strike buildup (0–100). */
   staggerBuildup?: number;
+  attackTelegraphEvent?: string;
+  alternateAttackVariants?: boolean;
+  attackVariantOneChance?: number;
+  showOrbitals?: boolean;
+  orbitalCharges?: DashChargeStatus[];
+  orbitalActiveColor?: string;
+  orbitalInactiveColor?: string;
+  orbitalYOffset?: number;
 }
 
 const ATTACK_DURATION = 1200; // ms — matches Mixamo attack clip length
@@ -59,6 +68,14 @@ export default function KnightRenderer({
   campType,
   showMeleeRangeRing = true,
   staggerBuildup = 0,
+  attackTelegraphEvent = 'knight-attack-telegraph',
+  alternateAttackVariants = false,
+  attackVariantOneChance = 0.65,
+  showOrbitals = false,
+  orbitalCharges = [],
+  orbitalActiveColor,
+  orbitalInactiveColor,
+  orbitalYOffset = 2.1,
 }: KnightRendererProps) {
   const theme = campHpTheme(campType);
   const { socket } = useMultiplayer();
@@ -75,6 +92,7 @@ export default function KnightRenderer({
 
   const prevHealthRef = useRef(health);
   const nextImpactVariantRef = useRef<1 | 2>(1);
+  const nextAttackVariantRef = useRef<1 | 2>(1);
 
   // Server-authoritative targets — updated when props change (single source of truth).
   // The group is NEVER written to from effects; only useFrame lerps toward these refs.
@@ -183,7 +201,13 @@ export default function KnightRenderer({
 
     const handleKnightTelegraph = (data: any) => {
       if (data.knightId !== id) return;
-      setAttackVariant(Math.random() < 0.65 ? 1 : 2);
+      if (alternateAttackVariants) {
+        const variant = nextAttackVariantRef.current;
+        nextAttackVariantRef.current = variant === 1 ? 2 : 1;
+        setAttackVariant(variant);
+      } else {
+        setAttackVariant(Math.random() < attackVariantOneChance ? 1 : 2);
+      }
       setIsAttacking(true);
       isAttackingRef.current = true;
       setTimeout(() => {
@@ -192,9 +216,9 @@ export default function KnightRenderer({
       }, ATTACK_DURATION);
     };
 
-    socket.on('knight-attack-telegraph', handleKnightTelegraph);
-    return () => { socket.off('knight-attack-telegraph', handleKnightTelegraph); };
-  }, [id, socket]);
+    socket.on(attackTelegraphEvent, handleKnightTelegraph);
+    return () => { socket.off(attackTelegraphEvent, handleKnightTelegraph); };
+  }, [id, socket, attackTelegraphEvent, alternateAttackVariants, attackVariantOneChance]);
 
   // Post-boss mobility: server-authoritative dash, visually matched to player dash timing.
   useEffect(() => {
@@ -260,6 +284,8 @@ export default function KnightRenderer({
     // Green / Purple Knight — Aggro Shout (self-heal)
     const handleHealTelegraph = (data: any) => {
       if (data.knightId !== id) return;
+      const soundPos = groupRef.current?.position.clone() ?? targetPosition.current.clone();
+      (window as any).audioSystem?.playKnightAggroSound?.(soundPos);
       isAbilityRef.current = true;
       setAbilityClip('Aggro');
       setTimeout(() => {
@@ -340,6 +366,17 @@ export default function KnightRenderer({
       isTrailMotionRef={isDashingRef}
       yOffset={1.0}
     />
+
+    {showOrbitals && orbitalCharges.length > 0 && !isDying && (
+      <ChargedOrbitals
+        parentRef={groupRef as React.RefObject<Group>}
+        dashCharges={orbitalCharges}
+        weaponType={WeaponType.NONE}
+        yOffset={orbitalYOffset}
+        customActiveColor={orbitalActiveColor}
+        customInactiveColor={orbitalInactiveColor}
+      />
+    )}
 
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <KnightModel

@@ -12,7 +12,22 @@ import { StatSystem, StatPointData, StatKey, PlayerStats } from '@/utils/StatSys
 import type { ItemRarity } from '@/utils/itemRarity';
 import { Vector3 } from '@/utils/three-exports';
 
-export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'chaos' | 'healing' | 'boss';
+export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'healing' | 'boss';
+export type CoopTerrainTheme = 'purple' | 'blue' | 'green';
+
+export type BroadcastPlayerAttackAnimationData = {
+  comboStep?: 1 | 2 | 3;
+  chargeProgress?: number;
+  isSpinning?: boolean;
+  isPerfectShot?: boolean;
+  damage?: number;
+  targetId?: number;
+  hitPosition?: { x: number; y: number; z: number };
+  isSwordCharging?: boolean;
+  storedCharge?: boolean;
+  highCaliberPerfectBeam?: boolean;
+  projectileConfig?: Record<string, unknown>;
+};
 
 export interface PlayerMovementDirection {
   x: number;
@@ -43,6 +58,7 @@ export interface Player {
   level?: number;
   // Essence currency system
   essence?: number;
+  gold?: number;
   // Purchased items
   purchasedItems?: string[];
   // Venom status effects
@@ -68,6 +84,8 @@ export interface EnemyDamageMeta {
   reaperCrossentropy?: boolean;
   /** PLAGUE Crossentropy — server zombies on kill; client venom FX. */
   crossentropyPlague?: boolean;
+  /** METEOR Crossentropy — server rolls meteor proc and schedules delayed AoE impact. */
+  crossentropyMeteor?: boolean;
   /** Staggering Strike (`wraith_strike`), Runeblade combo (`runeblade_combo`), Sabres (`sabre_left` / `sabre_right`), Staggering Smite (`smite` with `staggerToAdd`), Stagger Shot (`projectile` with `staggerToAdd`), TEMPEST Crossentropy (`crossentropy` with `staggerToAdd`): server accumulates stagger. */
   staggerToAdd?: number;
   /** Wyvern Bite — Barrage hit applies Concentrated Venom stack on server. */
@@ -104,6 +122,8 @@ export interface EnemyDamageMeta {
   glacialBiteChill?: boolean;
   /** Glacial Talons — Reaping Talons double damage vs frozen on server. */
   glacialTalons?: boolean;
+  /** Entanglement — Barrage hit roots and squeezes target on server. */
+  entanglementBarrage?: boolean;
 }
 
 /** Server enemy; `type` includes e.g. `knight`, `training-dummy` (throne prep). */
@@ -122,6 +142,14 @@ export interface Enemy {
   campIndex?: number;
   /** INFESTED STRIKE ally zombie */
   ownerPlayerId?: string;
+  /** Persistent co-op allied unit, currently the allied knight tank. */
+  alliedUnit?: boolean;
+  combatInitiated?: boolean;
+  /** Allied knight spell resource; true means the visible orbital is charged. */
+  alliedOrbSlots?: boolean[];
+  alliedOrbRecoverAt?: number[];
+  alliedSmiteCooldownUntil?: number;
+  alliedGreaterHealCooldownUntil?: number;
   expireAt?: number;
   /** Juggernaut Strain coop room boon — larger client model when `juggernaut`. */
   zombieVariant?: 'standard' | 'juggernaut';
@@ -139,6 +167,7 @@ export interface ConfirmedEnemyDamageEvent {
   wasKilled?: boolean;
   timestamp: number;
   damageType?: string;
+  crossentropyMeteorDamage?: boolean;
   position?: { x: number; y: number; z: number };
 }
 
@@ -166,6 +195,16 @@ export interface InventoryItem {
   pickedUpAt: number;
   statBonus?: number;
   rarity?: ItemRarity;
+}
+
+export interface GoldDrop {
+  id: string;
+  amount: number;
+  pieceCount: number;
+  position: { x: number; y: number; z: number };
+  enemyType?: string | null;
+  soulType?: string | null;
+  droppedAt: number;
 }
 
 
@@ -246,6 +285,8 @@ interface MultiplayerContextType {
   thronePortalLayout: 'rim' | 'center';
   /** Co-op: main combat map — two portals (wave 2), boss gate, or post-boss continuation. Null otherwise. */
   coopMainArenaPortalPhase: 'pick_wave2' | 'pick_boss' | 'pick_post_boss' | null;
+  /** Co-op: act terrain theme, independent from the selected room color/reward kind. */
+  coopTerrainTheme: CoopTerrainTheme;
   /** Co-op: active destination/reward kind for environment and pedestal behavior. */
   coopCurrentRoomKind: CoopRoomKind | null;
   /** Co-op: completed room kind for the current pedestal reward. */
@@ -277,6 +318,11 @@ interface MultiplayerContextType {
    */
   coopClearedRoomColor: string | null;
   clearCoopClearedRoomColor: () => void;
+  /** Phase 1: hide the overlay and begin the fade animation (call after scene assets are ready). */
+  hideCoopPortalTransition: () => void;
+  /** Phase 2: tell the server this client has fully loaded (call after the fade completes). */
+  confirmCoopPortalTransitionComplete: () => void;
+  /** @deprecated Use hideCoopPortalTransition + confirmCoopPortalTransitionComplete instead. */
   endCoopPortalTransition: () => void;
 
   // Chat state
@@ -311,7 +357,12 @@ interface MultiplayerContextType {
   updatePlayerPosition: (position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: PlayerMovementDirection) => void;
   updatePlayerWeapon: (weapon: WeaponType, subclass?: WeaponSubclass) => void;
   updatePlayerHealth: (health: number, maxHealth?: number) => void;
-  broadcastPlayerAttack: (attackType: string, position: { x: number; y: number; z: number }, direction: { x: number; y: number; z: number }, animationData?: { comboStep?: 1 | 2 | 3; chargeProgress?: number; isSpinning?: boolean; isPerfectShot?: boolean; damage?: number; targetId?: number; hitPosition?: { x: number; y: number; z: number }; isSwordCharging?: boolean; storedCharge?: boolean }) => void;
+  broadcastPlayerAttack: (
+    attackType: string,
+    position: { x: number; y: number; z: number },
+    direction: { x: number; y: number; z: number },
+    animationData?: BroadcastPlayerAttackAnimationData,
+  ) => void;
   broadcastPlayerAbility: (abilityType: string, position: { x: number; y: number; z: number }, direction?: { x: number; y: number; z: number }, target?: string, extraData?: any) => void;
   broadcastPlayerEffect: (effect: any) => void;
   broadcastPlayerDamage: (targetPlayerId: string, damage: number, damageType?: string, isCritical?: boolean) => void;
@@ -340,6 +391,7 @@ interface MultiplayerContextType {
 
   // Essence currency system actions
   updatePlayerEssence: (playerId: string, essence: number) => void;
+  updatePlayerGold: (playerId: string, gold: number) => void;
 
   // Shield actions
   updatePlayerShield: (playerId: string, shield: number, maxShield?: number) => void;
@@ -366,11 +418,13 @@ interface MultiplayerContextType {
 
   // Item drop & inventory
   droppedItems: Map<string, DroppedItem>;
+  goldDrops: Map<string, GoldDrop>;
   inventory: InventoryItem[];
   pickupItem: (itemId: string) => void;
+  pickupGoldDrop: (dropId: string) => void;
 
   // Merchant purchase actions
-  purchaseItem: (itemId: string, cost: number, currency: 'essence') => boolean;
+  purchaseItem: (itemId: string, cost: number, currency: 'essence' | 'gold') => boolean;
 
   // Chat actions
   sendChatMessage: (message: string) => void;
@@ -396,7 +450,8 @@ interface MultiplayerProviderProps {
 }
 
 const VALID_CAMP_KEYS = new Set(['red', 'blue', 'green', 'purple']);
-const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'chaos', 'healing', 'boss']);
+const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'healing', 'boss']);
+const VALID_COOP_TERRAIN_THEMES = new Set(['purple', 'blue', 'green']);
 
 function normalizeThronePortalLayout(v: unknown): 'rim' | 'center' {
   return v === 'center' ? 'center' : 'rim';
@@ -410,6 +465,11 @@ function normalizeCoopMainArenaPhase(v: unknown): 'pick_wave2' | 'pick_boss' | '
 function normalizeCoopRoomKind(v: unknown): CoopRoomKind | null {
   const k = String(v || '').toLowerCase();
   return VALID_COOP_ROOM_KINDS.has(k) ? (k as CoopRoomKind) : null;
+}
+
+function normalizeCoopTerrainTheme(v: unknown): CoopTerrainTheme {
+  const k = String(v || '').toLowerCase();
+  return VALID_COOP_TERRAIN_THEMES.has(k) ? (k as CoopTerrainTheme) : 'purple';
 }
 
 function normalizeCoopBossThroneArena(v: unknown): boolean {
@@ -467,6 +527,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopClearedRoomKind, setCoopClearedRoomKind] = useState<CoopRoomKind | null>(null);
   const [coopBossThroneArena, setCoopBossThroneArena] = useState(false);
   const [coopThroneBossKind, setCoopThroneBossKind] = useState<'boss' | 'boss2' | 'boss3' | null>(null);
+  const [coopTerrainTheme, setCoopTerrainTheme] = useState<CoopTerrainTheme>('purple');
   const [coopTransitionOverlay, setCoopTransitionOverlay] = useState(false);
   const [coopCombatTransitionId, setCoopCombatTransitionId] = useState<number | null>(null);
   const [coopCombatArenaEnterSeq, setCoopCombatArenaEnterSeq] = useState(0);
@@ -493,6 +554,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
   // Item drop & inventory state
   const [droppedItems, setDroppedItems] = useState<Map<string, DroppedItem>>(new Map());
+  const [goldDrops, setGoldDrops] = useState<Map<string, GoldDrop>>(new Map());
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
 
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
@@ -597,8 +659,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setPlayers(new Map());
       setEnemies(new Map());
       setCampTypes([]);
+      setCoopTerrainTheme('purple');
       setSkeletonKillCount(0);
       setDroppedItems(new Map());
+      setGoldDrops(new Map());
       setInventory([]);
 
       // Clear heartbeat
@@ -649,6 +713,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         });
       }
       setEnemies(enemiesMap);
+      const initialGoldDrops = new Map<string, GoldDrop>();
+      if (Array.isArray((data as { goldDrops?: GoldDrop[] }).goldDrops)) {
+        for (const drop of (data as { goldDrops: GoldDrop[] }).goldDrops) {
+          if (drop?.id) {
+            initialGoldDrops.set(drop.id, drop);
+          }
+        }
+      }
+      setGoldDrops(initialGoldDrops);
       setCampTypes(campArchetypeFromRoomPayload(data));
       if (Array.isArray((data as { thronePortalOffer?: string[] }).thronePortalOffer)) {
         setThronePortalOffer([...(data as { thronePortalOffer: string[] }).thronePortalOffer]);
@@ -669,6 +742,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       } else {
         setCoopThroneBossKind(null);
       }
+      setCoopTerrainTheme(normalizeCoopTerrainTheme((data as { coopTerrainTheme?: unknown }).coopTerrainTheme));
       setCoopCurrentRoomKind(normalizeCoopRoomKind((data as { coopCurrentRoomKind?: string }).coopCurrentRoomKind));
       setCoopClearedRoomKind(normalizeCoopRoomKind((data as { coopClearedRoomKind?: string }).coopClearedRoomKind));
       const ms = (data as { mushroomState?: { health?: number[]; maxHealth?: number } }).mushroomState;
@@ -679,9 +753,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       }
     });
 
-    addEventHandler('camps-initialized', (data: { campTypes?: string[]; coopCurrentRoomKind?: string }) => {
+    addEventHandler('camps-initialized', (data: { campTypes?: string[]; coopTerrainTheme?: unknown; coopCurrentRoomKind?: string }) => {
       const next = campArchetypeFromRoomPayload({ campTypes: data.campTypes });
       if (next.length > 0) setCampTypes(next);
+      setCoopTerrainTheme(normalizeCoopTerrainTheme(data.coopTerrainTheme));
       if (data.coopCurrentRoomKind != null) {
         setCoopCurrentRoomKind(normalizeCoopRoomKind(data.coopCurrentRoomKind));
       }
@@ -812,6 +887,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     addEventHandler('sabres-relentless-backstab-kill', () => {
       (window as any).controlSystemRef?.current?.resetBackstabCooldownForRelentless();
+      (window as any).audioSystem?.playLesserHealSound?.();
     });
 
     addEventHandler('mushroom-damaged', (data: { index: number; newHealth: number; maxHealth: number }) => {
@@ -845,7 +921,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         !skipDotFloating &&
         (data.damageType === 'ignite' ||
           data.damageType === 'venom' ||
-          data.damageType === 'wyvern_talons_detonate') &&
+          data.damageType === 'wyvern_talons_detonate' ||
+          (data.damageType === 'crossentropy' && data.crossentropyMeteorDamage === true)) &&
         typeof data.damage === 'number' &&
         data.damage > 0 &&
         data.position
@@ -854,7 +931,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         if (mgr?.addDamageNumber) {
           const pos = new Vector3(data.position.x, data.position.y + 1.5, data.position.z);
           const dt =
-            data.damageType === 'venom' || data.damageType === 'wyvern_talons_detonate' ? 'venom' : 'ignite';
+            data.damageType === 'venom' || data.damageType === 'wyvern_talons_detonate'
+              ? 'venom'
+              : data.damageType === 'crossentropy'
+                ? 'crossentropy'
+                : 'ignite';
           mgr.addDamageNumber(data.damage, false, pos, dt);
         }
       }
@@ -876,6 +957,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           wasKilled: data.wasKilled,
           timestamp: typeof data.timestamp === 'number' ? data.timestamp : Date.now(),
           damageType: typeof data.damageType === 'string' ? data.damageType : undefined,
+          crossentropyMeteorDamage: data.crossentropyMeteorDamage === true,
           position: data.position,
         });
       }
@@ -921,6 +1003,26 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         const enemy = updated.get(data.enemyId);
         if (enemy) {
           updated.set(data.enemyId, { ...enemy, staggerBuildup: data.stagger });
+        }
+        return updated;
+      });
+    });
+
+    addEventHandler('allied-knight-orbs-updated', (data: {
+      knightId?: string;
+      slots?: boolean[];
+      recoverAt?: number[];
+    }) => {
+      const knightId = data.knightId || 'allied-knight';
+      setEnemies(prev => {
+        const updated = new Map(prev);
+        const enemy = updated.get(knightId);
+        if (enemy) {
+          updated.set(knightId, {
+            ...enemy,
+            alliedOrbSlots: Array.isArray(data.slots) ? [...data.slots] : enemy.alliedOrbSlots,
+            alliedOrbRecoverAt: Array.isArray(data.recoverAt) ? [...data.recoverAt] : enemy.alliedOrbRecoverAt,
+          });
         }
         return updated;
       });
@@ -988,6 +1090,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
       // Grant stat only to the player who picked it up
       if (newSocket.id && data.playerId === newSocket.id) {
+        const isAmuletPickup =
+          typeof data.item.type === 'string' && data.item.type.startsWith('AMULET_OF');
+        if (isAmuletPickup) {
+          (window as any).audioSystem?.playUITomePickupSound?.();
+        }
         if (data.item.stat != null) {
           const bonus = data.item.statBonus;
           if (bonus != null && bonus > 0) {
@@ -1016,6 +1123,48 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setDroppedItems(prev => {
         const next = new Map(prev);
         next.delete(data.itemId);
+        return next;
+      });
+    });
+
+    addEventHandler('gold-dropped', (data: { drop: GoldDrop }) => {
+      if (!data?.drop?.id) return;
+      setGoldDrops(prev => {
+        const next = new Map(prev);
+        next.set(data.drop.id, data.drop);
+        return next;
+      });
+    });
+
+    addEventHandler('gold-picked-up', (data: { dropId: string }) => {
+      if (!data?.dropId) return;
+      setGoldDrops(prev => {
+        const next = new Map(prev);
+        next.delete(data.dropId);
+        return next;
+      });
+    });
+
+    addEventHandler('gold-expired', (data: { dropId: string }) => {
+      if (!data?.dropId) return;
+      setGoldDrops(prev => {
+        const next = new Map(prev);
+        next.delete(data.dropId);
+        return next;
+      });
+    });
+
+    addEventHandler('player-gold-changed', (data: { playerId: string; gold: number }) => {
+      if (!data?.playerId || typeof data.gold !== 'number') return;
+      setPlayers(prev => {
+        const next = new Map(prev);
+        const player = next.get(data.playerId);
+        if (player) {
+          next.set(data.playerId, {
+            ...player,
+            gold: data.gold,
+          });
+        }
         return next;
       });
     });
@@ -1072,6 +1221,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       } else {
         setCoopThroneBossKind(null);
       }
+      setCoopTerrainTheme(normalizeCoopTerrainTheme(data?.coopTerrainTheme));
       setCoopCurrentRoomKind(normalizeCoopRoomKind(data?.coopCurrentRoomKind));
       setCoopClearedRoomKind(normalizeCoopRoomKind(data?.coopClearedRoomKind));
       if (data?.mushroomState?.health && Array.isArray(data.mushroomState.health)) {
@@ -1108,6 +1258,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       if (data && 'coopThroneBossKind' in data) {
         setCoopThroneBossKind(normalizeCoopThroneBossKind(data.coopThroneBossKind));
       }
+      setCoopTerrainTheme(normalizeCoopTerrainTheme(data?.coopTerrainTheme));
       if (data && 'coopCurrentRoomKind' in data) {
         setCoopCurrentRoomKind(normalizeCoopRoomKind(data.coopCurrentRoomKind));
       }
@@ -1156,6 +1307,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       } else {
         setCoopThroneBossKind(null);
       }
+      setCoopTerrainTheme(normalizeCoopTerrainTheme(data?.coopTerrainTheme));
       setCoopCurrentRoomKind(normalizeCoopRoomKind(data?.coopCurrentRoomKind));
       setCoopClearedRoomKind(null);
       const transitionId = data?.coopCombatTransitionId != null
@@ -1256,10 +1408,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         if (player) {
           const purchasedItems = player.purchasedItems || [];
           purchasedItems.push(data.itemId);
+          const nextEssence =
+            data.currency === 'essence' ? (player.essence || 0) - data.cost : (player.essence || 0);
+          const nextGold =
+            data.currency === 'gold' ? (player.gold || 0) - data.cost : (player.gold || 0);
           updated.set(data.playerId, {
             ...player,
             purchasedItems,
-            essence: (player.essence || 0) - data.cost
+            essence: nextEssence,
+            gold: nextGold,
           });
         }
         return updated;
@@ -1350,6 +1507,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setPlayers(new Map());
       setEnemies(new Map());
       setCampTypes([]);
+      setCoopTerrainTheme('purple');
 
       // Clear heartbeat
       if (heartbeatInterval.current) {
@@ -1412,6 +1570,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setCombatArenaActive(true);
     setGameMode('multiplayer');
     setCampTypes([]);
+    setCoopTerrainTheme('purple');
     setThronePortalOffer([]);
     setThronePortalLayout('rim');
     setCoopMainArenaPortalPhase(null);
@@ -1424,6 +1583,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setCoopBossClearedBgmSeq(0);
     setMushroomState(null);
     setDroppedItems(new Map());
+    setGoldDrops(new Map());
     setInventory([]);
     setSelectedWeaponsState({ primary: WeaponType.NONE, secondary: WeaponType.NONE });
     setAbilityLoadoutState(getDefaultLoadout());
@@ -1451,6 +1611,21 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       socket.emit('enter-combat-arena', { roomId: currentRoomId, chosenCampType });
     }
   }, [socket, currentRoomId]);
+
+  const hideCoopPortalTransition = useCallback(() => {
+    setCoopTransitionOverlay(false);
+  }, []);
+
+  const confirmCoopPortalTransitionComplete = useCallback(() => {
+    if (socket && currentRoomId && coopCombatTransitionId != null) {
+      socket.emit('coop-combat-transition-ready', {
+        roomId: currentRoomId,
+        transitionId: coopCombatTransitionId,
+        timestamp: Date.now(),
+      });
+    }
+    setCoopCombatTransitionId(null);
+  }, [socket, currentRoomId, coopCombatTransitionId]);
 
   const endCoopPortalTransition = useCallback(() => {
     if (socket && currentRoomId && coopCombatTransitionId != null) {
@@ -1500,7 +1675,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const broadcastPlayerAttack = useCallback((attackType: string, position: { x: number; y: number; z: number }, direction: { x: number; y: number; z: number }, animationData?: { comboStep?: 1 | 2 | 3; chargeProgress?: number; isSpinning?: boolean; isPerfectShot?: boolean; damage?: number; targetId?: number; hitPosition?: { x: number; y: number; z: number }; isSwordCharging?: boolean; storedCharge?: boolean }) => {
+  const broadcastPlayerAttack = useCallback(
+    (
+      attackType: string,
+      position: { x: number; y: number; z: number },
+      direction: { x: number; y: number; z: number },
+      animationData?: BroadcastPlayerAttackAnimationData,
+    ) => {
     if (socket && currentRoomId) {
       socket.emit('player-attack', {
         roomId: currentRoomId,
@@ -1562,6 +1743,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.infernoCrossentropy ? { infernoCrossentropy: true } : {}),
         ...(meta?.reaperCrossentropy ? { reaperCrossentropy: true } : {}),
         ...(meta?.crossentropyPlague ? { crossentropyPlague: true } : {}),
+        ...(meta?.crossentropyMeteor ? { crossentropyMeteor: true } : {}),
         ...(meta?.staggerToAdd != null && meta.staggerToAdd > 0 ? { staggerToAdd: meta.staggerToAdd } : {}),
         ...(meta?.wyvernBiteVenom ? { wyvernBiteVenom: true } : {}),
         ...(meta?.wyvernStingVenomZombie ? { wyvernStingVenomZombie: true } : {}),
@@ -1580,6 +1762,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.guardbreakRoom ? { guardbreakRoom: true } : {}),
         ...(meta?.glacialBiteChill ? { glacialBiteChill: true } : {}),
         ...(meta?.glacialTalons ? { glacialTalons: true } : {}),
+        ...(meta?.entanglementBarrage ? { entanglementBarrage: true } : {}),
       });
     }
   }, [socket, currentRoomId]);
@@ -1615,6 +1798,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       socket.emit('pickup-item', {
         roomId: currentRoomId,
         itemId
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const pickupGoldDrop = useCallback((dropId: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('pickup-gold-drop', {
+        roomId: currentRoomId,
+        dropId,
       });
     }
   }, [socket, currentRoomId]);
@@ -1742,6 +1934,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
+  const updatePlayerGold = useCallback((playerId: string, gold: number) => {
+    if (socket && currentRoomId) {
+      socket.emit('player-gold-changed', {
+        roomId: currentRoomId,
+        playerId,
+        gold,
+      });
+    }
+  }, [socket, currentRoomId]);
+
   const updatePlayerShield = useCallback((playerId: string, shield: number, maxShield?: number) => {
     if (socket && currentRoomId) {
       socket.emit('player-shield-changed', {
@@ -1764,7 +1966,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
   const setTalentLoadout = useCallback(
     (loadout: TalentLoadout | ((prev: TalentLoadout) => TalentLoadout)) => {
-      setTalentLoadoutState(loadout);
+      setTalentLoadoutState((prev) => {
+        const next = typeof loadout === 'function' ? loadout(prev) : loadout;
+        return { ...createDefaultTalentLoadout(), ...next };
+      });
     },
     [],
   );
@@ -1829,7 +2034,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setStatPointData((prev) => StatSystem.grantStatPoints(prev, amount));
   }, []);
 
-  const purchaseItem = useCallback((itemId: string, cost: number, currency: 'essence'): boolean => {
+  const purchaseItem = useCallback((itemId: string, cost: number, currency: 'essence' | 'gold'): boolean => {
     // Try to find local player by socket ID first, then by looking for any player (for single-player mode)
     let localPlayer = players.get(socket?.id || '');
     if (!localPlayer) {
@@ -1847,16 +2052,18 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       return false;
     }
 
-    // Check if player has enough essence
     const currentEssence = localPlayer.essence || 0;
-    if (currentEssence < cost) {
+    const currentGold = localPlayer.gold || 0;
+    const currentBalance = currency === 'gold' ? currentGold : currentEssence;
+    if (currentBalance < cost) {
       return false;
     }
 
-    // Deduct essence and add item to purchased items
+    // Deduct selected currency and add item to purchased items
     const updatedPlayer = {
       ...localPlayer,
-      essence: currentEssence - cost,
+      essence: currency === 'essence' ? currentEssence - cost : currentEssence,
+      gold: currency === 'gold' ? currentGold - cost : currentGold,
       purchasedItems: [...(localPlayer.purchasedItems || []), itemId]
     };
 
@@ -1935,6 +2142,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     thronePortalOffer,
     thronePortalLayout,
     coopMainArenaPortalPhase,
+    coopTerrainTheme,
     coopCurrentRoomKind,
     coopClearedRoomKind,
     coopBossThroneArena,
@@ -1945,6 +2153,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopBossClearedBgmSeq,
     coopClearedRoomColor,
     clearCoopClearedRoomColor,
+    hideCoopPortalTransition,
+    confirmCoopPortalTransitionComplete,
     endCoopPortalTransition,
     currentPreview,
     joinRoom,
@@ -1976,6 +2186,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     updatePlayerExperience,
     updatePlayerLevel,
     updatePlayerEssence,
+    updatePlayerGold,
     updatePlayerShield,
     selectedWeapons,
     setSelectedWeapons,
@@ -1993,8 +2204,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     grantStatPoints,
     purchaseItem,
     droppedItems,
+    goldDrops,
     inventory,
     pickupItem,
+    pickupGoldDrop,
     chatMessages,
     isChatOpen,
     sendChatMessage,

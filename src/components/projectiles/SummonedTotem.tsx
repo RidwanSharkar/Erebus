@@ -427,6 +427,7 @@ export default function SummonedTotem({
             totemBoltVariant,
           },
         ]);
+        (window as any).audioSystem?.playTotemSuperconductorSound?.(from);
         constants.lastSuperconductorTime = now;
         handleSuperconductorStrike(closestEnemy);
       }

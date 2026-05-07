@@ -1,6 +1,7 @@
-import { useRef, useMemo, useState, useEffect } from 'react';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 import { Group, Vector3 } from 'three';
 import React from 'react';
+import { useFrame } from '@react-three/fiber';
 import BonePlate from './BonePlate';
 import BoneWings from './BoneWings';
 import AscendantBoneWings from './AscendantBoneWings';
@@ -20,6 +21,7 @@ import Reanimate, { ReanimateRef } from '../weapons/Reanimate';
 import BoneTail from './BoneTail';
 import ArchmageCrest from './ArchmageCrest';
 import SpellCastingAura from '../weapons/SpellCastingAura';
+import SpellCastingHalos from '../weapons/SpellCastingHalos';
 import DeflectShield from '../weapons/DeflectShield';
 import type { VorpalGustStabBoonBeamTheme } from '@/utils/talents';
 
@@ -123,6 +125,10 @@ interface DragonUnitProps {
   viperStingChargeProgress?: number;
   isBarrageCharging?: boolean;
   barrageChargeProgress?: number;
+  /** Scythe Crossentropy — charge phase (HUD / remote sync). */
+  isCrossentropyCharging?: boolean;
+  /** Scythe Mantra — Summon Totem charge (HUD / remote sync). */
+  isSummonTotemCharging?: boolean;
   isCobraShotCharging?: boolean;
   cobraShotChargeProgress?: number;
   /** Tempest Rounds: monotonic per-arrow id for EtherBow muzzle VFX. */
@@ -237,6 +243,8 @@ export default function DragonUnit({
   viperStingChargeProgress = 0,
   isBarrageCharging = false,
   barrageChargeProgress = 0,
+  isCrossentropyCharging = false,
+  isSummonTotemCharging = false,
   isCobraShotCharging = false,
   cobraShotChargeProgress = 0,
   tempestBurstShotSeq = 0,
@@ -317,6 +325,116 @@ export default function DragonUnit({
     };
   // Re-register whenever the active weapon changes so AURA_WEAPONS check is fresh
   }, [currentWeapon]);
+
+  const ABILITY_PULSE_MS = 1000;
+  const LONG_CAST_CAP_MS = 2000;
+
+  const [abilityPulseActive, setAbilityPulseActive] = useState(false);
+  const abilityPulseClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleAbilityPulse = useCallback(() => {
+    setAbilityPulseActive(true);
+    if (abilityPulseClearRef.current) clearTimeout(abilityPulseClearRef.current);
+    abilityPulseClearRef.current = setTimeout(() => {
+      setAbilityPulseActive(false);
+      abilityPulseClearRef.current = null;
+    }, ABILITY_PULSE_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (abilityPulseClearRef.current) clearTimeout(abilityPulseClearRef.current);
+    },
+    [],
+  );
+
+  const prevAbilityPulseRef = useRef<{
+    isWraithStriking: boolean;
+    isBarrageCharging: boolean;
+    isViperStingCharging: boolean;
+    isSummonTotemCharging: boolean;
+    isBackstabbing: boolean;
+    isSundering: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    const p = prevAbilityPulseRef.current;
+    if (p !== null) {
+      if (currentWeapon === WeaponType.RUNEBLADE && p.isWraithStriking && !isWraithStriking) {
+        scheduleAbilityPulse();
+      }
+      if (currentWeapon === WeaponType.BOW && p.isBarrageCharging && !isBarrageCharging) {
+        scheduleAbilityPulse();
+      }
+      if (currentWeapon === WeaponType.BOW && p.isViperStingCharging && !isViperStingCharging) {
+        scheduleAbilityPulse();
+      }
+      if (currentWeapon === WeaponType.SCYTHE && p.isSummonTotemCharging && !isSummonTotemCharging) {
+        scheduleAbilityPulse();
+      }
+      if (currentWeapon === WeaponType.SABRES && p.isBackstabbing && !isBackstabbing) {
+        scheduleAbilityPulse();
+      }
+      if (currentWeapon === WeaponType.SABRES && p.isSundering && !isSundering) {
+        scheduleAbilityPulse();
+      }
+    }
+    prevAbilityPulseRef.current = {
+      isWraithStriking,
+      isBarrageCharging,
+      isViperStingCharging,
+      isSummonTotemCharging,
+      isBackstabbing,
+      isSundering,
+    };
+  }, [
+    currentWeapon,
+    isWraithStriking,
+    isBarrageCharging,
+    isViperStingCharging,
+    isSummonTotemCharging,
+    isBackstabbing,
+    isSundering,
+    scheduleAbilityPulse,
+  ]);
+
+  const longCastStartRef = useRef<number | null>(null);
+  const cappedLongCastAuraRef = useRef(false);
+  const [cappedLongCastAura, setCappedLongCastAura] = useState(false);
+
+  useFrame(() => {
+    const inRunebladeSmite = currentWeapon === WeaponType.RUNEBLADE && isSmiting;
+    const inScytheCrossentropy = currentWeapon === WeaponType.SCYTHE && isCrossentropyCharging;
+    const inCast = inRunebladeSmite || inScytheCrossentropy;
+
+    if (!inCast) {
+      if (longCastStartRef.current !== null) {
+        longCastStartRef.current = null;
+        if (cappedLongCastAuraRef.current) {
+          cappedLongCastAuraRef.current = false;
+          setCappedLongCastAura(false);
+        }
+      }
+      return;
+    }
+
+    if (longCastStartRef.current === null) {
+      longCastStartRef.current = performance.now();
+      cappedLongCastAuraRef.current = true;
+      setCappedLongCastAura(true);
+      return;
+    }
+
+    const elapsed = performance.now() - longCastStartRef.current;
+    const next = elapsed < LONG_CAST_CAP_MS;
+    if (next !== cappedLongCastAuraRef.current) {
+      cappedLongCastAuraRef.current = next;
+      setCappedLongCastAura(next);
+    }
+  });
+
+  const spellAuraVisible =
+    showSpellAura || abilityPulseActive || cappedLongCastAura;
 
   // Weapon rendering logic
   const renderWeapon = () => {
@@ -588,11 +706,11 @@ export default function DragonUnit({
       />
       {playerLevel >= 2 && (
         <ArchmageCrest
-          position={crestPosition}
+          position={[crestPosition[0], crestPosition[1] - 0.05, crestPosition[2]]}
           scale={-0.525}
           weaponType={currentWeapon}
           weaponSubclass={currentSubclass}
-          wingSpread={1.3}
+          wingSpread={1.425}
           rotation={[0.00, 0.00, 0.0]}
         />
       )}
@@ -600,8 +718,13 @@ export default function DragonUnit({
       {/* SPELL CASTING AURA — shown after 1 s of left-click hold on any weapon */}
       <SpellCastingAura
         parentRef={groupRef}
-        isActive={showSpellAura}
+        isActive={spellAuraVisible}
       />
+
+      {/* Rising cast halos — Reanimate-style rings, ~50% scale; torso-height on humanoid weapon rig */}
+      <group position={[0, hideBody ? 1.05 : 0.55, 0]}>
+        <SpellCastingHalos isActive={spellAuraVisible} />
+      </group>
 
       {/* CHARGED ORBITALS — visible with or without dragon body, raised to hip level on character model */}
       <ChargedOrbitals

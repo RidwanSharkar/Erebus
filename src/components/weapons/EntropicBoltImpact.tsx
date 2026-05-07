@@ -167,7 +167,7 @@ export default function EntropicBoltImpact({
   });
 
   return (
-    <group ref={groupRef} position={[position.x, position.y + 0.5, position.z]}>
+    <group ref={groupRef} position={[position.x, position.y + 1.125, position.z]}>
 
       {/* Central flash disc */}
       <mesh ref={flashRef} rotation={[-Math.PI / 2, 0, 0]} scale={[0.01, 0.01, 1]}>

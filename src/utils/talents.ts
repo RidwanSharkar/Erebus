@@ -20,9 +20,16 @@ export const TALENT_STAGGER_SHOT = 'STAGGER_SHOT' as const;
 export const TALENT_CONCENTRATED_VOLLEY = 'CONCENTRATED_VOLLEY' as const;
 export const TALENT_WRATHFUL_BITE = 'WRATHFUL_BITE' as const;
 export const TALENT_WYVERN_BITE = 'WYVERN_BITE' as const;
+export const TALENT_ENTANGLEMENT = 'ENTANGLEMENT' as const;
 export const TALENT_INFERNO = 'INFERNO' as const;
 export const TALENT_REAPER = 'REAPER' as const;
+/** Crossentropy (`SCYTHE_R`) talent: 50% on-hit meteor proc from randomized sky origin. */
+export const TALENT_METEOR = 'METEOR' as const;
+/** Crossentropy (`SCYTHE_R`) talent: 50% on-hit ricochet to another enemy within range. */
+export const TALENT_FRAGMENTATION = 'FRAGMENTATION' as const;
 export const TALENT_DUAL_COIL = 'DUAL_COIL' as const;
+/** Bow — slower full LMB charge but stronger powershot / perfect shot and thicker perfect beam VFX. */
+export const TALENT_HIGH_CALIBER = 'HIGH_CALIBER' as const;
 export const TALENT_WYVERN_STING = 'WYVERN_STING' as const;
 /** Reaping Talons — detonate remaining Cobra / Concentrated Venom DoT on hit. */
 export const TALENT_WYVERN_TALONS = 'WYVERN_TALONS' as const;
@@ -79,6 +86,8 @@ export const TALENT_SUPERCONDUCTOR = 'SUPERCONDUCTOR' as const;
 export const TALENT_ACCELERATOR = 'ACCELERATOR' as const;
 /** Giantkiller — Reaping Talons (`BOW_R`): return hit on a target also hit by the forward leg deals extra % max HP damage. */
 export const TALENT_GIANTKILLER = 'GIANTKILLER' as const;
+/** Bow class — LMB uncharged tap damage 10 → 40; uncharged projectile VFX tint red. */
+export const TALENT_TRIGGER_FINGER = 'TRIGGER_FINGER' as const;
 /** Healing Stream — while Mantra totems (`SCYTHE_F`) are up: heal per second per owned totem within horizontal range (same radius as ACCELERATOR). */
 export const TALENT_HEALING_STREAM = 'HEALING_STREAM' as const;
 
@@ -106,6 +115,19 @@ export const TALENT_KILLSTREAK = 'KILLSTREAK' as const;
 export const TALENT_RELENTLESS = 'RELENTLESS' as const;
 /** Sabres class boon — Backstab becomes a forward piercing wind gust beam. */
 export const TALENT_VORPAL_GUST = 'VORPAL_GUST' as const;
+/** Sabres class boon — Flourish (`SABRES_E`) casts a fan of three Shade-style daggers forward. */
+export const TALENT_FAN_OF_KNIVES = 'FAN_OF_KNIVES' as const;
+/** Sabres class boon — Flourish shield restore on cast + passive STR/INT. */
+export const TALENT_PARRY = 'PARRY' as const;
+
+/** Fan of Knives — projectile tuning (local + replicated). */
+export const FAN_OF_KNIVES_DAMAGE = 30;
+export const FAN_OF_KNIVES_MAX_DISTANCE_UNITS = 7;
+export const FAN_OF_KNIVES_PROJECTILE_SPEED = 25;
+export const FAN_OF_KNIVES_PROJECTILE_LIFETIME_SEC = 3;
+
+/** VFX palette key for Fan of Knives tint (from Flourish room boons + default). */
+export type FanOfKnivesFlourishTint = 'default' | 'staggering' | 'wrathful' | 'infested' | 'guard';
 
 /** Green co-op room: affects any player zombie raised by infesting / Wyvern / etc.; weapon-agnostic. */
 export const TALENT_PACK_HUNTER = 'PACK_HUNTER' as const;
@@ -154,13 +176,45 @@ export const GIANTKILLER_MAX_HP_DAMAGE_FRAC_BOSS = 0.06;
 export const HEALING_STREAM_HP_PER_SEC_PER_TOTEM = 1;
 
 /** Crossentropy (`SCYTHE_R`) base hit damage before Reaper stack bonus. */
-export const CROSSENTROPY_BASE_DAMAGE = 370;
+export const CROSSENTROPY_BASE_DAMAGE = 345;
 /** PLAGUE boon: Crossentropy base hit damage before Reaper stack bonus. */
 export const CROSSENTROPY_PLAGUE_DAMAGE = 500;
 /** PLAGUE Crossentropy — ground venom-style VFX at explosion (matches VenomEffect one-shot ms). */
 export const CROSSENTROPY_PLAGUE_VENOM_MS = 2000;
 /** TEMPEST boon: stagger added per Crossentropy hit. */
 export const CROSSENTROPY_TEMPEST_STAGGER = 100;
+/** METEOR talent — weighted strike count on each eligible Crossentropy impact. */
+export const CROSSENTROPY_METEOR_SINGLE_CHANCE = 0.8;
+export const CROSSENTROPY_METEOR_DOUBLE_CHANCE = 0.15;
+export const CROSSENTROPY_METEOR_TRIPLE_CHANCE = 0.05;
+/** METEOR talent — delay between sequential meteor calls from one Crossentropy hit. */
+export const CROSSENTROPY_METEOR_STAGGER_MS = 500;
+/** METEOR talent — AoE damage at meteor impact. */
+export const CROSSENTROPY_METEOR_DAMAGE = 225;
+/** METEOR talent — horizontal AoE radius in world units. */
+export const CROSSENTROPY_METEOR_AOE_RADIUS = 2.99;
+/** METEOR talent — minimum randomized horizontal spawn offset from impact center. */
+export const CROSSENTROPY_METEOR_SKY_OFFSET_MIN = 2.5;
+/** METEOR talent — maximum randomized horizontal spawn offset from impact center. */
+export const CROSSENTROPY_METEOR_SKY_OFFSET_MAX = 8;
+/** METEOR talent — randomized spawn height range in world units. */
+export const CROSSENTROPY_METEOR_SKY_HEIGHT_MIN = 44;
+export const CROSSENTROPY_METEOR_SKY_HEIGHT_MAX = 66;
+/** METEOR talent — warning ring lead-in before meteor appears. */
+export const CROSSENTROPY_METEOR_WARNING_MS = 100;
+/** METEOR talent — meteor travel speed toward impact point. */
+export const CROSSENTROPY_METEOR_SPEED = 31;
+
+export function rollCrossentropyMeteorStrikeCount(): 1 | 2 | 3 {
+  const roll = Math.random();
+  if (roll < CROSSENTROPY_METEOR_SINGLE_CHANCE) return 1;
+  if (roll < CROSSENTROPY_METEOR_SINGLE_CHANCE + CROSSENTROPY_METEOR_DOUBLE_CHANCE) return 2;
+  return 3;
+}
+/** FRAGMENTATION talent — per-hit proc chance to bounce a second Crossentropy bolt. */
+export const CROSSENTROPY_FRAGMENTATION_PROC_CHANCE = 0.5;
+/** FRAGMENTATION talent — horizontal (xz) max distance from struck enemy to ricochet target. */
+export const CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS = 15;
 /** Reaper: +1 base damage per enemy kill (session). */
 export const CROSSENTROPY_REAPER_DAMAGE_PER_KILL = 1;
 /** Killstreak (Sabres): +base Backstab damage per Backstab kill this session (server-synced in co-op). */
@@ -204,6 +258,22 @@ export function evaluateVorpalGustBeamHit(
   const dist = Math.hypot(px, pz);
   return { ok: dist <= VORPAL_GUST_BEAM_RADIUS, t };
 }
+
+/** Beam segment length (world units) at max range treated as tip (Explosive Talons-style end-zone). */
+export const VORPAL_GUST_TIP_ZONE_WORLD_UNITS = 1.2;
+/** Minimum projected `t` from `evaluateVorpalGustBeamHit` to count as hitting near the gust tip. */
+export const VORPAL_GUST_TIP_ZONE_START = VORPAL_GUST_BEAM_LENGTH - VORPAL_GUST_TIP_ZONE_WORLD_UNITS;
+/** Tip zone: non-positional hit base (normally 95). */
+export const BACKSTAB_VORPAL_TIP_DAMAGE_FRONT = 155;
+/** Tip zone: positional Backstab vs PvE (normally 285). */
+export const BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB = 420;
+/** Tip zone: positional Backstab vs PvP tier (normally 175), scaled vs PvE 285→420 uplift. */
+export const BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB_PVP = Math.round((BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB * 175) / 285);
+
+export function isVorpalGustTipHit(t: number): boolean {
+  return t >= VORPAL_GUST_TIP_ZONE_START;
+}
+
 /** Reaper: HP healed to the caster per enemy hit by piercing Crossentropy (client-applied; excludes training dummy in co-op). */
 export const CROSSENTROPY_REAPER_HIT_HEAL = 1;
 /**
@@ -285,9 +355,13 @@ export type TalentId =
   | typeof TALENT_CONCENTRATED_VOLLEY
   | typeof TALENT_WRATHFUL_BITE
   | typeof TALENT_WYVERN_BITE
+  | typeof TALENT_ENTANGLEMENT
   | typeof TALENT_INFERNO
   | typeof TALENT_REAPER
+  | typeof TALENT_METEOR
+  | typeof TALENT_FRAGMENTATION
   | typeof TALENT_DUAL_COIL
+  | typeof TALENT_HIGH_CALIBER
   | typeof TALENT_WYVERN_STING
   | typeof TALENT_WYVERN_TALONS
   | typeof TALENT_ARCTIC_STING
@@ -329,6 +403,7 @@ export type TalentId =
   | typeof TALENT_SUPERCONDUCTOR
   | typeof TALENT_ACCELERATOR
   | typeof TALENT_GIANTKILLER
+  | typeof TALENT_TRIGGER_FINGER
   | typeof TALENT_HEALING_STREAM
   | typeof TALENT_STAGGERING_STAB
   | typeof TALENT_WRATHFUL_STAB
@@ -344,6 +419,8 @@ export type TalentId =
   | typeof TALENT_KILLSTREAK
   | typeof TALENT_RELENTLESS
   | typeof TALENT_VORPAL_GUST
+  | typeof TALENT_FAN_OF_KNIVES
+  | typeof TALENT_PARRY
   | typeof TALENT_PACK_HUNTER
   | typeof TALENT_EVERLIVING
   | typeof TALENT_ADRENALINE
@@ -387,6 +464,14 @@ export const SUPERCONDUCTOR_TOTEM_COOLDOWN_SEC = 3;
 /** SPELLBLADE — +effective intellect while Wraith Strike is in loadout (+2 max shield per point, see StatSystem). */
 export const SPELLBLADE_INTELLECT_BONUS = 10;
 export const SPELLBLADE_WRAITH_STRIKE_SHIELD_RESTORE = 30;
+/** SPELLBLADE — additive Wraith Strike base damage per effective Intellect (allocated + Spellblade bonus). */
+export const SPELLBLADE_WRAITH_DAMAGE_PER_INTELLECT = 2;
+
+/** Sabres PARRY — +effective intellect / strength while Flourish (`SABRES_E`) is in loadout (same derived-stat plumbing as Spellblade); shield chunk on Flourish cast. */
+
+export const PARRY_INTELLECT_BONUS = 5;
+export const PARRY_STRENGTH_BONUS = 5;
+export const PARRY_FLOURISH_SHIELD_RESTORE = 35;
 
 /** Aftershock (talent id `BREATH_WEAPON`) — Wraith Strike ground strip; detonation after delay. */
 export const BREATH_WEAPON_DAMAGE = 100;
@@ -415,6 +500,11 @@ export const EXPLOSIVE_TALONS_REAPING_TALONS_MAX_TRAVEL_DISTANCE = 13;
 export const EXPLOSIVE_TALONS_EXPLOSION_DAMAGE = 400;
 export const EXPLOSIVE_TALONS_EXPLOSION_RADIUS = 4.0;
 
+/** Bow LMB tap (uncharged primary) base damage without Trigger Finger. */
+export const BOW_UNCHARGED_PROJECTILE_DAMAGE = 10;
+/** Bow LMB tap base damage with Trigger Finger class talent. */
+export const BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE = 40;
+
 /** Wrathful Bite — Frostbite / Barrage (`BOW_Q`) hits use these additive crit modifiers in CombatSystem. */
 export const WRATHFUL_BITE_BARRAGE_CRIT_CHANCE_ADD = 0.4;
 export const WRATHFUL_BITE_BARRAGE_CRIT_DAMAGE_MULT_ADD = 0.75;
@@ -423,6 +513,10 @@ export const WRATHFUL_BITE_BARRAGE_CRIT_DAMAGE_MULT_ADD = 0.75;
 export const WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK = 17;
 export const WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS = 5;
 export const WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC = 8;
+
+/** Entanglement — Barrage hits root the target and squeeze for fixed damage. */
+export const ENTANGLEMENT_DURATION_MS = 5000;
+export const ENTANGLEMENT_DAMAGE_PER_SECOND = 20;
 
 /** Cobra Shot — impact and venom DPS (same value). */
 export const COBRA_SHOT_VENOM_DAMAGE_PER_SECOND = 29;
@@ -473,7 +567,7 @@ export const SOLAR_RECHARGE_PROC_CHANCE = 0.1175;
 export const FROST_SOLAR_PROC_EFFECT_ICD_MS = 2500;
 
 /** Windfury — Spear primary or Runeblade left-click combo hits that damage an enemy can proc Storm Shroud (Flurry) without F cooldown. */
-export const WINDFURY_PROC_CHANCE = 0.1175;
+export const WINDFURY_PROC_CHANCE = 0.1325;
 
 /** Crusader — Runeblade left-click hits that damage an enemy; matches Windfury proc rate. */
 export const CRUSADER_PROC_CHANCE = 0.15;
@@ -760,7 +854,7 @@ export const spellbladeTalentDefinition: TalentDefinition = {
   id: TALENT_SPELLBLADE,
   name: 'SPELLBLADE',
   description:
-    'While Wraith Strike is in your ability loadout, gain +10 Intellect (+20 max shield). Each Wraith Strike use restores 30 shield.',
+    'While Wraith Strike is in your ability loadout, gain +10 Intellect (+20 max shield). Wraith Strike deals +2 base damage per effective Intellect (including this bonus). Each Wraith Strike use restores 30 shield.',
   modifiesAbilityId: 'RUNEBLADE_E',
 };
 
@@ -878,8 +972,34 @@ export const vorpalGustTalentDefinition: TalentDefinition = {
   description:
     'Backstab becomes a piercing wind gust up to ' +
     String(VORPAL_GUST_BEAM_LENGTH) +
-    ' units in a line forward, hitting every enemy in its path. Uses the same stab animation. Positional Backstab damage, criticals, and all Backstab talents behave as before on each target.',
+    ' units in a line forward, hitting every enemy in its path. Uses the same stab animation. Positional Backstab damage, criticals, and all Backstab talents behave as before on each target. Targets in the gust tip (~' +
+    String(VORPAL_GUST_TIP_ZONE_WORLD_UNITS) +
+    ' units at max range) take higher base Backstab tiers: frontal ' +
+    String(BACKSTAB_VORPAL_TIP_DAMAGE_FRONT) +
+    ' (vs ' +
+    String(95) +
+    '), positional stab ' +
+    String(BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB) +
+    ' (vs ' +
+    String(285) +
+    ') on PvE.',
   modifiesAbilityId: 'SABRES_Q',
+};
+
+export const fanOfKnivesTalentDefinition: TalentDefinition = {
+  id: TALENT_FAN_OF_KNIVES,
+  name: 'Fan of Knives',
+  description:
+    `When you cast Flourish (Sunder), fire ${3} daggers in a forward fan for ${FAN_OF_KNIVES_DAMAGE} damage each, up to ${FAN_OF_KNIVES_MAX_DISTANCE_UNITS} units travel. Dagger color follows your Flourish room boon (purple guard, blue stagger, red wrath, green infested; light red otherwise).`,
+  modifiesAbilityId: 'SABRES_E',
+};
+
+export const parryTalentDefinition: TalentDefinition = {
+  id: TALENT_PARRY,
+  name: 'PARRY',
+  description:
+    `While Flourish (Sunder) is in your ability loadout: gain +${PARRY_INTELLECT_BONUS} Intellect and +${PARRY_STRENGTH_BONUS} Strength. Flourish restores ${PARRY_FLOURISH_SHIELD_RESTORE} shield when cast (baseline Flourish restores no shield without this talent).`,
+  modifiesAbilityId: 'SABRES_E',
 };
 
 export const packHunterTalentDefinition: TalentDefinition = {
@@ -1040,6 +1160,22 @@ export const dualCoilTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'BOW_BASIC',
 };
 
+export const highCaliberTalentDefinition: TalentDefinition = {
+  id: TALENT_HIGH_CALIBER,
+  name: 'HIGH CALIBER',
+  description:
+    'Bow left-click takes 1.5× as long to reach full charge (90/60 of baseline duration). Powershot deals 100 damage (was 50) and Perfect Shot deals 150 (was 75). Perfect-shot beam visuals are thicker.',
+  modifiesAbilityId: 'BOW_BASIC',
+};
+
+export const triggerFingerTalentDefinition: TalentDefinition = {
+  id: TALENT_TRIGGER_FINGER,
+  name: 'TRIGGER FINGER',
+  description:
+    'Bow left-click tap shots deal 40 base damage instead of 10. Uncharged projectiles use a red energy tint.',
+  modifiesAbilityId: 'BOW_BASIC',
+};
+
 export const tempestRoundsTalentDefinition: TalentDefinition = {
   id: TALENT_TEMPEST_ROUNDS,
   name: 'Tempest Rounds',
@@ -1085,6 +1221,14 @@ export const wyvernBiteTalentDefinition: TalentDefinition = {
   name: 'WYVERN BITE',
   description:
     'While Frostbite is in your ability loadout, each Barrage arrow hit applies Concentrated Venom: 17 damage per second per stack (max 5 stacks) for 8 seconds. Barrage arrows use a green theme (overrides Wrathful Bite red and Staggering Bite blue).',
+  modifiesAbilityId: 'BOW_Q',
+};
+
+export const entanglementTalentDefinition: TalentDefinition = {
+  id: TALENT_ENTANGLEMENT,
+  name: 'ENTANGLEMENT',
+  description:
+    'While Frostbite is in your ability loadout, each Barrage arrow hit Entangles its target for 5 seconds: the target cannot move, but can still cast, attack, dash, and blink. Green roots squeeze the target for 20 damage per second.',
   modifiesAbilityId: 'BOW_Q',
 };
 
@@ -1157,6 +1301,22 @@ export const reaperTalentDefinition: TalentDefinition = {
   name: 'Reaper',
   description:
     'While Crossentropy is in your ability loadout, the bolt travels to full range, pierces all enemies, and no longer spawns an explosion on hit. The bolt trail uses a purple theme. Each enemy hit by the bolt heals you for 1 HP. Killing an enemy with Crossentropy grants +1 base damage to Crossentropy for the rest of the session (stacks).',
+  modifiesAbilityId: 'SCYTHE_R',
+};
+
+export const meteorTalentDefinition: TalentDefinition = {
+  id: TALENT_METEOR,
+  name: 'METEOR',
+  description:
+    'While Crossentropy is in your ability loadout, each Crossentropy hit calls down 1 meteor, with a 15% chance to call a second and a 5% chance to call a third. Additional meteors are staggered by 0.5 seconds and deal 225 damage to enemies in the area.',
+  modifiesAbilityId: 'SCYTHE_R',
+};
+
+export const fragmentationTalentDefinition: TalentDefinition = {
+  id: TALENT_FRAGMENTATION,
+  name: 'FRAGMENTATION',
+  description:
+    'While Crossentropy is in your ability loadout, each Crossentropy enemy hit has a 50% chance to fire another Crossentropy projectile and trail from the struck enemy toward the closest other enemy within 15 horizontal distance — same damage and talent modifiers as the original bolt (each bolt fragments at most once per hop).',
   modifiesAbilityId: 'SCYTHE_R',
 };
 
@@ -1309,12 +1469,19 @@ export interface TalentLoadout {
   concentratedVolley: boolean;
   wrathfulBite: boolean;
   wyvernBite: boolean;
+  entanglement: boolean;
   inferno: boolean;
   reaper: boolean;
+  meteor: boolean;
+  fragmentation: boolean;
   frostPath: boolean;
   solarRecharge: boolean;
   windFury: boolean;
   dualCoil: boolean;
+  /** HIGH CALIBER — bow LMB slower full charge (+90/60), powershot/perfect doubled damage, thicker perfect beam. */
+  highCaliber: boolean;
+  /** TRIGGER FINGER — bow LMB uncharged damage + red projectile VFX. */
+  triggerFinger: boolean;
   wyvernSting: boolean;
   wyvernTalons: boolean;
   arcticSting: boolean;
@@ -1366,6 +1533,10 @@ export interface TalentLoadout {
   killstreak: boolean;
   relentless: boolean;
   vorpalGust: boolean;
+  /** Flourish (`SABRES_E`) — fan of three daggers forward. */
+  fanOfKnives: boolean;
+  /** Sabres Flourish — on-cast shield restore + passive STR/INT (see `PARRY_*` constants). */
+  parry: boolean;
   /** Co-op green room — Pack Hunter zombie pack damage aura. */
   packHunterRoom: boolean;
   /** Co-op green room — zombies have double HP. */
@@ -1410,12 +1581,17 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     concentratedVolley: false,
     wrathfulBite: false,
     wyvernBite: false,
+    entanglement: false,
     inferno: false,
     reaper: false,
+    meteor: false,
+    fragmentation: false,
     frostPath: false,
     solarRecharge: false,
     windFury: false,
     dualCoil: false,
+    highCaliber: false,
+    triggerFinger: false,
     wyvernSting: false,
     wyvernTalons: false,
     arcticSting: false,
@@ -1467,6 +1643,8 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     killstreak: false,
     relentless: false,
     vorpalGust: false,
+    fanOfKnives: false,
+    parry: false,
     packHunterRoom: false,
     everlivingRoom: false,
     adrenalineRoom: false,
@@ -1483,6 +1661,11 @@ export function createDefaultTalentLoadout(): TalentLoadout {
 export function isWraithStrikeInLoadout(loadout: AbilityLoadout | null | undefined): boolean {
   if (!loadout) return false;
   return loadout.Q === 'RUNEBLADE_E' || loadout.E === 'RUNEBLADE_E' || loadout.R === 'RUNEBLADE_E';
+}
+
+export function isSabresFlourishInLoadout(loadout: AbilityLoadout | null | undefined): boolean {
+  if (!loadout) return false;
+  return loadout.Q === 'SABRES_E' || loadout.E === 'SABRES_E' || loadout.R === 'SABRES_E';
 }
 
 export function isReapingTalonsInLoadout(loadout: AbilityLoadout | null | undefined): boolean {
@@ -1682,6 +1865,24 @@ export function shouldApplySpellbladeTalent(
   return !!talentLoadout?.spellblade && isWraithStrikeInLoadout(abilityLoadout);
 }
 
+/** Additive base damage for Wraith Strike when Spellblade is active (effective Intellect = allocated + talent bonus). */
+export function getSpellbladeWraithStrikeFlatDamageBonus(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+  allocatedIntellect: number,
+): number {
+  if (!shouldApplySpellbladeTalent(talentLoadout, abilityLoadout)) return 0;
+  const intellect = allocatedIntellect + SPELLBLADE_INTELLECT_BONUS;
+  return intellect * SPELLBLADE_WRAITH_DAMAGE_PER_INTELLECT;
+}
+
+export function shouldApplyParryTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.parry && isSabresFlourishInLoadout(abilityLoadout);
+}
+
 export function shouldApplyBreathWeaponTalent(
   talentLoadout: TalentLoadout | null | undefined,
   abilityLoadout: AbilityLoadout | null | undefined,
@@ -1764,6 +1965,15 @@ export function shouldApplyDualCoilTalent(talentLoadout: TalentLoadout | null | 
   return !!talentLoadout?.dualCoil;
 }
 
+export function shouldApplyHighCaliberTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.highCaliber;
+}
+
+/** Bow LMB uncharged damage + tint; talent toggle only (use with Bow equipped). */
+export function shouldApplyTriggerFingerTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.triggerFinger;
+}
+
 /** Bow perfect-shot bonus Cobra Shot; talent toggle only (use with Bow equipped). */
 export function shouldApplyWyvernStingTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.wyvernSting;
@@ -1809,6 +2019,13 @@ export function shouldApplyWyvernBiteTalent(
   return !!talentLoadout?.wyvernBite && isFrostBiteInLoadout(abilityLoadout);
 }
 
+export function shouldApplyEntanglementTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.entanglement && isFrostBiteInLoadout(abilityLoadout);
+}
+
 export function shouldApplyStaggeringBiteTalent(
   talentLoadout: TalentLoadout | null | undefined,
   abilityLoadout: AbilityLoadout | null | undefined,
@@ -1840,6 +2057,20 @@ export function shouldApplyReaperTalent(
   abilityLoadout: AbilityLoadout | null | undefined,
 ): boolean {
   return !!talentLoadout?.reaper && isCrossentropyInLoadout(abilityLoadout);
+}
+
+export function shouldApplyMeteorTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.meteor && isCrossentropyInLoadout(abilityLoadout);
+}
+
+export function shouldApplyFragmentationTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.fragmentation && isCrossentropyInLoadout(abilityLoadout);
 }
 
 export function shouldApplyCrossentropyTempestTalent(
@@ -2079,6 +2310,46 @@ export function shouldApplyVorpalGustTalent(talentLoadout: TalentLoadout | null 
   return !!talentLoadout?.vorpalGust;
 }
 
+export function shouldApplyFanOfKnivesTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.fanOfKnives;
+}
+
+/**
+ * Guard > Stagger > Wrath > Infested > default (mutex room boons normally pick one; order handles debug multi-toggle).
+ */
+export function getFanOfKnivesFlourishTintFromLoadout(
+  talentLoadout: TalentLoadout | null | undefined,
+): FanOfKnivesFlourishTint {
+  if (!talentLoadout) return 'default';
+  if (talentLoadout.guardSabresFlourish) return 'guard';
+  if (talentLoadout.staggeringFlourish) return 'staggering';
+  if (talentLoadout.wrathfulFlourish) return 'wrathful';
+  if (talentLoadout.infestedFlourish) return 'infested';
+  return 'default';
+}
+
+export interface FanOfKnivesDaggerColors {
+  dagger: string;
+  glow: string;
+  trail: string;
+  light: string;
+}
+
+export function getFanOfKnivesDaggerColorsFromTint(tint: FanOfKnivesFlourishTint): FanOfKnivesDaggerColors {
+  switch (tint) {
+    case 'guard':
+      return { dagger: '#9944ee', glow: '#cc66ff', trail: '#5500aa', light: '#9944ee' };
+    case 'staggering':
+      return { dagger: '#4488ff', glow: '#66aaff', trail: '#2266cc', light: '#4488ff' };
+    case 'wrathful':
+      return { dagger: '#dd2222', glow: '#ff4444', trail: '#881111', light: '#dd2222' };
+    case 'infested':
+      return { dagger: '#33cc66', glow: '#66ff88', trail: '#118844', light: '#33cc66' };
+    default:
+      return { dagger: '#ff8888', glow: '#ffaaaa', trail: '#cc5555', light: '#ff8888' };
+  }
+}
+
 export function shouldApplyWrathfulSabresSwipesTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.wrathfulSabresSwipes;
 }
@@ -2145,28 +2416,6 @@ export function shouldApplyBlizzardTalent(
   return !!talentLoadout?.blizzard;
 }
 
-/** localStorage: after picking the Blade Rush class boon once, future runs offer Stored Charge instead. */
-export const EREBUS_META_BLADE_RUSH_BOON_STORAGE_KEY = 'erebus_meta_blade_rush_boon_unlocked';
-
-export function readBladeRushBoonMetaUnlocked(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    return window.localStorage.getItem(EREBUS_META_BLADE_RUSH_BOON_STORAGE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-export function writeBladeRushBoonMetaUnlocked(unlocked: boolean): void {
-  if (typeof window === 'undefined') return;
-  try {
-    if (unlocked) window.localStorage.setItem(EREBUS_META_BLADE_RUSH_BOON_STORAGE_KEY, '1');
-    else window.localStorage.removeItem(EREBUS_META_BLADE_RUSH_BOON_STORAGE_KEY);
-  } catch {
-    /* ignore */
-  }
-}
-
 export type CoopRoomColor = 'blue' | 'green' | 'purple' | 'red';
 
 function isCoopRoomColor(s: string | null | undefined): s is CoopRoomColor {
@@ -2216,20 +2465,25 @@ export function getCoopZombieRoomBoonsPayload(loadout: TalentLoadout): {
   };
 }
 
-/** Runeblade class boon pool (v1). Blade Rush is replaced by Stored Charge after meta unlock. */
-export function buildRunebladeClassBoonPool(): TalentId[] {
-  const rushOrStored = readBladeRushBoonMetaUnlocked() ? TALENT_STORED_CHARGE : TALENT_BLADE_RUSH;
-  return [
+/** Runeblade class boon pool. Stored Charge is offered only after Blade Rush is on the run loadout. */
+export function buildRunebladeClassBoonPool(
+  talentLoadout?: TalentLoadout | null,
+): TalentId[] {
+  const pool: TalentId[] = [
     TALENT_TRINITY,
     TALENT_VENGEANCE,
     TALENT_CRUSADER,
     TALENT_WINDFURY,
     TALENT_BLIZZARD,
-    rushOrStored,
+    TALENT_BLADE_RUSH,
     TALENT_DOUBLE_STRIKE,
     TALENT_SPELLBLADE,
-    TALENT_BREATH_WEAPON,//Aftershock
+    TALENT_BREATH_WEAPON, // Aftershock
   ];
+  if (talentLoadout?.bladeRush) {
+    pool.push(TALENT_STORED_CHARGE);
+  }
+  return pool;
 }
 
 /** Bow class boon pool (co-op). */
@@ -2238,13 +2492,16 @@ export function buildBowClassBoonPool(): TalentId[] {
     TALENT_EXECUTE,
     TALENT_EXPLOSIVE_TALONS,
     TALENT_CONCENTRATED_VOLLEY,
+    TALENT_ENTANGLEMENT,
     TALENT_DUAL_COIL,
+    TALENT_HIGH_CALIBER,
+    TALENT_TRIGGER_FINGER,
     TALENT_TEMPEST_ROUNDS,
     TALENT_GIANTKILLER,
   ];
 }
 
-/** Scythe class boon pool (co-op): core kit only — colored Wrath/Stagger/Infest totem & entropic lines come from room boons. */
+/** Scythe class boon pool (co-op): core kit — colored Wrath/Stagger/Infest totem & entropic lines come from room boons. */
 export function buildScytheClassBoonPool(): TalentId[] {
   return [
     TALENT_ICEBEAM,
@@ -2255,17 +2512,22 @@ export function buildScytheClassBoonPool(): TalentId[] {
     TALENT_SUPERCONDUCTOR,
     TALENT_ACCELERATOR,
     TALENT_HEALING_STREAM,
+    TALENT_METEOR,
+    TALENT_FRAGMENTATION,
   ];
 }
 
 /** Sabres class boon pool (co-op): Backstab-focused talents — colored Backstab/Swipes/Flourish lines stay room boons. */
 export function buildSabresClassBoonPool(): TalentId[] {
-  return [TALENT_KILLSTREAK, TALENT_RELENTLESS, TALENT_VORPAL_GUST];
+  return [TALENT_KILLSTREAK, TALENT_RELENTLESS, TALENT_VORPAL_GUST, TALENT_FAN_OF_KNIVES, TALENT_PARRY];
 }
 
-export function buildClassBoonPoolForWeapon(weapon: WeaponType): TalentId[] {
+export function buildClassBoonPoolForWeapon(
+  weapon: WeaponType,
+  talentLoadout?: TalentLoadout | null,
+): TalentId[] {
   if (weapon === WeaponType.NONE) return [];
-  if (weapon === WeaponType.RUNEBLADE) return buildRunebladeClassBoonPool();
+  if (weapon === WeaponType.RUNEBLADE) return buildRunebladeClassBoonPool(talentLoadout);
   if (weapon === WeaponType.BOW) return buildBowClassBoonPool();
   if (weapon === WeaponType.SCYTHE) return buildScytheClassBoonPool();
   if (weapon === WeaponType.SABRES) return buildSabresClassBoonPool();
@@ -2556,14 +2818,29 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_WYVERN_BITE:
       next.wyvernBite = true;
       return next;
+    case TALENT_ENTANGLEMENT:
+      next.entanglement = true;
+      return next;
     case TALENT_INFERNO:
       next.inferno = true;
       return next;
     case TALENT_REAPER:
       next.reaper = true;
       return next;
+    case TALENT_METEOR:
+      next.meteor = true;
+      return next;
+    case TALENT_FRAGMENTATION:
+      next.fragmentation = true;
+      return next;
     case TALENT_DUAL_COIL:
       next.dualCoil = true;
+      return next;
+    case TALENT_HIGH_CALIBER:
+      next.highCaliber = true;
+      return next;
+    case TALENT_TRIGGER_FINGER:
+      next.triggerFinger = true;
       return next;
     case TALENT_WYVERN_STING:
       next.wyvernSting = true;
@@ -2733,6 +3010,12 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_VORPAL_GUST:
       next.vorpalGust = true;
       return next;
+    case TALENT_FAN_OF_KNIVES:
+      next.fanOfKnives = true;
+      return next;
+    case TALENT_PARRY:
+      next.parry = true;
+      return next;
     case TALENT_PACK_HUNTER:
       next.packHunterRoom = true;
       return next;
@@ -2801,9 +3084,14 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_CONCENTRATED_VOLLEY]: concentratedVolleyTalentDefinition,
   [TALENT_WRATHFUL_BITE]: wrathfulBiteTalentDefinition,
   [TALENT_WYVERN_BITE]: wyvernBiteTalentDefinition,
+  [TALENT_ENTANGLEMENT]: entanglementTalentDefinition,
   [TALENT_INFERNO]: infernoTalentDefinition,
   [TALENT_REAPER]: reaperTalentDefinition,
+  [TALENT_METEOR]: meteorTalentDefinition,
+  [TALENT_FRAGMENTATION]: fragmentationTalentDefinition,
   [TALENT_DUAL_COIL]: dualCoilTalentDefinition,
+  [TALENT_HIGH_CALIBER]: highCaliberTalentDefinition,
+  [TALENT_TRIGGER_FINGER]: triggerFingerTalentDefinition,
   [TALENT_WYVERN_STING]: wyvernStingTalentDefinition,
   [TALENT_WYVERN_TALONS]: wyvernTalonsTalentDefinition,
   [TALENT_ARCTIC_STING]: arcticStingTalentDefinition,
@@ -2846,6 +3134,8 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_KILLSTREAK]: killstreakTalentDefinition,
   [TALENT_RELENTLESS]: relentlessTalentDefinition,
   [TALENT_VORPAL_GUST]: vorpalGustTalentDefinition,
+  [TALENT_FAN_OF_KNIVES]: fanOfKnivesTalentDefinition,
+  [TALENT_PARRY]: parryTalentDefinition,
   [TALENT_PACK_HUNTER]: packHunterTalentDefinition,
   [TALENT_EVERLIVING]: everlivingTalentDefinition,
   [TALENT_ADRENALINE]: adrenalineTalentDefinition,
@@ -2871,7 +3161,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_STORED_CHARGE]: '/icons/storedCharge.svg',
   [TALENT_STAGGERING_STRIKE]: '/icons/strike.svg',
   [TALENT_STAGGERING_COMBO]: '/icons/combo.svg',
-  [TALENT_STAGGERING_SWIPES]: null,
+  [TALENT_STAGGERING_SWIPES]: '/icons/swipes.svg',
   [TALENT_TRINITY]: '/icons/trinity.svg',
   [TALENT_INFESTED_SMITE]: '/icons/smite.svg',
   [TALENT_STAGGERING_SMITE]: '/icons/smite.svg',
@@ -2881,9 +3171,14 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_CONCENTRATED_VOLLEY]: '/icons/concentratedVolley.svg',
   [TALENT_WRATHFUL_BITE]: '/icons/bite.svg',
   [TALENT_WYVERN_BITE]: '/icons/bite.svg',
+  [TALENT_ENTANGLEMENT]: '/icons/entanglement.svg',
   [TALENT_INFERNO]: '/icons/crossentropy.svg',
   [TALENT_REAPER]: '/icons/reaper.svg',
+  [TALENT_METEOR]: '/icons/meteor.svg',
+  [TALENT_FRAGMENTATION]: '/icons/fragmentation.svg',
   [TALENT_DUAL_COIL]: '/icons/dualCoil.svg',
+  [TALENT_HIGH_CALIBER]: '/icons/highcaliber.svg',
+  [TALENT_TRIGGER_FINGER]: '/icons/triggerfinger.svg',
   [TALENT_WYVERN_STING]: '/icons/shot.svg',
   [TALENT_WYVERN_TALONS]: '/icons/talon.svg',
   [TALENT_ARCTIC_STING]: '/icons/shot.svg',
@@ -2922,24 +3217,26 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_GLACIAL_STORM]: '/icons/crossentropy.svg',
   [TALENT_FROST_TOTEM]: '/icons/totem.svg',
   [TALENT_SHAMAN]: '/icons/shaman.svg',
-  [TALENT_SUPERCONDUCTOR]: '/icons/totem.svg',
-  [TALENT_ACCELERATOR]: '/icons/bolt.svg',
-  [TALENT_GIANTKILLER]: '/icons/talon.svg',
-  [TALENT_HEALING_STREAM]: '/icons/totem.svg',
-  [TALENT_STAGGERING_STAB]: '/icons/strike.svg',
-  [TALENT_WRATHFUL_STAB]: '/icons/strike.svg',
-  [TALENT_INFESTED_BACKSTAB]: '/icons/strike.svg',
-  [TALENT_WRATHFUL_SABRES_SWIPES]: '/icons/combo.svg',
-  [TALENT_INFESTING_SABRES_SWIPES]: '/icons/combo.svg',
-  [TALENT_STAGGERING_FLOURISH]: '/icons/strike.svg',
-  [TALENT_WRATHFUL_FLOURISH]: '/icons/strike.svg',
-  [TALENT_INFESTED_FLOURISH]: '/icons/strike.svg',
-  [TALENT_GUARD_SABRES_SWIPES]: '/icons/combo.svg',
-  [TALENT_GUARD_SABRES_STAB]: '/icons/strike.svg',
-  [TALENT_GUARD_SABRES_FLOURISH]: '/icons/strike.svg',
-  [TALENT_KILLSTREAK]: '/icons/combo.svg',
-  [TALENT_RELENTLESS]: '/icons/strike.svg',
-  [TALENT_VORPAL_GUST]: '/icons/windFury.svg',
+  [TALENT_SUPERCONDUCTOR]: '/icons/superconductor.svg',
+  [TALENT_ACCELERATOR]: '/icons/accelerator.svg',
+  [TALENT_GIANTKILLER]: '/icons/giantkiller.svg',
+  [TALENT_HEALING_STREAM]: '/icons/healingStream.svg',
+  [TALENT_STAGGERING_STAB]: '/icons/stab.svg',
+  [TALENT_WRATHFUL_STAB]: '/icons/stab.svg',
+  [TALENT_INFESTED_BACKSTAB]: '/icons/stab.svg',
+  [TALENT_WRATHFUL_SABRES_SWIPES]: '/icons/swipes.svg',
+  [TALENT_INFESTING_SABRES_SWIPES]: '/icons/swipes.svg',
+  [TALENT_STAGGERING_FLOURISH]: '/icons/flourish.svg',
+  [TALENT_WRATHFUL_FLOURISH]: '/icons/flourish.svg',
+  [TALENT_INFESTED_FLOURISH]: '/icons/flourish.svg',
+  [TALENT_GUARD_SABRES_SWIPES]: '/icons/swipes.svg',
+  [TALENT_GUARD_SABRES_STAB]: '/icons/stab.svg',
+  [TALENT_GUARD_SABRES_FLOURISH]: '/icons/flourish.svg',
+  [TALENT_KILLSTREAK]: '/icons/killstreak.svg',
+  [TALENT_RELENTLESS]: '/icons/relentless.svg',
+  [TALENT_VORPAL_GUST]: '/icons/vorpalGust.svg',
+  [TALENT_FAN_OF_KNIVES]: '/icons/fanofknives.svg',
+  [TALENT_PARRY]: '/icons/parry.svg',
   [TALENT_PACK_HUNTER]: '/icons/strike.svg',
   [TALENT_EVERLIVING]: null,
   [TALENT_ADRENALINE]: null,
@@ -2979,12 +3276,17 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.concentratedVolley) out.push(TALENT_CONCENTRATED_VOLLEY);
   if (loadout.wrathfulBite) out.push(TALENT_WRATHFUL_BITE);
   if (loadout.wyvernBite) out.push(TALENT_WYVERN_BITE);
+  if (loadout.entanglement) out.push(TALENT_ENTANGLEMENT);
   if (loadout.inferno) out.push(TALENT_INFERNO);
   if (loadout.reaper) out.push(TALENT_REAPER);
+  if (loadout.meteor) out.push(TALENT_METEOR);
+  if (loadout.fragmentation) out.push(TALENT_FRAGMENTATION);
   if (loadout.frostPath) out.push(TALENT_FROSTPATH);
   if (loadout.solarRecharge) out.push(TALENT_SOLAR_RECHARGE);
   if (loadout.windFury) out.push(TALENT_WINDFURY);
   if (loadout.dualCoil) out.push(TALENT_DUAL_COIL);
+  if (loadout.highCaliber) out.push(TALENT_HIGH_CALIBER);
+  if (loadout.triggerFinger) out.push(TALENT_TRIGGER_FINGER);
   if (loadout.wyvernSting) out.push(TALENT_WYVERN_STING);
   if (loadout.wyvernTalons) out.push(TALENT_WYVERN_TALONS);
   if (loadout.arcticSting) out.push(TALENT_ARCTIC_STING);
@@ -3036,6 +3338,8 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.killstreak) out.push(TALENT_KILLSTREAK);
   if (loadout.relentless) out.push(TALENT_RELENTLESS);
   if (loadout.vorpalGust) out.push(TALENT_VORPAL_GUST);
+  if (loadout.fanOfKnives) out.push(TALENT_FAN_OF_KNIVES);
+  if (loadout.parry) out.push(TALENT_PARRY);
   if (loadout.packHunterRoom) out.push(TALENT_PACK_HUNTER);
   if (loadout.everlivingRoom) out.push(TALENT_EVERLIVING);
   if (loadout.adrenalineRoom) out.push(TALENT_ADRENALINE);

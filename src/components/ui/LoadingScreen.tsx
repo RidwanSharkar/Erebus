@@ -13,7 +13,7 @@ const LOADING_TIPS = [
   'Press X by a throne weapon to equip it; Q/E/R default for that weapon.',
   'Pick one permanent class talent after equipping—it (once per weapon).',
   'After your first room clear, pick a room boon tied to that room’s color.',
-  'Different colored rooms have different types of rewards.',
+  'Destroying a mushroom releases a toxic cloud that damages enemies and players.',
   'Every third combat room opens a boss portal.',
   'Double-tap WASD to dash.',
   'Interact with pedestal after each room to obtain the reward.',

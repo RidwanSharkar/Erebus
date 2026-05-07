@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3 } from '@/utils/three-exports';
 import EntropicBolt from './EntropicBolt';
+import { ENTROPIC_TRAIL_FADE_OUT_DURATION } from './EntropicBoltTrail';
 import { World } from '@/ecs/World';
 import { Transform } from '@/ecs/components/Transform';
 import { Projectile } from '@/ecs/components/Projectile';
@@ -14,6 +15,7 @@ interface EntropicBoltData {
   entityId: number;
   isCryoflame: boolean;
   colorVariant: string;
+  trailFadeOutStartElapsed?: number;
 }
 
 interface EntropicBoltManagerProps {
@@ -26,9 +28,8 @@ export default function EntropicBoltManager({ world }: EntropicBoltManagerProps)
   const lastUpdateTime = useRef(0);
 
   useFrame((state) => {
-    // Throttle updates to avoid excessive re-renders
     const currentTime = state.clock.getElapsedTime();
-    if (currentTime - lastUpdateTime.current < 0.016) return; // ~60fps
+    if (currentTime - lastUpdateTime.current < 0.016) return;
     lastUpdateTime.current = currentTime;
 
     if (!world) return;
@@ -42,45 +43,58 @@ export default function EntropicBoltManager({ world }: EntropicBoltManagerProps)
       const projectile = entity.getComponent(Projectile);
 
       if (renderer?.mesh?.userData?.isEntropicBolt && transform && projectile) {
-        // Check if this bolt already exists
-        const existingBolt = activeBolts.find(bolt => bolt.entityId === entity.id);
-        
+        const existingBolt = activeBolts.find((bolt) => bolt.entityId === entity.id);
+
         if (existingBolt) {
-          // Update existing bolt position
           existingBolt.position.copy(transform.position);
+          delete existingBolt.trailFadeOutStartElapsed;
           newBolts.push(existingBolt);
         } else {
-          // Create new bolt
           const direction = renderer.mesh.userData.direction || projectile.velocity.clone().normalize();
           const isCryoflame = renderer.mesh.userData.isCryoflame || false;
           const colorVariant = renderer.mesh.userData.colorVariant || 'purple';
-          
+
           newBolts.push({
             id: boltIdCounter.current++,
             position: transform.position.clone(),
             direction: direction.clone(),
             entityId: entity.id,
-            isCryoflame: isCryoflame,
-            colorVariant: colorVariant
+            isCryoflame,
+            colorVariant,
           });
         }
       }
     }
 
-    // Clean up bolts whose entities no longer exist
-    const validEntityIds = new Set(projectileEntities.map(e => e.id));
-    const cleanedActiveBolts = activeBolts.filter(bolt => validEntityIds.has(bolt.entityId));
-    
-    // Update state if bolts have changed
-    if (newBolts.length !== cleanedActiveBolts.length || 
-        newBolts.some(bolt => !cleanedActiveBolts.find(existing => existing.entityId === bolt.entityId))) {
-      setActiveBolts(newBolts);
+    const liveIds = new Set(newBolts.map((b) => b.entityId));
+    const mergedBolts: EntropicBoltData[] = [...newBolts];
+    for (const b of activeBolts) {
+      if (!liveIds.has(b.entityId)) {
+        if (b.trailFadeOutStartElapsed === undefined) {
+          mergedBolts.push({ ...b, trailFadeOutStartElapsed: currentTime });
+        } else if (currentTime - b.trailFadeOutStartElapsed < ENTROPIC_TRAIL_FADE_OUT_DURATION) {
+          mergedBolts.push(b);
+        }
+      }
+    }
+
+    const boltsChanged =
+      mergedBolts.length !== activeBolts.length ||
+      mergedBolts.some((p) => {
+        const ex = activeBolts.find((e) => e.entityId === p.entityId);
+        if (!ex) return true;
+        return (ex.trailFadeOutStartElapsed ?? -1) !== (p.trailFadeOutStartElapsed ?? -1);
+      }) ||
+      activeBolts.some((p) => !mergedBolts.find((e) => e.entityId === p.entityId));
+
+    if (boltsChanged) {
+      setActiveBolts(mergedBolts);
     }
   });
 
   return (
     <>
-      {activeBolts.map(bolt => (
+      {activeBolts.map((bolt) => (
         <EntropicBolt
           key={bolt.id}
           id={bolt.id}
@@ -88,11 +102,7 @@ export default function EntropicBoltManager({ world }: EntropicBoltManagerProps)
           direction={bolt.direction}
           isCryoflame={bolt.isCryoflame}
           colorVariant={bolt.colorVariant}
-          onImpact={() => {
-            // Visual component lifecycle - just remove from visual state
-            // ECS system handles all collision detection and damage
-            setActiveBolts(prev => prev.filter(b => b.id !== bolt.id));
-          }}
+          trailFadeOutStartElapsed={bolt.trailFadeOutStartElapsed}
         />
       ))}
     </>

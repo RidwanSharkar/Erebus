@@ -16,7 +16,7 @@ import {
   PLAYER_VIEW_RADIUS,
   markExplored,
 } from '@/utils/fogOfWarUtils';
-import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+import { MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z } from '@/utils/mapConstants';
 
 // ─── Shaders ─────────────────────────────────────────────────────────────────
 
@@ -112,7 +112,7 @@ const FogOfWar: React.FC<FogOfWarProps> = ({ playerPositionRef, exploredGridRef 
     uFogAlpha:     { value: 0.93 },
     uPlayerPos:    { value: new Vector3() },
     uPlayerRadius: { value: PLAYER_VIEW_RADIUS },
-    uEdgeSoftness: { value: 9.5 },
+    uEdgeSoftness: { value: 2.5 },
     uExploredMap:  { value: exploredTex },
     uMapHalfSize:  { value: MAP_HALF_SIZE },
   }), [exploredTex]);
@@ -137,8 +137,8 @@ const FogOfWar: React.FC<FogOfWarProps> = ({ playerPositionRef, exploredGridRef 
       position={[0, 0.15, 0]}
       renderOrder={50}
     >
-      {/* Circle covers the full playable disc plus a small buffer */}
-      <circleGeometry args={[MAIN_MAP_RADIUS + 0.5, 64]} />
+      {/* Rectangle covers the full main arena plus a small buffer. */}
+      <planeGeometry args={[MAIN_MAP_HALF_X * 2 + 1, MAIN_MAP_HALF_Z * 2 + 1]} />
       <shaderMaterial
         ref={matRef}
         uniforms={uniforms}

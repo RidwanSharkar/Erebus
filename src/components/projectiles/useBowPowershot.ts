@@ -11,6 +11,8 @@ export interface BowPowershotEffect {
   isPerfectShot: boolean;
   /** Arctic Sting room boon — deep blue perfect-shot beam. */
   arcticStingTheme?: boolean;
+  /** HIGH CALIBER — thicker perfect-shot beam mesh. */
+  highCaliberPerfectBeam?: boolean;
   startTime: number;
 }
 
@@ -27,6 +29,7 @@ export const createGlobalPowershotEffect = (
   isPerfectShot: boolean = false,
   isElementalShotsUnlocked: boolean = true,
   arcticStingTheme: boolean = false,
+  highCaliberPerfectBeam: boolean = false,
 ): number => {
   const effectId = globalNextEffectId++;
   
@@ -38,7 +41,8 @@ export const createGlobalPowershotEffect = (
     isElementalShotsUnlocked,
     isPerfectShot,
     arcticStingTheme: arcticStingTheme && isPerfectShot,
-    startTime: Date.now()
+    highCaliberPerfectBeam: highCaliberPerfectBeam && isPerfectShot,
+    startTime: Date.now(),
   };
 
   globalActiveEffects = [...globalActiveEffects, newEffect];
@@ -71,6 +75,7 @@ export const useBowPowershot = () => {
     isPerfectShot: boolean = false,
     isElementalShotsUnlocked: boolean = true,
     arcticStingTheme: boolean = false,
+    highCaliberPerfectBeam: boolean = false,
   ) => {
     return createGlobalPowershotEffect(
       position,
@@ -79,6 +84,7 @@ export const useBowPowershot = () => {
       isPerfectShot,
       isElementalShotsUnlocked,
       arcticStingTheme,
+      highCaliberPerfectBeam,
     );
   }, []);
 

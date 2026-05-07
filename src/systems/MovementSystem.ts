@@ -1,7 +1,7 @@
 // Movement system with WASD controls and physics
 import { Camera, Vector3 } from '@/utils/three-exports';
-import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
-import { CASTLE_WALL_DEPTH_OFFSET, CASTLE_WALL_HALF_THICKNESS } from '@/components/environment/CastleWalls';
+import { MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z, MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+import { CASTLE_WALL_HALF_THICKNESS, CASTLE_WALL_X_OFFSET, CASTLE_WALL_Z_OFFSET } from '@/components/environment/CastleWalls';
 import { System } from '@/ecs/System';
 import { Entity, Component } from '@/ecs/Entity';
 import { Transform } from '@/ecs/components/Transform';
@@ -45,10 +45,10 @@ export class MovementSystem extends System {
         continue;
       }
 
-      // Check if this is a frozen or stunned enemy - skip movement if frozen or stunned
+      // Check if this is an immobilized enemy - skip ordinary locomotion only.
       const enemy = entity.getComponent(Enemy);
-      if (enemy && (enemy.isFrozen || enemy.isStunned)) {
-        continue; // Skip all movement for frozen or stunned enemies
+      if (enemy && (enemy.isFrozen || enemy.isStunned || enemy.isEntangled)) {
+        continue;
       }
 
       // Handle input-based movement
@@ -230,10 +230,10 @@ export class MovementSystem extends System {
 
   // Castle wall AABB segments — mirrors CastleWalls perimeter (half-extents)
   private readonly WALL_SEGMENTS = [
-    { cx: 0,   cz:  CASTLE_WALL_DEPTH_OFFSET,  hx: MAIN_MAP_RADIUS, hz: CASTLE_WALL_HALF_THICKNESS },
-    { cx: 0,   cz: -CASTLE_WALL_DEPTH_OFFSET,  hx: MAIN_MAP_RADIUS, hz: CASTLE_WALL_HALF_THICKNESS },
-    { cx:  CASTLE_WALL_DEPTH_OFFSET, cz: 0,  hx: CASTLE_WALL_HALF_THICKNESS, hz: MAIN_MAP_RADIUS },
-    { cx: -CASTLE_WALL_DEPTH_OFFSET, cz: 0,  hx: CASTLE_WALL_HALF_THICKNESS, hz: MAIN_MAP_RADIUS },
+    { cx: 0,   cz:  CASTLE_WALL_Z_OFFSET,  hx: MAIN_MAP_HALF_X + CASTLE_WALL_HALF_THICKNESS * 2, hz: CASTLE_WALL_HALF_THICKNESS },
+    { cx: 0,   cz: -CASTLE_WALL_Z_OFFSET,  hx: MAIN_MAP_HALF_X + CASTLE_WALL_HALF_THICKNESS * 2, hz: CASTLE_WALL_HALF_THICKNESS },
+    { cx:  CASTLE_WALL_X_OFFSET, cz: 0,  hx: CASTLE_WALL_HALF_THICKNESS, hz: MAIN_MAP_HALF_Z + CASTLE_WALL_HALF_THICKNESS * 2 },
+    { cx: -CASTLE_WALL_X_OFFSET, cz: 0,  hx: CASTLE_WALL_HALF_THICKNESS, hz: MAIN_MAP_HALF_Z + CASTLE_WALL_HALF_THICKNESS * 2 },
   ];
   private readonly WALL_PLAYER_RADIUS = 0.5;
 

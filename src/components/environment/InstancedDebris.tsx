@@ -73,7 +73,7 @@ const DEBRIS_FRAG = `
   }
 `;
 
-const ROCK_COUNT    = 220;
+const ROCK_COUNT    = 160;
 const ARENA_RADIUS  = 20;
 
 const InstancedDebris: React.FC = () => {

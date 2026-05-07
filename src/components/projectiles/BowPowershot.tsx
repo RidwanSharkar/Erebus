@@ -13,7 +13,10 @@ interface BowPowershotProps {
   isElementalShotsUnlocked?: boolean;
   isPerfectShot?: boolean;
   arcticStingTheme?: boolean;
+  highCaliberPerfectBeam?: boolean;
 }
+
+const PERFECT_CALIBER_RADIUS_MULT = 1.4;
 
 const BowPowershot: React.FC<BowPowershotProps> = ({ 
   position, 
@@ -23,11 +26,14 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
   isElementalShotsUnlocked = true,
   isPerfectShot = false,
   arcticStingTheme = false,
+  highCaliberPerfectBeam = false,
 }) => {
   const groupRef = useRef<Group>(null);
   const startTimeRef = useRef(Date.now());
   const duration = isPerfectShot ? 200 : 166; // Perfect shots last slightly longer
   const fadeStartTime = useRef<number | null>(null);
+  const thickCaliberPerfect = !!(isPerfectShot && highCaliberPerfectBeam);
+  const rf = thickCaliberPerfect ? PERFECT_CALIBER_RADIUS_MULT : 1;
   
   // Determine colors based on subclass and unlock status
   const getColors = () => {
@@ -118,7 +124,14 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
       <group quaternion={beamAlignQuat}>
         {/* Core beam - ultra thin, enhanced for perfect shots */}
         <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, halfZ]}>
-          <cylinderGeometry args={[isPerfectShot ? 0.035 : 0.025, isPerfectShot ? 0.035 : 0.025, beamLength, 8]} />
+          <cylinderGeometry
+            args={[
+              isPerfectShot ? 0.035 * rf : 0.025,
+              isPerfectShot ? 0.035 * rf : 0.025,
+              beamLength,
+              8,
+            ]}
+          />
           <meshStandardMaterial
             color={colors.core}
             emissive={colors.emissive}
@@ -130,7 +143,14 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
 
         {/* Inner glow - enhanced for perfect shots */}
         <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, halfZ]}>
-          <cylinderGeometry args={[isPerfectShot ? 0.08 : 0.0625, isPerfectShot ? 0.08 : 0.0625, beamLength, 8]} />
+          <cylinderGeometry
+            args={[
+              isPerfectShot ? 0.08 * rf : 0.0625,
+              isPerfectShot ? 0.08 * rf : 0.0625,
+              beamLength,
+              8,
+            ]}
+          />
           <meshStandardMaterial
             color={colors.core}
             emissive={colors.emissive}
@@ -142,7 +162,14 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
 
         {/* Outer glow - enhanced for perfect shots */}
         <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, halfZ]}>
-          <cylinderGeometry args={[isPerfectShot ? 0.095 : 0.075, isPerfectShot ? 0.095 : 0.075, beamLength, 8]} />
+          <cylinderGeometry
+            args={[
+              isPerfectShot ? 0.095 * rf : 0.075,
+              isPerfectShot ? 0.095 * rf : 0.075,
+              beamLength,
+              8,
+            ]}
+          />
           <meshStandardMaterial
             color={colors.outer}
             emissive={colors.emissive}
@@ -169,7 +196,7 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
                 rotation={[0, Date.now() * 0.002 + i, 0]}
                 scale={[scale, scale, scale]}
               >
-                <torusGeometry args={[0.4, 0.08, 6, 12]} />
+                <torusGeometry args={[0.4 * rf, 0.08 * rf, 6, 12]} />
                 <meshStandardMaterial
                   color={colors.outer}
                   emissive={colors.emissive}
@@ -185,7 +212,7 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
                 rotation={[Math.PI/2, Date.now() * -0.003 + i, 0]}
                 scale={[scale * 0.7, scale * 0.7, scale * 0.7]}
               >
-                <torusGeometry args={[0.3, 0.06, 6, 12]} />
+                <torusGeometry args={[0.3 * rf, 0.06 * rf, 6, 12]} />
                 <meshStandardMaterial
                   color={colors.core}
                   emissive={colors.emissive}
@@ -203,7 +230,7 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
         <pointLight
           color={colors.core}
           intensity={(isPerfectShot ? 20 : 15) * fadeProgress}
-          distance={isPerfectShot ? 10 * lenScale : 8}
+          distance={thickCaliberPerfect ? 14 * lenScale : isPerfectShot ? 10 * lenScale : 8}
           decay={2}
           position={[0, 0, halfZ]}
         />
@@ -214,7 +241,7 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
             {/* Lightning-like crackling effect around perfect shots */}
             {[...Array(4)].map((_, i) => {
               const angle = (i / 4) * Math.PI * 2;
-              const radius = 0.15;
+              const radius = 0.15 * rf;
               return (
                 <group key={`lightning-${i}`} position={[
                   Math.sin(angle + Date.now() * 0.01) * radius,
@@ -222,7 +249,7 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
                   halfZ + Math.sin(Date.now() * 0.005 + i) * 2 * lenScale
                 ]}>
                   <mesh>
-                    <sphereGeometry args={[0.02, 4, 4]} />
+                    <sphereGeometry args={[0.02 * rf, 4, 4]} />
                     <meshStandardMaterial
                       color="#ffffff"
                       emissive="#ffffff"
@@ -238,7 +265,7 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
             
             {/* Perfect shot aura */}
             <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, halfZ]}>
-              <cylinderGeometry args={[0.12, 0.12, beamLength, 8]} />
+              <cylinderGeometry args={[0.12 * rf, 0.12 * rf, beamLength, 8]} />
               <meshStandardMaterial
                 color="#ffffff"
                 emissive="#ffffff"

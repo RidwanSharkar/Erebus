@@ -8,7 +8,7 @@ import {
   Euler,
   Quaternion,
 } from '@/utils/three-exports';
-import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+import { MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z } from '@/utils/mapConstants';
 import type { RoomBorderTheme } from './SimpleBorderEffects';
 
 const THEME_ID: Record<RoomBorderTheme, number> = {
@@ -114,19 +114,14 @@ const STONE_FRAGMENT = `
 // Everything is one InstancedMesh — one BoxGeometry, one ShaderMaterial, one
 // draw call.  Three slab categories share the same unit-cube geometry:
 //
-//   PATH       y=0.055, thickness 0.09 — the main north-south road (7 u wide)
-//   CONNECTOR  y=0.057, thickness 0.09 — east/west branches to camps
-//                (y is 2 mm above PATH so no depth-fight in thin overlap zone)
-//   PLATFORM   y=0.06,  thickness 0.10 — cobbled combat pads per camp
+//   PATH       y=0.055, thickness 0.09 — the main south-north road (7 u wide)
+//   PLATFORM   y=0.06,  thickness 0.10 — cobbled pads and narrow side alcoves
 //                (sits clearly above both PATH and CONNECTOR — no depth-fight)
 //
 // All tiles are axis-aligned (rotY = 0) and spaced with a 0.1-unit grout gap
 // so coplanar faces never overlap — eliminating all z-fighting/jitter.
 //
-// Camp centres (backend/gameRoom.js CAMP_POSITIONS):
-//   Camp 0 — North Fortress : (0, -22)   path runs directly through the camp
-//   Camp 1 — East Bastion   : (22,  8)   east connector at z ≈ 8
-//   Camp 2 — West Citadel   : (-22, 8)   west connector at z ≈ 8
+// Main arena footprint: 20 × 70, x = ±10 and z = ±35.
 // ---------------------------------------------------------------------------
 
 interface SlabDef {
@@ -159,60 +154,38 @@ const makeGrid = (
   return slabs;
 };
 
-// ─── Main path (N-S) ───────────────────────────────────────────────────────
-// 21 rows · z = 26 → -24 · step 2.5 · single 7-wide slab per row · no rotation.
+// ─── Main path (S-N) ───────────────────────────────────────────────────────
 // Tile depth 2.4 → 0.1-unit gap between successive rows (no overlap possible).
 const buildPath = (): SlabDef[] => {
   const slabs: SlabDef[] = [];
-  for (let i = 0; i <= 20; i++) {
+  const tileD = 2.4;
+  const stepZ = 2.5;
+  const startZ = -MAIN_MAP_HALF_Z + tileD / 2;
+  const endZ = MAIN_MAP_HALF_Z - tileD / 2;
+  const rows = Math.floor((endZ - startZ) / stepZ) + 1;
+  for (let i = 0; i < rows; i++) {
     slabs.push({
-      position: [0, 0.055, 26 - i * 2.5],
-      scale:    [7.0, 0.09, 2.4],
+      position: [0, 0.055, startZ + i * stepZ],
+      scale:    [7.0, 0.09, tileD],
       rotY:     0,
     });
   }
-  return slabs; // last tile centre z = -24
+  return slabs;
 };
 
-// ─── Camp 0 · North Fortress  (camp centre x=0, z=-22) ────────────────────
-// The path already passes through this area; the platform sits 5 mm higher
-// (y=0.06) so there is no depth-fight with path tiles (y=0.055).
-// 4-col × 5-row grid · total footprint ≈ 14 × 18 units centred at (0, -23).
-//   stepX=3.6 → tileW=3.5 + 0.1 gap  |  stepZ=3.6 → tileD=3.5 + 0.1 gap
-const CAMP0_PLATFORM = makeGrid(0, -23, 4, 5, 3.6, 3.6, 3.5, 3.5, 0.06, 0.10);
-
-// ─── Camp 1 · East Bastion  (camp centre x=22, z=8) ───────────────────────
-// Connector: 5 tiles bridging from path edge (x≈3.5) to platform edge (x≈16).
-//   Each tile: 2.4 wide (travel dir) × 7.0 deep (z).  Step 2.5 → 0.1 gap.
-//   y=0.057 clears any depth-fight with path tiles (y=0.055) at x≈3.5.
-const CAMP1_CONNECTOR: SlabDef[] = [
-  { position: [ 4.7, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
-  { position: [ 7.2, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
-  { position: [ 9.7, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
-  { position: [12.2, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
-  { position: [14.7, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
-];
-// Platform: 4×4 grid centred at (22, 8) · step 3.9+0.1=4.0 · tile 3.9×3.9
-const CAMP1_PLATFORM = makeGrid(22, 8, 4, 4, 4.0, 4.0, 3.9, 3.9, 0.06, 0.10);
-
-// ─── Camp 2 · West Citadel  (camp centre x=-22, z=8) ─────────────────────
-// Mirror of Camp 1.
-const CAMP2_CONNECTOR: SlabDef[] = [
-  { position: [ -4.7, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
-  { position: [ -7.2, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
-  { position: [ -9.7, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
-  { position: [-12.2, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
-  { position: [-14.7, 0.057, 8.0], scale: [2.4, 0.09, 7.0], rotY: 0 },
-];
-const CAMP2_PLATFORM = makeGrid(-22, 8, 4, 4, 4.0, 4.0, 3.9, 3.9, 0.06, 0.10);
+// ─── Far combat pad + narrow alcoves ──────────────────────────────────────
+// The former side camps lived at x=±22. In the 15-wide corridor they become
+// slim in-bounds alcoves while the main pad anchors the far end of the room.
+const FAR_PLATFORM = makeGrid(0, 20.5, 4, 3, 1.8, 2.8, 1.7, 2.7, 0.06, 0.10);
+const ENTRY_PLATFORM = makeGrid(0, -20.0, 3, 2, 1.8, 2.8, 1.7, 2.7, 0.06, 0.10);
+const EAST_ALCOVE = makeGrid(5.55, 5.0, 2, 4, 1.8, 2.8, 1.7, 2.7, 0.06, 0.10);
+const WEST_ALCOVE = makeGrid(-5.55, 5.0, 2, 4, 1.8, 2.8, 1.7, 2.7, 0.06, 0.10);
 
 // ---------------------------------------------------------------------------
 // Merge everything — one InstancedMesh, one draw call
 // ---------------------------------------------------------------------------
 
-// Slabs whose corners protrude outside the playable square (inner castle wall
-// faces at ±MAIN_MAP_RADIUS) are culled — clip them here.
-const MAP_RADIUS = MAIN_MAP_RADIUS;
+// Slabs whose corners protrude outside the playable rectangle are culled.
 const isSlabInBounds = (slab: SlabDef): boolean => {
   const [cx, , cz] = slab.position;
   const hw = slab.scale[0] / 2;
@@ -223,16 +196,15 @@ const isSlabInBounds = (slab: SlabDef): boolean => {
     [cx - hw, cz + hd],
     [cx - hw, cz - hd],
   ];
-  return corners.every(([x, z]) => Math.abs(x) <= MAP_RADIUS && Math.abs(z) <= MAP_RADIUS);
+  return corners.every(([x, z]) => Math.abs(x) <= MAIN_MAP_HALF_X && Math.abs(z) <= MAIN_MAP_HALF_Z);
 };
 
 const ALL_SLABS: SlabDef[] = [
-  ...buildPath(),        // 21 slabs — main N-S road (7 units wide)
-  ...CAMP0_PLATFORM,     // 20 slabs — North Fortress platform (4×5)
-  ...CAMP1_CONNECTOR,    //  5 slabs — East branch road
-  ...CAMP1_PLATFORM,     // 16 slabs — East Bastion platform (4×4)
-  ...CAMP2_CONNECTOR,    //  5 slabs — West branch road
-  ...CAMP2_PLATFORM,     // 16 slabs — West Citadel platform (4×4)
+  ...buildPath(),
+  ...ENTRY_PLATFORM,
+  ...FAR_PLATFORM,
+  ...EAST_ALCOVE,
+  ...WEST_ALCOVE,
 ].filter(isSlabInBounds);
 
 const THRONE_MAP_RADIUS = 12;

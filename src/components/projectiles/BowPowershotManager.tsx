@@ -16,6 +16,7 @@ export default function BowPowershotManager() {
           isElementalShotsUnlocked={effect.isElementalShotsUnlocked}
           isPerfectShot={effect.isPerfectShot}
           arcticStingTheme={effect.arcticStingTheme}
+          highCaliberPerfectBeam={effect.highCaliberPerfectBeam}
           onComplete={() => removeEffect(effect.id)}
         />
       ))}

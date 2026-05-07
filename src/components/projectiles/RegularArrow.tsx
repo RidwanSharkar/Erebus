@@ -9,20 +9,37 @@ interface RegularArrowProps {
   distanceTraveled?: number;
   maxDistance?: number;
   projectileType?: string; // Add projectile type to support different colors
+  triggerFingerUncharged?: boolean;
 }
 
-export default function RegularArrow({ position, direction, onImpact, distanceTraveled = 0, maxDistance = 25, projectileType }: RegularArrowProps) {
+export default function RegularArrow({ position, direction, onImpact, distanceTraveled = 0, maxDistance = 25, projectileType, triggerFingerUncharged }: RegularArrowProps) {
 
   const arrowRef = useRef<Group>(null);
 
   // Determine colors based on projectile type
   const isBurstArrow = projectileType === 'burst_arrow';
-  const color = isBurstArrow ? "#ff5500" : "#00ffff"; // Teal for burst arrows, red-orange for regular
-  const emissiveColor = isBurstArrow ? "#aa2200" : "#0088aa"; // Darker teal for burst, dark red-orange for regular
-  const shaftEmissiveColor = isBurstArrow ? "#ff4400" : "#0099cc"; // Medium teal for burst, red-orange for regular
-  const fletchingColor = isBurstArrow ? "#ff7722" : "#66ffff"; // Light teal for burst, light red-orange for regular
-  const fletchingEmissiveColor = isBurstArrow ? "#ff5500" : "#00aaff"; // Bright teal for burst, bright red-orange for regular
-  const auraColor = isBurstArrow ? "#ff5500" : "#00ffff"; // Teal for burst, red-orange for regular
+  const isTriggerFinger = !isBurstArrow && triggerFingerUncharged === true;
+  let color = '#00ffff';
+  let emissiveColor = '#0088aa';
+  let shaftEmissiveColor = '#0099cc';
+  let fletchingColor = '#66ffff';
+  let fletchingEmissiveColor = '#00aaff';
+  let auraColor = '#00ffff';
+  if (isBurstArrow) {
+    color = '#ff5500';
+    emissiveColor = '#aa2200';
+    shaftEmissiveColor = '#ff4400';
+    fletchingColor = '#ff7722';
+    fletchingEmissiveColor = '#ff5500';
+    auraColor = '#ff5500';
+  } else if (isTriggerFinger) {
+    color = '#ff2200';
+    emissiveColor = '#880011';
+    shaftEmissiveColor = '#dd1100';
+    fletchingColor = '#ff4444';
+    fletchingEmissiveColor = '#ff1100';
+    auraColor = '#ff3300';
+  }
 
   const size = 0.15;
 

@@ -55,6 +55,7 @@ function IgniteRing({ enemyId, startPosition, startTime, duration, world, onComp
 }) {
   const groupRef = useRef<Group>(null);
   const geom = useMemo(() => new SphereGeometry(0.06, 6, 6), []);
+  const lastSoundAtRef = useRef(0);
   const mat = useMemo(
     () =>
       new MeshBasicMaterial({
@@ -73,6 +74,11 @@ function IgniteRing({ enemyId, startPosition, startTime, duration, world, onComp
     completedRef.current = true;
     onComplete();
   };
+
+  useEffect(() => {
+    lastSoundAtRef.current = Date.now();
+    (window as any).audioSystem?.playIgniteStatusSound?.(startPosition);
+  }, [startPosition, startTime]);
 
   useFrame(() => {
     const elapsed = Date.now() - startTime;
@@ -100,6 +106,10 @@ function IgniteRing({ enemyId, startPosition, startTime, duration, world, onComp
       groupRef.current.position.copy(pos);
       const pulse = 0.85 + 0.15 * Math.sin(elapsed * 0.012);
       groupRef.current.scale.setScalar(pulse);
+    }
+    if (Date.now() - lastSoundAtRef.current >= 1100) {
+      lastSoundAtRef.current = Date.now();
+      (window as any).audioSystem?.playIgniteStatusSound?.(pos);
     }
   });
 

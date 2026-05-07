@@ -72,7 +72,7 @@ export default function IcebeamManager({
     const rawTimeActive = icebeamStartTime.current ? (currentTime - icebeamStartTime.current) / 1000 : 0;
     const timeActive = Math.min(rawTimeActive, ICEBEAM_MAX_HOLD_SEC);
 
-    const baseDamage = 21;
+    const baseDamage = 23;
     const damageMultiplier = 1 + Math.floor(timeActive) * 0.5; // +50% damage per second held (capped at max channel)
     const finalDamage = Math.floor(baseDamage * damageMultiplier);
 
@@ -123,7 +123,7 @@ export default function IcebeamManager({
       
       if (perpendicularDistance < BEAM_WIDTH) {
         const cs = (window as any).controlSystemRef?.current;
-        const talentLoadout = cs?.talentLoadout;
+        const talentLoadout = cs?.getTalentLoadout?.() ?? cs?.talentLoadout;
         const icebeamBoon = talentLoadout?.icebeam === true;
         const playerEntity = cs?.playerEntity as Entity | undefined;
         const sourcePlayerId =

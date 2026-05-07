@@ -12,17 +12,20 @@
 const WALL_HEIGHT    = 3.0;
 const WALL_THICKNESS = 0.6;
 
-// Mirror: MAIN_MAP_RADIUS = 20, inner wall faces at ±R (square playable interior).
-const R = 20;
+// Mirror: client MAIN_MAP_HALF_X/Z, inner wall faces at x = ±16 and z = ±35.
+const MAIN_MAP_HALF_X = 16;
+const MAIN_MAP_HALF_Z = 35;
 const t = WALL_THICKNESS;
-const wallCenterOffset = R + t / 2;
-const longSpan = 2 * R;
+const wallXOffset = MAIN_MAP_HALF_X + t / 2;
+const wallZOffset = MAIN_MAP_HALF_Z + t / 2;
+const wallFullWidth = MAIN_MAP_HALF_X * 2 + t * 2;
+const wallFullDepth = MAIN_MAP_HALF_Z * 2 + t * 2;
 
 const WALL_SEGMENTS = [
-  { center: [0,  WALL_HEIGHT / 2,  wallCenterOffset], sizeX: longSpan,       sizeY: WALL_HEIGHT, sizeZ: t },
-  { center: [0,  WALL_HEIGHT / 2, -wallCenterOffset], sizeX: longSpan,       sizeY: WALL_HEIGHT, sizeZ: t },
-  { center: [ wallCenterOffset,  WALL_HEIGHT / 2, 0], sizeX: t, sizeY: WALL_HEIGHT, sizeZ: longSpan        },
-  { center: [-wallCenterOffset,  WALL_HEIGHT / 2, 0], sizeX: t, sizeY: WALL_HEIGHT, sizeZ: longSpan        },
+  { center: [0,  WALL_HEIGHT / 2,  wallZOffset], sizeX: wallFullWidth, sizeY: WALL_HEIGHT, sizeZ: t },
+  { center: [0,  WALL_HEIGHT / 2, -wallZOffset], sizeX: wallFullWidth, sizeY: WALL_HEIGHT, sizeZ: t },
+  { center: [ wallXOffset,  WALL_HEIGHT / 2, 0], sizeX: t, sizeY: WALL_HEIGHT, sizeZ: wallFullDepth },
+  { center: [-wallXOffset,  WALL_HEIGHT / 2, 0], sizeX: t, sizeY: WALL_HEIGHT, sizeZ: wallFullDepth },
 ];
 
 module.exports = { WALL_SEGMENTS };

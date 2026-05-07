@@ -2,6 +2,9 @@ import React, { useRef, useEffect, useMemo, type MutableRefObject } from 'react'
 import { useFrame } from '@react-three/fiber';
 import { Color, Mesh, Group, Points, Vector3, AdditiveBlending } from '@/utils/three-exports';
 
+/** Shared with managers / bolt — trail opacity decays 1→0 over this window when despawn fade starts. */
+export const ENTROPIC_TRAIL_FADE_OUT_DURATION = 0.35;
+
 interface EntropicBoltTrailProps {
   color: Color;
   size: number;
@@ -11,10 +14,15 @@ interface EntropicBoltTrailProps {
   accentColor?: Color;
   /** Normalized travel direction; used when path history is too short for a stable tangent. */
   flightDirectionRef?: MutableRefObject<Vector3> | null;
+  /** When set, global opacity is multiplied by (1 − eased(elapsed / duration)) using R3F clock elapsed time. */
+  trailFadeOutStartElapsed?: number | null;
+  trailFadeOutDuration?: number;
 }
 
-const TRAIL_LENGTH = 55;
-const ORBIT_RADIUS = 0.4;
+const TRAIL_LENGTH = 50;
+/** Helix spread at the bolt head → tapers to this at the trail tail. */
+const ORBIT_RADIUS_MAX = 0.4;
+const ORBIT_RADIUS_MIN = 0.1;
 const ORBIT_SPEED = 15;
 const MIN_MOVEMENT = 0.06;
 
@@ -50,6 +58,8 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
   opacity = 1,
   isCryoflame = false,
   flightDirectionRef = null,
+  trailFadeOutStartElapsed = null,
+  trailFadeOutDuration = ENTROPIC_TRAIL_FADE_OUT_DURATION,
 }) => {
   const trail1Ref = useRef<Points>(null);
   const trail2Ref = useRef<Points>(null);
@@ -102,13 +112,20 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
     }
   }, [meshRef]);
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (!meshRef.current || !isInitialized.current) return;
     if (!trail1Ref.current?.parent || !trail2Ref.current?.parent) return;
 
     timeRef.current += delta;
     updateTimer.current += delta;
 
+    let fadeOutFactor = 1;
+    if (trailFadeOutStartElapsed != null && trailFadeOutDuration > 1e-6) {
+      const u = (state.clock.elapsedTime - trailFadeOutStartElapsed) / trailFadeOutDuration;
+      const clamped = Math.min(1, Math.max(0, u));
+      // Smooth ease-out so the tail doesn’t “snap” at the end
+      fadeOutFactor = 1 - clamped * clamped * (3 - 2 * clamped);
+    }
 
     const wp = new Vector3();
     meshRef.current.getWorldPosition(wp);
@@ -149,8 +166,8 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
       const trailAge = i / TRAIL_LENGTH;
       // Helix: phase tied to arc index + time so strands precess around the beam
       const angle = trailAge * Math.PI * 4.2 + t * 0.85 + i * 0.31;
-      const fade = Math.pow(1 - trailAge, isCryoflame ? 2.0 : 1.65) * opacity;
-      const lateral = ORBIT_RADIUS * (0.85 + trailAge * 0.35);
+      const fade = Math.pow(1 - trailAge, isCryoflame ? 2.0 : 1.65) * opacity * fadeOutFactor;
+      const orbitR = ORBIT_RADIUS_MAX + (ORBIT_RADIUS_MIN - ORBIT_RADIUS_MAX) * trailAge;
 
       if (n >= 2) {
         if (i === 0) {
@@ -174,7 +191,7 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
       const c = Math.cos(angle);
       const s = Math.sin(angle);
       // Strand 1: offset strictly in plane perpendicular to T (double-helix partner is opposite)
-      _P.copy(_N).multiplyScalar(c * lateral).addScaledVector(_B, s * lateral);
+      _P.copy(_N).multiplyScalar(c * orbitR).addScaledVector(_B, s * orbitR);
       pos1.current[i * 3]     = center.x + _P.x;
       pos1.current[i * 3 + 1] = center.y + _P.y;
       pos1.current[i * 3 + 2] = center.z + _P.z;

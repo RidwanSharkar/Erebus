@@ -24,7 +24,7 @@ export function preloadZombieModels(): void {
   ZOMBIE_MODEL_PATHS.forEach(path => useGLTF.preload(path));
 }
 
-const SCALE = 0.014;
+const SCALE = 0.0125;
 
 export default function ZombieModel({ isWalking, isAttacking, isSummoning, isDying }: ZombieModelProps) {
   const sceneGroupRef = useRef<Group>(null);

@@ -241,15 +241,6 @@ export default function ShadeRenderer({
 
   return (
     <>
-      {/* Blink teleport effects — rendered in world space, outside the moving group */}
-      {blinkFx.map(fx => (
-        <ShadeTeleportEffect
-          key={fx.id}
-          position={fx.position}
-          type={fx.type}
-          onComplete={() => setBlinkFx(prev => prev.filter(f => f.id !== fx.id))}
-        />
-      ))}
 
       {/* Boss-style teleport effects layered on top of the shade blink (scaled down for shade) */}
       {bossFx.map(fx => (

@@ -35,7 +35,6 @@ const CHARACTER_INITIAL_MODEL_PATHS = [
 const CHARACTER_DEFERRED_MODEL_PATHS: Partial<Record<AnimState, string>> = {
   Jump: '/models/character_jump.glb',
   JumpFront: '/models/character_jumpFront.glb',
-  JumpBack: '/models/character_jumpBack.glb',
   Cast: '/models/character_cast.glb',
   CastSingle: '/models/character_castSingle.glb',
   SwordCast: '/models/character_swordCast.glb',
@@ -132,6 +131,9 @@ const FADE_JUMP   = 0.15;
 /** Drei `useAnimations` lazy `actions[name]` can be undefined before the mixer root ref syncs; bounded retries avoid startup T-pose. */
 const MAX_ANIM_APPLY_RETRIES = 15;
 
+/** Non-forward jump clips may not be ready on first airborne frame; avoid idle-in-air while they load. */
+const IDLE_FALLBACK_EXCLUDED = new Set<AnimState>(['Jump', 'JumpFront', 'JumpBack']);
+
 function stripRootMotionXZ(clip: AnimationClip): AnimationClip {
   clip.tracks = clip.tracks.map(track => {
     if (!track.name.endsWith('.position')) return track;
@@ -173,22 +175,24 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
 
   useEffect(() => {
     const neededState = isDead ? 'Death' : animState;
-    const path = CHARACTER_DEFERRED_MODEL_PATHS[neededState];
-    if (!path || deferredAnimationClips[neededState] || requestedDeferredStatesRef.current.has(neededState)) {
+    const loadState =
+      neededState === 'JumpBack' ? 'Jump' : neededState;
+    const path = CHARACTER_DEFERRED_MODEL_PATHS[loadState];
+    if (!path || deferredAnimationClips[loadState] || requestedDeferredStatesRef.current.has(loadState)) {
       return;
     }
 
-    requestedDeferredStatesRef.current.add(neededState);
+    requestedDeferredStatesRef.current.add(loadState);
     loadGltfAnimationClips(path)
       .then((clips) => {
         if (!isMountedRef.current) return;
         setDeferredAnimationClips((prev) =>
-          prev[neededState] ? prev : { ...prev, [neededState]: clips }
+          prev[loadState] ? prev : { ...prev, [loadState]: clips }
         );
       })
       .catch((error) => {
-        requestedDeferredStatesRef.current.delete(neededState);
-        console.warn(`Failed to load character animation ${neededState}:`, error);
+        requestedDeferredStatesRef.current.delete(loadState);
+        console.warn(`Failed to load character animation ${loadState}:`, error);
       });
   }, [animState, isDead, deferredAnimationClips]);
 
@@ -223,7 +227,7 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
       ...rename(rightAnims, 'RightStrafe').map(stripRootMotionXZ),
       ...rename(deferredAnimationClips.Jump ?? [],       'Jump'       ).map(stripRootMotionXZ),
       ...rename(deferredAnimationClips.JumpFront ?? [],  'JumpFront'  ).map(stripRootMotionXZ),
-      ...rename(deferredAnimationClips.JumpBack ?? [],   'JumpBack'   ).map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.Jump ?? [],       'JumpBack'   ).map(stripRootMotionXZ),
       ...rename(deferredAnimationClips.Cast ?? [],       'Cast'       ).map(stripRootMotionXZ),
       ...rename(deferredAnimationClips.CastSingle ?? [], 'CastSingle' ).map(stripRootMotionXZ),
       ...rename(deferredAnimationClips.SwordCast ?? [],  'SwordCast'  ).map(stripRootMotionXZ),
@@ -285,7 +289,12 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
       // Block any animation changes once death has been triggered.
       if (deathTriggeredRef.current) return;
 
-      const nextAction = actions[animState] ?? null;
+      const useIdleFallback =
+        animState !== 'Idle' &&
+        !clipRegistered(animState) &&
+        !IDLE_FALLBACK_EXCLUDED.has(animState);
+      const playAnim: AnimState = useIdleFallback ? 'Idle' : animState;
+      const nextAction = actions[playAnim] ?? null;
 
       if (!nextAction) {
         if (clipRegistered(animState) && scheduleRetry(apply)) return;
@@ -295,17 +304,17 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
       if (nextAction === currentActionRef.current) return;
 
       const isInitialAction = currentActionRef.current === null;
-      const fadeOut = animState === 'Jump' ? FADE_JUMP : FADE_NORMAL;
+      const fadeOut = playAnim === 'Jump' ? FADE_JUMP : FADE_NORMAL;
       const fadeIn  = fadeOut;
 
       currentActionRef.current?.fadeOut(fadeOut);
       nextAction.enabled = true;
 
       const configureNextAction = (): void => {
-        if (animState === 'Jump' || animState === 'JumpFront' || animState === 'JumpBack' || animState === 'ReleaseBow') {
+        if (playAnim === 'Jump' || playAnim === 'JumpFront' || playAnim === 'JumpBack' || playAnim === 'ReleaseBow') {
           nextAction.setLoop(LoopOnce, 1);
           nextAction.clampWhenFinished = false;
-        } else if (animState === 'CastSingle') {
+        } else if (playAnim === 'CastSingle') {
           nextAction.setLoop(LoopOnce, 1);
           nextAction.clampWhenFinished = true;
         } else {
@@ -326,15 +335,15 @@ export default function CharacterModel({ animState, isDead = false }: CharacterM
         return;
       }
 
-      if (animState === 'Jump' || animState === 'JumpFront' || animState === 'JumpBack' || animState === 'ReleaseBow') {
+      if (playAnim === 'Jump' || playAnim === 'JumpFront' || playAnim === 'JumpBack' || playAnim === 'ReleaseBow') {
         nextAction.setLoop(LoopOnce, 1);
         nextAction.clampWhenFinished = false;
         nextAction.reset().fadeIn(fadeIn).play();
-      } else if (animState === 'CastSingle') {
+      } else if (playAnim === 'CastSingle') {
         nextAction.setLoop(LoopOnce, 1);
         nextAction.clampWhenFinished = true;
         nextAction.reset().fadeIn(fadeIn).play();
-      } else if (animState === 'Cast' || animState === 'SwordCast' || animState === 'DrawBow') {
+      } else if (playAnim === 'Cast' || playAnim === 'SwordCast' || playAnim === 'DrawBow') {
         // Always restart so the cast clip plays from the beginning on each new hold.
         nextAction.setLoop(LoopRepeat, Infinity);
         nextAction.reset().fadeIn(fadeIn).play();

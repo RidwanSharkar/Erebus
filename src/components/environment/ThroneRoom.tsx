@@ -14,6 +14,7 @@ import EtherealBow from '@/components/weapons/EtherBow';
 import Scythe from '@/components/weapons/Scythe';
 import Sabres from '@/components/weapons/Sabres';
 import Runeblade from '@/components/weapons/Runeblade';
+import PortalSymbol from './PortalSymbols';
 
 export const COOP_THRONE_ROOM_RADIUS = 16;
 
@@ -91,13 +92,13 @@ export const MAIN_COMBAT_BOSS_PORTAL_POSITION = Object.freeze({
 });
 
 /** Main map: reward pedestal at the far end of the arena (opposite the player entry). */
-export const MAIN_COMBAT_PEDESTAL_POSITION = Object.freeze({ x: 0, y: 0, z: 15 });
+export const MAIN_COMBAT_PEDESTAL_POSITION = Object.freeze({ x: 0, y: 0, z: 13 });
 
 /** XZ interaction radius for the combat arena pedestal. */
 export const MAIN_COMBAT_PEDESTAL_INTERACT_RADIUS = 3.0;
 
 export type ThroneMainRoomCamp = 'purple' | 'blue' | 'red' | 'green';
-export type CoopPortalKind = ThroneMainRoomCamp | 'stat' | 'chaos' | 'healing' | 'boss';
+export type CoopPortalKind = ThroneMainRoomCamp | 'stat' | 'trial' | 'healing' | 'boss';
 
 const THRONE_PORTAL_COLOR_HEX: Record<CoopPortalKind, string> = {
   purple: '#6c3dff',
@@ -105,7 +106,7 @@ const THRONE_PORTAL_COLOR_HEX: Record<CoopPortalKind, string> = {
   red: '#ef4444',
   green: '#22c55e',
   stat: '#f97316',
-  chaos: '#030712',
+  trial: '#eab308',
   healing: '#ec4899',
   boss: '#6c3dff',
 };
@@ -124,7 +125,7 @@ export function normalizeCoopPortalKind(s: string | undefined): CoopPortalKind {
     k === 'red' ||
     k === 'green' ||
     k === 'stat' ||
-    k === 'chaos' ||
+    k === 'trial' ||
     k === 'healing' ||
     k === 'boss'
   ) {
@@ -446,6 +447,7 @@ export function ThronePortalRing({
         distance={locked ? 6 : 14}
         position={[0, 0.4, 0]}
       />
+      {!locked && <PortalSymbol campType={campType} portalColor={portalColor} />}
     </group>
   );
 }

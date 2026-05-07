@@ -18,6 +18,8 @@ export interface ViperShotTelegraphLineProps {
   /** XZ width of the box (Viper: narrow; tentacle: wide to match line hit half-width). */
   lineWidth?: number;
   color?: string;
+  /** Extra lift above the ground pad (m); does not retarget start/end in XZ. */
+  yOffset?: number;
 }
 
 /**
@@ -28,6 +30,7 @@ export default function ViperShotTelegraphLine({
   end,
   lineWidth = DEFAULT_LINE_WIDTH,
   color = DEFAULT_COLOR,
+  yOffset = 0,
 }: ViperShotTelegraphLineProps) {
   const { center, rotY, length, width } = useMemo(() => {
     const dx = end.x - start.x;
@@ -37,14 +40,14 @@ export default function ViperShotTelegraphLine({
     return {
       center: new Vector3(
         (start.x + end.x) * 0.5,
-        Math.max(start.y, end.y) + EPS_Y,
+        Math.max(start.y, end.y) + EPS_Y + yOffset,
         (start.z + end.z) * 0.5
       ),
       rotY: Math.atan2(dx, dz),
       length: safeLen,
       width: lineWidth,
     };
-  }, [start, end, lineWidth]);
+  }, [start, end, lineWidth, yOffset]);
 
   return (
     <mesh

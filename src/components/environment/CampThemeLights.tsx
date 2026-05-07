@@ -3,10 +3,10 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { PointLight, Mesh, Color } from '@/utils/three-exports';
-import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+import { MAIN_MAP_HALF_Z } from '@/utils/mapConstants';
 
-/** South inner edge — camp 0’s session “room color” orb sits here (opposite the north camp). */
-const ROOM_COLOR_BEACON_Z = MAIN_MAP_RADIUS - 1.5;
+/** Far inner edge — camp 0’s session “room color” orb sits near the north end. */
+const ROOM_COLOR_BEACON_Z = MAIN_MAP_HALF_Z - 1.5;
 
 // ─── Per-type palette ──────────────────────────────────────────────────────
 export const CAMP_TYPE_COLORS: Record<string, { beacon: string; torch: string; emissive: string }> = {
@@ -20,16 +20,16 @@ export const CAMP_TYPE_COLORS: Record<string, { beacon: string; torch: string; e
 // 5 positions per camp: 1 central beacon + 4 corner torches.
 const CAMP_TORCH_OFFSETS: [number, number, number][] = [
   [  0, 4,   0 ], // central beacon
-  [ -5, 2.5, -4 ], // corner 1
-  [  5, 2.5, -4 ], // corner 2
-  [ -5, 2.5,  4 ], // corner 3
-  [  5, 2.5,  4 ], // corner 4
+  [ -1.6, 2.5, -3.2 ], // corner 1
+  [  1.6, 2.5, -3.2 ], // corner 2
+  [ -1.6, 2.5,  3.2 ], // corner 3
+  [  1.6, 2.5,  3.2 ], // corner 4
 ];
 
 const CAMP_CENTERS: [number, number, number][] = [
-  [   0, 0, -14.3 ], // Camp 0 — North Fortress
-  [  14.3, 0,  5.0 ], // Camp 1 — East Bastion
-  [ -14.3, 0,  5.0 ], // Camp 2 — West Citadel
+  [   0, 0, ROOM_COLOR_BEACON_Z ], // Far room-color beacon
+  [  5.5, 0,  5.0 ], // East alcove
+  [ -5.5, 0,  5.0 ], // West alcove
 ];
 
 // ─── Single pulsing torch / beacon light ──────────────────────────────────

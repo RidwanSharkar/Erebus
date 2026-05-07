@@ -4,6 +4,7 @@ import { AdditiveBlending } from '@/utils/three-exports';
 import { Mesh, Vector3, Clock, Color } from 'three';
 import { useFrame } from '@react-three/fiber';
 import CrossentropyBoltTrail from './CrossentropyBoltTrail';
+import CrossentropyBoltLaunchSmoke from './CrossentropyBoltLaunchSmoke';
 import { CROSSENTROPY_MAX_TRAVEL_DISTANCE } from '@/utils/talents';
 import type { CrossentropyVisualTheme } from '@/utils/talents';
 interface CrossentropyBoltProps {
@@ -32,7 +33,7 @@ export default function CrossentropyBolt({
   const fireball3Ref = useRef<Mesh>(null);
   const clock = useRef(new Clock());
   const startSpeed = 0.03;
-  const maxSpeed = 2;
+  const maxSpeed = 2.25;
   const accelerationDistance = 20; // Distance over which to accelerate from start to max speed
   const maxRange = CROSSENTROPY_MAX_TRAVEL_DISTANCE; // Aligned with ECS maxDistance for Crossentropy
   const lifespan = 3; // Fallback lifespan
@@ -41,9 +42,9 @@ export default function CrossentropyBolt({
   const hasCollided = useRef(false);
   const hasExploded = useRef(false);
   const fadeStartTime = useRef<number | null>(null);
-  const fadeDuration = 0.75; // 500ms fade duration
+  const fadeDuration = 1; // 500ms fade duration
   const [opacity, setOpacity] = useState(1);
-  const size = 0.26;
+  const size = 0.275;
   const { color, meshColor, meshEmissive } = useMemo(() => {
     if (visualTheme === 'inferno') {
       return {
@@ -86,9 +87,10 @@ export default function CrossentropyBolt({
   );
 
   // Spiral parameters
-  const spiralRadius = 0.4875;
-  const spiralSpeed = 2.5; // rotations per second
+  const spiralRadius = 0.575;
+  const spiralSpeed = 4; // rotations per second
   const time = useRef(0);
+  const launchSmokeDistanceRef = useRef(0);
 
   // Collision detection is now handled by the ECS system
   // This component only handles visual representation
@@ -180,6 +182,7 @@ export default function CrossentropyBolt({
 
     // Calculate current speed based on distance traveled (accelerate from startSpeed to maxSpeed)
     const distanceTraveled = currentPosition.current.distanceTo(startPosition.current);
+    launchSmokeDistanceRef.current = distanceTraveled;
     const accelerationProgress = Math.min(distanceTraveled / accelerationDistance, 1);
     const currentSpeed = startSpeed + (maxSpeed - startSpeed) * accelerationProgress;
 
@@ -300,6 +303,14 @@ export default function CrossentropyBolt({
         mesh2Ref={fireball2Ref}
         mesh3Ref={fireball3Ref}
         opacity={opacity}
+      />
+      <CrossentropyBoltLaunchSmoke
+        direction={direction}
+        visualTheme={visualTheme}
+        anchorRef={currentPosition}
+        boltRadius={size}
+        reaperPurple={reaperEcsDriven}
+        {...(!reaperEcsDriven ? { launchDistanceRef: launchSmokeDistanceRef } : {})}
       />
       <pointLight color={color} intensity={8 * opacity} distance={4} decay={2} />
     </group>

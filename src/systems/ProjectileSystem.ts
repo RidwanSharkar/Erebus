@@ -12,8 +12,23 @@ import { World } from '@/ecs/World';
 import { ObjectPool } from '@/utils/ObjectPool';
 
 import { WeaponSubclass } from '@/components/dragon/weapons';
-import { STAGGERING_ENTROPIC_BOLT_STAGGER, CROSSENTROPY_TEMPEST_STAGGER } from '@/utils/talents';
-import type { CrossentropyVisualTheme } from '@/utils/talents';
+import {
+  STAGGERING_ENTROPIC_BOLT_STAGGER,
+  CROSSENTROPY_TEMPEST_STAGGER,
+  CROSSENTROPY_METEOR_AOE_RADIUS,
+  CROSSENTROPY_METEOR_DAMAGE,
+  CROSSENTROPY_METEOR_SKY_HEIGHT_MAX,
+  CROSSENTROPY_METEOR_SKY_HEIGHT_MIN,
+  CROSSENTROPY_METEOR_SKY_OFFSET_MAX,
+  CROSSENTROPY_METEOR_SKY_OFFSET_MIN,
+  CROSSENTROPY_METEOR_SPEED,
+  CROSSENTROPY_METEOR_STAGGER_MS,
+  CROSSENTROPY_METEOR_WARNING_MS,
+  CROSSENTROPY_FRAGMENTATION_PROC_CHANCE,
+  CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS,
+  rollCrossentropyMeteorStrikeCount,
+} from '@/utils/talents';
+import type { CrossentropyVisualTheme, FanOfKnivesFlourishTint } from '@/utils/talents';
 import { CombatSystem } from './CombatSystem';
 
 function crossentropyThemeFromProjectile(projectile: Projectile): CrossentropyVisualTheme {
@@ -38,6 +53,22 @@ export class ProjectileSystem extends System {
   // Reusable objects to reduce allocations
   private tempVector = new Vector3();
   private tempVector2 = new Vector3();
+  private pendingCrossentropyMeteorImpacts: Array<{
+    impactAtMs: number;
+    impactPosition: Vector3;
+    damage: number;
+    radius: number;
+    ownerEntityId: number;
+    sourcePlayerId: string;
+    infernoCrossentropy: boolean;
+    reaperCrossentropy: boolean;
+    crossentropyPlague: boolean;
+    staggerToAdd?: number;
+  }> = [];
+  /** Co-op only: fragmentation child bolt broadcast (matches `broadcastPlayerAttack` crossentropy projectileConfig shape). */
+  private crossentropyBoltBroadcastCallback?:
+    | ((position: Vector3, direction: Vector3, projectileConfig: Record<string, unknown>) => void)
+    | undefined;
 
   constructor(world: World) {
     super();
@@ -58,8 +89,17 @@ export class ProjectileSystem extends System {
     this.combatSystem = combatSystem;
   }
 
+  public setCrossentropyBoltBroadcastCallback(
+    cb:
+      | ((position: Vector3, direction: Vector3, projectileConfig: Record<string, unknown>) => void)
+      | undefined,
+  ): void {
+    this.crossentropyBoltBroadcastCallback = cb;
+  }
+
   public update(entities: Entity[], deltaTime: number): void {
     this.projectilesToDestroy.length = 0;
+    this.processPendingCrossentropyMeteorImpacts(Date.now());
 
     for (const entity of entities) {
       const transform = entity.getComponent(Transform)!;
@@ -78,6 +118,8 @@ export class ProjectileSystem extends System {
         continue;
       }
 
+      const previousProjectilePos = this.tempVector2.copy(transform.position);
+
       // Move projectile
       this.moveProjectile(transform, projectile, deltaTime);
 
@@ -88,7 +130,7 @@ export class ProjectileSystem extends System {
       // this.updateArrowOrientation(entity, projectile);
 
       // Check collisions
-      this.checkCollisions(entity, transform, projectile);
+      this.checkCollisions(entity, transform, projectile, previousProjectilePos);
 
       // Check world boundaries
       this.checkWorldBounds(entity, transform);
@@ -100,6 +142,109 @@ export class ProjectileSystem extends System {
     }
   }
 
+  private createCrossentropyMeteorStartPosition(impactPosition: Vector3): Vector3 {
+    const angle = Math.random() * Math.PI * 2;
+    const distance =
+      CROSSENTROPY_METEOR_SKY_OFFSET_MIN +
+      Math.random() * (CROSSENTROPY_METEOR_SKY_OFFSET_MAX - CROSSENTROPY_METEOR_SKY_OFFSET_MIN);
+    const height =
+      CROSSENTROPY_METEOR_SKY_HEIGHT_MIN +
+      Math.random() * (CROSSENTROPY_METEOR_SKY_HEIGHT_MAX - CROSSENTROPY_METEOR_SKY_HEIGHT_MIN);
+    return new Vector3(
+      impactPosition.x + Math.cos(angle) * distance,
+      height,
+      impactPosition.z + Math.sin(angle) * distance,
+    );
+  }
+
+  private scheduleCrossentropyMeteorImpact(
+    projectile: Projectile,
+    impactPosition: Vector3,
+    castDelayMs = 0,
+  ): void {
+    const castTimeMs = Date.now() + castDelayMs;
+    const startPosition = this.createCrossentropyMeteorStartPosition(impactPosition);
+    const travelDistance = startPosition.distanceTo(new Vector3(impactPosition.x, -3, impactPosition.z));
+    const travelTimeMs = (travelDistance / CROSSENTROPY_METEOR_SPEED) * 1000;
+    this.pendingCrossentropyMeteorImpacts.push({
+      impactAtMs: castTimeMs + CROSSENTROPY_METEOR_WARNING_MS + travelTimeMs,
+      impactPosition: impactPosition.clone(),
+      damage: CROSSENTROPY_METEOR_DAMAGE,
+      radius: CROSSENTROPY_METEOR_AOE_RADIUS,
+      ownerEntityId: projectile.owner,
+      sourcePlayerId: projectile.sourcePlayerId,
+      infernoCrossentropy: projectile.infernoCrossentropy === true,
+      reaperCrossentropy: projectile.reaperCrossentropy === true,
+      crossentropyPlague: projectile.crossentropyPlague === true,
+      ...(projectile.staggerToAdd != null && projectile.staggerToAdd > 0
+        ? { staggerToAdd: projectile.staggerToAdd }
+        : {}),
+    });
+    this.world.emitEvent('crossentropyMeteorCast', {
+      targetPosition: impactPosition.clone(),
+      timestamp: castTimeMs,
+      damage: CROSSENTROPY_METEOR_DAMAGE,
+      startPosition: startPosition.clone(),
+    });
+  }
+
+  private processPendingCrossentropyMeteorImpacts(nowMs: number): void {
+    if (this.pendingCrossentropyMeteorImpacts.length === 0) return;
+    const due = this.pendingCrossentropyMeteorImpacts.filter((meteor) => meteor.impactAtMs <= nowMs);
+    if (due.length === 0) return;
+    this.pendingCrossentropyMeteorImpacts = this.pendingCrossentropyMeteorImpacts.filter(
+      (meteor) => meteor.impactAtMs > nowMs,
+    );
+    const potentialTargets = this.world.queryEntities([Transform, Health]);
+    for (const meteor of due) {
+      const sourceEntity = this.world.getEntity(meteor.ownerEntityId);
+      for (const target of potentialTargets) {
+        if (target.id === meteor.ownerEntityId) continue;
+        if (target.userData?.isCoopAllyPlayer) continue;
+        if (!target.getComponent(Enemy)) continue;
+        const targetTransform = target.getComponent(Transform);
+        const targetHealth = target.getComponent(Health);
+        if (!targetTransform || !targetHealth || targetHealth.isDead) continue;
+        if (meteor.impactPosition.distanceTo(targetTransform.position) > meteor.radius) continue;
+        if (this.combatSystem) {
+          this.combatSystem.queueDamage(
+            target,
+            meteor.damage,
+            sourceEntity ?? undefined,
+            'crossentropy',
+            meteor.sourcePlayerId,
+            undefined,
+            undefined,
+            meteor.staggerToAdd,
+            undefined,
+            undefined,
+            meteor.infernoCrossentropy,
+            meteor.reaperCrossentropy,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            meteor.crossentropyPlague,
+            undefined,
+          );
+        } else {
+          const currentTime = Date.now() / 1000;
+          targetHealth.takeDamage(meteor.damage, currentTime, target);
+        }
+      }
+    }
+  }
+
   private moveProjectile(transform: Transform, projectile: Projectile, deltaTime: number): void {
     // Use temp vector to avoid allocations
     this.tempVector.copy(projectile.velocity).multiplyScalar(deltaTime);
@@ -107,6 +252,43 @@ export class ProjectileSystem extends System {
     // Update position
     transform.translate(this.tempVector.x, this.tempVector.y, this.tempVector.z);
     transform.matrixNeedsUpdate = true;
+  }
+
+  private segmentIntersectsSphere(
+    start: Vector3,
+    end: Vector3,
+    sphereCenter: Vector3,
+    radiusSquared: number,
+  ): boolean {
+    const segmentX = end.x - start.x;
+    const segmentY = end.y - start.y;
+    const segmentZ = end.z - start.z;
+    const segmentLengthSquared = segmentX * segmentX + segmentY * segmentY + segmentZ * segmentZ;
+
+    if (segmentLengthSquared === 0) {
+      return end.distanceToSquared(sphereCenter) <= radiusSquared;
+    }
+
+    const centerToStartX = sphereCenter.x - start.x;
+    const centerToStartY = sphereCenter.y - start.y;
+    const centerToStartZ = sphereCenter.z - start.z;
+    const t = Math.max(
+      0,
+      Math.min(
+        1,
+        (centerToStartX * segmentX + centerToStartY * segmentY + centerToStartZ * segmentZ) /
+          segmentLengthSquared,
+      ),
+    );
+
+    const closestX = start.x + segmentX * t;
+    const closestY = start.y + segmentY * t;
+    const closestZ = start.z + segmentZ * t;
+    const dx = sphereCenter.x - closestX;
+    const dy = sphereCenter.y - closestY;
+    const dz = sphereCenter.z - closestZ;
+
+    return dx * dx + dy * dy + dz * dz <= radiusSquared;
   }
 
   private updateHomingDirection(projectileEntity: Entity, projectile: Projectile, deltaTime: number): void {
@@ -216,7 +398,12 @@ export class ProjectileSystem extends System {
 
 
 
-  private checkCollisions(projectileEntity: Entity, transform: Transform, projectile: Projectile): void {
+  private checkCollisions(
+    projectileEntity: Entity,
+    transform: Transform,
+    projectile: Projectile,
+    previousProjectilePos: Vector3,
+  ): void {
     const projectilePos = transform.position;
 
     // NOTE: Barrage and Viper Sting projectiles ARE handled by ECS collision detection
@@ -257,6 +444,10 @@ export class ProjectileSystem extends System {
         continue;
       }
 
+      if (target.userData?.isCoopAlliedUnit) {
+        continue;
+      }
+
       // Check if projectile can hit this target (layer-based collision)
       // In PVP mode, projectiles can hit both ENEMY (remote players) and PLAYER (local player) layers
       if (targetCollider.layer !== CollisionLayer.ENEMY && targetCollider.layer !== CollisionLayer.PLAYER) {
@@ -279,17 +470,19 @@ export class ProjectileSystem extends System {
         continue;
       }
 
-      const targetPos = targetTransform.getWorldPosition();
+      const targetPos = targetTransform.getWorldPosition().add(targetCollider.offset);
 
       // Use collider radius for more accurate collision detection
       const projectileRadius = 0.2; // Increased from 0.1 for more forgiving collision detection
       const targetRadius = targetCollider.radius;
 
       // Use squared distance for performance (avoid sqrt)
-      const distanceSquared = projectilePos.distanceToSquared(targetPos);
       const collisionRadiusSquared = (projectileRadius + targetRadius) ** 2;
       
-      if (distanceSquared <= collisionRadiusSquared) {
+      if (
+        projectilePos.distanceToSquared(targetPos) <= collisionRadiusSquared ||
+        this.segmentIntersectsSphere(previousProjectilePos, projectilePos, targetPos, collisionRadiusSquared)
+      ) {
         this.handleHit(projectileEntity, target, projectile, targetHealth);
         
         // If not piercing, destroy projectile
@@ -317,8 +510,12 @@ export class ProjectileSystem extends System {
       const isCrossentropyBolt = renderer?.mesh?.userData?.isCrossentropyBolt;
       const isEntropicBolt = renderer?.mesh?.userData?.isEntropicBolt;
       const isBarrageArrow = renderer?.mesh?.userData?.isBarrageArrow;
+      const isFanOfKnives =
+        projectile.projectileType === 'fan_of_knives' ||
+        renderer?.mesh?.userData?.isFanOfKnivesDagger === true;
       const wyvernBiteConcentratedVenom = renderer?.mesh?.userData?.barrageWyvernBite === true;
       const glacialBiteChill = isBarrageArrow === true && renderer?.mesh?.userData?.barrageGlacialBite === true;
+      const entanglementBarrage = isBarrageArrow === true && renderer?.mesh?.userData?.barrageEntanglement === true;
 
       let damageType = 'projectile';
       if (isCrossentropyBolt) {
@@ -327,6 +524,8 @@ export class ProjectileSystem extends System {
         damageType = 'entropic';
       } else if (isBarrageArrow) {
         damageType = 'barrage';
+      } else if (isFanOfKnives) {
+        damageType = 'fan_of_knives';
       }
       
 
@@ -340,6 +539,40 @@ export class ProjectileSystem extends System {
           | 'arctic'
           | undefined);
 
+      if (isFanOfKnives) {
+        const infestedFlourishFan = renderer?.mesh?.userData?.infestedFlourishFanKnives === true;
+        this.combatSystem.queueDamage(
+          target,
+          projectile.damage,
+          projectileEntity,
+          'fan_of_knives',
+          projectile.sourcePlayerId,
+          false,
+          undefined,
+          projectile.staggerToAdd != null && projectile.staggerToAdd > 0 ? projectile.staggerToAdd : undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          infestedFlourishFan ? true : undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+        );
+      } else {
       this.combatSystem.queueDamage(
         target,
         projectile.damage,
@@ -369,7 +602,11 @@ export class ProjectileSystem extends System {
         undefined,
         isCrossentropyBolt && projectile.crossentropyPlague === true,
         glacialBiteChill,
+        undefined,
+        isCrossentropyBolt && projectile.crossentropyMeteor === true,
+        entanglementBarrage,
       );
+      }
 
       if (
         projectile.isPerfectShot === true &&
@@ -396,6 +633,61 @@ export class ProjectileSystem extends System {
           gp.y = Math.max(1.5, gp.y);
           const cs = (window as any).controlSystemRef?.current;
           cs?.applyGlacialStormOnCrossentropyHit?.(gp);
+        }
+      }
+
+      if (
+        isCrossentropyBolt &&
+        projectile.crossentropyMeteor === true &&
+        target.getComponent(Enemy)
+      ) {
+        const cs = (window as any).controlSystemRef?.current;
+        const localEnt = cs?.getPlayerEntity?.() as { id: number } | null | undefined;
+        if (
+          localEnt &&
+          projectile.owner === localEnt.id &&
+          this.combatSystem?.usesNetworkedEnemyDamage() !== true
+        ) {
+          const meteorTargetTransform = target.getComponent(Transform);
+          if (meteorTargetTransform) {
+            const impactPos = meteorTargetTransform.getWorldPosition();
+            impactPos.y = Math.max(1.5, impactPos.y);
+            const meteorCount = rollCrossentropyMeteorStrikeCount();
+            for (let i = 0; i < meteorCount; i++) {
+              this.scheduleCrossentropyMeteorImpact(projectile, impactPos, i * CROSSENTROPY_METEOR_STAGGER_MS);
+            }
+          }
+        }
+      }
+
+      if (
+        isCrossentropyBolt &&
+        projectile.crossentropyFragmentation === true &&
+        projectile.crossentropySuppressFragmentation !== true &&
+        target.getComponent(Enemy)
+      ) {
+        const csFrag = (window as any).controlSystemRef?.current;
+        const localFrag = csFrag?.getPlayerEntity?.() as { id: number } | null | undefined;
+        if (
+          localFrag &&
+          projectile.owner === localFrag.id &&
+          Math.random() < CROSSENTROPY_FRAGMENTATION_PROC_CHANCE
+        ) {
+          const fragOutcome = this.trySpawnCrossentropyFragmentationBolt(
+            projectileEntity,
+            projectile,
+            target,
+          );
+          if (
+            process.env.NODE_ENV === 'development' &&
+            fragOutcome === 'no_candidates'
+          ) {
+            console.debug(
+              '[Crossentropy FRAGMENTATION] 50% proc succeeded but no ricochet target: need another living Enemy with Health within',
+              CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS,
+              'horizontal units (xz) of the struck enemy.',
+            );
+          }
         }
       }
 
@@ -536,6 +828,7 @@ export class ProjectileSystem extends System {
       subclass?: WeaponSubclass;
       level?: number;
       opacity?: number;
+      sourcePlayerId?: string;
       staggerToAdd?: number;
       dualCoilLane?: 0 | 1;
       /** Bow perfect window — Wrathful Shots crit. */
@@ -556,6 +849,7 @@ export class ProjectileSystem extends System {
     projectile.damage = config?.damage || 25; // Higher damage than regular arrows
     projectile.maxLifetime = config?.lifetime || 5; // Longer lifetime
     projectile.owner = ownerId;
+    projectile.sourcePlayerId = config?.sourcePlayerId || 'unknown';
     if (config?.staggerToAdd != null && config.staggerToAdd > 0) {
       projectile.staggerToAdd = config.staggerToAdd;
     }
@@ -610,6 +904,105 @@ export class ProjectileSystem extends System {
     return projectileEntity;
   }
 
+  /**
+   * FRAGMENTATION ricochet: spawns a second Crossentropy bolt toward the closest eligible enemy.
+   * Verification: chain only appears when at least one other target exists within xz radius
+   * `CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS`; local shooter also notifies peers via
+   * `crossentropyBoltBroadcastCallback` when a bolt is spawned.
+   */
+  private trySpawnCrossentropyFragmentationBolt(
+    projectileEntity: Entity,
+    projectile: Projectile,
+    struckTarget: Entity,
+  ): 'spawned' | 'no_candidates' | 'aborted' {
+    const struckTf = struckTarget.getComponent(Transform);
+    if (!struckTf) return 'aborted';
+
+    const anchor = struckTf.getWorldPosition().clone();
+    anchor.y = Math.max(1.5, anchor.y);
+
+    const r2 = CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS * CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS;
+    const candidates: Array<{ entity: Entity; distanceSq: number }> = [];
+    const potential = this.world.queryEntities([Transform, Health, Enemy]);
+    for (const ent of potential) {
+      if (ent.id === struckTarget.id) continue;
+      if (ent.userData?.isCoopAllyPlayer) continue;
+      const h = ent.getComponent(Health);
+      if (!h || h.isDead) continue;
+      const tf = ent.getComponent(Transform);
+      if (!tf) continue;
+      const wp = tf.getWorldPosition();
+      const dx = wp.x - anchor.x;
+      const dz = wp.z - anchor.z;
+      const distanceSq = dx * dx + dz * dz;
+      if (distanceSq > r2) continue;
+      candidates.push({ entity: ent, distanceSq });
+    }
+    if (candidates.length === 0) return 'no_candidates';
+
+    const pick = candidates.reduce((closest, current) =>
+      current.distanceSq < closest.distanceSq ? current : closest
+    ).entity;
+    const pickTf = pick.getComponent(Transform);
+    if (!pickTf) return 'aborted';
+    const targetPos = pickTf.getWorldPosition();
+
+    const rawDir = this.tempVector.copy(targetPos).sub(anchor);
+    rawDir.y = 0;
+    const direction = rawDir.lengthSq() < 1e-8 ? new Vector3(0, 0, 1) : rawDir.clone().normalize();
+
+    const spawnPosition = anchor.clone().addScaledVector(direction, 0.5);
+
+    const rendererUd = projectileEntity.getComponent(Renderer)?.mesh?.userData as Record<string, unknown> | undefined;
+    const subclass =
+      rendererUd?.subclass != null ? (rendererUd.subclass as WeaponSubclass) : undefined;
+    const level =
+      rendererUd?.level != null && typeof rendererUd.level === 'number' ? rendererUd.level : undefined;
+    const opacity =
+      rendererUd?.opacity != null && typeof rendererUd.opacity === 'number'
+        ? rendererUd.opacity
+        : 1.0;
+
+    const reaper = projectile.reaperCrossentropy === true;
+    const fragmentConfig = {
+      speed: projectile.speed,
+      damage: projectile.damage,
+      lifetime: projectile.maxLifetime,
+      opacity,
+      sourcePlayerId: projectile.sourcePlayerId || 'unknown',
+      infernoCrossentropy: projectile.infernoCrossentropy === true,
+      ...(reaper
+        ? {
+            maxDistance: projectile.maxDistance,
+            reaperCrossentropy: true as const,
+            piercing: true as const,
+          }
+        : { piercing: false as const }),
+      crossentropyTempest: projectile.crossentropyTempest === true,
+      crossentropyPlague: projectile.crossentropyPlague === true,
+      crossentropyGlacial: projectile.crossentropyGlacial === true,
+      crossentropyMeteor: projectile.crossentropyMeteor === true,
+      crossentropySuppressFragmentation: true as const,
+      ...(subclass != null ? { subclass } : {}),
+      ...(typeof level === 'number' ? { level } : {}),
+    };
+
+    const fragmentEntity = this.createCrossentropyBoltProjectile(
+      this.world,
+      spawnPosition,
+      direction,
+      projectile.owner,
+      fragmentConfig,
+    );
+    fragmentEntity.getComponent(Projectile)?.addHitTarget(struckTarget.id);
+
+    if (this.crossentropyBoltBroadcastCallback) {
+      this.crossentropyBoltBroadcastCallback(spawnPosition, direction, fragmentConfig as Record<string, unknown>);
+    }
+
+    return 'spawned';
+  }
+
   // Utility method to create a CrossentropyBolt projectile for scythe
   public createCrossentropyBoltProjectile(
     world: World,
@@ -632,9 +1025,17 @@ export class ProjectileSystem extends System {
       crossentropyTempest?: boolean;
       crossentropyPlague?: boolean;
       crossentropyGlacial?: boolean;
+      crossentropyMeteor?: boolean;
+      crossentropyFragmentation?: boolean;
+      crossentropySuppressFragmentation?: boolean;
       maxDistance?: number;
     }
   ): Entity {
+    const crossentropyDirection = direction.clone();
+    if (crossentropyDirection.y < 0) crossentropyDirection.y = 0;
+    if (crossentropyDirection.lengthSq() < 1e-8) crossentropyDirection.set(0, 0, -1);
+    crossentropyDirection.normalize();
+
     const projectileEntity = world.createEntity();
 
     // Add Transform component
@@ -649,7 +1050,7 @@ export class ProjectileSystem extends System {
     projectile.maxLifetime = config?.lifetime || 1.75; // Longer lifetime
     projectile.owner = ownerId;
     projectile.sourcePlayerId = config?.sourcePlayerId || 'unknown'; // CRITICAL FIX: Set sourcePlayerId for proper damage attribution
-    projectile.setDirection(direction);
+    projectile.setDirection(crossentropyDirection);
     projectile.setStartPosition(position.clone());
     if (config?.infernoCrossentropy) {
       projectile.infernoCrossentropy = true;
@@ -666,6 +1067,15 @@ export class ProjectileSystem extends System {
     }
     if (config?.crossentropyGlacial) {
       projectile.crossentropyGlacial = true;
+    }
+    if (config?.crossentropyMeteor) {
+      projectile.crossentropyMeteor = true;
+    }
+    if (config?.crossentropyFragmentation) {
+      projectile.crossentropyFragmentation = true;
+    }
+    if (config?.crossentropySuppressFragmentation) {
+      projectile.crossentropySuppressFragmentation = true;
     }
     
     if (config?.piercing) projectile.setPiercing(true);
@@ -697,7 +1107,7 @@ export class ProjectileSystem extends System {
     // Mark this as a CrossentropyBolt for special handling
     placeholderMesh.userData.isCrossentropyBolt = true;
     placeholderMesh.userData.projectileEntity = projectileEntity;
-    placeholderMesh.userData.direction = direction.clone();
+    placeholderMesh.userData.direction = crossentropyDirection.clone();
     if (config?.infernoCrossentropy) {
       placeholderMesh.userData.crossentropyInferno = true;
     }
@@ -712,6 +1122,15 @@ export class ProjectileSystem extends System {
     }
     if (config?.crossentropyGlacial) {
       placeholderMesh.userData.crossentropyGlacial = true;
+    }
+    if (config?.crossentropyMeteor) {
+      placeholderMesh.userData.crossentropyMeteor = true;
+    }
+    if (config?.crossentropyFragmentation === true) {
+      placeholderMesh.userData.crossentropyFragmentation = true;
+    }
+    if (config?.crossentropySuppressFragmentation === true) {
+      placeholderMesh.userData.crossentropySuppressFragmentation = true;
     }
     
     renderer.mesh = placeholderMesh;
@@ -752,6 +1171,8 @@ export class ProjectileSystem extends System {
       isCryoflame?: boolean;
       colorVariant?: string;
       entropicBoltTalent?: 'wrathful' | 'staggering' | 'infesting' | 'arctic';
+      curveDirection?: 'left' | 'right';
+      visualOnlyCurveDirections?: readonly ('left' | 'right')[];
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -807,6 +1228,7 @@ export class ProjectileSystem extends System {
     placeholderMesh.userData.isCryoflame = config?.isCryoflame || false;
     placeholderMesh.userData.colorVariant = config?.colorVariant || 'purple';
     placeholderMesh.userData.entropicBoltTalent = entropicTalent;
+    placeholderMesh.userData.curveDirection = config?.curveDirection;
 
     renderer.mesh = placeholderMesh;
 
@@ -822,6 +1244,19 @@ export class ProjectileSystem extends System {
 
     // Notify systems that the entity is ready
     this.world.notifyEntityAdded(projectileEntity);
+
+    if (config?.visualOnlyCurveDirections?.length) {
+      for (const curveDirection of config.visualOnlyCurveDirections) {
+        this.world.emitEvent('entropicBoltVisual', {
+          position: position.clone(),
+          direction: direction.clone(),
+          isCryoflame: config.isCryoflame || false,
+          colorVariant: config.colorVariant || 'purple',
+          entropicBoltTalent: entropicTalent,
+          curveDirection,
+        });
+      }
+    }
     
     return projectileEntity;
   }
@@ -854,9 +1289,17 @@ export class ProjectileSystem extends System {
       staggeringBiteBarrage?: boolean;
       /** Glacial Bite — light blue Barrage + chill on hit. */
       glacialBiteBarrage?: boolean;
+      /** Entanglement — Barrage hit roots and damages over time. */
+      entanglementBarrage?: boolean;
       dualCoilLane?: 0 | 1;
       /** Bow perfect — Wrathful Shots. */
       isPerfectShot?: boolean;
+      /** Trigger Finger — uncharged bow tap; red tint on RegularArrow visuals. */
+      triggerFingerUncharged?: boolean;
+      /** Sabres Fan of Knives Flourish dagger tint key. */
+      fanOfKnivesFlourishTint?: FanOfKnivesFlourishTint;
+      /** INFESTED FLOURISH hit meta replication for coop zombie kills. */
+      infestedFlourishFanKnives?: boolean;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -924,7 +1367,21 @@ export class ProjectileSystem extends System {
     placeholderMesh.userData.level = config?.level;
     placeholderMesh.userData.opacity = config?.opacity || 1.0;
     placeholderMesh.userData.projectileType = projectileType;
-    
+    if (config?.triggerFingerUncharged === true) {
+      placeholderMesh.userData.triggerFingerUncharged = true;
+    }
+
+    const isFanOfKnivesProjectile = projectileType === 'fan_of_knives';
+    if (isFanOfKnivesProjectile) {
+      placeholderMesh.userData.isFanOfKnivesDagger = true;
+      if (config?.fanOfKnivesFlourishTint != null) {
+        placeholderMesh.userData.fanOfKnivesFlourishTint = config.fanOfKnivesFlourishTint;
+      }
+      if (config?.infestedFlourishFanKnives === true) {
+        placeholderMesh.userData.infestedFlourishFanKnives = true;
+      }
+    }
+
     renderer.mesh = placeholderMesh;
     
     // Set shadow casting with safety check

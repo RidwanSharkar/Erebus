@@ -30,6 +30,22 @@ import {
   type VorpalGustStabBoonBeamTheme,
 } from '@/utils/talents';
 
+/**
+ * Co-op allied units (knight/healer) and player-summoned zombies (`player-zombie`) share the ECS
+ * `Enemy` component for gameplay; exclude them from Sword/Bow/Runeblade client melee lists so local
+ * swing hitboxes / `runeblade-slash-impact` never treat them as targets. Mirrors `userData` set in
+ * CoopGameScene when syncing server enemies.
+ */
+function shouldExcludeFromWeaponEnemyData(entity: {
+  userData?: { isCoopAlliedUnit?: boolean; coopServerEnemyType?: string };
+}): boolean {
+  const ud = entity.userData;
+  if (!ud) return false;
+  if (ud.isCoopAlliedUnit === true) return true;
+  if (ud.coopServerEnemyType === 'player-zombie') return true;
+  return false;
+}
+
 interface DragonRendererProps {
   entityId: number;
   position: Vector3;
@@ -86,6 +102,8 @@ interface DragonRendererProps {
   viperStingChargeProgress?: number;
   isBarrageCharging?: boolean;
   barrageChargeProgress?: number;
+  isCrossentropyCharging?: boolean;
+  isSummonTotemCharging?: boolean;
   isCobraShotCharging?: boolean;
   cobraShotChargeProgress?: number;
   /** Tempest Rounds: monotonic per-arrow id for EtherBow muzzle VFX. */
@@ -238,6 +256,8 @@ export default function DragonRenderer({
   viperStingChargeProgress = 0,
   isBarrageCharging = false,
   barrageChargeProgress = 0,
+  isCrossentropyCharging = false,
+  isSummonTotemCharging = false,
   isCobraShotCharging = false,
   cobraShotChargeProgress = 0,
   tempestBurstShotSeq = 0,
@@ -510,7 +530,9 @@ export default function DragonRenderer({
         currentWeapon === WeaponType.BOW ||
         currentWeapon === WeaponType.RUNEBLADE
       ) {
-        const enemies = world.queryEntities([Transform, Health, Enemy]);
+        const enemies = world
+          .queryEntities([Transform, Health, Enemy])
+          .filter((entity) => !shouldExcludeFromWeaponEnemyData(entity));
         const enemyDataArray = enemies.map(enemy => {
           const transform = enemy.getComponent(Transform)!;
           const health = enemy.getComponent(Health)!;
@@ -754,6 +776,8 @@ export default function DragonRenderer({
           viperStingChargeProgress={viperStingChargeProgress}
           isBarrageCharging={isBarrageCharging}
           barrageChargeProgress={barrageChargeProgress}
+          isCrossentropyCharging={isCrossentropyCharging}
+          isSummonTotemCharging={isSummonTotemCharging}
           isCobraShotCharging={isCobraShotCharging}
           cobraShotChargeProgress={cobraShotChargeProgress}
           tempestBurstShotSeq={tempestBurstShotSeq}

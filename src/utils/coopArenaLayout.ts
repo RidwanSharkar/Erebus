@@ -2,7 +2,7 @@
  * Co-op main combat arena layout — keep in sync with backend/coopArenaLayout.js
  */
 export const COOP_MAIN_ENTRY_X = 0;
-export const COOP_MAIN_ENTRY_Z = -15;
+export const COOP_MAIN_ENTRY_Z = -30;
 
 /** Min distance from entry XZ for enemy spawns — keep in sync with backend/coopArenaLayout.js */
 export const COOP_PLAYER_START_CLEAR_RADIUS = 16;

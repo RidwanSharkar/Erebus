@@ -12,6 +12,7 @@ import PlayerDamageFeedbackOverlay from '../components/ui/PlayerDamageFeedbackOv
 import { getGlobalRuneCounts, getCriticalChance, getCriticalDamageMultiplier } from '../core/DamageCalculator';
 import ExperienceBar from '../components/ui/ExperienceBar';
 import EssenceDisplay from '../components/ui/EssenceDisplay';
+import GoldDisplay from '../components/ui/GoldDisplay';
 import { MultiplayerProvider, useMultiplayer } from '../contexts/MultiplayerContext';
 import type { CoopRoomKind } from '../contexts/MultiplayerContext';
 import MerchantUI from '../components/ui/MerchantUI';
@@ -22,7 +23,6 @@ import TalentSelectionModal from '../components/ui/TalentSelectionModal';
 import CoopBoonPickerModal from '../components/ui/CoopBoonPickerModal';
 import DefeatRetryDialog from '../components/ui/DefeatRetryDialog';
 import {
-  TALENT_BLADE_RUSH,
   applyTalentIdToLoadout,
   buildClassBoonPoolForWeapon,
   buildRoomBoonPoolForColor,
@@ -39,7 +39,6 @@ import {
   excludeOwnedTalentsFromBoonPool,
   filterTalentIdsByExclusionSet,
   pickRandomDistinctFromPool,
-  writeBladeRushBoonMetaUnlocked,
 } from '../utils/talents';
 import type { TalentId } from '../utils/talents';
 import { DpsTracker, type DpsSnapshot } from '../utils/DpsTracker';
@@ -85,6 +84,21 @@ function coopRoomBoonColorFromContext(
   return null;
 }
 
+function weaponIconSrcForHud(weapon: WeaponType): string | null {
+  switch (weapon) {
+    case WeaponType.SABRES:
+      return '/icons/sabres.svg';
+    case WeaponType.RUNEBLADE:
+      return '/icons/runeblade.svg';
+    case WeaponType.SCYTHE:
+      return '/icons/scythe.svg';
+    case WeaponType.BOW:
+      return '/icons/bow.svg';
+    default:
+      return null;
+  }
+}
+
 const DEV_TALENT_MODAL =
   process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_DEV_TALENT_MODAL === '1';
 
@@ -102,6 +116,7 @@ function HomeContent() {
     allocateStatPoint,
     updateStatPointsForLevel: updateStatPointsForLvl,
     grantStatPoints,
+    updatePlayerGold,
     purchaseItem,
     players,
     socket,
@@ -124,6 +139,7 @@ function HomeContent() {
     coopCurrentRoomKind,
     coopClearedRoomKind,
     clearCoopClearedRoomColor,
+    confirmCoopPortalTransitionComplete,
     subscribeEnemyDamage,
   } = useMultiplayer();
 
@@ -234,10 +250,19 @@ function HomeContent() {
   const [loadingSceneBootstrapReady, setLoadingSceneBootstrapReady] = useState(false);
   const [isGameLoading, setIsGameLoading] = useState(true);
   const [showCanvas, setShowCanvas] = useState(false);
+  // Tracks whether the last LoadingScreen show was driven by a co-op portal transition so
+  // onFadeComplete knows to send the server confirmation.
+  const pendingCoopTransitionConfirmRef = useRef(false);
+  useEffect(() => {
+    if (coopTransitionOverlay) {
+      pendingCoopTransitionConfirmRef.current = true;
+    }
+  }, [coopTransitionOverlay]);
   const bootstrapWeaponsRef = useRef(selectedWeapons);
   const [playerExperience, setPlayerExperience] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
   const [playerEssence, setPlayerEssence] = useState(50); // Start with 50 essence
+  const [playerGold, setPlayerGold] = useState(0);
   const [showMerchantUI, setShowMerchantUI] = useState(false);
   const [showRulesPanel, setShowRulesPanel] = useState(false);
   const [defeatDialogOpen, setDefeatDialogOpen] = useState(false);
@@ -271,12 +296,12 @@ function HomeContent() {
   }, []);
   const [throneAbilityWeapon, setThroneAbilityWeapon] = useState<WeaponType | null>(null);
   const [throneTalentWeapon, setThroneTalentWeapon] = useState<WeaponType | null>(null);
-  const [coopBoon, setCoopBoon] = useState<{
-    kind: 'class' | 'room';
-    options: TalentId[];
-  } | null>(null);
-  const [chaosSacrificeChoices, setChaosSacrificeChoices] = useState<Array<{ id: string; title: string; description: string }> | null>(null);
-  const classBoonPickedThisRunRef = useRef(false);
+  type CoopBoonState =
+    | { kind: 'class'; options: TalentId[]; weaponForPick: WeaponType }
+    | { kind: 'room'; options: TalentId[] };
+  const [coopBoon, setCoopBoon] = useState<CoopBoonState | null>(null);
+  /** Class boon completed for primary weapons in throne prep — one trio per weapon, not globally per run session. */
+  const classBoonPickedWeaponsRef = useRef<Set<WeaponType>>(new Set());
   const roomBoonIntermissionDoneSeqRef = useRef(-1);
   /** Runeblade colored-room boon mutex: excludes entire combo / strike / smite slot after one pick (per co-op room session). */
   const runebladeRoomBoonExcludedIdsRef = useRef<Set<TalentId>>(new Set());
@@ -368,7 +393,6 @@ function HomeContent() {
     lastArenaEnterSeqRef.current = coopCombatArenaEnterSeq;
     setPedestalInteracted(false);
     setPortalsUnlocked(false);
-    setChaosSacrificeChoices(null);
   }, [coopCombatArenaEnterSeq]);
 
   useEffect(() => {
@@ -396,12 +420,12 @@ function HomeContent() {
 
     if (rewardKind === 'boss') {
       const classPool = excludeOwnedTalentsFromBoonPool(
-        buildClassBoonPoolForWeapon(selectedWeapons.primary),
+        buildClassBoonPoolForWeapon(selectedWeapons.primary, talentLoadout),
         talentLoadout,
       );
       const options = pickRandomDistinctFromPool(classPool, 3);
       if (options.length > 0) {
-        setCoopBoon({ kind: 'class', options });
+        setCoopBoon({ kind: 'class', options, weaponForPick: selectedWeapons.primary });
         return;
       }
       setPortalsUnlocked(true);
@@ -421,24 +445,10 @@ function HomeContent() {
       return;
     }
 
-    if (rewardKind === 'chaos') {
-      setChaosSacrificeChoices([
-        {
-          id: 'dash-for-damage',
-          title: 'Bloodletting Momentum',
-          description: 'Placeholder: lose a dash charge for increased damage later.',
-        },
-        {
-          id: 'health-for-power',
-          title: 'Fractured Vitality',
-          description: 'Placeholder: sacrifice max health for greater power later.',
-        },
-        {
-          id: 'shield-for-speed',
-          title: 'Shattered Ward',
-          description: 'Placeholder: trade shield strength for speed later.',
-        },
-      ]);
+    if (rewardKind === 'trial') {
+      if (socket?.id) updatePlayerGold(socket.id, 100);
+      clearCoopClearedRoomColor();
+      setPortalsUnlocked(true);
       return;
     }
 
@@ -484,6 +494,7 @@ function HomeContent() {
     campTypes,
     selectedWeapons.primary,
     grantStatPoints,
+    updatePlayerGold,
     clearCoopClearedRoomColor,
     talentLoadout,
   ]);
@@ -491,23 +502,22 @@ function HomeContent() {
   const handleThroneWeaponEquipped = useCallback(
     (weapon: WeaponType) => {
       if (combatArenaActive) return;
-      if (classBoonPickedThisRunRef.current) return;
+      if (classBoonPickedWeaponsRef.current.has(weapon)) return;
       const pool = excludeOwnedTalentsFromBoonPool(
-        buildClassBoonPoolForWeapon(weapon),
+        buildClassBoonPoolForWeapon(weapon, talentLoadout),
         talentLoadout,
       );
       if (pool.length === 0) return;
       const options = pickRandomDistinctFromPool(pool, 3);
       if (options.length === 0) return;
-      setCoopBoon({ kind: 'class', options });
+      setCoopBoon({ kind: 'class', options, weaponForPick: weapon });
     },
     [combatArenaActive, talentLoadout],
   );
 
   const handleCoopBoonPick = useCallback(
-    (id: TalentId, kind: 'class' | 'room') => {
+    (id: TalentId, kind: 'class' | 'room', classPickWeapon?: WeaponType) => {
       setTalentLoadout((prev) => applyTalentIdToLoadout(prev, id));
-      if (id === TALENT_BLADE_RUSH) writeBladeRushBoonMetaUnlocked(true);
       if (kind === 'room') {
         for (const exId of expandBowRoomBoonExclusionsAfterPick(id)) {
           bowRoomBoonExcludedIdsRef.current.add(exId);
@@ -543,7 +553,12 @@ function HomeContent() {
         setPortalsUnlocked(true);
       }
       if (kind === 'class') {
-        classBoonPickedThisRunRef.current = true;
+        if (
+          classPickWeapon !== undefined &&
+          classPickWeapon !== WeaponType.NONE
+        ) {
+          classBoonPickedWeaponsRef.current.add(classPickWeapon);
+        }
         if (coopMainArenaPortalPhase !== null) {
           clearCoopClearedRoomColor();
           setPortalsUnlocked(true);
@@ -578,6 +593,10 @@ function HomeContent() {
   const handleEssenceUpdate = (essence: number) => {
     setPlayerEssence(essence);
   };
+
+  const handleGoldUpdate = useCallback((gold: number) => {
+    setPlayerGold(gold);
+  }, []);
 
   // Sync localPurchasedItems with multiplayer context player data
   useEffect(() => {
@@ -685,6 +704,10 @@ function HomeContent() {
     coopMainArenaPortalPhase,
   ]);
 
+  const dpsWeaponIconSrc = weaponIconSrcForHud(
+    controlSystem?.getCurrentWeapon() ?? selectedWeapons.primary ?? gameState.currentWeapon,
+  );
+
   return (
       <main className="w-full h-screen bg-black relative">
         {/* Rules Panel */}
@@ -720,9 +743,9 @@ function HomeContent() {
                 <div className="border-b border-gray-600 pb-4">
                   <h3 className="text-lg font-semibold text-yellow-400 mb-2">Boons at a glance</h3>
                   <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
-                    <li><strong className="text-sky-300">Runeblade</strong>: class pool includes Trinity, Vengeance, Crusader, Windfury, Blizzard, Blade Rush or Stored Charge (after meta unlock), Double Strike, Spellblade, and more by weapon. Colored <strong>room</strong> boons for your basic combo, Wraith Strike, and Smite are mutually exclusive branches for the rest of that run (one palette per branch); class boons ignore this split.</li>
+                    <li><strong className="text-sky-300">Runeblade</strong>: class pool includes Trinity, Vengeance, Crusader, Windfury, Blizzard, Blade Rush, Double Strike, Spellblade, Aftershock, and Stored Charge only after you have Blade Rush this run. Colored <strong>room</strong> boons for your basic combo, Wraith Strike, and Smite are mutually exclusive branches for the rest of that run (one palette per branch); class boons ignore this split.</li>
                     <li><strong className="text-green-300">Bow</strong>: class pool includes Execute, Explosive Talons, Concentrated Volley, Dual Coil, Tempest Rounds. Room colors gate talents like Stagger Shot, Wrathful Bite/Talons, Wyvern Sting/Bite.</li>
-                    <li><strong className="text-purple-300">Scythe</strong>: class pool includes Icebeam, Reaper, Frostpath, Solar Recharge, SHAMAN, and Superconductor. Colored <strong>room</strong> boons: red — Wrathful Entropic &amp; Totem; blue — Staggering Entropic &amp; Totem; green — Infesting Entropic &amp; Totem; purple — Inferno.</li>
+                    <li><strong className="text-purple-300">Scythe</strong>: class pool includes Icebeam, Reaper, Frostpath, Solar Recharge, SHAMAN, Superconductor, Accelerator, Healing Stream, Meteor, and Fragmentation. Colored <strong>room</strong> boons: red — Wrathful Entropic &amp; Totem; blue — Staggering Entropic &amp; Totem; green — Infesting Entropic &amp; Totem; purple — Inferno.</li>
                     <li><strong className="text-red-400">Sabres</strong>: class pool includes Killstreak, Relentless, and Vorpal Gust (Backstab). Colored <strong>room</strong> boons still gate Backstab / Swipes / Flourish branches.</li>
                     <li><strong>Tempest Rounds</strong> (Bow) and <strong>Icebeam</strong> (Scythe) are <strong>talents / boons</strong>, not passives on the ability picker.</li>
                   </ul>
@@ -800,6 +823,7 @@ function HomeContent() {
                   onControlSystemUpdate={handleControlSystemUpdate}
                   onExperienceUpdate={handleExperienceUpdate}
                   onEssenceUpdate={handleEssenceUpdate}
+                  onGoldUpdate={handleGoldUpdate}
                   onMerchantUIUpdate={setShowMerchantUI}
                   onSceneReady={() => {
                     setLoadingSceneBootstrapReady(true);
@@ -812,20 +836,16 @@ function HomeContent() {
                   statPointData={statPointData}
                   abilityLoadout={abilityLoadout}
                   throneAbilityModalOpen={
-                    throneAbilityWeapon !== null || throneTalentWeapon !== null || coopBoon !== null || chaosSacrificeChoices !== null
+                    throneAbilityWeapon !== null || throneTalentWeapon !== null || coopBoon !== null
                   }
                   onRequestThroneAbilityModal={(weapon) => {
                     setThroneTalentWeapon(null);
                     setThroneAbilityWeapon(weapon);
                   }}
-                  onRequestThroneTalentModal={
-                    DEV_TALENT_MODAL
-                      ? (weapon) => {
-                          setThroneAbilityWeapon(null);
-                          setThroneTalentWeapon(weapon);
-                        }
-                      : undefined
-                  }
+                  onRequestThroneTalentModal={(weapon) => {
+                    setThroneAbilityWeapon(null);
+                    setThroneTalentWeapon(weapon);
+                  }}
                   onThroneWeaponEquipped={handleThroneWeaponEquipped}
                   throneDevTalentShortcutEnabled={DEV_TALENT_MODAL}
                   pedestalBoonReady={coopMainArenaPortalPhase !== null && !pedestalInteracted}
@@ -851,7 +871,14 @@ function HomeContent() {
             >
               📜
             </button>
-            <div className="absolute top-4 left-4 text-white font-mono text-sm pointer-events-none">
+            <div className="absolute top-4 left-4 flex items-start gap-2 text-white font-mono text-sm pointer-events-none">
+              {dpsWeaponIconSrc && (
+                <img
+                  src={dpsWeaponIconSrc}
+                  alt=""
+                  className="h-10 w-10 shrink-0 object-contain drop-shadow-[0_0_8px_rgba(251,191,36,0.35)]"
+                />
+              )}
               <div className="rounded-md bg-black/45 px-3 py-2 shadow-lg backdrop-blur-sm">
                 <div className="text-yellow-300 font-semibold">
                   DPS: {Math.round(dpsSnapshot.currentDps).toLocaleString()}
@@ -961,6 +988,14 @@ function HomeContent() {
               />
             )}
 
+            {/* GOLD Display - Only show in co-op mode */}
+            {gameMode === 'coop' && (
+              <GoldDisplay
+                gold={playerGold}
+                isLocalPlayer={true}
+              />
+            )}
+
             {gameMode === 'coop' && throneAbilityWeapon !== null && (
               <AbilitySelectionModal
                 key={`throne-ability-${throneAbilityWeapon}`}
@@ -974,7 +1009,7 @@ function HomeContent() {
               />
             )}
 
-            {gameMode === 'coop' && DEV_TALENT_MODAL && throneTalentWeapon !== null && (
+            {gameMode === 'coop' && throneTalentWeapon !== null && (
               <TalentSelectionModal
                 key={`throne-talent-${throneTalentWeapon}`}
                 selectedWeapon={throneTalentWeapon}
@@ -991,38 +1026,21 @@ function HomeContent() {
             {gameMode === 'coop' && coopBoon !== null && (
               <CoopBoonPickerModal
                 kind={coopBoon.kind}
-                weapon={selectedWeapons.primary}
                 roomColor={coopBoon.kind === 'room' ? coopClearedRoomColor ?? campTypes[0] : undefined}
                 options={coopBoon.options}
-                onPick={(id) => handleCoopBoonPick(id, coopBoon.kind)}
+                weapon={
+                  coopBoon.kind === 'class'
+                    ? coopBoon.weaponForPick
+                    : selectedWeapons.primary
+                }
+                onPick={(id) =>
+                  handleCoopBoonPick(
+                    id,
+                    coopBoon.kind,
+                    coopBoon.kind === 'class' ? coopBoon.weaponForPick : undefined,
+                  )
+                }
               />
-            )}
-
-            {gameMode === 'coop' && chaosSacrificeChoices !== null && (
-              <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200]">
-                <div className="bg-gray-950/98 border-2 border-gray-800 rounded-xl p-6 max-w-3xl w-11/12 mx-auto shadow-2xl">
-                  <div className="text-center mb-5">
-                    <h2 className="text-xl font-bold text-gray-100 mb-1">CHAOS SACRIFICE</h2>
-                    <p className="text-gray-400 text-sm">Choose one placeholder sacrifice. Effects will be implemented later.</p>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {chaosSacrificeChoices.map((choice) => (
-                      <button
-                        key={choice.id}
-                        onClick={() => {
-                          setChaosSacrificeChoices(null);
-                          clearCoopClearedRoomColor();
-                          setPortalsUnlocked(true);
-                        }}
-                        className="text-left rounded-lg border border-gray-700 bg-gray-900/80 p-4 hover:border-gray-400 hover:bg-gray-800 transition-colors"
-                      >
-                        <div className="text-white font-bold text-sm mb-2">{choice.title}</div>
-                        <div className="text-gray-400 text-xs leading-relaxed">{choice.description}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
             )}
 
             {/* Merchant UI - Only show in PVP mode */}
@@ -1074,7 +1092,13 @@ function HomeContent() {
           sceneBootstrapReady={
             loadingSceneBootstrapReady || Boolean(!isGameLoading && coopTransitionOverlay)
           }
-          onFadeComplete={() => setIsGameLoading(false)}
+          onFadeComplete={() => {
+            setIsGameLoading(false);
+            if (pendingCoopTransitionConfirmRef.current) {
+              pendingCoopTransitionConfirmRef.current = false;
+              confirmCoopPortalTransitionComplete();
+            }
+          }}
         />
 
       </main>

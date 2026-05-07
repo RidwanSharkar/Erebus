@@ -15,6 +15,7 @@ function handleEnemyEvents(socket, gameRooms) {
       infernoCrossentropy,
       reaperCrossentropy,
       crossentropyPlague,
+      crossentropyMeteor,
       wyvernBiteVenom,
       wyvernStingVenomZombie,
       wyvernBiteConcentratedDoT,
@@ -28,6 +29,7 @@ function handleEnemyEvents(socket, gameRooms) {
       guardbreakRoom,
       glacialBiteChill,
       glacialTalons,
+      entanglementBarrage,
     } = data;
 
     console.log(`⚔️ Received enemy-damage: room=${roomId}, enemy=${enemyId}, damage=${damage}, source=${sourcePlayerId || socket.id}`);
@@ -58,6 +60,7 @@ function handleEnemyEvents(socket, gameRooms) {
         infernoCrossentropy: !!infernoCrossentropy,
         reaperCrossentropy: !!reaperCrossentropy,
         crossentropyPlague: !!crossentropyPlague,
+        crossentropyMeteor: !!crossentropyMeteor,
       };
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
         hitMeta.staggerToAdd = staggerToAdd;
@@ -73,6 +76,7 @@ function handleEnemyEvents(socket, gameRooms) {
     } else if (damageType === 'barrage') {
       hitMeta = { damageType: 'barrage', wyvernBiteVenom: !!wyvernBiteVenom };
       if (glacialBiteChill) hitMeta.glacialBiteChill = true;
+      if (entanglementBarrage) hitMeta.entanglementBarrage = true;
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
         hitMeta.staggerToAdd = staggerToAdd;
       }
@@ -105,6 +109,12 @@ function handleEnemyEvents(socket, gameRooms) {
       }
     } else if (damageType === 'sunder') {
       hitMeta = { damageType: 'sunder' };
+      if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
+      if (infestedFlourish) hitMeta.infestedFlourish = true;
+    } else if (damageType === 'fan_of_knives') {
+      hitMeta = { damageType: 'fan_of_knives' };
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
         hitMeta.staggerToAdd = staggerToAdd;
       }
@@ -181,6 +191,14 @@ function handleEnemyEvents(socket, gameRooms) {
     if (!gameRooms.has(roomId)) return;
     
     const room = gameRooms.get(roomId);
+    const targetEnemy = room.getEnemy?.(enemyId);
+    if (
+      targetEnemy &&
+      targetEnemy.alliedUnit === true &&
+      ['freeze', 'stun', 'corrupted', 'entangle', 'ignite'].includes(effectType)
+    ) {
+      return;
+    }
     const success = room.applyStatusEffect(enemyId, effectType, duration);
     
     if (success) {
@@ -196,6 +214,15 @@ function handleEnemyEvents(socket, gameRooms) {
 
     const room = gameRooms.get(roomId);
     room.pickupItem(itemId, socket.id);
+  });
+
+  socket.on('pickup-gold-drop', (data) => {
+    const { roomId, dropId } = data;
+
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    room.pickupGoldDrop(dropId, socket.id);
   });
 
   // Handle requests for enemy status effects

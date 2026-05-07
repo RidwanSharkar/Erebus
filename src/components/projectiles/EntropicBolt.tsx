@@ -9,7 +9,7 @@ import {
   Quaternion,
   DoubleSide,
 } from '@/utils/three-exports';
-import EntropicBoltTrail from './EntropicBoltTrail';
+import EntropicBoltTrail, { ENTROPIC_TRAIL_FADE_OUT_DURATION } from './EntropicBoltTrail';
 
 interface EntropicBoltProps {
   id: number;
@@ -19,6 +19,9 @@ interface EntropicBoltProps {
   checkCollisions?: (boltId: number, position: Vector3) => boolean;
   isCryoflame?: boolean;
   colorVariant?: string;
+  curveDirection?: 'left' | 'right';
+  /** R3F clock time when ECS despawn trail fade began; visual-only. */
+  trailFadeOutStartElapsed?: number;
 }
 
 type BoltColorTheme = {
@@ -42,6 +45,9 @@ function getBoltColorTheme(colorVariant: string | undefined, isCryoflame: boolea
 
 const AXIS_Y = new Vector3(0, 1, 0);
 const FALLBACK_UP = new Vector3(0, 0, 1);
+const CURVE_WIDTH = 2.125;
+const FORWARD_SCALE = 12.25;
+const VISUAL_DURATION = 0.675;
 const _dir = new Vector3();
 const _quat = new Quaternion();
 
@@ -63,7 +69,9 @@ export default function EntropicBolt({
   onImpact,
   checkCollisions,
   isCryoflame = false,
-  colorVariant
+  colorVariant,
+  curveDirection,
+  trailFadeOutStartElapsed,
 }: EntropicBoltProps) {
   const boltRef = useRef<Group>(null);
   const boltMeshRef = useRef<Mesh>(null);
@@ -72,11 +80,28 @@ export default function EntropicBolt({
   const tipRingRef = useRef<Mesh>(null);
   const startPosition = useRef(position.clone());
   const hasCollided = useRef(false);
-  const [flightActive, setFlightActive] = useState(true);
+  const collisionFadeStartRef = useRef<number | null>(null);
+  const [collisionTrailFadeStart, setCollisionTrailFadeStart] = useState<number | undefined>(undefined);
+  const [collisionFadeDone, setCollisionFadeDone] = useState(false);
+  const collisionFadeNotifiedRef = useRef(false);
   const [showImpact, setShowImpact] = useState(false);
   const [impactPosition, setImpactPosition] = useState<Vector3 | null>(null);
 
-  const targetPosition = useRef(position.clone().add(direction.clone().multiplyScalar(12)));
+  const targetPosition = useRef(position.clone().add(direction.clone().multiplyScalar(FORWARD_SCALE)));
+  const controlPosition = useRef<Vector3>((() => {
+    const forward = direction.clone().normalize();
+    const right = new Vector3().crossVectors(forward, AXIS_Y);
+    if (right.lengthSq() < 1e-8) {
+      right.copy(FALLBACK_UP).cross(forward);
+    }
+    right.normalize();
+
+    const side = curveDirection === 'right' ? 1 : curveDirection === 'left' ? -1 : 0;
+    return position
+      .clone()
+      .add(forward.multiplyScalar(FORWARD_SCALE * 0.5))
+      .add(right.multiplyScalar(CURVE_WIDTH * side));
+  })());
   const timeElapsed = useRef(0);
   const randomSeed = useRef(Math.random() * 1000);
   const chaoticOffset = useRef(new Vector3());
@@ -102,27 +127,52 @@ export default function EntropicBolt({
     alignBoltToDirection(orientRef.current, direction);
   }, [direction]);
 
-  useFrame((_, delta) => {
-    if (orientRef.current) {
+  const trailFadeStart =
+    trailFadeOutStartElapsed !== undefined
+      ? trailFadeOutStartElapsed
+      : collisionFadeStartRef.current ?? collisionTrailFadeStart;
+  const isEcsTrailFade = trailFadeOutStartElapsed !== undefined;
+  const hideBoltBody =
+    trailFadeOutStartElapsed !== undefined ||
+    collisionFadeStartRef.current != null ||
+    collisionTrailFadeStart !== undefined;
+
+  useFrame((state, delta) => {
+    if (orientRef.current && !hideBoltBody) {
       alignBoltToDirection(orientRef.current, direction);
     }
 
-    const t = timeElapsed.current;
-    const pulse = 1 + Math.sin(t * 16) * 0.07 + Math.sin(t * 7.3) * 0.04;
+    if (!boltRef.current) return;
 
+    if (
+      trailFadeStart !== undefined &&
+      trailFadeStart !== null &&
+      !isEcsTrailFade &&
+      !collisionFadeNotifiedRef.current &&
+      state.clock.elapsedTime - trailFadeStart >= ENTROPIC_TRAIL_FADE_OUT_DURATION
+    ) {
+      collisionFadeNotifiedRef.current = true;
+      setCollisionFadeDone(true);
+    }
 
+    if (hideBoltBody || collisionFadeDone) {
+      // Position follows last ECS/prop sync; trail reads meshRef world position in its own frame.
+      return;
+    }
 
-    if (!boltRef.current || hasCollided.current) return;
+    if (hasCollided.current) return;
 
     timeElapsed.current += delta;
-    const totalDistance = 15;
-    const progress = Math.min(timeElapsed.current * (15 / totalDistance), 0);
+    const progress = Math.min(timeElapsed.current / VISUAL_DURATION, 1);
 
-    const idealPosition = startPosition.current.clone().lerp(targetPosition.current, progress);
+    const invProgress = 1 - progress;
+    const idealPosition = startPosition.current
+      .clone()
+      .multiplyScalar(invProgress * invProgress)
+      .add(controlPosition.current.clone().multiplyScalar(2 * invProgress * progress))
+      .add(targetPosition.current.clone().multiplyScalar(progress * progress));
 
-    let finalPosition = idealPosition;
-
-   
+    const finalPosition = idealPosition;
 
     boltRef.current.position.copy(finalPosition);
 
@@ -132,7 +182,9 @@ export default function EntropicBolt({
 
       if (hitSomething) {
         hasCollided.current = true;
-        setFlightActive(false);
+        const tHit = state.clock.elapsedTime;
+        collisionFadeStartRef.current = tHit;
+        setCollisionTrailFadeStart(tHit);
         setImpactPosition(currentPos);
         setShowImpact(true);
         if (onImpact) onImpact(currentPos);
@@ -143,7 +195,9 @@ export default function EntropicBolt({
     if (progress >= 1) {
       if (!hasCollided.current) {
         hasCollided.current = true;
-        setFlightActive(false);
+        const tHit = state.clock.elapsedTime;
+        collisionFadeStartRef.current = tHit;
+        setCollisionTrailFadeStart(tHit);
         setImpactPosition(targetPosition.current.clone());
         setShowImpact(true);
         if (onImpact) onImpact(targetPosition.current.clone());
@@ -153,93 +207,36 @@ export default function EntropicBolt({
 
 
 
+  if (!isEcsTrailFade && collisionFadeDone) {
+    return null;
+  }
+
   return (
     <group>
-      {flightActive && (
-        <>
-          <EntropicBoltTrail
-            color={trailColor}
-            accentColor={trailColor}
-            size={0.25}
-            meshRef={boltRef}
-            opacity={1}
-            isCryoflame={isCryoflame}
-          />
-
-          <group ref={boltRef} position={position.toArray()}>
-            <group ref={orientRef}>
-   
-
-
-
-   
-
-              <pointLight
-                color={theme.light}
-                intensity={5.5}
-                distance={7}
-                decay={2}
-                position={[0, 0.15, 0]}
-              />
-            </group>
-          </group>
-        </>
-      )}
-
-
-    </group>
-  );
-}
-
-interface EntropicBoltImpactProps {
-  position: Vector3;
-  onComplete?: () => void;
-  isCryoflame?: boolean;
-  theme: BoltColorTheme;
-}
-
-function EntropicBoltImpact({ position, onComplete, isCryoflame = false, theme }: EntropicBoltImpactProps) {
-  const startTime = useRef(Date.now());
-  const [, forceUpdate] = useState({});
-  const IMPACT_DURATION = 0.7;
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      forceUpdate({});
-      const elapsed = (Date.now() - startTime.current) / 1000;
-      if (elapsed > IMPACT_DURATION) {
-        clearInterval(interval);
-        if (onComplete) onComplete();
-      }
-    }, 16);
-
-    const timer = setTimeout(() => {
-      clearInterval(interval);
-      if (onComplete) onComplete();
-    }, IMPACT_DURATION * 1000);
-
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timer);
-    };
-  }, [onComplete]);
-
-  const elapsed = (Date.now() - startTime.current) / 1000;
-  const fade = Math.max(0, 1 - (elapsed / IMPACT_DURATION));
-
-  if (fade <= 0) return null;
-
-  return (
-    <group position={position}>
-
-
-
-      <pointLight
-        color={theme.light}
-        intensity={8 * fade}
-        distance={4}
-        decay={2}
+      <EntropicBoltTrail
+        color={trailColor}
+        accentColor={trailColor}
+        size={0.11}
+        meshRef={boltRef}
+        opacity={1}
+        isCryoflame={isCryoflame}
+        trailFadeOutStartElapsed={trailFadeStart ?? null}
+        trailFadeOutDuration={ENTROPIC_TRAIL_FADE_OUT_DURATION}
       />
+
+      <group ref={boltRef} position={position.toArray()}>
+        {!hideBoltBody ? (
+          <group ref={orientRef}>
+            <pointLight
+              color={theme.light}
+              intensity={5.5}
+              distance={7}
+              decay={2}
+              position={[0, 0.15, 0]}
+            />
+          </group>
+        ) : null}
+      </group>
     </group>
   );
 }

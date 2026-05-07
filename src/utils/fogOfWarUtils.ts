@@ -12,11 +12,11 @@ import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
 /** Resolution of the exploration grid (cells per side). */
 export const FOG_GRID_SIZE = 128;
 
-/** Half-width of the fog grid in world units (grid covers −MAP_HALF_SIZE → +MAP_HALF_SIZE). Matches main map radius. */
+/** Half-width of the square fog texture in world units; covers the rectangular arena's longest half-axis. */
 export const MAP_HALF_SIZE = MAIN_MAP_RADIUS;
 
 /** World-space radius the player always reveals, both in the shader and for enemy visibility. */
-export const PLAYER_VIEW_RADIUS = 30;
+export const PLAYER_VIEW_RADIUS = 10;
 
 // Derived
 const MAP_FULL_SIZE    = MAP_HALF_SIZE * 2;

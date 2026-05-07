@@ -10,12 +10,16 @@ const SKY_Y = 22;
 interface KnightSmiteLightningProps {
   position: Vector3;
   onComplete: () => void;
+  variant?: 'enemy-red' | 'ally-gold';
 }
 
-/** Red sky-to-ground strike for Red Knight Smite — same mesh stack as StaggerProcLightning, crimson palette. */
-export default function KnightSmiteLightning({ position, onComplete }: KnightSmiteLightningProps) {
+/** Sky-to-ground strike for knight smites — crimson for enemies, gold for the allied knight. */
+export default function KnightSmiteLightning({ position, onComplete, variant = 'enemy-red' }: KnightSmiteLightningProps) {
   const startRef = useRef<number | null>(null);
   const doneRef = useRef(false);
+  const palette = variant === 'ally-gold'
+    ? { core: '#fff7ad', glow: '#facc15', light: '#f59e0b' }
+    : { core: '#fca5a5', glow: '#ef4444', light: '#f97316' };
 
   const segments = useMemo(() => {
     const baseX = position.x;
@@ -39,24 +43,24 @@ export default function KnightSmiteLightning({ position, onComplete }: KnightSmi
   const matCore = useMemo(
     () =>
       new MeshBasicMaterial({
-        color: '#fca5a5',
+        color: palette.core,
         transparent: true,
         opacity: 0.95,
         blending: AdditiveBlending,
         depthWrite: false,
       }),
-    [],
+    [palette.core],
   );
   const matGlow = useMemo(
     () =>
       new MeshBasicMaterial({
-        color: '#ef4444',
+        color: palette.glow,
         transparent: true,
         opacity: 0.55,
         blending: AdditiveBlending,
         depthWrite: false,
       }),
-    [],
+    [palette.glow],
   );
 
   const cyl = useMemo(() => new CylinderGeometry(0.07, 0.11, 1, 6), []);
@@ -76,7 +80,7 @@ export default function KnightSmiteLightning({ position, onComplete }: KnightSmi
 
   return (
     <group>
-      <pointLight position={[position.x, position.y + 2, position.z]} color="#f97316" intensity={22} distance={16} decay={2} />
+      <pointLight position={[position.x, position.y + 2, position.z]} color={palette.light} intensity={22} distance={16} decay={2} />
       {segments.slice(0, -1).map((p, i) => {
         const q = segments[i + 1];
         const midX = (p.x + q.x) / 2;

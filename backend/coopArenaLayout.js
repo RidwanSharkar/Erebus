@@ -2,7 +2,7 @@
  * Co-op main combat arena layout — keep in sync with src/utils/coopArenaLayout.ts
  */
 const COOP_MAIN_ENTRY_X = 0;
-const COOP_MAIN_ENTRY_Z = -15;
+const COOP_MAIN_ENTRY_Z = -30;
 
 /** Min distance from entry XZ for enemy spawns: ≥ max mob aggro (12) + player spawn ring (~1.25) + margin. */
 const COOP_PLAYER_START_CLEAR_RADIUS = 16;

@@ -16,12 +16,18 @@ interface ChargedOrbitalsProps {
   weaponSubclass?: WeaponSubclass;
   isCorruptedAuraActive?: boolean;
   yOffset?: number;
+  customActiveColor?: string;
+  customInactiveColor?: string;
 }
 
-const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weaponSubclass, isCorruptedAuraActive, yOffset = 0 }: ChargedOrbitalsProps) => {
+const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weaponSubclass, isCorruptedAuraActive, yOffset = 0, customActiveColor, customInactiveColor = '#333333' }: ChargedOrbitalsProps) => {
   const orbitalsRef = useRef<Group>(null);
   
   const getOrbitalColor = () => {
+    if (customActiveColor) {
+      return customActiveColor;
+    }
+
     // Check for corrupted aura on Runeblade first
     if (isCorruptedAuraActive && weaponType === WeaponType.RUNEBLADE) {
       return '#ff8800';
@@ -112,7 +118,7 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
       {dashCharges.map((charge, index) => {
         const isAvailable = charge.isAvailable;
         const activeColor = getOrbitalColor();
-        const inactiveColor = '#333333';
+        const inactiveColor = customInactiveColor;
         
         return (
           <group key={index}>
@@ -130,8 +136,8 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
             <mesh>
               <sphereGeometry args={[0.10*1.225, 16, 16]} />
               <meshStandardMaterial
-                color={isAvailable ? activeColor : "#333333"}
-                emissive={isAvailable ? activeColor : "#333333"}
+                color={isAvailable ? activeColor : inactiveColor}
+                emissive={isAvailable ? activeColor : inactiveColor}
                 emissiveIntensity={isAvailable ? .5 : 0.1}
                 transparent
                 opacity={isAvailable ? 0.4 : 0.15}
@@ -143,7 +149,7 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
 
 
             <pointLight
-              color={isAvailable ? activeColor : "#333333"}
+              color={isAvailable ? activeColor : inactiveColor}
               intensity={isAvailable ? 1 : 0.1}
               distance={2.3}
               decay={3}

@@ -24,6 +24,7 @@ import {
   CHILL_SLOW_PER_STACK,
   ARCTIC_CHILL_FREEZE_DURATION_SEC,
   BLIZZARD_FREEZE_DURATION_SEC,
+  ENTANGLEMENT_DURATION_MS,
 } from '@/utils/talents';
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
 import { ImpactEffectManager } from '@/utils/ImpactEffectManager';
@@ -32,6 +33,7 @@ import { Projectile } from '@/ecs/components/Projectile';
 import { Pillar } from '@/ecs/components/Pillar';
 import { DestructibleMushroom } from '@/ecs/components/DestructibleMushroom';
 import { WeaponType } from '@/components/dragon/weapons';
+import { addGlobalEntangledEnemy } from '@/components/weapons/EntangleManager';
 
 interface DamageEvent {
   target: Entity;
@@ -55,12 +57,16 @@ interface DamageEvent {
   reaperCrossentropy?: boolean;
   /** Co-op routing: PLAGUE Crossentropy — venom FX + zombies on kill (server). */
   crossentropyPlague?: boolean;
+  /** Co-op routing: METEOR Crossentropy — server schedules meteor proc + AoE impact. */
+  crossentropyMeteor?: boolean;
   /** Co-op routing: Infested Combo talent — with damageType `sword` / routed as `runeblade_combo`. */
   infestedCombo?: boolean;
   /** Wyvern Bite — Barrage hit applies Concentrated Venom stack (co-op: server; local: ECS). */
   wyvernBiteConcentratedVenom?: boolean;
   /** Glacial Bite — Barrage hit applies Blizzard-style chill (5 stacks → 6s freeze locally; server mirrors). */
   glacialBiteChill?: boolean;
+  /** Entanglement — Barrage hit roots and squeezes the target. */
+  entanglementBarrage?: boolean;
   /** Co-op: Cobra venom DoT tick — Wyvern Sting talent may raise zombie on kill. */
   wyvernStingVenomZombie?: boolean;
   /** Co-op: Concentrated Venom DoT tick — eligible for zombie on kill (Wyvern Bite). */
@@ -127,6 +133,7 @@ export class CombatSystem extends System {
       infernoCrossentropy?: boolean;
       reaperCrossentropy?: boolean;
       crossentropyPlague?: boolean;
+      crossentropyMeteor?: boolean;
       staggerToAdd?: number;
       infestedCombo?: boolean;
       wyvernBiteVenom?: boolean;
@@ -147,6 +154,7 @@ export class CombatSystem extends System {
       guardbreakRoom?: boolean;
       glacialBiteChill?: boolean;
       glacialTalons?: boolean;
+      entanglementBarrage?: boolean;
     },
     hitWorldPosition?: { x: number; y: number; z: number },
   ) => void;
@@ -242,6 +250,7 @@ export class CombatSystem extends System {
     source?: Entity,
   ): DamageCalcOptions | undefined {
     if (damageType === 'barrage') return this.getBarrageCritCalcOpts(damageType);
+    if (damageType === 'fan_of_knives') return undefined;
     if (damageType === 'crossentropy' && damageEvent.crossentropyInferno === true) {
       return { critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD };
     }
@@ -417,6 +426,8 @@ export class CombatSystem extends System {
         infernalSmite?: boolean;
         infernoCrossentropy?: boolean;
         reaperCrossentropy?: boolean;
+        crossentropyPlague?: boolean;
+        crossentropyMeteor?: boolean;
         staggerToAdd?: number;
         infestedCombo?: boolean;
         wyvernBiteVenom?: boolean;
@@ -432,7 +443,12 @@ export class CombatSystem extends System {
         infestedFlourish?: boolean;
         killstreakBackstab?: boolean;
         relentlessBackstab?: boolean;
+        arcticBlizzard?: boolean;
+        frostTotemChill?: boolean;
         guardbreakRoom?: boolean;
+        glacialBiteChill?: boolean;
+        glacialTalons?: boolean;
+        entanglementBarrage?: boolean;
       },
       hitWorldPosition?: { x: number; y: number; z: number },
     ) => void,
@@ -512,8 +528,12 @@ export class CombatSystem extends System {
         enemy.updateStunStatus(currentTime);
         enemy.updateCorruptedStatus(currentTime);
         enemy.updateChillStatus(currentTime);
+        const entangleTick = enemy.updateEntangleStatus(currentTime);
 
         if (!this.onEnemyDamageCallback) {
+          if (entangleTick.shouldDealDamage && entangleTick.damage > 0) {
+            this.queueDamage(entity, entangleTick.damage, undefined, 'entanglement');
+          }
           const cv = enemy.updateConcentratedVenomStatus(currentTime);
           if (cv.shouldDealDamage && cv.damage > 0) {
             this.queueDamage(
@@ -621,6 +641,9 @@ export class CombatSystem extends System {
     if (!health || !health.enabled) return;
 
     const enemy = target.getComponent(Enemy);
+    if (enemy && target.userData?.isCoopAlliedUnit) {
+      return;
+    }
     if (enemy && this.onEnemyDamageCallback && target.userData?.coopEnemyDying) {
       return;
     }
@@ -737,6 +760,9 @@ export class CombatSystem extends System {
                         ...(damageEvent.glacialBiteChill === true
                           ? { glacialBiteChill: true as const }
                           : {}),
+                        ...(damageEvent.entanglementBarrage === true
+                          ? { entanglementBarrage: true as const }
+                          : {}),
                         ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
                           ? { staggerToAdd: damageEvent.staggerToAdd }
                           : {}),
@@ -752,6 +778,9 @@ export class CombatSystem extends System {
                             : {}),
                           ...(damageEvent.crossentropyPlague === true
                             ? { crossentropyPlague: true as const }
+                            : {}),
+                          ...(damageEvent.crossentropyMeteor === true
+                            ? { crossentropyMeteor: true as const }
                             : {}),
                           ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
                             ? { staggerToAdd: damageEvent.staggerToAdd }
@@ -798,10 +827,7 @@ export class CombatSystem extends System {
                                   ? { frostTotemChill: true as const }
                                   : {}),
                               }
-                            : damageType === 'icebeam' &&
-                                ((damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0) ||
-                                  damageEvent.icebeamWrathful === true ||
-                                  damageEvent.icebeamInfested === true)
+                            : damageType === 'icebeam'
                               ? {
                                   damageType: 'icebeam' as const,
                                   ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
@@ -840,7 +866,17 @@ export class CombatSystem extends System {
                                         ? { infestedFlourish: true as const }
                                         : {}),
                                     }
-                                  : undefined;
+                                  : damageType === 'fan_of_knives'
+                                    ? {
+                                        damageType: 'fan_of_knives' as const,
+                                        ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
+                                          ? { staggerToAdd: damageEvent.staggerToAdd }
+                                          : {}),
+                                        ...(damageEvent.infestedFlourish === true
+                                          ? { infestedFlourish: true as const }
+                                          : {}),
+                                      }
+                                    : undefined;
       const routeMeta = this.shouldApplyGuardbreakRoomTalent()
         ? { ...(baseRouteMeta ?? {}), guardbreakRoom: true as const }
         : baseRouteMeta;
@@ -1138,7 +1174,12 @@ export class CombatSystem extends System {
 
       // Specific projectile types use the damage taken system.
       // Exception: Show damage numbers for crossentropy and entropic bolts when local player is the caster (not the target)
-      const isProjectileWithDamageTaken = damageType === 'crossentropy' || damageType === 'entropic' || damageType === 'entropic_cryoflame' || damageType === 'projectile';
+      const isProjectileWithDamageTaken =
+        damageType === 'crossentropy' ||
+        damageType === 'entropic' ||
+        damageType === 'entropic_cryoflame' ||
+        damageType === 'projectile' ||
+        damageType === 'fan_of_knives';
       const isLocalPlayerCaster = this.localPlayerEntityId !== null && this.localPlayerEntityId !== target.id;
       const shouldShowDamageNumbers = !isProjectileWithDamageTaken || (isProjectileWithDamageTaken && isLocalPlayerCaster);
 
@@ -1197,7 +1238,10 @@ export class CombatSystem extends System {
     ) {
       localBase = Math.floor(baseDamage * 2);
     }
-    const damageResult: DamageResult = calculateDamage(localBase, currentWeapon, localFallbackCritOpts);
+    const damageResult: DamageResult =
+      damageType === 'fan_of_knives'
+        ? { damage: localBase, isCritical: false }
+        : calculateDamage(localBase, currentWeapon, localFallbackCritOpts);
     const actualDamage = damageResult.damage;
     this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
 
@@ -1330,6 +1374,21 @@ export class CombatSystem extends System {
             BLIZZARD_FREEZE_DURATION_SEC,
             target.userData?.coopServerEnemyType as string | undefined,
           );
+        }
+      }
+
+      const enemyForEntanglement = target.getComponent(Enemy);
+      if (
+        enemyForEntanglement &&
+        damageType === 'barrage' &&
+        damageEvent.entanglementBarrage === true &&
+        damageDealt &&
+        !this.onEnemyDamageCallback
+      ) {
+        enemyForEntanglement.entangle(ENTANGLEMENT_DURATION_MS / 1000, currentTime);
+        const t = target.getComponent(Transform);
+        if (t) {
+          addGlobalEntangledEnemy(target.id.toString(), t.getWorldPosition().clone(), ENTANGLEMENT_DURATION_MS);
         }
       }
 
@@ -1550,6 +1609,8 @@ export class CombatSystem extends System {
     crossentropyPlague?: boolean,
     glacialBiteChill?: boolean,
     glacialTalons?: boolean,
+    crossentropyMeteor?: boolean,
+    entanglementBarrage?: boolean,
   ): void {
     this.damageQueue.push({
       target,
@@ -1582,6 +1643,8 @@ export class CombatSystem extends System {
       crossentropyPlague,
       glacialBiteChill,
       glacialTalons,
+      crossentropyMeteor,
+      entanglementBarrage,
     });
   }
 
@@ -1630,12 +1693,17 @@ export class CombatSystem extends System {
     // Calculate actual damage with critical hit mechanics
     const currentWeapon = this.getCurrentWeapon();
     const immediateCritOpts: DamageCalcOptions | undefined =
-      damageType === 'barrage'
+      damageType === 'fan_of_knives'
+        ? undefined
+        : damageType === 'barrage'
         ? this.getBarrageCritCalcOpts(damageType)
         : damageType === 'projectile'
           ? this.getWrathfulShotsPerfectCritOptsFromSource(source)
           : undefined;
-    const damageResult: DamageResult = calculateDamage(damage, currentWeapon, immediateCritOpts);
+    const damageResult: DamageResult =
+      damageType === 'fan_of_knives'
+        ? { damage, isCritical: false }
+        : calculateDamage(damage, currentWeapon, immediateCritOpts);
     const actualDamage = damageResult.damage;
 
     const currentTime = Date.now() / 1000;

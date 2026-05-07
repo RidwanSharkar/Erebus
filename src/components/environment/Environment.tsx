@@ -31,6 +31,8 @@ interface EnvironmentProps {
   isPVP?: boolean; // Enable PVP-specific pillar positioning
   pvpPillarPositions?: Array<[number, number, number]>; // PVP pillar positions
   campTypes?: string[]; // Assigned archetype per camp ('blue'|'green'|'red'|'purple')
+  /** Co-op act terrain, independent from the selected room color. */
+  coopTerrainTheme?: RoomBorderTheme;
   /** Co-op: destroyed mushroom instance indices (hide instanced meshes). */
   mushroomHiddenIndices?: ReadonlySet<number>;
 }
@@ -52,6 +54,7 @@ const Environment: React.FC<EnvironmentProps> = ({
   isPVP = false,
   pvpPillarPositions,
   campTypes = [],
+  coopTerrainTheme,
   mushroomHiddenIndices,
 }) => {
   // Define pillar positions - use PVP positions if provided, otherwise default triangle
@@ -68,7 +71,7 @@ const Environment: React.FC<EnvironmentProps> = ({
   // Define pedestal position
   const pedestalPosition: [number, number, number] = useMemo(() => [0, 0, 0], []);
 
-  /** Server camp archetype — embers and identity; red co-op arena borrows purple terrain/sky visuals. */
+  /** Server camp archetype — embers and identity; terrain may be overridden by act progression. */
   const roomArchetype: RoomBorderTheme = useMemo(() => {
     const key = campTypes[0]?.toLowerCase();
     if (key === 'blue' || key === 'green' || key === 'red' || key === 'purple') return key;
@@ -76,7 +79,7 @@ const Environment: React.FC<EnvironmentProps> = ({
   }, [campTypes]);
 
   const visualRoomTheme: RoomBorderTheme =
-    roomArchetype === 'red' ? 'purple' : roomArchetype;
+    coopTerrainTheme ?? (roomArchetype === 'red' ? 'purple' : roomArchetype);
 
   return (
     <group name="environment">
@@ -91,7 +94,7 @@ const Environment: React.FC<EnvironmentProps> = ({
       {/* Stone road + branch connectors + combat platforms — single draw call */}
       <StoneGround roomTheme={visualRoomTheme} />
 
-      {roomArchetype === 'blue' && <ArenaFallingSnow />}
+      {visualRoomTheme === 'blue' && <ArenaFallingSnow />}
 
       {/* Instanced forest ring — 220 trees, 4 draw calls, GPU wind */}
       {enableForest && <InstancedForest />}
@@ -132,6 +135,7 @@ const Environment: React.FC<EnvironmentProps> = ({
     
       {/* Volumetric god-ray shafts descending from the blood moon */}
       <VolumetricMoonRays />
+
 
 
     </group>

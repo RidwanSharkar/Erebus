@@ -12,6 +12,7 @@ import {
   BLIZZARD_FREEZE_DURATION_SEC,
   BOSS_MAX_FREEZE_DURATION_SEC,
   BOSS_MAX_FREEZE_DURATION_MS,
+  ENTANGLEMENT_DAMAGE_PER_SECOND,
 } from '@/utils/talents';
 
 export enum EnemyType {
@@ -75,6 +76,12 @@ export class Enemy extends Component {
   public isStunned: boolean;
   public stunStartTime: number;
   public stunDuration: number;
+
+  // Entangle status effect (prevents movement but not actions)
+  public isEntangled: boolean;
+  public entangleStartTime: number;
+  public entangleDuration: number;
+  public lastEntangleDamageTime: number;
   
   // Venom debuff effect
   public isVenomous: boolean;
@@ -135,6 +142,11 @@ export class Enemy extends Component {
     this.isStunned = false;
     this.stunStartTime = 0;
     this.stunDuration = 0;
+
+    this.isEntangled = false;
+    this.entangleStartTime = 0;
+    this.entangleDuration = 0;
+    this.lastEntangleDamageTime = 0;
     
     // Initialize venom status
     this.isVenomous = false;
@@ -259,6 +271,7 @@ export class Enemy extends Component {
     this.unfreeze();
     // Clear stun status on respawn
     this.unstun();
+    this.disentangle();
     // Clear venom status on respawn
     this.removeVenom();
     this.removeConcentratedVenom();
@@ -304,6 +317,22 @@ export class Enemy extends Component {
     // Restore original movement speed
     this.movementSpeed = this.originalMovementSpeed;
   }
+
+  public entangle(duration: number, currentTime: number): void {
+    if (this.isDead) return;
+
+    this.isEntangled = true;
+    this.entangleStartTime = currentTime;
+    this.entangleDuration = duration;
+    this.lastEntangleDamageTime = currentTime;
+  }
+
+  public disentangle(): void {
+    this.isEntangled = false;
+    this.entangleStartTime = 0;
+    this.entangleDuration = 0;
+    this.lastEntangleDamageTime = 0;
+  }
   
   public updateFreezeStatus(currentTime: number): void {
     if (!this.isFrozen) return;
@@ -321,6 +350,23 @@ export class Enemy extends Component {
     if (elapsed >= this.stunDuration) {
       this.unstun();
     }
+  }
+
+  public updateEntangleStatus(currentTime: number): { shouldDealDamage: boolean; damage: number } {
+    if (!this.isEntangled) return { shouldDealDamage: false, damage: 0 };
+
+    const elapsed = currentTime - this.entangleStartTime;
+    if (elapsed >= this.entangleDuration) {
+      this.disentangle();
+      return { shouldDealDamage: false, damage: 0 };
+    }
+
+    if (currentTime - this.lastEntangleDamageTime >= 1.0) {
+      this.lastEntangleDamageTime = currentTime;
+      return { shouldDealDamage: true, damage: ENTANGLEMENT_DAMAGE_PER_SECOND };
+    }
+
+    return { shouldDealDamage: false, damage: 0 };
   }
 
   public updateChillStatus(currentTime: number): void {
@@ -363,7 +409,7 @@ export class Enemy extends Component {
   }
   
   public canMove(): boolean {
-    return !this.isFrozen && !this.isStunned && !this.isDead;
+    return !this.isFrozen && !this.isStunned && !this.isEntangled && !this.isDead;
   }
 
   public canRotate(): boolean {
@@ -371,7 +417,7 @@ export class Enemy extends Component {
   }
   
   public getEffectiveMovementSpeed(): number {
-    if (this.isDead || this.isFrozen || this.isStunned) {
+    if (this.isDead || this.isFrozen || this.isStunned || this.isEntangled) {
       return 0;
     }
     
@@ -570,6 +616,11 @@ export class Enemy extends Component {
     this.isStunned = false;
     this.stunStartTime = 0;
     this.stunDuration = 0;
+
+    this.isEntangled = false;
+    this.entangleStartTime = 0;
+    this.entangleDuration = 0;
+    this.lastEntangleDamageTime = 0;
     
     // Reset venom status
     this.isVenomous = false;
@@ -615,6 +666,11 @@ export class Enemy extends Component {
     clone.isStunned = this.isStunned;
     clone.stunStartTime = this.stunStartTime;
     clone.stunDuration = this.stunDuration;
+
+    clone.isEntangled = this.isEntangled;
+    clone.entangleStartTime = this.entangleStartTime;
+    clone.entangleDuration = this.entangleDuration;
+    clone.lastEntangleDamageTime = this.lastEntangleDamageTime;
     
     // Clone venom status
     clone.isVenomous = this.isVenomous;

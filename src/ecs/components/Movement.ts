@@ -74,7 +74,7 @@ export class Movement extends Component {
   public knockbackStartPosition: Vector3;
 
   constructor(
-    maxSpeed: number = 3.625,
+    maxSpeed: number = 3.575,
     friction: number = 0.8,
     jumpForce: number = 35.0,
     gravity: number = -12.5
@@ -543,7 +543,7 @@ export class Movement extends Component {
     this.canMove = true;
     this.canJump = true;
     this.canFly = false;
-    this.maxSpeed = 3.625;
+    this.maxSpeed = 3.575;
     this.friction = 0.8;
     this.jumpForce = 25.0;
     this.gravity = -12.5;

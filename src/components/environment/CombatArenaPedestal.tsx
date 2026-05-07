@@ -10,7 +10,7 @@ const CAMP_ORB_COLOR: Record<CoopPortalKind, string> = {
   red:    '#ef4444',
   green:  '#22c55e',
   stat: '#f97316',
-  chaos: '#030712',
+  trial: '#eab308',
   healing: '#ec4899',
   boss: '#8b5cf6',
 };

@@ -38,6 +38,12 @@ export class Projectile extends Component {
   public crossentropyPlague?: boolean;
   /** GLACIAL STORM room boon: deep blue theme + blizzard/coldsnap on hit (Inferno may override VFX only). */
   public crossentropyGlacial?: boolean;
+  /** METEOR talent: Crossentropy hit can schedule a delayed meteor impact. */
+  public crossentropyMeteor?: boolean;
+  /** FRAGMENTATION talent enabled on this bolt (primary cast only). */
+  public crossentropyFragmentation?: boolean;
+  /** Secondary fragmentation bolt cannot chain further. */
+  public crossentropySuppressFragmentation?: boolean;
   /** Dual Coil: which parallel lane (0/1) for damage number lateral offset. */
   public dualCoilLane?: 0 | 1;
   /** Scythe Wrathful / Staggering / Infesting Entropic boons — bolt hit rules in CombatSystem. */
@@ -203,6 +209,9 @@ export class Projectile extends Component {
     this.crossentropyTempest = undefined;
     this.crossentropyPlague = undefined;
     this.crossentropyGlacial = undefined;
+    this.crossentropyMeteor = undefined;
+    this.crossentropyFragmentation = undefined;
+    this.crossentropySuppressFragmentation = undefined;
     this.dualCoilLane = undefined;
     this.entropicBoltTalent = undefined;
     this.targetEntityId = null;
@@ -233,6 +242,9 @@ export class Projectile extends Component {
     clone.crossentropyTempest = this.crossentropyTempest;
     clone.crossentropyPlague = this.crossentropyPlague;
     clone.crossentropyGlacial = this.crossentropyGlacial;
+    clone.crossentropyMeteor = this.crossentropyMeteor;
+    clone.crossentropyFragmentation = this.crossentropyFragmentation;
+    clone.crossentropySuppressFragmentation = this.crossentropySuppressFragmentation;
     clone.dualCoilLane = this.dualCoilLane;
     clone.entropicBoltTalent = this.entropicBoltTalent;
     return clone;

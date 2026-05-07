@@ -2,11 +2,12 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group } from '@/utils/three-exports';
 import { World } from '@/ecs/World';
-import { Enemy } from '@/ecs/components/Enemy';
 import BossGlbModel from './BossGlbModel';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 
 const WALK_STOP_DELAY = 200;
+/** Fallback if `boss-throw-start` omits `moveLockMs` — keep in sync with `BOSS_THROW_MOVE_LOCK_MS` in backend `enemyAI.js`. */
+const DEFAULT_BOSS_THROW_MOVE_LOCK_MS = 2000;
 
 interface BossRendererProps {
   id: string;
@@ -40,8 +41,10 @@ export default function BossRenderer({
   const [throwTrigger, setThrowTrigger] = useState(0);
   const [isImpacting, setIsImpacting] = useState(false);
   const [impactPlayKey, setImpactPlayKey] = useState(0);
+  const [isThrowCasting, setIsThrowCasting] = useState(false);
   const targetPosition = useRef(position.clone());
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const throwCastSafetyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const updateVisualRotation = () => {
@@ -58,16 +61,17 @@ export default function BossRenderer({
   useEffect(() => {
     const dist = targetPosition.current.distanceTo(position);
     targetPosition.current.copy(position);
-    if (dist > 0.02 && !isDying) {
+    if (dist > 0.02 && !isDying && !isThrowCasting) {
       setIsWalking(true);
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
     }
-  }, [position.x, position.y, position.z, isDying]);
+  }, [position.x, position.y, position.z, isDying, isThrowCasting]);
 
   useEffect(
     () => () => {
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      if (throwCastSafetyTimer.current) clearTimeout(throwCastSafetyTimer.current);
     },
     []
   );
@@ -81,9 +85,19 @@ export default function BossRenderer({
       setMeleeIndex(m as 0 | 1);
       setAttackTrigger((k) => k + 1);
     };
-    const onThrowStart = (data: { bossId: string }) => {
+    const onThrowStart = (data: { bossId: string; moveLockMs?: number }) => {
       if (data.bossId !== id) return;
       setThrowTrigger((k) => k + 1);
+      setIsThrowCasting(true);
+      if (throwCastSafetyTimer.current) clearTimeout(throwCastSafetyTimer.current);
+      const lockMs =
+        typeof data.moveLockMs === 'number' && data.moveLockMs > 0
+          ? data.moveLockMs
+          : DEFAULT_BOSS_THROW_MOVE_LOCK_MS;
+      throwCastSafetyTimer.current = setTimeout(() => {
+        setIsThrowCasting(false);
+        throwCastSafetyTimer.current = null;
+      }, lockMs + 150);
     };
     const onLeapStart = (data: { bossId: string }) => {
       if (data.bossId !== id) return;
@@ -111,6 +125,10 @@ export default function BossRenderer({
     socket.on('boss-hit-react', onHitReact);
 
     return () => {
+      if (throwCastSafetyTimer.current) {
+        clearTimeout(throwCastSafetyTimer.current);
+        throwCastSafetyTimer.current = null;
+      }
       socket.off('boss-attack', onAttack);
       socket.off('boss-throw-start', onThrowStart);
       socket.off('boss-leap-start', onLeapStart);
@@ -122,6 +140,14 @@ export default function BossRenderer({
 
   const handleImpactFinished = useCallback(() => {
     setIsImpacting(false);
+  }, []);
+
+  const handleThrowAnimFinished = useCallback(() => {
+    setIsThrowCasting(false);
+    if (throwCastSafetyTimer.current) {
+      clearTimeout(throwCastSafetyTimer.current);
+      throwCastSafetyTimer.current = null;
+    }
   }, []);
 
   useFrame((_, delta) => {
@@ -150,7 +176,7 @@ export default function BossRenderer({
   return (
     <group ref={groupRef}>
       <BossGlbModel
-        isWalking={isWalking && !isLeaping}
+        isWalking={isWalking && !isLeaping && !isThrowCasting}
         isDying={isDying}
         isLeaping={isLeaping}
         tectonicJumpTrigger={tectonicJumpTrigger}
@@ -163,7 +189,7 @@ export default function BossRenderer({
         onLeapFinished={() => setIsLeaping(false)}
         onTectonicJumpFinished={() => {}}
         onAttackFinished={() => {}}
-        onThrowAnimFinished={() => {}}
+        onThrowAnimFinished={handleThrowAnimFinished}
       />
     </group>
   );

@@ -10,7 +10,7 @@ interface CrossentropyExplosionProps {
   onComplete?: () => void;
 }
 
-const IMPACT_DURATION = 0.5; // Slightly longer than the original for more dramatic effect
+const IMPACT_DURATION = 0.395; // Slightly longer than the original for more dramatic effect
 
 export default function CrossentropyExplosion({
   position,
@@ -22,9 +22,9 @@ export default function CrossentropyExplosion({
   const startTime = useRef(explosionStartTime || Date.now());
   const [, forceUpdate] = useState({}); // Force updates to animate
   const normalizedCharge = Math.min(chargeTime / 4, 1.0);
-  const scale = 0.5 + (normalizedCharge * 1.0); // Increased base scale for more impact
-  const intensity = 2.5 + (normalizedCharge * 4); // Higher intensity for Crossentropy
-  const sparkCount = 16; // More sparks for dramatic effect
+  const scale = 0.35 + (normalizedCharge * 1.0); // Increased base scale for more impact
+  const intensity = 1.25 + (normalizedCharge * 4); // Higher intensity for Crossentropy
+  const sparkCount = 4; // More sparks for dramatic effect
 
   const {
     c1,
@@ -189,7 +189,7 @@ export default function CrossentropyExplosion({
           emissive={c1e}
           emissiveIntensity={0.5 * fade}
           transparent
-          opacity={0.8 * fade}
+          opacity={1 * fade}
           depthWrite={false}
           blending={AdditiveBlending}
         />
@@ -203,7 +203,7 @@ export default function CrossentropyExplosion({
           emissive={c2e}
           emissiveIntensity={0.5 * fade}
           transparent
-          opacity={0.9 * fade}
+          opacity={1 * fade}
           depthWrite={false}
           blending={AdditiveBlending}
         />
@@ -216,9 +216,9 @@ export default function CrossentropyExplosion({
           <meshStandardMaterial
             color={ringC}
             emissive={ringE}
-            emissiveIntensity={1 * fade}
+            emissiveIntensity={0.875 * fade}
             transparent
-            opacity={0.6 * fade * (1 - i * 0.2)}
+            opacity={0.875}
             depthWrite={false}
             blending={AdditiveBlending}
           />

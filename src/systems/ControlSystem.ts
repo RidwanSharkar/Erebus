@@ -21,6 +21,7 @@ import { WeaponSubclass, WeaponType } from '@/components/dragon/weapons';
 import { DeflectBarrier } from '@/components/weapons/DeflectBarrier';
 import { spawnArcticGroundBlizzardAtFromReact } from '@/components/weapons/Blizzard/arcticBlizzardSpawnBridge';
 import { SkillPointSystem, SkillPointData } from '@/utils/SkillPointSystem';
+import type { PlayerStats } from '@/utils/StatSystem';
 import { AbilityLoadout } from '@/utils/weaponAbilities';
 import {
   ICEBEAM_MAX_HOLD_SEC,
@@ -46,8 +47,11 @@ import {
   shouldApplyWrathfulBiteTalent,
   shouldApplyWyvernBiteTalent,
   shouldApplyStaggeringBiteTalent,
+  shouldApplyEntanglementTalent,
   shouldApplyInfernoTalent,
   shouldApplyReaperTalent,
+  shouldApplyMeteorTalent,
+  shouldApplyFragmentationTalent,
   shouldApplyCrossentropyTempestTalent,
   shouldApplyCrossentropyPlagueTalent,
   shouldApplyWrathfulEntropicTalent,
@@ -134,6 +138,10 @@ import {
   WRATH_STRIKE_CRIT_DAMAGE_MULT_ADD,
   getDualCoilLateralVector,
   shouldApplyDualCoilTalent,
+  shouldApplyHighCaliberTalent,
+  shouldApplyTriggerFingerTalent,
+  BOW_UNCHARGED_PROJECTILE_DAMAGE,
+  BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE,
   shouldApplyWyvernStingTalent,
   WYVERN_STING_COOLDOWN_SEC,
   ARCTIC_STING_BLIZZARD_ICD_SEC,
@@ -150,7 +158,10 @@ import {
   MANTRA_SHAMAN_INTERNAL_COOLDOWN_SEC,
   shouldApplyShamanTalent,
   shouldApplySpellbladeTalent,
+  getSpellbladeWraithStrikeFlatDamageBonus,
+  shouldApplyParryTalent,
   SPELLBLADE_WRAITH_STRIKE_SHIELD_RESTORE,
+  PARRY_FLOURISH_SHIELD_RESTORE,
   shouldApplyBreathWeaponTalent,
   BREATH_WEAPON_DAMAGE,
   AFTERSHOCK_STRIP_LENGTH,
@@ -169,6 +180,10 @@ import {
   shouldApplyKillstreakTalent,
   shouldApplyRelentlessTalent,
   evaluateVorpalGustBeamHit,
+  isVorpalGustTipHit,
+  BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB,
+  BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB_PVP,
+  BACKSTAB_VORPAL_TIP_DAMAGE_FRONT,
   shouldApplyVorpalGustTalent,
   shouldApplyWrathfulSabresSwipesTalent,
   shouldApplyInfestingSabresSwipesTalent,
@@ -178,6 +193,12 @@ import {
   shouldApplyStaggeringFlourishTalent,
   shouldApplyWrathfulFlourishTalent,
   shouldApplyInfestedFlourishTalent,
+  shouldApplyFanOfKnivesTalent,
+  getFanOfKnivesFlourishTintFromLoadout,
+  FAN_OF_KNIVES_DAMAGE,
+  FAN_OF_KNIVES_MAX_DISTANCE_UNITS,
+  FAN_OF_KNIVES_PROJECTILE_SPEED,
+  FAN_OF_KNIVES_PROJECTILE_LIFETIME_SEC,
 } from '@/utils/talents';
 import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
@@ -196,9 +217,9 @@ import {
   acceleratorOwnedTotemFlatXYZ,
   acceleratorOwnedTotemTripletCount,
 } from '@/components/projectiles/SummonTotemManager';
-import { MAIN_MAP_RADIUS, isInsideMainArenaXZ } from '@/utils/mapConstants';
-import { BOW_FULL_CHARGE_MS, isBowPerfectShotProgress } from '@/utils/bowConstants';
-import { CASTLE_WALL_DEPTH_OFFSET, CASTLE_WALL_HALF_THICKNESS } from '@/components/environment/CastleWalls';
+import { MAIN_ARENA_BOUNDS, MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z, MAIN_MAP_RADIUS, isInsideMainArenaXZ } from '@/utils/mapConstants';
+import { getBowFullChargeMs, isBowPerfectShotProgress } from '@/utils/bowConstants';
+import { CASTLE_WALL_HALF_THICKNESS, CASTLE_WALL_X_OFFSET, CASTLE_WALL_Z_OFFSET } from '@/components/environment/CastleWalls';
 
 export type RoomBoomDashVariant = 'infernal' | 'glacial' | 'mending' | 'staggering';
 export type RoomBoomDashKey = 'w' | 'a' | 's' | 'd';
@@ -406,8 +427,8 @@ export class ControlSystem extends System {
   private swordFireRate = 0.825; // Rate for sword attacks
   private runebladeFireRate = 0.775; // Runeblade attack rate
   private sabresFireRate = 0.625; // Sabres dual attack rate (600ms between attacks)
-  private scytheFireRate = 0.6; // EntropicBolt rate (0.33s cooldown)
-  private summonTotemFireRate = 6.0; // Summon Totem cooldown
+  private scytheFireRate = 0.725; // EntropicBolt rate (0.33s cooldown)
+  private summonTotemFireRate = 6.5; // Summon Totem cooldown
   private viperStingFireRate = 7.0; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
   private cobraShotFireRate = 6.0; // Cobra Shot rate (2 seconds cooldown)
@@ -440,6 +461,7 @@ export class ControlSystem extends System {
   private barrageFireRate = 8.0; // 5 second cooldown (keeping as requested)
   /** Invalidates staggered barrage timeouts on new volleys / weapon reset */
   private barrageVolleyGeneration = 0;
+  private fanOfKnivesVolleyGeneration = 0;
   private static readonly BARRAGE_ARROW_STAGGER_MS = 100;
   
   // Cobra Shot charging state
@@ -477,7 +499,7 @@ export class ControlSystem extends System {
   private lastChargeTime = 0;
   /** Double-tap Blade Rush (Runeblade) — separate from E-key `lastChargeTime`. */
   private lastBladeRushChargeTime = 0;
-  private chargeCooldown = 8.0; // 8 second cooldown
+  private chargeCooldown = 7.0; // 8 second cooldown
   
   // Deflect ability state
   private isDeflecting = false;
@@ -519,7 +541,7 @@ export class ControlSystem extends System {
   private isSkyfalling = false;
   private skyfallPhase: 'none' | 'ascending' | 'descending' | 'landing' = 'none';
   private lastSkyfallTime = 0;
-  private skyfallCooldown = 8.0; // 4 second cooldown
+  private skyfallCooldown = 7.25; // 4 second cooldown
   private skyfallStartTime = 0;
   private skyfallStartPosition = new Vector3();
   private skyfallTargetHeight = 0;
@@ -527,7 +549,7 @@ export class ControlSystem extends System {
   
   // Backstab ability state (Sabres)
   private lastBackstabTime = 0;
-  private backstabCooldown = 4; // 2 second cooldown
+  private backstabCooldown = 3.75; // 2 second cooldown
   private isBackstabbing = false;
   private backstabStartTime = 0;
   private backstabDuration = 1.0; // Total animation duration (0.3 + 0.4 + 0.3 seconds)
@@ -666,6 +688,9 @@ export class ControlSystem extends System {
 
   // Skill point system data
   private skillPointData: SkillPointData;
+
+  /** Allocated STR/STA/AGI/INT (co-op leveling / pedestals); feeds Spellblade Wraith Strike scaling. */
+  private allocatedPlayerStats: PlayerStats = { strength: 0, stamina: 0, agility: 0, intellect: 0 };
 
   // Ability loadout (universal ability selection per slot Q/E/R)
   private abilityLoadout: AbilityLoadout | null = null;
@@ -1885,7 +1910,11 @@ export class ControlSystem extends System {
           if (this.bowPrimaryChargeStartMs != null) {
             this.chargeProgress = Math.min(
               1,
-              (performance.now() - this.bowPrimaryChargeStartMs) / BOW_FULL_CHARGE_MS
+              (performance.now() - this.bowPrimaryChargeStartMs) /
+                getBowFullChargeMs(
+                  this.currentWeapon === WeaponType.BOW &&
+                    shouldApplyHighCaliberTalent(this.talentLoadout),
+                ),
             );
           }
         }
@@ -2135,21 +2164,15 @@ export class ControlSystem extends System {
     // Rate limiting was already checked in performCrossentropyAbility()
     // No need to check again here - we just finished charging
 
-    // Get dragon's facing direction
     const direction = new Vector3();
     this.camera.getWorldDirection(direction);
+    if (direction.y < 0) direction.y = 0;
+    if (direction.lengthSq() < 1e-8) {
+      direction.copy(playerTransform.getForward());
+      direction.y = 0;
+      if (direction.lengthSq() < 1e-8) direction.set(0, 0, -1);
+    }
     direction.normalize();
-
-    // Apply angle compensation (same as bow projectiles)
-    const compensationAngle = Math.PI / 6; // 30 degrees downward compensation
-    const cameraRight = new Vector3();
-    cameraRight.crossVectors(direction, new Vector3(0, 1, 0)).normalize();
-
-    const rotationMatrix = new Matrix4();
-    rotationMatrix.makeRotationAxis(cameraRight, compensationAngle);
-    direction.applyMatrix4(rotationMatrix);
-    direction.normalize();
-
 
     this.createCrossentropyBoltProjectile(playerTransform.position.clone(), direction);
   }
@@ -2271,7 +2294,7 @@ export class ControlSystem extends System {
     // Create projectile using the ProjectileSystem with current weapon config
     const projectileConfig = {
       speed: 25,
-      damage: 10, // Arrow damage should be 10
+      damage: this.bowUnchargedProjectileBaseDamage(),
       lifetime: 3,
       maxDistance: 25, // Limit bow arrows to 25 units distance
       subclass: this.currentSubclass,
@@ -2279,6 +2302,7 @@ export class ControlSystem extends System {
       opacity: 1.0,
       sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
       ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_UNCHARGED_STAGGER } : {}),
+      ...(this.bowTriggerFingerUnchargedActive() ? { triggerFingerUncharged: true as const } : {}),
     };
     
     const useDualCoil = this.shouldApplyDualCoilForBow();
@@ -2407,10 +2431,10 @@ export class ControlSystem extends System {
     spawnPosition.y += 1; // Slightly higher
     
     const colorVariants = [
-      { colorVariant: 'purple' as const, damage: 31 },
-      { colorVariant: 'blue' as const, damage: 36 },
-      { colorVariant: 'red' as const, damage: 41 },
-      { colorVariant: 'green' as const, damage: 33 },
+      { colorVariant: 'purple' as const, damage: 41 },
+      { colorVariant: 'blue' as const, damage: 47 },
+      { colorVariant: 'red' as const, damage: 53 },
+      { colorVariant: 'green' as const, damage: 43 },
     ] as const;
     const wrathEnt = shouldApplyWrathfulEntropicTalent(this.talentLoadout);
     const stagEnt = shouldApplyStaggeringEntropicTalent(this.talentLoadout);
@@ -2423,10 +2447,10 @@ export class ControlSystem extends System {
     };
     let entropicBoltTalent: 'wrathful' | 'staggering' | 'infesting' | 'arctic' | undefined;
     if (wrathEnt) {
-      randomVariant = { colorVariant: 'red', damage: 41 };
+      randomVariant = { colorVariant: 'red', damage: 53 };
       entropicBoltTalent = 'wrathful';
     } else if (stagEnt) {
-      randomVariant = { colorVariant: 'blue', damage: 36 };
+      randomVariant = { colorVariant: 'blue', damage: 47 };
       entropicBoltTalent = 'staggering';
     } else if (infestEnt) {
       randomVariant = { colorVariant: 'green', damage: INFESTING_ENTROPIC_BOLT_DAMAGE };
@@ -2438,7 +2462,6 @@ export class ControlSystem extends System {
       randomVariant = colorVariants[Math.floor(Math.random() * colorVariants.length)];
     }
 
-    // Create EntropicBolt projectile using the new method
     const entropicConfig = {
       speed: 20,
       damage: randomVariant.damage,
@@ -2452,8 +2475,9 @@ export class ControlSystem extends System {
       colorVariant: randomVariant.colorVariant,
       entropicBoltTalent,
       sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown',
+      visualOnlyCurveDirections: ['right', 'left'] as const,
     };
-    
+
     this.projectileSystem.createEntropicBoltProjectile(
       this.world,
       spawnPosition,
@@ -2461,7 +2485,7 @@ export class ControlSystem extends System {
       this.playerEntity.id,
       entropicConfig
     );
-    
+
     // Broadcast projectile creation to other players
     if (this.onProjectileCreatedCallback) {
       this.onProjectileCreatedCallback('entropic_bolt', spawnPosition, direction, entropicConfig);
@@ -2484,6 +2508,11 @@ export class ControlSystem extends System {
     const crossentropyTempest = shouldApplyCrossentropyTempestTalent(this.talentLoadout, this.abilityLoadout);
     const crossentropyPlague = shouldApplyCrossentropyPlagueTalent(this.talentLoadout, this.abilityLoadout);
     const crossentropyGlacial = shouldApplyGlacialStormTalent(this.talentLoadout, this.abilityLoadout);
+    const crossentropyMeteor = shouldApplyMeteorTalent(this.talentLoadout, this.abilityLoadout);
+    const crossentropyFragmentation = shouldApplyFragmentationTalent(
+      this.talentLoadout,
+      this.abilityLoadout,
+    );
 
     // Create CrossentropyBolt projectile using the existing method
     const crossentropyConfig = {
@@ -2503,6 +2532,8 @@ export class ControlSystem extends System {
       crossentropyTempest,
       crossentropyPlague,
       crossentropyGlacial,
+      crossentropyMeteor,
+      crossentropyFragmentation,
     };
     
     this.projectileSystem.createCrossentropyBoltProjectile(
@@ -2904,6 +2935,12 @@ export class ControlSystem extends System {
         const enemy = entity.getComponent(Enemy);
         
         if (enemy) {
+          if (
+            entity.userData?.isCoopAlliedUnit ||
+            entity.userData?.coopServerEnemyType === 'allied-knight'
+          ) {
+            return;
+          }
           const sk = entity.userData?.coopServerEnemyType as string | undefined;
           // This is an enemy - freeze it (single player mode)
           enemy.freeze(freezeDurationSec, currentTime, sk);
@@ -2973,13 +3010,14 @@ export class ControlSystem extends System {
     
     const chargedArrowConfig = {
       speed: 35, // Faster than regular arrows (25)
-      damage: 50, // Much higher damage than regular arrows (10)
+      damage: this.bowPowershotBaseDamage(),
       lifetime: 2, // Longer lifetime than regular arrows (3)
       piercing: true, // Charged arrows can pierce through enemies
       explosive: false, // No explosion, but could add special effects
       subclass: this.currentSubclass,
       level: this.currentLevel,
       opacity: 1.0,
+      sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
       ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_CHARGED_STAGGER } : {}),
     };
     
@@ -3018,15 +3056,18 @@ export class ControlSystem extends System {
       this.pendingArcticStingVolleyId = volleyId;
     }
 
+    const perfectShotDamage = this.bowPerfectShotBaseDamage();
+
     const perfectConfig = {
       speed: 40, // Faster than regular charged arrows (35)
-      damage: 75, // Higher damage than regular charged arrows (50)
+      damage: perfectShotDamage,
       lifetime: 6, // Longer lifetime than regular charged arrows (5)
       piercing: true, // Perfect shots can pierce through enemies
       explosive: false, // No explosion, but has special visual effects
       subclass: this.currentSubclass,
       level: this.currentLevel,
       opacity: 1.0,
+      sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
       isPerfectShot: true,
       perfectShotVolleyId: volleyId,
       ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_PERFECT_STAGGER } : {}),
@@ -3045,12 +3086,12 @@ export class ControlSystem extends System {
       if (this.onProjectileCreatedCallback) {
         this.onProjectileCreatedCallback('perfect_shot', spawnPosition, direction, {
           speed: 40,
-          damage: 75,
+          damage: perfectShotDamage,
           lifetime: 6,
           piercing: true,
           subclass: this.currentSubclass,
           level: this.currentLevel,
-          opacity: 1.0
+          opacity: 1.0,
         });
       }
     }
@@ -4178,7 +4219,13 @@ export class ControlSystem extends System {
 
     const wraithStrikeRange = 5.0; // Same range as melee attacks
     const wraithStrikeAngle = Math.PI / 2; // 90 degree cone
-    const wraithStrikeBaseDamage = this.shouldApplyInfestedStrikeTalent() ? 190 : 140;
+    const wraithStrikeBaseDamage =
+      (this.shouldApplyInfestedStrikeTalent() ? 190 : 140) +
+      getSpellbladeWraithStrikeFlatDamageBonus(
+        this.talentLoadout,
+        this.abilityLoadout,
+        this.allocatedPlayerStats.intellect,
+      );
 
     let hitCount = 0;
     const currentTime = Date.now() / 1000;
@@ -4495,10 +4542,11 @@ export class ControlSystem extends System {
     this.applyStormShroudFlurry(playerTransform, 'windfury', Date.now() / 1000);
   }
 
-  private tryCrusaderProcFromRunebladePrimaryHit(_playerTransform: Transform): void {
+  private tryCrusaderProcFromRunebladePrimaryHit(playerTransform: Transform): void {
     if (!shouldApplyCrusaderTalent(this.talentLoadout)) return;
     if (Math.random() >= CRUSADER_PROC_CHANCE) return;
     this.runebladeCrusaderBuffEndMs = Date.now() + CRUSADER_DURATION_SEC * 1000;
+    this.audioSystem?.playCrusaderProcSound(playerTransform.position);
   }
 
   private tryBlizzardProcFromRunebladePrimaryHit(_playerTransform: Transform): void {
@@ -5288,11 +5336,14 @@ export class ControlSystem extends System {
       return;
     }
     
-    // Regenerate 35 shield on Sunder use
-    if (this.playerEntity) {
+    // Flourish: shield restore only with PARRY talent
+    if (shouldApplyParryTalent(this.talentLoadout, this.abilityLoadout) && this.playerEntity) {
       const shieldComponent = this.playerEntity.getComponent(Shield);
       if (shieldComponent) {
-        const newShieldValue = Math.min(shieldComponent.maxShield, shieldComponent.currentShield + 45);
+        const newShieldValue = Math.min(
+          shieldComponent.maxShield,
+          shieldComponent.currentShield + PARRY_FLOURISH_SHIELD_RESTORE,
+        );
         shieldComponent.setShield(newShieldValue, shieldComponent.maxShield);
       }
     }
@@ -5345,7 +5396,9 @@ export class ControlSystem extends System {
     const playerDirection = new Vector3();
     this.camera.getWorldDirection(playerDirection);
     playerDirection.normalize();
-    
+
+    this.fireFanOfKnivesFan(playerTransform);
+
     const sunderRange = 4; // Same range as backstab
     let hitCount = 0;
     const currentTime = Date.now() / 1000;
@@ -5832,6 +5885,11 @@ export class ControlSystem extends System {
     this.skillPointData = data;
   }
 
+  /** Co-op: allocated stats from leveling / pedestal picks (Intellect feeds Spellblade Wraith Strike base scaling). */
+  public setAllocatedPlayerStats(stats: PlayerStats): void {
+    this.allocatedPlayerStats = { ...stats };
+  }
+
   public setAbilityLoadout(loadout: AbilityLoadout): void {
     this.abilityLoadout = loadout;
     // If a passive was selected in the loadout menu, force-unlock it without spending skill points
@@ -5848,6 +5906,11 @@ export class ControlSystem extends System {
     if (!shouldApplyBlizzardTalent(this.talentLoadout)) {
       this.runebladeBlizzardEndMs = 0;
     }
+  }
+
+  /** Current session talents (merged with defaults in `setTalentLoadout`). */
+  public getTalentLoadout(): TalentLoadout {
+    return this.talentLoadout;
   }
 
   public setReaperCrossentropyStack(stacks: number): void {
@@ -5935,6 +5998,28 @@ export class ControlSystem extends System {
   /** Dual Coil: twin Bow LMB projectiles and paired perfect-shot beam VFX. */
   public shouldApplyDualCoilForBow(): boolean {
     return shouldApplyDualCoilTalent(this.talentLoadout) && this.currentWeapon === WeaponType.BOW;
+  }
+
+  private bowHighCaliberActive(): boolean {
+    return this.currentWeapon === WeaponType.BOW && shouldApplyHighCaliberTalent(this.talentLoadout);
+  }
+
+  private bowTriggerFingerUnchargedActive(): boolean {
+    return this.currentWeapon === WeaponType.BOW && shouldApplyTriggerFingerTalent(this.talentLoadout);
+  }
+
+  private bowUnchargedProjectileBaseDamage(): number {
+    return this.bowTriggerFingerUnchargedActive()
+      ? BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE
+      : BOW_UNCHARGED_PROJECTILE_DAMAGE;
+  }
+
+  private bowPowershotBaseDamage(): number {
+    return this.bowHighCaliberActive() ? 100 : 50;
+  }
+
+  private bowPerfectShotBaseDamage(): number {
+    return this.bowHighCaliberActive() ? 150 : 75;
   }
 
   /** Tempest Rounds: P passive unlock or co-op talent — used for bow crit bonus in DamageCalculator. */
@@ -6138,8 +6223,15 @@ export class ControlSystem extends System {
         if (beam.ok) beamHits.push({ entity, t: beam.t });
       }
       beamHits.sort((a, b) => a.t - b.t);
-      for (const { entity } of beamHits) {
-        this.applyBackstabDamageToTarget(entity, playerTransform, playerPosition, playerDirection, hitState);
+      for (const { entity, t } of beamHits) {
+        this.applyBackstabDamageToTarget(
+          entity,
+          playerTransform,
+          playerPosition,
+          playerDirection,
+          hitState,
+          t,
+        );
       }
       return;
     }
@@ -6175,6 +6267,7 @@ export class ControlSystem extends System {
     playerPosition: Vector3,
     _playerDirection: Vector3,
     hitState: { hitCount: number },
+    vorpalBeamT?: number,
   ): void {
     const targetHealth = entity.getComponent(Health);
     const targetTransform = entity.getComponent(Transform);
@@ -6274,6 +6367,20 @@ export class ControlSystem extends System {
         console.log(
           `❌ Backstab failed checks - enemy: ${!!enemy}, rotation defined: ${rotationToUse !== undefined}`,
         );
+      }
+    }
+
+    if (
+      shouldApplyVorpalGustTalent(this.talentLoadout) &&
+      vorpalBeamT !== undefined &&
+      isVorpalGustTipHit(vorpalBeamT)
+    ) {
+      if (!isBackstab) {
+        baseDamage = BACKSTAB_VORPAL_TIP_DAMAGE_FRONT;
+      } else if (baseDamage === 285) {
+        baseDamage = BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB;
+      } else if (baseDamage === 175) {
+        baseDamage = BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB_PVP;
       }
     }
 
@@ -6629,10 +6736,10 @@ export class ControlSystem extends System {
 
   // Castle wall segments — mirrors CastleWalls perimeter (AABB half-extents)
   private readonly WALL_SEGMENTS = [
-    { cx: 0,   cz:  CASTLE_WALL_DEPTH_OFFSET,  hx: MAIN_MAP_RADIUS, hz: CASTLE_WALL_HALF_THICKNESS },
-    { cx: 0,   cz: -CASTLE_WALL_DEPTH_OFFSET,  hx: MAIN_MAP_RADIUS, hz: CASTLE_WALL_HALF_THICKNESS },
-    { cx:  CASTLE_WALL_DEPTH_OFFSET, cz: 0,  hx: CASTLE_WALL_HALF_THICKNESS, hz: MAIN_MAP_RADIUS },
-    { cx: -CASTLE_WALL_DEPTH_OFFSET, cz: 0,  hx: CASTLE_WALL_HALF_THICKNESS, hz: MAIN_MAP_RADIUS },
+    { cx: 0,   cz:  CASTLE_WALL_Z_OFFSET,  hx: MAIN_MAP_HALF_X + CASTLE_WALL_HALF_THICKNESS * 2, hz: CASTLE_WALL_HALF_THICKNESS },
+    { cx: 0,   cz: -CASTLE_WALL_Z_OFFSET,  hx: MAIN_MAP_HALF_X + CASTLE_WALL_HALF_THICKNESS * 2, hz: CASTLE_WALL_HALF_THICKNESS },
+    { cx:  CASTLE_WALL_X_OFFSET, cz: 0,  hx: CASTLE_WALL_HALF_THICKNESS, hz: MAIN_MAP_HALF_Z + CASTLE_WALL_HALF_THICKNESS * 2 },
+    { cx: -CASTLE_WALL_X_OFFSET, cz: 0,  hx: CASTLE_WALL_HALF_THICKNESS, hz: MAIN_MAP_HALF_Z + CASTLE_WALL_HALF_THICKNESS * 2 },
   ];
   private readonly WALL_PLAYER_RADIUS = 0.5;
 
@@ -6644,6 +6751,9 @@ export class ControlSystem extends System {
         if (x * Math.cos(a) + z * Math.sin(a) > apothem) return false;
       }
       return true;
+    }
+    if (this.arenaBoundaryMode === 'square') {
+      return isInsideMainArenaXZ(x, z, MAIN_ARENA_BOUNDS);
     }
     return isInsideMainArenaXZ(x, z, radius);
   }
@@ -7237,6 +7347,7 @@ export class ControlSystem extends System {
     const wyvernBiteBarrage = shouldApplyWyvernBiteTalent(this.talentLoadout, this.abilityLoadout);
     const staggeringBiteBarrage = shouldApplyStaggeringBiteTalent(this.talentLoadout, this.abilityLoadout);
     const glacialBiteBarrage = shouldApplyGlacialBiteTalent(this.talentLoadout, this.abilityLoadout);
+    const entanglementBarrage = shouldApplyEntanglementTalent(this.talentLoadout, this.abilityLoadout);
 
     if (this.onBarrageCallback) {
       this.onBarrageCallback(initialPos.clone(), initialDir.clone());
@@ -7271,6 +7382,7 @@ export class ControlSystem extends System {
           wyvernBiteBarrage,
           staggeringBiteBarrage,
           glacialBiteBarrage,
+          entanglementBarrage,
           ...(staggeringBiteBarrage ? { staggerToAdd: STAGGERING_BITE_BARRAGE_STAGGER_PER_HIT } : {}),
         };
 
@@ -7298,11 +7410,100 @@ export class ControlSystem extends System {
           if (glacialBiteBarrage) {
             renderer.mesh.userData.barrageGlacialBite = true;
           }
+          if (entanglementBarrage) {
+            renderer.mesh.userData.barrageEntanglement = true;
+          }
         }
 
         if (this.onProjectileCreatedCallback) {
           this.onProjectileCreatedCallback(
             'barrage_projectile',
+            spawnPosition,
+            projectileDirection,
+            projectileConfig,
+          );
+        }
+      }, index * ControlSystem.BARRAGE_ARROW_STAGGER_MS);
+    }
+  }
+
+  private fireFanOfKnivesFan(playerTransform: Transform): void {
+    if (!shouldApplyFanOfKnivesTalent(this.talentLoadout) || !this.playerEntity) return;
+
+    this.fanOfKnivesVolleyGeneration++;
+    const volleyGeneration = this.fanOfKnivesVolleyGeneration;
+
+    const getCompensatedAim = (): { playerPosition: Vector3; direction: Vector3 } => {
+      const playerPosition = playerTransform.getWorldPosition();
+      playerPosition.y += 0.825;
+      const dir = new Vector3();
+      this.camera.getWorldDirection(dir);
+      const compensationAngle = Math.PI / 6;
+      const cameraRight = new Vector3();
+      cameraRight.crossVectors(dir, new Vector3(0, 1, 0)).normalize();
+      const rotationMatrix = new Matrix4().makeRotationAxis(cameraRight, compensationAngle);
+      dir.applyMatrix4(rotationMatrix);
+      dir.normalize();
+      return { playerPosition, direction: dir };
+    };
+
+    const fanAnglesRad = [-Math.PI / 12, 0, Math.PI / 12];
+    const flourishTint = getFanOfKnivesFlourishTintFromLoadout(this.talentLoadout);
+    const staggeringFlourishKnives =
+      shouldApplyStaggeringFlourishTalent(this.talentLoadout) ? STAGGERING_FLOURISH_STAGGER : undefined;
+    const infestedFlourishFanKnives = shouldApplyInfestedFlourishTalent(this.talentLoadout) ? true : undefined;
+
+    for (let index = 0; index < fanAnglesRad.length; index++) {
+      const angle = fanAnglesRad[index]!;
+      setTimeout(() => {
+        if (volleyGeneration !== this.fanOfKnivesVolleyGeneration) return;
+        if (!this.playerEntity) return;
+
+        const { playerPosition, direction: baseDirection } = getCompensatedAim();
+        const projectileDirection = baseDirection.clone();
+        const yRot = new Matrix4().makeRotationY(angle);
+        projectileDirection.applyMatrix4(yRot);
+        projectileDirection.normalize();
+
+        const spawnPosition = playerPosition.clone();
+        spawnPosition.add(projectileDirection.clone().multiplyScalar(1));
+
+        const projectileConfig = {
+          speed: FAN_OF_KNIVES_PROJECTILE_SPEED,
+          damage: FAN_OF_KNIVES_DAMAGE,
+          lifetime: FAN_OF_KNIVES_PROJECTILE_LIFETIME_SEC,
+          maxDistance: FAN_OF_KNIVES_MAX_DISTANCE_UNITS,
+          piercing: false,
+          projectileType: 'fan_of_knives',
+          subclass: this.currentSubclass,
+          level: 1,
+          opacity: 1,
+          sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown',
+          fanOfKnivesFlourishTint: flourishTint,
+          ...(staggeringFlourishKnives != null ? { staggerToAdd: staggeringFlourishKnives } : {}),
+          ...(infestedFlourishFanKnives ? { infestedFlourishFanKnives: true as const } : {}),
+        };
+
+        const projectileEntity = this.projectileSystem.createProjectile(
+          this.world,
+          spawnPosition,
+          projectileDirection,
+          this.playerEntity.id,
+          projectileConfig,
+        );
+
+        const renderer = projectileEntity.getComponent(Renderer) as Renderer;
+        if (renderer?.mesh) {
+          renderer.mesh.userData.isFanOfKnivesDagger = true;
+          renderer.mesh.userData.fanOfKnivesFlourishTint = flourishTint;
+          if (infestedFlourishFanKnives) {
+            renderer.mesh.userData.infestedFlourishFanKnives = true;
+          }
+        }
+
+        if (this.onProjectileCreatedCallback) {
+          this.onProjectileCreatedCallback(
+            'fan_of_knives_projectile',
             spawnPosition,
             projectileDirection,
             projectileConfig,
@@ -7672,6 +7873,10 @@ export class ControlSystem extends System {
 
   public isDashGuardShieldActive(): boolean {
     return this.dashGuardShieldActive;
+  }
+
+  public isSabresPurpleGuardShieldActive(): boolean {
+    return this.sabresPurpleGuardShieldActive;
   }
 
   /** Duration (seconds) for local DeflectShield VFX while Aegis or talent guard shield is showing. */
