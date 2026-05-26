@@ -706,11 +706,11 @@ export default function DragonUnit({
       />
       {playerLevel >= 2 && (
         <ArchmageCrest
-          position={[crestPosition[0], crestPosition[1] - 0.05, crestPosition[2]]}
-          scale={-0.525}
+          position={[crestPosition[0], crestPosition[1] - 0.6, crestPosition[2]-0.3]}
+          scale={-0.425}
           weaponType={currentWeapon}
           weaponSubclass={currentSubclass}
-          wingSpread={1.425}
+          wingSpread={-.025}
           rotation={[0.00, 0.00, 0.0]}
         />
       )}

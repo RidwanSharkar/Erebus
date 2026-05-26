@@ -53,6 +53,12 @@ export class CameraSystem extends System {
   private cameraRotationDisabled = false;
   private disabledByEntityId: string | null = null;
 
+  // Reusable orbit basis vectors (avoid per-frame allocations)
+  private orbitForward = new Vector3();
+  private orbitRight = new Vector3();
+  private orbitOffset = new Vector3();
+  private orbitLookDir = new Vector3();
+
   // Ice Beam state for camera rotation speed reduction
   private isIcebeaming = false;
 
@@ -89,8 +95,7 @@ export class CameraSystem extends System {
     const targetTransform = this.target.getComponent(Transform);
     if (!targetTransform) return;
 
-    // Handle mouse input for camera rotation
-    this.handleMouseInput();
+    // Orbit input is applied early via applyOrbitInput() before movement systems run.
 
     // Update target position
     this.targetLookAt.copy(targetTransform.position);
@@ -163,11 +168,44 @@ export class CameraSystem extends System {
     return this.damageShakeOffset;
   }
 
+  /** Apply RMB orbit input — call from Engine before world.update so movement uses current-frame angles. */
+  public applyOrbitInput(): void {
+    this.handleMouseInput();
+  }
+
+  /** Horizontal movement basis from immediate orbit angles (not lerped camera transform). */
+  public getOrbitMovementBasis(): { forward: Vector3; right: Vector3 } {
+    this.orbitOffset.setFromSpherical(this.spherical);
+    this.orbitLookDir.copy(this.orbitOffset).negate();
+    this.orbitLookDir.y = 0;
+
+    if (this.orbitLookDir.lengthSq() > 1e-6) {
+      this.orbitLookDir.normalize();
+    } else {
+      this.orbitLookDir.set(0, 0, -1);
+    }
+
+    this.orbitRight.crossVectors(this.orbitLookDir, new Vector3(0, 1, 0)).normalize();
+    this.orbitForward.crossVectors(new Vector3(0, 1, 0), this.orbitRight).normalize();
+
+    return { forward: this.orbitForward, right: this.orbitRight };
+  }
+
+  /** Horizontal facing yaw aligned with orbit look direction (for player mesh / weapons). */
+  public getOrbitHorizontalFacingAngle(): number {
+    const { forward } = this.getOrbitMovementBasis();
+    return Math.atan2(forward.x, forward.z);
+  }
+
   private handleMouseInput(): void {
     const mouseDelta = this.inputManager.getMouseDelta();
 
     // Only rotate camera when right mouse button is held down AND camera rotation is not disabled
-    if ((mouseDelta.x !== 0 || mouseDelta.y !== 0) && this.isRightMouseDown && !this.cameraRotationDisabled) {
+    if (
+      (mouseDelta.x !== 0 || mouseDelta.y !== 0) &&
+      this.inputManager.isMouseButtonPressed(2) &&
+      !this.cameraRotationDisabled
+    ) {
       // Apply Ice Beam camera rotation speed reduction (50% slower)
       const sensitivity = this.isIcebeaming ? this.config.mouseSensitivity * 0.125 : this.config.mouseSensitivity;
 

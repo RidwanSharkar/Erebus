@@ -8225,10 +8225,17 @@ export function CoopGameScene({
           // Update Viper Sting parent ref with current position and camera rotation
           viperStingParentRef.current.position.copy(newPosition);
 
-          // Calculate quaternion from camera direction for Viper Sting
-          const cameraDirection = new Vector3();
-          camera.getWorldDirection(cameraDirection);
-          const cameraAngle = Math.atan2(cameraDirection.x, cameraDirection.z);
+          const cameraSystem = (window as any).cameraSystem as
+            | { getOrbitHorizontalFacingAngle?: () => number }
+            | undefined;
+          const cameraAngle =
+            typeof cameraSystem?.getOrbitHorizontalFacingAngle === 'function'
+              ? cameraSystem.getOrbitHorizontalFacingAngle()
+              : (() => {
+                  const cameraDirection = new Vector3();
+                  camera.getWorldDirection(cameraDirection);
+                  return Math.atan2(cameraDirection.x, cameraDirection.z);
+                })();
 
           // Update quaternion for Viper Sting direction
           viperStingParentRef.current.quaternion = {
@@ -10673,6 +10680,7 @@ export function CoopGameScene({
             key={effect.id}
             position={effect.position}
             type={effect.type}
+            theme="red"
             onComplete={() => {
               // Remove effect when it's done
               setActiveTeleportEffects(prev => prev.filter(e => e.id !== effect.id));
@@ -10694,7 +10702,7 @@ export function CoopGameScene({
       {martyrDetonationTelegraphs.map(tel => (
         <MartyrDetonationTelegraph
           key={tel.id}
-          position={tel.position}
+          position={new Vector3(tel.position.x, tel.position.y + 0.165, tel.position.z)}
           radius={6}
           endAt={tel.endAt}
           onComplete={() => {
@@ -11233,7 +11241,7 @@ function createCoopPlayer(
   // Add Movement component
   const movement = world.createComponent(Movement);
   movement.maxSpeed = 3.575; // Reduced from 8 to 3.65 for slower movement
-  movement.jumpForce = 4;
+  movement.jumpForce = 4.5;
   movement.friction = 0.85;
   player.addComponent(movement);
 
@@ -11354,6 +11362,7 @@ function setupCoopGame(
 
   // Expose camera system globally for effects access
   (window as any).cameraSystem = cameraSystem;
+  controlSystem.setCameraSystem(cameraSystem);
 
   // Expose damage number manager globally for abilities
   (window as any).damageNumberManager = combatSystem.getDamageNumberManager();

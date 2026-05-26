@@ -152,7 +152,7 @@ export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
 
 <pointLight position={[0, -0.125, 0]}
         color={colors.light}
-        intensity={7.5}
+        intensity={2.5}
         distance={6.0}
         decay={5}
       />

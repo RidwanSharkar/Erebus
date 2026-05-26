@@ -853,6 +853,10 @@ function HomeContent() {
                     <li>After you <strong>clear the first combat room</strong>, a <strong>room boon</strong> offers 3 picks from a pool determined by <strong>that room&apos;s color</strong> (blue / green / purple / red). Weapon affects most colors; green rooms always add universal zombie boons usable with any weapon.</li>
                     <li>On the <strong>main arena map</strong>, every <strong>third</strong> combat room you clear opens a <strong>boss portal</strong> (Boss 1 → Boss 2 → …; room color does not change that cadence). After a boss, you return to three rooms before the next boss gate.</li>
                     <li>Use rim <strong>portals</strong> to leave prep or, in the arena, to choose the next challenge when prompted.</li>
+                    <li>A <strong>PINK</strong> portal allows you to heal and buy items at the merchant.</li>
+                    <li><strong>RED</strong> portals are generally the most difficult.</li>
+                    <li><strong>YELLOW</strong> portals reward STAT points that can be spent.</li>
+                    <li><strong>PURPLE</strong>,<strong>BLUE</strong>,<strong>GREEN</strong>,and <strong>RED</strong> portals lead to enemy rooms that reward unique talents for abilities.</li>
                   </ul>
                 </div>
 

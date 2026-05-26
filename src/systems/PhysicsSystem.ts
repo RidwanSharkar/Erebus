@@ -90,6 +90,7 @@ export class PhysicsSystem extends BasePhysicsSystem {
         // console.warn('⚠️ Movement component missing updateDebuffs method:', movement);
       }
 
+      this.syncHorizontalVelocityFromInput(movement);
       this.updateMovement(transform, movement, deltaTime);
     }
   }
@@ -480,27 +481,24 @@ export class PhysicsSystem extends BasePhysicsSystem {
     return slidePosition;
   }
 
+  private syncHorizontalVelocityFromInput(movement: Movement): void {
+    if (movement.inputStrength > 0) {
+      const effectiveMaxSpeed = movement.getEffectiveMaxSpeed();
+      const targetVelocity = movement.moveDirection.clone();
+      targetVelocity.multiplyScalar(effectiveMaxSpeed * movement.inputStrength);
+      movement.velocity.x = targetVelocity.x;
+      movement.velocity.z = targetVelocity.z;
+    } else {
+      movement.velocity.x = 0;
+      movement.velocity.z = 0;
+    }
+  }
+
   private applyPhysics(transform: Transform, movement: Movement, deltaTime: number): void {
     // Apply gravity (only affects Y velocity)
     movement.applyGravity(deltaTime);
 
-    // Handle horizontal movement directly for immediate response
-    if (movement.inputStrength > 0) {
-      // Use effective max speed which accounts for frozen/slowed states
-      const effectiveMaxSpeed = movement.getEffectiveMaxSpeed();
-      
-      // Direct velocity setting for responsive movement
-      const targetVelocity = movement.moveDirection.clone();
-      targetVelocity.multiplyScalar(effectiveMaxSpeed * movement.inputStrength);
-      
-      // Set horizontal velocity directly (preserve Y velocity for gravity/jumping)
-      movement.velocity.x = targetVelocity.x;
-      movement.velocity.z = targetVelocity.z;
-    } else {
-      // No input - stop horizontal movement immediately for responsive controls
-      movement.velocity.x = 0;
-      movement.velocity.z = 0;
-    }
+    this.syncHorizontalVelocityFromInput(movement);
 
     // Apply any additional forces (like knockback, wind, etc.)
     movement.velocity.add(movement.acceleration.clone().multiplyScalar(deltaTime));

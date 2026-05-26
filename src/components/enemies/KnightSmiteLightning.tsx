@@ -63,7 +63,7 @@ export default function KnightSmiteLightning({ position, onComplete, variant = '
     [palette.glow],
   );
 
-  const cyl = useMemo(() => new CylinderGeometry(0.07, 0.11, 1, 6), []);
+  const cyl = useMemo(() => new CylinderGeometry(0.085, 0.085, 1, 6), []);
 
   useFrame(() => {
     if (startRef.current === null) startRef.current = performance.now();

@@ -129,7 +129,7 @@ const SmiteComponent = memo(function Smite({
   const progressRef = useRef(0);
   const animationDuration = 1.0; // Extended animation duration to ensure full visibility in PVP mode
   const delayTimer = useRef(0);
-  const startDelay = 0.025; // Initial delay
+  const startDelay = 0.05; // Initial delay
   const gateDelay = startDelay + sequenceDelaySec;
   const damageTriggered = useRef(false);
   /** Ground explosion phase 0→1 after impact (ref-driven; no extra React renders). */
@@ -267,7 +267,7 @@ const SmiteComponent = memo(function Smite({
     if (damageTriggered.current) return;
     damageTriggered.current = true;
 
-    const baseSmiteDamage = 195;
+    const baseSmiteDamage = 205;
     const damageRadius = 3.0; // Horizontal radius around impact (Y ignored so hovering units still hit)
     let totalDamage = 0;
     let targetsHit = 0;

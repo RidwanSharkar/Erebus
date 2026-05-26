@@ -147,7 +147,7 @@ const SHADE_POST_ATTACK_BLINK_DELAY_MS =
 
 // Templar Blink Smite: first cast 15s after aggro, then every 15s; windup 1s then AOE in front of templar
 const TEMPLAR_BLINK_SMITE_INTERVAL_MS = 12500;
-const TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS = 750;
+const TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS = 975;
 const TEMPLAR_BLINK_SMITE_IMPACT_OFFSET = 2.75;
 const TEMPLAR_BLINK_SMITE_DAMAGE = 65;
 const TEMPLAR_BLINK_SMITE_RADIUS = 2.5;
@@ -287,7 +287,7 @@ function distPointSegmentSqXZ(px, pz, ax, az, bx, bz) {
 // Purple warlock: matches WARLOCK_LAUNCH_DURATION in CoopGameScene.tsx — no walk during cast wind-up
 const WARLOCK_BLINK_LAUNCH_SHARED_COOLDOWN_MS = 3000;
 const WARLOCK_LAUNCH_MOVE_LOCK_MS = 1400;
-const WARLOCK_PREFERRED_STAND_RANGE = 7.5; // same as movement stop distance; launch only at or inside this
+const WARLOCK_PREFERRED_STAND_RANGE = 8.25; // same as movement stop distance; launch only at or inside this
 const WARLOCK_METEOR_PER_HIT_DAMAGE = 100;
 const WARLOCK_METEOR_STAGGER_MS = 500;
 // Meteor swarm: offset radius around primary target, clamped to co-op rectangle.
@@ -2842,7 +2842,7 @@ class EnemyAI {
           y: startY + (dy / len) * VIPER_ARROW_MAX_RANGE,
           z: startZ + (dz / horizontalLen) * VIPER_ARROW_MAX_RANGE
         },
-        damage:    55,
+        damage:    50,
         timestamp: Date.now()
       });
     }

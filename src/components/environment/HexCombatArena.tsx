@@ -3,6 +3,7 @@ import { AdditiveBlending, Color } from '@/utils/three-exports';
 import CustomSky from './CustomSky';
 import AtmosphericParticles from './AtmosphericParticles';
 import StylizedGrass from './StylizedGrass';
+import { createCastleWallShaderMaterial } from './CastleWalls';
 
 export const HEX_ARENA_RADIUS = 22;
 const HEX_WALL_HEIGHT = 4;
@@ -14,9 +15,8 @@ interface HexCombatArenaProps {
   variant: HexArenaVariant;
 }
 
-function HexWalls({ variant }: HexCombatArenaProps) {
-  const wallColor = variant === 'chaos' ? '#1e293b' : '#6b5b48';
-  const emissive = variant === 'chaos' ? '#312e81' : '#3b2412';
+function HexWalls(_props: HexCombatArenaProps) {
+  const wallMaterial = useMemo(() => createCastleWallShaderMaterial(), []);
   const sideLength = HEX_ARENA_RADIUS;
   const apothem = HEX_ARENA_RADIUS * Math.cos(Math.PI / 6);
 
@@ -32,15 +32,8 @@ function HexWalls({ variant }: HexCombatArenaProps) {
             position={[x, HEX_WALL_HEIGHT / 2, z]}
             rotation={[0, Math.PI / 2 - angle, 0]}
           >
-            <mesh castShadow receiveShadow>
+            <mesh castShadow receiveShadow material={wallMaterial}>
               <boxGeometry args={[sideLength, HEX_WALL_HEIGHT, HEX_WALL_THICKNESS]} />
-              <meshStandardMaterial
-                color={wallColor}
-                emissive={emissive}
-                emissiveIntensity={variant === 'chaos' ? 0.32 : 0.04}
-                roughness={0.85}
-                metalness={0.1}
-              />
             </mesh>
             {Array.from({ length: 7 }).map((__, merlon) => (
               <mesh
@@ -48,9 +41,9 @@ function HexWalls({ variant }: HexCombatArenaProps) {
                 position={[(-sideLength / 2) + merlon * (sideLength / 6), HEX_WALL_HEIGHT / 2 + 0.45, 0]}
                 castShadow
                 receiveShadow
+                material={wallMaterial}
               >
                 <boxGeometry args={[0.75, 0.9, HEX_WALL_THICKNESS + 0.08]} />
-                <meshStandardMaterial color={wallColor} roughness={0.85} metalness={0.1} />
               </mesh>
             ))}
           </group>

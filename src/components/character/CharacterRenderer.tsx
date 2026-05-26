@@ -222,10 +222,19 @@ export default function CharacterRenderer({
     // Rotation: local player always faces the camera; remote players lerp to server rotation.
     let facingDir = new Vector3(0, 0, -1); // default
     if (isLocalPlayer && camera) {
-      const dir = new Vector3();
-      camera.getWorldDirection(dir);
-      group.rotation.y = Math.atan2(dir.x, dir.z);
-      facingDir.set(dir.x, 0, dir.z).normalize();
+      const cameraSystem = (window as any).cameraSystem as
+        | { getOrbitHorizontalFacingAngle?: () => number }
+        | undefined;
+      const angle =
+        typeof cameraSystem?.getOrbitHorizontalFacingAngle === 'function'
+          ? cameraSystem.getOrbitHorizontalFacingAngle()
+          : (() => {
+              const dir = new Vector3();
+              camera.getWorldDirection(dir);
+              return Math.atan2(dir.x, dir.z);
+            })();
+      group.rotation.y = angle;
+      facingDir.set(Math.sin(angle), 0, Math.cos(angle));
     } else {
       let deltaAngle = targetRotationY.current - group.rotation.y;
       while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;

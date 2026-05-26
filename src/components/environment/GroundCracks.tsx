@@ -1,11 +1,11 @@
 import React, { useRef, useMemo, useEffect } from 'react';
+import { InstancedBufferAttribute } from 'three';
 import {
   InstancedMesh,
   ShaderMaterial,
   PlaneGeometry,
   Matrix4,
   Vector3,
-  AdditiveBlending,
 } from '@/utils/three-exports';
 
 // ---------------------------------------------------------------------------
@@ -15,32 +15,30 @@ import {
 // ---------------------------------------------------------------------------
 
 const CRACK_VERT = `
-  varying vec2 vWorldXZ;
+  attribute vec2 aCrackSeed;
+  varying vec2 vCrackUv;
 
   void main() {
+    vCrackUv = uv * 2.5 + aCrackSeed;
     vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
-    vWorldXZ    = wp.xz; // pass world XZ for crack pattern uniqueness
     gl_Position = projectionMatrix * viewMatrix * wp;
   }
 `;
 
 const CRACK_FRAG = `
-  varying vec2 vWorldXZ;
+  varying vec2 vCrackUv;
 
-  // ── Voronoi / cell noise for crack skeleton ─────────────────────────────
   vec2 hash2(vec2 p) {
     p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
     return fract(sin(p) * 43758.5453);
   }
 
-  // Distance to nearest Voronoi edge → crack mask
   float voronoiEdge(vec2 p) {
     vec2 pi = floor(p);
     vec2 pf = fract(p);
 
     float minDist1 = 1e9;
     float minDist2 = 1e9;
-    vec2  minPoint;
 
     for (int y = -1; y <= 1; y++) {
       for (int x = -1; x <= 1; x++) {
@@ -48,31 +46,31 @@ const CRACK_FRAG = `
         vec2 point = hash2(pi + cell);
         vec2 diff  = cell + point - pf;
         float d    = dot(diff, diff);
-        if (d < minDist1) { minDist2 = minDist1; minDist1 = d; minPoint = point; }
+        if (d < minDist1) { minDist2 = minDist1; minDist1 = d; }
         else if (d < minDist2) { minDist2 = d; }
       }
     }
-    // Edge distance = difference between two closest cell distances
     return sqrt(minDist2) - sqrt(minDist1);
   }
 
+  float crackLine(float edge, float baseWidth) {
+    float w = max(baseWidth, fwidth(edge) * 1.5);
+    return smoothstep(w, 0.0, edge);
+  }
+
   void main() {
-    // UV coordinates derived from world position for variety per instance
-    vec2 uv = vWorldXZ * 0.9;
+    vec2 uv = vCrackUv;
 
     float edge1 = voronoiEdge(uv * 1.0);
     float edge2 = voronoiEdge(uv * 2.2 + 3.7);
     float edge3 = voronoiEdge(uv * 4.5 - 1.9);
 
-    // Crack = narrow dark lines at cell edges; thinner at higher frequencies
-    float crack1 = smoothstep(0.06, 0.0,  edge1);
-    float crack2 = smoothstep(0.03, 0.0,  edge2) * 0.7;
-    float crack3 = smoothstep(0.015, 0.0, edge3) * 0.45;
+    float crack1 = crackLine(edge1, 0.06);
+    float crack2 = crackLine(edge2, 0.03) * 0.7;
+    float crack3 = crackLine(edge3, 0.015) * 0.45;
 
-    float cracks = crack1 + crack2 + crack3;
-    cracks = clamp(cracks, 0.0, 1.0);
+    float cracks = clamp(crack1 + crack2 + crack3, 0.0, 1.0);
 
-    // Dark charcoal crack color with a hint of the ground shadow
     vec3 crackCol = vec3(0.06, 0.05, 0.04);
     float alpha   = cracks * 0.72;
 
@@ -81,58 +79,80 @@ const CRACK_FRAG = `
 `;
 
 const CRACK_COUNT = 40;
+const CRACK_SEED = 0x4a7f;
+
+function seededRandom(seed: number): number {
+  const x = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+const CAMP_CENTERS: [number, number][] = [
+  [0, -15],
+  [15, 7],
+  [-15, 7],
+  [0, 0],
+];
 
 const GroundCracks: React.FC = () => {
   const meshRef = useRef<InstancedMesh>(null);
 
-  const geo = useMemo(() => new PlaneGeometry(1, 1), []);
+  const geo = useMemo(() => {
+    const geometry = new PlaneGeometry(1, 1);
+    geometry.setAttribute(
+      'aCrackSeed',
+      new InstancedBufferAttribute(new Float32Array(CRACK_COUNT * 2), 2),
+    );
+    return geometry;
+  }, []);
 
-  const mat = useMemo(() => new ShaderMaterial({
-    vertexShader:   CRACK_VERT,
-    fragmentShader: CRACK_FRAG,
-    transparent:    true,
-    depthWrite:     false,
-    // Multiplicative blend — darkens the stone underneath
-    // AdditiveBlending would lighten; keep default NormalBlending for shadow cracks
-  }), []);
-
-  // Camp paths + open stone areas to target
-  const CAMP_CENTERS: [number, number][] = [
-    [  0, -15 ],
-    [ 15,   7 ],
-    [-15,   7 ],
-    [  0,   0 ], // arena center
-  ];
+  const mat = useMemo(
+    () =>
+      new ShaderMaterial({
+        vertexShader: CRACK_VERT,
+        fragmentShader: CRACK_FRAG,
+        transparent: true,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+      }),
+    [],
+  );
 
   useEffect(() => {
     const mesh = meshRef.current;
     if (!mesh) return;
 
-    const m   = new Matrix4();
+    const seedAttr = geo.getAttribute('aCrackSeed') as InstancedBufferAttribute;
+    const m = new Matrix4();
     const scl = new Vector3();
     const pos = new Vector3();
 
     for (let i = 0; i < CRACK_COUNT; i++) {
-      // 70% near camp stone platforms, 30% on paths between camps
-      const camp = CAMP_CENTERS[Math.floor(Math.random() * CAMP_CENTERS.length)];
-      const a = Math.random() * Math.PI * 2;
-      const r = Math.random() * 7.5;
-      pos.set(camp[0] + Math.cos(a) * r, 0.02, camp[1] + Math.sin(a) * r);
+      const baseSeed = CRACK_SEED + i * 17.31;
+      const campIdx = Math.floor(seededRandom(baseSeed) * CAMP_CENTERS.length);
+      const camp = CAMP_CENTERS[campIdx];
+      const a = seededRandom(baseSeed + 1.7) * Math.PI * 2;
+      const r = seededRandom(baseSeed + 3.1) * 7.5;
+      pos.set(camp[0] + Math.cos(a) * r, 0.03, camp[1] + Math.sin(a) * r);
 
-      // Vary size and rotation for each crack slab
-      const s = 2.5 + Math.random() * 5.0;
-      const rotAngle = Math.random() * Math.PI;
+      const s = 2.5 + seededRandom(baseSeed + 5.3) * 5.0;
+      const rotAngle = seededRandom(baseSeed + 7.9) * Math.PI;
 
-      m.makeRotationX(-Math.PI / 2);                        // lay flat
-      const rotY = new Matrix4().makeRotationZ(rotAngle);   // randomise UV sampling direction
+      seedAttr.setXY(i, seededRandom(baseSeed + 11.2) * 8.0, seededRandom(baseSeed + 13.4) * 8.0);
+
+      m.makeRotationX(-Math.PI / 2);
+      const rotY = new Matrix4().makeRotationZ(rotAngle);
       m.multiply(rotY);
       scl.set(s, s, 1);
       m.scale(scl);
       m.setPosition(pos);
       mesh.setMatrixAt(i, m);
     }
+
+    seedAttr.needsUpdate = true;
     mesh.instanceMatrix.needsUpdate = true;
-  }, []);
+  }, [geo]);
 
   return (
     <instancedMesh

@@ -163,7 +163,7 @@ export const GUARDBREAK_STUNNED_DAMAGE_MULT = 1.3;
 /** Crossentropy (`SCYTHE_R`) ability cooldown after starting a bolt (seconds). */
 export const CROSSENTROPY_COOLDOWN_SEC = 8;
 /** Accelerator — horizontal distance (xz) within which each owned totem counts toward Crossentropy recharge. */
-export const ACCELERATOR_TOTEM_AURA_RADIUS_UNITS = 3;
+export const ACCELERATOR_TOTEM_AURA_RADIUS_UNITS = 4;
 
 /** GIANTKILLER — extra damage vs non-boss: fraction of target max HP on Reaping Talons return hit after a forward hit on the same target. */
 export const GIANTKILLER_MAX_HP_DAMAGE_FRAC = 0.1;
@@ -327,11 +327,11 @@ export const FLURRY_HEAL_VFX_MIN_INTERVAL_MS = 300;
 export const FLURRY_HEAL_NUMBER_MIN_INTERVAL_MS = 350;
 
 /** Infernal Smite — Ignite DoT: this fraction of the smite hit damage over INFERNAL_SMITE_DURATION_MS. */
-export const INFERNAL_SMITE_DOT_FRACTION = 0.7;
-export const INFERNAL_SMITE_DURATION_MS = 3000;
-export const INFERNAL_SMITE_TICKS = 3;
+export const INFERNAL_SMITE_DOT_FRACTION = 0.75;
+export const INFERNAL_SMITE_DURATION_MS = 4000;
+export const INFERNAL_SMITE_TICKS = 4;
 /** Infernal Smite — additive critical strike chance on each Smite beam (crit damage multiplier unchanged). */
-export const INFERNAL_SMITE_CRIT_CHANCE_ADD = 0.4;
+export const INFERNAL_SMITE_CRIT_CHANCE_ADD = 0.2;
 
 /** Vengeance — Colossus Smite: max extra damage multiplier at 0 HP (+200% → 3× total vs full HP). Linear in missing health fraction. */
 export const VENGEANCE_SMITE_MAX_EXTRA_DAMAGE_MULT = 2.5;
@@ -567,7 +567,7 @@ export const SOLAR_RECHARGE_PROC_CHANCE = 0.1175;
 export const FROST_SOLAR_PROC_EFFECT_ICD_MS = 2500;
 
 /** Windfury — Spear primary or Runeblade left-click combo hits that damage an enemy can proc Storm Shroud (Flurry) without F cooldown. */
-export const WINDFURY_PROC_CHANCE = 0.1325;
+export const WINDFURY_PROC_CHANCE = 0.1425;
 
 /** Crusader — Runeblade left-click hits that damage an enemy; matches Windfury proc rate. */
 export const CRUSADER_PROC_CHANCE = 0.15;
@@ -600,8 +600,8 @@ export const STAGGERING_COMBO_HIT2_STAGGER = 20;
 export const STAGGERING_COMBO_HIT3_STAGGER = 25;
 
 /** Staggering Swipes — Sabres basic dual swing: 15 stagger total per swing (split across blades). Same 100 cap / proc as other stagger talents. */
-export const STAGGERING_SWIPES_LEFT_BLADE_STAGGER = 10;
-export const STAGGERING_SWIPES_RIGHT_BLADE_STAGGER = 10;
+export const STAGGERING_SWIPES_LEFT_BLADE_STAGGER = 12;
+export const STAGGERING_SWIPES_RIGHT_BLADE_STAGGER = 13;
 
 /** Staggering Stab — Backstab applies this stagger server-side (`damageType` `backstab`). */
 export const STAGGERING_STAB_BACKSTAB_STAGGER = 80;
@@ -612,14 +612,14 @@ export const WRATHFUL_STAB_CRIT_DAMAGE_MULT_ADD = 0.6;
 export const WRATHFUL_SABRES_SWIPES_CRIT_CHANCE_ADD = 0.2;
 export const WRATHFUL_SABRES_SWIPES_CRIT_DAMAGE_MULT_ADD = 1.0;
 /** Infesting Swipes — non-stealth LMB base damage (left / right sabre); stealth branch unchanged in ControlSystem. */
-export const INFESTING_SABRES_SWIPES_LEFT_DAMAGE = 29;
-export const INFESTING_SABRES_SWIPES_RIGHT_DAMAGE = 24;
+export const INFESTING_SABRES_SWIPES_LEFT_DAMAGE = 37;
+export const INFESTING_SABRES_SWIPES_RIGHT_DAMAGE = 31;
 
 /** Staggering Flourish — Sunder (`damageType` `sunder`) stagger server-side. */
 export const STAGGERING_FLOURISH_STAGGER = 40;
 /** Wrathful Flourish — Flourish additive crit (see `calculateDamage` in ControlSystem). */
-export const WRATHFUL_FLOURISH_CRIT_CHANCE_ADD = 0.25;
-export const WRATHFUL_FLOURISH_CRIT_DAMAGE_MULT_ADD = 0.4;
+export const WRATHFUL_FLOURISH_CRIT_CHANCE_ADD = 0.35;
+export const WRATHFUL_FLOURISH_CRIT_DAMAGE_MULT_ADD = 0.15;
 
 /** Staggering Smite — each Colossus Smite beam adds this stagger per enemy hit (same 100 cap / proc as other stagger talents). */
 export const STAGGERING_SMITE_BEAM_STAGGER = 40;
@@ -647,7 +647,7 @@ export const WYVERN_STING_COOLDOWN_SEC = 5;
 export const ARCTIC_STING_BLIZZARD_ICD_SEC = 4;
 
 /** Wrathful Entropic — bolts + beam additive crit (crit damage multiplier unchanged). */
-export const WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD = 0.4;
+export const WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD = 0.25;
 export const WRATHFUL_ENTROPIC_BEAM_CRIT_CHANCE_ADD = 0.3;
 /** Staggering Entropic — bolt hit stagger and beam tick stagger (same cap/proc as other stagger talents). */
 export const STAGGERING_ENTROPIC_BOLT_STAGGER = 15;

@@ -740,7 +740,9 @@ export class AudioSystem extends System {
   }
 
   public playCrossentropyMeteoriteFallSound(position: Vector3) {
-    return this.playWeaponSound('scythe_meteorite', position, { volume: 0.9 });
+    setTimeout(() => {
+      this.playWeaponSound('scythe_meteorite', position, { volume: 0.9 });
+    }, 500);
   }
 
   public playTotemBoltLaunchSound(position: Vector3) {

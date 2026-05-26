@@ -1,15 +1,41 @@
 import React, { useState, useMemo } from 'react';
-import { Vector3, Color } from 'three';
+import { Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
+
+type BossTeleportTheme = 'purple' | 'red';
+
+const TELEPORT_PALETTES: Record<BossTeleportTheme, {
+  primary: string;
+  secondary: string;
+  core: string;
+  dark: string;
+  accent: string;
+}> = {
+  purple: {
+    primary: '#8800ff',
+    secondary: '#aa00ff',
+    core: '#ffffff',
+    dark: '#440088',
+    accent: '#ff00ff',
+  },
+  red: {
+    primary: '#7f0505',
+    secondary: '#ff2a1a',
+    core: '#ffffff',
+    dark: '#3a0202',
+    accent: '#ff5533',
+  },
+};
 
 interface BossTeleportEffectProps {
   position: Vector3;
   onComplete: () => void;
   type?: 'start' | 'end'; // Different effects for teleport start vs end
   scale?: number;          // Uniform scale applied to the effect geometry (default 1)
+  theme?: BossTeleportTheme;
 }
 
-const BossTeleportEffect: React.FC<BossTeleportEffectProps> = React.memo(({ position, onComplete, type = 'start', scale: effectScale = 1 }) => {
+const BossTeleportEffect: React.FC<BossTeleportEffectProps> = React.memo(({ position, onComplete, type = 'start', scale: effectScale = 1, theme = 'purple' }) => {
   const [time, setTime] = useState(0);
   const duration = 0.8; // Duration of the effect
   const hasCompletedRef = React.useRef(false);
@@ -39,12 +65,8 @@ const BossTeleportEffect: React.FC<BossTeleportEffectProps> = React.memo(({ posi
     ? 1 + progress * 2 // Expand for start
     : 1 - progress * 0.3 + Math.sin(progress * Math.PI * 2) * 0.2; // Contract with pulse for end
 
-  // Purple/dark energy colors for ominous teleport
-  const primaryColor = "#8800ff";
-  const secondaryColor = "#aa00ff";
-  const coreColor = "#ffffff";
-  const darkColor = "#440088";
-  const accentColor = "#ff00ff";
+  const { primary: primaryColor, secondary: secondaryColor, core: coreColor, dark: darkColor, accent: accentColor } =
+    TELEPORT_PALETTES[theme];
 
   // Generate random particles for swirling effect
   const particles = useMemo(() => {

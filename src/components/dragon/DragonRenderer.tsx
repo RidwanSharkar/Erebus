@@ -487,12 +487,18 @@ export default function DragonRenderer({
       
       // Rotate dragon based on whether it's the local player or other players
       if (isLocalPlayer && camera) {
-        // Local player: face camera direction for visual orientation
-        const cameraDirection = new Vector3();
-        camera.getWorldDirection(cameraDirection);
-        
-        // Calculate the angle to face the camera direction
-        const angle = Math.atan2(cameraDirection.x, cameraDirection.z);
+        // Local player: face immediate orbit yaw (matches movement basis while RMB orbiting)
+        const cameraSystem = (window as any).cameraSystem as
+          | { getOrbitHorizontalFacingAngle?: () => number }
+          | undefined;
+        const angle =
+          typeof cameraSystem?.getOrbitHorizontalFacingAngle === 'function'
+            ? cameraSystem.getOrbitHorizontalFacingAngle()
+            : (() => {
+                const cameraDirection = new Vector3();
+                camera.getWorldDirection(cameraDirection);
+                return Math.atan2(cameraDirection.x, cameraDirection.z);
+              })();
         groupRef.current.rotation.y = angle;
 
         const entity = world.getEntity(entityId);

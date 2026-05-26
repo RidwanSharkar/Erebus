@@ -180,6 +180,7 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}
           scale={getPulsingScale()}
+          position={[0, 0.225, 0]}
         >
           <primitive object={pulsingRingGeometry} />
           <meshBasicMaterial

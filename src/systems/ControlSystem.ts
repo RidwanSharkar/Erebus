@@ -14,6 +14,7 @@ import { Collider } from '@/ecs/components/Collider';
 import { Projectile } from '@/ecs/components/Projectile';
 import { InputManager } from '@/core/InputManager';
 import { World } from '@/ecs/World';
+import { CameraSystem } from './CameraSystem';
 import { ProjectileSystem } from './ProjectileSystem';
 import { AudioSystem } from './AudioSystem';
 import { CombatSystem } from './CombatSystem';
@@ -240,15 +241,15 @@ export class ControlSystem extends System {
   private projectileSystem: ProjectileSystem;
   private audioSystem: AudioSystem | null = null;
   private playerEntity: Entity | null = null;
+  private cameraSystem: CameraSystem | null = null;
 
   // Input control
   private inputDisabled: boolean = false;
   private freeLookBasisLocked = false;
   private freeLookCameraForward = new Vector3();
   private freeLookCameraRight = new Vector3();
-  private cameraAssistInputDirection = new Vector3();
-  private cameraAssistIntentDirection = new Vector3();
-  private cameraAssistIntentActive = false;
+  private orbitBasisForward = new Vector3();
+  private orbitBasisRight = new Vector3();
 
   /** Max horizontal distance from origin for dash/charge (matches PhysicsSystem map boundary). */
   private playableRadius = MAIN_MAP_RADIUS;
@@ -784,6 +785,10 @@ export class ControlSystem extends System {
     this.playableRadius = Math.max(1, radius);
   }
 
+  public setCameraSystem(cameraSystem: CameraSystem): void {
+    this.cameraSystem = cameraSystem;
+  }
+
   public setCastleWallChargeCollision(enabled: boolean): void {
     this.castleWallChargeEnabled = enabled;
     this.arenaBoundaryMode = enabled ? 'square' : 'circle';
@@ -1024,16 +1029,13 @@ export class ControlSystem extends System {
 
       if (freeLookActive) {
         movement.setMoveDirection(worldDirection, backwardsMultiplier);
-        this.setCameraKeyboardMoveIntentForInput(inputDirection, worldDirection, false);
       } else {
         this.clearFreeLookMoveLock();
         movement.setMoveDirection(worldDirection, backwardsMultiplier);
-        this.setCameraKeyboardMoveIntentForInput(inputDirection, worldDirection, true);
       }
     } else {
       this.clearFreeLookMoveLock();
       movement.setMoveDirection(new Vector3(0, 0, 0), 0);
-      this.setCameraKeyboardMoveIntentForInput(inputDirection, null, false);
     }
 
     // Handle jumping
@@ -1071,6 +1073,13 @@ export class ControlSystem extends System {
   }
 
   private getCameraMovementBasis(): { cameraForward: Vector3; cameraRight: Vector3 } {
+    if (this.cameraSystem) {
+      const { forward, right } = this.cameraSystem.getOrbitMovementBasis();
+      this.orbitBasisForward.copy(forward);
+      this.orbitBasisRight.copy(right);
+      return { cameraForward: this.orbitBasisForward, cameraRight: this.orbitBasisRight };
+    }
+
     const cameraDirection = new Vector3();
     this.camera.getWorldDirection(cameraDirection);
 
@@ -1103,7 +1112,11 @@ export class ControlSystem extends System {
   }
 
   private isFreeLookMoveLockInputActive(): boolean {
-    return this.inputManager.isKeyPressed('shift') && this.inputManager.isMouseButtonPressed(2);
+    return (
+      this.inputManager.isKeyPressed('shift') &&
+      this.inputManager.isMouseButtonPressed(2) &&
+      !this.getMovementInputDirection().hasInput
+    );
   }
 
   private clearFreeLookMoveLock(): void {
@@ -1114,40 +1127,6 @@ export class ControlSystem extends System {
 
   private clearMovementControlState(): void {
     this.clearFreeLookMoveLock();
-    this.setCameraKeyboardMoveIntentForInput(new Vector3(0, 0, 0), null, false);
-  }
-
-  private setCameraKeyboardMoveIntentForInput(
-    inputDirection: Vector3,
-    worldDirection: Vector3 | null,
-    active: boolean
-  ): void {
-    if (!active || !worldDirection || worldDirection.lengthSq() <= 0.0001) {
-      this.cameraAssistIntentActive = false;
-      this.cameraAssistInputDirection.set(0, 0, 0);
-      this.cameraAssistIntentDirection.set(0, 0, 0);
-      this.setCameraKeyboardMoveIntent(null, false);
-      return;
-    }
-
-    const inputChanged =
-      !this.cameraAssistIntentActive ||
-      this.cameraAssistInputDirection.distanceToSquared(inputDirection) > 0.0001;
-
-    if (inputChanged) {
-      this.cameraAssistInputDirection.copy(inputDirection);
-      this.cameraAssistIntentDirection.copy(worldDirection).normalize();
-      this.cameraAssistIntentActive = true;
-    }
-
-    this.setCameraKeyboardMoveIntent(this.cameraAssistIntentDirection, true);
-  }
-
-  private setCameraKeyboardMoveIntent(direction: Vector3 | null, active: boolean): void {
-    const cameraSystem = (window as any).cameraSystem;
-    if (cameraSystem && typeof cameraSystem.setKeyboardMoveIntent === 'function') {
-      cameraSystem.setKeyboardMoveIntent(direction, active);
-    }
   }
 
   private lastWeaponSwitchTime = 0;
@@ -6940,19 +6919,8 @@ export class ControlSystem extends System {
   }
 
   private getWorldSpaceDirection(inputDirection: Vector3): Vector3 {
-    // Get camera direction vectors
-    const cameraDirection = new Vector3();
-    this.camera.getWorldDirection(cameraDirection);
-    
-    // Get camera's right vector
-    const cameraRight = new Vector3();
-    cameraRight.crossVectors(cameraDirection, new Vector3(0, 1, 0)).normalize();
-    
-    // Get camera's forward vector (projected on XZ plane)
-    const cameraForward = new Vector3();
-    cameraForward.crossVectors(new Vector3(0, 1, 0), cameraRight).normalize();
+    const { cameraForward, cameraRight } = this.getCameraMovementBasis();
 
-    // Transform input direction to world space
     const worldDirection = new Vector3();
     worldDirection.addScaledVector(cameraRight, inputDirection.x);
     worldDirection.addScaledVector(cameraForward, -inputDirection.z);

@@ -80,7 +80,7 @@ export default function MartyrDetonationTelegraph({
   });
 
   return (
-    <group ref={groupRef} position={[position.x, 0.04, position.z]}>
+    <group ref={groupRef} position={[position.x, 0.225, position.z]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} material={matOuter} geometry={ringOuter} />
       <mesh rotation={[-Math.PI / 2, 0, 0]} material={matInner} geometry={ringInner} />
     </group>

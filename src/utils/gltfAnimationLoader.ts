@@ -22,3 +22,15 @@ export function preloadGltfAnimationClips(paths: readonly string[]): void {
     });
   });
 }
+
+export async function loadAllGltfAnimationClips<K extends string>(
+  pathByKey: Record<K, string>,
+): Promise<Record<K, AnimationClip[]>> {
+  const entries = await Promise.all(
+    (Object.entries(pathByKey) as [K, string][]).map(async ([key, path]) => {
+      const clips = await loadGltfAnimationClips(path);
+      return [key, clips] as const;
+    }),
+  );
+  return Object.fromEntries(entries) as Record<K, AnimationClip[]>;
+}

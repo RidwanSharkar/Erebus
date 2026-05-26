@@ -140,7 +140,10 @@ export class Engine extends EventEmitter {
     // Handle variable timestep updates (game logic)
     this.gameLoop.on('update', ({ deltaTime }) => {
       const startTime = performance.now();
-      
+
+      // Apply camera orbit before movement systems read input/camera basis
+      (window as any).cameraSystem?.applyOrbitInput?.();
+
       // Update world systems first so they can read input deltas
       this.world.update(deltaTime);
       
