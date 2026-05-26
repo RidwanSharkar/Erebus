@@ -94,7 +94,7 @@ const SYMBOL_SPEEDS: Partial<Record<CoopPortalKind, [number, number, number]>> =
   red:     [0.38, 0.55, 0.18],
   green:   [0.42, 0.65, 0.20],
   purple:  [0.30, 0.42, 0.28],
-  healing: [0.35, 0.58, 0.15],
+  merchant: [0.35, 0.58, 0.15],
   stat:    [0.44, 0.70, 0.16],
   trial:   [0.52, 0.75, 0.20],
 };
@@ -114,7 +114,7 @@ export default function PortalSymbol({
       case 'red':     return buildFireShape();
       case 'green':   return buildVenomShape();
       case 'purple':  return buildFrostShape();
-      case 'healing': return buildHeartShape();
+      case 'merchant': return buildHeartShape();
       case 'stat':    return buildStatShape();
       case 'trial':   return buildStatShape();
       default:        return null;

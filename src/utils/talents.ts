@@ -86,7 +86,7 @@ export const TALENT_SUPERCONDUCTOR = 'SUPERCONDUCTOR' as const;
 export const TALENT_ACCELERATOR = 'ACCELERATOR' as const;
 /** Giantkiller — Reaping Talons (`BOW_R`): return hit on a target also hit by the forward leg deals extra % max HP damage. */
 export const TALENT_GIANTKILLER = 'GIANTKILLER' as const;
-/** Bow class — LMB uncharged tap damage 10 → 40; uncharged projectile VFX tint red. */
+/** Bow class — LMB minimum charge damage 10 → 40; uncharged projectile VFX tint red. */
 export const TALENT_TRIGGER_FINGER = 'TRIGGER_FINGER' as const;
 /** Healing Stream — while Mantra totems (`SCYTHE_F`) are up: heal per second per owned totem within horizontal range (same radius as ACCELERATOR). */
 export const TALENT_HEALING_STREAM = 'HEALING_STREAM' as const;
@@ -264,7 +264,7 @@ export const VORPAL_GUST_TIP_ZONE_WORLD_UNITS = 1.2;
 /** Minimum projected `t` from `evaluateVorpalGustBeamHit` to count as hitting near the gust tip. */
 export const VORPAL_GUST_TIP_ZONE_START = VORPAL_GUST_BEAM_LENGTH - VORPAL_GUST_TIP_ZONE_WORLD_UNITS;
 /** Tip zone: non-positional hit base (normally 95). */
-export const BACKSTAB_VORPAL_TIP_DAMAGE_FRONT = 155;
+export const BACKSTAB_VORPAL_TIP_DAMAGE_FRONT = 225;
 /** Tip zone: positional Backstab vs PvE (normally 285). */
 export const BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB = 420;
 /** Tip zone: positional Backstab vs PvP tier (normally 175), scaled vs PvE 285→420 uplift. */
@@ -275,7 +275,7 @@ export function isVorpalGustTipHit(t: number): boolean {
 }
 
 /** Reaper: HP healed to the caster per enemy hit by piercing Crossentropy (client-applied; excludes training dummy in co-op). */
-export const CROSSENTROPY_REAPER_HIT_HEAL = 1;
+export const CROSSENTROPY_REAPER_HIT_HEAL = 2;
 /**
  * Max world units the Crossentropy bolt travels (matches legacy VFX in CrossentropyBolt).
  * Reaper uses this for ECS `maxDistance` so the pierce line does not outrange normal Crossentropy.
@@ -451,21 +451,21 @@ export const MANTRA_SHAMAN_MAX_CHARGES = 2;
 /** SHAMAN — minimum delay between spending stored Mantra charges. */
 export const MANTRA_SHAMAN_INTERNAL_COOLDOWN_SEC = 0.75;
 /** Superconductor — bonus Mantra totem lightning damage. */
-export const SUPERCONDUCTOR_TOTEM_DAMAGE = 85;
+export const SUPERCONDUCTOR_TOTEM_DAMAGE = 90;
 /** Superconductor + Infesting Totem — shock base damage before crit. */
-export const SUPERCONDUCTOR_INFESTING_DAMAGE = 100;
+export const SUPERCONDUCTOR_INFESTING_DAMAGE = 125;
 /** Superconductor + Staggering Totem — stagger per shock (totem bolts use `STAGGERING_TOTEM_STAGGER`). */
 export const SUPERCONDUCTOR_STAGGERING_STRIKE_STAGGER = 15;
 /** Superconductor + Wrathful Totem — additive crit chance on shock (crit damage multiplier unchanged). */
 export const SUPERCONDUCTOR_WRATHFUL_CRIT_CHANCE_ADD = 0.5;
 /** Superconductor — seconds between bonus lightning casts per totem. */
-export const SUPERCONDUCTOR_TOTEM_COOLDOWN_SEC = 3;
+export const SUPERCONDUCTOR_TOTEM_COOLDOWN_SEC = 1.75;
 
 /** SPELLBLADE — +effective intellect while Wraith Strike is in loadout (+2 max shield per point, see StatSystem). */
 export const SPELLBLADE_INTELLECT_BONUS = 10;
 export const SPELLBLADE_WRAITH_STRIKE_SHIELD_RESTORE = 30;
 /** SPELLBLADE — additive Wraith Strike base damage per effective Intellect (allocated + Spellblade bonus). */
-export const SPELLBLADE_WRAITH_DAMAGE_PER_INTELLECT = 2;
+export const SPELLBLADE_WRAITH_DAMAGE_PER_INTELLECT = 3;
 
 /** Sabres PARRY — +effective intellect / strength while Flourish (`SABRES_E`) is in loadout (same derived-stat plumbing as Spellblade); shield chunk on Flourish cast. */
 
@@ -474,7 +474,7 @@ export const PARRY_STRENGTH_BONUS = 5;
 export const PARRY_FLOURISH_SHIELD_RESTORE = 35;
 
 /** Aftershock (talent id `BREATH_WEAPON`) — Wraith Strike ground strip; detonation after delay. */
-export const BREATH_WEAPON_DAMAGE = 100;
+export const BREATH_WEAPON_DAMAGE = 120;
 export const AFTERSHOCK_STRIP_LENGTH = 7.5;
 export const AFTERSHOCK_DETONATION_DELAY_MS = 1000;
 /** Lateral distance from strip centerline (XZ) for hit and VFX width. */
@@ -1172,7 +1172,7 @@ export const triggerFingerTalentDefinition: TalentDefinition = {
   id: TALENT_TRIGGER_FINGER,
   name: 'TRIGGER FINGER',
   description:
-    'Bow left-click tap shots deal 40 base damage instead of 10. Uncharged projectiles use a red energy tint.',
+    'Bow left-click minimum charge damage is 40 instead of 10. Uncharged projectiles use a red energy tint.',
   modifiesAbilityId: 'BOW_BASIC',
 };
 
@@ -2736,6 +2736,71 @@ export function filterTalentIdsByExclusionSet(
   return pool.filter((id) => !excluded.has(id));
 }
 
+function appendAvailableTalentIds(
+  out: TalentId[],
+  available: ReadonlySet<TalentId>,
+  candidates: readonly TalentId[],
+): void {
+  for (const id of candidates) {
+    if (available.has(id) && !out.includes(id)) {
+      out.push(id);
+    }
+  }
+}
+
+function isAbilityIdInLoadout(
+  loadout: AbilityLoadout | null | undefined,
+  abilityId: string,
+): boolean {
+  if (!loadout) return false;
+  return loadout.Q === abilityId || loadout.E === abilityId || loadout.R === abilityId;
+}
+
+function buildPrioritizedRoomBoonIdsForLoadout(
+  pool: readonly TalentId[],
+  weapon: WeaponType,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): TalentId[] {
+  const available = new Set(pool);
+  const priority: TalentId[] = [];
+
+  if (weapon === WeaponType.BOW) {
+    appendAvailableTalentIds(priority, available, BOW_ROOM_BOON_MUTEX_BY_SLOT.primary);
+    if (isFrostBiteInLoadout(abilityLoadout)) {
+      appendAvailableTalentIds(priority, available, BOW_ROOM_BOON_MUTEX_BY_SLOT.q);
+    }
+    if (isReapingTalonsInLoadout(abilityLoadout)) {
+      appendAvailableTalentIds(priority, available, BOW_ROOM_BOON_MUTEX_BY_SLOT.e);
+    }
+  } else if (weapon === WeaponType.SCYTHE) {
+    appendAvailableTalentIds(priority, available, SCYTHE_ENTROPIC_BOON_MUTEX_GROUP);
+    if (isCrossentropyInLoadout(abilityLoadout)) {
+      appendAvailableTalentIds(priority, available, SCYTHE_CROSSENTROPY_BOON_MUTEX_GROUP);
+    }
+    if (isMantraInLoadout(abilityLoadout)) {
+      appendAvailableTalentIds(priority, available, SCYTHE_TOTEM_BOON_MUTEX_GROUP);
+    }
+  } else if (weapon === WeaponType.RUNEBLADE) {
+    appendAvailableTalentIds(priority, available, RUNEBLADE_ROOM_BOON_MUTEX_BY_SLOT.combo);
+    if (isWraithStrikeInLoadout(abilityLoadout)) {
+      appendAvailableTalentIds(priority, available, RUNEBLADE_ROOM_BOON_MUTEX_BY_SLOT.strike);
+    }
+    if (isColossusSmiteInLoadout(abilityLoadout)) {
+      appendAvailableTalentIds(priority, available, RUNEBLADE_ROOM_BOON_MUTEX_BY_SLOT.smite);
+    }
+  } else if (weapon === WeaponType.SABRES) {
+    appendAvailableTalentIds(priority, available, SABRES_SWIPES_BOON_MUTEX_GROUP);
+    if (isAbilityIdInLoadout(abilityLoadout, 'SABRES_Q')) {
+      appendAvailableTalentIds(priority, available, SABRES_BACKSTAB_BOON_MUTEX_GROUP);
+    }
+    if (isSabresFlourishInLoadout(abilityLoadout)) {
+      appendAvailableTalentIds(priority, available, SABRES_FLOURISH_BOON_MUTEX_GROUP);
+    }
+  }
+
+  return priority;
+}
+
 /**
  * Picks up to `count` distinct ids from a pool. If the pool is smaller than `count`, returns all in random order.
  * Uses a simple LCG for deterministic tests if `rng` is provided as () => 0-1.
@@ -2755,6 +2820,39 @@ export function pickRandomDistinctFromPool(
     idx[j] = t;
   }
   return idx.slice(0, n).map((i) => pool[i]!);
+}
+
+/**
+ * Room boons favor the player's active attack branches first, then fall back to
+ * utility / universal room talents from the same already-filtered pool.
+ */
+export function pickPrioritizedRoomBoonOptions(
+  pool: readonly TalentId[],
+  color: string | null | undefined,
+  weapon: WeaponType,
+  abilityLoadout: AbilityLoadout | null | undefined,
+  count: number = 3,
+  rng: () => number = Math.random,
+): TalentId[] {
+  if (pool.length === 0) return [];
+  if (!isCoopRoomColor(String(color ?? '').toLowerCase())) {
+    return pickRandomDistinctFromPool(pool, count, rng);
+  }
+
+  const priorityPool = buildPrioritizedRoomBoonIdsForLoadout(pool, weapon, abilityLoadout);
+  const pickedPriority = pickRandomDistinctFromPool(priorityPool, count, rng);
+  const remainingCount = count - pickedPriority.length;
+
+  if (remainingCount <= 0) {
+    return pickedPriority;
+  }
+
+  const pickedSet = new Set(pickedPriority);
+  const fallbackPool = pool.filter((id) => !pickedSet.has(id) && !priorityPool.includes(id));
+  return [
+    ...pickedPriority,
+    ...pickRandomDistinctFromPool(fallbackPool, remainingCount, rng),
+  ];
 }
 
 /**

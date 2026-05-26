@@ -126,10 +126,12 @@ import {
   FAN_OF_KNIVES_PROJECTILE_LIFETIME_SEC,
   type FanOfKnivesFlourishTint,
 } from '@/utils/talents';
-import { StatSystem, StatPointData } from '@/utils/StatSystem';
+import { StatSystem, StatPointData, type PlayerStats } from '@/utils/StatSystem';
 import { ITEM_RARITY_COLORS, isItemRarity } from '@/utils/itemRarity';
 import { setGlobalAgilityStatPoints, setGlobalStrengthStatPoints } from '@/core/DamageCalculator';
 import { logJsHeapSnapshotDev } from '@/utils/coopMemoryDebug';
+
+const ZERO_PLAYER_STATS: PlayerStats = { strength: 0, stamina: 0, agility: 0, intellect: 0 };
 
 // Import our ECS systems
 import { Engine } from '@/core/Engine';
@@ -198,7 +200,6 @@ import { DamageNumberData } from '@/components/DamageNumbers';
 import { setGlobalCriticalRuneCount, setGlobalCritDamageRuneCount, setControlSystem } from '@/core/DamageCalculator';
 import Environment from '@/components/environment/Environment';
 import HexCombatArena, { HEX_ARENA_RADIUS } from '@/components/environment/HexCombatArena';
-import FogOfWar from '@/components/environment/FogOfWar';
 import { CoopMainArenaPortals } from '@/components/environment/CoopMainArenaPortals';
 import ThroneRoom, {
   COOP_THRONE_ROOM_RADIUS,
@@ -224,8 +225,7 @@ import ThroneRoom, {
 import CombatArenaPedestal from '@/components/environment/CombatArenaPedestal';
 import CastleWallCollision from '@/components/environment/CastleWallCollision';
 import PillarCollision from '@/components/environment/PillarCollision';
-import { FOG_GRID_SIZE, isEnemyVisible } from '@/utils/fogOfWarUtils';
-import { MAIN_ARENA_BOUNDS, MAIN_MAP_RADIUS, clampToMainArenaXZ } from '@/utils/mapConstants';
+import { MAIN_ARENA_HEX_RADIUS, MAIN_MAP_RADIUS, clampToMainArenaXZ } from '@/utils/mapConstants';
 import { COOP_MAIN_ENTRY_Z, rotationYTowardArenaCenter } from '@/utils/coopArenaLayout';
 import { MUSHROOM_COUNT, buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
 import { MUSHROOM_MAX_HP } from '@/utils/mushroomConstants';
@@ -854,6 +854,9 @@ export function CoopGameScene({
   const playersRef = useRef(players);
   playersRef.current = players;
 
+  const inventorySnapshotRef = useRef(inventory);
+  inventorySnapshotRef.current = inventory;
+
   const talentLoadoutRef = useRef(talentLoadout);
   const abilityLoadoutRef = useRef(abilityLoadout ?? null);
   useEffect(() => {
@@ -862,6 +865,14 @@ export function CoopGameScene({
   useEffect(() => {
     abilityLoadoutRef.current = abilityLoadout ?? null;
   }, [abilityLoadout]);
+
+  const effectiveCombatStats = useMemo(
+    (): PlayerStats =>
+      statPointData
+        ? StatSystem.getEffectiveStatsWithInventory(statPointData.stats, inventory)
+        : ZERO_PLAYER_STATS,
+    [inventory, statPointData],
+  );
 
   const roomBoomGhostTrailColor = useMemo(() => {
     if (shouldApplyInfernalDashTalent(talentLoadout)) return '#ff2f18';
@@ -886,7 +897,7 @@ export function CoopGameScene({
   const coopArenaClampBounds = useMemo(() => {
     if (inThroneRoom || inBossThroneArena) return COOP_THRONE_ROOM_RADIUS;
     if (isHexCombatArena) return HEX_ARENA_RADIUS;
-    return MAIN_ARENA_BOUNDS;
+    return MAIN_ARENA_HEX_RADIUS;
   }, [inThroneRoom, inBossThroneArena, isHexCombatArena]);
 
   const dimThroneLikeLighting = inThroneRoom || inBossThroneArena;
@@ -1064,8 +1075,11 @@ export function CoopGameScene({
     return false;
   }, []);
 
-  // Fog of war — persistent grid of explored map cells (written by FogOfWar, read for enemy visibility)
-  const exploredGridRef = useRef<Uint8Array>(new Uint8Array(FOG_GRID_SIZE * FOG_GRID_SIZE));
+  const isCoopEnemyVisibleForRender = useCallback(
+    (_enemyX: number, _enemyZ: number) => true,
+    [],
+  );
+
   const portalUseSentRef = useRef(false);
   /** `useFrame` must read latest portal offer (set on `game-started`), not a stale render closure. */
   const thronePortalOfferRef = useRef<string[]>([]);
@@ -1147,8 +1161,11 @@ export function CoopGameScene({
     }
   }, [coopMainArenaPortalPhase]);
 
-  // Layout: apply before paint so castle wall ECS + PhysicsSystem AABB stay in sync (avoids one
-  // frame where wall colliders exist but maze AABB sliding is still disabled).
+  useEffect(() => {
+    portalUseSentRef.current = false;
+  }, [coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq]);
+
+  // Layout: apply before paint so physics boundary mode matches the active arena shell.
   useLayoutEffect(() => {
     if (!engineRef.current || !gameStarted) return;
     const world = engineRef.current.getWorld();
@@ -1158,18 +1175,20 @@ export function CoopGameScene({
         ? COOP_THRONE_ROOM_RADIUS + 2
         : isHexCombatArena
           ? HEX_ARENA_RADIUS
-          : MAIN_MAP_RADIUS;
+          : MAIN_ARENA_HEX_RADIUS;
+    const mainHexCoopRoom = !inThroneRoom && !inBossThroneArena && !isHexCombatArena;
     phys?.setMapRadius(r);
-    phys?.setArenaBoundaryMode?.(isHexCombatArena ? 'hex' : (inThroneRoom || inBossThroneArena ? 'circle' : 'square'));
+    phys?.setArenaBoundaryMode?.(isHexCombatArena || mainHexCoopRoom ? 'hex' : 'circle');
     const throneObstacles = inThroneRoom ? getThronePrepPhysicsObstacles() : null;
-    const castleWallsOn = !inThroneRoom && !inBossThroneArena && !isHexCombatArena;
+    const castleWallsOn = false; // Main combat rooms use hex boundary projection; ECS wall boxes are projectile blockers.
     phys?.setCastleWallPhysicsEnabled(castleWallsOn);
-    phys?.setArenaBoundaryMode?.(isHexCombatArena ? 'hex' : (castleWallsOn ? 'square' : 'circle'));
+    phys?.setArenaBoundaryMode?.(isHexCombatArena || mainHexCoopRoom ? 'hex' : 'circle');
+    phys?.setTreeCollisionEnabled?.(!mainHexCoopRoom);
     phys?.setThronePillarObstacles(throneObstacles);
     phys?.setCornerMountainObstacles(null);
     controlSystemRef.current?.setPlayableRadius(r);
     controlSystemRef.current?.setCastleWallChargeCollision(castleWallsOn);
-    controlSystemRef.current?.setArenaBoundaryMode?.(isHexCombatArena ? 'hex' : (castleWallsOn ? 'square' : 'circle'));
+    controlSystemRef.current?.setArenaBoundaryMode?.(isHexCombatArena || (!inThroneRoom && !inBossThroneArena) ? 'hex' : 'circle');
     controlSystemRef.current?.setThroneChargePillars(throneObstacles);
     controlSystemRef.current?.setChargeCornerMountains(null);
   }, [inThroneRoom, inBossThroneArena, isHexCombatArena, gameStarted, engineReady]);
@@ -1180,9 +1199,6 @@ export function CoopGameScene({
       if (process.env.NODE_ENV === 'development') {
         logJsHeapSnapshotDev('Coop: left prep throne (after portal) — JS heap snapshot');
       }
-      // Clear in-place: FogOfWar's DataTexture keeps a reference to the original buffer; assigning
-      // a new Uint8Array would desync GPU fog from gameplay and leak throne "explored" regions.
-      exploredGridRef.current.fill(0);
       if (playerEntityRef.current !== null && engineRef.current && socket?.id) {
         const me = players.get(socket.id);
         if (me) {
@@ -1198,11 +1214,6 @@ export function CoopGameScene({
     }
     prevInThroneRef.current = inThroneRoom;
   }, [inThroneRoom, players, socket?.id, coopArenaClampBounds]);
-
-  useEffect(() => {
-    if (coopCombatArenaEnterSeq === 0) return;
-    exploredGridRef.current.fill(0);
-  }, [coopCombatArenaEnterSeq]);
 
   /** `combat-arena-entered` (server teleports) or `coop-main-arena-intermission` (server state sync, no entry snap); align local ECS. */
   useEffect(() => {
@@ -1476,7 +1487,11 @@ export function CoopGameScene({
           : coopEnemyDamageMeta;
         damageEnemy(targetId, damage, socket.id, meta);
         if (isCritical && shouldApplyBloodleechTalent(talentLoadout)) {
-          const strengthHeal = Math.max(0, Math.floor(playerStatDataRef.current?.stats.strength ?? 0));
+          const str = StatSystem.getEffectiveStatsWithInventory(
+            playerStatDataRef.current?.stats ?? ZERO_PLAYER_STATS,
+            inventorySnapshotRef.current,
+          ).strength;
+          const strengthHeal = Math.max(0, Math.floor(str));
           const world = engineRef.current?.getWorld();
           const playerEntity = playerEntityRef.current != null ? world?.getEntity(playerEntityRef.current) : undefined;
           const health = playerEntity?.getComponent(Health);
@@ -1965,7 +1980,17 @@ export function CoopGameScene({
   }
   const [knightFrostProjectiles, setKnightFrostProjectiles] = useState<KnightFrostProjectileState[]>([]);
 
-  const [knightDeathGraspProjectiles, setKnightDeathGraspProjectiles] = useState<KnightFrostProjectileState[]>([]);
+  interface KnightDeathGraspProjectileState extends KnightFrostProjectileState {
+    telegraphId?: string;
+  }
+  const [knightDeathGraspProjectiles, setKnightDeathGraspProjectiles] = useState<KnightDeathGraspProjectileState[]>([]);
+
+  // interface KnightDeathGraspTelegraphState {
+  //   id: string;
+  //   start: Vector3;
+  //   end: Vector3;
+  // }
+  // const [knightDeathGraspTelegraphs, setKnightDeathGraspTelegraphs] = useState<KnightDeathGraspTelegraphState[]>([]);
 
   interface KnightFrostImpactState {
     id: string;
@@ -2017,7 +2042,8 @@ export function CoopGameScene({
   }
   const [viperArrows, setViperArrows] = useState<ViperArrowState[]>([]);
 
-  // Viper ground telegraph (red strip) — last ~400ms before arrow release; matches server-aim 20m XZ
+  // Viper-only ground telegraph strip. Damage timing is server-authoritative and follows the Viper arrow flight,
+  // while tentacle-spine strips use their own `tentacleSpineTelegraphs` state and constants below.
   interface ViperShotTelegraphState {
     id: string;
     start: Vector3;
@@ -2673,7 +2699,11 @@ export function CoopGameScene({
         durationMs: GLACIAL_DASH_FREEZE_DURATION_MS,
       });
     } else if (payload.variant === 'mending') {
-      const staminaHeal = Math.max(0, Math.floor(playerStatDataRef.current?.stats.stamina ?? 0));
+      const sta = StatSystem.getEffectiveStatsWithInventory(
+        playerStatDataRef.current?.stats ?? ZERO_PLAYER_STATS,
+        inventorySnapshotRef.current,
+      ).stamina;
+      const staminaHeal = Math.max(0, Math.floor(sta));
       const health = sourceEntity?.getComponent(Health);
       if (health && staminaHeal > 0 && health.heal(staminaHeal)) {
         updatePlayerHealth(health.currentHealth, health.maxHealth);
@@ -3072,11 +3102,11 @@ export function CoopGameScene({
 
     if (!statPointData) return;
 
-    setGlobalAgilityStatPoints(statPointData.stats.agility);
+    setGlobalAgilityStatPoints(effectiveCombatStats.agility);
 
     const spellbladeActive = shouldApplySpellbladeTalent(talentLoadout, abilityLoadout ?? null);
     const parryActive = shouldApplyParryTalent(talentLoadout, abilityLoadout ?? null);
-    let statsForShield = { ...statPointData.stats };
+    let statsForShield = { ...effectiveCombatStats };
     if (spellbladeActive) {
       statsForShield = { ...statsForShield, intellect: statsForShield.intellect + SPELLBLADE_INTELLECT_BONUS };
     }
@@ -3095,7 +3125,7 @@ export function CoopGameScene({
       const health = playerEntity.getComponent(Health);
       if (health) {
         const baseMaxHealth = ExperienceSystem.getMaxHealthForLevel(playerLevel);
-        const staminaBonus = StatSystem.getBonusMaxHealth(statPointData.stats);
+        const staminaBonus = StatSystem.getBonusMaxHealth(effectiveCombatStats);
         const newMaxHealth = baseMaxHealth + staminaBonus;
         if (health.maxHealth !== newMaxHealth) {
           health.maxHealth = newMaxHealth;
@@ -3110,7 +3140,7 @@ export function CoopGameScene({
         shieldComp.currentShield = Math.min(newMaxShield, shieldComp.currentShield + gained);
       }
     }
-  }, [statPointData, playerLevel, talentLoadout, abilityLoadout]);
+  }, [statPointData, playerLevel, talentLoadout, abilityLoadout, effectiveCombatStats]);
 
   const [weaponState, setWeaponState] = useState({
     currentWeapon: WeaponType.NONE,
@@ -3310,8 +3340,8 @@ export function CoopGameScene({
   useEffect(() => {
     if (!socket) return;
 
-    // How long the draw-bow animation plays before the arrow is released.
-    // This should match the viper_drawbow.glb clip length (approx 1 second).
+    // Viper-only draw/strip timing. The backend adds projectile flight time before applying Viper arrow damage.
+    // Tentacle-spine warning strips are scheduled by `handleTentacleSpineWindup` with separate constants.
     const VIPER_DRAWBOW_DURATION = 1000;
     const VIPER_GROUND_TELEGRAPH_LEAD_MS = 400;
     const VIPER_TELEGRAPH_GROUND_CLEARANCE = 0.25;
@@ -3616,9 +3646,6 @@ export function CoopGameScene({
                     ...(entropicConfig.curveDirection
                       ? { curveDirection: entropicConfig.curveDirection }
                       : {}),
-                    ...(Array.isArray(entropicConfig.visualOnlyCurveDirections)
-                      ? { visualOnlyCurveDirections: entropicConfig.visualOnlyCurveDirections }
-                      : {}),
                     isCryoflame: isCryoflame // Pass Cryoflame state to projectile system
                   }
                 );
@@ -3780,7 +3807,7 @@ export function CoopGameScene({
                   position,
                   direction,
                   attackerEntityId,
-                  { speed: 35, damage: 25, lifetime: 3, maxDistance: 25, piercing: false, opacity: 0.8, projectileType: 'burst_arrow', sourcePlayerId: data.playerId }
+                  { speed: 35, damage: 25, lifetime: 3, maxDistance: 22, piercing: false, opacity: 0.8, projectileType: 'burst_arrow', sourcePlayerId: data.playerId }
                 );
                 
                 // Mark as burst arrow for proper visual rendering (teal color)
@@ -5288,11 +5315,25 @@ export function CoopGameScene({
     }) => {
       const start = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
       const end = new Vector3(data.endPosition.x, data.endPosition.y, data.endPosition.z);
+      const projectileId = `knight-dg-proj-${data.knightId}-${Date.now()}`;
+      // const telegraphId = `knight-dg-telegraph-${data.knightId}-${Date.now()}`;
+      // const groundY = data.startPosition.y - 1.5 + 0.2;
+      // const stripStart = new Vector3(data.startPosition.x, groundY, data.startPosition.z);
+      // const stripEnd = new Vector3(data.endPosition.x, groundY, data.endPosition.z);
       window.audioSystem?.playEnemyRunebladeVoidGraspSound(start);
+      // setKnightDeathGraspTelegraphs(prev => [
+      //   ...prev,
+      //   {
+      //     id: telegraphId,
+      //     start: stripStart,
+      //     end: stripEnd,
+      //   },
+      // ]);
       setKnightDeathGraspProjectiles(prev => [
         ...prev,
         {
-          id: `knight-dg-proj-${data.knightId}-${Date.now()}`,
+          id: projectileId,
+          // telegraphId,
           startPosition: start.clone(),
           endPosition: end.clone(),
           travelMs: data.travelMs,
@@ -6087,6 +6128,32 @@ export function CoopGameScene({
       }
     };
 
+    const enqueueLocalPickupFloatingNumber = (
+      amount: number,
+      damageType: 'experience_gain' | 'gold_pickup',
+    ) => {
+      if (!engineRef.current || playerEntityRef.current === null) return;
+      const world = engineRef.current.getWorld();
+      const combatSystem = world.getSystem(CombatSystem);
+      const localEntity = world.getEntity(playerEntityRef.current);
+      const transform = localEntity?.getComponent(Transform);
+      const damageNumberManager = combatSystem?.getDamageNumberManager();
+      if (!damageNumberManager?.addDamageNumber || !transform) return;
+      const pos = transform.position.clone();
+      pos.y += 1.2;
+      damageNumberManager.addDamageNumber(
+        amount,
+        false,
+        pos,
+        damageType,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        'pickup',
+      );
+    };
+
     const handleGoldPickedUp = (data: {
       dropId: string;
       drop?: GoldDrop;
@@ -6096,6 +6163,8 @@ export function CoopGameScene({
       if (!socket?.id) return;
       const gained = (data.allocations || []).find(a => a.playerId === socket.id)?.amount || 0;
       if (gained <= 0) return;
+
+      enqueueLocalPickupFloatingNumber(gained, 'gold_pickup');
 
       const dropPos = data.drop?.position;
       if (!dropPos) return;
@@ -6131,7 +6200,7 @@ export function CoopGameScene({
 
   const handlePlayerHealing = (data: any) => {
       const { healingAmount, healingType, position, targetPlayerId, sourcePlayerId } = data;
-      const lesserHealTypes = new Set(['smite', 'flurry', 'healing_stream', 'viper_sting']);
+      const lesserHealTypes = new Set(['smite', 'flurry', 'healing_stream', 'viper_sting', 'merchant']);
       if (lesserHealTypes.has(healingType) && position) {
         (window as any).audioSystem?.playLesserHealSound?.(
           new Vector3(position.x, position.y, position.z),
@@ -6181,6 +6250,9 @@ export function CoopGameScene({
 
       // Only award EXP to the local player
       if (playerId === socket?.id) {
+        if (typeof experienceGained === 'number' && experienceGained > 0) {
+          enqueueLocalPickupFloatingNumber(experienceGained, 'experience_gain');
+        }
         setPlayerExperience(prev => {
           const newExp = prev + experienceGained;
 
@@ -6839,6 +6911,7 @@ export function CoopGameScene({
     socket.on('tentacle-spine-windup', handleTentacleSpineWindup);
     socket.on('tentacle-spine-slam', handleTentacleSpineSlamSocket);
     socket.on('knight-attack', handleKnightAttack);
+    socket.on('knight-spin-hit', handleKnightAttack);
     socket.on('knight-smite',  handleKnightSmite);
     socket.on('allied-knight-smite-impact', handleAlliedKnightSmiteImpact);
     socket.on('allied-healer-greater-heal', handleAlliedHealerGreaterHeal);
@@ -7136,6 +7209,7 @@ export function CoopGameScene({
       socket.off('tentacle-spine-windup', handleTentacleSpineWindup);
       socket.off('tentacle-spine-slam', handleTentacleSpineSlamSocket);
       socket.off('knight-attack', handleKnightAttack);
+      socket.off('knight-spin-hit', handleKnightAttack);
       socket.off('knight-smite',  handleKnightSmite);
       socket.off('allied-knight-smite-impact', handleAlliedKnightSmiteImpact);
       socket.off('allied-healer-greater-heal', handleAlliedHealerGreaterHeal);
@@ -7950,6 +8024,40 @@ export function CoopGameScene({
         }
       }
 
+      // Throne prep: ground gold autocollect (main-arena loop requires combatArenaActive)
+      if (
+        inThroneRoom &&
+        gameMode === 'coop' &&
+        playerEntity &&
+        socket?.id &&
+        !isChatOpenRef.current &&
+        !throneAbilityModalOpenRef.current
+      ) {
+        const transformPrepGold = playerEntity.getComponent(Transform);
+        if (transformPrepGold) {
+          const px = transformPrepGold.position.x;
+          const pz = transformPrepGold.position.z;
+          const rPick = COOP_GROUND_ITEM_PICKUP_RADIUS;
+          const rPick2 = rPick * rPick;
+          let nearestGoldPrep: { id: string; d2: number } | null = null;
+          for (const drop of Array.from(goldDropsRef.current.values())) {
+            const dx = px - drop.position.x;
+            const dz = pz - drop.position.z;
+            const d2 = dx * dx + dz * dz;
+            if (d2 <= rPick2 && (!nearestGoldPrep || d2 < nearestGoldPrep.d2)) {
+              nearestGoldPrep = { id: drop.id, d2 };
+            }
+          }
+          if (
+            nearestGoldPrep &&
+            !pendingGoldAutoPickupRef.current.has(nearestGoldPrep.id)
+          ) {
+            pendingGoldAutoPickupRef.current.add(nearestGoldPrep.id);
+            pickupGoldDropRef.current(nearestGoldPrep.id);
+          }
+        }
+      }
+
       // Main arena: pedestal X-interact + X-press portal entry
       if (
         !inThroneRoom &&
@@ -7982,12 +8090,6 @@ export function CoopGameScene({
             pedDx * pedDx + pedDz * pedDz < pedR2
           ) {
             const rewardKind = coopClearedRoomKindRef.current ?? coopCurrentRoomKindRef.current;
-            if (rewardKind === 'healing') {
-              const health = playerEntity.getComponent(Health);
-              if (health && health.heal(100)) {
-                updatePlayerHealth(health.currentHealth, health.maxHealth);
-              }
-            }
             onCombatArenaPedestalInteractRef.current?.(rewardKind);
           } else if (
             xEdge &&
@@ -9127,8 +9229,8 @@ export function CoopGameScene({
 
   React.useEffect(() => {
     if (!controlSystemRef.current || !statPointData || !engineReady) return;
-    controlSystemRef.current.setAllocatedPlayerStats(statPointData.stats);
-  }, [statPointData, engineReady]);
+    controlSystemRef.current.setAllocatedPlayerStats(effectiveCombatStats);
+  }, [engineReady, statPointData, effectiveCombatStats]);
 
   // Expose damage number completion handler for parent component
   useEffect(() => {
@@ -9207,13 +9309,6 @@ export function CoopGameScene({
                 />
               )}
 
-              {combatArenaActive && !inThroneRoom && !inBossThroneArena && !isHexCombatArena && (
-                <FogOfWar
-                  playerPositionRef={realTimePlayerPositionRef}
-                  exploredGridRef={exploredGridRef}
-                />
-              )}
-
               {mushroomEruptionFx.map((fx) => (
                 <MushroomEruptionVfx
                   key={fx.id}
@@ -9223,7 +9318,10 @@ export function CoopGameScene({
               ))}
 
               {engineRef.current?.getWorld() && !isHexCombatArena && (
-                <CastleWallCollision world={engineRef.current.getWorld()} />
+                <CastleWallCollision
+                  world={engineRef.current.getWorld()}
+                  enabled={!inThroneRoom && !inBossThroneArena && !isHexCombatArena}
+                />
               )}
               {combatArenaActive && coopMainArenaPortalPhase && (
                 <CoopMainArenaPortals
@@ -9670,7 +9768,7 @@ export function CoopGameScene({
         if (!entityId) return null; // Wait for ECS sync
 
         // Hide boss in undiscovered camps
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
 
         // Check if this boss is currently taunted
         const isTaunted = enemyTauntEffects.some(effect => effect.enemyId === enemy.id);
@@ -9707,7 +9805,7 @@ export function CoopGameScene({
       {/* Boss 2 Enemy Renderer (Co-op Mode) */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.isDying || enemy.type !== 'boss2') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
         const isTaunted = enemyTauntEffects.some(effect => effect.enemyId === enemy.id);
 
         return (
@@ -9735,10 +9833,7 @@ export function CoopGameScene({
       {/* Boss 3 — Weaver Nexus (Co-op) */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.isDying || enemy.type !== 'boss3') return null;
-        if (
-          !isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)
-        )
-          return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
         const isTaunted = enemyTauntEffects.some(effect => effect.enemyId === enemy.id);
 
         return (
@@ -9767,7 +9862,7 @@ export function CoopGameScene({
       {Array.from(enemies.values()).map(enemy => {
         // Only render boss-skeleton type enemies
         if (enemy.isDying || enemy.type !== 'boss-skeleton') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
 
         return (
           <SummonedBossSkeleton
@@ -9785,11 +9880,8 @@ export function CoopGameScene({
       {/* Knights (Co-op Mode) — Mixamo animated */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'knight') return null;
-        if (
-          !isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)
-        ) {
-          return null;
-        }
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        const preserveThroneLighting = !!enemy.throneKnight;
 
         return (
           <KnightRenderer
@@ -9802,6 +9894,8 @@ export function CoopGameScene({
             isDying={enemy.isDying}
             soulType={enemy.soulType as 'green' | 'red' | 'blue' | 'purple' | undefined}
             campType={enemy.campType}
+            showSoulEffect={!preserveThroneLighting}
+            castShadow={!preserveThroneLighting}
             staggerBuildup={enemy.staggerBuildup ?? 0}
           />
         );
@@ -9810,11 +9904,7 @@ export function CoopGameScene({
       {/* Allied knight — persistent co-op tank companion */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'allied-knight') return null;
-        if (
-          !isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)
-        ) {
-          return null;
-        }
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
 
         return (
           <AlliedKnightRenderer
@@ -9834,11 +9924,7 @@ export function CoopGameScene({
       {/* Allied healer — persistent co-op support companion */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'allied-healer') return null;
-        if (
-          !isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)
-        ) {
-          return null;
-        }
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
 
         return (
           <AlliedHealerRenderer
@@ -9923,7 +10009,12 @@ export function CoopGameScene({
           startPosition={p.startPosition}
           endPosition={p.endPosition}
           travelMs={p.travelMs}
-          onComplete={() => setKnightDeathGraspProjectiles(prev => prev.filter(x => x.id !== p.id))}
+          onComplete={() => {
+            setKnightDeathGraspProjectiles(prev => prev.filter(x => x.id !== p.id));
+            // if (p.telegraphId) {
+            //   setKnightDeathGraspTelegraphs(prev => prev.filter(x => x.id !== p.telegraphId));
+            // }
+          }}
         />
       ))}
 
@@ -9938,7 +10029,7 @@ export function CoopGameScene({
       {/* Shades (Co-op Mode) — ranged throw attackers */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'shade') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
         return (
           <ShadeRenderer
             key={enemy.id}
@@ -10004,7 +10095,7 @@ export function CoopGameScene({
       {/* Warlocks (Co-op Mode) — stationary spellcasters that blink and launch chaos orbs */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'warlock') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <WarlockRenderer
@@ -10025,7 +10116,7 @@ export function CoopGameScene({
       {/* Templars (Co-op Mode) — heavy melee fighters with alternating attack animations */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'templar') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <TemplarRenderer
@@ -10108,7 +10199,7 @@ export function CoopGameScene({
       {/* Vipers (Co-op Mode) — ranged archers that draw and release energy arrows */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'viper') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <ViperRenderer
@@ -10129,6 +10220,17 @@ export function CoopGameScene({
       {viperShotTelegraphs.map(t => (
         <ViperShotTelegraphLine key={t.id} start={t.start} end={t.end} />
       ))}
+
+      {/* {knightDeathGraspTelegraphs.map(t => (
+        <ViperShotTelegraphLine
+          key={t.id}
+          start={t.start}
+          end={t.end}
+          lineWidth={0.6}
+          color="#ff3333"
+          yOffset={0.12}
+        />
+      ))} */}
 
       {tentacleSpineTelegraphs.map(t => (
         <ViperShotTelegraphLine
@@ -10163,7 +10265,7 @@ export function CoopGameScene({
       {/* Weavers (Co-op Mode) — support spellcasters that heal allies and summon ghouls */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'weaver') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
         return (
           <WeaverRenderer
             key={enemy.id}
@@ -10251,7 +10353,7 @@ export function CoopGameScene({
       {/* Ghouls (Co-op Mode) — weaver summons; melee undead creatures */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'ghoul') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
         return (
           <GhoulRenderer
             key={enemy.id}
@@ -10269,7 +10371,7 @@ export function CoopGameScene({
       {/* Tentacle spine — environmental trap (no HP bar) */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'tentacle-spine') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
         const fx = tentacleSpineFxById.get(enemy.id);
         return (
           <TentacleSpineRenderer
@@ -10288,7 +10390,7 @@ export function CoopGameScene({
       {/* Martyrs — suicide bombers */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'martyr') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
         return (
           <MartyrRenderer
             key={enemy.id}
@@ -10306,7 +10408,7 @@ export function CoopGameScene({
       {/* Player zombies — INFESTED STRIKE (Wraith Strike kills) */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'player-zombie') return null;
-        if (!isEnemyVisible(enemy.position.x, enemy.position.z, playerPosition.x, playerPosition.z, exploredGridRef.current)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
         return (
           <ZombieRenderer
             key={enemy.id}

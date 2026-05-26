@@ -12,7 +12,7 @@ import { StatSystem, StatPointData, StatKey, PlayerStats } from '@/utils/StatSys
 import type { ItemRarity } from '@/utils/itemRarity';
 import { Vector3 } from '@/utils/three-exports';
 
-export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'healing' | 'boss';
+export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss';
 export type CoopTerrainTheme = 'purple' | 'blue' | 'green';
 
 export type BroadcastPlayerAttackAnimationData = {
@@ -135,6 +135,8 @@ export interface Enemy {
   health: number;
   maxHealth: number;
   isDying?: boolean;
+  /** Co-op throne prep: timer-spawned hostile knights (server clears on arena transition). */
+  throneKnight?: boolean;
   /** Co-op throne prep: which model to show for `training-dummy` */
   dummyVisual?: 'knight';
   soulType?: 'green' | 'red' | 'blue' | 'purple' | 'yellow';
@@ -195,6 +197,14 @@ export interface InventoryItem {
   pickedUpAt: number;
   statBonus?: number;
   rarity?: ItemRarity;
+}
+
+export interface MerchantStockItem {
+  id: string;
+  kind: 'boss_drop';
+  cost: number;
+  sold?: boolean;
+  item: Omit<DroppedItem, 'position' | 'droppedAt'> & Partial<Pick<DroppedItem, 'position' | 'droppedAt'>>;
 }
 
 export interface GoldDrop {
@@ -272,6 +282,8 @@ interface MultiplayerContextType {
   enemies: Map<string, Enemy>;
   killCount: number;
   skeletonKillCount: number;
+  /** Co-op wave clear target — from server `skeleton-kill-count-updated` (`required`). */
+  skeletonKillRequired: number;
   gameStarted: boolean;
   /** Co-op: false while the party is in the throne prep room (no enemies). True once the portal is used. */
   combatArenaActive: boolean;
@@ -420,11 +432,14 @@ interface MultiplayerContextType {
   droppedItems: Map<string, DroppedItem>;
   goldDrops: Map<string, GoldDrop>;
   inventory: InventoryItem[];
+  merchantInventory: MerchantStockItem[];
   pickupItem: (itemId: string) => void;
   pickupGoldDrop: (dropId: string) => void;
 
   // Merchant purchase actions
   purchaseItem: (itemId: string, cost: number, currency: 'essence' | 'gold') => boolean;
+  purchaseMerchantItem: (stockId: string) => void;
+  purchaseMerchantHeal: () => void;
 
   // Chat actions
   sendChatMessage: (message: string) => void;
@@ -450,7 +465,7 @@ interface MultiplayerProviderProps {
 }
 
 const VALID_CAMP_KEYS = new Set(['red', 'blue', 'green', 'purple']);
-const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'healing', 'boss']);
+const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'merchant', 'boss']);
 const VALID_COOP_TERRAIN_THEMES = new Set(['purple', 'blue', 'green']);
 
 function normalizeThronePortalLayout(v: unknown): 'rim' | 'center' {
@@ -464,7 +479,19 @@ function normalizeCoopMainArenaPhase(v: unknown): 'pick_wave2' | 'pick_boss' | '
 
 function normalizeCoopRoomKind(v: unknown): CoopRoomKind | null {
   const k = String(v || '').toLowerCase();
+  if (k === 'healing') return 'merchant';
   return VALID_COOP_ROOM_KINDS.has(k) ? (k as CoopRoomKind) : null;
+}
+
+function normalizeMerchantInventory(v: unknown): MerchantStockItem[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((entry): entry is MerchantStockItem => (
+    entry != null &&
+    typeof entry === 'object' &&
+    typeof (entry as MerchantStockItem).id === 'string' &&
+    typeof (entry as MerchantStockItem).cost === 'number' &&
+    (entry as MerchantStockItem).item != null
+  ));
 }
 
 function normalizeCoopTerrainTheme(v: unknown): CoopTerrainTheme {
@@ -514,6 +541,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [enemies, setEnemies] = useState<Map<string, Enemy>>(new Map());
   const [killCount, setKillCount] = useState(0);
   const [skeletonKillCount, setSkeletonKillCount] = useState(0);
+  const [skeletonKillRequired, setSkeletonKillRequired] = useState(8);
   const [gameStarted, setGameStarted] = useState(false);
   const [combatArenaActive, setCombatArenaActive] = useState(true);
   const [gameMode, setGameMode] = useState<'multiplayer' | 'coop'>('multiplayer');
@@ -556,6 +584,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [droppedItems, setDroppedItems] = useState<Map<string, DroppedItem>>(new Map());
   const [goldDrops, setGoldDrops] = useState<Map<string, GoldDrop>>(new Map());
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const inventoryRef = useRef<InventoryItem[]>([]);
+  inventoryRef.current = inventory;
+  const [merchantInventory, setMerchantInventory] = useState<MerchantStockItem[]>([]);
 
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
   /** Deferred `io()` so React Strict Mode’s mount→unmount→mount does not disconnect a half-open socket. */
@@ -661,9 +692,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCampTypes([]);
       setCoopTerrainTheme('purple');
       setSkeletonKillCount(0);
+      setSkeletonKillRequired(8);
       setDroppedItems(new Map());
       setGoldDrops(new Map());
       setInventory([]);
+      setMerchantInventory([]);
 
       // Clear heartbeat
       if (heartbeatInterval.current) {
@@ -745,6 +778,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopTerrainTheme(normalizeCoopTerrainTheme((data as { coopTerrainTheme?: unknown }).coopTerrainTheme));
       setCoopCurrentRoomKind(normalizeCoopRoomKind((data as { coopCurrentRoomKind?: string }).coopCurrentRoomKind));
       setCoopClearedRoomKind(normalizeCoopRoomKind((data as { coopClearedRoomKind?: string }).coopClearedRoomKind));
+      setMerchantInventory(normalizeMerchantInventory((data as { merchantInventory?: unknown }).merchantInventory));
       const ms = (data as { mushroomState?: { health?: number[]; maxHealth?: number } }).mushroomState;
       if (ms?.health && Array.isArray(ms.health)) {
         setMushroomState({ health: [...ms.health], maxHealth: ms.maxHealth ?? 10 });
@@ -1068,8 +1102,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setKillCount(data.killCount);
     });
 
-    addEventHandler('skeleton-kill-count-updated', (data) => {
+    addEventHandler('skeleton-kill-count-updated', (data: {
+      skeletonKillCount: number;
+      required?: number;
+    }) => {
       setSkeletonKillCount(data.skeletonKillCount);
+      const r = Number(data.required);
+      if (Number.isFinite(r) && r > 0) {
+        setSkeletonKillRequired(Math.floor(r));
+      }
     });
 
     // Item drop event handlers
@@ -1169,6 +1210,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
+    addEventHandler('merchant-inventory-updated', (data: { inventory?: unknown }) => {
+      setMerchantInventory(normalizeMerchantInventory(data?.inventory));
+    });
+
+    addEventHandler('merchant-purchase-failed', (data: { reason?: string }) => {
+      console.warn('Merchant purchase failed:', data?.reason || 'unknown');
+    });
+
     addEventHandler('game-started', (data: any) => {
       cancelPendingEnemyRemovals();
       setGameStarted(true);
@@ -1224,6 +1273,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopTerrainTheme(normalizeCoopTerrainTheme(data?.coopTerrainTheme));
       setCoopCurrentRoomKind(normalizeCoopRoomKind(data?.coopCurrentRoomKind));
       setCoopClearedRoomKind(normalizeCoopRoomKind(data?.coopClearedRoomKind));
+      setMerchantInventory(normalizeMerchantInventory(data?.merchantInventory));
       if (data?.mushroomState?.health && Array.isArray(data.mushroomState.health)) {
         setMushroomState({
           health: [...data.mushroomState.health],
@@ -1267,6 +1317,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       } else {
         setCoopClearedRoomKind(normalizeCoopRoomKind(data?.coopClearedRoomColor));
       }
+      setMerchantInventory(normalizeMerchantInventory(data?.merchantInventory));
       if (data?.players && Array.isArray(data.players)) {
         setPlayers((prev) => {
           const next = new Map(prev);
@@ -1310,6 +1361,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopTerrainTheme(normalizeCoopTerrainTheme(data?.coopTerrainTheme));
       setCoopCurrentRoomKind(normalizeCoopRoomKind(data?.coopCurrentRoomKind));
       setCoopClearedRoomKind(null);
+      setMerchantInventory(normalizeMerchantInventory(data?.merchantInventory));
       const transitionId = data?.coopCombatTransitionId != null
         ? Number(data.coopCombatTransitionId)
         : NaN;
@@ -1508,6 +1560,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setEnemies(new Map());
       setCampTypes([]);
       setCoopTerrainTheme('purple');
+      setDroppedItems(new Map());
+      setGoldDrops(new Map());
+      setInventory([]);
+      setMerchantInventory([]);
 
       // Clear heartbeat
       if (heartbeatInterval.current) {
@@ -1566,6 +1622,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setEnemies(new Map());
     setKillCount(0);
     setSkeletonKillCount(0);
+    setSkeletonKillRequired(8);
     setGameStarted(false);
     setCombatArenaActive(true);
     setGameMode('multiplayer');
@@ -1585,6 +1642,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setDroppedItems(new Map());
     setGoldDrops(new Map());
     setInventory([]);
+    setMerchantInventory([]);
     setSelectedWeaponsState({ primary: WeaponType.NONE, secondary: WeaponType.NONE });
     setAbilityLoadoutState(getDefaultLoadout());
     }
@@ -1991,26 +2049,27 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         level
       });
 
-      // Update skill points and stat points when leveling up
-      updateSkillPointsForLevel(level);
-      updateStatPointsForLevel(level);
+      setSkillPointData((prev) => SkillPointSystem.updateSkillPointsForLevel(prev, level));
+      setStatPointData((prev) =>
+        StatSystem.updateStatPointsForLevel(prev, level, inventoryRef.current),
+      );
     }
-  }, [socket, currentRoomId, gameMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [socket, currentRoomId]);
 
   // Skill point system functions
   const unlockAbility = useCallback((unlock: AbilityUnlock) => {
-    try {
-      const newSkillPointData = SkillPointSystem.unlockAbility(skillPointData, unlock.weaponType, unlock.abilityKey, unlock.weaponSlot);
-      setSkillPointData(newSkillPointData);
-    } catch (error) {
-      // console.error('Failed to unlock ability:', error);
-    }
-  }, [skillPointData]);
+    setSkillPointData((prev) => {
+      try {
+        return SkillPointSystem.unlockAbility(prev, unlock.weaponType, unlock.abilityKey, unlock.weaponSlot);
+      } catch {
+        return prev;
+      }
+    });
+  }, []);
 
   const updateSkillPointsForLevel = useCallback((level: number) => {
-    const newSkillPointData = SkillPointSystem.updateSkillPointsForLevel(skillPointData, level);
-    setSkillPointData(newSkillPointData);
-  }, [skillPointData]);
+    setSkillPointData((prev) => SkillPointSystem.updateSkillPointsForLevel(prev, level));
+  }, []);
 
   const grantSkillPoints = useCallback((amount: number) => {
     setSkillPointData((prev) => SkillPointSystem.grantSkillPoints(prev, amount));
@@ -2018,17 +2077,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
   const allocateStatPoint = useCallback((stat: StatKey) => {
     try {
-      const newStatPointData = StatSystem.allocateStat(statPointData, stat);
-      setStatPointData(newStatPointData);
+      setStatPointData((prev) => StatSystem.allocateStat(prev, stat));
     } catch {
       // No points available
     }
-  }, [statPointData]);
+  }, []);
 
   const updateStatPointsForLevel = useCallback((level: number) => {
-    const newStatPointData = StatSystem.updateStatPointsForLevel(statPointData, level);
-    setStatPointData(newStatPointData);
-  }, [statPointData]);
+    setStatPointData((prev) =>
+      StatSystem.updateStatPointsForLevel(prev, level, inventoryRef.current),
+    );
+  }, []);
 
   const grantStatPoints = useCallback((amount: number) => {
     setStatPointData((prev) => StatSystem.grantStatPoints(prev, amount));
@@ -2083,6 +2142,21 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     return true;
   }, [players, socket, currentRoomId]);
 
+  const purchaseMerchantItem = useCallback((stockId: string) => {
+    if (!socket || !currentRoomId) return;
+    socket.emit('coop-merchant-buy-item', {
+      roomId: currentRoomId,
+      stockId,
+    });
+  }, [socket, currentRoomId]);
+
+  const purchaseMerchantHeal = useCallback(() => {
+    if (!socket || !currentRoomId) return;
+    socket.emit('coop-merchant-buy-heal', {
+      roomId: currentRoomId,
+    });
+  }, [socket, currentRoomId]);
+
   // Chat functions
   const sendChatMessage = useCallback((message: string) => {
     if (!socket || !currentRoomId || !socket.id) return;
@@ -2135,6 +2209,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     enemies,
     killCount,
     skeletonKillCount,
+    skeletonKillRequired,
     gameStarted,
     combatArenaActive,
     gameMode,
@@ -2203,9 +2278,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     updateStatPointsForLevel,
     grantStatPoints,
     purchaseItem,
+    purchaseMerchantItem,
+    purchaseMerchantHeal,
     droppedItems,
     goldDrops,
     inventory,
+    merchantInventory,
     pickupItem,
     pickupGoldDrop,
     chatMessages,

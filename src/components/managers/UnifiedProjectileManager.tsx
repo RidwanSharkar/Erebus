@@ -32,8 +32,6 @@ function crossentropyThemeFromUserData(userData: Record<string, unknown>): Cross
   return 'default';
 }
 
-const ENTROPIC_VISUAL_ONLY_LIFETIME_SEC = 1.35;
-
 // Data interfaces for each projectile type
 interface ProjectileData {
   id: number;
@@ -72,17 +70,6 @@ interface ProjectileData {
   crossentropyPlague?: boolean;
   /** When the ECS entity despawns, R3F clock elapsed — trail fades out visually only. */
   trailFadeOutStartElapsed?: number;
-}
-
-interface EntropicVisualBoltData {
-  id: number;
-  position: Vector3;
-  direction: Vector3;
-  isCryoflame?: boolean;
-  colorVariant?: string;
-  entropicBoltTalent?: ProjectileData['entropicBoltTalent'];
-  curveDirection?: ProjectileData['curveDirection'];
-  createdAtElapsed: number;
 }
 
 interface SwordProjectileData {
@@ -144,7 +131,6 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
     [],
   );
   const [crossentropyMeteors, setCrossentropyMeteors] = useState<CrossentropyMeteorData[]>([]);
-  const [visualEntropicBolts, setVisualEntropicBolts] = useState<EntropicVisualBoltData[]>([]);
 
   // Counters for unique IDs
   const crossentropyIdCounter = useRef(0);
@@ -507,64 +493,6 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
       }
     }
 
-    const entropicVisualEvents = world.getEvents?.('entropicBoltVisual') || [];
-    const liveVisualEntropicBolts = visualEntropicBolts.filter(
-      (bolt) => currentTime - bolt.createdAtElapsed < ENTROPIC_VISUAL_ONLY_LIFETIME_SEC,
-    );
-    if (entropicVisualEvents.length > 0) {
-      world.clearEvents?.('entropicBoltVisual');
-      for (const raw of entropicVisualEvents) {
-        const position =
-          raw != null &&
-          typeof raw === 'object' &&
-          'position' in raw &&
-          raw.position != null &&
-          typeof (raw as { position: Vector3 }).position.clone === 'function'
-            ? (raw as { position: Vector3 }).position.clone()
-            : null;
-        const direction =
-          raw != null &&
-          typeof raw === 'object' &&
-          'direction' in raw &&
-          raw.direction != null &&
-          typeof (raw as { direction: Vector3 }).direction.clone === 'function'
-            ? (raw as { direction: Vector3 }).direction.clone()
-            : null;
-        if (!position || !direction) continue;
-        const entropicTalent =
-          raw != null && typeof raw === 'object'
-            ? ((raw as { entropicBoltTalent?: ProjectileData['entropicBoltTalent'] }).entropicBoltTalent)
-            : undefined;
-        liveVisualEntropicBolts.push({
-          id: entropicIdCounter.current++,
-          position,
-          direction,
-          isCryoflame:
-            raw != null && typeof raw === 'object'
-              ? (raw as { isCryoflame?: boolean }).isCryoflame === true
-              : false,
-          colorVariant:
-            entropicTalent === 'arctic'
-              ? 'arctic'
-              : raw != null && typeof raw === 'object'
-                ? (raw as { colorVariant?: string }).colorVariant || 'purple'
-                : 'purple',
-          entropicBoltTalent: entropicTalent,
-          curveDirection:
-            raw != null && typeof raw === 'object'
-              ? (raw as { curveDirection?: ProjectileData['curveDirection'] }).curveDirection
-              : undefined,
-          createdAtElapsed: currentTime,
-        });
-      }
-    }
-    const visualEntropicChanged =
-      entropicVisualEvents.length > 0 ||
-      liveVisualEntropicBolts.length !== visualEntropicBolts.length;
-    if (visualEntropicChanged) {
-      setVisualEntropicBolts(liveVisualEntropicBolts);
-    }
-
     // Entropic bolts: linger briefly after ECS despawn so the trail can fade out (see EntropicBoltTrail).
     const liveEntropicIds = new Set(newEntropic.map((b) => b.entityId));
     const mergedEntropic: ProjectileData[] = [...newEntropic];
@@ -711,22 +639,9 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
           isCryoflame={bolt.isCryoflame}
           colorVariant={bolt.colorVariant}
           curveDirection={bolt.curveDirection}
+          ecsDriven
           trailFadeOutStartElapsed={bolt.trailFadeOutStartElapsed}
-          onImpact={(impactPosition?: Vector3) => {
-            // console.log(`⚡ EntropicBolt ${bolt.id} impact at position:`, impactPosition?.toArray());
-          }}
-        />
-      ))}
-
-      {visualEntropicBolts.map((bolt) => (
-        <EntropicBolt
-          key={`visual-entropic-${bolt.id}`}
-          id={bolt.id}
-          position={bolt.position}
-          direction={bolt.direction}
-          isCryoflame={bolt.isCryoflame}
-          colorVariant={bolt.colorVariant}
-          curveDirection={bolt.curveDirection}
+          onImpact={() => {}}
         />
       ))}
 

@@ -7,13 +7,17 @@ import { Vector3, Camera } from '@/utils/three-exports';
 const MIN_VISIBLE_MS = 2000;
 const OUTGOING_DAMAGE_DURATION_MS = 5000;
 const INCOMING_DAMAGE_DURATION_MS = 3000;
+const PICKUP_FLOAT_DURATION_MS = 2400;
 const MAX_STACK_VISIBLE = 5;
 
 const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
 const easeOutCubic = (value: number) => 1 - Math.pow(1 - clamp01(value), 3);
 
-const getDamageNumberDuration = (damageData: DamageNumberData) =>
-  damageData.isIncomingDamage ? INCOMING_DAMAGE_DURATION_MS : OUTGOING_DAMAGE_DURATION_MS;
+const getDamageNumberDuration = (damageData: DamageNumberData) => {
+  if (damageData.isIncomingDamage) return INCOMING_DAMAGE_DURATION_MS;
+  if (damageData.durationHint === 'pickup') return PICKUP_FLOAT_DURATION_MS;
+  return OUTGOING_DAMAGE_DURATION_MS;
+};
 
 const getStableScreenJitter = (id: string, amplitudePx: number) => {
   let hash = 0;
@@ -36,6 +40,8 @@ export interface DamageNumberData {
   dualCoilSlot?: 0 | 1;
   /** When set, shown instead of numeric damage (e.g. AEGIS block). */
   displayText?: string;
+  /** Shorter lifetime for small pickup-style floats (EXP / gold). */
+  durationHint?: 'pickup';
 }
 
 interface DamageNumberProps {
@@ -156,7 +162,11 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
             ? // Incoming damage: red for all damage
               'text-red-400 text-lg font-bold'
             : // Outgoing damage: original logic
-              damageData.isCritical
+              damageData.damageType === 'experience_gain'
+                ? 'text-sky-300 text-sm font-bold tracking-wide drop-shadow-[0_0_6px_rgba(125,211,252,0.65)]'
+                : damageData.damageType === 'gold_pickup'
+                ? 'text-amber-300 text-sm font-bold tracking-wide drop-shadow-[0_0_6px_rgba(252,211,77,0.55)]'
+                : damageData.isCritical
                 ? 'text-amber-200 text-2xl font-black tracking-wide drop-shadow-[0_0_12px_rgba(251,191,36,0.95)]'
                 : damageData.damageType === 'crossentropy'
                 ? 'text-orange-400'
@@ -167,6 +177,7 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
                   damageData.damageType === 'summon_totem_healing' ||
                   damageData.damageType === 'rejuvenating_shot_healing' ||
                   damageData.damageType === 'flurry_healing' ||
+                  damageData.damageType === 'merchant_healing' ||
                   damageData.damageType === 'healing_stream_healing'
                 ? 'text-green-400 text-lg font-extrabold'
                 : damageData.damageType === 'colossus_strike' ||
@@ -217,14 +228,22 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
               damageData.damageType === 'summon_totem_healing' ||
               damageData.damageType === 'rejuvenating_shot_healing' ||
               damageData.damageType === 'flurry_healing' ||
-              damageData.damageType === 'healing_stream_healing') && '+'}
-            {damageData.damageType === 'healing' ||
+              damageData.damageType === 'merchant_healing' ||
+              damageData.damageType === 'healing_stream_healing' ||
+              damageData.damageType === 'experience_gain' ||
+              damageData.damageType === 'gold_pickup') && '+'}
+            {damageData.damageType === 'experience_gain' ? (
+              <>{Math.round(damageData.damage)} XP</>
+            ) : damageData.damageType === 'gold_pickup' ? (
+              <>{Math.round(damageData.damage)}</>
+            ) : damageData.damageType === 'healing' ||
              damageData.damageType === 'reanimate_healing' ||
              damageData.damageType === 'smite_healing' ||
              damageData.damageType === 'viper_sting_healing' ||
              damageData.damageType === 'summon_totem_healing' ||
              damageData.damageType === 'rejuvenating_shot_healing' ||
              damageData.damageType === 'flurry_healing' ||
+             damageData.damageType === 'merchant_healing' ||
              damageData.damageType === 'healing_stream_healing'
               ? Math.round(damageData.damage)
               : damageData.damage}
@@ -246,6 +265,7 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
     prevProps.damageData.position.equals(nextProps.damageData.position) &&
     prevProps.damageData.dualCoilSlot === nextProps.damageData.dualCoilSlot &&
     prevProps.damageData.displayText === nextProps.damageData.displayText &&
+    prevProps.damageData.durationHint === nextProps.damageData.durationHint &&
     prevProps.stackIndex === nextProps.stackIndex &&
     prevProps.camera === nextProps.camera &&
     prevProps.size.width === nextProps.size.width &&
@@ -346,6 +366,7 @@ const DamageNumbersComponent = memo(function DamageNumbers({ damageNumbers, onDa
              prev?.isIncomingDamage === next?.isIncomingDamage &&
              prev?.dualCoilSlot === next?.dualCoilSlot &&
              prev?.displayText === next?.displayText &&
+             prev?.durationHint === next?.durationHint &&
              prev?.timestamp === next?.timestamp;
     }) &&
     prevProps.camera === nextProps.camera &&

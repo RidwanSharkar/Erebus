@@ -140,8 +140,8 @@ export function useViperSting({
   
   const POOL_SIZE = 3;
   const SHOT_COOLDOWN = 2000; // 7 seconds
-  const PROJECTILE_SPEED = 0.625; // Slightly faster than regular arrows
-  const PROJECTILE_RETURN_SPEED = 0.525; // Slightly slower for return phase
+  const PROJECTILE_SPEED = 0.9375; // 50% faster than before
+  const PROJECTILE_RETURN_SPEED = 0.7875; // 50% faster return phase
   const DAMAGE = 91;
   const FADE_DURATION = 350;
   const SOUL_STEAL_DURATION = 1250; // 1.25 seconds to travel back

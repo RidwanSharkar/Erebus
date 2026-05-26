@@ -19,11 +19,11 @@ export interface StatPointData {
 }
 
 export class StatSystem {
-  private static readonly INITIAL_STAT_POINTS = 2;
-  private static readonly STAT_POINTS_PER_LEVEL = 2;
+  private static readonly INITIAL_STAT_POINTS = 3;
+  private static readonly STAT_POINTS_PER_LEVEL = 3;
 
   static readonly BASE_MAX_SHIELD = 25;
-  static readonly STRENGTH_CRIT_DAMAGE_MULT_PER_POINT = 0.04;
+  static readonly STRENGTH_CRIT_DAMAGE_MULT_PER_POINT = 0.05;
   static readonly STAMINA_HEALTH_PER_POINT = 10;
   static readonly AGILITY_CRIT_CHANCE_PER_POINT = 0.01;
   static readonly INTELLECT_MAX_SHIELD_PER_POINT = 2;
@@ -39,14 +39,68 @@ export class StatSystem {
     return StatSystem.INITIAL_STAT_POINTS + Math.max(0, level - 1) * StatSystem.STAT_POINTS_PER_LEVEL;
   }
 
-  static getSpentPoints(data: StatPointData): number {
-    const { strength, stamina, agility, intellect } = data.stats;
-    return strength + stamina + agility + intellect;
+  /**
+   * Flat STR/STA/AGI/INT granted by picked-up items. Rules must stay in sync with
+   * `item-picked-up` (boss: positive `statBonus`; amulets: no `statBonus` → +1).
+   */
+  static sumInventoryItemStatBonuses(
+    items: Iterable<{ stat?: StatKey | null; statBonus?: number | null }>,
+  ): PlayerStats {
+    const out: PlayerStats = { strength: 0, stamina: 0, agility: 0, intellect: 0 };
+    for (const item of Array.from(items)) {
+      const sk = item.stat;
+      if (sk == null) continue;
+      let delta: number;
+      if (item.statBonus != null && item.statBonus > 0) {
+        delta = item.statBonus;
+      } else if (item.statBonus == null) {
+        delta = 1;
+      } else {
+        continue;
+      }
+      out[sk] += delta;
+    }
+    return out;
   }
 
-  static updateStatPointsForLevel(data: StatPointData, newLevel: number): StatPointData {
+  /**
+   * Merge stored stat totals with inventory so UI/combat always reflect item bonuses
+   * even if the flat-stat grant path desyncs briefly.
+   */
+  static getEffectiveStatsWithInventory(
+    storedStats: PlayerStats,
+    items: Iterable<{ stat?: StatKey | null; statBonus?: number | null }>,
+  ): PlayerStats {
+    const inv = StatSystem.sumInventoryItemStatBonuses(items);
+    return {
+      strength: inv.strength + Math.max(0, storedStats.strength - inv.strength),
+      stamina: inv.stamina + Math.max(0, storedStats.stamina - inv.stamina),
+      agility: inv.agility + Math.max(0, storedStats.agility - inv.agility),
+      intellect: inv.intellect + Math.max(0, storedStats.intellect - inv.intellect),
+    };
+  }
+
+  /** Points spent on the four core stats via the allocate UI (excludes item-granted stats). */
+  static getSpentAllocationPoints(
+    data: StatPointData,
+    items: Iterable<{ stat?: StatKey | null; statBonus?: number | null }>,
+  ): number {
+    const inv = StatSystem.sumInventoryItemStatBonuses(items);
+    return (
+      Math.max(0, data.stats.strength - inv.strength) +
+      Math.max(0, data.stats.stamina - inv.stamina) +
+      Math.max(0, data.stats.agility - inv.agility) +
+      Math.max(0, data.stats.intellect - inv.intellect)
+    );
+  }
+
+  static updateStatPointsForLevel(
+    data: StatPointData,
+    newLevel: number,
+    items: Iterable<{ stat?: StatKey | null; statBonus?: number | null }> = [],
+  ): StatPointData {
     const totalPoints = StatSystem.getTotalStatPointsForLevel(newLevel);
-    const spentPoints = StatSystem.getSpentPoints(data);
+    const spentPoints = StatSystem.getSpentAllocationPoints(data, items);
     return { ...data, statPoints: Math.max(0, totalPoints - spentPoints) };
   }
 

@@ -10,10 +10,11 @@ import {
   Color,
   DoubleSide,
   CircleGeometry,
+  CylinderGeometry,
   PlaneGeometry,
   MeshBasicMaterial,
 } from '@/utils/three-exports';
-import { MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z, MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+import { MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z, MAIN_MAP_RADIUS, isInsideHexArenaXZ } from '@/utils/mapConstants';
 import type { RoomBorderTheme } from './SimpleBorderEffects';
 
 type TerrainPalette = {
@@ -71,8 +72,8 @@ function resolveRoomTheme(
 }
 
 interface StylizedGrassProps {
-  /** `disc` = throne / circular fields; `square` = main arena (matches castle wall inner square). */
-  fieldShape?: 'disc' | 'square';
+  /** `disc` = throne / circular fields; `hex` = main arena; `square` = legacy rectangle. */
+  fieldShape?: 'disc' | 'square' | 'hex';
   count?: number;
   radius?: number;
   halfX?: number;
@@ -225,6 +226,7 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
   const windStrength = windOverride ?? THEME_WIND[effectiveTheme] ?? 0.25;
 
   const useSquareEdge = fieldShape === 'square';
+  const useHexField = fieldShape === 'hex';
   const grassFadeInner = useSquareEdge ? 0.93 : radius - 0.8;
   const grassFadeOuter = useSquareEdge ? 1.08 : radius + 3.5;
 
@@ -278,10 +280,12 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
 
   const groundGeo = useMemo(
     () =>
-      useSquareEdge
+      useHexField
+        ? new CylinderGeometry(radius, radius, 0.02, 6)
+        : useSquareEdge
         ? new PlaneGeometry(halfX * 2, halfZ * 2)
         : new CircleGeometry(radius, 48),
-    [halfX, halfZ, radius, useSquareEdge],
+    [halfX, halfZ, radius, useHexField, useSquareEdge],
   );
   const groundMat = useMemo(
     () => new MeshBasicMaterial({ color: resolvedGroundColor }),
@@ -305,6 +309,11 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
       if (useSquareEdge) {
         x = (Math.random() * 2 - 1) * halfX;
         z = (Math.random() * 2 - 1) * halfZ;
+      } else if (useHexField) {
+        do {
+          x = (Math.random() * 2 - 1) * radius;
+          z = (Math.random() * 2 - 1) * radius;
+        } while (!isInsideHexArenaXZ(x, z, radius, 0.2));
       } else {
         const angle = Math.random() * Math.PI * 2;
         const r = Math.sqrt(Math.random()) * radius;
@@ -334,7 +343,7 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
 
     mesh.instanceMatrix.needsUpdate = true;
     return true;
-  }, [count, radius, halfX, halfZ, bladeHeight, useSquareEdge]);
+  }, [count, radius, halfX, halfZ, bladeHeight, useHexField, useSquareEdge]);
 
   useLayoutEffect(() => {
     if (fillInstanceMatrices()) return;
@@ -385,7 +394,7 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
       <mesh
         geometry={groundGeo}
         material={groundMat}
-        rotation-x={-Math.PI / 2}
+        rotation-x={useHexField ? 0 : -Math.PI / 2}
         position-y={0.01}
       />
 

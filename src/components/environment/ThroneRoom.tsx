@@ -15,8 +15,13 @@ import Scythe from '@/components/weapons/Scythe';
 import Sabres from '@/components/weapons/Sabres';
 import Runeblade from '@/components/weapons/Runeblade';
 import PortalSymbol from './PortalSymbols';
+import { ThroneCircularCastleWalls } from './CastleWalls';
 
-export const COOP_THRONE_ROOM_RADIUS = 16;
+/** Original throne staging layout (portals, pedestals, inner pavers); unchanged when expanding grass. */
+export const COOP_THRONE_LAYOUT_RADIUS = 16;
+
+/** Grass, VFX, physics clamp, outer perimeter — 2× the legacy 16m playable disk. */
+export const COOP_THRONE_ROOM_RADIUS = 24;
 
 
 /** XZ radius for movement physics, sword charge, and ECS `PillarCollision` cylinders on these pillars. */
@@ -51,11 +56,30 @@ export function getThronePillarPhysicsObstacles(): Array<{ x: number; z: number;
 /** Inset from grass radius so portal / dummy sit just inside the rim. */
 export const THRONE_RIM_INSET = 1.25;
 
-/** Tile centers for outer cobble ring: half radial slab depth (~1) + gap inside fence. */
-const THRONE_PERIMETER_RING_CENTER_R = COOP_THRONE_ROOM_RADIUS - 1.35;
+/**
+ * Small extra inset so hostile knight feet stay on playable grass inside the castle wall ring.
+ * Keep in sync with `backend/gameRoom.js` throne knight spawn helpers.
+ */
+export const THRONE_HOSTILE_KNIGHT_FOOT_MARGIN = 0.3;
+
+/** Max simultaneous timed hostile knights in co-op prep; must match `THRONE_KNIGHT_MAX_LIVE` in `backend/gameRoom.js`. */
+export const THRONE_HOSTILE_KNIGHT_MAX_LIVE = 3;
+
+/** XZ radial distance from room center for timed hostile knight spawns along the throne perimeter. */
+export const THRONE_HOSTILE_KNIGHT_PERIMETER_RADIUS =
+  COOP_THRONE_ROOM_RADIUS - THRONE_RIM_INSET - THRONE_HOSTILE_KNIGHT_FOOT_MARGIN;
+
+/** Gap from grass rim to tangential paver tile centers (matches `StoneGround` throne ring). */
+export const THRONE_PERIMETER_RING_INSET = 1.35;
+
+/** Inner ring: legacy rim near portals; outer ring: expanded grass edge. */
+export const THRONE_PERIMETER_RING_RADII: readonly number[] = [
+  COOP_THRONE_LAYOUT_RADIUS - THRONE_PERIMETER_RING_INSET,
+  COOP_THRONE_ROOM_RADIUS - THRONE_PERIMETER_RING_INSET,
+];
 
 const THRONE_PORTAL_Y = 1.15;
-const THRONE_PORTAL_Z = -(COOP_THRONE_ROOM_RADIUS - THRONE_RIM_INSET);
+const THRONE_PORTAL_Z = -(COOP_THRONE_LAYOUT_RADIUS - THRONE_RIM_INSET);
 
 /** World-space center between the two portal rings (XZ). South rim of prep circle. */
 export const THRONE_PORTAL_POSITION = Object.freeze({
@@ -98,7 +122,7 @@ export const MAIN_COMBAT_PEDESTAL_POSITION = Object.freeze({ x: 0, y: 0, z: 13 }
 export const MAIN_COMBAT_PEDESTAL_INTERACT_RADIUS = 3.0;
 
 export type ThroneMainRoomCamp = 'purple' | 'blue' | 'red' | 'green';
-export type CoopPortalKind = ThroneMainRoomCamp | 'stat' | 'trial' | 'healing' | 'boss';
+export type CoopPortalKind = ThroneMainRoomCamp | 'stat' | 'trial' | 'merchant' | 'boss';
 
 const THRONE_PORTAL_COLOR_HEX: Record<CoopPortalKind, string> = {
   purple: '#6c3dff',
@@ -107,7 +131,7 @@ const THRONE_PORTAL_COLOR_HEX: Record<CoopPortalKind, string> = {
   green: '#22c55e',
   stat: '#f97316',
   trial: '#eab308',
-  healing: '#ec4899',
+  merchant: '#ec4899',
   boss: '#6c3dff',
 };
 
@@ -119,6 +143,7 @@ export function normalizeThroneCamp(s: string | undefined): ThroneMainRoomCamp {
 
 export function normalizeCoopPortalKind(s: string | undefined): CoopPortalKind {
   const k = String(s || '').toLowerCase();
+  if (k === 'healing') return 'merchant';
   if (
     k === 'purple' ||
     k === 'blue' ||
@@ -126,7 +151,7 @@ export function normalizeCoopPortalKind(s: string | undefined): CoopPortalKind {
     k === 'green' ||
     k === 'stat' ||
     k === 'trial' ||
-    k === 'healing' ||
+    k === 'merchant' ||
     k === 'boss'
   ) {
     return k;
@@ -172,7 +197,7 @@ export const THRONE_WEAPON_INTERACT_RADIUS = 2.35;
 
 /** East rim — plain stone pillar for ability loadout (press X). XZ foot position. */
 export const THRONE_ABILITY_PEDESTAL_POSITION = Object.freeze({
-  x: COOP_THRONE_ROOM_RADIUS - THRONE_RIM_INSET - 2.75,
+  x: COOP_THRONE_LAYOUT_RADIUS - THRONE_RIM_INSET - 2.75,
   y: 0,
   z: -1,
 });
@@ -189,7 +214,7 @@ export const THRONE_TALENT_PEDESTAL_POSITION = Object.freeze({
 export const THRONE_TALENT_PEDESTAL_INTERACT_RADIUS = THRONE_ABILITY_PEDESTAL_INTERACT_RADIUS;
 
 /** West rim X (opposite east ability/talent pedestals), just inside grass border — matches south-rim inset. */
-export const THRONE_DEV_BOSS_EDGE_X = -(COOP_THRONE_ROOM_RADIUS - THRONE_RIM_INSET);
+export const THRONE_DEV_BOSS_EDGE_X = -(COOP_THRONE_LAYOUT_RADIUS - THRONE_RIM_INSET);
 
 /**
  * Development-only: three boss shortcut portals on the west rim, spaced on Z (`dev_boss` / `dev_boss2` / `dev_boss3` in `enter-combat-arena`).
@@ -477,7 +502,8 @@ interface ThroneRoomProps {
 }
 
 /**
- * Pre-combat staging space: same grass + stone language as the main map, smaller radius.
+ * Pre-combat staging space: same grass + stone language as the main map; expanded grass disc (`COOP_THRONE_ROOM_RADIUS`)
+ * with legacy pillar/portal layout (`COOP_THRONE_LAYOUT_RADIUS`).
  */
 export default function ThroneRoom({
   isSnowTheme,
@@ -533,11 +559,11 @@ export default function ThroneRoom({
         castShadow
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
-        shadow-camera-far={44}
-        shadow-camera-left={-18}
-        shadow-camera-right={18}
-        shadow-camera-top={18}
-        shadow-camera-bottom={-18}
+        shadow-camera-far={88}
+        shadow-camera-left={-40}
+        shadow-camera-right={40}
+        shadow-camera-top={40}
+        shadow-camera-bottom={-40}
       />
       <StylizedGrass
         radius={COOP_THRONE_ROOM_RADIUS}
@@ -550,8 +576,10 @@ export default function ThroneRoom({
       <StoneGround
         variant="throne"
         roomTheme={groundRoomTheme}
-        thronePerimeterRingRadius={THRONE_PERIMETER_RING_CENTER_R}
+        thronePerimeterRingRadius={THRONE_PERIMETER_RING_RADII}
       />
+    
+      <ThroneCircularCastleWalls innerRadius={COOP_THRONE_ROOM_RADIUS} />
       <SimpleBorderEffects
         radius={COOP_THRONE_ROOM_RADIUS}
         count={30}

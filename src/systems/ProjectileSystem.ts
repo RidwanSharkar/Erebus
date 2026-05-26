@@ -28,6 +28,14 @@ import {
   CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS,
   rollCrossentropyMeteorStrikeCount,
 } from '@/utils/talents';
+import {
+  approximateEntropicPathLength,
+  computeEntropicBezierPoints,
+  ENTROPIC_MAX_LIFETIME,
+  getEntropicSpeedAtDistance,
+  sampleEntropicBezier,
+  type EntropicCurveDirection,
+} from '@/utils/entropicBoltPath';
 import type { CrossentropyVisualTheme, FanOfKnivesFlourishTint } from '@/utils/talents';
 import { CombatSystem } from './CombatSystem';
 
@@ -109,8 +117,15 @@ export class ProjectileSystem extends System {
         continue;
       }
 
-      // Update projectile
+      const renderer = entity.getComponent(Renderer);
+      const isEntropicBolt = renderer?.mesh?.userData?.isEntropicBolt === true;
+
+      // Update projectile (entropic bolts track distance along bezier path in moveProjectile)
+      const prevDistanceTraveled = projectile.distanceTraveled;
       projectile.update(deltaTime);
+      if (isEntropicBolt) {
+        projectile.distanceTraveled = prevDistanceTraveled;
+      }
 
       // Check if projectile has expired
       if (projectile.isExpired()) {
@@ -121,7 +136,7 @@ export class ProjectileSystem extends System {
       const previousProjectilePos = this.tempVector2.copy(transform.position);
 
       // Move projectile
-      this.moveProjectile(transform, projectile, deltaTime);
+      this.moveProjectile(entity, transform, projectile, deltaTime);
 
       // Update homing direction if projectile is homing
       this.updateHomingDirection(entity, projectile, deltaTime);
@@ -245,13 +260,57 @@ export class ProjectileSystem extends System {
     }
   }
 
-  private moveProjectile(transform: Transform, projectile: Projectile, deltaTime: number): void {
+  private moveProjectile(
+    entity: Entity,
+    transform: Transform,
+    projectile: Projectile,
+    deltaTime: number,
+  ): void {
+    const renderer = entity.getComponent(Renderer);
+    const userData = renderer?.mesh?.userData;
+    if (userData?.isEntropicBolt && userData.bezierControl && userData.bezierTarget) {
+      this.moveEntropicProjectile(transform, projectile, userData, deltaTime);
+      return;
+    }
+
     // Use temp vector to avoid allocations
     this.tempVector.copy(projectile.velocity).multiplyScalar(deltaTime);
 
     // Update position
     transform.translate(this.tempVector.x, this.tempVector.y, this.tempVector.z);
     transform.matrixNeedsUpdate = true;
+  }
+
+  private moveEntropicProjectile(
+    transform: Transform,
+    projectile: Projectile,
+    userData: Record<string, unknown>,
+    deltaTime: number,
+  ): void {
+    const pathLength = userData.entropicPathLength as number;
+    const control = userData.bezierControl as Vector3;
+    const target = userData.bezierTarget as Vector3;
+    const start = projectile.startPosition;
+
+    const currentSpeed = getEntropicSpeedAtDistance(projectile.distanceTraveled);
+    const prevT = pathLength > 0 ? Math.min(projectile.distanceTraveled / pathLength, 1) : 0;
+    // Match CrossentropyBolt R3F movement scale (currentSpeed * delta * 60)
+    projectile.distanceTraveled += currentSpeed * deltaTime * 60;
+    const t = pathLength > 0 ? Math.min(projectile.distanceTraveled / pathLength, 1) : 1;
+
+    sampleEntropicBezier(start, control, target, t, transform.position);
+
+    const prevPos = sampleEntropicBezier(start, control, target, prevT, this.tempVector);
+    this.tempVector2.copy(transform.position).sub(prevPos);
+    if (this.tempVector2.lengthSq() > 1e-8) {
+      userData.direction = this.tempVector2.clone().normalize();
+    }
+
+    transform.matrixNeedsUpdate = true;
+
+    if (t >= 1) {
+      projectile.distanceTraveled = pathLength;
+    }
   }
 
   private segmentIntersectsSphere(
@@ -1171,8 +1230,7 @@ export class ProjectileSystem extends System {
       isCryoflame?: boolean;
       colorVariant?: string;
       entropicBoltTalent?: 'wrathful' | 'staggering' | 'infesting' | 'arctic';
-      curveDirection?: 'left' | 'right';
-      visualOnlyCurveDirections?: readonly ('left' | 'right')[];
+      curveDirection?: EntropicCurveDirection;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -1182,14 +1240,22 @@ export class ProjectileSystem extends System {
     transform.position.copy(position);
     projectileEntity.addComponent(transform);
 
+    const curveDirection = config?.curveDirection;
+    const bezierPoints = computeEntropicBezierPoints(position, direction, curveDirection);
+    const pathLength = approximateEntropicPathLength(position, bezierPoints.control, bezierPoints.target);
+
     // Add Projectile component with EntropicBolt-specific settings
     const projectile = world.createComponent(Projectile);
     projectile.speed = config?.speed || 20;
     projectile.damage = config?.damage || 31;
-    projectile.maxLifetime = config?.lifetime || 0.7;
+    projectile.maxLifetime = config?.lifetime ?? ENTROPIC_MAX_LIFETIME;
     projectile.owner = ownerId;
     projectile.sourcePlayerId = config?.sourcePlayerId || 'unknown';
+    projectile.projectileType = 'entropic_bolt';
     projectile.setDirection(direction);
+    projectile.setStartPosition(position);
+    projectile.setMaxDistance(pathLength);
+    projectile.distanceTraveled = 0;
     
     // Entropic bolts pierce by default so they damage every enemy along the path
     if (config?.piercing !== false) projectile.setPiercing(true);
@@ -1228,7 +1294,10 @@ export class ProjectileSystem extends System {
     placeholderMesh.userData.isCryoflame = config?.isCryoflame || false;
     placeholderMesh.userData.colorVariant = config?.colorVariant || 'purple';
     placeholderMesh.userData.entropicBoltTalent = entropicTalent;
-    placeholderMesh.userData.curveDirection = config?.curveDirection;
+    placeholderMesh.userData.curveDirection = curveDirection;
+    placeholderMesh.userData.bezierControl = bezierPoints.control;
+    placeholderMesh.userData.bezierTarget = bezierPoints.target;
+    placeholderMesh.userData.entropicPathLength = pathLength;
 
     renderer.mesh = placeholderMesh;
 
@@ -1244,19 +1313,6 @@ export class ProjectileSystem extends System {
 
     // Notify systems that the entity is ready
     this.world.notifyEntityAdded(projectileEntity);
-
-    if (config?.visualOnlyCurveDirections?.length) {
-      for (const curveDirection of config.visualOnlyCurveDirections) {
-        this.world.emitEvent('entropicBoltVisual', {
-          position: position.clone(),
-          direction: direction.clone(),
-          isCryoflame: config.isCryoflame || false,
-          colorVariant: config.colorVariant || 'purple',
-          entropicBoltTalent: entropicTalent,
-          curveDirection,
-        });
-      }
-    }
     
     return projectileEntity;
   }

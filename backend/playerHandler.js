@@ -859,6 +859,26 @@ function handlePlayerEvents(socket, gameRooms) {
     }
   });
 
+  socket.on('coop-merchant-buy-item', (data) => {
+    const { roomId, stockId } = data || {};
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (typeof room.purchaseMerchantItem === 'function') {
+      room.purchaseMerchantItem(socket.id, stockId);
+    }
+  });
+
+  socket.on('coop-merchant-buy-heal', (data) => {
+    const { roomId } = data || {};
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (typeof room.purchaseMerchantHeal === 'function') {
+      room.purchaseMerchantHeal(socket.id);
+    }
+  });
+
   // Handle player gold changes
   socket.on('player-gold-changed', (data) => {
     const { roomId, playerId, gold } = data;

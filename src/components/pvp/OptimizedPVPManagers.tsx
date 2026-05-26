@@ -659,7 +659,7 @@ export function OptimizedPVPViperStingManager({
         if (distanceToPlayer > 1.5 && !projectile.fadeStartTime) {
           // Move projectile back toward player (simulate the movement from useViperSting)
           projectile.position.add(
-            projectile.direction.clone().multiplyScalar(0.525) // PROJECTILE_RETURN_SPEED from useViperSting
+            projectile.direction.clone().multiplyScalar(0.7875) // PROJECTILE_RETURN_SPEED from useViperSting
           );
 
           // This prevents self-damage during the final return phase

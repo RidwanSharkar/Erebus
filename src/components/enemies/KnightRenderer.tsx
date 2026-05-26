@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Group, Vector3 } from 'three';
+import { AdditiveBlending, Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
-import KnightModel from './KnightModel';
+import KnightModel, { type KnightAbilityClip } from './KnightModel';
 import KnightSoulEffect from './KnightSoulEffect';
 import EnemyMeleeAttackRangeRing, { KNIGHT_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import EnemyStaggerBar from './EnemyStaggerBar';
@@ -24,6 +24,10 @@ interface KnightRendererProps {
   isDying?: boolean;
   soulType?: 'green' | 'red' | 'blue' | 'purple' | 'yellow';
   campType?: string;
+  /** When false, suppresses the colored soul orb and its local lights. */
+  showSoulEffect?: boolean;
+  /** Allows prep-only spawns to avoid changing room shadow coverage. */
+  castShadow?: boolean;
   /** When false, hides the red melee telegraph ring (e.g. throne training dummy). */
   showMeleeRangeRing?: boolean;
   /** Staggering Strike buildup (0–100). */
@@ -45,6 +49,8 @@ const HEAL_DURATION  = 1800; // Green/Purple aggro shout (ms)
 // knight_cast.glb / Cast clip — see knightCoopAbilitiesConstants (backend enemyAI)
 const CAST_ABILITY_MS = KNIGHT_CAST_ABILITY_LOCK_MS;
 const FROST_DURATION = CAST_ABILITY_MS; // Blue frost cast (ms)
+const SPIN_CHARGE_DURATION = 750;
+const SPIN_DURATION = 1033; // 31 frames at 30fps
 const FADE_DURATION = 1.5; // seconds
 // How quickly (per second) the rendered position chases the server-authoritative target.
 // 12 keeps the visual within ~0.17 units of the server position at knight speed (2 u/s),
@@ -56,6 +62,14 @@ const DASH_DURATION = 350;
 // Must comfortably exceed 2× the server tick (33ms) plus network jitter to avoid
 // premature Walk→Idle flicker when the client-side throttle drops an update.
 const WALK_STOP_DELAY = 250; // ms
+const DEFAULT_SPIN_CHARGE_COLOR = '#fff2a8';
+const SPIN_CHARGE_COLORS: Record<NonNullable<KnightRendererProps['soulType']>, string> = {
+  green: '#35ff6b',
+  red: '#ff3838',
+  blue: '#42b7ff',
+  purple: '#b55cff',
+  yellow: DEFAULT_SPIN_CHARGE_COLOR,
+};
 
 export default function KnightRenderer({
   id,
@@ -66,6 +80,8 @@ export default function KnightRenderer({
   isDying = false,
   soulType,
   campType,
+  showSoulEffect = true,
+  castShadow = true,
   showMeleeRangeRing = true,
   staggerBuildup = 0,
   attackTelegraphEvent = 'knight-attack-telegraph',
@@ -79,13 +95,15 @@ export default function KnightRenderer({
 }: KnightRendererProps) {
   const theme = campHpTheme(campType);
   const { socket } = useMultiplayer();
+  const spinChargeColor = soulType ? SPIN_CHARGE_COLORS[soulType] : DEFAULT_SPIN_CHARGE_COLOR;
   const groupRef = useRef<Group | null>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking, setIsWalking] = useState(false);
   const [attackVariant, setAttackVariant] = useState<1 | 2>(1);
-  const [abilityClip, setAbilityClip] = useState<'Smite' | 'Aggro' | 'Cast' | null>(null);
+  const [abilityClip, setAbilityClip] = useState<KnightAbilityClip | null>(null);
   const [isDashing, setIsDashing] = useState(false);
+  const [isSpinCharging, setIsSpinCharging] = useState(false);
   const [isImpacting, setIsImpacting] = useState(false);
   const [impactVariant, setImpactVariant] = useState<1 | 2>(1);
   const [impactPlayKey, setImpactPlayKey] = useState(0);
@@ -106,6 +124,13 @@ export default function KnightRenderer({
   // Timer handle for the delayed idle transition after server stops sending moves.
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const spinChargeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const spinTravelRef = useRef<{
+    start: Vector3;
+    end: Vector3;
+    startedAt: number;
+    duration: number;
+  } | null>(null);
   const fadeTimer = useRef(0);
   const opacity = useRef(1);
 
@@ -156,6 +181,7 @@ export default function KnightRenderer({
     return () => {
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (dashTimer.current) clearTimeout(dashTimer.current);
+      if (spinChargeTimer.current) clearTimeout(spinChargeTimer.current);
     };
   }, []);
 
@@ -239,10 +265,15 @@ export default function KnightRenderer({
 
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (dashTimer.current) clearTimeout(dashTimer.current);
+      if (spinChargeTimer.current) clearTimeout(spinChargeTimer.current);
+      spinTravelRef.current = null;
 
       setIsWalking(false);
       setIsImpacting(false);
+      setIsSpinCharging(false);
+      setAbilityClip(null);
       setIsDashing(true);
+      isAbilityRef.current = false;
       isDashingRef.current = true;
       targetPosition.current.copy(endPos);
       targetRotation.current = data.rotation;
@@ -255,6 +286,7 @@ export default function KnightRenderer({
       dashTimer.current = setTimeout(() => {
         setIsDashing(false);
         isDashingRef.current = false;
+        spinTravelRef.current = null;
         if (groupRef.current) {
           groupRef.current.position.copy(endPos);
           groupRef.current.rotation.y = data.rotation;
@@ -264,6 +296,104 @@ export default function KnightRenderer({
 
     socket.on('knight-dash', handleKnightDash);
     return () => { socket.off('knight-dash', handleKnightDash); };
+  }, [id, socket]);
+
+  // Spinning sword attack: server-authoritative charge, then timed travel.
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleKnightSpinCharge = (data: {
+      knightId: string;
+      position?: { x: number; y: number; z: number };
+      rotation: number;
+      chargeMs?: number;
+    }) => {
+      if (data.knightId !== id) return;
+
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      if (dashTimer.current) clearTimeout(dashTimer.current);
+      if (spinChargeTimer.current) clearTimeout(spinChargeTimer.current);
+      spinTravelRef.current = null;
+
+      const chargeMs = data.chargeMs ?? SPIN_CHARGE_DURATION;
+      setIsWalking(false);
+      setIsImpacting(false);
+      setIsDashing(false);
+      setAbilityClip(null);
+      setIsSpinCharging(true);
+      isDashingRef.current = false;
+      isAbilityRef.current = true;
+      targetRotation.current = data.rotation;
+
+      if (data.position && groupRef.current) {
+        const chargePos = new Vector3(data.position.x, data.position.y, data.position.z);
+        targetPosition.current.copy(chargePos);
+        groupRef.current.position.copy(chargePos);
+        groupRef.current.rotation.y = data.rotation;
+      }
+
+      spinChargeTimer.current = setTimeout(() => {
+        setIsSpinCharging(false);
+      }, chargeMs);
+    };
+
+    const handleKnightSpinDash = (data: {
+      knightId: string;
+      startPosition: { x: number; y: number; z: number };
+      endPosition: { x: number; y: number; z: number };
+      rotation: number;
+      durationMs?: number;
+    }) => {
+      if (data.knightId !== id) return;
+
+      const startPos = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
+      const endPos = new Vector3(data.endPosition.x, data.endPosition.y, data.endPosition.z);
+      const duration = data.durationMs ?? SPIN_DURATION;
+
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      if (dashTimer.current) clearTimeout(dashTimer.current);
+      if (spinChargeTimer.current) clearTimeout(spinChargeTimer.current);
+
+      setIsWalking(false);
+      setIsImpacting(false);
+      setIsSpinCharging(false);
+      setAbilityClip('Spin');
+      setIsDashing(true);
+      isAbilityRef.current = true;
+      isDashingRef.current = true;
+      targetPosition.current.copy(endPos);
+      targetRotation.current = data.rotation;
+      spinTravelRef.current = {
+        start: startPos.clone(),
+        end: endPos.clone(),
+        startedAt: performance.now(),
+        duration,
+      };
+
+      if (groupRef.current) {
+        groupRef.current.position.copy(startPos);
+        groupRef.current.rotation.y = data.rotation;
+      }
+
+      dashTimer.current = setTimeout(() => {
+        setAbilityClip(null);
+        setIsDashing(false);
+        isAbilityRef.current = false;
+        isDashingRef.current = false;
+        spinTravelRef.current = null;
+        if (groupRef.current) {
+          groupRef.current.position.copy(endPos);
+          groupRef.current.rotation.y = data.rotation;
+        }
+      }, duration);
+    };
+
+    socket.on('knight-spin-charge', handleKnightSpinCharge);
+    socket.on('knight-spin-dash', handleKnightSpinDash);
+    return () => {
+      socket.off('knight-spin-charge', handleKnightSpinCharge);
+      socket.off('knight-spin-dash', handleKnightSpinDash);
+    };
   }, [id, socket]);
 
   // Ability animation triggers from server — one handler per soul-type ability.
@@ -332,8 +462,14 @@ export default function KnightRenderer({
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    // Smoothly move the rendered position toward the server-authoritative target.
-    group.position.lerp(targetPosition.current, Math.min(1, delta * (isDashingRef.current ? DASH_LERP_SPEED : LERP_SPEED)));
+    const spinTravel = spinTravelRef.current;
+    if (spinTravel) {
+      const t = Math.min(1, (performance.now() - spinTravel.startedAt) / spinTravel.duration);
+      group.position.copy(spinTravel.start).lerp(spinTravel.end, t);
+    } else {
+      // Smoothly move the rendered position toward the server-authoritative target.
+      group.position.lerp(targetPosition.current, Math.min(1, delta * (isDashingRef.current ? DASH_LERP_SPEED : LERP_SPEED)));
+    }
 
     // Lerp rotation with shortest-arc wrapping so the knight never spins the long way.
     let deltaAngle = targetRotation.current - group.rotation.y;
@@ -362,7 +498,7 @@ export default function KnightRenderer({
     <GhostTrail
       parentRef={groupRef as React.RefObject<Group>}
       weaponType={WeaponType.NONE}
-      fixedTrailColor="#d8d8d8"
+      fixedTrailColor={spinChargeColor}
       isTrailMotionRef={isDashingRef}
       yOffset={1.0}
     />
@@ -379,12 +515,28 @@ export default function KnightRenderer({
     )}
 
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
+      {isSpinCharging && !isDying && (
+        <>
+          <pointLight position={[0, 1.25, 0]} color={spinChargeColor} intensity={6} distance={5} />
+          <mesh position={[0, 1.1, 0]}>
+            <sphereGeometry args={[1, 32, 16]} />
+            <meshBasicMaterial
+              color={spinChargeColor}
+              transparent
+              opacity={0.32}
+              depthWrite={false}
+              blending={AdditiveBlending}
+            />
+          </mesh>
+        </>
+      )}
       <KnightModel
         isWalking={isWalking}
         isAttacking={isAttacking}
         attackVariant={attackVariant}
         isDying={isDying}
         soulType={soulType}
+        castShadow={castShadow}
         abilityClip={abilityClip}
         isImpacting={isImpacting}
         impactVariant={impactVariant}
@@ -394,7 +546,7 @@ export default function KnightRenderer({
 
 
       {/* Glowing soul orb floating above the knight */}
-      {soulType && !isDying && (
+      {showSoulEffect && soulType && !isDying && (
         <KnightSoulEffect soulType={soulType} />
       )}
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StatSystem, StatPointData, StatKey } from '@/utils/StatSystem';
 import { InventoryItem } from '@/contexts/MultiplayerContext';
 import { ITEM_RARITY_COLORS, formatRarityLabel, isItemRarity } from '@/utils/itemRarity';
@@ -38,6 +38,11 @@ export default function StatsPanel({
   const [tab, setTab] = useState<'stats' | 'inventory'>('stats');
 
   const { stats, statPoints } = statPointData;
+
+  const displayStats = useMemo(
+    () => StatSystem.getEffectiveStatsWithInventory(stats, inventory),
+    [inventory, stats],
+  );
   const hasPoints = statPoints > 0;
 
   return (
@@ -70,7 +75,7 @@ export default function StatsPanel({
         <div className="px-3 pb-2.5 grid grid-cols-4 gap-1">
           {STAT_KEYS.map(stat => {
             const color = StatSystem.getStatColor(stat);
-            const value = stats[stat];
+            const value = displayStats[stat];
             return (
               <div key={stat} className="flex flex-col items-center gap-0.5">
                 <span className="text-sm leading-none">{StatSystem.getStatIcon(stat)}</span>
@@ -123,7 +128,7 @@ export default function StatsPanel({
                   </p>
                 )}
                 {STAT_KEYS.map(stat => {
-                  const value = stats[stat];
+                  const value = displayStats[stat];
                   const color = StatSystem.getStatColor(stat);
                   const canAllocate = statPoints > 0;
                   return (

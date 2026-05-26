@@ -218,7 +218,7 @@ import {
   acceleratorOwnedTotemTripletCount,
 } from '@/components/projectiles/SummonTotemManager';
 import { MAIN_ARENA_BOUNDS, MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z, MAIN_MAP_RADIUS, isInsideMainArenaXZ } from '@/utils/mapConstants';
-import { getBowFullChargeMs, isBowPerfectShotProgress } from '@/utils/bowConstants';
+import { computeBowPrimaryScaledDamage, getBowFullChargeMs, isBowPerfectShotProgress } from '@/utils/bowConstants';
 import { CASTLE_WALL_HALF_THICKNESS, CASTLE_WALL_X_OFFSET, CASTLE_WALL_Z_OFFSET } from '@/components/environment/CastleWalls';
 
 export type RoomBoomDashVariant = 'infernal' | 'glacial' | 'mending' | 'staggering';
@@ -243,6 +243,12 @@ export class ControlSystem extends System {
 
   // Input control
   private inputDisabled: boolean = false;
+  private freeLookBasisLocked = false;
+  private freeLookCameraForward = new Vector3();
+  private freeLookCameraRight = new Vector3();
+  private cameraAssistInputDirection = new Vector3();
+  private cameraAssistIntentDirection = new Vector3();
+  private cameraAssistIntentActive = false;
 
   /** Max horizontal distance from origin for dash/charge (matches PhysicsSystem map boundary). */
   private playableRadius = MAIN_MAP_RADIUS;
@@ -851,6 +857,7 @@ export class ControlSystem extends System {
       playerMovement.velocity.x = 0;
       playerMovement.velocity.z = 0;
       playerMovement.acceleration.set(0, 0, 0);
+      this.clearMovementControlState();
       this.audioSystem?.setFootstepsPlaying(false);
       return;
     }
@@ -863,6 +870,7 @@ export class ControlSystem extends System {
       }
       // Set movement velocity to 0 to prevent movement while dead
       playerMovement.velocity.set(0, 0, 0);
+      this.clearMovementControlState();
       // Block all input - don't process anything else
       this.audioSystem?.setFootstepsPlaying(false);
       return;
@@ -885,12 +893,14 @@ export class ControlSystem extends System {
         playerMovement.cancelCharge();
         this.onChargeComplete();
       }
+      this.clearMovementControlState();
       this.audioSystem?.setFootstepsPlaying(false);
       return;
     }
 
     if (playerMovement.isFrozen) {
       playerMovement.setMoveDirection(new Vector3(0, 0, 0), 0);
+      this.clearMovementControlState();
       if (playerMovement.isDashing) {
         playerMovement.cancelDash();
       }
@@ -916,6 +926,8 @@ export class ControlSystem extends System {
     // Most abilities should allow movement - only prevent for dashing, charging, and debuffs
     if (!playerMovement.isDashing && !playerMovement.isCharging && !playerMovement.isFrozen) {
       this.handleMovementInput(playerMovement);
+    } else {
+      this.clearMovementControlState();
     }
 
     // Handle combat input
@@ -991,45 +1003,12 @@ export class ControlSystem extends System {
     // Check for double-tap dashes first (before processing regular movement)
     this.checkForDashInput(movement, playerTransform);
 
-    // Get input direction
-    const inputDirection = new Vector3(0, 0, 0);
-    let hasInput = false;
-
-    // WASD movement
-    if (this.inputManager.isKeyPressed('w')) {
-      inputDirection.z -= 1;
-      hasInput = true;
-    }
-    if (this.inputManager.isKeyPressed('s')) {
-      inputDirection.z += 1;
-      hasInput = true;
-    }
-    if (this.inputManager.isKeyPressed('a')) {
-      inputDirection.x -= 1;
-      hasInput = true;
-    }
-    if (this.inputManager.isKeyPressed('d')) {
-      inputDirection.x += 1;
-      hasInput = true;
-    }
-
-    // Normalize diagonal movement
-    if (inputDirection.length() > 0) {
-      inputDirection.normalize();
-    }
+    const { inputDirection, hasInput } = this.getMovementInputDirection();
 
     // Convert input to world space based on camera orientation
     if (hasInput) {
-      const cameraDirection = new Vector3();
-      this.camera.getWorldDirection(cameraDirection);
-      
-      // Get camera's right vector
-      const cameraRight = new Vector3();
-      cameraRight.crossVectors(cameraDirection, new Vector3(0, 1, 0)).normalize();
-      
-      // Get camera's forward vector (projected on XZ plane)
-      const cameraForward = new Vector3();
-      cameraForward.crossVectors(new Vector3(0, 1, 0), cameraRight).normalize();
+      const freeLookActive = this.isFreeLookMoveLockInputActive();
+      const { cameraForward, cameraRight } = this.getMovementBasisForInput(freeLookActive);
 
       // Transform input direction to world space
       const worldDirection = new Vector3();
@@ -1043,14 +1022,131 @@ export class ControlSystem extends System {
       const moveAngle = Math.atan2(fwdCrossY, fwdDot);
       const backwardsMultiplier = Math.abs(moveAngle) > (5 * Math.PI) / 8 ? 0.5 : 1.0;
 
-      movement.setMoveDirection(worldDirection, backwardsMultiplier);
+      if (freeLookActive) {
+        movement.setMoveDirection(worldDirection, backwardsMultiplier);
+        this.setCameraKeyboardMoveIntentForInput(inputDirection, worldDirection, false);
+      } else {
+        this.clearFreeLookMoveLock();
+        movement.setMoveDirection(worldDirection, backwardsMultiplier);
+        this.setCameraKeyboardMoveIntentForInput(inputDirection, worldDirection, true);
+      }
     } else {
+      this.clearFreeLookMoveLock();
       movement.setMoveDirection(new Vector3(0, 0, 0), 0);
+      this.setCameraKeyboardMoveIntentForInput(inputDirection, null, false);
     }
 
     // Handle jumping
     if (this.inputManager.isKeyPressed(' ')) { // Spacebar
       movement.jump();
+    }
+  }
+
+  private getMovementInputDirection(): { inputDirection: Vector3; hasInput: boolean } {
+    const inputDirection = new Vector3(0, 0, 0);
+    let hasInput = false;
+
+    if (this.inputManager.isKeyPressed('w') || this.inputManager.isKeyPressed('arrowup')) {
+      inputDirection.z -= 1;
+      hasInput = true;
+    }
+    if (this.inputManager.isKeyPressed('s') || this.inputManager.isKeyPressed('arrowdown')) {
+      inputDirection.z += 1;
+      hasInput = true;
+    }
+    if (this.inputManager.isKeyPressed('a') || this.inputManager.isKeyPressed('arrowleft')) {
+      inputDirection.x -= 1;
+      hasInput = true;
+    }
+    if (this.inputManager.isKeyPressed('d') || this.inputManager.isKeyPressed('arrowright')) {
+      inputDirection.x += 1;
+      hasInput = true;
+    }
+
+    if (inputDirection.length() > 0) {
+      inputDirection.normalize();
+    }
+
+    return { inputDirection, hasInput };
+  }
+
+  private getCameraMovementBasis(): { cameraForward: Vector3; cameraRight: Vector3 } {
+    const cameraDirection = new Vector3();
+    this.camera.getWorldDirection(cameraDirection);
+
+    const cameraRight = new Vector3();
+    cameraRight.crossVectors(cameraDirection, new Vector3(0, 1, 0)).normalize();
+
+    const cameraForward = new Vector3();
+    cameraForward.crossVectors(new Vector3(0, 1, 0), cameraRight).normalize();
+
+    return { cameraForward, cameraRight };
+  }
+
+  private getMovementBasisForInput(freeLookActive: boolean): { cameraForward: Vector3; cameraRight: Vector3 } {
+    const { cameraForward, cameraRight } = this.getCameraMovementBasis();
+
+    if (!freeLookActive) {
+      return { cameraForward, cameraRight };
+    }
+
+    if (!this.freeLookBasisLocked) {
+      this.freeLookCameraForward.copy(cameraForward);
+      this.freeLookCameraRight.copy(cameraRight);
+      this.freeLookBasisLocked = true;
+    }
+
+    return {
+      cameraForward: this.freeLookCameraForward,
+      cameraRight: this.freeLookCameraRight
+    };
+  }
+
+  private isFreeLookMoveLockInputActive(): boolean {
+    return this.inputManager.isKeyPressed('shift') && this.inputManager.isMouseButtonPressed(2);
+  }
+
+  private clearFreeLookMoveLock(): void {
+    this.freeLookBasisLocked = false;
+    this.freeLookCameraForward.set(0, 0, 0);
+    this.freeLookCameraRight.set(0, 0, 0);
+  }
+
+  private clearMovementControlState(): void {
+    this.clearFreeLookMoveLock();
+    this.setCameraKeyboardMoveIntentForInput(new Vector3(0, 0, 0), null, false);
+  }
+
+  private setCameraKeyboardMoveIntentForInput(
+    inputDirection: Vector3,
+    worldDirection: Vector3 | null,
+    active: boolean
+  ): void {
+    if (!active || !worldDirection || worldDirection.lengthSq() <= 0.0001) {
+      this.cameraAssistIntentActive = false;
+      this.cameraAssistInputDirection.set(0, 0, 0);
+      this.cameraAssistIntentDirection.set(0, 0, 0);
+      this.setCameraKeyboardMoveIntent(null, false);
+      return;
+    }
+
+    const inputChanged =
+      !this.cameraAssistIntentActive ||
+      this.cameraAssistInputDirection.distanceToSquared(inputDirection) > 0.0001;
+
+    if (inputChanged) {
+      this.cameraAssistInputDirection.copy(inputDirection);
+      this.cameraAssistIntentDirection.copy(worldDirection).normalize();
+      this.cameraAssistIntentActive = true;
+    }
+
+    this.setCameraKeyboardMoveIntent(this.cameraAssistIntentDirection, true);
+  }
+
+  private setCameraKeyboardMoveIntent(direction: Vector3 | null, active: boolean): void {
+    const cameraSystem = (window as any).cameraSystem;
+    if (cameraSystem && typeof cameraSystem.setKeyboardMoveIntent === 'function') {
+      cameraSystem.setKeyboardMoveIntent(direction, active);
     }
   }
 
@@ -2291,10 +2387,16 @@ export class ControlSystem extends System {
         })()
       : [baseSpawn];
     
+    const bowPrimaryDamage = computeBowPrimaryScaledDamage(
+      this.chargeProgress,
+      this.bowUnchargedProjectileBaseDamage(),
+      this.bowPowershotBaseDamage(),
+    );
+
     // Create projectile using the ProjectileSystem with current weapon config
     const projectileConfig = {
       speed: 25,
-      damage: this.bowUnchargedProjectileBaseDamage(),
+      damage: bowPrimaryDamage,
       lifetime: 3,
       maxDistance: 25, // Limit bow arrows to 25 units distance
       subclass: this.currentSubclass,
@@ -2431,10 +2533,10 @@ export class ControlSystem extends System {
     spawnPosition.y += 1; // Slightly higher
     
     const colorVariants = [
-      { colorVariant: 'purple' as const, damage: 41 },
-      { colorVariant: 'blue' as const, damage: 47 },
-      { colorVariant: 'red' as const, damage: 53 },
-      { colorVariant: 'green' as const, damage: 43 },
+      { colorVariant: 'purple' as const, damage: 22 },
+      { colorVariant: 'blue' as const, damage: 23 },
+      { colorVariant: 'red' as const, damage: 24 },
+      { colorVariant: 'green' as const, damage: 20 },
     ] as const;
     const wrathEnt = shouldApplyWrathfulEntropicTalent(this.talentLoadout);
     const stagEnt = shouldApplyStaggeringEntropicTalent(this.talentLoadout);
@@ -2462,10 +2564,9 @@ export class ControlSystem extends System {
       randomVariant = colorVariants[Math.floor(Math.random() * colorVariants.length)];
     }
 
-    const entropicConfig = {
+    const entropicBaseConfig = {
       speed: 20,
       damage: randomVariant.damage,
-      lifetime: 0.7,
       piercing: true,
       explosive: false,
       explosionRadius: 0,
@@ -2475,20 +2576,26 @@ export class ControlSystem extends System {
       colorVariant: randomVariant.colorVariant,
       entropicBoltTalent,
       sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown',
-      visualOnlyCurveDirections: ['right', 'left'] as const,
     };
 
-    this.projectileSystem.createEntropicBoltProjectile(
-      this.world,
-      spawnPosition,
-      direction,
-      this.playerEntity.id,
-      entropicConfig
-    );
+    const curveDirections: Array<'left' | 'right' | undefined> = [undefined, 'right', 'left'];
+    for (const curveDirection of curveDirections) {
+      const entropicConfig = {
+        ...entropicBaseConfig,
+        ...(curveDirection ? { curveDirection } : {}),
+      };
 
-    // Broadcast projectile creation to other players
-    if (this.onProjectileCreatedCallback) {
-      this.onProjectileCreatedCallback('entropic_bolt', spawnPosition, direction, entropicConfig);
+      this.projectileSystem.createEntropicBoltProjectile(
+        this.world,
+        spawnPosition,
+        direction,
+        this.playerEntity.id,
+        entropicConfig,
+      );
+
+      if (this.onProjectileCreatedCallback) {
+        this.onProjectileCreatedCallback('entropic_bolt', spawnPosition, direction, entropicConfig);
+      }
     }
   }
 
@@ -5010,8 +5117,8 @@ export class ControlSystem extends System {
     const attackAngle = Math.PI / 2;
 
     // Base damage values
-    let leftSabreDamage = 19;
-    let rightSabreDamage = 23;
+    let leftSabreDamage = 23;
+    let rightSabreDamage = 29;
 
     const wrathSabreSwipes = shouldApplyWrathfulSabresSwipesTalent(this.talentLoadout);
     const infestSabreSwipes = shouldApplyInfestingSabresSwipesTalent(this.talentLoadout);
@@ -6274,7 +6381,7 @@ export class ControlSystem extends System {
     if (!targetHealth || !targetTransform || targetHealth.isDead) return;
 
     let isBackstab = false;
-    let baseDamage = 95;
+    let baseDamage = 115;
 
     const pvpPlayers = (window as any).pvpPlayers;
     const localSocketId = (window as any).localSocketId;
@@ -6306,7 +6413,7 @@ export class ControlSystem extends System {
         isBackstab = behindDotProduct < -0.3;
 
         if (isBackstab) {
-          baseDamage = 175;
+          baseDamage = 225;
         }
       }
     } else {
@@ -6379,7 +6486,7 @@ export class ControlSystem extends System {
         baseDamage = BACKSTAB_VORPAL_TIP_DAMAGE_FRONT;
       } else if (baseDamage === 285) {
         baseDamage = BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB;
-      } else if (baseDamage === 175) {
+      } else if (baseDamage === 225) {
         baseDamage = BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB_PVP;
       }
     }

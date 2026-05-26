@@ -954,7 +954,7 @@ export class CombatSystem extends System {
           position,
           damageType,
           undefined,
-          damageType === 'barrage' ? target.id : undefined,
+          damageType === 'barrage' || damageType === 'entropic' ? target.id : undefined,
           dualCoilSlot
         );
       }
@@ -1012,7 +1012,7 @@ export class CombatSystem extends System {
           position,
           damageType,
           undefined,
-          damageType === 'barrage' ? target.id : undefined,
+          damageType === 'barrage' || damageType === 'entropic' ? target.id : undefined,
           dualCoilSlot,
         );
       }
@@ -1076,7 +1076,7 @@ export class CombatSystem extends System {
           position,
           damageType,
           undefined,
-          damageType === 'barrage' ? target.id : undefined
+          damageType === 'barrage' || damageType === 'entropic' ? target.id : undefined
         );
       }
 
@@ -1205,7 +1205,7 @@ export class CombatSystem extends System {
               position,
               damageType || 'pvp',
               undefined,
-              damageType === 'barrage' ? target.id : undefined
+              damageType === 'barrage' || damageType === 'entropic' ? target.id : undefined
             );
           } else {
             // console.warn('⚠️ Skipping PVP damage number creation - invalid position:', position);
@@ -1268,7 +1268,7 @@ export class CombatSystem extends System {
             position,
             damageType,
             undefined,
-            damageType === 'barrage' ? target.id : undefined
+            damageType === 'barrage' || damageType === 'entropic' ? target.id : undefined
           );
         } else {
           // console.warn('⚠️ Skipping damage number creation - invalid position:', position);
@@ -1728,7 +1728,7 @@ export class CombatSystem extends System {
           position,
           damageType,
           undefined,
-          damageType === 'barrage' ? target.id : undefined,
+          damageType === 'barrage' || damageType === 'entropic' ? target.id : undefined,
           dualCoilSlot
         );
       }

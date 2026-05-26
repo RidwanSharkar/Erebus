@@ -15,6 +15,7 @@ import InstancedDebris from './InstancedDebris';
 import InstancedMushrooms from './InstancedMushrooms';
 import GroundCracks from './GroundCracks';
 import VolumetricMoonRays from './VolumetricMoonRays';
+import { MAIN_ARENA_HEX_RADIUS } from '@/utils/mapConstants';
 
 import { World } from '@/ecs/World';
 import { PerspectiveCamera } from '@/utils/three-exports';
@@ -88,7 +89,7 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       {/* Instanced grass field — density per room (purple sparse), GPU-animated wind */}
       {enableGrass && (
-        <StylizedGrass fieldShape="square" roomTheme={visualRoomTheme} />
+        <StylizedGrass fieldShape="hex" radius={MAIN_ARENA_HEX_RADIUS} roomTheme={visualRoomTheme} />
       )}
 
       {/* Stone road + branch connectors + combat platforms — single draw call */}
@@ -114,7 +115,7 @@ const Environment: React.FC<EnvironmentProps> = ({
         <PillarCollision world={world} positions={pillarPositions} />
       )}
 
-      {/* Castle walls — perimeter ring (closed square), single draw call */}
+      {/* Castle walls — perimeter ring (closed hex), single draw call */}
       <CastleWalls />
 
       {/* ── Doodads & scene props ──────────────────────────────────────── */}

@@ -1,43 +1,45 @@
 
-interface MerchantItem {
+export interface MerchantItem {
   id: string;
   name: string;
   description: string;
   cost: number;
-  currency: 'essence';
+  currency: 'essence' | 'gold';
+  sold?: boolean;
 }
 
 interface MerchantUIProps {
   isVisible: boolean;
+  items: MerchantItem[];
+  balance: number;
+  balanceLabel?: string;
+  title?: string;
+  healOffer?: {
+    cost: number;
+    amount: number;
+    disabled?: boolean;
+  };
   onClose?: () => void;
   onPurchase?: (itemId: string) => void;
+  onPurchaseHeal?: () => void;
 }
 
-const MERCHANT_ITEMS: MerchantItem[] = [
-  {
-    id: 'critical_damage_rune',
-    name: 'Critical Strike Damage Rune',
-    description: 'Permanently increases your critical strike damage by 15%',
-    cost: 45,
-    currency: 'essence'
-  },
-  {
-    id: 'critical_chance_rune',
-    name: 'Critical Strike Chance Rune',
-    description: 'Permanently increases your weapon critical strike chance by 3%',
-    cost: 35,
-    currency: 'essence'
-  },
-  {
-    id: 'ascendant_wings',
-    name: 'Ascendant Wings',
-    description: 'Angelic wings that replace your dragon wings with a celestial appearance',
-    cost: 50,
-    currency: 'essence'
-  }
-];
+const CURRENCY_LABEL: Record<MerchantItem['currency'], string> = {
+  essence: '✨',
+  gold: 'G',
+};
 
-export default function MerchantUI({ isVisible, onClose, onPurchase }: MerchantUIProps) {
+export default function MerchantUI({
+  isVisible,
+  items,
+  balance,
+  balanceLabel = 'gold',
+  title = 'Merchant',
+  healOffer,
+  onClose,
+  onPurchase,
+  onPurchaseHeal,
+}: MerchantUIProps) {
   if (!isVisible) return null;
 
   return (
@@ -45,7 +47,10 @@ export default function MerchantUI({ isVisible, onClose, onPurchase }: MerchantU
       <div className="bg-gray-900 border-2 border-gray-600 rounded-lg p-6 max-w-md w-full mx-4">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-white">Merchant</h2>
+          <div>
+            <h2 className="text-2xl font-bold text-white">{title}</h2>
+            <p className="text-sm text-yellow-300 mt-1">Balance: {balance} {balanceLabel}</p>
+          </div>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-white text-2xl font-bold"
@@ -56,7 +61,32 @@ export default function MerchantUI({ isVisible, onClose, onPurchase }: MerchantU
 
         {/* Items Grid */}
         <div className="space-y-4 max-h-96 overflow-y-auto">
-          {MERCHANT_ITEMS.map((item) => (
+          {healOffer && (
+            <div className="bg-gray-800 border border-pink-500/40 rounded-lg p-4 hover:bg-gray-700 transition-colors">
+              <div className="flex justify-between items-start mb-2">
+                <h3 className="text-lg font-semibold text-white">Restore Health</h3>
+                <div className="font-bold text-yellow-300">
+                  {healOffer.cost} G
+                </div>
+              </div>
+
+              <p className="text-gray-300 text-sm mb-3">
+                Restore {healOffer.amount} HP. Costs gold and cannot exceed max health.
+              </p>
+
+              <button
+                onClick={onPurchaseHeal}
+                disabled={healOffer.disabled || balance < healOffer.cost}
+                className="w-full bg-pink-600 hover:bg-pink-700 disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded transition-colors"
+              >
+                {balance < healOffer.cost ? 'Not Enough Gold' : 'Buy Heal'}
+              </button>
+            </div>
+          )}
+
+          {items.map((item) => {
+            const canAfford = balance >= item.cost;
+            return (
             <div
               key={item.id}
               className="bg-gray-800 border border-gray-600 rounded-lg p-4 hover:bg-gray-700 transition-colors"
@@ -64,8 +94,8 @@ export default function MerchantUI({ isVisible, onClose, onPurchase }: MerchantU
               <div className="flex justify-between items-start mb-2">
                 <h3 className="text-lg font-semibold text-white">{item.name}</h3>
                 <div className="text-right">
-                  <div className="font-bold text-purple-400">
-                    {item.cost} ✨
+                  <div className={item.currency === 'gold' ? 'font-bold text-yellow-300' : 'font-bold text-purple-400'}>
+                    {item.cost} {CURRENCY_LABEL[item.currency]}
                   </div>
                 </div>
               </div>
@@ -74,17 +104,19 @@ export default function MerchantUI({ isVisible, onClose, onPurchase }: MerchantU
 
               <button
                 onClick={() => onPurchase?.(item.id)}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition-colors"
+                disabled={item.sold || !canAfford}
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded transition-colors"
               >
-                Purchase
+                {item.sold ? 'Sold' : canAfford ? 'Purchase' : `Not Enough ${item.currency === 'gold' ? 'Gold' : 'Essence'}`}
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Footer */}
         <div className="mt-6 text-center text-gray-400 text-sm">
-          Items and purchasing system coming soon!
+          Purchases are final.
         </div>
       </div>
     </div>

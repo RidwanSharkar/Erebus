@@ -46,7 +46,7 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
     <group ref={groupRef}>
       {/* Main projectile body - sleek venomous arrow */}
       <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.04, 0.15, 2.5, 8]} />
+        <cylinderGeometry args={[0.025, 0.09, 1.9, 8]} />
         <meshStandardMaterial
           color="#ff4400" // Reddish-orange PerfectShot color
           emissive="#cc0000"
@@ -57,8 +57,8 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
       </mesh>
 
       {/* Arrowhead */}
-      <mesh position={[0, 0, 1.25]} rotation={[Math.PI / 2, 0, 0]}>
-        <coneGeometry args={[0.15, 0.6, 6]} />
+      <mesh position={[0, 0, 1]} rotation={[Math.PI / 2, 0, 0]}>
+        <coneGeometry args={[0.11, 0.45, 6]} />
         <meshStandardMaterial
           color="#cc0000"
           emissive="#ff4400"
@@ -70,11 +70,11 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
 
       {/* Spinning venom energy rings around the projectile - ThrowSpear style */}
       {[...Array(2)].map((_, i) => (
-        <group key={`ring-${i}`} position={[0, 0, 0.3 - i * 0.4] as [number, number, number]}>
+        <group key={`ring-${i}`} position={[0, 0, 0.22 - i * 0.32] as [number, number, number]}>
           <mesh
             rotation={[0, 0, Date.now() * 0.01 + i * Math.PI / 3]}
           >
-            <torusGeometry args={[0.15 + i * 0.05, 0.02, 6, 12]} />
+            <torusGeometry args={[0.105 + i * 0.035, 0.014, 6, 12]} />
             <meshStandardMaterial
               color="#cc0000" // Dark red
               emissive="#cc0000"
@@ -90,7 +90,7 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
 
       {/* Venom energy core */}
       <mesh>
-        <sphereGeometry args={[0.08, 8, 8]} />
+        <sphereGeometry args={[0.055, 8, 8]} />
         <meshStandardMaterial
           color="#ff6600"
           emissive="#cc0000"
@@ -109,7 +109,7 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
         
         // Position trails behind the projectile tip in the projectile's local coordinate system
         // The projectile's forward direction is along the positive Z axis in its local space
-        const trailOffset: [number, number, number] = [0, 0, -(index + 1) * 0.8]; // Behind the projectile along Z axis
+        const trailOffset: [number, number, number] = [0, 0, -(index + 1) * 0.6]; // Behind the projectile along Z axis
         
         return (
           <group
@@ -118,7 +118,7 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
           >
             {/* Venom energy trail */}
             <mesh scale={[trailScale, trailScale, trailScale]}>
-              <sphereGeometry args={[0.15, 8, 8]} />
+              <sphereGeometry args={[0.105, 8, 8]} />
               <meshStandardMaterial
                 color="#cc0000" // Dark red
                 emissive="#cc0000"
@@ -131,8 +131,8 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
             </mesh>
             
             {/* Outer venom glow */}
-            <mesh scale={[trailScale * 1.5, trailScale * 1.5, trailScale * 1.5]}>
-              <sphereGeometry args={[0.2, 6, 6]} />
+            <mesh scale={[trailScale * 1.35, trailScale * 1.35, trailScale * 1.35]}>
+              <sphereGeometry args={[0.14, 6, 6]} />
               <meshStandardMaterial
                 color="#ff6600" // Orange
                 emissive="#ff6600"
@@ -150,8 +150,8 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
       {/* Point light for glow effect */}
       <pointLight
         color="#cc0000"
-        intensity={2 * projectile.opacity}
-        distance={4}
+        intensity={1.6 * projectile.opacity}
+        distance={3.2}
         decay={2}
       />
     </group>

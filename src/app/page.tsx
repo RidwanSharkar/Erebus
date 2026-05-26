@@ -38,9 +38,11 @@ import {
   expandUniversalGreenZombieBoonIdsAfterPick,
   excludeOwnedTalentsFromBoonPool,
   filterTalentIdsByExclusionSet,
+  pickPrioritizedRoomBoonOptions,
   pickRandomDistinctFromPool,
 } from '../utils/talents';
-import type { TalentId } from '../utils/talents';
+import type { TalentId, TalentLoadout } from '../utils/talents';
+import type { AbilityLoadout } from '../utils/weaponAbilities';
 import { DpsTracker, type DpsSnapshot } from '../utils/DpsTracker';
 
 // Extend Window interface to include audioSystem
@@ -84,6 +86,58 @@ function coopRoomBoonColorFromContext(
   return null;
 }
 
+interface RoomBoonExclusionSets {
+  universalGreen: ReadonlySet<TalentId>;
+  roomBoomDash: ReadonlySet<TalentId>;
+  runeblade: ReadonlySet<TalentId>;
+  scytheEntropic: ReadonlySet<TalentId>;
+  sabres: ReadonlySet<TalentId>;
+  bow: ReadonlySet<TalentId>;
+}
+
+function filterRoomBoonPool(
+  color: string | null,
+  primaryWeapon: WeaponType,
+  talentLoadout: TalentLoadout | null | undefined,
+  exclusions: RoomBoonExclusionSets,
+): TalentId[] {
+  const rawPool = buildRoomBoonPoolForColor(color, primaryWeapon);
+  let pool = filterTalentIdsByExclusionSet(rawPool, exclusions.universalGreen);
+  pool = filterTalentIdsByExclusionSet(pool, exclusions.roomBoomDash);
+  if (primaryWeapon === WeaponType.RUNEBLADE) {
+    pool = filterTalentIdsByExclusionSet(pool, exclusions.runeblade);
+  } else if (primaryWeapon === WeaponType.SCYTHE) {
+    pool = filterTalentIdsByExclusionSet(pool, exclusions.scytheEntropic);
+  } else if (primaryWeapon === WeaponType.SABRES) {
+    pool = filterTalentIdsByExclusionSet(pool, exclusions.sabres);
+  } else if (primaryWeapon === WeaponType.BOW) {
+    pool = filterTalentIdsByExclusionSet(pool, exclusions.bow);
+  }
+  return excludeOwnedTalentsFromBoonPool(pool, talentLoadout);
+}
+
+function rollClassBoonOptions(
+  weapon: WeaponType,
+  talentLoadout: TalentLoadout | null | undefined,
+): TalentId[] {
+  const pool = excludeOwnedTalentsFromBoonPool(
+    buildClassBoonPoolForWeapon(weapon, talentLoadout),
+    talentLoadout,
+  );
+  return pickRandomDistinctFromPool(pool, 3);
+}
+
+function rollRoomBoonOptions(
+  color: string | null,
+  primaryWeapon: WeaponType,
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+  exclusions: RoomBoonExclusionSets,
+): TalentId[] {
+  const pool = filterRoomBoonPool(color, primaryWeapon, talentLoadout, exclusions);
+  return pickPrioritizedRoomBoonOptions(pool, color, primaryWeapon, abilityLoadout, 3);
+}
+
 function weaponIconSrcForHud(weapon: WeaponType): string | null {
   switch (weapon) {
     case WeaponType.SABRES:
@@ -118,11 +172,15 @@ function HomeContent() {
     grantStatPoints,
     updatePlayerGold,
     purchaseItem,
+    purchaseMerchantItem,
+    purchaseMerchantHeal,
     players,
     socket,
     skeletonKillCount,
+    skeletonKillRequired,
     enemies,
     inventory,
+    merchantInventory,
     joinRoom,
     currentRoomId,
     isConnected,
@@ -395,6 +453,15 @@ function HomeContent() {
     setPortalsUnlocked(false);
   }, [coopCombatArenaEnterSeq]);
 
+  /** New wave-clear intermission: ensure pedestal aura / X-interact isn't stuck behind prior `pedestalInteracted`. */
+  const lastIntermissionSeqForPedestalRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (lastIntermissionSeqForPedestalRef.current === coopMainArenaIntermissionSeq) return;
+    lastIntermissionSeqForPedestalRef.current = coopMainArenaIntermissionSeq;
+    if (gameMode !== 'coop' || coopMainArenaIntermissionSeq <= 0) return;
+    setPedestalInteracted(false);
+  }, [coopMainArenaIntermissionSeq, gameMode]);
+
   useEffect(() => {
     runebladeRoomBoonExcludedIdsRef.current.clear();
     scytheEntropicRoomBoonExcludedIdsRef.current.clear();
@@ -419,11 +486,7 @@ function HomeContent() {
     const rewardKind = (rewardKindFromScene ?? coopClearedRoomKind ?? coopCurrentRoomKind) as CoopRoomKind | null;
 
     if (rewardKind === 'boss') {
-      const classPool = excludeOwnedTalentsFromBoonPool(
-        buildClassBoonPoolForWeapon(selectedWeapons.primary, talentLoadout),
-        talentLoadout,
-      );
-      const options = pickRandomDistinctFromPool(classPool, 3);
+      const options = rollClassBoonOptions(selectedWeapons.primary, talentLoadout);
       if (options.length > 0) {
         setCoopBoon({ kind: 'class', options, weaponForPick: selectedWeapons.primary });
         return;
@@ -439,9 +502,8 @@ function HomeContent() {
       return;
     }
 
-    if (rewardKind === 'healing') {
-      clearCoopClearedRoomColor();
-      setPortalsUnlocked(true);
+    if (rewardKind === 'merchant') {
+      setShowMerchantUI(true);
       return;
     }
 
@@ -458,23 +520,20 @@ function HomeContent() {
       coopMainArenaPortalPhase === 'pick_post_boss'
     ) {
       const color = coopRoomBoonColorFromContext(coopClearedRoomColor, coopClearedRoomKind, campTypes);
-      const rawPool = buildRoomBoonPoolForColor(color, selectedWeapons.primary);
-      let pool = filterTalentIdsByExclusionSet(
-        rawPool,
-        universalGreenZombieRoomBoonExcludedIdsRef.current,
+      const options = rollRoomBoonOptions(
+        color,
+        selectedWeapons.primary,
+        talentLoadout,
+        abilityLoadout,
+        {
+          universalGreen: universalGreenZombieRoomBoonExcludedIdsRef.current,
+          roomBoomDash: roomBoomDashBoonExcludedIdsRef.current,
+          runeblade: runebladeRoomBoonExcludedIdsRef.current,
+          scytheEntropic: scytheEntropicRoomBoonExcludedIdsRef.current,
+          sabres: sabresRoomBoonExcludedIdsRef.current,
+          bow: bowRoomBoonExcludedIdsRef.current,
+        },
       );
-      pool = filterTalentIdsByExclusionSet(pool, roomBoomDashBoonExcludedIdsRef.current);
-      if (selectedWeapons.primary === WeaponType.RUNEBLADE) {
-        pool = filterTalentIdsByExclusionSet(pool, runebladeRoomBoonExcludedIdsRef.current);
-      } else if (selectedWeapons.primary === WeaponType.SCYTHE) {
-        pool = filterTalentIdsByExclusionSet(pool, scytheEntropicRoomBoonExcludedIdsRef.current);
-      } else if (selectedWeapons.primary === WeaponType.SABRES) {
-        pool = filterTalentIdsByExclusionSet(pool, sabresRoomBoonExcludedIdsRef.current);
-      } else if (selectedWeapons.primary === WeaponType.BOW) {
-        pool = filterTalentIdsByExclusionSet(pool, bowRoomBoonExcludedIdsRef.current);
-      }
-      pool = excludeOwnedTalentsFromBoonPool(pool, talentLoadout);
-      const options = pickRandomDistinctFromPool(pool, 3);
       if (options.length > 0) {
         setCoopBoon({ kind: 'room', options });
         // portalsUnlocked will be set in handleCoopBoonPick after the player chooses
@@ -497,23 +556,52 @@ function HomeContent() {
     updatePlayerGold,
     clearCoopClearedRoomColor,
     talentLoadout,
+    abilityLoadout,
   ]);
 
   const handleThroneWeaponEquipped = useCallback(
     (weapon: WeaponType) => {
       if (combatArenaActive) return;
       if (classBoonPickedWeaponsRef.current.has(weapon)) return;
-      const pool = excludeOwnedTalentsFromBoonPool(
-        buildClassBoonPoolForWeapon(weapon, talentLoadout),
-        talentLoadout,
-      );
-      if (pool.length === 0) return;
-      const options = pickRandomDistinctFromPool(pool, 3);
+      const options = rollClassBoonOptions(weapon, talentLoadout);
       if (options.length === 0) return;
       setCoopBoon({ kind: 'class', options, weaponForPick: weapon });
     },
     [combatArenaActive, talentLoadout],
   );
+
+  const handleCoopBoonReroll = useCallback(() => {
+    setCoopBoon((prev) => {
+      if (!prev) return null;
+      if (prev.kind === 'class') {
+        const options = rollClassBoonOptions(prev.weaponForPick, talentLoadout);
+        return options.length > 0 ? { ...prev, options } : prev;
+      }
+      const color = coopRoomBoonColorFromContext(coopClearedRoomColor, coopClearedRoomKind, campTypes);
+      const options = rollRoomBoonOptions(
+        color,
+        selectedWeapons.primary,
+        talentLoadout,
+        abilityLoadout,
+        {
+          universalGreen: universalGreenZombieRoomBoonExcludedIdsRef.current,
+          roomBoomDash: roomBoomDashBoonExcludedIdsRef.current,
+          runeblade: runebladeRoomBoonExcludedIdsRef.current,
+          scytheEntropic: scytheEntropicRoomBoonExcludedIdsRef.current,
+          sabres: sabresRoomBoonExcludedIdsRef.current,
+          bow: bowRoomBoonExcludedIdsRef.current,
+        },
+      );
+      return options.length > 0 ? { ...prev, options } : prev;
+    });
+  }, [
+    talentLoadout,
+    abilityLoadout,
+    selectedWeapons.primary,
+    coopClearedRoomColor,
+    coopClearedRoomKind,
+    campTypes,
+  ]);
 
   const handleCoopBoonPick = useCallback(
     (id: TalentId, kind: 'class' | 'room', classPickWeapon?: WeaponType) => {
@@ -707,6 +795,34 @@ function HomeContent() {
   const dpsWeaponIconSrc = weaponIconSrcForHud(
     controlSystem?.getCurrentWeapon() ?? selectedWeapons.primary ?? gameState.currentWeapon,
   );
+  const pvpMerchantItems = [
+    {
+      id: 'damage_boost',
+      name: 'Damage Boost',
+      description: 'Permanently increases your weapon damage by 15%',
+      cost: 75,
+      currency: 'essence' as const,
+    },
+    {
+      id: 'ascendant_wings',
+      name: 'Ascendant Wings',
+      description: 'Beautiful angelic wings that replace your dragon wings with a celestial appearance',
+      cost: 50,
+      currency: 'essence' as const,
+    },
+  ];
+  const coopMerchantItems = merchantInventory.map((stock) => ({
+    id: stock.id,
+    name: stock.item.label,
+    description: `${stock.item.rarity ? `${stock.item.rarity.toUpperCase()} ` : ''}+${stock.item.statBonus ?? 0} ${stock.item.stat ?? 'stat'} boss reward`,
+    cost: stock.cost,
+    currency: 'gold' as const,
+    sold: stock.sold,
+  }));
+  const merchantRoomActive =
+    gameMode === 'coop' &&
+    showMerchantUI &&
+    (coopClearedRoomKind === 'merchant' || coopCurrentRoomKind === 'merchant');
 
   return (
       <main className="w-full h-screen bg-black relative">
@@ -964,6 +1080,9 @@ function HomeContent() {
                 level={playerLevel}
                 isLocalPlayer={true}
                 skeletonKillCount={gameMode === 'coop' ? skeletonKillCount : undefined}
+                skeletonKillsRequired={
+                  gameMode === 'coop' ? skeletonKillRequired : undefined
+                }
                 bossSpawned={gameMode === 'coop'
                   ? Array.from(enemies.values()).some(e => (e.type === 'boss' || e.type === 'boss2' || e.type === 'boss3') && !e.isDying)
                   : undefined}
@@ -1040,34 +1159,20 @@ function HomeContent() {
                     coopBoon.kind === 'class' ? coopBoon.weaponForPick : undefined,
                   )
                 }
+                onReroll={handleCoopBoonReroll}
               />
             )}
 
-            {/* Merchant UI - Only show in PVP mode */}
+            {/* Merchant UI */}
             {gameMode === 'pvp' && (
               <MerchantUI
                 isVisible={showMerchantUI}
+                items={pvpMerchantItems}
+                balance={playerEssence}
+                balanceLabel="essence"
                 onClose={() => setShowMerchantUI(false)}
                 onPurchase={(itemId) => {
-                  // Find the item details
-                  const MERCHANT_ITEMS = [
-                    {
-                      id: 'damage_boost',
-                      name: 'Damage Boost',
-                      description: 'Permanently increases your weapon damage by 15%',
-                      cost: 75,
-                      currency: 'essence' as const
-                    },
-                    {
-                      id: 'ascendant_wings',
-                      name: 'Ascendant Wings',
-                      description: 'Beautiful angelic wings that replace your dragon wings with a celestial appearance',
-                      cost: 50,
-                      currency: 'essence' as const
-                    }
-                  ];
-
-                  const item = MERCHANT_ITEMS.find(item => item.id === itemId);
+                  const item = pvpMerchantItems.find(item => item.id === itemId);
                   if (item) {
                     const success = purchaseItem(item.id, item.cost, item.currency);
                     if (success) {
@@ -1081,6 +1186,26 @@ function HomeContent() {
                     }
                   }
                 }}
+              />
+            )}
+            {merchantRoomActive && (
+              <MerchantUI
+                isVisible={showMerchantUI}
+                title="Merchant Room"
+                items={coopMerchantItems}
+                balance={playerGold}
+                balanceLabel="gold"
+                healOffer={{
+                  cost: 50,
+                  amount: 100,
+                }}
+                onClose={() => {
+                  setShowMerchantUI(false);
+                  clearCoopClearedRoomColor();
+                  setPortalsUnlocked(true);
+                }}
+                onPurchase={purchaseMerchantItem}
+                onPurchaseHeal={purchaseMerchantHeal}
               />
             )}
           </>

@@ -8,14 +8,17 @@ import { peek as suspendPeek } from 'suspend-react';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
 
+export type KnightAbilityClip = 'Smite' | 'Aggro' | 'Cast' | 'Spin';
+
 interface KnightModelProps {
   isWalking: boolean;
   isAttacking: boolean;
   attackVariant: 1 | 2;
   isDying: boolean;
   soulType?: 'green' | 'red' | 'blue' | 'purple' | 'yellow';
+  castShadow?: boolean;
   /** Which ability animation is currently playing, or null when none. */
-  abilityClip?: 'Smite' | 'Aggro' | 'Cast' | null;
+  abilityClip?: KnightAbilityClip | null;
   /** Hit-react one-shots when damage is taken (renderer sets gates). */
   isImpacting?: boolean;
   impactVariant?: 1 | 2;
@@ -38,6 +41,7 @@ const KNIGHT_MODEL_PATHS = [
   '/models/knight_smite.glb',
   '/models/knight_aggro.glb',
   '/models/knight_cast.glb',
+  '/models/knight_spin.glb',
   '/models/knight_impact1.glb',
   '/models/knight_impact2.glb',
 ];
@@ -50,6 +54,7 @@ type KnightDeferredAnimationName =
   | 'Smite'
   | 'Aggro'
   | 'Cast'
+  | 'Spin'
   | 'Impact1'
   | 'Impact2';
 
@@ -60,6 +65,7 @@ const KNIGHT_DEFERRED_MODEL_PATHS: Record<Exclude<KnightDeferredAnimationName, '
   Smite: '/models/knight_smite.glb',
   Aggro: '/models/knight_aggro.glb',
   Cast: '/models/knight_cast.glb',
+  Spin: '/models/knight_spin.glb',
   Impact1: '/models/knight_impact1.glb',
   Impact2: '/models/knight_impact2.glb',
 };
@@ -107,6 +113,7 @@ export default function KnightModel({
   attackVariant,
   isDying,
   soulType,
+  castShadow = true,
   abilityClip,
   isImpacting = false,
   impactVariant = 1,
@@ -171,7 +178,7 @@ export default function KnightModel({
     const clone = SkeletonUtils.clone(scene) as Group;
     clone.traverse((child: any) => {
       if (child.isMesh) {
-        child.castShadow = true;
+        child.castShadow = castShadow;
         child.receiveShadow = true;
         // SkeletonUtils.clone() re-binds skeletons but leaves Material references
         // shared across all instances (Object3D.clone() is shallow for materials).
@@ -184,7 +191,7 @@ export default function KnightModel({
       }
     });
     return clone;
-  }, [scene]);
+  }, [scene, castShadow]);
 
   // Merge clips from the three separate GLBs into one array with canonical names.
   // Each individual GLB exports its clip as "mixamo.com", so we rename here.
@@ -225,6 +232,7 @@ export default function KnightModel({
       ...rename(deferredAnimationClips.Smite ?? [],   'Smite'),
       ...rename(deferredAnimationClips.Aggro ?? [],   'Aggro'),
       ...rename(deferredAnimationClips.Cast ?? [],    'Cast'),
+      ...rename(deferredAnimationClips.Spin ?? [],    'Spin').map(stripRootMotionXZ),
       ...rename(deferredAnimationClips.Impact1 ?? [], 'Impact1'),
       ...rename(deferredAnimationClips.Impact2 ?? [], 'Impact2'),
     ];
@@ -233,7 +241,7 @@ export default function KnightModel({
   // Bind the mixer to the clone's root so it can traverse to find bones by name
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
-  const getAction = (name: 'Idle' | 'Walk' | 'Attack' | 'Attack2' | 'Death' | 'Smite' | 'Aggro' | 'Cast' | 'Impact1' | 'Impact2'): AnimationAction | null =>
+  const getAction = (name: 'Idle' | 'Walk' | 'Attack' | 'Attack2' | 'Death' | 'Smite' | 'Aggro' | 'Cast' | 'Spin' | 'Impact1' | 'Impact2'): AnimationAction | null =>
     actions[name] ?? null;
 
   // Transition to the right animation clip when state changes.
@@ -317,7 +325,7 @@ export default function KnightModel({
         blendToWalkOrIdle();
         return;
       }
-      if (name === 'Attack' || name === 'Attack2' || name === 'Smite' || name === 'Aggro' || name === 'Cast') {
+      if (name === 'Attack' || name === 'Attack2' || name === 'Smite' || name === 'Aggro' || name === 'Cast' || name === 'Spin') {
         blendToWalkOrIdle();
       }
     };

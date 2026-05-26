@@ -2539,7 +2539,7 @@ export default function TalentSelectionModal({
                   <>
                     <p className="text-gray-400 text-sm mt-1">{triggerFingerTalentDefinition.description}</p>
                     <p className="text-rose-200/90 text-xs mt-2 font-mono">
-                      LMB tap damage {BOW_UNCHARGED_PROJECTILE_DAMAGE} → {BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE}
+                      LMB minimum damage {BOW_UNCHARGED_PROJECTILE_DAMAGE} → {BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE}
                     </p>
                   </>
                 )}

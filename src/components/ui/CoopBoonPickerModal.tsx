@@ -179,6 +179,7 @@ interface CoopBoonPickerModalProps {
   /** Up to three distinct picks; callers should omit owned talents — duplicate ids here are stripped in display order. */
   options: readonly TalentId[];
   onPick: (id: TalentId) => void;
+  onReroll?: () => void;
 }
 
 export default function CoopBoonPickerModal({
@@ -187,6 +188,7 @@ export default function CoopBoonPickerModal({
   roomColor,
   options,
   onPick,
+  onReroll,
 }: CoopBoonPickerModalProps) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
@@ -199,6 +201,10 @@ export default function CoopBoonPickerModal({
       out.push(id);
     }
     return out;
+  }, [options]);
+
+  useEffect(() => {
+    setHoveredIdx(null);
   }, [options]);
 
   const rc = String(roomColor ?? '').toLowerCase();
@@ -219,9 +225,14 @@ export default function CoopBoonPickerModal({
   const flavorKey = kind === 'room' && FLAVOR_SUBTITLES[rc] ? rc : kind;
   const flavorText = FLAVOR_SUBTITLES[flavorKey] ?? FLAVOR_SUBTITLES.class;
 
-  // Keyboard shortcuts: 1/2/3
+  // Keyboard shortcuts: 1/2/3 pick, R reroll
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
+      if (onReroll && (e.key === 'r' || e.key === 'R')) {
+        e.preventDefault();
+        onReroll();
+        return;
+      }
       const idx = parseInt(e.key, 10) - 1;
       if (!isNaN(idx) && idx >= 0 && idx < displayOptions.length) {
         const id = displayOptions[idx];
@@ -230,7 +241,7 @@ export default function CoopBoonPickerModal({
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [displayOptions, onPick]);
+  }, [displayOptions, onPick, onReroll]);
 
   const hoveredId =
     hoveredIdx !== null ? displayOptions[hoveredIdx] : undefined;
@@ -281,6 +292,23 @@ export default function CoopBoonPickerModal({
             <span className={`text-sm font-bold tracking-[0.2em] uppercase ${accent.text}`}>
               Choose One:
             </span>
+            {onReroll && (
+              <button
+                type="button"
+                onClick={onReroll}
+                aria-label="Reroll boon options"
+                className={`
+                  shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md
+                  border text-xs font-bold tracking-widest uppercase
+                  transition-all duration-150 cursor-pointer
+                  ${accent.dimBorder} ${accent.text} ${accent.bg}
+                  hover:brightness-125 hover:shadow-md hover:shadow-black/40
+                `}
+              >
+                <span className="text-sm leading-none" aria-hidden="true">🎲</span>
+                Reroll
+              </button>
+            )}
             <div className="flex-1 h-px bg-gray-700/60" />
             <span className="text-gray-600 text-xs tracking-widest">
               Press&nbsp;
@@ -289,6 +317,12 @@ export default function CoopBoonPickerModal({
               <kbd className="px-1 py-0.5 rounded bg-gray-800 border border-gray-600 text-gray-400 font-mono text-xs">2</kbd>
               &nbsp;·&nbsp;
               <kbd className="px-1 py-0.5 rounded bg-gray-800 border border-gray-600 text-gray-400 font-mono text-xs">3</kbd>
+              {onReroll && (
+                <>
+                  &nbsp;·&nbsp;
+                  <kbd className="px-1 py-0.5 rounded bg-gray-800 border border-gray-600 text-gray-400 font-mono text-xs">R</kbd>
+                </>
+              )}
             </span>
           </div>
 

@@ -389,7 +389,20 @@ export class InputManager extends EventEmitter {
 
   private isGameKey(key: string): boolean {
     // Define which keys should have their default behavior prevented
-    const gameKeys = ['w', 'a', 's', 'd', ' ', 'shift', 'tab', 'escape'];
+    const gameKeys = [
+      'w',
+      'a',
+      's',
+      'd',
+      'arrowup',
+      'arrowdown',
+      'arrowleft',
+      'arrowright',
+      ' ',
+      'shift',
+      'tab',
+      'escape'
+    ];
     return gameKeys.includes(key);
   }
 

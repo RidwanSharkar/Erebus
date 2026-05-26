@@ -6,9 +6,9 @@ export class DamageNumberManager {
   private damageNumbers: DamageNumberData[] = [];
   private nextId = 0;
 
-  /** Multiple barrage arrows can hit the same target in one volley — merge into one floating number. */
-  private barrageMergeByTarget = new Map<number, { id: string; lastHitMs: number }>();
-  private static readonly BARRAGE_MERGE_GAP_MS = 500;
+  /** Multiple barrage / entropic bolts can hit the same target in one volley — merge into one floating number. */
+  private multiHitMergeByTarget = new Map<number, { id: string; lastHitMs: number }>();
+  private static readonly MULTI_HIT_MERGE_GAP_MS = 500;
 
   public addDamageNumber(
     damage: number,
@@ -16,23 +16,24 @@ export class DamageNumberManager {
     position: Vector3,
     damageType?: string,
     isIncomingDamage?: boolean,
-    /** ECS target id — with `damageType === 'barrage'`, consecutive hits on that target merge within ~500ms. */
+    /** ECS target id — with `damageType === 'barrage' | 'entropic'`, consecutive hits on that target merge within ~500ms. */
     mergeBarrageTargetEntityId?: number,
     /** Bow Dual Coil: lane index so paired numbers don’t share one stack slot and get extra screen spread. */
     dualCoilSlot?: 0 | 1,
-    displayText?: string
+    displayText?: string,
+    durationHint?: 'pickup'
   ): string {
     const now = Date.now();
 
     if (
-      damageType === 'barrage' &&
+      (damageType === 'barrage' || damageType === 'entropic') &&
       mergeBarrageTargetEntityId !== undefined &&
       !isIncomingDamage
     ) {
-      const pending = this.barrageMergeByTarget.get(mergeBarrageTargetEntityId);
+      const pending = this.multiHitMergeByTarget.get(mergeBarrageTargetEntityId);
       if (
         pending &&
-        now - pending.lastHitMs <= DamageNumberManager.BARRAGE_MERGE_GAP_MS
+        now - pending.lastHitMs <= DamageNumberManager.MULTI_HIT_MERGE_GAP_MS
       ) {
         const existing = this.damageNumbers.find(dn => dn.id === pending.id);
         if (existing) {
@@ -42,7 +43,7 @@ export class DamageNumberManager {
           pending.lastHitMs = now;
           return pending.id;
         }
-        this.barrageMergeByTarget.delete(mergeBarrageTargetEntityId);
+        this.multiHitMergeByTarget.delete(mergeBarrageTargetEntityId);
       }
 
       const id = `damage_${this.nextId++}`;
@@ -56,9 +57,10 @@ export class DamageNumberManager {
         isIncomingDamage,
         ...(dualCoilSlot !== undefined ? { dualCoilSlot } : {}),
         ...(displayText !== undefined ? { displayText } : {}),
+        ...(durationHint !== undefined ? { durationHint } : {}),
       };
       this.damageNumbers.push(damageNumber);
-      this.barrageMergeByTarget.set(mergeBarrageTargetEntityId, {
+      this.multiHitMergeByTarget.set(mergeBarrageTargetEntityId, {
         id,
         lastHitMs: now,
       });
@@ -76,6 +78,7 @@ export class DamageNumberManager {
       isIncomingDamage,
       ...(dualCoilSlot !== undefined ? { dualCoilSlot } : {}),
       ...(displayText !== undefined ? { displayText } : {}),
+      ...(durationHint !== undefined ? { durationHint } : {}),
     };
 
     this.damageNumbers.push(damageNumber);
@@ -87,10 +90,10 @@ export class DamageNumberManager {
     if (index !== -1) {
       const removed = this.damageNumbers[index];
       this.damageNumbers.splice(index, 1);
-      if (removed.damageType === 'barrage') {
-        this.barrageMergeByTarget.forEach((pending, targetId) => {
+      if (removed.damageType === 'barrage' || removed.damageType === 'entropic') {
+        this.multiHitMergeByTarget.forEach((pending, targetId) => {
           if (pending.id === id) {
-            this.barrageMergeByTarget.delete(targetId);
+            this.multiHitMergeByTarget.delete(targetId);
           }
         });
       }
@@ -108,9 +111,9 @@ export class DamageNumberManager {
       dn => now - dn.timestamp < 5000
     );
 
-    this.barrageMergeByTarget.forEach((pending, targetId) => {
+    this.multiHitMergeByTarget.forEach((pending, targetId) => {
       if (!this.damageNumbers.some(dn => dn.id === pending.id)) {
-        this.barrageMergeByTarget.delete(targetId);
+        this.multiHitMergeByTarget.delete(targetId);
       }
     });
 
@@ -125,7 +128,7 @@ export class DamageNumberManager {
   public clear(): void {
     this.damageNumbers.length = 0;
     this.nextId = 0;
-    this.barrageMergeByTarget.clear();
+    this.multiHitMergeByTarget.clear();
   }
 
   public getCount(): number {

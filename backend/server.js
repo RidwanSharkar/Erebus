@@ -146,6 +146,7 @@ io.on('connection', (socket) => {
       coopTerrainTheme: typeof room.getCoopTerrainTheme === 'function' ? room.getCoopTerrainTheme() : null,
       coopCurrentRoomKind: typeof room.getCoopCurrentRoomKind === 'function' ? room.getCoopCurrentRoomKind() : null,
       coopClearedRoomKind: typeof room.getCoopClearedRoomKind === 'function' ? room.getCoopClearedRoomKind() : null,
+      merchantInventory: typeof room.getMerchantInventory === 'function' ? room.getMerchantInventory() : [],
       mushroomState: typeof room.getMushroomState === 'function' ? room.getMushroomState() : null,
       goldDrops: typeof room.getGoldDrops === 'function' ? room.getGoldDrops() : [],
     });

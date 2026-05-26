@@ -18,6 +18,9 @@ export class PhysicsSystem extends BasePhysicsSystem {
   private castleWallPhysicsEnabled = true;
   private arenaBoundaryMode: 'circle' | 'square' | 'hex' = 'square';
 
+  /** Legacy fixed tree discs; disable when forest visuals use procedural positions. */
+  private treeCollisionEnabled = true;
+
   /** Circular XZ obstacles (throne pillars) — only used when castle walls are off. */
   private thronePillarObstacles: Array<{ x: number; z: number; radius: number }> = [];
 
@@ -44,6 +47,10 @@ export class PhysicsSystem extends BasePhysicsSystem {
 
   public setArenaBoundaryMode(mode: 'circle' | 'square' | 'hex'): void {
     this.arenaBoundaryMode = mode;
+  }
+
+  public setTreeCollisionEnabled(enabled: boolean): void {
+    this.treeCollisionEnabled = enabled;
   }
 
   /**
@@ -125,7 +132,9 @@ export class PhysicsSystem extends BasePhysicsSystem {
       : null;
     
     // Check for tree, corner mountains, throne pillars, and castle-wall collisions
-    const treeCollision = this.checkTreeCollision(potentialPosition);
+    const treeCollision = this.treeCollisionEnabled
+      ? this.checkTreeCollision(potentialPosition)
+      : { hasCollision: false, normal: new Vector3(), treeCenter: new Vector3() };
     const cornerMountainCollision = this.checkCornerMountainCollision(potentialPosition);
     const thronePillarCollision = this.checkThronePillarCollision(potentialPosition);
     const wallCollision = this.castleWallPhysicsEnabled

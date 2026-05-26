@@ -8,7 +8,7 @@ import {
   Euler,
   Quaternion,
 } from '@/utils/three-exports';
-import { MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z } from '@/utils/mapConstants';
+import { MAIN_MAP_HALF_Z, isInsideHexArenaXZ } from '@/utils/mapConstants';
 import type { RoomBorderTheme } from './SimpleBorderEffects';
 
 const THEME_ID: Record<RoomBorderTheme, number> = {
@@ -121,7 +121,7 @@ const STONE_FRAGMENT = `
 // All tiles are axis-aligned (rotY = 0) and spaced with a 0.1-unit grout gap
 // so coplanar faces never overlap — eliminating all z-fighting/jitter.
 //
-// Main arena footprint: 20 × 70, x = ±10 and z = ±35.
+// Main arena footprint: regular hex; slabs whose corners protrude are culled.
 // ---------------------------------------------------------------------------
 
 interface SlabDef {
@@ -185,7 +185,7 @@ const WEST_ALCOVE = makeGrid(-5.55, 5.0, 2, 4, 1.8, 2.8, 1.7, 2.7, 0.06, 0.10);
 // Merge everything — one InstancedMesh, one draw call
 // ---------------------------------------------------------------------------
 
-// Slabs whose corners protrude outside the playable rectangle are culled.
+// Slabs whose corners protrude outside the playable hex are culled.
 const isSlabInBounds = (slab: SlabDef): boolean => {
   const [cx, , cz] = slab.position;
   const hw = slab.scale[0] / 2;
@@ -196,7 +196,7 @@ const isSlabInBounds = (slab: SlabDef): boolean => {
     [cx - hw, cz + hd],
     [cx - hw, cz - hd],
   ];
-  return corners.every(([x, z]) => Math.abs(x) <= MAIN_MAP_HALF_X && Math.abs(z) <= MAIN_MAP_HALF_Z);
+  return corners.every(([x, z]) => isInsideHexArenaXZ(x, z, undefined, 0.4));
 };
 
 const ALL_SLABS: SlabDef[] = [
@@ -258,15 +258,19 @@ type StoneGroundVariant = 'arena' | 'throne';
 const StoneGround: React.FC<{
   variant?: StoneGroundVariant;
   roomTheme?: RoomBorderTheme;
-  /** When set with `variant="throne"`, adds a circular ring at this radius (tile centers). */
-  thronePerimeterRingRadius?: number;
+  /** When set with `variant="throne"`, adds circular ring(s) at these radii (tile centers). */
+  thronePerimeterRingRadius?: number | readonly number[];
 }> = ({ variant = 'arena', roomTheme = 'green', thronePerimeterRingRadius }) => {
   const meshRef = useRef<InstancedMesh>(null);
 
   const slabs = useMemo(() => {
     if (variant !== 'throne') return ALL_SLABS;
     if (thronePerimeterRingRadius == null) return THRONE_SLABS;
-    return [...THRONE_SLABS, ...buildThronePerimeterSlabs(thronePerimeterRingRadius)];
+    const radii = Array.isArray(thronePerimeterRingRadius)
+      ? thronePerimeterRingRadius
+      : [thronePerimeterRingRadius];
+    const rings = radii.flatMap((r) => buildThronePerimeterSlabs(r));
+    return [...THRONE_SLABS, ...rings];
   }, [variant, thronePerimeterRingRadius]);
 
   const slabCount = slabs.length;

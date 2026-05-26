@@ -16,7 +16,7 @@ export const FOG_GRID_SIZE = 128;
 export const MAP_HALF_SIZE = MAIN_MAP_RADIUS;
 
 /** World-space radius the player always reveals, both in the shader and for enemy visibility. */
-export const PLAYER_VIEW_RADIUS = 10;
+export const PLAYER_VIEW_RADIUS = 40;
 
 // Derived
 const MAP_FULL_SIZE    = MAP_HALF_SIZE * 2;

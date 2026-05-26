@@ -7,20 +7,23 @@ interface ExperienceBarProps {
   experience: number;
   level: number;
   isLocalPlayer?: boolean;
-  /** Co-op: how many of the starting wave enemies have been killed */
+  /** Co-op: how many staged-wave enemies counted toward clear (server-driven) */
   skeletonKillCount?: number;
+  /** Co-op: clears required (`skeleton-kill-count-updated.required`); default mirrors `COOP_MIXED_WAVE_COUNT` in backend/gameRoom.js */
+  skeletonKillsRequired?: number;
   /** Co-op: whether the boss has already been spawned */
   bossSpawned?: boolean;
 }
 
-/** Must match `COOP_WAVE_ENEMY_COUNT` in backend/gameRoom.js */
-const KNIGHT_KILLS_REQUIRED = 10;
+/** Default must match `COOP_MIXED_WAVE_COUNT` in backend/gameRoom.js until first server `required`. */
+const DEFAULT_COOP_MIXED_WAVE_COUNT = 8;
 
 export default function ExperienceBar({
   experience,
   level,
   isLocalPlayer = false,
   skeletonKillCount = 0,
+  skeletonKillsRequired = DEFAULT_COOP_MIXED_WAVE_COUNT,
   bossSpawned = false,
 }: ExperienceBarProps) {
   const isMaxLevel = level >= 5;
@@ -29,7 +32,8 @@ export default function ExperienceBar({
   const currentLevelExp = experience - min;
   const maxLevelExp = max - min;
 
-  const skeletonProgress = Math.min((skeletonKillCount / KNIGHT_KILLS_REQUIRED) * 100, 100);
+  const req = skeletonKillsRequired > 0 ? skeletonKillsRequired : DEFAULT_COOP_MIXED_WAVE_COUNT;
+  const skeletonProgress = Math.min((skeletonKillCount / req) * 100, 100);
   const showSkeletonTracker = !bossSpawned;
 
   return (
