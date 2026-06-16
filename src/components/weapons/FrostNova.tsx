@@ -1,6 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Group, Vector3, Color, Mesh, Material } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+
+const FROST_NOVA_LIGHT_COLOR = new Color('#4FC3F7');
 
 interface FrostNovaProps {
   position: Vector3;
@@ -22,6 +25,10 @@ export default function FrostNova({
   const [fadeProgress, setFadeProgress] = useState(1);
   const [expansionProgress, setExpansionProgress] = useState(0);
   const rotationSpeed = useRef(Math.random() * 0.05 + 0.02);
+
+  // Borrow a pooled point light for the explosion glow (replaces two near-coincident
+  // <pointLight>s) instead of churning the scene light count.
+  const novaLight = useDynamicLight({ color: FROST_NOVA_LIGHT_COLOR, priority: 1 });
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -69,25 +76,39 @@ export default function FrostNova({
     }
 
     // Expansion phase (first 30% of duration)
+    let frameExpansionProgress: number;
     if (progress < 0.3) {
       const expansionPhase = progress / 0.3;
+      frameExpansionProgress = expansionPhase;
       setExpansionProgress(expansionPhase);
     } else {
+      frameExpansionProgress = 1;
       setExpansionProgress(1);
     }
 
     // Fade out in the last 40% of duration
+    let frameFadeProgress: number;
     if (progress > 0.6) {
       const fadeStart = 0.6;
       const fadePhase = (progress - fadeStart) / (1 - fadeStart);
+      frameFadeProgress = 1 - fadePhase;
       setFadeProgress(1 - fadePhase);
     } else {
+      frameFadeProgress = 1;
       setFadeProgress(1);
     }
 
     // Pulsing intensity effect
     const pulseIntensity = 0.7 + 0.3 * Math.sin(elapsed * 0.008);
-    setIntensity(pulseIntensity * fadeProgress);
+    const frameIntensity = pulseIntensity * frameFadeProgress;
+    setIntensity(frameIntensity);
+
+    // Drive the pooled light at the effect center (world space). The original two
+    // <pointLight>s sat at y+1 / y+0.5 above `position`; collapse to one near y+0.75.
+    const frameBaseScale = 0.1 + frameExpansionProgress * 2.5;
+    novaLight.current?.setPosition(position.x, position.y + 0.75, position.z);
+    novaLight.current?.setIntensity(8 * frameIntensity * frameFadeProgress);
+    novaLight.current?.setDistance(frameBaseScale * 2);
 
     // Rotate the entire effect
     effectRef.current.rotation.y += rotationSpeed.current;
@@ -209,21 +230,8 @@ export default function FrostNova({
         />
       </mesh>
 
-      {/* Central bright light */}
-      <pointLight 
-        color="#4FC3F7" 
-        intensity={8 * intensity * fadeProgress} 
-        distance={baseScale * 2} 
-        position={[0, 1, 0]}
-      />
-
-      {/* Ambient frost glow */}
-      <pointLight 
-        color="#B3E5FC" 
-        intensity={3 * intensity * fadeProgress} 
-        distance={baseScale * 3} 
-        position={[0, 0.5, 0]}
-      />
+      {/* Central bright light + ambient frost glow now driven via the shared dynamic
+          light pool (see useFrame) instead of mounted <pointLight>s. */}
     </group>
   );
 }

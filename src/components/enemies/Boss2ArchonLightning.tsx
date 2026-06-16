@@ -11,6 +11,7 @@ import {
   Vector3,
 } from 'three';
 import ViperShotTelegraphLine from './ViperShotTelegraphLine';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 export interface Boss2ArchonBeam {
   startPosition: Vector3;
@@ -97,6 +98,11 @@ export default function Boss2ArchonLightning({
   const completedRef = useRef(false);
   const flickerRef = useRef(1);
 
+  // Two pooled lights cover the primary beam's start/target impacts (replaces the
+  // per-impact <pointLight>s; extra beams share these as an approximation).
+  const targetLight = useDynamicLight({ color: '#ff0000', distance: 8, priority: 1 });
+  const startLight = useDynamicLight({ color: '#ff0000', distance: 5, priority: 1 });
+
   const groundPairs = useMemo(
     () =>
       beams.map(({ startPosition, targetPosition }) => ({
@@ -140,6 +146,8 @@ export default function Boss2ArchonLightning({
   useFrame(() => {
     const now = Date.now();
     if (phase === 'warning') {
+      targetLight.current?.setIntensity(0);
+      startLight.current?.setIntensity(0);
       if (now >= strikeAt) {
         strikeStartRef.current = now;
         setPhase('strike');
@@ -156,6 +164,16 @@ export default function Boss2ArchonLightning({
     materials.secondaryBolt.opacity = fadeOut * 0.8;
     materials.impact.opacity = fadeOut * 0.9;
     materials.ring.opacity = fadeOut * 0.7;
+
+    // Drive the pooled lights at the primary beam's impact world positions.
+    const primary = beams[0];
+    if (primary) {
+      const { startPosition, targetPosition } = primary;
+      startLight.current?.setPosition(startPosition.x, startPosition.y, startPosition.z);
+      startLight.current?.setIntensity(12 * flickerRef.current);
+      targetLight.current?.setPosition(targetPosition.x, targetPosition.y, targetPosition.z);
+      targetLight.current?.setIntensity(15 * flickerRef.current);
+    }
 
     if (progress >= 1 && !completedRef.current) {
       completedRef.current = true;
@@ -246,12 +264,6 @@ export default function Boss2ArchonLightning({
                       material={materials.ring}
                     />
                   ))}
-                  <pointLight
-                    color="#ff0000"
-                    intensity={(i === 0 ? 12 : 15) * flickerRef.current}
-                    distance={i === 0 ? 5 : 8}
-                    decay={2}
-                  />
                 </group>
               ))}
             </group>

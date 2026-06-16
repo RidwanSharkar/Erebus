@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
+
 import { AdditiveBlending, Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
@@ -517,7 +519,7 @@ export default function KnightRenderer({
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       {isSpinCharging && !isDying && (
         <>
-          <pointLight position={[0, 1.25, 0]} color={spinChargeColor} intensity={6} distance={5} />
+          <EnemyDynamicLight position={[0, 1.25, 0]} color={spinChargeColor} intensity={6} distance={5} />
           <mesh position={[0, 1.1, 0]}>
             <sphereGeometry args={[1, 32, 16]} />
             <meshBasicMaterial

@@ -16,9 +16,9 @@ import {
   DoubleSide,
   Color,
   Mesh,
-  PointLight,
 } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 const DURATION = 0.95;
 const STRIKE_PROGRESS = 0.62;
@@ -37,11 +37,15 @@ export default function TemplarBlinkSmiteGround({ position, onComplete }: Templa
   const burstStartedRef = useRef(false);
   const burstRingRef = useRef<Mesh>(null);
   const burstCoreRef = useRef<Mesh>(null);
-  const burstLightRef = useRef<PointLight | null>(null);
 
   const primaryColor = useMemo(() => new Color('#7f0505'), []);
   const secondaryColor = useMemo(() => new Color('#ff2a1a'), []);
   const burstPointColor = useMemo(() => primaryColor.clone().lerp(secondaryColor, 0.45), [primaryColor, secondaryColor]);
+
+  // Pooled lights replace the mounted <pointLight>s: one follows the falling beam
+  // (collapses the 2 beam lights → 1), one for the ground burst flash.
+  const beamLight = useDynamicLight({ color: primaryColor, distance: 28, decay: 2, priority: 1 });
+  const burstLight = useDynamicLight({ color: burstPointColor, distance: 11, decay: 2, priority: 1 });
 
   const geometries = useMemo(() => ({
     core: new CylinderGeometry(0.055, 0.055, 20, 20),
@@ -172,6 +176,10 @@ export default function TemplarBlinkSmiteGround({ position, onComplete }: Templa
       lightningRef.current.position.y = startY + (targetY - startY) * Math.min(p / STRIKE_PROGRESS, 1);
       const scale = p < 0.9 ? 1 : 1 - (p - 0.9) / 0.1;
       lightningRef.current.scale.set(scale, scale, scale);
+
+      // Beam light follows the descending lightning group (collapsed from 2 lights).
+      beamLight.current?.setPosition(position.x, lightningRef.current.position.y, position.z);
+      beamLight.current?.setIntensity(44);
     }
 
     if (p >= STRIKE_PROGRESS) {
@@ -194,10 +202,10 @@ export default function TemplarBlinkSmiteGround({ position, onComplete }: Templa
         const m = burstCoreRef.current.material as MeshBasicMaterial;
         m.opacity = 0.7 * (1 - Math.min(bt * 1.4, 1));
       }
-      if (burstLightRef.current) {
-        burstLightRef.current.intensity = 30 * (1 - bt);
-        burstLightRef.current.distance = 5 + easeOut * 4;
-      }
+      // Ground burst flash, at the burst group's world position (local 0.15 * scale 1.55).
+      burstLight.current?.setPosition(position.x, position.y + 1.25 + 0.15 * 1.55, position.z);
+      burstLight.current?.setIntensity(30 * (1 - bt));
+      burstLight.current?.setDistance(5 + easeOut * 4);
     }
 
     if (p >= 1 && !doneRef.current) {
@@ -233,9 +241,6 @@ export default function TemplarBlinkSmiteGround({ position, onComplete }: Templa
         {particlePositions.map((props, i) => (
           <mesh key={`templar-smite-particle-${i}`} position={props.position} geometry={geometries.sphere} material={materials.particle} />
         ))}
-
-        <pointLight position={[0, -10, 0]} color={primaryColor} intensity={44} distance={28} />
-        <pointLight position={[0, 0, 0]} color={secondaryColor} intensity={14} distance={5.5} />
       </group>
 
       <group position={[position.x, position.y + 1.25, position.z]} scale={[1.55, 1.55, 1.55]}>
@@ -254,13 +259,6 @@ export default function TemplarBlinkSmiteGround({ position, onComplete }: Templa
           geometry={geometries.burstCore}
           material={materials.burstCore}
           renderOrder={2}
-        />
-        <pointLight
-          ref={burstLightRef}
-          position={[0, 0.15, 0]}
-          color={burstPointColor}
-          intensity={0}
-          distance={11}
         />
       </group>
     </group>

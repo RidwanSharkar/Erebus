@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface BossSpearProjectileProps {
   startPosition: Vector3;
@@ -29,6 +30,9 @@ export default function BossSpearProjectile({
   const groupRef = useRef<Group>(null);
   const timeRef  = useRef(0);
   const doneRef  = useRef(false);
+
+  // Single pooled light follows the spear (replaces 2 near-coincident <pointLight>s).
+  const spearLight = useDynamicLight({ color: '#ff7700', distance: 7, priority: 2 });
 
   const { direction, totalDist, duration, yaw, pitch } = useMemo(() => {
     const d = new Vector3().subVectors(targetPosition, startPosition);
@@ -107,6 +111,11 @@ export default function BossSpearProjectile({
       startPosition.clone().addScaledVector(direction, progress * totalDist)
     );
 
+    // Drive the pooled light at the spear's world position.
+    const sp = groupRef.current.position;
+    spearLight.current?.setPosition(sp.x, sp.y, sp.z);
+    spearLight.current?.setIntensity(18);
+
     // Fade out in last 20% of travel
     const fade = progress > 0.80 ? 1 - (progress - 0.80) / 0.20 : 1.0;
 
@@ -181,9 +190,6 @@ export default function BossSpearProjectile({
         <boxGeometry args={[0.06, 0.06, 3.6]} />
       </mesh>
 
-      {/* ── Lights ────────────────────────────────────────────────────────── */}
-      <pointLight color="#ff7700" intensity={18} distance={7} decay={2} />
-      <pointLight color="#cc4400" intensity={6} distance={5} decay={2} position={[0, 0, 1.8]} />
     </group>
   );
 }

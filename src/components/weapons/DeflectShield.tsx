@@ -1,4 +1,5 @@
 import { useRef, useEffect, useMemo, useLayoutEffect } from 'react';
+import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Color, AdditiveBlending, DoubleSide, BackSide } from '@/utils/three-exports';
 import { WeaponType } from '@/components/dragon/weapons';
@@ -176,7 +177,7 @@ export default function DeflectShield({
             depthWrite={false}
           />
         </mesh>
-        <pointLight color={cMain} intensity={1.2} distance={6} decay={2} />
+        <PooledEffectLight color={cMain} intensity={1.2} distance={6} decay={2} />
       </group>
 
       <group ref={forwardGroupRef}>
@@ -291,7 +292,7 @@ export default function DeflectShield({
           ))}
         </group>
 
-        <pointLight color={cMain} intensity={2} distance={8} decay={2} />
+        <PooledEffectLight color={cMain} intensity={2} distance={8} decay={2} />
       </group>
     </>
   );

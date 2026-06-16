@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface ShadeTeleportEffectProps {
   position: Vector3;
@@ -21,6 +22,9 @@ export default function ShadeTeleportEffect({ position, type, onComplete }: Shad
   const doneRef  = useRef(false);
 
   const duration = type === 'start' ? DURATION_START : DURATION_END;
+
+  // Borrow a pooled point light for the teleport pulse (replaces a mounted <pointLight>).
+  const pulseLight = useDynamicLight({ color: new Color('#00bbaa'), distance: 4, decay: 2, priority: 1 });
 
   // Four shadow-wisp orbs distributed at cardinal points
   const orbAngles = useMemo(() => [0, Math.PI / 2, Math.PI, (Math.PI * 3) / 2], []);
@@ -46,6 +50,10 @@ export default function ShadeTeleportEffect({ position, type, onComplete }: Shad
 
     timeRef.current += delta;
     const t = Math.min(timeRef.current / duration, 1.0);
+
+    // Light lives at the (0, 0.5, 0) offset in world space; intensity is constant.
+    pulseLight.current?.setPosition(position.x, position.y + 0.5, position.z);
+    pulseLight.current?.setIntensity(6);
 
     if (type === 'start') {
       // ── Departure: core shrinks + fades, ring expands outward, wisps implode ──
@@ -146,9 +154,6 @@ export default function ShadeTeleportEffect({ position, type, onComplete }: Shad
           <sphereGeometry args={[0.09, 6, 6]} />
         </mesh>
       ))}
-
-      {/* Soft cyan light pulse */}
-      <pointLight color="#00bbaa" intensity={6} distance={4} decay={2} position={[0, 0.5, 0]} />
     </group>
   );
 }

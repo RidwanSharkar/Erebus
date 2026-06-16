@@ -10,6 +10,7 @@ import {
   DoubleSide,
 } from '@/utils/three-exports';
 import type { TotemBoltVariant } from '@/utils/talents';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import EntropicBoltTrail from './EntropicBoltTrail';
 
 export interface TotemEntropicBoltProps {
@@ -88,6 +89,9 @@ export default function TotemEntropicBolt({ from, to, onImpact, totemBoltVariant
   const primaryColor = useMemo(() => new Color(theme.primary), [theme.primary]);
   const secondaryColor = useMemo(() => new Color(theme.secondary), [theme.secondary]);
 
+  // Pooled point light follows the bolt body (replaces the per-bolt <pointLight>).
+  const boltLight = useDynamicLight({ color: theme.light, distance: 6, decay: 2, priority: 2 });
+
   useEffect(() => {
     startRef.current.copy(from);
     endRef.current.copy(to);
@@ -119,9 +123,15 @@ export default function TotemEntropicBolt({ from, to, onImpact, totemBoltVariant
 
     boltRef.current.position.lerpVectors(startRef.current, endRef.current, t);
 
+    // Drive the pooled light at the bolt body (matches the [0, 0.1, 0] local offset).
+    const bp = boltRef.current.position;
+    boltLight.current?.setPosition(bp.x, bp.y + 0.1, bp.z);
+    boltLight.current?.setIntensity(4.2);
+
     if (t >= 1 && !doneRef.current) {
       doneRef.current = true;
       setFlightActive(false);
+      boltLight.current?.setIntensity(0);
       onImpact(endRef.current.clone());
     }
   });
@@ -180,7 +190,6 @@ export default function TotemEntropicBolt({ from, to, onImpact, totemBoltVariant
                 />
               </mesh>
 
-              <pointLight color={theme.light} intensity={4.2} distance={6} decay={2} position={[0, 0.1, 0]} />
             </group>
           </group>
         </>

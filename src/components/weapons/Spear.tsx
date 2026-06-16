@@ -1,4 +1,5 @@
 import { useRef, useEffect, memo } from 'react';
+import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 import { Group, Vector3, Shape, ExtrudeGeometry, MeshStandardMaterial, DoubleSide, PointLight } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { Color } from 'three';
@@ -466,7 +467,7 @@ const SpearComponent = memo(function Spear({
             />
           </mesh>
 
-          <pointLight
+          <PooledEffectLight
             color={new Color(0xE8CD57)}
             intensity={2 + (isThrowSpearCharging ? throwSpearChargeProgress * 15 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 15 : 0)}
             distance={0.5}

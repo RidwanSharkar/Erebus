@@ -3,6 +3,7 @@
 import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface KnightDeathVortexProps {
   id: string;
@@ -94,12 +95,14 @@ export default function KnightDeathVortex({ position, soulType, onComplete }: Kn
   const coreRef      = useRef<THREE.Mesh>(null);
   const haloRef      = useRef<THREE.Mesh>(null);
   const beamRef      = useRef<THREE.Mesh>(null);
-  const lightRef     = useRef<THREE.PointLight>(null);
   const elapsed      = useRef(0);
   const completed    = useRef(false);
   const riseOffset   = useRef(0);
 
   const startY = position.y + 0.6;
+
+  // Borrow a pooled light for the vortex glow instead of mounting a <pointLight>.
+  const vortexLight = useDynamicLight({ color: palette.light, distance: 14, priority: 1 });
 
   const innerPositions = useMemo(() => makeRingPositions(INNER_COUNT, INNER_RADIUS, 0.18), []);
   const outerPositions = useMemo(() => makeRingPositions(OUTER_COUNT, OUTER_RADIUS, 0.32), []);
@@ -180,9 +183,12 @@ export default function KnightDeathVortex({ position, soulType, onComplete }: Kn
     }
 
     // ── Point light ──────────────────────────────────────────────────────────
-    if (lightRef.current) {
+    {
       const pulse = 1 + 0.35 * Math.sin(t * 11.0);
-      lightRef.current.intensity = 10 * opacity * pulse;
+      // Drive the pooled light at the orb's world position (light sat at the
+      // group origin, which rises with the orb).
+      vortexLight.current?.setPosition(position.x, startY + riseOffset.current, position.z);
+      vortexLight.current?.setIntensity(10 * opacity * pulse);
     }
 
     // ── Orb ring opacity (traverse inner/outer groups only) ───────────────────
@@ -203,15 +209,6 @@ export default function KnightDeathVortex({ position, soulType, onComplete }: Kn
       ref={groupRef}
       position={[position.x, startY, position.z]}
     >
-      {/* Scene light */}
-      <pointLight
-        ref={lightRef}
-        color={palette.light}
-        intensity={10}
-        distance={14}
-        decay={2}
-      />
-
       {/* Core orb */}
       <mesh ref={coreRef}>
         <sphereGeometry args={[0.33, 20, 20]} />

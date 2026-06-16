@@ -2,6 +2,7 @@ import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending, SphereGeometry, CylinderGeometry } from '@/utils/three-exports';
 import AnimatedDeathGrasp from './AnimatedDeathGrasp';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface DeathGraspProps {
   startPosition: Vector3;
@@ -32,6 +33,11 @@ export default function DeathGrasp({
   const duration = 1.2; // Total duration including pull
   const pullTriggered = useRef(false);
   const useAnimatedVersion = useRef(true); // Flag to use new animated version
+
+  // Borrow ONE pooled light (collapses the former static-fallback start/target/path
+  // <pointLight>s) instead of mounting lights. Only emits when the static fallback
+  // renders; the animated version drives its own pooled light.
+  const graspLight = useDynamicLight({ color: '#6A0DAD', distance: 4, decay: 2, priority: 1 });
 
   // Use useMemo for static geometries and materials
   const geometries = useMemo(() => ({
@@ -148,6 +154,15 @@ export default function DeathGrasp({
     materials.impact.opacity = (baseOpacity * 0.7) * flickerRef.current;
     materials.core.opacity = (baseOpacity * 1.1) * flickerRef.current;
 
+    // Drive the pooled light only in the static-fallback path (world space). Replicates the
+    // former start <pointLight> at startPosition: 10 * (1 - progress) * flicker.
+    if (!useAnimatedVersion.current) {
+      graspLight.current?.setPosition(startPosition.x, startPosition.y, startPosition.z);
+      graspLight.current?.setIntensity(10 * (1 - progress) * flickerRef.current);
+    } else {
+      graspLight.current?.setIntensity(0);
+    }
+
     // Complete the effect
     if (progress >= 1) {
       onComplete();
@@ -226,33 +241,7 @@ export default function DeathGrasp({
         ]}
       />
 
-      {/* Dynamic lighting - deep purple theme */}
-      <pointLight
-        position={startPosition.toArray()}
-        color="#6A0DAD"
-        intensity={10 * (1 - timeRef.current / duration) * flickerRef.current}
-        distance={4}
-        decay={2}
-      />
-
-      <pointLight
-        position={targetPosition.toArray()}
-        color="#9370DB"
-        intensity={8 * (1 - timeRef.current / duration) * flickerRef.current}
-        distance={5}
-        decay={2}
-      />
-
-      {/* Additional atmospheric lighting along the spiral path */}
-      {spiralStreams[0] && spiralStreams[0].length > 0 && (
-        <pointLight
-          position={spiralStreams[0][Math.floor(spiralStreams[0].length / 2)]?.position.toArray() || [0, 0, 0]}
-          color="#8A2BE2"
-          intensity={4 * (1 - timeRef.current / duration) * flickerRef.current}
-          distance={3}
-          decay={2}
-        />
-      )}
+      {/* Dynamic lighting is driven via the pooled light in useFrame above. */}
     </group>
   );
 }

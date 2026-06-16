@@ -3,6 +3,7 @@
 import React, { useRef, memo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Mesh, MeshStandardMaterial, AdditiveBlending, Material } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface VenomEffectProps {
   position: Vector3;
@@ -30,10 +31,13 @@ const VenomEffectComponent = memo(function VenomEffect({
 }: VenomEffectProps) {
   const groupRef = useRef<Group>(null);
   const startTimeRef = useRef(startTime);
-  
+
+  // Borrow a pooled light instead of mounting a <pointLight> (avoids lit-shader recompiles).
+  const venomLight = useDynamicLight({ color: '#00FF44', distance: 3, decay: 2, priority: 1 });
+
   useFrame(() => {
     if (!groupRef.current) return;
-    
+
     const currentTime = Date.now();
     const elapsed = currentTime - startTimeRef.current;
     const progress = Math.min(elapsed / duration, 1);
@@ -41,7 +45,7 @@ const VenomEffectComponent = memo(function VenomEffect({
     // Update position to follow enemy if enemyId is provided
     if (enemyId && enemyData.length > 0) {
       const target = enemyData.find(enemy => enemy.id === enemyId);
-      
+
       if (target && target.health > 0 && !target.isDying && !target.deathStartTime) {
         // Update the group position to follow the enemy
         const targetPosition = target.position.clone();
@@ -49,7 +53,15 @@ const VenomEffectComponent = memo(function VenomEffect({
         groupRef.current.position.copy(targetPosition);
       }
     }
-    
+
+    // Drive the pooled light at the venom cloud's world position (group root, already world-space).
+    venomLight.current?.setPosition(
+      groupRef.current.position.x,
+      groupRef.current.position.y,
+      groupRef.current.position.z,
+    );
+    venomLight.current?.setIntensity(1.5);
+
     // Scale effect and fade out
     const scale = 1 + progress * 1.5;
     groupRef.current.scale.set(scale, scale, scale);
@@ -188,9 +200,6 @@ const VenomEffectComponent = memo(function VenomEffect({
           </mesh>
         );
       })}
-      
-      {/* Venom glow light */}
-      <pointLight color="#00FF44" intensity={1.5} distance={3} decay={2} />
     </group>
   );
 }, (prevProps, nextProps) => {

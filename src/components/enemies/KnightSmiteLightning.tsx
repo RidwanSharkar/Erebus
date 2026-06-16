@@ -3,6 +3,7 @@
 import { useRef, useMemo } from 'react';
 import { Vector3, AdditiveBlending, CylinderGeometry, MeshBasicMaterial } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 const DURATION_MS = 450;
 const SKY_Y = 22;
@@ -20,6 +21,9 @@ export default function KnightSmiteLightning({ position, onComplete, variant = '
   const palette = variant === 'ally-gold'
     ? { core: '#fff7ad', glow: '#facc15', light: '#f59e0b' }
     : { core: '#fca5a5', glow: '#ef4444', light: '#f97316' };
+
+  // Borrow a pooled point light for the strike flash (replaces a mounted <pointLight>).
+  const strikeLight = useDynamicLight({ color: palette.light, distance: 16, decay: 2, priority: 1 });
 
   const segments = useMemo(() => {
     const baseX = position.x;
@@ -72,6 +76,8 @@ export default function KnightSmiteLightning({ position, onComplete, variant = '
     const fade = 1 - k;
     matCore.opacity = 0.95 * fade;
     matGlow.opacity = 0.55 * fade;
+    strikeLight.current?.setPosition(position.x, position.y + 2, position.z);
+    strikeLight.current?.setIntensity(22);
     if (k >= 1 && !doneRef.current) {
       doneRef.current = true;
       onComplete();
@@ -80,7 +86,6 @@ export default function KnightSmiteLightning({ position, onComplete, variant = '
 
   return (
     <group>
-      <pointLight position={[position.x, position.y + 2, position.z]} color={palette.light} intensity={22} distance={16} decay={2} />
       {segments.slice(0, -1).map((p, i) => {
         const q = segments[i + 1];
         const midX = (p.x + q.x) / 2;

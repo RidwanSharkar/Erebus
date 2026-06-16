@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, AdditiveBlending } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface ViperStingProjectile {
   id: number;
@@ -25,11 +26,22 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
   const groupRef = useRef<Group>(null);
   const TRAIL_COUNT = 8;
 
+  // Borrow a pooled light instead of mounting a <pointLight> (avoids lit-shader recompiles).
+  const stingLight = useDynamicLight({ color: '#cc0000', distance: 3.2, decay: 2, priority: 2 });
+
   useFrame(() => {
     if (!groupRef.current) return;
 
     // Update position
     groupRef.current.position.copy(projectile.position);
+
+    // Drive the pooled light at the projectile's world position.
+    stingLight.current?.setPosition(
+      projectile.position.x,
+      projectile.position.y,
+      projectile.position.z,
+    );
+    stingLight.current?.setIntensity(1.6 * projectile.opacity);
 
     // Calculate rotation based on direction (similar to ThrowSpear)
     const lookDirection = projectile.direction.clone().normalize();
@@ -146,14 +158,6 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
           </group>
         );
       })}
-
-      {/* Point light for glow effect */}
-      <pointLight
-        color="#cc0000"
-        intensity={1.6 * projectile.opacity}
-        distance={3.2}
-        decay={2}
-      />
     </group>
   );
 };

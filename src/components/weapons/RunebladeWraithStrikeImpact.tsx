@@ -10,6 +10,7 @@ import {
   Color,
   AdditiveBlending,
 } from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 export interface WraithStrikeImpactTalentProps {
   /** Wrathful Strike — red (priority 1 vs other Wraith Strike row talents). */
@@ -123,6 +124,14 @@ export default function RunebladeWraithStrikeImpact({
   const flashRef = useRef<Mesh | null>(null);
   const sparkRefs = useRef<(Mesh | null)[]>(Array(SPARK_COUNT).fill(null));
 
+  // Borrow a pooled point light for the impact flash instead of mounting a <pointLight>.
+  const impactLight = useDynamicLight({ color: pickWraithStrikeImpactColors(resolveImpactPaletteKey({
+    wrathfulStrike: !!wrathfulStrike,
+    infestedStrike: !!infestedStrike,
+    wraithGuard: !!wraithGuard,
+    staggeringStrike: !!staggeringStrike,
+  })).flash, distance: 10, decay: 6, priority: 1 });
+
   const sparkParams = useMemo(() => buildSparkParams(SPARK_COUNT), []);
 
   const crescentYaw = useMemo(
@@ -201,6 +210,10 @@ export default function RunebladeWraithStrikeImpact({
       const scale = 0.3 + t * 6.0;
       flashRef.current.scale.set(scale, scale, 1);
       flashMat.opacity = Math.max(0, flashFade * 0.85);
+
+      // Drive the pooled light at the impact point (world space), tracking the flash.
+      impactLight.current?.setPosition(position.x, position.y + 1, position.z);
+      impactLight.current?.setIntensity(10 * flashFade);
     }
 
     if (crescentRef.current) {
@@ -238,11 +251,9 @@ export default function RunebladeWraithStrikeImpact({
     }
   });
 
-  const lightColor = palette.flash;
-
   return (
     <group ref={groupRef} position={[position.x, position.y + 1, position.z]}>
-      <pointLight color={lightColor} intensity={10} distance={10} decay={6} />
+      {/* Impact flash point light now driven via the shared dynamic light pool (see useFrame). */}
 
       <mesh ref={flashRef} rotation={FLASH_ROTATION} scale={[0.01, 0.01, 1]}>
         <circleGeometry args={[1, 24]} />

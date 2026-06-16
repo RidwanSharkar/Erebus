@@ -7,6 +7,7 @@ import {
   Color,
   Quaternion,
 } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import EntropicBoltTrail, { ENTROPIC_TRAIL_FADE_OUT_DURATION } from './EntropicBoltTrail';
 
 interface EntropicBoltProps {
@@ -84,6 +85,9 @@ export default function EntropicBolt({
   const theme = getBoltColorTheme(colorVariant, isCryoflame);
   const trailColor = useMemo(() => new Color(theme.primary), [theme.primary]);
 
+  // Pooled point light follows the bolt body (replaces the per-bolt <pointLight>).
+  const boltLight = useDynamicLight({ color: theme.light, distance: 7, decay: 2, priority: 2 });
+
   const trailFadeStart =
     trailFadeOutStartElapsed !== undefined
       ? trailFadeOutStartElapsed
@@ -116,8 +120,14 @@ export default function EntropicBolt({
     }
 
     if (hideBoltBody || collisionFadeDone) {
+      boltLight.current?.setIntensity(0);
       return;
     }
+
+    // Drive the pooled light at the bolt body's world position (matches the body's
+    // [0, 0.15, 0] local offset). Body group sits at `position` in world space.
+    boltLight.current?.setPosition(position.x, position.y + 0.15, position.z);
+    boltLight.current?.setIntensity(5.5);
 
     if (ecsDriven) {
       boltRef.current.position.copy(position);
@@ -159,15 +169,7 @@ export default function EntropicBolt({
 
       <group ref={boltRef} position={position.toArray()}>
         {!hideBoltBody ? (
-          <group ref={orientRef}>
-            <pointLight
-              color={theme.light}
-              intensity={5.5}
-              distance={7}
-              decay={2}
-              position={[0, 0.15, 0]}
-            />
-          </group>
+          <group ref={orientRef} />
         ) : null}
       </group>
     </group>

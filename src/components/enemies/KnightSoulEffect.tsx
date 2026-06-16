@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useRef, useMemo } from 'react';
+import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
+
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Group, AdditiveBlending, Color } from 'three';
 
@@ -75,7 +77,7 @@ export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
     // Positioned relative to the knight group origin; Y handled in useFrame
     <group ref={groupRef} position={[0, 1.5, 0]}>
       {/* Point light — stronger radius and intensity */}
-      <pointLight position={[0, 0.2, 0]}
+      <EnemyDynamicLight position={[0, 0.2, 0]}
         color={colors.light}
         intensity={7.5}
         distance={6.0}
@@ -125,7 +127,7 @@ export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
                 blending={AdditiveBlending}
                 depthWrite={false}
               />
-              <pointLight position={[0, 0.35, 0]}
+              <EnemyDynamicLight position={[0, 0.35, 0]}
                 color={colors.light}
                 intensity={1.25}
                 distance={6.0}
@@ -150,7 +152,7 @@ export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
           side={2}
         />
 
-<pointLight position={[0, -0.125, 0]}
+<EnemyDynamicLight position={[0, -0.125, 0]}
         color={colors.light}
         intensity={2.5}
         distance={6.0}

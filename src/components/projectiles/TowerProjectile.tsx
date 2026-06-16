@@ -3,6 +3,7 @@
 import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Color, Group, Mesh, AdditiveBlending, MathUtils } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface TowerProjectileProps {
   position: Vector3;
@@ -54,11 +55,18 @@ export default function TowerProjectile({
     return playerColors[playerIndex];
   }, [ownerId]);
 
-  const emissiveColor = useMemo(() => 
+  const emissiveColor = useMemo(() =>
     projectileColor.clone().multiplyScalar(0.6), [projectileColor]);
+
+  // Borrow a pooled light instead of mounting a <pointLight> (avoids lit-shader recompiles).
+  const projectileLight = useDynamicLight({ color: projectileColor, distance: 2, decay: 2, priority: 2 });
 
   useFrame((_, delta) => {
     timeRef.current += delta;
+
+    // Drive the pooled light at the projectile's world position (group follows `position`).
+    projectileLight.current?.setPosition(position.x, position.y, position.z);
+    projectileLight.current?.setIntensity(0.5);
 
     if (groupRef.current) {
       // Update position
@@ -197,14 +205,6 @@ export default function TowerProjectile({
           );
         })}
       </group>
-
-      {/* Point light for dynamic lighting */}
-      <pointLight
-        color={projectileColor}
-        intensity={0.5}
-        distance={2}
-        decay={2}
-      />
     </group>
   );
 }

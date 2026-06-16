@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, SphereGeometry, MeshBasicMaterial, RingGeometry, AdditiveBlending, DoubleSide, Group, Mesh, Color } from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import MeteorTrail from './MeteorTrail';
 
 interface MeteorProps {
@@ -85,20 +86,6 @@ const createMeteorImpactEffect = (position: Vector3, startTime: number, onComple
           />
         </mesh>
       ))}
-
-      {/* Dynamic lights with fade */}
-      <pointLight
-        color="#BA55D3"
-        intensity={0.8 * fade}
-        distance={8 * (1 + elapsed)}
-        decay={2}
-      />
-      <pointLight
-        color="#BA55D3"
-        intensity={0.8 * fade}
-        distance={12}
-        decay={1}
-      />
     </group>
   );
 };
@@ -106,6 +93,10 @@ const createMeteorImpactEffect = (position: Vector3, startTime: number, onComple
 export default function Meteor({ targetPosition, onImpact, onComplete, timestamp, damage: damageOverride }: MeteorProps) {
   const meteorGroupRef = useRef<Group>(null);
   const meteorMeshRef = useRef<Mesh>(null);
+
+  // One pooled light serves the whole effect: it follows the falling meteor, then
+  // fades at the impact point (replaces 1 falling + 2 impact <pointLight>s → 1 pooled).
+  const meteorLight = useDynamicLight({ color: new Color('#BA55D3'), distance: 12, decay: 2, priority: 2 });
 
   // useMemo for initial calculations
   const [initialTargetPos, startPos, trajectory] = useMemo(() => {
@@ -140,6 +131,21 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
   }, [timestamp]);
 
   useFrame((_, delta) => {
+    // Drive the pooled light through both phases.
+    if (state.impactStartTime !== null) {
+      // Impact phase: light fades at the impact point (replaces the 2 impact <pointLight>s).
+      const elapsed = (Date.now() - state.impactStartTime) / 350;
+      const fade = Math.max(0, 1 - elapsed / IMPACT_DURATION);
+      const ip = meteorGroupRef.current?.position ?? initialTargetPos;
+      meteorLight.current?.setPosition(ip.x, ip.y, ip.z);
+      meteorLight.current?.setIntensity(0.8 * fade);
+    } else if (state.showMeteor && !state.impactOccurred && meteorGroupRef.current) {
+      // Falling phase: light follows the meteor (replaces the falling <pointLight>).
+      const mp = meteorGroupRef.current.position;
+      meteorLight.current?.setPosition(mp.x, mp.y, mp.z);
+      meteorLight.current?.setIntensity(5);
+    }
+
     if (!meteorGroupRef.current || !state.showMeteor || state.impactOccurred) {
       if (state.impactOccurred && !state.impactStartTime) {
         setState(prev => ({ ...prev, impactStartTime: Date.now() }));
@@ -218,7 +224,6 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
           <mesh ref={meteorMeshRef}>
             <primitive object={meteorGeometry} />
             <primitive object={meteorMaterial} />
-            <pointLight color="#BA55D3" intensity={5} distance={8} />
             <MeteorTrail
               meshRef={meteorMeshRef}
               color={new Color("#BA55D3")}

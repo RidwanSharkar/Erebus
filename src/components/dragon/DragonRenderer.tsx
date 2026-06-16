@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Group, Vector3 } from '@/utils/three-exports';
 import { useFrame, useThree } from '@react-three/fiber';
+import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
 import React from 'react';
 
 import DragonUnit from './DragonUnit';
@@ -716,9 +717,11 @@ export default function DragonRenderer({
   return (
     <>
       <group ref={groupRef}>
-        {/* Death effect - make dragon semi-transparent when dead */}
+        {/* Death effect - make dragon semi-transparent when dead. Uses the pooled unit
+            light so a player/ally dying doesn't change the scene light count (which
+            would recompile every lit material — a hitch exactly on death/respawn). */}
         {isDead && (
-          <pointLight
+          <EnemyDynamicLight
             color="#ff4444"
             intensity={0.5}
             distance={3}

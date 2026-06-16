@@ -13,6 +13,7 @@ import {
   RingGeometry,
   DoubleSide,
 } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface WeaverLightningStrikeProps {
   targetPosition: Vector3;
@@ -44,7 +45,9 @@ export default function WeaverLightningStrike({
   const impactDoneRef = useRef(false);
   const completeDoneRef = useRef(false);
   const flickerRef = useRef(1);
-  const lightRef = useRef<any>(null);
+
+  // Pooled light for the strike flash (replaces the impact <pointLight>).
+  const strikeLight = useDynamicLight({ color: '#a8e6ff', distance: 8, priority: 1 });
 
   const impactPos = useMemo(
     () => new Vector3(targetPosition.x, 0, targetPosition.z),
@@ -174,6 +177,8 @@ export default function WeaverLightningStrike({
     const now = Date.now();
 
     if (phase === 'warning') {
+      // No light during the telegraph (the original <pointLight> only existed in strike).
+      strikeLight.current?.setIntensity(0);
       if (now >= strikeAt && strikeStartRef.current === null) {
         strikeStartRef.current = now;
         setPhase('strike');
@@ -200,9 +205,9 @@ export default function WeaverLightningStrike({
       mat.opacity = (0.8 - i * 0.15) * (1 - progress) * fadeOut;
     });
 
-    if (lightRef.current) {
-      lightRef.current.intensity = 22 * (1 - progress) * flickerRef.current;
-    }
+    // Drive the pooled light at the impact point (world space).
+    strikeLight.current?.setPosition(impactPos.x, impactPos.y, impactPos.z);
+    strikeLight.current?.setIntensity(22 * (1 - progress) * flickerRef.current);
 
     if (progress >= 1 && !completeDoneRef.current) {
       completeDoneRef.current = true;
@@ -267,14 +272,6 @@ export default function WeaverLightningStrike({
                 <ringGeometry args={[size, size + 0.2, 32]} />
               </mesh>
             ))}
-
-            <pointLight
-              ref={lightRef}
-              color="#a8e6ff"
-              intensity={22}
-              distance={8}
-              decay={2}
-            />
           </group>
 
           {[...Array(12)].map((_, i) => {

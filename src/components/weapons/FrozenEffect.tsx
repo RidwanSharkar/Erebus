@@ -1,6 +1,10 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Group, Vector3, Mesh, Material } from '@/utils/three-exports';
+import { Group, Vector3, Color, Mesh, Material } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+
+const FROZEN_LIGHT_COLOR = new Color('#4FC3F7');
+const _frozenLightPos = new Vector3();
 
 interface FrozenEffectProps {
   position: Vector3;
@@ -30,6 +34,9 @@ export default function FrozenEffect({
   const [intensity, setIntensity] = useState(1);
   const [fadeProgress, setFadeProgress] = useState(1);
   const rotationSpeed = useRef(Math.random() * 0.02 + 0.01);
+
+  // Borrow a pooled point light for the ice glow instead of mounting a <pointLight>.
+  const frozenLight = useDynamicLight({ color: FROZEN_LIGHT_COLOR, distance: 6, priority: 1 });
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -91,17 +98,27 @@ export default function FrozenEffect({
     }
 
     // Fade out in the last 500ms
+    let frameFadeProgress: number;
     if (progress > 0.9) {
       const fadeStart = 0.9;
-      const fadeProgress = (progress - fadeStart) / (1 - fadeStart);
-      setFadeProgress(1 - fadeProgress);
+      const fade = (progress - fadeStart) / (1 - fadeStart);
+      frameFadeProgress = 1 - fade;
+      setFadeProgress(1 - fade);
     } else {
+      frameFadeProgress = 1;
       setFadeProgress(1);
     }
 
     // Pulsing intensity effect
     const pulseIntensity = 0.8 + 0.2 * Math.sin(elapsed * 0.005);
-    setIntensity(pulseIntensity * fadeProgress);
+    const frameIntensity = pulseIntensity * frameFadeProgress;
+    setIntensity(frameIntensity);
+
+    // Drive the pooled light at the effect's world position (the group may follow the
+    // enemy above), matching the original local [0, 1, 0] offset.
+    effectRef.current.getWorldPosition(_frozenLightPos);
+    frozenLight.current?.setPosition(_frozenLightPos.x, _frozenLightPos.y + 1, _frozenLightPos.z);
+    frozenLight.current?.setIntensity(3 * frameIntensity * frameFadeProgress);
 
     // Rotate the ice crystal
     effectRef.current.rotation.y += rotationSpeed.current;
@@ -222,13 +239,7 @@ export default function FrozenEffect({
         />
       </mesh>
 
-      {/* Point light for ice glow */}
-      <pointLight 
-        color="#4FC3F7" 
-        intensity={3 * intensity * fadeProgress} 
-        distance={6} 
-        position={[0, 1, 0]}
-      />
+      {/* Point light for ice glow now driven via the shared dynamic light pool (see useFrame). */}
     </group>
   );
 }

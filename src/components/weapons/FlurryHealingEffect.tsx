@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 import { Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 
@@ -128,14 +129,14 @@ const FlurryHealingEffect: React.FC<FlurryHealingEffectProps> = React.memo(({ po
 
 
       {/* Multiple point lights for intense glow */}
-      <pointLight
+      <PooledEffectLight
         color={primaryColor}
         intensity={5 * opacity}
         distance={6}
         decay={2}
       />
       
-      <pointLight
+      <PooledEffectLight
         position={[0, progress * 1.5, 0]}
         color={coreColor}
         intensity={4 * opacity}
@@ -143,7 +144,7 @@ const FlurryHealingEffect: React.FC<FlurryHealingEffectProps> = React.memo(({ po
         decay={2}
       />
 
-      <pointLight
+      <PooledEffectLight
         position={[0, 0.5, 0]}
         color={accentColor}
         intensity={3 * opacity}

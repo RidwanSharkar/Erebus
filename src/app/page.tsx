@@ -920,14 +920,15 @@ function HomeContent() {
 
         {showCanvas && (
           <Canvas
-            camera={{ 
-              position: [0, 5, 10], 
+            camera={{
+              position: [0, 5, 10],
               fov: 75,
               near: 0.1,
-              far: 1000 
+              far: 1000
             }}
             shadows
-            gl={{ 
+            dpr={[1, 1.5]}
+            gl={{
               antialias: true,
               alpha: false,
               powerPreference: "high-performance"

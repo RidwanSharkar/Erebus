@@ -1,5 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { Vector3, AdditiveBlending, Group, Mesh, Material } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface SummonTotemExplosionProps {
   position: Vector3;
@@ -17,6 +19,16 @@ export default function SummonTotemExplosion({
   const startTime = useRef(explosionStartTime || Date.now());
   const groupRef = useRef<Group>(null);
   const [, forceUpdate] = useState({}); // Force updates to animate
+
+  // Collapse the two near-coincident explosion <pointLight>s into one pooled light at
+  // the explosion origin (group sits at world `position`).
+  const explosionLight = useDynamicLight({ color: '#0099ff', distance: 4, decay: 2, priority: 1 });
+
+  useFrame(() => {
+    const fadeNow = Math.max(0, 1 - ((Date.now() - startTime.current) / 1000) / IMPACT_DURATION);
+    explosionLight.current?.setPosition(position.x, position.y, position.z);
+    explosionLight.current?.setIntensity(1 * fadeNow);
+  });
 
   // MEMORY FIX: Cleanup geometries and materials on unmount
   useEffect(() => {
@@ -145,19 +157,6 @@ export default function SummonTotemExplosion({
         );
       })}
 
-      {/* Point lights - Exact same as original */}
-      <pointLight
-        color="#0099ff"
-        intensity={1 * fade}
-        distance={4}
-        decay={2}
-      />
-      <pointLight
-        color="#0077aa"
-        intensity={1 * fade}
-        distance={6}
-        decay={1}
-      />
     </group>
   );
 }

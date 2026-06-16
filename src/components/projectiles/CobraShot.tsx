@@ -3,6 +3,7 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, AdditiveBlending } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 export interface CobraShotProjectile {
   id: number;
@@ -24,6 +25,9 @@ interface CobraShotProps {
 const CobraShotProjectileVisual: React.FC<{ projectile: CobraShotProjectile }> = ({ projectile }) => {
   const groupRef = useRef<Group>(null);
 
+  // Pooled light follows the projectile (replaces its per-projectile <pointLight>).
+  const projectileLight = useDynamicLight({ color: '#00ff40', distance: 4, priority: 2 });
+
   useFrame(() => {
     if (!groupRef.current) return;
 
@@ -36,6 +40,10 @@ const CobraShotProjectileVisual: React.FC<{ projectile: CobraShotProjectile }> =
 
     // Apply rotation - keep X and Z rotation at 0 to stay parallel to ground
     groupRef.current.rotation.set(0, rotationY, 0);
+
+    // Drive the pooled light at the projectile's world position (group sits at Y=0).
+    projectileLight.current?.setPosition(projectile.position.x, 0, projectile.position.z);
+    projectileLight.current?.setIntensity(2 * projectile.opacity);
   });
 
   if (!projectile.active) return null;
@@ -143,14 +151,6 @@ const CobraShotProjectileVisual: React.FC<{ projectile: CobraShotProjectile }> =
           </group>
         );
       })}
-
-      {/* Point light for green glow effect */}
-      <pointLight
-        color="#00ff40"
-        intensity={2 * projectile.opacity}
-        distance={4}
-        decay={2}
-      />
     </group>
   );
 };

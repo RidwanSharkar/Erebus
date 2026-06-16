@@ -11,8 +11,8 @@ import {
   Color,
   MeshBasicMaterial,
   MeshStandardMaterial,
-  PointLight,
 } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 export interface MartyrDetonationExplosionProps {
   position: { x: number; y: number; z: number };
@@ -30,8 +30,10 @@ export default function MartyrDetonationExplosion({ position, maxRadius, onCompl
   const ring1Ref = useRef<Group>(null);
   const ring2Ref = useRef<Group>(null);
   const flashRef = useRef<Group>(null);
-  const lightRef = useRef<PointLight>(null);
   const doneRef = useRef(false);
+
+  // Borrow a pooled point light for the explosion flash (replaces a mounted <pointLight>).
+  const explosionLight = useDynamicLight({ color: '#ff5500', distance: maxRadius * 4.2, decay: 2, priority: 1 });
 
   const { ringGeo1, ringGeo2, coreGeo, flashGeo } = useMemo(() => {
     const r = Math.max(0.5, maxRadius);
@@ -140,9 +142,11 @@ export default function MartyrDetonationExplosion({ position, maxRadius, onCompl
       matFlash.opacity = Math.max(0, 0.95 * (1 - tRef.current / 0.18));
     }
 
-    if (lightRef.current) {
+    {
       const peak = Math.sin(Math.min(tRef.current * 12, Math.PI));
-      lightRef.current.intensity = 22 + 48 * peak * (1 - p * 0.85);
+      // Light lives at the nested group offset (0, 0.52, 0) in world space.
+      explosionLight.current?.setPosition(position.x, position.y + 0.52, position.z);
+      explosionLight.current?.setIntensity(22 + 48 * peak * (1 - p * 0.85));
     }
 
     if (p >= 1 && !doneRef.current) {
@@ -171,13 +175,6 @@ export default function MartyrDetonationExplosion({ position, maxRadius, onCompl
         <group ref={coreMeshRef}>
           <mesh scale={[maxRadius, maxRadius, maxRadius]} geometry={coreGeo} material={matCore} />
         </group>
-        <pointLight
-          ref={lightRef}
-          color="#ff5500"
-          intensity={38}
-          distance={maxRadius * 4.2}
-          decay={2}
-        />
       </group>
     </group>
   );

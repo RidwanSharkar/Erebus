@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useRef, useMemo } from 'react';
+import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
+
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Group, AdditiveBlending } from 'three';
 
@@ -80,7 +82,7 @@ export default function CubeSoulEffect({ color, posY = 2.0 }: CubeSoulEffectProp
   return (
     <group ref={groupRef} position={[0, posY, 0]}>
       {/* Point light */}
-      <pointLight position={[0, -0.25, 0]}
+      <EnemyDynamicLight position={[0, -0.25, 0]}
         color={colors.light}
         intensity={5}
         distance={6.0}

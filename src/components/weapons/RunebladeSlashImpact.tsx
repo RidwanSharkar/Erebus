@@ -10,6 +10,7 @@ import {
   Color,
   AdditiveBlending,
 } from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface RunebladeSlashImpactProps {
   position: Vector3;
@@ -51,6 +52,10 @@ export default function RunebladeSlashImpact({
   const crescentRef = useRef<Mesh | null>(null);
   const flashRef    = useRef<Mesh | null>(null);
   const sparkRefs   = useRef<(Mesh | null)[]>(Array(SPARK_COUNT).fill(null));
+
+  // Borrow a pooled point light for the impact flash instead of mounting a <pointLight>
+  // (which would churn the scene light count and force lit-shader recompiles).
+  const impactLight = useDynamicLight({ color: COLOR_FLASH, distance: 10, decay: 6, priority: 1 });
 
   const sparkParams = useMemo(() => buildSparkParams(SPARK_COUNT), []);
 
@@ -119,6 +124,10 @@ export default function RunebladeSlashImpact({
       const scale = 0.3 + t * 6.0;
       flashRef.current.scale.set(scale, scale, 1);
       flashMat.opacity = Math.max(0, flashFade * 0.85);
+
+      // Drive the pooled light at the impact point (world space), tracking the flash.
+      impactLight.current?.setPosition(position.x, position.y + 1, position.z);
+      impactLight.current?.setIntensity(10 * flashFade);
     }
 
     // ── Crescent arc ──────────────────────────────────────────────────────
@@ -183,12 +192,7 @@ export default function RunebladeSlashImpact({
       {sparkParams.map((_, i) => (
         <mesh key={i} ref={(el) => { sparkRefs.current[i] = el; }}>
           <planeGeometry args={[1, 1]} />
-          <primitive object={sparkMats[i]} attach="material" />      <pointLight
-        color={COLOR_FLASH}
-        intensity={10}
-        distance={10}
-        decay={6}
-      />
+          <primitive object={sparkMats[i]} attach="material" />
         </mesh>
       ))}
 

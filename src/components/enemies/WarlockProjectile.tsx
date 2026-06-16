@@ -3,6 +3,9 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+
+const _warlockLightPos = new Vector3();
 
 export interface WarlockProjectileProps {
   startPosition: Vector3;
@@ -51,6 +54,9 @@ export default function WarlockProjectile({
   const chargeDurationSecRef = useRef(chargeDurationMs / 1000);
 
   const currentDirRef = useRef(new Vector3(0, 0, -1));
+
+  // Collapse the three per-orb <pointLight>s into one pooled light that follows the orb.
+  const orbLight = useDynamicLight({ color: '#dd1133', distance: 6.5, priority: 2 });
 
   const staleDist = useMemo(() => {
     const d = targetPosition.clone().sub(startPosition);
@@ -154,6 +160,11 @@ export default function WarlockProjectile({
 
   useFrame((_, delta) => {
     if (doneRef.current || !groupRef.current) return;
+
+    // Drive the pooled light at the orb's world position (group position is world-space).
+    groupRef.current.getWorldPosition(_warlockLightPos);
+    orbLight.current?.setPosition(_warlockLightPos.x, _warlockLightPos.y, _warlockLightPos.z);
+    orbLight.current?.setIntensity(18);
 
     const charging = phaseRef.current === 'charging';
 
@@ -316,9 +327,6 @@ export default function WarlockProjectile({
           </mesh>
         </group>
 
-        <pointLight color="#dd1133" intensity={18} distance={6.5} decay={2} />
-        <pointLight color="#8800ff" intensity={9} distance={4.5} decay={2} position={[0, 0.3, 0]} />
-        <pointLight color="#ff5500" intensity={5} distance={3.5} decay={2} position={[0, 0, 1.5]} />
       </group>
     </group>
   );

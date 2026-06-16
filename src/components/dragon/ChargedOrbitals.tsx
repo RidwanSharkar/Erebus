@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 import { useFrame } from '@react-three/fiber';
 import { Group, Color, DoubleSide, AdditiveBlending } from '@/utils/three-exports';
 import { WeaponType, WeaponSubclass } from './weapons';
@@ -148,7 +149,7 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
             </mesh>
 
 
-            <pointLight
+            <PooledEffectLight
               color={isAvailable ? activeColor : inactiveColor}
               intensity={isAvailable ? 1 : 0.1}
               distance={2.3}

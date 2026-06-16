@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Group, Vector3, Mesh, Material } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface DeathEffectProps {
   position: Vector3;
@@ -29,6 +30,9 @@ export default function DeathEffect({
   const [fadeProgress, setFadeProgress] = useState(1);
   const rotationSpeed = useRef(Math.random() * 0.01 + 0.005);
   const hasCompleted = useRef(false); // Flag to prevent multiple onComplete calls
+
+  // Borrow a pooled light instead of mounting a <pointLight> (avoids lit-shader recompiles).
+  const deathLight = useDynamicLight({ color: '#6A1B9A', distance: 8, decay: 2, priority: 1 });
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -88,17 +92,27 @@ export default function DeathEffect({
     }
 
     // Fade out in the last 500ms
+    let currentFadeProgress = 1;
     if (progress > 0.9) {
       const fadeStart = 0.9;
-      const fadeProgress = (progress - fadeStart) / (1 - fadeStart);
-      setFadeProgress(1 - fadeProgress);
-    } else {
-      setFadeProgress(1);
+      const fadeAmount = (progress - fadeStart) / (1 - fadeStart);
+      currentFadeProgress = 1 - fadeAmount;
     }
+    setFadeProgress(currentFadeProgress);
 
     // Pulsing intensity effect
     const pulseIntensity = 0.7 + 0.3 * Math.sin(elapsed * 0.008);
-    setIntensity(pulseIntensity * fadeProgress);
+    const currentIntensity = pulseIntensity * currentFadeProgress;
+    setIntensity(currentIntensity);
+
+    // Drive the pooled light at the effect's world position (group root + local [0,1,0]).
+    // Replicates the former <pointLight>: 2 * intensity * fadeProgress.
+    deathLight.current?.setPosition(
+      effectRef.current.position.x,
+      effectRef.current.position.y + 1,
+      effectRef.current.position.z,
+    );
+    deathLight.current?.setIntensity(2 * currentIntensity * currentFadeProgress);
 
     // Rotate the death effect slowly
     effectRef.current.rotation.y += rotationSpeed.current;
@@ -193,13 +207,6 @@ export default function DeathEffect({
         />
       </mesh>
 
-      {/* Point light for death glow */}
-      <pointLight
-        color="#6A1B9A"
-        intensity={2 * intensity * fadeProgress}
-        distance={8}
-        position={[0, 1, 0]}
-      />
     </group>
   );
 }

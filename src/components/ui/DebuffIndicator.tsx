@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 import { Group, Vector3 } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 
@@ -158,7 +159,7 @@ export default function DebuffIndicator({
 
 
       {/* Point light for glow effect */}
-      <pointLight 
+      <PooledEffectLight 
         color={visuals.color} 
         intensity={1.5 * intensity * fadeProgress} 
         distance={3} 

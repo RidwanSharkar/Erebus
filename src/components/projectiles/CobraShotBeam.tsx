@@ -3,6 +3,7 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3 } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface CobraShotBeamProps {
   position: Vector3;
@@ -28,24 +29,33 @@ const CobraShotBeam: React.FC<CobraShotBeamProps> = ({
     emissive: "#00aa20",   // Medium green
     outer: "#00ff60"       // Light green
   };
-  
+
+  // Pooled light replaces the beam's <pointLight>.
+  const beamLight = useDynamicLight({ color: colors.core, distance: 8, decay: 1, priority: 2 });
+
   useFrame(() => {
     const elapsed = Date.now() - startTimeRef.current;
-    
+
     if (elapsed >= duration && !fadeStartTime.current) {
       fadeStartTime.current = Date.now();
     }
-    
+
     // Handle fade out
     if (fadeStartTime.current) {
       const fadeElapsed = Date.now() - fadeStartTime.current;
       const fadeDuration = 150; // Slightly longer fade for cobra effect
-      
+
       if (fadeElapsed >= fadeDuration) {
         onComplete();
         return;
       }
     }
+
+    const liveFade = fadeStartTime.current
+      ? Math.max(0, 1 - (Date.now() - fadeStartTime.current) / 400)
+      : 1;
+    beamLight.current?.setPosition(position.x, position.y, position.z);
+    beamLight.current?.setIntensity(8 * liveFade);
   });
 
   const fadeProgress = fadeStartTime.current 
@@ -146,14 +156,6 @@ const CobraShotBeam: React.FC<CobraShotBeamProps> = ({
           );
         })}
       </group>
-
-      {/* Point light for cobra beam glow */}
-      <pointLight
-        color={colors.core}
-        intensity={8 * fadeProgress}
-        distance={8}
-        decay={1}
-      />
     </group>
   );
 };

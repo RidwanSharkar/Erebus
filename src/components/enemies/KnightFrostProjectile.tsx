@@ -2,7 +2,8 @@
 
 import { useRef, useMemo, useLayoutEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, Group, Mesh, PointLight, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
+import { Vector3, Group, Mesh, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface KnightFrostProjectileProps {
   startPosition: Vector3;
@@ -22,6 +23,9 @@ export default function KnightFrostProjectile({
   const startTimeRef = useRef<number | null>(null);
   const doneRef = useRef(false);
   const endFixedRef = useRef(endPosition.clone());
+
+  // Borrow a pooled point light that follows the projectile (replaces a mounted <pointLight>).
+  const projectileLight = useDynamicLight({ color: new Color('#7dd3fc'), distance: 10, decay: 2, priority: 2 });
 
   const coreMat = useMemo(
     () =>
@@ -119,6 +123,11 @@ export default function KnightFrostProjectile({
 
     groupRef.current.position.lerpVectors(startPosition, endFixedRef.current, k);
 
+    // Drive the pooled light at the projectile's world position.
+    const gp = groupRef.current.position;
+    projectileLight.current?.setPosition(gp.x, gp.y, gp.z);
+    projectileLight.current?.setIntensity(14);
+
     if (spinRef.current) {
       spinRef.current.rotation.y += delta * 5;
       spinRef.current.rotation.x += delta * 2.2;
@@ -164,7 +173,6 @@ export default function KnightFrostProjectile({
       <mesh material={trail4Mat} position={[0, 0, -2.75]}>
         <sphereGeometry args={[0.06, 5, 5]} />
       </mesh>
-      <pointLight color="#7dd3fc" intensity={14} distance={10} decay={2} />
     </group>
   );
 }
@@ -182,7 +190,10 @@ export function KnightFrostImpact({ position, onComplete }: KnightFrostImpactPro
   const doneRef = useRef(false);
   const flashRef = useRef<Mesh>(null);
   const ringRef = useRef<Mesh>(null);
-  const lightRef = useRef<PointLight>(null);
+
+  // Borrow a pooled point light for the impact flash (replaces a mounted <pointLight>).
+  const impactLight = useDynamicLight({ color: new Color('#22d3ee'), distance: 8, decay: 2, priority: 1 });
+
   const ringMat = useMemo(
     () =>
       new MeshBasicMaterial({
@@ -215,7 +226,8 @@ export function KnightFrostImpact({ position, onComplete }: KnightFrostImpactPro
     const s = 0.45 + t * 1.6;
     if (flashRef.current) flashRef.current.scale.setScalar(s);
     if (ringRef.current) ringRef.current.scale.setScalar(1 + t * 2.2);
-    if (lightRef.current) lightRef.current.intensity = 16 * fade;
+    impactLight.current?.setPosition(position.x, position.y, position.z);
+    impactLight.current?.setIntensity(16 * fade);
     if (t >= 1 && !doneRef.current) {
       doneRef.current = true;
       onComplete();
@@ -230,7 +242,6 @@ export function KnightFrostImpact({ position, onComplete }: KnightFrostImpactPro
       <mesh ref={ringRef} material={ringMat} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[0.4, 1.4, 24]} />
       </mesh>
-      <pointLight ref={lightRef} color="#22d3ee" intensity={16} distance={8} decay={2} />
     </group>
   );
 }

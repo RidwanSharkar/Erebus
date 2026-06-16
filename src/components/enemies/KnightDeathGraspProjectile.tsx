@@ -12,6 +12,7 @@ import {
   SphereGeometry,
   Vector3,
 } from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 /** Enemy Death Grasp travel VFX (server hit/dodge is authoritative). */
 interface KnightDeathGraspProjectileProps {
@@ -38,6 +39,10 @@ export default function KnightDeathGraspProjectile({
   const tempStartToReturnRef = useRef(new Vector3());
   const tempMidpointRef = useRef(new Vector3());
   const tempQuaternionRef = useRef(new Quaternion());
+
+  // Two pooled lights at the fixed start/end of the grasp (replaces 2 <pointLight>s).
+  const startLight = useDynamicLight({ color: '#6A0DAD', distance: 5, priority: 2 });
+  const endLight = useDynamicLight({ color: '#9370DB', distance: 6, priority: 2 });
 
   const { right, up, particles } = useMemo(() => {
     const path = endPosition.clone().sub(startPosition);
@@ -146,6 +151,13 @@ export default function KnightDeathGraspProjectile({
 
   useFrame((_, delta) => {
     if (doneRef.current) return;
+
+    // Drive the pooled lights at the fixed start/end world positions.
+    startLight.current?.setPosition(startPosition.x, startPosition.y, startPosition.z);
+    startLight.current?.setIntensity(8);
+    endLight.current?.setPosition(endFixedRef.current.x, endFixedRef.current.y, endFixedRef.current.z);
+    endLight.current?.setIntensity(7);
+
     if (startTimeRef.current === null) startTimeRef.current = performance.now();
     const elapsed = performance.now() - startTimeRef.current;
     const progress = Math.min(1, elapsed / Math.max(travelMs, 1));
@@ -270,8 +282,6 @@ export default function KnightDeathGraspProjectile({
         <mesh geometry={geometries.impact} material={materials.spiral[0]} scale={[1.7, 1.7, 1.7]} />
       </group>
 
-      <pointLight position={startPosition.toArray()} color="#6A0DAD" intensity={8} distance={5} decay={2} />
-      <pointLight position={endPosition.toArray()} color="#9370DB" intensity={7} distance={6} decay={2} />
     </group>
   );
 }

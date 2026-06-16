@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useRef, useMemo } from 'react';
+import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
+
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Group, AdditiveBlending } from 'three';
 
@@ -68,7 +70,7 @@ export default function TitanSoulEffect({ soulType }: TitanSoulEffectProps) {
   return (
     <group ref={groupRef}>
       {/* Stronger point light — wider radius to illuminate the large titan body */}
-      <pointLight
+      <EnemyDynamicLight
         color={colors.light}
         intensity={7}
         distance={9}

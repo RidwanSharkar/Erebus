@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface WarlockTeleportEffectProps {
   position: Vector3;
@@ -45,6 +46,9 @@ export default function WarlockTeleportEffect({ position, type, onComplete }: Wa
 
   useEffect(() => () => { Object.values(mats).forEach(m => m.dispose()); }, [mats]);
 
+  // Borrow a pooled light for the arcane flash instead of mounting a <pointLight>.
+  const arcaneLight = useDynamicLight({ color: '#9900ff', distance: 5, priority: 1 });
+
   const coreRef    = useRef<any>(null);
   const outerRef   = useRef<any>(null);
   const runeRef    = useRef<any>(null);
@@ -54,6 +58,10 @@ export default function WarlockTeleportEffect({ position, type, onComplete }: Wa
 
   useFrame((_, delta) => {
     if (doneRef.current) return;
+
+    // Pooled light sits at the rune's world position (light child was offset [0,0.6,0]).
+    arcaneLight.current?.setPosition(position.x, position.y + 0.6, position.z);
+    arcaneLight.current?.setIntensity(8);
 
     timeRef.current += delta;
     const t = Math.min(timeRef.current / duration, 1.0);
@@ -189,9 +197,6 @@ export default function WarlockTeleportEffect({ position, type, onComplete }: Wa
           <tetrahedronGeometry args={[0.07, 0]} />
         </mesh>
       ))}
-
-      {/* Violet arcane light */}
-      <pointLight color="#9900ff" intensity={8} distance={5} decay={2} position={[0, 0.6, 0]} />
     </group>
   );
 }

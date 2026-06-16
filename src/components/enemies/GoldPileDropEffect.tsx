@@ -3,6 +3,7 @@
 import React, { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, type Mesh } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface GoldDropLike {
   id: string;
@@ -44,6 +45,10 @@ export default function GoldPileDropEffect({
   const rootRef = useRef<any>(null);
   const pieceRefs = useRef<Array<Mesh | null>>([]);
   const pieceCount = Math.max(1, Math.min(25, Math.floor(drop.pieceCount || drop.amount || 1)));
+
+  // Borrow a pooled light for the gold glint instead of mounting a <pointLight>
+  // (gold drops mount/unmount frequently in combat, which would churn the light count).
+  const goldLight = useDynamicLight({ color: '#ffc94d', distance: 5, priority: 1 });
 
   const seeds = useMemo<GoldPieceAnimSeed[]>(() => {
     const out: GoldPieceAnimSeed[] = [];
@@ -87,6 +92,11 @@ export default function GoldPileDropEffect({
     if (rootRef.current) {
       rootRef.current.rotation.y += 0.0015;
     }
+
+    // Drive the pooled light at the pile's world position (light sat at local
+    // [0, 0.35, 0] on the group's rotation axis, so it does not move).
+    goldLight.current?.setPosition(drop.position.x, drop.position.y + 0.35, drop.position.z);
+    goldLight.current?.setIntensity(2.2);
   });
 
   const tryPickup = () => {
@@ -114,8 +124,6 @@ export default function GoldPileDropEffect({
         <sphereGeometry args={[0.52, 12, 12]} />
         <meshBasicMaterial color="#ffd873" transparent opacity={0.14} depthWrite={false} />
       </mesh>
-      <pointLight color="#ffc94d" intensity={2.2} distance={5} decay={2} position={[0, 0.35, 0]} />
-
       {seeds.map((_, idx) => (
         <mesh
           key={`${drop.id}-gold-${idx}`}

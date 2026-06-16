@@ -3,9 +3,12 @@ import { Group, Vector3, Color, CylinderGeometry, TorusGeometry, BoxGeometry } f
 import { useFrame } from '@react-three/fiber';
 import { ICEBEAM_MAX_HOLD_SEC } from '@/utils/icebeamConstants';
 import { createBeamCylinderAdditiveMaterial } from '@/utils/beamCylinderAdditiveMaterial';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 const _scratchA = new Color();
 const _scratchB = new Color();
+const _sourceLightPos = new Vector3();
+const _tipLightPos = new Vector3();
 
 /** ~matches prior MeshStandard stack when mapped through additive cylinders. */
 const ICE_BEAM_BRI_GAIN = 24;
@@ -68,12 +71,18 @@ export default function Icebeam({
   intensity: externalIntensity = 1,
 }: IcebeamProps) {
   const beamRef = useRef<Group>(null);
+  const sourceGroupRef = useRef<Group>(null);
+  const tipGroupRef = useRef<Group>(null);
   const [intensity, setIntensity] = useState(1);
   const [fadeProgress, setFadeProgress] = useState(0);
   const [isFadingOut, setIsFadingOut] = useState(false);
   const fadeStartTime = useRef<number | null>(null);
   const currentPosition = useRef(new Vector3());
   const currentDirection = useRef(new Vector3());
+
+  // Two pooled point lights (beam source + beam tip) replace the mounted <pointLight>s.
+  const sourceLight = useDynamicLight({ color: _scratchA.clone(), priority: 2 });
+  const tipLight = useDynamicLight({ color: _scratchB.clone(), priority: 2 });
 
   const iceCylinderMaterials = useMemo(() => createIceCylinderMaterials(), []);
 
@@ -225,6 +234,25 @@ export default function Icebeam({
     updateIceCylinderUniforms(iceCylinderMaterials, cylColors.color, cylColors.emissive, visIntensity, fp);
 
     beamRef.current.scale.setScalar(fp);
+
+    // Drive the two pooled lights at the beam source / tip (world space). Colors follow
+    // the cycling emissive hue; intensities/distances replicate the original <pointLight>s.
+    _scratchA.set(cylColors.emissive);
+    if (sourceGroupRef.current) {
+      sourceGroupRef.current.getWorldPosition(_sourceLightPos);
+      sourceLight.current?.setPosition(_sourceLightPos.x, _sourceLightPos.y, _sourceLightPos.z);
+    }
+    sourceLight.current?.setColor(_scratchA);
+    sourceLight.current?.setIntensity(16 * visIntensity * fp);
+    sourceLight.current?.setDistance(3 * visIntensity);
+
+    if (tipGroupRef.current) {
+      tipGroupRef.current.getWorldPosition(_tipLightPos);
+      tipLight.current?.setPosition(_tipLightPos.x, _tipLightPos.y, _tipLightPos.z);
+    }
+    tipLight.current?.setColor(_scratchA);
+    tipLight.current?.setIntensity(10 * visIntensity * fp);
+    tipLight.current?.setDistance(4 * visIntensity);
   });
 
   const activeTime = isActive
@@ -236,7 +264,7 @@ export default function Icebeam({
 
   return (
     <group ref={beamRef}>
-      <group position={[0, -1.1, 2]}>
+      <group ref={sourceGroupRef} position={[0, -1.1, 2]}>
         <mesh>
           <sphereGeometry args={[0.4 * intensity, 16, 16]} />
           <meshStandardMaterial
@@ -259,10 +287,12 @@ export default function Icebeam({
           />
         </mesh>
 
-        <pointLight color={beamColors.emissive} intensity={16 * intensity * fadeProgress} distance={3 * intensity} />
+        {/* Source point light now driven via the shared dynamic light pool (see useFrame). */}
       </group>
 
       <group position={[0, -1.1, 11.85]}>
+        {/* Marker for the beam-tip pooled light position (original local [0,0,12]). */}
+        <group ref={tipGroupRef} position={[0, 0, 12]} />
         <mesh rotation={[Math.PI / 2, 0, 0]} geometry={beamGeometries.core} material={iceCylinderMaterials.core} />
         <mesh rotation={[Math.PI / 2, 0, 0]} geometry={beamGeometries.inner} material={iceCylinderMaterials.inner} />
         <mesh rotation={[Math.PI / 2, 0, 0]} geometry={beamGeometries.outer} material={iceCylinderMaterials.outer} />
@@ -314,7 +344,7 @@ export default function Icebeam({
           </mesh>
         ))}
 
-        <pointLight position={[0, 0, 12]} color={beamColors.emissive} intensity={10 * intensity * fadeProgress} distance={4 * intensity} />
+        {/* Tip point light now driven via the shared dynamic light pool (see useFrame). */}
       </group>
     </group>
   );

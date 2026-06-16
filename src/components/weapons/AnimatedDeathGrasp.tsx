@@ -1,6 +1,7 @@
 import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending, SphereGeometry, CylinderGeometry } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface AnimatedDeathGraspProps {
   startPosition: Vector3;
@@ -145,6 +146,10 @@ export default function AnimatedDeathGrasp({
   const currentProjectilePosition = useRef(startPosition.clone());
   const currentReturnPosition = useRef(targetPosition.clone());
 
+  // Borrow ONE pooled light (collapses the former 3 phase <pointLight>s into one that
+  // follows the active phase head) instead of mounting lights (avoids lit-shader recompiles).
+  const graspLight = useDynamicLight({ color: '#6A0DAD', distance: 5, decay: 2, priority: 1 });
+
   useFrame((_, delta) => {
     timeRef.current = Math.min(timeRef.current + delta, totalDuration);
     flickerRef.current = Math.random() * 0.3 + 0.7;
@@ -213,6 +218,22 @@ export default function AnimatedDeathGrasp({
     materials.impact.opacity = (baseOpacity * 0.7) * flickerRef.current;
     materials.core.opacity = (baseOpacity * 1.1) * flickerRef.current;
     materials.chain.opacity = (baseOpacity * 0.6) * flickerRef.current;
+
+    // Drive the single pooled light at the active phase head (world space). Replicates the
+    // moving phase light: forward → projectile head (8 * flicker), return → return head
+    // (6 * flicker), complete → start glow off.
+    if (phaseRef.current === 'forward') {
+      const p = currentProjectilePosition.current;
+      graspLight.current?.setPosition(p.x, p.y, p.z);
+      graspLight.current?.setIntensity(8 * flickerRef.current);
+    } else if (phaseRef.current === 'return') {
+      const p = currentReturnPosition.current;
+      graspLight.current?.setPosition(p.x, p.y, p.z);
+      graspLight.current?.setIntensity(6 * flickerRef.current);
+    } else {
+      graspLight.current?.setPosition(startPosition.x, startPosition.y, startPosition.z);
+      graspLight.current?.setIntensity(0);
+    }
   });
 
   const checkForHits = (currentPos: Vector3) => {
@@ -341,34 +362,7 @@ export default function AnimatedDeathGrasp({
         ]}
       />
 
-      {/* Dynamic lighting */}
-      <pointLight
-        position={startPosition.toArray()}
-        color="#6A0DAD"
-        intensity={10 * (phaseRef.current !== 'complete' ? 1 : 0) * flickerRef.current}
-        distance={4}
-        decay={2}
-      />
-
-      {phaseRef.current === 'forward' && (
-        <pointLight
-          position={currentProjectilePosition.current.toArray()}
-          color="#9370DB"
-          intensity={8 * flickerRef.current}
-          distance={5}
-          decay={2}
-        />
-      )}
-
-      {phaseRef.current === 'return' && (
-        <pointLight
-          position={currentReturnPosition.current.toArray()}
-          color="#8A2BE2"
-          intensity={6 * flickerRef.current}
-          distance={4}
-          decay={2}
-        />
-      )}
+      {/* Dynamic lighting is driven via the pooled light in useFrame above. */}
     </group>
   );
 }

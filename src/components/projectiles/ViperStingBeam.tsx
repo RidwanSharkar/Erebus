@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { Vector3, Group, AdditiveBlending } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { REAPING_TALONS_MAX_TRAVEL_DISTANCE } from '@/utils/talents';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface ViperStingBeamProps {
   position: Vector3;
@@ -38,19 +39,36 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
         outer: "#ff6600",
       };
   const returnAccent = glacialTalonsTheme ? '#4da6ff' : '#ff6600';
-  
+
+  // Borrow a pooled light instead of mounting a <pointLight> (avoids lit-shader recompiles).
+  const beamLight = useDynamicLight({ color: colors.emissive, distance: 9 * lenScale, decay: 2, priority: 2 });
+
   useFrame(() => {
     const elapsed = Date.now() - startTimeRef.current;
-    
+
     if (elapsed >= duration && !fadeStartTime.current) {
       fadeStartTime.current = Date.now();
     }
-    
+
+    // Drive the pooled light at the beam mid-point in world space. The light sat at local
+    // [0,0,halfZ] inside a group rotated by atan2(dir.x,dir.z) and parented at `position`,
+    // so world = position + horizontalDir * halfZ.
+    const yaw = Math.atan2(direction.x, direction.z);
+    const fade = fadeStartTime.current
+      ? Math.max(0, 1 - (Date.now() - fadeStartTime.current) / 350)
+      : 1;
+    beamLight.current?.setPosition(
+      position.x + Math.sin(yaw) * halfZ,
+      position.y,
+      position.z + Math.cos(yaw) * halfZ,
+    );
+    beamLight.current?.setIntensity(18 * fade);
+
     // Handle fade out
     if (fadeStartTime.current) {
       const fadeElapsed = Date.now() - fadeStartTime.current;
       const fadeDuration = 250; // Slightly longer fade for venom effect
-      
+
       if (fadeElapsed >= fadeDuration) {
         onComplete();
         return;
@@ -180,15 +198,6 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
             </group>
           );
         })}
-
-        {/* Point light for illumination - purple venom glow */}
-        <pointLight
-          color={colors.emissive}
-          intensity={18 * fadeProgress}
-          distance={9 * lenScale}
-          decay={2}
-          position={[0, 0, halfZ]}
-        />
 
         {/* Additional returning shot effects */}
         {isReturning && (

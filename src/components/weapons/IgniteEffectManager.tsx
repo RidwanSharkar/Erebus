@@ -2,8 +2,11 @@
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, Group, AdditiveBlending, SphereGeometry, MeshBasicMaterial, Mesh } from '@/utils/three-exports';
+import { Vector3, Group, Color, AdditiveBlending, SphereGeometry, MeshBasicMaterial, Mesh } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import { World } from '@/ecs/World';
+
+const IGNITE_LIGHT_COLOR = new Color('#FF8C42');
 import { Transform } from '@/ecs/components/Transform';
 import { Health } from '@/ecs/components/Health';
 
@@ -56,6 +59,9 @@ function IgniteRing({ enemyId, startPosition, startTime, duration, world, onComp
   const groupRef = useRef<Group>(null);
   const geom = useMemo(() => new SphereGeometry(0.06, 6, 6), []);
   const lastSoundAtRef = useRef(0);
+
+  // Borrow a pooled point light for the ember glow instead of mounting a <pointLight>.
+  const igniteLight = useDynamicLight({ color: IGNITE_LIGHT_COLOR, distance: 3.5, decay: 2, priority: 1 });
   const mat = useMemo(
     () =>
       new MeshBasicMaterial({
@@ -107,6 +113,9 @@ function IgniteRing({ enemyId, startPosition, startTime, duration, world, onComp
       const pulse = 0.85 + 0.15 * Math.sin(elapsed * 0.012);
       groupRef.current.scale.setScalar(pulse);
     }
+    // Drive the pooled light at the ring's world position (constant intensity).
+    igniteLight.current?.setPosition(pos.x, pos.y, pos.z);
+    igniteLight.current?.setIntensity(2.2);
     if (Date.now() - lastSoundAtRef.current >= 1100) {
       lastSoundAtRef.current = Date.now();
       (window as any).audioSystem?.playIgniteStatusSound?.(pos);
@@ -115,7 +124,7 @@ function IgniteRing({ enemyId, startPosition, startTime, duration, world, onComp
 
   return (
     <group ref={groupRef} position={[startPosition.x, startPosition.y + 0.9, startPosition.z]}>
-      <pointLight color="#FF8C42" intensity={2.2} distance={3.5} decay={2} />
+      {/* Ember glow point light now driven via the shared dynamic light pool (see useFrame). */}
       <EmberOrb offset={[0.25, 0.15, 0]} />
       <EmberOrb offset={[-0.22, 0.12, 0.08]} />
       <EmberOrb offset={[0.05, -0.2, -0.18]} />

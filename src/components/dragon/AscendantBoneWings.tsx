@@ -1,4 +1,5 @@
 import { useRef, useMemo, useEffect, useState } from 'react';
+import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 import { Group, Vector3, Euler, Shape, ExtrudeGeometry, MeshStandardMaterial, DoubleSide } from 'three';
 import { useFrame } from '@react-three/fiber';
 import React from 'react';
@@ -198,7 +199,7 @@ export default function AscendantBoneWings({ isLeftWing, parentRef, isDashing }:
     >
       {/* Base feather */}
       <mesh geometry={featherGeometry} material={materials.feather}>
-        <pointLight
+        <PooledEffectLight
           color="#F5F5DC"
           intensity={0.3}
           distance={0.8}
@@ -213,7 +214,7 @@ export default function AscendantBoneWings({ isLeftWing, parentRef, isDashing }:
           material={materials.redMarking}
           position={[0, 0, 0.01]}
         >
-          <pointLight
+          <PooledEffectLight
             color="#FF0000"
             intensity={1.2}
             distance={1.2}

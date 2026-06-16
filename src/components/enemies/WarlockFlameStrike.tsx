@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useMemo, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface WarlockFlameStrikeProps {
   position: Vector3;
@@ -24,6 +25,10 @@ export default function WarlockFlameStrike({ position, onComplete }: WarlockFlam
   const pillarRefs = useRef<(Group | null)[]>([]);
   const timeRef    = useRef(0);
   const doneRef    = useRef(false);
+
+  // One pooled heat-glow light at the strike centre (collapses the 6 per-pillar
+  // <pointLight>s → 1; pillars all converge within a ~1.4u radius).
+  const heatLight = useDynamicLight({ color: new Color('#ff5500'), distance: 5, decay: 2, priority: 1 });
 
   // Stable random pillar layout, generated once per mount.
   const pillars = useMemo<PillarCfg[]>(() => {
@@ -76,6 +81,10 @@ export default function WarlockFlameStrike({ position, onComplete }: WarlockFlam
     mats.ember.opacity  = Math.max(0, 0.7 * fade);
     mats.scorch.opacity = Math.max(0, 0.45 * fade);
 
+    // Heat-glow light at the centre eruption (collapsed from the 6 per-pillar lights).
+    heatLight.current?.setPosition(position.x, position.y + pillars[0].height * 0.5, position.z);
+    heatLight.current?.setIntensity(12);
+
     // Per-pillar scale: rocket up quickly (0–40% local), retract slowly (40–100%).
     pillars.forEach((cfg, i) => {
       const ref = pillarRefs.current[i];
@@ -118,9 +127,6 @@ export default function WarlockFlameStrike({ position, onComplete }: WarlockFlam
           <mesh material={mats.scorch} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
             <circleGeometry args={[0.65, 8]} />
           </mesh>
-
-          {/* Heat glow — scales with pillar */}
-          <pointLight color="#ff5500" intensity={12} distance={5} decay={2} position={[0, cfg.height * 0.5, 0]} />
         </group>
       ))}
 

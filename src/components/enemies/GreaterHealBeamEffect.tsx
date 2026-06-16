@@ -4,6 +4,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { AdditiveBlending, DoubleSide, Group, Vector3 } from 'three';
 import type { Enemy, Player } from '@/contexts/MultiplayerContext';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface GreaterHealBeamEffectProps {
   position: Vector3;
@@ -34,6 +35,10 @@ export default function GreaterHealBeamEffect({
   const doneRef = useRef(false);
   const groupRef = useRef<Group | null>(null);
   const trackedPosition = useRef(position.clone());
+
+  // Single pooled light follows the heal target (replaces 2 near-coincident <pointLight>s).
+  const healLight = useDynamicLight({ color: '#ccfbf1', distance: 8, priority: 1 });
+
   const motes = useMemo(
     () =>
       Array.from({ length: 26 }, (_, i) => ({
@@ -89,6 +94,16 @@ export default function GreaterHealBeamEffect({
         doneRef.current = true;
         onComplete();
       }
+
+      // Drive the pooled light at the heal target's world position.
+      const p = Math.min(1, next / DURATION);
+      const fIn = Math.min(1, p / 0.18);
+      const fOut = 1 - Math.max(0, (p - 0.62) / 0.38);
+      const op = Math.max(0, fIn * fOut);
+      const tp = trackedPosition.current;
+      healLight.current?.setPosition(tp.x, tp.y, tp.z);
+      healLight.current?.setIntensity(7 * op);
+
       return next;
     });
   });
@@ -104,9 +119,6 @@ export default function GreaterHealBeamEffect({
 
   return (
     <group ref={groupRef} position={[trackedPosition.current.x, trackedPosition.current.y, trackedPosition.current.z]}>
-      <pointLight color="#ccfbf1" intensity={7 * opacity} distance={8} decay={2} />
-      <pointLight position={[0, 3.5, 0]} color="#14b8a6" intensity={5 * opacity} distance={10} decay={2} />
-
       <mesh position={[0, beamY, 0]}>
         <cylinderGeometry args={[beamRadius, beamRadius * 0.65, beamHeight, 32, 1, true]} />
         <meshBasicMaterial

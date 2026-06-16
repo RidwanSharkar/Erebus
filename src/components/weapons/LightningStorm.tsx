@@ -1,8 +1,11 @@
 import { useRef, useMemo, memo } from 'react';
 import { Group, Vector3, CylinderGeometry, SphereGeometry, OctahedronGeometry, MeshBasicMaterial, MeshStandardMaterial, Color, AdditiveBlending, RingGeometry } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import { WeaponType } from '../dragon/weapons';
 import { calculateDamage } from '@/core/DamageCalculator';
+
+const LIGHTNING_STORM_LIGHT_COLOR = new Color('#FFD700');
 
 interface LightningStormProps {
   weaponType: WeaponType;
@@ -63,6 +66,9 @@ const LightningStormComponent = memo(function LightningStorm({
   const damageDealtRef = useRef(false);
   const isVisible = useRef(false);
   const isCompleted = useRef(false);
+
+  // Borrow a pooled point light for the impact flash instead of mounting a <pointLight>.
+  const stormLight = useDynamicLight({ color: LIGHTNING_STORM_LIGHT_COLOR, distance: 8, decay: 2, priority: 1 });
 
   // Initialize start time only once
   if (startTimeRef.current === null) {
@@ -226,6 +232,14 @@ const LightningStormComponent = memo(function LightningStorm({
     materials.secondaryBolt.opacity = fadeOut * 0.8;
     materials.impact.opacity = fadeOut * 0.9;
     materials.particle.opacity = fadeOut;
+
+    // Drive the pooled impact light at the target (world space), replicating the
+    // original 25 * (1 - progress) * flicker intensity.
+    if (selectedTarget) {
+      const tp = selectedTarget.position;
+      stormLight.current?.setPosition(tp.x, tp.y, tp.z);
+      stormLight.current?.setIntensity(25 * (1 - progress) * flickerRef.current);
+    }
   });
 
   // Create geometries and materials outside render (like ColossusStrike)
@@ -309,13 +323,7 @@ const LightningStormComponent = memo(function LightningStorm({
           </mesh>
         ))}
 
-        {/* Enhanced lighting */}
-        <pointLight
-          color="#FFD700" // Golden yellow
-          intensity={25 * (1 - (Date.now() - startTimeRef.current) / (duration * 1000)) * flickerRef.current}
-          distance={8}
-          decay={2}
-        />
+        {/* Enhanced lighting now driven via the shared dynamic light pool (see useFrame). */}
       </group>
 
       {/* Spinning diamond particles around impact */}

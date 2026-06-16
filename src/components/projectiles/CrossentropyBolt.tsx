@@ -3,6 +3,7 @@ import { AdditiveBlending } from '@/utils/three-exports';
 
 import { Mesh, Vector3, Clock, Color } from 'three';
 import { useFrame } from '@react-three/fiber';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import CrossentropyBoltTrail from './CrossentropyBoltTrail';
 import CrossentropyBoltLaunchSmoke from './CrossentropyBoltLaunchSmoke';
 import { CROSSENTROPY_MAX_TRAVEL_DISTANCE } from '@/utils/talents';
@@ -81,6 +82,9 @@ export default function CrossentropyBolt({
     };
   }, [visualTheme]);
 
+  // One pooled light follows the bolt, driven in useFrame below.
+  const boltLight = useDynamicLight({ color, distance: 12, priority: 2 });
+
   const trailColor = useMemo(
     () => (reaperEcsDriven ? new Color('#B866FF') : color),
     [reaperEcsDriven, color],
@@ -143,6 +147,11 @@ export default function CrossentropyBolt({
       fireball1Ref.current.position.copy(currentPosition.current.clone().add(finalOffset1));
       fireball2Ref.current.position.copy(currentPosition.current.clone().add(finalOffset2));
       fireball3Ref.current.position.copy(currentPosition.current.clone().add(finalOffset3));
+      {
+        const rp = currentPosition.current;
+        boltLight.current?.setPosition(rp.x, rp.y, rp.z);
+        boltLight.current?.setIntensity(5 * opacity);
+      }
       return;
     }
 
@@ -249,6 +258,11 @@ export default function CrossentropyBolt({
     fireball1Ref.current.position.copy(currentPosition.current.clone().add(finalOffset1));
     fireball2Ref.current.position.copy(currentPosition.current.clone().add(finalOffset2));
     fireball3Ref.current.position.copy(currentPosition.current.clone().add(finalOffset3));
+
+    // Single pooled light follows the bolt (replaces 3 per-fireball <pointLight>s).
+    const p = currentPosition.current;
+    boltLight.current?.setPosition(p.x, p.y, p.z);
+    boltLight.current?.setIntensity(5 * opacity);
   });
 
   return (
@@ -265,7 +279,6 @@ export default function CrossentropyBolt({
           blending={AdditiveBlending}
           toneMapped={false}
         />
-        <pointLight color={color} intensity={5 * opacity} distance={12} />
       </mesh>
       <mesh ref={fireball2Ref} position={currentPosition.current}>
         <sphereGeometry args={[size, 32, 32]} />
@@ -279,7 +292,6 @@ export default function CrossentropyBolt({
           blending={AdditiveBlending}
           toneMapped={false}
         />
-        <pointLight color={color} intensity={5 * opacity} distance={12} />
       </mesh>
       <mesh ref={fireball3Ref} position={currentPosition.current}>
         <sphereGeometry args={[size, 32, 32]} />
@@ -293,7 +305,6 @@ export default function CrossentropyBolt({
           blending={AdditiveBlending}
           toneMapped={false}
         />
-        <pointLight color={color} intensity={5 * opacity} distance={12} />
       </mesh>
       <CrossentropyBoltTrail
         color={trailColor}

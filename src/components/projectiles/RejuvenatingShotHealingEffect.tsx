@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Vector3 } from 'three';
 import { useFrame, RootState } from '@react-three/fiber';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface RejuvenatingShotHealingEffectProps {
   position: Vector3;
@@ -11,12 +12,25 @@ const RejuvenatingShotHealingEffect: React.FC<RejuvenatingShotHealingEffectProps
   const [time, setTime] = useState(0);
   const duration = 1.2; // Slightly shorter than Reanimate for snappier feel
 
+  // Healing green colors
+  const primaryColor = "#00ffaa";
+  const secondaryColor = "#00ff77";
+  const coreColor = "#ffffff";
+
+  // Collapse the two healing-glow <pointLight>s into one pooled light at the effect
+  // origin (group sits at world `position`). Uses the brighter primary light.
+  const healLight = useDynamicLight({ color: primaryColor, distance: 6, decay: 2, priority: 1 });
+
   useFrame((_, delta) => {
     setTime(prev => {
       const newTime = prev + delta;
       if (newTime >= duration) {
         onComplete();
       }
+      const newProgress = newTime / duration;
+      const newOpacity = Math.sin(newProgress * Math.PI);
+      healLight.current?.setPosition(position.x, position.y, position.z);
+      healLight.current?.setIntensity(4 * newOpacity);
       return newTime;
     });
   });
@@ -24,11 +38,6 @@ const RejuvenatingShotHealingEffect: React.FC<RejuvenatingShotHealingEffectProps
   const progress = time / duration;
   const opacity = Math.sin(progress * Math.PI); // Fade in and out smoothly
   const scale = 1 + progress * 1.5; // Expand outward
-
-  // Healing green colors
-  const primaryColor = "#00ffaa";
-  const secondaryColor = "#00ff77";
-  const coreColor = "#ffffff";
 
   return (
     <group position={position.toArray()}>
@@ -163,22 +172,6 @@ const RejuvenatingShotHealingEffect: React.FC<RejuvenatingShotHealingEffectProps
         />
       </mesh>
 
-      {/* Bright point lights for extra glow */}
-      <pointLight
-        color={primaryColor}
-        intensity={4 * opacity}
-        distance={6}
-        decay={2}
-      />
-      
-      {/* Additional upward light */}
-      <pointLight
-        position={[0, progress * 2, 0]}
-        color={coreColor}
-        intensity={3 * opacity}
-        distance={4}
-        decay={2}
-      />
     </group>
   );
 });

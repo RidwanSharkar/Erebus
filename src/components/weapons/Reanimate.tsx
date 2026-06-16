@@ -1,6 +1,9 @@
 import React, { useImperativeHandle, forwardRef, useState, useCallback, useMemo } from 'react';
-import { Group, Vector3 } from 'three';
+import { Group, Vector3, Color } from 'three';
 import { useFrame, RootState } from '@react-three/fiber';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+
+const REANIMATE_LIGHT_COLOR = new Color('#ff8800');
 
 interface ReanimateProps {
   parentRef: React.RefObject<Group>;
@@ -13,7 +16,10 @@ export interface ReanimateRef {
 const HealingEffect: React.FC<{ position: Vector3; onComplete: () => void }> = React.memo(({ position, onComplete }) => {
   const [time, setTime] = useState(0);
   const duration = 1.5;
-  
+
+  // Borrow a pooled point light for the healing glow instead of mounting a <pointLight>.
+  const healLight = useDynamicLight({ color: REANIMATE_LIGHT_COLOR, distance: 5, decay: 2, priority: 1 });
+
   // Use useCallback for frame updates
   const onFrame = useCallback((_: RootState, delta: number) => {
     setTime(prev => {
@@ -21,8 +27,14 @@ const HealingEffect: React.FC<{ position: Vector3; onComplete: () => void }> = R
       if (newTime >= duration) {
         onComplete();
       }
+      // Drive the pooled light at the effect's world position, replicating 4 * opacity.
+      const frameProgress = newTime / duration;
+      const frameOpacity = Math.sin(frameProgress * Math.PI);
+      healLight.current?.setPosition(position.x, position.y, position.z);
+      healLight.current?.setIntensity(4 * frameOpacity);
       return newTime;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [duration, onComplete]);
 
   useFrame(onFrame);
@@ -104,13 +116,7 @@ const HealingEffect: React.FC<{ position: Vector3; onComplete: () => void }> = R
         );
       })}
 
-      {/* Light source */}
-      <pointLight
-        color="#ff8800"
-        intensity={4 * opacity}
-        distance={5}
-        decay={2}
-      />
+      {/* Light source now driven via the shared dynamic light pool (see useFrame). */}
     </group>
   );
 });

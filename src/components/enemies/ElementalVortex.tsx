@@ -1,4 +1,6 @@
 import { useRef } from 'react';
+import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
+
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Group, AdditiveBlending } from 'three';
 import { MeshStandardMaterial } from '@/utils/three-exports';
@@ -84,7 +86,7 @@ function ElementalVortex({ parentRef }: ElementalVortexProps) {
         </group>
       ))}
       
-      <pointLight
+      <EnemyDynamicLight
         color="#BA55D3"
         intensity={12}
         distance={12}

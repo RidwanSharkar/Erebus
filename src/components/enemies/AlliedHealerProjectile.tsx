@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 export interface AlliedHealerProjectileProps {
   startPosition: Vector3;
@@ -33,6 +34,9 @@ export default function AlliedHealerProjectile({
   const doneRef = useRef(false);
 
   const currentDirRef = useRef(new Vector3(0, 0, -1));
+
+  // Single pooled light follows the orb (replaces 3 near-coincident <pointLight>s).
+  const orbLight = useDynamicLight({ color: '#00eeff', distance: 6.5, priority: 2 });
 
   const staleDist = useMemo(() => {
     const d = targetPosition.clone().sub(startPosition);
@@ -146,6 +150,11 @@ export default function AlliedHealerProjectile({
     groupRef.current.position.addScaledVector(dir, SPEED * delta);
     groupRef.current.rotation.y = Math.atan2(dir.x, dir.z);
 
+    // Drive the pooled light at the orb's world position.
+    const gp = groupRef.current.position;
+    orbLight.current?.setPosition(gp.x, gp.y, gp.z);
+    orbLight.current?.setIntensity(18);
+
     if (spinRef.current) spinRef.current.rotation.z += delta * 2.6;
     if (ring1Ref.current) ring1Ref.current.rotation.y += delta * 3.5;
     if (ring2Ref.current) ring2Ref.current.rotation.x -= delta * 2.3;
@@ -231,9 +240,6 @@ export default function AlliedHealerProjectile({
           </mesh>
         </group>
 
-        <pointLight color="#00eeff" intensity={18} distance={6.5} decay={2} />
-        <pointLight color="#0099cc" intensity={9} distance={4.5} decay={2} position={[0, 0.3, 0]} />
-        <pointLight color="#00aadd" intensity={5} distance={3.5} decay={2} position={[0, 0, 1.5]} />
       </group>
     </group>
   );

@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
+
 import { Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
@@ -233,8 +235,8 @@ export default function WeaverRenderer({
             />
           </mesh>
 
-          <pointLight color="auraRing.color" intensity={0.5} distance={12} decay={6} position={[0, 2, -0.5]} />
-          <pointLight color="auraDisc.color" intensity={3} distance={8} decay={2} position={[0, 1, 0]} />
+          <EnemyDynamicLight color="auraRing.color" intensity={0.5} distance={12} decay={6} position={[0, 2, -0.5]} />
+          <EnemyDynamicLight color="auraDisc.color" intensity={3} distance={8} decay={2} position={[0, 1, 0]} />
         </group>
       )}
 

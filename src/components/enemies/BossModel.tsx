@@ -1,5 +1,7 @@
 // Combined Boss Model - Ascendant + Abomination features with 6 arms, spell-casting, and complex animations
 import React, { useRef, useEffect, useMemo } from 'react';
+import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
+
 import { Group, MeshStandardMaterial, SphereGeometry, CylinderGeometry, ConeGeometry, BoxGeometry, Shape, ExtrudeGeometry, InstancedMesh, Matrix4, Vector3, Euler, TorusGeometry, Quaternion, MathUtils, DynamicDrawUsage, DoubleSide, Points, AdditiveBlending, Mesh, Object3D, Material } from 'three';
 import { useFrame } from '@react-three/fiber';
 import BonePlate from '../dragon/BonePlate';
@@ -199,7 +201,7 @@ function AscendantArm({ isRaised = false }: { isRaised?: boolean }) {
                         opacity={0.8}
                       />
                     </mesh>
-                    <pointLight
+                    <EnemyDynamicLight
                       color="#FF0000"
                       intensity={1.5}
                       distance={2}
@@ -262,7 +264,7 @@ function EyeSet({ position }: { position: [number, number, number] }) {
       <primitive object={eyeParts.core} />
       <primitive object={eyeParts.innerGlow} />
       <primitive object={eyeParts.outerGlow} />
-      <pointLight color="#BA55D3" intensity={0.5} distance={1} decay={2} position={position} />
+      <EnemyDynamicLight color="#BA55D3" intensity={0.5} distance={1} decay={2} position={position} />
     </group>
   );
 }
@@ -363,7 +365,7 @@ function BossClawModel({ isLeftHand = false, glowing = false }: { isLeftHand?: b
                     />
                   </mesh>
 
-                  <pointLight
+                  <EnemyDynamicLight
                     color={glowing ? "#FF0000" : "#BA55D3"}
                     intensity={glowing ? 4.0 : 1}
                     distance={glowing ? 4 : 2}

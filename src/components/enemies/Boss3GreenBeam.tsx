@@ -8,6 +8,9 @@ import { useRef, useEffect, useState, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Color, Vector3, Group, CylinderGeometry, TorusGeometry, BoxGeometry } from '@/utils/three-exports';
 import { createBeamCylinderAdditiveMaterial } from '@/utils/beamCylinderAdditiveMaterial';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+
+const _lightWorldPos = new Vector3();
 
 /** Keep in sync with backend `enemyAI.js` (`boss3StartGreenBeam` / BOSS3_GREEN_BEAM_*). */
 const BOSS3_GREEN_BEAM_RANGE = 22;
@@ -108,6 +111,9 @@ export default function Boss3GreenBeam({
   const currentDirection = useRef(new Vector3());
 
   const cylinderMaterials = useMemo(() => createGreenCylinderMaterials(), []);
+
+  // Single pooled light follows the beam source (replaces 2 <pointLight>s along the beam).
+  const beamLight = useDynamicLight({ color: '#5cff9a', distance: 3, priority: 1 });
 
   useEffect(() => {
     const m = cylinderMaterials;
@@ -255,6 +261,15 @@ export default function Boss3GreenBeam({
     updateGreenCylinderUniforms(cylinderMaterials, cylColors.color, cylColors.emissive, visIntensity, fp);
 
     beamRef.current.scale.setScalar(fp);
+
+    // Drive the pooled light at the beam source's world position (the source light
+    // sat at local [0, 0.35, BOSS3_GREEN_BEAM_START_OFFSET] under the beam group).
+    beamRef.current.updateMatrixWorld();
+    _lightWorldPos.set(0, 0.35, BOSS3_GREEN_BEAM_START_OFFSET);
+    beamRef.current.localToWorld(_lightWorldPos);
+    beamLight.current?.setColor(cylColors.emissive);
+    beamLight.current?.setPosition(_lightWorldPos.x, _lightWorldPos.y, _lightWorldPos.z);
+    beamLight.current?.setIntensity(15 * visIntensity * fp);
   });
 
   const activeTime = isActive ? Math.min((Date.now() - startTime) / 1000, BEAM_HOLD_SEC) : 0;
@@ -285,7 +300,6 @@ export default function Boss3GreenBeam({
           />
         </mesh>
 
-        <pointLight color={beamColors.emissive} intensity={15 * intensity * fadeProgress} distance={3 * intensity} />
       </group>
 
       <group position={[0, 0.12, BEAM_AXIS_MID_Z]}>
@@ -335,12 +349,6 @@ export default function Boss3GreenBeam({
           );
         })}
 
-        <pointLight
-          position={[0, 0, BEAM_SEGMENT_LENGTH * 0.22]}
-          color={beamColors.emissive}
-          intensity={10 * intensity * fadeProgress}
-          distance={4 * intensity}
-        />
       </group>
     </group>
   );

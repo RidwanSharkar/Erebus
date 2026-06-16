@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import { VIPER_ARROW_MAX_RANGE } from './ViperArrowProjectile';
 
 // Travel distance matches VIPER_ARROW_MAX_RANGE; keep in sync with backend enemyAI (shade-attack-telegraph maxRange).
@@ -31,6 +32,9 @@ export default function ShadeDaggerProjectile({
   const groupRef = useRef<Group>(null);
   const timeRef = useRef(0);
   const doneRef = useRef(false);
+
+  // One pooled light follows the dagger (replaces a mounted <pointLight>).
+  const daggerLight = useDynamicLight({ color: new Color('#9b30ff'), distance: 3.5, decay: 2, priority: 2 });
 
   // `targetPosition` is the aim point; the dagger always travels `VIPER_ARROW_MAX_RANGE` along that ray.
   const { direction, totalDist, duration, yaw, pitch } = useMemo(() => {
@@ -89,6 +93,11 @@ export default function ShadeDaggerProjectile({
       startPosition.clone().addScaledVector(direction, progress * totalDist)
     );
 
+    // Drive the pooled light at the dagger's world position.
+    const dp = groupRef.current.position;
+    daggerLight.current?.setPosition(dp.x, dp.y, dp.z);
+    daggerLight.current?.setIntensity(5);
+
     // Fade out in the last 25% of travel — match ViperArrowProjectile
     const opacity = progress > 0.75 ? 1 - (progress - 0.75) / 0.25 : 1.0;
     daggerMat.opacity = 0.95 * opacity;
@@ -123,8 +132,6 @@ export default function ShadeDaggerProjectile({
       <mesh material={trailMat} position={[0, 0, 0.55]}>
         <boxGeometry args={[0.13, 0.13, 0.9]} />
       </mesh>
-
-      <pointLight color="#9b30ff" intensity={5} distance={3.5} decay={2} />
     </group>
   );
 }

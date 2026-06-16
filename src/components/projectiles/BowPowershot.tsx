@@ -4,6 +4,7 @@ import { AdditiveBlending } from '@/utils/three-exports';
 import { Vector3, Group, Quaternion } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { WeaponSubclass } from '@/components/dragon/weapons';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface BowPowershotProps {
   position: Vector3;
@@ -94,24 +95,43 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
     q.setFromUnitVectors(new Vector3(0, 0, 1), dir);
     return q;
   }, [direction.x, direction.y, direction.z]);
-  
+
+  // World position of the beam's light: position offset by halfZ along the (normalized) direction.
+  const lightWorldPos = useMemo(() => {
+    const dir = direction.clone();
+    if (dir.lengthSq() < 1e-10) return position.clone();
+    dir.normalize();
+    return position.clone().addScaledVector(dir, halfZ);
+  }, [position.x, position.y, position.z, direction.x, direction.y, direction.z, halfZ]);
+
+  const lightDistance = thickCaliberPerfect ? 14 * lenScale : isPerfectShot ? 10 * lenScale : 8;
+
+  // Pooled light replaces the beam's <pointLight>.
+  const beamLight = useDynamicLight({ color: colors.core, distance: lightDistance, priority: 2 });
+
   useFrame(() => {
     const elapsed = Date.now() - startTimeRef.current;
-    
+
     if (elapsed >= duration && !fadeStartTime.current) {
       fadeStartTime.current = Date.now();
     }
-    
+
     // Handle fade out
     if (fadeStartTime.current) {
       const fadeElapsed = Date.now() - fadeStartTime.current;
       const fadeDuration = 300; // 0.3 second fade
-      
+
       if (fadeElapsed >= fadeDuration) {
         onComplete();
         return;
       }
     }
+
+    const liveFade = fadeStartTime.current
+      ? Math.max(0, 1 - (Date.now() - fadeStartTime.current) / 300)
+      : 1;
+    beamLight.current?.setPosition(lightWorldPos.x, lightWorldPos.y, lightWorldPos.z);
+    beamLight.current?.setIntensity((isPerfectShot ? 20 : 15) * liveFade);
   });
 
   const fadeProgress = fadeStartTime.current 
@@ -225,15 +245,6 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
             </group>
           );
         })}
-
-        {/* Point light for illumination - brighter for perfect shots */}
-        <pointLight
-          color={colors.core}
-          intensity={(isPerfectShot ? 20 : 15) * fadeProgress}
-          distance={thickCaliberPerfect ? 14 * lenScale : isPerfectShot ? 10 * lenScale : 8}
-          decay={2}
-          position={[0, 0, halfZ]}
-        />
 
         {/* Additional perfect shot effects */}
         {isPerfectShot && (

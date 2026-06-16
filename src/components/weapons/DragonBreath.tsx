@@ -11,7 +11,6 @@ import {
   MeshBasicMaterial,
   PlaneGeometry,
   CylinderGeometry,
-  PointLight,
   RingGeometry,
   Vector3,
 } from '@/utils/three-exports';
@@ -20,6 +19,10 @@ import {
   AFTERSHOCK_STRIP_HALF_WIDTH,
   AFTERSHOCK_STRIP_LENGTH,
 } from '@/utils/talents';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+
+// Reused scratch vector for reading the blast-core world position (avoids per-frame allocs).
+const _tmpVec = new Vector3();
 
 interface DragonBreathProps {
   position: Vector3;
@@ -45,10 +48,13 @@ export default function DragonBreath({ position, direction, startTime, onComplet
   const detonationSoundPlayedRef = useRef(false);
 
   const pillarGroupRefs = useRef<(Group | null)[]>(Array(PILLAR_COUNT).fill(null));
-  const pillarLightRefs = useRef<(PointLight | null)[]>(Array(PILLAR_COUNT).fill(null));
   const shockwaveRef = useRef<Mesh>(null);
   const blastCoreRef = useRef<Mesh>(null);
   const sparkGroupRefs = useRef<(Group | null)[]>(Array(SPARK_COUNT).fill(null));
+
+  // Borrow ONE pooled light at the blast center (collapses the former 9 per-pillar
+  // <pointLight>s) instead of mounting lights (avoids lit-shader recompiles).
+  const blastLight = useDynamicLight({ color: '#66FF33', distance: 7, decay: 2, priority: 1 });
 
   const stripWidth = AFTERSHOCK_STRIP_HALF_WIDTH * 2;
 
@@ -241,16 +247,22 @@ export default function DragonBreath({ position, direction, startTime, onComplet
 
     for (let i = 0; i < PILLAR_COUNT; i++) {
       const grp = pillarGroupRefs.current[i];
-      const light = pillarLightRefs.current[i];
       const burst = pillarBursts[i];
       if (grp) {
         const widthScale = burst.radius + pillarScale * 0.72;
         grp.scale.set(widthScale, Math.max(0.001, pillarH * burst.height), widthScale);
       }
-      if (light) {
-        light.intensity = pillarScale > 0.02 ? 34 * pillarScale * (1 - detonationT * 0.62) : 0;
-      }
     }
+
+    // Drive the single pooled light at the blast center (world space). Replicates one
+    // per-pillar light's intensity expression: 34 * pillarScale * (1 - detonationT * 0.62).
+    if (blastCoreRef.current) {
+      blastCoreRef.current.getWorldPosition(_tmpVec);
+      blastLight.current?.setPosition(_tmpVec.x, _tmpVec.y, _tmpVec.z);
+    }
+    blastLight.current?.setIntensity(
+      pillarScale > 0.02 ? 34 * pillarScale * (1 - detonationT * 0.62) : 0,
+    );
 
     for (let i = 0; i < SPARK_COUNT; i++) {
       const grp = sparkGroupRefs.current[i];
@@ -344,16 +356,6 @@ export default function DragonBreath({ position, direction, startTime, onComplet
               position={[0, 0.5, 0]}
             />
           </group>
-          <pointLight
-            ref={(el) => {
-              pillarLightRefs.current[i] = el;
-            }}
-            color="#66FF33"
-            intensity={0}
-            distance={7}
-            decay={2}
-            position={[0, 1.1, 0]}
-          />
         </group>
       ))}
 

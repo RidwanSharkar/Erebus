@@ -9,6 +9,7 @@ import {
   Vector3,
 } from '@/utils/three-exports';
 import type { TotemBoltVariant } from '@/utils/talents';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import { getTotemBoltTheme } from '@/components/projectiles/TotemEntropicBolt';
 
 interface TotemSuperconductorLightningProps {
@@ -123,6 +124,10 @@ export default function TotemSuperconductorLightning({
     };
   }, [totemBoltVariant]);
 
+  // Two endpoint <pointLight>s (origin + impact) become two pooled lights at `from`/`to`.
+  const originLight = useDynamicLight({ color: conductorPalette.pointLight, distance: 4, decay: 2, priority: 1 });
+  const impactLight = useDynamicLight({ color: conductorPalette.pointLight, distance: 7, decay: 2, priority: 1 });
+
   const branches = useMemo(() => buildBoltBranches(from, to), [from, to]);
   const impactRotations = useMemo(
     () =>
@@ -183,6 +188,12 @@ export default function TotemSuperconductorLightning({
     materials.impact.opacity = fadeOut;
     materials.ring.opacity = fadeOut * 0.7;
 
+    // Drive the two endpoint lights, replicating the per-endpoint flicker intensity.
+    originLight.current?.setPosition(from.x, from.y, from.z);
+    originLight.current?.setIntensity(8 * flickerRef.current);
+    impactLight.current?.setPosition(to.x, to.y, to.z);
+    impactLight.current?.setIntensity(12 * flickerRef.current);
+
     if (progress >= 1 && !completedRef.current) {
       completedRef.current = true;
       onComplete();
@@ -217,12 +228,6 @@ export default function TotemSuperconductorLightning({
             scale={[i === 0 ? 0.8 : 1.2, i === 0 ? 0.8 : 1.2, 1]}
             geometry={geometries.ring}
             material={materials.ring}
-          />
-          <pointLight
-            color={conductorPalette.pointLight}
-            intensity={(i === 0 ? 8 : 12) * flickerRef.current}
-            distance={i === 0 ? 4 : 7}
-            decay={2}
           />
         </group>
       ))}

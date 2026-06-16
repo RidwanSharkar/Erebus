@@ -1,6 +1,9 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, SphereGeometry, MeshStandardMaterial } from '@/utils/three-exports';
+import { Vector3, Color, SphereGeometry, MeshStandardMaterial } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+
+const SABRE_MIST_LIGHT_COLOR = new Color('#FF544E');
 
 interface ParticleData {
   initialAngle: number;
@@ -21,6 +24,9 @@ export default function SabreReaperMistEffect({
 }: SabreReaperMistEffectProps) {
   const startTime = useRef(Date.now());
   const isCompleted = useRef(false);
+
+  // Borrow a pooled point light for the central glow instead of mounting a <pointLight>.
+  const mistLight = useDynamicLight({ color: SABRE_MIST_LIGHT_COLOR, distance: 5, decay: 1, priority: 1 });
 
   // Initialize particle data once
   const [particleData] = useState<ParticleData[]>(() =>
@@ -53,6 +59,10 @@ export default function SabreReaperMistEffect({
     // Update material properties dynamically
     particleMaterial.opacity = 0.8 * (1 - currentProgress);
     particleMaterial.emissiveIntensity = 0.8 * (1 - currentProgress);
+
+    // Drive the pooled light at the effect's world position (constant intensity).
+    mistLight.current?.setPosition(position.x, position.y, position.z);
+    mistLight.current?.setIntensity(4);
 
     if (currentProgress >= 1 && !isCompleted.current) {
       isCompleted.current = true;
@@ -92,13 +102,7 @@ export default function SabreReaperMistEffect({
         );
       })}
 
-      {/* Add central light for glow effect - red theme */}
-      <pointLight
-        color="#FF544E"
-        intensity={4}
-        distance={5}
-        decay={1}
-      />
+      {/* Central glow light now driven via the shared dynamic light pool (see useFrame). */}
     </group>
   );
 }

@@ -3,6 +3,7 @@
 import React, { useRef } from 'react';
 import { Vector3, AdditiveBlending, Color } from 'three';
 import { useFrame } from '@react-three/fiber';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface InfestedZombieRiseVFXProps {
   position: Vector3;
@@ -17,8 +18,10 @@ export default function InfestedZombieRiseVFX({ position, onComplete }: Infested
   const groupRef = useRef<any>(null);
   const ringRef = useRef<any>(null);
   const pillarRef = useRef<any>(null);
-  const lightRef = useRef<any>(null);
   const sparksRef = useRef<any[]>([]);
+
+  // Borrow a pooled light for the rise glow instead of mounting a <pointLight>.
+  const riseLight = useDynamicLight({ color: '#66ffaa', distance: 4, priority: 1 });
 
   useFrame((_, delta) => {
     elapsed.current += delta;
@@ -30,6 +33,11 @@ export default function InfestedZombieRiseVFX({ position, onComplete }: Infested
     if (groupRef.current) {
       groupRef.current.position.set(position.x, position.y + rise * 0.35, position.z);
     }
+
+    // Drive the pooled light at the effect's world position (light sat at local
+    // [0, 0.5, 0] under the rising group).
+    riseLight.current?.setPosition(position.x, position.y + rise * 0.35 + 0.5, position.z);
+    riseLight.current?.setIntensity(2.5 * fade);
     if (ringRef.current?.material) {
       ringRef.current.material.opacity = 0.55 * fade;
       ringRef.current.scale.setScalar(0.85 + t * 0.9);
@@ -37,9 +45,6 @@ export default function InfestedZombieRiseVFX({ position, onComplete }: Infested
     if (pillarRef.current?.material) {
       pillarRef.current.material.opacity = 0.35 * fade;
       pillarRef.current.scale.y = 0.2 + t * 1.6;
-    }
-    if (lightRef.current) {
-      lightRef.current.intensity = 2.5 * fade;
     }
     sparksRef.current.forEach((m, i) => {
       if (!m?.material) return;
@@ -99,14 +104,6 @@ export default function InfestedZombieRiseVFX({ position, onComplete }: Infested
           </mesh>
         );
       })}
-      <pointLight
-        ref={lightRef}
-        color="#66ffaa"
-        intensity={2.5}
-        distance={4}
-        decay={2}
-        position={[0, 0.5, 0]}
-      />
     </group>
   );
 }

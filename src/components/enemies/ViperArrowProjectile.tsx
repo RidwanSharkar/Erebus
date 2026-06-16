@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface ViperArrowProjectileProps {
   startPosition: Vector3;
@@ -29,6 +30,9 @@ export default function ViperArrowProjectile({
   const groupRef = useRef<Group>(null);
   const timeRef  = useRef(0);
   const doneRef  = useRef(false);
+
+  // One pooled light follows the arrow (collapses the 2 mounted <pointLight>s → 1).
+  const arrowLight = useDynamicLight({ color: new Color('#aaff00'), distance: 6, decay: 2, priority: 2 });
 
   // `targetPosition` is the aim point; the arrow always travels `VIPER_ARROW_MAX_RANGE` along that ray.
   const { direction, totalDist, duration, yaw, pitch } = useMemo(() => {
@@ -113,6 +117,11 @@ export default function ViperArrowProjectile({
     groupRef.current.position.copy(
       startPosition.clone().addScaledVector(direction, progress * totalDist)
     );
+
+    // Drive the pooled light at the arrow's world position.
+    const ap = groupRef.current.position;
+    arrowLight.current?.setPosition(ap.x, ap.y, ap.z);
+    arrowLight.current?.setIntensity(14);
 
     // Fade out in the last 25 % of travel.
     const fade = progress > 0.75 ? 1 - (progress - 0.75) / 0.25 : 1.0;
@@ -226,12 +235,6 @@ export default function ViperArrowProjectile({
         <boxGeometry args={[0.07, 0.07, 4.0]} />
       </mesh>
 
-      {/* ── Lights ────────────────────────────────────────────────────────── */}
-      {/* Main point light at the tip — bright lime bloom */}
-      <pointLight color="#aaff00" intensity={14} distance={6} decay={2} />
-
-      {/* Secondary softer light trailing behind, lighting up the environment */}
-      <pointLight color="#44cc00" intensity={5} distance={4} decay={2} position={[0, 0, 1.5]} />
     </group>
   );
 }

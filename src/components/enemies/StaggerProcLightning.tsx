@@ -3,6 +3,7 @@
 import { useRef, useMemo } from 'react';
 import { Vector3, Quaternion, AdditiveBlending, CylinderGeometry, MeshBasicMaterial } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 const DURATION_MS = 620;
 const SKY_Y = 24;
@@ -15,6 +16,9 @@ interface StaggerProcLightningProps {
 export default function StaggerProcLightning({ position, onComplete }: StaggerProcLightningProps) {
   const startRef = useRef<number | null>(null);
   const doneRef = useRef(false);
+
+  // One pooled point light for the bolt flash (collapses the 2 mounted <pointLight>s → 1).
+  const boltLight = useDynamicLight({ color: '#bae6fd', distance: 22, decay: 1.8, priority: 1 });
 
   const segments = useMemo(() => {
     const baseX = position.x;
@@ -105,6 +109,9 @@ export default function StaggerProcLightning({ position, onComplete }: StaggerPr
     matCore.opacity = Math.min(1, 0.98 * fade * peak);
     matGlow.opacity = 0.72 * fade * peak;
     matHalo.opacity = 0.35 * fade;
+    // Drive the pooled light at the strike (collapsed from the original 2 lights).
+    boltLight.current?.setPosition(position.x, position.y + 2, position.z);
+    boltLight.current?.setIntensity(48);
     if (k >= 1 && !doneRef.current) {
       doneRef.current = true;
       onComplete();
@@ -113,8 +120,6 @@ export default function StaggerProcLightning({ position, onComplete }: StaggerPr
 
   return (
     <group>
-      <pointLight position={[position.x, position.y + 3.5, position.z]} color="#bae6fd" intensity={48} distance={22} decay={1.8} />
-      <pointLight position={[position.x, position.y + 0.4, position.z]} color="#38bdf8" intensity={36} distance={14} decay={2} />
       {segments.map(({ mid, len, quat }, i) => (
         <group key={i} position={mid} quaternion={quat}>
           <mesh geometry={cyl} material={matHalo} scale={[2.1, len, 2.1]} />

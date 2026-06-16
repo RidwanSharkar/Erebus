@@ -1,5 +1,7 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { Vector3, AdditiveBlending } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import type { CrossentropyVisualTheme } from '@/utils/talents';
 
 interface CrossentropyExplosionProps {
@@ -144,6 +146,16 @@ export default function CrossentropyExplosion({
     };
   }, [visualTheme]);
 
+  // Collapse the two explosion <pointLight>s into one pooled light at the blast center.
+  const blastLight = useDynamicLight({ color: pl1, distance: 6, decay: 6, priority: 1 });
+
+  useFrame(() => {
+    const e = (Date.now() - startTime.current) / 1000;
+    const f = Math.max(0, 1 - e / IMPACT_DURATION);
+    blastLight.current?.setPosition(position.x, position.y, position.z);
+    blastLight.current?.setIntensity(1 * f);
+  });
+
   useEffect(() => {
     // Animation timer
     const interval = setInterval(() => {
@@ -252,19 +264,6 @@ export default function CrossentropyExplosion({
         );
       })}
 
-      {/* Point lights - Exact same as original */}
-      <pointLight
-        color={pl1}
-        intensity={1 * fade}
-        distance={4}
-        decay={6}
-      />
-      <pointLight
-        color={pl2}
-        intensity={1 * fade}
-        distance={6}
-        decay={6}
-      />
     </group>
   );
 }

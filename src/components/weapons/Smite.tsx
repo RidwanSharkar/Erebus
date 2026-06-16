@@ -15,15 +15,16 @@ import {
   AdditiveBlending,
   DoubleSide,
   Mesh,
-  PointLight,
 } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { WeaponType } from '../dragon/weapons';
 import { calculateDamage, DamageResult } from '@/core/DamageCalculator';
 import { INFERNAL_SMITE_CRIT_CHANCE_ADD, STAGGERING_SMITE_BEAM_STAGGER } from '@/utils/talents';
 import { createBeamCylinderAdditiveMaterial } from '@/utils/beamCylinderAdditiveMaterial';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 const _hslScratch = { h: 0, s: 0, l: 0 };
+const _smiteBoltLightPos = new Vector3();
 
 /** Saturated, punchy smite colors (Three.js) per talent theme. */
 function smiteVividColorPair(
@@ -136,7 +137,6 @@ const SmiteComponent = memo(function Smite({
   const groundBurstT = useRef(0);
   const burstRingRef = useRef<Mesh>(null);
   const burstCoreRef = useRef<Mesh>(null);
-  const burstLightRef = useRef<PointLight | null>(null);
   /** Ref-based delay does not re-render; state flips visibility once the bolt should show. */
   const [boltVisible, setBoltVisible] = useState(false);
 
@@ -170,6 +170,11 @@ const SmiteComponent = memo(function Smite({
     () => primaryColor.clone().lerp(secondaryColor, 0.35),
     [primaryColor, secondaryColor],
   );
+
+  // Two pooled point lights replace the three mounted <pointLight>s: one follows the
+  // falling bolt (collapses the bolt's two near-coincident lights), one for the ground burst.
+  const boltLight = useDynamicLight({ color: primaryColor, distance: 28, priority: 2 });
+  const burstLight = useDynamicLight({ color: burstPointColor, distance: 11, priority: 1 });
 
   const beamCylinderMaterials = useMemo(() => {
     const glow2Color = primaryColor.clone().lerp(secondaryColor, 0.42);
@@ -376,6 +381,12 @@ const SmiteComponent = memo(function Smite({
       const currentY = startY + (targetY - startY) * progress;
       lightningRef.current.position.y = currentY;
 
+      // Drive the pooled bolt light following the falling bolt (world space). Collapses
+      // the bolt's two original <pointLight>s; dominant one sat at local [0, -10, 0].
+      lightningRef.current.getWorldPosition(_smiteBoltLightPos);
+      boltLight.current?.setPosition(_smiteBoltLightPos.x, _smiteBoltLightPos.y - 10, _smiteBoltLightPos.z);
+      boltLight.current?.setIntensity(34);
+
       if (!damageTriggered.current) {
         groundBurstT.current = 0;
         if (burstRingRef.current) {
@@ -386,7 +397,7 @@ const SmiteComponent = memo(function Smite({
           burstCoreRef.current.scale.set(0.001, 0.001, 1);
           (burstCoreRef.current.material as MeshBasicMaterial).opacity = 0;
         }
-        if (burstLightRef.current) burstLightRef.current.intensity = 0;
+        burstLight.current?.setIntensity(0);
       }
 
       // Trigger damage when bolt hits the ground (around 80% progress)
@@ -400,7 +411,6 @@ const SmiteComponent = memo(function Smite({
         const easeOut = 1 - Math.pow(1 - bt, 2);
         const ring = burstRingRef.current;
         const core = burstCoreRef.current;
-        const bl = burstLightRef.current;
         if (ring) {
           const s = 0.35 + easeOut * 2.4;
           ring.scale.set(s, s, 1);
@@ -413,10 +423,11 @@ const SmiteComponent = memo(function Smite({
           const m = core.material as MeshBasicMaterial;
           m.opacity = 0.7 * (1 - Math.min(bt * 1.4, 1));
         }
-        if (bl) {
-          bl.intensity = 30 * (1 - bt);
-          bl.distance = 5 + easeOut * 4;
-        }
+        // Ground burst pooled light at the strike point (world space). Original local
+        // [0, 0.15, 0] inside a group scaled 1.55 → ~0.23 world offset above the base y.
+        burstLight.current?.setPosition(position.x, position.y + 1.075 + 0.15 * 1.55, position.z);
+        burstLight.current?.setIntensity(30 * (1 - bt));
+        burstLight.current?.setDistance(5 + easeOut * 4);
       }
 
       // Adjust scale effect
@@ -457,8 +468,7 @@ const SmiteComponent = memo(function Smite({
         <mesh key={i} position={props.position} geometry={cylinderGeometries.sphere} material={materials.particle} />
       ))}
 
-      <pointLight position={[0, -10, 0]} color={primaryColor} intensity={34} distance={28} />
-      <pointLight position={[0, 0, 0]} color={secondaryColor} intensity={11} distance={5.5} />
+      {/* Bolt point lights now driven via the shared dynamic light pool (see useFrame). */}
     </group>
 
     {/* Small ground burst at strike point (sibling so not parented to falling bolt) */}
@@ -477,13 +487,7 @@ const SmiteComponent = memo(function Smite({
         material={materials.burstCore}
         renderOrder={2}
       />
-      <pointLight
-        ref={burstLightRef}
-        position={[0, 0.15, 0]}
-        color={burstPointColor}
-        intensity={0}
-        distance={11}
-      />
+      {/* Ground burst point light now driven via the shared dynamic light pool (see useFrame). */}
     </group>
     </group>
   );

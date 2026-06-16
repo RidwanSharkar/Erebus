@@ -1,4 +1,5 @@
 import { useFrame } from '@react-three/fiber';
+import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 import { useRef, useMemo } from 'react';
 import { Shape, ExtrudeGeometry, Group, MeshStandardMaterial, SphereGeometry, DoubleSide } from 'three';
 import { WeaponType, WeaponSubclass } from './weapons';
@@ -237,7 +238,7 @@ export default function ArchmageCrest({
         >
           <mesh geometry={geometries.blade} material={materials.bladeCore} />
         </group>
-        <pointLight color={colors.glow} intensity={0.5} position={[0, -1, 0]} />
+        <PooledEffectLight color={colors.glow} intensity={0.5} position={[0, -1, 0]} />
       </group>
     );
   };

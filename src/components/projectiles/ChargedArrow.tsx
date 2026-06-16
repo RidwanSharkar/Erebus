@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, Mesh, DoubleSide, AdditiveBlending } from '@/utils/three-exports';
 import ChargedArrowTrail from './ChargedArrowTrail';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface ChargedArrowProps {
   position: Vector3;
@@ -19,12 +20,19 @@ export default function ChargedArrow({ position, direction, onImpact }: ChargedA
   const arrowHeadRef = useRef<Mesh>(null);
   const arrowShaftRef = useRef<Mesh>(null);
 
+  // One pooled light follows the arrow (replaces the head + main <pointLight>s).
+  const arrowLight = useDynamicLight({ color, distance: 8, priority: 2 });
+
   useFrame((_, delta) => {
     if (!arrowRef.current) return;
 
     // Use the position directly from the ECS system (passed via props)
     // The ChargedArrowManager updates this position from the Transform component
     arrowRef.current.position.copy(position);
+
+    // Drive the pooled light at the arrow's world position.
+    arrowLight.current?.setPosition(position.x, position.y, position.z);
+    arrowLight.current?.setIntensity(12);
     
     // Orient arrow to face movement direction
     const lookAtTarget = position.clone().add(direction.clone().normalize());
@@ -50,9 +58,8 @@ export default function ChargedArrow({ position, direction, onImpact }: ChargedA
             blending={AdditiveBlending}
             toneMapped={false}
           />
-          <pointLight color={color} intensity={8} distance={6} />
         </mesh>
-        
+
         {/* Arrow Shaft */}
         <mesh ref={arrowShaftRef}>
           <cylinderGeometry args={[0.02, 0.03, 0.4, 8]} />
@@ -111,8 +118,6 @@ export default function ChargedArrow({ position, direction, onImpact }: ChargedA
           />
         </mesh>
         
-        {/* Main point light */}
-        <pointLight color={color} intensity={12} distance={8} decay={2} />
       </group>
       
       {/* Trail Effect */}

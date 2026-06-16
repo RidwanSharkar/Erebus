@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, DoubleSide, AdditiveBlending, Color } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import RejuvenatingShotTrail from './RejuvenatingShotTrail';
 
 interface RejuvenatingShotProps {
@@ -33,6 +34,9 @@ export default function RejuvenatingShot({ position, direction, onImpact, distan
   const fadeProgress = Math.max(0, Math.min(1, (distanceTraveled - fadeStartDistance) / (maxDistance - fadeStartDistance)));
   const opacity = Math.max(0.1, 1 - fadeProgress); // Minimum opacity of 0.1
 
+  // Pooled point light follows the arrow position (world space).
+  const arrowLight = useDynamicLight({ color, distance: 4, decay: 2, priority: 2 });
+
   useFrame((_, delta) => {
     if (!arrowRef.current) return;
 
@@ -46,6 +50,10 @@ export default function RejuvenatingShot({ position, direction, onImpact, distan
     // Orient arrow to face movement direction
     const lookAtTarget = position.clone().add(direction.clone().normalize());
     arrowRef.current.lookAt(lookAtTarget);
+
+    // Drive the pooled light at the arrow (replaces the per-arrow <pointLight>).
+    arrowLight.current?.setPosition(position.x, position.y, position.z);
+    arrowLight.current?.setIntensity(3 * opacity);
   });
 
   return (
@@ -209,14 +217,6 @@ export default function RejuvenatingShot({ position, direction, onImpact, distan
             />
           </mesh>
         ))}
-
-        {/* Point light for extra glow */}
-        <pointLight
-          color={color}
-          intensity={3 * opacity}
-          distance={4}
-          decay={2}
-        />
       </group>
     </group>
   );

@@ -55,8 +55,11 @@ export class RenderSystem extends BaseRenderSystem {
       this.updateEntityTransform(entity, transform, rendererComponent);
     }
 
-    // Render the scene
-    this.renderer.render(this.scene, this.camera);
+    // NOTE: do NOT call this.renderer.render() here. The scene/camera/renderer are
+    // the ones owned by react-three-fiber (passed in from useThree), and R3F's own
+    // frameloop="always" already renders them every frame. Rendering again here drew
+    // the entire scene (and its shadow pass) a second time per frame. This pass now
+    // only syncs ECS entity transforms; R3F performs the single draw.
   }
 
   private updateEntityMesh(entity: Entity, transform: Transform, rendererComponent: Renderer): void {

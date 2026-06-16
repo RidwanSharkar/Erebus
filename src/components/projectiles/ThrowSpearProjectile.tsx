@@ -1,6 +1,10 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Shape, Color, DoubleSide, AdditiveBlending } from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+
+// Reused scratch vector for reading the spear light's world position (no per-frame alloc).
+const _spearLightWorld = new Vector3();
 
 interface ThrowSpearProjectileProps {
   position: Vector3;
@@ -18,24 +22,38 @@ export default function ThrowSpearProjectile({
   chargeTime 
 }: ThrowSpearProjectileProps) {
   const groupRef = useRef<Group>(null);
+  const lightAnchorRef = useRef<Group>(null);
   const TRAIL_COUNT = 16;
 
   // Calculate visual intensity based on charge time (0-1)
   const chargeIntensity = Math.min(chargeTime / 2, 1);
-  
+
+  // Pooled point light at the spear's energy core (replaces the nested <pointLight>).
+  // Cyan when returning, greyish silver going out — matches the original lightningColor.
+  const lightColor = isReturning ? 0x00ffff : 0xc0c0c0;
+  const spearLight = useDynamicLight({ color: new Color(lightColor), distance: 0.5, decay: 2, priority: 2 });
+
   useFrame(() => {
     if (!groupRef.current) return;
 
     // Update position
     groupRef.current.position.copy(position);
-    
+
     // Calculate rotation based on direction (similar to ViperSting)
     const lookDirection = direction.clone().normalize();
     const rotationY = Math.atan2(lookDirection.x, lookDirection.z);
     const rotationX = Math.atan2(-lookDirection.y, Math.sqrt(lookDirection.x * lookDirection.x + lookDirection.z * lookDirection.z));
-    
+
     // Apply rotation - this will make the spear flip when returning
     groupRef.current.rotation.set(rotationX, rotationY, 0);
+
+    // Drive the pooled light at the energy-core anchor's world position.
+    if (lightAnchorRef.current) {
+      lightAnchorRef.current.getWorldPosition(_spearLightWorld);
+      spearLight.current?.setPosition(_spearLightWorld.x, _spearLightWorld.y, _spearLightWorld.z);
+      spearLight.current?.setColor(lightColor);
+      spearLight.current?.setIntensity(chargeIntensity * 2 + 2);
+    }
   });
 
   // Create spear blade shape
@@ -142,7 +160,7 @@ export default function ThrowSpearProjectile({
           </group>
           
           {/* Spear guard/crossguard */}
-          <group position={[-0.025, .45, 0.35]} rotation={[Math.PI, 1.5, Math.PI]}>
+          <group ref={lightAnchorRef} position={[-0.025, .45, 0.35]} rotation={[Math.PI, 1.5, Math.PI]}>
             <mesh>
               <torusGeometry args={[0.26, 0.07, 16, 32]} />
               <meshStandardMaterial 
@@ -221,13 +239,6 @@ export default function ThrowSpearProjectile({
               />
             </mesh>
 
-            {/* Point light for illumination */}
-            <pointLight
-              color={new Color(lightningColor)}
-              intensity={chargeIntensity * 2 + 2}
-              distance={0.5}
-              decay={2}
-            />
           </group>
           
           {/* Spear blades - three-pronged design */}

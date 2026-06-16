@@ -1,6 +1,9 @@
 import React, { useState, useCallback } from 'react';
-import { Vector3 } from 'three';
+import { Vector3, Color } from 'three';
 import { useFrame, RootState } from '@react-three/fiber';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+
+const PVP_REANIMATE_LIGHT_COLOR = new Color('#ff8800');
 
 interface PVPReanimateEffectProps {
   position: Vector3;
@@ -11,12 +14,20 @@ const PVPReanimateEffect: React.FC<PVPReanimateEffectProps> = React.memo(({ posi
   const [time, setTime] = useState(0);
   const duration = 1.5;
 
+  // Borrow a pooled point light for the healing glow instead of mounting a <pointLight>.
+  const healLight = useDynamicLight({ color: PVP_REANIMATE_LIGHT_COLOR, distance: 5, decay: 2, priority: 1 });
+
   useFrame((_, delta) => {
     setTime(prev => {
       const newTime = prev + delta;
       if (newTime >= duration) {
         onComplete();
       }
+      // Drive the pooled light at the effect's world position, replicating 2 * opacity.
+      const frameProgress = newTime / duration;
+      const frameOpacity = Math.sin(frameProgress * Math.PI);
+      healLight.current?.setPosition(position.x, position.y, position.z);
+      healLight.current?.setIntensity(2 * frameOpacity);
       return newTime;
     });
   });
@@ -84,13 +95,7 @@ const PVPReanimateEffect: React.FC<PVPReanimateEffectProps> = React.memo(({ posi
         );
       })}
 
-      {/* Light source */}
-      <pointLight
-        color="#ff8800"
-        intensity={2 * opacity}
-        distance={5}
-        decay={2}
-      />
+      {/* Light source now driven via the shared dynamic light pool (see useFrame). */}
     </group>
   );
 });

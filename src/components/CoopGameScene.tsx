@@ -237,6 +237,9 @@ import { useBowPowershot } from '@/components/projectiles/useBowPowershot';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import PVPSummonTotemManager from '@/components/projectiles/PVPSummonTotemManager';
 import { ExperienceSystem } from '@/utils/ExperienceSystem';
+import DynamicLightPool, { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import { calculationCache } from '@/utils/CalculationCache';
+import { Text } from '@react-three/drei';
 
 const BossRenderer = React.lazy(() => import('./enemies/BossRenderer'));
 const Boss2Renderer = React.lazy(() => import('./enemies/Boss2Renderer'));
@@ -244,6 +247,168 @@ const Boss3Renderer = React.lazy(() => import('./enemies/Boss3Renderer'));
 const TemplarRenderer = React.lazy(() => import('./enemies/TemplarRenderer'));
 const ViperRenderer = React.lazy(() => import('./enemies/ViperRenderer'));
 const WarlockRenderer = React.lazy(() => import('./enemies/WarlockRenderer'));
+
+/**
+ * In-canvas perf helper. Two jobs, both cheap and isolated:
+ *  1. Throttled shadow-map refresh. `renderer.shadowMap.autoUpdate` is disabled in
+ *     setupCoopGame, so we flip `needsUpdate` every other frame — dynamic shadow
+ *     casters still move, but the shadow pass runs ~half as often.
+ *  2. Optional draw-call HUD. Append `?perf=1` to the URL to show live
+ *     `gl.info.render` stats (draw calls / triangles / programs) so renderBufferDirect
+ *     cost can be measured before/after changes. Off by default, zero prod overhead.
+ */
+function RenderPerfHud() {
+  const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+  const frame = useRef(0);
+  const hudRef = useRef<HTMLDivElement | null>(null);
+  const seenProgramKeys = useRef<Set<string>>(new Set());
+
+  const showHud = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).has('perf');
+  }, []);
+
+  useEffect(() => {
+    if (!showHud) return;
+    const el = document.createElement('div');
+    el.style.cssText =
+      'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:9999;' +
+      'font:12px/1.4 monospace;color:#9effa0;background:rgba(0,0,0,0.6);' +
+      'padding:4px 8px;border-radius:4px;pointer-events:none;white-space:pre';
+    document.body.appendChild(el);
+    hudRef.current = el;
+    return () => {
+      el.remove();
+      hudRef.current = null;
+    };
+  }, [showHud]);
+
+  // Memory-leak diagnostic: window.erebusMemStats() snapshots every suspect at once.
+  // Call it a minute apart while playing; whichever number climbs without bound is the
+  // leak (geometries/textures = undisposed GPU buffers; sceneObjects = lingering
+  // meshes; cache sizes = unbounded caches; heapMB = overall).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    (window as any).erebusMemStats = () => {
+      let sceneObjects = 0;
+      let meshes = 0;
+      let lights = 0;
+      scene.traverse((o: any) => {
+        sceneObjects++;
+        if (o.isMesh || o.isSkinnedMesh) meshes++;
+        if (o.isLight) lights++;
+      });
+      const mem = (performance as { memory?: { usedJSHeapSize: number } }).memory;
+      const stats = {
+        heapMB: mem ? Math.round(mem.usedJSHeapSize / 1048576) : 'n/a',
+        geometries: gl.info.memory.geometries,
+        textures: gl.info.memory.textures,
+        programs: gl.info.programs?.length ?? 0,
+        sceneObjects,
+        meshes,
+        lights,
+        calcCache: calculationCache.getStats?.() ?? 'n/a',
+      };
+      // eslint-disable-next-line no-console
+      console.table(stats);
+      return stats;
+    };
+    return () => {
+      delete (window as any).erebusMemStats;
+    };
+  }, [gl, scene]);
+
+  useFrame(() => {
+    const f = (frame.current = (frame.current + 1) % 1_000_000);
+
+    // 1. Pin compiled shader programs so three.js never evicts (and later recompiles)
+    //    them. three.js destroys a program when its last material is disposed
+    //    (WebGLPrograms: `if (--program.usedTimes === 0) program.destroy()`). Transient
+    //    combat VFX spawn and despawn constantly, so a program whose users all despawn
+    //    gets destroyed and must recompile on the next spawn — bursts of recompiles in
+    //    one frame are the ~1s stalls when attacking a lot. Keeping usedTimes high means
+    //    each shader variant compiles at most once per session (bounded, small memory).
+    const programs = gl.info.programs;
+    if (programs) {
+      for (let i = 0; i < programs.length; i++) {
+        (programs[i] as { usedTimes: number }).usedTimes = 1e9;
+      }
+    }
+
+    // 2. Throttle the shadow pass to every other frame.
+    if (!gl.shadowMap.autoUpdate) {
+      gl.shadowMap.needsUpdate = f % 2 === 0;
+    }
+
+    // 3. DIAGNOSTIC (perf HUD only): when new shader programs appear, log their cache
+    //    keys + the live scene light count, so we can see exactly what's churning.
+    if (showHud) {
+      const programs = gl.info.programs as Array<{ cacheKey?: string }> | null;
+      if (programs) {
+        const fresh: string[] = [];
+        for (let i = 0; i < programs.length; i++) {
+          const key = programs[i].cacheKey;
+          if (key && !seenProgramKeys.current.has(key)) {
+            seenProgramKeys.current.add(key);
+            fresh.push(key);
+          }
+        }
+        if (fresh.length > 0 && seenProgramKeys.current.size > fresh.length) {
+          // Skip the initial bulk warmup; only report incremental churn.
+          let nPoint = 0, nDir = 0, nSpot = 0, nShadow = 0;
+          scene.traverse((o: any) => {
+            if (!o.visible || !o.isLight) return;
+            if (o.isPointLight) nPoint++;
+            else if (o.isDirectionalLight) nDir++;
+            else if (o.isSpotLight) nSpot++;
+            if (o.castShadow) nShadow++;
+          });
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[perf] +${fresh.length} new programs (total ${seenProgramKeys.current.size}). ` +
+            `lights: point=${nPoint} dir=${nDir} spot=${nSpot} shadow=${nShadow}`,
+            fresh.map((k) => k.slice(0, 120)),
+          );
+        }
+      }
+    }
+
+    // 4. Sample draw-call stats ~4x/sec for the HUD.
+    if (showHud && hudRef.current && f % 15 === 0) {
+      const info = gl.info;
+      hudRef.current.textContent =
+        `draws ${info.render.calls}  tris ${info.render.triangles.toLocaleString()}\n` +
+        `geom ${info.memory.geometries}  tex ${info.memory.textures}  prog ${info.programs?.length ?? 0}  dpr ${gl.getPixelRatio().toFixed(2)}`;
+    }
+  });
+
+  return null;
+}
+
+/**
+ * Renders death/spawn VFX once, far offscreen, during the loading window so their shader
+ * variants (transparent / depth / additive) compile behind the loading screen instead of
+ * stalling the first time they appear in gameplay (e.g. the first ally death). The
+ * program-pin in RenderPerfHud then keeps the compiled programs resident for the session.
+ *
+ * Mounted only while warming up; the VFX just need to be rendered once to compile.
+ */
+function ShaderWarmup() {
+  const warmupPos = useMemo(() => new Vector3(0, -3000, 0), []);
+  const noop = useCallback(() => {}, []);
+  return (
+    <group position={warmupPos}>
+      {/* Player/ally death VFX — the confirmed first-compile hitch on ally death. */}
+      <DeathEffect position={warmupPos} duration={600000} onComplete={noop} />
+      {/* troika text shader — every enemy health bar mounts a <Text>; compiling its
+          derived shader here means the first enemy spawn doesn't stall on it. */}
+      <Text fontSize={0.16} color="#ccffcc" anchorX="center" anchorY="middle" fontWeight="bold">
+        {'\u{1F9DF} 0/0'}
+      </Text>
+    </group>
+  );
+}
 
 // Function to calculate rune count based on weapon type and player level
 // Bow, Sword, and Sabres gain 1 critical chance and 1 critical damage rune per level
@@ -1133,6 +1298,14 @@ export function CoopGameScene({
   selectedWeaponsRef.current = selectedWeapons ?? initialWeaponsForEngineRef.current;
 
   const [engineReady, setEngineReady] = useState(false); // Track when engine is ready
+  // Shader warmup: mount hidden death/spawn VFX while the scene loads so they compile
+  // behind the loading screen, then drop the rig once they've had a few seconds to render.
+  const [shaderWarmupActive, setShaderWarmupActive] = useState(true);
+  useEffect(() => {
+    if (!engineReady) return;
+    const id = window.setTimeout(() => setShaderWarmupActive(false), 5000);
+    return () => window.clearTimeout(id);
+  }, [engineReady]);
   /** Bumps once when a remote peer ECS entity is registered so JSX reads `serverPlayerEntities` ids. */
   const [remotePlayerEntityRevision, setRemotePlayerEntityRevision] = useState(0);
   const idleGltfWarmupStartedRef = useRef(false);
@@ -7719,6 +7892,17 @@ export function CoopGameScene({
             console.warn('Failed to preload gameplay sounds:', error);
           }
           if (teardownAfterAsync) return;
+          // Pre-compile every shader program for the now-populated scene while the
+          // loading screen is still up, using async/parallel compilation. Without
+          // this, three.js compiles each material lazily on the first frame it's
+          // rendered — a single ~1.6s synchronous stall on the first gameplay frame
+          // (getUniforms/getProgramParameter force the GPU to finish linking).
+          try {
+            await gl.compileAsync(scene, camera);
+          } catch (compileErr) {
+            console.warn('Shader pre-compile failed (non-fatal):', compileErr);
+          }
+          if (teardownAfterAsync) return;
           onSceneReady?.();
         } catch (startErr) {
           console.error('CoopGameScene: engine.start failed:', startErr);
@@ -7740,6 +7924,25 @@ export function CoopGameScene({
       }
     };
   }, [gameStarted]); // Only initialize when game starts, not when players change
+
+  // Re-warm shaders on major scene transitions (throne room ↔ combat arena). The new
+  // room's geometry/materials would otherwise compile lazily on the first frame after
+  // the transition, causing the same stall the initial load warmup prevents. Debounced
+  // so the new content has mounted; compileAsync is non-blocking (parallel compile).
+  useEffect(() => {
+    if (!engineReady) return;
+    let cancelled = false;
+    const id = window.setTimeout(() => {
+      if (cancelled) return;
+      gl.compileAsync(scene, camera).catch((e) => {
+        console.warn('Shader re-warm failed (non-fatal):', e);
+      });
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
+  }, [combatArenaActive, engineReady, gl, scene, camera]);
 
   // ==================== EMERGENCY MEMORY CLEANUP ====================
   // Helper function to dispose pooled effects and geometries
@@ -9254,6 +9457,9 @@ export function CoopGameScene({
 
   return (
     <>
+      <RenderPerfHud />
+      <DynamicLightPool />
+      {shaderWarmupActive && <ShaderWarmup />}
       {/* Don't render game world if game hasn't started */}
       {!gameStarted ? null : (
         <>
@@ -11307,6 +11513,20 @@ function setupCoopGame(
   // Enable shadows
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
+  // Don't rebuild the shadow map automatically every frame. A throttled useFrame
+  // flips needsUpdate so dynamic (moving) shadow casters still update, but at ~half
+  // the per-frame shadow-pass cost. See the shadow-throttle useFrame below.
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
+
+  // Dynamic <pointLight> VFX (impacts, spells, projectiles) constantly change the
+  // scene's light count, which forces three.js to recompile every lit material's
+  // shader program. By default the renderer then calls getProgramInfoLog() after
+  // each link — a SYNCHRONOUS GPU stall (the hot leaf in the profiler). Shaders are
+  // known-good in prod, so skip the error read; compiles go async and stop blocking
+  // the frame. This treats the symptom; the light-count churn itself is the root
+  // cause to address next (pool dynamic lights so the count stays constant).
+  renderer.debug.checkShaderErrors = false;
 
   // Create systems for coop mode (similar to PVP but without towers/pillars)
   const physicsSystem = new PhysicsSystem();

@@ -1,6 +1,7 @@
 import { useRef, useMemo, memo } from 'react';
 import { Group, Vector3, SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, Color, AdditiveBlending, RingGeometry } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import { WeaponType } from '../dragon/weapons';
 import { calculateDamage } from '@/core/DamageCalculator';
 
@@ -61,6 +62,9 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
   const damageDealtRef = useRef(false);
   const isVisible = useRef(false);
   const isCompleted = useRef(false);
+
+  // Borrow a pooled light instead of mounting a <pointLight> (avoids lit-shader recompiles).
+  const strikeLight = useDynamicLight({ color: '#FFD700', distance: 8, decay: 2, priority: 1 });
 
   // Initialize start time only once
   if (startTimeRef.current === null) {
@@ -242,6 +246,7 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
     // Check if we should start showing the effect
     if (currentTime < startTimeRef.current) {
       isVisible.current = false;
+      strikeLight.current?.setIntensity(0);
       return; // Don't render anything until delay is over
     }
 
@@ -254,12 +259,18 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
     if (elapsed >= duration) {
       if (!isCompleted.current) {
         isCompleted.current = true;
+        strikeLight.current?.setIntensity(0);
         onComplete();
       }
       return;
     }
 
     const progress = elapsed / duration;
+
+    // Drive the pooled impact light at the strike position (world space). Replicates the
+    // former impact <pointLight>: 25 * (1 - elapsed/duration) * flicker.
+    strikeLight.current?.setPosition(position.x, position.y, position.z);
+    strikeLight.current?.setIntensity(25 * (1 - progress) * flickerRef.current);
 
     // Trigger damage at the same timing as Smite (around 80% progress)
     if (progress >= 0.8 && !damageDealtRef.current) {
@@ -317,14 +328,6 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
             />
           </mesh>
         ))}
-        
-        {/* Enhanced lighting */}
-        <pointLight
-          color="#FFD700" // Golden yellow
-          intensity={25 * (1 - (Date.now() - startTimeRef.current) / (duration * 1000)) * flickerRef.current}
-          distance={8}
-          decay={2}
-        />
       </group>
     </group>
   );

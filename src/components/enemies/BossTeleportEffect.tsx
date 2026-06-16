@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 type BossTeleportTheme = 'purple' | 'red';
 
@@ -40,26 +41,38 @@ const BossTeleportEffect: React.FC<BossTeleportEffectProps> = React.memo(({ posi
   const duration = 0.8; // Duration of the effect
   const hasCompletedRef = React.useRef(false);
 
-  useFrame((_, delta) => {
-    setTime(prev => {
-      const newTime = prev + delta;
-      return newTime;
-    });
-    
-    // Check for completion outside of setState to avoid calling parent setState during render
-    if (time >= duration && !hasCompletedRef.current) {
-      hasCompletedRef.current = true;
-      onComplete();
-    }
+  // Borrow a pooled light for the teleport flash instead of mounting a <pointLight>.
+  const teleportLight = useDynamicLight({
+    color: TELEPORT_PALETTES[theme].primary,
+    distance: 5,
+    priority: 1,
   });
 
   const progress = time / duration;
 
   // Different behaviors for start and end teleport
   const isStartEffect = type === 'start';
-  const opacity = isStartEffect 
+  const opacity = isStartEffect
     ? 1 - progress // Fade out for start
     : Math.sin(progress * Math.PI); // Fade in and out for end
+
+  useFrame((_, delta) => {
+    setTime(prev => {
+      const newTime = prev + delta;
+      return newTime;
+    });
+
+    // Drive the pooled light at the effect's world position (light sat at local
+    // [0, 0.5, 0] inside the effectScale group → world y = position.y + 0.5 * scale).
+    teleportLight.current?.setPosition(position.x, position.y + 0.5 * effectScale, position.z);
+    teleportLight.current?.setIntensity(10 * opacity);
+
+    // Check for completion outside of setState to avoid calling parent setState during render
+    if (time >= duration && !hasCompletedRef.current) {
+      hasCompletedRef.current = true;
+      onComplete();
+    }
+  });
 
   const scale = isStartEffect
     ? 1 + progress * 2 // Expand for start
@@ -257,14 +270,6 @@ const BossTeleportEffect: React.FC<BossTeleportEffectProps> = React.memo(({ posi
         })
       )}
 
-      {/* Point light for dramatic lighting */}
-      <pointLight
-        position={[0, 0.5, 0]}
-        color={primaryColor}
-        intensity={10 * opacity}
-        distance={5}
-        decay={2}
-      />
       </group>
     </group>
   );

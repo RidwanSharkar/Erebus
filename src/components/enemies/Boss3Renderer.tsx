@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
+
 import { Billboard, Text } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3 } from 'three';
@@ -194,7 +196,7 @@ export default function Boss3Renderer({
         />
       )}
 
-      <pointLight color="#44ffaa" intensity={4} distance={14} decay={2} position={[0, 3.2, 0]} />
+      <EnemyDynamicLight color="#44ffaa" intensity={4} distance={14} decay={2} position={[0, 3.2, 0]} />
 
       <Billboard position={[0, 6.2, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (

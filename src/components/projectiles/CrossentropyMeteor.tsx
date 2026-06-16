@@ -8,12 +8,12 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
-  PointLight,
   RingGeometry,
   SphereGeometry,
   Vector3,
 } from '@/utils/three-exports';
 import MeteorTrail from '@/components/enemies/MeteorTrail';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import {
   CROSSENTROPY_METEOR_AOE_RADIUS,
   CROSSENTROPY_METEOR_DAMAGE,
@@ -55,6 +55,7 @@ const pulsingRingGeometry = new RingGeometry(
 );
 const particleGeometry = new SphereGeometry(0.09, 8, 8);
 const tempGroundImpact = new Vector3();
+const tempMeteorLightPos = new Vector3();
 const impactSphereGeometry = new SphereGeometry(1, 32, 32);
 
 function seededUnit(seed: number): number {
@@ -93,7 +94,9 @@ function CrossentropyMeteorImpactVisual({
   const torus1 = useRef<Mesh>(null);
   const torus2 = useRef<Mesh>(null);
   const torusRefs = [torus0, torus1, torus2];
-  const pointLightRef = useRef<PointLight>(null);
+
+  // Pooled light for the impact flash (replaces the impact <pointLight>).
+  const impactLight = useDynamicLight({ color: '#FF7A1A', priority: 1 });
 
   const torusRotations = useMemo(
     () =>
@@ -130,10 +133,9 @@ function CrossentropyMeteorImpactVisual({
       tm.opacity = 0.9 * fade * (1 - i * 0.12);
     }
 
-    if (pointLightRef.current) {
-      pointLightRef.current.intensity = 0.9 * fade;
-      pointLightRef.current.distance = METEOR_IMPACT_VFX_SCALE * 9 * (1 + elapsedRaw);
-    }
+    impactLight.current?.setPosition(position.x, position.y, position.z);
+    impactLight.current?.setIntensity(0.9 * fade);
+    impactLight.current?.setDistance(METEOR_IMPACT_VFX_SCALE * 9 * (1 + elapsedRaw));
   });
 
   return (
@@ -163,13 +165,6 @@ function CrossentropyMeteorImpactVisual({
           />
         </mesh>
       ))}
-      <pointLight
-        ref={pointLightRef}
-        color="#FF7A1A"
-        intensity={0.9}
-        distance={METEOR_IMPACT_VFX_SCALE * 9}
-        decay={2}
-      />
     </group>
   );
 }
@@ -186,6 +181,9 @@ export default function CrossentropyMeteor({
   const meteorMeshRef = useRef<Mesh>(null);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
+
+  // Pooled light follows the falling meteor (replaces its <pointLight>).
+  const meteorLight = useDynamicLight({ color: '#FF7A1A', distance: 8, priority: 2 });
 
   const [impactStartTime, setImpactStartTime] = useState<number | null>(null);
   const [showMeteor, setShowMeteor] = useState(false);
@@ -225,8 +223,18 @@ export default function CrossentropyMeteor({
   }, [impactTargetPos, showMeteor]);
 
   useFrame((_, delta) => {
-    if (!meteorGroupRef.current || !showMeteor || impactOccurred) return;
+    if (!meteorGroupRef.current || !showMeteor || impactOccurred) {
+      // Meteor not falling — keep its pooled light dark.
+      meteorLight.current?.setIntensity(0);
+      return;
+    }
     const currentPos = meteorGroupRef.current.position;
+
+    // Drive the pooled light at the meteor's world position.
+    meteorGroupRef.current.getWorldPosition(tempMeteorLightPos);
+    meteorLight.current?.setPosition(tempMeteorLightPos.x, tempMeteorLightPos.y, tempMeteorLightPos.z);
+    meteorLight.current?.setIntensity(5);
+
     const distanceToTarget = currentPos.distanceTo(impactTargetPos);
     if (distanceToTarget < CROSSENTROPY_METEOR_AOE_RADIUS || currentPos.y <= 0) {
       setImpactOccurred(true);
@@ -292,7 +300,6 @@ export default function CrossentropyMeteor({
           <mesh ref={meteorMeshRef}>
             <primitive object={meteorGeometry} />
             <primitive object={meteorMaterial} />
-            <pointLight color="#FF7A1A" intensity={5} distance={8} />
             <MeteorTrail
               meshRef={meteorMeshRef}
               color={new Color('#FF7A1A')}
