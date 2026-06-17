@@ -101,6 +101,7 @@ const COOP_SPECIAL_ROOM_TYPES = Object.freeze(['stat', 'trial', 'merchant']);
 const COOP_ROOM_TYPES = Object.freeze([...COOP_COLORED_ROOM_TYPES, ...COOP_SPECIAL_ROOM_TYPES, 'boss']);
 const COOP_TERRAIN_THEMES = Object.freeze(['purple', 'blue', 'green']);
 const COOP_WAVE_MARTYR_ROOM_CHANCE = 0.33; // 30% of colored rooms have martyr spawns
+const COOP_WAVE_BOSS1_ROOM_CHANCE = 0.33; // 33% of colored rooms have a mini-boss1 spawn after boss2 is defeated
 /** Staged room wave settings — mixed rooms scatter, colored rooms edge-spawn. */
 const COOP_MIXED_WAVE_COUNT = 8;
 const COOP_MIXED_INITIAL_ON_MAP = 2;
@@ -287,6 +288,12 @@ class GameRoom {
     this.coopWaveReserveReleased = 0;
     /** Whether the current colored room has martyr spawning enabled (30% chance, rolled per room). */
     this.roomHasMartyrs = false;
+    /** Whether the current colored room has a mini-boss1 spawn (33% chance after boss2 defeated). */
+    this.roomHasMiniBoss1 = false;
+    /** Tracks whether the mini-boss1 for this room has already been assigned to a slot. */
+    this.miniBoss1SpawnedThisRoom = false;
+    /** Tracks IDs of the three bosses in the triple-boss encounter; null outside that fight. */
+    this.tripleBossIds = null;
 
     /** Co-op: per-index HP for `mushroomLayout` instances; reset on new game. */
     this.mushroomHealth = null;
@@ -763,7 +770,9 @@ class GameRoom {
   getCoopTerrainTheme() {
     if (this.coopBossesDefeatedCount <= 0) return COOP_TERRAIN_THEMES[0];
     if (this.coopBossesDefeatedCount === 1) return COOP_TERRAIN_THEMES[1];
-    return COOP_TERRAIN_THEMES[2];
+    if (this.coopBossesDefeatedCount === 2) return COOP_TERRAIN_THEMES[2];
+    // 4th encounter (Trinity) cycles back to purple for a distinct finale feel.
+    return COOP_TERRAIN_THEMES[0];
   }
 
   _beginCoopCombatTransition({ startAIOnRelease = true } = {}) {
@@ -838,6 +847,9 @@ class GameRoom {
     this.coopWaveSpawnPlan = null;
     this.coopWaveReserveReleased = 0;
     this.roomHasMartyrs = false;
+    this.roomHasMiniBoss1 = false;
+    this.miniBoss1SpawnedThisRoom = false;
+    this.tripleBossIds = null;
     this._clearCoopCombatTransitionTimer();
     this.coopCombatTransition = null;
     this.stopEnemyAI();
@@ -1240,8 +1252,11 @@ class GameRoom {
         this.coopThroneBossKind = 'boss';
       } else if (defeated === 1) {
         this.coopThroneBossKind = 'boss2';
-      } else {
+      } else if (defeated === 2) {
         this.coopThroneBossKind = 'boss3';
+      } else {
+        // 4th encounter onward — the Trinity: all three bosses simultaneously.
+        this.coopThroneBossKind = 'boss_all';
       }
       this.currentCoopRoomKind = 'boss';
       this.clearedCoopRoomKind = null;
@@ -1881,6 +1896,15 @@ class GameRoom {
         health: 200, maxHealth: 175, damage: 0, moveSpeed: 3.0,
         soulType: campDef.knightSoulType };
     }
+    if (type === 'boss') {
+      // Mini-boss1 spawned inside a wave room — identical stats/AI to the real Boss1 encounter.
+      return {
+        id: `boss-wave-${campIndex}-${slotIndex}-${ts}`, type: 'boss', ...base,
+        health: 5000, maxHealth: 5000, moveSpeed: 2.5,
+        spawnedAt: ts, bossStationary: false, staggerBuildup: 0,
+        waveRoomBoss: true,
+      };
+    }
     if (type === 'tentacle-spine') {
       return { id: `tentacle-spine-${campIndex}-${slotIndex}-${ts}`, type: 'tentacle-spine', ...base,
         health: 250, maxHealth: 250, damage: 0, moveSpeed: 0, isTrap: true };
@@ -2131,6 +2155,10 @@ class GameRoom {
       let unitType;
       if (slotOffset + i === 0) {
         unitType = 'knight';
+      } else if (this.roomHasMiniBoss1 && !this.miniBoss1SpawnedThisRoom && slotOffset + i === 1) {
+        // Assign exactly one mini-boss1 to slot 1 for the whole room (spawns in the initial wave).
+        unitType = 'boss';
+        this.miniBoss1SpawnedThisRoom = true;
       } else if (this.roomHasMartyrs && Math.random() < 0.33) {
         unitType = 'martyr';
       } else {
@@ -2264,6 +2292,10 @@ class GameRoom {
     } else {
       // ── Colored rooms: edge-spawn batch system ────────────────────────────────
       this.roomHasMartyrs = Math.random() < COOP_WAVE_MARTYR_ROOM_CHANCE;
+      // Roll for a mini-boss1 appearance in this room (only available after Boss2 is defeated).
+      this.roomHasMiniBoss1 = this.coopBossesDefeatedCount >= 2
+        && Math.random() < COOP_WAVE_BOSS1_ROOM_CHANCE;
+      this.miniBoss1SpawnedThisRoom = false;
       // Store a minimal plan so _spawnCoopWaveBatch knows the pool.
       this.coopWaveSpawnPlan = { campDef };
 
@@ -2275,7 +2307,7 @@ class GameRoom {
       this._spawnTentacleSpinesForWave(edgePositions, campDef);
 
       console.log(
-        `⚔️ Colored room (${typeKey}): batch 1 at north edge, martyrs=${this.roomHasMartyrs}, room: ${this.currentCoopRoomKind}`
+        `⚔️ Colored room (${typeKey}): batch 1 at north edge, martyrs=${this.roomHasMartyrs}, miniBoss1=${this.roomHasMiniBoss1}, room: ${this.currentCoopRoomKind}`
       );
     }
 
@@ -2549,6 +2581,13 @@ class GameRoom {
       } else if (hitMeta && hitMeta.damageType === 'crossentropy' && hitMeta.crossentropyMeteorDamage) {
         damagedPayload.damageType = 'crossentropy';
         damagedPayload.crossentropyMeteorDamage = true;
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
+      } else if (hitMeta && hitMeta.sourceZombieId) {
+        damagedPayload.damageType = 'player_zombie';
         damagedPayload.position = {
           x: enemy.position.x,
           y: enemy.position.y,
@@ -3063,7 +3102,7 @@ class GameRoom {
       ) {
         const killer = this.players.get(fromPlayerId);
         if (killer && killer.maxHealth != null) {
-          killer.health = Math.min(killer.maxHealth, killer.health + 10);
+          killer.health = Math.min(killer.maxHealth, killer.health + 30);
           this.io.to(this.roomId).emit('player-health-updated', {
             playerId: fromPlayerId,
             health: killer.health,
@@ -3078,33 +3117,81 @@ class GameRoom {
 
       // Special rewards for boss kills
       if (COOP_BOSS_TYPES.has(enemy.type)) {
-        // Award significant EXP to all players for defeating the boss
-        if (this.io) {
-          this.players.forEach((player, playerId) => {
-            this.io.to(this.roomId).emit('player-experience-gained', {
-              playerId: playerId,
-              experienceGained: 1000, // 1000 EXP for boss kill
-              source: 'boss_kill',
-              enemyId: enemyId,
+        if (enemy.waveRoomBoss) {
+          // ── Mini-boss1 inside a wave room ────────────────────────────────────
+          // Grant reduced EXP; no boss-completion flow (no portal, no count increment).
+          if (this.io) {
+            this.players.forEach((player, playerId) => {
+              this.io.to(this.roomId).emit('player-experience-gained', {
+                playerId,
+                experienceGained: 250,
+                source: 'boss_kill',
+                enemyId,
+                timestamp: Date.now()
+              });
+            });
+          }
+          // Count toward the room kill quota so the wave can complete normally.
+          this._registerCoopWaveKill('👹 Wave mini-boss1 defeated');
+          console.log(`⚔️ Wave-room mini-boss1 defeated by player ${fromPlayerId}`);
+        } else if (this.tripleBossIds?.has(enemyId)) {
+          // ── Triple-boss encounter (4th boss fight) ───────────────────────────
+          // Award EXP and drop an item for each fallen boss; trigger completion only
+          // when all three are dead.
+          this.tripleBossIds.delete(enemyId);
+          if (this.io) {
+            this.players.forEach((player, playerId) => {
+              this.io.to(this.roomId).emit('player-experience-gained', {
+                playerId,
+                experienceGained: 1000,
+                source: 'boss_kill',
+                enemyId,
+                timestamp: Date.now()
+              });
+            });
+            this.spawnBossItemDrops(enemy.position);
+          }
+          console.log(`👹 Triple-boss: one defeated (${this.tripleBossIds.size} remaining)`);
+          if (this.tripleBossIds.size === 0) {
+            this.tripleBossIds = null;
+            if (this.io) {
+              this.io.to(this.roomId).emit('boss-defeated', {
+                bossId: enemyId,
+                killedBy: fromPlayerId,
+                timestamp: Date.now()
+              });
+            }
+            this.coopBossesDefeatedCount += 1;
+            this._schedulePostBossPortalIntermission();
+            console.log(`🎉 ALL THREE BOSSES DEFEATED — triple encounter cleared by player ${fromPlayerId}!`);
+          }
+        } else {
+          // ── Normal single-boss fight ─────────────────────────────────────────
+          if (this.io) {
+            this.players.forEach((player, playerId) => {
+              this.io.to(this.roomId).emit('player-experience-gained', {
+                playerId,
+                experienceGained: 1000,
+                source: 'boss_kill',
+                enemyId,
+                timestamp: Date.now()
+              });
+            });
+
+            this.io.to(this.roomId).emit('boss-defeated', {
+              bossId: enemyId,
+              killedBy: fromPlayerId,
               timestamp: Date.now()
             });
-          });
 
-          // Broadcast special boss defeated message
-          this.io.to(this.roomId).emit('boss-defeated', {
-            bossId: enemyId,
-            killedBy: fromPlayerId,
-            timestamp: Date.now()
-          });
+            this.spawnBossItemDrops(enemy.position);
+          }
 
-          // Drop 1 random boss reward item (random type + rarity)
-          this.spawnBossItemDrops(enemy.position);
-        }
+          this.coopBossesDefeatedCount += 1;
+          this._schedulePostBossPortalIntermission();
 
-        this.coopBossesDefeatedCount += 1;
-        this._schedulePostBossPortalIntermission();
-        
-        console.log(`🎉 BOSS DEFEATED by player ${fromPlayerId}!`);
+          console.log(`🎉 BOSS DEFEATED by player ${fromPlayerId}!`);
+        } // end else (normal single-boss)
       } else if (enemy.type === 'boss-skeleton') {
         // Handle boss skeleton death
         if (enemy.bossId && this.enemyAI) {
@@ -3125,6 +3212,13 @@ class GameRoom {
         // 10% chance to drop an amulet on skeleton death
         if (Math.random() < 0.10) {
           this.spawnItemDrop(enemy.position, enemy);
+        }
+
+        // If this skeleton was summoned by a wave-room mini-boss, count it toward
+        // the room kill quota (_registerCoopWaveKill is a no-op during real boss fights).
+        const parentBoss = enemy.bossId ? this.enemies.get(enemy.bossId) : null;
+        if (parentBoss?.waveRoomBoss) {
+          this._registerCoopWaveKill('💀 Wave mini-boss skeleton defeated');
         }
 
         // Remove skeleton immediately (no death animation delay)
@@ -3590,6 +3684,11 @@ class GameRoom {
       this._devSpawnBoss2 = false;
     }
 
+    // ── Triple-boss encounter (4th fight: "The Trinity") ──────────────────────
+    if (this.coopThroneBossKind === 'boss_all') {
+      return this._spawnTripleBoss();
+    }
+
     let bossType = 'boss';
     if (forceBoss3 || this.coopThroneBossKind === 'boss3') {
       bossType = 'boss3';
@@ -3642,6 +3741,60 @@ class GameRoom {
           : 'Boss tier 1';
     console.log(`👹 ${label} spawned with ${maxHealth} HP at center of arena!`);
     return bossData;
+  }
+
+  /**
+   * Spawn all three bosses simultaneously for the Trinity encounter (4th boss fight).
+   * Each boss gets a position in a triangle formation so they don't overlap.
+   * All three IDs are tracked in `this.tripleBossIds`; the encounter completes only
+   * when the last one falls.
+   */
+  _spawnTripleBoss() {
+    const now = Date.now();
+    const rand = () => Math.random().toString(36).substr(2, 9);
+
+    // Triangle formation — spread wide enough that bosses don't clip each other.
+    const spawnConfigs = [
+      { type: 'boss',  pos: { x: -8, y: 0, z:  3 }, maxHealth: 5000, moveSpeed: 2.5, extra: {} },
+      { type: 'boss2', pos: { x:  8, y: 0, z:  3 }, maxHealth: 5000, moveSpeed: 2.0, extra: {} },
+      { type: 'boss3', pos: { x:  0, y: 0, z: -9 }, maxHealth: 7500, moveSpeed: 2.0, extra: { summonChargesLeft: 2 } },
+    ];
+
+    this.tripleBossIds = new Set();
+    const spawnedBosses = [];
+
+    for (const cfg of spawnConfigs) {
+      const bossId = `${cfg.type}-trinity-${now}-${rand()}`;
+      const bossData = {
+        id: bossId,
+        type: cfg.type,
+        position: { ...cfg.pos },
+        initialPosition: { ...cfg.pos },
+        rotation: rotationYTowardEntry(cfg.pos.x, cfg.pos.z),
+        health: cfg.maxHealth,
+        maxHealth: cfg.maxHealth,
+        moveSpeed: cfg.moveSpeed,
+        spawnedAt: now,
+        isDying: false,
+        staggerBuildup: 0,
+        bossStationary: false,
+        ...cfg.extra,
+      };
+
+      this.enemies.set(bossId, bossData);
+      this.tripleBossIds.add(bossId);
+      spawnedBosses.push(bossData);
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('boss-spawned', { boss: bossData, timestamp: now });
+        broadcastEnemySpawn(this.io, this.roomId, bossData);
+      }
+    }
+
+    console.log(
+      `👹👹👹 THE TRINITY spawned — Boss1, Boss2, and Boss3 all at once! IDs: ${[...this.tripleBossIds].join(', ')}`
+    );
+    return spawnedBosses;
   }
 
   // Start enemy AI system

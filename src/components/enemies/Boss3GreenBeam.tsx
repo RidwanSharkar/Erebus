@@ -28,7 +28,6 @@ const _scratchA = new Color();
 const _scratchB = new Color();
 
 interface Boss3GreenBeamProps {
-  parentRef: React.RefObject<Group | null>;
   onComplete: () => void;
   isActive: boolean;
   startTime: number;
@@ -96,7 +95,6 @@ function getGreenBeamColors(activeTime: number): { color: string; emissive: stri
 }
 
 export default function Boss3GreenBeam({
-  parentRef,
   onComplete,
   isActive,
   startTime,
@@ -107,8 +105,6 @@ export default function Boss3GreenBeam({
   const [fadeProgress, setFadeProgress] = useState(0);
   const [isFadingOut, setIsFadingOut] = useState(false);
   const fadeStartTime = useRef<number | null>(null);
-  const currentPosition = useRef(new Vector3());
-  const currentDirection = useRef(new Vector3());
 
   const cylinderMaterials = useMemo(() => createGreenCylinderMaterials(), []);
 
@@ -221,15 +217,7 @@ export default function Boss3GreenBeam({
     let fp = fadeProgress;
     let visIntensity = intensity;
 
-    if (parentRef.current) {
-      currentPosition.current.copy(parentRef.current.position);
-
-      currentDirection.current.set(0, 0, 1);
-      currentDirection.current.applyQuaternion(parentRef.current.quaternion);
-
-      beamRef.current.position.copy(currentPosition.current);
-      beamRef.current.rotation.y = Math.atan2(currentDirection.current.x, currentDirection.current.z);
-    }
+    // Position and rotation are inherited from the parent boss group — no manual copy needed.
 
     if (isFadingOut) {
       if (fadeStartTime.current) {
@@ -263,9 +251,9 @@ export default function Boss3GreenBeam({
     beamRef.current.scale.setScalar(fp);
 
     // Drive the pooled light at the beam source's world position (the source light
-    // sat at local [0, 0.35, BOSS3_GREEN_BEAM_START_OFFSET] under the beam group).
+    // sits at local [0, 0.9, BOSS3_GREEN_BEAM_START_OFFSET] under the beam group).
     beamRef.current.updateMatrixWorld();
-    _lightWorldPos.set(0, 0.35, BOSS3_GREEN_BEAM_START_OFFSET);
+    _lightWorldPos.set(0, 0.9, BOSS3_GREEN_BEAM_START_OFFSET);
     beamRef.current.localToWorld(_lightWorldPos);
     beamLight.current?.setColor(cylColors.emissive);
     beamLight.current?.setPosition(_lightWorldPos.x, _lightWorldPos.y, _lightWorldPos.z);
@@ -277,7 +265,7 @@ export default function Boss3GreenBeam({
 
   return (
     <group ref={beamRef}>
-      <group position={[0, 0.35, BOSS3_GREEN_BEAM_START_OFFSET]}>
+      <group position={[0, 0.9, BOSS3_GREEN_BEAM_START_OFFSET]}>
         <mesh>
           <sphereGeometry args={[0.45 * intensity, 16, 16]} />
           <meshStandardMaterial
@@ -302,7 +290,7 @@ export default function Boss3GreenBeam({
 
       </group>
 
-      <group position={[0, 0.12, BEAM_AXIS_MID_Z]}>
+      <group position={[0, 0.75, BEAM_AXIS_MID_Z]}>
         <mesh rotation={[Math.PI / 2, 0, 0]} geometry={beamGeometries.core} material={cylinderMaterials.core} />
         <mesh rotation={[Math.PI / 2, 0, 0]} geometry={beamGeometries.inner} material={cylinderMaterials.inner} />
         <mesh rotation={[Math.PI / 2, 0, 0]} geometry={beamGeometries.outer} material={cylinderMaterials.outer} />

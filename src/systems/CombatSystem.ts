@@ -1540,10 +1540,11 @@ export class CombatSystem extends System {
   }
 
   private triggerHealingEffects(target: Entity, amount: number, source?: Entity): void {
-    // This can be extended to trigger healing particle effects
     const transform = target.getComponent(Transform);
-    if (transform) {
-      // console.log(`✨ Healing effect at position:`, transform.position);
+    if (transform && amount > 0) {
+      const healPos = transform.getWorldPosition().clone();
+      healPos.y += 1.5;
+      this.damageNumberManager.addDamageNumber(amount, false, healPos, 'healing');
     }
   }
 
@@ -1818,6 +1819,10 @@ export class CombatSystem extends System {
 
   public clearConsumedImpacts(): void {
     this.impactEffectManager.clearConsumed();
+  }
+
+  public addCrescentSlashEffect(position: Vector3, direction: Vector3): void {
+    this.impactEffectManager.addImpact('crescent-slash-effect', position, direction);
   }
 
   public removeDamageNumber(id: string): void {

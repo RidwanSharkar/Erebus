@@ -2,7 +2,7 @@ import { Vector3 } from '@/utils/three-exports';
 
 export interface ImpactEffectEvent {
   id: string;
-  type: 'bow-shot-impact' | 'entropic-bolt-impact' | 'sabre-impact-effect';
+  type: 'bow-shot-impact' | 'entropic-bolt-impact' | 'sabre-impact-effect' | 'crescent-slash-effect';
   position: Vector3;
   /** Normalized projectile velocity direction at point of impact. */
   direction: Vector3;

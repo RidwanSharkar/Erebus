@@ -123,6 +123,8 @@ const ABILITY_LABELS: Record<string, string> = {
   SPEAR_F:         'Storm Shroud',
   RAISE_DEAD:      'Raise Dead',
   METEOR_STRIKE:   'Meteor',
+  SCYTHE_E:        'Coldsnap',
+  SPEAR_R:         'Lightning Bolt',
   COOP_GREEN_ROOM: 'Necro Trial',
   COOP_RED_ROOM:   'Infernal Trial',
   COOP_BLUE_ROOM:  'Storm Trial',
@@ -132,7 +134,7 @@ const ABILITY_LABELS: Record<string, string> = {
 const FLAVOR_SUBTITLES: Record<string, string> = {
   class:  'A power that shall define your fighting style for this run.',
   room:   'A blessing earned through the blood of your enemies.',
-  blue:   'The lightning does not strike twice — but the stagger might.',
+  blue:   'The lightning does not strike twice — but the stagger might.', // lol ima keep it
   green:  'Nature reclaims what was taken from it by force.',
   purple: 'Ice settles where steel fell — chill first, then silence.',
   red:    'Those who walk through fire emerge forever changed.',

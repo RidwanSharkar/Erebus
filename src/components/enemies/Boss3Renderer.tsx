@@ -189,7 +189,6 @@ export default function Boss3Renderer({
 
       {greenBeamHold && (
         <Boss3GreenBeam
-          parentRef={groupRef as React.RefObject<Group | null>}
           isActive={greenBeamIsActive}
           startTime={greenBeamHold.startTime}
           onComplete={() => setGreenBeamHold(null)}

@@ -65,15 +65,15 @@ function getPalette(soulType?: string | null): VortexPalette {
   }
 }
 
-const TOTAL_DURATION = 4.8;   // seconds before the effect is removed
+const TOTAL_DURATION = 2.0;   // seconds before the effect is removed
 const RISE_START    = 0.25;   // seconds — wait for burst before rising
-const FADE_START    = 3.2;    // seconds — begin fading
-const RISE_SPEED    = 2.2;    // units per second
+const FADE_START    = 1.25;    // seconds — begin fading
+const RISE_SPEED    = 6.0;    // units per second
 
-const INNER_COUNT  = 9;
-const OUTER_COUNT  = 14;
-const INNER_RADIUS = 0.52;
-const OUTER_RADIUS = 1.05;
+const INNER_COUNT  = 6;
+const OUTER_COUNT  = 10;
+const INNER_RADIUS = 0.375;
+const OUTER_RADIUS = 0.75;
 
 // Pre-compute ring positions so they don't allocate every frame
 function makeRingPositions(count: number, radius: number, vertAmp: number) {
@@ -211,7 +211,7 @@ export default function KnightDeathVortex({ position, soulType, onComplete }: Kn
     >
       {/* Core orb */}
       <mesh ref={coreRef}>
-        <sphereGeometry args={[0.33, 20, 20]} />
+        <sphereGeometry args={[0.25, 16, 16]} />
         <meshBasicMaterial
           color={palette.core}
           transparent
@@ -223,7 +223,7 @@ export default function KnightDeathVortex({ position, soulType, onComplete }: Kn
 
       {/* Outer halo */}
       <mesh ref={haloRef}>
-        <sphereGeometry args={[0.58, 14, 14]} />
+        <sphereGeometry args={[0.425, 12, 12]} />
         <meshBasicMaterial
           color={palette.halo}
           transparent
@@ -273,7 +273,7 @@ export default function KnightDeathVortex({ position, soulType, onComplete }: Kn
 
       {/* Vertical light beam — stretches as the orb ascends */}
       <mesh ref={beamRef} position={[0, 1.5, 0]}>
-        <cylinderGeometry args={[0.04, 0.18, 3.5, 8, 1, true]} />
+        <cylinderGeometry args={[0.04, 0.15, 2.5, 8, 1, true]} />
         <meshBasicMaterial
           color={palette.beam}
           transparent

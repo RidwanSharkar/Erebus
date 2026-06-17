@@ -188,6 +188,7 @@ import {
   shouldApplyVorpalGustTalent,
   shouldApplyWrathfulSabresSwipesTalent,
   shouldApplyInfestingSabresSwipesTalent,
+  shouldApplyCrescentBladesTalent,
   STAGGERING_FLOURISH_STAGGER,
   WRATHFUL_FLOURISH_CRIT_CHANCE_ADD,
   WRATHFUL_FLOURISH_CRIT_DAMAGE_MULT_ADD,
@@ -434,8 +435,9 @@ export class ControlSystem extends System {
   private lastRejuvenatingShotTime = 0; // Separate tracking for Rejuvenating Shot ability
   private fireRate = 0.2; // Default for bow
   private swordFireRate = 0.825; // Rate for sword attacks
-  private runebladeFireRate = 0.775; // Runeblade attack rate
+  private runebladeFireRate = 0.875; // Runeblade attack rate
   private sabresFireRate = 0.625; // Sabres dual attack rate (600ms between attacks)
+  private crescentBladesAttackCount = 0; // Tracks swings toward Crescent Blades special (resets at 3)
   private scytheFireRate = 0.725; // EntropicBolt rate (0.33s cooldown)
   private summonTotemFireRate = 6.5; // Summon Totem cooldown
   private viperStingFireRate = 7.0; // Viper Sting rate (2 seconds cooldown)
@@ -5112,6 +5114,15 @@ export class ControlSystem extends System {
     }
     this.lastSabresFireTime = currentTime;
 
+    // Crescent Blades: every 3rd swing fires a bonus crescent slash AoE
+    if (shouldApplyCrescentBladesTalent(this.talentLoadout)) {
+      this.crescentBladesAttackCount++;
+      if (this.crescentBladesAttackCount >= 3) {
+        this.crescentBladesAttackCount = 0;
+        this.performCrescentSlash(playerTransform);
+      }
+    }
+
     // Set swinging state - completion will be handled by sabres component callback
     this.isSwinging = true;
 
@@ -5130,6 +5141,57 @@ export class ControlSystem extends System {
 
     // Reset swinging state
     this.isSwinging = false;
+  }
+
+  /** Crescent Blades — wide-arc 150-damage slash fired on every 3rd LMB swing. */
+  private performCrescentSlash(playerTransform: Transform): void {
+    const attackRange = 4;
+    const attackAngle = Math.PI / 2;
+    const crescentDamage = 150;
+
+    const attackDirection = new Vector3();
+    this.camera.getWorldDirection(attackDirection);
+    attackDirection.normalize();
+
+    const allEntities = this.world.getAllEntities();
+    const potentialTargets = allEntities.filter(entity =>
+      entity.hasComponent(Health) &&
+      entity.hasComponent(Transform) &&
+      entity !== this.playerEntity
+    );
+
+    const combatSystem = this.world.getSystem(CombatSystem);
+    const pid = this.playerEntity?.userData?.playerId;
+
+    for (const target of potentialTargets) {
+      const targetTransform = target.getComponent(Transform);
+      const targetHealth = target.getComponent(Health);
+      if (!targetTransform || !targetHealth || targetHealth.isDead) continue;
+
+      const directionToTarget = targetTransform.position.clone().sub(playerTransform.position);
+      if (directionToTarget.length() > attackRange) continue;
+
+      directionToTarget.normalize();
+      const dotProduct = attackDirection.dot(directionToTarget);
+      const angleToTarget = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
+      if (angleToTarget > attackAngle / 2) continue;
+
+      if (combatSystem) {
+        combatSystem.queueDamage(
+          target,
+          crescentDamage,
+          this.playerEntity || undefined,
+          'crescent_slash',
+          pid,
+        );
+      }
+    }
+
+    if (combatSystem) {
+      combatSystem.addCrescentSlashEffect(playerTransform.position, attackDirection);
+    }
+
+    this.audioSystem?.playSabresSwingSound(playerTransform.position);
   }
 
   private performSabresMeleeDamage(playerTransform: Transform): number {
@@ -6072,6 +6134,14 @@ export class ControlSystem extends System {
     this.lastBackstabTime = 0;
   }
 
+  /** Returns the local player's current world position, or null if unavailable. Used by socket handlers for damage number placement. */
+  public getPlayerWorldPosition(): Vector3 | null {
+    if (!this.playerEntity) return null;
+    const transform = this.playerEntity.getComponent(Transform);
+    if (!transform) return null;
+    return transform.getWorldPosition().clone();
+  }
+
   /**
    * Solo/local only: Killstreak stack increment + Relentless heal/Cooldown when Backstab kills.
    * Co-op uses server `backstab-killstreak-stack` / `sabres-relentless-backstab-kill` instead.
@@ -6522,7 +6592,7 @@ export class ControlSystem extends System {
       }
     }
 
-    if (isBackstab && shouldApplyKillstreakTalent(this.talentLoadout)) {
+    if (shouldApplyKillstreakTalent(this.talentLoadout)) {
       baseDamage += this.backstabKillstreakStack * BACKSTAB_KILLSTREAK_DAMAGE_PER_KILL;
     }
 
@@ -6611,22 +6681,22 @@ export class ControlSystem extends System {
     const meleeRange = MELEE_ARC_RANGE;
     
     // Base damage values based on combo step and weapon type
-    let baseDamage = 45; // Default base damage
+    let baseDamage = 50; // Default base damage
 
     // Weapon-specific damage scaling
     if (this.currentWeapon === WeaponType.SWORD) {
       // Sword damage values
       switch (this.swordComboStep) {
-        case 1: baseDamage = 45; break;
-        case 2: baseDamage = 50; break;
-        case 3: baseDamage = 60; break; // Finisher does more damage
+        case 1: baseDamage = 50; break;
+        case 2: baseDamage = 60; break;
+        case 3: baseDamage = 70; break; // Finisher does more damage
       }
     } else if (this.currentWeapon === WeaponType.RUNEBLADE) {
       // Runeblade damage values
       switch (this.swordComboStep) {
-        case 1: baseDamage = 45; break;
-        case 2: baseDamage = 50; break;
-        case 3: baseDamage = 60; break; // Finisher does more damage
+        case 1: baseDamage = 50; break;
+        case 2: baseDamage = 60; break;
+        case 3: baseDamage = 70; break; // Finisher does more damage
       }
     }
     

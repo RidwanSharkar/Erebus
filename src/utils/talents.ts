@@ -109,6 +109,8 @@ export const TALENT_GUARD_SABRES_SWIPES = 'GUARD_SABRES_SWIPES' as const;
 export const TALENT_GUARD_SABRES_STAB = 'GUARD_SABRES_STAB' as const;
 /** Sabres purple room — Flourish / Sunder hits proc shield (mutex with other Flourish room boons). */
 export const TALENT_GUARD_SABRES_FLOURISH = 'GUARD_SABRES_FLOURISH' as const;
+/** Sabres class talent — every 3rd swing fires a 150-damage crescent slash AoE; stacks freely with other boons. */
+export const TALENT_CRESCENT_BLADES = 'CRESCENT_BLADES' as const;
 
 /** Sabres class boons — Backstab (`SABRES_Q`) session stacking / on-kill (see room boons for palette picks). */
 export const TALENT_KILLSTREAK = 'KILLSTREAK' as const;
@@ -146,6 +148,10 @@ export const TALENT_BLOODLEECH = 'BLOODLEECH' as const;
 export const TALENT_RAISE_DEAD = 'RAISE_DEAD' as const;
 /** Red room universal active boon — calls down a meteor on a nearby target on R key (8s cooldown). */
 export const TALENT_METEOR_STRIKE = 'METEOR_STRIKE' as const;
+/** Purple room universal active boon — conjures an ice vortex that freezes nearby enemies on R key (12s cooldown). */
+export const TALENT_COLDSNAP_ROOM = 'COLDSNAP_ROOM' as const;
+/** Blue room universal active boon — calls down a lightning bolt on the highest-priority enemy on R key (3s cooldown). */
+export const TALENT_LIGHTNING_BOLT_ROOM = 'LIGHTNING_BOLT_ROOM' as const;
 
 /** Blade Rush — double-tap forward Charge on Runeblade; separate from E-key Charge cooldown. */
 export const BLADE_RUSH_CHARGE_COOLDOWN_SEC = 3;
@@ -154,18 +160,18 @@ export const RAISE_DEAD_COOLDOWN_SEC = 15;
 /** METEOR active boon — cooldown after calling a meteor via R key. */
 export const METEOR_STRIKE_COOLDOWN_SEC = 8;
 
-export const INFERNAL_DASH_DAMAGE = 150;
+export const INFERNAL_DASH_DAMAGE = 165;
 export const INFERNAL_DASH_RADIUS = 3.25;
 export const GLACIAL_DASH_RADIUS = 2.5;
 export const GLACIAL_DASH_FREEZE_DURATION_MS = 3000;
-export const GLACIAL_DASH_COOLDOWN_MS = 4000;
+export const GLACIAL_DASH_COOLDOWN_MS = 1000;
 export const MENDING_DASH_COOLDOWN_MS = 7000;
-export const STAGGERING_DASH_RANGE = 6;
+export const STAGGERING_DASH_RANGE = 10;
 export const STAGGERING_DASH_MIN_DAMAGE = 100;
 export const STAGGERING_DASH_MAX_DAMAGE = 240;
 export const STAGGERING_DASH_MIN_STAGGER = 80;
 export const STAGGERING_DASH_MAX_STAGGER = 135;
-export const STAGGERING_DASH_COOLDOWN_MS = 4000;
+export const STAGGERING_DASH_COOLDOWN_MS = 200;
 export const GUARDBREAK_STUNNED_DAMAGE_MULT = 2.0;
 
 /** Crossentropy (`SCYTHE_R`) ability cooldown after starting a bolt (seconds). */
@@ -174,9 +180,9 @@ export const CROSSENTROPY_COOLDOWN_SEC = 8;
 export const ACCELERATOR_TOTEM_AURA_RADIUS_UNITS = 4;
 
 /** GIANTKILLER — extra damage vs non-boss: fraction of target max HP on Reaping Talons return hit after a forward hit on the same target. */
-export const GIANTKILLER_MAX_HP_DAMAGE_FRAC = 0.1;
+export const GIANTKILLER_MAX_HP_DAMAGE_FRAC = 0.125;
 /** GIANTKILLER — same vs bosses (`EnemyType.BOSS`, including co-op boss variants mapped to BOSS). */
-export const GIANTKILLER_MAX_HP_DAMAGE_FRAC_BOSS = 0.06;
+export const GIANTKILLER_MAX_HP_DAMAGE_FRAC_BOSS = 0.1;
 /**
  * HEALING STREAM — HP healed per second per owned totem in range.
  * Range matches `ACCELERATOR_TOTEM_AURA_RADIUS_UNITS` (horizontal xz).
@@ -184,7 +190,7 @@ export const GIANTKILLER_MAX_HP_DAMAGE_FRAC_BOSS = 0.06;
 export const HEALING_STREAM_HP_PER_SEC_PER_TOTEM = 2;
 
 /** Crossentropy (`SCYTHE_R`) base hit damage before Reaper stack bonus. */
-export const CROSSENTROPY_BASE_DAMAGE = 345;
+export const CROSSENTROPY_BASE_DAMAGE = 335;
 /** PLAGUE boon: Crossentropy base hit damage before Reaper stack bonus. */
 export const CROSSENTROPY_PLAGUE_DAMAGE = 500;
 /** PLAGUE Crossentropy — ground venom-style VFX at explosion (matches VenomEffect one-shot ms). */
@@ -424,6 +430,7 @@ export type TalentId =
   | typeof TALENT_GUARD_SABRES_SWIPES
   | typeof TALENT_GUARD_SABRES_STAB
   | typeof TALENT_GUARD_SABRES_FLOURISH
+  | typeof TALENT_CRESCENT_BLADES
   | typeof TALENT_KILLSTREAK
   | typeof TALENT_RELENTLESS
   | typeof TALENT_VORPAL_GUST
@@ -440,7 +447,9 @@ export type TalentId =
   | typeof TALENT_GUARDBREAK
   | typeof TALENT_BLOODLEECH
   | typeof TALENT_RAISE_DEAD
-  | typeof TALENT_METEOR_STRIKE;
+  | typeof TALENT_METEOR_STRIKE
+  | typeof TALENT_COLDSNAP_ROOM
+  | typeof TALENT_LIGHTNING_BOLT_ROOM;
 
 /** Crossentropy bolt / explosion palette (Inferno overrides Glacial / Tempest / Plague). */
 export type CrossentropyVisualTheme = 'default' | 'inferno' | 'tempest' | 'plague' | 'glacial';
@@ -1106,6 +1115,22 @@ export const meteorStrikeTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'METEOR_STRIKE',
 };
 
+export const coldsnapRoomTalentDefinition: TalentDefinition = {
+  id: TALENT_COLDSNAP_ROOM,
+  name: 'COLDSNAP',
+  description:
+    'Grants the Coldsnap ability on your R key. Conjures an explosive ice vortex that applies FREEZE to nearby enemies, immobilizing them for 6 seconds. 12s cooldown.',
+  modifiesAbilityId: 'SCYTHE_E',
+};
+
+export const lightningBoltRoomTalentDefinition: TalentDefinition = {
+  id: TALENT_LIGHTNING_BOLT_ROOM,
+  name: 'LIGHTNING BOLT',
+  description:
+    'Grants the Lightning Bolt ability on your R key. Calls down a lightning bolt on the highest priority enemy in range, dealing 117 damage. 3s cooldown.',
+  modifiesAbilityId: 'SPEAR_R',
+};
+
 export const wrathfulSabresSwipesTalentDefinition: TalentDefinition = {
   id: TALENT_WRATHFUL_SABRES_SWIPES,
   name: 'Wrathful Swipes',
@@ -1168,6 +1193,14 @@ export const guardSabresFlourishTalentDefinition: TalentDefinition = {
   description:
     `Each enemy damaged by Flourish grants ${GUARD_SABRES_PURPLE_SHIELD_DURATION_SEC} seconds of Aegis deflection and invulnerability. Does not put Aegis on cooldown and does not require Aegis in your loadout.`,
   modifiesAbilityId: 'SABRES_E',
+};
+
+export const crescentBladesTalentDefinition: TalentDefinition = {
+  id: TALENT_CRESCENT_BLADES,
+  name: 'Crescent Blades',
+  description:
+    'Every 3rd Sabres left-click attack unleashes a crescent slash that deals 150 damage to all enemies in the arc in front of you, in addition to the normal dual-blade hit.',
+  modifiesAbilityId: 'SABRES_BASIC',
 };
 
 export const staggerShotTalentDefinition: TalentDefinition = {
@@ -1556,6 +1589,8 @@ export interface TalentLoadout {
   guardSabresSwipes: boolean;
   guardSabresStab: boolean;
   guardSabresFlourish: boolean;
+  /** Crescent Blades — every 3rd Sabres LMB swing fires a 150-damage crescent slash AoE. */
+  crescentBlades: boolean;
   killstreak: boolean;
   relentless: boolean;
   vorpalGust: boolean;
@@ -1587,6 +1622,10 @@ export interface TalentLoadout {
   raiseDeadRoom: boolean;
   /** Co-op red room active boon — player can call a meteor on a nearby enemy via R key (8s cooldown). */
   meteorStrikeRoom: boolean;
+  /** Co-op purple room active boon — player can cast Coldsnap (frost nova) via R key (12s cooldown). */
+  coldsnapRoom: boolean;
+  /** Co-op blue room active boon — player can call a lightning bolt on the top-priority enemy via R key (3s cooldown). */
+  lightningBoltRoom: boolean;
 }
 
 export function createDefaultTalentLoadout(): TalentLoadout {
@@ -1670,6 +1709,7 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     guardSabresSwipes: false,
     guardSabresStab: false,
     guardSabresFlourish: false,
+    crescentBlades: false,
     killstreak: false,
     relentless: false,
     vorpalGust: false,
@@ -1687,6 +1727,8 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     bloodleechRoom: false,
     raiseDeadRoom: false,
     meteorStrikeRoom: false,
+    coldsnapRoom: false,
+    lightningBoltRoom: false,
   };
 }
 // DEFAULT TALENTS DEFAULTTALENTS
@@ -2406,6 +2448,10 @@ export function shouldApplyGuardSabresSwipesTalent(talentLoadout: TalentLoadout 
   return !!talentLoadout?.guardSabresSwipes;
 }
 
+export function shouldApplyCrescentBladesTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.crescentBlades;
+}
+
 export function shouldApplyGuardSabresStabTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.guardSabresStab;
 }
@@ -2549,9 +2595,9 @@ export function buildScytheClassBoonPool(): TalentId[] {
   ];
 }
 
-/** Sabres class boon pool (co-op): Backstab-focused talents — colored Backstab/Swipes/Flourish lines stay room boons. */
+/** Sabres class boon pool (co-op): Backstab-focused talents + Crescent Blades LMB augment. */
 export function buildSabresClassBoonPool(): TalentId[] {
-  return [TALENT_KILLSTREAK, TALENT_RELENTLESS, TALENT_VORPAL_GUST, TALENT_FAN_OF_KNIVES, TALENT_PARRY];
+  return [TALENT_KILLSTREAK, TALENT_RELENTLESS, TALENT_VORPAL_GUST, TALENT_FAN_OF_KNIVES, TALENT_PARRY, TALENT_CRESCENT_BLADES];
 }
 
 export function buildClassBoonPoolForWeapon(
@@ -2667,9 +2713,9 @@ export function buildRoomBoonPoolForColor(
     case 'red':
       return [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH, TALENT_METEOR_STRIKE];
     case 'purple':
-      return [...pool, TALENT_GLACIAL_DASH];
+      return [...pool, TALENT_GLACIAL_DASH, TALENT_COLDSNAP_ROOM];
     case 'blue':
-      return [...pool, TALENT_STAGGERING_DASH, TALENT_GUARDBREAK];
+      return [...pool, TALENT_STAGGERING_DASH, TALENT_GUARDBREAK, TALENT_LIGHTNING_BOLT_ROOM];
     default:
       return pool;
   }
@@ -3125,6 +3171,9 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_GUARD_SABRES_SWIPES:
       next.guardSabresSwipes = true;
       return next;
+    case TALENT_CRESCENT_BLADES:
+      next.crescentBlades = true;
+      return next;
     case TALENT_GUARD_SABRES_STAB:
       next.guardSabresStab = true;
       return next;
@@ -3181,6 +3230,12 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
       return next;
     case TALENT_METEOR_STRIKE:
       next.meteorStrikeRoom = true;
+      return next;
+    case TALENT_COLDSNAP_ROOM:
+      next.coldsnapRoom = true;
+      return next;
+    case TALENT_LIGHTNING_BOLT_ROOM:
+      next.lightningBoltRoom = true;
       return next;
     default:
       return next;
@@ -3267,6 +3322,7 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_GUARD_SABRES_SWIPES]: guardSabresSwipesTalentDefinition,
   [TALENT_GUARD_SABRES_STAB]: guardSabresStabTalentDefinition,
   [TALENT_GUARD_SABRES_FLOURISH]: guardSabresFlourishTalentDefinition,
+  [TALENT_CRESCENT_BLADES]: crescentBladesTalentDefinition,
   [TALENT_KILLSTREAK]: killstreakTalentDefinition,
   [TALENT_RELENTLESS]: relentlessTalentDefinition,
   [TALENT_VORPAL_GUST]: vorpalGustTalentDefinition,
@@ -3284,6 +3340,8 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_BLOODLEECH]: bloodleechTalentDefinition,
   [TALENT_RAISE_DEAD]: raiseDeadTalentDefinition,
   [TALENT_METEOR_STRIKE]: meteorStrikeTalentDefinition,
+  [TALENT_COLDSNAP_ROOM]: coldsnapRoomTalentDefinition,
+  [TALENT_LIGHTNING_BOLT_ROOM]: lightningBoltRoomTalentDefinition,
 };
 
 /**
@@ -3370,6 +3428,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_GUARD_SABRES_SWIPES]: '/icons/swipes.svg',
   [TALENT_GUARD_SABRES_STAB]: '/icons/stab.svg',
   [TALENT_GUARD_SABRES_FLOURISH]: '/icons/flourish.svg',
+  [TALENT_CRESCENT_BLADES]: '/icons/swipes.svg',
   [TALENT_KILLSTREAK]: '/icons/killstreak.svg',
   [TALENT_RELENTLESS]: '/icons/relentless.svg',
   [TALENT_VORPAL_GUST]: '/icons/vorpalGust.svg',
@@ -3387,6 +3446,8 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_BLOODLEECH]: '/icons/strike.svg',
   [TALENT_RAISE_DEAD]: '/icons/strike.svg',
   [TALENT_METEOR_STRIKE]: '/icons/meteor.svg',
+  [TALENT_COLDSNAP_ROOM]: null,
+  [TALENT_LIGHTNING_BOLT_ROOM]: null,
 };
 
 export function getTalentIconSrc(id: TalentId): string | null {
@@ -3475,6 +3536,7 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.guardSabresSwipes) out.push(TALENT_GUARD_SABRES_SWIPES);
   if (loadout.guardSabresStab) out.push(TALENT_GUARD_SABRES_STAB);
   if (loadout.guardSabresFlourish) out.push(TALENT_GUARD_SABRES_FLOURISH);
+  if (loadout.crescentBlades) out.push(TALENT_CRESCENT_BLADES);
   if (loadout.killstreak) out.push(TALENT_KILLSTREAK);
   if (loadout.relentless) out.push(TALENT_RELENTLESS);
   if (loadout.vorpalGust) out.push(TALENT_VORPAL_GUST);
@@ -3492,6 +3554,8 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.bloodleechRoom) out.push(TALENT_BLOODLEECH);
   if (loadout.raiseDeadRoom) out.push(TALENT_RAISE_DEAD);
   if (loadout.meteorStrikeRoom) out.push(TALENT_METEOR_STRIKE);
+  if (loadout.coldsnapRoom) out.push(TALENT_COLDSNAP_ROOM);
+  if (loadout.lightningBoltRoom) out.push(TALENT_LIGHTNING_BOLT_ROOM);
   return out;
 }
 

@@ -312,7 +312,7 @@ interface MultiplayerContextType {
    * Co-op: which boss the throne fight is (boss tier 1, Archon tier 2, or Weaver Nexus tier 3).
    * From `room-joined`, `combat-arena-entered`, `coop-main-arena-intermission`, `game-started`.
    */
-  coopThroneBossKind: 'boss' | 'boss2' | 'boss3' | null;
+  coopThroneBossKind: 'boss' | 'boss2' | 'boss3' | 'boss_all' | null;
   /**
    * Full-screen loading overlay for portal transitions (throne → arena, wave picks, boss).
    * Set true on `combat-arena-entered`; clear via `endCoopPortalTransition` after the scene settles.
@@ -503,8 +503,9 @@ function normalizeCoopBossThroneArena(v: unknown): boolean {
   return v === true;
 }
 
-function normalizeCoopThroneBossKind(v: unknown): 'boss' | 'boss2' | 'boss3' | null {
+function normalizeCoopThroneBossKind(v: unknown): 'boss' | 'boss2' | 'boss3' | 'boss_all' | null {
   const k = String(v || '').toLowerCase();
+  if (k === 'boss_all') return 'boss_all';
   if (k === 'boss3') return 'boss3';
   if (k === 'boss2') return 'boss2';
   if (k === 'boss') return 'boss';
@@ -554,7 +555,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopCurrentRoomKind, setCoopCurrentRoomKind] = useState<CoopRoomKind | null>(null);
   const [coopClearedRoomKind, setCoopClearedRoomKind] = useState<CoopRoomKind | null>(null);
   const [coopBossThroneArena, setCoopBossThroneArena] = useState(false);
-  const [coopThroneBossKind, setCoopThroneBossKind] = useState<'boss' | 'boss2' | 'boss3' | null>(null);
+  const [coopThroneBossKind, setCoopThroneBossKind] = useState<'boss' | 'boss2' | 'boss3' | 'boss_all' | null>(null);
   const [coopTerrainTheme, setCoopTerrainTheme] = useState<CoopTerrainTheme>('purple');
   const [coopTransitionOverlay, setCoopTransitionOverlay] = useState(false);
   const [coopCombatTransitionId, setCoopCombatTransitionId] = useState<number | null>(null);
@@ -925,8 +926,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     addEventHandler('sabres-relentless-backstab-kill', () => {
-      (window as any).controlSystemRef?.current?.resetBackstabCooldownForRelentless();
+      const cs = (window as any).controlSystemRef?.current;
+      cs?.resetBackstabCooldownForRelentless();
       (window as any).audioSystem?.playLesserHealSound?.();
+      const playerPos = cs?.getPlayerWorldPosition?.();
+      if (playerPos) {
+        const healPos = new Vector3(playerPos.x, playerPos.y + 1.5, playerPos.z);
+        const mgr = (window as any).damageNumberManager;
+        mgr?.addDamageNumber?.(30, false, healPos, 'healing');
+      }
     });
 
     addEventHandler('mushroom-damaged', (data: { index: number; newHealth: number; maxHealth: number }) => {
@@ -961,6 +969,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         (data.damageType === 'ignite' ||
           data.damageType === 'venom' ||
           data.damageType === 'wyvern_talons_detonate' ||
+          data.damageType === 'player_zombie' ||
           (data.damageType === 'crossentropy' && data.crossentropyMeteorDamage === true)) &&
         typeof data.damage === 'number' &&
         data.damage > 0 &&
@@ -974,7 +983,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
               ? 'venom'
               : data.damageType === 'crossentropy'
                 ? 'crossentropy'
-                : 'ignite';
+                : data.damageType === 'player_zombie'
+                  ? 'player_zombie'
+                  : 'ignite';
           mgr.addDamageNumber(data.damage, false, pos, dt);
         }
       }

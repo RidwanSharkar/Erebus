@@ -917,9 +917,9 @@ export default function Runeblade({
     const now = Date.now();
 
     const damageValues = {
-      1: 45,
-      2: 50,
-      3: 60,
+      1: 50,
+      2: 60,
+      3: 70,
     };
 
     const baseDamage = damageValues[comboStep] + execBonus + crusaderBonus;

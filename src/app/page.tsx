@@ -42,6 +42,8 @@ import {
   pickRandomDistinctFromPool,
   TALENT_RAISE_DEAD,
   TALENT_METEOR_STRIKE,
+  TALENT_COLDSNAP_ROOM,
+  TALENT_LIGHTNING_BOLT_ROOM,
 } from '../utils/talents';
 import type { TalentId, TalentLoadout } from '../utils/talents';
 import type { AbilityLoadout } from '../utils/weaponAbilities';
@@ -321,6 +323,7 @@ function HomeContent() {
   const bootstrapWeaponsRef = useRef(selectedWeapons);
   const [playerExperience, setPlayerExperience] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
+  const playerLevelRef = useRef(1);
   const [playerEssence, setPlayerEssence] = useState(50); // Start with 50 essence
   const [playerGold, setPlayerGold] = useState(0);
   const [showMerchantUI, setShowMerchantUI] = useState(false);
@@ -608,8 +611,12 @@ function HomeContent() {
   const handleCoopBoonPick = useCallback(
     (id: TalentId, kind: 'class' | 'room', classPickWeapon?: WeaponType) => {
       setTalentLoadout((prev) => applyTalentIdToLoadout(prev, id));
-      if (id === TALENT_RAISE_DEAD || id === TALENT_METEOR_STRIKE) {
-        const abilityId = id === TALENT_RAISE_DEAD ? 'RAISE_DEAD' : 'METEOR_STRIKE';
+      if (id === TALENT_RAISE_DEAD || id === TALENT_METEOR_STRIKE
+          || id === TALENT_COLDSNAP_ROOM || id === TALENT_LIGHTNING_BOLT_ROOM) {
+        const abilityId =
+          id === TALENT_RAISE_DEAD ? 'RAISE_DEAD' :
+          id === TALENT_METEOR_STRIKE ? 'METEOR_STRIKE' :
+          id === TALENT_COLDSNAP_ROOM ? 'SCYTHE_E' : 'SPEAR_R';
         setAbilityLoadout(abilityLoadout ? { ...abilityLoadout, R: abilityId } : { Q: null, E: null, R: abilityId });
       }
       if (kind === 'room') {
@@ -670,19 +677,24 @@ function HomeContent() {
     }
   }, [controlSystem, skillPointData]);
 
-  const handleExperienceUpdate = (experience: number, level: number) => {
-    // Check if this is a level up before updating state
-    const isLevelUp = level > playerLevel;
+  // Keep ref in sync so the memoized callback always reads the latest level
+  playerLevelRef.current = playerLevel;
+
+  const handleExperienceUpdate = useCallback((experience: number, level: number) => {
+    // Use the ref to avoid stale closure — page.tsx re-renders very frequently
+    // (DPS ticks, enemy state, etc.) which would otherwise create a race where
+    // the closed-over playerLevel is already the new level before the level-up
+    // check runs, causing stat points to be silently skipped.
+    const isLevelUp = level > playerLevelRef.current;
 
     setPlayerExperience(experience);
     setPlayerLevel(level);
 
-    // Update skill points and stat points when level changes
     if (isLevelUp) {
       updateSkillPointsForLevel(level);
       updateStatPointsForLvl(level);
     }
-  };
+  }, [updateSkillPointsForLevel, updateStatPointsForLvl]);
 
   const handleEssenceUpdate = (essence: number) => {
     setPlayerEssence(essence);
@@ -861,7 +873,8 @@ function HomeContent() {
                     <li>Use rim <strong>portals</strong> to leave prep or, in the arena, to choose the next challenge when prompted.</li>
                     <li>A <strong>PINK</strong> portal allows you to heal and buy items at the merchant.</li>
                     <li><strong>RED</strong> portals are generally the most difficult.</li>
-                    <li><strong>YELLOW</strong> portals reward STAT points that can be spent.</li>
+                    <li><strong>YELLOW</strong> portals reward STAT points that can be spent. You start with 3 points and gain 3 more each level.</li>
+                    <li><strong>Stats</strong> — <strong className="text-red-400">Strength</strong> increases critical strike damage, <strong className="text-green-400">Stamina</strong> increases maximum health (and heals you when allocated), <strong className="text-blue-400">Agility</strong> increases critical hit chance, <strong className="text-purple-400">Intellect</strong> increases shield capacity.</li>
                     <li><strong>PURPLE</strong>,<strong>BLUE</strong>,<strong>GREEN</strong>,and <strong>RED</strong> portals lead to enemy rooms that reward unique talents for abilities.</li>
                   </ul>
                 </div>
@@ -1107,6 +1120,8 @@ function HomeContent() {
                 onAllocateStat={allocateStatPoint}
                 playerLevel={playerLevel}
                 inventory={inventory}
+                talentLoadout={talentLoadout}
+                abilityLoadout={abilityLoadout}
               />
             )}
 

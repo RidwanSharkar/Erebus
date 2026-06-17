@@ -4,12 +4,23 @@ import React, { useMemo, useState } from 'react';
 import { StatSystem, StatPointData, StatKey } from '@/utils/StatSystem';
 import { InventoryItem } from '@/contexts/MultiplayerContext';
 import { ITEM_RARITY_COLORS, formatRarityLabel, isItemRarity } from '@/utils/itemRarity';
+import {
+  TalentLoadout,
+  shouldApplySpellbladeTalent,
+  shouldApplyParryTalent,
+  SPELLBLADE_INTELLECT_BONUS,
+  PARRY_INTELLECT_BONUS,
+  PARRY_STRENGTH_BONUS,
+} from '@/utils/talents';
+import type { AbilityLoadout } from '@/utils/weaponAbilities';
 
 interface StatsPanelProps {
   statPointData: StatPointData;
   onAllocateStat: (stat: StatKey) => void;
   playerLevel: number;
   inventory?: InventoryItem[];
+  talentLoadout?: TalentLoadout | null;
+  abilityLoadout?: AbilityLoadout | null;
 }
 
 const STAT_KEYS: StatKey[] = ['strength', 'stamina', 'agility', 'intellect'];
@@ -33,6 +44,8 @@ export default function StatsPanel({
   onAllocateStat,
   playerLevel,
   inventory = [],
+  talentLoadout,
+  abilityLoadout,
 }: StatsPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const [tab, setTab] = useState<'stats' | 'inventory'>('stats');
@@ -43,6 +56,30 @@ export default function StatsPanel({
     () => StatSystem.getEffectiveStatsWithInventory(stats, inventory),
     [inventory, stats],
   );
+
+  // Compute per-stat talent bonuses so they're visible in the panel
+  const talentStatBonuses = useMemo(() => {
+    const bonuses = { strength: 0, stamina: 0, agility: 0, intellect: 0 };
+    if (shouldApplySpellbladeTalent(talentLoadout, abilityLoadout ?? null)) {
+      bonuses.intellect += SPELLBLADE_INTELLECT_BONUS;
+    }
+    if (shouldApplyParryTalent(talentLoadout, abilityLoadout ?? null)) {
+      bonuses.intellect += PARRY_INTELLECT_BONUS;
+      bonuses.strength += PARRY_STRENGTH_BONUS;
+    }
+    return bonuses;
+  }, [talentLoadout, abilityLoadout]);
+
+  const talentAdjustedStats = useMemo(
+    () => ({
+      strength: displayStats.strength + talentStatBonuses.strength,
+      stamina: displayStats.stamina + talentStatBonuses.stamina,
+      agility: displayStats.agility + talentStatBonuses.agility,
+      intellect: displayStats.intellect + talentStatBonuses.intellect,
+    }),
+    [displayStats, talentStatBonuses],
+  );
+
   const hasPoints = statPoints > 0;
 
   return (
@@ -75,13 +112,17 @@ export default function StatsPanel({
         <div className="px-3 pb-2.5 grid grid-cols-4 gap-1">
           {STAT_KEYS.map(stat => {
             const color = StatSystem.getStatColor(stat);
-            const value = displayStats[stat];
+            const value = talentAdjustedStats[stat];
+            const talentBonus = talentStatBonuses[stat];
             return (
               <div key={stat} className="flex flex-col items-center gap-0.5">
                 <span className="text-sm leading-none">{StatSystem.getStatIcon(stat)}</span>
                 <span className="text-xs font-black tabular-nums leading-none" style={{ color }}>
                   {value}
                 </span>
+                {talentBonus > 0 && (
+                  <span className="text-[8px] leading-none text-purple-300/70">+{talentBonus}T</span>
+                )}
               </div>
             );
           })}
@@ -128,7 +169,8 @@ export default function StatsPanel({
                   </p>
                 )}
                 {STAT_KEYS.map(stat => {
-                  const value = displayStats[stat];
+                  const value = talentAdjustedStats[stat];
+                  const talentBonus = talentStatBonuses[stat];
                   const color = StatSystem.getStatColor(stat);
                   const canAllocate = statPoints > 0;
                   return (
@@ -140,7 +182,12 @@ export default function StatsPanel({
                         {StatSystem.getStatIcon(stat)}
                       </div>
                       <span className="text-xs text-white/70 flex-1">{StatSystem.getStatDisplayName(stat)}</span>
-                      <span className="text-xs font-black tabular-nums" style={{ color }}>{value}</span>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xs font-black tabular-nums" style={{ color }}>{value}</span>
+                        {talentBonus > 0 && (
+                          <span className="text-[9px] font-bold text-purple-300/70">(+{talentBonus})</span>
+                        )}
+                      </div>
                       <button
                         onClick={() => canAllocate && onAllocateStat(stat)}
                         disabled={!canAllocate}

@@ -389,6 +389,7 @@ export default function TalentSelectionModal({
     guardSabresSwipes: initialTalentLoadout?.guardSabresSwipes ?? def.guardSabresSwipes,
     guardSabresStab: initialTalentLoadout?.guardSabresStab ?? def.guardSabresStab,
     guardSabresFlourish: initialTalentLoadout?.guardSabresFlourish ?? def.guardSabresFlourish,
+    crescentBlades: initialTalentLoadout?.crescentBlades ?? def.crescentBlades,
     killstreak: initialTalentLoadout?.killstreak ?? def.killstreak,
     relentless: initialTalentLoadout?.relentless ?? def.relentless,
     vorpalGust: initialTalentLoadout?.vorpalGust ?? def.vorpalGust,
@@ -406,6 +407,8 @@ export default function TalentSelectionModal({
     bloodleechRoom: initialTalentLoadout?.bloodleechRoom ?? def.bloodleechRoom,
     raiseDeadRoom: initialTalentLoadout?.raiseDeadRoom ?? def.raiseDeadRoom,
     meteorStrikeRoom: initialTalentLoadout?.meteorStrikeRoom ?? def.meteorStrikeRoom,
+    coldsnapRoom: initialTalentLoadout?.coldsnapRoom ?? def.coldsnapRoom,
+    lightningBoltRoom: initialTalentLoadout?.lightningBoltRoom ?? def.lightningBoltRoom,
   };
   const [loadout, setLoadout] = useState<TalentLoadout>(() => merged);
 

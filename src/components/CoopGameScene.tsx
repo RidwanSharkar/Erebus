@@ -47,6 +47,7 @@ import GoldCollectMoteEffect from './enemies/GoldCollectMoteEffect';
 import BowShotImpact from './weapons/BowShotImpact';
 import EntropicBoltImpact from './weapons/EntropicBoltImpact';
 import SabreImpactEffect from './weapons/SabreImpactEffect';
+import CrescentSlashEffect from './weapons/CrescentSlashEffect';
 import PlayerHitBurst from './weapons/PlayerHitBurst';
 import FrozenEffect from './weapons/FrozenEffect';
 import StunnedEffect from './weapons/StunnedEffect';
@@ -1195,6 +1196,8 @@ export function CoopGameScene({
   >(null);
   // Track current stat data in a ref for use inside event handler closures
   const playerStatDataRef = useRef<StatPointData | undefined>(statPointData);
+  // Track previous effective stamina to detect increases and apply healing
+  const prevEffectiveStaminaRef = useRef<number>(0);
   const cameraSystemRef = useRef<CameraSystem | null>(null);
   const localStunCameraUnlockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // summonedUnitSystemRef removed - using server-authoritative summoned units
@@ -1592,7 +1595,7 @@ export function CoopGameScene({
             health: p.health,
           }))),
       ...Array.from(enemies.values())
-        .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-healer')
+        .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-healer' && e.type !== 'player-zombie')
         .map((e) => ({
           id: e.id,
           position: new Vector3(e.position.x, e.position.y, e.position.z),
@@ -3324,6 +3327,10 @@ export function CoopGameScene({
     setGlobalStrengthStatPoints(statsForShield.strength);
     const newMaxShield = StatSystem.getMaxShieldFromStats(statsForShield);
 
+    const prevStamina = prevEffectiveStaminaRef.current;
+    const staminaDelta = effectiveCombatStats.stamina - prevStamina;
+    prevEffectiveStaminaRef.current = effectiveCombatStats.stamina;
+
     const playerEntity = engineRef.current?.getWorld().getEntity(playerEntityRef.current ?? -1);
     if (playerEntity) {
       const health = playerEntity.getComponent(Health);
@@ -3334,6 +3341,13 @@ export function CoopGameScene({
         if (health.maxHealth !== newMaxHealth) {
           health.maxHealth = newMaxHealth;
           health.currentHealth = Math.min(health.currentHealth, newMaxHealth);
+        }
+        // Heal the player by 10 HP per stamina point gained
+        if (staminaDelta > 0) {
+          health.currentHealth = Math.min(
+            health.currentHealth + staminaDelta * StatSystem.STAMINA_HEALTH_PER_POINT,
+            health.maxHealth,
+          );
         }
       }
 
@@ -10811,6 +10825,16 @@ export function CoopGameScene({
         if (e.type === 'sabre-impact-effect') {
           return (
             <SabreImpactEffect
+              key={e.id}
+              position={e.position}
+              direction={e.direction}
+              onComplete={onImpactDone}
+            />
+          );
+        }
+        if (e.type === 'crescent-slash-effect') {
+          return (
+            <CrescentSlashEffect
               key={e.id}
               position={e.position}
               direction={e.direction}

@@ -28,9 +28,9 @@ interface WeaverLightningStrikeProps {
 const TELEGRAPH_Y = 0.18;
 const STRIKE_DURATION_S = 1.0;
 const IMPACT_AT_PROGRESS = 0.6;
-const RING_SEGMENTS = 32;
-const MAIN_BOLT_SEGMENTS = 128;
-const BRANCH_COUNT = 24;
+const RING_SEGMENTS = 6;
+const MAIN_BOLT_SEGMENTS = 96;
+const BRANCH_COUNT = 16;
 
 export default function WeaverLightningStrike({
   targetPosition,
