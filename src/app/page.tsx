@@ -40,6 +40,8 @@ import {
   filterTalentIdsByExclusionSet,
   pickPrioritizedRoomBoonOptions,
   pickRandomDistinctFromPool,
+  TALENT_RAISE_DEAD,
+  TALENT_METEOR_STRIKE,
 } from '../utils/talents';
 import type { TalentId, TalentLoadout } from '../utils/talents';
 import type { AbilityLoadout } from '../utils/weaponAbilities';
@@ -606,6 +608,10 @@ function HomeContent() {
   const handleCoopBoonPick = useCallback(
     (id: TalentId, kind: 'class' | 'room', classPickWeapon?: WeaponType) => {
       setTalentLoadout((prev) => applyTalentIdToLoadout(prev, id));
+      if (id === TALENT_RAISE_DEAD || id === TALENT_METEOR_STRIKE) {
+        const abilityId = id === TALENT_RAISE_DEAD ? 'RAISE_DEAD' : 'METEOR_STRIKE';
+        setAbilityLoadout(abilityLoadout ? { ...abilityLoadout, R: abilityId } : { Q: null, E: null, R: abilityId });
+      }
       if (kind === 'room') {
         for (const exId of expandBowRoomBoonExclusionsAfterPick(id)) {
           bowRoomBoonExcludedIdsRef.current.add(exId);
@@ -654,7 +660,7 @@ function HomeContent() {
       }
       setCoopBoon(null);
     },
-    [clearCoopClearedRoomColor, coopMainArenaPortalPhase, setTalentLoadout],
+    [clearCoopClearedRoomColor, coopMainArenaPortalPhase, setTalentLoadout, setAbilityLoadout, abilityLoadout],
   );
 
   // Sync skill point data with control system

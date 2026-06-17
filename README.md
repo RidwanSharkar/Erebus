@@ -2,7 +2,9 @@
 
 A cooperative 1-3 player 3D boss battle action game featuring fast-paced real-time combat with a unique weapon/class system and boss encounter mechanics, emphasizing tactical positioning, resource management and coordinated party strategies within a fantasy/sci-fi arena.
 
-**Custom Sound Effects: https://www.youtube.com/watch?v=4zXGMIMsG2k** (GarageBand)
+
+**1.0 DEMO: https://www.youtube.com/watch?v=IXBi8mOIxyk&t=47s** 
+**0.7 Sound Effects: https://www.youtube.com/watch?v=4zXGMIMsG2k** 
 
 ### v0.7 Boss Abilities
 ![Spear2](https://github.com/user-attachments/assets/31e24563-2d63-42c2-9645-3cc977889355)

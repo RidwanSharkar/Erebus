@@ -48,6 +48,52 @@ function handlePlayerEvents(socket, gameRooms) {
     };
   });
 
+  /** Co-op: RAISE DEAD boon active ability — instantly summon one zombie at the player's position. */
+  socket.on('raise-dead-ability', (data) => {
+    const { roomId, position } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (!room.enemyAI) return;
+    room.enemyAI.trySpawnInfestedZombie(socket.id, {
+      x: position?.x ?? 0,
+      y: position?.y ?? 0,
+      z: position?.z ?? 0,
+    });
+  });
+
+  /** Co-op: METEOR STRIKE boon active ability — call down meteors on the nearest enemy. */
+  socket.on('meteor-strike-ability', (data) => {
+    const { roomId, position } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (!room.enemies || !room.enemies.size) return;
+
+    // Find the nearest alive enemy within 25 units of the player position
+    const px = position?.x ?? 0;
+    const pz = position?.z ?? 0;
+    const MAX_RANGE_SQ = 25 * 25;
+    let nearestEnemy = null;
+    let nearestDistSq = Infinity;
+    for (const [, enemy] of room.enemies) {
+      if (!enemy || enemy.isDying || (enemy.health != null && enemy.health <= 0)) continue;
+      const dx = (enemy.position?.x ?? 0) - px;
+      const dz = (enemy.position?.z ?? 0) - pz;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < MAX_RANGE_SQ && distSq < nearestDistSq) {
+        nearestDistSq = distSq;
+        nearestEnemy = enemy;
+      }
+    }
+    if (!nearestEnemy) return;
+
+    const player = room.players?.get(socket.id) ?? null;
+    const center = { x: nearestEnemy.position.x, y: nearestEnemy.position.y ?? 0, z: nearestEnemy.position.z };
+    const hitMeta = { damageType: 'crossentropy', crossentropyMeteor: true };
+    if (typeof room.tryProcCrossentropyMeteor === 'function') {
+      room.tryProcCrossentropyMeteor(center, socket.id, player, hitMeta);
+    }
+  });
+
   // Handle weapon selection changes
   socket.on('weapon-changed', (data) => {
     const { roomId, weapon, subclass } = data;

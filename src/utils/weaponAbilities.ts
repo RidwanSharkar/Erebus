@@ -196,6 +196,20 @@ export const universalAbilityPool: UniversalAbility[] = [
     description: 'Enter a frenzied state for 5 seconds, doubling your attack speed. Each successful hit heals you for 15 HP.',
     allowedWeapons: [WeaponType.SPEAR, WeaponType.RUNEBLADE, WeaponType.SABRES],
   },
+
+  // ── ROOM ACTIVE BOON ABILITIES ────────────────────────────────────────
+  {
+    id: 'RAISE_DEAD', sourceWeapon: WeaponType.NONE, sourceKey: 'R',
+    name: 'Raise Dead', cooldown: 15.0, icon: '💀',
+    description: 'Instantly summons one allied zombie at your position. Subject to the 3-zombie cap; benefits from all owned zombie boons.',
+    allowedWeapons: ALL_WEAPONS,
+  },
+  {
+    id: 'METEOR_STRIKE', sourceWeapon: WeaponType.NONE, sourceKey: 'R',
+    name: 'Meteor', cooldown: 8.0, icon: '☄️',
+    description: 'Calls down 1 meteor on the nearest enemy within range, with a 15% chance to call a second and a 5% chance to call a third. Meteors deal 240 AoE damage.',
+    allowedWeapons: ALL_WEAPONS,
+  },
 ];
 
 /** Look up a universal ability by its id. Returns undefined if not found. */

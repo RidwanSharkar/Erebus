@@ -142,9 +142,17 @@ export const TALENT_STAGGERING_DASH = 'STAGGERING_DASH' as const;
 /** Weapon-agnostic colored room combat boons. */
 export const TALENT_GUARDBREAK = 'GUARDBREAK' as const;
 export const TALENT_BLOODLEECH = 'BLOODLEECH' as const;
+/** Green room universal active boon — instant zombie summon on R key (15s cooldown). */
+export const TALENT_RAISE_DEAD = 'RAISE_DEAD' as const;
+/** Red room universal active boon — calls down a meteor on a nearby target on R key (8s cooldown). */
+export const TALENT_METEOR_STRIKE = 'METEOR_STRIKE' as const;
 
 /** Blade Rush — double-tap forward Charge on Runeblade; separate from E-key Charge cooldown. */
 export const BLADE_RUSH_CHARGE_COOLDOWN_SEC = 3;
+/** RAISE DEAD active boon — cooldown after summoning a zombie via R key. */
+export const RAISE_DEAD_COOLDOWN_SEC = 15;
+/** METEOR active boon — cooldown after calling a meteor via R key. */
+export const METEOR_STRIKE_COOLDOWN_SEC = 8;
 
 export const INFERNAL_DASH_DAMAGE = 150;
 export const INFERNAL_DASH_RADIUS = 3.25;
@@ -156,7 +164,7 @@ export const STAGGERING_DASH_RANGE = 6;
 export const STAGGERING_DASH_MIN_DAMAGE = 100;
 export const STAGGERING_DASH_MAX_DAMAGE = 240;
 export const STAGGERING_DASH_MIN_STAGGER = 80;
-export const STAGGERING_DASH_MAX_STAGGER = 100;
+export const STAGGERING_DASH_MAX_STAGGER = 135;
 export const STAGGERING_DASH_COOLDOWN_MS = 4000;
 export const GUARDBREAK_STUNNED_DAMAGE_MULT = 2.0;
 
@@ -430,7 +438,9 @@ export type TalentId =
   | typeof TALENT_MENDING_DASH
   | typeof TALENT_STAGGERING_DASH
   | typeof TALENT_GUARDBREAK
-  | typeof TALENT_BLOODLEECH;
+  | typeof TALENT_BLOODLEECH
+  | typeof TALENT_RAISE_DEAD
+  | typeof TALENT_METEOR_STRIKE;
 
 /** Crossentropy bolt / explosion palette (Inferno overrides Glacial / Tempest / Plague). */
 export type CrossentropyVisualTheme = 'default' | 'inferno' | 'tempest' | 'plague' | 'glacial';
@@ -1080,6 +1090,22 @@ export const bloodleechTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'COOP_RED_ROOM',
 };
 
+export const raiseDeadTalentDefinition: TalentDefinition = {
+  id: TALENT_RAISE_DEAD,
+  name: 'RAISE DEAD',
+  description:
+    'Grants the Raise Dead ability on your R key. Instantly summons one allied zombie at your position (same rules and 3-zombie cap as Infesting abilities). 15s cooldown.',
+  modifiesAbilityId: 'RAISE_DEAD',
+};
+
+export const meteorStrikeTalentDefinition: TalentDefinition = {
+  id: TALENT_METEOR_STRIKE,
+  name: 'METEOR',
+  description:
+    'Grants the Meteor ability on your R key. Calls down 1 meteor on the nearest enemy within range, with a 15% chance to call a second and a 5% chance to call a third (staggered 0.5s apart). Meteors deal 240 AoE damage. 8s cooldown.',
+  modifiesAbilityId: 'METEOR_STRIKE',
+};
+
 export const wrathfulSabresSwipesTalentDefinition: TalentDefinition = {
   id: TALENT_WRATHFUL_SABRES_SWIPES,
   name: 'Wrathful Swipes',
@@ -1557,6 +1583,10 @@ export interface TalentLoadout {
   guardbreakRoom: boolean;
   /** Co-op red room — your critical strikes heal for current Strength points. */
   bloodleechRoom: boolean;
+  /** Co-op green room active boon — player can summon a zombie via R key (15s cooldown). */
+  raiseDeadRoom: boolean;
+  /** Co-op red room active boon — player can call a meteor on a nearby enemy via R key (8s cooldown). */
+  meteorStrikeRoom: boolean;
 }
 
 export function createDefaultTalentLoadout(): TalentLoadout {
@@ -1655,6 +1685,8 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     staggeringDashRoom: false,
     guardbreakRoom: false,
     bloodleechRoom: false,
+    raiseDeadRoom: false,
+    meteorStrikeRoom: false,
   };
 }
 // DEFAULT TALENTS DEFAULTTALENTS
@@ -2628,12 +2660,12 @@ export function buildRoomBoonPoolForColor(
   }
 
   if (k === 'green') {
-    return [...pool, TALENT_MENDING_DASH, ...GREEN_COOP_UNIVERSAL_ZOMBIE_BOONS];
+    return [...pool, TALENT_MENDING_DASH, ...GREEN_COOP_UNIVERSAL_ZOMBIE_BOONS, TALENT_RAISE_DEAD];
   }
 
   switch (k) {
     case 'red':
-      return [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH];
+      return [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH, TALENT_METEOR_STRIKE];
     case 'purple':
       return [...pool, TALENT_GLACIAL_DASH];
     case 'blue':
@@ -3144,6 +3176,12 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_BLOODLEECH:
       next.bloodleechRoom = true;
       return next;
+    case TALENT_RAISE_DEAD:
+      next.raiseDeadRoom = true;
+      return next;
+    case TALENT_METEOR_STRIKE:
+      next.meteorStrikeRoom = true;
+      return next;
     default:
       return next;
   }
@@ -3244,6 +3282,8 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_STAGGERING_DASH]: staggeringDashTalentDefinition,
   [TALENT_GUARDBREAK]: guardbreakTalentDefinition,
   [TALENT_BLOODLEECH]: bloodleechTalentDefinition,
+  [TALENT_RAISE_DEAD]: raiseDeadTalentDefinition,
+  [TALENT_METEOR_STRIKE]: meteorStrikeTalentDefinition,
 };
 
 /**
@@ -3345,6 +3385,8 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_STAGGERING_DASH]: '/icons/dash.svg',
   [TALENT_GUARDBREAK]: '/icons/strike.svg',
   [TALENT_BLOODLEECH]: '/icons/strike.svg',
+  [TALENT_RAISE_DEAD]: '/icons/strike.svg',
+  [TALENT_METEOR_STRIKE]: '/icons/meteor.svg',
 };
 
 export function getTalentIconSrc(id: TalentId): string | null {
@@ -3448,6 +3490,8 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.staggeringDashRoom) out.push(TALENT_STAGGERING_DASH);
   if (loadout.guardbreakRoom) out.push(TALENT_GUARDBREAK);
   if (loadout.bloodleechRoom) out.push(TALENT_BLOODLEECH);
+  if (loadout.raiseDeadRoom) out.push(TALENT_RAISE_DEAD);
+  if (loadout.meteorStrikeRoom) out.push(TALENT_METEOR_STRIKE);
   return out;
 }
 

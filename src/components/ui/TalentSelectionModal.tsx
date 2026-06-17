@@ -404,6 +404,8 @@ export default function TalentSelectionModal({
     staggeringDashRoom: initialTalentLoadout?.staggeringDashRoom ?? def.staggeringDashRoom,
     guardbreakRoom: initialTalentLoadout?.guardbreakRoom ?? def.guardbreakRoom,
     bloodleechRoom: initialTalentLoadout?.bloodleechRoom ?? def.bloodleechRoom,
+    raiseDeadRoom: initialTalentLoadout?.raiseDeadRoom ?? def.raiseDeadRoom,
+    meteorStrikeRoom: initialTalentLoadout?.meteorStrikeRoom ?? def.meteorStrikeRoom,
   };
   const [loadout, setLoadout] = useState<TalentLoadout>(() => merged);
 

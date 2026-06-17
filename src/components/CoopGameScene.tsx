@@ -3256,6 +3256,35 @@ export function CoopGameScene({
     };
   }, [handleWaveComplete, handlePvpWaveComplete]);
 
+  // Relay Raise Dead and Meteor Strike active boon ability events to the server
+  useEffect(() => {
+    if (!socket || !currentRoomId) return;
+
+    const handleRaiseDeadAbility = (event: CustomEvent<{ position: { x: number; y: number; z: number } }>) => {
+      socket.emit('raise-dead-ability', {
+        roomId: currentRoomId,
+        position: event.detail.position,
+        playerId: socket.id,
+      });
+    };
+
+    const handleMeteorStrikeAbility = (event: CustomEvent<{ position: { x: number; y: number; z: number } }>) => {
+      socket.emit('meteor-strike-ability', {
+        roomId: currentRoomId,
+        position: event.detail.position,
+        playerId: socket.id,
+      });
+    };
+
+    window.addEventListener('raise-dead-ability', handleRaiseDeadAbility as EventListener);
+    window.addEventListener('meteor-strike-ability', handleMeteorStrikeAbility as EventListener);
+
+    return () => {
+      window.removeEventListener('raise-dead-ability', handleRaiseDeadAbility as EventListener);
+      window.removeEventListener('meteor-strike-ability', handleMeteorStrikeAbility as EventListener);
+    };
+  }, [socket, currentRoomId]);
+
   // Notify parent component of experience updates
   React.useEffect(() => {
     if (onExperienceUpdate) {

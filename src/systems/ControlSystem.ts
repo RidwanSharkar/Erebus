@@ -200,6 +200,8 @@ import {
   FAN_OF_KNIVES_MAX_DISTANCE_UNITS,
   FAN_OF_KNIVES_PROJECTILE_SPEED,
   FAN_OF_KNIVES_PROJECTILE_LIFETIME_SEC,
+  RAISE_DEAD_COOLDOWN_SEC,
+  METEOR_STRIKE_COOLDOWN_SEC,
 } from '@/utils/talents';
 import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
@@ -609,6 +611,12 @@ export class ControlSystem extends System {
   // Lightning Storm ability state (Spear)
   private lastLightningStormTime = 0;
   private lightningStormCooldown = 6.0; // 3 second cooldown
+
+  // Raise Dead active boon ability (green room R key)
+  private lastRaiseDeadTime = 0;
+
+  // Meteor Strike active boon ability (red room R key)
+  private lastMeteorStrikeTime = 0;
 
   // Public getter for stealth state
   public getIsStealthing(): boolean {
@@ -1543,6 +1551,12 @@ export class ControlSystem extends System {
           this.performFlurry(playerTransform);
         }
         break;
+      case 'RAISE_DEAD':
+        this.performRaiseDead(playerTransform);
+        break;
+      case 'METEOR_STRIKE':
+        this.performMeteorStrike(playerTransform);
+        break;
     }
   }
 
@@ -1893,6 +1907,8 @@ export class ControlSystem extends System {
       case 'SCYTHE_F':    return this.getSummonTotemCooldownInfo(currentTime);
       case 'SABRES_F':    return { current: Math.max(0, this.stealthCooldown - (currentTime - this.lastStealthTime)), max: this.stealthCooldown, isActive: this.isStealthing };
       case 'SPEAR_F':     return { current: Math.max(0, this.flurryCooldown - (currentTime - this.lastFlurryTime)), max: this.flurryCooldown, isActive: this.isFlurryActive };
+      case 'RAISE_DEAD':  return { current: Math.max(0, RAISE_DEAD_COOLDOWN_SEC - (currentTime - this.lastRaiseDeadTime)), max: RAISE_DEAD_COOLDOWN_SEC, isActive: false };
+      case 'METEOR_STRIKE': return { current: Math.max(0, METEOR_STRIKE_COOLDOWN_SEC - (currentTime - this.lastMeteorStrikeTime)), max: METEOR_STRIKE_COOLDOWN_SEC, isActive: false };
       default:            return { current: 0, max: 1, isActive: false };
     }
   }
@@ -5038,6 +5054,42 @@ export class ControlSystem extends System {
     } else {
       console.log('⚡ onLightningStormCallback is not set');
     }
+  }
+
+  private performRaiseDead(playerTransform: Transform): void {
+    const currentTime = Date.now() / 1000;
+    if (currentTime - this.lastRaiseDeadTime < RAISE_DEAD_COOLDOWN_SEC) return;
+    this.lastRaiseDeadTime = currentTime;
+    window.dispatchEvent(new CustomEvent('character-ability-cast'));
+    window.dispatchEvent(
+      new CustomEvent('raise-dead-ability', {
+        detail: {
+          position: {
+            x: playerTransform.position.x,
+            y: playerTransform.position.y,
+            z: playerTransform.position.z,
+          },
+        },
+      }),
+    );
+  }
+
+  private performMeteorStrike(playerTransform: Transform): void {
+    const currentTime = Date.now() / 1000;
+    if (currentTime - this.lastMeteorStrikeTime < METEOR_STRIKE_COOLDOWN_SEC) return;
+    this.lastMeteorStrikeTime = currentTime;
+    window.dispatchEvent(new CustomEvent('character-ability-cast'));
+    window.dispatchEvent(
+      new CustomEvent('meteor-strike-ability', {
+        detail: {
+          position: {
+            x: playerTransform.position.x,
+            y: playerTransform.position.y,
+            z: playerTransform.position.z,
+          },
+        },
+      }),
+    );
   }
 
   private updateFlurryState(currentTime: number): void {

@@ -121,6 +121,12 @@ const ABILITY_LABELS: Record<string, string> = {
   SABRES_E:        'Flourish',
   SWORD_E:         'Charge',
   SPEAR_F:         'Storm Shroud',
+  RAISE_DEAD:      'Raise Dead',
+  METEOR_STRIKE:   'Meteor',
+  COOP_GREEN_ROOM: 'Necro Trial',
+  COOP_RED_ROOM:   'Infernal Trial',
+  COOP_BLUE_ROOM:  'Storm Trial',
+  COOP_PURPLE_ROOM:'Glacial Trial',
 };
 
 const FLAVOR_SUBTITLES: Record<string, string> = {
