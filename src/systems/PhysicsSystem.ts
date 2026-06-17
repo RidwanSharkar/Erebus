@@ -1,0 +1,521 @@
+// Physics system for handling movement physics
+import { Vector3 } from '@/utils/three-exports';
+import { PhysicsSystem as BasePhysicsSystem } from '@/ecs/System';
+import { Entity } from '@/ecs/Entity';
+import { Transform } from '@/ecs/components/Transform';
+import { Movement } from '@/ecs/components/Movement';
+import { WALL_SEGMENTS, WallSegmentDef } from '@/components/environment/CastleWalls';
+import { THRONE_PILLAR_HULL_RADIUS } from '@/components/environment/ThroneRoom';
+import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
+
+export class PhysicsSystem extends BasePhysicsSystem {
+  public readonly requiredComponents = [Transform, Movement];
+
+  /** Horizontal circular map boundary (XZ distance from origin). */
+  private mapRadius = MAIN_MAP_RADIUS;
+
+  /** When false, castle wall AABB checks are skipped (co-op throne room). */
+  private castleWallPhysicsEnabled = true;
+  private arenaBoundaryMode: 'circle' | 'square' | 'hex' = 'square';
+
+  /** Legacy fixed tree discs; disable when forest visuals use procedural positions. */
+  private treeCollisionEnabled = true;
+
+  /** Circular XZ obstacles (throne pillars) — only used when castle walls are off. */
+  private thronePillarObstacles: Array<{ x: number; z: number; radius: number }> = [];
+
+  /** Optional circular XZ disc obstacles (typically empty). */
+  private cornerMountainObstacles: Array<{ x: number; z: number; radius: number }> = [];
+
+  constructor() {
+    super();
+    this.priority = 15; // Run after control system but before rendering
+  }
+
+  public setMapRadius(radius: number): void {
+    this.mapRadius = Math.max(1, radius);
+  }
+
+  public getMapRadius(): number {
+    return this.mapRadius;
+  }
+
+  public setCastleWallPhysicsEnabled(enabled: boolean): void {
+    this.castleWallPhysicsEnabled = enabled;
+    this.arenaBoundaryMode = enabled ? 'square' : 'circle';
+  }
+
+  public setArenaBoundaryMode(mode: 'circle' | 'square' | 'hex'): void {
+    this.arenaBoundaryMode = mode;
+  }
+
+  public setTreeCollisionEnabled(enabled: boolean): void {
+    this.treeCollisionEnabled = enabled;
+  }
+
+  /**
+   * When castle walls are disabled, use these circular XZ obstacles (throne pillars).
+   * Pass null or [] to clear.
+   */
+  public setThronePillarObstacles(obstacles: Array<{ x: number; z: number; radius: number }> | null): void {
+    this.thronePillarObstacles = obstacles && obstacles.length > 0 ? obstacles.slice() : [];
+  }
+
+  /** Optional circular XZ obstacles (e.g. legacy corner discs). Pass null or [] to clear. */
+  public setCornerMountainObstacles(
+    obstacles: Array<{ x: number; z: number; radius: number }> | null,
+  ): void {
+    this.cornerMountainObstacles = obstacles && obstacles.length > 0 ? obstacles.slice() : [];
+  }
+
+  public update(entities: Entity[], deltaTime: number): void {
+    // This runs every frame for variable timestep updates
+    for (const entity of entities) {
+      const transform = entity.getComponent(Transform);
+      const movement = entity.getComponent(Movement);
+
+      // Skip if required components are missing
+      if (!transform || !movement) {
+        continue;
+      }
+
+      if (!transform.enabled || !movement.enabled || !movement.canMove) {
+        continue;
+      }
+
+      // Update debuff states (frozen, slowed, etc.)
+      if (typeof movement.updateDebuffs === 'function') {
+        movement.updateDebuffs();
+      } else {
+        // console.warn('⚠️ Movement component missing updateDebuffs method:', movement);
+      }
+
+      this.syncHorizontalVelocityFromInput(movement);
+      this.updateMovement(transform, movement, deltaTime);
+    }
+  }
+
+  public fixedUpdate(entities: Entity[], fixedDeltaTime: number): void {
+    // This runs at fixed timestep for physics
+    for (const entity of entities) {
+      const transform = entity.getComponent(Transform);
+      const movement = entity.getComponent(Movement);
+
+      // Skip if required components are missing
+      if (!transform || !movement) {
+        continue;
+      }
+
+      if (!transform.enabled || !movement.enabled || !movement.canMove) {
+        continue;
+      }
+
+      this.applyPhysics(transform, movement, fixedDeltaTime);
+    }
+  }
+
+  private updateMovement(transform: Transform, movement: Movement, deltaTime: number): void {
+    // Update position based on velocity
+    const deltaPosition = movement.velocity.clone().multiplyScalar(deltaTime);
+    
+    // Calculate potential new position
+    const currentPosition = transform.position.clone();
+    const potentialPosition = currentPosition.clone().add(deltaPosition);
+    
+    // Apply map boundary constraints with smooth sliding (matches enlarged grass / collision disc)
+    const MAP_RADIUS = this.mapRadius;
+    
+    // Only check horizontal distance (ignore Y for boundary)
+    const horizontalPosition = new Vector3(potentialPosition.x, 0, potentialPosition.z);
+    const distanceFromCenter = horizontalPosition.length();
+    const hexBoundary = this.arenaBoundaryMode === 'hex'
+      ? this.getHexBoundaryCorrection(potentialPosition)
+      : null;
+    
+    // Check for tree, corner mountains, throne pillars, and castle-wall collisions
+    const treeCollision = this.treeCollisionEnabled
+      ? this.checkTreeCollision(potentialPosition)
+      : { hasCollision: false, normal: new Vector3(), treeCenter: new Vector3() };
+    const cornerMountainCollision = this.checkCornerMountainCollision(potentialPosition);
+    const thronePillarCollision = this.checkThronePillarCollision(potentialPosition);
+    const wallCollision = this.castleWallPhysicsEnabled
+      ? this.checkWallCollision(potentialPosition)
+      : { hasCollision: false, normal: new Vector3(), closestPoint: new Vector3(), segmentIndex: -1 };
+
+    // Circular clamp only when castle walls are off (throne prep). Main arena uses wall AABBs + square interior.
+    if (hexBoundary && hexBoundary.outside) {
+      const corrected = this.clampToHexBoundary(potentialPosition);
+      transform.setPosition(corrected.x, currentPosition.y + deltaPosition.y, corrected.z);
+      const velocityNormalComponent = movement.velocity.clone().projectOnVector(hexBoundary.normal);
+      movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
+    } else if (!this.castleWallPhysicsEnabled && distanceFromCenter >= MAP_RADIUS) {
+      // If we hit the boundary, calculate tangent movement for smooth sliding
+      const currentHorizontalPos = new Vector3(currentPosition.x, 0, currentPosition.z);
+      const toCenter = currentHorizontalPos.clone().normalize();
+
+      // Create tangent vector (perpendicular to radius)
+      const tangent = new Vector3(-toCenter.z, 0, toCenter.x);
+
+      // Project our horizontal movement onto the tangent
+      const horizontalMovement = new Vector3(deltaPosition.x, 0, deltaPosition.z);
+      const tangentMovement = tangent.multiplyScalar(horizontalMovement.dot(tangent));
+
+      // Apply the tangential movement while keeping distance to center constant
+      const newHorizontalPosition = currentHorizontalPos.add(tangentMovement);
+      newHorizontalPosition.normalize().multiplyScalar(MAP_RADIUS);
+
+      // Update position with tangent movement and preserve Y movement
+      transform.setPosition(
+        newHorizontalPosition.x,
+        currentPosition.y + deltaPosition.y, // Allow vertical movement (jumping, falling)
+        newHorizontalPosition.z
+      );
+    } else if (treeCollision.hasCollision) {
+      // Handle tree collision with smooth sliding
+      const slidePosition = this.calculateTreeSliding(currentPosition, deltaPosition, treeCollision);
+      transform.setPosition(slidePosition.x, slidePosition.y, slidePosition.z);
+
+      // Reduce velocity in the direction of the tree to prevent bouncing
+      const velocityNormalComponent = movement.velocity.clone().projectOnVector(treeCollision.normal);
+      movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
+    } else if (cornerMountainCollision.hasCollision) {
+      const slidePosition = this.calculateTreeSliding(
+        currentPosition,
+        deltaPosition,
+        { normal: cornerMountainCollision.normal, treeCenter: cornerMountainCollision.center },
+        cornerMountainCollision.blockRadius,
+      );
+      transform.setPosition(slidePosition.x, slidePosition.y, slidePosition.z);
+
+      const velocityNormalComponent = movement.velocity
+        .clone()
+        .projectOnVector(cornerMountainCollision.normal);
+      movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
+    } else if (thronePillarCollision.hasCollision) {
+      const slidePosition = this.calculateTreeSliding(
+        currentPosition,
+        deltaPosition,
+        { normal: thronePillarCollision.normal, treeCenter: thronePillarCollision.pillarCenter },
+        thronePillarCollision.blockRadius,
+      );
+      transform.setPosition(slidePosition.x, slidePosition.y, slidePosition.z);
+
+      const velocityNormalComponent = movement.velocity.clone().projectOnVector(thronePillarCollision.normal);
+      movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
+    } else if (wallCollision.hasCollision) {
+      // Handle castle-wall collision with smooth sliding (AABB)
+      const slidePosition = this.calculateWallSliding(currentPosition, deltaPosition, wallCollision);
+      transform.setPosition(slidePosition.x, slidePosition.y, slidePosition.z);
+
+      // Reduce velocity in the direction of the wall to prevent bouncing
+      const velocityNormalComponent = movement.velocity.clone().projectOnVector(wallCollision.normal);
+      movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
+    } else {
+      // If within bounds and no collision, move normally
+      transform.translate(deltaPosition.x, deltaPosition.y, deltaPosition.z);
+    }
+
+    // Mark transform matrix as needing update
+    transform.matrixNeedsUpdate = true;
+  }
+
+  /**
+   * Horizontal clearance for maze walls + throne pillars (XZ), vs. segment AABBs / circles.
+   * Must match the local player sphere radius in CoopGameScene so this pass agrees with
+   * CollisionSystem (sphere vs ENVIRONMENT boxes); a smaller value fights ECS every frame.
+   */
+  private readonly horizontalClearanceRadius = 1.2;
+
+  // Wall segments imported directly from CastleWalls so positions stay in sync
+  private readonly WALL_SEGMENTS: WallSegmentDef[] = WALL_SEGMENTS;
+
+  private getHexBoundaryCorrection(position: Vector3): { outside: boolean; normal: Vector3 } {
+    const apothem = this.mapRadius * Math.cos(Math.PI / 6) - this.horizontalClearanceRadius;
+    let maxExcess = 0;
+    let strongestNormal = new Vector3(1, 0, 0);
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i;
+      const normal = new Vector3(Math.cos(a), 0, Math.sin(a));
+      const excess = position.x * normal.x + position.z * normal.z - apothem;
+      if (excess > maxExcess) {
+        maxExcess = excess;
+        strongestNormal = normal;
+      }
+    }
+    return { outside: maxExcess > 0, normal: strongestNormal };
+  }
+
+  private clampToHexBoundary(position: Vector3): Vector3 {
+    const apothem = this.mapRadius * Math.cos(Math.PI / 6) - this.horizontalClearanceRadius;
+    let x = position.x;
+    let z = position.z;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < 6; i++) {
+        const a = (Math.PI / 3) * i;
+        const nx = Math.cos(a);
+        const nz = Math.sin(a);
+        const excess = x * nx + z * nz - apothem;
+        if (excess > 0) {
+          x -= nx * excess;
+          z -= nz * excess;
+        }
+      }
+    }
+    return new Vector3(x, position.y, z);
+  }
+
+  // Define tree positions (same as in Environment.tsx - reduced by half)
+  private readonly TREE_POSITIONS = [
+    // Middle ring (scaled to smaller main map)
+    new Vector3(10.7, 0, 3.6), new Vector3(-10.7, 0, 3.6), new Vector3(3.6, 0, 10.7),
+    // Outer ring
+    new Vector3(14.3, 0, 7.1), new Vector3(-14.3, 0, 7.1), new Vector3(14.3, 0, -7.1), new Vector3(-14.3, 0, -7.1),
+    new Vector3(7.1, 0, 14.3), new Vector3(-7.1, 0, 14.3), new Vector3(7.1, 0, -14.3), new Vector3(-7.1, 0, -14.3),
+    new Vector3(8.6, 0, 8.6)
+  ];
+  private readonly TREE_RADIUS = 0.3; // Roughly half the pillar diameter
+
+  private checkTreeCollision(position: Vector3): { hasCollision: boolean; normal: Vector3; treeCenter: Vector3 } {
+    for (const treePos of this.TREE_POSITIONS) {
+      // Only check horizontal distance (ignore Y)
+      const horizontalPos = new Vector3(position.x, 0, position.z);
+      const treeHorizontal = new Vector3(treePos.x, 0, treePos.z);
+      const distance = horizontalPos.distanceTo(treeHorizontal);
+
+      if (distance < this.TREE_RADIUS) {
+        // Calculate normal vector pointing away from tree center
+        const normal = horizontalPos.clone().sub(treeHorizontal).normalize();
+        // Handle case where player is exactly at tree center
+        if (normal.length() === 0) {
+          normal.set(1, 0, 0); // Default direction
+        }
+        return {
+          hasCollision: true,
+          normal: normal,
+          treeCenter: treePos.clone()
+        };
+      }
+    }
+
+    return { hasCollision: false, normal: new Vector3(), treeCenter: new Vector3() };
+  }
+
+  private calculateTreeSliding(
+    currentPosition: Vector3,
+    deltaPosition: Vector3,
+    collision: { normal: Vector3; treeCenter: Vector3 },
+    obstacleRadius: number = this.TREE_RADIUS,
+  ): Vector3 {
+    // Calculate the tangent vector (perpendicular to normal in XZ plane)
+    const tangent = new Vector3(-collision.normal.z, 0, collision.normal.x);
+
+    // Project the movement vector onto the tangent for sliding
+    const tangentMovement = deltaPosition.clone().projectOnVector(tangent);
+
+    // Calculate the new position with sliding movement
+    const slidePosition = currentPosition.clone().add(tangentMovement);
+
+    // Ensure we maintain minimum distance from obstacle center
+    const treeHorizontal = new Vector3(collision.treeCenter.x, 0, collision.treeCenter.z);
+    const slideHorizontal = new Vector3(slidePosition.x, 0, slidePosition.z);
+    const distanceAfterSlide = slideHorizontal.distanceTo(treeHorizontal);
+
+    if (distanceAfterSlide < obstacleRadius) {
+      // Push the position to maintain minimum distance
+      const pushDirection = slideHorizontal.clone().sub(treeHorizontal).normalize();
+      if (pushDirection.length() === 0) {
+        pushDirection.set(1, 0, 0); // Default direction
+      }
+      const correctedHorizontal = treeHorizontal.clone().add(pushDirection.multiplyScalar(obstacleRadius));
+      slidePosition.x = correctedHorizontal.x;
+      slidePosition.z = correctedHorizontal.z;
+    }
+
+    return slidePosition;
+  }
+
+  /** Corner disc obstacles when `setCornerMountainObstacles` is populated. */
+  private checkCornerMountainCollision(position: Vector3): {
+    hasCollision: boolean;
+    normal: Vector3;
+    center: Vector3;
+    blockRadius: number;
+  } {
+    const horizontalPos = new Vector3(position.x, 0, position.z);
+
+    for (const p of this.cornerMountainObstacles) {
+      const center = new Vector3(p.x, 0, p.z);
+      const dist = horizontalPos.distanceTo(center);
+      const minCenterDist = p.radius + this.horizontalClearanceRadius;
+      if (dist < minCenterDist) {
+        let normal = horizontalPos.clone().sub(center);
+        if (normal.lengthSq() < 1e-6) {
+          normal = new Vector3(1, 0, 0);
+        } else {
+          normal.normalize();
+        }
+        return { hasCollision: true, normal, center, blockRadius: minCenterDist };
+      }
+    }
+
+    return {
+      hasCollision: false,
+      normal: new Vector3(),
+      center: new Vector3(),
+      blockRadius: 0,
+    };
+  }
+
+  /**
+   * XZ discs from `getThronePrepPhysicsObstacles()` / `setThronePillarObstacles` (ThroneRoom layout).
+   * Radius should match `THRONE_PILLAR_HULL_RADIUS` and ECS throne `PillarCollision` cylinders.
+   */
+  private checkThronePillarCollision(position: Vector3): {
+    hasCollision: boolean;
+    normal: Vector3;
+    pillarCenter: Vector3;
+    blockRadius: number;
+  } {
+    const horizontalPos = new Vector3(position.x, 0, position.z);
+
+    for (const p of this.thronePillarObstacles) {
+      const center = new Vector3(p.x, 0, p.z);
+      const dist = horizontalPos.distanceTo(center);
+      const obstacleR = p.radius > 0 ? p.radius : THRONE_PILLAR_HULL_RADIUS;
+      const minCenterDist = obstacleR + this.horizontalClearanceRadius;
+      if (dist < minCenterDist) {
+        let normal = horizontalPos.clone().sub(center);
+        if (normal.lengthSq() < 1e-6) {
+          normal = new Vector3(1, 0, 0);
+        } else {
+          normal.normalize();
+        }
+        return { hasCollision: true, normal, pillarCenter: center, blockRadius: minCenterDist };
+      }
+    }
+
+    return {
+      hasCollision: false,
+      normal: new Vector3(),
+      pillarCenter: new Vector3(),
+      blockRadius: 0,
+    };
+  }
+
+  /**
+   * AABB collision: find the closest point on each wall segment's footprint to the
+   * player position and check if it's within horizontalClearanceRadius.  Returns the push-out
+   * normal (player-center → closest-point direction, inverted) and the segment index
+   * so the sliding step can re-verify against the same box.
+   */
+  private checkWallCollision(position: Vector3): {
+    hasCollision: boolean;
+    normal: Vector3;
+    closestPoint: Vector3;
+    segmentIndex: number;
+  } {
+    const px = position.x;
+    const pz = position.z;
+
+    for (let i = 0; i < this.WALL_SEGMENTS.length; i++) {
+      const seg = this.WALL_SEGMENTS[i];
+      const [cx, , cz] = seg.center;
+      const halfX = seg.sizeX / 2;
+      const halfZ = seg.sizeZ / 2;
+
+      // Closest point on this segment's XZ footprint to the player
+      const closestX = Math.max(cx - halfX, Math.min(px, cx + halfX));
+      const closestZ = Math.max(cz - halfZ, Math.min(pz, cz + halfZ));
+
+      const dx = px - closestX;
+      const dz = pz - closestZ;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      if (dist < this.horizontalClearanceRadius) {
+        const normal = dist < 0.001
+          ? new Vector3(1, 0, 0)
+          : new Vector3(dx / dist, 0, dz / dist);
+        return {
+          hasCollision: true,
+          normal,
+          closestPoint: new Vector3(closestX, 0, closestZ),
+          segmentIndex: i,
+        };
+      }
+    }
+
+    return { hasCollision: false, normal: new Vector3(), closestPoint: new Vector3(), segmentIndex: -1 };
+  }
+
+  private calculateWallSliding(
+    currentPosition: Vector3,
+    deltaPosition: Vector3,
+    collision: { normal: Vector3; closestPoint: Vector3; segmentIndex:  number }
+  ): Vector3 {
+    // Slide along the wall face (tangent perpendicular to push-out normal)
+    const tangent = new Vector3(-collision.normal.z, 0, collision.normal.x);
+    const tangentMovement = deltaPosition.clone().projectOnVector(tangent);
+    const slidePosition = currentPosition.clone().add(tangentMovement);
+
+    // Re-verify against the same segment and push out if we're still inside
+    const seg = this.WALL_SEGMENTS[collision.segmentIndex];
+    const [cx, , cz] = seg.center;
+    const halfX = seg.sizeX / 2;
+    const halfZ = seg.sizeZ / 2;
+
+    const closestX = Math.max(cx - halfX, Math.min(slidePosition.x, cx + halfX));
+    const closestZ = Math.max(cz - halfZ, Math.min(slidePosition.z, cz + halfZ));
+
+    const dx = slidePosition.x - closestX;
+    const dz = slidePosition.z - closestZ;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    if (dist < this.horizontalClearanceRadius) {
+      const pushDir = dist < 0.001
+        ? new Vector3(1, 0, 0)
+        : new Vector3(dx / dist, 0, dz / dist);
+      slidePosition.x = closestX + pushDir.x * this.horizontalClearanceRadius;
+      slidePosition.z = closestZ + pushDir.z * this.horizontalClearanceRadius;
+    }
+
+    return slidePosition;
+  }
+
+  private syncHorizontalVelocityFromInput(movement: Movement): void {
+    if (movement.inputStrength > 0) {
+      const effectiveMaxSpeed = movement.getEffectiveMaxSpeed();
+      const targetVelocity = movement.moveDirection.clone();
+      targetVelocity.multiplyScalar(effectiveMaxSpeed * movement.inputStrength);
+      movement.velocity.x = targetVelocity.x;
+      movement.velocity.z = targetVelocity.z;
+    } else {
+      movement.velocity.x = 0;
+      movement.velocity.z = 0;
+    }
+  }
+
+  private applyPhysics(transform: Transform, movement: Movement, deltaTime: number): void {
+    // Apply gravity (only affects Y velocity)
+    movement.applyGravity(deltaTime);
+
+    this.syncHorizontalVelocityFromInput(movement);
+
+    // Apply any additional forces (like knockback, wind, etc.)
+    movement.velocity.add(movement.acceleration.clone().multiplyScalar(deltaTime));
+
+    // Reset acceleration for next frame
+    movement.acceleration.set(0, 0, 0);
+
+    // Simple ground check (Y = 0 is ground level, account for sphere radius)
+    const sphereRadius = 0.5; // Player sphere radius
+    const groundLevel = sphereRadius; // Sphere center should be at radius height above ground
+    
+    if (transform.position.y <= groundLevel && movement.velocity.y <= 0) {
+      transform.position.y = groundLevel;
+      movement.velocity.y = 0;
+      movement.isGrounded = true;
+    } else {
+      movement.isGrounded = false;
+    }
+  }
+}

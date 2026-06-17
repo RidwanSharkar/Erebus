@@ -1,0 +1,304 @@
+'use client';
+
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { Group, Vector3 } from 'three';
+import { useFrame } from '@react-three/fiber';
+import { Billboard, Text } from '@react-three/drei';
+import ShadeModel from './ShadeModel';
+import ShadeTeleportEffect from './ShadeTeleportEffect';
+import CubeSoulEffect from './CubeSoulEffect';
+import BossTeleportEffect from './BossTeleportEffect';
+import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { campHpTheme } from '@/utils/campHpTheme';
+import EnemyStaggerBar from './EnemyStaggerBar';
+import GhostTrail from '../dragon/GhostTrail';
+import { WeaponType } from '../dragon/weapons';
+
+interface ShadeRendererProps {
+  id: string;
+  position: Vector3;
+  rotation: number;
+  health: number;
+  maxHealth: number;
+  isDying?: boolean;
+  campType?: string;
+  staggerBuildup?: number;
+}
+
+// How long the throw animation plays before blending back to idle/walk.
+// Tune to match shade_throw.glb; must match backend enemyAI SHADE_THROW_ANIMATION_MS.
+const ATTACK_DURATION = 1500; // ms
+// How long the blink "teleport" lasts before we hard-snap the mesh.
+const BLINK_DURATION  = 600;  // ms — must match shadeCastBlinkAndAttack in enemyAI.js
+const FADE_DURATION   = 1.5;  // seconds for death fade-out
+const LERP_SPEED      = 20;   // position + rotation chase speed — high value gives the fast-slide blink feel
+// Debounce: server must stop sending moves for this long before we switch to Idle.
+const WALK_STOP_DELAY = 250; // ms
+const HIT_REACT_IMPACT_COOLDOWN_MS = 1500; // min time between shade_impact.glb hit-react plays
+
+export default function ShadeRenderer({
+  id,
+  position,
+  rotation,
+  health,
+  maxHealth,
+  isDying = false,
+  campType,
+  staggerBuildup = 0,
+}: ShadeRendererProps) {
+  const theme = campHpTheme(campType);
+  const { socket } = useMultiplayer();
+  const groupRef = useRef<Group | null>(null);
+
+  const [isAttacking, setIsAttacking] = useState(false);
+  const [isWalking,   setIsWalking]   = useState(false);
+  const [isBlinking,  setIsBlinking]  = useState(false);
+  const [isImpacting,  setIsImpacting]  = useState(false);
+  const [impactPlayKey, setImpactPlayKey] = useState(0);
+
+  type BlinkFx = { id: string; position: Vector3; type: 'start' | 'end' };
+  const [bossFx, setBossFx] = useState<BlinkFx[]>([]);
+
+  const targetPosition = useRef(position.clone());
+  const targetRotation = useRef(rotation);
+  const isAttackingRef = useRef(false);
+  const isBlinkingRef  = useRef(false);
+  const prevHealthRef  = useRef(health);
+  const lastHitImpactAtRef = useRef(0);
+
+  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fadeTimer  = useRef(0);
+  const opacity    = useRef(1);
+
+  // Callback ref — positions the group at the server location before the first render
+  // so the shade never flickers from world-origin.
+  const setGroupRef = useCallback((group: Group | null) => {
+    groupRef.current = group;
+    if (group) {
+      group.position.copy(targetPosition.current);
+      group.rotation.y = targetRotation.current;
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Track server position changes and derive walking state from them.
+  useEffect(() => {
+    const dist = targetPosition.current.distanceTo(position);
+    targetPosition.current.copy(position);
+
+    // Teleport snap for large jumps (spawn / respawn only — blink uses lerp)
+    if (dist > 8.0 && groupRef.current && !isBlinkingRef.current) {
+      groupRef.current.position.copy(position);
+    }
+
+    // Suppress walk state while blinking or attacking
+    if (dist > 0.01 && !isAttackingRef.current && !isBlinkingRef.current && !isDying) {
+      if (!isWalking) setIsWalking(true);
+
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
+    }
+  }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    return () => { if (walkStopTimer.current) clearTimeout(walkStopTimer.current); };
+  }, []);
+
+  useEffect(() => {
+    targetRotation.current = rotation;
+  }, [rotation]);
+
+  const handleImpactFinished = useCallback(() => {
+    setIsImpacting(false);
+  }, []);
+
+  // Hit-react: health drop while idle (not walk / attack / blink).
+  useEffect(() => {
+    if (
+      health < prevHealthRef.current &&
+      !isDying &&
+      !isWalking &&
+      !isAttacking &&
+      !isBlinking
+    ) {
+      const now = performance.now();
+      if (now - lastHitImpactAtRef.current >= HIT_REACT_IMPACT_COOLDOWN_MS) {
+        lastHitImpactAtRef.current = now;
+        setIsImpacting(true);
+        setImpactPlayKey(k => k + 1);
+      }
+    }
+    prevHealthRef.current = health;
+  }, [health, isDying, isWalking, isAttacking, isBlinking]);
+
+  useEffect(() => {
+    if (isWalking || isAttacking || isBlinking) {
+      setIsImpacting(false);
+    }
+  }, [isWalking, isAttacking, isBlinking]);
+
+  // Blink telegraph: set the target position and let the high-speed lerp pull the
+  // mesh there — this produces the same fast-slide look as the Warlock's blink.
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleShadeBlink = (data: {
+      shadeId: string;
+      startPosition: { x: number; y: number; z: number };
+      endPosition: { x: number; y: number; z: number };
+      rotation: number;
+    }) => {
+      if (data.shadeId !== id) return;
+
+      setIsBlinking(true);
+      isBlinkingRef.current = true;
+
+      const startPos = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
+      const newPos   = new Vector3(data.endPosition.x,   data.endPosition.y,   data.endPosition.z);
+      targetPosition.current.copy(newPos);
+      targetRotation.current = data.rotation;
+      if (groupRef.current) {
+        groupRef.current.position.copy(startPos);
+        groupRef.current.rotation.y = data.rotation;
+      }
+
+      // Play blink sound at the departure position
+      (window as any).audioSystem?.playEnemyBlinkSound(startPos);
+
+      const fxId = `${id}-${Date.now()}`;
+
+      // Departure effect at the original position — fires immediately
+      setBossFx(prev => [...prev, { id: `${fxId}-boss-start`, position: startPos, type: 'start' }]);
+
+      // Arrival effect at the destination — fires halfway through the blink slide
+      const arrivalDelay = Math.round(BLINK_DURATION * 0.4);
+      setTimeout(() => {
+        setBossFx(prev => [...prev, { id: `${fxId}-boss-end`, position: newPos, type: 'end' }]);
+      }, arrivalDelay);
+
+      // Hard-snap only after the slide finishes so the position is exactly correct.
+      setTimeout(() => {
+        setIsBlinking(false);
+        isBlinkingRef.current = false;
+        if (groupRef.current) {
+          groupRef.current.position.copy(newPos);
+          groupRef.current.rotation.y = data.rotation;
+        }
+      }, BLINK_DURATION);
+    };
+
+    socket.on('shade-blink-telegraph', handleShadeBlink);
+    return () => { socket.off('shade-blink-telegraph', handleShadeBlink); };
+  }, [id, socket]);
+
+  // Listen for the server throw telegraph and drive the attack animation.
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleShadeTelegraph = (data: any) => {
+      if (data.shadeId !== id) return;
+      setIsAttacking(true);
+      isAttackingRef.current = true;
+      setTimeout(() => {
+        setIsAttacking(false);
+        isAttackingRef.current = false;
+      }, ATTACK_DURATION);
+    };
+
+    socket.on('shade-attack-telegraph', handleShadeTelegraph);
+    return () => { socket.off('shade-attack-telegraph', handleShadeTelegraph); };
+  }, [id, socket]);
+
+  useFrame((_, delta) => {
+    if (!groupRef.current) return;
+    const group = groupRef.current;
+
+    group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
+
+    // Shortest-arc rotation lerp
+    let deltaAngle = targetRotation.current - group.rotation.y;
+    while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
+    while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
+    group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+
+    // Death fade-out (death clip on model underneath)
+    if (isDying) {
+      fadeTimer.current += delta;
+      opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
+      group.traverse((child: any) => {
+        if (child.isMesh && child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach((mat: any) => {
+            mat.transparent = true;
+            mat.opacity = opacity.current;
+          });
+        }
+      });
+    }
+  });
+
+  return (
+    <>
+
+      {/* Boss-style teleport effects layered on top of the shade blink (scaled down for shade) */}
+      {bossFx.map(fx => (
+        <BossTeleportEffect
+          key={fx.id}
+          position={fx.position}
+          type={fx.type}
+          scale={0.45}
+          onComplete={() => setBossFx(prev => prev.filter(f => f.id !== fx.id))}
+        />
+      ))}
+
+      <GhostTrail
+        parentRef={groupRef as React.RefObject<Group>}
+        weaponType={WeaponType.NONE}
+        fixedTrailColor="#9b30ff"
+        isTrailMotionRef={isBlinkingRef}
+        yOffset={1.0}
+      />
+
+    <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
+      <ShadeModel
+        isWalking={isWalking}
+        isAttacking={isAttacking}
+        isBlinking={isBlinking}
+        isDying={isDying}
+        isImpacting={isImpacting}
+        impactPlayKey={impactPlayKey}
+        onImpactFinished={handleImpactFinished}
+      />
+      {!isDying && <CubeSoulEffect color="purple" posY={2.5} />}
+
+      {/* Billboard health bar */}
+      <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>
+        {health > 0 && !isDying && (
+          <>
+            <mesh position={[0, 0, 0]}>
+              <planeGeometry args={[2.0, 0.25]} />
+              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
+            </mesh>
+
+            <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
+              <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
+              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
+            </mesh>
+
+            <Text
+              position={[0, 0, 0.002]}
+              fontSize={0.18}
+              color={theme.text}
+              anchorX="center"
+              anchorY="middle"
+              fontWeight="bold"
+            >
+              {`👻 ${Math.ceil(health)}/${maxHealth}`}
+            </Text>
+            <EnemyStaggerBar stagger={staggerBuildup} />
+          </>
+        )}
+      </Billboard>
+    </group>
+    </>
+  );
+}

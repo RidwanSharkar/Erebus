@@ -1,0 +1,361 @@
+'use client';
+
+import React, { useRef, useEffect, useMemo, useState } from 'react';
+import { useGLTF, useAnimations } from '@react-three/drei';
+import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
+import { GLTFLoader } from 'three-stdlib';
+import { peek as suspendPeek } from 'suspend-react';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
+
+export type KnightAbilityClip = 'Smite' | 'Aggro' | 'Cast' | 'Spin';
+
+interface KnightModelProps {
+  isWalking: boolean;
+  isAttacking: boolean;
+  attackVariant: 1 | 2;
+  isDying: boolean;
+  soulType?: 'green' | 'red' | 'blue' | 'purple' | 'yellow';
+  castShadow?: boolean;
+  /** Which ability animation is currently playing, or null when none. */
+  abilityClip?: KnightAbilityClip | null;
+  /** Hit-react one-shots when damage is taken (renderer sets gates). */
+  isImpacting?: boolean;
+  impactVariant?: 1 | 2;
+  /** Incremented on each qualifying hit so the mixer can restart mid-clip. */
+  impactPlayKey?: number;
+  onImpactFinished?: () => void;
+}
+
+// Load mesh + skeleton from the "with skin" idle export.
+// Walk/Attack are loaded separately so each clip lives in its own single-scene
+// GLB — avoiding the multi-scene node-index confusion that gltf-transform merge
+// introduces when the animations target bones from different scene subtrees.
+const KNIGHT_MODEL_PATHS = [
+  '/models/knight_idle.glb',
+  '/models/knight_walk.glb',
+  '/models/knight_walk0.glb',
+  '/models/knight_attack.glb',
+  '/models/knight_attack2.glb',
+  '/models/knight_death.glb',
+  '/models/knight_smite.glb',
+  '/models/knight_aggro.glb',
+  '/models/knight_cast.glb',
+  '/models/knight_spin.glb',
+  '/models/knight_impact1.glb',
+  '/models/knight_impact2.glb',
+];
+
+type KnightDeferredAnimationName =
+  | 'Walk'
+  | 'Attack'
+  | 'Attack2'
+  | 'Death'
+  | 'Smite'
+  | 'Aggro'
+  | 'Cast'
+  | 'Spin'
+  | 'Impact1'
+  | 'Impact2';
+
+const KNIGHT_DEFERRED_MODEL_PATHS: Record<Exclude<KnightDeferredAnimationName, 'Walk'>, string> = {
+  Attack: '/models/knight_attack.glb',
+  Attack2: '/models/knight_attack2.glb',
+  Death: '/models/knight_death.glb',
+  Smite: '/models/knight_smite.glb',
+  Aggro: '/models/knight_aggro.glb',
+  Cast: '/models/knight_cast.glb',
+  Spin: '/models/knight_spin.glb',
+  Impact1: '/models/knight_impact1.glb',
+  Impact2: '/models/knight_impact2.glb',
+};
+
+export function preloadKnightModels(): void {
+  useGLTF.preload('/models/knight_idle.glb');
+  preloadGltfAnimationClips(KNIGHT_MODEL_PATHS.filter(path => path !== '/models/knight_idle.glb'));
+}
+
+function waitForGltfUrl(url: string, timeoutMs = 30_000): Promise<void> {
+  useGLTF.preload(url);
+  const peekKey: [typeof GLTFLoader, string] = [GLTFLoader, url];
+  const t0 = Date.now();
+  return new Promise<void>((resolve) => {
+    function tick(): void {
+      if (suspendPeek(peekKey) !== undefined) { resolve(); return; }
+      if (Date.now() - t0 > timeoutMs) { resolve(); return; }
+      requestAnimationFrame(tick);
+    }
+    tick();
+  });
+}
+
+/** Warm all knight GLBs so the model is ready when the 2nd room loads. */
+export async function warmupKnightModels(): Promise<void> {
+  try {
+    await waitForGltfUrl('/models/knight_idle.glb');
+    await Promise.all(
+      KNIGHT_MODEL_PATHS
+        .filter(p => p !== '/models/knight_idle.glb')
+        .map(p => loadGltfAnimationClips(p).then(() => undefined as void).catch(() => {})),
+    );
+  } catch (e) {
+    console.warn('Knight warmup failed:', e);
+  }
+}
+
+// GLB geometry is in centimeters (bboxMax Y ≈ 172.5 cm).
+// Target ≈ 2 game units tall → 2 / 172.5 ≈ 0.0116
+const SCALE = 0.015;
+
+export default function KnightModel({
+  isWalking,
+  isAttacking,
+  attackVariant,
+  isDying,
+  soulType,
+  castShadow = true,
+  abilityClip,
+  isImpacting = false,
+  impactVariant = 1,
+  impactPlayKey = 0,
+  onImpactFinished,
+}: KnightModelProps) {
+  // This ref is the root handed to useAnimations so the mixer can find bones
+  const sceneGroupRef = useRef<Group>(null);
+  const currentActionRef = useRef<AnimationAction | null>(null);
+  const isMountedRef = useRef(true);
+  const lastImpactPlayKeyRef = useRef(-1);
+  const requestedDeferredStatesRef = useRef<Set<KnightDeferredAnimationName>>(new Set());
+  const [deferredAnimationClips, setDeferredAnimationClips] = useState<
+    Partial<Record<KnightDeferredAnimationName, AnimationClip[]>>
+  >({});
+
+  // Scene (mesh + skeleton) comes from the idle GLB only
+  const { scene, animations: idleAnims } = useGLTF('/models/knight_idle.glb');
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const names = new Set<KnightDeferredAnimationName>();
+    if (isWalking) names.add('Walk');
+    if (isDying) names.add('Death');
+    if (isAttacking) names.add(attackVariant === 2 ? 'Attack2' : 'Attack');
+    if (abilityClip) names.add(abilityClip);
+    if (isImpacting) names.add(impactVariant === 1 ? 'Impact1' : 'Impact2');
+
+    names.forEach((name) => {
+      const path = name === 'Walk'
+        ? (soulType === 'purple' ? '/models/knight_walk.glb' : '/models/knight_walk0.glb')
+        : KNIGHT_DEFERRED_MODEL_PATHS[name];
+      if (deferredAnimationClips[name] || requestedDeferredStatesRef.current.has(name)) {
+        return;
+      }
+
+      requestedDeferredStatesRef.current.add(name);
+      loadGltfAnimationClips(path)
+        .then((clips) => {
+          if (!isMountedRef.current) return;
+          setDeferredAnimationClips((prev) =>
+            prev[name] ? prev : { ...prev, [name]: clips }
+          );
+        })
+        .catch((error) => {
+          requestedDeferredStatesRef.current.delete(name);
+          console.warn(`Failed to load knight animation ${name}:`, error);
+        });
+    });
+  }, [isWalking, isDying, isAttacking, attackVariant, abilityClip, isImpacting, impactVariant, soulType, deferredAnimationClips]);
+
+  // SkeletonUtils.clone() properly re-binds each clone's SkinnedMesh to its own
+  // skeleton, so multiple knight instances are fully independent.
+  // Plain scene.clone(true) shares the skeleton across all instances, causing
+  // all models to collapse to the same world position.
+  const clonedScene = useMemo(() => {
+    const clone = SkeletonUtils.clone(scene) as Group;
+    clone.traverse((child: any) => {
+      if (child.isMesh) {
+        child.castShadow = castShadow;
+        child.receiveShadow = true;
+        // SkeletonUtils.clone() re-binds skeletons but leaves Material references
+        // shared across all instances (Object3D.clone() is shallow for materials).
+        // The death fade-out in KnightRenderer mutates mat.opacity directly, so
+        // each instance MUST own its own material objects or one dying knight will
+        // make every other knight on the map invisible simultaneously.
+        child.material = Array.isArray(child.material)
+          ? child.material.map((m: any) => m.clone())
+          : child.material.clone();
+      }
+    });
+    return clone;
+  }, [scene, castShadow]);
+
+  // Dispose cloned materials on unmount to prevent GPU memory leaks
+  useEffect(() => {
+    return () => {
+      clonedScene.traverse((child: any) => {
+        if (child.isMesh) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m: any) => m?.dispose?.());
+          } else {
+            child.material?.dispose?.();
+          }
+        }
+      });
+    };
+  }, [clonedScene]);
+
+  // Merge clips from the three separate GLBs into one array with canonical names.
+  // Each individual GLB exports its clip as "mixamo.com", so we rename here.
+  // Cloning avoids mutating the cached shared AnimationClip objects.
+  const animations = useMemo(() => {
+    const rename = (clips: AnimationClip[], name: string) =>
+      clips.map(c => { const r = c.clone(); r.name = name; return r; });
+
+    // Mixamo walk/idle animations embed root motion in the Hips position track —
+    // the bone physically translates forward through the clip. Since position is
+    // driven by server state, we zero out X and Z while keeping Y so the natural
+    // vertical bounce is preserved.
+    //
+    // Match the Hips position track case-insensitively to handle naming variations
+    // across export tools (mixamorig:Hips, mixamorig_Hips, Hips, etc.).
+    // Only the Hips (root bone) should be stripped — other bones need their
+    // local-space position offsets intact.
+    const stripRootMotionXZ = (clip: AnimationClip): AnimationClip => {
+      clip.tracks = clip.tracks.map(track => {
+        if (!track.name.endsWith('.position')) return track;
+        if (!track.name.toLowerCase().includes('hips')) return track;
+        const values = Float32Array.from(track.values);
+        for (let i = 0; i < values.length; i += 3) {
+          values[i]     = 0; // X
+          values[i + 2] = 0; // Z
+        }
+        return new VectorKeyframeTrack(track.name, Array.from(track.times), Array.from(values));
+      });
+      return clip;
+    };
+
+    return [
+      ...rename(idleAnims,        'Idle').map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.Walk ?? [],    'Walk').map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.Attack ?? [],  'Attack'),
+      ...rename(deferredAnimationClips.Attack2 ?? [], 'Attack2'),
+      ...rename(deferredAnimationClips.Death ?? [],   'Death'),
+      ...rename(deferredAnimationClips.Smite ?? [],   'Smite'),
+      ...rename(deferredAnimationClips.Aggro ?? [],   'Aggro'),
+      ...rename(deferredAnimationClips.Cast ?? [],    'Cast'),
+      ...rename(deferredAnimationClips.Spin ?? [],    'Spin').map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.Impact1 ?? [], 'Impact1'),
+      ...rename(deferredAnimationClips.Impact2 ?? [], 'Impact2'),
+    ];
+  }, [idleAnims, deferredAnimationClips]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Bind the mixer to the clone's root so it can traverse to find bones by name
+  const { actions, mixer } = useAnimations(animations, sceneGroupRef);
+
+  const getAction = (name: 'Idle' | 'Walk' | 'Attack' | 'Attack2' | 'Death' | 'Smite' | 'Aggro' | 'Cast' | 'Spin' | 'Impact1' | 'Impact2'): AnimationAction | null =>
+    actions[name] ?? null;
+
+  // Transition to the right animation clip when state changes.
+  // Priority: Death > Attack > Ability > Impact > Walk > Idle
+  useEffect(() => {
+    if (!actions) return;
+
+    const attackClip = attackVariant === 2 ? 'Attack2' : 'Attack';
+    const impactClip = impactVariant === 1 ? 'Impact1' : 'Impact2';
+    const nextAction = isDying
+      ? getAction('Death')
+      : isAttacking
+        ? getAction(attackClip)
+        : abilityClip
+          ? getAction(abilityClip)
+          : isImpacting
+            ? getAction(impactClip)
+            : isWalking
+              ? getAction('Walk')
+              : getAction('Idle');
+
+    if (!nextAction) return;
+    if (nextAction === currentActionRef.current) {
+      const retriggerImpact = isImpacting && impactPlayKey !== lastImpactPlayKeyRef.current;
+      if (!retriggerImpact) return;
+    }
+
+    currentActionRef.current?.fadeOut(0.2);
+
+    if (isDying) {
+      // Death is a one-shot that clamps on its last frame (corpse pose).
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.15).play();
+    } else if (isAttacking || abilityClip) {
+      // Attack and ability animations are one-shot — always restart from frame 0.
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.2).play();
+    } else if (isImpacting) {
+      lastImpactPlayKeyRef.current = impactPlayKey;
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.2).play();
+    } else {
+      // Walk / Idle are continuous loops.
+      // Re-enable explicitly: Three.js auto-disables actions whose weight reaches 0
+      // after a fadeOut (_updateWeight sets enabled=false).
+      if (!isImpacting) lastImpactPlayKeyRef.current = -1;
+      nextAction.enabled = true;
+      nextAction.setLoop(LoopRepeat, Infinity);
+      nextAction.fadeIn(0.2).play();
+    }
+
+    currentActionRef.current = nextAction;
+  }, [isWalking, isAttacking, isDying, attackVariant, abilityClip, isImpacting, impactVariant, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // After a one-shot animation (impact, attack, or ability) finishes, blend back to Walk or Idle.
+  // Do not run for Death — the corpse should stay in the last pose.
+  useEffect(() => {
+    if (!mixer || isDying) return;
+
+    const blendToWalkOrIdle = () => {
+      if (isDying) return;
+      const fallback = isWalking ? getAction('Walk') : getAction('Idle');
+      if (fallback) {
+        fallback.setLoop(LoopRepeat, Infinity);
+        currentActionRef.current?.fadeOut(0.15);
+        fallback.reset().fadeIn(0.15).play();
+        currentActionRef.current = fallback;
+      }
+    };
+
+    const handleFinish = (e: { action: AnimationAction }) => {
+      if (isDying) return;
+      const name = e.action.getClip().name;
+      if (name === 'Death') return;
+      if (name === 'Impact1' || name === 'Impact2') {
+        onImpactFinished?.();
+        lastImpactPlayKeyRef.current = -1;
+        blendToWalkOrIdle();
+        return;
+      }
+      if (name === 'Attack' || name === 'Attack2' || name === 'Smite' || name === 'Aggro' || name === 'Cast' || name === 'Spin') {
+        blendToWalkOrIdle();
+      }
+    };
+
+    mixer.addEventListener('finished', handleFinish);
+    return () => mixer.removeEventListener('finished', handleFinish);
+  }, [mixer, isDying, isWalking, actions, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    // sceneGroupRef wraps the clone so the AnimationMixer can traverse into the
+    // bone hierarchy. The scale group converts cm → game units.
+    <group ref={sceneGroupRef}>
+      <group scale={[SCALE, SCALE, SCALE]}>
+        <primitive object={clonedScene} />
+      </group>
+    </group>
+  );
+}

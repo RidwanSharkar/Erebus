@@ -1,0 +1,923 @@
+import { useRef, useEffect, useState, useCallback } from 'react';
+import { Group, Vector3 } from '@/utils/three-exports';
+import { useFrame, useThree } from '@react-three/fiber';
+import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
+import React from 'react';
+
+import DragonUnit from './DragonUnit';
+import RunebladeSlashImpact from '../weapons/RunebladeSlashImpact';
+import RunebladeWraithStrikeImpact from '../weapons/RunebladeWraithStrikeImpact';
+import { DashChargeStatus } from './ChargedOrbitals';
+import ViperStingManager, { triggerGlobalViperSting } from '../projectiles/ViperStingManager';
+import { spawnArcticGroundBlizzardAtFromReact } from '@/components/weapons/Blizzard/arcticBlizzardSpawnBridge';
+import GhostTrail from './GhostTrail';
+import DashFireTrail from './DashFireTrail';
+import { WeaponType, WeaponSubclass } from './weapons';
+import { World } from '@/ecs/World';
+import { Movement } from '@/ecs/components/Movement';
+import { Transform } from '@/ecs/components/Transform';
+import { Health } from '@/ecs/components/Health';
+import { Enemy, EnemyType } from '@/ecs/components/Enemy';
+import { CombatSystem } from '@/systems/CombatSystem';
+import { calculateDamage } from '@/core/DamageCalculator';
+import { ReanimateRef } from '../weapons/Reanimate';
+import {
+  STAGGERING_COMBO_HIT1_STAGGER,
+  STAGGERING_COMBO_HIT2_STAGGER,
+  STAGGERING_COMBO_HIT3_STAGGER,
+  STAGGERING_TALONS_HIT_STAGGER,
+  EXECUTE_REAPING_TALONS_BONUS_DAMAGE,
+  WRATHFUL_COMBO_CRIT_CHANCE_ADD,
+  WRATHFUL_COMBO_CRIT_DAMAGE_MULT_ADD,
+  type VorpalGustStabBoonBeamTheme,
+} from '@/utils/talents';
+
+/**
+ * Co-op allied units (knight/healer) and player-summoned zombies (`player-zombie`) share the ECS
+ * `Enemy` component for gameplay; exclude them from Sword/Bow/Runeblade client melee lists so local
+ * swing hitboxes / `runeblade-slash-impact` never treat them as targets. Mirrors `userData` set in
+ * CoopGameScene when syncing server enemies.
+ */
+function shouldExcludeFromWeaponEnemyData(entity: {
+  userData?: { isCoopAlliedUnit?: boolean; coopServerEnemyType?: string };
+}): boolean {
+  const ud = entity.userData;
+  if (!ud) return false;
+  if (ud.isCoopAlliedUnit === true) return true;
+  if (ud.coopServerEnemyType === 'player-zombie') return true;
+  return false;
+}
+
+interface DragonRendererProps {
+  entityId: number;
+  position: Vector3;
+  realTimePositionRef?: React.RefObject<Vector3>;
+  world: World;
+  onMeshReady?: (mesh: Group) => void;
+  currentWeapon?: WeaponType;
+  currentSubclass?: WeaponSubclass;
+  isCharging?: boolean;
+  chargeProgress?: number;
+  chargeDirection?: Vector3;
+  isSwinging?: boolean;
+  purchasedItems?: string[];
+  isSpinning?: boolean;
+  onBowRelease?: (finalProgress: number, isPerfectShot?: boolean) => void;
+  onScytheSwingComplete?: () => void;
+  onSwordSwingComplete?: () => void;
+  onSabresSwingComplete?: () => void;
+  onRunebladeSwingComplete?: () => void;
+  onSpearSwingComplete?: () => void;
+  onBackstabComplete?: () => void;
+  onSunderComplete?: () => void;
+  swordComboStep?: 1 | 2 | 3;
+  isSkyfalling?: boolean;
+  isBackstabbing?: boolean;
+  /** Sabres — show Vorpal Gust beam during Backstab when talent owned or synced from attacker. */
+  showVorpalGustBeam?: boolean;
+  vorpalGustStabBoonBeamTheme?: VorpalGustStabBoonBeamTheme;
+  isSundering?: boolean;
+  isSwordCharging?: boolean;
+  isDeflecting?: boolean;
+  /** Deflect shield VFX (Aegis and/or Wraith Guard). */
+  deflectShieldActive?: boolean;
+  deflectShieldDurationSec?: number;
+  isSmiting?: boolean;
+  isColossusStriking?: boolean;
+  isDeathGrasping?: boolean;
+  isWraithStriking?: boolean;
+  isCorruptedAuraActive?: boolean;
+  isDead?: boolean;
+  onSmiteComplete?: () => void;
+  onColossusStrikeComplete?: () => void;
+  onDeathGraspComplete?: () => void;
+  onWraithStrikeComplete?: () => void;
+  onCorruptedAuraToggle?: (active: boolean) => void;
+  onChargeComplete?: () => void;
+  onDeflectComplete?: () => void;
+  onHeal?: (amount: number) => void; // Callback for healing effects like Viper Sting soul steal
+  rotation?: { x: number; y: number; z: number }; // Add rotation prop for multiplayer
+  isLocalPlayer?: boolean; // Flag to distinguish local player from other players
+  isStealthing?: boolean; // Whether the local player is currently in stealth mode
+  isInvisible?: boolean; // Whether the local player is currently invisible (stealth active)
+  isViperStingCharging?: boolean;
+  viperStingChargeProgress?: number;
+  isBarrageCharging?: boolean;
+  barrageChargeProgress?: number;
+  isCrossentropyCharging?: boolean;
+  isSummonTotemCharging?: boolean;
+  isCobraShotCharging?: boolean;
+  cobraShotChargeProgress?: number;
+  /** Tempest Rounds: monotonic per-arrow id for EtherBow muzzle VFX. */
+  tempestBurstShotSeq?: number;
+  isRejuvenatingShotCharging?: boolean;
+  rejuvenatingShotChargeProgress?: number;
+  isWhirlwindCharging?: boolean;
+  whirlwindChargeProgress?: number;
+  isWhirlwinding?: boolean;
+  isThrowSpearCharging?: boolean;
+  throwSpearChargeProgress?: number;
+  isThrowSpearReleasing?: boolean;
+  reanimateRef?: React.RefObject<ReanimateRef>;
+  // Damage number management
+  onDamageNumbersReady?: (setDamageNumbers: (callback: (prev: Array<{
+    id: number;
+    damage: number;
+    position: Vector3;
+    isCritical: boolean;
+    isSmite?: boolean;
+  }>) => Array<{
+    id: number;
+    damage: number;
+    position: Vector3;
+    isCritical: boolean;
+    isSmite?: boolean;
+  }>) => void, nextDamageNumberId: { current: number }) => void;
+  /** Local player: register queue fn for Wraith Strike slash VFX (ControlSystem → activeEffects). */
+  onWraithStrikeSlashImpactQueueReady?: (
+    queue:
+      | ((
+          pos: Vector3,
+          dir: Vector3,
+          meta?: {
+            wrathfulStrike?: boolean;
+            infestedStrike?: boolean;
+            wraithGuard?: boolean;
+            staggeringStrike?: boolean;
+          },
+        ) => void)
+      | null,
+  ) => void;
+  // PVP-specific props
+  targetPlayerData?: Array<{
+    id: string;
+    position: Vector3;
+    health: number;
+    maxHealth: number;
+  }>;
+  rageSpent?: number;
+  combatSystem?: any;
+  hideBody?: boolean;
+  playerLevel?: number;
+  /** Co-op: mushroom ring melee (Sword/Runeblade) — server `mushroom-damage`. */
+  mushroomTargets?: Array<{ index: number; position: Vector3 }>;
+  onMushroomHit?: (index: number, baseDamage: number) => void;
+
+  /** Wrathful Talons: Reaping Talons return arrow uses preset crit when local player has talent. */
+  wrathfulTalonsReturnCrit?: boolean;
+  /** EXECUTE: Reaping Talons first forward hit may consume a dash for bonus damage. */
+  executeReapingTalons?: boolean;
+  /** EXPLOSIVE TALONS: Reaping Talons detonates at max range; no return arrow. */
+  explosiveTalons?: boolean;
+  /** GIANTKILLER: Reaping Talons return hit bonus when forward leg hit same target. */
+  giantKillerReapingTalons?: boolean;
+  /** Wyvern Talons: Reaping hits detonate Cobra + Concentrated Venom remaining DoT. */
+  wyvernTalons?: boolean;
+  /** Staggering Talons: forward + return Reaping hits apply server stagger. */
+  staggeringTalonsActive?: boolean;
+  /** Glacial Talons room boon — deep-blue Reaping Talons beams + 2× vs frozen (R routed in CombatSystem). */
+  glacialTalonsTheme?: boolean;
+  /** Co-op: server applies CV remainder + optional Cobra remainder as one Wyvern Talons hit. */
+  detonateWyvernConcentratedVenomCoop?: (serverEnemyId: string, cobraRemainingDamage?: number) => void;
+  /** STORED CHARGE: Runeblade Charge — 3 spin rotations + per-rotation damage. */
+  runebladeStoredCharge?: boolean;
+  /** STAGGERING COMBO: basic attack combo adds stagger per hit (co-op server sync). */
+  runebladeStaggeringCombo?: boolean;
+  /** Wrathful Combo: 3rd basic hit uses bonus crit roll (client + server damage). */
+  runebladeWrathfulCombo?: boolean;
+  /** Infested Combo: basic hits heal and can spawn zombies on kill (server). */
+  runebladeInfestedCombo?: boolean;
+  /** Local player: roll Guard Combo proc after each basic hit (chance in ControlSystem). */
+  onRunebladeGuardComboProc?: () => void;
+  /** Local player: Windfury + Flurry heal once per Runeblade swing (ControlSystem). */
+  onRunebladePrimaryHits?: (enemiesHit: number) => void;
+  /** Local: live Runeblade combo step from ControlSystem. */
+  runebladeComboStepResolver?: () => 1 | 2 | 3;
+  /** Local: EXECUTIONER flat bonus (ControlSystem getAndClear). */
+  getRunebladeExecutionerFlatBonus?: () => number;
+  /** Local: Crusader flat bonus while buff active. */
+  getRunebladeCrusaderLmbFlatBonus?: () => number;
+  /** Local: Crusader corrupted blade palette. */
+  crusaderBladeThemeActive?: boolean;
+  /** Local: Blizzard talent storm (omit when talent not taken). */
+  getRunebladeBlizzardTalentActive?: () => boolean;
+  /** Room-boom dash boons override the weapon ghost trail while unlocked. */
+  roomBoomGhostTrailColor?: string;
+}
+
+export default function DragonRenderer({
+  entityId,
+  position,
+  realTimePositionRef,
+  world,
+  onMeshReady,
+  currentWeapon = WeaponType.NONE,
+  currentSubclass,
+  isCharging = false,
+  chargeProgress = 0,
+  chargeDirection,
+  isSwinging = false,
+  isSpinning = false,
+  isDeflecting = false,
+  deflectShieldActive: deflectShieldActiveProp,
+  deflectShieldDurationSec = 3,
+  isDead = false,
+  isSmiting = false,
+  isColossusStriking = false,
+  isDeathGrasping = false,
+  isWraithStriking = false,
+  isCorruptedAuraActive = false,
+  crusaderBladeThemeActive = false,
+  onSmiteComplete = () => {},
+  onColossusStrikeComplete = () => {},
+  onDeathGraspComplete = () => {},
+  onWraithStrikeComplete = () => {},
+  onCorruptedAuraToggle = () => {},
+  onBowRelease = () => {},
+  onScytheSwingComplete = () => {},
+  onSwordSwingComplete = () => {},
+  onSabresSwingComplete = () => {},
+  onRunebladeSwingComplete = () => {},
+  onSpearSwingComplete = () => {},
+  onBackstabComplete = () => {},
+  onSunderComplete = () => {},
+  swordComboStep = 1,
+  isSkyfalling = false,
+  isBackstabbing = false,
+  showVorpalGustBeam = false,
+  vorpalGustStabBoonBeamTheme = 'default',
+  isSundering = false,
+  isSwordCharging = false,
+  onChargeComplete = () => {},
+  onDeflectComplete = () => {},
+  rotation,
+  isLocalPlayer = false,
+  isStealthing = false,
+  isInvisible = false,
+  isViperStingCharging = false,
+  viperStingChargeProgress = 0,
+  isBarrageCharging = false,
+  barrageChargeProgress = 0,
+  isCrossentropyCharging = false,
+  isSummonTotemCharging = false,
+  isCobraShotCharging = false,
+  cobraShotChargeProgress = 0,
+  tempestBurstShotSeq = 0,
+  isRejuvenatingShotCharging = false,
+  rejuvenatingShotChargeProgress = 0,
+  isWhirlwindCharging = false,
+  whirlwindChargeProgress = 0,
+  isWhirlwinding = false,
+  isThrowSpearCharging = false,
+  throwSpearChargeProgress = 0,
+  isThrowSpearReleasing = false,
+  reanimateRef,
+  targetPlayerData,
+  rageSpent,
+  onDamageNumbersReady,
+  onWraithStrikeSlashImpactQueueReady,
+  combatSystem,
+  onHeal = () => {},
+  purchasedItems = [],
+  hideBody = false,
+  playerLevel = 1,
+  wrathfulTalonsReturnCrit = false,
+  executeReapingTalons = false,
+  explosiveTalons = false,
+  giantKillerReapingTalons = false,
+  wyvernTalons = false,
+  staggeringTalonsActive = false,
+  glacialTalonsTheme = false,
+  detonateWyvernConcentratedVenomCoop,
+  runebladeStoredCharge = false,
+  runebladeStaggeringCombo = false,
+  runebladeWrathfulCombo = false,
+  runebladeInfestedCombo = false,
+  onRunebladeGuardComboProc,
+  onRunebladePrimaryHits,
+  runebladeComboStepResolver,
+  getRunebladeExecutionerFlatBonus,
+  getRunebladeCrusaderLmbFlatBonus,
+  getRunebladeBlizzardTalentActive,
+  roomBoomGhostTrailColor,
+  mushroomTargets,
+  onMushroomHit,
+}: DragonRendererProps) {
+  const effectiveDeflectShieldActive = deflectShieldActiveProp ?? isDeflecting;
+  const mountRef = useRef(false);
+  if (!mountRef.current) {
+    console.log('🐉 DragonRenderer mounting:', {
+      entityId,
+      position: position?.toArray(),
+      isLocalPlayer,
+      currentWeapon
+    });
+    mountRef.current = true;
+  }
+  const { camera } = useThree();
+  const groupRef = useRef<Group>(null);
+  const movementDirection = useRef(new Vector3(0, 0, 0));
+  const lastPosition = useRef(position ? position.clone() : new Vector3(0, 0.5, 0));
+  const isDashing = useRef(false);
+  /** Movement.isCharging — Sword/Runeblade ability dash (GhostTrail matches regular dash) */
+  const isWeaponChargeMoving = useRef(false);
+  const [currentRotation, setCurrentRotation] = useState(new Vector3(0, 0, 0));
+  const lastFacingDirection = useRef(new Vector3(0, 0, -1)); // Default facing forward
+  const [enemyData, setEnemyData] = useState<Array<{
+    id: string;
+    position: Vector3;
+    health: number;
+    maxHealth: number;
+    isBoss: boolean;
+  }>>([]);
+  const [dashCharges, setDashCharges] = useState<Array<DashChargeStatus>>([
+    { isAvailable: true, cooldownRemaining: 0 },
+    { isAvailable: true, cooldownRemaining: 0 },
+    { isAvailable: true, cooldownRemaining: 0 }
+  ]);
+  // Use chargeDirection from props, with fallback to local state for backward compatibility
+  const [localChargeDirection, setLocalChargeDirection] = useState<Vector3 | undefined>(undefined);
+  const effectiveChargeDirection = chargeDirection || localChargeDirection;
+  const [damageNumbers, setDamageNumbers] = useState<Array<{
+    id: number;
+    damage: number;
+    position: Vector3;
+    isCritical: boolean;
+  }>>([]);
+  const nextDamageNumberId = useRef(0);
+
+  // Notify parent when damage number functions are ready
+  useEffect(() => {
+    if (onDamageNumbersReady) {
+      onDamageNumbersReady(setDamageNumbers, nextDamageNumberId);
+    }
+  }, [onDamageNumbersReady]);
+  const lastChargeState = useRef(false);
+  const [activeEffects, setActiveEffects] = useState<Array<{
+    id: number;
+    type: string;
+    position: Vector3;
+    direction: Vector3;
+    duration?: number;
+    startTime?: number;
+    summonId?: number;
+    targetId?: string;
+    wrathfulStrike?: boolean;
+    infestedStrike?: boolean;
+    wraithGuard?: boolean;
+    staggeringStrike?: boolean;
+  }>>([]);
+
+  useEffect(() => {
+    if (!isLocalPlayer || !onWraithStrikeSlashImpactQueueReady) return;
+    const queue = (
+      pos: Vector3,
+      dir: Vector3,
+      meta?: {
+        wrathfulStrike?: boolean;
+        infestedStrike?: boolean;
+        wraithGuard?: boolean;
+        staggeringStrike?: boolean;
+      },
+    ) => {
+      setActiveEffects((prev) => [
+        ...prev,
+        {
+          id: Date.now() + Math.random(),
+          type: 'runeblade-wraith-strike-impact',
+          position: pos.clone(),
+          direction: dir.clone(),
+          startTime: Date.now(),
+          duration: 0.5,
+          wrathfulStrike: meta?.wrathfulStrike,
+          infestedStrike: meta?.infestedStrike,
+          wraithGuard: meta?.wraithGuard,
+          staggeringStrike: meta?.staggeringStrike,
+        },
+      ]);
+    };
+    onWraithStrikeSlashImpactQueueReady(queue);
+    return () => {
+      onWraithStrikeSlashImpactQueueReady(null);
+    };
+  }, [isLocalPlayer, onWraithStrikeSlashImpactQueueReady]);
+
+  // Real-time position ref for charge trail particles
+  // Use the passed ref if available (for local player), otherwise create our own (for remote players)
+  const internalRealTimePositionRef = useRef<Vector3>(position ? position.clone() : new Vector3(0, 0.5, 0));
+  const effectiveRealTimePositionRef = realTimePositionRef || internalRealTimePositionRef;
+
+  // Calculate movement direction based on position changes
+  useFrame(() => {
+    if (groupRef.current) {
+      // Check if charge state changed from false to true
+      if (isSwordCharging && !lastChargeState.current) {
+        // Charge just started - calculate direction from camera
+        const direction = new Vector3();
+        camera.getWorldDirection(direction);
+        direction.y = 0; // Keep movement horizontal
+        direction.normalize();
+        setLocalChargeDirection(direction);
+
+      }
+      lastChargeState.current = isSwordCharging;
+      
+      // Clean up expired active effects
+      const now = Date.now();
+      setActiveEffects(prev => prev.filter(effect => {
+        if (effect.startTime && effect.duration) {
+          return (now - effect.startTime) < (effect.duration * 1000);
+        }
+        return true; // Keep effects without expiration
+      }));
+      
+      // Update position
+      if (position) {
+        groupRef.current.position.copy(position);
+      }
+      
+      // Get dash state from Movement component
+      const entity = world.getEntity(entityId);
+      if (entity) {
+        // Debug: Check what components are actually on this entity
+        if (Math.random() < 0.01) { // Only log 1% of the time to reduce spam
+          const allComponents = entity.getAllComponents();
+          const componentNames = entity.getComponentNames();
+        }
+        
+        const movement = entity.getComponent(Movement);
+        // Reduced logging for Movement component type check
+        
+        // Check if it's a Movement component by checking for specific methods
+        const isMovementComponent = movement && (
+          typeof movement.getDashChargeStatus === 'function' ||
+          (movement as any).componentType === 'Movement' ||
+          movement.constructor.name === 'Movement'
+        );
+        
+        if (isMovementComponent) {
+          isDashing.current = movement.isDashing;
+          isWeaponChargeMoving.current = movement.isCharging;
+
+          // Update dash charges state
+          if (typeof movement.getDashChargeStatus === 'function') {
+            const currentChargeStatus = movement.getDashChargeStatus();
+            setDashCharges(currentChargeStatus);
+          } else {
+
+          }
+          
+          // Update charge direction if charging
+          if (movement.isCharging) {
+            setLocalChargeDirection(movement.chargeDirection.clone());
+          } else {
+            setLocalChargeDirection(undefined);
+          }
+        }
+      }
+      
+      // Calculate movement direction for tail animation
+      if (position) {
+        const currentMovement = position.clone().sub(lastPosition.current);
+        if (currentMovement.length() > 0.001) {
+          movementDirection.current.copy(currentMovement.normalize());
+        } else {
+          movementDirection.current.set(0, 0, 0);
+        }
+        lastPosition.current.copy(position);
+      }
+      
+      // Rotate dragon based on whether it's the local player or other players
+      if (isLocalPlayer && camera) {
+        // Local player: face immediate orbit yaw (matches movement basis while RMB orbiting)
+        const cameraSystem = (window as any).cameraSystem as
+          | { getOrbitHorizontalFacingAngle?: () => number }
+          | undefined;
+        const angle =
+          typeof cameraSystem?.getOrbitHorizontalFacingAngle === 'function'
+            ? cameraSystem.getOrbitHorizontalFacingAngle()
+            : (() => {
+                const cameraDirection = new Vector3();
+                camera.getWorldDirection(cameraDirection);
+                return Math.atan2(cameraDirection.x, cameraDirection.z);
+              })();
+        groupRef.current.rotation.y = angle;
+
+        const entity = world.getEntity(entityId);
+        if (entity) {
+          // Update real-time position ref for charge trail particles
+          const transform = entity.getComponent(Transform);
+          if (transform && transform.position && effectiveRealTimePositionRef.current) {
+            effectiveRealTimePositionRef.current.copy(transform.position);
+          }
+
+          const movement = entity.getComponent(Movement);
+          if (movement && movement.inputStrength > 0.1 && movement.moveDirection.length() > 0.1) {
+            lastFacingDirection.current
+              .set(movement.moveDirection.x, 0, movement.moveDirection.z)
+              .normalize();
+          } else {
+            // Idle: keep ref aligned with camera so future logic stays consistent
+            lastFacingDirection.current.set(Math.sin(angle), 0, Math.cos(angle));
+          }
+        }
+
+        // Sword/Runeblade cones use playerRotation — must match dragon mesh (camera horizontal yaw),
+        // not stale move-only yaw (fixes LMB deadzone when orbiting camera without moving).
+        setCurrentRotation(new Vector3(0, angle, 0));
+      } else if (!isLocalPlayer && rotation) {
+        // Other players: use their actual rotation from server
+        groupRef.current.rotation.set(rotation.x, rotation.y, rotation.z);
+        setCurrentRotation(new Vector3(rotation.x, rotation.y, rotation.z));
+      }
+      
+      // Update enemy data for weapon collision detection
+      // Always update enemy data for weapons that need collision detection
+      if (
+        currentWeapon === WeaponType.SWORD ||
+        currentWeapon === WeaponType.BOW ||
+        currentWeapon === WeaponType.RUNEBLADE
+      ) {
+        const enemies = world
+          .queryEntities([Transform, Health, Enemy])
+          .filter((entity) => !shouldExcludeFromWeaponEnemyData(entity));
+        const enemyDataArray = enemies.map(enemy => {
+          const transform = enemy.getComponent(Transform)!;
+          const health = enemy.getComponent(Health)!;
+          const ec = enemy.getComponent(Enemy);
+          return {
+            id: enemy.id.toString(),
+            position: transform.getWorldPosition(),
+            health: health.currentHealth,
+            maxHealth: health.maxHealth,
+            isBoss: ec != null && ec.type === EnemyType.BOSS,
+          };
+        }).filter(enemy => enemy.health > 0);
+        
+        // Always update enemy data to ensure collision detection has fresh positions
+        setEnemyData(enemyDataArray);
+        
+        // Debug logging for collision detection
+        if (isSwinging && enemyDataArray.length > 0) {
+
+        }
+      }
+    }
+  });
+
+  useEffect(() => {
+    if (groupRef.current && onMeshReady) {
+      onMeshReady(groupRef.current);
+    }
+  }, [onMeshReady]);
+  
+  // Handle sword damage through combat system
+  const handleSwordHit = (
+    targetId: string,
+    damage: number,
+    isCritical?: boolean,
+    position?: Vector3,
+    isBlizzard?: boolean,
+    viperPhase?: 'forward' | 'return' | 'explosion',
+  ) => {
+    const targetEntity = world.getEntity(parseInt(targetId));
+    const playerEntityObj = world.getEntity(entityId);
+
+    if (targetEntity && playerEntityObj) {
+      // Use combat system to deal damage (this will handle damage numbers automatically)
+      const combatSystem = world.getSystem(CombatSystem);
+      if (combatSystem) {
+        if (currentWeapon === WeaponType.BOW && wyvernTalons) {
+          const enemyForWyvern = targetEntity.getComponent(Enemy);
+          if (enemyForWyvern) {
+            const t = Date.now() / 1000;
+            const cobraBurst = enemyForWyvern.getRemainingCobraVenomDamageInstant(t);
+            if (combatSystem.usesNetworkedEnemyDamage() && detonateWyvernConcentratedVenomCoop) {
+              const sid = targetEntity.userData?.serverEnemyId || String(targetEntity.id);
+              if (cobraBurst > 0) {
+                enemyForWyvern.removeVenom();
+              }
+              detonateWyvernConcentratedVenomCoop(sid, cobraBurst);
+            } else {
+              const cvBurst = enemyForWyvern.getRemainingConcentratedVenomDamageInstant(t);
+              const totalDetonate = cobraBurst + cvBurst;
+              if (totalDetonate > 0) {
+                if (cobraBurst > 0) enemyForWyvern.removeVenom();
+                if (cvBurst > 0) enemyForWyvern.removeConcentratedVenom();
+                combatSystem.queueDamage(
+                  targetEntity,
+                  totalDetonate,
+                  playerEntityObj,
+                  'wyvern_talons_detonate',
+                  playerEntityObj.userData?.playerId,
+                );
+              }
+            }
+          }
+        }
+
+        const isReapingViperPhase =
+          currentWeapon === WeaponType.BOW &&
+          !isBlizzard &&
+          (viperPhase === 'forward' || viperPhase === 'return' || viperPhase === 'explosion');
+
+        const damageType = isBlizzard ? 'blizzard' : isReapingViperPhase ? 'reaping_talons' : 'sword';
+
+        const glacialTalonsForHit = glacialTalonsTheme && isReapingViperPhase;
+        const rbComboStep =
+          currentWeapon === WeaponType.RUNEBLADE && runebladeComboStepResolver
+            ? runebladeComboStepResolver()
+            : swordComboStep;
+        let staggerToAdd: number | undefined;
+        if (
+          currentWeapon === WeaponType.BOW &&
+          staggeringTalonsActive &&
+          (viperPhase === 'forward' || viperPhase === 'return')
+        ) {
+          staggerToAdd = STAGGERING_TALONS_HIT_STAGGER;
+        } else if (currentWeapon === WeaponType.RUNEBLADE && runebladeStaggeringCombo && !isBlizzard) {
+          staggerToAdd =
+            rbComboStep === 1
+              ? STAGGERING_COMBO_HIT1_STAGGER
+              : rbComboStep === 2
+                ? STAGGERING_COMBO_HIT2_STAGGER
+                : STAGGERING_COMBO_HIT3_STAGGER;
+        }
+
+        let outgoingDamage = damage;
+        let critPreset = isCritical;
+        if (
+          currentWeapon === WeaponType.RUNEBLADE &&
+          !isBlizzard &&
+          runebladeWrathfulCombo &&
+          rbComboStep === 3
+        ) {
+          const r = calculateDamage(damage, WeaponType.RUNEBLADE, {
+            critChanceAdd: WRATHFUL_COMBO_CRIT_CHANCE_ADD,
+            critDamageMultAdd: WRATHFUL_COMBO_CRIT_DAMAGE_MULT_ADD,
+          });
+          outgoingDamage = r.damage;
+          critPreset = r.isCritical;
+        }
+
+        const infestedCombo =
+          currentWeapon === WeaponType.RUNEBLADE && !isBlizzard && runebladeInfestedCombo;
+
+        combatSystem.queueDamage(
+          targetEntity,
+          outgoingDamage,
+          playerEntityObj,
+          damageType,
+          playerEntityObj?.userData?.playerId,
+          critPreset,
+          undefined,
+          staggerToAdd,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          infestedCombo,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          glacialTalonsForHit,
+        );
+
+        if (glacialTalonsForHit && position) {
+          const bp = position.clone();
+          bp.y = Math.max(1.5, bp.y);
+          spawnArcticGroundBlizzardAtFromReact(bp);
+        }
+
+        if (
+          isLocalPlayer &&
+          currentWeapon === WeaponType.RUNEBLADE &&
+          !isBlizzard &&
+          onRunebladeGuardComboProc
+        ) {
+          onRunebladeGuardComboProc();
+        }
+      }
+    }
+  };
+
+  const onExecuteFirstForwardHit = useCallback((): number => {
+    const ent = world.getEntity(entityId);
+    const m = ent?.getComponent(Movement);
+    if (!m) return 0;
+    const consumed = m.consumeDashChargesWithoutDash(1, Date.now() / 1000);
+    return consumed > 0 ? EXECUTE_REAPING_TALONS_BONUS_DAMAGE : 0;
+  }, [world, entityId]);
+
+  return (
+    <>
+      <group ref={groupRef}>
+        {/* Death effect - make dragon semi-transparent when dead. Uses the pooled unit
+            light so a player/ally dying doesn't change the scene light count (which
+            would recompile every lit material — a hitch exactly on death/respawn). */}
+        {isDead && (
+          <EnemyDynamicLight
+            color="#ff4444"
+            intensity={0.5}
+            distance={3}
+            decay={2}
+          />
+        )}
+        <DragonUnit
+          position={new Vector3(0, 0, 0)} // Position is handled by the parent group
+          movementDirection={movementDirection.current}
+          isDashing={isDashing.current}
+          entityId={entityId}
+          dashCharges={dashCharges}
+          chargeDirection={effectiveChargeDirection}
+          currentWeapon={currentWeapon}
+          currentSubclass={currentSubclass}
+          isCharging={isCharging}
+          chargeProgress={chargeProgress}
+          isSwinging={isSwinging}
+          isSpinning={isSpinning}
+          onBowRelease={onBowRelease}
+          onScytheSwingComplete={onScytheSwingComplete}
+          onSwordSwingComplete={onSwordSwingComplete}
+          onSabresSwingComplete={onSabresSwingComplete}
+          onRunebladeSwingComplete={onRunebladeSwingComplete}
+          onSpearSwingComplete={onSpearSwingComplete}
+          onBackstabComplete={onBackstabComplete}
+          onSunderComplete={onSunderComplete}
+          swordComboStep={swordComboStep}
+          isSkyfalling={isSkyfalling}
+          isBackstabbing={isBackstabbing}
+          showVorpalGustBeam={showVorpalGustBeam}
+          vorpalGustStabBoonBeamTheme={vorpalGustStabBoonBeamTheme}
+          isSundering={isSundering}
+          isStealthing={isStealthing}
+          isInvisible={isInvisible}
+          isSwordCharging={isSwordCharging}
+          isDeflecting={isDeflecting}
+          deflectShieldActive={effectiveDeflectShieldActive}
+          deflectShieldDurationSec={deflectShieldDurationSec}
+          isSmiting={isSmiting}
+          isColossusStriking={isColossusStriking}
+          isDeathGrasping={isDeathGrasping}
+          isWraithStriking={isWraithStriking}
+          isCorruptedAuraActive={isCorruptedAuraActive}
+          crusaderBladeThemeActive={crusaderBladeThemeActive}
+          onSmiteComplete={onSmiteComplete}
+          onColossusStrikeComplete={onColossusStrikeComplete}
+          onDeathGraspComplete={onDeathGraspComplete}
+          onWraithStrikeComplete={onWraithStrikeComplete}
+          onCorruptedAuraToggle={onCorruptedAuraToggle}
+          onChargeComplete={onChargeComplete}
+          onDeflectComplete={onDeflectComplete}
+          enemyData={enemyData}
+          onHit={handleSwordHit}
+          setDamageNumbers={setDamageNumbers}
+          nextDamageNumberId={nextDamageNumberId}
+          playerPosition={position}
+          playerRotation={currentRotation}
+          realTimePositionRef={effectiveRealTimePositionRef}
+          isViperStingCharging={isViperStingCharging}
+          viperStingChargeProgress={viperStingChargeProgress}
+          isBarrageCharging={isBarrageCharging}
+          barrageChargeProgress={barrageChargeProgress}
+          isCrossentropyCharging={isCrossentropyCharging}
+          isSummonTotemCharging={isSummonTotemCharging}
+          isCobraShotCharging={isCobraShotCharging}
+          cobraShotChargeProgress={cobraShotChargeProgress}
+          tempestBurstShotSeq={tempestBurstShotSeq}
+          isRejuvenatingShotCharging={isRejuvenatingShotCharging}
+          rejuvenatingShotChargeProgress={rejuvenatingShotChargeProgress}
+          isWhirlwindCharging={isWhirlwindCharging}
+          whirlwindChargeProgress={whirlwindChargeProgress}
+          isWhirlwinding={isWhirlwinding}
+          isThrowSpearCharging={isThrowSpearCharging}
+          throwSpearChargeProgress={throwSpearChargeProgress}
+          isThrowSpearReleasing={isThrowSpearReleasing}
+          reanimateRef={reanimateRef}
+          setActiveEffects={setActiveEffects}
+          targetPlayerData={targetPlayerData}
+          rageSpent={rageSpent}
+          combatSystem={combatSystem}
+          purchasedItems={purchasedItems}
+          hideBody={hideBody}
+          playerLevel={playerLevel}
+          runebladeStoredCharge={runebladeStoredCharge}
+          onRunebladePrimaryHits={onRunebladePrimaryHits}
+          runebladeComboStepResolver={runebladeComboStepResolver}
+          getRunebladeExecutionerFlatBonus={getRunebladeExecutionerFlatBonus}
+          getRunebladeCrusaderLmbFlatBonus={getRunebladeCrusaderLmbFlatBonus}
+          getRunebladeBlizzardTalentActive={getRunebladeBlizzardTalentActive}
+          mushroomTargets={mushroomTargets}
+          onMushroomHit={onMushroomHit}
+          isLocalPlayer={isLocalPlayer}
+        />
+      </group>
+      
+      {/* GHOST TRAIL - Rendered outside dragon group to avoid inheriting transformations */}
+      <GhostTrail
+        parentRef={groupRef}
+        weaponType={currentWeapon}
+        weaponSubclass={currentSubclass}
+        targetPosition={effectiveRealTimePositionRef.current || undefined}
+        isStealthing={isStealthing}
+        isDashingRef={isDashing}
+        isWeaponChargeMovingRef={isWeaponChargeMoving}
+        isSkyfalling={isSkyfalling}
+        yOffset={hideBody ? 1.0 : 0}
+        fixedTrailColor={roomBoomGhostTrailColor}
+      />
+      <DashFireTrail
+        worldPositionRef={effectiveRealTimePositionRef}
+        isDashingRef={isDashing}
+        yOffset={hideBody ? 1.0 : 0}
+      />
+      
+      {/* VIPER STING MANAGER - Only for local player with bow */}
+      {isLocalPlayer && currentWeapon === WeaponType.BOW && (
+        <ViperStingManager
+          parentRef={groupRef}
+          enemyData={enemyData}
+          onHit={handleSwordHit}
+          setDamageNumbers={setDamageNumbers}
+          nextDamageNumberId={nextDamageNumberId}
+          onHealthChange={onHeal}
+          charges={dashCharges.map((charge, index) => ({
+            id: index + 1,
+            available: charge.isAvailable,
+            cooldownStartTime: charge.cooldownRemaining > 0 ? Date.now() - (15000 - charge.cooldownRemaining * 1000) : null
+          }))}
+          setCharges={(newCharges) => {
+            // Convert back to DashChargeStatus format
+            if (typeof newCharges === 'function') {
+              setDashCharges(prev => {
+                const converted = newCharges(prev.map((charge, index) => ({
+                  id: index + 1,
+                  available: charge.isAvailable,
+                  cooldownStartTime: charge.cooldownRemaining > 0 ? Date.now() - (15000 - charge.cooldownRemaining * 1000) : null
+                })));
+                
+                return converted.map((charge, index) => ({
+                  isAvailable: charge.available,
+                  cooldownRemaining: charge.cooldownStartTime ? Math.max(0, (15000 - (Date.now() - charge.cooldownStartTime)) / 1000) : 0
+                }));
+              });
+            } else {
+              setDashCharges(newCharges.map((charge) => ({
+                isAvailable: charge.available,
+                cooldownRemaining: charge.cooldownStartTime ? Math.max(0, (15000 - (Date.now() - charge.cooldownStartTime)) / 1000) : 0
+              })));
+            }
+          }}
+          localSocketId="local-player" // For single-player mode, use a fixed ID
+          wrathfulTalonsReturnCrit={wrathfulTalonsReturnCrit}
+          explosiveTalons={explosiveTalons}
+          onExecuteFirstForwardHit={executeReapingTalons ? onExecuteFirstForwardHit : undefined}
+          giantKiller={giantKillerReapingTalons}
+          glacialTalonsTheme={glacialTalonsTheme}
+        />
+      )}
+
+      {/* RUNEBLADE SLASH IMPACT — crescent arc + hit flash spawned per local LMB hit */}
+      {activeEffects
+        .filter(e => e.type === 'runeblade-slash-impact')
+        .map(e => (
+          <RunebladeSlashImpact
+            key={e.id}
+            position={e.position}
+            direction={e.direction}
+            onComplete={() =>
+              setActiveEffects(prev => prev.filter(x => x.id !== e.id))
+            }
+          />
+        ))}
+      {activeEffects
+        .filter(e => e.type === 'runeblade-wraith-strike-impact')
+        .map(e => (
+          <RunebladeWraithStrikeImpact
+            key={e.id}
+            position={e.position}
+            direction={e.direction}
+            wrathfulStrike={e.wrathfulStrike}
+            infestedStrike={e.infestedStrike}
+            wraithGuard={e.wraithGuard}
+            staggeringStrike={e.staggeringStrike}
+            onComplete={() =>
+              setActiveEffects(prev => prev.filter(x => x.id !== e.id))
+            }
+          />
+        ))}
+    </>
+  );
+}
