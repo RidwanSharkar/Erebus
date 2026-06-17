@@ -1,345 +1,208 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { useFrame } from '@react-three/fiber';
-import { Vector3, Shape, Group } from 'three';
+'use client';
 
-interface WindShearProjectileData {
+import React, { useRef, useState, useCallback } from 'react';
+import { useFrame } from '@react-three/fiber';
+import { Vector3, AdditiveBlending, BufferGeometry, BufferAttribute } from 'three';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+
+// Teal/cyan wind-slash palette
+const COLOR_CORE  = '#00e8d8';
+const COLOR_GLOW  = '#80fff5';
+const COLOR_OUTER = '#005f58';
+
+/** Build a flat crescent (annular arc sector) in the XZ plane. */
+function buildCrescentGeometry(
+  innerRadius: number,
+  outerRadius: number,
+  spanRadians: number,
+  segments: number,
+): BufferGeometry {
+  const geo = new BufferGeometry();
+  const half = spanRadians / 2;
+  const positions: number[] = [];
+  const indices: number[] = [];
+
+  for (let i = 0; i <= segments; i++) {
+    const angle = -half + (i / segments) * spanRadians;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    positions.push(sin * innerRadius, 0, cos * innerRadius);
+    positions.push(sin * outerRadius, 0, cos * outerRadius);
+  }
+
+  for (let i = 0; i < segments; i++) {
+    const base = i * 2;
+    indices.push(base, base + 1, base + 2);
+    indices.push(base + 1, base + 3, base + 2);
+  }
+
+  geo.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
+  geo.setIndex(indices);
+  return geo;
+}
+
+// Shared geometry instances (created once, reused across all instances)
+const outerCrescentGeo = buildCrescentGeometry(0.22, 0.55, Math.PI * 0.72, 20);
+const innerCrescentGeo = buildCrescentGeometry(0.0,  0.28, Math.PI * 0.55, 14);
+
+// ─── Shared view type ────────────────────────────────────────────────────────
+
+export interface WindShearProjectileView {
   id: number;
   position: Vector3;
   direction: Vector3;
-  startTime: number;
+  startPosition: Vector3;
   maxDistance: number;
   distanceTraveled: number;
-  hitTargets: Set<string>; // Track what has been hit to prevent multiple hits
+  /** Roll (radians) about the travel axis so paired slashes oppose diagonally. */
+  roll?: number;
 }
 
-interface WindShearProjectileManagerProps {
-  onProjectileHit?: (targetId: string, damage: number) => void;
-  onPlayerHit?: (playerId: string) => void; // New callback for player hits (for Charge cooldown reduction)
-  world?: any; // World instance for collision detection
-  players?: Array<{ id: string; position: { x: number; y: number; z: number }; health: number }>;
-  enemyData?: Array<{
-    id: string;
-    position: Vector3;
-    health: number;
-  }>;
-  localSocketId?: string;
-}
+// ─── Per-instance visual ─────────────────────────────────────────────────────
 
-// React-based projectile manager (no global state)
-export default function WindShearProjectileManager({
-  onProjectileHit,
-  onPlayerHit, // New callback for player hits
-  world,
-  players = [],
-  enemyData = [],
-  localSocketId
-}: WindShearProjectileManagerProps) {
-  const [activeProjectiles, setActiveProjectiles] = useState<WindShearProjectileData[]>([]);
-  const projectileIdCounter = useRef(0);
+function WindShearInstance({ projectile: p }: { projectile: WindShearProjectileView }) {
+  const traveled = Math.max(0, p.distanceTraveled);
+  const fadeStart = Math.max(p.maxDistance * 0.72, 1e-3);
+  const fadeEnd   = Math.max(p.maxDistance, fadeStart + 1e-3);
+  const fadeProgress =
+    traveled < fadeStart ? 0 : Math.min(1, (traveled - fadeStart) / (fadeEnd - fadeStart));
+  const opacity = 1 - fadeProgress * fadeProgress;
 
-  // Function to add new projectiles
-  const addProjectile = useCallback((position: Vector3, direction: Vector3) => {
-    const projectileId = projectileIdCounter.current++;
-    
-    
-    const normalizedDirection = direction.clone().normalize();
-    const projectileData: WindShearProjectileData = {
-      id: projectileId,
-      position: position.clone(),
-      direction: normalizedDirection,
-      startTime: Date.now(),
-      maxDistance: 15, // 15 unit range as specified
-      distanceTraveled: 0,
-      hitTargets: new Set()
-    };
-    
-    setActiveProjectiles(prev => {
-      const newProjectiles = [...prev, projectileData];
-      return newProjectiles;
-    });
-  }, []);
+  const yaw = Math.atan2(p.direction.x, p.direction.z);
+  const roll = p.roll ?? 0;
 
-  useFrame((state, deltaTime) => {
-    if (activeProjectiles.length === 0) return;
+  const windLight = useDynamicLight({ color: COLOR_CORE, distance: 4, decay: 2, priority: 2 });
 
-    const speed = 32.5; // Increased by 30%
-    const currentTime = Date.now();
-    const DAMAGE = 120; // Increased piercing damage as specified
-    const HIT_RADIUS = 1.5; // Collision radius
-
-    setActiveProjectiles(prev => {
-      const updatedProjectiles: WindShearProjectileData[] = [];
-      
-      prev.forEach((projectile) => {
-        // Update projectile position
-        const movement = projectile.direction.clone().multiplyScalar(speed * deltaTime);
-        projectile.position.add(movement);
-        projectile.distanceTraveled += movement.length();
-
-        // Check for collisions with enemies (PVE mode)
-        if (enemyData && enemyData.length > 0) {
-          for (const enemy of enemyData) {
-            if (projectile.hitTargets.has(enemy.id) || enemy.health <= 0) continue;
-
-            const distance = projectile.position.distanceTo(enemy.position);
-            if (distance <= HIT_RADIUS) {
-              projectile.hitTargets.add(enemy.id);
-              
-              // Call hit callback for damage processing
-              if (onProjectileHit) {
-                onProjectileHit(enemy.id, DAMAGE);
-              }
-              
-              // Don't remove projectile immediately - piercing damage!
-              break; // Only hit one target per frame
-            }
-          }
-        }
-
-        // Check for collisions with other players (PVP mode)
-        if (players && players.length > 0 && localSocketId) {
-          for (const player of players) {
-            // Skip self and already hit targets
-            if (player.id === localSocketId || projectile.hitTargets.has(player.id) || player.health <= 0) continue;
-
-            const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
-            const distance = projectile.position.distanceTo(playerPos);
-            if (distance <= HIT_RADIUS) {
-              projectile.hitTargets.add(player.id);
-
-              // Call hit callback for damage processing
-              if (onProjectileHit) {
-                onProjectileHit(player.id, DAMAGE);
-              }
-
-              // Call player hit callback for Charge cooldown reduction
-              if (onPlayerHit) {
-                onPlayerHit(player.id);
-              }
-
-              // Don't remove projectile immediately - piercing damage!
-              break; // Only hit one target per frame
-            }
-          }
-        }
-
-        // Check if projectile should be removed (exceeded max distance or lifetime)
-        const lifetime = (currentTime - projectile.startTime) / 1000;
-        
-        // Debug log every 0.25 seconds to track projectile movement more frequently
-        if (Math.floor(lifetime * 4) !== Math.floor((lifetime - deltaTime) * 4)) {
-        }
-        
-        if (projectile.distanceTraveled < projectile.maxDistance && lifetime <= 3.0) {
-          updatedProjectiles.push(projectile);
-        }
-      });
-
-      return updatedProjectiles;
-    });
+  useFrame(() => {
+    windLight.current?.setPosition(p.position.x, p.position.y, p.position.z);
+    windLight.current?.setIntensity(6 * opacity);
   });
 
-  // Expose the addProjectile function globally
-  React.useEffect(() => {
-    (window as any).triggerWindShearProjectile = addProjectile;
-    return () => {
-      delete (window as any).triggerWindShearProjectile;
-    };
-  }, [addProjectile]);
-
   return (
-    <group name="wind-shear-projectile-manager">
-      {activeProjectiles.map((projectileData) => (
-        <WindShearProjectileVisual
-          key={projectileData.id}
-          position={projectileData.position}
-          direction={projectileData.direction}
-          opacity={1}
-        />
-      ))}
+    <group position={p.position.toArray()} rotation={[0, yaw, 0]} scale={1.15}>
+      {/* Roll about the travel axis (local Z) so paired slashes read as diagonal, opposing swings. */}
+      <group rotation={[0, 0, roll]}>
+        <mesh geometry={outerCrescentGeo} renderOrder={1}>
+          <meshBasicMaterial
+            color={COLOR_CORE}
+            transparent
+            opacity={0.85 * opacity}
+            depthWrite={false}
+            blending={AdditiveBlending}
+            side={2}
+          />
+        </mesh>
+        <mesh geometry={innerCrescentGeo} renderOrder={2}>
+          <meshBasicMaterial
+            color={COLOR_GLOW}
+            transparent
+            opacity={0.65 * opacity}
+            depthWrite={false}
+            blending={AdditiveBlending}
+            side={2}
+          />
+        </mesh>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
+          <torusGeometry args={[0.38, 0.045, 6, 40, Math.PI * 0.75]} />
+          <meshBasicMaterial
+            color={COLOR_OUTER}
+            transparent
+            opacity={0.5 * opacity}
+            depthWrite={false}
+            blending={AdditiveBlending}
+          />
+        </mesh>
+      </group>
     </group>
   );
 }
 
-// Global function to trigger wind shear projectiles (called from ControlSystem)
-export const triggerWindShearProjectile = (position: Vector3, direction: Vector3) => {
-  if ((window as any).triggerWindShearProjectile) {
-    (window as any).triggerWindShearProjectile(position, direction);
-  }
-};
+// ─── ECS-based renderer (used by UnifiedProjectileManager) ───────────────────
 
-// Individual Wind Shear projectile visual component
-interface WindShearProjectileVisualProps {
-  position: Vector3;
-  direction: Vector3;
-  opacity: number;
+interface WindShearProjectileProps {
+  projectiles: WindShearProjectileView[];
 }
 
-function WindShearProjectileVisual({ position, direction, opacity }: WindShearProjectileVisualProps) {
-  const groupRef = useRef<Group>(null);
+export function WindShearProjectile({ projectiles }: WindShearProjectileProps) {
+  return (
+    <>
+      {projectiles.map((p) => (
+        <WindShearInstance key={p.id} projectile={p} />
+      ))}
+    </>
+  );
+}
 
-  // Update position and rotation every frame to ensure smooth movement
-  useFrame(() => {
-    if (groupRef.current) {
-      groupRef.current.position.set(position.x, position.y, position.z);
-      
-      // Reset rotation before applying new orientation
-      groupRef.current.rotation.set( Math.PI/2,  Math.PI/2, Math.PI/2);
-      
-      // Orient sword to face movement direction (same as RegularArrow)
-      const lookAtTarget = position.clone().add(direction.clone().normalize());
-      groupRef.current.lookAt(lookAtTarget);
-      
-      // Apply a fixed rotation to align the sword blade with forward direction
-      // Since the blade extends in +X direction and lookAt points +Z, rotate -90° around Y
-      groupRef.current.rotateY(-Math.PI / 2);
-      groupRef.current.rotateZ(-Math.PI / 2);
-    }
+// ─── Standalone manager (PVP visual replication) ─────────────────────────────
+
+const STANDALONE_SPEED = 32;
+const STANDALONE_MAX_DISTANCE = 8;
+
+interface StandaloneProjectile {
+  id: number;
+  position: Vector3;
+  direction: Vector3;
+  startPosition: Vector3;
+  spawnTime: number;
+}
+
+let nextStandaloneId = 0;
+let globalTrigger: ((position: Vector3, direction: Vector3) => void) | null = null;
+
+/** Trigger a standalone Wind Shear visual for remote PVP players. */
+export function triggerWindShearProjectile(position: Vector3, direction: Vector3): void {
+  globalTrigger?.(position, direction);
+}
+
+export default function WindShearProjectileManager() {
+  const [projectiles, setProjectiles] = useState<StandaloneProjectile[]>([]);
+
+  const spawn = useCallback((position: Vector3, direction: Vector3) => {
+    const p: StandaloneProjectile = {
+      id: nextStandaloneId++,
+      position: position.clone(),
+      direction: direction.clone().normalize(),
+      startPosition: position.clone(),
+      spawnTime: Date.now(),
+    };
+    setProjectiles((prev) => [...prev, p]);
+  }, []);
+
+  // Register the global trigger when this component mounts
+  React.useEffect(() => {
+    globalTrigger = spawn;
+    return () => { globalTrigger = null; };
+  }, [spawn]);
+
+  useFrame((_, delta) => {
+    const now = Date.now();
+    setProjectiles((prev) => {
+      const updated: StandaloneProjectile[] = [];
+      for (const p of prev) {
+        const traveled = p.startPosition.distanceTo(p.position);
+        if (traveled >= STANDALONE_MAX_DISTANCE) continue;
+        const move = p.direction.clone().multiplyScalar(STANDALONE_SPEED * delta);
+        p.position.add(move);
+        updated.push(p);
+      }
+      return updated.length !== prev.length ? updated : prev;
+    });
   });
 
-  // Sword blade shape creation (same as the sword component)
-  const createBladeShape = () => {
-    const shape = new Shape();
-
-    // Start at center
-    shape.moveTo(0, 0);
-
-    // Left side guard (fixed symmetry)
-    shape.lineTo(-0.25, 0.25);
-    shape.lineTo(-0.15, -0.15);
-    shape.lineTo(0, 0);
-
-    // Right side guard (matches left exactly)
-    shape.lineTo(0.175, 0.175);
-    shape.lineTo(0.15, -0.15);
-    shape.lineTo(0, 0);
-
-    // Blade shape with symmetry
-    shape.lineTo(0, 0.08);
-    shape.lineTo(0.2, 0.2);
-    shape.quadraticCurveTo(0.8, 0.15, 1.825, 0.18);
-    shape.quadraticCurveTo(2.0, 0.15, 2.275, 0);
-
-    shape.quadraticCurveTo(2.0, -0.15, 1.825, -0.18);
-    shape.quadraticCurveTo(0.8, -0.15, 0.15, -0.3);
-    shape.lineTo(0, -0.08);
-    shape.lineTo(0, 0);
-
-    return shape;
-  };
-
-  // Inner blade shape
-  const createInnerBladeShape = () => {
-    const shape = new Shape();
-    shape.moveTo(0, 0);
-
-    shape.lineTo(0, 0.06);
-    shape.lineTo(0.15, 0.15);
-    shape.quadraticCurveTo(1.2, 0.12, 1.75, 0.15);
-    shape.quadraticCurveTo(2.0, 0.08, 2.15, 0);
-    shape.quadraticCurveTo(2.0, -0.08, 1.75, -0.15);
-    shape.quadraticCurveTo(1.2, -0.12, 0.15, -0.275);
-    shape.lineTo(0, -0.05);
-    shape.lineTo(0, 0);
-
-    return shape;
-  };
-
-  const bladeExtrudeSettings = {
-    steps: 2,
-    depth: 0.05,
-    bevelEnabled: true,
-    bevelThickness: 0.014,
-    bevelSize: 0.02,
-    bevelOffset: 0.04,
-    bevelSegments: 2
-  };
-
-  const innerBladeExtrudeSettings = {
-    ...bladeExtrudeSettings,
-    depth: 0.06,
-    bevelThickness: 0.02,
-    bevelSize: 0.02,
-    bevelOffset: 0,
-    bevelSegments: 6
-  };
-
   return (
-    <group
-      ref={groupRef}
-      position={[position.x, position.y, position.z]}
-      // Remove static rotation - let useFrame handle dynamic rotation
-    >
-
-
-      {/* Sword model - larger scale for better visibility */}
-      <group scale={[1.0, 1.0, 1.0]}>
-        {/* Handle */}
-        <group position={[0.5, -0.55, 0.5]} rotation={[0, 1, Math.PI]}>
-          <mesh>
-            <cylinderGeometry args={[0.04, 0.05, 1.0, 12]} />
-            <meshStandardMaterial
-              color="#2C1810"
-              emissive="#8B4513"
-              emissiveIntensity={0.3}
-              metalness={0.2}
-              roughness={0.8}
-              transparent
-              opacity={opacity}
-            />
-          </mesh>
-        </group>
-
-        {/* Blade */}
-        <group position={[0.5, 0.55, 0.5]} rotation={[0, -Math.PI / 2, Math.PI / 2]}>
-          <mesh>
-            <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
-            <meshStandardMaterial
-              color="#1097B5"
-              emissive="#00FFFF"
-              emissiveIntensity={1.2}
-              metalness={0.9}
-              roughness={0.1}
-              transparent
-              opacity={opacity}
-              toneMapped={false}
-            />
-          </mesh>
-
-          {/* Inner blade glow */}
-          <mesh>
-            <extrudeGeometry args={[createInnerBladeShape(), innerBladeExtrudeSettings]} />
-            <meshStandardMaterial
-              color="#00FFFF"
-              emissive="#00FFFF"
-              emissiveIntensity={2.0}
-              metalness={0.6}
-              roughness={0.05}
-              transparent
-              opacity={0.95 * opacity}
-              toneMapped={false}
-            />
-          </mesh>
-        </group>
-
-        {/* Hilt guard */}
-        <group position={[0.5, -0.1, 0.5]} rotation={[0, -Math.PI / 2, 0]}>
-          <mesh>
-            <boxGeometry args={[0.6, 0.06, 0.12]} />
-            <meshStandardMaterial
-              color="#FFD700"
-              emissive="#FFD700"
-              emissiveIntensity={0.8}
-              metalness={0.9}
-              roughness={0.1}
-              transparent
-              opacity={opacity}
-              toneMapped={false}
-            />
-          </mesh>
-        </group>
-      </group>
-
-    </group>
+    <>
+      {projectiles.map((p) => {
+        const traveled = p.startPosition.distanceTo(p.position);
+        const view: WindShearProjectileView = {
+          id: p.id,
+          position: p.position,
+          direction: p.direction,
+          startPosition: p.startPosition,
+          maxDistance: STANDALONE_MAX_DISTANCE,
+          distanceTraveled: traveled,
+        };
+        return <WindShearInstance key={p.id} projectile={view} />;
+      })}
+    </>
   );
 }

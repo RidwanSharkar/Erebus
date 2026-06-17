@@ -572,6 +572,9 @@ export class ProjectileSystem extends System {
       const isFanOfKnives =
         projectile.projectileType === 'fan_of_knives' ||
         renderer?.mesh?.userData?.isFanOfKnivesDagger === true;
+      const isWindShear =
+        projectile.projectileType === 'wind_shear' ||
+        renderer?.mesh?.userData?.isWindShearProjectile === true;
       const wyvernBiteConcentratedVenom = renderer?.mesh?.userData?.barrageWyvernBite === true;
       const glacialBiteChill = isBarrageArrow === true && renderer?.mesh?.userData?.barrageGlacialBite === true;
       const entanglementBarrage = isBarrageArrow === true && renderer?.mesh?.userData?.barrageEntanglement === true;
@@ -585,6 +588,8 @@ export class ProjectileSystem extends System {
         damageType = 'barrage';
       } else if (isFanOfKnives) {
         damageType = 'fan_of_knives';
+      } else if (isWindShear) {
+        damageType = 'wind_shear';
       }
       
 
@@ -1436,6 +1441,10 @@ export class ProjectileSystem extends System {
       if (config?.infestedFlourishFanKnives === true) {
         placeholderMesh.userData.infestedFlourishFanKnives = true;
       }
+    }
+
+    if (projectileType === 'wind_shear') {
+      placeholderMesh.userData.isWindShearProjectile = true;
     }
 
     renderer.mesh = placeholderMesh;

@@ -189,6 +189,11 @@ import {
   shouldApplyWrathfulSabresSwipesTalent,
   shouldApplyInfestingSabresSwipesTalent,
   shouldApplyCrescentBladesTalent,
+  shouldApplyWindShearTalent,
+  WIND_SHEAR_DAMAGE,
+  WIND_SHEAR_MAX_DISTANCE_UNITS,
+  WIND_SHEAR_PROJECTILE_SPEED,
+  WIND_SHEAR_PROJECTILE_LIFETIME_SEC,
   STAGGERING_FLOURISH_STAGGER,
   WRATHFUL_FLOURISH_CRIT_CHANCE_ADD,
   WRATHFUL_FLOURISH_CRIT_DAMAGE_MULT_ADD,
@@ -5123,6 +5128,11 @@ export class ControlSystem extends System {
       }
     }
 
+    // Wind Shear talent: every swing fires a forward wind slash projectile (first hit, non-piercing)
+    if (shouldApplyWindShearTalent(this.talentLoadout)) {
+      this.performSabresWindShearTalent(playerTransform);
+    }
+
     // Set swinging state - completion will be handled by sabres component callback
     this.isSwinging = true;
 
@@ -5192,6 +5202,80 @@ export class ControlSystem extends System {
     }
 
     this.audioSystem?.playSabresSwingSound(playerTransform.position);
+  }
+
+  /** Wind Shear talent — fires a pair of wind slash projectiles on every Sabres LMB swing.
+   *  Both travel straight forward; only the crescent visual is rolled diagonally in opposing
+   *  directions so the pair reads as right-hand and left-hand swings. The second is launched
+   *  0.1s after the first. Non-piercing; each stops on first hit. */
+  private performSabresWindShearTalent(playerTransform: Transform): void {
+    if (!this.playerEntity) return;
+
+    // Roll applied to the crescent visual so the pair leans diagonally, opposing each other.
+    const diagonalRoll = Math.PI / 5; // ~36 degrees
+
+    // Fire the right-hand slash immediately, then the left-hand slash 0.1s later.
+    this.fireSabresWindShearProjectile(playerTransform, -diagonalRoll);
+    setTimeout(() => {
+      this.fireSabresWindShearProjectile(playerTransform, diagonalRoll);
+    }, 100);
+  }
+
+  /** Spawns a single Wind Shear talent projectile traveling forward, with `roll` (radians) applied to its visual. */
+  private fireSabresWindShearProjectile(playerTransform: Transform, roll: number): void {
+    if (!this.playerEntity) return;
+
+    const playerPosition = playerTransform.getWorldPosition();
+    playerPosition.y += 0.825;
+
+    const dir = new Vector3();
+    this.camera.getWorldDirection(dir);
+
+    // Slight downward compensation identical to Fan of Knives so the projectile tracks
+    // enemies at ground level rather than flying over their heads.
+    const compensationAngle = Math.PI / 6;
+    const cameraRight = new Vector3();
+    cameraRight.crossVectors(dir, new Vector3(0, 1, 0)).normalize();
+    const rotationMatrix = new Matrix4().makeRotationAxis(cameraRight, compensationAngle);
+    dir.applyMatrix4(rotationMatrix).normalize();
+
+    const spawnPosition = playerPosition.clone().add(dir.clone().multiplyScalar(1));
+
+    const projectileConfig = {
+      speed: WIND_SHEAR_PROJECTILE_SPEED,
+      damage: WIND_SHEAR_DAMAGE,
+      lifetime: WIND_SHEAR_PROJECTILE_LIFETIME_SEC,
+      maxDistance: WIND_SHEAR_MAX_DISTANCE_UNITS,
+      piercing: false,
+      projectileType: 'wind_shear',
+      subclass: this.currentSubclass,
+      level: 1,
+      opacity: 1,
+      sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown',
+    };
+
+    const projectileEntity = this.projectileSystem.createProjectile(
+      this.world,
+      spawnPosition,
+      dir,
+      this.playerEntity.id,
+      projectileConfig,
+    );
+
+    const renderer = projectileEntity.getComponent(Renderer) as Renderer;
+    if (renderer?.mesh) {
+      renderer.mesh.userData.isWindShearProjectile = true;
+      renderer.mesh.userData.windShearRoll = roll;
+    }
+
+    if (this.onProjectileCreatedCallback) {
+      this.onProjectileCreatedCallback(
+        'wind_shear_projectile',
+        spawnPosition,
+        dir,
+        projectileConfig,
+      );
+    }
   }
 
   private performSabresMeleeDamage(playerTransform: Transform): number {
@@ -5678,7 +5762,7 @@ export class ControlSystem extends System {
           this.applySabresPurpleGuardEffect(playerTransform);
         }
         
-        // Apply stun effect if at 3 stacks
+        // Apply stun effect if at 2 stacks
         if (isStunned) {
           const enemy = entity.getComponent(Enemy);
           if (enemy) {
@@ -5745,14 +5829,14 @@ export class ControlSystem extends System {
     }
     
     // Calculate damage based on current stack count (before adding new stack)
-    const baseDamages = [85, 105, 135, 175]; // 0, 1, 2, 3 stacks
+    const baseDamages = [85, 125, 170, 175]; // 0, 1, 2, 3 stacks
     const damage = baseDamages[Math.min(currentStacks.stacks, 3)];
     
     let isStunned = false;
     let newStackCount = currentStacks.stacks;
     
     // Apply new stack
-    if (currentStacks.stacks < 3) {
+    if (currentStacks.stacks < 2) {
       newStackCount = currentStacks.stacks + 1;
       this.sunderStacks.set(entityId, {
         stacks: newStackCount,
@@ -5760,7 +5844,7 @@ export class ControlSystem extends System {
         duration: stackDuration
       });
     } else {
-      // At 3 stacks, apply stun and reset to 0 stacks
+      // At 2 stacks, apply stun and reset to 0 stacks
       isStunned = true;
       newStackCount = 0;
       this.sunderStacks.set(entityId, {

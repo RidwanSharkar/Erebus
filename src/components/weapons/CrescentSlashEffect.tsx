@@ -19,7 +19,7 @@ interface CrescentSlashEffectProps {
   onComplete: () => void;
 }
 
-const DURATION = 0.55;
+const DURATION = 0.35;
 
 const COLOR_CORE  = new Color('#ffe4a0'); // warm gold
 const COLOR_EDGE  = new Color('#ff6a5c'); // red accent (matches sabre palette)
@@ -211,7 +211,7 @@ export default function CrescentSlashEffect({
     }
 
     // --- Outer expanding ring ---
-    const ringScale = 0.4 + progress * 2.0;
+    const ringScale = 0.25 + progress * 1.25;
     const ringFade  =
       t < 0.06 ? t / 0.06 : Math.max(0, 1 - (t - DURATION * 0.38) / (DURATION * 0.62));
     if (ringRef.current) {

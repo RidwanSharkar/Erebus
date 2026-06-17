@@ -390,6 +390,7 @@ export default function TalentSelectionModal({
     guardSabresStab: initialTalentLoadout?.guardSabresStab ?? def.guardSabresStab,
     guardSabresFlourish: initialTalentLoadout?.guardSabresFlourish ?? def.guardSabresFlourish,
     crescentBlades: initialTalentLoadout?.crescentBlades ?? def.crescentBlades,
+    windShear: initialTalentLoadout?.windShear ?? def.windShear,
     killstreak: initialTalentLoadout?.killstreak ?? def.killstreak,
     relentless: initialTalentLoadout?.relentless ?? def.relentless,
     vorpalGust: initialTalentLoadout?.vorpalGust ?? def.vorpalGust,

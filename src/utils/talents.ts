@@ -111,6 +111,8 @@ export const TALENT_GUARD_SABRES_STAB = 'GUARD_SABRES_STAB' as const;
 export const TALENT_GUARD_SABRES_FLOURISH = 'GUARD_SABRES_FLOURISH' as const;
 /** Sabres class talent — every 3rd swing fires a 150-damage crescent slash AoE; stacks freely with other boons. */
 export const TALENT_CRESCENT_BLADES = 'CRESCENT_BLADES' as const;
+/** Sabres class talent — every LMB swing fires a forward wind slash projectile for 40 damage (first hit only). */
+export const TALENT_WIND_SHEAR = 'WIND_SHEAR' as const;
 
 /** Sabres class boons — Backstab (`SABRES_Q`) session stacking / on-kill (see room boons for palette picks). */
 export const TALENT_KILLSTREAK = 'KILLSTREAK' as const;
@@ -121,6 +123,12 @@ export const TALENT_VORPAL_GUST = 'VORPAL_GUST' as const;
 export const TALENT_FAN_OF_KNIVES = 'FAN_OF_KNIVES' as const;
 /** Sabres class boon — Flourish shield restore on cast + passive STR/INT. */
 export const TALENT_PARRY = 'PARRY' as const;
+
+/** Wind Shear — projectile tuning (local + replicated). */
+export const WIND_SHEAR_DAMAGE = 40;
+export const WIND_SHEAR_MAX_DISTANCE_UNITS = 8;
+export const WIND_SHEAR_PROJECTILE_SPEED = 32;
+export const WIND_SHEAR_PROJECTILE_LIFETIME_SEC = 3;
 
 /** Fan of Knives — projectile tuning (local + replicated). */
 export const FAN_OF_KNIVES_DAMAGE = 30;
@@ -278,9 +286,9 @@ export const VORPAL_GUST_TIP_ZONE_WORLD_UNITS = 1.2;
 /** Minimum projected `t` from `evaluateVorpalGustBeamHit` to count as hitting near the gust tip. */
 export const VORPAL_GUST_TIP_ZONE_START = VORPAL_GUST_BEAM_LENGTH - VORPAL_GUST_TIP_ZONE_WORLD_UNITS;
 /** Tip zone: non-positional hit base (normally 95). */
-export const BACKSTAB_VORPAL_TIP_DAMAGE_FRONT = 225;
+export const BACKSTAB_VORPAL_TIP_DAMAGE_FRONT = 275;
 /** Tip zone: positional Backstab vs PvE (normally 285). */
-export const BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB = 420;
+export const BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB = 490;
 /** Tip zone: positional Backstab vs PvP tier (normally 175), scaled vs PvE 285→420 uplift. */
 export const BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB_PVP = Math.round((BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB * 175) / 285);
 
@@ -431,6 +439,7 @@ export type TalentId =
   | typeof TALENT_GUARD_SABRES_STAB
   | typeof TALENT_GUARD_SABRES_FLOURISH
   | typeof TALENT_CRESCENT_BLADES
+  | typeof TALENT_WIND_SHEAR
   | typeof TALENT_KILLSTREAK
   | typeof TALENT_RELENTLESS
   | typeof TALENT_VORPAL_GUST
@@ -493,7 +502,7 @@ export const PARRY_STRENGTH_BONUS = 5;
 export const PARRY_FLOURISH_SHIELD_RESTORE = 35;
 
 /** Aftershock (talent id `BREATH_WEAPON`) — Wraith Strike ground strip; detonation after delay. */
-export const BREATH_WEAPON_DAMAGE = 120;
+export const BREATH_WEAPON_DAMAGE = 125;
 export const AFTERSHOCK_STRIP_LENGTH = 7.5;
 export const AFTERSHOCK_DETONATION_DELAY_MS = 1000;
 /** Lateral distance from strip centerline (XZ) for hit and VFX width. */
@@ -508,7 +517,7 @@ export const WRATHFUL_TALONS_RETURN_CRIT_CHANCE_ADD = 0.5;
 export const WRATHFUL_TALONS_RETURN_CRIT_DAMAGE_MULT_ADD = 1.0;
 
 /** EXECUTE — Reaping Talons (`BOW_R`) first forward hit: bonus when a dash charge is consumed (useViperSting + Movement). */
-export const EXECUTE_REAPING_TALONS_BONUS_DAMAGE = 200;
+export const EXECUTE_REAPING_TALONS_BONUS_DAMAGE = 220;
 
 /** Reaping Talons (`BOW_R`) forward leg max travel in `useViperSting` (return-arrow variant). */
 export const REAPING_TALONS_MAX_TRAVEL_DISTANCE = 20;
@@ -522,14 +531,14 @@ export const EXPLOSIVE_TALONS_EXPLOSION_RADIUS = 4.0;
 /** Bow LMB tap (uncharged primary) base damage without Trigger Finger. */
 export const BOW_UNCHARGED_PROJECTILE_DAMAGE = 10;
 /** Bow LMB tap base damage with Trigger Finger class talent. */
-export const BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE = 40;
+export const BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE = 50;
 
 /** Wrathful Bite — Frostbite / Barrage (`BOW_Q`) hits use these additive crit modifiers in CombatSystem. */
 export const WRATHFUL_BITE_BARRAGE_CRIT_CHANCE_ADD = 0.4;
 export const WRATHFUL_BITE_BARRAGE_CRIT_DAMAGE_MULT_ADD = 0.75;
 
 /** Wyvern Bite — Concentrated Venom from Barrage hits (co-op server + local ECS). */
-export const WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK = 17;
+export const WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK = 31;
 export const WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS = 5;
 export const WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC = 8;
 
@@ -561,7 +570,7 @@ export const INFESTED_COMBO_LIFESTEAL = 0.02;
 
 /** Guard Combo — Runeblade basic hits can proc Aegis-like barrier + invuln (no Aegis cooldown). */
 export const GUARD_COMBO_PROC_CHANCE = 0.35;
-export const GUARD_COMBO_DURATION_SEC = 2;
+export const GUARD_COMBO_DURATION_SEC = 2.5;
 
 /** Guard Sabres Swipes — each LMB blade (`sabre_left` / `sabre_right`) rolls independently (see ControlSystem). */
 export const GUARD_SABRES_SWIPES_PROC_CHANCE = 0.2;
@@ -574,34 +583,34 @@ export const DASH_GUARD_DURATION_SEC = 2.0;
 /** EXECUTIONER — after a real dash (Movement.startDash), next Runeblade LMB within this window is treated as combo hit 3. */
 export const EXECUTIONER_POST_DASH_WINDOW_MS = 3000;
 /** Additive base damage on that EXECUTIONER swing (before crit). */
-export const EXECUTIONER_BASE_DAMAGE_ADD = 40;
+export const EXECUTIONER_BASE_DAMAGE_ADD = 80;
 
 /** Frostpath — Entropic Bolt (scythe LMB) hits on PvE enemies can proc Coldsnap at impact (no E cooldown). */
 export const FROSTPATH_PROC_CHANCE = 0.15;
 
 /** Solar Recharge — Entropic Bolt hits on PvE enemies can proc Sunwell (Reanimate) (no Q cooldown; does not require Sunwell in loadout). */
-export const SOLAR_RECHARGE_PROC_CHANCE = 0.1175;
+export const SOLAR_RECHARGE_PROC_CHANCE = 0.125;
 
 /** Min wall-clock ms between successful Frostpath Coldsnap execution or Solar Recharge Sunwell proc (separate per talent). */
 export const FROST_SOLAR_PROC_EFFECT_ICD_MS = 2500;
 
 /** Windfury — Spear primary or Runeblade left-click combo hits that damage an enemy can proc Storm Shroud (Flurry) without F cooldown. */
-export const WINDFURY_PROC_CHANCE = 0.1425;
+export const WINDFURY_PROC_CHANCE = 0.15;
 
 /** Crusader — Runeblade left-click hits that damage an enemy; matches Windfury proc rate. */
-export const CRUSADER_PROC_CHANCE = 0.15;
+export const CRUSADER_PROC_CHANCE = 0.1625;
 export const CRUSADER_DURATION_SEC = 5;
 export const CRUSADER_LMB_FLAT_BONUS = 50;
 
 /** Blizzard — Runeblade LMB hits that damage an enemy; matches Windfury proc rate. */
-export const BLIZZARD_PROC_CHANCE = 0.15;
+export const BLIZZARD_PROC_CHANCE = 0.1625;
 export const BLIZZARD_DURATION_SEC = 7;
 export const BLIZZARD_DPS_PER_TICK = 42;
 /** World units: enemies within this radius (XZ, see Blizzard.tsx) of the storm center take tick damage; ≥ melee arc range so LMB hits align with storm. */
 export const BLIZZARD_STORM_HIT_RADIUS = 4.5;
 export const CHILL_STACK_DURATION_SEC = 4;
-export const CHILL_SLOW_PER_STACK = 0.2;
-export const CHILL_STACKS_TO_FREEZE = 5;
+export const CHILL_SLOW_PER_STACK = 0.15;
+export const CHILL_STACKS_TO_FREEZE = 6;
 export const BLIZZARD_FREEZE_DURATION_SEC = 6;
 
 /** Staggering Strike — Wraith Strike (`RUNEBLADE_E`) builds stagger; at 100, proc lightning + damage + stun. */
@@ -611,7 +620,7 @@ export const STAGGER_MAX = 100;
 /** Co-op bosses (`boss`, `boss2`, `boss3`): same proc at this buildup (see `backend/gameRoom.js`). */
 export const STAGGER_MAX_BOSS = 300;
 export const STAGGER_PROC_DAMAGE = 150;
-export const STAGGER_PROC_STUN_SECONDS = 2;
+export const STAGGER_PROC_STUN_SECONDS = 1.5;
 
 /** Staggering Combo — Runeblade basic attack combo adds stagger per hit (same 100 cap / proc as Staggering Strike). */
 export const STAGGERING_COMBO_HIT1_STAGGER = 15;
@@ -626,7 +635,7 @@ export const STAGGERING_SWIPES_RIGHT_BLADE_STAGGER = 13;
 export const STAGGERING_STAB_BACKSTAB_STAGGER = 80;
 /** Wrathful Stab — Backstab additive crit (see `calculateDamage`). */
 export const WRATHFUL_STAB_CRIT_CHANCE_ADD = 0.3;
-export const WRATHFUL_STAB_CRIT_DAMAGE_MULT_ADD = 0.6;
+export const WRATHFUL_STAB_CRIT_DAMAGE_MULT_ADD = 0.8;
 /** Wrathful Sabres Swipes — LMB dual blades additive crit (see `calculateDamage`). */
 export const WRATHFUL_SABRES_SWIPES_CRIT_CHANCE_ADD = 0.2;
 export const WRATHFUL_SABRES_SWIPES_CRIT_DAMAGE_MULT_ADD = 1.0;
@@ -641,7 +650,7 @@ export const WRATHFUL_FLOURISH_CRIT_CHANCE_ADD = 0.35;
 export const WRATHFUL_FLOURISH_CRIT_DAMAGE_MULT_ADD = 0.15;
 
 /** Staggering Smite — each Colossus Smite beam adds this stagger per enemy hit (same 100 cap / proc as other stagger talents). */
-export const STAGGERING_SMITE_BEAM_STAGGER = 40;
+export const STAGGERING_SMITE_BEAM_STAGGER = 80;
 
 /** Stagger Shot — Bow LMB: uncharged, charged, perfect, and Tempest Rounds burst (same 100 cap / proc as other stagger talents). */
 export const STAGGER_SHOT_UNCHARGED_STAGGER = 10;
@@ -652,10 +661,10 @@ export const STAGGER_SHOT_TEMPEST_ROUND_STAGGER = 15;
 /** Staggering Bite — each Barrage arrow (Frostbite) adds this stagger. Same 100 cap / proc as other stagger talents. */
 export const STAGGERING_BITE_BARRAGE_STAGGER_PER_HIT = 20;
 /** Staggering Talons — Reaping Talons forward and return hit only (not Explosive end explosion). */
-export const STAGGERING_TALONS_HIT_STAGGER = 40;
+export const STAGGERING_TALONS_HIT_STAGGER = 50;
 /** Wrathful Shots — perfect-timing bow primary only. */
 export const WRATHFUL_SHOTS_PERFECT_CRIT_CHANCE_ADD = 0.4;
-export const WRATHFUL_SHOTS_PERFECT_CRIT_DAMAGE_MULT_ADD = 0.5;
+export const WRATHFUL_SHOTS_PERFECT_CRIT_DAMAGE_MULT_ADD = 0.65;
 
 /** Dual Coil — left/right offset for the twin Bow LMB spawns and perfect-shot beams (world units, half the pair’s separation is this distance from center). */
 export const DUAL_COIL_LATERAL_OFFSET = 0.16;
@@ -1203,6 +1212,14 @@ export const crescentBladesTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'SABRES_BASIC',
 };
 
+export const windShearTalentDefinition: TalentDefinition = {
+  id: TALENT_WIND_SHEAR,
+  name: 'Wind Shear',
+  description:
+    `Every Sabres left-click attack fires a wind slash projectile that travels ${WIND_SHEAR_MAX_DISTANCE_UNITS} units forward, dealing ${WIND_SHEAR_DAMAGE} damage to the first enemy it strikes.`,
+  modifiesAbilityId: 'SABRES_BASIC',
+};
+
 export const staggerShotTalentDefinition: TalentDefinition = {
   id: TALENT_STAGGER_SHOT,
   name: 'STAGGER SHOT',
@@ -1229,9 +1246,9 @@ export const highCaliberTalentDefinition: TalentDefinition = {
 
 export const triggerFingerTalentDefinition: TalentDefinition = {
   id: TALENT_TRIGGER_FINGER,
-  name: 'TRIGGER FINGER',
+  name: 'QUICK DRAW',
   description:
-    'Bow left-click minimum charge damage is 40 instead of 10. Uncharged projectiles use a red energy tint.',
+    'Bow left-click minimum charge damage is 50 instead of 10. Uncharged projectiles use a red energy tint.',
   modifiesAbilityId: 'BOW_BASIC',
 };
 
@@ -1591,6 +1608,8 @@ export interface TalentLoadout {
   guardSabresFlourish: boolean;
   /** Crescent Blades — every 3rd Sabres LMB swing fires a 150-damage crescent slash AoE. */
   crescentBlades: boolean;
+  /** Wind Shear — every Sabres LMB swing fires a forward wind slash for 40 damage (first hit only). */
+  windShear: boolean;
   killstreak: boolean;
   relentless: boolean;
   vorpalGust: boolean;
@@ -1710,6 +1729,7 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     guardSabresStab: false,
     guardSabresFlourish: false,
     crescentBlades: false,
+    windShear: false,
     killstreak: false,
     relentless: false,
     vorpalGust: false,
@@ -2452,6 +2472,10 @@ export function shouldApplyCrescentBladesTalent(talentLoadout: TalentLoadout | n
   return !!talentLoadout?.crescentBlades;
 }
 
+export function shouldApplyWindShearTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.windShear;
+}
+
 export function shouldApplyGuardSabresStabTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.guardSabresStab;
 }
@@ -2595,9 +2619,9 @@ export function buildScytheClassBoonPool(): TalentId[] {
   ];
 }
 
-/** Sabres class boon pool (co-op): Backstab-focused talents + Crescent Blades LMB augment. */
+/** Sabres class boon pool (co-op): Backstab-focused talents + LMB augments (Crescent Blades, Wind Shear). */
 export function buildSabresClassBoonPool(): TalentId[] {
-  return [TALENT_KILLSTREAK, TALENT_RELENTLESS, TALENT_VORPAL_GUST, TALENT_FAN_OF_KNIVES, TALENT_PARRY, TALENT_CRESCENT_BLADES];
+  return [TALENT_KILLSTREAK, TALENT_RELENTLESS, TALENT_VORPAL_GUST, TALENT_FAN_OF_KNIVES, TALENT_PARRY, TALENT_CRESCENT_BLADES, TALENT_WIND_SHEAR];
 }
 
 export function buildClassBoonPoolForWeapon(
@@ -3174,6 +3198,9 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_CRESCENT_BLADES:
       next.crescentBlades = true;
       return next;
+    case TALENT_WIND_SHEAR:
+      next.windShear = true;
+      return next;
     case TALENT_GUARD_SABRES_STAB:
       next.guardSabresStab = true;
       return next;
@@ -3323,6 +3350,7 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_GUARD_SABRES_STAB]: guardSabresStabTalentDefinition,
   [TALENT_GUARD_SABRES_FLOURISH]: guardSabresFlourishTalentDefinition,
   [TALENT_CRESCENT_BLADES]: crescentBladesTalentDefinition,
+  [TALENT_WIND_SHEAR]: windShearTalentDefinition,
   [TALENT_KILLSTREAK]: killstreakTalentDefinition,
   [TALENT_RELENTLESS]: relentlessTalentDefinition,
   [TALENT_VORPAL_GUST]: vorpalGustTalentDefinition,
@@ -3429,6 +3457,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_GUARD_SABRES_STAB]: '/icons/stab.svg',
   [TALENT_GUARD_SABRES_FLOURISH]: '/icons/flourish.svg',
   [TALENT_CRESCENT_BLADES]: '/icons/swipes.svg',
+  [TALENT_WIND_SHEAR]: '/icons/swipes.svg',
   [TALENT_KILLSTREAK]: '/icons/killstreak.svg',
   [TALENT_RELENTLESS]: '/icons/relentless.svg',
   [TALENT_VORPAL_GUST]: '/icons/vorpalGust.svg',
@@ -3537,6 +3566,7 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.guardSabresStab) out.push(TALENT_GUARD_SABRES_STAB);
   if (loadout.guardSabresFlourish) out.push(TALENT_GUARD_SABRES_FLOURISH);
   if (loadout.crescentBlades) out.push(TALENT_CRESCENT_BLADES);
+  if (loadout.windShear) out.push(TALENT_WIND_SHEAR);
   if (loadout.killstreak) out.push(TALENT_KILLSTREAK);
   if (loadout.relentless) out.push(TALENT_RELENTLESS);
   if (loadout.vorpalGust) out.push(TALENT_VORPAL_GUST);

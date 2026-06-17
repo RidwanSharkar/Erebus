@@ -16,6 +16,7 @@ import ChargedArrow from '@/components/projectiles/ChargedArrow';
 import RegularArrow from '@/components/projectiles/RegularArrow';
 import Barrage from '@/components/projectiles/Barrage';
 import FanOfKnivesDagger from '@/components/projectiles/FanOfKnivesDagger';
+import { WindShearProjectile } from '@/components/projectiles/WindShearProjectile';
 import TowerProjectile from '@/components/projectiles/TowerProjectile';
 import ExplosionEffect from '@/components/projectiles/ExplosionEffect';
 import CrossentropyExplosion from '@/components/projectiles/CrossentropyExplosion';
@@ -70,6 +71,8 @@ interface ProjectileData {
   crossentropyPlague?: boolean;
   /** When the ECS entity despawns, R3F clock elapsed — trail fades out visually only. */
   trailFadeOutStartElapsed?: number;
+  /** Wind Shear talent — roll (radians) applied to the crescent visual so paired slashes oppose diagonally. */
+  windShearRoll?: number;
 }
 
 interface SwordProjectileData {
@@ -114,6 +117,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
     sword: SwordProjectileData[];
     barrage: ProjectileData[];
     fanOfKnives: ProjectileData[];
+    windShear: ProjectileData[];
     tower: ProjectileData[];
   }>({
     crossentropy: [],
@@ -123,6 +127,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
     sword: [],
     barrage: [],
     fanOfKnives: [],
+    windShear: [],
     tower: []
   });
 
@@ -140,6 +145,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
   const swordIdCounter = useRef(0);
   const barrageIdCounter = useRef(0);
   const fanOfKnivesIdCounter = useRef(0);
+  const windShearIdCounter = useRef(0);
   const towerIdCounter = useRef(0);
   const explosionIdCounter = useRef(0);
   const plagueVenomEffectIdCounter = useRef(0);
@@ -207,6 +213,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
     const newSword: SwordProjectileData[] = [];
     const newBarrage: ProjectileData[] = [];
     const newFanOfKnives: ProjectileData[] = [];
+    const newWindShear: ProjectileData[] = [];
     const newTower: ProjectileData[] = [];
 
     for (const entity of allProjectileEntities) {
@@ -368,7 +375,22 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
           });
         }
       } else if (userData.projectileType === 'wind_shear') {
-        // Wind shear projectiles are handled by WindShearProjectileManager, skip here
+        const existing = projectileData.windShear.find((p) => p.entityId === entity.id);
+        if (existing) {
+          existing.position.copy(transform.position);
+          existing.direction.copy(direction);
+          newWindShear.push(existing);
+        } else {
+          newWindShear.push({
+            id: windShearIdCounter.current++,
+            position: transform.position.clone(),
+            direction: direction.clone(),
+            entityId: entity.id,
+            opacity: userData.opacity || 1.0,
+            projectileType: 'wind_shear',
+            windShearRoll: typeof userData.windShearRoll === 'number' ? userData.windShearRoll : 0,
+          });
+        }
       } else if (userData.projectileType === 'sword_projectile') {
         const existing = projectileData.sword.find(p => p.entityId === entity.id);
         if (existing) {
@@ -524,6 +546,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
       newSword.length !== projectileData.sword.length ||
       newBarrage.length !== projectileData.barrage.length ||
       newFanOfKnives.length !== projectileData.fanOfKnives.length ||
+      newWindShear.length !== projectileData.windShear.length ||
       newTower.length !== projectileData.tower.length ||
       newCrossentropy.some(p => !projectileData.crossentropy.find(existing => existing.entityId === p.entityId)) ||
       newCharged.some(p => !projectileData.charged.find(existing => existing.entityId === p.entityId)) ||
@@ -531,6 +554,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
       newSword.some(p => !projectileData.sword.find(existing => existing.entityId === p.entityId)) ||
       newBarrage.some(p => !projectileData.barrage.find(existing => existing.entityId === p.entityId)) ||
       newFanOfKnives.some(p => !projectileData.fanOfKnives.find(existing => existing.entityId === p.entityId)) ||
+      newWindShear.some(p => !projectileData.windShear.find(existing => existing.entityId === p.entityId)) ||
       newTower.some(p => !projectileData.tower.find(existing => existing.entityId === p.entityId))
     );
 
@@ -543,6 +567,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
         sword: newSword,
         barrage: newBarrage,
         fanOfKnives: newFanOfKnives,
+        windShear: newWindShear,
         tower: newTower
       });
     }
@@ -732,6 +757,29 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             maxDistance,
             distanceTraveled,
             colors: getFanOfKnivesDaggerColorsFromTint(tint),
+          };
+        })}
+      />
+
+      <WindShearProjectile
+        projectiles={projectileData.windShear.map((ws) => {
+          const projectileEntity = world?.getEntity(ws.entityId);
+          const projectileComp = projectileEntity?.getComponent(Projectile);
+          const distanceTraveled = projectileComp?.distanceTraveled ?? 0;
+          const maxDistance =
+            projectileComp?.maxDistance != null && projectileComp.maxDistance !== Infinity
+              ? projectileComp.maxDistance
+              : 8;
+          const startPos =
+            projectileComp?.startPosition != null ? projectileComp.startPosition.clone() : ws.position.clone();
+          return {
+            id: ws.id,
+            position: ws.position,
+            direction: ws.direction.clone(),
+            startPosition: startPos,
+            maxDistance,
+            distanceTraveled,
+            roll: ws.windShearRoll ?? 0,
           };
         })}
       />
