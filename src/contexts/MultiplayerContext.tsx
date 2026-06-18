@@ -118,6 +118,8 @@ export interface EnemyDamageMeta {
   frostTotemChill?: boolean;
   /** Guardbreak room boon — server applies bonus damage if target is stunned. */
   guardbreakRoom?: boolean;
+  /** REBUKE room boon — server schedules Ignite DoT after rebuke hit. */
+  rebukeRoom?: boolean;
   /** Glacial Bite — Barrage chill stacks; 5 stacks → 6s freeze on server. */
   glacialBiteChill?: boolean;
   /** Glacial Talons — Reaping Talons double damage vs frozen on server. */
@@ -1847,6 +1849,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.arcticBlizzard ? { arcticBlizzard: true } : {}),
         ...(meta?.frostTotemChill ? { frostTotemChill: true } : {}),
         ...(meta?.guardbreakRoom ? { guardbreakRoom: true } : {}),
+        ...(meta?.rebukeRoom ? { rebukeRoom: true } : {}),
         ...(meta?.glacialBiteChill ? { glacialBiteChill: true } : {}),
         ...(meta?.glacialTalons ? { glacialTalons: true } : {}),
         ...(meta?.entanglementBarrage ? { entanglementBarrage: true } : {}),

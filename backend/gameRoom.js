@@ -101,7 +101,7 @@ const COOP_SPECIAL_ROOM_TYPES = Object.freeze(['stat', 'trial', 'merchant']);
 const COOP_ROOM_TYPES = Object.freeze([...COOP_COLORED_ROOM_TYPES, ...COOP_SPECIAL_ROOM_TYPES, 'boss']);
 const COOP_TERRAIN_THEMES = Object.freeze(['purple', 'blue', 'green']);
 const COOP_WAVE_MARTYR_ROOM_CHANCE = 0.33; // 30% of colored rooms have martyr spawns
-const COOP_WAVE_TITAN_ROOM_CHANCE = 0.20; // 20% of colored rooms have titan spawns (after boss 1)
+const COOP_WAVE_TITAN_ROOM_CHANCE = 0.5; // 20% of colored rooms have titan spawns (after boss 1)
 const COOP_WAVE_BOSS1_ROOM_CHANCE = 0.33; // 33% of colored rooms have a mini-boss1 spawn after boss2 is defeated
 /** Staged room wave settings — mixed rooms scatter, colored rooms edge-spawn. */
 const COOP_MIXED_WAVE_COUNT = 8;
@@ -1583,6 +1583,7 @@ class GameRoom {
         maxHealth: player.maxHealth,
         wasKilled,
         timestamp: Date.now(),
+        ...(meta?.sourceEnemyId ? { sourceEnemyId: meta.sourceEnemyId } : {}),
       });
       this.io.to(this.roomId).emit('player-health-updated', {
         playerId,
@@ -1636,6 +1637,7 @@ class GameRoom {
         maxHealth: player.maxHealth,
         wasKilled,
         timestamp: Date.now(),
+        ...(meta?.sourceEnemyId ? { sourceEnemyId: meta.sourceEnemyId } : {}),
       });
       this.io.to(this.roomId).emit('player-health-updated', {
         playerId,
@@ -1671,7 +1673,8 @@ class GameRoom {
         newHealth: player.health,
         maxHealth: player.maxHealth,
         wasKilled,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        ...(meta?.sourceEnemyId ? { sourceEnemyId: meta.sourceEnemyId } : {}),
       });
       this.io.to(this.roomId).emit('player-health-updated', {
         playerId,
@@ -2240,7 +2243,7 @@ class GameRoom {
         this.miniBoss1SpawnedThisRoom = true;
       } else if (this.roomHasMartyrs && Math.random() < 0.33) {
         unitType = 'martyr';
-      } else if (this.roomHasTitans && Math.random() < 0.33) {
+      } else if (this.roomHasTitans && Math.random() < 0.15) {
         unitType = 'titan';
       } else {
         const pool = campDef.enemyPool;
@@ -2740,6 +2743,35 @@ class GameRoom {
         const remainder = totalDot - baseTick * tickCount;
         const tickAmounts = [baseTick, baseTick, baseTick + remainder];
         const delaysMs = [1000, 2000, 3000];
+        for (let i = 0; i < tickCount; i++) {
+          const tickDamage = tickAmounts[i];
+          if (tickDamage <= 0) continue;
+          this._scheduleTimeout(() => {
+            const target = this.enemies.get(enemyId);
+            if (!target || target.isDying || target.health <= 0) return;
+            this.damageEnemy(enemyId, tickDamage, fromPlayerId, player, { damageType: 'ignite' });
+          }, delaysMs[i]);
+        }
+      }
+    }
+
+    // REBUKE room boon — Ignite DoT: 70% of hit over 4s in 4 ticks (non-lethal hits only)
+    const rebukeDotEligible =
+      !result.wasKilled &&
+      hitMeta &&
+      appliedDamage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0 &&
+      hitMeta.rebukeRoom;
+    if (rebukeDotEligible) {
+      this.applyStatusEffect(enemyId, 'ignite', 4000);
+      const totalDot = Math.floor(appliedDamage * 0.7);
+      if (totalDot > 0) {
+        const tickCount = 4;
+        const baseTick = Math.floor(totalDot / tickCount);
+        const remainder = totalDot - baseTick * tickCount;
+        const tickAmounts = [baseTick, baseTick, baseTick, baseTick + remainder];
+        const delaysMs = [1000, 2000, 3000, 4000];
         for (let i = 0; i < tickCount; i++) {
           const tickDamage = tickAmounts[i];
           if (tickDamage <= 0) continue;

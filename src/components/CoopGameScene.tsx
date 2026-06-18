@@ -25,6 +25,7 @@ import MartyrRenderer from './enemies/MartyrRenderer';
 import TentacleSpineRenderer from './enemies/TentacleSpineRenderer';
 import MartyrDetonationTelegraph from './enemies/MartyrDetonationTelegraph';
 import MartyrDetonationExplosion from './enemies/MartyrDetonationExplosion';
+import DeathFlashExplosion, { type DeathFlashScale } from './enemies/DeathFlashExplosion';
 import ZombieRenderer from './enemies/ZombieRenderer';
 import GhoulSummonRitual from './enemies/GhoulSummonRitual';
 import InfestedZombieRiseVFX from './enemies/InfestedZombieRiseVFX';
@@ -40,7 +41,7 @@ import CrossentropyMeteor from './projectiles/CrossentropyMeteor';
 import BossTeleportEffect from './enemies/BossTeleportEffect';
 import BossLeapTelegraph from './enemies/BossLeapTelegraph';
 import BossSpearProjectile from './enemies/BossSpearProjectile';
-import BossLeapShockwave from './enemies/BossLeapShockwave';
+import BossLeapShockwave, { type LeapShockwaveVariant } from './enemies/BossLeapShockwave';
 import Boss2ArchonLightning from './enemies/Boss2ArchonLightning';
 import Boss3NovaDiscs, { type Boss3NovaBurst } from './enemies/Boss3NovaDiscs';
 import GoldPileDropEffect from './enemies/GoldPileDropEffect';
@@ -108,12 +109,15 @@ import {
   shouldApplyStaggeringDashTalent,
   shouldApplyGuardbreakTalent,
   shouldApplyBloodleechTalent,
+  shouldApplyRebukeTalent,
   shouldApplyVorpalGustTalent,
   getVorpalGustStabBoonBeamTheme,
   type VorpalGustStabBoonBeamTheme,
   evaluateVorpalGustBeamHit,
   INFERNAL_DASH_DAMAGE,
   INFERNAL_DASH_RADIUS,
+  REBUKE_DAMAGE,
+  REBUKE_ICD_SEC,
   GLACIAL_DASH_FREEZE_DURATION_MS,
   GLACIAL_DASH_RADIUS,
   STAGGERING_DASH_RANGE,
@@ -1095,6 +1099,7 @@ export function CoopGameScene({
     broadcastPlayerDeathEffect, // For broadcasting death effects
     broadcastPlayerKnockback, // For broadcasting knockback effects
     damageEnemy, // New function for enemy damage with source player tracking
+    subscribeEnemyDamage,
     damageMushroom,
     mushroomState,
     detonateWyvernConcentratedVenom,
@@ -1135,6 +1140,7 @@ export function CoopGameScene({
   inventorySnapshotRef.current = inventory;
 
   const talentLoadoutRef = useRef(talentLoadout);
+  const lastRebukeTimeSecRef = useRef(0);
   const abilityLoadoutRef = useRef(abilityLoadout ?? null);
   useEffect(() => {
     talentLoadoutRef.current = talentLoadout;
@@ -2135,7 +2141,9 @@ export function CoopGameScene({
   // Boss leap shockwave VFX (triggered on boss-leap-land)
   interface BossLeapShockwaveState {
     id: string;
-    position: Vector3;
+    x: number;
+    z: number;
+    variant: LeapShockwaveVariant;
   }
   const [bossLeapShockwaves, setBossLeapShockwaves] = useState<BossLeapShockwaveState[]>([]);
 
@@ -2157,6 +2165,7 @@ export function CoopGameScene({
   // Boss throw-spear projectiles
   interface BossSpearState {
     id: string;
+    bossId: string;
     startPosition: Vector3;
     targetPosition: Vector3;
     damage: number;
@@ -2184,6 +2193,7 @@ export function CoopGameScene({
     timestamp: number;
     /** Same event may set per-cast (e.g. warlock 100); boss uses Meteor default. */
     damage?: number;
+    sourceEnemyId?: string;
   }
   const [activeMeteors, setActiveMeteors] = useState<MeteorState[]>([]);
   interface CrossentropyMeteorState {
@@ -2225,6 +2235,13 @@ export function CoopGameScene({
     radius: number;
   }
   const [martyrDetonationExplosions, setMartyrDetonationExplosions] = useState<MartyrDetonationExplosionState[]>([]);
+
+  interface DeathFlashExplosionState {
+    id: string;
+    position: { x: number; y: number; z: number };
+    scale: DeathFlashScale;
+  }
+  const [deathFlashExplosions, setDeathFlashExplosions] = useState<DeathFlashExplosionState[]>([]);
 
   // Knight Death Vortex Effect State
   interface KnightDeathVortexState {
@@ -2360,6 +2377,7 @@ export function CoopGameScene({
   // Blue weaver: targeted lightning (ground telegraph + strike)
   interface WeaverLightningState {
     id: string;
+    weaverId: string;
     targetPosition: Vector3;
     strikeAt: number;
     damage: number;
@@ -2390,6 +2408,25 @@ export function CoopGameScene({
     position: Vector3;
   }
   const [enemySummonFlameVfx, setEnemySummonFlameVfx] = useState<EnemySummonFlameVfxState[]>([]);
+
+  useEffect(() => {
+    return subscribeEnemyDamage((event) => {
+      if (!event.wasKilled) return;
+      const enemy = enemiesRef.current.get(event.enemyId);
+      if (!enemy) return;
+      const isBoss = enemy.type === 'boss' || enemy.type === 'boss2' || enemy.type === 'boss3';
+      const isTitan = enemy.type === 'titan';
+      if (!isBoss && !isTitan) return;
+      setDeathFlashExplosions(prev => [
+        ...prev,
+        {
+          id: `death-flash-${event.enemyId}-${event.timestamp}`,
+          position: { x: enemy.position.x, y: enemy.position.y, z: enemy.position.z },
+          scale: isTitan ? 'titan' : 'boss',
+        },
+      ]);
+    });
+  }, [subscribeEnemyDamage]);
 
   // Function to create enemy taunt effect (for Deathgrasp)
   const createEnemyTauntEffect = useCallback((enemyId: string, duration: number = 10000) => {
@@ -3578,6 +3615,59 @@ export function CoopGameScene({
     }
   }, []);
 
+  const getCoopEnemyPositionByServerId = useCallback((serverEnemyId: string): Vector3 | null => {
+    const world = engineRef.current?.getWorld();
+    if (!world) return null;
+    for (const entity of world.getAllEntities()) {
+      if (entity.userData?.serverEnemyId !== serverEnemyId) continue;
+      const transform = entity.getComponent(Transform);
+      if (transform) return transform.position.clone();
+    }
+    const serverEnemy = enemiesRef.current.get(serverEnemyId);
+    if (serverEnemy?.position) {
+      return new Vector3(serverEnemy.position.x, serverEnemy.position.y, serverEnemy.position.z);
+    }
+    return null;
+  }, []);
+
+  const spawnRebukeFlameStrikeVfx = useCallback((strikePos: Vector3) => {
+    (window as any).audioSystem?.playWarlockImmolateSound(strikePos);
+    setWarlockFlameStrikes(prev => [
+      ...prev,
+      { id: `rebuke-flame-${Date.now()}-${Math.random()}`, position: strikePos.clone() },
+    ]);
+  }, []);
+
+  const tryRebukeOnDamageTaken = useCallback((
+    attackerServerEnemyId: string | undefined,
+    damageApplied: boolean,
+  ) => {
+    if (!damageApplied || !attackerServerEnemyId || !socket?.id) return;
+    if (!shouldApplyRebukeTalent(talentLoadoutRef.current)) return;
+    if (!coopServerEnemyLiving(attackerServerEnemyId)) return;
+
+    const nowSec = Date.now() / 1000;
+    if (nowSec - lastRebukeTimeSecRef.current < REBUKE_ICD_SEC) return;
+    lastRebukeTimeSecRef.current = nowSec;
+
+    const strikePos = getCoopEnemyPositionByServerId(attackerServerEnemyId);
+    if (!strikePos) return;
+
+    spawnRebukeFlameStrikeVfx(strikePos);
+    damageEnemy(attackerServerEnemyId, REBUKE_DAMAGE, socket.id, {
+      damageType: 'rebuke',
+      rebukeRoom: true,
+    });
+    broadcastPlayerAbility('rebuke', strikePos, undefined, attackerServerEnemyId);
+  }, [
+    broadcastPlayerAbility,
+    coopServerEnemyLiving,
+    damageEnemy,
+    getCoopEnemyPositionByServerId,
+    socket?.id,
+    spawnRebukeFlameStrikeVfx,
+  ]);
+
   const triggerAppliedLocalPlayerDamageFeedback = useCallback(({
     damage,
     damageType = 'physical',
@@ -3587,6 +3677,7 @@ export function CoopGameScene({
     shield,
     shieldBefore,
     position,
+    attackerServerEnemyId,
   }: {
     damage: number;
     damageType?: string;
@@ -3596,6 +3687,7 @@ export function CoopGameScene({
     shield?: Shield | null;
     shieldBefore?: number;
     position?: Vector3;
+    attackerServerEnemyId?: string;
   }) => {
     if (!damageApplied) return;
 
@@ -3612,7 +3704,9 @@ export function CoopGameScene({
       shieldOnly,
       fatal: health.isDead,
     });
-  }, [triggerLocalPlayerDamageFeedback]);
+
+    tryRebukeOnDamageTaken(attackerServerEnemyId, damageApplied);
+  }, [triggerLocalPlayerDamageFeedback, tryRebukeOnDamageTaken]);
 
   // Track previous weapon state for change detection
   const prevWeaponRef = useRef<{ weapon: WeaponType; subclass: WeaponSubclass }>({
@@ -4409,6 +4503,10 @@ export function CoopGameScene({
               : undefined;
             createRoomBoomDashVfx(variant, origin, destination, lightningTarget);
           }
+        } else if (data.abilityType === 'rebuke') {
+          if (data.playerId === socket?.id) return;
+          const strikePos = new Vector3(data.position.x, data.position.y, data.position.z);
+          spawnRebukeFlameStrikeVfx(strikePos);
         } else if (data.abilityType === 'smite') {
 
           // Create smite visual effect at the player's position
@@ -5312,6 +5410,7 @@ export function CoopGameScene({
                 shield,
                 shieldBefore,
                 position: transform.position,
+                attackerServerEnemyId: data.sourceEnemyId,
               });
 
               if (data.damageType === 'shade_dagger' && damageApplied) {
@@ -5442,6 +5541,7 @@ export function CoopGameScene({
                 shield,
                 shieldBefore,
                 position: transform.position,
+                attackerServerEnemyId: data.skeletonId,
               });
             }
           }
@@ -5619,6 +5719,7 @@ export function CoopGameScene({
               shield,
               shieldBefore,
               position: transform.position,
+              attackerServerEnemyId: data.knightId,
             });
           }
         }
@@ -5831,6 +5932,7 @@ export function CoopGameScene({
             shield,
             shieldBefore,
             position: transform.position,
+            attackerServerEnemyId: data.knightId,
           });
         }
 
@@ -5929,6 +6031,7 @@ export function CoopGameScene({
             shield,
             shieldBefore,
             position: transform.position,
+            attackerServerEnemyId: data.knightId,
           });
         }
 
@@ -6006,6 +6109,7 @@ export function CoopGameScene({
               shield,
               shieldBefore,
               position: transform.position,
+              attackerServerEnemyId: data.templarId,
             });
           }
         }
@@ -6680,6 +6784,7 @@ export function CoopGameScene({
                 shield,
                 shieldBefore,
                 position: transform.position,
+                attackerServerEnemyId: data.bossId,
               });
             }
           }
@@ -6725,6 +6830,7 @@ export function CoopGameScene({
         targetPosition: new Vector3(pos.x, pos.y, pos.z),
         timestamp: timestamp + (index * stepMs),
         ...(damage !== undefined ? { damage } : {}),
+        ...(data.bossId ? { sourceEnemyId: data.bossId } : {}),
       }));
 
       setActiveMeteors(prev => [...prev, ...newMeteors]);
@@ -6776,10 +6882,15 @@ export function CoopGameScene({
     const handleBossLeapLand = (data: { bossId: string; landPosition?: { x: number; y: number; z: number } }) => {
       setBossLeapTelegraphs((prev) => prev.filter((t) => !t.id.includes(data.bossId)));
       if (data.landPosition) {
-        const pos = new Vector3(data.landPosition.x, 0, data.landPosition.z);
+        const land = data.landPosition;
         setBossLeapShockwaves((prev) => [
           ...prev,
-          { id: `shockwave-${data.bossId}-${Date.now()}`, position: pos },
+          {
+            id: `shockwave-${data.bossId}-${Date.now()}`,
+            x: land.x,
+            z: land.z,
+            variant: 'boss',
+          },
         ]);
       }
     };
@@ -6804,10 +6915,15 @@ export function CoopGameScene({
     }) => {
       setMobLeapTelegraphs((prev) => prev.filter((t) => !t.id.includes(data.ghoulId)));
       if (data.landPosition) {
-        const pos = new Vector3(data.landPosition.x, 0, data.landPosition.z);
+        const land = data.landPosition;
         setBossLeapShockwaves((prev) => [
           ...prev,
-          { id: `ghoul-shockwave-${data.ghoulId}-${Date.now()}`, position: pos },
+          {
+            id: `ghoul-shockwave-${data.ghoulId}-${Date.now()}`,
+            x: land.x,
+            z: land.z,
+            variant: 'ghoul',
+          },
         ]);
       }
     };
@@ -6832,10 +6948,15 @@ export function CoopGameScene({
     }) => {
       setMobLeapTelegraphs((prev) => prev.filter((t) => !t.id.includes(data.templarId)));
       if (data.landPosition) {
-        const pos = new Vector3(data.landPosition.x, 0, data.landPosition.z);
+        const land = data.landPosition;
         setBossLeapShockwaves((prev) => [
           ...prev,
-          { id: `templar-shockwave-${data.templarId}-${Date.now()}`, position: pos },
+          {
+            id: `templar-shockwave-${data.templarId}-${Date.now()}`,
+            x: land.x,
+            z: land.z,
+            variant: 'templar',
+          },
         ]);
       }
     };
@@ -6853,6 +6974,7 @@ export function CoopGameScene({
         ...prev,
         {
           id: `boss-spear-${data.bossId}-${data.timestamp}`,
+          bossId: data.bossId,
           startPosition: start,
           targetPosition: target,
           damage: data.damage,
@@ -7010,6 +7132,7 @@ export function CoopGameScene({
             shield,
             shieldBefore,
             position: t.position,
+            attackerServerEnemyId: templarId,
           });
         }
       }
@@ -7094,6 +7217,7 @@ export function CoopGameScene({
             shield,
             shieldBefore,
             position: t.position,
+            attackerServerEnemyId: martyrId,
           });
         }
       }
@@ -7409,6 +7533,7 @@ export function CoopGameScene({
           shield,
           shieldBefore,
           position: t.position,
+          attackerServerEnemyId: data.warlockId,
         });
         if (wasAlive && health.isDead && socket?.id) {
           handlePlayerDeath(socket.id, 'warlock-flame-strike');
@@ -7472,6 +7597,7 @@ export function CoopGameScene({
               shield,
               shieldBefore,
               position: transform.position,
+              attackerServerEnemyId: data.ghoulId,
             });
           }
         }
@@ -7521,6 +7647,7 @@ export function CoopGameScene({
               shield,
               shieldBefore,
               position: transform.position,
+              attackerServerEnemyId: data.titanId,
             });
           }
         }
@@ -7588,6 +7715,7 @@ export function CoopGameScene({
         ...prev,
         {
           id: `weaver-lightning-${data.weaverId}-${data.timestamp}`,
+          weaverId: data.weaverId,
           targetPosition: pos,
           strikeAt: data.strikeAt,
           damage: data.damage,
@@ -10675,6 +10803,7 @@ export function CoopGameScene({
               shield,
               shieldBefore,
               position: transform?.position ?? orb.targetPosition,
+              attackerServerEnemyId: orb.warlockId,
             });
             // Play void-bolt impact sound when the chaos orb connects
             (window as any).audioSystem?.playWarlockVoidboltSound(orb.startPosition);
@@ -10845,6 +10974,7 @@ export function CoopGameScene({
                       shield,
                       shieldBefore,
                       position: localPlayerTransform.position,
+                      attackerServerEnemyId: strike.weaverId,
                     });
                   }
                 }
@@ -11028,6 +11158,7 @@ export function CoopGameScene({
                         shield,
                         shieldBefore,
                         position: localPlayerTransform.position,
+                        attackerServerEnemyId: meteor.sourceEnemyId,
                       });
                     }
                   }
@@ -11085,7 +11216,9 @@ export function CoopGameScene({
       {bossLeapShockwaves.map((sw) => (
         <BossLeapShockwave
           key={sw.id}
-          position={sw.position}
+          x={sw.x}
+          z={sw.z}
+          variant={sw.variant}
           onComplete={() => setBossLeapShockwaves((prev) => prev.filter((x) => x.id !== sw.id))}
         />
       ))}
@@ -11177,6 +11310,7 @@ export function CoopGameScene({
               shield,
               shieldBefore,
               position: transform?.position ?? spear.targetPosition,
+              attackerServerEnemyId: spear.bossId,
             });
             if (wasAlive && health.isDead && socket?.id) {
               handlePlayerDeath(socket.id, 'boss-spear');
@@ -11267,6 +11401,17 @@ export function CoopGameScene({
           maxRadius={boom.radius}
           onComplete={() => {
             setMartyrDetonationExplosions(prev => prev.filter(b => b.id !== boom.id));
+          }}
+        />
+      ))}
+
+      {deathFlashExplosions.map(fx => (
+        <DeathFlashExplosion
+          key={fx.id}
+          position={fx.position}
+          scale={fx.scale}
+          onComplete={() => {
+            setDeathFlashExplosions(prev => prev.filter(x => x.id !== fx.id));
           }}
         />
       ))}

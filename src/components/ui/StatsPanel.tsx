@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StatSystem, StatPointData, StatKey } from '@/utils/StatSystem';
 import { InventoryItem } from '@/contexts/MultiplayerContext';
 import { ITEM_RARITY_COLORS, formatRarityLabel, isItemRarity } from '@/utils/itemRarity';
@@ -47,10 +47,23 @@ export default function StatsPanel({
   talentLoadout,
   abilityLoadout,
 }: StatsPanelProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(statPointData.statPoints > 0);
   const [tab, setTab] = useState<'stats' | 'inventory'>('stats');
 
   const { stats, statPoints } = statPointData;
+  const prevStatPointsRef = useRef(statPoints);
+
+  useEffect(() => {
+    const prev = prevStatPointsRef.current;
+    if (statPoints > prev) {
+      setExpanded(true);
+      setTab('stats');
+    }
+    if (statPoints === 0) {
+      setExpanded(false);
+    }
+    prevStatPointsRef.current = statPoints;
+  }, [statPoints]);
 
   const displayStats = useMemo(
     () => StatSystem.getEffectiveStatsWithInventory(stats, inventory),

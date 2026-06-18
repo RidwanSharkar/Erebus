@@ -406,6 +406,7 @@ export default function TalentSelectionModal({
     staggeringDashRoom: initialTalentLoadout?.staggeringDashRoom ?? def.staggeringDashRoom,
     guardbreakRoom: initialTalentLoadout?.guardbreakRoom ?? def.guardbreakRoom,
     bloodleechRoom: initialTalentLoadout?.bloodleechRoom ?? def.bloodleechRoom,
+    rebukeRoom: initialTalentLoadout?.rebukeRoom ?? def.rebukeRoom,
     raiseDeadRoom: initialTalentLoadout?.raiseDeadRoom ?? def.raiseDeadRoom,
     meteorStrikeRoom: initialTalentLoadout?.meteorStrikeRoom ?? def.meteorStrikeRoom,
     coldsnapRoom: initialTalentLoadout?.coldsnapRoom ?? def.coldsnapRoom,

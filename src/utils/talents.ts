@@ -152,6 +152,8 @@ export const TALENT_STAGGERING_DASH = 'STAGGERING_DASH' as const;
 /** Weapon-agnostic colored room combat boons. */
 export const TALENT_GUARDBREAK = 'GUARDBREAK' as const;
 export const TALENT_BLOODLEECH = 'BLOODLEECH' as const;
+/** Red room universal passive — retaliate with fire when taking damage from an enemy. */
+export const TALENT_REBUKE = 'REBUKE' as const;
 /** Green room universal active boon — instant zombie summon on R key (15s cooldown). */
 export const TALENT_RAISE_DEAD = 'RAISE_DEAD' as const;
 /** Red room universal active boon — calls down a meteor on a nearby target on R key (8s cooldown). */
@@ -170,6 +172,14 @@ export const METEOR_STRIKE_COOLDOWN_SEC = 8;
 
 export const INFERNAL_DASH_DAMAGE = 165;
 export const INFERNAL_DASH_RADIUS = 3.25;
+/** REBUKE room boon — burst damage on the attacking enemy. */
+export const REBUKE_DAMAGE = 200;
+/** REBUKE — Ignite DoT: this fraction of the burst damage over REBUKE_IGNITE_DURATION_MS. */
+export const REBUKE_IGNITE_DOT_FRACTION = 0.7;
+export const REBUKE_IGNITE_DURATION_MS = 4000;
+export const REBUKE_IGNITE_TICKS = 4;
+/** REBUKE — min seconds between procs when repeatedly taking damage. */
+export const REBUKE_ICD_SEC = 2.5;
 export const GLACIAL_DASH_RADIUS = 2.5;
 export const GLACIAL_DASH_FREEZE_DURATION_MS = 3000;
 export const GLACIAL_DASH_COOLDOWN_MS = 1000;
@@ -455,6 +465,7 @@ export type TalentId =
   | typeof TALENT_STAGGERING_DASH
   | typeof TALENT_GUARDBREAK
   | typeof TALENT_BLOODLEECH
+  | typeof TALENT_REBUKE
   | typeof TALENT_RAISE_DEAD
   | typeof TALENT_METEOR_STRIKE
   | typeof TALENT_COLDSNAP_ROOM
@@ -1108,6 +1119,14 @@ export const bloodleechTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'COOP_RED_ROOM',
 };
 
+export const rebukeTalentDefinition: TalentDefinition = {
+  id: TALENT_REBUKE,
+  name: 'REBUKE',
+  description:
+    'Whenever you take damage from an enemy, that enemy erupts in flames, taking 200 damage and igniting for 70% of that damage over 4 seconds. 2.5s internal cooldown.',
+  modifiesAbilityId: 'COOP_RED_ROOM',
+};
+
 export const raiseDeadTalentDefinition: TalentDefinition = {
   id: TALENT_RAISE_DEAD,
   name: 'RAISE DEAD',
@@ -1206,7 +1225,7 @@ export const guardSabresFlourishTalentDefinition: TalentDefinition = {
 
 export const crescentBladesTalentDefinition: TalentDefinition = {
   id: TALENT_CRESCENT_BLADES,
-  name: 'Crescent Blades',
+  name: 'Crescent Flare',
   description:
     'Every 3rd Sabres left-click attack unleashes a crescent slash that deals 150 damage to all enemies in the arc in front of you, in addition to the normal dual-blade hit.',
   modifiesAbilityId: 'SABRES_BASIC',
@@ -1637,6 +1656,8 @@ export interface TalentLoadout {
   guardbreakRoom: boolean;
   /** Co-op red room — your critical strikes heal for current Strength points. */
   bloodleechRoom: boolean;
+  /** Co-op red room — retaliate with fire when taking damage from an enemy. */
+  rebukeRoom: boolean;
   /** Co-op green room active boon — player can summon a zombie via R key (15s cooldown). */
   raiseDeadRoom: boolean;
   /** Co-op red room active boon — player can call a meteor on a nearby enemy via R key (8s cooldown). */
@@ -1745,6 +1766,7 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     staggeringDashRoom: false,
     guardbreakRoom: false,
     bloodleechRoom: false,
+    rebukeRoom: false,
     raiseDeadRoom: false,
     meteorStrikeRoom: false,
     coldsnapRoom: false,
@@ -2038,6 +2060,10 @@ export function shouldApplyGuardbreakTalent(talentLoadout: TalentLoadout | null 
 
 export function shouldApplyBloodleechTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.bloodleechRoom;
+}
+
+export function shouldApplyRebukeTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.rebukeRoom;
 }
 
 /** EXECUTIONER — post-dash empowered Runeblade LMB; talent toggle only. */
@@ -2735,7 +2761,7 @@ export function buildRoomBoonPoolForColor(
 
   switch (k) {
     case 'red':
-      return [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH, TALENT_METEOR_STRIKE];
+      return [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH, TALENT_REBUKE, TALENT_METEOR_STRIKE];
     case 'purple':
       return [...pool, TALENT_GLACIAL_DASH, TALENT_COLDSNAP_ROOM];
     case 'blue':
@@ -3252,6 +3278,9 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_BLOODLEECH:
       next.bloodleechRoom = true;
       return next;
+    case TALENT_REBUKE:
+      next.rebukeRoom = true;
+      return next;
     case TALENT_RAISE_DEAD:
       next.raiseDeadRoom = true;
       return next;
@@ -3366,6 +3395,7 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_STAGGERING_DASH]: staggeringDashTalentDefinition,
   [TALENT_GUARDBREAK]: guardbreakTalentDefinition,
   [TALENT_BLOODLEECH]: bloodleechTalentDefinition,
+  [TALENT_REBUKE]: rebukeTalentDefinition,
   [TALENT_RAISE_DEAD]: raiseDeadTalentDefinition,
   [TALENT_METEOR_STRIKE]: meteorStrikeTalentDefinition,
   [TALENT_COLDSNAP_ROOM]: coldsnapRoomTalentDefinition,
@@ -3456,8 +3486,8 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_GUARD_SABRES_SWIPES]: '/icons/swipes.svg',
   [TALENT_GUARD_SABRES_STAB]: '/icons/stab.svg',
   [TALENT_GUARD_SABRES_FLOURISH]: '/icons/flourish.svg',
-  [TALENT_CRESCENT_BLADES]: '/icons/swipes.svg',
-  [TALENT_WIND_SHEAR]: '/icons/swipes.svg',
+  [TALENT_CRESCENT_BLADES]: '/icons/crescentFlare.svg',
+  [TALENT_WIND_SHEAR]: '/icons/windFury.svg',
   [TALENT_KILLSTREAK]: '/icons/killstreak.svg',
   [TALENT_RELENTLESS]: '/icons/relentless.svg',
   [TALENT_VORPAL_GUST]: '/icons/vorpalGust.svg',
@@ -3473,6 +3503,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_STAGGERING_DASH]: '/icons/dash.svg',
   [TALENT_GUARDBREAK]: '/icons/strike.svg',
   [TALENT_BLOODLEECH]: '/icons/strike.svg',
+  [TALENT_REBUKE]: '/icons/strike.svg',
   [TALENT_RAISE_DEAD]: '/icons/strike.svg',
   [TALENT_METEOR_STRIKE]: '/icons/meteor.svg',
   [TALENT_COLDSNAP_ROOM]: null,
@@ -3582,11 +3613,42 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.staggeringDashRoom) out.push(TALENT_STAGGERING_DASH);
   if (loadout.guardbreakRoom) out.push(TALENT_GUARDBREAK);
   if (loadout.bloodleechRoom) out.push(TALENT_BLOODLEECH);
+  if (loadout.rebukeRoom) out.push(TALENT_REBUKE);
   if (loadout.raiseDeadRoom) out.push(TALENT_RAISE_DEAD);
   if (loadout.meteorStrikeRoom) out.push(TALENT_METEOR_STRIKE);
   if (loadout.coldsnapRoom) out.push(TALENT_COLDSNAP_ROOM);
   if (loadout.lightningBoltRoom) out.push(TALENT_LIGHTNING_BOLT_ROOM);
   return out;
+}
+
+const COOP_ROOM_COLORS: CoopRoomColor[] = ['blue', 'green', 'purple', 'red'];
+
+/** All talent ids that can belong to a weapon (class boons + room boons across colors). */
+export function buildWeaponTalentIdSet(
+  weapon: WeaponType,
+  talentLoadoutForPool?: TalentLoadout | null,
+): Set<TalentId> {
+  const set = new Set<TalentId>();
+  for (const id of buildClassBoonPoolForWeapon(weapon, talentLoadoutForPool)) {
+    set.add(id);
+  }
+  for (const color of COOP_ROOM_COLORS) {
+    for (const id of buildRoomBoonPoolForColor(color, weapon)) {
+      set.add(id);
+    }
+  }
+  return set;
+}
+
+/** Enabled talent ids visible for the currently equipped weapon (HUD filtering). */
+export function getEnabledTalentIdsForWeapon(
+  loadout: TalentLoadout,
+  weapon: WeaponType,
+  talentLoadoutForPool?: TalentLoadout | null,
+): TalentId[] {
+  if (weapon === WeaponType.NONE) return [];
+  const allowed = buildWeaponTalentIdSet(weapon, talentLoadoutForPool);
+  return getEnabledTalentIds(loadout).filter((id) => allowed.has(id));
 }
 
 /** Remove talents the player already has this run before rolling co-op class/room boon choices. */

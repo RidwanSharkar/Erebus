@@ -639,7 +639,7 @@ export class AudioSystem extends System {
   }
 
   // Play enemy death sound — accepts a plain object so callers outside Three.js contexts
-  // don't need to import Vector3. `deathSFX.mp3` is reserved for knight / weaver only.
+  // don't need to import Vector3. `deathSFX.mp3` is used for knight, weaver, boss3, and titan.
   public playEnemyDeathSound(position: { x: number; y: number; z: number }, enemyType?: string) {
     const soundId = this.resolveEnemyDeathSoundId(enemyType);
     return this.playWeaponSound(soundId, new Vector3(position.x, position.y, position.z), { volume: 0.95 });
@@ -666,8 +666,14 @@ export class AudioSystem extends System {
       case 'viper':
         return 'enemy_death_viper';
       case 'templar':
-      case 'boss':
         return 'enemy_death_templar';
+      case 'boss':
+        return 'enemy_death_ghoul';
+      case 'boss2':
+        return 'enemy_death_warlock';
+      case 'boss3':
+      case 'titan':
+        return 'enemy_death';
       case 'tentacle-spine':
         return 'enemy_death_tentacle_spine';
       default:

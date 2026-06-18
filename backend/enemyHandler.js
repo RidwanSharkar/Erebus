@@ -30,6 +30,7 @@ function handleEnemyEvents(socket, gameRooms) {
       glacialBiteChill,
       glacialTalons,
       entanglementBarrage,
+      rebukeRoom,
     } = data;
 
     console.log(`⚔️ Received enemy-damage: room=${roomId}, enemy=${enemyId}, damage=${damage}, source=${sourcePlayerId || socket.id}`);
@@ -67,6 +68,8 @@ function handleEnemyEvents(socket, gameRooms) {
       }
     } else if (damageType === 'ignite') {
       hitMeta = { damageType: 'ignite' };
+    } else if (damageType === 'rebuke') {
+      hitMeta = { damageType: 'rebuke', rebukeRoom: !!rebukeRoom };
     } else if (damageType === 'reaping_talons') {
       hitMeta = { damageType: 'reaping_talons' };
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {

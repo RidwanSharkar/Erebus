@@ -4,7 +4,7 @@ import { SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
 import { universalAbilityPool, getUniversalAbilityById, type AbilityLoadout, type UniversalAbility } from '@/utils/weaponAbilities';
 import type { TalentId, TalentLoadout } from '@/utils/talents';
 import {
-  getEnabledTalentIds,
+  getEnabledTalentIdsForWeapon,
   getTalentBoonDefinition,
   getTalentIconSrc,
 } from '@/utils/talents';
@@ -194,8 +194,8 @@ export default function HotkeyPanel({
     : null;
 
   const enabledTalentIds = useMemo(
-    () => (talentLoadout ? getEnabledTalentIds(talentLoadout) : []),
-    [talentLoadout]
+    () => (talentLoadout ? getEnabledTalentIdsForWeapon(talentLoadout, currentWeapon, talentLoadout) : []),
+    [talentLoadout, currentWeapon]
   );
 
   // Update cooldowns from control system
