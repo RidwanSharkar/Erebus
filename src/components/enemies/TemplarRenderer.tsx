@@ -51,7 +51,9 @@ export default function TemplarRenderer({
   const [impactPlayKey, setImpactPlayKey] = useState(0);
   const [isBlinkSmite,  setIsBlinkSmite]  = useState(false);
   const [blinkSmitePlayKey, setBlinkSmitePlayKey] = useState(0);
+  const [isLeaping,     setIsLeaping]     = useState(false);
   const isBlinkSmiteRef = useRef(false);
+  const isLeapingRef    = useRef(false);
 
   const targetPosition  = useRef(position.clone());
   const targetRotation  = useRef(rotation);
@@ -80,7 +82,7 @@ export default function TemplarRenderer({
       groupRef.current.position.copy(position);
     }
 
-    if (dist > 0.01 && !isAttackingRef.current && !isDying) {
+    if (dist > 0.01 && !isAttackingRef.current && !isLeapingRef.current && !isDying) {
       if (!isWalking) setIsWalking(true);
 
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
@@ -156,9 +158,24 @@ export default function TemplarRenderer({
 
     socket.on('templar-attack-telegraph', handleTemplarTelegraph);
     socket.on('templar-blink-smite-windup', handleTemplarBlinkSmiteWindup);
+    const onLeapStart = (data: { templarId: string }) => {
+      if (data.templarId !== id) return;
+      setIsLeaping(true);
+      isLeapingRef.current = true;
+      setIsWalking(false);
+    };
+    const onLeapLand = (data: { templarId: string }) => {
+      if (data.templarId !== id) return;
+      setIsLeaping(false);
+      isLeapingRef.current = false;
+    };
+    socket.on('templar-leap-start', onLeapStart);
+    socket.on('templar-leap-land', onLeapLand);
     return () => {
       socket.off('templar-attack-telegraph', handleTemplarTelegraph);
       socket.off('templar-blink-smite-windup', handleTemplarBlinkSmiteWindup);
+      socket.off('templar-leap-start', onLeapStart);
+      socket.off('templar-leap-land', onLeapLand);
     };
   }, [id, socket]);
 
@@ -191,10 +208,11 @@ export default function TemplarRenderer({
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <TemplarModel
-        isWalking={isWalking && !isBlinkSmite}
-        isAttacking={isAttacking && !isBlinkSmite}
+        isWalking={isWalking && !isBlinkSmite && !isLeaping}
+        isAttacking={isAttacking && !isBlinkSmite && !isLeaping}
         attackVariant={attackVariant}
         isDying={isDying}
+        isLeaping={isLeaping}
         isImpacting={isImpacting}
         impactPlayKey={impactPlayKey}
         onImpactFinished={handleImpactFinished}

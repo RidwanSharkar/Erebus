@@ -11,6 +11,7 @@ interface GhoulModelProps {
   attackVariant: 1 | 2;
   isSummoning: boolean;
   isDying: boolean;
+  isLeaping?: boolean;
   isImpacting?: boolean;
   impactPlayKey?: number;
   onImpactFinished?: () => void;
@@ -24,6 +25,7 @@ const GHOUL_MODEL_PATHS = [
   '/models/ghoul_summon.glb',
   '/models/ghoul_death.glb',
   '/models/ghoul_impact.glb',
+  '/models/ghoul_leap.glb',
 ];
 
 export function preloadGhoulModels(): void {
@@ -45,6 +47,7 @@ export default function GhoulModel({
   attackVariant,
   isSummoning,
   isDying,
+  isLeaping = false,
   isImpacting = false,
   impactPlayKey = 0,
   onImpactFinished,
@@ -60,6 +63,7 @@ export default function GhoulModel({
   const { animations: summonAnims }         = useGLTF('/models/ghoul_summon.glb');
   const { animations: deathAnims }          = useGLTF('/models/ghoul_death.glb');
   const { animations: impactAnims }         = useGLTF('/models/ghoul_impact.glb');
+  const { animations: leapAnims }           = useGLTF('/models/ghoul_leap.glb');
 
   const clonedScene = useMemo(() => {
     const clone = SkeletonUtils.clone(scene) as Group;
@@ -105,16 +109,17 @@ export default function GhoulModel({
       ...rename(summonAnims,  'Summon'),
       ...rename(deathAnims,   'Death'),
       ...rename(impactAnims,  'Impact'),
+      ...rename(leapAnims,    'Leap').map(stripRootMotionXZ),
     ];
     return _cachedAnimations;
-  }, [idleAnims, runAnims, attackAnims, attack2Anims, summonAnims, deathAnims, impactAnims]);
+  }, [idleAnims, runAnims, attackAnims, attack2Anims, summonAnims, deathAnims, impactAnims, leapAnims]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
-  const getAction = (name: 'Idle' | 'Run' | 'Attack' | 'Attack2' | 'Summon' | 'Death' | 'Impact'): AnimationAction | null =>
+  const getAction = (name: 'Idle' | 'Run' | 'Attack' | 'Attack2' | 'Summon' | 'Death' | 'Impact' | 'Leap'): AnimationAction | null =>
     actions[name] ?? null;
 
-  // Priority: Death > Summon > Attack > Impact > Run > Idle
+  // Priority: Death > Summon > Leap > Attack > Impact > Run > Idle
   useEffect(() => {
     if (!actions) return;
 
@@ -123,13 +128,15 @@ export default function GhoulModel({
       ? getAction('Death')
       : isSummoning
         ? getAction('Summon')
-        : isAttacking
-          ? getAction(attackClip)
-          : isImpacting
-            ? getAction('Impact')
-            : isWalking
-              ? getAction('Run')
-              : getAction('Idle');
+        : isLeaping
+          ? getAction('Leap')
+          : isAttacking
+            ? getAction(attackClip)
+            : isImpacting
+              ? getAction('Impact')
+              : isWalking
+                ? getAction('Run')
+                : getAction('Idle');
 
     if (!nextAction) return;
     if (nextAction === currentActionRef.current) {
@@ -143,6 +150,10 @@ export default function GhoulModel({
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.15).play();
+    } else if (isLeaping) {
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.1).play();
     } else if (isSummoning || isAttacking) {
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
@@ -160,7 +171,7 @@ export default function GhoulModel({
     }
 
     currentActionRef.current = nextAction;
-  }, [isWalking, isAttacking, attackVariant, isSummoning, isDying, isImpacting, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isWalking, isAttacking, attackVariant, isSummoning, isDying, isLeaping, isImpacting, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After one-shot (summon, attack, impact) finishes, blend back to Run or Idle.
   useEffect(() => {

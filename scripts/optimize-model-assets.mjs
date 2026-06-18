@@ -15,7 +15,7 @@ const BASE_SCENE_FILES = new Set([
   'martyr_idle.glb',
   'shade_idle.glb',
   'templar_idle.glb',
-  'titan_idle.glb',
+  'titan_walk.glb',
   'viper_idle.glb',
   'warlock_idle.glb',
   'weaver_idle.glb',

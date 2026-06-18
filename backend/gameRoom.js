@@ -101,6 +101,7 @@ const COOP_SPECIAL_ROOM_TYPES = Object.freeze(['stat', 'trial', 'merchant']);
 const COOP_ROOM_TYPES = Object.freeze([...COOP_COLORED_ROOM_TYPES, ...COOP_SPECIAL_ROOM_TYPES, 'boss']);
 const COOP_TERRAIN_THEMES = Object.freeze(['purple', 'blue', 'green']);
 const COOP_WAVE_MARTYR_ROOM_CHANCE = 0.33; // 30% of colored rooms have martyr spawns
+const COOP_WAVE_TITAN_ROOM_CHANCE = 0.20; // 20% of colored rooms have titan spawns (after boss 1)
 const COOP_WAVE_BOSS1_ROOM_CHANCE = 0.33; // 33% of colored rooms have a mini-boss1 spawn after boss2 is defeated
 /** Staged room wave settings — mixed rooms scatter, colored rooms edge-spawn. */
 const COOP_MIXED_WAVE_COUNT = 8;
@@ -288,6 +289,8 @@ class GameRoom {
     this.coopWaveReserveReleased = 0;
     /** Whether the current colored room has martyr spawning enabled (30% chance, rolled per room). */
     this.roomHasMartyrs = false;
+    /** Whether the current colored room has titan spawning enabled (20% chance after boss 1). */
+    this.roomHasTitans = false;
     /** Whether the current colored room has a mini-boss1 spawn (33% chance after boss2 defeated). */
     this.roomHasMiniBoss1 = false;
     /** Tracks whether the mini-boss1 for this room has already been assigned to a slot. */
@@ -847,6 +850,7 @@ class GameRoom {
     this.coopWaveSpawnPlan = null;
     this.coopWaveReserveReleased = 0;
     this.roomHasMartyrs = false;
+    this.roomHasTitans = false;
     this.roomHasMiniBoss1 = false;
     this.miniBoss1SpawnedThisRoom = false;
     this.tripleBossIds = null;
@@ -1504,6 +1508,7 @@ class GameRoom {
     this.coopWaveSpawnPlan = null;
     this.coopWaveReserveReleased = 0;
     this.roomHasMartyrs = false;
+    this.roomHasTitans = false;
     this._devSpawnBoss2 = false;
     this._devSpawnBoss3 = false;
     this.stopEnemySpawning();
@@ -1673,6 +1678,21 @@ class GameRoom {
         health: player.health,
         maxHealth: player.maxHealth
       });
+      if (meta?.stunMs && meta.stunMs > 0) {
+        this.io.to(this.roomId).emit('player-debuff', {
+          targetPlayerId: playerId,
+          debuffType: 'stunned',
+          duration: meta.stunMs,
+          effectData: {
+            position: {
+              x: player.position.x,
+              y: player.position.y,
+              z: player.position.z,
+            },
+          },
+          timestamp: Date.now(),
+        });
+      }
     }
   }
 
@@ -1945,6 +1965,13 @@ class GameRoom {
         health: 200, maxHealth: 175, damage: 0, moveSpeed: 3.0,
         soulType: campDef.knightSoulType };
     }
+    if (type === 'titan') {
+      // Excluded from HP scaling.
+      return { id: `titan-${campIndex}-${slotIndex}-${ts}`, type: 'titan', ...base,
+        health: 3000, maxHealth: 3000, damage: 100, moveSpeed: 2.5,
+        patrolSpeed: 1.5, attackCooldown: 2500,
+        soulType: campDef.knightSoulType };
+    }
     if (type === 'boss') {
       // Mini-boss1 spawned inside a wave room — identical stats/AI to the real Boss1 encounter.
       return {
@@ -2213,6 +2240,8 @@ class GameRoom {
         this.miniBoss1SpawnedThisRoom = true;
       } else if (this.roomHasMartyrs && Math.random() < 0.33) {
         unitType = 'martyr';
+      } else if (this.roomHasTitans && Math.random() < 0.33) {
+        unitType = 'titan';
       } else {
         const pool = campDef.enemyPool;
         unitType = pool[Math.floor(Math.random() * pool.length)];
@@ -2222,7 +2251,10 @@ class GameRoom {
       this.enemies.set(enemy.id, enemy);
       // Pre-seed aggro so the enemy immediately marches toward players without
       // needing to enter the short (8–12 unit) proximity aggro radius first.
-      this.enemyAI.forceAggroOnEnemy(enemy);
+      // Titans patrol passively until provoked — skip forced aggro.
+      if (enemy.type !== 'titan') {
+        this.enemyAI.forceAggroOnEnemy(enemy);
+      }
       if (this.io) {
         this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
         this._emitEnemySummonVfx(enemy);
@@ -2346,6 +2378,8 @@ class GameRoom {
     } else {
       // ── Colored rooms: edge-spawn batch system ────────────────────────────────
       this.roomHasMartyrs = Math.random() < COOP_WAVE_MARTYR_ROOM_CHANCE;
+      this.roomHasTitans = this.coopBossesDefeatedCount >= 1
+        && Math.random() < COOP_WAVE_TITAN_ROOM_CHANCE;
       // Roll for a mini-boss1 appearance in this room (only available after Boss2 is defeated).
       this.roomHasMiniBoss1 = this.coopBossesDefeatedCount >= 2
         && Math.random() < COOP_WAVE_BOSS1_ROOM_CHANCE;
@@ -2361,7 +2395,7 @@ class GameRoom {
       this._spawnTentacleSpinesForWave(edgePositions, campDef);
 
       console.log(
-        `⚔️ Colored room (${typeKey}): batch 1 at north edge, martyrs=${this.roomHasMartyrs}, miniBoss1=${this.roomHasMiniBoss1}, room: ${this.currentCoopRoomKind}`
+        `⚔️ Colored room (${typeKey}): batch 1 at north edge, martyrs=${this.roomHasMartyrs}, titans=${this.roomHasTitans}, miniBoss1=${this.roomHasMiniBoss1}, room: ${this.currentCoopRoomKind}`
       );
     }
 
@@ -2409,7 +2443,7 @@ class GameRoom {
     if (!enemy || enemy.isDying) return;
 
     const now = Date.now();
-    const wyvernVenomDpsPerStack = 17;
+    const wyvernVenomDpsPerStack = 31;
     let cvDamage = 0;
     const stacks = enemy.concentratedVenomStacks || 0;
     const cvLastPlayerId = enemy.concentratedVenomLastPlayerId;
@@ -3557,6 +3591,38 @@ class GameRoom {
 
         return result;
 
+      } else if (enemy.type === 'titan') {
+        if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
+          this.io.to(this.roomId).emit('player-experience-gained', {
+            playerId: fromPlayerId,
+            experienceGained: 100,
+            source: 'titan_kill',
+            enemyId: enemyId,
+            timestamp: Date.now()
+          });
+        }
+
+        this._registerCoopWaveKill('🗿 Titan killed');
+
+        if (Math.random() < 0.15) {
+          this.spawnItemDrop(enemy.position, enemy);
+        }
+
+        if (this.enemyAI) {
+          this.enemyAI.removeEnemyAggro(enemyId);
+        }
+
+        this._scheduleTimeout(() => {
+          this._pruneEnemyMaps(enemyId);
+          this.enemies.delete(enemyId);
+          console.log(`🗑️ Titan ${enemyId} removed from enemies map after death fade`);
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-removed', { enemyId, timestamp: Date.now() });
+          }
+        }, 2500);
+
+        return result;
+
       } else if (enemy.type === 'viper') {
         // Award EXP for viper kills
         if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
@@ -4490,6 +4556,7 @@ class GameRoom {
     this.coopWaveSpawnPlan = null;
     this.coopWaveReserveReleased = 0;
     this.roomHasMartyrs = false;
+    this.roomHasTitans = false;
     this._clearCoopCombatTransitionTimer();
     this.coopCombatTransition = null;
     this.coopCombatTransitionId = 0;

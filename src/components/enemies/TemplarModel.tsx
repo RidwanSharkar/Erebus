@@ -10,6 +10,7 @@ interface TemplarModelProps {
   isAttacking: boolean;
   attackVariant: 1 | 2;
   isDying: boolean;
+  isLeaping?: boolean;
   isImpacting?: boolean;
   impactPlayKey?: number;
   onImpactFinished?: () => void;
@@ -27,6 +28,7 @@ const TEMPLAR_MODEL_PATHS = [
   '/models/templar_death.glb',
   '/models/templar_impact.glb',
   '/models/templar_smite.glb',
+  '/models/templar_leap.glb',
 ];
 
 export function preloadTemplarModels(): void {
@@ -41,6 +43,7 @@ export default function TemplarModel({
   isAttacking,
   attackVariant,
   isDying,
+  isLeaping = false,
   isImpacting = false,
   impactPlayKey = 0,
   onImpactFinished,
@@ -60,6 +63,7 @@ export default function TemplarModel({
   const { animations: deathAnims }          = useGLTF('/models/templar_death.glb');
   const { animations: impactAnims }         = useGLTF('/models/templar_impact.glb');
   const { animations: smiteAnims }          = useGLTF('/models/templar_smite.glb');
+  const { animations: leapAnims }           = useGLTF('/models/templar_leap.glb');
 
   // Clone scene + own materials so dying fade-out is isolated to this instance.
   const clonedScene = useMemo(() => {
@@ -106,30 +110,33 @@ export default function TemplarModel({
       ...(smiteAnims.length
         ? rename([smiteAnims[0]], 'BlinkSmite').map(stripRootMotionXZ)
         : []),
+      ...rename(leapAnims, 'Leap').map(stripRootMotionXZ),
     ];
-  }, [idleAnims, runAnims, attackAnims, attack2Anims, deathAnims, impactAnims, smiteAnims]);
+  }, [idleAnims, runAnims, attackAnims, attack2Anims, deathAnims, impactAnims, smiteAnims, leapAnims]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
-  const getAction = (name: 'Idle' | 'Walk' | 'Attack' | 'Attack2' | 'Death' | 'Impact' | 'BlinkSmite'): AnimationAction | null =>
+  const getAction = (name: 'Idle' | 'Walk' | 'Attack' | 'Attack2' | 'Death' | 'Impact' | 'BlinkSmite' | 'Leap'): AnimationAction | null =>
     actions[name] ?? null;
 
-  // Priority: Death > BlinkSmite > Attack > Impact > Walk > Idle
+  // Priority: Death > Leap > BlinkSmite > Attack > Impact > Walk > Idle
   useEffect(() => {
     if (!actions) return;
 
     const attackClip = attackVariant === 2 ? 'Attack2' : 'Attack';
     const nextAction = isDying
       ? getAction('Death')
-      : isBlinkSmite
-        ? getAction('BlinkSmite')
-        : isAttacking
-          ? getAction(attackClip)
-          : isImpacting
-            ? getAction('Impact')
-            : isWalking
-              ? getAction('Walk')
-              : getAction('Idle');
+      : isLeaping
+        ? getAction('Leap')
+        : isBlinkSmite
+          ? getAction('BlinkSmite')
+          : isAttacking
+            ? getAction(attackClip)
+            : isImpacting
+              ? getAction('Impact')
+              : isWalking
+                ? getAction('Walk')
+                : getAction('Idle');
 
     if (!nextAction) return;
     if (nextAction === currentActionRef.current) {
@@ -144,6 +151,10 @@ export default function TemplarModel({
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.15).play();
+    } else if (isLeaping) {
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.1).play();
     } else if (isBlinkSmite) {
       lastBlinkSmitePlayKeyRef.current = blinkSmitePlayKey;
       nextAction.setLoop(LoopOnce, 1);
@@ -167,7 +178,7 @@ export default function TemplarModel({
     }
 
     currentActionRef.current = nextAction;
-  }, [isWalking, isAttacking, isDying, attackVariant, isImpacting, impactPlayKey, isBlinkSmite, blinkSmitePlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isWalking, isAttacking, isDying, attackVariant, isLeaping, isImpacting, impactPlayKey, isBlinkSmite, blinkSmitePlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After one-shot (impact, attack) finishes, blend back to Walk or Idle.
   useEffect(() => {

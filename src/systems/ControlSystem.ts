@@ -936,7 +936,10 @@ export class ControlSystem extends System {
     // Handle weapon switching
     this.handleWeaponSwitching();
 
-    // Handle dash movement first (overrides regular movement)
+    // Handle knockback movement first (overrides regular movement)
+    this.handleKnockbackMovement(playerMovement, playerTransform);
+
+    // Handle dash movement (overrides regular movement)
     this.handleDashMovement(playerMovement, playerTransform);
 
     // Handle charge movement (overrides regular movement)
@@ -944,7 +947,7 @@ export class ControlSystem extends System {
 
     // Handle player movement input (only prevent for abilities that truly override movement)
     // Most abilities should allow movement - only prevent for dashing, charging, and debuffs
-    if (!playerMovement.isDashing && !playerMovement.isCharging && !playerMovement.isFrozen) {
+    if (!playerMovement.isDashing && !playerMovement.isCharging && !playerMovement.isFrozen && !playerMovement.isKnockbacked) {
       this.handleMovementInput(playerMovement);
     } else {
       this.clearMovementControlState();
@@ -6953,6 +6956,17 @@ export class ControlSystem extends System {
       destination,
       direction,
     });
+  }
+
+  private handleKnockbackMovement(movement: Movement, transform: Transform): void {
+    if (!movement.isKnockbacked) return;
+
+    const currentTime = Date.now() / 1000;
+    const knockbackResult = movement.updateKnockback(currentTime);
+
+    if (knockbackResult.newPosition) {
+      transform.position.copy(knockbackResult.newPosition);
+    }
   }
 
   private handleDashMovement(movement: Movement, transform: Transform): void {

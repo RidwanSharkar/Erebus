@@ -106,7 +106,7 @@ const FLAME_PALETTES: Record<string, [[number,number,number],[number,number,numb
 };
 const DEFAULT_PALETTE = FLAME_PALETTES.red;
 
-const EMBERS_PER_CAMP = 20;
+const EMBERS_PER_CAMP = 15;
 const TOTAL = EMBERS_PER_CAMP * CAMP_ORIGINS.length;
 
 // Build the two uniform Vector3[] arrays for a given campTypes list.

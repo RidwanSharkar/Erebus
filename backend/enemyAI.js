@@ -54,8 +54,8 @@ const KNIGHT_SPIN_TRAVEL_MS = 400; // 31 frames at 30fps
 const KNIGHT_SPIN_DAMAGE = 20;
 const KNIGHT_SPIN_STRIP_HALF_WIDTH = 0.75;
 
-// Knight / templar / ghoul / martyr: ring goals + peer separation (radii match client CoopGameScene hit spheres).
-const MELEE_SURROUND_TYPES = new Set(['knight', 'templar', 'ghoul', 'martyr', 'allied-knight']);
+// Knight / templar / ghoul / martyr / titan: ring goals + peer separation (radii match client CoopGameScene hit spheres).
+const MELEE_SURROUND_TYPES = new Set(['knight', 'templar', 'ghoul', 'martyr', 'titan', 'allied-knight']);
 const MELEE_PEER_SEP_PADDING = 0.05;
 // Tight ring: closer to player than ~0.82×attackRange so units path/hug obstacles less awkwardly.
 const MELEE_SURROUND_STANDOFF_FRAC = 0.18;
@@ -64,6 +64,17 @@ const MELEE_SURROUND_STANDOFF_MARGIN = 0.08;
 
 // Leash to current non-player damage threat (arena ~64×64).
 const DAMAGE_THREAT_LEASH = 90;
+
+// Titan — heavy patrol melee unit (post boss-1 room spawn).
+const TITAN_AGGRO_RADIUS = 5;
+const TITAN_ATTACK_RANGE = 3.0;
+const TITAN_SWING_LOCK_MS = 1500;
+const TITAN_HIT_DELAY_MS = 1200;
+const TITAN_KNOCKBACK_DISTANCE = 7;
+const TITAN_KNOCKBACK_DURATION = 0.5;
+const TITAN_PATROL_REACH = 0.5;
+const TITAN_PATROL_WAYPOINT_COUNT = 8;
+const TITAN_PATROL_RADIUS_FRAC = 0.65;
 
 // Infested player-zombie summon lock — keep in sync with client ZombieRenderer SUMMON_DURATION
 const INFESTED_ZOMBIE_SUMMON_LOCK_MS = 2800;
@@ -196,6 +207,30 @@ const BOSS_THROW_MOVE_LOCK_MS = 2_000;
 const BOSS_THROW_FIGHT_START_DELAY_MS = 6_000;
 /** Minimum gap between starting a throw and starting a leap (either order). */
 const BOSS_THROW_LEAP_ICD_MS = 2_000;
+
+// Ghoul Leap (unlocked after first boss): mirrors boss leap + player stun (no HP gate)
+const GHOUL_LEAP_LAND_STANDOFF_M = 0.25;
+const GHOUL_LEAP_COOLDOWN_MS = 10_000;
+const GHOUL_LEAP_MAX_TRAVEL = 14;
+const GHOUL_LEAP_DURATION_MS = BOSS_LEAP_DURATION_MS;
+const GHOUL_LEAP_LANDING_RADIUS = 3.5;
+const GHOUL_LEAP_DAMAGE = 25;
+const GHOUL_LEAP_STUN_MS = 1500;
+
+// Templar Leap (unlocked after first boss): 4–8m range, higher damage, no stun
+const TEMPLAR_LEAP_MIN_RANGE = 4;
+const TEMPLAR_LEAP_LAND_STANDOFF_M = 0.2;
+const TEMPLAR_LEAP_COOLDOWN_MS = 5_000;
+const TEMPLAR_LEAP_MAX_TRAVEL = 8;
+const TEMPLAR_LEAP_DURATION_MS = BOSS_LEAP_DURATION_MS;
+const TEMPLAR_LEAP_LANDING_RADIUS = 2.0;
+const TEMPLAR_LEAP_DAMAGE = 60;
+
+/** Co-op player locomotion (matches client Movement.maxSpeed / dash tuning). */
+const PLAYER_COOP_MAX_SPEED = 3.575;
+const PLAYER_DASH_DISTANCE = 4.125;
+const PLAYER_DASH_DURATION_S = 0.35;
+const MOB_LEAP_PREDICTION_MAX_OFFSET = 12;
 
 // Boss 2: Archon warlock
 const BOSS2_ARCHON_LIGHTNING_COOLDOWN_MS = 3500;
@@ -403,6 +438,12 @@ class EnemyAI {
 
     // Ghoul attack cooldown tracking
     this.ghoulAttackCooldown = new Map(); // enemyId -> lastAttackTime
+    this.titanAttackCooldown = new Map(); // enemyId -> lastAttackTime
+    this.ghoulLeapCooldown = new Map();
+    this.ghoulLeapEndAt = new Map();
+    this.ghoulLeapLand = new Map();
+    this.ghoulLeapFrom = new Map();
+    this.ghoulLeapTimeout = new Map();
 
     // Knight / Templar / Ghoul melee: timestamp until which the enemy is frozen mid-swing
     // so it cannot move until the swing animation and damage window both resolve.
@@ -423,6 +464,11 @@ class EnemyAI {
 
     // Templar Blink Smite: timestamp when next cast is allowed (per templar; initialized on first aggro)
     this.templarBlinkSmiteNextAt = new Map();
+    this.templarLeapCooldown = new Map();
+    this.templarLeapEndAt = new Map();
+    this.templarLeapLand = new Map();
+    this.templarLeapFrom = new Map();
+    this.templarLeapTimeout = new Map();
 
     /** tentacle-spine id -> windup slam setTimeout id */
     this.tentacleSlamTimeouts = new Map();
@@ -538,6 +584,13 @@ class EnemyAI {
     this.playerZombiesByOwner.clear();
     this.alliedProtectionThreat.clear();
     this.ghoulAttackCooldown.clear();
+    this.titanAttackCooldown.clear();
+    this.ghoulLeapCooldown.clear();
+    this.ghoulLeapEndAt.clear();
+    this.ghoulLeapLand.clear();
+    this.ghoulLeapFrom.clear();
+    this.ghoulLeapTimeout.forEach((t) => clearTimeout(t));
+    this.ghoulLeapTimeout.clear();
     this.meleeLockUntil.clear();
     this.knightAbilityCooldown.clear();
     this.knightDashCooldown.clear();
@@ -545,6 +598,12 @@ class EnemyAI {
     this.knightDeathGraspCooldown.clear();
     this.enemyPaths.clear();
     this.templarBlinkSmiteNextAt.clear();
+    this.templarLeapCooldown.clear();
+    this.templarLeapEndAt.clear();
+    this.templarLeapLand.clear();
+    this.templarLeapFrom.clear();
+    this.templarLeapTimeout.forEach((t) => clearTimeout(t));
+    this.templarLeapTimeout.clear();
   }
 
   updateAI() {
@@ -647,6 +706,11 @@ class EnemyAI {
 
     if (enemy.type === 'martyr') {
       this.updateMartyrAI(enemy, players);
+      return;
+    }
+
+    if (enemy.type === 'titan') {
+      this.updateTitanAI(enemy, players);
       return;
     }
 
@@ -2143,7 +2207,7 @@ class EnemyAI {
       this.io.to(this.roomId).emit('warlock-flame-strike', {
         warlockId: warlock.id,
         position:  endPosition,
-        damage:    32,
+        damage:    42,
         radius:    2.875,
         timestamp: Date.now()
       });
@@ -2178,7 +2242,7 @@ class EnemyAI {
           y: targetPlayer.position.y + 1.0,
           z: targetPlayer.position.z,
         },
-        damage: 42,
+        damage: 38,
         timestamp: Date.now()
       });
     }
@@ -2266,6 +2330,8 @@ class EnemyAI {
   // ─── Templar AI ──────────────────────────────────────────────────────────────
 
   updateTemplarAI(templar, players) {
+    if (this.tickTemplarLeapFlight(templar)) return;
+
     let aggroData = this.enemyAggro.get(templar.id);
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(templar, players);
@@ -2331,6 +2397,22 @@ class EnemyAI {
     if (now < lockUntil) return;
 
     const meleePressDistance = attackRange - MELEE_CLOSE_INSET;
+
+    if (
+      resolved.kind === 'player' &&
+      (this.room?.coopBossesDefeatedCount ?? 0) >= 1 &&
+      distance > attackRange
+    ) {
+      const canLeap =
+        distance >= TEMPLAR_LEAP_MIN_RANGE &&
+        (this.templarLeapCooldown.get(templar.id) == null ||
+          now - (this.templarLeapCooldown.get(templar.id) || 0) >= TEMPLAR_LEAP_COOLDOWN_MS) &&
+        !this.templarLeapEndAt.has(templar.id);
+      if (canLeap) {
+        this.templarStartLeap(templar, resolved.player);
+        return;
+      }
+    }
 
     if (resolved.kind === 'player') {
       const targetPlayer = resolved.player;
@@ -3147,6 +3229,8 @@ class EnemyAI {
   // ─── Ghoul AI ────────────────────────────────────────────────────────────────
 
   updateGhoulAI(ghoul, players) {
+    if (this.tickGhoulLeapFlight(ghoul)) return;
+
     let aggroData = this.enemyAggro.get(ghoul.id);
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(ghoul, players);
@@ -3176,6 +3260,21 @@ class EnemyAI {
     if (now < lockUntil) return;
 
     const meleePressDistance = attackRange - MELEE_CLOSE_INSET;
+
+    if (
+      resolved.kind === 'player' &&
+      (this.room?.coopBossesDefeatedCount ?? 0) >= 1 &&
+      distance > attackRange
+    ) {
+      const canLeap =
+        (this.ghoulLeapCooldown.get(ghoul.id) == null ||
+          now - (this.ghoulLeapCooldown.get(ghoul.id) || 0) >= GHOUL_LEAP_COOLDOWN_MS) &&
+        !this.ghoulLeapEndAt.has(ghoul.id);
+      if (canLeap) {
+        this.ghoulStartLeap(ghoul, resolved.player);
+        return;
+      }
+    }
 
     if (distance <= attackRange) {
       if (!this.ghoulAttackCooldown.has(ghoul.id)) {
@@ -3336,6 +3435,246 @@ class EnemyAI {
     this.moveEnemyTowardsTarget(martyr, moveTarget, { meleeSurroundAttackRange: attackRange });
   }
 
+  // ─── Titan AI ────────────────────────────────────────────────────────────────
+
+  _buildTitanPatrolWaypoints(spawnX, spawnZ) {
+    const apothem = MAIN_HEX_INNER_APOTHEM * TITAN_PATROL_RADIUS_FRAC;
+    const waypoints = [];
+    for (let i = 0; i < TITAN_PATROL_WAYPOINT_COUNT; i++) {
+      const angle = (Math.PI * 2 * i) / TITAN_PATROL_WAYPOINT_COUNT - Math.PI / 2;
+      const rawX = Math.cos(angle) * apothem;
+      const rawZ = Math.sin(angle) * apothem;
+      const clamped = clampToMainHexXZ(rawX, rawZ);
+      waypoints.push({ x: clamped.x, z: clamped.z });
+    }
+    let startIndex = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < waypoints.length; i++) {
+      const wp = waypoints[i];
+      const d = (wp.x - spawnX) ** 2 + (wp.z - spawnZ) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        startIndex = i;
+      }
+    }
+    return { waypoints, startIndex };
+  }
+
+  _ensureTitanPatrolState(titan) {
+    if (titan.patrolWaypoints && titan.patrolIndex != null) return;
+    const { waypoints, startIndex } = this._buildTitanPatrolWaypoints(
+      titan.position.x,
+      titan.position.z,
+    );
+    titan.patrolWaypoints = waypoints;
+    titan.patrolIndex = startIndex;
+  }
+
+  _moveTitanTowardsPatrolWaypoint(titan) {
+    this._ensureTitanPatrolState(titan);
+    const waypoints = titan.patrolWaypoints;
+    if (!waypoints || waypoints.length === 0) return;
+
+    let idx = titan.patrolIndex ?? 0;
+    let wp = waypoints[idx];
+    let dist = Math.hypot(wp.x - titan.position.x, wp.z - titan.position.z);
+
+    while (dist < TITAN_PATROL_REACH && waypoints.length > 1) {
+      idx = (idx + 1) % waypoints.length;
+      wp = waypoints[idx];
+      dist = Math.hypot(wp.x - titan.position.x, wp.z - titan.position.z);
+    }
+    titan.patrolIndex = idx;
+
+    const savedSpeed = titan.moveSpeed;
+    titan.moveSpeed = titan.patrolSpeed ?? (savedSpeed * 0.6);
+    this.moveEnemyTowardsTarget(titan, { position: wp, id: 'titan-patrol' });
+    titan.moveSpeed = savedSpeed;
+  }
+
+  updateTitanAI(titan, players) {
+    let aggroData = this.enemyAggro.get(titan.id);
+    if (!aggroData) {
+      const closestPlayer = this.findClosestPlayer(titan, players);
+      if (!closestPlayer) return;
+      aggroData = {
+        targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
+        targetTrapId: null,
+        lastUpdate: Date.now(),
+        aggro: 0,
+        isAggroed: false,
+        threatFromDamage: false,
+        directPlayerDamageAggroed: false,
+      };
+      this.enemyAggro.set(titan.id, aggroData);
+    }
+
+    const now = Date.now();
+    const lockUntil = this.meleeLockUntil.get(titan.id) || 0;
+    if (now < lockUntil) return;
+
+    const attackRange = TITAN_ATTACK_RANGE;
+    const attackCooldown = titan.attackCooldown ?? 2500;
+    const aggroRadius = TITAN_AGGRO_RADIUS;
+    const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
+
+    // Proximity aggro — low radius, requires line of sight.
+    if (!aggroData.isAggroed) {
+      for (const p of players) {
+        if (!p || p.health <= 0) continue;
+        const dist = this.calculateDistance(titan.position, p.position);
+        if (dist <= aggroRadius && this.hasLineOfSight(titan.position, p.position)) {
+          aggroData.isAggroed = true;
+          aggroData.targetPlayerId = p.id;
+          aggroData.targetZombieId = null;
+          aggroData.targetTrapId = null;
+          break;
+        }
+      }
+    }
+
+    if (!aggroData.isAggroed) {
+      this._moveTitanTowardsPatrolWaypoint(titan);
+      return;
+    }
+
+    const resolved = this.resolveAggroCombatTarget(aggroData, titan, players);
+    if (!resolved) {
+      aggroData.isAggroed = false;
+      this._moveTitanTowardsPatrolWaypoint(titan);
+      return;
+    }
+
+    const moveTarget = this.aggroTargetToMoveTarget(resolved);
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(titan.position, tpos);
+
+    if (aggroData.isAggroed && distance > leashRadius && !aggroData.threatFromDamage && !aggroData.directPlayerDamageAggroed) {
+      aggroData.isAggroed = false;
+      aggroData.threatFromDamage = false;
+      this._moveTitanTowardsPatrolWaypoint(titan);
+      return;
+    }
+
+    if (distance <= attackRange) {
+      if (!this.titanAttackCooldown.has(titan.id)) {
+        this.titanAttackCooldown.set(titan.id, 0);
+      }
+      const lastAttackTime = this.titanAttackCooldown.get(titan.id);
+      if (now - lastAttackTime >= attackCooldown) {
+        this.titanAttackCooldown.set(titan.id, now);
+        this.meleeLockUntil.set(titan.id, now + TITAN_SWING_LOCK_MS);
+
+        if (resolved.kind === 'player') {
+          this.telegraphTitanAttack(titan, resolved.player);
+          const pid = resolved.player.id;
+          setTimeout(() => {
+            if (titan.isDying || !this.room?.getGameStarted()) return;
+            if (this.room?.isEnemyAffectedBy(titan.id, 'stun')) return;
+            const currentPlayers = this.room?.getPlayers();
+            if (!currentPlayers) return;
+            const currentTarget = currentPlayers.find(p => p.id === pid);
+            if (!currentTarget || currentTarget.health <= 0) return;
+            const currentDistance = this.calculateDistance(titan.position, currentTarget.position);
+            if (currentDistance <= attackRange) {
+              this.titanAttackPlayer(titan, currentTarget);
+            }
+          }, TITAN_HIT_DELAY_MS);
+        } else if (resolved.kind === 'zombie') {
+          const z = resolved.zombie;
+          this.telegraphTitanAttack(titan, {
+            id: z.ownerPlayerId || z.id,
+            position: z.position,
+          });
+          const zid = z.id;
+          setTimeout(() => {
+            if (titan.isDying || !this.room?.getGameStarted()) return;
+            if (this.room?.isEnemyAffectedBy(titan.id, 'stun')) return;
+            const z = this.room?.getEnemy(zid);
+            if (!z || z.isDying || z.health <= 0) return;
+            const currentDistance = this.calculateDistance(titan.position, z.position);
+            if (currentDistance <= attackRange) {
+              const damage = titan.damage || 100;
+              this.damagePlayerZombieFromMob(titan, z, damage, 'titan_melee');
+            }
+          }, TITAN_HIT_DELAY_MS);
+        } else {
+          const tr = resolved.trap;
+          this.telegraphTitanAttack(titan, {
+            id: tr.id,
+            position: tr.position,
+          });
+          const trapId = tr.id;
+          setTimeout(() => {
+            if (titan.isDying || !this.room?.getGameStarted()) return;
+            const liveT = this.room?.getEnemy(trapId);
+            if (!liveT || liveT.isDying || liveT.health <= 0 || liveT.type !== 'tentacle-spine') return;
+            const currentDistance = this.calculateDistance(titan.position, liveT.position);
+            if (currentDistance <= attackRange) {
+              const damage = titan.damage || 100;
+              this.room.damageEnemy(trapId, damage, null, null, {
+                sourceEnemyId: titan.id,
+                damageType: 'titan_melee',
+              });
+            }
+          }, TITAN_HIT_DELAY_MS);
+        }
+        return;
+      }
+    }
+
+    this.moveEnemyTowardsTarget(titan, moveTarget, { meleeSurroundAttackRange: attackRange });
+  }
+
+  telegraphTitanAttack(titan, player) {
+    if (this.io) {
+      this.io.to(this.roomId).emit('titan-attack-telegraph', {
+        titanId: titan.id,
+        targetPlayerId: player.id,
+        position: titan.position,
+        timestamp: Date.now(),
+      });
+    }
+    console.log(`🗿 Titan ${titan.id} telegraphing attack at target ${player.id}!`);
+  }
+
+  titanAttackPlayer(titan, player) {
+    if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
+    const damage = titan.damage || 100;
+    this.recordAlliedProtectionThreat(titan.id, player.id, damage);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('titan-attack', {
+        titanId: titan.id,
+        targetPlayerId: player.id,
+        damage,
+        position: titan.position,
+        timestamp: Date.now(),
+      });
+
+      const dx = player.position.x - titan.position.x;
+      const dz = player.position.z - titan.position.z;
+      const len = Math.hypot(dx, dz) || 1;
+      this.io.to(this.roomId).emit('player-knockback', {
+        targetPlayerId: player.id,
+        direction: { x: dx / len, y: 0, z: dz / len },
+        distance: TITAN_KNOCKBACK_DISTANCE,
+        duration: TITAN_KNOCKBACK_DURATION,
+        timestamp: Date.now(),
+      });
+    }
+
+    console.log(`🗿 Titan ${titan.id} attacked player ${player.id} for ${damage} damage + knockback!`);
+
+    this.room?.tryDamageAlliedKnightInXZDisk(
+      { x: titan.position.x, z: titan.position.z },
+      TITAN_ATTACK_RANGE,
+      damage,
+      { sourceEnemyId: titan.id, damageType: 'titan_melee' },
+    );
+  }
+
   telegraphGhoulAttack(ghoul, player) {
     if (this.io) {
       this.io.to(this.roomId).emit('ghoul-attack-telegraph', {
@@ -3435,9 +3774,52 @@ class EnemyAI {
     this.bossTectonicSpikePendingTimeouts.get(boss.id).push(handle);
   }
 
-  computeBossLeapLandXZ(boss, targetPlayer) {
-    const bx = boss.position.x;
-    const bz = boss.position.z;
+  predictPlayerXZAtLeapLand(targetPlayer, durationMs) {
+    const px = targetPlayer.position.x;
+    const pz = targetPlayer.position.z;
+    const md = targetPlayer.movementDirection;
+    if (!md) return clampToMainHexXZ(px, pz);
+
+    const dt = durationMs / 1000;
+    let dirX = 0;
+    let dirZ = 0;
+    let speed = 0;
+
+    if (md.isDashing && md.dashDirection) {
+      dirX = md.dashDirection.x;
+      dirZ = md.dashDirection.z;
+      const mag = Math.hypot(dirX, dirZ);
+      if (mag > 0.01) {
+        dirX /= mag;
+        dirZ /= mag;
+        speed = PLAYER_DASH_DISTANCE / PLAYER_DASH_DURATION_S;
+      }
+    } else {
+      dirX = md.x;
+      dirZ = md.z;
+      const mag = Math.hypot(dirX, dirZ);
+      if (mag > 0.01) {
+        dirX /= mag;
+        dirZ /= mag;
+        speed = PLAYER_COOP_MAX_SPEED * (md.inputStrength ?? 1);
+      }
+    }
+
+    if (speed <= 0) return clampToMainHexXZ(px, pz);
+
+    const offset = Math.min(speed * dt, MOB_LEAP_PREDICTION_MAX_OFFSET);
+    return clampToMainHexXZ(px + dirX * offset, pz + dirZ * offset);
+  }
+
+  computeMobLeapLandXZ(enemy, targetPlayer, maxTravel, standoffM, durationMs) {
+    const predicted = this.predictPlayerXZAtLeapLand(targetPlayer, durationMs);
+    const aimTarget = { position: { x: predicted.x, y: 0, z: predicted.z } };
+    return this.computeLeapLandXZ(enemy, aimTarget, maxTravel, standoffM);
+  }
+
+  computeLeapLandXZ(enemy, targetPlayer, maxTravel, standoffM) {
+    const bx = enemy.position.x;
+    const bz = enemy.position.z;
     const tx = targetPlayer.position.x;
     const tz = targetPlayer.position.z;
     const dx = tx - bx;
@@ -3446,10 +3828,8 @@ class EnemyAI {
     if (dist < 0.01) return { x: bx, z: bz };
     const ndx = dx / dist;
     const ndz = dz / dist;
-    const want = dist - BOSS_LEAP_LAND_STANDOFF_M;
-    const leapCap =
-      this.room && this.room.coopBossThroneArena ? BOSS_LEAP_MAX_TRAVEL_THRONE : BOSS_LEAP_MAX_TRAVEL;
-    const travel = Math.max(0, Math.min(leapCap, want));
+    const want = dist - standoffM;
+    const travel = Math.max(0, Math.min(maxTravel, want));
     let lx = bx + ndx * travel;
     let lz = bz + ndz * travel;
     if (this.resolveEnemyWallCollisions) {
@@ -3458,6 +3838,12 @@ class EnemyAI {
       lz = r.z;
     }
     return { x: lx, z: lz };
+  }
+
+  computeBossLeapLandXZ(boss, targetPlayer) {
+    const leapCap =
+      this.room && this.room.coopBossThroneArena ? BOSS_LEAP_MAX_TRAVEL_THRONE : BOSS_LEAP_MAX_TRAVEL;
+    return this.computeLeapLandXZ(boss, targetPlayer, leapCap, BOSS_LEAP_LAND_STANDOFF_M);
   }
 
   moveBossTowardPoint(boss, px, pz) {
@@ -3531,6 +3917,182 @@ class EnemyAI {
       });
       this._queueMove(bossId, boss.position, boss.rotation);
     }
+  }
+
+  ghoulStartLeap(ghoul, targetPlayer) {
+    const fromX = ghoul.position.x;
+    const fromZ = ghoul.position.z;
+    const { x: landX, z: landZ } = this.computeMobLeapLandXZ(
+      ghoul,
+      targetPlayer,
+      GHOUL_LEAP_MAX_TRAVEL,
+      GHOUL_LEAP_LAND_STANDOFF_M,
+      GHOUL_LEAP_DURATION_MS,
+    );
+    const endAt = Date.now() + GHOUL_LEAP_DURATION_MS;
+    this.ghoulLeapEndAt.set(ghoul.id, endAt);
+    this.ghoulLeapLand.set(ghoul.id, { x: landX, z: landZ });
+    this.ghoulLeapFrom.set(ghoul.id, { x: fromX, z: fromZ });
+    this.meleeLockUntil.set(ghoul.id, endAt);
+    if (this.io) {
+      this.io.to(this.roomId).emit('ghoul-leap-start', {
+        ghoulId: ghoul.id,
+        startPosition: { x: ghoul.position.x, y: ghoul.position.y, z: ghoul.position.z },
+        landPosition: { x: landX, y: 0, z: landZ },
+        durationMs: GHOUL_LEAP_DURATION_MS,
+        timestamp: Date.now(),
+      });
+    }
+    const ghoulId = ghoul.id;
+    const t = setTimeout(() => {
+      this.ghoulCompleteLeap(ghoulId);
+    }, GHOUL_LEAP_DURATION_MS);
+    this.ghoulLeapTimeout.set(ghoul.id, t);
+  }
+
+  ghoulCompleteLeap(ghoulId) {
+    this.ghoulLeapTimeout.delete(ghoulId);
+    this.ghoulLeapEndAt.delete(ghoulId);
+    const land = this.ghoulLeapLand.get(ghoulId);
+    this.ghoulLeapLand.delete(ghoulId);
+    this.ghoulLeapFrom.delete(ghoulId);
+    const ghoul = this.room?.enemies?.get(ghoulId);
+    if (!ghoul || ghoul.isDying || ghoul.health <= 0) return;
+    if (land) {
+      ghoul.position.x = land.x;
+      ghoul.position.z = land.z;
+    }
+    this.ghoulLeapCooldown.set(ghoulId, Date.now());
+    if (this.room) {
+      this.room.damagePlayersInHorizontalRing(
+        land,
+        GHOUL_LEAP_LANDING_RADIUS,
+        GHOUL_LEAP_DAMAGE,
+        'ghoul_leap',
+        { stunMs: GHOUL_LEAP_STUN_MS, sourceEnemyId: ghoulId },
+      );
+    }
+    if (this.io) {
+      this.io.to(this.roomId).emit('ghoul-leap-land', {
+        ghoulId,
+        landPosition: land ? { x: land.x, y: 0, z: land.z } : { x: ghoul.position.x, y: 0, z: ghoul.position.z },
+        timestamp: Date.now(),
+      });
+      this._queueMove(ghoulId, ghoul.position, ghoul.rotation);
+    }
+  }
+
+  templarStartLeap(templar, targetPlayer) {
+    const fromX = templar.position.x;
+    const fromZ = templar.position.z;
+    const { x: landX, z: landZ } = this.computeMobLeapLandXZ(
+      templar,
+      targetPlayer,
+      TEMPLAR_LEAP_MAX_TRAVEL,
+      TEMPLAR_LEAP_LAND_STANDOFF_M,
+      TEMPLAR_LEAP_DURATION_MS,
+    );
+    const endAt = Date.now() + TEMPLAR_LEAP_DURATION_MS;
+    this.templarLeapEndAt.set(templar.id, endAt);
+    this.templarLeapLand.set(templar.id, { x: landX, z: landZ });
+    this.templarLeapFrom.set(templar.id, { x: fromX, z: fromZ });
+    this.meleeLockUntil.set(templar.id, endAt);
+    if (this.io) {
+      this.io.to(this.roomId).emit('templar-leap-start', {
+        templarId: templar.id,
+        startPosition: { x: templar.position.x, y: templar.position.y, z: templar.position.z },
+        landPosition: { x: landX, y: 0, z: landZ },
+        durationMs: TEMPLAR_LEAP_DURATION_MS,
+        timestamp: Date.now(),
+      });
+    }
+    const templarId = templar.id;
+    const t = setTimeout(() => {
+      this.templarCompleteLeap(templarId);
+    }, TEMPLAR_LEAP_DURATION_MS);
+    this.templarLeapTimeout.set(templar.id, t);
+  }
+
+  templarCompleteLeap(templarId) {
+    this.templarLeapTimeout.delete(templarId);
+    this.templarLeapEndAt.delete(templarId);
+    const land = this.templarLeapLand.get(templarId);
+    this.templarLeapLand.delete(templarId);
+    this.templarLeapFrom.delete(templarId);
+    const templar = this.room?.enemies?.get(templarId);
+    if (!templar || templar.isDying || templar.health <= 0) return;
+    if (land) {
+      templar.position.x = land.x;
+      templar.position.z = land.z;
+    }
+    this.templarLeapCooldown.set(templarId, Date.now());
+    if (this.room) {
+      this.room.damagePlayersInHorizontalRing(
+        land,
+        TEMPLAR_LEAP_LANDING_RADIUS,
+        TEMPLAR_LEAP_DAMAGE,
+        'templar_leap',
+        { sourceEnemyId: templarId },
+      );
+    }
+    if (this.io) {
+      this.io.to(this.roomId).emit('templar-leap-land', {
+        templarId,
+        landPosition: land ? { x: land.x, y: 0, z: land.z } : { x: templar.position.x, y: 0, z: templar.position.z },
+        timestamp: Date.now(),
+      });
+      this._queueMove(templarId, templar.position, templar.rotation);
+    }
+  }
+
+  tickGhoulLeapFlight(ghoul) {
+    if (!this.ghoulLeapEndAt.has(ghoul.id)) return false;
+    const now = Date.now();
+    const end = this.ghoulLeapEndAt.get(ghoul.id);
+    const land = this.ghoulLeapLand.get(ghoul.id);
+    const from = this.ghoulLeapFrom.get(ghoul.id);
+    if (now < end && land && from) {
+      const startTime = end - GHOUL_LEAP_DURATION_MS;
+      let u = (now - startTime) / GHOUL_LEAP_DURATION_MS;
+      if (u < 0) u = 0;
+      if (u > 1) u = 1;
+      const su = u * u * (3 - 2 * u);
+      ghoul.position.x = from.x + (land.x - from.x) * su;
+      ghoul.position.z = from.z + (land.z - from.z) * su;
+      ghoul.rotation = Math.atan2(land.x - from.x, land.z - from.z);
+      this._queueMove(ghoul.id, ghoul.position, ghoul.rotation);
+      return true;
+    }
+    if (now < end) return true;
+    if (this.ghoulLeapLand.has(ghoul.id)) {
+      this.ghoulCompleteLeap(ghoul.id);
+    }
+    return true;
+  }
+
+  tickTemplarLeapFlight(templar) {
+    if (!this.templarLeapEndAt.has(templar.id)) return false;
+    const now = Date.now();
+    const end = this.templarLeapEndAt.get(templar.id);
+    const land = this.templarLeapLand.get(templar.id);
+    const from = this.templarLeapFrom.get(templar.id);
+    if (now < end && land && from) {
+      const startTime = end - TEMPLAR_LEAP_DURATION_MS;
+      let u = (now - startTime) / TEMPLAR_LEAP_DURATION_MS;
+      if (u < 0) u = 0;
+      if (u > 1) u = 1;
+      const su = u * u * (3 - 2 * u);
+      templar.position.x = from.x + (land.x - from.x) * su;
+      templar.position.z = from.z + (land.z - from.z) * su;
+      templar.rotation = Math.atan2(land.x - from.x, land.z - from.z);
+      this._queueMove(templar.id, templar.position, templar.rotation);
+      return true;
+    }
+    if (now < end) return true;
+    if (this.templarLeapLand.has(templar.id)) {
+      this.templarCompleteLeap(templar.id);
+    }
+    return true;
   }
 
   getBossThreatTarget(boss, players) {
@@ -4909,6 +5471,8 @@ class EnemyAI {
       case 'templar':
       case 'ghoul':
         return 0.95;
+      case 'titan':
+        return 1.2;
       case 'martyr': return 0.8;
       default:
         return 1.4;
@@ -5115,6 +5679,7 @@ class EnemyAI {
       case 'templar': return 3.0;
       case 'weaver':  return 2.0;
       case 'ghoul':   return 2;
+      case 'titan':   return 2.5;
       case 'martyr':  return 3.0;
       case 'player-zombie': return 2.0;
       default: return 2.0;
@@ -6517,12 +7082,27 @@ class EnemyAI {
     this.weaverLightningCooldown.delete(enemyId);
     this.weaverSummonedGhouls.delete(enemyId);
     this.ghoulAttackCooldown.delete(enemyId);
+    this.titanAttackCooldown.delete(enemyId);
+    this.ghoulLeapCooldown.delete(enemyId);
+    this.ghoulLeapEndAt.delete(enemyId);
+    this.ghoulLeapLand.delete(enemyId);
+    this.ghoulLeapFrom.delete(enemyId);
+    const ghoulLeapT = this.ghoulLeapTimeout.get(enemyId);
+    if (ghoulLeapT) clearTimeout(ghoulLeapT);
+    this.ghoulLeapTimeout.delete(enemyId);
     this.meleeLockUntil.delete(enemyId);
     this.knightAbilityCooldown.delete(enemyId);
     this.knightDashCooldown.delete(enemyId);
     this.knightSpinCooldown.delete(enemyId);
     this.enemyPaths.delete(enemyId);
     this.templarBlinkSmiteNextAt.delete(enemyId);
+    this.templarLeapCooldown.delete(enemyId);
+    this.templarLeapEndAt.delete(enemyId);
+    this.templarLeapLand.delete(enemyId);
+    this.templarLeapFrom.delete(enemyId);
+    const templarLeapT = this.templarLeapTimeout.get(enemyId);
+    if (templarLeapT) clearTimeout(templarLeapT);
+    this.templarLeapTimeout.delete(enemyId);
 
     // If a ghoul dies, clear it from its summoner's slot so the weaver can resummon
     this.weaverSummonedGhouls.forEach((ghoulId, weaverId) => {

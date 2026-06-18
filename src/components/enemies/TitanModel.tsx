@@ -2,17 +2,19 @@
 
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
-import { Group, LoopRepeat, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
+import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 interface TitanModelProps {
   isWalking: boolean;
+  isAttacking: boolean;
   isDying: boolean;
 }
 
 const TITAN_MODEL_PATHS = [
-  '/models/titan_idle.glb',
   '/models/titan_walk.glb',
+  '/models/titan_melee.glb',
+  '/models/titan_death.glb',
 ];
 
 export function preloadTitanModels(): void {
@@ -22,14 +24,14 @@ export function preloadTitanModels(): void {
 // Adjust if the titan GLB geometry is larger or smaller than expected.
 const SCALE = 0.02775;
 
-export default function TitanModel({ isWalking, isDying }: TitanModelProps) {
+export default function TitanModel({ isWalking, isAttacking, isDying }: TitanModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
 
-  const { scene, animations: idleAnims } = useGLTF('/models/titan_idle.glb');
-  const { animations: walkAnims }        = useGLTF('/models/titan_walk.glb');
+  const { scene, animations: walkAnims } = useGLTF('/models/titan_walk.glb');
+  const { animations: meleeAnims }     = useGLTF('/models/titan_melee.glb');
+  const { animations: deathAnims }     = useGLTF('/models/titan_death.glb');
 
-  // Clone scene + own materials so dying fade-out doesn't bleed to other instances.
   const clonedScene = useMemo(() => {
     const clone = SkeletonUtils.clone(scene) as Group;
     clone.traverse((child: any) => {
@@ -48,7 +50,6 @@ export default function TitanModel({ isWalking, isDying }: TitanModelProps) {
     const rename = (clips: AnimationClip[], name: string) =>
       clips.map(c => { const r = c.clone(); r.name = name; return r; });
 
-    // Strip root-motion X/Z so server position stays authoritative.
     const stripRootMotionXZ = (clip: AnimationClip): AnimationClip => {
       clip.tracks = clip.tracks.map(track => {
         if (!track.name.endsWith('.position')) return track;
@@ -64,29 +65,71 @@ export default function TitanModel({ isWalking, isDying }: TitanModelProps) {
     };
 
     return [
-      ...rename(idleAnims, 'Idle').map(stripRootMotionXZ),
-      ...rename(walkAnims, 'Walk').map(stripRootMotionXZ),
+      ...rename(walkAnims,  'Walk').map(stripRootMotionXZ),
+      ...rename(meleeAnims, 'Melee').map(stripRootMotionXZ),
+      ...rename(deathAnims, 'Death'),
     ];
-  }, [idleAnims, walkAnims]);
+  }, [walkAnims, meleeAnims, deathAnims]);
 
-  const { actions } = useAnimations(animations, sceneGroupRef);
+  const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
-  const getAction = (name: 'Idle' | 'Walk'): AnimationAction | null =>
+  const getAction = (name: 'Walk' | 'Melee' | 'Death'): AnimationAction | null =>
     actions[name] ?? null;
 
-  // Walk/Idle transitions (no attack animation yet).
+  // Priority: Death > Melee > Walk (titans always walk when not attacking/dying).
   useEffect(() => {
-    if (!actions || isDying) return;
+    if (!actions) return;
 
-    const nextAction = isWalking ? getAction('Walk') : getAction('Idle');
-    if (!nextAction || nextAction === currentActionRef.current) return;
+    const nextAction = isDying
+      ? getAction('Death')
+      : isAttacking
+        ? getAction('Melee')
+        : getAction('Walk');
+
+    if (!nextAction) return;
+    if (nextAction === currentActionRef.current) return;
 
     currentActionRef.current?.fadeOut(0.3);
-    nextAction.enabled = true;
-    nextAction.setLoop(LoopRepeat, Infinity);
-    nextAction.fadeIn(0.3).play();
+
+    if (isDying) {
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.15).play();
+    } else if (isAttacking) {
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.2).play();
+    } else {
+      nextAction.enabled = true;
+      nextAction.setLoop(LoopRepeat, Infinity);
+      nextAction.fadeIn(0.3).play();
+    }
+
     currentActionRef.current = nextAction;
-  }, [isWalking, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isWalking, isAttacking, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // After melee finishes, blend back to Walk.
+  useEffect(() => {
+    if (!mixer || isDying) return;
+
+    const handleFinish = (e: { action: AnimationAction }) => {
+      if (isDying) return;
+      const name = e.action.getClip().name;
+      if (name === 'Death') return;
+      if (name === 'Melee') {
+        const walk = getAction('Walk');
+        if (walk) {
+          walk.setLoop(LoopRepeat, Infinity);
+          currentActionRef.current?.fadeOut(0.15);
+          walk.reset().fadeIn(0.15).play();
+          currentActionRef.current = walk;
+        }
+      }
+    };
+
+    mixer.addEventListener('finished', handleFinish);
+    return () => mixer.removeEventListener('finished', handleFinish);
+  }, [mixer, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group ref={sceneGroupRef}>

@@ -248,6 +248,7 @@ const BossRenderer = React.lazy(() => import('./enemies/BossRenderer'));
 const Boss2Renderer = React.lazy(() => import('./enemies/Boss2Renderer'));
 const Boss3Renderer = React.lazy(() => import('./enemies/Boss3Renderer'));
 const TemplarRenderer = React.lazy(() => import('./enemies/TemplarRenderer'));
+const TitanRenderer = React.lazy(() => import('./enemies/TitanRenderer'));
 const ViperRenderer = React.lazy(() => import('./enemies/ViperRenderer'));
 const WarlockRenderer = React.lazy(() => import('./enemies/WarlockRenderer'));
 
@@ -678,6 +679,7 @@ async function warmupLazyRendererChunks(): Promise<void> {
     import('./enemies/Boss2Renderer'),
     import('./enemies/Boss3Renderer'),
     import('./enemies/TemplarRenderer'),
+    import('./enemies/TitanRenderer'),
     import('./enemies/ViperRenderer'),
     import('./enemies/WarlockRenderer'),
   ]).catch((e) => console.warn('Lazy renderer chunk warmup failed (non-fatal):', e));
@@ -2136,6 +2138,11 @@ export function CoopGameScene({
     position: Vector3;
   }
   const [bossLeapShockwaves, setBossLeapShockwaves] = useState<BossLeapShockwaveState[]>([]);
+
+  // Ghoul / templar leap telegraphs (post boss1)
+  const [mobLeapTelegraphs, setMobLeapTelegraphs] = useState<
+    { id: string; x: number; y: number; z: number; durationMs: number; theme: 'boss' | 'templar' }[]
+  >([]);
 
   // Bow / Entropic Bolt hit-feedback VFX (polled from CombatSystem)
   const [impactEffects, setImpactEffects] = useState<ImpactEffectEvent[]>([]);
@@ -6777,6 +6784,62 @@ export function CoopGameScene({
       }
     };
 
+    const handleGhoulLeapStart = (data: {
+      ghoulId: string;
+      landPosition: { x: number; y: number; z: number };
+      durationMs?: number;
+      timestamp: number;
+    }) => {
+      const d = data.durationMs ?? 1100;
+      const id = `ghoul-leap-tg-${data.ghoulId}-${data.timestamp}`;
+      setMobLeapTelegraphs((prev) => [
+        ...prev,
+        { id, x: data.landPosition.x, y: data.landPosition.y, z: data.landPosition.z, durationMs: d, theme: 'boss' },
+      ]);
+    };
+
+    const handleGhoulLeapLand = (data: {
+      ghoulId: string;
+      landPosition?: { x: number; y: number; z: number };
+    }) => {
+      setMobLeapTelegraphs((prev) => prev.filter((t) => !t.id.includes(data.ghoulId)));
+      if (data.landPosition) {
+        const pos = new Vector3(data.landPosition.x, 0, data.landPosition.z);
+        setBossLeapShockwaves((prev) => [
+          ...prev,
+          { id: `ghoul-shockwave-${data.ghoulId}-${Date.now()}`, position: pos },
+        ]);
+      }
+    };
+
+    const handleTemplarLeapStart = (data: {
+      templarId: string;
+      landPosition: { x: number; y: number; z: number };
+      durationMs?: number;
+      timestamp: number;
+    }) => {
+      const d = data.durationMs ?? 1100;
+      const id = `templar-leap-tg-${data.templarId}-${data.timestamp}`;
+      setMobLeapTelegraphs((prev) => [
+        ...prev,
+        { id, x: data.landPosition.x, y: data.landPosition.y, z: data.landPosition.z, durationMs: d, theme: 'templar' },
+      ]);
+    };
+
+    const handleTemplarLeapLand = (data: {
+      templarId: string;
+      landPosition?: { x: number; y: number; z: number };
+    }) => {
+      setMobLeapTelegraphs((prev) => prev.filter((t) => !t.id.includes(data.templarId)));
+      if (data.landPosition) {
+        const pos = new Vector3(data.landPosition.x, 0, data.landPosition.z);
+        setBossLeapShockwaves((prev) => [
+          ...prev,
+          { id: `templar-shockwave-${data.templarId}-${Date.now()}`, position: pos },
+        ]);
+      }
+    };
+
     const handleBossThrowSpear = (data: {
       bossId: string;
       startPosition: { x: number; y: number; z: number };
@@ -7236,6 +7299,10 @@ export function CoopGameScene({
     socket.on('crossentropy-meteor-cast', handleCrossentropyMeteorCast);
     socket.on('boss-leap-start', handleBossLeapStart);
     socket.on('boss-leap-land', handleBossLeapLand);
+    socket.on('ghoul-leap-start', handleGhoulLeapStart);
+    socket.on('ghoul-leap-land', handleGhoulLeapLand);
+    socket.on('templar-leap-start', handleTemplarLeapStart);
+    socket.on('templar-leap-land', handleTemplarLeapLand);
     socket.on('boss-throw-spear', handleBossThrowSpear);
     socket.on('boss-tectonic-spike-telegraph', handleBossTectonicSpikeTelegraph);
     socket.on('boss-tectonic-spike-appear', handleBossTectonicSpikeAppear);
@@ -7419,6 +7486,55 @@ export function CoopGameScene({
       }
     };
 
+    // ── Titan attack (melee damage to local player; knockback via player-knockback event) ──
+    const handleTitanAttack = (data: any) => {
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+      if (blockLocalDamageDuringCoopPortal()) return;
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+
+        const healthBefore = health.currentHealth;
+        const shieldBefore = shield?.currentShield;
+        const damageApplied = health.takeDamage(data.damage, Date.now() / 1000, playerEntity, false);
+
+        if (playerEntity) {
+          const transform = playerEntity.getComponent(Transform);
+          if (transform) {
+            const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+            if (damageNumberManager && damageNumberManager.addDamageNumber) {
+              const pos = transform.position.clone();
+              pos.y -= 0.5;
+              damageNumberManager.addDamageNumber(data.damage, false, pos, 'physical', true);
+            }
+            triggerAppliedLocalPlayerDamageFeedback({
+              damage: data.damage,
+              damageType: 'physical',
+              damageApplied,
+              health,
+              healthBefore,
+              shield,
+              shieldBefore,
+              position: transform.position,
+            });
+          }
+        }
+
+        if (shield) {
+          updatePlayerShield(shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.titanId);
+        }
+      }
+    };
+
     // ── Weaver heal VFX ───────────────────────────────────────────────────────
     const handleWeaverHealTelegraph = (data: {
       weaverId: string;
@@ -7508,6 +7624,7 @@ export function CoopGameScene({
     };
 
     socket.on('ghoul-attack', handleGhoulAttack);
+    socket.on('titan-attack', handleTitanAttack);
     socket.on('weaver-heal-telegraph', handleWeaverHealTelegraph);
     socket.on('weaver-summon-telegraph', handleWeaverSummonTelegraph);
     socket.on('weaver-lightning-telegraph', handleWeaverLightningTelegraph);
@@ -7550,6 +7667,10 @@ export function CoopGameScene({
       socket.off('crossentropy-meteor-cast', handleCrossentropyMeteorCast);
       socket.off('boss-leap-start', handleBossLeapStart);
       socket.off('boss-leap-land', handleBossLeapLand);
+      socket.off('ghoul-leap-start', handleGhoulLeapStart);
+      socket.off('ghoul-leap-land', handleGhoulLeapLand);
+      socket.off('templar-leap-start', handleTemplarLeapStart);
+      socket.off('templar-leap-land', handleTemplarLeapLand);
       socket.off('boss-throw-spear', handleBossThrowSpear);
       socket.off('boss-tectonic-spike-telegraph', handleBossTectonicSpikeTelegraph);
       socket.off('boss-tectonic-spike-appear', handleBossTectonicSpikeAppear);
@@ -7590,6 +7711,7 @@ export function CoopGameScene({
       socket.off('warlock-flame-strike', handleWarlockFlameStrike);
       socket.off('boss2-flame-pillar', handleBoss2FlamePillar);
       socket.off('ghoul-attack', handleGhoulAttack);
+      socket.off('titan-attack', handleTitanAttack);
       socket.off('weaver-heal-telegraph', handleWeaverHealTelegraph);
       socket.off('weaver-summon-telegraph', handleWeaverSummonTelegraph);
       socket.off('weaver-lightning-telegraph', handleWeaverLightningTelegraph);
@@ -7737,6 +7859,7 @@ export function CoopGameScene({
           : serverEnemy.type === 'allied-knight' ? 0.85
           : serverEnemy.type === 'knight' ? 0.85
           : serverEnemy.type === 'templar' || serverEnemy.type === 'ghoul' ? 0.95
+          : serverEnemy.type === 'titan' ? 1.2
           : serverEnemy.type === 'training-dummy' ? 1.85
           : serverEnemy.type === 'shade' ? 1.0
           : serverEnemy.type === 'martyr' ? 0.8
@@ -10752,6 +10875,25 @@ export function CoopGameScene({
         );
       })}
 
+      {/* Titans (Co-op Mode) — heavy patrol units after first boss defeat */}
+      {Array.from(enemies.values()).map(enemy => {
+        if (enemy.type !== 'titan') return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <TitanRenderer
+              id={enemy.id}
+              position={new Vector3(enemy.position.x, enemy.position.y, enemy.position.z)}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
       {/* Tentacle spine — environmental trap (no HP bar) */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'tentacle-spine') return null;
@@ -10923,6 +11065,18 @@ export function CoopGameScene({
             durationMs={tg.durationMs}
             onEnd={() => {
               setBossLeapTelegraphs((prev) => prev.filter((t) => t.id !== tg.id));
+            }}
+          />
+        </group>
+      ))}
+
+      {mobLeapTelegraphs.map((tg) => (
+        <group key={tg.id} position={[tg.x, tg.y, tg.z]}>
+          <BossLeapTelegraph
+            theme={tg.theme}
+            durationMs={tg.durationMs}
+            onEnd={() => {
+              setMobLeapTelegraphs((prev) => prev.filter((t) => t.id !== tg.id));
             }}
           />
         </group>

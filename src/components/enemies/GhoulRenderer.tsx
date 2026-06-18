@@ -43,11 +43,13 @@ export default function GhoulRenderer({
   const [attackVariant,  setAttackVariant]  = useState<1 | 2>(1);
   const [isImpacting,    setIsImpacting]    = useState(false);
   const [impactPlayKey,  setImpactPlayKey]  = useState(0);
+  const [isLeaping,      setIsLeaping]      = useState(false);
 
   const targetPosition  = useRef(position.clone());
   const targetRotation  = useRef(rotation);
   const isAttackingRef  = useRef(false);
   const isSummoningRef  = useRef(true);
+  const isLeapingRef    = useRef(false);
   const prevHealthRef   = useRef(health);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -80,7 +82,7 @@ export default function GhoulRenderer({
       groupRef.current.position.copy(position);
     }
 
-    if (dist > 0.01 && !isAttackingRef.current && !isSummoningRef.current && !isDying) {
+    if (dist > 0.01 && !isAttackingRef.current && !isSummoningRef.current && !isLeapingRef.current && !isDying) {
       if (!isWalking) setIsWalking(true);
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
@@ -137,7 +139,24 @@ export default function GhoulRenderer({
     };
 
     socket.on('ghoul-attack-telegraph', handleGhoulTelegraph);
-    return () => { socket.off('ghoul-attack-telegraph', handleGhoulTelegraph); };
+    const onLeapStart = (data: { ghoulId: string }) => {
+      if (data.ghoulId !== id) return;
+      setIsLeaping(true);
+      isLeapingRef.current = true;
+      setIsWalking(false);
+    };
+    const onLeapLand = (data: { ghoulId: string }) => {
+      if (data.ghoulId !== id) return;
+      setIsLeaping(false);
+      isLeapingRef.current = false;
+    };
+    socket.on('ghoul-leap-start', onLeapStart);
+    socket.on('ghoul-leap-land', onLeapLand);
+    return () => {
+      socket.off('ghoul-attack-telegraph', handleGhoulTelegraph);
+      socket.off('ghoul-leap-start', onLeapStart);
+      socket.off('ghoul-leap-land', onLeapLand);
+    };
   }, [id, socket]);
 
   useFrame((_, delta) => {
@@ -169,11 +188,12 @@ export default function GhoulRenderer({
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <GhoulModel
-        isWalking={isWalking}
+        isWalking={isWalking && !isLeaping}
         isAttacking={isAttacking}
         attackVariant={attackVariant}
         isSummoning={isSummoning}
         isDying={isDying}
+        isLeaping={isLeaping}
         isImpacting={isImpacting}
         impactPlayKey={impactPlayKey}
         onImpactFinished={handleImpactFinished}
