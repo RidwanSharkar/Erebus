@@ -637,13 +637,13 @@ export const CHILL_STACKS_TO_FREEZE = 6;
 export const BLIZZARD_FREEZE_DURATION_SEC = 6;
 
 /** Staggering Strike — Wraith Strike (`RUNEBLADE_E`) builds stagger; at 100, proc lightning + damage + stun. */
-export const STAGGERING_STRIKE_WRAITH_STAGGER_ADD = 60;
+export const STAGGERING_STRIKE_WRAITH_STAGGER_ADD = 80;
 /** Non-boss PvE: stagger needed for lightning proc + stun (co-op server must match). */
 export const STAGGER_MAX = 100;
 /** Co-op bosses (`boss`, `boss2`, `boss3`): same proc at this buildup (see `backend/gameRoom.js`). */
 export const STAGGER_MAX_BOSS = 300;
 export const STAGGER_PROC_DAMAGE = 150;
-export const STAGGER_PROC_STUN_SECONDS = 1.0;
+export const STAGGER_PROC_STUN_SECONDS = 1.25;
 
 /** Staggering Combo — Runeblade basic attack combo adds stagger per hit (same 100 cap / proc as Staggering Strike). */
 export const STAGGERING_COMBO_HIT1_STAGGER = 15;

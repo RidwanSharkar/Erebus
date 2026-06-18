@@ -991,6 +991,8 @@ export class ProjectileSystem extends System {
     for (const ent of potential) {
       if (ent.id === struckTarget.id) continue;
       if (ent.userData?.isCoopAllyPlayer) continue;
+      if (ent.userData?.isCoopAlliedUnit) continue;
+      if (ent.userData?.coopServerEnemyType === 'player-zombie') continue;
       const h = ent.getComponent(Health);
       if (!h || h.isDead) continue;
       const tf = ent.getComponent(Transform);

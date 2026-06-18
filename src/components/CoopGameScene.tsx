@@ -7924,6 +7924,12 @@ export function CoopGameScene({
     
     // Create local ECS entities for enemies (for collision detection and damage)
     enemies.forEach((serverEnemy, enemyId) => {
+      const isCoopAlliedEnemy =
+        serverEnemy.alliedUnit === true ||
+        serverEnemy.type === 'allied-knight' ||
+        serverEnemy.type === 'allied-healer' ||
+        serverEnemy.type === 'player-zombie';
+
       const dyingNonDummy =
         serverEnemy.isDying && serverEnemy.type !== 'training-dummy';
 
@@ -7945,7 +7951,7 @@ export function CoopGameScene({
           entity.userData = entity.userData || {};
           entity.userData.serverEnemyId = enemyId;
           entity.userData.coopServerEnemyType = serverEnemy.type;
-          entity.userData.isCoopAlliedUnit = serverEnemy.alliedUnit === true || serverEnemy.type === 'allied-knight' || serverEnemy.type === 'allied-healer';
+          entity.userData.isCoopAlliedUnit = isCoopAlliedEnemy;
           entity.userData.rotation = serverEnemy.rotation || 0;
           entity.userData.coopEnemyDying = true;
           const t = entity.getComponent(Transform);
@@ -7999,7 +8005,7 @@ export function CoopGameScene({
           : 1.5;
         collider.layer = CollisionLayer.ENEMY;
         collider.isTrigger = true; // IMPORTANT: Trigger only, doesn't push players
-        collider.setMask(serverEnemy.alliedUnit === true ? 0 : CollisionLayer.PROJECTILE); // Only detect projectiles, not physical collision with players
+        collider.setMask(isCoopAlliedEnemy ? 0 : CollisionLayer.PROJECTILE); // Only detect projectiles, not physical collision with players
         collider.setOffset(0, serverEnemy.type === 'tentacle-spine' ? 1.15 : 1, 0);
         entity.addComponent(collider);
 
@@ -8007,7 +8013,7 @@ export function CoopGameScene({
         entity.userData = entity.userData || {};
         entity.userData.serverEnemyId = enemyId;
         entity.userData.coopServerEnemyType = serverEnemy.type;
-        entity.userData.isCoopAlliedUnit = serverEnemy.alliedUnit === true || serverEnemy.type === 'allied-knight' || serverEnemy.type === 'allied-healer';
+        entity.userData.isCoopAlliedUnit = isCoopAlliedEnemy;
         entity.userData.rotation = serverEnemy.rotation || 0; // Store rotation for backstab mechanic
         entity.userData.coopEnemyDying = false;
 
@@ -8050,8 +8056,12 @@ export function CoopGameScene({
           }
           entity.userData.rotation = serverEnemy.rotation || 0;
           entity.userData.coopServerEnemyType = serverEnemy.type;
-          entity.userData.isCoopAlliedUnit = serverEnemy.alliedUnit === true || serverEnemy.type === 'allied-knight' || serverEnemy.type === 'allied-healer';
+          entity.userData.isCoopAlliedUnit = isCoopAlliedEnemy;
           entity.userData.coopEnemyDying = false;
+          const colliderComp = entity.getComponent(Collider);
+          if (colliderComp) {
+            colliderComp.setMask(isCoopAlliedEnemy ? 0 : CollisionLayer.PROJECTILE);
+          }
         }
       }
     });
@@ -10998,7 +11008,7 @@ export function CoopGameScene({
         );
       })}
 
-      {/* Titans (Co-op Mode) — heavy patrol units after first boss defeat */}
+      {/* Titans (Co-op Mode) — tiered spawns: chance after Boss 1, guaranteed 1–2 after Boss 2, all combat rooms after Boss 3 */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'titan') return null;
         if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;

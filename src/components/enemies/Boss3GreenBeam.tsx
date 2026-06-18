@@ -16,6 +16,9 @@ const _lightWorldPos = new Vector3();
 const BOSS3_GREEN_BEAM_RANGE = 22;
 const BOSS3_GREEN_BEAM_START_OFFSET = 0.65;
 const BOSS3_GREEN_BEAM_HALF_WIDTH = 0.52;
+const BOSS3_GREEN_BEAM_ORIGIN_Y = 2.8;
+const BOSS3_GREEN_BEAM_AXIS_Y = 2.65;
+const BOSS3_GREEN_BEAM_PITCH_RAD = (10 * Math.PI) / 180;
 
 const BEAM_SEGMENT_LENGTH = BOSS3_GREEN_BEAM_RANGE - BOSS3_GREEN_BEAM_START_OFFSET;
 const BEAM_AXIS_MID_Z = (BOSS3_GREEN_BEAM_START_OFFSET + BOSS3_GREEN_BEAM_RANGE) / 2;
@@ -250,10 +253,9 @@ export default function Boss3GreenBeam({
 
     beamRef.current.scale.setScalar(fp);
 
-    // Drive the pooled light at the beam source's world position (the source light
-    // sits at local [0, 0.9, BOSS3_GREEN_BEAM_START_OFFSET] under the beam group).
+    // Drive the pooled light at the beam source's world position.
     beamRef.current.updateMatrixWorld();
-    _lightWorldPos.set(0, 0.9, BOSS3_GREEN_BEAM_START_OFFSET);
+    _lightWorldPos.set(0, BOSS3_GREEN_BEAM_ORIGIN_Y, BOSS3_GREEN_BEAM_START_OFFSET);
     beamRef.current.localToWorld(_lightWorldPos);
     beamLight.current?.setColor(cylColors.emissive);
     beamLight.current?.setPosition(_lightWorldPos.x, _lightWorldPos.y, _lightWorldPos.z);
@@ -264,8 +266,8 @@ export default function Boss3GreenBeam({
   const beamColors = getGreenBeamColors(activeTime);
 
   return (
-    <group ref={beamRef}>
-      <group position={[0, 0.9, BOSS3_GREEN_BEAM_START_OFFSET]}>
+    <group ref={beamRef} rotation={[BOSS3_GREEN_BEAM_PITCH_RAD, 0, 0]}>
+      <group position={[0, BOSS3_GREEN_BEAM_ORIGIN_Y, BOSS3_GREEN_BEAM_START_OFFSET]}>
         <mesh>
           <sphereGeometry args={[0.45 * intensity, 16, 16]} />
           <meshStandardMaterial
@@ -290,7 +292,7 @@ export default function Boss3GreenBeam({
 
       </group>
 
-      <group position={[0, 0.75, BEAM_AXIS_MID_Z]}>
+      <group position={[0, BOSS3_GREEN_BEAM_AXIS_Y, BEAM_AXIS_MID_Z]}>
         <mesh rotation={[Math.PI / 2, 0, 0]} geometry={beamGeometries.core} material={cylinderMaterials.core} />
         <mesh rotation={[Math.PI / 2, 0, 0]} geometry={beamGeometries.inner} material={cylinderMaterials.inner} />
         <mesh rotation={[Math.PI / 2, 0, 0]} geometry={beamGeometries.outer} material={cylinderMaterials.outer} />

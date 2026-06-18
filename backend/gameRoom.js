@@ -101,7 +101,7 @@ const COOP_SPECIAL_ROOM_TYPES = Object.freeze(['stat', 'trial', 'merchant']);
 const COOP_ROOM_TYPES = Object.freeze([...COOP_COLORED_ROOM_TYPES, ...COOP_SPECIAL_ROOM_TYPES, 'boss']);
 const COOP_TERRAIN_THEMES = Object.freeze(['purple', 'blue', 'green']);
 const COOP_WAVE_MARTYR_ROOM_CHANCE = 0.33; // 30% of colored rooms have martyr spawns
-const COOP_WAVE_TITAN_ROOM_CHANCE = 0.5; // 20% of colored rooms have titan spawns (after boss 1)
+const COOP_WAVE_TITAN_ROOM_CHANCE = 0.4; // 40% of colored rooms spawn 1 titan after boss 1 (chance tier)
 const COOP_WAVE_BOSS1_ROOM_CHANCE = 0.33; // 33% of colored rooms have a mini-boss1 spawn after boss2 is defeated
 /** Staged room wave settings — mixed rooms scatter, colored rooms edge-spawn. */
 const COOP_MIXED_WAVE_COUNT = 8;
@@ -289,8 +289,12 @@ class GameRoom {
     this.coopWaveReserveReleased = 0;
     /** Whether the current colored room has martyr spawning enabled (30% chance, rolled per room). */
     this.roomHasMartyrs = false;
-    /** Whether the current colored room has titan spawning enabled (20% chance after boss 1). */
+    /** Whether the current room has any titans planned (derived from roomTitanQuota). */
     this.roomHasTitans = false;
+    /** Number of titans to spawn this room (0–2), based on coopBossesDefeatedCount tier. */
+    this.roomTitanQuota = 0;
+    /** Global slot indices (0–7) reserved for titans in the current 8-enemy wave. */
+    this.roomTitanSlotIndices = new Set();
     /** Whether the current colored room has a mini-boss1 spawn (33% chance after boss2 defeated). */
     this.roomHasMiniBoss1 = false;
     /** Tracks whether the mini-boss1 for this room has already been assigned to a slot. */
@@ -851,6 +855,8 @@ class GameRoom {
     this.coopWaveReserveReleased = 0;
     this.roomHasMartyrs = false;
     this.roomHasTitans = false;
+    this.roomTitanQuota = 0;
+    this.roomTitanSlotIndices = new Set();
     this.roomHasMiniBoss1 = false;
     this.miniBoss1SpawnedThisRoom = false;
     this.tripleBossIds = null;
@@ -1514,6 +1520,8 @@ class GameRoom {
     this.coopWaveReserveReleased = 0;
     this.roomHasMartyrs = false;
     this.roomHasTitans = false;
+    this.roomTitanQuota = 0;
+    this.roomTitanSlotIndices = new Set();
     this._devSpawnBoss2 = false;
     this._devSpawnBoss3 = false;
     this.stopEnemySpawning();
@@ -2206,6 +2214,52 @@ class GameRoom {
   }
 
   /**
+   * Titan quota by boss-defeat tier:
+   *   count 1 — colored rooms: 0 or 1 (chance)
+   *   count 2 — colored rooms: 1–2 (guaranteed)
+   *   count 3+ — all combat rooms: 1–2 (guaranteed)
+   */
+  _computeRoomTitanQuota(roomKind) {
+    const count = this.coopBossesDefeatedCount;
+    const isMixed = roomKind === 'stat' || roomKind === 'trial';
+    const isColored = COOP_COLORED_ROOM_TYPES.includes(roomKind);
+    if (count < 1) return 0;
+    if (count >= 3 && (isColored || isMixed)) return 1 + Math.floor(Math.random() * 2);
+    if (count >= 2 && isColored) return 1 + Math.floor(Math.random() * 2);
+    if (count === 1 && isColored) return Math.random() < COOP_WAVE_TITAN_ROOM_CHANCE ? 1 : 0;
+    return 0;
+  }
+
+  /** Pick `quota` random slot indices from [0, totalSlots), excluding reserved slots. */
+  _pickTitanSlotIndices(quota, totalSlots, reservedSlots) {
+    if (quota <= 0) return new Set();
+    const eligible = [];
+    for (let i = 0; i < totalSlots; i++) {
+      if (!reservedSlots.has(i)) eligible.push(i);
+    }
+    for (let i = eligible.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [eligible[i], eligible[j]] = [eligible[j], eligible[i]];
+    }
+    return new Set(eligible.slice(0, Math.min(quota, eligible.length)));
+  }
+
+  /** Overwrite unitType on chosen mixed-room entry slots (keeps campDef for soul color). */
+  _injectTitansIntoMixedEntries(entries, quota, reservedSlots = new Set()) {
+    if (quota <= 0 || !entries?.length) return;
+    const indices = this._pickTitanSlotIndices(quota, entries.length, reservedSlots);
+    for (const idx of indices) {
+      if (entries[idx]) entries[idx].unitType = 'titan';
+    }
+  }
+
+  _applyRoomTitanPlan(quota, totalSlots, reservedSlots) {
+    this.roomTitanQuota = quota;
+    this.roomHasTitans = quota > 0;
+    this.roomTitanSlotIndices = this._pickTitanSlotIndices(quota, totalSlots, reservedSlots);
+  }
+
+  /**
    * Spawn the next staged batch of colored-room enemies at the far north edge.
    * Initial batch is 2 enemies; reserve batches release at the mixed-room thresholds.
    */
@@ -2239,22 +2293,22 @@ class GameRoom {
 
     for (let i = 0; i < count; i++) {
       const pos = positions[i] || { x: 0, z: MAIN_ARENA_HEX_RADIUS * 0.68 };
+      const slotIndex = slotOffset + i;
       let unitType;
-      if (slotOffset + i === 0) {
+      if (slotIndex === 0) {
         unitType = 'knight';
-      } else if (this.roomHasMiniBoss1 && !this.miniBoss1SpawnedThisRoom && slotOffset + i === 1) {
+      } else if (this.roomHasMiniBoss1 && !this.miniBoss1SpawnedThisRoom && slotIndex === 1) {
         // Assign exactly one mini-boss1 to slot 1 for the whole room (spawns in the initial wave).
         unitType = 'boss';
         this.miniBoss1SpawnedThisRoom = true;
+      } else if (this.roomTitanSlotIndices.has(slotIndex)) {
+        unitType = 'titan';
       } else if (this.roomHasMartyrs && Math.random() < 0.33) {
         unitType = 'martyr';
-      } else if (this.roomHasTitans && Math.random() < 0.15) {
-        unitType = 'titan';
       } else {
         const pool = campDef.enemyPool;
         unitType = pool[Math.floor(Math.random() * pool.length)];
       }
-      const slotIndex = slotOffset + i;
       const enemy = this._buildEnemy(unitType, 0, slotIndex, pos, campDef);
       this.enemies.set(enemy.id, enemy);
       // Pre-seed aggro so the enemy immediately marches toward players without
@@ -2285,6 +2339,9 @@ class GameRoom {
   initializeEnemies() {
     this.coopWaveSpawnPlan = null;
     this.coopWaveReserveReleased = 0;
+    this.roomTitanQuota = 0;
+    this.roomHasTitans = false;
+    this.roomTitanSlotIndices = new Set();
 
     const campTypeKeys = COOP_COLORED_ROOM_TYPES;
     let typeKey = this.pendingCoopArchetype;
@@ -2369,6 +2426,15 @@ class GameRoom {
         }
       }
 
+      const mixedTitanQuota = this._computeRoomTitanQuota(roomKind);
+      const mixedReservedSlots = roomKind === 'stat' ? new Set([0]) : new Set();
+      this._injectTitansIntoMixedEntries(entries, mixedTitanQuota, mixedReservedSlots);
+      this.roomTitanQuota = mixedTitanQuota;
+      this.roomHasTitans = mixedTitanQuota > 0;
+      this.roomTitanSlotIndices = new Set(
+        entries.map((e, i) => (e.unitType === 'titan' ? i : -1)).filter((i) => i >= 0),
+      );
+
       this.coopWaveSpawnPlan = { campDef, entries, isMixed: true };
 
       let totalSpawned = 0;
@@ -2382,16 +2448,20 @@ class GameRoom {
         }
         totalSpawned++;
       }
-      console.log(`⚔️ Mixed room: spawned ${totalSpawned}/${MIXED_WAVE_COUNT} enemies, room: ${this.currentCoopRoomKind}`);
+      console.log(
+        `⚔️ Mixed room: spawned ${totalSpawned}/${MIXED_WAVE_COUNT} enemies, titans=${this.roomTitanQuota}, room: ${this.currentCoopRoomKind}`,
+      );
     } else {
       // ── Colored rooms: edge-spawn batch system ────────────────────────────────
       this.roomHasMartyrs = Math.random() < COOP_WAVE_MARTYR_ROOM_CHANCE;
-      this.roomHasTitans = this.coopBossesDefeatedCount >= 1
-        && Math.random() < COOP_WAVE_TITAN_ROOM_CHANCE;
       // Roll for a mini-boss1 appearance in this room (only available after Boss2 is defeated).
       this.roomHasMiniBoss1 = this.coopBossesDefeatedCount >= 2
         && Math.random() < COOP_WAVE_BOSS1_ROOM_CHANCE;
       this.miniBoss1SpawnedThisRoom = false;
+      const titanQuota = this._computeRoomTitanQuota(roomKind);
+      const titanReservedSlots = new Set([0]);
+      if (this.roomHasMiniBoss1) titanReservedSlots.add(1);
+      this._applyRoomTitanPlan(titanQuota, COOP_MIXED_WAVE_COUNT, titanReservedSlots);
       // Store a minimal plan so _spawnCoopWaveBatch knows the pool.
       this.coopWaveSpawnPlan = { campDef };
 
@@ -2403,7 +2473,7 @@ class GameRoom {
       this._spawnTentacleSpinesForWave(edgePositions, campDef);
 
       console.log(
-        `⚔️ Colored room (${typeKey}): batch 1 at north edge, martyrs=${this.roomHasMartyrs}, titans=${this.roomHasTitans}, miniBoss1=${this.roomHasMiniBoss1}, room: ${this.currentCoopRoomKind}`
+        `⚔️ Colored room (${typeKey}): batch 1 at north edge, martyrs=${this.roomHasMartyrs}, titans=${this.roomTitanQuota}, miniBoss1=${this.roomHasMiniBoss1}, room: ${this.currentCoopRoomKind}`,
       );
     }
 
@@ -2573,12 +2643,8 @@ class GameRoom {
       appliedDamage = Math.floor(appliedDamage * 2);
     }
 
-    // Infested zombies (player-zombie) must not take damage from their summoner
-    if (
-      enemy.type === 'player-zombie' &&
-      fromPlayerId &&
-      enemy.ownerPlayerId === fromPlayerId
-    ) {
+    // Player-summoned zombies are allies — no player-sourced damage
+    if (enemy.type === 'player-zombie' && fromPlayerId) {
       return null;
     }
     if (this.isAlliedUnitEnemy(enemy) && fromPlayerId) {
@@ -4589,6 +4655,8 @@ class GameRoom {
     this.coopWaveReserveReleased = 0;
     this.roomHasMartyrs = false;
     this.roomHasTitans = false;
+    this.roomTitanQuota = 0;
+    this.roomTitanSlotIndices = new Set();
     this._clearCoopCombatTransitionTimer();
     this.coopCombatTransition = null;
     this.coopCombatTransitionId = 0;

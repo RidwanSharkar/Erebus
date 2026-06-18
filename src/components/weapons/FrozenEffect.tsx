@@ -31,7 +31,7 @@ const _shardScale = new Vector3(1, 1, 1);
 const _shardMatrix = new Matrix4();
 
 const SHARD_COUNT = 8;
-const MOTE_COUNT = 20;
+const MOTE_COUNT = 14;
 
 interface FrozenEffectProps {
   position: Vector3;
