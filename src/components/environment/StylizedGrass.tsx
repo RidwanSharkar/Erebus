@@ -26,11 +26,11 @@ type TerrainPalette = {
 };
 
 const SNOW_COLORS_SOFT: TerrainPalette = {
-  baseColor: '#9eb8d4',
-  tipColor: '#d4e4f0',
-  groundColor: '#aabecf',
-  groundLightColor: '#8eacc8',
-  groundLightIntensity: 0.26,
+  baseColor: '#7a96b0',
+  tipColor: '#a8bdd0',
+  groundColor: '#889aad',
+  groundLightColor: '#6a8aa4',
+  groundLightIntensity: 0.18,
 };
 
 const ARID_COLORS: TerrainPalette = {
@@ -129,6 +129,8 @@ const GRASS_VERTEX = `
   }
 `;
 
+const SNOW_BRIGHTNESS_SCALE = 0.82;
+
 const GRASS_FRAGMENT = `
   uniform vec3 uBaseColor;
   uniform vec3 uTipColor;
@@ -139,6 +141,7 @@ const GRASS_FRAGMENT = `
   uniform float uGrassHalfX;
   uniform float uGrassHalfZ;
   uniform float uUseSquareEdgeFade;
+  uniform float uBrightnessScale;
 
   varying float vHeightRatio;
   varying vec3 vWorldPos;
@@ -168,6 +171,8 @@ const GRASS_FRAGMENT = `
       ? max(abs(vWorldPos.x) / uGrassHalfX, abs(vWorldPos.z) / uGrassHalfZ)
       : length(vWorldPos.xz);
     col *= 1.0 - smoothstep(uGrassFadeInner, uGrassFadeOuter, dist) * 0.5;
+
+    col *= uBrightnessScale;
 
     gl_FragColor = vec4(col, 1.0);
   }
@@ -271,12 +276,13 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
         uGrassHalfX: { value: halfX },
         uGrassHalfZ: { value: halfZ },
         uUseSquareEdgeFade: { value: useSquareEdge ? 1.0 : 0.0 },
+        uBrightnessScale: { value: effectiveTheme === 'blue' ? SNOW_BRIGHTNESS_SCALE : 1.0 },
       },
       vertexShader: GRASS_VERTEX,
       fragmentShader: GRASS_FRAGMENT,
       side: DoubleSide,
     });
-  }, [resolvedBaseColor, resolvedTipColor, windStrength, resolvedGroundLightColor, resolvedGroundLightIntensity, grassFadeInner, grassFadeOuter, halfX, halfZ, useSquareEdge]);
+  }, [resolvedBaseColor, resolvedTipColor, windStrength, resolvedGroundLightColor, resolvedGroundLightIntensity, grassFadeInner, grassFadeOuter, halfX, halfZ, useSquareEdge, effectiveTheme]);
 
   const groundGeo = useMemo(
     () =>

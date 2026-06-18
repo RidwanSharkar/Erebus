@@ -113,18 +113,7 @@ function ScytheModel({
 
 
         {/* HANDLE RING 1 */}
-        <group ref={ring3Ref}>
-          <mesh position-y={-0.4} rotation={[Math.PI/2, 0, 0]}>
-            <torusGeometry args={[0.075, 0.02, 16, 32]} />
-            <meshStandardMaterial
-              color={isEmpowered ? "#4169E1" : "#00BFFF"}
-              emissive={isEmpowered ? "#1E90FF" : "#87CEEB"}
-              emissiveIntensity={1}
-              transparent
-              opacity={0.7}
-            />
-          </mesh>
-        </group>
+
 
         {/* HANDLE RING 2 */}
         <group ref={ring4Ref}>
@@ -155,18 +144,7 @@ function ScytheModel({
         </group>
 
                 {/* HANDLE RING 4 */}
-                <group ref={ring6Ref}>
-          <mesh position-y={0.4} rotation={[Math.PI/2, 0, 0]}>
-            <torusGeometry args={[0.075, 0.02, 16, 32]} />
-            <meshStandardMaterial
-              color={isEmpowered ? "#4169E1" : "#00BFFF"}
-              emissive={isEmpowered ? "#1E90FF" : "#87CEEB"}
-              emissiveIntensity={1.25}
-              transparent
-              opacity={0.7}
-            />
-          </mesh>
-        </group>
+  
 
         {/* Static outer glow */}
         <mesh>

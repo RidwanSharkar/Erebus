@@ -78,6 +78,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'enemy_knight_smite', file: 'versus/smite.mp3' },
   { id: 'enemy_templar_smite', file: 'sword/smite.mp3' },
   { id: 'weaver_ghoul_summon', file: 'versus/summon.mp3' },
+  { id: 'enemy_spawn_summon', file: 'ui/summon.mp3' },
   { id: 'shade_throw', file: 'versus/shadeThrow.mp3' },
   { id: 'shade_damage_1', file: 'versus/shadeDamage1.mp3' },
   { id: 'shade_damage_2', file: 'versus/shadeDamage2.mp3' },
@@ -625,6 +626,11 @@ export class AudioSystem extends System {
 
   public playWeaverGhoulSummonSound(position: Vector3) {
     return this.playWeaponSound('weaver_ghoul_summon', position, { volume: 0.85 });
+  }
+
+  // Play the flame-summon spawn cue when an enemy emerges into an enemy room.
+  public playEnemySummonSpawnSound(position: Vector3) {
+    return this.playWeaponSound('enemy_spawn_summon', position, { volume: 0.7 });
   }
 
   // Play enemy blink sound (Shade and Warlock teleport)

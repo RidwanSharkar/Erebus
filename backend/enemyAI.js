@@ -2143,8 +2143,8 @@ class EnemyAI {
       this.io.to(this.roomId).emit('warlock-flame-strike', {
         warlockId: warlock.id,
         position:  endPosition,
-        damage:    36,
-        radius:    3.0,
+        damage:    32,
+        radius:    2.875,
         timestamp: Date.now()
       });
     }

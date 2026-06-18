@@ -874,8 +874,9 @@ function HomeContent() {
                     <li>A <strong>PINK</strong> portal allows you to heal and buy items at the merchant.</li>
                     <li><strong>RED</strong> portals are generally the most difficult.</li>
                     <li><strong>YELLOW</strong> portals reward STAT points that can be spent. You start with 3 points and gain 3 more each level.</li>
-                    <li><strong>Stats</strong> — <strong className="text-red-400">Strength</strong> increases critical strike damage, <strong className="text-green-400">Stamina</strong> increases maximum health (and heals you when allocated), <strong className="text-blue-400">Agility</strong> increases critical hit chance, <strong className="text-purple-400">Intellect</strong> increases shield capacity.</li>
+                    <li><strong>Stats</strong> — <strong className="text-red-400">Strength</strong> increases critical strike damage, <strong className="text-green-400">Stamina</strong> increases maximum health, <strong className="text-blue-400">Agility</strong> increases critical hit chance, <strong className="text-purple-400">Intellect</strong> increases shield capacity.</li>
                     <li><strong>PURPLE</strong>,<strong>BLUE</strong>,<strong>GREEN</strong>,and <strong>RED</strong> portals lead to enemy rooms that reward unique talents for abilities.</li>
+                    <li>When releasing the Bow's left-click attack while the Bow flashes, a Perfect Shot will be fired.</li>
                   </ul>
                 </div>
 
@@ -885,7 +886,7 @@ function HomeContent() {
                     <li><strong className="text-sky-300">Runeblade</strong>: class pool includes Trinity, Vengeance, Crusader, Windfury, Blizzard, Blade Rush, Double Strike, Spellblade, Aftershock, and Stored Charge only after you have Blade Rush this run. Colored <strong>room</strong> boons for your basic combo, Wraith Strike, and Smite are mutually exclusive branches for the rest of that run (one palette per branch); class boons ignore this split.</li>
                     <li><strong className="text-green-300">Bow</strong>: class pool includes Execute, Explosive Talons, Concentrated Volley, Dual Coil, Tempest Rounds. Room colors gate talents like Stagger Shot, Wrathful Bite/Talons, Wyvern Sting/Bite.</li>
                     <li><strong className="text-purple-300">Scythe</strong>: class pool includes Icebeam, Reaper, Frostpath, Solar Recharge, SHAMAN, Superconductor, Accelerator, Healing Stream, Meteor, and Fragmentation. Colored <strong>room</strong> boons: red — Wrathful Entropic &amp; Totem; blue — Staggering Entropic &amp; Totem; green — Infesting Entropic &amp; Totem; purple — Inferno.</li>
-                    <li><strong className="text-red-400">Sabres</strong>: class pool includes Killstreak, Relentless, and Vorpal Gust (Backstab). Colored <strong>room</strong> boons still gate Backstab / Swipes / Flourish branches.</li>
+                    <li><strong className="text-red-400">Sabres</strong>: class pool includes Killstreak, Relentless, Parry, Crescent Blades, Vorpal Gust, Fan of Knives, and Wind Shear. Colored <strong>room</strong> boons still gate Backstab / Swipes / Flourish branches.</li>
                     <li><strong>Tempest Rounds</strong> (Bow) and <strong>Icebeam</strong> (Scythe) are <strong>talents / boons</strong>, not passives on the ability picker.</li>
                   </ul>
 

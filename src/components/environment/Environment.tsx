@@ -129,8 +129,8 @@ const Environment: React.FC<EnvironmentProps> = ({
       {/* Bioluminescent mushrooms near the forest ring */}
       <InstancedMushrooms hiddenIndices={mushroomHiddenIndices} />
 
-      {/* Procedural crack decals on stone paths */}
-      <GroundCracks />
+      {/* Procedural crack decals on stone paths LOOKS MESSY */}
+ 
 
       {/* Glowing arcane runes on ground near pillars and camp centers */}
     

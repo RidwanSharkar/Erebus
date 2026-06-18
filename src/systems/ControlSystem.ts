@@ -5051,9 +5051,6 @@ export class ControlSystem extends System {
     // Update cooldown
     this.lastLightningStormTime = currentTime;
 
-    // Play lightning bolt sound
-    this.audioSystem?.playLightningBoltSound(playerTransform.position);
-
     // Trigger the Lightning Storm callback if set
     if (this.onLightningStormCallback) {
       console.log('⚡ Calling onLightningStormCallback');
@@ -5767,7 +5764,7 @@ export class ControlSystem extends System {
           const enemy = entity.getComponent(Enemy);
           if (enemy) {
             // Apply stun to enemy component for immediate movement and rotation stop
-            enemy.stun(4.0, currentTime); // 4 second stun (using stun mechanics for movement and rotation)
+            enemy.stun(3.5, currentTime); // 4 second stun (using stun mechanics for movement and rotation)
 
             // Add visual stun effect (different from freeze) - 4 second duration for Sunder
             addGlobalStunnedEnemy(entity.id.toString(), targetTransform.position, 4000);
@@ -5775,7 +5772,7 @@ export class ControlSystem extends System {
 
             // Send stun status to server for multiplayer enemies (co-op mode)
             if (this.onApplyEnemyStatusEffectCallback && entity.userData?.serverEnemyId) {
-              this.onApplyEnemyStatusEffectCallback(entity.userData.serverEnemyId, 'stun', 4000); // 4 seconds
+              this.onApplyEnemyStatusEffectCallback(entity.userData.serverEnemyId, 'stun', 3500); // 4 seconds
               console.log(`⚔️ Sunder: Broadcasted stun to server for enemy ${entity.userData.serverEnemyId}`);
             } else {
               console.warn(`⚔️ Sunder: Could not broadcast stun - callback: ${!!this.onApplyEnemyStatusEffectCallback}, serverEnemyId: ${entity.userData?.serverEnemyId}`);

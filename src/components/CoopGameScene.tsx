@@ -28,6 +28,7 @@ import MartyrDetonationExplosion from './enemies/MartyrDetonationExplosion';
 import ZombieRenderer from './enemies/ZombieRenderer';
 import GhoulSummonRitual from './enemies/GhoulSummonRitual';
 import InfestedZombieRiseVFX from './enemies/InfestedZombieRiseVFX';
+import EnemySummonFlameVFX from './enemies/EnemySummonFlameVFX';
 import StaggerProcLightning from './enemies/StaggerProcLightning';
 import KnightSmiteLightning from './enemies/KnightSmiteLightning';
 import KnightFrostProjectile, { KnightFrostImpact } from './enemies/KnightFrostProjectile';
@@ -2271,6 +2272,12 @@ export function CoopGameScene({
     position: Vector3;
   }
   const [infestedZombieSummonVfx, setInfestedZombieSummonVfx] = useState<InfestedZombieSummonVfxState[]>([]);
+
+  interface EnemySummonFlameVfxState {
+    id: string;
+    position: Vector3;
+  }
+  const [enemySummonFlameVfx, setEnemySummonFlameVfx] = useState<EnemySummonFlameVfxState[]>([]);
 
   // Function to create enemy taunt effect (for Deathgrasp)
   const createEnemyTauntEffect = useCallback((enemyId: string, duration: number = 10000) => {
@@ -7371,11 +7378,27 @@ export function CoopGameScene({
       ]);
     };
 
+    // Flame "summoned from the abyss" burst when a wave enemy spawns into a room.
+    const handleEnemySummonVfx = (data: {
+      enemyId: string;
+      enemyType?: string;
+      position: { x: number; y: number; z: number };
+    }) => {
+      if (!data.position) return;
+      const pos = new Vector3(data.position.x, data.position.y, data.position.z);
+      window.audioSystem?.playEnemySummonSpawnSound(pos);
+      setEnemySummonFlameVfx(prev => [
+        ...prev,
+        { id: `enemy-summon-${data.enemyId}-${Date.now()}`, position: pos },
+      ]);
+    };
+
     socket.on('ghoul-attack', handleGhoulAttack);
     socket.on('weaver-heal-telegraph', handleWeaverHealTelegraph);
     socket.on('weaver-summon-telegraph', handleWeaverSummonTelegraph);
     socket.on('weaver-lightning-telegraph', handleWeaverLightningTelegraph);
     socket.on('infested-zombie-summon', handleInfestedZombieSummon);
+    socket.on('enemy-summon-vfx', handleEnemySummonVfx);
 
     return () => {
       tentacleSpinePendingByEnemyRef.current.forEach(p => {
@@ -7457,6 +7480,7 @@ export function CoopGameScene({
       socket.off('weaver-summon-telegraph', handleWeaverSummonTelegraph);
       socket.off('weaver-lightning-telegraph', handleWeaverLightningTelegraph);
       socket.off('infested-zombie-summon', handleInfestedZombieSummon);
+      socket.off('enemy-summon-vfx', handleEnemySummonVfx);
     };
   }, [
     socket,
@@ -9312,6 +9336,19 @@ export function CoopGameScene({
 
     // Set up Lightning Storm callback
     controlSystem.setLightningStormCallback((position: Vector3) => {
+      const lightningRange = 10;
+      const hasValidTargets = Array.from(enemiesRef.current.values()).some(enemy => {
+        if (enemy.isDying || enemy.health <= 0) return false;
+        if (enemy.alliedUnit === true || enemy.type === 'allied-knight' ||
+            enemy.type === 'allied-healer' || enemy.type === 'player-zombie') return false;
+        const ePos = new Vector3(enemy.position.x, enemy.position.y, enemy.position.z);
+        return ePos.distanceTo(position) <= lightningRange;
+      });
+
+      if (!hasValidTargets) return;
+
+      window.audioSystem?.playLightningBoltSound(position);
+
       // Create local Lightning Storm effect with fixed damage of 117
       createLightningStormEffect(socket?.id || '', position, 117);
 
@@ -10695,6 +10732,14 @@ export function CoopGameScene({
         />
       ))}
 
+      {enemySummonFlameVfx.map(fx => (
+        <EnemySummonFlameVFX
+          key={fx.id}
+          position={fx.position}
+          onComplete={() => setEnemySummonFlameVfx(prev => prev.filter(e => e.id !== fx.id))}
+        />
+      ))}
+
       {/* Boss Meteors */}
       {activeMeteors.map(meteor => {
         return (
@@ -11145,6 +11190,8 @@ export function CoopGameScene({
         const lightningStormEnemyData = Array.from(enemies.values())
           .filter(enemy => {
             if (enemy.isDying || enemy.health <= 0) return false;
+            if (enemy.alliedUnit === true || enemy.type === 'allied-knight' ||
+                enemy.type === 'allied-healer' || enemy.type === 'player-zombie') return false;
             const ePos = new Vector3(enemy.position.x, enemy.position.y, enemy.position.z);
             return ePos.distanceTo(lightningOrigin) <= lightningRange;
           })

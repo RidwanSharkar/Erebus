@@ -75,11 +75,18 @@ const LightningStormComponent = memo(function LightningStorm({
     startTimeRef.current = Date.now() + delayStart;
   }
 
-  // Select a random enemy from all available targets in range
-  const selectedTarget = useMemo(() => {
-    if (enemyData.length === 0) return null;
-    return enemyData[Math.floor(Math.random() * enemyData.length)];
-  }, [enemyData]);
+  // Lock in a single random target on first render and never re-roll.
+  // enemyData is a new array reference on every parent re-render, so useMemo
+  // would re-roll the random pick mid-animation causing the bolt to jump targets.
+  const selectedTargetRef = useRef<typeof enemyData[0] | null>(null);
+  const targetLockedRef = useRef(false);
+  if (!targetLockedRef.current) {
+    targetLockedRef.current = true;
+    selectedTargetRef.current = enemyData.length > 0
+      ? enemyData[Math.floor(Math.random() * enemyData.length)]
+      : null;
+  }
+  const selectedTarget = selectedTargetRef.current;
 
   // Calculate the sky position (directly above the target position)
   const skyPosition = useMemo(() => {

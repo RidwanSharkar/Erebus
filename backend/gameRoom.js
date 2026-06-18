@@ -1845,6 +1845,34 @@ class GameRoom {
     }
   }
 
+  // Enemy types that should NOT get the flame summon spawn VFX:
+  // bosses + terrain/trap enemies (tentacle-spine) + allies + training dummies.
+  _isSummonVfxEligible(enemy) {
+    if (!enemy || !enemy.type) return false;
+    const NO_SUMMON_TYPES = new Set([
+      'boss', 'boss2', 'boss3',
+      'tentacle-spine',
+      'training-dummy',
+      'allied-knight', 'allied-healer',
+    ]);
+    if (NO_SUMMON_TYPES.has(enemy.type)) return false;
+    if (enemy.isTrap) return false;
+    return true;
+  }
+
+  // Broadcast the flame "summoned from the abyss" spawn VFX for a freshly spawned
+  // enemy-room combatant. Skips bosses and terrain/trap enemies.
+  _emitEnemySummonVfx(enemy) {
+    if (!this.io || !this._isSummonVfxEligible(enemy)) return;
+    const pos = enemy.position || { x: 0, y: 0, z: 0 };
+    this.io.to(this.roomId).emit('enemy-summon-vfx', {
+      enemyId: enemy.id,
+      enemyType: enemy.type,
+      position: { x: pos.x, y: pos.y ?? 0, z: pos.z },
+      timestamp: Date.now(),
+    });
+  }
+
   // Build one enemy object at the given position for the given type/camp.
   _buildEnemy(type, campIndex, slotIndex, pos, campDef) {
     const soulStats = {
@@ -2113,6 +2141,7 @@ class GameRoom {
       this.enemies.set(enemy.id, enemy);
       if (this.io) {
         this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+        this._emitEnemySummonVfx(enemy);
       }
     }
     console.log(`⚔️ Mixed room reserve: slots ${sliceStart}–${sliceEnd - 1} (${sliceEnd - sliceStart} enemies)`);
@@ -2173,6 +2202,7 @@ class GameRoom {
       this.enemyAI.forceAggroOnEnemy(enemy);
       if (this.io) {
         this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+        this._emitEnemySummonVfx(enemy);
       }
     }
 
@@ -2285,6 +2315,7 @@ class GameRoom {
         this.enemies.set(enemy.id, enemy);
         if (this.io) {
           this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+          this._emitEnemySummonVfx(enemy);
         }
         totalSpawned++;
       }
