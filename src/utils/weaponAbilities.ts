@@ -210,6 +210,12 @@ export const universalAbilityPool: UniversalAbility[] = [
     description: 'Calls down 1 meteor on the nearest enemy within range, with a 15% chance to call a second and a 5% chance to call a third. Meteors deal 240 AoE damage.',
     allowedWeapons: ALL_WEAPONS,
   },
+  {
+    id: 'AEGIS_ROOM', sourceWeapon: WeaponType.NONE, sourceKey: 'R',
+    name: 'Aegis', cooldown: 8.0, icon: '🛡️',
+    description: 'Creates a protective barrier that blocks all incoming damage for 3 seconds.',
+    allowedWeapons: ALL_WEAPONS,
+  },
 ];
 
 /** Look up a universal ability by its id. Returns undefined if not found. */

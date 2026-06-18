@@ -1415,6 +1415,11 @@ class GameRoom {
         adrenaline: false,
         juggernautStrain: false,
       },
+      /** Co-op: blue stagger room boons synced from client (`coop-stagger-room-boons`). */
+      coopStaggerRoomBoons: {
+        guardbreak: false,
+        overshock: false,
+      },
     });
 
     // Position players for co-op mode
@@ -2553,13 +2558,6 @@ class GameRoom {
     let appliedDamage = damage;
     if (
       hitMeta &&
-      hitMeta.guardbreakRoom &&
-      this.isEnemyAffectedBy(enemyId, 'stun')
-    ) {
-      appliedDamage = Math.floor(appliedDamage * 1.3);
-    }
-    if (
-      hitMeta &&
       hitMeta.frostTotemChill &&
       hitMeta.damageType === 'entropic' &&
       this.isEnemyAffectedBy(enemyId, 'freeze')
@@ -2891,8 +2889,10 @@ class GameRoom {
         if (enemy.staggerBuildup == null) enemy.staggerBuildup = 0;
         enemy.staggerBuildup += hitMeta.staggerToAdd;
         const staggerCap = COOP_BOSS_TYPES.has(enemy.type) ? STAGGER_CAP_BOSS : STAGGER_CAP_NORMAL;
-        /** Keep in sync with `STAGGER_PROC_DAMAGE` in src/utils/talents.ts */
-        const PROC_DAMAGE = 175;
+        /** Keep in sync with `STAGGER_PROC_DAMAGE` / `GUARDBREAK_STAGGER_PROC_DAMAGE` in src/utils/talents.ts */
+        const staggerBoons = fromPlayerId ? this.players.get(fromPlayerId)?.coopStaggerRoomBoons : null;
+        const PROC_DAMAGE = staggerBoons?.guardbreak ? 300 : 150;
+        const STUN_MS = staggerBoons?.overshock ? 2500 : 1000;
         let procEnemy = this.enemies.get(enemyId);
         while (
           procEnemy &&
@@ -2902,7 +2902,7 @@ class GameRoom {
         ) {
           procEnemy.staggerBuildup -= staggerCap;
           this.damageEnemy(enemyId, PROC_DAMAGE, fromPlayerId, player, { damageType: 'stagger_break' });
-          this.applyStatusEffect(enemyId, 'stun', 3000);
+          this.applyStatusEffect(enemyId, 'stun', STUN_MS);
           procEnemy = this.enemies.get(enemyId);
           if (this.io && procEnemy) {
             this.io.to(this.roomId).emit('enemy-stagger-proc', {

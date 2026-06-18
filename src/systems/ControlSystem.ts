@@ -75,7 +75,6 @@ import {
   shouldApplyGlacialDashTalent,
   shouldApplyMendingDashTalent,
   shouldApplyStaggeringDashTalent,
-  shouldApplyGuardbreakTalent,
   shouldApplyBloodleechTalent,
   GLACIAL_DASH_COOLDOWN_MS,
   MENDING_DASH_COOLDOWN_MS,
@@ -208,7 +207,10 @@ import {
   FAN_OF_KNIVES_PROJECTILE_LIFETIME_SEC,
   RAISE_DEAD_COOLDOWN_SEC,
   METEOR_STRIKE_COOLDOWN_SEC,
+  AEGIS_ROOM_COOLDOWN_SEC,
+  AEGIS_ROOM_DURATION_SEC,
 } from '@/utils/talents';
+import type { AegisPaletteVariant } from '@/utils/aegisShieldPalette';
 import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
 import { triggerGlobalCobraShot } from '@/components/projectiles/CobraShotManager';
@@ -322,7 +324,11 @@ export class ControlSystem extends System {
   private onChargeCallback?: (position: Vector3, direction: Vector3) => void;
   
   // Callback for Deflect activation
-  private onDeflectCallback?: (position: Vector3, direction: Vector3) => void;
+  private onDeflectCallback?: (
+    position: Vector3,
+    direction: Vector3,
+    extra?: { aegisRoomBoon?: boolean },
+  ) => void;
   
   // Callback for broadcasting debuff effects in PVP
   private onDebuffCallback?: (targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', duration: number, position: Vector3) => void;
@@ -520,8 +526,9 @@ export class ControlSystem extends System {
   // Deflect ability state
   private isDeflecting = false;
   private lastDeflectTime = 0;
-  private deflectCooldown = 8; // 8 second cooldown
-  private deflectDuration = 3.0; // 3 second duration
+  private deflectCooldown = AEGIS_ROOM_COOLDOWN_SEC;
+  private deflectDuration = AEGIS_ROOM_DURATION_SEC;
+  private aegisRoomDeflectActive = false;
   private deflectBarrier: DeflectBarrier;
   /** Wraith Guard talent: barrier spawned without Aegis; separate from `isDeflecting` for UI/cooldown. */
   private wraithGuardShieldActive = false;
@@ -1567,6 +1574,12 @@ export class ControlSystem extends System {
       case 'METEOR_STRIKE':
         this.performMeteorStrike(playerTransform);
         break;
+      case 'AEGIS_ROOM':
+        if (!this.isDeflecting && !this.isSmiting && !this.isSwinging && !this.isWraithStriking) {
+          window.dispatchEvent(new CustomEvent('character-ability-cast'));
+          this.performDeflect(playerTransform, { fromAegisRoom: true });
+        }
+        break;
     }
   }
 
@@ -1919,6 +1932,7 @@ export class ControlSystem extends System {
       case 'SPEAR_F':     return { current: Math.max(0, this.flurryCooldown - (currentTime - this.lastFlurryTime)), max: this.flurryCooldown, isActive: this.isFlurryActive };
       case 'RAISE_DEAD':  return { current: Math.max(0, RAISE_DEAD_COOLDOWN_SEC - (currentTime - this.lastRaiseDeadTime)), max: RAISE_DEAD_COOLDOWN_SEC, isActive: false };
       case 'METEOR_STRIKE': return { current: Math.max(0, METEOR_STRIKE_COOLDOWN_SEC - (currentTime - this.lastMeteorStrikeTime)), max: METEOR_STRIKE_COOLDOWN_SEC, isActive: false };
+      case 'AEGIS_ROOM':  return { current: Math.max(0, AEGIS_ROOM_COOLDOWN_SEC - (currentTime - this.lastDeflectTime)), max: AEGIS_ROOM_COOLDOWN_SEC, isActive: this.isDeflecting };
       default:            return { current: 0, max: 1, isActive: false };
     }
   }
@@ -3293,7 +3307,11 @@ export class ControlSystem extends System {
     this.onChargeCallback = callback;
   }
   
-  public setDeflectCallback(callback: (position: Vector3, direction: Vector3) => void): void {
+  public setDeflectCallback(callback: (
+    position: Vector3,
+    direction: Vector3,
+    extra?: { aegisRoomBoon?: boolean },
+  ) => void): void {
     this.onDeflectCallback = callback;
   }
   
@@ -6275,10 +6293,6 @@ export class ControlSystem extends System {
     return this.talentLoadout.staggerShot === true && this.currentWeapon === WeaponType.BOW;
   }
 
-  public shouldApplyGuardbreakRoomTalent(): boolean {
-    return shouldApplyGuardbreakTalent(this.talentLoadout);
-  }
-
   public shouldApplyBloodleechRoomTalent(): boolean {
     return shouldApplyBloodleechTalent(this.talentLoadout);
   }
@@ -7358,7 +7372,10 @@ export class ControlSystem extends System {
     this.isSwordCharging = false;
   }
 
-  private performDeflect(playerTransform: Transform): void {
+  private performDeflect(
+    playerTransform: Transform,
+    options?: { fromAegisRoom?: boolean },
+  ): void {
     // Check cooldown
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastDeflectTime < this.deflectCooldown) {
@@ -7386,6 +7403,7 @@ export class ControlSystem extends System {
     }
 
     this.isDeflecting = true;
+    this.aegisRoomDeflectActive = options?.fromAegisRoom === true;
     this.lastDeflectTime = currentTime;
 
     // Play deflect sound
@@ -7396,7 +7414,11 @@ export class ControlSystem extends System {
       const direction = new Vector3();
       this.camera.getWorldDirection(direction);
       direction.normalize();
-      this.onDeflectCallback(playerTransform.position.clone(), direction);
+      this.onDeflectCallback(
+        playerTransform.position.clone(),
+        direction,
+        this.aegisRoomDeflectActive ? { aegisRoomBoon: true } : undefined,
+      );
     }
     
     // Set up deflect barrier that blocks damage and reflects projectiles
@@ -8132,6 +8154,7 @@ export class ControlSystem extends System {
   // Called by sword component when Deflect completes
   public onDeflectComplete(): void {
     this.isDeflecting = false;
+    this.aegisRoomDeflectActive = false;
     this.clearTalentBarrierEndTimeout();
     this.wraithGuardOwnsBarrier = false;
     this.wraithGuardShieldActive = false;
@@ -8169,6 +8192,22 @@ export class ControlSystem extends System {
 
   public isSabresPurpleGuardShieldActive(): boolean {
     return this.sabresPurpleGuardShieldActive;
+  }
+
+  public isAegisRoomDeflectActive(): boolean {
+    return this.aegisRoomDeflectActive;
+  }
+
+  /** DeflectShield palette for local player — purple room boon uses distinct Scythe/Bow themes. */
+  public getAegisShieldPaletteVariant(): AegisPaletteVariant {
+    if (!this.aegisRoomDeflectActive) return 'default';
+    if (
+      this.currentWeapon === WeaponType.SCYTHE ||
+      this.currentWeapon === WeaponType.BOW
+    ) {
+      return 'purple_room_boon';
+    }
+    return 'default';
   }
 
   /** Duration (seconds) for local DeflectShield VFX while Aegis or talent guard shield is showing. */

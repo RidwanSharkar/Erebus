@@ -48,6 +48,20 @@ function handlePlayerEvents(socket, gameRooms) {
     };
   });
 
+  /** Co-op: sync blue stagger room boon flags for server-authored stagger lightning procs. */
+  socket.on('coop-stagger-room-boons', (data) => {
+    const roomId = data?.roomId;
+    const raw = data?.coopStaggerRoomBoons ?? {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    const player = room.players?.get(socket.id);
+    if (!player) return;
+    player.coopStaggerRoomBoons = {
+      guardbreak: !!raw.guardbreak,
+      overshock: !!raw.overshock,
+    };
+  });
+
   /** Co-op: RAISE DEAD boon active ability — instantly summon one zombie at the player's position. */
   socket.on('raise-dead-ability', (data) => {
     const { roomId, position } = data || {};

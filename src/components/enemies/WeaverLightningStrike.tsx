@@ -44,6 +44,7 @@ export default function WeaverLightningStrike({
   const strikeStartRef = useRef<number | null>(null);
   const impactDoneRef = useRef(false);
   const completeDoneRef = useRef(false);
+  const soundPlayedRef = useRef(false);
   const flickerRef = useRef(1);
 
   // Pooled light for the strike flash (replaces the impact <pointLight>).
@@ -182,6 +183,10 @@ export default function WeaverLightningStrike({
       if (now >= strikeAt && strikeStartRef.current === null) {
         strikeStartRef.current = now;
         setPhase('strike');
+        if (!soundPlayedRef.current) {
+          soundPlayedRef.current = true;
+          (window as any).audioSystem?.playLightningBoltSound?.(impactPos);
+        }
       }
       return;
     }

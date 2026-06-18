@@ -82,6 +82,7 @@ interface DragonRendererProps {
   /** Deflect shield VFX (Aegis and/or Wraith Guard). */
   deflectShieldActive?: boolean;
   deflectShieldDurationSec?: number;
+  deflectShieldPaletteVariant?: import('@/utils/aegisShieldPalette').AegisPaletteVariant;
   isSmiting?: boolean;
   isColossusStriking?: boolean;
   isDeathGrasping?: boolean;
@@ -221,6 +222,7 @@ export default function DragonRenderer({
   isDeflecting = false,
   deflectShieldActive: deflectShieldActiveProp,
   deflectShieldDurationSec = 3,
+  deflectShieldPaletteVariant = 'default',
   isDead = false,
   isSmiting = false,
   isColossusStriking = false,
@@ -768,6 +770,7 @@ export default function DragonRenderer({
           isDeflecting={isDeflecting}
           deflectShieldActive={effectiveDeflectShieldActive}
           deflectShieldDurationSec={deflectShieldDurationSec}
+          deflectShieldPaletteVariant={deflectShieldPaletteVariant}
           isSmiting={isSmiting}
           isColossusStriking={isColossusStriking}
           isDeathGrasping={isDeathGrasping}

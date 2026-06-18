@@ -125,6 +125,7 @@ const ABILITY_LABELS: Record<string, string> = {
   METEOR_STRIKE:   'Meteor',
   SCYTHE_E:        'Coldsnap',
   SPEAR_R:         'Lightning Bolt',
+  AEGIS_ROOM:      'Aegis',
   COOP_GREEN_ROOM: 'Necro Trial',
   COOP_RED_ROOM:   'Infernal Trial',
   COOP_BLUE_ROOM:  'Storm Trial',
@@ -348,7 +349,7 @@ export default function CoopBoonPickerModal({
               const name = def?.name ?? id;
               const description = def?.description ?? '';
               const abilityId = def?.modifiesAbilityId ?? '';
-              const iconSrc = getTalentIconSrc(id);
+              const iconSrc = getTalentIconSrc(id, kind === 'room' ? roomColor : undefined);
               const abilityLabel = ABILITY_LABELS[abilityId] ?? abilityId;
               const isHovered = hoveredIdx === idx;
               const isLast = idx === options.length - 1;

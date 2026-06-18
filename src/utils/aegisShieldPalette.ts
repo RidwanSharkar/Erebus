@@ -7,8 +7,34 @@ export interface AegisShieldPalette {
   accent: number;
 }
 
+export type AegisPaletteVariant = 'default' | 'purple_room_boon';
+
 /** Class-colored Aegis / Wraith Guard plasma (RUNEBLADE_Q can be taken on any weapon). */
-export function getAegisShieldPalette(weapon: WeaponType): AegisShieldPalette {
+export function getAegisShieldPalette(
+  weapon: WeaponType,
+  variant: AegisPaletteVariant = 'default',
+): AegisShieldPalette {
+  if (variant === 'purple_room_boon') {
+    switch (weapon) {
+      case WeaponType.SCYTHE:
+        return {
+          main: 0x9b59ff,
+          emissive: 0x7c3aed,
+          emissiveDeep: 0x5b21b6,
+          accent: 0xe9d5ff,
+        };
+      case WeaponType.BOW:
+        return {
+          main: 0xff66cc,
+          emissive: 0xdb2777,
+          emissiveDeep: 0x9d174d,
+          accent: 0xffd6f0,
+        };
+      default:
+        break;
+    }
+  }
+
   switch (weapon) {
     case WeaponType.NONE:
       return {

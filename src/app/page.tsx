@@ -44,6 +44,7 @@ import {
   TALENT_METEOR_STRIKE,
   TALENT_COLDSNAP_ROOM,
   TALENT_LIGHTNING_BOLT_ROOM,
+  TALENT_AEGIS_ROOM,
 } from '../utils/talents';
 import type { TalentId, TalentLoadout } from '../utils/talents';
 import type { AbilityLoadout } from '../utils/weaponAbilities';
@@ -612,11 +613,13 @@ function HomeContent() {
     (id: TalentId, kind: 'class' | 'room', classPickWeapon?: WeaponType) => {
       setTalentLoadout((prev) => applyTalentIdToLoadout(prev, id));
       if (id === TALENT_RAISE_DEAD || id === TALENT_METEOR_STRIKE
-          || id === TALENT_COLDSNAP_ROOM || id === TALENT_LIGHTNING_BOLT_ROOM) {
+          || id === TALENT_COLDSNAP_ROOM || id === TALENT_LIGHTNING_BOLT_ROOM
+          || id === TALENT_AEGIS_ROOM) {
         const abilityId =
           id === TALENT_RAISE_DEAD ? 'RAISE_DEAD' :
           id === TALENT_METEOR_STRIKE ? 'METEOR_STRIKE' :
-          id === TALENT_COLDSNAP_ROOM ? 'SCYTHE_E' : 'SPEAR_R';
+          id === TALENT_COLDSNAP_ROOM ? 'SCYTHE_E' :
+          id === TALENT_AEGIS_ROOM ? 'AEGIS_ROOM' : 'SPEAR_R';
         setAbilityLoadout(abilityLoadout ? { ...abilityLoadout, R: abilityId } : { Q: null, E: null, R: abilityId });
       }
       if (kind === 'room') {

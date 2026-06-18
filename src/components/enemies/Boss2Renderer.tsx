@@ -15,6 +15,7 @@ import { WeaponType } from '../dragon/weapons';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
+import { campHpTheme } from '@/utils/campHpTheme';
 
 interface Boss2RendererProps {
   id: string;
@@ -43,6 +44,7 @@ export default function Boss2Renderer({
   isDying = false,
   staggerBuildup = 0,
 }: Boss2RendererProps) {
+  const theme = campHpTheme('red');
   const { socket } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
   const isBlinkingRef = useRef(false);
@@ -213,7 +215,7 @@ export default function Boss2Renderer({
             isLaunching={isLaunching}
             isDying={isDying}
           />
-          <group position={[0, 1.85, 0.18]} scale={[1.65, 1.65, 1.65]}>
+          <group position={[0, 1.85, 0.-.28]} scale={[1.25, 1.25, 1.25]}>
             <BoneWings isLeftWing parentRef={groupRef as React.RefObject<Group>} isDashing={isBlinking || isLaunching} />
             <BoneWings isLeftWing={false} parentRef={groupRef as React.RefObject<Group>} isDashing={isBlinking || isLaunching} />
           </group>
@@ -225,17 +227,17 @@ export default function Boss2Renderer({
           {health > 0 && !isDying && (
             <>
               <mesh position={[0, 0, 0]}>
-                <planeGeometry args={[2.4, 0.28]} />
-                <meshBasicMaterial color="#210006" opacity={0.9} transparent />
+                <planeGeometry args={[2.0, 0.25]} />
+                <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
               </mesh>
-              <mesh position={[-1.2 + (health / maxHealth) * 1.2, 0, 0.001]}>
-                <planeGeometry args={[(health / maxHealth) * 2.4, 0.25]} />
-                <meshBasicMaterial color="#ff3333" opacity={0.95} transparent />
+              <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
+                <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
+                <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
               </mesh>
               <Text
                 position={[0, 0, 0.002]}
                 fontSize={0.18}
-                color="#ffd9d9"
+                color={theme.text}
                 anchorX="center"
                 anchorY="middle"
                 fontWeight="bold"

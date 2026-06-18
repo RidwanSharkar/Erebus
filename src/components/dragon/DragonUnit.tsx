@@ -23,6 +23,7 @@ import ArchmageCrest from './ArchmageCrest';
 import SpellCastingAura from '../weapons/SpellCastingAura';
 import SpellCastingHalos from '../weapons/SpellCastingHalos';
 import DeflectShield from '../weapons/DeflectShield';
+import type { AegisPaletteVariant } from '@/utils/aegisShieldPalette';
 import type { VorpalGustStabBoonBeamTheme } from '@/utils/talents';
 
 interface DragonUnitProps {
@@ -77,6 +78,7 @@ interface DragonUnitProps {
   isDeflecting?: boolean;
   deflectShieldActive?: boolean;
   deflectShieldDurationSec?: number;
+  deflectShieldPaletteVariant?: AegisPaletteVariant;
   isSmiting?: boolean;
   isColossusStriking?: boolean;
   isDeathGrasping?: boolean;
@@ -216,6 +218,7 @@ export default function DragonUnit({
   isDeflecting = false,
   deflectShieldActive: deflectShieldActiveProp,
   deflectShieldDurationSec = 3,
+  deflectShieldPaletteVariant = 'default',
   isSmiting = false,
   isColossusStriking = false,
   isDeathGrasping = false,
@@ -756,6 +759,7 @@ export default function DragonUnit({
           playerRotation={playerRotation}
           dragonGroupRef={groupRef}
           weaponType={currentWeapon}
+          paletteVariant={deflectShieldPaletteVariant}
           enableBlockFlash={isLocalPlayer}
         />
       )}

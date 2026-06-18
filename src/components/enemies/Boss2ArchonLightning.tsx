@@ -12,6 +12,7 @@ import {
 } from 'three';
 import ViperShotTelegraphLine from './ViperShotTelegraphLine';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import { BOSS2_ARCHON_LIGHTNING_WINDUP_MS } from '@/utils/groundLineTelegraphShader';
 
 export interface Boss2ArchonBeam {
   startPosition: Vector3;
@@ -185,44 +186,19 @@ export default function Boss2ArchonLightning({
     <>
       {phase === 'warning' &&
         groundPairs.map(({ groundStart, groundEnd }, beamIdx) => {
-          const showStartRing = groundStart.distanceTo(groundEnd) > 2;
+          const showStartCap = groundStart.distanceTo(groundEnd) > 2;
           return (
-            <group key={`warn-${beamIdx}`}>
-              <ViperShotTelegraphLine
-                start={groundStart}
-                end={groundEnd}
-                lineWidth={halfWidth * 2}
-                color="#ff3333"
-              />
-              {showStartRing && (
-                <group position={[groundStart.x, 0.12, groundStart.z]}>
-                  <mesh rotation={[-Math.PI / 2, 0, 0]} scale={[1.1, 1.1, 1]}>
-                    <primitive object={geometries.ring} />
-                    <meshBasicMaterial
-                      color="#ff5555"
-                      transparent
-                      opacity={0.45}
-                      blending={AdditiveBlending}
-                      depthWrite={false}
-                      side={DoubleSide}
-                    />
-                  </mesh>
-                </group>
-              )}
-              <group position={[groundEnd.x, 0.12, groundEnd.z]}>
-                <mesh rotation={[-Math.PI / 2, 0, 0]} scale={[1.25, 1.25, 1]}>
-                  <primitive object={geometries.ring} />
-                  <meshBasicMaterial
-                    color="#ff5555"
-                    transparent
-                    opacity={0.5}
-                    blending={AdditiveBlending}
-                    depthWrite={false}
-                    side={DoubleSide}
-                  />
-                </mesh>
-              </group>
-            </group>
+            <ViperShotTelegraphLine
+              key={`warn-${beamIdx}`}
+              start={groundStart}
+              end={groundEnd}
+              lineWidth={halfWidth * 2}
+              color="#ff3333"
+              variant="archon"
+              endAt={strikeAt}
+              startedAt={strikeAt - BOSS2_ARCHON_LIGHTNING_WINDUP_MS}
+              showStartCap={showStartCap}
+            />
           );
         })}
 

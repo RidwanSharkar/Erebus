@@ -267,6 +267,9 @@ const BOSS3_NOVA_TRAVEL_MS = 1500;
 const BOSS3_NOVA_HALF_WIDTH = 0.85;
 const BOSS3_NOVA_DAMAGE = 50;
 const BOSS3_NOVA_STEPS = 26;
+const BOSS3_NOVA_BURST_GAP_MS = 250;
+const BOSS3_NOVA_HP_DOUBLE_ROUND = 0.75;
+const BOSS3_NOVA_HP_TRIPLE_ROUND = 0.5;
 const BOSS3_LIGHTNING_HEALTH_PCT = 0.675;
 const BOSS3_LIGHTNING_INTERVAL_MS = 6_000;
 const BOSS3_LIGHTNING_CHARGE_MS = 500;
@@ -331,7 +334,10 @@ const WARLOCK_METEOR_OFFSET_MAX = 6;
 /** Chaos orb — aligned with WarlockRenderer / WarlockProjectile.tsx */
 const WARLOCK_ORB_CHARGE_MS = 1400;
 const WARLOCK_ORB_SPEED = 9;
-const WARLOCK_ORB_HIT_RADIUS = 1.8;
+const WARLOCK_ORB_HIT_RADIUS = 1.6;
+const WARLOCK_ORB_DAMAGE = 42;
+const WARLOCK_FLAME_DAMAGE = 42;
+const WARLOCK_FLAME_RADIUS = 2.875;
 /** Purple meteor impact disk — Meteor.tsx DAMAGE_RADIUS */
 const WARLOCK_METEOR_DISK_RADIUS = 2.99;
 const WARLOCK_METEOR_WARNING_MS = 100;
@@ -388,7 +394,10 @@ class EnemyAI {
     this.boss3LockUntil = new Map();
     this.boss3NovaLastRelease = new Map();
     this.boss3NovaWindupTimeout = new Map();
+    /** @type {Map<string, Set<ReturnType<typeof setInterval>>>} */
     this.boss3NovaSweepInterval = new Map();
+    /** @type {Map<string, ReturnType<typeof setTimeout>[]>} */
+    this.boss3NovaBurstTimeouts = new Map();
     this.boss3LightningInterval = new Map();
     this.boss3GreenBeamEndAt = new Map();
     /** @type {Map<string, ReturnType<typeof setInterval>>} */
@@ -550,7 +559,13 @@ class EnemyAI {
     this.boss2WarlockSummonLastAt.clear();
     this.boss3NovaWindupTimeout.forEach((t) => clearTimeout(t));
     this.boss3NovaWindupTimeout.clear();
-    this.boss3NovaSweepInterval.forEach((t) => clearInterval(t));
+    this.boss3NovaBurstTimeouts.forEach((timeouts) => {
+      (timeouts || []).forEach((t) => clearTimeout(t));
+    });
+    this.boss3NovaBurstTimeouts.clear();
+    this.boss3NovaSweepInterval.forEach((set) => {
+      (set || []).forEach((t) => clearInterval(t));
+    });
     this.boss3NovaSweepInterval.clear();
     this.boss3LightningInterval.forEach((t) => clearInterval(t));
     this.boss3LightningInterval.clear();
@@ -2207,8 +2222,8 @@ class EnemyAI {
       this.io.to(this.roomId).emit('warlock-flame-strike', {
         warlockId: warlock.id,
         position:  endPosition,
-        damage:    42,
-        radius:    2.875,
+        damage:    WARLOCK_FLAME_DAMAGE,
+        radius:    WARLOCK_FLAME_RADIUS,
         timestamp: Date.now()
       });
     }
@@ -2221,7 +2236,14 @@ class EnemyAI {
       if (!this.room?.getGameStarted()) return;
       const w = this.room?.getEnemy(wid);
       if (!w || w.isDying) return;
-      this.room.tryDamageAlliedKnightInXZDisk(flameXZ, 3.0, 36, {
+      this.room.damagePlayersInHorizontalRing(
+        flameXZ,
+        WARLOCK_FLAME_RADIUS,
+        WARLOCK_FLAME_DAMAGE,
+        'warlock_flame_strike',
+        { sourceEnemyId: wid },
+      );
+      this.room.tryDamageAlliedKnightInXZDisk(flameXZ, WARLOCK_FLAME_RADIUS, WARLOCK_FLAME_DAMAGE, {
         sourceEnemyId: wid,
         damageType: 'warlock_flame_strike',
       });
@@ -2242,7 +2264,7 @@ class EnemyAI {
           y: targetPlayer.position.y + 1.0,
           z: targetPlayer.position.z,
         },
-        damage: 38,
+        damage: WARLOCK_ORB_DAMAGE,
         timestamp: Date.now()
       });
     }
@@ -2259,11 +2281,26 @@ class EnemyAI {
     const flyMs = flyDist > 1e-6 ? (flyDist / WARLOCK_ORB_SPEED) * 1000 : 0;
     const delayMs = WARLOCK_ORB_CHARGE_MS + flyMs;
     const wid = warlock.id;
+    const targetId = targetPlayer.id;
     setTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const w = this.room?.getEnemy(wid);
       if (!w || w.isDying) return;
-      this.room.tryDamageAlliedKnightInXZDisk({ x: tx, z: tz }, WARLOCK_ORB_HIT_RADIUS, 42, {
+
+      const currentPlayers = this.room?.getPlayers();
+      const target = currentPlayers?.find((p) => p.id === targetId);
+      if (!target || target.health <= 0) return;
+
+      const hitCenter = { x: target.position.x, z: target.position.z };
+
+      this.room.damagePlayersInHorizontalRing(
+        hitCenter,
+        WARLOCK_ORB_HIT_RADIUS,
+        WARLOCK_ORB_DAMAGE,
+        'warlock_chaos_orb',
+        { sourceEnemyId: wid },
+      );
+      this.room.tryDamageAlliedKnightInXZDisk(hitCenter, WARLOCK_ORB_HIT_RADIUS, WARLOCK_ORB_DAMAGE, {
         sourceEnemyId: wid,
         damageType: 'warlock_chaos_orb',
       });
@@ -4478,7 +4515,7 @@ class EnemyAI {
     const canSummon =
       charges > 0 &&
       !ghoulAlive &&
-      !(this.boss3NovaWindupTimeout.has(boss.id) || this.boss3NovaSweepInterval.has(boss.id));
+      !this.boss3IsNovaCasting(boss.id);
 
     if (canSummon) {
       boss.summonChargesLeft = charges - 1;
@@ -4492,7 +4529,7 @@ class EnemyAI {
     const lastNova = this.boss3NovaLastRelease.get(boss.id);
     const novaReady =
       lastNova === undefined || lastNova === null || now - lastNova >= BOSS3_NOVA_COOLDOWN_MS;
-    const castingBlocked = this.boss3NovaWindupTimeout.has(boss.id) || this.boss3NovaSweepInterval.has(boss.id);
+    const castingBlocked = this.boss3IsNovaCasting(boss.id);
 
     if (!castingBlocked && novaReady) {
       this.boss3StartNovaWindup(boss, targetPlayer, now);
@@ -4673,11 +4710,185 @@ class EnemyAI {
     return [clampXZ(x0, z0), offsetNearPrimary(), offsetNearPrimary()];
   }
 
+  boss3HasActiveNovaSweeps(bossId) {
+    const set = this.boss3NovaSweepInterval.get(bossId);
+    return !!(set && set.size > 0);
+  }
+
+  boss3IsNovaCasting(bossId) {
+    const burstTimeouts = this.boss3NovaBurstTimeouts.get(bossId);
+    return (
+      this.boss3NovaWindupTimeout.has(bossId) ||
+      this.boss3HasActiveNovaSweeps(bossId) ||
+      !!(burstTimeouts && burstTimeouts.length > 0)
+    );
+  }
+
+  boss3ClearNovaBurstTimeouts(bossId) {
+    const timeouts = this.boss3NovaBurstTimeouts.get(bossId);
+    if (timeouts) {
+      timeouts.forEach((t) => clearTimeout(t));
+    }
+    this.boss3NovaBurstTimeouts.delete(bossId);
+  }
+
+  boss3ClearNovaSweepIntervals(bossId) {
+    const set = this.boss3NovaSweepInterval.get(bossId);
+    if (set) {
+      set.forEach((iv) => clearInterval(iv));
+    }
+    this.boss3NovaSweepInterval.delete(bossId);
+  }
+
+  boss3AddNovaSweepInterval(bossId, intervalId) {
+    let set = this.boss3NovaSweepInterval.get(bossId);
+    if (!set) {
+      set = new Set();
+      this.boss3NovaSweepInterval.set(bossId, set);
+    }
+    set.add(intervalId);
+  }
+
+  boss3RemoveNovaSweepInterval(bossId, intervalId) {
+    const set = this.boss3NovaSweepInterval.get(bossId);
+    if (!set) return;
+    clearInterval(intervalId);
+    set.delete(intervalId);
+    if (set.size === 0) {
+      this.boss3NovaSweepInterval.delete(bossId);
+    }
+  }
+
+  boss3ScheduleNovaBurstTimeout(bossId, fn, delayMs) {
+    let timeouts = this.boss3NovaBurstTimeouts.get(bossId);
+    if (!timeouts) {
+      timeouts = [];
+      this.boss3NovaBurstTimeouts.set(bossId, timeouts);
+    }
+    const t = setTimeout(() => {
+      const arr = this.boss3NovaBurstTimeouts.get(bossId);
+      if (arr) {
+        const idx = arr.indexOf(t);
+        if (idx >= 0) arr.splice(idx, 1);
+        if (arr.length === 0) this.boss3NovaBurstTimeouts.delete(bossId);
+      }
+      fn();
+    }, delayMs);
+    timeouts.push(t);
+    return t;
+  }
+
+  boss3GetNovaBurstRounds(hpFrac) {
+    if (hpFrac <= BOSS3_NOVA_HP_TRIPLE_ROUND) return 3;
+    if (hpFrac <= BOSS3_NOVA_HP_DOUBLE_ROUND) return 2;
+    return 1;
+  }
+
+  boss3ReleaseNovaRound(bossId, targetPlayer, roundIndex = 0, burstRounds = 1) {
+    if (!this.room) return false;
+
+    const live = this.room.enemies?.get(bossId);
+    const players = this.room.getPlayers();
+    if (!live || live.isDying || live.health <= 0 || live.type !== 'boss3' || !players) {
+      return false;
+    }
+
+    const threat = this.getBossThreatTarget(live, players) || targetPlayer;
+    const tx = typeof threat?.position?.x === 'number' ? threat.position.x : live.position.x;
+    const tz = typeof threat?.position?.z === 'number' ? threat.position.z : live.position.z;
+
+    const ox = live.position.x;
+    const oz = live.position.z;
+    const rdx = tx - ox;
+    const rdz = tz - oz;
+    const baseAngle = Math.atan2(rdx, rdz);
+
+    const dirs = [0, 1, 2].map((k) => ({
+      ux: Math.sin(baseAngle + (k * Math.PI * 2) / 3),
+      uz: Math.cos(baseAngle + (k * Math.PI * 2) / 3),
+    }));
+
+    const releasedAt = Date.now();
+    if (roundIndex === 0) {
+      this.boss3NovaLastRelease.set(live.id, releasedAt);
+    }
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('boss3-nova-release', {
+        bossId: live.id,
+        origin: { x: ox, z: oz },
+        baseAngle,
+        directions: dirs,
+        maxRange: BOSS3_NOVA_MAX_RANGE,
+        travelMs: BOSS3_NOVA_TRAVEL_MS,
+        damage: BOSS3_NOVA_DAMAGE,
+        timestamp: releasedAt,
+        roundIndex,
+        burstRounds,
+      });
+    }
+
+    const hitSets = [new Set(), new Set(), new Set()];
+    const STEP_MS = Math.max(30, Math.floor(BOSS3_NOVA_TRAVEL_MS / BOSS3_NOVA_STEPS));
+    let step = 0;
+    let intervalId;
+
+    const tick = () => {
+      const b = this.room?.enemies?.get(bossId);
+      const pls = this.room?.getPlayers();
+      step += 1;
+      if (
+        step > BOSS3_NOVA_STEPS ||
+        !this.room?.getGameStarted() ||
+        !b ||
+        b.isDying ||
+        b.health <= 0 ||
+        !pls
+      ) {
+        this.boss3RemoveNovaSweepInterval(bossId, intervalId);
+        return;
+      }
+
+      const R = BOSS3_NOVA_MAX_RANGE;
+      for (let r = 0; r < 3; r += 1) {
+        const { ux, uz } = dirs[r];
+        const frac0 = (step - 1) / BOSS3_NOVA_STEPS;
+        const frac1 = step / BOSS3_NOVA_STEPS;
+        const ax = ox + ux * frac0 * R;
+        const az = oz + uz * frac0 * R;
+        const bx = ox + ux * frac1 * R;
+        const bz = oz + uz * frac1 * R;
+        this.room.damagePlayersInLineSegmentFirstHit(
+          ax,
+          az,
+          bx,
+          bz,
+          BOSS3_NOVA_HALF_WIDTH,
+          BOSS3_NOVA_DAMAGE,
+          'boss3_arcane_disc',
+          hitSets[r],
+        );
+      }
+
+      if (step >= BOSS3_NOVA_STEPS) {
+        this.boss3RemoveNovaSweepInterval(bossId, intervalId);
+      }
+    };
+
+    intervalId = setInterval(tick, STEP_MS);
+    this.boss3AddNovaSweepInterval(bossId, intervalId);
+    tick();
+
+    console.log(`🕸 Boss3 ${live.id} arcane nova round ${roundIndex + 1}/${burstRounds} — 3 discs.`);
+    return true;
+  }
+
   boss3StartNovaWindup(boss, targetPlayer, startedAt) {
     if (!this.room) return;
 
     const oldT = this.boss3NovaWindupTimeout.get(boss.id);
     if (oldT) clearTimeout(oldT);
+    this.boss3ClearNovaBurstTimeouts(boss.id);
 
     if (this.io) {
       this.io.to(this.roomId).emit('boss3-nova-start', {
@@ -4687,111 +4898,38 @@ class EnemyAI {
       });
     }
 
-    const travelEndAt = startedAt + BOSS3_NOVA_WINDUP_MS + BOSS3_NOVA_TRAVEL_MS;
-    this.boss3LockUntil.set(boss.id, travelEndAt);
+    const hpFracAtWindup = boss.maxHealth > 0 ? boss.health / boss.maxHealth : 1;
+    const burstRoundsAtWindup = this.boss3GetNovaBurstRounds(hpFracAtWindup);
+    const burstSpanAtWindup =
+      (burstRoundsAtWindup - 1) * BOSS3_NOVA_BURST_GAP_MS + BOSS3_NOVA_TRAVEL_MS;
+    this.boss3LockUntil.set(boss.id, startedAt + BOSS3_NOVA_WINDUP_MS + burstSpanAtWindup);
 
     const windupTimer = setTimeout(() => {
+      this.boss3NovaWindupTimeout.delete(boss.id);
+
       const live = this.room?.enemies?.get(boss.id);
-      const players = this.room?.getPlayers();
-      if (
-        !live ||
-        live.isDying ||
-        live.health <= 0 ||
-        live.type !== 'boss3' ||
-        !players
-      ) {
-        this.boss3NovaWindupTimeout.delete(boss.id);
+      if (!live || live.isDying || live.health <= 0 || live.type !== 'boss3') {
         return;
       }
 
-      const tx =
-        typeof targetPlayer?.position?.x === 'number' ? targetPlayer.position.x : live.position.x;
-      const tz =
-        typeof targetPlayer?.position?.z === 'number' ? targetPlayer.position.z : live.position.z;
+      const hpFrac = live.maxHealth > 0 ? live.health / live.maxHealth : 1;
+      const burstRounds = this.boss3GetNovaBurstRounds(hpFrac);
+      const burstSpan = (burstRounds - 1) * BOSS3_NOVA_BURST_GAP_MS + BOSS3_NOVA_TRAVEL_MS;
+      this.boss3LockUntil.set(boss.id, startedAt + BOSS3_NOVA_WINDUP_MS + burstSpan);
 
-      const ox = live.position.x;
-      const oz = live.position.z;
-      const rdx = tx - ox;
-      const rdz = tz - oz;
-      const baseAngle = Math.atan2(rdx, rdz);
+      this.boss3ReleaseNovaRound(boss.id, targetPlayer, 0, burstRounds);
 
-      const dirs = [0, 1, 2].map(k => ({
-        ux: Math.sin(baseAngle + (k * Math.PI * 2) / 3),
-        uz: Math.cos(baseAngle + (k * Math.PI * 2) / 3),
-      }));
-
-      const releasedAt = Date.now();
-      this.boss3NovaLastRelease.set(live.id, releasedAt);
-
-      if (this.io) {
-        this.io.to(this.roomId).emit('boss3-nova-release', {
-          bossId: live.id,
-          origin: { x: ox, z: oz },
-          baseAngle,
-          directions: dirs,
-          maxRange: BOSS3_NOVA_MAX_RANGE,
-          travelMs: BOSS3_NOVA_TRAVEL_MS,
-          damage: BOSS3_NOVA_DAMAGE,
-          timestamp: releasedAt,
-        });
+      for (let r = 1; r < burstRounds; r += 1) {
+        this.boss3ScheduleNovaBurstTimeout(
+          boss.id,
+          () => this.boss3ReleaseNovaRound(boss.id, targetPlayer, r, burstRounds),
+          r * BOSS3_NOVA_BURST_GAP_MS,
+        );
       }
 
-      const hitSets = [new Set(), new Set(), new Set()];
-      const STEP_MS = Math.max(30, Math.floor(BOSS3_NOVA_TRAVEL_MS / BOSS3_NOVA_STEPS));
-      let step = 0;
-
-      const tick = () => {
-        const b = this.room?.enemies?.get(live.id);
-        const pls = this.room?.getPlayers();
-        step += 1;
-        if (
-          step > BOSS3_NOVA_STEPS ||
-          !this.room?.getGameStarted() ||
-          !b ||
-          b.isDying ||
-          b.health <= 0 ||
-          !pls
-        ) {
-          const iv = this.boss3NovaSweepInterval.get(live.id);
-          if (iv) clearInterval(iv);
-          this.boss3NovaSweepInterval.delete(live.id);
-          return;
-        }
-
-        const R = BOSS3_NOVA_MAX_RANGE;
-        for (let r = 0; r < 3; r += 1) {
-          const { ux, uz } = dirs[r];
-          const frac0 = (step - 1) / BOSS3_NOVA_STEPS;
-          const frac1 = step / BOSS3_NOVA_STEPS;
-          const ax = ox + ux * frac0 * R;
-          const az = oz + uz * frac0 * R;
-          const bx = ox + ux * frac1 * R;
-          const bz = oz + uz * frac1 * R;
-          this.room.damagePlayersInLineSegmentFirstHit(
-            ax,
-            az,
-            bx,
-            bz,
-            BOSS3_NOVA_HALF_WIDTH,
-            BOSS3_NOVA_DAMAGE,
-            'boss3_arcane_disc',
-            hitSets[r],
-          );
-        }
-
-        if (step >= BOSS3_NOVA_STEPS) {
-          const iv = this.boss3NovaSweepInterval.get(live.id);
-          if (iv) clearInterval(iv);
-          this.boss3NovaSweepInterval.delete(live.id);
-        }
-      };
-
-      const intervalId = setInterval(tick, STEP_MS);
-      this.boss3NovaSweepInterval.set(live.id, intervalId);
-      this.boss3NovaWindupTimeout.delete(live.id);
-      tick();
-
-      console.log(`🕸 Boss3 ${live.id} arcane nova released — 3 discs.`);
+      console.log(
+        `🕸 Boss3 ${boss.id} arcane nova burst (${burstRounds} round${burstRounds > 1 ? 's' : ''}).`,
+      );
     }, BOSS3_NOVA_WINDUP_MS);
 
     this.boss3NovaWindupTimeout.set(boss.id, windupTimer);
@@ -7062,9 +7200,8 @@ class EnemyAI {
     const b3wup = this.boss3NovaWindupTimeout.get(enemyId);
     if (b3wup) clearTimeout(b3wup);
     this.boss3NovaWindupTimeout.delete(enemyId);
-    const b3si = this.boss3NovaSweepInterval.get(enemyId);
-    if (b3si) clearInterval(b3si);
-    this.boss3NovaSweepInterval.delete(enemyId);
+    this.boss3ClearNovaBurstTimeouts(enemyId);
+    this.boss3ClearNovaSweepIntervals(enemyId);
     const b3Lightning = this.boss3LightningInterval.get(enemyId);
     if (b3Lightning) clearInterval(b3Lightning);
     this.boss3LightningInterval.delete(enemyId);

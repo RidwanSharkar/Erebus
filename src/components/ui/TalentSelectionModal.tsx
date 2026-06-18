@@ -405,12 +405,14 @@ export default function TalentSelectionModal({
     mendingDashRoom: initialTalentLoadout?.mendingDashRoom ?? def.mendingDashRoom,
     staggeringDashRoom: initialTalentLoadout?.staggeringDashRoom ?? def.staggeringDashRoom,
     guardbreakRoom: initialTalentLoadout?.guardbreakRoom ?? def.guardbreakRoom,
+    overshockRoom: initialTalentLoadout?.overshockRoom ?? def.overshockRoom,
     bloodleechRoom: initialTalentLoadout?.bloodleechRoom ?? def.bloodleechRoom,
     rebukeRoom: initialTalentLoadout?.rebukeRoom ?? def.rebukeRoom,
     raiseDeadRoom: initialTalentLoadout?.raiseDeadRoom ?? def.raiseDeadRoom,
     meteorStrikeRoom: initialTalentLoadout?.meteorStrikeRoom ?? def.meteorStrikeRoom,
     coldsnapRoom: initialTalentLoadout?.coldsnapRoom ?? def.coldsnapRoom,
     lightningBoltRoom: initialTalentLoadout?.lightningBoltRoom ?? def.lightningBoltRoom,
+    aegisRoom: initialTalentLoadout?.aegisRoom ?? def.aegisRoom,
   };
   const [loadout, setLoadout] = useState<TalentLoadout>(() => merged);
 

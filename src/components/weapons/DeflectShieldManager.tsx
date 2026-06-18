@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3 } from '@/utils/three-exports';
 import { WeaponType } from '@/components/dragon/weapons';
+import { type AegisPaletteVariant } from '@/utils/aegisShieldPalette';
 import DeflectShield from './DeflectShield';
 
 interface DeflectShieldEffect {
@@ -12,6 +13,7 @@ interface DeflectShieldEffect {
   duration: number;
   playerId?: string;
   weaponType: WeaponType;
+  paletteVariant: AegisPaletteVariant;
 }
 
 interface DeflectShieldManagerProps {
@@ -27,7 +29,8 @@ export function triggerGlobalDeflectShield(
   position: Vector3,
   rotation: Vector3,
   playerId?: string,
-  weaponType: WeaponType = WeaponType.RUNEBLADE
+  weaponType: WeaponType = WeaponType.RUNEBLADE,
+  paletteVariant: AegisPaletteVariant = 'default',
 ): number {
   const effect: DeflectShieldEffect = {
     id: nextDeflectShieldId++,
@@ -37,6 +40,7 @@ export function triggerGlobalDeflectShield(
     duration: 3250,
     playerId,
     weaponType,
+    paletteVariant,
   };
   
   globalDeflectShieldEffects.push(effect);
@@ -78,6 +82,7 @@ export default function DeflectShieldManager({ }: DeflectShieldManagerProps) {
           playerPosition={effect.position}
           playerRotation={effect.rotation}
           weaponType={effect.weaponType}
+          paletteVariant={effect.paletteVariant}
           onComplete={() => {
             clearDeflectShieldEffect(effect.id);
           }}

@@ -89,7 +89,7 @@ import {
   shouldApplyGlacialTalonsTalent,
   shouldApplyArcticStingTalent,
   shouldApplyHighCaliberTalent,
-  STAGGER_PROC_DAMAGE,
+  getStaggerProcDamage,
   getDualCoilLateralVector,
   CROSSENTROPY_MAX_TRAVEL_DISTANCE,
   REANIMATE_SUNWELL_HEAL,
@@ -107,7 +107,6 @@ import {
   shouldApplyGlacialDashTalent,
   shouldApplyMendingDashTalent,
   shouldApplyStaggeringDashTalent,
-  shouldApplyGuardbreakTalent,
   shouldApplyBloodleechTalent,
   shouldApplyRebukeTalent,
   shouldApplyVorpalGustTalent,
@@ -1774,10 +1773,7 @@ export function CoopGameScene({
       if (!socket?.id) return;
       if (gameMode === 'coop' && players.has(targetId)) return;
       if (enemies.has(targetId)) {
-        const meta = shouldApplyGuardbreakTalent(talentLoadout)
-          ? { ...(coopEnemyDamageMeta ?? {}), guardbreakRoom: true }
-          : coopEnemyDamageMeta;
-        damageEnemy(targetId, damage, socket.id, meta);
+        damageEnemy(targetId, damage, socket.id, coopEnemyDamageMeta);
         if (isCritical && shouldApplyBloodleechTalent(talentLoadout)) {
           const str = StatSystem.getEffectiveStatsWithInventory(
             playerStatDataRef.current?.stats ?? ZERO_PLAYER_STATS,
@@ -2356,6 +2352,8 @@ export function CoopGameScene({
     id: string;
     start: Vector3;
     end: Vector3;
+    endAt: number;
+    startedAt: number;
   }
   const [viperShotTelegraphs, setViperShotTelegraphs] = useState<ViperShotTelegraphState[]>([]);
 
@@ -2364,6 +2362,8 @@ export function CoopGameScene({
     enemyId: string;
     start: Vector3;
     end: Vector3;
+    endAt?: number;
+    startedAt?: number;
   }
   const [tentacleSpineTelegraphs, setTentacleSpineTelegraphs] = useState<TentacleSpineTelegraphState[]>([]);
 
@@ -3529,6 +3529,7 @@ export function CoopGameScene({
     isDeflecting: false,
     deflectShieldActive: false,
     deflectShieldDurationSec: 3,
+    deflectShieldPaletteVariant: 'default' as import('@/utils/aegisShieldPalette').AegisPaletteVariant,
     isViperStingCharging: false,
     viperStingChargeProgress: 0,
     isBarrageCharging: false,
@@ -3808,13 +3809,19 @@ export function CoopGameScene({
             );
           })();
 
-      const lineId = `viper-telegraph-${data.viperId}-${Date.now()}`;
+      const eventTime = Date.now();
+      const lineId = `viper-telegraph-${data.viperId}-${eventTime}`;
+      const endAt = eventTime + VIPER_DRAWBOW_DURATION;
 
       (window as any).audioSystem?.playViperBowDrawSound(start);
 
       const lineDelay = Math.max(0, VIPER_DRAWBOW_DURATION - VIPER_GROUND_TELEGRAPH_LEAD_MS);
       const tLine = setTimeout(() => {
-        setViperShotTelegraphs(prev => [...prev, { id: lineId, start: from.clone(), end: to.clone() }]);
+        const startedAt = Date.now();
+        setViperShotTelegraphs(prev => [
+          ...prev,
+          { id: lineId, start: from.clone(), end: to.clone(), endAt, startedAt },
+        ]);
       }, lineDelay);
       viperAttackScheduleTimeoutsRef.current.push(tLine);
 
@@ -4919,7 +4926,13 @@ export function CoopGameScene({
           // Calculate rotation from direction for shield positioning
           const rotation = new Vector3(0, Math.atan2(direction.x, direction.z), 0);
           const remoteWeapon = players.get(data.playerId)?.weapon ?? WeaponType.RUNEBLADE;
-          triggerGlobalDeflectShield(position, rotation, data.playerId, remoteWeapon);
+          triggerGlobalDeflectShield(
+            position,
+            rotation,
+            data.playerId,
+            remoteWeapon,
+            data.extraData?.aegisRoomBoon ? 'purple_room_boon' : 'default',
+          );
           
           setMultiplayerPlayerStates(prev => {
             const updated = new Map(prev);
@@ -5421,6 +5434,10 @@ export function CoopGameScene({
                 shadeDamageVariant.current =
                   shadeDamageVariant.current === 3 ? 1 : ((shadeDamageVariant.current + 1) as 1 | 2 | 3);
               }
+
+              if (data.damageType === 'warlock_chaos_orb' && damageApplied) {
+                window.audioSystem?.playWarlockVoidboltSound(transform.position);
+              }
             }
           }
 
@@ -5588,6 +5605,7 @@ export function CoopGameScene({
       dirZ?: number;
       position?: { x: number; y: number; z: number };
       lineLength?: number;
+      timestamp?: number;
     }) => {
       const enemyId = data?.enemyId;
       if (!enemyId || !data.position) return;
@@ -5601,7 +5619,10 @@ export function CoopGameScene({
       const groundY = y + 0.03;
       const from = new Vector3(x, groundY, z);
       const to = new Vector3(x + nx * lineLen, groundY, z + nz * lineLen);
-      const lineId = `tentacle-tg-${enemyId}-${Date.now()}`;
+      const eventTime = data.timestamp ?? Date.now();
+      const lineId = `tentacle-tg-${enemyId}-${eventTime}`;
+      const endAt = eventTime + TENTACLE_SPINE_WINDUP_MS;
+      const startedAt = eventTime;
 
       clearTentacleSpineGroundTelegraph(enemyId);
 
@@ -5620,7 +5641,10 @@ export function CoopGameScene({
       const addTelegraph = () => {
         setTentacleSpineTelegraphs((prev) => {
           if (prev.some((s) => s.id === lineId)) return prev;
-          return [...prev, { id: lineId, enemyId, start: from.clone(), end: to.clone() }];
+          return [
+            ...prev,
+            { id: lineId, enemyId, start: from.clone(), end: to.clone(), endAt, startedAt },
+          ];
         });
       };
       if (lineDelay <= 0) addTelegraph();
@@ -5659,12 +5683,15 @@ export function CoopGameScene({
         const lineLen = data.lineLength ?? 10;
         const { x, y, z } = data.position;
         const groundY = y + 0.03;
-        const lineId = `tentacle-impact-tg-${enemyId}-${Date.now()}`;
+        const impactTime = Date.now();
+        const lineId = `tentacle-impact-tg-${enemyId}-${impactTime}`;
         const finalLine = {
           id: lineId,
           enemyId,
           start: new Vector3(x, groundY, z),
           end: new Vector3(x + nx * lineLen, groundY, z + nz * lineLen),
+          endAt: impactTime + 180,
+          startedAt: impactTime,
         };
         setTentacleSpineTelegraphs((prev) => [...prev.filter((t) => t.enemyId !== enemyId), finalLine]);
         setTimeout(() => {
@@ -7055,16 +7082,21 @@ export function CoopGameScene({
       maxRange: number;
       travelMs: number;
       timestamp: number;
+      roundIndex?: number;
+      burstRounds?: number;
     }) => {
       const o = new Vector3(data.origin.x, 0, data.origin.z);
+      const roundIndex = typeof data.roundIndex === 'number' ? data.roundIndex : 0;
       setBoss3NovaBursts(prev => [
         ...prev,
         {
-          id: `boss3-nova-${data.bossId}-${data.timestamp}`,
+          id: `boss3-nova-${data.bossId}-${data.timestamp}-r${roundIndex}`,
           origin: o,
           directions: data.directions ?? [],
           maxRange: data.maxRange,
           travelMs: data.travelMs,
+          roundIndex,
+          burstRounds: data.burstRounds,
         },
       ]);
     };
@@ -7322,7 +7354,7 @@ export function CoopGameScene({
     }) => {
       const p = new Vector3(data.position.x, data.position.y, data.position.z);
       (window as any).audioSystem?.playLightningBoltSound(p);
-      const dmg = typeof data.damage === 'number' ? data.damage : STAGGER_PROC_DAMAGE;
+      const dmg = typeof data.damage === 'number' ? data.damage : getStaggerProcDamage(talentLoadout);
       const numPos = p.clone();
       numPos.y += 1.35;
       const damageNumberManager = (window as any).damageNumberManager;
@@ -7509,35 +7541,7 @@ export function CoopGameScene({
           { id: `flame-strike-${data.warlockId}-${Date.now()}`, position: strikePos.clone() },
         ]);
 
-        // Client-side AOE damage check for the local player
-        if (!playerEntity) return;
-        if (blockLocalDamageDuringCoopPortal()) return;
-        const t = playerEntity.getComponent(Transform);
-        if (!t) return;
-        const dist = new Vector3(t.position.x, t.position.y, t.position.z).distanceTo(strikePos);
-        if (dist > data.radius) return;
-
-        const health = playerEntity.getComponent(Health);
-        if (!health || health.isDead) return;
-        const wasAlive = !health.isDead;
-        const shield = playerEntity.getComponent(Shield);
-        const healthBefore = health.currentHealth;
-        const shieldBefore = shield?.currentShield;
-        const damageApplied = health.takeDamage(data.damage, Date.now() / 1000, playerEntity, false);
-        triggerAppliedLocalPlayerDamageFeedback({
-          damage: data.damage,
-          damageType: 'fire',
-          damageApplied,
-          health,
-          healthBefore,
-          shield,
-          shieldBefore,
-          position: t.position,
-          attackerServerEnemyId: data.warlockId,
-        });
-        if (wasAlive && health.isDead && socket?.id) {
-          handlePlayerDeath(socket.id, 'warlock-flame-strike');
-        }
+        // Damage, hit audio, and floating numbers are server-authoritative via `player-damaged`.
       }, WARLOCK_BLINK_ANIM_MS);
     };
 
@@ -8916,6 +8920,7 @@ export function CoopGameScene({
             controlSystemRef.current.isDashGuardShieldActive() ||
             controlSystemRef.current.isSabresPurpleGuardShieldActive(),
           deflectShieldDurationSec: controlSystemRef.current.getDeflectShieldDurationSec(),
+          deflectShieldPaletteVariant: controlSystemRef.current.getAegisShieldPaletteVariant(),
           isViperStingCharging: controlSystemRef.current.isViperStingChargingActive(),
           viperStingChargeProgress: controlSystemRef.current.getViperStingChargeProgress(),
           isBarrageCharging: controlSystemRef.current.isBarrageChargingActive(),
@@ -9370,6 +9375,10 @@ export function CoopGameScene({
     // Set up Frost Nova callback
     controlSystem.setFrostNovaCallback((position, direction) => {
       broadcastPlayerAbility('frost_nova', position, direction);
+    });
+
+    controlSystem.setDeflectCallback((position, direction, extra) => {
+      broadcastPlayerAbility('deflect', position, direction, undefined, extra);
     });
 
     controlSystem.setRoomBoomDashCallback((payload) => {
@@ -10087,6 +10096,7 @@ export function CoopGameScene({
           isDeflecting={weaponState.isDeflecting}
           deflectShieldActive={weaponState.deflectShieldActive}
           deflectShieldDurationSec={weaponState.deflectShieldDurationSec}
+          deflectShieldPaletteVariant={weaponState.deflectShieldPaletteVariant}
           isViperStingCharging={weaponState.isViperStingCharging}
           viperStingChargeProgress={weaponState.viperStingChargeProgress}
           isBarrageCharging={weaponState.isBarrageCharging}
@@ -10783,33 +10793,7 @@ export function CoopGameScene({
             return t ? t.position.clone() : null;
           }}
           onHitPlayer={() => {
-            if (!playerEntity) return;
-            const deathState = playerDeathStates.get(socket?.id ?? '');
-            if (deathState?.isDead) return;
-            const health = playerEntity.getComponent(Health);
-            if (!health) return;
-            const wasAlive = !health.isDead;
-            const shield = playerEntity.getComponent(Shield);
-            const healthBefore = health.currentHealth;
-            const shieldBefore = shield?.currentShield;
-            const damageApplied = health.takeDamage(orb.damage, Date.now() / 1000, playerEntity, false);
-            const transform = playerEntity.getComponent(Transform);
-            triggerAppliedLocalPlayerDamageFeedback({
-              damage: orb.damage,
-              damageType: 'void',
-              damageApplied,
-              health,
-              healthBefore,
-              shield,
-              shieldBefore,
-              position: transform?.position ?? orb.targetPosition,
-              attackerServerEnemyId: orb.warlockId,
-            });
-            // Play void-bolt impact sound when the chaos orb connects
-            (window as any).audioSystem?.playWarlockVoidboltSound(orb.startPosition);
-            if (wasAlive && health.isDead && socket?.id) {
-              handlePlayerDeath(socket.id, 'warlock-orb');
-            }
+            // Damage, hit audio, and floating numbers are server-authoritative via `player-damaged`.
           }}
           onComplete={() => setWarlockProjectiles(prev => prev.filter(p => p.id !== orb.id))}
         />
@@ -10854,7 +10838,14 @@ export function CoopGameScene({
 
       {/* Viper ground telegraph (danger strip, last ~400ms of draw) */}
       {viperShotTelegraphs.map(t => (
-        <ViperShotTelegraphLine key={t.id} start={t.start} end={t.end} />
+        <ViperShotTelegraphLine
+          key={t.id}
+          start={t.start}
+          end={t.end}
+          variant="viper"
+          endAt={t.endAt}
+          startedAt={t.startedAt}
+        />
       ))}
 
       {/* {knightDeathGraspTelegraphs.map(t => (
@@ -10875,7 +10866,9 @@ export function CoopGameScene({
           end={t.end}
           lineWidth={TENTACLE_SPINE_TELEGRAPH_STRIP_WIDTH}
           color={TENTACLE_SPINE_TELEGRAPH_COLOR}
-          yOffset={0.2}
+          variant="tentacle"
+          endAt={t.endAt}
+          startedAt={t.startedAt}
         />
       ))}
 
@@ -11443,31 +11436,22 @@ export function CoopGameScene({
         );
       })}
 
-      {/* Boss Health Bar */}
+      {/* Boss 1 health bar — boss2/boss3 render HP inline on their renderers */}
       {Array.from(enemies.values()).map(enemy => {
-        if (enemy.isDying) return null; // Don't show health bar for dying boss
-        if (enemy.type !== 'boss' && enemy.type !== 'boss2' && enemy.type !== 'boss3') return null; // Only render bosses (co-op mode)
-
-        // console.log(`🏥 Boss health bar: ${enemy.id}, health: ${enemy.health}/${enemy.maxHealth}`);
-
-        const bossLabel =
-          enemy.type === 'boss2' ? 'ARCHON' : enemy.type === 'boss3' ? 'WEAVER NEXUS' : '👹 BOSS';
-        const barY =
-          enemy.type === 'boss2' || enemy.type === 'boss3'
-            ? 5
-            : 3;
+        if (enemy.isDying) return null;
+        if (enemy.type !== 'boss') return null;
 
         return (
           <PlayerHealthBar
             key={`boss-healthbar-${enemy.id}`}
             playerId={enemy.id}
-            playerName={bossLabel}
-            position={new Vector3(enemy.position.x, enemy.position.y + barY, enemy.position.z)} // Position above boss
+            playerName="👹 BOSS"
+            position={new Vector3(enemy.position.x, enemy.position.y + 3, enemy.position.z)}
             health={enemy.health}
             maxHealth={enemy.maxHealth}
             shield={0}
             camera={camera}
-            showDistance={100} // Show from very far away for boss
+            showDistance={100}
           />
         );
       })}

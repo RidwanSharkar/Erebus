@@ -3,7 +3,7 @@ import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Color, AdditiveBlending, DoubleSide, BackSide } from '@/utils/three-exports';
 import { WeaponType } from '@/components/dragon/weapons';
-import { getAegisShieldPalette } from '@/utils/aegisShieldPalette';
+import { getAegisShieldPalette, type AegisPaletteVariant } from '@/utils/aegisShieldPalette';
 
 function tagShieldMaterials(root: Group) {
   root.traverse((child: any) => {
@@ -23,6 +23,8 @@ interface DeflectShieldProps {
   playerRotation?: Vector3;
   dragonGroupRef?: React.RefObject<Group>;
   weaponType?: WeaponType;
+  /** Purple room Aegis boon uses distinct Scythe/Bow palettes. */
+  paletteVariant?: AegisPaletteVariant;
   /** Local player only: pulse shell on `aegis-block` window event. */
   enableBlockFlash?: boolean;
 }
@@ -35,6 +37,7 @@ export default function DeflectShield({
   playerRotation = new Vector3(0, 0, 0),
   dragonGroupRef,
   weaponType = WeaponType.RUNEBLADE,
+  paletteVariant = 'default',
   enableBlockFlash = false,
 }: DeflectShieldProps) {
   const bodyShellRef = useRef<Group>(null);
@@ -42,7 +45,10 @@ export default function DeflectShield({
   const startTime = useRef<number | null>(null);
   const blockFlashEndMs = useRef(0);
 
-  const palette = useMemo(() => getAegisShieldPalette(weaponType), [weaponType]);
+  const palette = useMemo(
+    () => getAegisShieldPalette(weaponType, paletteVariant),
+    [weaponType, paletteVariant],
+  );
 
   useEffect(() => {
     if (!enableBlockFlash || typeof window === 'undefined') return;

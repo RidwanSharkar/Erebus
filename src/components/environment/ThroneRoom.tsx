@@ -89,7 +89,7 @@ export const THRONE_PORTAL_POSITION = Object.freeze({
 });
 
 /** Half-distance on X between the two throne portal centers (portals sit side by side on the south rim). */
-export const THRONE_PORTAL_HALF_SPACING_X = 2.85;
+export const THRONE_PORTAL_HALF_SPACING_X = 5.25;
 
 /** Left portal [0] = west (−X), right portal [1] = east (+X). Order matches `thronePortalOffer` indices. */
 export const THRONE_PORTAL_POSITIONS: ReadonlyArray<{ readonly x: number; readonly y: number; readonly z: number }> =
@@ -98,14 +98,31 @@ export const THRONE_PORTAL_POSITIONS: ReadonlyArray<{ readonly x: number; readon
     Object.freeze({ x: THRONE_PORTAL_HALF_SPACING_X, y: THRONE_PORTAL_Y, z: THRONE_PORTAL_Z }),
   ]);
 
-/** Main co-op combat map: wave-2 choice portals (north-ish; keep in sync with co-op layout). */
+/** Main map: reward pedestal at the far end of the arena (opposite the player entry). */
+export const MAIN_COMBAT_PEDESTAL_POSITION = Object.freeze({ x: 0, y: 0, z: 13 });
+
+/** XZ interaction radius for the combat arena pedestal. */
+export const MAIN_COMBAT_PEDESTAL_INTERACT_RADIUS = 3.0;
+
+/** Half-distance on X between the two main-arena choice portals flanking the combat pedestal. */
+export const MAIN_COMBAT_PORTAL_HALF_SPACING_X = THRONE_PORTAL_HALF_SPACING_X;
+
+/** Main co-op combat map: choice portals flanking the reward pedestal (left = offer[0], right = offer[1]). */
 export const MAIN_COMBAT_CHOICE_PORTAL_POSITIONS: ReadonlyArray<{
   readonly x: number;
   readonly y: number;
   readonly z: number;
 }> = Object.freeze([
-  Object.freeze({ x: -14, y: THRONE_PORTAL_Y, z: 7 }),
-  Object.freeze({ x: 14, y: THRONE_PORTAL_Y, z: 7 }),
+  Object.freeze({
+    x: -MAIN_COMBAT_PORTAL_HALF_SPACING_X,
+    y: THRONE_PORTAL_Y,
+    z: MAIN_COMBAT_PEDESTAL_POSITION.z,
+  }),
+  Object.freeze({
+    x: MAIN_COMBAT_PORTAL_HALF_SPACING_X,
+    y: THRONE_PORTAL_Y,
+    z: MAIN_COMBAT_PEDESTAL_POSITION.z,
+  }),
 ]);
 
 /** Main map: boss-gate ring after wave 2. */
@@ -114,12 +131,6 @@ export const MAIN_COMBAT_BOSS_PORTAL_POSITION = Object.freeze({
   y: THRONE_PORTAL_Y,
   z: 0,
 });
-
-/** Main map: reward pedestal at the far end of the arena (opposite the player entry). */
-export const MAIN_COMBAT_PEDESTAL_POSITION = Object.freeze({ x: 0, y: 0, z: 13 });
-
-/** XZ interaction radius for the combat arena pedestal. */
-export const MAIN_COMBAT_PEDESTAL_INTERACT_RADIUS = 3.0;
 
 export type ThroneMainRoomCamp = 'purple' | 'blue' | 'red' | 'green';
 export type CoopPortalKind = ThroneMainRoomCamp | 'stat' | 'trial' | 'merchant' | 'boss';

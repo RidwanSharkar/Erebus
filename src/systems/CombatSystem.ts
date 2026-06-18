@@ -151,7 +151,6 @@ export class CombatSystem extends System {
       relentlessBackstab?: boolean;
       arcticBlizzard?: boolean;
       frostTotemChill?: boolean;
-      guardbreakRoom?: boolean;
       glacialBiteChill?: boolean;
       glacialTalons?: boolean;
       entanglementBarrage?: boolean;
@@ -199,10 +198,6 @@ export class CombatSystem extends System {
 
   private getControlSystem(): any {
     return (window as any).controlSystemRef?.current;
-  }
-
-  private shouldApplyGuardbreakRoomTalent(): boolean {
-    return this.getControlSystem()?.shouldApplyGuardbreakRoomTalent?.() === true;
   }
 
   private shouldApplyBloodleechRoomTalent(): boolean {
@@ -445,7 +440,6 @@ export class CombatSystem extends System {
         relentlessBackstab?: boolean;
         arcticBlizzard?: boolean;
         frostTotemChill?: boolean;
-        guardbreakRoom?: boolean;
         glacialBiteChill?: boolean;
         glacialTalons?: boolean;
         entanglementBarrage?: boolean;
@@ -877,9 +871,7 @@ export class CombatSystem extends System {
                                           : {}),
                                       }
                                     : undefined;
-      const routeMeta = this.shouldApplyGuardbreakRoomTalent()
-        ? { ...(baseRouteMeta ?? {}), guardbreakRoom: true as const }
-        : baseRouteMeta;
+      const routeMeta = baseRouteMeta;
       let hitWorldPosition: { x: number; y: number; z: number } | undefined;
       const hitTransform = target.getComponent(Transform);
       if (hitTransform) {

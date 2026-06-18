@@ -26,7 +26,6 @@ function handleEnemyEvents(socket, gameRooms) {
       relentlessBackstab,
       arcticBlizzard,
       frostTotemChill,
-      guardbreakRoom,
       glacialBiteChill,
       glacialTalons,
       entanglementBarrage,
@@ -145,10 +144,6 @@ function handleEnemyEvents(socket, gameRooms) {
       }
       if (data.icebeamWrathful) hitMeta.icebeamWrathful = true;
       if (data.icebeamInfested) hitMeta.icebeamInfested = true;
-    }
-    if (guardbreakRoom) {
-      hitMeta = hitMeta || {};
-      hitMeta.guardbreakRoom = true;
     }
     room.damageEnemy(enemyId, damage, actualSourcePlayerId, player, hitMeta);
   });

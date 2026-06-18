@@ -6,7 +6,7 @@ import { io, Socket } from 'socket.io-client';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { SkillPointSystem, SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
 import { AbilityLoadout, getDefaultLoadout } from '@/utils/weaponAbilities';
-import { TalentLoadout, createDefaultTalentLoadout, getCoopZombieRoomBoonsPayload } from '@/utils/talents';
+import { TalentLoadout, createDefaultTalentLoadout, getCoopZombieRoomBoonsPayload, getCoopStaggerRoomBoonsPayload } from '@/utils/talents';
 import { ExperienceSystem } from '@/utils/ExperienceSystem';
 import { StatSystem, StatPointData, StatKey, PlayerStats } from '@/utils/StatSystem';
 import type { ItemRarity } from '@/utils/itemRarity';
@@ -116,8 +116,6 @@ export interface EnemyDamageMeta {
   arcticBlizzard?: boolean;
   /** Frost totem hit — chill stack routing (server). */
   frostTotemChill?: boolean;
-  /** Guardbreak room boon — server applies bonus damage if target is stunned. */
-  guardbreakRoom?: boolean;
   /** REBUKE room boon — server schedules Ignite DoT after rebuke hit. */
   rebukeRoom?: boolean;
   /** Glacial Bite — Barrage chill stacks; 5 stacks → 6s freeze on server. */
@@ -1848,7 +1846,6 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.relentlessBackstab ? { relentlessBackstab: true } : {}),
         ...(meta?.arcticBlizzard ? { arcticBlizzard: true } : {}),
         ...(meta?.frostTotemChill ? { frostTotemChill: true } : {}),
-        ...(meta?.guardbreakRoom ? { guardbreakRoom: true } : {}),
         ...(meta?.rebukeRoom ? { rebukeRoom: true } : {}),
         ...(meta?.glacialBiteChill ? { glacialBiteChill: true } : {}),
         ...(meta?.glacialTalons ? { glacialTalons: true } : {}),
@@ -2070,6 +2067,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     socket.emit('coop-zombie-room-boons', {
       roomId: currentRoomId,
       coopZombieBoons: getCoopZombieRoomBoonsPayload(talentLoadout),
+    });
+    socket.emit('coop-stagger-room-boons', {
+      roomId: currentRoomId,
+      coopStaggerRoomBoons: getCoopStaggerRoomBoonsPayload(talentLoadout),
     });
   }, [socket, currentRoomId, gameMode, talentLoadout]);
 

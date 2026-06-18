@@ -151,6 +151,7 @@ export const TALENT_MENDING_DASH = 'MENDING_DASH' as const;
 export const TALENT_STAGGERING_DASH = 'STAGGERING_DASH' as const;
 /** Weapon-agnostic colored room combat boons. */
 export const TALENT_GUARDBREAK = 'GUARDBREAK' as const;
+export const TALENT_OVERSHOCK = 'OVERSHOCK' as const;
 export const TALENT_BLOODLEECH = 'BLOODLEECH' as const;
 /** Red room universal passive — retaliate with fire when taking damage from an enemy. */
 export const TALENT_REBUKE = 'REBUKE' as const;
@@ -162,6 +163,8 @@ export const TALENT_METEOR_STRIKE = 'METEOR_STRIKE' as const;
 export const TALENT_COLDSNAP_ROOM = 'COLDSNAP_ROOM' as const;
 /** Blue room universal active boon — calls down a lightning bolt on the highest-priority enemy on R key (3s cooldown). */
 export const TALENT_LIGHTNING_BOLT_ROOM = 'LIGHTNING_BOLT_ROOM' as const;
+/** Purple room universal active boon — manually cast Aegis deflect + invulnerability on R key (8s cooldown). */
+export const TALENT_AEGIS_ROOM = 'AEGIS_ROOM' as const;
 
 /** Blade Rush — double-tap forward Charge on Runeblade; separate from E-key Charge cooldown. */
 export const BLADE_RUSH_CHARGE_COOLDOWN_SEC = 3;
@@ -169,6 +172,10 @@ export const BLADE_RUSH_CHARGE_COOLDOWN_SEC = 3;
 export const RAISE_DEAD_COOLDOWN_SEC = 15;
 /** METEOR active boon — cooldown after calling a meteor via R key. */
 export const METEOR_STRIKE_COOLDOWN_SEC = 8;
+/** AEGIS room boon — cooldown after manually casting Aegis via R key. */
+export const AEGIS_ROOM_COOLDOWN_SEC = 8;
+/** AEGIS room boon — deflect + invulnerability duration (seconds). */
+export const AEGIS_ROOM_DURATION_SEC = 3;
 
 export const INFERNAL_DASH_DAMAGE = 165;
 export const INFERNAL_DASH_RADIUS = 3.25;
@@ -190,7 +197,10 @@ export const STAGGERING_DASH_MAX_DAMAGE = 240;
 export const STAGGERING_DASH_MIN_STAGGER = 80;
 export const STAGGERING_DASH_MAX_STAGGER = 135;
 export const STAGGERING_DASH_COOLDOWN_MS = 200;
-export const GUARDBREAK_STUNNED_DAMAGE_MULT = 2.0;
+/** GUARDBREAK room boon — stagger lightning proc damage (base is `STAGGER_PROC_DAMAGE`). */
+export const GUARDBREAK_STAGGER_PROC_DAMAGE = 300;
+/** OVERSHOCK room boon — stagger lightning proc stun duration (base is `STAGGER_PROC_STUN_SECONDS`). */
+export const OVERSHOCK_STAGGER_PROC_STUN_SECONDS = 2.5;
 
 /** Crossentropy (`SCYTHE_R`) ability cooldown after starting a bolt (seconds). */
 export const CROSSENTROPY_COOLDOWN_SEC = 8;
@@ -464,12 +474,14 @@ export type TalentId =
   | typeof TALENT_MENDING_DASH
   | typeof TALENT_STAGGERING_DASH
   | typeof TALENT_GUARDBREAK
+  | typeof TALENT_OVERSHOCK
   | typeof TALENT_BLOODLEECH
   | typeof TALENT_REBUKE
   | typeof TALENT_RAISE_DEAD
   | typeof TALENT_METEOR_STRIKE
   | typeof TALENT_COLDSNAP_ROOM
-  | typeof TALENT_LIGHTNING_BOLT_ROOM;
+  | typeof TALENT_LIGHTNING_BOLT_ROOM
+  | typeof TALENT_AEGIS_ROOM;
 
 /** Crossentropy bolt / explosion palette (Inferno overrides Glacial / Tempest / Plague). */
 export type CrossentropyVisualTheme = 'default' | 'inferno' | 'tempest' | 'plague' | 'glacial';
@@ -631,7 +643,7 @@ export const STAGGER_MAX = 100;
 /** Co-op bosses (`boss`, `boss2`, `boss3`): same proc at this buildup (see `backend/gameRoom.js`). */
 export const STAGGER_MAX_BOSS = 300;
 export const STAGGER_PROC_DAMAGE = 150;
-export const STAGGER_PROC_STUN_SECONDS = 1.5;
+export const STAGGER_PROC_STUN_SECONDS = 1.0;
 
 /** Staggering Combo — Runeblade basic attack combo adds stagger per hit (same 100 cap / proc as Staggering Strike). */
 export const STAGGERING_COMBO_HIT1_STAGGER = 15;
@@ -698,7 +710,7 @@ export const INFESTED_ENTROPIC_BEAM_KILL_HEAL = 5;
 export const STAGGERING_TOTEM_STAGGER = 10;
 
 /** Wider lateral offset at hit point so paired floating damage numbers read side-by-side. */
-export const DUAL_COIL_DAMAGE_NUMBER_LATERAL_OFFSET = 0.48;
+export const DUAL_COIL_DAMAGE_NUMBER_LATERAL_OFFSET = 0.4;
 
 /** Unit lateral × `lateralScale` (default: projectile/beam pair spacing). */
 export function getDualCoilLateralVector(
@@ -723,7 +735,7 @@ export interface TalentDefinition {
 
 export const wrathStrikeTalentDefinition: TalentDefinition = {
   id: TALENT_WRATH_STRIKE,
-  name: 'Wrathful Strike',
+  name: 'WRATHFUL STRIKE',
   description:
     'While Wraith Strike is in your ability loadout, Wraith Strike gains +20% critical strike chance and +50% critical strike damage.',
   modifiesAbilityId: 'RUNEBLADE_E',
@@ -1107,7 +1119,15 @@ export const guardbreakTalentDefinition: TalentDefinition = {
   id: TALENT_GUARDBREAK,
   name: 'GUARDBREAK',
   description:
-    'Stunned enemies take +30% more damage from all of your attacks.',
+    `Stagger lightning procs deal ${GUARDBREAK_STAGGER_PROC_DAMAGE} damage (up from ${STAGGER_PROC_DAMAGE}).`,
+  modifiesAbilityId: 'COOP_BLUE_ROOM',
+};
+
+export const overshockTalentDefinition: TalentDefinition = {
+  id: TALENT_OVERSHOCK,
+  name: 'OVERSHOCK',
+  description:
+    `Stagger lightning procs stun enemies for ${OVERSHOCK_STAGGER_PROC_STUN_SECONDS} seconds (up from ${STAGGER_PROC_STUN_SECONDS}).`,
   modifiesAbilityId: 'COOP_BLUE_ROOM',
 };
 
@@ -1157,6 +1177,14 @@ export const lightningBoltRoomTalentDefinition: TalentDefinition = {
   description:
     'Grants the Lightning Bolt ability on your R key. Calls down a lightning bolt on the highest priority enemy in range, dealing 117 damage. 3s cooldown.',
   modifiesAbilityId: 'SPEAR_R',
+};
+
+export const aegisRoomTalentDefinition: TalentDefinition = {
+  id: TALENT_AEGIS_ROOM,
+  name: 'AEGIS',
+  description:
+    `Grants the Aegis ability on your R key. Creates a protective barrier that blocks all incoming damage for ${AEGIS_ROOM_DURATION_SEC} seconds. ${AEGIS_ROOM_COOLDOWN_SEC}s cooldown.`,
+  modifiesAbilityId: 'COOP_PURPLE_ROOM',
 };
 
 export const wrathfulSabresSwipesTalentDefinition: TalentDefinition = {
@@ -1652,8 +1680,10 @@ export interface TalentLoadout {
   mendingDashRoom: boolean;
   /** Co-op blue room — any dash arcs lightning to a nearby enemy. */
   staggeringDashRoom: boolean;
-  /** Co-op blue room — stunned enemies take bonus damage from your attacks. */
+  /** Co-op blue room — stagger lightning procs deal bonus damage. */
   guardbreakRoom: boolean;
+  /** Co-op blue room — stagger lightning procs stun longer. */
+  overshockRoom: boolean;
   /** Co-op red room — your critical strikes heal for current Strength points. */
   bloodleechRoom: boolean;
   /** Co-op red room — retaliate with fire when taking damage from an enemy. */
@@ -1666,6 +1696,8 @@ export interface TalentLoadout {
   coldsnapRoom: boolean;
   /** Co-op blue room active boon — player can call a lightning bolt on the top-priority enemy via R key (3s cooldown). */
   lightningBoltRoom: boolean;
+  /** Co-op purple room active boon — player can cast Aegis deflect + invulnerability via R key (8s cooldown). */
+  aegisRoom: boolean;
 }
 
 export function createDefaultTalentLoadout(): TalentLoadout {
@@ -1765,12 +1797,14 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     mendingDashRoom: false,
     staggeringDashRoom: false,
     guardbreakRoom: false,
+    overshockRoom: false,
     bloodleechRoom: false,
     rebukeRoom: false,
     raiseDeadRoom: false,
     meteorStrikeRoom: false,
     coldsnapRoom: false,
     lightningBoltRoom: false,
+    aegisRoom: false,
   };
 }
 // DEFAULT TALENTS DEFAULTTALENTS
@@ -2056,6 +2090,25 @@ export function shouldApplyStaggeringDashTalent(talentLoadout: TalentLoadout | n
 
 export function shouldApplyGuardbreakTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.guardbreakRoom;
+}
+
+export function shouldApplyOvershockTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.overshockRoom;
+}
+
+/** Stagger lightning proc damage for the local player (co-op server mirrors via `coop-stagger-room-boons`). */
+export function getStaggerProcDamage(talentLoadout: TalentLoadout | null | undefined): number {
+  return shouldApplyGuardbreakTalent(talentLoadout)
+    ? GUARDBREAK_STAGGER_PROC_DAMAGE
+    : STAGGER_PROC_DAMAGE;
+}
+
+/** Stagger lightning proc stun duration in milliseconds. */
+export function getStaggerProcStunMs(talentLoadout: TalentLoadout | null | undefined): number {
+  const sec = shouldApplyOvershockTalent(talentLoadout)
+    ? OVERSHOCK_STAGGER_PROC_STUN_SECONDS
+    : STAGGER_PROC_STUN_SECONDS;
+  return Math.round(sec * 1000);
 }
 
 export function shouldApplyBloodleechTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
@@ -2593,6 +2646,17 @@ export function getCoopZombieRoomBoonsPayload(loadout: TalentLoadout): {
   };
 }
 
+/** Payload for `coop-stagger-room-boons` Socket.IO sync (server applies at stagger lightning proc). */
+export function getCoopStaggerRoomBoonsPayload(loadout: TalentLoadout): {
+  guardbreak: boolean;
+  overshock: boolean;
+} {
+  return {
+    guardbreak: !!loadout.guardbreakRoom,
+    overshock: !!loadout.overshockRoom,
+  };
+}
+
 /** Runeblade class boon pool. Stored Charge is offered only after Blade Rush is on the run loadout. */
 export function buildRunebladeClassBoonPool(
   talentLoadout?: TalentLoadout | null,
@@ -2763,9 +2827,9 @@ export function buildRoomBoonPoolForColor(
     case 'red':
       return [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH, TALENT_REBUKE, TALENT_METEOR_STRIKE];
     case 'purple':
-      return [...pool, TALENT_GLACIAL_DASH, TALENT_COLDSNAP_ROOM];
+      return [...pool, TALENT_GLACIAL_DASH, TALENT_COLDSNAP_ROOM, TALENT_AEGIS_ROOM];
     case 'blue':
-      return [...pool, TALENT_STAGGERING_DASH, TALENT_GUARDBREAK, TALENT_LIGHTNING_BOLT_ROOM];
+      return [...pool, TALENT_STAGGERING_DASH, TALENT_GUARDBREAK, TALENT_OVERSHOCK, TALENT_LIGHTNING_BOLT_ROOM];
     default:
       return pool;
   }
@@ -3275,6 +3339,9 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_GUARDBREAK:
       next.guardbreakRoom = true;
       return next;
+    case TALENT_OVERSHOCK:
+      next.overshockRoom = true;
+      return next;
     case TALENT_BLOODLEECH:
       next.bloodleechRoom = true;
       return next;
@@ -3292,6 +3359,9 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
       return next;
     case TALENT_LIGHTNING_BOLT_ROOM:
       next.lightningBoltRoom = true;
+      return next;
+    case TALENT_AEGIS_ROOM:
+      next.aegisRoom = true;
       return next;
     default:
       return next;
@@ -3394,17 +3464,27 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_MENDING_DASH]: mendingDashTalentDefinition,
   [TALENT_STAGGERING_DASH]: staggeringDashTalentDefinition,
   [TALENT_GUARDBREAK]: guardbreakTalentDefinition,
+  [TALENT_OVERSHOCK]: overshockTalentDefinition,
   [TALENT_BLOODLEECH]: bloodleechTalentDefinition,
   [TALENT_REBUKE]: rebukeTalentDefinition,
   [TALENT_RAISE_DEAD]: raiseDeadTalentDefinition,
   [TALENT_METEOR_STRIKE]: meteorStrikeTalentDefinition,
   [TALENT_COLDSNAP_ROOM]: coldsnapRoomTalentDefinition,
   [TALENT_LIGHTNING_BOLT_ROOM]: lightningBoltRoomTalentDefinition,
+  [TALENT_AEGIS_ROOM]: aegisRoomTalentDefinition,
+};
+
+/** Official room-type icons used as defaults when a room boon has no dedicated asset. */
+export const COOP_ROOM_TYPE_ICON_SRC: Record<CoopRoomColor, string> = {
+  blue: '/icons/storm.svg',
+  purple: '/icons/glacial.svg',
+  green: '/icons/necro.svg',
+  red: '/icons/infernal.svg',
 };
 
 /**
  * Public URL path for talent picker / HUD icons (`public/icons/*.svg`).
- * `null` when no asset exists yet (UI may show ✦ fallback).
+ * `null` when no dedicated asset exists; room boons may fall back to `COOP_ROOM_TYPE_ICON_SRC`.
  */
 export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_WRATH_STRIKE]: '/icons/strike.svg',
@@ -3502,16 +3582,42 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_MENDING_DASH]: '/icons/dash.svg',
   [TALENT_STAGGERING_DASH]: '/icons/dash.svg',
   [TALENT_GUARDBREAK]: '/icons/strike.svg',
+  [TALENT_OVERSHOCK]: '/icons/strike.svg',
   [TALENT_BLOODLEECH]: '/icons/strike.svg',
   [TALENT_REBUKE]: '/icons/strike.svg',
   [TALENT_RAISE_DEAD]: '/icons/strike.svg',
   [TALENT_METEOR_STRIKE]: '/icons/meteor.svg',
   [TALENT_COLDSNAP_ROOM]: null,
   [TALENT_LIGHTNING_BOLT_ROOM]: null,
+  [TALENT_AEGIS_ROOM]: null,
 };
 
-export function getTalentIconSrc(id: TalentId): string | null {
-  return TALENT_ICON_SRC[id] ?? null;
+const COOP_ROOM_COLOR_BY_TALENT: Partial<Record<TalentId, CoopRoomColor>> = (() => {
+  const map: Partial<Record<TalentId, CoopRoomColor>> = {};
+  const colors: CoopRoomColor[] = ['blue', 'green', 'purple', 'red'];
+  const weapons = [WeaponType.RUNEBLADE, WeaponType.BOW, WeaponType.SCYTHE, WeaponType.SABRES];
+  for (const color of colors) {
+    for (const weapon of weapons) {
+      for (const id of buildRoomBoonPoolForColor(color, weapon)) {
+        map[id] = color;
+      }
+    }
+  }
+  return map;
+})();
+
+export function getCoopRoomColorForTalent(id: TalentId): CoopRoomColor | null {
+  return COOP_ROOM_COLOR_BY_TALENT[id] ?? null;
+}
+
+export function getTalentIconSrc(id: TalentId, roomColor?: string | null): string | null {
+  const explicit = TALENT_ICON_SRC[id] ?? null;
+  if (explicit) return explicit;
+
+  const normalized = String(roomColor ?? '').toLowerCase();
+  const fromArg = isCoopRoomColor(normalized) ? normalized : null;
+  const color = fromArg ?? COOP_ROOM_COLOR_BY_TALENT[id] ?? null;
+  return color ? COOP_ROOM_TYPE_ICON_SRC[color] : null;
 }
 
 /** All enabled talent ids for HUD / tooltips (order matches loadout field declaration). */
@@ -3612,12 +3718,14 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.mendingDashRoom) out.push(TALENT_MENDING_DASH);
   if (loadout.staggeringDashRoom) out.push(TALENT_STAGGERING_DASH);
   if (loadout.guardbreakRoom) out.push(TALENT_GUARDBREAK);
+  if (loadout.overshockRoom) out.push(TALENT_OVERSHOCK);
   if (loadout.bloodleechRoom) out.push(TALENT_BLOODLEECH);
   if (loadout.rebukeRoom) out.push(TALENT_REBUKE);
   if (loadout.raiseDeadRoom) out.push(TALENT_RAISE_DEAD);
   if (loadout.meteorStrikeRoom) out.push(TALENT_METEOR_STRIKE);
   if (loadout.coldsnapRoom) out.push(TALENT_COLDSNAP_ROOM);
   if (loadout.lightningBoltRoom) out.push(TALENT_LIGHTNING_BOLT_ROOM);
+  if (loadout.aegisRoom) out.push(TALENT_AEGIS_ROOM);
   return out;
 }
 
