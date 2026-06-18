@@ -201,6 +201,7 @@ import EnhancedGround from '@/components/environment/EnhancedGround';
 import { DamageNumberData } from '@/components/DamageNumbers';
 import { setGlobalCriticalRuneCount, setGlobalCritDamageRuneCount, setControlSystem } from '@/core/DamageCalculator';
 import Environment from '@/components/environment/Environment';
+import DriftingMist from '@/components/environment/DriftingMist';
 import HexCombatArena, { HEX_ARENA_RADIUS } from '@/components/environment/HexCombatArena';
 import { CoopMainArenaPortals } from '@/components/environment/CoopMainArenaPortals';
 import ThroneRoom, {
@@ -408,6 +409,63 @@ function ShaderWarmup() {
       <Text fontSize={0.16} color="#ccffcc" anchorX="center" anchorY="middle" fontWeight="bold">
         {'\u{1F9DF} 0/0'}
       </Text>
+
+      {/* Transparent emissive double-sided material — used by ritual circles, VFX
+          ground decals, and rune overlays across all room themes. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[0.01, 0.01]} />
+        <meshStandardMaterial
+          color="#86efac"
+          emissive="#86efac"
+          emissiveIntensity={1}
+          transparent
+          opacity={0.5}
+          depthWrite={false}
+          side={2}
+        />
+      </mesh>
+
+      {/* Additive-blended emissive transparent — charge trails, particle VFX,
+          chain-lightning sparks, wraith-strike effects. */}
+      <mesh>
+        <sphereGeometry args={[0.005, 4, 4]} />
+        <meshStandardMaterial
+          color="#B5B010"
+          emissive="#B5B010"
+          emissiveIntensity={3}
+          transparent
+          opacity={0.8}
+          blending={2 /* AdditiveBlending */}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* High-emissive orb glow — weapon orbs, soul fragments, and boss VFX
+          all use this material variant (high emissiveIntensity + transparency). */}
+      <mesh>
+        <sphereGeometry args={[0.005, 6, 6]} />
+        <meshStandardMaterial
+          color="#1097B5"
+          emissive="#1097B5"
+          emissiveIntensity={30}
+          transparent
+          opacity={0.6}
+        />
+      </mesh>
+
+      {/* Standard shadowed opaque — enemy bodies, props, arena geometry.
+          Having castShadow+receiveShadow here ensures the shadow-map variant
+          compiles before the first enemy renders it. */}
+      <mesh castShadow receiveShadow>
+        <boxGeometry args={[0.01, 0.01, 0.01]} />
+        <meshStandardMaterial color="#4a5b6c" metalness={0.9} roughness={0.1} />
+      </mesh>
+
+      {/* Low-metalness opaque — wooden/stone surfaces, handle wrappings, floor tiles. */}
+      <mesh castShadow receiveShadow>
+        <boxGeometry args={[0.01, 0.01, 0.01]} />
+        <meshStandardMaterial color="#2a3b4c" roughness={0.7} metalness={0.0} />
+      </mesh>
     </group>
   );
 }
@@ -606,6 +664,56 @@ function preloadEnemyModelsForTypes(types: Iterable<string>): void {
       }
     }, 1200);
   });
+}
+
+/**
+ * Eagerly load the JS chunks for all React.lazy renderer components so their
+ * code is available in the browser cache before any enemy of that type spawns.
+ * Keeps React.lazy (no bundle-size regression) while eliminating the chunk-fetch
+ * stall on first mount.
+ */
+async function warmupLazyRendererChunks(): Promise<void> {
+  await Promise.all([
+    import('./enemies/BossRenderer'),
+    import('./enemies/Boss2Renderer'),
+    import('./enemies/Boss3Renderer'),
+    import('./enemies/TemplarRenderer'),
+    import('./enemies/ViperRenderer'),
+    import('./enemies/WarlockRenderer'),
+  ]).catch((e) => console.warn('Lazy renderer chunk warmup failed (non-fatal):', e));
+}
+
+/**
+ * Fire all enemy + ally model preloads during the initial loading screen so
+ * GLTF network downloads begin immediately rather than when the first enemy of
+ * that type spawns.  We await only the dynamic import() resolutions (JS chunks);
+ * the actual GLTF parses stream in the background and will be done well before
+ * any room is entered.
+ *
+ * Also fires warmupKnightModels / warmupAlliedHealerModels as non-blocking
+ * side-effects so the portal overlay no longer needs to wait for them.
+ */
+async function preloadAllEnemyModels(): Promise<void> {
+  await Promise.all([
+    import('./enemies/KnightModel').then((mod) => {
+      mod.preloadKnightModels();
+      void mod.warmupKnightModels();
+    }),
+    import('./enemies/AlliedHealerModel').then((mod) => {
+      mod.preloadAlliedHealerModels();
+      void mod.warmupAlliedHealerModels();
+    }),
+    import('./enemies/GhoulModel').then((mod) => { mod.preloadGhoulModels(); }),
+    import('./enemies/ShadeModel').then((mod) => { mod.preloadShadeModels(); }),
+    import('./enemies/WarlockModel').then((mod) => { mod.preloadWarlockModels(); }),
+    import('./enemies/TemplarModel').then((mod) => { mod.preloadTemplarModels(); }),
+    import('./enemies/WeaverModel').then((mod) => { mod.preloadWeaverModels(); }),
+    import('./enemies/ViperModel').then((mod) => { mod.preloadViperModels(); }),
+    import('./enemies/ZombieModel').then((mod) => { mod.preloadZombieModels(); }),
+    import('./enemies/MartyrModel').then((mod) => { mod.preloadMartyrModels(); }),
+    import('./enemies/BossGlbModel').then((mod) => { mod.preloadBossModels(); }),
+    import('./enemies/TitanModel').then((mod) => { mod.preloadTitanModels(); }),
+  ]).catch((e) => console.warn('Enemy model preload failed (non-fatal):', e));
 }
 
 
@@ -1128,20 +1236,16 @@ export function CoopGameScene({
   /**
    * After `combat-arena-entered`, keep the HTML loading overlay until:
    *   1. React/WebGL settle (rAF×2)
-   *   2. Ally models (healer + knight) are fully warmed up in the GLTF cache
-   *   3. A minimum display time has elapsed
-   * This ensures the 2nd room never pops in with missing ally / character geometry.
+   *   2. A minimum cosmetic display time has elapsed
+   *
+   * Ally model warmups (knight + allied-healer) are now fired during the
+   * initial loading screen via preloadAllEnemyModels(), so this overlay is
+   * a purely cosmetic crossfade — no real asset loading happens here.
    */
   const COOP_PORTAL_OVERLAY_MIN_MS = 280;
   useEffect(() => {
     if (coopCombatArenaEnterSeq === 0) return;
     let cancelled = false;
-
-    // Kick off ally-model warmups immediately so downloads overlap with the rAF gate.
-    const allyWarmup = Promise.all([
-      import('./enemies/AlliedHealerModel').then(mod => mod.warmupAlliedHealerModels()),
-      import('./enemies/KnightModel').then(mod => mod.warmupKnightModels()),
-    ]).catch(() => {});
 
     const minWait = new Promise<void>(resolve => setTimeout(resolve, COOP_PORTAL_OVERLAY_MIN_MS));
 
@@ -1149,7 +1253,7 @@ export function CoopGameScene({
     const raf1Id = requestAnimationFrame(() => {
       raf2Id = requestAnimationFrame(() => {
         if (cancelled) return;
-        void Promise.all([allyWarmup, minWait]).then(() => {
+        void minWait.then(() => {
           if (!cancelled) hideCoopPortalTransition();
         });
       });
@@ -1219,6 +1323,7 @@ export function CoopGameScene({
   // Alternating damage-sound variant (1 or 2) for knight and templar
   const knightDamageVariant = useRef<1 | 2>(1);
   const templarDamageVariant = useRef<1 | 2>(1);
+  const shadeDamageVariant = useRef<1 | 2 | 3>(1);
   const realTimePlayerPositionRef = useRef<Vector3>(new Vector3(0, 0.5, COOP_MAIN_DEFAULT_SPAWN_Z));
   const _lastSetPlayerPositionMs = useRef<number>(0);
   const _scratchCamDir = useRef<Vector3>(new Vector3());
@@ -5201,6 +5306,15 @@ export function CoopGameScene({
                 shieldBefore,
                 position: transform.position,
               });
+
+              if (data.damageType === 'shade_dagger' && damageApplied) {
+                window.audioSystem?.playShadeDamageSound(
+                  transform.position,
+                  shadeDamageVariant.current,
+                );
+                shadeDamageVariant.current =
+                  shadeDamageVariant.current === 3 ? 1 : ((shadeDamageVariant.current + 1) as 1 | 2 | 3);
+              }
             }
           }
 
@@ -7940,7 +8054,12 @@ export function CoopGameScene({
     const canvas = gl.domElement;
     let teardownAfterAsync = false;
 
-    Promise.all([engine.initialize(canvas), warmupCharacterLocomotionGltf()])
+    Promise.all([
+      engine.initialize(canvas),
+      warmupCharacterLocomotionGltf(),
+      warmupLazyRendererChunks(),
+      preloadAllEnemyModels(),
+    ])
       .then(async () => {
         if (teardownAfterAsync) return;
         try {
@@ -9541,6 +9660,8 @@ export function CoopGameScene({
       {/* Don't render game world if game hasn't started */}
       {!gameStarted ? null : (
         <>
+          {/* Drifting cloud mist — camera-relative overlay, present in every room */}
+          <DriftingMist />
           {inThroneRoom ? (
             <>
               <ThroneRoom
@@ -10349,35 +10470,7 @@ export function CoopGameScene({
             return t ? t.position.clone() : null;
           }}
           onHitPlayer={() => {
-            if (!playerEntity) return;
-            const deathState = playerDeathStates.get(socket?.id ?? '');
-            if (deathState?.isDead) return;
-            const health = playerEntity.getComponent(Health);
-            if (!health) return;
-            const wasAlive = !health.isDead;
-            const shield = playerEntity.getComponent(Shield);
-            const healthBefore = health.currentHealth;
-            const shieldBefore = shield?.currentShield;
-            const damageApplied = health.takeDamage(dagger.damage, Date.now() / 1000, playerEntity, false);
-            const transform = playerEntity.getComponent(Transform);
-            triggerAppliedLocalPlayerDamageFeedback({
-              damage: dagger.damage,
-              damageType: 'void',
-              damageApplied,
-              health,
-              healthBefore,
-              shield,
-              shieldBefore,
-              position: transform?.position ?? dagger.targetPosition,
-            });
-            // Play the damage sound for whichever dart hit (1st, 2nd, or 3rd)
-            (window as any).audioSystem?.playShadeDamageSound(
-              dagger.startPosition,
-              (dagger.daggerIndex + 1) as 1 | 2 | 3,
-            );
-            if (wasAlive && health.isDead && socket?.id) {
-              handlePlayerDeath(socket.id, 'shade-dagger');
-            }
+            // Damage, hit audio, and floating numbers are server-authoritative via `player-damaged`.
           }}
           onComplete={() => setShadeDaggers(prev => prev.filter(d => d.id !== dagger.id))}
         />

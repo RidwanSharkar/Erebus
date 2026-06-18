@@ -52,6 +52,22 @@ function createDashedRingGeometry(
   return geometries;
 }
 
+// ── Module-level shared geometries ────────────────────────────────────────────
+// Created once for the entire session (never mutated, never disposed).
+// Each GhoulSummonRitual instance references these, so no synchronous geometry
+// allocation happens on mount — eliminating the main-thread hitch at cast start.
+const sharedGeometries = (() => {
+  const s = GEOMETRY_SCALE;
+  return {
+    outerRing:      createDashedRingGeometry(20.5 * s, 22.5 * s, 8, 6),
+    innerRing:      createDashedRingGeometry(11.5 * s, 12.5 * s, 4, 3),
+    expandingRing:  new RingGeometry(20.5 * s, 22.5 * s, 32),
+    centerOrb:      new CircleGeometry(1.2 * s, 16),
+    marker:         new CylinderGeometry(0.05, 0.05, 1.0, 8),
+    rune:           new CircleGeometry(0.15, 8),
+  };
+})();
+
 export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonRitualProps) {
   const elapsed = useRef(0);
   const completedRef = useRef(false);
@@ -59,30 +75,9 @@ export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonR
   const innerRingRef = useRef<Group>(null);
   const rotationRef = useRef(0);
 
-  const { geometries, materials, materialFadeList } = useMemo(() => {
-    const scaleFactor = GEOMETRY_SCALE;
-
-    const outerRingGeometries = createDashedRingGeometry(
-      20.5 * scaleFactor,
-      22.5 * scaleFactor,
-      8,
-      6
-    );
-    const innerRingGeometries = createDashedRingGeometry(
-      11.5 * scaleFactor,
-      12.5 * scaleFactor,
-      4,
-      3
-    );
-    const expandingRingGeometry = new RingGeometry(
-      20.5 * scaleFactor,
-      22.5 * scaleFactor,
-      32
-    );
-    const centerOrbGeometry = new CircleGeometry(1.2 * scaleFactor, 16);
-    const markerGeometry = new CylinderGeometry(0.05, 0.05, 1.0, 8);
-    const runeGeometry = new CircleGeometry(0.15, 8);
-
+  // Per-instance materials: each ritual instance has its own material set so
+  // concurrent rituals can fade independently without interfering with each other.
+  const { materials, materialFadeList } = useMemo(() => {
     const makeMat = (
       opacity: number,
       emissiveIntensity: number
@@ -97,55 +92,41 @@ export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonR
         depthWrite: false,
       });
 
-    const outerRingMaterial = makeMat(0.75, 0.5);
-    const innerRingMaterial = makeMat(0.7, 0.4);
-    const centerOrbMaterial = makeMat(0.85, 0.8);
-    const markerMaterial = makeMat(0.7, 0.4);
-    const runeMaterial = makeMat(0.95, 0.7);
-    const expandingRingMaterial = makeMat(0.2, 0.25);
+    const outerRingMaterial    = makeMat(0.75, 0.5);
+    const innerRingMaterial    = makeMat(0.70, 0.4);
+    const centerOrbMaterial    = makeMat(0.85, 0.8);
+    const markerMaterial       = makeMat(0.70, 0.4);
+    const runeMaterial         = makeMat(0.95, 0.7);
+    const expandingRingMaterial = makeMat(0.20, 0.25);
 
     const materialFadeList = [
-      { material: outerRingMaterial, baseOpacity: 0.75 },
-      { material: innerRingMaterial, baseOpacity: 0.7 },
-      { material: centerOrbMaterial, baseOpacity: 0.85 },
-      { material: markerMaterial, baseOpacity: 0.7 },
-      { material: runeMaterial, baseOpacity: 0.95 },
-      { material: expandingRingMaterial, baseOpacity: 0.2 },
+      { material: outerRingMaterial,     baseOpacity: 0.75 },
+      { material: innerRingMaterial,     baseOpacity: 0.70 },
+      { material: centerOrbMaterial,     baseOpacity: 0.85 },
+      { material: markerMaterial,        baseOpacity: 0.70 },
+      { material: runeMaterial,          baseOpacity: 0.95 },
+      { material: expandingRingMaterial, baseOpacity: 0.20 },
     ];
 
     return {
-      geometries: {
-        outerRing: outerRingGeometries,
-        innerRing: innerRingGeometries,
-        expandingRing: expandingRingGeometry,
-        centerOrb: centerOrbGeometry,
-        marker: markerGeometry,
-        rune: runeGeometry,
-      },
       materials: {
-        outerRing: outerRingMaterial,
-        innerRing: innerRingMaterial,
-        centerOrb: centerOrbMaterial,
-        marker: markerMaterial,
-        rune: runeMaterial,
+        outerRing:     outerRingMaterial,
+        innerRing:     innerRingMaterial,
+        centerOrb:     centerOrbMaterial,
+        marker:        markerMaterial,
+        rune:          runeMaterial,
         expandingRing: expandingRingMaterial,
       },
       materialFadeList,
     };
   }, []);
 
+  // Dispose only per-instance materials on unmount; shared geometries are session-lived.
   useEffect(() => {
     return () => {
-      Object.entries(geometries).forEach(([, geometry]) => {
-        if (Array.isArray(geometry)) {
-          geometry.forEach((g) => g.dispose());
-        } else {
-          geometry.dispose();
-        }
-      });
       Object.values(materials).forEach((m) => m.dispose());
     };
-  }, [geometries, materials]);
+  }, [materials]);
 
   const finish = useCallback(() => {
     if (completedRef.current) return;
@@ -182,14 +163,14 @@ export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonR
     <group position={[position.x, 0.25, position.z]}>
       <group scale={[RITUAL_WORLD_SCALE, RITUAL_WORLD_SCALE, RITUAL_WORLD_SCALE]}>
         <mesh
-          geometry={geometries.expandingRing}
+          geometry={sharedGeometries.expandingRing}
           material={materials.expandingRing}
           rotation={[-Math.PI / 2, 0, 0]}
           position={[0, 0.01, 0]}
         />
 
         <mesh
-          geometry={geometries.expandingRing}
+          geometry={sharedGeometries.expandingRing}
           material={materials.expandingRing}
           rotation={[-Math.PI / 2, 0, 0]}
           position={[0, 0.01, 0]}
@@ -197,7 +178,7 @@ export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonR
         />
 
         <group ref={outerRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-          {geometries.outerRing.map((geometry, i) => (
+          {sharedGeometries.outerRing.map((geometry, i) => (
             <mesh key={`outer-dash-${i}`} geometry={geometry} material={materials.outerRing} />
           ))}
 
@@ -213,7 +194,7 @@ export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonR
               return (
                 <mesh
                   key={`marker-a-${i}`}
-                  geometry={geometries.marker}
+                  geometry={sharedGeometries.marker}
                   material={materials.marker}
                   position={[x, 0.005, z]}
                   rotation={[rad, 0, 0]}
@@ -235,7 +216,7 @@ export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonR
               return (
                 <mesh
                   key={`marker-b-${i}`}
-                  geometry={geometries.marker}
+                  geometry={sharedGeometries.marker}
                   material={materials.marker}
                   position={[x, 0.005, z]}
                   rotation={[rad, 0, 0]}
@@ -247,7 +228,7 @@ export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonR
         </group>
 
         <group ref={innerRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.035, 0]}>
-          {geometries.innerRing.map((geometry, i) => (
+          {sharedGeometries.innerRing.map((geometry, i) => (
             <mesh key={`inner-dash-${i}`} geometry={geometry} material={materials.innerRing} />
           ))}
         </group>
@@ -260,7 +241,7 @@ export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonR
           return (
             <mesh
               key={`rune-${i}`}
-              geometry={geometries.rune}
+              geometry={sharedGeometries.rune}
               material={materials.rune}
               position={[x, 0.035, z]}
               rotation={[-Math.PI / 2, 0, 0]}
@@ -269,7 +250,7 @@ export default function GhoulSummonRitual({ position, onComplete }: GhoulSummonR
         })}
 
         <mesh
-          geometry={geometries.centerOrb}
+          geometry={sharedGeometries.centerOrb}
           material={materials.centerOrb}
           rotation={[-Math.PI / 2, 0, 0]}
           position={[0, 0.04, 0]}

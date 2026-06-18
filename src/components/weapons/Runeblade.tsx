@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, Color, Shape, AdditiveBlending } from '@/utils/three-exports';
+import { Group, Vector3, Color, Shape, AdditiveBlending, BufferGeometry, Float32BufferAttribute } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import CorruptedAura from './CorruptedAura';
 import Blizzard from './Blizzard/Blizzard';
@@ -143,11 +143,18 @@ export default function Runeblade({
   const blizzardEdgeRef = useRef(false);
 
   const useCorruptedPalette = isCorruptedAuraActive || crusaderBladeThemeActive;
-  // Color scheme: F-key Corrupted Aura or Crusader talent blade theme
-  const primaryColor = useCorruptedPalette ? new Color("#ffaa00") : new Color(0x1097B5);
-  const primaryEmissive = useCorruptedPalette ? new Color("#ff8800") : new Color(0x1097B5);
-  const secondaryColor = useCorruptedPalette ? new Color("#ff8800") : new Color(0x87CEEB);
-  const secondaryEmissive = useCorruptedPalette ? new Color("#ff6600") : new Color(0x4682B4);
+  // Color scheme: F-key Corrupted Aura or Crusader talent blade theme.
+  // Memoized so that frequent re-renders driven by enemyData prop updates
+  // don't allocate four new Color objects on every render cycle.
+  const { primaryColor, primaryEmissive, secondaryColor, secondaryEmissive } = useMemo(
+    () => ({
+      primaryColor:    useCorruptedPalette ? new Color('#ffaa00') : new Color(0x1097B5),
+      primaryEmissive: useCorruptedPalette ? new Color('#ff8800') : new Color(0x1097B5),
+      secondaryColor:  useCorruptedPalette ? new Color('#ff8800') : new Color(0x87CEEB),
+      secondaryEmissive: useCorruptedPalette ? new Color('#ff6600') : new Color(0x4682B4),
+    }),
+    [useCorruptedPalette],
+  );
 
   const runebladeRef = useRef<Group>(null);
   const corruptedAuraRef = useRef<{ toggle: () => void; isActive: boolean }>(null);
@@ -175,6 +182,12 @@ export default function Runeblade({
     life: number;
     scale: number;
   }>>([]);
+  const MAX_SPARKS = 120;
+  // Pre-allocated GPU buffers updated each frame — avoids per-frame JS allocation
+  // from the old N×<mesh> pattern and collapses all sparks to a single draw call.
+  const sparkPositions = useMemo(() => new Float32Array(MAX_SPARKS * 3), []);
+  const sparkColors    = useMemo(() => new Float32Array(MAX_SPARKS * 3), []);
+  const sparkGeoRef    = useRef<BufferGeometry>(null);
 
   // Swing collision tracking
   const lastSwingHitTime = useRef<Record<string, number>>({});
@@ -838,43 +851,75 @@ export default function Runeblade({
       }
     }
 
-    // Handle electrical effects when Chain Lightning is unlocked
+    // Handle electrical effects when Chain Lightning is unlocked.
+    // Sparks are rendered as a single <points> draw call — no per-spark <mesh>.
     if (hasChainLightning && runebladeRef.current) {
+      const nowMs = Date.now();
+
+      // Spawn up to 3 sparks per frame when the random threshold passes
       if (Math.random() < 0.8) {
         for (let i = 0; i < 3; i++) {
           const randomLength = Math.random() * 2.2;
-          const randomOffset = new Vector3(
-            (Math.random() - 0.5) * 0.4,
-            randomLength,
-            (Math.random() - 0.5) * 0.4
-          );
-
           sparkParticles.current.push({
-            position: randomOffset,
+            position: new Vector3(
+              (Math.random() - 0.5) * 0.4,
+              randomLength,
+              (Math.random() - 0.5) * 0.4
+            ),
             velocity: new Vector3(
               (Math.random() - 0.5) * 4,
               (Math.random() - 0.2) * 4,
               (Math.random() - 0.5) * 4
             ).multiplyScalar(0.8),
             life: 1.0,
-            scale: Math.random() * 0.02 + 0.005
+            scale: Math.random() * 0.02 + 0.005,
           });
         }
       }
 
-      sparkParticles.current.forEach(spark => {
-        spark.velocity.x += Math.sin(Date.now() * 0.01) * delta * 0.5;
-        spark.velocity.z += Math.cos(Date.now() * 0.01) * delta * 0.5;
-        spark.position.add(spark.velocity.clone().multiplyScalar(delta));
-        spark.life -= delta * 1.5;
+      // Update & cull dead sparks
+      const sinT = Math.sin(nowMs * 0.01);
+      const cosT = Math.cos(nowMs * 0.01);
+      const live: typeof sparkParticles.current = [];
+      for (const spark of sparkParticles.current) {
+        spark.velocity.x += sinT * delta * 0.5;
+        spark.velocity.z += cosT * delta * 0.5;
         spark.velocity.y += delta * 0.5;
-      });
-
-      if (sparkParticles.current.length > 120) {
-        sparkParticles.current = sparkParticles.current.slice(-120);
+        spark.position.x += spark.velocity.x * delta;
+        spark.position.y += spark.velocity.y * delta;
+        spark.position.z += spark.velocity.z * delta;
+        spark.life -= delta * 1.5;
+        if (spark.life > 0) live.push(spark);
       }
+      // Cap at MAX_SPARKS to stay within the pre-allocated buffer
+      sparkParticles.current = live.length > MAX_SPARKS ? live.slice(-MAX_SPARKS) : live;
 
-      sparkParticles.current = sparkParticles.current.filter(spark => spark.life > 0);
+      // Write live-spark positions + faded colours into the GPU buffer
+      if (sparkGeoRef.current) {
+        const pos = sparkPositions;
+        const col = sparkColors;
+        const count = sparkParticles.current.length;
+        const sr = secondaryColor.r;
+        const sg = secondaryColor.g;
+        const sb = secondaryColor.b;
+        for (let i = 0; i < count; i++) {
+          const sp = sparkParticles.current[i];
+          const idx = i * 3;
+          pos[idx]     = sp.position.x;
+          pos[idx + 1] = sp.position.y;
+          pos[idx + 2] = sp.position.z;
+          const fade = sp.life;
+          col[idx]     = sr * fade;
+          col[idx + 1] = sg * fade;
+          col[idx + 2] = sb * fade;
+        }
+        const geo = sparkGeoRef.current;
+        (geo.attributes.position as Float32BufferAttribute).set(pos);
+        (geo.attributes.color    as Float32BufferAttribute).set(col);
+        geo.attributes.position.needsUpdate = true;
+        geo.attributes.color.needsUpdate    = true;
+        geo.setDrawRange(0, count);
+      }
     }
   });
 
@@ -1167,24 +1212,30 @@ export default function Runeblade({
               </mesh>
             </group>
 
-            {/* Enhanced spark particles */}
-            {sparkParticles.current.map((spark, index) => (
-              <mesh
-                key={index}
-                position={spark.position.toArray()}
-                scale={[spark.scale, spark.scale, spark.scale]}
-              >
-                <sphereGeometry args={[1.25, 6, 6]} />
-                <meshStandardMaterial
-                  color={secondaryColor}
-                  emissive={secondaryEmissive}
-                  emissiveIntensity={3 * spark.life}
-                  transparent
-                  opacity={spark.life * 0.6}
-                  blending={AdditiveBlending}
+            {/* Spark particles — single <points> draw call instead of N×<mesh>.
+                The sparkGeoRef buffer is filled each frame in useFrame.
+                vertexColors encodes per-spark fade (life → brightness). */}
+            <points>
+              <bufferGeometry ref={sparkGeoRef}>
+                <bufferAttribute
+                  attach="attributes-position"
+                  args={[sparkPositions, 3]}
                 />
-              </mesh>
-            ))}
+                <bufferAttribute
+                  attach="attributes-color"
+                  args={[sparkColors, 3]}
+                />
+              </bufferGeometry>
+              <pointsMaterial
+                vertexColors
+                size={0.04}
+                sizeAttenuation
+                transparent
+                opacity={0.85}
+                blending={AdditiveBlending}
+                depthWrite={false}
+              />
+            </points>
           </group>
         )}
       </group>

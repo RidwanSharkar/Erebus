@@ -80,17 +80,17 @@ const THRONE_HOSTILE_KNIGHT_PERIMETER_RADIUS =
   COOP_THRONE_ROOM_RADIUS - THRONE_RIM_INSET - THRONE_HOSTILE_KNIGHT_FOOT_MARGIN;
 
 /** Co-op prep room: hostile knights on a timer — first wave after delay, then every interval. Max live cap. */
-const THRONE_KNIGHT_FIRST_SPAWN_MS = 25000;
-const THRONE_KNIGHT_SPAWN_INTERVAL_MS = 25000;
+const THRONE_KNIGHT_FIRST_SPAWN_MS = 95000;
+const THRONE_KNIGHT_SPAWN_INTERVAL_MS = 35000;
 const THRONE_KNIGHT_SPAWN_BATCH = 1;
-const THRONE_KNIGHT_MAX_LIVE = 2;
+const THRONE_KNIGHT_MAX_LIVE = 1;
 /** radians — arc spread for clustered spawns along the perimeter */
 const THRONE_KNIGHT_CLUSTER_ARC_SPREAD = 0.14;
 
 /** Runeblade Blizzard talent — Chill; keep in sync with src/utils/talents.ts */
 const BLIZZARD_CHILL_STACK_DURATION_MS = 6000;
-const BLIZZARD_CHILL_STACKS_TO_FREEZE = 5;
-const BLIZZARD_CHILL_SLOW_PER_STACK = 0.2;
+const BLIZZARD_CHILL_STACKS_TO_FREEZE = 6;
+const BLIZZARD_CHILL_SLOW_PER_STACK = 0.15;
 
 /**
  * Co-op arena: non-martyr kills needed to clear a colored room and trigger the boss.
@@ -1875,11 +1875,28 @@ class GameRoom {
 
   // Build one enemy object at the given position for the given type/camp.
   _buildEnemy(type, campIndex, slotIndex, pos, campDef) {
+    // Post-boss difficulty scaling, keyed off how many bosses the party has killed.
+    // Every kill adds +250 HP to all combatants (martyr & tentacle-spine excluded)
+    // and bumps damage along a per-type tier table. Tier is clamped at 3 (3+ bosses).
+    const tier = Math.min(this.coopBossesDefeatedCount || 0, 3);
+    const hpBonus = 225 * tier;
+
+    // Damage by boss-kill tier: [base, after boss 1, after boss 2, after boss 3+].
+    const KNIGHT_DAMAGE_BY_TIER = {
+      green:  [20, 30, 40, 50],
+      red:    [30, 40, 50, 70],
+      blue:   [15, 25, 35, 45],
+      purple: [20, 30, 40, 50],
+    };
+    const SHADE_DAMAGE_BY_TIER   = [18, 25, 35, 40];
+    const TEMPLAR_DAMAGE_BY_TIER = [48, 60, 78, 96];
+    const VIPER_DAMAGE_BY_TIER   = [55, 70, 85, 95];
+
     const soulStats = {
-      green:  { health: 1250, maxHealth: 1250, damage: 20,  attackCooldown: 2500, moveSpeed: 2.0 },
-      red:    { health: 1000,  maxHealth: 1000,  damage: 30,  attackCooldown: 2500, moveSpeed: 2.0 },
-      blue:   { health: 900,  maxHealth: 900,  damage: 15,  attackCooldown: 1250, moveSpeed: 2.0 },
-      purple: { health: 900,  maxHealth: 900,  damage: 20,  attackCooldown: 2500, moveSpeed: 3.25 },
+      green:  { health: 1250, maxHealth: 1250, attackCooldown: 2500, moveSpeed: 2.0 },
+      red:    { health: 1000, maxHealth: 1000, attackCooldown: 2500, moveSpeed: 2.0 },
+      blue:   { health: 900,  maxHealth: 900,  attackCooldown: 1250, moveSpeed: 2.0 },
+      purple: { health: 900,  maxHealth: 900,  attackCooldown: 2500, moveSpeed: 3.25 },
     };
 
     const ts = Date.now();
@@ -1896,30 +1913,34 @@ class GameRoom {
       const soulType = campDef.knightSoulType;
       const stats = soulStats[soulType];
       return { id: `knight-${campIndex}-${slotIndex}-${ts}`, type: 'knight', ...base,
-        health: stats.health, maxHealth: stats.maxHealth, damage: stats.damage,
+        health: stats.health + hpBonus, maxHealth: stats.maxHealth + hpBonus,
+        damage: KNIGHT_DAMAGE_BY_TIER[soulType][tier],
         attackCooldown: stats.attackCooldown, moveSpeed: stats.moveSpeed, bossId: null, soulType };
     }
     if (type === 'shade') {
       return { id: `shade-${campIndex}-${slotIndex}-${ts}`, type: 'shade', ...base,
-        health: 750, maxHealth: 750, damage: 25, attackCooldown: 5500, moveSpeed: 2.0 };
+        health: 750 + hpBonus, maxHealth: 750 + hpBonus,
+        damage: SHADE_DAMAGE_BY_TIER[tier], attackCooldown: 5500, moveSpeed: 2.0 };
     }
     if (type === 'warlock') {
       const isPurple = campDef.knightSoulType === 'purple';
       return { id: `warlock-${campIndex}-${slotIndex}-${ts}`, type: 'warlock', ...base,
-        health: 800, maxHealth: 800, damage: 100,
+        health: 800 + hpBonus, maxHealth: 800 + hpBonus, damage: 100,
         moveSpeed: isPurple ? 1.75 : 0,
         soulType: campDef.knightSoulType };
     }
     if (type === 'templar') {
       return { id: `templar-${campIndex}-${slotIndex}-${ts}`, type: 'templar', ...base,
-        health: 1000, maxHealth: 1000, damage: 48, attackCooldown: 1600, moveSpeed: 3.5 };
+        health: 1000 + hpBonus, maxHealth: 1000 + hpBonus,
+        damage: TEMPLAR_DAMAGE_BY_TIER[tier], attackCooldown: 1600, moveSpeed: 3.5 };
     }
     if (type === 'weaver') {
       return { id: `weaver-${campIndex}-${slotIndex}-${ts}`, type: 'weaver', ...base,
-        health: 700, maxHealth: 700, damage: 0, moveSpeed: 2.0,
+        health: 700 + hpBonus, maxHealth: 700 + hpBonus, damage: 0, moveSpeed: 2.0,
         soulType: campDef.knightSoulType };
     }
     if (type === 'martyr') {
+      // Excluded from HP scaling.
       return { id: `martyr-${campIndex}-${slotIndex}-${ts}`, type: 'martyr', ...base,
         health: 200, maxHealth: 175, damage: 0, moveSpeed: 3.0,
         soulType: campDef.knightSoulType };
@@ -1928,18 +1949,20 @@ class GameRoom {
       // Mini-boss1 spawned inside a wave room — identical stats/AI to the real Boss1 encounter.
       return {
         id: `boss-wave-${campIndex}-${slotIndex}-${ts}`, type: 'boss', ...base,
-        health: 5000, maxHealth: 5000, moveSpeed: 2.5,
+        health: 5000 + hpBonus, maxHealth: 5000 + hpBonus, moveSpeed: 2.5,
         spawnedAt: ts, bossStationary: false, staggerBuildup: 0,
         waveRoomBoss: true,
       };
     }
     if (type === 'tentacle-spine') {
+      // Excluded from HP scaling.
       return { id: `tentacle-spine-${campIndex}-${slotIndex}-${ts}`, type: 'tentacle-spine', ...base,
         health: 250, maxHealth: 250, damage: 0, moveSpeed: 0, isTrap: true };
     }
     // viper
     return { id: `viper-${campIndex}-${slotIndex}-${ts}`, type: 'viper', ...base,
-      health: 650, maxHealth: 650, damage: 55, attackCooldown: 5000, moveSpeed: 2.0 };
+      health: 650 + hpBonus, maxHealth: 650 + hpBonus,
+      damage: VIPER_DAMAGE_BY_TIER[tier], attackCooldown: 5000, moveSpeed: 2.0 };
   }
 
   // Pick a random point inside an arena footprint, excluding certain zones.
@@ -2359,7 +2382,7 @@ class GameRoom {
 
   getEnemyMaxHealth(type) {
     if (type === 'boss3') {
-      return 7500;
+      return 8500;
     }
     if (type === 'boss' || type === 'boss2') {
       return 5000;
@@ -3787,8 +3810,8 @@ class GameRoom {
     // Triangle formation — spread wide enough that bosses don't clip each other.
     const spawnConfigs = [
       { type: 'boss',  pos: { x: -8, y: 0, z:  3 }, maxHealth: 5000, moveSpeed: 2.5, extra: {} },
-      { type: 'boss2', pos: { x:  8, y: 0, z:  3 }, maxHealth: 5000, moveSpeed: 2.0, extra: {} },
-      { type: 'boss3', pos: { x:  0, y: 0, z: -9 }, maxHealth: 7500, moveSpeed: 2.0, extra: { summonChargesLeft: 2 } },
+      { type: 'boss2', pos: { x:  8, y: 0, z:  3 }, maxHealth: 8500, moveSpeed: 2.0, extra: {} },
+      { type: 'boss3', pos: { x:  0, y: 0, z: -9 }, maxHealth: 15000, moveSpeed: 2.0, extra: { summonChargesLeft: 2 } },
     ];
 
     this.tripleBossIds = new Set();

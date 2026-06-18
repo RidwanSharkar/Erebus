@@ -8,6 +8,7 @@ import {
   Points,
   Vector3,
 } from '@/utils/three-exports';
+import { MAIN_ARENA_HEX_RADIUS } from '@/utils/mapConstants';
 
 // ---------------------------------------------------------------------------
 // Fire embers — GPU-animated floating sparks near camps and torch areas
@@ -77,11 +78,23 @@ const EMBER_FRAG = `
 `;
 
 // ---------------------------------------------------------------------------
-// Centre beacon only — color uses campTypes[0] (same room theme as the map)
+// Perimeter fire ring — evenly-spaced clusters around the arena boundary.
+// All clusters share aCampIdx=0 so they inherit the single room theme color.
 // ---------------------------------------------------------------------------
-const CAMP_ORIGINS: [number, number, number][] = [
-  [0, 0, 8], // North Fortress
-];
+const PERIMETER_COUNT  = 18;
+const PERIMETER_RADIUS = MAIN_ARENA_HEX_RADIUS - 1.5;
+
+const CAMP_ORIGINS: [number, number, number][] = Array.from(
+  { length: PERIMETER_COUNT },
+  (_, i) => {
+    const angle = (i / PERIMETER_COUNT) * Math.PI * 2;
+    return [
+      Math.cos(angle) * PERIMETER_RADIUS,
+      0,
+      Math.sin(angle) * PERIMETER_RADIUS,
+    ];
+  }
+);
 
 // Per-theme palettes: [dim (cool / fading), bright (hot core)]
 // With additive blending even modest values glow vividly.
@@ -93,7 +106,7 @@ const FLAME_PALETTES: Record<string, [[number,number,number],[number,number,numb
 };
 const DEFAULT_PALETTE = FLAME_PALETTES.red;
 
-const EMBERS_PER_CAMP = 35;
+const EMBERS_PER_CAMP = 20;
 const TOTAL = EMBERS_PER_CAMP * CAMP_ORIGINS.length;
 
 // Build the two uniform Vector3[] arrays for a given campTypes list.

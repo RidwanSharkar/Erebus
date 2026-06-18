@@ -71,9 +71,9 @@ const INFESTED_ZOMBIE_SUMMON_LOCK_MS = 2800;
 // Universal green coop room zombie boons — mirrored from client TalentLoadout (see `coop-zombie-room-boons`)
 const PLAYER_ZOMBIE_STANDARD_HP = 250;
 const PLAYER_ZOMBIE_STANDARD_DAMAGE = 45;
-const PLAYER_ZOMBIE_JUGGERNAUT_HP = 500;
-const PLAYER_ZOMBIE_JUGGERNAUT_DAMAGE = 100;
-const JUGGERNAUT_STRAIN_ROLL_CHANCE = 0.25;
+const PLAYER_ZOMBIE_JUGGERNAUT_HP = 600;
+const PLAYER_ZOMBIE_JUGGERNAUT_DAMAGE = 135;
+const JUGGERNAUT_STRAIN_ROLL_CHANCE = 0.33;
 const EVERLIVING_ZOMBIE_HP_MULT = 2;
 const ADRENALINE_ZOMBIE_MOVE_MULT = 1.5;
 const PLAYER_ZOMBIE_UNLOCK_MOVE_SPEED = 1.75;
@@ -146,7 +146,7 @@ const SHADE_POST_ATTACK_BLINK_DELAY_MS =
   SHADE_POST_ATTACK_BLINK_BUFFER_MS;
 
 // Templar Blink Smite: first cast 15s after aggro, then every 15s; windup 1s then AOE in front of templar
-const TEMPLAR_BLINK_SMITE_INTERVAL_MS = 12500;
+const TEMPLAR_BLINK_SMITE_INTERVAL_MS = 12000;
 const TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS = 975;
 const TEMPLAR_BLINK_SMITE_IMPACT_OFFSET = 2.75;
 const TEMPLAR_BLINK_SMITE_DAMAGE = 65;
@@ -172,15 +172,15 @@ const COOP_BOSS_THRONE_ARENA_CLAMP_R = 14;
 const BOSS_LEAP_DURATION_MS = 1325;
 const BOSS_LEAP_LANDING_RADIUS = 3.5;
 const BOSS_LEAP_DAMAGE = 25;
-const BOSS_TECTONIC_COOLDOWN_MS = 20000;
+const BOSS_TECTONIC_COOLDOWN_MS = 28000;
 const BOSS_TECTONIC_MAX_HP_PCT = 0.75;
 const BOSS_TECTONIC_CENTER_DIST = 0.85;
 const BOSS_TECTONIC_JUMP_INTERVAL_MS = 900;
-const BOSS_TECTONIC_JUMP_COUNT = 12;
+const BOSS_TECTONIC_JUMP_COUNT = 10;
 const BOSS_TECTONIC_SPIKE_WARN_MS = 750;
 // Keep in sync with TECTONIC_HIT_RADIUS in src/components/enemies/BossTectonicSpikeTelegraph.tsx
 const BOSS_TECTONIC_SHARD_RADIUS = 2.5;
-const BOSS_TECTONIC_SHARD_DAMAGE = 36;
+const BOSS_TECTONIC_SHARD_DAMAGE = 32;
 const BOSS_STATIONARY_EPS = 0.03;
 const BOSS_TECTONIC_CENTER = { x: 0, y: 0, z: 0 };
 // Boss throw-spear ability
@@ -232,17 +232,17 @@ const BOSS3_NOVA_TRAVEL_MS = 1500;
 const BOSS3_NOVA_HALF_WIDTH = 0.85;
 const BOSS3_NOVA_DAMAGE = 50;
 const BOSS3_NOVA_STEPS = 26;
-const BOSS3_LIGHTNING_HEALTH_PCT = 0.6;
+const BOSS3_LIGHTNING_HEALTH_PCT = 0.675;
 const BOSS3_LIGHTNING_INTERVAL_MS = 6_000;
 const BOSS3_LIGHTNING_CHARGE_MS = 500;
 const BOSS3_LIGHTNING_STAGGER_MS = 500;
-const BOSS3_LIGHTNING_DAMAGE = 35;
+const BOSS3_LIGHTNING_DAMAGE = 45;
 const BOSS3_LIGHTNING_RADIUS = 2.99;
 const BOSS3_LIGHTNING_OFFSET_MIN = 2;
 const BOSS3_LIGHTNING_OFFSET_MAX = 6;
 const BOSS3_GREEN_BEAM_DURATION_MS = 8000;
 const BOSS3_GREEN_BEAM_TICK_MS = 1000;
-const BOSS3_GREEN_BEAM_DPS = 50;
+const BOSS3_GREEN_BEAM_DPS = 100;
 const BOSS3_GREEN_BEAM_RANGE = 22;
 const BOSS3_GREEN_BEAM_HALF_WIDTH = 0.52;
 /** Radians/sec — slower than default boss snap so players can sidestep the beam. */
@@ -1781,7 +1781,7 @@ class EnemyAI {
               const zz = this.room?.getEnemy(zid);
               if (!zz || zz.isDying || zz.health <= 0) return;
               if (this.calculateDistance(shade.position, zz.position) > attackRange + 1.5) return;
-              this.damagePlayerZombieFromMob({ id: shadeId }, zz, 25, 'shade_dagger');
+              this.damagePlayerZombieFromMob({ id: shadeId }, zz, shade.damage || 25, 'shade_dagger');
             }, delay);
           });
         } else {
@@ -1797,7 +1797,7 @@ class EnemyAI {
               const tt = this.room?.getEnemy(trapId);
               if (!tt || tt.isDying || tt.health <= 0 || tt.type !== 'tentacle-spine') return;
               if (this.calculateDistance(shade.position, tt.position) > attackRange + 1.5) return;
-              this.room.damageEnemy(trapId, 25, null, null, {
+              this.room.damageEnemy(trapId, shade.damage || 25, null, null, {
                 sourceEnemyId: shadeId,
                 damageType: 'shade_dagger',
               });
@@ -1947,7 +1947,7 @@ class EnemyAI {
           y: startY + (dy / len) * SHADE_DAGGER_MAX_RANGE,
           z: startZ + (dz / len) * SHADE_DAGGER_MAX_RANGE
         },
-        damage: 25,
+        damage: shade.damage || 25,
         timestamp: Date.now()
       });
     }
@@ -2112,7 +2112,7 @@ class EnemyAI {
     const len = Math.sqrt(dx * dx + dz * dz);
     if (len === 0) return;
 
-    const blinkDist = 6; // Teleport 5 units closer
+    const blinkDist = 7.5; // Teleport 5 units closer
     const endPosition = {
       x: warlock.position.x + (dx / len) * blinkDist,
       y: warlock.position.y,
@@ -6882,9 +6882,11 @@ class EnemyAI {
     return resolved.zombie.position;
   }
 
-  /** Server-side allied-unit probe per dagger wave (shade throws toward aim xz). */
+  /** Server-side player + allied-unit probe per dagger wave (shade throws toward aim xz). */
   scheduleAllyShadeDaggerChecks(shadeId, aimTx, aimTz, delaysMs = [1000, 1250, 1500]) {
     const SHADE_DAGGER_PATH_RADIUS_SQ = 3.5 * 3.5;
+    /** Match ShadeDaggerProjectile HIT_RADIUS / viper_arrow halfWidth. */
+    const SHADE_DAGGER_HALF_WIDTH = 1.05;
     delaysMs.forEach((delayMs) => {
       setTimeout(() => {
         if (!this.room?.getGameStarted()) return;
@@ -6898,7 +6900,18 @@ class EnemyAI {
         const len = Math.hypot(dx, dz) || 1e-6;
         const endX = sx + (dx / len) * SHADE_DAGGER_MAX_RANGE;
         const endZ = sz + (dz / len) * SHADE_DAGGER_MAX_RANGE;
-        this.damageAlliedUnitsAlongSegmentXZ(sx, sz, endX, endZ, SHADE_DAGGER_PATH_RADIUS_SQ, 25, {
+        const damage = sh.damage || 25;
+        this.room?.damagePlayersInLineSegment?.(
+          sx,
+          sz,
+          endX,
+          endZ,
+          SHADE_DAGGER_HALF_WIDTH,
+          damage,
+          'shade_dagger',
+          { sourceEnemyId: shadeId },
+        );
+        this.damageAlliedUnitsAlongSegmentXZ(sx, sz, endX, endZ, SHADE_DAGGER_PATH_RADIUS_SQ, damage, {
           sourceEnemyId: shadeId,
           damageType: 'shade_dagger',
         });

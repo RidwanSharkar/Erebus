@@ -9,12 +9,13 @@ import StylizedGrass from './StylizedGrass';
 import InstancedForest from './InstancedForest';
 import StoneGround from './StoneGround';
 import ArenaFallingSnow from './ArenaFallingSnow';
-import CastleWalls from './CastleWalls';
+import InstancedMountains from './InstancedMountains';
 import InstancedEmbers from './InstancedEmbers';
 import InstancedDebris from './InstancedDebris';
 import InstancedMushrooms from './InstancedMushrooms';
 import GroundCracks from './GroundCracks';
 import VolumetricMoonRays from './VolumetricMoonRays';
+import { generateBorderMountains } from '@/utils/MountainGenerator';
 import { MAIN_ARENA_HEX_RADIUS } from '@/utils/mapConstants';
 
 import { World } from '@/ecs/World';
@@ -82,6 +83,22 @@ const Environment: React.FC<EnvironmentProps> = ({
   const visualRoomTheme: RoomBorderTheme =
     coopTerrainTheme ?? (roomArchetype === 'red' ? 'purple' : roomArchetype);
 
+  // Instanced mountain range that surrounds the playable hex (replaces castle
+  // walls in the colored combat rooms). Seeded per room so each color gets a
+  // stable, slightly different silhouette without re-randomizing on re-render.
+  const borderMountains = useMemo(() => {
+    const themeSeed: Record<RoomBorderTheme, number> = {
+      red: 1301,
+      blue: 2027,
+      green: 3119,
+      purple: 4231,
+    };
+    return generateBorderMountains({
+      arenaRadius: MAIN_ARENA_HEX_RADIUS,
+      seed: themeSeed[visualRoomTheme] ?? 1337,
+    });
+  }, [visualRoomTheme]);
+
   return (
     <group name="environment">
       {/* Custom sky with level-based colors */}
@@ -115,8 +132,9 @@ const Environment: React.FC<EnvironmentProps> = ({
         <PillarCollision world={world} positions={pillarPositions} />
       )}
 
-      {/* Castle walls — perimeter ring (closed hex), single draw call */}
-      <CastleWalls />
+      {/* Surrounding mountain range — instanced bases + snow peaks (replaces the
+          castle walls in colored combat rooms). Fixed handful of draw calls. */}
+      <InstancedMountains mountains={borderMountains} />
 
       {/* ── Doodads & scene props ──────────────────────────────────────── */}
 

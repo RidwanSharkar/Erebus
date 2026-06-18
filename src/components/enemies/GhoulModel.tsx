@@ -30,6 +30,13 @@ export function preloadGhoulModels(): void {
   GHOUL_MODEL_PATHS.forEach(path => useGLTF.preload(path));
 }
 
+// ── Module-level animation clip cache ─────────────────────────────────────────
+// All GhoulModel instances share the same set of AnimationClip objects.
+// THREE.js AnimationMixer creates per-instance AnimationActions that reference
+// shared clips, so this is safe. Caching here eliminates the per-mount
+// Float32Array.from() / Array.from() work for every ghoul after the first.
+let _cachedAnimations: AnimationClip[] | null = null;
+
 const SCALE = 0.014;
 
 export default function GhoulModel({
@@ -69,6 +76,10 @@ export default function GhoulModel({
   }, [scene]);
 
   const animations = useMemo(() => {
+    // Return the session-level cache on subsequent mounts; all ghouls share the
+    // same clip objects and each gets its own AnimationMixer + Actions via useAnimations.
+    if (_cachedAnimations) return _cachedAnimations;
+
     const rename = (clips: AnimationClip[], name: string) =>
       clips.map(c => { const r = c.clone(); r.name = name; return r; });
 
@@ -86,7 +97,7 @@ export default function GhoulModel({
       return clip;
     };
 
-    return [
+    _cachedAnimations = [
       ...rename(idleAnims,    'Idle').map(stripRootMotionXZ),
       ...rename(runAnims,     'Run').map(stripRootMotionXZ),
       ...rename(attackAnims,  'Attack'),
@@ -95,6 +106,7 @@ export default function GhoulModel({
       ...rename(deathAnims,   'Death'),
       ...rename(impactAnims,  'Impact'),
     ];
+    return _cachedAnimations;
   }, [idleAnims, runAnims, attackAnims, attack2Anims, summonAnims, deathAnims, impactAnims]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
