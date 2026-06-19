@@ -22,7 +22,7 @@ export interface WarlockProjectileProps {
 
 const SPEED = 9; // units per second
 const TURN_RATE = 1.8; // radians per second — moderate homing, still dodge-able
-const HIT_RADIUS = 1.6;
+const HIT_RADIUS = 1.05; // match backend WARLOCK_ORB_HIT_RADIUS / ShadeDaggerProjectile
 
 const CHARGE_MIN_SCALE = 0.08;
 
@@ -258,11 +258,16 @@ export default function WarlockProjectile({
     trail3Mat.opacity = 0.22 * fade;
     trail4Mat.opacity = 0.12 * fade;
 
-    if (playerPos && groupRef.current.position.distanceTo(playerPos) < HIT_RADIUS) {
-      doneRef.current = true;
-      onHitPlayer();
-      onComplete();
-      return;
+    if (playerPos && groupRef.current) {
+      const orb = groupRef.current.position;
+      const dx = playerPos.x - orb.x;
+      const dz = playerPos.z - orb.z;
+      if (dx * dx + dz * dz < HIT_RADIUS * HIT_RADIUS) {
+        doneRef.current = true;
+        onHitPlayer();
+        onComplete();
+        return;
+      }
     }
 
     if (t >= maxLifetime) {

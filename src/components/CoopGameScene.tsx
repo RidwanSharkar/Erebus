@@ -36,6 +36,7 @@ import KnightFrostProjectile, { KnightFrostImpact } from './enemies/KnightFrostP
 import KnightDeathGraspProjectile from './enemies/KnightDeathGraspProjectile';
 import WarlockProjectile from './enemies/WarlockProjectile';
 import WarlockFlameStrike from './enemies/WarlockFlameStrike';
+import WarlockVoidBoltExplosion from './enemies/WarlockVoidBoltExplosion';
 import Meteor from './enemies/Meteor';
 import CrossentropyMeteor from './projectiles/CrossentropyMeteor';
 import BossTeleportEffect from './enemies/BossTeleportEffect';
@@ -2329,6 +2330,13 @@ export function CoopGameScene({
   }
   const [warlockFlameStrikes, setWarlockFlameStrikes] = useState<WarlockFlameStrikeState[]>([]);
 
+  // Warlock void-bolt impact bursts — when chaos orb hits the local player
+  interface WarlockVoidBoltExplosionState {
+    id: string;
+    position: Vector3;
+  }
+  const [warlockVoidBoltExplosions, setWarlockVoidBoltExplosions] = useState<WarlockVoidBoltExplosionState[]>([]);
+
   // Boss 2 post-blink flame pillars — visuals only (damage is server-authoritative)
   interface Boss2FlamePillarVfxState {
     id: string;
@@ -3602,7 +3610,7 @@ export function CoopGameScene({
       (window as any).audioSystem?.playPlayerHurtSound?.(damage, damageType);
     }
 
-    if (position) {
+    if (position && damageType !== 'warlock_chaos_orb') {
       const id = `player-hit-${nextPlayerHitBurstId.current++}`;
       setPlayerHitBursts((prev) => [
         ...prev,
@@ -5433,10 +5441,6 @@ export function CoopGameScene({
                 );
                 shadeDamageVariant.current =
                   shadeDamageVariant.current === 3 ? 1 : ((shadeDamageVariant.current + 1) as 1 | 2 | 3);
-              }
-
-              if (data.damageType === 'warlock_chaos_orb' && damageApplied) {
-                window.audioSystem?.playWarlockVoidboltSound(transform.position);
               }
             }
           }
@@ -7516,6 +7520,27 @@ export function CoopGameScene({
 
     socket.on('warlock-attack-telegraph', handleWarlockAttackTelegraph);
 
+    const handleWarlockOrbImpact = (data: {
+      warlockId: string;
+      position: { x: number; y: number; z: number };
+      hit: boolean;
+    }) => {
+      const pos = new Vector3(data.position.x, data.position.y, data.position.z);
+      setWarlockVoidBoltExplosions((prev) => [
+        ...prev,
+        {
+          id: `void-bolt-impact-${data.warlockId}-${Date.now()}-${Math.random()}`,
+          position: pos,
+        },
+      ]);
+      window.audioSystem?.playWarlockVoidboltSound(
+        pos,
+        data.hit ? undefined : { volume: 0.45 },
+      );
+    };
+
+    socket.on('warlock-orb-impact', handleWarlockOrbImpact);
+
     // Blink animation duration — must match BLINK_ANIMATION_DURATION in WarlockRenderer.tsx
     const WARLOCK_BLINK_ANIM_MS = 800;
 
@@ -7840,6 +7865,7 @@ export function CoopGameScene({
       socket.off('knight-death-vortex', handleKnightDeathVortex);
       socket.off('shade-attack-telegraph', handleShadeAttackTelegraph);
       socket.off('warlock-attack-telegraph', handleWarlockAttackTelegraph);
+      socket.off('warlock-orb-impact', handleWarlockOrbImpact);
       socket.off('warlock-flame-strike', handleWarlockFlameStrike);
       socket.off('boss2-flame-pillar', handleBoss2FlamePillar);
       socket.off('ghoul-attack', handleGhoulAttack);
@@ -10815,6 +10841,15 @@ export function CoopGameScene({
           key={strike.id}
           position={strike.position}
           onComplete={() => setWarlockFlameStrikes(prev => prev.filter(s => s.id !== strike.id))}
+        />
+      ))}
+
+      {/* Warlock void-bolt impact on local player */}
+      {warlockVoidBoltExplosions.map((burst) => (
+        <WarlockVoidBoltExplosion
+          key={burst.id}
+          position={burst.position}
+          onComplete={() => setWarlockVoidBoltExplosions((prev) => prev.filter((x) => x.id !== burst.id))}
         />
       ))}
 

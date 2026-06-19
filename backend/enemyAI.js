@@ -334,7 +334,8 @@ const WARLOCK_METEOR_OFFSET_MAX = 6;
 /** Chaos orb — aligned with WarlockRenderer / WarlockProjectile.tsx */
 const WARLOCK_ORB_CHARGE_MS = 1400;
 const WARLOCK_ORB_SPEED = 9;
-const WARLOCK_ORB_HIT_RADIUS = 1.6;
+const WARLOCK_ORB_TURN_RATE = 1.8; // rad/s homing — WarlockProjectile.tsx TURN_RATE
+const WARLOCK_ORB_HIT_RADIUS = 1.05; // XZ — match ShadeDaggerProjectile / ViperArrowProjectile
 const WARLOCK_ORB_DAMAGE = 42;
 const WARLOCK_FLAME_DAMAGE = 42;
 const WARLOCK_FLAME_RADIUS = 2.875;
@@ -424,6 +425,8 @@ class EnemyAI {
     this.warlockBlinkLaunchSharedCooldownUntil = new Map(); // enemyId -> timestamp
     this.warlockMeteorCooldown = new Map(); // enemyId -> lastMeteorTime (purple warlock meteor swarm)
     this.warlockLaunchMoveLockUntil = new Map(); // enemyId -> timestamp: purple warlock cannot walk until
+    /** @type {Map<string, Set<ReturnType<typeof setInterval>>>} */
+    this.warlockOrbIntervals = new Map(); // warlockId -> in-flight chaos orb tick loops
 
     // Shade blink+attack cooldown tracking (4-second cooldown)
     this.shadeBlinkCooldown = new Map(); // enemyId -> lastBlinkTime
@@ -590,6 +593,8 @@ class EnemyAI {
     this.warlockBlinkLaunchSharedCooldownUntil.clear();
     this.warlockMeteorCooldown.clear();
     this.warlockLaunchMoveLockUntil.clear();
+    this.warlockOrbIntervals.forEach((set) => set.forEach((iv) => clearInterval(iv)));
+    this.warlockOrbIntervals.clear();
     this.shadeBlinkCooldown.clear();
     this.viperAttackCooldown.clear();
     this.weaverHealCooldown.clear();
@@ -2250,6 +2255,198 @@ class EnemyAI {
     }, WARLOCK_BLINK_FLAME_DELAY_MS);
   }
 
+  clearWarlockOrbIntervals(warlockId) {
+    const set = this.warlockOrbIntervals.get(warlockId);
+    if (set) {
+      set.forEach((iv) => clearInterval(iv));
+    }
+    this.warlockOrbIntervals.delete(warlockId);
+  }
+
+  addWarlockOrbInterval(warlockId, intervalId) {
+    let set = this.warlockOrbIntervals.get(warlockId);
+    if (!set) {
+      set = new Set();
+      this.warlockOrbIntervals.set(warlockId, set);
+    }
+    set.add(intervalId);
+  }
+
+  removeWarlockOrbInterval(warlockId, intervalId) {
+    const set = this.warlockOrbIntervals.get(warlockId);
+    if (set) {
+      set.delete(intervalId);
+      if (set.size === 0) this.warlockOrbIntervals.delete(warlockId);
+    }
+  }
+
+  warlockOrbGetTargetPos(targetId) {
+    const players = this.room?.getPlayers();
+    const target = players?.find((p) => p.id === targetId);
+    if (!target || target.health <= 0) return null;
+    return {
+      x: target.position.x,
+      y: target.position.y + 1.0,
+      z: target.position.z,
+    };
+  }
+
+  /** Orb state at charge-end launch — re-aims at live target (matches WarlockProjectile.tsx). */
+  createWarlockOrbState(start, targetId) {
+    const targetPos = this.warlockOrbGetTargetPos(targetId);
+    if (!targetPos) return null;
+
+    let dx = targetPos.x - start.x;
+    let dy = targetPos.y - start.y;
+    let dz = targetPos.z - start.z;
+    const dLen = Math.hypot(dx, dy, dz) || 1e-6;
+    dx /= dLen;
+    dy /= dLen;
+    dz /= dLen;
+
+    return {
+      px: start.x,
+      py: start.y,
+      pz: start.z,
+      dx,
+      dy,
+      dz,
+      elapsed: 0,
+      maxFlightSec: (dLen / WARLOCK_ORB_SPEED) * 1.5,
+      targetId,
+    };
+  }
+
+  /**
+   * Advance chaos orb one tick. Matches WarlockProjectile.tsx homing + XZ hit test.
+   * Returns { hit, impact, done }.
+   */
+  stepWarlockOrb(state, dt) {
+    const HIT_RADIUS_SQ = WARLOCK_ORB_HIT_RADIUS * WARLOCK_ORB_HIT_RADIUS;
+    const liveTarget = this.warlockOrbGetTargetPos(state.targetId);
+    if (!liveTarget) {
+      return {
+        hit: false,
+        impact: { x: state.px, y: state.py, z: state.pz },
+        done: true,
+      };
+    }
+
+    let toX = liveTarget.x - state.px;
+    let toY = liveTarget.y - state.py;
+    let toZ = liveTarget.z - state.pz;
+    const toLen = Math.hypot(toX, toY, toZ);
+    if (toLen > 0.5) {
+      toX /= toLen;
+      toY /= toLen;
+      toZ /= toLen;
+      const lerpT = Math.min(1, WARLOCK_ORB_TURN_RATE * dt);
+      state.dx += (toX - state.dx) * lerpT;
+      state.dy += (toY - state.dy) * lerpT;
+      state.dz += (toZ - state.dz) * lerpT;
+      const dLen = Math.hypot(state.dx, state.dy, state.dz) || 1e-6;
+      state.dx /= dLen;
+      state.dy /= dLen;
+      state.dz /= dLen;
+    }
+
+    state.px += state.dx * WARLOCK_ORB_SPEED * dt;
+    state.py += state.dy * WARLOCK_ORB_SPEED * dt;
+    state.pz += state.dz * WARLOCK_ORB_SPEED * dt;
+    state.elapsed += dt;
+
+    const players = this.room?.getPlayers();
+    if (players) {
+      for (const p of players) {
+        if (!p || p.health <= 0) continue;
+        const pdx = p.position.x - state.px;
+        const pdz = p.position.z - state.pz;
+        if (pdx * pdx + pdz * pdz <= HIT_RADIUS_SQ) {
+          return {
+            hit: true,
+            impact: { x: state.px, y: state.py, z: state.pz },
+            done: true,
+          };
+        }
+      }
+    }
+
+    return {
+      hit: false,
+      impact: { x: state.px, y: state.py, z: state.pz },
+      done: state.elapsed >= state.maxFlightSec,
+    };
+  }
+
+  emitWarlockOrbImpact(warlockId, position, hit) {
+    if (!this.io) return;
+    this.io.to(this.roomId).emit('warlock-orb-impact', {
+      warlockId,
+      position: {
+        x: position.x,
+        y: position.y,
+        z: position.z,
+      },
+      hit: !!hit,
+      timestamp: Date.now(),
+    });
+  }
+
+  startWarlockOrbFlight(warlockId, start, targetId) {
+    const state = this.createWarlockOrbState(start, targetId);
+    if (!state) return;
+
+    const STEP_MS = 50;
+    const intervalId = setInterval(() => {
+      if (!this.room?.getGameStarted()) {
+        clearInterval(intervalId);
+        this.removeWarlockOrbInterval(warlockId, intervalId);
+        return;
+      }
+      const liveWarlock = this.room?.getEnemy(warlockId);
+      if (!liveWarlock || liveWarlock.isDying) {
+        clearInterval(intervalId);
+        this.removeWarlockOrbInterval(warlockId, intervalId);
+        return;
+      }
+
+      const remaining = state.maxFlightSec - state.elapsed;
+      const dt = Math.min(STEP_MS / 1000, remaining > 0 ? remaining : STEP_MS / 1000);
+      const { hit, impact, done } = this.stepWarlockOrb(state, dt);
+
+      if (hit && impact) {
+        clearInterval(intervalId);
+        this.removeWarlockOrbInterval(warlockId, intervalId);
+        this.room.damagePlayersInHorizontalRing(
+          { x: impact.x, z: impact.z },
+          WARLOCK_ORB_HIT_RADIUS,
+          WARLOCK_ORB_DAMAGE,
+          'warlock_chaos_orb',
+          { sourceEnemyId: warlockId },
+        );
+        this.room.tryDamageAlliedKnightInXZDisk(
+          { x: impact.x, z: impact.z },
+          WARLOCK_ORB_HIT_RADIUS,
+          WARLOCK_ORB_DAMAGE,
+          {
+            sourceEnemyId: warlockId,
+            damageType: 'warlock_chaos_orb',
+          },
+        );
+        this.emitWarlockOrbImpact(warlockId, impact, true);
+        return;
+      }
+
+      if (done && impact) {
+        clearInterval(intervalId);
+        this.removeWarlockOrbInterval(warlockId, intervalId);
+        this.emitWarlockOrbImpact(warlockId, impact, false);
+      }
+    }, STEP_MS);
+
+    this.addWarlockOrbInterval(warlockId, intervalId);
+  }
+
   warlockCastLaunch(warlock, targetPlayer) {
     if (this.io) {
       this.io.to(this.roomId).emit('warlock-attack-telegraph', {
@@ -2274,12 +2471,6 @@ class EnemyAI {
     const sx = warlock.position.x;
     const sy = warlock.position.y + 2.0;
     const sz = warlock.position.z;
-    const tx = targetPlayer.position.x;
-    const ty = targetPlayer.position.y + 1.0;
-    const tz = targetPlayer.position.z;
-    const flyDist = Math.hypot(tx - sx, ty - sy, tz - sz);
-    const flyMs = flyDist > 1e-6 ? (flyDist / WARLOCK_ORB_SPEED) * 1000 : 0;
-    const delayMs = WARLOCK_ORB_CHARGE_MS + flyMs;
     const wid = warlock.id;
     const targetId = targetPlayer.id;
     setTimeout(() => {
@@ -2287,24 +2478,8 @@ class EnemyAI {
       const w = this.room?.getEnemy(wid);
       if (!w || w.isDying) return;
 
-      const currentPlayers = this.room?.getPlayers();
-      const target = currentPlayers?.find((p) => p.id === targetId);
-      if (!target || target.health <= 0) return;
-
-      const hitCenter = { x: target.position.x, z: target.position.z };
-
-      this.room.damagePlayersInHorizontalRing(
-        hitCenter,
-        WARLOCK_ORB_HIT_RADIUS,
-        WARLOCK_ORB_DAMAGE,
-        'warlock_chaos_orb',
-        { sourceEnemyId: wid },
-      );
-      this.room.tryDamageAlliedKnightInXZDisk(hitCenter, WARLOCK_ORB_HIT_RADIUS, WARLOCK_ORB_DAMAGE, {
-        sourceEnemyId: wid,
-        damageType: 'warlock_chaos_orb',
-      });
-    }, delayMs);
+      this.startWarlockOrbFlight(wid, { x: sx, y: sy, z: sz }, targetId);
+    }, WARLOCK_ORB_CHARGE_MS);
   }
 
   /** Purple warlock: 3 meteors near the aggro target; client uses boss-meteor-cast + Meteor. */
@@ -7212,6 +7387,7 @@ class EnemyAI {
     this.warlockBlinkLaunchSharedCooldownUntil.delete(enemyId);
     this.warlockMeteorCooldown.delete(enemyId);
     this.warlockLaunchMoveLockUntil.delete(enemyId);
+    this.clearWarlockOrbIntervals(enemyId);
     this.shadeBlinkCooldown.delete(enemyId);
     this.viperAttackCooldown.delete(enemyId);
     this.weaverHealCooldown.delete(enemyId);

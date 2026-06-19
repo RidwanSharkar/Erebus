@@ -68,7 +68,7 @@ export default function TitanSoulEffect({ soulType }: TitanSoulEffectProps) {
   });
 
   return (
-    <group ref={groupRef} position={[0, 0, 0.38]}>
+    <group ref={groupRef} position={[0, 0.025, 0.38]}>
       {/* Stronger point light — wider radius to illuminate the large titan body */}
       <EnemyDynamicLight
         color={colors.light}

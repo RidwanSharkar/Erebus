@@ -2,8 +2,9 @@
 
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
+import { Vector3, Group, Mesh, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import ViperArrowTrail from './ViperArrowTrail';
 
 interface ViperArrowProjectileProps {
   startPosition: Vector3;
@@ -28,6 +29,7 @@ export default function ViperArrowProjectile({
   onComplete,
 }: ViperArrowProjectileProps) {
   const groupRef = useRef<Group>(null);
+  const arrowTipRef = useRef<Mesh>(null);
   const timeRef  = useRef(0);
   const doneRef  = useRef(false);
 
@@ -86,20 +88,6 @@ export default function ViperArrowProjectile({
     blending: AdditiveBlending, depthWrite: false,
   }), []);
 
-  // Mid trail — the bulk of the visible wake behind the arrow.
-  const trailMidMat = useMemo(() => new MeshBasicMaterial({
-    color: new Color('#44bb00'),
-    transparent: true, opacity: 0.4,
-    blending: AdditiveBlending, depthWrite: false,
-  }), []);
-
-  // Far trail — long faint smear that evokes explosive speed.
-  const trailFarMat = useMemo(() => new MeshBasicMaterial({
-    color: new Color('#115500'),
-    transparent: true, opacity: 0.18,
-    blending: AdditiveBlending, depthWrite: false,
-  }), []);
-
   useEffect(() => {
     if (!groupRef.current) return;
     groupRef.current.position.copy(startPosition);
@@ -136,8 +124,6 @@ export default function ViperArrowProjectile({
     glowMat.opacity     = 0.50 * fade;
     outerMat.opacity    = 0.25 * fade;
     streakMat.opacity   = 0.70 * fade * pulse2;
-    trailMidMat.opacity = 0.40 * fade;
-    trailFarMat.opacity = 0.18 * fade;
 
     // Collision check.
     const playerPos = getPlayerPosition();
@@ -156,11 +142,12 @@ export default function ViperArrowProjectile({
   });
 
   return (
+    <>
     <group ref={groupRef}>
 
       {/* ── Arrowhead ─────────────────────────────────────────────────────── */}
       {/* White-hot tip cone — points forward along -Z (cone opens toward +Z) */}
-      <mesh material={coreMat} position={[0, 0, -0.3]} rotation={[Math.PI / 2, 0, 0]}>
+      <mesh ref={arrowTipRef} material={coreMat} position={[0, 0, -0.3]} rotation={[Math.PI / 2, 0, 0]}>
         <coneGeometry args={[0.065, 0.32, 6]} />
       </mesh>
 
@@ -224,17 +211,14 @@ export default function ViperArrowProjectile({
         <boxGeometry args={[0.018, 0.018, 1.2]} />
       </mesh>
 
-      {/* ── Trail layers ──────────────────────────────────────────────────── */}
-      {/* Medium wake — bright green smear directly behind shaft */}
-      <mesh material={trailMidMat} position={[0, 0, 1.2]}>
-        <boxGeometry args={[0.12, 0.12, 2.0]} />
-      </mesh>
-
-      {/* Far wake — very long faint smear for explosive speed feel */}
-      <mesh material={trailFarMat} position={[0, 0, 2.8]}>
-        <boxGeometry args={[0.07, 0.07, 4.0]} />
-      </mesh>
-
     </group>
+
+    <ViperArrowTrail
+      color="#ccff00"
+      size={0.2}
+      arrowHeadRef={arrowTipRef}
+      opacity={1}
+    />
+    </>
   );
 }

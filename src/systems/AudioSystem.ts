@@ -727,9 +727,9 @@ export class AudioSystem extends System {
     return this.playWeaponSound('warlock_immolate', position, { volume: 0.9 });
   }
 
-  // Play Warlock void-bolt hit sound — fires when the chaos orb hits the player
-  public playWarlockVoidboltSound(position: Vector3) {
-    return this.playWeaponSound('warlock_voidbolt', position, { volume: 0.9 });
+  // Play Warlock void-bolt hit sound — fires when the chaos orb impacts
+  public playWarlockVoidboltSound(position: Vector3, config?: SoundConfig) {
+    return this.playWeaponSound('warlock_voidbolt', position, { volume: 0.9, ...config });
   }
 
   // Play scythe mantra sound (totem summon)
