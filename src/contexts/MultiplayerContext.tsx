@@ -86,6 +86,8 @@ export interface EnemyDamageMeta {
   crossentropyPlague?: boolean;
   /** METEOR Crossentropy — server rolls meteor proc and schedules delayed AoE impact. */
   crossentropyMeteor?: boolean;
+  /** Cloudkill — bow LMB primary hit requests server-side poison arrow volley. */
+  cloudkill?: boolean;
   /** Staggering Strike (`wraith_strike`), Runeblade combo (`runeblade_combo`), Sabres (`sabre_left` / `sabre_right`), Staggering Smite (`smite` with `staggerToAdd`), Stagger Shot (`projectile` with `staggerToAdd`), TEMPEST Crossentropy (`crossentropy` with `staggerToAdd`): server accumulates stagger. */
   staggerToAdd?: number;
   /** Wyvern Bite — Barrage hit applies Concentrated Venom stack on server. */
@@ -157,6 +159,13 @@ export interface Enemy {
   zombieVariant?: 'standard' | 'juggernaut';
   /** Staggering Strike buildup (0–100), server-authoritative. */
   staggerBuildup?: number;
+  /** Boss3 Weaver Nexus summoned ghoul — larger client model. */
+  visualScale?: number;
+  /** Per-ghoul leap landing damage override (Boss3 summons deal 2×). */
+  leapDamage?: number;
+  /** Titan Bladestorm — active at ≤40% HP until death. */
+  bladestormActive?: boolean;
+  bladestormStartTime?: number;
 }
 
 export interface ConfirmedEnemyDamageEvent {
@@ -170,6 +179,7 @@ export interface ConfirmedEnemyDamageEvent {
   timestamp: number;
   damageType?: string;
   crossentropyMeteorDamage?: boolean;
+  cloudkillDamage?: boolean;
   position?: { x: number; y: number; z: number };
 }
 
@@ -917,6 +927,25 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
+    addEventHandler('titan-bladestorm-start', (data: {
+      titanId: string;
+      startTime: number;
+      soulType?: string;
+    }) => {
+      setEnemies(prev => {
+        const updated = new Map(prev);
+        const enemy = updated.get(data.titanId);
+        if (enemy) {
+          updated.set(data.titanId, {
+            ...enemy,
+            bladestormActive: true,
+            bladestormStartTime: data.startTime,
+          });
+        }
+        return updated;
+      });
+    });
+
     addEventHandler('reaper-crossentropy-stack', (data: { stacks: number }) => {
       (window as any).controlSystemRef?.current?.setReaperCrossentropyStack(data.stacks ?? 0);
     });
@@ -970,7 +999,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           data.damageType === 'venom' ||
           data.damageType === 'wyvern_talons_detonate' ||
           data.damageType === 'player_zombie' ||
-          (data.damageType === 'crossentropy' && data.crossentropyMeteorDamage === true)) &&
+          (data.damageType === 'crossentropy' && data.crossentropyMeteorDamage === true) ||
+          (data.damageType === 'cloudkill' && data.cloudkillDamage === true)) &&
         typeof data.damage === 'number' &&
         data.damage > 0 &&
         data.position
@@ -983,7 +1013,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
               ? 'venom'
               : data.damageType === 'crossentropy'
                 ? 'crossentropy'
-                : data.damageType === 'player_zombie'
+                : data.damageType === 'cloudkill'
+                  ? 'cloudkill'
+                  : data.damageType === 'player_zombie'
                   ? 'player_zombie'
                   : 'ignite';
           mgr.addDamageNumber(data.damage, false, pos, dt);
@@ -1008,6 +1040,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           timestamp: typeof data.timestamp === 'number' ? data.timestamp : Date.now(),
           damageType: typeof data.damageType === 'string' ? data.damageType : undefined,
           crossentropyMeteorDamage: data.crossentropyMeteorDamage === true,
+          cloudkillDamage: data.cloudkillDamage === true,
           position: data.position,
         });
       }
@@ -1831,6 +1864,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.reaperCrossentropy ? { reaperCrossentropy: true } : {}),
         ...(meta?.crossentropyPlague ? { crossentropyPlague: true } : {}),
         ...(meta?.crossentropyMeteor ? { crossentropyMeteor: true } : {}),
+        ...(meta?.cloudkill ? { cloudkill: true } : {}),
         ...(meta?.staggerToAdd != null && meta.staggerToAdd > 0 ? { staggerToAdd: meta.staggerToAdd } : {}),
         ...(meta?.wyvernBiteVenom ? { wyvernBiteVenom: true } : {}),
         ...(meta?.wyvernStingVenomZombie ? { wyvernStingVenomZombie: true } : {}),

@@ -8,7 +8,7 @@ import {
   Euler,
   Quaternion,
 } from '@/utils/three-exports';
-import { MAIN_MAP_HALF_Z, isInsideHexArenaXZ } from '@/utils/mapConstants';
+import { MAIN_ARENA_HEX_RADIUS, MAIN_MAP_HALF_Z } from '@/utils/mapConstants';
 import type { RoomBorderTheme } from './SimpleBorderEffects';
 
 const THEME_ID: Record<RoomBorderTheme, number> = {
@@ -185,7 +185,7 @@ const WEST_ALCOVE = makeGrid(-5.55, 5.0, 2, 4, 1.8, 2.8, 1.7, 2.7, 0.06, 0.10);
 // Merge everything — one InstancedMesh, one draw call
 // ---------------------------------------------------------------------------
 
-// Slabs whose corners protrude outside the playable hex are culled.
+// Slabs whose corners protrude outside the playable disc are culled.
 const isSlabInBounds = (slab: SlabDef): boolean => {
   const [cx, , cz] = slab.position;
   const hw = slab.scale[0] / 2;
@@ -196,7 +196,8 @@ const isSlabInBounds = (slab: SlabDef): boolean => {
     [cx - hw, cz + hd],
     [cx - hw, cz - hd],
   ];
-  return corners.every(([x, z]) => isInsideHexArenaXZ(x, z, undefined, 0.4));
+  const maxR = MAIN_ARENA_HEX_RADIUS - 0.4;
+  return corners.every(([x, z]) => Math.hypot(x, z) <= maxR);
 };
 
 const ALL_SLABS: SlabDef[] = [

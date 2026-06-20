@@ -4,6 +4,10 @@ import { useFrame } from '@react-three/fiber';
 import { ICEBEAM_MAX_HOLD_SEC } from '@/utils/icebeamConstants';
 import { createBeamCylinderAdditiveMaterial } from '@/utils/beamCylinderAdditiveMaterial';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import {
+  getEntropicBeamColors,
+  type EntropicColorVariant,
+} from '@/utils/entropicColorThemes';
 
 const _scratchA = new Color();
 const _scratchB = new Color();
@@ -19,6 +23,8 @@ interface IcebeamProps {
   isActive: boolean;
   startTime: number;
   intensity?: number;
+  /** Fixed entropic boon palette when Icebeam class boon + colored room boon are active. */
+  colorVariant?: EntropicColorVariant;
 }
 
 function updateIceCylinderUniforms(
@@ -69,6 +75,7 @@ export default function Icebeam({
   isActive,
   startTime,
   intensity: externalIntensity = 1,
+  colorVariant,
 }: IcebeamProps) {
   const beamRef = useRef<Group>(null);
   const sourceGroupRef = useRef<Group>(null);
@@ -163,6 +170,10 @@ export default function Icebeam({
   };
 
   const getBeamColors = (activeTime: number) => {
+    if (colorVariant) {
+      return getEntropicBeamColors(colorVariant);
+    }
+
     const cycleTime = activeTime % 4;
     const cycleProgress = cycleTime / 4;
 

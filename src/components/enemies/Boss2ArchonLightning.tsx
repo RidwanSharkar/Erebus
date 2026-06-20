@@ -12,10 +12,13 @@ export interface Boss2ArchonBeam {
   targetPosition: Vector3;
 }
 
+export type ArchonLightningTheme = 'boss2-red' | 'warlock-purple';
+
 interface Boss2ArchonLightningProps {
   beams: Boss2ArchonBeam[];
   strikeAt: number;
   halfWidth: number;
+  theme?: ArchonLightningTheme;
   onComplete: () => void;
 }
 
@@ -28,15 +31,40 @@ const ARCHON_RED_PALETTE: DirectionalProcLightningPalette = {
   light: '#ff0000',
 };
 
+const ARCHON_PURPLE_PALETTE: DirectionalProcLightningPalette = {
+  core: '#f0e6ff',
+  glow: '#aa33ff',
+  halo: '#cc44ff',
+  light: '#8811cc',
+};
+
+const THEME_CONFIG: Record<
+  ArchonLightningTheme,
+  { palette: DirectionalProcLightningPalette; telegraphVariant: 'archon' | 'archonPurple'; lineColor: string }
+> = {
+  'boss2-red': {
+    palette: ARCHON_RED_PALETTE,
+    telegraphVariant: 'archon',
+    lineColor: '#ff3333',
+  },
+  'warlock-purple': {
+    palette: ARCHON_PURPLE_PALETTE,
+    telegraphVariant: 'archonPurple',
+    lineColor: '#aa33ff',
+  },
+};
+
 export default function Boss2ArchonLightning({
   beams,
   strikeAt,
   halfWidth,
+  theme = 'boss2-red',
   onComplete,
 }: Boss2ArchonLightningProps) {
   const [phase, setPhase] = useState<'warning' | 'strike'>('warning');
   const completedRef = useRef(false);
   const finishedBoltsRef = useRef(0);
+  const { palette, telegraphVariant, lineColor } = THEME_CONFIG[theme];
 
   const groundPairs = useMemo(
     () =>
@@ -72,8 +100,8 @@ export default function Boss2ArchonLightning({
               start={groundStart}
               end={groundEnd}
               lineWidth={halfWidth * 2}
-              color="#ff3333"
-              variant="archon"
+              color={lineColor}
+              variant={telegraphVariant}
               endAt={strikeAt}
               startedAt={strikeAt - BOSS2_ARCHON_LIGHTNING_WINDUP_MS}
               showStartCap={showStartCap}
@@ -87,7 +115,7 @@ export default function Boss2ArchonLightning({
             key={`strike-${i}`}
             from={beam.startPosition}
             to={beam.targetPosition}
-            palette={ARCHON_RED_PALETTE}
+            palette={palette}
             durationMs={BOLT_DURATION_MS}
             onComplete={handleBoltComplete}
           />

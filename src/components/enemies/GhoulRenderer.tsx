@@ -17,6 +17,7 @@ interface GhoulRendererProps {
   maxHealth: number;
   isDying?: boolean;
   staggerBuildup?: number;
+  visualScale?: number;
 }
 
 const ATTACK_DURATION  = 1200; // ms — matches ghoul attack clip; backend `meleeLockUntil` uses the same window
@@ -33,6 +34,7 @@ export default function GhoulRenderer({
   maxHealth,
   isDying = false,
   staggerBuildup = 0,
+  visualScale = 1,
 }: GhoulRendererProps) {
   const { socket } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
@@ -197,10 +199,11 @@ export default function GhoulRenderer({
         isImpacting={isImpacting}
         impactPlayKey={impactPlayKey}
         onImpactFinished={handleImpactFinished}
+        scaleMultiplier={visualScale}
       />
 
 
-      <Billboard position={[0, 2.8, 0]} follow lockX={false} lockY={false} lockZ={false}>
+      <Billboard position={[0, 2.8 * visualScale, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && !isSummoning && (
           <>
             <mesh position={[0, 0, 0]}>

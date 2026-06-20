@@ -1,59 +1,100 @@
 'use client';
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, MeshStandardMaterial } from 'three';
+import type { TectonicSpikeTheme } from './BossTectonicSpikeTelegraph';
+import {
+  SPIKE_HEIGHT,
+  createTectonicSpikeGeometry,
+  createSpikeRiseMotion,
+  hashSpikeSeed,
+} from '@/utils/tectonicSpikeGeometry';
 
 const RISE_MS = 520;
 const HOLD_MS = 1600;
 const TOTAL_MS = RISE_MS + HOLD_MS;
 
-/** Match telegraph / hazard read (~server `BOSS_TECTONIC_SHARD_RADIUS` 2.75). */
-const SPIKE_RADIUS = 0.65;
-const CYLINDER_HEIGHT = 2;
-const CONE_HEIGHT = 4;
-const RADIAL_SEGS = 16;
-
 /**
- * Tectonic shard: cylinder shaft + cone tip, rising from the ground.
+ * Ridged mountain spike erupting from the ground with lateral wobble.
  */
 export default function BossTectonicSpike({
   worldPosition,
+  theme = 'earth',
+  variantSeed,
   onComplete,
 }: {
   worldPosition: Vector3;
+  theme?: TectonicSpikeTheme;
+  /** Stable key for per-spike sculpt + rise motion variation. */
+  variantSeed?: string;
   onComplete: () => void;
 }) {
   const root = useRef<Group>(null);
   const riseGroup = useRef<Group>(null);
   const t0 = useRef(performance.now());
   const done = useRef(false);
-  const matRef = useRef(
-    new MeshStandardMaterial({ color: '#4a3d2a', roughness: 0.9, metalness: 0.1 }),
+
+  const seedKey = variantSeed ?? `${worldPosition.x},${worldPosition.z}`;
+  const numericSeed = useMemo(() => hashSpikeSeed(seedKey), [seedKey]);
+
+  const geometry = useMemo(
+    () => createTectonicSpikeGeometry(numericSeed, theme),
+    [numericSeed, theme],
   );
 
-  useEffect(() => {
-    const m = matRef.current;
-    return () => m.dispose();
-  }, []);
+  const material = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        vertexColors: true,
+        flatShading: true,
+        roughness: 0.9,
+        metalness: 0.1,
+      }),
+    [],
+  );
 
-  const totalLen = CYLINDER_HEIGHT + CONE_HEIGHT;
-  /** Start mostly underground, rise so full column emerges. */
-  const riseDepth = totalLen * 0.92;
+  const riseMotion = useMemo(() => createSpikeRiseMotion(numericSeed), [numericSeed]);
+
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+      material.dispose();
+    };
+  }, [geometry, material]);
+
+  const riseDepth = SPIKE_HEIGHT * 0.92;
 
   useFrame(() => {
     if (done.current) return;
     const e = performance.now() - t0.current;
-    let yOff = 0;
-    if (e < RISE_MS) {
-      const t = e / RISE_MS;
-      yOff = -riseDepth * (1 - t * t);
-    } else {
-      yOff = 0;
-    }
+
     if (riseGroup.current) {
-      riseGroup.current.position.y = yOff;
+      if (e < RISE_MS) {
+        const t = e / RISE_MS;
+        const ease = 1 - (1 - t) * (1 - t);
+        const yOff = -riseDepth * (1 - ease);
+        const wobbleDecay = 1 - t;
+        const { leanDir, leanAmt, wobbleFreqX, wobbleFreqZ, wobbleAmp, tiltX, tiltZ } = riseMotion;
+        const xOff =
+          Math.cos(leanDir) * leanAmt * ease +
+          Math.sin(t * wobbleFreqX) * wobbleAmp * wobbleDecay;
+        const zOff =
+          Math.sin(leanDir) * leanAmt * ease +
+          Math.cos(t * wobbleFreqZ) * wobbleAmp * wobbleDecay;
+        riseGroup.current.position.set(xOff, yOff, zOff);
+        riseGroup.current.rotation.set(tiltX * wobbleDecay, 0, tiltZ * wobbleDecay);
+      } else {
+        const { leanDir, leanAmt } = riseMotion;
+        riseGroup.current.position.set(
+          Math.cos(leanDir) * leanAmt,
+          0,
+          Math.sin(leanDir) * leanAmt,
+        );
+        riseGroup.current.rotation.set(0, 0, 0);
+      }
     }
+
     if (e >= TOTAL_MS) {
       done.current = true;
       onComplete();
@@ -63,20 +104,7 @@ export default function BossTectonicSpike({
   return (
     <group ref={root} position={[worldPosition.x, 0, worldPosition.z]}>
       <group ref={riseGroup}>
-        <mesh
-          castShadow
-          position={[0, CYLINDER_HEIGHT / 2, 0]}
-          material={matRef.current}
-        >
-          <cylinderGeometry args={[SPIKE_RADIUS, SPIKE_RADIUS, CYLINDER_HEIGHT, RADIAL_SEGS]} />
-        </mesh>
-        <mesh
-          castShadow
-          position={[0, CYLINDER_HEIGHT + CONE_HEIGHT / 2, 0]}
-          material={matRef.current}
-        >
-          <coneGeometry args={[SPIKE_RADIUS, CONE_HEIGHT, RADIAL_SEGS]} />
-        </mesh>
+        <mesh castShadow geometry={geometry} material={material} />
       </group>
     </group>
   );

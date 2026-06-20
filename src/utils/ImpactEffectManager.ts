@@ -7,6 +7,8 @@ export interface ImpactEffectEvent {
   /** Normalized projectile velocity direction at point of impact. */
   direction: Vector3;
   timestamp: number;
+  /** Entropic bolt color variant for themed explosion VFX. */
+  colorVariant?: string;
 }
 
 export class ImpactEffectManager {
@@ -17,6 +19,7 @@ export class ImpactEffectManager {
     type: ImpactEffectEvent['type'],
     position: Vector3,
     direction: Vector3,
+    colorVariant?: string,
   ): void {
     this.impacts.push({
       id: `impact_${this.nextId++}`,
@@ -24,6 +27,7 @@ export class ImpactEffectManager {
       position: position.clone(),
       direction: direction.clone(),
       timestamp: Date.now(),
+      ...(colorVariant ? { colorVariant } : {}),
     });
   }
 

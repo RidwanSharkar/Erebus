@@ -68,7 +68,7 @@ export default function TitanSoulEffect({ soulType }: TitanSoulEffectProps) {
   });
 
   return (
-    <group ref={groupRef} position={[0, 0.025, 0.38]}>
+    <group ref={groupRef} position={[0, -0.025, 0.38]}>
       {/* Stronger point light — wider radius to illuminate the large titan body */}
       <EnemyDynamicLight
         color={colors.light}
@@ -78,7 +78,7 @@ export default function TitanSoulEffect({ soulType }: TitanSoulEffectProps) {
       />
 
       {/* Core orb — larger than the knight's 0.18 */}
-      <mesh ref={coreRef}>
+      <mesh ref={coreRef} position={[0, -0.45, 0]}>
         <sphereGeometry args={[0.55, 14, 14]} />
         <meshBasicMaterial color={colors.core} toneMapped={false} />
       </mesh>

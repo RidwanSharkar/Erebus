@@ -1,51 +1,33 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   Vector3,
   Group,
-  Mesh,
   Color,
   Quaternion,
+  AdditiveBlending,
+  DoubleSide,
 } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import EntropicBoltTrail, { ENTROPIC_TRAIL_FADE_OUT_DURATION } from './EntropicBoltTrail';
+import { getEntropicColorTheme } from '@/utils/entropicColorThemes';
 
 interface EntropicBoltProps {
   id: number;
   position: Vector3;
   direction: Vector3;
-  onImpact?: (position?: Vector3) => void;
-  checkCollisions?: (boltId: number, position: Vector3) => boolean;
   isCryoflame?: boolean;
   colorVariant?: string;
-  curveDirection?: 'left' | 'right';
   /** When true (default), position/direction follow authoritative ECS updates each frame. */
   ecsDriven?: boolean;
   /** R3F clock time when ECS despawn trail fade began; visual-only. */
   trailFadeOutStartElapsed?: number;
 }
 
-type BoltColorTheme = {
-  primary: string;
-  secondary: string;
-  light: string;
-};
-
-function getBoltColorTheme(colorVariant: string | undefined, isCryoflame: boolean): BoltColorTheme {
-  if (isCryoflame) return { primary: '#1e40af', secondary: '#3b82f6', light: '#60a5fa' };
-  switch (colorVariant) {
-    case 'arctic':
-      return { primary: '#0c4a6e', secondary: '#0284c7', light: '#7dd3fc' };
-    case 'blue':   return { primary: '#3b82f6', secondary: '#93c5fd', light: '#93c5fd' };
-    case 'red':    return { primary: '#ef4444', secondary: '#fca5a5', light: '#fecaca' };
-    case 'green':  return { primary: '#22c55e', secondary: '#86efac', light: '#bbf7d0' };
-    case 'purple':
-    default:       return { primary: '#9333ea', secondary: '#c084fc', light: '#e9d5ff' };
-  }
-}
-
 const AXIS_Y = new Vector3(0, 1, 0);
 const FALLBACK_UP = new Vector3(0, 0, 1);
+const ORBIT_SPEED = 8;
+const ORBIT_SHARD_ANGLES = [0, Math.PI * 2 / 3, Math.PI * 4 / 3, Math.PI] as const;
 const _dir = new Vector3();
 const _quat = new Quaternion();
 const _flightDir = new Vector3();
@@ -62,41 +44,31 @@ function alignBoltToDirection(group: Group | null, direction: Vector3) {
 }
 
 export default function EntropicBolt({
-  id,
   position,
   direction,
-  onImpact,
-  checkCollisions,
   isCryoflame = false,
   colorVariant,
-  curveDirection: _curveDirection,
   ecsDriven = true,
   trailFadeOutStartElapsed,
 }: EntropicBoltProps) {
   const boltRef = useRef<Group>(null);
   const orientRef = useRef<Group>(null);
+  const orbitRef = useRef<Group>(null);
+  const coreRef = useRef<Group>(null);
   const lastPosition = useRef(position.clone());
   const flightDirectionRef = useRef(_flightDir.copy(direction));
-  const collisionFadeStartRef = useRef<number | null>(null);
-  const [collisionTrailFadeStart, setCollisionTrailFadeStart] = useState<number | undefined>(undefined);
-  const [collisionFadeDone, setCollisionFadeDone] = useState(false);
-  const collisionFadeNotifiedRef = useRef(false);
+  const timeRef = useRef(0);
 
-  const theme = getBoltColorTheme(colorVariant, isCryoflame);
+  const theme = getEntropicColorTheme(colorVariant, isCryoflame);
   const trailColor = useMemo(() => new Color(theme.primary), [theme.primary]);
+  const primaryColor = useMemo(() => new Color(theme.primary), [theme.primary]);
+  const secondaryColor = useMemo(() => new Color(theme.secondary), [theme.secondary]);
+  const lightColor = useMemo(() => new Color(theme.light), [theme.light]);
 
-  // Pooled point light follows the bolt body (replaces the per-bolt <pointLight>).
   const boltLight = useDynamicLight({ color: theme.light, distance: 7, decay: 2, priority: 2 });
 
-  const trailFadeStart =
-    trailFadeOutStartElapsed !== undefined
-      ? trailFadeOutStartElapsed
-      : collisionFadeStartRef.current ?? collisionTrailFadeStart;
-  const isEcsTrailFade = trailFadeOutStartElapsed !== undefined;
-  const hideBoltBody =
-    trailFadeOutStartElapsed !== undefined ||
-    collisionFadeStartRef.current != null ||
-    collisionTrailFadeStart !== undefined;
+  const isTrailFading = trailFadeOutStartElapsed !== undefined;
+  const hideBoltBody = isTrailFading;
 
   useEffect(() => {
     if (boltRef.current) {
@@ -105,27 +77,31 @@ export default function EntropicBolt({
     }
   }, [position]);
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     if (!boltRef.current) return;
 
-    if (
-      trailFadeStart !== undefined &&
-      trailFadeStart !== null &&
-      !isEcsTrailFade &&
-      !collisionFadeNotifiedRef.current &&
-      state.clock.elapsedTime - trailFadeStart >= ENTROPIC_TRAIL_FADE_OUT_DURATION
-    ) {
-      collisionFadeNotifiedRef.current = true;
-      setCollisionFadeDone(true);
+    if (isTrailFading) {
+      const fadeElapsed = state.clock.elapsedTime - trailFadeOutStartElapsed!;
+      if (fadeElapsed >= ENTROPIC_TRAIL_FADE_OUT_DURATION) {
+        boltLight.current?.setIntensity(0);
+        return;
+      }
     }
 
-    if (hideBoltBody || collisionFadeDone) {
+    if (hideBoltBody) {
       boltLight.current?.setIntensity(0);
       return;
     }
 
-    // Drive the pooled light at the bolt body's world position (matches the body's
-    // [0, 0.15, 0] local offset). Body group sits at `position` in world space.
+    timeRef.current += delta;
+    const pulse = 1 + Math.sin(timeRef.current * 14) * 0.06;
+    if (coreRef.current) {
+      coreRef.current.scale.setScalar(pulse);
+    }
+    if (orbitRef.current) {
+      orbitRef.current.rotation.y += delta * ORBIT_SPEED;
+    }
+
     boltLight.current?.setPosition(position.x, position.y + 0.15, position.z);
     boltLight.current?.setIntensity(5.5);
 
@@ -136,9 +112,9 @@ export default function EntropicBolt({
       if (direction.lengthSq() > 1e-8) {
         lastPosition.current.copy(position);
       } else {
-        const delta = position.clone().sub(lastPosition.current);
-        if (delta.lengthSq() > 1e-8) {
-          flightDirectionRef.current.copy(delta.normalize());
+        const deltaPos = position.clone().sub(lastPosition.current);
+        if (deltaPos.lengthSq() > 1e-8) {
+          flightDirectionRef.current.copy(deltaPos.normalize());
         }
         lastPosition.current.copy(position);
       }
@@ -148,10 +124,6 @@ export default function EntropicBolt({
       }
     }
   });
-
-  if (!isEcsTrailFade && collisionFadeDone) {
-    return null;
-  }
 
   return (
     <group>
@@ -163,13 +135,116 @@ export default function EntropicBolt({
         opacity={1}
         isCryoflame={isCryoflame}
         flightDirectionRef={flightDirectionRef}
-        trailFadeOutStartElapsed={trailFadeStart ?? null}
+        trailFadeOutStartElapsed={trailFadeOutStartElapsed ?? null}
         trailFadeOutDuration={ENTROPIC_TRAIL_FADE_OUT_DURATION}
       />
 
       <group ref={boltRef} position={position.toArray()}>
         {!hideBoltBody ? (
-          <group ref={orientRef} />
+          <group ref={orientRef}>
+            <group ref={coreRef}>
+              {/* Jagged core bolt */}
+              <mesh position={[0, 0.18, 0]}>
+                <coneGeometry args={[0.042, 0.48, 5, 1, false]} />
+                <meshStandardMaterial
+                  color={primaryColor}
+                  emissive={secondaryColor}
+                  emissiveIntensity={2.6}
+                  transparent
+                  opacity={0.94}
+                  blending={AdditiveBlending}
+                  depthWrite={false}
+                />
+              </mesh>
+
+              {/* Fractured shaft shards */}
+              <mesh position={[0.028, 0.08, 0.012]} rotation={[0.15, 0.4, 0.25]}>
+                <boxGeometry args={[0.018, 0.14, 0.012]} />
+                <meshStandardMaterial
+                  color={secondaryColor}
+                  emissive={primaryColor}
+                  emissiveIntensity={1.8}
+                  transparent
+                  opacity={0.82}
+                  blending={AdditiveBlending}
+                  depthWrite={false}
+                />
+              </mesh>
+              <mesh position={[-0.022, 0.12, -0.01]} rotation={[-0.2, -0.35, 0.18]}>
+                <boxGeometry args={[0.014, 0.11, 0.01]} />
+                <meshStandardMaterial
+                  color={secondaryColor}
+                  emissive={primaryColor}
+                  emissiveIntensity={1.6}
+                  transparent
+                  opacity={0.78}
+                  blending={AdditiveBlending}
+                  depthWrite={false}
+                />
+              </mesh>
+              <mesh position={[0.01, 0.22, -0.024]} rotation={[0.35, 0.1, -0.3]}>
+                <coneGeometry args={[0.012, 0.1, 4, 1, false]} />
+                <meshStandardMaterial
+                  color={primaryColor}
+                  emissive={lightColor}
+                  emissiveIntensity={2.2}
+                  transparent
+                  opacity={0.75}
+                  blending={AdditiveBlending}
+                  depthWrite={false}
+                />
+              </mesh>
+
+              {/* Outer corona shell */}
+              <mesh position={[0, 0.16, 0]}>
+                <cylinderGeometry args={[0.058, 0.038, 0.44, 6, 1, true]} />
+                <meshStandardMaterial
+                  color={secondaryColor}
+                  emissive={primaryColor}
+                  emissiveIntensity={1.1}
+                  transparent
+                  opacity={0.18}
+                  blending={AdditiveBlending}
+                  depthWrite={false}
+                  side={DoubleSide}
+                />
+              </mesh>
+            </group>
+
+            {/* Perpendicular orbiting shards */}
+            <group ref={orbitRef} position={[0, 0.14, 0]}>
+              {ORBIT_SHARD_ANGLES.map((angle, i) => (
+                <group key={i} rotation={[0, angle, 0]}>
+                  <mesh position={[0.11, 0, 0]} rotation={[0.5, 0.8, 0.3]}>
+                    <tetrahedronGeometry args={[0.032, 0]} />
+                    <meshStandardMaterial
+                      color={i % 2 === 0 ? secondaryColor : primaryColor}
+                      emissive={lightColor}
+                      emissiveIntensity={2.8}
+                      transparent
+                      opacity={0.88}
+                      blending={AdditiveBlending}
+                      depthWrite={false}
+                    />
+                  </mesh>
+                </group>
+              ))}
+            </group>
+
+            {/* Tip emissive glow */}
+            <mesh position={[0, 0.3, 0]}>
+              <sphereGeometry args={[0.046, 8, 8]} />
+              <meshStandardMaterial
+                color={lightColor}
+                emissive={lightColor}
+                emissiveIntensity={4.2}
+                transparent
+                opacity={0.92}
+                blending={AdditiveBlending}
+                depthWrite={false}
+              />
+            </mesh>
+          </group>
         ) : null}
       </group>
     </group>

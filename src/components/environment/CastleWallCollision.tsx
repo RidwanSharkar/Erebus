@@ -17,7 +17,7 @@ interface CastleWallCollisionProps {
 /**
  * Creates invisible ECS BOX-collider entities for every castle wall segment.
  * Static environment colliders used by projectiles; player movement uses the
- * hex boundary projection in co-op rooms.
+ * circular boundary projection in co-op rooms.
  */
 const CastleWallCollision: React.FC<CastleWallCollisionProps> = ({ world, enabled = true }) => {
   const entitiesRef = useRef<Entity[]>([]);

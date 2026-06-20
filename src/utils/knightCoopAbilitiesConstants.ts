@@ -4,7 +4,7 @@
  */
 export const KNIGHT_CAST_ABILITY_LOCK_MS = 2000; // meleeLockUntil + Cast clip
 export const KNIGHT_CAST_PROJECTILE_DELAY_MS = 1000; // release after cast start
-export const KNIGHT_FROST_PROJECTILE_TRAVEL_MS = 420; // lerp time (blue frost)
+export const KNIGHT_FROST_PROJECTILE_TRAVEL_MS = 550; // lerp time (blue frost)
 export const KNIGHT_DEATH_GRASP_PROJECTILE_TRAVEL_MS = 520; // lerp time (red / green death grasp)
 export const KNIGHT_CAST_PROJECTILE_TRAVEL_MS = KNIGHT_FROST_PROJECTILE_TRAVEL_MS; // legacy frost timing alias
 export const KNIGHT_PROJECTILE_HIT_RADIUS = 1.35; // server XZ dodge window

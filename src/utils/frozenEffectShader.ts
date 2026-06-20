@@ -130,6 +130,8 @@ const FROST_GROUND_FRAG = `
   }
 `;
 
+export const ICE_MOTE_COUNT = 7;
+
 export const ICE_MOTE_VERT = `
   attribute float aIndex;
   attribute vec3  aOrigin;

@@ -28,8 +28,10 @@ function handleEnemyEvents(socket, gameRooms) {
       frostTotemChill,
       glacialBiteChill,
       glacialTalons,
+      icebeamArcticChill,
       entanglementBarrage,
       rebukeRoom,
+      cloudkill,
     } = data;
 
     console.log(`⚔️ Received enemy-damage: room=${roomId}, enemy=${enemyId}, damage=${damage}, source=${sourcePlayerId || socket.id}`);
@@ -121,14 +123,23 @@ function handleEnemyEvents(socket, gameRooms) {
         hitMeta.staggerToAdd = staggerToAdd;
       }
       if (infestedFlourish) hitMeta.infestedFlourish = true;
-    } else if (damageType === 'projectile' && typeof staggerToAdd === 'number' && staggerToAdd > 0) {
-      hitMeta = { damageType: 'projectile', staggerToAdd };
+    } else if (damageType === 'projectile') {
+      hitMeta = { damageType: 'projectile' };
+      if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
+      if (cloudkill) hitMeta.cloudkill = true;
+    } else if (damageType === 'cloudkill') {
+      hitMeta = { damageType: 'cloudkill', cloudkillDamage: true };
     } else if (damageType === 'stagger_break') {
       hitMeta = { damageType: 'stagger_break' };
     } else if (damageType === 'blizzard') {
       hitMeta = { damageType: 'blizzard', arcticBlizzard: !!arcticBlizzard };
     } else if (damageType === 'breath_weapon') {
       hitMeta = { damageType: 'breath_weapon' };
+      if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
     } else if (damageType === 'entropic') {
       hitMeta = { damageType: 'entropic' };
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
@@ -144,6 +155,7 @@ function handleEnemyEvents(socket, gameRooms) {
       }
       if (data.icebeamWrathful) hitMeta.icebeamWrathful = true;
       if (data.icebeamInfested) hitMeta.icebeamInfested = true;
+      if (icebeamArcticChill) hitMeta.icebeamArcticChill = true;
     }
     room.damageEnemy(enemyId, damage, actualSourcePlayerId, player, hitMeta);
   });

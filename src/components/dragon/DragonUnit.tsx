@@ -42,7 +42,7 @@ interface DragonUnitProps {
   purchasedItems?: string[]; // Purchased cosmetic items
   /** Co-op / progression level — crest gains an outer layer at 2+. */
   playerLevel?: number;
-  /** STORED CHARGE talent — Runeblade Charge spin + damage. */
+  /** Cyclone Rush — Runeblade Charge spin + damage. */
   runebladeStoredCharge?: boolean;
   /** Local: Windfury proc + Flurry heal after Runeblade LMB swing resolves hits. */
   onRunebladePrimaryHits?: (enemiesHit: number) => void;

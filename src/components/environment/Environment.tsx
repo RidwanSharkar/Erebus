@@ -83,7 +83,7 @@ const Environment: React.FC<EnvironmentProps> = ({
   const visualRoomTheme: RoomBorderTheme =
     coopTerrainTheme ?? (roomArchetype === 'red' ? 'purple' : roomArchetype);
 
-  // Instanced mountain range that surrounds the playable hex (replaces castle
+  // Instanced mountain range that surrounds the playable disc (replaces castle
   // walls in the colored combat rooms). Seeded per room so each color gets a
   // stable, slightly different silhouette without re-randomizing on re-render.
   const borderMountains = useMemo(() => {
@@ -106,7 +106,7 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       {/* Instanced grass field — density per room (purple sparse), GPU-animated wind */}
       {enableGrass && (
-        <StylizedGrass fieldShape="hex" radius={MAIN_ARENA_HEX_RADIUS} roomTheme={visualRoomTheme} />
+        <StylizedGrass fieldShape="disc" radius={MAIN_ARENA_HEX_RADIUS} roomTheme={visualRoomTheme} />
       )}
 
       {/* Stone road + branch connectors + combat platforms — single draw call */}

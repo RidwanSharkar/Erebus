@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
+import { ShapeGeometry } from 'three';
 import {
   AdditiveBlending,
   Color,
@@ -9,22 +10,25 @@ import {
   Group,
   Mesh,
   MeshBasicMaterial,
-  PlaneGeometry,
   CylinderGeometry,
   RingGeometry,
+  Shape,
   Vector3,
 } from '@/utils/three-exports';
 import {
   AFTERSHOCK_DETONATION_DELAY_MS,
+  AFTERSHOCK_ERUPTION_WAVE_MS,
+  AFTERSHOCK_STRIP_CORNER_RADIUS,
   AFTERSHOCK_STRIP_HALF_WIDTH,
   AFTERSHOCK_STRIP_LENGTH,
 } from '@/utils/talents';
+import { getAftershockColorPalette } from '@/utils/aftershockColorThemes';
+import type { WraithStrikeImpactTalentProps } from '@/components/weapons/RunebladeWraithStrikeImpact';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
-// Reused scratch vector for reading the blast-core world position (avoids per-frame allocs).
 const _tmpVec = new Vector3();
 
-interface DragonBreathProps {
+interface DragonBreathProps extends WraithStrikeImpactTalentProps {
   position: Vector3;
   direction: Vector3;
   startTime: number;
@@ -32,16 +36,51 @@ interface DragonBreathProps {
 }
 
 const GROUND_Y = 0.04;
-const PILLAR_COUNT = 9;
+const PILLAR_COUNT = 15;
 const CRACK_COUNT = 8;
 const SPARK_COUNT = 14;
 const PILLAR_RADIUS = 0.18;
-const PILLAR_MAX_HEIGHT = 3.1;
+const PILLAR_MAX_HEIGHT = 2.1;
 const STRIP_FADE_MS = 350;
+const DETONATION_RISE_MS = 420;
 const TOTAL_MS =
-  AFTERSHOCK_DETONATION_DELAY_MS + STRIP_FADE_MS + 260;
+  AFTERSHOCK_DETONATION_DELAY_MS +
+  AFTERSHOCK_ERUPTION_WAVE_MS +
+  STRIP_FADE_MS +
+  0;
 
-export default function DragonBreath({ position, direction, startTime, onComplete }: DragonBreathProps) {
+function createRoundedStripGeometry(width: number, length: number, cornerRadius: number) {
+  const hw = width * 0.5;
+  const hl = length * 0.5;
+  const r = Math.min(cornerRadius, hw, hl);
+  const shape = new Shape();
+  shape.moveTo(-hw + r, -hl);
+  shape.lineTo(hw - r, -hl);
+  shape.quadraticCurveTo(hw, -hl, hw, -hl + r);
+  shape.lineTo(hw, hl - r);
+  shape.quadraticCurveTo(hw, hl, hw - r, hl);
+  shape.lineTo(-hw + r, hl);
+  shape.quadraticCurveTo(-hw, hl, -hw, hl - r);
+  shape.lineTo(-hw, -hl + r);
+  shape.quadraticCurveTo(-hw, -hl, -hw + r, -hl);
+  return new ShapeGeometry(shape);
+}
+
+function eruptionProgress(localDetMs: number, riseMs: number): number {
+  if (localDetMs <= 0) return 0;
+  return Math.min(1, Math.pow(localDetMs / riseMs, 0.52));
+}
+
+export default function DragonBreath({
+  position,
+  direction,
+  startTime,
+  onComplete,
+  wrathfulStrike = false,
+  infestedStrike = false,
+  wraithGuard = false,
+  staggeringStrike = false,
+}: DragonBreathProps) {
   const rootRef = useRef<Group>(null);
   const stripRef = useRef<Group>(null);
   const completedRef = useRef(false);
@@ -52,18 +91,43 @@ export default function DragonBreath({ position, direction, startTime, onComplet
   const blastCoreRef = useRef<Mesh>(null);
   const sparkGroupRefs = useRef<(Group | null)[]>(Array(SPARK_COUNT).fill(null));
 
-  // Borrow ONE pooled light at the blast center (collapses the former 9 per-pillar
-  // <pointLight>s) instead of mounting lights (avoids lit-shader recompiles).
-  const blastLight = useDynamicLight({ color: '#66FF33', distance: 7, decay: 2, priority: 1 });
+  const palette = useMemo(
+    () =>
+      getAftershockColorPalette({
+        wrathfulStrike: !!wrathfulStrike,
+        infestedStrike: !!infestedStrike,
+        wraithGuard: !!wraithGuard,
+        staggeringStrike: !!staggeringStrike,
+      }),
+    [wrathfulStrike, infestedStrike, wraithGuard, staggeringStrike],
+  );
+
+  const blastLight = useDynamicLight({
+    color: palette.light,
+    distance: 7,
+    decay: 2,
+    priority: 1,
+  });
 
   const stripWidth = AFTERSHOCK_STRIP_HALF_WIDTH * 2;
 
   const geometries = useMemo(
     () => ({
-      ground: new PlaneGeometry(stripWidth, AFTERSHOCK_STRIP_LENGTH),
-      ember: new PlaneGeometry(stripWidth * 0.92, AFTERSHOCK_STRIP_LENGTH * 0.96),
-      fissure: new PlaneGeometry(stripWidth * 0.16, AFTERSHOCK_STRIP_LENGTH * 0.18),
-      edge: new PlaneGeometry(0.06, AFTERSHOCK_STRIP_LENGTH),
+      ground: createRoundedStripGeometry(
+        stripWidth,
+        AFTERSHOCK_STRIP_LENGTH,
+        AFTERSHOCK_STRIP_CORNER_RADIUS,
+      ),
+      ember: createRoundedStripGeometry(
+        stripWidth * 0.92,
+        AFTERSHOCK_STRIP_LENGTH * 0.96,
+        AFTERSHOCK_STRIP_CORNER_RADIUS * 0.92,
+      ),
+      fissure: createRoundedStripGeometry(
+        stripWidth * 0.16,
+        AFTERSHOCK_STRIP_LENGTH * 0.18,
+        AFTERSHOCK_STRIP_CORNER_RADIUS * 0.35,
+      ),
       pillar: new CylinderGeometry(PILLAR_RADIUS, PILLAR_RADIUS * 0.65, 1, 10),
       shockwave: new RingGeometry(0.62, 1.02, 48),
       blastCore: new CylinderGeometry(stripWidth * 0.48, stripWidth * 0.28, 0.08, 24),
@@ -75,70 +139,63 @@ export default function DragonBreath({ position, direction, startTime, onComplet
   const materials = useMemo(
     () => ({
       ground: new MeshBasicMaterial({
-        color: new Color('#173800'),
+        color: new Color(palette.ground),
         transparent: true,
         opacity: 0.55,
         blending: AdditiveBlending,
         depthWrite: false,
       }),
       ember: new MeshBasicMaterial({
-        color: new Color('#50FF28'),
+        color: new Color(palette.ember),
         transparent: true,
         opacity: 0.42,
         blending: AdditiveBlending,
         depthWrite: false,
       }),
       fissure: new MeshBasicMaterial({
-        color: new Color('#D8FF75'),
+        color: new Color(palette.fissure),
         transparent: true,
         opacity: 0.5,
         blending: AdditiveBlending,
         depthWrite: false,
       }),
-      edge: new MeshBasicMaterial({
-        color: new Color('#8CFF42'),
-        transparent: true,
-        opacity: 0.46,
-        blending: AdditiveBlending,
-        depthWrite: false,
-      }),
       pillar: new MeshBasicMaterial({
-        color: new Color('#D7FF72'),
+        color: new Color(palette.pillar),
         transparent: true,
         opacity: 0.92,
         blending: AdditiveBlending,
         depthWrite: false,
       }),
       pillarOuter: new MeshBasicMaterial({
-        color: new Color('#22CC11'),
+        color: new Color(palette.pillarOuter),
         transparent: true,
         opacity: 0.35,
         blending: AdditiveBlending,
         depthWrite: false,
       }),
       shockwave: new MeshBasicMaterial({
-        color: new Color('#BCFF65'),
+        color: new Color(palette.shockwave),
         transparent: true,
         opacity: 0,
         blending: AdditiveBlending,
         depthWrite: false,
       }),
       blastCore: new MeshBasicMaterial({
-        color: new Color('#F4FFAA'),
+        color: new Color(palette.blastCore),
         transparent: true,
         opacity: 0,
         blending: AdditiveBlending,
         depthWrite: false,
       }),
       spark: new MeshBasicMaterial({
-        color: new Color('#B7FF55'),
+        color: new Color(palette.spark),
         transparent: true,
         opacity: 0,
         blending: AdditiveBlending,
         depthWrite: false,
       }),
     }),
-    [],
+    [palette],
   );
 
   const crackSegments = useMemo(
@@ -187,6 +244,10 @@ export default function DragonBreath({ position, direction, startTime, onComplet
   }, [direction]);
 
   useEffect(() => {
+    blastLight.current?.setColor(palette.light);
+  }, [palette.light, blastLight]);
+
+  useEffect(() => {
     return () => {
       Object.values(geometries).forEach((g) => g.dispose());
       Object.values(materials).forEach((m) => m.dispose());
@@ -202,7 +263,6 @@ export default function DragonBreath({ position, direction, startTime, onComplet
     rootRef.current.position.set(position.x, position.y + GROUND_Y, position.z);
     rootRef.current.rotation.y = Math.atan2(normalizedDirection.x, normalizedDirection.z);
 
-    // Strip center at half length along local +Z (forward)
     if (stripRef.current) {
       stripRef.current.position.set(0, 0, AFTERSHOCK_STRIP_LENGTH * 0.5);
     }
@@ -212,62 +272,76 @@ export default function DragonBreath({ position, direction, startTime, onComplet
     const pulse = 0.78 + Math.sin(t * 14) * 0.12;
     materials.ground.opacity = 0.35 * pulse * telegraphFade;
     materials.ember.opacity = 0.38 * pulse * telegraphFade;
-    materials.fissure.opacity = (0.34 + Math.sin(t * 22) * 0.12) * telegraphFade;
-    materials.edge.opacity = (0.22 + Math.sin(t * 18) * 0.14) * telegraphFade;
 
     const rawDet = elapsedMs - telegraphEnd;
-    const detonationT =
-      rawDet <= 0 ? 0 : Math.min(1, rawDet / 420);
-    const pillarScale =
-      rawDet <= 0 ? 0 : Math.min(1, Math.pow(detonationT, 0.52));
-    const shockwaveT = rawDet <= 0 ? 0 : Math.min(1, rawDet / 520);
-    const sparkT = rawDet <= 0 ? 0 : Math.min(1, rawDet / 460);
 
     if (rawDet >= 0 && !detonationSoundPlayedRef.current) {
       detonationSoundPlayedRef.current = true;
       (window as any).audioSystem?.playAftershockSound?.(position);
     }
 
-    materials.pillar.opacity = pillarScale > 0.01 ? 0.92 * (1 - detonationT * 0.82) : 0;
-    materials.pillarOuter.opacity = pillarScale > 0.01 ? 0.42 * (1 - detonationT * 0.88) : 0;
-    materials.shockwave.opacity = shockwaveT > 0.01 ? 0.72 * Math.pow(1 - shockwaveT, 1.4) : 0;
-    materials.blastCore.opacity = pillarScale > 0.01 ? 0.72 * Math.pow(1 - detonationT, 1.25) : 0;
-    materials.spark.opacity = sparkT > 0.01 ? 0.78 * Math.pow(1 - sparkT, 1.1) : 0;
+    let maxPillarScale = 0;
+    let maxDetonationT = 0;
+    let maxSparkT = 0;
 
-    const pillarH = PILLAR_MAX_HEIGHT * pillarScale;
+    for (let i = 0; i < PILLAR_COUNT; i++) {
+      const burst = pillarBursts[i];
+      const pillarDelay = (burst.z / AFTERSHOCK_STRIP_LENGTH) * AFTERSHOCK_ERUPTION_WAVE_MS;
+      const localDet = rawDet - pillarDelay;
+      const detonationT = eruptionProgress(localDet, DETONATION_RISE_MS);
+      const pillarScale = detonationT;
+      maxPillarScale = Math.max(maxPillarScale, pillarScale);
+      maxDetonationT = Math.max(maxDetonationT, detonationT);
+
+      const grp = pillarGroupRefs.current[i];
+      if (grp) {
+        const widthScale = burst.radius + pillarScale * 0.72;
+        const pillarH = PILLAR_MAX_HEIGHT * pillarScale;
+        grp.scale.set(widthScale, Math.max(0.001, pillarH * burst.height), widthScale);
+      }
+    }
+
+    materials.pillar.opacity =
+      maxPillarScale > 0.01 ? 0.92 * (1 - maxDetonationT * 0.82) : 0;
+    materials.pillarOuter.opacity =
+      maxPillarScale > 0.01 ? 0.42 * (1 - maxDetonationT * 0.88) : 0;
+
+    const shockwaveDelay = AFTERSHOCK_ERUPTION_WAVE_MS * 0.35;
+    const shockwaveLocalDet = rawDet - shockwaveDelay;
+    const shockwaveT =
+      shockwaveLocalDet <= 0 ? 0 : Math.min(1, shockwaveLocalDet / 520);
+    materials.shockwave.opacity =
+      shockwaveT > 0.01 ? 0.72 * Math.pow(1 - shockwaveT, 1.4) : 0;
+    materials.blastCore.opacity =
+      maxPillarScale > 0.01 ? 0.72 * Math.pow(1 - maxDetonationT, 1.25) : 0;
 
     if (shockwaveRef.current) {
       const shockScale = 0.4 + shockwaveT * 2.45;
       shockwaveRef.current.scale.set(shockScale, shockScale, shockScale);
     }
     if (blastCoreRef.current) {
-      const coreScale = 0.35 + pillarScale * 1.25;
+      const coreScale = 0.35 + maxPillarScale * 1.25;
       blastCoreRef.current.scale.set(coreScale, 1, coreScale);
     }
 
-    for (let i = 0; i < PILLAR_COUNT; i++) {
-      const grp = pillarGroupRefs.current[i];
-      const burst = pillarBursts[i];
-      if (grp) {
-        const widthScale = burst.radius + pillarScale * 0.72;
-        grp.scale.set(widthScale, Math.max(0.001, pillarH * burst.height), widthScale);
-      }
-    }
-
-    // Drive the single pooled light at the blast center (world space). Replicates one
-    // per-pillar light's intensity expression: 34 * pillarScale * (1 - detonationT * 0.62).
     if (blastCoreRef.current) {
       blastCoreRef.current.getWorldPosition(_tmpVec);
       blastLight.current?.setPosition(_tmpVec.x, _tmpVec.y, _tmpVec.z);
     }
     blastLight.current?.setIntensity(
-      pillarScale > 0.02 ? 34 * pillarScale * (1 - detonationT * 0.62) : 0,
+      maxPillarScale > 0.02 ? 34 * maxPillarScale * (1 - maxDetonationT * 0.62) : 0,
     );
 
     for (let i = 0; i < SPARK_COUNT; i++) {
       const grp = sparkGroupRefs.current[i];
       const burst = sparkBursts[i];
       if (!grp) continue;
+
+      const sparkDelay = (burst.z / AFTERSHOCK_STRIP_LENGTH) * AFTERSHOCK_ERUPTION_WAVE_MS;
+      const localDet = rawDet - sparkDelay;
+      const sparkT = localDet <= 0 ? 0 : Math.min(1, localDet / 460);
+      maxSparkT = Math.max(maxSparkT, sparkT);
+
       const lift = Math.sin(sparkT * Math.PI) * burst.height;
       const spread = sparkT * (0.32 + (i % 5) * 0.05);
       grp.position.set(
@@ -277,6 +351,21 @@ export default function DragonBreath({ position, direction, startTime, onComplet
       );
       grp.scale.setScalar(sparkT > 0.01 ? 0.65 + sparkT * 0.8 : 0.001);
     }
+
+    materials.spark.opacity = maxSparkT > 0.01 ? 0.78 * Math.pow(1 - maxSparkT, 1.1) : 0;
+
+    let maxCrackPulse = 0;
+    for (const segment of crackSegments) {
+      const crackDelay = (segment.z / AFTERSHOCK_STRIP_LENGTH) * AFTERSHOCK_ERUPTION_WAVE_MS * 0.85;
+      const localDet = rawDet - crackDelay;
+      if (localDet > 0) {
+        maxCrackPulse = Math.max(maxCrackPulse, 0.34 + Math.sin(t * 22 + segment.z) * 0.12);
+      }
+    }
+    materials.fissure.opacity =
+      rawDet <= 0
+        ? (0.34 + Math.sin(t * 22) * 0.12) * telegraphFade
+        : maxCrackPulse * Math.max(0, 1 - maxDetonationT);
 
     if (elapsedMs >= TOTAL_MS) {
       completedRef.current = true;
@@ -298,15 +387,6 @@ export default function DragonBreath({ position, direction, startTime, onComplet
           geometry={geometries.ember}
           material={materials.ember}
         />
-        {[-1, 1].map(side => (
-          <mesh
-            key={`edge-${side}`}
-            rotation={[-Math.PI / 2, 0, 0]}
-            position={[side * stripWidth * 0.5, 0.018, 0]}
-            geometry={geometries.edge}
-            material={materials.edge}
-          />
-        ))}
         {crackSegments.map((segment, i) => (
           <mesh
             key={`crack-${i}`}

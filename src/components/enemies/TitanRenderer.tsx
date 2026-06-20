@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import TitanModel from './TitanModel';
 import TitanSoulEffect from './TitanSoulEffect';
+import TitanBladestorm from './TitanBladestorm';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyMeleeAttackRangeRing, { TITAN_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
@@ -19,8 +20,11 @@ interface TitanRendererProps {
   rotation: number;
   health: number;
   maxHealth: number;
+  soulType?: SoulType;
   isDying?: boolean;
   staggerBuildup?: number;
+  bladestormActive?: boolean;
+  bladestormStartTime?: number;
 }
 
 const ATTACK_DURATION   = 1500; // ms — matches backend meleeLockUntil
@@ -42,16 +46,14 @@ export default function TitanRenderer({
   rotation,
   health,
   maxHealth,
+  soulType = 'green',
   isDying = false,
   staggerBuildup = 0,
+  bladestormActive = false,
+  bladestormStartTime,
 }: TitanRendererProps) {
   const { socket } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
-
-  const soulType = useMemo<SoulType>(
-    () => SOUL_TYPES[Math.floor(Math.random() * SOUL_TYPES.length)],
-    [],
-  );
 
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking, setIsWalking] = useState(true); // titans default to walk anim
@@ -155,6 +157,10 @@ export default function TitanRenderer({
         isDying={isDying}
       />
       {!isDying && <TitanSoulEffect soulType={soulType} />}
+
+      {bladestormActive && !isDying && bladestormStartTime != null && (
+        <TitanBladestorm soulType={soulType} startTime={bladestormStartTime} />
+      )}
 
       {isAttacking && (
         <EnemyMeleeAttackRangeRing radius={TITAN_MELEE_ATTACK_RANGE} />

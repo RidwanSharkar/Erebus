@@ -27,14 +27,20 @@ import {
   CROSSENTROPY_FRAGMENTATION_PROC_CHANCE,
   CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS,
   rollCrossentropyMeteorStrikeCount,
+  CLOUDKILL_AOE_RADIUS,
+  CLOUDKILL_ARROW_DELAY_MS,
+  CLOUDKILL_ARROW_SPEED,
+  CLOUDKILL_DAMAGE,
+  CLOUDKILL_PROC_CHANCE,
+  CLOUDKILL_SKY_HEIGHT_MAX,
+  CLOUDKILL_SKY_HEIGHT_MIN,
+  CLOUDKILL_WARNING_MS,
+  rollCloudkillArrowCount,
+  shouldApplyCloudkillTalent,
 } from '@/utils/talents';
 import {
-  approximateEntropicPathLength,
-  computeEntropicBezierPoints,
+  ENTROPIC_FORWARD_SCALE,
   ENTROPIC_MAX_LIFETIME,
-  getEntropicSpeedAtDistance,
-  sampleEntropicBezier,
-  type EntropicCurveDirection,
 } from '@/utils/entropicBoltPath';
 import type { CrossentropyVisualTheme, FanOfKnivesFlourishTint } from '@/utils/talents';
 import { CombatSystem } from './CombatSystem';
@@ -73,6 +79,14 @@ export class ProjectileSystem extends System {
     crossentropyPlague: boolean;
     staggerToAdd?: number;
   }> = [];
+  private pendingCloudkillImpacts: Array<{
+    impactAtMs: number;
+    impactPosition: Vector3;
+    damage: number;
+    radius: number;
+    ownerEntityId: number;
+    sourcePlayerId: string;
+  }> = [];
   /** Co-op only: fragmentation child bolt broadcast (matches `broadcastPlayerAttack` crossentropy projectileConfig shape). */
   private crossentropyBoltBroadcastCallback?:
     | ((position: Vector3, direction: Vector3, projectileConfig: Record<string, unknown>) => void)
@@ -108,6 +122,7 @@ export class ProjectileSystem extends System {
   public update(entities: Entity[], deltaTime: number): void {
     this.projectilesToDestroy.length = 0;
     this.processPendingCrossentropyMeteorImpacts(Date.now());
+    this.processPendingCloudkillImpacts(Date.now());
 
     for (const entity of entities) {
       const transform = entity.getComponent(Transform)!;
@@ -117,15 +132,7 @@ export class ProjectileSystem extends System {
         continue;
       }
 
-      const renderer = entity.getComponent(Renderer);
-      const isEntropicBolt = renderer?.mesh?.userData?.isEntropicBolt === true;
-
-      // Update projectile (entropic bolts track distance along bezier path in moveProjectile)
-      const prevDistanceTraveled = projectile.distanceTraveled;
       projectile.update(deltaTime);
-      if (isEntropicBolt) {
-        projectile.distanceTraveled = prevDistanceTraveled;
-      }
 
       // Check if projectile has expired
       if (projectile.isExpired()) {
@@ -260,57 +267,88 @@ export class ProjectileSystem extends System {
     }
   }
 
+  private createCloudkillStartPosition(impactPosition: Vector3): Vector3 {
+    const height =
+      CLOUDKILL_SKY_HEIGHT_MIN +
+      Math.random() * (CLOUDKILL_SKY_HEIGHT_MAX - CLOUDKILL_SKY_HEIGHT_MIN);
+    return new Vector3(impactPosition.x, height, impactPosition.z);
+  }
+
+  private scheduleCloudkillVolley(projectile: Projectile, impactPosition: Vector3): void {
+    const arrowCount = rollCloudkillArrowCount();
+    const castBaseMs = Date.now();
+    for (let i = 0; i < arrowCount; i++) {
+      const castDelayMs = i * CLOUDKILL_ARROW_DELAY_MS;
+      const castTimeMs = castBaseMs + castDelayMs;
+      const startPosition = this.createCloudkillStartPosition(impactPosition);
+      const travelDistance = startPosition.distanceTo(
+        new Vector3(impactPosition.x, -3, impactPosition.z),
+      );
+      const travelTimeMs = (travelDistance / CLOUDKILL_ARROW_SPEED) * 1000;
+      this.pendingCloudkillImpacts.push({
+        impactAtMs: castTimeMs + CLOUDKILL_WARNING_MS + travelTimeMs,
+        impactPosition: impactPosition.clone(),
+        damage: CLOUDKILL_DAMAGE,
+        radius: CLOUDKILL_AOE_RADIUS,
+        ownerEntityId: projectile.owner,
+        sourcePlayerId: projectile.sourcePlayerId,
+      });
+      this.world.emitEvent('cloudkillCast', {
+        castId: `cloudkill-${castTimeMs}-${i}`,
+        targetPosition: impactPosition.clone(),
+        timestamp: castTimeMs,
+        delayMs: castDelayMs,
+        startPosition: startPosition.clone(),
+      });
+    }
+  }
+
+  private processPendingCloudkillImpacts(nowMs: number): void {
+    if (this.pendingCloudkillImpacts.length === 0) return;
+    const due = this.pendingCloudkillImpacts.filter((impact) => impact.impactAtMs <= nowMs);
+    if (due.length === 0) return;
+    this.pendingCloudkillImpacts = this.pendingCloudkillImpacts.filter(
+      (impact) => impact.impactAtMs > nowMs,
+    );
+    const potentialTargets = this.world.queryEntities([Transform, Health]);
+    for (const impact of due) {
+      const sourceEntity = this.world.getEntity(impact.ownerEntityId);
+      for (const target of potentialTargets) {
+        if (target.id === impact.ownerEntityId) continue;
+        if (target.userData?.isCoopAllyPlayer) continue;
+        if (!target.getComponent(Enemy)) continue;
+        const targetTransform = target.getComponent(Transform);
+        const targetHealth = target.getComponent(Health);
+        if (!targetTransform || !targetHealth || targetHealth.isDead) continue;
+        if (impact.impactPosition.distanceTo(targetTransform.position) > impact.radius) continue;
+        if (this.combatSystem) {
+          this.combatSystem.queueDamage(
+            target,
+            impact.damage,
+            sourceEntity ?? undefined,
+            'cloudkill',
+            impact.sourcePlayerId,
+          );
+        } else {
+          const currentTime = Date.now() / 1000;
+          targetHealth.takeDamage(impact.damage, currentTime, target);
+        }
+      }
+    }
+  }
+
   private moveProjectile(
     entity: Entity,
     transform: Transform,
     projectile: Projectile,
     deltaTime: number,
   ): void {
-    const renderer = entity.getComponent(Renderer);
-    const userData = renderer?.mesh?.userData;
-    if (userData?.isEntropicBolt && userData.bezierControl && userData.bezierTarget) {
-      this.moveEntropicProjectile(transform, projectile, userData, deltaTime);
-      return;
-    }
-
     // Use temp vector to avoid allocations
     this.tempVector.copy(projectile.velocity).multiplyScalar(deltaTime);
 
     // Update position
     transform.translate(this.tempVector.x, this.tempVector.y, this.tempVector.z);
     transform.matrixNeedsUpdate = true;
-  }
-
-  private moveEntropicProjectile(
-    transform: Transform,
-    projectile: Projectile,
-    userData: Record<string, unknown>,
-    deltaTime: number,
-  ): void {
-    const pathLength = userData.entropicPathLength as number;
-    const control = userData.bezierControl as Vector3;
-    const target = userData.bezierTarget as Vector3;
-    const start = projectile.startPosition;
-
-    const currentSpeed = getEntropicSpeedAtDistance(projectile.distanceTraveled);
-    const prevT = pathLength > 0 ? Math.min(projectile.distanceTraveled / pathLength, 1) : 0;
-    // Match CrossentropyBolt R3F movement scale (currentSpeed * delta * 60)
-    projectile.distanceTraveled += currentSpeed * deltaTime * 60;
-    const t = pathLength > 0 ? Math.min(projectile.distanceTraveled / pathLength, 1) : 1;
-
-    sampleEntropicBezier(start, control, target, t, transform.position);
-
-    const prevPos = sampleEntropicBezier(start, control, target, prevT, this.tempVector);
-    this.tempVector2.copy(transform.position).sub(prevPos);
-    if (this.tempVector2.lengthSq() > 1e-8) {
-      userData.direction = this.tempVector2.clone().normalize();
-    }
-
-    transform.matrixNeedsUpdate = true;
-
-    if (t >= 1) {
-      projectile.distanceTraveled = pathLength;
-    }
   }
 
   private segmentIntersectsSphere(
@@ -591,7 +629,33 @@ export class ProjectileSystem extends System {
       } else if (isWindShear) {
         damageType = 'wind_shear';
       }
-      
+
+      const isBowPrimary =
+        renderer?.mesh?.userData?.isRegularArrow === true ||
+        renderer?.mesh?.userData?.isChargedArrow === true ||
+        renderer?.mesh?.userData?.projectileType === 'burst_arrow';
+
+      let cloudkillProc = false;
+      if (isBowPrimary && damageType === 'projectile' && target.getComponent(Enemy)) {
+        const cs = (window as any).controlSystemRef?.current;
+        const localEnt = cs?.getPlayerEntity?.() as { id: number } | null | undefined;
+        if (
+          localEnt &&
+          projectile.owner === localEnt.id &&
+          shouldApplyCloudkillTalent(cs?.talentLoadout) &&
+          Math.random() < CLOUDKILL_PROC_CHANCE
+        ) {
+          cloudkillProc = true;
+          if (this.combatSystem?.usesNetworkedEnemyDamage() !== true) {
+            const impactTransform = target.getComponent(Transform);
+            if (impactTransform) {
+              const impactPos = impactTransform.getWorldPosition();
+              impactPos.y = Math.max(1.5, impactPos.y);
+              this.scheduleCloudkillVolley(projectile, impactPos);
+            }
+          }
+        }
+      }
 
       
       const entropicTalent =
@@ -669,6 +733,7 @@ export class ProjectileSystem extends System {
         undefined,
         isCrossentropyBolt && projectile.crossentropyMeteor === true,
         entanglementBarrage,
+        cloudkillProc,
       );
       }
 
@@ -1237,19 +1302,18 @@ export class ProjectileSystem extends System {
       isCryoflame?: boolean;
       colorVariant?: string;
       entropicBoltTalent?: 'wrathful' | 'staggering' | 'infesting' | 'arctic';
-      curveDirection?: EntropicCurveDirection;
     }
   ): Entity {
+    const entropicDirection = direction.clone();
+    if (entropicDirection.lengthSq() < 1e-8) entropicDirection.set(0, 0, -1);
+    entropicDirection.normalize();
+
     const projectileEntity = world.createEntity();
 
     // Add Transform component
     const transform = world.createComponent(Transform);
     transform.position.copy(position);
     projectileEntity.addComponent(transform);
-
-    const curveDirection = config?.curveDirection;
-    const bezierPoints = computeEntropicBezierPoints(position, direction, curveDirection);
-    const pathLength = approximateEntropicPathLength(position, bezierPoints.control, bezierPoints.target);
 
     // Add Projectile component with EntropicBolt-specific settings
     const projectile = world.createComponent(Projectile);
@@ -1259,13 +1323,11 @@ export class ProjectileSystem extends System {
     projectile.owner = ownerId;
     projectile.sourcePlayerId = config?.sourcePlayerId || 'unknown';
     projectile.projectileType = 'entropic_bolt';
-    projectile.setDirection(direction);
+    projectile.setDirection(entropicDirection);
     projectile.setStartPosition(position);
-    projectile.setMaxDistance(pathLength);
-    projectile.distanceTraveled = 0;
+    projectile.setMaxDistance(ENTROPIC_FORWARD_SCALE);
     
-    // Entropic bolts pierce by default so they damage every enemy along the path
-    if (config?.piercing !== false) projectile.setPiercing(true);
+    if (config?.piercing) projectile.setPiercing(true);
     if (config?.explosive && config?.explosionRadius) {
       projectile.setExplosive(config.explosionRadius);
     }
@@ -1297,14 +1359,10 @@ export class ProjectileSystem extends System {
     // Mark this as an EntropicBolt for special handling
     placeholderMesh.userData.isEntropicBolt = true;
     placeholderMesh.userData.projectileEntity = projectileEntity;
-    placeholderMesh.userData.direction = direction.clone();
+    placeholderMesh.userData.direction = entropicDirection.clone();
     placeholderMesh.userData.isCryoflame = config?.isCryoflame || false;
     placeholderMesh.userData.colorVariant = config?.colorVariant || 'purple';
     placeholderMesh.userData.entropicBoltTalent = entropicTalent;
-    placeholderMesh.userData.curveDirection = curveDirection;
-    placeholderMesh.userData.bezierControl = bezierPoints.control;
-    placeholderMesh.userData.bezierTarget = bezierPoints.target;
-    placeholderMesh.userData.entropicPathLength = pathLength;
 
     renderer.mesh = placeholderMesh;
 

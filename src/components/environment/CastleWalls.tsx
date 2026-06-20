@@ -93,7 +93,7 @@ export function createCastleWallShaderMaterial(): ShaderMaterial {
 
 // ─── Wall segment definitions ───────────────────────────────────────────────
 // Each segment: center position, rotation, and full dimensions (sizeX, sizeY, sizeZ).
-// Six sides form a closed regular hex; inner faces sit on the main-arena hex edge.
+// Main arena uses a circular ring; inner faces sit on the playable disc edge.
 
 export interface WallSegmentDef {
   center: [number, number, number];
@@ -113,33 +113,27 @@ export const CASTLE_WALL_HALF_THICKNESS = t / 2;
 export const CASTLE_WALL_X_OFFSET = MAIN_ARENA_HEX_RADIUS + t / 2;
 export const CASTLE_WALL_Z_OFFSET = MAIN_ARENA_HEX_RADIUS + t / 2;
 
-const MAIN_CASTLE_HEX_APOTHEM = MAIN_ARENA_HEX_RADIUS * Math.cos(Math.PI / 6);
+/** Short AABB blocks sampled around a circular arena perimeter (projectile / AI collision). */
+export function buildCircularWallSegments(innerRadius: number, targetChordLength = 2.0): WallSegmentDef[] {
+  const Rc = innerRadius + t / 2;
+  const circumference = 2 * Math.PI * Rc;
+  const n = Math.max(24, Math.round(circumference / targetChordLength));
+  const segments: WallSegmentDef[] = [];
+  for (let i = 0; i < n; i++) {
+    const theta = (i / n) * Math.PI * 2;
+    const chord = 2 * Rc * Math.sin(Math.PI / n);
+    segments.push({
+      center: [Math.cos(theta) * Rc, WALL_HEIGHT / 2, Math.sin(theta) * Rc],
+      sizeX: chord,
+      sizeY: WALL_HEIGHT,
+      sizeZ: t,
+      rotationY: Math.PI / 2 - theta,
+    });
+  }
+  return segments;
+}
 
-export const WALL_SEGMENTS: WallSegmentDef[] = Array.from({ length: 6 }, (_, i) => {
-  const angle = (Math.PI / 3) * i;
-  return {
-    center: [
-      Math.cos(angle) * (MAIN_CASTLE_HEX_APOTHEM + t / 2),
-      WALL_HEIGHT / 2,
-      Math.sin(angle) * (MAIN_CASTLE_HEX_APOTHEM + t / 2),
-    ],
-    sizeX: MAIN_ARENA_HEX_RADIUS,
-    sizeY: WALL_HEIGHT,
-    sizeZ: t,
-    rotationY: Math.PI / 2 - angle,
-  };
-});
-
-const CORNER_POST_SIZE = 0.85;
-const CORNER_POST_HEIGHT = WALL_HEIGHT + 1.0;
-const CORNER_POSTS: [number, number, number][] = Array.from({ length: 6 }, (_, i) => {
-  const angle = Math.PI / 6 + (Math.PI / 3) * i;
-  return [
-    Math.cos(angle) * (MAIN_ARENA_HEX_RADIUS + t / 2),
-    CORNER_POST_HEIGHT / 2,
-    Math.sin(angle) * (MAIN_ARENA_HEX_RADIUS + t / 2),
-  ];
-});
+export const WALL_SEGMENTS: WallSegmentDef[] = buildCircularWallSegments(MAIN_ARENA_HEX_RADIUS);
 
 // ─── Battlement (merlon) constants ──────────────────────────────────────────
 const MERLON_SPACING    = 1.5;   // distance from one merlon center to the next
@@ -278,11 +272,6 @@ const CastleWalls: React.FC = () => {
         seg.sizeX, seg.sizeY, seg.sizeZ,
         seg.rotationY ?? 0,
       ));
-    }
-
-    // Corner posts
-    for (const [px, py, pz] of CORNER_POSTS) {
-      all.push(buildMatrix(px, py, pz, CORNER_POST_SIZE, CORNER_POST_HEIGHT, CORNER_POST_SIZE));
     }
 
     // Battlements on every segment

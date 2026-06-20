@@ -39,6 +39,7 @@ import WarlockFlameStrike from './enemies/WarlockFlameStrike';
 import WarlockVoidBoltExplosion from './enemies/WarlockVoidBoltExplosion';
 import Meteor from './enemies/Meteor';
 import CrossentropyMeteor from './projectiles/CrossentropyMeteor';
+import CloudkillArrow from './projectiles/CloudkillArrow';
 import BossTeleportEffect from './enemies/BossTeleportEffect';
 import BossLeapTelegraph from './enemies/BossLeapTelegraph';
 import BossSpearProjectile from './enemies/BossSpearProjectile';
@@ -76,7 +77,7 @@ import {
   shouldApplyInfernalSmiteTalent,
   shouldApplyVengeanceSmiteTalent,
   shouldApplyStaggeringSmiteTalent,
-  shouldApplyRunebladeStoredChargeSpin,
+  shouldApplyCycloneRushChargeSpin,
   shouldApplyStaggeringComboTalent,
   shouldApplyWrathfulComboTalent,
   shouldApplyInfestedComboTalent,
@@ -1468,19 +1469,19 @@ export function CoopGameScene({
         : isHexCombatArena
           ? HEX_ARENA_RADIUS
           : MAIN_ARENA_HEX_RADIUS;
-    const mainHexCoopRoom = !inThroneRoom && !inBossThroneArena && !isHexCombatArena;
+    const mainCoopRoom = !inThroneRoom && !inBossThroneArena && !isHexCombatArena;
     phys?.setMapRadius(r);
-    phys?.setArenaBoundaryMode?.(isHexCombatArena || mainHexCoopRoom ? 'hex' : 'circle');
+    phys?.setArenaBoundaryMode?.(isHexCombatArena ? 'hex' : 'circle');
     const throneObstacles = inThroneRoom ? getThronePrepPhysicsObstacles() : null;
-    const castleWallsOn = false; // Main combat rooms use hex boundary projection; ECS wall boxes are projectile blockers.
+    const castleWallsOn = false; // Main combat rooms use circular boundary projection; ECS wall boxes are projectile blockers.
     phys?.setCastleWallPhysicsEnabled(castleWallsOn);
-    phys?.setArenaBoundaryMode?.(isHexCombatArena || mainHexCoopRoom ? 'hex' : 'circle');
-    phys?.setTreeCollisionEnabled?.(!mainHexCoopRoom);
+    phys?.setArenaBoundaryMode?.(isHexCombatArena ? 'hex' : 'circle');
+    phys?.setTreeCollisionEnabled?.(!mainCoopRoom);
     phys?.setThronePillarObstacles(throneObstacles);
     phys?.setCornerMountainObstacles(null);
     controlSystemRef.current?.setPlayableRadius(r);
     controlSystemRef.current?.setCastleWallChargeCollision(castleWallsOn);
-    controlSystemRef.current?.setArenaBoundaryMode?.(isHexCombatArena || (!inThroneRoom && !inBossThroneArena) ? 'hex' : 'circle');
+    controlSystemRef.current?.setArenaBoundaryMode?.(isHexCombatArena ? 'hex' : 'circle');
     controlSystemRef.current?.setThroneChargePillars(throneObstacles);
     controlSystemRef.current?.setChargeCornerMountains(null);
   }, [inThroneRoom, inBossThroneArena, isHexCombatArena, gameStarted, engineReady]);
@@ -2119,6 +2120,10 @@ export function CoopGameScene({
     position: Vector3;
     direction: Vector3;
     startTime: number;
+    wrathfulStrike?: boolean;
+    infestedStrike?: boolean;
+    wraithGuard?: boolean;
+    staggeringStrike?: boolean;
   }>>([]);
 
   // Enemy Taunt Effect Management (for Deathgrasp)
@@ -2181,6 +2186,7 @@ export function CoopGameScene({
     halfWidth: number;
   }
   const [boss2ArchonLightnings, setBoss2ArchonLightnings] = useState<Boss2ArchonLightningState[]>([]);
+  const [warlockArchonShocks, setWarlockArchonShocks] = useState<Boss2ArchonLightningState[]>([]);
   const [boss3NovaBursts, setBoss3NovaBursts] = useState<Boss3NovaBurst[]>([]);
 
   // Boss Meteor State
@@ -2201,6 +2207,14 @@ export function CoopGameScene({
     startPosition?: Vector3;
   }
   const [activeCrossentropyMeteors, setActiveCrossentropyMeteors] = useState<CrossentropyMeteorState[]>([]);
+  interface CloudkillArrowState {
+    id: string;
+    targetPosition: Vector3;
+    timestamp: number;
+    delayMs?: number;
+    startPosition?: Vector3;
+  }
+  const [activeCloudkillArrows, setActiveCloudkillArrows] = useState<CloudkillArrowState[]>([]);
 
   // Boss Teleport Effect State
   interface TeleportEffectState {
@@ -2392,6 +2406,23 @@ export function CoopGameScene({
     radius: number;
   }
   const [weaverLightningStrikes, setWeaverLightningStrikes] = useState<WeaverLightningState[]>([]);
+
+  // Weaver Impale Spike (post-Boss2): tectonic-style ground spike with blue/green theme
+  interface WeaverImpaleTelegraphState {
+    id: string;
+    x: number;
+    y: number;
+    z: number;
+    durationMs: number;
+    theme: 'blue' | 'green';
+  }
+  interface WeaverImpaleSpikeState {
+    id: string;
+    position: Vector3;
+    theme: 'blue' | 'green';
+  }
+  const [weaverImpaleTelegraphs, setWeaverImpaleTelegraphs] = useState<WeaverImpaleTelegraphState[]>([]);
+  const [weaverImpaleSpikes, setWeaverImpaleSpikes] = useState<WeaverImpaleSpikeState[]>([]);
 
   // Ghoul summon ritual circle VFX — one entry per active ritual
   interface GhoulSummonRitualState {
@@ -3109,7 +3140,16 @@ export function CoopGameScene({
     [],
   );
 
-  const createBreathWeaponEffect = useCallback((position: Vector3, direction: Vector3) => {
+  const createBreathWeaponEffect = useCallback((
+    position: Vector3,
+    direction: Vector3,
+    paletteMeta?: {
+      wrathfulStrike?: boolean;
+      infestedStrike?: boolean;
+      wraithGuard?: boolean;
+      staggeringStrike?: boolean;
+    },
+  ) => {
     const origin = position.clone();
 
     setBreathWeaponEffects(prev => [
@@ -3119,6 +3159,10 @@ export function CoopGameScene({
         position: origin,
         direction: direction.clone(),
         startTime: Date.now(),
+        wrathfulStrike: paletteMeta?.wrathfulStrike,
+        infestedStrike: paletteMeta?.infestedStrike,
+        wraithGuard: paletteMeta?.wraithGuard,
+        staggeringStrike: paletteMeta?.staggeringStrike,
       },
     ]);
   }, []);
@@ -3760,7 +3804,7 @@ export function CoopGameScene({
     lastAttackType?: string;
     lastAttackTime?: number;
     lastAnimationUpdate?: number;
-    /** Last remote Charge used STORED CHARGE (longer spin). */
+    /** Last remote Charge used Cyclone Rush (longer spin). */
     runebladeStoredCharge?: boolean;
     /** Tempest Rounds: sync with `projectileConfig.tempestBurstSeq` per `burst_arrow` for EtherBow muzzle VFX. */
     tempestBurstShotSeq?: number;
@@ -4083,14 +4127,11 @@ export function CoopGameScene({
                     speed: entropicConfig.speed || 20, 
                     damage: entropicConfig.damage || 20, 
                     lifetime: entropicConfig.lifetime || 1.75, 
-                    piercing: entropicConfig.piercing ?? true, 
+                    piercing: entropicConfig.piercing ?? false, 
                     opacity: entropicConfig.opacity || 0.8,
                     colorVariant: entropicConfig.colorVariant || 'purple',
                     ...(entropicConfig.entropicBoltTalent
                       ? { entropicBoltTalent: entropicConfig.entropicBoltTalent }
-                      : {}),
-                    ...(entropicConfig.curveDirection
-                      ? { curveDirection: entropicConfig.curveDirection }
                       : {}),
                     isCryoflame: isCryoflame // Pass Cryoflame state to projectile system
                   }
@@ -4874,7 +4915,12 @@ export function CoopGameScene({
             const breathDirection = data.direction
               ? new Vector3(data.direction.x, data.direction.y, data.direction.z)
               : new Vector3(0, 0, 1);
-            createBreathWeaponEffect(position, breathDirection);
+            createBreathWeaponEffect(position, breathDirection, {
+              wrathfulStrike: !!(data.extraData && data.extraData.wrathfulStrike),
+              infestedStrike: !!(data.extraData && data.extraData.infestedStrike),
+              staggeringStrike: !!(data.extraData && data.extraData.staggeringStrike),
+              wraithGuard: !!(data.extraData && data.extraData.wraithGuard),
+            });
           }
         } else if (data.abilityType === 'charge') {
           setMultiplayerPlayerStates(prev => {
@@ -6896,6 +6942,36 @@ export function CoopGameScene({
       setActiveCrossentropyMeteors((prev) => [...prev, next]);
     };
 
+    const handleCloudkillCast = (data: {
+      castId: string;
+      targetPosition: { x: number; y: number; z: number };
+      startPosition?: { x: number; y: number; z: number };
+      timestamp: number;
+      delayMs?: number;
+      damage?: number;
+    }) => {
+      const next: CloudkillArrowState = {
+        id: data.castId,
+        targetPosition: new Vector3(
+          data.targetPosition.x,
+          data.targetPosition.y,
+          data.targetPosition.z,
+        ),
+        timestamp: data.timestamp,
+        ...(typeof data.delayMs === 'number' ? { delayMs: data.delayMs } : {}),
+        ...(data.startPosition
+          ? {
+              startPosition: new Vector3(
+                data.startPosition.x,
+                data.startPosition.y,
+                data.startPosition.z,
+              ),
+            }
+          : {}),
+      };
+      setActiveCloudkillArrows((prev) => [...prev, next]);
+    };
+
     const handleBossLeapStart = (data: {
       bossId: string;
       landPosition: { x: number; y: number; z: number };
@@ -7072,6 +7148,38 @@ export function CoopGameScene({
         ...prev,
         {
           id: `boss2-archon-${data.bossId}-${data.timestamp}`,
+          beams,
+          strikeAt: data.strikeAt,
+          halfWidth: data.halfWidth ?? 1.0,
+        },
+      ]);
+    };
+
+    const handleWarlockArchonShock = (data: {
+      warlockId: string;
+      startPosition: { x: number; y: number; z: number };
+      targetPosition: { x: number; y: number; z: number };
+      beams?: { startPosition: { x: number; y: number; z: number }; targetPosition: { x: number; y: number; z: number } }[];
+      strikeAt: number;
+      halfWidth?: number;
+      timestamp: number;
+    }) => {
+      const beams =
+        data.beams && data.beams.length > 0
+          ? data.beams.map((b) => ({
+              startPosition: new Vector3(b.startPosition.x, b.startPosition.y, b.startPosition.z),
+              targetPosition: new Vector3(b.targetPosition.x, b.targetPosition.y, b.targetPosition.z),
+            }))
+          : [
+              {
+                startPosition: new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z),
+                targetPosition: new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z),
+              },
+            ];
+      setWarlockArchonShocks(prev => [
+        ...prev,
+        {
+          id: `warlock-archon-shock-${data.warlockId}-${data.timestamp}`,
           beams,
           strikeAt: data.strikeAt,
           halfWidth: data.halfWidth ?? 1.0,
@@ -7457,6 +7565,7 @@ export function CoopGameScene({
     socket.on('boss-combat-started', handleBossCombatStarted);
     socket.on('boss-meteor-cast', handleBossMeteorCast);
     socket.on('crossentropy-meteor-cast', handleCrossentropyMeteorCast);
+    socket.on('cloudkill-cast', handleCloudkillCast);
     socket.on('boss-leap-start', handleBossLeapStart);
     socket.on('boss-leap-land', handleBossLeapLand);
     socket.on('ghoul-leap-start', handleGhoulLeapStart);
@@ -7467,6 +7576,7 @@ export function CoopGameScene({
     socket.on('boss-tectonic-spike-telegraph', handleBossTectonicSpikeTelegraph);
     socket.on('boss-tectonic-spike-appear', handleBossTectonicSpikeAppear);
     socket.on('boss2-archon-lightning', handleBoss2ArchonLightning);
+    socket.on('warlock-archon-shock', handleWarlockArchonShock);
     socket.on('boss3-nova-release', handleBoss3NovaRelease);
     socket.on('templar-teleport', handleTemplarTeleport);
     socket.on('templar-blink-smite-impact', handleTemplarBlinkSmiteImpact);
@@ -7753,6 +7863,47 @@ export function CoopGameScene({
       ]);
     };
 
+    const handleWeaverImpaleSpikeTelegraph = (data: {
+      weaverId: string;
+      spikeId: string;
+      position: { x: number; y: number; z: number };
+      warningMs?: number;
+      soulType?: 'blue' | 'green';
+      timestamp: number;
+    }) => {
+      const w = data.warningMs !== undefined && data.warningMs >= 0 ? data.warningMs : 750;
+      const theme = data.soulType === 'blue' ? 'blue' : 'green';
+      (window as any).audioSystem?.playBossTectonicQuakeWarnSound?.(
+        new Vector3(data.position.x, data.position.y, data.position.z),
+      );
+      setWeaverImpaleTelegraphs((prev) => [
+        ...prev,
+        {
+          id: `weaver-impale-tg-${data.spikeId}`,
+          x: data.position.x,
+          y: data.position.y,
+          z: data.position.z,
+          durationMs: w,
+          theme,
+        },
+      ]);
+    };
+
+    const handleWeaverImpaleSpikeAppear = (data: {
+      weaverId: string;
+      spikeId: string;
+      position: { x: number; y: number; z: number };
+      soulType?: 'blue' | 'green';
+      timestamp: number;
+    }) => {
+      const theme = data.soulType === 'blue' ? 'blue' : 'green';
+      const pos = new Vector3(data.position.x, data.position.y, data.position.z);
+      setWeaverImpaleSpikes((prev) => [
+        ...prev,
+        { id: `weaver-impale-spike-${data.spikeId}`, position: pos, theme },
+      ]);
+    };
+
     const handleInfestedZombieSummon = (data: {
       zombieId: string;
       position: { x: number; y: number; z: number };
@@ -7785,6 +7936,8 @@ export function CoopGameScene({
     socket.on('weaver-heal-telegraph', handleWeaverHealTelegraph);
     socket.on('weaver-summon-telegraph', handleWeaverSummonTelegraph);
     socket.on('weaver-lightning-telegraph', handleWeaverLightningTelegraph);
+    socket.on('weaver-impale-spike-telegraph', handleWeaverImpaleSpikeTelegraph);
+    socket.on('weaver-impale-spike-appear', handleWeaverImpaleSpikeAppear);
     socket.on('infested-zombie-summon', handleInfestedZombieSummon);
     socket.on('enemy-summon-vfx', handleEnemySummonVfx);
 
@@ -7822,6 +7975,7 @@ export function CoopGameScene({
       socket.off('boss-combat-started', handleBossCombatStarted);
       socket.off('boss-meteor-cast', handleBossMeteorCast);
       socket.off('crossentropy-meteor-cast', handleCrossentropyMeteorCast);
+      socket.off('cloudkill-cast', handleCloudkillCast);
       socket.off('boss-leap-start', handleBossLeapStart);
       socket.off('boss-leap-land', handleBossLeapLand);
       socket.off('ghoul-leap-start', handleGhoulLeapStart);
@@ -7832,6 +7986,7 @@ export function CoopGameScene({
       socket.off('boss-tectonic-spike-telegraph', handleBossTectonicSpikeTelegraph);
       socket.off('boss-tectonic-spike-appear', handleBossTectonicSpikeAppear);
       socket.off('boss2-archon-lightning', handleBoss2ArchonLightning);
+      socket.off('warlock-archon-shock', handleWarlockArchonShock);
       socket.off('boss3-nova-release', handleBoss3NovaRelease);
       socket.off('templar-teleport', handleTemplarTeleport);
       socket.off('templar-blink-smite-impact', handleTemplarBlinkSmiteImpact);
@@ -7873,6 +8028,8 @@ export function CoopGameScene({
       socket.off('weaver-heal-telegraph', handleWeaverHealTelegraph);
       socket.off('weaver-summon-telegraph', handleWeaverSummonTelegraph);
       socket.off('weaver-lightning-telegraph', handleWeaverLightningTelegraph);
+      socket.off('weaver-impale-spike-telegraph', handleWeaverImpaleSpikeTelegraph);
+      socket.off('weaver-impale-spike-appear', handleWeaverImpaleSpikeAppear);
       socket.off('infested-zombie-summon', handleInfestedZombieSummon);
       socket.off('enemy-summon-vfx', handleEnemySummonVfx);
     };
@@ -8460,6 +8617,7 @@ export function CoopGameScene({
       setActiveMistEffects([]);
       setActiveMeteors([]);
       setActiveCrossentropyMeteors([]);
+      setActiveCloudkillArrows([]);
       setActiveTeleportEffects([]);
     });
 
@@ -9478,10 +9636,7 @@ export function CoopGameScene({
       // Also broadcast as attack for animation
       broadcastPlayerAttack('sword_charge_start', position, direction, {
         isSwordCharging: true,
-        storedCharge: shouldApplyRunebladeStoredChargeSpin(
-          talentLoadoutRef.current,
-          abilityLoadoutRef.current,
-        ),
+        storedCharge: shouldApplyCycloneRushChargeSpin(talentLoadoutRef.current),
       });
     });
 
@@ -9827,7 +9982,12 @@ export function CoopGameScene({
         abilityLoadoutRef.current,
       );
       if (breathWeapon) {
-        createBreathWeaponEffect(position, direction);
+        createBreathWeaponEffect(position, direction, {
+          wrathfulStrike: meta?.wrathfulStrike,
+          infestedStrike: meta?.infestedStrike,
+          staggeringStrike: meta?.staggeringStrike,
+          wraithGuard: meta?.wraithGuard,
+        });
       }
 
       // Broadcast WraithStrike ability to other players (extraData: Wrathful Strike for synced VFX tint)
@@ -9835,6 +9995,7 @@ export function CoopGameScene({
         wrathfulStrike: !!meta?.wrathfulStrike,
         infestedStrike: !!meta?.infestedStrike,
         staggeringStrike: !!meta?.staggeringStrike,
+        wraithGuard: !!meta?.wraithGuard,
         breathWeapon,
       });
     });
@@ -10176,7 +10337,7 @@ export function CoopGameScene({
           staggeringTalonsActive={shouldApplyStaggeringTalonsTalent(talentLoadout, abilityLoadout ?? null)}
           glacialTalonsTheme={shouldApplyGlacialTalonsTalent(talentLoadout, abilityLoadout ?? null)}
           detonateWyvernConcentratedVenomCoop={detonateWyvernConcentratedVenom}
-          runebladeStoredCharge={shouldApplyRunebladeStoredChargeSpin(talentLoadout, abilityLoadout ?? null)}
+          runebladeStoredCharge={shouldApplyCycloneRushChargeSpin(talentLoadout)}
           runebladeStaggeringCombo={shouldApplyStaggeringComboTalent(talentLoadout)}
           runebladeWrathfulCombo={shouldApplyWrathfulComboTalent(talentLoadout)}
           runebladeInfestedCombo={shouldApplyInfestedComboTalent(talentLoadout)}
@@ -10278,7 +10439,7 @@ export function CoopGameScene({
             direction.normalize();
             broadcastPlayerAttack('sword_charge_spin', playerPosition, direction, {
               isSpinning: true,
-              storedCharge: shouldApplyRunebladeStoredChargeSpin(talentLoadout, abilityLoadout ?? null),
+              storedCharge: shouldApplyCycloneRushChargeSpin(talentLoadout),
             });
           }}
           onDeflectComplete={() => {
@@ -11025,6 +11186,31 @@ export function CoopGameScene({
         />
       ))}
 
+      {/* Weaver Impale Spike (post-Boss2) — themed tectonic ground spike */}
+      {weaverImpaleTelegraphs.map((tg) => (
+        <group key={tg.id} position={[tg.x, tg.y, tg.z]}>
+          <BossTectonicSpikeTelegraph
+            durationMs={tg.durationMs}
+            theme={tg.theme}
+            onEnd={() => {
+              setWeaverImpaleTelegraphs((prev) => prev.filter((t) => t.id !== tg.id));
+            }}
+          />
+        </group>
+      ))}
+
+      {weaverImpaleSpikes.map((sp) => (
+        <BossTectonicSpike
+          key={sp.id}
+          worldPosition={sp.position}
+          theme={sp.theme}
+          variantSeed={sp.id}
+          onComplete={() => {
+            setWeaverImpaleSpikes((prev) => prev.filter((x) => x.id !== sp.id));
+          }}
+        />
+      ))}
+
       {/* Ghouls (Co-op Mode) — weaver summons; melee undead creatures */}
       {Array.from(enemies.values()).map(enemy => {
         if (enemy.type !== 'ghoul') return null;
@@ -11039,6 +11225,7 @@ export function CoopGameScene({
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
             staggerBuildup={enemy.staggerBuildup ?? 0}
+            visualScale={enemy.visualScale ?? 1}
           />
         );
       })}
@@ -11055,8 +11242,11 @@ export function CoopGameScene({
               rotation={enemy.rotation || 0}
               health={enemy.health}
               maxHealth={enemy.maxHealth}
+              soulType={enemy.soulType as 'green' | 'red' | 'blue' | 'purple' | undefined}
               isDying={enemy.isDying}
               staggerBuildup={enemy.staggerBuildup ?? 0}
+              bladestormActive={enemy.bladestormActive}
+              bladestormStartTime={enemy.bladestormStartTime}
             />
           </React.Suspense>
         );
@@ -11228,6 +11418,19 @@ export function CoopGameScene({
         />
       ))}
 
+      {activeCloudkillArrows.map((arrow) => (
+        <CloudkillArrow
+          key={arrow.id}
+          targetPosition={arrow.targetPosition}
+          timestamp={arrow.timestamp}
+          delayMs={arrow.delayMs}
+          startPosition={arrow.startPosition}
+          onComplete={() => {
+            setActiveCloudkillArrows((prev) => prev.filter((a) => a.id !== arrow.id));
+          }}
+        />
+      ))}
+
       {bossLeapTelegraphs.map((tg) => (
         <group key={tg.id} position={[tg.x, tg.y, tg.z]}>
           <BossLeapTelegraph
@@ -11310,6 +11513,7 @@ export function CoopGameScene({
             key={e.id}
             position={e.position}
             direction={e.direction}
+            colorVariant={e.colorVariant}
             onComplete={onImpactDone}
           />
         );
@@ -11373,6 +11577,7 @@ export function CoopGameScene({
         <BossTectonicSpike
           key={sp.id}
           worldPosition={sp.position}
+          variantSeed={sp.id}
           onComplete={() => {
             setBossTectonicSpikes((prev) => prev.filter((x) => x.id !== sp.id));
           }}
@@ -11386,6 +11591,17 @@ export function CoopGameScene({
           strikeAt={bolt.strikeAt}
           halfWidth={bolt.halfWidth}
           onComplete={() => setBoss2ArchonLightnings(prev => prev.filter(x => x.id !== bolt.id))}
+        />
+      ))}
+
+      {warlockArchonShocks.map((bolt) => (
+        <Boss2ArchonLightning
+          key={bolt.id}
+          beams={bolt.beams}
+          strikeAt={bolt.strikeAt}
+          halfWidth={bolt.halfWidth}
+          theme="warlock-purple"
+          onComplete={() => setWarlockArchonShocks(prev => prev.filter(x => x.id !== bolt.id))}
         />
       ))}
 
@@ -11897,6 +12113,10 @@ export function CoopGameScene({
               position={effect.position}
               direction={effect.direction}
               startTime={effect.startTime}
+              wrathfulStrike={effect.wrathfulStrike}
+              infestedStrike={effect.infestedStrike}
+              wraithGuard={effect.wraithGuard}
+              staggeringStrike={effect.staggeringStrike}
               onComplete={() => {
                 setBreathWeaponEffects(prev => prev.filter(e => e.id !== effect.id));
               }}

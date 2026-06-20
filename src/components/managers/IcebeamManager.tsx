@@ -6,11 +6,14 @@ import { Transform } from '@/ecs/components/Transform';
 import { CombatSystem } from '@/systems/CombatSystem';
 import Icebeam from '@/components/weapons/Icebeam';
 import { ICEBEAM_MAX_HOLD_SEC } from '@/utils/icebeamConstants';
+import type { EntropicColorVariant } from '@/utils/entropicColorThemes';
 import {
   shouldApplyWrathfulEntropicTalent,
   shouldApplyStaggeringEntropicTalent,
   shouldApplyInfestingEntropicTalent,
+  shouldApplyArcticShardsEntropicTalent,
   STAGGERING_ENTROPIC_BEAM_STAGGER_PER_TICK,
+  type TalentLoadout,
 } from '@/utils/talents';
 import type { Entity } from '@/ecs/Entity';
 
@@ -19,6 +22,17 @@ interface IcebeamManagerProps {
   playerRef: React.RefObject<Group>;
   isIcebeaming: boolean;
   onIcebeamEnd?: () => void;
+}
+
+function resolveIcebeamColorVariant(
+  talentLoadout: TalentLoadout | null | undefined,
+): EntropicColorVariant | undefined {
+  if (!talentLoadout?.icebeam) return undefined;
+  if (shouldApplyWrathfulEntropicTalent(talentLoadout)) return 'red';
+  if (shouldApplyStaggeringEntropicTalent(talentLoadout)) return 'blue';
+  if (shouldApplyInfestingEntropicTalent(talentLoadout)) return 'green';
+  if (shouldApplyArcticShardsEntropicTalent(talentLoadout)) return 'arctic';
+  return undefined;
 }
 
 export default function IcebeamManager({
@@ -133,6 +147,7 @@ export default function IcebeamManager({
           icebeamBoon && shouldApplyStaggeringEntropicTalent(talentLoadout);
         const wrathBeam = icebeamBoon && shouldApplyWrathfulEntropicTalent(talentLoadout);
         const infestBeam = icebeamBoon && shouldApplyInfestingEntropicTalent(talentLoadout);
+        const arcticBeam = icebeamBoon && shouldApplyArcticShardsEntropicTalent(talentLoadout);
 
         combatSystem.queueDamage(
           entity,
@@ -152,8 +167,19 @@ export default function IcebeamManager({
           undefined,
           undefined,
           undefined,
+          undefined,
           wrathBeam === true ? true : undefined,
           infestBeam === true ? true : undefined,
+          arcticBeam === true ? true : undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
         );
 
         lastDamageTime.current[entity.id] = now;
@@ -219,6 +245,10 @@ export default function IcebeamManager({
     return null;
   }
 
+  const cs = (window as any).controlSystemRef?.current;
+  const talentLoadout = cs?.getTalentLoadout?.() ?? cs?.talentLoadout;
+  const colorVariant = resolveIcebeamColorVariant(talentLoadout);
+
   return (
     <Icebeam
       parentRef={playerRef}
@@ -226,7 +256,7 @@ export default function IcebeamManager({
       isActive={isIcebeaming}
       startTime={icebeamStartTime.current || Date.now()}
       intensity={getIntensity()}
+      colorVariant={colorVariant}
     />
   );
 }
-

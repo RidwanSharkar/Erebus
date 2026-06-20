@@ -1,199 +1,333 @@
 'use client';
 
-import { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   Vector3,
   Group,
   Mesh,
-  MeshBasicMaterial,
-  Color,
+  MeshStandardMaterial,
+  Quaternion,
   AdditiveBlending,
-} from 'three';
+  DoubleSide,
+} from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import { getEntropicExplosionColors } from '@/utils/entropicColorThemes';
 
 interface EntropicBoltImpactProps {
   position: Vector3;
   /** Normalized projectile travel direction at point of impact. */
   direction: Vector3;
   onComplete: () => void;
+  colorVariant?: string;
 }
 
-const DURATION    = 0.4;  // seconds
-const SPARK_COUNT = 1;
+const IMPACT_DURATION = 0.45;
+const RING_SIZES = [0.4, 0.6, 0.8] as const;
+const SPARK_COUNT = 14;
 
-// Void-purple palette — matches EntropicBolt color theme
-const COLOR_FLASH     = new Color('#f0e0ff');
-const COLOR_RING_DEEP = new Color('#9333ea');
-const COLOR_RING_LITE = new Color('#c084fc');
-const COLOR_SPARK_A   = new Color('#c084fc');
-const COLOR_SPARK_B   = new Color('#e9d5ff');
+const AXIS_X = new Vector3(1, 0, 0);
+const AXIS_Z = new Vector3(0, 0, 1);
+const AXIS_Y = new Vector3(0, 1, 0);
+const _dir = new Vector3();
+const _quat = new Quaternion();
+const _sparkPos = new Vector3();
 
 function buildSparkParams(count: number) {
-  return Array.from({ length: count }, (_, i) => {
-    const base  = (i / count) * Math.PI * 2;
-    const angle = base + (Math.random() * 0.3 - 0.15);
-    const speed = 4.0 + Math.random() * 3.0;
-    const delay = Math.random() * 0.05;
-    const size  = 0.10 + Math.random() * 0.14;
-    const yBias = Math.random() * 0.35;
-    return { angle, speed, delay, size, yBias };
-  });
+  return Array.from({ length: count }, (_, i) => ({
+    angle: (i / count) * Math.PI * 2 + (Math.random() * 0.3 - 0.15),
+    drift: 0.4 + Math.random() * 0.8,
+    speed: 1.8 + Math.random() * 1.4,
+  }));
+}
+
+function alignGroupToDirection(group: Group | null, direction: Vector3) {
+  if (!group) return;
+  _dir.copy(direction).normalize();
+  if (_dir.lengthSq() < 1e-8) {
+    group.quaternion.identity();
+    return;
+  }
+  if (Math.abs(_dir.dot(AXIS_Y)) > 0.985) {
+    _quat.setFromUnitVectors(AXIS_X, _dir);
+  } else {
+    _quat.setFromUnitVectors(AXIS_Z, _dir);
+  }
+  group.quaternion.copy(_quat);
 }
 
 export default function EntropicBoltImpact({
   position,
+  direction,
   onComplete,
+  colorVariant,
 }: EntropicBoltImpactProps) {
-  const groupRef  = useRef<Group>(null);
-  const timeRef   = useRef(0);
-  const doneRef   = useRef(false);
+  const groupRef = useRef<Group>(null);
+  const orientRef = useRef<Group>(null);
+  const timeRef = useRef(0);
+  const doneRef = useRef(false);
 
-  const flashRef     = useRef<Mesh | null>(null);
-  // Two converging rings — start large, shrink inward (implosion feel)
-  const ring1Ref     = useRef<Mesh | null>(null);
-  const ring2Ref     = useRef<Mesh | null>(null);
-  const sparkRefs    = useRef<(Mesh | null)[]>(Array(SPARK_COUNT).fill(null));
+  const coreRef = useRef<Mesh>(null);
+  const innerRef = useRef<Mesh>(null);
+  const flashRef = useRef<Mesh>(null);
+  const shockwaveRef = useRef<Mesh>(null);
+  const ringRefs = useRef<(Group | null)[]>([]);
+  const sparkRefs = useRef<(Mesh | null)[]>([]);
+
+  const colors = useMemo(
+    () => getEntropicExplosionColors(colorVariant),
+    [colorVariant],
+  );
 
   const sparkParams = useMemo(() => buildSparkParams(SPARK_COUNT), []);
 
+  const coreMat = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: colors.core,
+        emissive: colors.coreEmissive,
+        emissiveIntensity: 2,
+        transparent: true,
+        opacity: 0.8,
+        depthWrite: false,
+        blending: AdditiveBlending,
+      }),
+    [colors.core, colors.coreEmissive],
+  );
+
+  const innerMat = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: colors.inner,
+        emissive: colors.innerEmissive,
+        emissiveIntensity: 4,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+        blending: AdditiveBlending,
+      }),
+    [colors.inner, colors.innerEmissive],
+  );
+
   const flashMat = useMemo(
-    () => new MeshBasicMaterial({
-      color: COLOR_FLASH,
-      transparent: true,
-      opacity: 0,
-      blending: AdditiveBlending,
-      depthWrite: false,
-    }),
-    [],
+    () =>
+      new MeshStandardMaterial({
+        color: colors.innerEmissive,
+        emissive: colors.coreEmissive,
+        emissiveIntensity: 5,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: AdditiveBlending,
+        side: DoubleSide,
+      }),
+    [colors.innerEmissive, colors.coreEmissive],
   );
 
-  const ring1Mat = useMemo(
-    () => new MeshBasicMaterial({
-      color: COLOR_RING_DEEP,
-      transparent: true,
-      opacity: 0,
-      blending: AdditiveBlending,
-      depthWrite: false,
-      side: 2,
-    }),
-    [],
+  const shockwaveMat = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: colors.ring,
+        emissive: colors.ringEmissive,
+        emissiveIntensity: 2.2,
+        transparent: true,
+        opacity: 0.7,
+        depthWrite: false,
+        blending: AdditiveBlending,
+        side: DoubleSide,
+      }),
+    [colors.ring, colors.ringEmissive],
   );
 
-  const ring2Mat = useMemo(
-    () => new MeshBasicMaterial({
-      color: COLOR_RING_LITE,
-      transparent: true,
-      opacity: 0,
-      blending: AdditiveBlending,
-      depthWrite: false,
-      side: 2,
-    }),
-    [],
+  const ringMats = useMemo(
+    () =>
+      RING_SIZES.map(
+        (_, i) =>
+          new MeshStandardMaterial({
+            color: colors.ring,
+            emissive: colors.ringEmissive,
+            emissiveIntensity: 1.2,
+            transparent: true,
+            opacity: 0.55 * (1 - i * 0.15),
+            depthWrite: false,
+            blending: AdditiveBlending,
+          }),
+      ),
+    [colors.ring, colors.ringEmissive],
   );
 
   const sparkMats = useMemo(
-    () => Array.from({ length: SPARK_COUNT }, (_, i) =>
-      new MeshBasicMaterial({
-        color: i % 2 === 0 ? COLOR_SPARK_A : COLOR_SPARK_B,
-        transparent: true,
-        opacity: 0,
-        blending: AdditiveBlending,
-        depthWrite: false,
-      }),
-    ),
-    [],
+    () =>
+      Array.from(
+        { length: SPARK_COUNT },
+        () =>
+          new MeshStandardMaterial({
+            color: colors.spark,
+            emissive: colors.sparkEmissive,
+            emissiveIntensity: 2.4,
+            transparent: true,
+            opacity: 0.9,
+            depthWrite: false,
+            blending: AdditiveBlending,
+          }),
+      ),
+    [colors.spark, colors.sparkEmissive],
   );
+
+  const explosionLight = useDynamicLight({
+    color: colors.light,
+    distance: 7,
+    decay: 2,
+    priority: 1,
+  });
+
+  useEffect(() => {
+    alignGroupToDirection(orientRef.current, direction);
+  }, [direction]);
 
   useFrame((_, delta) => {
     if (doneRef.current) return;
 
     timeRef.current += delta;
     const t = timeRef.current;
+    const fade = Math.max(0, 1 - t / IMPACT_DURATION);
 
-    if (t >= DURATION) {
+    if (t >= IMPACT_DURATION) {
       doneRef.current = true;
+      explosionLight.current?.setIntensity(0);
       onComplete();
       return;
     }
 
-    // ── Central flash disc ───────────────────────────────────────────────
+    explosionLight.current?.setPosition(
+      position.x,
+      position.y + 1.125,
+      position.z,
+    );
+    explosionLight.current?.setIntensity(6 * fade * fade);
+
+    const flashFade = t < 0.08 ? t / 0.08 : Math.max(0, 1 - (t - 0.08) / 0.12);
+
+    if (coreRef.current) {
+      const coreScale = 0.3 * (1 + t * 2.8);
+      coreRef.current.scale.setScalar(coreScale);
+    }
+    coreMat.emissiveIntensity = 3.5 * fade;
+    coreMat.opacity = 0.85 * fade;
+
+    if (innerRef.current) {
+      const innerScale = 0.2 * (1 + t * 3.6);
+      innerRef.current.scale.setScalar(innerScale);
+    }
+    innerMat.emissiveIntensity = 5 * fade;
+    innerMat.opacity = 0.95 * fade;
+
     if (flashRef.current) {
-      const flashFade = t < 0.07 ? t / 0.07 : Math.max(0, 1 - (t - 0.07) / 0.15);
-      const scale     = 0.2 + t * 7.0;
-      flashRef.current.scale.set(scale, scale, 1);
-      flashMat.opacity = Math.max(0, flashFade * 0.9);
+      const flashScale = 0.15 + t * 10;
+      flashRef.current.scale.set(flashScale, flashScale, 1);
     }
+    flashMat.opacity = flashFade * 0.95;
+    flashMat.emissiveIntensity = 6 * flashFade;
 
-    // ── Converging ring 1 (deep purple) — starts at 1.5, shrinks to 0.1 ─
-    if (ring1Ref.current) {
-      const progress = Math.min(t / DURATION, 1.0);
-      // Invert: 1.5 at start → 0.1 at end
-      const scale    = 1.5 - progress * 1.4;
-      ring1Ref.current.scale.set(scale, scale, scale);
-      const fadeIn  = t < 0.06 ? t / 0.06 : 1.0;
-      const fadeOut = t > DURATION * 0.6 ? 1 - (t - DURATION * 0.6) / (DURATION * 0.4) : 1.0;
-      ring1Mat.opacity = Math.max(0, fadeIn * fadeOut * 0.85);
+    if (shockwaveRef.current) {
+      const shockScale = 0.2 + t * 5.5;
+      shockwaveRef.current.scale.set(shockScale, shockScale, 1);
     }
+    shockwaveMat.opacity = fade * 0.75;
+    shockwaveMat.emissiveIntensity = 2.8 * fade;
 
-    // ── Converging ring 2 (light purple) — offset delay, slightly different ──
-    if (ring2Ref.current) {
-      const localT   = Math.max(0, t - 0.04);
-      const progress = Math.min(localT / DURATION, 1.0);
-      const scale    = 1.3 - progress * 1.15;
-      ring2Ref.current.scale.set(scale, scale, scale);
-      const fadeIn  = localT < 0.06 ? localT / 0.06 : 1.0;
-      const fadeOut = localT > DURATION * 0.55 ? 1 - (localT - DURATION * 0.55) / (DURATION * 0.45) : 1.0;
-      ring2Mat.opacity = Math.max(0, fadeIn * fadeOut * 0.7);
-    }
+    const ringSpinRates = [4.5, -3.2, 2.8] as const;
+    const ringExpandRates = [3.2, 3.6, 4.0] as const;
+    ringRefs.current.forEach((ringGroup, i) => {
+      if (!ringGroup) return;
+      ringGroup.rotation.z += ringSpinRates[i] * delta;
+      ringGroup.rotation.x += ringSpinRates[(i + 1) % 3] * delta * 0.65;
+      ringGroup.rotation.y += ringSpinRates[(i + 2) % 3] * delta * 0.45;
+      const ringScale = RING_SIZES[i] * (1 + t * ringExpandRates[i]);
+      ringGroup.scale.setScalar(ringScale / RING_SIZES[i]);
+      const mat = ringMats[i];
+      if (mat) {
+        mat.emissiveIntensity = 1.4 * fade;
+        mat.opacity = 0.6 * fade * (1 - i * 0.18);
+      }
+    });
 
-    // ── Radial sparks ────────────────────────────────────────────────────
-    for (let i = 0; i < SPARK_COUNT; i++) {
+    sparkParams.forEach((param, i) => {
       const mesh = sparkRefs.current[i];
-      const mat  = sparkMats[i];
-      if (!mesh) continue;
-      const { angle, speed, delay, size, yBias } = sparkParams[i];
-      const localT = t - delay;
-      if (localT <= 0) { mat.opacity = 0; continue; }
+      const mat = sparkMats[i];
+      if (!mesh || !mat) return;
 
-      const dist = localT * speed;
-      mesh.position.set(Math.sin(angle) * dist, yBias + localT * 1.2, Math.cos(angle) * dist);
-      const s = size * (0.5 + localT * 1.6);
-      mesh.scale.set(s, s, s);
-      const localFade = localT < 0.06
-        ? localT / 0.06
-        : Math.max(0, 1 - (localT - 0.06) / (DURATION * 0.85));
-      mat.opacity = Math.max(0, 0.85 * localFade);
-    }
+      const radius = t * param.speed;
+      const lift = t * param.drift;
+      _sparkPos.set(
+        Math.cos(param.angle) * radius,
+        Math.sin(param.angle) * radius + lift,
+        (Math.sin(param.angle * 2.1) * 0.08),
+      );
+      mesh.position.copy(_sparkPos);
+
+      const sparkSize = 0.05 * (1 - t / IMPACT_DURATION * 0.55);
+      mesh.scale.setScalar(Math.max(0.01, sparkSize / 0.05));
+      mat.emissiveIntensity = 2.6 * fade;
+      mat.opacity = 0.9 * fade;
+    });
   });
 
   return (
     <group ref={groupRef} position={[position.x, position.y + 1.125, position.z]}>
-
-      {/* Central flash disc */}
-      <mesh ref={flashRef} rotation={[-Math.PI / 2, 0, 0]} scale={[0.01, 0.01, 1]}>
-        <circleGeometry args={[1, 22]} />
-        <primitive object={flashMat} attach="material" />
-      </mesh>
-
-      {/* Converging ring 1 — deep purple */}
-      <mesh ref={ring1Ref} rotation={[-Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[1, 0.07, 5, 44]} />
-        <primitive object={ring1Mat} attach="material" />
-      </mesh>
-
-      {/* Converging ring 2 — light purple, slight offset */}
-      <mesh ref={ring2Ref} rotation={[-Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[1, 0.055, 5, 44]} />
-        <primitive object={ring2Mat} attach="material" />
-      </mesh>
-
-      {/* Radial purple sparks */}
-      {sparkParams.map((_, i) => (
-        <mesh key={i} ref={(el) => { sparkRefs.current[i] = el; }}>
-          <planeGeometry args={[1, 1]} />
-          <primitive object={sparkMats[i]} attach="material" />
+      <group ref={orientRef}>
+        {/* Direction-aligned flash disc */}
+        <mesh ref={flashRef}>
+          <circleGeometry args={[1, 24]} />
+          <primitive object={flashMat} attach="material" />
         </mesh>
-      ))}
+
+        {/* Shockwave ring aligned perpendicular to travel */}
+        <mesh ref={shockwaveRef}>
+          <ringGeometry args={[0.55, 0.72, 32]} />
+          <primitive object={shockwaveMat} attach="material" />
+        </mesh>
+
+        {/* Core explosion sphere */}
+        <mesh ref={coreRef}>
+          <sphereGeometry args={[1, 32, 32]} />
+          <primitive object={coreMat} attach="material" />
+        </mesh>
+
+        {/* Inner energy sphere */}
+        <mesh ref={innerRef}>
+          <sphereGeometry args={[1, 24, 24]} />
+          <primitive object={innerMat} attach="material" />
+        </mesh>
+
+        {/* Counter-rotating torus rings */}
+        {RING_SIZES.map((size, i) => (
+          <group
+            key={i}
+            ref={(el) => {
+              ringRefs.current[i] = el;
+            }}
+          >
+            <mesh>
+              <torusGeometry args={[size, 0.065, 16, 32]} />
+              <primitive object={ringMats[i]} attach="material" />
+            </mesh>
+          </group>
+        ))}
+
+        {/* Radial sparks in impact plane */}
+        {sparkParams.map((_, i) => (
+          <mesh
+            key={`spark-${i}`}
+            ref={(el) => {
+              sparkRefs.current[i] = el;
+            }}
+          >
+            <sphereGeometry args={[0.05, 8, 8]} />
+            <primitive object={sparkMats[i]} attach="material" />
+          </mesh>
+        ))}
+      </group>
     </group>
   );
 }

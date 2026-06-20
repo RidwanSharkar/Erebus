@@ -97,6 +97,10 @@ interface DamageEvent {
   frostTotemChill?: boolean;
   /** Glacial Talons — Reaping Talons vs frozen (server doubles damage). */
   glacialTalons?: boolean;
+  /** Cloudkill — bow LMB primary hit requests server-side poison arrow volley. */
+  cloudkillProc?: boolean;
+  /** Cloudkill arrow impact — prevents recursive proc. */
+  cloudkillDamage?: boolean;
 }
 
 interface HealEvent {
@@ -154,6 +158,8 @@ export class CombatSystem extends System {
       glacialBiteChill?: boolean;
       glacialTalons?: boolean;
       entanglementBarrage?: boolean;
+      cloudkill?: boolean;
+      cloudkillDamage?: boolean;
     },
     hitWorldPosition?: { x: number; y: number; z: number },
   ) => void;
@@ -352,10 +358,14 @@ export class CombatSystem extends System {
       proj.velocity.length() > 0
         ? proj.velocity.clone().normalize()
         : new Vector3(0, 0, 1);
+    const colorVariant = isEntropic
+      ? (source?.getComponent(Renderer)?.mesh?.userData?.colorVariant as string | undefined)
+      : undefined;
     this.impactEffectManager.addImpact(
       isBow ? 'bow-shot-impact' : 'entropic-bolt-impact',
       hitPos,
       dir,
+      colorVariant,
     );
   }
 
@@ -729,12 +739,20 @@ export class CombatSystem extends System {
                       : {}),
                   }
                 : damageType === 'projectile' &&
-                    damageEvent.staggerToAdd != null &&
-                    damageEvent.staggerToAdd > 0
+                    ((damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0) ||
+                      damageEvent.cloudkillProc === true)
                   ? {
                       damageType: 'projectile' as const,
-                      staggerToAdd: damageEvent.staggerToAdd,
+                      ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
+                        ? { staggerToAdd: damageEvent.staggerToAdd }
+                        : {}),
+                      ...(damageEvent.cloudkillProc === true ? { cloudkill: true as const } : {}),
                     }
+                  : damageType === 'cloudkill'
+                    ? {
+                        damageType: 'cloudkill' as const,
+                        cloudkillDamage: true as const,
+                      }
                   : damageType === 'reaping_talons'
                     ? {
                         damageType: 'reaping_talons' as const,
@@ -800,7 +818,12 @@ export class CombatSystem extends System {
                                   : {}),
                               }
                         : damageType === 'breath_weapon'
-                          ? { damageType: 'breath_weapon' as const }
+                          ? {
+                              damageType: 'breath_weapon' as const,
+                              ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
+                                ? { staggerToAdd: damageEvent.staggerToAdd }
+                                : {}),
+                            }
                           : damageType === 'entropic' &&
                               ((damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0) ||
                                 damageEvent.entropicWrathful === true ||
@@ -1604,6 +1627,7 @@ export class CombatSystem extends System {
     glacialTalons?: boolean,
     crossentropyMeteor?: boolean,
     entanglementBarrage?: boolean,
+    cloudkillProc?: boolean,
   ): void {
     this.damageQueue.push({
       target,
@@ -1638,6 +1662,7 @@ export class CombatSystem extends System {
       glacialTalons,
       crossentropyMeteor,
       entanglementBarrage,
+      cloudkillProc,
     });
   }
 

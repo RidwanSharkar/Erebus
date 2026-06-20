@@ -15,6 +15,7 @@ interface GhoulModelProps {
   isImpacting?: boolean;
   impactPlayKey?: number;
   onImpactFinished?: () => void;
+  scaleMultiplier?: number;
 }
 
 const GHOUL_MODEL_PATHS = [
@@ -51,6 +52,7 @@ export default function GhoulModel({
   isImpacting = false,
   impactPlayKey = 0,
   onImpactFinished,
+  scaleMultiplier = 1,
 }: GhoulModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
@@ -209,7 +211,7 @@ export default function GhoulModel({
 
   return (
     <group ref={sceneGroupRef}>
-      <group scale={[SCALE, SCALE, SCALE]}>
+      <group scale={[SCALE * scaleMultiplier, SCALE * scaleMultiplier, SCALE * scaleMultiplier]}>
         <primitive object={clonedScene} />
       </group>
     </group>

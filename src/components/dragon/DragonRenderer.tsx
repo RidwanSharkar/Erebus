@@ -180,7 +180,7 @@ interface DragonRendererProps {
   glacialTalonsTheme?: boolean;
   /** Co-op: server applies CV remainder + optional Cobra remainder as one Wyvern Talons hit. */
   detonateWyvernConcentratedVenomCoop?: (serverEnemyId: string, cobraRemainingDamage?: number) => void;
-  /** STORED CHARGE: Runeblade Charge — 3 spin rotations + per-rotation damage. */
+  /** Cyclone Rush: Runeblade Charge — 3 spin rotations + per-rotation damage. */
   runebladeStoredCharge?: boolean;
   /** STAGGERING COMBO: basic attack combo adds stagger per hit (co-op server sync). */
   runebladeStaggeringCombo?: boolean;

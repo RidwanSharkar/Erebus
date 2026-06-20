@@ -55,6 +55,24 @@ function rollCrossentropyMeteorStrikeCount() {
   return 3;
 }
 
+/** Keep in sync with `CLOUDKILL_*` in src/utils/talents.ts */
+const CLOUDKILL_ARROW_COUNT_MIN = 4;
+const CLOUDKILL_ARROW_COUNT_MAX = 8;
+const CLOUDKILL_ARROW_DELAY_MS = 250;
+const CLOUDKILL_DAMAGE = 25;
+const CLOUDKILL_RADIUS = 1.5;
+const CLOUDKILL_WARNING_MS = 100;
+const CLOUDKILL_ARROW_SPEED = 26.5;
+const CLOUDKILL_SKY_HEIGHT_MIN = 50;
+const CLOUDKILL_SKY_HEIGHT_MAX = 70;
+
+function rollCloudkillArrowCount() {
+  return (
+    CLOUDKILL_ARROW_COUNT_MIN +
+    Math.floor(Math.random() * (CLOUDKILL_ARROW_COUNT_MAX - CLOUDKILL_ARROW_COUNT_MIN + 1))
+  );
+}
+
 /**
  * Z and X offsets must match ThroneRoom.tsx `THRONE_TRAINING_DUMMY_SPAWNS` / `THRONE_TRAINING_DUMMY_SPAWN_Z`.
  */
@@ -140,13 +158,13 @@ const GOLD_REWARD_TABLE = Object.freeze({
   'boss2': { fixed: 100 },
   'boss3': { fixed: 150 },
 });
-/** Mirror client main hex arena constants. */
+/** Mirror client main arena constants (colored rooms use a circle at this radius). */
 const MAIN_ARENA_HEX_RADIUS = 26;
 const MAIN_MAP_HALF_X = MAIN_ARENA_HEX_RADIUS;
 const MAIN_MAP_HALF_Z = MAIN_ARENA_HEX_RADIUS;
-/** Keep foot XZ inside the playable hex with margin for collision radius. */
+/** Keep foot XZ inside the playable disc with margin for collision radius. */
 const MAIN_ARENA_SPAWN_INSET = 1.5;
-const MAIN_HEX_INNER_APOTHEM = MAIN_ARENA_HEX_RADIUS * Math.cos(Math.PI / 6) - MAIN_ARENA_SPAWN_INSET;
+const MAIN_CIRCLE_INNER_RADIUS = MAIN_ARENA_HEX_RADIUS - MAIN_ARENA_SPAWN_INSET;
 
 /**
  * Hex combat arena (stat / trial) — must match `HexCombatArena.tsx`:
@@ -155,6 +173,10 @@ const MAIN_HEX_INNER_APOTHEM = MAIN_ARENA_HEX_RADIUS * Math.cos(Math.PI / 6) - M
 const HEX_ARENA_RADIUS = 22;
 const HEX_FLOOR_MARGIN = 1.4;
 const HEX_INNER_APOTHEM = HEX_ARENA_RADIUS * Math.cos(Math.PI / 6) - HEX_FLOOR_MARGIN;
+
+function isInsideCircleArenaFloor(x, z, radius = MAIN_CIRCLE_INNER_RADIUS) {
+  return Math.hypot(x, z) <= radius;
+}
 
 function isInsideHexArenaFloor(x, z, apothem = HEX_INNER_APOTHEM) {
   for (let i = 0; i < 6; i++) {
@@ -165,26 +187,17 @@ function isInsideHexArenaFloor(x, z, apothem = HEX_INNER_APOTHEM) {
 }
 
 function clampPositionToMainArenaXZ(x, z) {
-  let cx = x;
-  let cz = z;
-  for (let pass = 0; pass < 2; pass++) {
-    for (let i = 0; i < 6; i++) {
-      const a = (Math.PI / 3) * i;
-      const nx = Math.cos(a);
-      const nz = Math.sin(a);
-      const excess = cx * nx + cz * nz - MAIN_HEX_INNER_APOTHEM;
-      if (excess > 0) {
-        cx -= nx * excess;
-        cz -= nz * excess;
-      }
-    }
-  }
-  return { x: cx, z: cz };
+  const maxR = MAIN_CIRCLE_INNER_RADIUS;
+  const len = Math.hypot(x, z);
+  if (len <= maxR || len < 1e-6) return { x, z };
+  const s = maxR / len;
+  return { x: x * s, z: z * s };
 }
 
-function maxHexAbsXAtZ(z, apothem = MAIN_HEX_INNER_APOTHEM) {
-  const diagonalLimit = (apothem - Math.abs(z) * Math.sin(Math.PI / 3)) / Math.cos(Math.PI / 3);
-  return Math.max(0, Math.min(apothem, diagonalLimit));
+function maxCircleAbsXAtZ(z, radius = MAIN_CIRCLE_INNER_RADIUS) {
+  const zAbs = Math.abs(z);
+  if (zAbs >= radius) return 0;
+  return Math.sqrt(radius * radius - z * z);
 }
 
 class GameRoom {
@@ -1808,6 +1821,70 @@ class GameRoom {
     }, impactDelayMs);
   }
 
+  getCloudkillStartPosition(center) {
+    const height =
+      CLOUDKILL_SKY_HEIGHT_MIN +
+      Math.random() * (CLOUDKILL_SKY_HEIGHT_MAX - CLOUDKILL_SKY_HEIGHT_MIN);
+    return {
+      x: center.x,
+      y: height,
+      z: center.z,
+    };
+  }
+
+  tryProcCloudkill(center, fromPlayerId, player, hitMeta) {
+    if (!center || !fromPlayerId || fromPlayerId === 'unknown') return;
+    if (!hitMeta || hitMeta.damageType !== 'projectile') return;
+    if (!hitMeta.cloudkill) return;
+    if (hitMeta.cloudkillDamage) return;
+    const arrowCount = rollCloudkillArrowCount();
+    for (let i = 0; i < arrowCount; i++) {
+      this._scheduleTimeout(() => {
+        this.spawnOneCloudkillArrow(center, fromPlayerId, player, i);
+      }, i * CLOUDKILL_ARROW_DELAY_MS);
+    }
+  }
+
+  spawnOneCloudkillArrow(center, fromPlayerId, player, arrowIndex) {
+    const startPosition = this.getCloudkillStartPosition(center);
+    const dx = center.x - startPosition.x;
+    const dy = -3 - startPosition.y;
+    const dz = center.z - startPosition.z;
+    const travelDistance = Math.hypot(dx, dy, dz);
+    const travelTimeMs = (travelDistance / CLOUDKILL_ARROW_SPEED) * 1000;
+    const castTimestamp = Date.now();
+    if (this.io) {
+      this.io.to(this.roomId).emit('cloudkill-cast', {
+        castId: `cloudkill-${fromPlayerId}-${castTimestamp}-${arrowIndex}`,
+        targetPosition: { x: center.x, y: center.y ?? 0, z: center.z },
+        startPosition,
+        timestamp: castTimestamp,
+        delayMs: arrowIndex * CLOUDKILL_ARROW_DELAY_MS,
+        damage: CLOUDKILL_DAMAGE,
+      });
+    }
+
+    const impactDelayMs = CLOUDKILL_WARNING_MS + travelTimeMs;
+    this._scheduleTimeout(() => {
+      if (!this.enemies) return;
+      const radiusSq = CLOUDKILL_RADIUS * CLOUDKILL_RADIUS;
+      const cloudkillHitMeta = {
+        damageType: 'cloudkill',
+        cloudkillDamage: true,
+      };
+      for (const [enemyId, enemy] of this.enemies) {
+        if (!enemy || enemy.isDying) continue;
+        if (enemy.health != null && enemy.health <= 0) continue;
+        const ex = enemy.position?.x ?? 0;
+        const ez = enemy.position?.z ?? 0;
+        const ddx = ex - center.x;
+        const ddz = ez - center.z;
+        if (ddx * ddx + ddz * ddz > radiusSq) continue;
+        this.damageEnemy(enemyId, CLOUDKILL_DAMAGE, fromPlayerId, player || null, cloudkillHitMeta);
+      }
+    }, impactDelayMs);
+  }
+
   getMushroomState() {
     if (!this.mushroomHealth || this.mushroomHealth.length === 0) {
       this._resetMushroomState();
@@ -1983,10 +2060,18 @@ class GameRoom {
     }
     if (type === 'titan') {
       // Excluded from HP scaling.
+      const TITAN_STATS_BY_SOUL = {
+        blue:   { health: 3500, maxHealth: 3500, damage: 148 },
+        red:    { health: 4000, maxHealth: 4000, damage: 134 },
+        green:  { health: 5000, maxHealth: 5000, damage: 100 },
+        purple: { health: 3000, maxHealth: 3000, damage: 166 },
+      };
+      const soulType = campDef.knightSoulType;
+      const stats = TITAN_STATS_BY_SOUL[soulType];
       return { id: `titan-${campIndex}-${slotIndex}-${ts}`, type: 'titan', ...base,
-        health: 3000, maxHealth: 3000, damage: 100, moveSpeed: 2.5,
-        patrolSpeed: 1.5, attackCooldown: 2500,
-        soulType: campDef.knightSoulType };
+        health: stats.health, maxHealth: stats.maxHealth, damage: stats.damage,
+        moveSpeed: 2.5, patrolSpeed: 1.5, attackCooldown: 2500,
+        soulType };
     }
     if (type === 'boss') {
       // Mini-boss1 spawned inside a wave room — identical stats/AI to the real Boss1 encounter.
@@ -2010,7 +2095,7 @@ class GameRoom {
 
   // Pick a random point inside an arena footprint, excluding certain zones.
   // Returns null if no valid position was found after MAX_ATTEMPTS.
-  _randomMapPos(mapHalfX, mapHalfZ, exclusions, existing, minDistFromOthers, useHexInterior = false, hexApothem = null) {
+  _randomMapPos(mapHalfX, mapHalfZ, exclusions, existing, minDistFromOthers, useHexInterior = false, hexApothem = null, circleRadius = null) {
     const MAX_ATTEMPTS = 120;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       // Uniform distribution within the axis-aligned rectangle.
@@ -2018,9 +2103,11 @@ class GameRoom {
       const z = (Math.random() * 2 - 1) * mapHalfZ;
 
       const apothem = hexApothem ?? (useHexInterior ? HEX_INNER_APOTHEM : null);
-      const inBounds = useHexInterior
-        ? isInsideHexArenaFloor(x, z, apothem)
-        : Math.abs(x) <= mapHalfX && Math.abs(z) <= mapHalfZ;
+      const inBounds = circleRadius != null
+        ? isInsideCircleArenaFloor(x, z, circleRadius)
+        : useHexInterior
+          ? isInsideHexArenaFloor(x, z, apothem)
+          : Math.abs(x) <= mapHalfX && Math.abs(z) <= mapHalfZ;
       if (!inBounds) continue;
 
       // Check exclusion zones
@@ -2114,7 +2201,7 @@ class GameRoom {
   }
 
   /**
-   * Generate `count` spawn positions near the far north shoulder of the hex arena.
+   * Generate `count` spawn positions near the far north rim of the circular arena.
    * Enemies spawned here will march south toward players.
    * @param {number} count
    * @returns {Array<{x:number,z:number}>}
@@ -2126,17 +2213,17 @@ class GameRoom {
       let x, z;
       let placed = false;
       for (let attempt = 0; attempt < 80; attempt++) {
-        z = farZ - Math.random() * 2.5; // Inward from the north hex shoulder.
-        const maxX = Math.max(3, maxHexAbsXAtZ(z) - 1.5);
+        z = farZ - Math.random() * 2.5; // Inward from the north rim.
+        const maxX = Math.max(3, maxCircleAbsXAtZ(z) - 1.5);
         x = (Math.random() * 2 - 1) * maxX;
-        if (isInsideHexArenaFloor(x, z, MAIN_HEX_INNER_APOTHEM) && !positions.some((p) => Math.hypot(p.x - x, p.z - z) < 2.5)) {
+        if (isInsideCircleArenaFloor(x, z) && !positions.some((p) => Math.hypot(p.x - x, p.z - z) < 2.5)) {
           placed = true;
           break;
         }
       }
       if (!placed) {
         // Fallback: evenly space along the edge
-        const maxX = Math.max(3, maxHexAbsXAtZ(farZ - 1) - 1.5);
+        const maxX = Math.max(3, maxCircleAbsXAtZ(farZ - 1) - 1.5);
         x = -maxX + (i / Math.max(count - 1, 1)) * maxX * 2;
         z = farZ - 1;
       }
@@ -2160,7 +2247,7 @@ class GameRoom {
     const existing = wavePositions.map((p) => ({ x: p.x, z: p.z }));
     const SLOT_BASE = 900;
     for (let i = 0; i < n; i++) {
-      const pos = this._randomMapPos(MAP_HALF_X, MAP_HALF_Z, exclusions, existing, 3.5, true, MAIN_HEX_INNER_APOTHEM);
+      const pos = this._randomMapPos(MAP_HALF_X, MAP_HALF_Z, exclusions, existing, 3.5, false, null, MAIN_CIRCLE_INNER_RADIUS);
       if (!pos) continue;
       existing.push({ x: pos.x, z: pos.z });
       const enemy = this._buildEnemy('tentacle-spine', 0, SLOT_BASE + i, pos, campDef);
@@ -2660,6 +2747,10 @@ class GameRoom {
 
     console.log(`💥 Enemy ${enemyId} (${enemy.type}) damaged by ${appliedDamage} from player ${fromPlayerId}. Health: ${previousHealth} -> ${enemy.health}`);
 
+    if (enemy.type === 'titan' && this.enemyAI && enemy.health > 0 && !enemy.isDying) {
+      this.enemyAI.titanMaybeStartBladestorm(enemy);
+    }
+
     // Track damage for aggro system
     if (this.enemyAI) {
       if (COOP_BOSS_TYPES.has(enemy.type)) {
@@ -2741,6 +2832,14 @@ class GameRoom {
           y: enemy.position.y,
           z: enemy.position.z,
         };
+      } else if (hitMeta && hitMeta.damageType === 'cloudkill' && hitMeta.cloudkillDamage) {
+        damagedPayload.damageType = 'cloudkill';
+        damagedPayload.cloudkillDamage = true;
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
       } else if (hitMeta && hitMeta.sourceZombieId) {
         damagedPayload.damageType = 'player_zombie';
         damagedPayload.position = {
@@ -2782,6 +2881,21 @@ class GameRoom {
       appliedDamage > 0
     ) {
       this.tryProcCrossentropyMeteor(
+        { x: enemy.position.x, y: enemy.position.y, z: enemy.position.z },
+        fromPlayerId,
+        player,
+        hitMeta,
+      );
+    }
+
+    if (
+      hitMeta &&
+      hitMeta.damageType === 'projectile' &&
+      hitMeta.cloudkill &&
+      !hitMeta.cloudkillDamage &&
+      appliedDamage > 0
+    ) {
+      this.tryProcCloudkill(
         { x: enemy.position.x, y: enemy.position.y, z: enemy.position.z },
         fromPlayerId,
         player,
@@ -2926,6 +3040,19 @@ class GameRoom {
       enemy.health > 0
     ) {
       this.applyGlacialBiteChillOnHit(enemyId);
+    }
+
+    // Arctic Shards + Icebeam — +1 chill per beam tick; 5 stacks → 4s freeze
+    if (
+      !result.wasKilled &&
+      hitMeta &&
+      hitMeta.damageType === 'icebeam' &&
+      hitMeta.icebeamArcticChill &&
+      damage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0
+    ) {
+      this.applyBlizzardChillOnHit(enemyId);
     }
 
     // Stagger talents: build stagger; at 100 (300 for coop bosses) proc damage + stun + VFX

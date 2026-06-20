@@ -84,7 +84,7 @@ interface RunebladeProps {
   dragonGroupRef?: React.RefObject<Group>; // Reference to dragon's group for real-time positioning
   playerEntityId?: number; // Player's entity ID to prevent self-damage
   realTimePositionRef?: React.RefObject<Vector3>; // Player position during charge (matches Sword)
-  /** STORED CHARGE talent: 3 full post-dash spins + damage each full rotation. */
+  /** Cyclone Rush — 3 full post-Charge spins + damage each full rotation. */
   storedCharge?: boolean;
   /** Windfury / Flurry — once per swing after real enemy hits (local player only). */
   onPrimaryHitsResolved?: (enemiesHit: number) => void;

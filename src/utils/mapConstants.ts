@@ -1,9 +1,11 @@
 /**
  * Main co-op combat arena (not the throne prep room).
- * The colored enemy rooms use a regular hex footprint, slightly larger than
- * the stat/trial HexCombatArena radius (22).
+ * Colored enemy rooms use a circular footprint at this radius; stat/trial
+ * HexCombatArena stays hex at `HEX_ARENA_RADIUS`.
  */
 export const MAIN_ARENA_HEX_RADIUS = 26;
+/** Stat/trial hex combat arena — must match `HexCombatArena.tsx`. */
+export const HEX_ARENA_RADIUS = 22;
 export const MAIN_ARENA_HEX_FLOOR_MARGIN = 1.4;
 export const MAIN_ARENA_HEX_INNER_APOTHEM =
   MAIN_ARENA_HEX_RADIUS * Math.cos(Math.PI / 6) - MAIN_ARENA_HEX_FLOOR_MARGIN;
@@ -39,6 +41,30 @@ function resolveMainArenaBounds(
     return { halfX: boundsOrHalfX, halfZ: halfZ ?? boundsOrHalfX };
   }
   return boundsOrHalfX;
+}
+
+/** True if (x, z) lies inside a circle arena of the given radius. */
+export function isInsideCircleArenaXZ(
+  x: number,
+  z: number,
+  radius: number = MAIN_ARENA_HEX_RADIUS,
+  inset: number = 0,
+): boolean {
+  return Math.hypot(x, z) <= radius - inset;
+}
+
+/** Clamp XZ to the nearest point inside a circle arena. */
+export function clampToCircleArenaXZ(
+  x: number,
+  z: number,
+  radius: number = MAIN_ARENA_HEX_RADIUS,
+  inset: number = MAIN_ARENA_SPAWN_INSET,
+): { x: number; z: number } {
+  const maxR = radius - inset;
+  const len = Math.hypot(x, z);
+  if (len <= maxR || len < 1e-6) return { x, z };
+  const s = maxR / len;
+  return { x: x * s, z: z * s };
 }
 
 /** True if (x, z) lies inside a regular hex with the same orientation as HexCombatArena. */
@@ -81,6 +107,10 @@ export function clampToHexArenaXZ(
   return { x: cx, z: cz };
 }
 
+function isStatTrialArenaRadius(radius: number): boolean {
+  return radius === HEX_ARENA_RADIUS;
+}
+
 /** True if (x, z) lies inside the playable main arena. Explicit bounds keep legacy rectangle behavior. */
 export function isInsideMainArenaXZ(
   x: number,
@@ -89,10 +119,13 @@ export function isInsideMainArenaXZ(
   halfZ?: number,
 ): boolean {
   if (boundsOrHalfX === MAIN_ARENA_BOUNDS && halfZ === undefined) {
-    return isInsideHexArenaXZ(x, z);
+    return isInsideCircleArenaXZ(x, z);
   }
   if (typeof boundsOrHalfX === 'number' && halfZ === undefined) {
-    return isInsideHexArenaXZ(x, z, boundsOrHalfX);
+    if (isStatTrialArenaRadius(boundsOrHalfX)) {
+      return isInsideHexArenaXZ(x, z, boundsOrHalfX);
+    }
+    return isInsideCircleArenaXZ(x, z, boundsOrHalfX);
   }
   const bounds = resolveMainArenaBounds(boundsOrHalfX, halfZ);
   return Math.abs(x) <= bounds.halfX && Math.abs(z) <= bounds.halfZ;
@@ -106,10 +139,13 @@ export function clampToMainArenaXZ(
   inset: number = MAIN_ARENA_SPAWN_INSET,
 ): { x: number; z: number } {
   if (boundsOrHalfX === MAIN_ARENA_BOUNDS) {
-    return clampToHexArenaXZ(x, z, MAIN_ARENA_HEX_RADIUS, inset);
+    return clampToCircleArenaXZ(x, z, MAIN_ARENA_HEX_RADIUS, inset);
   }
   if (typeof boundsOrHalfX === 'number') {
-    return clampToHexArenaXZ(x, z, boundsOrHalfX, inset);
+    if (isStatTrialArenaRadius(boundsOrHalfX)) {
+      return clampToHexArenaXZ(x, z, boundsOrHalfX, inset);
+    }
+    return clampToCircleArenaXZ(x, z, boundsOrHalfX, inset);
   }
   const bounds = resolveMainArenaBounds(boundsOrHalfX);
   const mx = bounds.halfX - inset;

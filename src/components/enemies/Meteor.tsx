@@ -225,7 +225,7 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
             <MeteorTrail
               meshRef={meteorMeshRef}
               color={new Color("#BA55D3")}
-              size={0.07}
+              size={0.05}
             />
           </mesh>
         </group>

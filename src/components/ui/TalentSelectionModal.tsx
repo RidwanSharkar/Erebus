@@ -63,8 +63,7 @@ import {
   staggeringStrikeTalentDefinition,
   staggeringComboTalentDefinition,
   staggeringSwipesTalentDefinition,
-  storedChargeTalentDefinition,
-  bladeRushTalentDefinition,
+  cycloneRushTalentDefinition,
   wrathfulComboTalentDefinition,
   infestedComboTalentDefinition,
   guardComboTalentDefinition,
@@ -90,7 +89,8 @@ import {
   WRATHFUL_COMBO_CRIT_CHANCE_ADD,
   WRATHFUL_COMBO_CRIT_DAMAGE_MULT_ADD,
   INFESTED_COMBO_LIFESTEAL,
-  BLADE_RUSH_CHARGE_COOLDOWN_SEC,
+  CYCLONE_RUSH_CHARGE_COOLDOWN_SEC,
+  normalizeTalentLoadout,
   trinityTalentDefinition,
   colossusGuardTalentDefinition,
   COLOSSUS_GUARD_PROC_CHANCE,
@@ -112,6 +112,11 @@ import {
   dualCoilTalentDefinition,
   highCaliberTalentDefinition,
   triggerFingerTalentDefinition,
+  cloudkillTalentDefinition,
+  CLOUDKILL_PROC_CHANCE,
+  CLOUDKILL_DAMAGE,
+  CLOUDKILL_ARROW_COUNT_MIN,
+  CLOUDKILL_ARROW_COUNT_MAX,
   BOW_UNCHARGED_PROJECTILE_DAMAGE,
   BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE,
   wyvernStingTalentDefinition,
@@ -319,7 +324,7 @@ export default function TalentSelectionModal({
     wrathfulTalons: initialTalentLoadout?.wrathfulTalons ?? def.wrathfulTalons,
     execute: initialTalentLoadout?.execute ?? def.execute,
     explosiveTalons: initialTalentLoadout?.explosiveTalons ?? def.explosiveTalons,
-    storedCharge: initialTalentLoadout?.storedCharge ?? def.storedCharge,
+    cycloneRush: initialTalentLoadout?.cycloneRush ?? def.cycloneRush,
     trinity: initialTalentLoadout?.trinity ?? def.trinity,
     infestedSmite: initialTalentLoadout?.infestedSmite ?? def.infestedSmite,
     staggeringSmite: initialTalentLoadout?.staggeringSmite ?? def.staggeringSmite,
@@ -341,12 +346,12 @@ export default function TalentSelectionModal({
     dualCoil: initialTalentLoadout?.dualCoil ?? def.dualCoil,
     highCaliber: initialTalentLoadout?.highCaliber ?? def.highCaliber,
     triggerFinger: initialTalentLoadout?.triggerFinger ?? def.triggerFinger,
+    cloudkill: initialTalentLoadout?.cloudkill ?? def.cloudkill,
     wyvernSting: initialTalentLoadout?.wyvernSting ?? def.wyvernSting,
     wyvernTalons: initialTalentLoadout?.wyvernTalons ?? def.wyvernTalons,
     arcticSting: initialTalentLoadout?.arcticSting ?? def.arcticSting,
     glacialBite: initialTalentLoadout?.glacialBite ?? def.glacialBite,
     glacialTalons: initialTalentLoadout?.glacialTalons ?? def.glacialTalons,
-    bladeRush: initialTalentLoadout?.bladeRush ?? def.bladeRush,
     wrathfulCombo: initialTalentLoadout?.wrathfulCombo ?? def.wrathfulCombo,
     infestedCombo: initialTalentLoadout?.infestedCombo ?? def.infestedCombo,
     guardCombo: initialTalentLoadout?.guardCombo ?? def.guardCombo,
@@ -414,7 +419,12 @@ export default function TalentSelectionModal({
     lightningBoltRoom: initialTalentLoadout?.lightningBoltRoom ?? def.lightningBoltRoom,
     aegisRoom: initialTalentLoadout?.aegisRoom ?? def.aegisRoom,
   };
-  const [loadout, setLoadout] = useState<TalentLoadout>(() => merged);
+  const [loadout, setLoadout] = useState<TalentLoadout>(() =>
+    normalizeTalentLoadout({
+      ...merged,
+      ...(initialTalentLoadout as Partial<TalentLoadout> & { bladeRush?: boolean; storedCharge?: boolean }),
+    }),
+  );
 
   const wraithEquipped = useMemo(() => isWraithStrikeInLoadout(abilityLoadout), [abilityLoadout]);
   const flourishEquipped = useMemo(() => isSabresFlourishInLoadout(abilityLoadout), [abilityLoadout]);
@@ -491,15 +501,8 @@ export default function TalentSelectionModal({
     setLoadout((prev) => ({ ...prev, giantKiller: !prev.giantKiller }));
   }, [reapingEquipped]);
 
-  const toggleStoredCharge = useCallback(() => {
-    setLoadout((prev) => {
-      if (!chargeEquipped && !prev.bladeRush) return prev;
-      return { ...prev, storedCharge: !prev.storedCharge };
-    });
-  }, [chargeEquipped]);
-
-  const toggleBladeRush = useCallback(() => {
-    setLoadout((prev) => ({ ...prev, bladeRush: !prev.bladeRush }));
+  const toggleCycloneRush = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, cycloneRush: !prev.cycloneRush }));
   }, []);
 
   const toggleTrinity = useCallback(() => {
@@ -651,6 +654,10 @@ export default function TalentSelectionModal({
 
   const toggleTriggerFinger = useCallback(() => {
     setLoadout((prev) => ({ ...prev, triggerFinger: !prev.triggerFinger }));
+  }, []);
+
+  const toggleCloudkill = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, cloudkill: !prev.cloudkill }));
   }, []);
 
   const toggleWyvernSting = useCallback(() => {
@@ -1330,7 +1337,7 @@ export default function TalentSelectionModal({
                     <>
                       <p className="text-gray-400 text-sm mt-1">{executionerTalentDefinition.description}</p>
                       <p className="text-sky-200/90 text-xs mt-2 font-mono">
-                        Real dash only (not Blade Rush) · {EXECUTIONER_POST_DASH_WINDOW_MS / 1000}s window · 3rd-hit combo · +
+                        Real dash only (not Cyclone Rush) · {EXECUTIONER_POST_DASH_WINDOW_MS / 1000}s window · 3rd-hit combo · +
                         {EXECUTIONER_BASE_DAMAGE_ADD} base before crit
                       </p>
                     </>
@@ -1377,65 +1384,29 @@ export default function TalentSelectionModal({
             ${wc.border} ${wc.bg}
           `}
             >
-              <TalentHoverSurface talent={bladeRushTalentDefinition}>
+              <TalentHoverSurface talent={cycloneRushTalentDefinition}>
               <div className="flex items-start gap-3">
-                <TalentRowIcon talent={bladeRushTalentDefinition} />
+                <TalentRowIcon talent={cycloneRushTalentDefinition} />
                 <input
                   type="checkbox"
-                  id="talent-blade-rush"
-                  checked={loadout.bladeRush}
-                  onChange={toggleBladeRush}
+                  id="talent-cyclone-rush"
+                  checked={loadout.cycloneRush}
+                  onChange={toggleCycloneRush}
                   className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
-                  aria-label={bladeRushTalentDefinition.name}
+                  aria-label={cycloneRushTalentDefinition.name}
                 />
-                <label htmlFor="talent-blade-rush" className="flex-1 cursor-pointer">
-                  {loadout.bladeRush && (
+                <label htmlFor="talent-cyclone-rush" className="flex-1 cursor-pointer">
+                  {loadout.cycloneRush && (
                     <>
-                      <p className="text-gray-400 text-sm mt-1">{bladeRushTalentDefinition.description}</p>
+                      <p className="text-gray-400 text-sm mt-1">{cycloneRushTalentDefinition.description}</p>
                       <p className="text-sky-200/90 text-xs mt-2 font-mono">
-                        Double-tap W · 1 dash charge · Charge path · {BLADE_RUSH_CHARGE_COOLDOWN_SEC}s between Blade Rush charges
+                        Double-tap W · 3 full spins · {CYCLONE_RUSH_CHARGE_COOLDOWN_SEC}s cooldown
                       </p>
                     </>
                   )}
                 </label>
               </div>
               </TalentHoverSurface>
-            </div>
-            <div
-              className={`
-            rounded-xl border-2 p-4 mb-6 transition-all
-            ${chargeEquipped || loadout.bladeRush ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
-          `}
-            >
-              <TalentHoverSurface talent={storedChargeTalentDefinition} dimmed={!(chargeEquipped || loadout.bladeRush)}>
-              <div className="flex items-start gap-3">
-                <TalentRowIcon talent={storedChargeTalentDefinition} dimmed={!(chargeEquipped || loadout.bladeRush)} />
-                <input
-                  type="checkbox"
-                  id="talent-stored-charge"
-                  checked={loadout.storedCharge}
-                  onChange={toggleStoredCharge}
-                  disabled={!chargeEquipped && !loadout.bladeRush}
-                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
-                  aria-label={storedChargeTalentDefinition.name}
-                />
-                <label
-                  htmlFor="talent-stored-charge"
-                  className={`flex-1 ${chargeEquipped || loadout.bladeRush ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
-                  {loadout.storedCharge && (
-                    <>
-                      <p className="text-gray-400 text-sm mt-1">{storedChargeTalentDefinition.description}</p>
-                      <p className="text-sky-200/90 text-xs mt-2 font-mono">3 full spins · Charge damage per rotation</p>
-                    </>
-                  )}
-                </label>
-              </div>
-              </TalentHoverSurface>
-              {!chargeEquipped && !loadout.bladeRush && (
-                <p className="text-gray-500 text-xs mt-3 pl-7">
-                  Equip <span className="text-gray-300">Charge</span> in your ability loadout or enable <span className="text-gray-300">Blade Rush</span> to use this talent.
-                </p>
-              )}
             </div>
             <div
               className={`
@@ -2549,6 +2520,34 @@ export default function TalentSelectionModal({
                     <p className="text-gray-400 text-sm mt-1">{triggerFingerTalentDefinition.description}</p>
                     <p className="text-rose-200/90 text-xs mt-2 font-mono">
                       LMB minimum damage {BOW_UNCHARGED_PROJECTILE_DAMAGE} → {BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE}
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+            </TalentHoverSurface>
+          </div>
+        )}
+
+        {selectedWeapon === WeaponType.BOW && (
+          <div className={`rounded-xl border-2 p-4 mb-6 transition-all ${wc.border} ${wc.bg}`}>
+            <TalentHoverSurface talent={cloudkillTalentDefinition}>
+            <div className="flex items-start gap-3">
+              <TalentRowIcon talent={cloudkillTalentDefinition} />
+              <input
+                type="checkbox"
+                id="talent-cloudkill"
+                checked={loadout.cloudkill}
+                onChange={toggleCloudkill}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+                aria-label={cloudkillTalentDefinition.name}
+              />
+              <label htmlFor="talent-cloudkill" className="flex-1 cursor-pointer">
+                {loadout.cloudkill && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{cloudkillTalentDefinition.description}</p>
+                    <p className="text-emerald-200/90 text-xs mt-2 font-mono">
+                      {CLOUDKILL_PROC_CHANCE * 100}% proc · {CLOUDKILL_ARROW_COUNT_MIN}–{CLOUDKILL_ARROW_COUNT_MAX} arrows · {CLOUDKILL_DAMAGE} dmg each
                     </p>
                   </>
                 )}

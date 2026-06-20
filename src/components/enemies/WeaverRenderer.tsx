@@ -148,6 +148,24 @@ export default function WeaverRenderer({
     return () => { socket.off('weaver-heal-telegraph', handleHealTelegraph); };
   }, [id, socket, isCastingSummon]);
 
+  // Weaver Impale Spike cast (post-Boss2) — reuses CastHeal animation
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleImpaleCast = (data: { weaverId: string }) => {
+      if (data.weaverId !== id) return;
+      isCastingRef.current = true;
+      setIsCastingHeal(true);
+      setTimeout(() => {
+        setIsCastingHeal(false);
+        isCastingRef.current = isCastingSummon;
+      }, CAST_HEAL_DURATION);
+    };
+
+    socket.on('weaver-impale-spike-cast', handleImpaleCast);
+    return () => { socket.off('weaver-impale-spike-cast', handleImpaleCast); };
+  }, [id, socket, isCastingSummon]);
+
   // Weaver summon ghoul telegraph
   useEffect(() => {
     if (!socket) return;

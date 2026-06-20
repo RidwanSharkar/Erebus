@@ -34,8 +34,8 @@ import type { DamageCalcOptions } from '@/core/DamageCalculator';
 import {
   TalentLoadout,
   createDefaultTalentLoadout,
+  normalizeTalentLoadout,
   isWraithStrikeInLoadout,
-  shouldApplyStoredChargeTalent as computeStoredChargeTalentActive,
   shouldApplyTrinityTalent as computeTrinityTalentActive,
   shouldApplyInfestedSmiteTalent as computeInfestedSmiteTalentActive,
   shouldApplyInfernalSmiteTalent as computeInfernalSmiteTalentActive,
@@ -140,6 +140,7 @@ import {
   shouldApplyDualCoilTalent,
   shouldApplyHighCaliberTalent,
   shouldApplyTriggerFingerTalent,
+  shouldApplyCloudkillTalent,
   BOW_UNCHARGED_PROJECTILE_DAMAGE,
   BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE,
   shouldApplyWyvernStingTalent,
@@ -150,8 +151,8 @@ import {
   shouldApplyWrathfulShotsTalent,
   WRATHFUL_SHOTS_PERFECT_CRIT_CHANCE_ADD,
   WRATHFUL_SHOTS_PERFECT_CRIT_DAMAGE_MULT_ADD,
-  BLADE_RUSH_CHARGE_COOLDOWN_SEC,
-  shouldApplyBladeRushTalent,
+  CYCLONE_RUSH_CHARGE_COOLDOWN_SEC,
+  shouldApplyCycloneRushTalent,
   WRAITH_STRIKE_COOLDOWN_SEC,
   WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES,
   MANTRA_SHAMAN_MAX_CHARGES,
@@ -167,6 +168,10 @@ import {
   AFTERSHOCK_STRIP_LENGTH,
   AFTERSHOCK_DETONATION_DELAY_MS,
   AFTERSHOCK_STRIP_HALF_WIDTH,
+  AFTERSHOCK_INFESTED_DAMAGE_BONUS,
+  AFTERSHOCK_GUARD_DAMAGE_BONUS,
+  AFTERSHOCK_WRATHFUL_CRIT_CHANCE_ADD,
+  AFTERSHOCK_STAGGERING_STAGGER,
   STAGGERING_STAB_BACKSTAB_STAGGER,
   WRATHFUL_STAB_CRIT_CHANCE_ADD,
   WRATHFUL_STAB_CRIT_DAMAGE_MULT_ADD,
@@ -366,7 +371,13 @@ export class ControlSystem extends System {
   private onWraithStrikeCallback?: (
     position: Vector3,
     direction: Vector3,
-    meta?: { wrathfulStrike: boolean; infestedStrike: boolean; staggeringStrike?: boolean; breathWeapon?: boolean },
+    meta?: {
+      wrathfulStrike: boolean;
+      infestedStrike: boolean;
+      staggeringStrike?: boolean;
+      wraithGuard?: boolean;
+      breathWeapon?: boolean;
+    },
   ) => void;
 
   /** Local VFX: mirrored slash impact on each Wraith Strike hit (DragonRenderer activeEffects). */
@@ -519,8 +530,8 @@ export class ControlSystem extends System {
   // Charge ability state
   private isSwordCharging = false;
   private lastChargeTime = 0;
-  /** Double-tap Blade Rush (Runeblade) — separate from E-key `lastChargeTime`. */
-  private lastBladeRushChargeTime = 0;
+  /** Double-tap Cyclone Rush (Runeblade) — separate from E-key `lastChargeTime`. */
+  private lastCycloneRushChargeTime = 0;
   private chargeCooldown = 7.0; // 8 second cooldown
   
   // Deflect ability state
@@ -2586,7 +2597,7 @@ export class ControlSystem extends System {
     const entropicBaseConfig = {
       speed: 20,
       damage: randomVariant.damage,
-      piercing: true,
+      piercing: false,
       explosive: false,
       explosionRadius: 0,
       subclass: this.currentSubclass,
@@ -2597,24 +2608,16 @@ export class ControlSystem extends System {
       sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown',
     };
 
-    const curveDirections: Array<'left' | 'right' | undefined> = [undefined];
-    for (const curveDirection of curveDirections) {
-      const entropicConfig = {
-        ...entropicBaseConfig,
-        ...(curveDirection ? { curveDirection } : {}),
-      };
+    this.projectileSystem.createEntropicBoltProjectile(
+      this.world,
+      spawnPosition,
+      direction,
+      this.playerEntity.id,
+      entropicBaseConfig,
+    );
 
-      this.projectileSystem.createEntropicBoltProjectile(
-        this.world,
-        spawnPosition,
-        direction,
-        this.playerEntity.id,
-        entropicConfig,
-      );
-
-      if (this.onProjectileCreatedCallback) {
-        this.onProjectileCreatedCallback('entropic_bolt', spawnPosition, direction, entropicConfig);
-      }
+    if (this.onProjectileCreatedCallback) {
+      this.onProjectileCreatedCallback('entropic_bolt', spawnPosition, direction, entropicBaseConfig);
     }
   }
 
@@ -3367,7 +3370,13 @@ export class ControlSystem extends System {
     callback: (
       position: Vector3,
       direction: Vector3,
-      meta?: { wrathfulStrike: boolean; infestedStrike: boolean; staggeringStrike?: boolean; breathWeapon?: boolean },
+      meta?: {
+        wrathfulStrike: boolean;
+        infestedStrike: boolean;
+        staggeringStrike?: boolean;
+        wraithGuard?: boolean;
+        breathWeapon?: boolean;
+      },
     ) => void,
   ): void {
     this.onWraithStrikeCallback = callback;
@@ -4319,6 +4328,7 @@ export class ControlSystem extends System {
         wrathfulStrike: this.shouldApplyWrathStrikeTalent(),
         infestedStrike: this.shouldApplyInfestedStrikeTalent(),
         staggeringStrike: this.shouldApplyStaggeringStrikeTalent(),
+        wraithGuard: shouldApplyWraithGuardTalent(this.talentLoadout, this.abilityLoadout),
         breathWeapon: this.shouldApplyBreathWeaponTalent(),
       });
     }
@@ -4458,6 +4468,12 @@ export class ControlSystem extends System {
     const world = this.world;
     const playerId = playerEntity.userData?.playerId;
 
+    const wrathful = this.shouldApplyWrathStrikeTalent();
+    const infested = this.shouldApplyInfestedStrikeTalent();
+    const staggering = this.shouldApplyStaggeringStrikeTalent();
+    const wraithGuard = shouldApplyWraithGuardTalent(this.talentLoadout, this.abilityLoadout);
+    const weapon = this.getCurrentWeapon();
+
     setTimeout(() => {
       const cs = world.getSystem(CombatSystem);
       if (!cs || !playerEntity) return;
@@ -4488,13 +4504,30 @@ export class ControlSystem extends System {
         const lateral = Math.hypot(px - cx, pz - cz);
         if (lateral > AFTERSHOCK_STRIP_HALF_WIDTH) continue;
 
+        let damage = BREATH_WEAPON_DAMAGE;
+        if (infested) damage += AFTERSHOCK_INFESTED_DAMAGE_BONUS;
+        if (wraithGuard) damage += AFTERSHOCK_GUARD_DAMAGE_BONUS;
+
+        let isCritical: boolean | undefined;
+        if (wrathful) {
+          const r = calculateDamage(damage, weapon, {
+            critChanceAdd: AFTERSHOCK_WRATHFUL_CRIT_CHANCE_ADD,
+          });
+          damage = r.damage;
+          isCritical = r.isCritical;
+        }
+
+        const staggerToAdd = staggering ? AFTERSHOCK_STAGGERING_STAGGER : undefined;
+
         cs.queueDamage(
           entity,
-          BREATH_WEAPON_DAMAGE,
+          damage,
           playerEntity,
           'breath_weapon',
           playerId,
-          false,
+          isCritical,
+          undefined,
+          staggerToAdd,
         );
       }
     }, AFTERSHOCK_DETONATION_DELAY_MS);
@@ -6201,7 +6234,7 @@ export class ControlSystem extends System {
   }
 
   public setTalentLoadout(loadout: TalentLoadout): void {
-    this.talentLoadout = { ...createDefaultTalentLoadout(), ...loadout };
+    this.talentLoadout = normalizeTalentLoadout(loadout);
     if (!shouldApplyCrusaderTalent(this.talentLoadout)) {
       this.runebladeCrusaderBuffEndMs = 0;
     }
@@ -6293,6 +6326,11 @@ export class ControlSystem extends System {
     return this.talentLoadout.staggerShot === true && this.currentWeapon === WeaponType.BOW;
   }
 
+  /** Cloudkill: Bow LMB primary hits may proc poison arrow volley (`ProjectileSystem`). */
+  public shouldApplyCloudkillForBow(): boolean {
+    return shouldApplyCloudkillTalent(this.talentLoadout) && this.currentWeapon === WeaponType.BOW;
+  }
+
   public shouldApplyBloodleechRoomTalent(): boolean {
     return shouldApplyBloodleechTalent(this.talentLoadout);
   }
@@ -6345,11 +6383,6 @@ export class ControlSystem extends System {
   /** Wyvern Sting: bonus Cobra Shot on perfect primary shot (Bow + talent toggle). */
   private shouldApplyWyvernStingForBow(): boolean {
     return shouldApplyWyvernStingTalent(this.talentLoadout) && this.currentWeapon === WeaponType.BOW;
-  }
-
-  /** STORED CHARGE: Runeblade Charge spin count and per-rotation damage (see Runeblade + talents). */
-  public shouldApplyStoredChargeTalentActive(): boolean {
-    return computeStoredChargeTalentActive(this.talentLoadout, this.abilityLoadout);
   }
 
   /** Wrathful Talons: Reaping Talons return-arrow preset crit (applied in `useViperSting`). */
@@ -6877,8 +6910,8 @@ export class ControlSystem extends System {
         if (
           key === 'w' &&
           this.currentWeapon === WeaponType.RUNEBLADE &&
-          shouldApplyBladeRushTalent(this.talentLoadout) &&
-          currentTime - this.lastBladeRushChargeTime >= BLADE_RUSH_CHARGE_COOLDOWN_SEC &&
+          shouldApplyCycloneRushTalent(this.talentLoadout) &&
+          currentTime - this.lastCycloneRushChargeTime >= CYCLONE_RUSH_CHARGE_COOLDOWN_SEC &&
           this.canAttemptSwordChargeMovement() &&
           movement.getAvailableDashCharges() >= 1
         ) {
@@ -7173,16 +7206,16 @@ export class ControlSystem extends System {
     this.lastChargeTime = currentTime;
   }
 
-  /** Blade Rush: Charge movement without advancing E-key cooldown; gated by `lastBladeRushChargeTime`. */
+  /** Cyclone Rush: Charge movement without advancing E-key cooldown; gated by `lastCycloneRushChargeTime`. */
   private performBladeRushChargeFromForwardDash(playerTransform: Transform): boolean {
     const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastBladeRushChargeTime < BLADE_RUSH_CHARGE_COOLDOWN_SEC) {
+    if (currentTime - this.lastCycloneRushChargeTime < CYCLONE_RUSH_CHARGE_COOLDOWN_SEC) {
       return false;
     }
     if (!this.executeChargeCore(playerTransform, currentTime)) {
       return false;
     }
-    this.lastBladeRushChargeTime = currentTime;
+    this.lastCycloneRushChargeTime = currentTime;
     return true;
   }
 

@@ -21,6 +21,7 @@ import TowerProjectile from '@/components/projectiles/TowerProjectile';
 import ExplosionEffect from '@/components/projectiles/ExplosionEffect';
 import CrossentropyExplosion from '@/components/projectiles/CrossentropyExplosion';
 import CrossentropyMeteor from '@/components/projectiles/CrossentropyMeteor';
+import CloudkillArrow from '@/components/projectiles/CloudkillArrow';
 import VenomEffect from '@/components/projectiles/VenomEffect';
 import { Vector3, Color } from '@/utils/three-exports';
 import { CROSSENTROPY_PLAGUE_VENOM_MS, type CrossentropyVisualTheme, type FanOfKnivesFlourishTint, getFanOfKnivesDaggerColorsFromTint } from '@/utils/talents';
@@ -46,7 +47,6 @@ interface ProjectileData {
   isCryoflame?: boolean; // For Entropic Bolt Cryoflame mode
   colorVariant?: string; // Entropic bolt roll color (purple / blue / red / green / arctic)
   entropicBoltTalent?: 'wrathful' | 'staggering' | 'infesting' | 'arctic';
-  curveDirection?: 'left' | 'right';
   projectileType?: string; // For projectile type differentiation (e.g., burst_arrow)
   /** Trigger Finger talent — red uncharged bow tap arrow. */
   triggerFingerUncharged?: boolean;
@@ -102,6 +102,14 @@ interface CrossentropyMeteorData {
   startPosition?: Vector3;
 }
 
+interface CloudkillArrowData {
+  id: number;
+  targetPosition: Vector3;
+  timestamp?: number;
+  delayMs?: number;
+  startPosition?: Vector3;
+}
+
 interface UnifiedProjectileManagerProps {
   world: World;
   onHauntedSoulAt?: (position: Vector3) => void;
@@ -136,6 +144,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
     [],
   );
   const [crossentropyMeteors, setCrossentropyMeteors] = useState<CrossentropyMeteorData[]>([]);
+  const [cloudkillArrows, setCloudkillArrows] = useState<CloudkillArrowData[]>([]);
 
   // Counters for unique IDs
   const crossentropyIdCounter = useRef(0);
@@ -150,6 +159,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
   const explosionIdCounter = useRef(0);
   const plagueVenomEffectIdCounter = useRef(0);
   const crossentropyMeteorIdCounter = useRef(0);
+  const cloudkillArrowIdCounter = useRef(0);
 
   // Throttling
   const lastUpdateTime = useRef(0);
@@ -271,12 +281,10 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
         const entropicTalent = userData.entropicBoltTalent as ProjectileData['entropicBoltTalent'] | undefined;
         const colorVariant =
           entropicTalent === 'arctic' ? 'arctic' : (userData.colorVariant as string | undefined) || 'purple';
-        const curveDirection = userData.curveDirection as ProjectileData['curveDirection'] | undefined;
         if (existing) {
           existing.position.copy(transform.position);
           existing.colorVariant = colorVariant;
           existing.entropicBoltTalent = entropicTalent;
-          existing.curveDirection = curveDirection;
           delete existing.trailFadeOutStartElapsed;
           newEntropic.push(existing);
         } else {
@@ -288,7 +296,6 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             isCryoflame: userData.isCryoflame || false,
             colorVariant,
             entropicBoltTalent: entropicTalent,
-            curveDirection,
           });
         }
       } else if (userData.isChargedArrow) {
@@ -515,6 +522,55 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
       }
     }
 
+    const cloudkillCastEvents = world.getEvents?.('cloudkillCast') || [];
+    if (cloudkillCastEvents.length > 0) {
+      world.clearEvents?.('cloudkillCast');
+      const spawned: CloudkillArrowData[] = [];
+      for (const raw of cloudkillCastEvents) {
+        const target =
+          raw != null &&
+          typeof raw === 'object' &&
+          'targetPosition' in raw &&
+          raw.targetPosition != null &&
+          typeof (raw as { targetPosition: Vector3 }).targetPosition.clone === 'function'
+            ? (raw as { targetPosition: Vector3 }).targetPosition.clone()
+            : null;
+        if (!target) continue;
+        const timestamp =
+          raw != null &&
+          typeof raw === 'object' &&
+          'timestamp' in raw &&
+          typeof (raw as { timestamp?: unknown }).timestamp === 'number'
+            ? (raw as { timestamp: number }).timestamp
+            : undefined;
+        const delayMs =
+          raw != null &&
+          typeof raw === 'object' &&
+          'delayMs' in raw &&
+          typeof (raw as { delayMs?: unknown }).delayMs === 'number'
+            ? (raw as { delayMs: number }).delayMs
+            : undefined;
+        const startPosition =
+          raw != null &&
+          typeof raw === 'object' &&
+          'startPosition' in raw &&
+          raw.startPosition != null &&
+          typeof (raw as { startPosition: Vector3 }).startPosition.clone === 'function'
+            ? (raw as { startPosition: Vector3 }).startPosition.clone()
+            : undefined;
+        spawned.push({
+          id: cloudkillArrowIdCounter.current++,
+          targetPosition: target,
+          ...(timestamp != null ? { timestamp } : {}),
+          ...(delayMs != null ? { delayMs } : {}),
+          ...(startPosition ? { startPosition } : {}),
+        });
+      }
+      if (spawned.length > 0) {
+        setCloudkillArrows((prev) => [...prev, ...spawned]);
+      }
+    }
+
     // Entropic bolts: linger briefly after ECS despawn so the trail can fade out (see EntropicBoltTrail).
     const liveEntropicIds = new Set(newEntropic.map((b) => b.entityId));
     const mergedEntropic: ProjectileData[] = [...newEntropic];
@@ -608,6 +664,18 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
           }
         />
       ))}
+      {cloudkillArrows.map((arrow) => (
+        <CloudkillArrow
+          key={arrow.id}
+          targetPosition={arrow.targetPosition}
+          timestamp={arrow.timestamp}
+          delayMs={arrow.delayMs}
+          startPosition={arrow.startPosition}
+          onComplete={() =>
+            setCloudkillArrows((prev) => prev.filter((a) => a.id !== arrow.id))
+          }
+        />
+      ))}
       {/* Crossentropy Bolts */}
       {projectileData.crossentropy.map(bolt => (
         <CrossentropyBolt
@@ -663,10 +731,8 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
           direction={bolt.direction}
           isCryoflame={bolt.isCryoflame}
           colorVariant={bolt.colorVariant}
-          curveDirection={bolt.curveDirection}
           ecsDriven
           trailFadeOutStartElapsed={bolt.trailFadeOutStartElapsed}
-          onImpact={() => {}}
         />
       ))}
 

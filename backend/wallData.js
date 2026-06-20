@@ -3,8 +3,8 @@
  *
  * Each segment is an axis-aligned box described by its centre position and
  * full extents (sizeX, sizeY, sizeZ). The visible client walls are rotated
- * hex sides; this backend mirror samples those sides into short AABB blocks
- * for the existing EnemyAI collision and line-of-sight tests.
+ * circular arc samples; this backend mirror matches those segments for
+ * EnemyAI collision and line-of-sight tests.
  *
  * Keep these values in sync with WALL_SEGMENTS in
  * src/components/environment/CastleWalls.tsx.
@@ -16,27 +16,42 @@ const WALL_THICKNESS = 0.6;
 // Mirror: client MAIN_ARENA_HEX_RADIUS.
 const MAIN_ARENA_HEX_RADIUS = 26;
 const t = WALL_THICKNESS;
-const hexApothem = MAIN_ARENA_HEX_RADIUS * Math.cos(Math.PI / 6);
-const sampleSpacing = 1.0;
+const targetChordLength = 2.0;
+
+function buildCircularWallSegments(innerRadius) {
+  const Rc = innerRadius + t / 2;
+  const circumference = 2 * Math.PI * Rc;
+  const n = Math.max(24, Math.round(circumference / targetChordLength));
+  const segments = [];
+  for (let i = 0; i < n; i++) {
+    const theta = (i / n) * Math.PI * 2;
+    const chord = 2 * Rc * Math.sin(Math.PI / n);
+    segments.push({
+      center: [Math.cos(theta) * Rc, WALL_HEIGHT / 2, Math.sin(theta) * Rc],
+      sizeX: chord,
+      sizeY: WALL_HEIGHT,
+      sizeZ: t,
+      rotationY: Math.PI / 2 - theta,
+    });
+  }
+  return segments;
+}
 
 const WALL_SEGMENTS = [];
-for (let side = 0; side < 6; side++) {
-  const angle = (Math.PI / 3) * side;
-  const cx = Math.cos(angle) * (hexApothem + t / 2);
-  const cz = Math.sin(angle) * (hexApothem + t / 2);
-  const rotY = Math.PI / 2 - angle;
+for (const seg of buildCircularWallSegments(MAIN_ARENA_HEX_RADIUS)) {
+  const rotY = seg.rotationY ?? 0;
+  const steps = rotY === 0 ? 1 : Math.max(1, Math.ceil(seg.sizeX / 1.0));
+  const step = seg.sizeX / steps;
   const tangentX = Math.cos(rotY);
   const tangentZ = -Math.sin(rotY);
-  const steps = Math.max(1, Math.ceil(MAIN_ARENA_HEX_RADIUS / sampleSpacing));
-  const step = MAIN_ARENA_HEX_RADIUS / steps;
-  const start = -MAIN_ARENA_HEX_RADIUS / 2 + step / 2;
+  const start = -seg.sizeX / 2 + step / 2;
   for (let i = 0; i < steps; i++) {
-    const offset = start + i * step;
+    const offset = rotY === 0 ? 0 : start + i * step;
     WALL_SEGMENTS.push({
-      center: [cx + tangentX * offset, WALL_HEIGHT / 2, cz + tangentZ * offset],
-      sizeX: step + 0.15,
-      sizeY: WALL_HEIGHT,
-      sizeZ: t + 0.35,
+      center: [seg.center[0] + tangentX * offset, seg.center[1], seg.center[2] + tangentZ * offset],
+      sizeX: rotY === 0 ? seg.sizeX : step + 0.15,
+      sizeY: seg.sizeY,
+      sizeZ: seg.sizeZ + 0.35,
     });
   }
 }

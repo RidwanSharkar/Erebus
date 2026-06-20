@@ -207,6 +207,20 @@ export default function WarlockRenderer({
     return () => { socket.off('warlock-attack-telegraph', handleWarlockLaunch); };
   }, [id, socket]);
 
+  // Archon Shock (post-boss-2): same cast animation as chaos orb launch
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleArchonShock = (data: { warlockId: string }) => {
+      if (data.warlockId !== id) return;
+      setIsLaunching(true);
+      setTimeout(() => setIsLaunching(false), LAUNCH_ANIMATION_DURATION);
+    };
+
+    socket.on('warlock-archon-shock', handleArchonShock);
+    return () => { socket.off('warlock-archon-shock', handleArchonShock); };
+  }, [id, socket]);
+
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;

@@ -1,9 +1,13 @@
 const { WALL_SEGMENTS } = require('./wallData');
 const { rotationYTowardEntry } = require('./coopArenaLayout');
 
-// Mirror client main hex arena constants.
+// Mirror client main arena constants (colored rooms use a circle at this radius).
 const MAIN_ARENA_HEX_RADIUS = 26;
-const MAIN_HEX_INNER_APOTHEM = MAIN_ARENA_HEX_RADIUS * Math.cos(Math.PI / 6) - 0.5;
+const MAIN_CIRCLE_INNER_RADIUS = MAIN_ARENA_HEX_RADIUS - 0.5;
+/** Stat/trial hex combat arena — must match `HexCombatArena.tsx`. */
+const HEX_ARENA_RADIUS = 22;
+const HEX_FLOOR_MARGIN = 1.4;
+const HEX_INNER_APOTHEM = HEX_ARENA_RADIUS * Math.cos(Math.PI / 6) - HEX_FLOOR_MARGIN;
 /** Match `backend/gameRoom.js` COOP_THRONE_ROOM_RADIUS — prep disc; wall resolve when combat not active. */
 const COOP_THRONE_ROOM_RADIUS = 24;
 
@@ -19,7 +23,14 @@ const NAV_ENEMY_RADIUS = 0.2;  // slightly wider than collision radius
 const NAV_WAYPOINT_REACH = 0.2; // advance to next waypoint when this close
 const NAV_RECOMPUTE_DIST = 0.5; // recompute path when target moves this far
 
-function clampToMainHexXZ(x, z, apothem = MAIN_HEX_INNER_APOTHEM) {
+function clampToCircleXZ(x, z, radius = MAIN_CIRCLE_INNER_RADIUS) {
+  const len = Math.hypot(x, z);
+  if (len <= radius || len < 1e-6) return { x, z };
+  const s = radius / len;
+  return { x: x * s, z: z * s };
+}
+
+function clampToMainHexXZ(x, z, apothem = HEX_INNER_APOTHEM) {
   let cx = x;
   let cz = z;
   for (let pass = 0; pass < 2; pass++) {
@@ -42,7 +53,7 @@ function clampToMainHexXZ(x, z, apothem = MAIN_HEX_INNER_APOTHEM) {
 const MELEE_CLOSE_INSET = 0.35;
 const KNIGHT_MELEE_WINDUP_STEP = 0.3;
 const KNIGHT_MELEE_WINDUP_STEP_DELAY_MS = 450;
-const KNIGHT_DASH_COOLDOWN_MS = 8000;
+const KNIGHT_DASH_COOLDOWN_MS = 7000;
 const KNIGHT_DASH_DISTANCE = 4.5;
 const KNIGHT_DASH_DURATION_MS = 350;
 const KNIGHT_DASH_MIN_DISTANCE = 3.25;
@@ -66,15 +77,19 @@ const MELEE_SURROUND_STANDOFF_MARGIN = 0.08;
 const DAMAGE_THREAT_LEASH = 90;
 
 // Titan — heavy patrol melee unit (post boss-1 room spawn).
-const TITAN_AGGRO_RADIUS = 5;
+const TITAN_AGGRO_RADIUS = 6;
 const TITAN_ATTACK_RANGE = 3.0;
 const TITAN_SWING_LOCK_MS = 1500;
-const TITAN_HIT_DELAY_MS = 1200;
+const TITAN_HIT_DELAY_MS = 875;
 const TITAN_KNOCKBACK_DISTANCE = 7;
 const TITAN_KNOCKBACK_DURATION = 0.5;
 const TITAN_PATROL_REACH = 0.5;
 const TITAN_PATROL_WAYPOINT_COUNT = 8;
 const TITAN_PATROL_RADIUS_FRAC = 0.65;
+const TITAN_BLADESTORM_HEALTH_PCT = 0.4;
+const TITAN_BLADESTORM_DAMAGE = 35;
+const TITAN_BLADESTORM_SPIN_SPEED = 32.5; // rad/s — matches Cyclone Rush
+const TITAN_BLADESTORM_HIT_RADIUS = 4.75;
 
 // Infested player-zombie summon lock — keep in sync with client ZombieRenderer SUMMON_DURATION
 const INFESTED_ZOMBIE_SUMMON_LOCK_MS = 2800;
@@ -86,11 +101,11 @@ const PLAYER_ZOMBIE_JUGGERNAUT_HP = 600;
 const PLAYER_ZOMBIE_JUGGERNAUT_DAMAGE = 135;
 const JUGGERNAUT_STRAIN_ROLL_CHANCE = 0.33;
 const EVERLIVING_ZOMBIE_HP_MULT = 2;
-const ADRENALINE_ZOMBIE_MOVE_MULT = 1.5;
+const ADRENALINE_ZOMBIE_MOVE_MULT = 2.5;
 const PLAYER_ZOMBIE_UNLOCK_MOVE_SPEED = 1.75;
 const PACK_HUNTER_RADIUS_UNITS = 5;
 const PACK_HUNTER_BONUS_PER_ALLY = 0.40;
-const PACK_HUNTER_MAX_STACKING_ALLIES = 4;
+const PACK_HUNTER_MAX_STACKING_ALLIES = 6;
 
 const ALLIED_KNIGHT_MAX_HP = 1000;
 const ALLIED_KNIGHT_DAMAGE = 50;
@@ -107,7 +122,7 @@ const ALLIED_KNIGHT_SMITE_COOLDOWN_MS = 5000;
 const ALLIED_KNIGHT_ORB_RECHARGE_MS = 5000;
 const ALLIED_KNIGHT_SMITE_LOCK_MS = 1200;
 const ALLIED_KNIGHT_SMITE_IMPACT_DELAY_MS = 900;
-const ALLIED_KNIGHT_SMITE_CAST_RANGE = 4.25;
+const ALLIED_KNIGHT_SMITE_CAST_RANGE = 4.0;
 const ALLIED_KNIGHT_SMITE_DAMAGE = 70;
 const ALLIED_KNIGHT_SMITE_RADIUS = 1.85;
 const ALLIED_HEALER_ID = 'allied-healer';
@@ -144,6 +159,9 @@ const viperArrowFlightMs = (from, to) => {
   const distance = Math.min(VIPER_ARROW_MAX_RANGE, Math.hypot(dx, dy, dz));
   return Math.min(VIPER_ARROW_MAX_FLIGHT_MS, Math.ceil((distance / VIPER_ARROW_PROJECTILE_SPEED) * 1000));
 };
+// Viper double shot (unlocked after first boss): second arrow fires when the first is released.
+const VIPER_DOUBLE_SHOT_UNLOCK_BOSS_COUNT = 1;
+const VIPER_DOUBLE_SHOT_FOLLOWUP_DELAY_MS = VIPER_DRAWBOW_DURATION_MS;
 // Shade daggers: same fixed ray length (telegraphShadeAttack maxRange / endPosition).
 const SHADE_DAGGER_MAX_RANGE = VIPER_ARROW_MAX_RANGE;
 const SHADE_BLINK_DURATION_MS = 600; // keep in sync with ShadeRenderer.tsx
@@ -160,7 +178,7 @@ const SHADE_POST_ATTACK_BLINK_DELAY_MS =
 const TEMPLAR_BLINK_SMITE_INTERVAL_MS = 12000;
 const TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS = 975;
 const TEMPLAR_BLINK_SMITE_IMPACT_OFFSET = 2.75;
-const TEMPLAR_BLINK_SMITE_DAMAGE = 65;
+const TEMPLAR_BLINK_SMITE_DAMAGE = 75;
 const TEMPLAR_BLINK_SMITE_RADIUS = 2.5;
 const TEMPLAR_BLINK_SMITE_ABILITY_LOCK_MS = 2500; // no move/melee during windup + post-strike
 const TELEPORT_BEHIND_DISTANCE = 2.2; // same as boss blink (templar blink smite; not used by main co-op boss)
@@ -197,10 +215,10 @@ const BOSS_TECTONIC_CENTER = { x: 0, y: 0, z: 0 };
 // Boss throw-spear ability
 const BOSS_THROW_MIN_RANGE     = 3;
 const BOSS_THROW_MAX_RANGE     = 12;
-const BOSS_THROW_DAMAGE        = 35;
+const BOSS_THROW_DAMAGE        = 45;
 const BOSS_THROW_COOLDOWN_MS   = 10_000;
 /** When the spear projectile / `boss-throw-spear` fires during the throw animation. */
-const BOSS_THROW_SPEAR_RELEASE_MS = 1_000;
+const BOSS_THROW_SPEAR_RELEASE_MS = 900;
 /** Boss cannot move until this elapses after `boss-throw-start` (full throw clip). */
 const BOSS_THROW_MOVE_LOCK_MS = 2_000;
 /** Boss 1 cannot use spear throw as an opener. */
@@ -215,7 +233,12 @@ const GHOUL_LEAP_MAX_TRAVEL = 14;
 const GHOUL_LEAP_DURATION_MS = BOSS_LEAP_DURATION_MS;
 const GHOUL_LEAP_LANDING_RADIUS = 3.5;
 const GHOUL_LEAP_DAMAGE = 25;
-const GHOUL_LEAP_STUN_MS = 1500;
+const GHOUL_LEAP_STUN_MS = 2250;
+const GHOUL_BASE_DAMAGE = 28;
+const GHOUL_BASE_MOVE_SPEED = 2.5;
+const BOSS3_SUMMONED_GHOUL_VISUAL_SCALE = 1.75;
+const BOSS3_SUMMONED_GHOUL_SPEED_MULT = 1.5;
+const BOSS3_SUMMONED_GHOUL_DAMAGE_MULT = 2;
 
 // Templar Leap (unlocked after first boss): 4–8m range, higher damage, no stun
 const TEMPLAR_LEAP_MIN_RANGE = 4;
@@ -265,7 +288,7 @@ const BOSS3_NOVA_COOLDOWN_MS = 3000;
 const BOSS3_NOVA_MAX_RANGE = 14;
 const BOSS3_NOVA_TRAVEL_MS = 1500;
 const BOSS3_NOVA_HALF_WIDTH = 0.85;
-const BOSS3_NOVA_DAMAGE = 50;
+const BOSS3_NOVA_DAMAGE = 65;
 const BOSS3_NOVA_STEPS = 26;
 const BOSS3_NOVA_BURST_GAP_MS = 250;
 const BOSS3_NOVA_HP_DOUBLE_ROUND = 0.75;
@@ -274,7 +297,7 @@ const BOSS3_LIGHTNING_HEALTH_PCT = 0.675;
 const BOSS3_LIGHTNING_INTERVAL_MS = 6_000;
 const BOSS3_LIGHTNING_CHARGE_MS = 500;
 const BOSS3_LIGHTNING_STAGGER_MS = 500;
-const BOSS3_LIGHTNING_DAMAGE = 45;
+const BOSS3_LIGHTNING_DAMAGE = 75;
 const BOSS3_LIGHTNING_RADIUS = 2.99;
 const BOSS3_LIGHTNING_OFFSET_MIN = 2;
 const BOSS3_LIGHTNING_OFFSET_MAX = 6;
@@ -284,7 +307,7 @@ const BOSS3_GREEN_BEAM_DPS = 100;
 const BOSS3_GREEN_BEAM_RANGE = 22;
 const BOSS3_GREEN_BEAM_HALF_WIDTH = 0.52;
 /** Radians/sec — slower than default boss snap so players can sidestep the beam. */
-const BOSS3_GREEN_BEAM_ROT_SPEED = 0.88;
+const BOSS3_GREEN_BEAM_ROT_SPEED = 0.95;
 
 // Martyr: self-detonation (matches client AOE)
 const MARTYR_MELEE_RANGE = 1.4;
@@ -345,6 +368,21 @@ const WARLOCK_METEOR_WARNING_MS = 100;
 const WARLOCK_METEOR_FALL_SPEED = 27.75;
 /** Warlock blink flame — CoopGameScene WARLOCK_BLINK_ANIM_MS */
 const WARLOCK_BLINK_FLAME_DELAY_MS = 1000;
+/** Post-boss-2 unlock: single-beam Archon Shock (Boss2 phase-0 clone, purple VFX). */
+const WARLOCK_ARCHON_SHOCK_UNLOCK_BOSS_COUNT = 2;
+const WARLOCK_ARCHON_SHOCK_COOLDOWN_MS = 7000;
+const WARLOCK_ARCHON_SHOCK_WINDUP_MS = 750;
+const WARLOCK_ARCHON_SHOCK_DAMAGE = 48;
+const WARLOCK_ARCHON_SHOCK_HALF_WIDTH = 1.0;
+const WARLOCK_ARCHON_SHOCK_RANGE = 14;
+
+/** Post-boss-2 unlock: single tectonic-style ground spike (castheal windup, player-targeted). */
+const WEAVER_IMPALE_SPIKE_UNLOCK_BOSS_COUNT = 2;
+const WEAVER_IMPALE_SPIKE_COOLDOWN_MS = 7000;
+const WEAVER_IMPALE_SPIKE_RANGE = 10;
+const WEAVER_IMPALE_SPIKE_CAST_ANIM_MS = 2000;
+const WEAVER_IMPALE_SPIKE_POST_ANIM_DELAY_MS = 1000;
+const WEAVER_IMPALE_SPIKE_DAMAGE = 43;
 
 class EnemyAI {
   constructor(roomId, io) {
@@ -427,17 +465,25 @@ class EnemyAI {
     this.warlockLaunchMoveLockUntil = new Map(); // enemyId -> timestamp: purple warlock cannot walk until
     /** @type {Map<string, Set<ReturnType<typeof setInterval>>>} */
     this.warlockOrbIntervals = new Map(); // warlockId -> in-flight chaos orb tick loops
+    this.warlockArchonShockCooldown = new Map();
+    this.warlockArchonShockLockUntil = new Map();
+    this.warlockArchonShockTimeout = new Map();
 
     // Shade blink+attack cooldown tracking (4-second cooldown)
     this.shadeBlinkCooldown = new Map(); // enemyId -> lastBlinkTime
 
     // Viper arrow shot cooldown tracking (2-second cooldown)
     this.viperAttackCooldown = new Map(); // enemyId -> lastAttackTime
+    this.viperFollowupTimeout = new Map(); // viperId -> pending double-shot follow-up timeout
 
     // Weaver ability cooldown tracking
     this.weaverHealCooldown   = new Map(); // enemyId -> lastHealTime
     this.weaverSummonCooldown = new Map(); // enemyId -> lastSummonTime
     this.weaverLightningCooldown = new Map(); // enemyId -> lastLightningTime (blue weaver)
+    this.weaverImpaleSpikeCooldown = new Map();
+    this.weaverImpaleSpikeLockUntil = new Map();
+    /** @type {Map<string, ReturnType<typeof setTimeout>[]>} */
+    this.weaverImpaleSpikePendingTimeouts = new Map();
 
     // Weaver summoned ghoul tracking (1 ghoul per weaver at a time)
     this.weaverSummonedGhouls = new Map(); // weaverId -> ghoulId | null
@@ -491,6 +537,26 @@ class EnemyAI {
 
   setRoom(room) {
     this.room = room;
+  }
+
+  _isStatTrialArena() {
+    const kind = this.room?.currentCoopRoomKind;
+    return kind === 'stat' || kind === 'trial';
+  }
+
+  /** Clamp enemy XZ to the active arena footprint (circle for colored rooms, hex for stat/trial). */
+  clampToArenaXZ(x, z) {
+    if (this._isStatTrialArena()) {
+      return clampToMainHexXZ(x, z, HEX_INNER_APOTHEM);
+    }
+    return clampToCircleXZ(x, z);
+  }
+
+  _arenaPatrolRadius() {
+    if (this._isStatTrialArena()) {
+      return HEX_INNER_APOTHEM * TITAN_PATROL_RADIUS_FRAC;
+    }
+    return MAIN_CIRCLE_INNER_RADIUS * TITAN_PATROL_RADIUS_FRAC;
   }
 
   /** Record a position update to be sent as a batch at end of the current AI tick. */
@@ -595,11 +661,23 @@ class EnemyAI {
     this.warlockLaunchMoveLockUntil.clear();
     this.warlockOrbIntervals.forEach((set) => set.forEach((iv) => clearInterval(iv)));
     this.warlockOrbIntervals.clear();
+    this.warlockArchonShockTimeout.forEach((t) => clearTimeout(t));
+    this.warlockArchonShockTimeout.clear();
+    this.warlockArchonShockCooldown.clear();
+    this.warlockArchonShockLockUntil.clear();
     this.shadeBlinkCooldown.clear();
     this.viperAttackCooldown.clear();
+    this.viperFollowupTimeout.forEach((t) => clearTimeout(t));
+    this.viperFollowupTimeout.clear();
     this.weaverHealCooldown.clear();
     this.weaverSummonCooldown.clear();
     this.weaverLightningCooldown.clear();
+    this.weaverImpaleSpikePendingTimeouts.forEach((ids) => {
+      (ids || []).forEach((tid) => clearTimeout(tid));
+    });
+    this.weaverImpaleSpikePendingTimeouts.clear();
+    this.weaverImpaleSpikeCooldown.clear();
+    this.weaverImpaleSpikeLockUntil.clear();
     this.weaverSummonedGhouls.clear();
     this.playerZombiesByOwner.clear();
     this.alliedProtectionThreat.clear();
@@ -937,7 +1015,7 @@ class EnemyAI {
     const attackRange = 2.6;
     const meleePressDistance = attackRange - MELEE_CLOSE_INSET;
     const attackCooldown = knight.attackCooldown ?? 2500;
-    const aggroRadius = 10;
+    const aggroRadius = 15;
 
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const thronePrepKnight =
@@ -1569,7 +1647,7 @@ class EnemyAI {
       // ── Green / Purple: Aggro Shout — self-heal for 150 HP (8 s CD) ─────────
       case 'green':
       case 'purple': {
-        const CD = 8000;
+        const CD = 11000;
         if (now - lastAbility < CD) return false;
         // Self-heal is useful only below max HP
         if (knight.health >= knight.maxHealth) return false;
@@ -1583,7 +1661,7 @@ class EnemyAI {
 
       // ── Blue: Frost Ray — ranged slow + 30 dmg (14 s CD, extended range) ──────
       case 'blue': {
-        const CD = 14000;
+        const CD = 12000;
         const FROST_RANGE = 13.0;
         if (now - lastAbility < CD) return false;
         if (distance > FROST_RANGE) return false;
@@ -1693,7 +1771,7 @@ class EnemyAI {
   // Blue Knight — Frost Ray (30 dmg + 50% slow for 5 s)
   knightCastFrost(knight, targetPlayer) {
     const FROST_CAST_LAUNCH_MS = 1000; // half of 2 s cast; matches client FROST_DURATION
-    const FROST_PROJECTILE_TRAVEL_MS = 375;
+    const FROST_PROJECTILE_TRAVEL_MS = 550;
     const FROST_HIT_RADIUS = 1.35; // XZ — dash out of this to dodge
 
     const fdx = targetPlayer.position.x - knight.position.x;
@@ -1815,7 +1893,7 @@ class EnemyAI {
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(shade.position, tpos);
     const attackRange = 12.0;
-    const aggroRadius = 10;
+    const aggroRadius = 15;
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(shade.position, tpos)) {
@@ -1963,7 +2041,7 @@ class EnemyAI {
     let rawZ = shade.position.z + blinkZ * blinkDist;
 
     // Clamp inside the main hex arena.
-    const clamped = clampToMainHexXZ(rawX, rawZ);
+    const clamped = this.clampToArenaXZ(rawX, rawZ);
     rawX = clamped.x;
     rawZ = clamped.z;
 
@@ -2127,12 +2205,29 @@ class EnemyAI {
 
     const targetPlayer = resolved.player;
 
+    if ((this.room?.coopBossesDefeatedCount ?? 0) >= WARLOCK_ARCHON_SHOCK_UNLOCK_BOSS_COUNT) {
+      const shockLockUntil = this.warlockArchonShockLockUntil.get(warlock.id) || 0;
+      if (now < shockLockUntil) {
+        return;
+      }
+
+      const lastShock = this.warlockArchonShockCooldown.get(warlock.id) || 0;
+      if (
+        distance <= WARLOCK_ARCHON_SHOCK_RANGE &&
+        now - lastShock >= WARLOCK_ARCHON_SHOCK_COOLDOWN_MS &&
+        !this.room?.isEnemyAffectedBy(warlock.id, 'freeze')
+      ) {
+        this.warlockCastArchonShock(warlock, targetPlayer);
+        return;
+      }
+    }
+
     if (isPurpleWarlock) {
       if (!this.warlockMeteorCooldown.has(warlock.id)) {
         this.warlockMeteorCooldown.set(warlock.id, now);
       }
       const lastMeteorTime = this.warlockMeteorCooldown.get(warlock.id) || 0;
-      const meteorCooldown = 9000;
+      const meteorCooldown = 12000;
       if (players.length > 0 && now - lastMeteorTime >= meteorCooldown) {
         this.warlockMeteorCooldown.set(warlock.id, now);
         this.warlockCastMeteor(warlock, targetPlayer);
@@ -2185,6 +2280,69 @@ class EnemyAI {
         this.moveEnemyTowardsTarget(warlock, moveTarget);
       }
     }
+  }
+
+  warlockCastArchonShock(warlock, targetPlayer) {
+    const now = Date.now();
+    const strikeAt = now + WARLOCK_ARCHON_SHOCK_WINDUP_MS;
+    this.warlockArchonShockCooldown.set(warlock.id, now);
+    this.warlockArchonShockLockUntil.set(warlock.id, strikeAt + 300);
+
+    const sx = warlock.position.x;
+    const sz = warlock.position.z;
+    const ty = targetPlayer.position.y + 1.1;
+    const tx = targetPlayer.position.x;
+    const tz = targetPlayer.position.z;
+    const warlockSkyY = warlock.position.y + 3.0;
+
+    const beams = [
+      {
+        startPosition: { x: sx, y: warlockSkyY, z: sz },
+        targetPosition: { x: tx, y: ty, z: tz },
+      },
+    ];
+    const startPosition = beams[0].startPosition;
+    const targetPosition = beams[0].targetPosition;
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('warlock-archon-shock', {
+        warlockId: warlock.id,
+        startPosition,
+        targetPosition,
+        beams,
+        strikeAt,
+        halfWidth: WARLOCK_ARCHON_SHOCK_HALF_WIDTH,
+        damage: WARLOCK_ARCHON_SHOCK_DAMAGE,
+        timestamp: now,
+      });
+    }
+
+    const seg = {
+      ax: startPosition.x,
+      az: startPosition.z,
+      bx: targetPosition.x,
+      bz: targetPosition.z,
+    };
+
+    const handle = setTimeout(() => {
+      this.warlockArchonShockTimeout.delete(warlock.id);
+      const liveWarlock = this.room?.enemies?.get(warlock.id);
+      if (!liveWarlock || liveWarlock.isDying || liveWarlock.health <= 0) return;
+      if (!this.room) return;
+      this.room.damagePlayersInLineSegment(
+        seg.ax,
+        seg.az,
+        seg.bx,
+        seg.bz,
+        WARLOCK_ARCHON_SHOCK_HALF_WIDTH,
+        WARLOCK_ARCHON_SHOCK_DAMAGE,
+        'warlock_archon_shock',
+      );
+    }, WARLOCK_ARCHON_SHOCK_WINDUP_MS);
+
+    const oldHandle = this.warlockArchonShockTimeout.get(warlock.id);
+    if (oldHandle) clearTimeout(oldHandle);
+    this.warlockArchonShockTimeout.set(warlock.id, handle);
   }
 
   warlockCastBlink(warlock, targetPlayer) {
@@ -2489,7 +2647,7 @@ class EnemyAI {
     }
 
     const y = targetPlayer.position.y;
-    const clampXZ = (x, z) => ({ ...clampToMainHexXZ(x, z), y });
+    const clampXZ = (x, z) => ({ ...this.clampToArenaXZ(x, z), y });
 
     const x0 = targetPlayer.position.x;
     const z0 = targetPlayer.position.z;
@@ -2564,9 +2722,9 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(templar.position, tpos);
-    const attackRange = 2.6;
+    const attackRange = 2.725;
     const attackCooldown = templar.attackCooldown ?? 2000;
-    const aggroRadius = 10;
+    const aggroRadius = 15;
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(templar.position, tpos)) {
@@ -2878,6 +3036,64 @@ class EnemyAI {
     });
   }
 
+  _trackViperFollowupTimeout(viperId, timeoutId) {
+    const prev = this.viperFollowupTimeout.get(viperId);
+    if (prev) clearTimeout(prev);
+    this.viperFollowupTimeout.set(viperId, timeoutId);
+  }
+
+  scheduleViperPlayerShot(viper, player, shotId, { drawDurationMs = VIPER_DRAWBOW_DURATION_MS } = {}) {
+    this.telegraphViperAttack(viper, player, shotId);
+    const startX = viper.position.x;
+    const startZ = viper.position.z;
+    const tx = player.position.x;
+    const tz = player.position.z;
+    const dx = tx - startX;
+    const dz = tz - startZ;
+    const len = Math.hypot(dx, dz) || 1e-6;
+    const endX = startX + (dx / len) * VIPER_ARROW_MAX_RANGE;
+    const endZ = startZ + (dz / len) * VIPER_ARROW_MAX_RANGE;
+    const impactDelayMs = drawDurationMs + viperArrowFlightMs(
+      { x: startX, y: viper.position.y + 1.5, z: startZ },
+      { x: tx, y: player.position.y + 1.0, z: tz },
+    );
+    const pid = player.id;
+    const vid = viper.id;
+    setTimeout(() => {
+      if (viper.isDying || !this.room?.getGameStarted()) return;
+      const v = this.room?.getEnemy(vid);
+      if (!v || v.isDying) return;
+      const players = this.room?.getPlayers();
+      const tp = players?.find(p => p.id === pid);
+      if (!tp) {
+        this.emitViperArrowOutcome(vid, shotId, false, v.position);
+        return;
+      }
+      const playerHits = this.room?.damagePlayersInLineSegment?.(
+        startX,
+        startZ,
+        endX,
+        endZ,
+        1.05,
+        55,
+        'viper_arrow',
+        { sourceEnemyId: vid },
+      ) || 0;
+      let hitAny = playerHits > 0;
+      const VIPER_ARROW_ALLY_PATH_R2 = 3.5 * 3.5;
+      const allyHits = this.damageAlliedUnitsAlongSegmentXZ(startX, startZ, endX, endZ, VIPER_ARROW_ALLY_PATH_R2, 55, {
+        sourceEnemyId: vid,
+        damageType: 'viper_arrow',
+      });
+      hitAny = hitAny || allyHits > 0;
+      this.emitViperArrowOutcome(vid, shotId, hitAny, {
+        x: hitAny ? tp.position.x : endX,
+        y: tp.position.y,
+        z: hitAny ? tp.position.z : endZ,
+      });
+    }, impactDelayMs);
+  }
+
   updateViperAI(viper, players) {
     let aggroData = this.enemyAggro.get(viper.id);
     if (!aggroData) {
@@ -2900,7 +3116,7 @@ class EnemyAI {
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(viper.position, tpos);
     const attackRange = 12.0;
-    const aggroRadius = 12;
+    const aggroRadius = 15;
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(viper.position, tpos)) {
@@ -2927,55 +3143,32 @@ class EnemyAI {
         this.viperAttackCooldown.set(viper.id, now);
         const shotId = `viper-shot-${viper.id}-${now}`;
         if (resolved.kind === 'player') {
-          this.telegraphViperAttack(viper, resolved.player, shotId);
-          const startX = viper.position.x;
-          const startZ = viper.position.z;
-          const tx = resolved.player.position.x;
-          const tz = resolved.player.position.z;
-          const dx = tx - startX;
-          const dz = tz - startZ;
-          const len = Math.hypot(dx, dz) || 1e-6;
-          const endX = startX + (dx / len) * VIPER_ARROW_MAX_RANGE;
-          const endZ = startZ + (dz / len) * VIPER_ARROW_MAX_RANGE;
-          const impactDelayMs = VIPER_DRAWBOW_DURATION_MS + viperArrowFlightMs(
-            { x: startX, y: viper.position.y + 1.5, z: startZ },
-            { x: tx, y: resolved.player.position.y + 1.0, z: tz },
-          );
-          const pid = resolved.player.id;
-          const vid = viper.id;
-          setTimeout(() => {
-            if (viper.isDying || !this.room?.getGameStarted()) return;
-            const v = this.room?.getEnemy(vid);
-            if (!v || v.isDying) return;
-            const players = this.room?.getPlayers();
-            const tp = players?.find(p => p.id === pid);
-            if (!tp) {
-              this.emitViperArrowOutcome(vid, shotId, false, v.position);
-              return;
-            }
-            const playerHits = this.room?.damagePlayersInLineSegment?.(
-              startX,
-              startZ,
-              endX,
-              endZ,
-              1.05,
-              55,
-              'viper_arrow',
-              { sourceEnemyId: vid },
-            ) || 0;
-            let hitAny = playerHits > 0;
-            const VIPER_ARROW_ALLY_PATH_R2 = 3.5 * 3.5;
-            const allyHits = this.damageAlliedUnitsAlongSegmentXZ(startX, startZ, endX, endZ, VIPER_ARROW_ALLY_PATH_R2, 55, {
-              sourceEnemyId: vid,
-              damageType: 'viper_arrow',
-            });
-            hitAny = hitAny || allyHits > 0;
-            this.emitViperArrowOutcome(vid, shotId, hitAny, {
-              x: hitAny ? tp.position.x : endX,
-              y: tp.position.y,
-              z: hitAny ? tp.position.z : endZ,
-            });
-          }, impactDelayMs);
+          this.scheduleViperPlayerShot(viper, resolved.player, shotId);
+
+          if ((this.room?.coopBossesDefeatedCount ?? 0) >= VIPER_DOUBLE_SHOT_UNLOCK_BOSS_COUNT) {
+            const vid = viper.id;
+            const pid = resolved.player.id;
+            const t = setTimeout(() => {
+              if (!this.room?.getGameStarted()) return;
+              const liveViper = this.room?.getEnemy(vid);
+              if (!liveViper || liveViper.isDying) return;
+              if (this.room?.isEnemyAffectedBy(vid, 'freeze')) return;
+              if (this.room?.isEnemyAffectedBy(vid, 'stun')) return;
+              const tp = this.room?.getPlayers()?.find(p => p.id === pid);
+              if (!tp || tp.health <= 0) return;
+
+              const aimDx = tp.position.x - liveViper.position.x;
+              const aimDz = tp.position.z - liveViper.position.z;
+              liveViper.rotation = Math.atan2(aimDx, aimDz);
+              this._queueMove(liveViper.id, liveViper.position, liveViper.rotation);
+
+              const shotId2 = `viper-shot-${vid}-${Date.now()}`;
+              this.scheduleViperPlayerShot(liveViper, tp, shotId2);
+              this.viperFollowupTimeout.delete(vid);
+            }, VIPER_DOUBLE_SHOT_FOLLOWUP_DELAY_MS);
+
+            this._trackViperFollowupTimeout(vid, t);
+          }
         } else if (resolved.kind === 'zombie') {
           const z = resolved.zombie;
           const targetPoint = {
@@ -3132,7 +3325,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(weaver.position, tpos);
-    const aggroRadius = 10;
+    const aggroRadius = 15;
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(weaver.position, tpos)) {
@@ -3151,6 +3344,23 @@ class EnemyAI {
     this._queueMove(weaver.id, weaver.position, weaver.rotation);
 
     const now = Date.now();
+
+    if ((this.room?.coopBossesDefeatedCount ?? 0) >= WEAVER_IMPALE_SPIKE_UNLOCK_BOSS_COUNT) {
+      const lockUntil = this.weaverImpaleSpikeLockUntil.get(weaver.id) || 0;
+      if (now < lockUntil) return;
+
+      const lastImpale = this.weaverImpaleSpikeCooldown.get(weaver.id) || 0;
+      if (
+        resolved.kind === 'player' &&
+        distance <= WEAVER_IMPALE_SPIKE_RANGE &&
+        now - lastImpale >= WEAVER_IMPALE_SPIKE_COOLDOWN_MS &&
+        !this.room?.isEnemyAffectedBy(weaver.id, 'freeze')
+      ) {
+        this.weaverCastImpaleSpike(weaver, resolved.player);
+        return;
+      }
+    }
+
     const isBlueWeaver = weaver.soulType === 'blue';
 
     if (isBlueWeaver) {
@@ -3171,7 +3381,7 @@ class EnemyAI {
       }
     } else {
       // ── Summon Ghoul (30-second cooldown; max 1 active ghoul) ────────────
-      const summonCooldown = 30000;
+      const summonCooldown = 35000;
       const lastSummonTime = this.weaverSummonCooldown.get(weaver.id) || 0;
       const activeGhoulId  = this.weaverSummonedGhouls.get(weaver.id);
       const ghoulAlive     = activeGhoulId && this.room?.enemies.has(activeGhoulId) &&
@@ -3183,8 +3393,8 @@ class EnemyAI {
       }
 
       // ── Heal (5-second cooldown) ───────────────────────────────────────────
-      const healCooldown   = 4000;
-      const healRange      = 10.0;
+      const healCooldown   = 5000;
+      const healRange      = 15.0;
       const lastHealTime   = this.weaverHealCooldown.get(weaver.id) || 0;
 
       if (now - lastHealTime >= healCooldown) {
@@ -3200,6 +3410,109 @@ class EnemyAI {
     if (distance > preferredRange) {
       this.moveEnemyTowardsTarget(weaver, moveTarget);
     }
+  }
+
+  clearWeaverImpaleSpikePendingTimeoutsForWeaver(weaverId) {
+    const arr = this.weaverImpaleSpikePendingTimeouts.get(weaverId);
+    if (arr) {
+      arr.forEach((tid) => clearTimeout(tid));
+      this.weaverImpaleSpikePendingTimeouts.delete(weaverId);
+    }
+  }
+
+  removeWeaverImpaleSpikePendingTimeoutHandle(weaverId, handle) {
+    const arr = this.weaverImpaleSpikePendingTimeouts.get(weaverId);
+    if (!arr) return;
+    const i = arr.indexOf(handle);
+    if (i >= 0) arr.splice(i, 1);
+    if (arr.length === 0) this.weaverImpaleSpikePendingTimeouts.delete(weaverId);
+  }
+
+  weaverCastImpaleSpike(weaver, targetPlayer) {
+    const now = Date.now();
+    const wid = weaver.id;
+    const targetPlayerId = targetPlayer.id;
+    const windupMs = WEAVER_IMPALE_SPIKE_CAST_ANIM_MS + WEAVER_IMPALE_SPIKE_POST_ANIM_DELAY_MS;
+
+    const dx = targetPlayer.position.x - weaver.position.x;
+    const dz = targetPlayer.position.z - weaver.position.z;
+    weaver.rotation = Math.atan2(dx, dz);
+    this._queueMove(weaver.id, weaver.position, weaver.rotation);
+
+    this.weaverImpaleSpikeCooldown.set(wid, now);
+    this.weaverImpaleSpikeLockUntil.set(
+      wid,
+      now + windupMs + BOSS_TECTONIC_SPIKE_WARN_MS + 300,
+    );
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('weaver-impale-spike-cast', {
+        weaverId: wid,
+        soulType: weaver.soulType === 'blue' ? 'blue' : 'green',
+        timestamp: now,
+      });
+    }
+
+    const telegraphHandle = setTimeout(() => {
+      this.removeWeaverImpaleSpikePendingTimeoutHandle(wid, telegraphHandle);
+      const w = this.room?.enemies?.get(wid);
+      if (!w || w.isDying || w.health <= 0) return;
+
+      const livePlayer = this.room?.players?.get(targetPlayerId);
+      if (!livePlayer || livePlayer.health <= 0) return;
+
+      const landX = livePlayer.position.x;
+      const landZ = livePlayer.position.z;
+      const tickNow = Date.now();
+      const spikeId = `weaver-impale-spike-${wid}-${tickNow}`;
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('weaver-impale-spike-telegraph', {
+          weaverId: wid,
+          spikeId,
+          position: { x: landX, y: 0, z: landZ },
+          warningMs: BOSS_TECTONIC_SPIKE_WARN_MS,
+          soulType: weaver.soulType === 'blue' ? 'blue' : 'green',
+          timestamp: tickNow,
+        });
+      }
+
+      const hitHandle = setTimeout(() => {
+        this.removeWeaverImpaleSpikePendingTimeoutHandle(wid, hitHandle);
+        const liveWeaver = this.room?.enemies?.get(wid);
+        if (!liveWeaver || liveWeaver.isDying || liveWeaver.health <= 0) return;
+        if (this.room) {
+          this.room.damagePlayersInHorizontalRing(
+            { x: landX, y: 0, z: landZ },
+            BOSS_TECTONIC_SHARD_RADIUS,
+            WEAVER_IMPALE_SPIKE_DAMAGE,
+            'weaver_impale_spike',
+            { sourceEnemyId: wid },
+          );
+        }
+        if (this.io) {
+          this.io.to(this.roomId).emit('weaver-impale-spike-appear', {
+            weaverId: wid,
+            spikeId,
+            position: { x: landX, y: 0, z: landZ },
+            soulType: weaver.soulType === 'blue' ? 'blue' : 'green',
+            timestamp: Date.now(),
+          });
+        }
+      }, BOSS_TECTONIC_SPIKE_WARN_MS);
+
+      if (!this.weaverImpaleSpikePendingTimeouts.has(wid)) {
+        this.weaverImpaleSpikePendingTimeouts.set(wid, []);
+      }
+      this.weaverImpaleSpikePendingTimeouts.get(wid).push(hitHandle);
+    }, windupMs);
+
+    if (!this.weaverImpaleSpikePendingTimeouts.has(wid)) {
+      this.weaverImpaleSpikePendingTimeouts.set(wid, []);
+    }
+    this.weaverImpaleSpikePendingTimeouts.get(wid).push(telegraphHandle);
+
+    console.log(`🧵 Weaver ${wid} casting Impale Spike on player ${targetPlayerId}`);
   }
 
   weaverCastLightningOnZombie(weaver, zombie, now) {
@@ -3235,7 +3548,7 @@ class EnemyAI {
   }
 
   weaverCastLightningOnTrap(weaver, trap, now) {
-    const CHARGE_MS = 1500;
+    const CHARGE_MS = 1150;
     const tx = trap.position.x;
     const tz = trap.position.z;
     if (this.io) {
@@ -3319,7 +3632,7 @@ class EnemyAI {
       const liveEnemy = this.room?.getEnemy(targetEnemy.id);
       if (!liveEnemy || liveEnemy.isDying || liveEnemy.health <= 0) return;
 
-      const healAmount    = 150;
+      const healAmount    = 250;
       const previousHp    = liveEnemy.health;
       liveEnemy.health    = Math.min(liveEnemy.maxHealth, liveEnemy.health + healAmount);
       const actualHeal    = liveEnemy.health - previousHp;
@@ -3339,7 +3652,7 @@ class EnemyAI {
 
   weaverCastLightning(weaver, targetPlayer, now) {
     // Client shows a blue ground circle; after CHARGE_MS, same dodge/damage as meteor (local check).
-    const CHARGE_MS = 1000;
+    const CHARGE_MS = 900;
     if (this.io) {
       this.io.to(this.roomId).emit('weaver-lightning-telegraph', {
         weaverId: weaver.id,
@@ -3349,7 +3662,7 @@ class EnemyAI {
           z: targetPlayer.position.z
         },
         strikeAt: now + CHARGE_MS,
-        damage: 45,
+        damage: 57,
         radius: 2.99,
         timestamp: now
       });
@@ -3394,11 +3707,14 @@ class EnemyAI {
     }
     console.log(`🧵 Weaver ${weaver.id} beginning summon ritual…`);
 
+    const isBoss3Summon = weaver.type === 'boss3';
+
     // After the cast animation (~3s), spawn the ghoul
     setTimeout(() => {
       if (weaver.isDying || !this.room?.getGameStarted()) return;
 
       const ghoulId = `ghoul-${weaver.id}-${Date.now()}`;
+      const damageMult = isBoss3Summon ? BOSS3_SUMMONED_GHOUL_DAMAGE_MULT : 1;
 
       const ghoul = {
         id:        ghoulId,
@@ -3408,10 +3724,15 @@ class EnemyAI {
         health:    400,
         maxHealth: 400,
         isDying:   false,
-        damage:    28,
+        damage:    GHOUL_BASE_DAMAGE * damageMult,
         attackCooldown: 2000,
         moveSpeed: 0,   // Frozen during summon animation
         summonerId: weaver.id,
+        ...(isBoss3Summon ? {
+          visualScale: BOSS3_SUMMONED_GHOUL_VISUAL_SCALE,
+          leapDamage: GHOUL_LEAP_DAMAGE * damageMult,
+          summonedByBoss3Id: weaver.id,
+        } : {}),
       };
 
       this.weaverSummonedGhouls.set(weaver.id, ghoulId);
@@ -3428,14 +3749,15 @@ class EnemyAI {
       console.log(`🧵 Weaver ${weaver.id} summoned ghoul ${ghoulId} at ritual circle!`);
 
       // Unlock movement once the summon animation finishes (~4500ms, extended to match ritual duration)
+      const speedMult = isBoss3Summon ? BOSS3_SUMMONED_GHOUL_SPEED_MULT : 1;
       setTimeout(() => {
         const spawnedGhoul = this.room?.getEnemy(ghoulId);
         if (spawnedGhoul && !spawnedGhoul.isDying) {
-          spawnedGhoul.moveSpeed = 2.5;
+          spawnedGhoul.moveSpeed = GHOUL_BASE_MOVE_SPEED * speedMult;
           console.log(`💀 Ghoul ${ghoulId} summon animation complete — movement unlocked`);
         }
       }, 4500);
-    }, 3000);
+    }, 2000);
   }
 
   // ─── Ghoul AI ────────────────────────────────────────────────────────────────
@@ -3464,7 +3786,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(ghoul.position, tpos);
-    const attackRange = 2.4;
+    const attackRange = 2.5;
     const attackCooldown = ghoul.attackCooldown ?? 2000;
 
     const now = Date.now();
@@ -3532,7 +3854,7 @@ class EnemyAI {
             if (!zz || zz.isDying || zz.health <= 0) return;
             const currentDistance = this.calculateDistance(ghoul.position, zz.position);
             if (currentDistance <= attackRange) {
-              const damage = ghoul.damage || 28;
+              const damage = ghoul.damage || GHOUL_BASE_DAMAGE;
               this.damagePlayerZombieFromMob(ghoul, zz, damage, 'ghoul_melee');
             } else {
               console.log(`💀 Ghoul ${ghoul.id} swing missed — zombie dodged!`);
@@ -3551,7 +3873,7 @@ class EnemyAI {
             if (!tt || tt.isDying || tt.health <= 0 || tt.type !== 'tentacle-spine') return;
             const currentDistance = this.calculateDistance(ghoul.position, tt.position);
             if (currentDistance <= attackRange) {
-              const damage = ghoul.damage || 28;
+              const damage = ghoul.damage || GHOUL_BASE_DAMAGE;
               this.room.damageEnemy(trapId, damage, null, null, {
                 sourceEnemyId: ghoul.id,
                 damageType: 'ghoul_melee',
@@ -3650,13 +3972,13 @@ class EnemyAI {
   // ─── Titan AI ────────────────────────────────────────────────────────────────
 
   _buildTitanPatrolWaypoints(spawnX, spawnZ) {
-    const apothem = MAIN_HEX_INNER_APOTHEM * TITAN_PATROL_RADIUS_FRAC;
+    const patrolRadius = this._arenaPatrolRadius();
     const waypoints = [];
     for (let i = 0; i < TITAN_PATROL_WAYPOINT_COUNT; i++) {
       const angle = (Math.PI * 2 * i) / TITAN_PATROL_WAYPOINT_COUNT - Math.PI / 2;
-      const rawX = Math.cos(angle) * apothem;
-      const rawZ = Math.sin(angle) * apothem;
-      const clamped = clampToMainHexXZ(rawX, rawZ);
+      const rawX = Math.cos(angle) * patrolRadius;
+      const rawZ = Math.sin(angle) * patrolRadius;
+      const clamped = this.clampToArenaXZ(rawX, rawZ);
       waypoints.push({ x: clamped.x, z: clamped.z });
     }
     let startIndex = 0;
@@ -3705,6 +4027,11 @@ class EnemyAI {
   }
 
   updateTitanAI(titan, players) {
+    this.titanMaybeStartBladestorm(titan);
+    if (titan.bladestormActive) {
+      this.tickTitanBladestorm(titan, this.updateInterval / 1000);
+    }
+
     let aggroData = this.enemyAggro.get(titan.id);
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(titan, players);
@@ -3839,6 +4166,76 @@ class EnemyAI {
     this.moveEnemyTowardsTarget(titan, moveTarget, { meleeSurroundAttackRange: attackRange });
   }
 
+  titanMaybeStartBladestorm(titan) {
+    if (!titan || titan.type !== 'titan') return;
+    if (titan.bladestormActive) return;
+    if (titan.isDying || titan.health <= 0) return;
+    if (!titan.maxHealth || titan.health / titan.maxHealth > TITAN_BLADESTORM_HEALTH_PCT) return;
+
+    const startTime = Date.now();
+    titan.bladestormActive = true;
+    titan.bladestormStartTime = startTime;
+    titan.bladestormSpinAngle = 0;
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('titan-bladestorm-start', {
+        titanId: titan.id,
+        startTime,
+        soulType: titan.soulType || 'green',
+        timestamp: startTime,
+      });
+    }
+    console.log(`🗿 Titan ${titan.id} entered Bladestorm at ${Math.round((titan.health / titan.maxHealth) * 100)}% HP.`);
+  }
+
+  tickTitanBladestorm(titan, dtSec) {
+    if (!titan?.bladestormActive || titan.isDying || titan.health <= 0) return;
+
+    const TAU = Math.PI * 2;
+    const prevAngle = titan.bladestormSpinAngle || 0;
+    const newAngle = prevAngle + dtSec * TITAN_BLADESTORM_SPIN_SPEED;
+    titan.bladestormSpinAngle = newAngle;
+
+    const prevFloor = Math.floor(prevAngle / TAU);
+    const currFloor = Math.floor(newAngle / TAU);
+    if (currFloor > prevFloor) {
+      for (let f = prevFloor + 1; f <= currFloor; f++) {
+        this.applyTitanBladestormDamage(titan);
+      }
+    }
+  }
+
+  applyTitanBladestormDamage(titan) {
+    if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
+    if (!titan?.position) return;
+
+    const center = titan.position;
+    const radius = TITAN_BLADESTORM_HIT_RADIUS;
+    const damage = TITAN_BLADESTORM_DAMAGE;
+    const meta = { sourceEnemyId: titan.id, damageType: 'titan_bladestorm' };
+
+    this.room?.damagePlayersInHorizontalRing(center, radius, damage, 'titan_bladestorm', meta);
+
+    this.room?.tryDamageAlliedKnightInXZDisk(
+      { x: center.x, z: center.z },
+      radius,
+      damage,
+      meta,
+    );
+
+    const r2 = radius * radius;
+    const enemies = this.room?.getEnemies?.() || [];
+    for (const enemy of enemies) {
+      if (!enemy || enemy.isDying || enemy.health <= 0) continue;
+      if (enemy.type !== 'player-zombie') continue;
+      const dx = (enemy.position?.x ?? 0) - center.x;
+      const dz = (enemy.position?.z ?? 0) - center.z;
+      if (dx * dx + dz * dz <= r2) {
+        this.damagePlayerZombieFromMob(titan, enemy, damage, 'titan_bladestorm');
+      }
+    }
+  }
+
   telegraphTitanAttack(titan, player) {
     if (this.io) {
       this.io.to(this.roomId).emit('titan-attack-telegraph', {
@@ -3901,7 +4298,7 @@ class EnemyAI {
 
   ghoulAttackPlayer(ghoul, player) {
     if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
-    const damage = ghoul.damage || 30;
+    const damage = ghoul.damage || GHOUL_BASE_DAMAGE;
     this.recordAlliedProtectionThreat(ghoul.id, player.id, damage);
 
     if (this.io) {
@@ -3990,7 +4387,7 @@ class EnemyAI {
     const px = targetPlayer.position.x;
     const pz = targetPlayer.position.z;
     const md = targetPlayer.movementDirection;
-    if (!md) return clampToMainHexXZ(px, pz);
+    if (!md) return this.clampToArenaXZ(px, pz);
 
     const dt = durationMs / 1000;
     let dirX = 0;
@@ -4017,10 +4414,10 @@ class EnemyAI {
       }
     }
 
-    if (speed <= 0) return clampToMainHexXZ(px, pz);
+    if (speed <= 0) return this.clampToArenaXZ(px, pz);
 
     const offset = Math.min(speed * dt, MOB_LEAP_PREDICTION_MAX_OFFSET);
-    return clampToMainHexXZ(px + dirX * offset, pz + dirZ * offset);
+    return this.clampToArenaXZ(px + dirX * offset, pz + dirZ * offset);
   }
 
   computeMobLeapLandXZ(enemy, targetPlayer, maxTravel, standoffM, durationMs) {
@@ -4175,11 +4572,12 @@ class EnemyAI {
       ghoul.position.z = land.z;
     }
     this.ghoulLeapCooldown.set(ghoulId, Date.now());
+    const leapDamage = ghoul.leapDamage ?? GHOUL_LEAP_DAMAGE;
     if (this.room) {
       this.room.damagePlayersInHorizontalRing(
         land,
         GHOUL_LEAP_LANDING_RADIUS,
-        GHOUL_LEAP_DAMAGE,
+        leapDamage,
         'ghoul_leap',
         { stunMs: GHOUL_LEAP_STUN_MS, sourceEnemyId: ghoulId },
       );
@@ -4871,7 +5269,7 @@ class EnemyAI {
   }
 
   boss3CreateLightningTargets(primaryTarget) {
-    const clampXZ = (x, z) => ({ ...clampToMainHexXZ(x, z), y: 0 });
+    const clampXZ = (x, z) => ({ ...this.clampToArenaXZ(x, z), y: 0 });
 
     const x0 = primaryTarget?.position?.x || 0;
     const z0 = primaryTarget?.position?.z || 0;
@@ -7235,7 +7633,7 @@ class EnemyAI {
           }
         }
       }
-      const clamped = clampToMainHexXZ(rx, rz);
+      const clamped = this.clampToArenaXZ(rx, rz);
       rx = clamped.x;
       rz = clamped.z;
     }
@@ -7388,11 +7786,22 @@ class EnemyAI {
     this.warlockMeteorCooldown.delete(enemyId);
     this.warlockLaunchMoveLockUntil.delete(enemyId);
     this.clearWarlockOrbIntervals(enemyId);
+    this.warlockArchonShockCooldown.delete(enemyId);
+    this.warlockArchonShockLockUntil.delete(enemyId);
+    const warlockShockT = this.warlockArchonShockTimeout.get(enemyId);
+    if (warlockShockT) clearTimeout(warlockShockT);
+    this.warlockArchonShockTimeout.delete(enemyId);
     this.shadeBlinkCooldown.delete(enemyId);
     this.viperAttackCooldown.delete(enemyId);
+    const viperFollowupT = this.viperFollowupTimeout.get(enemyId);
+    if (viperFollowupT) clearTimeout(viperFollowupT);
+    this.viperFollowupTimeout.delete(enemyId);
     this.weaverHealCooldown.delete(enemyId);
     this.weaverSummonCooldown.delete(enemyId);
     this.weaverLightningCooldown.delete(enemyId);
+    this.weaverImpaleSpikeCooldown.delete(enemyId);
+    this.weaverImpaleSpikeLockUntil.delete(enemyId);
+    this.clearWeaverImpaleSpikePendingTimeoutsForWeaver(enemyId);
     this.weaverSummonedGhouls.delete(enemyId);
     this.ghoulAttackCooldown.delete(enemyId);
     this.titanAttackCooldown.delete(enemyId);

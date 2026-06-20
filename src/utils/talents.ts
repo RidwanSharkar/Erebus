@@ -7,7 +7,7 @@ export const TALENT_INFESTED_STRIKE = 'INFESTED_STRIKE' as const;
 export const TALENT_WRATHFUL_TALONS = 'WRATHFUL_TALONS' as const;
 export const TALENT_EXECUTE = 'EXECUTE' as const;
 export const TALENT_EXPLOSIVE_TALONS = 'EXPLOSIVE_TALONS' as const;
-export const TALENT_STORED_CHARGE = 'STORED_CHARGE' as const;
+export const TALENT_CYCLONE_RUSH = 'CYCLONE_RUSH' as const;
 export const TALENT_STAGGERING_STRIKE = 'STAGGERING_STRIKE' as const;
 export const TALENT_STAGGERING_COMBO = 'STAGGERING_COMBO' as const;
 export const TALENT_STAGGERING_SWIPES = 'STAGGERING_SWIPES' as const;
@@ -43,7 +43,6 @@ export const TALENT_WRAITH_GUARD = 'WRAITH_GUARD' as const;
 export const TALENT_FROSTPATH = 'FROSTPATH' as const;
 export const TALENT_SOLAR_RECHARGE = 'SOLAR_RECHARGE' as const;
 export const TALENT_WINDFURY = 'WINDFURY' as const;
-export const TALENT_BLADE_RUSH = 'BLADE_RUSH' as const;
 export const TALENT_COLOSSUS_GUARD = 'COLOSSUS_GUARD' as const;
 export const TALENT_WRATHFUL_COMBO = 'WRATHFUL_COMBO' as const;
 export const TALENT_INFESTED_COMBO = 'INFESTED_COMBO' as const;
@@ -88,6 +87,8 @@ export const TALENT_ACCELERATOR = 'ACCELERATOR' as const;
 export const TALENT_GIANTKILLER = 'GIANTKILLER' as const;
 /** Bow class — LMB minimum charge damage 10 → 40; uncharged projectile VFX tint red. */
 export const TALENT_TRIGGER_FINGER = 'TRIGGER_FINGER' as const;
+/** Bow class — LMB primary hits have a 20% chance to rain 4–8 poison arrows on the struck enemy. */
+export const TALENT_CLOUDKILL = 'CLOUDKILL' as const;
 /** Healing Stream — while Mantra totems (`SCYTHE_F`) are up: heal per second per owned totem within horizontal range (same radius as ACCELERATOR). */
 export const TALENT_HEALING_STREAM = 'HEALING_STREAM' as const;
 
@@ -166,8 +167,8 @@ export const TALENT_LIGHTNING_BOLT_ROOM = 'LIGHTNING_BOLT_ROOM' as const;
 /** Purple room universal active boon — manually cast Aegis deflect + invulnerability on R key (8s cooldown). */
 export const TALENT_AEGIS_ROOM = 'AEGIS_ROOM' as const;
 
-/** Blade Rush — double-tap forward Charge on Runeblade; separate from E-key Charge cooldown. */
-export const BLADE_RUSH_CHARGE_COOLDOWN_SEC = 3;
+/** Cyclone Rush — double-tap forward Charge on Runeblade; separate from E-key Charge cooldown. */
+export const CYCLONE_RUSH_CHARGE_COOLDOWN_SEC = 3;
 /** RAISE DEAD active boon — cooldown after summoning a zombie via R key. */
 export const RAISE_DEAD_COOLDOWN_SEC = 15;
 /** METEOR active boon — cooldown after calling a meteor via R key. */
@@ -253,6 +254,33 @@ export function rollCrossentropyMeteorStrikeCount(): 1 | 2 | 3 {
   if (roll < CROSSENTROPY_METEOR_SINGLE_CHANCE + CROSSENTROPY_METEOR_DOUBLE_CHANCE) return 2;
   return 3;
 }
+/** Cloudkill (`BOW_BASIC` class boon) — per-hit proc chance on LMB primary enemy hits. */
+export const CLOUDKILL_PROC_CHANCE = 0.2;
+/** Cloudkill — damage per falling arrow impact. */
+export const CLOUDKILL_DAMAGE = 35;
+/** Cloudkill — AoE radius at each arrow impact (horizontal). */
+export const CLOUDKILL_AOE_RADIUS = 1.5;
+/** Cloudkill — minimum arrows per proc volley. */
+export const CLOUDKILL_ARROW_COUNT_MIN = 4;
+/** Cloudkill — maximum arrows per proc volley. */
+export const CLOUDKILL_ARROW_COUNT_MAX = 8;
+/** Cloudkill — delay between sequential arrows in one volley. */
+export const CLOUDKILL_ARROW_DELAY_MS = 125;
+/** Cloudkill — arrow fall speed (units per second). */
+export const CLOUDKILL_ARROW_SPEED = 26.5;
+/** Cloudkill — warning ring duration before arrow appears (ms). */
+export const CLOUDKILL_WARNING_MS = 100;
+/** Cloudkill — sky spawn height min above target. */
+export const CLOUDKILL_SKY_HEIGHT_MIN = 50;
+/** Cloudkill — sky spawn height max above target. */
+export const CLOUDKILL_SKY_HEIGHT_MAX = 70;
+
+export function rollCloudkillArrowCount(): number {
+  return (
+    CLOUDKILL_ARROW_COUNT_MIN +
+    Math.floor(Math.random() * (CLOUDKILL_ARROW_COUNT_MAX - CLOUDKILL_ARROW_COUNT_MIN + 1))
+  );
+}
 /** FRAGMENTATION talent — per-hit proc chance to bounce a second Crossentropy bolt. */
 export const CROSSENTROPY_FRAGMENTATION_PROC_CHANCE = 0.5;
 /** FRAGMENTATION talent — horizontal (xz) max distance from struck enemy to ricochet target. */
@@ -302,13 +330,13 @@ export function evaluateVorpalGustBeamHit(
 }
 
 /** Beam segment length (world units) at max range treated as tip (Explosive Talons-style end-zone). */
-export const VORPAL_GUST_TIP_ZONE_WORLD_UNITS = 1.2;
+export const VORPAL_GUST_TIP_ZONE_WORLD_UNITS = 1.5;
 /** Minimum projected `t` from `evaluateVorpalGustBeamHit` to count as hitting near the gust tip. */
 export const VORPAL_GUST_TIP_ZONE_START = VORPAL_GUST_BEAM_LENGTH - VORPAL_GUST_TIP_ZONE_WORLD_UNITS;
 /** Tip zone: non-positional hit base (normally 95). */
-export const BACKSTAB_VORPAL_TIP_DAMAGE_FRONT = 275;
+export const BACKSTAB_VORPAL_TIP_DAMAGE_FRONT = 333;
 /** Tip zone: positional Backstab vs PvE (normally 285). */
-export const BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB = 490;
+export const BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB = 666;
 /** Tip zone: positional Backstab vs PvP tier (normally 175), scaled vs PvE 285→420 uplift. */
 export const BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB_PVP = Math.round((BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB * 175) / 285);
 
@@ -384,7 +412,7 @@ export type TalentId =
   | typeof TALENT_WRATHFUL_TALONS
   | typeof TALENT_EXECUTE
   | typeof TALENT_EXPLOSIVE_TALONS
-  | typeof TALENT_STORED_CHARGE
+  | typeof TALENT_CYCLONE_RUSH
   | typeof TALENT_STAGGERING_STRIKE
   | typeof TALENT_STAGGERING_COMBO
   | typeof TALENT_STAGGERING_SWIPES
@@ -413,7 +441,6 @@ export type TalentId =
   | typeof TALENT_FROSTPATH
   | typeof TALENT_SOLAR_RECHARGE
   | typeof TALENT_WINDFURY
-  | typeof TALENT_BLADE_RUSH
   | typeof TALENT_COLOSSUS_GUARD
   | typeof TALENT_WRATHFUL_COMBO
   | typeof TALENT_INFESTED_COMBO
@@ -446,6 +473,7 @@ export type TalentId =
   | typeof TALENT_ACCELERATOR
   | typeof TALENT_GIANTKILLER
   | typeof TALENT_TRIGGER_FINGER
+  | typeof TALENT_CLOUDKILL
   | typeof TALENT_HEALING_STREAM
   | typeof TALENT_STAGGERING_STAB
   | typeof TALENT_WRATHFUL_STAB
@@ -530,6 +558,18 @@ export const AFTERSHOCK_STRIP_LENGTH = 7.5;
 export const AFTERSHOCK_DETONATION_DELAY_MS = 1000;
 /** Lateral distance from strip centerline (XZ) for hit and VFX width. */
 export const AFTERSHOCK_STRIP_HALF_WIDTH = 1;
+/** Rounded end-cap radius for ground strip VFX. */
+export const AFTERSHOCK_STRIP_CORNER_RADIUS = 0.45;
+/** Time for eruption wave to travel from cast origin to strip far end (ms). */
+export const AFTERSHOCK_ERUPTION_WAVE_MS = 400;
+/** Infested Strike — bonus Aftershock detonation damage. */
+export const AFTERSHOCK_INFESTED_DAMAGE_BONUS = 100;
+/** Wraith Guard — bonus Aftershock detonation damage. */
+export const AFTERSHOCK_GUARD_DAMAGE_BONUS = 50;
+/** Wrathful Strike — additive crit chance on Aftershock detonation. */
+export const AFTERSHOCK_WRATHFUL_CRIT_CHANCE_ADD = 0.8;
+/** Staggering Strike — stagger applied per enemy hit by Aftershock detonation. */
+export const AFTERSHOCK_STAGGERING_STAGGER = 50;
 
 /** Modifies Wraith Strike (`RUNEBLADE_E`) when equipped in Q/E/R. */
 export const WRATH_STRIKE_CRIT_CHANCE_ADD = 0.5;
@@ -773,19 +813,11 @@ export const explosiveTalonsTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'BOW_R',
 };
 
-export const storedChargeTalentDefinition: TalentDefinition = {
-  id: TALENT_STORED_CHARGE,
-  name: 'STORED CHARGE',
+export const cycloneRushTalentDefinition: TalentDefinition = {
+  id: TALENT_CYCLONE_RUSH,
+  name: 'CYCLONE RUSH',
   description:
-    'While Charge is in your ability loadout (or while you have the Blade Rush talent), after the dash your Runeblade completes three full spins instead of one and a half, dealing Charge damage to nearby enemies for each full rotation.',
-  modifiesAbilityId: 'SWORD_E',
-};
-
-export const bladeRushTalentDefinition: TalentDefinition = {
-  id: TALENT_BLADE_RUSH,
-  name: 'Blade Rush',
-  description:
-    'Double-tapping W to dash forward on the Runeblade performs Charge (forward dash and damage spin) when Blade Rush’s cooldown allows, consuming one dash charge. Does not require Charge in your loadout. While Blade Rush is on cooldown, the input uses a normal forward dash. E-key Charge keeps its own cooldown.',
+    'Double-tapping W to dash forward performs Charge when its cooldown allows, consuming one dash charge — no Charge in your loadout required. After any Charge, your Runeblade completes three full spins instead of one and a half, dealing Charge damage to nearby enemies for each full rotation. While on cooldown, forward double-tap W uses a normal dash. E-key Charge keeps its own cooldown.',
   modifiesAbilityId: 'RUNEBLADE_BASIC',
 };
 
@@ -953,7 +985,7 @@ export const dashGuardTalentDefinition: TalentDefinition = {
   id: TALENT_DASH_GUARD,
   name: 'DASH GUARD',
   description:
-    `Each time you dash (double-tap W/A/S/D), gain ${DASH_GUARD_DURATION_SEC} seconds of Aegis deflection and invulnerability on Runeblade or Sabres. Does not put Aegis on cooldown and does not require Aegis in your loadout. Blade Rush forward uses Charge, not a dash — it does not trigger this talent.`,
+    `Each time you dash (double-tap W/A/S/D), gain ${DASH_GUARD_DURATION_SEC} seconds of Aegis deflection and invulnerability on Runeblade or Sabres. Does not put Aegis on cooldown and does not require Aegis in your loadout. Cyclone Rush forward uses Charge, not a dash — it does not trigger this talent.`,
   modifiesAbilityId: 'RUNEBLADE_DASH',
 };
 
@@ -961,7 +993,7 @@ export const executionerTalentDefinition: TalentDefinition = {
   id: TALENT_EXECUTIONER,
   name: 'EXECUTIONER',
   description:
-    'After a real dash (double-tap W/A/S/D; not Blade Rush), your next Runeblade left-click within 3 seconds resolves as the third combo hit and deals +25 base damage before critical strikes. Blade Rush does not arm this buff.',
+    'After a real dash (double-tap W/A/S/D; not Cyclone Rush), your next Runeblade left-click within 3 seconds resolves as the third combo hit and deals +25 base damage before critical strikes. Cyclone Rush does not arm this buff.',
   modifiesAbilityId: 'RUNEBLADE_DASH',
 };
 
@@ -1299,6 +1331,14 @@ export const triggerFingerTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'BOW_BASIC',
 };
 
+export const cloudkillTalentDefinition: TalentDefinition = {
+  id: TALENT_CLOUDKILL,
+  name: 'Cloudkill',
+  description:
+    'Bow left-click attacks (uncharged, charged, perfect timing, and Tempest Rounds bursts) have a 20% chance on each enemy hit to rain 4–8 poison arrows onto that enemy. Each arrow deals 25 damage to enemies in the impact area.',
+  modifiesAbilityId: 'BOW_BASIC',
+};
+
 export const tempestRoundsTalentDefinition: TalentDefinition = {
   id: TALENT_TEMPEST_ROUNDS,
   name: 'Tempest Rounds',
@@ -1581,7 +1621,7 @@ export interface TalentLoadout {
   wrathfulTalons: boolean;
   execute: boolean;
   explosiveTalons: boolean;
-  storedCharge: boolean;
+  cycloneRush: boolean;
   trinity: boolean;
   infestedSmite: boolean;
   staggeringSmite: boolean;
@@ -1605,12 +1645,13 @@ export interface TalentLoadout {
   highCaliber: boolean;
   /** TRIGGER FINGER — bow LMB uncharged damage + red projectile VFX. */
   triggerFinger: boolean;
+  /** Cloudkill — bow LMB primary 20% on-hit poison arrow volley. */
+  cloudkill: boolean;
   wyvernSting: boolean;
   wyvernTalons: boolean;
   arcticSting: boolean;
   glacialBite: boolean;
   glacialTalons: boolean;
-  bladeRush: boolean;
   wrathfulCombo: boolean;
   infestedCombo: boolean;
   guardCombo: boolean;
@@ -1711,7 +1752,7 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     wrathfulTalons: false,
     execute: false,
     explosiveTalons: false,
-    storedCharge: false,
+    cycloneRush: false,
     trinity: false,
     infestedSmite: false,
     staggeringSmite: false,
@@ -1733,12 +1774,12 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     dualCoil: false,
     highCaliber: false,
     triggerFinger: false,
+    cloudkill: false,
     wyvernSting: false,
     wyvernTalons: false,
     arcticSting: false,
     glacialBite: false,
     glacialTalons: false,
-    bladeRush: false,
     wrathfulCombo: false,
     infestedCombo: false,
     guardCombo: false,
@@ -1807,6 +1848,16 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     aegisRoom: false,
   };
 }
+
+/** Merge partial loadouts and migrate legacy Blade Rush / Stored Charge flags to Cyclone Rush. */
+export function normalizeTalentLoadout(
+  raw: Partial<TalentLoadout> & { bladeRush?: boolean; storedCharge?: boolean },
+): TalentLoadout {
+  const merged = { ...createDefaultTalentLoadout(), ...raw };
+  merged.cycloneRush = !!(merged.cycloneRush || raw.bladeRush || raw.storedCharge);
+  return merged;
+}
+
 // DEFAULT TALENTS DEFAULTTALENTS
 export function isWraithStrikeInLoadout(loadout: AbilityLoadout | null | undefined): boolean {
   if (!loadout) return false;
@@ -1879,24 +1930,15 @@ export function isChargeInLoadout(loadout: AbilityLoadout | null | undefined): b
   return loadout.Q === 'SWORD_E' || loadout.E === 'SWORD_E' || loadout.R === 'SWORD_E';
 }
 
-export function shouldApplyStoredChargeTalent(
-  talentLoadout: TalentLoadout | null | undefined,
-  abilityLoadout: AbilityLoadout | null | undefined,
-): boolean {
-  return !!talentLoadout?.storedCharge && isChargeInLoadout(abilityLoadout);
+export function shouldApplyCycloneRushTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.cycloneRush;
 }
 
-export function shouldApplyBladeRushTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
-  return !!talentLoadout?.bladeRush;
-}
-
-/** Stored Charge spin count / charge spin broadcasts: Charge in loadout or Blade Rush (Charge-like dash without SWORD_E). */
-export function shouldApplyRunebladeStoredChargeSpin(
+/** Cyclone Rush — 3 full post-Charge spins + per-rotation damage on all Charge paths. */
+export function shouldApplyCycloneRushChargeSpin(
   talentLoadout: TalentLoadout | null | undefined,
-  abilityLoadout: AbilityLoadout | null | undefined,
 ): boolean {
-  if (!talentLoadout?.storedCharge) return false;
-  return isChargeInLoadout(abilityLoadout) || !!talentLoadout.bladeRush;
+  return !!talentLoadout?.cycloneRush;
 }
 
 /** Colossus Smite / Runeblade R (`RUNEBLADE_R`) in any universal slot. */
@@ -2244,6 +2286,12 @@ export function shouldApplyFragmentationTalent(
   abilityLoadout: AbilityLoadout | null | undefined,
 ): boolean {
   return !!talentLoadout?.fragmentation && isCrossentropyInLoadout(abilityLoadout);
+}
+
+export function shouldApplyCloudkillTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.cloudkill;
 }
 
 export function shouldApplyCrossentropyTempestTalent(
@@ -2657,25 +2705,21 @@ export function getCoopStaggerRoomBoonsPayload(loadout: TalentLoadout): {
   };
 }
 
-/** Runeblade class boon pool. Stored Charge is offered only after Blade Rush is on the run loadout. */
+/** Runeblade class boon pool. */
 export function buildRunebladeClassBoonPool(
-  talentLoadout?: TalentLoadout | null,
+  _talentLoadout?: TalentLoadout | null,
 ): TalentId[] {
-  const pool: TalentId[] = [
+  return [
     TALENT_TRINITY,
     TALENT_VENGEANCE,
     TALENT_CRUSADER,
     TALENT_WINDFURY,
     TALENT_BLIZZARD,
-    TALENT_BLADE_RUSH,
+    TALENT_CYCLONE_RUSH,
     TALENT_DOUBLE_STRIKE,
     TALENT_SPELLBLADE,
     TALENT_BREATH_WEAPON, // Aftershock
   ];
-  if (talentLoadout?.bladeRush) {
-    pool.push(TALENT_STORED_CHARGE);
-  }
-  return pool;
 }
 
 /** Bow class boon pool (co-op). */
@@ -2690,6 +2734,7 @@ export function buildBowClassBoonPool(): TalentId[] {
     TALENT_TRIGGER_FINGER,
     TALENT_TEMPEST_ROUNDS,
     TALENT_GIANTKILLER,
+    TALENT_CLOUDKILL,
   ];
 }
 
@@ -3069,8 +3114,8 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_EXPLOSIVE_TALONS:
       next.explosiveTalons = true;
       return next;
-    case TALENT_STORED_CHARGE:
-      next.storedCharge = true;
+    case TALENT_CYCLONE_RUSH:
+      next.cycloneRush = true;
       return next;
     case TALENT_STAGGERING_STRIKE:
       next.staggeringStrike = true;
@@ -3132,6 +3177,9 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_TRIGGER_FINGER:
       next.triggerFinger = true;
       return next;
+    case TALENT_CLOUDKILL:
+      next.cloudkill = true;
+      return next;
     case TALENT_WYVERN_STING:
       next.wyvernSting = true;
       return next;
@@ -3158,9 +3206,6 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
       return next;
     case TALENT_WINDFURY:
       next.windFury = true;
-      return next;
-    case TALENT_BLADE_RUSH:
-      next.bladeRush = true;
       return next;
     case TALENT_COLOSSUS_GUARD:
       next.colossusGuard = true;
@@ -3383,8 +3428,7 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_FROSTPATH]: frostPathTalentDefinition,
   [TALENT_SOLAR_RECHARGE]: solarRechargeTalentDefinition,
   [TALENT_WINDFURY]: windFuryTalentDefinition,
-  [TALENT_BLADE_RUSH]: bladeRushTalentDefinition,
-  [TALENT_STORED_CHARGE]: storedChargeTalentDefinition,
+  [TALENT_CYCLONE_RUSH]: cycloneRushTalentDefinition,
   [TALENT_COLOSSUS_GUARD]: colossusGuardTalentDefinition,
   [TALENT_WRATHFUL_COMBO]: wrathfulComboTalentDefinition,
   [TALENT_INFESTED_COMBO]: infestedComboTalentDefinition,
@@ -3409,6 +3453,7 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_DUAL_COIL]: dualCoilTalentDefinition,
   [TALENT_HIGH_CALIBER]: highCaliberTalentDefinition,
   [TALENT_TRIGGER_FINGER]: triggerFingerTalentDefinition,
+  [TALENT_CLOUDKILL]: cloudkillTalentDefinition,
   [TALENT_WYVERN_STING]: wyvernStingTalentDefinition,
   [TALENT_WYVERN_TALONS]: wyvernTalonsTalentDefinition,
   [TALENT_ARCTIC_STING]: arcticStingTalentDefinition,
@@ -3492,7 +3537,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_WRATHFUL_TALONS]: '/icons/talon.svg',
   [TALENT_EXECUTE]: '/icons/execute.svg',
   [TALENT_EXPLOSIVE_TALONS]: '/icons/explosiveTalons.svg',
-  [TALENT_STORED_CHARGE]: '/icons/storedCharge.svg',
+  [TALENT_CYCLONE_RUSH]: '/icons/storedCharge.svg',
   [TALENT_STAGGERING_STRIKE]: '/icons/strike.svg',
   [TALENT_STAGGERING_COMBO]: '/icons/combo.svg',
   [TALENT_STAGGERING_SWIPES]: '/icons/swipes.svg',
@@ -3513,6 +3558,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_DUAL_COIL]: '/icons/dualCoil.svg',
   [TALENT_HIGH_CALIBER]: '/icons/highcaliber.svg',
   [TALENT_TRIGGER_FINGER]: '/icons/triggerfinger.svg',
+  [TALENT_CLOUDKILL]: '/icons/cloudkill.svg',
   [TALENT_WYVERN_STING]: '/icons/shot.svg',
   [TALENT_WYVERN_TALONS]: '/icons/talon.svg',
   [TALENT_ARCTIC_STING]: '/icons/shot.svg',
@@ -3522,7 +3568,6 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_FROSTPATH]: '/icons/frostpath.svg',
   [TALENT_SOLAR_RECHARGE]: '/icons/solarRecharge.svg',
   [TALENT_WINDFURY]: '/icons/windFury.svg',
-  [TALENT_BLADE_RUSH]: '/icons/bladerush.svg',
   [TALENT_COLOSSUS_GUARD]: '/icons/smite.svg',
   [TALENT_WRATHFUL_COMBO]: '/icons/combo.svg',
   [TALENT_INFESTED_COMBO]: '/icons/combo.svg',
@@ -3632,7 +3677,7 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.wrathfulTalons) out.push(TALENT_WRATHFUL_TALONS);
   if (loadout.execute) out.push(TALENT_EXECUTE);
   if (loadout.explosiveTalons) out.push(TALENT_EXPLOSIVE_TALONS);
-  if (loadout.storedCharge) out.push(TALENT_STORED_CHARGE);
+  if (loadout.cycloneRush) out.push(TALENT_CYCLONE_RUSH);
   if (loadout.trinity) out.push(TALENT_TRINITY);
   if (loadout.infestedSmite) out.push(TALENT_INFESTED_SMITE);
   if (loadout.staggeringSmite) out.push(TALENT_STAGGERING_SMITE);
@@ -3654,12 +3699,12 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.dualCoil) out.push(TALENT_DUAL_COIL);
   if (loadout.highCaliber) out.push(TALENT_HIGH_CALIBER);
   if (loadout.triggerFinger) out.push(TALENT_TRIGGER_FINGER);
+  if (loadout.cloudkill) out.push(TALENT_CLOUDKILL);
   if (loadout.wyvernSting) out.push(TALENT_WYVERN_STING);
   if (loadout.wyvernTalons) out.push(TALENT_WYVERN_TALONS);
   if (loadout.arcticSting) out.push(TALENT_ARCTIC_STING);
   if (loadout.glacialBite) out.push(TALENT_GLACIAL_BITE);
   if (loadout.glacialTalons) out.push(TALENT_GLACIAL_TALONS);
-  if (loadout.bladeRush) out.push(TALENT_BLADE_RUSH);
   if (loadout.wrathfulCombo) out.push(TALENT_WRATHFUL_COMBO);
   if (loadout.infestedCombo) out.push(TALENT_INFESTED_COMBO);
   if (loadout.guardCombo) out.push(TALENT_GUARD_COMBO);

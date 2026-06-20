@@ -303,7 +303,7 @@ export default function CrossentropyMeteor({
             <MeteorTrail
               meshRef={meteorMeshRef}
               color={new Color('#FF7A1A')}
-              size={0.07}
+              size={0.05}
               backwardDir={trailBackward}
             />
           </mesh>

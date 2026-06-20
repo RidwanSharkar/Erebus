@@ -1,5 +1,5 @@
 import { MUSHROOM_MAX_HP } from './mushroomConstants';
-import { MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z, isInsideHexArenaXZ } from './mapConstants';
+import { MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z } from './mapConstants';
 
 export const MUSHROOM_COUNT = 20;
 export const MUSHROOM_INNER_RADIUS = 5;
@@ -37,7 +37,7 @@ export function buildMushroomInstances(): MushroomInstance[] {
     for (let attempt = 0; attempt < 64; attempt++) {
       x = (rand() * 2 - 1) * MUSHROOM_HALF_X;
       z = (rand() * 2 - 1) * MUSHROOM_HALF_Z;
-      if (Math.hypot(x, z) >= MUSHROOM_INNER_RADIUS && isInsideHexArenaXZ(x, z, undefined, 1.0)) break;
+      if (Math.hypot(x, z) >= MUSHROOM_INNER_RADIUS && Math.hypot(x, z) <= MAIN_MAP_HALF_X - 1.0) break;
     }
     const h = 0.14 + rand() * 0.55;
     const cr = 0.7 + rand() * 1.4;

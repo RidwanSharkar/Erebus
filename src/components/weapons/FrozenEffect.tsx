@@ -20,6 +20,7 @@ import {
   createIceShellMaterial,
   createFrostGroundMaterial,
   createIceMoteMaterial,
+  ICE_MOTE_COUNT,
 } from '@/utils/frozenEffectShader';
 
 const FROZEN_LIGHT_COLOR = new Color('#4FC3F7');
@@ -31,7 +32,6 @@ const _shardScale = new Vector3(1, 1, 1);
 const _shardMatrix = new Matrix4();
 
 const SHARD_COUNT = 8;
-const MOTE_COUNT = 14;
 
 interface FrozenEffectProps {
   position: Vector3;
@@ -106,7 +106,7 @@ const FrozenEffectComponent = memo(function FrozenEffect({
       }),
     [],
   );
-  const moteGeo = useMemo(() => buildMoteGeometry(MOTE_COUNT), []);
+  const moteGeo = useMemo(() => buildMoteGeometry(ICE_MOTE_COUNT), []);
   const moteMat = useMemo(() => createIceMoteMaterial(), []);
 
   const frozenLight = useDynamicLight({ color: FROZEN_LIGHT_COLOR, distance: 6, priority: 1 });
@@ -216,7 +216,7 @@ const FrozenEffectComponent = memo(function FrozenEffect({
   });
 
   return (
-    <group ref={effectRef} position={position}>
+    <group ref={effectRef} position={position} position-y={-0.5}>
       <mesh
         geometry={shellGeo}
         material={shellMat}

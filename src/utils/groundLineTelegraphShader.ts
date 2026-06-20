@@ -1,6 +1,6 @@
 import { AdditiveBlending, Color, DoubleSide, ShaderMaterial } from 'three';
 
-export type GroundLineTelegraphVariant = 'viper' | 'tentacle' | 'archon';
+export type GroundLineTelegraphVariant = 'viper' | 'tentacle' | 'archon' | 'archonPurple';
 
 export interface GroundLineTelegraphPreset {
   color: string;
@@ -46,6 +46,19 @@ export const GROUND_LINE_TELEGRAPH_PRESETS: Record<GroundLineTelegraphVariant, G
   archon: {
     color: '#ff3333',
     glowColor: '#ff8888',
+    scrollSpeed: 4.5,
+    pulseSpeed: 18,
+    softness: 0.15,
+    baseOpacity: 0.78,
+    glowOpacity: 0.45,
+    flickerAmount: 0.25,
+    baseLaneOpacity: 0.3,
+    baseLaneGlowOpacity: 0.18,
+    showEndpointCaps: true,
+  },
+  archonPurple: {
+    color: '#aa33ff',
+    glowColor: '#dd88ff',
     scrollSpeed: 4.5,
     pulseSpeed: 18,
     softness: 0.15,

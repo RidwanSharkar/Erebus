@@ -150,7 +150,7 @@ export default function FrostNova({
             ]}
           >
             <mesh rotation={[Math.PI / 6, 0, 0]}>
-              <octahedronGeometry args={[0.4 * baseScale, 0]} />
+              <octahedronGeometry args={[0.2 * baseScale, 0]} />
               <meshStandardMaterial
                 color="#E1F5FE"
                 emissive="#29B6F6"
@@ -187,7 +187,7 @@ export default function FrostNova({
       ))}
 
       {/* Ice particles scattered around */}
-      {[...Array(24)].map((_, i) => {
+      {[...Array(4)].map((_, i) => {
         const angle = (i * Math.PI * 2) / 24;
         const radius = baseScale * (0.6 + Math.random() * 0.4);
         return (
@@ -217,18 +217,7 @@ export default function FrostNova({
       })}
 
       {/* Ground frost effect */}
-      <mesh position={[0, -0.1, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[baseScale * 1.1, 32]} />
-        <meshStandardMaterial
-          color="#E1F5FE"
-          emissive="#4FC3F7"
-          emissiveIntensity={0.3 * intensity}
-          transparent
-          opacity={0.4 * fadeProgress}
-          roughness={0.8}
-          metalness={0.1}
-        />
-      </mesh>
+
 
       {/* Central bright light + ambient frost glow now driven via the shared dynamic
           light pool (see useFrame) instead of mounted <pointLight>s. */}
