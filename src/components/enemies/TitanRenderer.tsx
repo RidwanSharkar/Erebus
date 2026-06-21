@@ -10,6 +10,7 @@ import TitanBladestorm from './TitanBladestorm';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyMeleeAttackRangeRing, { TITAN_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 
 const SOUL_TYPES = ['green', 'red', 'blue', 'purple'] as const;
 type SoulType = typeof SOUL_TYPES[number];
@@ -27,10 +28,12 @@ interface TitanRendererProps {
   bladestormStartTime?: number;
 }
 
-const ATTACK_DURATION   = 1500; // ms — matches backend meleeLockUntil
-const FADE_DURATION     = 2.5;
-const LERP_SPEED        = 8;
-const WALK_STOP_DELAY   = 300;
+const ATTACK_DURATION        = 1500; // ms — matches backend meleeLockUntil
+const POWERUP_DURATION       = 1500; // ms — bladestorm windup
+const STOMP_DURATION         = 1000; // ms — stomp windup
+const FADE_DURATION          = 2.5;
+const LERP_SPEED             = 8;
+const WALK_STOP_DELAY        = 300;
 
 const THEME = {
   background: '#1a1a1a',
@@ -52,19 +55,26 @@ export default function TitanRenderer({
   bladestormActive = false,
   bladestormStartTime,
 }: TitanRendererProps) {
-  const { socket } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
-  const [isWalking, setIsWalking] = useState(true); // titans default to walk anim
+  const [isPoweringUp, setIsPoweringUp] = useState(false);
+  const [isStomping, setIsStomping] = useState(false);
+  const [isWalking, setIsWalking] = useState(true);
 
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
   const isAttackingRef = useRef(false);
+  const isPoweringUpRef = useRef(false);
+  const isStompingRef = useRef(false);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer     = useRef(0);
   const opacity       = useRef(1);
+
+  const isAnimLocked = () =>
+    isAttackingRef.current || isPoweringUpRef.current || isStompingRef.current;
 
   const setGroupRef = useCallback((group: Group | null) => {
     groupRef.current = group;
@@ -82,11 +92,11 @@ export default function TitanRenderer({
       groupRef.current.position.copy(position);
     }
 
-    if (dist > 0.01 && !isAttackingRef.current && !isDying) {
+    if (dist > 0.01 && !isAnimLocked() && !isDying) {
       if (!isWalking) setIsWalking(true);
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       walkStopTimer.current = setTimeout(() => {
-        if (!isAttackingRef.current) setIsWalking(false);
+        if (!isAnimLocked()) setIsWalking(false);
       }, WALK_STOP_DELAY);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -115,15 +125,45 @@ export default function TitanRenderer({
       }, ATTACK_DURATION);
     };
 
+    const handleBladestormPowerup = (data: { titanId: string }) => {
+      if (data.titanId !== id) return;
+      setIsPoweringUp(true);
+      isPoweringUpRef.current = true;
+      setIsWalking(false);
+      setTimeout(() => {
+        setIsPoweringUp(false);
+        isPoweringUpRef.current = false;
+        if (!isAnimLocked()) setIsWalking(true);
+      }, POWERUP_DURATION);
+    };
+
+    const handleStompStart = (data: { titanId: string }) => {
+      if (data.titanId !== id) return;
+      setIsStomping(true);
+      isStompingRef.current = true;
+      setIsWalking(false);
+      setTimeout(() => {
+        setIsStomping(false);
+        isStompingRef.current = false;
+        if (!isAnimLocked()) setIsWalking(true);
+      }, STOMP_DURATION);
+    };
+
     socket.on('titan-attack-telegraph', handleTitanTelegraph);
+    socket.on('titan-bladestorm-powerup-start', handleBladestormPowerup);
+    socket.on('titan-stomp-start', handleStompStart);
     return () => {
       socket.off('titan-attack-telegraph', handleTitanTelegraph);
+      socket.off('titan-bladestorm-powerup-start', handleBladestormPowerup);
+      socket.off('titan-stomp-start', handleStompStart);
     };
   }, [id, socket]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 
@@ -152,13 +192,15 @@ export default function TitanRenderer({
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <TitanModel
-        isWalking={!isAttacking && !isDying}
+        isWalking={!isAttacking && !isPoweringUp && !isStomping && !isDying}
         isAttacking={isAttacking}
+        isPoweringUp={isPoweringUp}
+        isStomping={isStomping}
         isDying={isDying}
       />
       {!isDying && <TitanSoulEffect soulType={soulType} />}
 
-      {bladestormActive && !isDying && bladestormStartTime != null && (
+      {bladestormActive && !isDying && !isPoweringUp && bladestormStartTime != null && (
         <TitanBladestorm soulType={soulType} startTime={bladestormStartTime} />
       )}
 

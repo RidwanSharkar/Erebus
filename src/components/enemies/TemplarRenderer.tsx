@@ -5,8 +5,10 @@ import { Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import TemplarModel from './TemplarModel';
+import EnemyAbilityChargeTelegraph from './EnemyAbilityChargeTelegraph';
 import EnemyMeleeAttackRangeRing, { TEMPLAR_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import TemplarSoulCrest from './TemplarSoulCrest';
@@ -25,9 +27,13 @@ interface TemplarRendererProps {
 }
 
 const ATTACK_DURATION = 1200; // ms — matches templar attack clip; backend `meleeLockUntil` uses the same window
+const BLINK_SMITE_ANIM_FALLBACK_MS = 2200; // ms — safety net only; mixer `finished` is primary exit
+const BLINK_CHARGE_DURATION = 500; // ms — server `TEMPLAR_BLINK_SMITE_CHARGE_MS` fallback
 const FADE_DURATION   = 1.5;  // seconds for death fade-out
 const LERP_SPEED      = 14;   // slightly faster than knight (12) to feel snappier
 const WALK_STOP_DELAY = 250;  // ms
+const TEMPLAR_BLINK_CHARGE_PRIMARY = '#ff3838';
+const TEMPLAR_BLINK_CHARGE_ACCENT = '#ff6644';
 
 export default function TemplarRenderer({
   id,
@@ -41,7 +47,7 @@ export default function TemplarRenderer({
   showMeleeRangeRing = true,
 }: TemplarRendererProps) {
   const theme = campHpTheme(campType);
-  const { socket } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
 
   const [isAttacking,   setIsAttacking]   = useState(false);
@@ -52,17 +58,49 @@ export default function TemplarRenderer({
   const [isBlinkSmite,  setIsBlinkSmite]  = useState(false);
   const [blinkSmitePlayKey, setBlinkSmitePlayKey] = useState(0);
   const [isLeaping,     setIsLeaping]     = useState(false);
+  const [isBlinkCharging, setIsBlinkCharging] = useState(false);
   const isBlinkSmiteRef = useRef(false);
   const isLeapingRef    = useRef(false);
+  const isAbilityRef    = useRef(false);
 
   const targetPosition  = useRef(position.clone());
+  const serverPositionRef = useRef(position.clone());
   const targetRotation  = useRef(rotation);
   const isAttackingRef  = useRef(false);
   const prevHealthRef   = useRef(health);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blinkSmiteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blinkChargeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer     = useRef(0);
   const opacity       = useRef(1);
+  const isDyingRef    = useRef(isDying);
+
+  useEffect(() => {
+    isDyingRef.current = isDying;
+  }, [isDying]);
+
+  const isAnimLocked = () =>
+    isAttackingRef.current ||
+    isAbilityRef.current ||
+    isLeapingRef.current ||
+    isBlinkSmiteRef.current;
+
+  const restoreWalkIfUnlocked = () => {
+    if (!isAnimLocked() && !isDyingRef.current) setIsWalking(true);
+  };
+
+  const flushServerPosition = useCallback(() => {
+    targetPosition.current.copy(serverPositionRef.current);
+    if (groupRef.current) {
+      groupRef.current.position.copy(serverPositionRef.current);
+      groupRef.current.rotation.y = targetRotation.current;
+    }
+  }, []);
+
+  useEffect(() => {
+    serverPositionRef.current.copy(position);
+  }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialise the group at the exact server position before the first frame.
   const setGroupRef = useCallback((group: Group | null) => {
@@ -76,22 +114,35 @@ export default function TemplarRenderer({
   // Derive walking state from server position deltas.
   useEffect(() => {
     const dist = targetPosition.current.distanceTo(position);
-    targetPosition.current.copy(position);
+    const locked = isAnimLocked();
 
-    if (dist > 5.0 && groupRef.current) {
+    // While executing an attack or ability, ignore position updates entirely.
+    // The backend locks the templar during these windows; syncing the lerp target
+    // during the lock would swallow post-ability deltas and prevent walk re-trigger.
+    if (!locked) {
+      targetPosition.current.copy(position);
+    }
+
+    if (dist > 5.0 && groupRef.current && !locked) {
       groupRef.current.position.copy(position);
     }
 
-    if (dist > 0.01 && !isAttackingRef.current && !isLeapingRef.current && !isDying) {
+    if (dist > 0.01 && !locked && !isDying) {
       if (!isWalking) setIsWalking(true);
 
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
+      walkStopTimer.current = setTimeout(() => {
+        if (!isAnimLocked()) setIsWalking(false);
+      }, WALK_STOP_DELAY);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    return () => { if (walkStopTimer.current) clearTimeout(walkStopTimer.current); };
+    return () => {
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      if (blinkSmiteTimer.current) clearTimeout(blinkSmiteTimer.current);
+      if (blinkChargeTimer.current) clearTimeout(blinkChargeTimer.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -102,10 +153,23 @@ export default function TemplarRenderer({
     setIsImpacting(false);
   }, []);
 
+  const handleLeapFinished = useCallback(() => {
+    setIsLeaping(false);
+    isLeapingRef.current = false;
+    restoreWalkIfUnlocked();
+  }, []);
+
   const handleBlinkSmiteFinished = useCallback(() => {
+    if (blinkSmiteTimer.current) {
+      clearTimeout(blinkSmiteTimer.current);
+      blinkSmiteTimer.current = null;
+    }
     setIsBlinkSmite(false);
     isBlinkSmiteRef.current = false;
-  }, []);
+    isAbilityRef.current = false;
+    flushServerPosition();
+    restoreWalkIfUnlocked();
+  }, [flushServerPosition]);
 
   useEffect(() => {
     isBlinkSmiteRef.current = isBlinkSmite;
@@ -144,20 +208,95 @@ export default function TemplarRenderer({
       setTimeout(() => {
         setIsAttacking(false);
         isAttackingRef.current = false;
+        restoreWalkIfUnlocked();
       }, ATTACK_DURATION);
+    };
+
+    const clearBlinkSmite = () => {
+      setIsBlinkSmite(false);
+      isBlinkSmiteRef.current = false;
+    };
+
+    const snapBlinkTeleport = (
+      endPosition: { x: number; y: number; z: number },
+      rot: number,
+    ) => {
+      const endPos = new Vector3(endPosition.x, endPosition.y, endPosition.z);
+      targetPosition.current.copy(endPos);
+      targetRotation.current = rot;
+      if (groupRef.current) {
+        groupRef.current.position.copy(endPos);
+        groupRef.current.rotation.y = rot;
+      }
+    };
+
+    const handleTemplarTeleport = (data: {
+      templarId: string;
+      endPosition: { x: number; y: number; z: number };
+      rotation: number;
+    }) => {
+      if (data.templarId !== id) return;
+      snapBlinkTeleport(data.endPosition, data.rotation);
     };
 
     const handleTemplarBlinkSmiteWindup = (data: any) => {
       if (data.templarId !== id) return;
+      if (blinkSmiteTimer.current) clearTimeout(blinkSmiteTimer.current);
+      setIsBlinkCharging(false);
+      setIsWalking(false);
+      isAbilityRef.current = true;
       setIsBlinkSmite(true);
       isBlinkSmiteRef.current = true;
       setBlinkSmitePlayKey(k => k + 1);
       setIsAttacking(false);
       isAttackingRef.current = false;
+      // Fallback only — mixer `finished` via onBlinkSmiteFinished is the primary exit.
+      blinkSmiteTimer.current = setTimeout(() => {
+        if (!isBlinkSmiteRef.current) return;
+        clearBlinkSmite();
+        isAbilityRef.current = false;
+        flushServerPosition();
+        restoreWalkIfUnlocked();
+      }, BLINK_SMITE_ANIM_FALLBACK_MS);
+    };
+
+    const handleTemplarBlinkSmiteCharge = (data: {
+      templarId: string;
+      position?: { x: number; y: number; z: number };
+      rotation: number;
+      chargeMs?: number;
+    }) => {
+      if (data.templarId !== id) return;
+
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      if (blinkChargeTimer.current) clearTimeout(blinkChargeTimer.current);
+      if (blinkSmiteTimer.current) clearTimeout(blinkSmiteTimer.current);
+      clearBlinkSmite();
+
+      const chargeMs = data.chargeMs ?? BLINK_CHARGE_DURATION;
+      setIsWalking(false);
+      setIsAttacking(false);
+      isAttackingRef.current = false;
+      setIsBlinkCharging(true);
+      isAbilityRef.current = true;
+      targetRotation.current = data.rotation;
+
+      if (data.position && groupRef.current) {
+        const chargePos = new Vector3(data.position.x, data.position.y, data.position.z);
+        targetPosition.current.copy(chargePos);
+        groupRef.current.position.copy(chargePos);
+        groupRef.current.rotation.y = data.rotation;
+      }
+
+      blinkChargeTimer.current = setTimeout(() => {
+        setIsBlinkCharging(false);
+      }, chargeMs);
     };
 
     socket.on('templar-attack-telegraph', handleTemplarTelegraph);
+    socket.on('templar-blink-smite-charge', handleTemplarBlinkSmiteCharge);
     socket.on('templar-blink-smite-windup', handleTemplarBlinkSmiteWindup);
+    socket.on('templar-teleport', handleTemplarTeleport);
     const onLeapStart = (data: { templarId: string }) => {
       if (data.templarId !== id) return;
       setIsLeaping(true);
@@ -168,20 +307,25 @@ export default function TemplarRenderer({
       if (data.templarId !== id) return;
       setIsLeaping(false);
       isLeapingRef.current = false;
+      restoreWalkIfUnlocked();
     };
     socket.on('templar-leap-start', onLeapStart);
     socket.on('templar-leap-land', onLeapLand);
     return () => {
       socket.off('templar-attack-telegraph', handleTemplarTelegraph);
+      socket.off('templar-blink-smite-charge', handleTemplarBlinkSmiteCharge);
       socket.off('templar-blink-smite-windup', handleTemplarBlinkSmiteWindup);
+      socket.off('templar-teleport', handleTemplarTeleport);
       socket.off('templar-leap-start', onLeapStart);
       socket.off('templar-leap-land', onLeapLand);
     };
-  }, [id, socket]);
+  }, [id, socket, flushServerPosition]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 
@@ -207,12 +351,18 @@ export default function TemplarRenderer({
 
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
+      <EnemyAbilityChargeTelegraph
+        active={isBlinkCharging && !isDying}
+        primaryColor={TEMPLAR_BLINK_CHARGE_PRIMARY}
+        accentColor={TEMPLAR_BLINK_CHARGE_ACCENT}
+      />
       <TemplarModel
-        isWalking={isWalking && !isBlinkSmite && !isLeaping}
-        isAttacking={isAttacking && !isBlinkSmite && !isLeaping}
+        isWalking={isWalking && !isBlinkSmite && !isLeaping && !isBlinkCharging}
+        isAttacking={isAttacking && !isBlinkSmite && !isLeaping && !isBlinkCharging}
         attackVariant={attackVariant}
         isDying={isDying}
         isLeaping={isLeaping}
+        onLeapFinished={handleLeapFinished}
         isImpacting={isImpacting}
         impactPlayKey={impactPlayKey}
         onImpactFinished={handleImpactFinished}

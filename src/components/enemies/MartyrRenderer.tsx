@@ -6,6 +6,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import MartyrModel from './MartyrModel';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import EnemyStaggerBar from './EnemyStaggerBar';
 
 interface MartyrRendererProps {
@@ -31,7 +32,7 @@ export default function MartyrRenderer({
   isDying = false,
   staggerBuildup = 0,
 }: MartyrRendererProps) {
-  const { socket } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
   const [isWalking, setIsWalking] = useState(false);
   const [isPrimming, setIsPrimming] = useState(false);
@@ -101,6 +102,9 @@ export default function MartyrRenderer({
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 
     let deltaAngle = targetRotation.current - group.rotation.y;

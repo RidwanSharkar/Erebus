@@ -56,6 +56,8 @@ export const TALENT_SPELLBLADE = 'SPELLBLADE' as const;
 export const TALENT_TEMPEST_ROUNDS = 'TEMPEST_ROUNDS' as const;
 export const TALENT_ICEBEAM = 'ICEBEAM' as const;
 export const TALENT_BREATH_WEAPON = 'BREATH_WEAPON' as const;
+/** Runeblade class talent — every 4th LMB swing fires a Mortal Strike arc slash. */
+export const TALENT_MORTAL_STRIKE = 'MORTAL_STRIKE' as const;
 export const TALENT_STAGGERING_BITE = 'STAGGERING_BITE' as const;
 export const TALENT_STAGGERING_TALONS = 'STAGGERING_TALONS' as const;
 export const TALENT_WRATHFUL_SHOTS = 'WRATHFUL_SHOTS' as const;
@@ -114,6 +116,8 @@ export const TALENT_GUARD_SABRES_FLOURISH = 'GUARD_SABRES_FLOURISH' as const;
 export const TALENT_CRESCENT_BLADES = 'CRESCENT_BLADES' as const;
 /** Sabres class talent — every LMB swing fires a forward wind slash projectile for 40 damage (first hit only). */
 export const TALENT_WIND_SHEAR = 'WIND_SHEAR' as const;
+/** Sabres class talent — each LMB blade hit procs bonus psionic damage scaled by Intellect. */
+export const TALENT_PSIONIC_BLADES = 'PSIONIC_BLADES' as const;
 
 /** Sabres class boons — Backstab (`SABRES_Q`) session stacking / on-kill (see room boons for palette picks). */
 export const TALENT_KILLSTREAK = 'KILLSTREAK' as const;
@@ -128,6 +132,9 @@ export const TALENT_PARRY = 'PARRY' as const;
 /** Wind Shear — projectile tuning (local + replicated). */
 export const WIND_SHEAR_DAMAGE = 40;
 export const WIND_SHEAR_MAX_DISTANCE_UNITS = 8;
+/** Psionic Blades — flat proc damage per blade hit + Intellect scaling. */
+export const PSIONIC_BLADES_BASE_DAMAGE = 10;
+export const PSIONIC_BLADES_DAMAGE_PER_INTELLECT = 2;
 export const WIND_SHEAR_PROJECTILE_SPEED = 32;
 export const WIND_SHEAR_PROJECTILE_LIFETIME_SEC = 3;
 
@@ -285,6 +292,18 @@ export function rollCloudkillArrowCount(): number {
 export const CROSSENTROPY_FRAGMENTATION_PROC_CHANCE = 0.5;
 /** FRAGMENTATION talent — horizontal (xz) max distance from struck enemy to ricochet target. */
 export const CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS = 15;
+/** FRAGMENTATION talent — Entropic Bolt: proc chance for 3rd target (after guaranteed 2nd). */
+export const ENTROPIC_FRAGMENTATION_SECOND_HOP_CHANCE = 0.5;
+/** FRAGMENTATION talent — Entropic Bolt: proc chance for 4th target (after 3rd). */
+export const ENTROPIC_FRAGMENTATION_THIRD_HOP_CHANCE = 0.3;
+
+/** Whether an Entropic Bolt fragmentation chain should spawn the next hop (hop 0 → always). */
+export function shouldEntropicFragmentationChain(fragmentHop: number): boolean {
+  if (fragmentHop === 0) return true;
+  if (fragmentHop === 1) return Math.random() < ENTROPIC_FRAGMENTATION_SECOND_HOP_CHANCE;
+  if (fragmentHop === 2) return Math.random() < ENTROPIC_FRAGMENTATION_THIRD_HOP_CHANCE;
+  return false;
+}
 /** Reaper: +1 base damage per enemy kill (session). */
 export const CROSSENTROPY_REAPER_DAMAGE_PER_KILL = 5;
 /** Killstreak (Sabres): +base Backstab damage per Backstab kill this session (server-synced in co-op). */
@@ -454,6 +473,7 @@ export type TalentId =
   | typeof TALENT_TEMPEST_ROUNDS
   | typeof TALENT_ICEBEAM
   | typeof TALENT_BREATH_WEAPON
+  | typeof TALENT_MORTAL_STRIKE
   | typeof TALENT_STAGGERING_BITE
   | typeof TALENT_STAGGERING_TALONS
   | typeof TALENT_WRATHFUL_SHOTS
@@ -488,6 +508,7 @@ export type TalentId =
   | typeof TALENT_GUARD_SABRES_FLOURISH
   | typeof TALENT_CRESCENT_BLADES
   | typeof TALENT_WIND_SHEAR
+  | typeof TALENT_PSIONIC_BLADES
   | typeof TALENT_KILLSTREAK
   | typeof TALENT_RELENTLESS
   | typeof TALENT_VORPAL_GUST
@@ -613,6 +634,18 @@ export const ENTANGLEMENT_DAMAGE_PER_SECOND = 20;
 export const COBRA_SHOT_VENOM_DAMAGE_PER_SECOND = 29;
 export const COBRA_SHOT_VENOM_DURATION_SEC = 6;
 export const COBRA_SHOT_HIT_DAMAGE = COBRA_SHOT_VENOM_DAMAGE_PER_SECOND;
+
+/** Wyvern Sting — Cobra venom DPS scales with allocated Intellect while talent is active. */
+export const WYVERN_STING_VENOM_BASE_DPS = COBRA_SHOT_VENOM_DAMAGE_PER_SECOND;
+export const WYVERN_STING_VENOM_PER_INTELLECT = 3;
+
+export function getWyvernStingVenomDamagePerSecond(allocatedIntellect: number): number {
+  return WYVERN_STING_VENOM_BASE_DPS + WYVERN_STING_VENOM_PER_INTELLECT * Math.max(0, allocatedIntellect);
+}
+
+export function getWyvernStingVenomMaxBurst(allocatedIntellect: number): number {
+  return getWyvernStingVenomDamagePerSecond(allocatedIntellect) * COBRA_SHOT_VENOM_DURATION_SEC;
+}
  
 /** Wraith Guard — Wraith Strike (`RUNEBLADE_E`) enemy hits can proc Aegis-like barrier + invuln (no Aegis cooldown). */
 export const WRAITH_GUARD_PROC_CHANCE = 1.0;
@@ -675,6 +708,19 @@ export const CHILL_STACK_DURATION_SEC = 4;
 export const CHILL_SLOW_PER_STACK = 0.15;
 export const CHILL_STACKS_TO_FREEZE = 6;
 export const BLIZZARD_FREEZE_DURATION_SEC = 6;
+
+/** Mortal Strike — Runeblade class talent: every Nth LMB swing fires a forward arc slash. */
+export const MORTAL_STRIKE_BASE_DAMAGE = 120;
+export const MORTAL_STRIKE_ATTACK_INTERVAL = 4;
+export const MORTAL_STRIKE_RANGE = 4.75;
+export const MORTAL_STRIKE_ARC_ANGLE = Math.PI / 2;
+export const MORTAL_STRIKE_WRATHFUL_CRIT_CHANCE_ADD = 0.5;
+export const MORTAL_STRIKE_STAGGERING_DAMAGE = 135;
+export const MORTAL_STRIKE_STAGGERING_STAGGER = 35;
+export const MORTAL_STRIKE_INFESTED_DAMAGE = 175;
+export const MORTAL_STRIKE_GUARD_DAMAGE = 240;
+
+export type MortalStrikeTheme = 'default' | 'wrathful' | 'staggering' | 'infested' | 'wraith_guard';
 
 /** Staggering Strike — Wraith Strike (`RUNEBLADE_E`) builds stagger; at 100, proc lightning + damage + stun. */
 export const STAGGERING_STRIKE_WRAITH_STAGGER_ADD = 80;
@@ -947,6 +993,14 @@ export const breathWeaponTalentDefinition: TalentDefinition = {
   description:
     'When you cast Wraith Strike, scorch the ground in a forward strip (7.5u long, 2u wide). After 1 second, the strip erupts in flame pillars, dealing 100 damage to enemies still in the area.',
   modifiesAbilityId: 'RUNEBLADE_E',
+};
+
+export const mortalStrikeTalentDefinition: TalentDefinition = {
+  id: TALENT_MORTAL_STRIKE,
+  name: 'Mortal Strike',
+  description:
+    `Every ${MORTAL_STRIKE_ATTACK_INTERVAL}th Runeblade left-click attack unleashes a sweeping arc slash that deals ${MORTAL_STRIKE_BASE_DAMAGE} damage to enemies in front of you (slightly beyond melee range), in addition to the normal combo hit. With Wrathful Combo: +50% critical strike chance. With Staggering Combo: ${MORTAL_STRIKE_STAGGERING_DAMAGE} damage and ${MORTAL_STRIKE_STAGGERING_STAGGER} stagger. With Infested Combo: ${MORTAL_STRIKE_INFESTED_DAMAGE} damage. With Guard Combo: ${MORTAL_STRIKE_GUARD_DAMAGE} damage.`,
+  modifiesAbilityId: 'RUNEBLADE_BASIC',
 };
 
 export const staggeringComboTalentDefinition: TalentDefinition = {
@@ -1299,6 +1353,14 @@ export const windShearTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'SABRES_BASIC',
 };
 
+export const psionicBladesTalentDefinition: TalentDefinition = {
+  id: TALENT_PSIONIC_BLADES,
+  name: 'Psionic Blades',
+  description:
+    `Each Sabres left-click blade hit (left and right) deals an additional ${PSIONIC_BLADES_BASE_DAMAGE} + ${PSIONIC_BLADES_DAMAGE_PER_INTELLECT} damage per point of Intellect (e.g. 20 Intellect → 50 bonus damage per blade).`,
+  modifiesAbilityId: 'SABRES_BASIC',
+};
+
 export const staggerShotTalentDefinition: TalentDefinition = {
   id: TALENT_STAGGER_SHOT,
   name: 'STAGGER SHOT',
@@ -1359,7 +1421,7 @@ export const wyvernStingTalentDefinition: TalentDefinition = {
   id: TALENT_WYVERN_STING,
   name: 'Wyvern Sting',
   description:
-    'When you release a perfect-timing bow primary shot, you also fire Cobra Shot: same damage, venom, beam, and VFX as the ability. Does not require Cobra Shot in your loadout. This bonus Cobra Shot has its own 5 second cooldown, separate from the E ability.',
+    `When you release a perfect-timing bow primary shot, you also fire Cobra Shot: same impact, beam, and VFX as the ability. Does not require Cobra Shot in your loadout. This bonus Cobra Shot has its own ${WYVERN_STING_COOLDOWN_SEC} second cooldown, separate from the E ability. While Wyvern Sting is active, all Cobra Shot venom deals ${WYVERN_STING_VENOM_BASE_DPS} + ${WYVERN_STING_VENOM_PER_INTELLECT} damage per Intellect per second for ${COBRA_SHOT_VENOM_DURATION_SEC} seconds. Cobra venom kills may raise an infested zombie.`,
   modifiesAbilityId: 'BOW_BASIC',
 };
 
@@ -1423,7 +1485,7 @@ export const wyvernTalonsTalentDefinition: TalentDefinition = {
   id: TALENT_WYVERN_TALONS,
   name: 'Wyvern Talons',
   description:
-    'While Reaping Talons is in your ability loadout, each hit detonates active Cobra Shot venom or Wyvern Bite Concentrated Venom: deals all remaining DoT damage instantly and ends the effect.',
+    'While Reaping Talons is in your ability loadout, each hit detonates active Cobra Shot venom or Wyvern Bite Concentrated Venom: deals all remaining DoT damage instantly and ends the effect. Reaping Talons and detonation kills may raise an infested zombie.',
   modifiesAbilityId: 'BOW_R',
 };
 
@@ -1447,7 +1509,7 @@ export const glacialTalonsTalentDefinition: TalentDefinition = {
   id: TALENT_GLACIAL_TALONS,
   name: 'Glacial Talons',
   description:
-    'While Reaping Talons is in your ability loadout, Reaping Talons uses a deep blue beam theme. Reaping Talons deals double damage to Frozen enemies.',
+    'While Reaping Talons is in your ability loadout, Reaping Talons uses a deep blue beam theme. The first enemy hit on the forward pass spawns the same concentrated blizzard as Arctic Sting (6s, 30 damage per 0.5s, radius 3, same Chill rules). Reaping Talons deals double damage to Frozen enemies.',
   modifiesAbilityId: 'BOW_R',
 };
 
@@ -1479,7 +1541,7 @@ export const fragmentationTalentDefinition: TalentDefinition = {
   id: TALENT_FRAGMENTATION,
   name: 'FRAGMENTATION',
   description:
-    'While Crossentropy is in your ability loadout, each Crossentropy enemy hit has a 50% chance to fire another Crossentropy projectile and trail from the struck enemy toward the closest other enemy within 15 horizontal distance — same damage and talent modifiers as the original bolt (each bolt fragments at most once per hop).',
+    'Crossentropy: each enemy hit has a 50% chance to fire another Crossentropy projectile from the struck enemy toward the closest other enemy within 15 horizontal distance — same damage and talent modifiers (each bolt fragments at most once per hop). Entropic Bolt: each hit always ricochets to the next nearest enemy, then has a 50% chance to bounce to a third target and a 30% chance to bounce to a fourth — same damage and talent modifiers.',
   modifiesAbilityId: 'SCYTHE_R',
 };
 
@@ -1698,6 +1760,10 @@ export interface TalentLoadout {
   crescentBlades: boolean;
   /** Wind Shear — every Sabres LMB swing fires a forward wind slash for 40 damage (first hit only). */
   windShear: boolean;
+  /** Psionic Blades — each LMB blade hit procs bonus damage scaled by Intellect. */
+  psionicBlades: boolean;
+  /** Mortal Strike — every 4th Runeblade LMB swing fires a bonus arc slash. */
+  mortalStrike: boolean;
   killstreak: boolean;
   relentless: boolean;
   vorpalGust: boolean;
@@ -1824,6 +1890,8 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     guardSabresFlourish: false,
     crescentBlades: false,
     windShear: false,
+    psionicBlades: false,
+    mortalStrike: false,
     killstreak: false,
     relentless: false,
     vorpalGust: false,
@@ -2283,9 +2351,9 @@ export function shouldApplyMeteorTalent(
 
 export function shouldApplyFragmentationTalent(
   talentLoadout: TalentLoadout | null | undefined,
-  abilityLoadout: AbilityLoadout | null | undefined,
+  _abilityLoadout?: AbilityLoadout | null | undefined,
 ): boolean {
-  return !!talentLoadout?.fragmentation && isCrossentropyInLoadout(abilityLoadout);
+  return !!talentLoadout?.fragmentation;
 }
 
 export function shouldApplyCloudkillTalent(
@@ -2599,8 +2667,74 @@ export function shouldApplyCrescentBladesTalent(talentLoadout: TalentLoadout | n
   return !!talentLoadout?.crescentBlades;
 }
 
+export function shouldApplyMortalStrikeTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.mortalStrike;
+}
+
+export function resolveMortalStrikeTheme(
+  talentLoadout: TalentLoadout | null | undefined,
+): MortalStrikeTheme {
+  if (talentLoadout?.wrathfulCombo) return 'wrathful';
+  if (talentLoadout?.staggeringCombo) return 'staggering';
+  if (talentLoadout?.infestedCombo) return 'infested';
+  if (talentLoadout?.guardCombo) return 'wraith_guard';
+  return 'default';
+}
+
+export type MortalStrikeDamageBundle = {
+  baseDamage: number;
+  theme: MortalStrikeTheme;
+  critChanceAdd?: number;
+  staggerToAdd?: number;
+  infestedCombo?: boolean;
+};
+
+export function resolveMortalStrikeDamageBundle(
+  talentLoadout: TalentLoadout | null | undefined,
+): MortalStrikeDamageBundle {
+  const theme = resolveMortalStrikeTheme(talentLoadout);
+  switch (theme) {
+    case 'wrathful':
+      return {
+        baseDamage: MORTAL_STRIKE_BASE_DAMAGE,
+        theme,
+        critChanceAdd: MORTAL_STRIKE_WRATHFUL_CRIT_CHANCE_ADD,
+      };
+    case 'staggering':
+      return {
+        baseDamage: MORTAL_STRIKE_STAGGERING_DAMAGE,
+        theme,
+        staggerToAdd: MORTAL_STRIKE_STAGGERING_STAGGER,
+      };
+    case 'infested':
+      return {
+        baseDamage: MORTAL_STRIKE_INFESTED_DAMAGE,
+        theme,
+        infestedCombo: true,
+      };
+    case 'wraith_guard':
+      return {
+        baseDamage: MORTAL_STRIKE_GUARD_DAMAGE,
+        theme,
+      };
+    default:
+      return {
+        baseDamage: MORTAL_STRIKE_BASE_DAMAGE,
+        theme,
+      };
+  }
+}
+
 export function shouldApplyWindShearTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.windShear;
+}
+
+export function getPsionicBladesProcDamage(allocatedIntellect: number): number {
+  return PSIONIC_BLADES_BASE_DAMAGE + PSIONIC_BLADES_DAMAGE_PER_INTELLECT * Math.max(0, allocatedIntellect);
+}
+
+export function shouldApplyPsionicBladesTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.psionicBlades;
 }
 
 export function shouldApplyGuardSabresStabTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
@@ -2719,6 +2853,7 @@ export function buildRunebladeClassBoonPool(
     TALENT_DOUBLE_STRIKE,
     TALENT_SPELLBLADE,
     TALENT_BREATH_WEAPON, // Aftershock
+    TALENT_MORTAL_STRIKE,
   ];
 }
 
@@ -2735,6 +2870,7 @@ export function buildBowClassBoonPool(): TalentId[] {
     TALENT_TEMPEST_ROUNDS,
     TALENT_GIANTKILLER,
     TALENT_CLOUDKILL,
+    TALENT_WYVERN_STING,
   ];
 }
 
@@ -2756,7 +2892,7 @@ export function buildScytheClassBoonPool(): TalentId[] {
 
 /** Sabres class boon pool (co-op): Backstab-focused talents + LMB augments (Crescent Blades, Wind Shear). */
 export function buildSabresClassBoonPool(): TalentId[] {
-  return [TALENT_KILLSTREAK, TALENT_RELENTLESS, TALENT_VORPAL_GUST, TALENT_FAN_OF_KNIVES, TALENT_PARRY, TALENT_CRESCENT_BLADES, TALENT_WIND_SHEAR];
+  return [TALENT_KILLSTREAK, TALENT_RELENTLESS, TALENT_VORPAL_GUST, TALENT_FAN_OF_KNIVES, TALENT_PARRY, TALENT_CRESCENT_BLADES, TALENT_WIND_SHEAR, TALENT_PSIONIC_BLADES];
 }
 
 export function buildClassBoonPoolForWeapon(
@@ -2883,8 +3019,15 @@ export function buildRoomBoonPoolForColor(
 /** Bow colored-room boons: primary / Q / E branches (mutually exclusive per slot for the run). */
 export type BowRoomBoonMutexSlot = 'primary' | 'q' | 'e';
 
+/** Primary bow LMB room boons — mutually exclusive with each other (Wyvern Sting stacks freely). */
+const BOW_PRIMARY_ROOM_BOONS: readonly TalentId[] = [
+  TALENT_STAGGER_SHOT,
+  TALENT_ARCTIC_STING,
+  TALENT_WRATHFUL_SHOTS,
+];
+
 const BOW_ROOM_BOON_MUTEX_BY_SLOT: Record<BowRoomBoonMutexSlot, readonly TalentId[]> = {
-  primary: [TALENT_STAGGER_SHOT, TALENT_WYVERN_STING, TALENT_ARCTIC_STING, TALENT_WRATHFUL_SHOTS],
+  primary: BOW_PRIMARY_ROOM_BOONS,
   q: [TALENT_WYVERN_BITE, TALENT_WRATHFUL_BITE, TALENT_STAGGERING_BITE, TALENT_GLACIAL_BITE],
   e: [TALENT_WYVERN_TALONS, TALENT_WRATHFUL_TALONS, TALENT_STAGGERING_TALONS, TALENT_GLACIAL_TALONS],
 };
@@ -2892,7 +3035,6 @@ const BOW_ROOM_BOON_MUTEX_BY_SLOT: Record<BowRoomBoonMutexSlot, readonly TalentI
 export function getBowRoomBoonMutexSlot(id: TalentId): BowRoomBoonMutexSlot | null {
   switch (id) {
     case TALENT_STAGGER_SHOT:
-    case TALENT_WYVERN_STING:
     case TALENT_ARCTIC_STING:
     case TALENT_WRATHFUL_SHOTS:
       return 'primary';
@@ -2915,8 +3057,9 @@ export function getBowRoomBoonMutexGroupForSlot(slot: BowRoomBoonMutexSlot): rea
   return BOW_ROOM_BOON_MUTEX_BY_SLOT[slot];
 }
 
-/** After a room-boon pick, all four ids in that slot are excluded from future room pools for the run. */
+/** After a room-boon pick, all ids in that slot are excluded from future room pools for the run. Wyvern Sting has no slot and excludes nothing. */
 export function expandBowRoomBoonExclusionsAfterPick(picked: TalentId): TalentId[] {
+  if (picked === TALENT_WYVERN_STING) return [];
   const slot = getBowRoomBoonMutexSlot(picked);
   if (!slot) return [];
   return [...getBowRoomBoonMutexGroupForSlot(slot)];
@@ -3336,6 +3479,12 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_WIND_SHEAR:
       next.windShear = true;
       return next;
+    case TALENT_PSIONIC_BLADES:
+      next.psionicBlades = true;
+      return next;
+    case TALENT_MORTAL_STRIKE:
+      next.mortalStrike = true;
+      return next;
     case TALENT_GUARD_SABRES_STAB:
       next.guardSabresStab = true;
       return next;
@@ -3463,6 +3612,7 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_TEMPEST_ROUNDS]: tempestRoundsTalentDefinition,
   [TALENT_ICEBEAM]: icebeamTalentDefinition,
   [TALENT_BREATH_WEAPON]: breathWeaponTalentDefinition,
+  [TALENT_MORTAL_STRIKE]: mortalStrikeTalentDefinition,
   [TALENT_STAGGERING_BITE]: staggeringBiteTalentDefinition,
   [TALENT_STAGGERING_TALONS]: staggeringTalonsTalentDefinition,
   [TALENT_WRATHFUL_SHOTS]: wrathfulShotsTalentDefinition,
@@ -3495,6 +3645,7 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_GUARD_SABRES_FLOURISH]: guardSabresFlourishTalentDefinition,
   [TALENT_CRESCENT_BLADES]: crescentBladesTalentDefinition,
   [TALENT_WIND_SHEAR]: windShearTalentDefinition,
+  [TALENT_PSIONIC_BLADES]: psionicBladesTalentDefinition,
   [TALENT_KILLSTREAK]: killstreakTalentDefinition,
   [TALENT_RELENTLESS]: relentlessTalentDefinition,
   [TALENT_VORPAL_GUST]: vorpalGustTalentDefinition,
@@ -3581,6 +3732,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_TEMPEST_ROUNDS]: '/icons/tempestRounds.svg',
   [TALENT_ICEBEAM]: '/icons/icebeam.svg',
   [TALENT_BREATH_WEAPON]: '/icons/aftershock.svg',
+  [TALENT_MORTAL_STRIKE]: '/icons/strike.svg',
   [TALENT_STAGGERING_BITE]: '/icons/bite.svg',
   [TALENT_STAGGERING_TALONS]: '/icons/talon.svg',
   [TALENT_WRATHFUL_SHOTS]: '/icons/shot.svg',
@@ -3613,6 +3765,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_GUARD_SABRES_FLOURISH]: '/icons/flourish.svg',
   [TALENT_CRESCENT_BLADES]: '/icons/crescentFlare.svg',
   [TALENT_WIND_SHEAR]: '/icons/windFury.svg',
+  [TALENT_PSIONIC_BLADES]: '/icons/swipes.svg',
   [TALENT_KILLSTREAK]: '/icons/killstreak.svg',
   [TALENT_RELENTLESS]: '/icons/relentless.svg',
   [TALENT_VORPAL_GUST]: '/icons/vorpalGust.svg',
@@ -3717,6 +3870,7 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.tempestRounds) out.push(TALENT_TEMPEST_ROUNDS);
   if (loadout.icebeam) out.push(TALENT_ICEBEAM);
   if (loadout.breathWeapon) out.push(TALENT_BREATH_WEAPON);
+  if (loadout.mortalStrike) out.push(TALENT_MORTAL_STRIKE);
   if (loadout.staggeringBite) out.push(TALENT_STAGGERING_BITE);
   if (loadout.staggeringTalons) out.push(TALENT_STAGGERING_TALONS);
   if (loadout.wrathfulShots) out.push(TALENT_WRATHFUL_SHOTS);
@@ -3749,6 +3903,7 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.guardSabresFlourish) out.push(TALENT_GUARD_SABRES_FLOURISH);
   if (loadout.crescentBlades) out.push(TALENT_CRESCENT_BLADES);
   if (loadout.windShear) out.push(TALENT_WIND_SHEAR);
+  if (loadout.psionicBlades) out.push(TALENT_PSIONIC_BLADES);
   if (loadout.killstreak) out.push(TALENT_KILLSTREAK);
   if (loadout.relentless) out.push(TALENT_RELENTLESS);
   if (loadout.vorpalGust) out.push(TALENT_VORPAL_GUST);

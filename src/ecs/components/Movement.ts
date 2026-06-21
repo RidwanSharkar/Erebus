@@ -287,6 +287,17 @@ export class Movement extends Component {
     return true;
   }
 
+  public setMaxDashCharges(count: number): void {
+    const target = Math.max(1, Math.floor(count));
+    while (this.dashCharges.length < target) {
+      this.dashCharges.push({ isAvailable: true, cooldownStartTime: null });
+    }
+    if (this.dashCharges.length > target) {
+      this.dashCharges.length = target;
+    }
+    this.maxDashCharges = target;
+  }
+
   /**
    * Consume up to `maxCount` dash charges without moving (e.g. TRINITY + Colossus Smite).
    * Uses the same per-charge cooldown as `startDash`. Returns how many charges were consumed.

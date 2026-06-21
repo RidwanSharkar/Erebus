@@ -125,7 +125,7 @@ export class Collider extends Component {
   }
 
   public updateBounds(worldPosition: Vector3): void {
-    if (!this.boundsNeedUpdate && !this.isStatic) {
+    if (this.isStatic && !this.boundsNeedUpdate) {
       return;
     }
 

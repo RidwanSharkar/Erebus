@@ -69,6 +69,8 @@ interface DamageEvent {
   entanglementBarrage?: boolean;
   /** Co-op: Cobra venom DoT tick — Wyvern Sting talent may raise zombie on kill. */
   wyvernStingVenomZombie?: boolean;
+  /** Co-op: Reaping Talons / Wyvern Talons detonation — may raise zombie on kill. */
+  wyvernTalonsZombie?: boolean;
   /** Co-op: Concentrated Venom DoT tick — eligible for zombie on kill (Wyvern Bite). */
   wyvernBiteConcentratedDoT?: boolean;
   /** Scythe Wrathful Entropic bolt — additive crit chance in calculateDamage. */
@@ -142,6 +144,7 @@ export class CombatSystem extends System {
       infestedCombo?: boolean;
       wyvernBiteVenom?: boolean;
       wyvernStingVenomZombie?: boolean;
+      wyvernTalonsZombie?: boolean;
       wyvernBiteConcentratedDoT?: boolean;
       entropicWrathful?: boolean;
       entropicInfesting?: boolean;
@@ -274,6 +277,29 @@ export class CombatSystem extends System {
     return undefined;
   }
 
+  /** Co-op: `enemy-damaged` echo in MultiplayerContext already spawns these DoT floats. */
+  private shouldDeferDotFloatingToServerEcho(
+    damageType: string | undefined,
+    damageEvent: DamageEvent,
+  ): boolean {
+    if (!damageType) return false;
+    if (
+      damageType === 'ignite' ||
+      damageType === 'venom' ||
+      damageType === 'wyvern_talons_detonate' ||
+      damageType === 'player_zombie'
+    ) {
+      return true;
+    }
+    if (damageType === 'cloudkill' && damageEvent.cloudkillDamage === true) {
+      return true;
+    }
+    if (damageType === 'crossentropy' && damageEvent.crossentropyMeteor === true) {
+      return true;
+    }
+    return false;
+  }
+
   public armRunebladeLmbHitSound(comboStep: 1 | 2 | 3, position: Vector3): void {
     this.runebladeLmbSfxArmed = { step: comboStep, position: position.clone() };
   }
@@ -358,14 +384,24 @@ export class CombatSystem extends System {
       proj.velocity.length() > 0
         ? proj.velocity.clone().normalize()
         : new Vector3(0, 0, 1);
-    const colorVariant = isEntropic
-      ? (source?.getComponent(Renderer)?.mesh?.userData?.colorVariant as string | undefined)
+    const renderer = source?.getComponent(Renderer);
+    const userData = renderer?.mesh?.userData;
+    const isCryoflame = isEntropic && userData?.isCryoflame === true;
+    let colorVariant = isEntropic
+      ? (userData?.colorVariant as string | undefined)
       : undefined;
+    if (isEntropic && !colorVariant) {
+      const talent = userData?.entropicBoltTalent as string | undefined;
+      if (talent === 'wrathful') colorVariant = 'red';
+      else if (talent === 'staggering') colorVariant = 'blue';
+      else if (talent === 'infesting') colorVariant = 'green';
+      else if (talent === 'arctic') colorVariant = 'arctic';
+    }
     this.impactEffectManager.addImpact(
       isBow ? 'bow-shot-impact' : 'entropic-bolt-impact',
       hitPos,
       dir,
-      colorVariant,
+      isEntropic ? { colorVariant, isCryoflame } : undefined,
     );
   }
 
@@ -437,6 +473,7 @@ export class CombatSystem extends System {
         infestedCombo?: boolean;
         wyvernBiteVenom?: boolean;
         wyvernStingVenomZombie?: boolean;
+        wyvernTalonsZombie?: boolean;
         wyvernBiteConcentratedDoT?: boolean;
         entropicWrathful?: boolean;
         entropicInfesting?: boolean;
@@ -637,6 +674,24 @@ export class CombatSystem extends System {
     }
   }
 
+  /** Glacial Talons — 2× vs fully Frozen (post-crit, matches server `damageEnemy` order). */
+  private applyGlacialTalonsFrozenBonus(
+    damage: number,
+    damageType: string | undefined,
+    glacialTalons: boolean | undefined,
+    enemy: Enemy | null | undefined,
+  ): number {
+    if (
+      enemy &&
+      damageType === 'reaping_talons' &&
+      glacialTalons === true &&
+      enemy.isFrozen
+    ) {
+      return Math.floor(damage * 2);
+    }
+    return damage;
+  }
+
   private applyDamage(damageEvent: DamageEvent, currentTime: number): void {
     const { target, damage: baseDamage, source, sourcePlayerId } = damageEvent;
     let damageType = damageEvent.damageType;
@@ -674,6 +729,12 @@ export class CombatSystem extends System {
       }
 
       const actualDamage = damageResult.damage;
+      const displayDamage = this.applyGlacialTalonsFrozenBonus(
+        actualDamage,
+        damageType,
+        damageEvent.glacialTalons,
+        enemy,
+      );
       this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
       this.maybeApplyBloodleechCriticalHeal(damageResult, source);
 
@@ -762,6 +823,9 @@ export class CombatSystem extends System {
                         ...(damageEvent.glacialTalons === true
                           ? { glacialTalons: true as const }
                           : {}),
+                        ...(damageEvent.wyvernTalonsZombie === true
+                          ? { wyvernTalonsZombie: true as const }
+                          : {}),
                       }
                   : damageType === 'barrage'
                     ? {
@@ -808,8 +872,15 @@ export class CombatSystem extends System {
                               ? { wyvernBiteConcentratedDoT: true as const }
                               : {}),
                           }
+                        : damageType === 'cobra_shot'
+                          ? { damageType: 'cobra_shot' as const }
                         : damageType === 'wyvern_talons_detonate'
-                          ? { damageType: 'wyvern_talons_detonate' as const }
+                          ? {
+                              damageType: 'wyvern_talons_detonate' as const,
+                              ...(damageEvent.wyvernTalonsZombie === true
+                                ? { wyvernTalonsZombie: true as const }
+                                : {}),
+                            }
                           : damageType === 'blizzard'
                             ? {
                                 damageType: 'blizzard' as const,
@@ -955,23 +1026,25 @@ export class CombatSystem extends System {
 
       this.maybeApplyReaperCrossentropyHitHeal(damageEvent, target, source, damageType, actualDamage);
 
-      // Still create local damage numbers for immediate visual feedback
-      const transform = target.getComponent(Transform);
-      if (transform) {
-        const position = transform.getWorldPosition();
-        position.y += 1.5;
-        if (damageType === 'sabre_right' || damageType === 'sabres_right') position.x += 0.3;
-        else if (damageType === 'sabre_left' || damageType === 'sabres_left') position.x -= 0.3;
-        const dualCoilSlot = this.applyDualCoilDamageNumberLateral(position, source);
-        this.damageNumberManager.addDamageNumber(
-          actualDamage,
-          damageResult.isCritical,
-          position,
-          damageType,
-          undefined,
-          damageType === 'barrage' || damageType === 'entropic' ? target.id : undefined,
-          dualCoilSlot
-        );
+      // Still create local damage numbers for immediate visual feedback (DoT types defer to server echo)
+      if (!this.shouldDeferDotFloatingToServerEcho(damageType, damageEvent)) {
+        const transform = target.getComponent(Transform);
+        if (transform) {
+          const position = transform.getWorldPosition();
+          position.y += 1.5;
+          if (damageType === 'sabre_right' || damageType === 'sabres_right') position.x += 0.3;
+          else if (damageType === 'sabre_left' || damageType === 'sabres_left') position.x -= 0.3;
+          const dualCoilSlot = this.applyDualCoilDamageNumberLateral(position, source);
+          this.damageNumberManager.addDamageNumber(
+            displayDamage,
+            damageResult.isCritical,
+            position,
+            damageType,
+            undefined,
+            damageType === 'barrage' || damageType === 'entropic' ? target.id : undefined,
+            dualCoilSlot
+          );
+        }
       }
 
       this.maybeTriggerFrostpath(damageType, source, target);
@@ -1242,22 +1315,17 @@ export class CombatSystem extends System {
     // For non-enemies (like players in non-PVP mode), apply damage locally as before
     const currentWeapon = this.getCurrentWeapon();
     const localFallbackCritOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source);
-    const enemyForGlacialTalons = target.getComponent(Enemy);
-    let localBase = baseDamage;
-    if (
-      enemyForGlacialTalons &&
-      !this.onEnemyDamageCallback &&
-      damageType === 'reaping_talons' &&
-      damageEvent.glacialTalons === true &&
-      enemyForGlacialTalons.isFrozen
-    ) {
-      localBase = Math.floor(baseDamage * 2);
-    }
     const damageResult: DamageResult =
       damageType === 'fan_of_knives'
-        ? { damage: localBase, isCritical: false }
-        : calculateDamage(localBase, currentWeapon, localFallbackCritOpts);
-    const actualDamage = damageResult.damage;
+        ? { damage: baseDamage, isCritical: false }
+        : calculateDamage(baseDamage, currentWeapon, localFallbackCritOpts);
+    const enemyForGlacialTalons = target.getComponent(Enemy);
+    const actualDamage = this.applyGlacialTalonsFrozenBonus(
+      damageResult.damage,
+      damageType,
+      damageEvent.glacialTalons,
+      enemyForGlacialTalons,
+    );
     this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
 
     // Apply damage (pass entity so Health can use Shield component)
@@ -1628,6 +1696,7 @@ export class CombatSystem extends System {
     crossentropyMeteor?: boolean,
     entanglementBarrage?: boolean,
     cloudkillProc?: boolean,
+    wyvernTalonsZombie?: boolean,
   ): void {
     this.damageQueue.push({
       target,
@@ -1663,6 +1732,7 @@ export class CombatSystem extends System {
       crossentropyMeteor,
       entanglementBarrage,
       cloudkillProc,
+      wyvernTalonsZombie,
     });
   }
 
@@ -1840,6 +1910,27 @@ export class CombatSystem extends System {
 
   public addCrescentSlashEffect(position: Vector3, direction: Vector3): void {
     this.impactEffectManager.addImpact('crescent-slash-effect', position, direction);
+  }
+
+  public addMortalStrikeEffect(
+    position: Vector3,
+    direction: Vector3,
+    theme: string,
+  ): void {
+    this.impactEffectManager.addImpact('mortal-strike-effect', position, direction, { colorVariant: theme });
+  }
+
+  public addPsionicBladeSliceEffect(
+    enemyEntityId: string,
+    direction: Vector3,
+    bladeSide: 'left' | 'right',
+  ): void {
+    this.impactEffectManager.addImpact(
+      'psionic-blade-slice',
+      new Vector3(),
+      direction,
+      { enemyEntityId, bladeSide },
+    );
   }
 
   public removeDamageNumber(id: string): void {

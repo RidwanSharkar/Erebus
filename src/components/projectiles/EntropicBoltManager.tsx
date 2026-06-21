@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3 } from '@/utils/three-exports';
+import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
 import EntropicBolt from './EntropicBolt';
 import { ENTROPIC_TRAIL_FADE_OUT_DURATION } from './EntropicBoltTrail';
 import { World } from '@/ecs/World';
@@ -52,7 +53,7 @@ export default function EntropicBoltManager({ world }: EntropicBoltManagerProps)
         } else {
           const direction = renderer.mesh.userData.direction || projectile.velocity.clone().normalize();
           const isCryoflame = renderer.mesh.userData.isCryoflame || false;
-          const colorVariant = renderer.mesh.userData.colorVariant || 'purple';
+          const colorVariant = renderer.mesh.userData.colorVariant || DEFAULT_ENTROPIC_COLOR_VARIANT;
 
           newBolts.push({
             id: boltIdCounter.current++,

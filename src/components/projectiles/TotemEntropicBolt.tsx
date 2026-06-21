@@ -20,7 +20,7 @@ export interface TotemEntropicBoltProps {
   to: Vector3;
   /** Called once when the bolt reaches `to`. */
   onImpact: (impactWorld: Vector3) => void;
-  /** Boon tint; default purple aligns with baseline Mantra bolts. */
+  /** Boon tint; default rose gold aligns with baseline Mantra / Entropic LMB bolts. */
   totemBoltVariant?: TotemBoltVariant;
 }
 
@@ -40,7 +40,7 @@ function alignBoltToDirection(group: Group | null, direction: Vector3) {
   group.quaternion.copy(_quat);
 }
 
-/** Match `EntropicBolt` palettes for red/green/blue; default aligns with purple Entropic LMB. */
+/** Match `EntropicBolt` palettes for red/green/blue; default aligns with rose gold Entropic LMB. */
 export function getTotemBoltTheme(variant: TotemBoltVariant | undefined): {
   primary: string;
   secondary: string;
@@ -56,7 +56,7 @@ export function getTotemBoltTheme(variant: TotemBoltVariant | undefined): {
     case 'frost':
       return { primary: '#075985', secondary: '#0369a1', light: '#7dd3fc' };
     default:
-      return { primary: '#9333ea', secondary: '#c084fc', light: '#e9d5ff' };
+      return { primary: '#d4849a', secondary: '#f0b8c8', light: '#fde0ea' };
   }
 }
 
@@ -143,7 +143,7 @@ export default function TotemEntropicBolt({ from, to, onImpact, totemBoltVariant
           <EntropicBoltTrail
             color={trailColor}
             accentColor={trailColor}
-            size={0.1025}
+            size={0.075}
             meshRef={boltRef}
             opacity={0.95}
           />

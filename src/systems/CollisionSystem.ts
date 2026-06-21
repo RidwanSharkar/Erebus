@@ -19,6 +19,8 @@ export class CollisionSystem extends PhysicsSystem {
   private spatialHash: SpatialHash;
   private collisionPairs: CollisionPair[] = [];
   private activeCollisions = new Map<string, CollisionPair>(); // Track ongoing collisions
+  private processedPairsReuse = new Set<string>();
+  private currentCollisionsReuse = new Map<string, CollisionPair>();
   
   // Performance tracking
   private lastUpdateTime = 0;
@@ -69,7 +71,8 @@ export class CollisionSystem extends PhysicsSystem {
     this.collisionChecks = 0;
     this.actualCollisions = 0;
 
-    const processedPairs = new Set<string>();
+    const processedPairs = this.processedPairsReuse;
+    processedPairs.clear();
 
     for (const entity of entities) {
       const transform = entity.getComponent(Transform)!;
@@ -128,7 +131,8 @@ export class CollisionSystem extends PhysicsSystem {
   }
 
   private processCollisionCallbacks(): void {
-    const currentCollisions = new Map<string, CollisionPair>();
+    const currentCollisions = this.currentCollisionsReuse;
+    currentCollisions.clear();
 
     // Process current collisions
     for (const pair of this.collisionPairs) {

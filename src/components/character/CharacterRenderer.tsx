@@ -14,6 +14,8 @@ import DashFireTrail from '@/components/dragon/DashFireTrail';
 interface CharacterRendererProps {
   entityId: number;
   position: Vector3;
+  /** When set, live position is read from this ref each frame instead of React prop updates. */
+  positionRef?: React.MutableRefObject<Vector3>;
   world: World;
   isLocalPlayer?: boolean;
   rotation?: { x: number; y: number; z: number };
@@ -73,6 +75,7 @@ function dirToSlowWalkAnimState(facingDir: Vector3, moveDir: Vector3): AnimState
 export default function CharacterRenderer({
   entityId,
   position,
+  positionRef,
   world,
   isLocalPlayer = true,
   rotation,
@@ -215,6 +218,10 @@ export default function CharacterRenderer({
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    if (positionRef) {
+      targetPosition.current.copy(positionRef.current);
+    }
 
     // Smooth position.
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));

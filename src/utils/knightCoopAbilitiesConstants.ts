@@ -14,3 +14,8 @@ export const KNIGHT_DEATH_GRASP_MIN_RANGE = 5.0; // must be strictly beyond this
 export const KNIGHT_DEATH_GRASP_MAX_RANGE = 13.0;
 export const KNIGHT_DEATH_GRASP_COOLDOWN_MS = 15000;
 export const KNIGHT_DEATH_GRASP_STANDOFF = 1.2; // server pull position from knight
+
+// Knight Smite (enemyAI: knightCastSmite, tryKnightSmiteUnlocked)
+export const KNIGHT_SMITE_IMPACT_DELAY_MS = 900;
+export const KNIGHT_SMITE_RADIUS_BASE = 2.8;
+export const KNIGHT_SMITE_RADIUS_POST_BOSS2 = 3.75;

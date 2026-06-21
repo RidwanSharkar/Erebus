@@ -1,6 +1,8 @@
 import React, { useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Mesh, Group, Quaternion, Vector3, Matrix4, Euler } from '@/utils/three-exports';
+import { Mesh, Group, Quaternion, Vector3, Matrix4 } from '@/utils/three-exports';
+import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import {
   FOREST_CANOPY_TIERS,
   createForestTrunkTaperedSegmentGeometries,
@@ -52,6 +54,10 @@ const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
   slamSeq,
   windDirXZ,
 }) => {
+  const { enemyTransformsRef } = useMultiplayer();
+  const groupRef = useRef<Group>(null);
+  const targetPosition = useRef(position.clone());
+  const targetRotation = useRef(rotation);
   const segmentGroupRefs = useRef<(Group | null)[]>([]);
   const shadowRef = useRef<Mesh>(null);
   const trunkMeshRefs = useRef<(Mesh | null)[]>([]);
@@ -64,8 +70,6 @@ const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
   const leanDirRef = useRef({ x: 0, z: 1 });
   const slamPhaseRef = useRef<'idle' | 'fwd' | 'rebound'>('idle');
   const slamReboundTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Keep rotation in a ref so useFrame always reads the latest value without stale closure
-  const rotationRef = useRef(rotation);
 
   const layout = useMemo(() => getForestSingleTreeLayoutFromId(id), [id]);
   const { trunkH, trunkR, canopyR, rotAngle } = layout;
@@ -206,12 +210,12 @@ const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
     });
   }, [canopyMatrices]);
 
-  // Keep rotationRef in sync so useFrame always converts world→local correctly
-  useLayoutEffect(() => {
-    rotationRef.current = rotation;
-  }, [rotation]);
-
   useFrame((_, delta) => {
+    if (!groupRef.current) return;
+    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    groupRef.current.position.copy(targetPosition.current);
+    groupRef.current.rotation.y = targetRotation.current;
+
     trunkMat.uniforms.uTime.value += delta;
     canopyMats.forEach((m) => {
       m.uniforms.uTime.value += delta;
@@ -230,8 +234,8 @@ const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
     _dir.normalize();
     // leanDir is world-space; segments live under a Y-rotated root group, so
     // transform into local space: local = R(-rotation) * world
-    const c = Math.cos(rotationRef.current);
-    const s = Math.sin(rotationRef.current);
+    const c = Math.cos(targetRotation.current);
+    const s = Math.sin(targetRotation.current);
     const lx = _dir.x * c - _dir.z * s;
     const lz = _dir.x * s + _dir.z * c;
     _dir.set(lx, 0, lz).normalize();
@@ -306,7 +310,7 @@ const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
   );
 
   return (
-    <group position={position} rotation={new Euler(0, rotation, 0)}>
+    <group ref={groupRef}>
       <mesh ref={shadowRef} geometry={shadowGeo} material={shadowMat} />
       <group position={[0, baseBottomY, 0]}>
         <TrunkChain depth={0} />

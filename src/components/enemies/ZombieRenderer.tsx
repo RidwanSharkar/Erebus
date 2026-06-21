@@ -7,6 +7,7 @@ import { Billboard, Text } from '@react-three/drei';
 import ZombieModel from './ZombieModel';
 import EnemyMeleeAttackRangeRing, { GHOUL_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import EnemyStaggerBar from './EnemyStaggerBar';
 
 interface ZombieRendererProps {
@@ -36,7 +37,7 @@ export default function ZombieRenderer({
   staggerBuildup = 0,
   visualScale = 1,
 }: ZombieRendererProps) {
-  const { socket } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
@@ -116,6 +117,8 @@ export default function ZombieRenderer({
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 

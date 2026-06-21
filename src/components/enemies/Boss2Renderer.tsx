@@ -13,6 +13,7 @@ import BoneWings from '../dragon/BoneWings';
 import BoneAura from '../dragon/BoneAura';
 import { WeaponType } from '../dragon/weapons';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
 import { campHpTheme } from '@/utils/campHpTheme';
@@ -45,7 +46,7 @@ export default function Boss2Renderer({
   staggerBuildup = 0,
 }: Boss2RendererProps) {
   const theme = campHpTheme('red');
-  const { socket } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
   const isBlinkingRef = useRef(false);
   const targetPosition = useRef(position.clone());
@@ -166,6 +167,8 @@ export default function Boss2Renderer({
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
     let deltaAngle = targetRotation.current - group.rotation.y;

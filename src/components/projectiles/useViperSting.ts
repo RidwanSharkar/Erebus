@@ -12,6 +12,7 @@ import {
   GIANTKILLER_MAX_HP_DAMAGE_FRAC,
   GIANTKILLER_MAX_HP_DAMAGE_FRAC_BOSS,
 } from '@/utils/talents';
+import { spawnArcticGroundBlizzardAtFromReact } from '@/components/weapons/Blizzard/arcticBlizzardSpawnBridge';
 
 interface ViperStingProjectile {
   id: number;
@@ -36,6 +37,8 @@ interface ViperStingProjectile {
   explosiveTalonsPvpAoEDone?: boolean;
   /** EXECUTE: after first forward hit resolution (consume attempt once per cast). */
   forwardExecuteResolved: boolean;
+  /** Glacial Talons: concentrated blizzard spawned on first forward hit this cast. */
+  glacialBlizzardSpawned?: boolean;
 }
 
 interface SoulStealEffect {
@@ -231,6 +234,7 @@ export function useViperSting({
     projectile.explosiveTalons = isRemoteSpawn ? !!opts?.explosiveTalons : explosiveTalons;
     projectile.explosiveTalonsPvpAoEDone = false;
     projectile.forwardExecuteResolved = false;
+    projectile.glacialBlizzardSpawned = false;
     projectile.maxDistance = projectile.explosiveTalons
       ? EXPLOSIVE_TALONS_REAPING_TALONS_MAX_TRAVEL_DISTANCE
       : REAPING_TALONS_MAX_TRAVEL_DISTANCE;
@@ -316,6 +320,13 @@ export function useViperSting({
               if (projectilePos2D.distanceTo(enemyPos2D) < 1.3) {
                 // Mark enemy as hit during forward phase
                 projectile.hitEnemies.add(enemy.id);
+
+                if (glacialTalonsTheme && !projectile.glacialBlizzardSpawned) {
+                  projectile.glacialBlizzardSpawned = true;
+                  const bp = enemy.position.clone();
+                  bp.y = Math.max(1.5, bp.y);
+                  spawnArcticGroundBlizzardAtFromReact(bp);
+                }
 
                 let forwardDamage = DAMAGE;
                 if (!projectile.forwardExecuteResolved && onExecuteFirstForwardHit) {

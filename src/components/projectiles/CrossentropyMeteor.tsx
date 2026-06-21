@@ -34,11 +34,11 @@ interface CrossentropyMeteorProps {
   startPosition?: Vector3;
 }
 
-const IMPACT_DURATION_SEC = 0.5;
+const IMPACT_DURATION_SEC = 0.65;
 /** Pulls impact sphere / ring expansion and point-light reach in together (~25% smaller). */
-const METEOR_IMPACT_VFX_SCALE = 0.575;
+const METEOR_IMPACT_VFX_SCALE = 0.525;
 const WARNING_SEGMENTS = 7;
-const FIRE_PARTICLES_COUNT = 4;
+const FIRE_PARTICLES_COUNT = 7;
 const TORUS_BASE_SIZES = [1.5, 1.75, 2.0] as const;
 
 const meteorGeometry = new SphereGeometry(0.68, 16, 16);
@@ -303,7 +303,7 @@ export default function CrossentropyMeteor({
             <MeteorTrail
               meshRef={meteorMeshRef}
               color={new Color('#FF7A1A')}
-              size={0.05}
+              size={0.055}
               backwardDir={trailBackward}
             />
           </mesh>

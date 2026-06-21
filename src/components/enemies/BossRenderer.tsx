@@ -4,6 +4,7 @@ import { Vector3, Group } from '@/utils/three-exports';
 import { World } from '@/ecs/World';
 import BossGlbModel from './BossGlbModel';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 
 const WALK_STOP_DELAY = 200;
 /** Fallback if `boss-throw-start` omits `moveLockMs` — keep in sync with `BOSS_THROW_MOVE_LOCK_MS` in backend `enemyAI.js`. */
@@ -30,7 +31,7 @@ export default function BossRenderer({
   isStunned = false,
   isDying = false,
 }: BossRendererProps) {
-  const { socket } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayer();
   const groupRef = useRef<Group>(null);
   const currentRotationRef = useRef(0);
   const [isWalking, setIsWalking] = useState(false);
@@ -43,6 +44,7 @@ export default function BossRenderer({
   const [impactPlayKey, setImpactPlayKey] = useState(0);
   const [isThrowCasting, setIsThrowCasting] = useState(false);
   const targetPosition = useRef(position.clone());
+  const targetRotation = useRef(rotation ?? 0);
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const throwCastSafetyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -151,20 +153,21 @@ export default function BossRenderer({
   }, []);
 
   useFrame((_, delta) => {
-    if (groupRef.current) {
-      groupRef.current.position.copy(position);
-      if (isStunned) return;
+    if (!groupRef.current) return;
+    const group = groupRef.current;
 
-      if (rotation !== undefined) {
-        const ROTATION_SPEED = 6.0;
-        const currentRotationY = groupRef.current.rotation.y;
-        let rotationDiff = rotation - currentRotationY;
-        while (rotationDiff > Math.PI) rotationDiff -= Math.PI * 2;
-        while (rotationDiff < -Math.PI) rotationDiff += Math.PI * 2;
-        groupRef.current.rotation.y += rotationDiff * Math.min(1, ROTATION_SPEED * delta);
-        currentRotationRef.current = groupRef.current.rotation.y;
-      }
-    }
+    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    group.position.copy(targetPosition.current);
+
+    if (isStunned) return;
+
+    const ROTATION_SPEED = 6.0;
+    const currentRotationY = group.rotation.y;
+    let rotationDiff = targetRotation.current - currentRotationY;
+    while (rotationDiff > Math.PI) rotationDiff -= Math.PI * 2;
+    while (rotationDiff < -Math.PI) rotationDiff += Math.PI * 2;
+    group.rotation.y += rotationDiff * Math.min(1, ROTATION_SPEED * delta);
+    currentRotationRef.current = group.rotation.y;
   });
 
   useEffect(() => {

@@ -112,7 +112,7 @@ export default function SwordMeshVisual({ theme }: SwordMeshVisualProps) {
   }, [bladeGeo, innerGeo]);
 
   return (
-    <group rotation={[-0.65, 0, 0.2]} scale={[0.8, 0.9, 0.65]}>
+    <group rotation={[-0.65, 0, 0.2]} scale={[1.25, 1.25, 1.25]}>
       <group position={[-1.18, 0.225, 0.3]} rotation={[0, 0, Math.PI / 3]} scale={[0.75, 0.8, 0.65]}>
         <group position={[0.25, -0.55, 0.35]} rotation={[0, 0, -Math.PI]}>
           <mesh ref={(el) => { meshRefs.current[0] = el; }}>

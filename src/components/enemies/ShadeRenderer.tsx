@@ -9,6 +9,7 @@ import ShadeTeleportEffect from './ShadeTeleportEffect';
 import CubeSoulEffect from './CubeSoulEffect';
 import BossTeleportEffect from './BossTeleportEffect';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import GhostTrail from '../dragon/GhostTrail';
@@ -47,7 +48,7 @@ export default function ShadeRenderer({
   staggerBuildup = 0,
 }: ShadeRendererProps) {
   const theme = campHpTheme(campType);
-  const { socket } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
@@ -211,6 +212,8 @@ export default function ShadeRenderer({
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 

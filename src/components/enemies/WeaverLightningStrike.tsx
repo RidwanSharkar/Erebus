@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   Vector3,
@@ -173,6 +173,19 @@ export default function WeaverLightningStrike({
     }),
     []
   );
+
+  useEffect(() => {
+    return () => {
+      warningRing.dispose();
+      innerPulse.dispose();
+      Object.values(geometries).forEach((g) => g.dispose());
+      materials.coreBolt.dispose();
+      materials.secondaryBolt.dispose();
+      materials.impact.dispose();
+      materials.particle.dispose();
+      materials.ringImpact.forEach((m) => m.dispose());
+    };
+  }, [warningRing, innerPulse, geometries, materials]);
 
   useFrame(() => {
     const now = Date.now();

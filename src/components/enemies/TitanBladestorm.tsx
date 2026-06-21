@@ -5,10 +5,9 @@ import { useFrame } from '@react-three/fiber';
 import { Group } from '@/utils/three-exports';
 import { calculationCache } from '@/utils/CalculationCache';
 import {
-  CYCLONE_SPIN_ROTATION_SPEED,
   TITAN_BLADESTORM_ORBIT_RADIUS,
   TITAN_BLADESTORM_ORBIT_HEIGHT,
-  applyCycloneSpinBladeRotation,
+  TITAN_BLADESTORM_SPIN_SPEED,
 } from '@/utils/cycloneSpinConstants';
 import SwordMeshVisual, { getSwordThemeForSoulType } from '@/components/weapons/SwordMeshVisual';
 
@@ -27,13 +26,13 @@ export default function TitanBladestorm({ soulType, startTime }: TitanBladestorm
     if (!orbitRef.current) return;
 
     const elapsedSec = (Date.now() - startTime) / 1000;
-    const angle = elapsedSec * CYCLONE_SPIN_ROTATION_SPEED;
+    const angle = elapsedSec * TITAN_BLADESTORM_SPIN_SPEED;
 
     const orbitalX = calculationCache.getTrigCalculation('cos', angle) * TITAN_BLADESTORM_ORBIT_RADIUS;
     const orbitalZ = calculationCache.getTrigCalculation('sin', angle) * TITAN_BLADESTORM_ORBIT_RADIUS;
 
     orbitRef.current.position.set(orbitalX, TITAN_BLADESTORM_ORBIT_HEIGHT, orbitalZ);
-    applyCycloneSpinBladeRotation(orbitRef.current, angle);
+    orbitRef.current.rotation.set(Math.PI / 4, angle + Math.PI / 2, 0);
   });
 
   return (

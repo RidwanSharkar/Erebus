@@ -7,6 +7,7 @@ import { GLTFLoader } from 'three-stdlib';
 import { peek as suspendPeek } from 'suspend-react';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
+import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 export type KnightAbilityClip = 'Smite' | 'Aggro' | 'Cast' | 'Spin';
 
@@ -193,20 +194,7 @@ export default function KnightModel({
     return clone;
   }, [scene, castShadow]);
 
-  // Dispose cloned materials on unmount to prevent GPU memory leaks
-  useEffect(() => {
-    return () => {
-      clonedScene.traverse((child: any) => {
-        if (child.isMesh) {
-          if (Array.isArray(child.material)) {
-            child.material.forEach((m: any) => m?.dispose?.());
-          } else {
-            child.material?.dispose?.();
-          }
-        }
-      });
-    };
-  }, [clonedScene]);
+  useDisposeClonedMaterials(clonedScene);
 
   // Merge clips from the three separate GLBs into one array with canonical names.
   // Each individual GLB exports its clip as "mixamo.com", so we rename here.

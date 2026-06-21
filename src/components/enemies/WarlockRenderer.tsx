@@ -8,6 +8,7 @@ import WarlockModel from './WarlockModel';
 import WarlockTeleportEffect from './WarlockTeleportEffect';
 import CubeSoulEffect from './CubeSoulEffect';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import GhostTrail from '../dragon/GhostTrail';
@@ -49,7 +50,7 @@ export default function WarlockRenderer({
   staggerBuildup = 0,
 }: WarlockRendererProps) {
   const theme = campHpTheme(campType);
-  const { socket } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
 
   const [isBlinking,  setIsBlinking]  = useState(false);
@@ -224,6 +225,8 @@ export default function WarlockRenderer({
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
 
     // Lerp toward server-authoritative position (handles minor corrections and blink approach)
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));

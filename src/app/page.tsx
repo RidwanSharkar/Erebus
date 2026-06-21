@@ -18,6 +18,8 @@ import type { CoopRoomKind } from '../contexts/MultiplayerContext';
 import MerchantUI from '../components/ui/MerchantUI';
 import StatsPanel from '../components/ui/StatsPanel';
 import LoadingScreen from '../components/ui/LoadingScreen';
+import PortalBlinkTransition from '../components/ui/PortalBlinkTransition';
+import RoomTitleAnnouncement from '../components/ui/RoomTitleAnnouncement';
 import AbilitySelectionModal from '../components/ui/AbilitySelectionModal';
 import TalentSelectionModal from '../components/ui/TalentSelectionModal';
 import CoopBoonPickerModal from '../components/ui/CoopBoonPickerModal';
@@ -48,6 +50,11 @@ import {
 } from '../utils/talents';
 import type { TalentId, TalentLoadout } from '../utils/talents';
 import type { AbilityLoadout } from '../utils/weaponAbilities';
+import {
+  buildRoomTitleAnnouncement,
+  REWARD_ANNOUNCEMENT_COLORS,
+  TRIAL_ROOM_PEDESTAL_GOLD,
+} from '../utils/coopRoomTitles';
 import { DpsTracker, type DpsSnapshot } from '../utils/DpsTracker';
 
 // Extend Window interface to include audioSystem
@@ -186,10 +193,13 @@ function HomeContent() {
     enemies,
     inventory,
     merchantInventory,
+    merchantPurchaseState,
+    registerMerchantPurchaseSuccessHandler,
     joinRoom,
     currentRoomId,
     isConnected,
     coopTransitionOverlay,
+    coopPortalBlinkSeq,
     combatArenaActive,
     gameMode: sessionGameMode,
     gameStarted,
@@ -201,8 +211,11 @@ function HomeContent() {
     coopClearedRoomColor,
     coopCurrentRoomKind,
     coopClearedRoomKind,
+    coopColoredRoomVisitIndex,
+    coopBossRoomVisitIndex,
     clearCoopClearedRoomColor,
     confirmCoopPortalTransitionComplete,
+    hideCoopPortalTransition,
     subscribeEnemyDamage,
   } = useMultiplayer();
 
@@ -313,18 +326,52 @@ function HomeContent() {
   const [loadingSceneBootstrapReady, setLoadingSceneBootstrapReady] = useState(false);
   const [isGameLoading, setIsGameLoading] = useState(true);
   const [showCanvas, setShowCanvas] = useState(false);
-  // Tracks whether the last LoadingScreen show was driven by a co-op portal transition so
-  // onFadeComplete knows to send the server confirmation.
-  const pendingCoopTransitionConfirmRef = useRef(false);
-  useEffect(() => {
-    if (coopTransitionOverlay) {
-      pendingCoopTransitionConfirmRef.current = true;
-    }
-  }, [coopTransitionOverlay]);
+  const coopCurrentRoomKindRef = useRef(coopCurrentRoomKind);
+  const coopColoredRoomVisitIndexRef = useRef(coopColoredRoomVisitIndex);
+  const coopBossRoomVisitIndexRef = useRef(coopBossRoomVisitIndex);
+  const combatArenaActiveRef = useRef(combatArenaActive);
+  coopCurrentRoomKindRef.current = coopCurrentRoomKind;
+  coopColoredRoomVisitIndexRef.current = coopColoredRoomVisitIndex;
+  coopBossRoomVisitIndexRef.current = coopBossRoomVisitIndex;
+  combatArenaActiveRef.current = combatArenaActive;
+  const [roomTitleAnnouncement, setRoomTitleAnnouncement] = useState<{
+    triggerKey: string | number;
+    title: string;
+    color: string;
+  } | null>(null);
+
+  const queueOverlayAnnouncement = useCallback((
+    title: string,
+    color: string,
+    triggerKey?: string | number,
+  ) => {
+    setRoomTitleAnnouncement({
+      triggerKey: triggerKey ?? `${title}-${Date.now()}`,
+      title,
+      color,
+    });
+  }, []);
+
+  const queueRoomTitleAnnouncement = useCallback((
+    kind: CoopRoomKind | 'throne',
+    visitIndex?: number | null,
+    triggerKey?: string | number,
+  ) => {
+    const announcement = buildRoomTitleAnnouncement(kind, visitIndex);
+    if (!announcement) return;
+    queueOverlayAnnouncement(
+      announcement.title,
+      announcement.color,
+      triggerKey ?? `${kind}-${visitIndex ?? 'none'}-${Date.now()}`,
+    );
+  }, [queueOverlayAnnouncement]);
+
   const bootstrapWeaponsRef = useRef(selectedWeapons);
   const [playerExperience, setPlayerExperience] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
   const playerLevelRef = useRef(1);
+  const abilityLoadoutRef = useRef(abilityLoadout);
+  abilityLoadoutRef.current = abilityLoadout;
   const [playerEssence, setPlayerEssence] = useState(50); // Start with 50 essence
   const [playerGold, setPlayerGold] = useState(0);
   const [showMerchantUI, setShowMerchantUI] = useState(false);
@@ -514,7 +561,13 @@ function HomeContent() {
     }
 
     if (rewardKind === 'trial') {
-      if (socket?.id) updatePlayerGold(socket.id, 100);
+      if (socket?.id) updatePlayerGold(socket.id, TRIAL_ROOM_PEDESTAL_GOLD);
+      window.audioSystem?.playUIGoldPickupSound?.();
+      queueOverlayAnnouncement(
+        `+${TRIAL_ROOM_PEDESTAL_GOLD} GOLD`,
+        REWARD_ANNOUNCEMENT_COLORS.gold,
+        `trial-gold-${coopMainArenaIntermissionSeq}`,
+      );
       clearCoopClearedRoomColor();
       setPortalsUnlocked(true);
       return;
@@ -563,6 +616,8 @@ function HomeContent() {
     clearCoopClearedRoomColor,
     talentLoadout,
     abilityLoadout,
+    socket?.id,
+    queueOverlayAnnouncement,
   ]);
 
   const handleThroneWeaponEquipped = useCallback(
@@ -668,10 +723,63 @@ function HomeContent() {
           setPortalsUnlocked(true);
         }
       }
+      queueOverlayAnnouncement('UNLOCKED', REWARD_ANNOUNCEMENT_COLORS.unlocked, `boon-${id}`);
+      window.audioSystem?.playUIInterface3Sound?.();
       setCoopBoon(null);
     },
-    [clearCoopClearedRoomColor, coopMainArenaPortalPhase, setTalentLoadout, setAbilityLoadout, abilityLoadout],
+    [clearCoopClearedRoomColor, coopMainArenaPortalPhase, setTalentLoadout, setAbilityLoadout, abilityLoadout, queueOverlayAnnouncement],
   );
+
+  useEffect(() => {
+    return registerMerchantPurchaseSuccessHandler(() => {
+      queueOverlayAnnouncement('PURCHASED', REWARD_ANNOUNCEMENT_COLORS.purchased);
+      window.audioSystem?.playUIInterface2Sound?.();
+    });
+  }, [registerMerchantPurchaseSuccessHandler, queueOverlayAnnouncement]);
+
+  useEffect(() => {
+    return registerMerchantPurchaseSuccessHandler((payload) => {
+      if (payload.kind !== 'weapon_talent') return;
+      setTalentLoadout((prev) => {
+        const pool = excludeOwnedTalentsFromBoonPool(
+          buildClassBoonPoolForWeapon(selectedWeapons.primary, prev),
+          prev,
+        );
+        const [id] = pickRandomDistinctFromPool(pool, 1);
+        if (!id) {
+          console.warn('Merchant weapon talent pool empty');
+          return prev;
+        }
+        queueMicrotask(() => {
+          if (
+            id === TALENT_RAISE_DEAD
+            || id === TALENT_METEOR_STRIKE
+            || id === TALENT_COLDSNAP_ROOM
+            || id === TALENT_LIGHTNING_BOLT_ROOM
+            || id === TALENT_AEGIS_ROOM
+          ) {
+            const abilityId =
+              id === TALENT_RAISE_DEAD ? 'RAISE_DEAD'
+              : id === TALENT_METEOR_STRIKE ? 'METEOR_STRIKE'
+              : id === TALENT_COLDSNAP_ROOM ? 'SCYTHE_E'
+              : id === TALENT_AEGIS_ROOM ? 'AEGIS_ROOM'
+              : 'SPEAR_R';
+            setAbilityLoadout(
+              abilityLoadoutRef.current
+                ? { ...abilityLoadoutRef.current, R: abilityId }
+                : { Q: null, E: null, R: abilityId },
+            );
+          }
+        });
+        return applyTalentIdToLoadout(prev, id);
+      });
+    });
+  }, [
+    registerMerchantPurchaseSuccessHandler,
+    selectedWeapons.primary,
+    setTalentLoadout,
+    setAbilityLoadout,
+  ]);
 
   // Sync skill point data with control system
   useEffect(() => {
@@ -832,14 +940,44 @@ function HomeContent() {
       currency: 'essence' as const,
     },
   ];
-  const coopMerchantItems = merchantInventory.map((stock) => ({
-    id: stock.id,
-    name: stock.item.label,
-    description: `${stock.item.rarity ? `${stock.item.rarity.toUpperCase()} ` : ''}+${stock.item.statBonus ?? 0} ${stock.item.stat ?? 'stat'} boss reward`,
-    cost: stock.cost,
-    currency: 'gold' as const,
-    sold: stock.sold,
-  }));
+  const coopMerchantItems = merchantInventory.map((stock) => {
+    if (stock.kind === 'dash_charge') {
+      return {
+        id: stock.id,
+        name: stock.label ?? 'Dash Charge',
+        description: stock.description ?? 'Adds a 4th dash charge for the run.',
+        cost: stock.cost,
+        currency: 'gold' as const,
+        sold: merchantPurchaseState.dashChargePurchased,
+        kind: 'dash_charge' as const,
+        limitLabel: '1 per run',
+      };
+    }
+    if (stock.kind === 'weapon_talent') {
+      const remaining = Math.max(0, 3 - merchantPurchaseState.weaponTalentPurchases);
+      return {
+        id: stock.id,
+        name: stock.label ?? 'Weapon Talent',
+        description: stock.description ?? 'Grants a random unowned class talent from your weapon.',
+        cost: stock.cost,
+        currency: 'gold' as const,
+        sold: merchantPurchaseState.weaponTalentPurchases >= 3,
+        kind: 'weapon_talent' as const,
+        limitLabel: '3 per run',
+        limitRemaining: remaining,
+      };
+    }
+    return {
+      id: stock.id,
+      name: stock.item?.label ?? 'Boss Reward',
+      description: `${stock.item?.rarity ? `${stock.item.rarity.toUpperCase()} ` : ''}+${stock.item?.statBonus ?? 0} ${stock.item?.stat ?? 'stat'} boss reward`,
+      cost: stock.cost,
+      currency: 'gold' as const,
+      sold: stock.sold,
+      kind: 'boss_drop' as const,
+      rarity: stock.item?.rarity,
+    };
+  });
   const merchantRoomActive =
     gameMode === 'coop' &&
     showMerchantUI &&
@@ -887,7 +1025,7 @@ function HomeContent() {
                   <h3 className="text-lg font-semibold text-yellow-400 mb-2">Boons at a glance</h3>
                   <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
                     <li><strong className="text-sky-300">Runeblade</strong>: class pool includes Trinity, Vengeance, Crusader, Windfury, Blizzard, Cyclone Rush, Double Strike, Spellblade, and Aftershock. Colored <strong>room</strong> boons for your basic combo, Wraith Strike, and Smite are mutually exclusive branches for the rest of that run (one palette per branch); class boons ignore this split.</li>
-                    <li><strong className="text-green-300">Bow</strong>: class pool includes Execute, Explosive Talons, Concentrated Volley, Dual Coil, Tempest Rounds. Room colors gate talents like Stagger Shot, Wrathful Bite/Talons, Wyvern Sting/Bite.</li>
+                    <li><strong className="text-green-300">Bow</strong>: class pool includes Execute, Explosive Talons, Concentrated Volley, Dual Coil, Tempest Rounds, Wyvern Sting. Room colors gate talents like Stagger Shot, Wrathful Bite/Talons, Wyvern Sting/Bite.</li>
                     <li><strong className="text-purple-300">Scythe</strong>: class pool includes Icebeam, Reaper, Frostpath, Solar Recharge, SHAMAN, Superconductor, Accelerator, Healing Stream, Meteor, and Fragmentation. Colored <strong>room</strong> boons: red — Wrathful Entropic &amp; Totem; blue — Staggering Entropic &amp; Totem; green — Infesting Entropic &amp; Totem; purple — Inferno.</li>
                     <li><strong className="text-red-400">Sabres</strong>: class pool includes Killstreak, Relentless, Parry, Crescent Blades, Vorpal Gust, Fan of Knives, and Wind Shear. Colored <strong>room</strong> boons still gate Backstab / Swipes / Flourish branches.</li>
                     <li><strong>Tempest Rounds</strong> (Bow) and <strong>Icebeam</strong> (Scythe) are <strong>talents / boons</strong>, not passives on the ability picker.</li>
@@ -998,6 +1136,7 @@ function HomeContent() {
                   onInteractHintChange={onCoopInteractHintChange}
                   onLocalPlayerDefeated={onLocalPlayerDefeated}
                   onLocalPlayerRevived={onLocalPlayerRevived}
+                  extraDashChargePurchased={merchantPurchaseState.dashChargePurchased}
                 />
               )}
             </Suspense>
@@ -1227,7 +1366,7 @@ function HomeContent() {
                 balanceLabel="gold"
                 healOffer={{
                   cost: 50,
-                  amount: 100,
+                  amount: 125,
                 }}
                 onClose={() => {
                   setShowMerchantUI(false);
@@ -1241,20 +1380,46 @@ function HomeContent() {
           </>
         )}
 
-        {/* Loading Screen - shown until scene ready */}
+        {/* Loading Screen - initial game boot only; portal transitions use PortalBlinkTransition */}
         <LoadingScreen
-          isVisible={isGameLoading || coopTransitionOverlay}
-          sceneBootstrapReady={
-            loadingSceneBootstrapReady || Boolean(!isGameLoading && coopTransitionOverlay)
-          }
+          isVisible={isGameLoading && !coopTransitionOverlay}
+          sceneBootstrapReady={loadingSceneBootstrapReady}
           onFadeComplete={() => {
             setIsGameLoading(false);
-            if (pendingCoopTransitionConfirmRef.current) {
-              pendingCoopTransitionConfirmRef.current = false;
-              confirmCoopPortalTransitionComplete();
+            if (sessionGameMode === 'coop' && !combatArenaActiveRef.current) {
+              queueRoomTitleAnnouncement('throne', null, 'throne-start');
             }
           }}
         />
+
+        <PortalBlinkTransition
+          active={coopTransitionOverlay}
+          triggerSeq={coopPortalBlinkSeq}
+          sceneReadySeq={coopCombatArenaEnterSeq}
+          onComplete={() => {
+            hideCoopPortalTransition();
+            confirmCoopPortalTransitionComplete();
+            const roomKind = coopCurrentRoomKindRef.current;
+            if (roomKind) {
+              const visitIndex = roomKind === 'boss'
+                ? coopBossRoomVisitIndexRef.current
+                : coopColoredRoomVisitIndexRef.current;
+              queueRoomTitleAnnouncement(
+                roomKind,
+                visitIndex,
+                coopCombatArenaEnterSeq,
+              );
+            }
+          }}
+        />
+
+        {sessionGameMode === 'coop' && roomTitleAnnouncement && (
+          <RoomTitleAnnouncement
+            triggerKey={roomTitleAnnouncement.triggerKey}
+            title={roomTitleAnnouncement.title}
+            color={roomTitleAnnouncement.color}
+          />
+        )}
 
       </main>
   );

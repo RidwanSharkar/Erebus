@@ -13,6 +13,7 @@ import Boss3GreenBeam from './Boss3GreenBeam';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
 import { campHpTheme } from '@/utils/campHpTheme';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 
 interface Boss3RendererProps {
   id: string;
@@ -127,7 +128,7 @@ export default function Boss3Renderer({
   staggerBuildup = 0,
 }: Boss3RendererProps) {
   const theme = campHpTheme('green');
-  const { socket } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
@@ -235,6 +236,8 @@ export default function Boss3Renderer({
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
     let deltaAngle = targetRotation.current - group.rotation.y;

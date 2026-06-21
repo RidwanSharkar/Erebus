@@ -1,7 +1,7 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { AdditiveBlending, BackSide, Color, Group, MeshBasicMaterial, Vector3 } from '@/utils/three-exports';
+import { AdditiveBlending, BackSide, Color, Group, MathUtils, MeshBasicMaterial, Vector3 } from '@/utils/three-exports';
 import CustomSky from './CustomSky';
 import type { RoomBorderTheme, SimpleBorderColorTheme } from './SimpleBorderEffects';
 import SimpleBorderEffects from './SimpleBorderEffects';
@@ -304,10 +304,13 @@ export const THRONE_WEAPON_INTERACT_DEFS: ThroneWeaponInteractDef[] = (() => {
   ];
 })();
 
+const THRONE_WEAPON_FADE_OUT_SPEED = 10;
+const THRONE_WEAPON_FADE_IN_SPEED = 5;
+
 /**
  * Idle weapon replicas with a gentle float — uses the same weapon meshes as gameplay (Runeblade = “Sword”).
  */
-function ThroneWeaponPedestals() {
+function ThroneWeaponPedestals({ equippedWeapon = WeaponType.NONE }: { equippedWeapon?: WeaponType }) {
   const bowPos = useMemo(() => new Vector3(0, 0, 0), []);
   const bowDir = useMemo(() => new Vector3(0, 0, -1), []);
   const scytheParentRef = useRef<Group>(null);
@@ -316,21 +319,49 @@ function ThroneWeaponPedestals() {
   const slots = useMemo(
     () => [
       // SWORD (primary pick / Runeblade) — yellow orb pillar
-      { pillar: THRONE_PILLAR_DEFS[1]!.position, key: 'runeblade' as const, phase: 0.0 },
+      {
+        pillar: THRONE_PILLAR_DEFS[1]!.position,
+        key: 'runeblade' as const,
+        weapon: WeaponType.RUNEBLADE,
+        phase: 0.0,
+      },
       // SABRES — red
-      { pillar: THRONE_PILLAR_DEFS[2]!.position, key: 'sabres' as const, phase: 1.1 },
+      {
+        pillar: THRONE_PILLAR_DEFS[2]!.position,
+        key: 'sabres' as const,
+        weapon: WeaponType.SABRES,
+        phase: 1.1,
+      },
       // SCYTHE — blue
-      { pillar: THRONE_PILLAR_DEFS[3]!.position, key: 'scythe' as const, phase: 2.2 },
+      {
+        pillar: THRONE_PILLAR_DEFS[3]!.position,
+        key: 'scythe' as const,
+        weapon: WeaponType.SCYTHE,
+        phase: 2.2,
+      },
       // BOW — green
-      { pillar: THRONE_PILLAR_DEFS[0]!.position, key: 'bow' as const, phase: 1.8 },
+      {
+        pillar: THRONE_PILLAR_DEFS[0]!.position,
+        key: 'bow' as const,
+        weapon: WeaponType.BOW,
+        phase: 1.8,
+      },
     ],
     [],
   );
 
   return (
     <group name="throne-weapon-pedestals">
-      {slots.map((slot) => (
-        <ThroneFloatingWeapon key={slot.key} xz={xzTowardRoomCenter(slot.pillar, THRONE_WEAPON_INSET)} phase={slot.phase}>
+      {slots.map((slot) => {
+        const isTaken =
+          equippedWeapon !== WeaponType.NONE && equippedWeapon === slot.weapon;
+        return (
+        <ThroneFloatingWeapon
+          key={slot.key}
+          xz={xzTowardRoomCenter(slot.pillar, THRONE_WEAPON_INSET)}
+          phase={slot.phase}
+          isTaken={isTaken}
+        >
           {slot.key === 'bow' && (
             <group scale={1.05} rotation={[1.28, 4.75, -0.25]} position={[0.75, 2.2, -1.0]}>
               <EtherealBow
@@ -394,7 +425,8 @@ function ThroneWeaponPedestals() {
             </group>
           )}
         </ThroneFloatingWeapon>
-      ))}
+        );
+      })}
     </group>
   );
 }
@@ -402,28 +434,55 @@ function ThroneWeaponPedestals() {
 function ThroneFloatingWeapon({
   xz,
   phase,
+  isTaken,
   children,
 }: {
   xz: [number, number];
   phase: number;
+  isTaken: boolean;
   children: ReactNode;
 }) {
   const rootRef = useRef<Group>(null);
+  const visualRef = useRef<Group>(null);
+  const visibilityRef = useRef(1);
+  const targetRef = useRef(isTaken ? 0 : 1);
   const [qx, qz] = xz;
 
-  useFrame((state) => {
+  useEffect(() => {
+    targetRef.current = isTaken ? 0 : 1;
+  }, [isTaken]);
+
+  useFrame((state, delta) => {
     const g = rootRef.current;
+    const visual = visualRef.current;
     if (!g) return;
+
+    const target = targetRef.current;
+    const fadeSpeed =
+      target < visibilityRef.current ? THRONE_WEAPON_FADE_OUT_SPEED : THRONE_WEAPON_FADE_IN_SPEED;
+    visibilityRef.current = MathUtils.lerp(
+      visibilityRef.current,
+      target,
+      Math.min(1, delta * fadeSpeed),
+    );
+
+    const v = visibilityRef.current;
+    if (visual) {
+      visual.scale.setScalar(v);
+      visual.visible = v > 0.02;
+    }
+
+    const floatAmp = v;
     const t = state.clock.elapsedTime + phase;
-    g.position.x = qx + Math.sin(t * 0.55) * 0.035;
-    g.position.y = 0.92 + Math.sin(t * 1.15) * 0.085;
-    g.position.z = qz + Math.cos(t * 0.48) * 0.03;
-    g.rotation.y = Math.sin(t * 0.42) * 0.045;
+    g.position.x = qx + Math.sin(t * 0.55) * 0.035 * floatAmp;
+    g.position.y = 0.92 + Math.sin(t * 1.15) * 0.085 * floatAmp;
+    g.position.z = qz + Math.cos(t * 0.48) * 0.03 * floatAmp;
+    g.rotation.y = Math.sin(t * 0.42) * 0.045 * floatAmp;
   });
 
   return (
     <group ref={rootRef} position={[qx, 0.92, qz]}>
-      {children}
+      <group ref={visualRef}>{children}</group>
     </group>
   );
 }
@@ -510,6 +569,8 @@ interface ThroneRoomProps {
   coopClearedRoomColor?: string | null;
   /** When true, the south-rim portals render grey — prevents entry before a weapon is chosen. */
   thronePortalsLocked?: boolean;
+  /** Local player's equipped weapon — hides that weapon's floating replica on its pedestal. */
+  equippedWeapon?: WeaponType;
 }
 
 /**
@@ -523,6 +584,7 @@ export default function ThroneRoom({
   campTypes = [],
   coopClearedRoomColor = null,
   thronePortalsLocked = false,
+  equippedWeapon = WeaponType.NONE,
 }: ThroneRoomProps) {
   /** All co-op boss tiers + post-boss intermission share the same purple shell (legacy Boss 2 / Archon look). */
   const usePurpleBossArenaShell = layout === 'bossArena';
@@ -611,7 +673,7 @@ export default function ThroneRoom({
             position={[THRONE_TALENT_PEDESTAL_POSITION.x, THRONE_TALENT_PEDESTAL_POSITION.y, THRONE_TALENT_PEDESTAL_POSITION.z]}
             showOrb={false}
           />
-          <ThroneWeaponPedestals />
+          <ThroneWeaponPedestals equippedWeapon={equippedWeapon} />
           <group>
             {THRONE_PORTAL_POSITIONS.map((pos, i) => (
               <group key={`throne-portal-${i}`} position={[pos.x, pos.y, pos.z]}>

@@ -5,6 +5,7 @@ import { Billboard, Text } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3 } from 'three';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import AlliedHealerModel from './AlliedHealerModel';
@@ -61,7 +62,7 @@ export default function AlliedHealerRenderer({
   alliedOrbSlots,
 }: AlliedHealerRendererProps) {
   const theme = campHpTheme('ally-green');
-  const { socket } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
@@ -201,6 +202,9 @@ export default function AlliedHealerRenderer({
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 
     let deltaAngle = targetRotation.current - group.rotation.y;

@@ -31,7 +31,7 @@ import GhoulSummonRitual from './enemies/GhoulSummonRitual';
 import InfestedZombieRiseVFX from './enemies/InfestedZombieRiseVFX';
 import EnemySummonFlameVFX from './enemies/EnemySummonFlameVFX';
 import StaggerProcLightning from './enemies/StaggerProcLightning';
-import KnightSmiteLightning from './enemies/KnightSmiteLightning';
+import KnightSmiteLightning, { type KnightSmiteLightningVariant } from './enemies/KnightSmiteLightning';
 import KnightFrostProjectile, { KnightFrostImpact } from './enemies/KnightFrostProjectile';
 import KnightDeathGraspProjectile from './enemies/KnightDeathGraspProjectile';
 import WarlockProjectile from './enemies/WarlockProjectile';
@@ -46,16 +46,20 @@ import BossSpearProjectile from './enemies/BossSpearProjectile';
 import BossLeapShockwave, { type LeapShockwaveVariant } from './enemies/BossLeapShockwave';
 import Boss2ArchonLightning from './enemies/Boss2ArchonLightning';
 import Boss3NovaDiscs, { type Boss3NovaBurst } from './enemies/Boss3NovaDiscs';
+import TitanStompShockwave, { type TitanStompShockwaveBurst } from './enemies/TitanStompShockwave';
 import GoldPileDropEffect from './enemies/GoldPileDropEffect';
 import GoldCollectMoteEffect from './enemies/GoldCollectMoteEffect';
 import BowShotImpact from './weapons/BowShotImpact';
 import EntropicBoltImpact from './weapons/EntropicBoltImpact';
 import SabreImpactEffect from './weapons/SabreImpactEffect';
 import CrescentSlashEffect from './weapons/CrescentSlashEffect';
+import MortalStrikeEffect from './weapons/MortalStrikeEffect';
+import PsionicBladeSliceEffect from './weapons/PsionicBladeSliceEffect';
 import PlayerHitBurst from './weapons/PlayerHitBurst';
 import FrozenEffect from './weapons/FrozenEffect';
 import StunnedEffect from './weapons/StunnedEffect';
 import type { ImpactEffectEvent } from '@/utils/ImpactEffectManager';
+import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
 import {
   EREBUS_PLAYER_DAMAGE_FEEDBACK_EVENT,
   type PlayerDamageFeedbackTone,
@@ -235,6 +239,7 @@ import CastleWallCollision from '@/components/environment/CastleWallCollision';
 import PillarCollision from '@/components/environment/PillarCollision';
 import { MAIN_ARENA_HEX_RADIUS, MAIN_MAP_RADIUS, clampToMainArenaXZ } from '@/utils/mapConstants';
 import { COOP_MAIN_ENTRY_Z, rotationYTowardArenaCenter } from '@/utils/coopArenaLayout';
+import { KNIGHT_SMITE_RADIUS_BASE } from '@/utils/knightCoopAbilitiesConstants';
 import { MUSHROOM_COUNT, buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
 import { MUSHROOM_MAX_HP } from '@/utils/mushroomConstants';
 import MushroomEruptionVfx from '@/components/environment/MushroomEruptionVfx';
@@ -256,6 +261,19 @@ const TemplarRenderer = React.lazy(() => import('./enemies/TemplarRenderer'));
 const TitanRenderer = React.lazy(() => import('./enemies/TitanRenderer'));
 const ViperRenderer = React.lazy(() => import('./enemies/ViperRenderer'));
 const WarlockRenderer = React.lazy(() => import('./enemies/WarlockRenderer'));
+
+function knightSmiteVariantFromSoulType(soulType?: string): KnightSmiteLightningVariant {
+  switch (soulType) {
+    case 'blue':
+      return 'enemy-blue';
+    case 'green':
+      return 'enemy-green';
+    case 'purple':
+      return 'enemy-purple';
+    default:
+      return 'enemy-red';
+  }
+}
 
 /**
  * In-canvas perf helper. Two jobs, both cheap and isolated:
@@ -302,11 +320,15 @@ function RenderPerfHud() {
     (window as any).erebusMemStats = () => {
       let sceneObjects = 0;
       let meshes = 0;
+      let instancedMeshes = 0;
       let lights = 0;
+      let shadowCasters = 0;
       scene.traverse((o: any) => {
         sceneObjects++;
-        if (o.isMesh || o.isSkinnedMesh) meshes++;
+        if (o.isInstancedMesh) instancedMeshes++;
+        else if (o.isMesh || o.isSkinnedMesh) meshes++;
         if (o.isLight) lights++;
+        if (o.castShadow) shadowCasters++;
       });
       const mem = (performance as { memory?: { usedJSHeapSize: number } }).memory;
       const stats = {
@@ -316,7 +338,10 @@ function RenderPerfHud() {
         programs: gl.info.programs?.length ?? 0,
         sceneObjects,
         meshes,
+        instancedMeshes,
         lights,
+        shadowCasters,
+        drawCalls: gl.info.render.calls,
         calcCache: calculationCache.getStats?.() ?? 'n/a',
       };
       // eslint-disable-next-line no-console
@@ -767,6 +792,8 @@ interface CoopGameSceneProps {
   portalsUnlocked?: boolean;
   /** Called when the player presses X near the combat pedestal in the main arena. */
   onCombatArenaPedestalInteract?: (rewardKind?: string | null) => void;
+  /** Merchant dash charge purchased this run — grants a 4th dash orbital. */
+  extraDashChargePurchased?: boolean;
   /** Proximity hint above the HUD health bar ("Press 'x' to interact"). */
   onInteractHintChange?: (hint: string | null) => void;
   /** Local player died — e.g. show defeat UI. */
@@ -1069,6 +1096,7 @@ export function CoopGameScene({
   pedestalBoonReady = false,
   portalsUnlocked = false,
   onCombatArenaPedestalInteract,
+  extraDashChargePurchased = false,
   onInteractHintChange,
   onLocalPlayerDefeated,
   onLocalPlayerRevived,
@@ -1078,6 +1106,8 @@ export function CoopGameScene({
     players,
     setPlayers,
     enemies,
+    enemiesRef,
+    enemyTransformsRef,
     gameStarted,
     combatArenaActive,
     gameMode,
@@ -1125,15 +1155,12 @@ export function CoopGameScene({
     coopCombatArenaEnterSeq,
     coopMainArenaIntermissionSeq,
     coopTransitionOverlay,
-    hideCoopPortalTransition,
     coopClearedRoomColor,
     coopTerrainTheme,
     coopCurrentRoomKind,
     coopClearedRoomKind,
   } = useMultiplayer();
 
-  const enemiesRef = useRef(enemies);
-  enemiesRef.current = enemies;
   const playersRef = useRef(players);
   playersRef.current = players;
 
@@ -1176,7 +1203,12 @@ export function CoopGameScene({
     () => gameMode === 'coop' && gameStarted && combatArenaActive && coopBossThroneArena,
     [gameMode, gameStarted, combatArenaActive, coopBossThroneArena],
   );
-  const isHexCombatArena = coopCurrentRoomKind === 'stat' || coopCurrentRoomKind === 'trial';
+  const isHexCombatArena =
+    coopCurrentRoomKind === 'stat'
+    || coopCurrentRoomKind === 'trial'
+    || coopCurrentRoomKind === 'merchant';
+  const hexArenaVariant =
+    coopCurrentRoomKind === 'merchant' ? 'merchant' as const : 'stat' as const;
 
   const coopArenaClampBounds = useMemo(() => {
     if (inThroneRoom || inBossThroneArena) return COOP_THRONE_ROOM_RADIUS;
@@ -1241,38 +1273,6 @@ export function CoopGameScene({
     },
     [damageMushroom, socket?.id],
   );
-
-  /**
-   * After `combat-arena-entered`, keep the HTML loading overlay until:
-   *   1. React/WebGL settle (rAF×2)
-   *   2. A minimum cosmetic display time has elapsed
-   *
-   * Ally model warmups (knight + allied-healer) are now fired during the
-   * initial loading screen via preloadAllEnemyModels(), so this overlay is
-   * a purely cosmetic crossfade — no real asset loading happens here.
-   */
-  const COOP_PORTAL_OVERLAY_MIN_MS = 280;
-  useEffect(() => {
-    if (coopCombatArenaEnterSeq === 0) return;
-    let cancelled = false;
-
-    const minWait = new Promise<void>(resolve => setTimeout(resolve, COOP_PORTAL_OVERLAY_MIN_MS));
-
-    let raf2Id = 0;
-    const raf1Id = requestAnimationFrame(() => {
-      raf2Id = requestAnimationFrame(() => {
-        if (cancelled) return;
-        void minWait.then(() => {
-          if (!cancelled) hideCoopPortalTransition();
-        });
-      });
-    });
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf1Id);
-      cancelAnimationFrame(raf2Id);
-    };
-  }, [coopCombatArenaEnterSeq, hideCoopPortalTransition]);
 
   // Debug multiplayer state
   useEffect(() => {
@@ -1342,7 +1342,6 @@ export function CoopGameScene({
   }, [coopTransitionOverlay]);
   // Real-time position refs for enemy players to enable ghost trail updates
   const enemyPlayerPositionRefs = useRef<Map<string, { current: Vector3 }>>(new Map());
-  const [playerPosition, setPlayerPosition] = useState(new Vector3(0, 0.5, COOP_MAIN_DEFAULT_SPAWN_Z));
   const [playerEntity, setPlayerEntity] = useState<any>(null);
 
   /** Warlock orb wind-up duration — keep aligned with WarlockRenderer LAUNCH_ANIMATION_DURATION & warlock_launch.glb */
@@ -1711,14 +1710,33 @@ export function CoopGameScene({
           }))),
       ...Array.from(enemies.values())
         .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-healer' && e.type !== 'player-zombie')
-        .map((e) => ({
-          id: e.id,
-          position: new Vector3(e.position.x, e.position.y, e.position.z),
-          health: e.health,
-        })),
+        .map((e) => {
+          const live = enemyTransformsRef.current.get(e.id);
+          const p = live?.position ?? e.position;
+          return {
+            id: e.id,
+            position: new Vector3(p.x, p.y, p.z),
+            health: e.health,
+          };
+        }),
     ],
-    [gameMode, players, enemies, socket?.id],
+    [gameMode, players, enemies, socket?.id, enemyTransformsRef],
   );
+
+  const getLiveCoopEnemyData = useCallback(() => {
+    return Array.from(enemiesRef.current.values())
+      .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-healer' && e.type !== 'player-zombie')
+      .map((e) => {
+        const live = enemyTransformsRef.current.get(e.id);
+        const p = live?.position ?? e.position;
+        return {
+          id: e.id,
+          position: new Vector3(p.x, p.y, p.z),
+          health: e.health,
+          maxHealth: e.maxHealth,
+        };
+      });
+  }, [enemiesRef, enemyTransformsRef]);
 
   const getArcticBlizzardEnemyData = useCallback(() => {
     const base = summonTotemEnemyData;
@@ -1849,6 +1867,8 @@ export function CoopGameScene({
   
   // Track server enemy to local ECS entity mapping for co-op damage
   const serverEnemyEntities = useRef<Map<string, number>>(new Map());
+  /** Sync ref-only enemy positions into ECS before Engine world.update (projectile/collision spatial hash). */
+  const syncCoopEnemyEcsTransformsRef = useRef<() => void>(() => {});
   const mushroomEntityByIndexRef = useRef<Map<number, number>>(new Map());
 
   // Track stealth states for players
@@ -2149,6 +2169,8 @@ export function CoopGameScene({
   }
   const [bossLeapShockwaves, setBossLeapShockwaves] = useState<BossLeapShockwaveState[]>([]);
 
+  const [titanStompShockwaves, setTitanStompShockwaves] = useState<TitanStompShockwaveBurst[]>([]);
+
   // Ghoul / templar leap telegraphs (post boss1)
   const [mobLeapTelegraphs, setMobLeapTelegraphs] = useState<
     { id: string; x: number; y: number; z: number; durationMs: number; theme: 'boss' | 'templar' }[]
@@ -2279,7 +2301,8 @@ export function CoopGameScene({
   interface KnightSmiteLightningState {
     id: string;
     position: Vector3;
-    variant?: 'enemy-red' | 'ally-gold';
+    variant?: KnightSmiteLightningVariant;
+    widthScale?: number;
   }
   const [knightSmiteLightnings, setKnightSmiteLightnings] = useState<KnightSmiteLightningState[]>([]);
   interface GreaterHealBeamState {
@@ -3568,6 +3591,16 @@ export function CoopGameScene({
     }
   }, [statPointData, playerLevel, talentLoadout, abilityLoadout, effectiveCombatStats]);
 
+  useEffect(() => {
+    if (!extraDashChargePurchased || !engineReady || playerEntityRef.current === null) return;
+    const world = engineRef.current?.getWorld();
+    const ent = world?.getEntity(playerEntityRef.current);
+    const movement = ent?.getComponent(Movement);
+    if (movement && movement.maxDashCharges < 4) {
+      movement.setMaxDashCharges(4);
+    }
+  }, [extraDashChargePurchased, engineReady]);
+
   const [weaponState, setWeaponState] = useState({
     currentWeapon: WeaponType.NONE,
     currentSubclass: WeaponSubclass.ELEMENTAL,
@@ -4129,9 +4162,15 @@ export function CoopGameScene({
                     lifetime: entropicConfig.lifetime || 1.75, 
                     piercing: entropicConfig.piercing ?? false, 
                     opacity: entropicConfig.opacity || 0.8,
-                    colorVariant: entropicConfig.colorVariant || 'purple',
+                    colorVariant: entropicConfig.colorVariant || DEFAULT_ENTROPIC_COLOR_VARIANT,
                     ...(entropicConfig.entropicBoltTalent
                       ? { entropicBoltTalent: entropicConfig.entropicBoltTalent }
+                      : {}),
+                    ...(entropicConfig.entropicFragmentation
+                      ? { entropicFragmentation: true as const }
+                      : {}),
+                    ...(typeof entropicConfig.entropicFragmentHop === 'number'
+                      ? { entropicFragmentHop: entropicConfig.entropicFragmentHop }
                       : {}),
                     isCryoflame: isCryoflame // Pass Cryoflame state to projectile system
                   }
@@ -5962,13 +6001,22 @@ export function CoopGameScene({
       applyServerDeathGraspPull(data);
     };
 
-    // Red Knight — Smite (75 physical damage)
+    // Knight Smite — physical damage (themed by soulType; wider post-Boss-2)
     const handleKnightSmite = (data: any) => {
       if (data.targetPosition) {
         const p = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
+        const variant = knightSmiteVariantFromSoulType(data.soulType);
+        const widthScale =
+          (typeof data.radius === 'number' ? data.radius : KNIGHT_SMITE_RADIUS_BASE) /
+          KNIGHT_SMITE_RADIUS_BASE;
         setKnightSmiteLightnings(prev => [
           ...prev,
-          { id: `knight-smite-${data.knightId}-${Date.now()}`, position: p.clone() },
+          {
+            id: `knight-smite-${data.knightId}-${Date.now()}`,
+            position: p.clone(),
+            variant,
+            widthScale,
+          },
         ]);
         window.audioSystem?.playEnemyKnightSmiteSound(p);
       } else if (data.position) {
@@ -6357,7 +6405,7 @@ export function CoopGameScene({
             position = transform.position.clone();
           } else {
             // Fallback to current player position from state
-            position = playerPosition.clone();
+            position = realTimePlayerPositionRef.current.clone();
           }
         } else {
           // For other players, use the multiplayer context or effectData
@@ -7068,6 +7116,26 @@ export function CoopGameScene({
       }
     };
 
+    const handleTitanStompShockwave = (data: {
+      titanId: string;
+      origin: { x: number; y: number; z: number };
+      direction: { ux: number; uz: number };
+      maxRange: number;
+      travelMs: number;
+      timestamp: number;
+    }) => {
+      setTitanStompShockwaves((prev) => [
+        ...prev,
+        {
+          id: `titan-stomp-${data.titanId}-${data.timestamp}`,
+          origin: data.origin,
+          direction: data.direction,
+          maxRange: data.maxRange,
+          travelMs: data.travelMs,
+        },
+      ]);
+    };
+
     const handleBossThrowSpear = (data: {
       bossId: string;
       startPosition: { x: number; y: number; z: number };
@@ -7572,6 +7640,7 @@ export function CoopGameScene({
     socket.on('ghoul-leap-land', handleGhoulLeapLand);
     socket.on('templar-leap-start', handleTemplarLeapStart);
     socket.on('templar-leap-land', handleTemplarLeapLand);
+    socket.on('titan-stomp-shockwave', handleTitanStompShockwave);
     socket.on('boss-throw-spear', handleBossThrowSpear);
     socket.on('boss-tectonic-spike-telegraph', handleBossTectonicSpikeTelegraph);
     socket.on('boss-tectonic-spike-appear', handleBossTectonicSpikeAppear);
@@ -7982,6 +8051,7 @@ export function CoopGameScene({
       socket.off('ghoul-leap-land', handleGhoulLeapLand);
       socket.off('templar-leap-start', handleTemplarLeapStart);
       socket.off('templar-leap-land', handleTemplarLeapLand);
+      socket.off('titan-stomp-shockwave', handleTitanStompShockwave);
       socket.off('boss-throw-spear', handleBossThrowSpear);
       socket.off('boss-tectonic-spike-telegraph', handleBossTectonicSpikeTelegraph);
       socket.off('boss-tectonic-spike-appear', handleBossTectonicSpikeAppear);
@@ -8212,11 +8282,7 @@ export function CoopGameScene({
         const entity = world.getEntity(entityId);
         
         if (entity) {
-          // Update position
-          const transform = entity.getComponent(Transform);
-          if (transform) {
-            transform.setPosition(serverEnemy.position.x, serverEnemy.position.y, serverEnemy.position.z);
-          }
+          // Position/rotation synced every frame from enemyTransformsRef (see useFrame below).
           
           // Update health
           const health = entity.getComponent(Health);
@@ -8281,7 +8347,7 @@ export function CoopGameScene({
       mushroomEntityByIndexRef.current.clear();
     };
 
-    if (inThroneRoom || inBossThroneArena) {
+    if (inThroneRoom || inBossThroneArena || isHexCombatArena) {
       clearAllMushrooms();
       return;
     }
@@ -8343,7 +8409,7 @@ export function CoopGameScene({
       world.notifyEntityAdded(entity);
       mushroomEntityByIndexRef.current.set(i, entity.id);
     }
-  }, [gameStarted, engineReady, gameMode, inThroneRoom, inBossThroneArena, effectiveMushroomHealth]);
+  }, [gameStarted, engineReady, gameMode, inThroneRoom, inBossThroneArena, isHexCombatArena, effectiveMushroomHealth]);
 
   // Sync server players and towers with local ECS entities for PVP damage system
   useEffect(() => {
@@ -8480,6 +8546,28 @@ export function CoopGameScene({
     }
   }, [players, gameStarted, gameMode, socket?.id, engineReady]);
 
+  const syncCoopEnemyEcsTransforms = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const world = engine.getWorld();
+    serverEnemyEntities.current.forEach((entityId, enemyId) => {
+      const live = enemyTransformsRef.current.get(enemyId);
+      if (!live) return;
+      const entity = world.getEntity(entityId);
+      if (!entity) return;
+      const ecsTransform = entity.getComponent(Transform);
+      if (ecsTransform) {
+        ecsTransform.setPosition(live.position.x, live.position.y, live.position.z);
+      }
+      if (entity.userData) {
+        entity.userData.rotation = live.rotation;
+      }
+    });
+  }, [enemyTransformsRef]);
+
+  useEffect(() => {
+    syncCoopEnemyEcsTransformsRef.current = syncCoopEnemyEcsTransforms;
+  }, [syncCoopEnemyEcsTransforms]);
 
   // Initialize the PVP game engine
 
@@ -8497,6 +8585,8 @@ export function CoopGameScene({
     // Create engine
     const engine = new Engine({ enableDebug: true });
     engineRef.current = engine;
+    const preWorldUpdateHook = () => syncCoopEnemyEcsTransformsRef.current();
+    engine.addPreWorldUpdateHook(preWorldUpdateHook);
 
     // Initialize with canvas
     const canvas = gl.domElement;
@@ -8549,6 +8639,7 @@ export function CoopGameScene({
       isInitialized.current = false;
       setEngineReady(false);
       if (engineRef.current) {
+        engineRef.current.removePreWorldUpdateHook(preWorldUpdateHook);
         engineRef.current.destroy();
         engineRef.current = null;
       }
@@ -9047,12 +9138,13 @@ export function CoopGameScene({
       // Reset object pool temporary objects for this frame
       pvpObjectPool.resetFrameTemporaries();
 
+      // Enemy ECS transforms sync in Engine preWorldUpdateHook (before collision/projectile systems).
+
       // Update player position for dragon renderer
       if (playerEntity) {
         const transform = playerEntity.getComponent(Transform);
         if (transform && transform.position) {
-          const newPosition = transform.position.clone();
-          setPlayerPosition(newPosition);
+          const newPosition = transform.position;
           realTimePlayerPositionRef.current.copy(newPosition);
 
 
@@ -9784,6 +9876,10 @@ export function CoopGameScene({
         // Includes FRAGMENTATION child bolts so peers see ricochets when the shooter proc succeeds.
         broadcastPlayerAttack('crossentropy_bolt', position, direction, animationData);
       });
+      projectileSystemForBroadcast.setEntropicBoltBroadcastCallback((position, direction, projectileConfig) => {
+        const animationData: BroadcastPlayerAttackAnimationData = { projectileConfig };
+        broadcastPlayerAttack('entropic_bolt', position, direction, animationData);
+      });
     }
 
     // Melee attack sounds are now handled through animation state broadcasting only
@@ -10027,6 +10123,7 @@ export function CoopGameScene({
     // Cleanup function
     return () => {
       projectileSystemForBroadcast?.setCrossentropyBoltBroadcastCallback(undefined);
+      projectileSystemForBroadcast?.setEntropicBoltBroadcastCallback(undefined);
       setPlayerEntity(null);
       playerEntityRef.current = null;
       controlSystemRef.current = null;
@@ -10129,6 +10226,7 @@ export function CoopGameScene({
                 thronePortalsLocked={
                   !selectedWeapons || selectedWeapons.primary === WeaponType.NONE
                 }
+                equippedWeapon={selectedWeapons?.primary ?? WeaponType.NONE}
               />
               {engineRef.current?.getWorld() && (
                 <PillarCollision world={engineRef.current.getWorld()} positions={THRONE_PILLAR_POSITIONS} />
@@ -10162,7 +10260,8 @@ export function CoopGameScene({
               {isHexCombatArena ? (
                 <HexCombatArena
                   key={`coop-hex-env-${coopCombatArenaEnterSeq}-${coopCurrentRoomKind}`}
-                  variant="stat"
+                  variant={hexArenaVariant}
+                  combatActive={combatArenaActive && enemies.size > 0}
                 />
               ) : (
                 <Environment
@@ -10234,7 +10333,8 @@ export function CoopGameScene({
       {playerEntity && engineRef.current && (
         <CharacterRenderer
           entityId={playerEntity.id}
-          position={playerPosition}
+          position={realTimePlayerPositionRef.current}
+          positionRef={realTimePlayerPositionRef}
           world={engineRef.current.getWorld()}
           isLocalPlayer={true}
           currentWeapon={weaponState.currentWeapon}
@@ -10254,7 +10354,8 @@ export function CoopGameScene({
       {localPlayerFrozenEffects.map(effect => (
         <FrozenEffect
           key={effect.id}
-          position={playerPosition.clone()}
+          position={realTimePlayerPositionRef.current}
+          positionRef={realTimePlayerPositionRef}
           duration={effect.duration}
           startTime={effect.startTime}
           onComplete={() => setLocalPlayerFrozenEffects(prev => prev.filter(e => e.id !== effect.id))}
@@ -10264,7 +10365,8 @@ export function CoopGameScene({
       {localPlayerStunnedEffects.map(effect => (
         <StunnedEffect
           key={effect.id}
-          position={playerPosition.clone()}
+          position={realTimePlayerPositionRef.current}
+          positionRef={realTimePlayerPositionRef}
           duration={effect.duration}
           startTime={effect.startTime}
           onComplete={() => setLocalPlayerStunnedEffects(prev => prev.filter(e => e.id !== effect.id))}
@@ -10275,7 +10377,7 @@ export function CoopGameScene({
       {playerEntity && engineRef.current && weaponState.currentWeapon !== WeaponType.KNIGHT && (
         <DragonRenderer
           entityId={playerEntity.id}
-          position={playerPosition}
+          position={realTimePlayerPositionRef.current}
           realTimePositionRef={realTimePlayerPositionRef}
           world={engineRef.current!.getWorld()}
           currentWeapon={weaponState.currentWeapon}
@@ -10383,7 +10485,7 @@ export function CoopGameScene({
                   // The CombatSystem will handle updating the health component and triggering effects
 
                   // Broadcast healing to other players
-                  broadcastPlayerHealing(amount, 'viper_sting', playerPosition);
+                  broadcastPlayerHealing(amount, 'viper_sting', realTimePlayerPositionRef.current);
                 }
               }
             }
@@ -10395,7 +10497,7 @@ export function CoopGameScene({
             const direction = new Vector3();
             camera.getWorldDirection(direction);
             direction.normalize();
-            broadcastPlayerAttack('scythe_swing', playerPosition, direction, {
+            broadcastPlayerAttack('scythe_swing', realTimePlayerPositionRef.current, direction, {
               isSpinning: true
             });
           }}
@@ -10404,7 +10506,7 @@ export function CoopGameScene({
             const direction = new Vector3();
             camera.getWorldDirection(direction);
             direction.normalize();
-            broadcastPlayerAttack('sword_swing', playerPosition, direction, {
+            broadcastPlayerAttack('sword_swing', realTimePlayerPositionRef.current, direction, {
               comboStep: weaponState.swordComboStep
             });
           }}
@@ -10413,14 +10515,14 @@ export function CoopGameScene({
             const direction = new Vector3();
             camera.getWorldDirection(direction);
             direction.normalize();
-            broadcastPlayerAttack('sabres_swing', playerPosition, direction);
+            broadcastPlayerAttack('sabres_swing', realTimePlayerPositionRef.current, direction);
           }}
           onRunebladeSwingComplete={() => {
             controlSystemRef.current?.onSwordSwingComplete(); // Reuse Sword swing complete for combo advancement
             const direction = new Vector3();
             camera.getWorldDirection(direction);
             direction.normalize();
-            broadcastPlayerAttack('runeblade_swing', playerPosition, direction, {
+            broadcastPlayerAttack('runeblade_swing', realTimePlayerPositionRef.current, direction, {
               comboStep: weaponState.swordComboStep
             });
           }}
@@ -10429,7 +10531,7 @@ export function CoopGameScene({
             const direction = new Vector3();
             camera.getWorldDirection(direction);
             direction.normalize();
-            broadcastPlayerAttack('spear_swing', playerPosition, direction);
+            broadcastPlayerAttack('spear_swing', realTimePlayerPositionRef.current, direction);
           }}
           onChargeComplete={() => {
             controlSystemRef.current?.onChargeComplete();
@@ -10437,7 +10539,7 @@ export function CoopGameScene({
             const direction = new Vector3();
             camera.getWorldDirection(direction);
             direction.normalize();
-            broadcastPlayerAttack('sword_charge_spin', playerPosition, direction, {
+            broadcastPlayerAttack('sword_charge_spin', realTimePlayerPositionRef.current, direction, {
               isSpinning: true,
               storedCharge: shouldApplyCycloneRushChargeSpin(talentLoadout),
             });
@@ -10844,6 +10946,7 @@ export function CoopGameScene({
           key={fx.id}
           position={fx.position}
           variant={fx.variant}
+          widthScale={fx.widthScale}
           onComplete={() => setKnightSmiteLightnings(prev => prev.filter(e => e.id !== fx.id))}
         />
       ))}
@@ -11464,6 +11567,14 @@ export function CoopGameScene({
         />
       ))}
 
+      {titanStompShockwaves.map((burst) => (
+        <TitanStompShockwave
+          key={burst.id}
+          burst={burst}
+          onComplete={() => setTitanStompShockwaves((prev) => prev.filter((x) => x.id !== burst.id))}
+        />
+      ))}
+
       {playerHitBursts.map((burst) => (
         <PlayerHitBurst
           key={burst.id}
@@ -11508,12 +11619,36 @@ export function CoopGameScene({
             />
           );
         }
+        if (e.type === 'mortal-strike-effect') {
+          return (
+            <MortalStrikeEffect
+              key={e.id}
+              position={e.position}
+              direction={e.direction}
+              theme={e.colorVariant}
+              onComplete={onImpactDone}
+            />
+          );
+        }
+        if (e.type === 'psionic-blade-slice' && e.enemyEntityId && engineRef.current) {
+          return (
+            <PsionicBladeSliceEffect
+              key={e.id}
+              enemyEntityId={e.enemyEntityId}
+              direction={e.direction}
+              bladeSide={e.bladeSide}
+              world={engineRef.current.getWorld()}
+              onComplete={onImpactDone}
+            />
+          );
+        }
         return (
           <EntropicBoltImpact
             key={e.id}
             position={e.position}
             direction={e.direction}
             colorVariant={e.colorVariant}
+            isCryoflame={e.isCryoflame}
             onComplete={onImpactDone}
           />
         );
@@ -11756,13 +11891,7 @@ export function CoopGameScene({
       {/* PVP Smite Effects */}
       {pvpSmiteEffects.map(effect => {
         // All living PvE enemies (same idea as Lightning Storm); Smite applies its own strike radius in Smite.tsx
-        const smiteEnemyData = Array.from(enemies.values())
-          .filter(enemy => !enemy.isDying && enemy.health > 0)
-          .map(enemy => ({
-            id: enemy.id,
-            position: new Vector3(enemy.position.x, enemy.position.y, enemy.position.z),
-            health: enemy.health
-          }));
+        const smiteEnemyData = getLiveCoopEnemyData().filter((enemy) => enemy.health > 0);
 
         const isLocalPlayerSmite = !!socket?.id && effect.playerId === socket.id;
         const loadoutForSmite = talentLoadout;
@@ -11824,21 +11953,21 @@ export function CoopGameScene({
         // Get enemy data for Lightning Storm targeting
         const lightningOrigin = new Vector3(effect.position.x, effect.position.y, effect.position.z);
         const lightningRange = 10;
-        const lightningStormEnemyData = Array.from(enemies.values())
+        const lightningStormEnemyData = getLiveCoopEnemyData()
           .filter(enemy => {
-            if (enemy.isDying || enemy.health <= 0) return false;
-            if (enemy.alliedUnit === true || enemy.type === 'allied-knight' ||
-                enemy.type === 'allied-healer' || enemy.type === 'player-zombie') return false;
-            const ePos = new Vector3(enemy.position.x, enemy.position.y, enemy.position.z);
-            return ePos.distanceTo(lightningOrigin) <= lightningRange;
+            if (enemy.health <= 0) return false;
+            return enemy.position.distanceTo(lightningOrigin) <= lightningRange;
           })
-          .map(enemy => ({
-            id: enemy.id,
-            position: new Vector3(enemy.position.x, enemy.position.y, enemy.position.z),
-            health: enemy.health,
-            isBoss: enemy.type === 'boss' || enemy.type === 'boss2' || enemy.type === 'boss3',
-            isSkeletonMinion: enemy.type === 'bossSkeleton'
-          }));
+          .map(enemy => {
+            const meta = enemiesRef.current.get(enemy.id);
+            return {
+              id: enemy.id,
+              position: enemy.position,
+              health: enemy.health,
+              isBoss: meta?.type === 'boss' || meta?.type === 'boss2' || meta?.type === 'boss3',
+              isSkeletonMinion: meta?.type === 'bossSkeleton',
+            };
+          });
 
         return (
           <LightningStorm
@@ -11924,13 +12053,7 @@ export function CoopGameScene({
       {/* Death Grasp Projectile Effects */}
       {pvpDeathGraspEffects.map(effect => {
         // Build NPC enemy array for hit detection
-        const nearbyEnemies = Array.from(enemies.values())
-          .filter(e => !e.isDying && e.health > 0)
-          .map(e => ({
-            id: e.id,
-            position: new Vector3(e.position.x, e.position.y, e.position.z),
-            health: e.health,
-          }));
+        const nearbyEnemies = getLiveCoopEnemyData();
 
         // Compute target position: aim 18 units in the cast direction
         const targetPos = effect.startPosition.clone().add(
@@ -12216,6 +12339,7 @@ function createCoopPlayer(
   player.userData.playerId = 'unknown';
   player.userData.isPlayer = true; // Mark as local player for manager systems
 
+  world.notifyEntityAdded(player);
   return player;
 }
 

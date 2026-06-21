@@ -24,6 +24,7 @@ import CrossentropyMeteor from '@/components/projectiles/CrossentropyMeteor';
 import CloudkillArrow from '@/components/projectiles/CloudkillArrow';
 import VenomEffect from '@/components/projectiles/VenomEffect';
 import { Vector3, Color } from '@/utils/three-exports';
+import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
 import { CROSSENTROPY_PLAGUE_VENOM_MS, type CrossentropyVisualTheme, type FanOfKnivesFlourishTint, getFanOfKnivesDaggerColorsFromTint } from '@/utils/talents';
 
 function crossentropyThemeFromUserData(userData: Record<string, unknown>): CrossentropyVisualTheme {
@@ -45,7 +46,7 @@ interface ProjectileData {
   opacity?: number;
   ownerId?: string; // For tower projectiles
   isCryoflame?: boolean; // For Entropic Bolt Cryoflame mode
-  colorVariant?: string; // Entropic bolt roll color (purple / blue / red / green / arctic)
+  colorVariant?: string; // Entropic bolt color (rosegold default / talent-locked red|blue|green|arctic)
   entropicBoltTalent?: 'wrathful' | 'staggering' | 'infesting' | 'arctic';
   projectileType?: string; // For projectile type differentiation (e.g., burst_arrow)
   /** Trigger Finger talent — red uncharged bow tap arrow. */
@@ -280,7 +281,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
         const existing = projectileData.entropic.find(p => p.entityId === entity.id);
         const entropicTalent = userData.entropicBoltTalent as ProjectileData['entropicBoltTalent'] | undefined;
         const colorVariant =
-          entropicTalent === 'arctic' ? 'arctic' : (userData.colorVariant as string | undefined) || 'purple';
+          entropicTalent === 'arctic' ? 'arctic' : (userData.colorVariant as string | undefined) || DEFAULT_ENTROPIC_COLOR_VARIANT;
         if (existing) {
           existing.position.copy(transform.position);
           existing.colorVariant = colorVariant;

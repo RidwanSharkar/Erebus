@@ -23,6 +23,7 @@ export class Engine extends EventEmitter {
   private frameTime = 0;
   private updateTime = 0;
   private renderTime = 0;
+  private preWorldUpdateHooks: Array<() => void> = [];
 
   constructor(config: EngineConfig = {}) {
     super();
@@ -125,6 +126,22 @@ export class Engine extends EventEmitter {
     return this.debugMode;
   }
 
+  /** Runs synchronously before `world.update` each frame (e.g. sync ref-only enemy transforms into ECS). */
+  public addPreWorldUpdateHook(hook: () => void): void {
+    this.preWorldUpdateHooks.push(hook);
+  }
+
+  public removePreWorldUpdateHook(hook: () => void): void {
+    const index = this.preWorldUpdateHooks.indexOf(hook);
+    if (index !== -1) this.preWorldUpdateHooks.splice(index, 1);
+  }
+
+  private runPreWorldUpdateHooks(): void {
+    for (const hook of this.preWorldUpdateHooks) {
+      hook();
+    }
+  }
+
   private setupGameLoop(): void {
     // Handle fixed timestep updates (physics)
     this.gameLoop.on('fixedUpdate', ({ fixedDeltaTime }) => {
@@ -143,6 +160,8 @@ export class Engine extends EventEmitter {
 
       // Apply camera orbit before movement systems read input/camera basis
       (window as any).cameraSystem?.applyOrbitInput?.();
+
+      this.runPreWorldUpdateHooks();
 
       // Update world systems first so they can read input deltas
       this.world.update(deltaTime);
@@ -175,7 +194,8 @@ export class Engine extends EventEmitter {
 
   public destroy(): void {
     this.stop();
-    
+    this.preWorldUpdateHooks.length = 0;
+
     // Clean up systems
     this.world.destroy();
     this.inputManager.destroy();

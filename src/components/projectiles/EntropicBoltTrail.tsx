@@ -1,9 +1,10 @@
 import React, { useRef, useEffect, useMemo, type MutableRefObject } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Color, Mesh, Group, Points, Vector3, AdditiveBlending } from '@/utils/three-exports';
+import { computeEntropicDustScatter } from '@/utils/entropicBoltChaos';
 
 /** Shared with managers / bolt — trail opacity decays 1→0 over this window when despawn fade starts. */
-export const ENTROPIC_TRAIL_FADE_OUT_DURATION = 0.35;
+export const ENTROPIC_TRAIL_FADE_OUT_DURATION = 0.25;
 
 interface EntropicBoltTrailProps {
   color: Color;
@@ -19,8 +20,10 @@ interface EntropicBoltTrailProps {
   trailFadeOutDuration?: number;
 }
 
-const TRAIL_LENGTH = 60;
+const TRAIL_LENGTH = 45;
 const MIN_MOVEMENT = 0.03;
+const _dustOffset = new Vector3();
+const _flightFallback = new Vector3(0, 1, 0);
 
 const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
   color,
@@ -29,6 +32,7 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
   meshRef,
   opacity = 1,
   isCryoflame = false,
+  flightDirectionRef = null,
   trailFadeOutStartElapsed = null,
   trailFadeOutDuration = ENTROPIC_TRAIL_FADE_OUT_DURATION,
 }) => {
@@ -53,6 +57,10 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
   const dustOpa = useRef<Float32Array>(new Float32Array(TRAIL_LENGTH));
   const dustScl = useRef<Float32Array>(new Float32Array(TRAIL_LENGTH));
   const dustAge = useRef<Float32Array>(new Float32Array(TRAIL_LENGTH));
+
+  const dustSeeds = useRef<Float32Array>(
+    Float32Array.from({ length: TRAIL_LENGTH }, (_, i) => (i * 0.618 + 0.13) % 1),
+  );
 
   useEffect(() => {
     if (meshRef.current && !isInitialized.current) {
@@ -101,6 +109,8 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
 
     const count = Math.min(pathHistory.current.length, TRAIL_LENGTH);
     const hist = pathHistory.current;
+    const time = state.clock.elapsedTime;
+    const flightDir = flightDirectionRef?.current ?? _flightFallback;
 
     for (let i = 0; i < TRAIL_LENGTH; i++) {
       if (i >= count) {
@@ -122,9 +132,17 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
       pos.current[i * 3 + 1] = center.y;
       pos.current[i * 3 + 2] = center.z;
 
-      dustPos.current[i * 3] = center.x;
-      dustPos.current[i * 3 + 1] = center.y;
-      dustPos.current[i * 3 + 2] = center.z;
+      computeEntropicDustScatter(
+        flightDir,
+        time,
+        dustSeeds.current[i],
+        trailAge,
+        size * 0.32,
+        _dustOffset,
+      );
+      dustPos.current[i * 3] = center.x + _dustOffset.x;
+      dustPos.current[i * 3 + 1] = center.y + _dustOffset.y;
+      dustPos.current[i * 3 + 2] = center.z + _dustOffset.z;
 
       const coreSize = size * (1.4 - trailAge * 0.9);
       const dustSize = size * (2.2 - trailAge * 1.4);

@@ -7,6 +7,7 @@ import { GLTFLoader } from 'three-stdlib';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadAllGltfAnimationClips, loadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
+import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 export type AnimState =
   | 'Idle' | 'Run' | 'Walk' | 'WalkBack' | 'WalkLeft' | 'WalkRight' | 'Backwards'
@@ -220,6 +221,8 @@ function CharacterModelRig({
     });
     return clone;
   }, [scene]);
+
+  useDisposeClonedMaterials(clonedScene);
 
   const animations = useMemo(() => {
     const rename = (clips: AnimationClip[], name: string) =>

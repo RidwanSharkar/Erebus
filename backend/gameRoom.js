@@ -24,6 +24,8 @@ const STAGGER_CAP_BOSS = 300;
 // disconnects mid-transition and never sends the confirmation.  Keep it large enough to never
 // race with a legitimate slow load.
 const COOP_COMBAT_TRANSITION_FALLBACK_MS = 30000;
+/** Delay after portal teleport before the initial enemy wave is added to the map. */
+const COOP_ROOM_ENTRY_ENEMY_SPAWN_DELAY_MS = 1000;
 const CROSSENTROPY_METEOR_SINGLE_CHANCE = 0.8;
 const CROSSENTROPY_METEOR_DOUBLE_CHANCE = 0.15;
 const CROSSENTROPY_METEOR_TRIPLE_CHANCE = 0.05;
@@ -59,7 +61,7 @@ function rollCrossentropyMeteorStrikeCount() {
 const CLOUDKILL_ARROW_COUNT_MIN = 4;
 const CLOUDKILL_ARROW_COUNT_MAX = 8;
 const CLOUDKILL_ARROW_DELAY_MS = 250;
-const CLOUDKILL_DAMAGE = 25;
+const CLOUDKILL_DAMAGE = 40;
 const CLOUDKILL_RADIUS = 1.5;
 const CLOUDKILL_WARNING_MS = 100;
 const CLOUDKILL_ARROW_SPEED = 26.5;
@@ -107,7 +109,7 @@ const THRONE_KNIGHT_CLUSTER_ARC_SPREAD = 0.14;
 
 /** Runeblade Blizzard talent — Chill; keep in sync with src/utils/talents.ts */
 const BLIZZARD_CHILL_STACK_DURATION_MS = 6000;
-const BLIZZARD_CHILL_STACKS_TO_FREEZE = 6;
+const BLIZZARD_CHILL_STACKS_TO_FREEZE = 5;
 const BLIZZARD_CHILL_SLOW_PER_STACK = 0.15;
 
 /**
@@ -135,6 +137,9 @@ const GOLD_VISUAL_PIECE_CAP = 25;
 const MERCHANT_HEAL_COST = 50;
 const MERCHANT_HEAL_AMOUNT = 125;
 const MERCHANT_ITEM_COUNT = 2;
+const MERCHANT_DASH_CHARGE_COST = 1000;
+const MERCHANT_WEAPON_TALENT_COST = 600;
+const MERCHANT_WEAPON_TALENT_MAX = 3;
 const MERCHANT_BOSS_ITEM_POOL = Object.freeze([
   { type: 'MANA_SHIELD', label: 'Mana Shield', stat: 'intellect', bonuses: { common: 8, rare: 15, epic: 20, legendary: 30 } },
   { type: 'COLOSSUS_LUNGS', label: 'Colossus Lungs', stat: 'stamina', bonuses: { common: 6, rare: 10, epic: 14, legendary: 20 } },
@@ -276,6 +281,10 @@ class GameRoom {
      * Defeated co-op bosses this run — picks next boss tier (Boss 1, Archon+, placeholder for Boss 3).
      */
     this.coopBossesDefeatedCount = 0;
+    /** Co-op: per-color visit counts for roman-numeral hall titles (red/blue/green/purple only). */
+    this.coopColoredRoomVisitCounts = { red: 0, blue: 0, green: 0, purple: 0 };
+    /** Co-op: boss chamber entries this run — drives CHAMBER OF DEATH I/II/III titles. */
+    this.coopBossRoomVisitCount = 0;
     /**
      * Set between waves on the main combat map (not throne): players pick next wave / boss in arena center.
      * @type {null | 'pick_wave2' | 'pick_boss' | 'pick_post_boss'}
@@ -327,6 +336,8 @@ class GameRoom {
     /** Co-op: active portal loading gate before enemy AI and damage can affect players. */
     this.coopCombatTransitionId = 0;
     this.coopCombatTransition = null;
+    /** Co-op: pending post-teleport initial wave spawn (`_schedulePostTeleportEnemyWave`). */
+    this._coopDelayedEnemyWaveTimeoutId = null;
 
     /** Co-op throne prep: timer hostile knight spawns (`true` on spawned `knight` enemies). */
     this._throneKnightFirstSpawnTimeoutId = null;
@@ -348,6 +359,24 @@ class GameRoom {
   _cancelAllTimers() {
     this._scheduledTimers.forEach(id => clearTimeout(id));
     this._scheduledTimers.clear();
+    this._coopDelayedEnemyWaveTimeoutId = null;
+  }
+
+  _clearCoopDelayedEnemyWaveTimer() {
+    if (this._coopDelayedEnemyWaveTimeoutId == null) return;
+    clearTimeout(this._coopDelayedEnemyWaveTimeoutId);
+    this._scheduledTimers.delete(this._coopDelayedEnemyWaveTimeoutId);
+    this._coopDelayedEnemyWaveTimeoutId = null;
+  }
+
+  /** Wait after portal teleport so players can reach the entry spawn before initial enemies appear. */
+  _schedulePostTeleportEnemyWave() {
+    this._clearCoopDelayedEnemyWaveTimer();
+    this._coopDelayedEnemyWaveTimeoutId = this._scheduleTimeout(() => {
+      this._coopDelayedEnemyWaveTimeoutId = null;
+      if (!this.gameStarted || !this.combatArenaActive || this.bossSpawned) return;
+      this.spawnEnemyWave();
+    }, COOP_ROOM_ENTRY_ENEMY_SPAWN_DELAY_MS);
   }
 
   /** Clear any active DoT setIntervals attached to an enemy object. */
@@ -410,12 +439,21 @@ class GameRoom {
     this._postBossIntermissionScheduled = false;
     this._coopNextWaveAfterPortal = 0;
     this.coopBossesDefeatedCount = 0;
+    this.coopColoredRoomVisitCounts = { red: 0, blue: 0, green: 0, purple: 0 };
+    this.coopBossRoomVisitCount = 0;
     this._clearCoopCombatTransitionTimer();
     this.coopCombatTransition = null;
     this.coopCombatTransitionId = 0;
     this._devSpawnBoss2 = false;
     this._devSpawnBoss3 = false;
     this._resetMushroomState();
+
+    if (this.gameMode === 'coop') {
+      for (const player of this.players.values()) {
+        player.merchantDashChargePurchased = false;
+        player.merchantWeaponTalentPurchases = 0;
+      }
+    }
 
     // Co-op: begin in the throne prep room — combat arena + enemies start after portal
     if (this.gameMode === 'coop') {
@@ -570,7 +608,7 @@ class GameRoom {
     }, THRONE_KNIGHT_FIRST_SPAWN_MS);
   }
 
-  /** Staging area (client grass/play disc `COOP_THRONE_ROOM_RADIUS` 32m in ThroneRoom; pillars/portals stay legacy layout). */
+  /** Staging area (client grass/play disc `COOP_THRONE_ROOM_RADIUS` 24m in ThroneRoom; pillars/portals stay legacy layout). */
   spawnThroneTrainingDummy() {
     if (this.gameMode !== 'coop') return;
     for (const def of THRONE_TRAINING_DUMMY_SPAWNS) {
@@ -757,6 +795,36 @@ class GameRoom {
     return COOP_ROOM_TYPES.includes(kind) ? kind : null;
   }
 
+  /** @param {string} roomKind @returns {number|null} 1-based visit index for colored halls */
+  _bumpColoredRoomVisit(roomKind) {
+    const kind = String(roomKind || '').toLowerCase();
+    if (!COOP_COLORED_ROOM_TYPES.includes(kind)) return null;
+    const next = (this.coopColoredRoomVisitCounts[kind] || 0) + 1;
+    this.coopColoredRoomVisitCounts[kind] = next;
+    return next;
+  }
+
+  /** @returns {number|null} visit index for the current colored room, if any */
+  _getCoopColoredRoomVisitIndexForEmit() {
+    const kind = this.currentCoopRoomKind != null ? String(this.currentCoopRoomKind).toLowerCase() : '';
+    if (!COOP_COLORED_ROOM_TYPES.includes(kind)) return null;
+    const count = this.coopColoredRoomVisitCounts[kind];
+    return count > 0 ? count : null;
+  }
+
+  /** @returns {number} 1-based boss chamber visit index */
+  _bumpBossRoomVisit() {
+    this.coopBossRoomVisitCount = (this.coopBossRoomVisitCount || 0) + 1;
+    return this.coopBossRoomVisitCount;
+  }
+
+  /** @returns {number|null} visit index when entering the boss chamber */
+  _getCoopBossRoomVisitIndexForEmit() {
+    if (this.currentCoopRoomKind !== 'boss') return null;
+    const count = this.coopBossRoomVisitCount;
+    return count > 0 ? count : null;
+  }
+
   getCoopCurrentRoomKind() {
     return this.currentCoopRoomKind;
   }
@@ -864,6 +932,7 @@ class GameRoom {
   }
 
   _clearAllCombatEnemies() {
+    this._clearCoopDelayedEnemyWaveTimer();
     this.coopWaveSpawnPlan = null;
     this.coopWaveReserveReleased = 0;
     this.roomHasMartyrs = false;
@@ -1018,6 +1087,7 @@ class GameRoom {
     this.pendingCoopRoomKind = pick;
     this.currentCoopRoomKind = pick;
     this.clearedCoopRoomKind = null;
+    this._bumpColoredRoomVisit(pick);
     this.stopThroneKnightSpawningLoop();
     this.removeAllThroneKnights();
     this.removeThroneTrainingDummy();
@@ -1028,7 +1098,7 @@ class GameRoom {
     this.coopThroneStep = 'rim';
     this.merchantInventory = [];
     this.teleportAllPlayersToCombatSpawn();
-    this.spawnEnemyWave();
+    this._schedulePostTeleportEnemyWave();
     const coopCombatTransitionId = this._beginCoopCombatTransition();
 
     if (this.io) {
@@ -1040,6 +1110,8 @@ class GameRoom {
         coopCurrentRoomKind: this.currentCoopRoomKind,
         coopClearedRoomKind: null,
         merchantInventory: this.getMerchantInventory(),
+        coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
+        coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         timestamp: Date.now(),
       });
@@ -1070,6 +1142,7 @@ class GameRoom {
     this.coopThroneBossKind = 'boss';
     this.currentCoopRoomKind = 'boss';
     this.clearedCoopRoomKind = null;
+    this._bumpBossRoomVisit();
     this.pendingCoopArchetype = null;
     this.pendingCoopRoomKind = null;
     this._postBossIntermissionScheduled = false;
@@ -1088,6 +1161,8 @@ class GameRoom {
         coopCurrentRoomKind: this.currentCoopRoomKind,
         coopClearedRoomKind: null,
         merchantInventory: this.getMerchantInventory(),
+        coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
+        coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         timestamp: Date.now(),
       });
@@ -1118,6 +1193,7 @@ class GameRoom {
     this.coopThroneBossKind = 'boss2';
     this.currentCoopRoomKind = 'boss';
     this.clearedCoopRoomKind = null;
+    this._bumpBossRoomVisit();
     this.pendingCoopArchetype = null;
     this.pendingCoopRoomKind = null;
     this._postBossIntermissionScheduled = false;
@@ -1136,6 +1212,8 @@ class GameRoom {
         coopCurrentRoomKind: this.currentCoopRoomKind,
         coopClearedRoomKind: null,
         merchantInventory: this.getMerchantInventory(),
+        coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
+        coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         timestamp: Date.now(),
       });
@@ -1166,6 +1244,7 @@ class GameRoom {
     this.coopThroneBossKind = 'boss3';
     this.currentCoopRoomKind = 'boss';
     this.clearedCoopRoomKind = null;
+    this._bumpBossRoomVisit();
     this.pendingCoopArchetype = null;
     this.pendingCoopRoomKind = null;
     this._postBossIntermissionScheduled = false;
@@ -1184,6 +1263,8 @@ class GameRoom {
         coopCurrentRoomKind: this.currentCoopRoomKind,
         coopClearedRoomKind: null,
         merchantInventory: this.getMerchantInventory(),
+        coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
+        coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         timestamp: Date.now(),
       });
@@ -1222,6 +1303,7 @@ class GameRoom {
       this.pendingCoopRoomKind = roomKind;
       this.currentCoopRoomKind = roomKind;
       this.clearedCoopRoomKind = null;
+      this._bumpColoredRoomVisit(roomKind);
       this.thronePortalOffer = [];
       this.coopMainArenaPortalPhase = null;
       const nextWave = this._coopNextWaveAfterPortal === 2 || this._coopNextWaveAfterPortal === 3
@@ -1235,7 +1317,7 @@ class GameRoom {
         this.generateMerchantInventory();
       } else {
         this.merchantInventory = [];
-        this.spawnEnemyWave();
+        this._schedulePostTeleportEnemyWave();
       }
       const coopCombatTransitionId = roomKind === 'merchant' ? null : this._beginCoopCombatTransition();
 
@@ -1248,6 +1330,8 @@ class GameRoom {
           coopCurrentRoomKind: this.currentCoopRoomKind,
           coopClearedRoomKind: null,
           merchantInventory: this.getMerchantInventory(),
+          coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
+          coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
           coopCombatTransitionId,
           timestamp: Date.now(),
         });
@@ -1283,6 +1367,7 @@ class GameRoom {
       }
       this.currentCoopRoomKind = 'boss';
       this.clearedCoopRoomKind = null;
+      this._bumpBossRoomVisit();
       this._postBossIntermissionScheduled = false;
       this.merchantInventory = [];
       this.teleportAllPlayersToCombatSpawn();
@@ -1299,6 +1384,8 @@ class GameRoom {
           coopCurrentRoomKind: this.currentCoopRoomKind,
           coopClearedRoomKind: null,
           merchantInventory: this.getMerchantInventory(),
+          coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
+          coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
           coopCombatTransitionId,
           timestamp: Date.now(),
         });
@@ -1322,6 +1409,7 @@ class GameRoom {
       this.pendingCoopRoomKind = pick;
       this.currentCoopRoomKind = pick;
       this.clearedCoopRoomKind = null;
+      this._bumpColoredRoomVisit(pick);
       this.thronePortalOffer = [];
       this.coopMainArenaPortalPhase = null;
       this.coopWaveIndex = 1;
@@ -1331,7 +1419,7 @@ class GameRoom {
       this.bossSpawned = false;
       this.merchantInventory = [];
       this.teleportAllPlayersToCombatSpawn();
-      this.spawnEnemyWave();
+      this._schedulePostTeleportEnemyWave();
       const coopCombatTransitionId = this._beginCoopCombatTransition();
 
       if (this.io) {
@@ -1343,6 +1431,8 @@ class GameRoom {
           coopCurrentRoomKind: this.currentCoopRoomKind,
           coopClearedRoomKind: null,
           merchantInventory: this.getMerchantInventory(),
+          coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
+          coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
           coopCombatTransitionId,
           timestamp: Date.now(),
         });
@@ -1439,6 +1529,8 @@ class GameRoom {
         guardbreak: false,
         overshock: false,
       },
+      merchantDashChargePurchased: false,
+      merchantWeaponTalentPurchases: 0,
     });
 
     // Position players for co-op mode
@@ -1544,6 +1636,7 @@ class GameRoom {
     for (const id of this.enemies.keys()) {
       this._clearEnemyDoTTimers(id);
     }
+    this._clearCoopDelayedEnemyWaveTimer();
     this._cancelAllTimers();
 
     // Clear all enemies and associated per-enemy maps
@@ -1670,6 +1763,21 @@ class GameRoom {
         health: player.health,
         maxHealth: player.maxHealth,
       });
+      if (meta?.stunMs && meta.stunMs > 0) {
+        this.io.to(this.roomId).emit('player-debuff', {
+          targetPlayerId: playerId,
+          debuffType: 'stunned',
+          duration: meta.stunMs,
+          effectData: {
+            position: {
+              x: player.position.x,
+              y: player.position.y,
+              z: player.position.z,
+            },
+          },
+          timestamp: Date.now(),
+        });
+      }
     }
   }
 
@@ -2597,10 +2705,10 @@ class GameRoom {
 
   /**
    * Wyvern Talons: instant remaining Concentrated Venom + optional Cobra venom remainder (client) as one hit.
-   * Clears server CV. Cobra cap matches client COBRA_SHOT venom (29 DPS × 6s).
+   * Clears server CV. Cobra cap matches Wyvern Sting intellect-scaled venom (29 + 3×Intellect DPS × 6s; ~50 Intellect ceiling).
    */
   detonateWyvernConcentratedVenom(enemyId, fromPlayerId, cobraRemainingRaw = 0) {
-    const WYVERN_COBRA_VENOM_MAX_BURST = 29 * 6;
+    const WYVERN_COBRA_VENOM_MAX_BURST = (29 + 3 * 50) * 6;
     let cobraRemaining = Math.max(0, Math.floor(Number(cobraRemainingRaw) || 0));
     cobraRemaining = Math.min(cobraRemaining, WYVERN_COBRA_VENOM_MAX_BURST);
 
@@ -2640,7 +2748,10 @@ class GameRoom {
 
     const sourceId = cobraRemaining > 0 ? fromPlayerId : (cvLastPlayerId || fromPlayerId);
     const tickPlayer = this.players.get(sourceId);
-    this.damageEnemy(enemyId, total, sourceId, tickPlayer || null, { damageType: 'wyvern_talons_detonate' });
+    this.damageEnemy(enemyId, total, sourceId, tickPlayer || null, {
+      damageType: 'wyvern_talons_detonate',
+      wyvernTalonsZombie: true,
+    });
   }
 
   applyEntanglementOnHit(enemyId, fromPlayerId, player) {
@@ -2963,7 +3074,7 @@ class GameRoom {
     }
 
     // Wyvern Bite — Concentrated Venom: +1 stack per Barrage hit (max 5), 17 DPS per stack, 8s from last stack
-    const wyvernVenomDpsPerStack = 17;
+    const wyvernVenomDpsPerStack = 31;
     const wyvernVenomMaxStacks = 5;
     const wyvernVenomDurationMs = 8000;
     if (
@@ -3332,6 +3443,44 @@ class GameRoom {
         hitMeta &&
         hitMeta.damageType === 'venom' &&
         hitMeta.wyvernBiteConcentratedDoT &&
+        fromPlayerId &&
+        fromPlayerId !== 'unknown' &&
+        enemy.type !== 'training-dummy' &&
+        !COOP_BOSS_TYPES.has(enemy.type) &&
+        enemy.type !== 'player-zombie' &&
+        this.enemyAI
+      ) {
+        this.enemyAI.trySpawnInfestedZombie(fromPlayerId, {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        });
+      }
+
+      // WYVERN TALONS: Reaping Talons kill
+      if (
+        hitMeta &&
+        hitMeta.damageType === 'reaping_talons' &&
+        hitMeta.wyvernTalonsZombie &&
+        fromPlayerId &&
+        fromPlayerId !== 'unknown' &&
+        enemy.type !== 'training-dummy' &&
+        !COOP_BOSS_TYPES.has(enemy.type) &&
+        enemy.type !== 'player-zombie' &&
+        this.enemyAI
+      ) {
+        this.enemyAI.trySpawnInfestedZombie(fromPlayerId, {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        });
+      }
+
+      // WYVERN TALONS: DoT detonation kill
+      if (
+        hitMeta &&
+        hitMeta.damageType === 'wyvern_talons_detonate' &&
+        hitMeta.wyvernTalonsZombie &&
         fromPlayerId &&
         fromPlayerId !== 'unknown' &&
         enemy.type !== 'training-dummy' &&
@@ -4504,12 +4653,38 @@ class GameRoom {
       epic: 220,
       legendary: 340,
     }[rarity] || 120;
-    return rarityBase + Math.max(0, statBonus || 0) * 4;
+    return (rarityBase + Math.max(0, statBonus || 0) * 4) * 2;
+  }
+
+  _getMerchantPurchaseState(player) {
+    return {
+      dashChargePurchased: !!player.merchantDashChargePurchased,
+      weaponTalentPurchases: player.merchantWeaponTalentPurchases || 0,
+    };
+  }
+
+  _buildFixedMerchantStock() {
+    return [
+      {
+        id: 'merchant-stock-dash-charge',
+        kind: 'dash_charge',
+        cost: MERCHANT_DASH_CHARGE_COST,
+        label: 'Dash Charge',
+        description: 'Adds a 4th dash charge for the run.',
+      },
+      {
+        id: 'merchant-stock-weapon-talent',
+        kind: 'weapon_talent',
+        cost: MERCHANT_WEAPON_TALENT_COST,
+        label: 'Weapon Talent',
+        description: 'Grants a random unowned class talent from your weapon.',
+      },
+    ];
   }
 
   generateMerchantInventory() {
     const pool = [...MERCHANT_BOSS_ITEM_POOL];
-    const inventory = [];
+    const inventory = [...this._buildFixedMerchantStock()];
     const n = Math.min(MERCHANT_ITEM_COUNT, pool.length);
     for (let i = 0; i < n; i++) {
       const pickIndex = Math.floor(Math.random() * pool.length);
@@ -4556,16 +4731,78 @@ class GameRoom {
       return false;
     }
     const entry = this.merchantInventory.find((item) => item.id === stockId);
-    if (!entry || entry.sold) {
+    if (!entry) {
       this._emitMerchantPurchaseFailure(playerId, 'item_unavailable');
       return false;
     }
+
+    const kind = entry.kind || 'boss_drop';
+    if (kind === 'boss_drop') {
+      if (entry.sold) {
+        this._emitMerchantPurchaseFailure(playerId, 'item_unavailable');
+        return false;
+      }
+    } else if (kind === 'dash_charge') {
+      if (player.merchantDashChargePurchased) {
+        this._emitMerchantPurchaseFailure(playerId, 'dash_charge_already_purchased');
+        return false;
+      }
+    } else if (kind === 'weapon_talent') {
+      if ((player.merchantWeaponTalentPurchases || 0) >= MERCHANT_WEAPON_TALENT_MAX) {
+        this._emitMerchantPurchaseFailure(playerId, 'weapon_talent_limit_reached');
+        return false;
+      }
+    } else {
+      this._emitMerchantPurchaseFailure(playerId, 'item_unavailable');
+      return false;
+    }
+
     if ((player.gold || 0) < entry.cost) {
       this._emitMerchantPurchaseFailure(playerId, 'not_enough_gold');
       return false;
     }
 
     player.gold = (player.gold || 0) - entry.cost;
+
+    if (kind === 'dash_charge') {
+      player.merchantDashChargePurchased = true;
+      if (this.io) {
+        this.io.to(this.roomId).emit('player-gold-changed', {
+          playerId,
+          gold: player.gold,
+          timestamp: Date.now(),
+        });
+        this.io.to(playerId).emit('merchant-purchase-succeeded', {
+          stockId,
+          kind: 'dash_charge',
+          cost: entry.cost,
+          merchantPurchaseState: this._getMerchantPurchaseState(player),
+          timestamp: Date.now(),
+        });
+      }
+      return true;
+    }
+
+    if (kind === 'weapon_talent') {
+      player.merchantWeaponTalentPurchases = (player.merchantWeaponTalentPurchases || 0) + 1;
+      if (this.io) {
+        this.io.to(this.roomId).emit('player-gold-changed', {
+          playerId,
+          gold: player.gold,
+          timestamp: Date.now(),
+        });
+        this.io.to(playerId).emit('merchant-purchase-succeeded', {
+          stockId,
+          kind: 'weapon_talent',
+          cost: entry.cost,
+          purchaseCount: player.merchantWeaponTalentPurchases,
+          merchantPurchaseState: this._getMerchantPurchaseState(player),
+          timestamp: Date.now(),
+        });
+      }
+      return true;
+    }
+
     entry.sold = true;
     const item = {
       ...entry.item,
@@ -4591,8 +4828,10 @@ class GameRoom {
       });
       this.io.to(playerId).emit('merchant-purchase-succeeded', {
         stockId,
+        kind: 'boss_drop',
         item,
         cost: entry.cost,
+        merchantPurchaseState: this._getMerchantPurchaseState(player),
         timestamp: Date.now(),
       });
     }

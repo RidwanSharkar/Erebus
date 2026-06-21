@@ -4,10 +4,13 @@ import React, { useRef, useEffect, useMemo } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 interface TitanModelProps {
   isWalking: boolean;
   isAttacking: boolean;
+  isPoweringUp: boolean;
+  isStomping: boolean;
   isDying: boolean;
 }
 
@@ -15,6 +18,8 @@ const TITAN_MODEL_PATHS = [
   '/models/titan_walk.glb',
   '/models/titan_melee.glb',
   '/models/titan_death.glb',
+  '/models/titan_powerup.glb',
+  '/models/titan_stomp.glb',
 ];
 
 export function preloadTitanModels(): void {
@@ -24,13 +29,21 @@ export function preloadTitanModels(): void {
 // Adjust if the titan GLB geometry is larger or smaller than expected.
 const SCALE = 0.02775;
 
-export default function TitanModel({ isWalking, isAttacking, isDying }: TitanModelProps) {
+export default function TitanModel({
+  isWalking,
+  isAttacking,
+  isPoweringUp,
+  isStomping,
+  isDying,
+}: TitanModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
 
-  const { scene, animations: walkAnims } = useGLTF('/models/titan_walk.glb');
-  const { animations: meleeAnims }     = useGLTF('/models/titan_melee.glb');
-  const { animations: deathAnims }     = useGLTF('/models/titan_death.glb');
+  const { scene, animations: walkAnims }     = useGLTF('/models/titan_walk.glb');
+  const { animations: meleeAnims }           = useGLTF('/models/titan_melee.glb');
+  const { animations: deathAnims }           = useGLTF('/models/titan_death.glb');
+  const { animations: powerupAnims }         = useGLTF('/models/titan_powerup.glb');
+  const { animations: stompAnims }             = useGLTF('/models/titan_stomp.glb');
 
   const clonedScene = useMemo(() => {
     const clone = SkeletonUtils.clone(scene) as Group;
@@ -45,6 +58,8 @@ export default function TitanModel({ isWalking, isAttacking, isDying }: TitanMod
     });
     return clone;
   }, [scene]);
+
+  useDisposeClonedMaterials(clonedScene);
 
   const animations = useMemo(() => {
     const rename = (clips: AnimationClip[], name: string) =>
@@ -65,26 +80,32 @@ export default function TitanModel({ isWalking, isAttacking, isDying }: TitanMod
     };
 
     return [
-      ...rename(walkAnims,  'Walk').map(stripRootMotionXZ),
-      ...rename(meleeAnims, 'Melee').map(stripRootMotionXZ),
-      ...rename(deathAnims, 'Death'),
+      ...rename(walkAnims,    'Walk').map(stripRootMotionXZ),
+      ...rename(meleeAnims,   'Melee').map(stripRootMotionXZ),
+      ...rename(powerupAnims, 'Powerup').map(stripRootMotionXZ),
+      ...rename(stompAnims,   'Stomp').map(stripRootMotionXZ),
+      ...rename(deathAnims,   'Death'),
     ];
-  }, [walkAnims, meleeAnims, deathAnims]);
+  }, [walkAnims, meleeAnims, powerupAnims, stompAnims, deathAnims]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
-  const getAction = (name: 'Walk' | 'Melee' | 'Death'): AnimationAction | null =>
+  const getAction = (name: 'Walk' | 'Melee' | 'Powerup' | 'Stomp' | 'Death'): AnimationAction | null =>
     actions[name] ?? null;
 
-  // Priority: Death > Melee > Walk (titans always walk when not attacking/dying).
+  // Priority: Death > Stomp > Powerup > Melee > Walk
   useEffect(() => {
     if (!actions) return;
 
     const nextAction = isDying
       ? getAction('Death')
-      : isAttacking
-        ? getAction('Melee')
-        : getAction('Walk');
+      : isStomping
+        ? getAction('Stomp')
+        : isPoweringUp
+          ? getAction('Powerup')
+          : isAttacking
+            ? getAction('Melee')
+            : getAction('Walk');
 
     if (!nextAction) return;
     if (nextAction === currentActionRef.current) return;
@@ -95,7 +116,7 @@ export default function TitanModel({ isWalking, isAttacking, isDying }: TitanMod
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.15).play();
-    } else if (isAttacking) {
+    } else if (isStomping || isPoweringUp || isAttacking) {
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.2).play();
@@ -106,9 +127,9 @@ export default function TitanModel({ isWalking, isAttacking, isDying }: TitanMod
     }
 
     currentActionRef.current = nextAction;
-  }, [isWalking, isAttacking, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isWalking, isAttacking, isPoweringUp, isStomping, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // After melee finishes, blend back to Walk.
+  // After one-shot clips finish, blend back to Walk.
   useEffect(() => {
     if (!mixer || isDying) return;
 
@@ -116,7 +137,7 @@ export default function TitanModel({ isWalking, isAttacking, isDying }: TitanMod
       if (isDying) return;
       const name = e.action.getClip().name;
       if (name === 'Death') return;
-      if (name === 'Melee') {
+      if (name === 'Melee' || name === 'Stomp' || name === 'Powerup') {
         const walk = getAction('Walk');
         if (walk) {
           walk.setLoop(LoopRepeat, Infinity);

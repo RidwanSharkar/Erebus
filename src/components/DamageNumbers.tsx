@@ -206,6 +206,8 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
                 ? 'text-violet-300 text-lg drop-shadow-[0_0_8px_rgba(167,139,250,0.75)]'
                 : damageData.damageType === 'player_zombie'
                 ? 'text-lime-400 text-lg drop-shadow-[0_0_6px_rgba(163,230,53,0.75)]'
+                : damageData.damageType === 'psionic_blades'
+                ? 'text-purple-300 text-lg drop-shadow-[0_0_8px_rgba(168,85,247,0.75)]'
                 : 'text-red-400'
         }`}
         style={damageData.isCritical ? {

@@ -2,39 +2,39 @@ import React, { useRef, useEffect, useMemo, memo } from 'react';
 import {
   Group,
   Vector3,
-  Color,
   Matrix4,
   Euler,
   Quaternion,
-  BufferGeometry,
-  Float32BufferAttribute,
-  MeshStandardMaterial,
   InstancedMesh,
-  OctahedronGeometry,
-  CircleGeometry,
 } from '@/utils/three-exports';
-import { IcosahedronGeometry } from 'three';
 import { useFrame } from '@react-three/fiber';
-import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import {
-  createIceShellMaterial,
-  createFrostGroundMaterial,
-  createIceMoteMaterial,
-  ICE_MOTE_COUNT,
+  sharedFrozenGeometries,
+  cloneFrozenShellMaterial,
+  cloneFrozenGroundMaterial,
+  cloneFrozenSpikeMaterial,
 } from '@/utils/frozenEffectShader';
 
-const FROZEN_LIGHT_COLOR = new Color('#4FC3F7');
-const _frozenLightPos = new Vector3();
-const _shardPos = new Vector3();
-const _shardRot = new Euler();
-const _shardQuat = new Quaternion();
-const _shardScale = new Vector3(1, 1, 1);
-const _shardMatrix = new Matrix4();
+const _spikePos = new Vector3();
+const _spikeRot = new Euler();
+const _spikeQuat = new Quaternion();
+const _spikeScale = new Vector3(1, 1, 1);
+const _spikeMatrix = new Matrix4();
 
-const SHARD_COUNT = 8;
+const CORNER_OFFSETS: [number, number, number][] = [
+  [0.52, 0.35, 0.52],
+  [-0.52, 0.15, 0.52],
+  [0.52, -0.05, -0.52],
+  [-0.52, 0.25, -0.52],
+  [0, 0.58, 0],
+  [0, 0.28, 0.52],
+  [0, 0.12, -0.52],
+];
+const SPIKE_COUNT = CORNER_OFFSETS.length;
 
 interface FrozenEffectProps {
   position: Vector3;
+  positionRef?: React.MutableRefObject<Vector3>;
   duration?: number;
   startTime?: number;
   enemyId?: string;
@@ -48,33 +48,9 @@ interface FrozenEffectProps {
   }>;
 }
 
-function buildMoteGeometry(count: number) {
-  const indices = new Float32Array(count);
-  const origins = new Float32Array(count * 3);
-  const speeds = new Float32Array(count);
-  const sizes = new Float32Array(count);
-  const positions = new Float32Array(count * 3);
-
-  for (let i = 0; i < count; i++) {
-    indices[i] = i;
-    origins[i * 3] = (Math.random() - 0.5) * 1.8;
-    origins[i * 3 + 1] = Math.random() * 2.2 - 0.1;
-    origins[i * 3 + 2] = (Math.random() - 0.5) * 1.8;
-    speeds[i] = 0.35 + Math.random() * 0.55;
-    sizes[i] = 2.5 + Math.random() * 3.5;
-  }
-
-  const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('aIndex', new Float32BufferAttribute(indices, 1));
-  geometry.setAttribute('aOrigin', new Float32BufferAttribute(origins, 3));
-  geometry.setAttribute('aSpeed', new Float32BufferAttribute(speeds, 1));
-  geometry.setAttribute('aSize', new Float32BufferAttribute(sizes, 1));
-  return geometry;
-}
-
 const FrozenEffectComponent = memo(function FrozenEffect({
   position,
+  positionRef,
   duration = 5000,
   startTime = Date.now(),
   enemyId,
@@ -82,34 +58,22 @@ const FrozenEffectComponent = memo(function FrozenEffect({
   onComplete,
 }: FrozenEffectProps) {
   const effectRef = useRef<Group>(null);
-  const shardsRef = useRef<InstancedMesh>(null);
-  const timeRef = useRef(0);
+  const spikesRef = useRef<InstancedMesh>(null);
   const hasCompleted = useRef(false);
   const rotationSpeed = useRef(Math.random() * 0.02 + 0.01);
 
-  const shellGeo = useMemo(() => new IcosahedronGeometry(0.9, 1), []);
-  const shellMat = useMemo(() => createIceShellMaterial(), []);
-  const groundGeo = useMemo(() => new CircleGeometry(1.1, 32), []);
-  const groundMat = useMemo(() => createFrostGroundMaterial(), []);
-  const shardGeo = useMemo(() => new OctahedronGeometry(0.22, 0), []);
-  const shardMat = useMemo(
-    () =>
-      new MeshStandardMaterial({
-        color: '#B3E5FC',
-        emissive: '#29B6F6',
-        emissiveIntensity: 0.4,
-        transparent: true,
-        opacity: 0.65,
-        roughness: 0.1,
-        metalness: 0.15,
-        flatShading: true,
-      }),
+  const shellMat = useMemo(() => cloneFrozenShellMaterial(), []);
+  const groundMat = useMemo(() => cloneFrozenGroundMaterial(), []);
+  const spikeMat = useMemo(() => cloneFrozenSpikeMaterial(), []);
+
+  const blockScale = useMemo(
+    (): [number, number, number] => [
+      0.92 + Math.random() * 0.14,
+      0.95 + Math.random() * 0.12,
+      0.92 + Math.random() * 0.14,
+    ],
     [],
   );
-  const moteGeo = useMemo(() => buildMoteGeometry(ICE_MOTE_COUNT), []);
-  const moteMat = useMemo(() => createIceMoteMaterial(), []);
-
-  const frozenLight = useDynamicLight({ color: FROZEN_LIGHT_COLOR, distance: 6, priority: 1 });
 
   const finish = () => {
     if (hasCompleted.current) return;
@@ -123,43 +87,33 @@ const FrozenEffectComponent = memo(function FrozenEffect({
   }, [duration, onComplete, enemyId, startTime]);
 
   useEffect(() => {
-    const mesh = shardsRef.current;
+    const mesh = spikesRef.current;
     if (!mesh) return;
 
-    for (let i = 0; i < SHARD_COUNT; i++) {
-      const angle = (i / SHARD_COUNT) * Math.PI * 2;
-      const radius = 0.72;
-      _shardPos.set(
-        Math.cos(angle) * radius,
-        -0.15 + Math.sin(i * 1.1) * 0.28,
-        Math.sin(angle) * radius,
-      );
-      _shardRot.set(Math.PI / 6, angle, Math.PI / 4);
-      _shardQuat.setFromEuler(_shardRot);
-      _shardMatrix.compose(_shardPos, _shardQuat, _shardScale);
-      mesh.setMatrixAt(i, _shardMatrix);
+    for (let i = 0; i < SPIKE_COUNT; i++) {
+      const [cx, cy, cz] = CORNER_OFFSETS[i];
+      _spikePos.set(cx, cy, cz);
+      const outward = Math.atan2(cx, cz);
+      _spikeRot.set(Math.PI / 5, outward + Math.PI / 4, Math.PI / 6);
+      _spikeQuat.setFromEuler(_spikeRot);
+      _spikeMatrix.compose(_spikePos, _spikeQuat, _spikeScale);
+      mesh.setMatrixAt(i, _spikeMatrix);
     }
     mesh.instanceMatrix.needsUpdate = true;
   }, []);
 
   useEffect(() => {
     return () => {
-      shellGeo.dispose();
       shellMat.dispose();
-      groundGeo.dispose();
       groundMat.dispose();
-      shardGeo.dispose();
-      shardMat.dispose();
-      moteGeo.dispose();
-      moteMat.dispose();
+      spikeMat.dispose();
     };
-  }, [shellGeo, shellMat, groundGeo, groundMat, shardGeo, shardMat, moteGeo, moteMat]);
+  }, [shellMat, groundMat, spikeMat]);
 
-  useFrame((_, delta) => {
+  useFrame(() => {
     if (!effectRef.current) return;
 
-    const currentTime = Date.now();
-    const elapsed = currentTime - startTime;
+    const elapsed = Date.now() - startTime;
     const progress = Math.min(elapsed / duration, 1);
 
     if (progress >= 1) {
@@ -167,7 +121,10 @@ const FrozenEffectComponent = memo(function FrozenEffect({
       return;
     }
 
-    if (enemyId && enemyData.length > 0) {
+    if (positionRef?.current) {
+      effectRef.current.position.copy(positionRef.current);
+      effectRef.current.position.y -= 0.5;
+    } else if (enemyId && enemyData.length > 0) {
       const target = enemyData.find(enemy => enemy.id === enemyId);
       if (target && target.health > 0 && !target.isDying && !target.deathStartTime) {
         effectRef.current.position.set(
@@ -178,38 +135,17 @@ const FrozenEffectComponent = memo(function FrozenEffect({
       }
     }
 
-    let frameFadeProgress: number;
-    if (progress > 0.9) {
-      const fade = (progress - 0.9) / 0.1;
-      frameFadeProgress = 1 - fade;
-    } else {
-      frameFadeProgress = 1;
-    }
-
+    const frameFadeProgress = progress > 0.9 ? 1 - (progress - 0.9) / 0.1 : 1;
     const pulseIntensity = 0.8 + 0.2 * Math.sin(elapsed * 0.005);
     const frameIntensity = pulseIntensity * frameFadeProgress;
 
-    timeRef.current += delta;
-    const t = timeRef.current;
+    shellMat.opacity = 0.42 * frameFadeProgress;
+    shellMat.emissiveIntensity = 0.35 * frameIntensity;
 
-    shellMat.uniforms.uTime.value = t;
-    shellMat.uniforms.uOpacity.value = frameFadeProgress;
-    shellMat.uniforms.uIntensity.value = frameIntensity;
+    groundMat.opacity = 0.45 * frameFadeProgress * frameIntensity;
 
-    groundMat.uniforms.uTime.value = t;
-    groundMat.uniforms.uOpacity.value = frameFadeProgress;
-    groundMat.uniforms.uIntensity.value = frameIntensity;
-
-    shardMat.opacity = 0.65 * frameFadeProgress;
-    shardMat.emissiveIntensity = 0.4 * frameIntensity;
-
-    moteMat.uniforms.uTime.value = t;
-    moteMat.uniforms.uOpacity.value = frameFadeProgress;
-    moteMat.uniforms.uIntensity.value = frameIntensity;
-
-    effectRef.current.getWorldPosition(_frozenLightPos);
-    frozenLight.current?.setPosition(_frozenLightPos.x, _frozenLightPos.y + 1, _frozenLightPos.z);
-    frozenLight.current?.setIntensity(3 * frameIntensity * frameFadeProgress);
+    spikeMat.opacity = 0.7 * frameFadeProgress;
+    spikeMat.emissiveIntensity = 0.55 * frameIntensity;
 
     effectRef.current.rotation.y += rotationSpeed.current;
     effectRef.current.rotation.x = Math.sin(elapsed * 0.003) * 0.1;
@@ -218,26 +154,23 @@ const FrozenEffectComponent = memo(function FrozenEffect({
   return (
     <group ref={effectRef} position={position} position-y={-0.5}>
       <mesh
-        geometry={shellGeo}
+        geometry={sharedFrozenGeometries.jaggedBlock}
         material={shellMat}
         position={[0, 0.35, 0]}
-        scale={[1, 1.15, 1]}
+        scale={blockScale}
       />
 
       <mesh
-        geometry={groundGeo}
+        geometry={sharedFrozenGeometries.ground}
         material={groundMat}
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, -0.05, 0]}
       />
 
       <instancedMesh
-        ref={shardsRef}
-        args={[shardGeo, shardMat, SHARD_COUNT]}
-        frustumCulled={false}
+        ref={spikesRef}
+        args={[sharedFrozenGeometries.spike, spikeMat, SPIKE_COUNT]}
       />
-
-      <points geometry={moteGeo} material={moteMat} frustumCulled={false} />
     </group>
   );
 }, (prevProps, nextProps) => {

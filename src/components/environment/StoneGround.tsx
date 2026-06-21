@@ -114,8 +114,8 @@ const STONE_FRAGMENT = `
 // Everything is one InstancedMesh — one BoxGeometry, one ShaderMaterial, one
 // draw call.  Three slab categories share the same unit-cube geometry:
 //
-//   PATH       y=0.055, thickness 0.09 — the main south-north road (7 u wide)
-//   PLATFORM   y=0.06,  thickness 0.10 — cobbled pads and narrow side alcoves
+//   PATH       y=0.035, thickness 0.07 — the main south-north road (7 u wide)
+//   PLATFORM   y=0.04,  thickness 0.08 — cobbled pads and narrow side alcoves
 //                (sits clearly above both PATH and CONNECTOR — no depth-fight)
 //
 // All tiles are axis-aligned (rotY = 0) and spaced with a 0.1-unit grout gap
@@ -123,6 +123,11 @@ const STONE_FRAGMENT = `
 //
 // Main arena footprint: regular hex; slabs whose corners protrude are culled.
 // ---------------------------------------------------------------------------
+
+const PATH_CENTER_Y = 0.035;
+const PATH_THICKNESS = 0.07;
+const PLATFORM_CENTER_Y = 0.04;
+const PLATFORM_THICKNESS = 0.08;
 
 interface SlabDef {
   position: [number, number, number];
@@ -165,8 +170,8 @@ const buildPath = (): SlabDef[] => {
   const rows = Math.floor((endZ - startZ) / stepZ) + 1;
   for (let i = 0; i < rows; i++) {
     slabs.push({
-      position: [0, 0.055, startZ + i * stepZ],
-      scale:    [7.0, 0.09, tileD],
+      position: [0, PATH_CENTER_Y, startZ + i * stepZ],
+      scale:    [7.0, PATH_THICKNESS, tileD],
       rotY:     0,
     });
   }
@@ -176,10 +181,10 @@ const buildPath = (): SlabDef[] => {
 // ─── Far combat pad + narrow alcoves ──────────────────────────────────────
 // The former side camps lived at x=±22. In the 15-wide corridor they become
 // slim in-bounds alcoves while the main pad anchors the far end of the room.
-const FAR_PLATFORM = makeGrid(0, 20.5, 4, 3, 1.8, 2.8, 1.7, 2.7, 0.06, 0.10);
-const ENTRY_PLATFORM = makeGrid(0, -20.0, 3, 2, 1.8, 2.8, 1.7, 2.7, 0.06, 0.10);
-const EAST_ALCOVE = makeGrid(5.55, 5.0, 2, 4, 1.8, 2.8, 1.7, 2.7, 0.06, 0.10);
-const WEST_ALCOVE = makeGrid(-5.55, 5.0, 2, 4, 1.8, 2.8, 1.7, 2.7, 0.06, 0.10);
+const FAR_PLATFORM = makeGrid(0, 20.5, 4, 3, 1.8, 2.8, 1.7, 2.7, PLATFORM_CENTER_Y, PLATFORM_THICKNESS);
+const ENTRY_PLATFORM = makeGrid(0, -20.0, 3, 2, 1.8, 2.8, 1.7, 2.7, PLATFORM_CENTER_Y, PLATFORM_THICKNESS);
+const EAST_ALCOVE = makeGrid(5.55, 5.0, 2, 4, 1.8, 2.8, 1.7, 2.7, PLATFORM_CENTER_Y, PLATFORM_THICKNESS);
+const WEST_ALCOVE = makeGrid(-5.55, 5.0, 2, 4, 1.8, 2.8, 1.7, 2.7, PLATFORM_CENTER_Y, PLATFORM_THICKNESS);
 
 // ---------------------------------------------------------------------------
 // Merge everything — one InstancedMesh, one draw call
@@ -223,14 +228,14 @@ const isSlabInThrone = (slab: SlabDef): boolean => {
 };
 
 /** Compact cobble pad for the pre-arena throne room (radius ~10). */
-const THRONE_SLABS: SlabDef[] = makeGrid(0, 0, 9, 9, 2.1, 2.1, 2.0, 2.0, 0.06, 0.10).filter(isSlabInThrone);
+const THRONE_SLABS: SlabDef[] = makeGrid(0, 0, 9, 9, 2.1, 2.1, 2.0, 2.0, PLATFORM_CENTER_Y, PLATFORM_THICKNESS).filter(isSlabInThrone);
 
 /** Tangential pavers around the grass rim — matches inner pad y/thickness. */
 const THRONE_PERIM_GROUT = 0.1;
 const THRONE_PERIM_TILE_W = 2.0;
 const THRONE_PERIM_RADIAL_D = 2.0;
-const THRONE_PERIM_Y = 0.06;
-const THRONE_PERIM_THICK = 0.1;
+const THRONE_PERIM_Y = PLATFORM_CENTER_Y;
+const THRONE_PERIM_THICK = PLATFORM_THICKNESS;
 
 function buildThronePerimeterSlabs(ringRadius: number): SlabDef[] {
   const step = THRONE_PERIM_TILE_W + THRONE_PERIM_GROUT;

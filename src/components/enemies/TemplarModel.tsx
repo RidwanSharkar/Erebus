@@ -4,6 +4,7 @@ import React, { useRef, useEffect, useMemo } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 interface TemplarModelProps {
   isWalking: boolean;
@@ -11,6 +12,7 @@ interface TemplarModelProps {
   attackVariant: 1 | 2;
   isDying: boolean;
   isLeaping?: boolean;
+  onLeapFinished?: () => void;
   isImpacting?: boolean;
   impactPlayKey?: number;
   onImpactFinished?: () => void;
@@ -44,6 +46,7 @@ export default function TemplarModel({
   attackVariant,
   isDying,
   isLeaping = false,
+  onLeapFinished,
   isImpacting = false,
   impactPlayKey = 0,
   onImpactFinished,
@@ -79,6 +82,8 @@ export default function TemplarModel({
     });
     return clone;
   }, [scene]);
+
+  useDisposeClonedMaterials(clonedScene);
 
   const animations = useMemo(() => {
     const rename = (clips: AnimationClip[], name: string) =>
@@ -174,7 +179,7 @@ export default function TemplarModel({
       if (!isBlinkSmite) lastBlinkSmitePlayKeyRef.current = -1;
       nextAction.enabled = true;
       nextAction.setLoop(LoopRepeat, Infinity);
-      nextAction.fadeIn(0.2).play();
+      nextAction.reset().fadeIn(0.2).play();
     }
 
     currentActionRef.current = nextAction;
@@ -190,6 +195,7 @@ export default function TemplarModel({
       if (fallback) {
         fallback.setLoop(LoopRepeat, Infinity);
         currentActionRef.current?.fadeOut(0.15);
+        fallback.enabled = true;
         fallback.reset().fadeIn(0.15).play();
         currentActionRef.current = fallback;
       }
@@ -205,9 +211,15 @@ export default function TemplarModel({
         blendToWalkOrIdle();
         return;
       }
+      if (name === 'Leap') {
+        onLeapFinished?.();
+        blendToWalkOrIdle();
+        return;
+      }
       if (name === 'BlinkSmite') {
         onBlinkSmiteFinished?.();
-        lastBlinkSmitePlayKeyRef.current = -1;
+        // Keep playKey matched so useEffect won't retrigger while React clears isBlinkSmite.
+        lastBlinkSmitePlayKeyRef.current = blinkSmitePlayKey;
         blendToWalkOrIdle();
         return;
       }
@@ -218,7 +230,7 @@ export default function TemplarModel({
 
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isDying, isWalking, actions, onImpactFinished, onBlinkSmiteFinished]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isDying, isWalking, actions, onImpactFinished, onBlinkSmiteFinished, onLeapFinished, blinkSmitePlayKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group ref={sceneGroupRef}>

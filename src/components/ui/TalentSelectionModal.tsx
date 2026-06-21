@@ -34,6 +34,8 @@ import {
   CROSSENTROPY_METEOR_AOE_RADIUS,
   CROSSENTROPY_FRAGMENTATION_PROC_CHANCE,
   CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS,
+  ENTROPIC_FRAGMENTATION_SECOND_HOP_CHANCE,
+  ENTROPIC_FRAGMENTATION_THIRD_HOP_CHANCE,
   frostPathTalentDefinition,
   FROSTPATH_PROC_CHANCE,
   FROST_SOLAR_PROC_EFFECT_ICD_MS,
@@ -126,6 +128,9 @@ import {
   glacialTalonsTalentDefinition,
   ARCTIC_STING_BLIZZARD_ICD_SEC,
   WYVERN_STING_COOLDOWN_SEC,
+  WYVERN_STING_VENOM_BASE_DPS,
+  WYVERN_STING_VENOM_PER_INTELLECT,
+  COBRA_SHOT_VENOM_DURATION_SEC,
   wrathStrikeTalentDefinition,
   wraithGuardTalentDefinition,
   doubleStrikeTalentDefinition,
@@ -395,7 +400,9 @@ export default function TalentSelectionModal({
     guardSabresStab: initialTalentLoadout?.guardSabresStab ?? def.guardSabresStab,
     guardSabresFlourish: initialTalentLoadout?.guardSabresFlourish ?? def.guardSabresFlourish,
     crescentBlades: initialTalentLoadout?.crescentBlades ?? def.crescentBlades,
+    mortalStrike: initialTalentLoadout?.mortalStrike ?? def.mortalStrike,
     windShear: initialTalentLoadout?.windShear ?? def.windShear,
+    psionicBlades: initialTalentLoadout?.psionicBlades ?? def.psionicBlades,
     killstreak: initialTalentLoadout?.killstreak ?? def.killstreak,
     relentless: initialTalentLoadout?.relentless ?? def.relentless,
     vorpalGust: initialTalentLoadout?.vorpalGust ?? def.vorpalGust,
@@ -705,9 +712,8 @@ export default function TalentSelectionModal({
   }, [crossentropyEquipped]);
 
   const toggleFragmentation = useCallback(() => {
-    if (!crossentropyEquipped) return;
     setLoadout((prev) => ({ ...prev, fragmentation: !prev.fragmentation }));
-  }, [crossentropyEquipped]);
+  }, []);
 
   const toggleCrossentropyTempest = useCallback(() => {
     if (!crossentropyEquipped) return;
@@ -2577,6 +2583,9 @@ export default function TalentSelectionModal({
                     <p className="text-emerald-200/90 text-xs mt-2 font-mono">
                       Bonus Cobra Shot internal cooldown: {WYVERN_STING_COOLDOWN_SEC}s (separate from Cobra Shot on E)
                     </p>
+                    <p className="text-emerald-200/90 text-xs mt-1 font-mono">
+                      Cobra venom: {WYVERN_STING_VENOM_BASE_DPS} + {WYVERN_STING_VENOM_PER_INTELLECT} per Intellect DPS · {COBRA_SHOT_VENOM_DURATION_SEC}s
+                    </p>
                   </>
                 )}
               </label>
@@ -2736,27 +2745,29 @@ export default function TalentSelectionModal({
               </label>
             </div>
             </TalentHoverSurface>
-            <TalentHoverSurface talent={fragmentationTalentDefinition} dimmed={!crossentropyEquipped}>
+            <TalentHoverSurface talent={fragmentationTalentDefinition}>
             <div className="flex items-start gap-3">
-              <TalentRowIcon talent={fragmentationTalentDefinition} dimmed={!crossentropyEquipped} />
+              <TalentRowIcon talent={fragmentationTalentDefinition} />
               <input
                 type="checkbox"
                 id="talent-fragmentation"
                 checked={loadout.fragmentation}
                 onChange={toggleFragmentation}
-                disabled={!crossentropyEquipped}
-                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
                 aria-label={fragmentationTalentDefinition.name}
               />
-              <label
-                htmlFor="talent-fragmentation"
-                className={`flex-1 ${crossentropyEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+              <label htmlFor="talent-fragmentation" className="flex-1 cursor-pointer">
                 {loadout.fragmentation && (
                   <>
                     <p className="text-gray-400 text-sm mt-1">{fragmentationTalentDefinition.description}</p>
                     <p className="text-amber-200/90 text-xs mt-2 font-mono">
-                      {CROSSENTROPY_FRAGMENTATION_PROC_CHANCE * 100}% proc · horizontal radius{' '}
-                      {CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS} · bolts chain at most once per hop
+                      Crossentropy: {CROSSENTROPY_FRAGMENTATION_PROC_CHANCE * 100}% proc · radius{' '}
+                      {CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS} · once per hop
+                    </p>
+                    <p className="text-amber-200/90 text-xs mt-1 font-mono">
+                      Entropic Bolt: always 2nd target · {ENTROPIC_FRAGMENTATION_SECOND_HOP_CHANCE * 100}% 3rd ·{' '}
+                      {ENTROPIC_FRAGMENTATION_THIRD_HOP_CHANCE * 100}% 4th · radius{' '}
+                      {CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS}
                     </p>
                   </>
                 )}

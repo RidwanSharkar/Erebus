@@ -95,6 +95,8 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'icebeam', file: 'scythe/icebeam.mp3' },
   { id: 'ui_selection', file: 'ui/selection.mp3' },
   { id: 'ui_interface', file: 'ui/interface1.mp3' },
+  { id: 'ui_interface_2', file: 'ui/interface2.mp3' },
+  { id: 'ui_interface_3', file: 'ui/interface3.mp3' },
   { id: 'ui_dash', file: 'ui/dash.mp3' },
   { id: 'ui_hitbox_bow', file: 'ui/bowHitbox.mp3' },
   { id: 'ui_hitbox_sabres', file: 'ui/sabresHitbox.mp3' },
@@ -786,6 +788,14 @@ export class AudioSystem extends System {
   // Play UI interface sound (for navigation buttons)
   public playUIInterfaceSound() {
     return this.playWeaponSound('ui_interface', new Vector3(0, 0, 0), { volume: 0.7 });
+  }
+
+  public playUIInterface2Sound() {
+    return this.playWeaponSound('ui_interface_2', new Vector3(0, 0, 0), { volume: 0.7 });
+  }
+
+  public playUIInterface3Sound() {
+    return this.playWeaponSound('ui_interface_3', new Vector3(0, 0, 0), { volume: 0.7 });
   }
 
   /** Local player defeated — short UI sting. */

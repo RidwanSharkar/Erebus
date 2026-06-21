@@ -10,6 +10,7 @@ import { Collider, CollisionLayer } from '@/ecs/components/Collider';
 import { Enemy } from '@/ecs/components/Enemy';
 import { World } from '@/ecs/World';
 import { ObjectPool } from '@/utils/ObjectPool';
+import { CollisionSystem } from '@/systems/CollisionSystem';
 
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import {
@@ -26,6 +27,7 @@ import {
   CROSSENTROPY_METEOR_WARNING_MS,
   CROSSENTROPY_FRAGMENTATION_PROC_CHANCE,
   CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS,
+  shouldEntropicFragmentationChain,
   rollCrossentropyMeteorStrikeCount,
   CLOUDKILL_AOE_RADIUS,
   CLOUDKILL_ARROW_DELAY_MS,
@@ -41,7 +43,10 @@ import {
 import {
   ENTROPIC_FORWARD_SCALE,
   ENTROPIC_MAX_LIFETIME,
+  ENTROPIC_BOLT_COLLISION_RADIUS,
+  checkEntropicBoltHit,
 } from '@/utils/entropicBoltPath';
+import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
 import type { CrossentropyVisualTheme, FanOfKnivesFlourishTint } from '@/utils/talents';
 import { CombatSystem } from './CombatSystem';
 
@@ -91,6 +96,10 @@ export class ProjectileSystem extends System {
   private crossentropyBoltBroadcastCallback?:
     | ((position: Vector3, direction: Vector3, projectileConfig: Record<string, unknown>) => void)
     | undefined;
+  /** Co-op only: Entropic fragmentation child bolt broadcast. */
+  private entropicBoltBroadcastCallback?:
+    | ((position: Vector3, direction: Vector3, projectileConfig: Record<string, unknown>) => void)
+    | undefined;
 
   constructor(world: World) {
     super();
@@ -117,6 +126,38 @@ export class ProjectileSystem extends System {
       | undefined,
   ): void {
     this.crossentropyBoltBroadcastCallback = cb;
+  }
+
+  public setEntropicBoltBroadcastCallback(
+    cb:
+      | ((position: Vector3, direction: Vector3, projectileConfig: Record<string, unknown>) => void)
+      | undefined,
+  ): void {
+    this.entropicBoltBroadcastCallback = cb;
+  }
+
+  private getCollisionSystem(): CollisionSystem | null {
+    return (this.world.getSystem(CollisionSystem as any) as CollisionSystem | null) ?? null;
+  }
+
+  /** Broad-phase targets near a projectile segment or impact point. */
+  private queryHittableNearPoint(center: Vector3, radius: number, requireCollider = false): Entity[] {
+    const collisionSystem = this.getCollisionSystem();
+    const candidates = collisionSystem
+      ? collisionSystem.queryCollidersRadius(center, radius)
+      : this.world.queryEntities(requireCollider ? [Transform, Health, Collider] : [Transform, Health]);
+
+    return candidates.filter((entity) => {
+      if (!entity.hasComponents([Transform, Health])) return false;
+      if (requireCollider && !entity.hasComponents([Collider])) return false;
+      return true;
+    });
+  }
+
+  private queryHittableAlongSegment(from: Vector3, to: Vector3, padding = 3): Entity[] {
+    this.tempVector.copy(from).add(to).multiplyScalar(0.5);
+    const halfLen = from.distanceTo(to) * 0.5;
+    return this.queryHittableNearPoint(this.tempVector, halfLen + padding, true);
   }
 
   public update(entities: Entity[], deltaTime: number): void {
@@ -217,9 +258,9 @@ export class ProjectileSystem extends System {
     this.pendingCrossentropyMeteorImpacts = this.pendingCrossentropyMeteorImpacts.filter(
       (meteor) => meteor.impactAtMs > nowMs,
     );
-    const potentialTargets = this.world.queryEntities([Transform, Health]);
     for (const meteor of due) {
       const sourceEntity = this.world.getEntity(meteor.ownerEntityId);
+      const potentialTargets = this.queryHittableNearPoint(meteor.impactPosition, meteor.radius + 1);
       for (const target of potentialTargets) {
         if (target.id === meteor.ownerEntityId) continue;
         if (target.userData?.isCoopAllyPlayer) continue;
@@ -310,9 +351,9 @@ export class ProjectileSystem extends System {
     this.pendingCloudkillImpacts = this.pendingCloudkillImpacts.filter(
       (impact) => impact.impactAtMs > nowMs,
     );
-    const potentialTargets = this.world.queryEntities([Transform, Health]);
     for (const impact of due) {
       const sourceEntity = this.world.getEntity(impact.ownerEntityId);
+      const potentialTargets = this.queryHittableNearPoint(impact.impactPosition, impact.radius + 1);
       for (const target of potentialTargets) {
         if (target.id === impact.ownerEntityId) continue;
         if (target.userData?.isCoopAllyPlayer) continue;
@@ -508,7 +549,7 @@ export class ProjectileSystem extends System {
     // The specialized PVP managers handle player-vs-player damage, while ECS handles enemy damage
 
     // Get all entities that could be hit - specifically look for enemies with colliders
-    const potentialTargets = this.world.queryEntities([Transform, Health, Collider]);
+    const potentialTargets = this.queryHittableAlongSegment(previousProjectilePos, projectilePos);
 
     // Early exit if no targets
     if (potentialTargets.length === 0) return;
@@ -569,8 +610,28 @@ export class ProjectileSystem extends System {
 
       const targetPos = targetTransform.getWorldPosition().add(targetCollider.offset);
 
+      const isEntropicBolt = projectile.projectileType === 'entropic_bolt';
+
+      if (isEntropicBolt) {
+        if (
+          checkEntropicBoltHit(
+            projectilePos,
+            previousProjectilePos,
+            targetPos,
+            targetCollider.radius,
+          )
+        ) {
+          this.handleHit(projectileEntity, target, projectile, targetHealth);
+          if (!projectile.piercing) {
+            this.projectilesToDestroy.push(projectileEntity.id);
+            break;
+          }
+        }
+        continue;
+      }
+
       // Use collider radius for more accurate collision detection
-      const projectileRadius = 0.2; // Increased from 0.1 for more forgiving collision detection
+      const projectileRadius = 0.2;
       const targetRadius = targetCollider.radius;
 
       // Use squared distance for performance (avoid sqrt)
@@ -790,6 +851,36 @@ export class ProjectileSystem extends System {
       }
 
       if (
+        isEntropicBolt &&
+        projectile.entropicFragmentation === true &&
+        target.getComponent(Enemy)
+      ) {
+        const csEntFrag = (window as any).controlSystemRef?.current;
+        const localEntFrag = csEntFrag?.getPlayerEntity?.() as { id: number } | null | undefined;
+        if (localEntFrag && projectile.owner === localEntFrag.id) {
+          const hop = projectile.entropicFragmentHop ?? 0;
+          if (shouldEntropicFragmentationChain(hop)) {
+            const fragOutcome = this.trySpawnEntropicFragmentationBolt(
+              projectileEntity,
+              projectile,
+              target,
+              hop + 1,
+            );
+            if (
+              process.env.NODE_ENV === 'development' &&
+              fragOutcome === 'no_candidates'
+            ) {
+              console.debug(
+                '[Entropic FRAGMENTATION] chain proc succeeded but no ricochet target: need another living Enemy with Health within',
+                CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS,
+                'horizontal units (xz) of the struck enemy.',
+              );
+            }
+          }
+        }
+      }
+
+      if (
         isCrossentropyBolt &&
         projectile.crossentropyFragmentation === true &&
         projectile.crossentropySuppressFragmentation !== true &&
@@ -901,7 +992,7 @@ export class ProjectileSystem extends System {
     });
 
     // Find all entities within explosion radius
-    const potentialTargets = this.world.queryEntities([Transform, Health]);
+    const potentialTargets = this.queryHittableNearPoint(explosionCenter, projectile.explosionRadius + 1);
 
     for (const target of potentialTargets) {
       if (target.id === projectile.owner) continue; // Don't damage owner
@@ -1030,7 +1121,43 @@ export class ProjectileSystem extends System {
     collider.layer = CollisionLayer.PROJECTILE;
     projectileEntity.addComponent(collider);
 
+    this.world.notifyEntityAdded(projectileEntity);
+
     return projectileEntity;
+  }
+
+  /**
+   * FRAGMENTATION ricochet: nearest eligible enemy within horizontal radius, excluding given ids.
+   */
+  private findNearestFragmentationTarget(
+    anchor: Vector3,
+    excludeIds: Iterable<number>,
+    radiusUnits: number = CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS,
+  ): Entity | null {
+    const excludeSet = excludeIds instanceof Set ? excludeIds : new Set(excludeIds);
+    const r2 = radiusUnits * radiusUnits;
+    const candidates: Array<{ entity: Entity; distanceSq: number }> = [];
+    const potential = this.queryHittableNearPoint(anchor, radiusUnits + 1).filter((ent) => ent.hasComponents([Enemy]));
+    for (const ent of potential) {
+      if (excludeSet.has(ent.id)) continue;
+      if (ent.userData?.isCoopAllyPlayer) continue;
+      if (ent.userData?.isCoopAlliedUnit) continue;
+      if (ent.userData?.coopServerEnemyType === 'player-zombie') continue;
+      const h = ent.getComponent(Health);
+      if (!h || h.isDead) continue;
+      const tf = ent.getComponent(Transform);
+      if (!tf) continue;
+      const wp = tf.getWorldPosition();
+      const dx = wp.x - anchor.x;
+      const dz = wp.z - anchor.z;
+      const distanceSq = dx * dx + dz * dz;
+      if (distanceSq > r2) continue;
+      candidates.push({ entity: ent, distanceSq });
+    }
+    if (candidates.length === 0) return null;
+    return candidates.reduce((closest, current) =>
+      current.distanceSq < closest.distanceSq ? current : closest,
+    ).entity;
   }
 
   /**
@@ -1050,30 +1177,9 @@ export class ProjectileSystem extends System {
     const anchor = struckTf.getWorldPosition().clone();
     anchor.y = Math.max(1.5, anchor.y);
 
-    const r2 = CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS * CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS;
-    const candidates: Array<{ entity: Entity; distanceSq: number }> = [];
-    const potential = this.world.queryEntities([Transform, Health, Enemy]);
-    for (const ent of potential) {
-      if (ent.id === struckTarget.id) continue;
-      if (ent.userData?.isCoopAllyPlayer) continue;
-      if (ent.userData?.isCoopAlliedUnit) continue;
-      if (ent.userData?.coopServerEnemyType === 'player-zombie') continue;
-      const h = ent.getComponent(Health);
-      if (!h || h.isDead) continue;
-      const tf = ent.getComponent(Transform);
-      if (!tf) continue;
-      const wp = tf.getWorldPosition();
-      const dx = wp.x - anchor.x;
-      const dz = wp.z - anchor.z;
-      const distanceSq = dx * dx + dz * dz;
-      if (distanceSq > r2) continue;
-      candidates.push({ entity: ent, distanceSq });
-    }
-    if (candidates.length === 0) return 'no_candidates';
+    const pick = this.findNearestFragmentationTarget(anchor, [struckTarget.id]);
+    if (!pick) return 'no_candidates';
 
-    const pick = candidates.reduce((closest, current) =>
-      current.distanceSq < closest.distanceSq ? current : closest
-    ).entity;
     const pickTf = pick.getComponent(Transform);
     if (!pickTf) return 'aborted';
     const targetPos = pickTf.getWorldPosition();
@@ -1129,6 +1235,82 @@ export class ProjectileSystem extends System {
 
     if (this.crossentropyBoltBroadcastCallback) {
       this.crossentropyBoltBroadcastCallback(spawnPosition, direction, fragmentConfig as Record<string, unknown>);
+    }
+
+    return 'spawned';
+  }
+
+  /**
+   * Entropic FRAGMENTATION ricochet: spawns a child Entropic bolt toward the closest eligible enemy.
+   */
+  private trySpawnEntropicFragmentationBolt(
+    projectileEntity: Entity,
+    projectile: Projectile,
+    struckTarget: Entity,
+    nextHop: number,
+  ): 'spawned' | 'no_candidates' | 'aborted' {
+    const struckTf = struckTarget.getComponent(Transform);
+    if (!struckTf) return 'aborted';
+
+    const anchor = struckTf.getWorldPosition().clone();
+    anchor.y = Math.max(1.5, anchor.y);
+
+    const pick = this.findNearestFragmentationTarget(anchor, projectile.hitTargets);
+    if (!pick) return 'no_candidates';
+
+    const pickTf = pick.getComponent(Transform);
+    if (!pickTf) return 'aborted';
+    const targetPos = pickTf.getWorldPosition();
+
+    const rawDir = this.tempVector.copy(targetPos).sub(anchor);
+    rawDir.y = 0;
+    const direction = rawDir.lengthSq() < 1e-8 ? new Vector3(0, 0, 1) : rawDir.clone().normalize();
+
+    const spawnPosition = anchor.clone().addScaledVector(direction, 0.5);
+
+    const rendererUd = projectileEntity.getComponent(Renderer)?.mesh?.userData as Record<string, unknown> | undefined;
+    const subclass =
+      rendererUd?.subclass != null ? (rendererUd.subclass as WeaponSubclass) : undefined;
+    const level =
+      rendererUd?.level != null && typeof rendererUd.level === 'number' ? rendererUd.level : undefined;
+    const opacity =
+      rendererUd?.opacity != null && typeof rendererUd.opacity === 'number'
+        ? rendererUd.opacity
+        : 1.0;
+
+    const fragmentConfig = {
+      speed: projectile.speed,
+      damage: projectile.damage,
+      lifetime: projectile.maxLifetime,
+      opacity,
+      sourcePlayerId: projectile.sourcePlayerId || 'unknown',
+      piercing: false as const,
+      colorVariant:
+        typeof rendererUd?.colorVariant === 'string' ? rendererUd.colorVariant : DEFAULT_ENTROPIC_COLOR_VARIANT,
+      isCryoflame: rendererUd?.isCryoflame === true,
+      ...(projectile.entropicBoltTalent ? { entropicBoltTalent: projectile.entropicBoltTalent } : {}),
+      entropicFragmentation: true as const,
+      entropicFragmentHop: nextHop,
+      ...(subclass != null ? { subclass } : {}),
+      ...(typeof level === 'number' ? { level } : {}),
+    };
+
+    const fragmentEntity = this.createEntropicBoltProjectile(
+      this.world,
+      spawnPosition,
+      direction,
+      projectile.owner,
+      fragmentConfig,
+    );
+    const fragmentProj = fragmentEntity.getComponent(Projectile);
+    if (fragmentProj) {
+      for (const hitId of Array.from(projectile.hitTargets)) {
+        fragmentProj.addHitTarget(hitId);
+      }
+    }
+
+    if (this.entropicBoltBroadcastCallback) {
+      this.entropicBoltBroadcastCallback(spawnPosition, direction, fragmentConfig as Record<string, unknown>);
     }
 
     return 'spawned';
@@ -1302,6 +1484,8 @@ export class ProjectileSystem extends System {
       isCryoflame?: boolean;
       colorVariant?: string;
       entropicBoltTalent?: 'wrathful' | 'staggering' | 'infesting' | 'arctic';
+      entropicFragmentation?: boolean;
+      entropicFragmentHop?: number;
     }
   ): Entity {
     const entropicDirection = direction.clone();
@@ -1339,6 +1523,12 @@ export class ProjectileSystem extends System {
         projectile.staggerToAdd = STAGGERING_ENTROPIC_BOLT_STAGGER;
       }
     }
+    if (config?.entropicFragmentation === true) {
+      projectile.entropicFragmentation = true;
+    }
+    if (config?.entropicFragmentHop != null) {
+      projectile.entropicFragmentHop = config.entropicFragmentHop;
+    }
     
     projectileEntity.addComponent(projectile);
 
@@ -1346,7 +1536,7 @@ export class ProjectileSystem extends System {
     const renderer = world.createComponent(Renderer);
     
     // Create a simple placeholder mesh that will be replaced by the React component
-    const placeholderGeometry = new SphereGeometry(0.15, 6, 6);
+    const placeholderGeometry = new SphereGeometry(ENTROPIC_BOLT_COLLISION_RADIUS, 6, 6);
     const placeholderMaterial = new MeshStandardMaterial({
       color: '#00ff44',
       emissive: '#00ff44',
@@ -1361,8 +1551,14 @@ export class ProjectileSystem extends System {
     placeholderMesh.userData.projectileEntity = projectileEntity;
     placeholderMesh.userData.direction = entropicDirection.clone();
     placeholderMesh.userData.isCryoflame = config?.isCryoflame || false;
-    placeholderMesh.userData.colorVariant = config?.colorVariant || 'purple';
+    placeholderMesh.userData.colorVariant = config?.colorVariant || DEFAULT_ENTROPIC_COLOR_VARIANT;
     placeholderMesh.userData.entropicBoltTalent = entropicTalent;
+    if (config?.entropicFragmentation === true) {
+      placeholderMesh.userData.entropicFragmentation = true;
+    }
+    if (config?.entropicFragmentHop != null) {
+      placeholderMesh.userData.entropicFragmentHop = config.entropicFragmentHop;
+    }
 
     renderer.mesh = placeholderMesh;
 

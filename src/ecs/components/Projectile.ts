@@ -48,6 +48,10 @@ export class Projectile extends Component {
   public dualCoilLane?: 0 | 1;
   /** Scythe Wrathful / Staggering / Infesting Entropic boons — bolt hit rules in CombatSystem. */
   public entropicBoltTalent?: 'wrathful' | 'staggering' | 'infesting' | 'arctic';
+  /** FRAGMENTATION talent enabled on this Entropic Bolt (primary cast + fragments). */
+  public entropicFragmentation?: boolean;
+  /** Entropic fragmentation chain depth: 0 = primary, 1–3 = spawned fragments. */
+  public entropicFragmentHop?: number;
 
   // Homing properties
   public targetEntityId: number | null; // Entity ID to home towards
@@ -214,6 +218,8 @@ export class Projectile extends Component {
     this.crossentropySuppressFragmentation = undefined;
     this.dualCoilLane = undefined;
     this.entropicBoltTalent = undefined;
+    this.entropicFragmentation = undefined;
+    this.entropicFragmentHop = undefined;
     this.targetEntityId = null;
     this.homingStrength = 0;
     this.maxTurnRate = Math.PI;
@@ -247,6 +253,8 @@ export class Projectile extends Component {
     clone.crossentropySuppressFragmentation = this.crossentropySuppressFragmentation;
     clone.dualCoilLane = this.dualCoilLane;
     clone.entropicBoltTalent = this.entropicBoltTalent;
+    clone.entropicFragmentation = this.entropicFragmentation;
+    clone.entropicFragmentHop = this.entropicFragmentHop;
     return clone;
   }
 }

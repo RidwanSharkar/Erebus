@@ -11,6 +11,41 @@ export class World {
   private componentPools = new Map<string, ObjectPool<any>>();
   private entitiesToDestroy: EntityId[] = [];
   private events = new Map<string, any[]>();
+  /** Component-type → entity ids for fast query intersection. */
+  private entitiesByComponent = new Map<string, Set<EntityId>>();
+  /** Reusable query result buffer per component signature. */
+  private queryResultCache = new Map<string, Entity[]>();
+
+  private getComponentTypeName(componentType: new () => Component): string {
+    return (componentType as { componentType?: string }).componentType || componentType.name;
+  }
+
+  private getComponentKey(componentTypes: (new () => Component)[]): string {
+    return componentTypes.map((t) => this.getComponentTypeName(t)).sort().join('|');
+  }
+
+  private indexEntity(entity: Entity): void {
+    for (const component of entity.getAllComponents()) {
+      const name = (component as { componentType?: string }).componentType || component.constructor.name;
+      let bucket = this.entitiesByComponent.get(name);
+      if (!bucket) {
+        bucket = new Set();
+        this.entitiesByComponent.set(name, bucket);
+      }
+      bucket.add(entity.id);
+    }
+  }
+
+  private unindexEntity(entity: Entity): void {
+    for (const component of entity.getAllComponents()) {
+      const name = (component as { componentType?: string }).componentType || component.constructor.name;
+      this.entitiesByComponent.get(name)?.delete(entity.id);
+    }
+  }
+
+  private invalidateQueryCaches(): void {
+    this.queryResultCache.clear();
+  }
 
   // Entity management
   public createEntity(): Entity {
@@ -25,6 +60,8 @@ export class World {
 
   // Notify systems that an entity has been fully configured and is ready
   public notifyEntityAdded(entity: Entity): void {
+    this.indexEntity(entity);
+    this.invalidateQueryCaches();
     for (const system of this.systems) {
       if (system.onEntityAdded && system.matchesEntity(entity)) {
         system.onEntityAdded(entity);
@@ -139,15 +176,14 @@ export class World {
 
   // Get entities that match a system's requirements
   private getEntitiesForSystem(system: System): Entity[] {
-    const entities: Entity[] = [];
-    
-    for (const entity of Array.from(this.entities.values())) {
-      if (system.matchesEntity(entity)) {
-        entities.push(entity);
+    if (system.requiredComponents.length === 0) {
+      const out: Entity[] = [];
+      for (const entity of Array.from(this.entities.values())) {
+        if (system.matchesEntity(entity)) out.push(entity);
       }
+      return out;
     }
-    
-    return entities;
+    return this.queryEntities(system.requiredComponents);
   }
 
   // Clean up destroyed entities
@@ -167,24 +203,42 @@ export class World {
           this.returnComponent(component);
         }
         
+        this.unindexEntity(entity);
         entity.destroy();
         this.entities.delete(entityId);
       }
     }
     this.entitiesToDestroy.length = 0;
+    this.invalidateQueryCaches();
   }
 
-  // Query entities by components
+  // Query entities by components — uses component index (smallest-set first).
   public queryEntities(componentTypes: (new () => Component)[]): Entity[] {
-    const entities: Entity[] = [];
-    
-    for (const entity of Array.from(this.entities.values())) {
-      if (entity.isActive() && entity.hasComponents(componentTypes)) {
-        entities.push(entity);
+    if (componentTypes.length === 0) {
+      return Array.from(this.entities.values()).filter((e) => e.isActive());
+    }
+
+    const key = this.getComponentKey(componentTypes);
+    const cached = this.queryResultCache.get(key);
+    if (cached) return cached;
+
+    const buckets = componentTypes.map((t) => this.entitiesByComponent.get(this.getComponentTypeName(t)));
+    if (buckets.some((b) => !b || b.size === 0)) {
+      const empty: Entity[] = [];
+      this.queryResultCache.set(key, empty);
+      return empty;
+    }
+
+    const sorted = [...buckets].sort((a, b) => a!.size - b!.size);
+    const result: Entity[] = [];
+    for (const id of Array.from(sorted[0]!)) {
+      const entity = this.entities.get(id);
+      if (entity?.isActive() && entity.hasComponents(componentTypes)) {
+        result.push(entity);
       }
     }
-    
-    return entities;
+    this.queryResultCache.set(key, result);
+    return result;
   }
 
   // Event system

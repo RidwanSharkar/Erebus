@@ -9,7 +9,6 @@ import RunebladeSlashImpact from '../weapons/RunebladeSlashImpact';
 import RunebladeWraithStrikeImpact from '../weapons/RunebladeWraithStrikeImpact';
 import { DashChargeStatus } from './ChargedOrbitals';
 import ViperStingManager, { triggerGlobalViperSting } from '../projectiles/ViperStingManager';
-import { spawnArcticGroundBlizzardAtFromReact } from '@/components/weapons/Blizzard/arcticBlizzardSpawnBridge';
 import GhostTrail from './GhostTrail';
 import DashFireTrail from './DashFireTrail';
 import { WeaponType, WeaponSubclass } from './weapons';
@@ -335,7 +334,8 @@ export default function DragonRenderer({
   const [dashCharges, setDashCharges] = useState<Array<DashChargeStatus>>([
     { isAvailable: true, cooldownRemaining: 0 },
     { isAvailable: true, cooldownRemaining: 0 },
-    { isAvailable: true, cooldownRemaining: 0 }
+    { isAvailable: true, cooldownRemaining: 0 },
+    { isAvailable: true, cooldownRemaining: 0 },
   ]);
   // Use chargeDirection from props, with fallback to local state for backward compatibility
   const [localChargeDirection, setLocalChargeDirection] = useState<Vector3 | undefined>(undefined);
@@ -433,8 +433,10 @@ export default function DragonRenderer({
         return true; // Keep effects without expiration
       }));
       
-      // Update position
-      if (position) {
+      // Update position from ref (local player) or prop (remote)
+      if (effectiveRealTimePositionRef.current) {
+        groupRef.current.position.copy(effectiveRealTimePositionRef.current);
+      } else if (position) {
         groupRef.current.position.copy(position);
       }
       
@@ -612,6 +614,33 @@ export default function DragonRenderer({
                   playerEntityObj,
                   'wyvern_talons_detonate',
                   playerEntityObj.userData?.playerId,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  true,
                 );
               }
             }
@@ -665,6 +694,8 @@ export default function DragonRenderer({
         const infestedCombo =
           currentWeapon === WeaponType.RUNEBLADE && !isBlizzard && runebladeInfestedCombo;
 
+        const wyvernTalonsZombieOnKill = wyvernTalons && isReapingViperPhase;
+
         combatSystem.queueDamage(
           targetEntity,
           outgoingDamage,
@@ -695,13 +726,11 @@ export default function DragonRenderer({
           undefined,
           false,
           glacialTalonsForHit,
+          undefined,
+          undefined,
+          undefined,
+          wyvernTalonsZombieOnKill || undefined,
         );
-
-        if (glacialTalonsForHit && position) {
-          const bp = position.clone();
-          bp.y = Math.max(1.5, bp.y);
-          spawnArcticGroundBlizzardAtFromReact(bp);
-        }
 
         if (
           isLocalPlayer &&

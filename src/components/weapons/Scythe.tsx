@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Shape } from '@/utils/three-exports';
 import { DoubleSide } from '@/utils/three-exports';
@@ -39,36 +39,25 @@ function ScytheModel({
     if (ring5Ref.current) ring5Ref.current.rotation.x = -t * 2;
     if (ring6Ref.current) ring6Ref.current.rotation.x = -t * 2;
   });
-  // Create custom blade shape
-  const createBladeShape = () => {
+  // Create custom blade shape once — avoid new Shape + extrudeGeometry every render.
+  const bladeShape = useMemo(() => {
     const shape = new Shape();
     shape.moveTo(0, 0);
-    
-    // Create thick back edge first
     shape.lineTo(0.4, -0.130);
-    shape.bezierCurveTo(
-      0.8, 0.22,    // control point 1
-      1.33, 0.5,    // control point 2
-      1.6, 0.515    // end point (tip)
-    );
-    
-    // Create sharp edge
+    shape.bezierCurveTo(0.8, 0.22, 1.33, 0.5, 1.6, 0.515);
     shape.lineTo(1.125, 0.75);
-    shape.bezierCurveTo(
-      0.5, 0.2,
-      0.225, 0.0,
-      0.1, 0.7
-    );
+    shape.bezierCurveTo(0.5, 0.2, 0.225, 0.0, 0.1, 0.7);
     shape.lineTo(0, 0);
     return shape;
-  };
+  }, []);
 
-  const bladeExtradeSettings = {
-    steps: 1,
-    depth: 0.00010,
-    bevelEnabled: false,
-    curveSegments: 16
-  };
+  const bladeExtrudeSettings = useMemo(
+    () => ({ steps: 1, depth: 0.03, bevelEnabled: false, curveSegments: 16 }),
+    [],
+  );
+
+  const handleMat = useMemo(() => ({ color: '#a86432', roughness: 0.7 }), []);
+  const wrapMat = useMemo(() => ({ color: '#a86432', metalness: 0.3, roughness: 0.7 }), []);
 
   return (
     <group 
@@ -163,7 +152,7 @@ function ScytheModel({
       <group position={[0.375, 0.45, 0.65]} rotation={[0.2, -Math.PI / 3.6, Math.PI -0.4]} scale={[0.8, 0.45, 0.8]}>
         {/* Base blade */}
         <mesh>
-          <extrudeGeometry args={[createBladeShape(), { ...bladeExtradeSettings, depth: 0.03 }]} />
+          <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
           <meshStandardMaterial
             color={isEmpowered ? "#3FAEFC" : "#3FAEFC"}
             emissive={isEmpowered ? "#3FAEFC" : "#3FAEFC"}
@@ -181,7 +170,7 @@ function ScytheModel({
       <group position={[-0.375, -0.45, -0.65]} rotation={[0.2, Math.PI/14 - 1.1, -0.4]} scale={[0.8, 0.45, 0.8]}>
         {/* Second blade */}
         <mesh>
-          <extrudeGeometry args={[createBladeShape(), { ...bladeExtradeSettings, depth: 0.03 }]} />
+          <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
           <meshStandardMaterial
             color={isEmpowered ? "#3FAEFC" : "#3FAEFC"}
             emissive={isEmpowered ? "#3FAEFC" : "#3FAEFC"}

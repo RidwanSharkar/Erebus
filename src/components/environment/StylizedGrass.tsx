@@ -49,6 +49,15 @@ const PURPLE_FIELD_COLORS: TerrainPalette = {
   groundLightIntensity: 0.22,
 };
 
+/** Hex stat/trial/merchant arenas — deep crimson, distinct from arid `roomTheme="red"`. */
+const DEEP_CRIMSON_COLORS: TerrainPalette = {
+  baseColor: '#2a0808',
+  tipColor: '#991b1b',
+  groundColor: '#120508',
+  groundLightColor: '#5c1010',
+  groundLightIntensity: 0.32,
+};
+
 const THEME_COUNTS: Record<RoomBorderTheme, number> = {
   green: 80_000,
   red: 80_000,
@@ -82,6 +91,8 @@ interface StylizedGrassProps {
   windStrength?: number;
   /** Coop room archetype — drives default palette, density (purple), and wind. */
   roomTheme?: RoomBorderTheme;
+  /** Override palette; `crimson` uses deep-red hex-arena colors instead of theme defaults. */
+  grassPalette?: 'theme' | 'crimson';
   /** Legacy: when true, same as `roomTheme="blue"`. Ignored if `roomTheme` is set. */
   isSnowTheme?: boolean;
   baseColor?: string;
@@ -208,6 +219,7 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
   bladeHeight = 0.45,
   windStrength: windOverride,
   roomTheme,
+  grassPalette = 'theme',
   isSnowTheme,
   baseColor,
   tipColor,
@@ -220,7 +232,8 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
   const effectiveTheme = resolveRoomTheme(roomTheme, isSnowTheme);
   const defaultCount = THEME_COUNTS[effectiveTheme];
   const count = countOverride ?? defaultCount;
-  const palette = paletteForTheme(effectiveTheme);
+  const palette =
+    grassPalette === 'crimson' ? DEEP_CRIMSON_COLORS : paletteForTheme(effectiveTheme);
 
   const resolvedBaseColor        = baseColor        ?? palette.baseColor;
   const resolvedTipColor         = tipColor         ?? palette.tipColor;

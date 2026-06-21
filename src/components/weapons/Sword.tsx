@@ -1,6 +1,6 @@
-import { useRef, useState, useEffect, memo } from 'react';
+import { useRef, useState, useEffect, memo, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, Color, Shape, AdditiveBlending } from '@/utils/three-exports';
+import { Group, Vector3, Color, Shape, AdditiveBlending, SphereGeometry, MeshStandardMaterial, InstancedMesh, Object3D } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import { calculationCache } from '@/utils/CalculationCache';
 import { isInsideMainArenaXZ } from '@/utils/mapConstants';
@@ -132,6 +132,21 @@ const SwordComponent = memo(function Sword({
     life: number;
     scale: number;
   }>>([]);
+  const MAX_SPARKS = 120;
+  const sparkGeo = useMemo(() => new SphereGeometry(1.25, 6, 6), []);
+  const sparkMat = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: 0x87ceeb,
+        emissive: 0x4682b4,
+        transparent: true,
+        blending: AdditiveBlending,
+      }),
+    [],
+  );
+  const sparkInstancedRef = useRef<InstancedMesh>(null);
+  const sparkDummy = useRef(new Object3D());
+  const sparkVelScratch = useRef(new Vector3());
 
 
   // Swing collision tracking
@@ -154,6 +169,13 @@ const SwordComponent = memo(function Sword({
       currentComboStep.current = comboStep;
     }
   }, [comboStep]);
+
+  useEffect(() => {
+    return () => {
+      sparkGeo.dispose();
+      sparkMat.dispose();
+    };
+  }, [sparkGeo, sparkMat]);
 
   useFrame((_, delta) => {
     if (!swordRef.current) return;
@@ -765,10 +787,30 @@ const SwordComponent = memo(function Sword({
       sparkParticles.current.forEach(spark => {
         spark.velocity.x += Math.sin(Date.now() * 0.01) * delta * 0.5;
         spark.velocity.z += Math.cos(Date.now() * 0.01) * delta * 0.5;
-        spark.position.add(spark.velocity.clone().multiplyScalar(delta));
+        sparkVelScratch.current.copy(spark.velocity).multiplyScalar(delta);
+        spark.position.add(sparkVelScratch.current);
         spark.life -= delta * 1.5;
         spark.velocity.y += delta * 0.5;
       });
+
+      const instanced = sparkInstancedRef.current;
+      if (instanced) {
+        const sparks = sparkParticles.current;
+        for (let i = 0; i < MAX_SPARKS; i++) {
+          if (i < sparks.length) {
+            const spark = sparks[i];
+            sparkDummy.current.position.copy(spark.position);
+            sparkDummy.current.scale.setScalar(spark.scale);
+            sparkMat.opacity = spark.life * 0.6;
+            sparkMat.emissiveIntensity = 3 * spark.life;
+          } else {
+            sparkDummy.current.scale.setScalar(0);
+          }
+          sparkDummy.current.updateMatrix();
+          instanced.setMatrixAt(i, sparkDummy.current.matrix);
+        }
+        instanced.instanceMatrix.needsUpdate = true;
+      }
 
       // Limit total particles
       if (sparkParticles.current.length > 120) { // Increased maximum particles
@@ -1007,24 +1049,8 @@ const SwordComponent = memo(function Sword({
               </mesh>
             </group>
 
-            {/* Enhanced spark particles */}
-            {sparkParticles.current.map((spark, index) => (
-              <mesh 
-                key={index} 
-                position={spark.position.toArray()}
-                scale={[spark.scale, spark.scale, spark.scale]}
-              >
-                <sphereGeometry args={[1.25, 6, 6]} />
-                <meshStandardMaterial
-                  color={new Color(0x87CEEB)}
-                  emissive={new Color(0x4682B4)}
-                  emissiveIntensity={3 * spark.life}
-                  transparent
-                  opacity={spark.life * 0.6}
-                  blending={AdditiveBlending}
-                />
-              </mesh>
-            ))}
+            {/* Enhanced spark particles — single InstancedMesh, no per-frame geometry allocation */}
+            <instancedMesh ref={sparkInstancedRef} args={[sparkGeo, sparkMat, MAX_SPARKS]} frustumCulled={false} />
 
 
           </>

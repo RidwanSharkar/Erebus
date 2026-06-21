@@ -4,6 +4,7 @@ import { Group, Vector3, Color, Mesh, Material } from '@/utils/three-exports';
 
 interface StunnedEffectProps {
   position: Vector3;
+  positionRef?: React.MutableRefObject<Vector3>;
   duration?: number;
   startTime?: number;
   enemyId?: string;
@@ -20,6 +21,7 @@ interface StunnedEffectProps {
 
 const StunnedEffectComponent = memo(function StunnedEffect({
   position,
+  positionRef,
   duration = 4000, // 4 seconds stun duration
   startTime = Date.now(),
   enemyId,
@@ -105,8 +107,11 @@ const StunnedEffectComponent = memo(function StunnedEffect({
       return;
     }
 
-    // Update position to follow enemy if enemyId is provided
-    if (enemyId && enemyData.length > 0) {
+    // Update position to follow local player ref or enemy
+    if (positionRef?.current) {
+      effectRef.current.position.copy(positionRef.current);
+      effectRef.current.position.y += 0.4;
+    } else if (enemyId && enemyData.length > 0) {
       const target = enemyData.find(enemy => enemy.id === enemyId);
       
       if (target && target.health > 0 && !target.isDying && !target.deathStartTime) {

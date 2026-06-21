@@ -11,6 +11,10 @@ import {
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import EntropicBoltTrail, { ENTROPIC_TRAIL_FADE_OUT_DURATION } from './EntropicBoltTrail';
 import { getEntropicColorTheme } from '@/utils/entropicColorThemes';
+import {
+  computeEntropicChaosOffset,
+  entropicChaosSeedFromId,
+} from '@/utils/entropicBoltChaos';
 
 interface EntropicBoltProps {
   id: number;
@@ -31,6 +35,9 @@ const ORBIT_SHARD_ANGLES = [0, Math.PI * 2 / 3, Math.PI * 4 / 3, Math.PI] as con
 const _dir = new Vector3();
 const _quat = new Quaternion();
 const _flightDir = new Vector3();
+const _basePos = new Vector3();
+const _chaosOffset = new Vector3();
+const WOBBLE_ROLL = 0.1;
 
 function alignBoltToDirection(group: Group | null, direction: Vector3) {
   if (!group) return;
@@ -44,6 +51,7 @@ function alignBoltToDirection(group: Group | null, direction: Vector3) {
 }
 
 export default function EntropicBolt({
+  id,
   position,
   direction,
   isCryoflame = false,
@@ -53,11 +61,13 @@ export default function EntropicBolt({
 }: EntropicBoltProps) {
   const boltRef = useRef<Group>(null);
   const orientRef = useRef<Group>(null);
+  const wobbleRef = useRef<Group>(null);
   const orbitRef = useRef<Group>(null);
   const coreRef = useRef<Group>(null);
   const lastPosition = useRef(position.clone());
   const flightDirectionRef = useRef(_flightDir.copy(direction));
   const timeRef = useRef(0);
+  const chaosSeed = useMemo(() => entropicChaosSeedFromId(id), [id]);
 
   const theme = getEntropicColorTheme(colorVariant, isCryoflame);
   const trailColor = useMemo(() => new Color(theme.primary), [theme.primary]);
@@ -102,11 +112,8 @@ export default function EntropicBolt({
       orbitRef.current.rotation.y += delta * ORBIT_SPEED;
     }
 
-    boltLight.current?.setPosition(position.x, position.y + 0.15, position.z);
-    boltLight.current?.setIntensity(5.5);
-
     if (ecsDriven) {
-      boltRef.current.position.copy(position);
+      _basePos.copy(position);
 
       flightDirectionRef.current.copy(direction);
       if (direction.lengthSq() > 1e-8) {
@@ -119,18 +126,38 @@ export default function EntropicBolt({
         lastPosition.current.copy(position);
       }
 
+      computeEntropicChaosOffset(
+        flightDirectionRef.current,
+        timeRef.current,
+        chaosSeed,
+        _chaosOffset,
+      );
+      boltRef.current.position.copy(_basePos).add(_chaosOffset);
+
+      const visual = boltRef.current.position;
+      boltLight.current?.setPosition(visual.x, visual.y + 0.15, visual.z);
+      boltLight.current?.setIntensity(5.5);
+
       if (orientRef.current) {
         alignBoltToDirection(orientRef.current, flightDirectionRef.current);
+      }
+      if (wobbleRef.current) {
+        const t = timeRef.current;
+        const s = chaosSeed * 17.3;
+        wobbleRef.current.rotation.x = Math.sin(t * 9.1 + s) * WOBBLE_ROLL;
+        wobbleRef.current.rotation.z = Math.cos(t * 7.4 + s * 1.4) * WOBBLE_ROLL;
       }
     }
   });
 
   return (
     <group>
+
+
       <EntropicBoltTrail
         color={trailColor}
         accentColor={trailColor}
-        size={0.11}
+        size={0.07}
         meshRef={boltRef}
         opacity={1}
         isCryoflame={isCryoflame}
@@ -142,6 +169,7 @@ export default function EntropicBolt({
       <group ref={boltRef} position={position.toArray()}>
         {!hideBoltBody ? (
           <group ref={orientRef}>
+            <group ref={wobbleRef}>
             <group ref={coreRef}>
               {/* Jagged core bolt */}
               <mesh position={[0, 0.18, 0]}>
@@ -244,6 +272,7 @@ export default function EntropicBolt({
                 depthWrite={false}
               />
             </mesh>
+            </group>
           </group>
         ) : null}
       </group>

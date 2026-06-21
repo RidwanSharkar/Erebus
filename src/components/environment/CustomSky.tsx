@@ -261,7 +261,9 @@ const CustomSky: React.FC<{
   roomTheme?: RoomBorderTheme;
   /** When set, overrides `roomTheme` (e.g. throne prep always uses clear blue sky). */
   skyPreset?: CustomSkyPreset;
-}> = ({ roomTheme = 'red', skyPreset }) => {
+  /** When false, cloud FBM stops updating (combat LOD). Defaults to true. */
+  animateClouds?: boolean;
+}> = ({ roomTheme = 'red', skyPreset, animateClouds = true }) => {
   const effectivePreset: CustomSkyPreset = skyPreset ?? roomTheme;
   const material = useMemo(
     () =>
@@ -294,7 +296,9 @@ const CustomSky: React.FC<{
   const geo = useMemo(() => new SphereGeometry(500, 32, 16), []);
 
   useFrame((_, delta) => {
-    material.uniforms.uTime.value += delta;
+    if (animateClouds) {
+      material.uniforms.uTime.value += delta;
+    }
   });
 
   return <mesh geometry={geo} material={material} />;

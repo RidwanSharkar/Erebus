@@ -10,6 +10,9 @@ const HEX_FLOOR_MARGIN = 1.4;
 const HEX_INNER_APOTHEM = HEX_ARENA_RADIUS * Math.cos(Math.PI / 6) - HEX_FLOOR_MARGIN;
 /** Match `backend/gameRoom.js` COOP_THRONE_ROOM_RADIUS — prep disc; wall resolve when combat not active. */
 const COOP_THRONE_ROOM_RADIUS = 24;
+/** Match `ThroneRoom.tsx` THRONE_RIM_INSET — inset from grass rim for portals / foot clearance. */
+const THRONE_RIM_INSET = 1.25;
+const ENEMY_WALL_COLLISION_RADIUS = 0.5;
 
 // ─── Navigation grid constants ────────────────────────────────────────────────
 // The grid covers the playable area with 1-unit cells. Walls are "inflated" by
@@ -87,9 +90,19 @@ const TITAN_PATROL_REACH = 0.5;
 const TITAN_PATROL_WAYPOINT_COUNT = 8;
 const TITAN_PATROL_RADIUS_FRAC = 0.65;
 const TITAN_BLADESTORM_HEALTH_PCT = 0.4;
-const TITAN_BLADESTORM_DAMAGE = 35;
-const TITAN_BLADESTORM_SPIN_SPEED = 32.5; // rad/s — matches Cyclone Rush
+const TITAN_BLADESTORM_POWERUP_MS = 1500;
+const TITAN_BLADESTORM_DAMAGE = 15;
+const TITAN_BLADESTORM_SPIN_SPEED = 12.0; // rad/s — calm circular orbit (~1 rotation/sec)
 const TITAN_BLADESTORM_HIT_RADIUS = 4.75;
+const TITAN_STOMP_COOLDOWN_MS = 10_000;
+const TITAN_STOMP_WINDUP_MS = 1500;
+const TITAN_STOMP_MIN_DISTANCE = 5;
+const TITAN_STOMP_MAX_RANGE = 10;
+const TITAN_STOMP_STUN_MS = 2000;
+const TITAN_STOMP_HALF_WIDTH = 1.0;
+const TITAN_STOMP_DAMAGE = 15;
+const TITAN_STOMP_TRAVEL_MS = 700;
+const TITAN_STOMP_STEPS = 10;
 
 // Infested player-zombie summon lock — keep in sync with client ZombieRenderer SUMMON_DURATION
 const INFESTED_ZOMBIE_SUMMON_LOCK_MS = 2800;
@@ -176,6 +189,7 @@ const SHADE_POST_ATTACK_BLINK_DELAY_MS =
 
 // Templar Blink Smite: first cast 15s after aggro, then every 15s; windup 1s then AOE in front of templar
 const TEMPLAR_BLINK_SMITE_INTERVAL_MS = 12000;
+const TEMPLAR_BLINK_SMITE_CHARGE_MS = 500;
 const TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS = 975;
 const TEMPLAR_BLINK_SMITE_IMPACT_OFFSET = 2.75;
 const TEMPLAR_BLINK_SMITE_DAMAGE = 75;
@@ -194,10 +208,11 @@ const BOSS_LEAP_MAX_HP_PCT = 0.95;
 const BOSS_LEAP_LAND_STANDOFF_M = 0.65; // land near player for leap (not full walk standoff 3.2m)
 const BOSS_LEAP_COOLDOWN_MS = 8000;
 const BOSS_LEAP_MAX_TRAVEL = 14;
-/** Inside co-op boss throne shell (~`COOP_THRONE_ROOM_RADIUS` 32 on client); keep leaps shorter. */
+/** Inside co-op boss throne shell (~`COOP_THRONE_ROOM_RADIUS` 24 on client); keep leaps shorter. */
 const BOSS_LEAP_MAX_TRAVEL_THRONE = 12;
 /** Playable disc inset so boss feet stay inside grass ring. */
-const COOP_BOSS_THRONE_ARENA_CLAMP_R = 14;
+const COOP_BOSS_THRONE_ARENA_CLAMP_R =
+  COOP_THRONE_ROOM_RADIUS - THRONE_RIM_INSET - ENEMY_WALL_COLLISION_RADIUS;
 const BOSS_LEAP_DURATION_MS = 1325;
 const BOSS_LEAP_LANDING_RADIUS = 3.5;
 const BOSS_LEAP_DAMAGE = 25;
@@ -229,6 +244,7 @@ const BOSS_THROW_LEAP_ICD_MS = 2_000;
 // Ghoul Leap (unlocked after first boss): mirrors boss leap + player stun (no HP gate)
 const GHOUL_LEAP_LAND_STANDOFF_M = 0.25;
 const GHOUL_LEAP_COOLDOWN_MS = 10_000;
+const GHOUL_LEAP_POST_SPAWN_DELAY_MS = 5_000;
 const GHOUL_LEAP_MAX_TRAVEL = 14;
 const GHOUL_LEAP_DURATION_MS = BOSS_LEAP_DURATION_MS;
 const GHOUL_LEAP_LANDING_RADIUS = 3.5;
@@ -376,6 +392,21 @@ const WARLOCK_ARCHON_SHOCK_DAMAGE = 48;
 const WARLOCK_ARCHON_SHOCK_HALF_WIDTH = 1.0;
 const WARLOCK_ARCHON_SHOCK_RANGE = 14;
 
+/** Post-boss-2 unlock: all knight colors gain themed Smite (Red Smite buffed). */
+const KNIGHT_SMITE_UNLOCK_BOSS_COUNT = 2;
+const KNIGHT_SMITE_COOLDOWN_MS = 6000;
+const KNIGHT_SMITE_LOCK_MS = 1200;
+const KNIGHT_SMITE_IMPACT_DELAY_MS = 900;
+const KNIGHT_SMITE_RADIUS_BASE = 2.8;
+const KNIGHT_SMITE_RADIUS_POST_BOSS2 = 3.75;
+const KNIGHT_SMITE_DAMAGE_PRE_BOSS2 = { red: 75 };
+const KNIGHT_SMITE_DAMAGE_POST_BOSS2 = {
+  red: 125,
+  blue: 85,
+  green: 85,
+  purple: 95,
+};
+
 /** Post-boss-2 unlock: single tectonic-style ground spike (castheal windup, player-targeted). */
 const WEAVER_IMPALE_SPIKE_UNLOCK_BOSS_COUNT = 2;
 const WEAVER_IMPALE_SPIKE_COOLDOWN_MS = 7000;
@@ -497,6 +528,10 @@ class EnemyAI {
     // Ghoul attack cooldown tracking
     this.ghoulAttackCooldown = new Map(); // enemyId -> lastAttackTime
     this.titanAttackCooldown = new Map(); // enemyId -> lastAttackTime
+    this.titanBladestormPowerupTimeout = new Map();
+    this.titanStompCooldown = new Map();
+    this.titanStompWindupTimeout = new Map();
+    this.titanStompShockwaveInterval = new Map();
     this.ghoulLeapCooldown = new Map();
     this.ghoulLeapEndAt = new Map();
     this.ghoulLeapLand = new Map();
@@ -510,6 +545,7 @@ class EnemyAI {
     // Knight special ability cooldown tracking
     // Each soul type has one unique ability; all share this single cooldown map.
     this.knightAbilityCooldown = new Map(); // enemyId -> lastAbilityTime
+    this.knightSmiteCooldown = new Map(); // enemyId -> lastSmiteTime (post-boss-2 blue/green/purple)
     this.knightDashCooldown = new Map(); // enemyId -> lastDashTime
     this.knightSpinCooldown = new Map(); // enemyId -> lastSpinTime
 
@@ -519,6 +555,17 @@ class EnemyAI {
     // Navigation / pathfinding
     this.navGrid    = null;      // Uint8Array built once on first use
     this.enemyPaths = new Map(); // enemyId -> { waypoints, wpIndex, lastTargetPos }
+    /** Per-tick cache — avoids repeated Array.from(getEnemies()) in hot paths. */
+    this._tickEnemies = null;
+    this._meleePeerGrid = null;
+    /** Pooled A* typed arrays (reused across path recomputes). */
+    this._astarGScore = null;
+    this._astarCameFrom = null;
+    this._astarInOpen = null;
+    /** Skip repeated full scans once allied knights are combat-active. */
+    this.alliedCombatStarted = false;
+    /** Per-enemy pending timeout handles cleared on death. */
+    this.enemyPendingTimeouts = new Map();
 
     // Templar Blink Smite: timestamp when next cast is allowed (per templar; initialized on first aggro)
     this.templarBlinkSmiteNextAt = new Map();
@@ -683,6 +730,13 @@ class EnemyAI {
     this.alliedProtectionThreat.clear();
     this.ghoulAttackCooldown.clear();
     this.titanAttackCooldown.clear();
+    this.titanBladestormPowerupTimeout.forEach((t) => clearTimeout(t));
+    this.titanBladestormPowerupTimeout.clear();
+    this.titanStompCooldown.clear();
+    this.titanStompWindupTimeout.forEach((t) => clearTimeout(t));
+    this.titanStompWindupTimeout.clear();
+    this.titanStompShockwaveInterval.forEach((id) => clearInterval(id));
+    this.titanStompShockwaveInterval.clear();
     this.ghoulLeapCooldown.clear();
     this.ghoulLeapEndAt.clear();
     this.ghoulLeapLand.clear();
@@ -691,6 +745,7 @@ class EnemyAI {
     this.ghoulLeapTimeout.clear();
     this.meleeLockUntil.clear();
     this.knightAbilityCooldown.clear();
+    this.knightSmiteCooldown.clear();
     this.knightDashCooldown.clear();
     this.knightSpinCooldown.clear();
     this.knightDeathGraspCooldown.clear();
@@ -702,6 +757,11 @@ class EnemyAI {
     this.templarLeapFrom.clear();
     this.templarLeapTimeout.forEach((t) => clearTimeout(t));
     this.templarLeapTimeout.clear();
+    this.alliedCombatStarted = false;
+    for (const pending of this.enemyPendingTimeouts.values()) {
+      for (const handle of pending) clearTimeout(handle);
+    }
+    this.enemyPendingTimeouts.clear();
   }
 
   updateAI() {
@@ -710,8 +770,14 @@ class EnemyAI {
 
     const enemies = this.room.getEnemies();
     const players = this.room.getPlayers();
+    this._tickEnemies = enemies;
+    this._meleePeerGrid = this._buildMeleePeerGrid(enemies);
     
-    if (enemies.length === 0 || players.length === 0) return;
+    if (enemies.length === 0 || players.length === 0) {
+      this._tickEnemies = null;
+      this._meleePeerGrid = null;
+      return;
+    }
     
     // Update each enemy's AI
     enemies.forEach(enemy => {
@@ -722,6 +788,8 @@ class EnemyAI {
 
     // Emit all position updates accumulated during this tick as a single batch
     this._flushMoves();
+    this._tickEnemies = null;
+    this._meleePeerGrid = null;
   }
 
   /** Co-op portal loading gate — skip emitting player-bound melee hit events. */
@@ -1050,6 +1118,8 @@ class EnemyAI {
       const deathGraspFired = this.tryKnightDeathGrasp(knight, targetPlayer, now, distance);
       if (deathGraspFired) return;
 
+      if (this.tryKnightSmiteUnlocked(knight, targetPlayer, now, distance, attackRange)) return;
+
       const abilityFired = this.tryKnightAbility(knight, targetPlayer, now, distance, attackRange);
       if (abilityFired) return;
 
@@ -1103,6 +1173,8 @@ class EnemyAI {
         const deathGraspFired = this.tryKnightDeathGrasp(knight, fakeTarget, now, distance);
         if (deathGraspFired) return;
       }
+
+      if (this.tryKnightSmiteUnlocked(knight, fakeTarget, now, distance, attackRange)) return;
 
       const abilityFired = this.tryKnightAbility(knight, fakeTarget, now, distance, attackRange);
       if (abilityFired) return;
@@ -1627,19 +1699,32 @@ class EnemyAI {
   // ─── Knight Special Abilities ────────────────────────────────────────────────
   // Returns true if an ability was triggered (so the caller can skip basic attack).
 
+  /** Post-boss-2: blue/green/purple gain Smite on a separate cooldown from Frost/Heal. */
+  tryKnightSmiteUnlocked(knight, targetPlayer, now, distance, meleeRange) {
+    if ((this.room?.coopBossesDefeatedCount ?? 0) < KNIGHT_SMITE_UNLOCK_BOSS_COUNT) return false;
+    if (knight.soulType === 'red') return false;
+    if (distance > meleeRange) return false;
+
+    const lastSmite = this.knightSmiteCooldown.get(knight.id) || 0;
+    if (now - lastSmite < KNIGHT_SMITE_COOLDOWN_MS) return false;
+
+    this.knightSmiteCooldown.set(knight.id, now);
+    this.meleeLockUntil.set(knight.id, now + KNIGHT_SMITE_LOCK_MS);
+    this.knightCastSmite(knight, targetPlayer);
+    return true;
+  }
+
   tryKnightAbility(knight, targetPlayer, now, distance, meleeRange) {
     const lastAbility = this.knightAbilityCooldown.get(knight.id) || 0;
 
     switch (knight.soulType) {
-      // ── Red: Smite — powered melee slam (75 dmg, 7 s CD, melee range) ───────
+      // ── Red: Smite — powered melee slam (75 dmg pre-boss-2, 125 post-boss-2) ──
       case 'red': {
-        const CD = 6000;
-        if (now - lastAbility < CD) return false;
+        if (now - lastAbility < KNIGHT_SMITE_COOLDOWN_MS) return false;
         if (distance > meleeRange) return false;
 
         this.knightAbilityCooldown.set(knight.id, now);
-        // Smite animation locks movement for 1 200 ms (same as basic swing)
-        this.meleeLockUntil.set(knight.id, now + 1200);
+        this.meleeLockUntil.set(knight.id, now + KNIGHT_SMITE_LOCK_MS);
         this.knightCastSmite(knight, targetPlayer);
         return true;
       }
@@ -1678,38 +1763,52 @@ class EnemyAI {
     }
   }
 
-  // Red Knight — Smite (melee slam, 75 dmg)
+  // Knight Smite — melee slam; damage/radius scale after Boss 2 defeat.
   knightCastSmite(knight, targetPlayer) {
+    const boss2Unlocked = (this.room?.coopBossesDefeatedCount ?? 0) >= KNIGHT_SMITE_UNLOCK_BOSS_COUNT;
+    const soulType = knight.soulType || 'red';
+    const damage = boss2Unlocked
+      ? (KNIGHT_SMITE_DAMAGE_POST_BOSS2[soulType] ?? 85)
+      : (KNIGHT_SMITE_DAMAGE_PRE_BOSS2[soulType] ?? 75);
+    const radius = boss2Unlocked ? KNIGHT_SMITE_RADIUS_POST_BOSS2 : KNIGHT_SMITE_RADIUS_BASE;
+    const knightId = knight.id;
+    const targetId = targetPlayer?.id;
+    const timestamp = Date.now();
+
     if (this.io) {
       this.io.to(this.roomId).emit('knight-smite-telegraph', {
-        knightId: knight.id,
-        targetPlayerId: targetPlayer.id,
+        knightId,
+        targetPlayerId: targetId,
+        soulType,
+        radius,
         position: knight.position,
-        timestamp: Date.now(),
+        timestamp,
       });
     }
-    console.log(`🔴⚡ Red Knight ${knight.id} charging Smite at player ${targetPlayer.id}!`);
+    console.log(`⚡ ${soulType} Knight ${knightId} charging Smite at target ${targetId}!`);
 
-    // Damage lands at the visual impact point of the animation (~900 ms)
     setTimeout(() => {
-      if (knight.isDying || !this.room?.getGameStarted()) return;
-      if (this.room?.isEnemyAffectedBy(knight.id, 'stun')) return;
-      const SMITE_RANGE = 2.8; // same melee range
+      const liveKnight = this.room?.getEnemy(knightId);
+      if (!liveKnight || liveKnight.isDying || !this.room?.getGameStarted()) return;
+      if (this.room?.isEnemyAffectedBy(knightId, 'stun')) return;
+
       const currentPlayers = this.room?.getPlayers();
       const currentTarget =
-        currentPlayers && targetPlayer?.id
-          ? currentPlayers.find(p => p.id === targetPlayer.id)
+        currentPlayers && targetId
+          ? currentPlayers.find(p => p.id === targetId)
           : null;
 
       if (currentTarget && currentTarget.health > 0) {
-        const currentDistance = this.calculateDistance(knight.position, currentTarget.position);
-        if (currentDistance <= SMITE_RANGE) {
+        const currentDistance = this.calculateDistance(liveKnight.position, currentTarget.position);
+        if (currentDistance <= radius) {
           if (this.io) {
             this.io.to(this.roomId).emit('knight-smite', {
-              knightId: knight.id,
+              knightId,
               targetPlayerId: currentTarget.id,
-              damage: 50,
-              position: knight.position,
+              soulType,
+              damage,
+              radius,
+              position: liveKnight.position,
               targetPosition: {
                 x: currentTarget.position.x,
                 y: currentTarget.position.y + 1.0,
@@ -1718,19 +1817,19 @@ class EnemyAI {
               timestamp: Date.now(),
             });
           }
-          console.log(`🔴⚡ Red Knight ${knight.id} SMITE hit player ${currentTarget.id} for 75 dmg!`);
+          console.log(`⚡ ${soulType} Knight ${knightId} SMITE hit player ${currentTarget.id} for ${damage} dmg!`);
         } else {
-          console.log(`🔴 Red Knight ${knight.id} Smite missed — player dodged!`);
+          console.log(`⚡ ${soulType} Knight ${knightId} Smite missed — player dodged!`);
         }
       }
 
       this.room?.tryDamageAlliedKnightInXZDisk(
-        { x: knight.position.x, z: knight.position.z },
-        SMITE_RANGE,
-        65,
-        { sourceEnemyId: knight.id, damageType: 'knight_smite' },
+        { x: liveKnight.position.x, z: liveKnight.position.z },
+        radius,
+        damage,
+        { sourceEnemyId: knightId, damageType: 'knight_smite' },
       );
-    }, 900);
+    }, KNIGHT_SMITE_IMPACT_DELAY_MS);
   }
 
   // Green / Purple Knight — Aggro Shout (self-heal 150 HP)
@@ -2966,61 +3065,99 @@ class EnemyAI {
 
   templarCastBlinkSmite(templar, targetPlayer) {
     if (!targetPlayer) return;
-    const { startPosition, endPosition } = this.teleportEnemyBehindTarget(templar, targetPlayer);
-    const blinkTime = Date.now();
-    this.meleeLockUntil.set(templar.id, blinkTime + TEMPLAR_BLINK_SMITE_ABILITY_LOCK_MS);
+
+    const chargeStart = Date.now();
+    const templarId = templar.id;
+    const targetPlayerId = targetPlayer.id;
+
+    const dx = targetPlayer.position.x - templar.position.x;
+    const dz = targetPlayer.position.z - templar.position.z;
+    const mag = Math.sqrt(dx * dx + dz * dz);
+    if (mag > 1e-4) {
+      templar.rotation = Math.atan2(dx / mag, dz / mag);
+    }
+
+    const totalLockMs = TEMPLAR_BLINK_SMITE_CHARGE_MS + TEMPLAR_BLINK_SMITE_ABILITY_LOCK_MS;
+    this.meleeLockUntil.set(templar.id, chargeStart + totalLockMs);
     if (!this.bossAttackCooldown.has(templar.id)) {
       this.bossAttackCooldown.set(templar.id, 0);
     }
     this.bossAttackCooldown.set(templar.id, Math.max(
       this.bossAttackCooldown.get(templar.id) || 0,
-      blinkTime + TEMPLAR_BLINK_SMITE_ABILITY_LOCK_MS
+      chargeStart + totalLockMs
     ));
+
+    const chargePosition = { ...templar.position };
     if (this.io) {
       this._queueMove(templar.id, templar.position, templar.rotation);
-      this.io.to(this.roomId).emit('templar-teleport', {
+      this.io.to(this.roomId).emit('templar-blink-smite-charge', {
         templarId: templar.id,
-        startPosition,
-        endPosition,
+        targetPlayerId,
+        position: chargePosition,
         rotation: templar.rotation,
-        targetPlayerId: targetPlayer.id,
-        timestamp: blinkTime
-      });
-      this.io.to(this.roomId).emit('templar-blink-smite-windup', {
-        templarId: templar.id,
-        targetPlayerId: targetPlayer.id,
-        timestamp: blinkTime
+        chargeMs: TEMPLAR_BLINK_SMITE_CHARGE_MS,
+        timestamp: chargeStart,
       });
     }
-    const templarId = templar.id;
+
     setTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const e = this.room?.enemies?.get(templarId);
       if (!e || e.isDying || e.type !== 'templar') return;
-      const r = e.rotation || 0;
-      const forwardX = Math.sin(r);
-      const forwardZ = Math.cos(r);
-      const smiteX = e.position.x + forwardX * TEMPLAR_BLINK_SMITE_IMPACT_OFFSET;
-      const smiteZ = e.position.z + forwardZ * TEMPLAR_BLINK_SMITE_IMPACT_OFFSET;
-      const smiteY = e.position.y;
+
+      const currentPlayers = this.room?.getPlayers?.() || [];
+      const liveTarget = currentPlayers.find(p => p.id === targetPlayerId && p.health > 0);
+      if (!liveTarget?.position) return;
+
+      const { startPosition, endPosition } = this.teleportEnemyBehindTarget(e, liveTarget);
+      const blinkTime = Date.now();
       if (this.io) {
-        this.io.to(this.roomId).emit('templar-blink-smite-impact', {
+        this._queueMove(e.id, e.position, e.rotation);
+        this.io.to(this.roomId).emit('templar-teleport', {
           templarId: e.id,
-          position: { x: smiteX, y: smiteY, z: smiteZ },
-          rotation: r,
-          radius: TEMPLAR_BLINK_SMITE_RADIUS,
-          damage: TEMPLAR_BLINK_SMITE_DAMAGE,
-          timestamp: Date.now()
+          startPosition,
+          endPosition,
+          rotation: e.rotation,
+          targetPlayerId,
+          timestamp: blinkTime
+        });
+        this.io.to(this.roomId).emit('templar-blink-smite-windup', {
+          templarId: e.id,
+          targetPlayerId,
+          timestamp: blinkTime
         });
       }
-      this.room?.tryDamageAlliedKnightInXZDisk(
-        { x: smiteX, z: smiteZ },
-        TEMPLAR_BLINK_SMITE_RADIUS,
-        TEMPLAR_BLINK_SMITE_DAMAGE,
-        { sourceEnemyId: e.id, damageType: 'templar_blink_smite' },
-      );
-    }, TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS);
-    console.log(`🛡️ Templar ${templar.id} Blink Smite — behind ${targetPlayer.id}, strike in ${TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS}ms`);
+
+      setTimeout(() => {
+        if (!this.room?.getGameStarted()) return;
+        const templar = this.room?.enemies?.get(templarId);
+        if (!templar || templar.isDying || templar.type !== 'templar') return;
+        const r = templar.rotation || 0;
+        const forwardX = Math.sin(r);
+        const forwardZ = Math.cos(r);
+        const smiteX = templar.position.x + forwardX * TEMPLAR_BLINK_SMITE_IMPACT_OFFSET;
+        const smiteZ = templar.position.z + forwardZ * TEMPLAR_BLINK_SMITE_IMPACT_OFFSET;
+        const smiteY = templar.position.y;
+        if (this.io) {
+          this.io.to(this.roomId).emit('templar-blink-smite-impact', {
+            templarId: templar.id,
+            position: { x: smiteX, y: smiteY, z: smiteZ },
+            rotation: r,
+            radius: TEMPLAR_BLINK_SMITE_RADIUS,
+            damage: TEMPLAR_BLINK_SMITE_DAMAGE,
+            timestamp: Date.now()
+          });
+        }
+        this.room?.tryDamageAlliedKnightInXZDisk(
+          { x: smiteX, z: smiteZ },
+          TEMPLAR_BLINK_SMITE_RADIUS,
+          TEMPLAR_BLINK_SMITE_DAMAGE,
+          { sourceEnemyId: templar.id, damageType: 'templar_blink_smite' },
+        );
+      }, TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS);
+
+      console.log(`🛡️ Templar ${e.id} Blink Smite — behind ${targetPlayerId}, strike in ${TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS}ms`);
+    }, TEMPLAR_BLINK_SMITE_CHARGE_MS);
   }
 
   // ─── Viper AI ────────────────────────────────────────────────────────────────
@@ -3727,6 +3864,7 @@ class EnemyAI {
         damage:    GHOUL_BASE_DAMAGE * damageMult,
         attackCooldown: 2000,
         moveSpeed: 0,   // Frozen during summon animation
+        spawnedAt: Date.now(),
         summonerId: weaver.id,
         ...(isBoss3Summon ? {
           visualScale: BOSS3_SUMMONED_GHOUL_VISUAL_SCALE,
@@ -3801,6 +3939,7 @@ class EnemyAI {
       distance > attackRange
     ) {
       const canLeap =
+        (ghoul.spawnedAt == null || now - ghoul.spawnedAt >= GHOUL_LEAP_POST_SPAWN_DELAY_MS) &&
         (this.ghoulLeapCooldown.get(ghoul.id) == null ||
           now - (this.ghoulLeapCooldown.get(ghoul.id) || 0) >= GHOUL_LEAP_COOLDOWN_MS) &&
         !this.ghoulLeapEndAt.has(ghoul.id);
@@ -4028,8 +4167,10 @@ class EnemyAI {
 
   updateTitanAI(titan, players) {
     this.titanMaybeStartBladestorm(titan);
+    if (titan.bladestormPowerupActive) return;
     if (titan.bladestormActive) {
       this.tickTitanBladestorm(titan, this.updateInterval / 1000);
+      return;
     }
 
     let aggroData = this.enemyAggro.get(titan.id);
@@ -4163,15 +4304,56 @@ class EnemyAI {
       }
     }
 
+    if (
+      resolved.kind === 'player' &&
+      distance > TITAN_STOMP_MIN_DISTANCE &&
+      distance <= TITAN_STOMP_MAX_RANGE + 2 &&
+      !titan.bladestormPowerupActive &&
+      !titan.bladestormActive &&
+      !this.titanStompWindupTimeout.has(titan.id) &&
+      (this.titanStompCooldown.get(titan.id) == null ||
+        now - (this.titanStompCooldown.get(titan.id) || 0) >= TITAN_STOMP_COOLDOWN_MS)
+    ) {
+      this.titanStartStomp(titan, resolved.player);
+      return;
+    }
+
     this.moveEnemyTowardsTarget(titan, moveTarget, { meleeSurroundAttackRange: attackRange });
   }
 
   titanMaybeStartBladestorm(titan) {
     if (!titan || titan.type !== 'titan') return;
-    if (titan.bladestormActive) return;
+    if (titan.bladestormPowerupActive || titan.bladestormActive) return;
     if (titan.isDying || titan.health <= 0) return;
     if (!titan.maxHealth || titan.health / titan.maxHealth > TITAN_BLADESTORM_HEALTH_PCT) return;
+    if (this.titanBladestormPowerupTimeout.has(titan.id)) return;
 
+    const now = Date.now();
+    titan.bladestormPowerupActive = true;
+    this.meleeLockUntil.set(titan.id, now + TITAN_BLADESTORM_POWERUP_MS);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('titan-bladestorm-powerup-start', {
+        titanId: titan.id,
+        soulType: titan.soulType || 'green',
+        timestamp: now,
+      });
+    }
+
+    const titanId = titan.id;
+    const handle = setTimeout(() => {
+      this.titanBladestormPowerupTimeout.delete(titanId);
+      this.titanCompleteBladestormPowerup(titanId);
+    }, TITAN_BLADESTORM_POWERUP_MS);
+    this.titanBladestormPowerupTimeout.set(titan.id, handle);
+    console.log(`🗿 Titan ${titan.id} powering up for Bladestorm at ${Math.round((titan.health / titan.maxHealth) * 100)}% HP.`);
+  }
+
+  titanCompleteBladestormPowerup(titanId) {
+    const titan = this.room?.enemies?.get(titanId);
+    if (!titan || titan.type !== 'titan' || titan.isDying || titan.health <= 0) return;
+
+    titan.bladestormPowerupActive = false;
     const startTime = Date.now();
     titan.bladestormActive = true;
     titan.bladestormStartTime = startTime;
@@ -4185,7 +4367,121 @@ class EnemyAI {
         timestamp: startTime,
       });
     }
-    console.log(`🗿 Titan ${titan.id} entered Bladestorm at ${Math.round((titan.health / titan.maxHealth) * 100)}% HP.`);
+    console.log(`🗿 Titan ${titan.id} entered Bladestorm.`);
+  }
+
+  titanStartStomp(titan, targetPlayer) {
+    const now = Date.now();
+    this.titanStompCooldown.set(titan.id, now);
+    this.meleeLockUntil.set(titan.id, now + TITAN_STOMP_WINDUP_MS);
+
+    const dx = targetPlayer.position.x - titan.position.x;
+    const dz = targetPlayer.position.z - titan.position.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const ux = dx / len;
+    const uz = dz / len;
+    titan.rotation = Math.atan2(dx, dz);
+    this._queueMove(titan.id, titan.position, titan.rotation);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('titan-stomp-start', {
+        titanId: titan.id,
+        targetPlayerId: targetPlayer.id,
+        direction: { ux, uz },
+        timestamp: now,
+      });
+    }
+
+    const titanId = titan.id;
+    const targetId = targetPlayer.id;
+    const handle = setTimeout(() => {
+      this.titanStompWindupTimeout.delete(titanId);
+      this.titanReleaseStompShockwave(titanId, targetId, ux, uz);
+    }, TITAN_STOMP_WINDUP_MS);
+    this.titanStompWindupTimeout.set(titan.id, handle);
+  }
+
+  titanReleaseStompShockwave(titanId, targetPlayerId, dirUx, dirUz) {
+    const titan = this.room?.enemies?.get(titanId);
+    if (!titan || titan.type !== 'titan' || titan.isDying || titan.health <= 0) return;
+    if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
+
+    const players = this.room?.getPlayers();
+    const target = players?.find((p) => p.id === targetPlayerId);
+    let ux = dirUx;
+    let uz = dirUz;
+    if (target && target.health > 0) {
+      const dx = target.position.x - titan.position.x;
+      const dz = target.position.z - titan.position.z;
+      const len = Math.hypot(dx, dz) || 1;
+      ux = dx / len;
+      uz = dz / len;
+      titan.rotation = Math.atan2(dx, dz);
+    }
+
+    const ox = titan.position.x;
+    const oz = titan.position.z;
+    const timestamp = Date.now();
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('titan-stomp-shockwave', {
+        titanId,
+        origin: { x: ox, y: 0, z: oz },
+        direction: { ux, uz },
+        maxRange: TITAN_STOMP_MAX_RANGE,
+        travelMs: TITAN_STOMP_TRAVEL_MS,
+        timestamp,
+      });
+    }
+
+    const hitPlayerIds = new Set();
+    const meta = { stunMs: TITAN_STOMP_STUN_MS, sourceEnemyId: titanId };
+    const STEP_MS = Math.max(30, Math.floor(TITAN_STOMP_TRAVEL_MS / TITAN_STOMP_STEPS));
+    let step = 0;
+
+    const oldInterval = this.titanStompShockwaveInterval.get(titanId);
+    if (oldInterval) clearInterval(oldInterval);
+
+    const tick = () => {
+      step += 1;
+      const live = this.room?.enemies?.get(titanId);
+      if (
+        step > TITAN_STOMP_STEPS ||
+        !this.room?.getGameStarted() ||
+        !live ||
+        live.isDying ||
+        live.health <= 0
+      ) {
+        const intervalId = this.titanStompShockwaveInterval.get(titanId);
+        if (intervalId) clearInterval(intervalId);
+        this.titanStompShockwaveInterval.delete(titanId);
+        return;
+      }
+      if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
+
+      const frac0 = (step - 1) / TITAN_STOMP_STEPS;
+      const frac1 = step / TITAN_STOMP_STEPS;
+      const ax = ox + ux * frac0 * TITAN_STOMP_MAX_RANGE;
+      const az = oz + uz * frac0 * TITAN_STOMP_MAX_RANGE;
+      const bx = ox + ux * frac1 * TITAN_STOMP_MAX_RANGE;
+      const bz = oz + uz * frac1 * TITAN_STOMP_MAX_RANGE;
+
+      this.room?.damagePlayersInLineSegmentFirstHit(
+        ax,
+        az,
+        bx,
+        bz,
+        TITAN_STOMP_HALF_WIDTH,
+        TITAN_STOMP_DAMAGE,
+        'titan_stomp',
+        hitPlayerIds,
+        meta,
+      );
+    };
+
+    const intervalId = setInterval(tick, STEP_MS);
+    this.titanStompShockwaveInterval.set(titanId, intervalId);
+    tick();
   }
 
   tickTitanBladestorm(titan, dtSec) {
@@ -4529,6 +4825,14 @@ class EnemyAI {
   }
 
   ghoulStartLeap(ghoul, targetPlayer) {
+    const now = Date.now();
+    if (
+      ghoul.spawnedAt != null &&
+      now - ghoul.spawnedAt < GHOUL_LEAP_POST_SPAWN_DELAY_MS
+    ) {
+      return;
+    }
+
     const fromX = ghoul.position.x;
     const fromZ = ghoul.position.z;
     const { x: landX, z: landZ } = this.computeMobLeapLandXZ(
@@ -6222,6 +6526,59 @@ class EnemyAI {
   }
 
   /**
+   * Spatial bucket of melee-only enemies for O(1) nearby peer queries during separation.
+   */
+  _buildMeleePeerGrid(enemies) {
+    const CELL = 2.5;
+    const grid = new Map();
+    for (const e of enemies) {
+      if (!e || e.isDying || e.health <= 0) continue;
+      if (!MELEE_SURROUND_TYPES.has(e.type)) continue;
+      const cx = Math.floor(e.position.x / CELL);
+      const cz = Math.floor(e.position.z / CELL);
+      const key = `${cx},${cz}`;
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key).push(e);
+    }
+    return { grid, cellSize: CELL };
+  }
+
+  _getMeleePeersNear(x, z) {
+    if (!this._meleePeerGrid) {
+      return (this._tickEnemies || this.room.getEnemies()).filter(
+        (e) => e && !e.isDying && e.health > 0 && MELEE_SURROUND_TYPES.has(e.type),
+      );
+    }
+    const { grid, cellSize } = this._meleePeerGrid;
+    const cx = Math.floor(x / cellSize);
+    const cz = Math.floor(z / cellSize);
+    const out = [];
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        const bucket = grid.get(`${cx + dx},${cz + dz}`);
+        if (bucket) out.push(...bucket);
+      }
+    }
+    return out;
+  }
+
+  _resetAStarBuffers(cellCount) {
+    if (!this._astarGScore || this._astarGScore.length !== cellCount) {
+      this._astarGScore = new Float32Array(cellCount);
+      this._astarCameFrom = new Int32Array(cellCount);
+      this._astarInOpen = new Uint8Array(cellCount);
+    }
+    this._astarGScore.fill(Infinity);
+    this._astarCameFrom.fill(-1);
+    this._astarInOpen.fill(0);
+    return {
+      gScore: this._astarGScore,
+      cameFrom: this._astarCameFrom,
+      inOpen: this._astarInOpen,
+    };
+  }
+
+  /**
    * Push this enemy's proposed position away from other melee peers (2 passes).
    */
   resolveMeleePeerSeparation(selfEnemy, x, z) {
@@ -6233,7 +6590,7 @@ class EnemyAI {
     let rz = z;
 
     for (let iter = 0; iter < 2; iter++) {
-      for (const other of this.room.getEnemies()) {
+      for (const other of this._getMeleePeersNear(rx, rz)) {
         if (!other || other.id === selfEnemy.id || other.isDying || other.health <= 0) continue;
         if (!MELEE_SURROUND_TYPES.has(other.type)) continue;
 
@@ -6540,13 +6897,35 @@ class EnemyAI {
 
   markAlliedCombatInitiated(enemyId = null) {
     if (!this.room) return;
-    for (const e of this.room.getEnemies()) {
+    if (this.alliedCombatStarted) {
+      if (enemyId) this.recordAlliedProtectionThreat(enemyId, null, 25);
+      return;
+    }
+    this.alliedCombatStarted = true;
+    const enemies = this._tickEnemies || this.room.getEnemies();
+    for (const e of enemies) {
       if (!e || e.type !== 'allied-knight' || e.isDying || e.health <= 0) continue;
       e.combatInitiated = true;
       if (enemyId) {
         this.recordAlliedProtectionThreat(enemyId, null, 25);
       }
     }
+  }
+
+  _scheduleEnemyTimeout(enemyId, fn, ms) {
+    const handle = setTimeout(fn, ms);
+    if (!this.enemyPendingTimeouts.has(enemyId)) {
+      this.enemyPendingTimeouts.set(enemyId, new Set());
+    }
+    this.enemyPendingTimeouts.get(enemyId).add(handle);
+    return handle;
+  }
+
+  _clearEnemyTimeouts(enemyId) {
+    const pending = this.enemyPendingTimeouts.get(enemyId);
+    if (!pending) return;
+    for (const handle of pending) clearTimeout(handle);
+    this.enemyPendingTimeouts.delete(enemyId);
   }
 
   isValidAlliedKnightTarget(enemy) {
@@ -7385,9 +7764,7 @@ class EnemyAI {
     if (sc === gc && sr === gr) return [];
 
     const cellCount = NAV_COLS * NAV_ROWS;
-    const gScore   = new Float32Array(cellCount).fill(Infinity);
-    const cameFrom = new Int32Array(cellCount).fill(-1);
-    const inOpen   = new Uint8Array(cellCount);
+    const { gScore, cameFrom, inOpen } = this._resetAStarBuffers(cellCount);
 
     const heuristic = (c, r) => Math.sqrt((c - gc) ** 2 + (r - gr) ** 2);
 
@@ -7606,12 +7983,21 @@ class EnemyAI {
 
     const thronePrep =
       this.room && this.room.gameMode === 'coop' && !this.room.combatArenaActive;
+    const bossThroneArena =
+      this.room && this.room.coopBossThroneArena;
 
     if (thronePrep) {
       const len = Math.hypot(rx, rz);
       const maxR = COOP_THRONE_ROOM_RADIUS - ENEMY_RADIUS;
       if (len > maxR && len > 1e-6) {
         const s = maxR / len;
+        rx *= s;
+        rz *= s;
+      }
+    } else if (bossThroneArena) {
+      const len = Math.hypot(rx, rz);
+      if (len > COOP_BOSS_THRONE_ARENA_CLAMP_R && len > 1e-6) {
+        const s = COOP_BOSS_THRONE_ARENA_CLAMP_R / len;
         rx *= s;
         rz *= s;
       }
@@ -7636,15 +8022,6 @@ class EnemyAI {
       const clamped = this.clampToArenaXZ(rx, rz);
       rx = clamped.x;
       rz = clamped.z;
-    }
-
-    if (this.room && this.room.coopBossThroneArena) {
-      const len = Math.hypot(rx, rz);
-      if (len > COOP_BOSS_THRONE_ARENA_CLAMP_R) {
-        const s = COOP_BOSS_THRONE_ARENA_CLAMP_R / len;
-        rx *= s;
-        rz *= s;
-      }
     }
 
     return { x: rx, z: rz };
@@ -7724,6 +8101,7 @@ class EnemyAI {
   }
 
   removeEnemyAggro(enemyId) {
+    this._clearEnemyTimeouts(enemyId);
     const tst = this.tentacleSlamTimeouts.get(enemyId);
     if (tst) {
       clearTimeout(tst);
@@ -7805,6 +8183,16 @@ class EnemyAI {
     this.weaverSummonedGhouls.delete(enemyId);
     this.ghoulAttackCooldown.delete(enemyId);
     this.titanAttackCooldown.delete(enemyId);
+    const titanPowerupT = this.titanBladestormPowerupTimeout.get(enemyId);
+    if (titanPowerupT) clearTimeout(titanPowerupT);
+    this.titanBladestormPowerupTimeout.delete(enemyId);
+    this.titanStompCooldown.delete(enemyId);
+    const titanStompWindupT = this.titanStompWindupTimeout.get(enemyId);
+    if (titanStompWindupT) clearTimeout(titanStompWindupT);
+    this.titanStompWindupTimeout.delete(enemyId);
+    const titanStompInterval = this.titanStompShockwaveInterval.get(enemyId);
+    if (titanStompInterval) clearInterval(titanStompInterval);
+    this.titanStompShockwaveInterval.delete(enemyId);
     this.ghoulLeapCooldown.delete(enemyId);
     this.ghoulLeapEndAt.delete(enemyId);
     this.ghoulLeapLand.delete(enemyId);
@@ -7814,6 +8202,7 @@ class EnemyAI {
     this.ghoulLeapTimeout.delete(enemyId);
     this.meleeLockUntil.delete(enemyId);
     this.knightAbilityCooldown.delete(enemyId);
+    this.knightSmiteCooldown.delete(enemyId);
     this.knightDashCooldown.delete(enemyId);
     this.knightSpinCooldown.delete(enemyId);
     this.enemyPaths.delete(enemyId);

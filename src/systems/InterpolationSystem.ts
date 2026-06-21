@@ -63,9 +63,25 @@ export class InterpolationSystem extends System {
    * Render interpolation (called during render phase for smooth visuals)
    */
   public render(entities: Entity[], deltaTime: number): void {
-    // For now, render and update phases are the same for interpolation
-    // In the future, we could separate concerns if needed
-    this.update(entities, deltaTime);
+    this.currentTime = performance.now();
+
+    for (const entity of entities) {
+      const transform = entity.getComponent(Transform);
+      const interpolationBuffer = entity.getComponent(InterpolationBuffer);
+
+      if (!transform?.enabled || !interpolationBuffer?.enabled) {
+        continue;
+      }
+
+      const movement = entity.getComponent(Movement);
+      if (movement && movement.canMove) {
+        continue;
+      }
+
+      if (!movement || !movement.isKnockbacked) {
+        this.interpolateEntity(transform, interpolationBuffer);
+      }
+    }
   }
 
   /**

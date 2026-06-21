@@ -14,6 +14,7 @@ import {
   PointLight,
 } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 // Target ≈ 2+ units — tune if asset scale differs
 const SCALE = 0.0205;
@@ -168,6 +169,8 @@ export default function BossGlbModel({
     });
     return clone;
   }, [scene]);
+
+  useDisposeClonedMaterials(clonedScene);
 
   const animations = useMemo(() => {
     const rename = (clips: AnimationClip[], name: string) => clips.map((c) => {

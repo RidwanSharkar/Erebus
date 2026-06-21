@@ -4,6 +4,7 @@ import React, { useRef, useEffect, useMemo } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 interface MartyrModelProps {
   isWalking: boolean;
@@ -43,6 +44,8 @@ export default function MartyrModel({ isWalking, isDying }: MartyrModelProps) {
     });
     return clone;
   }, [scene]);
+
+  useDisposeClonedMaterials(clonedScene);
 
   const animations = useMemo(() => {
     const rename = (clips: AnimationClip[], name: string) => clips.map(c => {

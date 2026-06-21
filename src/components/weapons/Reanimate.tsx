@@ -1,6 +1,6 @@
-import React, { useImperativeHandle, forwardRef, useState, useCallback, useMemo } from 'react';
+import React, { useImperativeHandle, forwardRef, useState, useCallback, useMemo, useRef } from 'react';
 import { Group, Vector3, Color } from 'three';
-import { useFrame, RootState } from '@react-three/fiber';
+import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 const REANIMATE_LIGHT_COLOR = new Color('#ff8800');
@@ -16,28 +16,29 @@ export interface ReanimateRef {
 const HealingEffect: React.FC<{ position: Vector3; onComplete: () => void }> = React.memo(({ position, onComplete }) => {
   const [time, setTime] = useState(0);
   const duration = 1.5;
+  const hasCompleted = useRef(false);
 
   // Borrow a pooled point light for the healing glow instead of mounting a <pointLight>.
   const healLight = useDynamicLight({ color: REANIMATE_LIGHT_COLOR, distance: 5, decay: 2, priority: 1 });
 
-  // Use useCallback for frame updates
-  const onFrame = useCallback((_: RootState, delta: number) => {
-    setTime(prev => {
-      const newTime = prev + delta;
-      if (newTime >= duration) {
-        onComplete();
-      }
-      // Drive the pooled light at the effect's world position, replicating 4 * opacity.
-      const frameProgress = newTime / duration;
-      const frameOpacity = Math.sin(frameProgress * Math.PI);
-      healLight.current?.setPosition(position.x, position.y, position.z);
-      healLight.current?.setIntensity(4 * frameOpacity);
-      return newTime;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [duration, onComplete]);
+  useFrame((_, delta) => {
+    if (hasCompleted.current) return;
 
-  useFrame(onFrame);
+    const newTime = time + delta;
+    const frameProgress = Math.min(newTime / duration, 1);
+    const frameOpacity = Math.sin(frameProgress * Math.PI);
+
+    healLight.current?.setPosition(position.x, position.y, position.z);
+    healLight.current?.setIntensity(4 * frameOpacity);
+
+    if (newTime >= duration) {
+      hasCompleted.current = true;
+      onComplete();
+      return;
+    }
+
+    setTime(newTime);
+  });
 
   // Memoize these calculations
   const progress = time / duration;
@@ -133,6 +134,10 @@ const Reanimate = forwardRef<ReanimateRef, ReanimateProps>(({
     setShowHealingEffect(true);
   }, []);
 
+  const handleHealingComplete = useCallback(() => {
+    setShowHealingEffect(false);
+  }, []);
+
   useImperativeHandle(ref, () => ({
     triggerHealingEffect
   }));
@@ -140,7 +145,7 @@ const Reanimate = forwardRef<ReanimateRef, ReanimateProps>(({
   return showHealingEffect && parentRef.current ? (
     <HealingEffect
       position={parentRef.current.position.clone().add(new Vector3(0, 0, 0))}
-      onComplete={() => setShowHealingEffect(false)}
+      onComplete={handleHealingComplete}
     />
   ) : null;
 });

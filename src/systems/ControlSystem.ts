@@ -193,7 +193,14 @@ import {
   shouldApplyWrathfulSabresSwipesTalent,
   shouldApplyInfestingSabresSwipesTalent,
   shouldApplyCrescentBladesTalent,
+  shouldApplyMortalStrikeTalent,
+  resolveMortalStrikeDamageBundle,
+  MORTAL_STRIKE_ATTACK_INTERVAL,
+  MORTAL_STRIKE_RANGE,
+  MORTAL_STRIKE_ARC_ANGLE,
   shouldApplyWindShearTalent,
+  shouldApplyPsionicBladesTalent,
+  getPsionicBladesProcDamage,
   WIND_SHEAR_DAMAGE,
   WIND_SHEAR_MAX_DISTANCE_UNITS,
   WIND_SHEAR_PROJECTILE_SPEED,
@@ -215,6 +222,7 @@ import {
   AEGIS_ROOM_COOLDOWN_SEC,
   AEGIS_ROOM_DURATION_SEC,
 } from '@/utils/talents';
+import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
 import type { AegisPaletteVariant } from '@/utils/aegisShieldPalette';
 import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
@@ -460,6 +468,7 @@ export class ControlSystem extends System {
   private runebladeFireRate = 0.875; // Runeblade attack rate
   private sabresFireRate = 0.625; // Sabres dual attack rate (600ms between attacks)
   private crescentBladesAttackCount = 0; // Tracks swings toward Crescent Blades special (resets at 3)
+  private mortalStrikeAttackCount = 0; // Tracks swings toward Mortal Strike special (resets at 4)
   private scytheFireRate = 0.725; // EntropicBolt rate (0.33s cooldown)
   private summonTotemFireRate = 6.5; // Summon Totem cooldown
   private viperStingFireRate = 7.0; // Viper Sting rate (2 seconds cooldown)
@@ -2562,49 +2571,45 @@ export class ControlSystem extends System {
     spawnPosition.add(direction.clone().multiplyScalar(1.14));
     spawnPosition.y += 1; // Slightly higher
     
-    const colorVariants = [
-      { colorVariant: 'purple' as const, damage: 47 },
-      { colorVariant: 'blue' as const, damage: 51 },
-      { colorVariant: 'red' as const, damage: 57 },
-      { colorVariant: 'green' as const, damage: 61 },
-    ] as const;
     const wrathEnt = shouldApplyWrathfulEntropicTalent(this.talentLoadout);
     const stagEnt = shouldApplyStaggeringEntropicTalent(this.talentLoadout);
     const infestEnt = shouldApplyInfestingEntropicTalent(this.talentLoadout);
     const arcticEnt = shouldApplyArcticShardsEntropicTalent(this.talentLoadout);
 
-    let randomVariant: {
-      colorVariant: 'purple' | 'blue' | 'red' | 'green' | 'arctic';
+    let boltVariant: {
+      colorVariant: typeof DEFAULT_ENTROPIC_COLOR_VARIANT | 'purple' | 'blue' | 'red' | 'green' | 'arctic';
       damage: number;
     };
     let entropicBoltTalent: 'wrathful' | 'staggering' | 'infesting' | 'arctic' | undefined;
     if (wrathEnt) {
-      randomVariant = { colorVariant: 'red', damage: 53 };
+      boltVariant = { colorVariant: 'red', damage: 53 };
       entropicBoltTalent = 'wrathful';
     } else if (stagEnt) {
-      randomVariant = { colorVariant: 'blue', damage: 47 };
+      boltVariant = { colorVariant: 'blue', damage: 47 };
       entropicBoltTalent = 'staggering';
     } else if (infestEnt) {
-      randomVariant = { colorVariant: 'green', damage: INFESTING_ENTROPIC_BOLT_DAMAGE };
+      boltVariant = { colorVariant: 'green', damage: INFESTING_ENTROPIC_BOLT_DAMAGE };
       entropicBoltTalent = 'infesting';
     } else if (arcticEnt) {
-      randomVariant = { colorVariant: 'arctic', damage: ARCTIC_ENTROPIC_BOLT_DAMAGE };
+      boltVariant = { colorVariant: 'arctic', damage: ARCTIC_ENTROPIC_BOLT_DAMAGE };
       entropicBoltTalent = 'arctic';
     } else {
-      randomVariant = colorVariants[Math.floor(Math.random() * colorVariants.length)];
+      boltVariant = { colorVariant: DEFAULT_ENTROPIC_COLOR_VARIANT, damage: 47 };
     }
 
     const entropicBaseConfig = {
       speed: 20,
-      damage: randomVariant.damage,
+      damage: boltVariant.damage,
       piercing: false,
       explosive: false,
       explosionRadius: 0,
       subclass: this.currentSubclass,
       level: this.currentLevel,
       opacity: 1.0,
-      colorVariant: randomVariant.colorVariant,
+      colorVariant: boltVariant.colorVariant,
       entropicBoltTalent,
+      entropicFragmentation: shouldApplyFragmentationTalent(this.talentLoadout, this.abilityLoadout),
+      entropicFragmentHop: 0,
       sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown',
     };
 
@@ -3847,6 +3852,15 @@ export class ControlSystem extends System {
 
     this.lastRunebladeFireTime = currentTime;
     this.lastSwordAttackTime = currentTime;
+
+    // Mortal Strike: every 4th swing fires a bonus arc slash AoE
+    if (shouldApplyMortalStrikeTalent(this.talentLoadout)) {
+      this.mortalStrikeAttackCount++;
+      if (this.mortalStrikeAttackCount >= MORTAL_STRIKE_ATTACK_INTERVAL) {
+        this.mortalStrikeAttackCount = 0;
+        this.performMortalStrike(playerTransform);
+      }
+    }
 
     // Set swinging state - completion will be handled by runeblade component callback
     this.isSwinging = true;
@@ -5255,6 +5269,84 @@ export class ControlSystem extends System {
     this.audioSystem?.playSabresSwingSound(playerTransform.position);
   }
 
+  /** Mortal Strike — wide-arc bonus slash fired on every 4th Runeblade LMB swing. */
+  private performMortalStrike(playerTransform: Transform): void {
+    const bundle = resolveMortalStrikeDamageBundle(this.talentLoadout);
+    const attackRange = MORTAL_STRIKE_RANGE;
+    const attackAngle = MORTAL_STRIKE_ARC_ANGLE;
+
+    const attackDirection = new Vector3();
+    this.camera.getWorldDirection(attackDirection);
+    attackDirection.y = 0;
+    if (attackDirection.lengthSq() < 1e-8) {
+      attackDirection.set(0, 0, -1);
+    } else {
+      attackDirection.normalize();
+    }
+
+    const allEntities = this.world.getAllEntities();
+    const potentialTargets = allEntities.filter(entity =>
+      entity.hasComponent(Health) &&
+      entity.hasComponent(Transform) &&
+      entity !== this.playerEntity
+    );
+
+    const combatSystem = this.world.getSystem(CombatSystem);
+    const pid = this.playerEntity?.userData?.playerId;
+
+    for (const target of potentialTargets) {
+      const targetTransform = target.getComponent(Transform);
+      const targetHealth = target.getComponent(Health);
+      if (!targetTransform || !targetHealth || targetHealth.isDead) continue;
+
+      const directionToTarget = targetTransform.position.clone().sub(playerTransform.position);
+      if (directionToTarget.length() > attackRange) continue;
+
+      directionToTarget.normalize();
+      const dotProduct = attackDirection.dot(directionToTarget);
+      const angleToTarget = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
+      if (angleToTarget > attackAngle / 2) continue;
+
+      if (combatSystem) {
+        let finalDamage = bundle.baseDamage;
+        let isCritical = false;
+        if (bundle.critChanceAdd != null) {
+          const r = calculateDamage(bundle.baseDamage, WeaponType.RUNEBLADE, {
+            critChanceAdd: bundle.critChanceAdd,
+          });
+          finalDamage = r.damage;
+          isCritical = r.isCritical;
+        }
+
+        combatSystem.queueDamage(
+          target,
+          finalDamage,
+          this.playerEntity || undefined,
+          'mortal_strike',
+          pid,
+          isCritical,
+          undefined,
+          bundle.staggerToAdd,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          bundle.infestedCombo ? true : undefined,
+        );
+      }
+    }
+
+    if (combatSystem) {
+      combatSystem.addMortalStrikeEffect(
+        playerTransform.position,
+        attackDirection,
+        bundle.theme,
+      );
+    }
+
+    this.audioSystem?.playRunebladeSwingHitSound(playerTransform.position);
+  }
+
   /** Wind Shear talent — fires a pair of wind slash projectiles on every Sabres LMB swing.
    *  Both travel straight forward; only the crescent visual is rolled diagonally in opposing
    *  directions so the pair reads as right-hand and left-hand swings. The second is launched
@@ -5424,6 +5516,7 @@ export class ControlSystem extends System {
         );
 
         this.tryGuardSabresSwipesBladeProc(playerTransform);
+        this.tryPsionicBladesProc(target, attackDirection, 'left');
 
         // Right sabre hit (with small delay)
         setTimeout(() => {
@@ -5454,6 +5547,7 @@ export class ControlSystem extends System {
               infestSabreSwipes,
             );
             this.tryGuardSabresSwipesBladeProc(playerTransform);
+            this.tryPsionicBladesProc(target, attackDirection, 'right');
           }
         }, 100); // 100ms delay between sabre hits
 
@@ -6223,6 +6317,10 @@ export class ControlSystem extends System {
   /** Co-op: allocated stats from leveling / pedestal picks (Intellect feeds Spellblade Wraith Strike base scaling). */
   public setAllocatedPlayerStats(stats: PlayerStats): void {
     this.allocatedPlayerStats = { ...stats };
+  }
+
+  public getAllocatedPlayerStats(): PlayerStats {
+    return { ...this.allocatedPlayerStats };
   }
 
   public setAbilityLoadout(loadout: AbilityLoadout): void {
@@ -8035,6 +8133,41 @@ export class ControlSystem extends System {
     if (!shouldApplyGuardSabresSwipesTalent(this.talentLoadout)) return;
     if (Math.random() >= GUARD_SABRES_SWIPES_PROC_CHANCE) return;
     this.applySabresPurpleGuardEffect(playerTransform);
+  }
+
+  /** Psionic Blades — bonus Intellect-scaled damage + slice VFX on each LMB blade hit. */
+  private tryPsionicBladesProc(
+    target: Entity,
+    attackDirection: Vector3,
+    bladeSide: 'left' | 'right',
+  ): void {
+    if (!this.playerEntity) return;
+    if (this.currentWeapon !== WeaponType.SABRES) return;
+    if (!shouldApplyPsionicBladesTalent(this.talentLoadout)) return;
+
+    const targetHealth = target.getComponent(Health);
+    if (!targetHealth || targetHealth.isDead) return;
+
+    const intellect = this.allocatedPlayerStats.intellect ?? 0;
+    const procDamage = getPsionicBladesProcDamage(intellect);
+    const combatSystem = this.world.getSystem(CombatSystem);
+    if (!combatSystem) return;
+
+    const pid = this.playerEntity.userData?.playerId;
+    combatSystem.queueDamage(
+      target,
+      procDamage,
+      this.playerEntity,
+      'psionic_blades',
+      pid,
+      false,
+    );
+
+    combatSystem.addPsionicBladeSliceEffect(
+      target.id.toString(),
+      attackDirection,
+      bladeSide,
+    );
   }
 
   /** Windfury proc + Flurry heal — called once per Runeblade swing after real hits (Runeblade.tsx). */

@@ -46,7 +46,7 @@ export default function CrossentropyBolt({
   const _scratchCurrentPos  = useRef(new Vector3());
   const clock = useRef(new Clock());
   const startSpeed = 0.03;
-  const maxSpeed = 2.25;
+  const maxSpeed = 2;
   const accelerationDistance = 20; // Distance over which to accelerate from start to max speed
   const maxRange = CROSSENTROPY_MAX_TRAVEL_DISTANCE; // Aligned with ECS maxDistance for Crossentropy
   const lifespan = 3; // Fallback lifespan

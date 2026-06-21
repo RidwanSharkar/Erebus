@@ -1,16 +1,16 @@
 'use client';
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
-
-import { AdditiveBlending, Group, Vector3 } from 'three';
+import { Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import KnightModel, { type KnightAbilityClip } from './KnightModel';
 import KnightSoulEffect from './KnightSoulEffect';
 import EnemyMeleeAttackRangeRing, { KNIGHT_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import EnemyStaggerBar from './EnemyStaggerBar';
+import EnemyAbilityChargeTelegraph from './EnemyAbilityChargeTelegraph';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import { KNIGHT_CAST_ABILITY_LOCK_MS } from '@/utils/knightCoopAbilitiesConstants';
 import GhostTrail from '../dragon/GhostTrail';
@@ -96,7 +96,7 @@ export default function KnightRenderer({
   orbitalYOffset = 2.1,
 }: KnightRendererProps) {
   const theme = campHpTheme(campType);
-  const { socket } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayer();
   const spinChargeColor = soulType ? SPIN_CHARGE_COLORS[soulType] : DEFAULT_SPIN_CHARGE_COLOR;
   const groupRef = useRef<Group | null>(null);
 
@@ -464,6 +464,19 @@ export default function KnightRenderer({
     if (!groupRef.current) return;
     const group = groupRef.current;
 
+    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    const isLocked = isAttackingRef.current || isAbilityRef.current || isDashingRef.current;
+    if (dist > 5.0 && !isLocked) {
+      group.position.copy(targetPosition.current);
+    }
+    if (dist > 0.01 && !isLocked && !isDying) {
+      if (!isWalking) setIsWalking(true);
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      walkStopTimer.current = setTimeout(() => {
+        setIsWalking(false);
+      }, WALK_STOP_DELAY);
+    }
+
     const spinTravel = spinTravelRef.current;
     if (spinTravel) {
       const t = Math.min(1, (performance.now() - spinTravel.startedAt) / spinTravel.duration);
@@ -517,21 +530,10 @@ export default function KnightRenderer({
     )}
 
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
-      {isSpinCharging && !isDying && (
-        <>
-          <EnemyDynamicLight position={[0, 1.25, 0]} color={spinChargeColor} intensity={6} distance={5} />
-          <mesh position={[0, 1.1, 0]}>
-            <sphereGeometry args={[1, 32, 16]} />
-            <meshBasicMaterial
-              color={spinChargeColor}
-              transparent
-              opacity={0.32}
-              depthWrite={false}
-              blending={AdditiveBlending}
-            />
-          </mesh>
-        </>
-      )}
+      <EnemyAbilityChargeTelegraph
+        active={isSpinCharging && !isDying}
+        primaryColor={spinChargeColor}
+      />
       <KnightModel
         isWalking={isWalking}
         isAttacking={isAttacking}

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { useEffect } from 'react';
 
 /**
  * Recursively dispose all geometries, materials, and textures attached to a
@@ -33,4 +34,25 @@ function disposeMaterial(material: THREE.Material): void {
     }
   }
   material.dispose();
+}
+
+/** Dispose only cloned GLB materials (geometries stay shared with the cache). */
+export function disposeClonedMaterials(object: THREE.Object3D): void {
+  object.traverse((child) => {
+    if (!(child as THREE.Mesh).isMesh) return;
+    const mat = (child as THREE.Mesh).material;
+    if (Array.isArray(mat)) {
+      mat.forEach((m) => m?.dispose());
+    } else if (mat) {
+      mat.dispose();
+    }
+  });
+}
+
+/** Cleanup hook for SkeletonUtils.clone scenes that duplicate materials per instance. */
+export function useDisposeClonedMaterials(clonedScene: THREE.Object3D | null | undefined): void {
+  useEffect(() => {
+    if (!clonedScene) return;
+    return () => disposeClonedMaterials(clonedScene);
+  }, [clonedScene]);
 }

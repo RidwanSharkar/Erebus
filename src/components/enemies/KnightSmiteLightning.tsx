@@ -8,21 +8,41 @@ import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 const DURATION_MS = 450;
 const SKY_Y = 22;
 
+export type KnightSmiteLightningVariant =
+  | 'enemy-red'
+  | 'enemy-blue'
+  | 'enemy-green'
+  | 'enemy-purple'
+  | 'ally-gold';
+
 interface KnightSmiteLightningProps {
   position: Vector3;
   onComplete: () => void;
-  variant?: 'enemy-red' | 'ally-gold';
+  variant?: KnightSmiteLightningVariant;
+  /** Scales beam thickness; 1 = base radius (2.8). Post-Boss-2 smites use ~3.75/2.8. */
+  widthScale?: number;
 }
 
-/** Sky-to-ground strike for knight smites — crimson for enemies, gold for the allied knight. */
-export default function KnightSmiteLightning({ position, onComplete, variant = 'enemy-red' }: KnightSmiteLightningProps) {
+const PALETTES: Record<KnightSmiteLightningVariant, { core: string; glow: string; light: string }> = {
+  'enemy-red': { core: '#fca5a5', glow: '#ef4444', light: '#f97316' },
+  'enemy-blue': { core: '#44aaff', glow: '#2266dd', light: '#3399ff' },
+  'enemy-green': { core: '#00ff88', glow: '#00cc55', light: '#00ff66' },
+  'enemy-purple': { core: '#cc44ff', glow: '#8811cc', light: '#bb33ff' },
+  'ally-gold': { core: '#fff7ad', glow: '#facc15', light: '#f59e0b' },
+};
+
+/** Sky-to-ground strike for knight smites — soul-themed for enemies, gold for allied knight. */
+export default function KnightSmiteLightning({
+  position,
+  onComplete,
+  variant = 'enemy-red',
+  widthScale = 1,
+}: KnightSmiteLightningProps) {
   const startRef = useRef<number | null>(null);
   const doneRef = useRef(false);
-  const palette = variant === 'ally-gold'
-    ? { core: '#fff7ad', glow: '#facc15', light: '#f59e0b' }
-    : { core: '#fca5a5', glow: '#ef4444', light: '#f97316' };
+  const palette = PALETTES[variant];
+  const beamScale = Math.max(0.5, widthScale);
 
-  // Borrow a pooled point light for the strike flash (replaces a mounted <pointLight>).
   const strikeLight = useDynamicLight({ color: palette.light, distance: 16, decay: 2, priority: 1 });
 
   const segments = useMemo(() => {
@@ -33,16 +53,16 @@ export default function KnightSmiteLightning({ position, onComplete, variant = '
     const pts: { x: number; y: number; z: number; h: number }[] = [];
     for (let i = 0; i < n; i++) {
       const t = i / (n - 1);
-      const jitter = (1 - t) * 0.35;
+      const jitter = (1 - t) * 0.35 * beamScale;
       pts.push({
         x: baseX + (Math.random() - 0.5) * jitter,
         y: baseY + SKY_Y * (1 - t),
         z: baseZ + (Math.random() - 0.5) * jitter,
-        h: 0.12 + (1 - t) * 0.08,
+        h: (0.12 + (1 - t) * 0.08) * beamScale,
       });
     }
     return pts;
-  }, [position.x, position.y, position.z]);
+  }, [position.x, position.y, position.z, beamScale]);
 
   const matCore = useMemo(
     () =>
@@ -67,7 +87,7 @@ export default function KnightSmiteLightning({ position, onComplete, variant = '
     [palette.glow],
   );
 
-  const cyl = useMemo(() => new CylinderGeometry(0.085, 0.085, 1, 6), []);
+  const cyl = useMemo(() => new CylinderGeometry(0.085 * beamScale, 0.085 * beamScale, 1, 6), [beamScale]);
 
   useFrame(() => {
     if (startRef.current === null) startRef.current = performance.now();

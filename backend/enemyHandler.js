@@ -18,6 +18,7 @@ function handleEnemyEvents(socket, gameRooms) {
       crossentropyMeteor,
       wyvernBiteVenom,
       wyvernStingVenomZombie,
+      wyvernTalonsZombie,
       wyvernBiteConcentratedDoT,
       infestedBackstab,
       sabreInfestingSwipes,
@@ -77,6 +78,7 @@ function handleEnemyEvents(socket, gameRooms) {
         hitMeta.staggerToAdd = staggerToAdd;
       }
       if (glacialTalons) hitMeta.glacialTalons = true;
+      if (wyvernTalonsZombie) hitMeta.wyvernTalonsZombie = true;
     } else if (damageType === 'barrage') {
       hitMeta = { damageType: 'barrage', wyvernBiteVenom: !!wyvernBiteVenom };
       if (glacialBiteChill) hitMeta.glacialBiteChill = true;
@@ -90,8 +92,11 @@ function handleEnemyEvents(socket, gameRooms) {
         wyvernStingVenomZombie: !!wyvernStingVenomZombie,
         wyvernBiteConcentratedDoT: !!wyvernBiteConcentratedDoT,
       };
+    } else if (damageType === 'cobra_shot') {
+      hitMeta = { damageType: 'cobra_shot' };
     } else if (damageType === 'wyvern_talons_detonate') {
       hitMeta = { damageType: 'wyvern_talons_detonate' };
+      if (wyvernTalonsZombie) hitMeta.wyvernTalonsZombie = true;
     } else if (damageType === 'backstab') {
       hitMeta = { damageType: 'backstab' };
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {

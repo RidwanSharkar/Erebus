@@ -8,6 +8,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import WeaverModel from './WeaverModel';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
 
@@ -50,7 +51,7 @@ export default function WeaverRenderer({
   const auraDisc = isBlue
     ? { color: '#3388dd', emissive: '#1a50aa' }
     : { color: '#00cc44', emissive: '#00aa22' };
-  const { socket } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
 
   const [isCastingHeal,   setIsCastingHeal]   = useState(false);
@@ -187,6 +188,8 @@ export default function WeaverRenderer({
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 
