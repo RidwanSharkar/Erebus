@@ -708,7 +708,7 @@ export class AudioSystem extends System {
 
   // Play Shade dart throw sound (one call per dart, staggered by the caller)
   public playShadeThrowSound(position: Vector3) {
-    return this.playWeaponSound('shade_throw', position, { volume: 0.85 });
+    return this.playWeaponSound('shade_throw', position, { volume: 0.75 });
   }
 
   // Play Shade dart hit-damage sound (variant matches which dart hit: 1, 2, or 3)
@@ -718,12 +718,12 @@ export class AudioSystem extends System {
 
   // Play Viper enemy bow draw sound (when the Viper starts drawing its bow)
   public playViperBowDrawSound(position: Vector3) {
-    return this.playWeaponSound('bow_draw', position, { volume: 0.55 });
+    return this.playWeaponSound('bow_draw', position, { volume: 0.65 });
   }
 
   // Play Viper enemy bow release sound (when the Viper fires its arrow)
   public playViperBowReleaseSound(position: Vector3) {
-    return this.playWeaponSound('bow_release', position, { volume: 0.6 });
+    return this.playWeaponSound('bow_release', position, { volume: 0.65 });
   }
 
   /** @deprecated Use authoritative hit/miss outcome sounds from the server. */
@@ -740,7 +740,7 @@ export class AudioSystem extends System {
   }
 
   public playKnightAggroSound(position: Vector3) {
-    return this.playWeaponSound('knight_aggro', position, { volume: 0.9 });
+    return this.playWeaponSound('knight_aggro', position, { volume: 0.75 });
   }
 
   public playBossTectonicQuakeWarnSound(position: Vector3) {
@@ -748,7 +748,7 @@ export class AudioSystem extends System {
   }
 
   public playBoss1AbilitySound(position: Vector3) {
-    return this.playWeaponSound('boss1_ability', position, { volume: 0.9 });
+    return this.playWeaponSound('boss1_ability', position, { volume: 0.75 });
   }
 
   public playEnemyAttackTelegraphSound(position: Vector3, config?: SoundConfig) {
@@ -768,15 +768,15 @@ export class AudioSystem extends System {
   }
 
   public playExplosiveTalonsDetonationSound(position: Vector3, config?: SoundConfig) {
-    return this.playWeaponSound('bow_explosive_talons', position, { volume: 0.9, ...config });
+    return this.playWeaponSound('bow_explosive_talons', position, { volume: 1.1, ...config });
   }
 
   public playMartyrArmingSound(position: Vector3, config?: SoundConfig) {
-    return this.playWeaponSound('versus_arming', position, { volume: 0.9, ...config });
+    return this.playWeaponSound('versus_arming', position, { volume: 1.2, ...config });
   }
 
   public playExplosionSound(position: Vector3, config?: SoundConfig) {
-    return this.playWeaponSound('bow_explosion', position, { volume: 0.9, ...config });
+    return this.playWeaponSound('bow_explosion', position, { volume: 1.4, ...config });
   }
 
   // Play Warlock flame-strike (immolate) sound — fires when the pillars erupt
@@ -806,11 +806,11 @@ export class AudioSystem extends System {
 
   // Play scythe cryoflame sound (entropic bolt with passive)
   public playScytheCryoflameSound(position: Vector3) {
-    return this.playWeaponSound('scythe_cryoflame', position, { volume: 0.8 });
+    return this.playWeaponSound('scythe_cryoflame', position, { volume: 0.7 });
   }
 
   public playMeteorIndicatorSound(position: Vector3) {
-    return this.playWeaponSound('scythe_meteor', position, { volume: 0.9 });
+    return this.playWeaponSound('scythe_meteor', position, { volume: 0.6 });
   }
 
   public playCrossentropyMeteoriteFallSound(position: Vector3) {
@@ -820,11 +820,11 @@ export class AudioSystem extends System {
   }
 
   public playTotemBoltLaunchSound(position: Vector3) {
-    return this.playWeaponSound('scythe_totem_bolt', position, { volume: 0.72 });
+    return this.playWeaponSound('scythe_totem_bolt', position, { volume: 0.65 });
   }
 
   public playTotemSuperconductorSound(position: Vector3) {
-    return this.playWeaponSound('scythe_superconductor', position, { volume: 0.78 });
+    return this.playWeaponSound('scythe_superconductor', position, { volume: 0.825 });
   }
 
   // Play Aftershock eruption sound when the delayed ground strip detonates
@@ -860,7 +860,7 @@ export class AudioSystem extends System {
 
   /** Local player defeated — short UI sting. */
   public playDefeatSound() {
-    return this.playWeaponSound('ui_defeat', new Vector3(0, 0, 0), { volume: 0.85 });
+    return this.playWeaponSound('ui_defeat', new Vector3(0, 0, 0), { volume: 1.0 });
   }
 
   public playLevelUpSound() {
@@ -868,19 +868,19 @@ export class AudioSystem extends System {
   }
 
   public playAegisBlockSound() {
-    return this.playWeaponSound('ui_aegis', new Vector3(0, 0, 0), { volume: 0.85 });
+    return this.playWeaponSound('ui_aegis', new Vector3(0, 0, 0), { volume: 1.0 });
   }
 
   public playFrozenStatusSound(position: Vector3) {
-    return this.playWeaponSound('ui_frozen', position, { volume: 0.78 });
+    return this.playWeaponSound('ui_frozen', position, { volume: 0.725 });
   }
 
   public playIgniteStatusSound(position: Vector3) {
-    return this.playWeaponSound('ui_ignite', position, { volume: 0.58 });
+    return this.playWeaponSound('ui_ignite', position, { volume: 0.78 });
   }
 
   public playEntangleStatusSound(position: Vector3) {
-    return this.playWeaponSound('ui_entangle', position, { volume: 0.62 });
+    return this.playWeaponSound('ui_entangle', position, { volume: 0.65 });
   }
 
   public playLesserHealSound(position?: Vector3) {
@@ -923,7 +923,7 @@ export class AudioSystem extends System {
 
   // Play flurry sound
   public playFlurrySound(position: Vector3) {
-    return this.playWeaponSound('flurry', position, { volume: 0.9 });
+    return this.playWeaponSound('flurry', position, { volume: 0.85 });
   }
 
   // Play icebeam sound (loops while active)

@@ -200,7 +200,7 @@ const TELEPORT_BEHIND_DISTANCE = 2.2; // same as boss blink (templar blink smite
 // Co-op main boss (GLB): melee + leap + tectonic
 const BOSS_MELEE_RANGE = 2.9;
 const BOSS_MELEE_COOLDOWN_MS = 2750;
-const BOSS_MELEE_DAMAGE = 17;
+const BOSS_MELEE_DAMAGE = 19;
 /** No translation during melee swing (matches knight `SWING_LOCK_MS`). */
 const BOSS_MELEE_ATTACK_LOCK_MS = 1200;
 /** Leap only once at or below this health fraction (not at full HP). */
@@ -224,13 +224,13 @@ const BOSS_TECTONIC_JUMP_COUNT = 10;
 const BOSS_TECTONIC_SPIKE_WARN_MS = 750;
 // Keep in sync with TECTONIC_HIT_RADIUS in src/components/enemies/BossTectonicSpikeTelegraph.tsx
 const BOSS_TECTONIC_SHARD_RADIUS = 2.5;
-const BOSS_TECTONIC_SHARD_DAMAGE = 32;
+const BOSS_TECTONIC_SHARD_DAMAGE = 30;
 const BOSS_STATIONARY_EPS = 0.03;
 const BOSS_TECTONIC_CENTER = { x: 0, y: 0, z: 0 };
 // Boss throw-spear ability
 const BOSS_THROW_MIN_RANGE     = 3;
-const BOSS_THROW_MAX_RANGE     = 12;
-const BOSS_THROW_DAMAGE        = 45;
+const BOSS_THROW_MAX_RANGE     = 18;
+const BOSS_THROW_DAMAGE        = 40;
 const BOSS_THROW_COOLDOWN_MS   = 10_000;
 /** When the spear projectile / `boss-throw-spear` fires during the throw animation. */
 const BOSS_THROW_SPEAR_RELEASE_MS = 900;
@@ -261,7 +261,7 @@ const BOSS3_SUMMONED_GHOUL_DAMAGE_MULT = 2;
 // Templar Leap (unlocked after first boss): 4–8m range, higher damage, no stun
 const TEMPLAR_LEAP_MIN_RANGE = 4;
 const TEMPLAR_LEAP_LAND_STANDOFF_M = 0.2;
-const TEMPLAR_LEAP_COOLDOWN_MS = 5_000;
+const TEMPLAR_LEAP_COOLDOWN_MS = 6_000;
 const TEMPLAR_LEAP_MAX_TRAVEL = 8;
 const TEMPLAR_LEAP_DURATION_MS = BOSS_LEAP_DURATION_MS;
 const TEMPLAR_LEAP_LANDING_RADIUS = 2.0;
@@ -276,7 +276,7 @@ const MOB_LEAP_PREDICTION_MAX_OFFSET = 12;
 // Boss 2: Archon warlock
 const BOSS2_ARCHON_LIGHTNING_COOLDOWN_MS = 3500;
 const BOSS2_ARCHON_LIGHTNING_WINDUP_MS = 750;
-const BOSS2_ARCHON_LIGHTNING_DAMAGE = 53;
+const BOSS2_ARCHON_LIGHTNING_DAMAGE = 49;
 const BOSS2_ARCHON_LIGHTNING_HALF_WIDTH = 1.0;
 const BOSS2_ARCHON_LIGHTNING_RANGE = 14;
 /** Phase 1 perpendicular arm half-length at target (capped). */
@@ -288,8 +288,8 @@ const BOSS2_DEATH_GRASP_HIT_RADIUS = 1.35;
 const BOSS2_DEATH_GRASP_STANDOFF = 1.2;
 const BOSS2_DEATH_GRASP_RANGE = 13;
 const BOSS2_DEATH_GRASP_ARC_RADIANS = Math.PI / 9;
-const BOSS2_FLAME_PILLAR_DAMAGE = 60;
-const BOSS2_FLAME_PILLAR_RADIUS = 1.35;
+const BOSS2_FLAME_PILLAR_DAMAGE = 50;
+const BOSS2_FLAME_PILLAR_RADIUS = 2.5;
 /** Same as WarlockRenderer / CoopGameScene blink slide — pillars erupt after landing. */
 const BOSS2_FLAME_PILLAR_BLINK_DELAY_MS = 800;
 const BOSS2_FLAME_PILLAR_STAGGER_MS = 250;
@@ -306,7 +306,7 @@ const BOSS3_NOVA_COOLDOWN_MS = 3000;
 const BOSS3_NOVA_MAX_RANGE = 14;
 const BOSS3_NOVA_TRAVEL_MS = 1500;
 const BOSS3_NOVA_HALF_WIDTH = 0.85;
-const BOSS3_NOVA_DAMAGE = 60;
+const BOSS3_NOVA_DAMAGE = 57;
 const BOSS3_NOVA_STEPS = 26;
 const BOSS3_NOVA_BURST_GAP_MS = 250;
 const BOSS3_NOVA_HP_DOUBLE_ROUND = 0.75;
@@ -315,17 +315,17 @@ const BOSS3_LIGHTNING_HEALTH_PCT = 0.675;
 const BOSS3_LIGHTNING_INTERVAL_MS = 6_000;
 const BOSS3_LIGHTNING_CHARGE_MS = 500;
 const BOSS3_LIGHTNING_STAGGER_MS = 500;
-const BOSS3_LIGHTNING_DAMAGE = 75;
+const BOSS3_LIGHTNING_DAMAGE = 59;
 const BOSS3_LIGHTNING_RADIUS = 2.99;
 const BOSS3_LIGHTNING_OFFSET_MIN = 2;
 const BOSS3_LIGHTNING_OFFSET_MAX = 6;
 const BOSS3_GREEN_BEAM_DURATION_MS = 8000;
 const BOSS3_GREEN_BEAM_TICK_MS = 1000;
-const BOSS3_GREEN_BEAM_DPS = 75;
+const BOSS3_GREEN_BEAM_DPS = 71;
 const BOSS3_GREEN_BEAM_RANGE = 22;
 const BOSS3_GREEN_BEAM_HALF_WIDTH = 0.52;
 /** Radians/sec — slower than default boss snap so players can sidestep the beam. */
-const BOSS3_GREEN_BEAM_ROT_SPEED = 1.2;
+const BOSS3_GREEN_BEAM_ROT_SPEED = 1.0;
 
 // Martyr: self-detonation (matches client AOE)
 const MARTYR_MELEE_RANGE = 1.4;
@@ -384,23 +384,29 @@ const WARLOCK_FLAME_RADIUS = 2.875;
 const WARLOCK_METEOR_DISK_RADIUS = 2.99;
 const WARLOCK_METEOR_WARNING_MS = 100;
 const WARLOCK_METEOR_FALL_SPEED = 27.75;
+/** Angled approach — same ranges as Crossentropy METEOR talent (Meteor.tsx impact Y = -3). */
+const WARLOCK_METEOR_SKY_OFFSET_MIN = 2.5;
+const WARLOCK_METEOR_SKY_OFFSET_MAX = 8;
+const WARLOCK_METEOR_SKY_HEIGHT_MIN = 44;
+const WARLOCK_METEOR_SKY_HEIGHT_MAX = 66;
+const WARLOCK_METEOR_IMPACT_Y = -3;
 /** Warlock blink flame — CoopGameScene WARLOCK_BLINK_ANIM_MS */
 const WARLOCK_BLINK_FLAME_DELAY_MS = 1000;
 /** Post-boss-2 unlock: single-beam Archon Shock (Boss2 phase-0 clone, purple VFX). */
 const WARLOCK_ARCHON_SHOCK_UNLOCK_BOSS_COUNT = 2;
-const WARLOCK_ARCHON_SHOCK_COOLDOWN_MS = 7000;
+const WARLOCK_ARCHON_SHOCK_COOLDOWN_MS = 7500;
 const WARLOCK_ARCHON_SHOCK_WINDUP_MS = 750;
-const WARLOCK_ARCHON_SHOCK_DAMAGE = 48;
+const WARLOCK_ARCHON_SHOCK_DAMAGE = 47;
 const WARLOCK_ARCHON_SHOCK_HALF_WIDTH = 1.0;
 const WARLOCK_ARCHON_SHOCK_RANGE = 14;
 
 /** Post-boss-2 unlock: all knight colors gain themed Smite (Red Smite buffed). */
 const KNIGHT_SMITE_UNLOCK_BOSS_COUNT = 2;
-const KNIGHT_SMITE_COOLDOWN_MS = 6000;
+const KNIGHT_SMITE_COOLDOWN_MS = 7000;
 const KNIGHT_SMITE_LOCK_MS = 1200;
 const KNIGHT_SMITE_IMPACT_DELAY_MS = 900;
 const KNIGHT_SMITE_RADIUS_BASE = 2.8;
-const KNIGHT_SMITE_RADIUS_POST_BOSS2 = 3.75;
+const KNIGHT_SMITE_RADIUS_POST_BOSS2 = 3.0;
 const KNIGHT_SMITE_DAMAGE_PRE_BOSS2 = { red: 60 };
 const KNIGHT_SMITE_DAMAGE_POST_BOSS2 = {
   red: 95,
@@ -2741,6 +2747,22 @@ class EnemyAI {
     }, WARLOCK_ORB_CHARGE_MS);
   }
 
+  /** Random sky origin for purple warlock meteors — mirrors Crossentropy METEOR talent. */
+  getWarlockMeteorStartPosition(center) {
+    const angle = Math.random() * Math.PI * 2;
+    const distance =
+      WARLOCK_METEOR_SKY_OFFSET_MIN +
+      Math.random() * (WARLOCK_METEOR_SKY_OFFSET_MAX - WARLOCK_METEOR_SKY_OFFSET_MIN);
+    const height =
+      WARLOCK_METEOR_SKY_HEIGHT_MIN +
+      Math.random() * (WARLOCK_METEOR_SKY_HEIGHT_MAX - WARLOCK_METEOR_SKY_HEIGHT_MIN);
+    return {
+      x: center.x + Math.cos(angle) * distance,
+      y: height,
+      z: center.z + Math.sin(angle) * distance,
+    };
+  }
+
   /** Purple warlock: 3 meteors near the aggro target; client uses boss-meteor-cast + Meteor. */
   warlockCastMeteor(warlock, targetPlayer) {
     if (!targetPlayer) {
@@ -2761,6 +2783,7 @@ class EnemyAI {
     };
 
     const targetPositions = [primary, offsetNearPrimary(), offsetNearPrimary()];
+    const startPositions = targetPositions.map((pos) => this.getWarlockMeteorStartPosition(pos));
 
     const meteorId = `meteor-${warlock.id}-${Date.now()}`;
 
@@ -2769,6 +2792,7 @@ class EnemyAI {
         bossId: warlock.id,
         meteorId: meteorId,
         targetPositions: targetPositions,
+        startPositions: startPositions,
         timestamp: Date.now(),
         damage: WARLOCK_METEOR_PER_HIT_DAMAGE,
         staggerIntervalMs: WARLOCK_METEOR_STAGGER_MS,
@@ -2778,12 +2802,13 @@ class EnemyAI {
     console.log(`☄️ Warlock ${warlock.id} casting meteor swarm (3 impacts near player ${targetPlayer.id})`);
 
     const wid = warlock.id;
-    const verticalFall = 63;
-    const baseImpactDelay =
-      WARLOCK_METEOR_WARNING_MS +
-      (verticalFall / WARLOCK_METEOR_FALL_SPEED) * 1000;
     targetPositions.forEach((pos, index) => {
-      const delayMs = baseImpactDelay + index * WARLOCK_METEOR_STAGGER_MS;
+      const start = startPositions[index];
+      const dx = pos.x - start.x;
+      const dy = WARLOCK_METEOR_IMPACT_Y - start.y;
+      const dz = pos.z - start.z;
+      const travelMs = (Math.hypot(dx, dy, dz) / WARLOCK_METEOR_FALL_SPEED) * 1000;
+      const delayMs = WARLOCK_METEOR_WARNING_MS + travelMs + index * WARLOCK_METEOR_STAGGER_MS;
       setTimeout(() => {
         if (!this.room?.getGameStarted()) return;
         const w = this.room?.getEnemy(wid);

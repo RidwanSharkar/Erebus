@@ -43,7 +43,7 @@ export default function ExperienceBar({
         style={{ minWidth: 320 }}
       >
         {/* ── Level & EXP row ── */}
-        <div className="flex items-center gap-3 mb-1.5">
+        <div className="flex items-center gap-3 mb-1.25">
 
           {/* Level badge */}
           <div

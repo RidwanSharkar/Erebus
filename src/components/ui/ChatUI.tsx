@@ -6,7 +6,7 @@ interface ChatUIProps {
 }
 
 export default function ChatUI({ isVisible = true }: ChatUIProps) {
-  const { chatMessages, isChatOpen, sendChatMessage, openChat, closeChat } = useMultiplayer();
+  const { chatMessages, isChatOpen, sendChatMessage, closeChat } = useMultiplayer();
   const [inputMessage, setInputMessage] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -47,9 +47,9 @@ export default function ChatUI({ isVisible = true }: ChatUIProps) {
   return (
     <>
       {/* Chat Messages Display */}
-      <div className="fixed bottom-16 right-4 z-50 max-w-xs">
+      <div className="fixed bottom-28 right-4 z-50 max-w-xs">
         <div className="bg-black bg-opacity-30 backdrop-blur-sm rounded-lg border border-gray-600 p-2 max-h-24 overflow-y-auto">
-          {chatMessages.length > 0 && (
+          {chatMessages.length > 0 ? (
             <div className="space-y-0.125">
               {chatMessages.map((message) => (
                 <div key={message.id} className="text-sm">
@@ -59,7 +59,9 @@ export default function ChatUI({ isVisible = true }: ChatUIProps) {
               ))}
               <div ref={messagesEndRef} />
             </div>
-          )}
+          ) : !isChatOpen ? (
+            <div className="text-gray-400 text-xs italic">Click Enter to Chat</div>
+          ) : null}
         </div>
       </div>
 

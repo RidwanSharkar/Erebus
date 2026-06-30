@@ -41,6 +41,8 @@ const BOSS_ITEM_ICONS: Record<string, string> = {
 
 const TOOLTIP_WIDTH = 240;
 const VIEWPORT_PAD = 12;
+const TOOLTIP_LINGER_MS = 5000;
+const TOOLTIP_FADE_MS = 300;
 
 function getClampedTooltipStyle(anchorX: number, anchorY: number): React.CSSProperties {
   const halfW = TOOLTIP_WIDTH / 2;
@@ -69,9 +71,10 @@ interface StatTooltipProps {
   visible: boolean;
   x: number;
   y: number;
+  opacity: number;
 }
 
-function StatTooltip({ name, description, visible, x, y }: StatTooltipProps) {
+function StatTooltip({ name, description, visible, x, y, opacity }: StatTooltipProps) {
   if (!visible) return null;
 
   const positionStyle = getClampedTooltipStyle(x, y);
@@ -81,6 +84,8 @@ function StatTooltip({ name, description, visible, x, y }: StatTooltipProps) {
       className="fixed z-[60] text-white text-sm pointer-events-none"
       style={{
         ...positionStyle,
+        opacity,
+        transition: `opacity ${TOOLTIP_FADE_MS}ms ease`,
         background: 'rgba(6,6,18,0.97)',
         border: '1px solid rgba(100,140,255,0.3)',
         borderTop: '2px solid rgba(120,160,255,0.75)',
@@ -107,19 +112,51 @@ export default function StatsPanel({
   const [tab, setTab] = useState<'stats' | 'inventory'>('stats');
   const [tooltipContent, setTooltipContent] = useState<{ name: string; description: string } | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+  const [tooltipOpacity, setTooltipOpacity] = useState(1);
+  const tooltipLingerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tooltipFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearTooltipTimers = useCallback(() => {
+    if (tooltipLingerTimerRef.current) {
+      clearTimeout(tooltipLingerTimerRef.current);
+      tooltipLingerTimerRef.current = null;
+    }
+    if (tooltipFadeTimerRef.current) {
+      clearTimeout(tooltipFadeTimerRef.current);
+      tooltipFadeTimerRef.current = null;
+    }
+  }, []);
+
+  const hideTooltip = useCallback(() => {
+    clearTooltipTimers();
+    setTooltipContent(null);
+    setTooltipOpacity(1);
+  }, [clearTooltipTimers]);
 
   const handleStatHover = useCallback((e: React.MouseEvent, stat: StatKey) => {
+    clearTooltipTimers();
+    setTooltipOpacity(1);
     const rect = e.currentTarget.getBoundingClientRect();
     setTooltipContent({
       name: StatSystem.getStatDisplayName(stat).toUpperCase(),
       description: StatSystem.getStatTooltipDescription(stat),
     });
     setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top });
-  }, []);
+
+    tooltipLingerTimerRef.current = setTimeout(() => {
+      setTooltipOpacity(0);
+      tooltipFadeTimerRef.current = setTimeout(() => {
+        setTooltipContent(null);
+        setTooltipOpacity(1);
+      }, TOOLTIP_FADE_MS);
+    }, TOOLTIP_LINGER_MS);
+  }, [clearTooltipTimers]);
 
   const handleStatLeave = useCallback(() => {
-    setTooltipContent(null);
-  }, []);
+    hideTooltip();
+  }, [hideTooltip]);
+
+  useEffect(() => () => clearTooltipTimers(), [clearTooltipTimers]);
 
   const { stats, statPoints } = statPointData;
   const prevStatPointsRef = useRef(statPoints);
@@ -439,6 +476,7 @@ export default function StatsPanel({
           visible
           x={tooltipPosition.x}
           y={tooltipPosition.y}
+          opacity={tooltipOpacity}
         />
       )}
     </div>

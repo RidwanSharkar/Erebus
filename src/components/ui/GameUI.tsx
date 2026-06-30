@@ -30,6 +30,7 @@ interface GameUIProps {
   talentLoadout?: TalentLoadout | null;
   /** Shown above the health bar when near a co-op interactable (e.g. pedestal, portal). */
   interactHint?: string | null;
+  gameMode?: 'menu' | 'singleplayer' | 'multiplayer' | 'pvp' | 'coop';
 }
 
 
@@ -119,6 +120,7 @@ export default function GameUI({
   criticalDamageMultiplier = 2.0,
   talentLoadout,
   interactHint = null,
+  gameMode,
 }: GameUIProps) {
 
   // Wrapper for unlockAbility to ensure ControlSystem is updated immediately
@@ -208,7 +210,7 @@ export default function GameUI({
       />
 
       {/* Chat UI */}
-      <ChatUI />
+      <ChatUI isVisible={gameMode === 'coop'} />
     </>
   );
 }

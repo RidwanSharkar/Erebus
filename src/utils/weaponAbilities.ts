@@ -57,13 +57,13 @@ export const universalAbilityPool: UniversalAbility[] = [
   {
     id: 'RUNEBLADE_E', sourceWeapon: WeaponType.RUNEBLADE, sourceKey: 'E',
     name: 'Wraith Strike', cooldown: 3.0, icon: '🗡️',
-    description: 'A swift strike that applies SLOW and TAUNT to enemies hit, forcing them to attack you for up to 10 seconds.',
+    description: 'A swift strike that briefly applies SLOW and TAUNT to enemies hit. 5 second cooldown.',
     allowedWeapons: [WeaponType.SABRES, WeaponType.SPEAR, WeaponType.RUNEBLADE],
   },
   {
     id: 'RUNEBLADE_R', sourceWeapon: WeaponType.RUNEBLADE, sourceKey: 'R',
     name: 'Colossus Strike', cooldown: 3.0, icon: '⚡️',
-    description: 'Calls down a pillar of radiant energy, dealing damage to enemy players in a small area, healing you for the same amount of damage dealt.',
+    description: 'Calls down a pillar of radiant energy, dealing damage to enemy players in a small area, healing you for 10 HP. 8 second cooldown.',
     allowedWeapons: [WeaponType.SPEAR, WeaponType.RUNEBLADE],
   },
   {
@@ -85,7 +85,7 @@ export const universalAbilityPool: UniversalAbility[] = [
   {
     id: 'BOW_Q', sourceWeapon: WeaponType.BOW, sourceKey: 'Q',
     name: 'Frostbite', cooldown: 5.0, icon: '🎯',
-    description: 'Fires 5 arrows in an arc, dealing 30 damage per arrow and applying a 50% SLOW effect for 5 seconds. An enemy can be hit by multiple arrows at close range.',
+    description: 'Fires 5 arrows in an arc. An enemy can be hit by multiple arrows at close range. 8 second cooldown.',
     allowedWeapons: [WeaponType.BOW, WeaponType.SCYTHE, WeaponType.RUNEBLADE],
   },
   {
@@ -97,7 +97,7 @@ export const universalAbilityPool: UniversalAbility[] = [
   {
     id: 'BOW_R', sourceWeapon: WeaponType.BOW, sourceKey: 'R',
     name: 'Reaping Talons', cooldown: 2.0, icon: '🪶',
-    description: 'Fires a powerful piercing arrow that returns to you after a short delay. Each hit on an enemy creates a soul fragment that heals you for 4 HP each when returned.',
+    description: 'Fires a powerful piercing arrow that returns to you. Each hit heals you for 2 HP each when orbs are returned. 7 second cooldown.',
     allowedWeapons: [WeaponType.BOW],
   },
   {
@@ -109,7 +109,7 @@ export const universalAbilityPool: UniversalAbility[] = [
   {
     id: 'BOW_P', sourceWeapon: WeaponType.BOW, sourceKey: 'P',
     name: 'Tempest Rounds', cooldown: 0, icon: '🏹',
-    description: '{PASSIVE} Replaces primary attack with a 3-round burst attack. Each arrow deals 30 damage.',
+    description: ' Replaces primary attack with a 3-round burst attack. Each arrow deals 30 damage.',
     allowedWeapons: [WeaponType.BOW],
   },
 
@@ -117,7 +117,7 @@ export const universalAbilityPool: UniversalAbility[] = [
   {
     id: 'SCYTHE_Q', sourceWeapon: WeaponType.SCYTHE, sourceKey: 'Q',
     name: 'Sunwell', cooldown: REANIMATE_SUNWELL_COOLDOWN_SEC, icon: '🔆',
-    description: 'Heals you and nearby allies for 60 HP.',
+    description: 'Heals you and nearby allies for 15 HP.',
     allowedWeapons: ALL_WEAPONS,
   },
   {
@@ -129,19 +129,19 @@ export const universalAbilityPool: UniversalAbility[] = [
   {
     id: 'SCYTHE_R', sourceWeapon: WeaponType.SCYTHE, sourceKey: 'R',
     name: 'Crossentropy', cooldown: 2.0, icon: '🔥',
-    description: 'Charges for 1 second to fire an accelerating plasma bolt that deals 200 damage.',
+    description: 'Charges for 1 second to fire an accelerating plasma bolt that explodes on impact. 8 second cooldown.',
     allowedWeapons: [WeaponType.SCYTHE],
   },
   {
     id: 'SCYTHE_F', sourceWeapon: WeaponType.SCYTHE, sourceKey: 'F',
     name: 'Mantra', cooldown: 5.0, icon: '🪬',
-    description: 'Summons a totem that attacks nearby enemies and enemy players within range for 8 seconds.',
+    description: 'Summons a totem that lasts for 8 seconds that blasts nearby enemies within range. 7 second cooldown',
     allowedWeapons: ALL_WEAPONS,
   },
   {
     id: 'SCYTHE_P', sourceWeapon: WeaponType.SCYTHE, sourceKey: 'P',
     name: 'Icebeam', cooldown: 0, icon: '🧊',
-    description: '{PASSIVE} Replaces your primary attack with Icebeam, a channeled beam that ramps up damage the longer it is maintained.',
+    description: 'Replaces your primary attack with Icebeam, a channeled beam that ramps up damage the longer it is maintained.',
     allowedWeapons: [WeaponType.SCYTHE],
   },
 
@@ -149,19 +149,19 @@ export const universalAbilityPool: UniversalAbility[] = [
   {
     id: 'SABRES_Q', sourceWeapon: WeaponType.SABRES, sourceKey: 'Q',
     name: 'Backstab', cooldown: 2.0, icon: '🔪',
-    description: 'Strikes the target with both sabres, dealing 75 damage or triple damage if attacking the target from behind.',
+    description: 'Strikes through enemies, dealing massive bonus damage if attacking the target from behind. 4 second cooldown.',
     allowedWeapons: [WeaponType.SABRES],
   },
   {
     id: 'SABRES_E', sourceWeapon: WeaponType.SABRES, sourceKey: 'E',
     name: 'Flourish', cooldown: 1.5, icon: '💥',
-    description: 'Unleash a flurry of slashes that regenerates 45 SHIELD and deals increased damage with successive hits on the same target, stacking up to 3 times. Expending 3 stacks applies STUN for 4 seconds.',
+    description: 'Unleash a flurry of close-range slashes. Applies a 4 second STUN to enemies that are hit by this ability a third time. 1.5 second cooldown.',
     allowedWeapons: [WeaponType.SABRES, WeaponType.RUNEBLADE],
   },
   {
     id: 'SABRES_R', sourceWeapon: WeaponType.SABRES, sourceKey: 'R',
     name: 'Divebomb', cooldown: 6.0, icon: '🐦‍🔥',
-    description: 'Leap into the air and crash down, dealing 125 damage and applying STUN for 2 seconds to enemies caught below.',
+    description: 'Leap into the air and crash down, dealing 125 damage and applying STUN for 2 seconds to enemies caught below. 8 second cooldown.',
     allowedWeapons: [WeaponType.SABRES, WeaponType.RUNEBLADE],
   },
   {

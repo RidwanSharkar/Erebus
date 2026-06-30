@@ -2324,6 +2324,7 @@ export function CoopGameScene({
     /** Same event may set per-cast (e.g. warlock 100); boss uses Meteor default. */
     damage?: number;
     sourceEnemyId?: string;
+    startPosition?: Vector3;
   }
   const [activeMeteors, setActiveMeteors] = useState<MeteorState[]>([]);
   interface CrossentropyMeteorState {
@@ -7229,6 +7230,7 @@ export function CoopGameScene({
       bossId?: string;
       meteorId: string;
       targetPositions: { x: number; y: number; z: number }[];
+      startPositions?: { x: number; y: number; z: number }[];
       timestamp: number;
       damage?: number;
       staggerIntervalMs?: number;
@@ -7237,7 +7239,7 @@ export function CoopGameScene({
         const src = enemiesRef.current.get(data.bossId);
         if (src?.type === 'boss') return;
       }
-      const { meteorId, targetPositions, timestamp, damage, staggerIntervalMs } = data;
+      const { meteorId, targetPositions, startPositions, timestamp, damage, staggerIntervalMs } = data;
       const stepMs = staggerIntervalMs !== undefined && staggerIntervalMs >= 0 ? staggerIntervalMs : 1000;
 
       const newMeteors: MeteorState[] = targetPositions.map((pos, index) => ({
@@ -7246,6 +7248,15 @@ export function CoopGameScene({
         timestamp: timestamp + (index * stepMs),
         ...(damage !== undefined ? { damage } : {}),
         ...(data.bossId ? { sourceEnemyId: data.bossId } : {}),
+        ...(startPositions?.[index]
+          ? {
+              startPosition: new Vector3(
+                startPositions[index].x,
+                startPositions[index].y,
+                startPositions[index].z,
+              ),
+            }
+          : {}),
       }));
 
       setActiveMeteors(prev => [...prev, ...newMeteors]);
@@ -7370,6 +7381,9 @@ export function CoopGameScene({
             variant: 'ghoul',
           },
         ]);
+        window.audioSystem?.playExplosionSound(
+          new Vector3(land.x, land.y, land.z),
+        );
       }
     };
 
@@ -7403,6 +7417,9 @@ export function CoopGameScene({
             variant: 'templar',
           },
         ]);
+        window.audioSystem?.playExplosionSound(
+          new Vector3(land.x, land.y, land.z),
+        );
       }
     };
 
@@ -11828,6 +11845,7 @@ export function CoopGameScene({
             targetPosition={meteor.targetPosition}
             timestamp={meteor.timestamp}
             damage={meteor.damage}
+            startPosition={meteor.startPosition}
             onImpact={(damage, position) => {
               // Only apply damage if local player is within range
               if (playerEntity) {

@@ -11,6 +11,8 @@ interface MeteorProps {
   timestamp?: number; // Optional timestamp for staggered meteor timing
   /** Override default boss meteor damage (e.g. purple warlock swarm). */
   damage?: number;
+  /** Randomized sky origin for angled approach (e.g. purple warlock swarm). */
+  startPosition?: Vector3;
 }
 
 const DAMAGE_RADIUS = 2.99;
@@ -88,7 +90,7 @@ function MeteorImpactEffect({ position, startTime, onComplete }: { position: Vec
   );
 }
 
-export default function Meteor({ targetPosition, onImpact, onComplete, timestamp, damage: damageOverride }: MeteorProps) {
+export default function Meteor({ targetPosition, onImpact, onComplete, timestamp, damage: damageOverride, startPosition }: MeteorProps) {
   const meteorGroupRef = useRef<Group>(null);
   const meteorMeshRef = useRef<Mesh>(null);
 
@@ -97,12 +99,12 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
   const meteorLight = useDynamicLight({ color: new Color('#BA55D3'), distance: 12, decay: 2, priority: 2 });
 
   // useMemo for initial calculations
-  const [initialTargetPos, startPos, trajectory] = useMemo(() => {
+  const [initialTargetPos, startPos, trajectory, trailBackward] = useMemo(() => {
     const initTarget = new Vector3(targetPosition.x, -3, targetPosition.z); // Slightly below ground for better visual
-    const start = new Vector3(targetPosition.x, 60, targetPosition.z);
+    const start = startPosition?.clone() ?? new Vector3(targetPosition.x, 60, targetPosition.z);
     const traj = new Vector3().subVectors(initTarget, start).normalize();
-    return [initTarget, start, traj];
-  }, [targetPosition]);
+    return [initTarget, start, traj, traj.clone().negate()];
+  }, [startPosition, targetPosition]);
 
   useEffect(() => {
     (window as any).audioSystem?.playMeteorIndicatorSound?.(
@@ -226,6 +228,7 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
               meshRef={meteorMeshRef}
               color={new Color("#BA55D3")}
               size={0.05}
+              {...(startPosition ? { backwardDir: trailBackward } : {})}
             />
           </mesh>
         </group>

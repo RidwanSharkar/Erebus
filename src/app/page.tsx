@@ -13,6 +13,7 @@ import { getGlobalRuneCounts, getCriticalChance, getCriticalDamageMultiplier } f
 import ExperienceBar from '../components/ui/ExperienceBar';
 import EssenceDisplay from '../components/ui/EssenceDisplay';
 import GoldDisplay from '../components/ui/GoldDisplay';
+import HudActionButtons from '../components/ui/HudActionButtons';
 import { MultiplayerProvider, useMultiplayer } from '../contexts/MultiplayerContext';
 import type { CoopRoomKind } from '../contexts/MultiplayerContext';
 import MerchantUI from '../components/ui/MerchantUI';
@@ -1048,7 +1049,7 @@ function HomeContent() {
 
               <div className="text-white space-y-4">
                 <div className="border-b border-gray-600 pb-4">
-                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">Co-op run (roguelike flow)</h3>
+                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">(roguelike flow)</h3>
                   <p className="text-gray-300 text-sm mb-2">
                     You start in the <strong className="text-green-400">throne room</strong>: pick a weapon, shape your ability bar, then enter the arena. Combat is room- and wave-based; between beats you choose where to go next. Boons you pick <strong>stack</strong> for the rest of the run (Hades-style).
                   </p>
@@ -1059,37 +1060,14 @@ function HomeContent() {
                     <li>After you <strong>clear the first combat room</strong>, a <strong>room boon</strong> offers 3 picks from a pool determined by <strong>that room&apos;s color</strong> (blue / green / purple / red). Weapon affects most colors; green rooms always add universal zombie boons usable with any weapon.</li>
                     <li>On the <strong>main arena map</strong>, every <strong>third</strong> combat room you clear opens a <strong>boss portal</strong> (Boss 1 → Boss 2 → …; room color does not change that cadence). After a boss, you return to three rooms before the next boss gate.</li>
                     <li>Use rim <strong>portals</strong> to leave prep or, in the arena, to choose the next challenge when prompted.</li>
-                    <li>A <strong>PINK</strong> portal allows you to heal and buy items at the merchant.</li>
+                    <li>Begin each run with 3 STAT points to spend on your character. Some talents may scale with specific stats.</li>
+                    <li>A <strong>PINK</strong> portal allows you to HEAL and buy items at the merchant.</li>
+                    <li><strong>ORANGE</strong> portals are TRIAL rooms that reward GOLD to be spent at the MERCHANT (PINK Portals).</li>
                     <li><strong>RED</strong> portals are generally the most difficult.</li>
                     <li><strong>YELLOW</strong> portals reward STAT points that can be spent. You start with 3 points and gain 3 more each level.</li>
                     <li><strong>Stats</strong> — <strong className="text-red-400">Strength</strong> increases critical strike damage, <strong className="text-green-400">Stamina</strong> increases maximum health, <strong className="text-blue-400">Agility</strong> increases critical hit chance, <strong className="text-purple-400">Intellect</strong> increases shield capacity.</li>
                     <li><strong>PURPLE</strong>,<strong>BLUE</strong>,<strong>GREEN</strong>,and <strong>RED</strong> portals lead to enemy rooms that reward unique talents for abilities.</li>
                     <li>When releasing the Bow's left-click attack while the Bow flashes, a Perfect Shot will be fired.</li>
-                  </ul>
-                </div>
-
-                <div className="border-b border-gray-600 pb-4">
-                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">Boons at a glance</h3>
-                  <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
-                    <li><strong className="text-sky-300">Runeblade</strong>: class pool includes Trinity, Vengeance, Crusader, Windfury, Blizzard, Cyclone Rush, Double Strike, Spellblade, and Aftershock. Colored <strong>room</strong> boons for your basic combo, Wraith Strike, and Smite are mutually exclusive branches for the rest of that run (one palette per branch); class boons ignore this split.</li>
-                    <li><strong className="text-green-300">Bow</strong>: class pool includes Execute, Explosive Talons, Double Talons, Concentrated Volley, Dual Coil, Tempest Rounds, Wyvern Sting. Room colors gate talents like Stagger Shot, Wrathful Bite/Talons, Wyvern Sting/Bite.</li>
-                    <li><strong className="text-purple-300">Scythe</strong>: class pool includes Icebeam, Reaper, Frostpath, Solar Recharge, SHAMAN, Superconductor, Accelerator, Healing Stream, Meteor, and Fragmentation. Colored <strong>room</strong> boons: red — Wrathful Entropic &amp; Totem; blue — Staggering Entropic &amp; Totem; green — Infesting Entropic &amp; Totem; purple — Inferno.</li>
-                    <li><strong className="text-red-400">Sabres</strong>: class pool includes Killstreak, Relentless, Double Stab, Parry, Crescent Blades, Vorpal Gust, Fan of Knives, and Wind Shear. Colored <strong>room</strong> boons still gate Backstab / Swipes / Flourish branches.</li>
-                    <li><strong>Tempest Rounds</strong> (Bow) and <strong>Icebeam</strong> (Scythe) are <strong>talents / boons</strong>, not passives on the ability picker.</li>
-                  </ul>
-
-                </div>
-
-                <div className="border-b border-gray-600 pb-4">
-                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">Weapons</h3>
-                  <p className="text-gray-300 text-sm mb-2">
-                    Each weapon has a distinct fantasy and boon lists
-                  </p>
-                  <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
-                    <li><strong className="text-green-400">Bow</strong> — Ranged pressure, crit scaling, Barrage and Talons lines.</li>
-                    <li><strong className="text-purple-400">Scythe</strong> — Entropic Bolt, Crossentropy, heals and control.</li>
-                    <li><strong className="text-sky-400">Runeblade</strong> — Combo, Smite, stagger and guard talents.</li>
-                    <li><strong className="text-red-400">Sabres</strong> — Assassin melee (where enabled).</li>
                   </ul>
                 </div>
 
@@ -1106,21 +1084,7 @@ function HomeContent() {
                   </ul>
                 </div>
 
-                <div className="border-b border-gray-600 pb-4">
-                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">Progression and survival</h3>
-                  <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
-                    <li>Kills and objectives still feed <strong>experience</strong>; levels can unlock <strong>skill points</strong> for extra abilities where that system applies.</li>
-                    <li><strong>Shield</strong> recovers between fights; <strong>health</strong> is precious — use boons and positioning.</li>
-                    <li>Room difficulty and portal choices shape what you face next; read boon text before you commit.</li>
-                  </ul>
-                </div>
-
-                <div className="pb-2">
-                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">PVP (other mode)</h3>
-                  <p className="text-gray-300 text-sm">
-                    In PVP, the classic MOBA loop still applies: towers, inhibitors, summoned units, essence and merchant upgrades. Co-op runs above are separate from that structure.
-                  </p>
-                </div>
+            
               </div>
             </div>
           </div>
@@ -1194,28 +1158,6 @@ function HomeContent() {
         {/* UI Overlay - Only show during gameplay */}
         {gameMode !== 'menu' && (
           <>
-            {sessionGameMode === 'coop' && (
-              <button
-                type="button"
-                onClick={() => {
-                  setControlsTutorialAutoDismiss(false);
-                  setControlsTutorialKey((k) => k + 1);
-                  setControlsTutorialVisible(true);
-                }}
-                className="absolute top-4 right-52 z-[100] text-2xl hover:scale-110 transition-transform cursor-pointer text-sky-300 hover:text-sky-200"
-                title="Replay controls"
-              >
-                ⌨️
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setShowRulesPanel(true)}
-              className="absolute top-4 right-28 z-[100] text-2xl hover:scale-110 transition-transform cursor-pointer text-yellow-400 hover:text-yellow-300"
-              title="Rulebook"
-            >
-              📜
-            </button>
             <div className="absolute top-4 left-4 text-white font-mono text-sm pointer-events-none">
               <div className="rounded-md bg-black/45 px-3 py-2 shadow-lg backdrop-blur-sm">
                 <div className="text-yellow-300 font-semibold">
@@ -1232,6 +1174,24 @@ function HomeContent() {
                   Clear
                 </button>
               </div>
+            </div>
+
+            <div className="fixed bottom-16 right-4 z-40 flex items-center gap-2">
+              <HudActionButtons
+                onOpenRulebook={() => setShowRulesPanel(true)}
+                onOpenControlsTutorial={() => {
+                  setControlsTutorialAutoDismiss(false);
+                  setControlsTutorialKey((k) => k + 1);
+                  setControlsTutorialVisible(true);
+                }}
+                showControlsButton={sessionGameMode === 'coop'}
+              />
+              {gameMode === 'coop' && (
+                <GoldDisplay gold={playerGold} isLocalPlayer />
+              )}
+              {gameMode === 'pvp' && (
+                <EssenceDisplay essence={playerEssence} isLocalPlayer />
+              )}
             </div>
             
             {/* Performance Stats */}
@@ -1292,6 +1252,7 @@ function HomeContent() {
                 criticalDamageMultiplier={getCriticalDamageMultiplier()}
                 talentLoadout={talentLoadout}
                 interactHint={gameMode === 'coop' ? coopInteractHint : null}
+                gameMode={gameMode}
               />
             </div>
 
@@ -1320,22 +1281,6 @@ function HomeContent() {
                 inventory={inventory}
                 talentLoadout={talentLoadout}
                 abilityLoadout={abilityLoadout}
-              />
-            )}
-
-            {/* Essence Display - Only show in PVP mode */}
-            {gameMode === 'pvp' && (
-              <EssenceDisplay
-                essence={playerEssence}
-                isLocalPlayer={true}
-              />
-            )}
-
-            {/* GOLD Display - Only show in co-op mode */}
-            {gameMode === 'coop' && (
-              <GoldDisplay
-                gold={playerGold}
-                isLocalPlayer={true}
               />
             )}
 

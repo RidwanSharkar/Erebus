@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
 import { SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
 import { universalAbilityPool, getUniversalAbilityById, type AbilityLoadout, type UniversalAbility } from '@/utils/weaponAbilities';
@@ -16,6 +16,7 @@ const TALENT_GAP_PX = 8; // gap-2
 const TALENT_SCROLL_MAX_WIDTH_PX =
   MAX_VISIBLE_TALENTS * TALENT_SLOT_PX +
   (MAX_VISIBLE_TALENTS - 1) * TALENT_GAP_PX;
+const TALENT_SCROLL_STEP_PX = TALENT_SLOT_PX + TALENT_GAP_PX;
 
 interface HotkeyPanelProps {
   currentWeapon: WeaponType;
@@ -135,6 +136,9 @@ export default function HotkeyPanel({
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const [cooldowns, setCooldowns] = useState<Record<string, number>>({});
   const [weaponSwitchCooldown, setWeaponSwitchCooldown] = useState<{ current: number; max: number }>({ current: 0, max: 5 });
+  const talentScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
 
   // Define selected weapons for switching (only show 1, 2, and 3 keys)
   const weapons: WeaponData[] = [];
@@ -207,6 +211,28 @@ export default function HotkeyPanel({
   );
 
   const needsTalentScroll = enabledTalentIds.length > MAX_VISIBLE_TALENTS;
+
+  const updateTalentScrollButtons = useCallback(() => {
+    const el = talentScrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 0);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  }, []);
+
+  const scrollTalentLeft = useCallback(() => {
+    talentScrollRef.current?.scrollBy({ left: -TALENT_SCROLL_STEP_PX, behavior: 'smooth' });
+  }, []);
+
+  const scrollTalentRight = useCallback(() => {
+    talentScrollRef.current?.scrollBy({ left: TALENT_SCROLL_STEP_PX, behavior: 'smooth' });
+  }, []);
+
+  useEffect(() => {
+    const el = talentScrollRef.current;
+    if (!el || !needsTalentScroll) return;
+    el.scrollLeft = 0;
+    updateTalentScrollButtons();
+  }, [enabledTalentIds, needsTalentScroll, updateTalentScrollButtons]);
 
   // Update cooldowns from control system
   useEffect(() => {
@@ -282,6 +308,52 @@ export default function HotkeyPanel({
       y: rect.top,
     });
   }, []);
+
+  const talentArrowButtonStyle = (enabled: boolean): React.CSSProperties => ({
+    background: 'rgba(18,18,34,0.97)',
+    border: enabled ? '1px solid rgba(120,120,160,0.5)' : '1px solid rgba(80,80,100,0.25)',
+    color: enabled ? 'rgba(200,200,220,0.9)' : 'rgba(120,120,140,0.4)',
+    boxShadow: enabled ? '0 1px 4px rgba(0,0,0,0.7)' : 'none',
+    opacity: enabled ? 1 : 0.45,
+    cursor: enabled ? 'pointer' : 'default',
+  });
+
+  const talentSlots = enabledTalentIds.map((talentId) => {
+    const src = getTalentIconSrc(talentId);
+    return (
+      <div
+        key={talentId}
+        className="relative h-12 w-12 shrink-0 rounded-lg transition-all duration-200 flex items-center justify-center cursor-default"
+        style={{
+          background: 'linear-gradient(135deg, rgba(54,42,14,0.55), rgba(24,18,8,0.45))',
+          border: '1px solid rgba(251,191,36,0.45)',
+          boxShadow: '0 0 10px rgba(251,191,36,0.15), inset 0 1px 0 rgba(255,255,255,0.06)',
+        }}
+        onMouseEnter={(e) => handleTalentHover(e, talentId)}
+        onMouseLeave={handleAbilityLeave}
+      >
+        <div className="flex h-7 w-7 items-center justify-center">
+          {src ? (
+            <img
+              src={src}
+              alt=""
+              className="h-7 w-7 object-contain"
+              style={{
+                filter: 'drop-shadow(0 0 3px rgba(251,191,36,0.35))',
+              }}
+            />
+          ) : (
+            <span
+              className="select-none text-lg leading-none"
+              style={{ color: 'rgba(253,224,71,0.85)' }}
+            >
+              ✦
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  });
 
   // Always render even without a loadout (shows empty slots)
 
@@ -624,47 +696,42 @@ export default function HotkeyPanel({
                   </span>
                   <div className="w-px h-3 rounded" style={{ background: 'rgba(120,120,160,0.3)' }} />
                 </div>
-                <div
-                  className={`flex gap-2 ${needsTalentScroll ? 'flex-nowrap overflow-x-auto' : ''}`}
-                  style={needsTalentScroll ? { maxWidth: TALENT_SCROLL_MAX_WIDTH_PX } : undefined}
-                >
-                  {enabledTalentIds.map((talentId) => {
-                    const src = getTalentIconSrc(talentId);
-                    return (
-                      <div
-                        key={talentId}
-                        className="relative h-12 w-12 shrink-0 rounded-lg transition-all duration-200 flex items-center justify-center cursor-default"
-                        style={{
-                          background: 'linear-gradient(135deg, rgba(54,42,14,0.55), rgba(24,18,8,0.45))',
-                          border: '1px solid rgba(251,191,36,0.45)',
-                          boxShadow: '0 0 10px rgba(251,191,36,0.15), inset 0 1px 0 rgba(255,255,255,0.06)',
-                        }}
-                        onMouseEnter={(e) => handleTalentHover(e, talentId)}
-                        onMouseLeave={handleAbilityLeave}
+                {needsTalentScroll ? (
+                  <div className="flex flex-col items-center">
+                    <div className="mb-1 flex items-center justify-center gap-1.5">
+                      <button
+                        type="button"
+                        aria-label="Scroll talents left"
+                        disabled={!canScrollLeft}
+                        onClick={scrollTalentLeft}
+                        className="flex h-6 w-6 items-center justify-center rounded text-base leading-none transition-colors"
+                        style={talentArrowButtonStyle(canScrollLeft)}
                       >
-                        <div className="flex h-7 w-7 items-center justify-center">
-                          {src ? (
-                            <img
-                              src={src}
-                              alt=""
-                              className="h-7 w-7 object-contain"
-                              style={{
-                                filter: 'drop-shadow(0 0 3px rgba(251,191,36,0.35))',
-                              }}
-                            />
-                          ) : (
-                            <span
-                              className="select-none text-lg leading-none"
-                              style={{ color: 'rgba(253,224,71,0.85)' }}
-                            >
-                              ✦
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                        ‹
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Scroll talents right"
+                        disabled={!canScrollRight}
+                        onClick={scrollTalentRight}
+                        className="flex h-6 w-6 items-center justify-center rounded text-base leading-none transition-colors"
+                        style={talentArrowButtonStyle(canScrollRight)}
+                      >
+                        ›
+                      </button>
+                    </div>
+                    <div
+                      ref={talentScrollRef}
+                      className="flex flex-nowrap gap-2 overflow-x-hidden"
+                      style={{ maxWidth: TALENT_SCROLL_MAX_WIDTH_PX }}
+                      onScroll={updateTalentScrollButtons}
+                    >
+                      {talentSlots}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">{talentSlots}</div>
+                )}
               </>
             )}
           </div>

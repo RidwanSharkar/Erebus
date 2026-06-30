@@ -1134,7 +1134,7 @@ export const staggeringSwipesTalentDefinition: TalentDefinition = {
   id: TALENT_STAGGERING_SWIPES,
   name: 'Charged Blades',
   description:
-    'Your Sabres\' basic attacks now apply stagger. At 100 STAGGER, the target is struck by a Lightning Bolt that inflicts STUN for 1.0 seconds.',
+    'Your Sabres\' basic attacks now apply STAGGER. At 100 STAGGER, the target is struck by a Lightning Bolt that inflicts STUN for 1.0 seconds.',
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
