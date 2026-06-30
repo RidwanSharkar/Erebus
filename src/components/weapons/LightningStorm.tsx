@@ -4,13 +4,15 @@ import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import { WeaponType } from '../dragon/weapons';
 import { calculateDamage } from '@/core/DamageCalculator';
+import { LIGHTNING_BOLT_ROOM_DAMAGE, LIGHTNING_BOLT_ROOM_STAGGER } from '@/utils/talents';
 
 const LIGHTNING_STORM_LIGHT_COLOR = new Color('#FFD700');
 
 interface LightningStormProps {
   weaponType: WeaponType;
   position: Vector3;
-  damage?: number; // Fixed damage of 117
+  damage?: number;
+  staggerToAdd?: number;
   delayStart?: number;
   onComplete: () => void;
   onHit?: (targetId: string, damage: number, isCritical?: boolean) => void;
@@ -48,7 +50,8 @@ interface LightningStormProps {
 const LightningStormComponent = memo(function LightningStorm({
   weaponType,
   position,
-  damage = 117, // Fixed damage of 117
+  damage = LIGHTNING_BOLT_ROOM_DAMAGE,
+  staggerToAdd = LIGHTNING_BOLT_ROOM_STAGGER,
   delayStart = 0,
   onComplete,
   onHit,
@@ -175,7 +178,16 @@ const LightningStormComponent = memo(function LightningStorm({
         const enemyEntity = allEntities.find((entity: any) => entity.userData?.serverEnemyId === selectedTarget.id);
 
         if (enemyEntity) {
-          combatSystem.queueDamage(enemyEntity, finalDamage, null, 'lightning_storm', undefined);
+          combatSystem.queueDamage(
+            enemyEntity,
+            finalDamage,
+            null,
+            'lightning_storm',
+            undefined,
+            isCritical,
+            undefined,
+            staggerToAdd > 0 ? staggerToAdd : undefined,
+          );
         }
       }
 

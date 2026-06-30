@@ -1,10 +1,14 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { Billboard, Text } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group } from '@/utils/three-exports';
 import { World } from '@/ecs/World';
 import BossGlbModel from './BossGlbModel';
+import EnemyStaggerBar from './EnemyStaggerBar';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { campHpTheme } from '@/utils/campHpTheme';
+import { STAGGER_MAX_BOSS } from '@/utils/talents';
 
 const WALK_STOP_DELAY = 200;
 /** Fallback if `boss-throw-start` omits `moveLockMs` — keep in sync with `BOSS_THROW_MOVE_LOCK_MS` in backend `enemyAI.js`. */
@@ -15,10 +19,13 @@ interface BossRendererProps {
   entityId: number;
   position: Vector3;
   world: World;
+  health: number;
+  maxHealth: number;
   onMeshReady?: (mesh: Group) => void;
   rotation?: number;
   isStunned?: boolean;
   isDying?: boolean;
+  staggerBuildup?: number;
 }
 
 export default function BossRenderer({
@@ -26,11 +33,15 @@ export default function BossRenderer({
   entityId,
   position,
   world,
+  health,
+  maxHealth,
   onMeshReady,
   rotation,
   isStunned = false,
   isDying = false,
+  staggerBuildup = 0,
 }: BossRendererProps) {
+  const theme = campHpTheme('red');
   const { socket, enemyTransformsRef } = useMultiplayer();
   const groupRef = useRef<Group>(null);
   const currentRotationRef = useRef(0);
@@ -194,6 +205,32 @@ export default function BossRenderer({
         onAttackFinished={() => {}}
         onThrowAnimFinished={handleThrowAnimFinished}
       />
+
+      <Billboard position={[0, 6.1, 0]} follow lockX={false} lockY={false} lockZ={false}>
+        {health > 0 && !isDying && (
+          <>
+            <mesh position={[0, 0, 0]}>
+              <planeGeometry args={[2.0, 0.25]} />
+              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
+            </mesh>
+            <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
+              <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
+              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
+            </mesh>
+            <Text
+              position={[0, 0, 0.002]}
+              fontSize={0.18}
+              color={theme.text}
+              anchorX="center"
+              anchorY="middle"
+              fontWeight="bold"
+            >
+              {`HATE ${Math.ceil(health)}/${maxHealth}`}
+            </Text>
+            <EnemyStaggerBar stagger={staggerBuildup} staggerMax={STAGGER_MAX_BOSS} />
+          </>
+        )}
+      </Billboard>
     </group>
   );
 }

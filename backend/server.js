@@ -149,6 +149,12 @@ io.on('connection', (socket) => {
       merchantInventory: typeof room.getMerchantInventory === 'function' ? room.getMerchantInventory() : [],
       mushroomState: typeof room.getMushroomState === 'function' ? room.getMushroomState() : null,
       goldDrops: typeof room.getGoldDrops === 'function' ? room.getGoldDrops() : [],
+      lateJoinCombatLoadout: (() => {
+        const p = room.getPlayer(socket.id);
+        if (!p?.lateJoinCombatLoadout) return null;
+        p.lateJoinCombatLoadout = false;
+        return { weapon: p.weapon, subclass: p.subclass };
+      })(),
     });
     
     // Notify other players

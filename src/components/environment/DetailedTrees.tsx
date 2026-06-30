@@ -1,7 +1,7 @@
 
 import React, { useRef, useEffect, useMemo } from 'react';
 import { BufferGeometry, CylinderGeometry, ConeGeometry, Group, MeshStandardMaterial, Mesh, Quaternion, Color, Vector3 } from 'three';
-
+import { disposeObject3D } from '@/utils/disposeObject3D';
 
 interface TreeBranch {
   start: Vector3;
@@ -167,6 +167,7 @@ const DetailedTrees: React.FC<{ trees: DetailedTree[] }> = ({ trees }) => {
   useEffect(() => {
     // Clear previous trees
     treeGroupsRef.current.forEach(group => {
+      disposeObject3D(group);
       if (group.parent) {
         group.parent.remove(group);
       }
@@ -302,6 +303,11 @@ const DetailedTrees: React.FC<{ trees: DetailedTree[] }> = ({ trees }) => {
       
       treeGroupsRef.current.push(treeGroup);
     });
+
+    return () => {
+      treeGroupsRef.current.forEach((group) => disposeObject3D(group));
+      treeGroupsRef.current = [];
+    };
   }, [treeStructures]);
 
   return (

@@ -25,7 +25,7 @@ import CloudkillArrow from '@/components/projectiles/CloudkillArrow';
 import VenomEffect from '@/components/projectiles/VenomEffect';
 import { Vector3, Color } from '@/utils/three-exports';
 import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
-import { CROSSENTROPY_PLAGUE_VENOM_MS, type CrossentropyVisualTheme, type FanOfKnivesFlourishTint, getFanOfKnivesDaggerColorsFromTint } from '@/utils/talents';
+import { CROSSENTROPY_PLAGUE_VENOM_MS, type CrossentropyVisualTheme, type FanOfKnivesFlourishTint, type TempestBurstTheme, getFanOfKnivesDaggerColorsFromTint } from '@/utils/talents';
 
 function crossentropyThemeFromUserData(userData: Record<string, unknown>): CrossentropyVisualTheme {
   if (userData.crossentropyInferno === true) return 'inferno';
@@ -51,6 +51,8 @@ interface ProjectileData {
   projectileType?: string; // For projectile type differentiation (e.g., burst_arrow)
   /** Trigger Finger talent — red uncharged bow tap arrow. */
   triggerFingerUncharged?: boolean;
+  /** Tempest Rounds burst visual theme. */
+  tempestBurstTheme?: TempestBurstTheme;
   /** Wrathful Bite talent — red Barrage theme. */
   barrageWrathfulBite?: boolean;
   /** Wyvern Bite talent — green Barrage theme. */
@@ -365,9 +367,11 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
       } else if (userData.isRegularArrow || userData.projectileType === 'burst_arrow') {
         const existing = projectileData.regular.find(p => p.entityId === entity.id);
         const triggerFinger = userData.triggerFingerUncharged === true;
+        const tempestTheme = userData.tempestBurstTheme as TempestBurstTheme | undefined;
         if (existing) {
           existing.position.copy(transform.position);
           existing.triggerFingerUncharged = triggerFinger;
+          existing.tempestBurstTheme = tempestTheme;
           newRegular.push(existing);
         } else {
           newRegular.push({
@@ -380,6 +384,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             opacity: userData.opacity || 1.0,
             projectileType: userData.projectileType,
             triggerFingerUncharged: triggerFinger,
+            tempestBurstTheme: tempestTheme,
           });
         }
       } else if (userData.projectileType === 'wind_shear') {
@@ -766,6 +771,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             maxDistance={maxDistance}
             projectileType={arrow.projectileType}
             triggerFingerUncharged={arrow.triggerFingerUncharged === true}
+            tempestBurstTheme={arrow.tempestBurstTheme}
             onImpact={() => {
               // console.log(`🏹 RegularArrow ${arrow.id} impact`);
             }}

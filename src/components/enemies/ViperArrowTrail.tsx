@@ -1,6 +1,6 @@
 import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Mesh, Line, Vector3, BufferGeometry, LineBasicMaterial, AdditiveBlending, BufferAttribute } from '@/utils/three-exports';
+import { Mesh, Line, Vector3, BufferGeometry, LineBasicMaterial, AdditiveBlending, BufferAttribute, SphereGeometry, MeshStandardMaterial } from '@/utils/three-exports';
 
 interface ViperArrowTrailProps {
   color: string;
@@ -11,6 +11,9 @@ interface ViperArrowTrailProps {
 
 const THICKNESS = 1.35;
 const MAX_TRAIL_LENGTH = 85;
+const GLOW_COUNT = 5;
+const SPARK_GROUP_COUNT = 3;
+const SPARKS_PER_GROUP = 3;
 
 function ViperArrowTrail({
   color,
@@ -21,6 +24,8 @@ function ViperArrowTrail({
   const trailRef = useRef<Line>(null);
   const trailPositions = useRef<Vector3[]>([]);
   const initialized = useRef(false);
+  const glowRefs = useRef<(Mesh | null)[]>([]);
+  const sparkRefs = useRef<(Mesh | null)[]>([]);
 
   const trailGeometry = useMemo(() => {
     const geometry = new BufferGeometry();
@@ -34,7 +39,6 @@ function ViperArrowTrail({
       positions[i * 3 + 2] = 0;
 
       const alpha = 1 - i / MAX_TRAIL_LENGTH;
-      // Bright lime (#ccff00) → mid green (#22aa00) → dark green (#115500)
       colors[i * 3] = 0.8 * alpha + 0.067 * (1 - alpha);
       colors[i * 3 + 1] = 1.0 * alpha + 0.33 * (1 - alpha);
       colors[i * 3 + 2] = 0.0;
@@ -64,12 +68,64 @@ function ViperArrowTrail({
 
   const trailLine = useMemo(() => new Line(trailGeometry, trailMaterial), [trailGeometry, trailMaterial]);
 
+  const glowGeos = useMemo(
+    () => Array.from({ length: GLOW_COUNT }, (_, i) => new SphereGeometry(size * 2 * (0.3 - i * 0.05) * THICKNESS, 8, 8)),
+    [size],
+  );
+  const glowMats = useMemo(
+    () =>
+      Array.from({ length: GLOW_COUNT }, (_, i) =>
+        new MeshStandardMaterial({
+          color,
+          emissive: '#aaff44',
+          emissiveIntensity: 2 - i * 0.3,
+          transparent: true,
+          opacity: opacity * (1 - i * 0.2),
+          depthWrite: false,
+          blending: AdditiveBlending,
+          toneMapped: false,
+        }),
+      ),
+    [color, opacity],
+  );
+
+  const sparkGeo = useMemo(() => new SphereGeometry(0.032, 4, 4), []);
+  const sparkMats = useMemo(
+    () =>
+      Array.from({ length: SPARK_GROUP_COUNT * SPARKS_PER_GROUP }, (_, i) =>
+        new MeshStandardMaterial({
+          color: '#aaff44',
+          emissive: '#88ff00',
+          emissiveIntensity: 3,
+          transparent: true,
+          opacity: opacity * (1 - Math.floor(i / SPARKS_PER_GROUP) * 0.3),
+          depthWrite: false,
+          blending: AdditiveBlending,
+        }),
+      ),
+    [opacity],
+  );
+
+  const sparkOffsets = useMemo(
+    () =>
+      Array.from({ length: SPARK_GROUP_COUNT * SPARKS_PER_GROUP }, () => [
+        (Math.random() - 0.5) * 0.3,
+        (Math.random() - 0.5) * 0.3,
+        (Math.random() - 0.5) * 0.3,
+      ] as [number, number, number]),
+    [],
+  );
+
   useEffect(() => {
     return () => {
       trailGeometry.dispose();
       trailMaterial.dispose();
+      glowGeos.forEach((g) => g.dispose());
+      glowMats.forEach((m) => m.dispose());
+      sparkGeo.dispose();
+      sparkMats.forEach((m) => m.dispose());
     };
-  }, [trailGeometry, trailMaterial]);
+  }, [trailGeometry, trailMaterial, glowGeos, glowMats, sparkGeo, sparkMats]);
 
   const _scratchPos = useRef(new Vector3());
 
@@ -94,70 +150,69 @@ function ViperArrowTrail({
         positions[i * 3 + 2] = currentPos.z;
       }
       trailGeometry.attributes.position.needsUpdate = true;
-      return;
+    } else {
+      trailPositions.current.unshift(currentPos.clone());
+
+      if (trailPositions.current.length > MAX_TRAIL_LENGTH) {
+        trailPositions.current.pop();
+      }
+
+      const positions = trailGeometry.attributes.position.array as Float32Array;
+      for (let i = 0; i < trailPositions.current.length; i++) {
+        const pos = trailPositions.current[i];
+        positions[i * 3] = pos.x;
+        positions[i * 3 + 1] = pos.y;
+        positions[i * 3 + 2] = pos.z;
+      }
+
+      trailGeometry.attributes.position.needsUpdate = true;
     }
 
-    trailPositions.current.unshift(currentPos);
-
-    if (trailPositions.current.length > MAX_TRAIL_LENGTH) {
-      trailPositions.current.pop();
-    }
-
-    const positions = trailGeometry.attributes.position.array as Float32Array;
-    for (let i = 0; i < trailPositions.current.length; i++) {
+    for (let i = 0; i < GLOW_COUNT; i++) {
+      const glow = glowRefs.current[i];
       const pos = trailPositions.current[i];
-      positions[i * 3] = pos.x;
-      positions[i * 3 + 1] = pos.y;
-      positions[i * 3 + 2] = pos.z;
+      if (glow && pos) {
+        glow.position.copy(pos);
+      }
     }
 
-    trailGeometry.attributes.position.needsUpdate = true;
+    for (let g = 0; g < SPARK_GROUP_COUNT; g++) {
+      const groupPos = trailPositions.current[g];
+      if (!groupPos) continue;
+      for (let s = 0; s < SPARKS_PER_GROUP; s++) {
+        const idx = g * SPARKS_PER_GROUP + s;
+        const spark = sparkRefs.current[idx];
+        if (!spark) continue;
+        const offset = sparkOffsets[idx];
+        spark.position.set(groupPos.x + offset[0], groupPos.y + offset[1], groupPos.z + offset[2]);
+      }
+    }
   });
 
   return (
     <group name="viper-arrow-trail">
       <primitive ref={trailRef} object={trailLine} />
 
-      {trailPositions.current.slice(0, 5).map((pos, index) => (
-        <mesh key={index} position={pos}>
-          <sphereGeometry args={[size * 2 * (0.3 - index * 0.05) * THICKNESS, 8, 8]} />
-          <meshStandardMaterial
-            color={color}
-            emissive="#aaff44"
-            emissiveIntensity={2 - index * 0.3}
-            transparent
-            opacity={opacity * (1 - index * 0.2)}
-            depthWrite={false}
-            blending={AdditiveBlending}
-            toneMapped={false}
-          />
-        </mesh>
+      {glowGeos.map((geo, i) => (
+        <mesh
+          key={`glow-${i}`}
+          ref={(el) => {
+            glowRefs.current[i] = el;
+          }}
+          geometry={geo}
+          material={glowMats[i]}
+        />
       ))}
 
-      {trailPositions.current.slice(0, 3).map((pos, index) => (
-        <group key={`spark-${index}`} position={pos}>
-          {[0, 1, 2].map((sparkIndex) => (
-            <mesh
-              key={sparkIndex}
-              position={[
-                (Math.random() - 0.5) * 0.3,
-                (Math.random() - 0.5) * 0.3,
-                (Math.random() - 0.5) * 0.3,
-              ]}
-            >
-              <sphereGeometry args={[0.032, 4, 4]} />
-              <meshStandardMaterial
-                color="#aaff44"
-                emissive="#88ff00"
-                emissiveIntensity={3}
-                transparent
-                opacity={opacity * (1 - index * 0.3)}
-                depthWrite={false}
-                blending={AdditiveBlending}
-              />
-            </mesh>
-          ))}
-        </group>
+      {Array.from({ length: SPARK_GROUP_COUNT * SPARKS_PER_GROUP }, (_, i) => (
+        <mesh
+          key={`spark-${i}`}
+          ref={(el) => {
+            sparkRefs.current[i] = el;
+          }}
+          geometry={sparkGeo}
+          material={sparkMats[i]}
+        />
       ))}
     </group>
   );

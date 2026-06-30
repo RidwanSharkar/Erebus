@@ -30,6 +30,19 @@ export class InputManager extends EventEmitter {
   private isPointerLocked = false;
   private canvas: HTMLCanvasElement | null = null;
 
+  // Bound once so add/removeEventListener references match.
+  private readonly boundOnKeyDown: (event: KeyboardEvent) => void;
+  private readonly boundOnKeyUp: (event: KeyboardEvent) => void;
+  private readonly boundOnMouseDown: (event: MouseEvent) => void;
+  private readonly boundOnMouseUp: (event: MouseEvent) => void;
+  private readonly boundOnMouseMove: (event: MouseEvent) => void;
+  private readonly boundOnWheel: (event: WheelEvent) => void;
+  private readonly boundOnPointerLockChange: () => void;
+  private readonly boundOnPointerLockError: () => void;
+  private readonly boundOnWindowBlur: () => void;
+  private readonly boundOnWindowFocus: () => void;
+  private readonly boundPreventContextMenu: (event: Event) => void;
+
   // Flag to allow all keyboard input (used for chat)
   private allowAllInput = false;
 
@@ -45,6 +58,17 @@ export class InputManager extends EventEmitter {
 
   constructor() {
     super();
+    this.boundOnKeyDown = this.onKeyDown.bind(this);
+    this.boundOnKeyUp = this.onKeyUp.bind(this);
+    this.boundOnMouseDown = this.onMouseDown.bind(this);
+    this.boundOnMouseUp = this.onMouseUp.bind(this);
+    this.boundOnMouseMove = this.onMouseMove.bind(this);
+    this.boundOnWheel = this.onWheel.bind(this);
+    this.boundOnPointerLockChange = this.onPointerLockChange.bind(this);
+    this.boundOnPointerLockError = this.onPointerLockError.bind(this);
+    this.boundOnWindowBlur = this.onWindowBlur.bind(this);
+    this.boundOnWindowFocus = this.onWindowFocus.bind(this);
+    this.boundPreventContextMenu = (e) => e.preventDefault();
     this.setupEventListeners();
   }
 
@@ -53,18 +77,11 @@ export class InputManager extends EventEmitter {
     
     // Add canvas-specific event listeners to ensure we capture events
     // that might be handled by React Three Fiber
-    canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
-    canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
-    canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
-    canvas.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-    
-    // Don't automatically request pointer lock - let systems handle this
-    // canvas.addEventListener('click', () => {
-    //   if (!this.isPointerLocked) {
-    //     this.requestPointerLock();
-    //   }
-    // });
+    canvas.addEventListener('mousedown', this.boundOnMouseDown);
+    canvas.addEventListener('mouseup', this.boundOnMouseUp);
+    canvas.addEventListener('mousemove', this.boundOnMouseMove);
+    canvas.addEventListener('wheel', this.boundOnWheel, { passive: false });
+    canvas.addEventListener('contextmenu', this.boundPreventContextMenu);
   }
 
   public requestPointerLock(): void {
@@ -200,26 +217,17 @@ export class InputManager extends EventEmitter {
   }
 
   private setupEventListeners(): void {
-    // Keyboard events
-    document.addEventListener('keydown', this.onKeyDown.bind(this));
-    document.addEventListener('keyup', this.onKeyUp.bind(this));
-
-    // Mouse events
-    document.addEventListener('mousedown', this.onMouseDown.bind(this));
-    document.addEventListener('mouseup', this.onMouseUp.bind(this));
-    document.addEventListener('mousemove', this.onMouseMove.bind(this));
-    document.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
-
-    // Pointer lock events
-    document.addEventListener('pointerlockchange', this.onPointerLockChange.bind(this));
-    document.addEventListener('pointerlockerror', this.onPointerLockError.bind(this));
-
-    // Prevent context menu
-    document.addEventListener('contextmenu', (e) => e.preventDefault());
-
-    // Handle window focus/blur to reset input state
-    window.addEventListener('blur', this.onWindowBlur.bind(this));
-    window.addEventListener('focus', this.onWindowFocus.bind(this));
+    document.addEventListener('keydown', this.boundOnKeyDown);
+    document.addEventListener('keyup', this.boundOnKeyUp);
+    document.addEventListener('mousedown', this.boundOnMouseDown);
+    document.addEventListener('mouseup', this.boundOnMouseUp);
+    document.addEventListener('mousemove', this.boundOnMouseMove);
+    document.addEventListener('wheel', this.boundOnWheel, { passive: false });
+    document.addEventListener('pointerlockchange', this.boundOnPointerLockChange);
+    document.addEventListener('pointerlockerror', this.boundOnPointerLockError);
+    document.addEventListener('contextmenu', this.boundPreventContextMenu);
+    window.addEventListener('blur', this.boundOnWindowBlur);
+    window.addEventListener('focus', this.boundOnWindowFocus);
   }
 
   private onKeyDown(event: KeyboardEvent): void {
@@ -370,7 +378,6 @@ export class InputManager extends EventEmitter {
   }
 
   private onPointerLockError(): void {
-    // console.warn('Pointer lock failed');
     this.isPointerLocked = false;
   }
 
@@ -388,7 +395,6 @@ export class InputManager extends EventEmitter {
   }
 
   private isGameKey(key: string): boolean {
-    // Define which keys should have their default behavior prevented
     const gameKeys = [
       'w',
       'a',
@@ -407,27 +413,25 @@ export class InputManager extends EventEmitter {
   }
 
   public destroy(): void {
-    // Remove document event listeners
-    document.removeEventListener('keydown', this.onKeyDown.bind(this));
-    document.removeEventListener('keyup', this.onKeyUp.bind(this));
-    document.removeEventListener('mousedown', this.onMouseDown.bind(this));
-    document.removeEventListener('mouseup', this.onMouseUp.bind(this));
-    document.removeEventListener('mousemove', this.onMouseMove.bind(this));
-    document.removeEventListener('wheel', this.onWheel.bind(this));
-    document.removeEventListener('pointerlockchange', this.onPointerLockChange.bind(this));
-    document.removeEventListener('pointerlockerror', this.onPointerLockError.bind(this));
-    window.removeEventListener('blur', this.onWindowBlur.bind(this));
-    window.removeEventListener('focus', this.onWindowFocus.bind(this));
+    document.removeEventListener('keydown', this.boundOnKeyDown);
+    document.removeEventListener('keyup', this.boundOnKeyUp);
+    document.removeEventListener('mousedown', this.boundOnMouseDown);
+    document.removeEventListener('mouseup', this.boundOnMouseUp);
+    document.removeEventListener('mousemove', this.boundOnMouseMove);
+    document.removeEventListener('wheel', this.boundOnWheel);
+    document.removeEventListener('pointerlockchange', this.boundOnPointerLockChange);
+    document.removeEventListener('pointerlockerror', this.boundOnPointerLockError);
+    window.removeEventListener('blur', this.boundOnWindowBlur);
+    window.removeEventListener('focus', this.boundOnWindowFocus);
 
-    // Remove canvas event listeners if canvas exists
     if (this.canvas) {
-      this.canvas.removeEventListener('mousedown', this.onMouseDown.bind(this));
-      this.canvas.removeEventListener('mouseup', this.onMouseUp.bind(this));
-      this.canvas.removeEventListener('mousemove', this.onMouseMove.bind(this));
-      this.canvas.removeEventListener('wheel', this.onWheel.bind(this));
+      this.canvas.removeEventListener('mousedown', this.boundOnMouseDown);
+      this.canvas.removeEventListener('mouseup', this.boundOnMouseUp);
+      this.canvas.removeEventListener('mousemove', this.boundOnMouseMove);
+      this.canvas.removeEventListener('wheel', this.boundOnWheel);
+      this.canvas.removeEventListener('contextmenu', this.boundPreventContextMenu);
     }
 
-    // Clear state
     this.keys.clear();
     this.mouseButtons.clear();
     this.keyTimings.clear();

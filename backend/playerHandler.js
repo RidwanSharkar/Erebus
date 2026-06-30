@@ -1,4 +1,16 @@
 function handlePlayerEvents(socket, gameRooms) {
+  const ZERO_MOVEMENT_DIRECTION = {
+    x: 0,
+    y: 0,
+    z: 0,
+    inputStrength: 0,
+    isGrounded: true,
+    isDashing: false,
+    dashDirection: { x: 0, y: 0, z: 0 },
+    isAttackSlowed: false,
+    isIcebeaming: false,
+  };
+
   // Handle player position and rotation updates
   socket.on('player-update', (data) => {
     const { roomId, position, rotation, weapon, health, movementDirection } = data;
@@ -7,9 +19,11 @@ function handlePlayerEvents(socket, gameRooms) {
     
     const room = gameRooms.get(roomId);
     const playerId = socket.id;
+    const player = room.getPlayer(playerId);
+    const isDead = player && player.health <= 0;
     
-    // Update player state
-    if (position && rotation) {
+    // Update player state (ignore sliding position updates while dead)
+    if (position && rotation && !isDead) {
       room.updatePlayerPosition(playerId, position, rotation, movementDirection);
     }
     
@@ -24,11 +38,11 @@ function handlePlayerEvents(socket, gameRooms) {
     // Broadcast updated position to other players in the room
     socket.to(roomId).emit('player-moved', {
       playerId,
-      position,
+      position: isDead && player ? player.position : position,
       rotation,
       weapon,
       health,
-      movementDirection
+      movementDirection: isDead ? ZERO_MOVEMENT_DIRECTION : movementDirection,
     });
   });
 
@@ -42,9 +56,9 @@ function handlePlayerEvents(socket, gameRooms) {
     if (!player) return;
     player.coopZombieBoons = {
       packHunter: !!raw.packHunter,
-      everliving: !!raw.everliving,
-      adrenaline: !!raw.adrenaline,
+      berserkerStrain: !!raw.berserkerStrain,
       juggernautStrain: !!raw.juggernautStrain,
+      exploderStrain: !!raw.exploderStrain,
     };
   });
 
@@ -59,6 +73,11 @@ function handlePlayerEvents(socket, gameRooms) {
     player.coopStaggerRoomBoons = {
       guardbreak: !!raw.guardbreak,
       overshock: !!raw.overshock,
+      unstableEnergy: !!raw.unstableEnergy,
+      stamina: typeof raw.stamina === 'number' ? raw.stamina : 0,
+      agility: typeof raw.agility === 'number' ? raw.agility : 0,
+      critChance: typeof raw.critChance === 'number' ? raw.critChance : 0,
+      critDamageMult: typeof raw.critDamageMult === 'number' ? raw.critDamageMult : 2,
     };
   });
 
@@ -905,7 +924,10 @@ function handlePlayerEvents(socket, gameRooms) {
 
     if (player) {
       const currentGold = player.gold || 0;
-      player.gold = currentGold + gold;
+      const nextGold = currentGold + gold;
+      if (nextGold < 0) return;
+
+      player.gold = nextGold;
 
       room.io.to(roomId).emit('player-gold-changed', {
         playerId: playerId || socket.id,

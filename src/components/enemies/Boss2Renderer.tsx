@@ -245,7 +245,7 @@ export default function Boss2Renderer({
                 anchorY="middle"
                 fontWeight="bold"
               >
-                {`ARCHON ${Math.ceil(health)}/${maxHealth}`}
+                {`ENVY ${Math.ceil(health)}/${maxHealth}`}
               </Text>
               <EnemyStaggerBar stagger={staggerBuildup} staggerMax={STAGGER_MAX_BOSS} />
             </>

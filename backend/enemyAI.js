@@ -60,7 +60,7 @@ const KNIGHT_DASH_COOLDOWN_MS = 7000;
 const KNIGHT_DASH_DISTANCE = 4.5;
 const KNIGHT_DASH_DURATION_MS = 350;
 const KNIGHT_DASH_MIN_DISTANCE = 3.25;
-const KNIGHT_SPIN_COOLDOWN_MS = 6000;
+const KNIGHT_SPIN_COOLDOWN_MS = 7000;
 const KNIGHT_SPIN_CAST_RANGE = 4.5;
 const KNIGHT_SPIN_CHARGE_MS = 500;
 const KNIGHT_SPIN_DISTANCE = 4.5;
@@ -92,14 +92,15 @@ const TITAN_PATROL_RADIUS_FRAC = 0.65;
 const TITAN_BLADESTORM_HEALTH_PCT = 0.4;
 const TITAN_BLADESTORM_POWERUP_MS = 1500;
 const TITAN_BLADESTORM_DAMAGE = 15;
-const TITAN_BLADESTORM_SPIN_SPEED = 12.0; // rad/s — calm circular orbit (~1 rotation/sec)
+const TITAN_BLADESTORM_SPIN_SPEED = 18.0; // rad/s — calm circular orbit (~1 rotation/sec)
 const TITAN_BLADESTORM_HIT_RADIUS = 4.75;
-const TITAN_STOMP_COOLDOWN_MS = 10_000;
-const TITAN_STOMP_WINDUP_MS = 1500;
-const TITAN_STOMP_MIN_DISTANCE = 5;
+const TITAN_STOMP_COOLDOWN_MS = 11_000;
+const TITAN_STOMP_WINDUP_MS = 1000;
+const TITAN_STOMP_MIN_DISTANCE = 3;
 const TITAN_STOMP_MAX_RANGE = 10;
 const TITAN_STOMP_STUN_MS = 2000;
-const TITAN_STOMP_HALF_WIDTH = 1.0;
+const TITAN_STOMP_HALF_WIDTH_MIN = 0.5;
+const TITAN_STOMP_HALF_WIDTH_MAX = 2.0;
 const TITAN_STOMP_DAMAGE = 15;
 const TITAN_STOMP_TRAVEL_MS = 700;
 const TITAN_STOMP_STEPS = 10;
@@ -113,12 +114,11 @@ const PLAYER_ZOMBIE_STANDARD_DAMAGE = 45;
 const PLAYER_ZOMBIE_JUGGERNAUT_HP = 600;
 const PLAYER_ZOMBIE_JUGGERNAUT_DAMAGE = 135;
 const JUGGERNAUT_STRAIN_ROLL_CHANCE = 0.33;
-const EVERLIVING_ZOMBIE_HP_MULT = 2;
-const ADRENALINE_ZOMBIE_MOVE_MULT = 2.5;
+const BERSERKER_STRAIN_HP_MULT = 2;
+const BERSERKER_STRAIN_MOVE_MULT = 2;
 const PLAYER_ZOMBIE_UNLOCK_MOVE_SPEED = 1.75;
-const PACK_HUNTER_RADIUS_UNITS = 5;
-const PACK_HUNTER_BONUS_PER_ALLY = 0.40;
-const PACK_HUNTER_MAX_STACKING_ALLIES = 6;
+const PACK_HUNTER_DAMAGE_PER_ZOMBIE = 15;
+const EXPLODER_STRAIN_RADIUS = 2.5;
 
 const ALLIED_KNIGHT_MAX_HP = 1000;
 const ALLIED_KNIGHT_DAMAGE = 50;
@@ -130,12 +130,12 @@ const ALLIED_KNIGHT_PROTECTIVE_THREAT_TTL_MS = 15000;
 const ALLIED_KNIGHT_PROTECTIVE_THREAT_DECAY_PER_SEC = 0.85;
 const ALLIED_KNIGHT_PROTECTIVE_OVERRIDE_DAMAGE = 50;
 const ALLIED_KNIGHT_ORB_COUNT = 3;
-const ALLIED_KNIGHT_SMITE_ORB_COST = 2;
+const ALLIED_KNIGHT_SMITE_ORB_COST = 1;
 const ALLIED_KNIGHT_SMITE_COOLDOWN_MS = 5000;
 const ALLIED_KNIGHT_ORB_RECHARGE_MS = 5000;
 const ALLIED_KNIGHT_SMITE_LOCK_MS = 1200;
 const ALLIED_KNIGHT_SMITE_IMPACT_DELAY_MS = 900;
-const ALLIED_KNIGHT_SMITE_CAST_RANGE = 4.0;
+const ALLIED_KNIGHT_SMITE_CAST_RANGE = 3.6;
 const ALLIED_KNIGHT_SMITE_DAMAGE = 70;
 const ALLIED_KNIGHT_SMITE_RADIUS = 1.85;
 const ALLIED_HEALER_ID = 'allied-healer';
@@ -198,13 +198,13 @@ const TEMPLAR_BLINK_SMITE_ABILITY_LOCK_MS = 2500; // no move/melee during windup
 const TELEPORT_BEHIND_DISTANCE = 2.2; // same as boss blink (templar blink smite; not used by main co-op boss)
 
 // Co-op main boss (GLB): melee + leap + tectonic
-const BOSS_MELEE_RANGE = 3;
+const BOSS_MELEE_RANGE = 2.9;
 const BOSS_MELEE_COOLDOWN_MS = 2750;
 const BOSS_MELEE_DAMAGE = 17;
 /** No translation during melee swing (matches knight `SWING_LOCK_MS`). */
 const BOSS_MELEE_ATTACK_LOCK_MS = 1200;
 /** Leap only once at or below this health fraction (not at full HP). */
-const BOSS_LEAP_MAX_HP_PCT = 0.95;
+const BOSS_LEAP_MAX_HP_PCT = 1.0;
 const BOSS_LEAP_LAND_STANDOFF_M = 0.65; // land near player for leap (not full walk standoff 3.2m)
 const BOSS_LEAP_COOLDOWN_MS = 8000;
 const BOSS_LEAP_MAX_TRAVEL = 14;
@@ -252,6 +252,8 @@ const GHOUL_LEAP_DAMAGE = 25;
 const GHOUL_LEAP_STUN_MS = 2250;
 const GHOUL_BASE_DAMAGE = 28;
 const GHOUL_BASE_MOVE_SPEED = 2.5;
+const GHOUL_SUMMON_HP = 400;
+const BOSS3_SUMMONED_GHOUL_HP = 1200;
 const BOSS3_SUMMONED_GHOUL_VISUAL_SCALE = 1.75;
 const BOSS3_SUMMONED_GHOUL_SPEED_MULT = 1.5;
 const BOSS3_SUMMONED_GHOUL_DAMAGE_MULT = 2;
@@ -274,7 +276,7 @@ const MOB_LEAP_PREDICTION_MAX_OFFSET = 12;
 // Boss 2: Archon warlock
 const BOSS2_ARCHON_LIGHTNING_COOLDOWN_MS = 3500;
 const BOSS2_ARCHON_LIGHTNING_WINDUP_MS = 750;
-const BOSS2_ARCHON_LIGHTNING_DAMAGE = 48;
+const BOSS2_ARCHON_LIGHTNING_DAMAGE = 53;
 const BOSS2_ARCHON_LIGHTNING_HALF_WIDTH = 1.0;
 const BOSS2_ARCHON_LIGHTNING_RANGE = 14;
 /** Phase 1 perpendicular arm half-length at target (capped). */
@@ -304,7 +306,7 @@ const BOSS3_NOVA_COOLDOWN_MS = 3000;
 const BOSS3_NOVA_MAX_RANGE = 14;
 const BOSS3_NOVA_TRAVEL_MS = 1500;
 const BOSS3_NOVA_HALF_WIDTH = 0.85;
-const BOSS3_NOVA_DAMAGE = 65;
+const BOSS3_NOVA_DAMAGE = 60;
 const BOSS3_NOVA_STEPS = 26;
 const BOSS3_NOVA_BURST_GAP_MS = 250;
 const BOSS3_NOVA_HP_DOUBLE_ROUND = 0.75;
@@ -319,11 +321,11 @@ const BOSS3_LIGHTNING_OFFSET_MIN = 2;
 const BOSS3_LIGHTNING_OFFSET_MAX = 6;
 const BOSS3_GREEN_BEAM_DURATION_MS = 8000;
 const BOSS3_GREEN_BEAM_TICK_MS = 1000;
-const BOSS3_GREEN_BEAM_DPS = 100;
+const BOSS3_GREEN_BEAM_DPS = 75;
 const BOSS3_GREEN_BEAM_RANGE = 22;
 const BOSS3_GREEN_BEAM_HALF_WIDTH = 0.52;
 /** Radians/sec — slower than default boss snap so players can sidestep the beam. */
-const BOSS3_GREEN_BEAM_ROT_SPEED = 0.95;
+const BOSS3_GREEN_BEAM_ROT_SPEED = 1.2;
 
 // Martyr: self-detonation (matches client AOE)
 const MARTYR_MELEE_RANGE = 1.4;
@@ -399,12 +401,12 @@ const KNIGHT_SMITE_LOCK_MS = 1200;
 const KNIGHT_SMITE_IMPACT_DELAY_MS = 900;
 const KNIGHT_SMITE_RADIUS_BASE = 2.8;
 const KNIGHT_SMITE_RADIUS_POST_BOSS2 = 3.75;
-const KNIGHT_SMITE_DAMAGE_PRE_BOSS2 = { red: 75 };
+const KNIGHT_SMITE_DAMAGE_PRE_BOSS2 = { red: 60 };
 const KNIGHT_SMITE_DAMAGE_POST_BOSS2 = {
-  red: 125,
+  red: 95,
   blue: 85,
-  green: 85,
-  purple: 95,
+  green: 80,
+  purple: 90,
 };
 
 /** Post-boss-2 unlock: single tectonic-style ground spike (castheal windup, player-targeted). */
@@ -3852,14 +3854,15 @@ class EnemyAI {
 
       const ghoulId = `ghoul-${weaver.id}-${Date.now()}`;
       const damageMult = isBoss3Summon ? BOSS3_SUMMONED_GHOUL_DAMAGE_MULT : 1;
+      const ghoulHp = isBoss3Summon ? BOSS3_SUMMONED_GHOUL_HP : GHOUL_SUMMON_HP;
 
       const ghoul = {
         id:        ghoulId,
         type:      'ghoul',
         position:  { ...ritualPosition },
         rotation:  rotationYTowardEntry(ritualPosition.x, ritualPosition.z),
-        health:    400,
-        maxHealth: 400,
+        health:    ghoulHp,
+        maxHealth: ghoulHp,
         isDying:   false,
         damage:    GHOUL_BASE_DAMAGE * damageMult,
         attackCooldown: 2000,
@@ -4168,9 +4171,9 @@ class EnemyAI {
   updateTitanAI(titan, players) {
     this.titanMaybeStartBladestorm(titan);
     if (titan.bladestormPowerupActive) return;
+
     if (titan.bladestormActive) {
       this.tickTitanBladestorm(titan, this.updateInterval / 1000);
-      return;
     }
 
     let aggroData = this.enemyAggro.get(titan.id);
@@ -4466,12 +4469,17 @@ class EnemyAI {
       const bx = ox + ux * frac1 * TITAN_STOMP_MAX_RANGE;
       const bz = oz + uz * frac1 * TITAN_STOMP_MAX_RANGE;
 
+      const fracMid = (frac0 + frac1) / 2;
+      const halfWidth =
+        TITAN_STOMP_HALF_WIDTH_MIN +
+        (TITAN_STOMP_HALF_WIDTH_MAX - TITAN_STOMP_HALF_WIDTH_MIN) * fracMid;
+
       this.room?.damagePlayersInLineSegmentFirstHit(
         ax,
         az,
         bx,
         bz,
-        TITAN_STOMP_HALF_WIDTH,
+        halfWidth,
         TITAN_STOMP_DAMAGE,
         'titan_stomp',
         hitPlayerIds,
@@ -6775,37 +6783,24 @@ class EnemyAI {
     this.meleeLockUntil.delete(zombieId);
   }
 
-  /** @returns {{ packHunter: boolean; everliving: boolean; adrenaline: boolean; juggernautStrain: boolean }} */
+  /** @returns {{ packHunter: boolean; berserkerStrain: boolean; juggernautStrain: boolean; exploderStrain: boolean }} */
   getCoopZombieBoons(ownerId) {
     const p = this.room?.players?.get(ownerId);
     const z = p?.coopZombieBoons;
     return {
       packHunter: !!z?.packHunter,
-      everliving: !!z?.everliving,
-      adrenaline: !!z?.adrenaline,
+      berserkerStrain: !!z?.berserkerStrain,
       juggernautStrain: !!z?.juggernautStrain,
+      exploderStrain: !!z?.exploderStrain,
     };
   }
 
-  /**
-   * Damage multiplier from Pack Hunter (+25% per other owned zombie within range, capped at +100%).
-   * @param {object} zombie - live player-zombie entity
-   */
-  getPackHunterDamageMultiplier(zombie) {
-    if (!this.room || !zombie?.ownerPlayerId) return 1;
-    const boons = this.getCoopZombieBoons(zombie.ownerPlayerId);
-    if (!boons.packHunter) return 1;
-
-    let near = 0;
-    const ownerId = zombie.ownerPlayerId;
-    for (const e of this.room.getEnemies()) {
-      if (!e || e.id === zombie.id || e.type !== 'player-zombie' || e.isDying || e.health <= 0) continue;
-      if (e.ownerPlayerId !== ownerId) continue;
-      if (this.calculateDistance(zombie.position, e.position) <= PACK_HUNTER_RADIUS_UNITS) near++;
-    }
-
-    const capped = Math.min(near, PACK_HUNTER_MAX_STACKING_ALLIES);
-    return 1 + capped * PACK_HUNTER_BONUS_PER_ALLY;
+  /** Flat Pack Hunter bonus: +15 damage per living owned zombie (including self). */
+  getPackHunterBonusDamage(ownerId) {
+    if (!ownerId) return 0;
+    const boons = this.getCoopZombieBoons(ownerId);
+    if (!boons.packHunter) return 0;
+    return PACK_HUNTER_DAMAGE_PER_ZOMBIE * this.countLivingPlayerZombies(ownerId);
   }
 
   isFriendlyCombatUnit(enemy) {
@@ -7546,8 +7541,8 @@ class EnemyAI {
       damage = PLAYER_ZOMBIE_JUGGERNAUT_DAMAGE;
     }
 
-    if (boons.everliving) {
-      maxHp *= EVERLIVING_ZOMBIE_HP_MULT;
+    if (boons.berserkerStrain) {
+      maxHp *= BERSERKER_STRAIN_HP_MULT;
     }
 
     const zombieId = `player-zombie-${ownerId}-${Date.now()}`;
@@ -7596,7 +7591,7 @@ class EnemyAI {
       if (spawned && !spawned.isDying && spawned.type === 'player-zombie') {
         let moveSpeed = PLAYER_ZOMBIE_UNLOCK_MOVE_SPEED;
         const nowBoons = this.getCoopZombieBoons(ownerId);
-        if (nowBoons.adrenaline) moveSpeed *= ADRENALINE_ZOMBIE_MOVE_MULT;
+        if (nowBoons.berserkerStrain) moveSpeed *= BERSERKER_STRAIN_MOVE_MULT;
         spawned.moveSpeed = moveSpeed;
         spawned.summonUnlockAt = null;
       }
@@ -7631,6 +7626,47 @@ class EnemyAI {
         position: zombie.position,
         timestamp: Date.now(),
       });
+    }
+  }
+
+  triggerExploderStrainDetonation(zombie) {
+    if (!this.room?.getGameStarted()) return;
+    const live = this.room.getEnemy(zombie.id) || zombie;
+    if (!live || live.isDying || live.exploderStrainDetonated) return;
+
+    const ownerId = live.ownerPlayerId;
+    if (!ownerId) return;
+    const boons = this.getCoopZombieBoons(ownerId);
+    if (!boons.exploderStrain) return;
+
+    live.exploderStrainDetonated = true;
+
+    const center = live.position;
+    const explosionDamage = Math.round(live.maxHealth ?? PLAYER_ZOMBIE_STANDARD_HP);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('player-zombie-explosion', {
+        zombieId: live.id,
+        position: { x: center.x, y: center.y, z: center.z },
+        radius: EXPLODER_STRAIN_RADIUS,
+        timestamp: Date.now(),
+      });
+    }
+
+    for (const e of this.room.getEnemies()) {
+      if (!e || e.id === live.id || e.isDying) continue;
+      if (this.isFriendlyCombatUnit(e)) continue;
+      if (e.type === 'training-dummy') continue;
+      if (e.health <= 0) continue;
+      if (this.calculateDistance(center, e.position) > EXPLODER_STRAIN_RADIUS) continue;
+      this.room.damageEnemy(e.id, explosionDamage, ownerId, null, {
+        damageType: 'zombie_explosion',
+        exploderStrainZombie: true,
+      });
+    }
+
+    if (live.health > 0) {
+      this.room.damageEnemy(live.id, live.health, null, null, { damageType: 'zombie_explosion_self' });
     }
   }
 
@@ -7686,11 +7722,15 @@ class EnemyAI {
             if (!liveHostile || liveHostile.isDying || liveHostile.health <= 0) return;
             const currentDist = this.calculateDistance(attacker.position, liveHostile.position);
             if (currentDist <= attackRange + 0.5) {
-              let dmg = attacker.damage || 32;
-              dmg *= this.getPackHunterDamageMultiplier(attacker);
+              let dmg = attacker.damage || PLAYER_ZOMBIE_STANDARD_DAMAGE;
+              dmg += this.getPackHunterBonusDamage(attacker.ownerPlayerId);
               this.room.damageEnemy(liveHostile.id, Math.round(dmg), attacker.ownerPlayerId, null, {
                 sourceZombieId: attacker.id,
               });
+              const boons = this.getCoopZombieBoons(attacker.ownerPlayerId);
+              if (boons.exploderStrain && !attacker.exploderStrainDetonated) {
+                this.triggerExploderStrainDetonation(attacker);
+              }
             }
           }, 700);
         } else if (distance > meleePressDistance) {

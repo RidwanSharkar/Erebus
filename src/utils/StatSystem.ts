@@ -202,6 +202,17 @@ export class StatSystem {
     return descs[stat];
   }
 
+  /** Brief hover tooltip copy for the stat allocation panel. */
+  static getStatTooltipDescription(stat: StatKey): string {
+    const descs: Record<StatKey, string> = {
+      strength: '+5% critical strike damage per point',
+      stamina: '+10 Maximum Health and +10 Heal per point',
+      agility: '+1% critical strike chance per point',
+      intellect: '+2 Shield Capacity per point',
+    };
+    return descs[stat];
+  }
+
   static getStatEffect(stat: StatKey, value: number): string {
     if (value === 0) return 'No bonus';
     switch (stat) {

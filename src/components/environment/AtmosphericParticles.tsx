@@ -1,4 +1,4 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Color, BufferGeometry, BufferAttribute, AdditiveBlending } from '@/utils/three-exports';
 
@@ -63,6 +63,12 @@ const AtmosphericParticles: React.FC<AtmosphericParticlesProps> = ({
     geom.setAttribute('color', new BufferAttribute(colors, 3));
     return geom;
   }, [positions, colors]);
+
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+    };
+  }, [geometry]);
 
   // Animate particles with gentle floating motion
   useFrame((state, delta) => {

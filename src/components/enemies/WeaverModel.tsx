@@ -9,8 +9,10 @@ import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 interface WeaverModelProps {
   isWalking: boolean;
   isCastingHeal: boolean;
-  /** When true, CastHeal clips loop until `isCastingHeal` clears (Boss 3 beam channel). */
+  /** When true, CastHeal clips loop until `isCastingHeal` clears. */
   castHealLoop?: boolean;
+  /** When true, CastHeal plays once and freezes on the last frame while `isCastingHeal` stays true. */
+  castHealHoldEnd?: boolean;
   isCastingSummon: boolean;
   isDying: boolean;
   isImpacting?: boolean;
@@ -37,6 +39,7 @@ export default function WeaverModel({
   isWalking,
   isCastingHeal,
   castHealLoop = false,
+  castHealHoldEnd = false,
   isCastingSummon,
   isDying,
   isImpacting = false,
@@ -124,6 +127,9 @@ export default function WeaverModel({
     const sameClip = nextAction === currentActionRef.current;
     if (sameClip) {
       const retriggerImpact = isImpacting && impactPlayKey !== lastImpactPlayKeyRef.current;
+      if (isCastingHeal && castHealHoldEnd && getAction('CastHeal') === nextAction) {
+        return;
+      }
       if (isCastingHeal && castHealLoop && getAction('CastHeal') === nextAction) {
         nextAction.setLoop(LoopRepeat, Infinity);
         nextAction.clampWhenFinished = false;
@@ -144,7 +150,10 @@ export default function WeaverModel({
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.2).play();
     } else if (isCastingHeal) {
-      if (castHealLoop) {
+      if (castHealHoldEnd) {
+        nextAction.setLoop(LoopOnce, 1);
+        nextAction.clampWhenFinished = true;
+      } else if (castHealLoop) {
         nextAction.setLoop(LoopRepeat, Infinity);
         nextAction.clampWhenFinished = false;
       } else {
@@ -165,7 +174,7 @@ export default function WeaverModel({
     }
 
     currentActionRef.current = nextAction;
-  }, [isWalking, isCastingHeal, castHealLoop, isCastingSummon, isDying, isImpacting, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isWalking, isCastingHeal, castHealLoop, castHealHoldEnd, isCastingSummon, isDying, isImpacting, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After one-shot (impact, cast) finishes, blend back to Walk or Idle.
   useEffect(() => {
@@ -193,14 +202,14 @@ export default function WeaverModel({
         return;
       }
       if (name === 'CastHeal' || name === 'CastSummon') {
-        if (name === 'CastHeal' && castHealLoop) return;
+        if (name === 'CastHeal' && (castHealLoop || castHealHoldEnd)) return;
         blendToWalkOrIdle();
       }
     };
 
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isDying, isWalking, isCastingHeal, castHealLoop, actions, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isDying, isWalking, isCastingHeal, castHealLoop, castHealHoldEnd, actions, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group ref={sceneGroupRef}>

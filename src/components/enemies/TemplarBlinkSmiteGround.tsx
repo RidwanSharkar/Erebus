@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import {
   Group,
   Vector3,
@@ -165,6 +165,13 @@ export default function TemplarBlinkSmiteGround({ position, onComplete }: Templa
       ),
     }))
   ), []);
+
+  useEffect(() => {
+    return () => {
+      Object.values(geometries).forEach((g) => g.dispose());
+      Object.values(materials).forEach((m) => m.dispose());
+    };
+  }, [geometries, materials]);
 
   useFrame((_, delta) => {
     tRef.current += delta;

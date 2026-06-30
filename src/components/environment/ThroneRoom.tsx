@@ -15,6 +15,8 @@ import Scythe from '@/components/weapons/Scythe';
 import Sabres from '@/components/weapons/Sabres';
 import Runeblade from '@/components/weapons/Runeblade';
 import PortalSymbol from './PortalSymbols';
+import ArcaneRitualCircle from './ArcaneRitualCircle';
+import { RITUAL_WORLD_SCALE } from './ritualCircleGeometries';
 import { ThroneCircularCastleWalls } from './CastleWalls';
 
 /** Original throne staging layout (portals, pedestals, inner pavers); unchanged when expanding grass. */
@@ -146,6 +148,17 @@ const THRONE_PORTAL_COLOR_HEX: Record<CoopPortalKind, string> = {
   boss: '#6c3dff',
 };
 
+const PORTAL_RITUAL_COLORS: Record<CoopPortalKind, { base: string; glow: string }> = {
+  purple: { base: '#4c1d95', glow: '#c4b5fd' },
+  blue: { base: '#1e3a8a', glow: '#93c5fd' },
+  red: { base: '#991b1b', glow: '#fca5a5' },
+  green: { base: '#166534', glow: '#86efac' },
+  stat: { base: '#c2410c', glow: '#fdba74' },
+  trial: { base: '#a16207', glow: '#fde047' },
+  merchant: { base: '#be185d', glow: '#f9a8d4' },
+  boss: { base: '#4c1d95', glow: '#c4b5fd' },
+};
+
 export function normalizeThroneCamp(s: string | undefined): ThroneMainRoomCamp {
   const k = String(s || '').toLowerCase();
   if (k === 'purple' || k === 'blue' || k === 'red' || k === 'green') return k;
@@ -250,21 +263,27 @@ export const THRONE_DEV_BOSS3_PORTAL_POSITION = Object.freeze({
 
 export const THRONE_DEV_BOSS_PORTAL_INTERACT_RADIUS = 1.25;
 
+/** Local dev / non-production builds — ability/talent pedestals and dev boss portals. */
+export const COOP_DEV_LOCALHOST_FEATURES = process.env.NODE_ENV !== 'production';
+
 /** Pillars + ability + talent pedestal hulls for movement / charge collision in the prep room. */
 export function getThronePrepPhysicsObstacles(): Array<{ x: number; z: number; radius: number }> {
-  return [
-    ...getThronePillarPhysicsObstacles(),
-    {
-      x: THRONE_ABILITY_PEDESTAL_POSITION.x,
-      z: THRONE_ABILITY_PEDESTAL_POSITION.z,
-      radius: THRONE_PILLAR_HULL_RADIUS,
-    },
-    {
-      x: THRONE_TALENT_PEDESTAL_POSITION.x,
-      z: THRONE_TALENT_PEDESTAL_POSITION.z,
-      radius: THRONE_PILLAR_HULL_RADIUS,
-    },
-  ];
+  const obstacles = [...getThronePillarPhysicsObstacles()];
+  if (COOP_DEV_LOCALHOST_FEATURES) {
+    obstacles.push(
+      {
+        x: THRONE_ABILITY_PEDESTAL_POSITION.x,
+        z: THRONE_ABILITY_PEDESTAL_POSITION.z,
+        radius: THRONE_PILLAR_HULL_RADIUS,
+      },
+      {
+        x: THRONE_TALENT_PEDESTAL_POSITION.x,
+        z: THRONE_TALENT_PEDESTAL_POSITION.z,
+        radius: THRONE_PILLAR_HULL_RADIUS,
+      },
+    );
+  }
+  return obstacles;
 }
 
 /** Area scales ~r²; keep blade density similar when expanding grass radius. */
@@ -543,6 +562,15 @@ export function ThronePortalRing({
         position={[0, 0.4, 0]}
       />
       {!locked && <PortalSymbol campType={campType} portalColor={portalColor} />}
+      {!locked && (
+        <ArcaneRitualCircle
+          position={[0, -THRONE_PORTAL_Y + 0.25, 0]}
+          baseColor={PORTAL_RITUAL_COLORS[campType].base}
+          glowColor={PORTAL_RITUAL_COLORS[campType].glow}
+          worldScale={RITUAL_WORLD_SCALE * 1.2}
+          persistent
+        />
+      )}
     </group>
   );
 }
@@ -614,12 +642,15 @@ export default function ThroneRoom({
     borderTheme === 'red' ? 'gold' : borderTheme;
 
   const groundRoomTheme: RoomBorderTheme = usePurpleBossArenaShell ? 'purple' : borderTheme;
-  const borderEffectsTheme: SimpleBorderColorTheme = usePurpleBossArenaShell ? 'purple' : simpleBorderColorTheme;
+  const borderEffectsTheme: SimpleBorderColorTheme = usePurpleBossArenaShell ? 'red' : simpleBorderColorTheme;
 
   return (
     <group name="throne-room">
       {usePurpleBossArenaShell ? <CustomSky roomTheme="purple" /> : <CustomSky skyPreset="throneBlue" />}
-      <PerimeterCloudSystem radius={COOP_THRONE_ROOM_RADIUS} />
+      <PerimeterCloudSystem
+        radius={COOP_THRONE_ROOM_RADIUS}
+        cloudTheme={usePurpleBossArenaShell ? 'red' : 'gold'}
+      />
       <ambientLight intensity={usePurpleBossArenaShell ? 0.1 : 0.14} />
       <hemisphereLight
         color={keyColor}
@@ -665,14 +696,18 @@ export default function ThroneRoom({
           {THRONE_PILLAR_DEFS.map((def, i) => (
             <Pillar key={`throne-pillar-${i}`} position={def.position} orbColorHex={def.orbColorHex} />
           ))}
-          <Pillar
-            position={[THRONE_ABILITY_PEDESTAL_POSITION.x, THRONE_ABILITY_PEDESTAL_POSITION.y, THRONE_ABILITY_PEDESTAL_POSITION.z]}
-            showOrb={false}
-          />
-          <Pillar
-            position={[THRONE_TALENT_PEDESTAL_POSITION.x, THRONE_TALENT_PEDESTAL_POSITION.y, THRONE_TALENT_PEDESTAL_POSITION.z]}
-            showOrb={false}
-          />
+          {COOP_DEV_LOCALHOST_FEATURES && (
+            <>
+              <Pillar
+                position={[THRONE_ABILITY_PEDESTAL_POSITION.x, THRONE_ABILITY_PEDESTAL_POSITION.y, THRONE_ABILITY_PEDESTAL_POSITION.z]}
+                showOrb={false}
+              />
+              <Pillar
+                position={[THRONE_TALENT_PEDESTAL_POSITION.x, THRONE_TALENT_PEDESTAL_POSITION.y, THRONE_TALENT_PEDESTAL_POSITION.z]}
+                showOrb={false}
+              />
+            </>
+          )}
           <ThroneWeaponPedestals equippedWeapon={equippedWeapon} />
           <group>
             {THRONE_PORTAL_POSITIONS.map((pos, i) => (
@@ -681,7 +716,7 @@ export default function ThroneRoom({
               </group>
             ))}
           </group>
-          {process.env.NODE_ENV !== 'production' && (
+          {COOP_DEV_LOCALHOST_FEATURES && (
             <>
               <group
                 position={[

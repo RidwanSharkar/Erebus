@@ -293,6 +293,9 @@ class ShaderRegistry {
         uSpeed: { value: 1 },
         uRotationSpeed: { value: 1 },
         uRotationOffset: { value: 0 },
+        uDeepColor: { value: new Color(0.6, 0.45, 0.05) },
+        uBrightColor: { value: new Color(1.0, 0.82, 0.25) },
+        uHotCoreColor: { value: new Color(1.0, 0.95, 0.55) },
       },
       vertexShader: `
         uniform float uTime;
@@ -353,17 +356,17 @@ class ShaderRegistry {
       fragmentShader: `
         varying float vAlpha;
         varying float vHeat;
+        uniform vec3 uDeepColor;
+        uniform vec3 uBrightColor;
+        uniform vec3 uHotCoreColor;
 
         void main() {
           vec2 center = gl_PointCoord - vec2(0.5);
           float dist = length(center);
           float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
-          vec3 deepGold = vec3(0.6, 0.45, 0.05);
-          vec3 brightGold = vec3(1.0, 0.82, 0.25);
-          vec3 hotCore = vec3(1.0, 0.95, 0.55);
-          vec3 color = mix(deepGold, brightGold, vHeat);
+          vec3 color = mix(uDeepColor, uBrightColor, vHeat);
           float core = 1.0 - smoothstep(0.0, 0.2, dist);
-          color = mix(color, hotCore, core * vHeat * 0.4);
+          color = mix(color, uHotCoreColor, core * vHeat * 0.4);
           gl_FragColor = vec4(color, alpha * vAlpha);
         }
       `,

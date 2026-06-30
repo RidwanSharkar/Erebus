@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   Vector3,
@@ -153,6 +153,18 @@ export default function SabreImpactEffect({
       ),
     [],
   );
+
+  useEffect(() => {
+    return () => {
+      leftMat.dispose();
+      rightMat.dispose();
+      leftGhostMat.dispose();
+      rightGhostMat.dispose();
+      pinchMat.dispose();
+      ringMat.dispose();
+      sparkMats.forEach((m) => m.dispose());
+    };
+  }, [leftMat, rightMat, leftGhostMat, rightGhostMat, pinchMat, ringMat, sparkMats]);
 
   useFrame((_, delta) => {
     if (doneRef.current) return;

@@ -9,6 +9,7 @@ import { AbilityLoadout, getDefaultLoadout } from '@/utils/weaponAbilities';
 import { TalentLoadout, createDefaultTalentLoadout, getCoopZombieRoomBoonsPayload, getCoopStaggerRoomBoonsPayload } from '@/utils/talents';
 import { ExperienceSystem } from '@/utils/ExperienceSystem';
 import { StatSystem, StatPointData, StatKey, PlayerStats } from '@/utils/StatSystem';
+import { getRuneCountForWeapon } from '@/utils/runeCount';
 import type { ItemRarity } from '@/utils/itemRarity';
 import { Vector3 } from '@/utils/three-exports';
 import { applyEnemyMoveBatch, type EnemyLiveTransform } from '@/utils/enemyLiveTransform';
@@ -129,6 +130,10 @@ export interface EnemyDamageMeta {
   glacialTalons?: boolean;
   /** Entanglement — Barrage hit roots and squeezes target on server. */
   entanglementBarrage?: boolean;
+  /** Tempest Rounds burst — Arctic Sting chill on hit. */
+  tempestBurstArcticChill?: boolean;
+  /** Tempest Rounds burst — Wyvern Sting zombie on kill. */
+  tempestBurstWyvernZombie?: boolean;
 }
 
 /** Server enemy; `type` includes e.g. `knight`, `training-dummy` (throne prep). */
@@ -373,6 +378,9 @@ interface MultiplayerContextType {
    */
   coopClearedRoomColor: string | null;
   clearCoopClearedRoomColor: () => void;
+  /** Co-op: server-assigned weapon when joining after the first portal (one-shot, consumed by page.tsx). */
+  lateJoinCombatLoadout: { weapon: WeaponType; subclass: WeaponSubclass } | null;
+  clearLateJoinCombatLoadout: () => void;
   /** Phase 1: hide the overlay and begin the fade animation (call after scene assets are ready). */
   hideCoopPortalTransition: () => void;
   /** Phase 2: tell the server this client has fully loaded (call after the fade completes). */
@@ -663,6 +671,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopMainArenaIntermissionSeq, setCoopMainArenaIntermissionSeq] = useState(0);
   const [coopBossClearedBgmSeq, setCoopBossClearedBgmSeq] = useState(0);
   const [coopClearedRoomColor, setCoopClearedRoomColor] = useState<string | null>(null);
+  const [lateJoinCombatLoadout, setLateJoinCombatLoadout] = useState<{
+    weapon: WeaponType;
+    subclass: WeaponSubclass;
+  } | null>(null);
   const [mushroomState, setMushroomState] = useState<{ health: number[]; maxHealth: number } | null>(null);
   const [currentPreview, setCurrentPreview] = useState<RoomPreview | null>(null);
   const [selectedWeapons, setSelectedWeaponsState] = useState<{
@@ -900,6 +912,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       } else {
         setMushroomState(null);
       }
+
+      const lj = (data as { lateJoinCombatLoadout?: { weapon?: string; subclass?: string } | null })
+        .lateJoinCombatLoadout;
+      if (lj?.weapon) {
+        const w = lj.weapon.toUpperCase() as WeaponType;
+        const sc = (lj.subclass?.toUpperCase() ?? 'ELEMENTAL') as WeaponSubclass;
+        setLateJoinCombatLoadout({ weapon: w, subclass: sc });
+      } else {
+        setLateJoinCombatLoadout(null);
+      }
     });
 
     addEventHandler('camps-initialized', (data: { campTypes?: string[]; coopTerrainTheme?: unknown; coopCurrentRoomKind?: string }) => {
@@ -1103,6 +1125,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           data.damageType === 'venom' ||
           data.damageType === 'wyvern_talons_detonate' ||
           data.damageType === 'player_zombie' ||
+          data.damageType === 'zombie_explosion' ||
           (data.damageType === 'crossentropy' && data.crossentropyMeteorDamage === true) ||
           (data.damageType === 'cloudkill' && data.cloudkillDamage === true)) &&
         typeof data.damage === 'number' &&
@@ -1119,7 +1142,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
                 ? 'crossentropy'
                 : data.damageType === 'cloudkill'
                   ? 'cloudkill'
-                  : data.damageType === 'player_zombie'
+                  : data.damageType === 'player_zombie' || data.damageType === 'zombie_explosion'
                   ? 'player_zombie'
                   : 'ignite';
           mgr.addDamageNumber(data.damage, false, pos, dt);
@@ -1805,6 +1828,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setCoopCombatArenaEnterSeq(0);
     setCoopMainArenaIntermissionSeq(0);
     setCoopBossClearedBgmSeq(0);
+    setLateJoinCombatLoadout(null);
     setMushroomState(null);
     setDroppedItems(new Map());
     setGoldDrops(new Map());
@@ -1874,6 +1898,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const clearCoopClearedRoomColor = useCallback(() => {
     setCoopClearedRoomColor(null);
     setCoopClearedRoomKind(null);
+  }, []);
+
+  const clearLateJoinCombatLoadout = useCallback(() => {
+    setLateJoinCombatLoadout(null);
   }, []);
 
   const updatePlayerPosition = useCallback((position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: PlayerMovementDirection) => {
@@ -1997,6 +2025,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.glacialBiteChill ? { glacialBiteChill: true } : {}),
         ...(meta?.glacialTalons ? { glacialTalons: true } : {}),
         ...(meta?.entanglementBarrage ? { entanglementBarrage: true } : {}),
+        ...(meta?.tempestBurstArcticChill ? { tempestBurstArcticChill: true } : {}),
+        ...(meta?.tempestBurstWyvernZombie ? { tempestBurstWyvernZombie: true } : {}),
       });
     }
   }, [socket, currentRoomId]);
@@ -2215,11 +2245,21 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       roomId: currentRoomId,
       coopZombieBoons: getCoopZombieRoomBoonsPayload(talentLoadout),
     });
+
+    const localPlayerLevel = socket.id ? (players.get(socket.id)?.level ?? 1) : 1;
+    const effectiveStats = StatSystem.getEffectiveStatsWithInventory(statPointData.stats, inventory);
+    const runeCount = getRuneCountForWeapon(selectedWeapons.primary, localPlayerLevel);
     socket.emit('coop-stagger-room-boons', {
       roomId: currentRoomId,
-      coopStaggerRoomBoons: getCoopStaggerRoomBoonsPayload(talentLoadout),
+      coopStaggerRoomBoons: getCoopStaggerRoomBoonsPayload(talentLoadout, {
+        agility: effectiveStats.agility,
+        strength: effectiveStats.strength,
+        stamina: effectiveStats.stamina,
+        criticalRuneCount: runeCount,
+        critDamageRuneCount: runeCount,
+      }),
     });
-  }, [socket, currentRoomId, gameMode, talentLoadout]);
+  }, [socket, currentRoomId, gameMode, talentLoadout, statPointData, inventory, selectedWeapons, players]);
 
   const updatePlayerLevel = useCallback((playerId: string, level: number) => {
     if (socket && currentRoomId) {
@@ -2423,6 +2463,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopBossClearedBgmSeq,
     coopClearedRoomColor,
     clearCoopClearedRoomColor,
+    lateJoinCombatLoadout,
+    clearLateJoinCombatLoadout,
     hideCoopPortalTransition,
     confirmCoopPortalTransitionComplete,
     endCoopPortalTransition,
@@ -2490,7 +2532,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     closeChat,
     setPlayers
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, leaveRoom, previewRoom, clearPreview, startGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, setSelectedWeapons, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
+  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, leaveRoom, previewRoom, clearPreview, startGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, setSelectedWeapons, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
 
   return (
     <MultiplayerContext.Provider value={contextValue}>

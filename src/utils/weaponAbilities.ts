@@ -187,7 +187,7 @@ export const universalAbilityPool: UniversalAbility[] = [
   {
     id: 'SPEAR_R', sourceWeapon: WeaponType.SPEAR, sourceKey: 'R',
     name: 'Lightning Bolt', cooldown: 3.0, icon: '⚡',
-    description: 'Calls down a lightning bolt on a random enemy within range, dealing 117 damage.',
+    description: 'Calls down a lightning bolt on a random enemy within range, dealing 117 damage and applying 70 stagger.',
     allowedWeapons: ALL_WEAPONS,
   },
   {
@@ -441,7 +441,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Lightning Bolt',
       key: 'R',
       cooldown: 1.0,
-      description: 'Calls down a lightning bolt on the highest priority enemy in the map, dealing 117 damage.'
+      description: 'Calls down a lightning bolt on the highest priority enemy in the map, dealing 117 damage and applying 70 stagger.'
     },
     {
       name: 'Storm Shroud',

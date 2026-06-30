@@ -8,6 +8,14 @@ import {
   getTalentBoonDefinition,
   getTalentIconSrc,
 } from '@/utils/talents';
+import { getWeaponHudIconSrc } from '@/utils/weaponIcons';
+
+const MAX_VISIBLE_TALENTS = 8;
+const TALENT_SLOT_PX = 48; // w-12
+const TALENT_GAP_PX = 8; // gap-2
+const TALENT_SCROLL_MAX_WIDTH_PX =
+  MAX_VISIBLE_TALENTS * TALENT_SLOT_PX +
+  (MAX_VISIBLE_TALENTS - 1) * TALENT_GAP_PX;
 
 interface HotkeyPanelProps {
   currentWeapon: WeaponType;
@@ -198,6 +206,8 @@ export default function HotkeyPanel({
     [talentLoadout, currentWeapon]
   );
 
+  const needsTalentScroll = enabledTalentIds.length > MAX_VISIBLE_TALENTS;
+
   // Update cooldowns from control system
   useEffect(() => {
     if (!controlSystem || !controlSystem.getAbilityCooldowns) return;
@@ -363,9 +373,36 @@ export default function HotkeyPanel({
                   </div>
 
                   {/* Weapon icon */}
-                  <div className="text-xl" style={{ filter: isCurrentWeapon ? `drop-shadow(0 0 6px rgba(251,191,36,0.6))` : undefined, color: iconColor }}>
-                    {weapon.icon}
-                  </div>
+                  {(() => {
+                    const iconSrc = getWeaponHudIconSrc(weapon.type);
+                    if (iconSrc) {
+                      return (
+                        <img
+                          src={iconSrc}
+                          alt=""
+                          className="h-7 w-7 object-contain"
+                          style={{
+                            filter: isCurrentWeapon
+                              ? 'drop-shadow(0 0 6px rgba(251,191,36,0.6))'
+                              : isOnCooldown
+                                ? 'opacity(0.65)'
+                                : undefined,
+                          }}
+                        />
+                      );
+                    }
+                    return (
+                      <div
+                        className="text-xl"
+                        style={{
+                          filter: isCurrentWeapon ? 'drop-shadow(0 0 6px rgba(251,191,36,0.6))' : undefined,
+                          color: iconColor,
+                        }}
+                      >
+                        {weapon.icon}
+                      </div>
+                    );
+                  })()}
 
                   {/* Cooldown overlay */}
                   {isOnCooldown && (
@@ -587,42 +624,47 @@ export default function HotkeyPanel({
                   </span>
                   <div className="w-px h-3 rounded" style={{ background: 'rgba(120,120,160,0.3)' }} />
                 </div>
-                {enabledTalentIds.map((talentId) => {
-                  const src = getTalentIconSrc(talentId);
-                  return (
-                    <div
-                      key={talentId}
-                      className="relative h-12 w-12 shrink-0 rounded-lg transition-all duration-200 flex items-center justify-center cursor-default"
-                      style={{
-                        background: 'linear-gradient(135deg, rgba(54,42,14,0.55), rgba(24,18,8,0.45))',
-                        border: '1px solid rgba(251,191,36,0.45)',
-                        boxShadow: '0 0 10px rgba(251,191,36,0.15), inset 0 1px 0 rgba(255,255,255,0.06)',
-                      }}
-                      onMouseEnter={(e) => handleTalentHover(e, talentId)}
-                      onMouseLeave={handleAbilityLeave}
-                    >
-                      <div className="flex h-7 w-7 items-center justify-center">
-                        {src ? (
-                          <img
-                            src={src}
-                            alt=""
-                            className="h-7 w-7 object-contain"
-                            style={{
-                              filter: 'drop-shadow(0 0 3px rgba(251,191,36,0.35))',
-                            }}
-                          />
-                        ) : (
-                          <span
-                            className="select-none text-lg leading-none"
-                            style={{ color: 'rgba(253,224,71,0.85)' }}
-                          >
-                            ✦
-                          </span>
-                        )}
+                <div
+                  className={`flex gap-2 ${needsTalentScroll ? 'flex-nowrap overflow-x-auto' : ''}`}
+                  style={needsTalentScroll ? { maxWidth: TALENT_SCROLL_MAX_WIDTH_PX } : undefined}
+                >
+                  {enabledTalentIds.map((talentId) => {
+                    const src = getTalentIconSrc(talentId);
+                    return (
+                      <div
+                        key={talentId}
+                        className="relative h-12 w-12 shrink-0 rounded-lg transition-all duration-200 flex items-center justify-center cursor-default"
+                        style={{
+                          background: 'linear-gradient(135deg, rgba(54,42,14,0.55), rgba(24,18,8,0.45))',
+                          border: '1px solid rgba(251,191,36,0.45)',
+                          boxShadow: '0 0 10px rgba(251,191,36,0.15), inset 0 1px 0 rgba(255,255,255,0.06)',
+                        }}
+                        onMouseEnter={(e) => handleTalentHover(e, talentId)}
+                        onMouseLeave={handleAbilityLeave}
+                      >
+                        <div className="flex h-7 w-7 items-center justify-center">
+                          {src ? (
+                            <img
+                              src={src}
+                              alt=""
+                              className="h-7 w-7 object-contain"
+                              style={{
+                                filter: 'drop-shadow(0 0 3px rgba(251,191,36,0.35))',
+                              }}
+                            />
+                          ) : (
+                            <span
+                              className="select-none text-lg leading-none"
+                              style={{ color: 'rgba(253,224,71,0.85)' }}
+                            >
+                              ✦
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </>
             )}
           </div>

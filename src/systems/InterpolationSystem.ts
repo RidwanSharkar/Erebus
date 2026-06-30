@@ -53,9 +53,7 @@ export class InterpolationSystem extends System {
       }
 
       // Only interpolate if not being knocked back (knockback has priority)
-      if (!movement || !movement.isKnockbacked) {
-        this.interpolateEntity(transform, interpolationBuffer);
-      }
+      // Position/rotation interpolation runs in render() only — avoids double work per frame.
     }
   }
 

@@ -182,7 +182,7 @@ export default function LoadingScreen({
               letterSpacing: '0.35em',
             }}
           >
-            EREBUS
+            EMPYREA
           </h1>
           <div
             className="mt-1 text-green-600/70 font-mono text-xs tracking-[0.5em] uppercase"

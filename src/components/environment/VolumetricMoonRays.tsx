@@ -1,4 +1,4 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   InstancedMesh,
@@ -78,6 +78,13 @@ const VolumetricMoonRays: React.FC = () => {
     blending:       AdditiveBlending,
     side:           DoubleSide,
   }), []);
+
+  useEffect(() => {
+    return () => {
+      geo.dispose();
+      mat.dispose();
+    };
+  }, [geo, mat]);
 
   // Build instance matrices once — each ray points from moon to a ground target
   useMemo(() => {

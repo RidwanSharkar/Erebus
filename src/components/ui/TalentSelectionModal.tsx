@@ -41,6 +41,10 @@ import {
   FROST_SOLAR_PROC_EFFECT_ICD_MS,
   solarRechargeTalentDefinition,
   SOLAR_RECHARGE_PROC_CHANCE,
+  arcaneSynergyTalentDefinition,
+  ARCANE_SYNERGY_ENTROPIC_BOLT_DAMAGE_PER_INTELLECT,
+  ENTROPIC_BOLT_FIRE_RATE_SEC,
+  ARCANE_SYNERGY_ENTROPIC_BOLT_FIRE_RATE_SEC,
   windFuryTalentDefinition,
   WINDFURY_PROC_CHANCE,
   isCrossentropyInLoadout,
@@ -61,6 +65,7 @@ import {
   isFrostBiteInLoadout,
   isReapingTalonsInLoadout,
   isWraithStrikeInLoadout,
+  isBackstabInLoadout,
   isSabresFlourishInLoadout,
   staggeringStrikeTalentDefinition,
   staggeringComboTalentDefinition,
@@ -76,6 +81,7 @@ import {
   DASH_GUARD_DURATION_SEC,
   EXECUTIONER_POST_DASH_WINDOW_MS,
   EXECUTIONER_BASE_DAMAGE_ADD,
+  EXECUTIONER_DAMAGE_PER_STRENGTH,
   crusaderTalentDefinition,
   CRUSADER_PROC_CHANCE,
   CRUSADER_DURATION_SEC,
@@ -108,6 +114,7 @@ import {
   staggeringTalonsTalentDefinition,
   STAGGERING_BITE_BARRAGE_STAGGER_PER_HIT,
   STAGGERING_TALONS_HIT_STAGGER,
+  STAGGERING_TALONS_EXPLOSION_STAGGER,
   wrathfulShotsTalentDefinition,
   WRATHFUL_SHOTS_PERFECT_CRIT_CHANCE_ADD,
   WRATHFUL_SHOTS_PERFECT_CRIT_DAMAGE_MULT_ADD,
@@ -146,6 +153,9 @@ import {
   AFTERSHOCK_STRIP_HALF_WIDTH,
   AFTERSHOCK_DETONATION_DELAY_MS,
   wrathfulTalonsTalentDefinition,
+  WRATHFUL_TALONS_RETURN_CRIT_CHANCE_ADD,
+  WRATHFUL_TALONS_RETURN_CRIT_DAMAGE_MULT_ADD,
+  WRATHFUL_TALONS_EXPLOSION_CRIT_CHANCE_ADD,
   executeTalentDefinition,
   explosiveTalonsTalentDefinition,
   EXPLOSIVE_TALONS_EXPLOSION_DAMAGE,
@@ -158,6 +168,10 @@ import {
   superconductorTalentDefinition,
   acceleratorTalentDefinition,
   giantKillerTalentDefinition,
+  doubleTalonsTalentDefinition,
+  REAPING_TALONS_COOLDOWN_SEC,
+  REAPING_TALONS_DOUBLE_TALONS_MAX_CHARGES,
+  REAPING_TALONS_DOUBLE_TALONS_INTERNAL_COOLDOWN_SEC,
   healingStreamTalentDefinition,
   getTalentIconSrc,
   wrathfulEntropicTalentDefinition,
@@ -195,13 +209,18 @@ import {
   INFESTING_SABRES_SWIPES_LEFT_DAMAGE,
   INFESTING_SABRES_SWIPES_RIGHT_DAMAGE,
   BACKSTAB_KILLSTREAK_DAMAGE_PER_KILL,
-  RELENTLESS_BACKSTAB_KILL_HEAL,
+  RELENTLESS_BACKSTAB_KILL_BASE,
+  RELENTLESS_BACKSTAB_KILL_HEAL_PER_STAMINA,
   killstreakTalentDefinition,
   relentlessTalentDefinition,
+  doubleStabTalentDefinition,
+  BACKSTAB_COOLDOWN_SEC,
+  BACKSTAB_DOUBLE_STAB_MAX_CHARGES,
   vorpalGustTalentDefinition,
   fanOfKnivesTalentDefinition,
   parryTalentDefinition,
-  FAN_OF_KNIVES_DAMAGE,
+  FAN_OF_KNIVES_BASE_DAMAGE,
+  FAN_OF_KNIVES_DAMAGE_PER_AGILITY,
   FAN_OF_KNIVES_MAX_DISTANCE_UNITS,
   PARRY_INTELLECT_BONUS,
   PARRY_STRENGTH_BONUS,
@@ -347,6 +366,7 @@ export default function TalentSelectionModal({
     fragmentation: initialTalentLoadout?.fragmentation ?? def.fragmentation,
     frostPath: initialTalentLoadout?.frostPath ?? def.frostPath,
     solarRecharge: initialTalentLoadout?.solarRecharge ?? def.solarRecharge,
+    arcaneSynergy: initialTalentLoadout?.arcaneSynergy ?? def.arcaneSynergy,
     windFury: initialTalentLoadout?.windFury ?? def.windFury,
     dualCoil: initialTalentLoadout?.dualCoil ?? def.dualCoil,
     highCaliber: initialTalentLoadout?.highCaliber ?? def.highCaliber,
@@ -387,6 +407,7 @@ export default function TalentSelectionModal({
     superconductor: initialTalentLoadout?.superconductor ?? def.superconductor,
     accelerator: initialTalentLoadout?.accelerator ?? def.accelerator,
     giantKiller: initialTalentLoadout?.giantKiller ?? def.giantKiller,
+    doubleTalons: initialTalentLoadout?.doubleTalons ?? def.doubleTalons,
     healingStream: initialTalentLoadout?.healingStream ?? def.healingStream,
     staggeringStab: initialTalentLoadout?.staggeringStab ?? def.staggeringStab,
     wrathfulStab: initialTalentLoadout?.wrathfulStab ?? def.wrathfulStab,
@@ -408,16 +429,18 @@ export default function TalentSelectionModal({
     vorpalGust: initialTalentLoadout?.vorpalGust ?? def.vorpalGust,
     fanOfKnives: initialTalentLoadout?.fanOfKnives ?? def.fanOfKnives,
     parry: initialTalentLoadout?.parry ?? def.parry,
+    doubleStab: initialTalentLoadout?.doubleStab ?? def.doubleStab,
     packHunterRoom: initialTalentLoadout?.packHunterRoom ?? def.packHunterRoom,
-    everlivingRoom: initialTalentLoadout?.everlivingRoom ?? def.everlivingRoom,
-    adrenalineRoom: initialTalentLoadout?.adrenalineRoom ?? def.adrenalineRoom,
+    berserkerStrainRoom: initialTalentLoadout?.berserkerStrainRoom ?? def.berserkerStrainRoom,
     juggernautStrainRoom: initialTalentLoadout?.juggernautStrainRoom ?? def.juggernautStrainRoom,
+    exploderStrainRoom: initialTalentLoadout?.exploderStrainRoom ?? def.exploderStrainRoom,
     infernalDashRoom: initialTalentLoadout?.infernalDashRoom ?? def.infernalDashRoom,
     glacialDashRoom: initialTalentLoadout?.glacialDashRoom ?? def.glacialDashRoom,
     mendingDashRoom: initialTalentLoadout?.mendingDashRoom ?? def.mendingDashRoom,
     staggeringDashRoom: initialTalentLoadout?.staggeringDashRoom ?? def.staggeringDashRoom,
     guardbreakRoom: initialTalentLoadout?.guardbreakRoom ?? def.guardbreakRoom,
     overshockRoom: initialTalentLoadout?.overshockRoom ?? def.overshockRoom,
+    unstableEnergyRoom: initialTalentLoadout?.unstableEnergyRoom ?? def.unstableEnergyRoom,
     bloodleechRoom: initialTalentLoadout?.bloodleechRoom ?? def.bloodleechRoom,
     rebukeRoom: initialTalentLoadout?.rebukeRoom ?? def.rebukeRoom,
     raiseDeadRoom: initialTalentLoadout?.raiseDeadRoom ?? def.raiseDeadRoom,
@@ -425,6 +448,9 @@ export default function TalentSelectionModal({
     coldsnapRoom: initialTalentLoadout?.coldsnapRoom ?? def.coldsnapRoom,
     lightningBoltRoom: initialTalentLoadout?.lightningBoltRoom ?? def.lightningBoltRoom,
     aegisRoom: initialTalentLoadout?.aegisRoom ?? def.aegisRoom,
+    momentumRiftRoom: initialTalentLoadout?.momentumRiftRoom ?? def.momentumRiftRoom,
+    manaShieldRoom: initialTalentLoadout?.manaShieldRoom ?? def.manaShieldRoom,
+    orbShieldRoom: initialTalentLoadout?.orbShieldRoom ?? def.orbShieldRoom,
   };
   const [loadout, setLoadout] = useState<TalentLoadout>(() =>
     normalizeTalentLoadout({
@@ -434,6 +460,7 @@ export default function TalentSelectionModal({
   );
 
   const wraithEquipped = useMemo(() => isWraithStrikeInLoadout(abilityLoadout), [abilityLoadout]);
+  const backstabEquipped = useMemo(() => isBackstabInLoadout(abilityLoadout), [abilityLoadout]);
   const flourishEquipped = useMemo(() => isSabresFlourishInLoadout(abilityLoadout), [abilityLoadout]);
   const reapingEquipped = useMemo(() => isReapingTalonsInLoadout(abilityLoadout), [abilityLoadout]);
   const frostbiteEquipped = useMemo(() => isFrostBiteInLoadout(abilityLoadout), [abilityLoadout]);
@@ -506,6 +533,11 @@ export default function TalentSelectionModal({
   const toggleGiantKiller = useCallback(() => {
     if (!reapingEquipped) return;
     setLoadout((prev) => ({ ...prev, giantKiller: !prev.giantKiller }));
+  }, [reapingEquipped]);
+
+  const toggleDoubleTalons = useCallback(() => {
+    if (!reapingEquipped) return;
+    setLoadout((prev) => ({ ...prev, doubleTalons: !prev.doubleTalons }));
   }, [reapingEquipped]);
 
   const toggleCycloneRush = useCallback(() => {
@@ -630,6 +662,11 @@ export default function TalentSelectionModal({
     setLoadout((prev) => ({ ...prev, relentless: !prev.relentless }));
   }, []);
 
+  const toggleDoubleStab = useCallback(() => {
+    if (!backstabEquipped) return;
+    setLoadout((prev) => ({ ...prev, doubleStab: !prev.doubleStab }));
+  }, [backstabEquipped]);
+
   const toggleVorpalGust = useCallback(() => {
     setLoadout((prev) => ({ ...prev, vorpalGust: !prev.vorpalGust }));
   }, []);
@@ -753,6 +790,10 @@ export default function TalentSelectionModal({
 
   const toggleSolarRecharge = useCallback(() => {
     setLoadout((prev) => ({ ...prev, solarRecharge: !prev.solarRecharge }));
+  }, []);
+
+  const toggleArcaneSynergy = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, arcaneSynergy: !prev.arcaneSynergy }));
   }, []);
 
   const toggleWindFury = useCallback(() => {
@@ -1344,7 +1385,7 @@ export default function TalentSelectionModal({
                       <p className="text-gray-400 text-sm mt-1">{executionerTalentDefinition.description}</p>
                       <p className="text-sky-200/90 text-xs mt-2 font-mono">
                         Real dash only (not Cyclone Rush) · {EXECUTIONER_POST_DASH_WINDOW_MS / 1000}s window · 3rd-hit combo · +
-                        {EXECUTIONER_BASE_DAMAGE_ADD} base before crit
+                        {EXECUTIONER_BASE_DAMAGE_ADD} + {EXECUTIONER_DAMAGE_PER_STRENGTH} per Strength before crit
                       </p>
                     </>
                   )}
@@ -1674,13 +1715,49 @@ export default function TalentSelectionModal({
                   <>
                     <p className="text-gray-400 text-sm mt-1">{relentlessTalentDefinition.description}</p>
                     <p className="text-emerald-200/90 text-xs mt-2 font-mono">
-                      Full Backstab cooldown refresh · +{RELENTLESS_BACKSTAB_KILL_HEAL} HP on kill
+                      Full Backstab cooldown refresh · +{RELENTLESS_BACKSTAB_KILL_BASE} + {RELENTLESS_BACKSTAB_KILL_HEAL_PER_STAMINA} HP per Stamina on kill
                     </p>
                   </>
                 )}
               </label>
             </div>
             </TalentHoverSurface>
+            <div
+              className={`
+                mt-4 rounded-xl border-2 p-4 transition-all
+                ${backstabEquipped ? `${wc.border} ${wc.bg}` : 'border-gray-600 bg-gray-800/40 opacity-70'}
+              `}
+            >
+            <TalentHoverSurface talent={doubleStabTalentDefinition} dimmed={!backstabEquipped}>
+            <div className="flex items-start gap-3">
+              <TalentRowIcon talent={doubleStabTalentDefinition} dimmed={!backstabEquipped} />
+              <input
+                type="checkbox"
+                id="talent-double-stab"
+                checked={loadout.doubleStab}
+                onChange={toggleDoubleStab}
+                disabled={!backstabEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                aria-label={doubleStabTalentDefinition.name}
+              />
+              <label htmlFor="talent-double-stab" className={`flex-1 ${backstabEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                {loadout.doubleStab && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{doubleStabTalentDefinition.description}</p>
+                    <p className="text-amber-200/90 text-xs mt-2 font-mono">
+                      {BACKSTAB_DOUBLE_STAB_MAX_CHARGES} charges · {BACKSTAB_COOLDOWN_SEC}s per charge · one recharge at a time
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+            </TalentHoverSurface>
+            {!backstabEquipped && (
+              <p className="text-gray-500 text-xs mt-2 pl-7">
+                Equip <span className="text-gray-300">Backstab</span> (Sabres Q) in your ability loadout to enable DOUBLE STAB.
+              </p>
+            )}
+            </div>
             <TalentHoverSurface talent={vorpalGustTalentDefinition}>
             <div className="flex items-start gap-3 mt-4">
               <TalentRowIcon talent={vorpalGustTalentDefinition} />
@@ -1715,7 +1792,7 @@ export default function TalentSelectionModal({
                   <>
                     <p className="text-gray-400 text-sm mt-1">{fanOfKnivesTalentDefinition.description}</p>
                     <p className="text-rose-200/90 text-xs mt-2 font-mono">
-                      {FAN_OF_KNIVES_DAMAGE} dmg per dagger · max {FAN_OF_KNIVES_MAX_DISTANCE_UNITS} units
+                      {FAN_OF_KNIVES_BASE_DAMAGE} + {FAN_OF_KNIVES_DAMAGE_PER_AGILITY} dmg per Agility per dagger · max {FAN_OF_KNIVES_MAX_DISTANCE_UNITS} units
                     </p>
                   </>
                 )}
@@ -2078,7 +2155,12 @@ export default function TalentSelectionModal({
                 {loadout.wrathfulTalons && (
                   <>
                     <p className="text-gray-400 text-sm mt-1">{wrathfulTalonsTalentDefinition.description}</p>
-                    <p className="text-green-200/90 text-xs mt-2 font-mono">+40% crit chance · +100% crit damage on return arrow hit</p>
+                    <p className="text-green-200/90 text-xs mt-2 font-mono">
+                      +{Math.round(WRATHFUL_TALONS_RETURN_CRIT_CHANCE_ADD * 100)}% crit chance · +{Math.round(WRATHFUL_TALONS_RETURN_CRIT_DAMAGE_MULT_ADD * 100)}% crit damage on return arrow hit
+                      {loadout.explosiveTalons
+                        ? ` · +${Math.round(WRATHFUL_TALONS_EXPLOSION_CRIT_CHANCE_ADD * 100)}% crit chance on Explosive detonation`
+                        : ''}
+                    </p>
                   </>
                 )}
               </label>
@@ -2124,6 +2206,12 @@ export default function TalentSelectionModal({
                     <p className="text-gray-400 text-sm mt-1">{explosiveTalonsTalentDefinition.description}</p>
                     <p className="text-green-200/90 text-xs mt-2 font-mono">
                       Forward {EXPLOSIVE_TALONS_REAPING_TALONS_MAX_TRAVEL_DISTANCE} (base {REAPING_TALONS_MAX_TRAVEL_DISTANCE}) · {EXPLOSIVE_TALONS_EXPLOSION_DAMAGE} dmg · radius {EXPLOSIVE_TALONS_EXPLOSION_RADIUS}
+                      {loadout.wrathfulTalons
+                        ? ` · +${Math.round(WRATHFUL_TALONS_EXPLOSION_CRIT_CHANCE_ADD * 100)}% crit with Wrathful`
+                        : ''}
+                      {loadout.staggeringTalons
+                        ? ` · ${STAGGERING_TALONS_EXPLOSION_STAGGER} stagger with Staggering`
+                        : ''}
                     </p>
                   </>
                 )}
@@ -2166,7 +2254,11 @@ export default function TalentSelectionModal({
                   <>
                     <p className="text-gray-400 text-sm mt-1">{staggeringTalonsTalentDefinition.description}</p>
                     <p className="text-amber-200/90 text-xs mt-2 font-mono">
-                      {STAGGERING_TALONS_HIT_STAGGER} stagger forward/return per hit · 100 = lightning + proc
+                      {STAGGERING_TALONS_HIT_STAGGER} stagger forward/return per hit
+                      {loadout.explosiveTalons
+                        ? ` · ${STAGGERING_TALONS_EXPLOSION_STAGGER} stagger on Explosive detonation`
+                        : ''}
+                      {' · '}100 = lightning + proc
                     </p>
                   </>
                 )}
@@ -2188,6 +2280,30 @@ export default function TalentSelectionModal({
               <label htmlFor="talent-giantkiller" className={`flex-1 ${reapingEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
                 {loadout.giantKiller && (
                   <p className="text-gray-400 text-sm mt-1">{giantKillerTalentDefinition.description}</p>
+                )}
+              </label>
+            </div>
+            </TalentHoverSurface>
+            <TalentHoverSurface talent={doubleTalonsTalentDefinition} dimmed={!reapingEquipped}>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon talent={doubleTalonsTalentDefinition} dimmed={!reapingEquipped} />
+              <input
+                type="checkbox"
+                id="talent-double-talons"
+                checked={loadout.doubleTalons}
+                onChange={toggleDoubleTalons}
+                disabled={!reapingEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                aria-label={doubleTalonsTalentDefinition.name}
+              />
+              <label htmlFor="talent-double-talons" className={`flex-1 ${reapingEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                {loadout.doubleTalons && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{doubleTalonsTalentDefinition.description}</p>
+                    <p className="text-green-200/90 text-xs mt-2 font-mono">
+                      {REAPING_TALONS_DOUBLE_TALONS_MAX_CHARGES} charges · {REAPING_TALONS_COOLDOWN_SEC}s per charge · one recharge at a time · {REAPING_TALONS_DOUBLE_TALONS_INTERNAL_COOLDOWN_SEC}s apart
+                    </p>
+                  </>
                 )}
               </label>
             </div>
@@ -2913,6 +3029,29 @@ export default function TalentSelectionModal({
                     <p className="text-gray-400 text-sm mt-1">{solarRechargeTalentDefinition.description}</p>
                     <p className="text-orange-200/90 text-xs mt-2 font-mono">
                       {SOLAR_RECHARGE_PROC_CHANCE * 100}% per Entropic Bolt hit on PvE enemies · Sunwell (Reanimate) heal and VFX · does not put Q on cooldown · min {FROST_SOLAR_PROC_EFFECT_ICD_MS / 1000}s between procs
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+            </TalentHoverSurface>
+            <TalentHoverSurface talent={arcaneSynergyTalentDefinition}>
+            <div className="flex items-start gap-3">
+              <TalentRowIcon talent={arcaneSynergyTalentDefinition} />
+              <input
+                type="checkbox"
+                id="talent-arcane-synergy"
+                checked={loadout.arcaneSynergy}
+                onChange={toggleArcaneSynergy}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+                aria-label={arcaneSynergyTalentDefinition.name}
+              />
+              <label htmlFor="talent-arcane-synergy" className="flex-1 cursor-pointer">
+                {loadout.arcaneSynergy && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{arcaneSynergyTalentDefinition.description}</p>
+                    <p className="text-purple-200/90 text-xs mt-2 font-mono">
+                      +{ARCANE_SYNERGY_ENTROPIC_BOLT_DAMAGE_PER_INTELLECT} base damage per Intellect · {ENTROPIC_BOLT_FIRE_RATE_SEC}s → {ARCANE_SYNERGY_ENTROPIC_BOLT_FIRE_RATE_SEC}s fire interval
                     </p>
                   </>
                 )}

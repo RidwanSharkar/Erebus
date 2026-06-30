@@ -140,6 +140,14 @@ export default function Boss3Renderer({
   const [isCastingSummon, setIsCastingSummon] = useState(false);
   const [novaWindup, setNovaWindup] = useState<{ startTime: number; durationMs: number } | null>(null);
   const [greenBeamHold, setGreenBeamHold] = useState<{ startTime: number; isActive: boolean } | null>(null);
+  const greenBeamSoundInstance = useRef<number | null>(null);
+
+  const stopGreenBeamSound = useCallback(() => {
+    if (greenBeamSoundInstance.current !== null && (window as any).audioSystem?.stopSound) {
+      (window as any).audioSystem.stopSound('icebeam', greenBeamSoundInstance.current);
+      greenBeamSoundInstance.current = null;
+    }
+  }, []);
 
   const setGroupRef = useCallback((group: Group | null) => {
     groupRef.current = group;
@@ -179,9 +187,24 @@ export default function Boss3Renderer({
   useEffect(
     () => () => {
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      stopGreenBeamSound();
     },
-    [],
+    [stopGreenBeamSound],
   );
+
+  const greenBeamIsActive = greenBeamHold?.isActive ?? false;
+
+  useEffect(() => {
+    if (greenBeamIsActive) {
+      stopGreenBeamSound();
+      const pos = groupRef.current?.position ?? targetPosition.current;
+      if ((window as any).audioSystem?.playIcebeamSound) {
+        greenBeamSoundInstance.current = (window as any).audioSystem.playIcebeamSound(pos.clone());
+      }
+    } else {
+      stopGreenBeamSound();
+    }
+  }, [greenBeamIsActive, greenBeamHold?.startTime, stopGreenBeamSound]);
 
   useEffect(() => {
     if (!socket) return;
@@ -206,6 +229,8 @@ export default function Boss3Renderer({
 
     const handleGreenBeamStart = (data: { bossId: string; durationMs?: number }) => {
       if (data.bossId !== id) return;
+      const pos = groupRef.current?.position ?? targetPosition.current;
+      (window as any).audioSystem?.playBoss3BeamTelegraphSound(pos.clone());
       const d =
         typeof data.durationMs === 'number' && data.durationMs > 0 ? data.durationMs : BOSS3_GREEN_BEAM_DURATION_MS;
       const startTime = Date.now();
@@ -261,7 +286,6 @@ export default function Boss3Renderer({
   });
 
   const greenBeamChanneling = !!(greenBeamHold && greenBeamHold.isActive);
-  const greenBeamIsActive = greenBeamHold?.isActive ?? false;
 
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
@@ -269,7 +293,7 @@ export default function Boss3Renderer({
         <WeaverModel
           isWalking={isWalking && !isCastingSummon && !greenBeamChanneling}
           isCastingHeal={greenBeamChanneling}
-          castHealLoop={greenBeamChanneling}
+          castHealHoldEnd={greenBeamChanneling}
           isCastingSummon={isCastingSummon}
           isDying={isDying}
         />
@@ -311,7 +335,7 @@ export default function Boss3Renderer({
               anchorY="middle"
               fontWeight="bold"
             >
-              {`WEAVER NEXUS ${Math.ceil(health)}/${maxHealth}`}
+              {`FEAR ${Math.ceil(health)}/${maxHealth}`}
             </Text>
             <EnemyStaggerBar stagger={staggerBuildup} staggerMax={STAGGER_MAX_BOSS} />
           </>

@@ -18,6 +18,7 @@ import { CameraSystem } from './CameraSystem';
 import { ProjectileSystem } from './ProjectileSystem';
 import { AudioSystem } from './AudioSystem';
 import { CombatSystem } from './CombatSystem';
+import { CollisionSystem } from './CollisionSystem';
 import { WeaponSubclass, WeaponType } from '@/components/dragon/weapons';
 import { DeflectBarrier } from '@/components/weapons/DeflectBarrier';
 import { spawnArcticGroundBlizzardAtFromReact } from '@/components/weapons/Blizzard/arcticBlizzardSpawnBridge';
@@ -65,6 +66,10 @@ import {
   shouldApplyGlacialStormTalent,
   shouldApplyWraithGuardTalent,
   shouldApplyDoubleStrikeTalent,
+  shouldApplyDoubleStabTalent,
+  shouldApplyDoubleTalonsTalent,
+  REAPING_TALONS_DOUBLE_TALONS_MAX_CHARGES,
+  REAPING_TALONS_DOUBLE_TALONS_INTERNAL_COOLDOWN_SEC,
   shouldApplyColossusGuardTalent,
   shouldApplyGuardComboTalent,
   shouldApplyDashGuardTalent,
@@ -82,6 +87,8 @@ import {
   shouldApplyExecutionerTalent,
   shouldApplyFrostpathTalent,
   shouldApplySolarRechargeTalent,
+  getEntropicBoltFireRateSec,
+  getArcaneSynergyEntropicBoltFlatDamageBonus,
   shouldApplyWindfuryTalent,
   shouldApplyCrusaderTalent,
   shouldApplyBlizzardTalent,
@@ -108,7 +115,8 @@ import {
   COLOSSUS_GUARD_MAX_REMAINING_SEC,
   DASH_GUARD_DURATION_SEC,
   EXECUTIONER_POST_DASH_WINDOW_MS,
-  EXECUTIONER_BASE_DAMAGE_ADD,
+  getEffectiveStrengthWithTalentBonuses,
+  getExecutionerFlatDamageBonus,
   getCrossentropyBaseDamage,
   CROSSENTROPY_REAPER_DAMAGE_PER_KILL,
   CROSSENTROPY_MAX_TRAVEL_DISTANCE,
@@ -151,10 +159,16 @@ import {
   shouldApplyWrathfulShotsTalent,
   WRATHFUL_SHOTS_PERFECT_CRIT_CHANCE_ADD,
   WRATHFUL_SHOTS_PERFECT_CRIT_DAMAGE_MULT_ADD,
+  WRATHFUL_SHOTS_TEMPEST_CRIT_CHANCE_ADD,
+  WRATHFUL_SHOTS_TEMPEST_CRIT_DAMAGE_MULT_ADD,
+  resolveTempestBurstTheme,
   CYCLONE_RUSH_CHARGE_COOLDOWN_SEC,
   shouldApplyCycloneRushTalent,
   WRAITH_STRIKE_COOLDOWN_SEC,
   WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES,
+  BACKSTAB_COOLDOWN_SEC,
+  BACKSTAB_DOUBLE_STAB_MAX_CHARGES,
+  BACKSTAB_DOUBLE_STAB_INTERNAL_COOLDOWN_SEC,
   MANTRA_SHAMAN_MAX_CHARGES,
   MANTRA_SHAMAN_INTERNAL_COOLDOWN_SEC,
   shouldApplyShamanTalent,
@@ -181,7 +195,7 @@ import {
   shouldApplyWrathfulStabTalent,
   shouldApplyInfestedBackstabTalent,
   BACKSTAB_KILLSTREAK_DAMAGE_PER_KILL,
-  RELENTLESS_BACKSTAB_KILL_HEAL,
+  getRelentlessBackstabKillHeal,
   shouldApplyKillstreakTalent,
   shouldApplyRelentlessTalent,
   evaluateVorpalGustBeamHit,
@@ -201,7 +215,7 @@ import {
   shouldApplyWindShearTalent,
   shouldApplyPsionicBladesTalent,
   getPsionicBladesProcDamage,
-  WIND_SHEAR_DAMAGE,
+  getWindShearProjectileDamage,
   WIND_SHEAR_MAX_DISTANCE_UNITS,
   WIND_SHEAR_PROJECTILE_SPEED,
   WIND_SHEAR_PROJECTILE_LIFETIME_SEC,
@@ -213,7 +227,7 @@ import {
   shouldApplyInfestedFlourishTalent,
   shouldApplyFanOfKnivesTalent,
   getFanOfKnivesFlourishTintFromLoadout,
-  FAN_OF_KNIVES_DAMAGE,
+  getFanOfKnivesProjectileDamage,
   FAN_OF_KNIVES_MAX_DISTANCE_UNITS,
   FAN_OF_KNIVES_PROJECTILE_SPEED,
   FAN_OF_KNIVES_PROJECTILE_LIFETIME_SEC,
@@ -221,6 +235,7 @@ import {
   METEOR_STRIKE_COOLDOWN_SEC,
   AEGIS_ROOM_COOLDOWN_SEC,
   AEGIS_ROOM_DURATION_SEC,
+  applyManaShieldRestoreForDashCharges,
 } from '@/utils/talents';
 import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
 import type { AegisPaletteVariant } from '@/utils/aegisShieldPalette';
@@ -463,17 +478,16 @@ export class ControlSystem extends System {
   private pendingArcticStingVolleyId: number | null = null;
   private lastSummonTotemTime = 0; // Separate tracking for Summon Totem ability
   private lastRejuvenatingShotTime = 0; // Separate tracking for Rejuvenating Shot ability
-  private fireRate = 0.2; // Default for bow
+  private fireRate = 0.2125; // Default for bow
   private swordFireRate = 0.825; // Rate for sword attacks
   private runebladeFireRate = 0.875; // Runeblade attack rate
   private sabresFireRate = 0.625; // Sabres dual attack rate (600ms between attacks)
   private crescentBladesAttackCount = 0; // Tracks swings toward Crescent Blades special (resets at 3)
   private mortalStrikeAttackCount = 0; // Tracks swings toward Mortal Strike special (resets at 4)
-  private scytheFireRate = 0.725; // EntropicBolt rate (0.33s cooldown)
   private summonTotemFireRate = 6.5; // Summon Totem cooldown
   private viperStingFireRate = 7.0; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
-  private cobraShotFireRate = 6.0; // Cobra Shot rate (2 seconds cooldown)
+  private cobraShotFireRate = 5.0; // Cobra Shot rate (2 seconds cooldown)
   private rejuvenatingShotFireRate = 3.0; // Rejuvenating Shot rate (4 seconds cooldown)
   private lastBurstFireTime = 0; // Separate tracking for Bow burst fire
   private burstFireRate = 0.925; // 1 second cooldown between bursts
@@ -495,6 +509,11 @@ export class ControlSystem extends System {
   // Viper Sting charging state
   private isViperStingCharging = false;
   private viperStingChargeProgress = 0;
+  /** Double Talons talent: staggered Reaping Talons charge recharge (one timer at a time). */
+  private viperStingDoubleTalonsActive = false;
+  private viperStingCharges = 0;
+  private viperStingNextChargeAt: number | null = null;
+  private lastViperStingDoubleTalonsChargeSpendTime = Number.NEGATIVE_INFINITY;
   
   // Barrage charging state
   private isBarrageCharging = false;
@@ -541,7 +560,7 @@ export class ControlSystem extends System {
   private lastChargeTime = 0;
   /** Double-tap Cyclone Rush (Runeblade) — separate from E-key `lastChargeTime`. */
   private lastCycloneRushChargeTime = 0;
-  private chargeCooldown = 7.0; // 8 second cooldown
+  private chargeCooldown = 5.0; // 8 second cooldown
   
   // Deflect ability state
   private isDeflecting = false;
@@ -592,8 +611,13 @@ export class ControlSystem extends System {
   
   // Backstab ability state (Sabres)
   private lastBackstabTime = 0;
-  private backstabCooldown = 3.75; // 2 second cooldown
+  private backstabCooldown = BACKSTAB_COOLDOWN_SEC;
   private isBackstabbing = false;
+  /** Double Stab talent: staggered charge recharge (one timer at a time). */
+  private backstabDoubleStabActive = false;
+  private backstabCharges = 0;
+  private backstabNextChargeAt: number | null = null;
+  private lastBackstabDoubleStabChargeSpendTime = Number.NEGATIVE_INFINITY;
   private backstabStartTime = 0;
   private backstabDuration = 1.0; // Total animation duration (0.3 + 0.4 + 0.3 seconds)
   private backstabTargetRotations = new Map<number, number>(); // Store target rotations at start of backstab
@@ -710,7 +734,9 @@ export class ControlSystem extends System {
 
   // Corrupted Aura ability state (Runeblade)
   private corruptedAuraActive = false;
-  private corruptedAuraRange = 2.0; 
+  private corruptedAuraRange = 2.0;
+  private lastCorruptedAuraAuraCheckMs = 0;
+  private readonly corruptedAuraCheckIntervalMs = 100; 
   private corruptedAuraSlowEffect = 0.5; // 50% slow (multiply movement speed by this)
   private corruptedAuraSlowedEntities = new Map<number, boolean>(); // Track slowed entities
   private lastCorruptedAuraTime = 0;
@@ -909,14 +935,15 @@ export class ControlSystem extends System {
       return;
     }
 
+    const playerHealth = this.playerEntity.getComponent(Health);
+
     // If player is dead, completely block all input and movement
-    if (this.isPlayerDead) {
+    if (this.isPlayerDead || playerHealth?.isDead) {
       // Update debuff states even when dead (for visual effects)
       if (typeof playerMovement.updateDebuffs === 'function') {
         playerMovement.updateDebuffs();
       }
-      // Set movement velocity to 0 to prevent movement while dead
-      playerMovement.velocity.set(0, 0, 0);
+      playerMovement.haltLocomotion();
       this.clearMovementControlState();
       // Block all input - don't process anything else
       this.audioSystem?.setFootstepsPlaying(false);
@@ -1230,7 +1257,7 @@ export class ControlSystem extends System {
         break;
       case WeaponType.SCYTHE:
         this.currentSubclass = WeaponSubclass.CHAOS;
-        this.fireRate = this.scytheFireRate;
+        this.fireRate = this.getEntropicBoltFireRateSec();
         break;
       case WeaponType.SABRES:
         this.currentSubclass = WeaponSubclass.FROST;
@@ -1523,7 +1550,12 @@ export class ControlSystem extends System {
         break;
       // ── SABRES ────────────────────────────────────────────────────────
       case 'SABRES_Q': // Backstab
-        if (!this.isSwinging && !this.isSkyfalling && !this.isSundering) {
+        if (
+          !this.isSwinging &&
+          !this.isSkyfalling &&
+          !this.isSundering &&
+          (!this.backstabDoubleStabActive || !this.isBackstabbing)
+        ) {
           window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performBackstab(playerTransform);
         }
@@ -1719,6 +1751,166 @@ export class ControlSystem extends System {
       current: Math.max(0, this.wraithStrikeCooldown - (currentTime - this.lastWraithStrikeTime)),
       max: this.wraithStrikeCooldown,
       isActive: this.isWraithStriking,
+    };
+  }
+
+  /** Sync Double Stab charge mode with talent + loadout; init or clear charge state on transitions. */
+  private syncBackstabDoubleStabMode(): boolean {
+    const active = shouldApplyDoubleStabTalent(this.talentLoadout, this.abilityLoadout);
+    if (!active) {
+      if (this.backstabDoubleStabActive) {
+        this.backstabDoubleStabActive = false;
+        this.backstabCharges = 0;
+        this.backstabNextChargeAt = null;
+        this.lastBackstabDoubleStabChargeSpendTime = Number.NEGATIVE_INFINITY;
+      }
+      return false;
+    }
+    if (!this.backstabDoubleStabActive) {
+      this.backstabDoubleStabActive = true;
+      this.backstabCharges = BACKSTAB_DOUBLE_STAB_MAX_CHARGES;
+      this.backstabNextChargeAt = null;
+      this.lastBackstabDoubleStabChargeSpendTime = Number.NEGATIVE_INFINITY;
+    }
+    return true;
+  }
+
+  /** Apply completed Backstab charge timers (Double Stab only). */
+  private advanceBackstabChargeRecharges(now: number): void {
+    const maxC = BACKSTAB_DOUBLE_STAB_MAX_CHARGES;
+    while (
+      this.backstabNextChargeAt !== null &&
+      now >= this.backstabNextChargeAt &&
+      this.backstabCharges < maxC
+    ) {
+      this.backstabCharges++;
+      if (this.backstabCharges < maxC) {
+        this.backstabNextChargeAt += this.backstabCooldown;
+      } else {
+        this.backstabNextChargeAt = null;
+      }
+    }
+  }
+
+  private getBackstabCooldownInfo(
+    currentTime: number,
+  ): { current: number; max: number; isActive: boolean; charges?: number; maxCharges?: number } {
+    if (this.syncBackstabDoubleStabMode()) {
+      this.advanceBackstabChargeRecharges(currentTime);
+      const maxC = BACKSTAB_DOUBLE_STAB_MAX_CHARGES;
+      if (this.backstabCharges > 0) {
+        const internalCooldownRemaining = Math.max(
+          0,
+          BACKSTAB_DOUBLE_STAB_INTERNAL_COOLDOWN_SEC -
+            (currentTime - this.lastBackstabDoubleStabChargeSpendTime),
+        );
+        return {
+          current: internalCooldownRemaining,
+          max:
+            internalCooldownRemaining > 0
+              ? BACKSTAB_DOUBLE_STAB_INTERNAL_COOLDOWN_SEC
+              : this.backstabCooldown,
+          isActive: this.isBackstabbing,
+          charges: this.backstabCharges,
+          maxCharges: maxC,
+        };
+      }
+      const until =
+        this.backstabNextChargeAt != null
+          ? Math.max(0, this.backstabNextChargeAt - currentTime)
+          : this.backstabCooldown;
+      return {
+        current: until,
+        max: this.backstabCooldown,
+        isActive: this.isBackstabbing,
+        charges: 0,
+        maxCharges: maxC,
+      };
+    }
+    return {
+      current: Math.max(0, this.backstabCooldown - (currentTime - this.lastBackstabTime)),
+      max: this.backstabCooldown,
+      isActive: this.isBackstabbing,
+    };
+  }
+
+  /** Sync Double Talons charge mode with talent + loadout; init or clear charge state on transitions. */
+  private syncViperStingDoubleTalonsMode(): boolean {
+    const active = shouldApplyDoubleTalonsTalent(this.talentLoadout, this.abilityLoadout);
+    if (!active) {
+      if (this.viperStingDoubleTalonsActive) {
+        this.viperStingDoubleTalonsActive = false;
+        this.viperStingCharges = 0;
+        this.viperStingNextChargeAt = null;
+        this.lastViperStingDoubleTalonsChargeSpendTime = Number.NEGATIVE_INFINITY;
+      }
+      return false;
+    }
+    if (!this.viperStingDoubleTalonsActive) {
+      this.viperStingDoubleTalonsActive = true;
+      this.viperStingCharges = REAPING_TALONS_DOUBLE_TALONS_MAX_CHARGES;
+      this.viperStingNextChargeAt = null;
+      this.lastViperStingDoubleTalonsChargeSpendTime = Number.NEGATIVE_INFINITY;
+    }
+    return true;
+  }
+
+  /** Apply completed Reaping Talons charge timers (Double Talons only). */
+  private advanceViperStingChargeRecharges(now: number): void {
+    const maxC = REAPING_TALONS_DOUBLE_TALONS_MAX_CHARGES;
+    while (
+      this.viperStingNextChargeAt !== null &&
+      now >= this.viperStingNextChargeAt &&
+      this.viperStingCharges < maxC
+    ) {
+      this.viperStingCharges++;
+      if (this.viperStingCharges < maxC) {
+        this.viperStingNextChargeAt += this.viperStingFireRate;
+      } else {
+        this.viperStingNextChargeAt = null;
+      }
+    }
+  }
+
+  private getViperStingCooldownInfo(
+    currentTime: number,
+  ): { current: number; max: number; isActive: boolean; charges?: number; maxCharges?: number } {
+    if (this.syncViperStingDoubleTalonsMode()) {
+      this.advanceViperStingChargeRecharges(currentTime);
+      const maxC = REAPING_TALONS_DOUBLE_TALONS_MAX_CHARGES;
+      if (this.viperStingCharges > 0) {
+        const internalCooldownRemaining = Math.max(
+          0,
+          REAPING_TALONS_DOUBLE_TALONS_INTERNAL_COOLDOWN_SEC -
+            (currentTime - this.lastViperStingDoubleTalonsChargeSpendTime),
+        );
+        return {
+          current: internalCooldownRemaining,
+          max:
+            internalCooldownRemaining > 0
+              ? REAPING_TALONS_DOUBLE_TALONS_INTERNAL_COOLDOWN_SEC
+              : this.viperStingFireRate,
+          isActive: this.isViperStingCharging,
+          charges: this.viperStingCharges,
+          maxCharges: maxC,
+        };
+      }
+      const until =
+        this.viperStingNextChargeAt != null
+          ? Math.max(0, this.viperStingNextChargeAt - currentTime)
+          : this.viperStingFireRate;
+      return {
+        current: until,
+        max: this.viperStingFireRate,
+        isActive: this.isViperStingCharging,
+        charges: 0,
+        maxCharges: maxC,
+      };
+    }
+    return {
+      current: Math.max(0, this.viperStingFireRate - (currentTime - this.lastViperStingTime)),
+      max: this.viperStingFireRate,
+      isActive: this.isViperStingCharging,
     };
   }
 
@@ -1932,11 +2124,11 @@ export class ControlSystem extends System {
       case 'RUNEBLADE_R': return { current: Math.max(0, this.smiteCooldown - (currentTime - this.lastSmiteTime)), max: this.smiteCooldown, isActive: this.isSmiting };
       case 'BOW_Q':       return { current: Math.max(0, this.barrageFireRate - (currentTime - this.lastBarrageTime)), max: this.barrageFireRate, isActive: this.isBarrageCharging };
       case 'BOW_E':       return { current: Math.max(0, this.cobraShotFireRate - (currentTime - this.lastCobraShotTime)), max: this.cobraShotFireRate, isActive: this.isCobraShotCharging };
-      case 'BOW_R':       return { current: Math.max(0, this.viperStingFireRate - (currentTime - this.lastViperStingTime)), max: this.viperStingFireRate, isActive: this.isViperStingCharging };
+      case 'BOW_R':       return this.getViperStingCooldownInfo(currentTime);
       case 'SCYTHE_Q':    return { current: Math.max(0, REANIMATE_SUNWELL_COOLDOWN_SEC - (currentTime - this.lastReanimateTime)), max: REANIMATE_SUNWELL_COOLDOWN_SEC, isActive: false };
       case 'SCYTHE_E':    return { current: Math.max(0, this.frostNovaFireRate - (currentTime - this.lastFrostNovaTime)), max: this.frostNovaFireRate, isActive: false };
       case 'SCYTHE_R':    return this.getCrossentropyCooldownHud(currentTime);
-      case 'SABRES_Q':    return { current: Math.max(0, this.backstabCooldown - (currentTime - this.lastBackstabTime)), max: this.backstabCooldown, isActive: this.isBackstabbing };
+      case 'SABRES_Q':    return this.getBackstabCooldownInfo(currentTime);
       case 'SABRES_E':    return { current: Math.max(0, this.sunderCooldown - (currentTime - this.lastSunderTime)), max: this.sunderCooldown, isActive: this.isSundering };
       case 'SABRES_R':    return { current: Math.max(0, this.skyfallCooldown - (currentTime - this.lastSkyfallTime)), max: this.skyfallCooldown, isActive: this.isSkyfalling };
       case 'SPEAR_Q':     return { current: Math.max(0, this.throwSpearCooldown - (currentTime - this.lastThrowSpearTime)), max: this.throwSpearCooldown, isActive: this.isThrowSpearCharging };
@@ -2229,10 +2421,14 @@ export class ControlSystem extends System {
     return true;
   }
 
+  private getEntropicBoltFireRateSec(): number {
+    return getEntropicBoltFireRateSec(this.talentLoadout);
+  }
+
   private fireEntropicBoltProjectile(playerTransform: Transform): void {
-    // Rate limiting - use new scythe rate (0.35 seconds)
     const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastScytheFireTime < this.scytheFireRate) {
+    const entropicFireRate = this.getEntropicBoltFireRateSec();
+    if (currentTime - this.lastScytheFireTime < entropicFireRate) {
       return;
     }
     this.lastScytheFireTime = currentTime;
@@ -2287,12 +2483,13 @@ export class ControlSystem extends System {
       this.crossentropyChargeProgress = Math.min(elapsed / chargeDuration, 1.0);
 
       if (this.crossentropyChargeProgress >= 1.0) {
-        clearInterval(chargeInterval);
+        this.clearTrackedAbilityInterval(chargeInterval);
         this.fireCrossentropyBoltAbilityAfterCharge(playerTransform);
         this.isCrossentropyCharging = false;
         this.crossentropyChargeProgress = 0;
       }
     }, 16); // ~60fps updates
+    this.trackAbilityInterval(chargeInterval);
   }
 
   private fireCrossentropyBoltAbilityAfterCharge(playerTransform: Transform): void {
@@ -2495,17 +2692,26 @@ export class ControlSystem extends System {
         })()
       : [baseSpawn];
 
+    const tempestTheme = resolveTempestBurstTheme(this.talentLoadout);
+    const tempestBurstWrathful = tempestTheme === 'wrathful';
+    const tempestBurstArcticChill = tempestTheme === 'arctic';
+    const tempestBurstWyvernZombie = shouldApplyWyvernStingTalent(this.talentLoadout);
+
     const projectileConfig = {
       speed: 35,
-      damage: 25, // Burst arrows deal 30 damage each
+      damage: 25, // Burst arrows deal 25 damage each
       lifetime: 3,
-      maxDistance: 20, // Limit bow arrows to 25 units distance
+      maxDistance: 20,
       subclass: this.currentSubclass,
       level: this.currentLevel,
       opacity: 1.0,
-      projectileType: 'burst_arrow' as const, // Mark as burst arrow for teal coloring
+      projectileType: 'burst_arrow' as const,
       sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
       tempestBurstSeq,
+      tempestBurstTheme: tempestTheme,
+      ...(tempestBurstWrathful ? { tempestBurstWrathful: true as const } : {}),
+      ...(tempestBurstArcticChill ? { tempestBurstArcticChill: true as const } : {}),
+      ...(tempestBurstWyvernZombie ? { tempestBurstWyvernZombie: true as const } : {}),
       ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_TEMPEST_ROUND_STAGGER } : {}),
     };
 
@@ -2597,9 +2803,16 @@ export class ControlSystem extends System {
       boltVariant = { colorVariant: DEFAULT_ENTROPIC_COLOR_VARIANT, damage: 47 };
     }
 
+    const damage =
+      boltVariant.damage +
+      getArcaneSynergyEntropicBoltFlatDamageBonus(
+        this.talentLoadout,
+        this.allocatedPlayerStats.intellect ?? 0,
+      );
+
     const entropicBaseConfig = {
       speed: 20,
-      damage: boltVariant.damage,
+      damage,
       piercing: false,
       explosive: false,
       explosionRadius: 0,
@@ -2991,13 +3204,14 @@ export class ControlSystem extends System {
       this.cobraShotChargeProgress = Math.min(elapsed / chargeDuration, 1.0);
       
       if (this.cobraShotChargeProgress >= 1.0) {
-        clearInterval(chargeInterval);
+        this.clearTrackedAbilityInterval(chargeInterval);
 
         this.fireCobraShot(playerTransform);
         this.isCobraShotCharging = false;
         this.cobraShotChargeProgress = 0;
       }
     }, 16); // ~60fps updates
+    this.trackAbilityInterval(chargeInterval);
   }
 
   /** Shared Cobra Shot emit: BOW_E after charge and Wyvern Sting on perfect shot. */
@@ -3847,7 +4061,13 @@ export class ControlSystem extends System {
     ) {
       this.executionerBuffDeadlineMs = 0;
       this.swordComboStep = 3;
-      this.runebladeExecutionerFlatBonusPending = EXECUTIONER_BASE_DAMAGE_ADD;
+      this.runebladeExecutionerFlatBonusPending = getExecutionerFlatDamageBonus(
+        getEffectiveStrengthWithTalentBonuses(
+          this.allocatedPlayerStats,
+          this.talentLoadout,
+          this.abilityLoadout,
+        ),
+      );
     }
 
     this.lastRunebladeFireTime = currentTime;
@@ -3935,6 +4155,7 @@ export class ControlSystem extends System {
       if (playerMovement) {
         const consumed = playerMovement.consumeDashChargesWithoutDash(2, currentTime);
         if (consumed > 0) {
+          this.tryManaShieldOnDashChargeExpended(consumed);
           const perp = new Vector3(-direction.z, 0, direction.x);
           if (perp.lengthSq() < 1e-8) perp.set(1, 0, 0);
           else perp.normalize();
@@ -4081,12 +4302,13 @@ export class ControlSystem extends System {
       this.windShearChargeProgress = Math.min(elapsed / chargeDuration, 1.0);
 
       if (this.windShearChargeProgress >= 1.0) {
-        clearInterval(chargeInterval);
+        this.clearTrackedAbilityInterval(chargeInterval);
         this.fireWindShear(playerTransform);
         this.isWindShearCharging = false;
         this.windShearChargeProgress = 0;
       }
     }, 16); // ~60fps updates
+    this.trackAbilityInterval(chargeInterval);
   }
 
   private fireWindShear(playerTransform: Transform): void {
@@ -4659,6 +4881,13 @@ export class ControlSystem extends System {
 
     // Reset wraith striking state
     this.isWraithStriking = false;
+  }
+
+  // Called by sabres component when backstab animation completes
+  public onBackstabComplete(): void {
+    if (!this.isBackstabbing) return;
+
+    this.isBackstabbing = false;
   }
 
   private handleSabresInput(playerTransform: Transform): void {
@@ -5386,7 +5615,11 @@ export class ControlSystem extends System {
 
     const projectileConfig = {
       speed: WIND_SHEAR_PROJECTILE_SPEED,
-      damage: WIND_SHEAR_DAMAGE,
+      damage: getWindShearProjectileDamage(
+        this.allocatedPlayerStats,
+        this.talentLoadout,
+        this.abilityLoadout,
+      ),
       lifetime: WIND_SHEAR_PROJECTILE_LIFETIME_SEC,
       maxDistance: WIND_SHEAR_MAX_DISTANCE_UNITS,
       piercing: false,
@@ -6122,6 +6355,7 @@ export class ControlSystem extends System {
   }
   
   private resetAllAbilityStates(): void {
+    this.clearAllAbilityIntervals();
     // Reset all ability states when switching weapons
     this.isSwinging = false; // Reset swinging state to prevent sound overlap
     this.isCharging = false; // Reset bow charging state
@@ -6262,39 +6496,49 @@ export class ControlSystem extends System {
   }
 
   private updateCorruptedAuraEffects(playerTransform: Transform): void {
-    const currentTime = Date.now() / 1000;
-    const playerPosition = playerTransform.position;
-
-    // Apply slow effect to enemies/players within range
-    this.applyCorruptedAuraSlow(playerPosition, currentTime);
+    const nowMs = Date.now();
+    if (nowMs - this.lastCorruptedAuraAuraCheckMs < this.corruptedAuraCheckIntervalMs) {
+      return;
+    }
+    this.lastCorruptedAuraAuraCheckMs = nowMs;
+    this.applyCorruptedAuraSlow(playerTransform.position);
   }
 
-  private applyCorruptedAuraSlow(playerPosition: Vector3, currentTime: number): void {
-    // Get all entities in the world
-    const allEntities = this.world.getAllEntities();
+  private applyCorruptedAuraSlow(playerPosition: Vector3): void {
+    const collisionSystem = this.world.getSystem(CollisionSystem);
+    const candidates = collisionSystem
+      ? collisionSystem.queryCollidersRadius(playerPosition, this.corruptedAuraRange)
+      : this.world.getAllEntities();
 
-    allEntities.forEach(entity => {
-      if (entity.id === this.playerEntity?.id) return; // Don't slow self
+    const inRangeIds = new Set<number>();
+
+    for (const entity of candidates) {
+      if (entity.id === this.playerEntity?.id) continue;
 
       const entityTransform = entity.getComponent(Transform);
       const entityMovement = entity.getComponent(Movement);
 
-      if (!entityTransform || !entityMovement) return;
+      if (!entityTransform || !entityMovement) continue;
 
       const distance = playerPosition.distanceTo(entityTransform.position);
-      const isInRange = distance <= this.corruptedAuraRange;
-      const wasSlowed = this.corruptedAuraSlowedEntities.get(entity.id) || false;
+      if (distance > this.corruptedAuraRange) continue;
 
-      if (isInRange && !wasSlowed) {
-        // Entity just entered range - apply slow
+      inRangeIds.add(entity.id);
+      if (!this.corruptedAuraSlowedEntities.get(entity.id)) {
         entityMovement.movementSpeedMultiplier = this.corruptedAuraSlowEffect;
         this.corruptedAuraSlowedEntities.set(entity.id, true);
-      } else if (!isInRange && wasSlowed) {
-        // Entity just left range - remove slow
-        entityMovement.movementSpeedMultiplier = 1.0;
-        this.corruptedAuraSlowedEntities.delete(entity.id);
       }
-    });
+    }
+
+    for (const [entityId] of Array.from(this.corruptedAuraSlowedEntities.entries())) {
+      if (inRangeIds.has(entityId)) continue;
+      const entity = this.world.getEntity(entityId);
+      const entityMovement = entity?.getComponent(Movement);
+      if (entityMovement) {
+        entityMovement.movementSpeedMultiplier = 1.0;
+      }
+      this.corruptedAuraSlowedEntities.delete(entityId);
+    }
   }
 
   // Callback for Corrupted Aura toggle
@@ -6323,6 +6567,18 @@ export class ControlSystem extends System {
     return { ...this.allocatedPlayerStats };
   }
 
+  /** Co-op purple room MANA SHIELD — restore shield when dash charges are expended. */
+  public tryManaShieldOnDashChargeExpended(consumed: number): void {
+    if (consumed <= 0 || !this.playerEntity) return;
+    applyManaShieldRestoreForDashCharges(
+      this.playerEntity,
+      this.talentLoadout,
+      this.abilityLoadout,
+      this.allocatedPlayerStats,
+      consumed,
+    );
+  }
+
   public setAbilityLoadout(loadout: AbilityLoadout): void {
     this.abilityLoadout = loadout;
     // If a passive was selected in the loadout menu, force-unlock it without spending skill points
@@ -6333,6 +6589,9 @@ export class ControlSystem extends System {
 
   public setTalentLoadout(loadout: TalentLoadout): void {
     this.talentLoadout = normalizeTalentLoadout(loadout);
+    if (this.currentWeapon === WeaponType.SCYTHE) {
+      this.fireRate = this.getEntropicBoltFireRateSec();
+    }
     if (!shouldApplyCrusaderTalent(this.talentLoadout)) {
       this.runebladeCrusaderBuffEndMs = 0;
     }
@@ -6364,7 +6623,13 @@ export class ControlSystem extends System {
 
   /** Full Backstab cooldown refresh after RELENTLESS kill (called from socket). */
   public resetBackstabCooldownForRelentless(): void {
-    this.lastBackstabTime = 0;
+    if (this.syncBackstabDoubleStabMode()) {
+      this.backstabCharges = BACKSTAB_DOUBLE_STAB_MAX_CHARGES;
+      this.backstabNextChargeAt = null;
+      this.lastBackstabDoubleStabChargeSpendTime = Number.NEGATIVE_INFINITY;
+    } else {
+      this.lastBackstabTime = 0;
+    }
   }
 
   /** Returns the local player's current world position, or null if unavailable. Used by socket handlers for damage number placement. */
@@ -6386,8 +6651,13 @@ export class ControlSystem extends System {
     }
     if (opts.relentless && shouldApplyRelentlessTalent(this.talentLoadout)) {
       const combatSystem = this.world.getSystem(CombatSystem);
-      if (this.playerEntity && combatSystem && RELENTLESS_BACKSTAB_KILL_HEAL > 0) {
-        combatSystem.queueHealing(this.playerEntity, RELENTLESS_BACKSTAB_KILL_HEAL, this.playerEntity);
+      const relentlessHeal = getRelentlessBackstabKillHeal(
+        this.allocatedPlayerStats,
+        this.talentLoadout,
+        this.abilityLoadout,
+      );
+      if (this.playerEntity && combatSystem && relentlessHeal > 0) {
+        combatSystem.queueHealing(this.playerEntity, relentlessHeal, this.playerEntity);
       }
       this.resetBackstabCooldownForRelentless();
     }
@@ -6499,6 +6769,17 @@ export class ControlSystem extends System {
     };
   }
 
+  /** Wrathful Shots: Tempest Rounds burst crit modifiers (read by `CombatSystem` via `controlSystemRef`). */
+  public getWrathfulShotsTempestCritOpts(): DamageCalcOptions | undefined {
+    if (this.currentWeapon !== WeaponType.BOW || !shouldApplyWrathfulShotsTalent(this.talentLoadout)) {
+      return undefined;
+    }
+    return {
+      critChanceAdd: WRATHFUL_SHOTS_TEMPEST_CRIT_CHANCE_ADD,
+      critDamageMultAdd: WRATHFUL_SHOTS_TEMPEST_CRIT_DAMAGE_MULT_ADD,
+    };
+  }
+
   /** Wrathful Bite: Barrage / Frostbite crit modifiers (read by `CombatSystem` via `controlSystemRef`). */
   public getBarrageCritDamageCalcOpts(): DamageCalcOptions | undefined {
     if (!shouldApplyWrathfulBiteTalent(this.talentLoadout, this.abilityLoadout)) return undefined;
@@ -6541,6 +6822,11 @@ export class ControlSystem extends System {
       this.runebladeExecutionerFlatBonusPending = 0;
       this.runebladeCrusaderBuffEndMs = 0;
       this.runebladeBlizzardEndMs = 0;
+
+      const movement = this.playerEntity?.getComponent(Movement);
+      if (movement) {
+        movement.haltLocomotion();
+      }
     }
   }
 
@@ -6594,14 +6880,34 @@ export class ControlSystem extends System {
   // Backstab ability implementation
   private performBackstab(playerTransform: Transform): void {
     const currentTime = Date.now() / 1000;
-    
-    // Check cooldown
-    if (currentTime - this.lastBackstabTime < this.backstabCooldown) {
+
+    if (this.syncBackstabDoubleStabMode()) {
+      this.advanceBackstabChargeRecharges(currentTime);
+      if (this.backstabCharges <= 0) {
+        return;
+      }
+      if (
+        currentTime - this.lastBackstabDoubleStabChargeSpendTime <
+        BACKSTAB_DOUBLE_STAB_INTERNAL_COOLDOWN_SEC
+      ) {
+        return;
+      }
+    } else if (currentTime - this.lastBackstabTime < this.backstabCooldown) {
       return;
     }
-    
-    // Set cooldown
-    this.lastBackstabTime = currentTime;
+
+    if (this.backstabDoubleStabActive) {
+      this.backstabCharges--;
+      this.lastBackstabDoubleStabChargeSpendTime = currentTime;
+      if (
+        this.backstabCharges < BACKSTAB_DOUBLE_STAB_MAX_CHARGES &&
+        this.backstabNextChargeAt === null
+      ) {
+        this.backstabNextChargeAt = currentTime + this.backstabCooldown;
+      }
+    } else {
+      this.lastBackstabTime = currentTime;
+    }
   
     // Capture current rotations of all nearby entities BEFORE the backstab damage check
     // This prevents the boss from turning to face us during the backstab cast
@@ -7014,7 +7320,8 @@ export class ControlSystem extends System {
           movement.getAvailableDashCharges() >= 1
         ) {
           if (this.performBladeRushChargeFromForwardDash(transform)) {
-            movement.consumeDashChargesWithoutDash(1, currentTime);
+            const consumed = movement.consumeDashChargesWithoutDash(1, currentTime);
+            this.tryManaShieldOnDashChargeExpended(consumed);
             handled = true;
           }
         }
@@ -7022,6 +7329,7 @@ export class ControlSystem extends System {
         if (!handled) {
           const dashStarted = movement.startDash(worldDirection, transform.position, currentTime);
           if (dashStarted) {
+            this.tryManaShieldOnDashChargeExpended(1);
             this.audioSystem?.playUIDashSound();
             this.tryTriggerRoomBoomDashTalent(key, movement, transform.position, worldDirection);
             if (
@@ -7354,6 +7662,23 @@ export class ControlSystem extends System {
 
   // Track charge hit entities to prevent multiple hits and enable collision stopping
   private chargeHitEntities = new Set<number>();
+  private activeAbilityIntervals = new Set<ReturnType<typeof setInterval>>();
+
+  private trackAbilityInterval(interval: ReturnType<typeof setInterval>): void {
+    this.activeAbilityIntervals.add(interval);
+  }
+
+  private clearTrackedAbilityInterval(interval: ReturnType<typeof setInterval>): void {
+    clearInterval(interval);
+    this.activeAbilityIntervals.delete(interval);
+  }
+
+  private clearAllAbilityIntervals(): void {
+    for (const interval of Array.from(this.activeAbilityIntervals)) {
+      clearInterval(interval);
+    }
+    this.activeAbilityIntervals.clear();
+  }
   private chargeStoppedByCollision = false;
 
   // Schedule damage detection during charge movement
@@ -7372,7 +7697,7 @@ export class ControlSystem extends System {
       
       // Stop if charge is complete, cancelled, or stopped by collision
       if (!this.isSwordCharging || currentTime - startTime > chargeDuration || this.chargeStoppedByCollision) {
-        clearInterval(damageInterval);
+        this.clearTrackedAbilityInterval(damageInterval);
         return;
       }
       
@@ -7490,12 +7815,13 @@ export class ControlSystem extends System {
         }
         
         // Clear the damage interval immediately to prevent further hits
-        clearInterval(damageInterval);
+        this.clearTrackedAbilityInterval(damageInterval);
         
         // Trigger charge completion
         this.onChargeComplete();
       }
     }, damageCheckInterval);
+    this.trackAbilityInterval(damageInterval);
   }
 
   // Called by sword component when Charge completes
@@ -7562,15 +7888,38 @@ export class ControlSystem extends System {
   }
 
   private performViperSting(playerTransform: Transform): void {
-    // Check cooldown
     const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastViperStingTime < this.viperStingFireRate) {
+
+    if (this.syncViperStingDoubleTalonsMode()) {
+      this.advanceViperStingChargeRecharges(currentTime);
+      if (this.viperStingCharges <= 0) {
+        return;
+      }
+      if (
+        currentTime - this.lastViperStingDoubleTalonsChargeSpendTime <
+        REAPING_TALONS_DOUBLE_TALONS_INTERNAL_COOLDOWN_SEC
+      ) {
+        return;
+      }
+    } else if (currentTime - this.lastViperStingTime < this.viperStingFireRate) {
       return;
+    }
+
+    if (this.viperStingDoubleTalonsActive) {
+      this.viperStingCharges--;
+      this.lastViperStingDoubleTalonsChargeSpendTime = currentTime;
+      if (
+        this.viperStingCharges < REAPING_TALONS_DOUBLE_TALONS_MAX_CHARGES &&
+        this.viperStingNextChargeAt === null
+      ) {
+        this.viperStingNextChargeAt = currentTime + this.viperStingFireRate;
+      }
+    } else {
+      this.lastViperStingTime = currentTime;
     }
 
     this.isViperStingCharging = true;
     this.viperStingChargeProgress = 0;
-    this.lastViperStingTime = currentTime;
 
     // Play bow draw sound when starting to charge
     this.audioSystem?.playBowDrawSound(playerTransform.position);
@@ -7584,7 +7933,7 @@ export class ControlSystem extends System {
       this.viperStingChargeProgress = Math.min(elapsed / chargeDuration, 1.0);
       
       if (this.viperStingChargeProgress >= 1.0) {
-        clearInterval(chargeInterval);
+        this.clearTrackedAbilityInterval(chargeInterval);
 
         // Play viper sting release sound when firing
         this.audioSystem?.playViperStingReleaseSound(playerTransform.position);
@@ -7594,6 +7943,7 @@ export class ControlSystem extends System {
         this.viperStingChargeProgress = 0;
       }
     }, 16); // ~60fps updates
+    this.trackAbilityInterval(chargeInterval);
   }
 
   private fireViperSting(playerTransform: Transform): void {
@@ -7667,12 +8017,13 @@ export class ControlSystem extends System {
       this.rejuvenatingShotChargeProgress = Math.min(elapsed / chargeDuration, 1.0);
 
       if (this.rejuvenatingShotChargeProgress >= 1.0) {
-        clearInterval(chargeInterval);
+        this.clearTrackedAbilityInterval(chargeInterval);
         this.fireRejuvenatingShot(playerTransform);
         this.isRejuvenatingShotCharging = false;
         this.rejuvenatingShotChargeProgress = 0;
       }
     }, 16); // ~60fps updates
+    this.trackAbilityInterval(chargeInterval);
   }
 
   private fireRejuvenatingShot(playerTransform: Transform): void {
@@ -7744,7 +8095,7 @@ export class ControlSystem extends System {
       this.barrageChargeProgress = Math.min(elapsed / chargeDuration, 1.0);
       
       if (this.barrageChargeProgress >= 1.0) {
-        clearInterval(chargeInterval);
+        this.clearTrackedAbilityInterval(chargeInterval);
 
         // Play barrage release sound when firing
         this.audioSystem?.playBarrageReleaseSound(playerTransform.position);
@@ -7754,6 +8105,7 @@ export class ControlSystem extends System {
         this.barrageChargeProgress = 0;
       }
     }, 16); // ~60fps updates
+    this.trackAbilityInterval(chargeInterval);
   }
 
   private fireBarrage(playerTransform: Transform): void {
@@ -7915,7 +8267,11 @@ export class ControlSystem extends System {
 
         const projectileConfig = {
           speed: FAN_OF_KNIVES_PROJECTILE_SPEED,
-          damage: FAN_OF_KNIVES_DAMAGE,
+          damage: getFanOfKnivesProjectileDamage(
+            this.allocatedPlayerStats,
+            this.talentLoadout,
+            this.abilityLoadout,
+          ),
           lifetime: FAN_OF_KNIVES_PROJECTILE_LIFETIME_SEC,
           maxDistance: FAN_OF_KNIVES_MAX_DISTANCE_UNITS,
           piercing: false,
@@ -8488,11 +8844,7 @@ export class ControlSystem extends System {
         max: this.cobraShotFireRate,
         isActive: false
       };
-      cooldowns['R'] = {
-        current: Math.max(0, this.viperStingFireRate - (currentTime - this.lastViperStingTime)),
-        max: this.viperStingFireRate,
-        isActive: this.isViperStingCharging
-      };
+      cooldowns['R'] = this.getViperStingCooldownInfo(currentTime);
       cooldowns['F'] = {
         current: Math.max(0, this.rejuvenatingShotFireRate - (currentTime - this.lastRejuvenatingShotTime)),
         max: this.rejuvenatingShotFireRate,
@@ -8513,11 +8865,7 @@ export class ControlSystem extends System {
       cooldowns['F'] = this.getSummonTotemCooldownInfo(currentTime);
       cooldowns['F'].isActive = this.isSummonTotemCharging;
     } else if (this.currentWeapon === WeaponType.SABRES) {
-      cooldowns['Q'] = {
-        current: Math.max(0, this.backstabCooldown - (currentTime - this.lastBackstabTime)),
-        max: this.backstabCooldown,
-        isActive: this.isBackstabbing
-      };
+      cooldowns['Q'] = this.getBackstabCooldownInfo(currentTime);
       cooldowns['E'] = {
         current: Math.max(0, this.sunderCooldown - (currentTime - this.lastSunderTime)),
         max: this.sunderCooldown,

@@ -96,10 +96,11 @@ export default function Sabres({
   // Skyfall animation state
   const skyfallAnimationComplete = useRef(false);
 
-  // Reset backstab animation when isBackstabbing becomes false
+  // Reset backstab animation when isBackstabbing toggles
   useEffect(() => {
-    if (!isBackstabbing) {
+    if (isBackstabbing) {
       backstabAnimationComplete.current = false;
+    } else {
       backstabPhase.current = 'none';
       backstabProgress.current = 0;
     }

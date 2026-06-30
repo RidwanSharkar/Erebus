@@ -481,6 +481,7 @@ export function OptimizedPVPViperStingManager({
         projectile.explosiveTalonsPvpAoEDone = true;
         const cx = projectile.position.x;
         const cz = projectile.position.z;
+        (window as any).audioSystem?.playExplosiveTalonsDetonationSound(projectile.position);
         players.forEach((player) => {
           if (player.id === localSocketId) return;
           if (projectile.casterId && player.id === projectile.casterId) return;

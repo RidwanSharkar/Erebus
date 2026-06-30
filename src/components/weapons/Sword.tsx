@@ -134,6 +134,17 @@ const SwordComponent = memo(function Sword({
   }>>([]);
   const MAX_SPARKS = 120;
   const sparkGeo = useMemo(() => new SphereGeometry(1.25, 6, 6), []);
+  const chargeTrailGeo = useMemo(() => new SphereGeometry(0.5, 6, 6), []);
+  const chargeTrailMat = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: new Color(0xB5B010),
+        emissive: new Color(0xB5B010),
+        transparent: true,
+        blending: AdditiveBlending,
+      }),
+    [],
+  );
   const sparkMat = useMemo(
     () =>
       new MeshStandardMaterial({
@@ -174,8 +185,10 @@ const SwordComponent = memo(function Sword({
     return () => {
       sparkGeo.dispose();
       sparkMat.dispose();
+      chargeTrailGeo.dispose();
+      chargeTrailMat.dispose();
     };
-  }, [sparkGeo, sparkMat]);
+  }, [sparkGeo, sparkMat, chargeTrailGeo, chargeTrailMat]);
 
   useFrame((_, delta) => {
     if (!swordRef.current) return;
@@ -1207,17 +1220,9 @@ const SwordComponent = memo(function Sword({
           key={particle.id}
           position={[particle.position.x, particle.position.y, particle.position.z]}
           scale={[particle.life * 0.2, particle.life * 0.2, particle.life * 0.2]}
-        >
-          <sphereGeometry args={[0.5, 6, 6]} />
-          <meshStandardMaterial
-            color={new Color(0xB5B010)}
-            emissive={new Color(0xB5B010)}
-            emissiveIntensity={particle.life * 3}
-            transparent
-            opacity={particle.life * 0.9}
-            blending={AdditiveBlending}
-          />
-        </mesh>
+          geometry={chargeTrailGeo}
+          material={chargeTrailMat}
+        />
       ))}
 
 

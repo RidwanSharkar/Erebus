@@ -21,9 +21,9 @@ export default function MeteorTrail({
   size,
   meshRef,
   backwardDir,
-  segmentSpacing = 0.5,
+  segmentSpacing = 1,
 }: MeteorTrailProps) {
-  const particlesCount = 17;
+  const particlesCount = 12;
   const particlesRef = useRef<Points>(null);
   const positionsRef = useRef<Float32Array>(new Float32Array(particlesCount * 3));
   const opacitiesRef = useRef<Float32Array>(new Float32Array(particlesCount));

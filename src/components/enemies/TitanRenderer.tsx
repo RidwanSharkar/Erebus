@@ -11,9 +11,17 @@ import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyMeleeAttackRangeRing, { TITAN_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { campHpTheme } from '@/utils/campHpTheme';
 
 const SOUL_TYPES = ['green', 'red', 'blue', 'purple'] as const;
 type SoulType = typeof SOUL_TYPES[number];
+
+const TITAN_DISPLAY_NAMES: Record<SoulType, string> = {
+  blue:   'STORM TITAN',
+  purple: 'TITAN OF MERCY',
+  red:    'TITAN OF WRATH',
+  green:  'PLAGUE TITAN',
+};
 
 interface TitanRendererProps {
   id: string;
@@ -35,12 +43,6 @@ const FADE_DURATION          = 2.5;
 const LERP_SPEED             = 8;
 const WALK_STOP_DELAY        = 300;
 
-const THEME = {
-  background: '#1a1a1a',
-  fill:       '#c8b89a',
-  text:       '#ffffff',
-};
-
 const HP_BAR_WIDTH = 3.0;
 
 export default function TitanRenderer({
@@ -55,6 +57,7 @@ export default function TitanRenderer({
   bladestormActive = false,
   bladestormStartTime,
 }: TitanRendererProps) {
+  const theme = campHpTheme(soulType);
   const { socket, enemyTransformsRef } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
 
@@ -213,23 +216,23 @@ export default function TitanRenderer({
           <>
             <mesh position={[0, 0, 0]}>
               <planeGeometry args={[HP_BAR_WIDTH, 0.28]} />
-              <meshBasicMaterial color={THEME.background} opacity={0.9} transparent />
+              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
 
             <mesh position={[-(HP_BAR_WIDTH / 2) * (1 - hpFraction), 0, 0.001]}>
               <planeGeometry args={[hpFraction * HP_BAR_WIDTH, 0.26]} />
-              <meshBasicMaterial color={THEME.fill} opacity={0.95} transparent />
+              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
 
             <Text
               position={[0, 0, 0.002]}
               fontSize={0.2}
-              color={THEME.text}
+              color={theme.text}
               anchorX="center"
               anchorY="middle"
               fontWeight="bold"
             >
-              {`🗿 TITAN  ${Math.ceil(health)} / ${maxHealth}`}
+              {`${TITAN_DISPLAY_NAMES[soulType]}  ${Math.ceil(health)} / ${maxHealth}`}
             </Text>
             <EnemyStaggerBar stagger={staggerBuildup} width={HP_BAR_WIDTH} y={-0.28} />
           </>

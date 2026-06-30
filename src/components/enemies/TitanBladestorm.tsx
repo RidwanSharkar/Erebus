@@ -8,6 +8,7 @@ import {
   TITAN_BLADESTORM_ORBIT_RADIUS,
   TITAN_BLADESTORM_ORBIT_HEIGHT,
   TITAN_BLADESTORM_SPIN_SPEED,
+  TITAN_BLADESTORM_BLADE_ROTATION,
 } from '@/utils/cycloneSpinConstants';
 import SwordMeshVisual, { getSwordThemeForSoulType } from '@/components/weapons/SwordMeshVisual';
 
@@ -32,12 +33,13 @@ export default function TitanBladestorm({ soulType, startTime }: TitanBladestorm
     const orbitalZ = calculationCache.getTrigCalculation('sin', angle) * TITAN_BLADESTORM_ORBIT_RADIUS;
 
     orbitRef.current.position.set(orbitalX, TITAN_BLADESTORM_ORBIT_HEIGHT, orbitalZ);
-    orbitRef.current.rotation.set(Math.PI / 4, angle + Math.PI / 2, 0);
   });
 
   return (
     <group ref={orbitRef}>
-      <SwordMeshVisual theme={theme} />
+      <group rotation={TITAN_BLADESTORM_BLADE_ROTATION}>
+        <SwordMeshVisual theme={theme} />
+      </group>
     </group>
   );
 }

@@ -53,6 +53,7 @@ interface ViperStingManagerProps {
     health: number;
   }>;
   wrathfulTalonsReturnCrit?: boolean;
+  wrathfulTalonsExplosionCrit?: boolean;
   explosiveTalons?: boolean;
   onExecuteFirstForwardHit?: () => number;
   giantKiller?: boolean;
@@ -122,6 +123,7 @@ export default function ViperStingManager({
   localSocketId,
   players,
   wrathfulTalonsReturnCrit,
+  wrathfulTalonsExplosionCrit,
   explosiveTalons,
   onExecuteFirstForwardHit,
   giantKiller,
@@ -160,6 +162,7 @@ export default function ViperStingManager({
     localSocketId, // Pass the local socket ID to prevent self-damage
     players, // Pass players data for dynamic PVP targeting
     wrathfulTalonsReturnCrit,
+    wrathfulTalonsExplosionCrit,
     explosiveTalons,
     onExecuteFirstForwardHit,
     onExplosiveTalonsDetonate,

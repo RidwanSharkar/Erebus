@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   Group,
@@ -91,6 +91,15 @@ const EnemyAbilityChargeTelegraph = React.memo(function EnemyAbilityChargeTelegr
       }),
     [accent]
   );
+
+  useEffect(() => {
+    return () => {
+      outerMat.dispose();
+      innerMat.dispose();
+      ringMat.dispose();
+      orbitalMat.dispose();
+    };
+  }, [outerMat, innerMat, ringMat, orbitalMat]);
 
   useFrame((_, delta) => {
     if (!active) return;

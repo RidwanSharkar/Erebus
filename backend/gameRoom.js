@@ -28,6 +28,14 @@ const COOP_COMBAT_TRANSITION_FALLBACK_MS = 30000;
 const COOP_ROOM_ENTRY_ENEMY_SPAWN_DELAY_MS = 1000;
 const CROSSENTROPY_METEOR_SINGLE_CHANCE = 0.8;
 const CROSSENTROPY_METEOR_DOUBLE_CHANCE = 0.15;
+/** Throne room weapon pedestals — keep in sync with `COOP_THRONE_WEAPON_TYPES` in weapons.ts */
+const COOP_THRONE_WEAPONS = ['RUNEBLADE', 'SABRES', 'SCYTHE', 'BOW'];
+const COOP_DEFAULT_SUBCLASS = {
+  RUNEBLADE: 'ARCANE',
+  SCYTHE: 'CHAOS',
+  SABRES: 'FROST',
+  BOW: 'ELEMENTAL',
+};
 const CROSSENTROPY_METEOR_TRIPLE_CHANCE = 0.05;
 const CROSSENTROPY_METEOR_STAGGER_MS = 500;
 const CROSSENTROPY_METEOR_DAMAGE = 230;
@@ -111,6 +119,9 @@ const THRONE_KNIGHT_CLUSTER_ARC_SPREAD = 0.14;
 const BLIZZARD_CHILL_STACK_DURATION_MS = 6000;
 const BLIZZARD_CHILL_STACKS_TO_FREEZE = 5;
 const BLIZZARD_CHILL_SLOW_PER_STACK = 0.15;
+/** Arctic Sting Tempest Rounds — keep in sync with src/utils/talents.ts CHILL_STACKS_TO_FREEZE */
+const ARCTIC_STING_TEMPEST_CHILL_STACKS_TO_FREEZE = 6;
+const ARCTIC_STING_TEMPEST_FREEZE_MS = 4000;
 
 /**
  * Co-op arena: non-martyr kills needed to clear a colored room and trigger the boss.
@@ -336,6 +347,8 @@ class GameRoom {
     /** Co-op: active portal loading gate before enemy AI and damage can affect players. */
     this.coopCombatTransitionId = 0;
     this.coopCombatTransition = null;
+    /** Co-op colored room: one whisper SFX per room visit on first combat engagement. */
+    this.coopRoomWhisperPlayed = false;
     /** Co-op: pending post-teleport initial wave spawn (`_schedulePostTeleportEnemyWave`). */
     this._coopDelayedEnemyWaveTimeoutId = null;
 
@@ -441,6 +454,7 @@ class GameRoom {
     this.coopBossesDefeatedCount = 0;
     this.coopColoredRoomVisitCounts = { red: 0, blue: 0, green: 0, purple: 0 };
     this.coopBossRoomVisitCount = 0;
+    this.coopRoomWhisperPlayed = false;
     this._clearCoopCombatTransitionTimer();
     this.coopCombatTransition = null;
     this.coopCombatTransitionId = 0;
@@ -825,6 +839,30 @@ class GameRoom {
     return count > 0 ? count : null;
   }
 
+  /** Reset once-per-room whisper when entering a colored combat room. */
+  _resetCoopRoomWhisperForEntry(roomKind) {
+    const kind = String(roomKind || '').toLowerCase();
+    if (!COOP_COLORED_ROOM_TYPES.includes(kind)) return;
+    this.coopRoomWhisperPlayed = false;
+  }
+
+  /** First player↔enemy engagement in a colored room — broadcast whisper SFX once. */
+  _tryEmitCoopRoomWhisper() {
+    if (this.gameMode !== 'coop' || this.coopRoomWhisperPlayed) return;
+    if (this.isCoopCombatTransitionActive()) return;
+    const roomColor = this.currentCoopRoomKind != null
+      ? String(this.currentCoopRoomKind).toLowerCase()
+      : '';
+    if (!COOP_COLORED_ROOM_TYPES.includes(roomColor)) return;
+    this.coopRoomWhisperPlayed = true;
+    if (this.io) {
+      this.io.to(this.roomId).emit('coop-room-whisper', {
+        roomColor,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
   getCoopCurrentRoomKind() {
     return this.currentCoopRoomKind;
   }
@@ -1088,6 +1126,7 @@ class GameRoom {
     this.currentCoopRoomKind = pick;
     this.clearedCoopRoomKind = null;
     this._bumpColoredRoomVisit(pick);
+    this._resetCoopRoomWhisperForEntry(pick);
     this.stopThroneKnightSpawningLoop();
     this.removeAllThroneKnights();
     this.removeThroneTrainingDummy();
@@ -1304,6 +1343,7 @@ class GameRoom {
       this.currentCoopRoomKind = roomKind;
       this.clearedCoopRoomKind = null;
       this._bumpColoredRoomVisit(roomKind);
+      this._resetCoopRoomWhisperForEntry(roomKind);
       this.thronePortalOffer = [];
       this.coopMainArenaPortalPhase = null;
       const nextWave = this._coopNextWaveAfterPortal === 2 || this._coopNextWaveAfterPortal === 3
@@ -1410,6 +1450,7 @@ class GameRoom {
       this.currentCoopRoomKind = pick;
       this.clearedCoopRoomKind = null;
       this._bumpColoredRoomVisit(pick);
+      this._resetCoopRoomWhisperForEntry(pick);
       this.thronePortalOffer = [];
       this.coopMainArenaPortalPhase = null;
       this.coopWaveIndex = 1;
@@ -1492,6 +1533,17 @@ class GameRoom {
     }, 1550);
   }
 
+  /**
+   * Late join after first portal: assign a random throne weapon so the joiner can fight immediately.
+   * Sets `player.lateJoinCombatLoadout` for the joining client's `room-joined` payload.
+   */
+  _grantLateJoinCombatLoadout(player) {
+    const weapon = COOP_THRONE_WEAPONS[Math.floor(Math.random() * COOP_THRONE_WEAPONS.length)];
+    player.weapon = weapon;
+    player.subclass = COOP_DEFAULT_SUBCLASS[weapon] ?? 'ELEMENTAL';
+    player.lateJoinCombatLoadout = true;
+  }
+
   // Player management
   addPlayer(playerId, playerName, weapon = 'scythe', subclass, gameMode = 'coop') {
     // In co-op mode, health scales with kill count
@@ -1520,14 +1572,19 @@ class GameRoom {
       /** Co-op: universal green zombie room boons synced from client (`coop-zombie-room-boons`). */
       coopZombieBoons: {
         packHunter: false,
-        everliving: false,
-        adrenaline: false,
+        berserkerStrain: false,
         juggernautStrain: false,
+        exploderStrain: false,
       },
       /** Co-op: blue stagger room boons synced from client (`coop-stagger-room-boons`). */
       coopStaggerRoomBoons: {
         guardbreak: false,
         overshock: false,
+        unstableEnergy: false,
+        stamina: 0,
+        agility: 0,
+        critChance: 0,
+        critDamageMult: 2,
       },
       merchantDashChargePurchased: false,
       merchantWeaponTalentPurchases: 0,
@@ -1537,6 +1594,10 @@ class GameRoom {
     if (gameMode === 'coop') {
       const playerIndex = this.players.size - 1;
       const player = this.players.get(playerId);
+
+      if (this.gameStarted && this.combatArenaActive && player) {
+        this._grantLateJoinCombatLoadout(player);
+      }
 
       if (this.gameStarted && !this.combatArenaActive) {
         // Mid-session join while party is still in the throne room
@@ -1710,6 +1771,7 @@ class GameRoom {
         maxHealth: player.maxHealth,
       });
     }
+    if (hitCount > 0) this._tryEmitCoopRoomWhisper();
     return hitCount;
   }
 
@@ -1720,6 +1782,7 @@ class GameRoom {
   damagePlayersInLineSegmentFirstHit(ax, az, bx, bz, halfWidth, damage, damageType = 'boss3_arcane_disc', hitPlayerIds, meta = null) {
     if (!this.io || !this.players || halfWidth <= 0 || damage <= 0 || !hitPlayerIds) return;
     if (this.isCoopCombatTransitionActive()) return;
+    let hitAny = false;
     const hw2 = halfWidth * halfWidth;
     const abx = bx - ax;
     const abz = bz - az;
@@ -1740,6 +1803,7 @@ class GameRoom {
       if (dx * dx + dz * dz > hw2) continue;
 
       hitPlayerIds.add(playerId);
+      hitAny = true;
       const previousHealth = player.health;
       player.health = Math.max(0, player.health - damage);
       const wasKilled = previousHealth > 0 && player.health <= 0;
@@ -1779,11 +1843,13 @@ class GameRoom {
         });
       }
     }
+    if (hitAny) this._tryEmitCoopRoomWhisper();
   }
 
   damagePlayersInHorizontalRing(center, radius, damage, damageType = 'boss_aoe', meta = null) {
     if (!this.io || !this.players || radius <= 0 || damage <= 0 || !center) return;
     if (this.isCoopCombatTransitionActive()) return;
+    let hitAny = false;
     const cx = center.x;
     const cz = center.z;
     const r2 = radius * radius;
@@ -1792,6 +1858,7 @@ class GameRoom {
       const dx = player.position.x - cx;
       const dz = player.position.z - cz;
       if (dx * dx + dz * dz > r2) continue;
+      hitAny = true;
       const previousHealth = player.health;
       player.health = Math.max(0, player.health - damage);
       const wasKilled = previousHealth > 0 && player.health <= 0;
@@ -1831,6 +1898,7 @@ class GameRoom {
         });
       }
     }
+    if (hitAny) this._tryEmitCoopRoomWhisper();
   }
 
   /**
@@ -2856,8 +2924,6 @@ class GameRoom {
       enemy.health = enemy.maxHealth;
     }
 
-    console.log(`💥 Enemy ${enemyId} (${enemy.type}) damaged by ${appliedDamage} from player ${fromPlayerId}. Health: ${previousHealth} -> ${enemy.health}`);
-
     if (enemy.type === 'titan' && this.enemyAI && enemy.health > 0 && !enemy.isDying) {
       this.enemyAI.titanMaybeStartBladestorm(enemy);
     }
@@ -2884,6 +2950,17 @@ class GameRoom {
           this.enemyAI.updateAggro(enemyId, fromPlayerId, aggroAmount);
         }
       }
+    }
+
+    if (
+      fromPlayerId &&
+      appliedDamage > 0 &&
+      enemy.type !== 'training-dummy' &&
+      enemy.type !== 'tentacle-spine' &&
+      enemy.type !== 'player-zombie' &&
+      !this.isAlliedUnitEnemy(enemy)
+    ) {
+      this._tryEmitCoopRoomWhisper();
     }
 
     const result = {
@@ -2953,6 +3030,13 @@ class GameRoom {
         };
       } else if (hitMeta && hitMeta.sourceZombieId) {
         damagedPayload.damageType = 'player_zombie';
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
+      } else if (hitMeta && hitMeta.damageType === 'zombie_explosion') {
+        damagedPayload.damageType = 'zombie_explosion';
         damagedPayload.position = {
           x: enemy.position.x,
           y: enemy.position.y,
@@ -3153,6 +3237,19 @@ class GameRoom {
       this.applyGlacialBiteChillOnHit(enemyId);
     }
 
+    // Arctic Sting + Tempest Rounds — +1 chill per burst hit; 6 stacks → freeze
+    if (
+      !result.wasKilled &&
+      hitMeta &&
+      hitMeta.damageType === 'projectile' &&
+      hitMeta.tempestBurstArcticChill &&
+      damage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0
+    ) {
+      this.applyArcticStingTempestChillOnHit(enemyId);
+    }
+
     // Arctic Shards + Icebeam — +1 chill per beam tick; 5 stacks → 4s freeze
     if (
       !result.wasKilled &&
@@ -3183,7 +3280,8 @@ class GameRoom {
         hitMeta.damageType === 'projectile' ||
         hitMeta.damageType === 'crossentropy' ||
         hitMeta.damageType === 'entropic' ||
-        hitMeta.damageType === 'icebeam') &&
+        hitMeta.damageType === 'icebeam' ||
+        hitMeta.damageType === 'lightning_storm') &&
       typeof hitMeta.staggerToAdd === 'number' &&
       hitMeta.staggerToAdd > 0 &&
       !enemy.isDying
@@ -3193,9 +3291,8 @@ class GameRoom {
         if (enemy.staggerBuildup == null) enemy.staggerBuildup = 0;
         enemy.staggerBuildup += hitMeta.staggerToAdd;
         const staggerCap = COOP_BOSS_TYPES.has(enemy.type) ? STAGGER_CAP_BOSS : STAGGER_CAP_NORMAL;
-        /** Keep in sync with `STAGGER_PROC_DAMAGE` / `GUARDBREAK_STAGGER_PROC_DAMAGE` in src/utils/talents.ts */
+        /** Keep in sync with `STAGGER_PROC_DAMAGE` / `GUARDBREAK_STAGGER_PROC_DAMAGE` / `UNSTABLE_ENERGY_AGILITY_DAMAGE_PER_POINT` in src/utils/talents.ts */
         const staggerBoons = fromPlayerId ? this.players.get(fromPlayerId)?.coopStaggerRoomBoons : null;
-        const PROC_DAMAGE = staggerBoons?.guardbreak ? 300 : 150;
         const STUN_MS = staggerBoons?.overshock ? 2500 : 1000;
         let procEnemy = this.enemies.get(enemyId);
         while (
@@ -3205,14 +3302,30 @@ class GameRoom {
           procEnemy.staggerBuildup >= staggerCap
         ) {
           procEnemy.staggerBuildup -= staggerCap;
-          this.damageEnemy(enemyId, PROC_DAMAGE, fromPlayerId, player, { damageType: 'stagger_break' });
+          let procBase = staggerBoons?.guardbreak ? 300 : 150;
+          if (staggerBoons?.unstableEnergy) {
+            const agi = typeof staggerBoons.agility === 'number' ? staggerBoons.agility : 0;
+            procBase += Math.max(0, agi) * 8;
+          }
+          let procDamage = procBase;
+          let isCritical = false;
+          if (staggerBoons?.unstableEnergy) {
+            const critChance = typeof staggerBoons.critChance === 'number' ? staggerBoons.critChance : 0;
+            const critMult = typeof staggerBoons.critDamageMult === 'number' ? staggerBoons.critDamageMult : 2;
+            isCritical = Math.random() < critChance;
+            if (isCritical) {
+              procDamage = Math.floor(procBase * critMult);
+            }
+          }
+          this.damageEnemy(enemyId, procDamage, fromPlayerId, player, { damageType: 'stagger_break' });
           this.applyStatusEffect(enemyId, 'stun', STUN_MS);
           procEnemy = this.enemies.get(enemyId);
           if (this.io && procEnemy) {
             this.io.to(this.roomId).emit('enemy-stagger-proc', {
               enemyId,
               position: { x: procEnemy.position.x, y: procEnemy.position.y, z: procEnemy.position.z },
-              damage: PROC_DAMAGE,
+              damage: procDamage,
+              isCritical,
               fromPlayerId: fromPlayerId || null,
               timestamp: Date.now(),
             });
@@ -3438,6 +3551,25 @@ class GameRoom {
         });
       }
 
+      // WYVERN STING + Tempest Rounds: burst projectile kill
+      if (
+        hitMeta &&
+        hitMeta.damageType === 'projectile' &&
+        hitMeta.tempestBurstWyvernZombie &&
+        fromPlayerId &&
+        fromPlayerId !== 'unknown' &&
+        enemy.type !== 'training-dummy' &&
+        !COOP_BOSS_TYPES.has(enemy.type) &&
+        enemy.type !== 'player-zombie' &&
+        this.enemyAI
+      ) {
+        this.enemyAI.trySpawnInfestedZombie(fromPlayerId, {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        });
+      }
+
       // WYVERN BITE: Concentrated Venom DoT kill
       if (
         hitMeta &&
@@ -3516,6 +3648,25 @@ class GameRoom {
         this.enemyAI.trySpawnInfestedZombie(fromPlayerId, pos);
       }
 
+      // EXPLODER STRAIN: zombie detonation kill — same zombie rules as Infested Strike
+      if (
+        hitMeta &&
+        hitMeta.damageType === 'zombie_explosion' &&
+        hitMeta.exploderStrainZombie &&
+        fromPlayerId &&
+        fromPlayerId !== 'unknown' &&
+        enemy.type !== 'training-dummy' &&
+        !COOP_BOSS_TYPES.has(enemy.type) &&
+        enemy.type !== 'player-zombie' &&
+        this.enemyAI
+      ) {
+        this.enemyAI.trySpawnInfestedZombie(fromPlayerId, {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        });
+      }
+
       // Reaper (Crossentropy): +1 base damage for this room session per kill
       if (
         hitMeta &&
@@ -3564,7 +3715,15 @@ class GameRoom {
       ) {
         const killer = this.players.get(fromPlayerId);
         if (killer && killer.maxHealth != null) {
-          killer.health = Math.min(killer.maxHealth, killer.health + 30);
+          // Keep in sync with RELENTLESS_BACKSTAB_KILL_* in src/utils/talents.ts
+          const stamina = Math.max(
+            0,
+            typeof killer.coopStaggerRoomBoons?.stamina === 'number'
+              ? killer.coopStaggerRoomBoons.stamina
+              : 0,
+          );
+          const relentlessHeal = 30 + 5 * stamina;
+          killer.health = Math.min(killer.maxHealth, killer.health + relentlessHeal);
           this.io.to(this.roomId).emit('player-health-updated', {
             playerId: fromPlayerId,
             health: killer.health,
@@ -4445,6 +4604,44 @@ class GameRoom {
     if (chill.stacks >= BLIZZARD_CHILL_STACKS_TO_FREEZE) {
       this.enemyChill.delete(enemyId);
       this.applyStatusEffect(enemyId, 'freeze', 6000);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-chill-sync', {
+          enemyId,
+          stacks: 0,
+          expiresAt: now,
+          timestamp: now,
+        });
+      }
+    } else {
+      this.enemyChill.set(enemyId, chill);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-chill-sync', {
+          enemyId,
+          stacks: chill.stacks,
+          expiresAt: chill.expiresAt,
+          timestamp: now,
+        });
+      }
+    }
+  }
+
+  applyArcticStingTempestChillOnHit(enemyId) {
+    const enemy = this.enemies.get(enemyId);
+    if (!enemy || enemy.isDying || enemy.health <= 0) return;
+    if (this.isEnemyAffectedBy(enemyId, 'freeze')) return;
+
+    const now = Date.now();
+    let chill = this.enemyChill.get(enemyId);
+    if (!chill || chill.expiresAt < now) {
+      chill = { stacks: 0, expiresAt: 0 };
+    }
+
+    chill.stacks += 1;
+    chill.expiresAt = now + BLIZZARD_CHILL_STACK_DURATION_MS;
+
+    if (chill.stacks >= ARCTIC_STING_TEMPEST_CHILL_STACKS_TO_FREEZE) {
+      this.enemyChill.delete(enemyId);
+      this.applyStatusEffect(enemyId, 'freeze', ARCTIC_STING_TEMPEST_FREEZE_MS);
       if (this.io) {
         this.io.to(this.roomId).emit('enemy-chill-sync', {
           enemyId,

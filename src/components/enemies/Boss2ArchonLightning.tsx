@@ -85,6 +85,8 @@ export default function Boss2ArchonLightning({
 
   useFrame(() => {
     if (phase === 'warning' && Date.now() >= strikeAt) {
+      const pos = beams[0]?.targetPosition;
+      if (pos) (window as any).audioSystem?.playWarlockZapSound(pos);
       setPhase('strike');
     }
   });

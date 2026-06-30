@@ -199,6 +199,13 @@ const InstancedEmbers: React.FC<InstancedEmbersProps> = ({ campTypes = [] }) => 
     mat.uniforms.uTime.value += delta;
   });
 
+  useEffect(() => {
+    return () => {
+      geo.dispose();
+      mat.dispose();
+    };
+  }, [geo, mat]);
+
   return (
     <points ref={pointsRef} geometry={geo} material={mat} frustumCulled={false} />
   );

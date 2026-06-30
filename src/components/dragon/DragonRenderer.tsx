@@ -25,6 +25,7 @@ import {
   STAGGERING_COMBO_HIT2_STAGGER,
   STAGGERING_COMBO_HIT3_STAGGER,
   STAGGERING_TALONS_HIT_STAGGER,
+  STAGGERING_TALONS_EXPLOSION_STAGGER,
   EXECUTE_REAPING_TALONS_BONUS_DAMAGE,
   WRATHFUL_COMBO_CRIT_CHANCE_ADD,
   WRATHFUL_COMBO_CRIT_DAMAGE_MULT_ADD,
@@ -94,6 +95,8 @@ interface DragonRendererProps {
   onWraithStrikeComplete?: () => void;
   onCorruptedAuraToggle?: (active: boolean) => void;
   onChargeComplete?: () => void;
+  onChargeSpinStart?: () => void;
+  onChargeSpinEnd?: () => void;
   onDeflectComplete?: () => void;
   onHeal?: (amount: number) => void; // Callback for healing effects like Viper Sting soul steal
   rotation?: { x: number; y: number; z: number }; // Add rotation prop for multiplayer
@@ -165,15 +168,19 @@ interface DragonRendererProps {
 
   /** Wrathful Talons: Reaping Talons return arrow uses preset crit when local player has talent. */
   wrathfulTalonsReturnCrit?: boolean;
+  /** Wrathful + Explosive Talons: end-of-range detonation preset crit. */
+  wrathfulTalonsExplosionCrit?: boolean;
   /** EXECUTE: Reaping Talons first forward hit may consume a dash for bonus damage. */
   executeReapingTalons?: boolean;
+  /** Local player: dash charge spent (e.g. Execute, room boons) — MANA SHIELD shield restore. */
+  onDashChargeExpended?: (consumed: number) => void;
   /** EXPLOSIVE TALONS: Reaping Talons detonates at max range; no return arrow. */
   explosiveTalons?: boolean;
   /** GIANTKILLER: Reaping Talons return hit bonus when forward leg hit same target. */
   giantKillerReapingTalons?: boolean;
   /** Wyvern Talons: Reaping hits detonate Cobra + Concentrated Venom remaining DoT. */
   wyvernTalons?: boolean;
-  /** Staggering Talons: forward + return Reaping hits apply server stagger. */
+  /** Staggering Talons: forward, return, and Explosive detonation Reaping hits apply server stagger. */
   staggeringTalonsActive?: boolean;
   /** Glacial Talons room boon — deep-blue Reaping Talons beams + 2× vs frozen (R routed in CombatSystem). */
   glacialTalonsTheme?: boolean;
@@ -250,6 +257,8 @@ export default function DragonRenderer({
   isSundering = false,
   isSwordCharging = false,
   onChargeComplete = () => {},
+  onChargeSpinStart,
+  onChargeSpinEnd,
   onDeflectComplete = () => {},
   rotation,
   isLocalPlayer = false,
@@ -283,7 +292,9 @@ export default function DragonRenderer({
   hideBody = false,
   playerLevel = 1,
   wrathfulTalonsReturnCrit = false,
+  wrathfulTalonsExplosionCrit = false,
   executeReapingTalons = false,
+  onDashChargeExpended,
   explosiveTalons = false,
   giantKillerReapingTalons = false,
   wyvernTalons = false,
@@ -660,12 +671,12 @@ export default function DragonRenderer({
             ? runebladeComboStepResolver()
             : swordComboStep;
         let staggerToAdd: number | undefined;
-        if (
-          currentWeapon === WeaponType.BOW &&
-          staggeringTalonsActive &&
-          (viperPhase === 'forward' || viperPhase === 'return')
-        ) {
-          staggerToAdd = STAGGERING_TALONS_HIT_STAGGER;
+        if (currentWeapon === WeaponType.BOW && staggeringTalonsActive) {
+          if (viperPhase === 'explosion') {
+            staggerToAdd = STAGGERING_TALONS_EXPLOSION_STAGGER;
+          } else if (viperPhase === 'forward' || viperPhase === 'return') {
+            staggerToAdd = STAGGERING_TALONS_HIT_STAGGER;
+          }
         } else if (currentWeapon === WeaponType.RUNEBLADE && runebladeStaggeringCombo && !isBlizzard) {
           staggerToAdd =
             rbComboStep === 1
@@ -749,8 +760,11 @@ export default function DragonRenderer({
     const m = ent?.getComponent(Movement);
     if (!m) return 0;
     const consumed = m.consumeDashChargesWithoutDash(1, Date.now() / 1000);
+    if (consumed > 0) {
+      onDashChargeExpended?.(consumed);
+    }
     return consumed > 0 ? EXECUTE_REAPING_TALONS_BONUS_DAMAGE : 0;
-  }, [world, entityId]);
+  }, [world, entityId, onDashChargeExpended]);
 
   return (
     <>
@@ -812,6 +826,8 @@ export default function DragonRenderer({
           onWraithStrikeComplete={onWraithStrikeComplete}
           onCorruptedAuraToggle={onCorruptedAuraToggle}
           onChargeComplete={onChargeComplete}
+          onChargeSpinStart={onChargeSpinStart}
+          onChargeSpinEnd={onChargeSpinEnd}
           onDeflectComplete={onDeflectComplete}
           enemyData={enemyData}
           onHit={handleSwordHit}
@@ -914,6 +930,7 @@ export default function DragonRenderer({
           }}
           localSocketId="local-player" // For single-player mode, use a fixed ID
           wrathfulTalonsReturnCrit={wrathfulTalonsReturnCrit}
+          wrathfulTalonsExplosionCrit={wrathfulTalonsExplosionCrit}
           explosiveTalons={explosiveTalons}
           onExecuteFirstForwardHit={executeReapingTalons ? onExecuteFirstForwardHit : undefined}
           giantKiller={giantKillerReapingTalons}

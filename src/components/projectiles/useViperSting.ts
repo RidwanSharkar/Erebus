@@ -5,6 +5,7 @@ import { calculateDamage } from '@/core/DamageCalculator';
 import {
   WRATHFUL_TALONS_RETURN_CRIT_CHANCE_ADD,
   WRATHFUL_TALONS_RETURN_CRIT_DAMAGE_MULT_ADD,
+  WRATHFUL_TALONS_EXPLOSION_CRIT_CHANCE_ADD,
   REAPING_TALONS_MAX_TRAVEL_DISTANCE,
   EXPLOSIVE_TALONS_REAPING_TALONS_MAX_TRAVEL_DISTANCE,
   EXPLOSIVE_TALONS_EXPLOSION_DAMAGE,
@@ -31,6 +32,8 @@ interface ViperStingProjectile {
   casterPosition?: Vector3; // For PVP: remember the caster's position for return
   /** Set at spawn: local caster with Wrathful Talons talent (remote spawns omit). */
   wrathfulTalonsReturnCrit?: boolean;
+  /** Set at spawn: local caster with Wrathful + Explosive Talons (remote spawns omit). */
+  wrathfulTalonsExplosionCrit?: boolean;
   /** EXPLOSIVE TALONS: no return; detonate at max range (from local prop or remote opts). */
   explosiveTalons?: boolean;
   /** PVP: player AoE from OptimizedPVPViperStingManager applied once per cast. */
@@ -103,6 +106,8 @@ interface UseViperStingProps {
   }>;
   /** Local Reaping Talons: return-arrow preset crit (stored on projectile at spawn). */
   wrathfulTalonsReturnCrit?: boolean;
+  /** Local Reaping Talons: Explosive end detonation preset crit (Wrathful + Explosive). */
+  wrathfulTalonsExplosionCrit?: boolean;
   /** EXPLOSIVE TALONS: forward-only + end-of-range explosion (local prop; remote via spawn opts). */
   explosiveTalons?: boolean;
   /** EXECUTE talent: first forward hit only — return bonus damage to add (0 if no dash consumed). */
@@ -129,6 +134,7 @@ export function useViperSting({
   localSocketId,
   players,
   wrathfulTalonsReturnCrit = false,
+  wrathfulTalonsExplosionCrit = false,
   explosiveTalons = false,
   onExecuteFirstForwardHit,
   giantKiller = false,
@@ -165,6 +171,7 @@ export function useViperSting({
       isReturning: false,
       returnHitEnemies: new Set(),
       wrathfulTalonsReturnCrit: false,
+      wrathfulTalonsExplosionCrit: false,
       explosiveTalons: false,
       explosiveTalonsPvpAoEDone: false,
       forwardExecuteResolved: false,
@@ -231,6 +238,7 @@ export function useViperSting({
     projectile.casterPosition = unitPosition.clone();
     const isRemoteSpawn = !!(overridePosition && overrideDirection);
     projectile.wrathfulTalonsReturnCrit = !isRemoteSpawn && wrathfulTalonsReturnCrit;
+    projectile.wrathfulTalonsExplosionCrit = !isRemoteSpawn && wrathfulTalonsExplosionCrit;
     projectile.explosiveTalons = isRemoteSpawn ? !!opts?.explosiveTalons : explosiveTalons;
     projectile.explosiveTalonsPvpAoEDone = false;
     projectile.forwardExecuteResolved = false;
@@ -245,7 +253,7 @@ export function useViperSting({
     }
 
     return true;
-  }, [createBeamEffect, parentRef, getInactiveProjectile, charges, setCharges, wrathfulTalonsReturnCrit, explosiveTalons, glacialTalonsTheme, localSocketId]);
+  }, [createBeamEffect, parentRef, getInactiveProjectile, charges, setCharges, wrathfulTalonsReturnCrit, wrathfulTalonsExplosionCrit, explosiveTalons, glacialTalonsTheme, localSocketId]);
 
   const createSoulStealEffect = useCallback((enemyPosition: Vector3) => {
     if (!parentRef.current) return;
@@ -372,16 +380,26 @@ export function useViperSting({
                 const horiz = Math.hypot(enemy.position.x - cx, enemy.position.z - cz);
                 if (horiz > EXPLOSIVE_TALONS_EXPLOSION_RADIUS) continue;
 
-                onHit(enemy.id, EXPLOSIVE_TALONS_EXPLOSION_DAMAGE, undefined, undefined, undefined, 'explosion');
+                let explosionDamage = EXPLOSIVE_TALONS_EXPLOSION_DAMAGE;
+                let explosionIsCritical: boolean | undefined = undefined;
+                if (projectile.wrathfulTalonsExplosionCrit) {
+                  const r = calculateDamage(EXPLOSIVE_TALONS_EXPLOSION_DAMAGE, WeaponType.BOW, {
+                    critChanceAdd: WRATHFUL_TALONS_EXPLOSION_CRIT_CHANCE_ADD,
+                  });
+                  explosionDamage = r.damage;
+                  explosionIsCritical = r.isCritical;
+                }
+
+                onHit(enemy.id, explosionDamage, explosionIsCritical, undefined, undefined, 'explosion');
                 if (applyDoT) {
                   applyDoT(enemy.id);
                 }
                 if (setDamageNumbers && nextDamageNumberId) {
                   setDamageNumbers(prev => [...prev, {
                     id: nextDamageNumberId.current++,
-                    damage: EXPLOSIVE_TALONS_EXPLOSION_DAMAGE,
+                    damage: explosionDamage,
                     position: enemy.position.clone(),
-                    isCritical: false,
+                    isCritical: !!explosionIsCritical,
                     isViperSting: true,
                   }]);
                 }

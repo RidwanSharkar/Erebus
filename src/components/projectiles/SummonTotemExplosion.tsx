@@ -1,6 +1,13 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, AdditiveBlending, Group, Mesh, Material } from '@/utils/three-exports';
+import {
+  Vector3,
+  AdditiveBlending,
+  SphereGeometry,
+  TorusGeometry,
+  MeshStandardMaterial,
+  type Mesh,
+} from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface SummonTotemExplosionProps {
@@ -9,154 +16,181 @@ interface SummonTotemExplosionProps {
   onComplete?: () => void;
 }
 
-const IMPACT_DURATION = 0.2; // Exact duration from original
+const IMPACT_DURATION = 0.2;
 
 export default function SummonTotemExplosion({
   position,
   explosionStartTime,
-  onComplete
+  onComplete,
 }: SummonTotemExplosionProps) {
   const startTime = useRef(explosionStartTime || Date.now());
-  const groupRef = useRef<Group>(null);
-  const [, forceUpdate] = useState({}); // Force updates to animate
+  const finished = useRef(false);
+  const coreRef = useRef<Mesh>(null);
+  const innerRef = useRef<Mesh>(null);
+  const ringRefs = useRef<(Mesh | null)[]>([]);
+  const sparkRefs = useRef<(Mesh | null)[]>([]);
 
-  // Collapse the two near-coincident explosion <pointLight>s into one pooled light at
-  // the explosion origin (group sits at world `position`).
   const explosionLight = useDynamicLight({ color: '#0099ff', distance: 4, decay: 2, priority: 1 });
 
+  const coreGeo = useMemo(() => new SphereGeometry(0.35, 32, 32), []);
+  const innerGeo = useMemo(() => new SphereGeometry(0.25, 24, 24), []);
+  const ringGeos = useMemo(
+    () => [0.45, 0.65, 0.85].map((size) => new TorusGeometry(size, 0.045, 16, 32)),
+    [],
+  );
+  const sparkGeo = useMemo(() => new SphereGeometry(0.05, 8, 8), []);
+
+  const coreMat = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: '#0099ff',
+        emissive: '#0088cc',
+        emissiveIntensity: 0.5,
+        transparent: true,
+        depthWrite: false,
+        blending: AdditiveBlending,
+      }),
+    [],
+  );
+  const innerMat = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: '#0077aa',
+        emissive: '#cceeff',
+        emissiveIntensity: 0.5,
+        transparent: true,
+        depthWrite: false,
+        blending: AdditiveBlending,
+      }),
+    [],
+  );
+  const ringMat = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: '#0099ff',
+        emissive: '#0088cc',
+        emissiveIntensity: 1,
+        transparent: true,
+        depthWrite: false,
+        blending: AdditiveBlending,
+      }),
+    [],
+  );
+  const sparkMat = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: '#0077aa',
+        emissive: '#cceeff',
+        emissiveIntensity: 2,
+        transparent: true,
+        depthWrite: false,
+        blending: AdditiveBlending,
+      }),
+    [],
+  );
+
+  const ringRotations = useMemo(
+    () =>
+      [0.45, 0.65, 0.85].map(
+        () => [Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI] as [number, number, number],
+      ),
+    [],
+  );
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!finished.current) {
+        finished.current = true;
+        onComplete?.();
+      }
+    }, IMPACT_DURATION * 1000);
+    return () => {
+      clearTimeout(timer);
+      coreGeo.dispose();
+      innerGeo.dispose();
+      ringGeos.forEach((g) => g.dispose());
+      sparkGeo.dispose();
+      coreMat.dispose();
+      innerMat.dispose();
+      ringMat.dispose();
+      sparkMat.dispose();
+    };
+  }, [coreGeo, innerGeo, ringGeos, sparkGeo, coreMat, innerMat, ringMat, sparkMat, onComplete]);
+
   useFrame(() => {
-    const fadeNow = Math.max(0, 1 - ((Date.now() - startTime.current) / 1000) / IMPACT_DURATION);
+    const elapsed = (Date.now() - startTime.current) / 1000;
+    const fade = Math.max(0, 1 - elapsed / IMPACT_DURATION);
+
     explosionLight.current?.setPosition(position.x, position.y, position.z);
-    explosionLight.current?.setIntensity(1 * fadeNow);
+    explosionLight.current?.setIntensity(1 * fade);
+
+    if (fade <= 0) {
+      if (!finished.current) {
+        finished.current = true;
+        onComplete?.();
+      }
+      return;
+    }
+
+    const coreScale = 1 + elapsed * 2;
+    const innerScale = 1 + elapsed * 3;
+    const ringScale = 1 + elapsed * 3;
+    const sparkRadius = 0.5 * (1 + elapsed * 2);
+
+    if (coreRef.current) {
+      coreRef.current.scale.setScalar(coreScale);
+      coreMat.opacity = 0.8 * fade;
+      coreMat.emissiveIntensity = 0.5 * fade;
+    }
+    if (innerRef.current) {
+      innerRef.current.scale.setScalar(innerScale);
+      innerMat.opacity = 0.9 * fade;
+      innerMat.emissiveIntensity = 0.5 * fade;
+    }
+
+    ringRefs.current.forEach((ring, i) => {
+      if (!ring) return;
+      ring.scale.set(ringScale, ringScale, ringScale);
+      ringMat.opacity = 0.6 * fade * (1 - i * 0.2);
+      ringMat.emissiveIntensity = 1 * fade;
+    });
+
+    sparkRefs.current.forEach((spark, i) => {
+      if (!spark) return;
+      const angle = (i / 4) * Math.PI * 2;
+      spark.position.set(Math.sin(angle) * sparkRadius, Math.cos(angle) * sparkRadius, 0);
+      sparkMat.opacity = 0.8 * fade;
+      sparkMat.emissiveIntensity = 2 * fade;
+    });
   });
 
-  // MEMORY FIX: Cleanup geometries and materials on unmount
-  useEffect(() => {
-    return () => {
-      if (groupRef.current) {
-        groupRef.current.traverse((child) => {
-          if (child instanceof Mesh) {
-            if (child.geometry) {
-              child.geometry.dispose();
-            }
-            if (child.material) {
-              if (Array.isArray(child.material)) {
-                child.material.forEach((mat: Material) => mat.dispose());
-              } else {
-                (child.material as Material).dispose();
-              }
-            }
-          }
-        });
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    // Animation timer - exact same timing as original
-    const interval = setInterval(() => {
-      forceUpdate({});
-
-      // Check if we should clean up - exact same condition as original
-      const elapsed = (Date.now() - startTime.current) / 1000;
-      if (elapsed > IMPACT_DURATION) {
-        clearInterval(interval);
-        if (onComplete) onComplete();
-      }
-    }, 16); // ~60fps
-
-    // Cleanup timer after explosion duration
-    const timer = setTimeout(() => {
-      clearInterval(interval);
-      if (onComplete) onComplete();
-    }, IMPACT_DURATION * 1000);
-
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timer);
-    };
-  }, [onComplete]);
-
-  // Calculate fade based on elapsed time - exact same calculation as original
-  const elapsed = (Date.now() - startTime.current) / 1000;
-  const duration = IMPACT_DURATION;
-  const fade = Math.max(0, 1 - (elapsed / duration));
-
-  if (fade <= 0) return null;
-
   return (
-    <group ref={groupRef} position={position}>
-      {/* Core explosion sphere - Exact same as original */}
-      <mesh>
-        <sphereGeometry args={[0.35 * (1 + elapsed * 2), 32, 32]} />
-        <meshStandardMaterial
-          color="#0099ff"
-          emissive="#0088cc"
-          emissiveIntensity={0.5 * fade}
-          transparent
-          opacity={0.8 * fade}
-          depthWrite={false}
-          blending={AdditiveBlending}
-        />
-      </mesh>
+    <group position={position}>
+      <mesh ref={coreRef} geometry={coreGeo} material={coreMat} />
+      <mesh ref={innerRef} geometry={innerGeo} material={innerMat} />
 
-      {/* Inner energy sphere - Exact same as original */}
-      <mesh>
-        <sphereGeometry args={[0.25 * (1 + elapsed * 3), 24, 24]} />
-        <meshStandardMaterial
-          color="#0077aa"
-          emissive="#cceeff"
-          emissiveIntensity={0.5 * fade}
-          transparent
-          opacity={0.9 * fade}
-          depthWrite={false}
-          blending={AdditiveBlending}
+      {[0.45, 0.65, 0.85].map((_, i) => (
+        <mesh
+          key={i}
+          ref={(el) => {
+            ringRefs.current[i] = el;
+          }}
+          geometry={ringGeos[i]}
+          material={ringMat}
+          rotation={ringRotations[i]}
         />
-      </mesh>
-
-      {/* Expanding rings - Exact same as original */}
-      {[0.45, 0.65, 0.85].map((size, i) => (
-        <mesh key={i} rotation={[Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI]}>
-          <torusGeometry args={[size * (1 + elapsed * 3), 0.045, 16, 32]} />
-          <meshStandardMaterial
-            color="#0099ff"
-            emissive="#0088cc"
-            emissiveIntensity={1 * fade}
-            transparent
-            opacity={0.6 * fade * (1 - i * 0.2)}
-            depthWrite={false}
-            blending={AdditiveBlending}
-          />
-        </mesh>
       ))}
 
-      {/* Particle sparks - Exact same as original */}
-      {[...Array(4)].map((_, i) => {
-        const angle = (i / 4) * Math.PI * 2;
-        const radius = 0.5 * (1 + elapsed * 2);
-        return (
-          <mesh
-            key={`spark-${i}`}
-            position={[
-              Math.sin(angle) * radius,
-              Math.cos(angle) * radius,
-              0
-            ]}
-          >
-            <sphereGeometry args={[0.05, 8, 8]} />
-            <meshStandardMaterial
-              color="#0077aa"
-              emissive="#cceeff"
-              emissiveIntensity={2 * fade}
-              transparent
-              opacity={0.8 * fade}
-              depthWrite={false}
-              blending={AdditiveBlending}
-            />
-          </mesh>
-        );
-      })}
-
+      {[0, 1, 2, 3].map((i) => (
+        <mesh
+          key={`spark-${i}`}
+          ref={(el) => {
+            sparkRefs.current[i] = el;
+          }}
+          geometry={sparkGeo}
+          material={sparkMat}
+        />
+      ))}
     </group>
   );
 }

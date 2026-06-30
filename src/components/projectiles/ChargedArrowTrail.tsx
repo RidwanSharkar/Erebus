@@ -1,6 +1,6 @@
 import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Mesh, Line, Vector3, BufferGeometry, LineBasicMaterial, AdditiveBlending, BufferAttribute } from '@/utils/three-exports';
+import { Mesh, Line, Vector3, BufferGeometry, LineBasicMaterial, AdditiveBlending, BufferAttribute, SphereGeometry, MeshStandardMaterial } from '@/utils/three-exports';
 
 interface ChargedArrowTrailProps {
   color: string;
@@ -10,50 +10,52 @@ interface ChargedArrowTrailProps {
   opacity?: number;
 }
 
-function ChargedArrowTrail({ 
-  color, 
-  size, 
-  arrowHeadRef, 
-  arrowShaftRef, 
-  opacity = 1 
+const GLOW_COUNT = 5;
+const SPARK_GROUP_COUNT = 3;
+const SPARKS_PER_GROUP = 3;
+
+function ChargedArrowTrail({
+  color,
+  size,
+  arrowHeadRef,
+  arrowShaftRef,
+  opacity = 1,
 }: ChargedArrowTrailProps) {
   const trailRef = useRef<Line>(null);
   const trailPositions = useRef<Vector3[]>([]);
   const maxTrailLength = 75;
   const initialized = useRef(false);
-  
-  // Create trail geometry
+  const glowRefs = useRef<(Mesh | null)[]>([]);
+  const sparkRefs = useRef<(Mesh | null)[]>([]);
+
   const trailGeometry = useMemo(() => {
     const geometry = new BufferGeometry();
     const positions = new Float32Array(maxTrailLength * 3);
     const colors = new Float32Array(maxTrailLength * 3);
     const indices = [];
-    
-    // Initialize positions and colors
+
     for (let i = 0; i < maxTrailLength; i++) {
       positions[i * 3] = 0;
       positions[i * 3 + 1] = 0;
       positions[i * 3 + 2] = 0;
-      
-      // Gradient from bright orange to transparent
-      const alpha = 1 - (i / maxTrailLength);
-      colors[i * 3] = 1.0; // R
-      colors[i * 3 + 1] = 0.6 * alpha; // G
-      colors[i * 3 + 2] = 0.0; // B
+
+      const alpha = 1 - i / maxTrailLength;
+      colors[i * 3] = 1.0;
+      colors[i * 3 + 1] = 0.6 * alpha;
+      colors[i * 3 + 2] = 0.0;
     }
-    
-    // Create line indices
+
     for (let i = 0; i < maxTrailLength - 1; i++) {
       indices.push(i, i + 1);
     }
-    
+
     geometry.setAttribute('position', new BufferAttribute(positions, 3));
     geometry.setAttribute('color', new BufferAttribute(colors, 3));
     geometry.setIndex(indices);
-    
+
     return geometry;
   }, [maxTrailLength]);
-  
+
   const trailMaterial = useMemo(() => {
     return new LineBasicMaterial({
       vertexColors: true,
@@ -61,44 +63,87 @@ function ChargedArrowTrail({
       opacity: opacity * 0.8,
       blending: AdditiveBlending,
       depthWrite: false,
-      linewidth: 3
+      linewidth: 3,
     });
   }, [opacity]);
 
-  // Create the Line object once; update it via ref in useFrame
   const trailLine = useMemo(() => new Line(trailGeometry, trailMaterial), [trailGeometry, trailMaterial]);
 
-  // Dispose GPU resources on unmount
+  const glowGeos = useMemo(
+    () => Array.from({ length: GLOW_COUNT }, (_, i) => new SphereGeometry(size * 2 * (0.3 - i * 0.05), 8, 8)),
+    [size],
+  );
+  const glowMats = useMemo(
+    () =>
+      Array.from({ length: GLOW_COUNT }, (_, i) =>
+        new MeshStandardMaterial({
+          color,
+          emissive: color,
+          emissiveIntensity: 2 - i * 0.3,
+          transparent: true,
+          opacity: opacity * (1 - i * 0.2),
+          depthWrite: false,
+          blending: AdditiveBlending,
+          toneMapped: false,
+        }),
+      ),
+    [color, opacity],
+  );
+
+  const sparkGeo = useMemo(() => new SphereGeometry(0.02, 4, 4), []);
+  const sparkMats = useMemo(
+    () =>
+      Array.from({ length: SPARK_GROUP_COUNT * SPARKS_PER_GROUP }, (_, i) =>
+        new MeshStandardMaterial({
+          color: '#ffcc00',
+          emissive: '#ff8800',
+          emissiveIntensity: 3,
+          transparent: true,
+          opacity: opacity * (1 - Math.floor(i / SPARKS_PER_GROUP) * 0.3),
+          depthWrite: false,
+          blending: AdditiveBlending,
+        }),
+      ),
+    [opacity],
+  );
+
+  const sparkOffsets = useMemo(
+    () =>
+      Array.from({ length: SPARK_GROUP_COUNT * SPARKS_PER_GROUP }, () => [
+        (Math.random() - 0.5) * 0.3,
+        (Math.random() - 0.5) * 0.3,
+        (Math.random() - 0.5) * 0.3,
+      ] as [number, number, number]),
+    [],
+  );
+
   useEffect(() => {
     return () => {
       trailGeometry.dispose();
       trailMaterial.dispose();
+      glowGeos.forEach((g) => g.dispose());
+      glowMats.forEach((m) => m.dispose());
+      sparkGeo.dispose();
+      sparkMats.forEach((m) => m.dispose());
     };
-  }, [trailGeometry, trailMaterial]);
+  }, [trailGeometry, trailMaterial, glowGeos, glowMats, sparkGeo, sparkMats]);
 
-  // Scratch vector to avoid per-frame allocation
   const _scratchPos = useRef(new Vector3());
 
   useFrame(() => {
     if (!arrowHeadRef.current || !trailRef.current) return;
-    
-    // Get current arrow world position (not local position)
+
     const currentPos = _scratchPos.current;
     arrowHeadRef.current.getWorldPosition(currentPos);
-    
-    // Only start tracking if arrow has moved from origin (0,0,0)
-    // This prevents the trail line from appearing from world center
-    if (currentPos.lengthSq() < 0.01) return; // Skip if still at/near origin
-    
-    // Initialize trail with current position to avoid line from origin
+
+    if (currentPos.lengthSq() < 0.01) return;
+
     if (!initialized.current) {
-      // Fill initial trail with current position
       for (let i = 0; i < maxTrailLength; i++) {
         trailPositions.current.push(currentPos.clone());
       }
       initialized.current = true;
-      
-      // Also initialize the geometry positions to current position
+
       const positions = trailGeometry.attributes.position.array as Float32Array;
       for (let i = 0; i < maxTrailLength; i++) {
         positions[i * 3] = currentPos.x;
@@ -106,76 +151,69 @@ function ChargedArrowTrail({
         positions[i * 3 + 2] = currentPos.z;
       }
       trailGeometry.attributes.position.needsUpdate = true;
-      return; // Skip first frame to avoid any artifacts
+    } else {
+      trailPositions.current.unshift(currentPos.clone());
+
+      if (trailPositions.current.length > maxTrailLength) {
+        trailPositions.current.pop();
+      }
+
+      const positions = trailGeometry.attributes.position.array as Float32Array;
+      for (let i = 0; i < trailPositions.current.length; i++) {
+        const pos = trailPositions.current[i];
+        positions[i * 3] = pos.x;
+        positions[i * 3 + 1] = pos.y;
+        positions[i * 3 + 2] = pos.z;
+      }
+
+      trailGeometry.attributes.position.needsUpdate = true;
     }
-    
-    // Add current position to trail
-    trailPositions.current.unshift(currentPos);
-    
-    // Limit trail length
-    if (trailPositions.current.length > maxTrailLength) {
-      trailPositions.current.pop();
-    }
-    
-    // Update trail geometry positions
-    const positions = trailGeometry.attributes.position.array as Float32Array;
-    for (let i = 0; i < trailPositions.current.length; i++) {
+
+    for (let i = 0; i < GLOW_COUNT; i++) {
+      const glow = glowRefs.current[i];
       const pos = trailPositions.current[i];
-      positions[i * 3] = pos.x;
-      positions[i * 3 + 1] = pos.y;
-      positions[i * 3 + 2] = pos.z;
+      if (glow && pos) {
+        glow.position.copy(pos);
+      }
     }
-    
-    trailGeometry.attributes.position.needsUpdate = true;
+
+    for (let g = 0; g < SPARK_GROUP_COUNT; g++) {
+      const groupPos = trailPositions.current[g];
+      if (!groupPos) continue;
+      for (let s = 0; s < SPARKS_PER_GROUP; s++) {
+        const idx = g * SPARKS_PER_GROUP + s;
+        const spark = sparkRefs.current[idx];
+        if (!spark) continue;
+        const offset = sparkOffsets[idx];
+        spark.position.set(groupPos.x + offset[0], groupPos.y + offset[1], groupPos.z + offset[2]);
+      }
+    }
   });
 
   return (
     <group name="charged-arrow-trail">
-      {/* Main trail line — created once via useMemo */}
       <primitive ref={trailRef} object={trailLine} />
-      
-      {/* Additional particle effects */}
-      {trailPositions.current.slice(0, 5).map((pos, index) => (
-        <mesh key={index} position={pos}>
-          <sphereGeometry args={[size*2 * (0.3 - index * 0.05), 8, 8]} />
-          <meshStandardMaterial
-            color={color}
-            emissive={color}
-            emissiveIntensity={2 - index * 0.3}
-            transparent
-            opacity={(opacity * (1 - index * 0.2))}
-            depthWrite={false}
-            blending={AdditiveBlending}
-            toneMapped={false}
-          />
-        </mesh>
+
+      {glowGeos.map((geo, i) => (
+        <mesh
+          key={`glow-${i}`}
+          ref={(el) => {
+            glowRefs.current[i] = el;
+          }}
+          geometry={geo}
+          material={glowMats[i]}
+        />
       ))}
-      
-      {/* Sparks effect */}
-      {trailPositions.current.slice(0, 3).map((pos, index) => (
-        <group key={`spark-${index}`} position={pos}>
-          {[0, 1, 2].map((sparkIndex) => (
-            <mesh 
-              key={sparkIndex}
-              position={[
-                (Math.random() - 0.5) * 0.3,
-                (Math.random() - 0.5) * 0.3,
-                (Math.random() - 0.5) * 0.3
-              ]}
-            >
-              <sphereGeometry args={[0.02, 4, 4]} />
-              <meshStandardMaterial
-                color="#ffcc00"
-                emissive="#ff8800"
-                emissiveIntensity={3}
-                transparent
-                opacity={opacity * (1 - index * 0.3)}
-                depthWrite={false}
-                blending={AdditiveBlending}
-              />
-            </mesh>
-          ))}
-        </group>
+
+      {Array.from({ length: SPARK_GROUP_COUNT * SPARKS_PER_GROUP }, (_, i) => (
+        <mesh
+          key={`spark-${i}`}
+          ref={(el) => {
+            sparkRefs.current[i] = el;
+          }}
+          geometry={sparkGeo}
+          material={sparkMats[i]}
+        />
       ))}
     </group>
   );

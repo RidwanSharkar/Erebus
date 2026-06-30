@@ -145,6 +145,23 @@ export default function WarlockProjectile({
   }), []);
 
   useEffect(() => {
+    return () => {
+      voidMat.dispose();
+      coreMat.dispose();
+      midMat.dispose();
+      auraMat.dispose();
+      hazeMat.dispose();
+      ring1Mat.dispose();
+      ring2Mat.dispose();
+      ring3Mat.dispose();
+      trail1Mat.dispose();
+      trail2Mat.dispose();
+      trail3Mat.dispose();
+      trail4Mat.dispose();
+    };
+  }, [voidMat, coreMat, midMat, auraMat, hazeMat, ring1Mat, ring2Mat, ring3Mat, trail1Mat, trail2Mat, trail3Mat, trail4Mat]);
+
+  useEffect(() => {
     resolvedStaleTargetRef.current.copy(targetPosition);
   }, [targetPosition]);
 

@@ -7,6 +7,7 @@ export interface RoomTitleAnnouncement {
 }
 
 export const TRIAL_ROOM_PEDESTAL_GOLD = 250;
+export const BOON_REROLL_GOLD_COST = 50;
 
 export const REWARD_ANNOUNCEMENT_COLORS = {
   gold: '#eab308',
@@ -28,10 +29,10 @@ const ROOM_TITLE_COLORS = {
 } as const;
 
 const COLORED_HALL_BASE: Record<'red' | 'blue' | 'green' | 'purple', string> = {
-  red: 'INFERNAL HALLS',
-  blue: 'STORM HALLS',
-  green: 'NECRO HALLS',
-  purple: 'GLACIAL HALLS',
+  red: 'INFERNAL GATE',
+  blue: 'TEMPEST GATE',
+  green: 'ELDRITCH GATE',
+  purple: 'ABYSSAL GATE',
 };
 
 const ROMAN_PAIRS: ReadonlyArray<[number, string]> = [

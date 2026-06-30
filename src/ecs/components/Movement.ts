@@ -2,6 +2,20 @@
 import { Vector3 } from '@/utils/three-exports';
 import { Component } from '../Entity';
 
+/** Per-charge dash recharge delay (matches existing setTimeout behavior). */
+const DASH_CHARGE_RECHARGE_MS = 8000;
+const DASH_CHARGE_RECHARGE_SEC = DASH_CHARGE_RECHARGE_MS / 1000;
+
+type DashChargeSlot = {
+  isAvailable: boolean;
+  cooldownStartTime: number | null;
+  cooldownTimerId: ReturnType<typeof setTimeout> | null;
+};
+
+function createEmptyDashCharge(): DashChargeSlot {
+  return { isAvailable: true, cooldownStartTime: null, cooldownTimerId: null };
+}
+
 export class Movement extends Component {
   public static readonly componentType = 'Movement'; // Explicit type identifier
   public readonly componentType = 'Movement'; // Instance identifier
@@ -51,10 +65,7 @@ export class Movement extends Component {
   public dashStartPosition: Vector3;
   
   // Multiple dash charges system
-  public dashCharges: Array<{
-    isAvailable: boolean;
-    cooldownStartTime: number | null;
-  }>;
+  public dashCharges: Array<DashChargeSlot>;
   public maxDashCharges: number;
 
   // Sword Charge ability system (separate from dashes)
@@ -124,12 +135,9 @@ export class Movement extends Component {
     this.dashDistance = 4.125; // Increased from 3.125 for more noticeable dash
     this.dashStartPosition = new Vector3(0, 0, 0);
     
-    // Initialize multiple dash charges (3 charges, each with 6s cooldown)
+    // Initialize multiple dash charges (3 charges, each with 8s cooldown)
     this.maxDashCharges = 3;
-    this.dashCharges = Array.from({ length: this.maxDashCharges }, () => ({
-      isAvailable: true,
-      cooldownStartTime: null
-    }));
+    this.dashCharges = Array.from({ length: this.maxDashCharges }, () => createEmptyDashCharge());
 
     // Initialize sword charge properties
     this.isCharging = false;
@@ -256,6 +264,29 @@ export class Movement extends Component {
     return speed;
   }
 
+  private clearDashChargeCooldown(chargeIndex: number): void {
+    const charge = this.dashCharges[chargeIndex];
+    if (!charge) return;
+    if (charge.cooldownTimerId !== null) {
+      clearTimeout(charge.cooldownTimerId);
+      charge.cooldownTimerId = null;
+    }
+  }
+
+  private beginDashChargeCooldown(chargeIndex: number, currentTime: number): void {
+    const charge = this.dashCharges[chargeIndex];
+    if (!charge) return;
+
+    this.clearDashChargeCooldown(chargeIndex);
+    charge.isAvailable = false;
+    charge.cooldownStartTime = currentTime;
+    charge.cooldownTimerId = setTimeout(() => {
+      charge.isAvailable = true;
+      charge.cooldownStartTime = null;
+      charge.cooldownTimerId = null;
+    }, DASH_CHARGE_RECHARGE_MS);
+  }
+
   public startDash(direction: Vector3, currentPosition: Vector3, currentTime: number): boolean {
     // Check if already dashing
     if (this.isDashing) {
@@ -274,15 +305,7 @@ export class Movement extends Component {
     this.dashStartTime = currentTime;
     this.dashStartPosition.copy(currentPosition);
 
-    // Consume the charge
-    this.dashCharges[availableChargeIndex].isAvailable = false;
-    this.dashCharges[availableChargeIndex].cooldownStartTime = currentTime;
-
-    // Set cooldown timer for this specific charge (6 seconds)
-    setTimeout(() => {
-      this.dashCharges[availableChargeIndex].isAvailable = true;
-      this.dashCharges[availableChargeIndex].cooldownStartTime = null;
-    }, 8000); // 6 second cooldown DASHCOOLDOWN DASH COOLDOWN
+    this.beginDashChargeCooldown(availableChargeIndex, currentTime);
 
     return true;
   }
@@ -290,9 +313,12 @@ export class Movement extends Component {
   public setMaxDashCharges(count: number): void {
     const target = Math.max(1, Math.floor(count));
     while (this.dashCharges.length < target) {
-      this.dashCharges.push({ isAvailable: true, cooldownStartTime: null });
+      this.dashCharges.push(createEmptyDashCharge());
     }
     if (this.dashCharges.length > target) {
+      for (let i = target; i < this.dashCharges.length; i++) {
+        this.clearDashChargeCooldown(i);
+      }
       this.dashCharges.length = target;
     }
     this.maxDashCharges = target;
@@ -308,17 +334,39 @@ export class Movement extends Component {
       const availableChargeIndex = this.dashCharges.findIndex(charge => charge.isAvailable);
       if (availableChargeIndex === -1) break;
 
-      this.dashCharges[availableChargeIndex].isAvailable = false;
-      this.dashCharges[availableChargeIndex].cooldownStartTime = currentTime;
-      const idx = availableChargeIndex;
-      setTimeout(() => {
-        this.dashCharges[idx].isAvailable = true;
-        this.dashCharges[idx].cooldownStartTime = null;
-      }, 8000);
-
+      this.beginDashChargeCooldown(availableChargeIndex, currentTime);
       consumed++;
     }
     return consumed;
+  }
+
+  /**
+   * Restore one dash charge (e.g. Momentum Rift). Prefers the slot with the longest remaining cooldown.
+   * Returns true if a charge was restored, false if all charges were already available.
+   */
+  public restoreDashCharge(): boolean {
+    const nowSec = Date.now() / 1000;
+    let bestIndex = -1;
+    let bestRemaining = -1;
+
+    for (let i = 0; i < this.dashCharges.length; i++) {
+      const charge = this.dashCharges[i];
+      if (charge.isAvailable || charge.cooldownStartTime === null) continue;
+
+      const remaining = DASH_CHARGE_RECHARGE_SEC - (nowSec - charge.cooldownStartTime);
+      if (remaining > bestRemaining) {
+        bestRemaining = remaining;
+        bestIndex = i;
+      }
+    }
+
+    if (bestIndex === -1) return false;
+
+    const charge = this.dashCharges[bestIndex];
+    this.clearDashChargeCooldown(bestIndex);
+    charge.isAvailable = true;
+    charge.cooldownStartTime = null;
+    return true;
   }
 
   public updateDash(currentTime: number): { isComplete: boolean; newPosition: Vector3 | null } {
@@ -358,6 +406,14 @@ export class Movement extends Component {
     this.inputStrength = 0;
   }
 
+  /** Stop all locomotion immediately (death, stun, etc.). */
+  public haltLocomotion(): void {
+    this.stop();
+    this.cancelDash();
+    this.cancelCharge();
+    this.cancelKnockback();
+  }
+
   public getSpeed(): number {
     return this.velocity.length();
   }
@@ -391,7 +447,7 @@ export class Movement extends Component {
     return this.dashCharges.map(charge => ({
       isAvailable: charge.isAvailable,
       cooldownRemaining: charge.cooldownStartTime 
-        ? Math.max(0, 6 - (currentTime - charge.cooldownStartTime))
+        ? Math.max(0, DASH_CHARGE_RECHARGE_SEC - (currentTime - charge.cooldownStartTime))
         : 0
     }));
   }
@@ -578,11 +634,11 @@ export class Movement extends Component {
     this.dashStartPosition.set(0, 0, 0);
     
     // Reset dash charges
+    for (let i = 0; i < this.dashCharges.length; i++) {
+      this.clearDashChargeCooldown(i);
+    }
     this.maxDashCharges = 3;
-    this.dashCharges = Array.from({ length: this.maxDashCharges }, () => ({
-      isAvailable: true,
-      cooldownStartTime: null
-    }));
+    this.dashCharges = Array.from({ length: this.maxDashCharges }, () => createEmptyDashCharge());
 
     // Reset charge properties
     this.isCharging = false;
@@ -633,7 +689,8 @@ export class Movement extends Component {
     clone.maxDashCharges = this.maxDashCharges;
     clone.dashCharges = this.dashCharges.map(charge => ({
       isAvailable: charge.isAvailable,
-      cooldownStartTime: charge.cooldownStartTime
+      cooldownStartTime: charge.cooldownStartTime,
+      cooldownTimerId: charge.cooldownTimerId,
     }));
 
     // Clone charge properties

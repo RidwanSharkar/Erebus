@@ -81,6 +81,12 @@ export default function ExplosiveTalonsDetonation({
     [geometries],
   );
 
+  useEffect(() => {
+    (window as any).audioSystem?.playExplosiveTalonsDetonationSound(
+      new Vector3(px, py, pz),
+    );
+  }, [px, py, pz]);
+
   const setMatOpacity = (mesh: Mesh | null, opacity: number, emissiveIntensity: number) => {
     if (!mesh?.material || !(mesh.material instanceof Material)) return;
     const mat = mesh.material as Material & { opacity?: number; emissiveIntensity?: number };

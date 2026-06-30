@@ -52,6 +52,14 @@ export class Projectile extends Component {
   public entropicFragmentation?: boolean;
   /** Entropic fragmentation chain depth: 0 = primary, 1–3 = spawned fragments. */
   public entropicFragmentHop?: number;
+  /** Tempest Rounds burst — Wrathful Shots crit (CombatSystem). */
+  public tempestBurstWrathful?: boolean;
+  /** Tempest Rounds burst — Arctic Sting chill on hit. */
+  public tempestBurstArcticChill?: boolean;
+  /** Tempest Rounds burst — Wyvern Sting zombie on kill (co-op server). */
+  public tempestBurstWyvernZombie?: boolean;
+  /** Tempest Rounds burst visual theme key (RegularArrow). */
+  public tempestBurstTheme?: string;
 
   // Homing properties
   public targetEntityId: number | null; // Entity ID to home towards

@@ -126,10 +126,10 @@ const ABILITY_LABELS: Record<string, string> = {
   SCYTHE_E:        'Coldsnap',
   SPEAR_R:         'Lightning Bolt',
   AEGIS_ROOM:      'Aegis',
-  COOP_GREEN_ROOM: 'Necro Trial',
-  COOP_RED_ROOM:   'Infernal Trial',
-  COOP_BLUE_ROOM:  'Storm Trial',
-  COOP_PURPLE_ROOM:'Glacial Trial',
+  COOP_GREEN_ROOM: 'Necro',
+  COOP_RED_ROOM:   'Infernal',
+  COOP_BLUE_ROOM:  'Tempest',
+  COOP_PURPLE_ROOM:'Abyssal',
 };
 
 const FLAVOR_SUBTITLES: Record<string, string> = {
@@ -142,10 +142,10 @@ const FLAVOR_SUBTITLES: Record<string, string> = {
 };
 
 const ROOM_TRIAL_TITLES: Record<string, string> = {
-  blue:   'Storm Trial Gifts',
-  green:  'Necro Trial Gifts',
-  red:    'Infernal Trial Gifts',
-  purple: 'Glacial Trial Gifts',
+  blue:   'Granted by the tempest',
+  green:  'Granted by the unknowable',
+  red:    'Granted by the inferno',
+  purple: 'Granted by the abyss',
 };
 
 interface RarityStyle {
@@ -196,6 +196,10 @@ interface CoopBoonPickerModalProps {
   options: readonly TalentId[];
   onPick: (id: TalentId) => void;
   onReroll?: () => void;
+  /** Gold cost per reroll; 0 = free (throne prep). */
+  rerollCost?: number;
+  /** Current gold balance — used to disable paid rerolls. */
+  goldBalance?: number;
 }
 
 export default function CoopBoonPickerModal({
@@ -205,8 +209,12 @@ export default function CoopBoonPickerModal({
   options,
   onPick,
   onReroll,
+  rerollCost = 0,
+  goldBalance = 0,
 }: CoopBoonPickerModalProps) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+
+  const rerollDisabled = !!onReroll && rerollCost > 0 && goldBalance < rerollCost;
 
   const displayOptions = useMemo(() => {
     const seen = new Set<TalentId>();
@@ -244,7 +252,7 @@ export default function CoopBoonPickerModal({
   // Keyboard shortcuts: 1/2/3 pick, R reroll
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (onReroll && (e.key === 'r' || e.key === 'R')) {
+      if (onReroll && !rerollDisabled && (e.key === 'r' || e.key === 'R')) {
         e.preventDefault();
         onReroll();
         return;
@@ -257,7 +265,7 @@ export default function CoopBoonPickerModal({
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [displayOptions, onPick, onReroll]);
+  }, [displayOptions, onPick, onReroll, rerollDisabled]);
 
   const hoveredId =
     hoveredIdx !== null ? displayOptions[hoveredIdx] : undefined;
@@ -312,17 +320,22 @@ export default function CoopBoonPickerModal({
               <button
                 type="button"
                 onClick={onReroll}
-                aria-label="Reroll boon options"
+                disabled={rerollDisabled}
+                aria-label={
+                  rerollCost > 0
+                    ? `Reroll boon options for ${rerollCost} gold`
+                    : 'Reroll boon options'
+                }
                 className={`
                   shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md
                   border text-xs font-bold tracking-widest uppercase
-                  transition-all duration-150 cursor-pointer
+                  transition-all duration-150
+                  ${rerollDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:brightness-125 hover:shadow-md hover:shadow-black/40'}
                   ${accent.dimBorder} ${accent.text} ${accent.bg}
-                  hover:brightness-125 hover:shadow-md hover:shadow-black/40
                 `}
               >
                 <span className="text-sm leading-none" aria-hidden="true">🎲</span>
-                Reroll
+                {rerollCost > 0 ? `Reroll ${rerollCost} Gold` : 'Reroll'}
               </button>
             )}
             <div className="flex-1 h-px bg-gray-700/60" />
@@ -386,7 +399,6 @@ export default function CoopBoonPickerModal({
                     accentBorder={isHovered ? accent.border : accent.dimBorder}
                     accentBg={isHovered ? accent.bg : 'bg-gray-900/60'}
                   />
-
                   {/* Content */}
                   <div className="flex-1 min-w-0">
                     {/* Name row */}

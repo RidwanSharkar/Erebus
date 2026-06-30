@@ -33,6 +33,8 @@ function handleEnemyEvents(socket, gameRooms) {
       entanglementBarrage,
       rebukeRoom,
       cloudkill,
+      tempestBurstArcticChill,
+      tempestBurstWyvernZombie,
     } = data;
 
     console.log(`⚔️ Received enemy-damage: room=${roomId}, enemy=${enemyId}, damage=${damage}, source=${sourcePlayerId || socket.id}`);
@@ -134,6 +136,8 @@ function handleEnemyEvents(socket, gameRooms) {
         hitMeta.staggerToAdd = staggerToAdd;
       }
       if (cloudkill) hitMeta.cloudkill = true;
+      if (tempestBurstArcticChill) hitMeta.tempestBurstArcticChill = true;
+      if (tempestBurstWyvernZombie) hitMeta.tempestBurstWyvernZombie = true;
     } else if (damageType === 'cloudkill') {
       hitMeta = { damageType: 'cloudkill', cloudkillDamage: true };
     } else if (damageType === 'stagger_break') {
@@ -142,6 +146,11 @@ function handleEnemyEvents(socket, gameRooms) {
       hitMeta = { damageType: 'blizzard', arcticBlizzard: !!arcticBlizzard };
     } else if (damageType === 'breath_weapon') {
       hitMeta = { damageType: 'breath_weapon' };
+      if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
+    } else if (damageType === 'lightning_storm') {
+      hitMeta = { damageType: 'lightning_storm' };
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
         hitMeta.staggerToAdd = staggerToAdd;
       }

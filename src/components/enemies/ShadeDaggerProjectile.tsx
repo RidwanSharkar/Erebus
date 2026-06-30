@@ -77,6 +77,14 @@ export default function ShadeDaggerProjectile({
   }), []);
 
   useEffect(() => {
+    return () => {
+      daggerMat.dispose();
+      glowMat.dispose();
+      trailMat.dispose();
+    };
+  }, [daggerMat, glowMat, trailMat]);
+
+  useEffect(() => {
     if (!groupRef.current) return;
     groupRef.current.position.copy(startPosition);
     groupRef.current.rotation.set(pitch, yaw, 0, 'YXZ');

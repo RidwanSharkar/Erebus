@@ -54,6 +54,7 @@ export default function DeflectShield({
     if (!enableBlockFlash || typeof window === 'undefined') return;
     const onBlock = () => {
       blockFlashEndMs.current = Date.now() + 150;
+      window.audioSystem?.playAegisBlockSound?.();
     };
     window.addEventListener('aegis-block', onBlock);
     return () => window.removeEventListener('aegis-block', onBlock);

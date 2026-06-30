@@ -25,12 +25,13 @@ type TerrainPalette = {
   groundLightIntensity: number;
 };
 
-const SNOW_COLORS_SOFT: TerrainPalette = {
-  baseColor: '#7a96b0',
-  tipColor: '#a8bdd0',
-  groundColor: '#889aad',
-  groundLightColor: '#6a8aa4',
-  groundLightIntensity: 0.18,
+/** Post–Boss 1 blue act — deep indigo blades with luminous cyan tips. */
+const ETHEREAL_BLUE_COLORS: TerrainPalette = {
+  baseColor: '#1e3a6e',
+  tipColor: '#6ec4ff',
+  groundColor: '#152848',
+  groundLightColor: '#3a7dff',
+  groundLightIntensity: 0.26,
 };
 
 const ARID_COLORS: TerrainPalette = {
@@ -202,7 +203,7 @@ function paletteForTheme(theme: RoomBorderTheme): TerrainPalette {
     case 'red':
       return ARID_COLORS;
     case 'blue':
-      return SNOW_COLORS_SOFT;
+      return ETHEREAL_BLUE_COLORS;
     case 'purple':
       return PURPLE_FIELD_COLORS;
     default:

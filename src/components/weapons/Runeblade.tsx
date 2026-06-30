@@ -28,6 +28,10 @@ interface RunebladeProps {
   onWraithStrikeComplete?: () => void;
   onOathstrikeComplete?: () => void;
   onChargeComplete?: () => void;
+  /** Cyclone Rush — post-charge blade spin audio start (storedCharge only). */
+  onChargeSpinStart?: () => void;
+  /** Cyclone Rush — post-charge blade spin audio stop. */
+  onChargeSpinEnd?: () => void;
   onCorruptedAuraToggle?: (active: boolean) => void;
   hasChainLightning?: boolean;
   comboStep?: 1 | 2 | 3;
@@ -115,6 +119,8 @@ export default function Runeblade({
   onWraithStrikeComplete,
   onOathstrikeComplete,
   onChargeComplete,
+  onChargeSpinStart,
+  onChargeSpinEnd,
   onCorruptedAuraToggle,
   hasChainLightning = false,
   comboStep = 1,
@@ -173,6 +179,7 @@ export default function Runeblade({
   const chargeSpinStartTime = useRef<number | null>(null);
   const isChargeSpinning = useRef(false);
   const shouldStartSpin = useRef(false);
+  const chargeSpinAudioActiveRef = useRef(false);
   const basePosition = [-1.18, 0.675, 0.675] as const; // POSITIONING
 
   // Chain Lightning Sparks
@@ -415,6 +422,11 @@ export default function Runeblade({
         chargeSpinStartTime.current = null;
         isChargeSpinning.current = false;
 
+        if (chargeSpinAudioActiveRef.current) {
+          chargeSpinAudioActiveRef.current = false;
+          onChargeSpinEnd?.();
+        }
+
         runebladeRef.current.position.set(...basePosition);
         runebladeRef.current.rotation.set(0, 0, 0);
 
@@ -566,6 +578,11 @@ export default function Runeblade({
       isChargeSpinning.current = true;
       chargeSpinRotation.current = 0;
       chargeSpinStartTime.current = Date.now();
+
+      if (storedCharge) {
+        chargeSpinAudioActiveRef.current = true;
+        onChargeSpinStart?.();
+      }
     }
 
     if (!isCharging && chargeStartTime.current !== null && !shouldStartSpin.current && !isChargeSpinning.current) {

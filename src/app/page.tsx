@@ -20,6 +20,7 @@ import StatsPanel from '../components/ui/StatsPanel';
 import LoadingScreen from '../components/ui/LoadingScreen';
 import PortalBlinkTransition from '../components/ui/PortalBlinkTransition';
 import RoomTitleAnnouncement from '../components/ui/RoomTitleAnnouncement';
+import ControlsTutorialOverlay from '../components/ui/ControlsTutorialOverlay';
 import AbilitySelectionModal from '../components/ui/AbilitySelectionModal';
 import TalentSelectionModal from '../components/ui/TalentSelectionModal';
 import CoopBoonPickerModal from '../components/ui/CoopBoonPickerModal';
@@ -42,6 +43,7 @@ import {
   filterTalentIdsByExclusionSet,
   pickPrioritizedRoomBoonOptions,
   pickRandomDistinctFromPool,
+  pickRandomClassBoonForWeapon,
   TALENT_RAISE_DEAD,
   TALENT_METEOR_STRIKE,
   TALENT_COLDSNAP_ROOM,
@@ -50,8 +52,10 @@ import {
 } from '../utils/talents';
 import type { TalentId, TalentLoadout } from '../utils/talents';
 import type { AbilityLoadout } from '../utils/weaponAbilities';
+import { getDefaultLoadoutForWeapon } from '../utils/weaponAbilities';
 import {
   buildRoomTitleAnnouncement,
+  BOON_REROLL_GOLD_COST,
   REWARD_ANNOUNCEMENT_COLORS,
   TRIAL_ROOM_PEDESTAL_GOLD,
 } from '../utils/coopRoomTitles';
@@ -150,21 +154,6 @@ function rollRoomBoonOptions(
   return pickPrioritizedRoomBoonOptions(pool, color, primaryWeapon, abilityLoadout, 3);
 }
 
-function weaponIconSrcForHud(weapon: WeaponType): string | null {
-  switch (weapon) {
-    case WeaponType.SABRES:
-      return '/icons/sabres.svg';
-    case WeaponType.RUNEBLADE:
-      return '/icons/runeblade.svg';
-    case WeaponType.SCYTHE:
-      return '/icons/scythe.svg';
-    case WeaponType.BOW:
-      return '/icons/bow.svg';
-    default:
-      return null;
-  }
-}
-
 const DEV_TALENT_MODAL =
   process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_DEV_TALENT_MODAL === '1';
 
@@ -217,6 +206,9 @@ function HomeContent() {
     confirmCoopPortalTransitionComplete,
     hideCoopPortalTransition,
     subscribeEnemyDamage,
+    setSelectedWeapons,
+    lateJoinCombatLoadout,
+    clearLateJoinCombatLoadout,
   } = useMultiplayer();
 
   const [damageNumbers, setDamageNumbers] = useState<DamageNumberData[]>([]);
@@ -339,6 +331,9 @@ function HomeContent() {
     title: string;
     color: string;
   } | null>(null);
+  const [controlsTutorialVisible, setControlsTutorialVisible] = useState(false);
+  const [controlsTutorialAutoDismiss, setControlsTutorialAutoDismiss] = useState(true);
+  const [controlsTutorialKey, setControlsTutorialKey] = useState(0);
 
   const queueOverlayAnnouncement = useCallback((
     title: string,
@@ -369,7 +364,6 @@ function HomeContent() {
   const bootstrapWeaponsRef = useRef(selectedWeapons);
   const [playerExperience, setPlayerExperience] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
-  const playerLevelRef = useRef(1);
   const abilityLoadoutRef = useRef(abilityLoadout);
   abilityLoadoutRef.current = abilityLoadout;
   const [playerEssence, setPlayerEssence] = useState(50); // Start with 50 essence
@@ -413,6 +407,7 @@ function HomeContent() {
   const [coopBoon, setCoopBoon] = useState<CoopBoonState | null>(null);
   /** Class boon completed for primary weapons in throne prep — one trio per weapon, not globally per run session. */
   const classBoonPickedWeaponsRef = useRef<Set<WeaponType>>(new Set());
+  const lateJoinLoadoutHandledRef = useRef(false);
   const roomBoonIntermissionDoneSeqRef = useRef(-1);
   /** Runeblade colored-room boon mutex: excludes entire combo / strike / smite slot after one pick (per co-op room session). */
   const runebladeRoomBoonExcludedIdsRef = useRef<Set<TalentId>>(new Set());
@@ -522,7 +517,61 @@ function HomeContent() {
     bowRoomBoonExcludedIdsRef.current.clear();
     universalGreenZombieRoomBoonExcludedIdsRef.current.clear();
     roomBoomDashBoonExcludedIdsRef.current.clear();
+    lateJoinLoadoutHandledRef.current = false;
   }, [currentRoomId]);
+
+  /** Late join after first portal: hydrate server-assigned weapon and auto-grant a starting class-boon. */
+  useEffect(() => {
+    if (!lateJoinCombatLoadout || lateJoinLoadoutHandledRef.current || sessionGameMode !== 'coop') return;
+
+    lateJoinLoadoutHandledRef.current = true;
+    const { weapon: w } = lateJoinCombatLoadout;
+
+    setSelectedWeapons({ primary: w, secondary: w });
+    setAbilityLoadout(getDefaultLoadoutForWeapon(w));
+
+    setTalentLoadout((prev) => {
+      const boonId = pickRandomClassBoonForWeapon(w, prev);
+      if (!boonId) return prev;
+
+      queueMicrotask(() => {
+        if (
+          boonId === TALENT_RAISE_DEAD
+          || boonId === TALENT_METEOR_STRIKE
+          || boonId === TALENT_COLDSNAP_ROOM
+          || boonId === TALENT_LIGHTNING_BOLT_ROOM
+          || boonId === TALENT_AEGIS_ROOM
+        ) {
+          const abilityId =
+            boonId === TALENT_RAISE_DEAD ? 'RAISE_DEAD'
+            : boonId === TALENT_METEOR_STRIKE ? 'METEOR_STRIKE'
+            : boonId === TALENT_COLDSNAP_ROOM ? 'SCYTHE_E'
+            : boonId === TALENT_AEGIS_ROOM ? 'AEGIS_ROOM'
+            : 'SPEAR_R';
+          setAbilityLoadout(
+            abilityLoadoutRef.current
+              ? { ...abilityLoadoutRef.current, R: abilityId }
+              : { Q: null, E: null, R: abilityId },
+          );
+        }
+        classBoonPickedWeaponsRef.current.add(w);
+        queueOverlayAnnouncement('UNLOCKED', REWARD_ANNOUNCEMENT_COLORS.unlocked, `boon-${boonId}`);
+        window.audioSystem?.playUIInterface3Sound?.();
+      });
+
+      return applyTalentIdToLoadout(prev, boonId);
+    });
+
+    clearLateJoinCombatLoadout();
+  }, [
+    lateJoinCombatLoadout,
+    sessionGameMode,
+    setSelectedWeapons,
+    setAbilityLoadout,
+    setTalentLoadout,
+    clearLateJoinCombatLoadout,
+    queueOverlayAnnouncement,
+  ]);
 
   /**
    * Called by CoopGameScene when the player presses X near the combat pedestal.
@@ -632,6 +681,10 @@ function HomeContent() {
   );
 
   const handleCoopBoonReroll = useCallback(() => {
+    if (combatArenaActive) {
+      if (playerGold < BOON_REROLL_GOLD_COST) return;
+      if (socket?.id) updatePlayerGold(socket.id, -BOON_REROLL_GOLD_COST);
+    }
     setCoopBoon((prev) => {
       if (!prev) return null;
       if (prev.kind === 'class') {
@@ -656,6 +709,10 @@ function HomeContent() {
       return options.length > 0 ? { ...prev, options } : prev;
     });
   }, [
+    combatArenaActive,
+    playerGold,
+    socket?.id,
+    updatePlayerGold,
     talentLoadout,
     abilityLoadout,
     selectedWeapons.primary,
@@ -788,23 +845,16 @@ function HomeContent() {
     }
   }, [controlSystem, skillPointData]);
 
-  // Keep ref in sync so the memoized callback always reads the latest level
-  playerLevelRef.current = playerLevel;
-
   const handleExperienceUpdate = useCallback((experience: number, level: number) => {
-    // Use the ref to avoid stale closure — page.tsx re-renders very frequently
-    // (DPS ticks, enemy state, etc.) which would otherwise create a race where
-    // the closed-over playerLevel is already the new level before the level-up
-    // check runs, causing stat points to be silently skipped.
-    const isLevelUp = level > playerLevelRef.current;
-
     setPlayerExperience(experience);
     setPlayerLevel(level);
+    updateSkillPointsForLevel(level);
+    updateStatPointsForLvl(level);
+  }, [updateSkillPointsForLevel, updateStatPointsForLvl]);
 
-    if (isLevelUp) {
-      updateSkillPointsForLevel(level);
-      updateStatPointsForLvl(level);
-    }
+  const handlePlayerLevelUp = useCallback((level: number) => {
+    updateSkillPointsForLevel(level);
+    updateStatPointsForLvl(level);
   }, [updateSkillPointsForLevel, updateStatPointsForLvl]);
 
   const handleEssenceUpdate = (essence: number) => {
@@ -921,9 +971,6 @@ function HomeContent() {
     coopMainArenaPortalPhase,
   ]);
 
-  const dpsWeaponIconSrc = weaponIconSrcForHud(
-    controlSystem?.getCurrentWeapon() ?? selectedWeapons.primary ?? gameState.currentWeapon,
-  );
   const pvpMerchantItems = [
     {
       id: 'damage_boost',
@@ -1025,9 +1072,9 @@ function HomeContent() {
                   <h3 className="text-lg font-semibold text-yellow-400 mb-2">Boons at a glance</h3>
                   <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
                     <li><strong className="text-sky-300">Runeblade</strong>: class pool includes Trinity, Vengeance, Crusader, Windfury, Blizzard, Cyclone Rush, Double Strike, Spellblade, and Aftershock. Colored <strong>room</strong> boons for your basic combo, Wraith Strike, and Smite are mutually exclusive branches for the rest of that run (one palette per branch); class boons ignore this split.</li>
-                    <li><strong className="text-green-300">Bow</strong>: class pool includes Execute, Explosive Talons, Concentrated Volley, Dual Coil, Tempest Rounds, Wyvern Sting. Room colors gate talents like Stagger Shot, Wrathful Bite/Talons, Wyvern Sting/Bite.</li>
+                    <li><strong className="text-green-300">Bow</strong>: class pool includes Execute, Explosive Talons, Double Talons, Concentrated Volley, Dual Coil, Tempest Rounds, Wyvern Sting. Room colors gate talents like Stagger Shot, Wrathful Bite/Talons, Wyvern Sting/Bite.</li>
                     <li><strong className="text-purple-300">Scythe</strong>: class pool includes Icebeam, Reaper, Frostpath, Solar Recharge, SHAMAN, Superconductor, Accelerator, Healing Stream, Meteor, and Fragmentation. Colored <strong>room</strong> boons: red — Wrathful Entropic &amp; Totem; blue — Staggering Entropic &amp; Totem; green — Infesting Entropic &amp; Totem; purple — Inferno.</li>
-                    <li><strong className="text-red-400">Sabres</strong>: class pool includes Killstreak, Relentless, Parry, Crescent Blades, Vorpal Gust, Fan of Knives, and Wind Shear. Colored <strong>room</strong> boons still gate Backstab / Swipes / Flourish branches.</li>
+                    <li><strong className="text-red-400">Sabres</strong>: class pool includes Killstreak, Relentless, Double Stab, Parry, Crescent Blades, Vorpal Gust, Fan of Knives, and Wind Shear. Colored <strong>room</strong> boons still gate Backstab / Swipes / Flourish branches.</li>
                     <li><strong>Tempest Rounds</strong> (Bow) and <strong>Icebeam</strong> (Scythe) are <strong>talents / boons</strong>, not passives on the ability picker.</li>
                   </ul>
 
@@ -1104,6 +1151,7 @@ function HomeContent() {
                   onGameStateUpdate={handleGameStateUpdate}
                   onControlSystemUpdate={handleControlSystemUpdate}
                   onExperienceUpdate={handleExperienceUpdate}
+                  onPlayerLevelUp={handlePlayerLevelUp}
                   onEssenceUpdate={handleEssenceUpdate}
                   onGoldUpdate={handleGoldUpdate}
                   onMerchantUIUpdate={setShowMerchantUI}
@@ -1146,6 +1194,20 @@ function HomeContent() {
         {/* UI Overlay - Only show during gameplay */}
         {gameMode !== 'menu' && (
           <>
+            {sessionGameMode === 'coop' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setControlsTutorialAutoDismiss(false);
+                  setControlsTutorialKey((k) => k + 1);
+                  setControlsTutorialVisible(true);
+                }}
+                className="absolute top-4 right-52 z-[100] text-2xl hover:scale-110 transition-transform cursor-pointer text-sky-300 hover:text-sky-200"
+                title="Replay controls"
+              >
+                ⌨️
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowRulesPanel(true)}
@@ -1154,14 +1216,7 @@ function HomeContent() {
             >
               📜
             </button>
-            <div className="absolute top-4 left-4 flex items-start gap-2 text-white font-mono text-sm pointer-events-none">
-              {dpsWeaponIconSrc && (
-                <img
-                  src={dpsWeaponIconSrc}
-                  alt=""
-                  className="h-10 w-10 shrink-0 object-contain drop-shadow-[0_0_8px_rgba(251,191,36,0.35)]"
-                />
-              )}
+            <div className="absolute top-4 left-4 text-white font-mono text-sm pointer-events-none">
               <div className="rounded-md bg-black/45 px-3 py-2 shadow-lg backdrop-blur-sm">
                 <div className="text-yellow-300 font-semibold">
                   DPS: {Math.round(dpsSnapshot.currentDps).toLocaleString()}
@@ -1329,6 +1384,8 @@ function HomeContent() {
                   )
                 }
                 onReroll={handleCoopBoonReroll}
+                rerollCost={combatArenaActive ? BOON_REROLL_GOLD_COST : 0}
+                goldBalance={playerGold}
               />
             )}
 
@@ -1388,6 +1445,8 @@ function HomeContent() {
             setIsGameLoading(false);
             if (sessionGameMode === 'coop' && !combatArenaActiveRef.current) {
               queueRoomTitleAnnouncement('throne', null, 'throne-start');
+              setControlsTutorialAutoDismiss(true);
+              setControlsTutorialVisible(true);
             }
           }}
         />
@@ -1418,6 +1477,16 @@ function HomeContent() {
             triggerKey={roomTitleAnnouncement.triggerKey}
             title={roomTitleAnnouncement.title}
             color={roomTitleAnnouncement.color}
+          />
+        )}
+
+        {sessionGameMode === 'coop' && controlsTutorialVisible && (
+          <ControlsTutorialOverlay
+            key={controlsTutorialKey}
+            visible={controlsTutorialVisible}
+            autoDismiss={controlsTutorialAutoDismiss}
+            animationKey={controlsTutorialKey}
+            onDismiss={() => setControlsTutorialVisible(false)}
           />
         )}
 

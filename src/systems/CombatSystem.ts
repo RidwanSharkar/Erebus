@@ -103,6 +103,10 @@ interface DamageEvent {
   cloudkillProc?: boolean;
   /** Cloudkill arrow impact — prevents recursive proc. */
   cloudkillDamage?: boolean;
+  /** Tempest Rounds burst — Arctic Sting chill on hit. */
+  tempestBurstArcticChill?: boolean;
+  /** Tempest Rounds burst — Wyvern Sting zombie on kill. */
+  tempestBurstWyvernZombie?: boolean;
 }
 
 interface HealEvent {
@@ -163,6 +167,8 @@ export class CombatSystem extends System {
       entanglementBarrage?: boolean;
       cloudkill?: boolean;
       cloudkillDamage?: boolean;
+      tempestBurstArcticChill?: boolean;
+      tempestBurstWyvernZombie?: boolean;
     },
     hitWorldPosition?: { x: number; y: number; z: number },
   ) => void;
@@ -247,6 +253,15 @@ export class CombatSystem extends System {
     return cs?.getWrathfulShotsPerfectCritOpts?.();
   }
 
+  /** Wrathful Shots — Tempest Rounds burst: additive crit from ControlSystem when projectile is flagged. */
+  private getWrathfulShotsTempestCritOptsFromSource(source: Entity | undefined): DamageCalcOptions | undefined {
+    if (!source) return undefined;
+    const proj = source.getComponent(Projectile);
+    if (!proj?.tempestBurstWrathful) return undefined;
+    const cs = (window as any).controlSystemRef?.current;
+    return cs?.getWrathfulShotsTempestCritOpts?.();
+  }
+
   /** Entropic bolts / Icebeam Wrathful Entropic — additive crit from queued damage meta. */
   private getCritCalcOptsForQueuedDamage(
     damageType: string | undefined,
@@ -258,7 +273,12 @@ export class CombatSystem extends System {
     if (damageType === 'crossentropy' && damageEvent.crossentropyInferno === true) {
       return { critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD };
     }
-    if (damageType === 'projectile') return this.getWrathfulShotsPerfectCritOptsFromSource(source);
+    if (damageType === 'projectile') {
+      return (
+        this.getWrathfulShotsPerfectCritOptsFromSource(source) ??
+        this.getWrathfulShotsTempestCritOptsFromSource(source)
+      );
+    }
     if (damageType === 'entropic' && damageEvent.entropicWrathful === true) {
       return { critChanceAdd: WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD };
     }
@@ -490,6 +510,8 @@ export class CombatSystem extends System {
         glacialBiteChill?: boolean;
         glacialTalons?: boolean;
         entanglementBarrage?: boolean;
+        tempestBurstArcticChill?: boolean;
+        tempestBurstWyvernZombie?: boolean;
       },
       hitWorldPosition?: { x: number; y: number; z: number },
     ) => void,
@@ -801,13 +823,21 @@ export class CombatSystem extends System {
                   }
                 : damageType === 'projectile' &&
                     ((damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0) ||
-                      damageEvent.cloudkillProc === true)
+                      damageEvent.cloudkillProc === true ||
+                      damageEvent.tempestBurstArcticChill === true ||
+                      damageEvent.tempestBurstWyvernZombie === true)
                   ? {
                       damageType: 'projectile' as const,
                       ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
                         ? { staggerToAdd: damageEvent.staggerToAdd }
                         : {}),
                       ...(damageEvent.cloudkillProc === true ? { cloudkill: true as const } : {}),
+                      ...(damageEvent.tempestBurstArcticChill === true
+                        ? { tempestBurstArcticChill: true as const }
+                        : {}),
+                      ...(damageEvent.tempestBurstWyvernZombie === true
+                        ? { tempestBurstWyvernZombie: true as const }
+                        : {}),
                     }
                   : damageType === 'cloudkill'
                     ? {
@@ -964,7 +994,13 @@ export class CombatSystem extends System {
                                           ? { infestedFlourish: true as const }
                                           : {}),
                                       }
-                                    : undefined;
+                                    : damageType === 'lightning_storm' &&
+                                        (damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0)
+                                      ? {
+                                          damageType: 'lightning_storm' as const,
+                                          staggerToAdd: damageEvent.staggerToAdd,
+                                        }
+                                      : undefined;
       const routeMeta = baseRouteMeta;
       let hitWorldPosition: { x: number; y: number; z: number } | undefined;
       const hitTransform = target.getComponent(Transform);
@@ -1460,6 +1496,26 @@ export class CombatSystem extends System {
         }
       }
 
+      const enemyTempestArctic = target.getComponent(Enemy);
+      if (
+        enemyTempestArctic &&
+        damageType === 'projectile' &&
+        damageEvent.tempestBurstArcticChill === true &&
+        damageDealt &&
+        !this.onEnemyDamageCallback
+      ) {
+        const t = target.getComponent(Transform);
+        if (t) {
+          enemyTempestArctic.applyBlizzardChillStack(
+            currentTime,
+            target.id.toString(),
+            t.getWorldPosition().clone(),
+            ARCTIC_CHILL_FREEZE_DURATION_SEC,
+            target.userData?.coopServerEnemyType as string | undefined,
+          );
+        }
+      }
+
       const enemyForEntanglement = target.getComponent(Enemy);
       if (
         enemyForEntanglement &&
@@ -1697,6 +1753,8 @@ export class CombatSystem extends System {
     entanglementBarrage?: boolean,
     cloudkillProc?: boolean,
     wyvernTalonsZombie?: boolean,
+    tempestBurstArcticChill?: boolean,
+    tempestBurstWyvernZombie?: boolean,
   ): void {
     this.damageQueue.push({
       target,
@@ -1733,6 +1791,8 @@ export class CombatSystem extends System {
       entanglementBarrage,
       cloudkillProc,
       wyvernTalonsZombie,
+      tempestBurstArcticChill,
+      tempestBurstWyvernZombie,
     });
   }
 

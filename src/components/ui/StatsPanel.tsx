@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatSystem, StatPointData, StatKey } from '@/utils/StatSystem';
 import { InventoryItem } from '@/contexts/MultiplayerContext';
 import { ITEM_RARITY_COLORS, formatRarityLabel, isItemRarity } from '@/utils/itemRarity';
@@ -39,6 +39,62 @@ const BOSS_ITEM_ICONS: Record<string, string> = {
   TITAN_HEART:    '💪',
 };
 
+const TOOLTIP_WIDTH = 240;
+const VIEWPORT_PAD = 12;
+
+function getClampedTooltipStyle(anchorX: number, anchorY: number): React.CSSProperties {
+  const halfW = TOOLTIP_WIDTH / 2;
+  let left = anchorX;
+  let transform = 'translate(-50%, -100%)';
+
+  if (anchorX < halfW + VIEWPORT_PAD) {
+    left = VIEWPORT_PAD;
+    transform = 'translate(0, -100%)';
+  } else if (anchorX + halfW > window.innerWidth - VIEWPORT_PAD) {
+    left = window.innerWidth - VIEWPORT_PAD;
+    transform = 'translate(-100%, -100%)';
+  }
+
+  return {
+    left,
+    top: anchorY - 8,
+    transform,
+    width: TOOLTIP_WIDTH,
+  };
+}
+
+interface StatTooltipProps {
+  name: string;
+  description: string;
+  visible: boolean;
+  x: number;
+  y: number;
+}
+
+function StatTooltip({ name, description, visible, x, y }: StatTooltipProps) {
+  if (!visible) return null;
+
+  const positionStyle = getClampedTooltipStyle(x, y);
+
+  return (
+    <div
+      className="fixed z-[60] text-white text-sm pointer-events-none"
+      style={{
+        ...positionStyle,
+        background: 'rgba(6,6,18,0.97)',
+        border: '1px solid rgba(100,140,255,0.3)',
+        borderTop: '2px solid rgba(120,160,255,0.75)',
+        borderRadius: '8px',
+        padding: '10px 14px',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.04)',
+      }}
+    >
+      <div className="font-semibold text-blue-300 mb-1 text-[13px]">{name}</div>
+      <div className="text-gray-400 text-xs leading-relaxed">{description}</div>
+    </div>
+  );
+}
+
 export default function StatsPanel({
   statPointData,
   onAllocateStat,
@@ -49,6 +105,21 @@ export default function StatsPanel({
 }: StatsPanelProps) {
   const [expanded, setExpanded] = useState(statPointData.statPoints > 0);
   const [tab, setTab] = useState<'stats' | 'inventory'>('stats');
+  const [tooltipContent, setTooltipContent] = useState<{ name: string; description: string } | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+
+  const handleStatHover = useCallback((e: React.MouseEvent, stat: StatKey) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setTooltipContent({
+      name: StatSystem.getStatDisplayName(stat).toUpperCase(),
+      description: StatSystem.getStatTooltipDescription(stat),
+    });
+    setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top });
+  }, []);
+
+  const handleStatLeave = useCallback(() => {
+    setTooltipContent(null);
+  }, []);
 
   const { stats, statPoints } = statPointData;
   const prevStatPointsRef = useRef(statPoints);
@@ -128,7 +199,12 @@ export default function StatsPanel({
             const value = talentAdjustedStats[stat];
             const talentBonus = talentStatBonuses[stat];
             return (
-              <div key={stat} className="flex flex-col items-center gap-0.5">
+              <div
+                key={stat}
+                className="flex flex-col items-center gap-0.5 cursor-default"
+                onMouseEnter={(e) => handleStatHover(e, stat)}
+                onMouseLeave={handleStatLeave}
+              >
                 <span className="text-sm leading-none">{StatSystem.getStatIcon(stat)}</span>
                 <span className="text-xs font-black tabular-nums leading-none" style={{ color }}>
                   {value}
@@ -187,7 +263,12 @@ export default function StatsPanel({
                   const color = StatSystem.getStatColor(stat);
                   const canAllocate = statPoints > 0;
                   return (
-                    <div key={stat} className="flex items-center gap-2">
+                    <div
+                      key={stat}
+                      className="flex items-center gap-2 cursor-default"
+                      onMouseEnter={(e) => handleStatHover(e, stat)}
+                      onMouseLeave={handleStatLeave}
+                    >
                       <div
                         className="w-6 h-6 rounded-lg flex items-center justify-center text-xs flex-shrink-0"
                         style={{ background: `${color}22`, border: `1px solid ${color}44` }}
@@ -350,6 +431,16 @@ export default function StatsPanel({
           </>
         )}
       </div>
+
+      {tooltipContent && (
+        <StatTooltip
+          name={tooltipContent.name}
+          description={tooltipContent.description}
+          visible
+          x={tooltipPosition.x}
+          y={tooltipPosition.y}
+        />
+      )}
     </div>
   );
 }

@@ -90,6 +90,8 @@ interface DragonUnitProps {
   onWraithStrikeComplete?: () => void;
   onCorruptedAuraToggle?: (active: boolean) => void;
   onChargeComplete?: () => void;
+  onChargeSpinStart?: () => void;
+  onChargeSpinEnd?: () => void;
   onDeflectComplete?: () => void;
   enemyData?: Array<{
     id: string;
@@ -232,6 +234,8 @@ export default function DragonUnit({
   onWraithStrikeComplete = () => {},
   onCorruptedAuraToggle = () => {},
   onChargeComplete = () => {},
+  onChargeSpinStart,
+  onChargeSpinEnd,
   onDeflectComplete = () => {},
   enemyData = [],
   mushroomTargets,
@@ -556,6 +560,8 @@ export default function DragonUnit({
           onCorruptedAuraToggle={onCorruptedAuraToggle}
           onOathstrikeComplete={() => {}}
           onChargeComplete={onChargeComplete}
+          onChargeSpinStart={onChargeSpinStart}
+          onChargeSpinEnd={onChargeSpinEnd}
           hasChainLightning={false}
           comboStep={swordComboStep}
           currentSubclass={currentSubclass}

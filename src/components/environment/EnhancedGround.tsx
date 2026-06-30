@@ -1,4 +1,4 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Mesh, ShaderMaterial, CylinderGeometry, Color, RepeatWrapping, CanvasTexture } from '@/utils/three-exports';
 import { MAIN_MAP_RADIUS } from '@/utils/mapConstants';
@@ -177,6 +177,15 @@ const EnhancedGround: React.FC<EnhancedGroundProps> = ({
   }, [groundTexture, normalTexture, levelColors]);
 
   const geometry = useMemo(() => new CylinderGeometry(radius, radius, height, 32, 1), [radius, height]);
+
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+      material.dispose();
+      groundTexture.dispose();
+      normalTexture.dispose();
+    };
+  }, [geometry, material, groundTexture, normalTexture]);
 
   // Animate the shader
   useFrame((state, delta) => {

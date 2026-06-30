@@ -39,6 +39,7 @@ import {
   CLOUDKILL_WARNING_MS,
   rollCloudkillArrowCount,
   shouldApplyCloudkillTalent,
+  type TempestBurstTheme,
 } from '@/utils/talents';
 import {
   ENTROPIC_FORWARD_SCALE,
@@ -795,6 +796,9 @@ export class ProjectileSystem extends System {
         isCrossentropyBolt && projectile.crossentropyMeteor === true,
         entanglementBarrage,
         cloudkillProc,
+        undefined,
+        projectile.tempestBurstArcticChill === true,
+        projectile.tempestBurstWyvernZombie === true,
       );
       }
 
@@ -1617,6 +1621,14 @@ export class ProjectileSystem extends System {
       fanOfKnivesFlourishTint?: FanOfKnivesFlourishTint;
       /** INFESTED FLOURISH hit meta replication for coop zombie kills. */
       infestedFlourishFanKnives?: boolean;
+      /** Tempest Rounds burst visual theme. */
+      tempestBurstTheme?: TempestBurstTheme;
+      /** Tempest Rounds burst — Wrathful Shots crit. */
+      tempestBurstWrathful?: boolean;
+      /** Tempest Rounds burst — Arctic Sting chill on hit. */
+      tempestBurstArcticChill?: boolean;
+      /** Tempest Rounds burst — Wyvern Sting zombie on kill. */
+      tempestBurstWyvernZombie?: boolean;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -1642,6 +1654,18 @@ export class ProjectileSystem extends System {
     }
     if (config?.isPerfectShot === true) {
       projectile.isPerfectShot = true;
+    }
+    if (config?.tempestBurstWrathful === true) {
+      projectile.tempestBurstWrathful = true;
+    }
+    if (config?.tempestBurstArcticChill === true) {
+      projectile.tempestBurstArcticChill = true;
+    }
+    if (config?.tempestBurstWyvernZombie === true) {
+      projectile.tempestBurstWyvernZombie = true;
+    }
+    if (config?.tempestBurstTheme != null) {
+      projectile.tempestBurstTheme = config.tempestBurstTheme;
     }
     projectile.setDirection(direction);
     projectile.setStartPosition(position);
@@ -1686,6 +1710,18 @@ export class ProjectileSystem extends System {
     placeholderMesh.userData.projectileType = projectileType;
     if (config?.triggerFingerUncharged === true) {
       placeholderMesh.userData.triggerFingerUncharged = true;
+    }
+    if (config?.tempestBurstTheme != null) {
+      placeholderMesh.userData.tempestBurstTheme = config.tempestBurstTheme;
+    }
+    if (config?.tempestBurstWrathful === true) {
+      placeholderMesh.userData.tempestBurstWrathful = true;
+    }
+    if (config?.tempestBurstArcticChill === true) {
+      placeholderMesh.userData.tempestBurstArcticChill = true;
+    }
+    if (config?.tempestBurstWyvernZombie === true) {
+      placeholderMesh.userData.tempestBurstWyvernZombie = true;
     }
 
     const isFanOfKnivesProjectile = projectileType === 'fan_of_knives';

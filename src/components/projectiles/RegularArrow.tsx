@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, DoubleSide, AdditiveBlending } from '@/utils/three-exports';
+import type { TempestBurstTheme } from '@/utils/talents';
 
 interface RegularArrowProps {
   position: Vector3;
@@ -8,15 +9,81 @@ interface RegularArrowProps {
   onImpact?: (position: Vector3) => void;
   distanceTraveled?: number;
   maxDistance?: number;
-  projectileType?: string; // Add projectile type to support different colors
+  projectileType?: string;
   triggerFingerUncharged?: boolean;
+  tempestBurstTheme?: TempestBurstTheme;
 }
 
-export default function RegularArrow({ position, direction, onImpact, distanceTraveled = 0, maxDistance = 25, projectileType, triggerFingerUncharged }: RegularArrowProps) {
+function resolveBurstArrowColors(theme: TempestBurstTheme | undefined): {
+  color: string;
+  emissiveColor: string;
+  shaftEmissiveColor: string;
+  fletchingColor: string;
+  fletchingEmissiveColor: string;
+  auraColor: string;
+} {
+  switch (theme) {
+    case 'wrathful':
+      return {
+        color: '#cc2222',
+        emissiveColor: '#ff3333',
+        shaftEmissiveColor: '#aa1111',
+        fletchingColor: '#ff4444',
+        fletchingEmissiveColor: '#ff2222',
+        auraColor: '#ff3333',
+      };
+    case 'arctic':
+      return {
+        color: '#8844cc',
+        emissiveColor: '#aa66ff',
+        shaftEmissiveColor: '#6622aa',
+        fletchingColor: '#bb88ff',
+        fletchingEmissiveColor: '#9944ee',
+        auraColor: '#aa66ff',
+      };
+    case 'stagger':
+      return {
+        color: '#0088ff',
+        emissiveColor: '#0088ff',
+        shaftEmissiveColor: '#0066cc',
+        fletchingColor: '#44aaff',
+        fletchingEmissiveColor: '#0088ff',
+        auraColor: '#0088ff',
+      };
+    case 'wyvern':
+      return {
+        color: '#00aa20',
+        emissiveColor: '#00ff40',
+        shaftEmissiveColor: '#008818',
+        fletchingColor: '#44dd66',
+        fletchingEmissiveColor: '#00ff40',
+        auraColor: '#00ff40',
+      };
+    default:
+      return {
+        color: '#ff5500',
+        emissiveColor: '#aa2200',
+        shaftEmissiveColor: '#ff4400',
+        fletchingColor: '#ff7722',
+        fletchingEmissiveColor: '#ff5500',
+        auraColor: '#ff5500',
+      };
+  }
+}
+
+export default function RegularArrow({
+  position,
+  direction,
+  onImpact,
+  distanceTraveled = 0,
+  maxDistance = 25,
+  projectileType,
+  triggerFingerUncharged,
+  tempestBurstTheme,
+}: RegularArrowProps) {
 
   const arrowRef = useRef<Group>(null);
 
-  // Determine colors based on projectile type
   const isBurstArrow = projectileType === 'burst_arrow';
   const isTriggerFinger = !isBurstArrow && triggerFingerUncharged === true;
   let color = '#00ffff';
@@ -26,12 +93,13 @@ export default function RegularArrow({ position, direction, onImpact, distanceTr
   let fletchingEmissiveColor = '#00aaff';
   let auraColor = '#00ffff';
   if (isBurstArrow) {
-    color = '#ff5500';
-    emissiveColor = '#aa2200';
-    shaftEmissiveColor = '#ff4400';
-    fletchingColor = '#ff7722';
-    fletchingEmissiveColor = '#ff5500';
-    auraColor = '#ff5500';
+    const burstColors = resolveBurstArrowColors(tempestBurstTheme);
+    color = burstColors.color;
+    emissiveColor = burstColors.emissiveColor;
+    shaftEmissiveColor = burstColors.shaftEmissiveColor;
+    fletchingColor = burstColors.fletchingColor;
+    fletchingEmissiveColor = burstColors.fletchingEmissiveColor;
+    auraColor = burstColors.auraColor;
   } else if (isTriggerFinger) {
     color = '#ff2200';
     emissiveColor = '#880011';

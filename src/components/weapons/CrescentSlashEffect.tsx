@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   Vector3,
@@ -163,6 +163,19 @@ export default function CrescentSlashEffect({
       }),
     [],
   );
+
+  useEffect(() => {
+    return () => {
+      arcGeo.dispose();
+      arcInnerGeo.dispose();
+      wingGeo.dispose();
+      arcMat.dispose();
+      arcInnerMat.dispose();
+      wingMat.dispose();
+      flashMat.dispose();
+      ringMat.dispose();
+    };
+  }, [arcGeo, arcInnerGeo, wingGeo, arcMat, arcInnerMat, wingMat, flashMat, ringMat]);
 
   useFrame((_, delta) => {
     if (doneRef.current) return;

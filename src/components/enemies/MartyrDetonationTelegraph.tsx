@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   Group,
@@ -66,6 +66,15 @@ export default function MartyrDetonationTelegraph({
       }),
     []
   );
+
+  useEffect(() => {
+    return () => {
+      ringOuter.dispose();
+      ringInner.dispose();
+      matOuter.dispose();
+      matInner.dispose();
+    };
+  }, [ringOuter, ringInner, matOuter, matInner]);
 
   useFrame((_, delta) => {
     tRef.current += delta;
