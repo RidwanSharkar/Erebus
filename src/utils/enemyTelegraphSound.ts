@@ -89,7 +89,7 @@ function playFromPayload(
 
 /** Boss 1 ability windups — use dedicated SFX instead of generic telegraph. */
 const BOSS1_TELEGRAPH_EVENTS = [
-  'boss-attack',
+  'boss-attack-telegraph',
   'boss-throw-start',
   'boss-meteor-cast',
   'boss-tectonic-spike-telegraph',

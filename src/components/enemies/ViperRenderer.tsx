@@ -74,15 +74,17 @@ export default function ViperRenderer({
   // Track server position changes and derive walking state from them.
   useEffect(() => {
     const dist = targetPosition.current.distanceTo(position);
-    targetPosition.current.copy(position);
+    const isLocked = isAttackingRef.current;
+    if (!isLocked) {
+      targetPosition.current.copy(position);
+    }
 
-    if (dist > 8.0 && groupRef.current) {
+    if (dist > 8.0 && groupRef.current && !isLocked) {
       groupRef.current.position.copy(position);
     }
 
-    if (dist > 0.01 && !isAttackingRef.current && !isDying) {
+    if (dist > 0.01 && !isLocked && !isDying) {
       if (!isWalking) setIsWalking(true);
-
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
     }
@@ -149,7 +151,13 @@ export default function ViperRenderer({
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+
+    if (dist > 0.01 && !isAttackingRef.current && !isDying) {
+      if (!isWalking) setIsWalking(true);
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
+    }
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 

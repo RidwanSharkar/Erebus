@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useLayoutEffect, useMemo, useState } from 're
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { peek as suspendPeek } from 'suspend-react';
 import { GLTFLoader } from 'three-stdlib';
-import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
+import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, AnimationMixer, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadAllGltfAnimationClips, loadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
@@ -139,6 +139,20 @@ const MAX_ANIM_APPLY_RETRIES = 15;
 
 /** Non-forward jump clips may not be ready on first airborne frame; avoid idle-in-air while they load. */
 const IDLE_FALLBACK_EXCLUDED = new Set<AnimState>(['Jump', 'JumpFront', 'JumpBack']);
+
+/** Jump clips play once then hold the last frame while airborne (prevents bind-pose T-pose). */
+const JUMP_CLAMP_ANIMS = IDLE_FALLBACK_EXCLUDED;
+
+function holdJumpEndPoseIfFinished(action: AnimationAction, mixer: AnimationMixer | null | undefined): void {
+  const duration = action.getClip().duration;
+  if (action.time < duration && action.isRunning()) return;
+  action.clampWhenFinished = true;
+  action.enabled = true;
+  action.setEffectiveWeight(1);
+  action.time = duration;
+  action.paused = true;
+  mixer?.update(0);
+}
 
 function stripRootMotionXZ(clip: AnimationClip): AnimationClip {
   clip.tracks = clip.tracks.map(track => {
@@ -320,7 +334,12 @@ function CharacterModelRig({
         return;
       }
 
-      if (nextAction === currentActionRef.current) return;
+      if (nextAction === currentActionRef.current) {
+        if (JUMP_CLAMP_ANIMS.has(playAnim)) {
+          holdJumpEndPoseIfFinished(nextAction, mixer);
+        }
+        return;
+      }
 
       const isInitialAction = currentActionRef.current === null;
       const fadeOut = playAnim === 'Jump' ? FADE_JUMP : FADE_NORMAL;
@@ -329,7 +348,10 @@ function CharacterModelRig({
       nextAction.enabled = true;
 
       const configureNextAction = (): void => {
-        if (playAnim === 'Jump' || playAnim === 'JumpFront' || playAnim === 'JumpBack' || playAnim === 'ReleaseBow') {
+        if (JUMP_CLAMP_ANIMS.has(playAnim)) {
+          nextAction.setLoop(LoopOnce, 1);
+          nextAction.clampWhenFinished = true;
+        } else if (playAnim === 'ReleaseBow') {
           nextAction.setLoop(LoopOnce, 1);
           nextAction.clampWhenFinished = false;
         } else if (playAnim === 'CastSingle') {
@@ -353,7 +375,12 @@ function CharacterModelRig({
         return;
       }
 
-      if (playAnim === 'Jump' || playAnim === 'JumpFront' || playAnim === 'JumpBack' || playAnim === 'ReleaseBow') {
+      if (JUMP_CLAMP_ANIMS.has(playAnim)) {
+        nextAction.setLoop(LoopOnce, 1);
+        nextAction.clampWhenFinished = true;
+        fadeOutCurrentAction(fadeOut);
+        nextAction.reset().fadeIn(fadeIn).play();
+      } else if (playAnim === 'ReleaseBow') {
         nextAction.setLoop(LoopOnce, 1);
         nextAction.clampWhenFinished = false;
         fadeOutCurrentAction(fadeOut);

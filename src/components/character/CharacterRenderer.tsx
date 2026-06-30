@@ -34,6 +34,9 @@ interface CharacterRendererProps {
 
 const LERP_SPEED      = 15;  // snappy but smooth position interpolation
 const WALK_STOP_DELAY = 120; // ms before switching to Idle after movement stops
+const YAW_OFFSET_FACTOR = 2.6;         // fraction of residual angle applied (keeps strafe posture readable)
+const YAW_OFFSET_MAX    = Math.PI / 6; // clamp (~30 deg) so the body never fully turns off-camera
+const YAW_OFFSET_LERP   = 10;          // smoothing speed toward target offset
 
 // The controllable player must never wait behind enemy/boss asset staging.
 preloadCharacterModels();
@@ -72,6 +75,52 @@ function dirToSlowWalkAnimState(facingDir: Vector3, moveDir: Vector3): AnimState
   return angle > 0 ? 'WalkRight' : 'WalkLeft';
 }
 
+/** S+A / S+D — backward diagonals between pure strafe (90°) and straight back (180°). */
+function isBackwardDiagonalMove(facingDir: Vector3, moveDir: Vector3): boolean {
+  const dot = facingDir.dot(moveDir);
+  const crossY = facingDir.x * moveDir.z - facingDir.z * moveDir.x;
+  const abs = Math.abs(Math.atan2(crossY, dot));
+  return abs >= (3 * Math.PI) / 4 && abs <= (7 * Math.PI) / 8;
+}
+
+function animCardinalAngle(s: AnimState): number | null {
+  switch (s) {
+    case 'Run':
+    case 'Walk':
+      return 0;
+    case 'RightStrafe':
+    case 'WalkRight':
+      return Math.PI / 2;
+    case 'LeftStrafe':
+    case 'WalkLeft':
+      return -Math.PI / 2;
+    case 'Backwards':
+    case 'WalkBack':
+      return Math.PI;
+    default:
+      return null; // Idle / Cast / Jump / Dash / Bow -> no offset
+  }
+}
+
+function computeModelYawOffset(
+  animState: AnimState,
+  moveDir: Vector3 | null,
+  facingDir: Vector3,
+  inputStrength: number,
+): number {
+  if (!moveDir || inputStrength <= 0.05) return 0;
+  const cardinal = animCardinalAngle(animState);
+  if (cardinal === null) return 0;
+
+  const dot = facingDir.dot(moveDir);
+  const crossY = facingDir.x * moveDir.z - facingDir.z * moveDir.x;
+  const angle = Math.atan2(crossY, dot);
+  let residual = angle - cardinal;
+  while (residual > Math.PI) residual -= Math.PI * 2;
+  while (residual < -Math.PI) residual += Math.PI * 2;
+  return Math.max(-YAW_OFFSET_MAX, Math.min(YAW_OFFSET_MAX, -residual * YAW_OFFSET_FACTOR));
+}
+
 export default function CharacterRenderer({
   entityId,
   position,
@@ -97,6 +146,8 @@ export default function CharacterRenderer({
   const lastIsDashingRef = useRef(false);
   const dashFireWorldPosRef = useRef(new Vector3());
   const isDashingRef = useRef(false);
+  const modelYawGroupRef = useRef<Group | null>(null);
+  const modelYawOffset = useRef(0);
 
   const targetPosition    = useRef(position.clone());
   const targetRotationY   = useRef(0);
@@ -291,6 +342,15 @@ export default function CharacterRenderer({
     }
 
     let next: AnimState;
+    let locomotionMoveDir: Vector3 | null = null;
+
+    const applyModelYawOffset = (animState: AnimState, moveDir: Vector3 | null) => {
+      const targetYaw = computeModelYawOffset(animState, moveDir, facingDir, movement.inputStrength);
+      modelYawOffset.current += (targetYaw - modelYawOffset.current) * Math.min(1, delta * YAW_OFFSET_LERP);
+      if (modelYawGroupRef.current) {
+        modelYawGroupRef.current.rotation.y = modelYawOffset.current;
+      }
+    };
 
     if (!movement.isGrounded) {
       // Capture the jump direction at take-off so it stays consistent mid-air.
@@ -336,8 +396,10 @@ export default function CharacterRenderer({
         moveDir.y = 0;
         if (moveDir.length() > 0.01) {
           moveDir.normalize();
+          locomotionMoveDir = moveDir;
           const slowLocomotion = movement.isAttackSlowed || movement.isIcebeaming;
-          next = slowLocomotion
+          const backwardDiagonal = !slowLocomotion && isBackwardDiagonalMove(facingDir, moveDir);
+          next = slowLocomotion || backwardDiagonal
             ? dirToSlowWalkAnimState(facingDir, moveDir)
             : dirToAnimState(facingDir, moveDir);
         } else {
@@ -383,19 +445,29 @@ export default function CharacterRenderer({
           s === 'Cast' || s === 'SwordCast' || s === 'DrawBow';
 
         // Let CastSingle play out on its own (driven by the ability-cast effect).
-        if (prevAnimState.current === 'CastSingle') return;
+        if (prevAnimState.current === 'CastSingle') {
+          applyModelYawOffset(prevAnimState.current, null);
+          return;
+        }
 
         // If an ability cast is in progress, keep CastSingle running.
-        if (isCastingAbility.current) return;
+        if (isCastingAbility.current) {
+          applyModelYawOffset(prevAnimState.current, null);
+          return;
+        }
 
         // Snap back to Idle instantly when a cast is released.
         if (isCastVariant(prevAnimState.current)) {
           prevAnimState.current = 'Idle';
           setAnimState('Idle');
+          applyModelYawOffset('Idle', null);
           return;
         }
         // Let ReleaseBow play out on its own (driven by the bow-release useEffect).
-        if (prevAnimState.current === 'ReleaseBow') return;
+        if (prevAnimState.current === 'ReleaseBow') {
+          applyModelYawOffset(prevAnimState.current, null);
+          return;
+        }
         // Snap to Idle instantly on landing from any jump.
         if (
           prevAnimState.current === 'Jump' ||
@@ -404,6 +476,7 @@ export default function CharacterRenderer({
         ) {
           prevAnimState.current = 'Idle';
           setAnimState('Idle');
+          applyModelYawOffset('Idle', null);
           return;
         }
         // Normal stop timer for locomotion → Idle transition.
@@ -417,6 +490,7 @@ export default function CharacterRenderer({
             prevAnimState.current = 'Idle';
           }, WALK_STOP_DELAY);
         }
+        applyModelYawOffset(prevAnimState.current, null);
         return; // keep current animation until timer fires
       }
     }
@@ -425,6 +499,8 @@ export default function CharacterRenderer({
       prevAnimState.current = next;
       setAnimState(next);
     }
+
+    applyModelYawOffset(next, locomotionMoveDir);
   });
 
   const wType = currentWeapon ?? WeaponType.NONE;
@@ -436,7 +512,9 @@ export default function CharacterRenderer({
   return (
     <>
       <group ref={setGroupRef}>
-        <CharacterModel animState={animState} isDead={isDead} />
+        <group ref={modelYawGroupRef}>
+          <CharacterModel animState={animState} isDead={isDead} />
+        </group>
         <group position={[0, 1.0, -0.12]}>
           <DraconicWingJets
             key={`left-dash-jets-${dashBurstId}`}

@@ -88,7 +88,7 @@ export class Movement extends Component {
     maxSpeed: number = 3.575,
     friction: number = 0.8,
     jumpForce: number = 35.0,
-    gravity: number = -12.5
+    gravity: number = -12.0 //REAL
   ) {
     super();
     

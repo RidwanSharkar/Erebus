@@ -22,6 +22,7 @@ export type ArcticBlizzardSpawn = {
 interface ArcticBlizzardManagerProps {
   world: World | null;
   getEnemyData: () => Array<{ id: string; position: Vector3; health: number }>;
+  getDamagePerTick: () => number;
 }
 
 function findEnemyEntityForBlizzard(world: World, targetId: string): Entity | null {
@@ -36,10 +37,12 @@ function findEnemyEntityForBlizzard(world: World, targetId: string): Entity | nu
 /**
  * Ground-fixed concentrated blizzards (Arctic Shards proc + Glacial Storm on hit).
  */
-export default function ArcticBlizzardManager({ world, getEnemyData }: ArcticBlizzardManagerProps) {
+export default function ArcticBlizzardManager({ world, getEnemyData, getDamagePerTick }: ArcticBlizzardManagerProps) {
   const [storms, setStorms] = useState<ArcticBlizzardSpawn[]>([]);
   const getEnemyDataRef = useRef(getEnemyData);
   getEnemyDataRef.current = getEnemyData;
+  const getDamagePerTickRef = useRef(getDamagePerTick);
+  getDamagePerTickRef.current = getDamagePerTick;
 
   const pushStorm = useCallback((worldPosition: Vector3) => {
     const id = `arctic-bz-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -52,13 +55,14 @@ export default function ArcticBlizzardManager({ world, getEnemyData }: ArcticBli
   }, [pushStorm]);
 
   const handleBlizzardHit = useCallback(
-    (targetId: string, damage: number, _isCritical: boolean, _hitPosition: Vector3, _isBlizzard: boolean) => {
+    (targetId: string, _damage: number, _isCritical: boolean, _hitPosition: Vector3, _isBlizzard: boolean) => {
       if (!world) return;
       const combat = world.getSystem(CombatSystem) as CombatSystem | undefined;
       if (!combat) return;
       const entity = findEnemyEntityForBlizzard(world, targetId);
       if (!entity) return;
       const localPlayer = (window as any).controlSystemRef?.current?.getPlayerEntity?.();
+      const damage = getDamagePerTickRef.current();
       combat.queueDamageWithBlizzardArctic(
         entity,
         damage,

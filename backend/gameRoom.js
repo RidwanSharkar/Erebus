@@ -12,6 +12,8 @@ const mushroomConstants = require('./mushroomConstants');
 
 /** Co-op boss encounters (GLB tier 1, Archon tier 2, Weaver Nexus tier 3). */
 const COOP_BOSS_TYPES = new Set(['boss', 'boss2', 'boss3']);
+const COOP_BOSS_MAX_HEALTH_PRE_TRINITY = { boss: 5000, boss2: 8500, boss3: 12500 };
+const COOP_BOSS_MAX_HEALTH_POST_TRINITY = { boss: 12500, boss2: 20000, boss3: 30000 };
 /** Max freeze duration (ms) for boss-tier enemies (server + client). */
 const BOSS_MAX_FREEZE_MS = 1000;
 const ENTANGLEMENT_DURATION_MS = 5000;
@@ -130,6 +132,11 @@ const ARCTIC_STING_TEMPEST_FREEZE_MS = 4000;
 const COOP_COLORED_ROOM_TYPES = Object.freeze(['blue', 'red', 'green', 'purple']);
 const COOP_SPECIAL_ROOM_TYPES = Object.freeze(['stat', 'trial', 'merchant']);
 const COOP_ROOM_TYPES = Object.freeze([...COOP_COLORED_ROOM_TYPES, ...COOP_SPECIAL_ROOM_TYPES, 'boss']);
+const COOP_ROOMS_BEFORE_BOSS = 3;
+const COOP_ROOMS_BEFORE_BOSS_LATE = 4; // after 2nd boss defeated
+const COOP_COUNTABLE_COMBAT_ROOM_TYPES = Object.freeze([
+  ...COOP_COLORED_ROOM_TYPES, 'stat', 'trial',
+]);
 const COOP_TERRAIN_THEMES = Object.freeze(['purple', 'blue', 'green']);
 const COOP_WAVE_MARTYR_ROOM_CHANCE = 0.33; // 30% of colored rooms have martyr spawns
 const COOP_WAVE_TITAN_ROOM_CHANCE = 0.4; // 40% of colored rooms spawn 1 titan after boss 1 (chance tier)
@@ -281,13 +288,8 @@ class GameRoom {
      * Co-op: initial prep only (`rim` portals). Main-map intermissions use `coopMainArenaPortalPhase`.
      */
     this.coopThroneStep = 'rim';
-    /** 0 = intermission/boss; 1–3 = combat waves on main map. */
-    this.coopWaveIndex = 0;
-    /**
-     * After a main-map wave completes, the next `pick_wave2` should spawn this wave (2 or 3). Not used for `boss_gate`.
-     * @type {2|3|0}
-     */
-    this._coopNextWaveAfterPortal = 0;
+    /** Combat rooms cleared in the current segment (colored/stat/trial only; merchant never counts). */
+    this.coopSegmentCombatRoomsCleared = 0;
     /**
      * Defeated co-op bosses this run — picks next boss tier (Boss 1, Archon+, placeholder for Boss 3).
      */
@@ -441,7 +443,6 @@ class GameRoom {
     this.bossSpawned = false;
     this.skeletonKillCount = 0;
     this.coopThroneStep = 'rim';
-    this.coopWaveIndex = 0;
     this.coopMainArenaPortalPhase = null;
     this.coopBossThroneArena = false;
     this.coopThroneBossKind = null;
@@ -450,7 +451,7 @@ class GameRoom {
     this.currentCoopRoomKind = null;
     this.clearedCoopRoomKind = null;
     this._postBossIntermissionScheduled = false;
-    this._coopNextWaveAfterPortal = 0;
+    this.coopSegmentCombatRoomsCleared = 0;
     this.coopBossesDefeatedCount = 0;
     this.coopColoredRoomVisitCounts = { red: 0, blue: 0, green: 0, purple: 0 };
     this.coopBossRoomVisitCount = 0;
@@ -809,6 +810,17 @@ class GameRoom {
     return COOP_ROOM_TYPES.includes(kind) ? kind : null;
   }
 
+  _getCoopRoomsRequiredBeforeBoss() {
+    return this.coopBossesDefeatedCount >= 2
+      ? COOP_ROOMS_BEFORE_BOSS_LATE
+      : COOP_ROOMS_BEFORE_BOSS;
+  }
+
+  _isCountableCoopCombatRoom(kind) {
+    const k = this._normalizeCoopRoomKind(kind);
+    return k != null && COOP_COUNTABLE_COMBAT_ROOM_TYPES.includes(k);
+  }
+
   /** @param {string} roomKind @returns {number|null} 1-based visit index for colored halls */
   _bumpColoredRoomVisit(roomKind) {
     const kind = String(roomKind || '').toLowerCase();
@@ -891,6 +903,13 @@ class GameRoom {
 
   getCoopThroneBossKind() {
     return this.coopThroneBossKind;
+  }
+
+  getCoopBossMaxHealth(bossType) {
+    const table = this.coopBossesDefeatedCount >= 4
+      ? COOP_BOSS_MAX_HEALTH_POST_TRINITY
+      : COOP_BOSS_MAX_HEALTH_PRE_TRINITY;
+    return table[bossType] ?? table.boss;
   }
 
   getCoopTerrainTheme() {
@@ -998,13 +1017,13 @@ class GameRoom {
   }
 
   /**
-   * After clearing a main-map wave: dual portals until the 3rd room in a segment, then a boss portal; after boss, repeats (3 rooms → boss …).
+   * After clearing a main-map combat room: dual portals until the segment quota is met, then a boss portal.
+   * Colored/stat/trial rooms count; merchant (pink) never does. Quota is 3, or 4 after Boss 2.
    * @param {'second_wave'|'boss_gate'} phase
    */
   startMainArenaPortalIntermission(phase) {
     this._clearAllCombatEnemies();
     this.skeletonKillCount = 0;
-    this.coopWaveIndex = 0;
     this.pendingCoopArchetype = null;
     this.pendingCoopRoomKind = null;
     const clearedColor =
@@ -1046,17 +1065,16 @@ class GameRoom {
   }
 
   _onCoopWaveThresholdMet() {
-    if (this.coopWaveIndex === 1) {
-      console.log('🌀 Wave 1 complete — main arena: choose next room (center portals).');
-      this._coopNextWaveAfterPortal = 2;
-      this.startMainArenaPortalIntermission('second_wave');
-    } else if (this.coopWaveIndex === 2) {
-      console.log('🌀 Wave 2 complete — main arena: choose next room (center portals).');
-      this._coopNextWaveAfterPortal = 3;
-      this.startMainArenaPortalIntermission('second_wave');
-    } else if (this.coopWaveIndex === 3) {
-      console.log('🌀 Segment complete (3 enemy rooms cleared) — main arena: boss portal.');
+    this.coopSegmentCombatRoomsCleared += 1;
+    const required = this._getCoopRoomsRequiredBeforeBoss();
+    if (this.coopSegmentCombatRoomsCleared >= required) {
+      console.log(`🌀 Segment complete (${required} combat rooms cleared) — main arena: boss portal.`);
       this.startMainArenaPortalIntermission('boss_gate');
+    } else {
+      console.log(
+        `🌀 Combat room ${this.coopSegmentCombatRoomsCleared}/${required} cleared — choose next room (center portals).`,
+      );
+      this.startMainArenaPortalIntermission('second_wave');
     }
   }
 
@@ -1068,7 +1086,7 @@ class GameRoom {
    */
   _registerCoopWaveKill(emojiLog) {
     if (this.gameMode !== 'coop' || !this.combatArenaActive || this.bossSpawned) return;
-    if (this.coopWaveIndex !== 1 && this.coopWaveIndex !== 2 && this.coopWaveIndex !== 3) return;
+    if (!this._isCountableCoopCombatRoom(this.currentCoopRoomKind)) return;
 
     const isMixedRoom = this.coopWaveSpawnPlan?.isMixed === true;
 
@@ -1133,7 +1151,6 @@ class GameRoom {
     this.combatArenaActive = true;
     this.thronePortalOffer = [];
     this.coopMainArenaPortalPhase = null;
-    this.coopWaveIndex = 1;
     this.coopThroneStep = 'rim';
     this.merchantInventory = [];
     this.teleportAllPlayersToCombatSpawn();
@@ -1176,7 +1193,6 @@ class GameRoom {
     this.combatArenaActive = true;
     this.thronePortalOffer = [];
     this.coopMainArenaPortalPhase = null;
-    this.coopWaveIndex = 0;
     this.coopBossThroneArena = true;
     this.coopThroneBossKind = 'boss';
     this.currentCoopRoomKind = 'boss';
@@ -1227,7 +1243,6 @@ class GameRoom {
     this.combatArenaActive = true;
     this.thronePortalOffer = [];
     this.coopMainArenaPortalPhase = null;
-    this.coopWaveIndex = 0;
     this.coopBossThroneArena = true;
     this.coopThroneBossKind = 'boss2';
     this.currentCoopRoomKind = 'boss';
@@ -1278,7 +1293,6 @@ class GameRoom {
     this.combatArenaActive = true;
     this.thronePortalOffer = [];
     this.coopMainArenaPortalPhase = null;
-    this.coopWaveIndex = 0;
     this.coopBossThroneArena = true;
     this.coopThroneBossKind = 'boss3';
     this.currentCoopRoomKind = 'boss';
@@ -1346,10 +1360,6 @@ class GameRoom {
       this._resetCoopRoomWhisperForEntry(roomKind);
       this.thronePortalOffer = [];
       this.coopMainArenaPortalPhase = null;
-      const nextWave = this._coopNextWaveAfterPortal === 2 || this._coopNextWaveAfterPortal === 3
-        ? this._coopNextWaveAfterPortal
-        : 2;
-      this.coopWaveIndex = nextWave;
       this.skeletonKillCount = 0;
       this.teleportAllPlayersToCombatSpawn();
       if (roomKind === 'merchant') {
@@ -1392,7 +1402,6 @@ class GameRoom {
       }
       this.thronePortalOffer = [];
       this.coopMainArenaPortalPhase = null;
-      this.coopWaveIndex = 0;
       this.coopBossThroneArena = true;
       const defeated = this.coopBossesDefeatedCount;
       if (defeated === 0) {
@@ -1453,7 +1462,6 @@ class GameRoom {
       this._resetCoopRoomWhisperForEntry(pick);
       this.thronePortalOffer = [];
       this.coopMainArenaPortalPhase = null;
-      this.coopWaveIndex = 1;
       this.skeletonKillCount = 0;
       this.coopBossThroneArena = false;
       this.coopThroneBossKind = null;
@@ -1499,7 +1507,7 @@ class GameRoom {
 
       this.bossSpawned = false;
       this.skeletonKillCount = 0;
-      this.coopWaveIndex = 0;
+      this.coopSegmentCombatRoomsCleared = 0;
       this.pendingCoopArchetype = null;
       this.pendingCoopRoomKind = null;
       this.clearedCoopRoomKind = 'boss';
@@ -1675,12 +1683,11 @@ class GameRoom {
     this.bossSpawned = false;
     this.skeletonKillCount = 0;
     this.coopThroneStep = 'rim';
-    this.coopWaveIndex = 0;
     this.coopMainArenaPortalPhase = null;
     this.coopBossThroneArena = false;
     this.coopThroneBossKind = null;
     this._postBossIntermissionScheduled = false;
-    this._coopNextWaveAfterPortal = 0;
+    this.coopSegmentCombatRoomsCleared = 0;
     this.coopBossesDefeatedCount = 0;
     this.coopWaveSpawnPlan = null;
     this.coopWaveReserveReleased = 0;
@@ -2237,10 +2244,10 @@ class GameRoom {
     if (type === 'titan') {
       // Excluded from HP scaling.
       const TITAN_STATS_BY_SOUL = {
-        blue:   { health: 3500, maxHealth: 3500, damage: 148 },
-        red:    { health: 4000, maxHealth: 4000, damage: 134 },
+        blue:   { health: 4000, maxHealth: 3500, damage: 148 },
+        red:    { health: 4500, maxHealth: 4000, damage: 134 },
         green:  { health: 5000, maxHealth: 5000, damage: 100 },
-        purple: { health: 3000, maxHealth: 3000, damage: 166 },
+        purple: { health: 3500, maxHealth: 3000, damage: 166 },
       };
       const soulType = campDef.knightSoulType;
       const stats = TITAN_STATS_BY_SOUL[soulType];
@@ -2528,7 +2535,7 @@ class GameRoom {
    */
   _spawnCoopWaveBatch(isInitial = false) {
     if (this.gameMode !== 'coop' || !this.combatArenaActive || this.bossSpawned) return;
-    if (this.coopWaveIndex !== 1 && this.coopWaveIndex !== 2 && this.coopWaveIndex !== 3) return;
+    if (!this._isCountableCoopCombatRoom(this.currentCoopRoomKind)) return;
     const plan = this.coopWaveSpawnPlan;
     if (!plan || !plan.campDef || plan.isMixed) return;
 
@@ -2756,11 +2763,8 @@ class GameRoom {
   }
 
   getEnemyMaxHealth(type) {
-    if (type === 'boss3') {
-      return 8500;
-    }
-    if (type === 'boss' || type === 'boss2') {
-      return 5000;
+    if (COOP_BOSS_TYPES.has(type)) {
+      return this.getCoopBossMaxHealth(type);
     }
     return 5000;
   }
@@ -4354,7 +4358,7 @@ class GameRoom {
     // Spawn boss at center of arena
     const position = { x: 0, y: 0, z: 0 };
 
-    const maxHealth = bossType === 'boss3' ? 7500 : 5000;
+    const maxHealth = this.getCoopBossMaxHealth(bossType);
     const moveSpeed = bossType === 'boss3' || bossType === 'boss2' ? 2.0 : 2.5;
 
     const bossData = {
@@ -4408,9 +4412,9 @@ class GameRoom {
 
     // Triangle formation — spread wide enough that bosses don't clip each other.
     const spawnConfigs = [
-      { type: 'boss',  pos: { x: -8, y: 0, z:  3 }, maxHealth: 5000, moveSpeed: 2.5, extra: {} },
-      { type: 'boss2', pos: { x:  8, y: 0, z:  3 }, maxHealth: 8500, moveSpeed: 2.0, extra: {} },
-      { type: 'boss3', pos: { x:  0, y: 0, z: -9 }, maxHealth: 15000, moveSpeed: 2.0, extra: { summonChargesLeft: 2 } },
+      { type: 'boss',  pos: { x: -8, y: 0, z:  3 }, moveSpeed: 2.5, extra: {} },
+      { type: 'boss2', pos: { x:  8, y: 0, z:  3 }, moveSpeed: 2.0, extra: {} },
+      { type: 'boss3', pos: { x:  0, y: 0, z: -9 }, moveSpeed: 2.0, extra: { summonChargesLeft: 2 } },
     ];
 
     this.tripleBossIds = new Set();
@@ -4418,14 +4422,15 @@ class GameRoom {
 
     for (const cfg of spawnConfigs) {
       const bossId = `${cfg.type}-trinity-${now}-${rand()}`;
+      const maxHealth = this.getCoopBossMaxHealth(cfg.type);
       const bossData = {
         id: bossId,
         type: cfg.type,
         position: { ...cfg.pos },
         initialPosition: { ...cfg.pos },
         rotation: rotationYTowardEntry(cfg.pos.x, cfg.pos.z),
-        health: cfg.maxHealth,
-        maxHealth: cfg.maxHealth,
+        health: maxHealth,
+        maxHealth,
         moveSpeed: cfg.moveSpeed,
         spawnedAt: now,
         isDying: false,
@@ -5207,12 +5212,11 @@ class GameRoom {
     this.bossSpawned = false;
     this.skeletonKillCount = 0;
     this.coopThroneStep = 'rim';
-    this.coopWaveIndex = 0;
     this.coopMainArenaPortalPhase = null;
     this.coopBossThroneArena = false;
     this.coopThroneBossKind = null;
     this._postBossIntermissionScheduled = false;
-    this._coopNextWaveAfterPortal = 0;
+    this.coopSegmentCombatRoomsCleared = 0;
     this.coopBossesDefeatedCount = 0;
     this.coopWaveSpawnPlan = null;
     this.coopWaveReserveReleased = 0;

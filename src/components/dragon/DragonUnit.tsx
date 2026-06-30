@@ -291,6 +291,8 @@ export default function DragonUnit({
   const [showSpellAura, setShowSpellAura] = useState(false);
 
   useEffect(() => {
+    if (!isLocalPlayer) return;
+
     const AURA_WEAPONS = new Set([
       WeaponType.BOW,
       WeaponType.SWORD,
@@ -331,7 +333,7 @@ export default function DragonUnit({
       if (spellAuraTimerRef.current) clearTimeout(spellAuraTimerRef.current);
     };
   // Re-register whenever the active weapon changes so AURA_WEAPONS check is fresh
-  }, [currentWeapon]);
+  }, [currentWeapon, isLocalPlayer]);
 
   const ABILITY_PULSE_MS = 1000;
   const LONG_CAST_CAP_MS = 2000;
@@ -365,6 +367,8 @@ export default function DragonUnit({
   } | null>(null);
 
   useEffect(() => {
+    if (!isLocalPlayer) return;
+
     const p = prevAbilityPulseRef.current;
     if (p !== null) {
       if (currentWeapon === WeaponType.RUNEBLADE && p.isWraithStriking && !isWraithStriking) {
@@ -395,6 +399,7 @@ export default function DragonUnit({
       isSundering,
     };
   }, [
+    isLocalPlayer,
     currentWeapon,
     isWraithStriking,
     isBarrageCharging,
@@ -410,6 +415,8 @@ export default function DragonUnit({
   const [cappedLongCastAura, setCappedLongCastAura] = useState(false);
 
   useFrame(() => {
+    if (!isLocalPlayer) return;
+
     const inRunebladeSmite = currentWeapon === WeaponType.RUNEBLADE && isSmiting;
     const inScytheCrossentropy = currentWeapon === WeaponType.SCYTHE && isCrossentropyCharging;
     const inCast = inRunebladeSmite || inScytheCrossentropy;
@@ -441,7 +448,8 @@ export default function DragonUnit({
   });
 
   const spellAuraVisible =
-    showSpellAura || abilityPulseActive || cappedLongCastAura;
+    isLocalPlayer &&
+    (showSpellAura || abilityPulseActive || cappedLongCastAura);
 
   // Weapon rendering logic
   const renderWeapon = () => {
@@ -724,16 +732,20 @@ export default function DragonUnit({
         />
       )}
 
-      {/* SPELL CASTING AURA — shown after 1 s of left-click hold on any weapon */}
-      <SpellCastingAura
-        parentRef={groupRef}
-        isActive={spellAuraVisible}
-      />
+      {/* SPELL CASTING AURA — local player only; shown after LMB hold on any weapon */}
+      {isLocalPlayer && (
+        <>
+          <SpellCastingAura
+            parentRef={groupRef}
+            isActive={spellAuraVisible}
+          />
 
-      {/* Rising cast halos — Reanimate-style rings, ~50% scale; torso-height on humanoid weapon rig */}
-      <group position={[0, hideBody ? 1.05 : 0.55, 0]}>
-        <SpellCastingHalos isActive={spellAuraVisible} />
-      </group>
+          {/* Rising cast halos — Reanimate-style rings, ~50% scale; torso-height on humanoid weapon rig */}
+          <group position={[0, hideBody ? 1.05 : 0.55, 0]}>
+            <SpellCastingHalos isActive={spellAuraVisible} />
+          </group>
+        </>
+      )}
 
       {/* CHARGED ORBITALS — visible with or without dragon body, raised to hip level on character model */}
       <ChargedOrbitals

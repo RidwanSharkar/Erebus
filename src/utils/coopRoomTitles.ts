@@ -1,4 +1,5 @@
 import type { CoopRoomKind } from '../contexts/MultiplayerContext';
+import { StatSystem } from './StatSystem';
 
 export interface RoomTitleAnnouncement {
   title: string;
@@ -7,10 +8,12 @@ export interface RoomTitleAnnouncement {
 }
 
 export const TRIAL_ROOM_PEDESTAL_GOLD = 250;
+export const STAT_ROOM_PEDESTAL_POINTS = StatSystem.STAT_ROOM_PEDESTAL_POINTS;
 export const BOON_REROLL_GOLD_COST = 50;
 
 export const REWARD_ANNOUNCEMENT_COLORS = {
   gold: '#eab308',
+  stat: '#eab308',
   purchased: '#ec4899',
   unlocked: '#c084fc',
 } as const;
@@ -19,8 +22,8 @@ export const REWARD_ANNOUNCEMENT_COLORS = {
 const ROOM_TITLE_COLORS = {
   throne: '#eab308',
   merchant: '#ec4899',
-  trial: '#eab308',
-  stat: '#f97316',
+  trial: '#f97316',
+  stat: '#eab308',
   red: '#ef4444',
   blue: '#3b82f6',
   green: '#22c55e',

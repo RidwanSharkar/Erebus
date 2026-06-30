@@ -10,6 +10,8 @@ export const TEMPLAR_MELEE_ATTACK_RANGE = 2.6;
 /** Match `attackRange` in `backend/enemyAI.js` → `updateGhoulAI` */
 export const GHOUL_MELEE_ATTACK_RANGE = 2.4;
 export const TITAN_MELEE_ATTACK_RANGE = 3.0;
+/** Match `BOSS_MELEE_RANGE` in `backend/enemyAI.js` → `updateBossAI` */
+export const BOSS_MELEE_ATTACK_RANGE = 2.9;
 
 const LINE_HALF_WIDTH = 0.04;
 

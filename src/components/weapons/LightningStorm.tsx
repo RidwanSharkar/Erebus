@@ -171,9 +171,10 @@ const LightningStormComponent = memo(function LightningStorm({
         onHit(selectedTarget.id, finalDamage, isCritical);
       }
 
-      // Also queue damage directly to combat system if available (like Smite does)
+      // Queue damage on the combat system when we can resolve the enemy entity.
+      // applyDamage() already spawns the floating damage number — do not also add one here or it doubles.
+      let queuedToCombatSystem = false;
       if (combatSystem) {
-        // Find the enemy entity by server enemy ID
         const allEntities = combatSystem.world?.getAllEntities() || [];
         const enemyEntity = allEntities.find((entity: any) => entity.userData?.serverEnemyId === selectedTarget.id);
 
@@ -188,18 +189,18 @@ const LightningStormComponent = memo(function LightningStorm({
             undefined,
             staggerToAdd > 0 ? staggerToAdd : undefined,
           );
+          queuedToCombatSystem = true;
         }
       }
 
-      // Create damage number using CombatSystem (like ColossusStrike)
-      if (combatSystem && combatSystem.damageNumberManager) {
+      if (!queuedToCombatSystem && combatSystem?.damageNumberManager) {
         const damagePosition = selectedTarget.position.clone();
-        damagePosition.y += 1.5; // Offset above target
+        damagePosition.y += 1.5;
         combatSystem.damageNumberManager.addDamageNumber(
           finalDamage,
           isCritical,
           damagePosition,
-          'lightning_storm' // Use distinct damage type for visual styling
+          'lightning_storm',
         );
       }
 

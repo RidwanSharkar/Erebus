@@ -87,6 +87,29 @@ function buildStatShape(): Shape {
   return s;
 }
 
+function buildCurrencyShape(): Shape {
+  const s = new Shape();
+  const r = 0.52;
+  const segments = 32;
+  for (let i = 0; i <= segments; i++) {
+    const a = (i / segments) * Math.PI * 2 - Math.PI / 2;
+    const x = Math.cos(a) * r;
+    const y = Math.sin(a) * r;
+    if (i === 0) s.moveTo(x, y);
+    else s.lineTo(x, y);
+  }
+  s.closePath();
+  const bandH = 0.12;
+  const hole = new Shape();
+  hole.moveTo(-r, bandH);
+  hole.lineTo(r, bandH);
+  hole.lineTo(r, -bandH);
+  hole.lineTo(-r, -bandH);
+  hole.lineTo(-r, bandH);
+  s.holes.push(hole);
+  return s;
+}
+
 const EXTRUDE_OPTS = { steps: 1, depth: 0.06, bevelEnabled: false, curveSegments: 16 };
 
 const SYMBOL_SPEEDS: Partial<Record<CoopPortalKind, [number, number, number]>> = {
@@ -116,7 +139,7 @@ export default function PortalSymbol({
       case 'purple':  return buildFrostShape();
       case 'merchant': return buildHeartShape();
       case 'stat':    return buildStatShape();
-      case 'trial':   return buildStatShape();
+      case 'trial':   return buildCurrencyShape();
       default:        return null;
     }
   }, [campType]);

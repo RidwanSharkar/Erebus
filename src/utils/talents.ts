@@ -196,6 +196,8 @@ export const TALENT_AEGIS_ROOM = 'AEGIS_ROOM' as const;
 export const TALENT_MOMENTUM_RIFT = 'MOMENTUM_RIFT' as const;
 /** Purple room universal passive — restore shield when expending a dash charge (scales with Intellect). */
 export const TALENT_MANA_SHIELD = 'MANA_SHIELD' as const;
+/** Purple room universal passive — buff Arctic Blizzard tick damage (scales with Intellect). */
+export const TALENT_HAILSTORM = 'HAILSTORM' as const;
 /** Green room universal passive — spend a dash charge to heal when taking damage from an enemy. */
 export const TALENT_ORB_SHIELD = 'ORB_SHIELD' as const;
 
@@ -236,13 +238,14 @@ export const STAGGERING_DASH_MAX_DAMAGE = 240;
 export const STAGGERING_DASH_MIN_STAGGER = 80;
 export const STAGGERING_DASH_MAX_STAGGER = 135;
 export const STAGGERING_DASH_COOLDOWN_MS = 200;
-/** Blue room Lightning Bolt (`SPEAR_R`) — fixed hit damage and stagger. */
+/** Blue room Lightning Bolt (`SPEAR_R`) — base hit damage and stagger. */
 export const LIGHTNING_BOLT_ROOM_DAMAGE = 117;
+export const LIGHTNING_BOLT_ROOM_DAMAGE_PER_AGILITY = 4;
 export const LIGHTNING_BOLT_ROOM_STAGGER = 75;
 /** GUARDBREAK room boon — stagger lightning proc damage (base is `STAGGER_PROC_DAMAGE`). */
 export const GUARDBREAK_STAGGER_PROC_DAMAGE = 300;
 /** OVERSHOCK room boon — stagger lightning proc stun duration (base is `STAGGER_PROC_STUN_SECONDS`). */
-export const OVERSHOCK_STAGGER_PROC_STUN_SECONDS = 2.5;
+export const OVERSHOCK_STAGGER_PROC_STUN_SECONDS = 3.0;
 /** UNSTABLE ENERGY room boon — stagger lightning proc base damage per Agility point. */
 export const UNSTABLE_ENERGY_AGILITY_DAMAGE_PER_POINT = 8;
 
@@ -418,6 +421,10 @@ export const ARCTIC_BLIZZARD_DURATION_SEC = 6;
 /** Damage tick interval for concentrated arctic blizzard (ms). */
 export const ARCTIC_BLIZZARD_TICK_MS = 500;
 export const ARCTIC_BLIZZARD_DAMAGE_PER_TICK = 30;
+/** HAILSTORM room boon — arctic blizzard base damage per tick (up from `ARCTIC_BLIZZARD_DAMAGE_PER_TICK`). */
+export const HAILSTORM_ARCTIC_BLIZZARD_DAMAGE_PER_TICK = 45;
+/** HAILSTORM room boon — bonus arctic blizzard damage per Intellect point. */
+export const HAILSTORM_INTELLECT_DAMAGE_PER_POINT = 2;
 /** XZ radius for arctic ground blizzard ticks. */
 export const ARCTIC_BLIZZARD_HIT_RADIUS = 3;
 /** At 5 chill stacks from arctic blizzard ticks — freeze duration (seconds). */
@@ -575,6 +582,7 @@ export type TalentId =
   | typeof TALENT_AEGIS_ROOM
   | typeof TALENT_MOMENTUM_RIFT
   | typeof TALENT_MANA_SHIELD
+  | typeof TALENT_HAILSTORM
   | typeof TALENT_ORB_SHIELD;
 
 /** Crossentropy bolt / explosion palette (Inferno overrides Glacial / Tempest / Plague). */
@@ -1062,7 +1070,7 @@ export const spellbladeTalentDefinition: TalentDefinition = {
   id: TALENT_SPELLBLADE,
   name: 'Spellblade',
   description:
-    'Wraith Strike now deals +3 base damage per point of INTELECT. Hitting an enemy with Wraith Strike restores 36 SHIELD. Permanent grants +10 INTELECT.',
+    'Wraith Strike now deals +3 base damage per point of INTELLECT. Hitting an enemy with Wraith Strike restores 36 SHIELD. Permanent grants +10 INTELLECT.',
   modifiesAbilityId: 'Wraith Strike (Q)',
 };
 
@@ -1220,7 +1228,7 @@ export const parryTalentDefinition: TalentDefinition = {
   id: TALENT_PARRY,
   name: 'Parry',
   description:
-    `Flourish restores ${PARRY_FLOURISH_SHIELD_RESTORE} shield when cast. Permanently grants +${PARRY_INTELLECT_BONUS} INTELECT and +${PARRY_STRENGTH_BONUS} STRENGTH.`,
+    `Flourish restores ${PARRY_FLOURISH_SHIELD_RESTORE} shield when cast. Permanently grants +${PARRY_INTELLECT_BONUS} INTELLECT and +${PARRY_STRENGTH_BONUS} STRENGTH.`,
   modifiesAbilityId: 'Flourish (E)',
 };
 
@@ -1307,7 +1315,7 @@ export const overshockTalentDefinition: TalentDefinition = {
   id: TALENT_OVERSHOCK,
   name: 'Paralysis',
   description:
-    `STAGGER lightning procs stun enemies for ${OVERSHOCK_STAGGER_PROC_STUN_SECONDS} seconds (up from ${STAGGER_PROC_STUN_SECONDS}).`,
+    `STAGGER lightning procs stun enemies for ${OVERSHOCK_STAGGER_PROC_STUN_SECONDS} seconds (up from 1.0 seconds).`,
   modifiesAbilityId: 'Tempest Boons',
 };
 
@@ -1363,7 +1371,7 @@ export const lightningBoltRoomTalentDefinition: TalentDefinition = {
   id: TALENT_LIGHTNING_BOLT_ROOM,
   name: 'Lightning Bolt',
   description:
-    `Calls down a lightning bolt on the highest priority enemy in range, dealing ${LIGHTNING_BOLT_ROOM_DAMAGE} damage and applying STAGGER to the target. At 100 STAGGER, the target is struck by a Lightning Bolt that inflicts STUN for 1.0 seconds.`,
+    `Calls down a lightning bolt on the highest priority enemy in range, dealing ${LIGHTNING_BOLT_ROOM_DAMAGE} + ${LIGHTNING_BOLT_ROOM_DAMAGE_PER_AGILITY} damage per point of AGILITY and applying STAGGER to the target. At 100 STAGGER, the target is struck by a Lightning Bolt that inflicts STUN for 1.0 seconds.`,
   modifiesAbilityId: 'Spell (R)',
 };
 
@@ -1387,7 +1395,15 @@ export const manaShieldRoomTalentDefinition: TalentDefinition = {
   id: TALENT_MANA_SHIELD,
   name: 'Mana Shield',
   description:
-    `Whenever you expend a dash charge, restore shield equal to ${MANA_SHIELD_RESTORE_PER_INTELLECT} × your INTELECT per charge spent.`,
+    `Whenever you expend a dash charge, restore shield equal to ${MANA_SHIELD_RESTORE_PER_INTELLECT} × your INTELLECT per charge spent.`,
+  modifiesAbilityId: 'Abyssal Boons',
+};
+
+export const hailstormRoomTalentDefinition: TalentDefinition = {
+  id: TALENT_HAILSTORM,
+  name: 'Hailstorm',
+  description:
+    `BLIZZARD effects deals ${HAILSTORM_ARCTIC_BLIZZARD_DAMAGE_PER_TICK} damage per tick (up from ${ARCTIC_BLIZZARD_DAMAGE_PER_TICK}) and +${HAILSTORM_INTELLECT_DAMAGE_PER_POINT} damage per point of INTELLECT.`,
   modifiesAbilityId: 'Abyssal Boons',
 };
 
@@ -1475,7 +1491,7 @@ export const psionicBladesTalentDefinition: TalentDefinition = {
   id: TALENT_PSIONIC_BLADES,
   name: 'Psionic Blades',
   description:
-    `Each Sabres basic attack hit (left and right) deals an additional ${PSIONIC_BLADES_BASE_DAMAGE} + ${PSIONIC_BLADES_DAMAGE_PER_INTELLECT} damage per point of INTELECT.`,
+    `Each Sabres basic attack hit (left and right) deals an additional ${PSIONIC_BLADES_BASE_DAMAGE} + ${PSIONIC_BLADES_DAMAGE_PER_INTELLECT} damage per point of INTELLECT.`,
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -1943,6 +1959,8 @@ export interface TalentLoadout {
   momentumRiftRoom: boolean;
   /** Co-op purple room passive — restore shield when expending a dash charge (scales with Intellect). */
   manaShieldRoom: boolean;
+  /** Co-op purple room passive — buff Arctic Blizzard tick damage (scales with Intellect). */
+  hailstormRoom: boolean;
   /** Co-op green room passive — spend a dash charge to heal when taking damage from an enemy. */
   orbShieldRoom: boolean;
 }
@@ -2060,6 +2078,7 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     aegisRoom: false,
     momentumRiftRoom: false,
     manaShieldRoom: false,
+    hailstormRoom: false,
     orbShieldRoom: false,
   };
 }
@@ -2437,6 +2456,32 @@ export function shouldApplyManaShieldRoomTalent(talentLoadout: TalentLoadout | n
   return !!talentLoadout?.manaShieldRoom;
 }
 
+export function shouldApplyHailstormTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.hailstormRoom;
+}
+
+export function getArcticBlizzardDamagePerTick(
+  talentLoadout: TalentLoadout | null | undefined,
+  intellect: number = 0,
+): number {
+  if (!shouldApplyHailstormTalent(talentLoadout)) {
+    return ARCTIC_BLIZZARD_DAMAGE_PER_TICK;
+  }
+  return (
+    HAILSTORM_ARCTIC_BLIZZARD_DAMAGE_PER_TICK
+    + Math.max(0, intellect) * HAILSTORM_INTELLECT_DAMAGE_PER_POINT
+  );
+}
+
+export function getArcticBlizzardDamagePerTickFromStats(
+  stats: PlayerStats,
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): number {
+  const intellect = getEffectiveIntellectWithTalentBonuses(stats, talentLoadout, abilityLoadout);
+  return getArcticBlizzardDamagePerTick(talentLoadout, intellect);
+}
+
 export function getEffectiveIntellectWithTalentBonuses(
   stats: PlayerStats,
   talentLoadout: TalentLoadout | null | undefined,
@@ -2499,6 +2544,15 @@ export function getFanOfKnivesProjectileDamage(
 ): number {
   const agility = getEffectiveAgilityWithTalentBonuses(stats, talentLoadout, abilityLoadout);
   return FAN_OF_KNIVES_BASE_DAMAGE + FAN_OF_KNIVES_DAMAGE_PER_AGILITY * Math.max(0, agility);
+}
+
+export function getLightningBoltRoomDamage(
+  stats: PlayerStats,
+  talentLoadout?: TalentLoadout | null,
+  abilityLoadout?: AbilityLoadout | null,
+): number {
+  const agility = getEffectiveAgilityWithTalentBonuses(stats, talentLoadout, abilityLoadout);
+  return LIGHTNING_BOLT_ROOM_DAMAGE + LIGHTNING_BOLT_ROOM_DAMAGE_PER_AGILITY * Math.max(0, agility);
 }
 
 export function getWindShearProjectileDamage(
@@ -3408,7 +3462,7 @@ export function buildRoomBoonPoolForColor(
     case 'red':
       return [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH, TALENT_REBUKE, TALENT_METEOR_STRIKE];
     case 'purple':
-      return [...pool, TALENT_GLACIAL_DASH, TALENT_COLDSNAP_ROOM, TALENT_AEGIS_ROOM, TALENT_MOMENTUM_RIFT, TALENT_MANA_SHIELD];
+      return [...pool, TALENT_GLACIAL_DASH, TALENT_COLDSNAP_ROOM, TALENT_AEGIS_ROOM, TALENT_MOMENTUM_RIFT, TALENT_MANA_SHIELD, TALENT_HAILSTORM];
     case 'blue':
       return [...pool, TALENT_STAGGERING_DASH, TALENT_GUARDBREAK, TALENT_OVERSHOCK, TALENT_UNSTABLE_ENERGY, TALENT_LIGHTNING_BOLT_ROOM];
     default:
@@ -3976,6 +4030,9 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_MANA_SHIELD:
       next.manaShieldRoom = true;
       return next;
+    case TALENT_HAILSTORM:
+      next.hailstormRoom = true;
+      return next;
     case TALENT_ORB_SHIELD:
       next.orbShieldRoom = true;
       return next;
@@ -4096,6 +4153,7 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_AEGIS_ROOM]: aegisRoomTalentDefinition,
   [TALENT_MOMENTUM_RIFT]: momentumRiftTalentDefinition,
   [TALENT_MANA_SHIELD]: manaShieldRoomTalentDefinition,
+  [TALENT_HAILSTORM]: hailstormRoomTalentDefinition,
   [TALENT_ORB_SHIELD]: orbShieldTalentDefinition,
 };
 
@@ -4223,6 +4281,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_AEGIS_ROOM]: null,
   [TALENT_MOMENTUM_RIFT]: null,
   [TALENT_MANA_SHIELD]: null,
+  [TALENT_HAILSTORM]: '/icons/blizzard.svg',
   [TALENT_ORB_SHIELD]: null,
 };
 
@@ -4368,6 +4427,7 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.aegisRoom) out.push(TALENT_AEGIS_ROOM);
   if (loadout.momentumRiftRoom) out.push(TALENT_MOMENTUM_RIFT);
   if (loadout.manaShieldRoom) out.push(TALENT_MANA_SHIELD);
+  if (loadout.hailstormRoom) out.push(TALENT_HAILSTORM);
   if (loadout.orbShieldRoom) out.push(TALENT_ORB_SHIELD);
   return out;
 }

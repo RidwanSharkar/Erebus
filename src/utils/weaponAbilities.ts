@@ -1,5 +1,5 @@
 import { WeaponType } from '@/components/dragon/weapons';
-import { REANIMATE_SUNWELL_COOLDOWN_SEC } from '@/utils/talents';
+import { REANIMATE_SUNWELL_COOLDOWN_SEC, LIGHTNING_BOLT_ROOM_DAMAGE, LIGHTNING_BOLT_ROOM_DAMAGE_PER_AGILITY, LIGHTNING_BOLT_ROOM_STAGGER } from '@/utils/talents';
 
 export interface AbilityData {
   name: string;
@@ -187,7 +187,7 @@ export const universalAbilityPool: UniversalAbility[] = [
   {
     id: 'SPEAR_R', sourceWeapon: WeaponType.SPEAR, sourceKey: 'R',
     name: 'Lightning Bolt', cooldown: 3.0, icon: '⚡',
-    description: 'Calls down a lightning bolt on a random enemy within range, dealing 117 damage and applying 70 stagger.',
+    description: `Calls down a lightning bolt on a random enemy within range, dealing ${LIGHTNING_BOLT_ROOM_DAMAGE} + ${LIGHTNING_BOLT_ROOM_DAMAGE_PER_AGILITY} damage per point of AGILITY and applying ${LIGHTNING_BOLT_ROOM_STAGGER} stagger.`,
     allowedWeapons: ALL_WEAPONS,
   },
   {
@@ -441,7 +441,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Lightning Bolt',
       key: 'R',
       cooldown: 1.0,
-      description: 'Calls down a lightning bolt on the highest priority enemy in the map, dealing 117 damage and applying 70 stagger.'
+      description: `Calls down a lightning bolt on the highest priority enemy in the map, dealing ${LIGHTNING_BOLT_ROOM_DAMAGE} + ${LIGHTNING_BOLT_ROOM_DAMAGE_PER_AGILITY} damage per point of AGILITY and applying ${LIGHTNING_BOLT_ROOM_STAGGER} stagger.`
     },
     {
       name: 'Storm Shroud',

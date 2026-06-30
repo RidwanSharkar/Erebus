@@ -12,8 +12,12 @@ import {
   BufferGeometry,
   Float32BufferAttribute,
   Mesh,
+  PlaneGeometry,
+  Vector3,
 } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+
+type SoulType = 'green' | 'red' | 'blue' | 'purple';
 
 export interface TitanStompShockwaveBurst {
   id: string;
@@ -21,6 +25,7 @@ export interface TitanStompShockwaveBurst {
   direction: { ux: number; uz: number };
   maxRange: number;
   travelMs: number;
+  soulType?: SoulType;
 }
 
 interface TitanStompShockwaveProps {
@@ -28,19 +33,51 @@ interface TitanStompShockwaveProps {
   onComplete: () => void;
 }
 
+interface TitanStompPalette {
+  wedgeCore: string;
+  wedgeMid: string;
+  wedgeHalo: string;
+  lightColor: string;
+  dustTints: string[];
+}
+
 const GROUND_Y = 0.12;
-/** Narrow half-width at Titan feet — matches server TITAN_STOMP_HALF_WIDTH_MIN. */
 const MIN_HALF_WIDTH = 0.5;
-/** Wide half-width at wavefront — matches server TITAN_STOMP_HALF_WIDTH_MAX. */
 const MAX_HALF_WIDTH = 2.0;
-/** Max world-units of wedge visible behind the wavefront. */
 const TRAIL_LENGTH = 4.0;
-/** Fraction of trail band used for soft trailing-edge falloff. */
 const TRAIL_FADE = 0.35;
 
-const DUST_COUNT = 32;
-const DUST_SPAWN_MS = 45;
-const DUST_COLORS = ['#e8dcc8', '#c8b89a', '#a89878', '#8b7355'];
+const DUST_COUNT = 48;
+const DUST_SPAWN_MS = 35;
+const PUFF_COUNT = 18;
+const PUFF_SPAWN_MS = 55;
+const PUFF_MAX_AGE = 0.9;
+
+const SOUL_BASE: Record<SoulType, { core: string; glow: string; light: string }> = {
+  green:  { core: '#00ff88', glow: '#00cc55', light: '#00ff66' },
+  red:    { core: '#ff3344', glow: '#cc1122', light: '#ff2233' },
+  blue:   { core: '#44aaff', glow: '#2266dd', light: '#3399ff' },
+  purple: { core: '#cc44ff', glow: '#8811cc', light: '#bb33ff' },
+};
+
+const EARTHY_DUST = ['#8b7d6a', '#a89878', '#6b5d4a', '#c8b89a'];
+
+function mixHex(soul: string, earth: string, soulWeight = 0.3): string {
+  const c1 = new Color(soul);
+  const c2 = new Color(earth);
+  return '#' + c1.lerp(c2, 1 - soulWeight).getHexString();
+}
+
+function getTitanStompPalette(soulType?: SoulType): TitanStompPalette {
+  const base = SOUL_BASE[soulType ?? 'green'] ?? SOUL_BASE.green;
+  return {
+    wedgeCore: base.core,
+    wedgeMid: base.glow,
+    wedgeHalo: base.glow,
+    lightColor: base.light,
+    dustTints: EARTHY_DUST.map((e) => mixHex(base.glow, e, 0.3)),
+  };
+}
 
 const WEDGE_VERT = `
   varying float vAlong;
@@ -89,6 +126,26 @@ const DUST_FRAG = `
   }
 `;
 
+const PUFF_VERT = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const PUFF_FRAG = `
+  varying vec2 vUv;
+  uniform vec3 uColor;
+  uniform float uOpacity;
+  void main() {
+    vec2 c = vUv - 0.5;
+    float dist = length(c);
+    float alpha = smoothstep(0.5, 0.05, dist) * uOpacity;
+    gl_FragColor = vec4(uColor, alpha);
+  }
+`;
+
 function lerpHalfWidth(u: number): number {
   return MIN_HALF_WIDTH + (MAX_HALF_WIDTH - MIN_HALF_WIDTH) * u;
 }
@@ -106,6 +163,20 @@ function createWedgeShaderMaterial(color: string, baseOpacity: number): ShaderMa
     fragmentShader: WEDGE_FRAG,
     transparent: true,
     blending: AdditiveBlending,
+    depthWrite: false,
+    side: 2,
+  });
+}
+
+function createPuffMaterial(color: string): ShaderMaterial {
+  return new ShaderMaterial({
+    uniforms: {
+      uColor: { value: new Color(color) },
+      uOpacity: { value: 0 },
+    },
+    vertexShader: PUFF_VERT,
+    fragmentShader: PUFF_FRAG,
+    transparent: true,
     depthWrite: false,
     side: 2,
   });
@@ -149,10 +220,25 @@ function updateWedgeGeometry(
 
 type DustParticle = {
   x: number;
+  y: number;
   z: number;
-  yJitter: number;
+  vy: number;
   size: number;
+  baseSize: number;
   color: string;
+  active: boolean;
+};
+
+type PuffParticle = {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  scale: number;
+  color: string;
+  age: number;
   active: boolean;
 };
 
@@ -164,45 +250,76 @@ function ExpandingWedge({
   onComplete: () => void;
 }) {
   const grp = useRef<Group>(null);
+  const puffGroupRef = useRef<Group>(null);
   const coreMeshRef = useRef<Mesh>(null);
   const midMeshRef = useRef<Mesh>(null);
   const frontRingRef = useRef<Mesh>(null);
+  const puffMeshRefs = useRef<(Mesh | null)[]>(Array(PUFF_COUNT).fill(null));
   const elapsed = useRef(0);
   const spawnAcc = useRef(0);
+  const puffSpawnAcc = useRef(0);
   const doneRef = useRef(false);
   const { origin, direction, maxRange, travelMs } = burst;
+
+  const palette = useMemo(
+    () => getTitanStompPalette(burst.soulType),
+    [burst.soulType],
+  );
 
   const dustParticles = useRef<DustParticle[]>(
     Array.from({ length: DUST_COUNT }, () => ({
       x: 0,
+      y: 0,
       z: 0,
-      yJitter: 0,
+      vy: 0,
       size: 0,
-      color: DUST_COLORS[0],
+      baseSize: 0,
+      color: palette.dustTints[0],
+      active: false,
+    })),
+  );
+
+  const puffParticles = useRef<PuffParticle[]>(
+    Array.from({ length: PUFF_COUNT }, () => ({
+      x: 0,
+      y: 0,
+      z: 0,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      scale: 0,
+      color: palette.dustTints[0],
+      age: 0,
       active: false,
     })),
   );
 
   const stompLight = useDynamicLight({
-    color: new Color('#c8b89a'),
+    color: new Color(palette.lightColor),
     distance: 8,
     decay: 2,
     priority: 0,
   });
 
   const { matCore, matMid, matHalo } = useMemo(() => {
-    const core = createWedgeShaderMaterial('#e8dcc8', 0.88);
-    const mid = createWedgeShaderMaterial('#a89878', 0.62);
+    const core = createWedgeShaderMaterial(palette.wedgeCore, 0.55);
+    const mid = createWedgeShaderMaterial(palette.wedgeMid, 0.38);
     const halo = new MeshBasicMaterial({
-      color: new Color('#8b7355'),
+      color: new Color(palette.wedgeHalo),
       transparent: true,
-      opacity: 0.38,
+      opacity: 0.28,
       blending: AdditiveBlending,
       depthWrite: false,
       side: 2,
+      toneMapped: false,
     });
     return { matCore: core, matMid: mid, matHalo: halo };
-  }, []);
+  }, [palette]);
+
+  const puffMats = useMemo(
+    () => Array.from({ length: PUFF_COUNT }, () => createPuffMaterial(palette.dustTints[0])),
+    [palette],
+  );
 
   const geomCore = useMemo(
     () => createWedgeGeometry(0.01, MIN_HALF_WIDTH, MIN_HALF_WIDTH),
@@ -213,6 +330,7 @@ function ExpandingWedge({
     [],
   );
   const geomRing = useMemo(() => new RingGeometry(0.35, 0.85, 24), []);
+  const puffGeo = useMemo(() => new PlaneGeometry(1.4, 1.4), []);
 
   const { dustGeom, dustMat } = useMemo(() => {
     const positions = new Float32Array(DUST_COUNT * 3);
@@ -228,7 +346,6 @@ function ExpandingWedge({
       vertexShader: DUST_VERT,
       fragmentShader: DUST_FRAG,
       transparent: true,
-      blending: AdditiveBlending,
       depthWrite: false,
     });
     return { dustGeom: geom, dustMat: mat };
@@ -242,10 +359,12 @@ function ExpandingWedge({
       geomCore.dispose();
       geomMid.dispose();
       geomRing.dispose();
+      puffGeo.dispose();
+      puffMats.forEach((m) => m.dispose());
       dustGeom.dispose();
       dustMat.dispose();
     };
-  }, [matCore, matMid, matHalo, geomCore, geomMid, geomRing, dustGeom, dustMat]);
+  }, [matCore, matMid, matHalo, geomCore, geomMid, geomRing, puffGeo, puffMats, dustGeom, dustMat]);
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -262,19 +381,42 @@ function ExpandingWedge({
     let spawned = 0;
     for (let i = 0; i < DUST_COUNT && spawned < count; i++) {
       if (pool[i].active) continue;
+      const baseSize = 0.18 + Math.random() * 0.22;
       pool[i] = {
         x: (Math.random() * 2 - 1) * frontHalfWidth * 0.92,
+        y: 0.04 + Math.random() * 0.1,
         z: length,
-        yJitter: 0.04 + Math.random() * 0.14,
-        size: 0.18 + Math.random() * 0.22,
-        color: DUST_COLORS[Math.floor(Math.random() * DUST_COLORS.length)],
+        vy: 0.3 + Math.random() * 0.6,
+        size: baseSize,
+        baseSize,
+        color: palette.dustTints[Math.floor(Math.random() * palette.dustTints.length)],
         active: true,
       };
       spawned += 1;
     }
   };
 
-  const updateDust = (length: number, globalFade: number) => {
+  const spawnPuff = (length: number, frontHalfWidth: number, waveSpeed: number) => {
+    const pool = puffParticles.current;
+    for (let i = 0; i < PUFF_COUNT; i++) {
+      if (pool[i].active) continue;
+      pool[i] = {
+        x: (Math.random() * 2 - 1) * frontHalfWidth * 0.85,
+        y: 0.06 + Math.random() * 0.12,
+        z: length + (Math.random() - 0.5) * 0.3,
+        vx: (Math.random() * 2 - 1) * 0.5,
+        vy: 0.4 + Math.random() * 0.8,
+        vz: waveSpeed * (0.85 + Math.random() * 0.2),
+        scale: 0.3 + Math.random() * 0.2,
+        color: palette.dustTints[Math.floor(Math.random() * palette.dustTints.length)],
+        age: 0,
+        active: true,
+      };
+      return;
+    }
+  };
+
+  const updateDust = (length: number, globalFade: number, dt: number) => {
     const posAttr = dustGeom.getAttribute('position') as Float32BufferAttribute;
     const opaAttr = dustGeom.getAttribute('aOpacity') as Float32BufferAttribute;
     const sizeAttr = dustGeom.getAttribute('aSize') as Float32BufferAttribute;
@@ -293,6 +435,9 @@ function ExpandingWedge({
         continue;
       }
 
+      p.y += p.vy * dt;
+      p.vy *= 0.96;
+
       const distBehind = length - p.z;
       if (distBehind > fadeEnd) {
         p.active = false;
@@ -304,12 +449,13 @@ function ExpandingWedge({
 
       const t = distBehind <= 0 ? 0 : (distBehind - fadeStart) / Math.max(0.001, TRAIL_LENGTH - fadeStart);
       const trailFade = distBehind <= 0 ? 1 : Math.max(0, 1 - t * t * (3 - 2 * t));
-      const opacity = 0.72 * globalFade * trailFade;
+      const ageScale = 1 + (1 - trailFade) * 0.35;
+      const opacity = 0.65 * globalFade * trailFade;
 
       scratchColor.set(p.color);
-      posAttr.setXYZ(i, p.x, p.yJitter, p.z);
+      posAttr.setXYZ(i, p.x, p.y, p.z);
       opaAttr.setX(i, opacity);
-      sizeAttr.setX(i, p.size * (0.85 + trailFade * 0.15));
+      sizeAttr.setX(i, p.baseSize * ageScale);
       colAttr.setXYZ(i, scratchColor.r, scratchColor.g, scratchColor.b);
     }
 
@@ -319,12 +465,56 @@ function ExpandingWedge({
     colAttr.needsUpdate = true;
   };
 
-  useFrame((_, dt) => {
+  const updatePuffs = (length: number, globalFade: number, dt: number, cameraPos: Vector3) => {
+    const pool = puffParticles.current;
+
+    for (let i = 0; i < PUFF_COUNT; i++) {
+      const p = pool[i];
+      const mesh = puffMeshRefs.current[i];
+      const mat = puffMats[i];
+
+      if (!p.active || !mesh) {
+        if (mesh) mesh.visible = false;
+        continue;
+      }
+
+      p.age += dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.z += p.vz * dt;
+      p.vy *= 0.98;
+      p.vx *= 0.97;
+
+      const distBehind = length - p.z;
+      const lifeFade = Math.max(0, 1 - p.age / PUFF_MAX_AGE);
+      const trailFade = distBehind > TRAIL_LENGTH + 0.5 ? 0 : 1;
+
+      if (lifeFade <= 0 || trailFade <= 0) {
+        p.active = false;
+        mesh.visible = false;
+        continue;
+      }
+
+      const growScale = p.scale + p.age * 1.6;
+      const opacity = 0.55 * globalFade * lifeFade * trailFade * (1 - p.age / PUFF_MAX_AGE * 0.4);
+
+      mesh.position.set(p.x, p.y, p.z);
+      mesh.scale.setScalar(growScale);
+      mesh.visible = opacity > 0.01;
+      mesh.lookAt(cameraPos);
+      mat.uniforms.uColor.value.set(p.color);
+      mat.uniforms.uOpacity.value = opacity;
+    }
+  };
+
+  useFrame(({ camera }, dt) => {
     if (!grp.current || doneRef.current) return;
     elapsed.current += dt * 1000;
     spawnAcc.current += dt * 1000;
+    puffSpawnAcc.current += dt * 1000;
     const u = Math.min(1, elapsed.current / Math.max(1, travelMs));
     const length = maxRange * u;
+    const waveSpeed = maxRange / Math.max(0.001, travelMs / 1000);
     const backZ = Math.max(0, length - TRAIL_LENGTH);
     const wedgeLen = Math.max(0.01, length - backZ);
     const backU = backZ / maxRange;
@@ -363,18 +553,27 @@ function ExpandingWedge({
     const globalFade = u > 0.9 ? 1 - (u - 0.9) / 0.1 : 1;
     matCore.uniforms.uGlobalFade.value = globalFade;
     matMid.uniforms.uGlobalFade.value = globalFade;
-    matHalo.opacity = 0.38 * globalFade;
+    matHalo.opacity = 0.28 * globalFade;
 
     while (spawnAcc.current >= DUST_SPAWN_MS && u < 1 && length > 0.05) {
       spawnAcc.current -= DUST_SPAWN_MS;
-      spawnDust(length, frontHalfWidth, Math.random() < 0.45 ? 2 : 1);
+      spawnDust(length, frontHalfWidth, Math.random() < 0.5 ? 2 : 1);
     }
-    updateDust(length, globalFade);
+
+    while (puffSpawnAcc.current >= PUFF_SPAWN_MS && u < 1 && length > 0.05) {
+      puffSpawnAcc.current -= PUFF_SPAWN_MS;
+      spawnPuff(length, frontHalfWidth, waveSpeed);
+      if (Math.random() < 0.4) spawnPuff(length, frontHalfWidth, waveSpeed);
+    }
+
+    updateDust(length, globalFade, dt);
+    updatePuffs(length, globalFade, dt, camera.position);
 
     const frontX = origin.x + direction.ux * length;
     const frontZ = origin.z + direction.uz * length;
     stompLight.current?.setPosition(frontX, y + 0.1, frontZ);
     stompLight.current?.setIntensity(4 + 6 * Math.sin(u * Math.PI));
+    stompLight.current?.setColor(new Color(palette.lightColor));
 
     if (u >= 1 && !doneRef.current) {
       doneRef.current = true;
@@ -394,6 +593,17 @@ function ExpandingWedge({
         visible={false}
       />
       <points geometry={dustGeom} material={dustMat} />
+      <group ref={puffGroupRef}>
+        {Array.from({ length: PUFF_COUNT }).map((_, i) => (
+          <mesh
+            key={i}
+            ref={(el) => { puffMeshRefs.current[i] = el; }}
+            geometry={puffGeo}
+            material={puffMats[i]}
+            visible={false}
+          />
+        ))}
+      </group>
     </group>
   );
 }

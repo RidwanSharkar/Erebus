@@ -450,6 +450,7 @@ export default function TalentSelectionModal({
     aegisRoom: initialTalentLoadout?.aegisRoom ?? def.aegisRoom,
     momentumRiftRoom: initialTalentLoadout?.momentumRiftRoom ?? def.momentumRiftRoom,
     manaShieldRoom: initialTalentLoadout?.manaShieldRoom ?? def.manaShieldRoom,
+    hailstormRoom: initialTalentLoadout?.hailstormRoom ?? def.hailstormRoom,
     orbShieldRoom: initialTalentLoadout?.orbShieldRoom ?? def.orbShieldRoom,
   };
   const [loadout, setLoadout] = useState<TalentLoadout>(() =>

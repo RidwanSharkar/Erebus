@@ -5,12 +5,15 @@ import { Vector3, Group } from '@/utils/three-exports';
 import { World } from '@/ecs/World';
 import BossGlbModel from './BossGlbModel';
 import EnemyStaggerBar from './EnemyStaggerBar';
+import EnemyMeleeAttackRangeRing, { BOSS_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
 
-const WALK_STOP_DELAY = 200;
+const WALK_STOP_DELAY = 250;
+/** Matches `BOSS_MELEE_ATTACK_LOCK_MS` in backend `enemyAI.js`. */
+const ATTACK_DURATION = 1200;
 /** Fallback if `boss-throw-start` omits `moveLockMs` — keep in sync with `BOSS_THROW_MOVE_LOCK_MS` in backend `enemyAI.js`. */
 const DEFAULT_BOSS_THROW_MOVE_LOCK_MS = 2000;
 
@@ -54,10 +57,15 @@ export default function BossRenderer({
   const [isImpacting, setIsImpacting] = useState(false);
   const [impactPlayKey, setImpactPlayKey] = useState(0);
   const [isThrowCasting, setIsThrowCasting] = useState(false);
+  const [isAttacking, setIsAttacking] = useState(false);
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation ?? 0);
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const throwCastSafetyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLeapingRef = useRef(false);
+  const isThrowCastingRef = useRef(false);
+  const isAttackingRef = useRef(false);
+  const attackEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const updateVisualRotation = () => {
@@ -73,18 +81,22 @@ export default function BossRenderer({
 
   useEffect(() => {
     const dist = targetPosition.current.distanceTo(position);
-    targetPosition.current.copy(position);
-    if (dist > 0.02 && !isDying && !isThrowCasting) {
-      setIsWalking(true);
+    const isLocked = isLeapingRef.current || isThrowCastingRef.current || isAttackingRef.current;
+    if (!isLocked) {
+      targetPosition.current.copy(position);
+    }
+    if (dist > 0.01 && !isLocked && !isDying) {
+      if (!isWalking) setIsWalking(true);
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
     }
-  }, [position.x, position.y, position.z, isDying, isThrowCasting]);
+  }, [position.x, position.y, position.z, isDying]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(
     () => () => {
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (throwCastSafetyTimer.current) clearTimeout(throwCastSafetyTimer.current);
+      if (attackEndTimer.current) clearTimeout(attackEndTimer.current);
     },
     []
   );
@@ -92,16 +104,26 @@ export default function BossRenderer({
   useEffect(() => {
     if (!socket) return;
 
-    const onAttack = (data: { bossId: string; meleeIndex?: number }) => {
+    const onAttackTelegraph = (data: { bossId: string; meleeIndex?: number }) => {
       if (data.bossId !== id) return;
       const m = (data.meleeIndex ?? 0) % 2;
       setMeleeIndex(m as 0 | 1);
       setAttackTrigger((k) => k + 1);
+      setIsAttacking(true);
+      isAttackingRef.current = true;
+      setIsWalking(false);
+      if (attackEndTimer.current) clearTimeout(attackEndTimer.current);
+      attackEndTimer.current = setTimeout(() => {
+        setIsAttacking(false);
+        isAttackingRef.current = false;
+        attackEndTimer.current = null;
+      }, ATTACK_DURATION);
     };
     const onThrowStart = (data: { bossId: string; moveLockMs?: number }) => {
       if (data.bossId !== id) return;
       setThrowTrigger((k) => k + 1);
       setIsThrowCasting(true);
+      isThrowCastingRef.current = true;
       if (throwCastSafetyTimer.current) clearTimeout(throwCastSafetyTimer.current);
       const lockMs =
         typeof data.moveLockMs === 'number' && data.moveLockMs > 0
@@ -109,16 +131,19 @@ export default function BossRenderer({
           : DEFAULT_BOSS_THROW_MOVE_LOCK_MS;
       throwCastSafetyTimer.current = setTimeout(() => {
         setIsThrowCasting(false);
+        isThrowCastingRef.current = false;
         throwCastSafetyTimer.current = null;
       }, lockMs + 150);
     };
     const onLeapStart = (data: { bossId: string }) => {
       if (data.bossId !== id) return;
       setIsLeaping(true);
+      isLeapingRef.current = true;
     };
     const onLeapLand = (data: { bossId: string }) => {
       if (data.bossId !== id) return;
       setIsLeaping(false);
+      isLeapingRef.current = false;
     };
     const onTectonic = (data: { bossId: string }) => {
       if (data.bossId !== id) return;
@@ -130,7 +155,7 @@ export default function BossRenderer({
       setImpactPlayKey((k) => k + 1);
     };
 
-    socket.on('boss-attack', onAttack);
+    socket.on('boss-attack-telegraph', onAttackTelegraph);
     socket.on('boss-throw-start', onThrowStart);
     socket.on('boss-leap-start', onLeapStart);
     socket.on('boss-leap-land', onLeapLand);
@@ -142,7 +167,11 @@ export default function BossRenderer({
         clearTimeout(throwCastSafetyTimer.current);
         throwCastSafetyTimer.current = null;
       }
-      socket.off('boss-attack', onAttack);
+      if (attackEndTimer.current) {
+        clearTimeout(attackEndTimer.current);
+        attackEndTimer.current = null;
+      }
+      socket.off('boss-attack-telegraph', onAttackTelegraph);
       socket.off('boss-throw-start', onThrowStart);
       socket.off('boss-leap-start', onLeapStart);
       socket.off('boss-leap-land', onLeapLand);
@@ -157,6 +186,7 @@ export default function BossRenderer({
 
   const handleThrowAnimFinished = useCallback(() => {
     setIsThrowCasting(false);
+    isThrowCastingRef.current = false;
     if (throwCastSafetyTimer.current) {
       clearTimeout(throwCastSafetyTimer.current);
       throwCastSafetyTimer.current = null;
@@ -167,8 +197,15 @@ export default function BossRenderer({
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
     group.position.copy(targetPosition.current);
+
+    const isLocked = isLeapingRef.current || isThrowCastingRef.current || isAttackingRef.current;
+    if (dist > 0.01 && !isLocked && !isDying) {
+      if (!isWalking) setIsWalking(true);
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
+    }
 
     if (isStunned) return;
 
@@ -190,7 +227,7 @@ export default function BossRenderer({
   return (
     <group ref={groupRef}>
       <BossGlbModel
-        isWalking={isWalking && !isLeaping && !isThrowCasting}
+        isWalking={isWalking && !isLeaping && !isThrowCasting && !isAttacking}
         isDying={isDying}
         isLeaping={isLeaping}
         tectonicJumpTrigger={tectonicJumpTrigger}
@@ -200,11 +237,18 @@ export default function BossRenderer({
         isImpacting={isImpacting}
         impactPlayKey={impactPlayKey}
         onImpactFinished={handleImpactFinished}
-        onLeapFinished={() => setIsLeaping(false)}
+        onLeapFinished={() => {
+          setIsLeaping(false);
+          isLeapingRef.current = false;
+        }}
         onTectonicJumpFinished={() => {}}
         onAttackFinished={() => {}}
         onThrowAnimFinished={handleThrowAnimFinished}
       />
+
+      {isAttacking && (
+        <EnemyMeleeAttackRangeRing radius={BOSS_MELEE_ATTACK_RANGE} />
+      )}
 
       <Billboard position={[0, 6.1, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (

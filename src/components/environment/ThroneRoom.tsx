@@ -142,8 +142,8 @@ const THRONE_PORTAL_COLOR_HEX: Record<CoopPortalKind, string> = {
   blue: '#3b82f6',
   red: '#ef4444',
   green: '#22c55e',
-  stat: '#f97316',
-  trial: '#eab308',
+  stat: '#eab308',
+  trial: '#f97316',
   merchant: '#ec4899',
   boss: '#6c3dff',
 };
@@ -153,8 +153,8 @@ const PORTAL_RITUAL_COLORS: Record<CoopPortalKind, { base: string; glow: string 
   blue: { base: '#1e3a8a', glow: '#93c5fd' },
   red: { base: '#991b1b', glow: '#fca5a5' },
   green: { base: '#166534', glow: '#86efac' },
-  stat: { base: '#c2410c', glow: '#fdba74' },
-  trial: { base: '#a16207', glow: '#fde047' },
+  stat: { base: '#a16207', glow: '#fde047' },
+  trial: { base: '#c2410c', glow: '#fdba74' },
   merchant: { base: '#be185d', glow: '#f9a8d4' },
   boss: { base: '#4c1d95', glow: '#c4b5fd' },
 };

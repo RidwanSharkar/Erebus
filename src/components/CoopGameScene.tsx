@@ -97,6 +97,7 @@ import {
   shouldApplyArcticStingTalent,
   shouldApplyHighCaliberTalent,
   getStaggerProcBaseDamage,
+  getArcticBlizzardDamagePerTickFromStats,
   getDualCoilLateralVector,
   CROSSENTROPY_MAX_TRAVEL_DISTANCE,
   REANIMATE_SUNWELL_HEAL,
@@ -136,7 +137,9 @@ import {
   STAGGERING_DASH_MIN_STAGGER,
   STAGGERING_DASH_MAX_STAGGER,
   LIGHTNING_BOLT_ROOM_DAMAGE,
+  LIGHTNING_BOLT_ROOM_DAMAGE_PER_AGILITY,
   LIGHTNING_BOLT_ROOM_STAGGER,
+  getLightningBoltRoomDamage,
   BOW_UNCHARGED_PROJECTILE_DAMAGE,
   FAN_OF_KNIVES_BASE_DAMAGE,
   FAN_OF_KNIVES_MAX_DISTANCE_UNITS,
@@ -1855,6 +1858,16 @@ export function CoopGameScene({
     }
     return out;
   }, [summonTotemEnemyData, gameMode]);
+
+  const getArcticBlizzardDamagePerTick = useCallback(
+    () =>
+      getArcticBlizzardDamagePerTickFromStats(
+        effectiveCombatStats,
+        talentLoadoutRef.current,
+        abilityLoadoutRef.current,
+      ),
+    [effectiveCombatStats],
+  );
 
   const resolveTotemEnemyFrozen = useCallback((targetId: string) => {
     const world = engineRef.current?.getWorld();
@@ -7348,6 +7361,9 @@ export function CoopGameScene({
             variant: 'boss',
           },
         ]);
+        window.audioSystem?.playExplosionSound(
+          new Vector3(land.x, land.y, land.z),
+        );
       }
     };
 
@@ -7425,6 +7441,7 @@ export function CoopGameScene({
 
     const handleTitanStompShockwave = (data: {
       titanId: string;
+      soulType?: 'green' | 'red' | 'blue' | 'purple';
       origin: { x: number; y: number; z: number };
       direction: { ux: number; uz: number };
       maxRange: number;
@@ -7442,6 +7459,7 @@ export function CoopGameScene({
           direction: data.direction,
           maxRange: data.maxRange,
           travelMs: data.travelMs,
+          soulType: data.soulType ?? 'green',
         },
       ]);
     };
@@ -10386,11 +10404,13 @@ export function CoopGameScene({
 
       window.audioSystem?.playLightningBoltSound(position);
 
-      // Create local Lightning Storm effect with fixed damage of 117
-      createLightningStormEffect(socket?.id || '', position, LIGHTNING_BOLT_ROOM_DAMAGE);
-
-      // Broadcast Lightning Storm ability to other players
-      broadcastPlayerAbility('lightningStorm', position, new Vector3(0, 0, 1), undefined, { damage: LIGHTNING_BOLT_ROOM_DAMAGE });
+      const boltDamage = getLightningBoltRoomDamage(
+        controlSystemRef.current?.getAllocatedPlayerStats() ?? effectiveCombatStats,
+        talentLoadoutRef.current,
+        abilityLoadoutRef.current,
+      );
+      createLightningStormEffect(socket?.id || '', position, boltDamage);
+      broadcastPlayerAbility('lightningStorm', position, new Vector3(0, 0, 1), undefined, { damage: boltDamage });
     });
 
     // Set up Wind Shear callback
@@ -12356,7 +12376,7 @@ export function CoopGameScene({
             key={`lightning-storm-${effect.id}`}
             weaponType={WeaponType.SPEAR}
             position={effect.position}
-            damage={LIGHTNING_BOLT_ROOM_DAMAGE}
+            damage={effect.damage}
             staggerToAdd={LIGHTNING_BOLT_ROOM_STAGGER}
             onComplete={() => {
               // Remove effect after completion
@@ -12527,6 +12547,7 @@ export function CoopGameScene({
           <ArcticBlizzardManager
             world={engineRef.current.getWorld()}
             getEnemyData={getArcticBlizzardEnemyData}
+            getDamagePerTick={getArcticBlizzardDamagePerTick}
           />
           <StunManager world={engineRef.current.getWorld()} />
           <EntangleManager world={engineRef.current.getWorld()} />

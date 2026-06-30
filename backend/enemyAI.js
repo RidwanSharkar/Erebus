@@ -203,6 +203,8 @@ const BOSS_MELEE_COOLDOWN_MS = 2750;
 const BOSS_MELEE_DAMAGE = 19;
 /** No translation during melee swing (matches knight `SWING_LOCK_MS`). */
 const BOSS_MELEE_ATTACK_LOCK_MS = 1200;
+/** Windup before melee damage lands (matches `TITAN_HIT_DELAY_MS`). */
+const BOSS_MELEE_HIT_DELAY_MS = 875;
 /** Leap only once at or below this health fraction (not at full HP). */
 const BOSS_LEAP_MAX_HP_PCT = 1.0;
 const BOSS_LEAP_LAND_STANDOFF_M = 0.65; // land near player for leap (not full walk standoff 3.2m)
@@ -216,7 +218,7 @@ const COOP_BOSS_THRONE_ARENA_CLAMP_R =
 const BOSS_LEAP_DURATION_MS = 1325;
 const BOSS_LEAP_LANDING_RADIUS = 3.5;
 const BOSS_LEAP_DAMAGE = 25;
-const BOSS_TECTONIC_COOLDOWN_MS = 28000;
+const BOSS_TECTONIC_COOLDOWN_MS = 30000;
 const BOSS_TECTONIC_MAX_HP_PCT = 0.75;
 const BOSS_TECTONIC_CENTER_DIST = 0.85;
 const BOSS_TECTONIC_JUMP_INTERVAL_MS = 900;
@@ -4454,6 +4456,7 @@ class EnemyAI {
     if (this.io) {
       this.io.to(this.roomId).emit('titan-stomp-shockwave', {
         titanId,
+        soulType: titan.soulType || 'green',
         origin: { x: ox, y: 0, z: oz },
         direction: { ux, uz },
         maxRange: TITAN_STOMP_MAX_RANGE,
@@ -6254,9 +6257,41 @@ class EnemyAI {
       this.moveEnemyTowardsTarget(boss, targetPlayer);
     } else {
       const lastAttackTime = this.bossAttackCooldown.get(boss.id) || 0;
-      if (now - lastAttackTime >= BOSS_MELEE_COOLDOWN_MS) {
-        this.bossAttackPlayer(boss, targetPlayer);
+      if (
+        now - lastAttackTime >= BOSS_MELEE_COOLDOWN_MS &&
+        this.isBossFacingTarget(boss, targetPlayer)
+      ) {
         this.bossAttackCooldown.set(boss.id, now);
+        this.meleeLockUntil.set(boss.id, now + BOSS_MELEE_ATTACK_LOCK_MS);
+
+        const idx = this.bossMeleePatternIndex.get(boss.id) || 0;
+        const meleeIndex = idx % 2;
+        this.bossMeleePatternIndex.set(boss.id, idx + 1);
+
+        this.telegraphBossAttack(boss, targetPlayer, meleeIndex);
+
+        const pid = targetPlayer.id;
+        const bossId = boss.id;
+        setTimeout(() => {
+          if (!this.room?.getGameStarted()) return;
+          const liveBoss = this.room?.enemies?.get(bossId);
+          if (!liveBoss || liveBoss.isDying || liveBoss.health <= 0) return;
+          if (this.room?.isEnemyAffectedBy(bossId, 'stun')) return;
+
+          const currentPlayers = this.room?.getPlayers();
+          if (!currentPlayers) return;
+
+          const currentTarget = currentPlayers.find((p) => p.id === pid);
+          if (!currentTarget || currentTarget.health <= 0) return;
+
+          const currentDistance = this.calculateDistance(liveBoss.position, currentTarget.position);
+          if (
+            currentDistance <= BOSS_MELEE_RANGE &&
+            this.isBossFacingTarget(liveBoss, currentTarget)
+          ) {
+            this.bossAttackPlayer(liveBoss, currentTarget, meleeIndex);
+          }
+        }, BOSS_MELEE_HIT_DELAY_MS);
       }
     }
 
@@ -6266,14 +6301,21 @@ class EnemyAI {
     boss.bossStationary = !movedN;
   }
 
-  bossAttackPlayer(boss, player) {
-    if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
-    const isFacingTarget = this.isBossFacingTarget(boss, player);
-    if (!isFacingTarget) return;
+  telegraphBossAttack(boss, player, meleeIndex) {
+    if (this.io) {
+      this.io.to(this.roomId).emit('boss-attack-telegraph', {
+        bossId: boss.id,
+        targetPlayerId: player.id,
+        position: boss.position,
+        meleeIndex,
+        timestamp: Date.now(),
+      });
+    }
+    console.log(`🔥 Boss ${boss.id} telegraphing melee ${meleeIndex} at player ${player.id}!`);
+  }
 
-    const idx = this.bossMeleePatternIndex.get(boss.id) || 0;
-    const meleeIndex = idx % 2;
-    this.bossMeleePatternIndex.set(boss.id, idx + 1);
+  bossAttackPlayer(boss, player, meleeIndex = 0) {
+    if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
     const damage = BOSS_MELEE_DAMAGE;
 
     if (this.io) {
@@ -6286,7 +6328,6 @@ class EnemyAI {
         timestamp: Date.now(),
       });
     }
-    this.meleeLockUntil.set(boss.id, Date.now() + BOSS_MELEE_ATTACK_LOCK_MS);
     console.log(`🔥 Boss ${boss.id} attacked player ${player.id} for ${damage} damage (melee ${meleeIndex})`);
   }
 

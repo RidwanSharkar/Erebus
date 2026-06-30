@@ -58,6 +58,7 @@ import {
   buildRoomTitleAnnouncement,
   BOON_REROLL_GOLD_COST,
   REWARD_ANNOUNCEMENT_COLORS,
+  STAT_ROOM_PEDESTAL_POINTS,
   TRIAL_ROOM_PEDESTAL_GOLD,
 } from '../utils/coopRoomTitles';
 import { DpsTracker, type DpsSnapshot } from '../utils/DpsTracker';
@@ -599,7 +600,13 @@ function HomeContent() {
     }
 
     if (rewardKind === 'stat') {
-      grantStatPoints(5);
+      grantStatPoints(STAT_ROOM_PEDESTAL_POINTS);
+      window.audioSystem?.playUIInterface3Sound?.();
+      queueOverlayAnnouncement(
+        `+${STAT_ROOM_PEDESTAL_POINTS} STAT POINTS`,
+        REWARD_ANNOUNCEMENT_COLORS.stat,
+        `stat-points-${coopMainArenaIntermissionSeq}`,
+      );
       clearCoopClearedRoomColor();
       setPortalsUnlocked(true);
       return;
@@ -1017,7 +1024,7 @@ function HomeContent() {
     }
     return {
       id: stock.id,
-      name: stock.item?.label ?? 'Boss Reward',
+      name: stock.item?.label ?? 'Artifact',
       description: `${stock.item?.rarity ? `${stock.item.rarity.toUpperCase()} ` : ''}+${stock.item?.statBonus ?? 0} ${stock.item?.stat ?? 'stat'} boss reward`,
       cost: stock.cost,
       currency: 'gold' as const,
@@ -1058,7 +1065,7 @@ function HomeContent() {
                     <li>Use the east <strong>ability pillar</strong> with <strong className="text-green-400">X</strong> to assign Q, E, and R from the shared pool.</li>
                     <li>When a <strong>class boon</strong> modal appears, pick 1 of 3 random talents for your <strong>current weapon</strong> (once per run after that weapon is equipped).</li>
                     <li>After you <strong>clear the first combat room</strong>, a <strong>room boon</strong> offers 3 picks from a pool determined by <strong>that room&apos;s color</strong> (blue / green / purple / red). Weapon affects most colors; green rooms always add universal zombie boons usable with any weapon.</li>
-                    <li>On the <strong>main arena map</strong>, every <strong>third</strong> combat room you clear opens a <strong>boss portal</strong> (Boss 1 → Boss 2 → …; room color does not change that cadence). After a boss, you return to three rooms before the next boss gate.</li>
+                    <li>On the <strong>main arena map</strong>, clearing <strong>3 combat rooms</strong> (colored, stat, or trial) opens a <strong>boss portal</strong>. <strong>Pink merchant</strong> portals never count toward that total. After <strong>Boss 2</strong>, <strong>4 combat rooms</strong> are required before each later boss gate.</li>
                     <li>Use rim <strong>portals</strong> to leave prep or, in the arena, to choose the next challenge when prompted.</li>
                     <li>Begin each run with 3 STAT points to spend on your character. Some talents may scale with specific stats.</li>
                     <li>A <strong>PINK</strong> portal allows you to HEAL and buy items at the merchant.</li>
@@ -1068,6 +1075,11 @@ function HomeContent() {
                     <li><strong>Stats</strong> — <strong className="text-red-400">Strength</strong> increases critical strike damage, <strong className="text-green-400">Stamina</strong> increases maximum health, <strong className="text-blue-400">Agility</strong> increases critical hit chance, <strong className="text-purple-400">Intellect</strong> increases shield capacity.</li>
                     <li><strong>PURPLE</strong>,<strong>BLUE</strong>,<strong>GREEN</strong>,and <strong>RED</strong> portals lead to enemy rooms that reward unique talents for abilities.</li>
                     <li>When releasing the Bow's left-click attack while the Bow flashes, a Perfect Shot will be fired.</li>
+                    <li>Interacting with a pedestal after clearing a room will unlock the portals, allowing you to choose the next challenge.</li>
+                    <li>The Merchant (PINK Portal) will sell you items that can be purchased with GOLD.</li>
+                    <li>Enemies have a chance to drop a STAT rune. Pressing 'x' or clicking on the rune will add the stat to your character.</li>
+                    <li>Red Runes provide STRENGTH, Green Runes provide AGILITY, Blue Runes provide AGILITY, and Purple Runes provide INTELLECT.</li>
+                    <li>Reward choices can be Rerolled for a cost of GOLD. There is no cost to reroll while in the Throne Room.</li>
                   </ul>
                 </div>
 
