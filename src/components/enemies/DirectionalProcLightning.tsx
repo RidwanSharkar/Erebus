@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { Vector3, Quaternion, AdditiveBlending, CylinderGeometry, MeshBasicMaterial } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
@@ -20,6 +20,9 @@ export interface DirectionalProcLightningProps {
   to: Vector3;
   palette: DirectionalProcLightningPalette;
   durationMs?: number;
+  /** When true, the pooled point light at the target is not driven. Use this when the
+   * parent component already manages its own impact light to avoid a double flash. */
+  suppressImpactLight?: boolean;
   onComplete?: () => void;
 }
 
@@ -82,6 +85,7 @@ export default function DirectionalProcLightning({
   to,
   palette,
   durationMs = DEFAULT_DURATION_MS,
+  suppressImpactLight = false,
   onComplete,
 }: DirectionalProcLightningProps) {
   const startRef = useRef<number | null>(null);
@@ -130,6 +134,19 @@ export default function DirectionalProcLightning({
 
   const cyl = useMemo(() => new CylinderGeometry(0.09, 0.14, 1, 8), []);
 
+  useEffect(() => {
+    const c = cyl;
+    const mc = matCore;
+    const mg = matGlow;
+    const mh = matHalo;
+    return () => {
+      c.dispose();
+      mc.dispose();
+      mg.dispose();
+      mh.dispose();
+    };
+  }, [cyl, matCore, matGlow, matHalo]);
+
   useFrame(() => {
     if (startRef.current === null) startRef.current = performance.now();
     const elapsed = performance.now() - startRef.current;
@@ -139,8 +156,12 @@ export default function DirectionalProcLightning({
     matCore.opacity = Math.min(1, 0.98 * fade * peak);
     matGlow.opacity = 0.72 * fade * peak;
     matHalo.opacity = 0.35 * fade;
-    boltLight.current?.setPosition(to.x, to.y, to.z);
-    boltLight.current?.setIntensity(48 * fade * peak);
+    if (!suppressImpactLight) {
+      boltLight.current?.setPosition(to.x, to.y, to.z);
+      boltLight.current?.setIntensity(48 * fade * peak);
+    } else {
+      boltLight.current?.setIntensity(0);
+    }
     if (k >= 1 && !doneRef.current) {
       doneRef.current = true;
       onComplete?.();

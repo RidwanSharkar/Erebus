@@ -466,12 +466,12 @@ export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | '
   [WeaponType.SWORD]: {
     Q: '🛡️', // Fullguard
     E: '🔱', // Charge
-    R: '⚡️', // Colossus Strike
+    R: '⚜️', // Colossus Strike
     F: '🌪', // Divine Wind
     P: '⚜️' // Titan's Breath
   },
   [WeaponType.BOW]: {
-    Q: '🎯', // Barrage
+    Q: '🐉', // Barrage
     E: '🐉', // Cobra Shot
     R: '🪶', // Viper Sting
     F: '🍃', // Rejuvenating Shot
@@ -494,7 +494,7 @@ export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | '
   [WeaponType.RUNEBLADE]: {
     Q: '🛡️', // Fullguard
     E: '🗡️', // Wraithblade
-    R: '⚡️', // Hexed Smite
+    R: '⚜️', // Hexed Smite
     F: '💠', // Heartrend
     P: '🩸' // Bloodpact
   },

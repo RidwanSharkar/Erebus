@@ -47,6 +47,16 @@ export default function DeathGrasp({
     core: new SphereGeometry(0.18, 8, 8)
   }), []);
 
+  useEffect(() => {
+    const g = geometries;
+    return () => {
+      g.particle.dispose();
+      g.tentacle.dispose();
+      g.impact.dispose();
+      g.core.dispose();
+    };
+  }, [geometries]);
+
   const materials = useMemo(() => ({
     spiral1: new MeshBasicMaterial({
       color: new Color("#6A0DAD"),
@@ -79,6 +89,17 @@ export default function DeathGrasp({
       blending: AdditiveBlending
     })
   }), []);
+
+  useEffect(() => {
+    const m = materials;
+    return () => {
+      m.spiral1.dispose();
+      m.spiral2.dispose();
+      m.spiral3.dispose();
+      m.impact.dispose();
+      m.core.dispose();
+    };
+  }, [materials]);
 
   // Pre-calculate 3 spiraling particle streams
   const spiralStreams = useMemo(() => {

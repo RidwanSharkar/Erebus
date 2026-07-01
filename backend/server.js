@@ -156,6 +156,10 @@ io.on('connection', (socket) => {
         return { weapon: p.weapon, subclass: p.subclass };
       })(),
     });
+
+    if (typeof room.isInCoopThronePrep === 'function' && room.isInCoopThronePrep()) {
+      socket.emit('coop-throne-sync', room.getCoopThroneSyncPayload());
+    }
     
     // Notify other players
     socket.to(roomId).emit('player-joined', {

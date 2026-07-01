@@ -1,12 +1,20 @@
 import { useRef, useMemo, useEffect, memo } from 'react';
-import { Group, Vector3, CylinderGeometry, SphereGeometry, OctahedronGeometry, MeshBasicMaterial, MeshStandardMaterial, Color, AdditiveBlending, RingGeometry } from '@/utils/three-exports';
+import { Vector3, SphereGeometry, OctahedronGeometry, MeshBasicMaterial, MeshStandardMaterial, Color, AdditiveBlending } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import { WeaponType } from '../dragon/weapons';
 import { calculateDamage } from '@/core/DamageCalculator';
 import { LIGHTNING_BOLT_ROOM_DAMAGE, LIGHTNING_BOLT_ROOM_STAGGER } from '@/utils/talents';
+import DirectionalProcLightning, { type DirectionalProcLightningPalette } from '@/components/enemies/DirectionalProcLightning';
 
 const LIGHTNING_STORM_LIGHT_COLOR = new Color('#FFD700');
+
+const GOLD_PALETTE: DirectionalProcLightningPalette = {
+  core: '#fff7ad',
+  glow: '#FFD700',
+  halo: '#FFA500',
+  light: '#FFD700',
+};
 
 interface LightningStormProps {
   weaponType: WeaponType;
@@ -64,16 +72,14 @@ const LightningStormComponent = memo(function LightningStorm({
   combatSystem
 }: LightningStormProps) {
   const startTimeRef = useRef<number | null>(null);
-  const duration = 1.0; // Shorter duration than ColossusStrike
+  const duration = 1.0;
   const flickerRef = useRef(1);
   const damageDealtRef = useRef(false);
   const isVisible = useRef(false);
   const isCompleted = useRef(false);
 
-  // Borrow a pooled point light for the impact flash instead of mounting a <pointLight>.
   const stormLight = useDynamicLight({ color: LIGHTNING_STORM_LIGHT_COLOR, distance: 8, decay: 2, priority: 1 });
 
-  // Initialize start time only once
   if (startTimeRef.current === null) {
     startTimeRef.current = Date.now() + delayStart;
   }
@@ -91,7 +97,6 @@ const LightningStormComponent = memo(function LightningStorm({
   }
   const selectedTarget = selectedTargetRef.current;
 
-  // Calculate the sky position (directly above the target position)
   const skyPosition = useMemo(() => {
     if (selectedTarget) {
       return new Vector3(selectedTarget.position.x, selectedTarget.position.y + 20, selectedTarget.position.z);
@@ -99,80 +104,23 @@ const LightningStormComponent = memo(function LightningStorm({
     return new Vector3(position.x, position.y + 20, position.z);
   }, [selectedTarget, position]);
 
-  // Create more concentrated branching geometry for lightning bolt
-  const mainBoltSegments = 128;
-  const branchCount = 24;
-
-  const branches = useMemo(() => {
-    if (!selectedTarget) return [];
-
-    const targetPos = selectedTarget.position;
-    const distance = targetPos.clone().sub(skyPosition).length();
-    const mainBolt = {
-      points: Array(mainBoltSegments).fill(0).map((_, i) => {
-        const t = i / (mainBoltSegments - 1);
-        // More complex zigzag pattern for main bolt
-        const primaryOffset = Math.sin(t * Math.PI * 8) * (1 - t) * 1.2;
-        const secondaryOffset = Math.sin(t * Math.PI * 16) * (1 - t) * 0.6;
-        const randomOffset = (Math.random() - 0.5) * 0.8 * (1 - t);
-
-        return new Vector3(
-          skyPosition.x + (targetPos.x - skyPosition.x) * t + primaryOffset + randomOffset,
-          skyPosition.y + (targetPos.y - skyPosition.y) * (Math.pow(t, 0.7)),
-          skyPosition.z + (targetPos.z - skyPosition.z) * t + secondaryOffset + randomOffset
-        );
-      }),
-      thickness: 0.11,
-      isCoreStrike: true
-    };
-
-    const secondaryBranches = Array(branchCount).fill(0).map(() => {
-      const startIdx = Math.floor(Math.random() * mainBolt.points.length * 0.8);
-      const startPoint = mainBolt.points[startIdx];
-      const branchLength = Math.floor(Math.random() * 12) + 8; // 8-20 segments
-
-      return {
-        points: Array(branchLength).fill(0).map((_, j) => {
-          const branchT = j / (branchLength - 1);
-          const angle = (Math.random() - 0.5) * Math.PI * 0.8; // Spread angle
-          const branchDistance = branchT * 3; // Max branch length
-
-          return new Vector3(
-            startPoint.x + Math.cos(angle) * branchDistance * (1 - branchT * 0.3),
-            startPoint.y - branchT * 2, // Branches go downward
-            startPoint.z + Math.sin(angle) * branchDistance * (1 - branchT * 0.3)
-          );
-        }),
-        thickness: 0.05,
-        isCoreStrike: false
-      };
-    });
-
-    return [mainBolt, ...secondaryBranches];
-  }, [selectedTarget, skyPosition]);
-
   const performLightningStormDamage = () => {
     if (damageDealtRef.current || !selectedTarget) {
-      return; // Prevent multiple damage applications
+      return;
     }
     damageDealtRef.current = true;
 
     let damageDealtFlag = false;
 
-    // Calculate damage using centralized DamageCalculator system
     const damageResult = calculateDamage(damage, weaponType);
     const finalDamage = damageResult.damage;
     const isCritical = damageResult.isCritical;
 
-    // Hit the selected target
     if (selectedTarget) {
-      // Call onHit callback for the specific target
       if (onHit) {
         onHit(selectedTarget.id, finalDamage, isCritical);
       }
 
-      // Queue damage on the combat system when we can resolve the enemy entity.
-      // applyDamage() already spawns the floating damage number — do not also add one here or it doubles.
       let queuedToCombatSystem = false;
       if (combatSystem) {
         const allEntities = combatSystem.world?.getAllEntities() || [];
@@ -207,7 +155,6 @@ const LightningStormComponent = memo(function LightningStorm({
       damageDealtFlag = true;
     }
 
-    // Notify that damage was dealt
     if (onDamageDealt) {
       onDamageDealt(damageDealtFlag);
     }
@@ -220,7 +167,7 @@ const LightningStormComponent = memo(function LightningStorm({
     const startTime = startTimeRef.current!;
 
     if (currentTime < startTime) {
-      return; // Not started yet
+      return;
     }
 
     if (!isVisible.current) {
@@ -230,15 +177,12 @@ const LightningStormComponent = memo(function LightningStorm({
     const elapsed = currentTime - startTime;
     const progress = Math.min(elapsed / (duration * 1000), 1);
 
-    // Flicker effect
     flickerRef.current = 0.8 + Math.random() * 0.4;
 
-    // Deal damage at 60% through the animation (when bolt hits ground)
     if (progress >= 0.6 && !damageDealtRef.current) {
       performLightningStormDamage();
     }
 
-    // Complete the effect
     if (progress >= 1) {
       if (!isCompleted.current) {
         isCompleted.current = true;
@@ -248,13 +192,9 @@ const LightningStormComponent = memo(function LightningStorm({
     }
 
     const fadeOut = (1.0 * (1 - progress)) * flickerRef.current;
-    materials.coreBolt.opacity = fadeOut;
-    materials.secondaryBolt.opacity = fadeOut * 0.8;
     materials.impact.opacity = fadeOut * 0.9;
     materials.particle.opacity = fadeOut;
 
-    // Drive the pooled impact light at the target (world space), replicating the
-    // original 25 * (1 - progress) * flicker intensity.
     if (selectedTarget) {
       const tp = selectedTarget.position;
       stormLight.current?.setPosition(tp.x, tp.y, tp.z);
@@ -262,40 +202,26 @@ const LightningStormComponent = memo(function LightningStorm({
     }
   });
 
-  // Create geometries and materials outside render (like ColossusStrike)
   const geometries = useMemo(() => ({
-    bolt: new CylinderGeometry(1, 1, 1, 8),
     impact: new SphereGeometry(1, 16, 16),
-    particle: new OctahedronGeometry(0.08, 0) // Diamond-shaped particles
+    particle: new OctahedronGeometry(0.08, 0),
   }), []);
 
   const materials = useMemo(() => ({
-    coreBolt: new MeshBasicMaterial({
-      color: "#FFD700", // Bright yellow core
-      transparent: true,
-      blending: AdditiveBlending
-    }),
-    secondaryBolt: new MeshBasicMaterial({
-      color: "#FFA500", // Orange-yellow secondary
-      transparent: true,
-      opacity: 0.8,
-      blending: AdditiveBlending
-    }),
     impact: new MeshBasicMaterial({
-      color: "#FFD700", // Golden yellow like ColossusStrike
+      color: '#FFD700',
       transparent: true,
       blending: AdditiveBlending
     }),
     particle: new MeshStandardMaterial({
-      color: "#FFD700", // Bright yellow particles
-      emissive: "#FFD700",
+      color: '#FFD700',
+      emissive: '#FFD700',
       emissiveIntensity: 0.8,
       transparent: true,
       blending: AdditiveBlending
     })
   }), []);
 
-  // Dispose GPU resources when the component unmounts
   useEffect(() => {
     return () => {
       Object.values(geometries).forEach(g => g.dispose());
@@ -303,31 +229,23 @@ const LightningStormComponent = memo(function LightningStorm({
     };
   }, [geometries, materials]);
 
-  // Don't render anything if not visible yet or if completed
   if (!isVisible.current || isCompleted.current || !selectedTarget) {
     return null;
   }
 
   return (
     <group>
-      {/* Lightning branches */}
-      {branches.map((branch, branchIdx) => (
-        <group key={branchIdx}>
-          {branch.points.map((point, idx) => (
-            idx < branch.points.length - 1 && (
-              <mesh
-                key={idx}
-                position={point.toArray()}
-                geometry={geometries.bolt}
-                material={branch.isCoreStrike ? materials.coreBolt : materials.secondaryBolt}
-                scale={[branch.thickness, branch.thickness, branch.thickness]}
-              />
-            )
-          ))}
-        </group>
-      ))}
+      {/* Segmented lightning bolt (DirectionalProcLightning style) */}
+      <DirectionalProcLightning
+        from={skyPosition}
+        to={selectedTarget.position}
+        palette={GOLD_PALETTE}
+        durationMs={620}
+        suppressImpactLight
+        onComplete={() => {}}
+      />
 
-      {/* Impact effect at target location (like ColossusStrike) */}
+      {/* Impact effect at target location */}
       <group position={selectedTarget.position.toArray()}>
         <mesh
           geometry={geometries.impact}
@@ -343,23 +261,21 @@ const LightningStormComponent = memo(function LightningStorm({
           >
             <ringGeometry args={[size, size + 0.2, 32]} />
             <meshBasicMaterial
-              color="#FFD700" // Golden yellow
+              color='#FFD700'
               transparent
               opacity={(0.8 - (i * 0.15)) * (1 - (startTimeRef.current ? (Date.now() - startTimeRef.current) / (duration * 1000) : 0))}
               blending={AdditiveBlending}
             />
           </mesh>
         ))}
-
-        {/* Enhanced lighting now driven via the shared dynamic light pool (see useFrame). */}
       </group>
 
       {/* Spinning diamond particles around impact */}
       {[...Array(12)].map((_, i) => {
         const angle = (i / 12) * Math.PI * 2;
-        const spinAngle = angle + (Date.now() * 0.008); // Fast spinning
-        const radius = 1.2 + (Math.sin(Date.now() * 0.01 + i) * 0.3); // Pulsing radius
-        const height = (Math.sin(Date.now() * 0.007 + i * 0.8) * 0.8); // Oscillating height
+        const spinAngle = angle + (Date.now() * 0.008);
+        const radius = 1.2 + (Math.sin(Date.now() * 0.01 + i) * 0.3);
+        const height = (Math.sin(Date.now() * 0.007 + i * 0.8) * 0.8);
 
         return (
           <mesh

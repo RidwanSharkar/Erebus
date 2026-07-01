@@ -11,6 +11,7 @@ interface TitanModelProps {
   isAttacking: boolean;
   isPoweringUp: boolean;
   isStomping: boolean;
+  isCasting: boolean;
   isDying: boolean;
 }
 
@@ -20,6 +21,7 @@ const TITAN_MODEL_PATHS = [
   '/models/titan_death.glb',
   '/models/titan_powerup.glb',
   '/models/titan_stomp.glb',
+  '/models/titan_cast.glb',
 ];
 
 export function preloadTitanModels(): void {
@@ -34,6 +36,7 @@ export default function TitanModel({
   isAttacking,
   isPoweringUp,
   isStomping,
+  isCasting,
   isDying,
 }: TitanModelProps) {
   const sceneGroupRef = useRef<Group>(null);
@@ -43,7 +46,8 @@ export default function TitanModel({
   const { animations: meleeAnims }           = useGLTF('/models/titan_melee.glb');
   const { animations: deathAnims }           = useGLTF('/models/titan_death.glb');
   const { animations: powerupAnims }         = useGLTF('/models/titan_powerup.glb');
-  const { animations: stompAnims }             = useGLTF('/models/titan_stomp.glb');
+  const { animations: stompAnims }           = useGLTF('/models/titan_stomp.glb');
+  const { animations: castAnims }            = useGLTF('/models/titan_cast.glb');
 
   const clonedScene = useMemo(() => {
     const clone = SkeletonUtils.clone(scene) as Group;
@@ -84,28 +88,31 @@ export default function TitanModel({
       ...rename(meleeAnims,   'Melee').map(stripRootMotionXZ),
       ...rename(powerupAnims, 'Powerup').map(stripRootMotionXZ),
       ...rename(stompAnims,   'Stomp').map(stripRootMotionXZ),
+      ...rename(castAnims,    'Cast').map(stripRootMotionXZ),
       ...rename(deathAnims,   'Death'),
     ];
-  }, [walkAnims, meleeAnims, powerupAnims, stompAnims, deathAnims]);
+  }, [walkAnims, meleeAnims, powerupAnims, stompAnims, castAnims, deathAnims]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
-  const getAction = (name: 'Walk' | 'Melee' | 'Powerup' | 'Stomp' | 'Death'): AnimationAction | null =>
+  const getAction = (name: 'Walk' | 'Melee' | 'Powerup' | 'Stomp' | 'Cast' | 'Death'): AnimationAction | null =>
     actions[name] ?? null;
 
-  // Priority: Death > Stomp > Powerup > Melee > Walk
+  // Priority: Death > Cast > Stomp > Powerup > Melee > Walk
   useEffect(() => {
     if (!actions) return;
 
     const nextAction = isDying
       ? getAction('Death')
-      : isStomping
-        ? getAction('Stomp')
-        : isPoweringUp
-          ? getAction('Powerup')
-          : isAttacking
-            ? getAction('Melee')
-            : getAction('Walk');
+      : isCasting
+        ? getAction('Cast')
+        : isStomping
+          ? getAction('Stomp')
+          : isPoweringUp
+            ? getAction('Powerup')
+            : isAttacking
+              ? getAction('Melee')
+              : getAction('Walk');
 
     if (!nextAction) return;
     if (nextAction === currentActionRef.current) return;
@@ -116,7 +123,7 @@ export default function TitanModel({
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.15).play();
-    } else if (isStomping || isPoweringUp || isAttacking) {
+    } else if (isCasting || isStomping || isPoweringUp || isAttacking) {
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.2).play();
@@ -127,7 +134,7 @@ export default function TitanModel({
     }
 
     currentActionRef.current = nextAction;
-  }, [isWalking, isAttacking, isPoweringUp, isStomping, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isWalking, isAttacking, isPoweringUp, isStomping, isCasting, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After one-shot clips finish, blend back to Walk.
   useEffect(() => {
@@ -137,7 +144,7 @@ export default function TitanModel({
       if (isDying) return;
       const name = e.action.getClip().name;
       if (name === 'Death') return;
-      if (name === 'Melee' || name === 'Stomp' || name === 'Powerup') {
+      if (name === 'Melee' || name === 'Stomp' || name === 'Powerup' || name === 'Cast') {
         const walk = getAction('Walk');
         if (walk) {
           walk.setLoop(LoopRepeat, Infinity);

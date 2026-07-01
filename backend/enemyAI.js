@@ -104,6 +104,15 @@ const TITAN_STOMP_HALF_WIDTH_MAX = 2.0;
 const TITAN_STOMP_DAMAGE = 15;
 const TITAN_STOMP_TRAVEL_MS = 700;
 const TITAN_STOMP_STEPS = 10;
+const TITAN_CANNON_UNLOCK_BOSS_COUNT = 3;
+const TITAN_CANNON_COOLDOWN_MS = 13_000;
+const TITAN_CANNON_WINDUP_MS = 1000;
+const TITAN_CANNON_TOTAL_LOCK_MS = 1500;
+const TITAN_CANNON_RANGE = 25;
+const TITAN_CANNON_HALF_WIDTH = 1.8;
+const TITAN_CANNON_MIN_RANGE = TITAN_STOMP_MAX_RANGE;
+const TITAN_CANNON_START_OFFSET = 0.65;
+const TITAN_CANNON_DAMAGE_BY_SOUL = { green: 120, red: 150, purple: 130, blue: 140 };
 
 // Infested player-zombie summon lock — keep in sync with client ZombieRenderer SUMMON_DURATION
 const INFESTED_ZOMBIE_SUMMON_LOCK_MS = 2800;
@@ -138,6 +147,16 @@ const ALLIED_KNIGHT_SMITE_IMPACT_DELAY_MS = 900;
 const ALLIED_KNIGHT_SMITE_CAST_RANGE = 3.6;
 const ALLIED_KNIGHT_SMITE_DAMAGE = 70;
 const ALLIED_KNIGHT_SMITE_RADIUS = 1.85;
+// TEMPEST INITIATE boon constants (keep in sync with src/utils/talents.ts)
+const TEMPEST_INITIATE_SMITE_COOLDOWN_MS = 2500;
+const TEMPEST_INITIATE_SMITE_BASE_DAMAGE_BONUS = 20;
+const TEMPEST_INITIATE_SMITE_DAMAGE_PER_AGILITY = 5;
+// NECROS INITIATE boon constants (keep in sync with src/utils/talents.ts)
+const NECROS_INITIATE_KNIGHT_BASE_HP = 750;
+const NECROS_INITIATE_KNIGHT_HP_PER_STAMINA = 25;
+// INFERNAL INITIATE boon constants (keep in sync with src/utils/talents.ts)
+const INFERNAL_INITIATE_KNIGHT_BASE_DAMAGE = 80;
+const INFERNAL_INITIATE_KNIGHT_DAMAGE_PER_STRENGTH = 3;
 const ALLIED_HEALER_ID = 'allied-healer';
 const ALLIED_HEALER_MAX_HP = 350;
 const ALLIED_HEALER_MOVE_SPEED = 2.0;
@@ -277,7 +296,7 @@ const MOB_LEAP_PREDICTION_MAX_OFFSET = 12;
 
 // Boss 2: Archon warlock
 const BOSS2_ARCHON_LIGHTNING_COOLDOWN_MS = 3500;
-const BOSS2_ARCHON_LIGHTNING_WINDUP_MS = 750;
+const BOSS2_ARCHON_LIGHTNING_WINDUP_MS = 825;
 const BOSS2_ARCHON_LIGHTNING_DAMAGE = 49;
 const BOSS2_ARCHON_LIGHTNING_HALF_WIDTH = 1.0;
 const BOSS2_ARCHON_LIGHTNING_RANGE = 14;
@@ -291,7 +310,7 @@ const BOSS2_DEATH_GRASP_STANDOFF = 1.2;
 const BOSS2_DEATH_GRASP_RANGE = 13;
 const BOSS2_DEATH_GRASP_ARC_RADIANS = Math.PI / 9;
 const BOSS2_FLAME_PILLAR_DAMAGE = 50;
-const BOSS2_FLAME_PILLAR_RADIUS = 2.5;
+const BOSS2_FLAME_PILLAR_RADIUS = 2.25;
 /** Same as WarlockRenderer / CoopGameScene blink slide — pillars erupt after landing. */
 const BOSS2_FLAME_PILLAR_BLINK_DELAY_MS = 800;
 const BOSS2_FLAME_PILLAR_STAGGER_MS = 250;
@@ -397,7 +416,7 @@ const WARLOCK_BLINK_FLAME_DELAY_MS = 1000;
 /** Post-boss-2 unlock: single-beam Archon Shock (Boss2 phase-0 clone, purple VFX). */
 const WARLOCK_ARCHON_SHOCK_UNLOCK_BOSS_COUNT = 2;
 const WARLOCK_ARCHON_SHOCK_COOLDOWN_MS = 7500;
-const WARLOCK_ARCHON_SHOCK_WINDUP_MS = 750;
+const WARLOCK_ARCHON_SHOCK_WINDUP_MS = 825;
 const WARLOCK_ARCHON_SHOCK_DAMAGE = 47;
 const WARLOCK_ARCHON_SHOCK_HALF_WIDTH = 1.0;
 const WARLOCK_ARCHON_SHOCK_RANGE = 14;
@@ -542,6 +561,8 @@ class EnemyAI {
     this.titanStompCooldown = new Map();
     this.titanStompWindupTimeout = new Map();
     this.titanStompShockwaveInterval = new Map();
+    this.titanCannonCooldown = new Map();
+    this.titanCannonWindupTimeout = new Map();
     this.ghoulLeapCooldown = new Map();
     this.ghoulLeapEndAt = new Map();
     this.ghoulLeapLand = new Map();
@@ -747,6 +768,9 @@ class EnemyAI {
     this.titanStompWindupTimeout.clear();
     this.titanStompShockwaveInterval.forEach((id) => clearInterval(id));
     this.titanStompShockwaveInterval.clear();
+    this.titanCannonCooldown.clear();
+    this.titanCannonWindupTimeout.forEach((t) => clearTimeout(t));
+    this.titanCannonWindupTimeout.clear();
     this.ghoulLeapCooldown.clear();
     this.ghoulLeapEndAt.clear();
     this.ghoulLeapLand.clear();
@@ -2021,7 +2045,7 @@ class EnemyAI {
     this._queueMove(shade.id, shade.position, shade.rotation);
 
     if (distance <= attackRange) {
-      const blinkCooldown = 4750;
+      const blinkCooldown = 5250;
       const lastBlinkTime = this.shadeBlinkCooldown.get(shade.id) || 0;
       const now = Date.now();
 
@@ -3692,6 +3716,7 @@ class EnemyAI {
         strikeAt: now + CHARGE_MS,
         damage: 45,
         radius: 2.99,
+        theme: 'blue',
         timestamp: now
       });
     }
@@ -3724,6 +3749,7 @@ class EnemyAI {
         strikeAt: now + CHARGE_MS,
         damage: 45,
         radius: 2.99,
+        theme: 'blue',
         timestamp: now,
       });
     }
@@ -3830,6 +3856,7 @@ class EnemyAI {
         strikeAt: now + CHARGE_MS,
         damage: 57,
         radius: 2.99,
+        theme: 'blue',
         timestamp: now
       });
     }
@@ -4334,6 +4361,22 @@ class EnemyAI {
       }
     }
 
+    const cannonUnlocked = (this.room?.coopBossesDefeatedCount ?? 0) >= TITAN_CANNON_UNLOCK_BOSS_COUNT;
+    if (
+      cannonUnlocked &&
+      resolved.kind === 'player' &&
+      distance > TITAN_CANNON_MIN_RANGE &&
+      distance <= TITAN_CANNON_RANGE &&
+      !titan.bladestormPowerupActive &&
+      !titan.bladestormActive &&
+      !this.titanCannonWindupTimeout.has(titan.id) &&
+      (this.titanCannonCooldown.get(titan.id) == null ||
+        now - (this.titanCannonCooldown.get(titan.id) || 0) >= TITAN_CANNON_COOLDOWN_MS)
+    ) {
+      this.titanStartCannon(titan, resolved.player);
+      return;
+    }
+
     if (
       resolved.kind === 'player' &&
       distance > TITAN_STOMP_MIN_DISTANCE &&
@@ -4518,6 +4561,58 @@ class EnemyAI {
     const intervalId = setInterval(tick, STEP_MS);
     this.titanStompShockwaveInterval.set(titanId, intervalId);
     tick();
+  }
+
+  titanStartCannon(titan, targetPlayer) {
+    const now = Date.now();
+    this.titanCannonCooldown.set(titan.id, now);
+    this.meleeLockUntil.set(titan.id, now + TITAN_CANNON_TOTAL_LOCK_MS);
+
+    const dx = targetPlayer.position.x - titan.position.x;
+    const dz = targetPlayer.position.z - titan.position.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const ux = dx / len;
+    const uz = dz / len;
+    titan.rotation = Math.atan2(dx, dz);
+    this._queueMove(titan.id, titan.position, titan.rotation);
+
+    const ox = titan.position.x + ux * TITAN_CANNON_START_OFFSET;
+    const oz = titan.position.z + uz * TITAN_CANNON_START_OFFSET;
+    const strikeAt = now + TITAN_CANNON_WINDUP_MS;
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('titan-cannon-windup', {
+        titanId: titan.id,
+        soulType: titan.soulType || 'green',
+        origin: { x: ox, y: 0, z: oz },
+        rotation: titan.rotation,
+        range: TITAN_CANNON_RANGE,
+        halfWidth: TITAN_CANNON_HALF_WIDTH,
+        strikeAt,
+        timestamp: now,
+      });
+    }
+
+    const titanId = titan.id;
+    const oldHandle = this.titanCannonWindupTimeout.get(titanId);
+    if (oldHandle) clearTimeout(oldHandle);
+    const handle = setTimeout(() => {
+      this.titanCannonWindupTimeout.delete(titanId);
+      this.titanFireCannon(titanId, ux, uz, ox, oz);
+    }, TITAN_CANNON_WINDUP_MS);
+    this.titanCannonWindupTimeout.set(titan.id, handle);
+  }
+
+  titanFireCannon(titanId, ux, uz, ox, oz) {
+    const titan = this.room?.enemies?.get(titanId);
+    if (!titan || titan.type !== 'titan' || titan.isDying || titan.health <= 0) return;
+    if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
+
+    const bx = ox + ux * TITAN_CANNON_RANGE;
+    const bz = oz + uz * TITAN_CANNON_RANGE;
+    const damage = TITAN_CANNON_DAMAGE_BY_SOUL[titan.soulType] ?? TITAN_CANNON_DAMAGE_BY_SOUL.green;
+
+    this.room?.damagePlayersInLineSegment(ox, oz, bx, bz, TITAN_CANNON_HALF_WIDTH, damage, 'titan_cannon', { sourceEnemyId: titanId });
   }
 
   tickTitanBladestorm(titan, dtSec) {
@@ -5595,6 +5690,7 @@ class EnemyAI {
           strikeAt: groupStartedAt + BOSS3_LIGHTNING_CHARGE_MS + (index * BOSS3_LIGHTNING_STAGGER_MS),
           damage: BOSS3_LIGHTNING_DAMAGE,
           radius: BOSS3_LIGHTNING_RADIUS,
+          theme: 'green',
           timestamp: groupStartedAt + index,
         });
       });
@@ -6861,6 +6957,45 @@ class EnemyAI {
     };
   }
 
+  /**
+   * Aggregate allied knight boons across all players in the room.
+   * Boolean flags are OR'd (any player with the boon activates it).
+   * Numeric stats use the max value found across all players with the boon active.
+   * @returns {{ tempestInitiate: boolean; necrosInitiate: boolean; infernalInitiate: boolean; abyssalInitiate: boolean; agility: number; strength: number; stamina: number }}
+   */
+  getCoopAlliedKnightBoons() {
+    const result = {
+      tempestInitiate: false,
+      necrosInitiate: false,
+      infernalInitiate: false,
+      abyssalInitiate: false,
+      agility: 0,
+      strength: 0,
+      stamina: 0,
+    };
+    if (!this.room?.players) return result;
+    for (const player of this.room.players.values()) {
+      const b = player.coopAlliedKnightBoons;
+      if (!b) continue;
+      if (b.tempestInitiate) {
+        result.tempestInitiate = true;
+        result.agility = Math.max(result.agility, typeof b.agility === 'number' ? b.agility : 0);
+      }
+      if (b.necrosInitiate) {
+        result.necrosInitiate = true;
+        result.stamina = Math.max(result.stamina, typeof b.stamina === 'number' ? b.stamina : 0);
+      }
+      if (b.infernalInitiate) {
+        result.infernalInitiate = true;
+        result.strength = Math.max(result.strength, typeof b.strength === 'number' ? b.strength : 0);
+      }
+      if (b.abyssalInitiate) {
+        result.abyssalInitiate = true;
+      }
+    }
+    return result;
+  }
+
   /** Flat Pack Hunter bonus: +15 damage per living owned zombie (including self). */
   getPackHunterBonusDamage(ownerId) {
     if (!ownerId) return 0;
@@ -7138,7 +7273,13 @@ class EnemyAI {
     if (this.countAlliedKnightReadyOrbs(ally) < ALLIED_KNIGHT_SMITE_ORB_COST) return false;
     if (!this.consumeAlliedKnightOrbs(ally, now)) return false;
 
-    ally.alliedSmiteCooldownUntil = now + ALLIED_KNIGHT_SMITE_COOLDOWN_MS;
+    const knightBoons = this.getCoopAlliedKnightBoons();
+    const smiteCooldown = knightBoons.tempestInitiate ? TEMPEST_INITIATE_SMITE_COOLDOWN_MS : ALLIED_KNIGHT_SMITE_COOLDOWN_MS;
+    const smiteDamage = knightBoons.tempestInitiate
+      ? ALLIED_KNIGHT_SMITE_DAMAGE + TEMPEST_INITIATE_SMITE_BASE_DAMAGE_BONUS + knightBoons.agility * TEMPEST_INITIATE_SMITE_DAMAGE_PER_AGILITY
+      : ALLIED_KNIGHT_SMITE_DAMAGE;
+
+    ally.alliedSmiteCooldownUntil = now + smiteCooldown;
     this.meleeLockUntil.set(ally.id, now + ALLIED_KNIGHT_SMITE_LOCK_MS);
 
     const dx = targetEnemy.position.x - ally.position.x;
@@ -7177,7 +7318,7 @@ class EnemyAI {
         const ex = enemy.position.x - strikePosition.x;
         const ez = enemy.position.z - strikePosition.z;
         if (ex * ex + ez * ez > ALLIED_KNIGHT_SMITE_RADIUS * ALLIED_KNIGHT_SMITE_RADIUS) continue;
-        this.room.damageEnemy(enemy.id, ALLIED_KNIGHT_SMITE_DAMAGE, null, null, {
+        this.room.damageEnemy(enemy.id, smiteDamage, null, null, {
           sourceAlliedUnitId: liveAlly.id,
           damageType: 'allied_knight_smite',
         });
@@ -7187,7 +7328,7 @@ class EnemyAI {
         this.io.to(this.roomId).emit('allied-knight-smite-impact', {
           knightId: liveAlly.id,
           targetEnemyId: liveTarget.id,
-          damage: ALLIED_KNIGHT_SMITE_DAMAGE,
+          damage: smiteDamage,
           radius: ALLIED_KNIGHT_SMITE_RADIUS,
           position: strikePosition,
           timestamp: Date.now(),
@@ -7204,6 +7345,21 @@ class EnemyAI {
     this.updateAlliedKnightOrbRecharge(ally, now);
     const lockUntil = this.meleeLockUntil.get(ally.id) || 0;
     if (now < lockUntil) return;
+
+    // Apply one-time allied knight boon stat upgrades when boons become active.
+    const knightBoons = this.getCoopAlliedKnightBoons();
+    if (knightBoons.necrosInitiate && !ally.necrosBoonApplied) {
+      ally.necrosBoonApplied = true;
+      const newMax = NECROS_INITIATE_KNIGHT_BASE_HP + knightBoons.stamina * NECROS_INITIATE_KNIGHT_HP_PER_STAMINA;
+      const hpIncrease = Math.max(0, newMax - (ally.maxHealth || ALLIED_KNIGHT_MAX_HP));
+      ally.maxHealth = newMax;
+      ally.health = Math.min(newMax, (ally.health || 0) + hpIncrease);
+    }
+    if (knightBoons.abyssalInitiate && !ally.abyssalBoonApplied) {
+      ally.abyssalBoonApplied = true;
+      ally.moveSpeed = (ally.moveSpeed ?? ALLIED_KNIGHT_MOVE_SPEED) * 1.5;
+      ally.attackCooldown = Math.round((ally.attackCooldown ?? ALLIED_KNIGHT_ATTACK_COOLDOWN_MS) / 1.5);
+    }
 
     const target = this.findAlliedKnightTarget(ally);
     const closestPlayer = this.findClosestPlayer(ally, players);
@@ -7247,7 +7403,11 @@ class EnemyAI {
           if (this.isFriendlyCombatUnit(liveTarget)) return;
           const currentDist = this.calculateDistance(attacker.position, liveTarget.position);
           if (currentDist <= ALLIED_KNIGHT_ATTACK_RANGE + 0.5) {
-            this.room.damageEnemy(liveTarget.id, attacker.damage || ALLIED_KNIGHT_DAMAGE, null, null, {
+            const meleeBoons = this.getCoopAlliedKnightBoons();
+            const meleeDamage = meleeBoons.infernalInitiate
+              ? INFERNAL_INITIATE_KNIGHT_BASE_DAMAGE + meleeBoons.strength * INFERNAL_INITIATE_KNIGHT_DAMAGE_PER_STRENGTH
+              : (attacker.damage || ALLIED_KNIGHT_DAMAGE);
+            this.room.damageEnemy(liveTarget.id, meleeDamage, null, null, {
               sourceAlliedUnitId: attacker.id,
               damageType: 'allied_knight_melee',
             });
@@ -8299,6 +8459,10 @@ class EnemyAI {
     const titanStompInterval = this.titanStompShockwaveInterval.get(enemyId);
     if (titanStompInterval) clearInterval(titanStompInterval);
     this.titanStompShockwaveInterval.delete(enemyId);
+    this.titanCannonCooldown.delete(enemyId);
+    const titanCannonWindupT = this.titanCannonWindupTimeout.get(enemyId);
+    if (titanCannonWindupT) clearTimeout(titanCannonWindupT);
+    this.titanCannonWindupTimeout.delete(enemyId);
     this.ghoulLeapCooldown.delete(enemyId);
     this.ghoulLeapEndAt.delete(enemyId);
     this.ghoulLeapLand.delete(enemyId);

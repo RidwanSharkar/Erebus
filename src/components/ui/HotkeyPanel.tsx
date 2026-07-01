@@ -4,18 +4,17 @@ import { SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
 import { universalAbilityPool, getUniversalAbilityById, type AbilityLoadout, type UniversalAbility } from '@/utils/weaponAbilities';
 import type { TalentId, TalentLoadout } from '@/utils/talents';
 import {
-  getEnabledTalentIdsForWeapon,
+  getCoopRoomColorForTalent,
+  getCoopRoomColorHudSlotStyle,
   getTalentBoonDefinition,
   getTalentIconSrc,
+  partitionTalentsForHotkeyHud,
 } from '@/utils/talents';
 import { getWeaponHudIconSrc } from '@/utils/weaponIcons';
 
 const MAX_VISIBLE_TALENTS = 8;
 const TALENT_SLOT_PX = 48; // w-12
 const TALENT_GAP_PX = 8; // gap-2
-const TALENT_SCROLL_MAX_WIDTH_PX =
-  MAX_VISIBLE_TALENTS * TALENT_SLOT_PX +
-  (MAX_VISIBLE_TALENTS - 1) * TALENT_GAP_PX;
 const TALENT_SCROLL_STEP_PX = TALENT_SLOT_PX + TALENT_GAP_PX;
 
 interface HotkeyPanelProps {
@@ -205,12 +204,17 @@ export default function HotkeyPanel({
     ? (getUniversalAbilityById(abilityLoadout.passive) ?? null)
     : null;
 
-  const enabledTalentIds = useMemo(
-    () => (talentLoadout ? getEnabledTalentIdsForWeapon(talentLoadout, currentWeapon, talentLoadout) : []),
-    [talentLoadout, currentWeapon]
+  const { primaryRoomBoons, otherTalents } = useMemo(
+    () =>
+      talentLoadout
+        ? partitionTalentsForHotkeyHud(talentLoadout, currentWeapon, abilityLoadout)
+        : { primaryRoomBoons: [], otherTalents: [] },
+    [talentLoadout, currentWeapon, abilityLoadout]
   );
 
-  const needsTalentScroll = enabledTalentIds.length > MAX_VISIBLE_TALENTS;
+  const totalTalentCount = primaryRoomBoons.length + otherTalents.length;
+  const maxScrollableTalents = Math.max(0, MAX_VISIBLE_TALENTS - primaryRoomBoons.length);
+  const needsTalentScroll = otherTalents.length > maxScrollableTalents;
 
   const updateTalentScrollButtons = useCallback(() => {
     const el = talentScrollRef.current;
@@ -232,7 +236,7 @@ export default function HotkeyPanel({
     if (!el || !needsTalentScroll) return;
     el.scrollLeft = 0;
     updateTalentScrollButtons();
-  }, [enabledTalentIds, needsTalentScroll, updateTalentScrollButtons]);
+  }, [otherTalents, needsTalentScroll, updateTalentScrollButtons]);
 
   // Update cooldowns from control system
   useEffect(() => {
@@ -318,17 +322,33 @@ export default function HotkeyPanel({
     cursor: enabled ? 'pointer' : 'default',
   });
 
-  const talentSlots = enabledTalentIds.map((talentId) => {
-    const src = getTalentIconSrc(talentId);
+  const defaultTalentSlotStyle: React.CSSProperties = {
+    background: 'linear-gradient(135deg, rgba(54,42,14,0.55), rgba(24,18,8,0.45))',
+    border: '1px solid rgba(251,191,36,0.45)',
+    boxShadow: '0 0 10px rgba(251,191,36,0.15), inset 0 1px 0 rgba(255,255,255,0.06)',
+  };
+
+  const renderTalentSlot = (talentId: TalentId, variant: 'primary' | 'default') => {
+    const roomColor = variant === 'primary' ? getCoopRoomColorForTalent(talentId) : null;
+    const roomStyle = roomColor ? getCoopRoomColorHudSlotStyle(roomColor) : null;
+    const src = getTalentIconSrc(talentId, roomColor);
+    const slotStyle: React.CSSProperties = roomStyle
+      ? {
+          background: roomStyle.background,
+          border: roomStyle.border,
+          boxShadow: roomStyle.boxShadow,
+        }
+      : defaultTalentSlotStyle;
+    const iconFilter = roomStyle
+      ? roomStyle.iconFilter
+      : 'drop-shadow(0 0 3px rgba(251,191,36,0.35))';
+    const fallbackGlyphColor = roomStyle?.fallbackGlyphColor ?? 'rgba(253,224,71,0.85)';
+
     return (
       <div
         key={talentId}
         className="relative h-12 w-12 shrink-0 rounded-lg transition-all duration-200 flex items-center justify-center cursor-default"
-        style={{
-          background: 'linear-gradient(135deg, rgba(54,42,14,0.55), rgba(24,18,8,0.45))',
-          border: '1px solid rgba(251,191,36,0.45)',
-          boxShadow: '0 0 10px rgba(251,191,36,0.15), inset 0 1px 0 rgba(255,255,255,0.06)',
-        }}
+        style={slotStyle}
         onMouseEnter={(e) => handleTalentHover(e, talentId)}
         onMouseLeave={handleAbilityLeave}
       >
@@ -338,14 +358,12 @@ export default function HotkeyPanel({
               src={src}
               alt=""
               className="h-7 w-7 object-contain"
-              style={{
-                filter: 'drop-shadow(0 0 3px rgba(251,191,36,0.35))',
-              }}
+              style={{ filter: iconFilter }}
             />
           ) : (
             <span
               className="select-none text-lg leading-none"
-              style={{ color: 'rgba(253,224,71,0.85)' }}
+              style={{ color: fallbackGlyphColor }}
             >
               ✦
             </span>
@@ -353,7 +371,13 @@ export default function HotkeyPanel({
         </div>
       </div>
     );
-  });
+  };
+
+  const primaryTalentSlots = primaryRoomBoons.map((talentId) => renderTalentSlot(talentId, 'primary'));
+  const otherTalentSlots = otherTalents.map((talentId) => renderTalentSlot(talentId, 'default'));
+  const scrollableTalentMaxWidthPx =
+    maxScrollableTalents * TALENT_SLOT_PX +
+    Math.max(0, maxScrollableTalents - 1) * TALENT_GAP_PX;
 
   // Always render even without a loadout (shows empty slots)
 
@@ -687,7 +711,7 @@ export default function HotkeyPanel({
               );
             })}
 
-            {enabledTalentIds.length > 0 && (
+            {totalTalentCount > 0 && (
               <>
                 <div className="flex flex-col items-center justify-center gap-1.5 px-0.5">
                   <div className="w-px h-3 rounded" style={{ background: 'rgba(120,120,160,0.3)' }} />
@@ -696,42 +720,49 @@ export default function HotkeyPanel({
                   </span>
                   <div className="w-px h-3 rounded" style={{ background: 'rgba(120,120,160,0.3)' }} />
                 </div>
-                {needsTalentScroll ? (
-                  <div className="flex flex-col items-center">
-                    <div className="mb-1 flex items-center justify-center gap-1.5">
-                      <button
-                        type="button"
-                        aria-label="Scroll talents left"
-                        disabled={!canScrollLeft}
-                        onClick={scrollTalentLeft}
-                        className="flex h-6 w-6 items-center justify-center rounded text-base leading-none transition-colors"
-                        style={talentArrowButtonStyle(canScrollLeft)}
-                      >
-                        ‹
-                      </button>
-                      <button
-                        type="button"
-                        aria-label="Scroll talents right"
-                        disabled={!canScrollRight}
-                        onClick={scrollTalentRight}
-                        className="flex h-6 w-6 items-center justify-center rounded text-base leading-none transition-colors"
-                        style={talentArrowButtonStyle(canScrollRight)}
-                      >
-                        ›
-                      </button>
-                    </div>
-                    <div
-                      ref={talentScrollRef}
-                      className="flex flex-nowrap gap-2 overflow-x-hidden"
-                      style={{ maxWidth: TALENT_SCROLL_MAX_WIDTH_PX }}
-                      onScroll={updateTalentScrollButtons}
-                    >
-                      {talentSlots}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">{talentSlots}</div>
-                )}
+                <div className="flex items-end gap-2">
+                  {primaryTalentSlots.length > 0 && (
+                    <div className="flex gap-2">{primaryTalentSlots}</div>
+                  )}
+                  {otherTalentSlots.length > 0 && (
+                    needsTalentScroll ? (
+                      <div className="flex flex-col items-center">
+                        <div className="mb-1 flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            aria-label="Scroll talents left"
+                            disabled={!canScrollLeft}
+                            onClick={scrollTalentLeft}
+                            className="flex h-6 w-6 items-center justify-center rounded text-base leading-none transition-colors"
+                            style={talentArrowButtonStyle(canScrollLeft)}
+                          >
+                            ‹
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Scroll talents right"
+                            disabled={!canScrollRight}
+                            onClick={scrollTalentRight}
+                            className="flex h-6 w-6 items-center justify-center rounded text-base leading-none transition-colors"
+                            style={talentArrowButtonStyle(canScrollRight)}
+                          >
+                            ›
+                          </button>
+                        </div>
+                        <div
+                          ref={talentScrollRef}
+                          className="flex flex-nowrap gap-2 overflow-x-hidden"
+                          style={{ maxWidth: scrollableTalentMaxWidthPx }}
+                          onScroll={updateTalentScrollButtons}
+                        >
+                          {otherTalentSlots}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">{otherTalentSlots}</div>
+                    )
+                  )}
+                </div>
               </>
             )}
           </div>

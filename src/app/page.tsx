@@ -467,7 +467,8 @@ function HomeContent() {
     setControlSystem(newControlSystem);
   };
 
-  // Auto-join default co-op room and start (throne-first entry; no weapon menu / room UI).
+  // Auto-join default co-op room and start throne prep immediately; a 2nd player who joins
+  // during prep is synced into the same throne room via `coop-throne-sync`.
   useEffect(() => {
     if (!isConnected || !socket || coopEntryBootstrapStarted) return;
     coopEntryBootstrapStarted = true;
@@ -475,14 +476,16 @@ function HomeContent() {
       try {
         const name = `Player${Math.floor(Math.random() * 10000)}`;
         const sw = bootstrapWeaponsRef.current;
-        const joinedRoomId = await joinRoom(
+        const joined = await joinRoom(
           'default',
           name,
           sw.primary,
           getDefaultSubclassForWeapon(sw.primary),
           'coop',
         );
-        socket.emit('start-game', { roomId: joinedRoomId });
+        if (!joined.gameStarted) {
+          socket.emit('start-game', { roomId: joined.roomId });
+        }
         setGameMode('coop');
         setShowCanvas(true);
         setLoadingSceneBootstrapReady(false);
@@ -1025,7 +1028,7 @@ function HomeContent() {
     return {
       id: stock.id,
       name: stock.item?.label ?? 'Artifact',
-      description: `${stock.item?.rarity ? `${stock.item.rarity.toUpperCase()} ` : ''}+${stock.item?.statBonus ?? 0} ${stock.item?.stat ?? 'stat'} boss reward`,
+      description: `${stock.item?.rarity ? `${stock.item.rarity.toUpperCase()} ` : ''}+${stock.item?.statBonus ?? 0} ${stock.item?.stat ?? 'stat'}`,
       cost: stock.cost,
       currency: 'gold' as const,
       sold: stock.sold,
@@ -1181,7 +1184,7 @@ function HomeContent() {
                 <button
                   type="button"
                   onClick={handleClearDpsData}
-                  className="pointer-events-auto mt-2 rounded border border-white/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-white/70 transition-colors hover:border-yellow-300/60 hover:text-yellow-200"
+                  className="pointer-events-auto mt-2 rounded border border-white/20 px-2 py-0.25 text-[9px] uppercase tracking-wide text-white/70 transition-colors hover:border-yellow-300/60 hover:text-yellow-200"
                 >
                   Clear
                 </button>

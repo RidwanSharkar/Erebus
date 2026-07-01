@@ -3,6 +3,8 @@
 import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Color, Group, Mesh, AdditiveBlending, MathUtils } from '@/utils/three-exports';
+
+const _dirScratch = new Vector3();
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface TowerProjectileProps {
@@ -57,6 +59,12 @@ export default function TowerProjectile({
 
   const emissiveColor = useMemo(() =>
     projectileColor.clone().multiplyScalar(0.6), [projectileColor]);
+  const coreBrightColor = useMemo(() =>
+    projectileColor.clone().multiplyScalar(1.5), [projectileColor]);
+  const coreEmissiveColor = useMemo(() =>
+    projectileColor.clone().multiplyScalar(0.8), [projectileColor]);
+  const tendrilBrightColor = useMemo(() =>
+    projectileColor.clone().multiplyScalar(1.3), [projectileColor]);
 
   // Borrow a pooled light instead of mounting a <pointLight> (avoids lit-shader recompiles).
   const projectileLight = useDynamicLight({ color: projectileColor, distance: 2, decay: 2, priority: 2 });
@@ -74,7 +82,7 @@ export default function TowerProjectile({
 
       // Calculate rotation to face movement direction
       if (direction.length() > 0) {
-        const normalizedDirection = direction.clone().normalize();
+        const normalizedDirection = _dirScratch.copy(direction).normalize();
         const angle = Math.atan2(normalizedDirection.x, normalizedDirection.z);
         groupRef.current.rotation.y = angle;
         
@@ -125,8 +133,8 @@ export default function TowerProjectile({
         <mesh>
           <octahedronGeometry args={[0.12, 0]} />
           <meshStandardMaterial
-            color={projectileColor.clone().multiplyScalar(1.5)}
-            emissive={projectileColor.clone().multiplyScalar(0.8)}
+            color={coreBrightColor}
+            emissive={coreEmissiveColor}
             emissiveIntensity={1.2}
             transparent
             opacity={opacity * 0.9}
@@ -165,7 +173,7 @@ export default function TowerProjectile({
           >
             <coneGeometry args={[0.03, 0.15, 4]} />
             <meshStandardMaterial
-              color={projectileColor.clone().multiplyScalar(1.3)}
+              color={tendrilBrightColor}
               emissive={emissiveColor}
               emissiveIntensity={0.6}
               transparent

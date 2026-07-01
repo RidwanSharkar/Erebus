@@ -22,6 +22,8 @@ const _perpA = new Vector3();
 const _perpB = new Vector3();
 const _flight = new Vector3();
 const _offset = new Vector3();
+// Shared scratch for getWorldPosition — safe because R3F runs useFrame serially.
+const _wpMist = new Vector3();
 
 const VERTEX_SHADER = `
   attribute float opacity;
@@ -154,7 +156,10 @@ const EntropicBoltMistTrail: React.FC<EntropicBoltMistTrailProps> = ({
   trailFadeOutDuration = ENTROPIC_TRAIL_FADE_OUT_DURATION,
 }) => {
   const mistRef = useRef<Points>(null);
-  const pathHistory = useRef<Vector3[]>([]);
+  // Ring buffer: avoids per-frame clone() and O(N) Array.unshift.
+  const posRing = useRef<Vector3[]>(Array.from({ length: TRAIL_LENGTH }, () => new Vector3()));
+  const ringHead = useRef(0);
+  const ringFill = useRef(0);
   const lastKnownPosition = useRef(new Vector3());
   const isInitialized = useRef(false);
   const seeds = useRef<Float32Array>(
@@ -182,19 +187,20 @@ const EntropicBoltMistTrail: React.FC<EntropicBoltMistTrailProps> = ({
 
   useEffect(() => {
     if (meshRef.current && !isInitialized.current) {
-      const wp = new Vector3();
-      meshRef.current.getWorldPosition(wp);
-      lastKnownPosition.current.copy(wp);
+      meshRef.current.getWorldPosition(_wpMist);
+      lastKnownPosition.current.copy(_wpMist);
 
       for (let i = 0; i < TRAIL_LENGTH; i++) {
-        pathHistory.current.push(wp.clone());
-        pos.current[i * 3] = wp.x;
-        pos.current[i * 3 + 1] = wp.y;
-        pos.current[i * 3 + 2] = wp.z;
+        posRing.current[i].copy(_wpMist);
+        pos.current[i * 3] = _wpMist.x;
+        pos.current[i * 3 + 1] = _wpMist.y;
+        pos.current[i * 3 + 2] = _wpMist.z;
         opa.current[i] = 0;
         scl.current[i] = 0;
         age.current[i] = 0;
       }
+      ringHead.current = 0;
+      ringFill.current = TRAIL_LENGTH;
       isInitialized.current = true;
     }
   }, [meshRef]);
@@ -212,20 +218,22 @@ const EntropicBoltMistTrail: React.FC<EntropicBoltMistTrailProps> = ({
       fadeOutFactor = 1 - clamped * clamped * (3 - 2 * clamped);
     }
 
-    const wp = new Vector3();
-    meshRef.current.getWorldPosition(wp);
+    meshRef.current.getWorldPosition(_wpMist);
 
-    if (wp.distanceTo(lastKnownPosition.current) > MIN_MOVEMENT) {
-      lastKnownPosition.current.copy(wp);
-      pathHistory.current.unshift(wp.clone());
-      if (pathHistory.current.length > TRAIL_LENGTH) pathHistory.current.pop();
+    if (_wpMist.distanceTo(lastKnownPosition.current) > MIN_MOVEMENT) {
+      lastKnownPosition.current.copy(_wpMist);
+      // Ring-buffer write.
+      ringHead.current = (ringHead.current + TRAIL_LENGTH - 1) % TRAIL_LENGTH;
+      posRing.current[ringHead.current].copy(_wpMist);
+      if (ringFill.current < TRAIL_LENGTH) ringFill.current++;
     }
 
     const flightDir = flightDirectionRef?.current ?? _flight.set(0, 1, 0);
     computePerpendicularAxes(flightDir, _perpA, _perpB);
 
-    const count = Math.min(pathHistory.current.length, TRAIL_LENGTH);
-    const hist = pathHistory.current;
+    const count = ringFill.current;
+    const ring = posRing.current;
+    const head = ringHead.current;
     const time = state.clock.elapsedTime;
 
     for (let i = 0; i < TRAIL_LENGTH; i++) {
@@ -236,7 +244,7 @@ const EntropicBoltMistTrail: React.FC<EntropicBoltMistTrailProps> = ({
         continue;
       }
 
-      const center = hist[i];
+      const center = ring[(head + i) % TRAIL_LENGTH];
       const trailAge = i / TRAIL_LENGTH;
       const fade = Math.pow(1 - trailAge, 0.85) * opacity * fadeOutFactor;
       const seed = seeds.current[i];

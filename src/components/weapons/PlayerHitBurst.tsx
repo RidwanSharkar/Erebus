@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   AdditiveBlending,
@@ -66,6 +66,15 @@ export default function PlayerHitBurst({
       }),
     [color],
   );
+
+  useEffect(() => {
+    const fm = flashMat;
+    const rm = ringMat;
+    return () => {
+      fm.dispose();
+      rm.dispose();
+    };
+  }, [flashMat, ringMat]);
 
   useFrame((_, delta) => {
     if (doneRef.current) return;

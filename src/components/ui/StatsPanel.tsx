@@ -32,6 +32,26 @@ const AMULET_ICONS: Record<string, string> = {
   AMULET_OF_INTELLECT: '✨',
 };
 
+const AMULET_DISPLAY_NAMES: Record<string, string> = {
+  AMULET_OF_STRENGTH:  'Blood Rune',
+  AMULET_OF_STAMINA:   'Life Rune',
+  AMULET_OF_AGILITY:   'Storm Rune',
+  AMULET_OF_INTELLECT: 'Mind Rune',
+};
+
+function groupRunesByType(amulets: InventoryItem[]) {
+  const map = new Map<string, { type: string; stat?: StatKey; count: number }>();
+  for (const item of amulets) {
+    const existing = map.get(item.type);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      map.set(item.type, { type: item.type, stat: item.stat, count: 1 });
+    }
+  }
+  return Array.from(map.values());
+}
+
 const BOSS_ITEM_ICONS: Record<string, string> = {
   MANA_SHIELD:    '✨',
   COLOSSUS_LUNGS: '🫁',
@@ -347,7 +367,7 @@ export default function StatsPanel({
                   <div className="flex flex-col items-center py-4 text-white/30">
                     <span className="text-2xl mb-1">💍</span>
                     <p className="text-xs">No items yet</p>
-                    <p className="text-[10px] mt-0.5 text-center">Defeat skeletons to find amulets</p>
+                    <p className="text-[10px] mt-0.5 text-center">Defeat skeletons to find runes</p>
                   </div>
                 ) : (() => {
                   const amulets   = inventory.filter(i => i.category !== 'boss_drop');
@@ -408,27 +428,33 @@ export default function StatsPanel({
                         </div>
                       )}
 
-                      {/* Amulets */}
+                      {/* Runes */}
                       {amulets.length > 0 && (
                         <div>
                           {bossDrops.length > 0 && (
                             <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-1">
-                              💍 Amulets
+                              💍 Runes
                             </p>
                           )}
                           <div className="space-y-1">
-                            {amulets.map((item, idx) => {
-                              const color = item.stat ? StatSystem.getStatColor(item.stat) : '#888';
-                              const icon  = AMULET_ICONS[item.type] || '💍';
+                            {groupRunesByType(amulets).map((group) => {
+                              const color = group.stat ? StatSystem.getStatColor(group.stat) : '#888';
+                              const icon  = AMULET_ICONS[group.type] || '💍';
+                              const displayName = AMULET_DISPLAY_NAMES[group.type] ?? group.type;
                               return (
                                 <div
-                                  key={`${item.id}-${idx}`}
+                                  key={group.type}
                                   className="flex items-center gap-2 rounded-lg px-2 py-1.5"
                                   style={{ background: `${color}12`, border: `1px solid ${color}25` }}
                                 >
                                   <span className="text-sm">{icon}</span>
-                                  <span className="text-xs text-white/80 flex-1 truncate">{item.label}</span>
-                                  <span className="text-[11px] font-black" style={{ color }}>+1</span>
+                                  <span className="text-xs text-white/80 flex-1 truncate">
+                                    {displayName}
+                                    {group.count > 1 && (
+                                      <span className="text-white/50 ml-1">x{group.count}</span>
+                                    )}
+                                  </span>
+                                  <span className="text-[11px] font-black" style={{ color }}>+{group.count}</span>
                                 </div>
                               );
                             })}

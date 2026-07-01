@@ -6,7 +6,7 @@ import { io, Socket } from 'socket.io-client';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { SkillPointSystem, SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
 import { AbilityLoadout, getDefaultLoadout } from '@/utils/weaponAbilities';
-import { TalentLoadout, createDefaultTalentLoadout, getCoopZombieRoomBoonsPayload, getCoopStaggerRoomBoonsPayload } from '@/utils/talents';
+import { TalentLoadout, createDefaultTalentLoadout, getCoopZombieRoomBoonsPayload, getCoopStaggerRoomBoonsPayload, getCoopAlliedKnightBoonsPayload } from '@/utils/talents';
 import { ExperienceSystem } from '@/utils/ExperienceSystem';
 import { StatSystem, StatPointData, StatKey, PlayerStats } from '@/utils/StatSystem';
 import { getRuneCountForWeapon } from '@/utils/runeCount';
@@ -408,7 +408,13 @@ interface MultiplayerContextType {
   currentPreview: RoomPreview | null;
   
   // Actions
-  joinRoom: (roomId: string, playerName: string, weapon: WeaponType, subclass?: WeaponSubclass, gameMode?: 'multiplayer' | 'coop') => Promise<string>;
+  joinRoom: (
+    roomId: string,
+    playerName: string,
+    weapon: WeaponType,
+    subclass?: WeaponSubclass,
+    gameMode?: 'multiplayer' | 'coop',
+  ) => Promise<JoinRoomResult>;
   leaveRoom: () => void;
   previewRoom: (roomId: string) => void;
   clearPreview: () => void;
@@ -610,6 +616,159 @@ function campArchetypeFromRoomPayload(data: {
     }
   }
   return [];
+}
+
+/** Result returned from `joinRoom` — used by bootstrap to skip redundant start-game / wait for party. */
+export interface JoinRoomResult {
+  roomId: string;
+  gameStarted: boolean;
+  gameMode: 'multiplayer' | 'coop';
+  playerCount: number;
+}
+
+type CoopSessionSnapshotPayload = {
+  killCount?: number;
+  combatArenaActive?: boolean;
+  players?: Player[];
+  enemies?: Enemy[];
+  thronePortalOffer?: string[];
+  thronePortalLayout?: string;
+  coopMainArenaPortalPhase?: string;
+  coopBossThroneArena?: boolean;
+  coopThroneBossKind?: unknown;
+  coopTerrainTheme?: unknown;
+  coopCurrentRoomKind?: string;
+  coopClearedRoomKind?: string;
+  coopColoredRoomVisitIndex?: unknown;
+  coopBossRoomVisitIndex?: unknown;
+  merchantInventory?: unknown;
+  mushroomState?: { health?: number[]; maxHealth?: number };
+};
+
+type CoopSnapshotSetters = {
+  setGameStarted: React.Dispatch<React.SetStateAction<boolean>>;
+  setKillCount: React.Dispatch<React.SetStateAction<number>>;
+  setCombatArenaActive: React.Dispatch<React.SetStateAction<boolean>>;
+  setPlayers: React.Dispatch<React.SetStateAction<Map<string, Player>>>;
+  setEnemies: React.Dispatch<React.SetStateAction<Map<string, Enemy>>>;
+  setThronePortalOffer: React.Dispatch<React.SetStateAction<string[]>>;
+  setThronePortalLayout: React.Dispatch<React.SetStateAction<'rim' | 'center'>>;
+  setCoopMainArenaPortalPhase: React.Dispatch<
+    React.SetStateAction<'pick_wave2' | 'pick_boss' | 'pick_post_boss' | null>
+  >;
+  setCoopBossThroneArena: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopThroneBossKind: React.Dispatch<
+    React.SetStateAction<'boss' | 'boss2' | 'boss3' | 'boss_all' | null>
+  >;
+  setCoopTerrainTheme: React.Dispatch<React.SetStateAction<CoopTerrainTheme>>;
+  setCoopCurrentRoomKind: React.Dispatch<React.SetStateAction<CoopRoomKind | null>>;
+  setCoopClearedRoomKind: React.Dispatch<React.SetStateAction<CoopRoomKind | null>>;
+  setCoopColoredRoomVisitIndex: React.Dispatch<React.SetStateAction<number | null>>;
+  setCoopBossRoomVisitIndex: React.Dispatch<React.SetStateAction<number | null>>;
+  setMerchantInventory: React.Dispatch<React.SetStateAction<MerchantStockItem[]>>;
+  setMerchantPurchaseState: React.Dispatch<React.SetStateAction<MerchantPurchaseState>>;
+  setMushroomState: React.Dispatch<
+    React.SetStateAction<{ health: number[]; maxHealth: number } | null>
+  >;
+};
+
+function applyCoopCombatArenaActiveFromServer(
+  gameMode: string | undefined,
+  combatArenaActive: boolean | undefined,
+  setCombatArenaActive: React.Dispatch<React.SetStateAction<boolean>>,
+) {
+  if (gameMode === 'coop') {
+    setCombatArenaActive(!!combatArenaActive);
+  } else {
+    setCombatArenaActive(true);
+  }
+}
+
+/** Shared coop session fields from `game-started`, `coop-throne-sync`, and active `room-joined`. */
+function applyCoopSessionSnapshot(
+  data: CoopSessionSnapshotPayload,
+  setters: CoopSnapshotSetters,
+  options: { resetVisitIndices?: boolean; resetMerchantPurchaseState?: boolean } = {},
+) {
+  const { resetVisitIndices = false, resetMerchantPurchaseState = false } = options;
+
+  setters.setGameStarted(true);
+  if (data.killCount != null) {
+    setters.setKillCount(data.killCount);
+  }
+  if (data && 'combatArenaActive' in data) {
+    setters.setCombatArenaActive(!!data.combatArenaActive);
+  }
+  if (data?.players && Array.isArray(data.players)) {
+    setters.setPlayers((prev) => {
+      const next = new Map(prev);
+      for (const p of data.players as Player[]) {
+        const old = next.get(p.id);
+        next.set(p.id, old ? { ...old, ...p } : p);
+      }
+      return next;
+    });
+  }
+  if (data?.enemies && Array.isArray(data.enemies)) {
+    setters.setEnemies((prev) => {
+      const next = new Map(prev);
+      for (const e of data.enemies as Enemy[]) {
+        next.set(e.id, { ...e, staggerBuildup: e.staggerBuildup ?? 0 });
+      }
+      return next;
+    });
+  }
+  if (Array.isArray(data?.thronePortalOffer)) {
+    setters.setThronePortalOffer([...data.thronePortalOffer]);
+  } else {
+    setters.setThronePortalOffer([]);
+  }
+  if (data && 'thronePortalLayout' in data) {
+    setters.setThronePortalLayout(normalizeThronePortalLayout(data.thronePortalLayout));
+  } else {
+    setters.setThronePortalLayout('rim');
+  }
+  if (data && 'coopMainArenaPortalPhase' in data) {
+    setters.setCoopMainArenaPortalPhase(normalizeCoopMainArenaPhase(data.coopMainArenaPortalPhase));
+  } else {
+    setters.setCoopMainArenaPortalPhase(null);
+  }
+  if (data && 'coopBossThroneArena' in data) {
+    setters.setCoopBossThroneArena(normalizeCoopBossThroneArena(data.coopBossThroneArena));
+  } else {
+    setters.setCoopBossThroneArena(false);
+  }
+  if (data && 'coopThroneBossKind' in data) {
+    setters.setCoopThroneBossKind(normalizeCoopThroneBossKind(data.coopThroneBossKind));
+  } else {
+    setters.setCoopThroneBossKind(null);
+  }
+  setters.setCoopTerrainTheme(normalizeCoopTerrainTheme(data?.coopTerrainTheme));
+  setters.setCoopCurrentRoomKind(normalizeCoopRoomKind(data?.coopCurrentRoomKind));
+  setters.setCoopClearedRoomKind(normalizeCoopRoomKind(data?.coopClearedRoomKind));
+  if (resetVisitIndices) {
+    setters.setCoopColoredRoomVisitIndex(null);
+    setters.setCoopBossRoomVisitIndex(null);
+  } else {
+    if (data && 'coopColoredRoomVisitIndex' in data) {
+      setters.setCoopColoredRoomVisitIndex(
+        normalizeCoopColoredRoomVisitIndex(data.coopColoredRoomVisitIndex),
+      );
+    }
+    if (data && 'coopBossRoomVisitIndex' in data) {
+      setters.setCoopBossRoomVisitIndex(normalizeCoopBossRoomVisitIndex(data.coopBossRoomVisitIndex));
+    }
+  }
+  setters.setMerchantInventory(normalizeMerchantInventory(data?.merchantInventory));
+  if (resetMerchantPurchaseState) {
+    setters.setMerchantPurchaseState({ dashChargePurchased: false, weaponTalentPurchases: 0 });
+  }
+  if (data?.mushroomState?.health && Array.isArray(data.mushroomState.health)) {
+    setters.setMushroomState({
+      health: [...data.mushroomState.health],
+      maxHealth: data.mushroomState.maxHealth ?? 10,
+    });
+  }
 }
 
 export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
@@ -845,11 +1004,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setKillCount(data.killCount);
       setGameStarted(data.gameStarted);
       setGameMode(data.gameMode || 'multiplayer'); // Set game mode from server
-      if ((data.gameMode || 'multiplayer') === 'coop' && data.gameStarted) {
-        setCombatArenaActive(!!data.combatArenaActive);
-      } else {
-        setCombatArenaActive(true);
-      }
+      applyCoopCombatArenaActiveFromServer(
+        data.gameMode || 'multiplayer',
+        data.combatArenaActive,
+        setCombatArenaActive,
+      );
 
       // Update players
       const playersMap = new Map();
@@ -1126,6 +1285,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           data.damageType === 'wyvern_talons_detonate' ||
           data.damageType === 'player_zombie' ||
           data.damageType === 'zombie_explosion' ||
+          data.damageType === 'allied_knight' ||
           (data.damageType === 'crossentropy' && data.crossentropyMeteorDamage === true) ||
           (data.damageType === 'cloudkill' && data.cloudkillDamage === true)) &&
         typeof data.damage === 'number' &&
@@ -1144,6 +1304,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
                   ? 'cloudkill'
                   : data.damageType === 'player_zombie' || data.damageType === 'zombie_explosion'
                   ? 'player_zombie'
+                  : data.damageType === 'allied_knight'
+                  ? 'allied_knight'
                   : 'ignite';
           mgr.addDamageNumber(data.damage, false, pos, dt);
         }
@@ -1395,69 +1557,66 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     addEventHandler('game-started', (data: any) => {
       cancelPendingEnemyRemovals();
-      setGameStarted(true);
-      setKillCount(data.killCount);
-      if (data && 'combatArenaActive' in data) {
-        setCombatArenaActive(!!data.combatArenaActive);
+      applyCoopSessionSnapshot(
+        data,
+        {
+          setGameStarted,
+          setKillCount,
+          setCombatArenaActive,
+          setPlayers,
+          setEnemies,
+          setThronePortalOffer,
+          setThronePortalLayout,
+          setCoopMainArenaPortalPhase,
+          setCoopBossThroneArena,
+          setCoopThroneBossKind,
+          setCoopTerrainTheme,
+          setCoopCurrentRoomKind,
+          setCoopClearedRoomKind,
+          setCoopColoredRoomVisitIndex,
+          setCoopBossRoomVisitIndex,
+          setMerchantInventory,
+          setMerchantPurchaseState,
+          setMushroomState,
+        },
+        { resetVisitIndices: true, resetMerchantPurchaseState: true },
+      );
+    });
+
+    addEventHandler('coop-throne-sync', (data: any) => {
+      cancelPendingEnemyRemovals();
+      applyCoopSessionSnapshot(
+        data,
+        {
+          setGameStarted,
+          setKillCount,
+          setCombatArenaActive,
+          setPlayers,
+          setEnemies,
+          setThronePortalOffer,
+          setThronePortalLayout,
+          setCoopMainArenaPortalPhase,
+          setCoopBossThroneArena,
+          setCoopThroneBossKind,
+          setCoopTerrainTheme,
+          setCoopCurrentRoomKind,
+          setCoopClearedRoomKind,
+          setCoopColoredRoomVisitIndex,
+          setCoopBossRoomVisitIndex,
+          setMerchantInventory,
+          setMerchantPurchaseState,
+          setMushroomState,
+        },
+        { resetVisitIndices: false, resetMerchantPurchaseState: false },
+      );
+    });
+
+    addEventHandler('start-game-failed', (data: { error?: string }) => {
+      if (data?.error === 'Game already started') {
+        console.log('ℹ️ Game already started — using room-joined / throne sync state');
+        return;
       }
-      if (data?.players && Array.isArray(data.players)) {
-        setPlayers((prev) => {
-          const next = new Map(prev);
-          for (const p of data.players as Player[]) {
-            const old = next.get(p.id);
-            next.set(p.id, old ? { ...old, ...p } : p);
-          }
-          return next;
-        });
-      }
-      // Authoritative enemy list (co-op throne dummy + any spawns) — fixes missed `enemy-spawned` ordering.
-      if (data?.enemies && Array.isArray(data.enemies)) {
-        setEnemies((prev) => {
-          const next = new Map(prev);
-          for (const e of data.enemies as Enemy[]) {
-            next.set(e.id, { ...e, staggerBuildup: e.staggerBuildup ?? 0 });
-          }
-          return next;
-        });
-      }
-      if (Array.isArray(data?.thronePortalOffer)) {
-        setThronePortalOffer([...data.thronePortalOffer]);
-      } else {
-        setThronePortalOffer([]);
-      }
-      if (data && 'thronePortalLayout' in data) {
-        setThronePortalLayout(normalizeThronePortalLayout(data.thronePortalLayout));
-      } else {
-        setThronePortalLayout('rim');
-      }
-      if (data && 'coopMainArenaPortalPhase' in data) {
-        setCoopMainArenaPortalPhase(normalizeCoopMainArenaPhase(data.coopMainArenaPortalPhase));
-      } else {
-        setCoopMainArenaPortalPhase(null);
-      }
-      if (data && 'coopBossThroneArena' in data) {
-        setCoopBossThroneArena(normalizeCoopBossThroneArena(data.coopBossThroneArena));
-      } else {
-        setCoopBossThroneArena(false);
-      }
-      if (data && 'coopThroneBossKind' in data) {
-        setCoopThroneBossKind(normalizeCoopThroneBossKind(data.coopThroneBossKind));
-      } else {
-        setCoopThroneBossKind(null);
-      }
-      setCoopTerrainTheme(normalizeCoopTerrainTheme(data?.coopTerrainTheme));
-      setCoopCurrentRoomKind(normalizeCoopRoomKind(data?.coopCurrentRoomKind));
-      setCoopClearedRoomKind(normalizeCoopRoomKind(data?.coopClearedRoomKind));
-      setCoopColoredRoomVisitIndex(null);
-      setCoopBossRoomVisitIndex(null);
-      setMerchantInventory(normalizeMerchantInventory(data?.merchantInventory));
-      setMerchantPurchaseState({ dashChargePurchased: false, weaponTalentPurchases: 0 });
-      if (data?.mushroomState?.health && Array.isArray(data.mushroomState.health)) {
-        setMushroomState({
-          health: [...data.mushroomState.health],
-          maxHealth: data.mushroomState.maxHealth ?? 10,
-        });
-      }
+      console.warn('Failed to start game:', data?.error || 'unknown');
     });
 
     addEventHandler('boss-defeated', () => {
@@ -1542,6 +1701,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopColoredRoomVisitIndex(normalizeCoopColoredRoomVisitIndex(data?.coopColoredRoomVisitIndex));
       setCoopBossRoomVisitIndex(normalizeCoopBossRoomVisitIndex(data?.coopBossRoomVisitIndex));
       setMerchantInventory(normalizeMerchantInventory(data?.merchantInventory));
+      if (data?.mushroomState?.health && Array.isArray(data.mushroomState.health)) {
+        setMushroomState({
+          health: [...data.mushroomState.health],
+          maxHealth: data.mushroomState.maxHealth ?? 10,
+        });
+      }
       const transitionId = data?.coopCombatTransitionId != null
         ? Number(data.coopCombatTransitionId)
         : NaN;
@@ -1765,7 +1930,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       throw new Error('Not connected to server');
     }
 
-    return new Promise<string>((resolve, reject) => {
+    return new Promise<JoinRoomResult>((resolve, reject) => {
       socket.emit('join-room', {
         roomId,
         playerName,
@@ -1780,11 +1945,21 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       }, 10000);
 
       // Listen for successful room join
-      const handleRoomJoined = (data: { roomId?: string }) => {
+      const handleRoomJoined = (data: {
+        roomId?: string;
+        gameStarted?: boolean;
+        gameMode?: string;
+        players?: Player[];
+      }) => {
         clearTimeout(timeout);
         socket.off('room-joined', handleRoomJoined);
         socket.off('room-full', handleRoomFull);
-        resolve(data?.roomId ?? roomId);
+        resolve({
+          roomId: data?.roomId ?? roomId,
+          gameStarted: !!data?.gameStarted,
+          gameMode: data?.gameMode === 'coop' ? 'coop' : 'multiplayer',
+          playerCount: Array.isArray(data?.players) ? data.players.length : 1,
+        });
       };
 
       // Listen for room full error
@@ -2257,6 +2432,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         stamina: effectiveStats.stamina,
         criticalRuneCount: runeCount,
         critDamageRuneCount: runeCount,
+      }),
+    });
+    socket.emit('coop-allied-knight-boons', {
+      roomId: currentRoomId,
+      coopAlliedKnightBoons: getCoopAlliedKnightBoonsPayload(talentLoadout, {
+        agility: effectiveStats.agility,
+        strength: effectiveStats.strength,
+        stamina: effectiveStats.stamina,
       }),
     });
   }, [socket, currentRoomId, gameMode, talentLoadout, statPointData, inventory, selectedWeapons, players]);

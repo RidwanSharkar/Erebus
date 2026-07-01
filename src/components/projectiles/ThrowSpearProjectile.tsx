@@ -1,10 +1,11 @@
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Shape, Color, DoubleSide, AdditiveBlending } from 'three';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
-// Reused scratch vector for reading the spear light's world position (no per-frame alloc).
+// Reused scratch vectors — no per-frame alloc.
 const _spearLightWorld = new Vector3();
+const _lookDirScratch = new Vector3();
 
 interface ThrowSpearProjectileProps {
   position: Vector3;
@@ -31,7 +32,8 @@ export default function ThrowSpearProjectile({
   // Pooled point light at the spear's energy core (replaces the nested <pointLight>).
   // Cyan when returning, greyish silver going out — matches the original lightningColor.
   const lightColor = isReturning ? 0x00ffff : 0xc0c0c0;
-  const spearLight = useDynamicLight({ color: new Color(lightColor), distance: 0.5, decay: 2, priority: 2 });
+  const lightColorObj = useMemo(() => new Color(lightColor), [lightColor]);
+  const spearLight = useDynamicLight({ color: lightColorObj, distance: 0.5, decay: 2, priority: 2 });
 
   useFrame(() => {
     if (!groupRef.current) return;
@@ -40,9 +42,9 @@ export default function ThrowSpearProjectile({
     groupRef.current.position.copy(position);
 
     // Calculate rotation based on direction (similar to ViperSting)
-    const lookDirection = direction.clone().normalize();
-    const rotationY = Math.atan2(lookDirection.x, lookDirection.z);
-    const rotationX = Math.atan2(-lookDirection.y, Math.sqrt(lookDirection.x * lookDirection.x + lookDirection.z * lookDirection.z));
+    _lookDirScratch.copy(direction).normalize();
+    const rotationY = Math.atan2(_lookDirScratch.x, _lookDirScratch.z);
+    const rotationX = Math.atan2(-_lookDirScratch.y, Math.sqrt(_lookDirScratch.x * _lookDirScratch.x + _lookDirScratch.z * _lookDirScratch.z));
 
     // Apply rotation - this will make the spear flip when returning
     groupRef.current.rotation.set(rotationX, rotationY, 0);
@@ -118,6 +120,12 @@ export default function ThrowSpearProjectile({
   const coreEmissiveIntensity = 2 + (chargeIntensity * 3); // 2 to 5
   const lightningColor = isReturning ? 0x00FFFF : 0xC0C0C0; // Cyan when returning, greyish silver when going out
   const spearColor = isReturning ? 0x0088FF : 0xC0C0C0; // Blue tint when returning, greyish silver when going out
+
+  // Memoize blade shapes (constant regardless of props) and per-color Color objects.
+  const bladeShape = useMemo(() => createBladeShape(), []);
+  const innerBladeShape = useMemo(() => createInnerBladeShape(), []);
+  const cSpear = useMemo(() => new Color(spearColor), [spearColor]);
+  const cLightning = useMemo(() => new Color(lightningColor), [lightningColor]);
 
   return (
     <group ref={groupRef}>
@@ -198,8 +206,8 @@ export default function ThrowSpearProjectile({
             <mesh>
               <sphereGeometry args={[0.155, 16, 16]} />
               <meshStandardMaterial
-                color={new Color(spearColor)}
-                emissive={new Color(spearColor)}
+                color={cSpear}
+                emissive={cSpear}
                 emissiveIntensity={baseEmissiveIntensity}
                 transparent
                 opacity={opacity}
@@ -209,8 +217,8 @@ export default function ThrowSpearProjectile({
             <mesh>
               <sphereGeometry args={[0.1, 16, 16]} />
               <meshStandardMaterial
-                color={new Color(spearColor)}
-                emissive={new Color(spearColor)}
+                color={cSpear}
+                emissive={cSpear}
                 emissiveIntensity={coreEmissiveIntensity}
                 transparent
                 opacity={opacity * 0.8}
@@ -220,8 +228,8 @@ export default function ThrowSpearProjectile({
             <mesh>
               <sphereGeometry args={[0.145, 16, 16]} />
               <meshStandardMaterial
-                color={new Color(spearColor)}
-                emissive={new Color(spearColor)}
+                color={cSpear}
+                emissive={cSpear}
                 emissiveIntensity={baseEmissiveIntensity + 1}
                 transparent
                 opacity={opacity * 0.6}
@@ -231,8 +239,8 @@ export default function ThrowSpearProjectile({
             <mesh>
               <sphereGeometry args={[.175, 16, 16]} />
               <meshStandardMaterial
-                color={new Color(spearColor)}
-                emissive={new Color(spearColor)}
+                color={cSpear}
+                emissive={cSpear}
                 emissiveIntensity={baseEmissiveIntensity}
                 transparent
                 opacity={opacity * 0.4}
@@ -247,10 +255,10 @@ export default function ThrowSpearProjectile({
             <group rotation={[0, 0, 0]}>
               <group rotation={[0, 0, 0.7]} scale={[0.4, 0.4, -0.4]}>
                 <mesh>
-                  <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
+                  <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
                   <meshStandardMaterial 
-                    color={new Color(spearColor)}
-                    emissive={new Color(spearColor)}
+                    color={cSpear}
+                    emissive={cSpear}
                     emissiveIntensity={baseEmissiveIntensity}
                     metalness={0.8}
                     roughness={0.1}
@@ -266,10 +274,10 @@ export default function ThrowSpearProjectile({
             <group rotation={[0, (2 * Math.PI) / 3, Math.PI/2]}>
               <group rotation={[0, 0., 5.33]} scale={[0.4, 0.4, -0.4]}>
                 <mesh>
-                  <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
+                  <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
                   <meshStandardMaterial 
-                    color={new Color(spearColor)}
-                    emissive={new Color(spearColor)}
+                    color={cSpear}
+                    emissive={cSpear}
                     emissiveIntensity={baseEmissiveIntensity}
                     metalness={0.8}
                     roughness={0.1}
@@ -284,10 +292,10 @@ export default function ThrowSpearProjectile({
             <group rotation={[0, (4 * Math.PI) / 3, Math.PI/2]}>
               <group rotation={[0, 0, 5.33]} scale={[0.4, 0.4, -0.4]}>
                 <mesh>
-                  <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
+                  <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
                   <meshStandardMaterial 
-                    color={new Color(spearColor)}
-                    emissive={new Color(spearColor)}
+                    color={cSpear}
+                    emissive={cSpear}
                     emissiveIntensity={baseEmissiveIntensity}
                     metalness={0.8}
                     roughness={0.1}
@@ -303,10 +311,10 @@ export default function ThrowSpearProjectile({
           {/* Inner blade component */}
           <group position={[0, 0.65, 0.35]} rotation={[0, -Math.PI / 2, Math.PI / 2]} scale={[0.8, 0.8, 0.5]}>
             <mesh>
-              <extrudeGeometry args={[createInnerBladeShape(), bladeExtrudeSettings]} />
+              <extrudeGeometry args={[innerBladeShape, bladeExtrudeSettings]} />
               <meshStandardMaterial 
-                color={new Color(spearColor)}
-                emissive={new Color(spearColor)}
+                color={cSpear}
+                emissive={cSpear}
                 emissiveIntensity={baseEmissiveIntensity}
                 metalness={0.3}
                 roughness={0.1}
@@ -316,10 +324,10 @@ export default function ThrowSpearProjectile({
             </mesh>
             
             <mesh>
-              <extrudeGeometry args={[createInnerBladeShape(), innerBladeExtrudeSettings]} />
+              <extrudeGeometry args={[innerBladeShape, innerBladeExtrudeSettings]} />
               <meshStandardMaterial 
-                color={new Color(spearColor)}
-                emissive={new Color(spearColor)}
+                color={cSpear}
+                emissive={cSpear}
                 emissiveIntensity={baseEmissiveIntensity * 0.7}
                 metalness={0.2}
                 roughness={0.1}
@@ -351,8 +359,8 @@ export default function ThrowSpearProjectile({
             <mesh scale={[trailScale * 1.5, trailScale * 1.5, trailScale * 1.5]}>
               <sphereGeometry args={[0.2, 6, 6]} />
               <meshStandardMaterial
-                color={new Color(lightningColor)}
-                emissive={new Color(lightningColor)}
+                color={cLightning}
+                emissive={cLightning}
                 emissiveIntensity={chargeIntensity * 2 + 1}
                 transparent
                 opacity={trailOpacity * 0.5}

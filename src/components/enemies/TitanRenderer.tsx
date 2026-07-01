@@ -39,6 +39,7 @@ interface TitanRendererProps {
 const ATTACK_DURATION        = 1500; // ms — matches backend meleeLockUntil
 const POWERUP_DURATION       = 1500; // ms — bladestorm windup
 const STOMP_DURATION         = 1000; // ms — stomp windup
+const CANNON_CAST_DURATION   = 1500; // ms — matches backend TITAN_CANNON_TOTAL_LOCK_MS
 const FADE_DURATION          = 2.5;
 const LERP_SPEED             = 8;
 const WALK_STOP_DELAY        = 300;
@@ -64,6 +65,7 @@ export default function TitanRenderer({
   const [isAttacking, setIsAttacking] = useState(false);
   const [isPoweringUp, setIsPoweringUp] = useState(false);
   const [isStomping, setIsStomping] = useState(false);
+  const [isCasting, setIsCasting] = useState(false);
   const [isWalking, setIsWalking] = useState(true);
 
   const targetPosition = useRef(position.clone());
@@ -71,13 +73,18 @@ export default function TitanRenderer({
   const isAttackingRef = useRef(false);
   const isPoweringUpRef = useRef(false);
   const isStompingRef = useRef(false);
+  const isCastingRef = useRef(false);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer     = useRef(0);
   const opacity       = useRef(1);
+  // Cached list of materials for death-fade — built once when isDying starts,
+  // avoiding a group.traverse() call on every frame.
+  const cachedDeathMats = useRef<any[]>([]);
+  const deathCacheBuilt = useRef(false);
 
   const isAnimLocked = () =>
-    isAttackingRef.current || isPoweringUpRef.current || isStompingRef.current;
+    isAttackingRef.current || isPoweringUpRef.current || isStompingRef.current || isCastingRef.current;
 
   const setGroupRef = useCallback((group: Group | null) => {
     groupRef.current = group;
@@ -152,13 +159,27 @@ export default function TitanRenderer({
       }, STOMP_DURATION);
     };
 
+    const handleCannonWindup = (data: { titanId: string }) => {
+      if (data.titanId !== id) return;
+      setIsCasting(true);
+      isCastingRef.current = true;
+      setIsWalking(false);
+      setTimeout(() => {
+        setIsCasting(false);
+        isCastingRef.current = false;
+        if (!isAnimLocked()) setIsWalking(true);
+      }, CANNON_CAST_DURATION);
+    };
+
     socket.on('titan-attack-telegraph', handleTitanTelegraph);
     socket.on('titan-bladestorm-powerup-start', handleBladestormPowerup);
     socket.on('titan-stomp-start', handleStompStart);
+    socket.on('titan-cannon-windup', handleCannonWindup);
     return () => {
       socket.off('titan-attack-telegraph', handleTitanTelegraph);
       socket.off('titan-bladestorm-powerup-start', handleBladestormPowerup);
       socket.off('titan-stomp-start', handleStompStart);
+      socket.off('titan-cannon-windup', handleCannonWindup);
     };
   }, [id, socket]);
 
@@ -178,15 +199,27 @@ export default function TitanRenderer({
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
-      group.traverse((child: any) => {
-        if (child.isMesh && child.material) {
-          const mats = Array.isArray(child.material) ? child.material : [child.material];
-          mats.forEach((mat: any) => {
-            mat.transparent = true;
-            mat.opacity = opacity.current;
-          });
-        }
-      });
+
+      // Build the material cache once on the first dying frame.
+      if (!deathCacheBuilt.current) {
+        const collected: any[] = [];
+        group.traverse((child: any) => {
+          if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((mat: any) => {
+              mat.transparent = true;
+              collected.push(mat);
+            });
+          }
+        });
+        cachedDeathMats.current = collected;
+        deathCacheBuilt.current = true;
+      }
+
+      const op = opacity.current;
+      for (let i = 0; i < cachedDeathMats.current.length; i++) {
+        cachedDeathMats.current[i].opacity = op;
+      }
     }
   });
 
@@ -195,10 +228,11 @@ export default function TitanRenderer({
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <TitanModel
-        isWalking={!isAttacking && !isPoweringUp && !isStomping && !isDying}
+        isWalking={!isAttacking && !isPoweringUp && !isStomping && !isCasting && !isDying}
         isAttacking={isAttacking}
         isPoweringUp={isPoweringUp}
         isStomping={isStomping}
+        isCasting={isCasting}
         isDying={isDying}
       />
       {!isDying && <TitanSoulEffect soulType={soulType} />}

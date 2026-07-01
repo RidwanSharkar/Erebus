@@ -16,6 +16,7 @@ interface BossSpearProjectileProps {
 
 const BOSS_SPEAR_SPEED = 22; // units per second
 const HIT_RADIUS = 0.9;
+const _spearPosScratch = new Vector3();
 /** Must match `BOSS_THROW_MAX_RANGE` in backend `enemyAI.js`. */
 export const BOSS_SPEAR_MAX_RANGE = 12;
 
@@ -95,6 +96,11 @@ export default function BossSpearProjectile({
   }), []);
 
   useEffect(() => {
+    const mats = [tipMat, coreMat, midMat, glowMat, outerMat, trailMat, trailFarMat];
+    return () => { mats.forEach((m) => m.dispose()); };
+  }, [tipMat, coreMat, midMat, glowMat, outerMat, trailMat, trailFarMat]);
+
+  useEffect(() => {
     if (!groupRef.current) return;
     groupRef.current.position.copy(startPosition);
     groupRef.current.rotation.set(pitch, yaw, 0, 'YXZ');
@@ -108,7 +114,7 @@ export default function BossSpearProjectile({
     const progress = Math.min(t / duration, 1.0);
 
     groupRef.current.position.copy(
-      startPosition.clone().addScaledVector(direction, progress * totalDist)
+      _spearPosScratch.copy(startPosition).addScaledVector(direction, progress * totalDist)
     );
 
     // Drive the pooled light at the spear's world position.

@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, Group, DoubleSide, AdditiveBlending, Color } from '@/utils/three-exports';
+import { Vector3, Group, Mesh, DoubleSide, AdditiveBlending, Color } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import RejuvenatingShotTrail from './RejuvenatingShotTrail';
 
@@ -16,7 +16,13 @@ interface RejuvenatingShotProps {
 export default function RejuvenatingShot({ position, direction, onImpact, distanceTraveled = 0, maxDistance = 25, projectileType }: RejuvenatingShotProps) {
 
   const arrowRef = useRef<Group>(null);
-  const [time, setTime] = useState(0);
+  const fletchingRef = useRef<Group>(null);
+  const spiralRefs = useRef<(Mesh | null)[]>([]);
+  const timeRef = useRef(0);
+
+  // Reusable scratch vectors so the per-frame orientation math allocates nothing.
+  const scratchDir = useMemo(() => new Vector3(), []);
+  const scratchLookAt = useMemo(() => new Vector3(), []);
 
   // Enhanced healing-themed colors - brighter and more vibrant
   const color = "#00ffaa"; // Brighter healing green
@@ -37,19 +43,40 @@ export default function RejuvenatingShot({ position, direction, onImpact, distan
   // Pooled point light follows the arrow position (world space).
   const arrowLight = useDynamicLight({ color, distance: 4, decay: 2, priority: 2 });
 
+  // Memoized trail color (constant) to avoid allocating a new Color every render.
+  const trailColor = useMemo(() => new Color(color), [color]);
+
   useFrame((_, delta) => {
     if (!arrowRef.current) return;
 
-    // Update animation time
-    setTime(prev => prev + delta);
+    // Advance animation time imperatively (no setState → no per-frame re-render).
+    const time = timeRef.current + delta;
+    timeRef.current = time;
 
     // Use the position directly from the ECS system (passed via props)
     // The RejuvenatingShotManager updates this position from the Transform component
     arrowRef.current.position.copy(position);
 
-    // Orient arrow to face movement direction
-    const lookAtTarget = position.clone().add(direction.clone().normalize());
-    arrowRef.current.lookAt(lookAtTarget);
+    // Orient arrow to face movement direction (reuse scratch vectors, no clones).
+    scratchDir.copy(direction).normalize();
+    scratchLookAt.copy(position).add(scratchDir);
+    arrowRef.current.lookAt(scratchLookAt);
+
+    // Animated fletching spin.
+    if (fletchingRef.current) fletchingRef.current.rotation.z = time * 2;
+
+    // Spiraling healing particles.
+    const spiralRadius = size * 1.8;
+    for (let i = 0; i < spiralRefs.current.length; i++) {
+      const m = spiralRefs.current[i];
+      if (!m) continue;
+      const spiralAngle = time * 3 + i * (Math.PI * 2 / 6);
+      m.position.set(
+        Math.cos(spiralAngle) * spiralRadius,
+        Math.sin(spiralAngle * 1.5) * size * 0.7,
+        Math.sin(spiralAngle) * spiralRadius,
+      );
+    }
 
     // Drive the pooled light at the arrow (replaces the per-arrow <pointLight>).
     arrowLight.current?.setPosition(position.x, position.y, position.z);
@@ -60,7 +87,7 @@ export default function RejuvenatingShot({ position, direction, onImpact, distan
     <group name="rejuvenating-shot-group">
       {/* Healing trail effect - positioned outside the projectile group for proper world coordinates */}
       <RejuvenatingShotTrail
-        color={new Color(color)}
+        color={trailColor}
         size={size * 0.8}
         meshRef={arrowRef}
         opacity={opacity}
@@ -113,7 +140,7 @@ export default function RejuvenatingShot({ position, direction, onImpact, distan
         </mesh>
 
         {/* Arrow Fletching - Animated healing leaves/energy wings */}
-        <group position={[0, 0, -0.15]} rotation={[0, 0, time * 2]}>
+        <group ref={fletchingRef} position={[0, 0, -0.15]} rotation={[0, 0, 0]}>
           {[0, 120, 240].map((angle, index) => (
             <mesh
               key={index}
@@ -171,11 +198,12 @@ export default function RejuvenatingShot({ position, direction, onImpact, distan
 
         {/* Spiraling healing particles */}
         {[...Array(6)].map((_, i) => {
-          const spiralAngle = time * 3 + i * (Math.PI * 2 / 6);
+          const spiralAngle = i * (Math.PI * 2 / 6);
           const spiralRadius = size * 1.8;
           return (
             <mesh
               key={`healing-particle-${i}`}
+              ref={(el) => { spiralRefs.current[i] = el; }}
               position={[
                 Math.cos(spiralAngle) * spiralRadius,
                 Math.sin(spiralAngle * 1.5) * size * 0.7,

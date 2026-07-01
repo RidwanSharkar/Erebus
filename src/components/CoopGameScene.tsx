@@ -3,7 +3,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import { useThree, useFrame } from '@react-three/fiber';
-import { Vector3, Matrix4, Camera, PerspectiveCamera, Scene, WebGLRenderer, PCFSoftShadowMap, Color, Quaternion, Euler, Group, AdditiveBlending, MeshBasicMaterial } from '@/utils/three-exports';
+import { Vector3, Matrix4, Camera, PerspectiveCamera, Scene, WebGLRenderer, PCFSoftShadowMap, Color, Quaternion, Euler, Group, AdditiveBlending, MeshBasicMaterial, Mesh, MeshStandardMaterial, PointLight } from '@/utils/three-exports';
 import DragonRenderer from './dragon/DragonRenderer';
 import CharacterRenderer from './character/CharacterRenderer';
 import { warmupCharacterIdleGltf, warmupCharacterLocomotionGltf } from '@/components/character/CharacterModel';
@@ -48,6 +48,7 @@ import BossLeapShockwave, { type LeapShockwaveVariant } from './enemies/BossLeap
 import Boss2ArchonLightning from './enemies/Boss2ArchonLightning';
 import Boss3NovaDiscs, { type Boss3NovaBurst } from './enemies/Boss3NovaDiscs';
 import TitanStompShockwave, { type TitanStompShockwaveBurst } from './enemies/TitanStompShockwave';
+import TitanCannonAbility from './enemies/TitanCannonAbility';
 import GoldPileDropEffect from './enemies/GoldPileDropEffect';
 import GoldCollectMoteEffect from './enemies/GoldCollectMoteEffect';
 import BowShotImpact from './weapons/BowShotImpact';
@@ -66,7 +67,11 @@ import {
   type PlayerDamageFeedbackTone,
 } from '@/utils/playerDamageFeedbackEvent';
 import BossTectonicSpike from './enemies/BossTectonicSpike';
-import BossTectonicSpikeTelegraph from './enemies/BossTectonicSpikeTelegraph';
+import BossTectonicSpikeTelegraph, {
+  POST_SPIKE_CRACK_HOLD_MS,
+  TECTONIC_HIT_RADIUS,
+} from './enemies/BossTectonicSpikeTelegraph';
+import SpikeGroundCracksVfx from './environment/SpikeGroundCracksVfx';
 import TemplarBlinkSmiteGround from './enemies/TemplarBlinkSmiteGround';
 import { useMultiplayer, Player, EnemyDamageMeta, type Enemy as ServerEnemy, type GoldDrop, type PlayerMovementDirection, type BroadcastPlayerAttackAnimationData } from '@/contexts/MultiplayerContext';
 import { SkillPointData } from '@/utils/SkillPointSystem';
@@ -592,94 +597,119 @@ function RoomBoomMendingEffect({
   position: Vector3;
   onComplete: () => void;
 }) {
-  const [time, setTime] = useState(0);
   const duration = 1.5;
+  const timeRef = useRef(0);
+  const hasCompletedRef = useRef(false);
 
-  const tick = useCallback(
-    (_: unknown, delta: number) => {
-      setTime((prev) => {
-        const next = prev + delta;
-        if (next >= duration) onComplete();
-        return next;
-      });
-    },
-    [duration, onComplete],
-  );
-
-  useFrame(tick);
-
-  const progress = Math.min(1, time / duration);
-  const opacity = Math.sin(progress * Math.PI);
-  const scale = 1 + progress * 2;
-
-  const ringMaterial = useMemo(
-    () => ({
-      color: '#88ffaa',
-      emissive: '#22c95e',
-      emissiveIntensity: 2,
-      transparent: true,
-    }),
-    [],
-  );
-
-  const particleMaterial = useMemo(
-    () => ({
-      color: '#88ffaa',
-      emissive: '#22c95e',
-      emissiveIntensity: 2,
-      transparent: true,
-    }),
-    [],
-  );
+  // Mesh/material refs — animation is driven imperatively each frame so the
+  // subtree is never re-rendered and geometries/materials are created once.
+  const ringMeshes = useRef<(Mesh | null)[]>([]);
+  const ringMats = useRef<(MeshStandardMaterial | null)[]>([]);
+  const sphereMesh = useRef<Mesh>(null);
+  const sphereMat = useRef<MeshStandardMaterial>(null);
+  const particleMeshes = useRef<(Mesh | null)[]>([]);
+  const particleMats = useRef<(MeshStandardMaterial | null)[]>([]);
+  const lightRef = useRef<PointLight>(null);
 
   const rings = useMemo(() => [...Array(3)], []);
   const particles = useMemo(() => [...Array(12)], []);
+
+  useFrame((_, delta) => {
+    const time = timeRef.current + delta;
+    timeRef.current = time;
+
+    const progress = Math.min(1, time / duration);
+    const opacity = Math.sin(progress * Math.PI);
+    const scale = 1 + progress * 2;
+
+    for (let i = 0; i < 3; i++) {
+      const m = ringMeshes.current[i];
+      if (m) {
+        m.position.y = progress * 2 + i * 0.5;
+        m.rotation.z = time * 2;
+      }
+      const mat = ringMats.current[i];
+      if (mat) mat.opacity = opacity * (1 - i * 0.2);
+    }
+
+    if (sphereMesh.current) sphereMesh.current.scale.setScalar(scale);
+    if (sphereMat.current) sphereMat.current.opacity = opacity * 0.3;
+
+    const radius = 0.75 + progress;
+    const yOffset = progress * 2;
+    for (let i = 0; i < 12; i++) {
+      const angle = (i / 12) * Math.PI * 2;
+      const m = particleMeshes.current[i];
+      if (m) {
+        m.position.set(
+          (Math.cos(angle + time * 2) * radius) / 1.1,
+          yOffset + Math.sin(time * 3 + i) * 0.5,
+          (Math.sin(angle + time * 2) * radius) / 1.1,
+        );
+      }
+      const mat = particleMats.current[i];
+      if (mat) mat.opacity = opacity * 0.8;
+    }
+
+    if (lightRef.current) lightRef.current.intensity = 4 * opacity;
+
+    if (time >= duration && !hasCompletedRef.current) {
+      hasCompletedRef.current = true;
+      onComplete();
+    }
+  });
 
   return (
     <group position={position.toArray()}>
       {rings.map((_, i) => (
         <mesh
           key={`mending-ring-${i}`}
-          position={[0, progress * 2 + i * 0.5, 0]}
-          rotation={[Math.PI / 2, 0, time * 2]}
+          ref={(el) => { ringMeshes.current[i] = el; }}
+          position={[0, i * 0.5, 0]}
+          rotation={[Math.PI / 2, 0, 0]}
         >
           <torusGeometry args={[0.8 - i * 0.2, 0.05, 16, 32]} />
-          <meshStandardMaterial {...ringMaterial} opacity={opacity * (1 - i * 0.2)} />
+          <meshStandardMaterial
+            ref={(el) => { ringMats.current[i] = el; }}
+            color="#88ffaa"
+            emissive="#22c95e"
+            emissiveIntensity={2}
+            transparent
+            opacity={0}
+          />
         </mesh>
       ))}
 
-      <mesh scale={[scale, scale, scale]}>
+      <mesh ref={sphereMesh}>
         <sphereGeometry args={[0.5, 32, 32]} />
         <meshStandardMaterial
+          ref={sphereMat}
           color="#aaf8c8"
           emissive="#1db954"
           emissiveIntensity={3}
           transparent
-          opacity={opacity * 0.3}
+          opacity={0}
         />
       </mesh>
 
-      {particles.map((_, i) => {
-        const angle = (i / 12) * Math.PI * 2;
-        const radius = 0.75 + progress;
-        const yOffset = progress * 2;
+      {particles.map((_, i) => (
+        <mesh
+          key={`mending-particle-${i}`}
+          ref={(el) => { particleMeshes.current[i] = el; }}
+        >
+          <sphereGeometry args={[0.095, 8, 8]} />
+          <meshStandardMaterial
+            ref={(el) => { particleMats.current[i] = el; }}
+            color="#88ffaa"
+            emissive="#22c95e"
+            emissiveIntensity={2}
+            transparent
+            opacity={0}
+          />
+        </mesh>
+      ))}
 
-        return (
-          <mesh
-            key={`mending-particle-${i}`}
-            position={[
-              (Math.cos(angle + time * 2) * radius) / 1.1,
-              yOffset + Math.sin(time * 3 + i) * 0.5,
-              (Math.sin(angle + time * 2) * radius) / 1.1,
-            ]}
-          >
-            <sphereGeometry args={[0.095, 8, 8]} />
-            <meshStandardMaterial {...particleMaterial} opacity={opacity * 0.8} />
-          </mesh>
-        );
-      })}
-
-      <pointLight color="#22c95e" intensity={4 * opacity} distance={5} decay={2} />
+      <pointLight ref={lightRef} color="#22c95e" intensity={0} distance={5} decay={2} />
     </group>
   );
 }
@@ -1101,6 +1131,9 @@ function buildPlayerMovementDirectionPayload(movement: Movement): PlayerMovement
   };
 }
 
+// Module-level scratch for camera direction fallback in useFrame (avoids per-frame allocation).
+const _camDirScratch = new Vector3();
+
 const ZERO_PLAYER_MOVEMENT_DIRECTION: PlayerMovementDirection = {
   x: 0,
   y: 0,
@@ -1335,11 +1368,20 @@ export function CoopGameScene({
   const prevMushroomHealthRef = useRef<number[] | null>(null);
   const [mushroomEruptionFx, setMushroomEruptionFx] = useState<Array<{ id: string; pos: Vector3 }>>([]);
 
+  // Reset the health snapshot whenever we enter a new combat room so the diff
+  // effect below does not treat freshly-restored mushrooms as newly destroyed.
   useEffect(() => {
+    prevMushroomHealthRef.current = null;
+  }, [coopCombatArenaEnterSeq]);
+
+  useEffect(() => {
+    // When prev is null (first render after a room enter) default to the current
+    // snapshot so the diff produces no eruptions — the authoritative state just
+    // arrived from the server and nothing has changed yet.
     const prev =
       prevMushroomHealthRef.current && prevMushroomHealthRef.current.length === effectiveMushroomHealth.length
         ? prevMushroomHealthRef.current
-        : Array.from({ length: effectiveMushroomHealth.length }, () => MUSHROOM_MAX_HP);
+        : [...effectiveMushroomHealth];
     const spawned: Array<{ id: string; pos: Vector3 }> = [];
     for (let i = 0; i < effectiveMushroomHealth.length; i++) {
       if (prev[i] > 0 && effectiveMushroomHealth[i] <= 0) {
@@ -1407,6 +1449,7 @@ export function CoopGameScene({
   const reanimateRef = useRef<ReanimateRef>(null);
   const damagePlayerCallbackRef = useRef<((playerId: string, damage: number, damageType?: string, isCritical?: boolean) => void) | null>(null);
   const isInitialized = useRef(false);
+  const coopGameSetupInitializedRef = useRef(false);
   const lastAnimationBroadcast = useRef(0);
   const lastMeleeSoundTime = useRef(new Map<string, number>());
   // Knight/Templar miss-sound scheduling: cancel timer when damage event confirms a hit
@@ -1579,6 +1622,30 @@ export function CoopGameScene({
   }, [inThroneRoom, inBossThroneArena, isHexCombatArena, gameStarted, engineReady]);
 
   const prevInThroneRef = useRef(inThroneRoom);
+  // Place the local player at their server throne spawn ONCE per throne entry, then let the
+  // local control system own the position. Keeping `players` in deps lets us retry until the
+  // local entry exists, but the guard prevents continuous server-position resets that would
+  // otherwise fight local movement (stuck-at-spawn + jitter for mid-session joiners).
+  const throneSpawnAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!inThroneRoom) {
+      throneSpawnAppliedRef.current = false;
+      return;
+    }
+    if (throneSpawnAppliedRef.current) return;
+    if (!engineRef.current || !engineReady || !gameStarted || !socket?.id) return;
+    if (playerEntityRef.current === null) return;
+    const me = players.get(socket.id);
+    if (!me) return;
+    const ent = engineRef.current.getWorld().getEntity(playerEntityRef.current);
+    const tr = ent?.getComponent(Transform);
+    if (tr) {
+      tr.setPosition(me.position.x, me.position.y ?? 0.5, me.position.z);
+    }
+    cameraSystemRef.current?.snapToTarget();
+    throneSpawnAppliedRef.current = true;
+  }, [inThroneRoom, gameStarted, engineReady, socket?.id, players]);
+
   useEffect(() => {
     if (prevInThroneRef.current && !inThroneRoom) {
       if (process.env.NODE_ENV === 'development') {
@@ -1599,6 +1666,15 @@ export function CoopGameScene({
     }
     prevInThroneRef.current = inThroneRoom;
   }, [inThroneRoom, players, socket?.id, coopArenaClampBounds]);
+
+  // Clear every live projectile when entering a new combat room so stale explosions
+  // and AOE impacts from the previous room cannot carry over and damage mushrooms.
+  useEffect(() => {
+    if (!engineRef.current || !gameStarted || !engineReady) return;
+    if (coopCombatArenaEnterSeq === 0) return;
+    const projectileSystem = engineRef.current.getWorld().getSystem(ProjectileSystem);
+    projectileSystem?.clearAllProjectiles();
+  }, [coopCombatArenaEnterSeq, gameStarted, engineReady]);
 
   /** `combat-arena-entered` (server teleports) or `coop-main-arena-intermission` (server state sync, no entry snap); align local ECS. */
   useEffect(() => {
@@ -2317,6 +2393,15 @@ export function CoopGameScene({
   const [bossTectonicTelegraphs, setBossTectonicTelegraphs] = useState<
     { id: string; x: number; y: number; z: number; durationMs: number }[]
   >([]);
+  interface TectonicSpikeGroundCrackState {
+    id: string;
+    x: number;
+    y: number;
+    z: number;
+    seed: string;
+    durationMs: number;
+  }
+  const [tectonicSpikeGroundCracks, setTectonicSpikeGroundCracks] = useState<TectonicSpikeGroundCrackState[]>([]);
 
   interface Boss2ArchonLightningState {
     id: string;
@@ -2328,6 +2413,17 @@ export function CoopGameScene({
   const [boss2ArchonLightnings, setBoss2ArchonLightnings] = useState<Boss2ArchonLightningState[]>([]);
   const [warlockArchonShocks, setWarlockArchonShocks] = useState<Boss2ArchonLightningState[]>([]);
   const [boss3NovaBursts, setBoss3NovaBursts] = useState<Boss3NovaBurst[]>([]);
+
+  interface TitanCannonAbilityState {
+    id: string;
+    soulType: 'green' | 'red' | 'blue' | 'purple';
+    origin: Vector3;
+    rotation: number;
+    range: number;
+    halfWidth: number;
+    strikeAt: number;
+  }
+  const [titanCannonAbilities, setTitanCannonAbilities] = useState<TitanCannonAbilityState[]>([]);
 
   // Boss Meteor State
   interface MeteorState {
@@ -2546,6 +2642,7 @@ export function CoopGameScene({
     strikeAt: number;
     damage: number;
     radius: number;
+    theme: 'blue' | 'green';
   }
   const [weaverLightningStrikes, setWeaverLightningStrikes] = useState<WeaverLightningState[]>([]);
 
@@ -7464,6 +7561,32 @@ export function CoopGameScene({
       ]);
     };
 
+    const handleTitanCannonWindup = (data: {
+      titanId: string;
+      soulType?: 'green' | 'red' | 'blue' | 'purple';
+      origin: { x: number; y: number; z: number };
+      rotation: number;
+      range: number;
+      halfWidth: number;
+      strikeAt: number;
+      timestamp: number;
+    }) => {
+      const pos = new Vector3(data.origin.x, data.origin.y, data.origin.z);
+      window.audioSystem?.playBoss3BeamTelegraphSound(pos);
+      setTitanCannonAbilities((prev) => [
+        ...prev,
+        {
+          id: `titan-cannon-${data.titanId}-${data.timestamp}`,
+          soulType: data.soulType ?? 'green',
+          origin: pos,
+          rotation: data.rotation,
+          range: data.range,
+          halfWidth: data.halfWidth,
+          strikeAt: data.strikeAt,
+        },
+      ]);
+    };
+
     const handleBossThrowSpear = (data: {
       bossId: string;
       startPosition: { x: number; y: number; z: number };
@@ -7501,6 +7624,17 @@ export function CoopGameScene({
           y: data.position.y,
           z: data.position.z,
           durationMs: w,
+        },
+      ]);
+      setTectonicSpikeGroundCracks((prev) => [
+        ...prev,
+        {
+          id: `cracks-${data.spikeId}`,
+          x: data.position.x,
+          y: data.position.y,
+          z: data.position.z,
+          seed: data.spikeId,
+          durationMs: w + POST_SPIKE_CRACK_HOLD_MS,
         },
       ]);
     };
@@ -7975,6 +8109,7 @@ export function CoopGameScene({
     socket.on('templar-leap-start', handleTemplarLeapStart);
     socket.on('templar-leap-land', handleTemplarLeapLand);
     socket.on('titan-stomp-shockwave', handleTitanStompShockwave);
+    socket.on('titan-cannon-windup', handleTitanCannonWindup);
     socket.on('boss-throw-spear', handleBossThrowSpear);
     socket.on('boss-tectonic-spike-telegraph', handleBossTectonicSpikeTelegraph);
     socket.on('boss-tectonic-spike-appear', handleBossTectonicSpikeAppear);
@@ -8246,6 +8381,7 @@ export function CoopGameScene({
       strikeAt: number;
       damage: number;
       radius?: number;
+      theme?: 'blue' | 'green';
       timestamp: number;
     }) => {
       const pos = new Vector3(
@@ -8253,6 +8389,8 @@ export function CoopGameScene({
         data.targetPosition.y,
         data.targetPosition.z
       );
+      const theme: 'blue' | 'green' = data.theme ??
+        (enemiesRef.current.get(data.weaverId)?.type === 'boss3' ? 'green' : 'blue');
       setWeaverLightningStrikes(prev => [
         ...prev,
         {
@@ -8262,6 +8400,7 @@ export function CoopGameScene({
           strikeAt: data.strikeAt,
           damage: data.damage,
           radius: data.radius ?? 2.99,
+          theme,
         },
       ]);
     };
@@ -8285,6 +8424,17 @@ export function CoopGameScene({
           z: data.position.z,
           durationMs: w,
           theme,
+        },
+      ]);
+      setTectonicSpikeGroundCracks((prev) => [
+        ...prev,
+        {
+          id: `cracks-${data.spikeId}`,
+          x: data.position.x,
+          y: data.position.y,
+          z: data.position.z,
+          seed: data.spikeId,
+          durationMs: w + POST_SPIKE_CRACK_HOLD_MS,
         },
       ]);
     };
@@ -8401,6 +8551,7 @@ export function CoopGameScene({
       socket.off('templar-leap-start', handleTemplarLeapStart);
       socket.off('templar-leap-land', handleTemplarLeapLand);
       socket.off('titan-stomp-shockwave', handleTitanStompShockwave);
+      socket.off('titan-cannon-windup', handleTitanCannonWindup);
       socket.off('boss-throw-spear', handleBossThrowSpear);
       socket.off('boss-tectonic-spike-telegraph', handleBossTectonicSpikeTelegraph);
       socket.off('boss-tectonic-spike-appear', handleBossTectonicSpikeAppear);
@@ -9339,20 +9490,21 @@ export function CoopGameScene({
           const rPick = COOP_GROUND_ITEM_PICKUP_RADIUS;
           const rPick2 = rPick * rPick;
           let nearestGoldPrep: { id: string; d2: number } | null = null;
-          for (const drop of Array.from(goldDropsRef.current.values())) {
+          goldDropsRef.current.forEach((drop) => {
             const dx = px - drop.position.x;
             const dz = pz - drop.position.z;
             const d2 = dx * dx + dz * dz;
             if (d2 <= rPick2 && (!nearestGoldPrep || d2 < nearestGoldPrep.d2)) {
               nearestGoldPrep = { id: drop.id, d2 };
             }
-          }
+          });
+          const _goldPrepFound = nearestGoldPrep as { id: string; d2: number } | null;
           if (
-            nearestGoldPrep &&
-            !pendingGoldAutoPickupRef.current.has(nearestGoldPrep.id)
+            _goldPrepFound &&
+            !pendingGoldAutoPickupRef.current.has(_goldPrepFound.id)
           ) {
-            pendingGoldAutoPickupRef.current.add(nearestGoldPrep.id);
-            pickupGoldDropRef.current(nearestGoldPrep.id);
+            pendingGoldAutoPickupRef.current.add(_goldPrepFound.id);
+            pickupGoldDropRef.current(_goldPrepFound.id);
           }
         }
       }
@@ -9435,16 +9587,17 @@ export function CoopGameScene({
             const rPick = COOP_GROUND_ITEM_PICKUP_RADIUS;
             const rPick2 = rPick * rPick;
             let nearestItem: { id: string; d2: number } | null = null;
-            for (const item of Array.from(droppedItemsRef.current.values())) {
+            droppedItemsRef.current.forEach((item) => {
               const dx = px - item.position.x;
               const dz = pz - item.position.z;
               const d2 = dx * dx + dz * dz;
               if (d2 <= rPick2 && (!nearestItem || d2 < nearestItem.d2)) {
                 nearestItem = { id: item.id, d2 };
               }
-            }
-            if (nearestItem) {
-              pickupItemRef.current(nearestItem.id);
+            });
+            const _itemFound = nearestItem as { id: string; d2: number } | null;
+            if (_itemFound) {
+              pickupItemRef.current(_itemFound.id);
             }
           }
 
@@ -9453,20 +9606,21 @@ export function CoopGameScene({
             const rPick = COOP_GROUND_ITEM_PICKUP_RADIUS;
             const rPick2 = rPick * rPick;
             let nearestGold: { id: string; d2: number } | null = null;
-            for (const drop of Array.from(goldDropsRef.current.values())) {
+            goldDropsRef.current.forEach((drop) => {
               const dx = px - drop.position.x;
               const dz = pz - drop.position.z;
               const d2 = dx * dx + dz * dz;
               if (d2 <= rPick2 && (!nearestGold || d2 < nearestGold.d2)) {
                 nearestGold = { id: drop.id, d2 };
               }
-            }
+            });
+            const _goldFound = nearestGold as { id: string; d2: number } | null;
             if (
-              nearestGold &&
-              !pendingGoldAutoPickupRef.current.has(nearestGold.id)
+              _goldFound &&
+              !pendingGoldAutoPickupRef.current.has(_goldFound.id)
             ) {
-              pendingGoldAutoPickupRef.current.add(nearestGold.id);
-              pickupGoldDropRef.current(nearestGold.id);
+              pendingGoldAutoPickupRef.current.add(_goldFound.id);
+              pickupGoldDropRef.current(_goldFound.id);
             }
           }
         }
@@ -9541,11 +9695,8 @@ export function CoopGameScene({
           const cameraAngle =
             typeof cameraSystem?.getOrbitHorizontalFacingAngle === 'function'
               ? cameraSystem.getOrbitHorizontalFacingAngle()
-              : (() => {
-                  const cameraDirection = new Vector3();
-                  camera.getWorldDirection(cameraDirection);
-                  return Math.atan2(cameraDirection.x, cameraDirection.z);
-                })();
+              : (camera.getWorldDirection(_camDirScratch),
+                 Math.atan2(_camDirScratch.x, _camDirScratch.z));
 
           // Update quaternion for Viper Sting direction
           viperStingParentRef.current.quaternion = {
@@ -9876,14 +10027,14 @@ export function CoopGameScene({
               if (!nextHint && droppedItemsRef.current.size > 0) {
                 const rPick = COOP_GROUND_ITEM_PICKUP_RADIUS;
                 const rPick2 = rPick * rPick;
-                for (const item of Array.from(droppedItemsRef.current.values())) {
+                droppedItemsRef.current.forEach((item) => {
+                  if (nextHint) return;
                   const dx = px - item.position.x;
                   const dz = pz - item.position.z;
                   if (dx * dx + dz * dz <= rPick2) {
                     nextHint = COOP_INTERACT_HINT_TEXT;
-                    break;
                   }
-                }
+                });
               }
             }
           }
@@ -9910,15 +10061,17 @@ export function CoopGameScene({
 
   // Initialize game setup after engine is ready
   useEffect(() => {
-    if (!engineRef.current || !engineReady) {
-      console.log('🔍 CoopGameScene: Waiting for engine to be ready...', {
-        hasEngine: !!engineRef.current,
-        engineReady
-      });
+    if (!engineRef.current || !engineReady || !gameStarted || coopGameSetupInitializedRef.current) {
+      if (!engineRef.current || !engineReady) {
+        console.log('🔍 CoopGameScene: Waiting for engine to be ready...', {
+          hasEngine: !!engineRef.current,
+          engineReady,
+        });
+      }
       return;
     }
 
-
+    coopGameSetupInitializedRef.current = true;
     // Create a PVP damage callback that maps local ECS entity IDs back to server player IDs
     const damagePlayerWithMapping = (entityId: string, damage: number, damageType?: string, isCritical?: boolean) => {
       // Find the server player ID that corresponds to this local ECS entity ID
@@ -10513,13 +10666,14 @@ export function CoopGameScene({
 
     // Cleanup function
     return () => {
+      coopGameSetupInitializedRef.current = false;
       projectileSystemForBroadcast?.setCrossentropyBoltBroadcastCallback(undefined);
       projectileSystemForBroadcast?.setEntropicBoltBroadcastCallback(undefined);
       setPlayerEntity(null);
       playerEntityRef.current = null;
       controlSystemRef.current = null;
     };
-  }, [engineReady, socket?.id]); // Use socket?.id instead of socket to prevent unnecessary re-renders
+  }, [engineReady, socket?.id, gameStarted]);
 
   // `setupCoopGame` only runs once when the engine becomes ready. If that happens before the socket
   // has `currentRoomId`, the captured `damageEnemy` would never emit — keep the CombatSystem callback fresh.
@@ -10536,12 +10690,18 @@ export function CoopGameScene({
         hitWorldPosition?: { x: number; y: number; z: number },
       ) => {
         if (meta?.damageType !== 'blizzard' && meta?.damageType !== 'icebeam') {
-          (window as any).audioSystem?.playUIHitboxSound(undefined, damage, hitWorldPosition);
+          if (meta?.damageType === 'crossentropy') {
+            (window as any).audioSystem?.playCrossentropyImpactSound();
+          } else {
+            (window as any).audioSystem?.playUIHitboxSound(undefined, damage, hitWorldPosition);
+          }
         }
         damageEnemy(enemyId, damage, sourcePlayerId, meta);
       },
     );
     combatSystem.setMushroomDamageCallback((index, damage, sourcePlayerId) => {
+      // Mirror the blockLocalDamageDuringCoopPortal guard used for enemy hits.
+      if (coopTransitionOverlayRef.current) return;
       damageMushroom(index, damage, sourcePlayerId ?? socket?.id);
     });
   }, [damageEnemy, damageMushroom, engineReady, socket?.id]);
@@ -11649,6 +11809,7 @@ export function CoopGameScene({
           strikeAt={strike.strikeAt}
           damage={strike.damage}
           radius={strike.radius}
+          theme={strike.theme}
           onImpact={(damage, position) => {
             if (playerEntity) {
               const localPlayerTransform = playerEntity.getComponent(Transform);
@@ -12141,6 +12302,19 @@ export function CoopGameScene({
         />
       ))}
 
+      {tectonicSpikeGroundCracks.map((cr) => (
+        <SpikeGroundCracksVfx
+          key={cr.id}
+          position={[cr.x, cr.y, cr.z]}
+          radius={TECTONIC_HIT_RADIUS}
+          seed={cr.seed}
+          durationMs={cr.durationMs}
+          onComplete={() =>
+            setTectonicSpikeGroundCracks((prev) => prev.filter((c) => c.id !== cr.id))
+          }
+        />
+      ))}
+
       {boss2ArchonLightnings.map((bolt) => (
         <Boss2ArchonLightning
           key={bolt.id}
@@ -12159,6 +12333,19 @@ export function CoopGameScene({
           halfWidth={bolt.halfWidth}
           theme="warlock-purple"
           onComplete={() => setWarlockArchonShocks(prev => prev.filter(x => x.id !== bolt.id))}
+        />
+      ))}
+
+      {titanCannonAbilities.map((ab) => (
+        <TitanCannonAbility
+          key={ab.id}
+          soulType={ab.soulType}
+          origin={ab.origin}
+          rotation={ab.rotation}
+          range={ab.range}
+          halfWidth={ab.halfWidth}
+          strikeAt={ab.strikeAt}
+          onComplete={() => setTitanCannonAbilities(prev => prev.filter(x => x.id !== ab.id))}
         />
       ))}
 
@@ -12871,7 +13058,11 @@ function setupCoopGame(
         hitWorldPosition?: { x: number; y: number; z: number },
       ) => {
         if (meta?.damageType !== 'blizzard' && meta?.damageType !== 'icebeam') {
-          audioSystem.playUIHitboxSound(undefined, damage, hitWorldPosition);
+          if (meta?.damageType === 'crossentropy') {
+            audioSystem.playCrossentropyImpactSound();
+          } else {
+            audioSystem.playUIHitboxSound(undefined, damage, hitWorldPosition);
+          }
         }
         damageEnemyCallback(enemyId, damage, sourcePlayerId, meta);
       },

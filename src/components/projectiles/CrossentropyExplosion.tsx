@@ -1,12 +1,16 @@
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   Vector3,
+  Group,
+  Mesh,
+  Material,
   AdditiveBlending,
+  RingGeometry,
+  PlaneGeometry,
   SphereGeometry,
   TorusGeometry,
-  MeshStandardMaterial,
-  type Mesh,
+  DoubleSide,
 } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import type { CrossentropyVisualTheme } from '@/utils/talents';
@@ -14,28 +18,60 @@ import type { CrossentropyVisualTheme } from '@/utils/talents';
 interface CrossentropyExplosionProps {
   position: Vector3;
   chargeTime?: number;
+  /** Kept for API compatibility; animation uses R3F clock. */
   explosionStartTime: number | null;
   visualTheme?: CrossentropyVisualTheme;
   onComplete?: () => void;
 }
 
-const IMPACT_DURATION = 0.395;
+const DURATION = 0.55;
+const BASE_RADIUS = 3.5;
+const CROSS_PLANE_COUNT = 4;
+const SPARK_COUNT = 4;
+const ENTROPY_RING_COUNT = 3;
+const EXPANDING_RING_COUNT = 5;
+const CROSS_PLANE_ANGLES = [0, Math.PI / 3, (2 * Math.PI) / 3, Math.PI];
+const ENTROPY_RING_SCALES = [0.45, 0.65, 0.85, 1.05];
+// Each expanding ring: [stagger (0-1), maxRadiusMultiplier, yOffset, tiltX, tiltZ, innerRatio]
+const EXPANDING_RING_PARAMS: [number, number, number, number, number, number][] = [
+  [0.00, 2.8, 0.01, 0,                 0,               0.82],
+  [0.06, 2.2, 0.04, Math.PI * 0.04,    0,               0.78],
+  [0.12, 3.2, 0.02, 0,                 Math.PI * 0.03,  0.85],
+  [0.18, 1.8, 0.06, -Math.PI * 0.05,   Math.PI * 0.02,  0.75],
+  [0.24, 2.5, 0.03, Math.PI * 0.02,   -Math.PI * 0.04,  0.80],
+];
+
+function setMatOpacity(mesh: Mesh | null, opacity: number, brightness = 1) {
+  if (!mesh?.material || !(mesh.material instanceof Material)) return;
+  const mat = mesh.material as Material & { opacity?: number };
+  mat.opacity = Math.min(1, opacity * brightness);
+}
 
 export default function CrossentropyExplosion({
   position,
   chargeTime = 1,
-  explosionStartTime,
+  explosionStartTime: _explosionStartTime,
   visualTheme = 'default',
   onComplete,
 }: CrossentropyExplosionProps) {
-  const startTime = useRef(explosionStartTime || Date.now());
-  const finished = useRef(false);
+  const groupRef = useRef<Group>(null);
+  const groundRingRef = useRef<Mesh>(null);
+  const ringOuterRef = useRef<Mesh>(null);
+  const ringInnerRef = useRef<Mesh>(null);
+  const entropyRingRefs = useRef<(Mesh | null)[]>([]);
+  const expandingRingRefs = useRef<(Mesh | null)[]>([]);
   const coreRef = useRef<Mesh>(null);
-  const innerRef = useRef<Mesh>(null);
-  const ringRefs = useRef<(Mesh | null)[]>([]);
+  const crossPlaneRefs = useRef<(Mesh | null)[]>([]);
   const sparkRefs = useRef<(Mesh | null)[]>([]);
+  const startTime = useRef<number | null>(null);
+  const finished = useRef(false);
 
   const normalizedCharge = Math.min(chargeTime / 4, 1.0);
+  const radius = BASE_RADIUS * (0.85 + 0.15 * normalizedCharge);
+
+  const px = position.x;
+  const py = position.y;
+  const pz = position.z;
 
   const {
     c1,
@@ -78,66 +114,70 @@ export default function CrossentropyExplosion({
     };
   }, [visualTheme]);
 
-  const coreGeo = useMemo(() => new SphereGeometry(0.55, 32, 32), []);
-  const innerGeo = useMemo(() => new SphereGeometry(0.35, 24, 24), []);
-  const ringGeos = useMemo(
-    () => [0.45, 0.65, 0.85].map((size) => new TorusGeometry(size * 1.25, 0.125, 16, 32)),
-    [],
-  );
-  const sparkGeo = useMemo(() => new SphereGeometry(0.05, 8, 8), []);
-
-  const coreMat = useMemo(
-    () => new MeshStandardMaterial({ color: c1, emissive: c1e, transparent: true, depthWrite: false, blending: AdditiveBlending }),
-    [c1, c1e],
-  );
-  const innerMat = useMemo(
-    () => new MeshStandardMaterial({ color: c2, emissive: c2e, transparent: true, depthWrite: false, blending: AdditiveBlending }),
-    [c2, c2e],
-  );
-  const ringMat = useMemo(
-    () => new MeshStandardMaterial({ color: ringC, emissive: ringE, transparent: true, depthWrite: false, blending: AdditiveBlending }),
-    [ringC, ringE],
-  );
-  const sparkMat = useMemo(
-    () => new MeshStandardMaterial({ color: sparkMain, emissive: sparkMainE, transparent: true, depthWrite: false, blending: AdditiveBlending }),
-    [sparkMain, sparkMainE],
-  );
-
-  const ringRotations = useMemo(
-    () => [0.45, 0.65, 0.85].map(() => [Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI] as [number, number, number]),
-    [],
-  );
-
-  const blastLight = useDynamicLight({ color: pl1, distance: 6, decay: 6, priority: 1 });
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!finished.current) {
-        finished.current = true;
-        onComplete?.();
-      }
-    }, IMPACT_DURATION * 1000);
-    return () => {
-      clearTimeout(timer);
-      coreGeo.dispose();
-      innerGeo.dispose();
-      ringGeos.forEach((g) => g.dispose());
-      sparkGeo.dispose();
-      coreMat.dispose();
-      innerMat.dispose();
-      ringMat.dispose();
-      sparkMat.dispose();
+  const geometries = useMemo(() => {
+    const baseR = radius * 0.42;
+    const tubeOuter = Math.max(0.08, radius * 0.11);
+    const tubeInner = tubeOuter * 0.65;
+    const entropyTube = Math.max(0.06, radius * 0.036);
+    return {
+      groundRing: new RingGeometry(0.05, 0.35, 32),
+      torusOuter: new TorusGeometry(baseR, tubeOuter, 10, 32),
+      torusInner: new TorusGeometry(baseR * 0.72, tubeInner, 8, 32),
+      crossPlane: new PlaneGeometry(radius * 1.6, radius * 1.2),
+      core: new SphereGeometry(radius * 0.18, 12, 12),
+      spark: new SphereGeometry(0.06, 6, 6),
+      entropyRings: ENTROPY_RING_SCALES.map(
+        (scale) => new TorusGeometry(scale * radius * 0.45, entropyTube, 8, 32),
+      ),
+      expandingRings: EXPANDING_RING_PARAMS.map(([, , , , , innerRatio]) =>
+        new RingGeometry(innerRatio * 0.5, 0.5, 48),
+      ),
     };
-  }, [coreGeo, innerGeo, ringGeos, sparkGeo, coreMat, innerMat, ringMat, sparkMat, onComplete]);
+  }, [radius]);
 
-  useFrame(() => {
-    const elapsed = (Date.now() - startTime.current) / 1000;
-    const fade = Math.max(0, 1 - elapsed / IMPACT_DURATION);
+  const entropyRingRotations = useMemo(
+    () =>
+      ENTROPY_RING_SCALES.map(
+        () =>
+          [Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI] as [
+            number,
+            number,
+            number,
+          ],
+      ),
+    [],
+  );
 
-    blastLight.current?.setPosition(position.x, position.y, position.z);
-    blastLight.current?.setIntensity(1 * fade);
+  const blastLight = useDynamicLight({
+    color: pl1,
+    distance: radius * 2.5,
+    decay: 2,
+    priority: 1,
+  });
 
-    if (fade <= 0) {
+  useEffect(
+    () => () => {
+      geometries.groundRing.dispose();
+      geometries.torusOuter.dispose();
+      geometries.torusInner.dispose();
+      geometries.crossPlane.dispose();
+      geometries.core.dispose();
+      geometries.spark.dispose();
+      geometries.entropyRings.forEach((g) => g.dispose());
+      geometries.expandingRings.forEach((g) => g.dispose());
+    },
+    [geometries],
+  );
+
+  useFrame((state) => {
+    if (!groupRef.current) return;
+
+    if (startTime.current === null) {
+      startTime.current = state.clock.getElapsedTime();
+    }
+
+    const t = (state.clock.getElapsedTime() - startTime.current) / DURATION;
+    if (t >= 1) {
       if (!finished.current) {
         finished.current = true;
         onComplete?.();
@@ -145,58 +185,169 @@ export default function CrossentropyExplosion({
       return;
     }
 
-    const coreScale = 1 + elapsed * 2;
-    const innerScale = 1 + elapsed * 3;
-    const ringScale = 1 + elapsed * 3;
-    const sparkRadius = 0.5 * (1 + elapsed * 2);
+    const fade = 1 - t;
+    const pulse = 0.15 + t * 0.85;
 
-    if (coreRef.current) {
-      coreRef.current.scale.setScalar(coreScale);
-      coreMat.opacity = fade;
-      coreMat.emissiveIntensity = 0.5 * fade;
-    }
-    if (innerRef.current) {
-      innerRef.current.scale.setScalar(innerScale);
-      innerMat.opacity = fade;
-      innerMat.emissiveIntensity = 0.5 * fade;
+    blastLight.current?.setPosition(px, py, pz);
+    blastLight.current?.setIntensity(2.0 * fade * (1 + t * 0.5));
+
+    groupRef.current.scale.setScalar(pulse);
+
+    setMatOpacity(ringOuterRef.current, fade * 0.75, 0.75);
+    setMatOpacity(ringInnerRef.current, fade * 0.55, 0.55);
+
+    const groundRing = groundRingRef.current;
+    if (groundRing) {
+      const groundScale = 0.2 + t * (radius / 0.35);
+      groundRing.scale.set(groundScale, groundScale, 1);
+      setMatOpacity(groundRing, fade * 0.85, 0.85);
     }
 
-    ringRefs.current.forEach((mesh, i) => {
-      if (!mesh) return;
-      mesh.scale.setScalar(ringScale);
-      ringMat.opacity = 0.875 * fade;
-      ringMat.emissiveIntensity = 0.875 * fade;
+    entropyRingRefs.current.forEach((ring, i) => {
+      if (!ring) return;
+      const stagger = i * 0.05;
+      const ringT = Math.min(1, Math.max(0, (t - stagger) / (1 - stagger)));
+      const ringScale = 0.35 + ringT * 1.65;
+      ring.scale.setScalar(ringScale);
+      setMatOpacity(ring, fade * (0.7 - i * 0.12), 0.65 - i * 0.08);
     });
 
-    sparkRefs.current.forEach((mesh, i) => {
-      if (!mesh) return;
-      const angle = (i / 4) * Math.PI * 2;
-      mesh.position.set(Math.sin(angle) * sparkRadius, Math.cos(angle) * sparkRadius, 0);
-      sparkMat.opacity = 0.8 * fade;
-      sparkMat.emissiveIntensity = 2 * fade;
+    expandingRingRefs.current.forEach((ring, i) => {
+      if (!ring) return;
+      const [stagger, maxMult] = EXPANDING_RING_PARAMS[i];
+      const localT = Math.min(1, Math.max(0, (t - stagger) / (1 - stagger)));
+      // expand quickly then slow down (ease-out cubic)
+      const eased = 1 - Math.pow(1 - localT, 3);
+      const targetScale = radius * maxMult;
+      const currentScale = 0.05 * radius + eased * targetScale;
+      ring.scale.set(currentScale, currentScale, 1);
+      // fade out more aggressively for later rings to create layered feel
+      const opacity = (1 - localT) * (0.85 - i * 0.1);
+      setMatOpacity(ring, Math.max(0, opacity), 1);
+    });
+
+    const core = coreRef.current;
+    if (core) {
+      const corePulse = t < 0.25 ? t / 0.25 : Math.max(0, 1 - (t - 0.25) / 0.35);
+      core.scale.setScalar(0.3 + corePulse * 1.4);
+      setMatOpacity(core, fade * 0.9, 0.35 + corePulse * 0.65);
+    }
+
+    crossPlaneRefs.current.forEach((plane, i) => {
+      if (!plane) return;
+      const stagger = i * 0.04;
+      const planeT = Math.min(1, Math.max(0, (t - stagger) / (1 - stagger)));
+      const planeScale = 0.1 + planeT * 0.9;
+      plane.scale.set(planeScale, 0.15 + planeT * 1.2, 1);
+      setMatOpacity(plane, fade * 0.5, 0.45 + planeScale * 0.45);
+    });
+
+    sparkRefs.current.forEach((spark, i) => {
+      if (!spark) return;
+      const angle = (i / SPARK_COUNT) * Math.PI * 2;
+      const sparkRadius = radius * 0.15 + t * radius * 0.85;
+      const sparkY = Math.sin(t * Math.PI * 2 + i) * 0.3 * fade;
+      spark.position.set(
+        Math.cos(angle) * sparkRadius,
+        sparkY,
+        Math.sin(angle) * sparkRadius,
+      );
+      const sparkScale = fade * (0.6 + (1 - t) * 0.8);
+      spark.scale.setScalar(sparkScale);
+      setMatOpacity(spark, fade * 0.8, 0.65);
     });
   });
 
+  const vfxMat = (color: string, opacity: number) => (
+    <meshBasicMaterial
+      color={color}
+      transparent
+      opacity={opacity}
+      depthWrite={false}
+      blending={AdditiveBlending}
+    />
+  );
+
   return (
-    <group position={position}>
-      <mesh ref={coreRef} geometry={coreGeo} material={coreMat} />
-      <mesh ref={innerRef} geometry={innerGeo} material={innerMat} />
-      {ringGeos.map((geo, i) => (
+    <group ref={groupRef} position={[px, py, pz]}>
+      <mesh
+        ref={groundRingRef}
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, -0.02, 0]}
+        geometry={geometries.groundRing}
+      >
+        {vfxMat(ringE, 0.85)}
+      </mesh>
+
+      <mesh ref={ringOuterRef} rotation={[Math.PI / 2, 0, 0]} geometry={geometries.torusOuter}>
+        {vfxMat(c1e, 0.75)}
+      </mesh>
+
+      <mesh ref={ringInnerRef} rotation={[Math.PI / 2, 0, 0.35]} geometry={geometries.torusInner}>
+        {vfxMat(c2e, 0.55)}
+      </mesh>
+
+      {geometries.entropyRings.map((geo, i) => (
         <mesh
-          key={i}
-          ref={(el) => { ringRefs.current[i] = el; }}
+          key={`entropy-ring-${i}`}
+          ref={(el) => {
+            entropyRingRefs.current[i] = el;
+          }}
           geometry={geo}
-          material={ringMat}
-          rotation={ringRotations[i]}
-        />
+          rotation={entropyRingRotations[i]}
+        >
+          {vfxMat(ringE, 0.7 - i * 0.12)}
+        </mesh>
       ))}
-      {[0, 1, 2, 3].map((i) => (
+
+      {EXPANDING_RING_PARAMS.map(([, , yOffset, tiltX, tiltZ], i) => (
+        <mesh
+          key={`expanding-ring-${i}`}
+          ref={(el) => {
+            expandingRingRefs.current[i] = el;
+          }}
+          geometry={geometries.expandingRings[i]}
+          position={[0, yOffset, 0]}
+          rotation={[-Math.PI / 2 + tiltX, 0, tiltZ]}
+        >
+          {vfxMat(i % 3 === 0 ? ringE : i % 3 === 1 ? c1e : ringC, 0.85 - i * 0.1)}
+        </mesh>
+      ))}
+
+      {CROSS_PLANE_ANGLES.map((angle, i) => (
+        <mesh
+          key={`plane-${i}`}
+          ref={(el) => {
+            crossPlaneRefs.current[i] = el;
+          }}
+          rotation={[0, angle, 0]}
+          geometry={geometries.crossPlane}
+        >
+          <meshBasicMaterial
+            color={i % 2 === 0 ? c1e : c2e}
+            transparent
+            opacity={0.5}
+            depthWrite={false}
+            blending={AdditiveBlending}
+            side={DoubleSide}
+          />
+        </mesh>
+      ))}
+
+      <mesh ref={coreRef} geometry={geometries.core}>
+        {vfxMat(c1, 0.9)}
+      </mesh>
+
+      {Array.from({ length: SPARK_COUNT }).map((_, i) => (
         <mesh
           key={`spark-${i}`}
-          ref={(el) => { sparkRefs.current[i] = el; }}
-          geometry={sparkGeo}
-          material={sparkMat}
-        />
+          ref={(el) => {
+            sparkRefs.current[i] = el;
+          }}
+          geometry={geometries.spark}
+        >
+          {vfxMat(i % 2 === 0 ? sparkMain : sparkMainE, 0.8)}
+        </mesh>
       ))}
     </group>
   );

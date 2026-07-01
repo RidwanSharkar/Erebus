@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   AdditiveBlending,
@@ -148,6 +148,20 @@ export default function KnightDeathGraspProjectile({
       }),
     [],
   );
+
+  useEffect(() => {
+    const g = geometries;
+    const m = materials;
+    return () => {
+      g.particle.dispose();
+      g.impact.dispose();
+      g.core.dispose();
+      m.spiral.forEach((mat) => mat.dispose());
+      m.impact.dispose();
+      m.core.dispose();
+      m.chain.dispose();
+    };
+  }, [geometries, materials]);
 
   useFrame((_, delta) => {
     if (doneRef.current) return;

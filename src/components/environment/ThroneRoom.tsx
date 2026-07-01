@@ -9,6 +9,7 @@ import PerimeterCloudSystem from './PerimeterCloudSystem';
 import StylizedGrass from './StylizedGrass';
 import StoneGround from './StoneGround';
 import Pillar from './Pillar';
+import ThronePedestalAura from './ThronePedestalAura';
 import { WeaponSubclass, WeaponType } from '@/components/dragon/weapons';
 import EtherealBow from '@/components/weapons/EtherBow';
 import Scythe from '@/components/weapons/Scythe';
@@ -34,12 +35,12 @@ export type ThronePillarDef = {
   orbColorHex: string;
 };
 
-/** Four pillars in a ring — orb colours: green, yellow, red, blue. */
+/** Four pillars in a ring — orb colours: green, blue, red, light purple. */
 export const THRONE_PILLAR_DEFS: ThronePillarDef[] = [
   { position: [-5.5, 0, 1], orbColorHex: '#22c55e' }, // BOW
-  { position: [5.5, 0, 1], orbColorHex: '#eab308' }, // SWORD
+  { position: [5.5, 0, 1], orbColorHex: '#3b82f6' }, // RUNEBLADE
   { position: [-3.25, 0, -2], orbColorHex: '#ef4444' }, // SABRES
-  { position: [3.25, 0, -2], orbColorHex: '#3b82f6' }, // SCYTHE
+  { position: [3.25, 0, -2], orbColorHex: '#a855f7' }, // SCYTHE
 ];
 
 /** Stable reference for `PillarCollision` (avoid new array identity every React render). */
@@ -326,6 +327,14 @@ export const THRONE_WEAPON_INTERACT_DEFS: ThroneWeaponInteractDef[] = (() => {
 const THRONE_WEAPON_FADE_OUT_SPEED = 10;
 const THRONE_WEAPON_FADE_IN_SPEED = 5;
 
+/** Maps each THRONE_PILLAR_DEFS index to its weapon: [0]=BOW, [1]=RUNEBLADE, [2]=SABRES, [3]=SCYTHE */
+const THRONE_PILLAR_WEAPONS: WeaponType[] = [
+  WeaponType.BOW,
+  WeaponType.RUNEBLADE,
+  WeaponType.SABRES,
+  WeaponType.SCYTHE,
+];
+
 /**
  * Idle weapon replicas with a gentle float — uses the same weapon meshes as gameplay (Runeblade = “Sword”).
  */
@@ -337,7 +346,7 @@ function ThroneWeaponPedestals({ equippedWeapon = WeaponType.NONE }: { equippedW
 
   const slots = useMemo(
     () => [
-      // SWORD (primary pick / Runeblade) — yellow orb pillar
+      // RUNEBLADE — blue orb pillar
       {
         pillar: THRONE_PILLAR_DEFS[1]!.position,
         key: 'runeblade' as const,
@@ -351,7 +360,7 @@ function ThroneWeaponPedestals({ equippedWeapon = WeaponType.NONE }: { equippedW
         weapon: WeaponType.SABRES,
         phase: 1.1,
       },
-      // SCYTHE — blue
+      // SCYTHE — light purple
       {
         pillar: THRONE_PILLAR_DEFS[3]!.position,
         key: 'scythe' as const,
@@ -694,7 +703,14 @@ export default function ThroneRoom({
       {isPrep && (
         <>
           {THRONE_PILLAR_DEFS.map((def, i) => (
-            <Pillar key={`throne-pillar-${i}`} position={def.position} orbColorHex={def.orbColorHex} />
+            <group key={`throne-pillar-${i}`}>
+              <Pillar position={def.position} orbColorHex={def.orbColorHex} />
+              <ThronePedestalAura
+                position={def.position}
+                weapon={THRONE_PILLAR_WEAPONS[i]!}
+                equippedWeapon={equippedWeapon}
+              />
+            </group>
           ))}
           {COOP_DEV_LOCALHOST_FEATURES && (
             <>

@@ -53,6 +53,16 @@ export default function AnimatedDeathGrasp({
     chain: new CylinderGeometry(0.02, 0.02, 1, 6)
   }), []);
 
+  useEffect(() => {
+    const g = geometries;
+    return () => {
+      g.particle.dispose();
+      g.impact.dispose();
+      g.core.dispose();
+      g.chain.dispose();
+    };
+  }, [geometries]);
+
   const materials = useMemo(() => ({
     spiral1: new MeshBasicMaterial({
       color: new Color("#6A0DAD"),
@@ -91,6 +101,18 @@ export default function AnimatedDeathGrasp({
       blending: AdditiveBlending
     })
   }), []);
+
+  useEffect(() => {
+    const m = materials;
+    return () => {
+      m.spiral1.dispose();
+      m.spiral2.dispose();
+      m.spiral3.dispose();
+      m.impact.dispose();
+      m.core.dispose();
+      m.chain.dispose();
+    };
+  }, [materials]);
 
   // Pre-calculate spiraling particle streams for forward phase
   const forwardSpiralStreams = useMemo(() => {

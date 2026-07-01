@@ -98,6 +98,9 @@ export default function KnightDeathVortex({ position, soulType, onComplete }: Kn
   const elapsed      = useRef(0);
   const completed    = useRef(false);
   const riseOffset   = useRef(0);
+  // Cache of { mat, baseOpacity } collected once from innerRef/outerRef on first frame.
+  const cachedOrbMats = useRef<Array<{ mat: THREE.MeshBasicMaterial; base: number }>>([]);
+  const orbMatsCached = useRef(false);
 
   const startY = position.y + 0.6;
 
@@ -191,17 +194,28 @@ export default function KnightDeathVortex({ position, soulType, onComplete }: Kn
       vortexLight.current?.setIntensity(10 * opacity * pulse);
     }
 
-    // ── Orb ring opacity (traverse inner/outer groups only) ───────────────────
-    [innerRef.current, outerRef.current].forEach(grp => {
-      if (!grp) return;
-      grp.traverse((child: THREE.Object3D) => {
-        const mesh = child as THREE.Mesh;
-        if (mesh.isMesh && mesh.material) {
-          const mat = mesh.material as THREE.MeshBasicMaterial;
-          if (mat.transparent) mat.opacity = opacity * (mat.userData.baseOpacity ?? 1);
-        }
+    // ── Orb ring opacity — build cache once, then iterate the flat list ──────
+    if (!orbMatsCached.current && innerRef.current && outerRef.current) {
+      const collected: Array<{ mat: THREE.MeshBasicMaterial; base: number }> = [];
+      [innerRef.current, outerRef.current].forEach(grp => {
+        grp.traverse((child: THREE.Object3D) => {
+          const mesh = child as THREE.Mesh;
+          if (mesh.isMesh && mesh.material) {
+            const mat = mesh.material as THREE.MeshBasicMaterial;
+            if (mat.transparent) {
+              collected.push({ mat, base: mat.userData.baseOpacity ?? 1 });
+            }
+          }
+        });
       });
-    });
+      cachedOrbMats.current = collected;
+      orbMatsCached.current = true;
+    }
+
+    for (let i = 0; i < cachedOrbMats.current.length; i++) {
+      const { mat, base } = cachedOrbMats.current[i];
+      mat.opacity = opacity * base;
+    }
   });
 
   return (

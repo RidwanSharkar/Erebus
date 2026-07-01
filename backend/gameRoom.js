@@ -419,6 +419,19 @@ class GameRoom {
     this.mushroomHealth = new Array(n).fill(mushroomConstants.MUSHROOM_MAX_HP);
   }
 
+  /**
+   * After the 3rd boss is defeated, Titan soul type is randomized across all four colors
+   * regardless of the host room's camp. Before that threshold it matches the room camp.
+   * @param {{ knightSoulType: string }} campDef
+   * @returns {string}
+   */
+  _resolveTitanSoulType(campDef) {
+    if (this.coopBossesDefeatedCount >= 3) {
+      return COOP_COLORED_ROOM_TYPES[Math.floor(Math.random() * COOP_COLORED_ROOM_TYPES.length)];
+    }
+    return campDef.knightSoulType;
+  }
+
   // ── Enemy archetype definitions ────────────────────────────────────────────
   // One archetype is randomly chosen per game session. All regular wave enemies share it.
   // enemyPool: unit types that can fill non-knight slots.
@@ -513,6 +526,38 @@ class GameRoom {
     }
     
     return true;
+  }
+
+  /** Co-op throne prep: snapshot for mid-session joiners (mirrors `game-started` payload). */
+  getCoopThroneSyncPayload() {
+    return {
+      roomId: this.roomId,
+      killCount: this.killCount,
+      timestamp: Date.now(),
+      combatArenaActive: this.combatArenaActive,
+      players: this.getPlayers(),
+      enemies: this.getEnemies(),
+      thronePortalOffer: [...this.thronePortalOffer],
+      thronePortalLayout: this.getThronePortalLayout(),
+      coopMainArenaPortalPhase: this.getCoopMainArenaPortalPhase(),
+      coopBossThroneArena: this.getCoopBossThroneArena(),
+      coopThroneBossKind: this.getCoopThroneBossKind(),
+      coopTerrainTheme: this.getCoopTerrainTheme(),
+      coopCurrentRoomKind: this.getCoopCurrentRoomKind(),
+      coopClearedRoomKind: this.getCoopClearedRoomKind(),
+      merchantInventory: this.getMerchantInventory(),
+      mushroomState: this.getMushroomState(),
+    };
+  }
+
+  /** @returns {boolean} true when party is in co-op throne prep (game running, combat not started). */
+  isInCoopThronePrep() {
+    return (
+      this.gameMode === 'coop'
+      && this.gameStarted
+      && !this.combatArenaActive
+      && !this.coopBossThroneArena
+    );
   }
 
   /** @returns {number} */
@@ -1153,6 +1198,7 @@ class GameRoom {
     this.coopMainArenaPortalPhase = null;
     this.coopThroneStep = 'rim';
     this.merchantInventory = [];
+    this._resetMushroomState();
     this.teleportAllPlayersToCombatSpawn();
     this._schedulePostTeleportEnemyWave();
     const coopCombatTransitionId = this._beginCoopCombatTransition();
@@ -1169,6 +1215,7 @@ class GameRoom {
         coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
+        mushroomState: this.getMushroomState(),
         timestamp: Date.now(),
       });
     }
@@ -1202,6 +1249,7 @@ class GameRoom {
     this.pendingCoopRoomKind = null;
     this._postBossIntermissionScheduled = false;
     this.merchantInventory = [];
+    this._resetMushroomState();
     this.teleportAllPlayersToCombatSpawn();
     this.spawnBoss();
     this.bossSpawned = true;
@@ -1219,6 +1267,7 @@ class GameRoom {
         coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
+        mushroomState: this.getMushroomState(),
         timestamp: Date.now(),
       });
     }
@@ -1252,6 +1301,7 @@ class GameRoom {
     this.pendingCoopRoomKind = null;
     this._postBossIntermissionScheduled = false;
     this.merchantInventory = [];
+    this._resetMushroomState();
     this.teleportAllPlayersToCombatSpawn();
     this.spawnBoss();
     this.bossSpawned = true;
@@ -1269,6 +1319,7 @@ class GameRoom {
         coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
+        mushroomState: this.getMushroomState(),
         timestamp: Date.now(),
       });
     }
@@ -1302,6 +1353,7 @@ class GameRoom {
     this.pendingCoopRoomKind = null;
     this._postBossIntermissionScheduled = false;
     this.merchantInventory = [];
+    this._resetMushroomState();
     this.teleportAllPlayersToCombatSpawn();
     this.spawnBoss();
     this.bossSpawned = true;
@@ -1319,6 +1371,7 @@ class GameRoom {
         coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
+        mushroomState: this.getMushroomState(),
         timestamp: Date.now(),
       });
     }
@@ -1361,6 +1414,7 @@ class GameRoom {
       this.thronePortalOffer = [];
       this.coopMainArenaPortalPhase = null;
       this.skeletonKillCount = 0;
+      this._resetMushroomState();
       this.teleportAllPlayersToCombatSpawn();
       if (roomKind === 'merchant') {
         this.sessionCampTypes = [];
@@ -1383,6 +1437,7 @@ class GameRoom {
           coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
           coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
           coopCombatTransitionId,
+          mushroomState: this.getMushroomState(),
           timestamp: Date.now(),
         });
       }
@@ -1419,6 +1474,7 @@ class GameRoom {
       this._bumpBossRoomVisit();
       this._postBossIntermissionScheduled = false;
       this.merchantInventory = [];
+      this._resetMushroomState();
       this.teleportAllPlayersToCombatSpawn();
       this.spawnBoss();
       this.bossSpawned = true;
@@ -1436,6 +1492,7 @@ class GameRoom {
           coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
           coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
           coopCombatTransitionId,
+          mushroomState: this.getMushroomState(),
           timestamp: Date.now(),
         });
       }
@@ -1467,6 +1524,7 @@ class GameRoom {
       this.coopThroneBossKind = null;
       this.bossSpawned = false;
       this.merchantInventory = [];
+      this._resetMushroomState();
       this.teleportAllPlayersToCombatSpawn();
       this._schedulePostTeleportEnemyWave();
       const coopCombatTransitionId = this._beginCoopCombatTransition();
@@ -1483,6 +1541,7 @@ class GameRoom {
           coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
           coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
           coopCombatTransitionId,
+          mushroomState: this.getMushroomState(),
           timestamp: Date.now(),
         });
       }
@@ -1594,12 +1653,22 @@ class GameRoom {
         critChance: 0,
         critDamageMult: 2,
       },
+      /** Co-op: allied knight room boons synced from client (`coop-allied-knight-boons`). */
+      coopAlliedKnightBoons: {
+        tempestInitiate: false,
+        necrosInitiate: false,
+        infernalInitiate: false,
+        abyssalInitiate: false,
+        agility: 0,
+        strength: 0,
+        stamina: 0,
+      },
       merchantDashChargePurchased: false,
       merchantWeaponTalentPurchases: 0,
     });
 
     // Position players for co-op mode
-    if (gameMode === 'coop') {
+    if (this.gameMode === 'coop') {
       const playerIndex = this.players.size - 1;
       const player = this.players.get(playerId);
 
@@ -2083,6 +2152,7 @@ class GameRoom {
    */
   damageMushroom(index, damage, playerId) {
     if (!this.gameStarted) return null;
+    if (this.isCoopCombatTransitionActive()) return null;
     const { MUSHROOM_COUNT, getEruptionPosition, getInstances } = mushroomLayout;
     if (typeof index !== 'number' || index < 0 || index >= MUSHROOM_COUNT) return null;
     const d = Math.min(
@@ -2249,7 +2319,7 @@ class GameRoom {
         green:  { health: 5000, maxHealth: 5000, damage: 100 },
         purple: { health: 3500, maxHealth: 3000, damage: 166 },
       };
-      const soulType = campDef.knightSoulType;
+      const soulType = this._resolveTitanSoulType(campDef);
       const stats = TITAN_STATS_BY_SOUL[soulType];
       return { id: `titan-${campIndex}-${slotIndex}-${ts}`, type: 'titan', ...base,
         health: stats.health, maxHealth: stats.maxHealth, damage: stats.damage,
@@ -3041,6 +3111,13 @@ class GameRoom {
         };
       } else if (hitMeta && hitMeta.damageType === 'zombie_explosion') {
         damagedPayload.damageType = 'zombie_explosion';
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
+      } else if (hitMeta && (hitMeta.damageType === 'allied_knight_melee' || hitMeta.damageType === 'allied_knight_smite')) {
+        damagedPayload.damageType = 'allied_knight';
         damagedPayload.position = {
           x: enemy.position.x,
           y: enemy.position.y,
@@ -5101,10 +5178,10 @@ class GameRoom {
     }
 
     const byColor = {
-      red: { type: 'AMULET_OF_STRENGTH', stat: 'strength', label: 'Amulet of Strength' },
-      green: { type: 'AMULET_OF_STAMINA', stat: 'stamina', label: 'Amulet of Stamina' },
-      blue: { type: 'AMULET_OF_AGILITY', stat: 'agility', label: 'Amulet of Agility' },
-      purple: { type: 'AMULET_OF_INTELLECT', stat: 'intellect', label: 'Amulet of Intellect' },
+      red: { type: 'AMULET_OF_STRENGTH', stat: 'strength', label: 'Blood Rune' },
+      green: { type: 'AMULET_OF_STAMINA', stat: 'stamina', label: 'Life Rune' },
+      blue: { type: 'AMULET_OF_AGILITY', stat: 'agility', label: 'Storm Rune' },
+      purple: { type: 'AMULET_OF_INTELLECT', stat: 'intellect', label: 'Mind Rune' },
     };
 
     const chosen = byColor[color];

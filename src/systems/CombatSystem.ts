@@ -190,6 +190,11 @@ export class CombatSystem extends System {
   // Local player entity ID for distinguishing caster vs target damage numbers
   private localPlayerEntityId: number | null = null;
 
+  // Shield audio state machine for local player
+  private localPlayerShieldPrev = 0;
+  private localPlayerRegenPrev = false;
+  private localPlayerShieldAudioInitialized = false;
+
   /** Runeblade LMB: armed from ControlSystem when cone preview hits; crit aggregated from resolved damage, flushed end of `processDamageQueue`. */
   private runebladeLmbSfxArmed: { step: 1 | 2 | 3; position: Vector3 } | null = null;
   private runebladeLmbSfxQueueProcessed = 0;
@@ -581,7 +586,15 @@ export class CombatSystem extends System {
       // Update shield component if it exists
       const shield = entity.getComponent(Shield);
       if (shield) {
-        shield.update(deltaTime);
+        if (this.localPlayerEntityId !== null && entity.id === this.localPlayerEntityId) {
+          this.updateLocalPlayerShieldAudio(shield, deltaTime);
+        } else {
+          shield.update(deltaTime);
+        }
+      } else if (this.localPlayerEntityId !== null && entity.id === this.localPlayerEntityId && this.localPlayerRegenPrev) {
+        // Shield component disappeared on local player — stop any active regen loop
+        this.localPlayerRegenPrev = false;
+        (window as any).audioSystem?.setShieldRegenPlaying?.(false);
       }
 
       // Update debuff statuses for enemies
@@ -2092,5 +2105,40 @@ export class CombatSystem extends System {
   // Set the local player entity ID for damage number filtering
   public setLocalPlayerEntityId(entityId: number): void {
     this.localPlayerEntityId = entityId;
+    // Reset shield audio state so the new entity starts fresh
+    this.localPlayerShieldPrev = 0;
+    this.localPlayerRegenPrev = false;
+    this.localPlayerShieldAudioInitialized = false;
+    (window as any).audioSystem?.setShieldRegenPlaying?.(false);
+  }
+
+  private updateLocalPlayerShieldAudio(shield: Shield, deltaTime: number): void {
+    if (this.localPlayerShieldAudioInitialized) {
+      // Shield just broke (damage reduced currentShield to 0 since last frame)
+      if (this.localPlayerShieldPrev > 0 && shield.currentShield <= 0) {
+        (window as any).audioSystem?.playShieldBreakSound?.();
+      }
+
+      // Regen was interrupted by damage between frames (absorbDamage sets isRegenerating false)
+      if (this.localPlayerRegenPrev && !shield.isRegenerating) {
+        (window as any).audioSystem?.setShieldRegenPlaying?.(false);
+      }
+    }
+
+    const regenBeforeUpdate = shield.isRegenerating;
+    shield.update(deltaTime);
+
+    // Regen started this frame (regenDelay elapsed)
+    if (!regenBeforeUpdate && shield.isRegenerating) {
+      (window as any).audioSystem?.setShieldRegenPlaying?.(true);
+    }
+    // Regen ended this frame (shield refilled to max)
+    if (regenBeforeUpdate && !shield.isRegenerating) {
+      (window as any).audioSystem?.setShieldRegenPlaying?.(false);
+    }
+
+    this.localPlayerShieldPrev = shield.currentShield;
+    this.localPlayerRegenPrev = shield.isRegenerating;
+    this.localPlayerShieldAudioInitialized = true;
   }
 }

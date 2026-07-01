@@ -19,8 +19,8 @@ const DAMAGE_RADIUS = 2.99;
 const IMPACT_DURATION = 0.625;
 const METEOR_SPEED = 27.75;
 const METEOR_DAMAGE = 173;
-const WARNING_RING_SEGMENTS = 32;
-const FIRE_PARTICLES_COUNT = 12;
+const WARNING_RING_SEGMENTS = 9;
+const FIRE_PARTICLES_COUNT = 0;
 const WARNING_DURATION = 100; // 1.5 seconds warning before meteor appears
 
 // Reusable geometries and materials
@@ -130,6 +130,13 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
     return () => clearTimeout(timer);
   }, [timestamp]);
 
+  useEffect(() => {
+    if (!state.showMeteor) return;
+    (window as any).audioSystem?.playCrossentropyMeteoriteFallSound?.(
+      new Vector3(initialTargetPos.x, 0, initialTargetPos.z),
+    );
+  }, [state.showMeteor, initialTargetPos]);
+
   useFrame((_, delta) => {
     // Drive the pooled light through both phases.
     if (state.impactStartTime !== null) {
@@ -177,7 +184,7 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
     <>
       <group position={[initialTargetPos.x, 0.01, initialTargetPos.z]}>
         {/* Warning rings using shared geometries */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.325, 0]}>
           <primitive object={warningRingGeometry} />
           <meshBasicMaterial color="#BA55D3" transparent opacity={0.4} side={DoubleSide} />
         </mesh>
@@ -186,7 +193,7 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}
           scale={getPulsingScale()}
-          position={[0, 0.225, 0]}
+          position={[0, 0.35, 0]}
         >
           <primitive object={pulsingRingGeometry} />
           <meshBasicMaterial

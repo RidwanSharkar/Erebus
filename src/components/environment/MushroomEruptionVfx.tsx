@@ -59,6 +59,10 @@ const MushroomEruptionVfx: React.FC<MushroomEruptionVfxProps> = ({ origin, onDon
     setBurstStart(clock.getElapsedTime());
   }, [clock, origin.x, origin.y, origin.z]);
 
+  useEffect(() => {
+    (window as any).audioSystem?.playAcidSound?.(origin);
+  }, [origin]);
+
   const scale = 1.1;
   const spread = 0.22;
   const distance = 1.4;

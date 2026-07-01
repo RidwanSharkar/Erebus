@@ -183,6 +183,17 @@ export default function BossLeapShockwave({
     [config.flashColor],
   );
 
+  useEffect(() => {
+    const rm = ringMats;
+    const dm = debrisMats;
+    const fm = flashMat;
+    return () => {
+      rm.forEach((m) => m.dispose());
+      dm.forEach((m) => m.dispose());
+      fm.dispose();
+    };
+  }, [ringMats, debrisMats, flashMat]);
+
   useFrame((_, delta) => {
     if (doneRef.current) return;
 

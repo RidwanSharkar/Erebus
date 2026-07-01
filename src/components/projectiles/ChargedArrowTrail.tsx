@@ -22,8 +22,11 @@ function ChargedArrowTrail({
   opacity = 1,
 }: ChargedArrowTrailProps) {
   const trailRef = useRef<Line>(null);
-  const trailPositions = useRef<Vector3[]>([]);
   const maxTrailLength = 75;
+  // Ring buffer: avoids per-frame clone() and O(N) Array.unshift.
+  const posRing = useRef<Vector3[]>(Array.from({ length: maxTrailLength }, () => new Vector3()));
+  const ringHead = useRef(0);
+  const ringFill = useRef(0);
   const initialized = useRef(false);
   const glowRefs = useRef<(Mesh | null)[]>([]);
   const sparkRefs = useRef<(Mesh | null)[]>([]);
@@ -140,8 +143,10 @@ function ChargedArrowTrail({
 
     if (!initialized.current) {
       for (let i = 0; i < maxTrailLength; i++) {
-        trailPositions.current.push(currentPos.clone());
+        posRing.current[i].copy(currentPos);
       }
+      ringHead.current = 0;
+      ringFill.current = maxTrailLength;
       initialized.current = true;
 
       const positions = trailGeometry.attributes.position.array as Float32Array;
@@ -152,33 +157,38 @@ function ChargedArrowTrail({
       }
       trailGeometry.attributes.position.needsUpdate = true;
     } else {
-      trailPositions.current.unshift(currentPos.clone());
-
-      if (trailPositions.current.length > maxTrailLength) {
-        trailPositions.current.pop();
-      }
+      // Ring-buffer write.
+      ringHead.current = (ringHead.current + maxTrailLength - 1) % maxTrailLength;
+      posRing.current[ringHead.current].copy(currentPos);
+      if (ringFill.current < maxTrailLength) ringFill.current++;
 
       const positions = trailGeometry.attributes.position.array as Float32Array;
-      for (let i = 0; i < trailPositions.current.length; i++) {
-        const pos = trailPositions.current[i];
-        positions[i * 3] = pos.x;
-        positions[i * 3 + 1] = pos.y;
-        positions[i * 3 + 2] = pos.z;
+      const len = ringFill.current;
+      const head = ringHead.current;
+      for (let i = 0; i < len; i++) {
+        const p = posRing.current[(head + i) % maxTrailLength];
+        positions[i * 3] = p.x;
+        positions[i * 3 + 1] = p.y;
+        positions[i * 3 + 2] = p.z;
       }
 
       trailGeometry.attributes.position.needsUpdate = true;
     }
 
+    const _head = ringHead.current;
+    const _ring = posRing.current;
+    const _fill = ringFill.current;
+
     for (let i = 0; i < GLOW_COUNT; i++) {
       const glow = glowRefs.current[i];
-      const pos = trailPositions.current[i];
-      if (glow && pos) {
-        glow.position.copy(pos);
+      if (glow && i < _fill) {
+        glow.position.copy(_ring[(_head + i) % maxTrailLength]);
       }
     }
 
     for (let g = 0; g < SPARK_GROUP_COUNT; g++) {
-      const groupPos = trailPositions.current[g];
+      if (g >= _fill) continue;
+      const groupPos = _ring[(_head + g) % maxTrailLength];
       if (!groupPos) continue;
       for (let s = 0; s < SPARKS_PER_GROUP; s++) {
         const idx = g * SPARKS_PER_GROUP + s;

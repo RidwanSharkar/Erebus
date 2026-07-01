@@ -30,6 +30,40 @@ body.pointer-locked {
   cursor: none;
 }
 
+/* ── HUD Resource Bar Animations ─────────────────────────────────────────── */
+@keyframes hb-shimmer {
+  0%, 68%  { transform: translateX(-200%) skewX(-14deg); opacity: 0; }
+  72%      { opacity: 0.7; }
+  96%      { opacity: 0.7; }
+  100%     { transform: translateX(420%) skewX(-14deg); opacity: 0; }
+}
+
+@keyframes hb-flow {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+@keyframes hb-pulse-icon {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+@keyframes hb-flash {
+  0%   { opacity: 0.7; }
+  100% { opacity: 0; }
+}
+
+@keyframes hb-border-pulse {
+  0%, 100% { opacity: 0.2; }
+  50%      { opacity: 0.85; }
+}
+
+@keyframes hb-panel-border {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
+}
+/* ─────────────────────────────────────────────────────────────────────────── */
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

@@ -166,6 +166,7 @@ export function createTectonicSpikeGeometry(
 }
 
 export interface SpikeRiseMotion {
+  emergenceYaw: number;
   leanDir: number;
   leanAmt: number;
   wobbleFreqX: number;
@@ -179,6 +180,7 @@ export interface SpikeRiseMotion {
 export function createSpikeRiseMotion(seed: number): SpikeRiseMotion {
   const rand = mulberry32(seed + 90210);
   return {
+    emergenceYaw: rand() * Math.PI * 2,
     leanDir: rand() * Math.PI * 2,
     leanAmt: 0.12 + rand() * 0.1,
     wobbleFreqX: 8 + rand() * 6,

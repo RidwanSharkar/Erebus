@@ -28,7 +28,7 @@ export class StatSystem {
   static readonly STRENGTH_CRIT_DAMAGE_MULT_PER_POINT = 0.05;
   static readonly STAMINA_HEALTH_PER_POINT = 10;
   static readonly AGILITY_CRIT_CHANCE_PER_POINT = 0.01;
-  static readonly INTELLECT_MAX_SHIELD_PER_POINT = 2;
+  static readonly INTELLECT_MAX_SHIELD_PER_POINT = 3;
   /** Co-op stat-room pedestal reward (points to spend on STR/STA/AGI/INT). */
   static readonly STAT_ROOM_PEDESTAL_POINTS = 5;
 
@@ -174,10 +174,10 @@ export class StatSystem {
 
   static getStatIcon(stat: StatKey): string {
     const icons: Record<StatKey, string> = {
-      strength: '🛡',
-      stamina: '❤️',
-      agility: '⚡',
-      intellect: '✨'
+      strength: '🩸',
+      stamina: '🍃',
+      agility: '🦋',
+      intellect: '🔮'
     };
     return icons[stat];
   }
@@ -206,9 +206,9 @@ export class StatSystem {
   static getStatTooltipDescription(stat: StatKey): string {
     const descs: Record<StatKey, string> = {
       strength: '+5% critical strike damage per point',
-      stamina: '+10 Maximum Health and +10 Heal per point',
+      stamina: '+10 Maximum Health capacity per point',
       agility: '+1% critical strike chance per point',
-      intellect: '+2 Shield Capacity per point',
+      intellect: '+3 Shield Capacity per point',
     };
     return descs[stat];
   }

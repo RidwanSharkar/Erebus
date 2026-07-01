@@ -137,6 +137,18 @@ export class ProjectileSystem extends System {
     this.entropicBoltBroadcastCallback = cb;
   }
 
+  /** Destroy every live projectile entity and cancel pending deferred impacts.
+   *  Call on portal room transitions to prevent stale hits carrying over. */
+  public clearAllProjectiles(): void {
+    const entities = this.world.queryEntities([Transform, Projectile]);
+    for (const entity of entities) {
+      this.world.destroyEntity(entity.id);
+    }
+    this.pendingCrossentropyMeteorImpacts.length = 0;
+    this.pendingCloudkillImpacts.length = 0;
+    this.projectilesToDestroy.length = 0;
+  }
+
   private getCollisionSystem(): CollisionSystem | null {
     return (this.world.getSystem(CollisionSystem as any) as CollisionSystem | null) ?? null;
   }

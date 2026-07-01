@@ -11,8 +11,10 @@ interface InfestedZombieRiseVFXProps {
 }
 
 const DURATION_SEC = 2.2;
+const _green = new Color('#44ff99');
+const _greenDeep = new Color('#00aa55');
 
-/** Small green spectral “rise from the grave” burst at infested zombie spawn. */
+/** Small green spectral "rise from the grave" burst at infested zombie spawn. */
 export default function InfestedZombieRiseVFX({ position, onComplete }: InfestedZombieRiseVFXProps) {
   const elapsed = useRef(0);
   const groupRef = useRef<any>(null);
@@ -56,15 +58,12 @@ export default function InfestedZombieRiseVFX({ position, onComplete }: Infested
     if (t >= 1) onComplete();
   });
 
-  const green = new Color('#44ff99');
-  const greenDeep = new Color('#00aa55');
-
   return (
     <group ref={groupRef} position={[position.x, position.y, position.z]}>
       <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[0.35, 0.85, 32]} />
         <meshBasicMaterial
-          color={green}
+          color={_green}
           transparent
           opacity={0.55}
           blending={AdditiveBlending}
@@ -74,7 +73,7 @@ export default function InfestedZombieRiseVFX({ position, onComplete }: Infested
       <mesh ref={pillarRef} position={[0, 0.9, 0]}>
         <cylinderGeometry args={[0.25, 0.45, 1.8, 12, 1, true]} />
         <meshBasicMaterial
-          color={greenDeep}
+          color={_greenDeep}
           transparent
           opacity={0.35}
           blending={AdditiveBlending}
@@ -95,7 +94,7 @@ export default function InfestedZombieRiseVFX({ position, onComplete }: Infested
           >
             <sphereGeometry args={[0.08 + (i % 2) * 0.04, 8, 8]} />
             <meshBasicMaterial
-              color={i % 2 === 0 ? green : greenDeep}
+              color={i % 2 === 0 ? _green : _greenDeep}
               transparent
               opacity={0.5}
               blending={AdditiveBlending}

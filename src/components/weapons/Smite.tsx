@@ -201,6 +201,23 @@ const SmiteComponent = memo(function Smite({
     };
   }, [beamCylinderMaterials]);
 
+  useEffect(() => {
+    const g = cylinderGeometries;
+    return () => {
+      g.core.dispose();
+      g.inner.dispose();
+      g.outer.dispose();
+      g.glow1.dispose();
+      g.glow2.dispose();
+      g.outerGlow.dispose();
+      g.torus.dispose();
+      g.skyTorus.dispose();
+      g.sphere.dispose();
+      g.burstRing.dispose();
+      g.burstCore.dispose();
+    };
+  }, [cylinderGeometries]);
+
   const materials = useMemo(() => ({
     ...beamCylinderMaterials,
     spiral: new MeshStandardMaterial({
@@ -241,6 +258,17 @@ const SmiteComponent = memo(function Smite({
         side: DoubleSide,
       }),
     }), [beamCylinderMaterials, primaryColor, secondaryColor]);
+
+  useEffect(() => {
+    const m = materials;
+    return () => {
+      m.spiral.dispose();
+      m.skySpiral.dispose();
+      m.particle.dispose();
+      m.burstRing.dispose();
+      m.burstCore.dispose();
+    };
+  }, [materials]);
 
   // Pre-calculate spiral positions
   const spiralPositions = useMemo(() => (

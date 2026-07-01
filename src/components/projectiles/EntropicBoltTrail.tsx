@@ -24,6 +24,8 @@ const TRAIL_LENGTH = 45;
 const MIN_MOVEMENT = 0.03;
 const _dustOffset = new Vector3();
 const _flightFallback = new Vector3(0, 1, 0);
+// Shared scratch for getWorldPosition — safe because R3F runs useFrame serially.
+const _wpEB = new Vector3();
 
 const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
   color,
@@ -44,7 +46,10 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
     [accentColor, color],
   );
 
-  const pathHistory = useRef<Vector3[]>([]);
+  // Ring buffer: avoids per-frame clone() and O(N) Array.unshift.
+  const posRing = useRef<Vector3[]>(Array.from({ length: TRAIL_LENGTH }, () => new Vector3()));
+  const ringHead = useRef(0);    // index of the newest slot
+  const ringFill = useRef(0);    // how many slots are valid
   const lastKnownPosition = useRef(new Vector3());
   const isInitialized = useRef(false);
 
@@ -64,18 +69,17 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
 
   useEffect(() => {
     if (meshRef.current && !isInitialized.current) {
-      const wp = new Vector3();
-      meshRef.current.getWorldPosition(wp);
-      lastKnownPosition.current.copy(wp);
+      meshRef.current.getWorldPosition(_wpEB);
+      lastKnownPosition.current.copy(_wpEB);
 
       for (let i = 0; i < TRAIL_LENGTH; i++) {
-        pathHistory.current.push(wp.clone());
-        pos.current[i * 3] = wp.x;
-        pos.current[i * 3 + 1] = wp.y;
-        pos.current[i * 3 + 2] = wp.z;
-        dustPos.current[i * 3] = wp.x;
-        dustPos.current[i * 3 + 1] = wp.y;
-        dustPos.current[i * 3 + 2] = wp.z;
+        posRing.current[i].copy(_wpEB);
+        pos.current[i * 3] = _wpEB.x;
+        pos.current[i * 3 + 1] = _wpEB.y;
+        pos.current[i * 3 + 2] = _wpEB.z;
+        dustPos.current[i * 3] = _wpEB.x;
+        dustPos.current[i * 3 + 1] = _wpEB.y;
+        dustPos.current[i * 3 + 2] = _wpEB.z;
         opa.current[i] = 0;
         dustOpa.current[i] = 0;
         scl.current[i] = 0;
@@ -83,6 +87,8 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
         age.current[i] = 0;
         dustAge.current[i] = 0;
       }
+      ringHead.current = 0;
+      ringFill.current = TRAIL_LENGTH;
       isInitialized.current = true;
     }
   }, [meshRef]);
@@ -98,17 +104,19 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
       fadeOutFactor = 1 - clamped * clamped * (3 - 2 * clamped);
     }
 
-    const wp = new Vector3();
-    meshRef.current.getWorldPosition(wp);
+    meshRef.current.getWorldPosition(_wpEB);
 
-    if (wp.distanceTo(lastKnownPosition.current) > MIN_MOVEMENT) {
-      lastKnownPosition.current.copy(wp);
-      pathHistory.current.unshift(wp.clone());
-      if (pathHistory.current.length > TRAIL_LENGTH) pathHistory.current.pop();
+    if (_wpEB.distanceTo(lastKnownPosition.current) > MIN_MOVEMENT) {
+      lastKnownPosition.current.copy(_wpEB);
+      // Ring-buffer write: decrement head and copy into the vacated slot.
+      ringHead.current = (ringHead.current + TRAIL_LENGTH - 1) % TRAIL_LENGTH;
+      posRing.current[ringHead.current].copy(_wpEB);
+      if (ringFill.current < TRAIL_LENGTH) ringFill.current++;
     }
 
-    const count = Math.min(pathHistory.current.length, TRAIL_LENGTH);
-    const hist = pathHistory.current;
+    const count = ringFill.current;
+    const ring = posRing.current;
+    const head = ringHead.current;
     const time = state.clock.elapsedTime;
     const flightDir = flightDirectionRef?.current ?? _flightFallback;
 
@@ -123,7 +131,7 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
         continue;
       }
 
-      const center = hist[i];
+      const center = ring[(head + i) % TRAIL_LENGTH];
       const trailAge = i / TRAIL_LENGTH;
       const fadePow = isCryoflame ? 2.0 : 1.4;
       const fade = Math.pow(1 - trailAge, fadePow) * opacity * fadeOutFactor;

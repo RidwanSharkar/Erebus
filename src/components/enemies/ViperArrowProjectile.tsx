@@ -17,6 +17,7 @@ interface ViperArrowProjectileProps {
 
 const SPEED = 25; // units per second
 const HIT_RADIUS = 1.05;
+const _arrowPosScratch = new Vector3();
 /** Must match `VIPER_ARROW_MAX_RANGE` in backend `enemyAI.js` → `telegraphViperAttack`. */
 export const VIPER_ARROW_MAX_RANGE = 18;
 
@@ -89,6 +90,11 @@ export default function ViperArrowProjectile({
   }), []);
 
   useEffect(() => {
+    const mats = [coreMat, midMat, glowMat, outerMat, streakMat];
+    return () => { mats.forEach((m) => m.dispose()); };
+  }, [coreMat, midMat, glowMat, outerMat, streakMat]);
+
+  useEffect(() => {
     if (!groupRef.current) return;
     groupRef.current.position.copy(startPosition);
     groupRef.current.rotation.set(pitch, yaw, 0, 'YXZ');
@@ -103,7 +109,7 @@ export default function ViperArrowProjectile({
 
     // Advance position along the fixed direction vector.
     groupRef.current.position.copy(
-      startPosition.clone().addScaledVector(direction, progress * totalDist)
+      _arrowPosScratch.copy(startPosition).addScaledVector(direction, progress * totalDist)
     );
 
     // Drive the pooled light at the arrow's world position.

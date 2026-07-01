@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   Vector3,
@@ -87,6 +87,17 @@ export default function BowShotImpact({
     ),
     [],
   );
+
+  useEffect(() => {
+    const fm = flashMat;
+    const rm = ringMat;
+    const sm = streakMats;
+    return () => {
+      fm.dispose();
+      rm.dispose();
+      sm.forEach((m) => m.dispose());
+    };
+  }, [flashMat, ringMat, streakMats]);
 
   useFrame((_, delta) => {
     if (doneRef.current) return;

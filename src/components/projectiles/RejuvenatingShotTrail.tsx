@@ -24,6 +24,7 @@ const RejuvenatingShotTrail: React.FC<RejuvenatingShotTrailProps> = ({
 
   // ref to store the last known position for smoother updates
   const lastKnownPosition = useRef(new Vector3());
+  const _worldPosScratch = useRef(new Vector3());
 
   // Control trail update frequency
   const minMovementDistance = 0.06; // Minimum distance before updating trail
@@ -34,7 +35,7 @@ const RejuvenatingShotTrail: React.FC<RejuvenatingShotTrailProps> = ({
   useEffect(() => {
     if (meshRef.current && !isInitialized.current) {
       // Get world position to handle coordinate space correctly
-      const worldPosition = new Vector3();
+      const worldPosition = _worldPosScratch.current;
       meshRef.current.getWorldPosition(worldPosition);
       const { x, y, z } = worldPosition;
       lastKnownPosition.current.set(x, y, z);
@@ -61,7 +62,7 @@ const RejuvenatingShotTrail: React.FC<RejuvenatingShotTrailProps> = ({
     updateTimer.current = 0;
 
     // Get world position to handle coordinate space correctly
-    const worldPosition = new Vector3();
+    const worldPosition = _worldPosScratch.current;
     meshRef.current.getWorldPosition(worldPosition);
 
     // Calculate movement distance

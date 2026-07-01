@@ -75,7 +75,16 @@ export default function BossTectonicSpike({
         const ease = 1 - (1 - t) * (1 - t);
         const yOff = -riseDepth * (1 - ease);
         const wobbleDecay = 1 - t;
-        const { leanDir, leanAmt, wobbleFreqX, wobbleFreqZ, wobbleAmp, tiltX, tiltZ } = riseMotion;
+        const {
+          emergenceYaw,
+          leanDir,
+          leanAmt,
+          wobbleFreqX,
+          wobbleFreqZ,
+          wobbleAmp,
+          tiltX,
+          tiltZ,
+        } = riseMotion;
         const xOff =
           Math.cos(leanDir) * leanAmt * ease +
           Math.sin(t * wobbleFreqX) * wobbleAmp * wobbleDecay;
@@ -83,15 +92,19 @@ export default function BossTectonicSpike({
           Math.sin(leanDir) * leanAmt * ease +
           Math.cos(t * wobbleFreqZ) * wobbleAmp * wobbleDecay;
         riseGroup.current.position.set(xOff, yOff, zOff);
-        riseGroup.current.rotation.set(tiltX * wobbleDecay, 0, tiltZ * wobbleDecay);
+        riseGroup.current.rotation.set(
+          tiltX * wobbleDecay,
+          emergenceYaw,
+          tiltZ * wobbleDecay,
+        );
       } else {
-        const { leanDir, leanAmt } = riseMotion;
+        const { emergenceYaw, leanDir, leanAmt } = riseMotion;
         riseGroup.current.position.set(
           Math.cos(leanDir) * leanAmt,
           0,
           Math.sin(leanDir) * leanAmt,
         );
-        riseGroup.current.rotation.set(0, 0, 0);
+        riseGroup.current.rotation.set(0, emergenceYaw, 0);
       }
     }
 

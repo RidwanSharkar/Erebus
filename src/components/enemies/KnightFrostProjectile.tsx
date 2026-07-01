@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo, useLayoutEffect } from 'react';
+import { useRef, useMemo, useLayoutEffect, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, Mesh, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
@@ -105,6 +105,11 @@ export default function KnightFrostProjectile({
       }),
     [],
   );
+
+  useEffect(() => {
+    const mats = [coreMat, midMat, auraMat, trail1Mat, trail2Mat, trail3Mat, trail4Mat];
+    return () => { mats.forEach((m) => m.dispose()); };
+  }, [coreMat, midMat, auraMat, trail1Mat, trail2Mat, trail3Mat, trail4Mat]);
 
   useLayoutEffect(() => {
     if (!groupRef.current) return;
@@ -216,6 +221,15 @@ export function KnightFrostImpact({ position, onComplete }: KnightFrostImpactPro
       }),
     [],
   );
+
+  useEffect(() => {
+    const rm = ringMat;
+    const fm = flashMat;
+    return () => {
+      rm.dispose();
+      fm.dispose();
+    };
+  }, [ringMat, flashMat]);
 
   useFrame(() => {
     if (startRef.current === null) startRef.current = performance.now();

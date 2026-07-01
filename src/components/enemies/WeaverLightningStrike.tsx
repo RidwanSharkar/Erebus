@@ -4,7 +4,6 @@ import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   Vector3,
-  CylinderGeometry,
   SphereGeometry,
   OctahedronGeometry,
   MeshBasicMaterial,
@@ -14,6 +13,7 @@ import {
   DoubleSide,
 } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import DirectionalProcLightning, { type DirectionalProcLightningPalette } from './DirectionalProcLightning';
 
 interface WeaverLightningStrikeProps {
   targetPosition: Vector3;
@@ -21,6 +21,7 @@ interface WeaverLightningStrikeProps {
   strikeAt: number;
   damage: number;
   radius: number;
+  theme?: 'blue' | 'green';
   onImpact: (damage: number, position: Vector3) => void;
   onComplete: () => void;
 }
@@ -29,14 +30,52 @@ const TELEGRAPH_Y = 0.18;
 const STRIKE_DURATION_S = 1.0;
 const IMPACT_AT_PROGRESS = 0.6;
 const RING_SEGMENTS = 6;
-const MAIN_BOLT_SEGMENTS = 96;
-const BRANCH_COUNT = 16;
+const SKY_Y = 24;
+
+const BLUE_PALETTE: DirectionalProcLightningPalette = {
+  core: '#c8e8ff',
+  glow: '#1a8fd4',
+  halo: '#2899e8',
+  light: '#6eb8f0',
+};
+
+const GREEN_PALETTE: DirectionalProcLightningPalette = {
+  core: '#d4ffe8',
+  glow: '#00cc55',
+  halo: '#00ff66',
+  light: '#33ff88',
+};
+
+const BLUE_THEME = {
+  palette: BLUE_PALETTE,
+  ringOuter: '#44aaff',
+  ringInner: '#88ccff',
+  warningRing: '#3388dd',
+  warningInner: '#66aaff',
+  impactSphere: '#c8e8ff',
+  particle: '#88ccff',
+  particleEmissive: '#44aaff',
+  strikeLightColor: '#6eb8f0',
+};
+
+const GREEN_THEME = {
+  palette: GREEN_PALETTE,
+  ringOuter: '#00ff66',
+  ringInner: '#66ffaa',
+  warningRing: '#00cc44',
+  warningInner: '#44ff88',
+  impactSphere: '#d4ffe8',
+  particle: '#66ffaa',
+  particleEmissive: '#00cc55',
+  strikeLightColor: '#33ff88',
+};
 
 export default function WeaverLightningStrike({
   targetPosition,
   strikeAt,
   damage,
   radius,
+  theme = 'blue',
   onImpact,
   onComplete,
 }: WeaverLightningStrikeProps) {
@@ -47,131 +86,53 @@ export default function WeaverLightningStrike({
   const soundPlayedRef = useRef(false);
   const flickerRef = useRef(1);
 
-  // Pooled light for the strike flash (replaces the impact <pointLight>).
-  const strikeLight = useDynamicLight({ color: '#a8e6ff', distance: 8, priority: 1 });
+  const themeConfig = theme === 'green' ? GREEN_THEME : BLUE_THEME;
+
+  const strikeLight = useDynamicLight({ color: themeConfig.strikeLightColor, distance: 8, priority: 1 });
 
   const impactPos = useMemo(
     () => new Vector3(targetPosition.x, 0, targetPosition.z),
-    [targetPosition.x, targetPosition.z]
+    [targetPosition.x, targetPosition.z],
   );
 
   const skyPosition = useMemo(
-    () => new Vector3(impactPos.x, impactPos.y + 20, impactPos.z),
-    [impactPos]
+    () => new Vector3(impactPos.x, impactPos.y + SKY_Y, impactPos.z),
+    [impactPos],
   );
 
-  const branches = useMemo(() => {
-    const targetPos = impactPos;
-    const mainBolt = {
-      points: Array(MAIN_BOLT_SEGMENTS)
-        .fill(0)
-        .map((_, i) => {
-          const t = i / (MAIN_BOLT_SEGMENTS - 1);
-          const primaryOffset = Math.sin(t * Math.PI * 8) * (1 - t) * 1.2;
-          const secondaryOffset = Math.sin(t * Math.PI * 16) * (1 - t) * 0.6;
-          const randomOffset = (Math.random() - 0.5) * 0.8 * (1 - t);
-
-          return new Vector3(
-            skyPosition.x + (targetPos.x - skyPosition.x) * t + primaryOffset + randomOffset,
-            skyPosition.y + (targetPos.y - skyPosition.y) * Math.pow(t, 0.7),
-            skyPosition.z + (targetPos.z - skyPosition.z) * t + secondaryOffset + randomOffset
-          );
-        }),
-      thickness: 0.11,
-      isCoreStrike: true as const,
-    };
-
-    const secondaryBranches = Array(BRANCH_COUNT)
-      .fill(0)
-      .map(() => {
-        const startIdx = Math.floor(Math.random() * mainBolt.points.length * 0.8);
-        const startPoint = mainBolt.points[startIdx];
-        const branchLength = Math.floor(Math.random() * 12) + 8;
-
-        return {
-          points: Array(branchLength)
-            .fill(0)
-            .map((_, j) => {
-              const branchT = j / (branchLength - 1);
-              const angle = (Math.random() - 0.5) * Math.PI * 0.8;
-              const branchDistance = branchT * 3;
-
-              return new Vector3(
-                startPoint.x + Math.cos(angle) * branchDistance * (1 - branchT * 0.3),
-                startPoint.y - branchT * 2,
-                startPoint.z + Math.sin(angle) * branchDistance * (1 - branchT * 0.3)
-              );
-            }),
-          thickness: 0.05,
-          isCoreStrike: false as const,
-        };
-      });
-
-    return [mainBolt, ...secondaryBranches];
-  }, [impactPos, skyPosition]);
-
-  const warningRing = useMemo(
-    () => new RingGeometry(radius - 0.25, radius, RING_SEGMENTS),
-    [radius]
-  );
-  const innerPulse = useMemo(
-    () => new RingGeometry(radius - 0.6, radius - 0.4, RING_SEGMENTS),
-    [radius]
-  );
+  const warningRing = useMemo(() => new RingGeometry(radius - 0.25, radius, RING_SEGMENTS), [radius]);
+  const innerPulse = useMemo(() => new RingGeometry(radius - 0.6, radius - 0.4, RING_SEGMENTS), [radius]);
 
   const geometries = useMemo(
     () => ({
-      bolt: new CylinderGeometry(1, 1, 1, 8),
       impact: new SphereGeometry(1, 16, 16),
       particle: new OctahedronGeometry(0.08, 0),
     }),
-    []
+    [],
   );
 
   const materials = useMemo(
     () => ({
-      coreBolt: new MeshBasicMaterial({
-        color: '#a8e6ff',
-        transparent: true,
-        blending: AdditiveBlending,
-      }),
-      secondaryBolt: new MeshBasicMaterial({
-        color: '#44aaff',
-        transparent: true,
-        opacity: 0.85,
-        blending: AdditiveBlending,
-      }),
       impact: new MeshBasicMaterial({
-        color: '#cfefff',
+        color: themeConfig.impactSphere,
         transparent: true,
         blending: AdditiveBlending,
       }),
       particle: new MeshStandardMaterial({
-        color: '#88ccff',
-        emissive: '#44aaff',
+        color: themeConfig.particle,
+        emissive: themeConfig.particleEmissive,
         emissiveIntensity: 0.85,
         transparent: true,
         blending: AdditiveBlending,
       }),
       ringImpact: [
-        new MeshBasicMaterial({
-          color: '#a8e6ff',
-          transparent: true,
-          blending: AdditiveBlending,
-        }),
-        new MeshBasicMaterial({
-          color: '#66bfff',
-          transparent: true,
-          blending: AdditiveBlending,
-        }),
-        new MeshBasicMaterial({
-          color: '#44aaff',
-          transparent: true,
-          blending: AdditiveBlending,
-        }),
+        new MeshBasicMaterial({ color: themeConfig.ringOuter, transparent: true, blending: AdditiveBlending }),
+        new MeshBasicMaterial({ color: themeConfig.ringInner, transparent: true, blending: AdditiveBlending }),
+        new MeshBasicMaterial({ color: themeConfig.ringOuter, transparent: true, blending: AdditiveBlending }),
       ],
     }),
-    []
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
 
   useEffect(() => {
@@ -179,8 +140,6 @@ export default function WeaverLightningStrike({
       warningRing.dispose();
       innerPulse.dispose();
       Object.values(geometries).forEach((g) => g.dispose());
-      materials.coreBolt.dispose();
-      materials.secondaryBolt.dispose();
       materials.impact.dispose();
       materials.particle.dispose();
       materials.ringImpact.forEach((m) => m.dispose());
@@ -191,7 +150,6 @@ export default function WeaverLightningStrike({
     const now = Date.now();
 
     if (phase === 'warning') {
-      // No light during the telegraph (the original <pointLight> only existed in strike).
       strikeLight.current?.setIntensity(0);
       if (now >= strikeAt && strikeStartRef.current === null) {
         strikeStartRef.current = now;
@@ -214,8 +172,6 @@ export default function WeaverLightningStrike({
     }
 
     const fadeOut = 1.0 * (1 - progress) * flickerRef.current;
-    materials.coreBolt.opacity = fadeOut;
-    materials.secondaryBolt.opacity = fadeOut * 0.85;
     materials.impact.opacity = fadeOut * 0.9;
     materials.particle.opacity = fadeOut;
 
@@ -223,7 +179,6 @@ export default function WeaverLightningStrike({
       mat.opacity = (0.8 - i * 0.15) * (1 - progress) * fadeOut;
     });
 
-    // Drive the pooled light at the impact point (world space).
     strikeLight.current?.setPosition(impactPos.x, impactPos.y, impactPos.z);
     strikeLight.current?.setIntensity(22 * (1 - progress) * flickerRef.current);
 
@@ -240,7 +195,7 @@ export default function WeaverLightningStrike({
           <mesh rotation={[-Math.PI / 2, 0, 0]}>
             <primitive object={warningRing} />
             <meshBasicMaterial
-              color="#44aaff"
+              color={themeConfig.warningRing}
               transparent
               opacity={0.5}
               side={DoubleSide}
@@ -250,7 +205,7 @@ export default function WeaverLightningStrike({
           <mesh rotation={[-Math.PI / 2, 0, 0]}>
             <primitive object={innerPulse} />
             <meshBasicMaterial
-              color="#88ccff"
+              color={themeConfig.warningInner}
               transparent
               opacity={0.45}
               side={DoubleSide}
@@ -261,22 +216,15 @@ export default function WeaverLightningStrike({
       )}
 
       {phase === 'strike' && (
-        <group>
-          {branches.map((branch, branchIdx) => (
-            <group key={branchIdx}>
-              {branch.points.map((point, idx) =>
-                idx < branch.points.length - 1 ? (
-                  <mesh
-                    key={idx}
-                    position={point.toArray()}
-                    geometry={geometries.bolt}
-                    material={branch.isCoreStrike ? materials.coreBolt : materials.secondaryBolt}
-                    scale={[branch.thickness, branch.thickness, branch.thickness]}
-                  />
-                ) : null
-              )}
-            </group>
-          ))}
+        <>
+          <DirectionalProcLightning
+            from={skyPosition}
+            to={impactPos}
+            palette={themeConfig.palette}
+            durationMs={620}
+            suppressImpactLight
+            onComplete={() => {}}
+          />
 
           <group position={impactPos.toArray()}>
             <mesh geometry={geometries.impact} material={materials.impact} scale={[1, 1, 1]} />
@@ -333,7 +281,7 @@ export default function WeaverLightningStrike({
               />
             );
           })}
-        </group>
+        </>
       )}
     </>
   );

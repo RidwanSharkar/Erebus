@@ -91,7 +91,6 @@ function playFromPayload(
 const BOSS1_TELEGRAPH_EVENTS = [
   'boss-attack-telegraph',
   'boss-throw-start',
-  'boss-meteor-cast',
   'boss-tectonic-spike-telegraph',
   'boss-tectonic-jump',
 ] as const;

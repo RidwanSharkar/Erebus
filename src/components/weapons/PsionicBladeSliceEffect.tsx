@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   Vector3,
@@ -105,6 +105,17 @@ export default function PsionicBladeSliceEffect({
       ),
     [],
   );
+
+  useEffect(() => {
+    const cm = crescentMat;
+    const fm = flashMat;
+    const sm = sparkMats;
+    return () => {
+      cm.dispose();
+      fm.dispose();
+      sm.forEach((m) => m.dispose());
+    };
+  }, [crescentMat, flashMat, sparkMats]);
 
   useFrame((_, delta) => {
     if (doneRef.current) return;

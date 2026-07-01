@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Group, MeshStandardMaterial, CylinderGeometry, ConeGeometry, PlaneGeometry, SphereGeometry } from 'three';
 import type { TotemBoltVariant } from '@/utils/talents';
 
@@ -63,6 +63,11 @@ export default function TotemModel({ isAttacking, totemBoltVariant }: TotemModel
       opacity: 0.9,
     });
   }, [totemBoltVariant]);
+
+  useEffect(() => {
+    const m = runesMat;
+    return () => { m.dispose(); };
+  }, [runesMat]);
 
   return (
     <group ref={totemRef} scale={0.3} position={[0, -0.80, 0]}>

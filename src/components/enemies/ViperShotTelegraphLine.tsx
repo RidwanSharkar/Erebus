@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { CircleGeometry, Group, Vector3 } from 'three';
 import {
@@ -94,6 +94,15 @@ export default function ViperShotTelegraphLine({
   const capGeometry = useMemo(() => new CircleGeometry(0.85, 32), []);
 
   const showCaps = preset.showEndpointCaps;
+
+  useEffect(() => {
+    const mats = [baseCoreMat, baseGlowMat, chargeCoreMat, chargeGlowMat, capMat];
+    const geo = capGeometry;
+    return () => {
+      mats.forEach((m) => m.dispose());
+      geo.dispose();
+    };
+  }, [baseCoreMat, baseGlowMat, chargeCoreMat, chargeGlowMat, capMat, capGeometry]);
 
   useFrame((_, delta) => {
     const now = Date.now();

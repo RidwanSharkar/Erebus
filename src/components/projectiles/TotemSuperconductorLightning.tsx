@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   AdditiveBlending,
@@ -176,6 +176,25 @@ export default function TotemSuperconductorLightning({
     }),
     [conductorPalette],
   );
+
+  useEffect(() => {
+    const g = geometries;
+    return () => {
+      g.bolt.dispose();
+      g.impact.dispose();
+      g.ring.dispose();
+    };
+  }, [geometries]);
+
+  useEffect(() => {
+    const m = materials;
+    return () => {
+      m.coreBolt.dispose();
+      m.secondaryBolt.dispose();
+      m.impact.dispose();
+      m.ring.dispose();
+    };
+  }, [materials]);
 
   useFrame(() => {
     const elapsed = Date.now() - startedAtRef.current;

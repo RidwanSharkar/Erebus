@@ -46,8 +46,8 @@ export default function CrossentropyBolt({
   const _scratchCurrentPos  = useRef(new Vector3());
   const clock = useRef(new Clock());
   const startSpeed = 0.03;
-  const maxSpeed = 2;
-  const accelerationDistance = 20; // Distance over which to accelerate from start to max speed
+  const maxSpeed = 1.25;
+  const accelerationDistance = 10; // Distance over which to accelerate from start to max speed
   const maxRange = CROSSENTROPY_MAX_TRAVEL_DISTANCE; // Aligned with ECS maxDistance for Crossentropy
   const lifespan = 3; // Fallback lifespan
   const currentPosition = useRef(position.clone());
@@ -57,7 +57,7 @@ export default function CrossentropyBolt({
   const fadeStartTime = useRef<number | null>(null);
   const fadeDuration = 1; // 500ms fade duration
   const [opacity, setOpacity] = useState(1);
-  const size = 0.275;
+  const size = 0.225;
   const { color, meshColor, meshEmissive } = useMemo(() => {
     if (visualTheme === 'inferno') {
       return {
@@ -103,7 +103,7 @@ export default function CrossentropyBolt({
   );
 
   // Spiral parameters
-  const spiralRadius = 0.575;
+  const spiralRadius = 0.5;
   const spiralSpeed = 4; // rotations per second
   const time = useRef(0);
   const launchSmokeDistanceRef = useRef(0);

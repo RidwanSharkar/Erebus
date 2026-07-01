@@ -201,6 +201,15 @@ export const TALENT_HAILSTORM = 'HAILSTORM' as const;
 /** Green room universal passive — spend a dash charge to heal when taking damage from an enemy. */
 export const TALENT_ORB_SHIELD = 'ORB_SHIELD' as const;
 
+/** Blue room allied knight boon — smite has reduced cooldown and deals bonus damage per Agility. */
+export const TALENT_TEMPEST_INITIATE = 'TEMPEST_INITIATE' as const;
+/** Green room allied knight boon — knight starts with increased max HP scaling with Stamina. */
+export const TALENT_NECROS_INITIATE = 'NECROS_INITIATE' as const;
+/** Red room allied knight boon — knight basic attack gains increased base damage scaling with Strength. */
+export const TALENT_INFERNAL_INITIATE = 'INFERNAL_INITIATE' as const;
+/** Purple room allied knight boon — knight gains +50% movement speed and attack speed. */
+export const TALENT_ABYSSAL_INITIATE = 'ABYSSAL_INITIATE' as const;
+
 /** Cyclone Rush — double-tap forward Charge on Runeblade; separate from E-key Charge cooldown. */
 export const CYCLONE_RUSH_CHARGE_COOLDOWN_SEC = 3;
 /** RAISE DEAD active boon — cooldown after summoning a zombie via R key. */
@@ -213,6 +222,21 @@ export const AEGIS_ROOM_COOLDOWN_SEC = 8;
 export const AEGIS_ROOM_DURATION_SEC = 3;
 /** MANA SHIELD room boon — shield restored per effective Intellect per dash charge spent. */
 export const MANA_SHIELD_RESTORE_PER_INTELLECT = 2;
+
+/** TEMPEST INITIATE — allied knight smite cooldown when boon is active. */
+export const TEMPEST_INITIATE_SMITE_COOLDOWN_MS = 2500;
+/** TEMPEST INITIATE — flat bonus damage added to allied knight smite. */
+export const TEMPEST_INITIATE_SMITE_BASE_DAMAGE_BONUS = 20;
+/** TEMPEST INITIATE — additional smite damage per point of Agility. */
+export const TEMPEST_INITIATE_SMITE_DAMAGE_PER_AGILITY = 5;
+/** NECROS INITIATE — allied knight base max HP (replaces default 500). */
+export const NECROS_INITIATE_KNIGHT_BASE_HP = 750;
+/** NECROS INITIATE — additional max HP per point of Stamina. */
+export const NECROS_INITIATE_KNIGHT_HP_PER_STAMINA = 25;
+/** INFERNAL INITIATE — allied knight base melee damage (replaces default 50). */
+export const INFERNAL_INITIATE_KNIGHT_BASE_DAMAGE = 80;
+/** INFERNAL INITIATE — additional melee damage per point of Strength. */
+export const INFERNAL_INITIATE_KNIGHT_DAMAGE_PER_STRENGTH = 3;
 
 export const INFERNAL_DASH_DAMAGE = 195;
 export const INFERNAL_DASH_RADIUS = 3.25;
@@ -352,7 +376,7 @@ export const RELENTLESS_BACKSTAB_KILL_BASE = 30;
 /** Relentless (Sabres): additional HP healed per point of Stamina (all sources). */
 export const RELENTLESS_BACKSTAB_KILL_HEAL_PER_STAMINA = 5;
 /** Vorpal Gust — piercing beam along horizontal camera forward (XZ). */
-export const VORPAL_GUST_BEAM_LENGTH = 6;
+export const VORPAL_GUST_BEAM_LENGTH = 5.5;
 export const VORPAL_GUST_BEAM_RADIUS = 1;
 export const VORPAL_GUST_BEAM_ORIGIN_FORWARD_OFFSET = 0.5;
 /** Beam VFX origin height in DragonUnit local space (weapon root; ~bow/chest). */
@@ -390,7 +414,7 @@ export function evaluateVorpalGustBeamHit(
 }
 
 /** Beam segment length (world units) at max range treated as tip (Explosive Talons-style end-zone). */
-export const VORPAL_GUST_TIP_ZONE_WORLD_UNITS = 1.5;
+export const VORPAL_GUST_TIP_ZONE_WORLD_UNITS = 2.0;
 /** Minimum projected `t` from `evaluateVorpalGustBeamHit` to count as hitting near the gust tip. */
 export const VORPAL_GUST_TIP_ZONE_START = VORPAL_GUST_BEAM_LENGTH - VORPAL_GUST_TIP_ZONE_WORLD_UNITS;
 /** Tip zone: non-positional hit base (normally 95). */
@@ -583,7 +607,11 @@ export type TalentId =
   | typeof TALENT_MOMENTUM_RIFT
   | typeof TALENT_MANA_SHIELD
   | typeof TALENT_HAILSTORM
-  | typeof TALENT_ORB_SHIELD;
+  | typeof TALENT_ORB_SHIELD
+  | typeof TALENT_TEMPEST_INITIATE
+  | typeof TALENT_NECROS_INITIATE
+  | typeof TALENT_INFERNAL_INITIATE
+  | typeof TALENT_ABYSSAL_INITIATE;
 
 /** Crossentropy bolt / explosion palette (Inferno overrides Glacial / Tempest / Plague). */
 export type CrossentropyVisualTheme = 'default' | 'inferno' | 'tempest' | 'plague' | 'glacial';
@@ -1176,7 +1204,7 @@ export const killstreakTalentDefinition: TalentDefinition = {
   description:
     'Each enemy kill with Backstab grants +' +
     BACKSTAB_KILLSTREAK_DAMAGE_PER_KILL +
-    'permanent base damage to Backstab.',
+    ' permanent base damage to Backstab.',
   modifiesAbilityId: 'Backstab (Q)',
 };
 
@@ -1405,6 +1433,38 @@ export const hailstormRoomTalentDefinition: TalentDefinition = {
   description:
     `BLIZZARD effects deals ${HAILSTORM_ARCTIC_BLIZZARD_DAMAGE_PER_TICK} damage per tick (up from ${ARCTIC_BLIZZARD_DAMAGE_PER_TICK}) and +${HAILSTORM_INTELLECT_DAMAGE_PER_POINT} damage per point of INTELLECT.`,
   modifiesAbilityId: 'Abyssal Boons',
+};
+
+export const tempestInitiateTalentDefinition: TalentDefinition = {
+  id: TALENT_TEMPEST_INITIATE,
+  name: 'Tempest Initiate',
+  description:
+    `ALLIED KNIGHT's SMITE attack has a reduced cooldown and deals +${TEMPEST_INITIATE_SMITE_BASE_DAMAGE_BONUS} base damage +${TEMPEST_INITIATE_SMITE_DAMAGE_PER_AGILITY} damage per point of AGILITY.`,
+  modifiesAbilityId: 'Allied Boons',
+};
+
+export const necrosInitiateTalentDefinition: TalentDefinition = {
+  id: TALENT_NECROS_INITIATE,
+  name: 'Necros Initiate',
+  description:
+    `ALLIED KNIGHT starts with ${NECROS_INITIATE_KNIGHT_BASE_HP} HP (+${NECROS_INITIATE_KNIGHT_HP_PER_STAMINA} max HP per point of STAMINA) instead of 500.`,
+  modifiesAbilityId: 'Allied Boons',
+};
+
+export const infernalInitiateTalentDefinition: TalentDefinition = {
+  id: TALENT_INFERNAL_INITIATE,
+  name: 'Infernal Initiate',
+  description:
+    `ALLIED KNIGHT basic attack gains increased base damage — from 50 to ${INFERNAL_INITIATE_KNIGHT_BASE_DAMAGE} +${INFERNAL_INITIATE_KNIGHT_DAMAGE_PER_STRENGTH} per point of STRENGTH.`,
+  modifiesAbilityId: 'Allied Boons',
+};
+
+export const abyssalInitiateTalentDefinition: TalentDefinition = {
+  id: TALENT_ABYSSAL_INITIATE,
+  name: 'Abyssal Initiate',
+  description:
+    'ALLIED KNIGHT gains +50% movement speed and attack speed.',
+  modifiesAbilityId: 'Allied Boons',
 };
 
 export const wrathfulSabresSwipesTalentDefinition: TalentDefinition = {
@@ -1763,7 +1823,7 @@ export const infestingEntropicTalentDefinition: TalentDefinition = {
   id: TALENT_INFESTING_ENTROPIC,
   name: 'Infesting Bolts',
   description:
-    'Enemies killed by Entropic Bolts raise an allied ZOMBIE ally. While Icebeam is your primary, beam kills raise a zombie and heal you for 5 HP.',
+    'Enemies killed by Entropic Bolts raise an allied ZOMBIE ally.',
   modifiesAbilityId: 'Entropic Bolts (Left-click)',
 };
 
@@ -1963,6 +2023,14 @@ export interface TalentLoadout {
   hailstormRoom: boolean;
   /** Co-op green room passive — spend a dash charge to heal when taking damage from an enemy. */
   orbShieldRoom: boolean;
+  /** Co-op blue room allied knight boon — smite has reduced cooldown and deals bonus damage per Agility. */
+  tempestInitiateRoom: boolean;
+  /** Co-op green room allied knight boon — knight starts with increased max HP scaling with Stamina. */
+  necrosInitiateRoom: boolean;
+  /** Co-op red room allied knight boon — knight basic attack gains increased base damage scaling with Strength. */
+  infernalInitiateRoom: boolean;
+  /** Co-op purple room allied knight boon — knight gains +50% movement speed and attack speed. */
+  abyssalInitiateRoom: boolean;
 }
 
 export function createDefaultTalentLoadout(): TalentLoadout {
@@ -2080,6 +2148,10 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     manaShieldRoom: false,
     hailstormRoom: false,
     orbShieldRoom: false,
+    tempestInitiateRoom: false,
+    necrosInitiateRoom: false,
+    infernalInitiateRoom: false,
+    abyssalInitiateRoom: false,
   };
 }
 
@@ -3277,6 +3349,35 @@ export function getCoopStaggerRoomBoonsPayload(
   return payload;
 }
 
+export interface CoopAlliedKnightBoonsPayload {
+  tempestInitiate: boolean;
+  necrosInitiate: boolean;
+  infernalInitiate: boolean;
+  abyssalInitiate: boolean;
+  agility?: number;
+  strength?: number;
+  stamina?: number;
+}
+
+/** Payload for `coop-allied-knight-boons` Socket.IO sync (server applies to allied knight stats). */
+export function getCoopAlliedKnightBoonsPayload(
+  loadout: TalentLoadout,
+  stats?: { agility: number; strength: number; stamina: number },
+): CoopAlliedKnightBoonsPayload {
+  const payload: CoopAlliedKnightBoonsPayload = {
+    tempestInitiate: !!loadout.tempestInitiateRoom,
+    necrosInitiate: !!loadout.necrosInitiateRoom,
+    infernalInitiate: !!loadout.infernalInitiateRoom,
+    abyssalInitiate: !!loadout.abyssalInitiateRoom,
+  };
+  if (stats) {
+    payload.agility = Math.max(0, stats.agility);
+    payload.strength = Math.max(0, stats.strength);
+    payload.stamina = Math.max(0, stats.stamina);
+  }
+  return payload;
+}
+
 /** Runeblade class boon pool. */
 export function buildRunebladeClassBoonPool(
   _talentLoadout?: TalentLoadout | null,
@@ -3455,16 +3556,16 @@ export function buildRoomBoonPoolForColor(
   }
 
   if (k === 'green') {
-    return [...pool, TALENT_MENDING_DASH, TALENT_ORB_SHIELD, ...GREEN_COOP_UNIVERSAL_ZOMBIE_BOONS, TALENT_RAISE_DEAD];
+    return [...pool, TALENT_MENDING_DASH, TALENT_ORB_SHIELD, ...GREEN_COOP_UNIVERSAL_ZOMBIE_BOONS, TALENT_RAISE_DEAD, TALENT_NECROS_INITIATE];
   }
 
   switch (k) {
     case 'red':
-      return [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH, TALENT_REBUKE, TALENT_METEOR_STRIKE];
+      return [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH, TALENT_REBUKE, TALENT_METEOR_STRIKE, TALENT_INFERNAL_INITIATE];
     case 'purple':
-      return [...pool, TALENT_GLACIAL_DASH, TALENT_COLDSNAP_ROOM, TALENT_AEGIS_ROOM, TALENT_MOMENTUM_RIFT, TALENT_MANA_SHIELD, TALENT_HAILSTORM];
+      return [...pool, TALENT_GLACIAL_DASH, TALENT_COLDSNAP_ROOM, TALENT_AEGIS_ROOM, TALENT_MOMENTUM_RIFT, TALENT_MANA_SHIELD, TALENT_HAILSTORM, TALENT_ABYSSAL_INITIATE];
     case 'blue':
-      return [...pool, TALENT_STAGGERING_DASH, TALENT_GUARDBREAK, TALENT_OVERSHOCK, TALENT_UNSTABLE_ENERGY, TALENT_LIGHTNING_BOLT_ROOM];
+      return [...pool, TALENT_STAGGERING_DASH, TALENT_GUARDBREAK, TALENT_OVERSHOCK, TALENT_UNSTABLE_ENERGY, TALENT_LIGHTNING_BOLT_ROOM, TALENT_TEMPEST_INITIATE];
     default:
       return pool;
   }
@@ -3591,6 +3692,57 @@ function isAbilityIdInLoadout(
   return loadout.Q === abilityId || loadout.E === abilityId || loadout.R === abilityId;
 }
 
+/** LMB → Q → E weapon-ability room boon mutex groups for HUD ordering and boon-picker priority. */
+export function getOrderedWeaponAbilityRoomBoonMutexGroups(
+  weapon: WeaponType,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): readonly (readonly TalentId[])[] {
+  switch (weapon) {
+    case WeaponType.BOW: {
+      const groups: (readonly TalentId[])[] = [BOW_ROOM_BOON_MUTEX_BY_SLOT.primary];
+      if (isFrostBiteInLoadout(abilityLoadout)) {
+        groups.push(BOW_ROOM_BOON_MUTEX_BY_SLOT.q);
+      }
+      if (isReapingTalonsInLoadout(abilityLoadout)) {
+        groups.push(BOW_ROOM_BOON_MUTEX_BY_SLOT.e);
+      }
+      return groups;
+    }
+    case WeaponType.SCYTHE: {
+      const groups: (readonly TalentId[])[] = [SCYTHE_ENTROPIC_BOON_MUTEX_GROUP];
+      if (isMantraInLoadout(abilityLoadout)) {
+        groups.push(SCYTHE_TOTEM_BOON_MUTEX_GROUP);
+      }
+      if (isCrossentropyInLoadout(abilityLoadout)) {
+        groups.push(SCYTHE_CROSSENTROPY_BOON_MUTEX_GROUP);
+      }
+      return groups;
+    }
+    case WeaponType.RUNEBLADE: {
+      const groups: (readonly TalentId[])[] = [RUNEBLADE_ROOM_BOON_MUTEX_BY_SLOT.combo];
+      if (isWraithStrikeInLoadout(abilityLoadout)) {
+        groups.push(RUNEBLADE_ROOM_BOON_MUTEX_BY_SLOT.strike);
+      }
+      if (isColossusSmiteInLoadout(abilityLoadout)) {
+        groups.push(RUNEBLADE_ROOM_BOON_MUTEX_BY_SLOT.smite);
+      }
+      return groups;
+    }
+    case WeaponType.SABRES: {
+      const groups: (readonly TalentId[])[] = [SABRES_SWIPES_BOON_MUTEX_GROUP];
+      if (isAbilityIdInLoadout(abilityLoadout, 'SABRES_Q')) {
+        groups.push(SABRES_BACKSTAB_BOON_MUTEX_GROUP);
+      }
+      if (isSabresFlourishInLoadout(abilityLoadout)) {
+        groups.push(SABRES_FLOURISH_BOON_MUTEX_GROUP);
+      }
+      return groups;
+    }
+    default:
+      return [];
+  }
+}
+
 function buildPrioritizedRoomBoonIdsForLoadout(
   pool: readonly TalentId[],
   weapon: WeaponType,
@@ -3598,41 +3750,9 @@ function buildPrioritizedRoomBoonIdsForLoadout(
 ): TalentId[] {
   const available = new Set(pool);
   const priority: TalentId[] = [];
-
-  if (weapon === WeaponType.BOW) {
-    appendAvailableTalentIds(priority, available, BOW_ROOM_BOON_MUTEX_BY_SLOT.primary);
-    if (isFrostBiteInLoadout(abilityLoadout)) {
-      appendAvailableTalentIds(priority, available, BOW_ROOM_BOON_MUTEX_BY_SLOT.q);
-    }
-    if (isReapingTalonsInLoadout(abilityLoadout)) {
-      appendAvailableTalentIds(priority, available, BOW_ROOM_BOON_MUTEX_BY_SLOT.e);
-    }
-  } else if (weapon === WeaponType.SCYTHE) {
-    appendAvailableTalentIds(priority, available, SCYTHE_ENTROPIC_BOON_MUTEX_GROUP);
-    if (isCrossentropyInLoadout(abilityLoadout)) {
-      appendAvailableTalentIds(priority, available, SCYTHE_CROSSENTROPY_BOON_MUTEX_GROUP);
-    }
-    if (isMantraInLoadout(abilityLoadout)) {
-      appendAvailableTalentIds(priority, available, SCYTHE_TOTEM_BOON_MUTEX_GROUP);
-    }
-  } else if (weapon === WeaponType.RUNEBLADE) {
-    appendAvailableTalentIds(priority, available, RUNEBLADE_ROOM_BOON_MUTEX_BY_SLOT.combo);
-    if (isWraithStrikeInLoadout(abilityLoadout)) {
-      appendAvailableTalentIds(priority, available, RUNEBLADE_ROOM_BOON_MUTEX_BY_SLOT.strike);
-    }
-    if (isColossusSmiteInLoadout(abilityLoadout)) {
-      appendAvailableTalentIds(priority, available, RUNEBLADE_ROOM_BOON_MUTEX_BY_SLOT.smite);
-    }
-  } else if (weapon === WeaponType.SABRES) {
-    appendAvailableTalentIds(priority, available, SABRES_SWIPES_BOON_MUTEX_GROUP);
-    if (isAbilityIdInLoadout(abilityLoadout, 'SABRES_Q')) {
-      appendAvailableTalentIds(priority, available, SABRES_BACKSTAB_BOON_MUTEX_GROUP);
-    }
-    if (isSabresFlourishInLoadout(abilityLoadout)) {
-      appendAvailableTalentIds(priority, available, SABRES_FLOURISH_BOON_MUTEX_GROUP);
-    }
+  for (const group of getOrderedWeaponAbilityRoomBoonMutexGroups(weapon, abilityLoadout)) {
+    appendAvailableTalentIds(priority, available, group);
   }
-
   return priority;
 }
 
@@ -4036,6 +4156,18 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_ORB_SHIELD:
       next.orbShieldRoom = true;
       return next;
+    case TALENT_TEMPEST_INITIATE:
+      next.tempestInitiateRoom = true;
+      return next;
+    case TALENT_NECROS_INITIATE:
+      next.necrosInitiateRoom = true;
+      return next;
+    case TALENT_INFERNAL_INITIATE:
+      next.infernalInitiateRoom = true;
+      return next;
+    case TALENT_ABYSSAL_INITIATE:
+      next.abyssalInitiateRoom = true;
+      return next;
     default:
       return next;
   }
@@ -4155,6 +4287,10 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_MANA_SHIELD]: manaShieldRoomTalentDefinition,
   [TALENT_HAILSTORM]: hailstormRoomTalentDefinition,
   [TALENT_ORB_SHIELD]: orbShieldTalentDefinition,
+  [TALENT_TEMPEST_INITIATE]: tempestInitiateTalentDefinition,
+  [TALENT_NECROS_INITIATE]: necrosInitiateTalentDefinition,
+  [TALENT_INFERNAL_INITIATE]: infernalInitiateTalentDefinition,
+  [TALENT_ABYSSAL_INITIATE]: abyssalInitiateTalentDefinition,
 };
 
 /** Official room-type icons used as defaults when a room boon has no dedicated asset. */
@@ -4283,6 +4419,10 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_MANA_SHIELD]: null,
   [TALENT_HAILSTORM]: '/icons/blizzard.svg',
   [TALENT_ORB_SHIELD]: null,
+  [TALENT_TEMPEST_INITIATE]: null,
+  [TALENT_NECROS_INITIATE]: null,
+  [TALENT_INFERNAL_INITIATE]: null,
+  [TALENT_ABYSSAL_INITIATE]: null,
 };
 
 const COOP_ROOM_COLOR_BY_TALENT: Partial<Record<TalentId, CoopRoomColor>> = (() => {
@@ -4301,6 +4441,52 @@ const COOP_ROOM_COLOR_BY_TALENT: Partial<Record<TalentId, CoopRoomColor>> = (() 
 
 export function getCoopRoomColorForTalent(id: TalentId): CoopRoomColor | null {
   return COOP_ROOM_COLOR_BY_TALENT[id] ?? null;
+}
+
+export interface CoopRoomColorHudSlotStyle {
+  background: string;
+  border: string;
+  boxShadow: string;
+  iconFilter: string;
+  fallbackGlyphColor: string;
+}
+
+/** Inline HUD slot styling for primary weapon-ability room boons (matches CoopBoonPickerModal room accents). */
+export function getCoopRoomColorHudSlotStyle(color: CoopRoomColor): CoopRoomColorHudSlotStyle {
+  switch (color) {
+    case 'blue':
+      return {
+        background: 'linear-gradient(135deg, rgba(14,40,80,0.55), rgba(8,20,45,0.45))',
+        border: '1px solid rgba(96,165,250,0.75)',
+        boxShadow: '0 0 12px rgba(96,165,250,0.35), inset 0 1px 0 rgba(255,255,255,0.06)',
+        iconFilter: 'drop-shadow(0 0 3px rgba(96,165,250,0.45))',
+        fallbackGlyphColor: 'rgba(147,197,253,0.9)',
+      };
+    case 'green':
+      return {
+        background: 'linear-gradient(135deg, rgba(8,50,35,0.55), rgba(4,28,20,0.45))',
+        border: '1px solid rgba(52,211,153,0.75)',
+        boxShadow: '0 0 12px rgba(52,211,153,0.35), inset 0 1px 0 rgba(255,255,255,0.06)',
+        iconFilter: 'drop-shadow(0 0 3px rgba(52,211,153,0.45))',
+        fallbackGlyphColor: 'rgba(110,231,183,0.9)',
+      };
+    case 'purple':
+      return {
+        background: 'linear-gradient(135deg, rgba(45,25,80,0.55), rgba(25,12,50,0.45))',
+        border: '1px solid rgba(167,139,250,0.75)',
+        boxShadow: '0 0 12px rgba(167,139,250,0.35), inset 0 1px 0 rgba(255,255,255,0.06)',
+        iconFilter: 'drop-shadow(0 0 3px rgba(167,139,250,0.45))',
+        fallbackGlyphColor: 'rgba(196,181,253,0.9)',
+      };
+    case 'red':
+      return {
+        background: 'linear-gradient(135deg, rgba(60,20,8,0.55), rgba(35,10,4,0.45))',
+        border: '1px solid rgba(249,115,22,0.75)',
+        boxShadow: '0 0 12px rgba(249,115,22,0.35), inset 0 1px 0 rgba(255,255,255,0.06)',
+        iconFilter: 'drop-shadow(0 0 3px rgba(249,115,22,0.45))',
+        fallbackGlyphColor: 'rgba(253,186,116,0.9)',
+      };
+  }
 }
 
 export function getTalentIconSrc(id: TalentId, roomColor?: string | null): string | null {
@@ -4460,6 +4646,36 @@ export function getEnabledTalentIdsForWeapon(
   if (weapon === WeaponType.NONE) return [];
   const allowed = buildWeaponTalentIdSet(weapon, talentLoadoutForPool);
   return getEnabledTalentIds(loadout).filter((id) => allowed.has(id));
+}
+
+/** Enabled LMB / Q / E colored room boon picks for the current weapon (at most one per mutex group). */
+export function getEnabledPrimaryWeaponRoomBoonIds(
+  loadout: TalentLoadout,
+  weapon: WeaponType,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): TalentId[] {
+  if (weapon === WeaponType.NONE) return [];
+  const enabled = new Set(getEnabledTalentIds(loadout));
+  const allowed = buildWeaponTalentIdSet(weapon, loadout);
+  const out: TalentId[] = [];
+  for (const group of getOrderedWeaponAbilityRoomBoonMutexGroups(weapon, abilityLoadout)) {
+    const picked = group.find((id) => enabled.has(id) && allowed.has(id));
+    if (picked) out.push(picked);
+  }
+  return out;
+}
+
+/** Split HUD talents into pinned primary room boons vs all other enabled talents. */
+export function partitionTalentsForHotkeyHud(
+  loadout: TalentLoadout,
+  weapon: WeaponType,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): { primaryRoomBoons: TalentId[]; otherTalents: TalentId[] } {
+  const all = getEnabledTalentIdsForWeapon(loadout, weapon, loadout);
+  const primaryRoomBoons = getEnabledPrimaryWeaponRoomBoonIds(loadout, weapon, abilityLoadout);
+  const primarySet = new Set(primaryRoomBoons);
+  const otherTalents = all.filter((id) => !primarySet.has(id));
+  return { primaryRoomBoons, otherTalents };
 }
 
 /** Remove talents the player already has this run before rolling co-op class/room boon choices. */

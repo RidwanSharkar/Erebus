@@ -1,4 +1,4 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending, SphereGeometry } from '@/utils/three-exports';
 import AnimatedDeathGrasp from './AnimatedDeathGrasp';
@@ -71,6 +71,15 @@ export default function DeathGraspProjectile({
     core: new SphereGeometry(0.18, 8, 8)
   }), []);
 
+  useEffect(() => {
+    const g = geometries;
+    return () => {
+      g.particle.dispose();
+      g.impact.dispose();
+      g.core.dispose();
+    };
+  }, [geometries]);
+
   const materials = useMemo(() => ({
     spiral1: new MeshBasicMaterial({
       color: new Color("#6A0DAD"),
@@ -103,6 +112,17 @@ export default function DeathGraspProjectile({
       blending: AdditiveBlending
     })
   }), []);
+
+  useEffect(() => {
+    const m = materials;
+    return () => {
+      m.spiral1.dispose();
+      m.spiral2.dispose();
+      m.spiral3.dispose();
+      m.impact.dispose();
+      m.core.dispose();
+    };
+  }, [materials]);
 
   // Pre-calculate spiraling particle streams
   const spiralStreams = useMemo(() => {

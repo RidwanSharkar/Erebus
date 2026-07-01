@@ -74,6 +74,15 @@ function IgniteRing({ enemyId, startPosition, startTime, duration, world, onComp
     [],
   );
 
+  useEffect(() => {
+    const g = geom;
+    const m = mat;
+    return () => {
+      g.dispose();
+      m.dispose();
+    };
+  }, [geom, mat]);
+
   const completedRef = useRef(false);
   const finish = () => {
     if (completedRef.current) return;

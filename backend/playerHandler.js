@@ -81,6 +81,25 @@ function handlePlayerEvents(socket, gameRooms) {
     };
   });
 
+  /** Co-op: sync allied knight room boon flags for server-authored knight AI buffs. */
+  socket.on('coop-allied-knight-boons', (data) => {
+    const roomId = data?.roomId;
+    const raw = data?.coopAlliedKnightBoons ?? {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    const player = room.players?.get(socket.id);
+    if (!player) return;
+    player.coopAlliedKnightBoons = {
+      tempestInitiate: !!raw.tempestInitiate,
+      necrosInitiate: !!raw.necrosInitiate,
+      infernalInitiate: !!raw.infernalInitiate,
+      abyssalInitiate: !!raw.abyssalInitiate,
+      agility: typeof raw.agility === 'number' ? raw.agility : 0,
+      strength: typeof raw.strength === 'number' ? raw.strength : 0,
+      stamina: typeof raw.stamina === 'number' ? raw.stamina : 0,
+    };
+  });
+
   /** Co-op: RAISE DEAD boon active ability — instantly summon one zombie at the player's position. */
   socket.on('raise-dead-ability', (data) => {
     const { roomId, position } = data || {};

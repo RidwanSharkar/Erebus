@@ -34,6 +34,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'sabres_skyfall', file: 'sabres/skyfall.mp3' },
   { id: 'entropic_bolt', file: 'scythe/entropic_bolts.mp3' },
   { id: 'crossentropy', file: 'scythe/crossentropy.mp3' },
+  { id: 'crossentropy_impact', file: 'scythe/crossentropy2.mp3' },
   { id: 'frost_nova', file: 'scythe/frost_nova.mp3' },
   { id: 'scythe_mantra', file: 'scythe/mantra.mp3' },
   { id: 'scythe_sunwell', file: 'scythe/sunwell.mp3' },
@@ -128,10 +129,13 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'ui_frozen', file: 'ui/frozen.mp3' },
   { id: 'ui_ignite', file: 'ui/ignite.mp3' },
   { id: 'ui_entangle', file: 'ui/entangle.mp3' },
+  { id: 'ui_acid', file: 'ui/acid.mp3' },
   { id: 'ui_lesser_heal', file: 'ui/lesserHeal.mp3' },
   { id: 'ui_greater_heal', file: 'ui/greaterHeal.mp3' },
   { id: 'ui_level', file: 'ui/1LEVEL.mp3' },
   { id: 'ui_aegis', file: 'ui/aegis.mp3' },
+  { id: 'ui_shield_break', file: 'ui/1shieldBreak.mp3' },
+  { id: 'ui_shield_regen', file: 'ui/1shieldRegen.mp3' },
 ];
 
 const STARTUP_SOUND_IDS = new Set([
@@ -153,7 +157,7 @@ export class AudioSystem extends System {
   private startupPreloadPromise: Promise<void> | null = null;
   private readonly sfxById = new Map(WEAPON_SOUND_ASSETS.map(asset => [asset.id, asset]));
   private masterVolume = 0.725;
-  private sfxVolume = 0.7125;
+  private sfxVolume = 0.675;
   private listenerPosition = new Vector3(0, 0, 0);
   private coopBgmMode: CoopBgmMode = 'none';
   private coopChaosInstance: number | null = null;
@@ -161,6 +165,9 @@ export class AudioSystem extends System {
   private currentCoopRoomTrackId: string | null = null;
   private footstepsLoopInstance: number | null = null;
   private footstepsShouldPlay = false;
+  private shieldRegenLoopInstance: number | null = null;
+  private shieldRegenShouldPlay = false;
+  private soundLastPlayedAt = new Map<string, number>();
 
   constructor() {
     super();
@@ -241,6 +248,23 @@ export class AudioSystem extends System {
 
   /** @deprecated No default hub BGM; kept for call-site compatibility. */
   public stopBackgroundMusicStreaming(): void {}
+
+  private static readonly MULTI_TARGET_STATUS_COOLDOWN_MS = 500;
+  private static readonly MELEE_HITBOX_SOUND_COOLDOWN_MS = 50;
+
+  /** Plays `soundId` only if it hasn't been played within `cooldownMs`. */
+  private playWeaponSoundWithCooldown(
+    soundId: string,
+    position: Vector3,
+    config: SoundConfig | undefined,
+    cooldownMs: number,
+  ): number | null {
+    const now = Date.now();
+    const last = this.soundLastPlayedAt.get(soundId) ?? 0;
+    if (now - last < cooldownMs) return null;
+    this.soundLastPlayedAt.set(soundId, now);
+    return this.playWeaponSound(soundId, position, config);
+  }
 
   // Play weapon sound effect (local only)
   public playWeaponSound(soundId: string, position: Vector3, config?: SoundConfig) {
@@ -324,7 +348,7 @@ export class AudioSystem extends System {
 
   // Play sabres swing sound
   public playSabresSwingSound(position: Vector3) {
-    return this.playWeaponSound('sabres_swing', position, { volume: 0.8 });
+    return this.playWeaponSound('sabres_swing', position, { volume: 0.6 });
   }
 
   // Play sabres flourish sound (Sunder ability)
@@ -358,6 +382,11 @@ export class AudioSystem extends System {
   // Play crossentropy sound
   public playCrossentropySound(position: Vector3) {
     return this.playWeaponSound('crossentropy', position, { volume: 0.9 });
+  }
+
+  // Play crossentropy explosion impact sound (distinct from cast sound)
+  public playCrossentropyImpactSound() {
+    return this.playWeaponSound('crossentropy_impact', new Vector3(0, 0, 0), { volume: 0.825 });
   }
 
   // Play sword swing sounds (combo steps 1-3)
@@ -868,19 +897,23 @@ export class AudioSystem extends System {
   }
 
   public playAegisBlockSound() {
-    return this.playWeaponSound('ui_aegis', new Vector3(0, 0, 0), { volume: 1.0 });
+    return this.playWeaponSound('ui_aegis', new Vector3(0, 0, 0), { volume: 1.33 });
   }
 
   public playFrozenStatusSound(position: Vector3) {
-    return this.playWeaponSound('ui_frozen', position, { volume: 0.725 });
+    return this.playWeaponSoundWithCooldown('ui_frozen', position, { volume: 0.65 }, AudioSystem.MULTI_TARGET_STATUS_COOLDOWN_MS);
   }
 
   public playIgniteStatusSound(position: Vector3) {
-    return this.playWeaponSound('ui_ignite', position, { volume: 0.78 });
+    return this.playWeaponSoundWithCooldown('ui_ignite', position, { volume: 0.725 }, AudioSystem.MULTI_TARGET_STATUS_COOLDOWN_MS);
   }
 
   public playEntangleStatusSound(position: Vector3) {
-    return this.playWeaponSound('ui_entangle', position, { volume: 0.65 });
+    return this.playWeaponSoundWithCooldown('ui_entangle', position, { volume: 0.675 }, AudioSystem.MULTI_TARGET_STATUS_COOLDOWN_MS);
+  }
+
+  public playAcidSound(position: Vector3) {
+    return this.playWeaponSoundWithCooldown('ui_acid', position, { volume: 0.75 }, AudioSystem.MULTI_TARGET_STATUS_COOLDOWN_MS);
   }
 
   public playLesserHealSound(position?: Vector3) {
@@ -956,7 +989,7 @@ export class AudioSystem extends System {
       green: 'whisper_eldritch',
     }[roomColor];
     if (!soundId) return;
-    this.playWeaponSound(soundId, new Vector3(0, 0, 0), { volume: 0.9 });
+    this.playWeaponSound(soundId, new Vector3(0, 0, 0), { volume: 1.3 });
   }
 
   /** Looped locomotion footsteps (local player run); mirrors Run vs slow-walk in CharacterRenderer. */
@@ -998,6 +1031,48 @@ export class AudioSystem extends System {
     }
   }
 
+  public playShieldBreakSound(): number | null {
+    return this.playWeaponSound('ui_shield_break', this.listenerPosition, { volume: 1.0 });
+  }
+
+  public setShieldRegenPlaying(active: boolean): void {
+    this.shieldRegenShouldPlay = active;
+    const sound = this.soundCache.get('ui_shield_regen');
+    if (!sound) {
+      if (active) {
+        const asset = this.sfxById.get('ui_shield_regen');
+        if (asset) {
+          void this.loadSfx(asset).then(loadedSound => {
+            if (loadedSound && this.shieldRegenShouldPlay) {
+              this.startShieldRegenLoop(loadedSound);
+            }
+          });
+        }
+      }
+      return;
+    }
+
+    if (!active) {
+      if (this.shieldRegenLoopInstance !== null) {
+        sound.stop(this.shieldRegenLoopInstance);
+        this.shieldRegenLoopInstance = null;
+      }
+      return;
+    }
+
+    this.startShieldRegenLoop(sound);
+  }
+
+  private startShieldRegenLoop(sound: Howl): void {
+    if (this.shieldRegenLoopInstance !== null) return;
+    const vol = 0.85 * this.sfxVolume * this.masterVolume;
+    this.shieldRegenLoopInstance = sound.play();
+    if (this.shieldRegenLoopInstance !== undefined) {
+      sound.loop(true, this.shieldRegenLoopInstance);
+      sound.volume(vol, this.shieldRegenLoopInstance);
+    }
+  }
+
   private getCurrentWeaponFromControl(): WeaponType | undefined {
     const controlSystemRef = (window as any).controlSystemRef;
     if (controlSystemRef?.current?.getCurrentWeapon) {
@@ -1035,7 +1110,10 @@ export class AudioSystem extends System {
   ) {
     const resolved = weapon ?? this.getCurrentWeaponFromControl();
     const soundId = this.hitboxSoundIdForWeapon(resolved);
-    const playResult = this.playWeaponSound(soundId, new Vector3(0, 0, 0), { volume: 0.65 });
+    const isMeleeMultiTarget = soundId === 'ui_hitbox_sabres' || soundId === 'ui_hitbox_sword';
+    const playResult = isMeleeMultiTarget
+      ? this.playWeaponSoundWithCooldown(soundId, new Vector3(0, 0, 0), { volume: 0.65 }, AudioSystem.MELEE_HITBOX_SOUND_COOLDOWN_MS)
+      : this.playWeaponSound(soundId, new Vector3(0, 0, 0), { volume: 0.65 });
 
     const showStrikeFlash =
       resolved === WeaponType.BOW || resolved === WeaponType.SCYTHE;

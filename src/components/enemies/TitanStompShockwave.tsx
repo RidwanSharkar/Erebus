@@ -215,7 +215,7 @@ function updateWedgeGeometry(
   attr.setXYZ(2, frontHalfWidth, y, length);
   attr.setXYZ(3, -frontHalfWidth, y, length);
   attr.needsUpdate = true;
-  geom.computeVertexNormals();
+  // Normals are unused by the custom ShaderMaterial — skip recompute every frame.
 }
 
 type DustParticle = {
@@ -265,6 +265,9 @@ function ExpandingWedge({
     () => getTitanStompPalette(burst.soulType),
     [burst.soulType],
   );
+
+  // Pre-allocate the light color so we never call `new Color` inside useFrame.
+  const _lightColor = useMemo(() => new Color(palette.lightColor), [palette]);
 
   const dustParticles = useRef<DustParticle[]>(
     Array.from({ length: DUST_COUNT }, () => ({
@@ -573,7 +576,7 @@ function ExpandingWedge({
     const frontZ = origin.z + direction.uz * length;
     stompLight.current?.setPosition(frontX, y + 0.1, frontZ);
     stompLight.current?.setIntensity(4 + 6 * Math.sin(u * Math.PI));
-    stompLight.current?.setColor(new Color(palette.lightColor));
+    stompLight.current?.setColor(_lightColor);
 
     if (u >= 1 && !doneRef.current) {
       doneRef.current = true;

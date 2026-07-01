@@ -2,6 +2,12 @@ import { useRef, useEffect, useMemo, useLayoutEffect } from 'react';
 import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Color, AdditiveBlending, DoubleSide, BackSide } from '@/utils/three-exports';
+
+// Module-level scratch vectors — DeflectShield is always a singleton.
+const _dRotScratch = new Vector3();
+const _bodyCenterScratch = new Vector3();
+const _fwdDirScratch = new Vector3();
+const _shieldPosScratch = new Vector3();
 import { WeaponType } from '@/components/dragon/weapons';
 import { getAegisShieldPalette, type AegisPaletteVariant } from '@/utils/aegisShieldPalette';
 
@@ -86,26 +92,26 @@ export default function DeflectShield({
 
     if (dragonGroupRef?.current) {
       currentPosition = dragonGroupRef.current.position;
-      currentRotation = new Vector3(
+      currentRotation = _dRotScratch.set(
         dragonGroupRef.current.rotation.x,
         dragonGroupRef.current.rotation.y,
         dragonGroupRef.current.rotation.z
       );
     }
 
-    const bodyCenter = currentPosition.clone();
-    bodyCenter.y += 1.05;
-    bodyShellRef.current.position.copy(bodyCenter);
+    _bodyCenterScratch.copy(currentPosition);
+    _bodyCenterScratch.y += 1.05;
+    bodyShellRef.current.position.copy(_bodyCenterScratch);
 
-    const forwardDirection = new Vector3(
+    _fwdDirScratch.set(
       Math.sin(currentRotation.y),
       0,
       Math.cos(currentRotation.y - 0.75)
     );
-    const shieldPosition = currentPosition.clone().add(forwardDirection.multiplyScalar(2.5));
-    shieldPosition.y += 0.25;
+    _shieldPosScratch.copy(currentPosition).add(_fwdDirScratch.multiplyScalar(2.5));
+    _shieldPosScratch.y += 0.25;
 
-    forwardGroupRef.current.position.copy(shieldPosition);
+    forwardGroupRef.current.position.copy(_shieldPosScratch);
     forwardGroupRef.current.rotation.set(
       currentRotation.x,
       currentRotation.y,
@@ -148,12 +154,15 @@ export default function DeflectShield({
     }
   });
 
-  if (!isActive) return null;
+  const colors = useMemo(() => ({
+    cMain:   new Color(palette.main),
+    cEm:     new Color(palette.emissive),
+    cDeep:   new Color(palette.emissiveDeep),
+    cAccent: new Color(palette.accent),
+  }), [palette]);
+  const { cMain, cEm, cDeep, cAccent } = colors;
 
-  const cMain = new Color(palette.main);
-  const cEm = new Color(palette.emissive);
-  const cDeep = new Color(palette.emissiveDeep);
-  const cAccent = new Color(palette.accent);
+  if (!isActive) return null;
 
   return (
     <>
