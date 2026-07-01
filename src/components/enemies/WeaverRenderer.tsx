@@ -27,6 +27,9 @@ interface WeaverRendererProps {
 
 const CAST_HEAL_DURATION   = 2000; // ms — matches weaver_castheal clip length
 const CAST_SUMMON_DURATION = 3000; // ms — matches weaver_castsummon clip length
+const CAST_LIGHTNING_DURATION = 900; // ms — matches backend WEAVER_LIGHTNING_CAST_LOCK_MS
+/** Full impale windup lock — matches backend weaverCastLockUntil duration. */
+const IMPALE_CAST_LOCK_MS = 2000 + 1000 + 750 + 300;
 const FADE_DURATION        = 1.5;  // seconds for death fade-out
 const LERP_SPEED           = 12;
 const WALK_STOP_DELAY      = 250;  // ms
@@ -63,6 +66,7 @@ export default function WeaverRenderer({
   const targetPosition   = useRef(position.clone());
   const targetRotation   = useRef(rotation);
   const isCastingRef     = useRef(false);
+  const isCastingSummonRef = useRef(false);
   const prevHealthRef    = useRef(health);
   const lastHitImpactAtRef = useRef(0);
 
@@ -80,27 +84,8 @@ export default function WeaverRenderer({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const dist = targetPosition.current.distanceTo(position);
-    targetPosition.current.copy(position);
-
-    if (dist > 8.0 && groupRef.current) {
-      groupRef.current.position.copy(position);
-    }
-
-    if (dist > 0.01 && !isCastingRef.current && !isDying) {
-      if (!isWalking) setIsWalking(true);
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
-    }
-  }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
     return () => { if (walkStopTimer.current) clearTimeout(walkStopTimer.current); };
   }, []);
-
-  useEffect(() => {
-    targetRotation.current = rotation;
-  }, [rotation]);
 
   const handleImpactFinished = useCallback(() => {
     setIsImpacting(false);
@@ -141,13 +126,13 @@ export default function WeaverRenderer({
       setIsCastingHeal(true);
       setTimeout(() => {
         setIsCastingHeal(false);
-        isCastingRef.current = isCastingSummon;
+        isCastingRef.current = isCastingSummonRef.current;
       }, CAST_HEAL_DURATION);
     };
 
     socket.on('weaver-heal-telegraph', handleHealTelegraph);
     return () => { socket.off('weaver-heal-telegraph', handleHealTelegraph); };
-  }, [id, socket, isCastingSummon]);
+  }, [id, socket]);
 
   // Weaver Impale Spike cast (post-Boss2) — reuses CastHeal animation
   useEffect(() => {
@@ -157,15 +142,15 @@ export default function WeaverRenderer({
       if (data.weaverId !== id) return;
       isCastingRef.current = true;
       setIsCastingHeal(true);
+      setTimeout(() => setIsCastingHeal(false), CAST_HEAL_DURATION);
       setTimeout(() => {
-        setIsCastingHeal(false);
-        isCastingRef.current = isCastingSummon;
-      }, CAST_HEAL_DURATION);
+        isCastingRef.current = isCastingSummonRef.current;
+      }, IMPALE_CAST_LOCK_MS);
     };
 
     socket.on('weaver-impale-spike-cast', handleImpaleCast);
     return () => { socket.off('weaver-impale-spike-cast', handleImpaleCast); };
-  }, [id, socket, isCastingSummon]);
+  }, [id, socket]);
 
   // Weaver summon ghoul telegraph
   useEffect(() => {
@@ -174,9 +159,11 @@ export default function WeaverRenderer({
     const handleSummonTelegraph = (data: { weaverId: string }) => {
       if (data.weaverId !== id) return;
       isCastingRef.current = true;
+      isCastingSummonRef.current = true;
       setIsCastingSummon(true);
       setTimeout(() => {
         setIsCastingSummon(false);
+        isCastingSummonRef.current = false;
         isCastingRef.current = false;
       }, CAST_SUMMON_DURATION);
     };
@@ -185,18 +172,52 @@ export default function WeaverRenderer({
     return () => { socket.off('weaver-summon-telegraph', handleSummonTelegraph); };
   }, [id, socket]);
 
+  // Blue weaver lightning — reuse CastHeal channel pose while locked in place
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleLightningTelegraph = (data: { weaverId: string; strikeAt?: number; timestamp?: number }) => {
+      if (data.weaverId !== id) return;
+      const lockMs = data.strikeAt && data.timestamp
+        ? Math.max(CAST_LIGHTNING_DURATION, data.strikeAt - data.timestamp)
+        : CAST_LIGHTNING_DURATION;
+      isCastingRef.current = true;
+      setIsCastingHeal(true);
+      setTimeout(() => setIsCastingHeal(false), Math.min(lockMs, CAST_HEAL_DURATION));
+      setTimeout(() => {
+        isCastingRef.current = isCastingSummonRef.current;
+      }, lockMs);
+    };
+
+    socket.on('weaver-lightning-telegraph', handleLightningTelegraph);
+    return () => { socket.off('weaver-lightning-telegraph', handleLightningTelegraph); };
+  }, [id, socket]);
+
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+    const isCastLocked = isCastingRef.current;
 
-    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
 
-    group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
+    if (dist > 8.0 && !isCastLocked) {
+      group.position.copy(targetPosition.current);
+    }
 
-    let deltaAngle = targetRotation.current - group.rotation.y;
-    while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
-    while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
-    group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+    if (dist > 0.01 && !isCastLocked && !isDying) {
+      if (!isWalking) setIsWalking(true);
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
+    }
+
+    if (!isCastLocked) {
+      group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
+
+      let deltaAngle = targetRotation.current - group.rotation.y;
+      while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
+      while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
+      group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+    }
 
     if (isDying) {
       fadeTimer.current += delta;

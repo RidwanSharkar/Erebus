@@ -17,6 +17,7 @@ import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
 import { campHpTheme } from '@/utils/campHpTheme';
+import BossBoneWings from './BossBoneWings';
 
 interface Boss2RendererProps {
   id: string;
@@ -219,9 +220,10 @@ export default function Boss2Renderer({
             isDying={isDying}
           />
           <group position={[0, 1.85, 0.-.28]} scale={[1.25, 1.25, 1.25]}>
-            <BoneWings isLeftWing parentRef={groupRef as React.RefObject<Group>} isDashing={isBlinking || isLaunching} />
-            <BoneWings isLeftWing={false} parentRef={groupRef as React.RefObject<Group>} isDashing={isBlinking || isLaunching} />
+            <BossBoneWings isLeftWing parentRef={groupRef as React.RefObject<Group>} isDashing={isBlinking || isLaunching} />
+            <BossBoneWings isLeftWing={false} parentRef={groupRef as React.RefObject<Group>} isDashing={isBlinking || isLaunching} />
           </group>
+      
         </group>
 
         <EnemyDynamicLight color="#ff2222" intensity={3.5} distance={12} decay={2} position={[0, 3, 0]} />

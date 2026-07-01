@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
 import HotkeyPanel from './HotkeyPanel';
+import ClassTalentPanel from './ClassTalentPanel';
 import { SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
 import { AbilityLoadout } from '@/utils/weaponAbilities';
 import type { TalentLoadout } from '@/utils/talents';
@@ -366,6 +367,13 @@ export default function GameUI({
         </div>
       </div>
       
+      {/* Class + duo boons — top-left vertical panel */}
+      <ClassTalentPanel
+        currentWeapon={currentWeapon}
+        talentLoadout={talentLoadout ?? null}
+        abilityLoadout={abilityLoadout}
+      />
+
       {/* Hotkey Panel - positioned below the main UI */}
       <HotkeyPanel
         currentWeapon={currentWeapon}

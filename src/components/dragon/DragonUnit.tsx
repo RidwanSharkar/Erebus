@@ -24,7 +24,7 @@ import SpellCastingAura from '../weapons/SpellCastingAura';
 import SpellCastingHalos from '../weapons/SpellCastingHalos';
 import DeflectShield from '../weapons/DeflectShield';
 import type { AegisPaletteVariant } from '@/utils/aegisShieldPalette';
-import type { VorpalGustStabBoonBeamTheme } from '@/utils/talents';
+import type { VorpalGustStabBoonBeamTheme, TalentLoadout } from '@/utils/talents';
 
 interface DragonUnitProps {
   position?: Vector3;
@@ -32,6 +32,7 @@ interface DragonUnitProps {
   isDashing?: boolean;
   entityId?: number; // Player's entity ID
   dashCharges?: Array<DashChargeStatus>;
+  dashRechargeDurationSec?: number;
   chargeDirection?: Vector3;
   currentWeapon?: WeaponType;
   currentSubclass?: WeaponSubclass;
@@ -40,6 +41,10 @@ interface DragonUnitProps {
   isSwinging?: boolean;
   isSpinning?: boolean;
   purchasedItems?: string[]; // Purchased cosmetic items
+  /** Co-op duo boon (green + purple) — attaches an AscendantBoneWings back cosmetic. */
+  hasFatebreaker?: boolean;
+  /** Co-op duo boon (red + purple) — attaches a small BoneWings back cosmetic. */
+  hasFrostQueen?: boolean;
   /** Co-op / progression level — crest gains an outer layer at 2+. */
   playerLevel?: number;
   /** Cyclone Rush — Runeblade Charge spin + damage. */
@@ -56,6 +61,10 @@ interface DragonUnitProps {
   crusaderBladeThemeActive?: boolean;
   /** Local: Blizzard talent — storm visibility from ControlSystem (omit when talent not taken). */
   getRunebladeBlizzardTalentActive?: () => boolean;
+  /** Local: Awakened Eye — scaled Runeblade Blizzard storm hit radius. */
+  getRunebladeBlizzardStormHitRadius?: () => number;
+  /** Local: Awakened Eye — denser Runeblade Blizzard frost particles. */
+  getRunebladeBlizzardParticleSpawnMultiplier?: () => number;
   onBowRelease?: (finalProgress: number, isPerfectShot?: boolean) => void;
   onScytheSwingComplete?: () => void;
   onSwordSwingComplete?: () => void;
@@ -131,6 +140,8 @@ interface DragonUnitProps {
   barrageChargeProgress?: number;
   /** Scythe Crossentropy — charge phase (HUD / remote sync). */
   isCrossentropyCharging?: boolean;
+  /** Local player talent loadout — drives scythe handle trail colors. */
+  talentLoadout?: TalentLoadout | null;
   /** Scythe Mantra — Summon Totem charge (HUD / remote sync). */
   isSummonTotemCharging?: boolean;
   isCobraShotCharging?: boolean;
@@ -191,6 +202,7 @@ export default function DragonUnit({
     { isAvailable: true, cooldownRemaining: 0 },
     { isAvailable: true, cooldownRemaining: 0 }
   ],
+  dashRechargeDurationSec = 8,
   chargeDirection,
   currentWeapon = WeaponType.BOW,
   currentSubclass = WeaponSubclass.ELEMENTAL,
@@ -228,6 +240,8 @@ export default function DragonUnit({
   isCorruptedAuraActive = false,
   crusaderBladeThemeActive = false,
   getRunebladeBlizzardTalentActive,
+  getRunebladeBlizzardStormHitRadius,
+  getRunebladeBlizzardParticleSpawnMultiplier,
   onSmiteComplete = () => {},
   onColossusStrikeComplete = () => {},
   onDeathGraspComplete = () => {},
@@ -251,6 +265,7 @@ export default function DragonUnit({
   isBarrageCharging = false,
   barrageChargeProgress = 0,
   isCrossentropyCharging = false,
+  talentLoadout = null,
   isSummonTotemCharging = false,
   isCobraShotCharging = false,
   cobraShotChargeProgress = 0,
@@ -271,6 +286,8 @@ export default function DragonUnit({
   isWingJetsActive = false,
   combatSystem,
   purchasedItems = [],
+  hasFatebreaker = false,
+  hasFrostQueen = false,
   hideBody = false,
   playerLevel = 1,
   runebladeStoredCharge = false,
@@ -486,6 +503,8 @@ export default function DragonUnit({
           level={1}
           isEmpowered={false}
           isSpinning={isSpinning}
+          talentLoadout={talentLoadout}
+          isCrossentropyCharging={isCrossentropyCharging}
         />
       );
     } else if (currentWeapon === WeaponType.SWORD) {
@@ -589,6 +608,8 @@ export default function DragonUnit({
           getExecutionerFlatBonus={getRunebladeExecutionerFlatBonus}
           getCrusaderLmbFlatBonus={getRunebladeCrusaderLmbFlatBonus}
           getBlizzardTalentActive={getRunebladeBlizzardTalentActive}
+          getBlizzardStormHitRadius={getRunebladeBlizzardStormHitRadius}
+          getBlizzardParticleSpawnMultiplier={getRunebladeBlizzardParticleSpawnMultiplier}
           mushroomTargets={mushroomTargets}
           onMushroomHit={onMushroomHit}
         />
@@ -638,7 +659,7 @@ export default function DragonUnit({
     </group>
   ), []);
 
-  const hasAscendantWings = purchasedItems.includes('ascendant_wings');
+  const hasAscendantWings = purchasedItems.includes('ascendant_wings'); //OUTDATED
 
   const wings = useMemo(() => (
     <group position={[0, 0.2, -0.15]}>
@@ -732,6 +753,30 @@ export default function DragonUnit({
         />
       )}
 
+      {/* FATEBREAKER (duo: green + purple) — small AscendantBoneWings back cosmetic, scaled like the crest */}
+      {hasFatebreaker && (
+        <group position={[crestPosition[0], crestPosition[1] - 0.4, crestPosition[2] - 1]} scale={[0.7, 0.7, 0.7]}>
+          <group rotation={[0, Math.PI / 5.5, 0]}>
+            <AscendantBoneWings isLeftWing={true} parentRef={groupRef} isDashing={isDashing} />
+          </group>
+          <group rotation={[0, -Math.PI / 5.5, 0]}>
+            <AscendantBoneWings isLeftWing={false} parentRef={groupRef} isDashing={isDashing} />
+          </group>
+        </group>
+      )}
+
+      {/* FROST QUEEN (duo: red + purple) — small BoneWings back cosmetic, scaled like the crest */}
+      {hasFrostQueen && (
+        <group position={[crestPosition[0], crestPosition[1] - 0.1, crestPosition[2] - 0.6]} scale={[0.4, 0.4, 0.4]}>
+          <group rotation={[0, Math.PI / 5.5, 0]}>
+            <BoneWings isLeftWing={true} parentRef={groupRef} isDashing={isDashing} />
+          </group>
+          <group rotation={[0, -Math.PI / 5.5, 0]}>
+            <BoneWings isLeftWing={false} parentRef={groupRef} isDashing={isDashing} />
+          </group>
+        </group>
+      )}
+
       {/* SPELL CASTING AURA — local player only; shown after LMB hold on any weapon */}
       {isLocalPlayer && (
         <>
@@ -751,6 +796,7 @@ export default function DragonUnit({
       <ChargedOrbitals
         parentRef={groupRef}
         dashCharges={dashCharges}
+        rechargeDurationSec={dashRechargeDurationSec}
         weaponType={currentWeapon}
         weaponSubclass={currentSubclass}
         isCorruptedAuraActive={isCorruptedAuraActive}

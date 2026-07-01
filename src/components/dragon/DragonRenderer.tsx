@@ -30,6 +30,7 @@ import {
   WRATHFUL_COMBO_CRIT_CHANCE_ADD,
   WRATHFUL_COMBO_CRIT_DAMAGE_MULT_ADD,
   type VorpalGustStabBoonBeamTheme,
+  type TalentLoadout,
 } from '@/utils/talents';
 
 /**
@@ -61,6 +62,10 @@ interface DragonRendererProps {
   chargeDirection?: Vector3;
   isSwinging?: boolean;
   purchasedItems?: string[];
+  /** Co-op duo boon (green + purple) — attaches AscendantBoneWings back cosmetic. */
+  hasFatebreaker?: boolean;
+  /** Co-op duo boon (red + purple) — attaches a small BoneWings back cosmetic. */
+  hasFrostQueen?: boolean;
   isSpinning?: boolean;
   onBowRelease?: (finalProgress: number, isPerfectShot?: boolean) => void;
   onScytheSwingComplete?: () => void;
@@ -208,8 +213,14 @@ interface DragonRendererProps {
   crusaderBladeThemeActive?: boolean;
   /** Local: Blizzard talent storm (omit when talent not taken). */
   getRunebladeBlizzardTalentActive?: () => boolean;
+  /** Local: Awakened Eye — scaled Runeblade Blizzard storm hit radius. */
+  getRunebladeBlizzardStormHitRadius?: () => number;
+  /** Local: Awakened Eye — denser Runeblade Blizzard frost particles. */
+  getRunebladeBlizzardParticleSpawnMultiplier?: () => number;
   /** Room-boom dash boons override the weapon ghost trail while unlocked. */
   roomBoomGhostTrailColor?: string;
+  /** Local player talent loadout — drives scythe handle trail colors. */
+  talentLoadout?: TalentLoadout | null;
 }
 
 export default function DragonRenderer({
@@ -289,6 +300,8 @@ export default function DragonRenderer({
   combatSystem,
   onHeal = () => {},
   purchasedItems = [],
+  hasFatebreaker = false,
+  hasFrostQueen = false,
   hideBody = false,
   playerLevel = 1,
   wrathfulTalonsReturnCrit = false,
@@ -311,7 +324,10 @@ export default function DragonRenderer({
   getRunebladeExecutionerFlatBonus,
   getRunebladeCrusaderLmbFlatBonus,
   getRunebladeBlizzardTalentActive,
+  getRunebladeBlizzardStormHitRadius,
+  getRunebladeBlizzardParticleSpawnMultiplier,
   roomBoomGhostTrailColor,
+  talentLoadout = null,
   mushroomTargets,
   onMushroomHit,
 }: DragonRendererProps) {
@@ -348,6 +364,7 @@ export default function DragonRenderer({
     { isAvailable: true, cooldownRemaining: 0 },
     { isAvailable: true, cooldownRemaining: 0 },
   ]);
+  const dashRechargeDurationSec = useRef(8);
   // Use chargeDirection from props, with fallback to local state for backward compatibility
   const [localChargeDirection, setLocalChargeDirection] = useState<Vector3 | undefined>(undefined);
   const effectiveChargeDirection = chargeDirection || localChargeDirection;
@@ -478,6 +495,9 @@ export default function DragonRenderer({
           if (typeof movement.getDashChargeStatus === 'function') {
             const currentChargeStatus = movement.getDashChargeStatus();
             setDashCharges(currentChargeStatus);
+            if (typeof movement.getDashChargeRechargeSec === 'function') {
+              dashRechargeDurationSec.current = movement.getDashChargeRechargeSec();
+            }
           } else {
 
           }
@@ -786,6 +806,7 @@ export default function DragonRenderer({
           isDashing={isDashing.current}
           entityId={entityId}
           dashCharges={dashCharges}
+          dashRechargeDurationSec={dashRechargeDurationSec.current}
           chargeDirection={effectiveChargeDirection}
           currentWeapon={currentWeapon}
           currentSubclass={currentSubclass}
@@ -841,6 +862,7 @@ export default function DragonRenderer({
           isBarrageCharging={isBarrageCharging}
           barrageChargeProgress={barrageChargeProgress}
           isCrossentropyCharging={isCrossentropyCharging}
+          talentLoadout={talentLoadout}
           isSummonTotemCharging={isSummonTotemCharging}
           isCobraShotCharging={isCobraShotCharging}
           cobraShotChargeProgress={cobraShotChargeProgress}
@@ -859,6 +881,8 @@ export default function DragonRenderer({
           rageSpent={rageSpent}
           combatSystem={combatSystem}
           purchasedItems={purchasedItems}
+          hasFatebreaker={hasFatebreaker}
+          hasFrostQueen={hasFrostQueen}
           hideBody={hideBody}
           playerLevel={playerLevel}
           runebladeStoredCharge={runebladeStoredCharge}
@@ -867,6 +891,8 @@ export default function DragonRenderer({
           getRunebladeExecutionerFlatBonus={getRunebladeExecutionerFlatBonus}
           getRunebladeCrusaderLmbFlatBonus={getRunebladeCrusaderLmbFlatBonus}
           getRunebladeBlizzardTalentActive={getRunebladeBlizzardTalentActive}
+          getRunebladeBlizzardStormHitRadius={getRunebladeBlizzardStormHitRadius}
+          getRunebladeBlizzardParticleSpawnMultiplier={getRunebladeBlizzardParticleSpawnMultiplier}
           mushroomTargets={mushroomTargets}
           onMushroomHit={onMushroomHit}
           isLocalPlayer={isLocalPlayer}

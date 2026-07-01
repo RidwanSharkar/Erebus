@@ -153,9 +153,7 @@ const Environment: React.FC<EnvironmentProps> = ({
       {/* Glowing arcane runes on ground near pillars and camp centers */}
     
       {/* Volumetric god-ray shafts descending from the blood moon */}
-      <VolumetricMoonRays />
-
-
+     
 
     </group>
   );

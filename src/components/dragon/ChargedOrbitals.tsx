@@ -19,9 +19,11 @@ interface ChargedOrbitalsProps {
   yOffset?: number;
   customActiveColor?: string;
   customInactiveColor?: string;
+  /** Per-charge recharge duration in seconds (default 8; 6.4 with Overclock). */
+  rechargeDurationSec?: number;
 }
 
-const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weaponSubclass, isCorruptedAuraActive, yOffset = 0, customActiveColor, customInactiveColor = '#333333' }: ChargedOrbitalsProps) => {
+const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weaponSubclass, isCorruptedAuraActive, yOffset = 0, customActiveColor, customInactiveColor = '#333333', rechargeDurationSec = 8 }: ChargedOrbitalsProps) => {
   const orbitalsRef = useRef<Group>(null);
   
   const getOrbitalColor = () => {
@@ -118,8 +120,16 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
     <group ref={orbitalsRef}>
       {dashCharges.map((charge, index) => {
         const isAvailable = charge.isAvailable;
+        const rechargeProgress = isAvailable || rechargeDurationSec <= 0
+          ? 1
+          : Math.max(0, Math.min(1, 1 - charge.cooldownRemaining / rechargeDurationSec));
         const activeColor = getOrbitalColor();
         const inactiveColor = customInactiveColor;
+        const emissiveIntensity = isAvailable ? 0.3 : 0.1 + rechargeProgress * 0.2;
+        const outerEmissiveIntensity = isAvailable ? 0.5 : 0.1 + rechargeProgress * 0.4;
+        const opacity = isAvailable ? 0.8 : 0.4 + rechargeProgress * 0.4;
+        const outerOpacity = isAvailable ? 0.4 : 0.15 + rechargeProgress * 0.25;
+        const lightIntensity = isAvailable ? 1 : 0.1 + rechargeProgress * 0.9;
         
         return (
           <group key={index}>
@@ -128,9 +138,9 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
               <meshStandardMaterial
                 color={new Color(isAvailable ? activeColor : inactiveColor)}
                 emissive={new Color(isAvailable ? activeColor : inactiveColor)}
-                emissiveIntensity={isAvailable ? 0.3 : 0.1}
+                emissiveIntensity={emissiveIntensity}
                 transparent
-                opacity={isAvailable ? 0.8 : 0.4}
+                opacity={opacity}
               />
             </mesh>
 
@@ -139,9 +149,9 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
               <meshStandardMaterial
                 color={isAvailable ? activeColor : inactiveColor}
                 emissive={isAvailable ? activeColor : inactiveColor}
-                emissiveIntensity={isAvailable ? .5 : 0.1}
+                emissiveIntensity={outerEmissiveIntensity}
                 transparent
-                opacity={isAvailable ? 0.4 : 0.15}
+                opacity={outerOpacity}
                 depthWrite={false}
                 side={DoubleSide}
                 blending={AdditiveBlending}
@@ -151,7 +161,7 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
 
             <PooledEffectLight
               color={isAvailable ? activeColor : inactiveColor}
-              intensity={isAvailable ? 1 : 0.1}
+              intensity={lightIntensity}
               distance={2.3}
               decay={3}
             />

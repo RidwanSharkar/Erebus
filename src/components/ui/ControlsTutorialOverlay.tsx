@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 const TOTAL_MS = 7000;
-const ENTER_MS = 400;
+const ENTER_MS = 250;
 const EXIT_MS = 500;
 const SPOTLIGHT_MS = 6000;
 
@@ -178,12 +178,13 @@ export default function ControlsTutorialOverlay({
 
   if (!mounted) return null;
 
+  const enterEarly = (105 / TOTAL_MS) * 100;
   const enterEnd = (ENTER_MS / TOTAL_MS) * 100;
   const exitStart = ((TOTAL_MS - EXIT_MS) / TOTAL_MS) * 100;
 
   return (
     <div
-      className="controls-tutorial fixed inset-0 z-[340] flex items-center justify-center px-4"
+      className="controls-tutorial fixed inset-0 z-[340] flex items-start justify-end p-3 sm:p-4"
       onClick={handleClose}
       role="presentation"
     >
@@ -289,7 +290,7 @@ export default function ControlsTutorialOverlay({
 
       <style jsx>{`
         .controls-tutorial-panel--auto {
-          animation: controlsPanelAuto ${TOTAL_MS}ms ease-in-out forwards;
+          animation: controlsPanelAuto ${TOTAL_MS}ms ease-out forwards;
         }
 
         .controls-tutorial-panel--persistent {
@@ -300,6 +301,10 @@ export default function ControlsTutorialOverlay({
           0% {
             opacity: 0;
             transform: scale(0.94) translateY(12px);
+          }
+          ${enterEarly}% {
+            opacity: 0.95;
+            transform: scale(0.98) translateY(4px);
           }
           ${enterEnd}% {
             opacity: 1;
@@ -361,7 +366,7 @@ export default function ControlsTutorialOverlay({
         }
 
         .controls-title {
-          animation: titleEnter 700ms ease-out forwards;
+          animation: titleEnter 450ms ease-out forwards;
           letter-spacing: 0.42em;
           text-shadow: 0 0 16px rgba(100, 160, 255, 0.35);
         }
@@ -380,14 +385,14 @@ export default function ControlsTutorialOverlay({
         }
 
         .control-section {
-          animation: sectionStagger 500ms ease-out backwards;
+          animation: sectionStagger 320ms ease-out backwards;
         }
 
-        .control-section--move { animation-delay: 120ms; }
-        .control-section--dash { animation-delay: 200ms; }
-        .control-section--attack { animation-delay: 280ms; }
-        .control-section--camera { animation-delay: 360ms; }
-        .control-section--jump { animation-delay: 440ms; }
+        .control-section--move { animation-delay: 40ms; }
+        .control-section--dash { animation-delay: 80ms; }
+        .control-section--attack { animation-delay: 120ms; }
+        .control-section--camera { animation-delay: 160ms; }
+        .control-section--jump { animation-delay: 200ms; }
 
         @keyframes sectionStagger {
           0% {
@@ -404,11 +409,11 @@ export default function ControlsTutorialOverlay({
           transition: opacity 0.45s ease, transform 0.45s ease, filter 0.45s ease;
         }
 
-        .control-section--move .control-section-inner { animation: spotlightMove ${SPOTLIGHT_MS}ms ease-in-out infinite; }
-        .control-section--dash .control-section-inner { animation: spotlightDash ${SPOTLIGHT_MS}ms ease-in-out infinite; }
-        .control-section--attack .control-section-inner { animation: spotlightAttack ${SPOTLIGHT_MS}ms ease-in-out infinite; }
-        .control-section--camera .control-section-inner { animation: spotlightCamera ${SPOTLIGHT_MS}ms ease-in-out infinite; }
-        .control-section--jump .control-section-inner { animation: spotlightJump ${SPOTLIGHT_MS}ms ease-in-out infinite; }
+        .control-section--move .control-section-inner { animation: spotlightMove ${SPOTLIGHT_MS}ms ease-in-out ${ENTER_MS}ms infinite; }
+        .control-section--dash .control-section-inner { animation: spotlightDash ${SPOTLIGHT_MS}ms ease-in-out ${ENTER_MS}ms infinite; }
+        .control-section--attack .control-section-inner { animation: spotlightAttack ${SPOTLIGHT_MS}ms ease-in-out ${ENTER_MS}ms infinite; }
+        .control-section--camera .control-section-inner { animation: spotlightCamera ${SPOTLIGHT_MS}ms ease-in-out ${ENTER_MS}ms infinite; }
+        .control-section--jump .control-section-inner { animation: spotlightJump ${SPOTLIGHT_MS}ms ease-in-out ${ENTER_MS}ms infinite; }
 
         @keyframes spotlightMove {
           0%, 18% { opacity: 1; transform: scale(1.03); filter: drop-shadow(0 0 8px rgba(100, 180, 255, 0.35)); }

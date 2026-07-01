@@ -6,7 +6,7 @@ import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Group, AdditiveBlending } from 'three';
 
-type CubeColor = 'green' | 'red' | 'purple';
+type CubeColor = 'green' | 'red' | 'purple' | 'blue';
 
 interface CubeSoulEffectProps {
   color: CubeColor;
@@ -18,6 +18,7 @@ const CUBE_COLORS: Record<CubeColor, { core: string; glow: string; light: string
   green:  { core: '#00ff88', glow: '#00cc55', light: '#00ff66' },
   red:    { core: '#ff3344', glow: '#cc1122', light: '#ff2233' },
   purple: { core: '#cc44ff', glow: '#8811cc', light: '#bb33ff' },
+  blue:   { core: '#33ccff', glow: '#0099dd', light: '#44ddff' },
 };
 
 // 6 orbiting cube particles in a ring

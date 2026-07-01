@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Group, Vector3, TorusGeometry, TetrahedronGeometry, MeshStandardMaterial } from 'three';
 import { useFrame } from '@react-three/fiber';
 import BlizzardShard from './BlizzardShard';
-import { BLIZZARD_STORM_HIT_RADIUS } from '@/utils/talents';
+import { BLIZZARD_STORM_HIT_RADIUS, ARCTIC_BLIZZARD_HIT_RADIUS } from '@/utils/talents';
 
 export const sharedGeometries = {
   torus: new TorusGeometry(0.8, 0.075, 8, 32),
@@ -44,6 +44,8 @@ interface BlizzardProps {
   damageTickIntervalMs?: number;
   /** XZ hit radius; default `BLIZZARD_STORM_HIT_RADIUS`. */
   hitRadius?: number;
+  /** Multiplier for orbital/falling shard spawn chance (Awakened Eye). */
+  particleSpawnMultiplier?: number;
   visualPreset?: 'default' | 'concentrated';
 }
 
@@ -59,6 +61,7 @@ export default function Blizzard({
   flatDamagePerTick,
   damageTickIntervalMs = 1000,
   hitRadius = BLIZZARD_STORM_HIT_RADIUS,
+  particleSpawnMultiplier = 1,
   visualPreset = 'default',
 }: BlizzardProps) {
   const stormRef = useRef<Group>(null);
@@ -69,18 +72,21 @@ export default function Blizzard({
   const shardsRef = useRef<Array<{ id: number; position: Vector3; type: 'orbital' | 'falling' }>>([]);
   const aurasRef = useRef<Array<{ id: number }>>([]);
 
-  const ORBITAL_RADIUS = visualPreset === 'concentrated' ? 0.35 : 0.8;
-  const FALLING_RADIUS = visualPreset === 'concentrated' ? 1.1 : 2.5;
-  const ORBITAL_HEIGHT = visualPreset === 'concentrated' ? 1.55 : 2.35;
-  const FALLING_HEIGHT = visualPreset === 'concentrated' ? 0.85 : 1.2;
-  const orbitalSpawnChance = visualPreset === 'concentrated' ? 0.42 : 0.3;
-  const fallingSpawnChance = visualPreset === 'concentrated' ? 0.75 : 0.8;
+  const baselineHitRadius =
+    visualPreset === 'concentrated' ? ARCTIC_BLIZZARD_HIT_RADIUS : BLIZZARD_STORM_HIT_RADIUS;
+  const radiusScale = hitRadius / baselineHitRadius;
+  const ORBITAL_RADIUS = (visualPreset === 'concentrated' ? 0.35 : 0.8) * radiusScale;
+  const FALLING_RADIUS = (visualPreset === 'concentrated' ? 1.1 : 2.5) * radiusScale;
+  const ORBITAL_HEIGHT = (visualPreset === 'concentrated' ? 1.55 : 2.35) * radiusScale;
+  const FALLING_HEIGHT = (visualPreset === 'concentrated' ? 0.85 : 1.2) * radiusScale;
+  const orbitalSpawnChance = (visualPreset === 'concentrated' ? 0.42 : 0.3) * particleSpawnMultiplier;
+  const fallingSpawnChance = (visualPreset === 'concentrated' ? 0.75 : 0.8) * particleSpawnMultiplier;
 
   useEffect(() => {
     endedRef.current = false;
     progressRef.current = 0;
     lastDamageTime.current = 0;
-  }, [durationSeconds, flatDamagePerTick, damageTickIntervalMs, hitRadius, visualPreset]);
+  }, [durationSeconds, flatDamagePerTick, damageTickIntervalMs, hitRadius, particleSpawnMultiplier, visualPreset]);
 
   useFrame((_, delta) => {
     if (!stormRef.current) return;

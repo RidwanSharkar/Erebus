@@ -38,8 +38,11 @@ import KnightDeathGraspProjectile from './enemies/KnightDeathGraspProjectile';
 import WarlockProjectile from './enemies/WarlockProjectile';
 import WarlockFlameStrike from './enemies/WarlockFlameStrike';
 import WarlockVoidBoltExplosion from './enemies/WarlockVoidBoltExplosion';
+import GreedFireProjectile from './enemies/GreedFireProjectile';
+import GreedEmberPatch from './enemies/GreedEmberPatch';
 import Meteor from './enemies/Meteor';
 import CrossentropyMeteor from './projectiles/CrossentropyMeteor';
+import CrossentropyExplosion from './projectiles/CrossentropyExplosion';
 import CloudkillArrow from './projectiles/CloudkillArrow';
 import BossTeleportEffect from './enemies/BossTeleportEffect';
 import BossLeapTelegraph from './enemies/BossLeapTelegraph';
@@ -103,6 +106,9 @@ import {
   shouldApplyHighCaliberTalent,
   getStaggerProcBaseDamage,
   getArcticBlizzardDamagePerTickFromStats,
+  getArcticBlizzardHitRadius,
+  getRunebladeBlizzardStormHitRadius,
+  getBlizzardParticleSpawnMultiplier,
   getDualCoilLateralVector,
   CROSSENTROPY_MAX_TRAVEL_DISTANCE,
   REANIMATE_SUNWELL_HEAL,
@@ -122,8 +128,14 @@ import {
   shouldApplyStaggeringDashTalent,
   shouldApplyBloodleechTalent,
   shouldApplyRebukeTalent,
+  shouldApplyTyrantsCloakTalent,
   shouldApplyMomentumRiftTalent,
   shouldApplyOrbShieldTalent,
+  shouldApplyFatebreakerTalent,
+  BLOOD_ORBS_DASH_HP_COST,
+  getDashChargeRechargeRateMultiplier,
+  shouldApplyFrostQueenTalent,
+  shouldApplyMonsoonTalent,
   shouldApplyVorpalGustTalent,
   getVorpalGustStabBoonBeamTheme,
   type VorpalGustStabBoonBeamTheme,
@@ -132,6 +144,7 @@ import {
   INFERNAL_DASH_RADIUS,
   REBUKE_DAMAGE,
   REBUKE_ICD_SEC,
+  TYRANTS_CLOAK_ICD_SEC,
   ORB_SHIELD_BASE_HEAL,
   ORB_SHIELD_ICD_SEC,
   GLACIAL_DASH_FREEZE_DURATION_MS,
@@ -206,6 +219,7 @@ import ArcticBlizzardManager from '@/components/weapons/Blizzard/ArcticBlizzardM
 import StunManager, { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
 import EntangleManager, { addGlobalEntangledEnemy } from '@/components/weapons/EntangleManager';
 import IgniteEffectManager, { addGlobalIgnitedEnemy } from '@/components/weapons/IgniteEffectManager';
+import FireStormManager from '@/components/weapons/FireStormManager';
 
 import CobraShotManager from '@/components/projectiles/CobraShotManager';
 
@@ -280,6 +294,7 @@ const TemplarRenderer = React.lazy(() => import('./enemies/TemplarRenderer'));
 const TitanRenderer = React.lazy(() => import('./enemies/TitanRenderer'));
 const ViperRenderer = React.lazy(() => import('./enemies/ViperRenderer'));
 const WarlockRenderer = React.lazy(() => import('./enemies/WarlockRenderer'));
+const GreedRenderer = React.lazy(() => import('./enemies/GreedRenderer'));
 
 function knightSmiteVariantFromSoulType(soulType?: string): KnightSmiteLightningVariant {
   switch (soulType) {
@@ -796,6 +811,9 @@ function preloadEnemyModelsForTypes(types: Iterable<string>): void {
         case 'boss':
           void import('./enemies/BossGlbModel').then(mod => mod.preloadBossModels());
           break;
+        case 'greed':
+          void import('./enemies/GreedModel').then(mod => mod.preloadGreedModels());
+          break;
       }
     }, 1200);
   });
@@ -816,6 +834,7 @@ async function warmupLazyRendererChunks(): Promise<void> {
     import('./enemies/TitanRenderer'),
     import('./enemies/ViperRenderer'),
     import('./enemies/WarlockRenderer'),
+    import('./enemies/GreedRenderer'),
   ]).catch((e) => console.warn('Lazy renderer chunk warmup failed (non-fatal):', e));
 }
 
@@ -1255,6 +1274,7 @@ export function CoopGameScene({
     damageMushroom,
     mushroomState,
     detonateWyvernConcentratedVenom,
+    triggerTyrantsCloakStrike,
     applyStatusEffect, // For applying status effects to enemies (freeze, slow, corrupted)
     socket,
     updatePlayerEssence,
@@ -1290,6 +1310,7 @@ export function CoopGameScene({
 
   const talentLoadoutRef = useRef(talentLoadout);
   const lastRebukeTimeSecRef = useRef(0);
+  const lastTyrantsCloakTimeSecRef = useRef(0);
   const lastOrbShieldTimeSecRef = useRef(0);
   const abilityLoadoutRef = useRef(abilityLoadout ?? null);
   useEffect(() => {
@@ -1945,6 +1966,26 @@ export function CoopGameScene({
     [effectiveCombatStats],
   );
 
+  const getArcticBlizzardHitRadiusCallback = useCallback(
+    () => getArcticBlizzardHitRadius(talentLoadoutRef.current),
+    [],
+  );
+
+  const getArcticBlizzardParticleMultiplier = useCallback(
+    () => getBlizzardParticleSpawnMultiplier(talentLoadoutRef.current),
+    [],
+  );
+
+  const getRunebladeBlizzardStormHitRadiusCallback = useCallback(
+    () => getRunebladeBlizzardStormHitRadius(talentLoadoutRef.current),
+    [],
+  );
+
+  const getRunebladeBlizzardParticleMultiplier = useCallback(
+    () => getBlizzardParticleSpawnMultiplier(talentLoadoutRef.current),
+    [],
+  );
+
   const resolveTotemEnemyFrozen = useCallback((targetId: string) => {
     const world = engineRef.current?.getWorld();
     if (!world) return false;
@@ -2412,6 +2453,7 @@ export function CoopGameScene({
   }
   const [boss2ArchonLightnings, setBoss2ArchonLightnings] = useState<Boss2ArchonLightningState[]>([]);
   const [warlockArchonShocks, setWarlockArchonShocks] = useState<Boss2ArchonLightningState[]>([]);
+  const [knightStormLashZaps, setKnightStormLashZaps] = useState<Boss2ArchonLightningState[]>([]);
   const [boss3NovaBursts, setBoss3NovaBursts] = useState<Boss3NovaBurst[]>([]);
 
   interface TitanCannonAbilityState {
@@ -2484,6 +2526,12 @@ export function CoopGameScene({
   }
   const [martyrDetonationExplosions, setMartyrDetonationExplosions] = useState<MartyrDetonationExplosionState[]>([]);
 
+  interface FissionDetonationState {
+    id: string;
+    position: Vector3;
+  }
+  const [fissionDetonations, setFissionDetonations] = useState<FissionDetonationState[]>([]);
+
   interface DeathFlashExplosionState {
     id: string;
     position: { x: number; y: number; z: number };
@@ -2510,6 +2558,8 @@ export function CoopGameScene({
   interface StaggerProcEffectState {
     id: string;
     position: Vector3;
+    magmaCurrent?: boolean;
+    forceOfNature?: boolean;
   }
   const [staggerProcEffects, setStaggerProcEffects] = useState<StaggerProcEffectState[]>([]);
 
@@ -2561,6 +2611,7 @@ export function CoopGameScene({
     startPosition: Vector3;
     targetPosition: Vector3;
     damage: number;
+    soulType?: string;
     daggerIndex: number; // 0, 1, or 2 — determines which damage sound plays on hit
   }
   const [shadeDaggers, setShadeDaggers] = useState<ShadeDaggerState[]>([]);
@@ -2574,6 +2625,33 @@ export function CoopGameScene({
     warlockId: string;
   }
   const [warlockProjectiles, setWarlockProjectiles] = useState<WarlockProjectileState[]>([]);
+
+  // Greed (bonus enemy) fireball state — one entry per in-flight comet
+  interface GreedFireballState {
+    id: string;
+    startPosition: Vector3;
+    targetPosition: Vector3;
+    greedId: string;
+  }
+  const [greedFireballs, setGreedFireballs] = useState<GreedFireballState[]>([]);
+
+  // Greed (bonus enemy) blue ember hazard zones — one entry per active ground patch
+  interface GreedEmberZoneState {
+    id: string;
+    position: Vector3;
+    radius: number;
+    durationMs: number;
+  }
+  const [greedEmberZones, setGreedEmberZones] = useState<GreedEmberZoneState[]>([]);
+
+  // Purple warlock meteor impact ember hazard zones
+  interface WarlockMeteorEmberZoneState {
+    id: string;
+    position: Vector3;
+    radius: number;
+    durationMs: number;
+  }
+  const [warlockMeteorEmberZones, setWarlockMeteorEmberZones] = useState<WarlockMeteorEmberZoneState[]>([]);
 
   // Warlock flame-strike state — one entry per active AOE eruption
   interface WarlockFlameStrikeState {
@@ -3266,6 +3344,8 @@ export function CoopGameScene({
       radius: number,
       damage: number,
       status?: { type: 'ignite' | 'freeze'; durationMs: number },
+      damageType?: string,
+      infernalDashRoom?: boolean,
     ) => {
       if (!world || !combatSystem) return;
       for (const entity of world.queryEntities([Enemy, Transform, Health])) {
@@ -3277,7 +3357,40 @@ export function CoopGameScene({
         const dz = transform.position.z - center.z;
         if (Math.hypot(dx, dz) > radius) continue;
         if (damage > 0) {
-          combatSystem.queueDamage(entity, damage, sourceEntity, undefined, sourcePlayerId);
+          combatSystem.queueDamage(
+            entity,
+            damage,
+            sourceEntity,
+            damageType,
+            sourcePlayerId,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            infernalDashRoom,
+          );
         }
         if (status) {
           applyEnemyStatus(entity, enemy, transform.position, status.type, status.durationMs);
@@ -3307,10 +3420,14 @@ export function CoopGameScene({
     let lightningTarget: Vector3 | undefined;
 
     if (payload.variant === 'infernal') {
-      damageEnemiesInRadius(payload.destination, INFERNAL_DASH_RADIUS, INFERNAL_DASH_DAMAGE, {
-        type: 'ignite',
-        durationMs: 5000,
-      });
+      damageEnemiesInRadius(
+        payload.destination,
+        INFERNAL_DASH_RADIUS,
+        INFERNAL_DASH_DAMAGE,
+        { type: 'ignite', durationMs: 4000 },
+        'infernal_dash',
+        true,
+      );
     } else if (payload.variant === 'glacial') {
       damageEnemiesInRadius(payload.origin, GLACIAL_DASH_RADIUS, 0, {
         type: 'freeze',
@@ -3845,6 +3962,16 @@ export function CoopGameScene({
     }
   }, [extraDashChargePurchased, engineReady]);
 
+  useEffect(() => {
+    if (!engineReady || playerEntityRef.current === null) return;
+    const world = engineRef.current?.getWorld();
+    const ent = world?.getEntity(playerEntityRef.current);
+    const movement = ent?.getComponent(Movement);
+    if (movement) {
+      movement.setDashChargeRechargeRateMultiplier(getDashChargeRechargeRateMultiplier(talentLoadout));
+    }
+  }, [talentLoadout, engineReady]);
+
   const [weaponState, setWeaponState] = useState({
     currentWeapon: WeaponType.NONE,
     currentSubclass: WeaponSubclass.ELEMENTAL,
@@ -3999,6 +4126,25 @@ export function CoopGameScene({
     spawnRebukeFlameStrikeVfx,
   ]);
 
+  const tryTyrantsCloakOnDamageTaken = useCallback((
+    attackerServerEnemyId: string | undefined,
+    damageApplied: boolean,
+  ) => {
+    if (!damageApplied || !attackerServerEnemyId || !socket?.id) return;
+    if (!shouldApplyTyrantsCloakTalent(talentLoadoutRef.current)) return;
+    if (!coopServerEnemyLiving(attackerServerEnemyId)) return;
+
+    const nowSec = Date.now() / 1000;
+    if (nowSec - lastTyrantsCloakTimeSecRef.current < TYRANTS_CLOAK_ICD_SEC) return;
+    lastTyrantsCloakTimeSecRef.current = nowSec;
+
+    triggerTyrantsCloakStrike(attackerServerEnemyId);
+  }, [
+    coopServerEnemyLiving,
+    socket?.id,
+    triggerTyrantsCloakStrike,
+  ]);
+
   const tryMomentumRiftOnDamageTaken = useCallback((
     attackerServerEnemyId: string | undefined,
     damageApplied: boolean,
@@ -4074,6 +4220,101 @@ export function CoopGameScene({
     updatePlayerHealth,
   ]);
 
+  const tryBloodOrbDashCost = useCallback(() => {
+    const world = engineRef.current?.getWorld();
+    const ent = playerEntityRef.current != null ? world?.getEntity(playerEntityRef.current) : undefined;
+    const health = ent?.getComponent(Health);
+    const transform = ent?.getComponent(Transform);
+    if (!health || health.isDead) return;
+    if (health.currentHealth <= BLOOD_ORBS_DASH_HP_COST) return;
+
+    const damageApplied = health.takeDamage(BLOOD_ORBS_DASH_HP_COST, Date.now() / 1000, ent, false);
+    if (!damageApplied) return;
+
+    const position = transform
+      ? transform.position.clone().add(new Vector3(0, 1.6, 0))
+      : new Vector3(0, 1.6, 0);
+
+    updatePlayerHealth(health.currentHealth, health.maxHealth);
+    if (socket?.id) {
+      broadcastPlayerDamage(socket.id, BLOOD_ORBS_DASH_HP_COST, 'blood_orbs');
+    }
+    triggerLocalPlayerDamageFeedback({
+      damage: BLOOD_ORBS_DASH_HP_COST,
+      damageType: 'blood_orbs',
+      position,
+      fatal: health.isDead,
+    });
+    onDamageNumbersUpdate?.([{
+      id: `room-boon-blood-orbs-${Date.now()}-${Math.random()}`,
+      damage: BLOOD_ORBS_DASH_HP_COST,
+      position,
+      isCritical: false,
+      timestamp: Date.now(),
+      damageType: 'blood_orbs',
+    }]);
+  }, [
+    broadcastPlayerDamage,
+    engineRef,
+    onDamageNumbersUpdate,
+    playerEntityRef,
+    socket?.id,
+    triggerLocalPlayerDamageFeedback,
+    updatePlayerHealth,
+  ]);
+
+  const tryBloodOrbDashCostRef = useRef(tryBloodOrbDashCost);
+  useEffect(() => {
+    tryBloodOrbDashCostRef.current = tryBloodOrbDashCost;
+  }, [tryBloodOrbDashCost]);
+
+  /** FATEBREAKER (duo: green + purple) — heal 2 + STAMINA + INTELLECT on every successful AEGIS block. */
+  const tryFatebreakerOnAegisBlock = useCallback(() => {
+    if (!shouldApplyFatebreakerTalent(talentLoadoutRef.current)) return;
+
+    const world = engineRef.current?.getWorld();
+    const ent = playerEntityRef.current != null ? world?.getEntity(playerEntityRef.current) : undefined;
+    const health = ent?.getComponent(Health);
+    const transform = ent?.getComponent(Transform);
+    if (!health || health.isDead) return;
+
+    const stats = StatSystem.getEffectiveStatsWithInventory(
+      playerStatDataRef.current?.stats ?? ZERO_PLAYER_STATS,
+      inventorySnapshotRef.current,
+    );
+    const healAmount = 2 + Math.max(0, Math.floor(stats.stamina)) + Math.max(0, Math.floor(stats.intellect));
+    if (healAmount <= 0) return;
+    if (!health.heal(healAmount)) return;
+
+    const position = transform
+      ? transform.position.clone().add(new Vector3(0, 1.6, 0))
+      : new Vector3(0, 1.6, 0);
+
+    updatePlayerHealth(health.currentHealth, health.maxHealth);
+    broadcastPlayerHealing(healAmount, 'room_boon_fatebreaker', position);
+    onDamageNumbersUpdate?.([{
+      id: `room-boon-fatebreaker-${Date.now()}-${Math.random()}`,
+      damage: healAmount,
+      position,
+      isCritical: false,
+      timestamp: Date.now(),
+      damageType: 'reanimate_healing',
+    }]);
+  }, [
+    broadcastPlayerHealing,
+    engineRef,
+    onDamageNumbersUpdate,
+    playerEntityRef,
+    updatePlayerHealth,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onAegisBlock = () => tryFatebreakerOnAegisBlock();
+    window.addEventListener('aegis-block', onAegisBlock);
+    return () => window.removeEventListener('aegis-block', onAegisBlock);
+  }, [tryFatebreakerOnAegisBlock]);
+
   const triggerAppliedLocalPlayerDamageFeedback = useCallback(({
     damage,
     damageType = 'physical',
@@ -4112,9 +4353,10 @@ export function CoopGameScene({
     });
 
     tryRebukeOnDamageTaken(attackerServerEnemyId, damageApplied);
+    tryTyrantsCloakOnDamageTaken(attackerServerEnemyId, damageApplied);
     tryOrbShieldOnDamageTaken(attackerServerEnemyId, damageApplied);
     tryMomentumRiftOnDamageTaken(attackerServerEnemyId, damageApplied);
-  }, [triggerLocalPlayerDamageFeedback, tryRebukeOnDamageTaken, tryOrbShieldOnDamageTaken, tryMomentumRiftOnDamageTaken]);
+  }, [triggerLocalPlayerDamageFeedback, tryRebukeOnDamageTaken, tryTyrantsCloakOnDamageTaken, tryOrbShieldOnDamageTaken, tryMomentumRiftOnDamageTaken]);
 
   // Track previous weapon state for change detection
   const prevWeaponRef = useRef<{ weapon: WeaponType; subclass: WeaponSubclass }>({
@@ -7188,7 +7430,7 @@ export function CoopGameScene({
 
   const handlePlayerHealing = (data: any) => {
       const { healingAmount, healingType, position, targetPlayerId, sourcePlayerId } = data;
-      const lesserHealTypes = new Set(['smite', 'flurry', 'healing_stream', 'viper_sting', 'merchant']);
+      const lesserHealTypes = new Set(['smite', 'flurry', 'healing_stream', 'viper_sting', 'merchant', 'room_boon_fatebreaker', 'room_boon_force_of_nature']);
       if (lesserHealTypes.has(healingType) && position) {
         (window as any).audioSystem?.playLesserHealSound?.(
           new Vector3(position.x, position.y, position.z),
@@ -7714,6 +7956,32 @@ export function CoopGameScene({
       ]);
     };
 
+    const handleKnightStormLashZap = (data: {
+      knightId: string;
+      beams?: { startPosition: { x: number; y: number; z: number }; targetPosition: { x: number; y: number; z: number } }[];
+      strikeAt: number;
+      halfWidth?: number;
+      timestamp: number;
+    }) => {
+      const beams =
+        data.beams && data.beams.length > 0
+          ? data.beams.map((b) => ({
+              startPosition: new Vector3(b.startPosition.x, b.startPosition.y, b.startPosition.z),
+              targetPosition: new Vector3(b.targetPosition.x, b.targetPosition.y, b.targetPosition.z),
+            }))
+          : [];
+      if (beams.length === 0) return;
+      setKnightStormLashZaps(prev => [
+        ...prev,
+        {
+          id: `knight-storm-lash-${data.knightId}-${data.timestamp}`,
+          beams,
+          strikeAt: data.strikeAt,
+          halfWidth: data.halfWidth ?? 1.0,
+        },
+      ]);
+    };
+
     const handleBoss3NovaRelease = (data: {
       bossId: string;
       origin: { x: number; z: number };
@@ -7907,6 +8175,18 @@ export function CoopGameScene({
       }
     };
 
+    const handleFissionDetonation = (data: {
+      position: { x: number; y: number; z: number };
+      radius: number;
+      timestamp: number;
+    }) => {
+      const { position, timestamp } = data;
+      const boomId = `fission-boom-${timestamp}-${Math.random().toString(36).slice(2, 8)}`;
+      const pos = new Vector3(position.x, position.y, position.z);
+      setFissionDetonations(prev => [...prev, { id: boomId, position: pos }]);
+      window.audioSystem?.playExplosionSound(pos);
+    };
+
     const handleEnemyStatusEffect = (data: any) => {
       const { enemyId, effectType, duration, timestamp } = data;
       
@@ -7995,6 +8275,8 @@ export function CoopGameScene({
       position: { x: number; y: number; z: number };
       damage?: number;
       isCritical?: boolean;
+      magmaCurrent?: boolean;
+      forceOfNature?: boolean;
       fromPlayerId?: string | null;
     }) => {
       const p = new Vector3(data.position.x, data.position.y, data.position.z);
@@ -8012,15 +8294,19 @@ export function CoopGameScene({
       }
       setStaggerProcEffects(prev => [
         ...prev,
-        { id: `stagger-proc-${data.enemyId}-${Date.now()}`, position: p.clone() },
+        {
+          id: `stagger-proc-${data.enemyId}-${Date.now()}`,
+          position: p.clone(),
+          magmaCurrent: !!data.magmaCurrent,
+          forceOfNature: !!data.forceOfNature,
+        },
       ]);
     };
 
     // How long (ms) into the shade throw animation the daggers are released.
-    // 250 ms early relative to the full clip length (1500 ms) to sync with the
-    // visual release point — keep aligned with ShadeRenderer ATTACK_DURATION and
-    // backend enemyAI SHADE_THROW_ANIMATION_MS.
-    const SHADE_THROW_DURATION = 1000;
+    // 350 ms earlier than the prior sync to match shadeThrow.mp3 / throw clip release.
+    // Keep aligned with ShadeRenderer ATTACK_DURATION and backend enemyAI SHADE_THROW_ANIMATION_MS.
+    const SHADE_THROW_DURATION = 650;
     // Delay between each successive dagger in the 3-dagger volley.
     const SHADE_DAGGER_INTERVAL = 250;
 
@@ -8037,11 +8323,15 @@ export function CoopGameScene({
       const packetStart = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
       const staleTarget = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
 
-      // Spawn 3 daggers staggered after the throw animation finishes.
+      const shadeEnemy = enemiesRef.current.get(data.shadeId);
+      const isBlueShade = shadeEnemy?.soulType === 'blue';
+      const daggerCount = isBlueShade ? 2 : 3;
+
+      // Spawn daggers staggered after the throw animation release point.
       // Each dagger samples live player aim at launch; spawn origin uses live shade
       // position (+1.5 Y hand offset, matching enemyAI telegraphShadeAttack) so post-boss
       // blink timing cannot desync projectile start from the mesh.
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < daggerCount; i++) {
         setTimeout(() => {
           let target = staleTarget.clone();
           if (playerEntity) {
@@ -8051,13 +8341,13 @@ export function CoopGameScene({
             }
           }
 
-          const shadeEnemy = enemiesRef.current.get(data.shadeId);
+          const liveShade = enemiesRef.current.get(data.shadeId);
           const start =
-            shadeEnemy?.position != null
+            liveShade?.position != null
               ? new Vector3(
-                  shadeEnemy.position.x,
-                  shadeEnemy.position.y + 1.5,
-                  shadeEnemy.position.z,
+                  liveShade.position.x,
+                  liveShade.position.y + 1.5,
+                  liveShade.position.z,
                 )
               : packetStart.clone();
 
@@ -8070,6 +8360,7 @@ export function CoopGameScene({
               startPosition: start.clone(),
               targetPosition: target,
               damage: data.damage,
+              soulType: liveShade?.soulType ?? shadeEnemy?.soulType,
               daggerIndex: i,
             },
           ]);
@@ -8115,11 +8406,13 @@ export function CoopGameScene({
     socket.on('boss-tectonic-spike-appear', handleBossTectonicSpikeAppear);
     socket.on('boss2-archon-lightning', handleBoss2ArchonLightning);
     socket.on('warlock-archon-shock', handleWarlockArchonShock);
+    socket.on('knight-storm-lash-zap', handleKnightStormLashZap);
     socket.on('boss3-nova-release', handleBoss3NovaRelease);
     socket.on('templar-teleport', handleTemplarTeleport);
     socket.on('templar-blink-smite-impact', handleTemplarBlinkSmiteImpact);
     socket.on('martyr-detonation-telegraph', handleMartyrDetonationTelegraph);
     socket.on('martyr-detonation-impact', handleMartyrDetonationImpact);
+    socket.on('fission-detonation', handleFissionDetonation);
     socket.on('boss-skeleton-attack', handleBossSkeletonAttack);
     socket.on('knight-attack-telegraph', handleKnightAttackTelegraph);
     socket.on('tentacle-spine-windup', handleTentacleSpineWindup);
@@ -8188,6 +8481,86 @@ export function CoopGameScene({
     };
 
     socket.on('warlock-orb-impact', handleWarlockOrbImpact);
+
+    const handleGreedLaunchTelegraph = (data: {
+      greedId: string;
+      startPosition: { x: number; y: number; z: number };
+      targetPosition: { x: number; y: number; z: number };
+      damage: number;
+    }) => {
+      if (!coopServerEnemyLiving(data.greedId)) return;
+      setGreedFireballs(prev => [
+        ...prev,
+        {
+          id: `greed-fireball-${data.greedId}-${Date.now()}`,
+          startPosition: new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z),
+          targetPosition: new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z),
+          greedId: data.greedId,
+        },
+      ]);
+    };
+
+    socket.on('greed-launch-telegraph', handleGreedLaunchTelegraph);
+
+    const handleGreedFireballImpact = (data: {
+      greedId: string;
+      position: { x: number; y: number; z: number };
+      hit: boolean;
+    }) => {
+      setGreedFireballs(prev => prev.filter(f => f.greedId !== data.greedId));
+    };
+
+    socket.on('greed-fireball-impact', handleGreedFireballImpact);
+
+    const handleGreedEmberZoneSpawned = (data: {
+      id: string;
+      position: { x: number; z: number };
+      radius: number;
+      durationMs: number;
+    }) => {
+      setGreedEmberZones(prev => [
+        ...prev,
+        {
+          id: data.id,
+          position: new Vector3(data.position.x, 0, data.position.z),
+          radius: data.radius,
+          durationMs: data.durationMs,
+        },
+      ]);
+    };
+
+    socket.on('greed-ember-zone-spawned', handleGreedEmberZoneSpawned);
+
+    const handleGreedEmberZoneExpired = (data: { id: string }) => {
+      setGreedEmberZones(prev => prev.filter(z => z.id !== data.id));
+    };
+
+    socket.on('greed-ember-zone-expired', handleGreedEmberZoneExpired);
+
+    const handleWarlockMeteorEmberZoneSpawned = (data: {
+      id: string;
+      position: { x: number; z: number };
+      radius: number;
+      durationMs: number;
+    }) => {
+      setWarlockMeteorEmberZones(prev => [
+        ...prev,
+        {
+          id: data.id,
+          position: new Vector3(data.position.x, 0, data.position.z),
+          radius: data.radius,
+          durationMs: data.durationMs,
+        },
+      ]);
+    };
+
+    socket.on('warlock-meteor-ember-zone-spawned', handleWarlockMeteorEmberZoneSpawned);
+
+    const handleWarlockMeteorEmberZoneExpired = (data: { id: string }) => {
+      setWarlockMeteorEmberZones(prev => prev.filter(z => z.id !== data.id));
+    };
+
+    socket.on('warlock-meteor-ember-zone-expired', handleWarlockMeteorEmberZoneExpired);
 
     // Blink animation duration — must match BLINK_ANIMATION_DURATION in WarlockRenderer.tsx
     const WARLOCK_BLINK_ANIM_MS = 800;
@@ -8557,11 +8930,13 @@ export function CoopGameScene({
       socket.off('boss-tectonic-spike-appear', handleBossTectonicSpikeAppear);
       socket.off('boss2-archon-lightning', handleBoss2ArchonLightning);
       socket.off('warlock-archon-shock', handleWarlockArchonShock);
+      socket.off('knight-storm-lash-zap', handleKnightStormLashZap);
       socket.off('boss3-nova-release', handleBoss3NovaRelease);
       socket.off('templar-teleport', handleTemplarTeleport);
       socket.off('templar-blink-smite-impact', handleTemplarBlinkSmiteImpact);
       socket.off('martyr-detonation-telegraph', handleMartyrDetonationTelegraph);
       socket.off('martyr-detonation-impact', handleMartyrDetonationImpact);
+      socket.off('fission-detonation', handleFissionDetonation);
       socket.off('boss-skeleton-attack', handleBossSkeletonAttack);
       socket.off('knight-attack-telegraph', handleKnightAttackTelegraph);
       socket.off('tentacle-spine-windup', handleTentacleSpineWindup);
@@ -8591,6 +8966,12 @@ export function CoopGameScene({
       socket.off('shade-attack-telegraph', handleShadeAttackTelegraph);
       socket.off('warlock-attack-telegraph', handleWarlockAttackTelegraph);
       socket.off('warlock-orb-impact', handleWarlockOrbImpact);
+      socket.off('greed-launch-telegraph', handleGreedLaunchTelegraph);
+      socket.off('greed-fireball-impact', handleGreedFireballImpact);
+      socket.off('greed-ember-zone-spawned', handleGreedEmberZoneSpawned);
+      socket.off('greed-ember-zone-expired', handleGreedEmberZoneExpired);
+      socket.off('warlock-meteor-ember-zone-spawned', handleWarlockMeteorEmberZoneSpawned);
+      socket.off('warlock-meteor-ember-zone-expired', handleWarlockMeteorEmberZoneExpired);
       socket.off('warlock-flame-strike', handleWarlockFlameStrike);
       socket.off('boss2-flame-pillar', handleBoss2FlamePillar);
       socket.off('ghoul-attack', handleGhoulAttack);
@@ -8749,7 +9130,7 @@ export function CoopGameScene({
           : serverEnemy.type === 'boss-skeleton' ? 1.2
           : serverEnemy.type === 'allied-healer' ? 0.75
           : serverEnemy.type === 'allied-knight' ? 0.85
-          : serverEnemy.type === 'knight' ? 0.85
+          : serverEnemy.type === 'knight' ? 0.85 * (serverEnemy.visualScale ?? 1)
           : serverEnemy.type === 'templar' || serverEnemy.type === 'ghoul' ? 0.95
           : serverEnemy.type === 'titan' ? 1.2
           : serverEnemy.type === 'training-dummy' ? 1.85
@@ -10213,6 +10594,10 @@ export function CoopGameScene({
       handleRoomBoomDashRef.current(payload);
     });
 
+    controlSystem.setBloodOrbDashCallback(() => {
+      tryBloodOrbDashCostRef.current();
+    });
+
     // Set up Summon Totem callback
     controlSystem.setSummonTotemCallback((position) => {
       const totemBoltVariant = getTotemBoltVariantFromTalentLoadout(talentLoadoutRef.current);
@@ -10936,6 +11321,7 @@ export function CoopGameScene({
             weaponState.currentWeapon === WeaponType.NONE ? undefined : weaponState.currentSubclass
           }
           roomBoomGhostTrailColor={roomBoomGhostTrailColor}
+          talentLoadout={talentLoadout}
           isCharging={weaponState.isCharging}
           chargeProgress={weaponState.chargeProgress}
           chargeDirection={weaponState.chargeDirection}
@@ -11024,6 +11410,8 @@ export function CoopGameScene({
               ? () => controlSystemRef.current?.isRunebladeBlizzardTalentActive() ?? false
               : undefined
           }
+          getRunebladeBlizzardStormHitRadius={getRunebladeBlizzardStormHitRadiusCallback}
+          getRunebladeBlizzardParticleSpawnMultiplier={getRunebladeBlizzardParticleMultiplier}
           mushroomTargets={!inThroneRoom && !inBossThroneArena ? mushroomTargetsForMelee : []}
           onMushroomHit={!inThroneRoom && !inBossThroneArena ? onMushroomMeleeHit : undefined}
           onDamageNumbersReady={handleDamageNumbersReady}
@@ -11145,6 +11533,8 @@ export function CoopGameScene({
             setWeaponState(newState);
           }}
           purchasedItems={players.get(socket?.id || '')?.purchasedItems || []}
+          hasFatebreaker={shouldApplyFatebreakerTalent(talentLoadout)}
+          hasFrostQueen={shouldApplyFrostQueenTalent(talentLoadout)}
           hideBody={true}
         />
       )}
@@ -11441,6 +11831,7 @@ export function CoopGameScene({
             showSoulEffect={!preserveThroneLighting}
             castShadow={!preserveThroneLighting}
             staggerBuildup={enemy.staggerBuildup ?? 0}
+            visualScale={enemy.visualScale ?? 1}
           />
         );
       })}
@@ -11461,6 +11852,7 @@ export function CoopGameScene({
             isDying={enemy.isDying}
             staggerBuildup={enemy.staggerBuildup ?? 0}
             alliedOrbSlots={enemy.alliedOrbSlots}
+            fastWalk={enemy.abyssalBoonApplied}
           />
         );
       })}
@@ -11509,6 +11901,8 @@ export function CoopGameScene({
         <StaggerProcLightning
           key={fx.id}
           position={fx.position}
+          magmaCurrent={fx.magmaCurrent}
+          forceOfNature={fx.forceOfNature}
           onComplete={() => setStaggerProcEffects(prev => prev.filter(e => e.id !== fx.id))}
         />
       ))}
@@ -11585,6 +11979,7 @@ export function CoopGameScene({
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
             campType={enemy.campType}
+            soulType={enemy.soulType}
             staggerBuildup={enemy.staggerBuildup ?? 0}
           />
         );
@@ -11597,6 +11992,7 @@ export function CoopGameScene({
           startPosition={dagger.startPosition}
           targetPosition={dagger.targetPosition}
           damage={dagger.damage}
+          soulType={dagger.soulType}
           getPlayerPosition={() => {
             if (!playerEntity) return null;
             const t = playerEntity.getComponent(Transform);
@@ -11927,6 +12323,59 @@ export function CoopGameScene({
           </React.Suspense>
         );
       })}
+
+      {/* Greed — bonus wandering/fleeing enemy (10% chance per countable combat room wave) */}
+      {Array.from(enemies.values()).map(enemy => {
+        if (enemy.type !== 'greed') return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <GreedRenderer
+              id={enemy.id}
+              position={new Vector3(enemy.position.x, enemy.position.y, enemy.position.z)}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+              soulType={enemy.soulType as 'green' | 'red' | 'blue' | 'purple' | undefined}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {/* Greed Fireball Projectiles (Red variant) */}
+      {greedFireballs.map(fireball => (
+        <GreedFireProjectile
+          key={fireball.id}
+          startPosition={fireball.startPosition}
+          targetPosition={fireball.targetPosition}
+          onComplete={() => setGreedFireballs(prev => prev.filter(f => f.id !== fireball.id))}
+        />
+      ))}
+
+      {/* Greed Ember Hazard Zones (Blue variant) */}
+      {greedEmberZones.map(zone => (
+        <GreedEmberPatch
+          key={zone.id}
+          position={zone.position}
+          radius={zone.radius}
+          durationMs={zone.durationMs}
+          onComplete={() => setGreedEmberZones(prev => prev.filter(z => z.id !== zone.id))}
+        />
+      ))}
+
+      {/* Purple Warlock Meteor Ember Hazard Zones */}
+      {warlockMeteorEmberZones.map(zone => (
+        <GreedEmberPatch
+          key={zone.id}
+          variant="purple"
+          position={zone.position}
+          radius={zone.radius}
+          durationMs={zone.durationMs}
+          onComplete={() => setWarlockMeteorEmberZones(prev => prev.filter(z => z.id !== zone.id))}
+        />
+      ))}
 
       {/* Tentacle spine — environmental trap (no HP bar) */}
       {Array.from(enemies.values()).map(enemy => {
@@ -12336,6 +12785,17 @@ export function CoopGameScene({
         />
       ))}
 
+      {knightStormLashZaps.map((bolt) => (
+        <Boss2ArchonLightning
+          key={bolt.id}
+          beams={bolt.beams}
+          strikeAt={bolt.strikeAt}
+          halfWidth={bolt.halfWidth}
+          theme="knight-storm-blue"
+          onComplete={() => setKnightStormLashZaps(prev => prev.filter(x => x.id !== bolt.id))}
+        />
+      ))}
+
       {titanCannonAbilities.map((ab) => (
         <TitanCannonAbility
           key={ab.id}
@@ -12399,6 +12859,18 @@ export function CoopGameScene({
           maxRadius={boom.radius}
           onComplete={() => {
             setMartyrDetonationExplosions(prev => prev.filter(b => b.id !== boom.id));
+          }}
+        />
+      ))}
+
+      {fissionDetonations.map(boom => (
+        <CrossentropyExplosion
+          key={boom.id}
+          position={boom.position}
+          visualTheme="inferno"
+          explosionStartTime={null}
+          onComplete={() => {
+            setFissionDetonations(prev => prev.filter(b => b.id !== boom.id));
           }}
         />
       ))}
@@ -12731,10 +13203,14 @@ export function CoopGameScene({
           />
           <BowPowershotManager />
           <FrostNovaManager world={engineRef.current.getWorld()} />
+          <FireStormManager world={engineRef.current.getWorld()} />
           <ArcticBlizzardManager
             world={engineRef.current.getWorld()}
             getEnemyData={getArcticBlizzardEnemyData}
             getDamagePerTick={getArcticBlizzardDamagePerTick}
+            getHitRadius={getArcticBlizzardHitRadiusCallback}
+            getParticleSpawnMultiplier={getArcticBlizzardParticleMultiplier}
+            hasMonsoon={shouldApplyMonsoonTalent(talentLoadout)}
           />
           <StunManager world={engineRef.current.getWorld()} />
           <EntangleManager world={engineRef.current.getWorld()} />

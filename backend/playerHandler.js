@@ -59,6 +59,10 @@ function handlePlayerEvents(socket, gameRooms) {
       berserkerStrain: !!raw.berserkerStrain,
       juggernautStrain: !!raw.juggernautStrain,
       exploderStrain: !!raw.exploderStrain,
+      legion: !!raw.legion,
+      hellfireVenom: !!raw.hellfireVenom,
+      critChance: typeof raw.critChance === 'number' ? raw.critChance : 0,
+      critDamageMult: typeof raw.critDamageMult === 'number' ? raw.critDamageMult : 2,
     };
   });
 
@@ -74,8 +78,14 @@ function handlePlayerEvents(socket, gameRooms) {
       guardbreak: !!raw.guardbreak,
       overshock: !!raw.overshock,
       unstableEnergy: !!raw.unstableEnergy,
+      magmaCurrent: !!raw.magmaCurrent,
+      frostQueen: !!raw.frostQueen,
+      forceOfNature: !!raw.forceOfNature,
+      tyrantsCloak: !!raw.tyrantsCloak,
+      stormWitch: !!raw.stormWitch,
       stamina: typeof raw.stamina === 'number' ? raw.stamina : 0,
       agility: typeof raw.agility === 'number' ? raw.agility : 0,
+      intellect: typeof raw.intellect === 'number' ? raw.intellect : 0,
       critChance: typeof raw.critChance === 'number' ? raw.critChance : 0,
       critDamageMult: typeof raw.critDamageMult === 'number' ? raw.critDamageMult : 2,
     };
@@ -97,6 +107,19 @@ function handlePlayerEvents(socket, gameRooms) {
       agility: typeof raw.agility === 'number' ? raw.agility : 0,
       strength: typeof raw.strength === 'number' ? raw.strength : 0,
       stamina: typeof raw.stamina === 'number' ? raw.stamina : 0,
+    };
+  });
+
+  /** Co-op: sync red room boon flags for server-authored infernal effects (e.g. FISSION). */
+  socket.on('coop-red-room-boons', (data) => {
+    const roomId = data?.roomId;
+    const raw = data?.coopRedRoomBoons ?? {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    const player = room.players?.get(socket.id);
+    if (!player) return;
+    player.coopRedRoomBoons = {
+      fission: !!raw.fission,
     };
   });
 

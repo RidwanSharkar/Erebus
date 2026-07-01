@@ -130,6 +130,7 @@ const ABILITY_LABELS: Record<string, string> = {
   COOP_RED_ROOM:   'Infernal',
   COOP_BLUE_ROOM:  'Tempest',
   COOP_PURPLE_ROOM:'Abyssal',
+  'Duo Boons':      'Duo Boon',
 };
 
 const FLAVOR_SUBTITLES: Record<string, string> = {
@@ -143,9 +144,10 @@ const FLAVOR_SUBTITLES: Record<string, string> = {
 
 const ROOM_TRIAL_TITLES: Record<string, string> = {
   blue:   'Granted by the tempest',
-  green:  'Granted by the unknowable',
+  green:  'Granted by the dead',
   red:    'Granted by the inferno',
   purple: 'Granted by the abyss',
+  orange: 'Granted from within',
 };
 
 interface RarityStyle {

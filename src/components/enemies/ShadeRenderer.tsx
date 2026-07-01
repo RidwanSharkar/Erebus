@@ -23,6 +23,7 @@ interface ShadeRendererProps {
   maxHealth: number;
   isDying?: boolean;
   campType?: string;
+  soulType?: string;
   staggerBuildup?: number;
 }
 
@@ -32,7 +33,8 @@ const ATTACK_DURATION = 1500; // ms
 // How long the blink "teleport" lasts before we hard-snap the mesh.
 const BLINK_DURATION  = 600;  // ms — must match shadeCastBlinkAndAttack in enemyAI.js
 const FADE_DURATION   = 1.5;  // seconds for death fade-out
-const LERP_SPEED      = 20;   // position + rotation chase speed — high value gives the fast-slide blink feel
+const LERP_SPEED      = 12;   // match Knight/Viper smooth walk interpolation
+const BLINK_LERP_SPEED = 20;  // fast slide during blink telegraph
 // Debounce: server must stop sending moves for this long before we switch to Idle.
 const WALK_STOP_DELAY = 250; // ms
 const HIT_REACT_IMPACT_COOLDOWN_MS = 1500; // min time between shade_impact.glb hit-react plays
@@ -45,9 +47,11 @@ export default function ShadeRenderer({
   maxHealth,
   isDying = false,
   campType,
+  soulType,
   staggerBuildup = 0,
 }: ShadeRendererProps) {
   const theme = campHpTheme(campType);
+  const isBlueShade = soulType === 'blue';
   const { socket, enemyTransformsRef } = useMultiplayer();
   const groupRef = useRef<Group | null>(null);
 
@@ -81,32 +85,9 @@ export default function ShadeRenderer({
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Track server position changes and derive walking state from them.
-  useEffect(() => {
-    const dist = targetPosition.current.distanceTo(position);
-    targetPosition.current.copy(position);
-
-    // Teleport snap for large jumps (spawn / respawn only — blink uses lerp)
-    if (dist > 8.0 && groupRef.current && !isBlinkingRef.current) {
-      groupRef.current.position.copy(position);
-    }
-
-    // Suppress walk state while blinking or attacking
-    if (dist > 0.01 && !isAttackingRef.current && !isBlinkingRef.current && !isDying) {
-      if (!isWalking) setIsWalking(true);
-
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
-    }
-  }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
-
   useEffect(() => {
     return () => { if (walkStopTimer.current) clearTimeout(walkStopTimer.current); };
   }, []);
-
-  useEffect(() => {
-    targetRotation.current = rotation;
-  }, [rotation]);
 
   const handleImpactFinished = useCallback(() => {
     setIsImpacting(false);
@@ -212,16 +193,36 @@ export default function ShadeRenderer({
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+    const isAttackLocked = isAttackingRef.current;
 
-    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    if (isBlinkingRef.current) {
+      group.position.lerp(targetPosition.current, Math.min(1, delta * BLINK_LERP_SPEED));
+      let deltaAngle = targetRotation.current - group.rotation.y;
+      while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
+      while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
+      group.rotation.y += deltaAngle * Math.min(1, delta * BLINK_LERP_SPEED);
+    } else {
+      const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
 
-    group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
+      if (dist > 8.0 && !isAttackLocked) {
+        group.position.copy(targetPosition.current);
+      }
 
-    // Shortest-arc rotation lerp
-    let deltaAngle = targetRotation.current - group.rotation.y;
-    while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
-    while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
-    group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+      if (dist > 0.01 && !isAttackLocked && !isDying) {
+        if (!isWalking) setIsWalking(true);
+        if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+        walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
+      }
+
+      if (!isAttackLocked) {
+        group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
+
+        let deltaAngle = targetRotation.current - group.rotation.y;
+        while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
+        while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
+        group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+      }
+    }
 
     // Death fade-out (death clip on model underneath)
     if (isDying) {
@@ -249,6 +250,7 @@ export default function ShadeRenderer({
           position={fx.position}
           type={fx.type}
           scale={0.45}
+          theme={isBlueShade ? 'blue' : 'purple'}
           onComplete={() => setBossFx(prev => prev.filter(f => f.id !== fx.id))}
         />
       ))}
@@ -256,7 +258,7 @@ export default function ShadeRenderer({
       <GhostTrail
         parentRef={groupRef as React.RefObject<Group>}
         weaponType={WeaponType.NONE}
-        fixedTrailColor="#9b30ff"
+        fixedTrailColor={isBlueShade ? '#33ccff' : '#9b30ff'}
         isTrailMotionRef={isBlinkingRef}
         yOffset={1.0}
       />
@@ -271,7 +273,7 @@ export default function ShadeRenderer({
         impactPlayKey={impactPlayKey}
         onImpactFinished={handleImpactFinished}
       />
-      {!isDying && <CubeSoulEffect color="purple" posY={2.5} />}
+      {!isDying && <CubeSoulEffect color={isBlueShade ? 'blue' : 'purple'} posY={2.5} />}
 
       {/* Billboard health bar */}
       <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>

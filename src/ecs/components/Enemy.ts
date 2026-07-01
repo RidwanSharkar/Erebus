@@ -488,10 +488,14 @@ export class Enemy extends Component {
   }
 
   public applyConcentratedVenomStack(currentTime: number): void {
-    if (this.isDead) return;
+    this.applyConcentratedVenomStacks(1, currentTime);
+  }
+
+  public applyConcentratedVenomStacks(stackCount: number, currentTime: number): void {
+    if (this.isDead || stackCount <= 0) return;
     this.concentratedVenomStacks = Math.min(
       WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS,
-      this.concentratedVenomStacks + 1,
+      this.concentratedVenomStacks + stackCount,
     );
     this.concentratedVenomEndTime = currentTime + WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC;
     this.lastConcentratedVenomTickTime = currentTime;

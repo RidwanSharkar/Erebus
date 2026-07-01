@@ -17,9 +17,15 @@ interface KnightModelProps {
   attackVariant: 1 | 2;
   isDying: boolean;
   soulType?: 'green' | 'red' | 'blue' | 'purple' | 'yellow';
+  /** When true, use fast walk clip regardless of soulType (e.g. allied knight with Abyssal Initiate). */
+  forceFastWalk?: boolean;
+  /** Multiplier applied to the base model scale (e.g. Boss1 elite knights). */
+  scaleMultiplier?: number;
   castShadow?: boolean;
   /** Which ability animation is currently playing, or null when none. */
   abilityClip?: KnightAbilityClip | null;
+  /** When true, keep the current ability clip clamped on its last frame (Storm Lash channel). */
+  holdAbilityClip?: boolean;
   /** Hit-react one-shots when damage is taken (renderer sets gates). */
   isImpacting?: boolean;
   impactVariant?: 1 | 2;
@@ -114,8 +120,11 @@ export default function KnightModel({
   attackVariant,
   isDying,
   soulType,
+  forceFastWalk = false,
+  scaleMultiplier = 1,
   castShadow = true,
   abilityClip,
+  holdAbilityClip = false,
   isImpacting = false,
   impactVariant = 1,
   impactPlayKey = 0,
@@ -140,6 +149,17 @@ export default function KnightModel({
     };
   }, []);
 
+  // When walk clip source changes (soulType / forceFastWalk), drop cached Walk so the correct GLB reloads.
+  useEffect(() => {
+    requestedDeferredStatesRef.current.delete('Walk');
+    setDeferredAnimationClips((prev) => {
+      if (!prev.Walk) return prev;
+      const next = { ...prev };
+      delete next.Walk;
+      return next;
+    });
+  }, [soulType, forceFastWalk]);
+
   useEffect(() => {
     const names = new Set<KnightDeferredAnimationName>();
     if (isWalking) names.add('Walk');
@@ -150,7 +170,7 @@ export default function KnightModel({
 
     names.forEach((name) => {
       const path = name === 'Walk'
-        ? (soulType === 'purple' ? '/models/knight_walk.glb' : '/models/knight_walk0.glb')
+        ? ((soulType === 'blue' || forceFastWalk) ? '/models/knight_walk.glb' : '/models/knight_walk0.glb')
         : KNIGHT_DEFERRED_MODEL_PATHS[name];
       if (deferredAnimationClips[name] || requestedDeferredStatesRef.current.has(name)) {
         return;
@@ -169,7 +189,7 @@ export default function KnightModel({
           console.warn(`Failed to load knight animation ${name}:`, error);
         });
     });
-  }, [isWalking, isDying, isAttacking, attackVariant, abilityClip, isImpacting, impactVariant, soulType, deferredAnimationClips]);
+  }, [isWalking, isDying, isAttacking, attackVariant, abilityClip, isImpacting, impactVariant, soulType, forceFastWalk, deferredAnimationClips]);
 
   // SkeletonUtils.clone() properly re-binds each clone's SkinnedMesh to its own
   // skeleton, so multiple knight instances are fully independent.
@@ -329,19 +349,20 @@ export default function KnightModel({
         return;
       }
       if (name === 'Attack' || name === 'Attack2' || name === 'Smite' || name === 'Aggro' || name === 'Cast' || name === 'Spin') {
+        if (name === 'Cast' && holdAbilityClip) return;
         blendToWalkOrIdle();
       }
     };
 
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isDying, isWalking, actions, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isDying, isWalking, holdAbilityClip, actions, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     // sceneGroupRef wraps the clone so the AnimationMixer can traverse into the
     // bone hierarchy. The scale group converts cm → game units.
     <group ref={sceneGroupRef}>
-      <group scale={[SCALE, SCALE, SCALE]}>
+      <group scale={[SCALE * scaleMultiplier, SCALE * scaleMultiplier, SCALE * scaleMultiplier]}>
         <primitive object={clonedScene} />
       </group>
     </group>

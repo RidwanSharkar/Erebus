@@ -12,7 +12,7 @@ export interface Boss2ArchonBeam {
   targetPosition: Vector3;
 }
 
-export type ArchonLightningTheme = 'boss2-red' | 'warlock-purple';
+export type ArchonLightningTheme = 'boss2-red' | 'warlock-purple' | 'knight-storm-blue';
 
 interface Boss2ArchonLightningProps {
   beams: Boss2ArchonBeam[];
@@ -38,9 +38,16 @@ const ARCHON_PURPLE_PALETTE: DirectionalProcLightningPalette = {
   light: '#8811cc',
 };
 
+const ARCHON_BLUE_PALETTE: DirectionalProcLightningPalette = {
+  core: '#e6f4ff',
+  glow: '#3399ff',
+  halo: '#44aaff',
+  light: '#1166cc',
+};
+
 const THEME_CONFIG: Record<
   ArchonLightningTheme,
-  { palette: DirectionalProcLightningPalette; telegraphVariant: 'archon' | 'archonPurple'; lineColor: string }
+  { palette: DirectionalProcLightningPalette; telegraphVariant: 'archon' | 'archonPurple' | 'archonBlue'; lineColor: string }
 > = {
   'boss2-red': {
     palette: ARCHON_RED_PALETTE,
@@ -51,6 +58,11 @@ const THEME_CONFIG: Record<
     palette: ARCHON_PURPLE_PALETTE,
     telegraphVariant: 'archonPurple',
     lineColor: '#aa33ff',
+  },
+  'knight-storm-blue': {
+    palette: ARCHON_BLUE_PALETTE,
+    telegraphVariant: 'archonBlue',
+    lineColor: '#3399ff',
   },
 };
 

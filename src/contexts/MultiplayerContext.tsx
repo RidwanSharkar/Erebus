@@ -6,7 +6,7 @@ import { io, Socket } from 'socket.io-client';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
 import { SkillPointSystem, SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
 import { AbilityLoadout, getDefaultLoadout } from '@/utils/weaponAbilities';
-import { TalentLoadout, createDefaultTalentLoadout, getCoopZombieRoomBoonsPayload, getCoopStaggerRoomBoonsPayload, getCoopAlliedKnightBoonsPayload } from '@/utils/talents';
+import { TalentLoadout, createDefaultTalentLoadout, getCoopZombieRoomBoonsPayload, getCoopStaggerRoomBoonsPayload, getCoopAlliedKnightBoonsPayload, getCoopRedRoomBoonsPayload, getEffectiveIntellectWithTalentBonuses } from '@/utils/talents';
 import { ExperienceSystem } from '@/utils/ExperienceSystem';
 import { StatSystem, StatPointData, StatKey, PlayerStats } from '@/utils/StatSystem';
 import { getRuneCountForWeapon } from '@/utils/runeCount';
@@ -124,6 +124,8 @@ export interface EnemyDamageMeta {
   frostTotemChill?: boolean;
   /** REBUKE room boon — server schedules Ignite DoT after rebuke hit. */
   rebukeRoom?: boolean;
+  /** INFERNAL DASH room boon — server schedules Ignite DoT after dash hit. */
+  infernalDashRoom?: boolean;
   /** Glacial Bite — Barrage chill stacks; 5 stacks → 6s freeze on server. */
   glacialBiteChill?: boolean;
   /** Glacial Talons — Reaping Talons double damage vs frozen on server. */
@@ -162,6 +164,8 @@ export interface Enemy {
   alliedOrbRecoverAt?: number[];
   alliedSmiteCooldownUntil?: number;
   alliedGreaterHealCooldownUntil?: number;
+  /** Allied knight Abyssal Initiate boon — use fast walk animation when true. */
+  abyssalBoonApplied?: boolean;
   expireAt?: number;
   /** Juggernaut Strain coop room boon — larger client model when `juggernaut`. */
   zombieVariant?: 'standard' | 'juggernaut';
@@ -448,6 +452,8 @@ interface MultiplayerContextType {
   subscribeEnemyDamage: (listener: ConfirmedEnemyDamageListener) => () => void;
   /** Co-op: server clears Wyvern Bite CV + applies optional Cobra remainder as one combined hit. */
   detonateWyvernConcentratedVenom: (enemyId: string, cobraRemainingDamage?: number) => void;
+  /** Co-op: Tyrant's Cloak counter-strike — server triggers stagger lightning bolt on attacker. */
+  triggerTyrantsCloakStrike: (enemyId: string) => void;
   applyStatusEffect: (enemyId: string, effectType: string, duration: number) => void;
 
   /** Co-op: ring mushroom HP (server sync). */
@@ -1307,7 +1313,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
                   : data.damageType === 'allied_knight'
                   ? 'allied_knight'
                   : 'ignite';
-          mgr.addDamageNumber(data.damage, false, pos, dt);
+          mgr.addDamageNumber(data.damage, !!data.isCritical, pos, dt);
         }
       }
 
@@ -1395,6 +1401,22 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
             alliedOrbSlots: Array.isArray(data.slots) ? [...data.slots] : enemy.alliedOrbSlots,
             alliedOrbRecoverAt: Array.isArray(data.recoverAt) ? [...data.recoverAt] : enemy.alliedOrbRecoverAt,
           });
+        }
+        return updated;
+      });
+    });
+
+    addEventHandler('allied-knight-boons-updated', (data: {
+      enemyId?: string;
+      abyssalInitiate?: boolean;
+    }) => {
+      const enemyId = data.enemyId || 'allied-knight';
+      if (!data.abyssalInitiate) return;
+      setEnemies(prev => {
+        const updated = new Map(prev);
+        const enemy = updated.get(enemyId);
+        if (enemy) {
+          updated.set(enemyId, { ...enemy, abyssalBoonApplied: true });
         }
         return updated;
       });
@@ -2197,6 +2219,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.arcticBlizzard ? { arcticBlizzard: true } : {}),
         ...(meta?.frostTotemChill ? { frostTotemChill: true } : {}),
         ...(meta?.rebukeRoom ? { rebukeRoom: true } : {}),
+        ...(meta?.infernalDashRoom ? { infernalDashRoom: true } : {}),
         ...(meta?.glacialBiteChill ? { glacialBiteChill: true } : {}),
         ...(meta?.glacialTalons ? { glacialTalons: true } : {}),
         ...(meta?.entanglementBarrage ? { entanglementBarrage: true } : {}),
@@ -2215,6 +2238,18 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           ...(typeof cobraRemainingDamage === 'number' && cobraRemainingDamage > 0
             ? { cobraRemainingDamage }
             : {}),
+        });
+      }
+    },
+    [socket, currentRoomId],
+  );
+
+  const triggerTyrantsCloakStrike = useCallback(
+    (enemyId: string) => {
+      if (socket && currentRoomId) {
+        socket.emit('tyrants-cloak-strike', {
+          roomId: currentRoomId,
+          enemyId,
         });
       }
     },
@@ -2416,20 +2451,33 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   useEffect(() => {
     if (!socket || !currentRoomId || gameMode !== 'coop') return;
     if (!socket.connected) return;
-    socket.emit('coop-zombie-room-boons', {
-      roomId: currentRoomId,
-      coopZombieBoons: getCoopZombieRoomBoonsPayload(talentLoadout),
-    });
 
     const localPlayerLevel = socket.id ? (players.get(socket.id)?.level ?? 1) : 1;
     const effectiveStats = StatSystem.getEffectiveStatsWithInventory(statPointData.stats, inventory);
+    const effectiveIntellect = getEffectiveIntellectWithTalentBonuses(
+      effectiveStats,
+      talentLoadout,
+      abilityLoadout,
+    );
     const runeCount = getRuneCountForWeapon(selectedWeapons.primary, localPlayerLevel);
+
+    socket.emit('coop-zombie-room-boons', {
+      roomId: currentRoomId,
+      coopZombieBoons: getCoopZombieRoomBoonsPayload(talentLoadout, {
+        agility: effectiveStats.agility,
+        strength: effectiveStats.strength,
+        criticalRuneCount: runeCount,
+        critDamageRuneCount: runeCount,
+      }),
+    });
+
     socket.emit('coop-stagger-room-boons', {
       roomId: currentRoomId,
       coopStaggerRoomBoons: getCoopStaggerRoomBoonsPayload(talentLoadout, {
         agility: effectiveStats.agility,
         strength: effectiveStats.strength,
         stamina: effectiveStats.stamina,
+        intellect: effectiveIntellect,
         criticalRuneCount: runeCount,
         critDamageRuneCount: runeCount,
       }),
@@ -2442,7 +2490,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         stamina: effectiveStats.stamina,
       }),
     });
-  }, [socket, currentRoomId, gameMode, talentLoadout, statPointData, inventory, selectedWeapons, players]);
+
+    socket.emit('coop-red-room-boons', {
+      roomId: currentRoomId,
+      coopRedRoomBoons: getCoopRedRoomBoonsPayload(talentLoadout),
+    });
+  }, [socket, currentRoomId, gameMode, talentLoadout, abilityLoadout, statPointData, inventory, selectedWeapons, players]);
 
   const updatePlayerLevel = useCallback((playerId: string, level: number) => {
     if (socket && currentRoomId) {
@@ -2676,6 +2729,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     subscribeEnemyDamage,
     damageMushroom,
     detonateWyvernConcentratedVenom,
+    triggerTyrantsCloakStrike,
     applyStatusEffect,
     mushroomState,
     updatePlayerExperience,

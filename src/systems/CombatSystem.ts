@@ -25,8 +25,19 @@ import {
   ARCTIC_CHILL_FREEZE_DURATION_SEC,
   BLIZZARD_FREEZE_DURATION_SEC,
   ENTANGLEMENT_DURATION_MS,
+  INFERNAL_DASH_IGNITE_DOT_FRACTION,
+  INFERNAL_DASH_IGNITE_DURATION_MS,
+  INFERNAL_DASH_IGNITE_TICKS,
+  FIRE_AFFINITY_IGNITE_DOT_FRACTION,
+  FIRE_AFFINITY_IGNITE_DURATION_MS,
+  FIRE_AFFINITY_IGNITE_TICKS,
+  METEOR_IGNITE_DURATION_MS,
+  METEOR_IGNITE_TICKS,
+  CROSSENTROPY_PLAGUE_VENOM_STACKS,
+  computeIgniteDotTickPlan,
 } from '@/utils/talents';
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
+import { addGlobalIgnitedEnemy } from '@/components/weapons/IgniteEffectManager';
 import { ImpactEffectManager } from '@/utils/ImpactEffectManager';
 import type { ImpactEffectEvent } from '@/utils/ImpactEffectManager';
 import { Projectile } from '@/ecs/components/Projectile';
@@ -59,6 +70,10 @@ interface DamageEvent {
   crossentropyPlague?: boolean;
   /** Co-op routing: METEOR Crossentropy — server schedules meteor proc + AoE impact. */
   crossentropyMeteor?: boolean;
+  /** Meteor impact damage (not direct Crossentropy hit). */
+  crossentropyMeteorDamage?: boolean;
+  /** Co-op routing: INFERNAL DASH room boon — server schedules Ignite DoT. */
+  infernalDashRoom?: boolean;
   /** Co-op routing: Infested Combo talent — with damageType `sword` / routed as `runeblade_combo`. */
   infestedCombo?: boolean;
   /** Wyvern Bite — Barrage hit applies Concentrated Venom stack (co-op: server; local: ECS). */
@@ -517,6 +532,7 @@ export class CombatSystem extends System {
         entanglementBarrage?: boolean;
         tempestBurstArcticChill?: boolean;
         tempestBurstWyvernZombie?: boolean;
+        infernalDashRoom?: boolean;
       },
       hitWorldPosition?: { x: number; y: number; z: number },
     ) => void,
@@ -527,6 +543,31 @@ export class CombatSystem extends System {
   /** True when enemy damage is routed to the co-op server (no local CV ticks; use server for CV detonate). */
   public usesNetworkedEnemyDamage(): boolean {
     return !!this.onEnemyDamageCallback;
+  }
+
+  /** Solo/training — schedule ignite DoT ticks locally (co-op uses server `_scheduleIgniteDot`). */
+  public scheduleLocalIgniteDot(
+    target: Entity,
+    appliedDamage: number,
+    dotFraction: number,
+    durationMs: number,
+    tickCount: number,
+    source?: Entity,
+    sourcePlayerId?: string,
+  ): void {
+    const totalDot = Math.floor(appliedDamage * dotFraction);
+    const plan = computeIgniteDotTickPlan(totalDot, tickCount, durationMs);
+    for (let i = 0; i < plan.tickAmounts.length; i++) {
+      const tickDamage = plan.tickAmounts[i];
+      const delayMs = plan.delaysMs[i];
+      if (tickDamage <= 0) continue;
+      setTimeout(() => {
+        const health = target.getComponent(Health);
+        const enemy = target.getComponent(Enemy);
+        if (!health || health.isDead || !enemy || enemy.isDead) return;
+        this.queueDamage(target, tickDamage, source, 'ignite', sourcePlayerId);
+      }, delayMs);
+    }
   }
   
   // Set callback for routing player damage to multiplayer server (PVP)
@@ -930,6 +971,9 @@ export class CombatSystem extends System {
                                 ...(damageEvent.blizzardArctic === true
                                   ? { arcticBlizzard: true as const }
                                   : {}),
+                                ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
+                                  ? { staggerToAdd: damageEvent.staggerToAdd }
+                                  : {}),
                               }
                         : damageType === 'breath_weapon'
                           ? {
@@ -1013,7 +1057,16 @@ export class CombatSystem extends System {
                                           damageType: 'lightning_storm' as const,
                                           staggerToAdd: damageEvent.staggerToAdd,
                                         }
-                                      : undefined;
+                                      : damageType === 'infernal_dash'
+                                        ? {
+                                            damageType: 'infernal_dash' as const,
+                                            infernalDashRoom: true as const,
+                                          }
+                                        : damageType === 'fire_affinity_storm'
+                                          ? {
+                                              damageType: 'fire_affinity_storm' as const,
+                                            }
+                                          : undefined;
       const routeMeta = baseRouteMeta;
       let hitWorldPosition: { x: number; y: number; z: number } | undefined;
       const hitTransform = target.getComponent(Transform);
@@ -1489,6 +1542,59 @@ export class CombatSystem extends System {
         enemyForVenom.applyConcentratedVenomStack(currentTime);
       }
 
+      if (
+        enemyForVenom &&
+        damageType === 'crossentropy' &&
+        damageEvent.crossentropyPlague === true &&
+        !damageEvent.crossentropyMeteorDamage &&
+        damageDealt
+      ) {
+        enemyForVenom.applyConcentratedVenomStacks(CROSSENTROPY_PLAGUE_VENOM_STACKS, currentTime);
+      }
+
+      if (
+        damageDealt &&
+        !health.isDead &&
+        !this.onEnemyDamageCallback &&
+        damageType === 'infernal_dash' &&
+        (damageEvent.infernalDashRoom === true || damageType === 'infernal_dash')
+      ) {
+        this.scheduleLocalIgniteDot(
+          target,
+          actualDamage,
+          INFERNAL_DASH_IGNITE_DOT_FRACTION,
+          INFERNAL_DASH_IGNITE_DURATION_MS,
+          INFERNAL_DASH_IGNITE_TICKS,
+          source,
+          damageEvent.sourcePlayerId,
+        );
+      }
+
+      if (
+        damageDealt &&
+        !health.isDead &&
+        !this.onEnemyDamageCallback &&
+        damageType === 'fire_affinity_storm'
+      ) {
+        const igniteTransform = target.getComponent(Transform);
+        if (igniteTransform) {
+          addGlobalIgnitedEnemy(
+            target.id.toString(),
+            igniteTransform.getWorldPosition().clone(),
+            FIRE_AFFINITY_IGNITE_DURATION_MS,
+          );
+        }
+        this.scheduleLocalIgniteDot(
+          target,
+          actualDamage,
+          FIRE_AFFINITY_IGNITE_DOT_FRACTION,
+          FIRE_AFFINITY_IGNITE_DURATION_MS,
+          FIRE_AFFINITY_IGNITE_TICKS,
+          source,
+          damageEvent.sourcePlayerId,
+        );
+      }
+
       const enemyGlacialBite = target.getComponent(Enemy);
       if (
         enemyGlacialBite &&
@@ -1763,6 +1869,8 @@ export class CombatSystem extends System {
     glacialBiteChill?: boolean,
     glacialTalons?: boolean,
     crossentropyMeteor?: boolean,
+    crossentropyMeteorDamage?: boolean,
+    infernalDashRoom?: boolean,
     entanglementBarrage?: boolean,
     cloudkillProc?: boolean,
     wyvernTalonsZombie?: boolean,
@@ -1801,6 +1909,8 @@ export class CombatSystem extends System {
       glacialBiteChill,
       glacialTalons,
       crossentropyMeteor,
+      crossentropyMeteorDamage,
+      infernalDashRoom,
       entanglementBarrage,
       cloudkillProc,
       wyvernTalonsZombie,
@@ -1815,6 +1925,7 @@ export class CombatSystem extends System {
     damage: number,
     source?: Entity,
     sourcePlayerId?: string,
+    staggerToAdd?: number,
   ): void {
     this.damageQueue.push({
       target,
@@ -1824,6 +1935,7 @@ export class CombatSystem extends System {
       timestamp: Date.now() / 1000,
       sourcePlayerId,
       blizzardArctic: true,
+      ...(typeof staggerToAdd === 'number' && staggerToAdd > 0 ? { staggerToAdd } : {}),
     });
   }
 

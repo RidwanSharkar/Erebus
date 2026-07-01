@@ -42,6 +42,10 @@ interface KnightRendererProps {
   orbitalActiveColor?: string;
   orbitalInactiveColor?: string;
   orbitalYOffset?: number;
+  /** Use fast walk animation regardless of soulType (allied knight with Abyssal Initiate). */
+  forceFastWalk?: boolean;
+  /** Visual scale multiplier (e.g. Boss1 elite knights). */
+  visualScale?: number;
 }
 
 const ATTACK_DURATION = 1200; // ms — matches Mixamo attack clip length
@@ -50,7 +54,8 @@ const SMITE_DURATION = 1200; // Red knight smite (ms)
 const HEAL_DURATION  = 1800; // Green/Purple aggro shout (ms)
 // knight_cast.glb / Cast clip — see knightCoopAbilitiesConstants (backend enemyAI)
 const CAST_ABILITY_MS = KNIGHT_CAST_ABILITY_LOCK_MS;
-const FROST_DURATION = CAST_ABILITY_MS; // Blue frost cast (ms)
+const FROST_DURATION = CAST_ABILITY_MS; // Purple frost cast (ms)
+const STORM_LASH_DURATION = 4000; // Blue Storm Lash channel (ms)
 const SPIN_CHARGE_DURATION = 750;
 const SPIN_DURATION = 1033; // 31 frames at 30fps
 const FADE_DURATION = 1.5; // seconds
@@ -94,6 +99,8 @@ export default function KnightRenderer({
   orbitalActiveColor,
   orbitalInactiveColor,
   orbitalYOffset = 2.1,
+  forceFastWalk = false,
+  visualScale = 1,
 }: KnightRendererProps) {
   const theme = campHpTheme(campType);
   const { socket, enemyTransformsRef } = useMultiplayer();
@@ -104,6 +111,7 @@ export default function KnightRenderer({
   const [isWalking, setIsWalking] = useState(false);
   const [attackVariant, setAttackVariant] = useState<1 | 2>(1);
   const [abilityClip, setAbilityClip] = useState<KnightAbilityClip | null>(null);
+  const [isStormLashHolding, setIsStormLashHolding] = useState(false);
   const [isDashing, setIsDashing] = useState(false);
   const [isSpinCharging, setIsSpinCharging] = useState(false);
   const [isImpacting, setIsImpacting] = useState(false);
@@ -413,7 +421,7 @@ export default function KnightRenderer({
       }, SMITE_DURATION);
     };
 
-    // Green / Purple Knight — Aggro Shout (self-heal)
+    // Green Knight — Aggro Shout (self-heal)
     const handleHealTelegraph = (data: any) => {
       if (data.knightId !== id) return;
       const soundPos = groupRef.current?.position.clone() ?? targetPosition.current.clone();
@@ -426,7 +434,7 @@ export default function KnightRenderer({
       }, HEAL_DURATION);
     };
 
-    // Blue Knight — Frost Ray
+    // Purple Knight — Frost Ray
     const handleFrostTelegraph = (data: any) => {
       if (data.knightId !== id) return;
       isAbilityRef.current = true;
@@ -435,6 +443,19 @@ export default function KnightRenderer({
         setAbilityClip(null);
         isAbilityRef.current = false;
       }, CAST_ABILITY_MS);
+    };
+
+    // Blue Knight — Storm Lash (hold cast pose for full channel)
+    const handleStormLashTelegraph = (data: any) => {
+      if (data.knightId !== id) return;
+      isAbilityRef.current = true;
+      setIsStormLashHolding(true);
+      setAbilityClip('Cast');
+      setTimeout(() => {
+        setAbilityClip(null);
+        setIsStormLashHolding(false);
+        isAbilityRef.current = false;
+      }, STORM_LASH_DURATION);
     };
 
     // Red / Green — Death Grasp (same cast clip as frost)
@@ -451,11 +472,13 @@ export default function KnightRenderer({
     socket.on('knight-smite-telegraph', handleSmiteTelegraph);
     socket.on('knight-heal-telegraph',  handleHealTelegraph);
     socket.on('knight-frost-telegraph', handleFrostTelegraph);
+    socket.on('knight-stormlash-telegraph', handleStormLashTelegraph);
     socket.on('knight-deathgrasp-telegraph', handleDeathGraspTelegraph);
     return () => {
       socket.off('knight-smite-telegraph', handleSmiteTelegraph);
       socket.off('knight-heal-telegraph',  handleHealTelegraph);
       socket.off('knight-frost-telegraph', handleFrostTelegraph);
+      socket.off('knight-stormlash-telegraph', handleStormLashTelegraph);
       socket.off('knight-deathgrasp-telegraph', handleDeathGraspTelegraph);
     };
   }, [id, socket]);
@@ -540,8 +563,11 @@ export default function KnightRenderer({
         attackVariant={attackVariant}
         isDying={isDying}
         soulType={soulType}
+        forceFastWalk={forceFastWalk}
+        scaleMultiplier={visualScale}
         castShadow={castShadow}
         abilityClip={abilityClip}
+        holdAbilityClip={isStormLashHolding}
         isImpacting={isImpacting}
         impactVariant={impactVariant}
         impactPlayKey={impactPlayKey}
@@ -555,7 +581,7 @@ export default function KnightRenderer({
       )}
 
       {/* Billboard health bar — above the knight model head */}
-      <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>
+      <Billboard position={[0, 3 * visualScale, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
             <mesh position={[0, 0, 0]}>

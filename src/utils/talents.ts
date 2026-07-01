@@ -135,6 +135,8 @@ export const TALENT_VORPAL_GUST = 'VORPAL_GUST' as const;
 export const TALENT_FAN_OF_KNIVES = 'FAN_OF_KNIVES' as const;
 /** Sabres class boon — Flourish shield restore on cast + passive STR/INT. */
 export const TALENT_PARRY = 'PARRY' as const;
+/** Sabres class boon — Flourish erupts in a brief firestorm around the player. */
+export const TALENT_FIRE_AFFINITY = 'FIRE_AFFINITY' as const;
 /** Sabres class boon — Backstab (`SABRES_Q`) holds 2 staggered charges (same pattern as Double Strike). */
 export const TALENT_DOUBLE_STAB = 'DOUBLE_STAB' as const;
 
@@ -162,6 +164,15 @@ export const FAN_OF_KNIVES_MAX_DISTANCE_UNITS = 7;
 export const FAN_OF_KNIVES_PROJECTILE_SPEED = 32;
 export const FAN_OF_KNIVES_PROJECTILE_LIFETIME_SEC = 3;
 
+/** Fire Affinity — Flourish firestorm AoE (all stats scale). */
+export const FIRE_AFFINITY_STORM_BASE_DAMAGE = 100;
+export const FIRE_AFFINITY_STORM_DAMAGE_PER_STAT_POINT = 2;
+export const FIRE_AFFINITY_STORM_RADIUS = 5.5;
+export const FIRE_AFFINITY_STORM_ICD_SEC = 3;
+export const FIRE_AFFINITY_IGNITE_DOT_FRACTION = 0.8;
+export const FIRE_AFFINITY_IGNITE_DURATION_MS = 4000;
+export const FIRE_AFFINITY_IGNITE_TICKS = 4;
+
 /** VFX palette key for Fan of Knives tint (from Flourish room boons + default). */
 export type FanOfKnivesFlourishTint = 'default' | 'staggering' | 'wrathful' | 'infested' | 'guard';
 
@@ -186,6 +197,16 @@ export const TALENT_REBUKE = 'REBUKE' as const;
 export const TALENT_RAISE_DEAD = 'RAISE_DEAD' as const;
 /** Red room universal active boon — calls down a meteor on a nearby target on R key (8s cooldown). */
 export const TALENT_METEOR_STRIKE = 'METEOR_STRIKE' as const;
+/** Red room universal passive — ignited enemies erupt on death, dealing AoE damage and spreading ignite. */
+export const TALENT_FISSION = 'FISSION' as const;
+/** Red room universal passive — dash without charges by paying HP. */
+export const TALENT_BLOOD_ORBS = 'BLOOD_ORBS' as const;
+/** Red room universal passive — consume a dash charge to bypass E-ability cooldown. */
+export const TALENT_BLOODMAGE = 'BLOODMAGE' as const;
+/** Blue room universal passive — faster dash charge recovery. */
+export const TALENT_OVERCLOCK = 'OVERCLOCK' as const;
+/** Blue room universal passive — drain all shield to bypass Q-ability cooldown. */
+export const TALENT_OVERRIDE = 'OVERRIDE' as const;
 /** Purple room universal active boon — conjures an ice vortex that freezes nearby enemies on R key (12s cooldown). */
 export const TALENT_COLDSNAP_ROOM = 'COLDSNAP_ROOM' as const;
 /** Blue room universal active boon — calls down a lightning bolt on the highest-priority enemy on R key (3s cooldown). */
@@ -198,6 +219,8 @@ export const TALENT_MOMENTUM_RIFT = 'MOMENTUM_RIFT' as const;
 export const TALENT_MANA_SHIELD = 'MANA_SHIELD' as const;
 /** Purple room universal passive — buff Arctic Blizzard tick damage (scales with Intellect). */
 export const TALENT_HAILSTORM = 'HAILSTORM' as const;
+/** Purple room universal passive — larger Blizzard radius and denser frost particles. */
+export const TALENT_AWAKENED_EYE = 'AWAKENED_EYE' as const;
 /** Green room universal passive — spend a dash charge to heal when taking damage from an enemy. */
 export const TALENT_ORB_SHIELD = 'ORB_SHIELD' as const;
 
@@ -209,6 +232,40 @@ export const TALENT_NECROS_INITIATE = 'NECROS_INITIATE' as const;
 export const TALENT_INFERNAL_INITIATE = 'INFERNAL_INITIATE' as const;
 /** Purple room allied knight boon — knight gains +50% movement speed and attack speed. */
 export const TALENT_ABYSSAL_INITIATE = 'ABYSSAL_INITIATE' as const;
+
+/** Duo boon (red + blue) — stagger lightning procs also ignite, dealing 80% of proc damage over 4s. */
+export const TALENT_MAGMA_CURRENT = 'MAGMA_CURRENT' as const;
+/** Duo boon (red + green) — allied zombies can critically strike with melee and explosion damage. */
+export const TALENT_LEGION = 'LEGION' as const;
+/** Duo boon (green + purple) — gain AscendantBoneWings and heal on successful Aegis blocks. */
+export const TALENT_FATEBREAKER = 'FATEBREAKER' as const;
+/** Duo boon (red + purple) — FROZEN enemies are immediately struck by a meteor; gain small BoneWings. */
+export const TALENT_FROST_QUEEN = 'FROST_QUEEN' as const;
+/** Duo boon (blue + green) — stagger lightning procs heal you per Agility point; bolts turn green. */
+export const TALENT_FORCE_OF_NATURE = 'FORCE_OF_NATURE' as const;
+/** Duo boon (blue + purple) — each blizzard damage tick also applies 10 stagger. */
+export const TALENT_MONSOON = 'MONSOON' as const;
+/** Duo boon (red + blue) — all Ignite ticks apply 10 stagger; counter-strike with stagger lightning on hit taken. */
+export const TALENT_TYRANTS_CLOAK = 'TYRANTS_CLOAK' as const;
+/** Duo boon (red + green) — zombie attacks apply Concentrated Venom; venom sources also Ignite (level-scaled). */
+export const TALENT_HELLFIRE_VENOM = 'HELLFIRE_VENOM' as const;
+/** Duo boon (blue + green) — stagger lightning procs also apply 2 stacks of Concentrated Venom. */
+export const TALENT_STORM_WITCH = 'STORM_WITCH' as const;
+
+/** TYRANT'S CLOAK — min seconds between counter-strike stagger lightning procs when taking damage. */
+export const TYRANTS_CLOAK_ICD_SEC = 3;
+/** TYRANT'S CLOAK — stagger added per Ignite DoT tick. */
+export const TYRANTS_CLOAK_IGNITE_STAGGER_PER_TICK = 10;
+/** HELLFIRE VENOM — Ignite base damage scales as this × player level (80% over 4s via dot fraction). */
+export const HELLFIRE_VENOM_IGNITE_BASE_PER_LEVEL = 100;
+/** HELLFIRE VENOM — min ms between Ignite re-applications per enemy (prevents DoT stacking spam). */
+export const HELLFIRE_VENOM_IGNITE_ICD_MS = 1000;
+/** HELLFIRE VENOM — Ignite DoT fraction of base damage over duration. */
+export const HELLFIRE_VENOM_IGNITE_DOT_FRACTION = 0.8;
+export const HELLFIRE_VENOM_IGNITE_DURATION_MS = 4000;
+export const HELLFIRE_VENOM_IGNITE_TICKS = 4;
+/** STORM WITCH — Concentrated Venom stacks applied per stagger lightning proc. */
+export const STORM_WITCH_VENOM_STACKS = 2;
 
 /** Cyclone Rush — double-tap forward Charge on Runeblade; separate from E-key Charge cooldown. */
 export const CYCLONE_RUSH_CHARGE_COOLDOWN_SEC = 3;
@@ -240,6 +297,26 @@ export const INFERNAL_INITIATE_KNIGHT_DAMAGE_PER_STRENGTH = 3;
 
 export const INFERNAL_DASH_DAMAGE = 195;
 export const INFERNAL_DASH_RADIUS = 3.25;
+/** INFERNAL DASH — Ignite DoT: this fraction of burst damage over INFERNAL_DASH_IGNITE_DURATION_MS. */
+export const INFERNAL_DASH_IGNITE_DOT_FRACTION = 0.8;
+export const INFERNAL_DASH_IGNITE_DURATION_MS = 4000;
+export const INFERNAL_DASH_IGNITE_TICKS = 4;
+/** METEOR impacts — Ignite DoT base fraction + bonus per Intellect point. */
+export const METEOR_IGNITE_DOT_BASE_FRACTION = 0.8;
+export const METEOR_IGNITE_DOT_INTELLECT_BONUS_PER_POINT = 0.02;
+export const METEOR_IGNITE_DURATION_MS = 4000;
+export const METEOR_IGNITE_TICKS = 4;
+/** FISSION room boon — ignited enemy death explosion damage and radius. */
+export const FISSON_EXPLOSION_DAMAGE = 240;
+export const FISSON_EXPLOSION_RADIUS = 4.0;
+/** FISSION — Ignite DoT on splash survivors: this fraction of hit damage over FISSON_IGNITE_DURATION_MS. */
+export const FISSON_IGNITE_DOT_FRACTION = 0.8;
+export const FISSON_IGNITE_DURATION_MS = 4000;
+export const FISSON_IGNITE_TICKS = 4;
+/** BLOOD ORBS room boon — HP cost to dash when no charges remain. */
+export const BLOOD_ORBS_DASH_HP_COST = 20;
+/** OVERCLOCK room boon — flat dash charge recovery rate bonus (multiplier = 1 + this). */
+export const OVERCLOCK_DASH_RECHARGE_RATE_BONUS = 0.25;
 /** REBUKE room boon — burst damage on the attacking enemy. */
 export const REBUKE_DAMAGE = 200;
 /** REBUKE — Ignite DoT: this fraction of the burst damage over REBUKE_IGNITE_DURATION_MS. */
@@ -294,6 +371,8 @@ export const CROSSENTROPY_BASE_DAMAGE = 335;
 export const CROSSENTROPY_PLAGUE_DAMAGE = 500;
 /** PLAGUE Crossentropy — ground venom-style VFX at explosion (matches VenomEffect one-shot ms). */
 export const CROSSENTROPY_PLAGUE_VENOM_MS = 2000;
+/** PLAGUE Crossentropy — Concentrated Venom stacks applied per direct hit (Wyvern Bite uses 1). */
+export const CROSSENTROPY_PLAGUE_VENOM_STACKS = 3;
 /** TEMPEST boon: stagger added per Crossentropy hit. */
 export const CROSSENTROPY_TEMPEST_STAGGER = 100;
 /** METEOR talent — weighted strike count on each eligible Crossentropy impact. */
@@ -323,6 +402,37 @@ export function rollCrossentropyMeteorStrikeCount(): 1 | 2 | 3 {
   if (roll < CROSSENTROPY_METEOR_SINGLE_CHANCE) return 1;
   if (roll < CROSSENTROPY_METEOR_SINGLE_CHANCE + CROSSENTROPY_METEOR_DOUBLE_CHANCE) return 2;
   return 3;
+}
+
+/** METEOR ignite DoT fraction: 80% base + 2% per Intellect point (can exceed 100%). */
+export function getMeteorIgniteDotFraction(intellect: number): number {
+  return METEOR_IGNITE_DOT_BASE_FRACTION + Math.max(0, intellect) * METEOR_IGNITE_DOT_INTELLECT_BONUS_PER_POINT;
+}
+
+export interface IgniteDotTickPlan {
+  tickAmounts: number[];
+  delaysMs: number[];
+}
+
+/** Split total DoT evenly across ticks with remainder on the last tick; 1s intervals. */
+export function computeIgniteDotTickPlan(
+  totalDot: number,
+  tickCount: number,
+  durationMs: number,
+): IgniteDotTickPlan {
+  const tickAmounts: number[] = [];
+  const delaysMs: number[] = [];
+  if (totalDot <= 0 || tickCount <= 0) return { tickAmounts, delaysMs };
+  const baseTick = Math.floor(totalDot / tickCount);
+  const remainder = totalDot - baseTick * tickCount;
+  const intervalMs = durationMs / tickCount;
+  for (let i = 0; i < tickCount; i++) {
+    const tickDamage = i === tickCount - 1 ? baseTick + remainder : baseTick;
+    if (tickDamage <= 0) continue;
+    tickAmounts.push(tickDamage);
+    delaysMs.push(Math.round(intervalMs * (i + 1)));
+  }
+  return { tickAmounts, delaysMs };
 }
 /** Cloudkill (`BOW_BASIC` class boon) — per-hit proc chance on LMB primary enemy hits. */
 export const CLOUDKILL_PROC_CHANCE = 0.2;
@@ -451,6 +561,14 @@ export const HAILSTORM_ARCTIC_BLIZZARD_DAMAGE_PER_TICK = 45;
 export const HAILSTORM_INTELLECT_DAMAGE_PER_POINT = 2;
 /** XZ radius for arctic ground blizzard ticks. */
 export const ARCTIC_BLIZZARD_HIT_RADIUS = 3;
+/** BLOODMAGE room boon — min seconds between dash-charge E-ability cooldown bypasses. */
+export const BLOODMAGE_BYPASS_ICD_SEC = 5;
+/** OVERRIDE room boon — min seconds between shield-drain Q-ability cooldown bypasses. */
+export const OVERRIDE_BYPASS_ICD_SEC = 5;
+/** AWAKENED EYE room boon — Blizzard hit radius multiplier. */
+export const AWAKENED_EYE_RADIUS_MULTIPLIER = 1.5;
+/** AWAKENED EYE room boon — Blizzard particle spawn rate multiplier. */
+export const AWAKENED_EYE_PARTICLE_MULTIPLIER = 1.6;
 /** At 5 chill stacks from arctic blizzard ticks — freeze duration (seconds). */
 export const ARCTIC_CHILL_FREEZE_DURATION_SEC = 4;
 
@@ -585,6 +703,7 @@ export type TalentId =
   | typeof TALENT_VORPAL_GUST
   | typeof TALENT_FAN_OF_KNIVES
   | typeof TALENT_PARRY
+  | typeof TALENT_FIRE_AFFINITY
   | typeof TALENT_DOUBLE_STAB
   | typeof TALENT_PACK_HUNTER
   | typeof TALENT_BERSERKER_STRAIN
@@ -601,17 +720,32 @@ export type TalentId =
   | typeof TALENT_REBUKE
   | typeof TALENT_RAISE_DEAD
   | typeof TALENT_METEOR_STRIKE
+  | typeof TALENT_FISSION
+  | typeof TALENT_BLOOD_ORBS
+  | typeof TALENT_BLOODMAGE
+  | typeof TALENT_OVERCLOCK
+  | typeof TALENT_OVERRIDE
   | typeof TALENT_COLDSNAP_ROOM
   | typeof TALENT_LIGHTNING_BOLT_ROOM
   | typeof TALENT_AEGIS_ROOM
   | typeof TALENT_MOMENTUM_RIFT
   | typeof TALENT_MANA_SHIELD
   | typeof TALENT_HAILSTORM
+  | typeof TALENT_AWAKENED_EYE
   | typeof TALENT_ORB_SHIELD
   | typeof TALENT_TEMPEST_INITIATE
   | typeof TALENT_NECROS_INITIATE
   | typeof TALENT_INFERNAL_INITIATE
-  | typeof TALENT_ABYSSAL_INITIATE;
+  | typeof TALENT_ABYSSAL_INITIATE
+  | typeof TALENT_MAGMA_CURRENT
+  | typeof TALENT_LEGION
+  | typeof TALENT_FATEBREAKER
+  | typeof TALENT_FROST_QUEEN
+  | typeof TALENT_FORCE_OF_NATURE
+  | typeof TALENT_MONSOON
+  | typeof TALENT_TYRANTS_CLOAK
+  | typeof TALENT_HELLFIRE_VENOM
+  | typeof TALENT_STORM_WITCH;
 
 /** Crossentropy bolt / explosion palette (Inferno overrides Glacial / Tempest / Plague). */
 export type CrossentropyVisualTheme = 'default' | 'inferno' | 'tempest' | 'plague' | 'glacial';
@@ -1260,6 +1394,14 @@ export const parryTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'Flourish (E)',
 };
 
+export const fireAffinityTalentDefinition: TalentDefinition = {
+  id: TALENT_FIRE_AFFINITY,
+  name: 'Fire Affinity',
+  description:
+    `Flourish erupts in a brief violent firestorm around you, dealing ${FIRE_AFFINITY_STORM_BASE_DAMAGE} + ${FIRE_AFFINITY_STORM_DAMAGE_PER_STAT_POINT} damage per point of STRENGTH, AGILITY, STAMINA, and INTELLECT to all enemies within ${FIRE_AFFINITY_STORM_RADIUS} units. Applies IGNITE, dealing ${FIRE_AFFINITY_IGNITE_DOT_FRACTION * 100}% of the impact damage over 4 seconds. (${FIRE_AFFINITY_STORM_ICD_SEC}s internal cooldown.)`,
+  modifiesAbilityId: 'Flourish (E)',
+};
+
 export const packHunterTalentDefinition: TalentDefinition = {
   id: TALENT_PACK_HUNTER,
   name: 'Pack Hunter',
@@ -1371,6 +1513,46 @@ export const rebukeTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'Infernal Boons',
 };
 
+export const fissionTalentDefinition: TalentDefinition = {
+  id: TALENT_FISSION,
+  name: 'Fission',
+  description:
+    `Enemies afflicted with IGNITE erupt on death, dealing ${FISSON_EXPLOSION_DAMAGE} damage to nearby enemies and inflicting IGNITE for ${Math.round(FISSON_IGNITE_DOT_FRACTION * 100)}% of the damage dealt over 4 seconds.`,
+  modifiesAbilityId: 'Infernal Boons',
+};
+
+export const bloodOrbsTalentDefinition: TalentDefinition = {
+  id: TALENT_BLOOD_ORBS,
+  name: 'Blood Orbs',
+  description:
+    `When you have no dash charges remaining, you may still dash by paying ${BLOOD_ORBS_DASH_HP_COST} HP.`,
+  modifiesAbilityId: 'Dash (double-tap W/A/S/D)',
+};
+
+export const bloodmageRoomTalentDefinition: TalentDefinition = {
+  id: TALENT_BLOODMAGE,
+  name: 'Bloodmage',
+  description:
+    'While Colossus Strike, Crossentropy, or Reaping Talons is on cooldown, consume 1 dash charge to use it anyway. Cannot occur more than once every 5 seconds.',
+  modifiesAbilityId: 'Infernal Boons',
+};
+
+export const overclockTalentDefinition: TalentDefinition = {
+  id: TALENT_OVERCLOCK,
+  name: 'Overclock',
+  description:
+    `Dash charges recharge ${Math.round(OVERCLOCK_DASH_RECHARGE_RATE_BONUS * 100)}% faster (8s → 6.4s per charge).`,
+  modifiesAbilityId: 'Tempest Boons',
+};
+
+export const overrideRoomTalentDefinition: TalentDefinition = {
+  id: TALENT_OVERRIDE,
+  name: 'Override',
+  description:
+    'While your Q ability is on cooldown, drain all current shield to use it anyway. Cannot occur more than once every 5 seconds.',
+  modifiesAbilityId: 'Tempest Boons',
+};
+
 export const raiseDeadTalentDefinition: TalentDefinition = {
   id: TALENT_RAISE_DEAD,
   name: 'Raise Dead',
@@ -1383,7 +1565,7 @@ export const meteorStrikeTalentDefinition: TalentDefinition = {
   id: TALENT_METEOR_STRIKE,
   name: 'Meteor Strike',
   description:
-    'Calls down 1 meteor on the nearest enemy within range, with a 15% chance to call a second and a 5% chance to call a third. Meteors deal 240 base damage.',
+    'Calls down 1 meteor on the nearest enemy within range, with a 15% chance to call a second and a 5% chance to call a third. Meteors deal 240 base damage and apply IGNITE, dealing bonus damage equal to 80% of the impact damage plus 2% per point of INTELLECT over 4 seconds.',
   modifiesAbilityId: 'Spell (R)',
 };
 
@@ -1435,6 +1617,14 @@ export const hailstormRoomTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'Abyssal Boons',
 };
 
+export const awakenedEyeRoomTalentDefinition: TalentDefinition = {
+  id: TALENT_AWAKENED_EYE,
+  name: 'Awakened Eye',
+  description:
+    `Concentrated Blizzards and your Blizzard storm gain ${Math.round((AWAKENED_EYE_RADIUS_MULTIPLIER - 1) * 100)}% larger radius with denser, larger frost particle effects.`,
+  modifiesAbilityId: 'Abyssal Boons',
+};
+
 export const tempestInitiateTalentDefinition: TalentDefinition = {
   id: TALENT_TEMPEST_INITIATE,
   name: 'Tempest Initiate',
@@ -1465,6 +1655,78 @@ export const abyssalInitiateTalentDefinition: TalentDefinition = {
   description:
     'ALLIED KNIGHT gains +50% movement speed and attack speed.',
   modifiesAbilityId: 'Allied Boons',
+};
+
+export const magmaCurrentTalentDefinition: TalentDefinition = {
+  id: TALENT_MAGMA_CURRENT,
+  name: 'Magma Current',
+  description:
+    'Your STAGGER lightning procs now also IGNITE the enemy, dealing 80% of the proc\u2019s damage as bonus damage over 4 seconds. The bolts turn a deep fiery orange.',
+  modifiesAbilityId: 'Duo Boons',
+};
+
+export const legionTalentDefinition: TalentDefinition = {
+  id: TALENT_LEGION,
+  name: 'Legion',
+  description:
+    'Allied ZOMBIES can now critically strike with their melee attacks and Exploder Strain detonations, using your exact critical strike chance and critical damage multiplier.',
+  modifiesAbilityId: 'Duo Boons',
+};
+
+export const fatebreakerTalentDefinition: TalentDefinition = {
+  id: TALENT_FATEBREAKER,
+  name: 'Fatebreaker',
+  description:
+    'Whenever you successfully block an attack while invulnerable (AEGIS), heal for 2 HP + 1 HP per point of your current STAMINA and INTELLECT combined.',
+  modifiesAbilityId: 'Duo Boons',
+};
+
+export const frostQueenTalentDefinition: TalentDefinition = {
+  id: TALENT_FROST_QUEEN,
+  name: 'Frost Queen',
+  description:
+    'Any enemy that becomes FROZEN is immediately struck by a METEOR at their location, dealing the same damage as your Meteor Strike. Gain a pair of small BONE WINGS.',
+  modifiesAbilityId: 'Duo Boons',
+};
+
+export const forceOfNatureTalentDefinition: TalentDefinition = {
+  id: TALENT_FORCE_OF_NATURE,
+  name: 'Force of Nature',
+  description:
+    'Your STAGGER lightning procs now heal you for 1 HP per point of your current AGILITY. The bolts turn a verdant green.',
+  modifiesAbilityId: 'Duo Boons',
+};
+
+export const monsoonTalentDefinition: TalentDefinition = {
+  id: TALENT_MONSOON,
+  name: 'Monsoon',
+  description:
+    'Each damage tick of your BLIZZARD now also applies 10 STAGGER to the enemy hit.',
+  modifiesAbilityId: 'Duo Boons',
+};
+
+export const tyrantsCloakTalentDefinition: TalentDefinition = {
+  id: TALENT_TYRANTS_CLOAK,
+  name: "Tyrant's Cloak",
+  description:
+    'All IGNITE damage ticks now apply 10 STAGGER. Whenever you take damage from an enemy, strike that enemy with a STAGGER lightning bolt (once every 3 seconds; independent of Rebuke).',
+  modifiesAbilityId: 'Duo Boons',
+};
+
+export const hellfireVenomTalentDefinition: TalentDefinition = {
+  id: TALENT_HELLFIRE_VENOM,
+  name: 'Hellfire Venom',
+  description:
+    'Allied ZOMBIE attacks now apply 1 stack of Concentrated VENOM. Whenever an enemy is affected by any VENOM (Concentrated Venom, Cobra Shot, or Entanglement), they are also inflicted with IGNITE dealing 80% of 100 damage × your current level over 4 seconds.',
+  modifiesAbilityId: 'Duo Boons',
+};
+
+export const stormWitchTalentDefinition: TalentDefinition = {
+  id: TALENT_STORM_WITCH,
+  name: 'Storm Witch',
+  description:
+    'Your STAGGER lightning procs now also apply 2 stacks of Concentrated VENOM to the target.',
+  modifiesAbilityId: 'Duo Boons',
 };
 
 export const wrathfulSabresSwipesTalentDefinition: TalentDefinition = {
@@ -1727,7 +1989,7 @@ export const meteorTalentDefinition: TalentDefinition = {
   id: TALENT_METEOR,
   name: 'Meteor',
   description:
-    'Crossentropy now calls down 1 meteor, with a 15% chance to call a second and a 5% chance to call a third, dealing 240 base damage to enemies in the area.',
+    'Crossentropy now calls down 1 meteor, with a 15% chance to call a second and a 5% chance to call a third, dealing 240 base damage to enemies in the area. Meteors apply IGNITE, dealing bonus damage equal to 80% of the impact damage plus 2% per point of INTELLECT over 4 seconds.',
   modifiesAbilityId: 'Crossentropy (E)',
 };
 
@@ -1751,7 +2013,7 @@ export const crossentropyPlagueTalentDefinition: TalentDefinition = {
   id: TALENT_CROSSENTROPY_PLAGUE,
   name: 'Plague',
   description:
-    'Crossentropy now deals 500 base damage. Each enemy killed by Crossentropy raises up to two ZOMBIE allies for 30s (max 3).',
+    `Crossentropy now deals ${CROSSENTROPY_PLAGUE_DAMAGE} base damage and applies ${CROSSENTROPY_PLAGUE_VENOM_STACKS} stacks of Concentrated Venom per hit. Each enemy killed by Crossentropy raises up to two ZOMBIE allies for 30s (max 3).`,
   modifiesAbilityId: 'Crossentropy (E)',
 };
 
@@ -1845,7 +2107,7 @@ export const staggeringTotemTalentDefinition: TalentDefinition = {
 
 export const infestingTotemTalentDefinition: TalentDefinition = {
   id: TALENT_INFESTING_TOTEM,
-  name: 'Plague Totem',
+  name: 'Infesting Totem',
   description:
     'Mantra\'s Totem shots now gain increased base damage. Enemies killed by Totem shots raise an allied ZOMBIE for 30s (max 3).',
   modifiesAbilityId: 'Mantra (Q)',
@@ -1977,6 +2239,8 @@ export interface TalentLoadout {
   fanOfKnives: boolean;
   /** Sabres Flourish — on-cast shield restore + passive STR/INT (see `PARRY_*` constants). */
   parry: boolean;
+  /** Fire Affinity — Flourish firestorm AoE + Ignite. */
+  fireAffinity: boolean;
   /** Double Stab — Backstab holds 2 staggered charges while Backstab is in loadout. */
   doubleStab: boolean;
   /** Co-op green room — Pack Hunter zombie pack damage bonus. */
@@ -2009,6 +2273,16 @@ export interface TalentLoadout {
   raiseDeadRoom: boolean;
   /** Co-op red room active boon — player can call a meteor on a nearby enemy via R key (8s cooldown). */
   meteorStrikeRoom: boolean;
+  /** Co-op red room passive — ignited enemies detonate on death, dealing AoE damage and spreading ignite. */
+  fissionRoom: boolean;
+  /** Co-op red room passive — dash without charges by paying HP. */
+  bloodOrbsRoom: boolean;
+  /** Co-op red room passive — consume a dash charge to bypass E-ability cooldown. */
+  bloodmageRoom: boolean;
+  /** Co-op blue room passive — faster dash charge recovery. */
+  overclockRoom: boolean;
+  /** Co-op blue room passive — drain all shield to bypass Q-ability cooldown. */
+  overrideRoom: boolean;
   /** Co-op purple room active boon — player can cast Coldsnap (frost nova) via R key (12s cooldown). */
   coldsnapRoom: boolean;
   /** Co-op blue room active boon — player can call a lightning bolt on the top-priority enemy via R key (3s cooldown). */
@@ -2021,6 +2295,8 @@ export interface TalentLoadout {
   manaShieldRoom: boolean;
   /** Co-op purple room passive — buff Arctic Blizzard tick damage (scales with Intellect). */
   hailstormRoom: boolean;
+  /** Co-op purple room passive — larger Blizzard radius and denser frost particles. */
+  awakenedEyeRoom: boolean;
   /** Co-op green room passive — spend a dash charge to heal when taking damage from an enemy. */
   orbShieldRoom: boolean;
   /** Co-op blue room allied knight boon — smite has reduced cooldown and deals bonus damage per Agility. */
@@ -2031,6 +2307,24 @@ export interface TalentLoadout {
   infernalInitiateRoom: boolean;
   /** Co-op purple room allied knight boon — knight gains +50% movement speed and attack speed. */
   abyssalInitiateRoom: boolean;
+  /** Duo boon (red + blue) — stagger lightning procs also ignite for 80% of proc damage over 4s. */
+  magmaCurrentRoom: boolean;
+  /** Duo boon (red + green) — allied zombies can critically strike with melee and explosion damage. */
+  legionRoom: boolean;
+  /** Duo boon (green + purple) — gain AscendantBoneWings; heal on successful Aegis blocks. */
+  fatebreakerRoom: boolean;
+  /** Duo boon (red + purple) — FROZEN enemies are immediately struck by a meteor; gain small BoneWings. */
+  frostQueenRoom: boolean;
+  /** Duo boon (blue + green) — stagger lightning procs heal you per Agility point; bolts turn green. */
+  forceOfNatureRoom: boolean;
+  /** Duo boon (blue + purple) — each blizzard damage tick also applies 10 stagger. */
+  monsoonRoom: boolean;
+  /** Duo boon (red + blue) — all Ignite ticks apply 10 stagger; counter-strike with stagger lightning on hit taken. */
+  tyrantsCloakRoom: boolean;
+  /** Duo boon (red + green) — zombie attacks apply Concentrated Venom; venom sources also Ignite (level-scaled). */
+  hellfireVenomRoom: boolean;
+  /** Duo boon (blue + green) — stagger lightning procs also apply 2 stacks of Concentrated Venom. */
+  stormWitchRoom: boolean;
 }
 
 export function createDefaultTalentLoadout(): TalentLoadout {
@@ -2125,6 +2419,7 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     vorpalGust: false,
     fanOfKnives: false,
     parry: false,
+    fireAffinity: false,
     doubleStab: false,
     packHunterRoom: false,
     berserkerStrainRoom: false,
@@ -2141,17 +2436,32 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     rebukeRoom: false,
     raiseDeadRoom: false,
     meteorStrikeRoom: false,
+    fissionRoom: false,
+    bloodOrbsRoom: false,
+    bloodmageRoom: false,
+    overclockRoom: false,
+    overrideRoom: false,
     coldsnapRoom: false,
     lightningBoltRoom: false,
     aegisRoom: false,
     momentumRiftRoom: false,
     manaShieldRoom: false,
     hailstormRoom: false,
+    awakenedEyeRoom: false,
     orbShieldRoom: false,
     tempestInitiateRoom: false,
     necrosInitiateRoom: false,
     infernalInitiateRoom: false,
     abyssalInitiateRoom: false,
+    magmaCurrentRoom: false,
+    legionRoom: false,
+    fatebreakerRoom: false,
+    frostQueenRoom: false,
+    forceOfNatureRoom: false,
+    monsoonRoom: false,
+    tyrantsCloakRoom: false,
+    hellfireVenomRoom: false,
+    stormWitchRoom: false,
   };
 }
 
@@ -2520,6 +2830,26 @@ export function shouldApplyRebukeTalent(talentLoadout: TalentLoadout | null | un
   return !!talentLoadout?.rebukeRoom;
 }
 
+export function shouldApplyFissionRoom(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.fissionRoom;
+}
+
+export function shouldApplyBloodOrbsTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.bloodOrbsRoom;
+}
+
+export function shouldApplyOverclockTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.overclockRoom;
+}
+
+export function getDashChargeRechargeRateMultiplier(
+  talentLoadout: TalentLoadout | null | undefined,
+): number {
+  return shouldApplyOverclockTalent(talentLoadout)
+    ? 1 + OVERCLOCK_DASH_RECHARGE_RATE_BONUS
+    : 1;
+}
+
 export function shouldApplyMomentumRiftTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.momentumRiftRoom;
 }
@@ -2530,6 +2860,42 @@ export function shouldApplyManaShieldRoomTalent(talentLoadout: TalentLoadout | n
 
 export function shouldApplyHailstormTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.hailstormRoom;
+}
+
+export function shouldApplyAwakenedEyeTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.awakenedEyeRoom;
+}
+
+export function shouldApplyBloodmageTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.bloodmageRoom;
+}
+
+export function shouldApplyOverrideTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.overrideRoom;
+}
+
+export function getArcticBlizzardHitRadius(
+  talentLoadout: TalentLoadout | null | undefined,
+): number {
+  const base = ARCTIC_BLIZZARD_HIT_RADIUS;
+  if (!shouldApplyAwakenedEyeTalent(talentLoadout)) return base;
+  return base * AWAKENED_EYE_RADIUS_MULTIPLIER;
+}
+
+export function getRunebladeBlizzardStormHitRadius(
+  talentLoadout: TalentLoadout | null | undefined,
+): number {
+  const base = BLIZZARD_STORM_HIT_RADIUS;
+  if (!shouldApplyAwakenedEyeTalent(talentLoadout)) return base;
+  return base * AWAKENED_EYE_RADIUS_MULTIPLIER;
+}
+
+export function getBlizzardParticleSpawnMultiplier(
+  talentLoadout: TalentLoadout | null | undefined,
+): number {
+  return shouldApplyAwakenedEyeTalent(talentLoadout)
+    ? AWAKENED_EYE_PARTICLE_MULTIPLIER
+    : 1;
 }
 
 export function getArcticBlizzardDamagePerTick(
@@ -2618,6 +2984,19 @@ export function getFanOfKnivesProjectileDamage(
   return FAN_OF_KNIVES_BASE_DAMAGE + FAN_OF_KNIVES_DAMAGE_PER_AGILITY * Math.max(0, agility);
 }
 
+export function getFireAffinityStormDamage(
+  stats: PlayerStats,
+  talentLoadout?: TalentLoadout | null,
+  abilityLoadout?: AbilityLoadout | null,
+): number {
+  const total =
+    Math.max(0, getEffectiveStrengthWithTalentBonuses(stats, talentLoadout, abilityLoadout)) +
+    Math.max(0, getEffectiveAgilityWithTalentBonuses(stats, talentLoadout, abilityLoadout)) +
+    Math.max(0, getEffectiveStaminaWithTalentBonuses(stats, talentLoadout, abilityLoadout)) +
+    Math.max(0, getEffectiveIntellectWithTalentBonuses(stats, talentLoadout, abilityLoadout));
+  return FIRE_AFFINITY_STORM_BASE_DAMAGE + FIRE_AFFINITY_STORM_DAMAGE_PER_STAT_POINT * total;
+}
+
 export function getLightningBoltRoomDamage(
   stats: PlayerStats,
   talentLoadout?: TalentLoadout | null,
@@ -2671,6 +3050,51 @@ export function applyManaShieldRestoreForDashCharges(
 
 export function shouldApplyOrbShieldTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.orbShieldRoom;
+}
+
+/** MAGMA CURRENT (duo: red + blue) — stagger lightning procs also ignite the enemy. */
+export function shouldApplyMagmaCurrentTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.magmaCurrentRoom;
+}
+
+/** LEGION (duo: red + green) — allied zombies can critically strike. */
+export function shouldApplyLegionTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.legionRoom;
+}
+
+/** FATEBREAKER (duo: green + purple) — AscendantBoneWings + heal on successful Aegis blocks. */
+export function shouldApplyFatebreakerTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.fatebreakerRoom;
+}
+
+/** FROST QUEEN (duo: red + purple) — FROZEN enemies are immediately struck by a meteor; small BoneWings. */
+export function shouldApplyFrostQueenTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.frostQueenRoom;
+}
+
+/** FORCE OF NATURE (duo: blue + green) — stagger lightning procs heal you per Agility point. */
+export function shouldApplyForceOfNatureTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.forceOfNatureRoom;
+}
+
+/** MONSOON (duo: blue + purple) — each blizzard damage tick also applies 10 stagger. */
+export function shouldApplyMonsoonTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.monsoonRoom;
+}
+
+/** TYRANT'S CLOAK (duo: red + blue) — Ignite ticks apply stagger; counter-strike with stagger lightning. */
+export function shouldApplyTyrantsCloakTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.tyrantsCloakRoom;
+}
+
+/** HELLFIRE VENOM (duo: red + green) — zombie venom + venom sources Ignite. */
+export function shouldApplyHellfireVenomTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.hellfireVenomRoom;
+}
+
+/** STORM WITCH (duo: blue + green) — stagger lightning procs apply Concentrated Venom stacks. */
+export function shouldApplyStormWitchTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.stormWitchRoom;
 }
 
 /** EXECUTIONER — post-dash empowered Runeblade LMB; talent toggle only. */
@@ -2922,6 +3346,18 @@ export function shouldApplyArcticShardsEntropicTalent(
   return !!talentLoadout?.arcticShards;
 }
 
+export type EntropicBoltTalentVariant = EntropicBoltBoonKind;
+
+export function getEntropicBoltTalentVariantFromTalentLoadout(
+  talentLoadout: TalentLoadout | null | undefined,
+): EntropicBoltTalentVariant | undefined {
+  if (shouldApplyWrathfulEntropicTalent(talentLoadout)) return 'wrathful';
+  if (shouldApplyStaggeringEntropicTalent(talentLoadout)) return 'staggering';
+  if (shouldApplyInfestingEntropicTalent(talentLoadout)) return 'infesting';
+  if (shouldApplyArcticShardsEntropicTalent(talentLoadout)) return 'arctic';
+  return undefined;
+}
+
 /** Purple room — Glacial Crossentropy (requires R in loadout for full effect). */
 export function shouldApplyGlacialStormTalent(
   talentLoadout: TalentLoadout | null | undefined,
@@ -3082,6 +3518,10 @@ export function shouldApplyVorpalGustTalent(talentLoadout: TalentLoadout | null 
 
 export function shouldApplyFanOfKnivesTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.fanOfKnives;
+}
+
+export function shouldApplyFireAffinityTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.fireAffinity;
 }
 
 /**
@@ -3262,7 +3702,7 @@ export function shouldApplyBlizzardTalent(
 
 export type CoopRoomColor = 'blue' | 'green' | 'purple' | 'red';
 
-function isCoopRoomColor(s: string | null | undefined): s is CoopRoomColor {
+export function isCoopRoomColor(s: string | null | undefined): s is CoopRoomColor {
   return s === 'blue' || s === 'green' || s === 'purple' || s === 'red';
 }
 
@@ -3295,27 +3735,69 @@ export function expandRoomBoomDashExclusionsAfterPick(picked: TalentId): TalentI
 }
 
 /** Payload for `coop-zombie-room-boons` Socket.IO sync (server applies to raised zombies). */
-export function getCoopZombieRoomBoonsPayload(loadout: TalentLoadout): {
+export function getCoopZombieRoomBoonsPayload(
+  loadout: TalentLoadout,
+  combatSnapshot?: {
+    agility: number;
+    strength: number;
+    criticalRuneCount: number;
+    critDamageRuneCount: number;
+  },
+): {
   packHunter: boolean;
   berserkerStrain: boolean;
   juggernautStrain: boolean;
   exploderStrain: boolean;
+  legion: boolean;
+  hellfireVenom: boolean;
+  critChance?: number;
+  critDamageMult?: number;
 } {
-  return {
+  const legion = !!loadout.legionRoom;
+  const payload: {
+    packHunter: boolean;
+    berserkerStrain: boolean;
+    juggernautStrain: boolean;
+    exploderStrain: boolean;
+    legion: boolean;
+    hellfireVenom: boolean;
+    critChance?: number;
+    critDamageMult?: number;
+  } = {
     packHunter: !!loadout.packHunterRoom,
     berserkerStrain: !!loadout.berserkerStrainRoom,
     juggernautStrain: !!loadout.juggernautStrainRoom,
     exploderStrain: !!loadout.exploderStrainRoom,
+    legion,
+    hellfireVenom: !!loadout.hellfireVenomRoom,
   };
+  if (legion && combatSnapshot) {
+    const snap = getUnstableEnergyStaggerProcCombatSnapshot(combatSnapshot);
+    payload.critChance = snap.critChance;
+    payload.critDamageMult = snap.critDamageMult;
+  }
+  return payload;
 }
 
 export interface CoopStaggerRoomBoonsPayload {
   guardbreak: boolean;
   overshock: boolean;
   unstableEnergy: boolean;
+  /** Duo boon (red + blue) — stagger lightning procs also ignite. */
+  magmaCurrent: boolean;
+  /** Duo boon (red + purple) — FROZEN enemies are immediately struck by a meteor. */
+  frostQueen: boolean;
+  /** Duo boon (blue + green) — stagger lightning procs heal you per Agility point. */
+  forceOfNature: boolean;
+  /** Duo boon (red + blue) — Ignite ticks apply stagger; counter-strike with stagger lightning. */
+  tyrantsCloak: boolean;
+  /** Duo boon (blue + green) — stagger lightning procs apply Concentrated Venom stacks. */
+  stormWitch: boolean;
   /** Effective Stamina from all sources (Relentless Backstab kill heal on server). */
   stamina?: number;
   agility?: number;
+  /** Effective Intellect (meteor ignite scaling on server). */
+  intellect?: number;
   critChance?: number;
   critDamageMult?: number;
 }
@@ -3327,6 +3809,7 @@ export function getCoopStaggerRoomBoonsPayload(
     agility: number;
     strength: number;
     stamina: number;
+    intellect?: number;
     criticalRuneCount: number;
     critDamageRuneCount: number;
   },
@@ -3336,9 +3819,19 @@ export function getCoopStaggerRoomBoonsPayload(
     guardbreak: !!loadout.guardbreakRoom,
     overshock: !!loadout.overshockRoom,
     unstableEnergy,
+    magmaCurrent: !!loadout.magmaCurrentRoom,
+    frostQueen: !!loadout.frostQueenRoom,
+    forceOfNature: !!loadout.forceOfNatureRoom,
+    tyrantsCloak: !!loadout.tyrantsCloakRoom,
+    stormWitch: !!loadout.stormWitchRoom,
   };
   if (combatSnapshot) {
     payload.stamina = Math.max(0, combatSnapshot.stamina);
+    // FORCE OF NATURE also needs Agility even without Unstable Energy enabled.
+    payload.agility = Math.max(0, combatSnapshot.agility);
+    if (typeof combatSnapshot.intellect === 'number') {
+      payload.intellect = Math.max(0, combatSnapshot.intellect);
+    }
   }
   if (unstableEnergy && combatSnapshot) {
     const snap = getUnstableEnergyStaggerProcCombatSnapshot(combatSnapshot);
@@ -3376,6 +3869,15 @@ export function getCoopAlliedKnightBoonsPayload(
     payload.stamina = Math.max(0, stats.stamina);
   }
   return payload;
+}
+
+export interface CoopRedRoomBoonsPayload {
+  fission: boolean;
+}
+
+/** Payload for `coop-red-room-boons` Socket.IO sync (server applies on ignited enemy death). */
+export function getCoopRedRoomBoonsPayload(loadout: TalentLoadout): CoopRedRoomBoonsPayload {
+  return { fission: !!loadout.fissionRoom };
 }
 
 /** Runeblade class boon pool. */
@@ -3434,7 +3936,7 @@ export function buildScytheClassBoonPool(): TalentId[] {
 
 /** Sabres class boon pool (co-op): Backstab-focused talents + LMB augments (Crescent Blades, Wind Shear). */
 export function buildSabresClassBoonPool(): TalentId[] {
-  return [TALENT_KILLSTREAK, TALENT_RELENTLESS, TALENT_DOUBLE_STAB, TALENT_VORPAL_GUST, TALENT_FAN_OF_KNIVES, TALENT_PARRY, TALENT_CRESCENT_BLADES, TALENT_WIND_SHEAR, TALENT_PSIONIC_BLADES];
+  return [TALENT_KILLSTREAK, TALENT_RELENTLESS, TALENT_DOUBLE_STAB, TALENT_VORPAL_GUST, TALENT_FAN_OF_KNIVES, TALENT_PARRY, TALENT_FIRE_AFFINITY, TALENT_CRESCENT_BLADES, TALENT_WIND_SHEAR, TALENT_PSIONIC_BLADES];
 }
 
 export function buildClassBoonPoolForWeapon(
@@ -3561,11 +4063,11 @@ export function buildRoomBoonPoolForColor(
 
   switch (k) {
     case 'red':
-      return [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH, TALENT_REBUKE, TALENT_METEOR_STRIKE, TALENT_INFERNAL_INITIATE];
+      return [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH, TALENT_REBUKE, TALENT_METEOR_STRIKE, TALENT_INFERNAL_INITIATE, TALENT_FISSION, TALENT_BLOOD_ORBS, TALENT_BLOODMAGE];
     case 'purple':
-      return [...pool, TALENT_GLACIAL_DASH, TALENT_COLDSNAP_ROOM, TALENT_AEGIS_ROOM, TALENT_MOMENTUM_RIFT, TALENT_MANA_SHIELD, TALENT_HAILSTORM, TALENT_ABYSSAL_INITIATE];
+      return [...pool, TALENT_GLACIAL_DASH, TALENT_COLDSNAP_ROOM, TALENT_AEGIS_ROOM, TALENT_MOMENTUM_RIFT, TALENT_MANA_SHIELD, TALENT_HAILSTORM, TALENT_AWAKENED_EYE, TALENT_ABYSSAL_INITIATE];
     case 'blue':
-      return [...pool, TALENT_STAGGERING_DASH, TALENT_GUARDBREAK, TALENT_OVERSHOCK, TALENT_UNSTABLE_ENERGY, TALENT_LIGHTNING_BOLT_ROOM, TALENT_TEMPEST_INITIATE];
+      return [...pool, TALENT_STAGGERING_DASH, TALENT_GUARDBREAK, TALENT_OVERSHOCK, TALENT_UNSTABLE_ENERGY, TALENT_LIGHTNING_BOLT_ROOM, TALENT_TEMPEST_INITIATE, TALENT_OVERCLOCK, TALENT_OVERRIDE];
     default:
       return pool;
   }
@@ -4090,6 +4592,9 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_PARRY:
       next.parry = true;
       return next;
+    case TALENT_FIRE_AFFINITY:
+      next.fireAffinity = true;
+      return next;
     case TALENT_PACK_HUNTER:
       next.packHunterRoom = true;
       return next;
@@ -4135,6 +4640,21 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_METEOR_STRIKE:
       next.meteorStrikeRoom = true;
       return next;
+    case TALENT_FISSION:
+      next.fissionRoom = true;
+      return next;
+    case TALENT_BLOOD_ORBS:
+      next.bloodOrbsRoom = true;
+      return next;
+    case TALENT_BLOODMAGE:
+      next.bloodmageRoom = true;
+      return next;
+    case TALENT_OVERCLOCK:
+      next.overclockRoom = true;
+      return next;
+    case TALENT_OVERRIDE:
+      next.overrideRoom = true;
+      return next;
     case TALENT_COLDSNAP_ROOM:
       next.coldsnapRoom = true;
       return next;
@@ -4153,6 +4673,9 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_HAILSTORM:
       next.hailstormRoom = true;
       return next;
+    case TALENT_AWAKENED_EYE:
+      next.awakenedEyeRoom = true;
+      return next;
     case TALENT_ORB_SHIELD:
       next.orbShieldRoom = true;
       return next;
@@ -4167,6 +4690,33 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
       return next;
     case TALENT_ABYSSAL_INITIATE:
       next.abyssalInitiateRoom = true;
+      return next;
+    case TALENT_MAGMA_CURRENT:
+      next.magmaCurrentRoom = true;
+      return next;
+    case TALENT_LEGION:
+      next.legionRoom = true;
+      return next;
+    case TALENT_FATEBREAKER:
+      next.fatebreakerRoom = true;
+      return next;
+    case TALENT_FROST_QUEEN:
+      next.frostQueenRoom = true;
+      return next;
+    case TALENT_FORCE_OF_NATURE:
+      next.forceOfNatureRoom = true;
+      return next;
+    case TALENT_MONSOON:
+      next.monsoonRoom = true;
+      return next;
+    case TALENT_TYRANTS_CLOAK:
+      next.tyrantsCloakRoom = true;
+      return next;
+    case TALENT_HELLFIRE_VENOM:
+      next.hellfireVenomRoom = true;
+      return next;
+    case TALENT_STORM_WITCH:
+      next.stormWitchRoom = true;
       return next;
     default:
       return next;
@@ -4265,6 +4815,7 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_VORPAL_GUST]: vorpalGustTalentDefinition,
   [TALENT_FAN_OF_KNIVES]: fanOfKnivesTalentDefinition,
   [TALENT_PARRY]: parryTalentDefinition,
+  [TALENT_FIRE_AFFINITY]: fireAffinityTalentDefinition,
   [TALENT_PACK_HUNTER]: packHunterTalentDefinition,
   [TALENT_BERSERKER_STRAIN]: berserkerStrainTalentDefinition,
   [TALENT_JUGGERNAUT_STRAIN]: juggernautStrainTalentDefinition,
@@ -4280,17 +4831,32 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_REBUKE]: rebukeTalentDefinition,
   [TALENT_RAISE_DEAD]: raiseDeadTalentDefinition,
   [TALENT_METEOR_STRIKE]: meteorStrikeTalentDefinition,
+  [TALENT_FISSION]: fissionTalentDefinition,
+  [TALENT_BLOOD_ORBS]: bloodOrbsTalentDefinition,
+  [TALENT_BLOODMAGE]: bloodmageRoomTalentDefinition,
+  [TALENT_OVERCLOCK]: overclockTalentDefinition,
+  [TALENT_OVERRIDE]: overrideRoomTalentDefinition,
   [TALENT_COLDSNAP_ROOM]: coldsnapRoomTalentDefinition,
   [TALENT_LIGHTNING_BOLT_ROOM]: lightningBoltRoomTalentDefinition,
   [TALENT_AEGIS_ROOM]: aegisRoomTalentDefinition,
   [TALENT_MOMENTUM_RIFT]: momentumRiftTalentDefinition,
   [TALENT_MANA_SHIELD]: manaShieldRoomTalentDefinition,
   [TALENT_HAILSTORM]: hailstormRoomTalentDefinition,
+  [TALENT_AWAKENED_EYE]: awakenedEyeRoomTalentDefinition,
   [TALENT_ORB_SHIELD]: orbShieldTalentDefinition,
   [TALENT_TEMPEST_INITIATE]: tempestInitiateTalentDefinition,
   [TALENT_NECROS_INITIATE]: necrosInitiateTalentDefinition,
   [TALENT_INFERNAL_INITIATE]: infernalInitiateTalentDefinition,
   [TALENT_ABYSSAL_INITIATE]: abyssalInitiateTalentDefinition,
+  [TALENT_MAGMA_CURRENT]: magmaCurrentTalentDefinition,
+  [TALENT_LEGION]: legionTalentDefinition,
+  [TALENT_FATEBREAKER]: fatebreakerTalentDefinition,
+  [TALENT_FROST_QUEEN]: frostQueenTalentDefinition,
+  [TALENT_FORCE_OF_NATURE]: forceOfNatureTalentDefinition,
+  [TALENT_MONSOON]: monsoonTalentDefinition,
+  [TALENT_TYRANTS_CLOAK]: tyrantsCloakTalentDefinition,
+  [TALENT_HELLFIRE_VENOM]: hellfireVenomTalentDefinition,
+  [TALENT_STORM_WITCH]: stormWitchTalentDefinition,
 };
 
 /** Official room-type icons used as defaults when a room boon has no dedicated asset. */
@@ -4397,6 +4963,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_VORPAL_GUST]: '/icons/vorpalGust.svg',
   [TALENT_FAN_OF_KNIVES]: '/icons/fanofknives.svg',
   [TALENT_PARRY]: '/icons/parry.svg',
+  [TALENT_FIRE_AFFINITY]: '/icons/fireAffinity.svg',
   [TALENT_PACK_HUNTER]: null,
   [TALENT_BERSERKER_STRAIN]: null,
   [TALENT_JUGGERNAUT_STRAIN]: null,
@@ -4412,17 +4979,32 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_REBUKE]: null,
   [TALENT_RAISE_DEAD]: null,
   [TALENT_METEOR_STRIKE]: '/icons/meteor.svg',
+  [TALENT_FISSION]: null,
+  [TALENT_BLOOD_ORBS]: null,
+  [TALENT_BLOODMAGE]: null,
+  [TALENT_OVERCLOCK]: null,
+  [TALENT_OVERRIDE]: null,
   [TALENT_COLDSNAP_ROOM]: null,
   [TALENT_LIGHTNING_BOLT_ROOM]: null,
   [TALENT_AEGIS_ROOM]: null,
   [TALENT_MOMENTUM_RIFT]: null,
   [TALENT_MANA_SHIELD]: null,
   [TALENT_HAILSTORM]: '/icons/blizzard.svg',
+  [TALENT_AWAKENED_EYE]: '/icons/blizzard.svg',
   [TALENT_ORB_SHIELD]: null,
   [TALENT_TEMPEST_INITIATE]: null,
   [TALENT_NECROS_INITIATE]: null,
   [TALENT_INFERNAL_INITIATE]: null,
   [TALENT_ABYSSAL_INITIATE]: null,
+  [TALENT_MAGMA_CURRENT]: null,
+  [TALENT_LEGION]: null,
+  [TALENT_FATEBREAKER]: null,
+  [TALENT_FROST_QUEEN]: null,
+  [TALENT_FORCE_OF_NATURE]: null,
+  [TALENT_MONSOON]: null,
+  [TALENT_TYRANTS_CLOAK]: null,
+  [TALENT_HELLFIRE_VENOM]: null,
+  [TALENT_STORM_WITCH]: null,
 };
 
 const COOP_ROOM_COLOR_BY_TALENT: Partial<Record<TalentId, CoopRoomColor>> = (() => {
@@ -4593,6 +5175,7 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.vorpalGust) out.push(TALENT_VORPAL_GUST);
   if (loadout.fanOfKnives) out.push(TALENT_FAN_OF_KNIVES);
   if (loadout.parry) out.push(TALENT_PARRY);
+  if (loadout.fireAffinity) out.push(TALENT_FIRE_AFFINITY);
   if (loadout.packHunterRoom) out.push(TALENT_PACK_HUNTER);
   if (loadout.berserkerStrainRoom) out.push(TALENT_BERSERKER_STRAIN);
   if (loadout.juggernautStrainRoom) out.push(TALENT_JUGGERNAUT_STRAIN);
@@ -4608,19 +5191,67 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.rebukeRoom) out.push(TALENT_REBUKE);
   if (loadout.raiseDeadRoom) out.push(TALENT_RAISE_DEAD);
   if (loadout.meteorStrikeRoom) out.push(TALENT_METEOR_STRIKE);
+  if (loadout.fissionRoom) out.push(TALENT_FISSION);
+  if (loadout.bloodOrbsRoom) out.push(TALENT_BLOOD_ORBS);
+  if (loadout.bloodmageRoom) out.push(TALENT_BLOODMAGE);
+  if (loadout.overclockRoom) out.push(TALENT_OVERCLOCK);
+  if (loadout.overrideRoom) out.push(TALENT_OVERRIDE);
   if (loadout.coldsnapRoom) out.push(TALENT_COLDSNAP_ROOM);
   if (loadout.lightningBoltRoom) out.push(TALENT_LIGHTNING_BOLT_ROOM);
   if (loadout.aegisRoom) out.push(TALENT_AEGIS_ROOM);
   if (loadout.momentumRiftRoom) out.push(TALENT_MOMENTUM_RIFT);
   if (loadout.manaShieldRoom) out.push(TALENT_MANA_SHIELD);
   if (loadout.hailstormRoom) out.push(TALENT_HAILSTORM);
+  if (loadout.awakenedEyeRoom) out.push(TALENT_AWAKENED_EYE);
   if (loadout.orbShieldRoom) out.push(TALENT_ORB_SHIELD);
+  if (loadout.tempestInitiateRoom) out.push(TALENT_TEMPEST_INITIATE);
+  if (loadout.necrosInitiateRoom) out.push(TALENT_NECROS_INITIATE);
+  if (loadout.infernalInitiateRoom) out.push(TALENT_INFERNAL_INITIATE);
+  if (loadout.abyssalInitiateRoom) out.push(TALENT_ABYSSAL_INITIATE);
+  if (loadout.magmaCurrentRoom) out.push(TALENT_MAGMA_CURRENT);
+  if (loadout.legionRoom) out.push(TALENT_LEGION);
+  if (loadout.fatebreakerRoom) out.push(TALENT_FATEBREAKER);
+  if (loadout.frostQueenRoom) out.push(TALENT_FROST_QUEEN);
+  if (loadout.forceOfNatureRoom) out.push(TALENT_FORCE_OF_NATURE);
+  if (loadout.monsoonRoom) out.push(TALENT_MONSOON);
+  if (loadout.tyrantsCloakRoom) out.push(TALENT_TYRANTS_CLOAK);
+  if (loadout.hellfireVenomRoom) out.push(TALENT_HELLFIRE_VENOM);
+  if (loadout.stormWitchRoom) out.push(TALENT_STORM_WITCH);
   return out;
 }
 
 const COOP_ROOM_COLORS: CoopRoomColor[] = ['blue', 'green', 'purple', 'red'];
 
-/** All talent ids that can belong to a weapon (class boons + room boons across colors). */
+interface DuoBoonDef {
+  id: TalentId;
+  colors: readonly [CoopRoomColor, CoopRoomColor];
+}
+
+/** Cross-color duo boons — unlocked once the player owns a primary (LMB/Q/E/R) room boon of BOTH colors. */
+const DUO_BOONS: readonly DuoBoonDef[] = [
+  { id: TALENT_MAGMA_CURRENT, colors: ['red', 'blue'] },
+  { id: TALENT_TYRANTS_CLOAK, colors: ['red', 'blue'] },
+  { id: TALENT_LEGION, colors: ['red', 'green'] },
+  { id: TALENT_HELLFIRE_VENOM, colors: ['red', 'green'] },
+  { id: TALENT_FATEBREAKER, colors: ['green', 'purple'] },
+  { id: TALENT_FROST_QUEEN, colors: ['red', 'purple'] },
+  { id: TALENT_FORCE_OF_NATURE, colors: ['blue', 'green'] },
+  { id: TALENT_STORM_WITCH, colors: ['blue', 'green'] },
+  { id: TALENT_MONSOON, colors: ['blue', 'purple'] },
+];
+
+export const DUO_BOON_IDS: readonly TalentId[] = DUO_BOONS.map((d) => d.id);
+
+export function isDuoBoonTalent(id: TalentId): boolean {
+  return DUO_BOON_IDS.includes(id);
+}
+
+/** Room-color pair required to unlock a duo boon (null if not a duo boon). */
+export function getDuoBoonColors(id: TalentId): readonly [CoopRoomColor, CoopRoomColor] | null {
+  return DUO_BOONS.find((d) => d.id === id)?.colors ?? null;
+}
+
+/** All talent ids that can belong to a weapon (class boons + room boons across colors + duo boons). */
 export function buildWeaponTalentIdSet(
   weapon: WeaponType,
   talentLoadoutForPool?: TalentLoadout | null,
@@ -4633,6 +5264,9 @@ export function buildWeaponTalentIdSet(
     for (const id of buildRoomBoonPoolForColor(color, weapon)) {
       set.add(id);
     }
+  }
+  for (const id of DUO_BOON_IDS) {
+    set.add(id);
   }
   return set;
 }
@@ -4665,17 +5299,83 @@ export function getEnabledPrimaryWeaponRoomBoonIds(
   return out;
 }
 
-/** Split HUD talents into pinned primary room boons vs all other enabled talents. */
+/** Enabled class boons for the currently equipped weapon. */
+export function getEnabledClassBoonIdsForWeapon(
+  loadout: TalentLoadout,
+  weapon: WeaponType,
+): TalentId[] {
+  if (weapon === WeaponType.NONE) return [];
+  const enabled = new Set(getEnabledTalentIds(loadout));
+  return buildClassBoonPoolForWeapon(weapon, loadout).filter((id) => enabled.has(id));
+}
+
+/** Enabled duo boons (weapon-agnostic). */
+export function getEnabledDuoBoonIds(loadout: TalentLoadout): TalentId[] {
+  const enabled = new Set(getEnabledTalentIds(loadout));
+  return DUO_BOON_IDS.filter((id) => enabled.has(id));
+}
+
+export interface HudTalentPartition {
+  primaryRoomBoons: TalentId[];
+  otherRoomBoons: TalentId[];
+  classTalents: TalentId[];
+  duoBoons: TalentId[];
+}
+
+/** Split HUD talents into room boons (bottom bar), class boons, and duo boons (vertical panel). */
+export function partitionTalentsForHud(
+  loadout: TalentLoadout,
+  weapon: WeaponType,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): HudTalentPartition {
+  const all = getEnabledTalentIdsForWeapon(loadout, weapon, loadout);
+  const primaryRoomBoons = getEnabledPrimaryWeaponRoomBoonIds(loadout, weapon, abilityLoadout);
+  const classTalents = getEnabledClassBoonIdsForWeapon(loadout, weapon);
+  const duoBoons = getEnabledDuoBoonIds(loadout);
+  const excluded = new Set([...primaryRoomBoons, ...classTalents, ...duoBoons]);
+  const otherRoomBoons = all.filter((id) => !excluded.has(id));
+  return { primaryRoomBoons, otherRoomBoons, classTalents, duoBoons };
+}
+
+/** @deprecated Use partitionTalentsForHud */
 export function partitionTalentsForHotkeyHud(
   loadout: TalentLoadout,
   weapon: WeaponType,
   abilityLoadout: AbilityLoadout | null | undefined,
 ): { primaryRoomBoons: TalentId[]; otherTalents: TalentId[] } {
-  const all = getEnabledTalentIdsForWeapon(loadout, weapon, loadout);
-  const primaryRoomBoons = getEnabledPrimaryWeaponRoomBoonIds(loadout, weapon, abilityLoadout);
-  const primarySet = new Set(primaryRoomBoons);
-  const otherTalents = all.filter((id) => !primarySet.has(id));
-  return { primaryRoomBoons, otherTalents };
+  const { primaryRoomBoons, otherRoomBoons } = partitionTalentsForHud(
+    loadout,
+    weapon,
+    abilityLoadout,
+  );
+  return { primaryRoomBoons, otherTalents: otherRoomBoons };
+}
+
+/**
+ * Duo boons eligible to appear in a given colored room's reward pool: the player must own at
+ * least one primary weapon-ability room boon (LMB/Q/E/R mutex group) of EACH color in the pair,
+ * and must not already own the duo boon itself.
+ */
+export function getEligibleDuoBoonsForColor(
+  color: CoopRoomColor,
+  loadout: TalentLoadout | null | undefined,
+  weapon: WeaponType,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): TalentId[] {
+  if (!loadout) return [];
+  const ownedColors = new Set<CoopRoomColor>();
+  for (const id of getEnabledPrimaryWeaponRoomBoonIds(loadout, weapon, abilityLoadout)) {
+    const c = getCoopRoomColorForTalent(id);
+    if (c) ownedColors.add(c);
+  }
+  const enabled = new Set(getEnabledTalentIds(loadout));
+  return DUO_BOONS.filter(
+    (d) =>
+      d.colors.includes(color) &&
+      ownedColors.has(d.colors[0]) &&
+      ownedColors.has(d.colors[1]) &&
+      !enabled.has(d.id),
+  ).map((d) => d.id);
 }
 
 /** Remove talents the player already has this run before rolling co-op class/room boon choices. */

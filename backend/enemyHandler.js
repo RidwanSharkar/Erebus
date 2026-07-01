@@ -74,6 +74,8 @@ function handleEnemyEvents(socket, gameRooms) {
       hitMeta = { damageType: 'ignite' };
     } else if (damageType === 'rebuke') {
       hitMeta = { damageType: 'rebuke', rebukeRoom: !!rebukeRoom };
+    } else if (damageType === 'infernal_dash') {
+      hitMeta = { damageType: 'infernal_dash', infernalDashRoom: true };
     } else if (damageType === 'reaping_talons') {
       hitMeta = { damageType: 'reaping_talons' };
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
@@ -124,6 +126,8 @@ function handleEnemyEvents(socket, gameRooms) {
         hitMeta.staggerToAdd = staggerToAdd;
       }
       if (infestedFlourish) hitMeta.infestedFlourish = true;
+    } else if (damageType === 'fire_affinity_storm') {
+      hitMeta = { damageType: 'fire_affinity_storm' };
     } else if (damageType === 'fan_of_knives') {
       hitMeta = { damageType: 'fan_of_knives' };
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
@@ -144,6 +148,10 @@ function handleEnemyEvents(socket, gameRooms) {
       hitMeta = { damageType: 'stagger_break' };
     } else if (damageType === 'blizzard') {
       hitMeta = { damageType: 'blizzard', arcticBlizzard: !!arcticBlizzard };
+      // MONSOON (duo: blue + purple) — each blizzard damage tick also applies 10 stagger.
+      if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
     } else if (damageType === 'breath_weapon') {
       hitMeta = { damageType: 'breath_weapon' };
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
@@ -183,6 +191,18 @@ function handleEnemyEvents(socket, gameRooms) {
     if (typeof room.detonateWyvernConcentratedVenom === 'function') {
       room.detonateWyvernConcentratedVenom(enemyId, fromPlayerId, cobraRemainingDamage);
     }
+  });
+
+  /** TYRANT'S CLOAK (duo: red + blue) — counter-strike stagger lightning bolt when taking damage. */
+  socket.on('tyrants-cloak-strike', (data) => {
+    const { roomId, enemyId } = data || {};
+    if (!roomId || !enemyId) return;
+    if (!gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    const player = room.players?.get(socket.id);
+    if (!player?.coopStaggerRoomBoons?.tyrantsCloak) return;
+    if (typeof room._triggerStaggerLightningProc !== 'function') return;
+    room._triggerStaggerLightningProc(enemyId, socket.id, player);
   });
 
   // Handle enemy position updates from AI

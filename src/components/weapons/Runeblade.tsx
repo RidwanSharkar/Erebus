@@ -4,7 +4,7 @@ import { Group, Vector3, Color, Shape, AdditiveBlending, BufferGeometry, Float32
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import CorruptedAura from './CorruptedAura';
 import Blizzard from './Blizzard/Blizzard';
-import { BLIZZARD_DURATION_SEC, BLIZZARD_DPS_PER_TICK } from '@/utils/talents';
+import { BLIZZARD_DURATION_SEC, BLIZZARD_DPS_PER_TICK, BLIZZARD_STORM_HIT_RADIUS } from '@/utils/talents';
 import { calculationCache } from '@/utils/CalculationCache';
 import { isInsideMainArenaXZ } from '@/utils/mapConstants';
 import { forEachMushroomHitBySwing } from '@/utils/mushroomMeleeUtils';
@@ -100,6 +100,10 @@ interface RunebladeProps {
   getCrusaderLmbFlatBonus?: () => number;
   /** Local: Blizzard class talent — storm active while ControlSystem window is up. */
   getBlizzardTalentActive?: () => boolean;
+  /** Local: Awakened Eye — scaled storm hit radius. */
+  getBlizzardStormHitRadius?: () => number;
+  /** Local: Awakened Eye — denser frost particles. */
+  getBlizzardParticleSpawnMultiplier?: () => number;
 }
 
 export default function Runeblade({
@@ -143,6 +147,8 @@ export default function Runeblade({
   getExecutionerFlatBonus,
   getCrusaderLmbFlatBonus,
   getBlizzardTalentActive,
+  getBlizzardStormHitRadius,
+  getBlizzardParticleSpawnMultiplier,
 }: RunebladeProps) {
   const [blizzardStormVisible, setBlizzardStormVisible] = useState(false);
   const [blizzardMountKey, setBlizzardMountKey] = useState(0);
@@ -1282,6 +1288,8 @@ export default function Runeblade({
         position={new Vector3(0, 0, 0)}
         durationSeconds={BLIZZARD_DURATION_SEC}
         flatDamagePerTick={BLIZZARD_DPS_PER_TICK}
+        hitRadius={getBlizzardStormHitRadius?.() ?? BLIZZARD_STORM_HIT_RADIUS}
+        particleSpawnMultiplier={getBlizzardParticleSpawnMultiplier?.() ?? 1}
         onComplete={() => {}}
         enemyData={enemyData}
         parentRef={dragonGroupRef}

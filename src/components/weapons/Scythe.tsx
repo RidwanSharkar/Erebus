@@ -1,8 +1,23 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Shape } from '@/utils/three-exports';
+import { Group, Shape, Color } from '@/utils/three-exports';
 import { DoubleSide } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
+import ScytheHandleTrail from '@/components/weapons/ScytheHandleTrail';
+import {
+  getEntropicBoltTalentVariantFromTalentLoadout,
+  type EntropicBoltTalentVariant,
+  type TalentLoadout,
+} from '@/utils/talents';
+
+const SCYTHE_BLADE_COLOR = '#9D4EDD';
+const SCYTHE_TRAIL_DEFAULT_COLOR = '#9D4EDD';
+const SCYTHE_TRAIL_TALENT_COLORS: Record<EntropicBoltTalentVariant, string> = {
+  wrathful: '#ef4444',
+  staggering: '#3b82f6',
+  infesting: '#22c55e',
+  arctic: '#8783D1',
+};
 
 interface ScytheProps {
   parentRef: React.RefObject<Group>;
@@ -10,6 +25,8 @@ interface ScytheProps {
   level?: number;
   isEmpowered?: boolean;
   isSpinning?: boolean;
+  talentLoadout?: TalentLoadout | null;
+  isCrossentropyCharging?: boolean;
 }
 
 // Reusable ScytheModel component
@@ -17,10 +34,14 @@ function ScytheModel({
   scytheRef, 
   basePosition, 
   isEmpowered = false,
+  handleTopRef,
+  handleBottomRef,
 }: { 
   scytheRef: React.RefObject<Group>; 
   basePosition: readonly [number, number, number];
   isEmpowered?: boolean;
+  handleTopRef: React.RefObject<Group>;
+  handleBottomRef: React.RefObject<Group>;
 }) {
   const ring1Ref = useRef<Group>(null);
   const ring2Ref = useRef<Group>(null);
@@ -80,6 +101,10 @@ function ScytheModel({
             <meshStandardMaterial color="#a86432" metalness={0.3} roughness={0.7} />
           </mesh>
         ))}
+
+        {/* Handle-end trail anchors */}
+        <group ref={handleTopRef} position={[0, 0.7, 0]} />
+        <group ref={handleBottomRef} position={[0, -0.7, 0]} />
       </group>
       
       {/* Blade connector */}
@@ -154,8 +179,8 @@ function ScytheModel({
         <mesh>
           <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
           <meshStandardMaterial
-            color={isEmpowered ? "#3FAEFC" : "#3FAEFC"}
-            emissive={isEmpowered ? "#3FAEFC" : "#3FAEFC"}
+            color={SCYTHE_BLADE_COLOR}
+            emissive={SCYTHE_BLADE_COLOR}
             emissiveIntensity={1.25}
             metalness={0.8}
             roughness={0.1}
@@ -172,8 +197,8 @@ function ScytheModel({
         <mesh>
           <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
           <meshStandardMaterial
-            color={isEmpowered ? "#3FAEFC" : "#3FAEFC"}
-            emissive={isEmpowered ? "#3FAEFC" : "#3FAEFC"}
+            color={SCYTHE_BLADE_COLOR}
+            emissive={SCYTHE_BLADE_COLOR}
             emissiveIntensity={1.25}
             metalness={0.8}
             roughness={0.1}
@@ -191,7 +216,9 @@ export default function Scythe({
   currentSubclass = WeaponSubclass.CHAOS,
   level = 1,
   isEmpowered = false,
-  isSpinning = false
+  isSpinning = false,
+  talentLoadout = null,
+  isCrossentropyCharging = false,
 }: ScytheProps) {
   
   // Debug: Log when empowerment changes
@@ -208,11 +235,20 @@ export default function Scythe({
     }
   }, [isSpinning]);
 
-  // Single scythe ref
+  const containerRef = useRef<Group>(null);
   const scytheRef = useRef<Group>(null);
+  const handleTopRef = useRef<Group>(null);
+  const handleBottomRef = useRef<Group>(null);
   const spinTime = useRef(0);
 
   const basePosition = [-0.8, 0.75, 0.4] as const;
+
+  const entropicVariant = getEntropicBoltTalentVariantFromTalentLoadout(talentLoadout);
+  const trailColorHex =
+    isCrossentropyCharging || !entropicVariant
+      ? SCYTHE_TRAIL_DEFAULT_COLOR
+      : SCYTHE_TRAIL_TALENT_COLORS[entropicVariant];
+  const trailColor = useMemo(() => new Color(trailColorHex), [trailColorHex]);
 
   useFrame((_, delta) => {
     if (!scytheRef.current) return;
@@ -222,7 +258,7 @@ export default function Scythe({
       spinTime.current += delta;
       
       // Spin the scythe around its center
-      const spinSpeed = 25; // Adjust speed as needed
+      const spinSpeed = 17; // Adjust speed as needed
       const currentRotation = spinTime.current * spinSpeed;
       
       // Position scythe in front of dragon for spinning
@@ -246,6 +282,17 @@ export default function Scythe({
     }
   });
 
-  // Single scythe only
-  return <ScytheModel scytheRef={scytheRef} basePosition={basePosition} isEmpowered={isEmpowered} />;
+  return (
+    <group ref={containerRef}>
+      <ScytheModel
+        scytheRef={scytheRef}
+        basePosition={basePosition}
+        isEmpowered={isEmpowered}
+        handleTopRef={handleTopRef}
+        handleBottomRef={handleBottomRef}
+      />
+      <ScytheHandleTrail anchorRef={handleTopRef} parentRef={containerRef} color={trailColor} />
+      <ScytheHandleTrail anchorRef={handleBottomRef} parentRef={containerRef} color={trailColor} />
+    </group>
+  );
 }

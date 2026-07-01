@@ -3,7 +3,7 @@ import { Vector3, Mesh, MeshStandardMaterial } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
-type BossTeleportTheme = 'purple' | 'red';
+type BossTeleportTheme = 'purple' | 'red' | 'blue';
 
 const TELEPORT_PALETTES: Record<BossTeleportTheme, {
   primary: string;
@@ -25,6 +25,13 @@ const TELEPORT_PALETTES: Record<BossTeleportTheme, {
     core: '#ffffff',
     dark: '#3a0202',
     accent: '#ff5533',
+  },
+  blue: {
+    primary: '#00aaff',
+    secondary: '#33ccff',
+    core: '#ffffff',
+    dark: '#004488',
+    accent: '#66eeff',
   },
 };
 

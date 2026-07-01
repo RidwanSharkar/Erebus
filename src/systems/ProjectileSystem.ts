@@ -39,6 +39,10 @@ import {
   CLOUDKILL_WARNING_MS,
   rollCloudkillArrowCount,
   shouldApplyCloudkillTalent,
+  getMeteorIgniteDotFraction,
+  getEffectiveIntellectWithTalentBonuses,
+  METEOR_IGNITE_DURATION_MS,
+  METEOR_IGNITE_TICKS,
   type TempestBurstTheme,
 } from '@/utils/talents';
 import {
@@ -50,6 +54,7 @@ import {
 import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
 import type { CrossentropyVisualTheme, FanOfKnivesFlourishTint } from '@/utils/talents';
 import { CombatSystem } from './CombatSystem';
+import { addGlobalIgnitedEnemy } from '@/components/weapons/IgniteEffectManager';
 
 function crossentropyThemeFromProjectile(projectile: Projectile): CrossentropyVisualTheme {
   if (projectile.infernoCrossentropy === true) return 'inferno';
@@ -264,6 +269,14 @@ export class ProjectileSystem extends System {
     });
   }
 
+  private resolveMeteorIgniteIntellect(): number {
+    const cs = (window as any).controlSystemRef?.current;
+    if (!cs?.getAllocatedPlayerStats) return 0;
+    const stats = cs.getAllocatedPlayerStats();
+    const talentLoadout = cs.getTalentLoadout?.() ?? null;
+    return getEffectiveIntellectWithTalentBonuses(stats, talentLoadout, null);
+  }
+
   private processPendingCrossentropyMeteorImpacts(nowMs: number): void {
     if (this.pendingCrossentropyMeteorImpacts.length === 0) return;
     const due = this.pendingCrossentropyMeteorImpacts.filter((meteor) => meteor.impactAtMs <= nowMs);
@@ -274,6 +287,7 @@ export class ProjectileSystem extends System {
     for (const meteor of due) {
       const sourceEntity = this.world.getEntity(meteor.ownerEntityId);
       const potentialTargets = this.queryHittableNearPoint(meteor.impactPosition, meteor.radius + 1);
+      const networked = this.combatSystem?.usesNetworkedEnemyDamage() === true;
       for (const target of potentialTargets) {
         if (target.id === meteor.ownerEntityId) continue;
         if (target.userData?.isCoopAllyPlayer) continue;
@@ -310,9 +324,30 @@ export class ProjectileSystem extends System {
             undefined,
             undefined,
             undefined,
-            meteor.crossentropyPlague,
             undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
           );
+          if (!networked) {
+            const intellect = this.resolveMeteorIgniteIntellect();
+            const dotFraction = getMeteorIgniteDotFraction(intellect);
+            addGlobalIgnitedEnemy(
+              target.id.toString(),
+              targetTransform.position.clone(),
+              METEOR_IGNITE_DURATION_MS,
+            );
+            this.combatSystem.scheduleLocalIgniteDot(
+              target,
+              meteor.damage,
+              dotFraction,
+              METEOR_IGNITE_DURATION_MS,
+              METEOR_IGNITE_TICKS,
+              sourceEntity ?? undefined,
+              meteor.sourcePlayerId,
+            );
+          }
         } else {
           const currentTime = Date.now() / 1000;
           targetHealth.takeDamage(meteor.damage, currentTime, target);

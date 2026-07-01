@@ -4,7 +4,6 @@ import { Component } from '../Entity';
 
 /** Per-charge dash recharge delay (matches existing setTimeout behavior). */
 const DASH_CHARGE_RECHARGE_MS = 8000;
-const DASH_CHARGE_RECHARGE_SEC = DASH_CHARGE_RECHARGE_MS / 1000;
 
 type DashChargeSlot = {
   isAvailable: boolean;
@@ -67,6 +66,8 @@ export class Movement extends Component {
   // Multiple dash charges system
   public dashCharges: Array<DashChargeSlot>;
   public maxDashCharges: number;
+  /** Flat recovery rate multiplier (1 = base 8s; 1.25 = Overclock). */
+  public dashChargeRechargeRateMultiplier: number;
 
   // Sword Charge ability system (separate from dashes)
   public isCharging: boolean;
@@ -138,6 +139,7 @@ export class Movement extends Component {
     // Initialize multiple dash charges (3 charges, each with 8s cooldown)
     this.maxDashCharges = 3;
     this.dashCharges = Array.from({ length: this.maxDashCharges }, () => createEmptyDashCharge());
+    this.dashChargeRechargeRateMultiplier = 1;
 
     // Initialize sword charge properties
     this.isCharging = false;
@@ -264,6 +266,42 @@ export class Movement extends Component {
     return speed;
   }
 
+  private getDashChargeRechargeMs(): number {
+    return DASH_CHARGE_RECHARGE_MS / Math.max(0.1, this.dashChargeRechargeRateMultiplier);
+  }
+
+  public getDashChargeRechargeSec(): number {
+    return this.getDashChargeRechargeMs() / 1000;
+  }
+
+  public setDashChargeRechargeRateMultiplier(multiplier: number): void {
+    const next = Math.max(0.1, multiplier);
+    if (next === this.dashChargeRechargeRateMultiplier) return;
+
+    const prev = this.dashChargeRechargeRateMultiplier;
+    this.dashChargeRechargeRateMultiplier = next;
+
+    const nowSec = Date.now() / 1000;
+    for (let i = 0; i < this.dashCharges.length; i++) {
+      const charge = this.dashCharges[i];
+      if (charge.isAvailable || charge.cooldownStartTime === null) continue;
+
+      const prevTotalSec = DASH_CHARGE_RECHARGE_MS / prev / 1000;
+      const remainingSec = Math.max(0, prevTotalSec - (nowSec - charge.cooldownStartTime));
+      const scaledRemainingSec = remainingSec * (prev / next);
+      const newTotalSec = this.getDashChargeRechargeSec();
+
+      this.clearDashChargeCooldown(i);
+      charge.isAvailable = false;
+      charge.cooldownStartTime = nowSec - (newTotalSec - scaledRemainingSec);
+      charge.cooldownTimerId = setTimeout(() => {
+        charge.isAvailable = true;
+        charge.cooldownStartTime = null;
+        charge.cooldownTimerId = null;
+      }, scaledRemainingSec * 1000);
+    }
+  }
+
   private clearDashChargeCooldown(chargeIndex: number): void {
     const charge = this.dashCharges[chargeIndex];
     if (!charge) return;
@@ -284,7 +322,7 @@ export class Movement extends Component {
       charge.isAvailable = true;
       charge.cooldownStartTime = null;
       charge.cooldownTimerId = null;
-    }, DASH_CHARGE_RECHARGE_MS);
+    }, this.getDashChargeRechargeMs());
   }
 
   public startDash(direction: Vector3, currentPosition: Vector3, currentTime: number): boolean {
@@ -306,6 +344,23 @@ export class Movement extends Component {
     this.dashStartPosition.copy(currentPosition);
 
     this.beginDashChargeCooldown(availableChargeIndex, currentTime);
+
+    return true;
+  }
+
+  /** Blood Orbs — dash without consuming a charge when all charges are on cooldown. */
+  public startDashWithoutCharge(direction: Vector3, currentPosition: Vector3, currentTime: number): boolean {
+    if (this.isDashing) {
+      return false;
+    }
+    if (this.getAvailableDashCharges() > 0) {
+      return false;
+    }
+
+    this.isDashing = true;
+    this.dashDirection.copy(direction).normalize();
+    this.dashStartTime = currentTime;
+    this.dashStartPosition.copy(currentPosition);
 
     return true;
   }
@@ -353,7 +408,7 @@ export class Movement extends Component {
       const charge = this.dashCharges[i];
       if (charge.isAvailable || charge.cooldownStartTime === null) continue;
 
-      const remaining = DASH_CHARGE_RECHARGE_SEC - (nowSec - charge.cooldownStartTime);
+      const remaining = this.getDashChargeRechargeSec() - (nowSec - charge.cooldownStartTime);
       if (remaining > bestRemaining) {
         bestRemaining = remaining;
         bestIndex = i;
@@ -447,7 +502,7 @@ export class Movement extends Component {
     return this.dashCharges.map(charge => ({
       isAvailable: charge.isAvailable,
       cooldownRemaining: charge.cooldownStartTime 
-        ? Math.max(0, DASH_CHARGE_RECHARGE_SEC - (currentTime - charge.cooldownStartTime))
+        ? Math.max(0, this.getDashChargeRechargeSec() - (currentTime - charge.cooldownStartTime))
         : 0
     }));
   }
@@ -639,6 +694,7 @@ export class Movement extends Component {
     }
     this.maxDashCharges = 3;
     this.dashCharges = Array.from({ length: this.maxDashCharges }, () => createEmptyDashCharge());
+    this.dashChargeRechargeRateMultiplier = 1;
 
     // Reset charge properties
     this.isCharging = false;
@@ -687,6 +743,7 @@ export class Movement extends Component {
     
     // Clone dash charges
     clone.maxDashCharges = this.maxDashCharges;
+    clone.dashChargeRechargeRateMultiplier = this.dashChargeRechargeRateMultiplier;
     clone.dashCharges = this.dashCharges.map(charge => ({
       isAvailable: charge.isAvailable,
       cooldownStartTime: charge.cooldownStartTime,

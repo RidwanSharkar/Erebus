@@ -99,7 +99,7 @@ export default function VenomEffectManager({ world }: VenomEffectManagerProps) {
       const enemy = entity.getComponent(Enemy);
       const transform = entity.getComponent(Transform);
       
-      if (enemy && transform && enemy.isVenomous) {
+      if (enemy && transform && (enemy.isVenomous || enemy.concentratedVenomStacks > 0)) {
         // Check if we already have a venom effect for this enemy
         const existingVenomEffect = venomousEnemies.find(ve => ve.enemyId === entity.id.toString());
         
@@ -122,7 +122,7 @@ export default function VenomEffectManager({ world }: VenomEffectManagerProps) {
         if (!enemy || !health) return false;
         if (health.isDead) return false; // Enemy is dead
         
-        return enemy.isVenomous; // Keep only if still venomous
+        return enemy.isVenomous || enemy.concentratedVenomStacks > 0;
       });
     });
   });

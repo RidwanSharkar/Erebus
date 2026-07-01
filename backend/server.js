@@ -263,6 +263,8 @@ io.on('connection', (socket) => {
     const camp = String(chosenCampType || '').toLowerCase();
     if (camp === 'dev_boss') {
       ok = room.activateDevBossArena();
+    } else if (camp === 'dev_boss1_elite') {
+      ok = room.activateDevBoss1EliteArena();
     } else if (camp === 'dev_boss2') {
       ok = room.activateDevBoss2Arena();
     } else if (camp === 'dev_boss3') {

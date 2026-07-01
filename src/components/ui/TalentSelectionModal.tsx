@@ -26,12 +26,16 @@ import {
   CROSSENTROPY_TEMPEST_STAGGER,
   CROSSENTROPY_PLAGUE_DAMAGE,
   CROSSENTROPY_PLAGUE_VENOM_MS,
+  CROSSENTROPY_PLAGUE_VENOM_STACKS,
   CROSSENTROPY_METEOR_SINGLE_CHANCE,
   CROSSENTROPY_METEOR_DOUBLE_CHANCE,
   CROSSENTROPY_METEOR_TRIPLE_CHANCE,
   CROSSENTROPY_METEOR_STAGGER_MS,
   CROSSENTROPY_METEOR_DAMAGE,
   CROSSENTROPY_METEOR_AOE_RADIUS,
+  METEOR_IGNITE_DOT_BASE_FRACTION,
+  METEOR_IGNITE_DOT_INTELLECT_BONUS_PER_POINT,
+  METEOR_IGNITE_DURATION_MS,
   CROSSENTROPY_FRAGMENTATION_PROC_CHANCE,
   CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS,
   ENTROPIC_FRAGMENTATION_SECOND_HOP_CHANCE,
@@ -219,9 +223,15 @@ import {
   vorpalGustTalentDefinition,
   fanOfKnivesTalentDefinition,
   parryTalentDefinition,
+  fireAffinityTalentDefinition,
   FAN_OF_KNIVES_BASE_DAMAGE,
   FAN_OF_KNIVES_DAMAGE_PER_AGILITY,
   FAN_OF_KNIVES_MAX_DISTANCE_UNITS,
+  FIRE_AFFINITY_STORM_BASE_DAMAGE,
+  FIRE_AFFINITY_STORM_DAMAGE_PER_STAT_POINT,
+  FIRE_AFFINITY_STORM_RADIUS,
+  FIRE_AFFINITY_STORM_ICD_SEC,
+  FIRE_AFFINITY_IGNITE_DOT_FRACTION,
   PARRY_INTELLECT_BONUS,
   PARRY_STRENGTH_BONUS,
   PARRY_FLOURISH_SHIELD_RESTORE,
@@ -559,6 +569,11 @@ export default function TalentSelectionModal({
   const toggleFanOfKnives = useCallback(() => {
     setLoadout((prev) => ({ ...prev, fanOfKnives: !prev.fanOfKnives }));
   }, []);
+
+  const toggleFireAffinity = useCallback(() => {
+    if (!flourishEquipped) return;
+    setLoadout((prev) => ({ ...prev, fireAffinity: !prev.fireAffinity }));
+  }, [flourishEquipped]);
 
   const toggleParry = useCallback(() => {
     if (!flourishEquipped) return;
@@ -1684,6 +1699,34 @@ export default function TalentSelectionModal({
               </label>
             </div>
             </TalentHoverSurface>
+            <TalentHoverSurface talent={fireAffinityTalentDefinition} dimmed={!flourishEquipped}>
+            <div className={`flex items-start gap-3 mt-4 ${!flourishEquipped ? 'opacity-70' : ''}`}>
+              <TalentRowIcon talent={fireAffinityTalentDefinition} dimmed={!flourishEquipped} />
+              <input
+                type="checkbox"
+                id="talent-fire-affinity"
+                checked={loadout.fireAffinity}
+                onChange={toggleFireAffinity}
+                disabled={!flourishEquipped}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500 disabled:cursor-not-allowed"
+                aria-label={fireAffinityTalentDefinition.name}
+              />
+              <label
+                htmlFor="talent-fire-affinity"
+                className={`flex-1 ${flourishEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                {loadout.fireAffinity && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{fireAffinityTalentDefinition.description}</p>
+                    <p className="text-orange-200/90 text-xs mt-2 font-mono">
+                      {FIRE_AFFINITY_STORM_BASE_DAMAGE} + {FIRE_AFFINITY_STORM_DAMAGE_PER_STAT_POINT} dmg per stat ·{' '}
+                      {FIRE_AFFINITY_STORM_RADIUS} unit radius · {FIRE_AFFINITY_IGNITE_DOT_FRACTION * 100}% ignite ·{' '}
+                      {FIRE_AFFINITY_STORM_ICD_SEC}s ICD
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+            </TalentHoverSurface>
             <TalentHoverSurface talent={parryTalentDefinition} dimmed={!flourishEquipped}>
             <div className={`flex items-start gap-3 mt-4 ${!flourishEquipped ? 'opacity-70' : ''}`}>
               <TalentRowIcon talent={parryTalentDefinition} dimmed={!flourishEquipped} />
@@ -1713,7 +1756,7 @@ export default function TalentSelectionModal({
             </TalentHoverSurface>
             {!flourishEquipped && (
               <p className="text-gray-500 text-xs mt-2 pl-7">
-                Equip <span className="text-gray-300">Flourish</span> (Sabres E) in your ability loadout to enable PARRY.
+                Equip <span className="text-gray-300">Flourish</span> (Sabres E) in your ability loadout to enable PARRY and FIRE AFFINITY.
               </p>
             )}
           </div>
@@ -2739,7 +2782,9 @@ export default function TalentSelectionModal({
                     <p className="text-orange-200/90 text-xs mt-2 font-mono">
                       {CROSSENTROPY_METEOR_SINGLE_CHANCE * 100}% single · {CROSSENTROPY_METEOR_DOUBLE_CHANCE * 100}% double ·{' '}
                       {CROSSENTROPY_METEOR_TRIPLE_CHANCE * 100}% triple · {CROSSENTROPY_METEOR_STAGGER_MS / 1000}s stagger ·{' '}
-                      {CROSSENTROPY_METEOR_DAMAGE} AoE damage · {CROSSENTROPY_METEOR_AOE_RADIUS.toFixed(2)} radius
+                      {CROSSENTROPY_METEOR_DAMAGE} AoE damage · {CROSSENTROPY_METEOR_AOE_RADIUS.toFixed(2)} radius · Ignite{' '}
+                      {METEOR_IGNITE_DOT_BASE_FRACTION * 100}% + {METEOR_IGNITE_DOT_INTELLECT_BONUS_PER_POINT * 100}%/Intellect over{' '}
+                      {METEOR_IGNITE_DURATION_MS / 1000}s
                     </p>
                   </>
                 )}
@@ -2821,9 +2866,10 @@ export default function TalentSelectionModal({
                   <>
                     <p className="text-gray-400 text-sm mt-1">{crossentropyPlagueTalentDefinition.description}</p>
                     <p className="text-emerald-200/90 text-xs mt-2 font-mono">
-                      Base hit damage {CROSSENTROPY_PLAGUE_DAMAGE} · {CROSSENTROPY_PLAGUE_VENOM_MS / 1000}s venom at impact · up to 2
-                      zombies/kill · max 3 zombies · mutually exclusive with {crossentropyTempestTalentDefinition.name} and{' '}
-                      {glacialStormTalentDefinition.name}
+                      Base hit damage {CROSSENTROPY_PLAGUE_DAMAGE} · {CROSSENTROPY_PLAGUE_VENOM_STACKS} Concentrated Venom stacks/hit (
+                      {WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK} DPS/stack · max {WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS} ·{' '}
+                      {WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC}s) · up to 2 zombies/kill · max 3 zombies · mutually exclusive with{' '}
+                      {crossentropyTempestTalentDefinition.name} and {glacialStormTalentDefinition.name}
                     </p>
                   </>
                 )}

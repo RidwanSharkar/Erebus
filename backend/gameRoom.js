@@ -14,6 +14,20 @@ const mushroomConstants = require('./mushroomConstants');
 const COOP_BOSS_TYPES = new Set(['boss', 'boss2', 'boss3']);
 const COOP_BOSS_MAX_HEALTH_PRE_TRINITY = { boss: 5000, boss2: 8500, boss3: 12500 };
 const COOP_BOSS_MAX_HEALTH_POST_TRINITY = { boss: 12500, boss2: 20000, boss3: 30000 };
+/** Knight damage by boss-kill tier: [base, after boss 1, after boss 2, after boss 3+]. */
+const KNIGHT_DAMAGE_BY_TIER = {
+  green:  [20, 30, 40, 50],
+  red:    [30, 40, 50, 70],
+  blue:   [15, 25, 35, 45],
+  purple: [20, 30, 40, 50],
+};
+const KNIGHT_SOUL_STATS = {
+  green:  { health: 1250, maxHealth: 1250, attackCooldown: 2500, moveSpeed: 2.0 },
+  red:    { health: 1000, maxHealth: 1000, attackCooldown: 2500, moveSpeed: 2.0 },
+  blue:   { health: 900,  maxHealth: 900,  attackCooldown: 1250, moveSpeed: 3.25 },
+  purple: { health: 900,  maxHealth: 900,  attackCooldown: 2500, moveSpeed: 2.0 },
+};
+const KNIGHT_SOUL_TYPES = ['red', 'blue', 'purple', 'green'];
 /** Max freeze duration (ms) for boss-tier enemies (server + client). */
 const BOSS_MAX_FREEZE_MS = 1000;
 const ENTANGLEMENT_DURATION_MS = 5000;
@@ -40,7 +54,7 @@ const COOP_DEFAULT_SUBCLASS = {
 };
 const CROSSENTROPY_METEOR_TRIPLE_CHANCE = 0.05;
 const CROSSENTROPY_METEOR_STAGGER_MS = 500;
-const CROSSENTROPY_METEOR_DAMAGE = 230;
+const CROSSENTROPY_METEOR_DAMAGE = 240;
 const CROSSENTROPY_METEOR_RADIUS = 2.99;
 const CROSSENTROPY_METEOR_WARNING_MS = 100;
 const CROSSENTROPY_METEOR_SPEED = 31;
@@ -48,6 +62,35 @@ const CROSSENTROPY_METEOR_SKY_OFFSET_MIN = 2.5;
 const CROSSENTROPY_METEOR_SKY_OFFSET_MAX = 8;
 const CROSSENTROPY_METEOR_SKY_HEIGHT_MIN = 44;
 const CROSSENTROPY_METEOR_SKY_HEIGHT_MAX = 66;
+const INFERNAL_DASH_IGNITE_DOT_FRACTION = 0.8;
+const INFERNAL_DASH_IGNITE_DURATION_MS = 4000;
+const INFERNAL_DASH_IGNITE_TICKS = 4;
+const FIRE_AFFINITY_IGNITE_DOT_FRACTION = 0.8;
+const FIRE_AFFINITY_IGNITE_DURATION_MS = 4000;
+const FIRE_AFFINITY_IGNITE_TICKS = 4;
+const METEOR_IGNITE_DOT_BASE_FRACTION = 0.8;
+const METEOR_IGNITE_DOT_INTELLECT_BONUS_PER_POINT = 0.02;
+const METEOR_IGNITE_DURATION_MS = 4000;
+const METEOR_IGNITE_TICKS = 4;
+const FISSON_EXPLOSION_DAMAGE = 240;
+const FISSON_EXPLOSION_RADIUS = 4.0;
+const FISSON_IGNITE_DOT_FRACTION = 0.8;
+const FISSON_IGNITE_DURATION_MS = 4000;
+const FISSON_IGNITE_TICKS = 4;
+const CROSSENTROPY_PLAGUE_VENOM_STACKS = 3;
+const WYVERN_VENOM_DPS_PER_STACK = 31;
+const WYVERN_VENOM_MAX_STACKS = 5;
+const WYVERN_VENOM_DURATION_MS = 8000;
+/** Keep in sync with `TYRANTS_CLOAK_IGNITE_STAGGER_PER_TICK` in src/utils/talents.ts */
+const TYRANTS_CLOAK_IGNITE_STAGGER_PER_TICK = 10;
+/** Keep in sync with Hellfire Venom ignite constants in src/utils/talents.ts */
+const HELLFIRE_VENOM_IGNITE_BASE_PER_LEVEL = 100;
+const HELLFIRE_VENOM_IGNITE_ICD_MS = 1000;
+const HELLFIRE_VENOM_IGNITE_DOT_FRACTION = 0.8;
+const HELLFIRE_VENOM_IGNITE_DURATION_MS = 4000;
+const HELLFIRE_VENOM_IGNITE_TICKS = 4;
+/** Keep in sync with `STORM_WITCH_VENOM_STACKS` in src/utils/talents.ts */
+const STORM_WITCH_VENOM_STACKS = 2;
 const ALLIED_KNIGHT_ID = 'allied-knight';
 const ALLIED_KNIGHT_MAX_HP = 500;
 const ALLIED_KNIGHT_DAMAGE = 50;
@@ -102,7 +145,7 @@ const THRONE_TRAINING_DUMMY_SPAWNS = Object.freeze([
 const THRONE_TRAINING_DUMMY_ID = 'throne-training-dummy';
 
 /** Match `ThroneRoom.tsx`: grass disc radius and rim inset. */
-const COOP_THRONE_ROOM_RADIUS = 24;
+const COOP_THRONE_ROOM_RADIUS = 22;
 const THRONE_RIM_INSET = 1.25;
 /** Match `THRONE_HOSTILE_KNIGHT_FOOT_MARGIN` in ThroneRoom.tsx */
 const THRONE_HOSTILE_KNIGHT_FOOT_MARGIN = 0.3;
@@ -141,6 +184,13 @@ const COOP_TERRAIN_THEMES = Object.freeze(['purple', 'blue', 'green']);
 const COOP_WAVE_MARTYR_ROOM_CHANCE = 0.33; // 30% of colored rooms have martyr spawns
 const COOP_WAVE_TITAN_ROOM_CHANCE = 0.4; // 40% of colored rooms spawn 1 titan after boss 1 (chance tier)
 const COOP_WAVE_BOSS1_ROOM_CHANCE = 0.33; // 33% of colored rooms have a mini-boss1 spawn after boss2 is defeated
+const COOP_BOSS1_ELITE_KNIGHTS_CHANCE = 0.5; // 50% of 1st boss encounters are 2 elite knights instead of the GLB boss
+const BOSS1_ELITE_SIZE_SCALE = 1.33;
+const BOSS1_ELITE_SPEED_MULT = 1.30;
+const BOSS1_ELITE_HEALTH_MULT = 3;
+const COOP_WAVE_GREED_SPAWN_CHANCE = 0.20; // 10% chance for a bonus Greed enemy on any countable combat room's wave init
+const GREED_LIFETIME_MS = 30000; // Greed despawns 30s after spawning if not killed
+const GREED_COLORS = ['green', 'red', 'blue', 'purple'];
 /** Staged room wave settings — mixed rooms scatter, colored rooms edge-spawn. */
 const COOP_MIXED_WAVE_COUNT = 8;
 const COOP_MIXED_INITIAL_ON_MAP = 2;
@@ -150,7 +200,7 @@ const COOP_MIXED_THIRD_RESERVE_AT_KILLS = 5;
 const COOP_MIXED_FIRST_RESERVE_COUNT = 2;
 const COOP_MIXED_SECOND_RESERVE_COUNT = 2;
 const COOP_MIXED_THIRD_RESERVE_COUNT = 2;
-const GOLD_DROP_EXPIRE_MS = 60000;
+const GOLD_DROP_EXPIRE_MS = 75000;
 const GOLD_VISUAL_PIECE_CAP = 25;
 const MERCHANT_HEAL_COST = 50;
 const MERCHANT_HEAL_AMOUNT = 125;
@@ -244,6 +294,8 @@ class GameRoom {
 
     // Status effect tracking for enemies
     this.enemyStatusEffects = new Map(); // enemyId -> { stun: expiration, freeze: expiration, slow: expiration }
+    /** playerId -> { stun: expiration, freeze: expiration } */
+    this.playerStatusEffects = new Map();
     /** Blizzard talent: enemyId -> { stacks, expiresAt } (expiresAt = epoch ms) */
     this.enemyChill = new Map();
 
@@ -336,6 +388,8 @@ class GameRoom {
     this.miniBoss1SpawnedThisRoom = false;
     /** Tracks IDs of the three bosses in the triple-boss encounter; null outside that fight. */
     this.tripleBossIds = null;
+    /** Tracks IDs of the two elite knights in the alternate Boss1 encounter; null outside that fight. */
+    this.boss1EliteKnightIds = null;
 
     /** Co-op: per-index HP for `mushroomLayout` instances; reset on new game. */
     this.mushroomHealth = null;
@@ -408,6 +462,210 @@ class GameRoom {
     }
   }
 
+  /** Schedule ignite DoT ticks: dotFraction of appliedDamage over durationMs in tickCount equal intervals. */
+  _scheduleIgniteDot(enemyId, appliedDamage, dotFraction, durationMs, tickCount, fromPlayerId, player) {
+    const totalDot = Math.floor(appliedDamage * dotFraction);
+    if (totalDot <= 0 || tickCount <= 0) return;
+    const baseTick = Math.floor(totalDot / tickCount);
+    const remainder = totalDot - baseTick * tickCount;
+    const intervalMs = durationMs / tickCount;
+    for (let i = 0; i < tickCount; i++) {
+      const tickDamage = i === tickCount - 1 ? baseTick + remainder : baseTick;
+      if (tickDamage <= 0) continue;
+      const delayMs = Math.round(intervalMs * (i + 1));
+      this._scheduleTimeout(() => {
+        const target = this.enemies.get(enemyId);
+        if (!target || target.isDying || target.health <= 0) return;
+        const tickPlayer = fromPlayerId ? this.players.get(fromPlayerId) : player;
+        const tyrantsCloak = tickPlayer?.coopStaggerRoomBoons?.tyrantsCloak;
+        const igniteMeta = { damageType: 'ignite' };
+        if (tyrantsCloak) {
+          igniteMeta.staggerToAdd = TYRANTS_CLOAK_IGNITE_STAGGER_PER_TICK;
+        }
+        this.damageEnemy(enemyId, tickDamage, fromPlayerId, tickPlayer || player, igniteMeta);
+      }, delayMs);
+    }
+  }
+
+  /**
+   * Execute one stagger lightning bolt proc: damage, stun, duo boon side effects, VFX emit.
+   * Used by natural stagger-cap procs and Tyrant's Cloak counter-strikes.
+   * Does NOT modify staggerBuildup (caller handles decrement for natural procs).
+   */
+  _triggerStaggerLightningProc(enemyId, fromPlayerId, player) {
+    if (!fromPlayerId) return null;
+    const procEnemy = this.enemies.get(enemyId);
+    if (!procEnemy || procEnemy.isDying || procEnemy.health <= 0) return null;
+
+    const noStaggerTypes = new Set(['boss-skeleton', 'player-zombie', 'tentacle-spine']);
+    if (noStaggerTypes.has(procEnemy.type)) return null;
+
+    const staggerBoons = this.players.get(fromPlayerId)?.coopStaggerRoomBoons;
+    const STUN_MS = staggerBoons?.overshock ? 2500 : 1000;
+
+    let procBase = staggerBoons?.guardbreak ? 300 : 150;
+    if (staggerBoons?.unstableEnergy) {
+      const agi = typeof staggerBoons.agility === 'number' ? staggerBoons.agility : 0;
+      procBase += Math.max(0, agi) * 8;
+    }
+    let procDamage = procBase;
+    let isCritical = false;
+    if (staggerBoons?.unstableEnergy) {
+      const critChance = typeof staggerBoons.critChance === 'number' ? staggerBoons.critChance : 0;
+      const critMult = typeof staggerBoons.critDamageMult === 'number' ? staggerBoons.critDamageMult : 2;
+      isCritical = Math.random() < critChance;
+      if (isCritical) {
+        procDamage = Math.floor(procBase * critMult);
+      }
+    }
+
+    const livePlayer = player || this.players.get(fromPlayerId) || null;
+    const procResult = this.damageEnemy(enemyId, procDamage, fromPlayerId, livePlayer, { damageType: 'stagger_break' });
+    this.applyStatusEffect(enemyId, 'stun', STUN_MS);
+    let afterEnemy = this.enemies.get(enemyId);
+
+    // MAGMA CURRENT (duo: red + blue) — stagger lightning procs also IGNITE: 80% of proc damage over 4s, 4 ticks.
+    const magmaCurrentDotEligible =
+      staggerBoons?.magmaCurrent &&
+      procResult &&
+      !procResult.wasKilled &&
+      afterEnemy &&
+      !afterEnemy.isDying &&
+      afterEnemy.health > 0;
+    if (magmaCurrentDotEligible) {
+      this.applyStatusEffect(enemyId, 'ignite', 4000);
+      this._scheduleIgniteDot(enemyId, procDamage, 0.8, 4000, 4, fromPlayerId, livePlayer);
+    }
+
+    // FORCE OF NATURE (duo: blue + green) — stagger lightning procs heal fromPlayer 1 HP per Agility point.
+    if (staggerBoons?.forceOfNature && fromPlayerId && livePlayer && livePlayer.maxHealth != null) {
+      const agi = typeof staggerBoons.agility === 'number' ? staggerBoons.agility : 0;
+      const healAmt = Math.max(1, Math.round(Math.max(0, agi)));
+      livePlayer.health = Math.min(livePlayer.maxHealth, livePlayer.health + healAmt);
+      if (this.io) {
+        this.io.to(this.roomId).emit('player-health-updated', {
+          playerId: fromPlayerId,
+          health: livePlayer.health,
+          maxHealth: livePlayer.maxHealth,
+        });
+        this.io.to(this.roomId).emit('player-healing', {
+          sourcePlayerId: fromPlayerId,
+          targetPlayerId: fromPlayerId,
+          healingAmount: healAmt,
+          healingType: 'room_boon_force_of_nature',
+          position: livePlayer.position || { x: 0, y: 0, z: 0 },
+          timestamp: Date.now(),
+        });
+      }
+    }
+
+    // STORM WITCH (duo: blue + green) — stagger lightning procs also apply Concentrated Venom stacks.
+    afterEnemy = this.enemies.get(enemyId);
+    if (
+      staggerBoons?.stormWitch &&
+      procResult &&
+      !procResult.wasKilled &&
+      afterEnemy &&
+      !afterEnemy.isDying &&
+      afterEnemy.health > 0
+    ) {
+      this._addConcentratedVenomStacks(enemyId, STORM_WITCH_VENOM_STACKS, fromPlayerId);
+    }
+
+    if (this.io && afterEnemy) {
+      this.io.to(this.roomId).emit('enemy-stagger-proc', {
+        enemyId,
+        position: { x: afterEnemy.position.x, y: afterEnemy.position.y, z: afterEnemy.position.z },
+        damage: procDamage,
+        isCritical,
+        magmaCurrent: !!staggerBoons?.magmaCurrent,
+        forceOfNature: !!staggerBoons?.forceOfNature,
+        fromPlayerId: fromPlayerId || null,
+        timestamp: Date.now(),
+      });
+    }
+
+    return { procDamage, isCritical, procResult };
+  }
+
+  /** HELLFIRE VENOM (duo: red + green) — venom sources also Ignite (level-scaled, per-enemy ICD). */
+  _tryHellfireVenomIgnite(enemyId, fromPlayerId, player) {
+    if (!fromPlayerId) return;
+    const livePlayer = player || this.players.get(fromPlayerId);
+    if (!livePlayer?.coopZombieBoons?.hellfireVenom) return;
+
+    const enemy = this.enemies.get(enemyId);
+    if (!enemy || enemy.isDying || enemy.health <= 0) return;
+
+    const now = Date.now();
+    if (enemy._hellfireVenomIgniteAt && now - enemy._hellfireVenomIgniteAt < HELLFIRE_VENOM_IGNITE_ICD_MS) {
+      return;
+    }
+    enemy._hellfireVenomIgniteAt = now;
+
+    const level = typeof livePlayer.level === 'number' ? livePlayer.level : 1;
+    const baseDamage = HELLFIRE_VENOM_IGNITE_BASE_PER_LEVEL * Math.max(1, level);
+    this.applyStatusEffect(enemyId, 'ignite', HELLFIRE_VENOM_IGNITE_DURATION_MS);
+    this._scheduleIgniteDot(
+      enemyId,
+      baseDamage,
+      HELLFIRE_VENOM_IGNITE_DOT_FRACTION,
+      HELLFIRE_VENOM_IGNITE_DURATION_MS,
+      HELLFIRE_VENOM_IGNITE_TICKS,
+      fromPlayerId,
+      livePlayer,
+    );
+  }
+
+  /** Wyvern Bite / Plague Crossentropy — Concentrated Venom stacks with 1s DPS ticks. */
+  _addConcentratedVenomStacks(enemyId, stackCount, fromPlayerId) {
+    const enemy = this.enemies.get(enemyId);
+    if (!enemy || enemy.isDying || enemy.health <= 0) return;
+    if (stackCount <= 0) return;
+    if (enemy.concentratedVenomStacks == null) enemy.concentratedVenomStacks = 0;
+    enemy.concentratedVenomStacks = Math.min(
+      WYVERN_VENOM_MAX_STACKS,
+      enemy.concentratedVenomStacks + stackCount,
+    );
+    enemy.concentratedVenomExpireAt = Date.now() + WYVERN_VENOM_DURATION_MS;
+    enemy.concentratedVenomLastPlayerId = fromPlayerId;
+
+    if (!enemy._concentratedVenomIntervalId) {
+      enemy._concentratedVenomIntervalId = setInterval(() => {
+        const e = this.enemies.get(enemyId);
+        if (!e || e.isDying || e.health <= 0) {
+          if (e && e._concentratedVenomIntervalId) {
+            clearInterval(e._concentratedVenomIntervalId);
+            e._concentratedVenomIntervalId = null;
+          }
+          return;
+        }
+        const now = Date.now();
+        if (!e.concentratedVenomExpireAt || now >= e.concentratedVenomExpireAt) {
+          if (e._concentratedVenomIntervalId) {
+            clearInterval(e._concentratedVenomIntervalId);
+            e._concentratedVenomIntervalId = null;
+          }
+          e.concentratedVenomStacks = 0;
+          return;
+        }
+        const stacks = e.concentratedVenomStacks || 0;
+        if (stacks <= 0) return;
+        const tickPlayer = this.players.get(e.concentratedVenomLastPlayerId);
+        this.damageEnemy(
+          enemyId,
+          stacks * WYVERN_VENOM_DPS_PER_STACK,
+          e.concentratedVenomLastPlayerId,
+          tickPlayer || null,
+          { damageType: 'venom', wyvernBiteConcentratedDoT: true },
+        );
+      }, 1000);
+    }
+
+    const stackPlayer = fromPlayerId ? this.players.get(fromPlayerId) : null;
+    this._tryHellfireVenomIgnite(enemyId, fromPlayerId, stackPlayer);
+  }
+
   /** Remove all per-enemy map entries when an enemy is fully cleaned up. */
   _pruneEnemyMaps(enemyId) {
     this.enemyStatusEffects.delete(enemyId);
@@ -438,7 +696,7 @@ class GameRoom {
   // knightSoulType: the soul colour used for knights in this archetype.
   static get CAMP_TYPES() {
     return {
-      blue:   { color: 'blue',   knightSoulType: 'blue',   enemyPool: ['knight', 'shade', 'weaver', 'viper' ] },
+      blue:   { color: 'blue',   knightSoulType: 'blue',   enemyPool: ['knight', 'shade', 'weaver', ] },
       green:  { color: 'green',  knightSoulType: 'green',  enemyPool: ['knight', 'viper', 'weaver', 'ghoul', 'viper' ] },
       red:    { color: 'red',    knightSoulType: 'red',    enemyPool: ['knight', 'warlock', 'templar'] },
       purple: { color: 'purple', knightSoulType: 'purple', enemyPool: ['knight', 'shade', 'warlock' ] },
@@ -1044,6 +1302,7 @@ class GameRoom {
     this.roomHasMiniBoss1 = false;
     this.miniBoss1SpawnedThisRoom = false;
     this.tripleBossIds = null;
+    this.boss1EliteKnightIds = null;
     this._clearCoopCombatTransitionTimer();
     this.coopCombatTransition = null;
     this.stopEnemyAI();
@@ -1275,6 +1534,57 @@ class GameRoom {
   }
 
   /**
+   * Development-only: jump into boss arena with the alternate Boss1 elite-knight encounter.
+   */
+  activateDevBoss1EliteArena() {
+    if (process.env.NODE_ENV === 'production') {
+      return false;
+    }
+    if (!this.gameStarted || this.combatArenaActive || this.gameMode !== 'coop') {
+      return false;
+    }
+
+    this.stopThroneKnightSpawningLoop();
+    this.removeAllThroneKnights();
+    this.removeThroneTrainingDummy();
+    this.combatArenaActive = true;
+    this.thronePortalOffer = [];
+    this.coopMainArenaPortalPhase = null;
+    this.coopBossThroneArena = true;
+    this.coopThroneBossKind = 'boss';
+    this.currentCoopRoomKind = 'boss';
+    this.clearedCoopRoomKind = null;
+    this._bumpBossRoomVisit();
+    this.pendingCoopArchetype = null;
+    this.pendingCoopRoomKind = null;
+    this._postBossIntermissionScheduled = false;
+    this.merchantInventory = [];
+    this._resetMushroomState();
+    this.teleportAllPlayersToCombatSpawn();
+    this.spawnBoss1EliteKnights();
+    this.bossSpawned = true;
+    const coopCombatTransitionId = this._beginCoopCombatTransition();
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('combat-arena-entered', {
+        players: this.getPlayers(),
+        coopBossThroneArena: true,
+        coopThroneBossKind: this.coopThroneBossKind,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
+        coopCurrentRoomKind: this.currentCoopRoomKind,
+        coopClearedRoomKind: null,
+        merchantInventory: this.getMerchantInventory(),
+        coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
+        coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
+        coopCombatTransitionId,
+        mushroomState: this.getMushroomState(),
+        timestamp: Date.now(),
+      });
+    }
+    return true;
+  }
+
+  /**
    * Development-only: jump into boss arena with the 2nd boss (Archon / `boss2`) instead of the GLB boss.
    */
   activateDevBoss2Arena() {
@@ -1476,7 +1786,11 @@ class GameRoom {
       this.merchantInventory = [];
       this._resetMushroomState();
       this.teleportAllPlayersToCombatSpawn();
-      this.spawnBoss();
+      if (defeated === 0 && Math.random() < COOP_BOSS1_ELITE_KNIGHTS_CHANCE) {
+        this.spawnBoss1EliteKnights();
+      } else {
+        this.spawnBoss();
+      }
       this.bossSpawned = true;
       const coopCombatTransitionId = this._beginCoopCombatTransition();
 
@@ -1642,14 +1956,21 @@ class GameRoom {
         berserkerStrain: false,
         juggernautStrain: false,
         exploderStrain: false,
+        legion: false,
+        critChance: 0,
+        critDamageMult: 2,
       },
       /** Co-op: blue stagger room boons synced from client (`coop-stagger-room-boons`). */
       coopStaggerRoomBoons: {
         guardbreak: false,
         overshock: false,
         unstableEnergy: false,
+        magmaCurrent: false,
+        frostQueen: false,
+        forceOfNature: false,
         stamina: 0,
         agility: 0,
+        intellect: 0,
         critChance: 0,
         critDamageMult: 2,
       },
@@ -1662,6 +1983,10 @@ class GameRoom {
         agility: 0,
         strength: 0,
         stamina: 0,
+      },
+      /** Co-op: red room boons synced from client (`coop-red-room-boons`). */
+      coopRedRoomBoons: {
+        fission: false,
       },
       merchantDashChargePurchased: false,
       merchantWeaponTalentPurchases: 0,
@@ -1904,6 +2229,7 @@ class GameRoom {
         maxHealth: player.maxHealth,
       });
       if (meta?.stunMs && meta.stunMs > 0) {
+        this.applyPlayerStatusEffect(playerId, 'stun', meta.stunMs);
         this.io.to(this.roomId).emit('player-debuff', {
           targetPlayerId: playerId,
           debuffType: 'stunned',
@@ -1959,6 +2285,7 @@ class GameRoom {
         maxHealth: player.maxHealth
       });
       if (meta?.stunMs && meta.stunMs > 0) {
+        this.applyPlayerStatusEffect(playerId, 'stun', meta.stunMs);
         this.io.to(this.roomId).emit('player-debuff', {
           targetPlayerId: playerId,
           debuffType: 'stunned',
@@ -1997,6 +2324,44 @@ class GameRoom {
       const dz = ez - cz;
       if (dx * dx + dz * dz > r2) continue;
       this.damageEnemy(enemyId, damage, null, null, { damageType });
+    }
+  }
+
+  _anyPlayerHasFissionRoom() {
+    if (!this.players) return false;
+    for (const [, player] of this.players) {
+      if (player?.coopRedRoomBoons?.fission) return true;
+    }
+    return false;
+  }
+
+  _tryFissionDetonation(deadEnemy, deadEnemyId, fromPlayerId, player) {
+    if (!deadEnemy?.position) return;
+    const center = {
+      x: deadEnemy.position.x,
+      y: deadEnemy.position.y ?? 0,
+      z: deadEnemy.position.z,
+    };
+    const timestamp = Date.now();
+    if (this.io) {
+      this.io.to(this.roomId).emit('fission-detonation', {
+        position: center,
+        radius: FISSON_EXPLOSION_RADIUS,
+        timestamp,
+      });
+    }
+    const radiusSq = FISSON_EXPLOSION_RADIUS * FISSON_EXPLOSION_RADIUS;
+    const fissionHitMeta = { damageType: 'fission', fissionRoom: true };
+    for (const [enemyId, enemy] of this.enemies) {
+      if (!enemy || enemy.isDying) continue;
+      if (enemyId === deadEnemyId) continue;
+      if (enemy.health != null && enemy.health <= 0) continue;
+      const ex = enemy.position?.x ?? 0;
+      const ez = enemy.position?.z ?? 0;
+      const dx = ex - center.x;
+      const dz = ez - center.z;
+      if (dx * dx + dz * dz > radiusSq) continue;
+      this.damageEnemy(enemyId, FISSON_EXPLOSION_DAMAGE, fromPlayerId, player, fissionHitMeta);
     }
   }
 
@@ -2247,23 +2612,9 @@ class GameRoom {
     const tier = Math.min(this.coopBossesDefeatedCount || 0, 3);
     const hpBonus = 225 * tier;
 
-    // Damage by boss-kill tier: [base, after boss 1, after boss 2, after boss 3+].
-    const KNIGHT_DAMAGE_BY_TIER = {
-      green:  [20, 30, 40, 50],
-      red:    [30, 40, 50, 70],
-      blue:   [15, 25, 35, 45],
-      purple: [20, 30, 40, 50],
-    };
     const SHADE_DAMAGE_BY_TIER   = [18, 25, 35, 40];
     const TEMPLAR_DAMAGE_BY_TIER = [48, 60, 78, 96];
     const VIPER_DAMAGE_BY_TIER   = [55, 70, 85, 95];
-
-    const soulStats = {
-      green:  { health: 1250, maxHealth: 1250, attackCooldown: 2500, moveSpeed: 2.0 },
-      red:    { health: 1000, maxHealth: 1000, attackCooldown: 2500, moveSpeed: 2.0 },
-      blue:   { health: 900,  maxHealth: 900,  attackCooldown: 1250, moveSpeed: 2.0 },
-      purple: { health: 900,  maxHealth: 900,  attackCooldown: 2500, moveSpeed: 3.25 },
-    };
 
     const ts = Date.now();
     const base = {
@@ -2277,7 +2628,7 @@ class GameRoom {
 
     if (type === 'knight') {
       const soulType = campDef.knightSoulType;
-      const stats = soulStats[soulType];
+      const stats = KNIGHT_SOUL_STATS[soulType];
       return { id: `knight-${campIndex}-${slotIndex}-${ts}`, type: 'knight', ...base,
         health: stats.health + hpBonus, maxHealth: stats.maxHealth + hpBonus,
         damage: KNIGHT_DAMAGE_BY_TIER[soulType][tier],
@@ -2286,7 +2637,8 @@ class GameRoom {
     if (type === 'shade') {
       return { id: `shade-${campIndex}-${slotIndex}-${ts}`, type: 'shade', ...base,
         health: 750 + hpBonus, maxHealth: 750 + hpBonus,
-        damage: SHADE_DAMAGE_BY_TIER[tier], attackCooldown: 5500, moveSpeed: 2.0 };
+        damage: SHADE_DAMAGE_BY_TIER[tier], attackCooldown: 5500, moveSpeed: 2.0,
+        soulType: campDef.knightSoulType };
     }
     if (type === 'warlock') {
       const isPurple = campDef.knightSoulType === 'purple';
@@ -2324,7 +2676,7 @@ class GameRoom {
       return { id: `titan-${campIndex}-${slotIndex}-${ts}`, type: 'titan', ...base,
         health: stats.health, maxHealth: stats.maxHealth, damage: stats.damage,
         moveSpeed: 2.5, patrolSpeed: 1.5, attackCooldown: 2500,
-        soulType };
+        soulType, spawnedAt: ts };
     }
     if (type === 'boss') {
       // Mini-boss1 spawned inside a wave room — identical stats/AI to the real Boss1 encounter.
@@ -2344,6 +2696,28 @@ class GameRoom {
     return { id: `viper-${campIndex}-${slotIndex}-${ts}`, type: 'viper', ...base,
       health: 650 + hpBonus, maxHealth: 650 + hpBonus,
       damage: VIPER_DAMAGE_BY_TIER[tier], attackCooldown: 5000, moveSpeed: 2.0 };
+  }
+
+  /**
+   * Bonus/additive Greed enemy — fully independent of the 8-slot kill-quota wave system.
+   * Wanders aimlessly until it notices a player, then flees/casts a color-specific ability,
+   * despawns after GREED_LIFETIME_MS if not killed, and never counts toward the room's kill quota.
+   */
+  _buildGreedEnemy(color, pos) {
+    const ts = Date.now();
+    return {
+      id: `greed-${color}-${ts}`,
+      type: 'greed',
+      position: { x: pos.x, y: 0, z: pos.z },
+      rotation: 0,
+      isDying: false,
+      health: 1500, maxHealth: 1500, damage: 0,
+      moveSpeed: 2.75,
+      soulType: color,
+      spawnedAt: ts,
+      expireAt: ts + GREED_LIFETIME_MS,
+      staggerBuildup: 0,
+    };
   }
 
   // Pick a random point inside an arena footprint, excluding certain zones.
@@ -2817,6 +3191,8 @@ class GameRoom {
       );
     }
 
+    this._maybeSpawnGreedBonusEnemy(isMixedRoom);
+
     if (this.io) {
       this.io.to(this.roomId).emit('camps-initialized', {
         campTypes: this.sessionCampTypes,
@@ -2825,6 +3201,27 @@ class GameRoom {
         timestamp: Date.now()
       });
     }
+  }
+
+  /**
+   * 10% chance, on every countable combat room's wave init (colored + mixed alike), to spawn a
+   * bonus Greed enemy — fully additive to the 8-slot kill-quota wave system, same pattern as
+   * tentacle-spine. No forced aggro: Greed starts passive/wandering like Titan.
+   */
+  _maybeSpawnGreedBonusEnemy(isMixedRoom) {
+    if (!this._isCountableCoopCombatRoom(this.currentCoopRoomKind)) return;
+    if (Math.random() >= COOP_WAVE_GREED_SPAWN_CHANCE) return;
+
+    const color = GREED_COLORS[Math.floor(Math.random() * GREED_COLORS.length)];
+    const pos = this._generateScatteredPositions(1, isMixedRoom)[0];
+    if (!pos) return;
+
+    const enemy = this._buildGreedEnemy(color, pos);
+    this.enemies.set(enemy.id, enemy);
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+    }
+    console.log(`💰 Greed (${color}) bonus enemy spawned in room: ${this.currentCoopRoomKind}`);
   }
 
   spawnEnemy(type) {
@@ -2933,6 +3330,8 @@ class GameRoom {
         damageType: 'entanglement',
       });
     }, 1000);
+
+    this._tryHellfireVenomIgnite(enemyId, fromPlayerId, player);
   }
 
   /**
@@ -3056,6 +3455,7 @@ class GameRoom {
         damage: result.damage,
         fromPlayerId: result.fromPlayerId,
         wasKilled: result.wasKilled,
+        isCritical: !!(hitMeta && hitMeta.isCritical),
         timestamp: Date.now(),
       };
       if (hitMeta && hitMeta.damageType === 'ignite') {
@@ -3147,7 +3547,7 @@ class GameRoom {
       !enemy.isDying &&
       enemy.health > 0
     ) {
-      this.applyBlizzardChillOnHit(enemyId);
+      this.applyBlizzardChillOnHit(enemyId, fromPlayerId, player);
     }
 
     if (
@@ -3190,23 +3590,7 @@ class GameRoom {
         (hitMeta.damageType === 'crossentropy' && hitMeta.infernoCrossentropy));
     if (infernoDotEligible) {
       this.applyStatusEffect(enemyId, 'ignite', 3000);
-      const totalDot = Math.floor(appliedDamage * 0.8);
-      if (totalDot > 0) {
-        const tickCount = 3;
-        const baseTick = Math.floor(totalDot / tickCount);
-        const remainder = totalDot - baseTick * tickCount;
-        const tickAmounts = [baseTick, baseTick, baseTick + remainder];
-        const delaysMs = [1000, 2000, 3000];
-        for (let i = 0; i < tickCount; i++) {
-          const tickDamage = tickAmounts[i];
-          if (tickDamage <= 0) continue;
-          this._scheduleTimeout(() => {
-            const target = this.enemies.get(enemyId);
-            if (!target || target.isDying || target.health <= 0) return;
-            this.damageEnemy(enemyId, tickDamage, fromPlayerId, player, { damageType: 'ignite' });
-          }, delaysMs[i]);
-        }
-      }
+      this._scheduleIgniteDot(enemyId, appliedDamage, 0.8, 3000, 3, fromPlayerId, player);
     }
 
     // REBUKE room boon — Ignite DoT: 70% of hit over 4s in 4 ticks (non-lethal hits only)
@@ -3219,29 +3603,98 @@ class GameRoom {
       hitMeta.rebukeRoom;
     if (rebukeDotEligible) {
       this.applyStatusEffect(enemyId, 'ignite', 4000);
-      const totalDot = Math.floor(appliedDamage * 0.7);
-      if (totalDot > 0) {
-        const tickCount = 4;
-        const baseTick = Math.floor(totalDot / tickCount);
-        const remainder = totalDot - baseTick * tickCount;
-        const tickAmounts = [baseTick, baseTick, baseTick, baseTick + remainder];
-        const delaysMs = [1000, 2000, 3000, 4000];
-        for (let i = 0; i < tickCount; i++) {
-          const tickDamage = tickAmounts[i];
-          if (tickDamage <= 0) continue;
-          this._scheduleTimeout(() => {
-            const target = this.enemies.get(enemyId);
-            if (!target || target.isDying || target.health <= 0) return;
-            this.damageEnemy(enemyId, tickDamage, fromPlayerId, player, { damageType: 'ignite' });
-          }, delaysMs[i]);
-        }
-      }
+      this._scheduleIgniteDot(enemyId, appliedDamage, 0.7, 4000, 4, fromPlayerId, player);
     }
 
-    // Wyvern Bite — Concentrated Venom: +1 stack per Barrage hit (max 5), 17 DPS per stack, 8s from last stack
-    const wyvernVenomDpsPerStack = 31;
-    const wyvernVenomMaxStacks = 5;
-    const wyvernVenomDurationMs = 8000;
+    // INFERNAL DASH room boon — Ignite DoT: 80% of hit over 4s in 4 ticks (non-lethal hits only)
+    const infernalDashDotEligible =
+      !result.wasKilled &&
+      hitMeta &&
+      appliedDamage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0 &&
+      hitMeta.infernalDashRoom;
+    if (infernalDashDotEligible) {
+      this.applyStatusEffect(enemyId, 'ignite', INFERNAL_DASH_IGNITE_DURATION_MS);
+      this._scheduleIgniteDot(
+        enemyId,
+        appliedDamage,
+        INFERNAL_DASH_IGNITE_DOT_FRACTION,
+        INFERNAL_DASH_IGNITE_DURATION_MS,
+        INFERNAL_DASH_IGNITE_TICKS,
+        fromPlayerId,
+        player,
+      );
+    }
+
+    // Fire Affinity (Sabres Flourish) — Ignite DoT: 80% of hit over 4s in 4 ticks (non-lethal hits only)
+    const fireAffinityDotEligible =
+      !result.wasKilled &&
+      hitMeta &&
+      appliedDamage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0 &&
+      hitMeta.damageType === 'fire_affinity_storm';
+    if (fireAffinityDotEligible) {
+      this.applyStatusEffect(enemyId, 'ignite', FIRE_AFFINITY_IGNITE_DURATION_MS);
+      this._scheduleIgniteDot(
+        enemyId,
+        appliedDamage,
+        FIRE_AFFINITY_IGNITE_DOT_FRACTION,
+        FIRE_AFFINITY_IGNITE_DURATION_MS,
+        FIRE_AFFINITY_IGNITE_TICKS,
+        fromPlayerId,
+        player,
+      );
+    }
+
+    // METEOR impacts (Crossentropy METEOR + R Meteor Strike) — Ignite: (80% + 2%×Intellect) over 4s
+    const meteorIgniteEligible =
+      !result.wasKilled &&
+      hitMeta &&
+      appliedDamage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0 &&
+      hitMeta.damageType === 'crossentropy' &&
+      hitMeta.crossentropyMeteorDamage;
+    if (meteorIgniteEligible) {
+      const intellect = player?.coopStaggerRoomBoons?.intellect ?? 0;
+      const dotFraction =
+        METEOR_IGNITE_DOT_BASE_FRACTION + Math.max(0, intellect) * METEOR_IGNITE_DOT_INTELLECT_BONUS_PER_POINT;
+      this.applyStatusEffect(enemyId, 'ignite', METEOR_IGNITE_DURATION_MS);
+      this._scheduleIgniteDot(
+        enemyId,
+        appliedDamage,
+        dotFraction,
+        METEOR_IGNITE_DURATION_MS,
+        METEOR_IGNITE_TICKS,
+        fromPlayerId,
+        player,
+      );
+    }
+
+    // FISSION room boon — Ignite DoT on splash survivors: 80% of hit over 4s in 4 ticks (non-lethal hits only)
+    const fissionDotEligible =
+      !result.wasKilled &&
+      hitMeta &&
+      hitMeta.fissionRoom &&
+      appliedDamage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0;
+    if (fissionDotEligible) {
+      this.applyStatusEffect(enemyId, 'ignite', FISSON_IGNITE_DURATION_MS);
+      this._scheduleIgniteDot(
+        enemyId,
+        appliedDamage,
+        FISSON_IGNITE_DOT_FRACTION,
+        FISSON_IGNITE_DURATION_MS,
+        FISSON_IGNITE_TICKS,
+        fromPlayerId,
+        player,
+      );
+    }
+
+    // Wyvern Bite — Concentrated Venom: +1 stack per Barrage hit (max 5), 31 DPS per stack, 8s from last stack
     if (
       !result.wasKilled &&
       hitMeta &&
@@ -3251,45 +3704,21 @@ class GameRoom {
       !enemy.isDying &&
       enemy.health > 0
     ) {
-      if (enemy.concentratedVenomStacks == null) enemy.concentratedVenomStacks = 0;
-      enemy.concentratedVenomStacks = Math.min(
-        wyvernVenomMaxStacks,
-        enemy.concentratedVenomStacks + 1,
-      );
-      enemy.concentratedVenomExpireAt = Date.now() + wyvernVenomDurationMs;
-      enemy.concentratedVenomLastPlayerId = fromPlayerId;
+      this._addConcentratedVenomStacks(enemyId, 1, fromPlayerId);
+    }
 
-      if (!enemy._concentratedVenomIntervalId) {
-        enemy._concentratedVenomIntervalId = setInterval(() => {
-          const e = this.enemies.get(enemyId);
-          if (!e || e.isDying || e.health <= 0) {
-            if (e && e._concentratedVenomIntervalId) {
-              clearInterval(e._concentratedVenomIntervalId);
-              e._concentratedVenomIntervalId = null;
-            }
-            return;
-          }
-          const now = Date.now();
-          if (!e.concentratedVenomExpireAt || now >= e.concentratedVenomExpireAt) {
-            if (e._concentratedVenomIntervalId) {
-              clearInterval(e._concentratedVenomIntervalId);
-              e._concentratedVenomIntervalId = null;
-            }
-            e.concentratedVenomStacks = 0;
-            return;
-          }
-          const stacks = e.concentratedVenomStacks || 0;
-          if (stacks <= 0) return;
-          const tickPlayer = this.players.get(e.concentratedVenomLastPlayerId);
-          this.damageEnemy(
-            enemyId,
-            stacks * wyvernVenomDpsPerStack,
-            e.concentratedVenomLastPlayerId,
-            tickPlayer || null,
-            { damageType: 'venom', wyvernBiteConcentratedDoT: true },
-          );
-        }, 1000);
-      }
+    // PLAGUE Crossentropy — 3 stacks of Concentrated Venom on direct hit only (not meteor splash)
+    if (
+      !result.wasKilled &&
+      hitMeta &&
+      hitMeta.damageType === 'crossentropy' &&
+      hitMeta.crossentropyPlague &&
+      !hitMeta.crossentropyMeteorDamage &&
+      damage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0
+    ) {
+      this._addConcentratedVenomStacks(enemyId, CROSSENTROPY_PLAGUE_VENOM_STACKS, fromPlayerId);
     }
 
     // Entanglement — Barrage hit roots ordinary movement + 20 DPS for 5s.
@@ -3305,6 +3734,20 @@ class GameRoom {
       this.applyEntanglementOnHit(enemyId, fromPlayerId, player);
     }
 
+    // HELLFIRE VENOM (duo: red + green) — venom / cobra shot / entanglement hits also Ignite.
+    if (
+      !result.wasKilled &&
+      hitMeta &&
+      appliedDamage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0 &&
+      (hitMeta.damageType === 'venom' ||
+        hitMeta.damageType === 'cobra_shot' ||
+        hitMeta.damageType === 'entanglement')
+    ) {
+      this._tryHellfireVenomIgnite(enemyId, fromPlayerId, player);
+    }
+
     // Glacial Bite — +1 chill per Barrage hit; 5 stacks → 6s freeze (longer than blizzard tick freeze)
     if (
       !result.wasKilled &&
@@ -3315,7 +3758,7 @@ class GameRoom {
       !enemy.isDying &&
       enemy.health > 0
     ) {
-      this.applyGlacialBiteChillOnHit(enemyId);
+      this.applyGlacialBiteChillOnHit(enemyId, fromPlayerId, player);
     }
 
     // Arctic Sting + Tempest Rounds — +1 chill per burst hit; 6 stacks → freeze
@@ -3328,7 +3771,7 @@ class GameRoom {
       !enemy.isDying &&
       enemy.health > 0
     ) {
-      this.applyArcticStingTempestChillOnHit(enemyId);
+      this.applyArcticStingTempestChillOnHit(enemyId, fromPlayerId, player);
     }
 
     // Arctic Shards + Icebeam — +1 chill per beam tick; 5 stacks → 4s freeze
@@ -3341,7 +3784,7 @@ class GameRoom {
       !enemy.isDying &&
       enemy.health > 0
     ) {
-      this.applyBlizzardChillOnHit(enemyId);
+      this.applyBlizzardChillOnHit(enemyId, fromPlayerId, player);
     }
 
     // Stagger talents: build stagger; at 100 (300 for coop bosses) proc damage + stun + VFX
@@ -3362,7 +3805,9 @@ class GameRoom {
         hitMeta.damageType === 'crossentropy' ||
         hitMeta.damageType === 'entropic' ||
         hitMeta.damageType === 'icebeam' ||
-        hitMeta.damageType === 'lightning_storm') &&
+        hitMeta.damageType === 'lightning_storm' ||
+        hitMeta.damageType === 'blizzard' ||
+        hitMeta.damageType === 'ignite') &&
       typeof hitMeta.staggerToAdd === 'number' &&
       hitMeta.staggerToAdd > 0 &&
       !enemy.isDying
@@ -3372,9 +3817,6 @@ class GameRoom {
         if (enemy.staggerBuildup == null) enemy.staggerBuildup = 0;
         enemy.staggerBuildup += hitMeta.staggerToAdd;
         const staggerCap = COOP_BOSS_TYPES.has(enemy.type) ? STAGGER_CAP_BOSS : STAGGER_CAP_NORMAL;
-        /** Keep in sync with `STAGGER_PROC_DAMAGE` / `GUARDBREAK_STAGGER_PROC_DAMAGE` / `UNSTABLE_ENERGY_AGILITY_DAMAGE_PER_POINT` in src/utils/talents.ts */
-        const staggerBoons = fromPlayerId ? this.players.get(fromPlayerId)?.coopStaggerRoomBoons : null;
-        const STUN_MS = staggerBoons?.overshock ? 2500 : 1000;
         let procEnemy = this.enemies.get(enemyId);
         while (
           procEnemy &&
@@ -3383,34 +3825,8 @@ class GameRoom {
           procEnemy.staggerBuildup >= staggerCap
         ) {
           procEnemy.staggerBuildup -= staggerCap;
-          let procBase = staggerBoons?.guardbreak ? 300 : 150;
-          if (staggerBoons?.unstableEnergy) {
-            const agi = typeof staggerBoons.agility === 'number' ? staggerBoons.agility : 0;
-            procBase += Math.max(0, agi) * 8;
-          }
-          let procDamage = procBase;
-          let isCritical = false;
-          if (staggerBoons?.unstableEnergy) {
-            const critChance = typeof staggerBoons.critChance === 'number' ? staggerBoons.critChance : 0;
-            const critMult = typeof staggerBoons.critDamageMult === 'number' ? staggerBoons.critDamageMult : 2;
-            isCritical = Math.random() < critChance;
-            if (isCritical) {
-              procDamage = Math.floor(procBase * critMult);
-            }
-          }
-          this.damageEnemy(enemyId, procDamage, fromPlayerId, player, { damageType: 'stagger_break' });
-          this.applyStatusEffect(enemyId, 'stun', STUN_MS);
+          this._triggerStaggerLightningProc(enemyId, fromPlayerId, player);
           procEnemy = this.enemies.get(enemyId);
-          if (this.io && procEnemy) {
-            this.io.to(this.roomId).emit('enemy-stagger-proc', {
-              enemyId,
-              position: { x: procEnemy.position.x, y: procEnemy.position.y, z: procEnemy.position.z },
-              damage: procDamage,
-              isCritical,
-              fromPlayerId: fromPlayerId || null,
-              timestamp: Date.now(),
-            });
-          }
         }
         const syncEnemy = this.enemies.get(enemyId);
         if (this.io && syncEnemy && !syncEnemy.isDying) {
@@ -3448,6 +3864,16 @@ class GameRoom {
           }
         }, 2500);
         return result;
+      }
+
+      if (
+        this._anyPlayerHasFissionRoom() &&
+        this.isEnemyAffectedBy(enemyId, 'ignite') &&
+        enemy.type !== 'training-dummy' &&
+        !COOP_BOSS_TYPES.has(enemy.type) &&
+        enemy.type !== 'player-zombie'
+      ) {
+        this._tryFissionDetonation(enemy, enemyId, fromPlayerId, player);
       }
 
       // INFESTED STRIKE: raise zombie on Wraith Strike kill (non-boss, non-dummy)
@@ -3944,6 +4370,33 @@ class GameRoom {
         return result;
 
       } else if (enemy.type === 'knight') {
+        if (this.boss1EliteKnightIds?.has(enemyId)) {
+          this.boss1EliteKnightIds.delete(enemyId);
+          if (this.boss1EliteKnightIds.size === 0) {
+            this.boss1EliteKnightIds = null;
+            if (this.io) {
+              this.players.forEach((player, playerId) => {
+                this.io.to(this.roomId).emit('player-experience-gained', {
+                  playerId,
+                  experienceGained: 1000,
+                  source: 'boss_kill',
+                  enemyId,
+                  timestamp: Date.now(),
+                });
+              });
+              this.io.to(this.roomId).emit('boss-defeated', {
+                bossId: enemyId,
+                killedBy: fromPlayerId,
+                timestamp: Date.now(),
+              });
+              this.spawnBossItemDrops(enemy.position);
+            }
+            this.coopBossesDefeatedCount += 1;
+            this._schedulePostBossPortalIntermission();
+            console.log(`🎉 BOSS1 ELITE KNIGHTS DEFEATED by player ${fromPlayerId}!`);
+          }
+        }
+
         // Award +65 EXP for knight kills (tougher than skeleton)
         if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
           this.io.to(this.roomId).emit('player-experience-gained', {
@@ -4156,7 +4609,7 @@ class GameRoom {
           });
         }
 
-        this._registerCoopWaveKill('💀 Ghoul killed');
+        // Ghoul kills no longer count toward the room's kill quota.
 
         if (this.enemyAI) {
           this.enemyAI.removeEnemyAggro(enemyId);
@@ -4283,6 +4736,22 @@ class GameRoom {
             this.io.to(this.roomId).emit('enemy-removed', { enemyId, timestamp: Date.now() });
           }
         }, 600);
+        return result;
+
+      } else if (enemy.type === 'greed') {
+        // Bonus enemy: gold stacks only, no EXP, never counts toward the room's kill quota.
+        this._spawnGreedGoldDrops(enemy);
+        if (this.enemyAI) {
+          this.enemyAI.removeEnemyAggro(enemyId);
+        }
+        this._scheduleTimeout(() => {
+          this._pruneEnemyMaps(enemyId);
+          this.enemies.delete(enemyId);
+          console.log(`🗑️ Greed ${enemyId} removed from enemies map after death fade`);
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-removed', { enemyId, timestamp: Date.now() });
+          }
+        }, 1500);
         return result;
 
       } else if (enemy.type === 'player-zombie') {
@@ -4478,6 +4947,69 @@ class GameRoom {
   }
 
   /**
+   * Alternate Boss1 encounter: two elite knights (random distinct colors) instead of the GLB boss.
+   * Both IDs are tracked in `this.boss1EliteKnightIds`; the encounter completes only when both fall.
+   */
+  spawnBoss1EliteKnights() {
+    if (!this.gameStarted || this.bossSpawned) {
+      return null;
+    }
+
+    const now = Date.now();
+    const rand = () => Math.random().toString(36).substr(2, 9);
+    const shuffled = [...KNIGHT_SOUL_TYPES].sort(() => Math.random() - 0.5);
+    const soulTypes = shuffled.slice(0, 2);
+
+    const spawnConfigs = [
+      { soulType: soulTypes[0], pos: { x: -4, y: 0, z: 2 } },
+      { soulType: soulTypes[1], pos: { x: 4, y: 0, z: 2 } },
+    ];
+
+    this.boss1EliteKnightIds = new Set();
+    const spawnedKnights = [];
+
+    for (const cfg of spawnConfigs) {
+      const stats = KNIGHT_SOUL_STATS[cfg.soulType];
+      const knightId = `knight-boss1-elite-${cfg.soulType}-${now}-${rand()}`;
+      const maxHealth = Math.round(stats.maxHealth * BOSS1_ELITE_HEALTH_MULT);
+      const knightData = {
+        id: knightId,
+        type: 'knight',
+        position: { ...cfg.pos },
+        initialPosition: { ...cfg.pos },
+        rotation: rotationYTowardEntry(cfg.pos.x, cfg.pos.z),
+        health: maxHealth,
+        maxHealth,
+        damage: KNIGHT_DAMAGE_BY_TIER[cfg.soulType][0],
+        attackCooldown: stats.attackCooldown,
+        moveSpeed: stats.moveSpeed * BOSS1_ELITE_SPEED_MULT,
+        spawnedAt: now,
+        isDying: false,
+        staggerBuildup: 0,
+        campIndex: 0,
+        campType: cfg.soulType,
+        soulType: cfg.soulType,
+        bossId: null,
+        visualScale: BOSS1_ELITE_SIZE_SCALE,
+        isBoss1EliteKnight: true,
+      };
+
+      this.enemies.set(knightId, knightData);
+      this.boss1EliteKnightIds.add(knightId);
+      spawnedKnights.push(knightData);
+
+      if (this.io) {
+        broadcastEnemySpawn(this.io, this.roomId, knightData);
+      }
+    }
+
+    console.log(
+      `⚔️⚔️ Boss1 elite knights spawned (${soulTypes.join(' + ')})! IDs: ${[...this.boss1EliteKnightIds].join(', ')}`
+    );
+    return spawnedKnights;
+  }
+
+  /**
    * Spawn all three bosses simultaneously for the Trinity encounter (4th boss fight).
    * Each boss gets a position in a triangle formation so they don't overlap.
    * All three IDs are tracked in `this.tripleBossIds`; the encounter completes only
@@ -4601,6 +5133,24 @@ class GameRoom {
     return true;
   }
 
+  applyPlayerStatusEffect(playerId, type, durationMs) {
+    if (!playerId || !(durationMs > 0)) return;
+    const existing = this.playerStatusEffects.get(playerId) || {};
+    existing[type] = Date.now() + durationMs;
+    this.playerStatusEffects.set(playerId, existing);
+  }
+
+  isPlayerAffectedBy(playerId, type) {
+    const existing = this.playerStatusEffects.get(playerId);
+    const expiresAt = existing?.[type];
+    if (typeof expiresAt !== 'number') return false;
+    if (Date.now() >= expiresAt) {
+      delete existing[type];
+      return false;
+    }
+    return true;
+  }
+
   getEnemyStatusEffects(enemyId) {
     const effects = this.enemyStatusEffects.get(enemyId);
     if (!effects) return {};
@@ -4631,7 +5181,23 @@ class GameRoom {
     return 1 - BLIZZARD_CHILL_SLOW_PER_STACK * Math.min(4, chill.stacks);
   }
 
-  applyBlizzardChillOnHit(enemyId) {
+  /** FROST QUEEN (duo: red + purple) — spawns one guaranteed meteor at a newly FROZEN enemy's position. */
+  _maybeTriggerFrostQueenMeteor(enemyId, fromPlayerId, player) {
+    if (!fromPlayerId || !player) return;
+    if (!player.coopStaggerRoomBoons?.frostQueen) return;
+    const enemy = this.enemies.get(enemyId);
+    if (!enemy) return;
+    const center = { x: enemy.position.x, y: enemy.position.y ?? 0, z: enemy.position.z };
+    this.spawnOneCrossentropyMeteor(
+      center,
+      fromPlayerId,
+      player,
+      { damageType: 'crossentropy', crossentropyMeteor: true },
+      0,
+    );
+  }
+
+  applyBlizzardChillOnHit(enemyId, fromPlayerId, player) {
     const enemy = this.enemies.get(enemyId);
     if (!enemy || enemy.isDying || enemy.health <= 0) return;
     if (this.isEnemyAffectedBy(enemyId, 'freeze')) return;
@@ -4648,6 +5214,7 @@ class GameRoom {
     if (chill.stacks >= BLIZZARD_CHILL_STACKS_TO_FREEZE) {
       this.enemyChill.delete(enemyId);
       this.applyStatusEffect(enemyId, 'freeze', 4000);
+      this._maybeTriggerFrostQueenMeteor(enemyId, fromPlayerId, player);
       if (this.io) {
         this.io.to(this.roomId).emit('enemy-chill-sync', {
           enemyId,
@@ -4669,7 +5236,7 @@ class GameRoom {
     }
   }
 
-  applyGlacialBiteChillOnHit(enemyId) {
+  applyGlacialBiteChillOnHit(enemyId, fromPlayerId, player) {
     const enemy = this.enemies.get(enemyId);
     if (!enemy || enemy.isDying || enemy.health <= 0) return;
     if (this.isEnemyAffectedBy(enemyId, 'freeze')) return;
@@ -4686,6 +5253,7 @@ class GameRoom {
     if (chill.stacks >= BLIZZARD_CHILL_STACKS_TO_FREEZE) {
       this.enemyChill.delete(enemyId);
       this.applyStatusEffect(enemyId, 'freeze', 6000);
+      this._maybeTriggerFrostQueenMeteor(enemyId, fromPlayerId, player);
       if (this.io) {
         this.io.to(this.roomId).emit('enemy-chill-sync', {
           enemyId,
@@ -4707,7 +5275,7 @@ class GameRoom {
     }
   }
 
-  applyArcticStingTempestChillOnHit(enemyId) {
+  applyArcticStingTempestChillOnHit(enemyId, fromPlayerId, player) {
     const enemy = this.enemies.get(enemyId);
     if (!enemy || enemy.isDying || enemy.health <= 0) return;
     if (this.isEnemyAffectedBy(enemyId, 'freeze')) return;
@@ -4724,6 +5292,7 @@ class GameRoom {
     if (chill.stacks >= ARCTIC_STING_TEMPEST_CHILL_STACKS_TO_FREEZE) {
       this.enemyChill.delete(enemyId);
       this.applyStatusEffect(enemyId, 'freeze', ARCTIC_STING_TEMPEST_FREEZE_MS);
+      this._maybeTriggerFrostQueenMeteor(enemyId, fromPlayerId, player);
       if (this.io) {
         this.io.to(this.roomId).emit('enemy-chill-sync', {
           enemyId,
@@ -4805,6 +5374,20 @@ class GameRoom {
     const amount = this._rollGoldReward(enemy);
     if (amount <= 0) return null;
     return this.spawnGoldDrop(enemy?.position, amount, enemy);
+  }
+
+  /** Greed's death reward: 5–10 fixed 20-gold stacks scattered around the corpse (bypasses GOLD_REWARD_TABLE). */
+  _spawnGreedGoldDrops(enemy) {
+    const stackCount = 5 + Math.floor(Math.random() * 6); // 5–10 inclusive
+    for (let i = 0; i < stackCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = Math.random() * 2.2;
+      const pos = {
+        x: enemy.position.x + Math.cos(angle) * r,
+        z: enemy.position.z + Math.sin(angle) * r,
+      };
+      this.spawnGoldDrop(pos, 20, enemy);
+    }
   }
 
   spawnGoldDrop(position, amount, enemy = null) {

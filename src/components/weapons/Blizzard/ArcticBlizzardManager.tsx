@@ -23,7 +23,14 @@ interface ArcticBlizzardManagerProps {
   world: World | null;
   getEnemyData: () => Array<{ id: string; position: Vector3; health: number }>;
   getDamagePerTick: () => number;
+  getHitRadius?: () => number;
+  getParticleSpawnMultiplier?: () => number;
+  /** MONSOON (duo: blue + purple) — each blizzard damage tick also applies 10 stagger. */
+  hasMonsoon?: boolean;
 }
+
+/** MONSOON (duo: blue + purple) — stagger applied per blizzard damage tick. */
+const MONSOON_STAGGER_PER_TICK = 10;
 
 function findEnemyEntityForBlizzard(world: World, targetId: string): Entity | null {
   const candidates = world.queryEntities([Health, Enemy]);
@@ -37,12 +44,25 @@ function findEnemyEntityForBlizzard(world: World, targetId: string): Entity | nu
 /**
  * Ground-fixed concentrated blizzards (Arctic Shards proc + Glacial Storm on hit).
  */
-export default function ArcticBlizzardManager({ world, getEnemyData, getDamagePerTick }: ArcticBlizzardManagerProps) {
+export default function ArcticBlizzardManager({
+  world,
+  getEnemyData,
+  getDamagePerTick,
+  getHitRadius,
+  getParticleSpawnMultiplier,
+  hasMonsoon = false,
+}: ArcticBlizzardManagerProps) {
   const [storms, setStorms] = useState<ArcticBlizzardSpawn[]>([]);
   const getEnemyDataRef = useRef(getEnemyData);
   getEnemyDataRef.current = getEnemyData;
   const getDamagePerTickRef = useRef(getDamagePerTick);
   getDamagePerTickRef.current = getDamagePerTick;
+  const getHitRadiusRef = useRef(getHitRadius ?? (() => ARCTIC_BLIZZARD_HIT_RADIUS));
+  getHitRadiusRef.current = getHitRadius ?? (() => ARCTIC_BLIZZARD_HIT_RADIUS);
+  const getParticleSpawnMultiplierRef = useRef(getParticleSpawnMultiplier ?? (() => 1));
+  getParticleSpawnMultiplierRef.current = getParticleSpawnMultiplier ?? (() => 1);
+  const hasMonsoonRef = useRef(hasMonsoon);
+  hasMonsoonRef.current = hasMonsoon;
 
   const pushStorm = useCallback((worldPosition: Vector3) => {
     const id = `arctic-bz-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -68,6 +88,7 @@ export default function ArcticBlizzardManager({ world, getEnemyData, getDamagePe
         damage,
         localPlayer ?? undefined,
         localPlayer?.userData?.playerId,
+        hasMonsoonRef.current ? MONSOON_STAGGER_PER_TICK : undefined,
       );
     },
     [world],
@@ -83,7 +104,8 @@ export default function ArcticBlizzardManager({ world, getEnemyData, getDamagePe
           durationSeconds={ARCTIC_BLIZZARD_DURATION_SEC}
           flatDamagePerTick={ARCTIC_BLIZZARD_DAMAGE_PER_TICK}
           damageTickIntervalMs={ARCTIC_BLIZZARD_TICK_MS}
-          hitRadius={ARCTIC_BLIZZARD_HIT_RADIUS}
+          hitRadius={getHitRadiusRef.current()}
+          particleSpawnMultiplier={getParticleSpawnMultiplierRef.current()}
           visualPreset="concentrated"
           onHitTarget={handleBlizzardHit}
           onComplete={() => setStorms((prev) => prev.filter((x) => x.id !== s.id))}

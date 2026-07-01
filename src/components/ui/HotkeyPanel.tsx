@@ -3,17 +3,17 @@ import { WeaponType } from '@/components/dragon/weapons';
 import { SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
 import { universalAbilityPool, getUniversalAbilityById, type AbilityLoadout, type UniversalAbility } from '@/utils/weaponAbilities';
 import type { TalentId, TalentLoadout } from '@/utils/talents';
-import {
-  getCoopRoomColorForTalent,
-  getCoopRoomColorHudSlotStyle,
-  getTalentBoonDefinition,
-  getTalentIconSrc,
-  partitionTalentsForHotkeyHud,
-} from '@/utils/talents';
+import { partitionTalentsForHud } from '@/utils/talents';
 import { getWeaponHudIconSrc } from '@/utils/weaponIcons';
+import {
+  HotkeyTooltip,
+  TalentSlot,
+  TALENT_SLOT_PX,
+  getTalentTooltipContent,
+  type TooltipContent,
+} from './hotkeyTalentSlot';
 
-const MAX_VISIBLE_TALENTS = 8;
-const TALENT_SLOT_PX = 48; // w-12
+const MAX_VISIBLE_TALENTS = 6;
 const TALENT_GAP_PX = 8; // gap-2
 const TALENT_SCROLL_STEP_PX = TALENT_SLOT_PX + TALENT_GAP_PX;
 
@@ -40,38 +40,14 @@ interface WeaponData {
 }
 
 interface TooltipProps {
-  content: {
-    name: string;
-    description: string;
-  };
+  content: TooltipContent;
   visible: boolean;
   x: number;
   y: number;
 }
 
 function Tooltip({ content, visible, x, y }: TooltipProps) {
-  if (!visible) return null;
-
-  return (
-    <div
-      className="fixed z-50 text-white text-sm max-w-xs pointer-events-none"
-      style={{
-        left: x - 150,
-        top: y - 92,
-        transform: 'translateX(-50%)',
-        background: 'rgba(6,6,18,0.97)',
-        border: '1px solid rgba(100,140,255,0.3)',
-        borderTop: '2px solid rgba(120,160,255,0.75)',
-        borderRadius: '8px',
-        padding: '10px 14px',
-        boxShadow:
-          '0 8px 32px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.04)',
-      }}
-    >
-      <div className="font-semibold text-blue-300 mb-1 text-[13px]">{content.name}</div>
-      <div className="text-gray-400 text-xs leading-relaxed">{content.description}</div>
-    </div>
-  );
+  return <HotkeyTooltip content={content} visible={visible} x={x} y={y} />;
 }
 
 /**
@@ -204,17 +180,17 @@ export default function HotkeyPanel({
     ? (getUniversalAbilityById(abilityLoadout.passive) ?? null)
     : null;
 
-  const { primaryRoomBoons, otherTalents } = useMemo(
+  const { primaryRoomBoons, otherRoomBoons } = useMemo(
     () =>
       talentLoadout
-        ? partitionTalentsForHotkeyHud(talentLoadout, currentWeapon, abilityLoadout)
-        : { primaryRoomBoons: [], otherTalents: [] },
+        ? partitionTalentsForHud(talentLoadout, currentWeapon, abilityLoadout)
+        : { primaryRoomBoons: [], otherRoomBoons: [], classTalents: [], duoBoons: [] },
     [talentLoadout, currentWeapon, abilityLoadout]
   );
 
-  const totalTalentCount = primaryRoomBoons.length + otherTalents.length;
+  const totalRoomBoonCount = primaryRoomBoons.length + otherRoomBoons.length;
   const maxScrollableTalents = Math.max(0, MAX_VISIBLE_TALENTS - primaryRoomBoons.length);
-  const needsTalentScroll = otherTalents.length > maxScrollableTalents;
+  const needsTalentScroll = otherRoomBoons.length > maxScrollableTalents;
 
   const updateTalentScrollButtons = useCallback(() => {
     const el = talentScrollRef.current;
@@ -236,7 +212,7 @@ export default function HotkeyPanel({
     if (!el || !needsTalentScroll) return;
     el.scrollLeft = 0;
     updateTalentScrollButtons();
-  }, [otherTalents, needsTalentScroll, updateTalentScrollButtons]);
+  }, [otherRoomBoons, needsTalentScroll, updateTalentScrollButtons]);
 
   // Update cooldowns from control system
   useEffect(() => {
@@ -301,12 +277,8 @@ export default function HotkeyPanel({
   }, []);
 
   const handleTalentHover = useCallback((e: React.MouseEvent, talentId: TalentId) => {
-    const def = getTalentBoonDefinition(talentId);
     const rect = e.currentTarget.getBoundingClientRect();
-    setTooltipContent({
-      name: def?.name ?? talentId,
-      description: def?.description ?? '',
-    });
+    setTooltipContent(getTalentTooltipContent(talentId));
     setTooltipPosition({
       x: rect.left + rect.width / 2,
       y: rect.top,
@@ -322,59 +294,6 @@ export default function HotkeyPanel({
     cursor: enabled ? 'pointer' : 'default',
   });
 
-  const defaultTalentSlotStyle: React.CSSProperties = {
-    background: 'linear-gradient(135deg, rgba(54,42,14,0.55), rgba(24,18,8,0.45))',
-    border: '1px solid rgba(251,191,36,0.45)',
-    boxShadow: '0 0 10px rgba(251,191,36,0.15), inset 0 1px 0 rgba(255,255,255,0.06)',
-  };
-
-  const renderTalentSlot = (talentId: TalentId, variant: 'primary' | 'default') => {
-    const roomColor = variant === 'primary' ? getCoopRoomColorForTalent(talentId) : null;
-    const roomStyle = roomColor ? getCoopRoomColorHudSlotStyle(roomColor) : null;
-    const src = getTalentIconSrc(talentId, roomColor);
-    const slotStyle: React.CSSProperties = roomStyle
-      ? {
-          background: roomStyle.background,
-          border: roomStyle.border,
-          boxShadow: roomStyle.boxShadow,
-        }
-      : defaultTalentSlotStyle;
-    const iconFilter = roomStyle
-      ? roomStyle.iconFilter
-      : 'drop-shadow(0 0 3px rgba(251,191,36,0.35))';
-    const fallbackGlyphColor = roomStyle?.fallbackGlyphColor ?? 'rgba(253,224,71,0.85)';
-
-    return (
-      <div
-        key={talentId}
-        className="relative h-12 w-12 shrink-0 rounded-lg transition-all duration-200 flex items-center justify-center cursor-default"
-        style={slotStyle}
-        onMouseEnter={(e) => handleTalentHover(e, talentId)}
-        onMouseLeave={handleAbilityLeave}
-      >
-        <div className="flex h-7 w-7 items-center justify-center">
-          {src ? (
-            <img
-              src={src}
-              alt=""
-              className="h-7 w-7 object-contain"
-              style={{ filter: iconFilter }}
-            />
-          ) : (
-            <span
-              className="select-none text-lg leading-none"
-              style={{ color: fallbackGlyphColor }}
-            >
-              ✦
-            </span>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const primaryTalentSlots = primaryRoomBoons.map((talentId) => renderTalentSlot(talentId, 'primary'));
-  const otherTalentSlots = otherTalents.map((talentId) => renderTalentSlot(talentId, 'default'));
   const scrollableTalentMaxWidthPx =
     maxScrollableTalents * TALENT_SLOT_PX +
     Math.max(0, maxScrollableTalents - 1) * TALENT_GAP_PX;
@@ -711,7 +630,7 @@ export default function HotkeyPanel({
               );
             })}
 
-            {totalTalentCount > 0 && (
+            {totalRoomBoonCount > 0 && (
               <>
                 <div className="flex flex-col items-center justify-center gap-1.5 px-0.5">
                   <div className="w-px h-3 rounded" style={{ background: 'rgba(120,120,160,0.3)' }} />
@@ -720,48 +639,68 @@ export default function HotkeyPanel({
                   </span>
                   <div className="w-px h-3 rounded" style={{ background: 'rgba(120,120,160,0.3)' }} />
                 </div>
-                <div className="flex items-end gap-2">
-                  {primaryTalentSlots.length > 0 && (
-                    <div className="flex gap-2">{primaryTalentSlots}</div>
-                  )}
-                  {otherTalentSlots.length > 0 && (
-                    needsTalentScroll ? (
-                      <div className="flex flex-col items-center">
-                        <div className="mb-1 flex items-center justify-center gap-1.5">
-                          <button
-                            type="button"
-                            aria-label="Scroll talents left"
-                            disabled={!canScrollLeft}
-                            onClick={scrollTalentLeft}
-                            className="flex h-6 w-6 items-center justify-center rounded text-base leading-none transition-colors"
-                            style={talentArrowButtonStyle(canScrollLeft)}
-                          >
-                            ‹
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="Scroll talents right"
-                            disabled={!canScrollRight}
-                            onClick={scrollTalentRight}
-                            className="flex h-6 w-6 items-center justify-center rounded text-base leading-none transition-colors"
-                            style={talentArrowButtonStyle(canScrollRight)}
-                          >
-                            ›
-                          </button>
-                        </div>
+                <div className="flex items-center gap-2">
+                  {primaryRoomBoons.length > 0 &&
+                    primaryRoomBoons.map((talentId) => (
+                      <TalentSlot
+                        key={talentId}
+                        talentId={talentId}
+                        variant="primary"
+                        onMouseEnter={handleTalentHover}
+                        onMouseLeave={handleAbilityLeave}
+                      />
+                    ))}
+                  {otherRoomBoons.length > 0 &&
+                    (needsTalentScroll ? (
+                      <div className="relative flex items-center">
+                        <button
+                          type="button"
+                          aria-label="Scroll talents left"
+                          disabled={!canScrollLeft}
+                          onClick={scrollTalentLeft}
+                          className="absolute left-0 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-base leading-none transition-colors top-1/2"
+                          style={talentArrowButtonStyle(canScrollLeft)}
+                        >
+                          ‹
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Scroll talents right"
+                          disabled={!canScrollRight}
+                          onClick={scrollTalentRight}
+                          className="absolute right-0 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-base leading-none transition-colors top-1/2"
+                          style={talentArrowButtonStyle(canScrollRight)}
+                        >
+                          ›
+                        </button>
                         <div
                           ref={talentScrollRef}
                           className="flex flex-nowrap gap-2 overflow-x-hidden"
                           style={{ maxWidth: scrollableTalentMaxWidthPx }}
                           onScroll={updateTalentScrollButtons}
                         >
-                          {otherTalentSlots}
+                          {otherRoomBoons.map((talentId) => (
+                            <TalentSlot
+                              key={talentId}
+                              talentId={talentId}
+                              variant="default"
+                              onMouseEnter={handleTalentHover}
+                              onMouseLeave={handleAbilityLeave}
+                            />
+                          ))}
                         </div>
                       </div>
                     ) : (
-                      <div className="flex gap-2">{otherTalentSlots}</div>
-                    )
-                  )}
+                      otherRoomBoons.map((talentId) => (
+                        <TalentSlot
+                          key={talentId}
+                          talentId={talentId}
+                          variant="default"
+                          onMouseEnter={handleTalentHover}
+                          onMouseLeave={handleAbilityLeave}
+                        />
+                      ))
+                    ))}
                 </div>
               </>
             )}

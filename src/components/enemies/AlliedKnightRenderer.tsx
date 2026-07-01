@@ -14,6 +14,8 @@ interface AlliedKnightRendererProps {
   isDying?: boolean;
   staggerBuildup?: number;
   alliedOrbSlots?: boolean[];
+  /** Use fast walk animation when Abyssal Initiate is active. */
+  fastWalk?: boolean;
 }
 
 export default function AlliedKnightRenderer({
@@ -25,6 +27,7 @@ export default function AlliedKnightRenderer({
   isDying = false,
   staggerBuildup = 0,
   alliedOrbSlots,
+  fastWalk = false,
 }: AlliedKnightRendererProps) {
   const orbitalCharges = useMemo<DashChargeStatus[]>(() => {
     const slots = alliedOrbSlots?.length === 3 ? alliedOrbSlots : [true, true, true];
@@ -49,6 +52,7 @@ export default function AlliedKnightRenderer({
       orbitalActiveColor="#facc15"
       orbitalInactiveColor="#3a2a09"
       orbitalYOffset={2.1}
+      forceFastWalk={fastWalk}
     />
   );
 }

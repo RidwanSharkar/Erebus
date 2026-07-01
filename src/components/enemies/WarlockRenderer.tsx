@@ -35,8 +35,9 @@ const FADE_DURATION = 1.5; // seconds for death fade-out
 const WALK_STOP_DELAY = 250; // ms — purple warlock walks on server; debounce idle
 const HIT_REACT_IMPACT_COOLDOWN_MS = 1500; // min time between warlock_impact.glb hit-react plays
 
-// Fast lerp: the warlock only moves via teleport, so we want position corrections to be snappy
-const LERP_SPEED = 20;
+// Match Knight/Viper for smooth walk; blink uses a faster slide lerp.
+const LERP_SPEED = 12;
+const BLINK_LERP_SPEED = 20;
 
 export default function WarlockRenderer({
   id,
@@ -56,6 +57,7 @@ export default function WarlockRenderer({
   const [isBlinking,  setIsBlinking]  = useState(false);
   const isBlinkingRef = useRef(false);
   const [isLaunching, setIsLaunching] = useState(false);
+  const isLaunchingRef = useRef(false);
   const [isWalking,   setIsWalking]   = useState(false);
   const [isImpacting, setIsImpacting] = useState(false);
   const [impactPlayKey, setImpactPlayKey] = useState(0);
@@ -80,36 +82,9 @@ export default function WarlockRenderer({
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Track server position — red: blink teleports; purple: incremental walk updates
-  useEffect(() => {
-    const dist = targetPosition.current.distanceTo(position);
-    targetPosition.current.copy(position);
-
-    if (dist > 2.0 && groupRef.current && !isBlinkingRef.current) {
-      groupRef.current.position.copy(position);
-    }
-
-    if (
-      soulType === 'purple' &&
-      dist > 0.01 &&
-      dist <= 2.0 &&
-      !isBlinking &&
-      !isLaunching &&
-      !isDying
-    ) {
-      setIsWalking(true);
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
-    }
-  }, [position.x, position.y, position.z, soulType, isBlinking, isLaunching, isDying]); // eslint-disable-line react-hooks/exhaustive-deps
-
   useEffect(() => {
     return () => { if (walkStopTimer.current) clearTimeout(walkStopTimer.current); };
   }, []);
-
-  useEffect(() => {
-    targetRotation.current = rotation;
-  }, [rotation]);
 
   const handleImpactFinished = useCallback(() => {
     setIsImpacting(false);
@@ -201,7 +176,11 @@ export default function WarlockRenderer({
     const handleWarlockLaunch = (data: { warlockId: string }) => {
       if (data.warlockId !== id) return;
       setIsLaunching(true);
-      setTimeout(() => setIsLaunching(false), LAUNCH_ANIMATION_DURATION);
+      isLaunchingRef.current = true;
+      setTimeout(() => {
+        setIsLaunching(false);
+        isLaunchingRef.current = false;
+      }, LAUNCH_ANIMATION_DURATION);
     };
 
     socket.on('warlock-attack-telegraph', handleWarlockLaunch);
@@ -215,7 +194,11 @@ export default function WarlockRenderer({
     const handleArchonShock = (data: { warlockId: string }) => {
       if (data.warlockId !== id) return;
       setIsLaunching(true);
-      setTimeout(() => setIsLaunching(false), LAUNCH_ANIMATION_DURATION);
+      isLaunchingRef.current = true;
+      setTimeout(() => {
+        setIsLaunching(false);
+        isLaunchingRef.current = false;
+      }, LAUNCH_ANIMATION_DURATION);
     };
 
     socket.on('warlock-archon-shock', handleArchonShock);
@@ -225,17 +208,41 @@ export default function WarlockRenderer({
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+    const isLaunchLocked = isLaunchingRef.current;
 
-    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    if (isBlinkingRef.current) {
+      group.position.lerp(targetPosition.current, Math.min(1, delta * BLINK_LERP_SPEED));
+      let deltaAngle = targetRotation.current - group.rotation.y;
+      while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
+      while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
+      group.rotation.y += deltaAngle * Math.min(1, delta * BLINK_LERP_SPEED);
+    } else {
+      const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
 
-    // Lerp toward server-authoritative position (handles minor corrections and blink approach)
-    group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
+      if (dist > 2.0 && !isLaunchLocked) {
+        group.position.copy(targetPosition.current);
+      }
 
-    // Shortest-arc rotation lerp
-    let deltaAngle = targetRotation.current - group.rotation.y;
-    while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
-    while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
-    group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+      if (
+        soulType === 'purple' &&
+        dist > 0.01 &&
+        !isLaunchLocked &&
+        !isDying
+      ) {
+        if (!isWalking) setIsWalking(true);
+        if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+        walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
+      }
+
+      if (!isLaunchLocked) {
+        group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
+
+        let deltaAngle = targetRotation.current - group.rotation.y;
+        while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
+        while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
+        group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+      }
+    }
 
     // Death fade-out (death clip plays on the model underneath)
     if (isDying) {

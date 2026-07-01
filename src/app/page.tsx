@@ -42,6 +42,8 @@ import {
   expandUniversalGreenZombieBoonIdsAfterPick,
   excludeOwnedTalentsFromBoonPool,
   filterTalentIdsByExclusionSet,
+  getEligibleDuoBoonsForColor,
+  isCoopRoomColor,
   pickPrioritizedRoomBoonOptions,
   pickRandomDistinctFromPool,
   pickRandomClassBoonForWeapon,
@@ -51,7 +53,7 @@ import {
   TALENT_LIGHTNING_BOLT_ROOM,
   TALENT_AEGIS_ROOM,
 } from '../utils/talents';
-import type { TalentId, TalentLoadout } from '../utils/talents';
+import type { TalentId, TalentLoadout, CoopRoomColor } from '../utils/talents';
 import type { AbilityLoadout } from '../utils/weaponAbilities';
 import { getDefaultLoadoutForWeapon } from '../utils/weaponAbilities';
 import {
@@ -152,8 +154,23 @@ function rollRoomBoonOptions(
   abilityLoadout: AbilityLoadout | null | undefined,
   exclusions: RoomBoonExclusionSets,
 ): TalentId[] {
+  const TOTAL_OPTIONS = 3;
+  const lowerColor = String(color ?? '').toLowerCase();
+  // Duo boons are guaranteed slots (up to TOTAL_OPTIONS) once both required colors are owned.
+  const duoBoons: TalentId[] = isCoopRoomColor(lowerColor)
+    ? getEligibleDuoBoonsForColor(
+        lowerColor as CoopRoomColor,
+        talentLoadout,
+        primaryWeapon,
+        abilityLoadout,
+      ).slice(0, TOTAL_OPTIONS)
+    : [];
+  const remainingCount = TOTAL_OPTIONS - duoBoons.length;
+  if (remainingCount <= 0) return duoBoons;
+
   const pool = filterRoomBoonPool(color, primaryWeapon, talentLoadout, exclusions);
-  return pickPrioritizedRoomBoonOptions(pool, color, primaryWeapon, abilityLoadout, 3);
+  const rest = pickPrioritizedRoomBoonOptions(pool, color, primaryWeapon, abilityLoadout, remainingCount);
+  return [...duoBoons, ...rest];
 }
 
 const DEV_TALENT_MODAL =
@@ -336,6 +353,12 @@ function HomeContent() {
   const [controlsTutorialVisible, setControlsTutorialVisible] = useState(false);
   const [controlsTutorialAutoDismiss, setControlsTutorialAutoDismiss] = useState(true);
   const [controlsTutorialKey, setControlsTutorialKey] = useState(0);
+
+  const handleOpenControlsTutorial = useCallback(() => {
+    setControlsTutorialAutoDismiss(false);
+    setControlsTutorialKey((k) => k + 1);
+    setControlsTutorialVisible(true);
+  }, []);
 
   const queueOverlayAnnouncement = useCallback((
     title: string,
@@ -1173,7 +1196,7 @@ function HomeContent() {
         {/* UI Overlay - Only show during gameplay */}
         {gameMode !== 'menu' && (
           <>
-            <div className="absolute top-4 left-4 text-white font-mono text-sm pointer-events-none">
+            <div id="dps-meter-hud" className="absolute top-4 left-4 text-white font-mono text-sm pointer-events-none">
               <div className="rounded-md bg-black/45 px-3 py-2 shadow-lg backdrop-blur-sm">
                 <div className="text-yellow-300 font-semibold">
                   DPS: {Math.round(dpsSnapshot.currentDps).toLocaleString()}
@@ -1194,12 +1217,6 @@ function HomeContent() {
             <div className="fixed bottom-16 right-4 z-40 flex items-center gap-2">
               <HudActionButtons
                 onOpenRulebook={() => setShowRulesPanel(true)}
-                onOpenControlsTutorial={() => {
-                  setControlsTutorialAutoDismiss(false);
-                  setControlsTutorialKey((k) => k + 1);
-                  setControlsTutorialVisible(true);
-                }}
-                showControlsButton={sessionGameMode === 'coop'}
               />
               {gameMode === 'coop' && (
                 <GoldDisplay gold={playerGold} isLocalPlayer />
@@ -1212,6 +1229,17 @@ function HomeContent() {
             {/* Performance Stats */}
             <div className="absolute top-4 right-4 text-white font-mono text-sm">
               <div id="fps-counter">FPS: --</div>
+
+              {sessionGameMode === 'coop' && (
+                <button
+                  type="button"
+                  onClick={handleOpenControlsTutorial}
+                  className="mt-2 text-2xl hover:scale-110 transition-transform cursor-pointer text-sky-300 hover:text-sky-200"
+                  title="Replay controls"
+                >
+                  ⌨️
+                </button>
+              )}
 
               {gameMode === 'pvp' && (
                 <div className="mt-2 text-red-400">

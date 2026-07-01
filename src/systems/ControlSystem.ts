@@ -80,6 +80,8 @@ import {
   shouldApplyGlacialDashTalent,
   shouldApplyMendingDashTalent,
   shouldApplyStaggeringDashTalent,
+  shouldApplyBloodOrbsTalent,
+  BLOOD_ORBS_DASH_HP_COST,
   shouldApplyBloodleechTalent,
   GLACIAL_DASH_COOLDOWN_MS,
   MENDING_DASH_COOLDOWN_MS,
@@ -226,20 +228,29 @@ import {
   shouldApplyWrathfulFlourishTalent,
   shouldApplyInfestedFlourishTalent,
   shouldApplyFanOfKnivesTalent,
+  shouldApplyFireAffinityTalent,
   getFanOfKnivesFlourishTintFromLoadout,
   getFanOfKnivesProjectileDamage,
+  getFireAffinityStormDamage,
   FAN_OF_KNIVES_MAX_DISTANCE_UNITS,
   FAN_OF_KNIVES_PROJECTILE_SPEED,
   FAN_OF_KNIVES_PROJECTILE_LIFETIME_SEC,
+  FIRE_AFFINITY_STORM_RADIUS,
+  FIRE_AFFINITY_STORM_ICD_SEC,
   RAISE_DEAD_COOLDOWN_SEC,
   METEOR_STRIKE_COOLDOWN_SEC,
   AEGIS_ROOM_COOLDOWN_SEC,
   AEGIS_ROOM_DURATION_SEC,
   applyManaShieldRestoreForDashCharges,
+  shouldApplyBloodmageTalent,
+  shouldApplyOverrideTalent,
+  BLOODMAGE_BYPASS_ICD_SEC,
+  OVERRIDE_BYPASS_ICD_SEC,
 } from '@/utils/talents';
 import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
 import type { AegisPaletteVariant } from '@/utils/aegisShieldPalette';
 import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
+import { triggerGlobalFireStorm } from '@/components/weapons/fireStormSpawnBridge';
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
 import { triggerGlobalCobraShot } from '@/components/projectiles/CobraShotManager';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
@@ -341,6 +352,8 @@ export class ControlSystem extends System {
   private onFrostNovaCallback?: (position: Vector3, direction: Vector3) => void;
 
   private onRoomBoomDashCallback?: (payload: RoomBoomDashPayload) => void;
+
+  private onBloodOrbDashCallback?: () => void;
 
   // Callback for Cobra Shot activation
   private onCobraShotCallback?: (position: Vector3, direction: Vector3) => void;
@@ -629,6 +642,7 @@ export class ControlSystem extends System {
   private sunderStartTime = 0;
   private sunderDuration = 1.0; // Same animation duration as backstab
   private sunderDamageApplied = false; // Track if damage has been applied during current sunder
+  private lastFireAffinityStormTime = 0;
   
   // Stealth ability state (Sabres)
   private lastStealthTime = 0;
@@ -700,6 +714,10 @@ export class ControlSystem extends System {
   private lastSmiteTime = 0;
   private smiteCooldown = 8.0; // 2 second cooldown
   private isSmiting = false;
+  /** BLOODMAGE room boon — last dash-charge E-ability cooldown bypass. */
+  private lastBloodmageTriggerTime = Number.NEGATIVE_INFINITY;
+  /** OVERRIDE room boon — last shield-drain Q-ability cooldown bypass. */
+  private lastOverrideTriggerTime = Number.NEGATIVE_INFINITY;
   /** TRINITY: max `sequenceDelaySec` on follow-up strikes; used with `onSmiteComplete` / smite duration. */
   private lastSmiteMaxFollowUpDelaySec = 0;
 
@@ -2463,13 +2481,17 @@ export class ControlSystem extends System {
     const ppos = playerTransform.getWorldPosition();
     this.reconcileCrossentropyCooldown(currentTime, ppos);
     const eps = 1e-6;
+    let isBloodmageBypass = false;
     if (this.crossentropyRechargeAccumulator + eps < CROSSENTROPY_COOLDOWN_SEC) {
-      return;
+      if (!this.tryBloodmageDashBypass(currentTime)) return;
+      isBloodmageBypass = true;
     }
 
     this.isCrossentropyCharging = true;
     this.crossentropyChargeProgress = 0;
-    this.crossentropyRechargeAccumulator = 0;
+    if (!isBloodmageBypass) {
+      this.crossentropyRechargeAccumulator = 0;
+    }
 
     // Play crossentropy sound at the start of the ability
     this.audioSystem?.playCrossentropySound(playerTransform.position);
@@ -2901,10 +2923,14 @@ export class ControlSystem extends System {
     if (!this.playerEntity) return;
     
     const currentTime = Date.now() / 1000;
+    let isOverrideBypass = false;
     if (currentTime - this.lastReanimateTime < REANIMATE_SUNWELL_COOLDOWN_SEC) {
-      return;
+      if (!this.tryOverrideShieldBypass(currentTime)) return;
+      isOverrideBypass = true;
     }
-    this.lastReanimateTime = currentTime;
+    if (!isOverrideBypass) {
+      this.lastReanimateTime = currentTime;
+    }
     
     // Play sunwell sound when reanimate is cast
     this.audioSystem?.playScytheSunwellSound(playerTransform.getWorldPosition());
@@ -3517,6 +3543,10 @@ export class ControlSystem extends System {
     this.onRoomBoomDashCallback = callback;
   }
 
+  public setBloodOrbDashCallback(callback: () => void): void {
+    this.onBloodOrbDashCallback = callback;
+  }
+
   public setCobraShotCallback(callback: (position: Vector3, direction: Vector3) => void): void {
     this.onCobraShotCallback = callback;
   }
@@ -4104,8 +4134,10 @@ export class ControlSystem extends System {
   private performSmite(playerTransform: Transform): void {
     // Check cooldown
     const currentTime = Date.now() / 1000;
+    let isBloodmageBypass = false;
     if (currentTime - this.lastSmiteTime < this.smiteCooldown) {
-      return; // Still on cooldown
+      if (!this.tryBloodmageDashBypass(currentTime)) return;
+      isBloodmageBypass = true;
     }
 
     // Check if already smiting
@@ -4113,7 +4145,9 @@ export class ControlSystem extends System {
       return;
     }
 
-    this.lastSmiteTime = currentTime;
+    if (!isBloodmageBypass) {
+      this.lastSmiteTime = currentTime;
+    }
     this.isSmiting = true;
 
     // Play colossus strike sound instead of smite sound
@@ -4450,8 +4484,10 @@ export class ControlSystem extends System {
   private performDeathGrasp(playerTransform: Transform): void {
     // Check cooldown
     const currentTime = Date.now() / 1000;
+    let isOverrideBypass = false;
     if (currentTime - this.lastDeathGraspTime < this.deathGraspCooldown) {
-      return; // Still on cooldown
+      if (!this.tryOverrideShieldBypass(currentTime)) return;
+      isOverrideBypass = true;
     }
 
     // Check if already death grasping
@@ -4459,7 +4495,9 @@ export class ControlSystem extends System {
       return;
     }
 
-    this.lastDeathGraspTime = currentTime;
+    if (!isOverrideBypass) {
+      this.lastDeathGraspTime = currentTime;
+    }
     this.isDeathGrasping = true;
 
     // Play void grasp sound
@@ -6060,6 +6098,7 @@ export class ControlSystem extends System {
     playerDirection.normalize();
 
     this.fireFanOfKnivesFan(playerTransform);
+    this.performFireAffinityStorm(playerTransform);
 
     const sunderRange = 4; // Same range as backstab
     let hitCount = 0;
@@ -6194,6 +6233,50 @@ export class ControlSystem extends System {
       if (this.onSunderCallback) {
         this.onSunderCallback(playerTransform.position, playerDirection, finalDamage, stackCount);
       }
+    }
+  }
+
+  private performFireAffinityStorm(playerTransform: Transform): void {
+    if (!shouldApplyFireAffinityTalent(this.talentLoadout) || !this.playerEntity) return;
+
+    const currentTime = Date.now() / 1000;
+    if (currentTime - this.lastFireAffinityStormTime < FIRE_AFFINITY_STORM_ICD_SEC) return;
+    this.lastFireAffinityStormTime = currentTime;
+
+    const playerPosition = playerTransform.getWorldPosition();
+    const stormDamage = getFireAffinityStormDamage(
+      this.allocatedPlayerStats,
+      this.talentLoadout,
+      this.abilityLoadout,
+    );
+    const combatSystem = this.world.getSystem(CombatSystem);
+    if (!combatSystem) return;
+
+    triggerGlobalFireStorm(playerPosition);
+    this.audioSystem?.playWeaponSound?.('scythe_cryoflame', playerPosition, { volume: 0.8 });
+
+    for (const entity of this.world.getAllEntities()) {
+      if (entity === this.playerEntity) continue;
+      if (
+        entity.userData?.isCoopAlliedUnit ||
+        entity.userData?.coopServerEnemyType === 'allied-knight'
+      ) {
+        continue;
+      }
+      if (!entity.getComponent(Enemy)) continue;
+
+      const targetHealth = entity.getComponent(Health);
+      const targetTransform = entity.getComponent(Transform);
+      if (!targetHealth || !targetTransform || targetHealth.isDead) continue;
+      if (playerPosition.distanceTo(targetTransform.position) > FIRE_AFFINITY_STORM_RADIUS) continue;
+
+      combatSystem.queueDamage(
+        entity,
+        stormDamage,
+        this.playerEntity,
+        'fire_affinity_storm',
+        this.playerEntity?.userData?.playerId,
+      );
     }
   }
   
@@ -6579,6 +6662,30 @@ export class ControlSystem extends System {
     );
   }
 
+  /** Bloodmage room boon: consume a dash charge to bypass an E-ability's cooldown. Max once per BLOODMAGE_BYPASS_ICD_SEC. */
+  private tryBloodmageDashBypass(currentTime: number): boolean {
+    if (!shouldApplyBloodmageTalent(this.talentLoadout)) return false;
+    if (currentTime - this.lastBloodmageTriggerTime < BLOODMAGE_BYPASS_ICD_SEC) return false;
+    const movement = this.playerEntity?.getComponent(Movement);
+    if (!movement) return false;
+    const consumed = movement.consumeDashChargesWithoutDash(1, currentTime);
+    if (consumed <= 0) return false;
+    this.lastBloodmageTriggerTime = currentTime;
+    this.tryManaShieldOnDashChargeExpended(consumed);
+    return true;
+  }
+
+  /** Override room boon: drain all current shield to bypass a Q-ability's cooldown. Max once per OVERRIDE_BYPASS_ICD_SEC. */
+  private tryOverrideShieldBypass(currentTime: number): boolean {
+    if (!shouldApplyOverrideTalent(this.talentLoadout)) return false;
+    if (currentTime - this.lastOverrideTriggerTime < OVERRIDE_BYPASS_ICD_SEC) return false;
+    const shield = this.playerEntity?.getComponent(Shield);
+    if (!shield || shield.currentShield <= 0) return false;
+    shield.setShield(0, shield.maxShield);
+    this.lastOverrideTriggerTime = currentTime;
+    return true;
+  }
+
   public setAbilityLoadout(loadout: AbilityLoadout): void {
     this.abilityLoadout = loadout;
     // If a passive was selected in the loadout menu, force-unlock it without spending skill points
@@ -6880,23 +6987,25 @@ export class ControlSystem extends System {
   // Backstab ability implementation
   private performBackstab(playerTransform: Transform): void {
     const currentTime = Date.now() / 1000;
+    let isOverrideBypass = false;
 
     if (this.syncBackstabDoubleStabMode()) {
       this.advanceBackstabChargeRecharges(currentTime);
       if (this.backstabCharges <= 0) {
-        return;
-      }
-      if (
+        if (!this.tryOverrideShieldBypass(currentTime)) return;
+        isOverrideBypass = true;
+      } else if (
         currentTime - this.lastBackstabDoubleStabChargeSpendTime <
         BACKSTAB_DOUBLE_STAB_INTERNAL_COOLDOWN_SEC
       ) {
         return;
       }
     } else if (currentTime - this.lastBackstabTime < this.backstabCooldown) {
-      return;
+      if (!this.tryOverrideShieldBypass(currentTime)) return;
+      isOverrideBypass = true;
     }
 
-    if (this.backstabDoubleStabActive) {
+    if (this.backstabDoubleStabActive && !isOverrideBypass) {
       this.backstabCharges--;
       this.lastBackstabDoubleStabChargeSpendTime = currentTime;
       if (
@@ -6905,7 +7014,7 @@ export class ControlSystem extends System {
       ) {
         this.backstabNextChargeAt = currentTime + this.backstabCooldown;
       }
-    } else {
+    } else if (!isOverrideBypass) {
       this.lastBackstabTime = currentTime;
     }
   
@@ -7327,9 +7436,36 @@ export class ControlSystem extends System {
         }
 
         if (!handled) {
-          const dashStarted = movement.startDash(worldDirection, transform.position, currentTime);
+          let dashStarted = movement.startDash(worldDirection, transform.position, currentTime);
+          let bloodOrbDash = false;
+
+          if (
+            !dashStarted &&
+            shouldApplyBloodOrbsTalent(this.talentLoadout) &&
+            movement.getAvailableDashCharges() === 0
+          ) {
+            const health = this.playerEntity?.getComponent(Health);
+            if (
+              health &&
+              !health.isDead &&
+              health.currentHealth > BLOOD_ORBS_DASH_HP_COST
+            ) {
+              dashStarted = movement.startDashWithoutCharge(
+                worldDirection,
+                transform.position,
+                currentTime,
+              );
+              if (dashStarted) {
+                bloodOrbDash = true;
+                this.onBloodOrbDashCallback?.();
+              }
+            }
+          }
+
           if (dashStarted) {
-            this.tryManaShieldOnDashChargeExpended(1);
+            if (!bloodOrbDash) {
+              this.tryManaShieldOnDashChargeExpended(1);
+            }
             this.audioSystem?.playUIDashSound();
             this.tryTriggerRoomBoomDashTalent(key, movement, transform.position, worldDirection);
             if (
@@ -7835,8 +7971,10 @@ export class ControlSystem extends System {
   ): void {
     // Check cooldown
     const currentTime = Date.now() / 1000;
+    let isOverrideBypass = false;
     if (currentTime - this.lastDeflectTime < this.deflectCooldown) {
-      return;
+      if (!this.tryOverrideShieldBypass(currentTime)) return;
+      isOverrideBypass = true;
     }
 
     this.clearTalentBarrierEndTimeout();
@@ -7861,7 +7999,9 @@ export class ControlSystem extends System {
 
     this.isDeflecting = true;
     this.aegisRoomDeflectActive = options?.fromAegisRoom === true;
-    this.lastDeflectTime = currentTime;
+    if (!isOverrideBypass) {
+      this.lastDeflectTime = currentTime;
+    }
 
     // Play deflect sound
     this.audioSystem?.playSwordDeflectSound(playerTransform.position);
@@ -7889,23 +8029,25 @@ export class ControlSystem extends System {
 
   private performViperSting(playerTransform: Transform): void {
     const currentTime = Date.now() / 1000;
+    let isBloodmageBypass = false;
 
     if (this.syncViperStingDoubleTalonsMode()) {
       this.advanceViperStingChargeRecharges(currentTime);
       if (this.viperStingCharges <= 0) {
-        return;
-      }
-      if (
+        if (!this.tryBloodmageDashBypass(currentTime)) return;
+        isBloodmageBypass = true;
+      } else if (
         currentTime - this.lastViperStingDoubleTalonsChargeSpendTime <
         REAPING_TALONS_DOUBLE_TALONS_INTERNAL_COOLDOWN_SEC
       ) {
         return;
       }
     } else if (currentTime - this.lastViperStingTime < this.viperStingFireRate) {
-      return;
+      if (!this.tryBloodmageDashBypass(currentTime)) return;
+      isBloodmageBypass = true;
     }
 
-    if (this.viperStingDoubleTalonsActive) {
+    if (this.viperStingDoubleTalonsActive && !isBloodmageBypass) {
       this.viperStingCharges--;
       this.lastViperStingDoubleTalonsChargeSpendTime = currentTime;
       if (
@@ -7914,7 +8056,7 @@ export class ControlSystem extends System {
       ) {
         this.viperStingNextChargeAt = currentTime + this.viperStingFireRate;
       }
-    } else {
+    } else if (!isBloodmageBypass) {
       this.lastViperStingTime = currentTime;
     }
 
@@ -8075,13 +8217,17 @@ export class ControlSystem extends System {
     
     // Check cooldown
     const currentTime = Date.now() / 1000;
+    let isOverrideBypass = false;
     if (currentTime - this.lastBarrageTime < this.barrageFireRate) {
-      return;
+      if (!this.tryOverrideShieldBypass(currentTime)) return;
+      isOverrideBypass = true;
     }
 
     this.isBarrageCharging = true;
     this.barrageChargeProgress = 0;
-    this.lastBarrageTime = currentTime;
+    if (!isOverrideBypass) {
+      this.lastBarrageTime = currentTime;
+    }
 
     // Play bow draw sound when starting to charge
     this.audioSystem?.playBowDrawSound(playerTransform.position);
