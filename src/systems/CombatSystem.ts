@@ -37,7 +37,6 @@ import {
   computeIgniteDotTickPlan,
 } from '@/utils/talents';
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
-import { addGlobalIgnitedEnemy } from '@/components/weapons/IgniteEffectManager';
 import { ImpactEffectManager } from '@/utils/ImpactEffectManager';
 import type { ImpactEffectEvent } from '@/utils/ImpactEffectManager';
 import { Projectile } from '@/ecs/components/Projectile';
@@ -658,6 +657,7 @@ export class CombatSystem extends System {
         enemy.updateStunStatus(currentTime);
         enemy.updateCorruptedStatus(currentTime);
         enemy.updateChillStatus(currentTime);
+        enemy.updateIgniteStatus(currentTime);
         const entangleTick = enemy.updateEntangleStatus(currentTime);
 
         if (!this.onEnemyDamageCallback) {
@@ -1593,6 +1593,16 @@ export class CombatSystem extends System {
         damageType === 'infernal_dash' &&
         (damageEvent.infernalDashRoom === true || damageType === 'infernal_dash')
       ) {
+        const enemyForIgnite = target.getComponent(Enemy);
+        const igniteTransform = target.getComponent(Transform);
+        if (enemyForIgnite && igniteTransform) {
+          enemyForIgnite.applyIgnite(
+            INFERNAL_DASH_IGNITE_DURATION_MS,
+            currentTime,
+            target.id.toString(),
+            igniteTransform.getWorldPosition().clone(),
+          );
+        }
         this.scheduleLocalIgniteDot(
           target,
           actualDamage,
@@ -1610,12 +1620,14 @@ export class CombatSystem extends System {
         !this.onEnemyDamageCallback &&
         damageType === 'fire_affinity_storm'
       ) {
+        const enemyForIgnite = target.getComponent(Enemy);
         const igniteTransform = target.getComponent(Transform);
-        if (igniteTransform) {
-          addGlobalIgnitedEnemy(
+        if (enemyForIgnite && igniteTransform) {
+          enemyForIgnite.applyIgnite(
+            FIRE_AFFINITY_IGNITE_DURATION_MS,
+            currentTime,
             target.id.toString(),
             igniteTransform.getWorldPosition().clone(),
-            FIRE_AFFINITY_IGNITE_DURATION_MS,
           );
         }
         this.scheduleLocalIgniteDot(

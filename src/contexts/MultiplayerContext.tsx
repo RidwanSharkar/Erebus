@@ -149,8 +149,6 @@ export interface Enemy {
   health: number;
   maxHealth: number;
   isDying?: boolean;
-  /** Co-op throne prep: timer-spawned hostile knights (server clears on arena transition). */
-  throneKnight?: boolean;
   /** Co-op throne prep: which model to show for `training-dummy` */
   dummyVisual?: 'knight';
   soulType?: 'green' | 'red' | 'blue' | 'purple' | 'yellow';

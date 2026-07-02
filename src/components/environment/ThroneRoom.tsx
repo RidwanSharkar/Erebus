@@ -24,7 +24,7 @@ import { ThroneCircularCastleWalls } from './CastleWalls';
 export const COOP_THRONE_LAYOUT_RADIUS = 16;
 
 /** Grass, VFX, physics clamp, outer perimeter — 2× the legacy 16m playable disk. */
-export const COOP_THRONE_ROOM_RADIUS = 24;
+export const COOP_THRONE_ROOM_RADIUS = 21
 
 
 /** XZ radius for movement physics, sword charge, and ECS `PillarCollision` cylinders on these pillars. */
@@ -58,19 +58,6 @@ export function getThronePillarPhysicsObstacles(): Array<{ x: number; z: number;
 
 /** Inset from grass radius so portal / dummy sit just inside the rim. */
 export const THRONE_RIM_INSET = 1.25;
-
-/**
- * Small extra inset so hostile knight feet stay on playable grass inside the castle wall ring.
- * Keep in sync with `backend/gameRoom.js` throne knight spawn helpers.
- */
-export const THRONE_HOSTILE_KNIGHT_FOOT_MARGIN = 0.3;
-
-/** Max simultaneous timed hostile knights in co-op prep; must match `THRONE_KNIGHT_MAX_LIVE` in `backend/gameRoom.js`. */
-export const THRONE_HOSTILE_KNIGHT_MAX_LIVE = 3;
-
-/** XZ radial distance from room center for timed hostile knight spawns along the throne perimeter. */
-export const THRONE_HOSTILE_KNIGHT_PERIMETER_RADIUS =
-  COOP_THRONE_ROOM_RADIUS - THRONE_RIM_INSET - THRONE_HOSTILE_KNIGHT_FOOT_MARGIN;
 
 /** Gap from grass rim to tangential paver tile centers (matches `StoneGround` throne ring). */
 export const THRONE_PERIMETER_RING_INSET = 1.35;
@@ -685,10 +672,10 @@ function ThroneRoom({
         thronePerimeterRingRadius={THRONE_PERIMETER_RING_RADII}
       />
     
-      <ThroneCircularCastleWalls innerRadius={COOP_THRONE_ROOM_RADIUS} />
+
       <SimpleBorderEffects
         radius={COOP_THRONE_ROOM_RADIUS}
-        count={20}
+        count={25}
         enableParticles
         particleCount={60}
         borderTheme={borderEffectsTheme}

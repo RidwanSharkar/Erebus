@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
 import { SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
-import { universalAbilityPool, getUniversalAbilityById, type AbilityLoadout, type UniversalAbility } from '@/utils/weaponAbilities';
+import {
+  universalAbilityPool,
+  getUniversalAbilityById,
+  getPrimaryAttackForWeapon,
+  type AbilityLoadout,
+  type UniversalAbility,
+} from '@/utils/weaponAbilities';
 import type { TalentId, TalentLoadout } from '@/utils/talents';
 import { partitionTalentsForHud } from '@/utils/talents';
 import { getWeaponHudIconSrc } from '@/utils/weaponIcons';
@@ -262,15 +268,29 @@ export default function HotkeyPanel({
     weapon: WeaponData
   ) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    setTooltipContent({
-      name: weapon.name,
-      description: `Weilding the ${weapon.name}`
-    });
+    const isPurchasedItem = (weapon as { isPurchasedItem?: boolean }).isPurchasedItem;
+
+    if (weapon.key === '1' && !isPurchasedItem) {
+      const primaryAttack = getPrimaryAttackForWeapon(weapon.type, {
+        passiveAbilityId: abilityLoadout?.passive,
+        talentLoadout,
+      });
+      setTooltipContent({
+        name: primaryAttack?.name ?? weapon.name,
+        description: primaryAttack?.description ?? `Wielding the ${weapon.name}`,
+      });
+    } else {
+      setTooltipContent({
+        name: weapon.name,
+        description: isPurchasedItem ? `Equipped: ${weapon.name}` : `Wielding the ${weapon.name}`,
+      });
+    }
+
     setTooltipPosition({
       x: rect.left + rect.width / 2,
       y: rect.top
     });
-  }, []);
+  }, [abilityLoadout?.passive, talentLoadout]);
 
   const handleAbilityLeave = useCallback(() => {
     setTooltipContent(null);
@@ -375,7 +395,9 @@ export default function HotkeyPanel({
                 >
                   {/* Key badge — centered above */}
                   <div
-                    className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full px-2 py-px text-[10px] font-mono font-bold"
+                    className={`absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full py-px font-mono font-bold ${
+                      weapon.key === '1' && !isPurchased ? 'px-1.5 text-[8px]' : 'px-2 text-[10px]'
+                    }`}
                     style={{
                       background: 'rgba(18,18,34,0.97)',
                       border: '1px solid rgba(120,120,160,0.5)',
@@ -384,7 +406,7 @@ export default function HotkeyPanel({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {weapon.key}
+                    {weapon.key === '1' && !isPurchased ? 'L-C' : weapon.key}
                   </div>
 
                   {/* Weapon icon */}

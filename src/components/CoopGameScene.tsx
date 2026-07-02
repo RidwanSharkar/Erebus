@@ -251,7 +251,7 @@ import ArcticBlizzardManager from '@/components/weapons/Blizzard/ArcticBlizzardM
 import Blizzard from '@/components/weapons/Blizzard/Blizzard';
 import StunManager, { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
 import EntangleManager, { addGlobalEntangledEnemy } from '@/components/weapons/EntangleManager';
-import IgniteEffectManager, { addGlobalIgnitedEnemy } from '@/components/weapons/IgniteEffectManager';
+import IgniteEffectManager from '@/components/weapons/IgniteEffectManager';
 import FireStormManager from '@/components/weapons/FireStormManager';
 
 import CobraShotManager from '@/components/projectiles/CobraShotManager';
@@ -907,6 +907,10 @@ async function preloadAllEnemyModels(): Promise<void> {
     import('./enemies/AlliedHealerModel').then((mod) => {
       mod.preloadAlliedHealerModels();
       void mod.warmupAlliedHealerModels();
+    }),
+    import('./enemies/GreedModel').then((mod) => {
+      mod.preloadGreedModels();
+      void mod.warmupGreedModels();
     }),
     import('./enemies/GhoulModel').then((mod) => { mod.preloadGhoulModels(); }),
     import('./enemies/ShadeModel').then((mod) => { mod.preloadShadeModels(); }),
@@ -2846,7 +2850,7 @@ export function CoopGameScene({
 
     const applyEnemyStatus = (entity: Entity, enemy: Enemy, position: Vector3, effectType: 'ignite' | 'freeze', durationMs: number) => {
       if (effectType === 'ignite') {
-        addGlobalIgnitedEnemy(entity.id.toString(), position.clone(), durationMs);
+        enemy.applyIgnite(durationMs, nowSec, entity.id.toString(), position.clone());
       } else {
         const sk = entity.userData?.coopServerEnemyType as string | undefined;
         const cappedMs = capFreezeMsForEnemy(enemy, durationMs, sk);
@@ -7763,7 +7767,7 @@ export function CoopGameScene({
             } else if (effectType === 'ignite') {
               const transform = entity.getComponent(Transform);
               if (transform) {
-                addGlobalIgnitedEnemy(entity.id.toString(), transform.position.clone(), duration);
+                enemy.applyIgnite(duration, currentTime, entity.id.toString(), transform.position.clone());
               }
             } else if (effectType === 'entangle') {
               enemy.entangle(duration / 1000, currentTime);
@@ -8579,7 +8583,7 @@ export function CoopGameScene({
       collider.radius = serverEnemy.type === 'boss' ? 2.0
         : serverEnemy.type === 'boss2' || serverEnemy.type === 'boss3' ? 1.8
         : serverEnemy.type === 'boss-skeleton' ? 1.2
-        : serverEnemy.type === 'allied-healer' ? 0.75
+        : serverEnemy.type === 'allied-healer' || serverEnemy.type === 'greed' ? 0.75
         : serverEnemy.type === 'allied-knight' ? 0.85
         : serverEnemy.type === 'knight' ? 0.85 * (serverEnemy.visualScale ?? 1)
         : serverEnemy.type === 'templar' || serverEnemy.type === 'ghoul' ? 0.95
@@ -11285,7 +11289,6 @@ export function CoopGameScene({
       {/* Knights (Co-op Mode) — Mixamo animated */}
       {(enemiesByType.get('knight') ?? []).map(enemy => {
         if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
-        const preserveThroneLighting = !!enemy.throneKnight;
 
         return (
           <KnightRenderer
@@ -11298,8 +11301,6 @@ export function CoopGameScene({
             isDying={enemy.isDying}
             soulType={enemy.soulType as 'green' | 'red' | 'blue' | 'purple' | undefined}
             campType={enemy.campType}
-            showSoulEffect={!preserveThroneLighting}
-            castShadow={!preserveThroneLighting}
             staggerBuildup={enemy.staggerBuildup ?? 0}
             visualScale={enemy.visualScale ?? 1}
           />

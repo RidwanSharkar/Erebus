@@ -152,22 +152,6 @@ const THRONE_TRAINING_DUMMY_SPAWNS = Object.freeze([
 /** @deprecated use THRONE_TRAINING_DUMMY_SPAWNS; kept for client imports */
 const THRONE_TRAINING_DUMMY_ID = 'throne-training-dummy';
 
-/** Match `ThroneRoom.tsx`: grass disc radius and rim inset. */
-const COOP_THRONE_ROOM_RADIUS = 22;
-const THRONE_RIM_INSET = 1.25;
-/** Match `THRONE_HOSTILE_KNIGHT_FOOT_MARGIN` in ThroneRoom.tsx */
-const THRONE_HOSTILE_KNIGHT_FOOT_MARGIN = 0.3;
-const THRONE_HOSTILE_KNIGHT_PERIMETER_RADIUS =
-  COOP_THRONE_ROOM_RADIUS - THRONE_RIM_INSET - THRONE_HOSTILE_KNIGHT_FOOT_MARGIN;
-
-/** Co-op prep room: hostile knights on a timer — first wave after delay, then every interval. Max live cap. */
-const THRONE_KNIGHT_FIRST_SPAWN_MS = 95000;
-const THRONE_KNIGHT_SPAWN_INTERVAL_MS = 35000;
-const THRONE_KNIGHT_SPAWN_BATCH = 1;
-const THRONE_KNIGHT_MAX_LIVE = 1;
-/** radians — arc spread for clustered spawns along the perimeter */
-const THRONE_KNIGHT_CLUSTER_ARC_SPREAD = 0.14;
-
 /** Runeblade Blizzard talent — Chill; keep in sync with src/utils/talents.ts */
 const BLIZZARD_CHILL_STACK_DURATION_MS = 6000;
 const BLIZZARD_CHILL_STACKS_TO_FREEZE = 5;
@@ -415,11 +399,6 @@ class GameRoom {
     this.coopRoomWhisperPlayed = false;
     /** Co-op: pending post-teleport initial wave spawn (`_schedulePostTeleportEnemyWave`). */
     this._coopDelayedEnemyWaveTimeoutId = null;
-
-    /** Co-op throne prep: timer hostile knight spawns (`true` on spawned `knight` enemies). */
-    this._throneKnightFirstSpawnTimeoutId = null;
-    this._throneKnightSpawnIntervalId = null;
-    this._throneKnightSlotSeq = 0;
   }
 
   /** Schedule a one-shot timer tracked for bulk cancellation on room teardown. */
@@ -765,8 +744,6 @@ class GameRoom {
       this._pickThronePortalOffer();
       this.teleportAllPlayersToThroneRoom();
       this.spawnThroneTrainingDummy();
-      this._throneKnightSlotSeq = 0;
-      this.startThroneKnightSpawningLoop();
     } else {
       this.combatArenaActive = true;
     }
@@ -833,114 +810,6 @@ class GameRoom {
       && !this.combatArenaActive
       && !this.coopBossThroneArena
     );
-  }
-
-  /** @returns {number} */
-  _countLiveThroneKnights() {
-    let n = 0;
-    for (const e of this.enemies.values()) {
-      if (!e || e.type !== 'knight' || !e.throneKnight) continue;
-      if (e.isDying) continue;
-      if (e.health != null && e.health <= 0) continue;
-      n++;
-    }
-    return n;
-  }
-
-  /**
-   * @param {number} count
-   * @returns {Array<{ x: number, z: number }>}
-   */
-  _generateThroneKnightPerimeterBatchPositions(count) {
-    const positions = [];
-    const baseAngle = Math.random() * Math.PI * 2;
-    const R = THRONE_HOSTILE_KNIGHT_PERIMETER_RADIUS;
-    const half = count > 1 ? (count - 1) / 2 : 0;
-    for (let i = 0; i < count; i++) {
-      const arcOff = (i - half) * THRONE_KNIGHT_CLUSTER_ARC_SPREAD + (Math.random() - 0.5) * 0.04;
-      const radialJitter = (Math.random() - 0.5) * 0.55;
-      const rEff = Math.min(COOP_THRONE_ROOM_RADIUS - 0.65, Math.max(R - 0.6, R + radialJitter));
-      const a = baseAngle + arcOff;
-      positions.push({
-        x: Math.cos(a) * rEff,
-        z: Math.sin(a) * rEff,
-      });
-    }
-    return positions;
-  }
-
-  /** Remove hostile throne-prep knights before leaving staging (so they don't mix with arena spawns). */
-  removeAllThroneKnights() {
-    const toRemove = [];
-    for (const [id, e] of this.enemies) {
-      if (e && e.throneKnight && e.type === 'knight') toRemove.push(id);
-    }
-    for (const id of toRemove) {
-      if (!this.enemies.has(id)) continue;
-      this.enemies.delete(id);
-      if (this.enemyAI) {
-        this.enemyAI.removeEnemyAggro(id);
-      }
-      if (this.io) {
-        this.io.to(this.roomId).emit('enemy-removed', {
-          enemyId: id,
-          timestamp: Date.now(),
-        });
-      }
-    }
-  }
-
-  stopThroneKnightSpawningLoop() {
-    if (this._throneKnightFirstSpawnTimeoutId) {
-      clearTimeout(this._throneKnightFirstSpawnTimeoutId);
-      this._throneKnightFirstSpawnTimeoutId = null;
-    }
-    if (this._throneKnightSpawnIntervalId) {
-      clearInterval(this._throneKnightSpawnIntervalId);
-      this._throneKnightSpawnIntervalId = null;
-    }
-  }
-
-  _tickThroneKnightSpawns() {
-    if (!this.gameStarted || this.gameMode !== 'coop') return;
-    if (this.combatArenaActive) return;
-
-    const live = this._countLiveThroneKnights();
-    const batch = Math.min(THRONE_KNIGHT_SPAWN_BATCH, THRONE_KNIGHT_MAX_LIVE - live);
-    if (batch <= 0) return;
-
-    const positions = this._generateThroneKnightPerimeterBatchPositions(batch);
-    const campKeys = COOP_COLORED_ROOM_TYPES;
-    const ts = Date.now();
-
-    for (let i = 0; i < batch; i++) {
-      const pick = campKeys[Math.floor(Math.random() * campKeys.length)];
-      const campDef = GameRoom.CAMP_TYPES[pick];
-      if (!campDef) continue;
-      this._throneKnightSlotSeq += 1;
-      const pos = positions[i] || { x: 0, z: THRONE_HOSTILE_KNIGHT_PERIMETER_RADIUS };
-      const enemy = this._buildEnemy('knight', 0, 900000 + this._throneKnightSlotSeq, pos, campDef);
-      enemy.throneKnight = true;
-
-      this.enemies.set(enemy.id, enemy);
-      if (this.io) {
-        this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: ts });
-      }
-    }
-  }
-
-  /** Co-op prep only: first spawn after `THRONE_KNIGHT_FIRST_SPAWN_MS`, then every `THRONE_KNIGHT_SPAWN_INTERVAL_MS`. */
-  startThroneKnightSpawningLoop() {
-    if (this.gameMode !== 'coop') return;
-    this.stopThroneKnightSpawningLoop();
-    this._throneKnightFirstSpawnTimeoutId = setTimeout(() => {
-      this._throneKnightFirstSpawnTimeoutId = null;
-      this._tickThroneKnightSpawns();
-      this._throneKnightSpawnIntervalId = setInterval(
-        () => this._tickThroneKnightSpawns(),
-        THRONE_KNIGHT_SPAWN_INTERVAL_MS,
-      );
-    }, THRONE_KNIGHT_FIRST_SPAWN_MS);
   }
 
   /** Staging area (client grass/play disc `COOP_THRONE_ROOM_RADIUS` 24m in ThroneRoom; pillars/portals stay legacy layout). */
@@ -1466,8 +1335,6 @@ class GameRoom {
     this.clearedCoopRoomKind = null;
     this._bumpColoredRoomVisit(pick);
     this._resetCoopRoomWhisperForEntry(pick);
-    this.stopThroneKnightSpawningLoop();
-    this.removeAllThroneKnights();
     this.removeThroneTrainingDummy();
     this.combatArenaActive = true;
     this.thronePortalOffer = [];
@@ -1510,8 +1377,6 @@ class GameRoom {
       return false;
     }
 
-    this.stopThroneKnightSpawningLoop();
-    this.removeAllThroneKnights();
     this.removeThroneTrainingDummy();
     this.combatArenaActive = true;
     this.thronePortalOffer = [];
@@ -1566,8 +1431,6 @@ class GameRoom {
       return false;
     }
 
-    this.stopThroneKnightSpawningLoop();
-    this.removeAllThroneKnights();
     this.removeThroneTrainingDummy();
     this.combatArenaActive = true;
     this.thronePortalOffer = [];
@@ -1618,8 +1481,6 @@ class GameRoom {
     }
 
     this._devSpawnBoss2 = true;
-    this.stopThroneKnightSpawningLoop();
-    this.removeAllThroneKnights();
     this.removeThroneTrainingDummy();
     this.combatArenaActive = true;
     this.thronePortalOffer = [];
@@ -1670,8 +1531,6 @@ class GameRoom {
     }
 
     this._devSpawnBoss3 = true;
-    this.stopThroneKnightSpawningLoop();
-    this.removeAllThroneKnights();
     this.removeThroneTrainingDummy();
     this.combatArenaActive = true;
     this.thronePortalOffer = [];
@@ -1776,6 +1635,7 @@ class GameRoom {
       if (roomKind === 'merchant') {
         this.startMainArenaPortalIntermission('second_wave');
         this._emitMerchantNpcGreet('arrival');
+        this._maybeSpawnGreedInMerchantRoom();
       }
       return true;
     }
@@ -3280,8 +3140,20 @@ class GameRoom {
     }
   }
 
+  /** Spawn a bonus Greed at `pos` and notify clients. */
+  _spawnGreedBonusAtPos(color, pos) {
+    const enemy = this._buildGreedEnemy(color, pos);
+    this.enemies.set(enemy.id, enemy);
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+    }
+    console.log(`💰 Greed (${color}) bonus enemy spawned in room: ${this.currentCoopRoomKind}`);
+    this.startEnemyAI();
+    return enemy;
+  }
+
   /**
-   * 10% chance, on every countable combat room's wave init (colored + mixed alike), to spawn a
+   * 20% chance, on every countable combat room's wave init (colored + mixed alike), to spawn a
    * bonus Greed enemy — fully additive to the 8-slot kill-quota wave system, same pattern as
    * tentacle-spine. No forced aggro: Greed starts passive/wandering like Titan.
    */
@@ -3293,13 +3165,19 @@ class GameRoom {
     const pos = this._generateScatteredPositions(1, isMixedRoom)[0];
     if (!pos) return;
 
-    const enemy = this._buildGreedEnemy(color, pos);
-    this.enemies.set(enemy.id, enemy);
-    if (this.io) {
-      this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
-    }
-    console.log(`💰 Greed (${color}) bonus enemy spawned in room: ${this.currentCoopRoomKind}`);
-    this.startEnemyAI();
+    this._spawnGreedBonusAtPos(color, pos);
+  }
+
+  /** 20% chance to spawn a bonus Greed in the pink merchant hex arena (non-countable room). */
+  _maybeSpawnGreedInMerchantRoom() {
+    if (this.currentCoopRoomKind !== 'merchant') return;
+    if (Math.random() >= COOP_WAVE_GREED_SPAWN_CHANCE) return;
+
+    const color = GREED_COLORS[Math.floor(Math.random() * GREED_COLORS.length)];
+    const pos = this._generateScatteredPositions(1, true)[0];
+    if (!pos) return;
+
+    this._spawnGreedBonusAtPos(color, pos);
   }
 
   spawnEnemy(type) {
@@ -4980,9 +4858,8 @@ class GameRoom {
     return 5;
   }
 
-  // Stop timed spawns (boss prep timer + throne-prep knight waves)
+  // Stop timed spawns (boss prep timer)
   stopEnemySpawning() {
-    this.stopThroneKnightSpawningLoop();
     if (this.bossSpawnTimer) {
       clearTimeout(this.bossSpawnTimer);
       this.bossSpawnTimer = null;

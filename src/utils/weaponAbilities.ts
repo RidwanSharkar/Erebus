@@ -1,5 +1,13 @@
 import { WeaponType } from '@/components/dragon/weapons';
-import { REANIMATE_SUNWELL_COOLDOWN_SEC, LIGHTNING_BOLT_ROOM_DAMAGE, LIGHTNING_BOLT_ROOM_DAMAGE_PER_AGILITY, LIGHTNING_BOLT_ROOM_STAGGER } from '@/utils/talents';
+import {
+  REANIMATE_SUNWELL_COOLDOWN_SEC,
+  LIGHTNING_BOLT_ROOM_DAMAGE,
+  LIGHTNING_BOLT_ROOM_DAMAGE_PER_AGILITY,
+  LIGHTNING_BOLT_ROOM_STAGGER,
+  BOW_UNCHARGED_PROJECTILE_DAMAGE,
+  ENTROPIC_BOLT_FIRE_RATE_SEC,
+  type TalentLoadout,
+} from '@/utils/talents';
 
 export interface AbilityData {
   name: string;
@@ -511,4 +519,98 @@ export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | '
 // Helper function to get ability iconxw
 export function getAbilityIcon(weapon: WeaponType, key: 'Q' | 'E' | 'R' | 'F' | 'P'): string {
   return abilityIcons[weapon]?.[key] || '❓';
+}
+
+// --- Primary attack (left-click) descriptions for the hotkey HUD ---
+
+export interface PrimaryAttackData {
+  name: string;
+  description: string;
+}
+
+const BOW_PRIMARY_ATTACK: PrimaryAttackData = {
+  name: 'Bow Shot',
+  description:
+    `Hold left-click to charge your shot. Quick releases fire an uncharged arrow dealing ${BOW_UNCHARGED_PROJECTILE_DAMAGE} damage. Damage scales up to 50 as you charge. A fully charged release fires a piercing arrow dealing 50 damage. Release when the Bow flashes (75–98% charge) to fire a Perfect Shot dealing 75 damage.`,
+};
+
+const BOW_TEMPEST_ROUNDS_PRIMARY: PrimaryAttackData = {
+  name: 'Tempest Rounds',
+  description: 'Replaces primary attack with a 3-round burst attack. Each arrow deals 30 damage.',
+};
+
+const SCYTHE_ENTROPIC_BOLTS_PRIMARY: PrimaryAttackData = {
+  name: 'Entropic Bolts',
+  description:
+    `Hold left-click to continuously fire Entropic Bolts toward your cursor. Each bolt deals 47 damage and fires every ${ENTROPIC_BOLT_FIRE_RATE_SEC} seconds.`,
+};
+
+const SCYTHE_ICEBEAM_PRIMARY: PrimaryAttackData = {
+  name: 'Icebeam',
+  description:
+    'Replaces your primary attack with Icebeam, a channeled beam that ramps up damage the longer it is maintained.',
+};
+
+const SABRES_PRIMARY: PrimaryAttackData = {
+  name: 'Dual Blades',
+  description:
+    'Swing both sabres in a wide arc in front of you. The left blade deals 23 damage and the right blade deals 29 damage on each swing.',
+};
+
+const RUNEBLADE_PRIMARY: PrimaryAttackData = {
+  name: 'Combo Strike',
+  description:
+    'Chain a 3-hit melee combo with left-click. The first strike deals 50 damage, the second deals 60 damage, and the third finisher deals 70 damage. The combo resets after 1 second without attacking.',
+};
+
+const SWORD_PRIMARY: PrimaryAttackData = {
+  name: 'Combo Strike',
+  description:
+    'Chain a 3-hit melee combo with left-click. The first strike deals 50 damage, the second deals 60 damage, and the third finisher deals 70 damage. The combo resets after 1 second without attacking.',
+};
+
+const SPEAR_PRIMARY: PrimaryAttackData = {
+  name: 'Spear Thrust',
+  description:
+    'Thrust your spear forward in a wide cone. Deals 30 damage at point-blank range, scaling up to 60 damage at maximum reach.',
+};
+
+/** Base left-click attack tooltip for each weapon (before passive / talent overrides). */
+export const weaponPrimaryAttacks: Record<WeaponType, PrimaryAttackData | null> = {
+  [WeaponType.NONE]: {
+    name: 'Unarmed',
+    description: 'Strike with your bare hands.',
+  },
+  [WeaponType.SWORD]: SWORD_PRIMARY,
+  [WeaponType.BOW]: BOW_PRIMARY_ATTACK,
+  [WeaponType.SCYTHE]: SCYTHE_ENTROPIC_BOLTS_PRIMARY,
+  [WeaponType.SABRES]: SABRES_PRIMARY,
+  [WeaponType.RUNEBLADE]: RUNEBLADE_PRIMARY,
+  [WeaponType.SPEAR]: SPEAR_PRIMARY,
+  [WeaponType.KNIGHT]: null,
+};
+
+/** Resolve the left-click primary attack shown in the hotkey HUD (accounts for passive loadout + class talents). */
+export function getPrimaryAttackForWeapon(
+  weapon: WeaponType,
+  options?: {
+    passiveAbilityId?: string | null;
+    talentLoadout?: TalentLoadout | null;
+  },
+): PrimaryAttackData | null {
+  const base = weaponPrimaryAttacks[weapon];
+  if (!base) return null;
+
+  const passiveId = options?.passiveAbilityId ?? null;
+  const talents = options?.talentLoadout;
+
+  if (weapon === WeaponType.BOW && (passiveId === 'BOW_P' || talents?.tempestRounds === true)) {
+    return BOW_TEMPEST_ROUNDS_PRIMARY;
+  }
+
+  if (weapon === WeaponType.SCYTHE && (passiveId === 'SCYTHE_P' || talents?.icebeam === true)) {
+    return SCYTHE_ICEBEAM_PRIMARY;
+  }
+
+  return base;
 }

@@ -694,21 +694,21 @@ class EnemyAI {
     this.room = room;
   }
 
-  _isStatTrialArena() {
+  _isHexCombatArena() {
     const kind = this.room?.currentCoopRoomKind;
-    return kind === 'stat' || kind === 'trial';
+    return kind === 'stat' || kind === 'trial' || kind === 'merchant';
   }
 
-  /** Clamp enemy XZ to the active arena footprint (circle for colored rooms, hex for stat/trial). */
+  /** Clamp enemy XZ to the active arena footprint (circle for colored rooms, hex for stat/trial/merchant). */
   clampToArenaXZ(x, z) {
-    if (this._isStatTrialArena()) {
+    if (this._isHexCombatArena()) {
       return clampToMainHexXZ(x, z, HEX_INNER_APOTHEM);
     }
     return clampToCircleXZ(x, z);
   }
 
   _arenaPatrolRadius() {
-    if (this._isStatTrialArena()) {
+    if (this._isHexCombatArena()) {
       return HEX_INNER_APOTHEM * TITAN_PATROL_RADIUS_FRAC;
     }
     return MAIN_CIRCLE_INNER_RADIUS * TITAN_PATROL_RADIUS_FRAC;
@@ -1232,13 +1232,7 @@ class EnemyAI {
     const aggroRadius = 15;
 
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
-    const thronePrepKnight =
-      knight.throneKnight === true &&
-      this.room &&
-      this.room.gameMode === 'coop' &&
-      !this.room.combatArenaActive;
-    const losOk =
-      thronePrepKnight || this.hasLineOfSight(knight.position, tpos);
+    const losOk = this.hasLineOfSight(knight.position, tpos);
     if (!aggroData.isAggroed && distance <= aggroRadius && losOk) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
@@ -8494,8 +8488,8 @@ class EnemyAI {
       ? Math.hypot(target.x - greed.position.x, target.z - greed.position.z) <= GREED_WANDER_REACH
       : true;
     if (!target || reachedTarget || now >= (greed.nextWanderPickAt || 0)) {
-      const isMixedRoom = this.room?.coopWaveSpawnPlan?.isMixed === true;
-      const next = this.room?._generateScatteredPositions?.(1, isMixedRoom)?.[0];
+      const useHexInterior = this._isHexCombatArena();
+      const next = this.room?._generateScatteredPositions?.(1, useHexInterior)?.[0];
       if (next) greed.wanderTarget = next;
       greed.nextWanderPickAt = now + GREED_WANDER_REPICK_MS;
     }

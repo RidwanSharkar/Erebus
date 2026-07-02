@@ -54,7 +54,6 @@ import {
 import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
 import type { CrossentropyVisualTheme, FanOfKnivesFlourishTint } from '@/utils/talents';
 import { CombatSystem } from './CombatSystem';
-import { addGlobalIgnitedEnemy } from '@/components/weapons/IgniteEffectManager';
 
 function crossentropyThemeFromProjectile(projectile: Projectile): CrossentropyVisualTheme {
   if (projectile.infernoCrossentropy === true) return 'inferno';
@@ -333,11 +332,16 @@ export class ProjectileSystem extends System {
           if (!networked) {
             const intellect = this.resolveMeteorIgniteIntellect();
             const dotFraction = getMeteorIgniteDotFraction(intellect);
-            addGlobalIgnitedEnemy(
-              target.id.toString(),
-              targetTransform.position.clone(),
-              METEOR_IGNITE_DURATION_MS,
-            );
+            const enemyForIgnite = target.getComponent(Enemy);
+            const currentTime = Date.now() / 1000;
+            if (enemyForIgnite) {
+              enemyForIgnite.applyIgnite(
+                METEOR_IGNITE_DURATION_MS,
+                currentTime,
+                target.id.toString(),
+                targetTransform.position.clone(),
+              );
+            }
             this.combatSystem.scheduleLocalIgniteDot(
               target,
               meteor.damage,

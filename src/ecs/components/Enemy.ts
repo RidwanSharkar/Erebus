@@ -2,6 +2,7 @@
 import { Component } from '../Entity';
 import { Vector3 } from '@/utils/three-exports';
 import { addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
+import { addGlobalIgnitedEnemy } from '@/components/weapons/IgniteEffectManager';
 import {
   WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK,
   WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC,
@@ -111,6 +112,10 @@ export class Enemy extends Component {
   public chillStacks: number;
   public chillExpiresAtSec: number;
 
+  /** Ignite DoT status (local + client mirror of server in co-op). */
+  public isIgnited: boolean;
+  public igniteEndTime: number;
+
   constructor(
     type: EnemyType = EnemyType.DUMMY,
     level: number = 1
@@ -173,6 +178,9 @@ export class Enemy extends Component {
 
     this.chillStacks = 0;
     this.chillExpiresAtSec = 0;
+
+    this.isIgnited = false;
+    this.igniteEndTime = 0;
   }
 
   private calculateExperienceReward(): number {
@@ -279,6 +287,7 @@ export class Enemy extends Component {
     this.removeCorrupted();
     this.chillStacks = 0;
     this.chillExpiresAtSec = 0;
+    this.clearIgnite();
   }
   
   public freeze(duration: number, currentTime: number, coopServerEnemyType?: string | null): void {
@@ -406,6 +415,48 @@ export class Enemy extends Component {
     if (this.isDead) return;
     this.chillStacks = Math.max(0, Math.floor(stacks));
     this.chillExpiresAtSec = expiresAtMs / 1000;
+  }
+
+  public applyIgnite(
+    durationMs: number,
+    currentTime: number,
+    ecsEntityIdForVfx?: string,
+    position?: Vector3,
+  ): void {
+    if (this.isDead) return;
+
+    this.isIgnited = true;
+    this.igniteEndTime = currentTime + durationMs / 1000;
+
+    if (ecsEntityIdForVfx && position) {
+      addGlobalIgnitedEnemy(ecsEntityIdForVfx, position.clone(), durationMs);
+    }
+  }
+
+  public clearIgnite(): void {
+    this.isIgnited = false;
+    this.igniteEndTime = 0;
+  }
+
+  public isIgnitedActive(currentTime: number): boolean {
+    if (!this.isIgnited) return false;
+    if (currentTime >= this.igniteEndTime) {
+      this.clearIgnite();
+      return false;
+    }
+    return true;
+  }
+
+  public updateIgniteStatus(currentTime: number): void {
+    if (!this.isIgnited) return;
+    if (currentTime >= this.igniteEndTime) {
+      this.clearIgnite();
+    }
+  }
+
+  public getIgniteRemainingMs(currentTime: number): number {
+    if (!this.isIgnited) return 0;
+    return Math.max(0, Math.floor((this.igniteEndTime - currentTime) * 1000));
   }
   
   public canMove(): boolean {
@@ -643,6 +694,8 @@ export class Enemy extends Component {
 
     this.chillStacks = 0;
     this.chillExpiresAtSec = 0;
+
+    this.clearIgnite();
   }
 
   public clone(): Enemy {
@@ -700,6 +753,9 @@ export class Enemy extends Component {
 
     clone.chillStacks = this.chillStacks;
     clone.chillExpiresAtSec = this.chillExpiresAtSec;
+
+    clone.isIgnited = this.isIgnited;
+    clone.igniteEndTime = this.igniteEndTime;
     
     return clone;
   }

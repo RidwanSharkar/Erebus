@@ -9,7 +9,7 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
-/** Greed has no idle pose — it is always wandering/fleeing, so `Walk` is the eager base clip. */
+/** Greed uses the idle mesh (same as allied healer / merchant NPC) and always plays Walk. */
 type GreedClip = 'Walk' | 'Death' | 'Cast' | 'HealCast' | 'Launch';
 export type GreedAbilityClip = 'Cast' | 'HealCast' | 'Launch';
 
@@ -19,6 +19,7 @@ interface GreedModelProps {
 }
 
 const GREED_MODEL_PATHS = [
+  '/models/ally_idle.glb',
   '/models/ally_walk.glb',
   '/models/ally_death.glb',
   '/models/ally_cast.glb',
@@ -26,7 +27,8 @@ const GREED_MODEL_PATHS = [
   '/models/ally_launch.glb',
 ];
 
-const GREED_DEFERRED_MODEL_PATHS: Record<Exclude<GreedClip, 'Walk'>, string> = {
+const GREED_DEFERRED_MODEL_PATHS: Record<GreedClip, string> = {
+  Walk: '/models/ally_walk.glb',
   Death: '/models/ally_death.glb',
   Cast: '/models/ally_cast.glb',
   HealCast: '/models/ally_healcast.glb',
@@ -36,8 +38,8 @@ const GREED_DEFERRED_MODEL_PATHS: Record<Exclude<GreedClip, 'Walk'>, string> = {
 const SCALE = 0.01135;
 
 export function preloadGreedModels(): void {
-  useGLTF.preload('/models/ally_walk.glb');
-  preloadGltfAnimationClips(GREED_MODEL_PATHS.filter(path => path !== '/models/ally_walk.glb'));
+  useGLTF.preload('/models/ally_idle.glb');
+  preloadGltfAnimationClips(GREED_MODEL_PATHS.filter(path => path !== '/models/ally_idle.glb'));
 }
 
 function waitForGltfUrl(url: string, timeoutMs = 30_000): Promise<void> {
@@ -57,10 +59,10 @@ function waitForGltfUrl(url: string, timeoutMs = 30_000): Promise<void> {
 /** Warm all Greed GLBs so the model is ready the moment a Greed bonus enemy spawns. */
 export async function warmupGreedModels(): Promise<void> {
   try {
-    await waitForGltfUrl('/models/ally_walk.glb');
+    await waitForGltfUrl('/models/ally_idle.glb');
     await Promise.all(
       GREED_MODEL_PATHS
-        .filter(p => p !== '/models/ally_walk.glb')
+        .filter(p => p !== '/models/ally_idle.glb')
         .map(p => loadGltfAnimationClips(p).then(() => undefined as void).catch(() => {})),
     );
   } catch (e) {
@@ -72,12 +74,12 @@ export default function GreedModel({ isDying, abilityClip }: GreedModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
   const isMountedRef = useRef(true);
-  const requestedDeferredStatesRef = useRef<Set<Exclude<GreedClip, 'Walk'>>>(new Set());
+  const requestedDeferredStatesRef = useRef<Set<GreedClip>>(new Set());
   const [deferredAnimationClips, setDeferredAnimationClips] = useState<
-    Partial<Record<Exclude<GreedClip, 'Walk'>, AnimationClip[]>>
+    Partial<Record<GreedClip, AnimationClip[]>>
   >({});
 
-  const { scene, animations: walkAnims } = useGLTF('/models/ally_walk.glb');
+  const { scene } = useGLTF('/models/ally_idle.glb');
 
   useEffect(() => {
     return () => {
@@ -86,7 +88,7 @@ export default function GreedModel({ isDying, abilityClip }: GreedModelProps) {
   }, []);
 
   useEffect(() => {
-    const names = new Set<Exclude<GreedClip, 'Walk'>>();
+    const names = new Set<GreedClip>(['Walk']);
     if (isDying) names.add('Death');
     if (abilityClip) names.add(abilityClip);
 
@@ -144,13 +146,13 @@ export default function GreedModel({ isDying, abilityClip }: GreedModelProps) {
     };
 
     return [
-      ...rename(walkAnims, 'Walk').map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.Walk ?? [], 'Walk').map(stripRootMotionXZ),
       ...rename(deferredAnimationClips.Death ?? [], 'Death'),
       ...rename(deferredAnimationClips.Cast ?? [], 'Cast'),
       ...rename(deferredAnimationClips.HealCast ?? [], 'HealCast'),
       ...rename(deferredAnimationClips.Launch ?? [], 'Launch'),
     ];
-  }, [walkAnims, deferredAnimationClips]);
+  }, [deferredAnimationClips]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
