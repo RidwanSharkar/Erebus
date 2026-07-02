@@ -21,6 +21,12 @@ export class CollisionSystem extends PhysicsSystem {
   private activeCollisions = new Map<string, CollisionPair>(); // Track ongoing collisions
   private processedPairsReuse = new Set<string>();
   private currentCollisionsReuse = new Map<string, CollisionPair>();
+  private resolveSeparation = new Vector3();
+  private resolveSeparationVector = new Vector3();
+  private resolveSeparationA = new Vector3();
+  private resolveSeparationB = new Vector3();
+  private resolveVelocityTowardsStatic = new Vector3();
+  private resolveNegatedSeparation = new Vector3();
   
   // Performance tracking
   private lastUpdateTime = 0;
@@ -38,8 +44,6 @@ export class CollisionSystem extends PhysicsSystem {
     this.updateSpatialHash(entities);
     this.detectCollisions(entities);
     this.processCollisionCallbacks();
-    // Also resolve collisions in update() to ensure immediate response
-    this.resolveCollisions();
   }
 
   public fixedUpdate(entities: Entity[], fixedDeltaTime: number): void {
@@ -219,11 +223,12 @@ export class CollisionSystem extends PhysicsSystem {
     const posB = transformB.getWorldPosition();
 
     // Calculate separation vector with safety checks
-    if (!posA || !posA.clone || !posB || !posB.clone) {
+    if (!posA || !posB) {
       return;
     }
-    
-    const separation = posA.clone().sub(posB);
+
+    const separation = this.resolveSeparation;
+    separation.subVectors(posA, posB);
     const distance = separation.length();
 
     if (distance === 0) {
@@ -265,7 +270,9 @@ export class CollisionSystem extends PhysicsSystem {
       }
       
       // Separate objects - use enhanced separation for static objects
-      const separationVector = separation.multiplyScalar(overlap * separationMultiplier);
+      const separationVector = this.resolveSeparationVector.copy(separation).multiplyScalar(
+        overlap * separationMultiplier,
+      );
       
       // Check if entities have Movement components for intelligent separation distribution
       const movementA = pair.entityA.getComponent(Movement);
@@ -326,30 +333,35 @@ export class CollisionSystem extends PhysicsSystem {
       }
       
       // Apply separation with calculated factors
-      if (separationFactorA > 0 && separationVector && separationVector.clone) {
-        const separationA = separationVector.clone().multiplyScalar(separationFactorA);
+      if (separationFactorA > 0) {
+        const separationA = this.resolveSeparationA
+          .copy(separationVector)
+          .multiplyScalar(separationFactorA);
         transformA.translate(separationA.x, separationA.y, separationA.z);
-        
+
         // Also stop movement velocity for player when hitting static objects
-        if (movementA && pair.colliderB.isStatic && movementA.velocity && movementA.velocity.clone && separation && separation.clone) {
-          // Project velocity to remove component towards the static object
-          const velocityTowardsStatic = movementA.velocity.clone().projectOnVector(separation.clone().negate());
-          if (velocityTowardsStatic.length() > 0) {
-            movementA.velocity.sub(velocityTowardsStatic);
+        if (movementA && pair.colliderB.isStatic) {
+          this.resolveNegatedSeparation.copy(separation).negate();
+          this.resolveVelocityTowardsStatic.copy(movementA.velocity).projectOnVector(
+            this.resolveNegatedSeparation,
+          );
+          if (this.resolveVelocityTowardsStatic.length() > 0) {
+            movementA.velocity.sub(this.resolveVelocityTowardsStatic);
           }
         }
       }
-      
+
       if (separationFactorB > 0) {
-        const separationB = separationVector.clone().multiplyScalar(-separationFactorB);
+        const separationB = this.resolveSeparationB
+          .copy(separationVector)
+          .multiplyScalar(-separationFactorB);
         transformB.translate(separationB.x, separationB.y, separationB.z);
-        
+
         // Also stop movement velocity for player when hitting static objects
         if (movementB && pair.colliderA.isStatic) {
-          // Project velocity to remove component towards the static object
-          const velocityTowardsStatic = movementB.velocity.clone().projectOnVector(separation);
-          if (velocityTowardsStatic.length() > 0) {
-            movementB.velocity.sub(velocityTowardsStatic);
+          this.resolveVelocityTowardsStatic.copy(movementB.velocity).projectOnVector(separation);
+          if (this.resolveVelocityTowardsStatic.length() > 0) {
+            movementB.velocity.sub(this.resolveVelocityTowardsStatic);
           }
         }
       }

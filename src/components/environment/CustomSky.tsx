@@ -1,4 +1,4 @@
-import React, { useMemo, useLayoutEffect } from 'react';
+import React, { useMemo, useLayoutEffect, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { ShaderMaterial, SphereGeometry, Vector3, Color, BackSide } from '@/utils/three-exports';
 import type { RoomBorderTheme } from './SimpleBorderEffects';
@@ -295,6 +295,13 @@ const CustomSky: React.FC<{
 
   const geo = useMemo(() => new SphereGeometry(500, 32, 16), []);
 
+  useEffect(() => {
+    return () => {
+      geo.dispose();
+      material.dispose();
+    };
+  }, [geo, material]);
+
   useFrame((_, delta) => {
     if (animateClouds) {
       material.uniforms.uTime.value += delta;
@@ -304,4 +311,4 @@ const CustomSky: React.FC<{
   return <mesh geometry={geo} material={material} />;
 };
 
-export default CustomSky;
+export default React.memo(CustomSky);

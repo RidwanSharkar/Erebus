@@ -6,7 +6,7 @@ import { World } from '@/ecs/World';
 import BossGlbModel from './BossGlbModel';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyMeleeAttackRangeRing, { BOSS_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
-import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
@@ -31,7 +31,7 @@ interface BossRendererProps {
   staggerBuildup?: number;
 }
 
-export default function BossRenderer({
+function BossRenderer({
   id,
   entityId,
   position,
@@ -45,10 +45,11 @@ export default function BossRenderer({
   staggerBuildup = 0,
 }: BossRendererProps) {
   const theme = campHpTheme('red');
-  const { socket, enemyTransformsRef } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group>(null);
   const currentRotationRef = useRef(0);
   const [isWalking, setIsWalking] = useState(false);
+  const isWalkingRef = useRef(false);
   const [isLeaping, setIsLeaping] = useState(false);
   const [tectonicJumpTrigger, setTectonicJumpTrigger] = useState(0);
   const [attackTrigger, setAttackTrigger] = useState(0);
@@ -68,27 +69,21 @@ export default function BossRenderer({
   const attackEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const updateVisualRotation = () => {
-      const entity = world.getEntity(entityId);
-      if (entity && groupRef.current) {
-        if (!entity.userData) entity.userData = {};
-        entity.userData.visualRotation = groupRef.current.rotation.y;
-      }
-    };
-    const intervalId = setInterval(updateVisualRotation, 16);
-    return () => clearInterval(intervalId);
-  }, [world, entityId]);
-
-  useEffect(() => {
     const dist = targetPosition.current.distanceTo(position);
     const isLocked = isLeapingRef.current || isThrowCastingRef.current || isAttackingRef.current;
     if (!isLocked) {
       targetPosition.current.copy(position);
     }
     if (dist > 0.01 && !isLocked && !isDying) {
-      if (!isWalking) setIsWalking(true);
+      if (!isWalkingRef.current) {
+        isWalkingRef.current = true;
+        setIsWalking(true);
+      }
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
+      walkStopTimer.current = setTimeout(() => {
+        isWalkingRef.current = false;
+        setIsWalking(false);
+      }, WALK_STOP_DELAY);
     }
   }, [position.x, position.y, position.z, isDying]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -111,6 +106,7 @@ export default function BossRenderer({
       setAttackTrigger((k) => k + 1);
       setIsAttacking(true);
       isAttackingRef.current = true;
+      isWalkingRef.current = false;
       setIsWalking(false);
       if (attackEndTimer.current) clearTimeout(attackEndTimer.current);
       attackEndTimer.current = setTimeout(() => {
@@ -197,15 +193,8 @@ export default function BossRenderer({
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
     group.position.copy(targetPosition.current);
-
-    const isLocked = isLeapingRef.current || isThrowCastingRef.current || isAttackingRef.current;
-    if (dist > 0.01 && !isLocked && !isDying) {
-      if (!isWalking) setIsWalking(true);
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
-    }
 
     if (isStunned) return;
 
@@ -216,6 +205,12 @@ export default function BossRenderer({
     while (rotationDiff < -Math.PI) rotationDiff += Math.PI * 2;
     group.rotation.y += rotationDiff * Math.min(1, ROTATION_SPEED * delta);
     currentRotationRef.current = group.rotation.y;
+
+    const entity = world.getEntity(entityId);
+    if (entity) {
+      if (!entity.userData) entity.userData = {};
+      entity.userData.visualRotation = group.rotation.y;
+    }
   });
 
   useEffect(() => {
@@ -278,3 +273,5 @@ export default function BossRenderer({
     </group>
   );
 }
+
+export default React.memo(BossRenderer);

@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect, useState } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 import { Group, Vector3, Euler, Shape, ExtrudeGeometry, MeshStandardMaterial, DoubleSide } from 'three';
 import { useFrame } from '@react-three/fiber';
@@ -20,8 +20,8 @@ interface AscendantBoneWingsProps {
 
 export default function AscendantBoneWings({ isLeftWing, parentRef, isDashing }: AscendantBoneWingsProps) {
   const wingsRef = useRef<Group>(null);
-  const [isFlapping, setIsFlapping] = useState(false);
-  const [flapStartTime, setFlapStartTime] = useState(0);
+  const isFlappingRef = useRef(false);
+  const flapStartTimeRef = useRef(0);
   const flapDuration = 0.45; // Match dash duration
 
   // Wing feather shape - thinner and more angular
@@ -162,21 +162,22 @@ export default function AscendantBoneWings({ isLeftWing, parentRef, isDashing }:
 
   // Trigger flapping when dash starts
   useEffect(() => {
-    if (isDashing && !isFlapping) {
-      setIsFlapping(true);
-      setFlapStartTime(Date.now() / 1000);
+    if (isDashing && !isFlappingRef.current) {
+      isFlappingRef.current = true;
+      flapStartTimeRef.current = Date.now() / 1000;
     }
-  }, [isDashing, isFlapping]);
+  }, [isDashing]);
 
   // Wing flapping animation
   useFrame(() => {
-    if (isFlapping && wingsRef.current) {
+    if (isFlappingRef.current && wingsRef.current) {
       const currentTime = Date.now() / 1000;
-      const elapsed = currentTime - flapStartTime;
+      const elapsed = currentTime - flapStartTimeRef.current;
       const progress = Math.min(elapsed / flapDuration, 1);
 
       if (progress >= 1) {
-        setIsFlapping(false);
+        isFlappingRef.current = false;
+        wingsRef.current.rotation.z = 0;
       } else {
         // Apply flapping animation
         const flapIntensity = Math.sin(progress * Math.PI * 2) * 0.3;

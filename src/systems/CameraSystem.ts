@@ -48,6 +48,10 @@ export class CameraSystem extends System {
   // Mouse state for camera rotation
   private isRightMouseDown = false;
   private wheelListenerAdded = false;
+  private onMouseDownListener: ((data: { button: number }) => void) | null = null;
+  private onMouseUpListener: ((data: { button: number }) => void) | null = null;
+  private onWheelListener: ((data: { deltaY: number }) => void) | null = null;
+  private disposed = false;
 
   // Stun state for camera rotation disable
   private cameraRotationDisabled = false;
@@ -226,27 +230,52 @@ export class CameraSystem extends System {
   }
 
   private setupEventListeners(): void {
-    // Mouse button events for camera rotation
-    this.inputManager.on('mouseDown', ({ button }) => {
-      if (button === 2) { // Right mouse button
+    if (this.disposed) return;
+
+    this.onMouseDownListener = ({ button }) => {
+      if (button === 2) {
         this.isRightMouseDown = true;
       }
-    });
-
-    this.inputManager.on('mouseUp', ({ button }) => {
-      if (button === 2) { // Right mouse button
+    };
+    this.onMouseUpListener = ({ button }) => {
+      if (button === 2) {
         this.isRightMouseDown = false;
       }
-    });
+    };
+    this.inputManager.on('mouseDown', this.onMouseDownListener);
+    this.inputManager.on('mouseUp', this.onMouseUpListener);
 
-    // Mouse wheel for zoom - only add listener once
     if (!this.wheelListenerAdded) {
-      this.inputManager.on('wheel', ({ deltaY }) => {
+      this.onWheelListener = ({ deltaY }) => {
         this.spherical.radius += deltaY * 0.01;
         this.spherical.radius = MathUtils.clamp(this.spherical.radius, 2, this.config.maxDistance);
-      });
+      };
+      this.inputManager.on('wheel', this.onWheelListener);
       this.wheelListenerAdded = true;
     }
+  }
+
+  public dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    if (this.onMouseDownListener) {
+      this.inputManager.off('mouseDown', this.onMouseDownListener);
+      this.onMouseDownListener = null;
+    }
+    if (this.onMouseUpListener) {
+      this.inputManager.off('mouseUp', this.onMouseUpListener);
+      this.onMouseUpListener = null;
+    }
+    if (this.onWheelListener) {
+      this.inputManager.off('wheel', this.onWheelListener);
+      this.onWheelListener = null;
+      this.wheelListenerAdded = false;
+    }
+    this.target = null;
+  }
+
+  public onDisable(): void {
+    this.dispose();
   }
 
   private setupInitialPosition(): void {

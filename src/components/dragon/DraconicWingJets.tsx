@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, Euler, AdditiveBlending } from 'three';
+import { Group, Vector3, Euler, AdditiveBlending, Mesh, MeshStandardMaterial } from 'three';
 import { WeaponType, WeaponSubclass } from './weapons';
 
 interface DashFlags {
@@ -19,6 +19,19 @@ interface WingJetProps {
   dashFlagsRef?: React.RefObject<DashFlags>;
 }
 
+interface JetParticle {
+  id: number;
+  position: Vector3;
+  velocity: Vector3;
+  scale: number;
+  life: number;
+  maxLife: number;
+}
+
+const PARTICLE_COUNT = 20;
+const _jetDir = new Vector3();
+const _velocityDelta = new Vector3();
+
 const DraconicWingJets: React.FC<WingJetProps> = ({
   isActive,
   collectedBones,
@@ -28,19 +41,20 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
   dashFlagsRef,
 }) => {
   const jetGroupRef = useRef<Group>(null);
-  const [jetParticles, setJetParticles] = useState(() =>
-    Array(20).fill(null).map((_, i) => ({
+  const meshRefs = useRef<(Mesh | null)[]>([]);
+  const jetParticlesRef = useRef<JetParticle[]>(
+    Array(PARTICLE_COUNT).fill(null).map((_, i) => ({
       id: i,
       position: new Vector3(0, 0, 0),
       velocity: new Vector3(0, 0, 0),
       scale: Math.random() * 0.12 + 0.08,
       life: 0,
-      maxLife: Math.random() * 0.6 + 0.5
-    }))
+      maxLife: Math.random() * 0.6 + 0.5,
+    })),
   );
 
   // Get color based on weapon type/subclass (matching GhostTrail)
-  const getJetColor = () => {
+  const colors = useMemo(() => {
     if (weaponSubclass) {
       switch (weaponSubclass) {
         // Scythe subclasses
@@ -100,60 +114,67 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
     }
 
     return { main: '#4A90E2', emissive: '#87CEEB', particle: '#E0F6FF' }; // Default
-  };
-
-  const colors = getJetColor();
+  }, [weaponType, weaponSubclass]);
 
   // Wing bone positions (expanded for wider particle distribution)
-  const wingBonePositions = [
-    // Main central arm bone
-    {
-      pos: new Vector3(isLeftWing ? -0.3 : 0.3, 0.275, 0),
-      rot: new Euler(0, 0, isLeftWing ? -Math.PI / 5 : Math.PI / 5),
-      scale: 1.2
-    },
-    // Upper wing membrane positions (for wider spread)
-    {
-      pos: new Vector3(isLeftWing ? -0.5 : 0.5, 0.45, 0.1),
-      rot: new Euler(0, 0, isLeftWing ? -Math.PI / 3.5 : Math.PI / 3.5),
-      scale: 1.0
-    },
-    {
-      pos: new Vector3(isLeftWing ? -0.65 : 0.65, 0.6, 0.15),
-      rot: new Euler(0, 0, isLeftWing ? -Math.PI / 2.5 : Math.PI / 2.5),
-      scale: 0.9
-    },
-    // Wing tip area
-    {
-      pos: new Vector3(isLeftWing ? -0.85 : 0.85, 0.72, 0.2),
-      rot: new Euler(0.1, 0, isLeftWing ? -Math.PI / 2.2 : Math.PI / 2.2),
-      scale: 0.8
-    },
-    // Lower wing membrane
-    {
-      pos: new Vector3(isLeftWing ? -0.4 : 0.4, 0.15, 0.05),
-      rot: new Euler(0, 0, isLeftWing ? -Math.PI / 6 : Math.PI / 6),
-      scale: 1.0
-    },
-    // Additional spread points
-    {
-      pos: new Vector3(isLeftWing ? -0.6 : 0.6, 0.35, 0.08),
-      rot: new Euler(0, 0, isLeftWing ? -Math.PI / 4 : Math.PI / 4),
-      scale: 0.9
-    }
-  ];
+  const wingBonePositions = useMemo(
+    () => [
+      // Main central arm bone
+      {
+        pos: new Vector3(isLeftWing ? -0.3 : 0.3, 0.275, 0),
+        rot: new Euler(0, 0, isLeftWing ? -Math.PI / 5 : Math.PI / 5),
+        scale: 1.2,
+      },
+      // Upper wing membrane positions (for wider spread)
+      {
+        pos: new Vector3(isLeftWing ? -0.5 : 0.5, 0.45, 0.1),
+        rot: new Euler(0, 0, isLeftWing ? -Math.PI / 3.5 : Math.PI / 3.5),
+        scale: 1.0,
+      },
+      {
+        pos: new Vector3(isLeftWing ? -0.65 : 0.65, 0.6, 0.15),
+        rot: new Euler(0, 0, isLeftWing ? -Math.PI / 2.5 : Math.PI / 2.5),
+        scale: 0.9,
+      },
+      // Wing tip area
+      {
+        pos: new Vector3(isLeftWing ? -0.85 : 0.85, 0.72, 0.2),
+        rot: new Euler(0.1, 0, isLeftWing ? -Math.PI / 2.2 : Math.PI / 2.2),
+        scale: 0.8,
+      },
+      // Lower wing membrane
+      {
+        pos: new Vector3(isLeftWing ? -0.4 : 0.4, 0.15, 0.05),
+        rot: new Euler(0, 0, isLeftWing ? -Math.PI / 6 : Math.PI / 6),
+        scale: 1.0,
+      },
+      // Additional spread points
+      {
+        pos: new Vector3(isLeftWing ? -0.6 : 0.6, 0.35, 0.08),
+        rot: new Euler(0, 0, isLeftWing ? -Math.PI / 4 : Math.PI / 4),
+        scale: 0.9,
+      },
+    ],
+    [isLeftWing],
+  );
 
   useFrame((_, delta) => {
     if (!isActive || !jetGroupRef.current) return;
 
-    // Animate jet particles
-    setJetParticles(prev => prev.map(particle => {
+    const particles = jetParticlesRef.current;
+
+    for (let i = 0; i < particles.length; i += 1) {
+      const particle = particles[i];
+      const mesh = meshRefs.current[i];
+
       // Update particle life
       particle.life -= delta * 2;
 
       // Reset particle if it died
       if (particle.life <= 0) {
-        const boneIndex = Math.floor(Math.random() * Math.min(wingBonePositions.length, Math.max(1, collectedBones || 1)));
+        const boneIndex = Math.floor(
+          Math.random() * Math.min(wingBonePositions.length, Math.max(1, collectedBones || 1)),
+        );
         const bone = wingBonePositions[boneIndex];
 
         // Start from bone position with some randomization for wider spread
@@ -162,7 +183,7 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
         // Add random offset to create wider diameter emanation
         // Spread increases with collected bones for more impressive effect
         const baseSpread = 0.12;
-        const spreadRadius = baseSpread + (collectedBones * 0.03); // Wider spread with more bones
+        const spreadRadius = baseSpread + collectedBones * 0.03; // Wider spread with more bones
         const randomAngle = Math.random() * Math.PI * 2;
         const randomRadius = Math.random() * spreadRadius;
 
@@ -174,33 +195,41 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
         // current in the same frame a particle is born (no stale-state ghost trails).
         const flags = dashFlagsRef?.current;
         const isDashingBackward = flags?.isBackward ?? false;
-        const isDashingLeft     = flags?.isLeft     ?? false;
-        const isDashingRight    = flags?.isRight    ?? false;
+        const isDashingLeft = flags?.isLeft ?? false;
+        const isDashingRight = flags?.isRight ?? false;
 
         // - Backward dash: flip Z so jets fire forward (thrust opposes travel).
         // - Right dash: right wing fires inward (X flips to -1) to push character right.
         // - Left dash: left wing fires inward (X flips to +1) to push character left.
         const outwardX = isLeftWing ? -1 : 1;
         const flipX = (isDashingRight && !isLeftWing) || (isDashingLeft && isLeftWing);
-        const jetDirection = new Vector3(
+        _jetDir.set(
           flipX ? -outwardX : outwardX,
           -0.3,
-          isDashingBackward ? 0.8 : -0.8
+          isDashingBackward ? 0.8 : -0.8,
         ).normalize();
 
-        particle.velocity.copy(jetDirection).multiplyScalar(2 + Math.random() * 3);
+        particle.velocity.copy(_jetDir).multiplyScalar(2 + Math.random() * 3);
         particle.life = particle.maxLife;
       } else {
         // Move particle
-        particle.position.add(particle.velocity.clone().multiplyScalar(delta));
+        _velocityDelta.copy(particle.velocity).multiplyScalar(delta);
+        particle.position.add(_velocityDelta);
 
         // Add some turbulence
         particle.velocity.x += (Math.random() - 0.5) * 0.02;
         particle.velocity.y += (Math.random() - 0.5) * 0.02;
       }
 
-      return particle;
-    }));
+      if (mesh) {
+        mesh.position.copy(particle.position);
+        mesh.scale.setScalar(particle.scale);
+        const mat = mesh.material;
+        if (mat instanceof MeshStandardMaterial) {
+          mat.opacity = (particle.life / particle.maxLife) * 0.75;
+        }
+      }
+    }
 
     // Rotate the entire jet group for dynamic effect
     jetGroupRef.current.rotation.z += delta * 0;
@@ -209,17 +238,16 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
   if (!isActive) return null;
 
   return (
-    <group
-      ref={jetGroupRef}
-      position={new Vector3(0, 0, 0)}
-    >
+    <group ref={jetGroupRef}>
 
       {/* Jet particles */}
       <group>
-        {jetParticles.map(particle => (
+        {jetParticlesRef.current.map(particle => (
           <mesh
             key={particle.id}
-            position={particle.position.toArray()}
+            ref={el => {
+              meshRefs.current[particle.id] = el;
+            }}
             scale={[particle.scale, particle.scale, particle.scale]}
           >
             <icosahedronGeometry args={[0.8, 0]} />
@@ -228,7 +256,7 @@ const DraconicWingJets: React.FC<WingJetProps> = ({
               emissive={colors.main}
               emissiveIntensity={0.5}
               transparent
-              opacity={particle.life / particle.maxLife * 0.75}
+              opacity={0}
               depthWrite={false}
               blending={AdditiveBlending}
             />

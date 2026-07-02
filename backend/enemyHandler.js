@@ -37,7 +37,9 @@ function handleEnemyEvents(socket, gameRooms) {
       tempestBurstWyvernZombie,
     } = data;
 
-    console.log(`⚔️ Received enemy-damage: room=${roomId}, enemy=${enemyId}, damage=${damage}, source=${sourcePlayerId || socket.id}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`⚔️ Received enemy-damage: room=${roomId}, enemy=${enemyId}, damage=${damage}, source=${sourcePlayerId || socket.id}`);
+    }
 
     if (!gameRooms.has(roomId)) {
       console.log(`❌ Room ${roomId} not found`);
@@ -212,6 +214,9 @@ function handleEnemyEvents(socket, gameRooms) {
     if (!gameRooms.has(roomId)) return;
     
     const room = gameRooms.get(roomId);
+    // Co-op uses server-authoritative enemy AI — ignore client position overrides.
+    if (room.gameMode === 'coop') return;
+
     const enemy = room.getEnemy(enemyId);
     
     if (enemy) {

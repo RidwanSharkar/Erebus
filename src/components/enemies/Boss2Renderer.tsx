@@ -12,7 +12,7 @@ import GhostTrail from '../dragon/GhostTrail';
 import BoneWings from '../dragon/BoneWings';
 import BoneAura from '../dragon/BoneAura';
 import { WeaponType } from '../dragon/weapons';
-import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
@@ -37,7 +37,7 @@ const LERP_SPEED = 12;
 const FADE_DURATION = 1.5;
 const BOSS_SCALE = 1.65;
 
-export default function Boss2Renderer({
+function Boss2Renderer({
   id,
   position,
   rotation,
@@ -47,15 +47,27 @@ export default function Boss2Renderer({
   staggerBuildup = 0,
 }: Boss2RendererProps) {
   const theme = campHpTheme('red');
-  const { socket, enemyTransformsRef } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const isBlinkingRef = useRef(false);
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const launchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const trackTimeout = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      pendingTimersRef.current = pendingTimersRef.current.filter((t) => t !== id);
+      fn();
+    }, ms);
+    pendingTimersRef.current.push(id);
+    return id;
+  }, []);
   const fadeTimer = useRef(0);
   const opacity = useRef(1);
+  const cachedDeathMats = useRef<any[]>([]);
+  const deathCacheBuilt = useRef(false);
 
   const [isWalking, setIsWalking] = useState(false);
   const [isBlinking, setIsBlinking] = useState(false);
@@ -93,6 +105,8 @@ export default function Boss2Renderer({
     return () => {
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (launchTimer.current) clearTimeout(launchTimer.current);
+      pendingTimersRef.current.forEach(clearTimeout);
+      pendingTimersRef.current = [];
     };
   }, []);
 
@@ -117,11 +131,11 @@ export default function Boss2Renderer({
       (window as any).audioSystem?.playEnemyBlinkSound(startPos);
       const fxId = `${id}-${Date.now()}`;
       setBlinkFx(prev => [...prev, { id: `${fxId}-start`, position: startPos, type: 'start' }]);
-      setTimeout(() => {
+      trackTimeout(() => {
         setBlinkFx(prev => [...prev, { id: `${fxId}-end`, position: endPos, type: 'end' }]);
       }, Math.round(BLINK_ANIMATION_DURATION * 0.45));
 
-      setTimeout(() => {
+      trackTimeout(() => {
         setIsBlinking(false);
         isBlinkingRef.current = false;
         if (groupRef.current) {
@@ -163,7 +177,7 @@ export default function Boss2Renderer({
         launchTimer.current = null;
       }
     };
-  }, [id, socket]);
+  }, [id, socket, trackTimeout]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
@@ -180,15 +194,26 @@ export default function Boss2Renderer({
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
-      group.traverse((child: any) => {
-        if (child.isMesh && child.material) {
-          const mats = Array.isArray(child.material) ? child.material : [child.material];
-          mats.forEach((mat: any) => {
-            mat.transparent = true;
-            mat.opacity = opacity.current;
-          });
-        }
-      });
+
+      if (!deathCacheBuilt.current) {
+        const collected: any[] = [];
+        group.traverse((child: any) => {
+          if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((mat: any) => {
+              mat.transparent = true;
+              collected.push(mat);
+            });
+          }
+        });
+        cachedDeathMats.current = collected;
+        deathCacheBuilt.current = true;
+      }
+
+      const op = opacity.current;
+      for (let i = 0; i < cachedDeathMats.current.length; i++) {
+        cachedDeathMats.current[i].opacity = op;
+      }
     }
   });
 
@@ -257,3 +282,5 @@ export default function Boss2Renderer({
     </>
   );
 }
+
+export default React.memo(Boss2Renderer);

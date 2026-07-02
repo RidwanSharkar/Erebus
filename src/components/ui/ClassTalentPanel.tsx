@@ -96,8 +96,8 @@ export default function ClassTalentPanel({
     const rect = e.currentTarget.getBoundingClientRect();
     setTooltipContent(getTalentTooltipContent(talentId));
     setTooltipPosition({
-      x: rect.left + rect.width / 2,
-      y: rect.top,
+      x: rect.right + 10,
+      y: rect.top + rect.height / 2,
     });
   }, []);
 
@@ -209,6 +209,7 @@ export default function ClassTalentPanel({
           visible={true}
           x={tooltipPosition.x}
           y={tooltipPosition.y}
+          placement="right"
         />
       )}
     </>

@@ -111,6 +111,25 @@ function assertDurationClose(actual, expected, message) {
   }
 }
 
+function assertKnightAnimationClip(filename, threeGltf) {
+  if (!filename.startsWith('knight_') || filename === 'knight_idle.glb') return;
+
+  const clip = threeGltf.animations[0];
+  if (!clip) {
+    throw new Error(`${filename} should contain a knight animation clip`);
+  }
+
+  const trackCount = clip.tracks.length;
+  if (trackCount !== 156) {
+    throw new Error(`${filename} knight animation track count: expected 156, received ${trackCount}`);
+  }
+
+  const hasAssimpTracks = clip.tracks.some((track) => track.name.includes('$AssimpFbx$_Rotation'));
+  if (!hasAssimpTracks) {
+    throw new Error(`${filename} knight animation should target Assimp rotation helper bones`);
+  }
+}
+
 const files = await listGlbs(modelsDir);
 let beforeTotal = 0;
 let afterTotal = 0;
@@ -143,6 +162,7 @@ for (const filePath of files) {
     const threeMeshCount = countThreeMeshes(threeGltf.scene);
     assertEqual(threeGltf.animations.length, originalStats.animations, `${filename} Three.js animation count`);
     assertEqual(threeMeshCount, 0, `${filename} renderable mesh count`);
+    assertKnightAnimationClip(filename, threeGltf);
   }
 
   console.log(

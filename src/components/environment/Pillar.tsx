@@ -1,5 +1,20 @@
-import React, { useMemo } from 'react';
-import { CylinderGeometry, SphereGeometry, MeshStandardMaterial, PointLight } from '../../utils/three-exports';
+import React, { useMemo, useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
+import { CylinderGeometry, SphereGeometry, MeshStandardMaterial, Mesh } from '../../utils/three-exports';
+
+/** Shared stone meshes — one geometry set for all pillar instances (never disposed). */
+export const PILLAR_SHARED_GEOMETRIES = {
+  base: new CylinderGeometry(2, 2.2, 1, 8),
+  column: new CylinderGeometry(1.5, 1.5, 8, 8),
+  top: new CylinderGeometry(2.2, 2, 1, 8),
+  orb: new SphereGeometry(1, 32, 32),
+};
+
+export const PILLAR_STONE_MATERIAL = new MeshStandardMaterial({
+  color: '#ffffff',
+  roughness: 0.7,
+  metalness: 0.2,
+});
 
 interface PillarProps {
   position?: [number, number, number];
@@ -10,111 +25,67 @@ interface PillarProps {
 }
 
 const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], orbColorHex = '#5DADE2', showOrb = true }) => {
+  const orbMaterial = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: orbColorHex,
+        emissive: orbColorHex,
+        metalness: 1,
+        roughness: 0.2,
+      }),
+    [orbColorHex],
+  );
 
-  // Create geometries and materials only once using useMemo
-  const { pillarGeometries, materials } = useMemo(() => {
-    // Base geometry
-    const baseGeometry = new CylinderGeometry(2, 2.2, 1, 8);
+  const orbRef = useRef<Mesh>(null);
 
-    // Main column geometry
-    const columnGeometry = new CylinderGeometry(1.5, 1.5, 8, 8);
+  useFrame(() => {
+    if (!showOrb || !orbRef.current) return;
+    orbRef.current.rotation.x += 0.02;
+    orbRef.current.rotation.y += 0.02;
+  });
 
-    // Top geometry (decorative cap)
-    const topGeometry = new CylinderGeometry(2.2, 2, 1, 8);
-
-    // Shared material for all parts
-    const stoneMaterial = new MeshStandardMaterial({
-      color: '#ffffff',
-      roughness: 0.7,
-      metalness: 0.2,
-    });
-
-    // Add sphere geometry for the orb
-    const orbGeometry = new SphereGeometry(1, 32, 32);
-
-    const orbMaterial = new MeshStandardMaterial({
-      color: orbColorHex,
-      emissive: orbColorHex,
-      metalness: 1,
-      roughness: 0.2,
-    });
-
-    return {
-      pillarGeometries: {
-        base: baseGeometry,
-        column: columnGeometry,
-        top: topGeometry,
-        orb: orbGeometry,
-      },
-      materials: {
-        stone: stoneMaterial,
-        orb: orbMaterial,
-      }
-    };
-  }, [orbColorHex]);
-
-  // rotation animation for the orb
-  const [rotation, setRotation] = React.useState(0);
-
-  React.useEffect(() => {
-    if (!showOrb) return;
-    let animationFrameId: number;
-
-    const animate = () => {
-      setRotation((prev) => (prev + 0.02) % (Math.PI * 2));
-      animationFrameId = requestAnimationFrame(animate);
-    };
-
-    animate();
-    return () => {
-      cancelAnimationFrame(animationFrameId);
-    };
-  }, [showOrb]);
-
-  //  cleanup 
-  React.useEffect(() => {
-    return () => {
-      Object.values(pillarGeometries).forEach(geometry => geometry.dispose());
-      Object.values(materials).forEach(material => material.dispose());
-    };
-  }, [pillarGeometries, materials]);
-
+  React.useEffect(
+    () => () => {
+      orbMaterial.dispose();
+    },
+    [orbMaterial],
+  );
 
   return (
     <group position={position} scale={[0.35, 0.35, 0.35]}>
       {/* Base */}
       <mesh
-        geometry={pillarGeometries.base}
-        material={materials.stone}
+        geometry={PILLAR_SHARED_GEOMETRIES.base}
+        material={PILLAR_STONE_MATERIAL}
         position={[0, 0, 0]}
         castShadow
         receiveShadow
       />
-      
+
       {/* Main column */}
       <mesh
-        geometry={pillarGeometries.column}
-        material={materials.stone}
+        geometry={PILLAR_SHARED_GEOMETRIES.column}
+        material={PILLAR_STONE_MATERIAL}
         position={[0, 0.25, 0]}
         castShadow
         receiveShadow
       />
-      
+
       {/* Top */}
       <mesh
-        geometry={pillarGeometries.top}
-        material={materials.stone}
+        geometry={PILLAR_SHARED_GEOMETRIES.top}
+        material={PILLAR_STONE_MATERIAL}
         position={[0, 3, 0]}
         castShadow
         receiveShadow
       />
-      
+
       {showOrb && (
         <mesh
-          geometry={pillarGeometries.orb}
-          material={materials.orb}
+          ref={orbRef}
+          geometry={PILLAR_SHARED_GEOMETRIES.orb}
+          material={orbMaterial}
           position={[0, 5, 0]}
-          rotation={[rotation, rotation, 0]}
         >
           <pointLight color={orbColorHex} intensity={1} distance={5} />
         </mesh>

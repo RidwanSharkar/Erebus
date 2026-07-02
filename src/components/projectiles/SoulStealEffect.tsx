@@ -1,6 +1,9 @@
 import React, { useRef, useEffect } from 'react';
 import { Vector3, Group, AdditiveBlending, DoubleSide } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
+import type { Mesh } from '@/utils/three-exports';
+
+const _lerpPos = new Vector3();
 
 interface SoulStealEffectProps {
   id: number;
@@ -22,6 +25,7 @@ export default function SoulStealEffect({
   onComplete
 }: SoulStealEffectProps) {
   const groupRef = useRef<Group>(null);
+  const ringRef = useRef<Mesh>(null);
   const currentPosition = useRef(startPosition.clone());
   const hasCompleted = useRef(false);
 
@@ -45,16 +49,20 @@ export default function SoulStealEffect({
     const currentTarget = getCurrentPlayerPosition();
 
     // Smooth interpolation from start to current player position
-    const newPosition = new Vector3().lerpVectors(startPosition, currentTarget, progress);
+    _lerpPos.lerpVectors(startPosition, currentTarget, progress);
 
-    currentPosition.current.copy(newPosition);
-    groupRef.current.position.copy(newPosition);
+    currentPosition.current.copy(_lerpPos);
+    groupRef.current.position.copy(_lerpPos);
 
     // Scale effect based on progress (starts small, grows, then shrinks)
     const scale = progress < 0.5 
       ? 0.5 + progress // Grow from 0.5 to 1.0
       : 1.5 - progress; // Shrink from 1.0 to 0.5
     groupRef.current.scale.setScalar(scale);
+
+    if (ringRef.current) {
+      ringRef.current.rotation.set(Math.PI / 2, 0, now * 0.005);
+    }
   });
 
   return (
@@ -86,7 +94,7 @@ export default function SoulStealEffect({
       </mesh>
 
       {/* Healing energy aura */}
-      <mesh rotation={[Math.PI / 2, 0, Date.now() * 0.005]}>
+      <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
         <ringGeometry args={[0.1, 0.3, 8]} />
         <meshStandardMaterial
           color="#ff4400"

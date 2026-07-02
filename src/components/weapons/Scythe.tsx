@@ -10,13 +10,13 @@ import {
   type TalentLoadout,
 } from '@/utils/talents';
 
-const SCYTHE_BLADE_COLOR = '#9D4EDD';
-const SCYTHE_TRAIL_DEFAULT_COLOR = '#9D4EDD';
+const SCYTHE_BLADE_COLOR = '#38AECC';
+const SCYTHE_TRAIL_DEFAULT_COLOR = '#FF6A00'; // 8667E5
 const SCYTHE_TRAIL_TALENT_COLORS: Record<EntropicBoltTalentVariant, string> = {
   wrathful: '#ef4444',
   staggering: '#3b82f6',
   infesting: '#22c55e',
-  arctic: '#8783D1',
+  arctic: '#84C8D1',
 };
 
 interface ScytheProps {
@@ -115,57 +115,17 @@ function ScytheModel({
           <meshStandardMaterial color="#2c1810" roughness={0.6} />
         </mesh>
 
-        {/* Rotating glow rings */}
-        <group ref={ring1Ref}>
-
-        </group>
-
-        {/* Second ring rotating opposite direction */}
-        <group ref={ring2Ref}>
-
-        </group>
 
 
-        {/* HANDLE RING 1 */}
 
 
-        {/* HANDLE RING 2 */}
-        <group ref={ring4Ref}>
-          <mesh position-y={-0.2} rotation={[Math.PI/2, 0, 0]}>
-            <torusGeometry args={[0.075, 0.02, 16, 32]} />
-            <meshStandardMaterial
-              color={isEmpowered ? "#4169E1" : "#00BFFF"}
-              emissive={isEmpowered ? "#1E90FF" : "#87CEEB"}
-              emissiveIntensity={1.25}
-              transparent
-              opacity={0.7}
-            />
-          </mesh>
-        </group>
-
-        {/* HANDLE RING 3 */}
-        <group ref={ring5Ref}>
-          <mesh position-y={0.2} rotation={[Math.PI/2, 0, 0]}>
-            <torusGeometry args={[0.075, 0.02, 16, 32]} />
-            <meshStandardMaterial
-              color={isEmpowered ? "#4169E1" : "#00BFFF"}
-              emissive={isEmpowered ? "#1E90FF" : "#87CEEB"}
-              emissiveIntensity={1.25}
-              transparent
-              opacity={0.7}
-            />
-          </mesh>
-        </group>
-
-                {/* HANDLE RING 4 */}
-  
 
         {/* Static outer glow */}
         <mesh>
           <cylinderGeometry args={[0.13, 0.11, 0.32, 8]} />
           <meshStandardMaterial
-            color={isEmpowered ? "#8A2BE2" : "#17CE54"}
-            emissive={isEmpowered ? "#8A2BE2" : "#17CE54"}
+            color={isEmpowered ? "#8A2BE2" : "#38AECC"}
+            emissive={isEmpowered ? "#8A2BE2" : "#38AECC"}
             emissiveIntensity={1.5}
             transparent
             opacity={0.3}
@@ -258,7 +218,7 @@ export default function Scythe({
       spinTime.current += delta;
       
       // Spin the scythe around its center
-      const spinSpeed = 17; // Adjust speed as needed
+      const spinSpeed = 19; // Adjust speed as needed
       const currentRotation = spinTime.current * spinSpeed;
       
       // Position scythe in front of dragon for spinning

@@ -37,6 +37,8 @@ interface EnvironmentProps {
   coopTerrainTheme?: RoomBorderTheme;
   /** Co-op: destroyed mushroom instance indices (hide instanced meshes). */
   mushroomHiddenIndices?: ReadonlySet<number>;
+  /** When false, sky cloud FBM stops updating (combat LOD). */
+  animateClouds?: boolean;
 }
 
 /**
@@ -58,6 +60,7 @@ const Environment: React.FC<EnvironmentProps> = ({
   campTypes = [],
   coopTerrainTheme,
   mushroomHiddenIndices,
+  animateClouds = true,
 }) => {
   // Define pillar positions - use PVP positions if provided, otherwise default triangle
   const pillarPositions: Array<[number, number, number]> = useMemo(() => {
@@ -102,7 +105,9 @@ const Environment: React.FC<EnvironmentProps> = ({
   return (
     <group name="environment">
       {/* Custom sky with level-based colors */}
-      {enableSky && <CustomSky roomTheme={visualRoomTheme} />}
+      {enableSky && (
+        <CustomSky roomTheme={visualRoomTheme} animateClouds={animateClouds} />
+      )}
 
       {/* Instanced grass field — density per room (purple sparse), GPU-animated wind */}
       {enableGrass && (
@@ -117,7 +122,7 @@ const Environment: React.FC<EnvironmentProps> = ({
       {/* Instanced forest ring — 220 trees, 4 draw calls, GPU wind */}
       {enableForest && <InstancedForest />}
 
-      <Planet />
+
 
       {/* Three pillars in triangle formation */}
       {pillarPositions.map((pillarPos, index) => (
@@ -159,4 +164,4 @@ const Environment: React.FC<EnvironmentProps> = ({
   );
 };
 
-export default Environment;
+export default React.memo(Environment);

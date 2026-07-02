@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { Group, Vector3, Color, Mesh, Material } from '@/utils/three-exports';
+import React, { useRef, useEffect, useMemo } from 'react';
+import { Group, Vector3, Color, Mesh, Material, MeshStandardMaterial } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
@@ -21,10 +21,33 @@ export default function FrostNova({
   onComplete 
 }: FrostNovaProps) {
   const effectRef = useRef<Group>(null);
-  const [intensity, setIntensity] = useState(1);
-  const [fadeProgress, setFadeProgress] = useState(1);
-  const [expansionProgress, setExpansionProgress] = useState(0);
   const rotationSpeed = useRef(Math.random() * 0.05 + 0.02);
+
+  const coreMeshRef = useRef<Mesh>(null);
+  const coreMatRef = useRef<MeshStandardMaterial>(null);
+  const spikeGroupRefs = useRef<(Group | null)[]>([]);
+  const spikeMeshRefs = useRef<(Mesh | null)[]>([]);
+  const spikeMatRefs = useRef<(MeshStandardMaterial | null)[]>([]);
+  const ringMeshRefs = useRef<(Mesh | null)[]>([]);
+  const ringMatRefs = useRef<(MeshStandardMaterial | null)[]>([]);
+  const particleMeshRefs = useRef<(Mesh | null)[]>([]);
+  const particleMatRefs = useRef<(MeshStandardMaterial | null)[]>([]);
+
+  const particleSeeds = useMemo(
+    () =>
+      Array.from({ length: 4 }, (_, i) => ({
+        angle: (i * Math.PI * 2) / 24,
+        radiusFactor: 0.6 + Math.random() * 0.4,
+        offsetX: (Math.random() - 0.5) * 2,
+        offsetY: Math.random() * 2 + 0.2,
+        offsetZ: (Math.random() - 0.5) * 2,
+        size: 0.08 + Math.random() * 0.12,
+        rotX: Math.random() * Math.PI,
+        rotY: Math.random() * Math.PI,
+        rotZ: Math.random() * Math.PI,
+      })),
+    [],
+  );
 
   // Borrow a pooled point light for the explosion glow (replaces two near-coincident
   // <pointLight>s) instead of churning the scene light count.
@@ -78,12 +101,9 @@ export default function FrostNova({
     // Expansion phase (first 30% of duration)
     let frameExpansionProgress: number;
     if (progress < 0.3) {
-      const expansionPhase = progress / 0.3;
-      frameExpansionProgress = expansionPhase;
-      setExpansionProgress(expansionPhase);
+      frameExpansionProgress = progress / 0.3;
     } else {
       frameExpansionProgress = 1;
-      setExpansionProgress(1);
     }
 
     // Fade out in the last 40% of duration
@@ -92,44 +112,104 @@ export default function FrostNova({
       const fadeStart = 0.6;
       const fadePhase = (progress - fadeStart) / (1 - fadeStart);
       frameFadeProgress = 1 - fadePhase;
-      setFadeProgress(1 - fadePhase);
     } else {
       frameFadeProgress = 1;
-      setFadeProgress(1);
     }
 
     // Pulsing intensity effect
     const pulseIntensity = 0.7 + 0.3 * Math.sin(elapsed * 0.008);
     const frameIntensity = pulseIntensity * frameFadeProgress;
-    setIntensity(frameIntensity);
+
+    const baseScale = 0.1 + frameExpansionProgress * 2.5;
+    const ringScale = baseScale * 1.15;
 
     // Drive the pooled light at the effect center (world space). The original two
     // <pointLight>s sat at y+1 / y+0.5 above `position`; collapse to one near y+0.75.
-    const frameBaseScale = 0.1 + frameExpansionProgress * 2.5;
     novaLight.current?.setPosition(position.x, position.y + 0.75, position.z);
     novaLight.current?.setIntensity(8 * frameIntensity * frameFadeProgress);
-    novaLight.current?.setDistance(frameBaseScale * 2);
+    novaLight.current?.setDistance(baseScale * 2);
+
+    if (coreMeshRef.current) {
+      coreMeshRef.current.scale.setScalar(baseScale);
+    }
+    if (coreMatRef.current) {
+      coreMatRef.current.emissiveIntensity = 0.8 * frameIntensity;
+      coreMatRef.current.opacity = 0.3 * frameFadeProgress;
+    }
+
+    for (let i = 0; i < 12; i++) {
+      const angle = (i * Math.PI * 2) / 12;
+      const radius = baseScale * 0.8;
+      const spikeGroup = spikeGroupRefs.current[i];
+      if (spikeGroup) {
+        spikeGroup.rotation.set(0, angle, 0);
+        spikeGroup.position.set(
+          Math.cos(angle) * radius,
+          0,
+          Math.sin(angle) * radius,
+        );
+      }
+      const spikeMesh = spikeMeshRefs.current[i];
+      if (spikeMesh) {
+        spikeMesh.scale.setScalar(baseScale);
+      }
+      const spikeMat = spikeMatRefs.current[i];
+      if (spikeMat) {
+        spikeMat.emissiveIntensity = 0.6 * frameIntensity;
+        spikeMat.opacity = 0.8 * frameFadeProgress;
+      }
+    }
+
+    for (let i = 0; i < 4; i++) {
+      const ringMesh = ringMeshRefs.current[i];
+      if (ringMesh) {
+        const s = ringScale * (0.8 + i * 0.2);
+        ringMesh.scale.set(s, s, 1);
+      }
+      const ringMat = ringMatRefs.current[i];
+      if (ringMat) {
+        ringMat.emissiveIntensity = 0.7 * frameIntensity;
+        ringMat.opacity = 0.6 * frameFadeProgress * (1 - i * 0.2);
+      }
+    }
+
+    for (let i = 0; i < particleSeeds.length; i++) {
+      const seed = particleSeeds[i];
+      const radius = baseScale * seed.radiusFactor;
+      const particleMesh = particleMeshRefs.current[i];
+      if (particleMesh) {
+        particleMesh.position.set(
+          Math.cos(seed.angle) * radius + seed.offsetX,
+          seed.offsetY,
+          Math.sin(seed.angle) * radius + seed.offsetZ,
+        );
+        particleMesh.rotation.set(seed.rotX, seed.rotY, seed.rotZ);
+        particleMesh.scale.setScalar(seed.size);
+      }
+      const particleMat = particleMatRefs.current[i];
+      if (particleMat) {
+        particleMat.emissiveIntensity = 0.9 * frameIntensity;
+        particleMat.opacity = 0.5 * frameFadeProgress;
+      }
+    }
 
     // Rotate the entire effect
     effectRef.current.rotation.y += rotationSpeed.current;
     effectRef.current.rotation.x = Math.sin(elapsed * 0.002) * 0.1;
   });
 
-  // Calculate scale based on expansion progress
-  const baseScale = 0.1 + (expansionProgress * 2.5); // Expands from 0.25 to 4 units radius (half size)
-  const ringScale = baseScale * 1.15;
-
   return (
     <group ref={effectRef} position={position} scale={[visualScale, visualScale, visualScale]}>
       {/* Central ice explosion core */}
-      <mesh position={[0, 0.5, 0]}>
-        <sphereGeometry args={[1 * baseScale, 16, 16]} />
+      <mesh ref={coreMeshRef} position={[0, 0.5, 0]}>
+        <sphereGeometry args={[1, 16, 16]} />
         <meshStandardMaterial
+          ref={coreMatRef}
           color="#B3E5FC"
           emissive="#4FC3F7"
-          emissiveIntensity={0.8 * intensity}
+          emissiveIntensity={0.8}
           transparent
-          opacity={0.3 * fadeProgress}
+          opacity={0.3}
           roughness={0.1}
           metalness={0.2}
         />
@@ -138,10 +218,11 @@ export default function FrostNova({
       {/* Ice crystal spikes radiating outward */}
       {[...Array(12)].map((_, i) => {
         const angle = (i * Math.PI * 2) / 12;
-        const radius = baseScale * 0.8;
+        const radius = 0.8;
         return (
           <group
             key={i}
+            ref={(el) => { spikeGroupRefs.current[i] = el; }}
             rotation={[0, angle, 0]}
             position={[
               Math.cos(angle) * radius,
@@ -149,14 +230,15 @@ export default function FrostNova({
               Math.sin(angle) * radius
             ]}
           >
-            <mesh rotation={[Math.PI / 6, 0, 0]}>
-              <octahedronGeometry args={[0.2 * baseScale, 0]} />
+            <mesh ref={(el) => { spikeMeshRefs.current[i] = el; }} rotation={[Math.PI / 6, 0, 0]}>
+              <octahedronGeometry args={[0.2, 0]} />
               <meshStandardMaterial
+                ref={(el) => { spikeMatRefs.current[i] = el; }}
                 color="#E1F5FE"
                 emissive="#29B6F6"
-                emissiveIntensity={0.6 * intensity}
+                emissiveIntensity={0.6}
                 transparent
-                opacity={0.8 * fadeProgress}
+                opacity={0.8}
                 roughness={0.05}
                 metalness={0.15}
               />
@@ -169,17 +251,18 @@ export default function FrostNova({
       {[...Array(4)].map((_, i) => (
         <mesh 
           key={`ring-${i}`}
+          ref={(el) => { ringMeshRefs.current[i] = el; }}
           position={[0, 0.1 + i * 0.15, 0]}
           rotation={[Math.PI / 2, 0, (i * Math.PI) / 6]}
-          scale={[ringScale * (0.8 + i * 0.2), ringScale * (0.8 + i * 0.2), 1]}
         >
           <torusGeometry args={[1, 0.08, 8, 32]} />
           <meshStandardMaterial
+            ref={(el) => { ringMatRefs.current[i] = el; }}
             color="#B3E5FC"
             emissive="#29B6F6"
-            emissiveIntensity={0.7 * intensity}
+            emissiveIntensity={0.7}
             transparent
-            opacity={0.6 * fadeProgress * (1 - i * 0.2)}
+            opacity={0.6}
             roughness={0.1}
             metalness={0.2}
           />
@@ -187,34 +270,29 @@ export default function FrostNova({
       ))}
 
       {/* Ice particles scattered around */}
-      {[...Array(4)].map((_, i) => {
-        const angle = (i * Math.PI * 2) / 24;
-        const radius = baseScale * (0.6 + Math.random() * 0.4);
-        return (
-          <mesh
-            key={`particle-${i}`}
-            position={[
-              Math.cos(angle) * radius + (Math.random() - 0.5) * 2,
-              Math.random() * 2 + 0.2,
-              Math.sin(angle) * radius + (Math.random() - 0.5) * 2
-            ]}
-            rotation={[
-              Math.random() * Math.PI,
-              Math.random() * Math.PI,
-              Math.random() * Math.PI
-            ]}
-          >
-            <octahedronGeometry args={[0.08 + Math.random() * 0.12, 0]} />
-            <meshStandardMaterial
-              color="#E1F5FE"
-              emissive="#4FC3F7"
-              emissiveIntensity={0.9 * intensity}
-              transparent
-              opacity={0.5 * fadeProgress}
-            />
-          </mesh>
-        );
-      })}
+      {particleSeeds.map((seed, i) => (
+        <mesh
+          key={`particle-${i}`}
+          ref={(el) => { particleMeshRefs.current[i] = el; }}
+          position={[
+            Math.cos(seed.angle) * seed.radiusFactor + seed.offsetX,
+            seed.offsetY,
+            Math.sin(seed.angle) * seed.radiusFactor + seed.offsetZ,
+          ]}
+          rotation={[seed.rotX, seed.rotY, seed.rotZ]}
+          scale={[seed.size, seed.size, seed.size]}
+        >
+          <octahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial
+            ref={(el) => { particleMatRefs.current[i] = el; }}
+            color="#E1F5FE"
+            emissive="#4FC3F7"
+            emissiveIntensity={0.9}
+            transparent
+            opacity={0.5}
+          />
+        </mesh>
+      ))}
 
       {/* Ground frost effect */}
 

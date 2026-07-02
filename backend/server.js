@@ -27,11 +27,13 @@ const corsOptions = {
     credentials: true
 };
 
-// Log incoming requests for debugging
-app.use((req, res, next) => {
-    console.log(`${req.method} ${req.path} from ${req.get('origin') || 'no-origin'}`);
-    next();
-});
+// Log incoming requests for debugging (dev only)
+if (process.env.NODE_ENV !== 'production') {
+    app.use((req, res, next) => {
+        console.log(`${req.method} ${req.path} from ${req.get('origin') || 'no-origin'}`);
+        next();
+    });
+}
 
 app.use(cors(corsOptions));
 app.use(express.json());
@@ -47,7 +49,7 @@ const io = socketIo(server, {
   pingTimeout: 20000,  // Reduced from 60000ms (60s) to 20000ms (20s)
   pingInterval: 10000,  // Reduced from 25000ms (25s) to 10000ms (10s)
   connectTimeout: 20000, // Reduced from 45000ms (45s) to 20000ms (20s)
-  maxHttpBufferSize: 1e8
+  maxHttpBufferSize: 4 * 1024 * 1024
 });
 
 /** Default matches Next dev client `NEXT_PUBLIC_BACKEND_URL` fallback in MultiplayerContext. */
@@ -72,7 +74,7 @@ app.get('/health', (req, res) => {
     const playerCount = room.getPlayerCount();
     roomDetails[roomId] = {
       players: playerCount,
-      enemies: room.getEnemies().length
+      enemies: room.enemies.size
     };
     totalPlayersInRooms += playerCount;
   }

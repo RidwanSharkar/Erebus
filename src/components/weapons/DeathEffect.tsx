@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { Group, Vector3, Mesh, Material } from '@/utils/three-exports';
+import React, { useRef, useEffect } from 'react';
+import { Group, Vector3, Mesh, Material, MeshStandardMaterial } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
@@ -26,10 +26,14 @@ export default function DeathEffect({
   onComplete
 }: DeathEffectProps) {
   const effectRef = useRef<Group>(null);
-  const [intensity, setIntensity] = useState(1);
-  const [fadeProgress, setFadeProgress] = useState(1);
   const rotationSpeed = useRef(Math.random() * 0.01 + 0.005);
   const hasCompleted = useRef(false); // Flag to prevent multiple onComplete calls
+
+  const coreMatRef = useRef<MeshStandardMaterial>(null);
+  const mistMatRefs = useRef<(MeshStandardMaterial | null)[]>([]);
+  const ringMatRefs = useRef<(MeshStandardMaterial | null)[]>([]);
+  const skullMatRef = useRef<MeshStandardMaterial>(null);
+  const glowMatRef = useRef<MeshStandardMaterial>(null);
 
   // Borrow a pooled light instead of mounting a <pointLight> (avoids lit-shader recompiles).
   const deathLight = useDynamicLight({ color: '#6A1B9A', distance: 8, decay: 2, priority: 1 });
@@ -98,12 +102,35 @@ export default function DeathEffect({
       const fadeAmount = (progress - fadeStart) / (1 - fadeStart);
       currentFadeProgress = 1 - fadeAmount;
     }
-    setFadeProgress(currentFadeProgress);
 
     // Pulsing intensity effect
     const pulseIntensity = 0.7 + 0.3 * Math.sin(elapsed * 0.008);
     const currentIntensity = pulseIntensity * currentFadeProgress;
-    setIntensity(currentIntensity);
+
+    if (coreMatRef.current) {
+      coreMatRef.current.emissiveIntensity = 0.4 * currentIntensity;
+      coreMatRef.current.opacity = 0.6 * currentFadeProgress;
+    }
+    for (const mat of mistMatRefs.current) {
+      if (mat) {
+        mat.emissiveIntensity = 0.6 * currentIntensity;
+        mat.opacity = 0.4 * currentFadeProgress;
+      }
+    }
+    for (const mat of ringMatRefs.current) {
+      if (mat) {
+        mat.emissiveIntensity = 0.5 * currentIntensity;
+        mat.opacity = 0.5 * currentFadeProgress;
+      }
+    }
+    if (skullMatRef.current) {
+      skullMatRef.current.emissiveIntensity = 0.8 * currentIntensity;
+      skullMatRef.current.opacity = 0.7 * currentFadeProgress;
+    }
+    if (glowMatRef.current) {
+      glowMatRef.current.emissiveIntensity = 0.15 * currentIntensity;
+      glowMatRef.current.opacity = 0.3 * currentFadeProgress;
+    }
 
     // Drive the pooled light at the effect's world position (group root + local [0,1,0]).
     // Replicates the former <pointLight>: 2 * intensity * fadeProgress.
@@ -125,11 +152,12 @@ export default function DeathEffect({
       <mesh position={[0, 0.5, 0]}>
         <sphereGeometry args={[0.8, 16, 16]} />
         <meshStandardMaterial
+          ref={coreMatRef}
           color="#2D1B69"
           emissive="#4A148C"
-          emissiveIntensity={0.4 * intensity}
+          emissiveIntensity={0.4}
           transparent
-          opacity={0.6 * fadeProgress}
+          opacity={0.6}
           roughness={0.8}
           metalness={0.1}
         />
@@ -152,11 +180,12 @@ export default function DeathEffect({
         >
           <sphereGeometry args={[0.1 + Math.random() * 0.1, 8, 8]} />
           <meshStandardMaterial
+            ref={(el) => { mistMatRefs.current[i] = el; }}
             color="#6A1B9A"
             emissive="#9C27B0"
-            emissiveIntensity={0.6 * intensity}
+            emissiveIntensity={0.6}
             transparent
-            opacity={0.4 * fadeProgress}
+            opacity={0.4}
           />
         </mesh>
       ))}
@@ -170,11 +199,12 @@ export default function DeathEffect({
         >
           <torusGeometry args={[0.5 + i * 0.2, 0.03, 8, 16]} />
           <meshStandardMaterial
+            ref={(el) => { ringMatRefs.current[i] = el; }}
             color="#4A148C"
             emissive="#7B1FA2"
-            emissiveIntensity={0.5 * intensity}
+            emissiveIntensity={0.5}
             transparent
-            opacity={0.5 * fadeProgress}
+            opacity={0.5}
             roughness={0.7}
             metalness={0.2}
           />
@@ -185,11 +215,12 @@ export default function DeathEffect({
       <mesh position={[0, 0.8, 0]}>
         <sphereGeometry args={[0.3, 12, 12]} />
         <meshStandardMaterial
+          ref={skullMatRef}
           color="#1A0033"
           emissive="#4A148C"
-          emissiveIntensity={0.8 * intensity}
+          emissiveIntensity={0.8}
           transparent
-          opacity={0.7 * fadeProgress}
+          opacity={0.7}
           roughness={0.9}
           metalness={0.1}
         />
@@ -199,11 +230,12 @@ export default function DeathEffect({
       <mesh>
         <sphereGeometry args={[1.2, 16, 16]} />
         <meshStandardMaterial
+          ref={glowMatRef}
           color="#4A148C"
           emissive="#6A1B9A"
-          emissiveIntensity={0.15 * intensity}
+          emissiveIntensity={0.15}
           transparent
-          opacity={0.3 * fadeProgress}
+          opacity={0.3}
         />
       </mesh>
 

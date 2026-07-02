@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Group, Vector3 } from 'three';
+import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from 'react';
+import { Group, Vector3, Mesh } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import KnightModel, { type KnightAbilityClip } from './KnightModel';
@@ -9,9 +9,17 @@ import KnightSoulEffect from './KnightSoulEffect';
 import EnemyMeleeAttackRangeRing, { KNIGHT_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyAbilityChargeTelegraph from './EnemyAbilityChargeTelegraph';
-import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
+import {
+  ENEMY_HP_BAR_WIDTH,
+  ENEMY_HP_BAR_HEIGHT,
+  ENEMY_HP_BAR_FILL_HEIGHT,
+  ENEMY_HP_BAR_FILL_Z,
+  applyEnemyHealthBarFill,
+  syncEnemyHealthBarFillFromRef,
+} from '@/utils/enemyHealthBar';
 import { KNIGHT_CAST_ABILITY_LOCK_MS } from '@/utils/knightCoopAbilitiesConstants';
 import GhostTrail from '../dragon/GhostTrail';
 import { WeaponType } from '../dragon/weapons';
@@ -78,7 +86,7 @@ const SPIN_CHARGE_COLORS: Record<NonNullable<KnightRendererProps['soulType']>, s
   yellow: DEFAULT_SPIN_CHARGE_COLOR,
 };
 
-export default function KnightRenderer({
+function KnightRenderer({
   id,
   position,
   rotation,
@@ -103,12 +111,14 @@ export default function KnightRenderer({
   visualScale = 1,
 }: KnightRendererProps) {
   const theme = campHpTheme(campType);
-  const { socket, enemyTransformsRef } = useMultiplayer();
+  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
   const spinChargeColor = soulType ? SPIN_CHARGE_COLORS[soulType] : DEFAULT_SPIN_CHARGE_COLOR;
   const groupRef = useRef<Group | null>(null);
+  const hpFillRef = useRef<Mesh>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking, setIsWalking] = useState(false);
+  const isWalkingRef = useRef(false);
   const [attackVariant, setAttackVariant] = useState<1 | 2>(1);
   const [abilityClip, setAbilityClip] = useState<KnightAbilityClip | null>(null);
   const [isStormLashHolding, setIsStormLashHolding] = useState(false);
@@ -135,6 +145,8 @@ export default function KnightRenderer({
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const spinChargeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const attackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abilityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const spinTravelRef = useRef<{
     start: Vector3;
     end: Vector3;
@@ -143,6 +155,8 @@ export default function KnightRenderer({
   } | null>(null);
   const fadeTimer = useRef(0);
   const opacity = useRef(1);
+  const cachedDeathMats = useRef<any[]>([]);
+  const deathCacheBuilt = useRef(false);
 
   // Callback ref — fires synchronously when the <group> mounts, before the first
   // WebGL frame, so the knight is never rendered at the world origin.
@@ -175,23 +189,29 @@ export default function KnightRenderer({
 
     // Server moved the knight a meaningful amount → it's walking.
     if (dist > 0.01 && !isLocked && !isDying) {
-      if (!isWalking) setIsWalking(true);
+      if (!isWalkingRef.current) {
+        isWalkingRef.current = true;
+        setIsWalking(true);
+      }
 
       // Push back the idle-transition timer: as long as the server keeps sending
       // movement updates the knight stays in its walk animation.
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       walkStopTimer.current = setTimeout(() => {
+        isWalkingRef.current = false;
         setIsWalking(false);
       }, WALK_STOP_DELAY);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Clean up the walk-stop timer on unmount.
+  // Clean up timers on unmount.
   useEffect(() => {
     return () => {
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (dashTimer.current) clearTimeout(dashTimer.current);
       if (spinChargeTimer.current) clearTimeout(spinChargeTimer.current);
+      if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
+      if (abilityTimerRef.current) clearTimeout(abilityTimerRef.current);
     };
   }, []);
 
@@ -246,9 +266,11 @@ export default function KnightRenderer({
       }
       setIsAttacking(true);
       isAttackingRef.current = true;
-      setTimeout(() => {
+      if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
+      attackTimerRef.current = setTimeout(() => {
         setIsAttacking(false);
         isAttackingRef.current = false;
+        attackTimerRef.current = null;
       }, ATTACK_DURATION);
     };
 
@@ -278,6 +300,7 @@ export default function KnightRenderer({
       if (spinChargeTimer.current) clearTimeout(spinChargeTimer.current);
       spinTravelRef.current = null;
 
+      isWalkingRef.current = false;
       setIsWalking(false);
       setIsImpacting(false);
       setIsSpinCharging(false);
@@ -326,6 +349,7 @@ export default function KnightRenderer({
       spinTravelRef.current = null;
 
       const chargeMs = data.chargeMs ?? SPIN_CHARGE_DURATION;
+      isWalkingRef.current = false;
       setIsWalking(false);
       setIsImpacting(false);
       setIsDashing(false);
@@ -364,6 +388,7 @@ export default function KnightRenderer({
       if (dashTimer.current) clearTimeout(dashTimer.current);
       if (spinChargeTimer.current) clearTimeout(spinChargeTimer.current);
 
+      isWalkingRef.current = false;
       setIsWalking(false);
       setIsImpacting(false);
       setIsSpinCharging(false);
@@ -415,9 +440,11 @@ export default function KnightRenderer({
       if (data.knightId !== id) return;
       isAbilityRef.current = true;
       setAbilityClip('Smite');
-      setTimeout(() => {
+      if (abilityTimerRef.current) clearTimeout(abilityTimerRef.current);
+      abilityTimerRef.current = setTimeout(() => {
         setAbilityClip(null);
         isAbilityRef.current = false;
+        abilityTimerRef.current = null;
       }, SMITE_DURATION);
     };
 
@@ -428,9 +455,11 @@ export default function KnightRenderer({
       (window as any).audioSystem?.playKnightAggroSound?.(soundPos);
       isAbilityRef.current = true;
       setAbilityClip('Aggro');
-      setTimeout(() => {
+      if (abilityTimerRef.current) clearTimeout(abilityTimerRef.current);
+      abilityTimerRef.current = setTimeout(() => {
         setAbilityClip(null);
         isAbilityRef.current = false;
+        abilityTimerRef.current = null;
       }, HEAL_DURATION);
     };
 
@@ -439,9 +468,11 @@ export default function KnightRenderer({
       if (data.knightId !== id) return;
       isAbilityRef.current = true;
       setAbilityClip('Cast');
-      setTimeout(() => {
+      if (abilityTimerRef.current) clearTimeout(abilityTimerRef.current);
+      abilityTimerRef.current = setTimeout(() => {
         setAbilityClip(null);
         isAbilityRef.current = false;
+        abilityTimerRef.current = null;
       }, CAST_ABILITY_MS);
     };
 
@@ -451,10 +482,12 @@ export default function KnightRenderer({
       isAbilityRef.current = true;
       setIsStormLashHolding(true);
       setAbilityClip('Cast');
-      setTimeout(() => {
+      if (abilityTimerRef.current) clearTimeout(abilityTimerRef.current);
+      abilityTimerRef.current = setTimeout(() => {
         setAbilityClip(null);
         setIsStormLashHolding(false);
         isAbilityRef.current = false;
+        abilityTimerRef.current = null;
       }, STORM_LASH_DURATION);
     };
 
@@ -463,10 +496,25 @@ export default function KnightRenderer({
       if (data.knightId !== id) return;
       isAbilityRef.current = true;
       setAbilityClip('Cast');
-      setTimeout(() => {
+      if (abilityTimerRef.current) clearTimeout(abilityTimerRef.current);
+      abilityTimerRef.current = setTimeout(() => {
         setAbilityClip(null);
         isAbilityRef.current = false;
+        abilityTimerRef.current = null;
       }, CAST_ABILITY_MS);
+    };
+
+    // All knights — Block (looping idle block pose for full invuln window)
+    const handleBlockTelegraph = (data: { knightId: string; durationMs: number }) => {
+      if (data.knightId !== id) return;
+      isAbilityRef.current = true;
+      setAbilityClip('Block');
+      if (abilityTimerRef.current) clearTimeout(abilityTimerRef.current);
+      abilityTimerRef.current = setTimeout(() => {
+        setAbilityClip(null);
+        isAbilityRef.current = false;
+        abilityTimerRef.current = null;
+      }, data.durationMs);
     };
 
     socket.on('knight-smite-telegraph', handleSmiteTelegraph);
@@ -474,30 +522,37 @@ export default function KnightRenderer({
     socket.on('knight-frost-telegraph', handleFrostTelegraph);
     socket.on('knight-stormlash-telegraph', handleStormLashTelegraph);
     socket.on('knight-deathgrasp-telegraph', handleDeathGraspTelegraph);
+    socket.on('knight-block-telegraph', handleBlockTelegraph);
     return () => {
       socket.off('knight-smite-telegraph', handleSmiteTelegraph);
       socket.off('knight-heal-telegraph',  handleHealTelegraph);
       socket.off('knight-frost-telegraph', handleFrostTelegraph);
       socket.off('knight-stormlash-telegraph', handleStormLashTelegraph);
       socket.off('knight-deathgrasp-telegraph', handleDeathGraspTelegraph);
+      socket.off('knight-block-telegraph', handleBlockTelegraph);
     };
   }, [id, socket]);
+
+  useLayoutEffect(() => {
+    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth);
+  }, [health, maxHealth]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
 
+    syncEnemyHealthBarFillFromRef(
+      hpFillRef,
+      enemiesRef,
+      id,
+      health,
+      maxHealth,
+    );
+
     const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
     const isLocked = isAttackingRef.current || isAbilityRef.current || isDashingRef.current;
     if (dist > 5.0 && !isLocked) {
       group.position.copy(targetPosition.current);
-    }
-    if (dist > 0.01 && !isLocked && !isDying) {
-      if (!isWalking) setIsWalking(true);
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => {
-        setIsWalking(false);
-      }, WALK_STOP_DELAY);
     }
 
     const spinTravel = spinTravelRef.current;
@@ -519,15 +574,26 @@ export default function KnightRenderer({
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
-      group.traverse((child: any) => {
-        if (child.isMesh && child.material) {
-          const mats = Array.isArray(child.material) ? child.material : [child.material];
-          mats.forEach((mat: any) => {
-            mat.transparent = true;
-            mat.opacity = opacity.current;
-          });
-        }
-      });
+
+      if (!deathCacheBuilt.current) {
+        const collected: any[] = [];
+        group.traverse((child: any) => {
+          if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((mat: any) => {
+              mat.transparent = true;
+              collected.push(mat);
+            });
+          }
+        });
+        cachedDeathMats.current = collected;
+        deathCacheBuilt.current = true;
+      }
+
+      const op = opacity.current;
+      for (let i = 0; i < cachedDeathMats.current.length; i++) {
+        cachedDeathMats.current[i].opacity = op;
+      }
     }
   });
 
@@ -585,12 +651,16 @@ export default function KnightRenderer({
         {health > 0 && !isDying && (
           <>
             <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[2.0, 0.25]} />
+              <planeGeometry args={[ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_HEIGHT]} />
               <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
 
-            <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
-              <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
+            <mesh
+              ref={hpFillRef}
+              position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
+              scale={[1, 1, 1]}
+            >
+              <planeGeometry args={[ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_FILL_HEIGHT]} />
               <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
 
@@ -612,3 +682,5 @@ export default function KnightRenderer({
     </>
   );
 }
+
+export default React.memo(KnightRenderer);

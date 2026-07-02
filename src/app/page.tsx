@@ -5,9 +5,8 @@ import dynamic from 'next/dynamic';
 import { WeaponType, WeaponSubclass } from '../components/dragon/weapons';
 import { Camera } from '../utils/three-exports';
 import type { DamageNumberData } from '../components/DamageNumbers';
-import DamageNumbers from '../components/DamageNumbers';
+import CombatOverlay, { type CombatOverlayCallbacks } from '../components/ui/CombatOverlay';
 import GameUI from '../components/ui/GameUI';
-import StrikeIndicator from '../components/ui/StrikeIndicator';
 import PlayerDamageFeedbackOverlay from '../components/ui/PlayerDamageFeedbackOverlay';
 import { getGlobalRuneCounts, getCriticalChance, getCriticalDamageMultiplier } from '../core/DamageCalculator';
 import ExperienceBar from '../components/ui/ExperienceBar';
@@ -176,6 +175,25 @@ function rollRoomBoonOptions(
 const DEV_TALENT_MODAL =
   process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_DEV_TALENT_MODAL === '1';
 
+const CANVAS_CAMERA = {
+  position: [0, 5, 10] as [number, number, number],
+  fov: 75,
+  near: 0.1,
+  far: 1000,
+};
+
+const CANVAS_GL = {
+  antialias: true,
+  alpha: false,
+  powerPreference: 'high-performance' as const,
+};
+
+const NOOP_COMBAT_OVERLAY_CALLBACKS: CombatOverlayCallbacks = {
+  onCameraUpdate: () => {},
+  onDamageNumbersUpdate: () => {},
+  onDamageNumberComplete: () => {},
+};
+
 function HomeContent() {
   const {
     selectedWeapons,
@@ -230,14 +248,8 @@ function HomeContent() {
     clearLateJoinCombatLoadout,
   } = useMultiplayer();
 
-  const [damageNumbers, setDamageNumbers] = useState<DamageNumberData[]>([]);
-  const [cameraInfo, setCameraInfo] = useState<{
-    camera: Camera | null;
-    size: { width: number; height: number };
-  }>({
-    camera: null,
-    size: { width: 0, height: 0 }
-  });
+  const combatOverlayCallbacksRef = useRef<CombatOverlayCallbacks>(NOOP_COMBAT_OVERLAY_CALLBACKS);
+
   const [localPurchasedItems, setLocalPurchasedItems] = useState<string[]>([]);
   const [gameState, setGameState] = useState({
     playerHealth: 200,
@@ -458,18 +470,15 @@ function HomeContent() {
     typeof coopMainArenaPortalPhase | 'unset'
   >('unset');
 
-  const handleDamageNumberComplete = (id: string) => {
-    // Use the global handler set by GameScene
-    if ((window as any).handleDamageNumberComplete) {
-      (window as any).handleDamageNumberComplete(id);
-    }
-  };
+  const handleDamageNumberComplete = useCallback((id: string) => {
+    combatOverlayCallbacksRef.current.onDamageNumberComplete(id);
+  }, []);
 
-  const handleCameraUpdate = (camera: Camera, size: { width: number; height: number }) => {
-    setCameraInfo({ camera, size });
-  };
+  const handleCameraUpdate = useCallback((camera: Camera, size: { width: number; height: number }) => {
+    combatOverlayCallbacksRef.current.onCameraUpdate(camera, size);
+  }, []);
 
-  const handleGameStateUpdate = (newGameState: {
+  const handleGameStateUpdate = useCallback((newGameState: {
     playerHealth: number;
     maxHealth: number;
     playerShield: number;
@@ -482,13 +491,34 @@ function HomeContent() {
     setGameState({
       ...newGameState,
       mana: newGameState.mana ?? 150,
-      maxMana: newGameState.maxMana ?? 150
+      maxMana: newGameState.maxMana ?? 150,
     });
-  };
+  }, []);
 
-  const handleControlSystemUpdate = (newControlSystem: any) => {
+  const handleControlSystemUpdate = useCallback((newControlSystem: unknown) => {
     setControlSystem(newControlSystem);
-  };
+  }, []);
+
+  const handleDamageNumbersUpdate = useCallback((numbers: DamageNumberData[]) => {
+    combatOverlayCallbacksRef.current.onDamageNumbersUpdate(numbers);
+  }, []);
+
+  const handleSceneReady = useCallback(() => {
+    setLoadingSceneBootstrapReady(true);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => setIsGameLoading(false));
+    });
+  }, []);
+
+  const handleRequestThroneAbilityModal = useCallback((weapon: WeaponType) => {
+    setThroneTalentWeapon(null);
+    setThroneAbilityWeapon(weapon);
+  }, []);
+
+  const handleRequestThroneTalentModal = useCallback((weapon: WeaponType) => {
+    setThroneAbilityWeapon(null);
+    setThroneTalentWeapon(weapon);
+  }, []);
 
   // Auto-join default co-op room and start throne prep immediately; a 2nd player who joins
   // during prep is synced into the same throne room via `coop-throne-sync`.
@@ -891,9 +921,9 @@ function HomeContent() {
     updateStatPointsForLvl(level);
   }, [updateSkillPointsForLevel, updateStatPointsForLvl]);
 
-  const handleEssenceUpdate = (essence: number) => {
+  const handleEssenceUpdate = useCallback((essence: number) => {
     setPlayerEssence(essence);
-  };
+  }, []);
 
   const handleGoldUpdate = useCallback((gold: number) => {
     setPlayerGold(gold);
@@ -1130,24 +1160,15 @@ function HomeContent() {
 
         {showCanvas && (
           <Canvas
-            camera={{
-              position: [0, 5, 10],
-              fov: 75,
-              near: 0.1,
-              far: 1000
-            }}
+            camera={CANVAS_CAMERA}
             shadows
             dpr={[1, 1.5]}
-            gl={{
-              antialias: true,
-              alpha: false,
-              powerPreference: "high-performance"
-            }}
+            gl={CANVAS_GL}
           >
             <Suspense fallback={null}>
               {(gameMode === 'pvp' || gameMode === 'coop') && (
                 <CoopGameScene
-                  onDamageNumbersUpdate={setDamageNumbers}
+                  onDamageNumbersUpdate={handleDamageNumbersUpdate}
                   onDamageNumberComplete={handleDamageNumberComplete}
                   onCameraUpdate={handleCameraUpdate}
                   onGameStateUpdate={handleGameStateUpdate}
@@ -1157,12 +1178,7 @@ function HomeContent() {
                   onEssenceUpdate={handleEssenceUpdate}
                   onGoldUpdate={handleGoldUpdate}
                   onMerchantUIUpdate={setShowMerchantUI}
-                  onSceneReady={() => {
-                    setLoadingSceneBootstrapReady(true);
-                    requestAnimationFrame(() => {
-                      requestAnimationFrame(() => setIsGameLoading(false));
-                    });
-                  }}
+                  onSceneReady={handleSceneReady}
                   selectedWeapons={selectedWeapons}
                   skillPointData={skillPointData}
                   statPointData={statPointData}
@@ -1170,14 +1186,8 @@ function HomeContent() {
                   throneAbilityModalOpen={
                     throneAbilityWeapon !== null || throneTalentWeapon !== null || coopBoon !== null
                   }
-                  onRequestThroneAbilityModal={(weapon) => {
-                    setThroneTalentWeapon(null);
-                    setThroneAbilityWeapon(weapon);
-                  }}
-                  onRequestThroneTalentModal={(weapon) => {
-                    setThroneAbilityWeapon(null);
-                    setThroneTalentWeapon(weapon);
-                  }}
+                  onRequestThroneAbilityModal={handleRequestThroneAbilityModal}
+                  onRequestThroneTalentModal={handleRequestThroneTalentModal}
                   onThroneWeaponEquipped={handleThroneWeaponEquipped}
                   throneDevTalentShortcutEnabled={DEV_TALENT_MODAL}
                   pedestalBoonReady={coopMainArenaPortalPhase !== null && !pedestalInteracted}
@@ -1214,7 +1224,7 @@ function HomeContent() {
               </div>
             </div>
 
-            <div className="fixed bottom-16 right-4 z-40 flex items-center gap-2">
+            <div className="fixed bottom-16 right-1 z-40 flex items-center gap-2">
               <HudActionButtons
                 onOpenRulebook={() => setShowRulesPanel(true)}
               />
@@ -1248,23 +1258,7 @@ function HomeContent() {
               )}
             </div>
             
-            {/* Damage Numbers Display - Outside Canvas */}
-            {damageNumbers.length > 0 && cameraInfo.camera && cameraInfo.size && (
-              <div className="absolute inset-0 pointer-events-none">
-                <DamageNumbers
-                  damageNumbers={damageNumbers}
-                  onDamageNumberComplete={handleDamageNumberComplete}
-                  camera={cameraInfo.camera}
-                  size={cameraInfo.size}
-                />
-              </div>
-            )}
-
-            <StrikeIndicator
-              enabled
-              camera={cameraInfo.camera}
-              size={cameraInfo.size}
-            />
+            <CombatOverlay callbacksRef={combatOverlayCallbacksRef} />
             <PlayerDamageFeedbackOverlay />
 
             <DefeatRetryDialog open={defeatDialogOpen} />

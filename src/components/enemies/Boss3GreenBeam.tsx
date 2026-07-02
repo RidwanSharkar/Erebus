@@ -4,9 +4,19 @@
  * Weaver Nexus corruption beam — visuals match Icebeam silhouette, toxic green palette.
  */
 
-import { useRef, useEffect, useState, useMemo } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Color, Vector3, Group, CylinderGeometry, TorusGeometry, BoxGeometry } from '@/utils/three-exports';
+import {
+  Color,
+  Vector3,
+  Group,
+  Mesh,
+  CylinderGeometry,
+  TorusGeometry,
+  BoxGeometry,
+  SphereGeometry,
+  MeshStandardMaterial,
+} from '@/utils/three-exports';
 import { createBeamCylinderAdditiveMaterial } from '@/utils/beamCylinderAdditiveMaterial';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
@@ -26,6 +36,9 @@ const BEAM_RADIUS_SCALE = BOSS3_GREEN_BEAM_HALF_WIDTH / 0.375;
 
 const BEAM_HOLD_SEC = 8;
 const BEAM_BRI_GAIN = 24;
+
+const MAX_SPIRALS = 6;
+const MAX_SHARDS = 48;
 
 const _scratchA = new Color();
 const _scratchB = new Color();
@@ -97,6 +110,19 @@ function getGreenBeamColors(activeTime: number): { color: string; emissive: stri
   };
 }
 
+function updateStandardBeamMaterial(
+  mat: MeshStandardMaterial,
+  colorHex: string,
+  emissiveHex: string,
+  emissiveIntensity: number,
+  opacity: number,
+): void {
+  mat.color.set(colorHex);
+  mat.emissive.set(emissiveHex);
+  mat.emissiveIntensity = emissiveIntensity;
+  mat.opacity = opacity;
+}
+
 export default function Boss3GreenBeam({
   onComplete,
   isActive,
@@ -104,10 +130,17 @@ export default function Boss3GreenBeam({
   intensity: externalIntensity = 1,
 }: Boss3GreenBeamProps) {
   const beamRef = useRef<Group>(null);
-  const [intensity, setIntensity] = useState(1);
-  const [fadeProgress, setFadeProgress] = useState(0);
-  const [isFadingOut, setIsFadingOut] = useState(false);
+  const intensityRef = useRef(1);
+  const fadeProgressRef = useRef(0);
+  const isFadingOutRef = useRef(false);
   const fadeStartTime = useRef<number | null>(null);
+  const completedRef = useRef(false);
+
+  const sourceInnerMeshRef = useRef<Mesh>(null);
+  const sourceOuterMeshRef = useRef<Mesh>(null);
+  const cylinderMeshRefs = useRef<(Mesh | null)[]>([]);
+  const spiralMeshRefs = useRef<(Mesh | null)[]>([]);
+  const shardMeshRefs = useRef<(Mesh | null)[]>([]);
 
   const cylinderMaterials = useMemo(() => createGreenCylinderMaterials(), []);
 
@@ -127,31 +160,31 @@ export default function Boss3GreenBeam({
   const beamGeometries = useMemo(
     () => ({
       core: new CylinderGeometry(
-        (0.1 * intensity * BEAM_RADIUS_SCALE) / 2,
-        0.1 * intensity * BEAM_RADIUS_SCALE,
+        (0.1 * BEAM_RADIUS_SCALE) / 2,
+        0.1 * BEAM_RADIUS_SCALE,
         BEAM_SEGMENT_LENGTH,
         16,
       ),
       inner: new CylinderGeometry(
-        (0.25 * intensity * BEAM_RADIUS_SCALE) / 2,
-        0.275 * intensity * BEAM_RADIUS_SCALE,
+        (0.25 * BEAM_RADIUS_SCALE) / 2,
+        0.275 * BEAM_RADIUS_SCALE,
         BEAM_SEGMENT_LENGTH,
         16,
       ),
       outer: new CylinderGeometry(
-        0.3 * intensity * BEAM_RADIUS_SCALE,
-        0.375 * intensity * BEAM_RADIUS_SCALE,
+        0.3 * BEAM_RADIUS_SCALE,
+        0.375 * BEAM_RADIUS_SCALE,
         BEAM_SEGMENT_LENGTH,
         16,
       ),
       outermost: new CylinderGeometry(
-        0.35 * intensity * BEAM_RADIUS_SCALE,
-        0.375 * intensity * BEAM_RADIUS_SCALE,
+        0.35 * BEAM_RADIUS_SCALE,
+        0.375 * BEAM_RADIUS_SCALE,
         BEAM_SEGMENT_LENGTH,
         16,
       ),
     }),
-    [intensity],
+    [],
   );
 
   useEffect(
@@ -164,13 +197,12 @@ export default function Boss3GreenBeam({
     [beamGeometries],
   );
 
-  const spiralCount = Math.floor(5 * intensity);
   const spiralGeometries = useMemo(
     () =>
-      Array.from({ length: spiralCount }, () =>
-        new TorusGeometry(0.35 * intensity * BEAM_RADIUS_SCALE, 0.05, 8, 32),
+      Array.from({ length: MAX_SPIRALS }, () =>
+        new TorusGeometry(0.35 * BEAM_RADIUS_SCALE, 0.05, 8, 32),
       ),
-    [spiralCount, intensity],
+    [],
   );
 
   useEffect(
@@ -189,21 +221,84 @@ export default function Boss3GreenBeam({
     [shardGeometry],
   );
 
+  const sourceSphereGeometries = useMemo(
+    () => ({
+      inner: new SphereGeometry(0.45, 16, 16),
+      outer: new SphereGeometry(0.65, 16, 16),
+    }),
+    [],
+  );
+
+  const sourceSphereMaterials = useMemo(
+    () => ({
+      inner: new MeshStandardMaterial({
+        color: '#2aff7a',
+        emissive: '#0a8844',
+        emissiveIntensity: 0,
+        transparent: true,
+        opacity: 0,
+      }),
+      outer: new MeshStandardMaterial({
+        color: '#2aff7a',
+        emissive: '#0a8844',
+        emissiveIntensity: 0,
+        transparent: true,
+        opacity: 0,
+      }),
+    }),
+    [],
+  );
+
+  const spiralMaterial = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: '#2aff7a',
+        emissive: '#0a8844',
+        emissiveIntensity: 0,
+        transparent: true,
+        opacity: 0,
+      }),
+    [],
+  );
+
+  const shardMaterial = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: '#2aff7a',
+        emissive: '#0a8844',
+        emissiveIntensity: 0,
+        transparent: true,
+        opacity: 0,
+      }),
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      sourceSphereGeometries.inner.dispose();
+      sourceSphereGeometries.outer.dispose();
+      sourceSphereMaterials.inner.dispose();
+      sourceSphereMaterials.outer.dispose();
+      spiralMaterial.dispose();
+      shardMaterial.dispose();
+    },
+    [sourceSphereGeometries, sourceSphereMaterials, spiralMaterial, shardMaterial],
+  );
+
   useEffect(() => {
-    if (!isActive && !isFadingOut) {
-      setIsFadingOut(true);
+    if (!isActive && !isFadingOutRef.current) {
+      isFadingOutRef.current = true;
       fadeStartTime.current = Date.now();
     }
-  }, [isActive, isFadingOut]);
+  }, [isActive]);
 
-  const shardCount = Math.floor(24 * intensity);
   const zShardSpan = BEAM_SEGMENT_LENGTH * 0.42;
   const shardLayouts = useMemo(() => {
     const rnd = (s: number) => {
       const x = Math.sin(s * 12.9898) * 43758.5453;
       return x - Math.floor(x);
     };
-    return Array.from({ length: Math.max(48, shardCount) }, (_, i) => ({
+    return Array.from({ length: MAX_SHARDS }, (_, i) => ({
       x: (rnd(i + 0.3) - 0.5) * BOSS3_GREEN_BEAM_HALF_WIDTH * 2.1,
       y: (rnd(i + 0.7) - 0.5) * 1.2,
       z: (rnd(i + 1.1) - 0.5) * zShardSpan,
@@ -211,26 +306,25 @@ export default function Boss3GreenBeam({
       ry: rnd(i + 2.3) * Math.PI * 2,
       rz: rnd(i + 2.7) * Math.PI * 2,
     }));
-  }, [shardCount, zShardSpan]);
+  }, [zShardSpan]);
 
   useFrame(() => {
-    if (!beamRef.current) return;
+    if (!beamRef.current || completedRef.current) return;
 
     const currentTime = Date.now();
-    let fp = fadeProgress;
-    let visIntensity = intensity;
+    let fp = fadeProgressRef.current;
+    let visIntensity = intensityRef.current;
 
-    // Position and rotation are inherited from the parent boss group — no manual copy needed.
-
-    if (isFadingOut) {
+    if (isFadingOutRef.current) {
       if (fadeStartTime.current) {
         const fadeElapsed = currentTime - fadeStartTime.current;
         const fadeDuration = 400;
         const progress = Math.min(fadeElapsed / fadeDuration, 1);
         fp = 1 - progress;
-        setFadeProgress(fp);
+        fadeProgressRef.current = fp;
 
         if (progress >= 1) {
+          completedRef.current = true;
           beamRef.current.scale.setScalar(0);
           onComplete();
           return;
@@ -241,9 +335,9 @@ export default function Boss3GreenBeam({
       const baseIntensity = Math.min(1 + activeTime * 0.22, 2.35);
       const newIntensity = baseIntensity * externalIntensity;
       visIntensity = Math.min(newIntensity, 1.35);
-      setIntensity(visIntensity);
+      intensityRef.current = visIntensity;
       fp = 1;
-      setFadeProgress(1);
+      fadeProgressRef.current = 1;
     }
 
     const activeTimeHold = isActive ? Math.min((currentTime - startTime) / 1000, BEAM_HOLD_SEC) : 0;
@@ -253,7 +347,63 @@ export default function Boss3GreenBeam({
 
     beamRef.current.scale.setScalar(fp);
 
-    // Drive the pooled light at the beam source's world position.
+    updateStandardBeamMaterial(
+      sourceSphereMaterials.inner,
+      cylColors.color,
+      cylColors.emissive,
+      2.4 * visIntensity * fp,
+      0.66 * fp,
+    );
+    updateStandardBeamMaterial(
+      sourceSphereMaterials.outer,
+      cylColors.color,
+      cylColors.emissive,
+      0.72 * visIntensity * fp,
+      0.64 * fp,
+    );
+    sourceInnerMeshRef.current?.scale.setScalar(visIntensity);
+    sourceOuterMeshRef.current?.scale.setScalar(visIntensity);
+
+    updateStandardBeamMaterial(
+      spiralMaterial,
+      cylColors.color,
+      cylColors.emissive,
+      visIntensity * fp,
+      0.32 * fp,
+    );
+    const spiralCount = Math.floor(5 * visIntensity);
+    for (let i = 0; i < MAX_SPIRALS; i += 1) {
+      const spiral = spiralMeshRefs.current[i];
+      if (!spiral) continue;
+      spiral.visible = i < spiralCount;
+      if (i < spiralCount) {
+        spiral.scale.setScalar(visIntensity);
+      }
+    }
+
+    updateStandardBeamMaterial(
+      shardMaterial,
+      cylColors.color,
+      cylColors.emissive,
+      2 * visIntensity * fp,
+      0.74 * fp,
+    );
+    const shardCount = Math.floor(24 * visIntensity);
+    for (let i = 0; i < MAX_SHARDS; i += 1) {
+      const shard = shardMeshRefs.current[i];
+      if (!shard) continue;
+      const layout = shardLayouts[i];
+      shard.visible = i < shardCount;
+      if (i < shardCount) {
+        shard.position.set(layout.x * visIntensity, layout.y * visIntensity, layout.z);
+      }
+    }
+
+    for (let i = 0; i < 4; i += 1) {
+      const cylinder = cylinderMeshRefs.current[i];
+      cylinder?.scale.set(visIntensity, visIntensity, 1);
+    }
+
     beamRef.current.updateMatrixWorld();
     _lightWorldPos.set(0, BOSS3_GREEN_BEAM_ORIGIN_Y, BOSS3_GREEN_BEAM_START_OFFSET);
     beamRef.current.localToWorld(_lightWorldPos);
@@ -262,41 +412,42 @@ export default function Boss3GreenBeam({
     beamLight.current?.setIntensity(15 * visIntensity * fp);
   });
 
-  const activeTime = isActive ? Math.min((Date.now() - startTime) / 1000, BEAM_HOLD_SEC) : 0;
-  const beamColors = getGreenBeamColors(activeTime);
-
   return (
     <group ref={beamRef} rotation={[BOSS3_GREEN_BEAM_PITCH_RAD, 0, 0]}>
       <group position={[0, BOSS3_GREEN_BEAM_ORIGIN_Y, BOSS3_GREEN_BEAM_START_OFFSET]}>
-        <mesh>
-          <sphereGeometry args={[0.45 * intensity, 16, 16]} />
-          <meshStandardMaterial
-            color={beamColors.color}
-            emissive={beamColors.emissive}
-            emissiveIntensity={2.4 * intensity * fadeProgress}
-            transparent
-            opacity={0.66 * fadeProgress}
-          />
-        </mesh>
-
-        <mesh>
-          <sphereGeometry args={[0.65 * intensity, 16, 16]} />
-          <meshStandardMaterial
-            color={beamColors.color}
-            emissive={beamColors.emissive}
-            emissiveIntensity={0.72 * intensity * fadeProgress}
-            transparent
-            opacity={0.64 * fadeProgress}
-          />
-        </mesh>
-
+        <mesh ref={sourceInnerMeshRef} geometry={sourceSphereGeometries.inner} material={sourceSphereMaterials.inner} />
+        <mesh ref={sourceOuterMeshRef} geometry={sourceSphereGeometries.outer} material={sourceSphereMaterials.outer} />
       </group>
 
       <group position={[0, BOSS3_GREEN_BEAM_AXIS_Y, BEAM_AXIS_MID_Z]}>
-        <mesh rotation={[Math.PI / 2, 0, 0]} geometry={beamGeometries.core} material={cylinderMaterials.core} />
-        <mesh rotation={[Math.PI / 2, 0, 0]} geometry={beamGeometries.inner} material={cylinderMaterials.inner} />
-        <mesh rotation={[Math.PI / 2, 0, 0]} geometry={beamGeometries.outer} material={cylinderMaterials.outer} />
         <mesh
+          ref={(el) => {
+            cylinderMeshRefs.current[0] = el;
+          }}
+          rotation={[Math.PI / 2, 0, 0]}
+          geometry={beamGeometries.core}
+          material={cylinderMaterials.core}
+        />
+        <mesh
+          ref={(el) => {
+            cylinderMeshRefs.current[1] = el;
+          }}
+          rotation={[Math.PI / 2, 0, 0]}
+          geometry={beamGeometries.inner}
+          material={cylinderMaterials.inner}
+        />
+        <mesh
+          ref={(el) => {
+            cylinderMeshRefs.current[2] = el;
+          }}
+          rotation={[Math.PI / 2, 0, 0]}
+          geometry={beamGeometries.outer}
+          material={cylinderMaterials.outer}
+        />
+        <mesh
+          ref={(el) => {
+            cylinderMeshRefs.current[3] = el;
+          }}
           rotation={[Math.PI / 2, 0, 0]}
           geometry={beamGeometries.outermost}
           material={cylinderMaterials.outermost}
@@ -305,40 +456,30 @@ export default function Boss3GreenBeam({
         {spiralGeometries.map((geo, i) => (
           <mesh
             key={i}
+            ref={(el) => {
+              spiralMeshRefs.current[i] = el;
+            }}
             rotation={[-Math.PI / 4, 0, (i * Math.PI) / -1.5]}
             position={[0, 0, 0]}
             geometry={geo}
-          >
-            <meshStandardMaterial
-              color={beamColors.color}
-              emissive={beamColors.emissive}
-              emissiveIntensity={1 * intensity * fadeProgress}
-              transparent
-              opacity={0.32 * fadeProgress}
-            />
-          </mesh>
+            material={spiralMaterial}
+            visible={false}
+          />
         ))}
 
-        {[...Array(shardCount)].map((_, i) => {
-          const L = shardLayouts[i];
-          return (
-            <mesh
-              key={`gshard-${i}`}
-              geometry={shardGeometry}
-              position={[L.x * intensity, L.y * intensity, L.z]}
-              rotation={[L.rx, L.ry, L.rz]}
-            >
-              <meshStandardMaterial
-                color={beamColors.color}
-                emissive={beamColors.emissive}
-                emissiveIntensity={2 * intensity * fadeProgress}
-                transparent
-                opacity={0.74 * fadeProgress}
-              />
-            </mesh>
-          );
-        })}
-
+        {shardLayouts.map((L, i) => (
+          <mesh
+            key={`gshard-${i}`}
+            ref={(el) => {
+              shardMeshRefs.current[i] = el;
+            }}
+            geometry={shardGeometry}
+            position={[L.x, L.y, L.z]}
+            rotation={[L.rx, L.ry, L.rz]}
+            material={shardMaterial}
+            visible={false}
+          />
+        ))}
       </group>
     </group>
   );

@@ -14,6 +14,12 @@ import {
 } from 'three';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
+const _particleBase = new Vector3();
+const _twistOffset = new Vector3();
+const _rightScaled = new Vector3();
+const _upScaled = new Vector3();
+const _yAxis = new Vector3(0, 1, 0);
+
 /** Enemy Death Grasp travel VFX (server hit/dodge is authoritative). */
 interface KnightDeathGraspProjectileProps {
   startPosition: Vector3;
@@ -196,17 +202,16 @@ export default function KnightDeathGraspProjectile({
       mesh.visible = isVisible;
       if (!isVisible) return;
 
-      const base = startPosition.clone().lerp(endFixedRef.current, particle.progress);
+      _particleBase.lerpVectors(startPosition, endFixedRef.current, particle.progress);
       const spiralAngle = particle.progress * Math.PI * 2 * 3.5 + particle.phaseOffset + elapsed * 0.014;
       const radius = 0.24 * (1 - particle.progress * 0.35) * (1 - returnProgress * 0.2);
       const collapse = returnProgress * Math.max(0, 1 - particle.progress) * 0.35;
-      const twistOffset = right
-        .clone()
-        .multiplyScalar(Math.cos(spiralAngle) * radius)
-        .add(up.clone().multiplyScalar(Math.sin(spiralAngle) * radius));
+      _rightScaled.copy(right).multiplyScalar(Math.cos(spiralAngle) * radius);
+      _upScaled.copy(up).multiplyScalar(Math.sin(spiralAngle) * radius);
+      _twistOffset.copy(_rightScaled).add(_upScaled);
 
-      base.add(twistOffset).lerp(startPosition, collapse);
-      mesh.position.copy(base);
+      _particleBase.add(_twistOffset).lerp(startPosition, collapse);
+      mesh.position.copy(_particleBase);
 
       const pulse = 0.82 + Math.sin(elapsed * 0.018 + particle.progress * 20 + particle.streamIndex) * 0.18;
       const scale = particle.baseScale * pulse * (1 - returnProgress * 0.2);
@@ -242,7 +247,7 @@ export default function KnightDeathGraspProjectile({
         chainRef.current.scale.set(1, chainLength, 1);
         const chainDirection = toStart.normalize();
         chainRef.current.quaternion.copy(
-          tempQuaternionRef.current.setFromUnitVectors(new Vector3(0, 1, 0), chainDirection),
+          tempQuaternionRef.current.setFromUnitVectors(_yAxis, chainDirection),
         );
       }
     }

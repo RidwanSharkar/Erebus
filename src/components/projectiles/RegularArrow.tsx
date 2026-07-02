@@ -71,6 +71,9 @@ function resolveBurstArrowColors(theme: TempestBurstTheme | undefined): {
   }
 }
 
+const _lookAtTarget = new Vector3();
+const _dirNorm = new Vector3();
+
 export default function RegularArrow({
   position,
   direction,
@@ -124,8 +127,8 @@ export default function RegularArrow({
     arrowRef.current.position.copy(position);
     
     // Orient arrow to face movement direction
-    const lookAtTarget = position.clone().add(direction.clone().normalize());
-    arrowRef.current.lookAt(lookAtTarget);
+    _lookAtTarget.copy(position).add(_dirNorm.copy(direction).normalize());
+    arrowRef.current.lookAt(_lookAtTarget);
   });
 
   return (

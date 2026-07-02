@@ -202,6 +202,7 @@ import {
   shouldApplyRelentlessTalent,
   evaluateVorpalGustBeamHit,
   isVorpalGustTipHit,
+  VORPAL_GUST_BEAM_LENGTH,
   BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB,
   BACKSTAB_VORPAL_TIP_DAMAGE_BACKSTAB_PVP,
   BACKSTAB_VORPAL_TIP_DAMAGE_FRONT,
@@ -299,6 +300,24 @@ export class ControlSystem extends System {
   private freeLookCameraRight = new Vector3();
   private orbitBasisForward = new Vector3();
   private orbitBasisRight = new Vector3();
+  private movementWorldDirection = new Vector3();
+  private readonly movementZeroDirection = new Vector3(0, 0, 0);
+  private meleeAttackDirection = new Vector3();
+  private meleeQueryToEnemy = new Vector3();
+  private meleeQueryToEnemyFlat = new Vector3();
+  private backstabPlayerDirection = new Vector3();
+  private backstabDirectionToTarget = new Vector3();
+
+  private static readonly DASH_DIR_FORWARD = new Vector3(0, 0, -1);
+  private static readonly DASH_DIR_BACK = new Vector3(0, 0, 1);
+  private static readonly DASH_DIR_LEFT = new Vector3(-1, 0, 0);
+  private static readonly DASH_DIR_RIGHT = new Vector3(1, 0, 0);
+  private static readonly DASH_DIRECTIONS: ReadonlyArray<{ key: RoomBoomDashKey; direction: Vector3 }> = [
+    { key: 'w', direction: ControlSystem.DASH_DIR_FORWARD },
+    { key: 's', direction: ControlSystem.DASH_DIR_BACK },
+    { key: 'a', direction: ControlSystem.DASH_DIR_LEFT },
+    { key: 'd', direction: ControlSystem.DASH_DIR_RIGHT },
+  ];
 
   /** Max horizontal distance from origin for dash/charge (matches PhysicsSystem map boundary). */
   private playableRadius = MAIN_MAP_RADIUS;
@@ -611,6 +630,8 @@ export class ControlSystem extends System {
   private runebladeBlizzardEndMs = 0;
   /** Single teardown timer for talent-spawned deflect shields (max of end times). */
   private talentBarrierEndTimeout: ReturnType<typeof setTimeout> | null = null;
+  /** Tracked ability/setTimeout handles — cleared in dispose(). */
+  private scheduledAbilityTimeouts = new Set<ReturnType<typeof setTimeout>>();
   
   // Skyfall ability state (Sabres)
   private isSkyfalling = false;
@@ -1106,26 +1127,28 @@ export class ControlSystem extends System {
       const { cameraForward, cameraRight } = this.getMovementBasisForInput(freeLookActive);
 
       // Transform input direction to world space
-      const worldDirection = new Vector3();
-      worldDirection.addScaledVector(cameraRight, inputDirection.x);
-      worldDirection.addScaledVector(cameraForward, -inputDirection.z);
-      worldDirection.normalize();
+      this.movementWorldDirection.set(0, 0, 0);
+      this.movementWorldDirection.addScaledVector(cameraRight, inputDirection.x);
+      this.movementWorldDirection.addScaledVector(cameraForward, -inputDirection.z);
+      this.movementWorldDirection.normalize();
 
       // Walking backwards or backward-diagonal (A+S / D+S, angle > 112.5° from camera forward) is 50% speed.
-      const fwdDot    = cameraForward.dot(worldDirection);
-      const fwdCrossY = cameraForward.x * worldDirection.z - cameraForward.z * worldDirection.x;
+      const fwdDot = cameraForward.dot(this.movementWorldDirection);
+      const fwdCrossY =
+        cameraForward.x * this.movementWorldDirection.z -
+        cameraForward.z * this.movementWorldDirection.x;
       const moveAngle = Math.atan2(fwdCrossY, fwdDot);
       const backwardsMultiplier = Math.abs(moveAngle) > (5 * Math.PI) / 8 ? 0.5 : 1.0;
 
       if (freeLookActive) {
-        movement.setMoveDirection(worldDirection, backwardsMultiplier);
+        movement.setMoveDirection(this.movementWorldDirection, backwardsMultiplier);
       } else {
         this.clearFreeLookMoveLock();
-        movement.setMoveDirection(worldDirection, backwardsMultiplier);
+        movement.setMoveDirection(this.movementWorldDirection, backwardsMultiplier);
       }
     } else {
       this.clearFreeLookMoveLock();
-      movement.setMoveDirection(new Vector3(0, 0, 0), 0);
+      movement.setMoveDirection(this.movementZeroDirection, 0);
     }
 
     // Handle jumping
@@ -2763,12 +2786,12 @@ export class ControlSystem extends System {
     this.createBurstProjectile(position, direction);
 
     // Fire second projectile after 0.1 seconds
-    setTimeout(() => {
+    this.scheduleAbilityTimeout(() => {
       this.createBurstProjectile(position, direction);
     }, 100);
 
     // Fire third projectile after 0.2 seconds
-    setTimeout(() => {
+    this.scheduleAbilityTimeout(() => {
       this.createBurstProjectile(position, direction);
     }, 200);
 
@@ -3760,7 +3783,7 @@ export class ControlSystem extends System {
     this.activeDebuffEffects.set(entityId, existingEffects);
 
     // Schedule cleanup of expired effect
-    setTimeout(() => {
+    this.scheduleAbilityTimeout(() => {
       const currentEffects = this.activeDebuffEffects.get(entityId) || [];
       const filteredEffects = currentEffects.filter(e => e !== effect);
       if (filteredEffects.length === 0) {
@@ -4234,7 +4257,7 @@ export class ControlSystem extends System {
     this.lastSmiteMaxFollowUpDelaySec = maxStrikeDelaySec;
 
     // Smite VFX ~1s after each strike's gate; TRINITY delays follow-up gates (see `onSmiteComplete`)
-    setTimeout(() => {
+    this.scheduleAbilityTimeout(() => {
       this.isSmiting = false;
       this.lastSmiteMaxFollowUpDelaySec = 0;
     }, 1000 + maxStrikeDelaySec * 1000 + 200);
@@ -4292,7 +4315,7 @@ export class ControlSystem extends System {
     }
 
     // Reset colossus striking state after animation duration (same as the ColossusStrike component)
-    setTimeout(() => {
+    this.scheduleAbilityTimeout(() => {
       this.isColossusStriking = false;
     }, 1200); // 1.2 seconds matches the updated animation duration
   }
@@ -4373,7 +4396,7 @@ export class ControlSystem extends System {
     this.createWindShearProjectile(shearPosition, direction);
 
     // Reset the wind shearing state after a short delay
-    setTimeout(() => {
+    this.scheduleAbilityTimeout(() => {
       this.isWindShearing = false;
     }, 200); // 200ms delay to prevent spamming
   }
@@ -4525,7 +4548,7 @@ export class ControlSystem extends System {
     }
 
     // Reset death grasping state after animation duration
-    setTimeout(() => {
+    this.scheduleAbilityTimeout(() => {
       this.isDeathGrasping = false;
     }, 1200); // 1.2 seconds matches the animation duration
   }
@@ -4608,7 +4631,7 @@ export class ControlSystem extends System {
     }
 
     // Reset wraith striking state after animation duration (same as 2nd swing)
-    setTimeout(() => {
+    this.scheduleAbilityTimeout(() => {
       this.isWraithStriking = false;
     }, 750); // 0.75 seconds matches the 2nd swing animation duration
   }
@@ -4748,7 +4771,7 @@ export class ControlSystem extends System {
     const wraithGuard = shouldApplyWraithGuardTalent(this.talentLoadout, this.abilityLoadout);
     const weapon = this.getCurrentWeapon();
 
-    setTimeout(() => {
+    this.scheduleAbilityTimeout(() => {
       const cs = world.getSystem(CombatSystem);
       if (!cs || !playerEntity) return;
 
@@ -5626,7 +5649,7 @@ export class ControlSystem extends System {
 
     // Fire the right-hand slash immediately, then the left-hand slash 0.1s later.
     this.fireSabresWindShearProjectile(playerTransform, -diagonalRoll);
-    setTimeout(() => {
+    this.scheduleAbilityTimeout(() => {
       this.fireSabresWindShearProjectile(playerTransform, diagonalRoll);
     }, 100);
   }
@@ -5790,7 +5813,7 @@ export class ControlSystem extends System {
         this.tryPsionicBladesProc(target, attackDirection, 'left');
 
         // Right sabre hit (with small delay)
-        setTimeout(() => {
+        this.scheduleAbilityTimeout(() => {
           if (!targetHealth.isDead) {
             combatSystem.queueDamage(
               target,
@@ -6365,7 +6388,7 @@ export class ControlSystem extends System {
     // Don't broadcast stealth state immediately - wait for invisibility activation
     
     // Schedule invisibility activation after delay
-    setTimeout(() => {
+    this.scheduleAbilityTimeout(() => {
       if (this.isStealthing) { // Only activate if stealth wasn't cancelled
         this.isInvisible = true;
         
@@ -6377,7 +6400,7 @@ export class ControlSystem extends System {
     // Schedule invisibility deactivation with proper cleanup
     const totalStealthDuration = this.stealthDelayDuration + this.stealthInvisibilityDuration;
 
-    setTimeout(() => {
+    this.scheduleAbilityTimeout(() => {
       if (this.isStealthing) {
         // Create local reappearance mist effect
         if (this.onCreateSabreMistEffectCallback && this.playerEntity) {
@@ -6588,10 +6611,7 @@ export class ControlSystem extends System {
   }
 
   private applyCorruptedAuraSlow(playerPosition: Vector3): void {
-    const collisionSystem = this.world.getSystem(CollisionSystem);
-    const candidates = collisionSystem
-      ? collisionSystem.queryCollidersRadius(playerPosition, this.corruptedAuraRange)
-      : this.world.getAllEntities();
+    const candidates = this.queryNearbyEntities(playerPosition, this.corruptedAuraRange);
 
     const inRangeIds = new Set<number>();
 
@@ -6622,6 +6642,14 @@ export class ControlSystem extends System {
       }
       this.corruptedAuraSlowedEntities.delete(entityId);
     }
+  }
+
+  private queryNearbyEntities(center: Vector3, radius: number): Entity[] {
+    const collisionSystem = this.world.getSystem(CollisionSystem);
+    if (collisionSystem) {
+      return collisionSystem.queryCollidersRadius(center, radius);
+    }
+    return this.world.getAllEntities();
   }
 
   // Callback for Corrupted Aura toggle
@@ -7021,7 +7049,8 @@ export class ControlSystem extends System {
     // Capture current rotations of all nearby entities BEFORE the backstab damage check
     // This prevents the boss from turning to face us during the backstab cast
     // Use visual rotation (from mesh) if available, as it lags behind server rotation
-    const allEntities = this.world.getAllEntities();
+    const backstabRange = 4.75;
+    const allEntities = this.queryNearbyEntities(playerTransform.position, backstabRange);
     this.backstabTargetRotations.clear();
     
     for (const entity of allEntities) {
@@ -7053,25 +7082,29 @@ export class ControlSystem extends System {
   }
 
   private performBackstabDamage(playerTransform: Transform): void {
-    const allEntities = this.world.getAllEntities();
+    const backstabRange = 4.75;
+    const vorpalGust = shouldApplyVorpalGustTalent(this.talentLoadout);
+    const queryRadius = vorpalGust ? VORPAL_GUST_BEAM_LENGTH + 1.5 : backstabRange;
+    const candidates = this.queryNearbyEntities(playerTransform.position, queryRadius);
     const playerPosition = playerTransform.position;
 
-    const playerDirection = new Vector3();
-    this.camera.getWorldDirection(playerDirection);
-    playerDirection.normalize();
+    this.camera.getWorldDirection(this.backstabPlayerDirection);
+    this.backstabPlayerDirection.normalize();
 
-    const vorpalGust = shouldApplyVorpalGustTalent(this.talentLoadout);
-    const backstabRange = 4.75;
     const hitState = { hitCount: 0 };
 
     if (vorpalGust) {
       const beamHits: { entity: Entity; t: number }[] = [];
-      for (const entity of allEntities) {
+      for (const entity of candidates) {
         if (entity === this.playerEntity) continue;
         const targetHealth = entity.getComponent(Health);
         const targetTransform = entity.getComponent(Transform);
         if (!targetHealth || !targetTransform || targetHealth.isDead) continue;
-        const beam = evaluateVorpalGustBeamHit(playerPosition, playerDirection, targetTransform.position);
+        const beam = evaluateVorpalGustBeamHit(
+          playerPosition,
+          this.backstabPlayerDirection,
+          targetTransform.position,
+        );
         if (beam.ok) beamHits.push({ entity, t: beam.t });
       }
       beamHits.sort((a, b) => a.t - b.t);
@@ -7080,7 +7113,7 @@ export class ControlSystem extends System {
           entity,
           playerTransform,
           playerPosition,
-          playerDirection,
+          this.backstabPlayerDirection,
           hitState,
           t,
         );
@@ -7088,7 +7121,7 @@ export class ControlSystem extends System {
       return;
     }
 
-    for (const entity of allEntities) {
+    for (const entity of candidates) {
       if (entity === this.playerEntity) continue;
 
       const targetHealth = entity.getComponent(Health);
@@ -7099,16 +7132,22 @@ export class ControlSystem extends System {
       const distance = playerPosition.distanceTo(targetTransform.position);
       if (distance > backstabRange) continue;
 
-      const directionToTarget = new Vector3()
+      this.backstabDirectionToTarget
         .subVectors(targetTransform.position, playerPosition)
         .normalize();
 
-      const dotProduct = playerDirection.dot(directionToTarget);
+      const dotProduct = this.backstabPlayerDirection.dot(this.backstabDirectionToTarget);
       const angleThreshold = Math.cos(Math.PI / 3); // 60 degree cone
 
       if (dotProduct < angleThreshold) continue;
 
-      this.applyBackstabDamageToTarget(entity, playerTransform, playerPosition, playerDirection, hitState);
+      this.applyBackstabDamageToTarget(
+        entity,
+        playerTransform,
+        playerPosition,
+        this.backstabPlayerDirection,
+        hitState,
+      );
     }
   }
 
@@ -7309,18 +7348,17 @@ export class ControlSystem extends System {
    * @param dealDamage - When false, only counts enemies in the melee cone (for swing/miss audio). Weapon meshes apply real damage.
    */
   private performMeleeDamage(playerTransform: Transform, dealDamage: boolean = true): number {
-    // Get all entities in the world to check for enemies
-    const allEntities = this.world.getAllEntities();
     const playerPosition = playerTransform.position;
+    const candidates = this.queryNearbyEntities(playerPosition, MELEE_ARC_RANGE);
 
-    const direction = new Vector3();
-    this.camera.getWorldDirection(direction);
-    direction.y = 0;
-    if (direction.lengthSq() < 1e-8) {
-      direction.set(0, 0, 1);
+    this.camera.getWorldDirection(this.meleeAttackDirection);
+    this.meleeAttackDirection.y = 0;
+    if (this.meleeAttackDirection.lengthSq() < 1e-8) {
+      this.meleeAttackDirection.set(0, 0, 1);
     } else {
-      direction.normalize();
+      this.meleeAttackDirection.normalize();
     }
+    const direction = this.meleeAttackDirection;
 
     const meleeRange = MELEE_ARC_RANGE;
     
@@ -7347,21 +7385,21 @@ export class ControlSystem extends System {
     // Get combat system to apply damage
     const combatSystem = this.world.getSystem(CombatSystem);
     let enemiesHit = 0;
-    
-    allEntities.forEach(entity => {
+
+    for (const entity of candidates) {
       // Check if entity has enemy component and health
       const enemyTransform = entity.getComponent(Transform);
       const enemyHealth = entity.getComponent(Health);
-      if (!enemyTransform || !enemyHealth || entity.id === this.playerEntity?.id) return;
+      if (!enemyTransform || !enemyHealth || entity.id === this.playerEntity?.id) continue;
 
       const enemyPosition = enemyTransform.position;
-      const toEnemy = enemyPosition.clone().sub(playerPosition);
-      const distance = toEnemy.length();
+      this.meleeQueryToEnemy.subVectors(enemyPosition, playerPosition);
+      const distance = this.meleeQueryToEnemy.length();
 
       if (distance <= meleeRange) {
-        const toEnemyFlat = toEnemy.clone();
-        toEnemyFlat.y = 0;
-        if (toEnemyFlat.lengthSq() < 1e-8) {
+        this.meleeQueryToEnemyFlat.copy(this.meleeQueryToEnemy);
+        this.meleeQueryToEnemyFlat.y = 0;
+        if (this.meleeQueryToEnemyFlat.lengthSq() < 1e-8) {
           enemiesHit++;
           if (dealDamage && combatSystem && this.playerEntity) {
             const damageResult = calculateDamage(baseDamage, this.currentWeapon);
@@ -7369,8 +7407,8 @@ export class ControlSystem extends System {
             combatSystem.queueDamage(entity, actualDamage, this.playerEntity, 'melee', this.playerEntity?.userData?.playerId, damageResult.isCritical);
           }
         } else {
-          toEnemyFlat.normalize();
-          if (toEnemyFlat.dot(direction) > MELEE_ARC_MIN_DOT) {
+          this.meleeQueryToEnemyFlat.normalize();
+          if (this.meleeQueryToEnemyFlat.dot(direction) > MELEE_ARC_MIN_DOT) {
             enemiesHit++;
             if (dealDamage && combatSystem && this.playerEntity) {
               const damageResult = calculateDamage(baseDamage, this.currentWeapon);
@@ -7380,7 +7418,7 @@ export class ControlSystem extends System {
           }
         }
       }
-    });
+    }
 
     return enemiesHit;
   }
@@ -7407,12 +7445,7 @@ export class ControlSystem extends System {
     }
 
     // Check for double-tap on movement keys
-    const dashDirections: Array<{ key: RoomBoomDashKey; direction: Vector3 }> = [
-      { key: 'w', direction: new Vector3(0, 0, -1) }, // Forward
-      { key: 's', direction: new Vector3(0, 0, 1) },  // Backward
-      { key: 'a', direction: new Vector3(-1, 0, 0) }, // Left
-      { key: 'd', direction: new Vector3(1, 0, 0) }   // Right
-    ];
+    const dashDirections = ControlSystem.DASH_DIRECTIONS;
 
     for (const { key, direction } of dashDirections) {
       if (this.inputManager.checkDoubleTap(key)) {
@@ -7837,10 +7870,11 @@ export class ControlSystem extends System {
         return;
       }
       
-      // Get all entities in the world to check for damage
-      const allEntities = this.world.getAllEntities();
+      // Get nearby entities for charge collision / damage
       const playerPosition = playerTransform.position;
-      
+      const chargeQueryRadius = chargeRadius + 2.5;
+      const candidates = this.queryNearbyEntities(playerPosition, chargeQueryRadius);
+
       let hitSomething = false;
       
       // Debug: Log all entities in the world during charge
@@ -7882,7 +7916,7 @@ export class ControlSystem extends System {
         }
       });
       
-      allEntities.forEach(entity => {
+      candidates.forEach(entity => {
         // Skip self
         if (entity.id === this.playerEntity?.id) return;
         
@@ -8022,7 +8056,7 @@ export class ControlSystem extends System {
     this.setupDeflectBarrier(playerTransform, this.deflectDuration);
     
     // Auto-complete deflect after duration
-    setTimeout(() => {
+    this.scheduleAbilityTimeout(() => {
       this.onDeflectComplete();
     }, this.deflectDuration * 1000);
   }
@@ -8298,7 +8332,7 @@ export class ControlSystem extends System {
 
     for (let index = 0; index < angles.length; index++) {
       const angle = angles[index]!;
-      setTimeout(() => {
+      this.scheduleAbilityTimeout(() => {
         if (volleyGeneration !== this.barrageVolleyGeneration) return;
         if (!this.playerEntity) return;
 
@@ -8398,7 +8432,7 @@ export class ControlSystem extends System {
 
     for (let index = 0; index < fanAnglesRad.length; index++) {
       const angle = fanAnglesRad[index]!;
-      setTimeout(() => {
+      this.scheduleAbilityTimeout(() => {
         if (volleyGeneration !== this.fanOfKnivesVolleyGeneration) return;
         if (!this.playerEntity) return;
 
@@ -8551,7 +8585,10 @@ export class ControlSystem extends System {
       maxEnd = Math.max(maxEnd, this.sabresPurpleGuardBarrierEndMs);
     }
     if (maxEnd > now) {
-      this.talentBarrierEndTimeout = setTimeout(() => this.onTalentBarrierTeardown(), maxEnd - now);
+      this.talentBarrierEndTimeout = this.scheduleAbilityTimeout(
+        () => this.onTalentBarrierTeardown(),
+        maxEnd - now,
+      );
       return;
     }
     this.finishTalentBarrierTeardown();
@@ -8583,7 +8620,10 @@ export class ControlSystem extends System {
       this.finishTalentBarrierTeardown();
       return;
     }
-    this.talentBarrierEndTimeout = setTimeout(() => this.onTalentBarrierTeardown(), maxEnd - now);
+    this.talentBarrierEndTimeout = this.scheduleAbilityTimeout(
+      () => this.onTalentBarrierTeardown(),
+      maxEnd - now,
+    );
   }
 
   private applyWraithGuardEffect(playerTransform: Transform): void {
@@ -9070,5 +9110,31 @@ export class ControlSystem extends System {
     }
 
     return cooldowns;
+  }
+
+  /** Register a timeout so dispose() can clear orphaned ability timers. */
+  private scheduleAbilityTimeout(callback: () => void, delayMs: number): ReturnType<typeof setTimeout> {
+    const id = setTimeout(() => {
+      this.scheduledAbilityTimeouts.delete(id);
+      callback();
+    }, delayMs);
+    this.scheduledAbilityTimeouts.add(id);
+    return id;
+  }
+
+  private clearScheduledAbilityTimeouts(): void {
+    for (const id of Array.from(this.scheduledAbilityTimeouts)) {
+      clearTimeout(id);
+    }
+    this.scheduledAbilityTimeouts.clear();
+    this.talentBarrierEndTimeout = null;
+  }
+
+  public dispose(): void {
+    this.clearScheduledAbilityTimeouts();
+  }
+
+  public onDisable(): void {
+    this.dispose();
   }
 }

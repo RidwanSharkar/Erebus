@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react';
 
 const TOTAL_MS = 7000;
-const ENTER_MS = 250;
 const EXIT_MS = 500;
 const SPOTLIGHT_MS = 6000;
 
@@ -178,8 +177,6 @@ export default function ControlsTutorialOverlay({
 
   if (!mounted) return null;
 
-  const enterEarly = (105 / TOTAL_MS) * 100;
-  const enterEnd = (ENTER_MS / TOTAL_MS) * 100;
   const exitStart = ((TOTAL_MS - EXIT_MS) / TOTAL_MS) * 100;
 
   return (
@@ -190,13 +187,13 @@ export default function ControlsTutorialOverlay({
     >
       <div
         key={animationKey}
-        className={`controls-tutorial-panel relative backdrop-blur-lg px-6 py-5 sm:px-8 sm:py-6 max-w-[92vw] w-[min(520px,92vw)] overflow-hidden ${autoDismiss ? 'controls-tutorial-panel--auto' : 'controls-tutorial-panel--persistent'}`}
+        className={`controls-tutorial-panel relative backdrop-blur-lg px-5 py-4 sm:px-6 sm:py-5 max-w-[88vw] w-[min(470px,88vw)] overflow-hidden ${autoDismiss ? 'controls-tutorial-panel--auto' : ''}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label="Controls tutorial"
         style={{
           background:
-            'linear-gradient(180deg, rgba(12,12,28,0.92) 0%, rgba(6,6,18,0.96) 100%)',
+            'linear-gradient(180deg, rgba(12,12,28,0.97) 0%, rgba(6,6,18,0.99) 100%)',
           borderTop: '1px solid rgba(255,255,255,0.12)',
           borderLeft: '1px solid rgba(255,255,255,0.07)',
           borderRight: '1px solid rgba(255,255,255,0.07)',
@@ -219,11 +216,11 @@ export default function ControlsTutorialOverlay({
           ×
         </button>
 
-        <h2 className="controls-title text-center font-mono font-black uppercase text-sm sm:text-base text-sky-200/90 mb-5">
+        <h2 className="controls-title text-center font-mono font-black uppercase text-sm sm:text-base text-sky-200/90 mb-4">
           Controls
         </h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
           <ControlSection id="move" accent={SECTION_ACCENTS.move}>
             <SectionLabel accent={SECTION_ACCENTS.move}>Move</SectionLabel>
             <div className="wasd-grid flex flex-col items-center gap-1">
@@ -269,7 +266,7 @@ export default function ControlsTutorialOverlay({
         </div>
 
         <ControlSection id="jump" accent={SECTION_ACCENTS.jump}>
-          <div className="mt-5 pt-4 border-t border-white/5 flex flex-col items-center w-full">
+          <div className="mt-4 pt-3 border-t border-white/5 flex flex-col items-center w-full">
             <SectionLabel accent={SECTION_ACCENTS.jump}>Jump</SectionLabel>
             <div className="relative">
               <KeyCap label="SPACE" wide className="space-key" />
@@ -293,20 +290,8 @@ export default function ControlsTutorialOverlay({
           animation: controlsPanelAuto ${TOTAL_MS}ms ease-out forwards;
         }
 
-        .controls-tutorial-panel--persistent {
-          animation: controlsPanelPersistent ${ENTER_MS}ms ease-out forwards;
-        }
-
         @keyframes controlsPanelAuto {
           0% {
-            opacity: 0;
-            transform: scale(0.94) translateY(12px);
-          }
-          ${enterEarly}% {
-            opacity: 0.95;
-            transform: scale(0.98) translateY(4px);
-          }
-          ${enterEnd}% {
             opacity: 1;
             transform: scale(1) translateY(0);
           }
@@ -317,17 +302,6 @@ export default function ControlsTutorialOverlay({
           100% {
             opacity: 0;
             transform: scale(0.96) translateY(-8px);
-          }
-        }
-
-        @keyframes controlsPanelPersistent {
-          0% {
-            opacity: 0;
-            transform: scale(0.94) translateY(12px);
-          }
-          100% {
-            opacity: 1;
-            transform: scale(1) translateY(0);
           }
         }
 
@@ -366,54 +340,19 @@ export default function ControlsTutorialOverlay({
         }
 
         .controls-title {
-          animation: titleEnter 450ms ease-out forwards;
-          letter-spacing: 0.42em;
+          letter-spacing: 0.3em;
           text-shadow: 0 0 16px rgba(100, 160, 255, 0.35);
-        }
-
-        @keyframes titleEnter {
-          0% {
-            opacity: 0;
-            transform: translateY(-6px);
-            letter-spacing: 0.55em;
-          }
-          100% {
-            opacity: 1;
-            transform: translateY(0);
-            letter-spacing: 0.3em;
-          }
-        }
-
-        .control-section {
-          animation: sectionStagger 320ms ease-out backwards;
-        }
-
-        .control-section--move { animation-delay: 40ms; }
-        .control-section--dash { animation-delay: 80ms; }
-        .control-section--attack { animation-delay: 120ms; }
-        .control-section--camera { animation-delay: 160ms; }
-        .control-section--jump { animation-delay: 200ms; }
-
-        @keyframes sectionStagger {
-          0% {
-            opacity: 0;
-            transform: translateY(14px);
-          }
-          100% {
-            opacity: 1;
-            transform: translateY(0);
-          }
         }
 
         .control-section-inner {
           transition: opacity 0.45s ease, transform 0.45s ease, filter 0.45s ease;
         }
 
-        .control-section--move .control-section-inner { animation: spotlightMove ${SPOTLIGHT_MS}ms ease-in-out ${ENTER_MS}ms infinite; }
-        .control-section--dash .control-section-inner { animation: spotlightDash ${SPOTLIGHT_MS}ms ease-in-out ${ENTER_MS}ms infinite; }
-        .control-section--attack .control-section-inner { animation: spotlightAttack ${SPOTLIGHT_MS}ms ease-in-out ${ENTER_MS}ms infinite; }
-        .control-section--camera .control-section-inner { animation: spotlightCamera ${SPOTLIGHT_MS}ms ease-in-out ${ENTER_MS}ms infinite; }
-        .control-section--jump .control-section-inner { animation: spotlightJump ${SPOTLIGHT_MS}ms ease-in-out ${ENTER_MS}ms infinite; }
+        .control-section--move .control-section-inner { animation: spotlightMove ${SPOTLIGHT_MS}ms ease-in-out 0ms infinite; }
+        .control-section--dash .control-section-inner { animation: spotlightDash ${SPOTLIGHT_MS}ms ease-in-out 0ms infinite; }
+        .control-section--attack .control-section-inner { animation: spotlightAttack ${SPOTLIGHT_MS}ms ease-in-out 0ms infinite; }
+        .control-section--camera .control-section-inner { animation: spotlightCamera ${SPOTLIGHT_MS}ms ease-in-out 0ms infinite; }
+        .control-section--jump .control-section-inner { animation: spotlightJump ${SPOTLIGHT_MS}ms ease-in-out 0ms infinite; }
 
         @keyframes spotlightMove {
           0%, 18% { opacity: 1; transform: scale(1.03); filter: drop-shadow(0 0 8px rgba(100, 180, 255, 0.35)); }
@@ -637,11 +576,8 @@ export default function ControlsTutorialOverlay({
 
         @media (prefers-reduced-motion: reduce) {
           .controls-tutorial-panel--auto,
-          .controls-tutorial-panel--persistent,
           .panel-border-glow,
           .panel-scan-line,
-          .controls-title,
-          .control-section,
           .control-section-inner,
           .wasd-key,
           .dash-key,
@@ -658,16 +594,10 @@ export default function ControlsTutorialOverlay({
             animation: none !important;
           }
 
-          .control-section,
           .control-section-inner {
             opacity: 1 !important;
             transform: none !important;
             filter: none !important;
-          }
-
-          .controls-title {
-            letter-spacing: 0.3em;
-            opacity: 1;
           }
 
           .dismiss-progress {

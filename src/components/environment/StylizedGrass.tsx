@@ -276,27 +276,57 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
     return geo;
   }, []);
 
-  const material = useMemo(() => {
-    return new ShaderMaterial({
-      uniforms: {
-        uTime: { value: 0 },
-        uBaseColor: { value: new Color(resolvedBaseColor) },
-        uTipColor: { value: new Color(resolvedTipColor) },
-        uWindStrength: { value: windStrength },
-        uGroundLightColor: { value: new Color(resolvedGroundLightColor) },
-        uGroundLightIntensity: { value: resolvedGroundLightIntensity },
-        uGrassFadeInner: { value: grassFadeInner },
-        uGrassFadeOuter: { value: grassFadeOuter },
-        uGrassHalfX: { value: halfX },
-        uGrassHalfZ: { value: halfZ },
-        uUseSquareEdgeFade: { value: useSquareEdge ? 1.0 : 0.0 },
-        uBrightnessScale: { value: effectiveTheme === 'blue' ? SNOW_BRIGHTNESS_SCALE : 1.0 },
-      },
-      vertexShader: GRASS_VERTEX,
-      fragmentShader: GRASS_FRAGMENT,
-      side: DoubleSide,
-    });
-  }, [resolvedBaseColor, resolvedTipColor, windStrength, resolvedGroundLightColor, resolvedGroundLightIntensity, grassFadeInner, grassFadeOuter, halfX, halfZ, useSquareEdge, effectiveTheme]);
+  const material = useMemo(
+    () =>
+      new ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uBaseColor: { value: new Color() },
+          uTipColor: { value: new Color() },
+          uWindStrength: { value: 0.25 },
+          uGroundLightColor: { value: new Color() },
+          uGroundLightIntensity: { value: 0.45 },
+          uGrassFadeInner: { value: 0 },
+          uGrassFadeOuter: { value: 0 },
+          uGrassHalfX: { value: halfX },
+          uGrassHalfZ: { value: halfZ },
+          uUseSquareEdgeFade: { value: 0.0 },
+          uBrightnessScale: { value: 1.0 },
+        },
+        vertexShader: GRASS_VERTEX,
+        fragmentShader: GRASS_FRAGMENT,
+        side: DoubleSide,
+      }),
+    [],
+  );
+
+  useLayoutEffect(() => {
+    material.uniforms.uBaseColor.value.set(resolvedBaseColor);
+    material.uniforms.uTipColor.value.set(resolvedTipColor);
+    material.uniforms.uWindStrength.value = windStrength;
+    material.uniforms.uGroundLightColor.value.set(resolvedGroundLightColor);
+    material.uniforms.uGroundLightIntensity.value = resolvedGroundLightIntensity;
+    material.uniforms.uGrassFadeInner.value = grassFadeInner;
+    material.uniforms.uGrassFadeOuter.value = grassFadeOuter;
+    material.uniforms.uGrassHalfX.value = halfX;
+    material.uniforms.uGrassHalfZ.value = halfZ;
+    material.uniforms.uUseSquareEdgeFade.value = useSquareEdge ? 1.0 : 0.0;
+    material.uniforms.uBrightnessScale.value =
+      effectiveTheme === 'blue' ? SNOW_BRIGHTNESS_SCALE : 1.0;
+  }, [
+    material,
+    resolvedBaseColor,
+    resolvedTipColor,
+    windStrength,
+    resolvedGroundLightColor,
+    resolvedGroundLightIntensity,
+    grassFadeInner,
+    grassFadeOuter,
+    halfX,
+    halfZ,
+    useSquareEdge,
+    effectiveTheme,
+  ]);
 
   const groundGeo = useMemo(
     () =>
@@ -307,10 +337,11 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
         : new CircleGeometry(radius, 48),
     [halfX, halfZ, radius, useHexField, useSquareEdge],
   );
-  const groundMat = useMemo(
-    () => new MeshBasicMaterial({ color: resolvedGroundColor }),
-    [resolvedGroundColor]
-  );
+  const groundMat = useMemo(() => new MeshBasicMaterial({ color: '#000000' }), []);
+
+  useLayoutEffect(() => {
+    groundMat.color.set(resolvedGroundColor);
+  }, [groundMat, resolvedGroundColor]);
 
   // After InstancedMesh commits (or recreates on count change), fill matrices. useLayoutEffect
   // + rAF fallback avoids an empty instanced draw when the ref is not set in the same tick.
@@ -362,6 +393,11 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
     }
 
     mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+    if (mesh.boundingSphere) {
+      mesh.boundingSphere.center.set(0, 0, 0);
+      mesh.boundingSphere.radius = radius;
+    }
     return true;
   }, [count, radius, halfX, halfZ, bladeHeight, useHexField, useSquareEdge]);
 
@@ -419,10 +455,9 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
       />
 
       <instancedMesh
-        key={`grass-instances-${count}`}
         ref={meshRef}
         args={[bladeGeometry, material, count]}
-        frustumCulled={false}
+        frustumCulled
       />
     </group>
   );

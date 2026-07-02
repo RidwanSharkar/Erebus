@@ -34,8 +34,8 @@ interface CharacterRendererProps {
 
 const LERP_SPEED      = 15;  // snappy but smooth position interpolation
 const WALK_STOP_DELAY = 120; // ms before switching to Idle after movement stops
-const YAW_OFFSET_FACTOR = 2.6;         // fraction of residual angle applied (keeps strafe posture readable)
-const YAW_OFFSET_MAX    = Math.PI / 6; // clamp (~30 deg) so the body never fully turns off-camera
+const YAW_OFFSET_FACTOR = 1.6;         // fraction of residual angle applied (keeps strafe posture readable)
+const YAW_OFFSET_MAX    = Math.PI / 4; // clamp (~30 deg) so the body never fully turns off-camera
 const YAW_OFFSET_LERP   = 10;          // smoothing speed toward target offset
 
 // The controllable player must never wait behind enemy/boss asset staging.

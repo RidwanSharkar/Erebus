@@ -7,7 +7,7 @@ import { Billboard, Text } from '@react-three/drei';
 import WarlockModel from './WarlockModel';
 import WarlockTeleportEffect from './WarlockTeleportEffect';
 import CubeSoulEffect from './CubeSoulEffect';
-import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
@@ -39,7 +39,7 @@ const HIT_REACT_IMPACT_COOLDOWN_MS = 1500; // min time between warlock_impact.gl
 const LERP_SPEED = 12;
 const BLINK_LERP_SPEED = 20;
 
-export default function WarlockRenderer({
+function WarlockRenderer({
   id,
   position,
   rotation,
@@ -51,7 +51,7 @@ export default function WarlockRenderer({
   staggerBuildup = 0,
 }: WarlockRendererProps) {
   const theme = campHpTheme(campType);
-  const { socket, enemyTransformsRef } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
 
   const [isBlinking,  setIsBlinking]  = useState(false);
@@ -59,6 +59,7 @@ export default function WarlockRenderer({
   const [isLaunching, setIsLaunching] = useState(false);
   const isLaunchingRef = useRef(false);
   const [isWalking,   setIsWalking]   = useState(false);
+  const isWalkingRef = useRef(false);
   const [isImpacting, setIsImpacting] = useState(false);
   const [impactPlayKey, setImpactPlayKey] = useState(0);
 
@@ -71,7 +72,19 @@ export default function WarlockRenderer({
   const lastHitImpactAtRef = useRef(0);
   const fadeTimer      = useRef(0);
   const opacity        = useRef(1);
+  const cachedDeathMats = useRef<any[]>([]);
+  const deathCacheBuilt = useRef(false);
   const walkStopTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const trackTimeout = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      pendingTimersRef.current = pendingTimersRef.current.filter((t) => t !== id);
+      fn();
+    }, ms);
+    pendingTimersRef.current.push(id);
+    return id;
+  }, []);
 
   // Snap to server position before the first frame so the warlock is never rendered at the world origin
   const setGroupRef = useCallback((group: Group | null) => {
@@ -83,8 +96,44 @@ export default function WarlockRenderer({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    return () => { if (walkStopTimer.current) clearTimeout(walkStopTimer.current); };
+    return () => {
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      pendingTimersRef.current.forEach(clearTimeout);
+      pendingTimersRef.current = [];
+    };
   }, []);
+
+  // Derive walking state from server position deltas (purple warlock only).
+  useEffect(() => {
+    const dist = targetPosition.current.distanceTo(position);
+    const isLaunchLocked = isLaunchingRef.current;
+    if (!isLaunchLocked && !isBlinkingRef.current) {
+      targetPosition.current.copy(position);
+    }
+    if (dist > 2.0 && groupRef.current && !isLaunchLocked && !isBlinkingRef.current) {
+      groupRef.current.position.copy(position);
+    }
+    if (
+      soulType === 'purple' &&
+      dist > 0.01 &&
+      !isLaunchLocked &&
+      !isDying
+    ) {
+      if (!isWalkingRef.current) {
+        isWalkingRef.current = true;
+        setIsWalking(true);
+      }
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      walkStopTimer.current = setTimeout(() => {
+        isWalkingRef.current = false;
+        setIsWalking(false);
+      }, WALK_STOP_DELAY);
+    }
+  }, [position.x, position.y, position.z, soulType]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    targetRotation.current = rotation;
+  }, [rotation]);
 
   const handleImpactFinished = useCallback(() => {
     setIsImpacting(false);
@@ -150,11 +199,11 @@ export default function WarlockRenderer({
 
       // Arrival effect fires roughly halfway through the blink animation
       const arrivalDelay = Math.round(BLINK_ANIMATION_DURATION * 0.45);
-      setTimeout(() => {
+      trackTimeout(() => {
         setBlinkFx(prev => [...prev, { id: `${fxId}-end`, position: newPos, type: 'end' }]);
       }, arrivalDelay);
 
-      setTimeout(() => {
+      trackTimeout(() => {
         setIsBlinking(false);
         isBlinkingRef.current = false;
         // Hard snap after animation completes to ensure the position is exact
@@ -167,7 +216,7 @@ export default function WarlockRenderer({
 
     socket.on('warlock-blink-telegraph', handleWarlockBlink);
     return () => { socket.off('warlock-blink-telegraph', handleWarlockBlink); };
-  }, [id, socket]);
+  }, [id, socket, trackTimeout]);
 
   // Launch telegraph: drives the launch animation (projectile is spawned by CoopGameScene)
   useEffect(() => {
@@ -177,7 +226,7 @@ export default function WarlockRenderer({
       if (data.warlockId !== id) return;
       setIsLaunching(true);
       isLaunchingRef.current = true;
-      setTimeout(() => {
+      trackTimeout(() => {
         setIsLaunching(false);
         isLaunchingRef.current = false;
       }, LAUNCH_ANIMATION_DURATION);
@@ -185,7 +234,7 @@ export default function WarlockRenderer({
 
     socket.on('warlock-attack-telegraph', handleWarlockLaunch);
     return () => { socket.off('warlock-attack-telegraph', handleWarlockLaunch); };
-  }, [id, socket]);
+  }, [id, socket, trackTimeout]);
 
   // Archon Shock (post-boss-2): same cast animation as chaos orb launch
   useEffect(() => {
@@ -195,7 +244,7 @@ export default function WarlockRenderer({
       if (data.warlockId !== id) return;
       setIsLaunching(true);
       isLaunchingRef.current = true;
-      setTimeout(() => {
+      trackTimeout(() => {
         setIsLaunching(false);
         isLaunchingRef.current = false;
       }, LAUNCH_ANIMATION_DURATION);
@@ -203,7 +252,7 @@ export default function WarlockRenderer({
 
     socket.on('warlock-archon-shock', handleArchonShock);
     return () => { socket.off('warlock-archon-shock', handleArchonShock); };
-  }, [id, socket]);
+  }, [id, socket, trackTimeout]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
@@ -223,17 +272,6 @@ export default function WarlockRenderer({
         group.position.copy(targetPosition.current);
       }
 
-      if (
-        soulType === 'purple' &&
-        dist > 0.01 &&
-        !isLaunchLocked &&
-        !isDying
-      ) {
-        if (!isWalking) setIsWalking(true);
-        if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-        walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
-      }
-
       if (!isLaunchLocked) {
         group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 
@@ -248,15 +286,26 @@ export default function WarlockRenderer({
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
-      group.traverse((child: any) => {
-        if (child.isMesh && child.material) {
-          const mats = Array.isArray(child.material) ? child.material : [child.material];
-          mats.forEach((mat: any) => {
-            mat.transparent = true;
-            mat.opacity = opacity.current;
-          });
-        }
-      });
+
+      if (!deathCacheBuilt.current) {
+        const collected: any[] = [];
+        group.traverse((child: any) => {
+          if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((mat: any) => {
+              mat.transparent = true;
+              collected.push(mat);
+            });
+          }
+        });
+        cachedDeathMats.current = collected;
+        deathCacheBuilt.current = true;
+      }
+
+      const op = opacity.current;
+      for (let i = 0; i < cachedDeathMats.current.length; i++) {
+        cachedDeathMats.current[i].opacity = op;
+      }
     }
   });
 
@@ -329,3 +378,5 @@ export default function WarlockRenderer({
     </>
   );
 }
+
+export default React.memo(WarlockRenderer);

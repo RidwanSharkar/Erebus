@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Group, Vector3, TorusGeometry, TetrahedronGeometry, MeshStandardMaterial } from 'three';
 import { useFrame } from '@react-three/fiber';
 import BlizzardShard from './BlizzardShard';
@@ -69,8 +69,13 @@ export default function Blizzard({
   const progressRef = useRef(0);
   const lastDamageTime = useRef<number>(0);
   const endedRef = useRef(false);
-  const shardsRef = useRef<Array<{ id: number; position: Vector3; type: 'orbital' | 'falling' }>>([]);
-  const aurasRef = useRef<Array<{ id: number }>>([]);
+  const MAX_SHARDS = 32;
+  type ShardEntry = { id: number; position: Vector3; type: 'orbital' | 'falling' };
+  const shardsRef = useRef<(ShardEntry | null)[]>(Array(MAX_SHARDS).fill(null));
+  const freeShardSlotsRef = useRef<number[]>(Array.from({ length: MAX_SHARDS }, (_, i) => i));
+  const nextShardIdRef = useRef(0);
+  const [, shardRenderTick] = useState(0);
+  const bumpShardRender = () => shardRenderTick(v => v + 1);
 
   const baselineHitRadius =
     visualPreset === 'concentrated' ? ARCTIC_BLIZZARD_HIT_RADIUS : BLIZZARD_STORM_HIT_RADIUS;
@@ -86,7 +91,36 @@ export default function Blizzard({
     endedRef.current = false;
     progressRef.current = 0;
     lastDamageTime.current = 0;
+    shardsRef.current = Array(MAX_SHARDS).fill(null);
+    freeShardSlotsRef.current = Array.from({ length: MAX_SHARDS }, (_, i) => i);
+    nextShardIdRef.current = 0;
+    bumpShardRender();
   }, [durationSeconds, flatDamagePerTick, damageTickIntervalMs, hitRadius, particleSpawnMultiplier, visualPreset]);
+
+  const spawnShard = (type: 'orbital' | 'falling', shardPosition: Vector3) => {
+    const free = freeShardSlotsRef.current;
+    if (free.length === 0) return;
+    const slot = free.pop()!;
+    shardsRef.current[slot] = {
+      id: nextShardIdRef.current++,
+      position: shardPosition,
+      type,
+    };
+    bumpShardRender();
+  };
+
+  const releaseShard = (shardId: number) => {
+    const slots = shardsRef.current;
+    for (let slot = 0; slot < slots.length; slot++) {
+      const shard = slots[slot];
+      if (shard?.id === shardId) {
+        slots[slot] = null;
+        freeShardSlotsRef.current.push(slot);
+        bumpShardRender();
+        return;
+      }
+    }
+  };
 
   useFrame((_, delta) => {
     if (!stormRef.current) return;
@@ -118,11 +152,7 @@ export default function Blizzard({
         Math.sin(angle) * spawnRadius
       );
 
-      shardsRef.current.push({
-        id: Date.now() + Math.random(),
-        position: orbitalPosition,
-        type: 'orbital'
-      });
+      spawnShard('orbital', orbitalPosition);
     }
 
     if (Math.random() < fallingSpawnChance) {
@@ -135,14 +165,8 @@ export default function Blizzard({
         Math.sin(angle) * spawnRadius
       );
 
-      shardsRef.current.push({
-        id: Date.now() + Math.random(),
-        position: fallingPosition,
-        type: 'falling'
-      });
+      spawnShard('falling', fallingPosition);
     }
-
-    // aurasRef was accumulated but never rendered; omit the push to prevent unbounded growth
 
     const now = Date.now();
     if (now - lastDamageTime.current >= damageTickIntervalMs) {
@@ -170,16 +194,18 @@ export default function Blizzard({
 
   return (
     <group ref={stormRef} position={[position.x, position.y, position.z]}>
-      {shardsRef.current.map(shard => (
-        <BlizzardShard
-          key={shard.id}
-          initialPosition={shard.position}
-          type={shard.type}
-          onComplete={() => {
-            shardsRef.current = shardsRef.current.filter(s => s.id !== shard.id);
-          }}
-        />
-      ))}
+      {shardsRef.current.flatMap((shard) =>
+        shard
+          ? [
+              <BlizzardShard
+                key={shard.id}
+                initialPosition={shard.position}
+                type={shard.type}
+                onComplete={() => releaseShard(shard.id)}
+              />,
+            ]
+          : [],
+      )}
 
     </group>
   );

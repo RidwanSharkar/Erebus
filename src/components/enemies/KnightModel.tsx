@@ -9,7 +9,7 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
-export type KnightAbilityClip = 'Smite' | 'Aggro' | 'Cast' | 'Spin';
+export type KnightAbilityClip = 'Smite' | 'Aggro' | 'Cast' | 'Spin' | 'Block';
 
 interface KnightModelProps {
   isWalking: boolean;
@@ -49,6 +49,7 @@ const KNIGHT_MODEL_PATHS = [
   '/models/knight_aggro.glb',
   '/models/knight_cast.glb',
   '/models/knight_spin.glb',
+  '/models/knight_block.glb',
   '/models/knight_impact1.glb',
   '/models/knight_impact2.glb',
 ];
@@ -62,6 +63,7 @@ type KnightDeferredAnimationName =
   | 'Aggro'
   | 'Cast'
   | 'Spin'
+  | 'Block'
   | 'Impact1'
   | 'Impact2';
 
@@ -73,6 +75,7 @@ const KNIGHT_DEFERRED_MODEL_PATHS: Record<Exclude<KnightDeferredAnimationName, '
   Aggro: '/models/knight_aggro.glb',
   Cast: '/models/knight_cast.glb',
   Spin: '/models/knight_spin.glb',
+  Block: '/models/knight_block.glb',
   Impact1: '/models/knight_impact1.glb',
   Impact2: '/models/knight_impact2.glb',
 };
@@ -256,6 +259,7 @@ export default function KnightModel({
       ...rename(deferredAnimationClips.Aggro ?? [],   'Aggro'),
       ...rename(deferredAnimationClips.Cast ?? [],    'Cast'),
       ...rename(deferredAnimationClips.Spin ?? [],    'Spin').map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.Block ?? [],   'Block').map(stripRootMotionXZ),
       ...rename(deferredAnimationClips.Impact1 ?? [], 'Impact1'),
       ...rename(deferredAnimationClips.Impact2 ?? [], 'Impact2'),
     ];
@@ -264,7 +268,7 @@ export default function KnightModel({
   // Bind the mixer to the clone's root so it can traverse to find bones by name
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
-  const getAction = (name: 'Idle' | 'Walk' | 'Attack' | 'Attack2' | 'Death' | 'Smite' | 'Aggro' | 'Cast' | 'Spin' | 'Impact1' | 'Impact2'): AnimationAction | null =>
+  const getAction = (name: 'Idle' | 'Walk' | 'Attack' | 'Attack2' | 'Death' | 'Smite' | 'Aggro' | 'Cast' | 'Spin' | 'Block' | 'Impact1' | 'Impact2'): AnimationAction | null =>
     actions[name] ?? null;
 
   // Transition to the right animation clip when state changes.
@@ -299,6 +303,12 @@ export default function KnightModel({
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.15).play();
+    } else if (abilityClip === 'Block') {
+      // Block holds the final pose for the full invuln window.
+      if (!isImpacting) lastImpactPlayKeyRef.current = -1;
+      nextAction.setLoop(LoopOnce, 1);
+      nextAction.clampWhenFinished = true;
+      nextAction.reset().fadeIn(0.2).play();
     } else if (isAttacking || abilityClip) {
       // Attack and ability animations are one-shot — always restart from frame 0.
       nextAction.setLoop(LoopOnce, 1);

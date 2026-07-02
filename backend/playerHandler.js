@@ -11,6 +11,27 @@ function handlePlayerEvents(socket, gameRooms) {
     isIcebeaming: false,
   };
 
+  const PLAYER_MOVE_REBROADCAST_MIN_MS = 50; // 20 Hz
+  const PLAYER_MOVE_POSITION_EPSILON = 0.02;
+  /** playerId -> { lastBroadcastAt, lastPosition, lastRotation } */
+  const playerMoveRebroadcastState = new Map();
+
+  function positionDeltaExceedsEpsilon(a, b) {
+    if (!a || !b) return true;
+    const dx = (a.x ?? 0) - (b.x ?? 0);
+    const dy = (a.y ?? 0) - (b.y ?? 0);
+    const dz = (a.z ?? 0) - (b.z ?? 0);
+    return Math.hypot(dx, dy, dz) > PLAYER_MOVE_POSITION_EPSILON;
+  }
+
+  function rotationDeltaExceedsEpsilon(a, b) {
+    if (!a || !b) return true;
+    const dx = Math.abs((a.x ?? 0) - (b.x ?? 0));
+    const dy = Math.abs((a.y ?? 0) - (b.y ?? 0));
+    const dz = Math.abs((a.z ?? 0) - (b.z ?? 0));
+    return dx > PLAYER_MOVE_POSITION_EPSILON || dy > PLAYER_MOVE_POSITION_EPSILON || dz > PLAYER_MOVE_POSITION_EPSILON;
+  }
+
   // Handle player position and rotation updates
   socket.on('player-update', (data) => {
     const { roomId, position, rotation, weapon, health, movementDirection } = data;
@@ -35,15 +56,45 @@ function handlePlayerEvents(socket, gameRooms) {
       room.updatePlayerHealth(playerId, health);
     }
     
-    // Broadcast updated position to other players in the room
-    socket.to(roomId).emit('player-moved', {
-      playerId,
-      position: isDead && player ? player.position : position,
-      rotation,
-      weapon,
-      health,
-      movementDirection: isDead ? ZERO_MOVEMENT_DIRECTION : movementDirection,
-    });
+    const broadcastPosition = isDead && player ? player.position : position;
+    const hasNonMoveUpdate = !!weapon || typeof health === 'number';
+    const now = Date.now();
+    let state = playerMoveRebroadcastState.get(playerId);
+    if (!state) {
+      state = { lastBroadcastAt: 0, lastPosition: null, lastRotation: null };
+      playerMoveRebroadcastState.set(playerId, state);
+    }
+
+    const moveChanged =
+      positionDeltaExceedsEpsilon(broadcastPosition, state.lastPosition) ||
+      rotationDeltaExceedsEpsilon(rotation, state.lastRotation);
+    const intervalElapsed = now - state.lastBroadcastAt >= PLAYER_MOVE_REBROADCAST_MIN_MS;
+
+    if (hasNonMoveUpdate || (moveChanged && intervalElapsed)) {
+      socket.to(roomId).emit('player-moved', {
+        playerId,
+        position: broadcastPosition,
+        rotation,
+        weapon,
+        health,
+        movementDirection: isDead ? ZERO_MOVEMENT_DIRECTION : movementDirection,
+      });
+      state.lastBroadcastAt = now;
+      if (broadcastPosition) {
+        state.lastPosition = {
+          x: broadcastPosition.x,
+          y: broadcastPosition.y,
+          z: broadcastPosition.z,
+        };
+      }
+      if (rotation) {
+        state.lastRotation = {
+          x: rotation.x,
+          y: rotation.y,
+          z: rotation.z,
+        };
+      }
+    }
   });
 
   /** Co-op: sync TalentLoadout green zombie room flags for server-authored infested zombies. */
@@ -83,6 +134,9 @@ function handlePlayerEvents(socket, gameRooms) {
       forceOfNature: !!raw.forceOfNature,
       tyrantsCloak: !!raw.tyrantsCloak,
       stormWitch: !!raw.stormWitch,
+      duality: !!raw.duality,
+      acidRain: !!raw.acidRain,
+      spellThief: !!raw.spellThief,
       stamina: typeof raw.stamina === 'number' ? raw.stamina : 0,
       agility: typeof raw.agility === 'number' ? raw.agility : 0,
       intellect: typeof raw.intellect === 'number' ? raw.intellect : 0,

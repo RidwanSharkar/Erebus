@@ -9,6 +9,7 @@ interface CrossentropyBoltTrailProps {
   mesh2Ref: React.RefObject<Mesh>;
   mesh3Ref: React.RefObject<Mesh>;
   opacity?: number;
+  opacityRef?: React.RefObject<number>;
   /** Reaper Crossentropy: purple accent in trail mix instead of orange. */
   reaperPurple?: boolean;
 }
@@ -45,6 +46,7 @@ const CrossentropyBoltTrail: React.FC<CrossentropyBoltTrailProps> = ({
   mesh2Ref,
   mesh3Ref,
   opacity = 1,
+  opacityRef,
   reaperPurple = false,
 }) => {
   const particlesCount = 50;
@@ -165,10 +167,11 @@ const CrossentropyBoltTrail: React.FC<CrossentropyBoltTrailProps> = ({
     }
 
     // Update opacities and scales with parent opacity
+    const parentOpacity = opacityRef?.current ?? opacity;
     for (let i = 0; i < particlesCount; i++) {
-      opacities1Ref.current[i] = Math.pow((1 - i / particlesCount), 2) * 0.6 * opacity;
-      opacities2Ref.current[i] = Math.pow((1 - i / particlesCount), 2) * 0.6 * opacity;
-      opacities3Ref.current[i] = Math.pow((1 - i / particlesCount), 2) * 0.6 * opacity;
+      opacities1Ref.current[i] = Math.pow((1 - i / particlesCount), 2) * 0.6 * parentOpacity;
+      opacities2Ref.current[i] = Math.pow((1 - i / particlesCount), 2) * 0.6 * parentOpacity;
+      opacities3Ref.current[i] = Math.pow((1 - i / particlesCount), 2) * 0.6 * parentOpacity;
       scales1Ref.current[i] = size * 0.5 * Math.pow((1 - i / particlesCount), 0.5);
       scales2Ref.current[i] = size * 0.5 * Math.pow((1 - i / particlesCount), 0.5);
       scales3Ref.current[i] = size * 0.5 * Math.pow((1 - i / particlesCount), 0.5);

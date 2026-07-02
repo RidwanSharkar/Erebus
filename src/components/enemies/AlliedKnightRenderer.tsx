@@ -18,7 +18,7 @@ interface AlliedKnightRendererProps {
   fastWalk?: boolean;
 }
 
-export default function AlliedKnightRenderer({
+function AlliedKnightRenderer({
   id,
   position,
   rotation,
@@ -56,3 +56,5 @@ export default function AlliedKnightRenderer({
     />
   );
 }
+
+export default React.memo(AlliedKnightRenderer);

@@ -251,6 +251,12 @@ export const TALENT_TYRANTS_CLOAK = 'TYRANTS_CLOAK' as const;
 export const TALENT_HELLFIRE_VENOM = 'HELLFIRE_VENOM' as const;
 /** Duo boon (blue + green) — stagger lightning procs also apply 2 stacks of Concentrated Venom. */
 export const TALENT_STORM_WITCH = 'STORM_WITCH' as const;
+/** Duo boon (red + purple) — all Ignite ticks have a 15% chance to spawn a BLIZZARD at the ignited enemy. */
+export const TALENT_DUALITY = 'DUALITY' as const;
+/** Duo boon (green + purple) — each blizzard damage tick also applies 1 stack of Concentrated Venom. */
+export const TALENT_ACID_RAIN = 'ACID_RAIN' as const;
+/** Duo boon (blue + purple) — killing with stagger lightning or blizzard restores 1 dash charge. */
+export const TALENT_SPELL_THIEF = 'SPELL_THIEF' as const;
 
 /** TYRANT'S CLOAK — min seconds between counter-strike stagger lightning procs when taking damage. */
 export const TYRANTS_CLOAK_ICD_SEC = 3;
@@ -266,6 +272,10 @@ export const HELLFIRE_VENOM_IGNITE_DURATION_MS = 4000;
 export const HELLFIRE_VENOM_IGNITE_TICKS = 4;
 /** STORM WITCH — Concentrated Venom stacks applied per stagger lightning proc. */
 export const STORM_WITCH_VENOM_STACKS = 2;
+/** DUALITY — chance per Ignite tick to spawn a concentrated blizzard at the ignited enemy. */
+export const DUALITY_BLIZZARD_PROC_CHANCE = 0.15;
+/** ACID RAIN — Concentrated Venom stacks applied per blizzard damage tick. */
+export const ACID_RAIN_VENOM_STACKS_PER_TICK = 1;
 
 /** Cyclone Rush — double-tap forward Charge on Runeblade; separate from E-key Charge cooldown. */
 export const CYCLONE_RUSH_CHARGE_COOLDOWN_SEC = 3;
@@ -745,7 +755,10 @@ export type TalentId =
   | typeof TALENT_MONSOON
   | typeof TALENT_TYRANTS_CLOAK
   | typeof TALENT_HELLFIRE_VENOM
-  | typeof TALENT_STORM_WITCH;
+  | typeof TALENT_STORM_WITCH
+  | typeof TALENT_DUALITY
+  | typeof TALENT_ACID_RAIN
+  | typeof TALENT_SPELL_THIEF;
 
 /** Crossentropy bolt / explosion palette (Inferno overrides Glacial / Tempest / Plague). */
 export type CrossentropyVisualTheme = 'default' | 'inferno' | 'tempest' | 'plague' | 'glacial';
@@ -1675,7 +1688,7 @@ export const legionTalentDefinition: TalentDefinition = {
 
 export const fatebreakerTalentDefinition: TalentDefinition = {
   id: TALENT_FATEBREAKER,
-  name: 'Fatebreaker',
+  name: 'Valkyrie',
   description:
     'Whenever you successfully block an attack while invulnerable (AEGIS), heal for 2 HP + 1 HP per point of your current STAMINA and INTELLECT combined.',
   modifiesAbilityId: 'Duo Boons',
@@ -1691,7 +1704,7 @@ export const frostQueenTalentDefinition: TalentDefinition = {
 
 export const forceOfNatureTalentDefinition: TalentDefinition = {
   id: TALENT_FORCE_OF_NATURE,
-  name: 'Force of Nature',
+  name: 'Plague Doctor',
   description:
     'Your STAGGER lightning procs now heal you for 1 HP per point of your current AGILITY. The bolts turn a verdant green.',
   modifiesAbilityId: 'Duo Boons',
@@ -1726,6 +1739,30 @@ export const stormWitchTalentDefinition: TalentDefinition = {
   name: 'Storm Witch',
   description:
     'Your STAGGER lightning procs now also apply 2 stacks of Concentrated VENOM to the target.',
+  modifiesAbilityId: 'Duo Boons',
+};
+
+export const dualityTalentDefinition: TalentDefinition = {
+  id: TALENT_DUALITY,
+  name: 'Duality',
+  description:
+    'All IGNITE damage ticks have a 15% chance to summon a BLIZZARD at the ignited enemy\u2019s location.',
+  modifiesAbilityId: 'Duo Boons',
+};
+
+export const acidRainTalentDefinition: TalentDefinition = {
+  id: TALENT_ACID_RAIN,
+  name: 'Acid Rain',
+  description:
+    'Each damage tick of your BLIZZARD now also applies 1 stack of Concentrated VENOM to the enemy hit.',
+  modifiesAbilityId: 'Duo Boons',
+};
+
+export const spellThiefTalentDefinition: TalentDefinition = {
+  id: TALENT_SPELL_THIEF,
+  name: 'Spell Thief',
+  description:
+    'Killing an enemy with your STAGGER lightning bolt or BLIZZARD damage restores 1 dash charge.',
   modifiesAbilityId: 'Duo Boons',
 };
 
@@ -2325,6 +2362,12 @@ export interface TalentLoadout {
   hellfireVenomRoom: boolean;
   /** Duo boon (blue + green) — stagger lightning procs also apply 2 stacks of Concentrated Venom. */
   stormWitchRoom: boolean;
+  /** Duo boon (red + purple) — all Ignite ticks have a 15% chance to spawn a BLIZZARD. */
+  dualityRoom: boolean;
+  /** Duo boon (green + purple) — each blizzard damage tick also applies 1 Concentrated Venom stack. */
+  acidRainRoom: boolean;
+  /** Duo boon (blue + purple) — stagger lightning or blizzard kills restore 1 dash charge. */
+  spellThiefRoom: boolean;
 }
 
 export function createDefaultTalentLoadout(): TalentLoadout {
@@ -2462,6 +2505,9 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     tyrantsCloakRoom: false,
     hellfireVenomRoom: false,
     stormWitchRoom: false,
+    dualityRoom: false,
+    acidRainRoom: false,
+    spellThiefRoom: false,
   };
 }
 
@@ -3095,6 +3141,21 @@ export function shouldApplyHellfireVenomTalent(talentLoadout: TalentLoadout | nu
 /** STORM WITCH (duo: blue + green) — stagger lightning procs apply Concentrated Venom stacks. */
 export function shouldApplyStormWitchTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.stormWitchRoom;
+}
+
+/** DUALITY (duo: red + purple) — Ignite ticks may spawn a BLIZZARD at the ignited enemy. */
+export function shouldApplyDualityTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.dualityRoom;
+}
+
+/** ACID RAIN (duo: green + purple) — blizzard ticks apply Concentrated Venom stacks. */
+export function shouldApplyAcidRainTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.acidRainRoom;
+}
+
+/** SPELL THIEF (duo: blue + purple) — stagger lightning or blizzard kills restore a dash charge. */
+export function shouldApplySpellThiefTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.spellThiefRoom;
 }
 
 /** EXECUTIONER — post-dash empowered Runeblade LMB; talent toggle only. */
@@ -3793,6 +3854,12 @@ export interface CoopStaggerRoomBoonsPayload {
   tyrantsCloak: boolean;
   /** Duo boon (blue + green) — stagger lightning procs apply Concentrated Venom stacks. */
   stormWitch: boolean;
+  /** Duo boon (red + purple) — Ignite ticks may spawn a BLIZZARD at the ignited enemy. */
+  duality: boolean;
+  /** Duo boon (green + purple) — blizzard ticks apply Concentrated Venom stacks. */
+  acidRain: boolean;
+  /** Duo boon (blue + purple) — stagger lightning or blizzard kills restore a dash charge. */
+  spellThief: boolean;
   /** Effective Stamina from all sources (Relentless Backstab kill heal on server). */
   stamina?: number;
   agility?: number;
@@ -3824,6 +3891,9 @@ export function getCoopStaggerRoomBoonsPayload(
     forceOfNature: !!loadout.forceOfNatureRoom,
     tyrantsCloak: !!loadout.tyrantsCloakRoom,
     stormWitch: !!loadout.stormWitchRoom,
+    duality: !!loadout.dualityRoom,
+    acidRain: !!loadout.acidRainRoom,
+    spellThief: !!loadout.spellThiefRoom,
   };
   if (combatSnapshot) {
     payload.stamina = Math.max(0, combatSnapshot.stamina);
@@ -4718,6 +4788,15 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_STORM_WITCH:
       next.stormWitchRoom = true;
       return next;
+    case TALENT_DUALITY:
+      next.dualityRoom = true;
+      return next;
+    case TALENT_ACID_RAIN:
+      next.acidRainRoom = true;
+      return next;
+    case TALENT_SPELL_THIEF:
+      next.spellThiefRoom = true;
+      return next;
     default:
       return next;
   }
@@ -4857,6 +4936,9 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_TYRANTS_CLOAK]: tyrantsCloakTalentDefinition,
   [TALENT_HELLFIRE_VENOM]: hellfireVenomTalentDefinition,
   [TALENT_STORM_WITCH]: stormWitchTalentDefinition,
+  [TALENT_DUALITY]: dualityTalentDefinition,
+  [TALENT_ACID_RAIN]: acidRainTalentDefinition,
+  [TALENT_SPELL_THIEF]: spellThiefTalentDefinition,
 };
 
 /** Official room-type icons used as defaults when a room boon has no dedicated asset. */
@@ -4907,14 +4989,14 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_WRAITH_GUARD]: '/icons/strike.svg',
   [TALENT_FROSTPATH]: '/icons/frostpath.svg',
   [TALENT_SOLAR_RECHARGE]: '/icons/solarRecharge.svg',
-  [TALENT_ARCANE_SYNERGY]: '/icons/bolt0.svg',
+  [TALENT_ARCANE_SYNERGY]: '/icons/arcaneSynergy.svg',
   [TALENT_WINDFURY]: '/icons/windFury.svg',
   [TALENT_COLOSSUS_GUARD]: '/icons/smite.svg',
   [TALENT_WRATHFUL_COMBO]: '/icons/combo.svg',
   [TALENT_INFESTED_COMBO]: '/icons/combo.svg',
   [TALENT_GUARD_COMBO]: '/icons/combo.svg',
   [TALENT_DASH_GUARD]: null,
-  [TALENT_EXECUTIONER]: '/icons/dash.svg',
+  [TALENT_EXECUTIONER]: '/icons/executioner.svg',
   [TALENT_DOUBLE_STRIKE]: '/icons/doubleStrike.svg',
   [TALENT_CRUSADER]: '/icons/crusader.svg',
   [TALENT_BLIZZARD]: '/icons/blizzard.svg',
@@ -4922,7 +5004,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_TEMPEST_ROUNDS]: '/icons/tempestRounds.svg',
   [TALENT_ICEBEAM]: '/icons/icebeam.svg',
   [TALENT_BREATH_WEAPON]: '/icons/aftershock.svg',
-  [TALENT_MORTAL_STRIKE]: '/icons/strike.svg',
+  [TALENT_MORTAL_STRIKE]: '/icons/mortalStrike.svg',
   [TALENT_STAGGERING_BITE]: '/icons/bite.svg',
   [TALENT_STAGGERING_TALONS]: '/icons/talon.svg',
   [TALENT_WRATHFUL_SHOTS]: '/icons/shot.svg',
@@ -4964,47 +5046,50 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_FAN_OF_KNIVES]: '/icons/fanofknives.svg',
   [TALENT_PARRY]: '/icons/parry.svg',
   [TALENT_FIRE_AFFINITY]: '/icons/fireAffinity.svg',
-  [TALENT_PACK_HUNTER]: null,
-  [TALENT_BERSERKER_STRAIN]: null,
-  [TALENT_JUGGERNAUT_STRAIN]: null,
-  [TALENT_EXPLODER_STRAIN]: null,
+  [TALENT_PACK_HUNTER]: '/icons/packHunter.svg',
+  [TALENT_BERSERKER_STRAIN]: '/icons/berserkerStrain.svg',
+  [TALENT_JUGGERNAUT_STRAIN]: '/icons/juggernautStrain.svg',
+  [TALENT_EXPLODER_STRAIN]: '/icons/exploderStrain.svg',
   [TALENT_INFERNAL_DASH]: null,
   [TALENT_GLACIAL_DASH]: null,
   [TALENT_MENDING_DASH]: null,
   [TALENT_STAGGERING_DASH]: null,
-  [TALENT_GUARDBREAK]: null,
-  [TALENT_OVERSHOCK]: null,
-  [TALENT_UNSTABLE_ENERGY]: null,
-  [TALENT_BLOODLEECH]: null,
-  [TALENT_REBUKE]: null,
-  [TALENT_RAISE_DEAD]: null,
-  [TALENT_METEOR_STRIKE]: '/icons/meteor.svg',
-  [TALENT_FISSION]: null,
-  [TALENT_BLOOD_ORBS]: null,
-  [TALENT_BLOODMAGE]: null,
-  [TALENT_OVERCLOCK]: null,
-  [TALENT_OVERRIDE]: null,
-  [TALENT_COLDSNAP_ROOM]: null,
-  [TALENT_LIGHTNING_BOLT_ROOM]: null,
-  [TALENT_AEGIS_ROOM]: null,
-  [TALENT_MOMENTUM_RIFT]: null,
-  [TALENT_MANA_SHIELD]: null,
-  [TALENT_HAILSTORM]: '/icons/blizzard.svg',
-  [TALENT_AWAKENED_EYE]: '/icons/blizzard.svg',
-  [TALENT_ORB_SHIELD]: null,
-  [TALENT_TEMPEST_INITIATE]: null,
-  [TALENT_NECROS_INITIATE]: null,
-  [TALENT_INFERNAL_INITIATE]: null,
-  [TALENT_ABYSSAL_INITIATE]: null,
+  [TALENT_GUARDBREAK]: '/icons/guardbreak.svg',
+  [TALENT_OVERSHOCK]: '/icons/paralysis.svg',
+  [TALENT_UNSTABLE_ENERGY]: '/icons/unstablePlasma.svg',
+  [TALENT_BLOODLEECH]: '/icons/bloodleech.svg',
+  [TALENT_REBUKE]: '/icons/rebuke.svg',
+  [TALENT_RAISE_DEAD]: '/icons/raiseDead.svg',
+  [TALENT_METEOR_STRIKE]: '/icons/meteorStrike.svg',
+  [TALENT_FISSION]: '/icons/fission.svg',
+  [TALENT_BLOOD_ORBS]: '/icons/bloodOrbs.svg',
+  [TALENT_BLOODMAGE]: '/icons/bloodMage.svg',
+  [TALENT_OVERCLOCK]: '/icons/overclock.svg',
+  [TALENT_OVERRIDE]: '/icons/override.svg',
+  [TALENT_COLDSNAP_ROOM]: '/icons/coldsnap.svg',
+  [TALENT_LIGHTNING_BOLT_ROOM]: '/icons/lightningBolt.svg',
+  [TALENT_AEGIS_ROOM]: '/icons/aegis.svg',
+  [TALENT_MOMENTUM_RIFT]: '/icons/momentumRift.svg',
+  [TALENT_MANA_SHIELD]: '/icons/manaShield.svg',
+  [TALENT_HAILSTORM]: '/icons/hailstorm.svg',
+  [TALENT_AWAKENED_EYE]: '/icons/awakenedEye.svg',
+  [TALENT_ORB_SHIELD]: '/icons/orbShield.svg',
+  [TALENT_TEMPEST_INITIATE]: '/icons/tempestInitiate.svg',
+  [TALENT_NECROS_INITIATE]: '/icons/necrosInitiate.svg',
+  [TALENT_INFERNAL_INITIATE]: '/icons/infernalInitiate.svg',
+  [TALENT_ABYSSAL_INITIATE]: '/icons/abyssalInitiate.svg',
   [TALENT_MAGMA_CURRENT]: null,
-  [TALENT_LEGION]: null,
-  [TALENT_FATEBREAKER]: null,
-  [TALENT_FROST_QUEEN]: null,
-  [TALENT_FORCE_OF_NATURE]: null,
-  [TALENT_MONSOON]: null,
+  [TALENT_LEGION]: '/icons/legion.svg',
+  [TALENT_FATEBREAKER]: '/icons/valkyrie.svg',
+  [TALENT_FROST_QUEEN]: '/icons/frostQueen.svg',
+  [TALENT_FORCE_OF_NATURE]: '/icons/plagueDoctor.svg',
+  [TALENT_MONSOON]: '/icons/stormcaller.svg',
   [TALENT_TYRANTS_CLOAK]: null,
-  [TALENT_HELLFIRE_VENOM]: null,
-  [TALENT_STORM_WITCH]: null,
+  [TALENT_HELLFIRE_VENOM]: '/icons/hellfireVenom.svg',
+  [TALENT_STORM_WITCH]: '/icons/stormWitch.svg',
+  [TALENT_DUALITY]: '/icons/duality.svg',
+  [TALENT_ACID_RAIN]: '/icons/acidRain.svg',
+  [TALENT_SPELL_THIEF]: '/icons/spellThief.svg',
 };
 
 const COOP_ROOM_COLOR_BY_TALENT: Partial<Record<TalentId, CoopRoomColor>> = (() => {
@@ -5217,6 +5302,9 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.tyrantsCloakRoom) out.push(TALENT_TYRANTS_CLOAK);
   if (loadout.hellfireVenomRoom) out.push(TALENT_HELLFIRE_VENOM);
   if (loadout.stormWitchRoom) out.push(TALENT_STORM_WITCH);
+  if (loadout.dualityRoom) out.push(TALENT_DUALITY);
+  if (loadout.acidRainRoom) out.push(TALENT_ACID_RAIN);
+  if (loadout.spellThiefRoom) out.push(TALENT_SPELL_THIEF);
   return out;
 }
 
@@ -5238,6 +5326,9 @@ const DUO_BOONS: readonly DuoBoonDef[] = [
   { id: TALENT_FORCE_OF_NATURE, colors: ['blue', 'green'] },
   { id: TALENT_STORM_WITCH, colors: ['blue', 'green'] },
   { id: TALENT_MONSOON, colors: ['blue', 'purple'] },
+  { id: TALENT_DUALITY, colors: ['red', 'purple'] },
+  { id: TALENT_ACID_RAIN, colors: ['green', 'purple'] },
+  { id: TALENT_SPELL_THIEF, colors: ['blue', 'purple'] },
 ];
 
 export const DUO_BOON_IDS: readonly TalentId[] = DUO_BOONS.map((d) => d.id);

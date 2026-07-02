@@ -6,6 +6,9 @@ import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'thre
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 const _warlockLightPos = new Vector3();
+const _resolved = new Vector3();
+const _aim = new Vector3();
+const _toPlayer = new Vector3();
 
 export interface WarlockProjectileProps {
   startPosition: Vector3;
@@ -208,19 +211,19 @@ export default function WarlockProjectile({
           return;
         }
 
-        let resolved = resolvedStaleTargetRef.current.clone();
+        _resolved.copy(resolvedStaleTargetRef.current);
         const pp = getPlayerPosition();
         if (pp) {
-          resolved.set(pp.x, resolvedStaleTargetRef.current.y, pp.z);
+          _resolved.set(pp.x, resolvedStaleTargetRef.current.y, pp.z);
         }
 
-        const aim = resolved.clone().sub(startPosition);
-        const aimLen = aim.length();
-        if (aimLen > 1e-4) {
-          currentDirRef.current.copy(aim).multiplyScalar(1 / aimLen);
+        _aim.copy(_resolved).sub(startPosition);
+        const aimLenSq = _aim.lengthSq();
+        if (aimLenSq > 1e-8) {
+          currentDirRef.current.copy(_aim).multiplyScalar(1 / Math.sqrt(aimLenSq));
         }
 
-        maxLifetimeRef.current = (Math.max(aimLen, 0.01) / SPEED) * 1.5;
+        maxLifetimeRef.current = (Math.max(Math.sqrt(aimLenSq), 0.01) / SPEED) * 1.5;
         phaseRef.current = 'flying';
         timeRef.current = 0;
         if (visualScaleRef.current) {
@@ -238,11 +241,11 @@ export default function WarlockProjectile({
 
     const playerPos = getPlayerPosition();
     if (playerPos) {
-      const toPlayer = playerPos.clone().sub(groupRef.current.position);
-      if (toPlayer.length() > 0.5) {
-        toPlayer.normalize();
+      _toPlayer.copy(playerPos).sub(groupRef.current.position);
+      if (_toPlayer.lengthSq() > 0.25) {
+        _toPlayer.normalize();
         currentDirRef.current
-          .lerp(toPlayer, Math.min(1, TURN_RATE * delta))
+          .lerp(_toPlayer, Math.min(1, TURN_RATE * delta))
           .normalize();
       }
     }

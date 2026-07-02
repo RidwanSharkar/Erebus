@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { AdditiveBlending, BackSide, Color, Group, MathUtils, MeshBasicMaterial, Vector3 } from '@/utils/three-exports';
+import { AdditiveBlending, BackSide, Group, MathUtils, MeshBasicMaterial, Vector3 } from '@/utils/three-exports';
 import CustomSky from './CustomSky';
 import type { RoomBorderTheme, SimpleBorderColorTheme } from './SimpleBorderEffects';
 import SimpleBorderEffects from './SimpleBorderEffects';
@@ -38,9 +38,9 @@ export type ThronePillarDef = {
 /** Four pillars in a ring — orb colours: green, blue, red, light purple. */
 export const THRONE_PILLAR_DEFS: ThronePillarDef[] = [
   { position: [-5.5, 0, 1], orbColorHex: '#22c55e' }, // BOW
-  { position: [5.5, 0, 1], orbColorHex: '#3b82f6' }, // RUNEBLADE
+  { position: [5.5, 0, 1], orbColorHex: '#FFC300' }, // RUNEBLADE
   { position: [-3.25, 0, -2], orbColorHex: '#ef4444' }, // SABRES
-  { position: [3.25, 0, -2], orbColorHex: '#a855f7' }, // SCYTHE
+  { position: [3.25, 0, -2], orbColorHex: '#00B7FF' }, // SCYTHE 8667E5
 ];
 
 /** Stable reference for `PillarCollision` (avoid new array identity every React render). */
@@ -106,6 +106,15 @@ export const MAIN_COMBAT_PEDESTAL_POSITION = Object.freeze({ x: 0, y: 0, z: 13 }
 
 /** XZ interaction radius for the combat arena pedestal. */
 export const MAIN_COMBAT_PEDESTAL_INTERACT_RADIUS = 3.0;
+
+/** Merchant room NPC — stands behind the reward pedestal (toward +Z). */
+export const MERCHANT_NPC_POSITION = Object.freeze({ x: 0, y: 0, z: 15.5 });
+
+/** Default yaw: faces toward player entry (-Z). */
+export const MERCHANT_NPC_DEFAULT_ROTATION_Y = Math.PI;
+
+/** XZ distance within which the merchant rotates to track the local player. */
+export const MERCHANT_NPC_FACE_RANGE = 7;
 
 /** Half-distance on X between the two main-arena choice portals flanking the combat pedestal. */
 export const MAIN_COMBAT_PORTAL_HALF_SPACING_X = THRONE_PORTAL_HALF_SPACING_X;
@@ -573,7 +582,7 @@ export function ThronePortalRing({
       {!locked && <PortalSymbol campType={campType} portalColor={portalColor} />}
       {!locked && (
         <ArcaneRitualCircle
-          position={[0, -THRONE_PORTAL_Y + 0.25, 0]}
+          position={[0, -THRONE_PORTAL_Y + 0.275, 0]}
           baseColor={PORTAL_RITUAL_COLORS[campType].base}
           glowColor={PORTAL_RITUAL_COLORS[campType].glow}
           worldScale={RITUAL_WORLD_SCALE * 1.2}
@@ -614,7 +623,7 @@ interface ThroneRoomProps {
  * Pre-combat staging space: same grass + stone language as the main map; expanded grass disc (`COOP_THRONE_ROOM_RADIUS`)
  * with legacy pillar/portal layout (`COOP_THRONE_LAYOUT_RADIUS`).
  */
-export default function ThroneRoom({
+function ThroneRoom({
   isSnowTheme,
   layout = 'prep',
   thronePortalOffer,
@@ -625,11 +634,6 @@ export default function ThroneRoom({
 }: ThroneRoomProps) {
   /** All co-op boss tiers + post-boss intermission share the same purple shell (legacy Boss 2 / Archon look). */
   const usePurpleBossArenaShell = layout === 'bossArena';
-  const keyColor = usePurpleBossArenaShell
-    ? new Color('#c4a8e8')
-    : isSnowTheme
-      ? new Color('#9fc2f0')
-      : new Color('#4a2d6e');
   const isPrep = layout === 'prep';
 
   const o = thronePortalOffer;
@@ -655,29 +659,18 @@ export default function ThroneRoom({
 
   return (
     <group name="throne-room">
-      {usePurpleBossArenaShell ? <CustomSky roomTheme="purple" /> : <CustomSky skyPreset="throneBlue" />}
+      {usePurpleBossArenaShell ? (
+        <CustomSky roomTheme="purple" animateClouds={false} />
+      ) : (
+        <CustomSky skyPreset="throneBlue" />
+      )}
       <PerimeterCloudSystem
         radius={COOP_THRONE_ROOM_RADIUS}
         cloudTheme={usePurpleBossArenaShell ? 'red' : 'gold'}
       />
-      <ambientLight intensity={usePurpleBossArenaShell ? 0.1 : 0.14} />
-      <hemisphereLight
-        color={keyColor}
-        groundColor={usePurpleBossArenaShell ? '#0a0612' : '#1a1020'}
-        intensity={usePurpleBossArenaShell ? 0.32 : 0.35}
-      />
-      <directionalLight
-        position={[8, 16, 6]}
-        intensity={usePurpleBossArenaShell ? 0.38 : 0.42}
-        castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
-        shadow-camera-far={88}
-        shadow-camera-left={-40}
-        shadow-camera-right={40}
-        shadow-camera-top={40}
-        shadow-camera-bottom={-40}
-      />
+
+ 
+
       <StylizedGrass
         radius={COOP_THRONE_ROOM_RADIUS}
         count={usePurpleBossArenaShell ? THRONE_PURPLE_GRASS_COUNT : THRONE_GRASS_COUNT}
@@ -695,7 +688,7 @@ export default function ThroneRoom({
       <ThroneCircularCastleWalls innerRadius={COOP_THRONE_ROOM_RADIUS} />
       <SimpleBorderEffects
         radius={COOP_THRONE_ROOM_RADIUS}
-        count={30}
+        count={20}
         enableParticles
         particleCount={60}
         borderTheme={borderEffectsTheme}
@@ -771,3 +764,5 @@ export default function ThroneRoom({
     </group>
   );
 }
+
+export default React.memo(ThroneRoom);

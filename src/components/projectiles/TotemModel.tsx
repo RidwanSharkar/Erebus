@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { Group, MeshStandardMaterial, CylinderGeometry, ConeGeometry, PlaneGeometry, SphereGeometry } from 'three';
 import type { TotemBoltVariant } from '@/utils/talents';
 
@@ -47,11 +48,12 @@ const SHARED_GEOMETRIES = {
 };
 
 interface TotemModelProps {
-  isAttacking: boolean;
+  isAttacking?: boolean;
+  isAttackingRef?: React.MutableRefObject<boolean>;
   totemBoltVariant?: TotemBoltVariant;
 }
 
-export default function TotemModel({ isAttacking, totemBoltVariant }: TotemModelProps) {
+export default function TotemModel({ isAttacking, isAttackingRef, totemBoltVariant }: TotemModelProps) {
   const totemRef = useRef<Group>(null);
 
   const runesMat = useMemo(() => {
@@ -68,6 +70,11 @@ export default function TotemModel({ isAttacking, totemBoltVariant }: TotemModel
     const m = runesMat;
     return () => { m.dispose(); };
   }, [runesMat]);
+
+  useFrame(() => {
+    const attacking = isAttackingRef ? isAttackingRef.current : !!isAttacking;
+    runesMat.emissiveIntensity = attacking ? 3 : 1;
+  });
 
   return (
     <group ref={totemRef} scale={0.3} position={[0, -0.80, 0]}>

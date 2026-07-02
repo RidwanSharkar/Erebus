@@ -27,6 +27,49 @@ export class PhysicsSystem extends BasePhysicsSystem {
   /** Optional circular XZ disc obstacles (typically empty). */
   private cornerMountainObstacles: Array<{ x: number; z: number; radius: number }> = [];
 
+  private _deltaPosition = new Vector3();
+  private _currentPosition = new Vector3();
+  private _potentialPosition = new Vector3();
+  private _horizontalPosition = new Vector3();
+  private _currentHorizontalPos = new Vector3();
+  private _toCenter = new Vector3();
+  private _tangent = new Vector3();
+  private _horizontalMovement = new Vector3();
+  private _newHorizontalPosition = new Vector3();
+  private _velocityNormal = new Vector3();
+  private _targetVelocity = new Vector3();
+  private _accelDelta = new Vector3();
+  private _treeCollisionResult = {
+    hasCollision: false,
+    normal: new Vector3(),
+    treeCenter: new Vector3(),
+  };
+  private _cornerMountainCollisionResult = {
+    hasCollision: false,
+    normal: new Vector3(),
+    center: new Vector3(),
+    blockRadius: 0,
+  };
+  private _thronePillarCollisionResult = {
+    hasCollision: false,
+    normal: new Vector3(),
+    pillarCenter: new Vector3(),
+    blockRadius: 0,
+  };
+  private _wallCollisionResult = {
+    hasCollision: false,
+    normal: new Vector3(),
+    closestPoint: new Vector3(),
+    segmentIndex: -1,
+  };
+  private _horizontalPosScratch = new Vector3();
+  private _treeHorizontalScratch = new Vector3();
+  private _slideHorizontalScratch = new Vector3();
+  private _pushDirectionScratch = new Vector3();
+  private _centerScratch = new Vector3();
+  private _hexNormalScratch = new Vector3();
+  private _hexStrongestNormal = new Vector3(1, 0, 0);
+
   constructor() {
     super();
     this.priority = 15; // Run after control system but before rendering
@@ -116,52 +159,72 @@ export class PhysicsSystem extends BasePhysicsSystem {
 
   private updateMovement(transform: Transform, movement: Movement, deltaTime: number): void {
     // Update position based on velocity
-    const deltaPosition = movement.velocity.clone().multiplyScalar(deltaTime);
-    
+    const deltaPosition = this._deltaPosition.copy(movement.velocity).multiplyScalar(deltaTime);
+
     // Calculate potential new position
-    const currentPosition = transform.position.clone();
-    const potentialPosition = currentPosition.clone().add(deltaPosition);
-    
+    const currentPosition = this._currentPosition.copy(transform.position);
+    const potentialPosition = this._potentialPosition.copy(currentPosition).add(deltaPosition);
+
     // Apply map boundary constraints with smooth sliding (matches enlarged grass / collision disc)
     const MAP_RADIUS = this.mapRadius;
-    
+
     // Only check horizontal distance (ignore Y for boundary)
-    const horizontalPosition = new Vector3(potentialPosition.x, 0, potentialPosition.z);
+    const horizontalPosition = this._horizontalPosition.set(
+      potentialPosition.x,
+      0,
+      potentialPosition.z,
+    );
     const distanceFromCenter = horizontalPosition.length();
     const hexBoundary = this.arenaBoundaryMode === 'hex'
       ? this.getHexBoundaryCorrection(potentialPosition)
       : null;
-    
+
     // Check for tree, corner mountains, throne pillars, and castle-wall collisions
     const treeCollision = this.treeCollisionEnabled
       ? this.checkTreeCollision(potentialPosition)
-      : { hasCollision: false, normal: new Vector3(), treeCenter: new Vector3() };
+      : this._treeCollisionResult;
+    if (!this.treeCollisionEnabled) {
+      this._treeCollisionResult.hasCollision = false;
+    }
     const cornerMountainCollision = this.checkCornerMountainCollision(potentialPosition);
     const thronePillarCollision = this.checkThronePillarCollision(potentialPosition);
     const wallCollision = this.castleWallPhysicsEnabled
       ? this.checkWallCollision(potentialPosition)
-      : { hasCollision: false, normal: new Vector3(), closestPoint: new Vector3(), segmentIndex: -1 };
+      : this._wallCollisionResult;
+    if (!this.castleWallPhysicsEnabled) {
+      this._wallCollisionResult.hasCollision = false;
+    }
 
     // Circular clamp only when castle walls are off (throne prep). Main arena uses wall AABBs + square interior.
     if (hexBoundary && hexBoundary.outside) {
       const corrected = this.clampToHexBoundary(potentialPosition);
       transform.setPosition(corrected.x, currentPosition.y + deltaPosition.y, corrected.z);
-      const velocityNormalComponent = movement.velocity.clone().projectOnVector(hexBoundary.normal);
-      movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
+      this._velocityNormal.copy(movement.velocity).projectOnVector(hexBoundary.normal);
+      movement.velocity.sub(this._velocityNormal.multiplyScalar(0.5));
     } else if (!this.castleWallPhysicsEnabled && distanceFromCenter >= MAP_RADIUS) {
       // If we hit the boundary, calculate tangent movement for smooth sliding
-      const currentHorizontalPos = new Vector3(currentPosition.x, 0, currentPosition.z);
-      const toCenter = currentHorizontalPos.clone().normalize();
+      const currentHorizontalPos = this._currentHorizontalPos.set(
+        currentPosition.x,
+        0,
+        currentPosition.z,
+      );
+      const toCenter = this._toCenter.copy(currentHorizontalPos).normalize();
 
       // Create tangent vector (perpendicular to radius)
-      const tangent = new Vector3(-toCenter.z, 0, toCenter.x);
+      const tangent = this._tangent.set(-toCenter.z, 0, toCenter.x);
 
       // Project our horizontal movement onto the tangent
-      const horizontalMovement = new Vector3(deltaPosition.x, 0, deltaPosition.z);
+      const horizontalMovement = this._horizontalMovement.set(
+        deltaPosition.x,
+        0,
+        deltaPosition.z,
+      );
       const tangentMovement = tangent.multiplyScalar(horizontalMovement.dot(tangent));
 
       // Apply the tangential movement while keeping distance to center constant
-      const newHorizontalPosition = currentHorizontalPos.add(tangentMovement);
+      const newHorizontalPosition = this._newHorizontalPosition
+        .copy(currentHorizontalPos)
+        .add(tangentMovement);
       newHorizontalPosition.normalize().multiplyScalar(MAP_RADIUS);
 
       // Update position with tangent movement and preserve Y movement
@@ -176,8 +239,8 @@ export class PhysicsSystem extends BasePhysicsSystem {
       transform.setPosition(slidePosition.x, slidePosition.y, slidePosition.z);
 
       // Reduce velocity in the direction of the tree to prevent bouncing
-      const velocityNormalComponent = movement.velocity.clone().projectOnVector(treeCollision.normal);
-      movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
+      this._velocityNormal.copy(movement.velocity).projectOnVector(treeCollision.normal);
+      movement.velocity.sub(this._velocityNormal.multiplyScalar(0.5));
     } else if (cornerMountainCollision.hasCollision) {
       const slidePosition = this.calculateTreeSliding(
         currentPosition,
@@ -187,10 +250,8 @@ export class PhysicsSystem extends BasePhysicsSystem {
       );
       transform.setPosition(slidePosition.x, slidePosition.y, slidePosition.z);
 
-      const velocityNormalComponent = movement.velocity
-        .clone()
-        .projectOnVector(cornerMountainCollision.normal);
-      movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
+      this._velocityNormal.copy(movement.velocity).projectOnVector(cornerMountainCollision.normal);
+      movement.velocity.sub(this._velocityNormal.multiplyScalar(0.5));
     } else if (thronePillarCollision.hasCollision) {
       const slidePosition = this.calculateTreeSliding(
         currentPosition,
@@ -200,16 +261,16 @@ export class PhysicsSystem extends BasePhysicsSystem {
       );
       transform.setPosition(slidePosition.x, slidePosition.y, slidePosition.z);
 
-      const velocityNormalComponent = movement.velocity.clone().projectOnVector(thronePillarCollision.normal);
-      movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
+      this._velocityNormal.copy(movement.velocity).projectOnVector(thronePillarCollision.normal);
+      movement.velocity.sub(this._velocityNormal.multiplyScalar(0.5));
     } else if (wallCollision.hasCollision) {
       // Handle castle-wall collision with smooth sliding (AABB)
       const slidePosition = this.calculateWallSliding(currentPosition, deltaPosition, wallCollision);
       transform.setPosition(slidePosition.x, slidePosition.y, slidePosition.z);
 
       // Reduce velocity in the direction of the wall to prevent bouncing
-      const velocityNormalComponent = movement.velocity.clone().projectOnVector(wallCollision.normal);
-      movement.velocity.sub(velocityNormalComponent.multiplyScalar(0.5));
+      this._velocityNormal.copy(movement.velocity).projectOnVector(wallCollision.normal);
+      movement.velocity.sub(this._velocityNormal.multiplyScalar(0.5));
     } else {
       // If within bounds and no collision, move normally
       transform.translate(deltaPosition.x, deltaPosition.y, deltaPosition.z);
@@ -232,17 +293,20 @@ export class PhysicsSystem extends BasePhysicsSystem {
   private getHexBoundaryCorrection(position: Vector3): { outside: boolean; normal: Vector3 } {
     const apothem = this.mapRadius * Math.cos(Math.PI / 6) - this.horizontalClearanceRadius;
     let maxExcess = 0;
-    let strongestNormal = new Vector3(1, 0, 0);
+    this._hexStrongestNormal.set(1, 0, 0);
     for (let i = 0; i < 6; i++) {
       const a = (Math.PI / 3) * i;
-      const normal = new Vector3(Math.cos(a), 0, Math.sin(a));
-      const excess = position.x * normal.x + position.z * normal.z - apothem;
+      this._hexNormalScratch.set(Math.cos(a), 0, Math.sin(a));
+      const excess =
+        position.x * this._hexNormalScratch.x +
+        position.z * this._hexNormalScratch.z -
+        apothem;
       if (excess > maxExcess) {
         maxExcess = excess;
-        strongestNormal = normal;
+        this._hexStrongestNormal.copy(this._hexNormalScratch);
       }
     }
-    return { outside: maxExcess > 0, normal: strongestNormal };
+    return { outside: maxExcess > 0, normal: this._hexStrongestNormal };
   }
 
   private clampToHexBoundary(position: Vector3): Vector3 {
@@ -261,7 +325,7 @@ export class PhysicsSystem extends BasePhysicsSystem {
         }
       }
     }
-    return new Vector3(x, position.y, z);
+    return this._potentialPosition.set(x, position.y, z);
   }
 
   // Define tree positions (same as in Environment.tsx - reduced by half)
@@ -276,28 +340,28 @@ export class PhysicsSystem extends BasePhysicsSystem {
   private readonly TREE_RADIUS = 0.3; // Roughly half the pillar diameter
 
   private checkTreeCollision(position: Vector3): { hasCollision: boolean; normal: Vector3; treeCenter: Vector3 } {
+    const result = this._treeCollisionResult;
+    result.hasCollision = false;
+
     for (const treePos of this.TREE_POSITIONS) {
-      // Only check horizontal distance (ignore Y)
-      const horizontalPos = new Vector3(position.x, 0, position.z);
-      const treeHorizontal = new Vector3(treePos.x, 0, treePos.z);
+      const horizontalPos = this._horizontalPosScratch.set(position.x, 0, position.z);
+      const treeHorizontal = this._treeHorizontalScratch.set(treePos.x, 0, treePos.z);
       const distance = horizontalPos.distanceTo(treeHorizontal);
 
       if (distance < this.TREE_RADIUS) {
-        // Calculate normal vector pointing away from tree center
-        const normal = horizontalPos.clone().sub(treeHorizontal).normalize();
-        // Handle case where player is exactly at tree center
-        if (normal.length() === 0) {
-          normal.set(1, 0, 0); // Default direction
+        result.normal.copy(horizontalPos).sub(treeHorizontal);
+        if (result.normal.length() === 0) {
+          result.normal.set(1, 0, 0);
+        } else {
+          result.normal.normalize();
         }
-        return {
-          hasCollision: true,
-          normal: normal,
-          treeCenter: treePos.clone()
-        };
+        result.treeCenter.copy(treePos);
+        result.hasCollision = true;
+        return result;
       }
     }
 
-    return { hasCollision: false, normal: new Vector3(), treeCenter: new Vector3() };
+    return result;
   }
 
   private calculateTreeSliding(
@@ -306,64 +370,65 @@ export class PhysicsSystem extends BasePhysicsSystem {
     collision: { normal: Vector3; treeCenter: Vector3 },
     obstacleRadius: number = this.TREE_RADIUS,
   ): Vector3 {
-    // Calculate the tangent vector (perpendicular to normal in XZ plane)
-    const tangent = new Vector3(-collision.normal.z, 0, collision.normal.x);
+    const tangent = this._tangent.set(-collision.normal.z, 0, collision.normal.x);
+    const tangentMovement = this._horizontalMovement.copy(deltaPosition).projectOnVector(tangent);
+    const slidePosition = this._currentPosition.copy(currentPosition).add(tangentMovement);
 
-    // Project the movement vector onto the tangent for sliding
-    const tangentMovement = deltaPosition.clone().projectOnVector(tangent);
-
-    // Calculate the new position with sliding movement
-    const slidePosition = currentPosition.clone().add(tangentMovement);
-
-    // Ensure we maintain minimum distance from obstacle center
-    const treeHorizontal = new Vector3(collision.treeCenter.x, 0, collision.treeCenter.z);
-    const slideHorizontal = new Vector3(slidePosition.x, 0, slidePosition.z);
+    const treeHorizontal = this._treeHorizontalScratch.set(
+      collision.treeCenter.x,
+      0,
+      collision.treeCenter.z,
+    );
+    const slideHorizontal = this._slideHorizontalScratch.set(slidePosition.x, 0, slidePosition.z);
     const distanceAfterSlide = slideHorizontal.distanceTo(treeHorizontal);
 
     if (distanceAfterSlide < obstacleRadius) {
-      // Push the position to maintain minimum distance
-      const pushDirection = slideHorizontal.clone().sub(treeHorizontal).normalize();
-      if (pushDirection.length() === 0) {
-        pushDirection.set(1, 0, 0); // Default direction
+      this._pushDirectionScratch.copy(slideHorizontal).sub(treeHorizontal);
+      if (this._pushDirectionScratch.length() === 0) {
+        this._pushDirectionScratch.set(1, 0, 0);
+      } else {
+        this._pushDirectionScratch.normalize();
       }
-      const correctedHorizontal = treeHorizontal.clone().add(pushDirection.multiplyScalar(obstacleRadius));
-      slidePosition.x = correctedHorizontal.x;
-      slidePosition.z = correctedHorizontal.z;
+      this._newHorizontalPosition
+        .copy(treeHorizontal)
+        .add(this._pushDirectionScratch.multiplyScalar(obstacleRadius));
+      slidePosition.x = this._newHorizontalPosition.x;
+      slidePosition.z = this._newHorizontalPosition.z;
     }
 
     return slidePosition;
   }
 
-  /** Corner disc obstacles when `setCornerMountainObstacles` is populated. */
   private checkCornerMountainCollision(position: Vector3): {
     hasCollision: boolean;
     normal: Vector3;
     center: Vector3;
     blockRadius: number;
   } {
-    const horizontalPos = new Vector3(position.x, 0, position.z);
+    const result = this._cornerMountainCollisionResult;
+    result.hasCollision = false;
+    result.blockRadius = 0;
+    const horizontalPos = this._horizontalPosScratch.set(position.x, 0, position.z);
 
     for (const p of this.cornerMountainObstacles) {
-      const center = new Vector3(p.x, 0, p.z);
+      const center = this._centerScratch.set(p.x, 0, p.z);
       const dist = horizontalPos.distanceTo(center);
       const minCenterDist = p.radius + this.horizontalClearanceRadius;
       if (dist < minCenterDist) {
-        let normal = horizontalPos.clone().sub(center);
-        if (normal.lengthSq() < 1e-6) {
-          normal = new Vector3(1, 0, 0);
+        result.normal.copy(horizontalPos).sub(center);
+        if (result.normal.lengthSq() < 1e-6) {
+          result.normal.set(1, 0, 0);
         } else {
-          normal.normalize();
+          result.normal.normalize();
         }
-        return { hasCollision: true, normal, center, blockRadius: minCenterDist };
+        result.center.copy(center);
+        result.blockRadius = minCenterDist;
+        result.hasCollision = true;
+        return result;
       }
     }
 
-    return {
-      hasCollision: false,
-      normal: new Vector3(),
-      center: new Vector3(),
-      blockRadius: 0,
-    };
+    return result;
   }
 
   /**
@@ -376,30 +441,31 @@ export class PhysicsSystem extends BasePhysicsSystem {
     pillarCenter: Vector3;
     blockRadius: number;
   } {
-    const horizontalPos = new Vector3(position.x, 0, position.z);
+    const result = this._thronePillarCollisionResult;
+    result.hasCollision = false;
+    result.blockRadius = 0;
+    const horizontalPos = this._horizontalPosScratch.set(position.x, 0, position.z);
 
     for (const p of this.thronePillarObstacles) {
-      const center = new Vector3(p.x, 0, p.z);
+      const center = this._centerScratch.set(p.x, 0, p.z);
       const dist = horizontalPos.distanceTo(center);
       const obstacleR = p.radius > 0 ? p.radius : THRONE_PILLAR_HULL_RADIUS;
       const minCenterDist = obstacleR + this.horizontalClearanceRadius;
       if (dist < minCenterDist) {
-        let normal = horizontalPos.clone().sub(center);
-        if (normal.lengthSq() < 1e-6) {
-          normal = new Vector3(1, 0, 0);
+        result.normal.copy(horizontalPos).sub(center);
+        if (result.normal.lengthSq() < 1e-6) {
+          result.normal.set(1, 0, 0);
         } else {
-          normal.normalize();
+          result.normal.normalize();
         }
-        return { hasCollision: true, normal, pillarCenter: center, blockRadius: minCenterDist };
+        result.pillarCenter.copy(center);
+        result.blockRadius = minCenterDist;
+        result.hasCollision = true;
+        return result;
       }
     }
 
-    return {
-      hasCollision: false,
-      normal: new Vector3(),
-      pillarCenter: new Vector3(),
-      blockRadius: 0,
-    };
+    return result;
   }
 
   /**
@@ -414,6 +480,9 @@ export class PhysicsSystem extends BasePhysicsSystem {
     closestPoint: Vector3;
     segmentIndex: number;
   } {
+    const result = this._wallCollisionResult;
+    result.hasCollision = false;
+    result.segmentIndex = -1;
     const px = position.x;
     const pz = position.z;
 
@@ -423,7 +492,6 @@ export class PhysicsSystem extends BasePhysicsSystem {
       const halfX = seg.sizeX / 2;
       const halfZ = seg.sizeZ / 2;
 
-      // Closest point on this segment's XZ footprint to the player
       const closestX = Math.max(cx - halfX, Math.min(px, cx + halfX));
       const closestZ = Math.max(cz - halfZ, Math.min(pz, cz + halfZ));
 
@@ -432,19 +500,19 @@ export class PhysicsSystem extends BasePhysicsSystem {
       const dist = Math.sqrt(dx * dx + dz * dz);
 
       if (dist < this.horizontalClearanceRadius) {
-        const normal = dist < 0.001
-          ? new Vector3(1, 0, 0)
-          : new Vector3(dx / dist, 0, dz / dist);
-        return {
-          hasCollision: true,
-          normal,
-          closestPoint: new Vector3(closestX, 0, closestZ),
-          segmentIndex: i,
-        };
+        if (dist < 0.001) {
+          result.normal.set(1, 0, 0);
+        } else {
+          result.normal.set(dx / dist, 0, dz / dist);
+        }
+        result.closestPoint.set(closestX, 0, closestZ);
+        result.segmentIndex = i;
+        result.hasCollision = true;
+        return result;
       }
     }
 
-    return { hasCollision: false, normal: new Vector3(), closestPoint: new Vector3(), segmentIndex: -1 };
+    return result;
   }
 
   private calculateWallSliding(
@@ -452,12 +520,10 @@ export class PhysicsSystem extends BasePhysicsSystem {
     deltaPosition: Vector3,
     collision: { normal: Vector3; closestPoint: Vector3; segmentIndex:  number }
   ): Vector3 {
-    // Slide along the wall face (tangent perpendicular to push-out normal)
-    const tangent = new Vector3(-collision.normal.z, 0, collision.normal.x);
-    const tangentMovement = deltaPosition.clone().projectOnVector(tangent);
-    const slidePosition = currentPosition.clone().add(tangentMovement);
+    const tangent = this._tangent.set(-collision.normal.z, 0, collision.normal.x);
+    const tangentMovement = this._horizontalMovement.copy(deltaPosition).projectOnVector(tangent);
+    const slidePosition = this._currentPosition.copy(currentPosition).add(tangentMovement);
 
-    // Re-verify against the same segment and push out if we're still inside
     const seg = this.WALL_SEGMENTS[collision.segmentIndex];
     const [cx, , cz] = seg.center;
     const halfX = seg.sizeX / 2;
@@ -471,11 +537,13 @@ export class PhysicsSystem extends BasePhysicsSystem {
     const dist = Math.sqrt(dx * dx + dz * dz);
 
     if (dist < this.horizontalClearanceRadius) {
-      const pushDir = dist < 0.001
-        ? new Vector3(1, 0, 0)
-        : new Vector3(dx / dist, 0, dz / dist);
-      slidePosition.x = closestX + pushDir.x * this.horizontalClearanceRadius;
-      slidePosition.z = closestZ + pushDir.z * this.horizontalClearanceRadius;
+      if (dist < 0.001) {
+        this._pushDirectionScratch.set(1, 0, 0);
+      } else {
+        this._pushDirectionScratch.set(dx / dist, 0, dz / dist);
+      }
+      slidePosition.x = closestX + this._pushDirectionScratch.x * this.horizontalClearanceRadius;
+      slidePosition.z = closestZ + this._pushDirectionScratch.z * this.horizontalClearanceRadius;
     }
 
     return slidePosition;
@@ -484,7 +552,7 @@ export class PhysicsSystem extends BasePhysicsSystem {
   private syncHorizontalVelocityFromInput(movement: Movement): void {
     if (movement.inputStrength > 0) {
       const effectiveMaxSpeed = movement.getEffectiveMaxSpeed();
-      const targetVelocity = movement.moveDirection.clone();
+      const targetVelocity = this._targetVelocity.copy(movement.moveDirection);
       targetVelocity.multiplyScalar(effectiveMaxSpeed * movement.inputStrength);
       movement.velocity.x = targetVelocity.x;
       movement.velocity.z = targetVelocity.z;
@@ -501,7 +569,9 @@ export class PhysicsSystem extends BasePhysicsSystem {
     this.syncHorizontalVelocityFromInput(movement);
 
     // Apply any additional forces (like knockback, wind, etc.)
-    movement.velocity.add(movement.acceleration.clone().multiplyScalar(deltaTime));
+    movement.velocity.add(
+      this._accelDelta.copy(movement.acceleration).multiplyScalar(deltaTime),
+    );
 
     // Reset acceleration for next frame
     movement.acceleration.set(0, 0, 0);

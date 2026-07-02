@@ -13,15 +13,27 @@ import type { TotemBoltVariant } from '@/utils/talents';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import EntropicBoltTrail from './EntropicBoltTrail';
 
+export type TotemBoltPoolSlot = {
+  active: boolean;
+  launchGen: number;
+  id: number;
+  from: Vector3;
+  to: Vector3;
+  targetId: string;
+};
+
 export interface TotemEntropicBoltProps {
   /** World-space start (totem origin). */
-  from: Vector3;
+  from?: Vector3;
   /** World-space end (target center / impact height). */
-  to: Vector3;
+  to?: Vector3;
   /** Called once when the bolt reaches `to`. */
-  onImpact: (impactWorld: Vector3) => void;
+  onImpact?: (impactWorld: Vector3) => void;
   /** Boon tint; default rose gold aligns with baseline Mantra / Entropic LMB bolts. */
   totemBoltVariant?: TotemBoltVariant;
+  /** When set, flight is driven from the pool slot (no React state per launch). */
+  poolSlot?: TotemBoltPoolSlot;
+  onPoolImpact?: (boltId: number, targetId: string) => void;
 }
 
 const AXIS_Y = new Vector3(0, 1, 0);
@@ -61,21 +73,59 @@ export function getTotemBoltTheme(variant: TotemBoltVariant | undefined): {
 }
 
 /** Simplified Entropic-style bolt using the same `EntropicBoltTrail` as `EntropicBolt`. */
-export default function TotemEntropicBolt({ from, to, onImpact, totemBoltVariant }: TotemEntropicBoltProps) {
+export default function TotemEntropicBolt({
+  from,
+  to,
+  onImpact,
+  totemBoltVariant,
+  poolSlot,
+  onPoolImpact,
+}: TotemEntropicBoltProps) {
   const boltRef = useRef<Group>(null);
   const orientRef = useRef<Group>(null);
   const coronaRef = useRef<Mesh>(null);
-  const startRef = useRef(from.clone());
-  const endRef = useRef(to.clone());
+  const rootRef = useRef<Group>(null);
+  const startRef = useRef((from ?? poolSlot?.from ?? new Vector3()).clone());
+  const endRef = useRef((to ?? poolSlot?.to ?? new Vector3()).clone());
   const flightDir = useRef(new Vector3(0, 1, 0));
   const elapsed = useRef(0);
   const doneRef = useRef(false);
-  const [flightActive, setFlightActive] = useState(true);
+  const flightVisibleRef = useRef(true);
+  const launchGenSeen = useRef(0);
+  const durationRef = useRef(0.2);
+  const [flightActive, setFlightActive] = useState(!poolSlot);
+
+  const resetFlight = (start: Vector3, end: Vector3, playSound: boolean) => {
+    startRef.current.copy(start);
+    endRef.current.copy(end);
+    if (playSound) {
+      (window as any).audioSystem?.playTotemBoltLaunchSound?.(startRef.current.clone());
+    }
+    flightDir.current.copy(endRef.current).sub(startRef.current);
+    if (flightDir.current.lengthSq() < 1e-6) {
+      flightDir.current.set(0, 1, 0);
+    } else {
+      flightDir.current.normalize();
+    }
+    elapsed.current = 0;
+    doneRef.current = false;
+    flightVisibleRef.current = true;
+    durationRef.current = Math.max(0.11, Math.min(0.38, start.distanceTo(end) / 34));
+    if (boltRef.current) {
+      boltRef.current.visible = true;
+      boltRef.current.position.copy(startRef.current);
+    }
+    if (rootRef.current) rootRef.current.visible = true;
+    alignBoltToDirection(orientRef.current, flightDir.current);
+  };
 
   const duration = useMemo(() => {
-    const d = from.distanceTo(to);
+    if (poolSlot) return durationRef.current;
+    const start = from!;
+    const end = to!;
+    const d = start.distanceTo(end);
     return Math.max(0.11, Math.min(0.38, d / 34));
-  }, [from, to]);
+  }, [from, to, poolSlot]);
 
   const theme = useMemo(() => getTotemBoltTheme(totemBoltVariant), [totemBoltVariant]);
 
@@ -93,26 +143,26 @@ export default function TotemEntropicBolt({ from, to, onImpact, totemBoltVariant
   const boltLight = useDynamicLight({ color: theme.light, distance: 6, decay: 2, priority: 2 });
 
   useEffect(() => {
-    startRef.current.copy(from);
-    endRef.current.copy(to);
-    (window as any).audioSystem?.playTotemBoltLaunchSound?.(startRef.current.clone());
-    flightDir.current.copy(endRef.current).sub(startRef.current);
-    if (flightDir.current.lengthSq() < 1e-6) {
-      flightDir.current.set(0, 1, 0);
-    } else {
-      flightDir.current.normalize();
-    }
-    if (boltRef.current) {
-      boltRef.current.position.copy(startRef.current);
-    }
-    alignBoltToDirection(orientRef.current, flightDir.current);
-  }, [from, to]);
+    if (poolSlot || !from || !to) return;
+    resetFlight(from, to, true);
+  }, [from, to, poolSlot]);
 
   useFrame((_, delta) => {
-    if (doneRef.current || !boltRef.current) return;
+    if (poolSlot) {
+      if (!poolSlot.active) {
+        if (rootRef.current) rootRef.current.visible = false;
+        return;
+      }
+      if (poolSlot.launchGen !== launchGenSeen.current) {
+        launchGenSeen.current = poolSlot.launchGen;
+        resetFlight(poolSlot.from, poolSlot.to, true);
+      }
+    }
+
+    if (doneRef.current || !boltRef.current || !flightVisibleRef.current) return;
 
     elapsed.current += delta;
-    const t = Math.min(1, elapsed.current / duration);
+    const t = Math.min(1, elapsed.current / (poolSlot ? durationRef.current : duration));
 
     alignBoltToDirection(orientRef.current, flightDir.current);
 
@@ -130,15 +180,24 @@ export default function TotemEntropicBolt({ from, to, onImpact, totemBoltVariant
 
     if (t >= 1 && !doneRef.current) {
       doneRef.current = true;
-      setFlightActive(false);
+      flightVisibleRef.current = false;
+      if (rootRef.current) rootRef.current.visible = false;
       boltLight.current?.setIntensity(0);
-      onImpact(endRef.current.clone());
+      if (poolSlot) {
+        poolSlot.active = false;
+        onPoolImpact?.(poolSlot.id, poolSlot.targetId);
+      } else {
+        setFlightActive(false);
+        onImpact?.(endRef.current.clone());
+      }
     }
   });
 
+  const showFlight = poolSlot ? true : flightActive;
+
   return (
-    <group>
-      {flightActive && (
+    <group ref={rootRef}>
+      {showFlight && (
         <>
           <EntropicBoltTrail
             color={trailColor}

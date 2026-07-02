@@ -7,7 +7,7 @@ import { Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import WeaverModel from './WeaverModel';
-import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
@@ -35,7 +35,7 @@ const LERP_SPEED           = 12;
 const WALK_STOP_DELAY      = 250;  // ms
 const HIT_REACT_IMPACT_COOLDOWN_MS = 1500; // min time between weaver_impact.glb hit-react plays
 
-export default function WeaverRenderer({
+function WeaverRenderer({
   id,
   position,
   rotation,
@@ -54,12 +54,13 @@ export default function WeaverRenderer({
   const auraDisc = isBlue
     ? { color: '#3388dd', emissive: '#1a50aa' }
     : { color: '#00cc44', emissive: '#00aa22' };
-  const { socket, enemyTransformsRef } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
 
   const [isCastingHeal,   setIsCastingHeal]   = useState(false);
   const [isCastingSummon, setIsCastingSummon] = useState(false);
   const [isWalking,       setIsWalking]       = useState(false);
+  const isWalkingRef = useRef(false);
   const [isImpacting,     setIsImpacting]     = useState(false);
   const [impactPlayKey,   setImpactPlayKey]   = useState(0);
 
@@ -71,8 +72,20 @@ export default function WeaverRenderer({
   const lastHitImpactAtRef = useRef(0);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const trackTimeout = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      pendingTimersRef.current = pendingTimersRef.current.filter((t) => t !== id);
+      fn();
+    }, ms);
+    pendingTimersRef.current.push(id);
+    return id;
+  }, []);
   const fadeTimer     = useRef(0);
   const opacity       = useRef(1);
+  const cachedDeathMats = useRef<any[]>([]);
+  const deathCacheBuilt = useRef(false);
   const auraGroupRef  = useRef<Group | null>(null);
 
   const setGroupRef = useCallback((group: Group | null) => {
@@ -84,8 +97,39 @@ export default function WeaverRenderer({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    return () => { if (walkStopTimer.current) clearTimeout(walkStopTimer.current); };
+    return () => {
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      pendingTimersRef.current.forEach(clearTimeout);
+      pendingTimersRef.current = [];
+    };
   }, []);
+
+  // Derive walking state from server position deltas (not per-frame lerp sampling).
+  useEffect(() => {
+    const dist = targetPosition.current.distanceTo(position);
+    const isCastLocked = isCastingRef.current;
+    if (!isCastLocked) {
+      targetPosition.current.copy(position);
+    }
+    if (dist > 8.0 && groupRef.current && !isCastLocked) {
+      groupRef.current.position.copy(position);
+    }
+    if (dist > 0.01 && !isCastLocked && !isDying) {
+      if (!isWalkingRef.current) {
+        isWalkingRef.current = true;
+        setIsWalking(true);
+      }
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      walkStopTimer.current = setTimeout(() => {
+        isWalkingRef.current = false;
+        setIsWalking(false);
+      }, WALK_STOP_DELAY);
+    }
+  }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    targetRotation.current = rotation;
+  }, [rotation]);
 
   const handleImpactFinished = useCallback(() => {
     setIsImpacting(false);
@@ -124,7 +168,7 @@ export default function WeaverRenderer({
       if (data.weaverId !== id) return;
       isCastingRef.current = true;
       setIsCastingHeal(true);
-      setTimeout(() => {
+      trackTimeout(() => {
         setIsCastingHeal(false);
         isCastingRef.current = isCastingSummonRef.current;
       }, CAST_HEAL_DURATION);
@@ -132,7 +176,7 @@ export default function WeaverRenderer({
 
     socket.on('weaver-heal-telegraph', handleHealTelegraph);
     return () => { socket.off('weaver-heal-telegraph', handleHealTelegraph); };
-  }, [id, socket]);
+  }, [id, socket, trackTimeout]);
 
   // Weaver Impale Spike cast (post-Boss2) — reuses CastHeal animation
   useEffect(() => {
@@ -142,15 +186,15 @@ export default function WeaverRenderer({
       if (data.weaverId !== id) return;
       isCastingRef.current = true;
       setIsCastingHeal(true);
-      setTimeout(() => setIsCastingHeal(false), CAST_HEAL_DURATION);
-      setTimeout(() => {
+      trackTimeout(() => setIsCastingHeal(false), CAST_HEAL_DURATION);
+      trackTimeout(() => {
         isCastingRef.current = isCastingSummonRef.current;
       }, IMPALE_CAST_LOCK_MS);
     };
 
     socket.on('weaver-impale-spike-cast', handleImpaleCast);
     return () => { socket.off('weaver-impale-spike-cast', handleImpaleCast); };
-  }, [id, socket]);
+  }, [id, socket, trackTimeout]);
 
   // Weaver summon ghoul telegraph
   useEffect(() => {
@@ -161,7 +205,7 @@ export default function WeaverRenderer({
       isCastingRef.current = true;
       isCastingSummonRef.current = true;
       setIsCastingSummon(true);
-      setTimeout(() => {
+      trackTimeout(() => {
         setIsCastingSummon(false);
         isCastingSummonRef.current = false;
         isCastingRef.current = false;
@@ -170,7 +214,7 @@ export default function WeaverRenderer({
 
     socket.on('weaver-summon-telegraph', handleSummonTelegraph);
     return () => { socket.off('weaver-summon-telegraph', handleSummonTelegraph); };
-  }, [id, socket]);
+  }, [id, socket, trackTimeout]);
 
   // Blue weaver lightning — reuse CastHeal channel pose while locked in place
   useEffect(() => {
@@ -183,15 +227,15 @@ export default function WeaverRenderer({
         : CAST_LIGHTNING_DURATION;
       isCastingRef.current = true;
       setIsCastingHeal(true);
-      setTimeout(() => setIsCastingHeal(false), Math.min(lockMs, CAST_HEAL_DURATION));
-      setTimeout(() => {
+      trackTimeout(() => setIsCastingHeal(false), Math.min(lockMs, CAST_HEAL_DURATION));
+      trackTimeout(() => {
         isCastingRef.current = isCastingSummonRef.current;
       }, lockMs);
     };
 
     socket.on('weaver-lightning-telegraph', handleLightningTelegraph);
     return () => { socket.off('weaver-lightning-telegraph', handleLightningTelegraph); };
-  }, [id, socket]);
+  }, [id, socket, trackTimeout]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
@@ -202,12 +246,6 @@ export default function WeaverRenderer({
 
     if (dist > 8.0 && !isCastLocked) {
       group.position.copy(targetPosition.current);
-    }
-
-    if (dist > 0.01 && !isCastLocked && !isDying) {
-      if (!isWalking) setIsWalking(true);
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
     }
 
     if (!isCastLocked) {
@@ -222,15 +260,26 @@ export default function WeaverRenderer({
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
-      group.traverse((child: any) => {
-        if (child.isMesh && child.material) {
-          const mats = Array.isArray(child.material) ? child.material : [child.material];
-          mats.forEach((mat: any) => {
-            mat.transparent = true;
-            mat.opacity = opacity.current;
-          });
-        }
-      });
+
+      if (!deathCacheBuilt.current) {
+        const collected: any[] = [];
+        group.traverse((child: any) => {
+          if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((mat: any) => {
+              mat.transparent = true;
+              collected.push(mat);
+            });
+          }
+        });
+        cachedDeathMats.current = collected;
+        deathCacheBuilt.current = true;
+      }
+
+      const op = opacity.current;
+      for (let i = 0; i < cachedDeathMats.current.length; i++) {
+        cachedDeathMats.current[i].opacity = op;
+      }
     }
 
     // Aura is a scene-level sibling group — mirror the weaver's XZ, stay at ground Y
@@ -324,3 +373,5 @@ export default function WeaverRenderer({
     </>
   );
 }
+
+export default React.memo(WeaverRenderer);

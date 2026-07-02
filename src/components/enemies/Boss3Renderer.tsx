@@ -12,7 +12,7 @@ import EnemyStaggerBar from './EnemyStaggerBar';
 import Boss3GreenBeam from './Boss3GreenBeam';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
 import { campHpTheme } from '@/utils/campHpTheme';
-import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 
 interface Boss3RendererProps {
@@ -118,7 +118,7 @@ function Boss3NovaWindupTelegraph({ startTime, durationMs }: { startTime: number
   );
 }
 
-export default function Boss3Renderer({
+function Boss3Renderer({
   id,
   position,
   rotation,
@@ -128,13 +128,25 @@ export default function Boss3Renderer({
   staggerBuildup = 0,
 }: Boss3RendererProps) {
   const theme = campHpTheme('green');
-  const { socket, enemyTransformsRef } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const trackTimeout = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      pendingTimersRef.current = pendingTimersRef.current.filter((t) => t !== id);
+      fn();
+    }, ms);
+    pendingTimersRef.current.push(id);
+    return id;
+  }, []);
   const fadeTimer = useRef(0);
   const opacity = useRef(1);
+  const cachedDeathMats = useRef<any[]>([]);
+  const deathCacheBuilt = useRef(false);
 
   const [isWalking, setIsWalking] = useState(false);
   const [isCastingSummon, setIsCastingSummon] = useState(false);
@@ -187,6 +199,8 @@ export default function Boss3Renderer({
   useEffect(
     () => () => {
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      pendingTimersRef.current.forEach(clearTimeout);
+      pendingTimersRef.current = [];
       stopGreenBeamSound();
     },
     [stopGreenBeamSound],
@@ -212,7 +226,7 @@ export default function Boss3Renderer({
     const handleSummonTelegraph = (data: { weaverId: string }) => {
       if (data.weaverId !== id) return;
       setIsCastingSummon(true);
-      setTimeout(() => setIsCastingSummon(false), CAST_SUMMON_DURATION);
+      trackTimeout(() => setIsCastingSummon(false), CAST_SUMMON_DURATION);
     };
 
     const handleNovaStart = (data: { bossId: string; windupMs?: number }) => {
@@ -221,7 +235,7 @@ export default function Boss3Renderer({
       const startTime = Date.now();
       setIsCastingSummon(true);
       setNovaWindup({ startTime, durationMs: w });
-      setTimeout(() => {
+      trackTimeout(() => {
         setIsCastingSummon(false);
         setNovaWindup(null);
       }, w);
@@ -235,7 +249,7 @@ export default function Boss3Renderer({
         typeof data.durationMs === 'number' && data.durationMs > 0 ? data.durationMs : BOSS3_GREEN_BEAM_DURATION_MS;
       const startTime = Date.now();
       setGreenBeamHold({ startTime, isActive: true });
-      setTimeout(() => {
+      trackTimeout(() => {
         setGreenBeamHold((prev) => (prev && prev.startTime === startTime ? { ...prev, isActive: false } : prev));
       }, d);
     };
@@ -255,8 +269,10 @@ export default function Boss3Renderer({
       socket.off('boss3-nova-start', handleNovaStart);
       socket.off('boss3-green-beam-start', handleGreenBeamStart);
       socket.off('boss3-green-beam-end', handleGreenBeamEnd);
+      pendingTimersRef.current.forEach(clearTimeout);
+      pendingTimersRef.current = [];
     };
-  }, [id, socket]);
+  }, [id, socket, trackTimeout]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
@@ -273,15 +289,26 @@ export default function Boss3Renderer({
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
-      group.traverse((child: any) => {
-        if (child.isMesh && child.material) {
-          const mats = Array.isArray(child.material) ? child.material : [child.material];
-          mats.forEach((mat: any) => {
-            mat.transparent = true;
-            mat.opacity = opacity.current;
-          });
-        }
-      });
+
+      if (!deathCacheBuilt.current) {
+        const collected: any[] = [];
+        group.traverse((child: any) => {
+          if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((mat: any) => {
+              mat.transparent = true;
+              collected.push(mat);
+            });
+          }
+        });
+        cachedDeathMats.current = collected;
+        deathCacheBuilt.current = true;
+      }
+
+      const op = opacity.current;
+      for (let i = 0; i < cachedDeathMats.current.length; i++) {
+        cachedDeathMats.current[i].opacity = op;
+      }
     }
   });
 
@@ -344,3 +371,5 @@ export default function Boss3Renderer({
     </group>
   );
 }
+
+export default React.memo(Boss3Renderer);

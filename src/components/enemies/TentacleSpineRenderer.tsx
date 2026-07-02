@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Group, Quaternion, Vector3, Matrix4 } from '@/utils/three-exports';
-import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import {
   FOREST_CANOPY_TIERS,
@@ -54,7 +54,7 @@ const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
   slamSeq,
   windDirXZ,
 }) => {
-  const { enemyTransformsRef } = useMultiplayer();
+  const { enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group>(null);
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);

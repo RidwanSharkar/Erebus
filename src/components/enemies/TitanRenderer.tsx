@@ -9,7 +9,7 @@ import TitanSoulEffect from './TitanSoulEffect';
 import TitanBladestorm from './TitanBladestorm';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyMeleeAttackRangeRing, { TITAN_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
-import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 
@@ -46,7 +46,7 @@ const WALK_STOP_DELAY        = 300;
 
 const HP_BAR_WIDTH = 3.0;
 
-export default function TitanRenderer({
+function TitanRenderer({
   id,
   position,
   rotation,
@@ -59,7 +59,7 @@ export default function TitanRenderer({
   bladestormStartTime,
 }: TitanRendererProps) {
   const theme = campHpTheme(soulType);
-  const { socket, enemyTransformsRef } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
@@ -76,6 +76,16 @@ export default function TitanRenderer({
   const isCastingRef = useRef(false);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const trackTimeout = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      pendingTimersRef.current = pendingTimersRef.current.filter((t) => t !== id);
+      fn();
+    }, ms);
+    pendingTimersRef.current.push(id);
+    return id;
+  }, []);
   const fadeTimer     = useRef(0);
   const opacity       = useRef(1);
   // Cached list of materials for death-fade — built once when isDying starts,
@@ -112,7 +122,11 @@ export default function TitanRenderer({
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    return () => { if (walkStopTimer.current) clearTimeout(walkStopTimer.current); };
+    return () => {
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      pendingTimersRef.current.forEach(clearTimeout);
+      pendingTimersRef.current = [];
+    };
   }, []);
 
   useEffect(() => {
@@ -128,7 +142,7 @@ export default function TitanRenderer({
       setIsAttacking(true);
       isAttackingRef.current = true;
       setIsWalking(false);
-      setTimeout(() => {
+      trackTimeout(() => {
         setIsAttacking(false);
         isAttackingRef.current = false;
         setIsWalking(true);
@@ -140,7 +154,7 @@ export default function TitanRenderer({
       setIsPoweringUp(true);
       isPoweringUpRef.current = true;
       setIsWalking(false);
-      setTimeout(() => {
+      trackTimeout(() => {
         setIsPoweringUp(false);
         isPoweringUpRef.current = false;
         if (!isAnimLocked()) setIsWalking(true);
@@ -152,7 +166,7 @@ export default function TitanRenderer({
       setIsStomping(true);
       isStompingRef.current = true;
       setIsWalking(false);
-      setTimeout(() => {
+      trackTimeout(() => {
         setIsStomping(false);
         isStompingRef.current = false;
         if (!isAnimLocked()) setIsWalking(true);
@@ -164,7 +178,7 @@ export default function TitanRenderer({
       setIsCasting(true);
       isCastingRef.current = true;
       setIsWalking(false);
-      setTimeout(() => {
+      trackTimeout(() => {
         setIsCasting(false);
         isCastingRef.current = false;
         if (!isAnimLocked()) setIsWalking(true);
@@ -180,8 +194,10 @@ export default function TitanRenderer({
       socket.off('titan-bladestorm-powerup-start', handleBladestormPowerup);
       socket.off('titan-stomp-start', handleStompStart);
       socket.off('titan-cannon-windup', handleCannonWindup);
+      pendingTimersRef.current.forEach(clearTimeout);
+      pendingTimersRef.current = [];
     };
-  }, [id, socket]);
+  }, [id, socket, trackTimeout]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
@@ -275,3 +291,5 @@ export default function TitanRenderer({
     </group>
   );
 }
+
+export default React.memo(TitanRenderer);

@@ -1,5 +1,6 @@
-import { useRef, useState, memo } from 'react';
+import { useRef, memo, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
+import { TubeGeometry, MeshStandardMaterial } from 'three';
 import {
   Group,
   Vector3,
@@ -7,10 +8,10 @@ import {
   CubicBezierCurve3,
   Shape,
   DoubleSide,
-  PointLight,
   Mesh,
   MeshBasicMaterial,
 } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import { isBowPerfectShotProgress } from '@/utils/bowConstants';
 
@@ -53,8 +54,10 @@ const EtherBowComponent = memo(function EtherealBow({
   tempestBurstShotSeq = 0
 }: EtherealBowProps) {
   const bowRef = useRef<Group>(null);
-  const muzzleLightRef = useRef<PointLight | null>(null);
+  const muzzleMarkerRef = useRef<Group>(null);
   const muzzleFlareRef = useRef<Mesh | null>(null);
+  const _muzzleWorldPos = useRef(new Vector3());
+  const muzzleLight = useDynamicLight({ color: '#ff7722', distance: 3.5, decay: 1.2, priority: 1 });
   const tempestSeqRef = useRef(0);
   tempestSeqRef.current = tempestBurstShotSeq;
   const prevTempestSeqRef = useRef(0);
@@ -62,7 +65,12 @@ const EtherBowComponent = memo(function EtherealBow({
   const maxDrawDistance = 1.35;
   const prevIsCharging = useRef(isCharging);
   const basePosition = [-0.9, 0.075, 0.75] as const;  // Match other weapons' base positioning
-  const [perfectEmissivePulse, setPerfectEmissivePulse] = useState(4);
+  const bowBodyMatRef = useRef<MeshStandardMaterial>(null);
+  const leftWingMatRef = useRef<MeshStandardMaterial>(null);
+  const rightWingMatRef = useRef<MeshStandardMaterial>(null);
+  const leftBladeMatRef = useRef<MeshStandardMaterial>(null);
+  const rightBladeMatRef = useRef<MeshStandardMaterial>(null);
+  const perfectShotMatRefs = [bowBodyMatRef, leftWingMatRef, rightWingMatRef, leftBladeMatRef, rightBladeMatRef];
   const isPerfectShotWindow = isBowPerfectShotProgress(chargeProgress);
   
   // Perfect-window pulse (R3F clock) + charge release: only real bow draw, not ability animations
@@ -74,9 +82,15 @@ const EtherBowComponent = memo(function EtherealBow({
     }
     muzzleFlashStrengthRef.current = Math.max(0, muzzleFlashStrengthRef.current * Math.exp(-delta * 12));
     const t = muzzleFlashStrengthRef.current;
-    const muzzle = muzzleLightRef.current;
-    if (muzzle) {
-      muzzle.intensity = t * 22;
+    const marker = muzzleMarkerRef.current;
+    if (marker) {
+      marker.getWorldPosition(_muzzleWorldPos.current);
+      muzzleLight.current?.setPosition(
+        _muzzleWorldPos.current.x,
+        _muzzleWorldPos.current.y,
+        _muzzleWorldPos.current.z,
+      );
+      muzzleLight.current?.setIntensity(t * 22);
     }
     const flare = muzzleFlareRef.current;
     if (flare) {
@@ -87,7 +101,10 @@ const EtherBowComponent = memo(function EtherealBow({
     }
 
     if (isPerfectShotWindow) {
-      setPerfectEmissivePulse(4.0 + Math.sin(state.clock.elapsedTime * 20) * 2.0);
+      const pulse = 4.0 + Math.sin(state.clock.elapsedTime * 20) * 2.0;
+      for (const matRef of perfectShotMatRefs) {
+        if (matRef.current) matRef.current.emissiveIntensity = pulse;
+      }
     }
     const actualIsCharging = isCharging && !isAbilityBowAnimation && !isViperStingCharging && !isBarrageCharging && !isCobraShotCharging && !isRejuvenatingShotCharging;
 
@@ -98,60 +115,64 @@ const EtherBowComponent = memo(function EtherealBow({
     prevIsCharging.current = actualIsCharging;
   });
 
-  // Rest of the curve creation functions remain the same
-  const createBowCurve = () => {
-    return new CatmullRomCurve3([
-      new Vector3(-0.875, 0, 0),
-      new Vector3(-0.85, 0.2, 0),
-      new Vector3(-0.25, 0.5, 0),
-      new Vector3(-0.4, 0.35, 0),
-      new Vector3(0.4, 0.35, 0),
-      new Vector3(0.25, 0.5, 0),
-      new Vector3(0.85, 0.2, 0),
-      new Vector3(0.875, 0, 0)
-    ]);
-  };
+  const bowCurve = useMemo(
+    () =>
+      new CatmullRomCurve3([
+        new Vector3(-0.875, 0, 0),
+        new Vector3(-0.85, 0.2, 0),
+        new Vector3(-0.25, 0.5, 0),
+        new Vector3(-0.4, 0.35, 0),
+        new Vector3(0.4, 0.35, 0),
+        new Vector3(0.25, 0.5, 0),
+        new Vector3(0.85, 0.2, 0),
+        new Vector3(0.875, 0, 0),
+      ]),
+    [],
+  );
 
-  const createStringCurve = (drawAmount: number) => {
-    const pullback = drawAmount * maxDrawDistance;
-    const curve = new CubicBezierCurve3(
+  const bladeShape = useMemo(() => {
+    const shape = new Shape();
+    shape.moveTo(0, 0);
+    shape.lineTo(0.4, -0.130);
+    shape.bezierCurveTo(0.8, 0.22, 1.33, 0.5, 1.6, 0.515);
+    shape.lineTo(1.125, 0.75);
+    shape.bezierCurveTo(0.5, 0.2, 0.225, 0.0, 0.1, 0.7);
+    shape.lineTo(0, 0);
+    return shape;
+  }, []);
+
+  const bladeExtrudeSettings = useMemo(
+    () => ({ steps: 1, depth: 0.03, bevelEnabled: false }),
+    [],
+  );
+
+  const rawDrawProgress = isCobraShotCharging
+    ? cobraShotChargeProgress
+    : isBarrageCharging
+      ? barrageChargeProgress
+      : isViperStingCharging
+        ? viperStingChargeProgress
+        : isRejuvenatingShotCharging
+          ? rejuvenatingShotChargeProgress
+          : chargeProgress;
+  const quantizedDrawProgress = Math.round(rawDrawProgress * 20) / 20;
+
+  const stringCurve = useMemo(() => {
+    const pullback = quantizedDrawProgress * maxDrawDistance;
+    return new CubicBezierCurve3(
       new Vector3(-0.8, 0, 0),
       new Vector3(0, 0, -pullback),
       new Vector3(0, 0, -pullback),
-      new Vector3(0.8, 0, 0)
+      new Vector3(0.8, 0, 0),
     );
-    return curve;
-  };
+  }, [quantizedDrawProgress]);
 
-  // Create custom blade shape (similar to scythe blades)
-  const createBladeShape = () => {
-    const shape = new Shape();
-    shape.moveTo(0, 0);
-    
-    // Create thick back edge first
-    shape.lineTo(0.4, -0.130);
-    shape.bezierCurveTo(
-      0.8, 0.22,    // control point 1
-      1.33, 0.5,    // control point 2
-      1.6, 0.515    // end point (tip)
-    );
-    
-    // Create sharp edge
-    shape.lineTo(1.125, 0.75);
-    shape.bezierCurveTo(
-      0.5, 0.2,
-      0.225, 0.0,
-      0.1, 0.7
-    );
-    shape.lineTo(0, 0);
-    return shape;
-  };
+  const stringTubeGeo = useMemo(
+    () => new TubeGeometry(stringCurve, 16, 0.02, 8, false),
+    [stringCurve],
+  );
 
-  const bladeExtrudeSettings = {
-    steps: 1,
-    depth: 0.03,
-    bevelEnabled: false
-  };
+  useEffect(() => () => stringTubeGeo.dispose(), [stringTubeGeo]);
 
   return (
     <group
@@ -168,14 +189,7 @@ const EtherBowComponent = memo(function EtherealBow({
           0
         ]}
       >
-        <pointLight
-          ref={muzzleLightRef}
-          position={[0, 0, 0.45]}
-          color="#ff7722"
-          distance={3.5}
-          decay={1.2}
-          intensity={0}
-        />
+        <group ref={muzzleMarkerRef} position={[0, 0, 0.45]} />
         {/* Unlit muzzle pop — always visible (not dependent on scene lighting) */}
         <mesh ref={muzzleFlareRef} position={[0, 0, 0.5]} renderOrder={2}>
           <sphereGeometry args={[0.12, 10, 10]} />
@@ -189,8 +203,9 @@ const EtherBowComponent = memo(function EtherealBow({
         </mesh>
         {/* Bow body with dynamic color for instant powershot, charging, and perfect shot timing */}
         <mesh rotation={[Math.PI/2, 0, 0]}>
-          <tubeGeometry args={[createBowCurve(), 64, 0.035, 8, false]} />
+          <tubeGeometry args={[bowCurve, 64, 0.035, 8, false]} />
           <meshStandardMaterial 
+            ref={bowBodyMatRef}
             color={
               isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
               isBarrageCharging ? `rgb(${Math.floor(0 + barrageChargeProgress * 136)}, ${Math.floor(136 + barrageChargeProgress * 119)}, ${Math.floor(255)})` : // Light blue Barrage colors
@@ -214,7 +229,7 @@ const EtherBowComponent = memo(function EtherealBow({
               "#C18C4B"
             }
             emissiveIntensity={
-              isPerfectShotWindow ? perfectEmissivePulse : // Pulsing effect during perfect window
+              isPerfectShotWindow ? 4 : // Pulsing effect driven via material ref in useFrame
               isBarrageCharging ? 2.0 + barrageChargeProgress * 2.0 : // Barrage charging glow
               isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
               isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
@@ -228,9 +243,8 @@ const EtherBowComponent = memo(function EtherealBow({
           />
         </mesh>
 
-        {/* Bow string */}
-        <mesh>
-          <tubeGeometry args={[createStringCurve(isCobraShotCharging ? cobraShotChargeProgress : isBarrageCharging ? barrageChargeProgress : isViperStingCharging ? viperStingChargeProgress : isRejuvenatingShotCharging ? rejuvenatingShotChargeProgress : chargeProgress), 16, 0.02, 8, false]} />
+        {/* Bow string — quantized draw + memoized TubeGeometry */}
+        <mesh geometry={stringTubeGeo}>
           <meshStandardMaterial 
             color="#ffffff"
             emissive="#ffffff"
@@ -246,6 +260,7 @@ const EtherBowComponent = memo(function EtherealBow({
           <mesh position={[-0.4, 0, 0.475]} rotation={[Math.PI/2, 0, Math.PI/6]}>
             <boxGeometry args={[0.6, 0.02, 0.05]} />
             <meshStandardMaterial 
+              ref={leftWingMatRef}
               color={
                 isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
                 isBarrageCharging ? `rgb(${Math.floor(0 + barrageChargeProgress * 136)}, ${Math.floor(136 + barrageChargeProgress * 119)}, ${Math.floor(255)})` : // Light blue Barrage colors
@@ -269,7 +284,7 @@ const EtherBowComponent = memo(function EtherealBow({
                 "#C18C4B"
               }
               emissiveIntensity={
-                isPerfectShotWindow ? perfectEmissivePulse : // Pulsing effect during perfect window
+                isPerfectShotWindow ? 4 : // Pulsing effect driven via material ref in useFrame
                 isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
                 isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
                 currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? 2.5 :
@@ -285,6 +300,7 @@ const EtherBowComponent = memo(function EtherealBow({
           <mesh position={[0.4, 0, 0.475]} rotation={[Math.PI/2, 0, -Math.PI/6]}>
             <boxGeometry args={[0.6, 0.02, 0.05]} />
             <meshStandardMaterial 
+              ref={rightWingMatRef}
               color={
                 isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
                 isBarrageCharging ? `rgb(${Math.floor(0 + barrageChargeProgress * 136)}, ${Math.floor(136 + barrageChargeProgress * 119)}, ${Math.floor(255)})` : // Light blue Barrage colors
@@ -308,7 +324,7 @@ const EtherBowComponent = memo(function EtherealBow({
                 "#C18C4B"
               }
               emissiveIntensity={
-                isPerfectShotWindow ? perfectEmissivePulse : // Pulsing effect during perfect window
+                isPerfectShotWindow ? 4 : // Pulsing effect driven via material ref in useFrame
                 isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
                 isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
                 currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? 2.5 :
@@ -325,8 +341,9 @@ const EtherBowComponent = memo(function EtherealBow({
         <group>
           {/* Left blade */}
           <mesh position={[-1, 0, -0.2]} rotation={[Math.PI/2, 0, Math.PI/2]} scale={[0.4, -0.4, 0.4]}>
-            <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
+            <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
             <meshStandardMaterial 
+              ref={leftBladeMatRef}
               color={
                 isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
                 isBarrageCharging ? `rgb(${Math.floor(0 + barrageChargeProgress * 136)}, ${Math.floor(136 + barrageChargeProgress * 119)}, ${Math.floor(255)})` : // Light blue Barrage colors
@@ -350,7 +367,7 @@ const EtherBowComponent = memo(function EtherealBow({
                 "#C18C4B"
               }
               emissiveIntensity={
-                isPerfectShotWindow ? perfectEmissivePulse : // Pulsing effect during perfect window
+                isPerfectShotWindow ? 4 : // Pulsing effect driven via material ref in useFrame
                 isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
                 isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
                 currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? 2.5 :
@@ -367,8 +384,9 @@ const EtherBowComponent = memo(function EtherealBow({
 
           {/* Right blade */}
           <mesh position={[1.0, 0, -0.2]} rotation={[Math.PI/2, 0, Math.PI/2]} scale={[0.4, 0.4, 0.4]}>
-            <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
+            <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
             <meshStandardMaterial 
+              ref={rightBladeMatRef}
               color={
                 isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
                 isBarrageCharging ? `rgb(${Math.floor(0 + barrageChargeProgress * 136)}, ${Math.floor(136 + barrageChargeProgress * 119)}, ${Math.floor(255)})` : // Light blue Barrage colors
@@ -392,7 +410,7 @@ const EtherBowComponent = memo(function EtherealBow({
                 "#C18C4B"
               }
               emissiveIntensity={
-                isPerfectShotWindow ? perfectEmissivePulse : // Pulsing effect during perfect window
+                isPerfectShotWindow ? 4 : // Pulsing effect driven via material ref in useFrame
                 isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
                 isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
                 currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? 2.5 :

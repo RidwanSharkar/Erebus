@@ -457,6 +457,24 @@ const KNIGHT_SMITE_DAMAGE_POST_BOSS2 = {
   purple: 90,
 };
 
+/** Knight Block — reactive invuln after taking damage; elite Boss1 knights use HP thresholds. */
+const KNIGHT_BLOCK_REACT_WINDOW_MS = 500;
+const KNIGHT_BLOCK_DURATION_MS = {
+  red: 2000,
+  blue: 3000,
+  purple: 4000,
+  green: 6000,
+};
+const KNIGHT_BLOCK_COOLDOWN_MS = {
+  red: 6000,
+  blue: 8000,
+  purple: 12000,
+  green: 15000,
+};
+const KNIGHT_ELITE_BLOCK_DURATION_MS = 10000;
+const KNIGHT_ELITE_BLOCK_HEALTH_THRESHOLDS = [0.9, 0.5, 0.2];
+const KNIGHT_BLOCK_UNLOCK_BOSS_COUNT = 2;
+
 /** Post-boss-2 unlock: single tectonic-style ground spike (castheal windup, player-targeted). */
 const WEAVER_IMPALE_SPIKE_UNLOCK_BOSS_COUNT = 2;
 const WEAVER_IMPALE_SPIKE_COOLDOWN_MS = 7000;
@@ -634,12 +652,18 @@ class EnemyAI {
     // Blue: Storm Lash channeled lightning zaps (timeout handles cleared on death)
     this.knightStormLashTimeouts = new Map(); // enemyId -> handle[]
 
+    // Knight Block — reactive invuln / elite HP-threshold blocks
+    this.knightBlockCooldown = new Map(); // enemyId -> lastBlockTime (regular color-tier)
+    this.knightBlockActiveUntil = new Map(); // enemyId -> invuln expiry timestamp
+    this.knightBlockStages = new Map(); // enemyId -> { p90, p50, p20 } (elite only)
+
     // Navigation / pathfinding
     this.navGrid    = null;      // Uint8Array built once on first use
     this.enemyPaths = new Map(); // enemyId -> { waypoints, wpIndex, lastTargetPos }
     /** Per-tick cache — avoids repeated Array.from(getEnemies()) in hot paths. */
-    this._tickEnemies = null;
+    this._tickEnemies = [];
     this._meleePeerGrid = null;
+    this._meleePeerBucketPool = [];
     /** Pooled A* typed arrays (reused across path recomputes). */
     this._astarGScore = null;
     this._astarCameFrom = null;
@@ -648,6 +672,8 @@ class EnemyAI {
     this.alliedCombatStarted = false;
     /** Per-enemy pending timeout handles cleared on death. */
     this.enemyPendingTimeouts = new Map();
+    /** Per-enemy hazard tick intervals (ember patches, fireballs, spin damage) cleared on death. */
+    this.enemyHazardIntervals = new Map();
 
     // Templar Blink Smite: timestamp when next cast is allowed (per templar; initialized on first aggro)
     this.templarBlinkSmiteNextAt = new Map();
@@ -849,21 +875,46 @@ class EnemyAI {
       for (const handle of pending) clearTimeout(handle);
     }
     this.enemyPendingTimeouts.clear();
+    this.enemyHazardIntervals.forEach((set) => set.forEach((iv) => clearInterval(iv)));
+    this.enemyHazardIntervals.clear();
+  }
+
+  /** Reuse scratch array instead of Array.from(this.room.getEnemies()) each tick. */
+  _refreshTickEnemies() {
+    const scratch = this._tickEnemies;
+    scratch.length = 0;
+    const enemyMap = this.room?.enemies;
+    if (enemyMap) {
+      for (const enemy of enemyMap.values()) {
+        scratch.push(enemy);
+      }
+    }
+    return scratch;
   }
 
   updateAI() {
     if (!this.room || !this.room.getGameStarted()) return;
     if (this.room.isCoopCombatTransitionActive && this.room.isCoopCombatTransitionActive()) return;
+    // Skip full AI during co-op throne prep (combat arena not yet active).
+    if (this.room.gameMode === 'coop' && this.room.combatArenaActive === false) return;
 
-    const enemies = this.room.getEnemies();
+    const enemies = this._refreshTickEnemies();
     const players = this.room.getPlayers();
-    this._tickEnemies = enemies;
     this._meleePeerGrid = this._buildMeleePeerGrid(enemies);
     
     if (enemies.length === 0 || players.length === 0) {
-      this._tickEnemies = null;
       this._meleePeerGrid = null;
+      if (this.aiTimer) {
+        clearInterval(this.aiTimer);
+        this.aiTimer = null;
+        this._aiPausedForIdle = true;
+      }
       return;
+    }
+
+    if (this._aiPausedForIdle) {
+      this._aiPausedForIdle = false;
+      this.startAI();
     }
     
     // Update each enemy's AI
@@ -875,7 +926,6 @@ class EnemyAI {
 
     // Emit all position updates accumulated during this tick as a single batch
     this._flushMoves();
-    this._tickEnemies = null;
     this._meleePeerGrid = null;
   }
 
@@ -1057,9 +1107,10 @@ class EnemyAI {
           this.telegraphSkeletonAttack(skeleton, resolved.player);
           const telegraphDelay = 250;
           const pid = resolved.player.id;
-          setTimeout(() => {
+          const sid = skeleton.id;
+          this._scheduleEnemyTimeout(sid, () => {
             if (skeleton.isDying || !this.room?.getGameStarted()) return;
-            if (this.room?.isEnemyAffectedBy(skeleton.id, 'stun')) return;
+            if (this.room?.isEnemyAffectedBy(sid, 'stun')) return;
             const currentPlayers = this.room?.getPlayers();
             if (!currentPlayers) return;
             const currentTarget = currentPlayers.find(p => p.id === pid);
@@ -1068,7 +1119,7 @@ class EnemyAI {
             if (currentDistance <= attackRange) {
               this.bossSkeletonAttackPlayer(skeleton, currentTarget);
             } else {
-              console.log(`💀 Skeleton ${skeleton.id} attack missed - player ${currentTarget.id} dodged out of range!`);
+              console.log(`💀 Skeleton ${sid} attack missed - player ${currentTarget.id} dodged out of range!`);
             }
           }, telegraphDelay);
         } else if (resolved.kind === 'zombie') {
@@ -1078,9 +1129,10 @@ class EnemyAI {
             position: resolved.zombie.position,
           });
           const telegraphDelay = 250;
-          setTimeout(() => {
+          const sid = skeleton.id;
+          this._scheduleEnemyTimeout(sid, () => {
             if (skeleton.isDying || !this.room?.getGameStarted()) return;
-            if (this.room?.isEnemyAffectedBy(skeleton.id, 'stun')) return;
+            if (this.room?.isEnemyAffectedBy(sid, 'stun')) return;
             const z = this.room?.getEnemy(zid);
             if (!z || z.isDying || z.health <= 0) return;
             const currentDistance = this.calculateDistance(skeleton.position, z.position);
@@ -1097,16 +1149,17 @@ class EnemyAI {
           });
           const telegraphDelay = 250;
           const trapId = trap.id;
-          setTimeout(() => {
+          const sid = skeleton.id;
+          this._scheduleEnemyTimeout(sid, () => {
             if (skeleton.isDying || !this.room?.getGameStarted()) return;
-            if (this.room?.isEnemyAffectedBy(skeleton.id, 'stun')) return;
+            if (this.room?.isEnemyAffectedBy(sid, 'stun')) return;
             const t = this.room?.getEnemy(trapId);
             if (!t || t.isDying || t.health <= 0 || t.type !== 'tentacle-spine') return;
             const currentDistance = this.calculateDistance(skeleton.position, t.position);
             if (currentDistance <= attackRange) {
               const damage = skeleton.damage || 17;
               this.room.damageEnemy(trapId, damage, null, null, {
-                sourceEnemyId: skeleton.id,
+                sourceEnemyId: sid,
                 damageType: 'boss_skeleton_melee',
               });
             }
@@ -1202,6 +1255,8 @@ class EnemyAI {
 
     const lockUntil = this.meleeLockUntil.get(knight.id) || 0;
     if (now < lockUntil) return;
+
+    if (this.tryKnightBlock(knight, now)) return;
 
     if (resolved.kind === 'player') {
       const targetPlayer = resolved.player;
@@ -1453,10 +1508,11 @@ class EnemyAI {
 
     const originalTargetId = targetPlayer.id;
     const originalAim = { ...targetPlayer.position };
-    setTimeout(() => {
+    const kid = knight.id;
+    this._scheduleEnemyTimeout(kid, () => {
       if (knight.isDying || !this.room?.getGameStarted()) return;
-      if (this.room?.isEnemyAffectedBy(knight.id, 'stun')) return;
-      if (this.room?.isEnemyAffectedBy(knight.id, 'freeze')) return;
+      if (this.room?.isEnemyAffectedBy(kid, 'stun')) return;
+      if (this.room?.isEnemyAffectedBy(kid, 'freeze')) return;
 
       const currentPlayers = this.room?.getPlayers?.() || [];
       const liveTarget = currentPlayers.find(p => p.id === originalTargetId && p.health > 0);
@@ -1485,7 +1541,7 @@ class EnemyAI {
       const endPosition = { ...knight.position };
       if (this.io) {
         this.io.to(this.roomId).emit('knight-spin-dash', {
-          knightId: knight.id,
+          knightId: kid,
           targetPlayerId: originalTargetId,
           startPosition,
           endPosition,
@@ -1495,7 +1551,7 @@ class EnemyAI {
           damage: KNIGHT_SPIN_DAMAGE,
           timestamp: Date.now(),
         });
-        this._queueMove(knight.id, knight.position, knight.rotation);
+        this._queueMove(kid, knight.position, knight.rotation);
       }
 
       this.scheduleKnightSpinPathDamage(knight, startPosition, endPosition);
@@ -1557,14 +1613,17 @@ class EnemyAI {
       return true;
     };
 
+    const kid = knight.id;
     const interval = setInterval(() => {
       const elapsed = Date.now() - startedAt;
       const progress = Math.min(1, elapsed / KNIGHT_SPIN_TRAVEL_MS);
       const shouldContinue = applyHitsForProgress(progress);
       if (!shouldContinue || progress >= 1) {
         clearInterval(interval);
+        this._removeEnemyHazardInterval(kid, interval);
       }
     }, sampleEveryMs);
+    this._addEnemyHazardInterval(kid, interval);
   }
 
   scheduleKnightMeleeWindupStep(knight, attackFocus) {
@@ -1791,6 +1850,73 @@ class EnemyAI {
 
   // ─── Knight Special Abilities ────────────────────────────────────────────────
   // Returns true if an ability was triggered (so the caller can skip basic attack).
+
+  /** Reactive Block — invuln window after recent damage (regular) or HP thresholds (elite). */
+  tryKnightBlock(knight, now) {
+    if (this.room?.isAlliedUnitEnemy?.(knight)) return false;
+    if (this.room?.isEnemyAffectedBy(knight.id, 'stun')) return false;
+    if (this.room?.isEnemyAffectedBy(knight.id, 'freeze')) return false;
+
+    if (knight.isBoss1EliteKnight) return this.tryKnightEliteBlock(knight, now);
+
+    const lastDamageAt = knight.lastDamageAt || 0;
+    if (now - lastDamageAt > KNIGHT_BLOCK_REACT_WINDOW_MS) return false;
+    if ((this.room?.coopBossesDefeatedCount ?? 0) < KNIGHT_BLOCK_UNLOCK_BOSS_COUNT) return false;
+
+    const soulType = knight.soulType || 'red';
+    const cooldownMs = KNIGHT_BLOCK_COOLDOWN_MS[soulType] ?? KNIGHT_BLOCK_COOLDOWN_MS.red;
+    const durationMs = KNIGHT_BLOCK_DURATION_MS[soulType] ?? KNIGHT_BLOCK_DURATION_MS.red;
+    const last = this.knightBlockCooldown.get(knight.id) || 0;
+    if (now - last < cooldownMs) return false;
+
+    this.knightBlockCooldown.set(knight.id, now);
+    this.knightCastBlock(knight, durationMs);
+    return true;
+  }
+
+  tryKnightEliteBlock(knight, now) {
+    if (!knight.maxHealth) return false;
+    let stages = this.knightBlockStages.get(knight.id);
+    if (!stages) {
+      stages = { p90: false, p50: false, p20: false };
+      this.knightBlockStages.set(knight.id, stages);
+    }
+    const hpFrac = knight.health / knight.maxHealth;
+    const [t90, t50, t20] = KNIGHT_ELITE_BLOCK_HEALTH_THRESHOLDS;
+    if (!stages.p90 && hpFrac <= t90) {
+      stages.p90 = true;
+    } else if (!stages.p50 && hpFrac <= t50) {
+      stages.p50 = true;
+    } else if (!stages.p20 && hpFrac <= t20) {
+      stages.p20 = true;
+    } else {
+      return false;
+    }
+
+    this.knightCastBlock(knight, KNIGHT_ELITE_BLOCK_DURATION_MS);
+    return true;
+  }
+
+  knightCastBlock(knight, durationMs) {
+    const now = Date.now();
+    const knightId = knight.id;
+    this.meleeLockUntil.set(knightId, now + durationMs);
+    this.knightBlockActiveUntil.set(knightId, now + durationMs);
+    this._queueMove(knightId, knight.position, knight.rotation);
+    if (this.io) {
+      this.io.to(this.roomId).emit('knight-block-telegraph', {
+        knightId,
+        durationMs,
+        timestamp: now,
+      });
+    }
+    console.log(`🛡️ Knight ${knightId} (${knight.soulType || 'elite'}) blocking for ${durationMs}ms.`);
+  }
+
+  isKnightBlocking(enemyId) {
+    const until = this.knightBlockActiveUntil.get(enemyId);
+    return !!until && Date.now() < until;
+  }
 
   /** Post-boss-2: blue/green/purple gain Smite on a separate cooldown from Frost/Heal. */
   tryKnightSmiteUnlocked(knight, targetPlayer, now, distance, meleeRange) {
@@ -3006,7 +3132,7 @@ class EnemyAI {
       const dz = pos.z - start.z;
       const travelMs = (Math.hypot(dx, dy, dz) / WARLOCK_METEOR_FALL_SPEED) * 1000;
       const delayMs = WARLOCK_METEOR_WARNING_MS + travelMs + index * WARLOCK_METEOR_STAGGER_MS;
-      setTimeout(() => {
+      this._scheduleEnemyTimeout(wid, () => {
         if (!this.room?.getGameStarted()) return;
         const w = this.room?.getEnemy(wid);
         if (!w || w.isDying) return;
@@ -3034,7 +3160,11 @@ class EnemyAI {
     });
     let elapsed = 0;
     const intervalId = setInterval(() => {
-      if (!this.room?.getGameStarted()) { clearInterval(intervalId); return; }
+      if (!this.room?.getGameStarted()) {
+        clearInterval(intervalId);
+        this._removeEnemyHazardInterval(warlockId, intervalId);
+        return;
+      }
       elapsed += WARLOCK_METEOR_EMBER_TICK_MS;
       this.room?.damagePlayersInHorizontalRing(
         { x: position.x, z: position.z },
@@ -3045,9 +3175,11 @@ class EnemyAI {
       );
       if (elapsed >= WARLOCK_METEOR_EMBER_DURATION_MS) {
         clearInterval(intervalId);
+        this._removeEnemyHazardInterval(warlockId, intervalId);
         this.io?.to(this.roomId).emit('warlock-meteor-ember-zone-expired', { id: zoneId, timestamp: Date.now() });
       }
     }, WARLOCK_METEOR_EMBER_TICK_MS);
+    this._addEnemyHazardInterval(warlockId, intervalId);
   }
 
   // ─── Templar AI ──────────────────────────────────────────────────────────────
@@ -6871,7 +7003,9 @@ class EnemyAI {
     if (player && player.isStealthing) {
       const stealthMultiplier = 10.0; // 10x aggro generation while stealthing
       effectiveDamage *= stealthMultiplier;
-      console.log(`👤 Stealth aggro bonus: Player ${playerId} stealth attack (${damage} damage) -> ${effectiveDamage} effective aggro`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`👤 Stealth aggro bonus: Player ${playerId} stealth attack (${damage} damage) -> ${effectiveDamage} effective aggro`);
+      }
     }
 
     const currentDamage = damageMap.get(playerId) || 0;
@@ -6994,25 +7128,40 @@ class EnemyAI {
 
   /**
    * Spatial bucket of melee-only enemies for O(1) nearby peer queries during separation.
+   * Reuses the grid Map and bucket arrays across ticks.
    */
   _buildMeleePeerGrid(enemies) {
     const CELL = 2.5;
-    const grid = new Map();
+    if (!this._meleePeerGrid) {
+      this._meleePeerGrid = { grid: new Map(), cellSize: CELL };
+    }
+    const data = this._meleePeerGrid;
+    const { grid } = data;
+    for (const bucket of grid.values()) {
+      bucket.length = 0;
+      this._meleePeerBucketPool.push(bucket);
+    }
+    grid.clear();
+
     for (const e of enemies) {
       if (!e || e.isDying || e.health <= 0) continue;
       if (!MELEE_SURROUND_TYPES.has(e.type)) continue;
       const cx = Math.floor(e.position.x / CELL);
       const cz = Math.floor(e.position.z / CELL);
       const key = `${cx},${cz}`;
-      if (!grid.has(key)) grid.set(key, []);
-      grid.get(key).push(e);
+      let bucket = grid.get(key);
+      if (!bucket) {
+        bucket = this._meleePeerBucketPool.pop() || [];
+        grid.set(key, bucket);
+      }
+      bucket.push(e);
     }
-    return { grid, cellSize: CELL };
+    return data;
   }
 
   _getMeleePeersNear(x, z) {
     if (!this._meleePeerGrid) {
-      return (this._tickEnemies || this.room.getEnemies()).filter(
+      return this._tickEnemies.filter(
         (e) => e && !e.isDying && e.health > 0 && MELEE_SURROUND_TYPES.has(e.type),
       );
     }
@@ -7423,6 +7572,28 @@ class EnemyAI {
     if (!pending) return;
     for (const handle of pending) clearTimeout(handle);
     this.enemyPendingTimeouts.delete(enemyId);
+  }
+
+  _addEnemyHazardInterval(enemyId, intervalId) {
+    if (!this.enemyHazardIntervals.has(enemyId)) {
+      this.enemyHazardIntervals.set(enemyId, new Set());
+    }
+    this.enemyHazardIntervals.get(enemyId).add(intervalId);
+  }
+
+  _removeEnemyHazardInterval(enemyId, intervalId) {
+    const set = this.enemyHazardIntervals.get(enemyId);
+    if (!set) return;
+    set.delete(intervalId);
+    if (set.size === 0) this.enemyHazardIntervals.delete(enemyId);
+  }
+
+  _clearEnemyHazardIntervals(enemyId) {
+    const set = this.enemyHazardIntervals.get(enemyId);
+    if (set) {
+      for (const iv of set) clearInterval(iv);
+    }
+    this.enemyHazardIntervals.delete(enemyId);
   }
 
   isValidAlliedKnightTarget(enemy) {
@@ -8512,8 +8683,13 @@ class EnemyAI {
     const STEP_MS = 50;
     const maxSteps = Math.ceil((dirLen / GREED_FIREBALL_SPEED) * (1000 / STEP_MS)) + 4;
     let steps = 0;
+    const gid = greed.id;
     const intervalId = setInterval(() => {
-      if (!this.room?.getGameStarted()) { clearInterval(intervalId); return; }
+      if (!this.room?.getGameStarted()) {
+        clearInterval(intervalId);
+        this._removeEnemyHazardInterval(gid, intervalId);
+        return;
+      }
       steps++;
       pos.x += dir.x * GREED_FIREBALL_SPEED * (STEP_MS / 1000);
       pos.z += dir.z * GREED_FIREBALL_SPEED * (STEP_MS / 1000);
@@ -8524,22 +8700,25 @@ class EnemyAI {
         const hdz = p.position.z - pos.z;
         if (hdx * hdx + hdz * hdz <= GREED_FIREBALL_HIT_RADIUS * GREED_FIREBALL_HIT_RADIUS) {
           clearInterval(intervalId);
+          this._removeEnemyHazardInterval(gid, intervalId);
           this.room.damagePlayersInHorizontalRing(
-            { x: pos.x, z: pos.z }, GREED_FIREBALL_HIT_RADIUS, GREED_RED_DAMAGE, 'greed_fireball', { sourceEnemyId: greed.id },
+            { x: pos.x, z: pos.z }, GREED_FIREBALL_HIT_RADIUS, GREED_RED_DAMAGE, 'greed_fireball', { sourceEnemyId: gid },
           );
           this.io?.to(this.roomId).emit('greed-fireball-impact', {
-            greedId: greed.id, position: pos, hit: true, timestamp: Date.now(),
+            greedId: gid, position: pos, hit: true, timestamp: Date.now(),
           });
           return;
         }
       }
       if (steps >= maxSteps) {
         clearInterval(intervalId);
+        this._removeEnemyHazardInterval(gid, intervalId);
         this.io?.to(this.roomId).emit('greed-fireball-impact', {
-          greedId: greed.id, position: pos, hit: false, timestamp: Date.now(),
+          greedId: gid, position: pos, hit: false, timestamp: Date.now(),
         });
       }
     }, STEP_MS);
+    this._addEnemyHazardInterval(gid, intervalId);
   }
 
   /** Blue — drops a stationary ground ember patch beneath itself that ticks damage for its duration. */
@@ -8552,15 +8731,22 @@ class EnemyAI {
       id: zoneId, position, radius: GREED_BLUE_EMBER_RADIUS, durationMs: GREED_BLUE_EMBER_DURATION_MS, timestamp: now,
     });
     let elapsed = 0;
+    const gid = greed.id;
     const intervalId = setInterval(() => {
-      if (!this.room?.getGameStarted()) { clearInterval(intervalId); return; }
+      if (!this.room?.getGameStarted()) {
+        clearInterval(intervalId);
+        this._removeEnemyHazardInterval(gid, intervalId);
+        return;
+      }
       elapsed += GREED_BLUE_EMBER_TICK_MS;
-      this.room?.damagePlayersInHorizontalRing(position, GREED_BLUE_EMBER_RADIUS, GREED_BLUE_EMBER_DAMAGE, 'greed_blue_ember', { sourceEnemyId: greed.id });
+      this.room?.damagePlayersInHorizontalRing(position, GREED_BLUE_EMBER_RADIUS, GREED_BLUE_EMBER_DAMAGE, 'greed_blue_ember', { sourceEnemyId: gid });
       if (elapsed >= GREED_BLUE_EMBER_DURATION_MS) {
         clearInterval(intervalId);
+        this._removeEnemyHazardInterval(gid, intervalId);
         this.io?.to(this.roomId).emit('greed-ember-zone-expired', { id: zoneId, timestamp: Date.now() });
       }
     }, GREED_BLUE_EMBER_TICK_MS);
+    this._addEnemyHazardInterval(gid, intervalId);
   }
 
   // ─── Navigation / A* pathfinding ──────────────────────────────────────────
@@ -8958,6 +9144,7 @@ class EnemyAI {
 
   removeEnemyAggro(enemyId) {
     this._clearEnemyTimeouts(enemyId);
+    this._clearEnemyHazardIntervals(enemyId);
     const tst = this.tentacleSlamTimeouts.get(enemyId);
     if (tst) {
       clearTimeout(tst);
@@ -9072,6 +9259,9 @@ class EnemyAI {
       for (const h of stormLashHandles) clearTimeout(h);
     }
     this.knightStormLashTimeouts.delete(enemyId);
+    this.knightBlockCooldown.delete(enemyId);
+    this.knightBlockActiveUntil.delete(enemyId);
+    this.knightBlockStages.delete(enemyId);
     this.enemyPaths.delete(enemyId);
     this.templarBlinkSmiteNextAt.delete(enemyId);
     this.templarLeapCooldown.delete(enemyId);
@@ -9088,6 +9278,12 @@ class EnemyAI {
         this.weaverSummonedGhouls.set(weaverId, null);
         console.log(`🧵 Weaver ${weaverId} ghoul ${enemyId} died — resummon available`);
       }
+    });
+
+    this.enemyTaunts.delete(enemyId);
+    this.alliedProtectionThreat.delete(enemyId);
+    this.alliedProtectionThreat.forEach((chart) => {
+      if (chart) chart.delete(enemyId);
     });
   }
 
@@ -9522,13 +9718,17 @@ class EnemyAI {
 
   // Remove player from all aggro charts when they die
   removePlayerFromAllAggro(deadPlayerId) {
-    console.log(`💀 Removing dead player ${deadPlayerId} from all aggro charts`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`💀 Removing dead player ${deadPlayerId} from all aggro charts`);
+    }
 
     // Remove from all boss damage tracking
     this.bossDamageTracking.forEach((damageMap, bossId) => {
       if (damageMap.has(deadPlayerId)) {
         damageMap.delete(deadPlayerId);
-        console.log(`  - Removed ${deadPlayerId} from boss ${bossId} damage tracking`);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`  - Removed ${deadPlayerId} from boss ${bossId} damage tracking`);
+        }
       }
     });
 
@@ -9543,9 +9743,22 @@ class EnemyAI {
         aggroData.isAggroed = false;
         aggroData.threatFromDamage = false;
         aggroData.directPlayerDamageAggroed = false;
-        console.log(`  - Cleared ${deadPlayerId} as target for enemy ${enemyId}`);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`  - Cleared ${deadPlayerId} as target for enemy ${enemyId}`);
+        }
       }
     });
+
+    const ownedZombieIds = this.playerZombiesByOwner.get(deadPlayerId);
+    if (ownedZombieIds) {
+      for (const zid of [...ownedZombieIds]) {
+        const z = this.room?.getEnemy(zid);
+        if (z && !z.isDying && z.health > 0) {
+          this.room.damageEnemy(zid, z.health, null, null, { damageType: 'owner_disconnect' });
+        }
+      }
+      this.playerZombiesByOwner.delete(deadPlayerId);
+    }
   }
 }
 

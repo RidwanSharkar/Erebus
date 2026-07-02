@@ -1,10 +1,10 @@
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useCallback, useEffect } from 'react';
 import { Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import TotemModel from './TotemModel';
 import UnholyAura from './UnholyAura';
-import TotemEntropicBolt from './TotemEntropicBolt';
-import TotemSuperconductorLightning from './TotemSuperconductorLightning';
+import TotemEntropicBolt, { type TotemBoltPoolSlot } from './TotemEntropicBolt';
+import TotemSuperconductorLightning, { type TotemLightningPoolSlot } from './TotemSuperconductorLightning';
 import { calculateDamage } from '@/core/DamageCalculator';
 import { WeaponType } from '@/components/dragon/weapons';
 import type { EnemyDamageMeta } from '@/contexts/MultiplayerContext';
@@ -130,6 +130,31 @@ interface SummonProps {
   resolveTotemEnemyFrozen?: (enemyId: string) => boolean;
 }
 
+const MAX_TOTEM_BOLTS = 12;
+const MAX_TOTEM_LIGHTNING = 6;
+
+function createBoltPool(size: number): TotemBoltPoolSlot[] {
+  return Array.from({ length: size }, () => ({
+    active: false,
+    launchGen: 0,
+    id: -1,
+    from: new Vector3(),
+    to: new Vector3(),
+    targetId: '',
+  }));
+}
+
+function createLightningPool(size: number): TotemLightningPoolSlot[] {
+  return Array.from({ length: size }, () => ({
+    active: false,
+    launchGen: 0,
+    id: -1,
+    from: new Vector3(),
+    to: new Vector3(),
+    totemBoltVariant: undefined,
+  }));
+}
+
 export default function SummonedTotem({
   position,
   players,
@@ -152,13 +177,10 @@ export default function SummonedTotem({
 
   const groupRef = useRef<Group>(null);
   const boltIdRef = useRef(0);
-  const [currentTarget, setCurrentTarget] = useState<{ id: string; position: Vector3; health: number } | null>(null);
-  const [activeBolts, setActiveBolts] = useState<
-    Array<{ id: number; from: Vector3; to: Vector3; targetId: string }>
-  >([]);
-  const [activeLightning, setActiveLightning] = useState<
-    Array<{ id: number; from: Vector3; to: Vector3; totemBoltVariant?: TotemBoltVariant }>
-  >([]);
+  const currentTargetRef = useRef<{ id: string; position: Vector3; health: number } | null>(null);
+  const isAttackingRef = useRef(false);
+  const boltPool = useRef(createBoltPool(MAX_TOTEM_BOLTS));
+  const lightningPool = useRef(createLightningPool(MAX_TOTEM_LIGHTNING));
 
   const constants = useRef({
     lastAttackTime: 0,
@@ -225,7 +247,7 @@ export default function SummonedTotem({
         continue;
       }
 
-      if (excludeCurrentTarget && currentTarget && enemy.id === currentTarget.id) {
+      if (excludeCurrentTarget && currentTargetRef.current && enemy.id === currentTargetRef.current.id) {
         continue;
       }
 
@@ -241,7 +263,7 @@ export default function SummonedTotem({
     }
 
     return closestTarget;
-  }, [getCurrentEnemyData, calculateDistance, currentTarget, constants.RANGE]);
+  }, [getCurrentEnemyData, calculateDistance, constants.RANGE]);
 
   const handleAttack = useCallback((target: { id: string; position: Vector3; health: number }) => {
     const canShowFloating =
@@ -417,16 +439,15 @@ export default function SummonedTotem({
         const to = closestEnemy.position.clone();
         to.y = Math.max(to.y, 0.35) + 1.1;
         const id = boltIdRef.current++;
-
-        setActiveLightning((prev) => [
-          ...prev,
-          {
-            id,
-            from: from.clone(),
-            to: to.clone(),
-            totemBoltVariant,
-          },
-        ]);
+        const lightningSlot = lightningPool.current.find((slot) => !slot.active);
+        if (lightningSlot) {
+          lightningSlot.active = true;
+          lightningSlot.id = id;
+          lightningSlot.from.copy(from);
+          lightningSlot.to.copy(to);
+          lightningSlot.totemBoltVariant = totemBoltVariant;
+          lightningSlot.launchGen += 1;
+        }
         (window as any).audioSystem?.playTotemSuperconductorSound?.(from);
         constants.lastSuperconductorTime = now;
         handleSuperconductorStrike(closestEnemy);
@@ -441,23 +462,25 @@ export default function SummonedTotem({
           const to = closestEnemy.position.clone();
           to.y = Math.max(to.y, 0.35) + 1.05;
           const id = boltIdRef.current++;
-          setCurrentTarget(closestEnemy);
-          setActiveBolts((prev) => [
-            ...prev,
-            {
-              id,
-              from: from.clone(),
-              to: to.clone(),
-              targetId: closestEnemy.id,
-            },
-          ]);
+          currentTargetRef.current = closestEnemy;
+          isAttackingRef.current = true;
+          const boltSlot = boltPool.current.find((slot) => !slot.active);
+          if (boltSlot) {
+            boltSlot.active = true;
+            boltSlot.id = id;
+            boltSlot.from.copy(from);
+            boltSlot.to.copy(to);
+            boltSlot.targetId = closestEnemy.id;
+            boltSlot.launchGen += 1;
+          }
           constants.lastAttackTime = now;
         }
       }
     } else {
       // No enemy in range, clear current target
-      if (currentTarget) {
-        setCurrentTarget(null);
+      if (currentTargetRef.current) {
+        currentTargetRef.current = null;
+        isAttackingRef.current = false;
       }
     }
   });
@@ -477,7 +500,6 @@ export default function SummonedTotem({
 
   const onTotemBoltImpact = useCallback(
     (boltId: number, targetId: string) => {
-      setActiveBolts((prev) => prev.filter((b) => b.id !== boltId));
       const currentEnemyData = getCurrentEnemyData();
       const currentEnemy = currentEnemyData.find((e) => e.id === targetId && e.health > 0);
       if (!currentEnemy) {
@@ -488,32 +510,29 @@ export default function SummonedTotem({
     [getCurrentEnemyData, handleAttack],
   );
 
-  const onSuperconductorComplete = useCallback((id: number) => {
-    setActiveLightning((prev) => prev.filter((b) => b.id !== id));
+  const onSuperconductorComplete = useCallback((_id: number) => {
+    // Pool slot is cleared imperatively when the lightning finishes.
   }, []);
 
   return (
     <>
       <group ref={groupRef} position={position.toArray()}>
-        <TotemModel isAttacking={!!currentTarget} totemBoltVariant={totemBoltVariant} />
+        <TotemModel isAttackingRef={isAttackingRef} totemBoltVariant={totemBoltVariant} />
         <UnholyAura totemBoltVariant={totemBoltVariant} />
       </group>
-      {activeBolts.map((b) => (
+      {boltPool.current.map((slot, i) => (
         <TotemEntropicBolt
-          key={b.id}
-          from={b.from}
-          to={b.to}
+          key={`totem-bolt-${i}`}
+          poolSlot={slot}
           totemBoltVariant={totemBoltVariant}
-          onImpact={() => onTotemBoltImpact(b.id, b.targetId)}
+          onPoolImpact={onTotemBoltImpact}
         />
       ))}
-      {activeLightning.map((b) => (
+      {lightningPool.current.map((slot, i) => (
         <TotemSuperconductorLightning
-          key={b.id}
-          from={b.from}
-          to={b.to}
-          totemBoltVariant={b.totemBoltVariant}
-          onComplete={() => onSuperconductorComplete(b.id)}
+          key={`totem-lightning-${i}`}
+          poolSlot={slot}
+          onPoolComplete={onSuperconductorComplete}
         />
       ))}
     </>

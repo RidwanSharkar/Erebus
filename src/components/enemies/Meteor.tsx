@@ -35,7 +35,17 @@ const particleGeometry = new SphereGeometry(0.1, 8, 8);
 const tempTargetGroundPos = new Vector3();
 
 /** Stable impact VFX component — animates via useFrame, no per-frame setState. */
-function MeteorImpactEffect({ position, startTime, onComplete }: { position: Vector3; startTime: number; onComplete: () => void }) {
+function MeteorImpactEffect({
+  positionRef,
+  startTimeRef,
+  activeRef,
+  onComplete,
+}: {
+  positionRef: React.RefObject<Vector3>;
+  startTimeRef: React.RefObject<number | null>;
+  activeRef: React.RefObject<boolean>;
+  onComplete: () => void;
+}) {
   const groupRef = useRef<Group>(null);
   const coreRef = useRef<Mesh>(null);
   const innerRef = useRef<Mesh>(null);
@@ -44,8 +54,17 @@ function MeteorImpactEffect({ position, startTime, onComplete }: { position: Vec
   const RING_SIZES = [2.0, 2.15, 2.3, 2.5, 2.7];
 
   useFrame(() => {
+    if (groupRef.current && positionRef.current) {
+      groupRef.current.position.copy(positionRef.current);
+    }
+    if (!activeRef.current || startTimeRef.current === null) {
+      if (groupRef.current) groupRef.current.visible = false;
+      return;
+    }
+    if (groupRef.current) groupRef.current.visible = true;
     if (doneRef.current) return;
-    const elapsed = (Date.now() - startTime) / 350;
+
+    const elapsed = (Date.now() - startTimeRef.current) / 350;
     const fade = Math.max(0, 1 - (elapsed / IMPACT_DURATION));
     if (fade <= 0) {
       doneRef.current = true;
@@ -71,7 +90,7 @@ function MeteorImpactEffect({ position, startTime, onComplete }: { position: Vec
   });
 
   return (
-    <group ref={groupRef} position={position}>
+    <group ref={groupRef}>
       <mesh ref={coreRef}>
         <sphereGeometry args={[1, 32, 32]} />
         <meshStandardMaterial color="#BA55D3" emissive="#BA55D3" emissiveIntensity={2} transparent opacity={1.8} depthWrite={false} blending={AdditiveBlending} />
@@ -112,51 +131,46 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
     );
   }, [initialTargetPos]);
 
-  // state management
-  const [state, setState] = useState({
-    impactOccurred: false,
-    showMeteor: false,
-    impactStartTime: null as number | null
-  });
+  const [showMeteor, setShowMeteor] = useState(false);
+  const impactOccurredRef = useRef(false);
+  const impactStartTimeRef = useRef<number | null>(null);
+  const impactPositionRef = useRef(initialTargetPos.clone());
 
   useEffect(() => {
     // Calculate delay based on timestamp if provided, otherwise use default WARNING_DURATION
     const delay = timestamp ? Math.max(0, timestamp - Date.now() + WARNING_DURATION) : WARNING_DURATION;
 
     const timer = setTimeout(() => {
-      setState(prev => ({ ...prev, showMeteor: true }));
+      setShowMeteor(true);
     }, delay);
 
     return () => clearTimeout(timer);
   }, [timestamp]);
 
   useEffect(() => {
-    if (!state.showMeteor) return;
+    if (!showMeteor) return;
     (window as any).audioSystem?.playCrossentropyMeteoriteFallSound?.(
       new Vector3(initialTargetPos.x, 0, initialTargetPos.z),
     );
-  }, [state.showMeteor, initialTargetPos]);
+  }, [showMeteor, initialTargetPos]);
 
   useFrame((_, delta) => {
     // Drive the pooled light through both phases.
-    if (state.impactStartTime !== null) {
+    if (impactStartTimeRef.current !== null) {
       // Impact phase: light fades at the impact point (replaces the 2 impact <pointLight>s).
-      const elapsed = (Date.now() - state.impactStartTime) / 350;
+      const elapsed = (Date.now() - impactStartTimeRef.current) / 350;
       const fade = Math.max(0, 1 - elapsed / IMPACT_DURATION);
-      const ip = meteorGroupRef.current?.position ?? initialTargetPos;
+      const ip = impactPositionRef.current;
       meteorLight.current?.setPosition(ip.x, ip.y, ip.z);
       meteorLight.current?.setIntensity(0.8 * fade);
-    } else if (state.showMeteor && !state.impactOccurred && meteorGroupRef.current) {
+    } else if (showMeteor && !impactOccurredRef.current && meteorGroupRef.current) {
       // Falling phase: light follows the meteor (replaces the falling <pointLight>).
       const mp = meteorGroupRef.current.position;
       meteorLight.current?.setPosition(mp.x, mp.y, mp.z);
       meteorLight.current?.setIntensity(5);
     }
 
-    if (!meteorGroupRef.current || !state.showMeteor || state.impactOccurred) {
-      if (state.impactOccurred && !state.impactStartTime) {
-        setState(prev => ({ ...prev, impactStartTime: Date.now() }));
-      }
+    if (!meteorGroupRef.current || !showMeteor || impactOccurredRef.current) {
       return;
     }
 
@@ -164,11 +178,14 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
     const distanceToTarget = currentPos.distanceTo(initialTargetPos);
 
     if (distanceToTarget < DAMAGE_RADIUS || currentPos.y <= 0) {
-      setState(prev => ({ ...prev, impactOccurred: true, impactStartTime: Date.now() }));
-      
+      impactOccurredRef.current = true;
+      impactStartTimeRef.current = Date.now();
+      impactPositionRef.current.copy(meteorGroupRef.current.position);
+
       // Call impact with the meteor's impact position (ground level for damage check)
       tempTargetGroundPos.set(initialTargetPos.x, 0, initialTargetPos.z);
       onImpact(damageOverride ?? METEOR_DAMAGE, tempTargetGroundPos.clone());
+      return;
     }
 
     const speed = METEOR_SPEED * delta;
@@ -226,7 +243,7 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
       </group>
 
       {/* Meteor with trail */}
-      {state.showMeteor && (
+      {showMeteor && (
         <group ref={meteorGroupRef} position={startPos}>
           <mesh ref={meteorMeshRef}>
             <primitive object={meteorGeometry} />
@@ -242,10 +259,11 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
       )}
 
       {/* Add impact effect — stable component to avoid per-render GPU allocation */}
-      {state.impactStartTime && (
+      {showMeteor && (
         <MeteorImpactEffect
-          position={meteorGroupRef.current?.position || initialTargetPos}
-          startTime={state.impactStartTime}
+          positionRef={impactPositionRef}
+          startTimeRef={impactStartTimeRef}
+          activeRef={impactOccurredRef}
           onComplete={onComplete}
         />
       )}

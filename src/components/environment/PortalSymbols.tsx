@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   Shape,
@@ -122,7 +122,7 @@ const SYMBOL_SPEEDS: Partial<Record<CoopPortalKind, [number, number, number]>> =
   trial:   [0.52, 0.75, 0.20],
 };
 
-export default function PortalSymbol({
+function PortalSymbol({
   campType,
   portalColor,
 }: {
@@ -164,6 +164,13 @@ export default function PortalSymbol({
 
   const speeds = SYMBOL_SPEEDS[campType] ?? [0.4, 0.6, 0.2];
 
+  useEffect(() => {
+    return () => {
+      geometry?.dispose();
+      material.dispose();
+    };
+  }, [geometry, material]);
+
   useFrame((state) => {
     const g = groupRef.current;
     if (!g) return;
@@ -181,3 +188,5 @@ export default function PortalSymbol({
     </group>
   );
 }
+
+export default React.memo(PortalSymbol);

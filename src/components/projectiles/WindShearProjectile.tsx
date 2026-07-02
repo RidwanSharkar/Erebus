@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, AdditiveBlending, BufferGeometry, BufferAttribute } from 'three';
+import { Vector3, AdditiveBlending, BufferGeometry, BufferAttribute, Group, MeshBasicMaterial } from 'three';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 // Teal/cyan wind-slash palette
@@ -58,35 +58,60 @@ export interface WindShearProjectileView {
   roll?: number;
 }
 
+function computeFadeOpacity(traveled: number, maxDistance: number): number {
+  const fadeStart = Math.max(maxDistance * 0.72, 1e-3);
+  const fadeEnd = Math.max(maxDistance, fadeStart + 1e-3);
+  const fadeProgress =
+    traveled < fadeStart ? 0 : Math.min(1, (traveled - fadeStart) / (fadeEnd - fadeStart));
+  return 1 - fadeProgress * fadeProgress;
+}
+
 // ─── Per-instance visual ─────────────────────────────────────────────────────
 
 function WindShearInstance({ projectile: p }: { projectile: WindShearProjectileView }) {
-  const traveled = Math.max(0, p.distanceTraveled);
-  const fadeStart = Math.max(p.maxDistance * 0.72, 1e-3);
-  const fadeEnd   = Math.max(p.maxDistance, fadeStart + 1e-3);
-  const fadeProgress =
-    traveled < fadeStart ? 0 : Math.min(1, (traveled - fadeStart) / (fadeEnd - fadeStart));
-  const opacity = 1 - fadeProgress * fadeProgress;
+  const projectileRef = useRef(p);
+  projectileRef.current = p;
 
-  const yaw = Math.atan2(p.direction.x, p.direction.z);
-  const roll = p.roll ?? 0;
+  const groupRef = useRef<Group>(null);
+  const rollGroupRef = useRef<Group>(null);
+  const outerMatRef = useRef<MeshBasicMaterial>(null);
+  const innerMatRef = useRef<MeshBasicMaterial>(null);
+  const torusMatRef = useRef<MeshBasicMaterial>(null);
 
   const windLight = useDynamicLight({ color: COLOR_CORE, distance: 4, decay: 2, priority: 2 });
 
   useFrame(() => {
-    windLight.current?.setPosition(p.position.x, p.position.y, p.position.z);
+    const proj = projectileRef.current;
+    const traveled = Math.max(0, proj.distanceTraveled);
+    const opacity = computeFadeOpacity(traveled, proj.maxDistance);
+    const yaw = Math.atan2(proj.direction.x, proj.direction.z);
+    const roll = proj.roll ?? 0;
+
+    if (groupRef.current) {
+      groupRef.current.position.copy(proj.position);
+      groupRef.current.rotation.set(0, yaw, 0);
+      groupRef.current.scale.setScalar(1.15);
+    }
+    if (rollGroupRef.current) {
+      rollGroupRef.current.rotation.set(0, 0, roll);
+    }
+    if (outerMatRef.current) outerMatRef.current.opacity = 0.85 * opacity;
+    if (innerMatRef.current) innerMatRef.current.opacity = 0.65 * opacity;
+    if (torusMatRef.current) torusMatRef.current.opacity = 0.5 * opacity;
+
+    windLight.current?.setPosition(proj.position.x, proj.position.y, proj.position.z);
     windLight.current?.setIntensity(6 * opacity);
   });
 
   return (
-    <group position={p.position.toArray()} rotation={[0, yaw, 0]} scale={1.15}>
-      {/* Roll about the travel axis (local Z) so paired slashes read as diagonal, opposing swings. */}
-      <group rotation={[0, 0, roll]}>
+    <group ref={groupRef}>
+      <group ref={rollGroupRef}>
         <mesh geometry={outerCrescentGeo} renderOrder={1}>
           <meshBasicMaterial
+            ref={outerMatRef}
             color={COLOR_CORE}
             transparent
-            opacity={0.85 * opacity}
+            opacity={0.85}
             depthWrite={false}
             blending={AdditiveBlending}
             side={2}
@@ -94,9 +119,10 @@ function WindShearInstance({ projectile: p }: { projectile: WindShearProjectileV
         </mesh>
         <mesh geometry={innerCrescentGeo} renderOrder={2}>
           <meshBasicMaterial
+            ref={innerMatRef}
             color={COLOR_GLOW}
             transparent
-            opacity={0.65 * opacity}
+            opacity={0.65}
             depthWrite={false}
             blending={AdditiveBlending}
             side={2}
@@ -105,9 +131,10 @@ function WindShearInstance({ projectile: p }: { projectile: WindShearProjectileV
         <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
           <torusGeometry args={[0.38, 0.045, 6, 40, Math.PI * 0.75]} />
           <meshBasicMaterial
+            ref={torusMatRef}
             color={COLOR_OUTER}
             transparent
-            opacity={0.5 * opacity}
+            opacity={0.5}
             depthWrite={false}
             blending={AdditiveBlending}
           />
@@ -146,6 +173,78 @@ interface StandaloneProjectile {
   spawnTime: number;
 }
 
+function StandaloneWindShearInstance({ projectile }: { projectile: StandaloneProjectile }) {
+  const projectileRef = useRef(projectile);
+  projectileRef.current = projectile;
+
+  const groupRef = useRef<Group>(null);
+  const rollGroupRef = useRef<Group>(null);
+  const outerMatRef = useRef<MeshBasicMaterial>(null);
+  const innerMatRef = useRef<MeshBasicMaterial>(null);
+  const torusMatRef = useRef<MeshBasicMaterial>(null);
+
+  const windLight = useDynamicLight({ color: COLOR_CORE, distance: 4, decay: 2, priority: 2 });
+
+  useFrame(() => {
+    const p = projectileRef.current;
+    const traveled = p.startPosition.distanceTo(p.position);
+    const opacity = computeFadeOpacity(traveled, STANDALONE_MAX_DISTANCE);
+    const yaw = Math.atan2(p.direction.x, p.direction.z);
+
+    if (groupRef.current) {
+      groupRef.current.position.copy(p.position);
+      groupRef.current.rotation.set(0, yaw, 0);
+      groupRef.current.scale.setScalar(1.15);
+    }
+    if (outerMatRef.current) outerMatRef.current.opacity = 0.85 * opacity;
+    if (innerMatRef.current) innerMatRef.current.opacity = 0.65 * opacity;
+    if (torusMatRef.current) torusMatRef.current.opacity = 0.5 * opacity;
+
+    windLight.current?.setPosition(p.position.x, p.position.y, p.position.z);
+    windLight.current?.setIntensity(6 * opacity);
+  });
+
+  return (
+    <group ref={groupRef}>
+      <group ref={rollGroupRef}>
+        <mesh geometry={outerCrescentGeo} renderOrder={1}>
+          <meshBasicMaterial
+            ref={outerMatRef}
+            color={COLOR_CORE}
+            transparent
+            opacity={0.85}
+            depthWrite={false}
+            blending={AdditiveBlending}
+            side={2}
+          />
+        </mesh>
+        <mesh geometry={innerCrescentGeo} renderOrder={2}>
+          <meshBasicMaterial
+            ref={innerMatRef}
+            color={COLOR_GLOW}
+            transparent
+            opacity={0.65}
+            depthWrite={false}
+            blending={AdditiveBlending}
+            side={2}
+          />
+        </mesh>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
+          <torusGeometry args={[0.38, 0.045, 6, 40, Math.PI * 0.75]} />
+          <meshBasicMaterial
+            ref={torusMatRef}
+            color={COLOR_OUTER}
+            transparent
+            opacity={0.5}
+            depthWrite={false}
+            blending={AdditiveBlending}
+          />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
 let nextStandaloneId = 0;
 let globalTrigger: ((position: Vector3, direction: Vector3) => void) | null = null;
 
@@ -155,7 +254,8 @@ export function triggerWindShearProjectile(position: Vector3, direction: Vector3
 }
 
 export default function WindShearProjectileManager() {
-  const [projectiles, setProjectiles] = useState<StandaloneProjectile[]>([]);
+  const projectilesRef = useRef<StandaloneProjectile[]>([]);
+  const [activeIds, setActiveIds] = useState<number[]>([]);
 
   const spawn = useCallback((position: Vector3, direction: Vector3) => {
     const p: StandaloneProjectile = {
@@ -165,43 +265,35 @@ export default function WindShearProjectileManager() {
       startPosition: position.clone(),
       spawnTime: Date.now(),
     };
-    setProjectiles((prev) => [...prev, p]);
+    projectilesRef.current.push(p);
+    setActiveIds((prev) => [...prev, p.id]);
   }, []);
 
-  // Register the global trigger when this component mounts
   React.useEffect(() => {
     globalTrigger = spawn;
     return () => { globalTrigger = null; };
   }, [spawn]);
 
   useFrame((_, delta) => {
-    const now = Date.now();
-    setProjectiles((prev) => {
-      const updated: StandaloneProjectile[] = [];
-      for (const p of prev) {
-        const traveled = p.startPosition.distanceTo(p.position);
-        if (traveled >= STANDALONE_MAX_DISTANCE) continue;
-        const move = p.direction.clone().multiplyScalar(STANDALONE_SPEED * delta);
-        p.position.add(move);
-        updated.push(p);
-      }
-      return updated.length !== prev.length ? updated : prev;
-    });
+    const live: StandaloneProjectile[] = [];
+    for (const p of projectilesRef.current) {
+      const traveled = p.startPosition.distanceTo(p.position);
+      if (traveled >= STANDALONE_MAX_DISTANCE) continue;
+      p.position.addScaledVector(p.direction, STANDALONE_SPEED * delta);
+      live.push(p);
+    }
+    if (live.length !== projectilesRef.current.length) {
+      projectilesRef.current = live;
+      setActiveIds(live.map((p) => p.id));
+    }
   });
 
   return (
     <>
-      {projectiles.map((p) => {
-        const traveled = p.startPosition.distanceTo(p.position);
-        const view: WindShearProjectileView = {
-          id: p.id,
-          position: p.position,
-          direction: p.direction,
-          startPosition: p.startPosition,
-          maxDistance: STANDALONE_MAX_DISTANCE,
-          distanceTraveled: traveled,
-        };
-        return <WindShearInstance key={p.id} projectile={view} />;
+      {activeIds.map((id) => {
+        const p = projectilesRef.current.find((entry) => entry.id === id);
+        if (!p) return null;
+        return <StandaloneWindShearInstance key={id} projectile={p} />;
       })}
     </>
   );

@@ -91,6 +91,14 @@ const HELLFIRE_VENOM_IGNITE_DURATION_MS = 4000;
 const HELLFIRE_VENOM_IGNITE_TICKS = 4;
 /** Keep in sync with `STORM_WITCH_VENOM_STACKS` in src/utils/talents.ts */
 const STORM_WITCH_VENOM_STACKS = 2;
+/** Keep in sync with Duality / Arctic blizzard constants in src/utils/talents.ts */
+const DUALITY_BLIZZARD_PROC_CHANCE = 0.15;
+const DUALITY_BLIZZARD_DAMAGE_PER_TICK = 30;
+const DUALITY_BLIZZARD_DURATION_MS = 6000;
+const DUALITY_BLIZZARD_TICK_MS = 500;
+const DUALITY_BLIZZARD_HIT_RADIUS = 3;
+/** Keep in sync with `ACID_RAIN_VENOM_STACKS_PER_TICK` in src/utils/talents.ts */
+const ACID_RAIN_VENOM_STACKS_PER_TICK = 1;
 const ALLIED_KNIGHT_ID = 'allied-knight';
 const ALLIED_KNIGHT_MAX_HP = 500;
 const ALLIED_KNIGHT_DAMAGE = 50;
@@ -482,6 +490,16 @@ class GameRoom {
         if (tyrantsCloak) {
           igniteMeta.staggerToAdd = TYRANTS_CLOAK_IGNITE_STAGGER_PER_TICK;
         }
+        if (
+          tickPlayer?.coopStaggerRoomBoons?.duality &&
+          Math.random() < DUALITY_BLIZZARD_PROC_CHANCE
+        ) {
+          this._spawnDualityBlizzard(
+            { x: target.position.x, y: target.position.y, z: target.position.z },
+            fromPlayerId,
+            tickPlayer,
+          );
+        }
         this.damageEnemy(enemyId, tickDamage, fromPlayerId, tickPlayer || player, igniteMeta);
       }, delayMs);
     }
@@ -749,7 +767,6 @@ class GameRoom {
       this.spawnThroneTrainingDummy();
       this._throneKnightSlotSeq = 0;
       this.startThroneKnightSpawningLoop();
-      this.startEnemyAI();
     } else {
       this.combatArenaActive = true;
     }
@@ -1510,7 +1527,12 @@ class GameRoom {
     this.merchantInventory = [];
     this._resetMushroomState();
     this.teleportAllPlayersToCombatSpawn();
-    this.spawnBoss();
+    const defeated = this.coopBossesDefeatedCount;
+    if (defeated === 0 && Math.random() < COOP_BOSS1_ELITE_KNIGHTS_CHANCE) {
+      this.spawnBoss1EliteKnights();
+    } else {
+      this.spawnBoss();
+    }
     this.bossSpawned = true;
     const coopCombatTransitionId = this._beginCoopCombatTransition();
 
@@ -1753,6 +1775,7 @@ class GameRoom {
       }
       if (roomKind === 'merchant') {
         this.startMainArenaPortalIntermission('second_wave');
+        this._emitMerchantNpcGreet('arrival');
       }
       return true;
     }
@@ -2044,6 +2067,7 @@ class GameRoom {
       this.enemyAI.removePlayerFromAllAggro(playerId);
     }
 
+    this.playerStatusEffects.delete(playerId);
     this.players.delete(playerId);
 
     // Stop game if no players left
@@ -2119,6 +2143,16 @@ class GameRoom {
     return this.players.size;
   }
 
+  _emitPlayerDamagedWithHealth(playerId, player, damagePayload) {
+    if (!this.io || !player) return;
+    this.io.to(this.roomId).emit('player-damaged', damagePayload);
+    this.io.to(this.roomId).emit('player-health-updated', {
+      playerId,
+      health: player.health,
+      maxHealth: player.maxHealth,
+    });
+  }
+
   /**
    * Boss leap / tectonic shards: apply damage to all players in a horizontal XZ ring.
    */
@@ -2154,7 +2188,7 @@ class GameRoom {
       if (meta?.sourceEnemyId && this.enemyAI) {
         this.enemyAI.recordAlliedProtectionThreat(meta.sourceEnemyId, playerId, damage);
       }
-      this.io.to(this.roomId).emit('player-damaged', {
+      this._emitPlayerDamagedWithHealth(playerId, player, {
         sourcePlayerId: null,
         targetPlayerId: playerId,
         damage,
@@ -2165,11 +2199,6 @@ class GameRoom {
         wasKilled,
         timestamp: Date.now(),
         ...(meta?.sourceEnemyId ? { sourceEnemyId: meta.sourceEnemyId } : {}),
-      });
-      this.io.to(this.roomId).emit('player-health-updated', {
-        playerId,
-        health: player.health,
-        maxHealth: player.maxHealth,
       });
     }
     if (hitCount > 0) this._tryEmitCoopRoomWhisper();
@@ -2211,7 +2240,7 @@ class GameRoom {
       if (meta?.sourceEnemyId && this.enemyAI) {
         this.enemyAI.recordAlliedProtectionThreat(meta.sourceEnemyId, playerId, damage);
       }
-      this.io.to(this.roomId).emit('player-damaged', {
+      this._emitPlayerDamagedWithHealth(playerId, player, {
         sourcePlayerId: null,
         targetPlayerId: playerId,
         damage,
@@ -2222,11 +2251,6 @@ class GameRoom {
         wasKilled,
         timestamp: Date.now(),
         ...(meta?.sourceEnemyId ? { sourceEnemyId: meta.sourceEnemyId } : {}),
-      });
-      this.io.to(this.roomId).emit('player-health-updated', {
-        playerId,
-        health: player.health,
-        maxHealth: player.maxHealth,
       });
       if (meta?.stunMs && meta.stunMs > 0) {
         this.applyPlayerStatusEffect(playerId, 'stun', meta.stunMs);
@@ -2267,7 +2291,7 @@ class GameRoom {
       if (meta?.sourceEnemyId && this.enemyAI) {
         this.enemyAI.recordAlliedProtectionThreat(meta.sourceEnemyId, playerId, damage);
       }
-      this.io.to(this.roomId).emit('player-damaged', {
+      this._emitPlayerDamagedWithHealth(playerId, player, {
         sourcePlayerId: null,
         targetPlayerId: playerId,
         damage,
@@ -2278,11 +2302,6 @@ class GameRoom {
         wasKilled,
         timestamp: Date.now(),
         ...(meta?.sourceEnemyId ? { sourceEnemyId: meta.sourceEnemyId } : {}),
-      });
-      this.io.to(this.roomId).emit('player-health-updated', {
-        playerId,
-        health: player.health,
-        maxHealth: player.maxHealth
       });
       if (meta?.stunMs && meta.stunMs > 0) {
         this.applyPlayerStatusEffect(playerId, 'stun', meta.stunMs);
@@ -2438,6 +2457,61 @@ class GameRoom {
     }, impactDelayMs);
   }
 
+  /** DUALITY (duo: red + purple) — server-authoritative concentrated blizzard at a fixed point. */
+  _spawnDualityBlizzard(center, fromPlayerId, player) {
+    if (!center || !fromPlayerId) return;
+    const position = {
+      x: center.x ?? 0,
+      y: Math.max(1.5, center.y ?? 0),
+      z: center.z ?? 0,
+    };
+    const castTimestamp = Date.now();
+    if (this.io) {
+      this.io.to(this.roomId).emit('duality-blizzard-cast', {
+        blizzardId: `duality-bz-${fromPlayerId}-${castTimestamp}-${Math.random().toString(36).slice(2, 8)}`,
+        position,
+        durationMs: DUALITY_BLIZZARD_DURATION_MS,
+        tickMs: DUALITY_BLIZZARD_TICK_MS,
+        radius: DUALITY_BLIZZARD_HIT_RADIUS,
+        timestamp: castTimestamp,
+      });
+    }
+
+    const tickCount = Math.floor(DUALITY_BLIZZARD_DURATION_MS / DUALITY_BLIZZARD_TICK_MS);
+    const radiusSq = DUALITY_BLIZZARD_HIT_RADIUS * DUALITY_BLIZZARD_HIT_RADIUS;
+    let ticksDone = 0;
+    const intervalId = setInterval(() => {
+      ticksDone += 1;
+      if (!this.enemies || ticksDone > tickCount) {
+        clearInterval(intervalId);
+        this._scheduledTimers.delete(intervalId);
+        return;
+      }
+      const livePlayer = fromPlayerId ? this.players.get(fromPlayerId) : player;
+      for (const [enemyId, enemy] of this.enemies) {
+        if (!enemy || enemy.isDying) continue;
+        if (enemy.health != null && enemy.health <= 0) continue;
+        const ex = enemy.position?.x ?? 0;
+        const ez = enemy.position?.z ?? 0;
+        const ddx = ex - position.x;
+        const ddz = ez - position.z;
+        if (ddx * ddx + ddz * ddz > radiusSq) continue;
+        this.damageEnemy(
+          enemyId,
+          DUALITY_BLIZZARD_DAMAGE_PER_TICK,
+          fromPlayerId,
+          livePlayer || player,
+          { damageType: 'blizzard', arcticBlizzard: true },
+        );
+      }
+      if (ticksDone >= tickCount) {
+        clearInterval(intervalId);
+        this._scheduledTimers.delete(intervalId);
+      }
+    }, DUALITY_BLIZZARD_TICK_MS);
+    this._scheduledTimers.add(intervalId);
+  }
+
   getCloudkillStartPosition(center) {
     const height =
       CLOUDKILL_SKY_HEIGHT_MIN +
@@ -2573,6 +2647,7 @@ class GameRoom {
     if (this.gameMode === 'coop') {
       this.initializeEnemies();
       this.spawnOrReviveAlliedUnitsForEnemyRoom();
+      this.startEnemyAI();
     }
   }
 
@@ -2925,6 +3000,7 @@ class GameRoom {
       }
     }
     console.log(`⚔️ Mixed room reserve: slots ${sliceStart}–${sliceEnd - 1} (${sliceEnd - sliceStart} enemies)`);
+    this.startEnemyAI();
   }
 
   /**
@@ -3041,6 +3117,7 @@ class GameRoom {
       this.coopWaveReserveReleased++;
     }
     console.log(`⚔️ Co-op edge batch ${batchIndex + 1} spawned (${count} enemies at north edge)`);
+    this.startEnemyAI();
   }
 
   /**
@@ -3222,6 +3299,7 @@ class GameRoom {
       this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
     }
     console.log(`💰 Greed (${color}) bonus enemy spawned in room: ${this.currentCoopRoomKind}`);
+    this.startEnemyAI();
   }
 
   spawnEnemy(type) {
@@ -3364,6 +3442,15 @@ class GameRoom {
       return null;
     }
 
+    if (
+      enemy.type === 'knight' &&
+      hitMeta?.damageType !== 'ignite' &&
+      hitMeta?.damageType !== 'venom' &&
+      this.enemyAI?.isKnightBlocking(enemyId)
+    ) {
+      return null;
+    }
+
     let appliedDamage = damage;
     if (
       hitMeta &&
@@ -3393,6 +3480,10 @@ class GameRoom {
     const previousHealth = enemy.health;
     enemy.health = Math.max(0, enemy.health - appliedDamage);
 
+    if (appliedDamage > 0) {
+      enemy.lastDamageAt = Date.now();
+    }
+
     if (enemy.type === 'training-dummy' && enemy.health <= 0) {
       enemy.health = enemy.maxHealth;
     }
@@ -3411,7 +3502,9 @@ class GameRoom {
         let aggroAmount = appliedDamage;
         if (player && player.isStealthing) {
           aggroAmount *= 10.0; // Same 10x multiplier as bosses
-          console.log(`👤 Stealth aggro bonus: Player ${fromPlayerId} stealth attack on enemy ${enemyId} (${appliedDamage} -> ${aggroAmount} aggro)`);
+          if (process.env.NODE_ENV !== 'production') {
+            console.log(`👤 Stealth aggro bonus: Player ${fromPlayerId} stealth attack on enemy ${enemyId} (${appliedDamage} -> ${aggroAmount} aggro)`);
+          }
         }
         if (hitMeta && hitMeta.sourceAlliedUnitId) {
           this.enemyAI.applyAlliedUnitThreat(enemyId, hitMeta.sourceAlliedUnitId, aggroAmount);
@@ -3548,6 +3641,20 @@ class GameRoom {
       enemy.health > 0
     ) {
       this.applyBlizzardChillOnHit(enemyId, fromPlayerId, player);
+    }
+
+    if (
+      hitMeta &&
+      hitMeta.damageType === 'blizzard' &&
+      appliedDamage > 0 &&
+      !result.wasKilled &&
+      !enemy.isDying &&
+      enemy.health > 0
+    ) {
+      const blizzardPlayer = fromPlayerId ? this.players.get(fromPlayerId) : player;
+      if (blizzardPlayer?.coopStaggerRoomBoons?.acidRain) {
+        this._addConcentratedVenomStacks(enemyId, ACID_RAIN_VENOM_STACKS_PER_TICK, fromPlayerId);
+      }
     }
 
     if (
@@ -3864,6 +3971,17 @@ class GameRoom {
           }
         }, 2500);
         return result;
+      }
+
+      if (
+        fromPlayerId &&
+        hitMeta &&
+        (hitMeta.damageType === 'stagger_break' || hitMeta.damageType === 'blizzard')
+      ) {
+        const killer = this.players.get(fromPlayerId);
+        if (killer?.coopStaggerRoomBoons?.spellThief && this.io) {
+          this.io.to(fromPlayerId).emit('spell-thief-dash-restore', { timestamp: Date.now() });
+        }
       }
 
       if (
@@ -4849,6 +4967,7 @@ class GameRoom {
   addEnemy(enemyData) {
     this.enemies.set(enemyData.id, enemyData);
     console.log(`➕ Enemy ${enemyData.id} (${enemyData.type}) added to room ${this.roomId}`);
+    this.startEnemyAI();
   }
 
   // Function to calculate level based on kill count (same as Scene.tsx)
@@ -4943,6 +5062,7 @@ class GameRoom {
           ? 'Boss tier 2 (Archon)'
           : 'Boss tier 1';
     console.log(`👹 ${label} spawned with ${maxHealth} HP at center of arena!`);
+    this.startEnemyAI();
     return bossData;
   }
 
@@ -5006,6 +5126,7 @@ class GameRoom {
     console.log(
       `⚔️⚔️ Boss1 elite knights spawned (${soulTypes.join(' + ')})! IDs: ${[...this.boss1EliteKnightIds].join(', ')}`
     );
+    this.startEnemyAI();
     return spawnedKnights;
   }
 
@@ -5061,16 +5182,16 @@ class GameRoom {
     console.log(
       `👹👹👹 THE TRINITY spawned — Boss1, Boss2, and Boss3 all at once! IDs: ${[...this.tripleBossIds].join(', ')}`
     );
+    this.startEnemyAI();
     return spawnedBosses;
   }
 
   // Start enemy AI system
   startEnemyAI() {
-    if (this.gameStarted && this.players.size > 0) {
-      // Start enemy AI for co-op mode
-      if (this.gameMode === 'coop') {
-        this.enemyAI.startAI();
-      }
+    if (!this.gameStarted || this.players.size === 0) return;
+    if (this.gameMode === 'coop' && !this.combatArenaActive) return;
+    if (this.gameMode === 'coop') {
+      this.enemyAI.startAI();
     }
   }
 
@@ -5586,6 +5707,14 @@ class GameRoom {
     );
   }
 
+  _emitMerchantNpcGreet(kind) {
+    if (!this.io) return;
+    this.io.to(this.roomId).emit('merchant-npc-greet', {
+      kind,
+      timestamp: Date.now(),
+    });
+  }
+
   purchaseMerchantItem(playerId, stockId) {
     const player = this.players.get(playerId);
     if (!player || !this._isMerchantRoomOpen()) {
@@ -5863,6 +5992,7 @@ class GameRoom {
     this.players.clear();
     this.enemies.clear();
     this.enemyStatusEffects.clear();
+    this.playerStatusEffects.clear();
     this.enemyChill.clear();
     this.droppedItems.clear();
     this.goldDrops.clear();

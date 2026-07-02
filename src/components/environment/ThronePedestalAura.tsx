@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, memo } from 'react';
 import { Group, Mesh } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { WeaponType } from '@/components/dragon/weapons';
@@ -14,7 +14,7 @@ interface AuraPalette {
 }
 
 const ROYAL_DEFAULT: AuraPalette = {
-  outer: '#b8b8c8',
+  outer: '#d4af37',
   plane: '#e8e8f0',
   innerColor: '#5a5a6a',
   streamColor: '#2a2a3a',
@@ -34,31 +34,31 @@ const WEAPON_PALETTES: Partial<Record<WeaponType, AuraPalette>> = {
     glow: '#22c55e',
   },
   [WeaponType.SABRES]: {
-    outer: '#ef4444',
-    plane: '#fb923c',
-    innerColor: '#b91c1c',
-    streamColor: '#7f1d1d',
-    streamEmissive: '#f97316',
-    ambient: '#fca5a5',
-    glow: '#ef4444',
+    outer: '#FF4444',
+    plane: '#FF4444',
+    innerColor: '#FF4444',
+    streamColor: '#FF4444',
+    streamEmissive: '#FF4444',
+    ambient: '#FD6464',
+    glow: '#FF4444',
   },
   [WeaponType.SCYTHE]: {
-    outer: '#d8b4fe',
-    plane: '#7dd3fc',
-    innerColor: '#6b21a8',
-    streamColor: '#3b0764',
-    streamEmissive: '#38bdf8',
-    ambient: '#d8b4fe',
-    glow: '#d8b4fe',
+    outer: '#FF6224',
+    plane: '#FF5E00',
+    innerColor: '#FF6224',
+    streamColor: '#FF5E00',
+    streamEmissive: '#FF5E00',
+    ambient: '#FF5E00',
+    glow: '#FF5E00',
   },
   [WeaponType.RUNEBLADE]: {
-    outer: '#7dd3fc',
+    outer: '#38bdf8',
     plane: '#38bdf8',
-    innerColor: '#0284c7',
+    innerColor: '#38bdf8',
     streamColor: '#0c4a6e',
     streamEmissive: '#38bdf8',
-    ambient: '#bae6fd',
-    glow: '#7dd3fc',
+    ambient: '#38bdf8',
+    glow: '#38bdf8',
   },
 };
 
@@ -68,7 +68,7 @@ interface ThronePedestalAuraProps {
   position: [number, number, number];
 }
 
-export default function ThronePedestalAura({ weapon, equippedWeapon, position }: ThronePedestalAuraProps) {
+function ThronePedestalAura({ weapon, equippedWeapon, position }: ThronePedestalAuraProps) {
   const auraRef = useRef<Group>(null);
 
   // Animated mesh refs
@@ -245,3 +245,5 @@ export default function ThronePedestalAura({ weapon, equippedWeapon, position }:
     </group>
   );
 }
+
+export default memo(ThronePedestalAura);

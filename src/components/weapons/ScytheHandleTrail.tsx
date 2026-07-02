@@ -68,6 +68,20 @@ export default function ScytheHandleTrail({
     isInitialized.current = true;
   }, [anchorRef, parentRef]);
 
+  useEffect(() => {
+    return () => {
+      const points = trailRef.current;
+      if (!points) return;
+      points.geometry?.dispose();
+      const mat = points.material;
+      if (Array.isArray(mat)) {
+        mat.forEach((m) => m.dispose());
+      } else {
+        mat?.dispose();
+      }
+    };
+  }, []);
+
   useFrame((state) => {
     if (!anchorRef.current || !parentRef.current || !isInitialized.current) return;
     if (!trailRef.current?.parent) return;
@@ -127,7 +141,7 @@ export default function ScytheHandleTrail({
       vAge = age;
       vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
       gl_Position = projectionMatrix * mvPosition;
-      gl_PointSize = scale * 22.0 * (300.0 / -mvPosition.z);
+      gl_PointSize = scale * 16.0 * (300.0 / -mvPosition.z);
     }
   `;
 

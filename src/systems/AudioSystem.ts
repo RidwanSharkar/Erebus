@@ -136,6 +136,8 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'ui_aegis', file: 'ui/aegis.mp3' },
   { id: 'ui_shield_break', file: 'ui/1shieldBreak.mp3' },
   { id: 'ui_shield_regen', file: 'ui/1shieldRegen.mp3' },
+  { id: 'merchant_greet_arrival', file: 'ui/merchantGreetArrival.mp3' },
+  { id: 'merchant_greet_purchase', file: 'ui/merchantGreetPurchase.mp3' },
 ];
 
 const STARTUP_SOUND_IDS = new Set([
@@ -146,10 +148,117 @@ const STARTUP_SOUND_IDS = new Set([
   'ui_room_start_2',
 ]);
 
-const GAMEPLAY_PRELOAD_ASSETS = WEAPON_SOUND_ASSETS;
+/** Weapon-owned SFX loaded eagerly for the equipped weapon; other weapons lazy-load on first play. */
+const WEAPON_SPECIFIC_SOUND_IDS: Partial<Record<WeaponType, readonly string[]>> = {
+  [WeaponType.BOW]: [
+    'bow_draw',
+    'bow_release',
+    'bow_power_release',
+    'bow_viper_sting_release',
+    'bow_barrage_release',
+    'bow_cobra_shot_release',
+    'bow_explosive_talons',
+    'bow_explosion',
+    'ui_hitbox_bow',
+  ],
+  [WeaponType.SABRES]: [
+    'sabres_swing',
+    'sabres_backstab',
+    'sabres_flourish',
+    'sabres_shadow_step',
+    'sabres_skyfall',
+    'knight_miss',
+    'ui_hitbox_sabres',
+  ],
+  [WeaponType.SCYTHE]: [
+    'entropic_bolt',
+    'crossentropy',
+    'crossentropy_impact',
+    'frost_nova',
+    'scythe_mantra',
+    'scythe_sunwell',
+    'scythe_cryoflame',
+    'aftershock',
+    'scythe_meteor',
+    'scythe_meteorite',
+    'scythe_totem_bolt',
+    'scythe_superconductor',
+    'icebeam',
+    'ui_hitbox_scythe',
+  ],
+  [WeaponType.SPEAR]: [
+    'spear_swing',
+    'whirlwind_charge',
+    'whirlwind_release',
+    'throw_spear_charge',
+    'throw_spear_release',
+    'lightning_bolt',
+    'flurry',
+    'ui_hitbox_spear',
+  ],
+  [WeaponType.SWORD]: [
+    'sword_swing_1',
+    'sword_swing_2',
+    'sword_swing_3',
+    'sword_charge',
+    'sword_deflect',
+    'sword_crusader',
+    'windshear',
+    'colossus_strike',
+    'sword_miss_1',
+    'sword_miss_2',
+    'ui_hitbox_sword',
+  ],
+  [WeaponType.RUNEBLADE]: [
+    'sword_swing_1',
+    'sword_swing_2',
+    'sword_swing_3',
+    'sword_charge',
+    'sword_deflect',
+    'sword_crusader',
+    'windshear',
+    'colossus_strike',
+    'runeblade_heartrend',
+    'runeblade_smite',
+    'runeblade_wraithblade',
+    'runeblade_void_grasp',
+    'runeblade_swing_hit',
+    'runeblade_whirlwind',
+    'sword_miss_1',
+    'sword_miss_2',
+    'ui_hitbox_sword',
+  ],
+  [WeaponType.KNIGHT]: [
+    'sword_swing_1',
+    'sword_swing_2',
+    'sword_swing_3',
+    'knight_miss',
+    'knight_damage_1',
+    'knight_damage_2',
+    'ui_hitbox_sword',
+  ],
+  [WeaponType.NONE]: ['ui_hitbox_sword'],
+};
+
+const ALL_WEAPON_SPECIFIC_SOUND_IDS = new Set(
+  Object.values(WEAPON_SPECIFIC_SOUND_IDS).flat(),
+);
+
+const COMMON_GAMEPLAY_PRELOAD_IDS = new Set(
+  WEAPON_SOUND_ASSETS.map(asset => asset.id).filter(id => !ALL_WEAPON_SPECIFIC_SOUND_IDS.has(id)),
+);
+
+function getGameplayPreloadAssets(weapon?: WeaponType): SfxAsset[] {
+  const weaponIds = WEAPON_SPECIFIC_SOUND_IDS[weapon ?? WeaponType.BOW] ?? WEAPON_SPECIFIC_SOUND_IDS[WeaponType.BOW]!;
+  const preloadIds = new Set([...Array.from(COMMON_GAMEPLAY_PRELOAD_IDS), ...weaponIds]);
+  return WEAPON_SOUND_ASSETS.filter(asset => preloadIds.has(asset.id));
+}
 
 export class AudioSystem extends System {
   public readonly requiredComponents = []; // Audio system doesn't require specific components
+
+  /** Shared origin for non-positional UI SFX (Howler skips 3D positioning anyway). */
+  private static readonly UI_ORIGIN = new Vector3(0, 0, 0);
 
   private soundCache = new Map<string, Howl>();
   private soundLoadPromises = new Map<string, Promise<Howl | null>>();
@@ -230,12 +339,21 @@ export class AudioSystem extends System {
     return this.startupPreloadPromise;
   }
 
-  // Preload gameplay SFX. Keeps large / on-demand music out of the loading screen.
-  public preloadWeaponSounds(): Promise<void> {
+  // Preload common combat SFX plus the equipped weapon subset; other weapons lazy-load on first play.
+  public preloadWeaponSounds(weapon?: WeaponType): Promise<void> {
     if (!this.weaponPreloadPromise) {
-      this.weaponPreloadPromise = this.preloadSfxAssets(GAMEPLAY_PRELOAD_ASSETS);
+      const resolvedWeapon = weapon ?? this.getCurrentWeaponFromControl();
+      this.weaponPreloadPromise = this.preloadSfxAssets(getGameplayPreloadAssets(resolvedWeapon));
     }
     return this.weaponPreloadPromise;
+  }
+
+  /** Preload SFX for a newly equipped weapon (no-op if already cached). */
+  public preloadWeaponSoundsForWeapon(weapon: WeaponType): Promise<void> {
+    const assets = (WEAPON_SPECIFIC_SOUND_IDS[weapon] ?? [])
+      .map(id => this.sfxById.get(id))
+      .filter((asset): asset is SfxAsset => asset != null);
+    return this.preloadSfxAssets(assets);
   }
 
   /** @deprecated No default hub BGM; kept for call-site compatibility. */
@@ -386,7 +504,7 @@ export class AudioSystem extends System {
 
   // Play crossentropy explosion impact sound (distinct from cast sound)
   public playCrossentropyImpactSound() {
-    return this.playWeaponSound('crossentropy_impact', new Vector3(0, 0, 0), { volume: 0.825 });
+    return this.playWeaponSound('crossentropy_impact', AudioSystem.UI_ORIGIN, { volume: 0.825 });
   }
 
   // Play sword swing sounds (combo steps 1-3)
@@ -863,41 +981,41 @@ export class AudioSystem extends System {
 
   // Play UI selection sound
   public playUISelectionSound() {
-    return this.playWeaponSound('ui_selection', new Vector3(0, 0, 0), { volume: 0.7 });
+    return this.playWeaponSound('ui_selection', AudioSystem.UI_ORIGIN, { volume: 0.7 });
   }
 
   public playUIGoldPickupSound() {
-    return this.playWeaponSound('ui_gold_pickup', new Vector3(0, 0, 0), { volume: 0.72 });
+    return this.playWeaponSound('ui_gold_pickup', AudioSystem.UI_ORIGIN, { volume: 0.72 });
   }
 
   public playUITomePickupSound() {
-    return this.playWeaponSound('ui_tome_pickup', new Vector3(0, 0, 0), { volume: 0.72 });
+    return this.playWeaponSound('ui_tome_pickup', AudioSystem.UI_ORIGIN, { volume: 0.72 });
   }
 
   // Play UI interface sound (for navigation buttons)
   public playUIInterfaceSound() {
-    return this.playWeaponSound('ui_interface', new Vector3(0, 0, 0), { volume: 0.7 });
+    return this.playWeaponSound('ui_interface', AudioSystem.UI_ORIGIN, { volume: 0.7 });
   }
 
   public playUIInterface2Sound() {
-    return this.playWeaponSound('ui_interface_2', new Vector3(0, 0, 0), { volume: 0.7 });
+    return this.playWeaponSound('ui_interface_2', AudioSystem.UI_ORIGIN, { volume: 0.7 });
   }
 
   public playUIInterface3Sound() {
-    return this.playWeaponSound('ui_interface_3', new Vector3(0, 0, 0), { volume: 0.7 });
+    return this.playWeaponSound('ui_interface_3', AudioSystem.UI_ORIGIN, { volume: 0.7 });
   }
 
   /** Local player defeated — short UI sting. */
   public playDefeatSound() {
-    return this.playWeaponSound('ui_defeat', new Vector3(0, 0, 0), { volume: 1.0 });
+    return this.playWeaponSound('ui_defeat', AudioSystem.UI_ORIGIN, { volume: 1.0 });
   }
 
   public playLevelUpSound() {
-    return this.playWeaponSound('ui_level', new Vector3(0, 0, 0), { volume: 0.9 });
+    return this.playWeaponSound('ui_level', AudioSystem.UI_ORIGIN, { volume: 0.9 });
   }
 
   public playAegisBlockSound() {
-    return this.playWeaponSound('ui_aegis', new Vector3(0, 0, 0), { volume: 1.33 });
+    return this.playWeaponSound('ui_aegis', AudioSystem.UI_ORIGIN, { volume: 1.33 });
   }
 
   public playFrozenStatusSound(position: Vector3) {
@@ -966,18 +1084,28 @@ export class AudioSystem extends System {
 
   // Play UI dash sound (when dashing)
   public playUIDashSound() {
-    return this.playWeaponSound('ui_dash', new Vector3(0, 0, 0), { volume: 0.8 });
+    return this.playWeaponSound('ui_dash', AudioSystem.UI_ORIGIN, { volume: 0.8 });
   }
 
   /** Co-op combat room entry: random start chime alongside combat BGM. */
   public playCoopRoomEnterStinger(): void {
     const id = Math.random() < 0.5 ? 'ui_room_start_1' : 'ui_room_start_2';
-    this.playWeaponSound(id, new Vector3(0, 0, 0), { volume: 0.85 });
+    this.playWeaponSound(id, AudioSystem.UI_ORIGIN, { volume: 0.85 });
   }
 
   /** Co-op room clear: pedestal / portal unlock. */
   public playCoopRoomClearFinish(): void {
-    this.playWeaponSound('ui_room_finish', new Vector3(0, 0, 0), { volume: 0.85 });
+    this.playWeaponSound('ui_room_finish', AudioSystem.UI_ORIGIN, { volume: 0.85 });
+  }
+
+  /** Merchant room: greeting when the party arrives. */
+  public playMerchantArrivalGreet(): void {
+    this.playWeaponSound('merchant_greet_arrival', AudioSystem.UI_ORIGIN, { volume: 0.8 });
+  }
+
+  /** Merchant room: thank-you line after a successful purchase (buyer only). */
+  public playMerchantPurchaseGreet(): void {
+    this.playWeaponSound('merchant_greet_purchase', AudioSystem.UI_ORIGIN, { volume: 0.8 });
   }
 
   /** Co-op colored room: first combat engagement whisper (once per room visit). */
@@ -989,7 +1117,7 @@ export class AudioSystem extends System {
       green: 'whisper_eldritch',
     }[roomColor];
     if (!soundId) return;
-    this.playWeaponSound(soundId, new Vector3(0, 0, 0), { volume: 1.3 });
+    this.playWeaponSound(soundId, AudioSystem.UI_ORIGIN, { volume: 1.3 });
   }
 
   /** Looped locomotion footsteps (local player run); mirrors Run vs slow-walk in CharacterRenderer. */
@@ -1112,8 +1240,8 @@ export class AudioSystem extends System {
     const soundId = this.hitboxSoundIdForWeapon(resolved);
     const isMeleeMultiTarget = soundId === 'ui_hitbox_sabres' || soundId === 'ui_hitbox_sword';
     const playResult = isMeleeMultiTarget
-      ? this.playWeaponSoundWithCooldown(soundId, new Vector3(0, 0, 0), { volume: 0.65 }, AudioSystem.MELEE_HITBOX_SOUND_COOLDOWN_MS)
-      : this.playWeaponSound(soundId, new Vector3(0, 0, 0), { volume: 0.65 });
+      ? this.playWeaponSoundWithCooldown(soundId, AudioSystem.UI_ORIGIN, { volume: 0.65 }, AudioSystem.MELEE_HITBOX_SOUND_COOLDOWN_MS)
+      : this.playWeaponSound(soundId, AudioSystem.UI_ORIGIN, { volume: 0.65 });
 
     const showStrikeFlash =
       resolved === WeaponType.BOW || resolved === WeaponType.SCYTHE;

@@ -4,7 +4,7 @@ import React, { useRef, useMemo } from 'react';
 import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
 
 import { useFrame } from '@react-three/fiber';
-import { Mesh, Group, AdditiveBlending, Color } from 'three';
+import { Mesh, Group, AdditiveBlending } from 'three';
 
 type SoulType = 'green' | 'red' | 'blue' | 'purple' | 'yellow';
 
@@ -24,7 +24,7 @@ const SOUL_COLORS: Record<SoulType, { core: string; glow: string; light: string 
 const ORBIT_COUNT = 4;
 const ORBIT_RADIUS = 0.5;
 
-export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
+function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
   const groupRef = useRef<Group>(null);
   const coreRef = useRef<Mesh>(null);
   const glowRef = useRef<Mesh>(null);
@@ -76,8 +76,9 @@ export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
   return (
     // Positioned relative to the knight group origin; Y handled in useFrame
     <group ref={groupRef} position={[0, 1.5, 0]}>
-      {/* Point light — stronger radius and intensity */}
-      <EnemyDynamicLight position={[0, 0.2, 0]}
+      {/* Single pooled light — one acquire per soul instead of six */}
+      <EnemyDynamicLight
+        position={[0, 0.2, 0]}
         color={colors.light}
         intensity={7.5}
         distance={6.0}
@@ -127,17 +128,10 @@ export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
                 blending={AdditiveBlending}
                 depthWrite={false}
               />
-              <EnemyDynamicLight position={[0, 0.35, 0]}
-                color={colors.light}
-                intensity={1.25}
-                distance={6.0}
-                decay={5}
-              />
             </mesh>
           );
         })}
       </group>
-      
 
       {/* Wide aura disc beneath the orb — more visible */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.35, 0]}>
@@ -151,17 +145,9 @@ export default function KnightSoulEffect({ soulType }: KnightSoulEffectProps) {
           toneMapped={false}
           side={2}
         />
-
-<EnemyDynamicLight position={[0, -0.125, 0]}
-        color={colors.light}
-        intensity={2.5}
-        distance={6.0}
-        decay={5}
-      />
-
-
-        
       </mesh>
     </group>
   );
 }
+
+export default React.memo(KnightSoulEffect);

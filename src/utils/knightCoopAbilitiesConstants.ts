@@ -19,3 +19,21 @@ export const KNIGHT_DEATH_GRASP_STANDOFF = 1.2; // server pull position from kni
 export const KNIGHT_SMITE_IMPACT_DELAY_MS = 900;
 export const KNIGHT_SMITE_RADIUS_BASE = 2.8;
 export const KNIGHT_SMITE_RADIUS_POST_BOSS2 = 3.75;
+
+// Knight Block (enemyAI: tryKnightBlock, knightCastBlock)
+export const KNIGHT_BLOCK_REACT_WINDOW_MS = 500;
+export const KNIGHT_BLOCK_DURATION_MS: Record<'red' | 'blue' | 'purple' | 'green', number> = {
+  red: 2000,
+  blue: 3000,
+  purple: 4000,
+  green: 6000,
+};
+export const KNIGHT_BLOCK_COOLDOWN_MS: Record<'red' | 'blue' | 'purple' | 'green', number> = {
+  red: 6000,
+  blue: 8000,
+  purple: 12000,
+  green: 15000,
+};
+export const KNIGHT_ELITE_BLOCK_DURATION_MS = 10000;
+export const KNIGHT_ELITE_BLOCK_HEALTH_THRESHOLDS = [0.9, 0.5, 0.2] as const;
+export const KNIGHT_BLOCK_UNLOCK_BOSS_COUNT = 2;

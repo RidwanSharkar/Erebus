@@ -3,6 +3,8 @@ import { useFrame } from '@react-three/fiber';
 import {
   AdditiveBlending,
   DoubleSide,
+  Group,
+  Mesh,
   MeshBasicMaterial,
   RingGeometry,
   SphereGeometry,
@@ -12,12 +14,23 @@ import type { TotemBoltVariant } from '@/utils/talents';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import { getTotemBoltTheme } from '@/components/projectiles/TotemEntropicBolt';
 
-interface TotemSuperconductorLightningProps {
+export type TotemLightningPoolSlot = {
+  active: boolean;
+  launchGen: number;
+  id: number;
   from: Vector3;
   to: Vector3;
-  onComplete: () => void;
+  totemBoltVariant?: TotemBoltVariant;
+};
+
+interface TotemSuperconductorLightningProps {
+  from?: Vector3;
+  to?: Vector3;
+  onComplete?: () => void;
   /** Matches Mantra totem boon; default keeps cyan/teal conductor look. */
   totemBoltVariant?: TotemBoltVariant;
+  poolSlot?: TotemLightningPoolSlot;
+  onPoolComplete?: (id: number) => void;
 }
 
 const DEFAULT_CONDUCTOR = {
@@ -106,38 +119,32 @@ export default function TotemSuperconductorLightning({
   to,
   onComplete,
   totemBoltVariant,
+  poolSlot,
+  onPoolComplete,
 }: TotemSuperconductorLightningProps) {
   const startedAtRef = useRef(Date.now());
   const completedRef = useRef(false);
   const flickerRef = useRef(1);
+  const holderRef = useRef<Group>(null);
+  const launchGenSeen = useRef(0);
+  const impactRotationsRef = useRef<[number, number, number][]>([]);
+
+  const resolvedVariant = poolSlot?.totemBoltVariant ?? totemBoltVariant;
+  const resolvedFrom = poolSlot?.from ?? from!;
+  const resolvedTo = poolSlot?.to ?? to!;
 
   const conductorPalette = useMemo(() => {
-    if (!totemBoltVariant) {
+    if (!resolvedVariant) {
       return DEFAULT_CONDUCTOR;
     }
-    const t = getTotemBoltTheme(totemBoltVariant);
+    const t = getTotemBoltTheme(resolvedVariant);
     return {
       core: t.light,
       secondary: t.primary,
       impact: t.secondary,
       pointLight: t.light,
     };
-  }, [totemBoltVariant]);
-
-  // Two endpoint <pointLight>s (origin + impact) become two pooled lights at `from`/`to`.
-  const originLight = useDynamicLight({ color: conductorPalette.pointLight, distance: 4, decay: 2, priority: 1 });
-  const impactLight = useDynamicLight({ color: conductorPalette.pointLight, distance: 7, decay: 2, priority: 1 });
-
-  const branches = useMemo(() => buildBoltBranches(from, to), [from, to]);
-  const impactRotations = useMemo(
-    () =>
-      [0, 1].map(() => [
-        Math.random() * Math.PI,
-        Math.random() * Math.PI,
-        Math.random() * Math.PI,
-      ] as [number, number, number]),
-    [],
-  );
+  }, [resolvedVariant]);
 
   const geometries = useMemo(
     () => ({
@@ -177,6 +184,66 @@ export default function TotemSuperconductorLightning({
     [conductorPalette],
   );
 
+  // Two endpoint <pointLight>s (origin + impact) become two pooled lights at `from`/`to`.
+  const originLight = useDynamicLight({ color: conductorPalette.pointLight, distance: 4, decay: 2, priority: 1 });
+  const impactLight = useDynamicLight({ color: conductorPalette.pointLight, distance: 7, decay: 2, priority: 1 });
+
+  const mountLightning = (start: Vector3, end: Vector3) => {
+    const holder = holderRef.current;
+    if (!holder) return;
+
+    while (holder.children.length > 0) {
+      holder.remove(holder.children[0]);
+    }
+
+    const builtBranches = buildBoltBranches(start, end);
+    impactRotationsRef.current = [0, 1].map(() => [
+      Math.random() * Math.PI,
+      Math.random() * Math.PI,
+      Math.random() * Math.PI,
+    ] as [number, number, number]);
+
+    for (const branch of builtBranches) {
+      const branchGroup = new Group();
+      for (const point of branch.points) {
+        const mesh = new Mesh(geometries.bolt, branch.isCoreStrike ? materials.coreBolt : materials.secondaryBolt);
+        mesh.position.copy(point);
+        mesh.scale.setScalar(branch.thickness);
+        branchGroup.add(mesh);
+      }
+      holder.add(branchGroup);
+    }
+
+    [start, end].forEach((pos, i) => {
+      const impactGroup = new Group();
+      impactGroup.position.copy(pos);
+      const impactMesh = new Mesh(geometries.impact, materials.impact);
+      impactMesh.scale.setScalar(i === 0 ? 0.45 : 0.75);
+      impactGroup.add(impactMesh);
+      const ringMesh = new Mesh(geometries.ring, materials.ring);
+      ringMesh.rotation.set(...(impactRotationsRef.current[i] ?? [0, 0, 0]));
+      ringMesh.scale.set(i === 0 ? 0.8 : 1.2, i === 0 ? 0.8 : 1.2, 1);
+      impactGroup.add(ringMesh);
+      holder.add(impactGroup);
+    });
+  };
+
+  const branches = useMemo(
+    () => (poolSlot ? [] : buildBoltBranches(resolvedFrom, resolvedTo)),
+    [poolSlot, resolvedFrom, resolvedTo],
+  );
+  const impactRotations = useMemo(
+    () =>
+      poolSlot
+        ? []
+        : [0, 1].map(() => [
+            Math.random() * Math.PI,
+            Math.random() * Math.PI,
+            Math.random() * Math.PI,
+          ] as [number, number, number]),
+    [poolSlot],
+  );
+
   useEffect(() => {
     const g = geometries;
     return () => {
@@ -197,6 +264,22 @@ export default function TotemSuperconductorLightning({
   }, [materials]);
 
   useFrame(() => {
+    if (poolSlot) {
+      if (!poolSlot.active) {
+        if (holderRef.current) holderRef.current.visible = false;
+        originLight.current?.setIntensity(0);
+        impactLight.current?.setIntensity(0);
+        return;
+      }
+      if (poolSlot.launchGen !== launchGenSeen.current) {
+        launchGenSeen.current = poolSlot.launchGen;
+        startedAtRef.current = Date.now();
+        completedRef.current = false;
+        mountLightning(poolSlot.from, poolSlot.to);
+        if (holderRef.current) holderRef.current.visible = true;
+      }
+    }
+
     const elapsed = Date.now() - startedAtRef.current;
     const progress = Math.min(elapsed / BOLT_DURATION_MS, 1);
     flickerRef.current = Math.random() * 0.35 + 0.65;
@@ -207,17 +290,32 @@ export default function TotemSuperconductorLightning({
     materials.impact.opacity = fadeOut;
     materials.ring.opacity = fadeOut * 0.7;
 
+    const lightFrom = poolSlot?.from ?? resolvedFrom;
+    const lightTo = poolSlot?.to ?? resolvedTo;
+
     // Drive the two endpoint lights, replicating the per-endpoint flicker intensity.
-    originLight.current?.setPosition(from.x, from.y, from.z);
+    originLight.current?.setPosition(lightFrom.x, lightFrom.y, lightFrom.z);
     originLight.current?.setIntensity(8 * flickerRef.current);
-    impactLight.current?.setPosition(to.x, to.y, to.z);
+    impactLight.current?.setPosition(lightTo.x, lightTo.y, lightTo.z);
     impactLight.current?.setIntensity(12 * flickerRef.current);
 
     if (progress >= 1 && !completedRef.current) {
       completedRef.current = true;
-      onComplete();
+      if (poolSlot) {
+        poolSlot.active = false;
+        if (holderRef.current) holderRef.current.visible = false;
+        originLight.current?.setIntensity(0);
+        impactLight.current?.setIntensity(0);
+        onPoolComplete?.(poolSlot.id);
+      } else {
+        onComplete?.();
+      }
     }
   });
+
+  if (poolSlot) {
+    return <group ref={holderRef} visible={false} />;
+  }
 
   return (
     <group>
@@ -235,7 +333,7 @@ export default function TotemSuperconductorLightning({
         </group>
       ))}
 
-      {[from, to].map((pos, i) => (
+      {[resolvedFrom, resolvedTo].map((pos, i) => (
         <group key={i} position={pos.toArray()}>
           <mesh
             geometry={geometries.impact}

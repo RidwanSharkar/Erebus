@@ -8,7 +8,7 @@ import ShadeModel from './ShadeModel';
 import ShadeTeleportEffect from './ShadeTeleportEffect';
 import CubeSoulEffect from './CubeSoulEffect';
 import BossTeleportEffect from './BossTeleportEffect';
-import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
@@ -39,7 +39,7 @@ const BLINK_LERP_SPEED = 20;  // fast slide during blink telegraph
 const WALK_STOP_DELAY = 250; // ms
 const HIT_REACT_IMPACT_COOLDOWN_MS = 1500; // min time between shade_impact.glb hit-react plays
 
-export default function ShadeRenderer({
+function ShadeRenderer({
   id,
   position,
   rotation,
@@ -52,11 +52,12 @@ export default function ShadeRenderer({
 }: ShadeRendererProps) {
   const theme = campHpTheme(campType);
   const isBlueShade = soulType === 'blue';
-  const { socket, enemyTransformsRef } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking,   setIsWalking]   = useState(false);
+  const isWalkingRef = useRef(false);
   const [isBlinking,  setIsBlinking]  = useState(false);
   const [isImpacting,  setIsImpacting]  = useState(false);
   const [impactPlayKey, setImpactPlayKey] = useState(0);
@@ -72,8 +73,20 @@ export default function ShadeRenderer({
   const lastHitImpactAtRef = useRef(0);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const trackTimeout = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      pendingTimersRef.current = pendingTimersRef.current.filter((t) => t !== id);
+      fn();
+    }, ms);
+    pendingTimersRef.current.push(id);
+    return id;
+  }, []);
   const fadeTimer  = useRef(0);
   const opacity    = useRef(1);
+  const cachedDeathMats = useRef<any[]>([]);
+  const deathCacheBuilt = useRef(false);
 
   // Callback ref — positions the group at the server location before the first render
   // so the shade never flickers from world-origin.
@@ -86,8 +99,39 @@ export default function ShadeRenderer({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    return () => { if (walkStopTimer.current) clearTimeout(walkStopTimer.current); };
+    return () => {
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      pendingTimersRef.current.forEach(clearTimeout);
+      pendingTimersRef.current = [];
+    };
   }, []);
+
+  // Derive walking state from server position deltas (not per-frame lerp sampling).
+  useEffect(() => {
+    const dist = targetPosition.current.distanceTo(position);
+    const isAttackLocked = isAttackingRef.current;
+    if (!isAttackLocked && !isBlinkingRef.current) {
+      targetPosition.current.copy(position);
+    }
+    if (dist > 8.0 && groupRef.current && !isAttackLocked && !isBlinkingRef.current) {
+      groupRef.current.position.copy(position);
+    }
+    if (dist > 0.01 && !isAttackLocked && !isDying) {
+      if (!isWalkingRef.current) {
+        isWalkingRef.current = true;
+        setIsWalking(true);
+      }
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      walkStopTimer.current = setTimeout(() => {
+        isWalkingRef.current = false;
+        setIsWalking(false);
+      }, WALK_STOP_DELAY);
+    }
+  }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    targetRotation.current = rotation;
+  }, [rotation]);
 
   const handleImpactFinished = useCallback(() => {
     setIsImpacting(false);
@@ -153,12 +197,11 @@ export default function ShadeRenderer({
 
       // Arrival effect at the destination — fires halfway through the blink slide
       const arrivalDelay = Math.round(BLINK_DURATION * 0.4);
-      setTimeout(() => {
+      trackTimeout(() => {
         setBossFx(prev => [...prev, { id: `${fxId}-boss-end`, position: newPos, type: 'end' }]);
       }, arrivalDelay);
 
-      // Hard-snap only after the slide finishes so the position is exactly correct.
-      setTimeout(() => {
+      trackTimeout(() => {
         setIsBlinking(false);
         isBlinkingRef.current = false;
         if (groupRef.current) {
@@ -170,7 +213,7 @@ export default function ShadeRenderer({
 
     socket.on('shade-blink-telegraph', handleShadeBlink);
     return () => { socket.off('shade-blink-telegraph', handleShadeBlink); };
-  }, [id, socket]);
+  }, [id, socket, trackTimeout]);
 
   // Listen for the server throw telegraph and drive the attack animation.
   useEffect(() => {
@@ -180,7 +223,7 @@ export default function ShadeRenderer({
       if (data.shadeId !== id) return;
       setIsAttacking(true);
       isAttackingRef.current = true;
-      setTimeout(() => {
+      trackTimeout(() => {
         setIsAttacking(false);
         isAttackingRef.current = false;
       }, ATTACK_DURATION);
@@ -188,7 +231,7 @@ export default function ShadeRenderer({
 
     socket.on('shade-attack-telegraph', handleShadeTelegraph);
     return () => { socket.off('shade-attack-telegraph', handleShadeTelegraph); };
-  }, [id, socket]);
+  }, [id, socket, trackTimeout]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
@@ -208,12 +251,6 @@ export default function ShadeRenderer({
         group.position.copy(targetPosition.current);
       }
 
-      if (dist > 0.01 && !isAttackLocked && !isDying) {
-        if (!isWalking) setIsWalking(true);
-        if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-        walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
-      }
-
       if (!isAttackLocked) {
         group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 
@@ -228,15 +265,26 @@ export default function ShadeRenderer({
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
-      group.traverse((child: any) => {
-        if (child.isMesh && child.material) {
-          const mats = Array.isArray(child.material) ? child.material : [child.material];
-          mats.forEach((mat: any) => {
-            mat.transparent = true;
-            mat.opacity = opacity.current;
-          });
-        }
-      });
+
+      if (!deathCacheBuilt.current) {
+        const collected: any[] = [];
+        group.traverse((child: any) => {
+          if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((mat: any) => {
+              mat.transparent = true;
+              collected.push(mat);
+            });
+          }
+        });
+        cachedDeathMats.current = collected;
+        deathCacheBuilt.current = true;
+      }
+
+      const op = opacity.current;
+      for (let i = 0; i < cachedDeathMats.current.length; i++) {
+        cachedDeathMats.current[i].opacity = op;
+      }
     }
   });
 
@@ -307,3 +355,5 @@ export default function ShadeRenderer({
     </>
   );
 }
+
+export default React.memo(ShadeRenderer);

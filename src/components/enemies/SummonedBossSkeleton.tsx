@@ -1,9 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Group, Vector3 } from 'three';
-import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import CustomSkeleton from '@/components/environment/CustomSkeleton';
-import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 
 interface SummonedBossSkeletonProps {
   id: string;
@@ -24,19 +23,21 @@ export default function SummonedBossSkeleton({
   isDying = false,
   onPositionUpdate
 }: SummonedBossSkeletonProps) {
-  const { socket } = useMultiplayer();
+  const { socket } = useMultiplayerActions();
   const groupRef = useRef<Group>(null);
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking, setIsWalking] = useState(false);
+  const isWalkingRef = useRef(false);
+  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const currentPosition = useRef(position.clone());
   const currentRotation = useRef(rotation);
-  const lastPosition = useRef(position.clone());
-  const movementCheckTimer = useRef(0);
+  const lastServerPosition = useRef(position.clone());
 
   // Constants
   const ATTACK_DURATION = 1000; // milliseconds
   const MOVEMENT_THRESHOLD = 0.05; // Minimum movement to trigger walking animation
+  const WALK_STOP_DELAY = 150;
 
   // Sync position from server
   useEffect(() => {
@@ -52,6 +53,30 @@ export default function SummonedBossSkeleton({
       }
     }
   }, [position]);
+
+  // Derive walking state from server position deltas (not useFrame sampling).
+  useEffect(() => {
+    const dist = lastServerPosition.current.distanceTo(position);
+    lastServerPosition.current.copy(position);
+
+    if (dist > MOVEMENT_THRESHOLD && !isAttacking && !isDying) {
+      if (!isWalkingRef.current) {
+        isWalkingRef.current = true;
+        setIsWalking(true);
+      }
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      walkStopTimer.current = setTimeout(() => {
+        isWalkingRef.current = false;
+        setIsWalking(false);
+      }, WALK_STOP_DELAY);
+    }
+  }, [position.x, position.y, position.z, isAttacking, isDying]);
+
+  useEffect(() => {
+    return () => {
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+    };
+  }, []);
 
   // Sync rotation from server
   useEffect(() => {
@@ -84,30 +109,6 @@ export default function SummonedBossSkeleton({
       });
     }
   }, [isDying]);
-
-  // Continuously check for movement and update walking animation
-  useFrame((_, delta) => {
-    if (!groupRef.current || isDying) return;
-
-    // Check movement every frame
-    movementCheckTimer.current += delta;
-
-    if (movementCheckTimer.current >= 0.1) { // Check every 100ms
-      const distance = currentPosition.current.distanceTo(lastPosition.current);
-      
-      // Update walking state based on actual movement
-      const shouldBeWalking = distance > MOVEMENT_THRESHOLD && !isAttacking;
-      
-      if (shouldBeWalking !== isWalking) {
-        setIsWalking(shouldBeWalking);
-      }
-
-      // Store current position for next check
-      lastPosition.current.copy(currentPosition.current);
-      movementCheckTimer.current = 0;
-    }
-  });
-
 
   // Listen for telegraph events from server (starts the swing animation; damage comes 1s later)
   useEffect(() => {

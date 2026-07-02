@@ -1,4 +1,4 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { Group, SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, BackSide, Matrix4, Vector3, Frustum, Sphere } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 
@@ -34,11 +34,30 @@ const Planet: React.FC = () => {
     side: BackSide
   }), []);
 
+  useEffect(() => {
+    return () => {
+      sphereGeometry.dispose();
+      planetMaterial.dispose();
+      glowMaterial.dispose();
+      outerGlowMaterial.dispose();
+    };
+  }, [sphereGeometry, planetMaterial, glowMaterial, outerGlowMaterial]);
+
 
   // Cache frustum and matrices to reduce garbage collection
   const frustum = useMemo(() => new Frustum(), []);
   const matrix = useMemo(() => new Matrix4(), []);
   const sphere = useMemo(() => new Sphere(new Vector3(), 12 * Math.sqrt(3)), []);
+
+  useEffect(
+    () => () => {
+      sphereGeometry.dispose();
+      planetMaterial.dispose();
+      glowMaterial.dispose();
+      outerGlowMaterial.dispose();
+    },
+    [sphereGeometry, planetMaterial, glowMaterial, outerGlowMaterial],
+  );
 
   // Apply frustum culling for performance
   useFrame((state) => {

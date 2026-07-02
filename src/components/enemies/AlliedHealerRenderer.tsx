@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Billboard, Text } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3 } from 'three';
-import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
@@ -51,7 +51,7 @@ const FADE_DURATION = 1.5;
 const DEFAULT_CAST_MS = 900;
 const DEFAULT_HEALCAST_MS = 1100;
 
-export default function AlliedHealerRenderer({
+function AlliedHealerRenderer({
   id,
   position,
   rotation,
@@ -62,7 +62,7 @@ export default function AlliedHealerRenderer({
   alliedOrbSlots,
 }: AlliedHealerRendererProps) {
   const theme = campHpTheme('ally-green');
-  const { socket, enemyTransformsRef } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
@@ -72,6 +72,8 @@ export default function AlliedHealerRenderer({
   const unlockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer = useRef(0);
   const opacity = useRef(1);
+  const cachedDeathMats = useRef<any[]>([]);
+  const deathCacheBuilt = useRef(false);
 
   const [isWalking, setIsWalking] = useState(false);
   const [abilityClip, setAbilityClip] = useState<'Cast' | 'HealCast' | 'Launch' | null>(null);
@@ -215,15 +217,26 @@ export default function AlliedHealerRenderer({
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
-      group.traverse((child: any) => {
-        if (child.isMesh && child.material) {
-          const mats = Array.isArray(child.material) ? child.material : [child.material];
-          mats.forEach((mat: any) => {
-            mat.transparent = true;
-            mat.opacity = opacity.current;
-          });
-        }
-      });
+
+      if (!deathCacheBuilt.current) {
+        const collected: any[] = [];
+        group.traverse((child: any) => {
+          if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((mat: any) => {
+              mat.transparent = true;
+              collected.push(mat);
+            });
+          }
+        });
+        cachedDeathMats.current = collected;
+        deathCacheBuilt.current = true;
+      }
+
+      const op = opacity.current;
+      for (let i = 0; i < cachedDeathMats.current.length; i++) {
+        cachedDeathMats.current[i].opacity = op;
+      }
     }
   });
 
@@ -285,3 +298,5 @@ export default function AlliedHealerRenderer({
     </>
   );
 }
+
+export default React.memo(AlliedHealerRenderer);

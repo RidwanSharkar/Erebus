@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, type SetStateAction } from 'react';
 import { Group, Vector3 } from '@/utils/three-exports';
 import { useFrame, useThree } from '@react-three/fiber';
 import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
@@ -32,6 +32,56 @@ import {
   type VorpalGustStabBoonBeamTheme,
   type TalentLoadout,
 } from '@/utils/talents';
+
+const _chargeDirScratch = new Vector3();
+const _cameraDirScratch = new Vector3();
+const _movementDeltaScratch = new Vector3();
+
+type DragonEnemyDataEntry = {
+  id: string;
+  position: Vector3;
+  health: number;
+  maxHealth: number;
+  isBoss: boolean;
+};
+
+type DragonActiveEffect = {
+  id: number;
+  type: string;
+  position: Vector3;
+  direction: Vector3;
+  duration?: number;
+  startTime?: number;
+  summonId?: number;
+  targetId?: string;
+  wrathfulStrike?: boolean;
+  infestedStrike?: boolean;
+  wraithGuard?: boolean;
+  staggeringStrike?: boolean;
+};
+
+function countAvailableDashCharges(charges: DashChargeStatus[]): number {
+  let count = 0;
+  for (let i = 0; i < charges.length; i++) {
+    if (charges[i].isAvailable) count++;
+  }
+  return count;
+}
+
+function writeDashChargesRef(target: DashChargeStatus[], source: DashChargeStatus[]): void {
+  for (let i = 0; i < source.length; i++) {
+    if (i < target.length) {
+      target[i].isAvailable = source[i].isAvailable;
+      target[i].cooldownRemaining = source[i].cooldownRemaining;
+    } else {
+      target.push({
+        isAvailable: source[i].isAvailable,
+        cooldownRemaining: source[i].cooldownRemaining,
+      });
+    }
+  }
+  target.length = source.length;
+}
 
 /**
  * Co-op allied units (knight/healer) and player-summoned zombies (`player-zombie`) share the ECS
@@ -349,25 +399,24 @@ export default function DragonRenderer({
   const isDashing = useRef(false);
   /** Movement.isCharging — Sword/Runeblade ability dash (GhostTrail matches regular dash) */
   const isWeaponChargeMoving = useRef(false);
-  const [currentRotation, setCurrentRotation] = useState(new Vector3(0, 0, 0));
+  const currentRotationRef = useRef(new Vector3(0, 0, 0));
   const lastFacingDirection = useRef(new Vector3(0, 0, -1)); // Default facing forward
-  const [enemyData, setEnemyData] = useState<Array<{
-    id: string;
-    position: Vector3;
-    health: number;
-    maxHealth: number;
-    isBoss: boolean;
-  }>>([]);
-  const [dashCharges, setDashCharges] = useState<Array<DashChargeStatus>>([
+  const enemyDataRef = useRef<DragonEnemyDataEntry[]>([]);
+  const lastEnemyQueryTimeRef = useRef(0);
+  const initialDashCharges: DashChargeStatus[] = [
     { isAvailable: true, cooldownRemaining: 0 },
     { isAvailable: true, cooldownRemaining: 0 },
     { isAvailable: true, cooldownRemaining: 0 },
     { isAvailable: true, cooldownRemaining: 0 },
-  ]);
+  ];
+  const dashChargesRef = useRef<DashChargeStatus[]>(initialDashCharges.map((charge) => ({ ...charge })));
+  const [dashCharges, setDashCharges] = useState<DashChargeStatus[]>(() =>
+    initialDashCharges.map((charge) => ({ ...charge })),
+  );
+  const lastAvailableDashCountRef = useRef(initialDashCharges.length);
   const dashRechargeDurationSec = useRef(8);
-  // Use chargeDirection from props, with fallback to local state for backward compatibility
-  const [localChargeDirection, setLocalChargeDirection] = useState<Vector3 | undefined>(undefined);
-  const effectiveChargeDirection = chargeDirection || localChargeDirection;
+  const localChargeDirectionRef = useRef<Vector3 | undefined>(undefined);
+  const effectiveChargeDirection = chargeDirection || localChargeDirectionRef.current;
   const [damageNumbers, setDamageNumbers] = useState<Array<{
     id: number;
     damage: number;
@@ -383,20 +432,58 @@ export default function DragonRenderer({
     }
   }, [onDamageNumbersReady]);
   const lastChargeState = useRef(false);
-  const [activeEffects, setActiveEffects] = useState<Array<{
-    id: number;
-    type: string;
-    position: Vector3;
-    direction: Vector3;
-    duration?: number;
-    startTime?: number;
-    summonId?: number;
-    targetId?: string;
-    wrathfulStrike?: boolean;
-    infestedStrike?: boolean;
-    wraithGuard?: boolean;
-    staggeringStrike?: boolean;
-  }>>([]);
+  const activeEffectsRef = useRef<DragonActiveEffect[]>([]);
+  const [activeEffects, setActiveEffectsState] = useState<DragonActiveEffect[]>([]);
+  const setActiveEffects = useCallback((updater: SetStateAction<DragonActiveEffect[]>) => {
+    const next =
+      typeof updater === 'function' ? updater(activeEffectsRef.current) : updater;
+    activeEffectsRef.current = next;
+    setActiveEffectsState(next);
+  }, []);
+
+  const syncDashChargesHud = useCallback((source: DashChargeStatus[]) => {
+    writeDashChargesRef(dashChargesRef.current, source);
+    const availableCount = countAvailableDashCharges(dashChargesRef.current);
+    if (availableCount !== lastAvailableDashCountRef.current) {
+      lastAvailableDashCountRef.current = availableCount;
+      setDashCharges(dashChargesRef.current.map((charge) => ({ ...charge })));
+    }
+  }, []);
+
+  const refreshEnemyDataRef = useCallback(() => {
+    const enemies = world
+      .queryEntities([Transform, Health, Enemy])
+      .filter((entity) => !shouldExcludeFromWeaponEnemyData(entity));
+    const enemyDataArray = enemyDataRef.current;
+    let writeIndex = 0;
+
+    for (const enemy of enemies) {
+      const transform = enemy.getComponent(Transform)!;
+      const health = enemy.getComponent(Health)!;
+      if (health.currentHealth <= 0) continue;
+
+      const ec = enemy.getComponent(Enemy);
+      const worldPos = transform.getWorldPosition();
+      if (writeIndex < enemyDataArray.length) {
+        const entry = enemyDataArray[writeIndex];
+        entry.id = enemy.id.toString();
+        entry.position.copy(worldPos);
+        entry.health = health.currentHealth;
+        entry.maxHealth = health.maxHealth;
+        entry.isBoss = ec != null && ec.type === EnemyType.BOSS;
+      } else {
+        enemyDataArray.push({
+          id: enemy.id.toString(),
+          position: worldPos.clone(),
+          health: health.currentHealth,
+          maxHealth: health.maxHealth,
+          isBoss: ec != null && ec.type === EnemyType.BOSS,
+        });
+      }
+      writeIndex++;
+    }
+    enemyDataArray.length = writeIndex;
+  }, [world]);
 
   useEffect(() => {
     if (!isLocalPlayer || !onWraithStrikeSlashImpactQueueReady) return;
@@ -439,163 +526,142 @@ export default function DragonRenderer({
 
   // Calculate movement direction based on position changes
   useFrame(() => {
-    if (groupRef.current) {
-      // Check if charge state changed from false to true
-      if (isSwordCharging && !lastChargeState.current) {
-        // Charge just started - calculate direction from camera
-        const direction = new Vector3();
-        camera.getWorldDirection(direction);
-        direction.y = 0; // Keep movement horizontal
-        direction.normalize();
-        setLocalChargeDirection(direction);
+    if (!groupRef.current) return;
 
+    // Check if charge state changed from false to true
+    if (isSwordCharging && !lastChargeState.current) {
+      // Charge just started - calculate direction from camera
+      camera.getWorldDirection(_chargeDirScratch);
+      _chargeDirScratch.y = 0; // Keep movement horizontal
+      _chargeDirScratch.normalize();
+      if (!localChargeDirectionRef.current) {
+        localChargeDirectionRef.current = new Vector3();
       }
-      lastChargeState.current = isSwordCharging;
-      
-      // Clean up expired active effects
-      const now = Date.now();
-      setActiveEffects(prev => prev.filter(effect => {
-        if (effect.startTime && effect.duration) {
-          return (now - effect.startTime) < (effect.duration * 1000);
-        }
-        return true; // Keep effects without expiration
-      }));
-      
-      // Update position from ref (local player) or prop (remote)
-      if (effectiveRealTimePositionRef.current) {
-        groupRef.current.position.copy(effectiveRealTimePositionRef.current);
-      } else if (position) {
-        groupRef.current.position.copy(position);
+      localChargeDirectionRef.current.copy(_chargeDirScratch);
+    }
+    lastChargeState.current = isSwordCharging;
+
+    // Clean up expired active effects — only re-render when an effect is removed
+    const now = Date.now();
+    const prevEffectCount = activeEffectsRef.current.length;
+    activeEffectsRef.current = activeEffectsRef.current.filter((effect) => {
+      if (effect.startTime && effect.duration) {
+        return now - effect.startTime < effect.duration * 1000;
       }
-      
-      // Get dash state from Movement component
-      const entity = world.getEntity(entityId);
-      if (entity) {
-        // Debug: Check what components are actually on this entity
-        if (Math.random() < 0.01) { // Only log 1% of the time to reduce spam
-          const allComponents = entity.getAllComponents();
-          const componentNames = entity.getComponentNames();
-        }
-        
-        const movement = entity.getComponent(Movement);
-        // Reduced logging for Movement component type check
-        
-        // Check if it's a Movement component by checking for specific methods
-        const isMovementComponent = movement && (
-          typeof movement.getDashChargeStatus === 'function' ||
-          (movement as any).componentType === 'Movement' ||
-          movement.constructor.name === 'Movement'
-        );
-        
-        if (isMovementComponent) {
-          isDashing.current = movement.isDashing;
-          isWeaponChargeMoving.current = movement.isCharging;
+      return true; // Keep effects without expiration
+    });
+    if (activeEffectsRef.current.length !== prevEffectCount) {
+      setActiveEffectsState([...activeEffectsRef.current]);
+    }
 
-          // Update dash charges state
-          if (typeof movement.getDashChargeStatus === 'function') {
-            const currentChargeStatus = movement.getDashChargeStatus();
-            setDashCharges(currentChargeStatus);
-            if (typeof movement.getDashChargeRechargeSec === 'function') {
-              dashRechargeDurationSec.current = movement.getDashChargeRechargeSec();
-            }
-          } else {
+    // Update position from ref (local player) or prop (remote)
+    if (effectiveRealTimePositionRef.current) {
+      groupRef.current.position.copy(effectiveRealTimePositionRef.current);
+    } else if (position) {
+      groupRef.current.position.copy(position);
+    }
 
-          }
-          
-          // Update charge direction if charging
-          if (movement.isCharging) {
-            setLocalChargeDirection(movement.chargeDirection.clone());
-          } else {
-            setLocalChargeDirection(undefined);
+    // Get dash state from Movement component
+    const entity = world.getEntity(entityId);
+    if (entity) {
+      const movement = entity.getComponent(Movement);
+
+      // Check if it's a Movement component by checking for specific methods
+      const isMovementComponent = movement && (
+        typeof movement.getDashChargeStatus === 'function' ||
+        (movement as any).componentType === 'Movement' ||
+        movement.constructor.name === 'Movement'
+      );
+
+      if (isMovementComponent) {
+        isDashing.current = movement.isDashing;
+        isWeaponChargeMoving.current = movement.isCharging;
+
+        // Update dash charges ref; HUD state only when available count changes
+        if (typeof movement.getDashChargeStatus === 'function') {
+          const currentChargeStatus = movement.getDashChargeStatus();
+          syncDashChargesHud(currentChargeStatus);
+          if (typeof movement.getDashChargeRechargeSec === 'function') {
+            dashRechargeDurationSec.current = movement.getDashChargeRechargeSec();
           }
         }
-      }
-      
-      // Calculate movement direction for tail animation
-      if (position) {
-        const currentMovement = position.clone().sub(lastPosition.current);
-        if (currentMovement.length() > 0.001) {
-          movementDirection.current.copy(currentMovement.normalize());
+
+        // Update charge direction ref if charging
+        if (movement.isCharging) {
+          if (!localChargeDirectionRef.current) {
+            localChargeDirectionRef.current = new Vector3();
+          }
+          localChargeDirectionRef.current.copy(movement.chargeDirection);
         } else {
-          movementDirection.current.set(0, 0, 0);
+          localChargeDirectionRef.current = undefined;
         }
-        lastPosition.current.copy(position);
       }
-      
-      // Rotate dragon based on whether it's the local player or other players
-      if (isLocalPlayer && camera) {
-        // Local player: face immediate orbit yaw (matches movement basis while RMB orbiting)
-        const cameraSystem = (window as any).cameraSystem as
-          | { getOrbitHorizontalFacingAngle?: () => number }
-          | undefined;
-        const angle =
-          typeof cameraSystem?.getOrbitHorizontalFacingAngle === 'function'
-            ? cameraSystem.getOrbitHorizontalFacingAngle()
-            : (() => {
-                const cameraDirection = new Vector3();
-                camera.getWorldDirection(cameraDirection);
-                return Math.atan2(cameraDirection.x, cameraDirection.z);
-              })();
-        groupRef.current.rotation.y = angle;
+    }
 
-        const entity = world.getEntity(entityId);
-        if (entity) {
-          // Update real-time position ref for charge trail particles
-          const transform = entity.getComponent(Transform);
-          if (transform && transform.position && effectiveRealTimePositionRef.current) {
-            effectiveRealTimePositionRef.current.copy(transform.position);
-          }
-
-          const movement = entity.getComponent(Movement);
-          if (movement && movement.inputStrength > 0.1 && movement.moveDirection.length() > 0.1) {
-            lastFacingDirection.current
-              .set(movement.moveDirection.x, 0, movement.moveDirection.z)
-              .normalize();
-          } else {
-            // Idle: keep ref aligned with camera so future logic stays consistent
-            lastFacingDirection.current.set(Math.sin(angle), 0, Math.cos(angle));
-          }
-        }
-
-        // Sword/Runeblade cones use playerRotation — must match dragon mesh (camera horizontal yaw),
-        // not stale move-only yaw (fixes LMB deadzone when orbiting camera without moving).
-        setCurrentRotation(new Vector3(0, angle, 0));
-      } else if (!isLocalPlayer && rotation) {
-        // Other players: use their actual rotation from server
-        groupRef.current.rotation.set(rotation.x, rotation.y, rotation.z);
-        setCurrentRotation(new Vector3(rotation.x, rotation.y, rotation.z));
+    // Calculate movement direction for tail animation
+    if (position) {
+      _movementDeltaScratch.copy(position).sub(lastPosition.current);
+      if (_movementDeltaScratch.length() > 0.001) {
+        movementDirection.current.copy(_movementDeltaScratch.normalize());
+      } else {
+        movementDirection.current.set(0, 0, 0);
       }
-      
-      // Update enemy data for weapon collision detection
-      // Always update enemy data for weapons that need collision detection
-      if (
-        currentWeapon === WeaponType.SWORD ||
-        currentWeapon === WeaponType.BOW ||
-        currentWeapon === WeaponType.RUNEBLADE
-      ) {
-        const enemies = world
-          .queryEntities([Transform, Health, Enemy])
-          .filter((entity) => !shouldExcludeFromWeaponEnemyData(entity));
-        const enemyDataArray = enemies.map(enemy => {
-          const transform = enemy.getComponent(Transform)!;
-          const health = enemy.getComponent(Health)!;
-          const ec = enemy.getComponent(Enemy);
-          return {
-            id: enemy.id.toString(),
-            position: transform.getWorldPosition(),
-            health: health.currentHealth,
-            maxHealth: health.maxHealth,
-            isBoss: ec != null && ec.type === EnemyType.BOSS,
-          };
-        }).filter(enemy => enemy.health > 0);
-        
-        // Always update enemy data to ensure collision detection has fresh positions
-        setEnemyData(enemyDataArray);
-        
-        // Debug logging for collision detection
-        if (isSwinging && enemyDataArray.length > 0) {
+      lastPosition.current.copy(position);
+    }
 
+    // Rotate dragon based on whether it's the local player or other players
+    if (isLocalPlayer && camera) {
+      // Local player: face immediate orbit yaw (matches movement basis while RMB orbiting)
+      const cameraSystem = (window as any).cameraSystem as
+        | { getOrbitHorizontalFacingAngle?: () => number }
+        | undefined;
+      const angle =
+        typeof cameraSystem?.getOrbitHorizontalFacingAngle === 'function'
+          ? cameraSystem.getOrbitHorizontalFacingAngle()
+          : (() => {
+              camera.getWorldDirection(_cameraDirScratch);
+              return Math.atan2(_cameraDirScratch.x, _cameraDirScratch.z);
+            })();
+      groupRef.current.rotation.y = angle;
+
+      const localEntity = world.getEntity(entityId);
+      if (localEntity) {
+        // Update real-time position ref for charge trail particles
+        const transform = localEntity.getComponent(Transform);
+        if (transform && transform.position && effectiveRealTimePositionRef.current) {
+          effectiveRealTimePositionRef.current.copy(transform.position);
         }
+
+        const movement = localEntity.getComponent(Movement);
+        if (movement && movement.inputStrength > 0.1 && movement.moveDirection.length() > 0.1) {
+          lastFacingDirection.current
+            .set(movement.moveDirection.x, 0, movement.moveDirection.z)
+            .normalize();
+        } else {
+          // Idle: keep ref aligned with camera so future logic stays consistent
+          lastFacingDirection.current.set(Math.sin(angle), 0, Math.cos(angle));
+        }
+      }
+
+      // Sword/Runeblade cones use playerRotation — must match dragon mesh (camera horizontal yaw),
+      // not stale move-only yaw (fixes LMB deadzone when orbiting camera without moving).
+      currentRotationRef.current.set(0, angle, 0);
+    } else if (!isLocalPlayer && rotation) {
+      // Other players: use their actual rotation from server
+      groupRef.current.rotation.set(rotation.x, rotation.y, rotation.z);
+      currentRotationRef.current.set(rotation.x, rotation.y, rotation.z);
+    }
+
+    // Throttled enemy ECS query — every frame while swinging, otherwise every 100ms
+    if (
+      currentWeapon === WeaponType.SWORD ||
+      currentWeapon === WeaponType.BOW ||
+      currentWeapon === WeaponType.RUNEBLADE
+    ) {
+      const queryNow = performance.now();
+      if (isSwinging || queryNow - lastEnemyQueryTimeRef.current >= 100) {
+        lastEnemyQueryTimeRef.current = queryNow;
+        refreshEnemyDataRef();
       }
     }
   });
@@ -850,12 +916,12 @@ export default function DragonRenderer({
           onChargeSpinStart={onChargeSpinStart}
           onChargeSpinEnd={onChargeSpinEnd}
           onDeflectComplete={onDeflectComplete}
-          enemyData={enemyData}
+          enemyData={enemyDataRef.current}
           onHit={handleSwordHit}
           setDamageNumbers={setDamageNumbers}
           nextDamageNumberId={nextDamageNumberId}
           playerPosition={position}
-          playerRotation={currentRotation}
+          playerRotation={currentRotationRef.current}
           realTimePositionRef={effectiveRealTimePositionRef}
           isViperStingCharging={isViperStingCharging}
           viperStingChargeProgress={viperStingChargeProgress}
@@ -922,7 +988,7 @@ export default function DragonRenderer({
       {isLocalPlayer && currentWeapon === WeaponType.BOW && (
         <ViperStingManager
           parentRef={groupRef}
-          enemyData={enemyData}
+          enemyData={enemyDataRef.current}
           onHit={handleSwordHit}
           setDamageNumbers={setDamageNumbers}
           nextDamageNumberId={nextDamageNumberId}
@@ -941,17 +1007,23 @@ export default function DragonRenderer({
                   available: charge.isAvailable,
                   cooldownStartTime: charge.cooldownRemaining > 0 ? Date.now() - (15000 - charge.cooldownRemaining * 1000) : null
                 })));
-                
-                return converted.map((charge, index) => ({
+
+                const next = converted.map((charge) => ({
                   isAvailable: charge.available,
                   cooldownRemaining: charge.cooldownStartTime ? Math.max(0, (15000 - (Date.now() - charge.cooldownStartTime)) / 1000) : 0
                 }));
+                writeDashChargesRef(dashChargesRef.current, next);
+                lastAvailableDashCountRef.current = countAvailableDashCharges(next);
+                return next;
               });
             } else {
-              setDashCharges(newCharges.map((charge) => ({
+              const next = newCharges.map((charge) => ({
                 isAvailable: charge.available,
                 cooldownRemaining: charge.cooldownStartTime ? Math.max(0, (15000 - (Date.now() - charge.cooldownStartTime)) / 1000) : 0
-              })));
+              }));
+              writeDashChargesRef(dashChargesRef.current, next);
+              lastAvailableDashCountRef.current = countAvailableDashCharges(next);
+              setDashCharges(next);
             }
           }}
           localSocketId="local-player" // For single-player mode, use a fixed ID

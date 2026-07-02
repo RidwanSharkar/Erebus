@@ -2,10 +2,9 @@
 
 import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, Color, Group, Mesh, CylinderGeometry, SphereGeometry, MeshStandardMaterial, PointLight } from '@/utils/three-exports';
+import { Vector3, Color, Group, Mesh, MeshStandardMaterial } from '@/utils/three-exports';
 import { World } from '@/ecs/World';
-import { Transform } from '@/ecs/components/Transform';
-import { Pillar } from '@/ecs/components/Pillar';
+import { PILLAR_SHARED_GEOMETRIES, PILLAR_STONE_MATERIAL } from './Pillar';
 
 interface PillarRendererProps {
   entityId: number;
@@ -21,7 +20,7 @@ interface PillarRendererProps {
   camera?: any;
 }
 
-export default function PillarRenderer({
+function PillarRenderer({
   entityId,
   world,
   position,
@@ -36,6 +35,7 @@ export default function PillarRenderer({
 }: PillarRendererProps) {
   const groupRef = useRef<Group>(null);
   const healthBarRef = useRef<Group>(null);
+  const orbRef = useRef<Mesh>(null);
 
   // Default colors for different players
   const playerColors = useMemo(() => [
@@ -47,80 +47,34 @@ export default function PillarRenderer({
   // Player 1 (index 0) = blue, Player 2 (index 1) = red
   const pillarColor = color || playerColors[playerIndex % playerColors.length];
 
+  const orbMaterial = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: pillarColor,
+        emissive: pillarColor,
+        metalness: 1,
+        roughness: 0.2,
+      }),
+    [pillarColor],
+  );
+
+  React.useEffect(
+    () => () => {
+      orbMaterial.dispose();
+    },
+    [orbMaterial],
+  );
+
   // Health bar dimensions
   const healthBarWidth = 2;
   const healthBarHeight = 0.2;
   const healthBarY = 3.25; // Above the pillar
 
-  // Create geometries and materials only once using useMemo
-  const { pillarGeometries, materials } = useMemo(() => {
-    // Base geometry
-    const baseGeometry = new CylinderGeometry(2, 2.2, 1, 8);
-
-    // Main column geometry
-    const columnGeometry = new CylinderGeometry(1.5, 1.5, 8, 8);
-
-    // Top geometry (decorative cap)
-    const topGeometry = new CylinderGeometry(2.2, 2, 1, 8);
-
-    // Shared material for all parts
-    const stoneMaterial = new MeshStandardMaterial({
-      color: '#ffffff',
-      roughness: 0.7,
-      metalness: 0.2,
-    });
-
-    // Add sphere geometry for the orb
-    const orbGeometry = new SphereGeometry(1, 32, 32);
-
-    // Add glowing material for the orb with player color
-    const orbMaterial = new MeshStandardMaterial({
-      color: pillarColor,
-      emissive: pillarColor,
-      metalness: 1,
-      roughness: 0.2,
-    });
-
-    return {
-      pillarGeometries: {
-        base: baseGeometry,
-        column: columnGeometry,
-        top: topGeometry,
-        orb: orbGeometry,
-      },
-      materials: {
-        stone: stoneMaterial,
-        orb: orbMaterial,
-      }
-    };
-  }, [pillarColor]);
-
-  // rotation animation for the orb
-  const [rotation, setRotation] = React.useState(0);
-
-  React.useEffect(() => {
-    let animationFrameId: number;
-
-    const animate = () => {
-      setRotation(prev => (prev + 0.02) % (Math.PI * 2));
-      animationFrameId = requestAnimationFrame(animate);
-    };
-
-    animate();
-    return () => {
-      cancelAnimationFrame(animationFrameId);
-    };
-  }, []);
-
-  // cleanup
-  React.useEffect(() => {
-    return () => {
-      Object.values(pillarGeometries).forEach(geometry => geometry.dispose());
-      Object.values(materials).forEach(material => material.dispose());
-    };
-  }, [pillarGeometries, materials]);
-
   useFrame((state, delta) => {
+    if (orbRef.current) {
+      orbRef.current.rotation.x += 0.02;
+      orbRef.current.rotation.y += 0.02;
+    }
     // Update health bar to always face camera
     if (healthBarRef.current && camera) {
       healthBarRef.current.lookAt(camera.position);
@@ -139,8 +93,8 @@ export default function PillarRenderer({
       <group scale={[0.35, 0.35, 0.35]}>
         {/* Base */}
         <mesh
-          geometry={pillarGeometries.base}
-          material={materials.stone}
+          geometry={PILLAR_SHARED_GEOMETRIES.base}
+          material={PILLAR_STONE_MATERIAL}
           position={[0, 0, 0]}
           castShadow
           receiveShadow
@@ -148,8 +102,8 @@ export default function PillarRenderer({
 
         {/* Main column */}
         <mesh
-          geometry={pillarGeometries.column}
-          material={materials.stone}
+          geometry={PILLAR_SHARED_GEOMETRIES.column}
+          material={PILLAR_STONE_MATERIAL}
           position={[0, 0.25, 0]}
           castShadow
           receiveShadow
@@ -157,8 +111,8 @@ export default function PillarRenderer({
 
         {/* Top */}
         <mesh
-          geometry={pillarGeometries.top}
-          material={materials.stone}
+          geometry={PILLAR_SHARED_GEOMETRIES.top}
+          material={PILLAR_STONE_MATERIAL}
           position={[0, 3, 0]}
           castShadow
           receiveShadow
@@ -166,10 +120,10 @@ export default function PillarRenderer({
 
         {/* Floating orb */}
         <mesh
-          geometry={pillarGeometries.orb}
-          material={materials.orb}
+          ref={orbRef}
+          geometry={PILLAR_SHARED_GEOMETRIES.orb}
+          material={orbMaterial}
           position={[0, 5, 0]}
-          rotation={[rotation, rotation, 0]}
         >
           <pointLight color={pillarColor} intensity={0.25} distance={5} />
         </mesh>
@@ -183,9 +137,12 @@ export default function PillarRenderer({
           <meshBasicMaterial color="#333333" transparent opacity={0.8} />
         </mesh>
 
-        {/* Health fill */}
-        <mesh position={[-(healthBarWidth * (1 - healthPercent)) / 2, 0, 0.01]}>
-          <planeGeometry args={[healthBarWidth * healthPercent, healthBarHeight * 0.8]} />
+        {/* Health fill — fixed geometry + scale.x avoids reallocating planeGeometry each tick */}
+        <mesh
+          position={[-healthBarWidth / 2 + (healthBarWidth * healthPercent) / 2, 0, 0.01]}
+          scale={[healthPercent, 1, 1]}
+        >
+          <planeGeometry args={[healthBarWidth, healthBarHeight * 0.8]} />
           <meshBasicMaterial
             color={healthPercent > 0.6 ? "#00ff00" : healthPercent > 0.3 ? "#ffff00" : "#ff0000"}
             transparent
@@ -202,3 +159,5 @@ export default function PillarRenderer({
     </group>
   );
 }
+
+export default React.memo(PillarRenderer);

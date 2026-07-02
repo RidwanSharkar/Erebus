@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect, useState } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { Group, Vector3, Euler } from 'three';
 import { useFrame } from '@react-three/fiber';
 import React from 'react';
@@ -17,8 +17,8 @@ interface BossBoneWingsProps {
 
 const BossBoneWings = React.memo(({ isLeftWing, isDashing }: BossBoneWingsProps) => {
   const wingsRef = useRef<Group>(null);
-  const [isFlapping, setIsFlapping] = useState(false);
-  const [flapStartTime, setFlapStartTime] = useState(0);
+  const isFlappingRef = useRef(false);
+  const flapStartTimeRef = useRef(0);
   const flapDuration = 0.45; // Match dash duration
   const boneRefs = useRef<(Group | null)[]>([]);
   
@@ -117,22 +117,22 @@ const BossBoneWings = React.memo(({ isLeftWing, isDashing }: BossBoneWingsProps)
 
   // Trigger flapping when dash starts
   useEffect(() => {
-    if (isDashing && !isFlapping) {
-      setIsFlapping(true);
-      setFlapStartTime(Date.now() / 1000);
+    if (isDashing && !isFlappingRef.current) {
+      isFlappingRef.current = true;
+      flapStartTimeRef.current = Date.now() / 1000;
     }
-  }, [isDashing, isFlapping]);
+  }, [isDashing]);
 
   // Wing flapping animation
   useFrame(() => {
-    if (isFlapping && boneRefs.current.length > 0) {
+    if (isFlappingRef.current && boneRefs.current.length > 0) {
       const currentTime = Date.now() / 1000;
-      const elapsed = currentTime - flapStartTime;
+      const elapsed = currentTime - flapStartTimeRef.current;
       const progress = Math.min(elapsed / flapDuration, 1);
 
       if (progress >= 1) {
         // Animation complete - restore original positions
-        setIsFlapping(false);
+        isFlappingRef.current = false;
         boneRefs.current.forEach((boneRef, index) => {
           if (boneRef && originalRotations[index]) {
             boneRef.rotation.copy(originalRotations[index]);

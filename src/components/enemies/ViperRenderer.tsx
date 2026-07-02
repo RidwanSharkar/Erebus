@@ -6,7 +6,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import ViperModel from './ViperModel';
 import CubeSoulEffect from './CubeSoulEffect';
-import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
@@ -30,7 +30,7 @@ const LERP_SPEED      = 12;
 const WALK_STOP_DELAY = 250;  // ms
 const HIT_REACT_IMPACT_COOLDOWN_MS = 1500; // min time between viper_impact.glb hit-react plays
 
-export default function ViperRenderer({
+function ViperRenderer({
   id,
   position,
   rotation,
@@ -41,13 +41,14 @@ export default function ViperRenderer({
   staggerBuildup = 0,
 }: ViperRendererProps) {
   const theme = campHpTheme(campType);
-  const { socket, enemyTransformsRef } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
 
   // Increments on every telegraph — passed to ViperModel so it always restarts DrawBow.
   const [attackKey,   setAttackKey]   = useState(0);
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking,   setIsWalking]   = useState(false);
+  const isWalkingRef = useRef(false);
   const [isImpacting,  setIsImpacting]  = useState(false);
   const [impactPlayKey, setImpactPlayKey] = useState(0);
 
@@ -58,8 +59,11 @@ export default function ViperRenderer({
   const lastHitImpactAtRef = useRef(0);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const attackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer     = useRef(0);
   const opacity       = useRef(1);
+  const cachedDeathMats = useRef<any[]>([]);
+  const deathCacheBuilt = useRef(false);
 
   // Callback ref — positions the group at the server location before the first render
   // so the viper never flickers from world-origin.
@@ -84,14 +88,23 @@ export default function ViperRenderer({
     }
 
     if (dist > 0.01 && !isLocked && !isDying) {
-      if (!isWalking) setIsWalking(true);
+      if (!isWalkingRef.current) {
+        isWalkingRef.current = true;
+        setIsWalking(true);
+      }
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
+      walkStopTimer.current = setTimeout(() => {
+        isWalkingRef.current = false;
+        setIsWalking(false);
+      }, WALK_STOP_DELAY);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    return () => { if (walkStopTimer.current) clearTimeout(walkStopTimer.current); };
+    return () => {
+      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -134,30 +147,29 @@ export default function ViperRenderer({
       if (data.viperId !== id) return;
       // Increment key unconditionally so ViperModel always restarts DrawBow,
       // even if a previous attack cycle hasn't fully finished yet.
+      if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
       setAttackKey(k => k + 1);
       setIsAttacking(true);
       isAttackingRef.current = true;
-      setTimeout(() => {
+      attackTimerRef.current = setTimeout(() => {
         setIsAttacking(false);
         isAttackingRef.current = false;
+        attackTimerRef.current = null;
       }, ATTACK_DURATION);
     };
 
     socket.on('viper-attack-telegraph', handleViperTelegraph);
-    return () => { socket.off('viper-attack-telegraph', handleViperTelegraph); };
+    return () => {
+      socket.off('viper-attack-telegraph', handleViperTelegraph);
+      if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
+    };
   }, [id, socket]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
-
-    if (dist > 0.01 && !isAttackingRef.current && !isDying) {
-      if (!isWalking) setIsWalking(true);
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
-    }
+    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 
@@ -171,15 +183,26 @@ export default function ViperRenderer({
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
-      group.traverse((child: any) => {
-        if (child.isMesh && child.material) {
-          const mats = Array.isArray(child.material) ? child.material : [child.material];
-          mats.forEach((mat: any) => {
-            mat.transparent = true;
-            mat.opacity = opacity.current;
-          });
-        }
-      });
+
+      if (!deathCacheBuilt.current) {
+        const collected: any[] = [];
+        group.traverse((child: any) => {
+          if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((mat: any) => {
+              mat.transparent = true;
+              collected.push(mat);
+            });
+          }
+        });
+        cachedDeathMats.current = collected;
+        deathCacheBuilt.current = true;
+      }
+
+      const op = opacity.current;
+      for (let i = 0; i < cachedDeathMats.current.length; i++) {
+        cachedDeathMats.current[i].opacity = op;
+      }
     }
   });
 
@@ -226,3 +249,5 @@ export default function ViperRenderer({
     </group>
   );
 }
+
+export default React.memo(ViperRenderer);

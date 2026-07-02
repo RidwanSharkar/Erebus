@@ -1,5 +1,5 @@
 import React, { useImperativeHandle, forwardRef, useState, useCallback, useMemo, useRef } from 'react';
-import { Group, Vector3, Color } from 'three';
+import { Group, Vector3, Color, Mesh, MeshStandardMaterial } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
@@ -13,111 +13,132 @@ export interface ReanimateRef {
   triggerHealingEffect: () => void;
 }
 
+const RING_COUNT = 3;
+const PARTICLE_COUNT = 12;
+
 const HealingEffect: React.FC<{ position: Vector3; onComplete: () => void }> = React.memo(({ position, onComplete }) => {
-  const [time, setTime] = useState(0);
+  const timeRef = useRef(0);
   const duration = 1.5;
   const hasCompleted = useRef(false);
+  const ringRefs = useRef<(Mesh | null)[]>([]);
+  const ringMatRefs = useRef<(MeshStandardMaterial | null)[]>([]);
+  const centerMeshRef = useRef<Mesh>(null);
+  const centerMatRef = useRef<MeshStandardMaterial>(null);
+  const particleRefs = useRef<(Mesh | null)[]>([]);
+  const particleMatRefs = useRef<(MeshStandardMaterial | null)[]>([]);
 
-  // Borrow a pooled point light for the healing glow instead of mounting a <pointLight>.
   const healLight = useDynamicLight({ color: REANIMATE_LIGHT_COLOR, distance: 5, decay: 2, priority: 1 });
 
   useFrame((_, delta) => {
     if (hasCompleted.current) return;
 
-    const newTime = time + delta;
-    const frameProgress = Math.min(newTime / duration, 1);
-    const frameOpacity = Math.sin(frameProgress * Math.PI);
+    timeRef.current += delta;
+    const t = timeRef.current;
+    const progress = Math.min(t / duration, 1);
+    const opacity = Math.sin(progress * Math.PI);
+    const scale = 1 + progress * 2;
 
     healLight.current?.setPosition(position.x, position.y, position.z);
-    healLight.current?.setIntensity(4 * frameOpacity);
+    healLight.current?.setIntensity(4 * opacity);
 
-    if (newTime >= duration) {
-      hasCompleted.current = true;
-      onComplete();
-      return;
+    for (let i = 0; i < RING_COUNT; i++) {
+      const mesh = ringRefs.current[i];
+      if (mesh) {
+        mesh.position.set(0, progress * 2 + i * 0.5, 0);
+        mesh.rotation.set(Math.PI / 2, 0, t * 2);
+      }
+      const mat = ringMatRefs.current[i];
+      if (mat) mat.opacity = opacity * (1 - i * 0.2);
     }
 
-    setTime(newTime);
+    if (centerMeshRef.current) {
+      centerMeshRef.current.scale.setScalar(scale);
+    }
+    if (centerMatRef.current) {
+      centerMatRef.current.opacity = opacity * 0.3;
+    }
+
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const mesh = particleRefs.current[i];
+      if (mesh) {
+        const angle = (i / PARTICLE_COUNT) * Math.PI * 2;
+        const radius = 0.75 + progress;
+        const yOffset = progress * 2;
+        mesh.position.set(
+          Math.cos(angle + t * 2) * radius / 1.1,
+          yOffset + Math.sin(t * 3 + i) * 0.5,
+          Math.sin(angle + t * 2) * radius / 1.1,
+        );
+      }
+      const mat = particleMatRefs.current[i];
+      if (mat) mat.opacity = opacity * 0.8;
+    }
+
+    if (t >= duration) {
+      hasCompleted.current = true;
+      onComplete();
+    }
   });
 
-  // Memoize these calculations
-  const progress = time / duration;
-  const opacity = Math.sin(progress * Math.PI);
-  const scale = 1 + progress * 2;
-
-  // Pre-calculate shared material properties
   const ringMaterial = useMemo(() => ({
     color: "#ffaa00",
     emissive: "#ff8800",
     emissiveIntensity: 2,
-    transparent: true
+    transparent: true,
+    opacity: 0,
   }), []);
 
   const particleMaterial = useMemo(() => ({
     color: "#ffaa00",
     emissive: "#ff8800",
     emissiveIntensity: 2,
-    transparent: true
+    transparent: true,
+    opacity: 0,
   }), []);
 
-  // Pre-generate arrays for iterations
-  const rings = useMemo(() => [...Array(3)], []);
-  const particles = useMemo(() => [...Array(12)], []);
+  const rings = useMemo(() => [...Array(RING_COUNT)], []);
+  const particles = useMemo(() => [...Array(PARTICLE_COUNT)], []);
 
   return (
     <group position={position.toArray()}>
-      {/* Rising healing rings */}
       {rings.map((_, i) => (
         <mesh
           key={`ring-${i}`}
-          position={[0, progress * 2 + i * 0.5, 0]}
-          rotation={[Math.PI / 2, 0, time * 2]}
+          ref={(el) => { ringRefs.current[i] = el; }}
+          rotation={[Math.PI / 2, 0, 0]}
         >
           <torusGeometry args={[0.8 - i * 0.2, 0.05, 16, 32]} />
           <meshStandardMaterial
+            ref={(el) => { ringMatRefs.current[i] = el; }}
             {...ringMaterial}
-            opacity={opacity * (1 - i * 0.2)}
           />
         </mesh>
       ))}
 
-      {/* Central healing glow */}
-      <mesh scale={[scale, scale, scale]}>
+      <mesh ref={centerMeshRef}>
         <sphereGeometry args={[0.5, 32, 32]} />
         <meshStandardMaterial
+          ref={centerMatRef}
           color="#ffaa00"
           emissive="#ff8800"
           emissiveIntensity={3}
           transparent
-          opacity={opacity * 0.3}
+          opacity={0}
         />
       </mesh>
 
-      {/* Healing particles */}
-      {particles.map((_, i) => {
-        const angle = (i / 12) * Math.PI * 2;
-        const radius = 0.75 + progress;
-        const yOffset = progress * 2;
-        
-        return (
-          <mesh
-            key={`particle-${i}`}
-            position={[
-              Math.cos(angle + time * 2) * radius/1.1,
-              yOffset + Math.sin(time * 3 + i) * 0.5,
-              Math.sin(angle + time * 2) * radius/1.1
-            ]}
-          >
-            <sphereGeometry args={[0.095, 8, 8]} />
-            <meshStandardMaterial
-              {...particleMaterial}
-              opacity={opacity * 0.8}
-            />
-          </mesh>
-        );
-      })}
-
-      {/* Light source now driven via the shared dynamic light pool (see useFrame). */}
+      {particles.map((_, i) => (
+        <mesh
+          key={`particle-${i}`}
+          ref={(el) => { particleRefs.current[i] = el; }}
+        >
+          <sphereGeometry args={[0.095, 8, 8]} />
+          <meshStandardMaterial
+            ref={(el) => { particleMatRefs.current[i] = el; }}
+            {...particleMaterial}
+          />
+        </mesh>
+      ))}
     </group>
   );
 });
@@ -129,7 +150,6 @@ const Reanimate = forwardRef<ReanimateRef, ReanimateProps>(({
 }, ref) => {
   const [showHealingEffect, setShowHealingEffect] = useState(false);
 
-  // Function to trigger the healing effect
   const triggerHealingEffect = useCallback(() => {
     setShowHealingEffect(true);
   }, []);

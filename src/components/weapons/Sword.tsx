@@ -125,14 +125,25 @@ const SwordComponent = memo(function Sword({
   const basePosition = [-1.18, 0.225, 0.3] as const; // POSITIONING
   
   
-  // Chain Lightning Sparks
-  const sparkParticles = useRef<Array<{
+  // Chain Lightning Sparks — fixed-size object pool (no push/filter/slice churn)
+  const MAX_SPARKS = 120;
+  type SparkSlot = {
     position: Vector3;
     velocity: Vector3;
     life: number;
     scale: number;
-  }>>([]);
-  const MAX_SPARKS = 120;
+    active: boolean;
+  };
+  const sparkPool = useRef<SparkSlot[]>(
+    Array.from({ length: MAX_SPARKS }, () => ({
+      position: new Vector3(),
+      velocity: new Vector3(),
+      life: 0,
+      scale: 0,
+      active: false,
+    })),
+  );
+  const sparkPoolWriteIndex = useRef(0);
   const sparkGeo = useMemo(() => new SphereGeometry(1.25, 6, 6), []);
   const chargeTrailGeo = useMemo(() => new SphereGeometry(0.5, 6, 6), []);
   const chargeTrailMat = useMemo(
@@ -772,66 +783,69 @@ const SwordComponent = memo(function Sword({
 
     // Handle electrical effects when Chain Lightning is unlocked
     if (hasChainLightning && swordRef.current) {
-      // Spawn new sparks more frequently and along the blade
-      if (Math.random() < 0.8) { // Increased spawn rate even more
-        // Spawn multiple particles per frame
-        for (let i = 0; i < 3; i++) { // Spawn 3 particles at once
+      const acquireSparkSlot = (): SparkSlot => {
+        const pool = sparkPool.current;
+        const inactive = pool.find((s) => !s.active);
+        if (inactive) return inactive;
+        const slot = pool[sparkPoolWriteIndex.current % MAX_SPARKS];
+        sparkPoolWriteIndex.current = (sparkPoolWriteIndex.current + 1) % MAX_SPARKS;
+        return slot;
+      };
+
+      if (Math.random() < 0.8) {
+        for (let i = 0; i < 3; i++) {
+          const spark = acquireSparkSlot();
           const randomLength = Math.random() * 2.2;
-          const randomOffset = new Vector3(
+          spark.position.set(
             (Math.random() - 0.5) * 0.4,
             randomLength,
-            (Math.random() - 0.5) * 0.4
+            (Math.random() - 0.5) * 0.4,
           );
-          
-          sparkParticles.current.push({
-            position: randomOffset,
-            velocity: new Vector3(
-              (Math.random() - 0.5) * 4,
-              (Math.random() - 0.2) * 4,
-              (Math.random() - 0.5) * 4
-            ).multiplyScalar(0.8),
-            life: 1.0,
-            scale: Math.random() * 0.02 + 0.005  // Much smaller scale range
-          });
+          spark.velocity.set(
+            (Math.random() - 0.5) * 4,
+            (Math.random() - 0.2) * 4,
+            (Math.random() - 0.5) * 4,
+          ).multiplyScalar(0.8);
+          spark.life = 1.0;
+          spark.scale = Math.random() * 0.02 + 0.005;
+          spark.active = true;
         }
       }
 
-      // Update existing sparks with dynamic movement
-      sparkParticles.current.forEach(spark => {
+      const pool = sparkPool.current;
+      for (let i = 0; i < pool.length; i++) {
+        const spark = pool[i];
+        if (!spark.active) continue;
         spark.velocity.x += Math.sin(Date.now() * 0.01) * delta * 0.5;
         spark.velocity.z += Math.cos(Date.now() * 0.01) * delta * 0.5;
         sparkVelScratch.current.copy(spark.velocity).multiplyScalar(delta);
         spark.position.add(sparkVelScratch.current);
         spark.life -= delta * 1.5;
         spark.velocity.y += delta * 0.5;
-      });
+        if (spark.life <= 0) spark.active = false;
+      }
 
       const instanced = sparkInstancedRef.current;
       if (instanced) {
-        const sparks = sparkParticles.current;
-        for (let i = 0; i < MAX_SPARKS; i++) {
-          if (i < sparks.length) {
-            const spark = sparks[i];
-            sparkDummy.current.position.copy(spark.position);
-            sparkDummy.current.scale.setScalar(spark.scale);
-            sparkMat.opacity = spark.life * 0.6;
-            sparkMat.emissiveIntensity = 3 * spark.life;
-          } else {
-            sparkDummy.current.scale.setScalar(0);
-          }
+        let instanceIndex = 0;
+        for (let i = 0; i < pool.length && instanceIndex < MAX_SPARKS; i++) {
+          const spark = pool[i];
+          if (!spark.active) continue;
+          sparkDummy.current.position.copy(spark.position);
+          sparkDummy.current.scale.setScalar(spark.scale);
+          sparkMat.opacity = spark.life * 0.6;
+          sparkMat.emissiveIntensity = 3 * spark.life;
+          sparkDummy.current.updateMatrix();
+          instanced.setMatrixAt(instanceIndex, sparkDummy.current.matrix);
+          instanceIndex++;
+        }
+        for (let i = instanceIndex; i < MAX_SPARKS; i++) {
+          sparkDummy.current.scale.setScalar(0);
           sparkDummy.current.updateMatrix();
           instanced.setMatrixAt(i, sparkDummy.current.matrix);
         }
         instanced.instanceMatrix.needsUpdate = true;
       }
-
-      // Limit total particles
-      if (sparkParticles.current.length > 120) { // Increased maximum particles
-        sparkParticles.current = sparkParticles.current.slice(-120);
-      }
-
-      // Remove dead sparks
-      sparkParticles.current = sparkParticles.current.filter(spark => spark.life > 0);
     }
   });
 
@@ -974,72 +988,69 @@ const SwordComponent = memo(function Sword({
   };
 
 
-  // Create custom sword blade shape
-  const createBladeShape = () => {
+  const bladeShape = useMemo(() => {
     const shape = new Shape();
-    
-    // Start at center
     shape.moveTo(0, 0);
-    
-    // Left side guard (fixed symmetry)
-    shape.lineTo(-0.25, 0.25);  
-    shape.lineTo(-0.15, -0.15); 
+    shape.lineTo(-0.25, 0.25);
+    shape.lineTo(-0.15, -0.15);
     shape.lineTo(0, 0);
-    
-    // Right side guard (matches left exactly)
     shape.lineTo(0.175, 0.175);
     shape.lineTo(0.15, -0.15);
     shape.lineTo(0, 0);
-    
-    // Blade shape with symmetry
-    shape.lineTo(0, 0.08);    // Reduced from 0.12
-    shape.lineTo(0.2, 0.2);   // Reduced from 0.25
-    shape.quadraticCurveTo(0.8, 0.15, 1.875, 0.18); // Reduced y values
-    shape.quadraticCurveTo(2.0, 0.15, 2.375, 0);     // Reduced y value
-    
-    shape.quadraticCurveTo(2.0, -0.15, 1.825, -0.18); // Mirror of upper curve
+    shape.lineTo(0, 0.08);
+    shape.lineTo(0.2, 0.2);
+    shape.quadraticCurveTo(0.8, 0.15, 1.875, 0.18);
+    shape.quadraticCurveTo(2.0, 0.15, 2.375, 0);
+    shape.quadraticCurveTo(2.0, -0.15, 1.825, -0.18);
     shape.quadraticCurveTo(0.8, -0.15, 0.15, -0.3);
-    shape.lineTo(0, -0.08);   // Reduced from -0.12
+    shape.lineTo(0, -0.08);
     shape.lineTo(0, 0);
-    
     return shape;
-  };
+  }, []);
 
-  // inner blade shape 
-  const createInnerBladeShape = () => {
+  const innerBladeShape = useMemo(() => {
     const shape = new Shape();
     shape.moveTo(0, 0);
-    
-    shape.lineTo(0, 0.06);   
-    shape.lineTo(0.15, 0.15); 
-    shape.quadraticCurveTo(1.2, 0.12, 1.75, 0.15); 
-    shape.quadraticCurveTo(2.0, 0.08, 2.15, 0);    
-    shape.quadraticCurveTo(2.0, -0.08, 1.75, -0.15); 
+    shape.lineTo(0, 0.06);
+    shape.lineTo(0.15, 0.15);
+    shape.quadraticCurveTo(1.2, 0.12, 1.75, 0.15);
+    shape.quadraticCurveTo(2.0, 0.08, 2.15, 0);
+    shape.quadraticCurveTo(2.0, -0.08, 1.75, -0.15);
     shape.quadraticCurveTo(1.2, -0.12, 0.15, -0.275);
-    shape.lineTo(0, -0.05);  
+    shape.lineTo(0, -0.05);
     shape.lineTo(0, 0);
-    
     return shape;
-  };
+  }, []);
 
-  const bladeExtrudeSettings = {
-    steps: 2,
-    depth: 0.05,
-    bevelEnabled: true,
-    bevelThickness: 0.014,
-    bevelSize: 0.02,
-    bevelOffset: 0.04,
-    bevelSegments: 2
-  }; 
+  const bladeExtrudeSettings = useMemo(
+    () => ({
+      steps: 2,
+      depth: 0.05,
+      bevelEnabled: true,
+      bevelThickness: 0.014,
+      bevelSize: 0.02,
+      bevelOffset: 0.04,
+      bevelSegments: 2,
+    }),
+    [],
+  );
 
-  const innerBladeExtrudeSettings = {
-    ...bladeExtrudeSettings,
-    depth: 0.06,
-    bevelThickness: 0.02,
-    bevelSize: 0.02,
-    bevelOffset: 0,
-    bevelSegments: 6
-  };
+  const innerBladeExtrudeSettings = useMemo(
+    () => ({
+      ...bladeExtrudeSettings,
+      depth: 0.06,
+      bevelThickness: 0.02,
+      bevelSize: 0.02,
+      bevelOffset: 0,
+      bevelSegments: 6,
+    }),
+    [bladeExtrudeSettings],
+  );
+
+  const auraBladeExtrudeSettings = useMemo(
+    () => ({ ...bladeExtrudeSettings, depth: 0.07 }),
+    [bladeExtrudeSettings],
+  );
 
   // Consolidated electrical effects
   const createElectricalEffects = () => {
@@ -1050,7 +1061,7 @@ const SwordComponent = memo(function Sword({
             {/* Electrical aura around blade */}
             <group position={[0.25, 0.55, 0.35]} rotation={[0, -Math.PI / 2, Math.PI / 2]} scale={[0.95, 1.10, 0.95]}>
               <mesh>
-                <extrudeGeometry args={[createBladeShape(), { ...bladeExtrudeSettings, depth: 0.07 }]} />
+                <extrudeGeometry args={[bladeShape, auraBladeExtrudeSettings]} />
                 <meshStandardMaterial
                   color={new Color(0x87CEEB)}
                   emissive={new Color(0x4682B4)}
@@ -1184,7 +1195,7 @@ const SwordComponent = memo(function Sword({
         <group position={[0.25, 0.5, 0.35]} rotation={[0, -Math.PI / 2, Math.PI / 2]}>
           {/* Base blade */}
           <mesh>
-            <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
+            <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
             <meshStandardMaterial 
               color={new Color(0x1097B5)}  
               emissive={new Color(0x1097B5)}
@@ -1196,7 +1207,7 @@ const SwordComponent = memo(function Sword({
           
           {/* BLADE Glowing core */}
           <mesh>
-            <extrudeGeometry args={[createInnerBladeShape(), innerBladeExtrudeSettings]} />
+            <extrudeGeometry args={[innerBladeShape, innerBladeExtrudeSettings]} />
             <meshStandardMaterial 
               color={new Color(0x1097B5)}  
               emissive={new Color(0x1097B5)}

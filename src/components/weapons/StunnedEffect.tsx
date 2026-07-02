@@ -1,6 +1,6 @@
-import React, { useRef, useState, useEffect, memo } from 'react';
+import React, { useRef, useEffect, memo, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, Color, Mesh, Material } from '@/utils/three-exports';
+import { Group, Vector3, Color, Mesh, Material, MeshStandardMaterial } from '@/utils/three-exports';
 
 interface StunnedEffectProps {
   position: Vector3;
@@ -30,11 +30,17 @@ const StunnedEffectComponent = memo(function StunnedEffect({
   disableCameraRotation = false
 }: StunnedEffectProps) {
   const effectRef = useRef<Group>(null);
-  const [intensity, setIntensity] = useState(1);
-  const [fadeProgress, setFadeProgress] = useState(1);
   const rotationSpeed = useRef(Math.random() * 0.03 + 0.02);
   const pulseSpeed = useRef(Math.random() * 0.008 + 0.006);
-  const elapsedRef = useRef(0);
+
+  const ringMatRefs = useRef<(MeshStandardMaterial | null)[]>([]);
+  const verticalMatRefs = useRef<(MeshStandardMaterial | null)[]>([]);
+  const sparkMatRefs = useRef<(MeshStandardMaterial | null)[]>([]);
+
+  const sparkOpacityMultipliers = useMemo(
+    () => Array.from({ length: 8 }, () => Math.random() * 0.8),
+    [],
+  );
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -98,7 +104,6 @@ const StunnedEffectComponent = memo(function StunnedEffect({
 
     const currentTime = Date.now();
     const elapsed = currentTime - startTime;
-    elapsedRef.current = elapsed; // Store elapsed time in ref for use in JSX
     const progress = Math.min(elapsed / duration, 1);
 
     // Safety check: if effect has exceeded its duration, trigger completion
@@ -125,17 +130,36 @@ const StunnedEffectComponent = memo(function StunnedEffect({
     }
 
     // Fade out in the last 500ms
+    let frameFadeProgress = 1;
     if (progress > 0.875) {
       const fadeStart = 0.875;
-      const fadeProgress = (progress - fadeStart) / (1 - fadeStart);
-      setFadeProgress(1 - fadeProgress);
-    } else {
-      setFadeProgress(1);
+      const fadeAmount = (progress - fadeStart) / (1 - fadeStart);
+      frameFadeProgress = 1 - fadeAmount;
     }
 
     // Pulsing intensity effect - more aggressive than freeze
     const pulseIntensity = 0.6 + 0.4 * Math.sin(elapsed * pulseSpeed.current);
-    setIntensity(pulseIntensity * fadeProgress);
+    const frameIntensity = pulseIntensity * frameFadeProgress;
+
+    for (const mat of ringMatRefs.current) {
+      if (mat) {
+        mat.emissiveIntensity = frameIntensity * 6.75;
+        mat.opacity = frameFadeProgress * 0.8;
+      }
+    }
+    for (const mat of verticalMatRefs.current) {
+      if (mat) {
+        mat.emissiveIntensity = frameIntensity * 1;
+        mat.opacity = frameFadeProgress * 0.6;
+      }
+    }
+    for (let i = 0; i < sparkMatRefs.current.length; i++) {
+      const mat = sparkMatRefs.current[i];
+      if (mat) {
+        mat.emissiveIntensity = frameIntensity * 6;
+        mat.opacity = frameFadeProgress * sparkOpacityMultipliers[i];
+      }
+    }
 
     // Rotate the lightning cage
     effectRef.current.rotation.y += rotationSpeed.current;
@@ -154,11 +178,12 @@ const StunnedEffectComponent = memo(function StunnedEffect({
           <mesh position={[0.6, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
             <cylinderGeometry args={[0.02, 0.02, 1.2, 4]} />
             <meshStandardMaterial
+              ref={(el) => { ringMatRefs.current[i] = el; }}
               color={new Color("blue")}      // Red-orange
               emissive={new Color("green")}
-              emissiveIntensity={intensity * 6.75}
+              emissiveIntensity={6.75}
               transparent
-              opacity={fadeProgress * 0.8}
+              opacity={0.8}
             />
           </mesh>
         </group>
@@ -175,11 +200,12 @@ const StunnedEffectComponent = memo(function StunnedEffect({
               rotation={[0, 0, 0]}>
           <cylinderGeometry args={[0.025, 0.025, 0.35, 4]} />
           <meshStandardMaterial
+            ref={(el) => { verticalMatRefs.current[i] = el; }}
             color={new Color(0xDD4444)}       // Dark red
             emissive={new Color(0xDD4444)}
-            emissiveIntensity={intensity * 1}
+            emissiveIntensity={1}
             transparent
-            opacity={fadeProgress * 0.6}
+            opacity={0.6}
           />
         </mesh>
       ))}
@@ -197,11 +223,12 @@ const StunnedEffectComponent = memo(function StunnedEffect({
               ]}>
           <sphereGeometry args={[0.03, 4, 4]} />
           <meshStandardMaterial
+            ref={(el) => { sparkMatRefs.current[i] = el; }}
             color={new Color(0xFFFFFF)}       // White sparks
             emissive={new Color(0xFFFFFF)}
-            emissiveIntensity={intensity * 6}
+            emissiveIntensity={6}
             transparent
-            opacity={fadeProgress * Math.random() * 0.8}
+            opacity={sparkOpacityMultipliers[i]}
           />
         </mesh>
       ))}

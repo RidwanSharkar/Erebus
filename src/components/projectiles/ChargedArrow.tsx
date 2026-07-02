@@ -4,6 +4,9 @@ import { Vector3, Group, Mesh, DoubleSide, AdditiveBlending } from '@/utils/thre
 import ChargedArrowTrail from './ChargedArrowTrail';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
+const _lookAtTarget = new Vector3();
+const _dirNorm = new Vector3();
+
 interface ChargedArrowProps {
   position: Vector3;
   direction: Vector3;
@@ -35,8 +38,8 @@ export default function ChargedArrow({ position, direction, onImpact }: ChargedA
     arrowLight.current?.setIntensity(12);
     
     // Orient arrow to face movement direction
-    const lookAtTarget = position.clone().add(direction.clone().normalize());
-    arrowRef.current.lookAt(lookAtTarget);
+    _lookAtTarget.copy(position).add(_dirNorm.copy(direction).normalize());
+    arrowRef.current.lookAt(_lookAtTarget);
     
     // Trail components will track the arrow head world position automatically
     // No need to manually set positions since they're positioned relative to the arrow group

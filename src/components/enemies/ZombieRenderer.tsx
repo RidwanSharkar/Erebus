@@ -6,7 +6,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import ZombieModel from './ZombieModel';
 import EnemyMeleeAttackRangeRing, { GHOUL_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
-import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import EnemyStaggerBar from './EnemyStaggerBar';
 
@@ -27,7 +27,7 @@ const FADE_DURATION = 1.5;
 const LERP_SPEED = 14;
 const WALK_STOP_DELAY = 250;
 
-export default function ZombieRenderer({
+function ZombieRenderer({
   id,
   position,
   rotation,
@@ -37,7 +37,7 @@ export default function ZombieRenderer({
   staggerBuildup = 0,
   visualScale = 1,
 }: ZombieRendererProps) {
-  const { socket, enemyTransformsRef } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
@@ -50,8 +50,11 @@ export default function ZombieRenderer({
   const isAttackingRef = useRef(false);
 
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const attackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer = useRef(0);
   const opacity = useRef(1);
+  const cachedDeathMats = useRef<any[]>([]);
+  const deathCacheBuilt = useRef(false);
 
   const setGroupRef = useCallback((group: Group | null) => {
     groupRef.current = group;
@@ -87,6 +90,7 @@ export default function ZombieRenderer({
   useEffect(() => {
     return () => {
       if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
+      if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
     };
   }, []);
 
@@ -100,17 +104,20 @@ export default function ZombieRenderer({
     const handleTelegraph = (data: { zombieId: string }) => {
       if (data.zombieId !== id) return;
       if (isSummoningRef.current) return;
+      if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
       setIsAttacking(true);
       isAttackingRef.current = true;
-      setTimeout(() => {
+      attackTimerRef.current = setTimeout(() => {
         setIsAttacking(false);
         isAttackingRef.current = false;
+        attackTimerRef.current = null;
       }, ATTACK_DURATION);
     };
 
     socket.on('player-zombie-attack-telegraph', handleTelegraph);
     return () => {
       socket.off('player-zombie-attack-telegraph', handleTelegraph);
+      if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
     };
   }, [id, socket]);
 
@@ -130,15 +137,26 @@ export default function ZombieRenderer({
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
-      group.traverse((child: any) => {
-        if (child.isMesh && child.material) {
-          const mats = Array.isArray(child.material) ? child.material : [child.material];
-          mats.forEach((mat: any) => {
-            mat.transparent = true;
-            mat.opacity = opacity.current;
-          });
-        }
-      });
+
+      if (!deathCacheBuilt.current) {
+        const collected: any[] = [];
+        group.traverse((child: any) => {
+          if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((mat: any) => {
+              mat.transparent = true;
+              collected.push(mat);
+            });
+          }
+        });
+        cachedDeathMats.current = collected;
+        deathCacheBuilt.current = true;
+      }
+
+      const op = opacity.current;
+      for (let i = 0; i < cachedDeathMats.current.length; i++) {
+        cachedDeathMats.current[i].opacity = op;
+      }
     }
   });
 
@@ -182,3 +200,5 @@ export default function ZombieRenderer({
     </group>
   );
 }
+
+export default React.memo(ZombieRenderer);

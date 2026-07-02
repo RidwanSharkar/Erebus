@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import type { TalentId } from '@/utils/talents';
 import {
   getCoopRoomColorForTalent,
@@ -42,23 +42,68 @@ export interface TooltipContent {
   description: string;
 }
 
+const VIEWPORT_PADDING_PX = 8;
+
 interface HotkeyTooltipProps {
   content: TooltipContent;
   visible: boolean;
   x: number;
   y: number;
+  placement?: 'above' | 'right';
 }
 
-export function HotkeyTooltip({ content, visible, x, y }: HotkeyTooltipProps) {
+export function HotkeyTooltip({
+  content,
+  visible,
+  x,
+  y,
+  placement = 'above',
+}: HotkeyTooltipProps) {
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const [clampedPosition, setClampedPosition] = useState<{ left: number; top: number } | null>(
+    null
+  );
+
+  useLayoutEffect(() => {
+    if (!visible) {
+      setClampedPosition(null);
+      return;
+    }
+
+    const el = tooltipRef.current;
+    if (!el) return;
+
+    const rect = el.getBoundingClientRect();
+    const maxLeft = window.innerWidth - VIEWPORT_PADDING_PX - rect.width;
+    const maxTop = window.innerHeight - VIEWPORT_PADDING_PX - rect.height;
+    const left = Math.min(Math.max(rect.left, VIEWPORT_PADDING_PX), maxLeft);
+    const top = Math.min(Math.max(rect.top, VIEWPORT_PADDING_PX), maxTop);
+
+    if (left !== rect.left || top !== rect.top) {
+      setClampedPosition({ left, top });
+    } else {
+      setClampedPosition(null);
+    }
+  }, [visible, x, y, placement, content.name, content.description]);
+
   if (!visible) return null;
+
+  const baseStyle: React.CSSProperties =
+    placement === 'right'
+      ? { left: x, top: y, transform: 'translateY(-50%)' }
+      : { left: x - 150, top: y - 92, transform: 'translateX(-50%)' };
+
+  const clampedStyle: React.CSSProperties | undefined = clampedPosition
+    ? { left: clampedPosition.left, top: clampedPosition.top, transform: 'none' }
+    : undefined;
 
   return (
     <div
+      ref={tooltipRef}
       className="fixed z-50 text-white text-sm max-w-xs pointer-events-none"
       style={{
-        left: x - 150,
-        top: y - 92,
-        transform: 'translateX(-50%)',
+        ...baseStyle,
+        ...clampedStyle,
         background: 'rgba(6,6,18,0.97)',
         border: '1px solid rgba(100,140,255,0.3)',
         borderTop: '2px solid rgba(120,160,255,0.75)',

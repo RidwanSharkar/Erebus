@@ -7,7 +7,7 @@ import { Billboard, Text } from '@react-three/drei';
 import TemplarModel from './TemplarModel';
 import EnemyAbilityChargeTelegraph from './EnemyAbilityChargeTelegraph';
 import EnemyMeleeAttackRangeRing, { TEMPLAR_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
-import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
@@ -35,7 +35,7 @@ const WALK_STOP_DELAY = 250;  // ms
 const TEMPLAR_BLINK_CHARGE_PRIMARY = '#ff3838';
 const TEMPLAR_BLINK_CHARGE_ACCENT = '#ff6644';
 
-export default function TemplarRenderer({
+function TemplarRenderer({
   id,
   position,
   rotation,
@@ -47,7 +47,7 @@ export default function TemplarRenderer({
   showMeleeRangeRing = true,
 }: TemplarRendererProps) {
   const theme = campHpTheme(campType);
-  const { socket, enemyTransformsRef } = useMultiplayer();
+  const { socket, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
 
   const [isAttacking,   setIsAttacking]   = useState(false);
@@ -74,6 +74,8 @@ export default function TemplarRenderer({
   const blinkChargeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer     = useRef(0);
   const opacity       = useRef(1);
+  const cachedDeathMats = useRef<any[]>([]);
+  const deathCacheBuilt = useRef(false);
   const isDyingRef    = useRef(isDying);
 
   useEffect(() => {
@@ -337,15 +339,26 @@ export default function TemplarRenderer({
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
-      group.traverse((child: any) => {
-        if (child.isMesh && child.material) {
-          const mats = Array.isArray(child.material) ? child.material : [child.material];
-          mats.forEach((mat: any) => {
-            mat.transparent = true;
-            mat.opacity = opacity.current;
-          });
-        }
-      });
+
+      if (!deathCacheBuilt.current) {
+        const collected: any[] = [];
+        group.traverse((child: any) => {
+          if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((mat: any) => {
+              mat.transparent = true;
+              collected.push(mat);
+            });
+          }
+        });
+        cachedDeathMats.current = collected;
+        deathCacheBuilt.current = true;
+      }
+
+      const op = opacity.current;
+      for (let i = 0; i < cachedDeathMats.current.length; i++) {
+        cachedDeathMats.current[i].opacity = op;
+      }
     }
   });
 
@@ -404,3 +417,5 @@ export default function TemplarRenderer({
     </group>
   );
 }
+
+export default React.memo(TemplarRenderer);

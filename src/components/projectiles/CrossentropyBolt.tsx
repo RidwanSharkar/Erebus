@@ -1,13 +1,17 @@
-import React, { useRef, useState, useMemo } from 'react';
-import { AdditiveBlending } from '@/utils/three-exports';
+import React, { useRef, useMemo } from 'react';
+import { AdditiveBlending, SphereGeometry } from '@/utils/three-exports';
 
-import { Mesh, Vector3, Clock, Color } from 'three';
+import { Mesh, Vector3, Clock, Color, MeshStandardMaterial } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import CrossentropyBoltTrail from './CrossentropyBoltTrail';
 import CrossentropyBoltLaunchSmoke from './CrossentropyBoltLaunchSmoke';
 import { CROSSENTROPY_MAX_TRAVEL_DISTANCE } from '@/utils/talents';
 import type { CrossentropyVisualTheme } from '@/utils/talents';
+
+const BOLT_SPHERE_RADIUS = 0.225;
+const BOLT_SPHERE_GEO = new SphereGeometry(BOLT_SPHERE_RADIUS, 16, 16);
+
 interface CrossentropyBoltProps {
   id: number;
   position: Vector3;
@@ -56,8 +60,11 @@ export default function CrossentropyBolt({
   const hasExploded = useRef(false);
   const fadeStartTime = useRef<number | null>(null);
   const fadeDuration = 1; // 500ms fade duration
-  const [opacity, setOpacity] = useState(1);
-  const size = 0.225;
+  const opacityRef = useRef(1);
+  const mat1Ref = useRef<MeshStandardMaterial>(null);
+  const mat2Ref = useRef<MeshStandardMaterial>(null);
+  const mat3Ref = useRef<MeshStandardMaterial>(null);
+  const size = BOLT_SPHERE_RADIUS;
   const { color, meshColor, meshEmissive } = useMemo(() => {
     if (visualTheme === 'inferno') {
       return {
@@ -108,6 +115,16 @@ export default function CrossentropyBolt({
   const time = useRef(0);
   const launchSmokeDistanceRef = useRef(0);
 
+  const applyOpacityToMaterials = (value: number) => {
+    opacityRef.current = value;
+    for (const matRef of [mat1Ref, mat2Ref, mat3Ref]) {
+      const mat = matRef.current;
+      if (!mat) continue;
+      mat.opacity = 0.9 * value;
+      mat.emissiveIntensity = 2 * value;
+    }
+  };
+
   // Collision detection is now handled by the ECS system
   // This component only handles visual representation
 
@@ -120,8 +137,7 @@ export default function CrossentropyBolt({
       if (fadeStartTime.current !== null) {
         const fadeElapsed = currentTime - fadeStartTime.current;
         const fadeProgress = Math.min(fadeElapsed / (fadeDuration * 1000), 1);
-        const newOpacity = 1 - fadeProgress;
-        setOpacity(newOpacity);
+        applyOpacityToMaterials(1 - fadeProgress);
         if (fadeProgress >= 1) {
           fireball1Ref.current.removeFromParent();
           fireball2Ref.current.removeFromParent();
@@ -145,7 +161,7 @@ export default function CrossentropyBolt({
       {
         const rp = currentPosition.current;
         boltLight.current?.setPosition(rp.x, rp.y, rp.z);
-        boltLight.current?.setIntensity(5 * opacity);
+        boltLight.current?.setIntensity(5 * opacityRef.current);
       }
       return;
     }
@@ -154,9 +170,7 @@ export default function CrossentropyBolt({
     if (fadeStartTime.current !== null) {
       const fadeElapsed = currentTime - fadeStartTime.current;
       const fadeProgress = Math.min(fadeElapsed / (fadeDuration * 1000), 1);
-      const newOpacity = 1 - fadeProgress;
-      
-      setOpacity(newOpacity);
+      applyOpacityToMaterials(1 - fadeProgress);
       
       if (fadeProgress >= 1) {
         // Fade complete, remove from scene
@@ -235,45 +249,45 @@ export default function CrossentropyBolt({
     // Single pooled light follows the bolt (replaces 3 per-fireball <pointLight>s).
     const p = currentPosition.current;
     boltLight.current?.setPosition(p.x, p.y, p.z);
-    boltLight.current?.setIntensity(5 * opacity);
+    boltLight.current?.setIntensity(5 * opacityRef.current);
   });
 
   return (
     <group name="crossentropy-bolt-group">
-      <mesh ref={fireball1Ref} position={currentPosition.current}>
-        <sphereGeometry args={[size, 32, 32]} />
+      <mesh ref={fireball1Ref} position={currentPosition.current} geometry={BOLT_SPHERE_GEO}>
         <meshStandardMaterial
+          ref={mat1Ref}
           color={meshColor}
           emissive={meshEmissive}
-          emissiveIntensity={2 * opacity}
+          emissiveIntensity={2}
           transparent
-          opacity={0.9 * opacity}
+          opacity={0.9}
           depthWrite={false}
           blending={AdditiveBlending}
           toneMapped={false}
         />
       </mesh>
-      <mesh ref={fireball2Ref} position={currentPosition.current}>
-        <sphereGeometry args={[size, 32, 32]} />
+      <mesh ref={fireball2Ref} position={currentPosition.current} geometry={BOLT_SPHERE_GEO}>
         <meshStandardMaterial
+          ref={mat2Ref}
           color={meshColor}
           emissive={meshEmissive}
-          emissiveIntensity={2 * opacity}
+          emissiveIntensity={2}
           transparent
-          opacity={0.9 * opacity}
+          opacity={0.9}
           depthWrite={false}
           blending={AdditiveBlending}
           toneMapped={false}
         />
       </mesh>
-      <mesh ref={fireball3Ref} position={currentPosition.current}>
-        <sphereGeometry args={[size, 32, 32]} />
+      <mesh ref={fireball3Ref} position={currentPosition.current} geometry={BOLT_SPHERE_GEO}>
         <meshStandardMaterial
+          ref={mat3Ref}
           color={meshColor}
           emissive={meshEmissive}
-          emissiveIntensity={2 * opacity}
+          emissiveIntensity={2}
           transparent
-          opacity={0.9 * opacity}
+          opacity={0.9}
           depthWrite={false}
           blending={AdditiveBlending}
           toneMapped={false}
@@ -286,7 +300,7 @@ export default function CrossentropyBolt({
         mesh1Ref={fireball1Ref}
         mesh2Ref={fireball2Ref}
         mesh3Ref={fireball3Ref}
-        opacity={opacity}
+        opacityRef={opacityRef}
       />
       <CrossentropyBoltLaunchSmoke
         direction={direction}
@@ -296,7 +310,6 @@ export default function CrossentropyBolt({
         reaperPurple={reaperEcsDriven}
         {...(!reaperEcsDriven ? { launchDistanceRef: launchSmokeDistanceRef } : {})}
       />
-      <pointLight color={color} intensity={8 * opacity} distance={4} decay={2} />
     </group>
   );
 } 

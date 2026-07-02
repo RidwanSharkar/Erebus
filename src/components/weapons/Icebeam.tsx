@@ -1,5 +1,5 @@
-import { useRef, useEffect, useState, useMemo } from 'react';
-import { Group, Vector3, Color, CylinderGeometry, TorusGeometry, BoxGeometry } from '@/utils/three-exports';
+import { useRef, useEffect, useMemo } from 'react';
+import { Group, Vector3, Color, CylinderGeometry, TorusGeometry, BoxGeometry, Mesh, MeshStandardMaterial } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { ICEBEAM_MAX_HOLD_SEC } from '@/utils/icebeamConstants';
 import { createBeamCylinderAdditiveMaterial } from '@/utils/beamCylinderAdditiveMaterial';
@@ -13,6 +13,11 @@ const _scratchA = new Color();
 const _scratchB = new Color();
 const _sourceLightPos = new Vector3();
 const _tipLightPos = new Vector3();
+const _beamColor = new Color();
+const _beamEmissive = new Color();
+
+const MAX_SPIRALS = 6;
+const MAX_SHARDS = 31;
 
 /** ~matches prior MeshStandard stack when mapped through additive cylinders. */
 const ICE_BEAM_BRI_GAIN = 24;
@@ -80,12 +85,32 @@ export default function Icebeam({
   const beamRef = useRef<Group>(null);
   const sourceGroupRef = useRef<Group>(null);
   const tipGroupRef = useRef<Group>(null);
-  const [intensity, setIntensity] = useState(1);
-  const [fadeProgress, setFadeProgress] = useState(0);
-  const [isFadingOut, setIsFadingOut] = useState(false);
+  const intensityRef = useRef(1);
+  const fadeProgressRef = useRef(0);
+  const isFadingOutRef = useRef(false);
   const fadeStartTime = useRef<number | null>(null);
   const currentPosition = useRef(new Vector3());
   const currentDirection = useRef(new Vector3());
+
+  const sourceMeshRefs = useRef<(Mesh | null)[]>([]);
+  const sourceMatRefs = useRef<(MeshStandardMaterial | null)[]>([]);
+  const spiralMatRefs = useRef<(MeshStandardMaterial | null)[]>([]);
+  const spiralMeshRefs = useRef<(Mesh | null)[]>([]);
+  const shardMeshRefs = useRef<(Mesh | null)[]>([]);
+  const shardMatRefs = useRef<(MeshStandardMaterial | null)[]>([]);
+
+  const shardSeeds = useMemo(
+    () =>
+      Array.from({ length: MAX_SHARDS }, () => ({
+        posX: (Math.random() - 0.5) * 1.0,
+        posY: (Math.random() - 0.5) * 1.75,
+        posZ: Math.random() * 5 - 11,
+        rotX: Math.random() * Math.PI * 2,
+        rotY: Math.random() * Math.PI * 2,
+        rotZ: Math.random() * Math.PI * 2,
+      })),
+    [],
+  );
 
   // Two pooled point lights (beam source + beam tip) replace the mounted <pointLight>s.
   const sourceLight = useDynamicLight({ color: _scratchA.clone(), priority: 2 });
@@ -105,12 +130,12 @@ export default function Icebeam({
 
   const beamGeometries = useMemo(
     () => ({
-      core: new CylinderGeometry(0.1 * intensity / 2, 0.1 * intensity, 20, 16),
-      inner: new CylinderGeometry(0.25 * intensity / 2, 0.275 * intensity, 20, 16),
-      outer: new CylinderGeometry(0.3 * intensity, 0.375 * intensity, 20, 16),
-      outermost: new CylinderGeometry(0.35 * intensity, 0.375 * intensity, 20, 16),
+      core: new CylinderGeometry(0.05, 0.1, 20, 16),
+      inner: new CylinderGeometry(0.125, 0.275, 20, 16),
+      outer: new CylinderGeometry(0.3, 0.375, 20, 16),
+      outermost: new CylinderGeometry(0.35, 0.375, 20, 16),
     }),
-    [intensity],
+    [],
   );
 
   useEffect(
@@ -123,10 +148,9 @@ export default function Icebeam({
     [beamGeometries],
   );
 
-  const spiralCount = Math.floor(5 * intensity);
   const spiralGeometries = useMemo(
-    () => Array.from({ length: spiralCount }, () => new TorusGeometry(0.35 * intensity, 0.05, 8, 32)),
-    [spiralCount, intensity],
+    () => Array.from({ length: MAX_SPIRALS }, () => new TorusGeometry(0.35, 0.05, 8, 32)),
+    [],
   );
 
   useEffect(
@@ -146,11 +170,11 @@ export default function Icebeam({
   );
 
   useEffect(() => {
-    if (!isActive && !isFadingOut) {
-      setIsFadingOut(true);
+    if (!isActive && !isFadingOutRef.current) {
+      isFadingOutRef.current = true;
       fadeStartTime.current = Date.now();
     }
-  }, [isActive, isFadingOut]);
+  }, [isActive]);
 
   const lerpColor = (color1: string, color2: string, t: number): string => {
     const c1 = color1.replace('#', '');
@@ -197,12 +221,67 @@ export default function Icebeam({
     };
   };
 
+  const updateBeamMaterialColors = (
+    colorHex: string,
+    emissiveHex: string,
+    intens: number,
+    fp: number,
+  ) => {
+    _beamColor.set(colorHex);
+    _beamEmissive.set(emissiveHex);
+
+    for (const mat of sourceMatRefs.current) {
+      if (!mat) continue;
+      mat.color.copy(_beamColor);
+      mat.emissive.copy(_beamEmissive);
+      mat.emissiveIntensity = (mat === sourceMatRefs.current[0] ? 2.5 : 0.7) * intens * fp;
+      mat.opacity = 0.65 * fp;
+    }
+
+    const spiralCount = Math.floor(5 * intens);
+    for (let i = 0; i < MAX_SPIRALS; i++) {
+      const mesh = spiralMeshRefs.current[i];
+      if (mesh) mesh.visible = i < spiralCount;
+      const mat = spiralMatRefs.current[i];
+      if (mat) {
+        mat.color.copy(_beamColor);
+        mat.emissive.copy(_beamEmissive);
+        mat.emissiveIntensity = 1 * intens * fp;
+        mat.opacity = 0.3 * fp;
+      }
+    }
+
+    const shardCount = Math.floor(24 * intens);
+    for (let i = 0; i < MAX_SHARDS; i++) {
+      const mesh = shardMeshRefs.current[i];
+      if (mesh) {
+        mesh.visible = i < shardCount;
+        if (i < shardCount) {
+          const seed = shardSeeds[i];
+          mesh.position.set(
+            seed.posX * intens,
+            seed.posY * intens,
+            seed.posZ,
+          );
+          mesh.rotation.set(seed.rotX, seed.rotY, seed.rotZ);
+        }
+      }
+      const mat = shardMatRefs.current[i];
+      if (mat) {
+        mat.color.copy(_beamColor);
+        mat.emissive.copy(_beamEmissive);
+        mat.emissiveIntensity = 2 * intens * fp;
+        mat.opacity = 0.75 * fp;
+      }
+    }
+  };
+
   useFrame(() => {
     if (!beamRef.current) return;
 
     const currentTime = Date.now();
-    let fp = fadeProgress;
-    let visIntensity = intensity;
+    let fp = fadeProgressRef.current;
+    let visIntensity = intensityRef.current;
 
     if (parentRef.current) {
       currentPosition.current.copy(parentRef.current.position);
@@ -215,13 +294,13 @@ export default function Icebeam({
       beamRef.current.rotation.y = Math.atan2(currentDirection.current.x, currentDirection.current.z);
     }
 
-    if (isFadingOut) {
+    if (isFadingOutRef.current) {
       if (fadeStartTime.current) {
         const fadeElapsed = currentTime - fadeStartTime.current;
         const fadeDuration = 400;
         const progress = Math.min(fadeElapsed / fadeDuration, 1);
         fp = 1 - progress;
-        setFadeProgress(fp);
+        fadeProgressRef.current = fp;
 
         if (progress >= 1) {
           beamRef.current.scale.setScalar(0);
@@ -234,15 +313,29 @@ export default function Icebeam({
       const baseIntensity = Math.min(1 + activeTime * 0.3, 2.5);
       const newIntensity = baseIntensity * externalIntensity;
       visIntensity = Math.min(newIntensity, 1.3);
-      setIntensity(visIntensity);
+      intensityRef.current = visIntensity;
       fp = 1;
-      setFadeProgress(1);
+      fadeProgressRef.current = 1;
     }
 
     const activeTimeHold = isActive ? Math.min((currentTime - startTime) / 1000, ICEBEAM_MAX_HOLD_SEC) : 0;
     const cylColors = getBeamColors(activeTimeHold);
 
     updateIceCylinderUniforms(iceCylinderMaterials, cylColors.color, cylColors.emissive, visIntensity, fp);
+    updateBeamMaterialColors(cylColors.color, cylColors.emissive, visIntensity, fp);
+
+    for (let i = 0; i < sourceMeshRefs.current.length; i++) {
+      const mesh = sourceMeshRefs.current[i];
+      if (mesh) {
+        const base = i === 0 ? 0.4 : 0.5;
+        mesh.scale.setScalar(base * visIntensity);
+      }
+    }
+
+    for (let i = 0; i < MAX_SPIRALS; i++) {
+      const mesh = spiralMeshRefs.current[i];
+      if (mesh) mesh.scale.setScalar(visIntensity);
+    }
 
     beamRef.current.scale.setScalar(fp);
 
@@ -266,35 +359,30 @@ export default function Icebeam({
     tipLight.current?.setDistance(4 * visIntensity);
   });
 
-  const activeTime = isActive
-    ? Math.min((Date.now() - startTime) / 1000, ICEBEAM_MAX_HOLD_SEC)
-    : 0;
-
-  const beamColors = getBeamColors(activeTime);
-  const shardCount = Math.floor(24 * intensity);
-
   return (
     <group ref={beamRef}>
       <group ref={sourceGroupRef} position={[0, -1.1, 2]}>
-        <mesh>
-          <sphereGeometry args={[0.4 * intensity, 16, 16]} />
+        <mesh ref={(el) => { sourceMeshRefs.current[0] = el; }}>
+          <sphereGeometry args={[1, 16, 16]} />
           <meshStandardMaterial
-            color={beamColors.color}
-            emissive={beamColors.emissive}
-            emissiveIntensity={2.5 * intensity * fadeProgress}
+            ref={(el) => { sourceMatRefs.current[0] = el; }}
+            color="#58FCEC"
+            emissive="#00E5FF"
+            emissiveIntensity={2.5}
             transparent
-            opacity={0.65 * fadeProgress}
+            opacity={0.65}
           />
         </mesh>
 
-        <mesh>
-          <sphereGeometry args={[0.5 * intensity, 16, 16]} />
+        <mesh ref={(el) => { sourceMeshRefs.current[1] = el; }}>
+          <sphereGeometry args={[1, 16, 16]} />
           <meshStandardMaterial
-            color={beamColors.color}
-            emissive={beamColors.emissive}
-            emissiveIntensity={0.7 * intensity * fadeProgress}
+            ref={(el) => { sourceMatRefs.current[1] = el; }}
+            color="#58FCEC"
+            emissive="#00E5FF"
+            emissiveIntensity={0.7}
             transparent
-            opacity={0.65 * fadeProgress}
+            opacity={0.65}
           />
         </mesh>
 
@@ -316,41 +404,37 @@ export default function Icebeam({
         {spiralGeometries.map((geo, i) => (
           <mesh
             key={i}
+            ref={(el) => { spiralMeshRefs.current[i] = el; }}
             rotation={[-Math.PI / 4, 0, (i * Math.PI) / -1.5]}
             position={[0, 0, 10]}
             geometry={geo}
           >
             <meshStandardMaterial
-              color={beamColors.color}
-              emissive={beamColors.emissive}
-              emissiveIntensity={1 * intensity * fadeProgress}
+              ref={(el) => { spiralMatRefs.current[i] = el; }}
+              color="#58FCEC"
+              emissive="#00E5FF"
+              emissiveIntensity={1}
               transparent
-              opacity={0.3 * fadeProgress}
+              opacity={0.3}
             />
           </mesh>
         ))}
 
-        {[...Array(shardCount)].map((_, i) => (
+        {shardSeeds.map((seed, i) => (
           <mesh
             key={`shard-${i}`}
+            ref={(el) => { shardMeshRefs.current[i] = el; }}
             geometry={shardGeometry}
-            position={[
-              (Math.random() - 0.5) * 1.0 * intensity,
-              (Math.random() - 0.5) * 1.75 * intensity,
-              Math.random() * 5 - 11,
-            ]}
-            rotation={[
-              Math.random() * Math.PI * 2,
-              Math.random() * Math.PI * 2,
-              Math.random() * Math.PI * 2,
-            ]}
+            position={[seed.posX, seed.posY, seed.posZ]}
+            rotation={[seed.rotX, seed.rotY, seed.rotZ]}
           >
             <meshStandardMaterial
-              color={beamColors.color}
-              emissive={beamColors.emissive}
-              emissiveIntensity={2 * intensity * fadeProgress}
+              ref={(el) => { shardMatRefs.current[i] = el; }}
+              color="#58FCEC"
+              emissive="#00E5FF"
+              emissiveIntensity={2}
               transparent
-              opacity={0.75 * fadeProgress}
+              opacity={0.75}
             />
           </mesh>
         ))}

@@ -131,11 +131,20 @@ interface HealEvent {
   timestamp: number;
 }
 
+interface PendingIgniteTick {
+  target: Entity;
+  tickDamage: number;
+  fireAtMs: number;
+  source?: Entity;
+  sourcePlayerId?: string;
+}
+
 export class CombatSystem extends System {
   public readonly requiredComponents = [Health];
   private world: World;
   private damageQueue: DamageEvent[] = [];
   private healQueue: HealEvent[] = [];
+  private pendingIgniteTicks: PendingIgniteTick[] = [];
   private deadEntities: Entity[] = [];
   private damageNumberManager: DamageNumberManager;
   private impactEffectManager = new ImpactEffectManager();
@@ -561,12 +570,13 @@ export class CombatSystem extends System {
       const tickDamage = plan.tickAmounts[i];
       const delayMs = plan.delaysMs[i];
       if (tickDamage <= 0) continue;
-      setTimeout(() => {
-        const health = target.getComponent(Health);
-        const enemy = target.getComponent(Enemy);
-        if (!health || health.isDead || !enemy || enemy.isDead) return;
-        this.queueDamage(target, tickDamage, source, 'ignite', sourcePlayerId);
-      }, delayMs);
+      this.pendingIgniteTicks.push({
+        target,
+        tickDamage,
+        fireAtMs: Date.now() + delayMs,
+        source,
+        sourcePlayerId,
+      });
     }
   }
   
@@ -598,6 +608,9 @@ export class CombatSystem extends System {
 
     // Process damage queue
     this.processDamageQueue(currentTime);
+
+    // Frame-based ignite DoT ticks (solo / training)
+    this.processPendingIgniteTicks();
 
     // Process heal queue
     this.processHealQueue(currentTime);
@@ -683,8 +696,9 @@ export class CombatSystem extends System {
   private processDamageQueue(currentTime: number): void {
     this.runebladeLmbSfxQueueProcessed = 0;
     this.runebladeLmbSfxQueueAnyCrit = false;
+    const cachedWeapon = this.getCurrentWeapon();
     for (const damageEvent of this.damageQueue) {
-      this.applyDamage(damageEvent, currentTime);
+      this.applyDamage(damageEvent, currentTime, cachedWeapon);
     }
     this.flushRunebladeLmbHitSoundIfReady();
   }
@@ -693,6 +707,25 @@ export class CombatSystem extends System {
     for (const healEvent of this.healQueue) {
       this.applyHealing(healEvent, currentTime);
     }
+  }
+
+  private processPendingIgniteTicks(): void {
+    if (this.pendingIgniteTicks.length === 0) return;
+    const now = Date.now();
+    let write = 0;
+    for (let i = 0; i < this.pendingIgniteTicks.length; i++) {
+      const tick = this.pendingIgniteTicks[i]!;
+      if (tick.fireAtMs > now) {
+        this.pendingIgniteTicks[write++] = tick;
+        continue;
+      }
+      const health = tick.target.getComponent(Health);
+      const enemy = tick.target.getComponent(Enemy);
+      if (health && !health.isDead && enemy && !enemy.isDead) {
+        this.queueDamage(tick.target, tick.tickDamage, tick.source, 'ignite', tick.sourcePlayerId);
+      }
+    }
+    this.pendingIgniteTicks.length = write;
   }
 
   private maybeApplyReaperCrossentropyHitHeal(
@@ -768,9 +801,14 @@ export class CombatSystem extends System {
     return damage;
   }
 
-  private applyDamage(damageEvent: DamageEvent, currentTime: number): void {
+  private applyDamage(
+    damageEvent: DamageEvent,
+    currentTime: number,
+    cachedWeapon: WeaponType | undefined,
+  ): void {
     const { target, damage: baseDamage, source, sourcePlayerId } = damageEvent;
     let damageType = damageEvent.damageType;
+    const currentWeapon = cachedWeapon;
 
     const health = target.getComponent(Health);
     if (!health || !health.enabled) return;
@@ -791,7 +829,6 @@ export class CombatSystem extends System {
     if (enemy && !health.isDead && this.onEnemyDamageCallback) {
       // Calculate actual damage with critical hit mechanics
       // For abilities that already determined critical hits (like backstab), preserve the original critical flag
-      const currentWeapon = this.getCurrentWeapon();
       let damageResult: DamageResult;
 
       if (damageEvent.isCritical !== undefined) {
@@ -1161,7 +1198,6 @@ export class CombatSystem extends System {
 
     const destructibleMushroom = target.getComponent(DestructibleMushroom);
     if (destructibleMushroom && !health.isDead && this.onMushroomDamageCallback) {
-      const currentWeapon = this.getCurrentWeapon();
       let damageResult: DamageResult;
       if (damageEvent.isCritical !== undefined) {
         damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
@@ -1308,7 +1344,6 @@ export class CombatSystem extends System {
 
       // Calculate actual damage with critical hit mechanics (using modified damage)
       // For abilities that already determined critical hits (like backstab), preserve the original critical flag
-      const currentWeapon = this.getCurrentWeapon();
       let damageResult: DamageResult;
 
       if (damageEvent.isCritical !== undefined) {
@@ -1415,7 +1450,6 @@ export class CombatSystem extends System {
     }
 
     // For non-enemies (like players in non-PVP mode), apply damage locally as before
-    const currentWeapon = this.getCurrentWeapon();
     const localFallbackCritOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source);
     const damageResult: DamageResult =
       damageType === 'fan_of_knives'
@@ -2129,6 +2163,7 @@ export class CombatSystem extends System {
   public onDisable(): void {
     this.damageQueue.length = 0;
     this.healQueue.length = 0;
+    this.pendingIgniteTicks.length = 0;
     this.deadEntities.length = 0;
     this.damageNumberManager.clear();
     this.resetStats();
