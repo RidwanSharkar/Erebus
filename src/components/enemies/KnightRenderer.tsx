@@ -5,12 +5,13 @@ import { Group, Vector3, Mesh } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import KnightModel, { type KnightAbilityClip } from './KnightModel';
+import KnightBlockShield from './KnightBlockShield';
 import KnightSoulEffect from './KnightSoulEffect';
 import EnemyMeleeAttackRangeRing, { KNIGHT_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyAbilityChargeTelegraph from './EnemyAbilityChargeTelegraph';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   ENEMY_HP_BAR_WIDTH,
@@ -20,7 +21,7 @@ import {
   applyEnemyHealthBarFill,
   syncEnemyHealthBarFillFromRef,
 } from '@/utils/enemyHealthBar';
-import { KNIGHT_CAST_ABILITY_LOCK_MS } from '@/utils/knightCoopAbilitiesConstants';
+import { KNIGHT_CAST_ABILITY_LOCK_MS, KNIGHT_STORM_LASH_DURATION_MS } from '@/utils/knightCoopAbilitiesConstants';
 import GhostTrail from '../dragon/GhostTrail';
 import { WeaponType } from '../dragon/weapons';
 import ChargedOrbitals, { DashChargeStatus } from '../dragon/ChargedOrbitals';
@@ -63,7 +64,6 @@ const HEAL_DURATION  = 1800; // Green/Purple aggro shout (ms)
 // knight_cast.glb / Cast clip — see knightCoopAbilitiesConstants (backend enemyAI)
 const CAST_ABILITY_MS = KNIGHT_CAST_ABILITY_LOCK_MS;
 const FROST_DURATION = CAST_ABILITY_MS; // Purple frost cast (ms)
-const STORM_LASH_DURATION = 4000; // Blue Storm Lash channel (ms)
 const SPIN_CHARGE_DURATION = 750;
 const SPIN_DURATION = 1033; // 31 frames at 30fps
 const FADE_DURATION = 1.5; // seconds
@@ -121,7 +121,7 @@ function KnightRenderer({
   const isWalkingRef = useRef(false);
   const [attackVariant, setAttackVariant] = useState<1 | 2>(1);
   const [abilityClip, setAbilityClip] = useState<KnightAbilityClip | null>(null);
-  const [isStormLashHolding, setIsStormLashHolding] = useState(false);
+  const [abilityPlayKey, setAbilityPlayKey] = useState(0);
   const [isDashing, setIsDashing] = useState(false);
   const [isSpinCharging, setIsSpinCharging] = useState(false);
   const [isImpacting, setIsImpacting] = useState(false);
@@ -142,7 +142,7 @@ function KnightRenderer({
   const isDashingRef   = useRef(false);
 
   // Timer handle for the delayed idle transition after server stops sending moves.
-  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMoveTimeRef = useRef(0);
   const dashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const spinChargeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -186,28 +186,11 @@ function KnightRenderer({
       // Actual teleport (spawn, respawn) — snap so the knight doesn't swim the map.
       groupRef.current.position.copy(position);
     }
-
-    // Server moved the knight a meaningful amount → it's walking.
-    if (dist > 0.01 && !isLocked && !isDying) {
-      if (!isWalkingRef.current) {
-        isWalkingRef.current = true;
-        setIsWalking(true);
-      }
-
-      // Push back the idle-transition timer: as long as the server keeps sending
-      // movement updates the knight stays in its walk animation.
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => {
-        isWalkingRef.current = false;
-        setIsWalking(false);
-      }, WALK_STOP_DELAY);
-    }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clean up timers on unmount.
   useEffect(() => {
     return () => {
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (dashTimer.current) clearTimeout(dashTimer.current);
       if (spinChargeTimer.current) clearTimeout(spinChargeTimer.current);
       if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
@@ -295,7 +278,6 @@ function KnightRenderer({
       const endPos = new Vector3(data.endPosition.x, data.endPosition.y, data.endPosition.z);
       const duration = data.durationMs ?? DASH_DURATION;
 
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (dashTimer.current) clearTimeout(dashTimer.current);
       if (spinChargeTimer.current) clearTimeout(spinChargeTimer.current);
       spinTravelRef.current = null;
@@ -343,7 +325,6 @@ function KnightRenderer({
     }) => {
       if (data.knightId !== id) return;
 
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (dashTimer.current) clearTimeout(dashTimer.current);
       if (spinChargeTimer.current) clearTimeout(spinChargeTimer.current);
       spinTravelRef.current = null;
@@ -384,7 +365,6 @@ function KnightRenderer({
       const endPos = new Vector3(data.endPosition.x, data.endPosition.y, data.endPosition.z);
       const duration = data.durationMs ?? SPIN_DURATION;
 
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (dashTimer.current) clearTimeout(dashTimer.current);
       if (spinChargeTimer.current) clearTimeout(spinChargeTimer.current);
 
@@ -476,19 +456,23 @@ function KnightRenderer({
       }, CAST_ABILITY_MS);
     };
 
-    // Blue Knight — Storm Lash (hold cast pose for full channel)
+    // Blue Knight — Storm Lash (restart Cast on each lightning zap)
     const handleStormLashTelegraph = (data: any) => {
       if (data.knightId !== id) return;
       isAbilityRef.current = true;
-      setIsStormLashHolding(true);
       setAbilityClip('Cast');
+      setAbilityPlayKey(k => k + 1);
       if (abilityTimerRef.current) clearTimeout(abilityTimerRef.current);
       abilityTimerRef.current = setTimeout(() => {
         setAbilityClip(null);
-        setIsStormLashHolding(false);
         isAbilityRef.current = false;
         abilityTimerRef.current = null;
-      }, STORM_LASH_DURATION);
+      }, KNIGHT_STORM_LASH_DURATION_MS);
+    };
+
+    const handleStormLashZap = (data: { knightId: string }) => {
+      if (data.knightId !== id) return;
+      setAbilityPlayKey(k => k + 1);
     };
 
     // Red / Green — Death Grasp (same cast clip as frost)
@@ -521,6 +505,7 @@ function KnightRenderer({
     socket.on('knight-heal-telegraph',  handleHealTelegraph);
     socket.on('knight-frost-telegraph', handleFrostTelegraph);
     socket.on('knight-stormlash-telegraph', handleStormLashTelegraph);
+    socket.on('knight-storm-lash-zap', handleStormLashZap);
     socket.on('knight-deathgrasp-telegraph', handleDeathGraspTelegraph);
     socket.on('knight-block-telegraph', handleBlockTelegraph);
     return () => {
@@ -528,6 +513,7 @@ function KnightRenderer({
       socket.off('knight-heal-telegraph',  handleHealTelegraph);
       socket.off('knight-frost-telegraph', handleFrostTelegraph);
       socket.off('knight-stormlash-telegraph', handleStormLashTelegraph);
+      socket.off('knight-storm-lash-zap', handleStormLashZap);
       socket.off('knight-deathgrasp-telegraph', handleDeathGraspTelegraph);
       socket.off('knight-block-telegraph', handleBlockTelegraph);
     };
@@ -554,6 +540,17 @@ function KnightRenderer({
     if (dist > 5.0 && !isLocked) {
       group.position.copy(targetPosition.current);
     }
+
+    // Walk state from live server transform deltas (ref-only movement store).
+    updateEnemyWalkStateFromMoveDist(
+      dist,
+      isLocked,
+      isDying,
+      WALK_STOP_DELAY,
+      lastMoveTimeRef,
+      isWalkingRef,
+      setIsWalking,
+    );
 
     const spinTravel = spinTravelRef.current;
     if (spinTravel) {
@@ -633,13 +630,17 @@ function KnightRenderer({
         scaleMultiplier={visualScale}
         castShadow={castShadow}
         abilityClip={abilityClip}
-        holdAbilityClip={isStormLashHolding}
+        abilityPlayKey={abilityPlayKey}
         isImpacting={isImpacting}
         impactVariant={impactVariant}
         impactPlayKey={impactPlayKey}
         onImpactFinished={handleImpactFinished}
       />
 
+      <KnightBlockShield
+        active={abilityClip === 'Block' && !isDying}
+        visualScale={visualScale}
+      />
 
       {/* Glowing soul orb floating above the knight */}
       {showSoulEffect && soulType && !isDying && (

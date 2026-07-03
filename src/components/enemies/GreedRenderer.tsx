@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Billboard, Text } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3 } from 'three';
@@ -9,8 +9,7 @@ import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import GreedModel, { GreedAbilityClip } from './GreedModel';
-import ChargedOrbitals, { DashChargeStatus } from '../dragon/ChargedOrbitals';
-import { WeaponType } from '../dragon/weapons';
+import KnightSoulEffect from './KnightSoulEffect';
 
 export type GreedSoulType = 'green' | 'red' | 'blue' | 'purple';
 
@@ -33,13 +32,6 @@ interface AbilityTelegraphEvent {
 
 const LERP_SPEED = 12;
 const FADE_DURATION = 1.5;
-
-const ORB_COLORS: Record<GreedSoulType, { active: string; inactive: string }> = {
-  green:  { active: '#22c55e', inactive: '#0d3b1c' },
-  red:    { active: '#ef4444', inactive: '#3b0d0d' },
-  blue:   { active: '#38bdf8', inactive: '#0a2a3b' },
-  purple: { active: '#a855f7', inactive: '#2c0d3b' },
-};
 
 const ABILITY_TO_CLIP: Record<AbilityTelegraphEvent['ability'], GreedAbilityClip> = {
   cast: 'Cast',
@@ -69,11 +61,6 @@ function GreedRenderer({
   const deathCacheBuilt = useRef(false);
 
   const [abilityClip, setAbilityClip] = useState<GreedAbilityClip | null>(null);
-  const orbColors = ORB_COLORS[soulType] ?? ORB_COLORS.green;
-  const orbitalCharges = useMemo<DashChargeStatus[]>(
-    () => [{ isAvailable: true, cooldownRemaining: 0 }],
-    [],
-  );
 
   const setGroupRef = useCallback((group: Group | null) => {
     groupRef.current = group;
@@ -158,50 +145,39 @@ function GreedRenderer({
   });
 
   return (
-    <>
-      {!isDying && (
-        <ChargedOrbitals
-          parentRef={groupRef as React.RefObject<Group>}
-          dashCharges={orbitalCharges}
-          weaponType={WeaponType.NONE}
-          yOffset={2.1}
-          customActiveColor={orbColors.active}
-          customInactiveColor={orbColors.inactive}
-        />
-      )}
+    <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
+      <GreedModel isDying={!!isDying} abilityClip={abilityClip} />
 
-      <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
-        <GreedModel isDying={!!isDying} abilityClip={abilityClip} />
+      {!isDying && <KnightSoulEffect soulType={soulType} compact />}
 
-        <Billboard position={[0, 2.8, 0]} follow lockX={false} lockY={false} lockZ={false}>
-          {health > 0 && !isDying && (
-            <>
-              <mesh position={[0, 0, 0]}>
-                <planeGeometry args={[1.8, 0.23]} />
-                <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
-              </mesh>
+      <Billboard position={[0, 2.8, 0]} follow lockX={false} lockY={false} lockZ={false}>
+        {health > 0 && !isDying && (
+          <>
+            <mesh position={[0, 0, 0]}>
+              <planeGeometry args={[1.8, 0.23]} />
+              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
+            </mesh>
 
-              <mesh position={[-0.9 + (health / maxHealth) * 0.9, 0, 0.001]}>
-                <planeGeometry args={[(health / maxHealth) * 1.8, 0.21]} />
-                <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
-              </mesh>
+            <mesh position={[-0.9 + (health / maxHealth) * 0.9, 0, 0.001]}>
+              <planeGeometry args={[(health / maxHealth) * 1.8, 0.21]} />
+              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
+            </mesh>
 
-              <Text
-                position={[0, 0, 0.002]}
-                fontSize={0.16}
-                color={theme.text}
-                anchorX="center"
-                anchorY="middle"
-                fontWeight="bold"
-              >
-                {`HP ${Math.ceil(health)}/${maxHealth}`}
-              </Text>
-              <EnemyStaggerBar stagger={staggerBuildup} />
-            </>
-          )}
-        </Billboard>
-      </group>
-    </>
+            <Text
+              position={[0, 0, 0.002]}
+              fontSize={0.16}
+              color={theme.text}
+              anchorX="center"
+              anchorY="middle"
+              fontWeight="bold"
+            >
+              {`HP ${Math.ceil(health)}/${maxHealth}`}
+            </Text>
+            <EnemyStaggerBar stagger={staggerBuildup} />
+          </>
+        )}
+      </Billboard>
+    </group>
   );
 }
 

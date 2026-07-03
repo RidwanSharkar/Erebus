@@ -93,9 +93,9 @@ export class Transform extends Component {
     return up;
   }
 
-  public getWorldPosition(): Vector3 {
+  public getWorldPosition(target?: Vector3): Vector3 {
     this.updateWorldMatrix();
-    const worldPosition = new Vector3();
+    const worldPosition = target ?? new Vector3();
     worldPosition.setFromMatrixPosition(this.worldMatrix);
     return worldPosition;
   }

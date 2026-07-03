@@ -4,6 +4,7 @@ import { MELEE_ARC_RANGE } from './meleeArcConstants';
 export const MUSHROOM_MAX_HP = 10;
 export const MUSHROOM_ERUPTION_PLAYER_DMG = 15;
 export const MUSHROOM_ERUPTION_ENEMY_DMG = 300;
+export const MUSHROOM_ERUPTION_ALLY_DMG = 25;
 /** Horizontal XZ distance from mushroom origin for server AoE and tuning; visual is separate. */
 export const MUSHROOM_ERUPTION_RADIUS = 3.5;
 

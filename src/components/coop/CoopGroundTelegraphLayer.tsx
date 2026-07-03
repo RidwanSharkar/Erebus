@@ -1,6 +1,7 @@
 'use client';
 
 import React, { forwardRef, memo, useCallback, useImperativeHandle, useState } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { Vector3 } from '@/utils/three-exports';
 import BossLeapTelegraph from '@/components/enemies/BossLeapTelegraph';
 import ViperShotTelegraphLine from '@/components/enemies/ViperShotTelegraphLine';
@@ -115,6 +116,19 @@ const CoopGroundTelegraphLayer = memo(forwardRef<CoopGroundTelegraphLayerHandle,
       setTentacleSpineTelegraphsState(telegraphs);
     }, []);
 
+    // Defensive sweep: remove tentacle strips whose endAt passed (orphaned if socket timers fail)
+    useFrame(() => {
+      const now = Date.now();
+      setTentacleSpineTelegraphsState((prev) => {
+        const staleIds = prev
+          .filter((t) => t.endAt !== undefined && now > t.endAt + 250)
+          .map((t) => t.id);
+        if (staleIds.length === 0) return prev;
+        const staleSet = new Set(staleIds);
+        return prev.filter((t) => !staleSet.has(t.id));
+      });
+    });
+
     const addBossTectonicTelegraph = useCallback((tg: BossTectonicTelegraphState) => {
       setBossTectonicTelegraphs((prev) => [...prev, tg]);
     }, []);
@@ -215,6 +229,7 @@ const CoopGroundTelegraphLayer = memo(forwardRef<CoopGroundTelegraphLayerHandle,
             variant="tentacle"
             endAt={t.endAt}
             startedAt={t.startedAt}
+            onEnd={() => removeTentacleSpineTelegraph(t.id)}
           />
         ))}
 

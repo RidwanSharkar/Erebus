@@ -14,7 +14,6 @@ import {
   CylinderGeometry,
   TorusGeometry,
   BoxGeometry,
-  SphereGeometry,
   MeshStandardMaterial,
 } from '@/utils/three-exports';
 import { createBeamCylinderAdditiveMaterial } from '@/utils/beamCylinderAdditiveMaterial';
@@ -23,11 +22,15 @@ import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 const _lightWorldPos = new Vector3();
 
 /** Keep in sync with backend `enemyAI.js` (`boss3StartGreenBeam` / BOSS3_GREEN_BEAM_*). */
-const BOSS3_GREEN_BEAM_RANGE = 22;
-const BOSS3_GREEN_BEAM_START_OFFSET = 0.65;
+const BOSS3_OUTER_SCALE = 1.75;
+/** World-space range — server hitbox uses this directly. */
+const BOSS3_GREEN_BEAM_WORLD_RANGE = 22;
+/** Model-local forward offset to cast-heal orb (parent is BOSS3_OUTER_SCALE group). */
+const BOSS3_GREEN_BEAM_START_OFFSET = 1.25;
+const BOSS3_GREEN_BEAM_RANGE = BOSS3_GREEN_BEAM_WORLD_RANGE / BOSS3_OUTER_SCALE;
 const BOSS3_GREEN_BEAM_HALF_WIDTH = 0.52;
-const BOSS3_GREEN_BEAM_ORIGIN_Y = 2.8;
-const BOSS3_GREEN_BEAM_AXIS_Y = 2.65;
+const BOSS3_GREEN_BEAM_ORIGIN_Y = 2.8 / BOSS3_OUTER_SCALE;
+const BOSS3_GREEN_BEAM_AXIS_Y = 2.65 / BOSS3_OUTER_SCALE;
 const BOSS3_GREEN_BEAM_PITCH_RAD = (10 * Math.PI) / 180;
 
 const BEAM_SEGMENT_LENGTH = BOSS3_GREEN_BEAM_RANGE - BOSS3_GREEN_BEAM_START_OFFSET;
@@ -136,8 +139,6 @@ export default function Boss3GreenBeam({
   const fadeStartTime = useRef<number | null>(null);
   const completedRef = useRef(false);
 
-  const sourceInnerMeshRef = useRef<Mesh>(null);
-  const sourceOuterMeshRef = useRef<Mesh>(null);
   const cylinderMeshRefs = useRef<(Mesh | null)[]>([]);
   const spiralMeshRefs = useRef<(Mesh | null)[]>([]);
   const shardMeshRefs = useRef<(Mesh | null)[]>([]);
@@ -221,34 +222,6 @@ export default function Boss3GreenBeam({
     [shardGeometry],
   );
 
-  const sourceSphereGeometries = useMemo(
-    () => ({
-      inner: new SphereGeometry(0.45, 16, 16),
-      outer: new SphereGeometry(0.65, 16, 16),
-    }),
-    [],
-  );
-
-  const sourceSphereMaterials = useMemo(
-    () => ({
-      inner: new MeshStandardMaterial({
-        color: '#2aff7a',
-        emissive: '#0a8844',
-        emissiveIntensity: 0,
-        transparent: true,
-        opacity: 0,
-      }),
-      outer: new MeshStandardMaterial({
-        color: '#2aff7a',
-        emissive: '#0a8844',
-        emissiveIntensity: 0,
-        transparent: true,
-        opacity: 0,
-      }),
-    }),
-    [],
-  );
-
   const spiralMaterial = useMemo(
     () =>
       new MeshStandardMaterial({
@@ -275,14 +248,10 @@ export default function Boss3GreenBeam({
 
   useEffect(
     () => () => {
-      sourceSphereGeometries.inner.dispose();
-      sourceSphereGeometries.outer.dispose();
-      sourceSphereMaterials.inner.dispose();
-      sourceSphereMaterials.outer.dispose();
       spiralMaterial.dispose();
       shardMaterial.dispose();
     },
-    [sourceSphereGeometries, sourceSphereMaterials, spiralMaterial, shardMaterial],
+    [spiralMaterial, shardMaterial],
   );
 
   useEffect(() => {
@@ -348,23 +317,6 @@ export default function Boss3GreenBeam({
     beamRef.current.scale.setScalar(fp);
 
     updateStandardBeamMaterial(
-      sourceSphereMaterials.inner,
-      cylColors.color,
-      cylColors.emissive,
-      2.4 * visIntensity * fp,
-      0.66 * fp,
-    );
-    updateStandardBeamMaterial(
-      sourceSphereMaterials.outer,
-      cylColors.color,
-      cylColors.emissive,
-      0.72 * visIntensity * fp,
-      0.64 * fp,
-    );
-    sourceInnerMeshRef.current?.scale.setScalar(visIntensity);
-    sourceOuterMeshRef.current?.scale.setScalar(visIntensity);
-
-    updateStandardBeamMaterial(
       spiralMaterial,
       cylColors.color,
       cylColors.emissive,
@@ -414,11 +366,6 @@ export default function Boss3GreenBeam({
 
   return (
     <group ref={beamRef} rotation={[BOSS3_GREEN_BEAM_PITCH_RAD, 0, 0]}>
-      <group position={[0, BOSS3_GREEN_BEAM_ORIGIN_Y, BOSS3_GREEN_BEAM_START_OFFSET]}>
-        <mesh ref={sourceInnerMeshRef} geometry={sourceSphereGeometries.inner} material={sourceSphereMaterials.inner} />
-        <mesh ref={sourceOuterMeshRef} geometry={sourceSphereGeometries.outer} material={sourceSphereMaterials.outer} />
-      </group>
-
       <group position={[0, BOSS3_GREEN_BEAM_AXIS_Y, BEAM_AXIS_MID_Z]}>
         <mesh
           ref={(el) => {

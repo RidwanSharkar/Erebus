@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   BufferGeometry,
@@ -96,6 +96,13 @@ const ArenaFallingSnow: React.FC<ArenaFallingSnowProps> = ({
     });
     return { geometry, material };
   }, [count, halfX, halfZ]);
+
+  useEffect(() => {
+    return () => {
+      geo.dispose();
+      mat.dispose();
+    };
+  }, [geo, mat]);
 
   useFrame((_, delta) => {
     mat.uniforms.uTime.value += delta;

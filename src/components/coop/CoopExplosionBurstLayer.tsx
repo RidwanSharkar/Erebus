@@ -8,6 +8,7 @@ import CrossentropyExplosion from '@/components/projectiles/CrossentropyExplosio
 import DeathFlashExplosion from '@/components/enemies/DeathFlashExplosion';
 import TemplarBlinkSmiteGround from '@/components/enemies/TemplarBlinkSmiteGround';
 import BossTeleportEffect from '@/components/enemies/BossTeleportEffect';
+import ShadeTeleportEffect from '@/components/enemies/ShadeTeleportEffect';
 import type {
   DeathFlashExplosionState,
   FissionDetonationState,
@@ -116,16 +117,27 @@ const CoopExplosionBurstLayer = memo(forwardRef<CoopExplosionBurstLayerHandle, o
         ))}
 
         {activeTeleportEffects.map(effect => {
+          const onComplete = () => {
+            setActiveTeleportEffects(prev => prev.filter(e => e.id !== effect.id));
+          };
+          if (effect.variant === 'shade') {
+            return (
+              <ShadeTeleportEffect
+                key={effect.id}
+                position={effect.position}
+                type={effect.type}
+                theme={effect.theme === 'blue' ? 'blue' : 'purple'}
+                onComplete={onComplete}
+              />
+            );
+          }
           return (
             <BossTeleportEffect
               key={effect.id}
               position={effect.position}
               type={effect.type}
-              theme="red"
-              onComplete={() => {
-                // Remove effect when it's done
-                setActiveTeleportEffects(prev => prev.filter(e => e.id !== effect.id));
-              }}
+              theme={effect.theme === 'blue' ? 'blue' : effect.theme === 'purple' ? 'purple' : 'red'}
+              onComplete={onComplete}
             />
           );
         })}

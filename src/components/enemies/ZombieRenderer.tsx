@@ -7,7 +7,7 @@ import { Billboard, Text } from '@react-three/drei';
 import ZombieModel from './ZombieModel';
 import EnemyMeleeAttackRangeRing, { GHOUL_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import EnemyStaggerBar from './EnemyStaggerBar';
 
 interface ZombieRendererProps {
@@ -48,8 +48,9 @@ function ZombieRenderer({
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
   const isAttackingRef = useRef(false);
+  const isWalkingRef = useRef(false);
 
-  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMoveTimeRef = useRef(0);
   const attackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer = useRef(0);
   const opacity = useRef(1);
@@ -79,17 +80,10 @@ function ZombieRenderer({
     if (dist > 8.0 && groupRef.current) {
       groupRef.current.position.copy(position);
     }
-
-    if (dist > 0.01 && !isAttackingRef.current && !isDying && !isSummoningRef.current) {
-      if (!isWalking) setIsWalking(true);
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
-    }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     return () => {
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
     };
   }, []);
@@ -125,7 +119,16 @@ function ZombieRenderer({
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    updateEnemyWalkStateFromMoveDist(
+      dist,
+      isAttackingRef.current || isSummoningRef.current,
+      isDying,
+      WALK_STOP_DELAY,
+      lastMoveTimeRef,
+      isWalkingRef,
+      setIsWalking,
+    );
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 

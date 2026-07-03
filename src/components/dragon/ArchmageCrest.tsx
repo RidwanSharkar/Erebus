@@ -1,6 +1,6 @@
 import { useFrame } from '@react-three/fiber';
 import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { Shape, ExtrudeGeometry, Group, MeshStandardMaterial, SphereGeometry, DoubleSide } from 'three';
 import { WeaponType, WeaponSubclass } from './weapons';
 
@@ -56,7 +56,7 @@ export default function ArchmageCrest({
   const rightWingRef = useRef<Group>(null);
 
   // Get color based on weapon type/subclass (matching GhostTrail)
-  const getCrestColor = () => {
+  const getCrestColor = (): { main: string; emissive: string; glow: string; secondary: string } => {
     if (weaponSubclass) {
       switch (weaponSubclass) {
         // Scythe subclasses
@@ -116,7 +116,10 @@ export default function ArchmageCrest({
     return { main: '#8A2BE2', emissive: '#9370DB', glow: '#DA70D6', secondary: '#BA55D3' }; // Default purple
   };
 
-  const colors = getCrestColor();
+  // Memoized on the actual inputs so materials below only rebuild when the
+  // theme genuinely changes, instead of on every render (getCrestColor()
+  // used to return a brand-new object identity each call).
+  const colors = useMemo(() => getCrestColor(), [weaponType, weaponSubclass]);
 
   // Cached materials for performance - weapon themed
   const materials = useMemo(() => ({
@@ -179,6 +182,23 @@ export default function ArchmageCrest({
     centerCore: new SphereGeometry(0.12, 12, 12),
     energyWisp: new SphereGeometry(0.04, 6, 6)
   }), [bladeShape, bladeExtrudeSettings]);
+
+  // Dispose GPU resources when the memoized sets are replaced (theme change) or on unmount
+  useEffect(() => {
+    return () => {
+      materials.blade.dispose();
+      materials.bladeCore.dispose();
+      materials.bladeGlow.dispose();
+    };
+  }, [materials]);
+
+  useEffect(() => {
+    return () => {
+      geometries.blade.dispose();
+      geometries.centerCore.dispose();
+      geometries.energyWisp.dispose();
+    };
+  }, [geometries]);
 
   // Animation - disabled for static appearance
   useFrame((state) => {

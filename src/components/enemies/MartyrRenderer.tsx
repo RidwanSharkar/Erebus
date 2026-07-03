@@ -6,7 +6,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import MartyrModel from './MartyrModel';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import EnemyStaggerBar from './EnemyStaggerBar';
 
 interface MartyrRendererProps {
@@ -35,10 +35,11 @@ function MartyrRenderer({
   const { socket, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const [isWalking, setIsWalking] = useState(false);
+  const isWalkingRef = useRef(false);
   const [isPrimming, setIsPrimming] = useState(false);
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
-  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMoveTimeRef = useRef(0);
   const fadeTimer = useRef(0);
   const opacity = useRef(1);
   const cachedDeathMats = useRef<any[]>([]);
@@ -87,25 +88,22 @@ function MartyrRenderer({
     if (dist > 8.0 && groupRef.current) {
       groupRef.current.position.copy(position);
     }
-
-    if (dist > 0.01 && !isDying) {
-      if (!isWalking) setIsWalking(true);
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
-    }
-  }, [position.x, position.y, position.z, isDying]);
-
-  useEffect(() => {
-    return () => {
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-    };
-  }, []);
+  }, [position.x, position.y, position.z]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    updateEnemyWalkStateFromMoveDist(
+      dist,
+      isPrimming,
+      isDying,
+      WALK_STOP_DELAY,
+      lastMoveTimeRef,
+      isWalkingRef,
+      setIsWalking,
+    );
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 

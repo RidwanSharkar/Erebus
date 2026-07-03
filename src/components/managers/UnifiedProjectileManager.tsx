@@ -7,6 +7,7 @@ import { Renderer } from '@/ecs/components/Renderer';
 import { Enemy } from '@/ecs/components/Enemy';
 import { Health } from '@/ecs/components/Health';
 import { Collider } from '@/ecs/components/Collider';
+import { CollisionSystem } from '@/systems/CollisionSystem';
 
 // Import individual projectile components
 import CrossentropyBolt from '@/components/projectiles/CrossentropyBolt';
@@ -26,6 +27,15 @@ import VenomEffect from '@/components/projectiles/VenomEffect';
 import { Vector3, Color } from '@/utils/three-exports';
 import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
 import { CROSSENTROPY_PLAGUE_VENOM_MS, type CrossentropyVisualTheme, type FanOfKnivesFlourishTint, type TempestBurstTheme, getFanOfKnivesDaggerColorsFromTint } from '@/utils/talents';
+
+// Generous bound covering projectile radius (~0.5) + largest enemy/boss collider radius,
+// used to keep the client-side crossentropy explosion check a local spatial query instead
+// of a full world scan.
+const CROSSENTROPY_BOLT_COLLISION_QUERY_RADIUS = 5;
+
+// Stable no-op passed to memoized projectile visuals so their `onImpact` prop identity
+// doesn't change every render (which would otherwise defeat React.memo).
+const noopProjectileImpact = () => {};
 
 function crossentropyThemeFromUserData(userData: Record<string, unknown>): CrossentropyVisualTheme {
   if (userData.crossentropyInferno === true) return 'inferno';
@@ -76,6 +86,12 @@ interface ProjectileData {
   trailFadeOutStartElapsed?: number;
   /** Wind Shear talent — roll (radians) applied to the crescent visual so paired slashes oppose diagonally. */
   windShearRoll?: number;
+  /** Cached from the ECS Projectile component each tick so render doesn't need to re-query the world. */
+  distanceTraveled?: number;
+  /** Cached from the ECS Projectile component each tick so render doesn't need to re-query the world. */
+  maxDistance?: number;
+  /** Cached once at spawn from the ECS Projectile component (stable for the projectile's lifetime). */
+  cachedStartPosition?: Vector3;
 }
 
 interface SwordProjectileData {
@@ -118,7 +134,7 @@ interface UnifiedProjectileManagerProps {
   onHauntedSoulAt?: (position: Vector3) => void;
 }
 
-export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileManagerProps) {
+function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileManagerProps) {
   // State for all projectile types
   const [projectileData, setProjectileData] = useState<{
     crossentropy: ProjectileData[];
@@ -167,14 +183,19 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
   // Throttling
   const lastUpdateTime = useRef(0);
 
-  // Collision detection for CrossentropyBolt
+  // Collision detection for CrossentropyBolt (visual-only: decides when the client-simulated
+  // fireball should explode. Real damage is applied independently by the ECS ProjectileSystem.)
   const checkCrossentropyBoltCollisions = (boltId: number, position: Vector3): boolean => {
     if (!world) return false;
 
-    // Get all enemy entities
-    const allEntities = world.getAllEntities();
+    // Only scan entities near the bolt (spatial hash) instead of the entire world every frame.
+    // Radius generously covers projectile radius + largest enemy collider radius.
+    const collisionSystem = world.getSystem(CollisionSystem);
+    const nearbyEntities = collisionSystem
+      ? collisionSystem.queryCollidersRadius(position, CROSSENTROPY_BOLT_COLLISION_QUERY_RADIUS)
+      : world.getAllEntities();
 
-    for (const entity of allEntities) {
+    for (const entity of nearbyEntities) {
       const enemy = entity.getComponent(Enemy);
       const health = entity.getComponent(Health);
       const transform = entity.getComponent(Transform);
@@ -321,11 +342,14 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
         const existing = projectileData.barrage.find(p => p.entityId === entity.id);
         if (existing) {
           existing.position.copy(transform.position);
+          existing.direction.copy(direction);
           existing.barrageWrathfulBite = userData.barrageWrathfulBite === true;
           existing.barrageWyvernBite = userData.barrageWyvernBite === true;
           existing.barrageStaggeringBite = userData.barrageStaggeringBite === true;
           existing.barrageGlacialBite = userData.barrageGlacialBite === true;
           existing.barrageEntanglement = userData.barrageEntanglement === true;
+          existing.distanceTraveled = projectile.distanceTraveled;
+          existing.maxDistance = projectile.maxDistance;
           newBarrage.push(existing);
         } else {
           newBarrage.push({
@@ -341,6 +365,9 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             barrageStaggeringBite: userData.barrageStaggeringBite === true,
             barrageGlacialBite: userData.barrageGlacialBite === true,
             barrageEntanglement: userData.barrageEntanglement === true,
+            distanceTraveled: projectile.distanceTraveled,
+            maxDistance: projectile.maxDistance,
+            cachedStartPosition: projectile.startPosition?.clone(),
           });
         }
       } else if (userData.isFanOfKnivesDagger || userData.projectileType === 'fan_of_knives') {
@@ -350,6 +377,8 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
           existing.position.copy(transform.position);
           existing.direction.copy(direction);
           existing.fanOfKnivesFlourishTint = fanTint;
+          existing.distanceTraveled = projectile.distanceTraveled;
+          existing.maxDistance = projectile.maxDistance;
           newFanOfKnives.push(existing);
         } else {
           newFanOfKnives.push({
@@ -362,6 +391,9 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             opacity: userData.opacity || 1.0,
             projectileType: 'fan_of_knives',
             fanOfKnivesFlourishTint: fanTint,
+            distanceTraveled: projectile.distanceTraveled,
+            maxDistance: projectile.maxDistance,
+            cachedStartPosition: projectile.startPosition?.clone(),
           });
         }
       } else if (userData.isRegularArrow || userData.projectileType === 'burst_arrow') {
@@ -372,6 +404,8 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
           existing.position.copy(transform.position);
           existing.triggerFingerUncharged = triggerFinger;
           existing.tempestBurstTheme = tempestTheme;
+          existing.distanceTraveled = projectile.distanceTraveled;
+          existing.maxDistance = projectile.maxDistance;
           newRegular.push(existing);
         } else {
           newRegular.push({
@@ -385,6 +419,8 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             projectileType: userData.projectileType,
             triggerFingerUncharged: triggerFinger,
             tempestBurstTheme: tempestTheme,
+            distanceTraveled: projectile.distanceTraveled,
+            maxDistance: projectile.maxDistance,
           });
         }
       } else if (userData.projectileType === 'wind_shear') {
@@ -392,6 +428,8 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
         if (existing) {
           existing.position.copy(transform.position);
           existing.direction.copy(direction);
+          existing.distanceTraveled = projectile.distanceTraveled;
+          existing.maxDistance = projectile.maxDistance;
           newWindShear.push(existing);
         } else {
           newWindShear.push({
@@ -402,6 +440,9 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             opacity: userData.opacity || 1.0,
             projectileType: 'wind_shear',
             windShearRoll: typeof userData.windShearRoll === 'number' ? userData.windShearRoll : 0,
+            distanceTraveled: projectile.distanceTraveled,
+            maxDistance: projectile.maxDistance,
+            cachedStartPosition: projectile.startPosition?.clone(),
           });
         }
       } else if (userData.projectileType === 'sword_projectile') {
@@ -748,19 +789,15 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
           key={arrow.id}
           position={arrow.position}
           direction={arrow.direction}
-          onImpact={() => {
-            // console.log(`🏹 ChargedArrow ${arrow.id} impact`);
-          }}
+          onImpact={noopProjectileImpact}
         />
       ))}
 
       {/* Regular Arrows */}
       {projectileData.regular.map(arrow => {
-        // Get distance information from the ECS projectile component
-        const projectileEntity = world?.getEntity(arrow.entityId);
-        const projectile = projectileEntity?.getComponent(Projectile);
-        const distanceTraveled = projectile?.distanceTraveled || 0;
-        const maxDistance = projectile?.maxDistance || 25;
+        // Distance info is cached from the ECS projectile component during the useFrame tick above
+        const distanceTraveled = arrow.distanceTraveled || 0;
+        const maxDistance = arrow.maxDistance || 25;
         
         return (
           <RegularArrow
@@ -772,9 +809,7 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
             projectileType={arrow.projectileType}
             triggerFingerUncharged={arrow.triggerFingerUncharged === true}
             tempestBurstTheme={arrow.tempestBurstTheme}
-            onImpact={() => {
-              // console.log(`🏹 RegularArrow ${arrow.id} impact`);
-            }}
+            onImpact={noopProjectileImpact}
           />
         );
       })}
@@ -783,17 +818,17 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
       {/* Barrage Arrows */}
       <Barrage 
         projectiles={projectileData.barrage.map(arrow => {
-          // Get distance information from the ECS projectile component
-          const projectileEntity = world?.getEntity(arrow.entityId);
-          const projectile = projectileEntity?.getComponent(Projectile);
-          const distanceTraveled = projectile?.distanceTraveled || 0;
-          const maxDistance = projectile?.maxDistance || 25;
-          
+          // Distance info is cached from the ECS projectile component during the useFrame tick above
+          const distanceTraveled = arrow.distanceTraveled || 0;
+          const maxDistance = arrow.maxDistance || 16;
+          const startPos =
+            arrow.cachedStartPosition != null ? arrow.cachedStartPosition.clone() : arrow.position.clone();
+
           return {
             id: arrow.id,
             position: arrow.position,
             direction: arrow.direction,
-            startPosition: arrow.position.clone(), // Use current position as start for visual purposes
+            startPosition: startPos,
             maxDistance: maxDistance,
             damage: 30,
             startTime: Date.now(),
@@ -812,15 +847,13 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
 
       <FanOfKnivesDagger
         projectiles={projectileData.fanOfKnives.map((knife) => {
-          const projectileEntity = world?.getEntity(knife.entityId);
-          const projectileComp = projectileEntity?.getComponent(Projectile);
-          const distanceTraveled = projectileComp?.distanceTraveled ?? 0;
+          // Distance/start-position info is cached from the ECS projectile component during the useFrame tick above
+          const distanceTraveled = knife.distanceTraveled ?? 0;
           const maxDistance =
-            projectileComp?.maxDistance != null && projectileComp.maxDistance !== Infinity
-              ? projectileComp.maxDistance
+            knife.maxDistance != null && knife.maxDistance !== Infinity
+              ? knife.maxDistance
               : 7;
-          const startPos =
-            projectileComp?.startPosition != null ? projectileComp.startPosition.clone() : knife.position.clone();
+          const startPos = knife.cachedStartPosition != null ? knife.cachedStartPosition.clone() : knife.position.clone();
           const tint = knife.fanOfKnivesFlourishTint ?? 'default';
           return {
             id: knife.id,
@@ -836,15 +869,13 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
 
       <WindShearProjectile
         projectiles={projectileData.windShear.map((ws) => {
-          const projectileEntity = world?.getEntity(ws.entityId);
-          const projectileComp = projectileEntity?.getComponent(Projectile);
-          const distanceTraveled = projectileComp?.distanceTraveled ?? 0;
+          // Distance/start-position info is cached from the ECS projectile component during the useFrame tick above
+          const distanceTraveled = ws.distanceTraveled ?? 0;
           const maxDistance =
-            projectileComp?.maxDistance != null && projectileComp.maxDistance !== Infinity
-              ? projectileComp.maxDistance
+            ws.maxDistance != null && ws.maxDistance !== Infinity
+              ? ws.maxDistance
               : 8;
-          const startPos =
-            projectileComp?.startPosition != null ? projectileComp.startPosition.clone() : ws.position.clone();
+          const startPos = ws.cachedStartPosition != null ? ws.cachedStartPosition.clone() : ws.position.clone();
           return {
             id: ws.id,
             position: ws.position,
@@ -902,3 +933,5 @@ export default function UnifiedProjectileManager({ world, onHauntedSoulAt }: Uni
     </>
   );
 }
+
+export default React.memo(UnifiedProjectileManager);

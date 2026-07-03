@@ -6,6 +6,7 @@ import { useFrame } from '@react-three/fiber';
 import { AnimationClip, Group, LoopRepeat, Vector3 } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import KnightSoulEffect from '@/components/enemies/KnightSoulEffect';
 import {
   MERCHANT_NPC_DEFAULT_ROTATION_Y,
   MERCHANT_NPC_FACE_RANGE,
@@ -103,6 +104,7 @@ function MerchantNpcRenderer({ playerPositionRef }: MerchantNpcRendererProps) {
       <group scale={[SCALE, SCALE, SCALE]}>
         <primitive object={clonedScene} />
       </group>
+      <KnightSoulEffect soulType="yellow" compact />
     </group>
   );
 }

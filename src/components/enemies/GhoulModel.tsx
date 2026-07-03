@@ -43,7 +43,7 @@ let _cachedAnimations: AnimationClip[] | null = null;
 
 const SCALE = 0.014;
 
-export default function GhoulModel({
+export default React.memo(function GhoulModel({
   isWalking,
   isAttacking,
   attackVariant,
@@ -186,9 +186,10 @@ export default function GhoulModel({
       if (isDying) return;
       const fallback = isWalking ? getAction('Run') : getAction('Idle');
       if (fallback) {
+        fallback.enabled = true;
         fallback.setLoop(LoopRepeat, Infinity);
         currentActionRef.current?.fadeOut(0.15);
-        fallback.reset().fadeIn(0.15).play();
+        fallback.fadeIn(0.15).play();
         currentActionRef.current = fallback;
       }
     };
@@ -219,4 +220,5 @@ export default function GhoulModel({
       </group>
     </group>
   );
-}
+});
+

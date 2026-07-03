@@ -5,6 +5,7 @@ import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
 
 interface MartyrModelProps {
   isWalking: boolean;
@@ -23,7 +24,7 @@ export function preloadMartyrModels(): void {
 
 const SCALE = 0.008;
 
-export default function MartyrModel({ isWalking, isDying }: MartyrModelProps) {
+export default React.memo(function MartyrModel({ isWalking, isDying }: MartyrModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
 
@@ -47,33 +48,15 @@ export default function MartyrModel({ isWalking, isDying }: MartyrModelProps) {
 
   useDisposeClonedMaterials(clonedScene);
 
-  const animations = useMemo(() => {
-    const rename = (clips: AnimationClip[], name: string) => clips.map(c => {
-      const r = c.clone();
-      r.name = name;
-      return r;
-    });
-
-    const stripRootMotionXZ = (clip: AnimationClip): AnimationClip => {
-      clip.tracks = clip.tracks.map(track => {
-        if (!track.name.endsWith('.position')) return track;
-        if (!track.name.toLowerCase().includes('hips')) return track;
-        const values = Float32Array.from(track.values);
-        for (let i = 0; i < values.length; i += 3) {
-          values[i] = 0;
-          values[i + 2] = 0;
-        }
-        return new VectorKeyframeTrack(track.name, Array.from(track.times), Array.from(values));
-      });
-      return clip;
-    };
-
-    return [
-      ...rename(idleAnims, 'Idle').map(stripRootMotionXZ),
-      ...rename(runAnims, 'Run').map(stripRootMotionXZ),
-      ...rename(deathAnims, 'Death').map(stripRootMotionXZ),
-    ];
-  }, [idleAnims, runAnims, deathAnims]);
+  const animations = useMemo(
+    () =>
+      getCachedEnemyAnimationClips('martyr', () => [
+        ...renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ),
+        ...renameAnimationClips(runAnims, 'Run').map(stripRootMotionXZ),
+        ...renameAnimationClips(deathAnims, 'Death').map(stripRootMotionXZ),
+      ]),
+    [idleAnims, runAnims, deathAnims],
+  );
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
@@ -114,4 +97,5 @@ export default function MartyrModel({ isWalking, isDying }: MartyrModelProps) {
       </group>
     </group>
   );
-}
+});
+

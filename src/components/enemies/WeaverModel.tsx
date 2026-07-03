@@ -5,6 +5,7 @@ import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
 
 interface WeaverModelProps {
   isWalking: boolean;
@@ -35,7 +36,7 @@ export function preloadWeaverModels(): void {
 
 const SCALE = 0.01235;
 
-export default function WeaverModel({
+export default React.memo(function WeaverModel({
   isWalking,
   isCastingHeal,
   castHealLoop = false,
@@ -73,33 +74,18 @@ export default function WeaverModel({
 
   useDisposeClonedMaterials(clonedScene);
 
-  const animations = useMemo(() => {
-    const rename = (clips: AnimationClip[], name: string) =>
-      clips.map(c => { const r = c.clone(); r.name = name; return r; });
-
-    const stripRootMotionXZ = (clip: AnimationClip): AnimationClip => {
-      clip.tracks = clip.tracks.map(track => {
-        if (!track.name.endsWith('.position')) return track;
-        if (!track.name.toLowerCase().includes('hips')) return track;
-        const values = Float32Array.from(track.values);
-        for (let i = 0; i < values.length; i += 3) {
-          values[i]     = 0;
-          values[i + 2] = 0;
-        }
-        return new VectorKeyframeTrack(track.name, Array.from(track.times), Array.from(values));
-      });
-      return clip;
-    };
-
-    return [
-      ...rename(idleAnims,       'Idle').map(stripRootMotionXZ),
-      ...rename(walkAnims,       'Walk').map(stripRootMotionXZ),
-      ...rename(castHealAnims,   'CastHeal'),
-      ...rename(castSummonAnims, 'CastSummon'),
-      ...rename(deathAnims,      'Death'),
-      ...rename(impactAnims,     'Impact'),
-    ];
-  }, [idleAnims, walkAnims, castHealAnims, castSummonAnims, deathAnims, impactAnims]);
+  const animations = useMemo(
+    () =>
+      getCachedEnemyAnimationClips('weaver', () => [
+        ...renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ),
+        ...renameAnimationClips(walkAnims, 'Walk').map(stripRootMotionXZ),
+        ...renameAnimationClips(castHealAnims, 'CastHeal'),
+        ...renameAnimationClips(castSummonAnims, 'CastSummon'),
+        ...renameAnimationClips(deathAnims, 'Death'),
+        ...renameAnimationClips(impactAnims, 'Impact'),
+      ]),
+    [idleAnims, walkAnims, castHealAnims, castSummonAnims, deathAnims, impactAnims],
+  );
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
@@ -184,9 +170,10 @@ export default function WeaverModel({
       if (isDying) return;
       const fallback = isWalking ? getAction('Walk') : getAction('Idle');
       if (fallback) {
+        fallback.enabled = true;
         fallback.setLoop(LoopRepeat, Infinity);
         currentActionRef.current?.fadeOut(0.15);
-        fallback.reset().fadeIn(0.15).play();
+        fallback.fadeIn(0.15).play();
         currentActionRef.current = fallback;
       }
     };
@@ -218,4 +205,5 @@ export default function WeaverModel({
       </group>
     </group>
   );
-}
+});
+

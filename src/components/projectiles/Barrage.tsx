@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, AdditiveBlending } from '@/utils/three-exports';
+import { Vector3, AdditiveBlending, Group } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+
+const _lookAtTarget = new Vector3();
+const _dirNorm = new Vector3();
 
 interface BarrageProjectile {
   id: number;
@@ -33,6 +36,8 @@ interface BarrageProps {
 }
 
 function BarrageProjectileVisual({ projectile }: { projectile: BarrageProjectile }) {
+  const arrowRef = useRef<Group>(null);
+
   // Wyvern > Entanglement > Wrathful > Glacial Bite > Staggering (blue) > default orange-yellow
   const mainColor = projectile.wyvernBite
     ? '#00aa20'
@@ -71,21 +76,20 @@ function BarrageProjectileVisual({ projectile }: { projectile: BarrageProjectile
   const arrowLight = useDynamicLight({ color: mainColor, distance: 4, priority: 2 });
 
   useFrame(() => {
+    if (!arrowRef.current) return;
+
     const p = projectile.position;
+    arrowRef.current.position.copy(p);
+    _lookAtTarget.copy(p).add(_dirNorm.copy(projectile.direction).normalize());
+    arrowRef.current.lookAt(_lookAtTarget);
+
     arrowLight.current?.setPosition(p.x, p.y, p.z);
     arrowLight.current?.setIntensity(2.5 * finalOpacity);
   });
 
   return (
     <group>
-      <group
-        position={projectile.position.toArray()}
-        rotation={[
-          0,
-          Math.atan2(projectile.direction.x, projectile.direction.z),
-          0
-        ]}
-      >
+      <group ref={arrowRef} position={projectile.position}>
       {/* Base arrow - slightly smaller than regular bow arrows */}
       <mesh rotation={[Math.PI/2, 0, 0]}>
         <cylinderGeometry args={[0.025, 0.1, 1.8, 6]} />
@@ -121,7 +125,7 @@ function BarrageProjectileVisual({ projectile }: { projectile: BarrageProjectile
   );
 }
 
-export default function Barrage({ projectiles }: BarrageProps) {
+function Barrage({ projectiles }: BarrageProps) {
   return (
     <>
       {projectiles.map(projectile => (
@@ -130,3 +134,5 @@ export default function Barrage({ projectiles }: BarrageProps) {
     </>
   );
 }
+
+export default React.memo(Barrage);

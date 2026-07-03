@@ -5,6 +5,7 @@ import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { getCachedProcessedClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
 
 interface TemplarModelProps {
   isWalking: boolean;
@@ -40,7 +41,7 @@ export function preloadTemplarModels(): void {
 // Scale to match in-world height (~2 game units). Tune if GLB geometry differs.
 const SCALE = 0.013;
 
-export default function TemplarModel({
+export default React.memo(function TemplarModel({
   isWalking,
   isAttacking,
   attackVariant,
@@ -85,39 +86,21 @@ export default function TemplarModel({
 
   useDisposeClonedMaterials(clonedScene);
 
-  const animations = useMemo(() => {
-    const rename = (clips: AnimationClip[], name: string) =>
-      clips.map(c => { const r = c.clone(); r.name = name; return r; });
-
-    // Strip root-motion X/Z so server position stays authoritative.
-    const stripRootMotionXZ = (clip: AnimationClip): AnimationClip => {
-      clip.tracks = clip.tracks.map(track => {
-        if (!track.name.endsWith('.position')) return track;
-        if (!track.name.toLowerCase().includes('hips')) return track;
-        const values = Float32Array.from(track.values);
-        for (let i = 0; i < values.length; i += 3) {
-          values[i]     = 0; // X
-          values[i + 2] = 0; // Z
-        }
-        return new VectorKeyframeTrack(track.name, Array.from(track.times), Array.from(values));
-      });
-      return clip;
-    };
-
-    return [
-      ...rename(idleAnims,    'Idle').map(stripRootMotionXZ),
-      ...rename(runAnims,     'Walk').map(stripRootMotionXZ),
-      ...rename(attackAnims,  'Attack'),
-      ...rename(attack2Anims, 'Attack2'),
-      ...rename(deathAnims,   'Death'),
-      ...rename(impactAnims,  'Impact'),
-      // Single clip: duplicate names in the mixer if the GLB has multiple takes
+  const animations = useMemo(
+    () => [
+      ...getCachedProcessedClips('templar-idle', idleAnims, { stripRootMotion: true, renameTo: 'Idle' }),
+      ...getCachedProcessedClips('templar-run', runAnims, { stripRootMotion: true, renameTo: 'Walk' }),
+      ...getCachedProcessedClips('templar-attack', attackAnims, { renameTo: 'Attack' }),
+      ...getCachedProcessedClips('templar-attack2', attack2Anims, { renameTo: 'Attack2' }),
+      ...getCachedProcessedClips('templar-death', deathAnims, { renameTo: 'Death' }),
+      ...getCachedProcessedClips('templar-impact', impactAnims, { renameTo: 'Impact' }),
       ...(smiteAnims.length
-        ? rename([smiteAnims[0]], 'BlinkSmite').map(stripRootMotionXZ)
+        ? getCachedProcessedClips('templar-smite', [smiteAnims[0]], { stripRootMotion: true, renameTo: 'BlinkSmite' })
         : []),
-      ...rename(leapAnims, 'Leap').map(stripRootMotionXZ),
-    ];
-  }, [idleAnims, runAnims, attackAnims, attack2Anims, deathAnims, impactAnims, smiteAnims, leapAnims]);
+      ...getCachedProcessedClips('templar-leap', leapAnims, { stripRootMotion: true, renameTo: 'Leap' }),
+    ],
+    [idleAnims, runAnims, attackAnims, attack2Anims, deathAnims, impactAnims, smiteAnims, leapAnims],
+  );
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
@@ -193,10 +176,10 @@ export default function TemplarModel({
       if (isDying) return;
       const fallback = isWalking ? getAction('Walk') : getAction('Idle');
       if (fallback) {
+        fallback.enabled = true;
         fallback.setLoop(LoopRepeat, Infinity);
         currentActionRef.current?.fadeOut(0.15);
-        fallback.enabled = true;
-        fallback.reset().fadeIn(0.15).play();
+        fallback.fadeIn(0.15).play();
         currentActionRef.current = fallback;
       }
     };
@@ -239,4 +222,5 @@ export default function TemplarModel({
       </group>
     </group>
   );
-}
+});
+

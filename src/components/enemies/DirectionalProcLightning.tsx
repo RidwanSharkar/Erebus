@@ -20,6 +20,7 @@ export interface DirectionalProcLightningProps {
   to: Vector3;
   palette: DirectionalProcLightningPalette;
   durationMs?: number;
+  thicknessScale?: number;
   /** When true, the pooled point light at the target is not driven. Use this when the
    * parent component already manages its own impact light to avoid a double flash. */
   suppressImpactLight?: boolean;
@@ -31,7 +32,7 @@ const _dir = new Vector3();
 const _perp1 = new Vector3();
 const _perp2 = new Vector3();
 
-function buildBoltSegments(from: Vector3, to: Vector3) {
+function buildBoltSegments(from: Vector3, to: Vector3, thicknessScale = 1) {
   const n = SEGMENT_COUNT;
   const pts: { x: number; y: number; z: number }[] = [];
 
@@ -48,7 +49,7 @@ function buildBoltSegments(from: Vector3, to: Vector3) {
 
   for (let i = 0; i < n; i++) {
     const t = i / (n - 1);
-    const spread = 1.1 * Math.sin(t * Math.PI) + 0.35;
+    const spread = (1.1 * Math.sin(t * Math.PI) + 0.35) * thicknessScale;
     const baseX = from.x + (to.x - from.x) * t;
     const baseY = from.y + (to.y - from.y) * t;
     const baseZ = from.z + (to.z - from.z) * t;
@@ -85,17 +86,18 @@ export default function DirectionalProcLightning({
   to,
   palette,
   durationMs = DEFAULT_DURATION_MS,
+  thicknessScale = 1,
   suppressImpactLight = false,
   onComplete,
 }: DirectionalProcLightningProps) {
   const startRef = useRef<number | null>(null);
   const doneRef = useRef(false);
 
-  const boltLight = useDynamicLight({ color: palette.light, distance: 22, decay: 1.8, priority: 1 });
+  const boltLight = useDynamicLight({ color: palette.light, distance: 22 * thicknessScale, decay: 1.8, priority: 1 });
 
   const segments = useMemo(
-    () => buildBoltSegments(from, to),
-    [from.x, from.y, from.z, to.x, to.y, to.z],
+    () => buildBoltSegments(from, to, thicknessScale),
+    [from.x, from.y, from.z, to.x, to.y, to.z, thicknessScale],
   );
 
   const matCore = useMemo(
@@ -158,7 +160,7 @@ export default function DirectionalProcLightning({
     matHalo.opacity = 0.35 * fade;
     if (!suppressImpactLight) {
       boltLight.current?.setPosition(to.x, to.y, to.z);
-      boltLight.current?.setIntensity(48 * fade * peak);
+      boltLight.current?.setIntensity(48 * thicknessScale * fade * peak);
     } else {
       boltLight.current?.setIntensity(0);
     }
@@ -172,9 +174,9 @@ export default function DirectionalProcLightning({
     <group>
       {segments.map(({ mid, len, quat }, i) => (
         <group key={i} position={mid} quaternion={quat}>
-          <mesh geometry={cyl} material={matHalo} scale={[2.1, len, 2.1]} />
-          <mesh geometry={cyl} material={matGlow} scale={[1.65, len, 1.65]} />
-          <mesh geometry={cyl} material={matCore} scale={[1.05, len, 1.05]} />
+          <mesh geometry={cyl} material={matHalo} scale={[2.1 * thicknessScale, len, 2.1 * thicknessScale]} />
+          <mesh geometry={cyl} material={matGlow} scale={[1.65 * thicknessScale, len, 1.65 * thicknessScale]} />
+          <mesh geometry={cyl} material={matCore} scale={[1.05 * thicknessScale, len, 1.05 * thicknessScale]} />
         </group>
       ))}
     </group>

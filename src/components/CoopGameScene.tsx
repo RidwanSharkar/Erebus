@@ -104,11 +104,13 @@ import type {
   WarlockProjectileState,
   WeaverLightningState,
 } from './coop/coopVfxLayerTypes';
+import { applyPlayerMove } from '@/utils/playerLiveTransform';
 import { useMultiplayerActions, useMultiplayerRoom, Player, EnemyDamageMeta, type Enemy as ServerEnemy, type GoldDrop, type PlayerMovementDirection, type BroadcastPlayerAttackAnimationData } from '@/contexts/MultiplayerContext';
 import { SkillPointData } from '@/utils/SkillPointSystem';
 import { AbilityLoadout, getDefaultLoadoutForWeapon } from '@/utils/weaponAbilities';
 import {
   TENTACLE_GROUND_TELEGRAPH_LEAD_MS,
+  TENTACLE_SPINE_IMPACT_TELEGRAPH_MS,
   TENTACLE_SPINE_TELEGRAPH_COLOR,
   TENTACLE_SPINE_TELEGRAPH_STRIP_WIDTH,
   TENTACLE_SPINE_WINDUP_MS,
@@ -204,6 +206,7 @@ import { logJsHeapSnapshotDev } from '@/utils/coopMemoryDebug';
 import { isBowPerfectShotProgress } from '@/utils/bowConstants';
 import { getRuneCountForWeapon } from '@/utils/runeCount';
 import { registerEnemyAttackTelegraphSounds } from '@/utils/enemyTelegraphSound';
+import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
 
 const ZERO_PLAYER_STATS: PlayerStats = { strength: 0, stamina: 0, agility: 0, intellect: 0 };
 
@@ -1338,6 +1341,8 @@ export function CoopGameScene({
     registerMerchantPurchaseSuccessHandler,
     registerMerchantNpcGreetHandler,
     registerPlayerGoldChangedHandler,
+    confirmCoopPortalTransitionComplete,
+    resetLocalPositionEmitThrottle,
   } = useMultiplayerActions();
 
   const {
@@ -1568,10 +1573,20 @@ export function CoopGameScene({
   const templarPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   /** Pending Viper line + arrow setTimeouts; cleared on socket effect cleanup. */
   const viperAttackScheduleTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  /** tentacle ground telegraph: per-enemy windup add/failsafe timers */
+  /** tentacle ground telegraph: per-enemy windup/impact timers */
   const tentacleSpinePendingByEnemyRef = useRef<
-    Map<string, { tAdd: ReturnType<typeof setTimeout>; tFail: ReturnType<typeof setTimeout>; lineId: string }>
+    Map<
+      string,
+      {
+        tAdd?: ReturnType<typeof setTimeout>;
+        tFail?: ReturnType<typeof setTimeout>;
+        tImpact?: ReturnType<typeof setTimeout>;
+        lineId: string;
+      }
+    >
   >(new Map());
+  /** Last slam timestamp per trap — ignore stale windup packets after slam */
+  const tentacleSpineLastSlamAtRef = useRef<Map<string, number>>(new Map());
   // Alternating damage-sound variant (1 or 2) for knight and templar
   const knightDamageVariant = useRef<1 | 2>(1);
   const templarDamageVariant = useRef<1 | 2>(1);
@@ -1583,6 +1598,13 @@ export function CoopGameScene({
   const remotePlayerWhirlwindStartTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const _lastSetPlayerPositionMs = useRef<number>(0);
   const _scratchCamDir = useRef<Vector3>(new Vector3());
+  const pendingPortalSnapRef = useRef(false);
+  const lastAppliedCombatEnterSeqRef = useRef(0);
+  const lastAppliedIntermissionSeqRef = useRef(0);
+  const confirmCoopPortalTransitionCompleteRef = useRef(confirmCoopPortalTransitionComplete);
+  confirmCoopPortalTransitionCompleteRef.current = confirmCoopPortalTransitionComplete;
+  const resetLocalPositionEmitThrottleRef = useRef(resetLocalPositionEmitThrottle);
+  resetLocalPositionEmitThrottleRef.current = resetLocalPositionEmitThrottle;
   const coopTransitionOverlayRef = useRef(false);
   useEffect(() => {
     coopTransitionOverlayRef.current = coopTransitionOverlay;
@@ -1607,8 +1629,13 @@ export function CoopGameScene({
       });
     });
 
-    const unregisterPurchase = registerMerchantPurchaseSuccessHandler(() => {
-      window.audioSystem?.playMerchantPurchaseGreet?.();
+    const unregisterPurchase = registerMerchantPurchaseSuccessHandler((payload) => {
+      const isHeal = payload.healingAmount != null || payload.stockId === 'merchant_heal_100';
+      if (isHeal) {
+        window.audioSystem?.playFountainSound?.();
+      } else {
+        window.audioSystem?.playMerchantPurchaseGreet?.();
+      }
     });
 
     return () => {
@@ -1643,6 +1670,28 @@ export function CoopGameScene({
   const environmentVfxLayerRef = useRef<CoopEnvironmentVfxLayerHandle>(null);
   const tentacleSpineLayerRef = useRef<CoopTentacleSpineLayerHandle>(null);
   const tentacleSpineFxRef = useRef<Map<string, { windSeq: number; slamSeq: number; dir: { x: number; z: number } }>>(new Map());
+
+  const clearTentacleSpineGroundTelegraph = useCallback((enemyId: string) => {
+    const p = tentacleSpinePendingByEnemyRef.current.get(enemyId);
+    if (p) {
+      if (p.tAdd) clearTimeout(p.tAdd);
+      if (p.tFail) clearTimeout(p.tFail);
+      if (p.tImpact) clearTimeout(p.tImpact);
+      tentacleSpinePendingByEnemyRef.current.delete(enemyId);
+    }
+    groundTelegraphLayerRef.current?.removeTentacleSpineTelegraphsByEnemyId(enemyId);
+  }, []);
+
+  const clearAllTentacleSpinePendingTimers = useCallback(() => {
+    tentacleSpinePendingByEnemyRef.current.forEach((p, enemyId) => {
+      if (p.tAdd) clearTimeout(p.tAdd);
+      if (p.tFail) clearTimeout(p.tFail);
+      if (p.tImpact) clearTimeout(p.tImpact);
+      groundTelegraphLayerRef.current?.removeTentacleSpineTelegraphsByEnemyId(enemyId);
+    });
+    tentacleSpinePendingByEnemyRef.current.clear();
+    tentacleSpineLastSlamAtRef.current.clear();
+  }, []);
 
   const coopServerEnemyLiving = useCallback((serverEnemyId: string): boolean => {
     if (!engineRef.current) return false;
@@ -1838,24 +1887,56 @@ export function CoopGameScene({
   }, [coopCombatArenaEnterSeq, gameStarted, engineReady]);
 
   /** `combat-arena-entered` (server teleports) or `coop-main-arena-intermission` (server state sync, no entry snap); align local ECS. */
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!engineRef.current || !gameStarted || !engineReady) return;
     if (playerEntityRef.current === null || !socket?.id) return;
     if (coopCombatArenaEnterSeq === 0 && coopMainArenaIntermissionSeq === 0) return;
+
+    const combatEnterChanged =
+      coopCombatArenaEnterSeq > 0 &&
+      coopCombatArenaEnterSeq !== lastAppliedCombatEnterSeqRef.current;
+    const intermissionChanged =
+      coopMainArenaIntermissionSeq > 0 &&
+      coopMainArenaIntermissionSeq !== lastAppliedIntermissionSeqRef.current;
+    if (!combatEnterChanged && !intermissionChanged) return;
+
+    if (combatEnterChanged) {
+      pendingPortalSnapRef.current = true;
+    }
+
     const me = players.get(socket.id);
     if (!me) return;
     const ent = engineRef.current.getWorld().getEntity(playerEntityRef.current);
     const tr = ent?.getComponent(Transform);
+    const c = clampToMainArenaXZ(me.position.x, me.position.z, coopArenaClampBounds);
+    const snappedPos = { x: c.x, y: 0.5, z: c.z };
+    const snappedRot = me.rotation ?? { x: 0, y: 0, z: 0 };
     if (tr) {
-      const c = clampToMainArenaXZ(me.position.x, me.position.z, coopArenaClampBounds);
-      tr.setPosition(c.x, 0.5, c.z);
+      tr.setPosition(snappedPos.x, snappedPos.y, snappedPos.z);
     }
     const movement = ent?.getComponent(Movement);
     if (movement) {
       movement.velocity.set(0, 0, 0);
       movement.acceleration.set(0, 0, 0);
     }
+    realTimePlayerPositionRef.current.set(snappedPos.x, snappedPos.y, snappedPos.z);
+    applyPlayerMove(playersTransformsRef, contextPlayersRef, {
+      playerId: socket.id,
+      position: snappedPos,
+      rotation: snappedRot,
+      movementDirection: { x: 0, y: 0, z: 0 },
+    });
+    resetLocalPositionEmitThrottleRef.current(snappedPos, snappedRot);
     cameraSystemRef.current?.snapToTarget();
+
+    if (combatEnterChanged) {
+      lastAppliedCombatEnterSeqRef.current = coopCombatArenaEnterSeq;
+      pendingPortalSnapRef.current = false;
+      confirmCoopPortalTransitionCompleteRef.current();
+    }
+    if (intermissionChanged) {
+      lastAppliedIntermissionSeqRef.current = coopMainArenaIntermissionSeq;
+    }
     // Intentionally omit `players` from deps: run only when seq/engine gates change; `players` is fresh from that commit when seq bumps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, gameStarted, engineReady, socket?.id, coopArenaClampBounds]);
@@ -1897,14 +1978,14 @@ export function CoopGameScene({
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [isChatOpen, openChat]);
 
-  // Disable control system input when chat or throne ability modal is open
+  // Disable control system input when chat, throne modal, or portal transition overlay is active
   useEffect(() => {
     if (controlSystemRef.current) {
-      const uiBlocksGame = isChatOpen || throneAbilityModalOpen;
+      const uiBlocksGame = isChatOpen || throneAbilityModalOpen || coopTransitionOverlay;
       controlSystemRef.current.setInputDisabled(uiBlocksGame);
       controlSystemRef.current.setAllowAllInput(isChatOpen);
     }
-  }, [isChatOpen, throneAbilityModalOpen]);
+  }, [isChatOpen, throneAbilityModalOpen, coopTransitionOverlay]);
 
   useEffect(() => {
     return () => {
@@ -2877,6 +2958,7 @@ export function CoopGameScene({
         const transform = entity.getComponent(Transform);
         const health = entity.getComponent(Health);
         if (!enemy || !transform || !health || health.isDead || enemy.isDead) continue;
+        if (isCoopPlayerAllyEntity(entity)) continue;
         const dx = transform.position.x - center.x;
         const dz = transform.position.z - center.z;
         if (Math.hypot(dx, dz) > radius) continue;
@@ -2930,6 +3012,7 @@ export function CoopGameScene({
         const transform = entity.getComponent(Transform);
         const health = entity.getComponent(Health);
         if (!enemy || !transform || !health || health.isDead || enemy.isDead) continue;
+        if (isCoopPlayerAllyEntity(entity)) continue;
         const dx = transform.position.x - center.x;
         const dz = transform.position.z - center.z;
         const distSq = dx * dx + dz * dz;
@@ -3836,6 +3919,10 @@ export function CoopGameScene({
   }) => {
     if (!damageApplied) return;
 
+    if (attackerServerEnemyId) {
+      window.audioSystem?.playDamageBreathSound?.();
+    }
+
     const shieldAfter = shield?.currentShield ?? 0;
     const shieldOnly =
       health.currentHealth >= healthBefore &&
@@ -4426,19 +4513,19 @@ export function CoopGameScene({
                 const staggeringBiteBarrage = !!barrageCfg.staggeringBiteBarrage;
                 const glacialBiteBarrage = !!barrageCfg.glacialBiteBarrage;
                 const entanglementBarrage = !!barrageCfg.entanglementBarrage;
-                // Create Barrage projectiles for PVP
                 const barrageEntity = projectileSystem.createProjectile(
                   engineRef.current.getWorld(),
                   position,
                   direction,
                   attackerEntityId,
                   {
-                    speed: 22,
-                    damage: 30,
-                    lifetime: 3,
-                    maxDistance: 25,
+                    speed: typeof barrageCfg.speed === 'number' ? barrageCfg.speed : 30,
+                    damage: typeof barrageCfg.damage === 'number' ? barrageCfg.damage : 79,
+                    lifetime: typeof barrageCfg.lifetime === 'number' ? barrageCfg.lifetime : 8,
+                    maxDistance: typeof barrageCfg.maxDistance === 'number' ? barrageCfg.maxDistance : 16,
                     piercing: false,
-                    opacity: 0.8,
+                    opacity: typeof barrageCfg.opacity === 'number' ? barrageCfg.opacity : 1.0,
+                    projectileType: 'barrage',
                     sourcePlayerId: data.playerId,
                     wrathfulBiteBarrage,
                     wyvernBiteBarrage,
@@ -5920,15 +6007,7 @@ export function CoopGameScene({
       knightPendingMissTimers.current.set(data.knightId, timer);
     };
 
-    const clearTentacleSpineGroundTelegraph = (enemyId: string) => {
-      const p = tentacleSpinePendingByEnemyRef.current.get(enemyId);
-      if (p) {
-        clearTimeout(p.tAdd);
-        clearTimeout(p.tFail);
-        tentacleSpinePendingByEnemyRef.current.delete(enemyId);
-      }
-      groundTelegraphLayerRef.current?.removeTentacleSpineTelegraphsByEnemyId(enemyId);
-    };
+    const clearTentacleSpineGroundTelegraphForSocket = clearTentacleSpineGroundTelegraph;
 
     const handleTentacleSpineWindup = (data: {
       enemyId?: string;
@@ -5940,6 +6019,12 @@ export function CoopGameScene({
     }) => {
       const enemyId = data?.enemyId;
       if (!enemyId || !data.position) return;
+      const eventTime = data.timestamp ?? Date.now();
+      const endAt = eventTime + TENTACLE_SPINE_WINDUP_MS;
+      if (endAt <= Date.now()) return;
+      const lastSlamAt = tentacleSpineLastSlamAtRef.current.get(enemyId);
+      if (lastSlamAt !== undefined && eventTime <= lastSlamAt) return;
+
       const lineLen = data.lineLength ?? 10;
       const dirX = data.dirX ?? 0;
       const dirZ = data.dirZ ?? 1;
@@ -5950,12 +6035,10 @@ export function CoopGameScene({
       const groundY = y + 0.03;
       const from = new Vector3(x, groundY, z);
       const to = new Vector3(x + nx * lineLen, groundY, z + nz * lineLen);
-      const eventTime = data.timestamp ?? Date.now();
       const lineId = `tentacle-tg-${enemyId}-${eventTime}`;
-      const endAt = eventTime + TENTACLE_SPINE_WINDUP_MS;
       const startedAt = eventTime;
 
-      clearTentacleSpineGroundTelegraph(enemyId);
+      clearTentacleSpineGroundTelegraphForSocket(enemyId);
 
       {
         const prevFx = tentacleSpineFxRef.current.get(enemyId) ?? { windSeq: 0, slamSeq: 0, dir: { x: 0, z: 1 } };
@@ -5972,17 +6055,24 @@ export function CoopGameScene({
       }
 
       const lineDelay = Math.max(0, TENTACLE_SPINE_WINDUP_MS - TENTACLE_GROUND_TELEGRAPH_LEAD_MS);
+      const removeIn = Math.max(0, endAt - Date.now());
       const addTelegraph = () => {
-        groundTelegraphLayerRef.current?.addTentacleSpineTelegraph({ id: lineId, enemyId, start: from.clone(), end: to.clone(), endAt, startedAt });
+        groundTelegraphLayerRef.current?.addTentacleSpineTelegraph({
+          id: lineId,
+          enemyId,
+          start: from.clone(),
+          end: to.clone(),
+          endAt,
+          startedAt,
+        });
       };
-      if (lineDelay <= 0) addTelegraph();
       const tAdd = setTimeout(addTelegraph, lineDelay);
       const tFail = setTimeout(() => {
         groundTelegraphLayerRef.current?.removeTentacleSpineTelegraph(lineId);
         if (tentacleSpinePendingByEnemyRef.current.get(enemyId)?.lineId === lineId) {
           tentacleSpinePendingByEnemyRef.current.delete(enemyId);
         }
-      }, TENTACLE_SPINE_WINDUP_MS);
+      }, removeIn);
       tentacleSpinePendingByEnemyRef.current.set(enemyId, { tAdd, tFail, lineId });
     };
 
@@ -5992,10 +6082,13 @@ export function CoopGameScene({
       dirZ?: number;
       position?: { x: number; y: number; z: number };
       lineLength?: number;
+      timestamp?: number;
     }) => {
       const enemyId = data?.enemyId;
       if (!enemyId) return;
-      clearTentacleSpineGroundTelegraph(enemyId);
+      const impactTime = data.timestamp ?? Date.now();
+      tentacleSpineLastSlamAtRef.current.set(enemyId, impactTime);
+      clearTentacleSpineGroundTelegraphForSocket(enemyId);
       const dirX = data.dirX ?? 0;
       const dirZ = data.dirZ ?? 1;
       {
@@ -6011,21 +6104,25 @@ export function CoopGameScene({
         const lineLen = data.lineLength ?? 10;
         const { x, y, z } = data.position;
         const groundY = y + 0.03;
-        const impactTime = Date.now();
         const lineId = `tentacle-impact-tg-${enemyId}-${impactTime}`;
+        const endAt = impactTime + TENTACLE_SPINE_IMPACT_TELEGRAPH_MS;
+        const removeIn = Math.max(0, endAt - Date.now());
         const finalLine = {
           id: lineId,
           enemyId,
           start: new Vector3(x, groundY, z),
           end: new Vector3(x + nx * lineLen, groundY, z + nz * lineLen),
-          endAt: impactTime + 180,
+          endAt,
           startedAt: impactTime,
         };
-        groundTelegraphLayerRef.current?.removeTentacleSpineTelegraphsByEnemyId(enemyId);
         groundTelegraphLayerRef.current?.addTentacleSpineTelegraph(finalLine);
-        setTimeout(() => {
+        const tImpact = setTimeout(() => {
           groundTelegraphLayerRef.current?.removeTentacleSpineTelegraph(lineId);
-        }, 180);
+          if (tentacleSpinePendingByEnemyRef.current.get(enemyId)?.lineId === lineId) {
+            tentacleSpinePendingByEnemyRef.current.delete(enemyId);
+          }
+        }, removeIn);
+        tentacleSpinePendingByEnemyRef.current.set(enemyId, { tImpact, lineId });
       }
     };
 
@@ -6985,7 +7082,7 @@ export function CoopGameScene({
 
     const handlePlayerHealing = (data: any) => {
       const { healingAmount, healingType, position, targetPlayerId, sourcePlayerId } = data;
-      const lesserHealTypes = new Set(['smite', 'flurry', 'healing_stream', 'viper_sting', 'merchant', 'room_boon_fatebreaker', 'room_boon_force_of_nature']);
+      const lesserHealTypes = new Set(['smite', 'flurry', 'healing_stream', 'viper_sting', 'room_boon_fatebreaker', 'room_boon_force_of_nature']);
       if (lesserHealTypes.has(healingType) && position) {
         (window as any).audioSystem?.playLesserHealSound?.(
           new Vector3(position.x, position.y, position.z),
@@ -7504,6 +7601,7 @@ export function CoopGameScene({
       beams?: { startPosition: { x: number; y: number; z: number }; targetPosition: { x: number; y: number; z: number } }[];
       strikeAt: number;
       halfWidth?: number;
+      vfxScale?: number;
       timestamp: number;
     }) => {
       const beams =
@@ -7519,6 +7617,7 @@ export function CoopGameScene({
           beams,
           strikeAt: data.strikeAt,
           halfWidth: data.halfWidth ?? 1.0,
+          vfxScale: data.vfxScale ?? 1,
         });
     };
 
@@ -7553,12 +7652,16 @@ export function CoopGameScene({
           position: new Vector3(startPosition.x, startPosition.y, startPosition.z),
           type: 'start' as const,
           timestamp,
+          variant: 'templar',
+          theme: 'red',
         });
       explosionBurstLayerRef.current?.addTeleportEffect({
           id: `${templarId}-teleport-end-${timestamp}`,
           position: new Vector3(endPosition.x, endPosition.y, endPosition.z),
           type: 'end' as const,
           timestamp,
+          variant: 'templar',
+          theme: 'red',
         });
     };
 
@@ -7735,6 +7838,8 @@ export function CoopGameScene({
       
       for (const entity of allEntities) {
         if (entity.userData?.serverEnemyId === enemyId) {
+          if (isCoopPlayerAllyEntity(entity)) break;
+
           const enemy = entity.getComponent(Enemy);
           if (enemy) {
             const currentTime = Date.now() / 1000;
@@ -7895,6 +8000,40 @@ export function CoopGameScene({
       }
     };
 
+    // Shade blink VFX — centralized here (one listener) instead of per-shade BossTeleportEffect.
+    const SHADE_BLINK_DURATION_MS = 600;
+    const handleShadeBlinkTelegraph = (data: {
+      shadeId: string;
+      startPosition: { x: number; y: number; z: number };
+      endPosition: { x: number; y: number; z: number };
+      timestamp?: number;
+    }) => {
+      const ts = data.timestamp ?? Date.now();
+      const shadeEnemy = enemiesRef.current.get(data.shadeId);
+      const theme = shadeEnemy?.soulType === 'blue' ? 'blue' : 'purple';
+
+      explosionBurstLayerRef.current?.addTeleportEffect({
+        id: `${data.shadeId}-blink-start-${ts}`,
+        position: new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z),
+        type: 'start',
+        timestamp: ts,
+        variant: 'shade',
+        theme,
+      });
+
+      const arrivalDelay = Math.round(SHADE_BLINK_DURATION_MS * 0.4);
+      setTimeout(() => {
+        explosionBurstLayerRef.current?.addTeleportEffect({
+          id: `${data.shadeId}-blink-end-${ts}`,
+          position: new Vector3(data.endPosition.x, data.endPosition.y, data.endPosition.z),
+          type: 'end',
+          timestamp: ts,
+          variant: 'shade',
+          theme,
+        });
+      }, arrivalDelay);
+    };
+
     socket.on('player-attacked', handlePlayerAttack);
     socket.on('player-used-ability', handlePlayerAbility);
     socket.on('player-damaged', handlePlayerDamaged);
@@ -7963,6 +8102,7 @@ export function CoopGameScene({
     socket.on('enemy-chill-sync', handleEnemyChillSync);
     socket.on('enemy-stagger-proc', handleEnemyStaggerProc);
     socket.on('knight-death-vortex', handleKnightDeathVortex);
+    socket.on('shade-blink-telegraph', handleShadeBlinkTelegraph);
     socket.on('shade-attack-telegraph', handleShadeAttackTelegraph);
 
     const handleWarlockAttackTelegraph = (data: {
@@ -8372,11 +8512,14 @@ export function CoopGameScene({
     return () => {
       unregisterEnemyTelegraphSounds();
       socket.off('coop-room-whisper', handleCoopRoomWhisper);
-      tentacleSpinePendingByEnemyRef.current.forEach(p => {
-        clearTimeout(p.tAdd);
-        clearTimeout(p.tFail);
+      tentacleSpinePendingByEnemyRef.current.forEach((p, enemyId) => {
+        if (p.tAdd) clearTimeout(p.tAdd);
+        if (p.tFail) clearTimeout(p.tFail);
+        if (p.tImpact) clearTimeout(p.tImpact);
+        groundTelegraphLayerRef.current?.removeTentacleSpineTelegraphsByEnemyId(enemyId);
       });
       tentacleSpinePendingByEnemyRef.current.clear();
+      tentacleSpineLastSlamAtRef.current.clear();
       greaterHealImpactTimers.current.forEach(clearTimeout);
       greaterHealImpactTimers.current = [];
       socket.off('player-attacked', handlePlayerAttack);
@@ -8452,6 +8595,7 @@ export function CoopGameScene({
       socket.off('enemy-chill-sync', handleEnemyChillSync);
       socket.off('enemy-stagger-proc', handleEnemyStaggerProc);
       socket.off('knight-death-vortex', handleKnightDeathVortex);
+      socket.off('shade-blink-telegraph', handleShadeBlinkTelegraph);
       socket.off('shade-attack-telegraph', handleShadeAttackTelegraph);
       socket.off('warlock-attack-telegraph', handleWarlockAttackTelegraph);
       socket.off('warlock-orb-impact', handleWarlockOrbImpact);
@@ -8486,23 +8630,28 @@ export function CoopGameScene({
   ]);
 
   useEffect(() => {
-    const pending = tentacleSpinePendingByEnemyRef.current;
-    const toRemove: string[] = [];
-    pending.forEach((p, enemyId) => {
+    const toRemove = new Set<string>();
+
+    tentacleSpinePendingByEnemyRef.current.forEach((p, enemyId) => {
       const e = enemies.get(enemyId);
       if (!e || e.type !== 'tentacle-spine' || e.isDying) {
-        clearTimeout(p.tAdd);
-        clearTimeout(p.tFail);
-        toRemove.push(enemyId);
+        toRemove.add(enemyId);
       }
     });
+
+    enemies.forEach((e, enemyId) => {
+      if (e.type === 'tentacle-spine' && e.isDying) {
+        toRemove.add(enemyId);
+      }
+    });
+
     toRemove.forEach((enemyId) => {
-      pending.delete(enemyId);
-      groundTelegraphLayerRef.current?.removeTentacleSpineTelegraphsByEnemyId(enemyId);
+      clearTentacleSpineGroundTelegraph(enemyId);
       tentacleSpineLayerRef.current?.removeFx(enemyId);
       tentacleSpineFxRef.current.delete(enemyId);
+      tentacleSpineLastSlamAtRef.current.delete(enemyId);
     });
-  }, [enemies]);
+  }, [enemies, clearTentacleSpineGroundTelegraph]);
 
   // Add a cleanup effect to prevent stuck animations
   useEffect(() => {
@@ -9005,6 +9154,7 @@ export function CoopGameScene({
     });
 
     pvpAbilityLayerRef.current?.clearAll();
+    clearAllTentacleSpinePendingTimers();
     groundTelegraphLayerRef.current?.clearAll();
     bossMechanicLayerRef.current?.clearAll();
     explosionBurstLayerRef.current?.clearAll();
@@ -9063,7 +9213,7 @@ export function CoopGameScene({
     if (process.env.NODE_ENV === 'development') {
       console.warn('EMERGENCY: Memory cleanup completed');
     }
-  }, [players, disposeEffectPools, clearAllPvpVenomTimers]);
+  }, [players, disposeEffectPools, clearAllPvpVenomTimers, clearAllTentacleSpinePendingTimers]);
 
   // Dev: call `__ERE_DEBUG_HEAP()` in the console to snapshot JS heap (Chrome `performance.memory`).
   // Also logs automatically when leaving prep throne (see `prevInThroneRef` effect + `logJsHeapSnapshotDev`).
@@ -9573,11 +9723,17 @@ export function CoopGameScene({
           const rotation = { x: 0, y: cameraAngle, z: 0 };
           const movement = playerEntity.getComponent(Movement);
           const isLocalDead = localDeathState?.isDead ?? false;
-          updatePlayerPosition(
-            isLocalDead ? localDeathState!.deathPosition : transform.position,
-            rotation,
-            isLocalDead ? ZERO_PLAYER_MOVEMENT_DIRECTION : (movement ? buildPlayerMovementDirectionPayload(movement) : undefined),
-          );
+          if (
+            !isLocalDead &&
+            !coopTransitionOverlayRef.current &&
+            !pendingPortalSnapRef.current
+          ) {
+            updatePlayerPosition(
+              transform.position,
+              rotation,
+              movement ? buildPlayerMovementDirectionPayload(movement) : undefined,
+            );
+          }
         }
       }
 
@@ -11637,7 +11793,7 @@ export function CoopGameScene({
         <>
           <UnifiedProjectileManager
             world={engineRef.current.getWorld()}
-            onHauntedSoulAt={(pos) => createPvpHauntedSoulEffect(pos)}
+            onHauntedSoulAt={createPvpHauntedSoulEffect}
           />
           <IcebeamManager
             world={engineRef.current.getWorld()}

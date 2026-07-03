@@ -305,6 +305,9 @@ class GameRoom {
     this.gameStartTime = 0;
     this.bossSpawned = false;
 
+    /** enemyId -> { lastAt, lastStagger } — throttle stagger broadcasts (~10 Hz). */
+    this._staggerBroadcastByEnemy = new Map();
+
     /** Co-op: false until a player uses the throne-room portal (enemies + AI start then). */
     this.combatArenaActive = false;
 
@@ -898,6 +901,10 @@ class GameRoom {
     return !!enemy && enemy.alliedUnit === true;
   }
 
+  _isCoopPlayerAllyEnemy(enemy) {
+    return !!enemy && (enemy.alliedUnit === true || enemy.type === 'player-zombie');
+  }
+
   spawnOrReviveAlliedKnightForEnemyRoom() {
     return this.spawnOrReviveAlliedUnitsForEnemyRoom()?.knight ?? null;
   }
@@ -1109,7 +1116,7 @@ class GameRoom {
     return COOP_TERRAIN_THEMES[0];
   }
 
-  _beginCoopCombatTransition({ startAIOnRelease = true } = {}) {
+  _beginCoopCombatTransition({ startAIOnRelease = true, spawnInitialWave = false } = {}) {
     if (this.gameMode !== 'coop') {
       if (startAIOnRelease) this.startEnemyAI();
       return null;
@@ -1121,6 +1128,7 @@ class GameRoom {
       id,
       readyPlayerIds: new Set(),
       startAIOnRelease,
+      spawnInitialWave,
       startedAt: Date.now(),
       timeoutId: null,
     };
@@ -1146,7 +1154,9 @@ class GameRoom {
 
     this._clearCoopCombatTransitionTimer();
     this.coopCombatTransition = null;
-    if (transition.startAIOnRelease) {
+    if (transition.spawnInitialWave) {
+      this.spawnEnemyWave();
+    } else if (transition.startAIOnRelease) {
       this.startEnemyAI();
     }
     if (process.env.NODE_ENV !== 'production') {
@@ -1343,8 +1353,7 @@ class GameRoom {
     this.merchantInventory = [];
     this._resetMushroomState();
     this.teleportAllPlayersToCombatSpawn();
-    this._schedulePostTeleportEnemyWave();
-    const coopCombatTransitionId = this._beginCoopCombatTransition();
+    const coopCombatTransitionId = this._beginCoopCombatTransition({ spawnInitialWave: true });
 
     if (this.io) {
       this.io.to(this.roomId).emit('combat-arena-entered', {
@@ -1612,9 +1621,10 @@ class GameRoom {
         this.generateMerchantInventory();
       } else {
         this.merchantInventory = [];
-        this._schedulePostTeleportEnemyWave();
       }
-      const coopCombatTransitionId = roomKind === 'merchant' ? null : this._beginCoopCombatTransition();
+      const coopCombatTransitionId = roomKind === 'merchant'
+        ? null
+        : this._beginCoopCombatTransition({ spawnInitialWave: true });
 
       if (this.io) {
         this.io.to(this.roomId).emit('combat-arena-entered', {
@@ -1723,8 +1733,7 @@ class GameRoom {
       this.merchantInventory = [];
       this._resetMushroomState();
       this.teleportAllPlayersToCombatSpawn();
-      this._schedulePostTeleportEnemyWave();
-      const coopCombatTransitionId = this._beginCoopCombatTransition();
+      const coopCombatTransitionId = this._beginCoopCombatTransition({ spawnInitialWave: true });
 
       if (this.io) {
         this.io.to(this.roomId).emit('combat-arena-entered', {
@@ -1999,6 +2008,20 @@ class GameRoom {
     return Array.from(this.players.values());
   }
 
+  _maybeBroadcastStagger(enemyId, stagger) {
+    if (!this.io) return;
+    const now = Date.now();
+    const prev = this._staggerBroadcastByEnemy.get(enemyId);
+    if (prev && prev.lastStagger === stagger && now - prev.lastAt < 100) return;
+    if (prev && now - prev.lastAt < 100) return;
+    this._staggerBroadcastByEnemy.set(enemyId, { lastAt: now, lastStagger: stagger });
+    this.io.to(this.roomId).emit('enemy-stagger-updated', {
+      enemyId,
+      stagger,
+      timestamp: now,
+    });
+  }
+
   getPlayerCount() {
     return this.players.size;
   }
@@ -2006,11 +2029,6 @@ class GameRoom {
   _emitPlayerDamagedWithHealth(playerId, player, damagePayload) {
     if (!this.io || !player) return;
     this.io.to(this.roomId).emit('player-damaged', damagePayload);
-    this.io.to(this.roomId).emit('player-health-updated', {
-      playerId,
-      health: player.health,
-      maxHealth: player.maxHealth,
-    });
   }
 
   /**
@@ -2202,7 +2220,10 @@ class GameRoom {
       const dx = ex - cx;
       const dz = ez - cz;
       if (dx * dx + dz * dz > r2) continue;
-      this.damageEnemy(enemyId, damage, null, null, { damageType });
+      const dmg = this._isCoopPlayerAllyEnemy(enemy)
+        ? mushroomConstants.MUSHROOM_ERUPTION_ALLY_DMG
+        : damage;
+      this.damageEnemy(enemyId, dmg, null, null, { damageType });
     }
   }
 
@@ -3494,6 +3515,13 @@ class GameRoom {
           y: enemy.position.y,
           z: enemy.position.z,
         };
+      } else if (hitMeta && hitMeta.damageType === 'mushroom_eruption') {
+        damagedPayload.damageType = 'mushroom_eruption';
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
       }
       this.io.to(this.roomId).emit('enemy-damaged', damagedPayload);
     }
@@ -3814,13 +3842,9 @@ class GameRoom {
           procEnemy = this.enemies.get(enemyId);
         }
         const syncEnemy = this.enemies.get(enemyId);
-        if (this.io && syncEnemy && !syncEnemy.isDying) {
+        if (syncEnemy && !syncEnemy.isDying) {
           if (syncEnemy.staggerBuildup == null) syncEnemy.staggerBuildup = 0;
-          this.io.to(this.roomId).emit('enemy-stagger-updated', {
-            enemyId,
-            stagger: syncEnemy.staggerBuildup,
-            timestamp: Date.now(),
-          });
+          this._maybeBroadcastStagger(enemyId, syncEnemy.staggerBuildup);
         }
       }
     }
@@ -4783,6 +4807,14 @@ class GameRoom {
         }
 
         // Update all players' max health and heal them by 1
+        const healthBeforeKillBonus = new Map();
+        this.players.forEach((player, playerId) => {
+          healthBeforeKillBonus.set(playerId, {
+            health: player.health,
+            maxHealth: player.maxHealth,
+          });
+        });
+
         this.players.forEach((player, playerId) => {
           const newMaxHealth = 200 + this.killCount;
           const newHealth = Math.min(newMaxHealth, player.health + 1);
@@ -4799,8 +4831,15 @@ class GameRoom {
             timestamp: Date.now()
           });
 
-          // Also broadcast player health updates
           this.players.forEach((player, playerId) => {
+            const before = healthBeforeKillBonus.get(playerId);
+            if (
+              before &&
+              before.health === player.health &&
+              before.maxHealth === player.maxHealth
+            ) {
+              return;
+            }
             this.io.to(this.roomId).emit('player-health-updated', {
               playerId: playerId,
               health: player.health,
@@ -5081,6 +5120,11 @@ class GameRoom {
   applyStatusEffect(enemyId, effectType, duration) {
     const enemy = this.enemies.get(enemyId);
     if (!enemy) return false;
+
+    const PLAYER_DEBUFF_TYPES = new Set(['stun', 'freeze', 'ignite', 'corrupted', 'entangle', 'slow']);
+    if (PLAYER_DEBUFF_TYPES.has(effectType) && this._isCoopPlayerAllyEnemy(enemy)) {
+      return false;
+    }
 
     if (
       effectType === 'corrupted' &&
@@ -5908,7 +5952,11 @@ class GameRoom {
     };
   }
 
-  updatePlayerPosition(playerId, position, rotation, movementDirection) {
+  updatePlayerPosition(playerId, position, rotation, movementDirection, options = {}) {
+    const { authoritative = false } = options;
+    if (!authoritative && this.isCoopCombatTransitionActive()) {
+      return;
+    }
     const player = this.players.get(playerId);
     if (player) {
       player.position = position;

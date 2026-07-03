@@ -18,15 +18,17 @@ export class CollisionSystem extends PhysicsSystem {
   public readonly requiredComponents = [Transform, Collider];
   private spatialHash: SpatialHash;
   private collisionPairs: CollisionPair[] = [];
-  private activeCollisions = new Map<string, CollisionPair>(); // Track ongoing collisions
+  private activeCollisions = new Map<string, CollisionPair>(); // Collisions active as of the previous frame
+  private nextActiveCollisions = new Map<string, CollisionPair>(); // Scratch map rebuilt into this frame's active set
   private processedPairsReuse = new Set<string>();
-  private currentCollisionsReuse = new Map<string, CollisionPair>();
   private resolveSeparation = new Vector3();
   private resolveSeparationVector = new Vector3();
   private resolveSeparationA = new Vector3();
   private resolveSeparationB = new Vector3();
   private resolveVelocityTowardsStatic = new Vector3();
   private resolveNegatedSeparation = new Vector3();
+  private scratchWorldPosA = new Vector3();
+  private scratchWorldPosB = new Vector3();
   
   // Performance tracking
   private lastUpdateTime = 0;
@@ -63,7 +65,7 @@ export class CollisionSystem extends PhysicsSystem {
       }
 
       // Update collider bounds
-      collider.updateBounds(transform.getWorldPosition());
+      collider.updateBounds(transform.getWorldPosition(this.scratchWorldPosA));
       
       // Update spatial hash
       this.spatialHash.update(entity, collider.bounds);
@@ -86,6 +88,10 @@ export class CollisionSystem extends PhysicsSystem {
 
       // Query spatial hash for potential collisions
       const candidates = this.spatialHash.query(collider.bounds);
+      if (candidates.length === 0) continue;
+
+      // This entity's world position doesn't change across candidates - compute once per entity
+      const thisWorldPos = transform.getWorldPosition(this.scratchWorldPosA);
 
       for (const candidate of candidates) {
         const otherEntity = candidate.entity;
@@ -113,7 +119,8 @@ export class CollisionSystem extends PhysicsSystem {
         this.collisionChecks++;
 
         // Precise collision detection
-        if (collider.intersects(otherCollider, transform.getWorldPosition(), otherTransform.getWorldPosition())) {
+        const otherWorldPos = otherTransform.getWorldPosition(this.scratchWorldPosB);
+        if (collider.intersects(otherCollider, thisWorldPos, otherWorldPos)) {
           this.actualCollisions++;
           
           // Debug logging for pillar collisions
@@ -135,7 +142,9 @@ export class CollisionSystem extends PhysicsSystem {
   }
 
   private processCollisionCallbacks(): void {
-    const currentCollisions = this.currentCollisionsReuse;
+    // Double-buffer: rebuild into the scratch map (distinct from `activeCollisions`,
+    // which still holds last frame's state) so Enter/Stay/Exit comparisons stay correct.
+    const currentCollisions = this.nextActiveCollisions;
     currentCollisions.clear();
 
     // Process current collisions
@@ -164,8 +173,11 @@ export class CollisionSystem extends PhysicsSystem {
       }
     });
 
-    // Update active collisions
+    // Swap buffers: this frame's set becomes "active" for next frame's comparison,
+    // and the previous "active" map is reused as next frame's scratch buffer.
+    const previousActive = this.activeCollisions;
     this.activeCollisions = currentCollisions;
+    this.nextActiveCollisions = previousActive;
   }
 
   private triggerCollisionEnter(pair: CollisionPair): void {

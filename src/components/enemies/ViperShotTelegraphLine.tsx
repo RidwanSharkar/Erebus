@@ -33,6 +33,8 @@ export interface ViperShotTelegraphLineProps {
   startedAt?: number;
   /** Show a pulsing cap at the line origin (archon beams with length > 2m). */
   showStartCap?: boolean;
+  /** Called once when endAt elapses (if endAt is set). */
+  onEnd?: () => void;
 }
 
 /**
@@ -48,9 +50,11 @@ export default function ViperShotTelegraphLine({
   endAt,
   startedAt,
   showStartCap = true,
+  onEnd,
 }: ViperShotTelegraphLineProps) {
   const groupRef = useRef<Group>(null);
   const mountTimeRef = useRef(Date.now());
+  const endedRef = useRef(false);
   const preset = GROUND_LINE_TELEGRAPH_PRESETS[variant];
 
   const { center, rotY, length, width } = useMemo(() => {
@@ -106,6 +110,10 @@ export default function ViperShotTelegraphLine({
 
   useFrame((_, delta) => {
     const now = Date.now();
+    if (endAt !== undefined && !endedRef.current && now >= endAt) {
+      endedRef.current = true;
+      onEnd?.();
+    }
     const startMs = startedAt ?? mountTimeRef.current;
     let progress = 0.5;
     if (endAt !== undefined && endAt > startMs) {

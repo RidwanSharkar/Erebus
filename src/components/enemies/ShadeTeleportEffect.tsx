@@ -5,9 +5,35 @@ import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
+type ShadeTeleportTheme = 'purple' | 'blue';
+
+const SHADE_TELEPORT_PALETTES: Record<ShadeTeleportTheme, {
+  core: string;
+  wisp: string;
+  ring: string;
+  smoke: string;
+  light: string;
+}> = {
+  purple: {
+    core: '#cc44ff',
+    wisp: '#440066',
+    ring: '#9b30ff',
+    smoke: '#220033',
+    light: '#9b30ff',
+  },
+  blue: {
+    core: '#33ccff',
+    wisp: '#004466',
+    ring: '#66eeff',
+    smoke: '#002244',
+    light: '#33ccff',
+  },
+};
+
 interface ShadeTeleportEffectProps {
   position: Vector3;
   type: 'start' | 'end';
+  theme?: ShadeTeleportTheme;
   onComplete: () => void;
 }
 
@@ -16,26 +42,27 @@ interface ShadeTeleportEffectProps {
 const DURATION_START = 0.55;
 const DURATION_END   = 0.65;
 
-export default function ShadeTeleportEffect({ position, type, onComplete }: ShadeTeleportEffectProps) {
+export default function ShadeTeleportEffect({ position, type, theme = 'purple', onComplete }: ShadeTeleportEffectProps) {
   const groupRef = useRef<Group>(null);
   const timeRef  = useRef(0);
   const doneRef  = useRef(false);
 
   const duration = type === 'start' ? DURATION_START : DURATION_END;
+  const palette = SHADE_TELEPORT_PALETTES[theme];
 
   // Borrow a pooled point light for the teleport pulse (replaces a mounted <pointLight>).
-  const pulseLight = useDynamicLight({ color: new Color('#00bbaa'), distance: 4, decay: 2, priority: 1 });
+  const pulseLight = useDynamicLight({ color: new Color(palette.light), distance: 4, decay: 2, priority: 1 });
 
   // Four shadow-wisp orbs distributed at cardinal points
   const orbAngles = useMemo(() => [0, Math.PI / 2, Math.PI, (Math.PI * 3) / 2], []);
 
   // Two shared materials — mutated each frame, disposed on unmount
   const mats = useMemo(() => ({
-    core:  new MeshBasicMaterial({ color: new Color('#00ccbb'), transparent: true, opacity: 1.0, blending: AdditiveBlending, depthWrite: false }),
-    wisp:  new MeshBasicMaterial({ color: new Color('#004444'), transparent: true, opacity: 0.85, blending: AdditiveBlending, depthWrite: false }),
-    ring:  new MeshBasicMaterial({ color: new Color('#00ffcc'), transparent: true, opacity: 0.6,  blending: AdditiveBlending, depthWrite: false, side: 2 }),
-    smoke: new MeshBasicMaterial({ color: new Color('#002233'), transparent: true, opacity: 0.5,  blending: AdditiveBlending, depthWrite: false }),
-  }), []);
+    core:  new MeshBasicMaterial({ color: new Color(palette.core), transparent: true, opacity: 1.0, blending: AdditiveBlending, depthWrite: false }),
+    wisp:  new MeshBasicMaterial({ color: new Color(palette.wisp), transparent: true, opacity: 0.85, blending: AdditiveBlending, depthWrite: false }),
+    ring:  new MeshBasicMaterial({ color: new Color(palette.ring), transparent: true, opacity: 0.6,  blending: AdditiveBlending, depthWrite: false, side: 2 }),
+    smoke: new MeshBasicMaterial({ color: new Color(palette.smoke), transparent: true, opacity: 0.5,  blending: AdditiveBlending, depthWrite: false }),
+  }), [palette.core, palette.wisp, palette.ring, palette.smoke]);
 
   useEffect(() => () => { Object.values(mats).forEach(m => m.dispose()); }, [mats]);
 

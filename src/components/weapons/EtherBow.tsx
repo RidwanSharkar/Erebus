@@ -15,6 +15,39 @@ import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import { isBowPerfectShotProgress } from '@/utils/bowConstants';
 
+type ControlSystemDrawReader = {
+  isCobraShotChargingActive(): boolean;
+  getCobraShotChargeProgress(): number;
+  isBarrageChargingActive(): boolean;
+  getBarrageChargeProgress(): number;
+  isViperStingChargingActive(): boolean;
+  getViperStingChargeProgress(): number;
+  isRejuvenatingShotChargingActive(): boolean;
+  getRejuvenatingShotChargeProgress(): number;
+  getChargeProgress(): number;
+};
+
+function readLiveDrawProgress(fallback: number, isLocalPlayer: boolean): number {
+  if (!isLocalPlayer) return fallback;
+  const cs = (window as Window & { controlSystemRef?: { current?: ControlSystemDrawReader } })
+    .controlSystemRef?.current;
+  if (!cs) return fallback;
+  if (cs.isCobraShotChargingActive()) return cs.getCobraShotChargeProgress();
+  if (cs.isBarrageChargingActive()) return cs.getBarrageChargeProgress();
+  if (cs.isViperStingChargingActive()) return cs.getViperStingChargeProgress();
+  if (cs.isRejuvenatingShotChargingActive()) return cs.getRejuvenatingShotChargeProgress();
+  return cs.getChargeProgress();
+}
+
+function createStringCurve(pullback: number): CubicBezierCurve3 {
+  return new CubicBezierCurve3(
+    new Vector3(-0.8, 0, 0),
+    new Vector3(0, 0, -pullback),
+    new Vector3(0, 0, -pullback),
+    new Vector3(0.8, 0, 0),
+  );
+}
+
 interface EtherealBowProps {
   position: Vector3;
   direction: Vector3;
@@ -34,6 +67,8 @@ interface EtherealBowProps {
   rejuvenatingShotChargeProgress?: number;
   /** Monotonic per Tempest Rounds arrow — triggers muzzle flash on increase. */
   tempestBurstShotSeq?: number;
+  /** When true, read draw progress from controlSystemRef in useFrame (local player only). */
+  isLocalPlayer?: boolean;
 }
 
 const EtherBowComponent = memo(function EtherealBow({
@@ -51,11 +86,15 @@ const EtherBowComponent = memo(function EtherealBow({
   cobraShotChargeProgress = 0,
   isRejuvenatingShotCharging = false,
   rejuvenatingShotChargeProgress = 0,
-  tempestBurstShotSeq = 0
+  tempestBurstShotSeq = 0,
+  isLocalPlayer = false,
 }: EtherealBowProps) {
   const bowRef = useRef<Group>(null);
   const muzzleMarkerRef = useRef<Group>(null);
   const muzzleFlareRef = useRef<Mesh | null>(null);
+  const stringMeshRef = useRef<Mesh>(null);
+  const arrowGroupRef = useRef<Group>(null);
+  const lastQuantizedDrawRef = useRef(-1);
   const _muzzleWorldPos = useRef(new Vector3());
   const muzzleLight = useDynamicLight({ color: '#ff7722', distance: 3.5, decay: 1.2, priority: 1 });
   const tempestSeqRef = useRef(0);
@@ -64,6 +103,8 @@ const EtherBowComponent = memo(function EtherealBow({
   const muzzleFlashStrengthRef = useRef(0);
   const maxDrawDistance = 1.35;
   const prevIsCharging = useRef(isCharging);
+  const isLocalPlayerRef = useRef(isLocalPlayer);
+  isLocalPlayerRef.current = isLocalPlayer;
   const basePosition = [-0.9, 0.075, 0.75] as const;  // Match other weapons' base positioning
   const bowBodyMatRef = useRef<MeshStandardMaterial>(null);
   const leftWingMatRef = useRef<MeshStandardMaterial>(null);
@@ -72,7 +113,43 @@ const EtherBowComponent = memo(function EtherealBow({
   const rightBladeMatRef = useRef<MeshStandardMaterial>(null);
   const perfectShotMatRefs = [bowBodyMatRef, leftWingMatRef, rightWingMatRef, leftBladeMatRef, rightBladeMatRef];
   const isPerfectShotWindow = isBowPerfectShotProgress(chargeProgress);
-  
+
+  const propDrawProgress = isCobraShotCharging
+    ? cobraShotChargeProgress
+    : isBarrageCharging
+      ? barrageChargeProgress
+      : isViperStingCharging
+        ? viperStingChargeProgress
+        : isRejuvenatingShotCharging
+          ? rejuvenatingShotChargeProgress
+          : chargeProgress;
+
+  const initialStringGeo = useMemo(
+    () => new TubeGeometry(createStringCurve(0), 16, 0.02, 8, false),
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      stringMeshRef.current?.geometry.dispose();
+    },
+    [],
+  );
+
+  const updateStringGeometry = (quantizedDraw: number) => {
+    if (quantizedDraw === lastQuantizedDrawRef.current) return;
+    lastQuantizedDrawRef.current = quantizedDraw;
+
+    const pullback = quantizedDraw * maxDrawDistance;
+    const curve = createStringCurve(pullback);
+    const newGeo = new TubeGeometry(curve, 16, 0.02, 8, false);
+    const mesh = stringMeshRef.current;
+    if (mesh) {
+      mesh.geometry.dispose();
+      mesh.geometry = newGeo;
+    }
+  };
+
   // Perfect-window pulse (R3F clock) + charge release: only real bow draw, not ability animations
   useFrame((state, delta) => {
     const seq = tempestSeqRef.current;
@@ -100,16 +177,28 @@ const EtherBowComponent = memo(function EtherealBow({
       flare.scale.set(s, s, s);
     }
 
-    if (isPerfectShotWindow) {
+    const liveDrawProgress = readLiveDrawProgress(propDrawProgress, isLocalPlayerRef.current);
+    const livePerfectShotWindow = isBowPerfectShotProgress(liveDrawProgress);
+
+    if (livePerfectShotWindow) {
       const pulse = 4.0 + Math.sin(state.clock.elapsedTime * 20) * 2.0;
       for (const matRef of perfectShotMatRefs) {
         if (matRef.current) matRef.current.emissiveIntensity = pulse;
       }
     }
+
+    const quantizedDraw = Math.round(liveDrawProgress * 20) / 20;
+    updateStringGeometry(quantizedDraw);
+
+    const arrowGroup = arrowGroupRef.current;
+    if (arrowGroup) {
+      arrowGroup.position.z = 0.8 - liveDrawProgress * maxDrawDistance;
+    }
+
     const actualIsCharging = isCharging && !isAbilityBowAnimation && !isViperStingCharging && !isBarrageCharging && !isCobraShotCharging && !isRejuvenatingShotCharging;
 
     if (prevIsCharging.current && !actualIsCharging && !isViperStingCharging && !isBarrageCharging && !isCobraShotCharging && !isRejuvenatingShotCharging) {
-      onRelease(chargeProgress, isBowPerfectShotProgress(chargeProgress));
+      onRelease(liveDrawProgress, isBowPerfectShotProgress(liveDrawProgress));
     }
 
     prevIsCharging.current = actualIsCharging;
@@ -145,34 +234,6 @@ const EtherBowComponent = memo(function EtherealBow({
     () => ({ steps: 1, depth: 0.03, bevelEnabled: false }),
     [],
   );
-
-  const rawDrawProgress = isCobraShotCharging
-    ? cobraShotChargeProgress
-    : isBarrageCharging
-      ? barrageChargeProgress
-      : isViperStingCharging
-        ? viperStingChargeProgress
-        : isRejuvenatingShotCharging
-          ? rejuvenatingShotChargeProgress
-          : chargeProgress;
-  const quantizedDrawProgress = Math.round(rawDrawProgress * 20) / 20;
-
-  const stringCurve = useMemo(() => {
-    const pullback = quantizedDrawProgress * maxDrawDistance;
-    return new CubicBezierCurve3(
-      new Vector3(-0.8, 0, 0),
-      new Vector3(0, 0, -pullback),
-      new Vector3(0, 0, -pullback),
-      new Vector3(0.8, 0, 0),
-    );
-  }, [quantizedDrawProgress]);
-
-  const stringTubeGeo = useMemo(
-    () => new TubeGeometry(stringCurve, 16, 0.02, 8, false),
-    [stringCurve],
-  );
-
-  useEffect(() => () => stringTubeGeo.dispose(), [stringTubeGeo]);
 
   return (
     <group
@@ -243,8 +304,8 @@ const EtherBowComponent = memo(function EtherealBow({
           />
         </mesh>
 
-        {/* Bow string — quantized draw + memoized TubeGeometry */}
-        <mesh geometry={stringTubeGeo}>
+        {/* Bow string — draw driven imperatively in useFrame (no React re-renders per step) */}
+        <mesh ref={stringMeshRef} geometry={initialStringGeo}>
           <meshStandardMaterial 
             color="#ffffff"
             emissive="#ffffff"
@@ -429,7 +490,8 @@ const EtherBowComponent = memo(function EtherealBow({
         {/* Arrow  */}
         {(isCharging || isViperStingCharging || isBarrageCharging || isCobraShotCharging || isRejuvenatingShotCharging) && (
           <group
-            position={[0, 0, 0.8 - (isCobraShotCharging ? cobraShotChargeProgress : isBarrageCharging ? barrageChargeProgress : isViperStingCharging ? viperStingChargeProgress : isRejuvenatingShotCharging ? rejuvenatingShotChargeProgress : chargeProgress) * maxDrawDistance]}
+            ref={arrowGroupRef}
+            position={[0, 0, 0.8]}
             rotation={[Math.PI/2, 0, 0]}
           >
             {/* Arrow shaft - increased length from 0.5 to 0.7 */}
@@ -477,6 +539,7 @@ const EtherBowComponent = memo(function EtherealBow({
     prevProps.isRejuvenatingShotCharging === nextProps.isRejuvenatingShotCharging &&
     prevProps.rejuvenatingShotChargeProgress === nextProps.rejuvenatingShotChargeProgress &&
     prevProps.tempestBurstShotSeq === nextProps.tempestBurstShotSeq &&
+    prevProps.isLocalPlayer === nextProps.isLocalPlayer &&
     (!prevProps.position || !nextProps.position || prevProps.position.equals(nextProps.position)) &&
     (!prevProps.direction || !nextProps.direction || prevProps.direction.equals(nextProps.direction))
   );

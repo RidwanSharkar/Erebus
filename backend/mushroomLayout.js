@@ -1,12 +1,16 @@
 /**
- * Deterministic mushroom ring — same logic as `src/utils/mushroomLayout.ts` (MUSHROOM_LAYOUT_SEED).
+ * Deterministic mushroom ring — must stay in sync with `src/utils/mushroomLayout.ts` (MUSHROOM_LAYOUT_SEED).
  */
+const MAIN_ARENA_HEX_RADIUS = 26;
+const MAIN_MAP_HALF_X = MAIN_ARENA_HEX_RADIUS;
+const MAIN_MAP_HALF_Z = MAIN_ARENA_HEX_RADIUS;
+
 const MUSHROOM_COUNT = 20;
 const MUSHROOM_INNER_RADIUS = 5;
-const MUSHROOM_OUTER_RADIUS = 23;
+const MUSHROOM_OUTER_RADIUS = MAIN_MAP_HALF_Z - 2;
 const MUSHROOM_LAYOUT_SEED = 0x1a2b3c4d;
-const MUSHROOM_HALF_X = 6.5;
-const MUSHROOM_HALF_Z = MUSHROOM_OUTER_RADIUS;
+const MUSHROOM_HALF_X = MAIN_MAP_HALF_X - 1.0;
+const MUSHROOM_HALF_Z = MAIN_MAP_HALF_Z - 2.0;
 
 function mulberry32(seed) {
   return function () {
@@ -28,7 +32,7 @@ function getInstances() {
     for (let attempt = 0; attempt < 64; attempt++) {
       x = (rand() * 2 - 1) * MUSHROOM_HALF_X;
       z = (rand() * 2 - 1) * MUSHROOM_HALF_Z;
-      if (Math.hypot(x, z) >= MUSHROOM_INNER_RADIUS) break;
+      if (Math.hypot(x, z) >= MUSHROOM_INNER_RADIUS && Math.hypot(x, z) <= MAIN_MAP_HALF_X - 1.0) break;
     }
     const h = 0.14 + rand() * 0.55;
     const cr = 0.7 + rand() * 1.4;

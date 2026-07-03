@@ -111,6 +111,7 @@ const CoopLightningBurstLayer = memo(forwardRef<CoopLightningBurstLayerHandle, o
             beams={bolt.beams}
             strikeAt={bolt.strikeAt}
             halfWidth={bolt.halfWidth}
+            vfxScale={bolt.vfxScale ?? 1}
             theme="knight-storm-blue"
             onComplete={() => setKnightStormLashZaps(prev => prev.filter(x => x.id !== bolt.id))}
           />

@@ -10,7 +10,7 @@ export type EntropicColorTheme = {
 };
 
 const BASE_THEMES: Record<EntropicColorVariant, EntropicColorTheme> = {
-  rosegold: { primary: '#d4849a', secondary: '#f0b8c8', light: '#fde0ea' },
+  rosegold: { primary: '#FF6A00', secondary: '#FF9A4D', light: '#FFD4A8' },
   red: { primary: '#ef4444', secondary: '#fca5a5', light: '#fecaca' },
   blue: { primary: '#3b82f6', secondary: '#93c5fd', light: '#93c5fd' },
   green: { primary: '#22c55e', secondary: '#86efac', light: '#bbf7d0' },
@@ -87,21 +87,21 @@ export type EntropicExplosionColors = {
 
 const EXPLOSION_PALETTES: Record<EntropicColorVariant, EntropicExplosionColors> = {
   rosegold: {
-    core: '#d4849a',
-    coreEmissive: '#fde0ea',
-    inner: '#f0b8c8',
-    innerEmissive: '#fff5f8',
-    ring: '#d4849a',
-    ringEmissive: '#f0b8c8',
-    spark: '#f0b8c8',
-    sparkEmissive: '#fde0ea',
-    light: '#f0b8c8',
-    void: '#7a3d52',
-    voidEmissive: '#d4849a',
-    singularity: '#fde0ea',
-    singularityEmissive: '#fff8fb',
-    shard: '#f0b8c8',
-    shardEmissive: '#fde0ea',
+    core: '#FF6A00',
+    coreEmissive: '#FFD4A8',
+    inner: '#FF9A4D',
+    innerEmissive: '#FFF0E0',
+    ring: '#FF6A00',
+    ringEmissive: '#FF9A4D',
+    spark: '#FF9A4D',
+    sparkEmissive: '#FFD4A8',
+    light: '#FF9A4D',
+    void: '#993F00',
+    voidEmissive: '#FF6A00',
+    singularity: '#FFD4A8',
+    singularityEmissive: '#FFF5EB',
+    shard: '#FF9A4D',
+    shardEmissive: '#FFD4A8',
   },
   red: {
     core: '#ef4444',

@@ -88,6 +88,13 @@ const InstancedDebris: React.FC = () => {
   }), []);
 
   useEffect(() => {
+    return () => {
+      geo.dispose();
+      mat.dispose();
+    };
+  }, [geo, mat]);
+
+  useEffect(() => {
     const mesh = meshRef.current;
     if (!mesh) return;
 

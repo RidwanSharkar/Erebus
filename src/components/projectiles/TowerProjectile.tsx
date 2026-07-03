@@ -15,7 +15,7 @@ interface TowerProjectileProps {
   opacity?: number;
 }
 
-export default function TowerProjectile({
+function TowerProjectile({
   position,
   direction,
   entityId,
@@ -216,3 +216,5 @@ export default function TowerProjectile({
     </group>
   );
 }
+
+export default React.memo(TowerProjectile);

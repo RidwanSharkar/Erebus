@@ -5,11 +5,9 @@ import { Group, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import ShadeModel from './ShadeModel';
-import ShadeTeleportEffect from './ShadeTeleportEffect';
 import CubeSoulEffect from './CubeSoulEffect';
-import BossTeleportEffect from './BossTeleportEffect';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import GhostTrail from '../dragon/GhostTrail';
@@ -62,9 +60,6 @@ function ShadeRenderer({
   const [isImpacting,  setIsImpacting]  = useState(false);
   const [impactPlayKey, setImpactPlayKey] = useState(0);
 
-  type BlinkFx = { id: string; position: Vector3; type: 'start' | 'end' };
-  const [bossFx, setBossFx] = useState<BlinkFx[]>([]);
-
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
   const isAttackingRef = useRef(false);
@@ -72,7 +67,7 @@ function ShadeRenderer({
   const prevHealthRef  = useRef(health);
   const lastHitImpactAtRef = useRef(0);
 
-  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMoveTimeRef = useRef(0);
   const pendingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const trackTimeout = useCallback((fn: () => void, ms: number) => {
@@ -100,13 +95,12 @@ function ShadeRenderer({
 
   useEffect(() => {
     return () => {
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       pendingTimersRef.current.forEach(clearTimeout);
       pendingTimersRef.current = [];
     };
   }, []);
 
-  // Derive walking state from server position deltas (not per-frame lerp sampling).
+  // Keep spawn/teleport snap in sync with React position prop updates.
   useEffect(() => {
     const dist = targetPosition.current.distanceTo(position);
     const isAttackLocked = isAttackingRef.current;
@@ -115,17 +109,6 @@ function ShadeRenderer({
     }
     if (dist > 8.0 && groupRef.current && !isAttackLocked && !isBlinkingRef.current) {
       groupRef.current.position.copy(position);
-    }
-    if (dist > 0.01 && !isAttackLocked && !isDying) {
-      if (!isWalkingRef.current) {
-        isWalkingRef.current = true;
-        setIsWalking(true);
-      }
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => {
-        isWalkingRef.current = false;
-        setIsWalking(false);
-      }, WALK_STOP_DELAY);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -190,17 +173,6 @@ function ShadeRenderer({
       // Play blink sound at the departure position
       (window as any).audioSystem?.playEnemyBlinkSound(startPos);
 
-      const fxId = `${id}-${Date.now()}`;
-
-      // Departure effect at the original position — fires immediately
-      setBossFx(prev => [...prev, { id: `${fxId}-boss-start`, position: startPos, type: 'start' }]);
-
-      // Arrival effect at the destination — fires halfway through the blink slide
-      const arrivalDelay = Math.round(BLINK_DURATION * 0.4);
-      trackTimeout(() => {
-        setBossFx(prev => [...prev, { id: `${fxId}-boss-end`, position: newPos, type: 'end' }]);
-      }, arrivalDelay);
-
       trackTimeout(() => {
         setIsBlinking(false);
         isBlinkingRef.current = false;
@@ -251,6 +223,16 @@ function ShadeRenderer({
         group.position.copy(targetPosition.current);
       }
 
+      updateEnemyWalkStateFromMoveDist(
+        dist,
+        isAttackLocked || isBlinkingRef.current,
+        isDying,
+        WALK_STOP_DELAY,
+        lastMoveTimeRef,
+        isWalkingRef,
+        setIsWalking,
+      );
+
       if (!isAttackLocked) {
         group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 
@@ -290,19 +272,6 @@ function ShadeRenderer({
 
   return (
     <>
-
-      {/* Boss-style teleport effects layered on top of the shade blink (scaled down for shade) */}
-      {bossFx.map(fx => (
-        <BossTeleportEffect
-          key={fx.id}
-          position={fx.position}
-          type={fx.type}
-          scale={0.45}
-          theme={isBlueShade ? 'blue' : 'purple'}
-          onComplete={() => setBossFx(prev => prev.filter(f => f.id !== fx.id))}
-        />
-      ))}
-
       <GhostTrail
         parentRef={groupRef as React.RefObject<Group>}
         weaponType={WeaponType.NONE}

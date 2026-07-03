@@ -13,7 +13,7 @@ import ExperienceBar from '../components/ui/ExperienceBar';
 import EssenceDisplay from '../components/ui/EssenceDisplay';
 import GoldDisplay from '../components/ui/GoldDisplay';
 import HudActionButtons from '../components/ui/HudActionButtons';
-import { MultiplayerProvider, useMultiplayer } from '../contexts/MultiplayerContext';
+import { MultiplayerProvider, useMultiplayerActions, useMultiplayerRoom } from '../contexts/MultiplayerContext';
 import type { CoopRoomKind } from '../contexts/MultiplayerContext';
 import MerchantUI from '../components/ui/MerchantUI';
 import StatsPanel from '../components/ui/StatsPanel';
@@ -196,15 +196,15 @@ const NOOP_COMBAT_OVERLAY_CALLBACKS: CombatOverlayCallbacks = {
 
 function HomeContent() {
   const {
-    selectedWeapons,
-    abilityLoadout,
+    socket,
+    playersRef,
+    enemiesRef,
+    subscribeEnemyDamage,
+    joinRoom,
     setAbilityLoadout,
-    talentLoadout,
     setTalentLoadout,
-    skillPointData,
     unlockAbility,
     updateSkillPointsForLevel,
-    statPointData,
     allocateStatPoint,
     updateStatPointsForLevel: updateStatPointsForLvl,
     grantStatPoints,
@@ -212,16 +212,24 @@ function HomeContent() {
     purchaseItem,
     purchaseMerchantItem,
     purchaseMerchantHeal,
-    players,
-    socket,
+    registerMerchantPurchaseSuccessHandler,
+    clearCoopClearedRoomColor,
+    hideCoopPortalTransition,
+    setSelectedWeapons,
+    clearLateJoinCombatLoadout,
+  } = useMultiplayerActions();
+
+  const {
+    selectedWeapons,
+    abilityLoadout,
+    talentLoadout,
+    skillPointData,
+    statPointData,
     skeletonKillCount,
     skeletonKillRequired,
-    enemies,
     inventory,
     merchantInventory,
     merchantPurchaseState,
-    registerMerchantPurchaseSuccessHandler,
-    joinRoom,
     currentRoomId,
     isConnected,
     coopTransitionOverlay,
@@ -239,18 +247,13 @@ function HomeContent() {
     coopClearedRoomKind,
     coopColoredRoomVisitIndex,
     coopBossRoomVisitIndex,
-    clearCoopClearedRoomColor,
-    confirmCoopPortalTransitionComplete,
-    hideCoopPortalTransition,
-    subscribeEnemyDamage,
-    setSelectedWeapons,
     lateJoinCombatLoadout,
-    clearLateJoinCombatLoadout,
-  } = useMultiplayer();
+  } = useMultiplayerRoom();
 
   const combatOverlayCallbacksRef = useRef<CombatOverlayCallbacks>(NOOP_COMBAT_OVERLAY_CALLBACKS);
 
   const [localPurchasedItems, setLocalPurchasedItems] = useState<string[]>([]);
+  const [coopBossSpawned, setCoopBossSpawned] = useState(false);
   const [gameState, setGameState] = useState({
     playerHealth: 200,
     maxHealth: 200,
@@ -462,6 +465,7 @@ function HomeContent() {
   const [pedestalInteracted, setPedestalInteracted] = useState(false);
   /** True after the boon has been picked (or no boon options), unlocking the portals. */
   const [portalsUnlocked, setPortalsUnlocked] = useState(false);
+  const pedestalRevealTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastCoopIntermissionBgmRef = useRef(0);
   const lastCoopEnterBgmRef = useRef(0);
   const lastCoopBossBgmRef = useRef(0);
@@ -569,6 +573,24 @@ function HomeContent() {
   }, [coopMainArenaIntermissionSeq, gameMode]);
 
   useEffect(() => {
+    return () => {
+      if (pedestalRevealTimeoutRef.current) {
+        clearTimeout(pedestalRevealTimeoutRef.current);
+        pedestalRevealTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  const playPedestalInteractAndDelay = useCallback((reveal: () => void) => {
+    window.audioSystem?.playPedestalSound?.();
+    if (pedestalRevealTimeoutRef.current) clearTimeout(pedestalRevealTimeoutRef.current);
+    pedestalRevealTimeoutRef.current = setTimeout(() => {
+      reveal();
+      pedestalRevealTimeoutRef.current = null;
+    }, 800);
+  }, []);
+
+  useEffect(() => {
     runebladeRoomBoonExcludedIdsRef.current.clear();
     scytheEntropicRoomBoonExcludedIdsRef.current.clear();
     sabresRoomBoonExcludedIdsRef.current.clear();
@@ -648,41 +670,51 @@ function HomeContent() {
     if (rewardKind === 'boss') {
       const options = rollClassBoonOptions(selectedWeapons.primary, talentLoadout);
       if (options.length > 0) {
-        setCoopBoon({ kind: 'class', options, weaponForPick: selectedWeapons.primary });
+        playPedestalInteractAndDelay(() => {
+          setCoopBoon({ kind: 'class', options, weaponForPick: selectedWeapons.primary });
+        });
         return;
       }
-      setPortalsUnlocked(true);
+      playPedestalInteractAndDelay(() => {
+        setPortalsUnlocked(true);
+      });
       return;
     }
 
     if (rewardKind === 'stat') {
-      grantStatPoints(STAT_ROOM_PEDESTAL_POINTS);
-      window.audioSystem?.playUIInterface3Sound?.();
-      queueOverlayAnnouncement(
-        `+${STAT_ROOM_PEDESTAL_POINTS} STAT POINTS`,
-        REWARD_ANNOUNCEMENT_COLORS.stat,
-        `stat-points-${coopMainArenaIntermissionSeq}`,
-      );
-      clearCoopClearedRoomColor();
-      setPortalsUnlocked(true);
+      playPedestalInteractAndDelay(() => {
+        grantStatPoints(STAT_ROOM_PEDESTAL_POINTS);
+        window.audioSystem?.playUIInterface3Sound?.();
+        queueOverlayAnnouncement(
+          `+${STAT_ROOM_PEDESTAL_POINTS} STAT POINTS`,
+          REWARD_ANNOUNCEMENT_COLORS.stat,
+          `stat-points-${coopMainArenaIntermissionSeq}`,
+        );
+        clearCoopClearedRoomColor();
+        setPortalsUnlocked(true);
+      });
       return;
     }
 
     if (rewardKind === 'merchant') {
-      setShowMerchantUI(true);
+      playPedestalInteractAndDelay(() => {
+        setShowMerchantUI(true);
+      });
       return;
     }
 
     if (rewardKind === 'trial') {
-      if (socket?.id) updatePlayerGold(socket.id, TRIAL_ROOM_PEDESTAL_GOLD);
-      window.audioSystem?.playUIGoldPickupSound?.();
-      queueOverlayAnnouncement(
-        `+${TRIAL_ROOM_PEDESTAL_GOLD} GOLD`,
-        REWARD_ANNOUNCEMENT_COLORS.gold,
-        `trial-gold-${coopMainArenaIntermissionSeq}`,
-      );
-      clearCoopClearedRoomColor();
-      setPortalsUnlocked(true);
+      playPedestalInteractAndDelay(() => {
+        if (socket?.id) updatePlayerGold(socket.id, TRIAL_ROOM_PEDESTAL_GOLD);
+        window.audioSystem?.playUIGoldPickupSound?.();
+        queueOverlayAnnouncement(
+          `+${TRIAL_ROOM_PEDESTAL_GOLD} GOLD`,
+          REWARD_ANNOUNCEMENT_COLORS.gold,
+          `trial-gold-${coopMainArenaIntermissionSeq}`,
+        );
+        clearCoopClearedRoomColor();
+        setPortalsUnlocked(true);
+      });
       return;
     }
 
@@ -707,14 +739,18 @@ function HomeContent() {
         },
       );
       if (options.length > 0) {
-        setCoopBoon({ kind: 'room', options });
+        playPedestalInteractAndDelay(() => {
+          setCoopBoon({ kind: 'room', options });
+        });
         // portalsUnlocked will be set in handleCoopBoonPick after the player chooses
         return;
       }
     }
 
-    // No boon to show (empty pool or non-boon reward) — unlock portals immediately
-    setPortalsUnlocked(true);
+    // No boon to show (empty pool or non-boon reward) — unlock portals after pedestal beat
+    playPedestalInteractAndDelay(() => {
+      setPortalsUnlocked(true);
+    });
   }, [
     gameMode,
     coopMainArenaIntermissionSeq,
@@ -731,6 +767,7 @@ function HomeContent() {
     abilityLoadout,
     socket?.id,
     queueOverlayAnnouncement,
+    playPedestalInteractAndDelay,
   ]);
 
   const handleThroneWeaponEquipped = useCallback(
@@ -739,9 +776,11 @@ function HomeContent() {
       if (classBoonPickedWeaponsRef.current.has(weapon)) return;
       const options = rollClassBoonOptions(weapon, talentLoadout);
       if (options.length === 0) return;
-      setCoopBoon({ kind: 'class', options, weaponForPick: weapon });
+      playPedestalInteractAndDelay(() => {
+        setCoopBoon({ kind: 'class', options, weaponForPick: weapon });
+      });
     },
-    [combatArenaActive, talentLoadout],
+    [combatArenaActive, talentLoadout, playPedestalInteractAndDelay],
   );
 
   const handleCoopBoonReroll = useCallback(() => {
@@ -749,6 +788,7 @@ function HomeContent() {
       if (playerGold < BOON_REROLL_GOLD_COST) return;
       if (socket?.id) updatePlayerGold(socket.id, -BOON_REROLL_GOLD_COST);
     }
+    window.audioSystem?.playBoonRerollSound?.();
     setCoopBoon((prev) => {
       if (!prev) return null;
       if (prev.kind === 'class') {
@@ -929,22 +969,40 @@ function HomeContent() {
     setPlayerGold(gold);
   }, []);
 
-  // Sync localPurchasedItems with multiplayer context player data
-  useEffect(() => {
-    if (players.size > 0) {
-      // Find the local player (either by socket ID or first player if in single-player mode)
-      let localPlayer = players.get(socket?.id || '');
-      if (!localPlayer) {
-        // If no player found by socket ID, try to find any player (for cases where socket isn't connected)
-        const allPlayers = Array.from(players.values());
-        localPlayer = allPlayers.find(p => p.id) || undefined;
-      }
+  const refreshCoopBossSpawned = useCallback(() => {
+    setCoopBossSpawned(
+      Array.from(enemiesRef.current.values()).some(
+        (e) => (e.type === 'boss' || e.type === 'boss2' || e.type === 'boss3') && !e.isDying,
+      ),
+    );
+  }, [enemiesRef]);
 
-      if (localPlayer?.purchasedItems) {
-        setLocalPurchasedItems(localPlayer.purchasedItems);
+  // Sync localPurchasedItems from ref — avoids re-rendering on every player map update.
+  useEffect(() => {
+    const localPlayer = playersRef.current.get(socket?.id || '');
+    if (!localPlayer) {
+      const fallback = Array.from(playersRef.current.values()).find((p) => p.id);
+      if (fallback?.purchasedItems) {
+        setLocalPurchasedItems(fallback.purchasedItems);
       }
+      return;
     }
-  }, [players, socket?.id]);
+    if (localPlayer.purchasedItems) {
+      setLocalPurchasedItems(localPlayer.purchasedItems);
+    }
+  }, [merchantPurchaseState, currentRoomId, socket?.id, playersRef]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onEnemyRosterChange = () => refreshCoopBossSpawned();
+    socket.on('enemy-spawned', onEnemyRosterChange);
+    socket.on('enemy-removed', onEnemyRosterChange);
+    refreshCoopBossSpawned();
+    return () => {
+      socket.off('enemy-spawned', onEnemyRosterChange);
+      socket.off('enemy-removed', onEnemyRosterChange);
+    };
+  }, [socket, currentRoomId, refreshCoopBossSpawned]);
 
   // Initialize audio system for UI sounds
   useEffect(() => {
@@ -1303,9 +1361,7 @@ function HomeContent() {
                 skeletonKillsRequired={
                   gameMode === 'coop' ? skeletonKillRequired : undefined
                 }
-                bossSpawned={gameMode === 'coop'
-                  ? Array.from(enemies.values()).some(e => (e.type === 'boss' || e.type === 'boss2' || e.type === 'boss3') && !e.isDying)
-                  : undefined}
+                bossSpawned={gameMode === 'coop' ? coopBossSpawned : undefined}
               />
             )}
 
@@ -1408,6 +1464,7 @@ function HomeContent() {
                   amount: 125,
                 }}
                 onClose={() => {
+                  window.audioSystem?.playMerchantExitGreet?.();
                   setShowMerchantUI(false);
                   clearCoopClearedRoomColor();
                   setPortalsUnlocked(true);
@@ -1439,7 +1496,6 @@ function HomeContent() {
           sceneReadySeq={coopCombatArenaEnterSeq}
           onComplete={() => {
             hideCoopPortalTransition();
-            confirmCoopPortalTransitionComplete();
             const roomKind = coopCurrentRoomKindRef.current;
             if (roomKind) {
               const visitIndex = roomKind === 'boss'

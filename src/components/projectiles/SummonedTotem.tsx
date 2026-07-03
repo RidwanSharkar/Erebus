@@ -7,8 +7,14 @@ import TotemEntropicBolt, { type TotemBoltPoolSlot } from './TotemEntropicBolt';
 import TotemSuperconductorLightning, { type TotemLightningPoolSlot } from './TotemSuperconductorLightning';
 import { calculateDamage } from '@/core/DamageCalculator';
 import { WeaponType } from '@/components/dragon/weapons';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import type { EnemyDamageMeta } from '@/contexts/MultiplayerContext';
 import type { TotemBoltVariant } from '@/utils/talents';
+import {
+  refreshTotemEnemyTargetScratch,
+  type TotemTargetEntry,
+} from '@/utils/enemyLiveTransform';
+import { getPlayerLivePosition } from '@/utils/playerLiveTransform';
 import {
   SUPERCONDUCTOR_INFESTING_DAMAGE,
   SUPERCONDUCTOR_STAGGERING_STRIKE_STAGGER,
@@ -175,12 +181,20 @@ export default function SummonedTotem({
   resolveTotemEnemyFrozen,
 }: SummonProps) {
 
+  const { enemiesRef, enemyTransformsRef, playersRef, playersTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group>(null);
   const boltIdRef = useRef(0);
   const currentTargetRef = useRef<{ id: string; position: Vector3; health: number } | null>(null);
   const isAttackingRef = useRef(false);
   const boltPool = useRef(createBoltPool(MAX_TOTEM_BOLTS));
   const lightningPool = useRef(createLightningPool(MAX_TOTEM_LIGHTNING));
+  const enemyTargetScratchRef = useRef<TotemTargetEntry[]>([]);
+  const enemyDataRef = useRef(enemyData);
+  enemyDataRef.current = enemyData;
+  const allowPlayerTargetsRef = useRef(allowPlayerTargets);
+  allowPlayerTargetsRef.current = allowPlayerTargets;
+  const casterIdRef = useRef(casterId);
+  casterIdRef.current = casterId;
 
   const constants = useRef({
     lastAttackTime: 0,
@@ -202,32 +216,86 @@ export default function SummonedTotem({
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }, []);
 
-  // Get current enemy data from players and static enemyData
-  const getCurrentEnemyData = useCallback((): Array<{ id: string; position: Vector3; health: number }> => {
-    let currentEnemies: Array<{ id: string; position: Vector3; health: number }> = [...enemyData];
+  // Live enemy/player targets refreshed from ref stores (no React re-renders on movement).
+  const refreshLiveTargets = useCallback((): TotemTargetEntry[] => {
+    const scratch = refreshTotemEnemyTargetScratch(
+      enemyTargetScratchRef.current,
+      enemiesRef,
+      enemyTransformsRef,
+    );
+    let writeIndex = scratch.length;
 
-    // Add real-time player positions
-    if (allowPlayerTargets && players) {
-      const playerEnemies = Array.from(players.entries())
-        .filter(([playerId]) => !casterId || playerId !== casterId) // Exclude the caster of the totem (if casterId is defined)
-        .map(([playerId, playerData]) => ({
-          id: playerId,
-          position: new Vector3(playerData.position.x, playerData.position.y, playerData.position.z),
-          health: playerData.health
-        }));
-
-      currentEnemies = [...currentEnemies, ...playerEnemies];
+    for (const npc of enemyDataRef.current) {
+      if (enemiesRef.current.has(npc.id)) continue;
+      if (npc.health <= 0) continue;
+      if (writeIndex < scratch.length) {
+        scratch[writeIndex].id = npc.id;
+        scratch[writeIndex].position.copy(npc.position);
+        scratch[writeIndex].health = npc.health;
+      } else {
+        scratch.push({
+          id: npc.id,
+          position: npc.position.clone(),
+          health: npc.health,
+        });
+      }
+      writeIndex++;
     }
 
-    return currentEnemies;
-  }, [players, casterId, enemyData, allowPlayerTargets]);
+    if (allowPlayerTargetsRef.current) {
+      for (const [playerId, playerData] of Array.from(playersRef.current.entries())) {
+        if (casterIdRef.current && playerId === casterIdRef.current) continue;
+        if (playerData.health <= 0) continue;
+        const livePos = getPlayerLivePosition(playerId, playersTransformsRef, playerData.position);
+        if (writeIndex < scratch.length) {
+          scratch[writeIndex].id = playerId;
+          scratch[writeIndex].position.set(livePos.x, livePos.y, livePos.z);
+          scratch[writeIndex].health = playerData.health;
+        } else {
+          scratch.push({
+            id: playerId,
+            position: new Vector3(livePos.x, livePos.y, livePos.z),
+            health: playerData.health,
+          });
+        }
+        writeIndex++;
+      }
+    }
+
+    scratch.length = writeIndex;
+    return scratch;
+  }, [enemiesRef, enemyTransformsRef, playersRef, playersTransformsRef]);
+
+  const getCurrentEnemyData = useCallback((): TotemTargetEntry[] => {
+    return refreshLiveTargets();
+  }, [refreshLiveTargets]);
+
+  const findLiveTargetById = useCallback((targetId: string): TotemTargetEntry | undefined => {
+    const scratch = enemyTargetScratchRef.current;
+    for (let i = 0; i < scratch.length; i++) {
+      if (scratch[i].id === targetId && scratch[i].health > 0) {
+        return scratch[i];
+      }
+    }
+    return undefined;
+  }, []);
+
+  const syncActiveBoltTargets = useCallback(() => {
+    for (const slot of boltPool.current) {
+      if (!slot.active || !slot.targetId) continue;
+      const liveTarget = findLiveTargetById(slot.targetId);
+      if (!liveTarget) continue;
+      slot.to.copy(liveTarget.position);
+      slot.to.y = Math.max(slot.to.y, 0.35) + 1.05;
+    }
+  }, [findLiveTargetById]);
 
   const findNewTarget = useCallback((excludeCurrentTarget: boolean = false): { id: string; position: Vector3; health: number } | null => {
     if (!groupRef.current) {
       return null;
     }
 
-    const currentEnemyData = getCurrentEnemyData();
+    const currentEnemyData = enemyTargetScratchRef.current;
     if (!currentEnemyData.length) {
       return null;
     }
@@ -263,7 +331,7 @@ export default function SummonedTotem({
     }
 
     return closestTarget;
-  }, [getCurrentEnemyData, calculateDistance, constants.RANGE]);
+  }, [calculateDistance, constants.RANGE]);
 
   const handleAttack = useCallback((target: { id: string; position: Vector3; health: number }) => {
     const canShowFloating =
@@ -423,6 +491,9 @@ export default function SummonedTotem({
       }
       return;
     }
+
+    refreshLiveTargets();
+    syncActiveBoltTargets();
 
     // Continuously check for the closest enemy in range
     const closestEnemy = findNewTarget();

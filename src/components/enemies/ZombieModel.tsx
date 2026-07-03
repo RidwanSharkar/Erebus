@@ -2,9 +2,10 @@
 
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
-import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
+import { Group, LoopRepeat, LoopOnce, AnimationAction } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
 
 interface ZombieModelProps {
   isWalking: boolean;
@@ -27,7 +28,7 @@ export function preloadZombieModels(): void {
 
 const SCALE = 0.0125;
 
-export default function ZombieModel({ isWalking, isAttacking, isSummoning, isDying }: ZombieModelProps) {
+export default React.memo(function ZombieModel({ isWalking, isAttacking, isSummoning, isDying }: ZombieModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
 
@@ -53,36 +54,17 @@ export default function ZombieModel({ isWalking, isAttacking, isSummoning, isDyi
 
   useDisposeClonedMaterials(clonedScene);
 
-  const animations = useMemo(() => {
-    const rename = (clips: AnimationClip[], name: string) =>
-      clips.map((c) => {
-        const r = c.clone();
-        r.name = name;
-        return r;
-      });
-
-    const stripRootMotionXZ = (clip: AnimationClip): AnimationClip => {
-      clip.tracks = clip.tracks.map((track) => {
-        if (!track.name.endsWith('.position')) return track;
-        if (!track.name.toLowerCase().includes('hips')) return track;
-        const values = Float32Array.from(track.values);
-        for (let i = 0; i < values.length; i += 3) {
-          values[i] = 0;
-          values[i + 2] = 0;
-        }
-        return new VectorKeyframeTrack(track.name, Array.from(track.times), Array.from(values));
-      });
-      return clip;
-    };
-
-    return [
-      ...rename(idleAnims, 'Idle').map(stripRootMotionXZ),
-      ...rename(walkAnims, 'Walk').map(stripRootMotionXZ),
-      ...rename(attackAnims, 'Attack'),
-      ...rename(summonAnims, 'Summon'),
-      ...rename(deathAnims, 'Death'),
-    ];
-  }, [idleAnims, walkAnims, attackAnims, summonAnims, deathAnims]);
+  const animations = useMemo(
+    () =>
+      getCachedEnemyAnimationClips('zombie', () => [
+        ...renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ),
+        ...renameAnimationClips(walkAnims, 'Walk').map(stripRootMotionXZ),
+        ...renameAnimationClips(attackAnims, 'Attack'),
+        ...renameAnimationClips(summonAnims, 'Summon'),
+        ...renameAnimationClips(deathAnims, 'Death'),
+      ]),
+    [idleAnims, walkAnims, attackAnims, summonAnims, deathAnims],
+  );
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
@@ -130,9 +112,10 @@ export default function ZombieModel({ isWalking, isAttacking, isSummoning, isDyi
       if (isDying) return;
       const fallback = isWalking ? getAction('Walk') : getAction('Idle');
       if (fallback) {
+        fallback.enabled = true;
         fallback.setLoop(LoopRepeat, Infinity);
         currentActionRef.current?.fadeOut(0.15);
-        fallback.reset().fadeIn(0.15).play();
+        fallback.fadeIn(0.15).play();
         currentActionRef.current = fallback;
       }
     };
@@ -157,4 +140,5 @@ export default function ZombieModel({ isWalking, isAttacking, isSummoning, isDyi
       </group>
     </group>
   );
-}
+});
+

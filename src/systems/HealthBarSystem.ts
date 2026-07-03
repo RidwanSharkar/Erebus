@@ -1,5 +1,5 @@
 // Health bar system for rendering health bars above entities
-import { Scene, Camera, Group } from '@/utils/three-exports';
+import { Scene, Camera, Group, Vector3 } from '@/utils/three-exports';
 import { RenderSystem } from '@/ecs/System';
 import { Entity } from '@/ecs/Entity';
 import { Transform } from '@/ecs/components/Transform';
@@ -10,6 +10,7 @@ export class HealthBarSystem extends RenderSystem {
   public readonly requiredComponents = [Transform, Health, HealthBar];
   private scene: Scene;
   private camera: Camera;
+  private scratchWorldPosition = new Vector3();
 
   constructor(scene: Scene, camera: Camera) {
     super();
@@ -30,7 +31,7 @@ export class HealthBarSystem extends RenderSystem {
       }
 
       // Update health bar with current health ratio
-      const worldPosition = transform.getWorldPosition();
+      const worldPosition = transform.getWorldPosition(this.scratchWorldPosition);
       const cameraPosition = this.camera.position;
       
       healthBar.updateHealthBar(

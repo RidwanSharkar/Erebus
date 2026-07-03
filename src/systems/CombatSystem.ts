@@ -44,6 +44,7 @@ import { Pillar } from '@/ecs/components/Pillar';
 import { DestructibleMushroom } from '@/ecs/components/DestructibleMushroom';
 import { WeaponType } from '@/components/dragon/weapons';
 import { addGlobalEntangledEnemy } from '@/components/weapons/EntangleManager';
+import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
 
 interface DamageEvent {
   target: Entity;
@@ -814,14 +815,18 @@ export class CombatSystem extends System {
     if (!health || !health.enabled) return;
 
     const enemy = target.getComponent(Enemy);
-    if (enemy && target.userData?.isCoopAlliedUnit) {
+    if (enemy && isCoopPlayerAllyEntity(target)) {
       return;
     }
     if (enemy && this.onEnemyDamageCallback && target.userData?.coopEnemyDying) {
       return;
     }
 
-    if (this.isCoopMode && !enemy && target.userData?.isCoopAllyPlayer) {
+    if (
+      this.isCoopMode &&
+      !enemy &&
+      (target.userData?.isCoopAllyPlayer || target.userData?.isPlayer === true)
+    ) {
       return;
     }
 
@@ -1224,24 +1229,6 @@ export class CombatSystem extends System {
         finalSourcePlayerId,
         damageType,
       );
-
-      const transform = target.getComponent(Transform);
-      if (transform) {
-        const position = transform.getWorldPosition();
-        position.y += 1.5;
-        if (damageType === 'sabre_right' || damageType === 'sabres_right') position.x += 0.3;
-        else if (damageType === 'sabre_left' || damageType === 'sabres_left') position.x -= 0.3;
-        const dualCoilSlot = this.applyDualCoilDamageNumberLateral(position, source);
-        this.damageNumberManager.addDamageNumber(
-          actualDamage,
-          damageResult.isCritical,
-          position,
-          damageType,
-          undefined,
-          damageType === 'barrage' || damageType === 'entropic' ? target.id : undefined,
-          dualCoilSlot,
-        );
-      }
 
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);

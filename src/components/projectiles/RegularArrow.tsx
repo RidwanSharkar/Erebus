@@ -74,7 +74,7 @@ function resolveBurstArrowColors(theme: TempestBurstTheme | undefined): {
 const _lookAtTarget = new Vector3();
 const _dirNorm = new Vector3();
 
-export default function RegularArrow({
+function RegularArrow({
   position,
   direction,
   onImpact,
@@ -213,3 +213,5 @@ export default function RegularArrow({
     </group>
   );
 }
+
+export default React.memo(RegularArrow);

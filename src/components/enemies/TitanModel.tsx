@@ -5,6 +5,7 @@ import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
 
 interface TitanModelProps {
   isWalking: boolean;
@@ -31,7 +32,7 @@ export function preloadTitanModels(): void {
 // Adjust if the titan GLB geometry is larger or smaller than expected.
 const SCALE = 0.02775;
 
-export default function TitanModel({
+export default React.memo(function TitanModel({
   isWalking,
   isAttacking,
   isPoweringUp,
@@ -65,33 +66,18 @@ export default function TitanModel({
 
   useDisposeClonedMaterials(clonedScene);
 
-  const animations = useMemo(() => {
-    const rename = (clips: AnimationClip[], name: string) =>
-      clips.map(c => { const r = c.clone(); r.name = name; return r; });
-
-    const stripRootMotionXZ = (clip: AnimationClip): AnimationClip => {
-      clip.tracks = clip.tracks.map(track => {
-        if (!track.name.endsWith('.position')) return track;
-        if (!track.name.toLowerCase().includes('hips')) return track;
-        const values = Float32Array.from(track.values);
-        for (let i = 0; i < values.length; i += 3) {
-          values[i]     = 0;
-          values[i + 2] = 0;
-        }
-        return new VectorKeyframeTrack(track.name, Array.from(track.times), Array.from(values));
-      });
-      return clip;
-    };
-
-    return [
-      ...rename(walkAnims,    'Walk').map(stripRootMotionXZ),
-      ...rename(meleeAnims,   'Melee').map(stripRootMotionXZ),
-      ...rename(powerupAnims, 'Powerup').map(stripRootMotionXZ),
-      ...rename(stompAnims,   'Stomp').map(stripRootMotionXZ),
-      ...rename(castAnims,    'Cast').map(stripRootMotionXZ),
-      ...rename(deathAnims,   'Death'),
-    ];
-  }, [walkAnims, meleeAnims, powerupAnims, stompAnims, castAnims, deathAnims]);
+  const animations = useMemo(
+    () =>
+      getCachedEnemyAnimationClips('titan', () => [
+        ...renameAnimationClips(walkAnims, 'Walk').map(stripRootMotionXZ),
+        ...renameAnimationClips(meleeAnims, 'Melee').map(stripRootMotionXZ),
+        ...renameAnimationClips(powerupAnims, 'Powerup').map(stripRootMotionXZ),
+        ...renameAnimationClips(stompAnims, 'Stomp').map(stripRootMotionXZ),
+        ...renameAnimationClips(castAnims, 'Cast').map(stripRootMotionXZ),
+        ...renameAnimationClips(deathAnims, 'Death'),
+      ]),
+    [walkAnims, meleeAnims, powerupAnims, stompAnims, castAnims, deathAnims],
+  );
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
@@ -149,7 +135,10 @@ export default function TitanModel({
         if (walk) {
           walk.setLoop(LoopRepeat, Infinity);
           currentActionRef.current?.fadeOut(0.15);
-          walk.reset().fadeIn(0.15).play();
+          walk.enabled = true;
+          walk.setLoop(LoopRepeat, Infinity);
+          currentActionRef.current?.fadeOut(0.15);
+          walk.fadeIn(0.15).play();
           currentActionRef.current = walk;
         }
       }
@@ -166,4 +155,5 @@ export default function TitanModel({
       </group>
     </group>
   );
-}
+});
+

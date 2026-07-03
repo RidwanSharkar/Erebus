@@ -18,6 +18,7 @@ interface Boss2ArchonLightningProps {
   beams: Boss2ArchonBeam[];
   strikeAt: number;
   halfWidth: number;
+  vfxScale?: number;
   theme?: ArchonLightningTheme;
   onComplete: () => void;
 }
@@ -70,6 +71,7 @@ export default function Boss2ArchonLightning({
   beams,
   strikeAt,
   halfWidth,
+  vfxScale = 1,
   theme = 'boss2-red',
   onComplete,
 }: Boss2ArchonLightningProps) {
@@ -113,7 +115,7 @@ export default function Boss2ArchonLightning({
               key={`warn-${beamIdx}`}
               start={groundStart}
               end={groundEnd}
-              lineWidth={halfWidth * 2}
+              lineWidth={halfWidth * 2 * vfxScale}
               color={lineColor}
               variant={telegraphVariant}
               endAt={strikeAt}
@@ -131,6 +133,7 @@ export default function Boss2ArchonLightning({
             to={beam.targetPosition}
             palette={palette}
             durationMs={BOLT_DURATION_MS}
+            thicknessScale={vfxScale}
             onComplete={handleBoltComplete}
           />
         ))}

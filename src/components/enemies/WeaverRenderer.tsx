@@ -8,7 +8,7 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import WeaverModel from './WeaverModel';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
 
@@ -71,7 +71,7 @@ function WeaverRenderer({
   const prevHealthRef    = useRef(health);
   const lastHitImpactAtRef = useRef(0);
 
-  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMoveTimeRef = useRef(0);
   const pendingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const trackTimeout = useCallback((fn: () => void, ms: number) => {
@@ -98,13 +98,12 @@ function WeaverRenderer({
 
   useEffect(() => {
     return () => {
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       pendingTimersRef.current.forEach(clearTimeout);
       pendingTimersRef.current = [];
     };
   }, []);
 
-  // Derive walking state from server position deltas (not per-frame lerp sampling).
+  // Keep spawn snap in sync with React position prop updates.
   useEffect(() => {
     const dist = targetPosition.current.distanceTo(position);
     const isCastLocked = isCastingRef.current;
@@ -113,17 +112,6 @@ function WeaverRenderer({
     }
     if (dist > 8.0 && groupRef.current && !isCastLocked) {
       groupRef.current.position.copy(position);
-    }
-    if (dist > 0.01 && !isCastLocked && !isDying) {
-      if (!isWalkingRef.current) {
-        isWalkingRef.current = true;
-        setIsWalking(true);
-      }
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => {
-        isWalkingRef.current = false;
-        setIsWalking(false);
-      }, WALK_STOP_DELAY);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -247,6 +235,16 @@ function WeaverRenderer({
     if (dist > 8.0 && !isCastLocked) {
       group.position.copy(targetPosition.current);
     }
+
+    updateEnemyWalkStateFromMoveDist(
+      dist,
+      isCastLocked,
+      isDying,
+      WALK_STOP_DELAY,
+      lastMoveTimeRef,
+      isWalkingRef,
+      setIsWalking,
+    );
 
     if (!isCastLocked) {
       group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));

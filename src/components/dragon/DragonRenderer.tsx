@@ -12,6 +12,7 @@ import ViperStingManager, { triggerGlobalViperSting } from '../projectiles/Viper
 import GhostTrail from './GhostTrail';
 import DashFireTrail from './DashFireTrail';
 import { WeaponType, WeaponSubclass } from './weapons';
+import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
 import { World } from '@/ecs/World';
 import { Movement } from '@/ecs/components/Movement';
 import { Transform } from '@/ecs/components/Transform';
@@ -92,11 +93,7 @@ function writeDashChargesRef(target: DashChargeStatus[], source: DashChargeStatu
 function shouldExcludeFromWeaponEnemyData(entity: {
   userData?: { isCoopAlliedUnit?: boolean; coopServerEnemyType?: string };
 }): boolean {
-  const ud = entity.userData;
-  if (!ud) return false;
-  if (ud.isCoopAlliedUnit === true) return true;
-  if (ud.coopServerEnemyType === 'player-zombie') return true;
-  return false;
+  return isCoopPlayerAllyEntity(entity);
 }
 
 interface DragonRendererProps {
@@ -968,9 +965,9 @@ export default function DragonRenderer({
       {/* GHOST TRAIL - Rendered outside dragon group to avoid inheriting transformations */}
       <GhostTrail
         parentRef={groupRef}
+        worldPositionRef={effectiveRealTimePositionRef}
         weaponType={currentWeapon}
         weaponSubclass={currentSubclass}
-        targetPosition={effectiveRealTimePositionRef.current || undefined}
         isStealthing={isStealthing}
         isDashingRef={isDashing}
         isWeaponChargeMovingRef={isWeaponChargeMoving}

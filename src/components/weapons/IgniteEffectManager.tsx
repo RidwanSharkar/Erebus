@@ -17,6 +17,7 @@ import { World } from '@/ecs/World';
 import { Enemy } from '@/ecs/components/Enemy';
 import { Transform } from '@/ecs/components/Transform';
 import { Health } from '@/ecs/components/Health';
+import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
 
 const IGNITE_LIGHT_COLOR = new Color('#FF8C42');
 const EMBER_COUNT = 18;
@@ -283,11 +284,7 @@ export default function IgniteEffectManager({ world }: IgniteEffectManagerProps)
     return world
       .getAllEntities()
       .filter((entity) => entity.hasComponent(Enemy) && entity.hasComponent(Transform) && entity.hasComponent(Health))
-      .filter(
-        (entity) =>
-          !entity.userData?.isCoopAlliedUnit &&
-          entity.userData?.coopServerEnemyType !== 'allied-knight',
-      )
+      .filter((entity) => !isCoopPlayerAllyEntity(entity))
       .map((entity) => {
         const transform = entity.getComponent(Transform)!;
         const health = entity.getComponent(Health)!;
@@ -303,6 +300,10 @@ export default function IgniteEffectManager({ world }: IgniteEffectManagerProps)
   }, [world]);
 
   const addIgnitedEnemy = useCallback((enemyId: string, position: Vector3, duration: number = 3000) => {
+    if (world) {
+      const entity = world.getAllEntities().find((e) => e.id.toString() === enemyId);
+      if (entity && isCoopPlayerAllyEntity(entity)) return;
+    }
     setIgnited((prev) => {
       const rest = prev.filter((row) => row.enemyId !== enemyId);
       return [
@@ -316,7 +317,7 @@ export default function IgniteEffectManager({ world }: IgniteEffectManagerProps)
         },
       ];
     });
-  }, []);
+  }, [world]);
 
   useEffect(() => {
     globalIgniteManager = { addIgnitedEnemy };
@@ -336,6 +337,8 @@ export default function IgniteEffectManager({ world }: IgniteEffectManagerProps)
     const allEntities = world.getAllEntities();
 
     allEntities.forEach((entity) => {
+      if (isCoopPlayerAllyEntity(entity)) return;
+
       const enemy = entity.getComponent(Enemy);
       const transform = entity.getComponent(Transform);
       const health = entity.getComponent(Health);

@@ -86,13 +86,43 @@ function findByName(rootObj, name) {
   return found;
 }
 
-/** Map a smite/idle track bone name to the flat Mixamo source bone. */
+function isAssimpHelperTrack(trackName) {
+  return trackName.split('.')[0].includes('_$AssimpFbx$_');
+}
+
+/** Map a reference-track name to the flat Mixamo FBX node name (exact track lookup). */
 function sourceBoneNameForTrack(trackName) {
-  const bone = trackName.split('.')[0];
-  if (bone.includes('_$AssimpFbx$_Rotation')) {
-    return bone.replace('_$AssimpFbx$_Rotation', '');
+  return trackName.split('.')[0];
+}
+
+/** Assimp helper tracks (e.g. mixamorigLeftArm_$AssimpFbx$_Rotation) map to the flat Mixamo bone. */
+function flatBoneNameForTrack(trackName) {
+  const nodeName = trackName.split('.')[0];
+  const assimpIdx = nodeName.indexOf('_$AssimpFbx$_');
+  return assimpIdx === -1 ? nodeName : nodeName.slice(0, assimpIdx);
+}
+
+function sampleHelperLocalQuaternion(targetScene, sourceScene, targetTrackName) {
+  const targetBone = targetTrackName.split('.')[0];
+  const targetNode = findByName(targetScene, targetBone);
+  if (!targetNode) return null;
+
+  const sourceName = flatBoneNameForTrack(targetTrackName);
+  const sourceNode = findByName(sourceScene, sourceName);
+  if (!sourceNode) return null;
+
+  sourceNode.updateWorldMatrix(true, false);
+  sourceNode.getWorldQuaternion(_worldQuat);
+
+  if (targetNode.parent) {
+    targetNode.parent.updateWorldMatrix(true, false);
+    targetNode.parent.getWorldQuaternion(_parentWorldQuat);
+    _localQuat.copy(_parentWorldQuat.invert().multiply(_worldQuat));
+  } else {
+    _localQuat.copy(_worldQuat);
   }
-  return bone;
+
+  return _localQuat.clone();
 }
 
 function sampleLocalQuaternion(targetScene, sourceScene, targetTrackName) {
@@ -156,18 +186,50 @@ function makeConstantTrack(refTrack, duration) {
   );
 }
 
-function resampleTrack(refTrack, times, sampleFn) {
+function getBindVector(refTrack) {
+  const values = refTrack.values;
   const size = refTrack.getValueSize();
-  const values = new Array(times.length * size);
+  return values.slice(0, size);
+}
+
+function resampleQuaternionTrack(refTrack, times, frameSampleFn, bindTrack) {
+  const bindValues = getBindVector(bindTrack);
+  const values = new Float32Array(times.length * 4);
+  let lastValid = bindValues.length === 4 ? bindValues.slice() : [0, 0, 0, 1];
+  let nullFrames = 0;
+
   for (let i = 0; i < times.length; i++) {
-    const sampled = sampleFn();
-    if (!sampled) return null;
-    for (let j = 0; j < size; j++) values[i * size + j] = sampled[j];
+    const sampled = frameSampleFn(i);
+    if (!sampled) {
+      nullFrames += 1;
+      for (let j = 0; j < 4; j++) values[i * 4 + j] = lastValid[j];
+      continue;
+    }
+    sampled.toArray(values, i * 4);
+    lastValid = [values[i * 4], values[i * 4 + 1], values[i * 4 + 2], values[i * 4 + 3]];
   }
-  const TrackCtor = refTrack instanceof QuaternionKeyframeTrack
-    ? QuaternionKeyframeTrack
-    : VectorKeyframeTrack;
-  return new TrackCtor(refTrack.name, times, values);
+
+  return { track: new QuaternionKeyframeTrack(refTrack.name, times.slice(), values), nullFrames };
+}
+
+function resamplePositionTrack(refTrack, times, frameSampleFn, bindTrack) {
+  const bindValues = getBindVector(bindTrack);
+  const values = new Float32Array(times.length * 3);
+  let lastValid = bindValues.length === 3 ? bindValues.slice() : [0, 0, 0];
+  let nullFrames = 0;
+
+  for (let i = 0; i < times.length; i++) {
+    const sampled = frameSampleFn(i);
+    if (!sampled) {
+      nullFrames += 1;
+      for (let j = 0; j < 3; j++) values[i * 3 + j] = lastValid[j];
+      continue;
+    }
+    sampled.toArray(values, i * 3);
+    lastValid = [values[i * 3], values[i * 3 + 1], values[i * 3 + 2]];
+  }
+
+  return { track: new VectorKeyframeTrack(refTrack.name, times.slice(), values), nullFrames };
 }
 
 async function loadGltfClip(filePath) {
@@ -212,13 +274,17 @@ async function exportAnimationGlb(scene, clip, outputPath) {
 console.log('Loading reference clip (knight_smite.glb)...');
 const refClip = await loadGltfClip(path.join(modelsDir, 'knight_smite.glb'));
 
-console.log('Loading target skeleton (knight_idle.glb)...');
-const idleBuffer = readFileSync(path.join(modelsDir, 'knight_idle.glb'));
-const idleGltf = await loader.parseAsync(
-  idleBuffer.buffer.slice(idleBuffer.byteOffset, idleBuffer.byteOffset + idleBuffer.byteLength),
+console.log('Loading idle bind-pose clip (knight_idle.glb)...');
+const idleBindClip = await loadGltfClip(path.join(modelsDir, 'knight_idle.glb'));
+const idleBindTrackMap = new Map(idleBindClip.tracks.map((t) => [t.name, t]));
+
+console.log('Loading target skeleton (knight_smite.glb — animation-only, matches other knight clips)...');
+const smiteBuffer = readFileSync(path.join(modelsDir, 'knight_smite.glb'));
+const smiteGltf = await loader.parseAsync(
+  smiteBuffer.buffer.slice(smiteBuffer.byteOffset, smiteBuffer.byteOffset + smiteBuffer.byteLength),
   modelsDir,
 );
-const targetScene = idleGltf.scene.clone(true);
+const targetScene = smiteGltf.scene.clone(true);
 stripMeshes(targetScene);
 
 console.log('Loading source animation (knight_block.fbx)...');
@@ -242,40 +308,74 @@ sourceAction.play();
 const blockTrackMap = new Map(sourceClip.tracks.map((t) => [t.name, t]));
 
 const outputTracks = [];
+const resampleWarnings = [];
 
 for (const refTrack of refClip.tracks) {
-  const [targetBone, prop] = refTrack.name.split('.');
+  const [, prop] = refTrack.name.split('.');
   const directSourceName = `${sourceBoneNameForTrack(refTrack.name)}.${prop}`;
   const hasDirectSource = blockTrackMap.has(directSourceName);
+  const bindTrack = idleBindTrackMap.get(refTrack.name) ?? refTrack;
 
-  if (prop === 'quaternion' && hasDirectSource) {
-    const values = new Float32Array(numFrames * 4);
-    for (let i = 0; i < numFrames; i++) {
-      sourceMixer.setTime(times[i]);
-      sourceScene.updateMatrixWorld(true);
-      const q = sampleLocalQuaternion(targetScene, sourceScene, refTrack.name);
-      if (!q) break;
-      q.toArray(values, i * 4);
+  // Mixamo FBX exports flat bones only — never drive Assimp helper tracks from a parent
+  // bone's quaternion (that mismatch is what causes the twisted block pose).
+  if (prop === 'quaternion' && hasDirectSource && !isAssimpHelperTrack(refTrack.name)) {
+    const { track, nullFrames } = resampleQuaternionTrack(
+      refTrack,
+      times,
+      (frameIndex) => {
+        sourceMixer.setTime(times[frameIndex]);
+        sourceScene.updateMatrixWorld(true);
+        return sampleLocalQuaternion(targetScene, sourceScene, refTrack.name);
+      },
+      bindTrack,
+    );
+    if (nullFrames > 0) {
+      resampleWarnings.push(`${refTrack.name}: ${nullFrames}/${numFrames} frames used fallback`);
     }
-    outputTracks.push(new QuaternionKeyframeTrack(refTrack.name, times.slice(), values));
+    outputTracks.push(track);
     continue;
   }
 
-  if (prop === 'position' && blockTrackMap.has(directSourceName)) {
-    const values = new Float32Array(numFrames * 3);
-    for (let i = 0; i < numFrames; i++) {
-      sourceMixer.setTime(times[i]);
-      sourceScene.updateMatrixWorld(true);
-      const p = sampleLocalPosition(targetScene, sourceScene, refTrack.name);
-      if (!p) break;
-      p.toArray(values, i * 3);
+  // Assimp helper rotations must be derived from the flat FBX bone's world pose, not held
+  // at idle bind — block is a static guard pose (~40-90° off idle on arms) baked in the FBX.
+  if (prop === 'quaternion' && isAssimpHelperTrack(refTrack.name)) {
+    const { track, nullFrames } = resampleQuaternionTrack(
+      refTrack,
+      times,
+      (frameIndex) => {
+        sourceMixer.setTime(times[frameIndex]);
+        sourceScene.updateMatrixWorld(true);
+        return sampleHelperLocalQuaternion(targetScene, sourceScene, refTrack.name);
+      },
+      bindTrack,
+    );
+    if (nullFrames > 0) {
+      resampleWarnings.push(`${refTrack.name}: ${nullFrames}/${numFrames} frames used fallback`);
     }
-    outputTracks.push(new VectorKeyframeTrack(refTrack.name, times.slice(), values));
+    outputTracks.push(track);
     continue;
   }
 
-  // Constant position/scale offsets — hold smite bind-pose values for the clip duration.
-  outputTracks.push(makeConstantTrack(refTrack, duration));
+  if (prop === 'position' && hasDirectSource && !isAssimpHelperTrack(refTrack.name)) {
+    const { track, nullFrames } = resamplePositionTrack(
+      refTrack,
+      times,
+      (frameIndex) => {
+        sourceMixer.setTime(times[frameIndex]);
+        sourceScene.updateMatrixWorld(true);
+        return sampleLocalPosition(targetScene, sourceScene, refTrack.name);
+      },
+      bindTrack,
+    );
+    if (nullFrames > 0) {
+      resampleWarnings.push(`${refTrack.name}: ${nullFrames}/${numFrames} frames used fallback`);
+    }
+    outputTracks.push(track);
+    continue;
+  }
+
+  // Assimp offsets + any track absent from the FBX — hold idle bind-pose constants.
+  outputTracks.push(makeConstantTrack(bindTrack, duration));
 }
 
 sourceMixer.stopAllAction();
@@ -290,3 +390,9 @@ console.log(`  tracks: ${outputTracks.length}`);
 console.log(
   `  has Assimp tracks: ${outputTracks.some((t) => t.name.includes('AssimpFbx'))}`,
 );
+if (resampleWarnings.length > 0) {
+  console.warn(`  resample fallbacks (${resampleWarnings.length} tracks):`);
+  for (const warning of resampleWarnings) console.warn(`    ${warning}`);
+} else {
+  console.log('  resample fallbacks: none');
+}

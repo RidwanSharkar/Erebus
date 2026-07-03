@@ -23,19 +23,14 @@ interface ThrowSpearProps {
 }
 
 export default function ThrowSpear({ activeProjectiles }: ThrowSpearProps) {
-  // Debug: log when projectiles are being rendered
-  if (activeProjectiles.length > 0) {
-    console.log('🎯 Rendering', activeProjectiles.length, 'throw spear projectiles');
-  }
-
   return (
     <>
       {activeProjectiles.map(projectile => (
         <ThrowSpearProjectile
           key={projectile.id}
+          projectile={projectile}
           position={projectile.position}
           direction={projectile.direction}
-          opacity={projectile.opacity}
           isReturning={projectile.isReturning}
           chargeTime={projectile.chargeTime}
         />

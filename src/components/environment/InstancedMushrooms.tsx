@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useLayoutEffect, useCallback } from 'react';
+import React, { useRef, useMemo, useLayoutEffect, useCallback, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   InstancedMesh,
@@ -116,6 +116,20 @@ const InstancedMushrooms: React.FC<InstancedMushroomsProps> = ({ hiddenIndices }
       }),
     [],
   );
+
+  useEffect(() => {
+    return () => {
+      stemGeo.dispose();
+      capGeo.dispose();
+    };
+  }, [stemGeo, capGeo]);
+
+  useEffect(() => {
+    return () => {
+      stemMat.dispose();
+      capMat.dispose();
+    };
+  }, [stemMat, capMat]);
 
   const fillInstances = useCallback((hide: ReadonlySet<number> | undefined) => {
     const stem = stemRef.current;

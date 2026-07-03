@@ -43,8 +43,11 @@ function handlePlayerEvents(socket, gameRooms) {
     const player = room.getPlayer(playerId);
     const isDead = player && player.health <= 0;
     
-    // Update player state (ignore sliding position updates while dead)
-    if (position && rotation && !isDead) {
+    // Update player state (ignore sliding position updates while dead or during coop portal transition)
+    const coopTransitionActive =
+      typeof room.isCoopCombatTransitionActive === 'function' &&
+      room.isCoopCombatTransitionActive();
+    if (position && rotation && !isDead && !coopTransitionActive) {
       room.updatePlayerPosition(playerId, position, rotation, movementDirection);
     }
     
@@ -70,7 +73,7 @@ function handlePlayerEvents(socket, gameRooms) {
       rotationDeltaExceedsEpsilon(rotation, state.lastRotation);
     const intervalElapsed = now - state.lastBroadcastAt >= PLAYER_MOVE_REBROADCAST_MIN_MS;
 
-    if (hasNonMoveUpdate || (moveChanged && intervalElapsed)) {
+    if (hasNonMoveUpdate || (moveChanged && intervalElapsed && !coopTransitionActive)) {
       socket.to(roomId).emit('player-moved', {
         playerId,
         position: broadcastPosition,
@@ -534,12 +537,16 @@ function handlePlayerEvents(socket, gameRooms) {
     
     if (!healerPlayer) return;
     
-    console.log(`🔍 DEBUG: Reanimate cast by ${socket.id} at position:`, position, `radius: ${radius}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`🔍 DEBUG: Reanimate cast by ${socket.id} at position:`, position, `radius: ${radius}`);
+    }
     
     // Helper function to calculate distance between two positions
     const calculateDistance = (pos1, pos2) => {
       if (!pos2 || pos2.x === undefined || pos2.y === undefined || pos2.z === undefined) {
-        console.log(`⚠️ WARNING: Invalid position for player:`, pos2);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`⚠️ WARNING: Invalid position for player:`, pos2);
+        }
         return Infinity; // Return infinite distance if position is invalid
       }
       const dx = pos1.x - pos2.x;
@@ -551,17 +558,23 @@ function handlePlayerEvents(socket, gameRooms) {
     // Find all players within radius and heal them
     let healedPlayers = [];
     room.players.forEach((player, playerId) => {
-      console.log(`🔍 DEBUG: Checking player ${playerId}, health: ${player.health}, position:`, player.position);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`🔍 DEBUG: Checking player ${playerId}, health: ${player.health}, position:`, player.position);
+      }
       
       // Skip dead players
       if (player.health <= 0) {
-        console.log(`⚠️ Skipping dead player ${playerId}`);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`⚠️ Skipping dead player ${playerId}`);
+        }
         return;
       }
       
       // Skip if player has no position
       if (!player.position) {
-        console.log(`⚠️ WARNING: Player ${playerId} has no position data!`);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`⚠️ WARNING: Player ${playerId} has no position data!`);
+        }
         return;
       }
 
@@ -572,7 +585,9 @@ function handlePlayerEvents(socket, gameRooms) {
       
       // Calculate distance from healer position to this player
       const distance = calculateDistance(position, player.position);
-      console.log(`📏 Distance from caster to player ${playerId}: ${distance.toFixed(2)} units (radius: ${radius})`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`📏 Distance from caster to player ${playerId}: ${distance.toFixed(2)} units (radius: ${radius})`);
+      }
       
       // Heal if within radius
       if (distance <= radius) {
@@ -582,7 +597,9 @@ function handlePlayerEvents(socket, gameRooms) {
         
         const actualHealingAmount = newHealth - previousHealth;
         
-        console.log(`💚 Healing player ${playerId}: ${previousHealth} -> ${newHealth} (${actualHealingAmount} HP)`);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`💚 Healing player ${playerId}: ${previousHealth} -> ${newHealth} (${actualHealingAmount} HP)`);
+        }
         
         // Only broadcast if actual healing occurred
         if (actualHealingAmount > 0) {
@@ -609,7 +626,9 @@ function handlePlayerEvents(socket, gameRooms) {
       }
     });
     
-    console.log(`💚 Player ${socket.id} healed ${healedPlayers.length} nearby allies with ${abilityType} (${healAmount} HP, ${radius} units radius)`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`💚 Player ${socket.id} healed ${healedPlayers.length} nearby allies with ${abilityType} (${healAmount} HP, ${radius} units radius)`);
+    }
   });
 
   // Handle player healing (totems, self-healing, cross-player healing)
@@ -633,7 +652,9 @@ function handlePlayerEvents(socket, gameRooms) {
     if (actualHealingAmount > 0) {
       room.updatePlayerHealth(recipientId, newHealth);
 
-      console.log(`💚 Player ${socket.id} healed ${recipientId} for ${actualHealingAmount} HP (${healingType})`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`💚 Player ${socket.id} healed ${recipientId} for ${actualHealingAmount} HP (${healingType})`);
+      }
 
       room.io.to(roomId).emit('player-healing', {
         sourcePlayerId: socket.id,
@@ -681,7 +702,7 @@ function handlePlayerEvents(socket, gameRooms) {
     room.updatePlayerHealth(socket.id, newHealth);
     
     if (position) {
-      room.updatePlayerPosition(socket.id, position, { x: 0, y: 0, z: 0 });
+      room.updatePlayerPosition(socket.id, position, { x: 0, y: 0, z: 0 }, undefined, { authoritative: true });
     }
 
     // Broadcast player respawn to other players
@@ -790,13 +811,6 @@ function handlePlayerEvents(socket, gameRooms) {
         timestamp: Date.now()
       });
     }
-    
-    // Also broadcast health update specifically
-    room.io.to(roomId).emit('player-health-updated', {
-      playerId: targetPlayerId,
-      health: targetPlayer.health,
-      maxHealth: targetPlayer.maxHealth
-    });
   });
 
 

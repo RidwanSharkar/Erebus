@@ -242,6 +242,9 @@ export interface TeleportEffectState {
   position: Vector3;
   type: 'start' | 'end';
   timestamp: number;
+  /** 'templar' (default) uses BossTeleportEffect; 'shade' uses ShadeTeleportEffect */
+  variant?: 'templar' | 'shade';
+  theme?: 'blue' | 'purple' | 'red';
 }
 
 export interface TemplarBlinkSmiteStrikeState {
@@ -255,6 +258,7 @@ export interface Boss2ArchonLightningState {
   beams: { startPosition: Vector3; targetPosition: Vector3 }[];
   strikeAt: number;
   halfWidth: number;
+  vfxScale?: number;
 }
 
 export interface StaggerProcEffectState {

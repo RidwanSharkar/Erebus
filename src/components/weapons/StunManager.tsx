@@ -6,6 +6,7 @@ import { Enemy } from '@/ecs/components/Enemy';
 import { Transform } from '@/ecs/components/Transform';
 import { Health } from '@/ecs/components/Health';
 import StunnedEffect from './StunnedEffect';
+import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
 
 interface StunnedEnemyData {
   enemyId: string;
@@ -48,6 +49,7 @@ export default function StunManager({ world }: StunManagerProps) {
     const allEntities = world.getAllEntities();
     return allEntities
       .filter(entity => entity.hasComponent(Enemy) && entity.hasComponent(Transform) && entity.hasComponent(Health))
+      .filter(entity => !isCoopPlayerAllyEntity(entity))
       .map(entity => {
         const enemy = entity.getComponent(Enemy)!;
         const transform = entity.getComponent(Transform)!;
@@ -64,6 +66,10 @@ export default function StunManager({ world }: StunManagerProps) {
   }, [world]);
 
   const addStunnedEnemy = useCallback((enemyId: string, position: Vector3, duration: number = 4000) => {
+    if (world) {
+      const entity = world.getAllEntities().find(e => e.id.toString() === enemyId);
+      if (entity && isCoopPlayerAllyEntity(entity)) return;
+    }
     setStunnedEnemies(prev => {
       const rest = prev.filter(se => se.enemyId !== enemyId);
       return [
@@ -76,7 +82,7 @@ export default function StunManager({ world }: StunManagerProps) {
         },
       ];
     });
-  }, []);
+  }, [world]);
 
   const getActiveStunnedEnemies = useCallback(() => stunnedEnemies, [stunnedEnemies]);
 
@@ -111,6 +117,10 @@ export default function StunManager({ world }: StunManagerProps) {
 
         const entity = allEntities.find(e => e.id.toString() === stunnedEnemy.enemyId);
         if (!entity) {
+          return false;
+        }
+
+        if (isCoopPlayerAllyEntity(entity)) {
           return false;
         }
 

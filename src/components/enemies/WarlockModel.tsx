@@ -5,6 +5,7 @@ import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
 
 interface WarlockModelProps {
   isWalking: boolean;
@@ -31,7 +32,7 @@ export function preloadWarlockModels(): void {
 
 const SCALE = 0.0125;
 
-export default function WarlockModel({
+export default React.memo(function WarlockModel({
   isWalking,
   isBlinking,
   isLaunching,
@@ -67,33 +68,18 @@ export default function WarlockModel({
 
   useDisposeClonedMaterials(clonedScene);
 
-  const animations = useMemo(() => {
-    const rename = (clips: AnimationClip[], name: string) =>
-      clips.map(c => { const r = c.clone(); r.name = name; return r; });
-
-    const stripRootMotionXZ = (clip: AnimationClip): AnimationClip => {
-      clip.tracks = clip.tracks.map(track => {
-        if (!track.name.endsWith('.position')) return track;
-        if (!track.name.toLowerCase().includes('hips')) return track;
-        const values = Float32Array.from(track.values);
-        for (let i = 0; i < values.length; i += 3) {
-          values[i]     = 0;
-          values[i + 2] = 0;
-        }
-        return new VectorKeyframeTrack(track.name, Array.from(track.times), Array.from(values));
-      });
-      return clip;
-    };
-
-    return [
-      ...rename(idleAnims,   'Idle').map(stripRootMotionXZ),
-      ...rename(walkAnims,   'Walk').map(stripRootMotionXZ),
-      ...rename(blinkAnims,  'Blink'),
-      ...rename(launchAnims, 'Launch'),
-      ...rename(deathAnims,  'Death'),
-      ...rename(impactAnims, 'Impact'),
-    ];
-  }, [idleAnims, walkAnims, blinkAnims, launchAnims, deathAnims, impactAnims]);
+  const animations = useMemo(
+    () =>
+      getCachedEnemyAnimationClips('warlock', () => [
+        ...renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ),
+        ...renameAnimationClips(walkAnims, 'Walk').map(stripRootMotionXZ),
+        ...renameAnimationClips(blinkAnims, 'Blink'),
+        ...renameAnimationClips(launchAnims, 'Launch'),
+        ...renameAnimationClips(deathAnims, 'Death'),
+        ...renameAnimationClips(impactAnims, 'Impact'),
+      ]),
+    [idleAnims, walkAnims, blinkAnims, launchAnims, deathAnims, impactAnims],
+  );
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
@@ -154,9 +140,10 @@ export default function WarlockModel({
       if (isDying) return;
       const fallback = isWalking ? getAction('Walk') : getAction('Idle');
       if (fallback) {
+        fallback.enabled = true;
         fallback.setLoop(LoopRepeat, Infinity);
         currentActionRef.current?.fadeOut(0.15);
-        fallback.reset().fadeIn(0.15).play();
+        fallback.fadeIn(0.15).play();
         currentActionRef.current = fallback;
       }
     };
@@ -187,4 +174,5 @@ export default function WarlockModel({
       </group>
     </group>
   );
-}
+});
+

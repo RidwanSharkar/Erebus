@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
 
 import { Billboard, Text } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
-import { AdditiveBlending, Color, Group, MeshBasicMaterial, RingGeometry, Vector3 } from 'three';
+import { AdditiveBlending, Color, Group, Mesh, MeshBasicMaterial, RingGeometry, Vector3 } from 'three';
 import WeaverModel from './WeaverModel';
 import AscendantBoneWings from '../dragon/AscendantBoneWings';
 import EnemyStaggerBar from './EnemyStaggerBar';
@@ -13,7 +13,8 @@ import Boss3GreenBeam from './Boss3GreenBeam';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
 import { campHpTheme } from '@/utils/campHpTheme';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_HEIGHT, ENEMY_HP_BAR_FILL_HEIGHT, ENEMY_HP_BAR_FILL_Z, applyEnemyHealthBarFill } from '@/utils/enemyHealthBar';
 
 interface Boss3RendererProps {
   id: string;
@@ -130,9 +131,12 @@ function Boss3Renderer({
   const theme = campHpTheme('green');
   const { socket, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
+  const hpFillRef = useRef<Mesh>(null);
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
-  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isWalkingRef = useRef(false);
+  const isCastingSummonRef = useRef(false);
+  const lastMoveTimeRef = useRef(0);
   const pendingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const trackTimeout = useCallback((fn: () => void, ms: number) => {
@@ -146,6 +150,10 @@ function Boss3Renderer({
   const fadeTimer = useRef(0);
   const opacity = useRef(1);
   const cachedDeathMats = useRef<any[]>([]);
+
+  useLayoutEffect(() => {
+    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, ENEMY_HP_BAR_WIDTH);
+  }, [health, maxHealth]);
   const deathCacheBuilt = useRef(false);
 
   const [isWalking, setIsWalking] = useState(false);
@@ -159,6 +167,7 @@ function Boss3Renderer({
       (window as any).audioSystem.stopSound('icebeam', greenBeamSoundInstance.current);
       greenBeamSoundInstance.current = null;
     }
+    (window as any).audioSystem?.stopSound?.('icebeam');
   }, []);
 
   const setGroupRef = useCallback((group: Group | null) => {
@@ -176,21 +185,7 @@ function Boss3Renderer({
     if (dist > 8 && groupRef.current) {
       groupRef.current.position.copy(position);
     }
-
-    if (dist > 0.01 && !isCastingSummon && !isDying && !(greenBeamHold && greenBeamHold.isActive)) {
-      setIsWalking(true);
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
-    }
-  }, [
-    position.x,
-    position.y,
-    position.z,
-    isCastingSummon,
-    isDying,
-    greenBeamHold?.isActive,
-    greenBeamHold?.startTime,
-  ]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     targetRotation.current = rotation;
@@ -198,7 +193,6 @@ function Boss3Renderer({
 
   useEffect(
     () => () => {
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       pendingTimersRef.current.forEach(clearTimeout);
       pendingTimersRef.current = [];
       stopGreenBeamSound();
@@ -207,6 +201,10 @@ function Boss3Renderer({
   );
 
   const greenBeamIsActive = greenBeamHold?.isActive ?? false;
+
+  useEffect(() => {
+    isCastingSummonRef.current = isCastingSummon;
+  }, [isCastingSummon]);
 
   useEffect(() => {
     if (greenBeamIsActive) {
@@ -219,6 +217,12 @@ function Boss3Renderer({
       stopGreenBeamSound();
     }
   }, [greenBeamIsActive, greenBeamHold?.startTime, stopGreenBeamSound]);
+
+  useEffect(() => {
+    if (!isDying) return;
+    stopGreenBeamSound();
+    setGreenBeamHold((prev) => (prev ? { ...prev, isActive: false } : null));
+  }, [isDying, stopGreenBeamSound]);
 
   useEffect(() => {
     if (!socket) return;
@@ -278,7 +282,16 @@ function Boss3Renderer({
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    updateEnemyWalkStateFromMoveDist(
+      dist,
+      isCastingSummonRef.current || greenBeamIsActive,
+      isDying,
+      WALK_STOP_DELAY,
+      lastMoveTimeRef,
+      isWalkingRef,
+      setIsWalking,
+    );
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
     let deltaAngle = targetRotation.current - group.rotation.y;
@@ -331,15 +344,14 @@ function Boss3Renderer({
         {novaWindup && (
           <Boss3NovaWindupTelegraph startTime={novaWindup.startTime} durationMs={novaWindup.durationMs} />
         )}
+        {greenBeamHold && (
+          <Boss3GreenBeam
+            isActive={greenBeamIsActive}
+            startTime={greenBeamHold.startTime}
+            onComplete={() => setGreenBeamHold(null)}
+          />
+        )}
       </group>
-
-      {greenBeamHold && (
-        <Boss3GreenBeam
-          isActive={greenBeamIsActive}
-          startTime={greenBeamHold.startTime}
-          onComplete={() => setGreenBeamHold(null)}
-        />
-      )}
 
       <EnemyDynamicLight color="#44ffaa" intensity={4} distance={14} decay={2} position={[0, 3.2, 0]} />
 
@@ -347,11 +359,15 @@ function Boss3Renderer({
         {health > 0 && !isDying && (
           <>
             <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[2.0, 0.25]} />
+              <planeGeometry args={[ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_HEIGHT]} />
               <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
-            <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
-              <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
+            <mesh
+              ref={hpFillRef}
+              position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
+              scale={[1, 1, 1]}
+            >
+              <planeGeometry args={[ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_FILL_HEIGHT]} />
               <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
             <Text

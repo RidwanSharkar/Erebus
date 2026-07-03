@@ -7,6 +7,7 @@ import { World } from '@/ecs/World';
 import { Enemy } from '@/ecs/components/Enemy';
 import { Transform } from '@/ecs/components/Transform';
 import { Health } from '@/ecs/components/Health';
+import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
 
 interface FrostNovaData {
   id: number;
@@ -73,11 +74,7 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
     const allEntities = world.getAllEntities();
     return allEntities
       .filter(entity => entity.hasComponent(Enemy) && entity.hasComponent(Transform) && entity.hasComponent(Health))
-      .filter(
-        entity =>
-          !entity.userData?.isCoopAlliedUnit &&
-          entity.userData?.coopServerEnemyType !== 'allied-knight',
-      )
+      .filter(entity => !isCoopPlayerAllyEntity(entity))
       .map(entity => {
         const enemy = entity.getComponent(Enemy)!;
         const transform = entity.getComponent(Transform)!;
@@ -106,6 +103,10 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
 
   const addFrozenEnemy = useCallback(
     (enemyId: string, position: Vector3, durationMs: number = DEFAULT_FROZEN_VFX_MS) => {
+      if (world) {
+        const entity = world.getAllEntities().find(e => e.id.toString() === enemyId);
+        if (entity && isCoopPlayerAllyEntity(entity)) return;
+      }
       (window as any).audioSystem?.playFrozenStatusSound?.(position);
       setFrozenEnemies(prev => {
         const rest = prev.filter(fe => fe.enemyId !== enemyId);
@@ -120,7 +121,7 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
         ];
       });
     },
-    [],
+    [world],
   );
 
   const getActiveFrostNovas = useCallback(() => activeFrostNovas, [activeFrostNovas]);

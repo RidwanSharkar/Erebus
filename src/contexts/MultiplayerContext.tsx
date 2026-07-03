@@ -15,6 +15,7 @@ import { Vector3 } from '@/utils/three-exports';
 import { applyEnemyMoveBatch, type EnemyLiveTransform } from '@/utils/enemyLiveTransform';
 import { applyPlayerMove, type PlayerLiveTransform } from '@/utils/playerLiveTransform';
 import { patchEnemyRef, patchPlayerRef } from '@/utils/multiplayerRefPatch';
+import { buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
 
 export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss';
 export type CoopTerrainTheme = 'purple' | 'blue' | 'green';
@@ -393,6 +394,11 @@ interface MultiplayerContextType {
   hideCoopPortalTransition: () => void;
   /** Phase 2: tell the server this client has fully loaded (call after the fade completes). */
   confirmCoopPortalTransitionComplete: () => void;
+  /** Reset outbound position emit throttle after an authoritative portal snap. */
+  resetLocalPositionEmitThrottle: (
+    position: { x: number; y: number; z: number },
+    rotation: { x: number; y: number; z: number },
+  ) => void;
   /** @deprecated Use hideCoopPortalTransition + confirmCoopPortalTransitionComplete instead. */
   endCoopPortalTransition: () => void;
 
@@ -589,6 +595,7 @@ export type MultiplayerActionsContextType = Pick<
   | 'setPlayers'
   | 'hideCoopPortalTransition'
   | 'confirmCoopPortalTransitionComplete'
+  | 'resetLocalPositionEmitThrottle'
   | 'endCoopPortalTransition'
   | 'clearCoopClearedRoomColor'
   | 'clearLateJoinCombatLoadout'
@@ -1311,6 +1318,18 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
+    addEventHandler('player-damaged', (data: {
+      targetPlayerId?: string;
+      newHealth?: number;
+      maxHealth?: number;
+    }) => {
+      if (!data.targetPlayerId || typeof data.newHealth !== 'number') return;
+      patchPlayerRef(playersRef, data.targetPlayerId, {
+        health: data.newHealth,
+        maxHealth: data.maxHealth,
+      });
+    });
+
     // Enemy event handlers (for multiplayer and co-op modes)
     addEventHandler('enemy-spawned', (data) => {
       setEnemies(prev => {
@@ -1326,17 +1345,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       startTime: number;
       soulType?: string;
     }) => {
-      setEnemies(prev => {
-        const updated = new Map(prev);
-        const enemy = updated.get(data.titanId);
-        if (enemy) {
-          updated.set(data.titanId, {
-            ...enemy,
-            bladestormActive: true,
-            bladestormStartTime: data.startTime,
-          });
-        }
-        return updated;
+      patchEnemyRef(enemiesRef, data.titanId, {
+        bladestormActive: true,
+        bladestormStartTime: data.startTime,
       });
     });
 
@@ -1360,13 +1371,25 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       }
     });
 
-    addEventHandler('mushroom-damaged', (data: { index: number; newHealth: number; maxHealth: number }) => {
+    addEventHandler('mushroom-damaged', (data: { index: number; newHealth: number; maxHealth: number; damage?: number }) => {
       setMushroomState((prev) => {
         if (!prev) return prev;
         const h = [...prev.health];
         if (data.index >= 0 && data.index < h.length) h[data.index] = data.newHealth;
         return { health: h, maxHealth: data.maxHealth ?? prev.maxHealth };
       });
+
+      if (typeof data.damage === 'number' && data.damage > 0) {
+        const inst = buildMushroomInstances()[data.index];
+        if (inst) {
+          const mgr = (window as any).damageNumberManager;
+          if (mgr?.addDamageNumber) {
+            const c = getMushroomColliderCenter(inst);
+            const pos = new Vector3(c.x, c.y + 1.0, c.z);
+            mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
+          }
+        }
+      }
     });
 
     addEventHandler('mushroom-destroyed', (data: { index: number }) => {
@@ -1395,6 +1418,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           data.damageType === 'player_zombie' ||
           data.damageType === 'zombie_explosion' ||
           data.damageType === 'allied_knight' ||
+          data.damageType === 'mushroom_eruption' ||
           (data.damageType === 'crossentropy' && data.crossentropyMeteorDamage === true) ||
           (data.damageType === 'cloudkill' && data.cloudkillDamage === true)) &&
         typeof data.damage === 'number' &&
@@ -1415,6 +1439,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
                   ? 'player_zombie'
                   : data.damageType === 'allied_knight'
                   ? 'allied_knight'
+                  : data.damageType === 'mushroom_eruption'
+                  ? 'mushroom_eruption'
                   : 'ignite';
           mgr.addDamageNumber(data.damage, !!data.isCritical, pos, dt);
         }
@@ -1500,17 +1526,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       recoverAt?: number[];
     }) => {
       const knightId = data.knightId || 'allied-knight';
-      setEnemies(prev => {
-        const updated = new Map(prev);
-        const enemy = updated.get(knightId);
-        if (enemy) {
-          updated.set(knightId, {
-            ...enemy,
-            alliedOrbSlots: Array.isArray(data.slots) ? [...data.slots] : enemy.alliedOrbSlots,
-            alliedOrbRecoverAt: Array.isArray(data.recoverAt) ? [...data.recoverAt] : enemy.alliedOrbRecoverAt,
-          });
-        }
-        return updated;
+      const enemy = enemiesRef.current.get(knightId);
+      if (!enemy) return;
+      patchEnemyRef(enemiesRef, knightId, {
+        alliedOrbSlots: Array.isArray(data.slots) ? [...data.slots] : enemy.alliedOrbSlots,
+        alliedOrbRecoverAt: Array.isArray(data.recoverAt) ? [...data.recoverAt] : enemy.alliedOrbRecoverAt,
       });
     });
 
@@ -1840,6 +1860,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopPortalBlinkSeq((s) => s + 1);
       }
       if (data?.players && Array.isArray(data.players)) {
+        for (const p of data.players as Player[]) {
+          applyPlayerMove(playersTransformsRef, playersRef, {
+            playerId: p.id,
+            position: p.position,
+            rotation: p.rotation,
+            movementDirection: p.movementDirection,
+          });
+        }
         setPlayers((prev) => {
           const next = new Map(prev);
           for (const p of data.players as Player[]) {
@@ -2199,6 +2227,19 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
   const clearLateJoinCombatLoadout = useCallback(() => {
     setLateJoinCombatLoadout(null);
+  }, []);
+
+  const resetLocalPositionEmitThrottle = useCallback((
+    position: { x: number; y: number; z: number },
+    rotation: { x: number; y: number; z: number },
+  ) => {
+    lastLocalPositionEmitRef.current = {
+      time: 0,
+      x: position.x,
+      y: position.y,
+      z: position.z,
+      ry: rotation.y,
+    };
   }, []);
 
   const updatePlayerPosition = useCallback((position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: PlayerMovementDirection) => {
@@ -2844,6 +2885,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     clearLateJoinCombatLoadout,
     hideCoopPortalTransition,
     confirmCoopPortalTransitionComplete,
+    resetLocalPositionEmitThrottle,
     endCoopPortalTransition,
     currentPreview,
     joinRoom,
@@ -2975,6 +3017,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setPlayers,
       hideCoopPortalTransition,
       confirmCoopPortalTransitionComplete,
+      resetLocalPositionEmitThrottle,
       endCoopPortalTransition,
       clearCoopClearedRoomColor,
       clearLateJoinCombatLoadout,
@@ -3035,6 +3078,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setPlayers,
       hideCoopPortalTransition,
       confirmCoopPortalTransitionComplete,
+      resetLocalPositionEmitThrottle,
       endCoopPortalTransition,
       clearCoopClearedRoomColor,
       clearLateJoinCombatLoadout,

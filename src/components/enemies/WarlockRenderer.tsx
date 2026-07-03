@@ -8,7 +8,7 @@ import WarlockModel from './WarlockModel';
 import WarlockTeleportEffect from './WarlockTeleportEffect';
 import CubeSoulEffect from './CubeSoulEffect';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import GhostTrail from '../dragon/GhostTrail';
@@ -74,7 +74,7 @@ function WarlockRenderer({
   const opacity        = useRef(1);
   const cachedDeathMats = useRef<any[]>([]);
   const deathCacheBuilt = useRef(false);
-  const walkStopTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMoveTimeRef = useRef(0);
   const pendingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const trackTimeout = useCallback((fn: () => void, ms: number) => {
@@ -97,13 +97,12 @@ function WarlockRenderer({
 
   useEffect(() => {
     return () => {
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       pendingTimersRef.current.forEach(clearTimeout);
       pendingTimersRef.current = [];
     };
   }, []);
 
-  // Derive walking state from server position deltas (purple warlock only).
+  // Keep spawn snap in sync with React position prop updates.
   useEffect(() => {
     const dist = targetPosition.current.distanceTo(position);
     const isLaunchLocked = isLaunchingRef.current;
@@ -113,23 +112,7 @@ function WarlockRenderer({
     if (dist > 2.0 && groupRef.current && !isLaunchLocked && !isBlinkingRef.current) {
       groupRef.current.position.copy(position);
     }
-    if (
-      soulType === 'purple' &&
-      dist > 0.01 &&
-      !isLaunchLocked &&
-      !isDying
-    ) {
-      if (!isWalkingRef.current) {
-        isWalkingRef.current = true;
-        setIsWalking(true);
-      }
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => {
-        isWalkingRef.current = false;
-        setIsWalking(false);
-      }, WALK_STOP_DELAY);
-    }
-  }, [position.x, position.y, position.z, soulType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     targetRotation.current = rotation;
@@ -270,6 +253,18 @@ function WarlockRenderer({
 
       if (dist > 2.0 && !isLaunchLocked) {
         group.position.copy(targetPosition.current);
+      }
+
+      if (soulType === 'purple') {
+        updateEnemyWalkStateFromMoveDist(
+          dist,
+          isLaunchLocked || isBlinkingRef.current,
+          isDying,
+          WALK_STOP_DELAY,
+          lastMoveTimeRef,
+          isWalkingRef,
+          setIsWalking,
+        );
       }
 
       if (!isLaunchLocked) {

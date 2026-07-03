@@ -8,23 +8,31 @@ const _spearLightWorld = new Vector3();
 const _lookDirScratch = new Vector3();
 
 interface ThrowSpearProjectileProps {
+  projectile: { opacity: number };
   position: Vector3;
   direction: Vector3;
-  opacity: number;
   isReturning: boolean;
   chargeTime: number; // 0-2 seconds, affects visual intensity
 }
 
 export default function ThrowSpearProjectile({ 
+  projectile,
   position, 
   direction, 
-  opacity, 
   isReturning,
   chargeTime 
 }: ThrowSpearProjectileProps) {
   const groupRef = useRef<Group>(null);
   const lightAnchorRef = useRef<Group>(null);
   const TRAIL_COUNT = 16;
+  const lastAppliedOpacity = useRef(-1);
+
+  const bindOpacityFactor = (factor: number) => (mat: { userData: { opacityFactor?: number }; transparent?: boolean; opacity?: number } | null) => {
+    if (!mat) return;
+    mat.userData.opacityFactor = factor;
+    mat.transparent = true;
+    mat.opacity = projectile.opacity * factor;
+  };
 
   // Calculate visual intensity based on charge time (0-1)
   const chargeIntensity = Math.min(chargeTime / 2, 1);
@@ -38,18 +46,38 @@ export default function ThrowSpearProjectile({
   useFrame(() => {
     if (!groupRef.current) return;
 
-    // Update position
     groupRef.current.position.copy(position);
+
+    const opacity = projectile.opacity;
+    if (opacity !== lastAppliedOpacity.current) {
+      lastAppliedOpacity.current = opacity;
+      groupRef.current.traverse((child) => {
+        const mesh = child as {
+          isMesh?: boolean;
+          material?: { userData?: { opacityFactor?: number }; opacity?: number; transparent?: boolean }
+            | Array<{ userData?: { opacityFactor?: number }; opacity?: number; transparent?: boolean }>;
+        };
+        if (!mesh.isMesh || !mesh.material) return;
+        const applyOpacity = (mat: { userData?: { opacityFactor?: number }; opacity?: number; transparent?: boolean }) => {
+          const factor = mat.userData?.opacityFactor ?? 1;
+          mat.transparent = true;
+          mat.opacity = opacity * factor;
+        };
+        if (Array.isArray(mesh.material)) {
+          mesh.material.forEach(applyOpacity);
+        } else {
+          applyOpacity(mesh.material);
+        }
+      });
+    }
 
     // Calculate rotation based on direction (similar to ViperSting)
     _lookDirScratch.copy(direction).normalize();
     const rotationY = Math.atan2(_lookDirScratch.x, _lookDirScratch.z);
     const rotationX = Math.atan2(-_lookDirScratch.y, Math.sqrt(_lookDirScratch.x * _lookDirScratch.x + _lookDirScratch.z * _lookDirScratch.z));
 
-    // Apply rotation - this will make the spear flip when returning
     groupRef.current.rotation.set(rotationX, rotationY, 0);
 
-    // Drive the pooled light at the energy-core anchor's world position.
     if (lightAnchorRef.current) {
       lightAnchorRef.current.getWorldPosition(_spearLightWorld);
       spearLight.current?.setPosition(_spearLightWorld.x, _spearLightWorld.y, _spearLightWorld.z);
@@ -148,7 +176,7 @@ export default function ThrowSpearProjectile({
                 color="#2a3b4c" 
                 roughness={0.7}
                 transparent
-                opacity={opacity}
+                opacity={1}
               />
             </mesh>
             
@@ -161,7 +189,8 @@ export default function ThrowSpearProjectile({
                   metalness={0.6} 
                   roughness={0.4}
                   transparent
-                  opacity={opacity}
+                  opacity={1}
+                  ref={bindOpacityFactor(1)}
                 />
               </mesh>
             ))}
@@ -176,7 +205,8 @@ export default function ThrowSpearProjectile({
                 metalness={0.9}
                 roughness={0.1}
                 transparent
-                opacity={opacity}
+                opacity={1}
+                ref={bindOpacityFactor(1)}
               />
             </mesh>
             
@@ -197,7 +227,8 @@ export default function ThrowSpearProjectile({
                   metalness={0.9}
                   roughness={0.1}
                   transparent
-                  opacity={opacity}
+                  opacity={1}
+                  ref={bindOpacityFactor(1)}
                 />
               </mesh>
             ))}
@@ -210,7 +241,8 @@ export default function ThrowSpearProjectile({
                 emissive={cSpear}
                 emissiveIntensity={baseEmissiveIntensity}
                 transparent
-                opacity={opacity}
+                opacity={1}
+                ref={bindOpacityFactor(1)}
               />
             </mesh>
             
@@ -221,7 +253,8 @@ export default function ThrowSpearProjectile({
                 emissive={cSpear}
                 emissiveIntensity={coreEmissiveIntensity}
                 transparent
-                opacity={opacity * 0.8}
+                opacity={1}
+                ref={bindOpacityFactor(0.8)}
               />
             </mesh>
             
@@ -232,7 +265,8 @@ export default function ThrowSpearProjectile({
                 emissive={cSpear}
                 emissiveIntensity={baseEmissiveIntensity + 1}
                 transparent
-                opacity={opacity * 0.6}
+                opacity={1}
+                ref={bindOpacityFactor(0.6)}
               />
             </mesh>
             
@@ -243,7 +277,8 @@ export default function ThrowSpearProjectile({
                 emissive={cSpear}
                 emissiveIntensity={baseEmissiveIntensity}
                 transparent
-                opacity={opacity * 0.4}
+                opacity={1}
+                ref={bindOpacityFactor(0.4)}
               />
             </mesh>
 
@@ -262,9 +297,10 @@ export default function ThrowSpearProjectile({
                     emissiveIntensity={baseEmissiveIntensity}
                     metalness={0.8}
                     roughness={0.1}
-                    opacity={opacity * 0.8}
+                    opacity={1}
                     transparent
                     side={DoubleSide}
+                    ref={bindOpacityFactor(0.8)}
                   />
                 </mesh>
               </group>
@@ -281,9 +317,10 @@ export default function ThrowSpearProjectile({
                     emissiveIntensity={baseEmissiveIntensity}
                     metalness={0.8}
                     roughness={0.1}
-                    opacity={opacity * 0.8}
+                    opacity={1}
                     transparent
                     side={DoubleSide}
+                    ref={bindOpacityFactor(0.8)}
                   />
                 </mesh>
               </group>
@@ -299,9 +336,10 @@ export default function ThrowSpearProjectile({
                     emissiveIntensity={baseEmissiveIntensity}
                     metalness={0.8}
                     roughness={0.1}
-                    opacity={opacity * 0.8}
+                    opacity={1}
                     transparent
                     side={DoubleSide}
+                    ref={bindOpacityFactor(0.8)}
                   />
                 </mesh>
               </group>
@@ -319,7 +357,8 @@ export default function ThrowSpearProjectile({
                 metalness={0.3}
                 roughness={0.1}
                 transparent
-                opacity={opacity}
+                opacity={1}
+                ref={bindOpacityFactor(1)}
               />
             </mesh>
             
@@ -331,8 +370,9 @@ export default function ThrowSpearProjectile({
                 emissiveIntensity={baseEmissiveIntensity * 0.7}
                 metalness={0.2}
                 roughness={0.1}
-                opacity={opacity * 0.8}
+                opacity={1}
                 transparent
+                ref={bindOpacityFactor(0.8)}
               />
             </mesh>
           </group>
@@ -341,8 +381,8 @@ export default function ThrowSpearProjectile({
 
       {/* Lightning trail effects - more intense with higher charge */}
       {[...Array(TRAIL_COUNT)].map((_, index) => {
-        const trailOpacity = opacity * (1 - index / TRAIL_COUNT) * 0.6;
         const trailScale = 1.15 - (index / TRAIL_COUNT) * 0.5;
+        const trailOpacityFactor = (1 - index / TRAIL_COUNT) * 0.6 * 0.5;
         
         // Calculate trail offset in world space (behind the spear along its trajectory)
         // Use the direction vector to position trails behind the spear
@@ -363,9 +403,10 @@ export default function ThrowSpearProjectile({
                 emissive={cLightning}
                 emissiveIntensity={chargeIntensity * 2 + 1}
                 transparent
-                opacity={trailOpacity * 0.5}
+                opacity={1}
                 blending={AdditiveBlending}
                 depthWrite={false}
+                ref={bindOpacityFactor(trailOpacityFactor)}
               />
             </mesh>
           </group>

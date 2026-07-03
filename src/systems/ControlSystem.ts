@@ -253,6 +253,7 @@ import type { AegisPaletteVariant } from '@/utils/aegisShieldPalette';
 import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import { triggerGlobalFireStorm } from '@/components/weapons/fireStormSpawnBridge';
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
+import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
 import { triggerGlobalCobraShot } from '@/components/projectiles/CobraShotManager';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import { triggerGlobalRejuvenatingShot } from '@/components/projectiles/RejuvenatingShotManager';
@@ -727,6 +728,7 @@ export class ControlSystem extends System {
   
   // Sunder stack tracking - Map of entity ID to stack data
   private sunderStacks = new Map<number, { stacks: number; lastApplied: number; duration: number }>();
+  private lastSunderCleanupTime = 0;
 
   // Active debuff effects tracking for PVP players - Map of entity ID to debuff data
   private activeDebuffEffects = new Map<number, { debuffType: string; startTime: number; duration: number }[]>();
@@ -1057,13 +1059,20 @@ export class ControlSystem extends System {
 
     const md = playerMovement.moveDirection;
     const moveLenSq = md.x * md.x + md.z * md.z;
+    let movingForwardOrStrafe = moveLenSq > 0.0001;
+    if (movingForwardOrStrafe) {
+      const { cameraForward } = this.getCameraMovementBasis();
+      const fwdDot = cameraForward.x * md.x + cameraForward.z * md.z;
+      // Same 112.5° threshold as handleMovementInput backward slow-walk.
+      movingForwardOrStrafe = fwdDot >= Math.cos((5 * Math.PI) / 8);
+    }
     const wantsFootsteps =
       playerMovement.isGrounded &&
       !playerMovement.isDashing &&
       !playerMovement.isCharging &&
       !playerMovement.isFrozen &&
       playerMovement.inputStrength > 0.05 &&
-      moveLenSq > 0.0001 &&
+      movingForwardOrStrafe &&
       !(playerMovement.isAttackSlowed || playerMovement.isIcebeaming);
     this.audioSystem?.setFootstepsPlaying(wantsFootsteps);
   }
@@ -3009,8 +3018,8 @@ export class ControlSystem extends System {
   }
 
   private healNearbyAllies(playerTransform: Transform, healAmount: number, radius: number): void {
-    // Get all entities in the world
-    const allEntities = this.world.getAllEntities();
+    // Only consider entities within heal radius instead of scanning the whole world
+    const allEntities = this.queryNearbyEntities(playerTransform.position, radius);
     const playerPosition = playerTransform.position;
     
     // Get local socket ID to avoid healing ourselves again
@@ -3307,8 +3316,8 @@ export class ControlSystem extends System {
   }
 
   private freezeEnemiesInRadius(centerPosition: Vector3, radius: number, currentTime: number, freezeDurationSec = 6): void {
-    // Get all entities in the world
-    const allEntities = this.world.getAllEntities();
+    // Only consider entities within freeze radius instead of scanning the whole world
+    const allEntities = this.queryNearbyEntities(centerPosition, radius);
     let frozenCount = 0;
     let damagedPlayers = 0;
     
@@ -3332,10 +3341,7 @@ export class ControlSystem extends System {
         const enemy = entity.getComponent(Enemy);
         
         if (enemy) {
-          if (
-            entity.userData?.isCoopAlliedUnit ||
-            entity.userData?.coopServerEnemyType === 'allied-knight'
-          ) {
+          if (isCoopPlayerAllyEntity(entity)) {
             return;
           }
           const sk = entity.userData?.coopServerEnemyType as string | undefined;
@@ -4409,8 +4415,8 @@ export class ControlSystem extends System {
     let damageDealt = false;
     let totalDamage = 0;
 
-    // Get all entities in the world to check for enemies/players
-    const allEntities = this.world.getAllEntities();
+    // Only consider entities within damage radius instead of scanning the whole world
+    const allEntities = this.queryNearbyEntities(smitePosition, damageRadius);
 
     allEntities.forEach(entity => {
       if (entity.id === this.playerEntity?.id) return; // Don't damage self
@@ -4637,8 +4643,6 @@ export class ControlSystem extends System {
   }
 
   private performWraithStrikeDamage(playerTransform: Transform): void {
-    // Get all entities in the world to check for enemies/players
-    const allEntities = this.world.getAllEntities();
     const playerPosition = playerTransform.position;
     
     // Get player facing direction (camera direction)
@@ -4656,6 +4660,9 @@ export class ControlSystem extends System {
 
     const wraithStrikeRange = 5.0; // Same range as melee attacks
     const wraithStrikeAngle = Math.PI / 2; // 90 degree cone
+
+    // Only consider entities within strike range instead of scanning the whole world
+    const allEntities = this.queryNearbyEntities(playerPosition, wraithStrikeRange);
     const wraithStrikeBaseDamage =
       (this.shouldApplyInfestedStrikeTalent() ? 190 : 140) +
       getSpellbladeWraithStrikeFlatDamageBonus(
@@ -4676,6 +4683,7 @@ export class ControlSystem extends System {
 
     for (const entity of allEntities) {
       if (entity === this.playerEntity) continue;
+      if (isCoopPlayerAllyEntity(entity)) continue;
       
       const targetHealth = entity.getComponent(Health);
       const targetTransform = entity.getComponent(Transform);
@@ -4771,11 +4779,14 @@ export class ControlSystem extends System {
     const wraithGuard = shouldApplyWraithGuardTalent(this.talentLoadout, this.abilityLoadout);
     const weapon = this.getCurrentWeapon();
 
+    // Bounding circle around `origin` that fully covers the forward strip zone
+    const aftershockQueryRadius = Math.hypot(AFTERSHOCK_STRIP_LENGTH, AFTERSHOCK_STRIP_HALF_WIDTH);
+
     this.scheduleAbilityTimeout(() => {
       const cs = world.getSystem(CombatSystem);
       if (!cs || !playerEntity) return;
 
-      const allEntities = world.getAllEntities();
+      const allEntities = this.queryNearbyEntities(origin, aftershockQueryRadius);
       for (const entity of allEntities) {
         if (entity === playerEntity) continue;
 
@@ -5069,8 +5080,6 @@ export class ControlSystem extends System {
   }
 
   private performSpearMeleeDamage(playerTransform: Transform): number {
-    // Get all entities in the world to check for enemies
-    const allEntities = this.world.getAllEntities();
     const playerPosition = playerTransform.position;
 
     // Get player facing direction (camera direction)
@@ -5082,12 +5091,15 @@ export class ControlSystem extends System {
     const spearRange = 6.75; // Longer range for spear
     const spearAngle = Math.PI / 2; // 60 degree cone
 
+    // Only consider entities within attack range instead of scanning the whole world
+    const candidates = this.queryNearbyEntities(playerPosition, spearRange);
+
     // Get combat system to apply damage
     const combatSystem = this.world.getSystem(CombatSystem);
 
     let enemiesHit = 0;
 
-    allEntities.forEach(entity => {
+    candidates.forEach(entity => {
       // Check if entity has enemy component and health
       const enemyTransform = entity.getComponent(Transform);
       const enemyHealth = entity.getComponent(Health);
@@ -5203,10 +5215,11 @@ export class ControlSystem extends System {
   }
 
   private performWhirlwindDamage(playerTransform: Transform, baseDamage: number): void {
-    // Get all entities that could be damaged
-    const allEntities = this.world.getAllEntities();
     const playerPosition = playerTransform.position;
     const whirlwindRadius = 4.5; // 3.5 unit radius for damage
+
+    // Only consider entities within whirlwind radius instead of scanning the whole world
+    const allEntities = this.queryNearbyEntities(playerPosition, whirlwindRadius);
 
     // Get combat system
     const combatSystem = this.world.getSystem(CombatSystem);
@@ -5518,8 +5531,9 @@ export class ControlSystem extends System {
     this.camera.getWorldDirection(attackDirection);
     attackDirection.normalize();
 
-    const allEntities = this.world.getAllEntities();
-    const potentialTargets = allEntities.filter(entity =>
+    // Only consider entities within attack range instead of scanning the whole world
+    const nearbyEntities = this.queryNearbyEntities(playerTransform.position, attackRange);
+    const potentialTargets = nearbyEntities.filter(entity =>
       entity.hasComponent(Health) &&
       entity.hasComponent(Transform) &&
       entity !== this.playerEntity
@@ -5574,8 +5588,9 @@ export class ControlSystem extends System {
       attackDirection.normalize();
     }
 
-    const allEntities = this.world.getAllEntities();
-    const potentialTargets = allEntities.filter(entity =>
+    // Only consider entities within attack range instead of scanning the whole world
+    const nearbyEntities = this.queryNearbyEntities(playerTransform.position, attackRange);
+    const potentialTargets = nearbyEntities.filter(entity =>
       entity.hasComponent(Health) &&
       entity.hasComponent(Transform) &&
       entity !== this.playerEntity
@@ -5718,17 +5733,17 @@ export class ControlSystem extends System {
   private performSabresMeleeDamage(playerTransform: Transform): number {
     const currentTime = Date.now() / 1000;
 
-    // Get all entities that could be damaged
-    const allEntities = this.world.getAllEntities();
+    // SABRES DAMAGE
+    const attackRange = 4;
+    const attackAngle = Math.PI / 2;
+
+    // Only consider entities within attack range instead of scanning the whole world
+    const allEntities = this.queryNearbyEntities(playerTransform.position, attackRange);
     const potentialTargets = allEntities.filter(entity =>
       entity.hasComponent(Health) &&
       entity.hasComponent(Transform) &&
       entity !== this.playerEntity
     );
-
-    // SABRES DAMAGE
-    const attackRange = 4;
-    const attackAngle = Math.PI / 2;
 
     // Base damage values
     let leftSabreDamage = 23;
@@ -5944,16 +5959,18 @@ export class ControlSystem extends System {
   private performSkyfallLanding(playerTransform: Transform): void {
     const currentTime = Date.now() / 1000; // Define currentTime for stun effects
 
-    // Deal damage to enemies in landing area
-    const allEntities = this.world.getAllEntities();
     const landingPosition = playerTransform.position;
     const damageRadius = 4.0; // 4 unit radius
     const skyfallDamage = 125; // SKYFALL DAMAGE
+
+    // Only consider entities within landing damage radius instead of scanning the whole world
+    const allEntities = this.queryNearbyEntities(landingPosition, damageRadius);
 
     let hitCount = 0;
     
     for (const entity of allEntities) {
       if (entity === this.playerEntity) continue;
+      if (isCoopPlayerAllyEntity(entity)) continue;
       
       const targetHealth = entity.getComponent(Health);
       const targetTransform = entity.getComponent(Transform);
@@ -6111,8 +6128,6 @@ export class ControlSystem extends System {
   }
   
   private performSunderDamage(playerTransform: Transform): void {
-    // Get all entities in the world to check for enemies/players
-    const allEntities = this.world.getAllEntities();
     const playerPosition = playerTransform.position;
     
     // Get player facing direction (camera direction)
@@ -6126,9 +6141,13 @@ export class ControlSystem extends System {
     const sunderRange = 4; // Same range as backstab
     let hitCount = 0;
     const currentTime = Date.now() / 1000;
+
+    // Only consider entities within sunder range instead of scanning the whole world
+    const allEntities = this.queryNearbyEntities(playerPosition, sunderRange);
     
     for (const entity of allEntities) {
       if (entity === this.playerEntity) continue;
+      if (isCoopPlayerAllyEntity(entity)) continue;
       
       const targetHealth = entity.getComponent(Health);
       const targetTransform = entity.getComponent(Transform);
@@ -6278,14 +6297,10 @@ export class ControlSystem extends System {
     triggerGlobalFireStorm(playerPosition);
     this.audioSystem?.playWeaponSound?.('scythe_cryoflame', playerPosition, { volume: 0.8 });
 
-    for (const entity of this.world.getAllEntities()) {
+    // Only consider entities within storm radius instead of scanning the whole world
+    for (const entity of this.queryNearbyEntities(playerPosition, FIRE_AFFINITY_STORM_RADIUS)) {
       if (entity === this.playerEntity) continue;
-      if (
-        entity.userData?.isCoopAlliedUnit ||
-        entity.userData?.coopServerEnemyType === 'allied-knight'
-      ) {
-        continue;
-      }
+      if (isCoopPlayerAllyEntity(entity)) continue;
       if (!entity.getComponent(Enemy)) continue;
 
       const targetHealth = entity.getComponent(Health);
@@ -6341,12 +6356,18 @@ export class ControlSystem extends System {
     return { damage, stackCount: newStackCount, isStunned };
   }
 
-  // Clean up expired Sunder stacks periodically
+  // Clean up expired Sunder stacks periodically (throttled - stacks last 10s, no need to check every frame)
   private cleanupSunderStacks(): void {
+    if (this.sunderStacks.size === 0) return;
+
     const currentTime = Date.now() / 1000;
+    if (currentTime - this.lastSunderCleanupTime < 1.0) return;
+    this.lastSunderCleanupTime = currentTime;
+
     const stackDuration = 10.0;
-    
-    // Convert to array to avoid iteration issues
+
+    // Target doesn't support native Map iteration, so snapshot to an array - but only
+    // once per throttle window now instead of every frame.
     const entries = Array.from(this.sunderStacks.entries());
     for (const [entityId, stackData] of entries) {
       if ((currentTime - stackData.lastApplied) > stackDuration) {
@@ -8349,8 +8370,9 @@ export class ControlSystem extends System {
           speed: 30, // Slightly faster than regular arrows (20)
           damage: 79, // High damage for barrage arrows
           lifetime: 8,
-          maxDistance: 16, // Limit barrage arrows to 25 units distance (same as regular arrows)
+          maxDistance: 16,
           piercing: false,
+          projectileType: 'barrage',
           subclass: this.currentSubclass,
           level: 1,
           opacity: 1.0,

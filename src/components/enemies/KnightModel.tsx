@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect, useMemo, useState } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import { GLTFLoader } from 'three-stdlib';
@@ -8,6 +8,7 @@ import { peek as suspendPeek } from 'suspend-react';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
 
 export type KnightAbilityClip = 'Smite' | 'Aggro' | 'Cast' | 'Spin' | 'Block';
 
@@ -24,8 +25,8 @@ interface KnightModelProps {
   castShadow?: boolean;
   /** Which ability animation is currently playing, or null when none. */
   abilityClip?: KnightAbilityClip | null;
-  /** When true, keep the current ability clip clamped on its last frame (Storm Lash channel). */
-  holdAbilityClip?: boolean;
+  /** Incremented to restart the current ability clip mid-channel (Storm Lash zaps). */
+  abilityPlayKey?: number;
   /** Hit-react one-shots when damage is taken (renderer sets gates). */
   isImpacting?: boolean;
   impactVariant?: 1 | 2;
@@ -117,7 +118,7 @@ export async function warmupKnightModels(): Promise<void> {
 // Target ≈ 2 game units tall → 2 / 172.5 ≈ 0.0116
 const SCALE = 0.015;
 
-export default function KnightModel({
+export default React.memo(function KnightModel({
   isWalking,
   isAttacking,
   attackVariant,
@@ -127,7 +128,7 @@ export default function KnightModel({
   scaleMultiplier = 1,
   castShadow = true,
   abilityClip,
-  holdAbilityClip = false,
+  abilityPlayKey = 0,
   isImpacting = false,
   impactVariant = 1,
   impactPlayKey = 0,
@@ -136,8 +137,11 @@ export default function KnightModel({
   // This ref is the root handed to useAnimations so the mixer can find bones
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
+  const extraActionsRef = useRef<Partial<Record<string, AnimationAction>>>({});
   const isMountedRef = useRef(true);
   const lastImpactPlayKeyRef = useRef(-1);
+  const lastAbilityPlayKeyRef = useRef(-1);
+  const hasKickedIdleRef = useRef(false);
   const requestedDeferredStatesRef = useRef<Set<KnightDeferredAnimationName>>(new Set());
   const [deferredAnimationClips, setDeferredAnimationClips] = useState<
     Partial<Record<KnightDeferredAnimationName, AnimationClip[]>>
@@ -154,6 +158,7 @@ export default function KnightModel({
 
   // When walk clip source changes (soulType / forceFastWalk), drop cached Walk so the correct GLB reloads.
   useEffect(() => {
+    delete extraActionsRef.current.Walk;
     requestedDeferredStatesRef.current.delete('Walk');
     setDeferredAnimationClips((prev) => {
       if (!prev.Walk) return prev;
@@ -164,8 +169,11 @@ export default function KnightModel({
   }, [soulType, forceFastWalk]);
 
   useEffect(() => {
-    const names = new Set<KnightDeferredAnimationName>();
-    if (isWalking) names.add('Walk');
+    // Walk is requested unconditionally (not gated on isWalking) so it starts
+    // loading as soon as the knight spawns — most knights start walking almost
+    // immediately, and waiting for the first `isWalking` flip left a visible
+    // T-pose/Idle gap while the GLB fetched.
+    const names = new Set<KnightDeferredAnimationName>(['Walk']);
     if (isDying) names.add('Death');
     if (isAttacking) names.add(attackVariant === 2 ? 'Attack2' : 'Attack');
     if (abilityClip) names.add(abilityClip);
@@ -219,66 +227,71 @@ export default function KnightModel({
 
   useDisposeClonedMaterials(clonedScene);
 
-  // Merge clips from the three separate GLBs into one array with canonical names.
-  // Each individual GLB exports its clip as "mixamo.com", so we rename here.
-  // Cloning avoids mutating the cached shared AnimationClip objects.
-  const animations = useMemo(() => {
-    const rename = (clips: AnimationClip[], name: string) =>
-      clips.map(c => { const r = c.clone(); r.name = name; return r; });
+  // Only Idle goes through useAnimations — it is always loaded and stable.
+  // Deferred clips are registered directly on the mixer so loading them never
+  // triggers useAnimations cleanup (which would stop the current Idle/Walk).
+  const idleClips = useMemo(
+    () => getCachedProcessedClips('knight-idle', idleAnims, { stripRootMotion: true, renameTo: 'Idle' }),
+    [idleAnims],
+  );
 
-    // Mixamo walk/idle animations embed root motion in the Hips position track —
-    // the bone physically translates forward through the clip. Since position is
-    // driven by server state, we zero out X and Z while keeping Y so the natural
-    // vertical bounce is preserved.
-    //
-    // Match the Hips position track case-insensitively to handle naming variations
-    // across export tools (mixamorig:Hips, mixamorig_Hips, Hips, etc.).
-    // Only the Hips (root bone) should be stripped — other bones need their
-    // local-space position offsets intact.
-    const stripRootMotionXZ = (clip: AnimationClip): AnimationClip => {
-      clip.tracks = clip.tracks.map(track => {
-        if (!track.name.endsWith('.position')) return track;
-        if (!track.name.toLowerCase().includes('hips')) return track;
-        const values = Float32Array.from(track.values);
-        for (let i = 0; i < values.length; i += 3) {
-          values[i]     = 0; // X
-          values[i + 2] = 0; // Z
-        }
-        return new VectorKeyframeTrack(track.name, Array.from(track.times), Array.from(values));
+  const { actions: idleActions, mixer } = useAnimations(idleClips, sceneGroupRef);
+
+  // Register deferred clips on the mixer as they finish loading.
+  useEffect(() => {
+    if (!mixer || !sceneGroupRef.current) return;
+
+    const root = sceneGroupRef.current;
+    const walkPath = (soulType === 'blue' || forceFastWalk) ? 'fast' : 'default';
+
+    const registerClip = (
+      name: string,
+      rawClips: AnimationClip[] | undefined,
+      cacheKey: string,
+      options: { stripRootMotion?: boolean; renameTo?: string } = {},
+    ) => {
+      if (!rawClips?.length || extraActionsRef.current[name]) return;
+      const processed = getCachedProcessedClips(cacheKey, rawClips, options);
+      processed.forEach((clip) => {
+        extraActionsRef.current[name] = mixer.clipAction(clip, root);
       });
-      return clip;
     };
 
-    return [
-      ...rename(idleAnims,        'Idle').map(stripRootMotionXZ),
-      ...rename(deferredAnimationClips.Walk ?? [],    'Walk').map(stripRootMotionXZ),
-      ...rename(deferredAnimationClips.Attack ?? [],  'Attack'),
-      ...rename(deferredAnimationClips.Attack2 ?? [], 'Attack2'),
-      ...rename(deferredAnimationClips.Death ?? [],   'Death'),
-      ...rename(deferredAnimationClips.Smite ?? [],   'Smite'),
-      ...rename(deferredAnimationClips.Aggro ?? [],   'Aggro'),
-      ...rename(deferredAnimationClips.Cast ?? [],    'Cast'),
-      ...rename(deferredAnimationClips.Spin ?? [],    'Spin').map(stripRootMotionXZ),
-      ...rename(deferredAnimationClips.Block ?? [],   'Block').map(stripRootMotionXZ),
-      ...rename(deferredAnimationClips.Impact1 ?? [], 'Impact1'),
-      ...rename(deferredAnimationClips.Impact2 ?? [], 'Impact2'),
-    ];
-  }, [idleAnims, deferredAnimationClips]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Bind the mixer to the clone's root so it can traverse to find bones by name
-  const { actions, mixer } = useAnimations(animations, sceneGroupRef);
+    registerClip('Walk', deferredAnimationClips.Walk, `knight-walk-${walkPath}`, { stripRootMotion: true, renameTo: 'Walk' });
+    registerClip('Attack', deferredAnimationClips.Attack, 'knight-attack', { renameTo: 'Attack' });
+    registerClip('Attack2', deferredAnimationClips.Attack2, 'knight-attack2', { renameTo: 'Attack2' });
+    registerClip('Death', deferredAnimationClips.Death, 'knight-death', { renameTo: 'Death' });
+    registerClip('Smite', deferredAnimationClips.Smite, 'knight-smite', { renameTo: 'Smite' });
+    registerClip('Aggro', deferredAnimationClips.Aggro, 'knight-aggro', { renameTo: 'Aggro' });
+    registerClip('Cast', deferredAnimationClips.Cast, 'knight-cast', { renameTo: 'Cast' });
+    registerClip('Spin', deferredAnimationClips.Spin, 'knight-spin', { stripRootMotion: true, renameTo: 'Spin' });
+    registerClip('Block', deferredAnimationClips.Block, 'knight-block', { stripRootMotion: true, renameTo: 'Block' });
+    registerClip('Impact1', deferredAnimationClips.Impact1, 'knight-impact1', { renameTo: 'Impact1' });
+    registerClip('Impact2', deferredAnimationClips.Impact2, 'knight-impact2', { renameTo: 'Impact2' });
+  }, [deferredAnimationClips, mixer, soulType, forceFastWalk]);
 
   const getAction = (name: 'Idle' | 'Walk' | 'Attack' | 'Attack2' | 'Death' | 'Smite' | 'Aggro' | 'Cast' | 'Spin' | 'Block' | 'Impact1' | 'Impact2'): AnimationAction | null =>
-    actions[name] ?? null;
+    idleActions[name] ?? extraActionsRef.current[name] ?? null;
+
+  // Kick Idle before first paint so the knight never flashes T-pose on spawn.
+  useLayoutEffect(() => {
+    const idle = idleActions.Idle;
+    if (!idle || hasKickedIdleRef.current) return;
+    hasKickedIdleRef.current = true;
+    idle.enabled = true;
+    idle.setLoop(LoopRepeat, Infinity);
+    idle.play();
+    currentActionRef.current = idle;
+  }, [idleActions]);
 
   // Transition to the right animation clip when state changes.
   // Priority: Death > Attack > Ability > Impact > Walk > Idle
   useEffect(() => {
-    if (!actions) return;
+    if (!idleActions) return;
 
     const attackClip = attackVariant === 2 ? 'Attack2' : 'Attack';
     const impactClip = impactVariant === 1 ? 'Impact1' : 'Impact2';
-    const nextAction = isDying
+    const desiredAction = isDying
       ? getAction('Death')
       : isAttacking
         ? getAction(attackClip)
@@ -290,27 +303,50 @@ export default function KnightModel({
               ? getAction('Walk')
               : getAction('Idle');
 
+    // The desired clip's GLB may still be loading (deferred animations). Fall
+    // back to Idle rather than bailing out, so the knight keeps posing instead
+    // of freezing in the T-pose bind pose while it waits.
+    const usingFallback = !desiredAction;
+    const nextAction = desiredAction ?? getAction('Idle');
+
     if (!nextAction) return;
     if (nextAction === currentActionRef.current) {
-      const retriggerImpact = isImpacting && impactPlayKey !== lastImpactPlayKeyRef.current;
-      if (!retriggerImpact) return;
+      // Block must not restart when impactPlayKey changes — abilityClip outranks impact
+      // and the renderer clears isImpacting on block, but guard here to avoid reset().play().
+      const retriggerImpact =
+        abilityClip !== 'Block' &&
+        isImpacting &&
+        impactPlayKey !== lastImpactPlayKeyRef.current;
+      const retriggerAbility =
+        !!abilityClip &&
+        abilityClip !== 'Block' &&
+        abilityPlayKey !== lastAbilityPlayKeyRef.current;
+      if (!retriggerImpact && !retriggerAbility) return;
     }
 
     currentActionRef.current?.fadeOut(0.2);
 
-    if (isDying) {
+    if (usingFallback) {
+      if (!isImpacting) lastImpactPlayKeyRef.current = -1;
+      nextAction.enabled = true;
+      nextAction.setLoop(LoopRepeat, Infinity);
+      nextAction.fadeIn(0.2).play();
+    } else if (isDying) {
       // Death is a one-shot that clamps on its last frame (corpse pose).
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.15).play();
     } else if (abilityClip === 'Block') {
       // Block holds the final pose for the full invuln window.
-      if (!isImpacting) lastImpactPlayKeyRef.current = -1;
+      lastImpactPlayKeyRef.current = impactPlayKey;
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.2).play();
     } else if (isAttacking || abilityClip) {
       // Attack and ability animations are one-shot — always restart from frame 0.
+      if (abilityClip) {
+        lastAbilityPlayKeyRef.current = abilityPlayKey;
+      }
       nextAction.setLoop(LoopOnce, 1);
       nextAction.clampWhenFinished = true;
       nextAction.reset().fadeIn(0.2).play();
@@ -324,13 +360,14 @@ export default function KnightModel({
       // Re-enable explicitly: Three.js auto-disables actions whose weight reaches 0
       // after a fadeOut (_updateWeight sets enabled=false).
       if (!isImpacting) lastImpactPlayKeyRef.current = -1;
+      if (!abilityClip) lastAbilityPlayKeyRef.current = -1;
       nextAction.enabled = true;
       nextAction.setLoop(LoopRepeat, Infinity);
       nextAction.fadeIn(0.2).play();
     }
 
     currentActionRef.current = nextAction;
-  }, [isWalking, isAttacking, isDying, attackVariant, abilityClip, isImpacting, impactVariant, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isWalking, isAttacking, isDying, attackVariant, abilityClip, abilityPlayKey, isImpacting, impactVariant, impactPlayKey, idleActions, deferredAnimationClips]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After a one-shot animation (impact, attack, or ability) finishes, blend back to Walk or Idle.
   // Do not run for Death — the corpse should stay in the last pose.
@@ -341,9 +378,10 @@ export default function KnightModel({
       if (isDying) return;
       const fallback = isWalking ? getAction('Walk') : getAction('Idle');
       if (fallback) {
+        fallback.enabled = true;
         fallback.setLoop(LoopRepeat, Infinity);
         currentActionRef.current?.fadeOut(0.15);
-        fallback.reset().fadeIn(0.15).play();
+        fallback.fadeIn(0.15).play();
         currentActionRef.current = fallback;
       }
     };
@@ -359,14 +397,13 @@ export default function KnightModel({
         return;
       }
       if (name === 'Attack' || name === 'Attack2' || name === 'Smite' || name === 'Aggro' || name === 'Cast' || name === 'Spin') {
-        if (name === 'Cast' && holdAbilityClip) return;
         blendToWalkOrIdle();
       }
     };
 
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isDying, isWalking, holdAbilityClip, actions, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isDying, isWalking, idleActions, deferredAnimationClips, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     // sceneGroupRef wraps the clone so the AnimationMixer can traverse into the
@@ -377,4 +414,5 @@ export default function KnightModel({
       </group>
     </group>
   );
-}
+});
+

@@ -10,7 +10,7 @@ import TitanBladestorm from './TitanBladestorm';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyMeleeAttackRangeRing, { TITAN_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 
 const SOUL_TYPES = ['green', 'red', 'blue', 'purple'] as const;
@@ -74,8 +74,9 @@ function TitanRenderer({
   const isPoweringUpRef = useRef(false);
   const isStompingRef = useRef(false);
   const isCastingRef = useRef(false);
+  const isWalkingRef = useRef(true);
 
-  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMoveTimeRef = useRef(0);
   const pendingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const trackTimeout = useCallback((fn: () => void, ms: number) => {
@@ -111,19 +112,10 @@ function TitanRenderer({
     if (dist > 15.0 && groupRef.current) {
       groupRef.current.position.copy(position);
     }
-
-    if (dist > 0.01 && !isAnimLocked() && !isDying) {
-      if (!isWalking) setIsWalking(true);
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => {
-        if (!isAnimLocked()) setIsWalking(false);
-      }, WALK_STOP_DELAY);
-    }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     return () => {
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       pendingTimersRef.current.forEach(clearTimeout);
       pendingTimersRef.current = [];
     };
@@ -141,11 +133,15 @@ function TitanRenderer({
       if (data.titanId !== id) return;
       setIsAttacking(true);
       isAttackingRef.current = true;
+      isWalkingRef.current = false;
       setIsWalking(false);
       trackTimeout(() => {
         setIsAttacking(false);
         isAttackingRef.current = false;
-        setIsWalking(true);
+        if (!isAnimLocked()) {
+          isWalkingRef.current = true;
+          setIsWalking(true);
+        }
       }, ATTACK_DURATION);
     };
 
@@ -153,11 +149,15 @@ function TitanRenderer({
       if (data.titanId !== id) return;
       setIsPoweringUp(true);
       isPoweringUpRef.current = true;
+      isWalkingRef.current = false;
       setIsWalking(false);
       trackTimeout(() => {
         setIsPoweringUp(false);
         isPoweringUpRef.current = false;
-        if (!isAnimLocked()) setIsWalking(true);
+        if (!isAnimLocked()) {
+          isWalkingRef.current = true;
+          setIsWalking(true);
+        }
       }, POWERUP_DURATION);
     };
 
@@ -165,11 +165,15 @@ function TitanRenderer({
       if (data.titanId !== id) return;
       setIsStomping(true);
       isStompingRef.current = true;
+      isWalkingRef.current = false;
       setIsWalking(false);
       trackTimeout(() => {
         setIsStomping(false);
         isStompingRef.current = false;
-        if (!isAnimLocked()) setIsWalking(true);
+        if (!isAnimLocked()) {
+          isWalkingRef.current = true;
+          setIsWalking(true);
+        }
       }, STOMP_DURATION);
     };
 
@@ -177,11 +181,15 @@ function TitanRenderer({
       if (data.titanId !== id) return;
       setIsCasting(true);
       isCastingRef.current = true;
+      isWalkingRef.current = false;
       setIsWalking(false);
       trackTimeout(() => {
         setIsCasting(false);
         isCastingRef.current = false;
-        if (!isAnimLocked()) setIsWalking(true);
+        if (!isAnimLocked()) {
+          isWalkingRef.current = true;
+          setIsWalking(true);
+        }
       }, CANNON_CAST_DURATION);
     };
 
@@ -203,7 +211,16 @@ function TitanRenderer({
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    updateEnemyWalkStateFromMoveDist(
+      dist,
+      isAnimLocked(),
+      isDying,
+      WALK_STOP_DELAY,
+      lastMoveTimeRef,
+      isWalkingRef,
+      setIsWalking,
+    );
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 

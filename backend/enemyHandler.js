@@ -243,7 +243,7 @@ function handleEnemyEvents(socket, gameRooms) {
     const targetEnemy = room.getEnemy?.(enemyId);
     if (
       targetEnemy &&
-      targetEnemy.alliedUnit === true &&
+      (targetEnemy.alliedUnit === true || targetEnemy.type === 'player-zombie') &&
       ['freeze', 'stun', 'corrupted', 'entangle', 'ignite'].includes(effectType)
     ) {
       return;

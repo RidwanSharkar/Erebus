@@ -50,7 +50,7 @@ function alignBoltToDirection(group: Group | null, direction: Vector3) {
   group.quaternion.copy(_quat);
 }
 
-export default function EntropicBolt({
+function EntropicBolt({
   id,
   position,
   direction,
@@ -279,3 +279,5 @@ export default function EntropicBolt({
     </group>
   );
 }
+
+export default React.memo(EntropicBolt);

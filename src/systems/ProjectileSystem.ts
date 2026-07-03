@@ -77,6 +77,11 @@ export class ProjectileSystem extends System {
   // Reusable objects to reduce allocations
   private tempVector = new Vector3();
   private tempVector2 = new Vector3();
+  private tempTargetPos = new Vector3();
+  private homingCurrentDirection = new Vector3();
+  private homingDesiredDirection = new Vector3();
+  private homingRotationAxis = new Vector3();
+  private homingNewDirection = new Vector3();
   private pendingCrossentropyMeteorImpacts: Array<{
     impactAtMs: number;
     impactPosition: Vector3;
@@ -277,19 +282,31 @@ export class ProjectileSystem extends System {
   }
 
   private processPendingCrossentropyMeteorImpacts(nowMs: number): void {
-    if (this.pendingCrossentropyMeteorImpacts.length === 0) return;
-    const due = this.pendingCrossentropyMeteorImpacts.filter((meteor) => meteor.impactAtMs <= nowMs);
-    if (due.length === 0) return;
-    this.pendingCrossentropyMeteorImpacts = this.pendingCrossentropyMeteorImpacts.filter(
-      (meteor) => meteor.impactAtMs > nowMs,
-    );
+    const pending = this.pendingCrossentropyMeteorImpacts;
+    if (pending.length === 0) return;
+
+    // Cheap no-allocation scan first - most frames have nothing due yet
+    let anyDue = false;
+    for (let i = 0; i < pending.length; i++) {
+      if (pending[i].impactAtMs <= nowMs) { anyDue = true; break; }
+    }
+    if (!anyDue) return;
+
+    // Single pass partition instead of two separate .filter() scans/allocations
+    const due: typeof pending = [];
+    const remaining: typeof pending = [];
+    for (const meteor of pending) {
+      (meteor.impactAtMs <= nowMs ? due : remaining).push(meteor);
+    }
+    this.pendingCrossentropyMeteorImpacts = remaining;
+
     for (const meteor of due) {
       const sourceEntity = this.world.getEntity(meteor.ownerEntityId);
       const potentialTargets = this.queryHittableNearPoint(meteor.impactPosition, meteor.radius + 1);
       const networked = this.combatSystem?.usesNetworkedEnemyDamage() === true;
       for (const target of potentialTargets) {
         if (target.id === meteor.ownerEntityId) continue;
-        if (target.userData?.isCoopAllyPlayer) continue;
+        if (target.userData?.isCoopAllyPlayer || target.userData?.isPlayer === true) continue;
         if (!target.getComponent(Enemy)) continue;
         const targetTransform = target.getComponent(Transform);
         const targetHealth = target.getComponent(Health);
@@ -397,18 +414,30 @@ export class ProjectileSystem extends System {
   }
 
   private processPendingCloudkillImpacts(nowMs: number): void {
-    if (this.pendingCloudkillImpacts.length === 0) return;
-    const due = this.pendingCloudkillImpacts.filter((impact) => impact.impactAtMs <= nowMs);
-    if (due.length === 0) return;
-    this.pendingCloudkillImpacts = this.pendingCloudkillImpacts.filter(
-      (impact) => impact.impactAtMs > nowMs,
-    );
+    const pending = this.pendingCloudkillImpacts;
+    if (pending.length === 0) return;
+
+    // Cheap no-allocation scan first - most frames have nothing due yet
+    let anyDue = false;
+    for (let i = 0; i < pending.length; i++) {
+      if (pending[i].impactAtMs <= nowMs) { anyDue = true; break; }
+    }
+    if (!anyDue) return;
+
+    // Single pass partition instead of two separate .filter() scans/allocations
+    const due: typeof pending = [];
+    const remaining: typeof pending = [];
+    for (const impact of pending) {
+      (impact.impactAtMs <= nowMs ? due : remaining).push(impact);
+    }
+    this.pendingCloudkillImpacts = remaining;
+
     for (const impact of due) {
       const sourceEntity = this.world.getEntity(impact.ownerEntityId);
       const potentialTargets = this.queryHittableNearPoint(impact.impactPosition, impact.radius + 1);
       for (const target of potentialTargets) {
         if (target.id === impact.ownerEntityId) continue;
-        if (target.userData?.isCoopAllyPlayer) continue;
+        if (target.userData?.isCoopAllyPlayer || target.userData?.isPlayer === true) continue;
         if (!target.getComponent(Enemy)) continue;
         const targetTransform = target.getComponent(Transform);
         const targetHealth = target.getComponent(Health);
@@ -529,13 +558,13 @@ export class ProjectileSystem extends System {
     // Normalize target direction
     this.tempVector.normalize();
 
-    // Get current velocity direction
-    const currentDirection = projectile.velocity.clone().normalize();
+    // Get current velocity direction (reuse scratch vector - not retained beyond this call)
+    const currentDirection = this.homingCurrentDirection.copy(projectile.velocity).normalize();
 
     // For tower projectiles, use more direct approach when very close
     if (isTowerProjectile && distanceToTarget < 0.3) {
       // Direct approach: immediately adjust towards target
-      const desiredDirection = this.tempVector.clone();
+      const desiredDirection = this.homingDesiredDirection.copy(this.tempVector);
       const angle = currentDirection.angleTo(desiredDirection);
 
       // For tower projectiles, allow much more aggressive turning when close
@@ -543,10 +572,9 @@ export class ProjectileSystem extends System {
       const turnAngle = Math.min(angle, maxTurnThisFrame);
 
       if (turnAngle > 0.001) {
-        const rotationAxis = new Vector3();
-        rotationAxis.crossVectors(currentDirection, desiredDirection).normalize();
+        const rotationAxis = this.homingRotationAxis.crossVectors(currentDirection, desiredDirection).normalize();
 
-        const newDirection = currentDirection.clone();
+        const newDirection = this.homingNewDirection.copy(currentDirection);
         newDirection.applyAxisAngle(rotationAxis, turnAngle);
 
         projectile.velocity.copy(newDirection).multiplyScalar(projectile.speed);
@@ -556,8 +584,7 @@ export class ProjectileSystem extends System {
       const homingStrength = isTowerProjectile ? Math.min(projectile.homingStrength + 0.1, 1.0) : projectile.homingStrength;
 
       // Calculate desired direction (interpolate between current and target direction)
-      const desiredDirection = new Vector3();
-      desiredDirection.lerpVectors(currentDirection, this.tempVector, homingStrength);
+      const desiredDirection = this.homingDesiredDirection.lerpVectors(currentDirection, this.tempVector, homingStrength);
 
       // Calculate angle between current and desired direction
       const angle = currentDirection.angleTo(desiredDirection);
@@ -569,15 +596,10 @@ export class ProjectileSystem extends System {
       // If we need to turn
       if (turnAngle > 0.001) { // Small threshold to avoid jitter
         // Calculate rotation axis
-        const rotationAxis = new Vector3();
-        rotationAxis.crossVectors(currentDirection, desiredDirection).normalize();
-
-        // Create rotation quaternion
-        const cosHalfAngle = Math.cos(turnAngle / 2);
-        const sinHalfAngle = Math.sin(turnAngle / 2);
+        const rotationAxis = this.homingRotationAxis.crossVectors(currentDirection, desiredDirection).normalize();
 
         // Apply rotation to current direction
-        const newDirection = currentDirection.clone();
+        const newDirection = this.homingNewDirection.copy(currentDirection);
         newDirection.applyAxisAngle(rotationAxis, turnAngle);
 
         // Update velocity while maintaining speed
@@ -630,7 +652,7 @@ export class ProjectileSystem extends System {
         continue;
       }
 
-      if (target.userData?.isCoopAllyPlayer) {
+      if (target.userData?.isCoopAllyPlayer || target.userData?.isPlayer === true) {
         continue;
       }
 
@@ -660,7 +682,7 @@ export class ProjectileSystem extends System {
         continue;
       }
 
-      const targetPos = targetTransform.getWorldPosition().add(targetCollider.offset);
+      const targetPos = targetTransform.getWorldPosition(this.tempTargetPos).add(targetCollider.offset);
 
       const isEntropicBolt = projectile.projectileType === 'entropic_bolt';
 
@@ -1051,7 +1073,7 @@ export class ProjectileSystem extends System {
 
     for (const target of potentialTargets) {
       if (target.id === projectile.owner) continue; // Don't damage owner
-      if (target.userData?.isCoopAllyPlayer) continue;
+      if (target.userData?.isCoopAllyPlayer || target.userData?.isPlayer === true) continue;
 
       const targetTransform = target.getComponent(Transform)!;
       const targetHealth = target.getComponent(Health)!;
@@ -1195,7 +1217,7 @@ export class ProjectileSystem extends System {
     const potential = this.queryHittableNearPoint(anchor, radiusUnits + 1).filter((ent) => ent.hasComponents([Enemy]));
     for (const ent of potential) {
       if (excludeSet.has(ent.id)) continue;
-      if (ent.userData?.isCoopAllyPlayer) continue;
+      if (ent.userData?.isCoopAllyPlayer || ent.userData?.isPlayer === true) continue;
       if (ent.userData?.isCoopAlliedUnit) continue;
       if (ent.userData?.coopServerEnemyType === 'player-zombie') continue;
       const h = ent.getComponent(Health);

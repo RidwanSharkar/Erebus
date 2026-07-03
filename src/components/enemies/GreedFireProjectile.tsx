@@ -98,25 +98,28 @@ export default function GreedFireProjectile({
   });
 
   return (
-    <group ref={groupRef}>
+    <>
       <EntropicBoltTrail
         color={trailColor}
         accentColor={trailAccent}
         size={0.12}
         meshRef={groupRef}
         opacity={0.95}
+        flightDirectionRef={dirRef}
       />
-      <group ref={spinRef}>
-        <mesh ref={coreRef} material={coreMat}>
-          <sphereGeometry args={[0.24, 10, 10]} />
-        </mesh>
-        <mesh material={midMat}>
-          <sphereGeometry args={[0.4, 10, 10]} />
-        </mesh>
-        <mesh material={auraMat}>
-          <sphereGeometry args={[0.62, 8, 8]} />
-        </mesh>
+      <group ref={groupRef}>
+        <group ref={spinRef}>
+          <mesh ref={coreRef} material={coreMat}>
+            <sphereGeometry args={[0.24, 10, 10]} />
+          </mesh>
+          <mesh material={midMat}>
+            <sphereGeometry args={[0.4, 10, 10]} />
+          </mesh>
+          <mesh material={auraMat}>
+            <sphereGeometry args={[0.62, 8, 8]} />
+          </mesh>
+        </group>
       </group>
-    </group>
+    </>
   );
 }

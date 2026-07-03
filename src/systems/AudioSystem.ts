@@ -114,6 +114,14 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'ui_interface_2', file: 'ui/interface2.mp3' },
   { id: 'ui_interface_3', file: 'ui/interface3.mp3' },
   { id: 'ui_dash', file: 'ui/dash.mp3' },
+  { id: 'ui_breath_1', file: 'ui/breath1.mp3' },
+  { id: 'ui_breath_2', file: 'ui/breath2.mp3' },
+  { id: 'ui_breath_3', file: 'ui/breath3.mp3' },
+  { id: 'ui_breath_4', file: 'ui/breath4.mp3' },
+  { id: 'ui_breath_5', file: 'ui/breath5.mp3' },
+  { id: 'ui_hover', file: 'ui/hover.mp3' },
+  { id: 'ui_reroll', file: 'ui/reroll.mp3' },
+  { id: 'ui_interface_4', file: 'ui/interface4.mp3' },
   { id: 'ui_hitbox_bow', file: 'ui/bowHitbox.mp3' },
   { id: 'ui_hitbox_sabres', file: 'ui/sabresHitbox.mp3' },
   { id: 'ui_hitbox_scythe', file: 'ui/scytheHitbox.mp3' },
@@ -138,12 +146,19 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'ui_shield_regen', file: 'ui/1shieldRegen.mp3' },
   { id: 'merchant_greet_arrival', file: 'ui/merchantGreetArrival.mp3' },
   { id: 'merchant_greet_purchase', file: 'ui/merchantGreetPurchase.mp3' },
+  { id: 'merchant_greet_exit', file: 'ui/merchantGreetExit.mp3' },
+  { id: 'ui_pedestal', file: 'ui/pedestal.mp3' },
+  { id: 'ui_fountain', file: 'ui/fountain.mp3' },
 ];
 
 const STARTUP_SOUND_IDS = new Set([
   'ui_selection',
   'ui_interface',
   'ui_dash',
+  'ui_breath_1',
+  'ui_breath_2',
+  'ui_breath_3',
+  'ui_breath_4',
   'ui_room_start_1',
   'ui_room_start_2',
 ]);
@@ -244,9 +259,10 @@ const ALL_WEAPON_SPECIFIC_SOUND_IDS = new Set(
   Object.values(WEAPON_SPECIFIC_SOUND_IDS).flat(),
 );
 
-const COMMON_GAMEPLAY_PRELOAD_IDS = new Set(
-  WEAPON_SOUND_ASSETS.map(asset => asset.id).filter(id => !ALL_WEAPON_SPECIFIC_SOUND_IDS.has(id)),
-);
+const COMMON_GAMEPLAY_PRELOAD_IDS = new Set([
+  ...WEAPON_SOUND_ASSETS.map(asset => asset.id).filter(id => !ALL_WEAPON_SPECIFIC_SOUND_IDS.has(id)),
+  'icebeam', // Boss3 green beam loop — required even when player is not on Scythe
+]);
 
 function getGameplayPreloadAssets(weapon?: WeaponType): SfxAsset[] {
   const weaponIds = WEAPON_SPECIFIC_SOUND_IDS[weapon ?? WeaponType.BOW] ?? WEAPON_SPECIFIC_SOUND_IDS[WeaponType.BOW]!;
@@ -259,6 +275,16 @@ export class AudioSystem extends System {
 
   /** Shared origin for non-positional UI SFX (Howler skips 3D positioning anyway). */
   private static readonly UI_ORIGIN = new Vector3(0, 0, 0);
+
+  private static readonly DASH_BREATH_SOUND_IDS = [
+    'ui_breath_1',
+    'ui_breath_2',
+    'ui_breath_3',
+    'ui_breath_4',
+  ] as const;
+
+  /** Layered on dash SFX — louder so breath clips remain audible over dash.mp3. */
+  private static readonly DASH_BREATH_VOLUME = 1.5;
 
   private soundCache = new Map<string, Howl>();
   private soundLoadPromises = new Map<string, Promise<Howl | null>>();
@@ -274,6 +300,7 @@ export class AudioSystem extends System {
   private currentCoopRoomTrackId: string | null = null;
   private footstepsLoopInstance: number | null = null;
   private footstepsShouldPlay = false;
+  private lastDamageBreathAtMs = 0;
   private shieldRegenLoopInstance: number | null = null;
   private shieldRegenShouldPlay = false;
   private soundLastPlayedAt = new Map<string, number>();
@@ -390,7 +417,9 @@ export class AudioSystem extends System {
     if (!sound) {
       const asset = this.sfxById.get(soundId);
       if (asset) {
-        void this.loadSfx(asset);
+        void this.loadSfx(asset).then((loaded) => {
+          if (loaded) this.playWeaponSound(soundId, position, config);
+        });
       }
       return null;
     }
@@ -1002,7 +1031,30 @@ export class AudioSystem extends System {
   }
 
   public playUIInterface3Sound() {
-    return this.playWeaponSound('ui_interface_3', AudioSystem.UI_ORIGIN, { volume: 0.7 });
+    return this.playWeaponSound('ui_interface_3', AudioSystem.UI_ORIGIN, { volume: 1.1 });
+  }
+
+  public playUIInterface4Sound() {
+    return this.playWeaponSound('ui_interface_4', AudioSystem.UI_ORIGIN, { volume: 1.1 });
+  }
+
+  /** Co-op boon picker: option card hover. */
+  public playBoonHoverSound() {
+    return this.playWeaponSound('ui_hover', AudioSystem.UI_ORIGIN, { volume: 0.7 });
+  }
+
+  /** Co-op boon picker: successful reroll purchase. */
+  public playBoonRerollSound() {
+    return this.playWeaponSound('ui_reroll', AudioSystem.UI_ORIGIN, { volume: 0.85 });
+  }
+
+  /** Enemy hit grunt — 70% chance, 1s internal cooldown, louder than dash breath clips. */
+  public playDamageBreathSound(): void {
+    const now = performance.now();
+    if (now - this.lastDamageBreathAtMs < 1000) return;
+    if (Math.random() >= 0.7) return;
+    this.lastDamageBreathAtMs = now;
+    this.playWeaponSound('ui_breath_5', AudioSystem.UI_ORIGIN, { volume: AudioSystem.DASH_BREATH_VOLUME });
   }
 
   /** Local player defeated — short UI sting. */
@@ -1082,9 +1134,17 @@ export class AudioSystem extends System {
     return this.playWeaponSound('icebeam', position, { volume: 0.8, loop: true });
   }
 
-  // Play UI dash sound (when dashing)
-  public playUIDashSound() {
-    return this.playWeaponSound('ui_dash', AudioSystem.UI_ORIGIN, { volume: 0.8 });
+  // Play UI dash sound (when dashing); 70% chance to layer a random breath clip
+  public playUIDashSound(): void {
+    this.playWeaponSound('ui_dash', AudioSystem.UI_ORIGIN, { volume: 0.8 });
+
+    if (Math.random() < 0.7) {
+      const breathId =
+        AudioSystem.DASH_BREATH_SOUND_IDS[
+          Math.floor(Math.random() * AudioSystem.DASH_BREATH_SOUND_IDS.length)
+        ];
+      this.playWeaponSound(breathId, AudioSystem.UI_ORIGIN, { volume: AudioSystem.DASH_BREATH_VOLUME });
+    }
   }
 
   /** Co-op combat room entry: random start chime alongside combat BGM. */
@@ -1108,6 +1168,21 @@ export class AudioSystem extends System {
     this.playWeaponSound('merchant_greet_purchase', AudioSystem.UI_ORIGIN, { volume: 0.8 });
   }
 
+  /** Merchant room: farewell when closing the shop UI. */
+  public playMerchantExitGreet(): void {
+    this.playWeaponSound('merchant_greet_exit', AudioSystem.UI_ORIGIN, { volume: 0.8 });
+  }
+
+  /** Co-op combat pedestal: interact before reward reveal. */
+  public playPedestalSound(): void {
+    this.playWeaponSound('ui_pedestal', AudioSystem.UI_ORIGIN, { volume: 1.2 });
+  }
+
+  /** Merchant room: healing purchase. */
+  public playFountainSound(): void {
+    this.playWeaponSound('ui_fountain', AudioSystem.UI_ORIGIN, { volume: 0.85 });
+  }
+
   /** Co-op colored room: first combat engagement whisper (once per room visit). */
   public playCoopRoomWhisperSound(roomColor: 'red' | 'blue' | 'green' | 'purple'): void {
     const soundId = {
@@ -1117,7 +1192,7 @@ export class AudioSystem extends System {
       green: 'whisper_eldritch',
     }[roomColor];
     if (!soundId) return;
-    this.playWeaponSound(soundId, AudioSystem.UI_ORIGIN, { volume: 1.3 });
+    this.playWeaponSound(soundId, AudioSystem.UI_ORIGIN, { volume: 1.6 });
   }
 
   /** Looped locomotion footsteps (local player run); mirrors Run vs slow-walk in CharacterRenderer. */

@@ -8,6 +8,7 @@ import { World } from '@/ecs/World';
 import { Enemy } from '@/ecs/components/Enemy';
 import { Transform } from '@/ecs/components/Transform';
 import { Health } from '@/ecs/components/Health';
+import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
 
 interface VenomEffectData {
   id: number;
@@ -46,6 +47,7 @@ export default function VenomEffectManager({ world }: VenomEffectManagerProps) {
     const allEntities = world.getAllEntities();
     return allEntities
       .filter(entity => entity.hasComponent(Enemy) && entity.hasComponent(Transform) && entity.hasComponent(Health))
+      .filter(entity => !isCoopPlayerAllyEntity(entity))
       .map(entity => {
         const enemy = entity.getComponent(Enemy)!;
         const transform = entity.getComponent(Transform)!;
@@ -62,6 +64,10 @@ export default function VenomEffectManager({ world }: VenomEffectManagerProps) {
   }, [world]);
 
   const addVenomousEnemy = useCallback((enemyId: string, position: Vector3) => {
+    if (world) {
+      const entity = world.getAllEntities().find(e => e.id.toString() === enemyId);
+      if (entity && isCoopPlayerAllyEntity(entity)) return;
+    }
     const newVenomousEnemy: VenomEffectData = {
       id: venomEffectIdCounter.current++,
       enemyId,
@@ -71,7 +77,7 @@ export default function VenomEffectManager({ world }: VenomEffectManagerProps) {
     };
     
     setVenomousEnemies(prev => [...prev, newVenomousEnemy]);
-  }, []);
+  }, [world]);
 
   // Register global manager
   React.useEffect(() => {
@@ -96,6 +102,8 @@ export default function VenomEffectManager({ world }: VenomEffectManagerProps) {
     // Check for newly venomous enemies and add venom effects
     const allEntities = world.getAllEntities();
     allEntities.forEach(entity => {
+      if (isCoopPlayerAllyEntity(entity)) return;
+
       const enemy = entity.getComponent(Enemy);
       const transform = entity.getComponent(Transform);
       

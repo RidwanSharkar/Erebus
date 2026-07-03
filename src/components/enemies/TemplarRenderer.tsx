@@ -8,7 +8,7 @@ import TemplarModel from './TemplarModel';
 import EnemyAbilityChargeTelegraph from './EnemyAbilityChargeTelegraph';
 import EnemyMeleeAttackRangeRing, { TEMPLAR_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import TemplarSoulCrest from './TemplarSoulCrest';
@@ -67,9 +67,10 @@ function TemplarRenderer({
   const serverPositionRef = useRef(position.clone());
   const targetRotation  = useRef(rotation);
   const isAttackingRef  = useRef(false);
+  const isWalkingRef    = useRef(false);
   const prevHealthRef   = useRef(health);
 
-  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMoveTimeRef = useRef(0);
   const blinkSmiteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const blinkChargeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer     = useRef(0);
@@ -89,7 +90,10 @@ function TemplarRenderer({
     isBlinkSmiteRef.current;
 
   const restoreWalkIfUnlocked = () => {
-    if (!isAnimLocked() && !isDyingRef.current) setIsWalking(true);
+    if (!isAnimLocked() && !isDyingRef.current) {
+      isWalkingRef.current = true;
+      setIsWalking(true);
+    }
   };
 
   const flushServerPosition = useCallback(() => {
@@ -128,20 +132,10 @@ function TemplarRenderer({
     if (dist > 5.0 && groupRef.current && !locked) {
       groupRef.current.position.copy(position);
     }
-
-    if (dist > 0.01 && !locked && !isDying) {
-      if (!isWalking) setIsWalking(true);
-
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => {
-        if (!isAnimLocked()) setIsWalking(false);
-      }, WALK_STOP_DELAY);
-    }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     return () => {
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (blinkSmiteTimer.current) clearTimeout(blinkSmiteTimer.current);
       if (blinkChargeTimer.current) clearTimeout(blinkChargeTimer.current);
     };
@@ -270,12 +264,12 @@ function TemplarRenderer({
     }) => {
       if (data.templarId !== id) return;
 
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (blinkChargeTimer.current) clearTimeout(blinkChargeTimer.current);
       if (blinkSmiteTimer.current) clearTimeout(blinkSmiteTimer.current);
       clearBlinkSmite();
 
       const chargeMs = data.chargeMs ?? BLINK_CHARGE_DURATION;
+      isWalkingRef.current = false;
       setIsWalking(false);
       setIsAttacking(false);
       isAttackingRef.current = false;
@@ -303,6 +297,7 @@ function TemplarRenderer({
       if (data.templarId !== id) return;
       setIsLeaping(true);
       isLeapingRef.current = true;
+      isWalkingRef.current = false;
       setIsWalking(false);
     };
     const onLeapLand = (data: { templarId: string }) => {
@@ -327,7 +322,16 @@ function TemplarRenderer({
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    updateEnemyWalkStateFromMoveDist(
+      dist,
+      isAnimLocked(),
+      isDying,
+      WALK_STOP_DELAY,
+      lastMoveTimeRef,
+      isWalkingRef,
+      setIsWalking,
+    );
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 

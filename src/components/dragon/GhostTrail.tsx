@@ -7,6 +7,25 @@ import React from 'react';
 
 const DASH_LINGER_MS = 100; // how long the trail stays visible after dash ends
 const TRAIL_SPHERE_GEO = new SphereGeometry(0.475, 16, 16);
+const HIDDEN_TRAIL_POS = new Vector3(9999, 9999, 9999);
+
+function hideTrailMeshes(
+  trails: (Mesh | null)[],
+  materials: MeshBasicMaterial[],
+  trailCount: number,
+) {
+  materials.forEach((mat) => {
+    mat.opacity = 0;
+  });
+  for (let i = 0; i < trailCount; i++) {
+    const trail = trails[i];
+    if (trail) {
+      trail.position.copy(HIDDEN_TRAIL_POS);
+      trail.scale.setScalar(0);
+      trail.visible = false;
+    }
+  }
+}
 
 function resolveTrailColor(
   isStealthing: boolean,
@@ -86,9 +105,10 @@ function resolveTrailColor(
 
 interface GhostTrailProps {
   parentRef: React.RefObject<Group>;
+  /** Live world position ref — preferred over parentRef (matches DashFireTrail). */
+  worldPositionRef?: React.RefObject<Vector3 | null> | React.MutableRefObject<Vector3 | null>;
   weaponType: WeaponType;
   weaponSubclass?: WeaponSubclass;
-  targetPosition?: Vector3; // Optional for multiplayer - if provided, use this instead of parentRef position
   isStealthing?: boolean; // Whether the local player is currently in stealth mode
   isDashingRef?: React.RefObject<boolean>; // Live ref to dashing state; trail only shows while dashing or within linger window
   /** Movement.startCharge (Sword/Runeblade Charge ability) — same trail treatment as regular dash */
@@ -101,14 +121,15 @@ interface GhostTrailProps {
   isTrailMotionRef?: React.RefObject<boolean>;
 }
 
-const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPosition, isStealthing = false, isDashingRef, isWeaponChargeMovingRef, isSkyfalling = false, yOffset = 0, fixedTrailColor, isTrailMotionRef }: GhostTrailProps) => {
-  const trailsRef = useRef<Mesh[]>([]);
+const GhostTrail = React.memo(({ parentRef, worldPositionRef, weaponType, weaponSubclass, isStealthing = false, isDashingRef, isWeaponChargeMovingRef, isSkyfalling = false, yOffset = 0, fixedTrailColor, isTrailMotionRef }: GhostTrailProps) => {
+  const trailsRef = useRef<(Mesh | null)[]>([]);
   const ringBuffer = useRef<Vector3[]>([]);
   const writeIndex = useRef(0);
   const sampleScratch = useRef(new Vector3());
   const [isInitialized, setIsInitialized] = useState(false);
   const lastDashEndTime = useRef<number>(-Infinity); // timestamp when dash-like motion last became false
   const wasTrailMotionActive = useRef<boolean>(false);
+  const wasShowingRef = useRef(false);
   const trailCount = 24;
 
   const trailColorHex = resolveTrailColor(isStealthing, fixedTrailColor, weaponSubclass, weaponType);
@@ -133,8 +154,9 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
 
   useEffect(() => {
     let initialPos: Vector3;
-    if (targetPosition) {
-      initialPos = targetPosition.clone();
+    const worldPos = worldPositionRef?.current;
+    if (worldPos) {
+      initialPos = worldPos.clone();
     } else if (parentRef.current) {
       initialPos = parentRef.current.position.clone();
     } else {
@@ -142,8 +164,9 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
     }
     ringBuffer.current = Array.from({ length: trailCount }, () => initialPos.clone());
     writeIndex.current = 0;
+    hideTrailMeshes(trailsRef.current, trailMaterials, trailCount);
     setIsInitialized(true);
-  }, [parentRef, targetPosition, trailCount]);
+  }, [parentRef, worldPositionRef, trailCount, trailMaterials]);
 
   useEffect(() => {
     return () => {
@@ -160,16 +183,35 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
       ? (isTrailMotionRef.current ?? false)
       : (isDashingRef ? (isDashingRef.current ?? false) : false) ||
         (isWeaponChargeMovingRef ? (isWeaponChargeMovingRef.current ?? false) : false);
+
+    // Fast path for blink-only trails (e.g. shade): skip work when idle and not lingering.
+    if (isTrailMotionRef && !isTrailMotionActive && !wasShowingRef.current) {
+      return;
+    }
+
     if (wasTrailMotionActive.current && !isTrailMotionActive) {
       lastDashEndTime.current = Date.now();
     }
     wasTrailMotionActive.current = isTrailMotionActive;
-    const withinLinger = Date.now() - lastDashEndTime.current < DASH_LINGER_MS;
+    const lingerElapsed = Date.now() - lastDashEndTime.current;
+    const withinLinger = lingerElapsed < DASH_LINGER_MS;
     const shouldShow = isTrailMotionActive || withinLinger || isSkyfalling;
 
+    if (!shouldShow) {
+      wasShowingRef.current = false;
+      hideTrailMeshes(trailsRef.current, trailMaterials, trailCount);
+      return;
+    }
+
+    // While lingering (not actively dashing/charging/skyfalling), fade the
+    // trail out over DASH_LINGER_MS instead of cutting it off abruptly.
+    const lingerFade =
+      isTrailMotionActive || isSkyfalling ? 1 : Math.max(0, 1 - lingerElapsed / DASH_LINGER_MS);
+
     const scratch = sampleScratch.current;
-    if (targetPosition) {
-      scratch.copy(targetPosition);
+    const worldPos = worldPositionRef?.current;
+    if (worldPos) {
+      scratch.copy(worldPos);
     } else if (parentRef.current?.position) {
       scratch.copy(parentRef.current.position);
     } else {
@@ -179,24 +221,37 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
     scratch.y += -0.1 + yOffset;
 
     const buffer = ringBuffer.current;
+    const risingEdge = !wasShowingRef.current;
+    wasShowingRef.current = true;
+
+    if (risingEdge) {
+      // Flush stale positions so old-location ghosts don't appear
+      for (let i = 0; i < trailCount; i++) {
+        buffer[i].copy(scratch);
+      }
+      writeIndex.current = 0;
+    }
+
     buffer[writeIndex.current].copy(scratch);
     writeIndex.current = (writeIndex.current + 1) % trailCount;
 
-    trailsRef.current.forEach((trail, i) => {
+    for (let i = 0; i < trailCount; i++) {
+      const trail = trailsRef.current[i];
       const slot = (writeIndex.current - 1 - i + trailCount * 64) % trailCount;
       const pos = buffer[slot];
-      if (trail && pos) {
-        trail.position.copy(pos);
+      if (!trail || !pos) continue;
 
-        const scale = 1 - (i / trailCount) * 0.6;
-        trail.scale.setScalar(scale);
+      trail.visible = true;
+      trail.position.copy(pos);
 
-        const mat = trailMaterials[i];
-        if (mat) {
-          mat.opacity = shouldShow ? (1 - i / trailCount) * 0.2 : 0;
-        }
+      const scale = 1 - (i / trailCount) * 0.6;
+      trail.scale.setScalar(scale);
+
+      const mat = trailMaterials[i];
+      if (mat) {
+        mat.opacity = (1 - i / trailCount) * 0.2 * lingerFade;
       }
-    });
+    }
   });
 
   if (!isInitialized) return null;
@@ -207,10 +262,11 @@ const GhostTrail = React.memo(({ parentRef, weaponType, weaponSubclass, targetPo
         <mesh
           key={i}
           ref={(el) => {
-            if (el) trailsRef.current[i] = el;
+            trailsRef.current[i] = el;
           }}
           geometry={TRAIL_SPHERE_GEO}
           material={trailMaterials[i]}
+          visible={false}
         />
       ))}
     </>

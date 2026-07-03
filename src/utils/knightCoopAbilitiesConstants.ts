@@ -37,3 +37,7 @@ export const KNIGHT_BLOCK_COOLDOWN_MS: Record<'red' | 'blue' | 'purple' | 'green
 export const KNIGHT_ELITE_BLOCK_DURATION_MS = 10000;
 export const KNIGHT_ELITE_BLOCK_HEALTH_THRESHOLDS = [0.9, 0.5, 0.2] as const;
 export const KNIGHT_BLOCK_UNLOCK_BOSS_COUNT = 2;
+
+// Blue Storm Lash (enemyAI: knightCastStormLash)
+export const KNIGHT_STORM_LASH_DURATION_MS = 4000;
+export const KNIGHT_STORM_LASH_ZAP_INTERVAL_MS = 750;

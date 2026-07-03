@@ -56,6 +56,7 @@ export default function ShadeDaggerProjectile({
   const groupRef = useRef<Group>(null);
   const timeRef = useRef(0);
   const doneRef = useRef(false);
+  const positionScratch = useRef(new Vector3());
 
   // One pooled light follows the dagger (replaces a mounted <pointLight>).
   const daggerLight = useDynamicLight({ color: new Color(colors.dagger), distance: 3.5, decay: 2, priority: 2 });
@@ -122,7 +123,7 @@ export default function ShadeDaggerProjectile({
     const progress = Math.min(t / duration, 1.0);
 
     groupRef.current.position.copy(
-      startPosition.clone().addScaledVector(direction, progress * totalDist)
+      positionScratch.current.copy(startPosition).addScaledVector(direction, progress * totalDist)
     );
 
     // Drive the pooled light at the dagger's world position.

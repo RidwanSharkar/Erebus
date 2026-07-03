@@ -493,6 +493,7 @@ export default function DragonUnit({
           tempestBurstShotSeq={tempestBurstShotSeq}
           isRejuvenatingShotCharging={isRejuvenatingShotCharging}
           rejuvenatingShotChargeProgress={rejuvenatingShotChargeProgress}
+          isLocalPlayer={isLocalPlayer}
         />
       );
     } else if (currentWeapon === WeaponType.SCYTHE) {

@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
 
 import { Billboard, Text } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3 } from 'three';
+import { Group, Mesh, Vector3 } from 'three';
 import WarlockModel from './WarlockModel';
 import WarlockTeleportEffect from './WarlockTeleportEffect';
 import GhostTrail from '../dragon/GhostTrail';
@@ -13,11 +13,12 @@ import BoneWings from '../dragon/BoneWings';
 import BoneAura from '../dragon/BoneAura';
 import { WeaponType } from '../dragon/weapons';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
 import { campHpTheme } from '@/utils/campHpTheme';
 import BossBoneWings from './BossBoneWings';
+import { ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_HEIGHT, ENEMY_HP_BAR_FILL_HEIGHT, ENEMY_HP_BAR_FILL_Z, applyEnemyHealthBarFill } from '@/utils/enemyHealthBar';
 
 interface Boss2RendererProps {
   id: string;
@@ -49,10 +50,13 @@ function Boss2Renderer({
   const theme = campHpTheme('red');
   const { socket, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
+  const hpFillRef = useRef<Mesh>(null);
   const isBlinkingRef = useRef(false);
+  const isLaunchingRef = useRef(false);
+  const isWalkingRef = useRef(false);
   const targetPosition = useRef(position.clone());
   const targetRotation = useRef(rotation);
-  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMoveTimeRef = useRef(0);
   const launchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -68,6 +72,10 @@ function Boss2Renderer({
   const opacity = useRef(1);
   const cachedDeathMats = useRef<any[]>([]);
   const deathCacheBuilt = useRef(false);
+
+  useLayoutEffect(() => {
+    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, ENEMY_HP_BAR_WIDTH);
+  }, [health, maxHealth]);
 
   const [isWalking, setIsWalking] = useState(false);
   const [isBlinking, setIsBlinking] = useState(false);
@@ -89,13 +97,7 @@ function Boss2Renderer({
     if (dist > 8 && groupRef.current) {
       groupRef.current.position.copy(position);
     }
-
-    if (dist > 0.01 && !isBlinking && !isLaunching && !isDying) {
-      setIsWalking(true);
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
-    }
-  }, [position.x, position.y, position.z, isBlinking, isLaunching, isDying]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     targetRotation.current = rotation;
@@ -103,7 +105,6 @@ function Boss2Renderer({
 
   useEffect(() => {
     return () => {
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (launchTimer.current) clearTimeout(launchTimer.current);
       pendingTimersRef.current.forEach(clearTimeout);
       pendingTimersRef.current = [];
@@ -122,6 +123,8 @@ function Boss2Renderer({
       if (data.warlockId !== id) return;
       setIsBlinking(true);
       isBlinkingRef.current = true;
+      isWalkingRef.current = false;
+      setIsWalking(false);
 
       const startPos = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
       const endPos = new Vector3(data.endPosition.x, data.endPosition.y, data.endPosition.z);
@@ -148,9 +151,12 @@ function Boss2Renderer({
     const playLaunchAnimation = (durationMs: number) => {
       if (launchTimer.current) clearTimeout(launchTimer.current);
       setIsLaunching(true);
+      isLaunchingRef.current = true;
+      isWalkingRef.current = false;
       setIsWalking(false);
       launchTimer.current = setTimeout(() => {
         setIsLaunching(false);
+        isLaunchingRef.current = false;
         launchTimer.current = null;
       }, durationMs);
     };
@@ -183,7 +189,16 @@ function Boss2Renderer({
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    updateEnemyWalkStateFromMoveDist(
+      dist,
+      isBlinkingRef.current || isLaunchingRef.current,
+      isDying,
+      WALK_STOP_DELAY,
+      lastMoveTimeRef,
+      isWalkingRef,
+      setIsWalking,
+    );
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
     let deltaAngle = targetRotation.current - group.rotation.y;
@@ -257,11 +272,15 @@ function Boss2Renderer({
           {health > 0 && !isDying && (
             <>
               <mesh position={[0, 0, 0]}>
-                <planeGeometry args={[2.0, 0.25]} />
+                <planeGeometry args={[ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_HEIGHT]} />
                 <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
               </mesh>
-              <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
-                <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
+              <mesh
+                ref={hpFillRef}
+                position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
+                scale={[1, 1, 1]}
+              >
+                <planeGeometry args={[ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_FILL_HEIGHT]} />
                 <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
               </mesh>
               <Text

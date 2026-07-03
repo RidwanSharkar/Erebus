@@ -354,6 +354,10 @@ const BOSS3_GREEN_BEAM_DURATION_MS = 8000;
 const BOSS3_GREEN_BEAM_TICK_MS = 1000;
 const BOSS3_GREEN_BEAM_DPS = 71;
 const BOSS3_GREEN_BEAM_RANGE = 22;
+/** Model-local cast-heal orb forward offset (matches Boss3GreenBeam.tsx). */
+const BOSS3_GREEN_BEAM_START_OFFSET = 1.25;
+const BOSS3_OUTER_SCALE = 1.75;
+const BOSS3_GREEN_BEAM_WORLD_START_OFFSET = BOSS3_GREEN_BEAM_START_OFFSET * BOSS3_OUTER_SCALE;
 const BOSS3_GREEN_BEAM_HALF_WIDTH = 0.52;
 /** Radians/sec — slower than default boss snap so players can sidestep the beam. */
 const BOSS3_GREEN_BEAM_ROT_SPEED = 1.0;
@@ -446,6 +450,7 @@ const KNIGHT_STORM_LASH_DURATION_MS = 4000;
 const KNIGHT_STORM_LASH_ZAP_INTERVAL_MS = 750;
 const KNIGHT_STORM_LASH_ZAP_DAMAGE = 20;
 const KNIGHT_STORM_LASH_HALF_WIDTH = 1.0;
+const KNIGHT_STORM_LASH_VFX_SCALE = 0.75;
 const KNIGHT_SMITE_IMPACT_DELAY_MS = 900;
 const KNIGHT_SMITE_RADIUS_BASE = 2.8;
 const KNIGHT_SMITE_RADIUS_POST_BOSS2 = 3.0;
@@ -595,6 +600,7 @@ class EnemyAI {
 
     // Shade blink+attack cooldown tracking (4-second cooldown)
     this.shadeBlinkCooldown = new Map(); // enemyId -> lastBlinkTime
+    this.shadeLastQueuedMove = new Map(); // enemyId -> last { x, y, z, rotation } sent via _queueMove
 
     // Viper arrow shot cooldown tracking (2-second cooldown)
     this.viperAttackCooldown = new Map(); // enemyId -> lastAttackTime
@@ -821,6 +827,7 @@ class EnemyAI {
     this.warlockArchonShockCooldown.clear();
     this.warlockArchonShockLockUntil.clear();
     this.shadeBlinkCooldown.clear();
+    this.shadeLastQueuedMove.clear();
     this.viperAttackCooldown.clear();
     this.viperFollowupTimeout.forEach((t) => clearTimeout(t));
     this.viperFollowupTimeout.clear();
@@ -1826,6 +1833,7 @@ class EnemyAI {
           newPosition,
           rot,
           { x: 0, y: 0, z: 0 },
+          { authoritative: true },
         );
 
         if (this.io) {
@@ -2258,6 +2266,7 @@ class EnemyAI {
             beams,
             strikeAt,
             halfWidth: KNIGHT_STORM_LASH_HALF_WIDTH,
+            vfxScale: KNIGHT_STORM_LASH_VFX_SCALE,
             damage: KNIGHT_STORM_LASH_ZAP_DAMAGE,
             timestamp: strikeAt,
           });
@@ -2318,8 +2327,20 @@ class EnemyAI {
 
     const dx = tpos.x - shade.position.x;
     const dz = tpos.z - shade.position.z;
-    shade.rotation = Math.atan2(dx, dz);
-    this._queueMove(shade.id, shade.position, shade.rotation);
+    const newRot = Math.atan2(dx, dz);
+    shade.rotation = newRot;
+    const pos = shade.position;
+    const lastQueued = this.shadeLastQueuedMove.get(shade.id);
+    if (
+      !lastQueued ||
+      Math.abs(lastQueued.x - pos.x) > 0.001 ||
+      Math.abs(lastQueued.y - pos.y) > 0.001 ||
+      Math.abs(lastQueued.z - pos.z) > 0.001 ||
+      Math.abs(lastQueued.rotation - newRot) > 0.001
+    ) {
+      this.shadeLastQueuedMove.set(shade.id, { x: pos.x, y: pos.y, z: pos.z, rotation: newRot });
+      this._queueMove(shade.id, shade.position, shade.rotation);
+    }
 
     if (distance <= attackRange) {
       const blinkCooldown = 5250;
@@ -2494,7 +2515,9 @@ class EnemyAI {
     }
 
     const dirLabel = theta > 0 ? (Math.abs(theta) < Math.PI / 2 ? 'diagonal-fwd-left' : 'left') : (Math.abs(theta) < Math.PI / 2 ? 'diagonal-fwd-right' : 'right');
-    console.log(`👻 Shade ${shade.id} ${reason} blinked 5 units ${dirLabel} of target (θ=${(theta * 180 / Math.PI).toFixed(0)}°)`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`👻 Shade ${shade.id} ${reason} blinked 5 units ${dirLabel} of target (θ=${(theta * 180 / Math.PI).toFixed(0)}°)`);
+    }
     return true;
   }
 
@@ -2535,7 +2558,9 @@ class EnemyAI {
         timestamp: Date.now()
       });
     }
-    console.log(`👻 Shade ${shade.id} throwing daggers at player ${targetPlayer.id}!`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`👻 Shade ${shade.id} throwing daggers at player ${targetPlayer.id}!`);
+    }
   }
 
   // ─── Warlock AI ──────────────────────────────────────────────────────────────
@@ -5842,6 +5867,7 @@ class EnemyAI {
               newPosition,
               rot,
               { x: 0, y: 0, z: 0 },
+              { authoritative: true },
             );
 
             if (this.io) {
@@ -6057,8 +6083,8 @@ class EnemyAI {
       const br = live.rotation || 0;
       const fx = Math.sin(br);
       const fz = Math.cos(br);
-      const ax = live.position.x + fx * 0.65;
-      const az = live.position.z + fz * 0.65;
+      const ax = live.position.x + fx * BOSS3_GREEN_BEAM_WORLD_START_OFFSET;
+      const az = live.position.z + fz * BOSS3_GREEN_BEAM_WORLD_START_OFFSET;
       const bx = live.position.x + fx * BOSS3_GREEN_BEAM_RANGE;
       const bz = live.position.z + fz * BOSS3_GREEN_BEAM_RANGE;
       this.room.damagePlayersInLineSegment(
@@ -7005,7 +7031,9 @@ class EnemyAI {
     const currentDamage = damageMap.get(playerId) || 0;
     damageMap.set(playerId, currentDamage + effectiveDamage);
 
-    console.log(`📊 Boss aggro - Player ${playerId} has dealt ${currentDamage + effectiveDamage} total damage to boss ${bossId}${player?.isStealthing ? ' (STEALTH BONUS)' : ''}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`📊 Boss aggro - Player ${playerId} has dealt ${currentDamage + effectiveDamage} total damage to boss ${bossId}${player?.isStealthing ? ' (STEALTH BONUS)' : ''}`);
+    }
   }
 
   findClosestPlayer(enemy, players) {
@@ -9180,11 +9208,19 @@ class EnemyAI {
     this.clearBoss2DeathGraspTimers(enemyId);
     this.clearBoss2FlamePillarTimers(enemyId);
     this.boss2WarlockSummonLastAt.delete(enemyId);
+    const hadBoss3GreenBeam =
+      this.boss3GreenBeamDamageInterval.has(enemyId) || this.boss3GreenBeamEndAt.has(enemyId);
     const b3gb = this.boss3GreenBeamDamageInterval.get(enemyId);
     if (b3gb) clearInterval(b3gb);
     this.boss3GreenBeamDamageInterval.delete(enemyId);
     this.boss3GreenBeamEndAt.delete(enemyId);
     this.boss3GreenBeamStages.delete(enemyId);
+    if (hadBoss3GreenBeam && this.io) {
+      this.io.to(this.roomId).emit('boss3-green-beam-end', {
+        bossId: enemyId,
+        timestamp: Date.now(),
+      });
+    }
     const b3wup = this.boss3NovaWindupTimeout.get(enemyId);
     if (b3wup) clearTimeout(b3wup);
     this.boss3NovaWindupTimeout.delete(enemyId);
@@ -9207,6 +9243,7 @@ class EnemyAI {
     if (warlockShockT) clearTimeout(warlockShockT);
     this.warlockArchonShockTimeout.delete(enemyId);
     this.shadeBlinkCooldown.delete(enemyId);
+    this.shadeLastQueuedMove.delete(enemyId);
     this.viperAttackCooldown.delete(enemyId);
     const viperFollowupT = this.viperFollowupTimeout.get(enemyId);
     if (viperFollowupT) clearTimeout(viperFollowupT);

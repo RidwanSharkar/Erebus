@@ -10,6 +10,7 @@ import {
   DoubleSide,
 } from '@/utils/three-exports';
 import type { TotemBoltVariant } from '@/utils/talents';
+import { getEntropicColorTheme } from '@/utils/entropicColorThemes';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import EntropicBoltTrail from './EntropicBoltTrail';
 
@@ -52,7 +53,7 @@ function alignBoltToDirection(group: Group | null, direction: Vector3) {
   group.quaternion.copy(_quat);
 }
 
-/** Match `EntropicBolt` palettes for red/green/blue; default aligns with rose gold Entropic LMB. */
+/** Match `EntropicBolt` palettes for red/green/blue; default aligns with default Entropic LMB. */
 export function getTotemBoltTheme(variant: TotemBoltVariant | undefined): {
   primary: string;
   secondary: string;
@@ -68,7 +69,7 @@ export function getTotemBoltTheme(variant: TotemBoltVariant | undefined): {
     case 'frost':
       return { primary: '#075985', secondary: '#0369a1', light: '#7dd3fc' };
     default:
-      return { primary: '#d4849a', secondary: '#f0b8c8', light: '#fde0ea' };
+      return getEntropicColorTheme('rosegold');
   }
 }
 
@@ -94,6 +95,20 @@ export default function TotemEntropicBolt({
   const launchGenSeen = useRef(0);
   const durationRef = useRef(0.2);
   const [flightActive, setFlightActive] = useState(!poolSlot);
+  const [trailSession, setTrailSession] = useState(0);
+
+  const updateFlightEndpoint = (end: Vector3, updateDuration: boolean) => {
+    endRef.current.copy(end);
+    flightDir.current.copy(endRef.current).sub(startRef.current);
+    if (flightDir.current.lengthSq() < 1e-6) {
+      flightDir.current.set(0, 1, 0);
+    } else {
+      flightDir.current.normalize();
+    }
+    if (updateDuration) {
+      durationRef.current = Math.max(0.11, Math.min(0.38, startRef.current.distanceTo(endRef.current) / 34));
+    }
+  };
 
   const resetFlight = (start: Vector3, end: Vector3, playSound: boolean) => {
     startRef.current.copy(start);
@@ -101,22 +116,17 @@ export default function TotemEntropicBolt({
     if (playSound) {
       (window as any).audioSystem?.playTotemBoltLaunchSound?.(startRef.current.clone());
     }
-    flightDir.current.copy(endRef.current).sub(startRef.current);
-    if (flightDir.current.lengthSq() < 1e-6) {
-      flightDir.current.set(0, 1, 0);
-    } else {
-      flightDir.current.normalize();
-    }
+    updateFlightEndpoint(end, true);
     elapsed.current = 0;
     doneRef.current = false;
     flightVisibleRef.current = true;
-    durationRef.current = Math.max(0.11, Math.min(0.38, start.distanceTo(end) / 34));
     if (boltRef.current) {
       boltRef.current.visible = true;
       boltRef.current.position.copy(startRef.current);
     }
     if (rootRef.current) rootRef.current.visible = true;
     alignBoltToDirection(orientRef.current, flightDir.current);
+    setTrailSession((n) => n + 1);
   };
 
   const duration = useMemo(() => {
@@ -130,11 +140,6 @@ export default function TotemEntropicBolt({
   const theme = useMemo(() => getTotemBoltTheme(totemBoltVariant), [totemBoltVariant]);
 
   const trailColor = useMemo(() => new Color(theme.primary), [theme.primary]);
-  const trailAccent = useMemo(() => {
-    const c = new Color(theme.secondary);
-    c.lerp(new Color('#ffffff'), 0.35);
-    return c;
-  }, [theme.secondary]);
 
   const primaryColor = useMemo(() => new Color(theme.primary), [theme.primary]);
   const secondaryColor = useMemo(() => new Color(theme.secondary), [theme.secondary]);
@@ -156,6 +161,8 @@ export default function TotemEntropicBolt({
       if (poolSlot.launchGen !== launchGenSeen.current) {
         launchGenSeen.current = poolSlot.launchGen;
         resetFlight(poolSlot.from, poolSlot.to, true);
+      } else if (poolSlot.targetId) {
+        updateFlightEndpoint(poolSlot.to, true);
       }
     }
 
@@ -200,11 +207,13 @@ export default function TotemEntropicBolt({
       {showFlight && (
         <>
           <EntropicBoltTrail
+            key={trailSession}
             color={trailColor}
             accentColor={trailColor}
-            size={0.075}
+            size={0.07}
             meshRef={boltRef}
-            opacity={0.95}
+            opacity={1}
+            flightDirectionRef={flightDir}
           />
 
           <group ref={boltRef} position={startRef.current.toArray()}>

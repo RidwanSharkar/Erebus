@@ -1,14 +1,19 @@
 'use client';
 
-import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Group, Vector3 } from 'three';
+import React, { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
+import { Group, Mesh, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard, Text } from '@react-three/drei';
 import GhoulModel from './GhoulModel';
 import EnemyMeleeAttackRangeRing, { GHOUL_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import EnemyStaggerBar from './EnemyStaggerBar';
+import { applyEnemyHealthBarFill } from '@/utils/enemyHealthBar';
+
+const GHOUL_HP_BAR_WIDTH = 1.8;
+const GHOUL_HP_BAR_HEIGHT = 0.22;
+const GHOUL_HP_BAR_FILL_HEIGHT = 0.20;
 
 interface GhoulRendererProps {
   id: string;
@@ -39,6 +44,7 @@ function GhoulRenderer({
 }: GhoulRendererProps) {
   const { socket, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
+  const hpFillRef = useRef<Mesh>(null);
 
   const [isAttacking,    setIsAttacking]    = useState(false);
   const [isWalking,      setIsWalking]      = useState(false);
@@ -53,9 +59,14 @@ function GhoulRenderer({
   const isAttackingRef  = useRef(false);
   const isSummoningRef  = useRef(true);
   const isLeapingRef    = useRef(false);
+  const isWalkingRef    = useRef(false);
   const prevHealthRef   = useRef(health);
 
-  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useLayoutEffect(() => {
+    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, GHOUL_HP_BAR_WIDTH);
+  }, [health, maxHealth]);
+
+  const lastMoveTimeRef = useRef(0);
   const attackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer     = useRef(0);
   const opacity       = useRef(1);
@@ -87,17 +98,10 @@ function GhoulRenderer({
     if (dist > 8.0 && groupRef.current) {
       groupRef.current.position.copy(position);
     }
-
-    if (dist > 0.01 && !isAttackingRef.current && !isSummoningRef.current && !isLeapingRef.current && !isDying) {
-      if (!isWalking) setIsWalking(true);
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => setIsWalking(false), WALK_STOP_DELAY);
-    }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     return () => {
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
     };
   }, []);
@@ -154,6 +158,7 @@ function GhoulRenderer({
       if (data.ghoulId !== id) return;
       setIsLeaping(true);
       isLeapingRef.current = true;
+      isWalkingRef.current = false;
       setIsWalking(false);
     };
     const onLeapLand = (data: { ghoulId: string }) => {
@@ -175,7 +180,17 @@ function GhoulRenderer({
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    const isLocked = isAttackingRef.current || isSummoningRef.current || isLeapingRef.current;
+    updateEnemyWalkStateFromMoveDist(
+      dist,
+      isLocked,
+      isDying,
+      WALK_STOP_DELAY,
+      lastMoveTimeRef,
+      isWalkingRef,
+      setIsWalking,
+    );
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 
@@ -230,12 +245,16 @@ function GhoulRenderer({
         {health > 0 && !isDying && !isSummoning && (
           <>
             <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[1.8, 0.22]} />
+              <planeGeometry args={[GHOUL_HP_BAR_WIDTH, GHOUL_HP_BAR_HEIGHT]} />
               <meshBasicMaterial color="#1a0a0a" opacity={0.9} transparent />
             </mesh>
 
-            <mesh position={[-0.9 + (health / maxHealth) * 0.9, 0, 0.001]}>
-              <planeGeometry args={[(health / maxHealth) * 1.8, 0.20]} />
+            <mesh
+              ref={hpFillRef}
+              position={[-GHOUL_HP_BAR_WIDTH / 2, 0, 0.001]}
+              scale={[1, 1, 1]}
+            >
+              <planeGeometry args={[GHOUL_HP_BAR_WIDTH, GHOUL_HP_BAR_FILL_HEIGHT]} />
               <meshBasicMaterial color="#aa3300" opacity={0.95} transparent />
             </mesh>
 

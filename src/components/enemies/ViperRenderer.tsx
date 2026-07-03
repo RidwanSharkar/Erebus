@@ -7,7 +7,7 @@ import { Billboard, Text } from '@react-three/drei';
 import ViperModel from './ViperModel';
 import CubeSoulEffect from './CubeSoulEffect';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import EnemyStaggerBar from './EnemyStaggerBar';
 
@@ -58,7 +58,7 @@ function ViperRenderer({
   const prevHealthRef  = useRef(health);
   const lastHitImpactAtRef = useRef(0);
 
-  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMoveTimeRef = useRef(0);
   const attackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer     = useRef(0);
   const opacity       = useRef(1);
@@ -86,23 +86,10 @@ function ViperRenderer({
     if (dist > 8.0 && groupRef.current && !isLocked) {
       groupRef.current.position.copy(position);
     }
-
-    if (dist > 0.01 && !isLocked && !isDying) {
-      if (!isWalkingRef.current) {
-        isWalkingRef.current = true;
-        setIsWalking(true);
-      }
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => {
-        isWalkingRef.current = false;
-        setIsWalking(false);
-      }, WALK_STOP_DELAY);
-    }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     return () => {
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
     };
   }, []);
@@ -169,7 +156,16 @@ function ViperRenderer({
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    updateEnemyWalkStateFromMoveDist(
+      dist,
+      isAttackingRef.current,
+      isDying,
+      WALK_STOP_DELAY,
+      lastMoveTimeRef,
+      isWalkingRef,
+      setIsWalking,
+    );
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 

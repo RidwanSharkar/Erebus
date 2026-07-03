@@ -215,6 +215,7 @@ export default function CoopBoonPickerModal({
   goldBalance = 0,
 }: CoopBoonPickerModalProps) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [openingFlash, setOpeningFlash] = useState(true);
 
   const rerollDisabled = !!onReroll && rerollCost > 0 && goldBalance < rerollCost;
 
@@ -232,6 +233,12 @@ export default function CoopBoonPickerModal({
   useEffect(() => {
     setHoveredIdx(null);
   }, [options]);
+
+  useEffect(() => {
+    setOpeningFlash(true);
+    const timer = window.setTimeout(() => setOpeningFlash(false), 300);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const rc = String(roomColor ?? '').toLowerCase();
   const accent: AccentTheme =
@@ -251,11 +258,24 @@ export default function CoopBoonPickerModal({
   const flavorKey = kind === 'room' && FLAVOR_SUBTITLES[rc] ? rc : kind;
   const flavorText = FLAVOR_SUBTITLES[flavorKey] ?? FLAVOR_SUBTITLES.class;
 
+  const handleRerollAttempt = () => {
+    if (!onReroll) return;
+    if (rerollDisabled) {
+      window.audioSystem?.playUIInterface4Sound?.();
+      return;
+    }
+    onReroll();
+  };
+
   // Keyboard shortcuts: 1/2/3 pick, R reroll
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (onReroll && !rerollDisabled && (e.key === 'r' || e.key === 'R')) {
+      if (onReroll && (e.key === 'r' || e.key === 'R')) {
         e.preventDefault();
+        if (rerollDisabled) {
+          window.audioSystem?.playUIInterface4Sound?.();
+          return;
+        }
         onReroll();
         return;
       }
@@ -281,6 +301,25 @@ export default function CoopBoonPickerModal({
           'radial-gradient(ellipse at 50% 40%, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.96) 100%)',
       }}
     >
+      {openingFlash && (
+        <div
+          className="pointer-events-none fixed inset-0 z-[201]"
+          style={{
+            background: 'rgba(255, 248, 220, 0.72)',
+            animation: 'coop-boon-open-flash 0.3s ease-out forwards',
+          }}
+        />
+      )}
+      <style jsx>{`
+        @keyframes coop-boon-open-flash {
+          0% {
+            opacity: 1;
+          }
+          100% {
+            opacity: 0;
+          }
+        }
+      `}</style>
       <div className="relative w-full max-w-3xl flex gap-5 items-start">
         {/* ── Main panel ── */}
         <div className="flex-1 min-w-0">
@@ -321,8 +360,8 @@ export default function CoopBoonPickerModal({
             {onReroll && (
               <button
                 type="button"
-                onClick={onReroll}
-                disabled={rerollDisabled}
+                onClick={handleRerollAttempt}
+                aria-disabled={rerollDisabled}
                 aria-label={
                   rerollCost > 0
                     ? `Reroll boon options for ${rerollCost} gold`
@@ -374,7 +413,10 @@ export default function CoopBoonPickerModal({
                   key={id}
                   type="button"
                   onClick={() => onPick(id)}
-                  onMouseEnter={() => setHoveredIdx(idx)}
+                  onMouseEnter={() => {
+                    window.audioSystem?.playBoonHoverSound?.();
+                    setHoveredIdx(idx);
+                  }}
                   onMouseLeave={() => setHoveredIdx(null)}
                   className={`
                     relative w-full flex items-center gap-4 px-5 py-4 text-left

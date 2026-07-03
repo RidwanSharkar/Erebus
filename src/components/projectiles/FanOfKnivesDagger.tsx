@@ -88,7 +88,7 @@ function FanOfKnivesDaggerInstance({ projectile }: { projectile: FanOfKnivesProj
   );
 }
 
-export default function FanOfKnivesDagger({ projectiles }: FanOfKnivesDaggerProps) {
+function FanOfKnivesDagger({ projectiles }: FanOfKnivesDaggerProps) {
   return (
     <>
       {projectiles.map((p) => (
@@ -97,3 +97,5 @@ export default function FanOfKnivesDagger({ projectiles }: FanOfKnivesDaggerProp
     </>
   );
 }
+
+export default React.memo(FanOfKnivesDagger);

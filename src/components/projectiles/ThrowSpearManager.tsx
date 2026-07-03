@@ -40,12 +40,6 @@ const _scratchMovement = new Vector3();
 const _scratchReturnDir = new Vector3();
 
 export function triggerGlobalThrowSpear(position: Vector3, direction: Vector3, chargeTime: number): void {
-  console.log('🎯 Throw Spear triggered!', {
-    position: position.toArray(),
-    direction: direction.toArray(),
-    chargeTime
-  });
-
   // Calculate distance based on charge time (10 to 20 units)
   const minDistance = 8;
   const maxDistance = 20;
@@ -73,8 +67,6 @@ export function triggerGlobalThrowSpear(position: Vector3, direction: Vector3, c
     chargeTime: chargeTime,
     damage: baseDamage
   };
-
-  console.log('🎯 Projectile created:', projectile.id, 'Total projectiles:', globalThrowSpearProjectiles.length + 1);
 
   globalThrowSpearProjectiles.push(projectile);
 }
@@ -199,9 +191,9 @@ export default function ThrowSpearManager({ world }: ThrowSpearManagerProps) {
       return projectile.active;
     });
 
-    // Sync React state: always update during fading (opacity changes), and on count changes
+    // Sync React state only when projectiles arrive/depart — movement/fade mutate refs in place.
     const activeCount = globalThrowSpearProjectiles.length;
-    if (changed || activeCount !== lastActiveCount.current || globalThrowSpearProjectiles.some(p => p.fadeStartTime)) {
+    if (changed || activeCount !== lastActiveCount.current) {
       lastActiveCount.current = activeCount;
       setProjectiles([...globalThrowSpearProjectiles]);
     }
